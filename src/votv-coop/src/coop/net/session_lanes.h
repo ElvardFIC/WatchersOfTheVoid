@@ -120,6 +120,10 @@ inline Lane LaneForKind(ReliableKind k) {
     case ReliableKind::AtvRelease:     return Lane::Normal;
     case ReliableKind::AtvSpawn:       return Lane::Normal;
     case ReliableKind::AtvDestroy:     return Lane::Normal;
+    // A service rides the ATV family's lane: it must not overtake the AtvState that made its
+    // sender a mirror, nor the AtvSpawn of a runtime ATV it names. Not relayable: the host decides
+    // where it applies.
+    case ReliableKind::AtvConditionEdit: return Lane::Normal;
     // DeskState, DeskInput and DeskScanEvent are order-coupled (adopt before deltas, charge before
     // scan); pinned together.
     case ReliableKind::DeskState:      return Lane::Normal;

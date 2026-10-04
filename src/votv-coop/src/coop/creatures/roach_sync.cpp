@@ -148,7 +148,9 @@ void SetCompScale(void* comp, float s) {
     Vec3 v{s, s, s};
     ue_wrap::ParamFrame f(g_setScaleFn);
     if (!f.valid()) return;
-    f.SetRaw(L"NewScale3D", &v, sizeof(v));
+    // SetWorldScale3D's parameter is NewScale (SetRelativeScale3D's is NewScale3D). The frame is
+    // zeroed, so a call after a failed write would scale the roach to nothing.
+    if (!f.SetRaw(L"NewScale", &v, sizeof(v))) return;
     ue_wrap::Call(comp, f);
 }
 

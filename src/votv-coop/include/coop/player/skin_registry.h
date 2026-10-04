@@ -40,6 +40,9 @@ struct SkinEntry {
     std::string  name;         // the SKIN name = package name = wire name (a single-skin
                                // pak's stem, or a bundle member -- never a bundle's stem)
     std::wstring previewPath;  // sibling <name>.png/.bmp; empty = no preview tile
+    std::wstring pakPath;      // the pak that provides it (a bundle's for a member); empty for
+                               // dr_kel and the builtins
+    std::string  title;        // the first line of a sibling <name>.txt, UTF-8; empty = none
 };
 
 // Does a skin's mesh actually EXIST on this machine? A pak is not a skin: the scan offers

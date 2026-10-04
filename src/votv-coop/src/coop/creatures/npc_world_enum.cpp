@@ -130,12 +130,26 @@ coop::element::ElementId EnrollUntrackedNpcActor(void* obj, const std::wstring& 
 // without this row the coin allowlist entry is inert; and the jellyfish path, whose spawn makes
 // its seven fish inside its own graph. A future creature event adds its trigger class here once
 // its target class joins the NPC allowlist.
+//
+// The eventer and the event controllers below are that step for the scheduled and story events:
+// the eventer's runEvent spawns its creatures and ships inside its own graph (the vent crawler,
+// the Rozital mothership, the morning UFO, the droppers, the follower, the egger, the cleaner), and
+// each controller spawns its own creatures in turn. Each row's output reaches only the lanes whose
+// allowlists name it; everything else it spawns stays the host's.
 constexpr const wchar_t* kExSpawnSourceClasses[] = {
     L"trigger_wispSwarm_C",   // the wisps event swarm
     L"piramidSpawner_C",      // the piramid event chain
     L"ticker_wispSpawner_C",  // the ambient sky wisps
     L"prop_coingun_C",        // the sell gun's coin mint
     L"jellyfishPath_C",       // the space jellyfish's seven, on the world-actor lane
+    L"trigger_eventer_C",       // every list_events row's own spawns
+    L"boarInvasion_C",          // the boar war: grayboar_C, npc_ariral_shooter_C, firetank_C
+    L"ufoDropper_pig_C",        // the pig drop: grayboar_C
+    L"ufoDropper_tank_C",       // the tank drop: firetankDeploy_C
+    L"firetankDeploy_C",        // the deployed tank: firetank_C
+    L"grayEventController_C",   // the grays: grayTest_C
+    L"superEgger_C",            // the eggvasion: eg_C
+    L"tentacleBallsFollower_C", // the tentacle balls: tentacleBall_C
 };
 
 // A source's output may be a world-actor-lane class (the pyramid): the same catch seam,
@@ -186,6 +200,7 @@ void OnBeginDeferredExSpawn(void* /*context*/, void* srcObj, void* spawned) {
     if (!sourceMatch) return;
     void* cls = R::ClassOf(spawned);
     if (!cls) return;
+    coop::npc_sync::RefreshLateAllowlist();  // an event creature's class may have just loaded
     if (!coop::npc_sync::IsAllowlistedClass(cls) && !IsWaAllowlistedClass(cls)) return;
     const int32_t idx = R::InternalIndexOf(spawned);
     std::lock_guard<std::mutex> lk(g_pendingMx);
@@ -200,9 +215,10 @@ void InstallExSpawnCatch(void* beginDeferredFn) {
     // Idempotent per UFunction and callback inside the hook install; it chains after any other
     // Func thunk on the same UFunction (the trash collect's ambient-prop observer), and both fire.
     if (ue_wrap::ufunction_hook::InstallPostHook(beginDeferredFn, &OnBeginDeferredExSpawn)) {
-        UE_LOGI("npc-sync[ex-spawn]: Func-thunk catch installed on BeginDeferred (source-gated: "
-                "trigger_wispSwarm_C -> wisp_C, piramidSpawner_C -> killerwisp_C + piramid2_C, "
-                "jellyfishPath_C -> jellyfish_C; EX_CallMath spawns now enroll)");
+        UE_LOGI("npc-sync[ex-spawn]: Func-thunk catch installed on BeginDeferred (source-gated, %zu "
+                "source classes: the wisp swarm, the pyramid, the sky wisps, the coin gun, the "
+                "jellyfish path, the eventer and its event controllers; EX_CallMath spawns now enroll)",
+                std::size(kExSpawnSourceClasses));
     } else {
         UE_LOGW("npc-sync[ex-spawn]: InstallPostHook FAILED -- EX_CallMath creature spawns will "
                 "NOT mirror this session (event-swarm wisps host-only)");

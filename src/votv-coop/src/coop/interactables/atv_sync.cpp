@@ -20,6 +20,7 @@
 #include "coop/interactables/atv_hit_guard.h"
 #include "coop/interactables/atv_sync_internal.h"
 
+#include "coop/net/intent_bucket.h"  // a sender's budget of service edits on the host
 #include "coop/net/protocol.h"
 #include "coop/net/session.h"
 #include "coop/net/wire_key_util.h"  // WireKeyFromString / StringFromWireKey / FnvKey (shared)
@@ -69,6 +70,18 @@ constexpr float kIdleMovedCm   = 1.0f;
 constexpr float kIdleTurnedDeg = 0.5f;
 constexpr float kIdleMovingCmS = 1.0f;
 
+// A peer that does not author an ATV reports its own player's service of it (coop/interactables/
+// atv_condition_sync): measured five times a second, and once more before an author's block
+// overwrites the copy, and sent at most once per window, the measurements between merged.
+constexpr uint64_t kServiceScanMs = 200;
+constexpr uint64_t kServiceSendMs = 200;
+// A service is the player's own use of a can, a toolbox or a tyre on the ATV, within arm's reach of
+// it; a movement on a copy whose player is further away is never reported.
+constexpr float kServiceReachCm = 600.f;
+// A sender's edit budget on the host: a scan's worth a second, with a burst for the block-arrival
+// scans of a second ATV.
+constexpr coop::net::IntentBudget kEditBudget{8.f, 6.f};
+
 
 // Per-ATV state; a mirror is a simulating body whose velocity is biased at packet arrival, with
 // no interpolation state. Game thread only.
@@ -82,6 +95,7 @@ std::unordered_map<std::wstring, AtvEntry> g_atvs;
 size_t   g_lastLogCount = SIZE_MAX;
 uint64_t g_lastLogHash  = 0;
 bool     g_installed    = false;  // latches the one-time index; Install is the per-tick ensure path
+coop::net::IntentBucket g_editBuckets[coop::players::kMaxPeers];  // host: by sender slot
 
 // Runtime-spawned ATV identity. Nothing sells an ATV, but list_props row 'atv' spawns an ATV_C
 // from the spawn menu; such an ATV has no save twin on the other peers and its own save key is
@@ -211,6 +225,49 @@ bool ReadPayload(void* actor, const std::wstring& key, uint8_t occupantSlot, uin
 
 
 
+
+bool PlayerInReach(void* actor, void* localPlayer) {
+    if (!actor || !localPlayer) return false;
+    FVector at; FRotator rot;
+    if (!A::GetRootTransform(actor, at, rot)) return false;
+    FVector me{};
+    if (!ue_wrap::engine::TryGetActorLocation(localPlayer, me)) return false;
+    return Len(FVector{ me.X - at.X, me.Y - at.Y, me.Z - at.Z }) <= kServiceReachCm;
+}
+
+// The local player's service of an ATV this peer does not author, since the author's last write,
+// merged into the unsent one.
+void CollectLocalService(AtvEntry& e, void* localPlayer) {
+    coop::net::AtvConditionEditPayload p{};
+    if (!coop::atv_condition_sync::TakeLocalService(e, PlayerInReach(e.actor, localPlayer), p)) return;
+    if (e.hasPendingService) {
+        coop::atv_condition_sync::MergeService(e.pendingService, p);
+    } else {
+        e.pendingService = p;
+        e.hasPendingService = true;
+    }
+}
+
+// The unsent service, once its window allows, where the truth is: a client's to the host, the
+// host's own to the client that authors the ATV.
+void FlushLocalService(coop::net::Session* s, AtvEntry& e, const std::wstring& key, bool isHost,
+                       uint8_t localSlot, uint64_t nowMs) {
+    if (!e.hasPendingService || nowMs - e.lastServiceSentMs < kServiceSendMs) return;
+    coop::net::AtvConditionEditPayload& p = e.pendingService;
+    WireKeyFromString(key, p.key);
+    bool sent = false;
+    if (!isHost) {
+        sent = s->SendReliable(coop::net::ReliableKind::AtvConditionEdit, &p, sizeof(p));
+    } else if (e.authorSlot != 0xFF && e.authorSlot != localSlot) {
+        sent = s->SendReliableToSlot(e.authorSlot, coop::net::ReliableKind::AtvConditionEdit, &p, sizeof(p));
+    }
+    UE_LOGI("atv: local service of '%ls' %s -- fuel %+.1f health %+.1f dirt %+.2f tyres on %02X spare on %u",
+            key.c_str(), sent ? (isHost ? "sent to its author" : "sent to the host") : "NOT sent",
+            p.fuel, p.health, p.bodyDirt, static_cast<unsigned>(p.tiresAdded),
+            static_cast<unsigned>(p.spareAdded));
+    e.lastServiceSentMs = nowMs;
+    e.hasPendingService = false;
+}
 
 // The idle syncer's change gate: true if the ATV moved, turned or is moving; the baseline updates
 // on a yes, so a slow drift accumulates into a send instead of being rounded away.
@@ -358,6 +415,7 @@ void OnSlotReplaced(int slot, const coop::roster_ledger::Row& /*outgoing*/,
         // depends on the host sending something.
         e.haveLastSync = false;
     }
+    if (static_cast<size_t>(slot) < std::size(g_editBuckets)) g_editBuckets[slot].Reset();
     if (freed > 0)
         UE_LOGI("atv: slot %d departed -- freed %d ATV seat/author reservation(s)", slot, freed);
 }
@@ -456,6 +514,9 @@ void OnReliable(const coop::net::AtvStatePayload& payload, uint8_t senderPeerSlo
     // keeps simulating either way; the state machine between "adopt an idle ATV" and "mirror an
     // authored one" is where the release defect lived.
     coop::atv_corrector::ApplyCorrection(e, payload, /*snap*/ payload.adopt != 0);
+    // A service this peer's player made since the last scan is measured before the block below
+    // overwrites the copy it was made on; the tick sends it.
+    CollectLocalService(e, localPlayer);
     // The condition block applies after the pose, behind the same gates; presence consumption is
     // further gated inside on the host as sender (atv_condition_sync.h).
     coop::atv_condition_sync::ApplyPayload(e, payload, senderPeerSlot);
@@ -542,6 +603,58 @@ void OnAtvDestroy(const coop::net::AtvDestroyPayload& payload, uint8_t /*senderP
     g_atvs.erase(it);
     UE_LOGI("atv: runtime-ATV mirror synthKey='%ls' %s", synthKey.c_str(),
             destroyed ? "destroyed" : "dropped from the lane, not destroyed here");
+}
+
+void OnConditionEdit(const coop::net::AtvConditionEditPayload& payload, uint8_t senderPeerSlot) {
+    auto* s = g_session.load(std::memory_order_acquire);
+    if (!s || !s->connected()) return;
+    const bool isHost = s->role() == coop::net::Role::Host;
+    // A client's service reaches the host; the host's, or one it forwards, reaches the author.
+    if (isHost ? (senderPeerSlot == 0 || senderPeerSlot >= std::size(g_editBuckets))
+               : senderPeerSlot != 0) {
+        UE_LOGW("atv: AtvConditionEdit from slot %u refused on the %s", static_cast<unsigned>(senderPeerSlot),
+                isHost ? "host" : "client");
+        return;
+    }
+    if (isHost && !g_editBuckets[senderPeerSlot].Take(kEditBudget, NowMs())) return;
+    const std::wstring key = StringFromWireKey(payload.key);
+    if (key.empty()) return;
+    if (!A::EnsureResolved() || !IndexCurrent()) return;
+    auto it = g_atvs.find(key);
+    if (it == g_atvs.end()) {
+        UE_LOGW("atv: service of '%ls' from slot %u names no indexed ATV -- dropped", key.c_str(),
+                static_cast<unsigned>(senderPeerSlot));
+        return;
+    }
+    AtvEntry& e = it->second;
+    if (!R::IsLiveByIndex(e.actor, e.idx)) return;
+    void* localPlayer = coop::players::Registry::Get().Local();
+    const uint8_t localSlot = coop::players::Registry::Get().LocalPeerId();
+    const bool iAuthor = IsPoseAuthor(e.actor, localPlayer, e.occupantSlot, localSlot);
+    const bool putsOn = payload.tiresAdded != 0 || payload.spareAdded != 0;
+
+    if (!isHost) {
+        if (!iAuthor) {
+            UE_LOGI("atv: service of '%ls' by slot %u arrived after this peer stopped authoring it -- dropped",
+                    key.c_str(), static_cast<unsigned>(payload.originSlot));
+            return;
+        }
+        coop::atv_condition_sync::ApplyService(e, payload, /*deltas*/true, /*presence*/true);
+        return;
+    }
+    if (iAuthor || e.authorSlot == 0xFF || e.authorSlot == localSlot) {
+        coop::atv_condition_sync::ApplyService(e, payload, /*deltas*/true, /*presence*/true);
+        return;
+    }
+    // A client authors it: tyre presence is the host's own, the accumulators are the author's, and
+    // an author that made the service itself already streams them.
+    if (putsOn) coop::atv_condition_sync::ApplyService(e, payload, /*deltas*/false, /*presence*/true);
+    if (e.authorSlot == senderPeerSlot) return;
+    coop::net::AtvConditionEditPayload fwd = payload;
+    fwd.originSlot = senderPeerSlot;
+    s->SendReliableToSlot(e.authorSlot, coop::net::ReliableKind::AtvConditionEdit, &fwd, sizeof(fwd));
+    UE_LOGI("atv: service of '%ls' by slot %u forwarded to its author, slot %u", key.c_str(),
+            static_cast<unsigned>(senderPeerSlot), static_cast<unsigned>(e.authorSlot));
 }
 
 void QueueConnectBroadcastForSlot(int peerSlot) {
@@ -644,6 +757,17 @@ void Tick() {
         const bool ownsTick = OwnsTickFor(authority, isHost, e.authorSlot);
         // The eject drill, env-gated, once per process.
         coop::atv_eject_drill::MaybeFire(e.actor, kv.first.c_str(), nowMs, isHost, authority, ownsTick);
+        // A copy this peer does not own is a mirror, and its player's service of it is the one write
+        // a mirror makes that must reach the truth.
+        if (ownsTick) {
+            coop::atv_condition_sync::ResetLocalService(e);
+        } else {
+            if (nowMs - e.lastServiceScanMs >= kServiceScanMs) {
+                e.lastServiceScanMs = nowMs;
+                CollectLocalService(e, localPlayer);
+            }
+            FlushLocalService(s, e, kv.first, isHost, localSlot, nowMs);
+        }
         if (ownsTick) {
             if (ownedN < coop::atv_hit_guard::kMaxOwned) {
                 owned[ownedN++] = e.actor;
@@ -711,6 +835,7 @@ void OnDisconnect() {
     }
     const size_t n = g_atvs.size();
     g_atvs.clear();
+    for (auto& b : g_editBuckets) b.Reset();
     g_synthForActor.clear();
     g_savePlacedKeys.clear();
     g_savePlacedActors.clear();

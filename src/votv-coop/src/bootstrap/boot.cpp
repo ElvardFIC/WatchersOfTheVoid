@@ -9,6 +9,7 @@
 #include "bootstrap/refuse_dialog.h"  // the stand-down modal (never the overlay's dialog)
 #include "ui/native_text_field.h"   // its un-gated editing selftest
 #include "coop/net/protocol.h"  // kProtocolVersion -- the b<N> build rev in the banner
+#include "coop/player/model_folder.h"  // the players' models folder, prepared at boot
 #include "coop/version.h"
 #include "harness/harness.h"
 #include "ue_wrap/core/game_thread.h"
@@ -129,7 +130,7 @@ DWORD WINAPI BootThread(LPVOID rawTag) {
     WriteMarker(entryTag);
     UE_LOGI("==== %s ====", coop::version::kDisplayLabel);
     // The Paper-pair identity line: game target + build number (= kProtocolVersion).
-    UE_LOGI("boot: Multivoid %s b%u", coop::version::kGameTarget,
+    UE_LOGI("boot: Multivoid+ %s b%u (community build on Multivoid b208)", coop::version::kGameTarget,
             static_cast<unsigned>(coop::net::kProtocolVersion));
     // Build triage line: discriminates same-proto rebuilds in bug reports
     // (banner-only -- never announced, never gated; the DLL hash stays the deploy
@@ -158,6 +159,9 @@ DWORD WINAPI BootThread(LPVOID rawTag) {
     // session ever existing, and a check gated on a session start would never run at all.
     // Un-gated, pure logic, microseconds.
     ui::native_text_field::RunSelftest();
+    // The players' models folder and its import, before the skins panel or the starter roll scans
+    // LogicMods. Filesystem only.
+    coop::model_folder::PrepareAtBoot();
 
     // THE VERDICT IS A DECISION, NOT A LOG LINE.
     //

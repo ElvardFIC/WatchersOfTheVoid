@@ -20,6 +20,7 @@ struct AtvStatePayload;
 struct AtvReleasePayload;
 struct AtvSpawnPayload;
 struct AtvDestroyPayload;
+struct AtvConditionEditPayload;
 }  // namespace coop::net
 
 namespace coop::atv_sync {
@@ -57,6 +58,13 @@ void OnAtvSpawn(const coop::net::AtvSpawnPayload& payload, uint8_t senderPeerSlo
 // Receiver entry (CLIENT-only): an AtvDestroy arrived. The host's synthetic-keyed (runtime) ATV is
 // gone -> K2_DestroyActor the fresh-spawned mirror + drop the index entry. From event_feed.
 void OnAtvDestroy(const coop::net::AtvDestroyPayload& payload, uint8_t senderPeerSlot);
+
+// Receiver entry: an AtvConditionEdit arrived -- a peer that does not author the ATV serviced it.
+// On the host, from a client: applied to the host's copy when the host authors the ATV or nobody
+// does, forwarded to the author when another client does; a tyre put on is applied on the host's
+// copy whoever authors. On a client, from the host: applied when this client authors the ATV. A
+// sender's edits run at a bounded rate. From event_feed. Game thread.
+void OnConditionEdit(const coop::net::AtvConditionEditPayload& payload, uint8_t senderPeerSlot);
 
 // HOST-only: snapshot every indexed ATV's pose, VELOCITY and holder to a freshly connected client
 // `peerSlot` (adopt=1 -> the joiner warps to it). Carrying the velocity is what lets an ATV that is

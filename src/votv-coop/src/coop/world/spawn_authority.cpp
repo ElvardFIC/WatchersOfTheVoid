@@ -67,6 +67,18 @@ constexpr Row kRows[] = {
     {L"ticker_fossilhoundSpawner_C", L"ReceiveTick",    "fossilhoundSpawner.ReceiveTick"},
     {L"cockroachMaster_C",           L"ReceiveTick",    "cockroachMaster.ReceiveTick"},
     {L"ticker_roachSummoner_C",      L"ReceiveTick",    "roachSummoner.ReceiveTick"},
+    // The event actors the world-actor lane mirrors whose own begin-play spawns the event's content
+    // (the follower's balls, the egger's eggs, the cleaner's sponge, a dropper's cargo, the deployed
+    // tank's gun): on a client each is a pose-driven mirror, and its begin-play would spawn a local
+    // copy of what the host's creature and world-actor lanes deliver. The droppers' base body serves
+    // the body and car drops; the pig and tank drops override it with bodies of their own.
+    {L"tentacleBallsFollower_C",     L"ReceiveBeginPlay", "tentacleBallsFollower.ReceiveBeginPlay"},
+    {L"superEgger_C",                L"ReceiveBeginPlay", "superEgger.ReceiveBeginPlay"},
+    {L"soltomiaCleaning_C",          L"ReceiveBeginPlay", "soltomiaCleaning.ReceiveBeginPlay"},
+    {L"ufoDropper_C",                L"ReceiveBeginPlay", "ufoDropper.ReceiveBeginPlay"},
+    {L"ufoDropper_pig_C",            L"ReceiveBeginPlay", "ufoDropper_pig.ReceiveBeginPlay"},
+    {L"ufoDropper_tank_C",           L"ReceiveBeginPlay", "ufoDropper_tank.ReceiveBeginPlay"},
+    {L"firetankDeploy_C",            L"ReceiveBeginPlay", "firetankDeploy.ReceiveBeginPlay"},
 };
 constexpr int kRowCount = static_cast<int>(std::size(kRows));
 constexpr int kTagBase = 0x53410000;   // 'SA', then the row

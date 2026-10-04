@@ -23,10 +23,10 @@ BEGIN
     BEGIN
         BLOCK "040904b0"
         BEGIN
-            VALUE "ProductName", "Multivoid"
+            VALUE "ProductName", "Multivoid+"
             VALUE "InternalName", "multivoid"
             VALUE "OriginalFilename", "main.dll"
-            VALUE "FileDescription", "Multivoid - Voices of the Void co-op mod"
+            VALUE "FileDescription", "Multivoid+ - Voices of the Void co-op mod (community build on Multivoid b208)"
             VALUE "ProductVersion", "@VOTVCOOP_GAME_TARGET@ b@VOTVCOOP_BUILD@"
             VALUE "FileVersion", "@VOTVCOOP_GAME_TARGET@ b@VOTVCOOP_BUILD@"
         END

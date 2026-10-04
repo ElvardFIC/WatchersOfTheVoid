@@ -17,21 +17,21 @@ constexpr size_t kMaxAssembliesPerSender = 4;
 
 namespace {
 // Shared chunker for SendBlob / SendBlobToSlot. `sendOne(p)` does the per-chunk transport
-// (broadcast vs slot-targeted); everything else (chunk count, 255-cap, all-or-nothing) is
+// (broadcast vs slot-targeted); everything else (chunk count, the kMaxChunks cap, all-or-nothing) is
 // identical (RULE 2 -- one chunking implementation).
 template <class SendOne>
 bool ChunkAndSend(coop::net::ReliableKind kind, uint32_t seq,
                   const std::vector<uint8_t>& blob, SendOne sendOne) {
     const size_t maxData = sizeof(coop::net::BlobChunkPayload{}.data);
-    const uint8_t chunks =
-        static_cast<uint8_t>(blob.empty() ? 1 : (blob.size() + maxData - 1) / maxData);
-    if (blob.size() > maxData * 255) {
-        UE_LOGW("blob_chunks: blob of %zu bytes exceeds the 255-chunk cap (kind %u) -- dropped",
-                blob.size(), static_cast<unsigned>(kind));
+    if (blob.size() > MaxBlobBytes()) {
+        UE_LOGW("blob_chunks: blob of %zu bytes exceeds the %zu-chunk cap (kind %u) -- dropped",
+                blob.size(), kMaxChunks, static_cast<unsigned>(kind));
         return false;
     }
+    const uint16_t chunks =
+        static_cast<uint16_t>(blob.empty() ? 1 : (blob.size() + maxData - 1) / maxData);
     size_t off = 0;
-    for (uint8_t i = 0; i < chunks; ++i) {
+    for (uint16_t i = 0; i < chunks; ++i) {
         coop::net::BlobChunkPayload p{};
         p.blobSeq = seq;
         p.chunkIdx = i;
@@ -70,15 +70,20 @@ bool SendBlobToSlot(coop::net::Session* s, int peerSlot, coop::net::ReliableKind
 
 bool Assembler::OnChunk(const coop::net::BlobChunkPayload& p, uint8_t senderSlot,
                         std::vector<uint8_t>& outBlob) {
-    if (p.chunks == 0 || p.chunkIdx >= p.chunks || p.chunkLen > sizeof(p.data))
+    if (p.chunks == 0 || p.chunks > kMaxChunks || p.chunkIdx >= p.chunks ||
+        p.chunkLen > sizeof(p.data))
         return false;
+    // The first chunk names the whole blob's size, unproven; reserve only a bounded head of it and
+    // let the rest grow as chunks actually arrive.
+    const size_t reserveChunks = p.chunks < 64 ? p.chunks : 64;
 
     const auto now = std::chrono::steady_clock::now();
     const auto key = std::make_pair(senderSlot, p.blobSeq);
     // Anti-flood cap. blobSeq is ATTACKER-CHOSEN, and `map_[key]` below default-inserts, so before
-    // this cap one 228-byte packet bought a fresh assembly that reserved chunks * 220 = up to ~56
-    // KB -- about 246x amplification, on eight lanes, reachable client-to-host with no join or role
-    // gate. Only the size of ONE assembly was bounded (chunks is a u8); their NUMBER was not.
+    // this cap one 228-byte packet bought a fresh assembly that reserved its whole claimed size --
+    // about 246x amplification, on eight lanes, reachable client-to-host with no join or role
+    // gate. Only the size of ONE assembly was bounded (now by kMaxChunks, and its reservation by
+    // reserveChunks); their NUMBER was not.
     // order_sync caps its own table the same way -- this is that guard at the shared primitive, so
     // every lane gets it at once instead of eight bespoke patches.
     //
@@ -99,7 +104,7 @@ bool Assembler::OnChunk(const coop::net::BlobChunkPayload& p, uint8_t senderSlot
     if (a.expectChunks == 0) {
         a.expectChunks = p.chunks;
         a.started = now;
-        a.blob.reserve(static_cast<size_t>(p.chunks) * sizeof(p.data));
+        a.blob.reserve(reserveChunks * sizeof(p.data));
     }
     if (a.expectChunks != p.chunks || a.gotChunks != p.chunkIdx) {
         // Mismatched part: the RESTART semantics (see header).
@@ -108,7 +113,7 @@ bool Assembler::OnChunk(const coop::net::BlobChunkPayload& p, uint8_t senderSlot
         auto& fresh = map_[key];
         fresh.expectChunks = p.chunks;
         fresh.started = now;
-        fresh.blob.reserve(static_cast<size_t>(p.chunks) * sizeof(p.data));
+        fresh.blob.reserve(reserveChunks * sizeof(p.data));
         fresh.blob.insert(fresh.blob.end(), p.data, p.data + p.chunkLen);
         fresh.gotChunks = 1;
         if (fresh.gotChunks == fresh.expectChunks) {

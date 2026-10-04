@@ -88,10 +88,19 @@ inline constexpr const wchar_t* NpcClass_WispG        = L"wisp_g_C";
 inline constexpr const wchar_t* NpcClass_WispO        = L"wisp_o_C";
 inline constexpr const wchar_t* NpcClass_WispP        = L"wisp_p_C";
 inline constexpr const wchar_t* NpcClass_WispBlu      = L"wisp_blu_C";
+// The event creatures, born inside their event controllers' graphs, so they reach the lane through
+// the source-gated catch (coop/creatures/npc_world_enum): the boar war's and the pig drop's boars,
+// the gray event's grays, the eggvasion's eggs, and the tentacle-balls follower's balls.
+inline constexpr const wchar_t* NpcClass_GrayBoar     = L"grayboar_C";
+inline constexpr const wchar_t* NpcClass_GrayTest     = L"grayTest_C";
+inline constexpr const wchar_t* NpcClass_Egg          = L"eg_C";
+inline constexpr const wchar_t* NpcClass_TentacleBall = L"tentacleBall_C";
 
 // The allowlist array: resolved once at install through R::FindClass and cached. The classes load
 // on the first gameplay-level transition, not at the menu, so the install retries until every
-// entry resolves. sizeof-derived, so a new entry binds everywhere.
+// REQUIRED entry resolves (the first kNpcAllowlistRequiredSize). The entries after them load with
+// their events and are resolved late, after the lane is live (npc_sync::RefreshLateAllowlist).
+// sizeof-derived, so a new entry binds everywhere.
 inline constexpr const wchar_t* kNpcAllowlist[] = {
     NpcClass_Zombie,
     NpcClass_KerfurOmega,
@@ -116,8 +125,17 @@ inline constexpr const wchar_t* kNpcAllowlist[] = {
     NpcClass_WispO,
     NpcClass_WispP,
     NpcClass_WispBlu,
+    // Late entries: not required for the lane to go live.
+    NpcClass_GrayBoar,
+    NpcClass_GrayTest,
+    NpcClass_Egg,
+    NpcClass_TentacleBall,
 };
 inline constexpr size_t kNpcAllowlistSize = sizeof(kNpcAllowlist) / sizeof(kNpcAllowlist[0]);
+inline constexpr size_t kNpcAllowlistRequiredSize = kNpcAllowlistSize - 4;
+static_assert(kNpcAllowlist[kNpcAllowlistRequiredSize - 1] == NpcClass_WispBlu &&
+                  kNpcAllowlist[kNpcAllowlistRequiredSize] == NpcClass_GrayBoar,
+              "kNpcAllowlistRequiredSize must end the required entries at the late ones");
 
 // The non-Character event actors the Character-only NPC mirror cannot replicate: npc_pose_drive
 // drives position, yaw and the CMC, so these AActor/APawn ships and saucers get a transform-only
@@ -128,6 +146,8 @@ inline constexpr const wchar_t* kWorldActorAllowlist[] = {
     L"ufoDropper_body_C",          // ufoDropper delivery saucer body (the gray "drop pod")
     L"ufoDropper_car_C",           // ufoDropper car variant
     L"ufoDropper_tank_C",          // ufoDropper tank variant
+    L"ufoDropper_pig_C",           // ufoDropper pig variant (drops the boars)
+    L"firetankDeploy_C",           // the tank drop's deploying tank, which becomes firetank_C
     L"rozitBorg_C",                // Rozital mothership (borgRozital event)
     L"arirShip_C",                 // ariral ship
     L"skyUfo_C",                   // high-altitude sky UFO

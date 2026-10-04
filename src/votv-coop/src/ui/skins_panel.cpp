@@ -3,6 +3,7 @@
 #include "ui/skins_panel.h"
 
 #include "coop/player/local_body.h"
+#include "coop/player/model_folder.h"  // the players' models folder, its import and its pak details
 #include "coop/player/skin_registry.h"
 #include "coop/player/skin_preview.h"  // the live in-world mannequin preview on hover
 #include "ui/overlay_backend.h"
@@ -62,10 +63,38 @@ void Render() {
     ImGui::TextDisabled("Skins come from converter .pak files under Content/Paks/LogicMods "
                         "(any subfolder). One pak may carry several skins -- the four "
                         "scientists ship together in scientists.pak.");
-    ImGui::TextDisabled("Preview tile = <skin name>.png/.bmp beside the pak.");
-    ImGui::TextDisabled("Peers WITHOUT that pak see the default kel body instead.");
+    ImGui::TextDisabled("Preview tile = <skin name>.png/.bmp beside the pak; its title, one "
+                        "line in <skin name>.txt.");
+    ImGui::TextDisabled("Peers WITHOUT that pak see the default kel body instead. Hover a tile "
+                        "for its fingerprint: the same name and fingerprint means the same file.");
     ImGui::TextDisabled("A pak that carries no skin (another mod's) is dropped from this "
                         "list once the game has been asked -- it is not a skin.");
+
+    const coop::model_folder::Report folder = coop::model_folder::LastReport();
+    if (!folder.folder.empty()) {
+        ImGui::Separator();
+        ImGui::TextUnformatted("Models folder (MultiModel): put your skin paks here.");
+        if (ImGui::Button("Open models folder")) coop::model_folder::OpenInExplorer(folder.folder);
+        if (!folder.inbox.empty()) {
+            ImGui::SameLine();
+            if (ImGui::Button("Open import folder")) coop::model_folder::OpenInExplorer(folder.inbox);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("A pak put here is copied into the models folder at the game's "
+                                  "start, and survives a mod manager's update.");
+        }
+        if (!folder.imported.empty()) {
+            std::string names;
+            for (const std::string& n : folder.imported) names += (names.empty() ? "" : ", ") + n;
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.55f, 1.0f, 0.6f, 1.0f));
+            ImGui::TextWrapped("Imported at this start: %s. Not listed yet? Restart the game: a pak "
+                               "is mounted when the game starts.", names.c_str());
+            ImGui::PopStyleColor();
+        }
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.75f, 0.35f, 1.0f));
+        for (const std::string& n : folder.notes) ImGui::TextWrapped("%s", n.c_str());
+        ImGui::PopStyleColor();
+        ImGui::Separator();
+    }
     if (ImGui::Button("Refresh list")) {
         PublishNamesForResolve(coop::skins::Entries(true));
         // Release the cached preview textures before dropping the map -- clearing
@@ -126,13 +155,22 @@ void Render() {
                                                                            : "(no preview)",
                                     ImVec2(tileW, tileImgH));
         }
-        // Hover -> live mannequin preview of this skin.
-        if (ImGui::IsItemHovered()) hoveredName = e.name;
+        // Hover -> live mannequin preview of this skin, and the file it comes from.
+        if (ImGui::IsItemHovered()) {
+            hoveredName = e.name;
+            if (!e.pakPath.empty()) {
+                const coop::model_folder::PakInfo& info = coop::model_folder::InfoFor(e.pakPath);
+                ImGui::SetTooltip("%s\n%.1f MB, fingerprint %s", e.name.c_str(),
+                                  static_cast<double>(info.size) / (1024.0 * 1024.0),
+                                  info.fingerprint.empty() ? "?" : info.fingerprint.c_str());
+            }
+        }
         if (isCurrent) ImGui::PopStyleColor(3);
-        // Name line under the tile, clipped to the tile width.
+        // Name line under the tile, clipped to the tile width: the title when the pak has one.
+        const std::string& label = e.title.empty() ? e.name : e.title;
         ImGui::PushTextWrapPos(ImGui::GetCursorPos().x + tileW);
-        if (isCurrent) ImGui::TextColored(ImVec4(0.55f, 1.0f, 0.6f, 1.0f), "%s", e.name.c_str());
-        else           ImGui::TextUnformatted(e.name.c_str());
+        if (isCurrent) ImGui::TextColored(ImVec4(0.55f, 1.0f, 0.6f, 1.0f), "%s", label.c_str());
+        else           ImGui::TextUnformatted(label.c_str());
         ImGui::PopTextWrapPos();
 
         if (clicked && !isCurrent) coop::local_body::RequestSkin(e.name);

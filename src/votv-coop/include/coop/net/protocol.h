@@ -30,7 +30,7 @@ inline constexpr uint32_t kMagic = 0x564D5450u;
 // This file is past the 1500-line hard cap and stays there: it is the single-feature exception the
 // rule names. One wire format, whose enum, payload structs and static_asserts are read together;
 // splitting it would put a kind's number in one file and its bytes in another.
-inline constexpr uint16_t kProtocolVersion = 208;
+inline constexpr uint16_t kProtocolVersion = 2081;
 
 // Default LAN port (overridable via multivoid.ini "net.port=").
 inline constexpr uint16_t kDefaultPort = 47621;
@@ -927,6 +927,18 @@ enum class ReliableKind : uint8_t {
     // host runs the box's fix when it is broken and within the player's reach, and a refusal is answered to the
     // presser alone with the state row (ServerState). Never relayed. ServerRepairPayload.
     ServerRepair = 164,
+
+    // Client to host: my player serviced this ATV while another peer authored it -- refuelled it,
+    // repaired it, cleaned it, patched a tyre or put a tyre or the spare on -- and here is how much
+    // each accumulator moved on my copy. The host adds the deltas to its own copy when it authors the
+    // ATV or nobody does, and forwards them to the author when a client does; the author's stream then
+    // carries the result to everyone. A tyre put on is applied on the host's copy whoever authors,
+    // since tyre presence is the host's. Only the servicing directions travel (fuel, health and
+    // durability up, dirt down), so a peer that does not author the ATV can never damage it. Host to
+    // the author: the same edit, `originSlot` naming who made it, and the host's own player's edits.
+    // Never relayed; a sender's edits run at a bounded rate. Late join: nothing to replay, the result
+    // rides AtvState. AtvConditionEditPayload.
+    AtvConditionEdit = 165,
 };
 
 #pragma pack(push, 1)
@@ -1897,10 +1909,10 @@ static_assert(sizeof(HookDestroyPayload) == 4, "HookDestroyPayload must be 4 byt
 // text; pfpLeaf }, capped at 256 / 4096 / 96 chars; signal rows are coop/signal_wire.
 struct BlobChunkPayload {
     uint32_t blobSeq;    // 4 -- per-SENDER monotonically increasing (per kind)
-    uint8_t  chunkIdx;   // 1
-    uint8_t  chunks;     // 1 -- total (>=1)
+    uint16_t chunkIdx;   // 2
+    uint16_t chunks;     // 2 -- total (>=1, <= blob_chunks::kMaxChunks)
     uint16_t chunkLen;   // 2 -- used bytes in data[]
-    uint8_t  data[220];  // 220
+    uint8_t  data[218];  // 218
 };
 static_assert(sizeof(BlobChunkPayload) == 228, "BlobChunkPayload must be 228 bytes");
 static_assert(sizeof(BlobChunkPayload) <= 256 - 20 - 8,
@@ -2234,6 +2246,31 @@ struct AtvReleasePayload {
     WireKey key;       // 32 -- the ATV's Key
 };
 static_assert(sizeof(AtvReleasePayload) == 32, "AtvReleasePayload must be 32 bytes");
+
+// A non-author's service of an ATV (AtvConditionEdit): the movement of each accumulator on the
+// sender's copy since the last value the author gave it, in the condition block's units. Every
+// delta is in its servicing direction (the receiver clamps anything else to zero), and a fix
+// counter moves only with its tyre's durability. A tyre or the spare the sender put on travels
+// whole instead: its bit is set, and its fields carry its values, not a movement.
+struct AtvConditionEditPayload {
+    WireKey  key;                  // 32 -- the ATV's Key
+    float    fuel;                 // 4  -- >= 0
+    float    health;               // 4  -- >= 0
+    float    bodyDirt;             // 4  -- <= 0
+    float    spareDurability;      // 4  -- >= 0; the spare's own when spareAdded
+    float    spareDirt;            // 4  -- <= 0; the spare's own when spareAdded
+    float    tiresDurability[4];   // 16 -- >= 0; the tyre's own where tiresAdded
+    float    tiresDirt[4];         // 16 -- <= 0; the tyre's own where tiresAdded
+    int8_t   tiresFixes[4];        // 4  -- the fix counter's move on a tyre whose durability rose; the tyre's own where tiresAdded
+    uint8_t  tiresTypes[4];        // 4  -- an added tyre's type
+    int8_t   spareFixes;           // 1
+    uint8_t  tiresAdded;           // 1  -- bit i: the sender put a tyre on at tires[i]
+    uint8_t  spareAdded;           // 1  -- 1: the sender put the spare on
+    uint8_t  originSlot;           // 1  -- host to author: the peer that serviced it; 0 from a client
+};
+static_assert(sizeof(AtvConditionEditPayload) == 96, "AtvConditionEditPayload must be 96 bytes");
+static_assert(sizeof(AtvConditionEditPayload) <= 256 - 20 - 8,
+              "AtvConditionEditPayload must fit in one reliable datagram (kMaxReliablePayload)");
 
 // The drone's state (DroneState): transform, activity, effect bits and the dust anchor.
 struct DroneStatePayload {

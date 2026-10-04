@@ -134,7 +134,8 @@ void OnEntitySpawn(const coop::net::EntitySpawnPayload& payload) {
         return;
     }
     // The allowlist gate: a peer could send any className, so only subclasses of the NPC bases
-    // materialise.
+    // materialise. An event creature's class may have loaded after the last late resolve.
+    coop::npc_sync::RefreshLateAllowlist();
     if (!coop::npc_sync::IsAllowlistedClass(actorClass)) {
         UE_LOGW("npc-sync[client OnSpawn]: class '%ls' is NOT on NPC allowlist -- "
                 "rejecting (eid=%u; peer is broadcasting non-NPC EntitySpawn?)",

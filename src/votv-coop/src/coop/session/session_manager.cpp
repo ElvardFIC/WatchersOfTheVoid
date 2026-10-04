@@ -189,7 +189,7 @@ std::string DisplayVersion() {
     // Function-static: the inputs are compile-time constants and the browser header calls this
     // every frame.
     static const std::string kLabel =
-        std::string("Multivoid ") + coop::version::kGameTarget +
+        std::string("Multivoid+ ") + coop::version::kGameTarget +
         " b" + std::to_string(static_cast<int>(net::kProtocolVersion));
     return kLabel;
 }

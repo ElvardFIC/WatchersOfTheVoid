@@ -25,6 +25,6 @@ inline constexpr const char* kGameTarget = "@VOTVCOOP_GAME_TARGET@";
 // Boot-banner label (the build number is appended at the log site -- protocol.h
 // owns it and this header must stay engine-independent).
 inline constexpr const char* kDisplayLabel =
-    "Multivoid (for VOTV Alpha @VOTVCOOP_GAME_TARGET@)";
+    "Multivoid+ (for VOTV Alpha @VOTVCOOP_GAME_TARGET@)";
 
 }  // namespace coop::version

@@ -18,7 +18,7 @@
 
 #include <cstdint>
 
-namespace coop::net { struct AtvStatePayload; }
+namespace coop::net { struct AtvStatePayload; struct AtvConditionEditPayload; }
 namespace coop::atv_sync { struct AtvEntry; }
 
 namespace coop::atv_condition_sync {
@@ -40,6 +40,35 @@ void ApplyPayload(coop::atv_sync::AtvEntry& e, const coop::net::AtvStatePayload&
 bool CondChangedSinceLastSend(const coop::atv_sync::AtvEntry& e,
                               const coop::net::AtvStatePayload& p);
 void NoteSent(coop::atv_sync::AtvEntry& e, const coop::net::AtvStatePayload& p);
+
+// SERVICE BY A NON-AUTHOR. A peer that does not author the ATV runs the game's own refuel, repair,
+// wash and tyre verbs on its copy when its player uses them, and the author's next block overwrote
+// the result: the gas can was spent and the ATV kept its fuel. The copy is measured against the
+// author's last write instead, and its servicing movement -- fuel, health and durability up, dirt
+// down, a tyre or the spare put on -- travels as AtvConditionEdit to the peer whose copy is the truth.
+//
+// The movement since the reference, filled into `out` (the key is the caller's), true when there is
+// any. `inReach` false absorbs the movement without reporting it, so a drift on a copy whose player
+// is not at the ATV is never mistaken for a service. A report arms the floor that keeps the serviced
+// values on this copy until the author's stream carries them. Game thread.
+bool TakeLocalService(coop::atv_sync::AtvEntry& e, bool inReach,
+                      coop::net::AtvConditionEditPayload& out);
+
+// Fold a later service `add` into an unsent one `into`, so the scans between two sends travel as one
+// edit: movements add up, and a tyre or the spare put on keeps its whole values with the later
+// movements applied to them.
+void MergeService(coop::net::AtvConditionEditPayload& into,
+                  const coop::net::AtvConditionEditPayload& add);
+
+// Forget the reference: this peer authors the ATV now, and the next stretch as a mirror measures
+// from what its copy holds then.
+void ResetLocalService(coop::atv_sync::AtvEntry& e);
+
+// Apply a received service to this peer's own copy: the deltas when `deltas`, a tyre or the spare
+// put on when `presence`, each clamped to its servicing direction and its domain, and the game's
+// reducers run for what changed. Game thread.
+void ApplyService(coop::atv_sync::AtvEntry& e, const coop::net::AtvConditionEditPayload& p,
+                  bool deltas, bool presence);
 
 // Apply-site counters: OURS, and blind by construction to the game's own processKeys and
 // native reducer calls.

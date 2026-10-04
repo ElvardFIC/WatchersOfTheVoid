@@ -459,7 +459,10 @@ bool PlayFatalityMontage(void* wisp) {
         ue_wrap::ParamFrame f(g_montageJumpFn);
         if (f.valid()) {
             f.SetRaw(L"SectionName", &section, sizeof(section));
-            f.Set<void*>(L"MontageToJumpTo", g_fatalityMontage);
+            // UAnimInstance::Montage_JumpToSection names its montage parameter `Montage`.
+            f.Set<void*>(R::FindParamOffset(g_montageJumpFn, L"Montage") >= 0 ? L"Montage"
+                                                                              : L"MontageToJumpTo",
+                         g_fatalityMontage);
             ue_wrap::Call(anim, f);
         }
     }

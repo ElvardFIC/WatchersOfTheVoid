@@ -3,6 +3,7 @@
 #include "coop/player/skin_registry.h"
 
 #include "coop/player/client_model.h"   // the only authority on "does this mesh exist"
+#include "coop/player/model_folder.h"   // TitleFor -- a model's <name>.txt caption
 #include "ue_wrap/core/hot_path_guard.h"  // UE_ASSERT_GAME_THREAD -- LoadObject is not free-thread
 
 #include "ue_wrap/core/paths.h"  // ExeDir -- the pak folder is derived from the install dir
@@ -247,7 +248,9 @@ const std::vector<SkinEntry>& Entries(bool rescan) {
                         cand += pext;
                         if (fs::is_regular_file(cand, ec)) { preview = cand.wstring(); break; }
                     }
-                    g_entries.push_back({std::move(member), std::move(preview)});
+                    std::string title = coop::model_folder::TitleFor(p.parent_path().wstring(), member);
+                    g_entries.push_back({std::move(member), std::move(preview), p.wstring(),
+                                         std::move(title)});
                 }
                 continue;
             }
@@ -259,7 +262,8 @@ const std::vector<SkinEntry>& Entries(bool rescan) {
                 fs::path cand = p; cand.replace_extension(pext);
                 if (fs::is_regular_file(cand, ec)) { preview = cand.wstring(); break; }
             }
-            g_entries.push_back({std::move(stem), std::move(preview)});
+            std::string title = coop::model_folder::TitleFor(p.parent_path().wstring(), stem);
+            g_entries.push_back({std::move(stem), std::move(preview), p.wstring(), std::move(title)});
         }
     }
     UE_LOGI("skin_registry: %zu skin(s) catalogued (incl. dr_kel) across %zu LogicMods subdir(s)",

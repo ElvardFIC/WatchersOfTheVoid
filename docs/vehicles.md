@@ -62,6 +62,22 @@ loss the host persists. The mirror's own accrual is held at zero by the impulse 
 overwrite never races an irreversible act. The battery is an inserted prop's charge and rides
 the prop lane.
 
+### Service by a peer that does not author it
+
+A peer that does not author the ATV still runs the game's own servicing verbs on its copy when its
+player uses them: the gas can's refuel, the toolbox's and the wall fixer's repair, the sponge's
+wash, a tyre or the spare put on. The author's next block used to overwrite the result, so the
+can was spent and the ATV kept its fuel. The copy is now measured against the author's last
+write, five times a second and once more before each block lands, and its servicing movement --
+fuel, health and durability up, dirt down, a tyre or the spare put on -- travels as an edit
+(`AtvConditionEdit`, `coop/interactables/atv_condition_sync`): a client's to the host, which
+applies it when it authors the ATV or nobody does and forwards it to the author when a client
+does; the host's own to the client that authors it. A tyre put on is applied on the host's copy
+whoever authors, since presence is the host's. Only the servicing directions travel and only
+while the player is within reach of the ATV, so a mirror can never author damage and a drift on a
+far copy is never mistaken for a service. Until the author's stream carries the result, the
+servicing peer's copy keeps the serviced values (a three-second floor), so nothing flickers back.
+
 ## Who owns what
 
 | State | Owner | Shape |
@@ -96,7 +112,8 @@ on its first packet.
 | At an authority handoff the host becomes the idle syncer on the tick after the release, so its stream and the new author's overlap until the new author's first packet lands | `[V]` `coop/interactables/atv_sync` |
 | A client's tyre eject is refused by the arbiter, so the host keeps the wheel and the peers disagree until the eject intent lane exists | `[V]` `coop/interactables/atv_condition_sync`, by design |
 | The pose stream rides the reliable lane; a sequenced unreliable stream is the intended shape | `[V]` `coop/interactables/atv_sync` sends it reliable |
-| Not synced: the thirteen modules and every upgrade effect, lights, brake and turbo, honk, the radio, the map, repair, the kerfur passenger, and a remote driver's body is not seated on the ATV | `[V]` nothing under `coop/interactables/atv_*` carries them |
+| Not synced: the thirteen modules and every upgrade effect, lights, brake and turbo, honk, the radio, the map, the kerfur passenger, and a remote driver's body is not seated on the ATV | `[V]` nothing under `coop/interactables/atv_*` carries them |
+| A non-author's service is measured, not intercepted: a refuel, repair or wash travels as the movement it left on the copy, and a tyre taken off by a non-author still does not travel | `[RD]` `coop/interactables/atv_condition_sync`; built, not yet played |
 
 ## Code map
 

@@ -38,12 +38,17 @@ inline uint64_t Fnv64(const uint8_t* p, size_t n) {
 }
 inline uint64_t Fnv64(const std::vector<uint8_t>& b) { return Fnv64(b.data(), b.size()); }
 
-// The transport ceiling: 255 chunks x the inline chunk payload. A blob past this NEVER sends
+// The chunk-count cap: the counters are 16 bits, and the cap bounds what one assembly may hold on a
+// receiver. A storage container full of items reached 58 KB, past the 255 chunks of the 8-bit
+// counters.
+inline constexpr size_t kMaxChunks = 1024;
+
+// The transport ceiling: kMaxChunks x the inline chunk payload. A blob past this NEVER sends
 // (ChunkAndSend warns and returns false before any chunk), so a caller with unbounded content must
 // bound BELOW this and check the return -- an ignored false on a canonical path is a silent
 // permanent divergence.
 inline constexpr size_t MaxBlobBytes() {
-    return sizeof(coop::net::BlobChunkPayload{}.data) * 255;
+    return sizeof(coop::net::BlobChunkPayload{}.data) * kMaxChunks;
 }
 
 // Ship one blob as BlobChunkPayload chunks under `kind` with per-sender id `seq`. True only if
@@ -82,7 +87,7 @@ public:
 
 private:
     struct Assembly {
-        uint8_t expectChunks = 0, gotChunks = 0;
+        uint16_t expectChunks = 0, gotChunks = 0;
         std::vector<uint8_t> blob;
         std::chrono::steady_clock::time_point started{};
     };

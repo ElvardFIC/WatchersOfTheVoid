@@ -123,6 +123,16 @@ class. A mirror stops whatever its class simulates with (the coin's sphere, the 
 capsule), so the pose drive alone moves it `[V]`. A heading
 that lives outside the actor's rotation streams as an auxiliary yaw.
 
+The eventer spawns a row's creatures and ships inside its own graph, a call the deferred-spawn
+interceptors never see, so the eventer and the event controllers it spawns (the boar war, the gray
+event, the egger, the tentacle-balls follower, the pig and tank drops and the deployed tank) are
+sources of the native-seam catch: what they spawn reaches the creature lane (the vent crawler, the
+boars, the grays, the eggs, the tentacle balls) and the world-actor lane (the mothership, the
+morning UFO, the droppers, the follower, the cleaner, the fire tank). On a client the event actors
+whose own begin-play spawns the event's content (the follower, the egger, the cleaner, the droppers,
+the deployed tank) are pose-driven mirrors whose begin-play is refused, so a client never spawns a
+second copy of what the lanes deliver (`coop/world/spawn_authority`).
+
 The walking pyramid rides those rails for its spawn, pose and despawn, the creature lane for
 its four wisps, and the event lane for its identity; its own lane owns the one axis nothing
 generic carries, the brain: the four state-writing timers are cancelled on the mirror, the

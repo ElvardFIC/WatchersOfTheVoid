@@ -19,7 +19,9 @@ finishes, and broadcasts it (`coop/creatures/npc_sync`). Two births that interce
 are enrolled by other means (`coop/creatures/npc_world_enum`): characters that loaded with the
 level, by a walk at world start, and characters a Blueprint spawns from inside its own graph (the
 wisp swarm, the ambient sky wisps, the pyramid's spawner), caught at the native function seam and
-gated by the spawning class. A save-persisted character, the kerfur above all, is materialised on
+gated by the spawning class; the eventer and its event controllers are such spawning classes, and
+the event creatures (the boars, the grays, the eggs, the tentacle balls) are late allowlist entries,
+resolved once their classes load so they never hold the lane back. A save-persisted character, the kerfur above all, is materialised on
 a joiner by the game's own save load at an unpredictable moment, so the joiner adopts its own
 local twin by class after a deferred poll instead of spawning a second one
 (`coop/creatures/npc_adoption`).

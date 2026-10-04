@@ -143,18 +143,22 @@ const NoReplayRow kNoReplayRows[] = {
     // Host-local by design:
     { "agrav", "physics divergence (by-design host-local)" },
     { "treehouseSleep", "per-player teleport" },
-    // Creature and save-actor spawns, host-only until allowlisted. The vent crawler is
-    // npc-allowlisted, so its no-replay reason is the mirrors:
-    { "ventCrawler", "npc lane (allowlisted)" }, { "ventKnocker", "creature spawn (no lane yet)" },
-    { "tentacleBalls", "creature spawn (no lane yet)" }, { "morningGay", "creature spawn (no lane yet)" },
-    { "borgRozital", "creature spawn (no lane yet)" }, { "graysforest", "creature spawn (no lane yet)" },
-    { "graystank", "creature spawn (no lane yet)" }, { "arirBuster", "creature spawn (no lane yet)" },
-    { "eggvasion", "creature spawn (no lane yet)" }, { "boarwar", "creature spawn (no lane yet)" },
-    { "soltoClean", "creature spawn (no lane yet)" },
+    // Creature and save-actor spawns. The eventer and the event controllers are sources of the
+    // native-seam spawn catch (coop/creatures/npc_world_enum), so the creatures and ships these rows
+    // spawn reach the npc and world-actor lanes, and a replay would double them:
+    { "ventCrawler", "npc lane (allowlisted)" }, { "ventKnocker", "world-actor lane (kocker_C)" },
+    { "tentacleBalls", "world-actor + npc lanes (the follower and its balls)" },
+    { "morningGay", "world-actor lane (morningUfo_C)" },
+    { "borgRozital", "world-actor lane (rozitBorg_C)" }, { "graysforest", "npc lane (grayTest_C)" },
+    { "graystank", "npc lane (grayTest_C)" }, { "arirBuster", "creature spawn (no lane yet)" },
+    { "eggvasion", "world-actor + npc lanes (superEgger_C and eg_C)" },
+    { "boarwar", "npc + world-actor lanes (the boars, the shooters, the fire tank)" },
+    { "soltoClean", "world-actor lane (soltomiaCleaning_C)" },
     { "salt", "save-actor spawn (no lane)" }, { "rozitalHole", "save-actor spawn (no lane)" },
     { "dreambase", "save-actor spawn (no lane)" },
-    { "fallbody_0", "dropper spawn (no lane)" }, { "fallbody_1", "dropper spawn (no lane)" },
-    { "fallcar_0", "dropper spawn (no lane)" },
+    { "fallbody_0", "world-actor lane (ufoDropper_body_C)" },
+    { "fallbody_1", "world-actor lane (ufoDropper_body_C)" },
+    { "fallcar_0", "world-actor lane (ufoDropper_car_C)" },
     // The prank layer (host-local RNG; thrown-prop outputs ride the prop lane):
     { "food", "prank special (prop lane)" }, { "drive", "prank special (prop lane)" },
     { "atvFuel", "prank special (prop lane)" }, { "atvFix", "prank special (prop lane)" },

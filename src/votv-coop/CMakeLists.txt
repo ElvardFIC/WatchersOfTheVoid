@@ -267,6 +267,7 @@ target_link_libraries(votv-coop PRIVATE
     gdiplus
     ws2_32
     winhttp  # master-server HTTP client (coop/net/http_client)
+    shell32  # the models folder: the shimloader's --pak-dir argument, and opening it in Explorer
     # PR-1 GNS link (vendored static lib, BSD-3). bcrypt: Windows SDK provides
     # AES+SHA backend referenced by USE_CRYPTO=BCrypt. crypt32: needed for
     # cert/PKI symbols some GNS modules reference (transitive).

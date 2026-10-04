@@ -99,6 +99,12 @@ void ReleaseNpcElementSilent(coop::element::ElementId eid);
 // NPC bases, by a SuperStruct walk. False while the allowlist is not fully resolved.
 bool IsAllowlistedClass(void* cls);
 
+// Resolve the late allowlist entries (the event creatures) that have loaded since the last call,
+// through the object index: a lookup each, no object-array walk. Called before a check that may
+// meet a class the lane has not seen yet (a host event spawn, a client's receive of one). Game
+// thread.
+void RefreshLateAllowlist();
+
 // Clear the per-session state: the tracked-NPC map, the counter, the bypass slot. The
 // interceptor stays installed; the cached classes and the function pointer remain valid across
 // a disconnect.

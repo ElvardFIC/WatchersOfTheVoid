@@ -221,6 +221,24 @@ bool HandleStateEvent(net::Session& session,
         coop::atv_sync::OnAtvDestroy(adp, 0);
         break;
     }
+    case net::ReliableKind::AtvConditionEdit: {
+        // A non-author's service of an ATV: a client's to the host, or the host's to the ATV's
+        // author. atv_sync gates who may send it, bounds the rate and decides where it applies;
+        // every value is clamped to its servicing direction there.
+        if (msg.payloadLen < sizeof(net::AtvConditionEditPayload)) {
+            UE_LOGW("event_feed: AtvConditionEdit payload too short (%zu < %zu)",
+                    static_cast<size_t>(msg.payloadLen), sizeof(net::AtvConditionEditPayload));
+            break;
+        }
+        net::AtvConditionEditPayload cep{};
+        std::memcpy(&cep, msg.payload, sizeof(cep));
+        const uint8_t senderSlot =
+            (msg.senderPeerSlot >= 0 && msg.senderPeerSlot < net::kMaxPeers)
+                ? static_cast<uint8_t>(msg.senderPeerSlot)
+                : static_cast<uint8_t>(0xFF);
+        coop::atv_sync::OnConditionEdit(cep, senderSlot);
+        break;
+    }
     case net::ReliableKind::DroneState: {
         // The delivery drone body pose, a host-authoritative singleton: host to client only,
         // trust-gated to slot 0. The client suppresses its own drone tick and mirrors the streamed

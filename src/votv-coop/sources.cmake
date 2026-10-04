@@ -165,6 +165,7 @@ set(VOTVCOOP_SOURCES
     src/coop/player/client_model.cpp
     src/coop/player/skin_effects.cpp
     src/coop/player/skin_registry.cpp
+    src/coop/player/model_folder.cpp
     src/coop/player/local_body.cpp
     src/coop/props/remote_prop.cpp
     src/coop/props/unresolved_pose_ledger.cpp

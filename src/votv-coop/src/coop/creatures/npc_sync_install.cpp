@@ -13,6 +13,7 @@
 #include "coop/creatures/npc_world_enum.h"  // InstallExSpawnCatch (the EX_CallMath spawn catch)
 #include "ue_wrap/core/game_thread.h"
 #include "ue_wrap/core/log.h"
+#include "ue_wrap/core/object_index.h"      // ClassByName (the late entries' one-lookup resolve)
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/sdk_profile.h"
 
@@ -70,9 +71,27 @@ bool IsInstalled() {
     return g_installed.load(std::memory_order_acquire);
 }
 
+void RefreshLateAllowlist() {
+    for (size_t i = P::name::kNpcAllowlistRequiredSize; i < P::name::kNpcAllowlistSize; ++i) {
+        if (g_npcAllowlist[i]) continue;
+        void* cls = ue_wrap::object_index::ClassByName(P::name::kNpcAllowlist[i]);
+        if (!cls) continue;
+        g_npcAllowlist[i] = cls;
+        UE_LOGI("npc-suppress: late allowlist[%zu] '%ls' = %p (loaded with its event)",
+                i, P::name::kNpcAllowlist[i], cls);
+    }
+}
+
 void Install(coop::net::Session* session) {
     SetSession(session);  // cache (caller guarantees outlives us)
-    if (g_installed.load(std::memory_order_acquire)) return;
+    if (g_installed.load(std::memory_order_acquire)) {
+        static int s_lateCountdown = 0;
+        if (--s_lateCountdown <= 0) {
+            s_lateCountdown = 120;
+            RefreshLateAllowlist();
+        }
+        return;
+    }
     // The throttle guard: every Find call below walks the object array with a string allocation
     // per entry, so retries are bounded to about one per half second during the unresolved window.
     static int s_installRetryCountdown = 0;
@@ -163,20 +182,23 @@ void Install(coop::net::Session* session) {
     // Already-resolved entries skip the lookup, and the unresolved walks are bounded by the
     // throttle gate at the top.
     size_t resolved = 0;
-    for (size_t i = 0; i < P::name::kNpcAllowlistSize; ++i) {
+    for (size_t i = 0; i < P::name::kNpcAllowlistRequiredSize; ++i) {
         if (!g_npcAllowlist[i]) {
             g_npcAllowlist[i] = R::FindClass(P::name::kNpcAllowlist[i]);
         }
         if (g_npcAllowlist[i]) ++resolved;
     }
-    if (resolved < P::name::kNpcAllowlistSize) {
-        // Not installed yet: every class must be cached before going live, or some NPCs would be
-        // suppressed and others not, depending on resolve timing. Throttle the next attempt.
+    if (resolved < P::name::kNpcAllowlistRequiredSize) {
+        // Not installed yet: every required class must be cached before going live, or some NPCs
+        // would be suppressed and others not, depending on resolve timing. A late entry has no
+        // instance to suppress before its class loads, so it never holds the lane back. Throttle
+        // the next attempt.
         s_installRetryCountdown = 60;
         UE_LOGI("npc-suppress: NPC class load partial (%zu/%zu) -- throttled retry in ~0.5s",
-                resolved, P::name::kNpcAllowlistSize);
+                resolved, P::name::kNpcAllowlistRequiredSize);
         return;
     }
+    RefreshLateAllowlist();
 
     // Every class resolved. Cache the function pointer and the offsets. The lifecycle observers go
     // in first: if either registration fails (the observer table full), the disabled flag is set
