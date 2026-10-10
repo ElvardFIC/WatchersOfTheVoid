@@ -244,7 +244,7 @@ void CheckClass(RowState& s) {
         return;
     }
     const Clock::time_point r0 = Clock::now();
-    const F::Resolved fn = row.GetMode() == F::Mode::RuntimeClass ? F::ResolveOn(row, cls) : F::Resolve(row);
+    const F::Resolved fn = F::ResolveOn(row, cls);  // the class is in hand: no second class lookup
     s.resolveUs = std::chrono::duration<double, std::micro>(Clock::now() - r0).count();
     if (!fn) {
         s.outcome = !ref ? Outcome::NoReference : (ref->path ? Outcome::Gone : Outcome::KnownGone);
@@ -425,11 +425,8 @@ void Capture() {
     std::vector<std::string> rowLines;
     for (const F::Function* row = F::First(); row; row = row->Next()) {
         F::Resolved r;
-        if (row->GetMode() == F::Mode::Declared || row->GetMode() == F::Mode::Dispatch) {
-            if (row->Class() && OI::ClassByName(row->Class())) r = F::Resolve(*row);
-        } else if (row->GetMode() == F::Mode::RuntimeClass) {
+        if (row->GetMode() != F::Mode::AnyClass)
             if (void* cls = row->Class() ? OI::ClassByName(row->Class()) : WitnessClass(*row)) r = F::ResolveOn(*row, cls);
-        }
         static const char* kModes[] = {"Declared", "Dispatch", "AnyClass", "RuntimeClass"};
         rowLines.push_back("#row " + std::string(row->Feature()) + " " + kModes[static_cast<int>(row->GetMode())] + " " +
                            Key(*row) + " -> " + (r ? FP::PathOf(r.Fn()) : std::string("-")));

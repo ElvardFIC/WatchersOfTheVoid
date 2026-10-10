@@ -64,12 +64,20 @@ Resolved Resolve(const Function& row) {
 }
 
 Resolved ResolveOn(const Function& row, void* cls) {
-    if (row.GetMode() != Mode::RuntimeClass || !cls) return {};
-    void* fn = R::FindFunction(cls, row.Name());
+    if (row.GetMode() == Mode::AnyClass || !cls) return {};
+    void* fn = nullptr;
+    if (row.GetMode() == Mode::Dispatch) {
+        void* declarer = nullptr;
+        fn = R::FindDispatchFunction(cls, row.Name(), &declarer);
+    } else {
+        fn = R::FindFunction(cls, row.Name());
+    }
     if (!fn) return {};
-    const R::FName& n = R::NameOf(cls);
-    row.NoteWitness((static_cast<uint64_t>(static_cast<uint32_t>(n.ComparisonIndex)) << 32) |
-                    static_cast<uint32_t>(n.Number));
+    if (row.GetMode() == Mode::RuntimeClass) {
+        const R::FName& n = R::NameOf(cls);
+        row.NoteWitness((static_cast<uint64_t>(static_cast<uint32_t>(n.ComparisonIndex)) << 32) |
+                        static_cast<uint32_t>(n.Number));
+    }
     return Resolved(fn, &row);
 }
 

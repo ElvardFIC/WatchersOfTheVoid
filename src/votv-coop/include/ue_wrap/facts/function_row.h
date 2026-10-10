@@ -99,7 +99,10 @@ private:
 // have the function, or the row is of another mode (logged once per row).
 Resolved Resolve(const Function& row);
 
-// A RuntimeClass row's function on the class the site found (FindFunction on it); empty otherwise.
+// A row's function on a class the caller already holds, by the row's mode: a RuntimeClass row's site
+// found its class at run time (and the row records which, for the census); a census that found a
+// Declared or Dispatch row's class through the object index resolves it here without a second class
+// lookup. Empty for an AnyClass row or when the class lacks it.
 Resolved ResolveOn(const Function& row, void* cls);
 
 }  // namespace ue_wrap::facts
