@@ -536,7 +536,7 @@ async fn serve_tls(
                 let deadline = Instant::now() + budget;
                 let acceptor = acceptor.clone();
                 tokio::spawn(async move {
-                    match timeout_at(deadline, acceptor.accept(stream)).await {
+                    match timeout_at(deadline, acceptor.accept_with(stream, tls::limit_send_buffer)).await {
                         Ok(Ok(tls_stream)) => handle(tls_stream, ip, "tls", pending, deadline).await,
                         Ok(Err(e)) => log(&format!("tls handshake failed [{ip}]: {e}")),
                         Err(_) => log(&format!("tls handshake timed out [{ip}]")),

@@ -32,6 +32,15 @@ use tokio_rustls::TlsAcceptor;
 /// listener: a var that IS set but unreadable is a FATAL error (below), because
 /// silently falling back to cleartext on a box that was meant to serve TLS is
 /// exactly the failure this tier exists to prevent.
+/// TLS records a connection may hold unsent before a write waits for the peer to read: rustls'
+/// default is 64 KiB, the size of a whole lobby list, held by any client that stops reading.
+pub const SEND_BUFFER_LIMIT: usize = 16 * 1024;
+
+/// For `TlsAcceptor::accept_with`: every accepted connection gets `SEND_BUFFER_LIMIT`.
+pub fn limit_send_buffer(conn: &mut tokio_rustls::rustls::ServerConnection) {
+    conn.set_buffer_limit(Some(SEND_BUFFER_LIMIT));
+}
+
 pub fn acceptor_from_env() -> Option<TlsAcceptor> {
     let cert_path = env_str("COOP_TLS_CERT", "");
     let key_path = env_str("COOP_TLS_KEY", "");

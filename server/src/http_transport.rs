@@ -12,7 +12,11 @@ use tokio::time::timeout;
 /// the body. The answer's write is bounded separately (`write_response`).
 pub const HTTP_TIMEOUT: Duration = Duration::from_secs(15);
 pub const MAX_HEADER: usize = 16 * 1024;
-pub const MAX_BODY: usize = 64 * 1024;
+/// The largest body a client of ours sends is the host announce: under 1.5 KiB with its name and
+/// world at their 63-byte input caps, fully escaped (coop/net/lobby_announcer.cpp). 4 KiB leaves
+/// room and keeps a body's parse small: a `serde_json::Value` can cost 16x its bytes
+/// (tests/conn_cost.rs: a 64 KiB array of zeros parses to 1 MiB).
+pub const MAX_BODY: usize = 4 * 1024;
 pub const MAX_CONNS: usize = 256;
 /// Per source address. A client holds at most a few short requests at once (a list refresh, a
 /// heartbeat, a join), so 16 leaves room for a household or a carrier NAT while keeping one source

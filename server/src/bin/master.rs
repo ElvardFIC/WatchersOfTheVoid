@@ -44,8 +44,14 @@ async fn handle<S: AsyncRead + AsyncWrite + Unpin>(mut stream: S, peer_ip: Strin
         Ok(Err(HeadErr::Closed)) | Err(_) => return, // eof / timeout
     };
 
-    let req = match parse_head(&head) {
-        Ok(h) => h,
+    let (method, path, query, content_length, client_ip) = match parse_head(&head) {
+        Ok(h) => (
+            h.method.to_string(),
+            h.path.to_string(),
+            h.query.to_string(),
+            h.content_length.map(str::to_string),
+            resolve_client_ip(&peer_ip, h.x_real_ip, h.x_forwarded_for),
+        ),
         Err(why) => {
             let error = match why {
                 HeadReject::NotText => "head is not text",
@@ -55,40 +61,23 @@ async fn handle<S: AsyncRead + AsyncWrite + Unpin>(mut stream: S, peer_ip: Strin
             return;
         }
     };
-    let (method, path, query) = (req.method, req.path, req.query);
-    let client_ip = resolve_client_ip(&peer_ip, req.x_real_ip, req.x_forwarded_for);
+    // A connection holds its head or its body, never both.
+    drop(head);
+    let (method, path, query) = (method.as_str(), path.as_str(), query.as_str());
 
-    // ---- body (POST only, bounded) ----
-    let mut body_obj = Value::Object(serde_json::Map::new());
+    // ---- POST: read, parse and answer in one expression, so the body and its parse are dropped
+    // before the answer's write, which can wait out the deadline on a client that stops reading.
     if method == "POST" {
-        let clen: i64 = req
-            .content_length
-            .and_then(|s| s.trim().parse::<i64>().ok())
-            .unwrap_or(-1);
-        if clen < 0 || clen as usize > MAX_BODY {
-            write_response(&mut stream, 413, &json_bytes(&json!({"error": "body too large"}))).await;
-            return;
-        }
-        let clen = clen as usize;
-        let mut raw = leftover;
-        if raw.len() < clen {
-            let need = clen - raw.len();
-            let mut rest = vec![0u8; need];
-            match timeout_at(deadline, stream.read_exact(&mut rest)).await {
-                Ok(Ok(_)) => raw.extend_from_slice(&rest),
-                _ => return, // eof / timeout
-            }
-        }
-        raw.truncate(clen);
-        if !raw.is_empty() {
-            match serde_json::from_slice::<Value>(&raw) {
-                Ok(v) if v.is_object() => body_obj = v,
-                _ => {
-                    write_response(&mut stream, 400, &json_bytes(&json!({"error": "bad json"}))).await;
-                    return;
-                }
-            }
-        }
+        let (status, answer) = match read_post_body(&mut stream, leftover, content_length.as_deref(), deadline).await {
+            Err(None) => return, // eof / timeout
+            Err(Some((status, error))) => (status, json_bytes(&json!({ "error": error }))),
+            Ok(body) => match dispatch_post(path, &client_ip, &body) {
+                Some((status, resp)) => (status, json_bytes(&resp)),
+                None => (404, json_bytes(&json!({"error": "not found"}))),
+            },
+        };
+        write_response(&mut stream, status, &answer).await;
+        return;
     }
 
     // ---- route ----
@@ -143,13 +132,33 @@ async fn handle<S: AsyncRead + AsyncWrite + Unpin>(mut stream: S, peer_ip: Strin
     } else if method == "GET" && path == "/healthz" {
         let n = lock_state().lobbies.len();
         write_response(&mut stream, 200, &json_bytes(&json!({"ok": true, "lobbies": n}))).await;
-    } else if method == "POST" {
-        match dispatch_post(path, &client_ip, &body_obj) {
-            Some((status, resp)) => write_response(&mut stream, status, &json_bytes(&resp)).await,
-            None => write_response(&mut stream, 404, &json_bytes(&json!({"error": "not found"}))).await,
-        }
     } else {
         write_response(&mut stream, 404, &json_bytes(&json!({"error": "not found"}))).await;
+    }
+}
+
+/// A POST body, read into one buffer of its declared length and parsed as a JSON object.
+/// `Err(None)`: the client went away or ran out the deadline; `Err(Some(..))`: the answer that
+/// refuses it.
+async fn read_post_body<S: AsyncRead + Unpin>(
+    stream: &mut S,
+    mut raw: Vec<u8>,
+    content_length: Option<&str>,
+    deadline: Instant,
+) -> Result<Value, Option<(u16, &'static str)>> {
+    let clen = content_length.and_then(|s| s.trim().parse::<usize>().ok()).filter(|n| *n <= MAX_BODY);
+    let Some(clen) = clen else { return Err(Some((413, "body too large"))) };
+    let have = raw.len().min(clen);
+    raw.resize(clen, 0);
+    if have < clen && !matches!(timeout_at(deadline, stream.read_exact(&mut raw[have..])).await, Ok(Ok(_))) {
+        return Err(None);
+    }
+    if raw.is_empty() {
+        return Ok(Value::Object(serde_json::Map::new()));
+    }
+    match serde_json::from_slice::<Value>(&raw) {
+        Ok(v) if v.is_object() => Ok(v),
+        _ => Err(Some((400, "bad json"))),
     }
 }
 
@@ -262,7 +271,7 @@ async fn serve_tls(
                 let acceptor = acceptor.clone();
                 tokio::spawn(async move {
                     let _slot = slot;
-                    match timeout_at(deadline, acceptor.accept(stream)).await {
+                    match timeout_at(deadline, acceptor.accept_with(stream, tls::limit_send_buffer)).await {
                         Ok(Ok(tls_stream)) => handle(tls_stream, peer_ip, deadline).await,
                         Ok(Err(e)) => log(&format!("tls handshake failed [{peer_ip}]: {e}")),
                         Err(_) => log(&format!("tls handshake timed out [{peer_ip}]")),
@@ -312,6 +321,45 @@ mod tests {
         let l = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let a = l.local_addr().unwrap();
         (l, a)
+    }
+
+    /// One request through `handle` over an in-memory pipe: the status and the body it answered.
+    async fn ask(request: Vec<u8>) -> (u16, String) {
+        use tokio::io::AsyncWriteExt;
+        let (mut client, server) = tokio::io::duplex(1 << 16);
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        let served = tokio::spawn(super::handle(server, "192.0.2.50".to_string(), deadline));
+        client.write_all(&request).await.unwrap();
+        let mut answer = Vec::new();
+        client.read_to_end(&mut answer).await.unwrap();
+        served.await.unwrap();
+        let text = String::from_utf8_lossy(&answer).to_string();
+        let status = text.get(9..12).and_then(|s| s.parse().ok()).unwrap_or(0);
+        (status, text.split("\r\n\r\n").nth(1).unwrap_or("").to_string())
+    }
+
+    fn post(path: &str, body: &[u8]) -> Vec<u8> {
+        let mut r = format!("POST {path} HTTP/1.1\r\nHost: x\r\nContent-Length: {}\r\n\r\n", body.len()).into_bytes();
+        r.extend_from_slice(body);
+        r
+    }
+
+    #[tokio::test]
+    async fn a_post_is_answered_and_its_limits_hold() {
+        let identity = format!("gen:{}", "ab01cd23".repeat(8));
+        let host = serde_json::json!({"name": "t", "game": "0.9.0n", "proto": 216, "identity": identity,
+                                      "conn": "direct", "direct_port": 7777});
+        let (status, body) = ask(post("/v1/host", host.to_string().as_bytes())).await;
+        assert_eq!(status, 200, "a direct host announce was refused: {body}");
+        let lobby: serde_json::Value = serde_json::from_str(&body).unwrap();
+        let id = lobby["lobbyId"].as_str().expect("no lobbyId").to_string();
+        let (status, list) = ask(b"GET /v1/lobbies HTTP/1.1\r\nHost: x\r\n\r\n".to_vec()).await;
+        assert!(status == 200 && list.contains(&id), "the new lobby is not listed");
+
+        let over = vec![b' '; super::MAX_BODY + 1];
+        assert_eq!(ask(post("/v1/host", &over)).await.0, 413, "a body past the cap was read");
+        assert_eq!(ask(post("/v1/host", b"{nope")).await.0, 400);
+        assert_eq!(ask(b"GET / HTTP/1.1\r\nA: \xff\r\n\r\n".to_vec()).await.0, 400, "a non-text head was read");
     }
 
     #[tokio::test]
