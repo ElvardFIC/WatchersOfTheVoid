@@ -147,28 +147,51 @@ std::string Hex(uint64_t v) {
 std::unordered_map<std::string, std::vector<void*>> g_anySubjects;  // lowercase name -> functions
 bool g_anyScanned = false;
 
-void ScanAnySubjects() {
-    g_anySubjects.clear();
-    std::unordered_set<std::string> wanted;
-    for (const RowState& s : g_rows)
-        if (s.row->GetMode() == F::Mode::AnyClass) wanted.insert(Lower(Narrow(s.row->Name())));
-    void* const fnClasses[] = {R::FindClass(L"Function"), R::FindClass(L"DelegateFunction")};
-    std::unordered_map<int32_t, bool> interesting;  // comparison index -> its name is wanted
+// One walk of the object array, resumable across frames: it stops at `deadline` (checked every 256
+// objects) and goes on from there on the next slice. True when the whole array has been read.
+struct AnyScan {
+    bool                               begun = false;
+    int32_t                            next = 0;
+    void*                              fnClasses[2] = {};
+    std::unordered_set<std::string>    wanted;
+    std::unordered_map<int32_t, bool>  interesting;  // comparison index -> its name is wanted
+};
+AnyScan g_scan;
+
+bool ScanAnySubjectsStep(Clock::time_point deadline) {
+    AnyScan& sc = g_scan;
+    if (!sc.begun) {
+        sc = AnyScan{};
+        sc.begun = true;
+        g_anySubjects.clear();
+        for (const RowState& s : g_rows)
+            if (s.row->GetMode() == F::Mode::AnyClass) sc.wanted.insert(Lower(Narrow(s.row->Name())));
+        sc.fnClasses[0] = R::FindClass(L"Function");
+        sc.fnClasses[1] = R::FindClass(L"DelegateFunction");
+    }
     const int32_t n = R::NumObjects();
-    for (int32_t i = 0; i < n; ++i) {
-        void* obj = R::ObjectAt(i);
+    for (; sc.next < n; ++sc.next) {
+        if ((sc.next & 255) == 0 && Clock::now() >= deadline) return false;
+        void* obj = R::ObjectAt(sc.next);
         if (!obj) continue;
         void* cls = R::ClassOf(obj);
-        if (cls != fnClasses[0] && cls != fnClasses[1]) continue;
+        if (cls != sc.fnClasses[0] && cls != sc.fnClasses[1]) continue;
         const R::FName& nm = R::NameOf(obj);
-        auto it = interesting.find(nm.ComparisonIndex);
-        if (it == interesting.end()) {
+        auto it = sc.interesting.find(nm.ComparisonIndex);
+        if (it == sc.interesting.end()) {
             const std::string s = Lower(Narrow(R::ToString(R::FName{nm.ComparisonIndex, 0}).c_str()));
-            it = interesting.emplace(nm.ComparisonIndex, wanted.count(s) != 0).first;
+            it = sc.interesting.emplace(nm.ComparisonIndex, sc.wanted.count(s) != 0).first;
         }
         if (it->second && nm.Number == 0) g_anySubjects[Lower(Narrow(R::ToString(nm).c_str()))].push_back(obj);
     }
+    sc.begun = false;
     g_anyScanned = true;
+    return true;
+}
+
+void ScanAnySubjects() {  // the capture's one pass, whole
+    g_scan.begun = false;
+    while (!ScanAnySubjectsStep(Clock::time_point::max())) {}
 }
 
 // ---- one row ----
@@ -185,6 +208,7 @@ void CheckAny(RowState& s) {
     size_t outside = 0;
     if (loaded) {
         for (void* fn : it->second) {
+            if (!R::IsLive(fn)) continue;  // found on an earlier frame: its class may have unloaded since
             const FP::Result r = FP::SignatureOf(fn);
             bool known = false;
             for (int k = 0; k < ref->sigCount && !known; ++k) known = kRefAnySigs[ref->firstSig + k] == r.sigHash;
@@ -249,8 +273,7 @@ void CheckClass(RowState& s) {
 
 void Check(RowState& s) {
     if (s.row->GetMode() == F::Mode::AnyClass) {
-        if (!g_anyScanned) ScanAnySubjects();
-        CheckAny(s);
+        CheckAny(s);  // Slice has finished the scan before any any-class row is checked
     } else {
         CheckClass(s);
     }
@@ -320,6 +343,13 @@ void Slice() {
     ue_wrap::ScopedWalkTimer walk("fingerprint-census slice");
     const Clock::time_point t0 = Clock::now();
     const auto budget = std::chrono::microseconds(2000);
+    const bool anyPending = std::any_of(g_rows.begin(), g_rows.end(), [](const RowState& r) {
+        return !r.settled && r.row->GetMode() == F::Mode::AnyClass;
+    });
+    if (anyPending && !g_anyScanned && !ScanAnySubjectsStep(t0 + budget)) {
+        g_ms += std::chrono::duration<double, std::milli>(Clock::now() - t0).count();
+        return;  // the scan goes on next frame; the rows wait for it
+    }
     while (g_next < g_rows.size() && Clock::now() - t0 < budget) {
         RowState& s = g_rows[g_next++];
         if (s.settled) continue;
@@ -423,6 +453,7 @@ void Run() {
     g_next = 0;
     g_ms = 0;
     g_anyScanned = false;
+    g_scan.begun = false;
     g_running = !g_rows.empty();
     g_waiting = false;
     g_firstPass = true;
@@ -443,6 +474,7 @@ void Tick() {
     g_next = 0;
     g_running = true;
     g_anyScanned = false;
+    g_scan.begun = false;
 }
 
 }  // namespace harness::fingerprint_census
