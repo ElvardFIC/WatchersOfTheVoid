@@ -153,6 +153,8 @@ async fn read_post_body<S: AsyncRead + Unpin>(
 
 #[tokio::main]
 async fn main() {
+    // Built now, so its settings are logged at start rather than at the first connect.
+    LazyLock::force(&CONNECTS);
     // fail fast on missing secrets (same as the Python FATAL exits)
     if CFG.turn_secret.is_empty() {
         log("FATAL: COOP_TURN_SECRET not set -- refusing to mint TURN creds");

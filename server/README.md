@@ -62,7 +62,7 @@ rate limits; a global LRU and per-address lobby caps; a `LOBBY_TTL` sweep; bound
 body; connection admission at accept (`admission.rs`: a total and a per-address cap, taken before
 the TLS handshake) under one deadline that covers the handshake and every read before the
 answer, or on the relay before registration; a relay destination's queue is capped in bytes;
-an address past `COOP_CONNECT_FLOOD_MAX` connects (default 20, 0 is off) inside ten seconds is
+an address past `COOP_CONNECT_FLOOD_MAX` connects (default 20, at most 40, 0 is off) inside ten seconds is
 ignored for a minute, and `COOP_CONNECT_FLOOD_EXCLUDE` (comma-separated addresses) is never limited.
 
 ## Design notes

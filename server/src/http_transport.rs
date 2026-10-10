@@ -21,8 +21,9 @@ pub const MAX_BODY: usize = 4 * 1024;
 /// The pool, sized against the unit's 128 MiB. One connection holds at most ~87 KiB: the larger of
 /// rustls' handshake buffer (64.8 KiB) and, after it, one record held in 32 KiB plus 16 KiB of
 /// received plaintext, 16 KiB unsent (`tls::SEND_BUFFER_LIMIT`) and the 16 KiB head (80 KiB), plus
-/// the task's ~7 KiB. 512 of them ~44 MiB; with the connect history and the lobby maps the master's
-/// worst case is ~71 MiB (tests/conn_cost.rs measures the parts that are ours).
+/// the task's ~7 KiB. 512 of them ~44 MiB; the connect history adds up to ~11 MiB at its setting's
+/// ceiling (~6 MiB at the default; tests/conn_cost.rs), and the lobby maps, the rate map and the
+/// list cache an estimated ~16 MiB: the master's worst case is ~71 MiB.
 pub const MAX_CONNS: usize = 512;
 /// Per source address. A browser open is three requests at once (lobbies, latest, thanks) and the
 /// list refreshes every 5 s (`server_browser_native.cpp:123`), so a household of four needs 12;

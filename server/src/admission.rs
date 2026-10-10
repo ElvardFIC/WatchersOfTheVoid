@@ -152,8 +152,15 @@ const MAX_TRACKED: usize = 10_000;
 /// The flood guard's default: connects allowed per period. `COOP_CONNECT_FLOOD_MAX` overrides it.
 const DEFAULT_FLOOD_MAX: i64 = 20;
 /// The highest `COOP_CONNECT_FLOOD_MAX` taken: a tracked address keeps up to that many connect
-/// times, so the history's memory (`MAX_TRACKED` addresses) grows with it; at 40 it is ~9 MiB.
+/// times, so the history's memory (`MAX_TRACKED` addresses) grows with it (tests/conn_cost.rs
+/// measures a tracked address at the default and at this ceiling).
 const FLOOD_MAX_CEILING: i64 = 40;
+
+/// The connects per period a `COOP_CONNECT_FLOOD_MAX` value asks for: 0 is off, a negative value
+/// takes the default, and nothing goes past the ceiling.
+fn flood_max_from(asked: i64) -> usize {
+    if asked < 0 { DEFAULT_FLOOD_MAX as usize } else { asked.min(FLOOD_MAX_CEILING) as usize }
+}
 
 /// The one history each server process keeps, for every listener it runs. Built from
 /// `COOP_CONNECT_FLOOD_MAX` (0 turns the guard off, where MTA's setting is 1..10000,
@@ -161,13 +168,13 @@ const FLOOD_MAX_CEILING: i64 = 40;
 /// separated list of addresses the guard never limits; the pools' caps still apply, and an IPv6
 /// entry covers its /64) the first time it is used, and logged as built.
 pub static CONNECTS: LazyLock<ConnectHistory> = LazyLock::new(|| {
-    let asked = env_int("COOP_CONNECT_FLOOD_MAX", DEFAULT_FLOOD_MAX);
-    let max = if asked < 0 { DEFAULT_FLOOD_MAX } else { asked.min(FLOOD_MAX_CEILING) } as usize;
+    let max = flood_max_from(env_int("COOP_CONNECT_FLOOD_MAX", DEFAULT_FLOOD_MAX));
     let history = ConnectHistory::new(max, Duration::from_secs(10), Duration::from_secs(60), MAX_TRACKED)
         .with_exclude(&env_str("COOP_CONNECT_FLOOD_EXCLUDE", ""));
     log(&format!(
-        "connect flood guard: {} (asked {asked}), {} excluded address(es)",
+        "connect flood guard: {} (COOP_CONNECT_FLOOD_MAX '{}'), {} excluded address(es)",
         if max == 0 { "off".to_string() } else { format!("{max} per 10 s, then 60 s ignored") },
+        clamp_str(&env_str("COOP_CONNECT_FLOOD_MAX", ""), 32),
         history.exclude.len()
     ));
     history
@@ -304,7 +311,15 @@ impl Drop for Slot<'_> {
 
 #[cfg(test)]
 mod tests {
-    use super::{ConnectHistory, Pool, REFUSAL_LOG_EVERY};
+    use super::{flood_max_from, ConnectHistory, Pool, DEFAULT_FLOOD_MAX, FLOOD_MAX_CEILING, REFUSAL_LOG_EVERY};
+
+    #[test]
+    fn the_flood_setting_is_off_at_zero_defaulted_when_negative_and_capped() {
+        assert_eq!(flood_max_from(0), 0);
+        assert_eq!(flood_max_from(-5), DEFAULT_FLOOD_MAX as usize);
+        assert_eq!(flood_max_from(25), 25);
+        assert_eq!(flood_max_from(i64::MAX), FLOOD_MAX_CEILING as usize);
+    }
     use std::time::{Duration, Instant};
 
     #[test]
@@ -337,6 +352,7 @@ mod tests {
         assert!((0..10).all(|_| h.allow("192.0.2.77", t0)), "an excluded address was limited");
         assert!((0..10).all(|_| h.allow("2001:db8:1:2::ffff", t0)), "an excluded /64 was limited");
         assert_eq!(h.tracked(), 0, "an excluded address was tracked");
+        assert_eq!(h.exclude.len(), 2, "an entry that is not an address joined the exclude list");
         assert!(h.allow("192.0.2.1", t0) && h.allow("192.0.2.1", t0));
         assert!(!h.allow("192.0.2.1", t0), "the exclude list spared another address");
     }

@@ -98,7 +98,8 @@ const MAX_IDENTITY: usize = 80;
 // alone (64 x 8 KiB) times the 512 authed slots would be 256 MiB, twice the unit's MemoryMax.
 // 64 KiB per destination is still 8 frames at the 8 KiB cap. On the master's basis (rustls'
 // buffers, the line, the task) an authed connection is at most ~143 KiB with this queue, 512 of
-// them ~72 MiB; with the pre-auth pool and the connect history the relay's worst case is ~99 MiB.
+// them ~72 MiB; the pre-auth pool adds ~9 MiB, the connect history up to ~11 MiB at its setting's
+// ceiling, and the process's own base an estimated ~7 MiB: the relay's worst case is ~99 MiB.
 const RELAY_QUEUE: usize = 64;
 const MAX_RELAY_PAYLOAD: usize = 8 * 1024;
 const MAX_QUEUED_PER_DEST: usize = 64 * 1024;
@@ -111,8 +112,7 @@ static CLIENTS: LazyLock<Mutex<HashMap<String, Route>>> = LazyLock::new(|| Mutex
 static PENDING: LazyLock<Pool> = LazyLock::new(|| Pool::new("pre-auth", 128, 4));
 // Registered peers: one per install while it hosts or joins. A full lobby is 4, and a reconnect
 // over a half-open socket is admitted before the stale registration it replaces is gone, so 8 per
-// address; filling the pool takes 64 addresses. 512 x (64 KiB of queue + ~65 KiB of TLS and line)
-// is ~65 MiB of the unit's 128 MiB.
+// address. 512 x ~143 KiB (MAX_QUEUED_PER_DEST's comment) is ~72 MiB of the unit's 128 MiB.
 static AUTHED: LazyLock<Pool> = LazyLock::new(|| Pool::new("authed", 512, 8));
 static CONN_SEQ: AtomicU64 = AtomicU64::new(1);
 
@@ -456,6 +456,8 @@ fn set_keepalive(stream: &TcpStream) {
 
 #[tokio::main]
 async fn main() {
+    // Built now, so its settings are logged at start rather than at the first connect.
+    LazyLock::force(&CONNECTS);
     if TOKEN.is_empty() {
         log("FATAL: COOP_SIGNALING_TOKEN not set -- refusing to start an open server");
         std::process::exit(1);

@@ -146,6 +146,19 @@ fn connection_costs() {
     });
     bound(&format!("connect history, {MANY} addresses, 20 connects each"), many, 1320.0);
 
+    // And at the setting's ceiling of 40 connects per address.
+    let history = ConnectHistory::new(40, Duration::from_secs(10), Duration::from_secs(60), 10_000);
+    let ((), many40) = held(|| {
+        for a in 0..MANY {
+            let ip = format!("10.{}.{}.{}", a >> 16, (a >> 8) & 255, a & 255);
+            for _ in 0..40 {
+                assert!(history.allow(&ip, now));
+            }
+        }
+    });
+    println!("  -> {:.0} B per address at 40 connects", many40 as f64 / MANY as f64);
+    bound(&format!("connect history, {MANY} addresses, 40 connects each"), many40, 2600.0);
+
     // A rustls server connection holding one partial 16 KiB handshake record.
     let cfg = Arc::new(ServerConfig::builder().with_no_client_auth().with_cert_resolver(Arc::new(NoCert)));
     let (conn, new_cost) = held(|| ServerConnection::new(cfg.clone()).expect("a server connection"));
