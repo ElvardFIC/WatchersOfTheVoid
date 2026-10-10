@@ -153,6 +153,29 @@ std::string SigLine(Ctx& c, void* fn) {
     return out + ")\n";
 }
 
+// ---- the pass cache ----
+
+// An ubergraph's decoded statements, kept for a census pass: every event stub of a class follows the same
+// ubergraph, and mainPlayer_C's is decoded once instead of once per stub. Keyed on the script's address
+// and size; a pass is a few seconds of one world. Game thread.
+struct PassCache {
+    std::unordered_map<const uint8_t*, std::pair<size_t, std::vector<Stmt>>> scans;
+};
+PassCache* g_pass = nullptr;
+
+const std::vector<Stmt>* ScanUbergraph(Ctx& c, const uint8_t* s, size_t n, std::vector<Stmt>& local) {
+    if (g_pass) {
+        auto it = g_pass->scans.find(s);
+        if (it != g_pass->scans.end() && it->second.first == n) return &it->second.second;
+    }
+    if (!Scan(c, s, n, local)) return nullptr;
+    if (!g_pass) return &local;
+    auto& e = g_pass->scans[s];
+    e.first = n;
+    e.second = std::move(local);
+    return &e.second;
+}
+
 // ---- one function ----
 
 void Build(void* fn, Result& r, Ctx& c) {
@@ -165,9 +188,13 @@ void Build(void* fn, Result& r, Ctx& c) {
     const uint8_t* s = Rd<const uint8_t*>(fn, P::off::UStruct_Script);
     const int32_t n = Rd<int32_t>(fn, P::off::UStruct_ScriptNum);
     if (!s || n <= 0) return;  // a delegate signature or an empty function: its signature is all there is
-    std::vector<Stmt> stmts;
-    if (!Scan(c, s, static_cast<size_t>(n), stmts)) return;
-    if (IsUbergraph(c, fn)) {
+    std::vector<Stmt> own;
+    const bool uber = IsUbergraph(c, fn);
+    const std::vector<Stmt>* scanned =
+        uber ? ScanUbergraph(c, s, static_cast<size_t>(n), own) : (Scan(c, s, static_cast<size_t>(n), own) ? &own : nullptr);
+    if (!scanned) return;
+    const std::vector<Stmt>& stmts = *scanned;
+    if (uber) {
         // the ubergraph itself: its dispatch is a computed jump, so its logic is the region of every event
         // stub of the class that enters it, stub by stub in name order (a fresh frame map per entry)
         std::vector<std::pair<std::string, int32_t>> entries;
@@ -199,13 +226,14 @@ void Build(void* fn, Result& r, Ctx& c) {
         if (st.uberEntry < 0) continue;
         const uint8_t* us = Rd<const uint8_t*>(st.uberFn, P::off::UStruct_Script);
         const int32_t un = Rd<int32_t>(st.uberFn, P::off::UStruct_ScriptNum);
-        std::vector<Stmt> ust;
-        if (!us || un <= 0 || !Scan(c, us, static_cast<size_t>(un), ust)) {
+        std::vector<Stmt> local;
+        const std::vector<Stmt>* ust = us && un > 0 ? ScanUbergraph(c, us, static_cast<size_t>(un), local) : nullptr;
+        if (!ust) {
             c.Fail("ubergraph does not decode", 0);
             return;
         }
         r.text += "== " + ObjPath(c, st.uberFn) + " ==\n";
-        RenderFlow(c, us, static_cast<size_t>(un), ust, static_cast<uint32_t>(st.uberEntry), r.text);
+        RenderFlow(c, us, static_cast<size_t>(un), *ust, static_cast<uint32_t>(st.uberEntry), r.text);
     }
 }
 
@@ -242,6 +270,16 @@ Result SignatureOf(void* ufunction) {
     r.ok = true;
     r.hash = r.sigHash = Fnv1a64(r.text);
     return r;
+}
+
+void BeginPass() {
+    delete g_pass;
+    g_pass = new PassCache;
+}
+
+void EndPass() {
+    delete g_pass;
+    g_pass = nullptr;
 }
 
 std::string PathOf(void* uobject) {

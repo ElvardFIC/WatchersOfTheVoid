@@ -35,6 +35,11 @@ Result Of(void* ufunction);
 // class's function of one name depends on. Game thread; a fault reads as a zero hash.
 Result SignatureOf(void* ufunction);
 
+// A census pass: between the two, an ubergraph is decoded once however many event stubs follow it (a
+// class's stubs all enter its one ubergraph). Game thread; Begin again starts a fresh pass.
+void BeginPass();
+void EndPass();
+
 // The function's path as the canonical text writes objects: its outer chain without the package,
 // lowercase, '.'-joined ("serverbox_c.fix", "actor.k2_destroyactor").
 std::string PathOf(void* uobject);

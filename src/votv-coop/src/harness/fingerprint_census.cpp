@@ -359,6 +359,7 @@ void Slice() {
     g_ms += std::chrono::duration<double, std::milli>(Clock::now() - t0).count();
     if (g_next < g_rows.size()) return;
     g_running = false;
+    FP::EndPass();
     if (g_firstPass || g_settledMore) Report();  // a re-try that settled nothing says nothing
     g_firstPass = false;
     g_settledMore = false;
@@ -452,6 +453,7 @@ void Run() {
     }
     g_next = 0;
     g_ms = 0;
+    FP::BeginPass();
     g_anyScanned = false;
     g_scan.begun = false;
     g_running = !g_rows.empty();
@@ -471,6 +473,7 @@ void Tick() {
     const uint64_t classSet = OI::ClassSetVersion();
     if (classSet == g_classSet && Clock::now() - g_lastTry < std::chrono::seconds(5)) return;
     // Some row's class was not loaded: try those again now that the class set moved or the timer ran out.
+    FP::BeginPass();
     g_next = 0;
     g_running = true;
     g_anyScanned = false;
