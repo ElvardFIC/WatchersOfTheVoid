@@ -146,11 +146,15 @@ impl<S: AsyncRead + Unpin> LineReader<S> {
                 return Ok(line);
             }
             self.scanned = self.buf.len();
-            if self.buf.len() > self.max {
+            // A read never takes more than one byte past `max`, so a slot holds at most `max + 1`
+            // bytes of line; a whole 4 KiB read appended before the check let it hold more.
+            let room = (self.max + 1).saturating_sub(self.buf.len());
+            if room == 0 {
                 return Err(LineErr::TooLong);
             }
             let mut tmp = [0u8; 4096];
-            let n = self.rh.read(&mut tmp).await.map_err(|_| LineErr::Closed)?;
+            let room = room.min(tmp.len());
+            let n = self.rh.read(&mut tmp[..room]).await.map_err(|_| LineErr::Closed)?;
             if n == 0 {
                 return Err(LineErr::Closed);
             }
@@ -705,6 +709,7 @@ mod tests {
         assert_eq!(lr.next_line().await.ok().unwrap(), b"xyz\n");
         tx.write_all(&[b'a'; 40]).await.unwrap();
         assert!(matches!(lr.next_line().await, Err(LineErr::TooLong)), "a line past the cap was buffered on");
+        assert!(lr.buf.len() <= 17, "the reader held {} bytes against a cap of 16", lr.buf.len());
     }
 
     #[tokio::test]
