@@ -66,14 +66,15 @@ pub fn find_subsequence(hay: &[u8], needle: &[u8]) -> Option<usize> {
     hay.windows(needle.len()).position(|w| w == needle)
 }
 
-/// Read the header block up to (and consuming) the terminating CRLFCRLF, bounded by
-/// `max`. Returns (head_bytes, leftover_body_bytes_already_read). Mirrors the Python
-/// `readuntil(b"\r\n\r\n")` with the start_server `limit`.
+/// Read the header block up to (and consuming) the terminating CRLFCRLF, which must end within
+/// `max + 4` bytes. Returns (head_bytes, leftover_body_bytes_already_read). The buffer is sized
+/// once and no read goes past it, so a head costs `max + 4` bytes at most, never a grown copy.
 pub async fn read_head<S: AsyncRead + Unpin>(
     stream: &mut S,
     max: usize,
 ) -> Result<(Vec<u8>, Vec<u8>), HeadErr> {
-    let mut buf: Vec<u8> = Vec::with_capacity(2048);
+    let cap = max + 4;
+    let mut buf: Vec<u8> = Vec::with_capacity(cap);
     let mut tmp = [0u8; 4096];
     // Search only what arrived since the last look, less the terminator's length so one split
     // across two reads is still found. Rescanning the whole buffer made a head trickled a byte
@@ -85,11 +86,12 @@ pub async fn read_head<S: AsyncRead + Unpin>(
             buf.truncate(i);
             return Ok((buf, leftover));
         }
-        if buf.len() > max {
+        let room = (cap - buf.len()).min(tmp.len());
+        if room == 0 {
             return Err(HeadErr::TooLarge);
         }
         from = buf.len().saturating_sub(3);
-        let n = stream.read(&mut tmp).await.map_err(|_| HeadErr::Closed)?;
+        let n = stream.read(&mut tmp[..room]).await.map_err(|_| HeadErr::Closed)?;
         if n == 0 {
             return Err(HeadErr::Closed);
         }
@@ -102,10 +104,89 @@ pub enum HeadErr {
     Closed,
 }
 
+/// The parts of a request head the master reads. Every other header line is skipped as it is
+/// parsed and nothing is kept for it, so a head costs its own bytes however many lines it holds.
+pub struct Head<'a> {
+    pub method: &'a str,
+    pub path: &'a str,
+    pub query: &'a str,
+    pub content_length: Option<&'a str>,
+    pub x_real_ip: Option<&'a str>,
+    pub x_forwarded_for: Option<&'a str>,
+}
+
+pub enum HeadReject {
+    /// Not UTF-8: an HTTP head from a client of ours is ASCII.
+    NotText,
+    BadRequestLine,
+}
+
+/// Parse a head `read_head` returned. A repeated header keeps its last value.
+pub fn parse_head(head: &[u8]) -> Result<Head<'_>, HeadReject> {
+    let text = std::str::from_utf8(head).map_err(|_| HeadReject::NotText)?;
+    let mut lines = text.split("\r\n");
+    let mut rl = lines.next().unwrap_or("").splitn(3, ' ');
+    let (method, raw_path) = match (rl.next(), rl.next(), rl.next()) {
+        (Some(m), Some(p), Some(_)) => (m, p),
+        _ => return Err(HeadReject::BadRequestLine),
+    };
+    let (path, query) = raw_path.split_once('?').unwrap_or((raw_path, ""));
+    let mut h = Head { method, path, query, content_length: None, x_real_ip: None, x_forwarded_for: None };
+    for ln in lines {
+        let Some((k, v)) = ln.split_once(':') else { continue };
+        let k = k.trim();
+        let slot = if k.eq_ignore_ascii_case("content-length") {
+            &mut h.content_length
+        } else if k.eq_ignore_ascii_case("x-real-ip") {
+            &mut h.x_real_ip
+        } else if k.eq_ignore_ascii_case("x-forwarded-for") {
+            &mut h.x_forwarded_for
+        } else {
+            continue;
+        };
+        *slot = Some(v.trim());
+    }
+    Ok(h)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{read_head, HeadErr};
+    use super::{parse_head, read_head, HeadErr, HeadReject};
     use tokio::io::AsyncWriteExt;
+
+    #[test]
+    fn a_head_keeps_only_the_headers_the_master_reads() {
+        let h = parse_head(b"POST /v1/host?x=1 HTTP/1.1\r\nContent-Length: 12\r\nX-Real-IP: 1.2.3.4\r\nA: b")
+            .ok()
+            .expect("a well-formed head was refused");
+        assert_eq!((h.method, h.path, h.query), ("POST", "/v1/host", "x=1"));
+        assert_eq!((h.content_length, h.x_real_ip, h.x_forwarded_for), (Some("12"), Some("1.2.3.4"), None));
+        let again = parse_head(b"GET / HTTP/1.1\r\ncontent-length: 1\r\nCONTENT-LENGTH: 2").ok().unwrap();
+        assert_eq!(again.content_length, Some("2"), "a repeated header did not keep its last value");
+        // Thousands of tiny header lines cost nothing past the head's own bytes: nothing is kept.
+        let mut many = b"GET / HTTP/1.1".to_vec();
+        for _ in 0..4000 {
+            many.extend_from_slice(b"\r\na:");
+        }
+        assert!(parse_head(&many).is_ok());
+    }
+
+    #[test]
+    fn a_head_that_is_not_text_or_has_no_request_line_is_refused() {
+        assert!(matches!(parse_head(b"GET / HTTP/1.1\r\nA: \xff\xfe"), Err(HeadReject::NotText)));
+        assert!(matches!(parse_head(b"GET /"), Err(HeadReject::BadRequestLine)));
+    }
+
+    #[tokio::test]
+    async fn a_head_never_reads_past_its_cap() {
+        // One write far past the cap: the reader takes at most cap bytes, then refuses.
+        let (mut tx, mut rx) = tokio::io::duplex(1 << 16);
+        tx.write_all(&[b'a'; 40_000]).await.unwrap();
+        assert!(matches!(read_head(&mut rx, 1024).await, Err(HeadErr::TooLarge)));
+        let mut left = vec![0u8; 40_000];
+        let n = tokio::io::AsyncReadExt::read(&mut rx, &mut left).await.unwrap();
+        assert!(n >= 40_000 - 1028, "the reader consumed {} bytes past a 1028-byte cap", 40_000 - n - 1028);
+    }
 
     #[tokio::test]
     async fn a_terminator_split_across_reads_is_found() {

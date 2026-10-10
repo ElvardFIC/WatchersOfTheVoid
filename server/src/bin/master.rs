@@ -14,7 +14,8 @@
 use coop_server::admission::Pool;
 use coop_server::common::{clamp_str, env_int, env_str, log};
 use coop_server::http_transport::{
-    json_bytes, read_head, write_response, HeadErr, CONNS, HTTP_TIMEOUT, MAX_BODY, MAX_HEADER,
+    json_bytes, parse_head, read_head, write_response, HeadErr, HeadReject, CONNS, HTTP_TIMEOUT, MAX_BODY,
+    MAX_HEADER,
 };
 use coop_server::lobby::{
     dispatch_post, filter_lobbies, lobbies_snapshot, lock_state, resolve_client_ip, sweeper,
@@ -28,7 +29,6 @@ use std::sync::LazyLock;
 use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite};
 use tokio::time::{timeout_at, Instant};
-use std::collections::HashMap;
 use tokio::net::TcpListener;
 
 /// One request. The connection was admitted at accept, and `deadline` -- set there too -- bounds
@@ -44,39 +44,25 @@ async fn handle<S: AsyncRead + AsyncWrite + Unpin>(mut stream: S, peer_ip: Strin
         Ok(Err(HeadErr::Closed)) | Err(_) => return, // eof / timeout
     };
 
-    let head_str = String::from_utf8_lossy(&head);
-    let mut lines = head_str.split("\r\n");
-    let request_line = lines.next().unwrap_or("");
-    let mut rl = request_line.splitn(3, ' ');
-    let (method, raw_path) = match (rl.next(), rl.next(), rl.next()) {
-        (Some(m), Some(p), Some(_)) => (m, p),
-        _ => {
-            write_response(&mut stream, 400, &json_bytes(&json!({"error": "bad request line"}))).await;
+    let req = match parse_head(&head) {
+        Ok(h) => h,
+        Err(why) => {
+            let error = match why {
+                HeadReject::NotText => "head is not text",
+                HeadReject::BadRequestLine => "bad request line",
+            };
+            write_response(&mut stream, 400, &json_bytes(&json!({ "error": error }))).await;
             return;
         }
     };
-
-    let mut headers: HashMap<String, String> = HashMap::new();
-    for ln in lines {
-        if ln.is_empty() {
-            continue;
-        }
-        if let Some((k, v)) = ln.split_once(':') {
-            headers.insert(k.trim().to_lowercase(), v.trim().to_string());
-        }
-    }
-
-    let (path, query) = match raw_path.split_once('?') {
-        Some((p, q)) => (p, q),
-        None => (raw_path, ""),
-    };
-    let client_ip = resolve_client_ip(&peer_ip, &headers);
+    let (method, path, query) = (req.method, req.path, req.query);
+    let client_ip = resolve_client_ip(&peer_ip, req.x_real_ip, req.x_forwarded_for);
 
     // ---- body (POST only, bounded) ----
     let mut body_obj = Value::Object(serde_json::Map::new());
     if method == "POST" {
-        let clen: i64 = headers
-            .get("content-length")
+        let clen: i64 = req
+            .content_length
             .and_then(|s| s.trim().parse::<i64>().ok())
             .unwrap_or(-1);
         if clen < 0 || clen as usize > MAX_BODY {

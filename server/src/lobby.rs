@@ -264,15 +264,15 @@ pub fn host_listed(body: &Value) -> bool {
 
 // ---- helpers ----------------------------------------------------------------
 
-pub fn resolve_client_ip(peer_ip: &str, headers: &HashMap<String, String>) -> String {
+pub fn resolve_client_ip(peer_ip: &str, x_real_ip: Option<&str>, x_forwarded_for: Option<&str>) -> String {
     if TRUSTED_PROXY_PEERS.contains(&peer_ip) {
-        if let Some(xr) = headers.get("x-real-ip") {
+        if let Some(xr) = x_real_ip {
             let xr = xr.trim();
             if !xr.is_empty() {
                 return xr.to_string();
             }
         }
-        if let Some(xff) = headers.get("x-forwarded-for") {
+        if let Some(xff) = x_forwarded_for {
             let parts: Vec<&str> = xff.split(',').map(|p| p.trim()).filter(|p| !p.is_empty()).collect();
             if let Some(last) = parts.last() {
                 return last.to_string(); // rightmost = what the trusted proxy observed
