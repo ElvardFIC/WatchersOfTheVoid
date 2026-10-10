@@ -12,14 +12,14 @@
 
 
 use coop_server::admission::{Pool, CONNECTS};
-use coop_server::common::{clamp_str, env_int, env_str, log};
+use coop_server::common::{env_int, env_str, log};
 use coop_server::http_transport::{
     json_bytes, parse_head, read_head, write_response, HeadErr, HeadReject, CONNS, HTTP_TIMEOUT, MAX_BODY,
     MAX_HEADER,
 };
 use coop_server::lobby::{
-    dispatch_post, filter_lobbies, lobbies_snapshot, lock_state, resolve_client_ip, sweeper,
-    LATEST_MOD, LATEST_PROTO, LATEST_URL, MAX_VERSION,
+    dispatch_post, lobbies_snapshot, lock_state, resolve_client_ip, sweeper, LATEST_MOD, LATEST_PROTO,
+    LATEST_URL,
 };
 use coop_server::master_config::CFG;
 use coop_server::thanks::{thanks_answer, Answer};
@@ -44,11 +44,10 @@ async fn handle<S: AsyncRead + AsyncWrite + Unpin>(mut stream: S, peer_ip: Strin
         Ok(Err(HeadErr::Closed)) | Err(_) => return, // eof / timeout
     };
 
-    let (method, path, query, content_length, client_ip) = match parse_head(&head) {
+    let (method, path, content_length, client_ip) = match parse_head(&head) {
         Ok(h) => (
             h.method.to_string(),
             h.path.to_string(),
-            h.query.to_string(),
             h.content_length.map(str::to_string),
             resolve_client_ip(&peer_ip, h.x_real_ip, h.x_forwarded_for),
         ),
@@ -63,7 +62,7 @@ async fn handle<S: AsyncRead + AsyncWrite + Unpin>(mut stream: S, peer_ip: Strin
     };
     // A connection holds its head or its body, never both.
     drop(head);
-    let (method, path, query) = (method.as_str(), path.as_str(), query.as_str());
+    let (method, path) = (method.as_str(), path.as_str());
 
     // ---- POST: read, parse and answer in one expression, so the body and its parse are dropped
     // before the answer's write, which can wait out the deadline on a client that stops reading.
@@ -82,23 +81,13 @@ async fn handle<S: AsyncRead + AsyncWrite + Unpin>(mut stream: S, peer_ip: Strin
 
     // ---- route ----
     if method == "GET" && path == "/v1/lobbies" {
-        let mut vf = String::new();
-        for kv in query.split('&') {
-            if let Some(rest) = kv.strip_prefix("version=") {
-                vf = clamp_str(rest, MAX_VERSION);
-            }
-        }
-        // Refresh + snapshot under the lock; serialize the response OFF the lock (L5).
-        let (all_body, rows) = {
+        // Refresh + snapshot under the lock; the write happens OFF the lock (L5). The query string
+        // is not read: every client asks for the whole list.
+        let body = {
             let mut state = lock_state();
             lobbies_snapshot(&mut state)
         };
-        if vf.is_empty() {
-            write_response(&mut stream, 200, &all_body).await;
-        } else {
-            let body = filter_lobbies(&rows, &vf);
-            write_response(&mut stream, 200, &body).await;
-        }
+        write_response(&mut stream, 200, &body).await;
     } else if method == "GET" && path == "/v1/latest" {
         // Env-overridable release info (resolved once; see the LATEST_* comment above).
         static LATEST: LazyLock<(i64, String, String)> = LazyLock::new(|| {
@@ -361,6 +350,8 @@ mod tests {
         let id = lobby["lobbyId"].as_str().expect("no lobbyId").to_string();
         let (status, list) = ask(b"GET /v1/lobbies HTTP/1.1\r\nHost: x\r\n\r\n".to_vec()).await;
         assert!(status == 200 && list.contains(&id), "the new lobby is not listed");
+        let (status, list) = ask(b"GET /v1/lobbies?version=zzz HTTP/1.1\r\nHost: x\r\n\r\n".to_vec()).await;
+        assert!(status == 200 && list.contains(&id), "a query string changed the list");
 
         let over = vec![b' '; super::MAX_BODY + 1];
         assert_eq!(ask(post("/v1/host", &over)).await.0, 413, "a body past the cap was read");

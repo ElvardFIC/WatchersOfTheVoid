@@ -170,10 +170,9 @@ pub struct MasterState {
     pub lobby_by_public: HashMap<String, String>, // lobbyId -> sessionId
     pub rate: HashMap<String, Vec<Instant>>,  // "ipbucket|class" -> recent timestamps
     pub cache_t: Option<Instant>,
-    // Arc so /v1/lobbies can clone the cached body/rows cheaply under the lock and
-    // serialize the response OUTSIDE it (audit L5: serializing a ~200 KB body under
-    // the global lock serialized it against all host/join/heartbeat processing).
-    pub cache_rows: Arc<Vec<Value>>,
+    // Arc so /v1/lobbies can clone the cached body cheaply under the lock and write the
+    // response OUTSIDE it (audit L5: serializing a ~200 KB body under the global lock
+    // serialized it against all host/join/heartbeat processing).
     pub cache_all_body: Arc<Vec<u8>>,
 }
 
@@ -184,7 +183,6 @@ impl MasterState {
             lobby_by_public: HashMap::new(),
             rate: HashMap::new(),
             cache_t: None,
-            cache_rows: Arc::new(Vec::new()),
             cache_all_body: Arc::new(Vec::new()),
         }
     }
@@ -621,11 +619,10 @@ pub fn build_rows(state: &MasterState) -> Vec<Value> {
     rows
 }
 
-/// Refresh the /v1/lobbies cache if stale and return cheap Arc handles to the cached
-/// unfiltered body + the row set. Called UNDER the lock; the caller serializes any
-/// version-filtered response from the returned rows AFTER dropping the lock (audit
-/// L5 — the ~200 KB clone/serialize no longer runs under the global mutex).
-pub fn lobbies_snapshot(state: &mut MasterState) -> (Arc<Vec<u8>>, Arc<Vec<Value>>) {
+/// Refresh the /v1/lobbies cache if stale and return a cheap Arc handle to the cached
+/// body. Called UNDER the lock; the caller writes it AFTER dropping the lock (audit
+/// L5 — the ~200 KB body is no longer cloned or serialized under the global mutex).
+pub fn lobbies_snapshot(state: &mut MasterState) -> Arc<Vec<u8>> {
     let now = Instant::now();
     let stale = match state.cache_t {
         Some(t) => now.duration_since(t) >= LOBBIES_CACHE_TTL,
@@ -635,20 +632,9 @@ pub fn lobbies_snapshot(state: &mut MasterState) -> (Arc<Vec<u8>>, Arc<Vec<Value
         let rows = build_rows(state);
         let body = serde_json::to_vec(&json!({"lobbies": rows})).unwrap_or_default();
         state.cache_all_body = Arc::new(body);
-        state.cache_rows = Arc::new(rows);
         state.cache_t = Some(now);
     }
-    (Arc::clone(&state.cache_all_body), Arc::clone(&state.cache_rows))
-}
-
-/// Serialize a version-filtered lobby list from a cached row snapshot (runs OFF the
-/// lock). Bounded by MAX_LOBBIES rows.
-pub fn filter_lobbies(rows: &[Value], version_filter: &str) -> Vec<u8> {
-    let filtered: Vec<&Value> = rows
-        .iter()
-        .filter(|r| r.get("version").and_then(|v| v.as_str()) == Some(version_filter))
-        .collect();
-    serde_json::to_vec(&json!({"lobbies": filtered})).unwrap_or_default()
+    Arc::clone(&state.cache_all_body)
 }
 
 pub fn dispatch_post(path: &str, ip: &str, body: &Value) -> Option<(u16, Value)> {
