@@ -93,10 +93,14 @@ fingerprinted; an any-class row checks the signature of every loaded function of
 reference's set. Each row ends as `match`, `sig-changed` (a hook reads wrong parameters), `body-changed`
 (the logic drifted), `gone` (absent though the reference has it), `known-gone` (absent on the reference
 build too), `unchecked` (its class is not loaded; re-tried when the class set moves and every 5 s),
-`undecodable` or `no-reference`. The work is sliced at 2 ms per frame. The health log gets one line,
+`undecodable` or `no-reference`. The work is sliced at 2 ms per frame, in a game-thread task of its own so
+that another lane's fault in the per-frame work cannot keep it from finishing; a pass reads the 423 rows in
+about 40 ms of work, its worst slice one whole-event-graph row at about 6 ms `[V]`. The health log gets one line,
 `fingerprint-census: N of M class rows match, ...`, and one warning per changed, gone or refused row,
 naming its lane; rows of dev instruments are counted apart. `multivoid-compat-report.txt` carries the
-full table, every row with its resolved function and both pairs of fingerprints.
+full table, every row with its resolved function and both pairs of fingerprints. ***REMOVED*** against
+the 0.9.0n reference, it named ***REMOVED***, and agreed with the port tooling's diff of the two
+builds' paks on all ***REMOVED*** `[V]`.
 
 `[dev] fingerprint_census_red=<class>.<function>` falsifies one row's reference: the census must report
 it `body changed` and print `fingerprint-census: RED ARM <row> reported body changed`.
