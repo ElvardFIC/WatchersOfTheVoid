@@ -58,7 +58,7 @@
 //! 5s drain timeout — a slow/stalled destination can never head-of-line block a
 //! sender, and memory per destination is bounded by the channel capacity.
 
-use coop_server::admission::{Pool, Slot};
+use coop_server::admission::{Pool, Slot, CONNECTS};
 use coop_server::common::{clamp_str, ct_eq, env_int, env_str, identity_shape_ok, log, token_hex};
 use coop_server::registration::check_registration_proof;
 use coop_server::tls;
@@ -506,6 +506,9 @@ async fn serve_plain(listener: TcpListener, pool: &'static Pool, budget: Duratio
         match listener.accept().await {
             Ok((stream, addr)) => {
                 let ip = addr.ip().to_string();
+                if !CONNECTS.allow(&ip, std::time::Instant::now()) {
+                    continue;
+                }
                 let Some(pending) = pool.admit_or_log(&ip) else { continue };
                 log(&format!("accept [listener=plain] [{ip}]"));
                 set_keepalive(&stream);
@@ -531,6 +534,9 @@ async fn serve_tls(
         match listener.accept().await {
             Ok((stream, addr)) => {
                 let ip = addr.ip().to_string();
+                if !CONNECTS.allow(&ip, std::time::Instant::now()) {
+                    continue;
+                }
                 let Some(pending) = pool.admit_or_log(&ip) else { continue };
                 set_keepalive(&stream);
                 let deadline = Instant::now() + budget;

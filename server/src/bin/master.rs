@@ -11,7 +11,7 @@
 //! ever held across an await — while still using the multi-thread tokio runtime.
 
 
-use coop_server::admission::Pool;
+use coop_server::admission::{Pool, CONNECTS};
 use coop_server::common::{clamp_str, env_int, env_str, log};
 use coop_server::http_transport::{
     json_bytes, parse_head, read_head, write_response, HeadErr, HeadReject, CONNS, HTTP_TIMEOUT, MAX_BODY,
@@ -237,6 +237,9 @@ async fn serve_plain(listener: TcpListener, pool: &'static Pool, budget: Duratio
         match listener.accept().await {
             Ok((stream, addr)) => {
                 let peer_ip = addr.ip().to_string();
+                if !CONNECTS.allow(&peer_ip, std::time::Instant::now()) {
+                    continue;
+                }
                 let Some(slot) = pool.admit_or_log(&peer_ip) else { continue };
                 log(&format!("accept [listener=plain] [{peer_ip}]"));
                 let deadline = Instant::now() + budget;
@@ -266,6 +269,9 @@ async fn serve_tls(
         match listener.accept().await {
             Ok((stream, addr)) => {
                 let peer_ip = addr.ip().to_string();
+                if !CONNECTS.allow(&peer_ip, std::time::Instant::now()) {
+                    continue;
+                }
                 let Some(slot) = pool.admit_or_log(&peer_ip) else { continue };
                 let deadline = Instant::now() + budget;
                 let acceptor = acceptor.clone();

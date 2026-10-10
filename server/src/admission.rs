@@ -9,8 +9,8 @@
 //! IPv4 address, an IPv6 /64), like every other per-source control in this crate.
 
 use crate::common::{ip_bucket, log};
-use std::collections::HashMap;
-use std::sync::Mutex;
+use std::collections::{HashMap, VecDeque};
+use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
 /// A refusal is logged at most this often per pool. Every refused socket used to cost a
@@ -90,14 +90,7 @@ impl Pool {
 
     /// Count one refusal; `Some(n)` when a line is due, `n` being the refusals it reports.
     fn note_refusal(&self, now: Instant) -> Option<u64> {
-        let mut r = self.refusals.lock().unwrap_or_else(|e| e.into_inner());
-        r.unlogged += 1;
-        let due = r.last_logged.map_or(true, |t| now.duration_since(t) >= REFUSAL_LOG_EVERY);
-        if !due {
-            return None;
-        }
-        r.last_logged = Some(now);
-        Some(std::mem::take(&mut r.unlogged))
+        note(&mut self.refusals.lock().unwrap_or_else(|e| e.into_inner()), now)
     }
 
     /// Slots held in the whole pool.
@@ -117,6 +110,110 @@ impl Pool {
     }
 }
 
+/// MTA's flood guard for its HTTP server, at both servers' accepts: `CHTTPD::ShouldAllowConnection`
+/// keeps a `CConnectHistory` of 20 connects per 10 s per address and ignores an address that goes
+/// past it for a minute (CHTTPD.cpp:40, CMainConfig.cpp:66). A source that churns connections then
+/// costs no pool slot and no TLS handshake. A client of ours opens three at once at most (a browser
+/// open), and a heartbeat every 30 s. The same shape guards game joins (coop/net/connect_history.cpp).
+pub struct ConnectHistory {
+    max: usize,
+    period: Duration,
+    ban: Duration,
+    state: Mutex<History>,
+}
+
+#[derive(Default)]
+struct History {
+    per_addr: HashMap<String, Recent>,
+    last_sweep: Option<Instant>,
+    refusals: Refusals,
+}
+
+#[derive(Default)]
+struct Recent {
+    connects: VecDeque<Instant>,
+    ignored_until: Option<Instant>,
+}
+
+/// Addresses tracked at once. Past it a new address is admitted untracked (the pools' per-address
+/// shares still hold it): refusing it instead would let a source-diverse flood lock every newcomer
+/// out, the failure the lobby rate map had to be rid of.
+const MAX_TRACKED: usize = 50_000;
+
+/// The one history each server process keeps, for every listener it runs.
+pub static CONNECTS: LazyLock<ConnectHistory> =
+    LazyLock::new(|| ConnectHistory::new(20, Duration::from_secs(10), Duration::from_secs(60)));
+
+impl ConnectHistory {
+    pub fn new(max: usize, period: Duration, ban: Duration) -> ConnectHistory {
+        ConnectHistory { max, period, ban, state: Mutex::new(History::default()) }
+    }
+
+    /// Whether a connect from `ip` at `now` is admitted. The one past `max` inside `period` is
+    /// refused and starts the address's ignored minute, logged once.
+    pub fn allow(&self, ip: &str, now: Instant) -> bool {
+        let key = ip_bucket(ip);
+        let mut h = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        self.sweep(&mut h, now);
+        if !h.per_addr.contains_key(&key) && h.per_addr.len() >= MAX_TRACKED {
+            return true;
+        }
+        let recent = h.per_addr.entry(key).or_default();
+        if recent.ignored_until.is_some_and(|until| now < until) {
+            return false;
+        }
+        recent.ignored_until = None;
+        while recent.connects.front().is_some_and(|t| now.duration_since(*t) >= self.period) {
+            recent.connects.pop_front();
+        }
+        if recent.connects.len() < self.max {
+            recent.connects.push_back(now);
+            return true;
+        }
+        recent.connects.clear();
+        recent.ignored_until = Some(now + self.ban);
+        if let Some(n) = note(&mut h.refusals, now) {
+            let tail = if n > 1 { format!(" ({n} addresses since the last line)") } else { String::new() };
+            log(&format!(
+                "[{ip}] connect flood: more than {} inside {} s, ignored for {} s{tail}",
+                self.max,
+                self.period.as_secs(),
+                self.ban.as_secs()
+            ));
+        }
+        false
+    }
+
+    /// At most once a second, forget the addresses that are neither ignored nor recent.
+    fn sweep(&self, h: &mut History, now: Instant) {
+        if h.last_sweep.is_some_and(|t| now.duration_since(t) < Duration::from_secs(1)) {
+            return;
+        }
+        h.last_sweep = Some(now);
+        let period = self.period;
+        h.per_addr.retain(|_, r| {
+            r.ignored_until.is_some_and(|until| now < until)
+                || r.connects.back().is_some_and(|t| now.duration_since(*t) < period)
+        });
+    }
+
+    #[cfg(test)]
+    fn tracked(&self) -> usize {
+        self.state.lock().unwrap().per_addr.len()
+    }
+}
+
+/// One more refusal into `r`: `Some(n)` when a line is due, `n` being the refusals it reports.
+fn note(r: &mut Refusals, now: Instant) -> Option<u64> {
+    r.unlogged += 1;
+    let due = r.last_logged.map_or(true, |t| now.duration_since(t) >= REFUSAL_LOG_EVERY);
+    if !due {
+        return None;
+    }
+    r.last_logged = Some(now);
+    Some(std::mem::take(&mut r.unlogged))
+}
+
 impl Drop for Slot<'_> {
     fn drop(&mut self) {
         let mut held = self.pool.held.lock().unwrap_or_else(|e| e.into_inner());
@@ -132,8 +229,30 @@ impl Drop for Slot<'_> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Pool, REFUSAL_LOG_EVERY};
-    use std::time::Instant;
+    use super::{ConnectHistory, Pool, REFUSAL_LOG_EVERY};
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn a_connect_flood_is_ignored_for_the_ban_and_alone() {
+        let h = ConnectHistory::new(3, Duration::from_secs(10), Duration::from_secs(60));
+        let t0 = Instant::now();
+        assert!((0..3).all(|i| h.allow("203.0.113.7", t0 + Duration::from_millis(i))), "under the cap");
+        assert!(!h.allow("203.0.113.7", t0 + Duration::from_secs(1)), "the fourth inside the period passed");
+        assert!(h.allow("198.51.100.1", t0 + Duration::from_secs(1)), "another address paid for the flood");
+        assert!(!h.allow("203.0.113.7", t0 + Duration::from_secs(59)), "admitted inside the ban");
+        assert!(h.allow("203.0.113.7", t0 + Duration::from_secs(62)), "still ignored after the ban");
+    }
+
+    #[test]
+    fn connects_age_out_of_the_period() {
+        let h = ConnectHistory::new(2, Duration::from_secs(10), Duration::from_secs(60));
+        let t0 = Instant::now();
+        assert!(h.allow("192.0.2.1", t0) && h.allow("192.0.2.1", t0 + Duration::from_secs(5)));
+        assert!(h.allow("192.0.2.1", t0 + Duration::from_secs(11)), "a connect older than the period still counted");
+        // The sweep forgets an address with nothing recent and no ban.
+        assert!(h.allow("192.0.2.9", t0 + Duration::from_secs(30)));
+        assert_eq!(h.tracked(), 1, "a stale address outlived the sweep");
+    }
 
     #[test]
     fn one_address_cannot_take_the_whole_pool() {
