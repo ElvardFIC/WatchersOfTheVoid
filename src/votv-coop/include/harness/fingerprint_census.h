@@ -11,8 +11,12 @@
 
 namespace harness::fingerprint_census {
 
-// Game thread, after the world is up (posted with sdk_check::Run). A single flag read when the capture
-// is off and no census row is due.
+// Start a pass over every row (and the capture when its flag is on). Game thread, after the world is up,
+// posted with sdk_check::Run; the rows are checked over the next frames by Tick.
 void Run();
+
+// The frame tail's entry (harness::pump::TickFrameTail): a 2 ms slice of a pass while one runs, then a
+// re-try of the rows whose class was not loaded when the class set moves or every 5 s; two reads idle.
+void Tick();
 
 }  // namespace harness::fingerprint_census

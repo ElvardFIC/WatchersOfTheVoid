@@ -31,6 +31,10 @@ struct Result {
 // reading is absorbed and reported in `problem`.
 Result Of(void* ufunction);
 
+// The signature line alone (its text and sigHash), without walking the script: what a name watch on every
+// class's function of one name depends on. Game thread; a fault reads as a zero hash.
+Result SignatureOf(void* ufunction);
+
 // The function's path as the canonical text writes objects: its outer chain without the package,
 // lowercase, '.'-joined ("serverbox_c.fix", "actor.k2_destroyactor").
 std::string PathOf(void* uobject);

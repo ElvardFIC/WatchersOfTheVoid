@@ -218,7 +218,31 @@ int BuildSEH(void* fn, Result* r, Ctx* c) {
     }
 }
 
+void SignatureLine(void* fn, Result& r, Ctx& c) { r.text = SigLine(c, fn); }
+
+int SignatureSEH(void* fn, Result* r, Ctx* c) {
+    __try {
+        SignatureLine(fn, *r, *c);
+        return 0;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return 1;
+    }
+}
+
 }  // namespace
+
+Result SignatureOf(void* ufunction) {
+    Result r;
+    Ctx c;
+    if (!ufunction || SignatureSEH(ufunction, &r, &c)) {
+        r.problem = ufunction ? "fault while reading the signature" : "null function";
+        r.text.clear();
+        return r;
+    }
+    r.ok = true;
+    r.hash = r.sigHash = Fnv1a64(r.text);
+    return r;
+}
 
 std::string PathOf(void* uobject) {
     Ctx c;

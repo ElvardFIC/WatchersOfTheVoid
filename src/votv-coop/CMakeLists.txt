@@ -225,6 +225,10 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/sources.cmake)
 add_library(votv-coop SHARED ${VOTVCOOP_SOURCES})
 
 target_include_directories(votv-coop PRIVATE include ${CMAKE_CURRENT_BINARY_DIR}/generated)
+# The fingerprint census compares the running game with the reference table of the game target
+# (docs/bytecode-fingerprint.md); a target with no generated table does not compile.
+target_compile_definitions(votv-coop PRIVATE
+    "VOTVCOOP_FINGERPRINT_TABLE=\"ue_wrap/facts/fingerprints_${VOTVCOOP_GAME_TARGET}.inc\"")
 # The UE4SS mod-folder contract name (UE4SS_ARC WP-2 commit 3): the DLL ships
 # as Mods/Multivoid/dlls/main.dll. The versioned multivoid-<game>-<build>.dll
 # OUTPUT_NAME retired WITH its one consumer, the xinput proxy's scan -- the

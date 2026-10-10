@@ -35,6 +35,10 @@ CFG_FLAG(dependency_dump, "dependency_dump", "dev", false, "VOTVCOOP_DEPENDENCY_
     "script_gate watch, ufunction_hook patch and game_thread observer and interceptor, sorted and counted, to "
     "multivoid-dependency-dump-<milestone>.txt beside the exe. Two builds' dumps diffed equal prove a change left "
     "the registered set as it was. Off by default.")
+CFG_STRING(fingerprint_census_red, "fingerprint_census_red", "dev", "", "VOTVCOOP_FINGERPRINT_CENSUS_RED", false,
+    "The fingerprint census's red arm: a row key ('class.function', lowercase) whose reference is falsified, so the "
+    "census must report it 'body changed' and print 'fingerprint-census: RED ARM <row> reported body changed', or "
+    "'RED ARM FAILED'. Empty: no red arm.")
 ***REMOVED***
     ***REMOVED***
     "mainGamemode BeginPlay scans Binaries for *.dll and Content/Paks for *.pak, then pops 'Modded "

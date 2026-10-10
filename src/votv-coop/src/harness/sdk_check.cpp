@@ -16,6 +16,7 @@
 
 #include "harness/sdk_check.h"
 
+#include "harness/compat_report.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/paths.h"
 #include "ue_wrap/core/reflection.h"
@@ -105,18 +106,14 @@ void ReportFooter(int ok, int total, int fail, int failPriority, int skipped) {
     }
 }
 
+// The section is this check's; the file beside the exe is harness/compat_report's, which the fingerprint
+// census writes its own section into.
 void WriteReportFile() {
-    // The report lands beside the game exe (same convention as multivoid.log).
-    const std::wstring path = ue_wrap::paths::ExeDir() + L"\\multivoid-compat-report.txt";
-    FILE* f = nullptr;
-    if (_wfopen_s(&f, path.c_str(), L"w") != 0 || !f) {
-        UE_LOGW("sdk-check: failed to open compat report '%ls' for writing", path.c_str());
-        return;
-    }
-    const std::string content = g_report.str();
-    std::fwrite(content.data(), 1, content.size(), f);
-    std::fclose(f);
-    UE_LOGI("sdk-check: wrote compat report '%ls' (%zu bytes)", path.c_str(), content.size());
+    namespace CR = harness::compat_report;
+    CR::Begin("sdk-check");
+    std::istringstream in(g_report.str());
+    for (std::string line; std::getline(in, line);) CR::Line("sdk-check", line);
+    CR::Write();
 }
 
 enum class Severity { Critical, Important, Cosmetic };
@@ -194,11 +191,11 @@ const ClassCheck kClasses[] = {
 // (Class, Function) pairs we look up via R::FindFunction. We test ONLY the
 // resolvers used by shipping code paths -- autotest-only functions aren't
 // included (the autotest itself logs its own resolve failures).
+// The functions the mod CALLS by name. A function it watches or hooks is a facts row instead, which the
+// fingerprint census resolves and fingerprints (harness/fingerprint_census): one function, one checker.
 const FunctionCheck kFunctions[] = {
     // --- Critical engine UFunctions ---
     {P::name::KismetSystemLibraryClass, P::name::ExecuteConsoleCommandFn,    Severity::Critical, "level open + autotest harness"},
-    {P::name::GameplayStaticsClass,     P::name::BeginDeferredSpawnFn,       Severity::Critical, "actor spawn + NPC interceptor"},
-    {P::name::GameplayStaticsClass,     P::name::FinishSpawningActorFn,      Severity::Critical, "actor spawn second step"},
     {P::name::GameplayStaticsClass,     P::name::LoadGameFromSlotFn,         Severity::Critical, "STORY save load"},
     {P::name::GameplayStaticsClass,     P::name::SpawnObjectFn,              Severity::Critical, "NewObject (widget tree construction)"},
     {P::name::GameInstanceClass,        P::name::SetSaveSlotObjectFn,        Severity::Critical, "save apply on BeginPlay"},
@@ -206,11 +203,8 @@ const FunctionCheck kFunctions[] = {
     {P::name::ActorClass,               P::name::SetActorLocationFn,         Severity::Critical, "pose apply (puppet drive)"},
     {P::name::ActorClass,               P::name::GetActorRotationFn,         Severity::Critical, "pose yaw read"},
     {P::name::ActorClass,               P::name::SetActorRotationFn,         Severity::Critical, "pose yaw apply"},
-    {P::name::ActorClass,               P::name::GetActorVelocityFn,         Severity::Critical, "AnimBP locomotion speed"},
-    {P::name::ActorClass,               P::name::DestroyActorFn,             Severity::Critical, "cross-peer destroy + cleanup"},
     {P::name::PawnClassName,            P::name::GetControllerFn,            Severity::Critical, "controller resolution"},
     // --- Important: gameplay UFunctions ---
-    {P::name::ActorClass,               P::name::GetActorForwardVectorFn,    Severity::Important, "autotest hand placement"},
     {P::name::ActorClass,               P::name::SetActorTickEnabledFn,      Severity::Important, "puppet tick gating"},
     {P::name::ActorClass,               P::name::TeleportToFn,               Severity::Important, "client KPP teleport + autotest"},
     {P::name::ActorClass,               P::name::GetActorBoundsFn,           Severity::Important, "puppet visible-feet derivation"},
@@ -236,18 +230,8 @@ const FunctionCheck kFunctions[] = {
     {P::name::PropClass,                P::name::PropInitFn,                 Severity::Important, "Aprop_C::Init, the body the Init watch expresses a birth after"},
     {P::name::PropClass,                P::name::PropSetKeyFn,               Severity::Critical,  "wire-Key apply before Init -- prop identity (without this, every receiver-spawned prop has wrong key + tracking lost)"},
     {P::name::PropClass,                P::name::PropThrownFn,               Severity::Important, "prop throw sound + particle effects on receiver"},
-    {P::name::PropInventoryClass,       P::name::PropInventoryTakeObjFn,     Severity::Important, "storage extract observer"},
-    {P::name::PhysicsHandleComponentClass, P::name::GrabComponentAtLocationFn,    Severity::Important, "grab observer (light)"},
-    {P::name::PhysicsHandleComponentClass, P::name::SetTargetLocationFn,          Severity::Important, "per-tick grab driver observer"},
-    {P::name::PhysicsHandleComponentClass, P::name::SetTargetLocationAndRotationFn, Severity::Important, "a puppet's trash carry: the host sets the handle's target each tick"},
-    {P::name::PhysicsHandleComponentClass, P::name::ReleaseComponentFn,           Severity::Important, "grab release observer + before-destroy cleanup"},
-    {P::name::PhysicsConstraintComponentClass, P::name::SetConstrainedComponentsFn, Severity::Important, "heavy grab observer"},
-    {P::name::PhysicsConstraintComponentClass, P::name::BreakConstraintFn,        Severity::Important, "heavy grab release observer"},
-    {P::name::PrimitiveComponentClass,  P::name::AddImpulseFn,               Severity::Important, "throw impulse observer"},
     {P::name::PrimitiveComponentClass,  P::name::SetSimulatePhysicsFn,       Severity::Important, "receiver prop kinematic toggle"},
     {P::name::PrimitiveComponentClass,  P::name::GetPhysicsLinearVelocityFn, Severity::Important, "throw velocity capture (host-side release)"},
-    {P::name::PrimitiveComponentClass,  P::name::SetPhysicsLinearVelocityFn, Severity::Important, "receiver prop re-entry linear velocity (throw sync)"},
-    {P::name::PrimitiveComponentClass,  P::name::SetPhysicsAngularVelocityInDegreesFn, Severity::Important, "receiver prop re-entry angular velocity (spin sync)"},
     {P::name::PrimitiveComponentClass,  P::name::SetCollisionEnabledFn,      Severity::Important, "mushroom collision restore (wire-converged props)"},
     {P::name::TextBlockClass,           P::name::NameplateSetTextFn,         Severity::Important, "nameplate + HUD text"},
     {P::name::KismetTextLibraryClass,   P::name::ConvStringToTextFn,         Severity::Important, "FString -> FText for widget text"},
@@ -261,10 +245,6 @@ const FunctionCheck kFunctions[] = {
     {P::name::WidgetComponentClass,     P::name::RequestRenderUpdateFn,      Severity::Important, "nameplate render-target refresh"},
     {P::name::UserWidgetClass,          P::name::SetPositionInViewportFn,    Severity::Important, "HUD feed + dev HUD positioning"},
     {P::name::UserWidgetClass,          P::name::SetAlignmentInViewportFn,   Severity::Important, "HUD feed + dev HUD alignment"},
-    // --- BP-Timeline observers on mainPlayer_C (K2Node ordinal embedded!) ---
-    {P::name::MainPlayerClass,          P::name::MainPlayerUseInputEventFn,  Severity::Important, "E-press observer (K2Node ordinal embedded -- BP recook breaks)"},
-    {P::name::MainPlayerClass,          P::name::MainPlayerGrabUpdateFn,     Severity::Important, "grab Timeline tick observer"},
-    {P::name::MainPlayerClass,          P::name::MainPlayerGrabFinishedFn,   Severity::Important, "grab Timeline end observer"},
 };
 
 // ---- Asset catalog ------------------------------------------------------

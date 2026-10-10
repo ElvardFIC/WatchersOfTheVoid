@@ -648,6 +648,7 @@ set(VOTVCOOP_SOURCES
     src/ui/input_focus.cpp
     src/harness/screenshot.cpp
     src/harness/mod_environment.cpp
+    src/harness/compat_report.cpp
     src/harness/fingerprint_census.cpp
     src/harness/sdk_check.cpp
     src/l10n/po_reader.cpp

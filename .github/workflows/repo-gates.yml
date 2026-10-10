@@ -153,6 +153,12 @@ jobs:
       - name: ReliableKind routing gate (every wire kind reaches a receiver, or names why not)
         run: python3 .github/ci/reliablekind_gate.py
 
+      - name: Fact rows gate drill
+        run: python3 .github/ci/fact_rows_gate.py --drill
+
+      - name: Fact rows gate (every watched or hooked game function is a well-formed row with a reference)
+        run: python3 .github/ci/fact_rows_gate.py
+
       - name: Plural vectors gate (the l10n selftest's expected forms are the independent evaluator's)
         run: python3 .github/ci/l10n_vectors.py --check
 

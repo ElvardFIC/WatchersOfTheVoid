@@ -66,7 +66,11 @@ Resolved Resolve(const Function& row) {
 Resolved ResolveOn(const Function& row, void* cls) {
     if (row.GetMode() != Mode::RuntimeClass || !cls) return {};
     void* fn = R::FindFunction(cls, row.Name());
-    return fn ? Resolved(fn, &row) : Resolved{};
+    if (!fn) return {};
+    const R::FName& n = R::NameOf(cls);
+    row.NoteWitness((static_cast<uint64_t>(static_cast<uint32_t>(n.ComparisonIndex)) << 32) |
+                    static_cast<uint32_t>(n.Number));
+    return Resolved(fn, &row);
 }
 
 }  // namespace ue_wrap::facts

@@ -56,6 +56,11 @@ public:
     uint8_t Accepted() const { return accepted_.load(std::memory_order_relaxed); }
     uint8_t Refused() const { return refused_.load(std::memory_order_relaxed); }
 
+    // A RuntimeClass row's class as ResolveOn last saw it: the class's name (its FName, packed), never a
+    // pointer, so the census can find the class again after a world change. 0 until a site resolved it.
+    uint64_t WitnessClass() const { return witness_.load(std::memory_order_relaxed); }
+    void     NoteWitness(uint64_t packedName) const { witness_.store(packedName, std::memory_order_relaxed); }
+
 private:
     const char*     ident_;
     const char*     feature_;
@@ -65,6 +70,7 @@ private:
     const Function* next_;
     mutable std::atomic<uint8_t> accepted_{0};
     mutable std::atomic<uint8_t> refused_{0};
+    mutable std::atomic<uint64_t> witness_{0};
 };
 
 // Every row, linked at DLL load in no meaningful order (a report sorts them).
