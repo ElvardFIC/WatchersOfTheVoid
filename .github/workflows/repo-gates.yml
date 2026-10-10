@@ -164,3 +164,6 @@ jobs:
 
       - name: Translation template gate (the template is current; only allowlisted files extract; call sites follow the rules)
         run: python3 .github/ci/l10n_pot.py --check
+
+      - name: Server tests (the master and the relay)
+        run: cargo test --locked --manifest-path server/Cargo.toml
