@@ -14,9 +14,10 @@ the checksum).
 The zip also carries `mod/dlls/main.dll.sig`, the release signature, made in the publish job
 with the `release` environment's key. The `release` environment holds the release key. It has
 the maintainer as its required reviewer, with self-review allowed and administrators unable to
-bypass it, and it deploys only to tags `v*` and the branch `main`. A tag ruleset lets only an
-administrator create, move or delete a `v*` tag, since such a tag reaches the key. `release_sign.py
-keygen` refuses to set a key unless the environment and the ruleset both stand as described here.
+bypass it, and it deploys only to tags `v*` and the branch `main`. Two rulesets hold those refs:
+only an administrator may create, move or delete a `v*` tag or push to `main`, since either
+reaches the key. `release_sign.py keygen` refuses to set a key unless the environment and both
+rulesets stand as described here.
 
 Build numbers are minted in one place, the append-only, human-written ledger
 `.github/ci/LEDGER.tsv`. A tag or a release page is a deletable platform object and a drift
@@ -65,7 +66,7 @@ release is fired as the last thing; its publish job waits for the maintainer's a
    tag reach the remote together and the number is unique there from that moment.
 6. **Watch the run to green.** The judge refuses with a labelled verdict on any missed
    precondition; a refusal is stateless, so fix the cause and re-run (dispatch `release-core`
-   with the tag). The publish job waits for the maintainer's approval of the `release`
+   on `main` with the tag). The publish job waits for the maintainer's approval of the `release`
    environment; a run waiting for that approval still holds the `release` concurrency group,
    so a re-run queues behind it until the deployment is approved or rejected. A run whose
    environment has no key fails when that job starts. The release is

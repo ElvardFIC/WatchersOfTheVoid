@@ -4,7 +4,7 @@
 Standard library only. A fake runner answers canned `gh` output and records every call's argv and
 keyword arguments, so no process starts and the real `gh` is never run; each run happens inside a
 temporary working directory with stdout and stderr captured. The fake answers only the
-commands keygen may run (four reads, then the secret), with the output a real `gh` prints (so an echo of it is seen), and acts
+commands keygen may run (its reads, then the secret), with the output a real `gh` prints (so an echo of it is seen), and acts
 on the keyword arguments the way `subprocess.run` does. Three mutants are always run and the same
 assertion helper as the green arms must flag each of them; one starts a process, which the guard
 below must refuse.
@@ -61,10 +61,17 @@ PROCESS_NAMES = ("system", "popen", "startfile", "spawnl", "spawnv", "execl", "e
 REPO = "drill-owner/drill-repo"
 ENV_ARGV = ["gh", "api", "repos/%s/environments/release" % REPO]
 POLICIES_ARGV = ["gh", "api", "repos/%s/environments/release/deployment-branch-policies" % REPO]
-RULESETS_ARGV = ["gh", "api", "repos/%s/rulesets" % REPO]
-TAG_RULESET_ID = 11
-RULESET_ARGV = ["gh", "api", "repos/%s/rulesets/%d" % (REPO, TAG_RULESET_ID)]
-READS = [ENV_ARGV, POLICIES_ARGV, RULESETS_ARGV, RULESET_ARGV]
+RULESETS_ARGV = ["gh", "api", "repos/%s/rulesets?per_page=100" % REPO]
+BRANCH_RULESET_ID, TAG_RULESET_ID, MAIN_RULESET_ID = 10, 11, 12
+DETAIL_PREFIX = "repos/%s/rulesets/" % REPO
+
+
+def ruleset_argv(ruleset_id):
+    return ["gh", "api", DETAIL_PREFIX + str(ruleset_id)]
+
+
+READS = [ENV_ARGV, POLICIES_ARGV, RULESETS_ARGV, ruleset_argv(BRANCH_RULESET_ID),
+         ruleset_argv(TAG_RULESET_ID), ruleset_argv(MAIN_RULESET_ID)]
 SECRET_ARGV = ["gh", "secret", "set", rs.SEED_ENV, "--env", "release", "--repo", REPO]
 API_KWARGS = {"capture_output": True, "text": True, "encoding": "utf-8"}
 SECRET_KWARGS = dict(API_KWARGS, errors="replace")
@@ -102,26 +109,52 @@ def canned_policies(*extra):
         {"id": 3 + i, "node_id": "n%d" % i, "name": n, "type": t} for i, (n, t) in enumerate(items)]}
 
 
-def canned_rulesets(tag=None):
-    """The repository's ruleset list: a branch ruleset the check must skip, then the tag one;
-    `tag` edits the tag ruleset's summary."""
-    summary = {"id": TAG_RULESET_ID, "name": "v-tags-admin-only", "target": "tag",
-               "enforcement": "active", "source_type": "Repository"}
-    summary.update(tag or {})
-    return [{"id": 10, "name": "main-no-force-no-delete", "target": "branch",
-             "enforcement": "active", "source_type": "Repository"}, summary]
+ADMIN_BYPASS = {"actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always"}
+WRITE_BYPASS = {"actor_id": 4, "actor_type": "RepositoryRole", "bypass_mode": "always"}
+# id -> (target, name, ref pattern, rule types, bypass actors): the live repository's rulesets
+# 10 to 12 in its order, and a second v* ruleset (13) for the arm that reads two.
+RULESET_SHAPES = {
+    BRANCH_RULESET_ID: ("branch", "main-no-force-no-delete", "refs/heads/main",
+                        ["deletion", "non_fast_forward"], []),
+    TAG_RULESET_ID: ("tag", "v-tags-admin-only", "refs/tags/v*",
+                     ["creation", "update", "deletion"], [ADMIN_BYPASS]),
+    MAIN_RULESET_ID: ("branch", "main-push-admin-only", "refs/heads/main", ["update"],
+                      [ADMIN_BYPASS]),
+    13: ("tag", "v-tags-second", "refs/tags/v*", ["creation", "update", "deletion"],
+         [ADMIN_BYPASS]),
+}
 
 
-def canned_ruleset(**over):
-    """GitHub's REST answer for the v* tag ruleset, shaped as the live repository's."""
-    ruleset = {"id": TAG_RULESET_ID, "name": "v-tags-admin-only", "target": "tag",
-               "enforcement": "active",
-               "conditions": {"ref_name": {"exclude": [], "include": ["refs/tags/v*"]}},
-               "rules": [{"type": "creation"}, {"type": "update"}, {"type": "deletion"}],
-               "bypass_actors": [{"actor_id": 5, "actor_type": "RepositoryRole",
-                                  "bypass_mode": "always"}]}
-    ruleset.update(over)
-    return ruleset
+def dropping_absent(values):
+    return {k: v for k, v in values.items() if v is not ABSENT}
+
+
+def canned_rulesets(ids=(BRANCH_RULESET_ID, TAG_RULESET_ID, MAIN_RULESET_ID), edit=None, drop=()):
+    """The repository's ruleset list, in the order of `ids` less `drop`; `edit` maps an id to
+    overrides of its summary."""
+    items = []
+    for ruleset_id in ids:
+        if ruleset_id in drop:
+            continue
+        target, name = RULESET_SHAPES[ruleset_id][:2]
+        summary = {"id": ruleset_id, "name": name, "target": target, "enforcement": "active",
+                   "source_type": "Repository"}
+        summary.update((edit or {}).get(ruleset_id, {}))
+        items.append(summary)
+    return items
+
+
+def canned_details(edit=None):
+    """GitHub's REST answer for each ruleset, by id, shaped as the live repository's; `edit`
+    maps an id to overrides (a value of ABSENT drops that key)."""
+    details = {}
+    for ruleset_id, (target, name, pattern, rules, bypass) in RULESET_SHAPES.items():
+        detail = {"id": ruleset_id, "name": name, "target": target, "enforcement": "active",
+                  "conditions": {"ref_name": {"exclude": [], "include": [pattern]}},
+                  "rules": [{"type": t} for t in rules], "bypass_actors": list(bypass)}
+        detail.update((edit or {}).get(ruleset_id, {}))
+        details[ruleset_id] = dropping_absent(detail)
+    return details
 
 
 class Uncanned(Exception):
@@ -131,11 +164,11 @@ class Uncanned(Exception):
 class FakeGh:
     """A runner that answers from canned values and records every call; it starts no process."""
 
-    def __init__(self, environment=None, policies=None, secret=None, rulesets=None, ruleset=None):
+    def __init__(self, environment=None, policies=None, secret=None, rulesets=None, details=None):
         self.environment = canned_env() if environment is None else environment
         self.policies = canned_policies() if policies is None else policies
         self.rulesets = canned_rulesets() if rulesets is None else rulesets
-        self.ruleset = canned_ruleset() if ruleset is None else ruleset
+        self.details = canned_details() if details is None else details
         self.secret = secret or (lambda text: (0, GH_LINE, GH_WARNING))
         self.calls = []
 
@@ -149,8 +182,10 @@ class FakeGh:
             answer = self.policies
         elif argv == RULESETS_ARGV:
             answer = self.rulesets
-        elif argv == RULESET_ARGV:
-            answer = self.ruleset
+        elif (len(argv) == 3 and argv[:2] == ["gh", "api"] and argv[2].startswith(DETAIL_PREFIX)
+              and argv[2][len(DETAIL_PREFIX):].isdigit()
+              and int(argv[2][len(DETAIL_PREFIX):]) in self.details):
+            answer = self.details[int(argv[2][len(DETAIL_PREFIX):])]
         else:
             raise Uncanned(" ".join(argv))
         if isinstance(answer, (dict, list)):
@@ -247,9 +282,10 @@ def no_process():
         rs.subprocess, rs.os = real_sub, real_os
 
 
-def keygen_flaws(keygen, fake, table, key_id=2, seeds=None):
+def keygen_flaws(keygen, fake, table, key_id=2, seeds=None, reads=READS):
     """Every custody rule a green keygen run must keep; an empty list is a clean run. `key_id` is
-    the id the run asks for; the seed each run hands to gh is appended to `seeds`."""
+    the id the run asks for; the seed each run hands to gh is appended to `seeds`; `reads` is the
+    exact list of reads the run makes before the secret."""
     table_before = table.read_bytes()
     r = drive(keygen, fake, table, key_id=str(key_id))
     flaws = []
@@ -262,10 +298,11 @@ def keygen_flaws(keygen, fake, table, key_id=2, seeds=None):
     need("no exception (%s)" % r["raised"], r["raised"] is None)
     need("exit 0", r["rc"] == 0)
     need("stderr empty", r["stderr"] == "")
-    need("five calls, the secret last",
-         len(calls) == 5 and len(secrets) == 1 and calls[4] is secrets[0])
-    need("the four protection reads, exact argv and kwargs",
-         [c[0] for c in calls[:4]] == READS and all(c[1] == API_KWARGS for c in calls[:4]))
+    last = len(reads)
+    need("%d calls, the secret last" % (last + 1),
+         len(calls) == last + 1 and len(secrets) == 1 and calls[last] is secrets[0])
+    need("the protection reads, exact argv and kwargs",
+         [c[0] for c in calls[:last]] == reads and all(c[1] == API_KWARGS for c in calls[:last]))
     need("the dictated gh secret set argv", bool(secrets) and secrets[0][0] == SECRET_ARGV)
     need("the secret set kwargs, exactly, and the input",
          bool(secrets) and "input" in secrets[0][1]
@@ -346,8 +383,16 @@ def drill_keygen_green(tmp):
             ("--id 254 through main", via_main, FakeGh(), 254)):
         flaws = keygen_flaws(keygen, fake, table, key_id, seeds)
         check("keygen green with " + name + (": " + ", ".join(flaws) if flaws else ""), not flaws)
+    excluded = {"conditions": {"ref_name": {"exclude": ["refs/tags/v0*"],
+                                            "include": ["refs/tags/v*"]}}}
+    two_tag_rulesets = FakeGh(rulesets=canned_rulesets(ids=(10, 11, 12, 13)),
+                              details=canned_details({TAG_RULESET_ID: excluded}))
+    flaws = keygen_flaws(rs.cmd_keygen, two_tag_rulesets, table, 2, seeds,
+                         reads=READS + [ruleset_argv(13)])
+    check("keygen green with two tag rulesets, the first listed flawed and the second holding"
+          + (": " + ", ".join(flaws) if flaws else ""), not flaws)
     check("keygen green: every run's seed is its own and none is the public selftest seed",
-          len(seeds) == 10 and len(set(seeds)) == len(seeds) and rs.TEST_SEED_HEX not in seeds)
+          len(seeds) == 11 and len(set(seeds)) == len(seeds) and rs.TEST_SEED_HEX not in seeds)
 
 
 def drill_keygen_mutants(tmp):
@@ -392,27 +437,38 @@ def drill_keygen_refuses(tmp):
             {"id": 4, "node_id": "n4", "name": "main", "type": "branch"}]}, "branch policies"),
         "an environment that is not an object": ([1, 2], None, "admins can bypass"),
     }
+    # Each: (the ruleset list or None, edits to the ruleset details or None, the requirement the
+    # refusal must name). The first requirement a ruleset breaks is the tag's creation.
+    creation = ("refs/tags/v*", "creation")
+    main_update = ("refs/heads/main", "update")
+    tag_rules = lambda *kinds: {TAG_RULESET_ID: {"rules": [{"type": k} for k in kinds]}}
+    tag_bypass = lambda *actors: {TAG_RULESET_ID: {"bypass_actors": list(actors)}}
     unruled = {
-        "no tag ruleset": (canned_rulesets()[:1], None, "no active tag ruleset"),
-        "the tag ruleset only evaluated": (canned_rulesets({"enforcement": "evaluate"}), None,
-                                           "no active tag ruleset"),
-        "a ruleset list that is not a list": ({"id": 11}, None, "no active tag ruleset"),
-        "another tag pattern": (None, canned_ruleset(conditions={"ref_name": {
-            "exclude": [], "include": ["refs/tags/release-*"]}}), "the v* pattern"),
-        "an exclusion": (None, canned_ruleset(conditions={"ref_name": {
-            "exclude": ["refs/tags/v0*"], "include": ["refs/tags/v*"]}}), "the v* pattern"),
-        "no conditions": (None, canned_ruleset(conditions=None), "the v* pattern"),
-        "deletion allowed": (None, canned_ruleset(rules=[{"type": "creation"}, {"type": "update"}]),
-                             "creation, update and deletion"),
-        "a write role may bypass": (None, canned_ruleset(bypass_actors=[
-            {"actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always"},
-            {"actor_id": 4, "actor_type": "RepositoryRole", "bypass_mode": "always"}]),
-            "admin-only bypass"),
-        "a bypass list that is absent": (None, {k: v for k, v in canned_ruleset().items()
-                                                if k != "bypass_actors"}, "admin-only bypass"),
+        "no tag ruleset": (canned_rulesets(drop=(TAG_RULESET_ID,)), None, creation),
+        "the tag ruleset only evaluated": (canned_rulesets(
+            edit={TAG_RULESET_ID: {"enforcement": "evaluate"}}), None, creation),
+        "a ruleset list that is not a list": ({"id": 11}, None, creation),
+        "another tag pattern": (None, {TAG_RULESET_ID: {"conditions": {"ref_name": {
+            "exclude": [], "include": ["refs/tags/release-*"]}}}}, creation),
+        "an exclusion": (None, {TAG_RULESET_ID: {"conditions": {"ref_name": {
+            "exclude": ["refs/tags/v0*"], "include": ["refs/tags/v*"]}}}}, creation),
+        "no conditions": (None, {TAG_RULESET_ID: {"conditions": None}}, creation),
+        "creation allowed": (None, tag_rules("update", "deletion"), creation),
+        "update allowed": (None, tag_rules("creation", "deletion"), ("refs/tags/v*", "update")),
+        "deletion allowed": (None, tag_rules("creation", "update"), ("refs/tags/v*", "deletion")),
+        "a write role may bypass": (None, tag_bypass(ADMIN_BYPASS, WRITE_BYPASS), creation),
+        "an OrganizationAdmin with id 5": (None, tag_bypass(
+            dict(ADMIN_BYPASS, actor_type="OrganizationAdmin")), creation),
+        "a bypass list that is absent": (None, {TAG_RULESET_ID: {"bypass_actors": ABSENT}},
+                                         creation),
+        "a boolean id on the tag summary": (canned_rulesets(edit={TAG_RULESET_ID: {"id": True}}),
+                                            None, creation),
+        "main pushes open": (canned_rulesets(drop=(MAIN_RULESET_ID,)), None, main_update),
+        "main's ruleset lets a write role bypass": (None, {MAIN_RULESET_ID: {
+            "bypass_actors": [ADMIN_BYPASS, WRITE_BYPASS]}}, main_update),
     }
-    unruled_text = ("release_sign: the release tags are not held by a ruleset as docs/release.md "
-                    "sets it (%s)")
+    unruled_text = ("release_sign: the refs the release environment admits are not held by "
+                    "rulesets as docs/release.md sets it (%s %s)")
     gh_failed = {
         "the environment missing": (FakeGh(environment=(1, "", "gh: Not Found (HTTP 404)\nmore")),
                                     "release_sign: gh api failed: gh: Not Found (HTTP 404)"),
@@ -420,13 +476,14 @@ def drill_keygen_refuses(tmp):
                        "release_sign: gh is not installed or cannot run"),
         "a non-JSON answer": (FakeGh(policies=(0, "<html>", "")),
                               "release_sign: gh api failed (the answer is not JSON)"),
-        "the ruleset read failed": (FakeGh(ruleset=(1, "", "gh: Not Found (HTTP 404)")),
+        "a ruleset read failed": (FakeGh(details={
+            **canned_details(), BRANCH_RULESET_ID: (1, "", "gh: Not Found (HTTP 404)")}),
                                     "release_sign: gh api failed: gh: Not Found (HTTP 404)"),
     }
     cases = [(name, FakeGh(env, pol), UNPROTECTED % check_name)
              for name, (env, pol, check_name) in refusals.items()]
-    cases += [(name, FakeGh(rulesets=lst, ruleset=one), unruled_text % check_name)
-              for name, (lst, one, check_name) in unruled.items()]
+    cases += [(name, FakeGh(rulesets=lst, details=canned_details(edit)), unruled_text % required)
+              for name, (lst, edit, required) in unruled.items()]
     cases += [(name, fake, text) for name, (fake, text) in gh_failed.items()]
     for name, fake, text in cases:
         r = drive(rs.cmd_keygen, fake, table)
@@ -441,7 +498,7 @@ def drill_keygen_secret(tmp):
     r = drive(rs.cmd_keygen, fake, table)
     check("keygen secret fails: the message is dictated and holds nothing else",
           r["rc"] == 3 and r["out"] == "release_sign: gh secret set failed (exit 1)\n"
-          and r["stderr"] == "" and len(fake.calls) == 5)
+          and r["stderr"] == "" and len(fake.calls) == 7)
     fake = FakeGh(secret=lambda text: FileNotFoundError("gh"))
     r = drive(rs.cmd_keygen, fake, table)
     check("keygen secret set cannot run: exit 3",
@@ -464,7 +521,7 @@ def drill_keygen_readback(tmp):
         rs.read_rows = original
     check("keygen row read back: a row that does not is exit 3 and no secret is set",
           r["rc"] == 3 and r["out"] == "release_sign: the new row did not read back\n"
-          and r["stderr"] == "" and not fake.secret_calls() and len(fake.calls) == 4
+          and r["stderr"] == "" and not fake.secret_calls() and len(fake.calls) == 6
           and r["left"] == [])
 
 

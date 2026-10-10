@@ -10,7 +10,8 @@
 build it belongs to and an Ed25519 signature over `signed_message`. `verify` applies the same
 grammar and steps as the game, and prints which step refused. `keygen` makes a key in memory, hands
 its private half straight to the `release` environment's secret through `gh`, and prints only the
-table row; it refuses first unless that environment is protected as docs/release.md sets it.
+table row; it refuses first unless that environment, and the rulesets over the refs it admits,
+are set as docs/release.md sets them.
 The game's check is the vendored ed25519-donna `ed25519_sign_open`
 (src/votv-coop/third_party/GameNetworkingSockets/src/external/ed25519-donna/ed25519.c);
 `verify` is the same cofactorless, byte-exact check (RFC 8032 section 5.1.7 allows it): it
@@ -31,7 +32,7 @@ This is NOT constant-time: it signs one DLL per release on a CI runner. The seed
 environment only, and no message and no exception text this file writes holds it.
 
 Exit codes: 0 done; 1 verification failed; 2 a usage or key-table error; 3 the environment (the
-seed, or `gh` and the repository's `release` environment).
+seed, or `gh`, the repository's `release` environment and its rulesets).
 Every message is one line on stdout and starts `release_sign: `.
 """
 import argparse
@@ -426,48 +427,51 @@ def _check_protection(environment, policies):
         raise _unprotected("branch policies")
 
 
-# The release environment admits the v* tags, so whoever may create or move one reaches the key.
-# Only an admin may: an active tag ruleset over refs/tags/v* with no exclusion, refusing creation,
-# update and deletion to all but the admin repository role (actor 5, as the live ruleset reads).
-_TAG_PATTERN = "refs/tags/v*"
-_TAG_RULES = {"creation", "update", "deletion"}
+# The release environment admits the v* tags and main, so whoever may create or move such a tag,
+# or push to main, reaches the key. Only an admin may: for each requirement an active ruleset over
+# that ref with no exclusion, refusing the rule to all but the admin repository role (actor 5, as
+# the live rulesets read). The rulesets are read in list order and any one may hold a requirement.
 _ADMIN_ROLE = ("RepositoryRole", 5)
+_REQUIREMENTS = (("tag", "refs/tags/v*", "creation"), ("tag", "refs/tags/v*", "update"),
+                 ("tag", "refs/tags/v*", "deletion"), ("branch", "refs/heads/main", "update"))
 
 
-def _unruled(check):
-    return SignError("protection", 3, "release_sign: the release tags are not held by a ruleset as "
-                     "docs/release.md sets it (%s)" % check)
+def _unruled(pattern, rule):
+    return SignError("protection", 3, "release_sign: the refs the release environment admits are "
+                     "not held by rulesets as docs/release.md sets it (%s %s)" % (pattern, rule))
 
 
-def _tag_ruleset_flaw(ruleset):
-    """Why one ruleset does not hold the release tags, or None when it does."""
+def _ruleset_holds(ruleset, pattern, rule):
+    """Whether one ruleset refuses `rule` on `pattern` to all but the admin repository role."""
     conditions = ruleset.get("conditions") if isinstance(ruleset, dict) else None
     names = conditions.get("ref_name") if isinstance(conditions, dict) else None
     if not (isinstance(names, dict) and isinstance(names.get("include"), list)
-            and _TAG_PATTERN in names["include"] and names.get("exclude") == []):
-        return "the v* pattern"
+            and pattern in names["include"] and names.get("exclude") == []):
+        return False
     rules = ruleset.get("rules")
     kinds = {r.get("type") for r in rules if isinstance(r, dict)} if isinstance(rules, list) else set()
-    if not _TAG_RULES <= kinds:
-        return "creation, update and deletion"
+    if rule not in kinds:
+        return False
     bypass = ruleset.get("bypass_actors")
-    if not isinstance(bypass, list) or any(
-            not isinstance(a, dict) or (a.get("actor_type"), a.get("actor_id")) != _ADMIN_ROLE
-            for a in bypass):
-        return "admin-only bypass"
-    return None
+    return isinstance(bypass, list) and all(
+        isinstance(a, dict) and (a.get("actor_type"), a.get("actor_id")) == _ADMIN_ROLE
+        for a in bypass)
 
 
-def _check_tag_ruleset(runner, repo):
-    listed = _gh_api(runner, "repos/%s/rulesets" % repo)
-    ids = [r.get("id") for r in listed if isinstance(r, dict) and r.get("target") == "tag"
-           and r.get("enforcement") == "active"] if isinstance(listed, list) else []
-    ids = [i for i in ids if isinstance(i, int) and not isinstance(i, bool)]
-    if not ids:
-        raise _unruled("no active tag ruleset")
-    flaws = [_tag_ruleset_flaw(_gh_api(runner, "repos/%s/rulesets/%d" % (repo, i))) for i in ids]
-    if None not in flaws:
-        raise _unruled(flaws[0])
+def _check_ref_rulesets(runner, repo):
+    listed = _gh_api(runner, "repos/%s/rulesets?per_page=100" % repo)
+    read = []
+    for summary in listed if isinstance(listed, list) else []:
+        if not (isinstance(summary, dict) and summary.get("enforcement") == "active"
+                and summary.get("target") in ("tag", "branch")):
+            continue
+        ruleset_id = summary.get("id")
+        if isinstance(ruleset_id, int) and not isinstance(ruleset_id, bool):
+            read.append((summary["target"],
+                         _gh_api(runner, "repos/%s/rulesets/%d" % (repo, ruleset_id))))
+    for target, pattern, rule in _REQUIREMENTS:
+        if not any(t == target and _ruleset_holds(r, pattern, rule) for t, r in read):
+            raise _unruled(pattern, rule)
 
 
 def _key_id(text):
@@ -479,7 +483,7 @@ def _key_id(text):
 
 
 def cmd_keygen(args, runner, out):
-    """The order is the custody: refuse an unprotected environment or unheld release tags, then
+    """The order is the custody: refuse an unprotected environment or unheld release refs, then
     make the key, check its row, hand the seed to gh's standard input, and print the row. No file
     is written."""
     if _REPO.fullmatch(args.repo) is None:
@@ -494,7 +498,7 @@ def cmd_keygen(args, runner, out):
     environment = _gh_api(runner, base)
     policies = _gh_api(runner, base + "/deployment-branch-policies")
     _check_protection(environment, policies)
-    _check_tag_ruleset(runner, args.repo)
+    _check_ref_rulesets(runner, args.repo)
 
     seed = os.urandom(32)
     pub = ed25519_public(seed)
