@@ -7,6 +7,8 @@
 # contrib branch shadow this file while the caller's diff reads clean (R22).
 # Changes here land only as human commits on main; this file's sha256 is part
 # of the release fingerprint (.github/ci/fingerprint.json, design D3/R23).
+# No ${{ }} expression is pasted into a run: script (workflow_expr_gate.py):
+# a script reads its values through env:.
 # Build steps based on PR #2 by huoyan1231 (reworked per design D2).
 name: build-core
 
@@ -58,12 +60,14 @@ jobs:
 
       - name: Self-check -- tree is the requested source (R27)
         shell: pwsh
+        env:
+          SOURCE_SHA: ${{ inputs.source-sha }}
         run: |
           $head = (git rev-parse HEAD).Trim()
           Write-Host "HEAD       = $head"
-          Write-Host "source-sha = ${{ inputs.source-sha }}"
-          Write-Host "github.sha = ${{ github.sha }} (evidence only -- on a recovery dispatch this is main's HEAD while the tree is the tag's)"
-          if ($head -ne '${{ inputs.source-sha }}') { throw "checkout mismatch: HEAD $head != source-sha ${{ inputs.source-sha }}" }
+          Write-Host "source-sha = $env:SOURCE_SHA"
+          Write-Host "github.sha = $env:GITHUB_SHA (evidence only -- on a recovery dispatch this is main's HEAD while the tree is the tag's)"
+          if ($head -ne $env:SOURCE_SHA) { throw "checkout mismatch: HEAD $head != source-sha $env:SOURCE_SHA" }
 
       - name: Init build submodules (third_party only; reference/* never fetched)
         shell: pwsh
@@ -232,8 +236,10 @@ jobs:
 
       - name: Install vcpkg (clone full + checkout the baseline pin + bootstrap)
         shell: pwsh
+        env:
+          PIN: ${{ steps.baseline.outputs.sha }}
         run: |
-          $pin = '${{ steps.baseline.outputs.sha }}'
+          $pin = $env:PIN
           if (-not (Test-Path "$env:VCPKG_ROOT\.git")) {
             git clone https://github.com/microsoft/vcpkg.git $env:VCPKG_ROOT
           }
@@ -271,16 +277,18 @@ jobs:
 
       - name: Configure (CMake + vcpkg manifest mode)
         shell: pwsh
+        env:
+          GENERATOR: ${{ steps.vs.outputs.generator }}
         run: |
-          cmake -S src/votv-coop -B ${{ env.BUILD_DIR }} `
-            -G "${{ steps.vs.outputs.generator }}" -A x64 `
-            -DCMAKE_TOOLCHAIN_FILE="${{ env.VCPKG_ROOT }}/scripts/buildsystems/vcpkg.cmake" `
-            -DVCPKG_TARGET_TRIPLET=${{ env.VCPKG_TRIPLET }} `
+          cmake -S src/votv-coop -B $env:BUILD_DIR `
+            -G $env:GENERATOR -A x64 `
+            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" `
+            -DVCPKG_TARGET_TRIPLET="$env:VCPKG_TRIPLET" `
             -DVCPKG_MANIFEST_MODE=ON
 
       - name: Build (Release)
         shell: pwsh
-        run: cmake --build ${{ env.BUILD_DIR }} --config Release
+        run: cmake --build $env:BUILD_DIR --config Release
 
       - name: ABI gate (D-3 -- the built DLL imports NOTHING from UE4SS)
         # The C-ABI slim contract's whole payoff is a number: 0 imported UE4SS
@@ -296,7 +304,7 @@ jobs:
         # silently discarded the drill's failure -- the script runs the drill
         # first and returns 2 immediately if it cannot fire.
         shell: pwsh
-        run: python .github/ci/abi_gate.py --drill "${{ env.BUILD_DIR }}/Release/main.dll"
+        run: python .github/ci/abi_gate.py --drill "$env:BUILD_DIR/Release/main.dll"
 
       - name: Package the r2modman zip + verify it (CI evidence, pak-less by construction)
         # THE DISTRIBUTABLE IS ASSEMBLED ON EVERY BUILD RUN, not first at release time.
@@ -312,7 +320,7 @@ jobs:
         # stocked, so this step proves the STRUCTURE, never the payload set.
         shell: pwsh
         run: |
-          pwsh -File .github/ci/package.ps1 -BuildDir "${{ env.BUILD_DIR }}/Release" `
+          pwsh -File .github/ci/package.ps1 -BuildDir "$env:BUILD_DIR/Release" `
                                                -OutDir "$env:RUNNER_TEMP/package"
           exit $LASTEXITCODE
 
@@ -322,7 +330,7 @@ jobs:
         run: |
           $out = Join-Path $env:RUNNER_TEMP 'artifact'
           New-Item -ItemType Directory $out | Out-Null
-          $dlls = @(Get-ChildItem "${{ env.BUILD_DIR }}/Release/*.dll")
+          $dlls = @(Get-ChildItem "$env:BUILD_DIR/Release/*.dll")
           if ($dlls.Count -eq 0) { throw 'no DLLs produced' }
           foreach ($d in $dlls) {
             Copy-Item $d.FullName $out

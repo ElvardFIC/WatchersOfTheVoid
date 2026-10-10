@@ -5,6 +5,9 @@
 # checkout (checkout#2) -- the self-check below guards the JUDGE, not just the
 # evidence. The run logs workflow_ref/workflow_sha as evidence (not a gate --
 # a gate cannot guard itself; residual D7(a)).
+# No ${{ }} expression is pasted into a run: script (workflow_expr_gate.py):
+# every value a script reads comes through env:, and the tag name is held to
+# the release grammar before any command sees it.
 name: release-core
 
 on:
@@ -56,19 +59,25 @@ jobs:
           $main = (git rev-parse origin/main).Trim()
           Write-Host "judge HEAD   = $head"
           Write-Host "origin/main  = $main"
-          Write-Host "workflow_ref = ${{ github.workflow_ref }} (evidence)"
-          Write-Host "workflow_sha = ${{ github.workflow_sha }} (evidence)"
+          Write-Host "workflow_ref = $env:GITHUB_WORKFLOW_REF (evidence)"
+          Write-Host "workflow_sha = $env:GITHUB_WORKFLOW_SHA (evidence)"
           if ($head -ne $main) { throw "judge checkout is not origin/main HEAD (main moved mid-run?) -- re-run" }
 
-      - name: Resolve tag
+      - name: Resolve tag (held to the release grammar before any command reads it)
         id: resolve
         shell: pwsh
+        env:
+          DISPATCH_TAG: ${{ inputs.tag }}
+          CALLER_TAG: ${{ inputs.tag-name }}
+          CALLER_SHA: ${{ inputs.tag-sha }}
         run: |
-          $tag = if ('${{ github.event_name }}' -eq 'workflow_dispatch') { '${{ inputs.tag }}' } else { '${{ inputs.tag-name }}' }
+          . ./.github/ci/ledger_lib.ps1
+          $tag = if ($env:GITHUB_EVENT_NAME -eq 'workflow_dispatch') { $env:DISPATCH_TAG } else { $env:CALLER_TAG }
           if (-not $tag) { throw 'no tag input' }
+          if (-not (ConvertFrom-ReleaseTag $tag)) { throw 'the tag input fails the release tag grammar' }
           $sha = (git rev-list -n1 $tag).Trim()
           if (-not $sha) { throw "tag '$tag' not found on origin" }
-          Write-Host "tag $tag -> $sha (caller evidence: '${{ inputs.tag-sha }}')"
+          Write-Host "tag $tag -> $sha (caller evidence: '$env:CALLER_SHA')"
           "tag-name=$tag" | Out-File -Append $env:GITHUB_OUTPUT
           "tag-sha=$sha"  | Out-File -Append $env:GITHUB_OUTPUT
 
@@ -87,8 +96,10 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ steps.resolve.outputs.tag-name }}
+          TAG_SHA: ${{ steps.resolve.outputs.tag-sha }}
         run: |
-          pwsh -File .github/ci/judge.ps1 -TagName '${{ steps.resolve.outputs.tag-name }}' -TagShaEvidence '${{ steps.resolve.outputs.tag-sha }}'
+          pwsh -File .github/ci/judge.ps1 -TagName $env:TAG_NAME -TagShaEvidence $env:TAG_SHA
           $code = $LASTEXITCODE
           # Explicit exits: without them the step ends with the child's
           # $LASTEXITCODE (10) and the no-op verdict turned the job RED --
@@ -178,18 +189,20 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           MULTIVOID_RELEASE_KEY: ${{ secrets.MULTIVOID_RELEASE_KEY }}
+          TAG_NAME: ${{ needs.judge.outputs.tag-name }}
+          TAG_SHA: ${{ needs.judge.outputs.tag-sha }}
         run: |
-          pwsh -File .github/ci/publish.ps1 `
-            -TagName '${{ needs.judge.outputs.tag-name }}' `
-            -TagSha  '${{ needs.judge.outputs.tag-sha }}' `
-            -ArtifactDir _release_artifact
+          pwsh -File .github/ci/publish.ps1 -TagName $env:TAG_NAME -TagSha $env:TAG_SHA -ArtifactDir _release_artifact
           Get-Content _release_artifact/fingerprint-dump.json | Out-Host
 
       - name: Summary
         shell: pwsh
+        env:
+          TAG_NAME: ${{ needs.judge.outputs.tag-name }}
+          TAG_SHA: ${{ needs.judge.outputs.tag-sha }}
         run: |
-          "## Release ${{ needs.judge.outputs.tag-name }}" | Out-File -Append $env:GITHUB_STEP_SUMMARY
-          "source: ${{ needs.judge.outputs.tag-sha }}" | Out-File -Append $env:GITHUB_STEP_SUMMARY
+          "## Release $env:TAG_NAME" | Out-File -Append $env:GITHUB_STEP_SUMMARY
+          "source: $env:TAG_SHA" | Out-File -Append $env:GITHUB_STEP_SUMMARY
           "Ritual: verify the release page, then append the 'published' ledger row (see publish log; STABLE also: master env + verify_latest.ps1)." | Out-File -Append $env:GITHUB_STEP_SUMMARY
 
   already-published:
