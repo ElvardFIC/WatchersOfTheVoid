@@ -111,8 +111,9 @@ def canned_policies(*extra):
 
 ADMIN_BYPASS = {"actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always"}
 WRITE_BYPASS = {"actor_id": 4, "actor_type": "RepositoryRole", "bypass_mode": "always"}
-# id -> (target, name, ref pattern, rule types, bypass actors): the live repository's rulesets
-# 10 to 12 in its order, and a second v* ruleset (13) for the arm that reads two.
+# id -> (target, name, ref pattern, rule types, bypass actors): the live repository's three
+# rulesets, renumbered 10 to 12 in its list order, and a second v* ruleset (13) for the arm that
+# reads two.
 RULESET_SHAPES = {
     BRANCH_RULESET_ID: ("branch", "main-no-force-no-delete", "refs/heads/main",
                         ["deletion", "non_fast_forward"], []),
@@ -391,8 +392,13 @@ def drill_keygen_green(tmp):
                          reads=READS + [ruleset_argv(13)])
     check("keygen green with two tag rulesets, the first listed flawed and the second holding"
           + (": " + ", ".join(flaws) if flaws else ""), not flaws)
+    # No bypass at all holds a requirement too: nobody, admins included, may move the ref.
+    no_bypass = FakeGh(details=canned_details({TAG_RULESET_ID: {"bypass_actors": []}}))
+    flaws = keygen_flaws(rs.cmd_keygen, no_bypass, table, 2, seeds)
+    check("keygen green with an empty bypass list on the tag ruleset"
+          + (": " + ", ".join(flaws) if flaws else ""), not flaws)
     check("keygen green: every run's seed is its own and none is the public selftest seed",
-          len(seeds) == 11 and len(set(seeds)) == len(seeds) and rs.TEST_SEED_HEX not in seeds)
+          len(seeds) == 12 and len(set(seeds)) == len(seeds) and rs.TEST_SEED_HEX not in seeds)
 
 
 def drill_keygen_mutants(tmp):
@@ -463,9 +469,17 @@ def drill_keygen_refuses(tmp):
                                          creation),
         "a boolean id on the tag summary": (canned_rulesets(edit={TAG_RULESET_ID: {"id": True}}),
                                             None, creation),
+        "a string id on the tag summary": (canned_rulesets(edit={TAG_RULESET_ID: {"id": "11"}}),
+                                           None, creation),
+        # The v* rules on a ruleset whose target is a branch hold no tag: the target is checked.
+        "the v* rules on a branch ruleset": (canned_rulesets(
+            edit={TAG_RULESET_ID: {"target": "branch"}}), {TAG_RULESET_ID: {"target": "branch"}},
+            creation),
         "main pushes open": (canned_rulesets(drop=(MAIN_RULESET_ID,)), None, main_update),
         "main's ruleset lets a write role bypass": (None, {MAIN_RULESET_ID: {
             "bypass_actors": [ADMIN_BYPASS, WRITE_BYPASS]}}, main_update),
+        "main's rules on a tag ruleset": (canned_rulesets(edit={MAIN_RULESET_ID: {"target": "tag"}}),
+                                          None, main_update),
     }
     unruled_text = ("release_sign: the refs the release environment admits are not held by "
                     "rulesets as docs/release.md sets it (%s %s)")
@@ -476,6 +490,8 @@ def drill_keygen_refuses(tmp):
                        "release_sign: gh is not installed or cannot run"),
         "a non-JSON answer": (FakeGh(policies=(0, "<html>", "")),
                               "release_sign: gh api failed (the answer is not JSON)"),
+        "the ruleset list read failed": (FakeGh(rulesets=(1, "", "gh: Not Found (HTTP 404)")),
+                                         "release_sign: gh api failed: gh: Not Found (HTTP 404)"),
         "a ruleset read failed": (FakeGh(details={
             **canned_details(), BRANCH_RULESET_ID: (1, "", "gh: Not Found (HTTP 404)")}),
                                     "release_sign: gh api failed: gh: Not Found (HTTP 404)"),

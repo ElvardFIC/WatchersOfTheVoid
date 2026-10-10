@@ -2,7 +2,8 @@
 # 2026-07-26 release-body/notes/install gates): MUST-MATCH rows with expected
 # parse fields + MUST-REFUSE near-twins, for the tag grammar AND the notes
 # format lint AND the install-doc staleness patterns AND the body writer's
-# machine-key invariants. Runs in every release judge pass and locally.
+# machine-key invariants, and the pick of a tag's commit from ls-remote lines.
+# Runs in every release judge pass, in the repo gates, and locally.
 # Exit 0 = all rows hold; exit 1 = a grammar/gate drifted.
 
 Set-StrictMode -Version Latest

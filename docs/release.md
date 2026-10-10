@@ -14,9 +14,9 @@ the checksum).
 The zip also carries `mod/dlls/main.dll.sig`, the release signature, made in the publish job
 with the `release` environment's key. The `release` environment holds the release key. It has
 the maintainer as its required reviewer, with self-review allowed and administrators unable to
-bypass it, and it deploys only to tags `v*` and the branch `main`. Two rulesets hold those refs:
+bypass it, and it deploys only to tags `v*` and the branch `main`. Rulesets hold those refs:
 only an administrator may create, move or delete a `v*` tag or push to `main`, since either
-reaches the key. `release_sign.py keygen` refuses to set a key unless the environment and both
+reaches the key. `release_sign.py keygen` refuses to set a key unless the environment and those
 rulesets stand as described here.
 
 Build numbers are minted in one place, the append-only, human-written ledger

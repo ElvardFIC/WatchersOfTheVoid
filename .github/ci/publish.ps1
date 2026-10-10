@@ -22,7 +22,7 @@ $ErrorActionPreference = 'Stop'
 
 $tag = ConvertFrom-ReleaseTag $TagName
 if (-not $tag) { throw "tag '$TagName' fails the grammar (the judge should have refused)" }
-if ($TagSha -cnotmatch '^[0-9a-f]{40}$') { throw "TagSha '$TagSha' is not a full lowercase commit sha" }
+if ($TagSha -cnotmatch '^[0-9a-f]{40}\z') { throw "TagSha '$TagSha' is not a full lowercase commit sha" }
 
 # The release hangs on the tag NAME, its assets on TagSha. The tag is re-read from
 # the repository before the draft and again right before the flip makes the release public:
