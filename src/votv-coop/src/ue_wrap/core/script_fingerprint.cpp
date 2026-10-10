@@ -172,6 +172,7 @@ std::string SigLine(Ctx& c, void* fn) {
 struct PassCache {
     std::unordered_map<const uint8_t*, std::pair<size_t, Decoded>> scans;
     NameCache names;  // every fingerprint of the pass renders a name once
+    std::unordered_map<void*, Result> results;  // two lanes' rows on one function read it once
 };
 PassCache* g_pass = nullptr;
 
@@ -307,6 +308,10 @@ Result Of(void* ufunction) {
         r.problem = "null function";
         return r;
     }
+    if (g_pass) {
+        auto it = g_pass->results.find(ufunction);
+        if (it != g_pass->results.end()) return it->second;
+    }
     Ctx c;
     if (g_pass) c.names = &g_pass->names;
     if (BuildSEH(ufunction, &r, &c)) {
@@ -320,6 +325,7 @@ Result Of(void* ufunction) {
     const size_t sigEnd = r.text.find('\n');
     r.sigHash = Fnv1a64(r.text.substr(0, sigEnd == std::string::npos ? r.text.size() : sigEnd + 1));
     r.bodyHash = Fnv1a64(sigEnd == std::string::npos ? std::string() : r.text.substr(sigEnd + 1));
+    if (g_pass) g_pass->results.emplace(ufunction, r);
     return r;
 }
 
