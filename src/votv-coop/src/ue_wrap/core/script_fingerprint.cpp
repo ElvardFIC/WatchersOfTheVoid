@@ -19,14 +19,26 @@ using namespace detail;
 
 namespace {
 
+// A script's statements and the index from a statement's offset to its position, built once per script.
+struct Decoded {
+    std::vector<Stmt>                  stmts;
+    std::unordered_map<uint32_t, int> index;
+};
+
+bool Decode(Ctx& c, const uint8_t* s, size_t n, Decoded& out) {
+    if (!Scan(c, s, n, out.stmts)) return false;
+    out.index.reserve(out.stmts.size());
+    for (size_t i = 0; i < out.stmts.size(); ++i) out.index[out.stmts[i].off] = static_cast<int>(i);
+    return true;
+}
+
 struct Block {
-    const std::vector<Stmt>* stmts = nullptr;
-    std::unordered_map<uint32_t, int> index;  // offset -> statement index
+    const Decoded* d = nullptr;
     uint32_t Resolve(uint32_t off) const {
-        for (size_t guard = 0; guard <= stmts->size(); ++guard) {
-            auto it = index.find(off);
-            if (it == index.end() || (*stmts)[it->second].op != EX_Jump) return off;
-            off = (*stmts)[it->second].targets.empty() ? off : (*stmts)[it->second].targets[0];
+        for (size_t guard = 0; guard <= d->stmts.size(); ++guard) {
+            auto it = d->index.find(off);
+            if (it == d->index.end() || d->stmts[it->second].op != EX_Jump) return off;
+            off = d->stmts[it->second].targets.empty() ? off : d->stmts[it->second].targets[0];
         }
         return off;
     }
@@ -40,11 +52,10 @@ bool IsTerminator(uint8_t op) {
 
 // Flow order: follow a straight run (an EX_Jump is layout glue), defer every other code target LIFO in
 // operand order, mark where a run merges into a labelled statement.
-void RenderFlow(Ctx& c, const uint8_t* s, size_t n, const std::vector<Stmt>& stmts, uint32_t entry,
-                std::string& text) {
+void RenderFlow(Ctx& c, const uint8_t* s, size_t n, const Decoded& d, uint32_t entry, std::string& text) {
+    const std::vector<Stmt>& stmts = d.stmts;
     Block b;
-    b.stmts = &stmts;
-    for (size_t i = 0; i < stmts.size(); ++i) b.index[stmts[i].off] = static_cast<int>(i);
+    b.d = &d;
     std::vector<uint32_t> order;
     std::unordered_map<uint32_t, int> label;
     std::unordered_map<uint32_t, uint32_t> merges;
@@ -56,8 +67,8 @@ void RenderFlow(Ctx& c, const uint8_t* s, size_t n, const std::vector<Stmt>& stm
         bool havePrev = false;
         uint32_t prev = 0;
         for (;;) {
-            auto it = b.index.find(off);
-            if (it == b.index.end()) {
+            auto it = d.index.find(off);
+            if (it == d.index.end()) {
                 c.Fail("code offset is not a statement", off);
                 break;
             }
@@ -78,7 +89,7 @@ void RenderFlow(Ctx& c, const uint8_t* s, size_t n, const std::vector<Stmt>& stm
         }
     }
     for (uint32_t off : order) {
-        const Stmt& st = stmts[b.index[off]];
+        const Stmt& st = stmts[d.index.at(off)];
         text += std::to_string(label[off]) + " ";
         const Labels labels{&label, &ResolveThunk, &b};
         if (st.uberEntry >= 0) {
@@ -107,7 +118,7 @@ std::string TypeText(Ctx& c, void* prop, int depth) {
     std::string type;
     if (fc) {
         const R::FName n = Rd<R::FName>(fc, P::off::FFieldClass_Name);
-        type = c.names.Of(n.ComparisonIndex, static_cast<uint32_t>(n.Number));
+        type = c.names->Of(n.ComparisonIndex, static_cast<uint32_t>(n.Number));
     }
     if (depth > 4) return type;
     auto obj = [&](size_t off) {
@@ -159,16 +170,17 @@ std::string SigLine(Ctx& c, void* fn) {
 // ubergraph, and mainPlayer_C's is decoded once instead of once per stub. Keyed on the script's address
 // and size; a pass is a few seconds of one world. Game thread.
 struct PassCache {
-    std::unordered_map<const uint8_t*, std::pair<size_t, std::vector<Stmt>>> scans;
+    std::unordered_map<const uint8_t*, std::pair<size_t, Decoded>> scans;
+    NameCache names;  // every fingerprint of the pass renders a name once
 };
 PassCache* g_pass = nullptr;
 
-const std::vector<Stmt>* ScanUbergraph(Ctx& c, const uint8_t* s, size_t n, std::vector<Stmt>& local) {
+const Decoded* DecodeUbergraph(Ctx& c, const uint8_t* s, size_t n, Decoded& local) {
     if (g_pass) {
         auto it = g_pass->scans.find(s);
         if (it != g_pass->scans.end() && it->second.first == n) return &it->second.second;
     }
-    if (!Scan(c, s, n, local)) return nullptr;
+    if (!Decode(c, s, n, local)) return nullptr;
     if (!g_pass) return &local;
     auto& e = g_pass->scans[s];
     e.first = n;
@@ -188,12 +200,12 @@ void Build(void* fn, Result& r, Ctx& c) {
     const uint8_t* s = Rd<const uint8_t*>(fn, P::off::UStruct_Script);
     const int32_t n = Rd<int32_t>(fn, P::off::UStruct_ScriptNum);
     if (!s || n <= 0) return;  // a delegate signature or an empty function: its signature is all there is
-    std::vector<Stmt> own;
+    Decoded own;
     const bool uber = IsUbergraph(c, fn);
-    const std::vector<Stmt>* scanned =
-        uber ? ScanUbergraph(c, s, static_cast<size_t>(n), own) : (Scan(c, s, static_cast<size_t>(n), own) ? &own : nullptr);
-    if (!scanned) return;
-    const std::vector<Stmt>& stmts = *scanned;
+    const Decoded* decoded =
+        uber ? DecodeUbergraph(c, s, static_cast<size_t>(n), own) : (Decode(c, s, static_cast<size_t>(n), own) ? &own : nullptr);
+    if (!decoded) return;
+    const std::vector<Stmt>& stmts = decoded->stmts;
     if (uber) {
         // the ubergraph itself: its dispatch is a computed jump, so its logic is the region of every event
         // stub of the class that enters it, stub by stub in name order (a fresh frame map per entry)
@@ -210,24 +222,24 @@ void Build(void* fn, Result& r, Ctx& c) {
             for (const Stmt& x : st)
                 if (x.uberFn == fn) {
                     const R::FName& nm = R::NameOf(f);
-                    entries.emplace_back(c.names.Of(nm.ComparisonIndex, static_cast<uint32_t>(nm.Number)), x.uberEntry);
+                    entries.emplace_back(c.names->Of(nm.ComparisonIndex, static_cast<uint32_t>(nm.Number)), x.uberEntry);
                 }
         }
         std::sort(entries.begin(), entries.end());
         for (const auto& e : entries) {
             r.text += "== entry " + e.first + " ==\n";
             c.locals.clear();
-            RenderFlow(c, s, static_cast<size_t>(n), stmts, static_cast<uint32_t>(e.second), r.text);
+            RenderFlow(c, s, static_cast<size_t>(n), *decoded, static_cast<uint32_t>(e.second), r.text);
         }
         return;
     }
-    RenderFlow(c, s, static_cast<size_t>(n), stmts, 0, r.text);
+    RenderFlow(c, s, static_cast<size_t>(n), *decoded, 0, r.text);
     for (const Stmt& st : stmts) {
         if (st.uberEntry < 0) continue;
         const uint8_t* us = Rd<const uint8_t*>(st.uberFn, P::off::UStruct_Script);
         const int32_t un = Rd<int32_t>(st.uberFn, P::off::UStruct_ScriptNum);
-        std::vector<Stmt> local;
-        const std::vector<Stmt>* ust = us && un > 0 ? ScanUbergraph(c, us, static_cast<size_t>(un), local) : nullptr;
+        Decoded local;
+        const Decoded* ust = us && un > 0 ? DecodeUbergraph(c, us, static_cast<size_t>(un), local) : nullptr;
         if (!ust) {
             c.Fail("ubergraph does not decode", 0);
             return;
@@ -262,6 +274,7 @@ int SignatureSEH(void* fn, Result* r, Ctx* c) {
 Result SignatureOf(void* ufunction) {
     Result r;
     Ctx c;
+    if (g_pass) c.names = &g_pass->names;
     if (!ufunction || SignatureSEH(ufunction, &r, &c)) {
         r.problem = ufunction ? "fault while reading the signature" : "null function";
         r.text.clear();
@@ -284,6 +297,7 @@ void EndPass() {
 
 std::string PathOf(void* uobject) {
     Ctx c;
+    if (g_pass) c.names = &g_pass->names;
     return uobject ? ObjPath(c, uobject) : std::string();
 }
 
@@ -294,6 +308,7 @@ Result Of(void* ufunction) {
         return r;
     }
     Ctx c;
+    if (g_pass) c.names = &g_pass->names;
     if (BuildSEH(ufunction, &r, &c)) {
         r.problem = "fault while reading the function";
         r.text.clear();

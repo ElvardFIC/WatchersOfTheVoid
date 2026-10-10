@@ -34,10 +34,15 @@ struct NameCache {
     std::string Of(int32_t comparisonIndex, uint32_t number);
 };
 
-// One fingerprint's state: the names rendered so far, a frame's own properties by first appearance, and
-// the first problem met.
+// One fingerprint's state: the names rendered so far (its own cache, or a census pass's shared one: a
+// name's comparison index is stable for the process's life), a frame's own properties by first
+// appearance, and the first problem met.
 struct Ctx {
-    NameCache names;
+    Ctx() = default;
+    Ctx(const Ctx&) = delete;  // `names` may point at `own`: a copy would read the original's cache
+    Ctx& operator=(const Ctx&) = delete;
+    NameCache  own;
+    NameCache* names = &own;
     std::unordered_map<void*, int> locals;
     std::string problem;
     void Fail(const char* what, size_t at);

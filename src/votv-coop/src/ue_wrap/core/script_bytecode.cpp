@@ -216,7 +216,7 @@ std::string ObjPath(Ctx& c, void* obj) {
     std::vector<std::string> parts;
     for (int guard = 0; obj && R::OuterOf(obj) && guard < 64; ++guard) {
         const R::FName& n = R::NameOf(obj);
-        parts.push_back(c.names.Of(n.ComparisonIndex, static_cast<uint32_t>(n.Number)));
+        parts.push_back(c.names->Of(n.ComparisonIndex, static_cast<uint32_t>(n.Number)));
         obj = R::OuterOf(obj);
     }
     std::string out;
@@ -229,7 +229,7 @@ std::string ObjPath(Ctx& c, void* obj) {
 
 std::string FieldName(Ctx& c, const void* field) {
     const R::FName n = Rd<R::FName>(field, P::off::FField_NamePrivate);
-    return c.names.Of(n.ComparisonIndex, static_cast<uint32_t>(n.Number));
+    return c.names->Of(n.ComparisonIndex, static_cast<uint32_t>(n.Number));
 }
 
 namespace {
@@ -238,7 +238,7 @@ bool IsFunctionClass(Ctx& c, void* obj) {
     void* cls = R::ClassOf(obj);
     if (!cls) return false;
     const R::FName& n = R::NameOf(cls);
-    const std::string s = c.names.Of(n.ComparisonIndex, static_cast<uint32_t>(n.Number));
+    const std::string s = c.names->Of(n.ComparisonIndex, static_cast<uint32_t>(n.Number));
     return s == "function" || s == "delegatefunction" || s == "sparsedelegatefunction";
 }
 
@@ -352,7 +352,7 @@ struct Walker {
             uint32_t num = 0;
             if (!Take(ci) || !Take(di) || !Take(num)) return false;
             sep();
-            if (render) Emit("n:" + c.names.Of(ci, num));
+            if (render) Emit("n:" + c.names->Of(ci, num));
             return true;
         }
         case kI32: { int32_t v; if (!Take(v)) return false; sep(); if (render) Emit("i:" + std::to_string(v)); return true; }
@@ -523,7 +523,7 @@ struct Walker {
 bool IsUbergraph(Ctx& c, void* fn) {
     if (!fn) return false;
     const R::FName& n = R::NameOf(fn);
-    return c.names.Of(n.ComparisonIndex, 0).rfind("executeubergraph_", 0) == 0;
+    return c.names->Of(n.ComparisonIndex, 0).rfind("executeubergraph_", 0) == 0;
 }
 
 bool Scan(Ctx& c, const uint8_t* s, size_t n, std::vector<Stmt>& out) {
