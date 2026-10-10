@@ -3,8 +3,8 @@
 
 Standard library only. A fake runner answers canned `gh` output and records every call's argv and
 keyword arguments, so no process starts and the real `gh` is never run; each run happens inside a
-temporary working directory with stdout and stderr captured. The fake answers only the three
-commands keygen may run, with the output a real `gh` prints (so an echo of it is seen), and acts
+temporary working directory with stdout and stderr captured. The fake answers only the
+commands keygen may run (four reads, then the secret), with the output a real `gh` prints (so an echo of it is seen), and acts
 on the keyword arguments the way `subprocess.run` does. Three mutants are always run and the same
 assertion helper as the green arms must flag each of them; one starts a process, which the guard
 below must refuse.
@@ -61,6 +61,10 @@ PROCESS_NAMES = ("system", "popen", "startfile", "spawnl", "spawnv", "execl", "e
 REPO = "drill-owner/drill-repo"
 ENV_ARGV = ["gh", "api", "repos/%s/environments/release" % REPO]
 POLICIES_ARGV = ["gh", "api", "repos/%s/environments/release/deployment-branch-policies" % REPO]
+RULESETS_ARGV = ["gh", "api", "repos/%s/rulesets" % REPO]
+TAG_RULESET_ID = 11
+RULESET_ARGV = ["gh", "api", "repos/%s/rulesets/%d" % (REPO, TAG_RULESET_ID)]
+READS = [ENV_ARGV, POLICIES_ARGV, RULESETS_ARGV, RULESET_ARGV]
 SECRET_ARGV = ["gh", "secret", "set", rs.SEED_ENV, "--env", "release", "--repo", REPO]
 API_KWARGS = {"capture_output": True, "text": True, "encoding": "utf-8"}
 SECRET_KWARGS = dict(API_KWARGS, errors="replace")
@@ -98,6 +102,28 @@ def canned_policies(*extra):
         {"id": 3 + i, "node_id": "n%d" % i, "name": n, "type": t} for i, (n, t) in enumerate(items)]}
 
 
+def canned_rulesets(tag=None):
+    """The repository's ruleset list: a branch ruleset the check must skip, then the tag one;
+    `tag` edits the tag ruleset's summary."""
+    summary = {"id": TAG_RULESET_ID, "name": "v-tags-admin-only", "target": "tag",
+               "enforcement": "active", "source_type": "Repository"}
+    summary.update(tag or {})
+    return [{"id": 10, "name": "main-no-force-no-delete", "target": "branch",
+             "enforcement": "active", "source_type": "Repository"}, summary]
+
+
+def canned_ruleset(**over):
+    """GitHub's REST answer for the v* tag ruleset, shaped as the live repository's."""
+    ruleset = {"id": TAG_RULESET_ID, "name": "v-tags-admin-only", "target": "tag",
+               "enforcement": "active",
+               "conditions": {"ref_name": {"exclude": [], "include": ["refs/tags/v*"]}},
+               "rules": [{"type": "creation"}, {"type": "update"}, {"type": "deletion"}],
+               "bypass_actors": [{"actor_id": 5, "actor_type": "RepositoryRole",
+                                  "bypass_mode": "always"}]}
+    ruleset.update(over)
+    return ruleset
+
+
 class Uncanned(Exception):
     """The code under test ran a command the fake has no answer for."""
 
@@ -105,9 +131,11 @@ class Uncanned(Exception):
 class FakeGh:
     """A runner that answers from canned values and records every call; it starts no process."""
 
-    def __init__(self, environment=None, policies=None, secret=None):
+    def __init__(self, environment=None, policies=None, secret=None, rulesets=None, ruleset=None):
         self.environment = canned_env() if environment is None else environment
         self.policies = canned_policies() if policies is None else policies
+        self.rulesets = canned_rulesets() if rulesets is None else rulesets
+        self.ruleset = canned_ruleset() if ruleset is None else ruleset
         self.secret = secret or (lambda text: (0, GH_LINE, GH_WARNING))
         self.calls = []
 
@@ -119,6 +147,10 @@ class FakeGh:
             answer = self.environment
         elif argv == POLICIES_ARGV:
             answer = self.policies
+        elif argv == RULESETS_ARGV:
+            answer = self.rulesets
+        elif argv == RULESET_ARGV:
+            answer = self.ruleset
         else:
             raise Uncanned(" ".join(argv))
         if isinstance(answer, (dict, list)):
@@ -230,11 +262,10 @@ def keygen_flaws(keygen, fake, table, key_id=2, seeds=None):
     need("no exception (%s)" % r["raised"], r["raised"] is None)
     need("exit 0", r["rc"] == 0)
     need("stderr empty", r["stderr"] == "")
-    need("three calls, the secret last",
-         len(calls) == 3 and len(secrets) == 1 and calls[2] is secrets[0])
-    need("the two protection reads, exact argv and kwargs",
-         [c[0] for c in calls[:2]] == [ENV_ARGV, POLICIES_ARGV]
-         and all(c[1] == API_KWARGS for c in calls[:2]))
+    need("five calls, the secret last",
+         len(calls) == 5 and len(secrets) == 1 and calls[4] is secrets[0])
+    need("the four protection reads, exact argv and kwargs",
+         [c[0] for c in calls[:4]] == READS and all(c[1] == API_KWARGS for c in calls[:4]))
     need("the dictated gh secret set argv", bool(secrets) and secrets[0][0] == SECRET_ARGV)
     need("the secret set kwargs, exactly, and the input",
          bool(secrets) and "input" in secrets[0][1]
@@ -361,6 +392,27 @@ def drill_keygen_refuses(tmp):
             {"id": 4, "node_id": "n4", "name": "main", "type": "branch"}]}, "branch policies"),
         "an environment that is not an object": ([1, 2], None, "admins can bypass"),
     }
+    unruled = {
+        "no tag ruleset": (canned_rulesets()[:1], None, "no active tag ruleset"),
+        "the tag ruleset only evaluated": (canned_rulesets({"enforcement": "evaluate"}), None,
+                                           "no active tag ruleset"),
+        "a ruleset list that is not a list": ({"id": 11}, None, "no active tag ruleset"),
+        "another tag pattern": (None, canned_ruleset(conditions={"ref_name": {
+            "exclude": [], "include": ["refs/tags/release-*"]}}), "the v* pattern"),
+        "an exclusion": (None, canned_ruleset(conditions={"ref_name": {
+            "exclude": ["refs/tags/v0*"], "include": ["refs/tags/v*"]}}), "the v* pattern"),
+        "no conditions": (None, canned_ruleset(conditions=None), "the v* pattern"),
+        "deletion allowed": (None, canned_ruleset(rules=[{"type": "creation"}, {"type": "update"}]),
+                             "creation, update and deletion"),
+        "a write role may bypass": (None, canned_ruleset(bypass_actors=[
+            {"actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always"},
+            {"actor_id": 4, "actor_type": "RepositoryRole", "bypass_mode": "always"}]),
+            "admin-only bypass"),
+        "a bypass list that is absent": (None, {k: v for k, v in canned_ruleset().items()
+                                                if k != "bypass_actors"}, "admin-only bypass"),
+    }
+    unruled_text = ("release_sign: the release tags are not held by a ruleset as docs/release.md "
+                    "sets it (%s)")
     gh_failed = {
         "the environment missing": (FakeGh(environment=(1, "", "gh: Not Found (HTTP 404)\nmore")),
                                     "release_sign: gh api failed: gh: Not Found (HTTP 404)"),
@@ -368,9 +420,13 @@ def drill_keygen_refuses(tmp):
                        "release_sign: gh is not installed or cannot run"),
         "a non-JSON answer": (FakeGh(policies=(0, "<html>", "")),
                               "release_sign: gh api failed (the answer is not JSON)"),
+        "the ruleset read failed": (FakeGh(ruleset=(1, "", "gh: Not Found (HTTP 404)")),
+                                    "release_sign: gh api failed: gh: Not Found (HTTP 404)"),
     }
     cases = [(name, FakeGh(env, pol), UNPROTECTED % check_name)
              for name, (env, pol, check_name) in refusals.items()]
+    cases += [(name, FakeGh(rulesets=lst, ruleset=one), unruled_text % check_name)
+              for name, (lst, one, check_name) in unruled.items()]
     cases += [(name, fake, text) for name, (fake, text) in gh_failed.items()]
     for name, fake, text in cases:
         r = drive(rs.cmd_keygen, fake, table)
@@ -385,7 +441,7 @@ def drill_keygen_secret(tmp):
     r = drive(rs.cmd_keygen, fake, table)
     check("keygen secret fails: the message is dictated and holds nothing else",
           r["rc"] == 3 and r["out"] == "release_sign: gh secret set failed (exit 1)\n"
-          and r["stderr"] == "" and len(fake.calls) == 3)
+          and r["stderr"] == "" and len(fake.calls) == 5)
     fake = FakeGh(secret=lambda text: FileNotFoundError("gh"))
     r = drive(rs.cmd_keygen, fake, table)
     check("keygen secret set cannot run: exit 3",
@@ -408,7 +464,7 @@ def drill_keygen_readback(tmp):
         rs.read_rows = original
     check("keygen row read back: a row that does not is exit 3 and no secret is set",
           r["rc"] == 3 and r["out"] == "release_sign: the new row did not read back\n"
-          and r["stderr"] == "" and not fake.secret_calls() and len(fake.calls) == 2
+          and r["stderr"] == "" and not fake.secret_calls() and len(fake.calls) == 4
           and r["left"] == [])
 
 

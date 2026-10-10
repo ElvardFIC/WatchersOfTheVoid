@@ -14,8 +14,9 @@ the checksum).
 The zip also carries `mod/dlls/main.dll.sig`, the release signature, made in the publish job
 with the `release` environment's key. The `release` environment holds the release key. It has
 the maintainer as its required reviewer, with self-review allowed and administrators unable to
-bypass it, and it deploys only to tags `v*` and the branch `main`; `release_sign.py keygen`
-refuses to set a key into an environment protected any other way.
+bypass it, and it deploys only to tags `v*` and the branch `main`. A tag ruleset lets only an
+administrator create, move or delete a `v*` tag, since such a tag reaches the key. `release_sign.py
+keygen` refuses to set a key unless the environment and the ruleset both stand as described here.
 
 Build numbers are minted in one place, the append-only, human-written ledger
 `.github/ci/LEDGER.tsv`. A tag or a release page is a deletable platform object and a drift

@@ -1,6 +1,7 @@
-# release-core -- the release lane's brain, ALWAYS executed from main
-# (the trampoline calls it @main; the recovery dispatch runs main's YAML by
-# construction). THIN ORCHESTRATOR (design D3): every refusal / lint /
+# release-core -- the release lane's brain, executed from main: the trampoline
+# calls it @main, and a recovery dispatch runs the YAML of the ref it is
+# dispatched on, which the ritual picks as main (the release environment admits
+# only main and the admin-only v* tags). THIN ORCHESTRATOR (design D3): every refusal / lint /
 # predicate decision lives in .github/ci/*.ps1 executed from the MAIN
 # checkout (checkout#2) -- the self-check below guards the JUDGE, not just the
 # evidence. The run logs workflow_ref/workflow_sha as evidence (not a gate --

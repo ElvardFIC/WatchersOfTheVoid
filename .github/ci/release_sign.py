@@ -426,6 +426,50 @@ def _check_protection(environment, policies):
         raise _unprotected("branch policies")
 
 
+# The release environment admits the v* tags, so whoever may create or move one reaches the key.
+# Only an admin may: an active tag ruleset over refs/tags/v* with no exclusion, refusing creation,
+# update and deletion to all but the admin repository role (actor 5, as the live ruleset reads).
+_TAG_PATTERN = "refs/tags/v*"
+_TAG_RULES = {"creation", "update", "deletion"}
+_ADMIN_ROLE = ("RepositoryRole", 5)
+
+
+def _unruled(check):
+    return SignError("protection", 3, "release_sign: the release tags are not held by a ruleset as "
+                     "docs/release.md sets it (%s)" % check)
+
+
+def _tag_ruleset_flaw(ruleset):
+    """Why one ruleset does not hold the release tags, or None when it does."""
+    conditions = ruleset.get("conditions") if isinstance(ruleset, dict) else None
+    names = conditions.get("ref_name") if isinstance(conditions, dict) else None
+    if not (isinstance(names, dict) and isinstance(names.get("include"), list)
+            and _TAG_PATTERN in names["include"] and names.get("exclude") == []):
+        return "the v* pattern"
+    rules = ruleset.get("rules")
+    kinds = {r.get("type") for r in rules if isinstance(r, dict)} if isinstance(rules, list) else set()
+    if not _TAG_RULES <= kinds:
+        return "creation, update and deletion"
+    bypass = ruleset.get("bypass_actors")
+    if not isinstance(bypass, list) or any(
+            not isinstance(a, dict) or (a.get("actor_type"), a.get("actor_id")) != _ADMIN_ROLE
+            for a in bypass):
+        return "admin-only bypass"
+    return None
+
+
+def _check_tag_ruleset(runner, repo):
+    listed = _gh_api(runner, "repos/%s/rulesets" % repo)
+    ids = [r.get("id") for r in listed if isinstance(r, dict) and r.get("target") == "tag"
+           and r.get("enforcement") == "active"] if isinstance(listed, list) else []
+    ids = [i for i in ids if isinstance(i, int) and not isinstance(i, bool)]
+    if not ids:
+        raise _unruled("no active tag ruleset")
+    flaws = [_tag_ruleset_flaw(_gh_api(runner, "repos/%s/rulesets/%d" % (repo, i))) for i in ids]
+    if None not in flaws:
+        raise _unruled(flaws[0])
+
+
 def _key_id(text):
     """The strict parse `sign --build` applies to its number: plain ASCII digits, no sign, no
     underscore, no leading zero."""
@@ -435,8 +479,9 @@ def _key_id(text):
 
 
 def cmd_keygen(args, runner, out):
-    """The order is the custody: refuse an unprotected environment, then make the key, check its
-    row, hand the seed to gh's standard input, and print the row. No file is written."""
+    """The order is the custody: refuse an unprotected environment or unheld release tags, then
+    make the key, check its row, hand the seed to gh's standard input, and print the row. No file
+    is written."""
     if _REPO.fullmatch(args.repo) is None:
         raise SignError("usage", 2, "release_sign: --repo must be owner/name")
     rows = _table_rows()
@@ -449,6 +494,7 @@ def cmd_keygen(args, runner, out):
     environment = _gh_api(runner, base)
     policies = _gh_api(runner, base + "/deployment-branch-policies")
     _check_protection(environment, policies)
+    _check_tag_ruleset(runner, args.repo)
 
     seed = os.urandom(32)
     pub = ed25519_public(seed)
