@@ -302,8 +302,11 @@ inline constexpr size_t FFieldClass_Name = 0x00;          // FName
 inline constexpr size_t FProperty_TypeObject = 0x78;      // the property's type object (see above)
 inline constexpr size_t FField_Next = 0x20;               // FField*
 inline constexpr size_t FField_NamePrivate = 0x28;        // FName
-inline constexpr size_t FProperty_ElementSize = 0x38;     // int32
-inline constexpr size_t FProperty_ArrayDim = 0x3C;        // int32
+// ArrayDim first, then ElementSize (RE-UE4SS MemberVariableLayout_4_27_Template.ini [FProperty]). The two
+// were named the other way round until 2026-10-11; every reader multiplied them, so it never showed, until
+// script_fingerprint read ElementSize alone and every parameter measured 1 byte.
+inline constexpr size_t FProperty_ArrayDim = 0x38;        // int32
+inline constexpr size_t FProperty_ElementSize = 0x3C;     // int32
 inline constexpr size_t FProperty_PropertyFlags = 0x40;   // uint64
 inline constexpr size_t FProperty_Offset_Internal = 0x4C; // int32 (byte offset in the frame)
 
