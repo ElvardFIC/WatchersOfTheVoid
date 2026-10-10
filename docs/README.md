@@ -36,6 +36,7 @@ Then, if you are going to touch code:
 | [testing.md](testing.md) | The test rig, the launcher and its scenarios, the in-game harness, and the gates a push runs |
 | [release.md](release.md) | How a build becomes a release, and the gates it must pass |
 | [versioning.md](versioning.md) | The version pair two peers must match, the files a game update touches, how a broken build says so, and the port runbook |
+| [bytecode-fingerprint.md](bytecode-fingerprint.md) | How the mod tells that a game function it depends on changed its logic: the canonical text of Blueprint bytecode and its fingerprints |
 | [votv-ui-style.md](votv-ui-style.md) | The game's own widget style, measured; binding for anything drawn inside the game's UI |
 
 Before writing any entity-sync, hook or spawn-catch code, read these three:

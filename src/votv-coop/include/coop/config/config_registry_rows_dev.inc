@@ -27,9 +27,9 @@ CFG_FLAG(spawn_menu_unlock, "spawn_menu_unlock", "dev", false, nullptr,
     "Unlock the native spawn menu while in a coop session.")
 CFG_FLAG(fingerprint_capture, "fingerprint_capture", "dev", false, "VOTVCOOP_FINGERPRINT_CAPTURE",
     "Port tool: once gameplay is loaded, write every function of every loaded Blueprint class with its "
-    "canonical bytecode text and fingerprint to multivoid-fingerprints-capture.txt beside the exe -- the "
-    "input of the agreement test against tools/port/bp_fingerprint.py and of a build's reference table "
-    "(docs/VERSION_PORT_DRILL_ARC.md section 7). A few seconds of work at world load; off by default.")
+    "canonical bytecode text and fingerprint to multivoid-fingerprints-capture.txt beside the exe: the "
+    "mod's half of the comparison with the text rendered from the cooked assets, and the native half of a "
+    "build's reference table (docs/bytecode-fingerprint.md). About a second of work at world load; off by default.")
 ***REMOVED***
     ***REMOVED***
     "mainGamemode BeginPlay scans Binaries for *.dll and Content/Paks for *.pak, then pops 'Modded "

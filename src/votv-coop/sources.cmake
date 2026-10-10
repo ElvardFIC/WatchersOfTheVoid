@@ -39,6 +39,7 @@ set(VOTVCOOP_SOURCES
     src/ue_wrap/engine/spawn_gate.cpp
     src/ue_wrap/engine/actor_end_play.cpp
     src/ue_wrap/core/ufunction_hook.cpp
+    src/ue_wrap/core/script_bytecode.cpp
     src/ue_wrap/core/script_fingerprint.cpp
     src/ue_wrap/core/script_gate.cpp
     src/ue_wrap/core/script_loop.cpp

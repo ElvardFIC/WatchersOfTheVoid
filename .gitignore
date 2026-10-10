@@ -241,6 +241,7 @@ docs/THUNDERSTORE.md
 # free and safe by default. The files that left the tree stay on disk; history is not rewritten.
 docs/**
 !docs/architecture.md
+!docs/bytecode-fingerprint.md
 !docs/code-map.md
 !docs/coop-dispatch-visibility.md
 !docs/coop-entity-expression-map.md

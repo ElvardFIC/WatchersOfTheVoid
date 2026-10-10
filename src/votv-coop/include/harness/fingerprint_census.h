@@ -1,11 +1,11 @@
 // harness/fingerprint_census.h -- the bytecode-fingerprint census of the functions the mod depends on
-// (docs/VERSION_PORT_DRILL_ARC.md systems 2 and 3, VP-1). Runs once gameplay is loaded, beside the SDK
-// check: every function the mod watches or hooks is fingerprinted on the running game and compared
-// with the fingerprint of the build the mod was made for.
+// (docs/bytecode-fingerprint.md). Runs once gameplay is loaded, beside the SDK check: every function the
+// mod watches or hooks is fingerprinted on the running game and compared with the fingerprint of the
+// build the mod was made for.
 //
-// [dev] fingerprint_capture writes every function of every loaded Blueprint class (and the census
-// rows) with its canonical text to multivoid-fingerprints-capture.txt beside the exe: the input of the
-// agreement test against tools/port/bp_fingerprint.py, and of the reference table a port generates.
+// [dev] fingerprint_capture writes every function of every loaded Blueprint class with its canonical
+// text to multivoid-fingerprints-capture.txt beside the exe: the mod's half of the comparison with the
+// text rendered from the cooked assets, and the native half of a build's reference table.
 
 #pragma once
 

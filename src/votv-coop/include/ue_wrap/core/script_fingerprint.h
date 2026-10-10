@@ -1,15 +1,13 @@
-// ue_wrap/core/script_fingerprint.h -- a game function as canonical, name-resolved text and its 64-bit
-// fingerprint, so a port can ask "is this the function the mod was built against?" (the version port
-// arc, docs/VERSION_PORT_DRILL_ARC.md system 2; the canonical form is specified in its section 7).
+// ue_wrap/core/script_fingerprint.h -- a game function as canonical, name-resolved text and two 64-bit
+// fingerprints, so a port can ask "is this the function the mod was built against?" The canonical form is
+// specified in docs/bytecode-fingerprint.md.
 //
-// A Blueprint function is read from its in-memory bytecode (UStruct::Script) by a walker over every
-// UE4.27 opcode, in the layout UAssetAPI (MIT) documents for the iCode stream: a pointer is 8 bytes,
-// an FScriptName 12. Names, objects and properties are rendered as lowercase text, never as indices
-// or addresses; statements are written in flow order with code offsets as labels; an event stub is
-// followed into its ubergraph; a frame's own slots are renamed by first appearance. The offline tool
-// tools/port/bp_fingerprint.py renders the same text from the cooked asset, and the two are held
-// equal by a measured agreement test. A native function has no script: its text is the signature line.
-// Engine-wrapper layer (principle 7): no gameplay or network logic.
+// A Blueprint function is read from its in-memory bytecode (UStruct::Script) by a decoder of every UE4.27
+// opcode (script_bytecode.h). Names, objects and properties are written as lowercase text, never as
+// indices or addresses; statements in flow order, code offsets as labels; an event stub is followed into
+// its ubergraph; a frame's own slots are renamed by first appearance. The same text can be rendered from
+// the cooked asset, and the two renderings are compared function by function. A native function has no
+// script: its text is the signature line. Engine-wrapper layer (principle 7): no gameplay or network logic.
 
 #pragma once
 
@@ -28,9 +26,9 @@ struct Result {
     std::string problem;         // the first problem met, empty when ok
 };
 
-// Fingerprint one UFunction. Game thread: names render through FName::ToString. Not hot -- a census
-// pass at boot reads a few hundred functions once. A fault while reading is absorbed and reported in
-// `problem`.
+// Fingerprint one UFunction. Game thread: names render through FName::ToString. A census reads a few
+// hundred functions once (about 45 us each, measured over every loaded Blueprint function). A fault while
+// reading is absorbed and reported in `problem`.
 Result Of(void* ufunction);
 
 // The function's path as the canonical text writes objects: its outer chain without the package,

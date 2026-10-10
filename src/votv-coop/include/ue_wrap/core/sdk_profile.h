@@ -294,7 +294,9 @@ inline constexpr size_t UObject_GetWorld_VtblOff = 0x160;      // UObject::GetWo
 // bool saying it is a UObject), and the type object a typed property carries first after FProperty
 // (PropertyClass / Struct / Enum / SignatureFunction / an Array's Inner; an EnumProperty's Enum and a
 // Map's value one slot later): RE-UE4SS MemberVariableLayout_4_27_Template.ini [FField] [FFieldClass]
-// [FObjectPropertyBase] [FStructProperty] [FEnumProperty] [FMapProperty]. script_fingerprint reads them.
+// [FObjectPropertyBase] [FStructProperty] [FEnumProperty] [FMapProperty]. The template sizes Owner as an
+// FFieldVariant of 0x10 at 0x10; the bool in its second half is the engine's, confirmed by every owner
+// chain the fingerprint walked rendering as the cooked asset names it. script_fingerprint reads them.
 inline constexpr size_t FField_ClassPrivate = 0x08;       // FFieldClass*
 inline constexpr size_t FField_Owner = 0x10;              // FField* or UObject*
 inline constexpr size_t FField_OwnerIsUObject = 0x18;     // bool
@@ -303,7 +305,7 @@ inline constexpr size_t FProperty_TypeObject = 0x78;      // the property's type
 inline constexpr size_t FField_Next = 0x20;               // FField*
 inline constexpr size_t FField_NamePrivate = 0x28;        // FName
 // ArrayDim first, then ElementSize (RE-UE4SS MemberVariableLayout_4_27_Template.ini [FProperty]). The two
-// were named the other way round until 2026-10-11; every reader multiplied them, so it never showed, until
+// were once named the other way round; every reader multiplied them, so it never showed, until
 // script_fingerprint read ElementSize alone and every parameter measured 1 byte.
 inline constexpr size_t FProperty_ArrayDim = 0x38;        // int32
 inline constexpr size_t FProperty_ElementSize = 0x3C;     // int32
