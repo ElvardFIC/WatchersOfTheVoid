@@ -8,7 +8,7 @@
 //! stops ONE source from filling the whole pool; the address is coarsened by `ip_bucket` (a full
 //! IPv4 address, an IPv6 /64), like every other per-source control in this crate.
 
-use crate::common::{ip_bucket, log};
+use crate::common::{env_int, env_str, ip_bucket, log};
 use std::collections::{HashMap, VecDeque};
 use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
@@ -113,12 +113,19 @@ impl Pool {
 /// MTA's flood guard for its HTTP server, at both servers' accepts: `CHTTPD::ShouldAllowConnection`
 /// keeps a `CConnectHistory` of 20 connects per 10 s per address and ignores an address that goes
 /// past it for a minute (CHTTPD.cpp:40, CMainConfig.cpp:66). A source that churns connections then
-/// costs no pool slot and no TLS handshake. A client of ours opens three at once at most (a browser
-/// open), and a heartbeat every 30 s. The same shape guards game joins (coop/net/connect_history.cpp).
+/// costs no pool slot and no TLS handshake. A browser opens three connections and refreshes every
+/// 5 s, a host heartbeats every 30 s, so 20 per 10 s admits about ten open browsers behind one
+/// address; raise it for a known shared address, or exclude it. Both are settings, as in MTA
+/// (`httpdosthreshold`, `httpdosexclude`, CMainConfig.cpp:247-252). The same shape guards game
+/// joins (coop/net/connect_history.cpp).
 pub struct ConnectHistory {
+    // 0 turns the guard off.
     max: usize,
     period: Duration,
     ban: Duration,
+    max_tracked: usize,
+    // `ip_bucket` keys of the addresses that are always allowed and never tracked.
+    exclude: Vec<String>,
     state: Mutex<History>,
 }
 
@@ -127,6 +134,8 @@ struct History {
     per_addr: HashMap<String, Recent>,
     last_sweep: Option<Instant>,
     refusals: Refusals,
+    // Newcomers admitted untracked because the table was full.
+    untracked: Refusals,
 }
 
 #[derive(Default)]
@@ -140,27 +149,72 @@ struct Recent {
 /// it): refusing it instead would let a source-diverse flood lock every newcomer out.
 const MAX_TRACKED: usize = 10_000;
 
-/// The one history each server process keeps, for every listener it runs.
-pub static CONNECTS: LazyLock<ConnectHistory> =
-    LazyLock::new(|| ConnectHistory::new(20, Duration::from_secs(10), Duration::from_secs(60)));
+/// The flood guard's default: connects allowed per period. `COOP_CONNECT_FLOOD_MAX` overrides it.
+const DEFAULT_FLOOD_MAX: i64 = 20;
+
+/// The one history each server process keeps, for every listener it runs. Built from
+/// `COOP_CONNECT_FLOOD_MAX` (0 turns the guard off) and `COOP_CONNECT_FLOOD_EXCLUDE` (a comma
+/// separated list of addresses that are never limited) the first time it is used.
+pub static CONNECTS: LazyLock<ConnectHistory> = LazyLock::new(|| {
+    let max = usize::try_from(env_int("COOP_CONNECT_FLOOD_MAX", DEFAULT_FLOOD_MAX))
+        .unwrap_or(DEFAULT_FLOOD_MAX as usize);
+    ConnectHistory::new(max, Duration::from_secs(10), Duration::from_secs(60), MAX_TRACKED)
+        .with_exclude(&env_str("COOP_CONNECT_FLOOD_EXCLUDE", ""))
+});
 
 impl ConnectHistory {
-    pub fn new(max: usize, period: Duration, ban: Duration) -> ConnectHistory {
-        ConnectHistory { max, period, ban, state: Mutex::new(History::default()) }
+    pub fn new(max: usize, period: Duration, ban: Duration, max_tracked: usize) -> ConnectHistory {
+        ConnectHistory {
+            max,
+            period,
+            ban,
+            max_tracked,
+            exclude: Vec::new(),
+            state: Mutex::new(History::default()),
+        }
+    }
+
+    /// Never limit or track the addresses in `list`, comma separated.
+    pub fn with_exclude(mut self, list: &str) -> ConnectHistory {
+        self.exclude = list.split(',').map(str::trim).filter(|a| !a.is_empty()).map(ip_bucket).collect();
+        self
     }
 
     /// Whether a connect from `ip` at `now` is admitted. The one past `max` inside `period` is
-    /// refused and starts the address's ignored minute, logged once.
+    /// refused and starts the address's ignored minute, logged once. The key is `ip_bucket` (an
+    /// IPv6 /64), where the mod's own port keys the full address.
     pub fn allow(&self, ip: &str, now: Instant) -> bool {
+        if self.max == 0 {
+            return true;
+        }
         let key = ip_bucket(ip);
+        if self.exclude.contains(&key) {
+            return true;
+        }
+        let (allowed, line) = self.decide(key, ip, now);
+        // The line is written after the lock is gone: a log write is a syscall.
+        if let Some(line) = line {
+            log(&line);
+        }
+        allowed
+    }
+
+    /// `allow`'s decision under the lock, and the log line it owes, if any.
+    fn decide(&self, key: String, ip: &str, now: Instant) -> (bool, Option<String>) {
         let mut h = self.state.lock().unwrap_or_else(|e| e.into_inner());
         self.sweep(&mut h, now);
-        if !h.per_addr.contains_key(&key) && h.per_addr.len() >= MAX_TRACKED {
-            return true;
+        if !h.per_addr.contains_key(&key) && h.per_addr.len() >= self.max_tracked {
+            // MTA's map is unbounded (CConnectHistory.h:14); this one is bounded for the unit's
+            // memory and fails open, logged once per line-second.
+            let line = note(&mut h.untracked, now).map(|n| {
+                let tail = if n > 1 { format!(" ({n} since the last line)") } else { String::new() };
+                format!("[{ip}] connect history full ({} addresses): admitted untracked{tail}", self.max_tracked)
+            });
+            return (true, line);
         }
         let recent = h.per_addr.entry(key).or_default();
         if recent.ignored_until.is_some_and(|until| now < until) {
-            return false;
+            return (false, None);
         }
         recent.ignored_until = None;
         while recent.connects.front().is_some_and(|t| now.duration_since(*t) >= self.period) {
@@ -168,20 +222,24 @@ impl ConnectHistory {
         }
         if recent.connects.len() < self.max {
             recent.connects.push_back(now);
-            return true;
+            return (true, None);
         }
+        // MTA keeps the stamps through the ban and can re-ban on them in the sweep gap
+        // (CConnectHistory.cpp:51-57,107-111); the stamps are cleared here so a ban does not.
         recent.connects.clear();
         recent.ignored_until = Some(now + self.ban);
-        if let Some(n) = note(&mut h.refusals, now) {
+        // The address's open connections are left alone: the pools bound them, where MTA's EHS
+        // stops them (ehs.cpp:977-991) and a registered relay peer must not pay for a neighbour.
+        let line = note(&mut h.refusals, now).map(|n| {
             let tail = if n > 1 { format!(" ({n} addresses since the last line)") } else { String::new() };
-            log(&format!(
+            format!(
                 "[{ip}] connect flood: more than {} inside {} s, ignored for {} s{tail}",
                 self.max,
                 self.period.as_secs(),
                 self.ban.as_secs()
-            ));
-        }
-        false
+            )
+        });
+        (false, line)
     }
 
     /// At most once a second, forget the addresses that are neither ignored nor recent.
@@ -234,7 +292,7 @@ mod tests {
 
     #[test]
     fn a_connect_flood_is_ignored_for_the_ban_and_alone() {
-        let h = ConnectHistory::new(3, Duration::from_secs(10), Duration::from_secs(60));
+        let h = ConnectHistory::new(3, Duration::from_secs(10), Duration::from_secs(60), 100);
         let t0 = Instant::now();
         assert!((0..3).all(|i| h.allow("203.0.113.7", t0 + Duration::from_millis(i))), "under the cap");
         assert!(!h.allow("203.0.113.7", t0 + Duration::from_secs(1)), "the fourth inside the period passed");
@@ -245,13 +303,43 @@ mod tests {
 
     #[test]
     fn connects_age_out_of_the_period() {
-        let h = ConnectHistory::new(2, Duration::from_secs(10), Duration::from_secs(60));
+        let h = ConnectHistory::new(2, Duration::from_secs(10), Duration::from_secs(60), 100);
         let t0 = Instant::now();
         assert!(h.allow("192.0.2.1", t0) && h.allow("192.0.2.1", t0 + Duration::from_secs(5)));
         assert!(h.allow("192.0.2.1", t0 + Duration::from_secs(11)), "a connect older than the period still counted");
         // The sweep forgets an address with nothing recent and no ban.
         assert!(h.allow("192.0.2.9", t0 + Duration::from_secs(30)));
         assert_eq!(h.tracked(), 1, "a stale address outlived the sweep");
+    }
+
+    #[test]
+    fn an_excluded_address_is_allowed_past_the_max_and_leaves_no_entry() {
+        let h = ConnectHistory::new(2, Duration::from_secs(10), Duration::from_secs(60), 100)
+            .with_exclude(" 192.0.2.77 , ,2001:db8:1:2::5");
+        let t0 = Instant::now();
+        assert!((0..10).all(|_| h.allow("192.0.2.77", t0)), "an excluded address was limited");
+        assert!((0..10).all(|_| h.allow("2001:db8:1:2::ffff", t0)), "an excluded /64 was limited");
+        assert_eq!(h.tracked(), 0, "an excluded address was tracked");
+        assert!(h.allow("192.0.2.1", t0) && h.allow("192.0.2.1", t0));
+        assert!(!h.allow("192.0.2.1", t0), "the exclude list spared another address");
+    }
+
+    #[test]
+    fn a_max_of_zero_allows_everything() {
+        let h = ConnectHistory::new(0, Duration::from_secs(10), Duration::from_secs(60), 100);
+        let t0 = Instant::now();
+        assert!((0..100).all(|_| h.allow("192.0.2.1", t0)), "the guard was on at 0");
+        assert_eq!(h.tracked(), 0, "a disabled guard tracked an address");
+    }
+
+    #[test]
+    fn past_the_tracked_cap_a_newcomer_is_allowed_and_not_tracked() {
+        let h = ConnectHistory::new(1, Duration::from_secs(10), Duration::from_secs(60), 2);
+        let t0 = Instant::now();
+        assert!(h.allow("192.0.2.1", t0) && h.allow("192.0.2.2", t0));
+        assert!((0..5).all(|_| h.allow("192.0.2.3", t0)), "a newcomer past the cap was limited");
+        assert_eq!(h.tracked(), 2, "a newcomer past the cap was tracked");
+        assert!(!h.allow("192.0.2.1", t0), "a tracked address escaped its limit");
     }
 
     #[test]

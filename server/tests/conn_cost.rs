@@ -124,7 +124,7 @@ fn connection_costs() {
     }
 
     // One tracked address that connected 20 times, the flood guard's per-address cost.
-    let history = ConnectHistory::new(20, Duration::from_secs(10), Duration::from_secs(60));
+    let history = ConnectHistory::new(20, Duration::from_secs(10), Duration::from_secs(60), 10_000);
     let now = Instant::now();
     let ((), tracked) = held(|| {
         for _ in 0..20 {
@@ -135,7 +135,7 @@ fn connection_costs() {
 
     // The same per address once the table is full of them: what the tracked cap multiplies.
     const MANY: usize = 1792;
-    let history = ConnectHistory::new(20, Duration::from_secs(10), Duration::from_secs(60));
+    let history = ConnectHistory::new(20, Duration::from_secs(10), Duration::from_secs(60), 10_000);
     let ((), many) = held(|| {
         for a in 0..MANY {
             let ip = format!("10.{}.{}.{}", a >> 16, (a >> 8) & 255, a & 255);

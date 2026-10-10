@@ -77,7 +77,9 @@ admit a connection at accept, before its TLS handshake, into a pool with a total
 cap, and one deadline bounds the handshake and everything read before the answer (on the relay,
 before registration). Filling a pool takes tens of addresses (32 for the master, 32 and 64 for the
 relay's two), each connection's memory is bounded so a full pool fits the service's limit, and an
-address that makes more than 20 connects inside ten seconds is ignored for a minute.
+address that makes more than 20 connects inside ten seconds is ignored for a minute
+(`COOP_CONNECT_FLOOD_MAX` sets the 20, 0 turns it off; `COOP_CONNECT_FLOOD_EXCLUDE` lists
+addresses that are never limited).
 
 ### Direct and brokered
 
