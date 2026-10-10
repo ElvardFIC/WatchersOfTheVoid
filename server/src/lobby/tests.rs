@@ -1,6 +1,6 @@
 //! The lobby domain's unit tests.
 
-use super::{build_claim_from_body, host_listed, LobbyLinks};
+use super::{build_claim_from_body, h_host, host_listed, Lobby, LobbyLinks, MasterState, MAX_LOBBIES_GLOBAL};
 use crate::common::{build_claim_shape_ok, identity_shape_ok};
 
 #[test]
@@ -94,4 +94,21 @@ fn a_host_body_lists_unless_it_says_not() {
     assert!(!host_listed(&serde_json::json!({"listed": false})));
     assert!(host_listed(&serde_json::json!({"listed": true})));
     assert!(host_listed(&serde_json::json!({})));
+}
+
+#[test]
+fn a_refused_create_at_the_global_cap_evicts_nothing() {
+    // A full map: every lobby from its own address, so no per-address cap is near.
+    let mut state = MasterState::new();
+    for i in 0..MAX_LOBBIES_GLOBAL {
+        let lo = Lobby::new(&format!("10.{}.{}.1", i / 250, i % 250));
+        state.lobby_by_public.insert(lo.lobby_id.clone(), lo.session_id.clone());
+        state.lobbies.insert(lo.session_id.clone(), lo);
+    }
+    let before: Vec<String> = state.lobbies.keys().cloned().collect();
+    // No identity: refused with a 400 after the version gate passes the empty pair.
+    let (status, _) = h_host(&mut state, "198.51.100.7", &serde_json::json!({}));
+    assert_eq!(status, 400);
+    assert_eq!(state.lobbies.len(), MAX_LOBBIES_GLOBAL, "a refused create evicted a live lobby");
+    assert!(before.iter().all(|sid| state.lobbies.contains_key(sid)));
 }

@@ -350,7 +350,6 @@ pub fn h_host(state: &mut MasterState, ip: &str, body: &Value) -> (u16, Value) {
     if lobbies_per_ip(state, ip) >= MAX_LOBBIES_PER_IP {
         return (429, json!({"error": "too many lobbies for this address"}));
     }
-    evict_if_full(state);
 
     let mut lo = Lobby::new(ip);
     let name = clamp_field(body, "name", MAX_NAME);
@@ -412,6 +411,9 @@ pub fn h_host(state: &mut MasterState, ip: &str, body: &Value) -> (u16, Value) {
     let conn = lo.conn.clone();
     let is_direct = conn == "direct";
 
+    // Room is made only for a create that passed every check above: a refused one must cost
+    // nobody else their lobby.
+    evict_if_full(state);
     state.lobby_by_public.insert(lobby_id.clone(), session_id.clone());
     state.lobbies.insert(session_id.clone(), lo);
     log(&format!(
