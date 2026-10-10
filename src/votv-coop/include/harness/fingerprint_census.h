@@ -15,8 +15,13 @@ namespace harness::fingerprint_census {
 // posted with sdk_check::Run; the rows are checked over the next frames by Tick.
 void Run();
 
-// The frame tail's entry (harness::pump::TickFrameTail): a 2 ms slice of a pass while one runs, then a
-// re-try of the rows whose class was not loaded when the class set moves or every 5 s; two reads idle.
+// A 2 ms slice of a pass while one runs, then a re-try of the rows whose class was not loaded when the
+// class set moves or every 5 s. A posted task of its own (harness/session_runtime posts it when Due),
+// so a fault in another lane's per-frame work cannot keep the census from finishing. Game thread.
 void Tick();
+
+// Is a Tick due: every frame while a pass runs, once a second while rows wait for their class, never
+// when idle. Any thread (the runtime thread asks before posting).
+bool Due();
 
 }  // namespace harness::fingerprint_census

@@ -16,7 +16,6 @@
 #include "coop/session/join_progress.h"
 #include "coop/session/net_pump.h"
 #include "coop/session/shutdown.h"
-#include "harness/fingerprint_census.h"
 
 #include <atomic>
 #include <cstdint>
@@ -92,8 +91,6 @@ void TickFrameTail() {
     coop::dev::class_lifetime_probe::Tick();
     // [dev] Every keyed Init body the script gate sees; a latched read when off.
     coop::dev::init_seam_probe::Tick();
-    // The fingerprint census's slices and re-tries; two flag reads when idle.
-    harness::fingerprint_census::Tick();
     // [dev] The walking mannequin's spawn sequence, in session or not; a single atomic read when idle.
     coop::dev::mannequin_drill::TickFrame();
     TickShutdownHooks();

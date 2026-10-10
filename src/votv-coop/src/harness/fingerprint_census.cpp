@@ -17,6 +17,7 @@
 #include "ue_wrap/facts/function_row.h"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstdio>
 #include <cstring>
@@ -98,6 +99,13 @@ bool                  g_settledMore = false;  // a re-try settled a row: the rep
 uint64_t              g_classSet = 0;
 Clock::time_point     g_lastTry;
 double                g_ms = 0;            // the pass's measured work
+// When the next Tick is due, for the runtime thread that posts it (Due): 0 now (a pass runs), a
+// steady-clock millisecond while unsettled rows wait, -1 never (idle).
+std::atomic<int64_t>  g_dueMs{-1};
+
+int64_t NowMs() {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now().time_since_epoch()).count();
+}
 std::string           g_red;               // [dev] fingerprint_census_red: the row whose reference is falsified
 
 std::string Narrow(const wchar_t* s) {
@@ -383,6 +391,7 @@ void Slice() {
     g_firstPass = false;
     g_settledMore = false;
     g_waiting = std::any_of(g_rows.begin(), g_rows.end(), [](const RowState& s) { return !s.settled; });
+    g_dueMs.store(g_waiting ? NowMs() + 1000 : -1, std::memory_order_release);
     g_classSet = OI::ClassSetVersion();
     g_lastTry = Clock::now();
 }
@@ -473,6 +482,7 @@ void Run() {
     g_anyScanned = false;
     g_scan.begun = false;
     g_running = !g_rows.empty();
+    g_dueMs.store(g_running ? 0 : -1, std::memory_order_release);
     g_waiting = false;
     g_firstPass = true;
     g_settledMore = false;
@@ -487,13 +497,22 @@ void Tick() {
     }
     if (!g_waiting) return;
     const uint64_t classSet = OI::ClassSetVersion();
-    if (classSet == g_classSet && Clock::now() - g_lastTry < std::chrono::seconds(5)) return;
+    if (classSet == g_classSet && Clock::now() - g_lastTry < std::chrono::seconds(5)) {
+        g_dueMs.store(NowMs() + 1000, std::memory_order_release);  // ask the class set again in a second
+        return;
+    }
     // Some row's class was not loaded: try those again now that the class set moved or the timer ran out.
     FP::BeginPass();
     g_next = 0;
     g_running = true;
+    g_dueMs.store(0, std::memory_order_release);
     g_anyScanned = false;
     g_scan.begun = false;
+}
+
+bool Due() {
+    const int64_t due = g_dueMs.load(std::memory_order_acquire);
+    return due == 0 || (due > 0 && NowMs() >= due);
 }
 
 }  // namespace harness::fingerprint_census

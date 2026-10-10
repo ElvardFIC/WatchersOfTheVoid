@@ -4,6 +4,7 @@
 
 #include "harness/session_runtime.h"
 
+#include "harness/fingerprint_census.h"
 #include "harness/join_leave.h"
 #include "harness/pump.h"
 #include "harness/world_boot.h"
@@ -561,6 +562,9 @@ void RunPlayLoop(bool bootedIntoGameplay) {
             // Always: the tail every composite runs, the menu-mode join's included.
             harness::pump::TickFrameTail();
         });
+        // The fingerprint census in a task of its own, so another lane's fault in the composite cannot
+        // starve it; posted only when a slice or a re-try is due.
+        if (harness::fingerprint_census::Due()) Post([] { harness::fingerprint_census::Tick(); });
         harness::pump::TickWatchdogs();
         if (running && ++tick % 120 == 0) {  // ~every 2 s at 60 Hz: stats for the LAN tests
             Post([] {
