@@ -55,6 +55,7 @@ jobs:
         with:
           ref: ${{ inputs.ref }}
           submodules: false
+          persist-credentials: false
           # Full clone: submodule-pinned commits + vcpkg versions DB need history.
           fetch-depth: 0
 

@@ -32,8 +32,10 @@ concurrency:
   group: release          # full serialization; a queued twin lands on ALREADY_PUBLISHED
   cancel-in-progress: false
 
+# Read-only for every job but publish, the one that writes the Release API (D7).
+# The v* tag ruleset lets only an admin create, move or delete a release tag.
 permissions:
-  contents: write         # Release API only (D7); the v* tag ruleset blocks robot tags independently
+  contents: read
 
 jobs:
   judge:
@@ -49,6 +51,7 @@ jobs:
         with:
           ref: main
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Self-check -- judge tree is origin/main HEAD
         shell: pwsh
@@ -131,6 +134,8 @@ jobs:
     needs: [judge, build]
     if: needs.judge.outputs.verdict == 'publish'
     runs-on: windows-latest
+    permissions:
+      contents: write
     # The release key is this environment's secret. The job waits here for the reviewer's
     # approval, and only after it can read the secret; the first step fails the job when the
     # environment holds none, which is after the build and the approval, not at once.
@@ -159,6 +164,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ needs.judge.outputs.tag-sha }}
+          persist-credentials: false
 
       # Only the *.ps1 predicates and the release signer are overlaid, and only from main. A tag can be
       # created by anyone who can push one; the refuse-to-publish logic must not
