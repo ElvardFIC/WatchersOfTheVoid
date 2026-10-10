@@ -19,6 +19,8 @@
 
 #include <windows.h>
 
+#include "script_gate_detail.h"
+
 #include <atomic>
 #include <cstdint>
 #include <cstring>
@@ -26,6 +28,7 @@
 #include <mutex>
 
 namespace ue_wrap::script_gate {
+using namespace detail;
 namespace {
 
 namespace GT = ue_wrap::game_thread;
@@ -43,69 +46,22 @@ std::atomic<const ExecHandler*> g_execHandlers{nullptr};  // set at the arm step
 std::atomic<bool> g_enabled{false};
 std::atomic<bool> g_countOn{false};
 
-// Fixed open-addressing tables, never rehashed and never freed: a slot's key is published last
-// with release, so the loop's reader sees an empty slot or a whole entry, and a retired watch
-// only clears its enabled flag, leaving the probe chain intact. Two key spaces, two tables: an
-// exact watch keys on the UFunction pointer, a name watch on the FName's two indices (its
-// unresolved placeholder holds a second slot). What fills a table is its KEYED slots, retired
-// ones included, so the cap counts those: at most 3/8 of a table, the load at which a miss
-// probes under two slots. A name watch, class-scoped or not, holds two keyed slots, so the name table
-// takes 384 name watches: each peer of a two-peer smoke held 163-166, eighteen of them one lane's
-// device entries, and every polled state moved onto a watch adds its own.
-constexpr int kSlotBits = 11;
-constexpr int kSlots = 1 << kSlotBits;
-constexpr int kMaxKeyed = kSlots * 3 / 8;
+}  // namespace
 
-struct Entry {
-    std::atomic<std::uint64_t> key{0};
-    std::atomic<bool> enabled{false};
-    int tag = 0;
-    PreFn pre = nullptr;
-    PostFn post = nullptr;
-    const wchar_t* name = nullptr;   // a name watch's registered literal; null for an exact one
-    const wchar_t* className = nullptr;  // a class-scoped name watch's class literal, else null
-    std::uint64_t classKey = 0;       // that class's FName key once resolved; 0 matches any owner
-    std::atomic<bool> resolved{true}; // a name watch is inert until its FName is known
-    std::atomic<bool> dead{false};    // a name watch that can never fire: a full table, or its class has no such body
-    std::atomic<bool> unjudged{false};  // a class-scoped watch whose class was not loaded when it resolved
-};
+namespace detail {
 Entry g_fnTable[kSlots];
 Entry g_nameTable[kSlots];
-std::atomic<int> g_fnWatches{0};      // enabled exact watches
-std::atomic<int> g_nameWatches{0};    // enabled name watches, placeholders included
+std::atomic<int> g_fnWatches{0};
+std::atomic<int> g_nameWatches{0};
 std::atomic<int> g_namesPending{0};
-std::atomic<int> g_unjudged{0};       // class-scoped watches waiting for their class to load
-std::uint64_t g_judgedAtClassSet = 0; // the class set's number at the last judging pass; game thread
-int g_fnKeyed = 0;                    // keyed slots, under the registration mutex
+std::atomic<int> g_unjudged{0};
+std::uint64_t g_judgedAtClassSet = 0;
+int g_fnKeyed = 0;
 int g_nameKeyed = 0;
-std::mutex g_regMutex;   // registration only; never on the call path
+std::mutex g_regMutex;
+}  // namespace detail
 
-inline std::uint64_t HashKey(std::uint64_t key) {
-    return (key >> 4) * 0x9E3779B97F4A7C15ull;
-}
-// The hash's top bits pick the slot: exactly kSlotBits of them, so every slot is a home slot.
-inline int SlotOf(std::uint64_t key) {
-    return static_cast<int>(HashKey(key) >> (64 - kSlotBits));
-}
-inline std::uint64_t NameKey(const R::FName& n) {
-    return (static_cast<std::uint64_t>(static_cast<std::uint32_t>(n.ComparisonIndex)) << 32) |
-           static_cast<std::uint32_t>(n.Number);
-}
-
-// The FName key of the class that owns `fn`'s body, its outer; read only after a class-scoped
-// entry has matched the function's name.
-inline std::uint64_t OwnerKey(void* fn) {
-    void* owner = R::OuterOf(fn);
-    return owner ? NameKey(R::NameOf(owner)) : 0;
-}
-
-// Whether entry `e`, whose key matched, is scoped to a class other than the one that owns `fn`'s
-// body. `owner` caches that class's key across the entries of one probe (0 until first read).
-inline bool OtherOwner(const Entry& e, void* fn, std::uint64_t& owner) {
-    if (e.classKey == 0) return false;
-    if (owner == 0) owner = OwnerKey(fn);
-    return owner != e.classKey;
-}
+namespace {
 
 // Counters: relaxed atomics, torn reads tolerated by the readers.
 std::atomic<unsigned long long> g_calls{0};
@@ -153,10 +109,6 @@ struct ActiveScope {
     ActiveScope(const ActiveScope&) = delete;
     ActiveScope& operator=(const ActiveScope&) = delete;
 };
-
-template <class T> inline T Read(const void* base, size_t off) {
-    T v; std::memcpy(&v, reinterpret_cast<const std::uint8_t*>(base) + off, sizeof(T)); return v;
-}
 
 // ---- the crash firewall around a consumer callback -----------------------------------------
 // SEH only in these two frames (no C++ unwind may share a frame with __try). A stack overflow is
@@ -355,14 +307,14 @@ bool IsInstalled() { return g_installed.load(std::memory_order_acquire); }
 
 const ExecHandler* ExecHandlers() { return g_execHandlers.load(std::memory_order_acquire); }
 
-namespace {
+namespace detail {
 
 // Registration under the mutex: an idempotent re-register re-enables the same slot; a new pair
 // takes the first empty slot of the probe chain. `enabled` false keeps an entry for a later re-register
 // without firing it. Returns false when the chain is full.
 bool Register(Entry* table, std::atomic<int>& count, int& keyed, std::uint64_t key, int tag,
               PreFn pre, PostFn post, const wchar_t* name, const wchar_t* className,
-              std::uint64_t classKey, bool resolved, bool enabled = true, bool unjudged = false) {
+              std::uint64_t classKey, bool resolved, bool enabled, bool unjudged) {
     for (int i = SlotOf(key), n = 0; n < kSlots; ++n, i = (i + 1) & (kSlots - 1)) {
         Entry& e = table[i];
         const std::uint64_t k = e.key.load(std::memory_order_relaxed);
@@ -404,11 +356,11 @@ bool Retire(Entry* table, std::atomic<int>& count, std::uint64_t key, int tag, P
     return false;
 }
 
-}  // namespace
+}  // namespace detail
 
 // A watch on a gate that never installed is refused, so a consumer's "live" line cannot print
 // over a seam that sees nothing; said once, since the consumers retry from their ticks.
-bool RefusedUninstalled(const char* what) {
+bool detail::RefusedUninstalled(const char* what) {
     if (g_installed.load(std::memory_order_acquire)) return false;
     static std::atomic<bool> s_said{false};
     if (!s_said.exchange(true, std::memory_order_relaxed))
@@ -416,7 +368,7 @@ bool RefusedUninstalled(const char* what) {
     return true;
 }
 
-namespace {
+namespace detail {
 
 // The exact-watch table's own entry points; the public forms take a resolved row (script_gate.h).
 bool WatchFn(void* ufunction, int tag, PreFn pre, PostFn post) {
@@ -442,111 +394,7 @@ bool UnwatchFn(void* ufunction, int tag, PreFn pre, PostFn post) {
     return Retire(g_fnTable, g_fnWatches, reinterpret_cast<std::uintptr_t>(ufunction), tag, pre, post, nullptr);
 }
 
-inline bool SameLiteral(const wchar_t* a, const wchar_t* b) {
-    return a == b || (a && b && std::wcscmp(a, b) == 0);
-}
-
-// A name watch, class-scoped when `className` is set. A name's key is its FName, unknown until the
-// game thread converts it; until then the entry is keyed on the literal's address and marked
-// unresolved, and the resolve re-keys it.
-bool WatchNameScoped(const wchar_t* className, const wchar_t* name, int tag, PreFn pre, PostFn post) {
-    if (!name || !*name || (className && !*className) || (!pre && !post)) return false;
-    if (RefusedUninstalled("WatchName")) return false;
-    std::lock_guard<std::mutex> lk(g_regMutex);
-    for (int i = 0; i < kSlots; ++i) {
-        Entry& e = g_nameTable[i];
-        if (e.key.load(std::memory_order_relaxed) != 0 && e.name && e.tag == tag && e.pre == pre &&
-            e.post == post && std::wcscmp(e.name, name) == 0 && SameLiteral(e.className, className) &&
-            !e.dead.load(std::memory_order_relaxed)) {
-            if (!e.enabled.exchange(true, std::memory_order_release)) g_nameWatches.fetch_add(1, std::memory_order_release);
-            return true;
-        }
-    }
-    const bool ok = Register(g_nameTable, g_nameWatches, g_nameKeyed, reinterpret_cast<std::uintptr_t>(name) | 1u,
-                             tag, pre, post, name, className, 0, /*resolved=*/false);
-    if (!ok) {
-        static std::atomic<bool> s_saidFull{false};
-        if (!s_saidFull.exchange(true, std::memory_order_relaxed))
-            UE_LOGE("script_gate: name watch table full (%d keyed slots) -- cannot watch %ls", kMaxKeyed, name);
-        return false;
-    }
-    g_namesPending.fetch_add(1, std::memory_order_release);
-    if (className)
-        UE_LOGI("script_gate: watching '%ls' of class '%ls' tag=%d -- pending the game-thread name resolve",
-                name, className, tag);
-    else
-        UE_LOGI("script_gate: watching '%ls' tag=%d -- pending the game-thread name resolve", name, tag);
-    GT::Post([] { ResolvePendingNames(); });
-    return true;
-}
-
-// The whole table, not the probe chain: before the resolve the entry sits at its placeholder key
-// and after it at the real one, and this answers across both. The resolve leaves the placeholder
-// disabled and nameless, so a name that resolved into a FULL table -- the watch the gate calls dead
-// -- matches nothing here and reads as not live, which is the truth.
-bool ScopedWatchLive(const wchar_t* className, const wchar_t* name, int tag) {
-    if (!name) return false;
-    for (int i = 0; i < kSlots; ++i) {
-        const Entry& e = g_nameTable[i];
-        if (e.key.load(std::memory_order_acquire) == 0) continue;
-        if (e.name != name || e.className != className || e.tag != tag) continue;
-        if (e.enabled.load(std::memory_order_acquire) && e.resolved.load(std::memory_order_acquire))
-            return true;
-    }
-    return false;
-}
-
-// Live, or dead for good: its placeholder keeps the literals and the dead mark after a failed re-key.
-bool ScopedWatchSettled(const wchar_t* className, const wchar_t* name, int tag) {
-    if (!name) return false;
-    for (int i = 0; i < kSlots; ++i) {
-        const Entry& e = g_nameTable[i];
-        if (e.key.load(std::memory_order_acquire) == 0) continue;
-        if (e.name != name || e.className != className || e.tag != tag) continue;
-        if (e.dead.load(std::memory_order_acquire)) return true;
-        if (e.enabled.load(std::memory_order_acquire) && e.resolved.load(std::memory_order_acquire))
-            return true;
-    }
-    return false;
-}
-
-}  // namespace
-
-namespace {
-// Disable every entry of that name watch: the resolved one, or the placeholder still waiting for its
-// name, which the resolve then re-keys disabled, its literals kept for a re-watch.
-bool UnwatchNameScoped(const wchar_t* className, const wchar_t* name, int tag, PreFn pre, PostFn post) {
-    if (!name) return false;
-    std::lock_guard<std::mutex> lk(g_regMutex);
-    bool found = false;
-    for (int i = 0; i < kSlots; ++i) {
-        Entry& e = g_nameTable[i];
-        if (e.key.load(std::memory_order_relaxed) == 0 || !e.name || e.tag != tag || e.pre != pre ||
-            e.post != post || std::wcscmp(e.name, name) != 0 || !SameLiteral(e.className, className))
-            continue;
-        if (e.enabled.exchange(false, std::memory_order_release)) g_nameWatches.fetch_sub(1, std::memory_order_release);
-        found = true;
-    }
-    return found;
-}
-}  // namespace
-
-namespace {
-// The class a name-form row scopes its watch to: none for an AnyClass row, its class for a Declared one.
-bool ScopeOf(const facts::Function& row, const wchar_t*& cls) {
-    if (row.GetMode() == facts::Mode::AnyClass && !row.Class()) {
-        cls = nullptr;
-        return true;
-    }
-    if (row.GetMode() == facts::Mode::Declared && row.Class()) {
-        cls = row.Class();
-        return true;
-    }
-    UE_LOGE("script-gate: row %s cannot be a name watch (an AnyClass row with no class, or a Declared one with "
-            "its class)", row.Ident());
-    return false;
-}
-}  // namespace
+}  // namespace detail
 
 bool Watch(const facts::Resolved& fn, int tag, PreFn pre, PostFn post) {
     if (!fn) return false;  // not resolved yet: nothing was asked of the gate, nothing is recorded
@@ -557,181 +405,6 @@ bool Watch(const facts::Resolved& fn, int tag, PreFn pre, PostFn post) {
 
 bool Unwatch(const facts::Resolved& fn, int tag, PreFn pre, PostFn post) {
     return fn && UnwatchFn(fn.Fn(), tag, pre, post);
-}
-
-bool WatchName(const facts::Function& row, int tag, PreFn pre, PostFn post) {
-    const wchar_t* cls = nullptr;
-    const bool ok = ScopeOf(row, cls) && WatchNameScoped(cls, row.Name(), tag, pre, post);
-    row.NoteUse(facts::kUseScriptGate, ok);
-    return ok;
-}
-
-bool UnwatchName(const facts::Function& row, int tag, PreFn pre, PostFn post) {
-    const wchar_t* cls = nullptr;
-    return ScopeOf(row, cls) && UnwatchNameScoped(cls, row.Name(), tag, pre, post);
-}
-
-bool NameWatchLive(const facts::Function& row, int tag) {
-    const wchar_t* cls = nullptr;
-    return ScopeOf(row, cls) && ScopedWatchLive(cls, row.Name(), tag);
-}
-
-bool NameWatchSettled(const facts::Function& row, int tag) {
-    const wchar_t* cls = nullptr;
-    return ScopeOf(row, cls) && ScopedWatchSettled(cls, row.Name(), tag);
-}
-
-int PendingNameCount() { return g_namesPending.load(std::memory_order_acquire); }
-
-void DebugForEachWatch(WatchVisitor visit, void* ctx) {
-    if (!visit) return;
-    for (const Entry& e : g_fnTable)
-        if (e.key.load(std::memory_order_acquire) && e.enabled.load(std::memory_order_relaxed))
-            visit(ctx, reinterpret_cast<void*>(e.key.load(std::memory_order_relaxed)), nullptr, nullptr, e.tag);
-    for (const Entry& e : g_nameTable)
-        if (e.key.load(std::memory_order_acquire) && e.enabled.load(std::memory_order_relaxed) && e.name)
-            visit(ctx, nullptr, e.className, e.name, e.tag);
-}
-
-namespace {
-// What a class-scoped watch's class says of its name once it is loaded: a body it declares, which the loop runs;
-// none, or a native one, which never runs through the loop, so the watch can never fire; or nothing yet, the class
-// not loaded or still loading. Game thread (the object index answers there).
-enum class ClassAnswer : uint8_t { NotLoaded, Declared, Undeclared, Native };
-
-ClassAnswer AskClass(const wchar_t* className, const wchar_t* name) {
-    void* cls = ue_wrap::object_index::ClassByName(className);
-    if (!cls) return ClassAnswer::NotLoaded;
-    void* fn = R::FindFunction(cls, name);
-    if (!fn) return ClassAnswer::Undeclared;
-    return (Read<std::uint32_t>(fn, P::off::UFunction_FunctionFlags) & P::off::FUNC_Native) ? ClassAnswer::Native
-                                                                                          : ClassAnswer::Declared;
-}
-
-void LogNeverFires(const wchar_t* className, const wchar_t* name, ClassAnswer a) {
-    if (a == ClassAnswer::Native)
-        UE_LOGE("script_gate: class '%ls' declares '%ls' native, and a native body never runs through the script "
-                "loop -- the watch can never fire", className, name);
-    else
-        UE_LOGE("script_gate: class '%ls' declares no function '%ls' -- the watch can never fire", className, name);
-}
-
-// The class-scoped watches whose class was not loaded when they resolved, asked when the class set next moves (a
-// class gains its first instance or loses its last), so a watch registered before its class loads is judged all
-// the same: a class that declares no such body kills it, as the resolve would have. Asking a class dispatches
-// nothing, so it runs under the registration mutex. One load and a compare while none waits or the set has not
-// moved. Game thread.
-void JudgeWaitingClasses() {
-    if (g_unjudged.load(std::memory_order_relaxed) == 0) return;
-    const std::uint64_t set = ue_wrap::object_index::ClassSetVersion();
-    if (set == g_judgedAtClassSet) return;
-    g_judgedAtClassSet = set;
-    int declared = 0, dead = 0;
-    std::lock_guard<std::mutex> lk(g_regMutex);
-    for (Entry& e : g_nameTable) {
-        if (e.key.load(std::memory_order_relaxed) == 0 || !e.unjudged.load(std::memory_order_relaxed)) continue;
-        const ClassAnswer a = AskClass(e.className, e.name);
-        if (a == ClassAnswer::NotLoaded) continue;
-        e.unjudged.store(false, std::memory_order_relaxed);
-        g_unjudged.fetch_sub(1, std::memory_order_relaxed);
-        if (a == ClassAnswer::Declared) {
-            ++declared;
-            continue;
-        }
-        if (e.enabled.exchange(false, std::memory_order_release)) g_nameWatches.fetch_sub(1, std::memory_order_release);
-        e.dead.store(true, std::memory_order_release);
-        ++dead;
-        LogNeverFires(e.className, e.name, a);
-    }
-    if (declared || dead)
-        UE_LOGI("script_gate: %d class-scoped watch(es) judged as their classes loaded: %d declared by their class, "
-                "%d dead; %d still wait", declared + dead, declared, dead, g_unjudged.load(std::memory_order_relaxed));
-}
-}  // namespace
-
-void ResolvePendingNames() {
-    if (!GT::IsGameThread()) return;
-    JudgeWaitingClasses();
-    if (g_namesPending.load(std::memory_order_acquire) == 0) return;
-    // The string-to-name conversion dispatches ProcessEvent, so it runs OUTSIDE the registration
-    // mutex: a registration reached from inside that dispatch would otherwise wait on itself.
-    // Under the mutex only the pending literals are collected, and the re-key is done after.
-    struct Pending { const wchar_t* name; const wchar_t* className; };
-    Pending pending[kMaxKeyed];   // every keyed slot at most
-    int n = 0;
-    {
-        std::lock_guard<std::mutex> lk(g_regMutex);
-        for (int i = 0; i < kSlots && n < kMaxKeyed; ++i) {
-            const Entry& e = g_nameTable[i];
-            if (e.key.load(std::memory_order_relaxed) != 0 && !e.resolved.load(std::memory_order_relaxed) && e.name)
-                pending[n++] = {e.name, e.className};
-        }
-    }
-    for (int j = 0; j < n; ++j) {
-        const Pending& p = pending[j];
-        const R::FName f = ue_wrap::fname_utils::StringToFName(p.name);
-        if (f.ComparisonIndex == 0) continue;   // not yet; the next tick retries
-        // A class-scoped watch goes live only with its class's name resolved too.
-        R::FName c{};
-        if (p.className) {
-            c = ue_wrap::fname_utils::StringToFName(p.className);
-            if (c.ComparisonIndex == 0) continue;
-        }
-        // A class-scoped watch fires only for a body its class declares (OtherOwner), and the conversion
-        // above adds any name it is given, so a misspelt or mis-copied one resolves all the same: its class
-        // is asked now if it is loaded, else when the class set moves (JudgeWaitingClasses).
-        const ClassAnswer answer = p.className ? AskClass(p.className, p.name) : ClassAnswer::Declared;
-        const bool neverFires = answer == ClassAnswer::Undeclared || answer == ClassAnswer::Native;
-        const bool unjudged = p.className && answer == ClassAnswer::NotLoaded;
-        std::lock_guard<std::mutex> lk(g_regMutex);
-        // An unresolved entry sits at the slot of its placeholder key; once the FName is known
-        // it moves to the slot of its real key, and the placeholder slot is left disabled, keyed
-        // (its chain stays walkable) and nameless, so no registration matches it again.
-        for (int i = 0; i < kSlots; ++i) {
-            Entry& e = g_nameTable[i];
-            if (e.key.load(std::memory_order_relaxed) == 0 || e.resolved.load(std::memory_order_relaxed) ||
-                e.name != p.name || e.className != p.className) continue;
-            const bool wasEnabled = e.enabled.exchange(false, std::memory_order_release);
-            e.name = nullptr;
-            e.className = nullptr;
-            e.resolved.store(true, std::memory_order_release);
-            g_namesPending.fetch_sub(1, std::memory_order_release);
-            if (wasEnabled) g_nameWatches.fetch_sub(1, std::memory_order_release);
-            const wchar_t* ofClass = p.className ? L" of class " : L"";
-            const wchar_t* cls = p.className ? p.className : L"";
-            // A dead placeholder keeps its literals and the mark, so a consumer asking whether the watch
-            // has settled is told, rather than waiting for one that never comes.
-            auto markDead = [&e, &p] {
-                e.name = p.name;
-                e.className = p.className;
-                e.dead.store(true, std::memory_order_release);
-            };
-            if (neverFires) {
-                LogNeverFires(cls, p.name, answer);
-                markDead();
-                continue;
-            }
-            // One retired while it waited is re-keyed too, disabled with its literals: a later watch of it
-            // re-enables that slot, where a dropped one would take a new placeholder each time.
-            if (Register(g_nameTable, g_nameWatches, g_nameKeyed, NameKey(f), e.tag, e.pre, e.post, p.name,
-                         p.className, p.className ? NameKey(c) : 0, /*resolved=*/true, /*enabled=*/wasEnabled,
-                         unjudged)) {
-                const wchar_t* checked = !p.className ? L""
-                                         : unjudged ? L"; its class is not loaded yet, and is asked when it loads"
-                                                    : L", declared by its class";
-                if (wasEnabled)
-                    UE_LOGI("script_gate: name '%ls'%ls%ls resolved (cmp=0x%x number=0x%x) -- the watch is live%ls",
-                            p.name, ofClass, cls, f.ComparisonIndex, f.Number, checked);
-                else
-                    UE_LOGI("script_gate: name '%ls'%ls%ls resolved after its watch was retired -- kept for a "
-                            "re-watch", p.name, ofClass, cls);
-            } else {
-                UE_LOGE("script_gate: name '%ls'%ls%ls resolved but the table is full -- the watch is dead",
-                        p.name, ofClass, cls);
-                markDead();
-            }
-        }
-    }
 }
 
 namespace {

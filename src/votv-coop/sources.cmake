@@ -43,6 +43,7 @@ set(VOTVCOOP_SOURCES
     src/ue_wrap/core/script_bytecode.cpp
     src/ue_wrap/core/script_fingerprint.cpp
     src/ue_wrap/core/script_gate.cpp
+    src/ue_wrap/core/script_gate_names.cpp
     src/ue_wrap/core/script_loop.cpp
     src/ue_wrap/engine/engine.cpp
     src/ue_wrap/engine/engine_save.cpp
