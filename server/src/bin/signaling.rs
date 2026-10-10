@@ -93,10 +93,10 @@ const KEEPALIVE_INTERVAL: Duration = Duration::from_secs(5);
 const MAX_IDENTITY: usize = 80;
 // Bounded relay backlog per destination. Sizing (security audit 2026-07-16, S-1): the
 // prior 1024-deep queue of up-to-64 KiB items let ONE token-holder pin ~64 MiB per
-// stalled destination. Signaling payloads (SDP/ICE trickle) are a few KB, so the
-// relayed frame is capped at MAX_RELAY_PAYLOAD -- the longest line a registered peer
-// may send at all -- and the queue at RELAY_QUEUE frames AND MAX_QUEUED_PER_DEST
-// bytes. The byte cap is what bounds the whole relay: frames alone (64 x 8 KiB)
+// stalled destination. Signaling payloads (SDP/ICE trickle) are a few KB, so a
+// registered peer's line is capped at MAX_RELAY_PAYLOAD, the frame relayed from it is
+// that line's own bytes behind the sender's name (`relay_frame`), and the queue holds
+// RELAY_QUEUE frames AND MAX_QUEUED_PER_DEST bytes. The byte cap is what bounds the whole relay: frames alone (64 x 8 KiB)
 // times the 512 authed slots came to 256 MiB, twice the unit's MemoryMax, so a few
 // sources that register and stop reading could have it OOM-killed. 128 KiB per
 // destination is 64 MiB over every slot, and still holds 64 small ICE frames.
@@ -402,17 +402,7 @@ fn relay_line(sender: &str, line: &[u8]) {
     if line.len() > MAX_RELAY_PAYLOAD {
         return;
     }
-    let text = String::from_utf8_lossy(line);
-    let sp = match text.find(' ') {
-        Some(i) if i > 0 => i,
-        _ => return, // no dest, or leading space -> drop (matches `sp <= 0: continue`)
-    };
-    let dest = text[..sp].trim();
-    let payload = &text[sp + 1..]; // keeps the trailing '\n'
-    if dest.is_empty() {
-        return;
-    }
-    let msg = format!("{sender} {payload}").into_bytes();
+    let Some((dest, msg)) = relay_frame(sender, line) else { return };
     let cl = CLIENTS.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(route) = cl.get(dest) {
         // Non-blocking and best-effort: drop when the destination's byte budget is
@@ -423,6 +413,26 @@ fn relay_line(sender: &str, line: &[u8]) {
             let _ = route.tx.try_send(frame);
         }
     }
+}
+
+/// The frame one line becomes: `<dest> <hex>\n` in, `<sender> <hex>\n` out, the payload's bytes
+/// copied as they arrived. The payload must be lowercase hex of whole bytes -- the client's own
+/// encoding (coop/net/signaling_client.cpp, `kHexDigit`), empty for the self-echo -- ended by the
+/// newline; anything else is dropped. So a frame is never longer than its line plus the sender's
+/// name, where a lossy re-decode of invalid UTF-8 once tripled it.
+fn relay_frame<'a>(sender: &str, line: &'a [u8]) -> Option<(&'a str, Vec<u8>)> {
+    let sp = line.iter().position(|b| *b == b' ').filter(|i| *i > 0)?;
+    let dest = std::str::from_utf8(&line[..sp]).ok()?;
+    let payload = &line[sp + 1..];
+    let hex = payload.strip_suffix(b"\n")?;
+    if hex.len() % 2 != 0 || !hex.iter().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) {
+        return None;
+    }
+    let mut frame = Vec::with_capacity(sender.len() + 1 + payload.len());
+    frame.extend_from_slice(sender.as_bytes());
+    frame.push(b' ');
+    frame.extend_from_slice(payload);
+    Some((dest, frame))
 }
 
 /// Enable TCP keepalive with an explicit idle/interval, so a dead authed peer is reaped in about a
@@ -657,6 +667,28 @@ mod tests {
         assert_eq!(budget.load(Ordering::Relaxed), MAX_QUEUED_PER_DEST, "a refused frame stayed charged");
         drop(held);
         assert_eq!(budget.load(Ordering::Relaxed), 0, "dropped frames kept their bytes charged");
+    }
+
+    #[test]
+    fn a_relayed_frame_is_the_line_s_own_bytes_and_only_hex_is_relayed() {
+        use super::relay_frame;
+        let me = "gen:aa";
+        assert_eq!(relay_frame(me, b"gen:bb 0a1bff\n"), Some(("gen:bb", b"gen:aa 0a1bff\n".to_vec())));
+        // The self-echo: an empty payload addressed to its sender.
+        assert_eq!(relay_frame(me, b"gen:aa \n"), Some(("gen:aa", b"gen:aa \n".to_vec())));
+        for bad in [
+            &b"gen:bb \xff\xfe\n"[..], // invalid UTF-8 the old re-decode expanded threefold
+            b"gen:bb 0A1B\n",          // upper case: the client never sends it
+            b"gen:bb 0a1\n",           // half a byte
+            b"gen:bb 0a 1b\n",         // a second space
+            b"gen:bb 0a1b",             // no newline
+            b"gen:bb 0a1b\r\n",        // a carriage return
+            b" 0a1b\n",                // no destination
+            b"gen:bb\n",               // no payload separator
+            b"\xff\xfe 0a\n",          // a destination that is not text
+        ] {
+            assert_eq!(relay_frame(me, bad), None, "relayed {:?}", String::from_utf8_lossy(bad));
+        }
     }
 
     #[tokio::test]
