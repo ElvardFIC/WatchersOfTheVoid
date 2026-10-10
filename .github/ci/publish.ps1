@@ -22,6 +22,24 @@ $ErrorActionPreference = 'Stop'
 
 $tag = ConvertFrom-ReleaseTag $TagName
 if (-not $tag) { throw "tag '$TagName' fails the grammar (the judge should have refused)" }
+if ($TagSha -cnotmatch '^[0-9a-f]{40}$') { throw "TagSha '$TagSha' is not a full lowercase commit sha" }
+
+# The release hangs on the tag NAME, its assets on TagSha. The tag is re-read from
+# origin before the draft and again right before the flip makes the release public:
+# a tag moved after the judge would publish these assets under another commit.
+function Assert-TagStillNamesJudgedSha {
+    $lines = @(git ls-remote --tags origin "refs/tags/$TagName*")
+    if ($LASTEXITCODE -ne 0) { throw "re-reading tag '$TagName' from origin failed" }
+    $direct = $null; $peeled = $null
+    foreach ($line in $lines) {
+        $sha, $ref = "$line" -split "`t", 2
+        if ($ref -ceq "refs/tags/$TagName") { $direct = $sha }
+        elseif ($ref -ceq "refs/tags/$TagName^{}") { $peeled = $sha }
+    }
+    $now = if ($peeled) { $peeled } else { $direct }
+    if ($now -cne $TagSha) { throw "tag '$TagName' now names '$now', not the judged $TagSha -- refusing to publish" }
+    Write-Host "tag $TagName still names the judged $TagSha"
+}
 
 # --- Assets: ONE zip, assembled from the artifact payload (UE4SS_ARC 7.4c/8.3) --
 # The artifact carries the tagged cacheless rebuild's main.dll; the zip is
@@ -116,6 +134,7 @@ if ($shaMatches.Count -ne $assets.Count) { throw "final body carries $($shaMatch
 $bodyFile = Join-Path ([System.IO.Path]::GetTempPath()) "multivoid-relbody-$($tag.N).md"
 Set-Content -LiteralPath $bodyFile -Value $body -Encoding utf8 -NoNewline
 
+Assert-TagStillNamesJudgedSha
 gh release create $TagName --repo $Repo --draft --title $title --notes-file $bodyFile @($assets.FullName) | Out-Host
 if ($LASTEXITCODE -ne 0) { throw 'draft creation failed' }
 
@@ -132,6 +151,7 @@ foreach ($a in $assets) {
 }
 
 # --- Flip -----------------------------------------------------------------
+Assert-TagStillNamesJudgedSha
 $flipArgs = @('release', 'edit', $TagName, '--repo', $Repo, '--draft=false')
 $flipArgs += $(if ($tag.Dev) { '--prerelease' } else { '--prerelease=false' })
 & gh @flipArgs | Out-Host
