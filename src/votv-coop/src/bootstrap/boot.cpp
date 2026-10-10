@@ -7,6 +7,7 @@
 #include "bootstrap/boot.h"
 
 #include "bootstrap/refuse_dialog.h"  // the stand-down modal (never the overlay's dialog)
+***REMOVED***
 #include "ui/native_text_field.h"   // its un-gated editing selftest
 #include "coop/build_trust/build_trust.h"  // ComputeSelf -- this DLL's hash and type
 #include "coop/net/protocol.h"  // kProtocolVersion -- the b<N> build rev in the banner
@@ -222,6 +223,10 @@ DWORD WINAPI BootThread(LPVOID rawTag) {
                     tid, bootTid, tid != bootTid ? "DIFFERENT thread -- OK" : "SAME -- WRONG",
                     n);
             UE_LOGI("==== GAME-THREAD CONTEXT: LIVE ====");
+            ***REMOVED***
+            ***REMOVED***
+            // DLL/pak scan. A single bool read (and a no-op) when the flag is off; never ships.
+            ***REMOVED***
         });
         UE_LOGI("boot: game-thread dispatcher installed; self-test task posted");
         // The script-body gate beside it: the second detour, on the VM's own body loop, so a

@@ -25,6 +25,12 @@ CFG_FLAG(freecam, "freecam", "dev", false, nullptr,
     "Enable the freecam toggle.")
 CFG_FLAG(spawn_menu_unlock, "spawn_menu_unlock", "dev", false, nullptr,
     "Unlock the native spawn menu while in a coop session.")
+***REMOVED***
+    ***REMOVED***
+    "mainGamemode BeginPlay scans Binaries for *.dll and Content/Paks for *.pak, then pops 'Modded "
+    "client detected!' and quits). Empties that one scan's file list through our Func-patch substrate; "
+    ***REMOVED***
+    "public build is expected to carry no such gate, so this is off by default and never ships.")
 CFG_FLAG(desk_diag, "desk_diag", "dev", false, "VOTVCOOP_DESK_DIAG",
     "Diagnostic (BOTH peers): periodically log the signal desk's state, and the digests a day "
     "rollover or a world load rolls per machine (the dish hash codes, the coordinate towers, the "
