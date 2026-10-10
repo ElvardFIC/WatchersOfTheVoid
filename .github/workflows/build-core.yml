@@ -74,18 +74,6 @@ jobs:
         shell: pwsh
         run: git submodule update --init --recursive src/votv-coop/third_party
 
-      - name: Ensure opus submodule present (BUILDING.md troubleshooting fallback)
-        # Old clones lack the opus .gitmodules entry; --recursive then skips
-        # the gitlink silently and configure fails.
-        shell: pwsh
-        run: |
-          $opus = 'src/votv-coop/third_party/opus'
-          if (-not (Test-Path (Join-Path $opus 'CMakeLists.txt'))) {
-            Write-Host 'opus submodule empty -> cloning v1.5.2 directly'
-            Remove-Item -Recurse -Force $opus -ErrorAction SilentlyContinue
-            git clone --depth 1 -b v1.5.2 https://github.com/xiph/opus.git $opus
-          } else { Write-Host 'opus present, ok' }
-
       - name: Config registry gate (arc 3 C5 -- dead rows / write-only / alias / ratchet surface)
         # Standing gate with fixture-injected must-fire controls each run; the
         # script exits explicitly (pwsh last-child-code lesson). Cheap text
@@ -307,18 +295,15 @@ jobs:
         shell: pwsh
         run: python .github/ci/abi_gate.py --drill "$env:BUILD_DIR/Release/main.dll"
 
-      - name: Package the r2modman zip + verify it (CI evidence, pak-less by construction)
+      - name: Package the r2modman zip + verify it (CI evidence)
         # THE DISTRIBUTABLE IS ASSEMBLED ON EVERY BUILD RUN, not first at release time.
         # `package.ps1` is the same script the release lane runs, and it verifies the
         # zip it just wrote with the predicate the drill above proved can fail -- so a
         # change that quietly breaks the package tree (a moved payload, a manifest key,
         # an identity parse) fails HERE, on the commit that caused it.
         #
-        # LAWFULLY PAK-LESS. `assets/paks/` holds untracked binaries and does not exist
-        # in a CI checkout; package.ps1 documents that a CI zip is pak-less and that a
-        # pak-less package is still a fully working mod (client_model falls back to the
-        # game's own skin). A RELEASE zip is assembled on a box where that dir is
-        # stocked, so this step proves the STRUCTURE, never the payload set.
+        # The starter paks are tracked in `assets/paks/`, so this zip carries the same
+        # paks a release zip does; package.ps1 stages them by default.
         shell: pwsh
         run: |
           pwsh -File .github/ci/package.ps1 -BuildDir "$env:BUILD_DIR/Release" `
