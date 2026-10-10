@@ -75,8 +75,9 @@ distinct from the secret session id, control characters stripped and strings cla
 bodies and headers, and the forwarded-for header trusted only from a loopback proxy. Both services
 admit a connection at accept, before its TLS handshake, into a pool with a total and a per-address
 cap, and one deadline bounds the handshake and everything read before the answer (on the relay,
-before registration): a source that opens sockets and sends nothing holds a few slots for fifteen
-seconds, never the whole pool.
+before registration). Filling a pool takes tens of addresses (48 for the master, 32 and 64 for the
+relay's two), each connection's memory is bounded so a full pool fits the service's limit, and an
+address that makes more than 20 connects inside ten seconds is ignored for a minute.
 
 ### Direct and brokered
 

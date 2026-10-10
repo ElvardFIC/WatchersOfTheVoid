@@ -17,10 +17,14 @@ pub const MAX_HEADER: usize = 16 * 1024;
 /// room and keeps a body's parse small: a `serde_json::Value` can cost 16x its bytes
 /// (tests/conn_cost.rs: a 64 KiB array of zeros parses to 1 MiB).
 pub const MAX_BODY: usize = 4 * 1024;
-pub const MAX_CONNS: usize = 256;
-/// Per source address. A client holds at most a few short requests at once (a list refresh, a
-/// heartbeat, a join), so 16 leaves room for a household or a carrier NAT while keeping one source
-/// from holding the whole pool.
+/// The pool, sized against the unit's 128 MiB. One connection holds at most ~66 KiB: during the TLS
+/// handshake rustls buffers up to 64 KiB of a handshake message (its `MAX_HANDSHAKE_SIZE`); after
+/// it, one record (~17 KiB), 16 KiB of received plaintext, 16 KiB unsent (`tls::SEND_BUFFER_LIMIT`)
+/// and the 16 KiB head or the 4 KiB body. 768 x 66 KiB is ~50 MiB, leaving room for the lobby
+/// maps and the connect history (tests/conn_cost.rs measures the parts that are ours).
+pub const MAX_CONNS: usize = 768;
+/// Per source address. A browser open is three requests at once (lobbies, latest, thanks), so a
+/// household of four needs 12; filling the pool then takes 48 addresses.
 pub const MAX_CONNS_PER_ADDR: u32 = 16;
 
 /// Every connection the master holds, the ones still in their TLS handshake included.

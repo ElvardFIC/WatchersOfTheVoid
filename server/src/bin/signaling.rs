@@ -107,11 +107,14 @@ const MAX_QUEUED_PER_DEST: usize = 128 * 1024;
 static TOKEN: LazyLock<String> = LazyLock::new(|| env_str("COOP_SIGNALING_TOKEN", ""));
 static CLIENTS: LazyLock<Mutex<HashMap<String, Route>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
 // Connections that have not proved their key yet: the small pool an anonymous flood can fill,
-// taken at accept, and one address may hold only a few of its slots.
-static PENDING: LazyLock<Pool> = LazyLock::new(|| Pool::new("pre-auth", 128, 8));
-// Registered peers: one per install while it hosts or joins, so 32 per address is a large
-// household or a carrier NAT.
-static AUTHED: LazyLock<Pool> = LazyLock::new(|| Pool::new("authed", 512, 32));
+// taken at accept. A slot holds at most a 64 KiB TLS handshake buffer and a 513-byte line, and one
+// address 4 of the 128, so filling it takes 32 addresses.
+static PENDING: LazyLock<Pool> = LazyLock::new(|| Pool::new("pre-auth", 128, 4));
+// Registered peers: one per install while it hosts or joins. A full lobby is 4, and a reconnect
+// over a half-open socket is admitted before the stale registration it replaces is gone, so 8 per
+// address; filling the pool takes 64 addresses. Its total stays: 512 x (128 KiB of queue + ~33 KiB
+// of TLS) is ~80 MiB of the unit's 128 MiB.
+static AUTHED: LazyLock<Pool> = LazyLock::new(|| Pool::new("authed", 512, 8));
 static CONN_SEQ: AtomicU64 = AtomicU64::new(1);
 
 /// Bounded, cancel-safe line reader over the connection's read half. On `select!`

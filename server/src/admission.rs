@@ -135,10 +135,10 @@ struct Recent {
     ignored_until: Option<Instant>,
 }
 
-/// Addresses tracked at once. Past it a new address is admitted untracked (the pools' per-address
-/// shares still hold it): refusing it instead would let a source-diverse flood lock every newcomer
-/// out, the failure the lobby rate map had to be rid of.
-const MAX_TRACKED: usize = 50_000;
+/// Addresses tracked at once: ~400 bytes each (20 connect times and the key), so ~8 MiB at most.
+/// Past it a new address is admitted untracked (the pools' per-address shares still hold it):
+/// refusing it instead would let a source-diverse flood lock every newcomer out.
+const MAX_TRACKED: usize = 20_000;
 
 /// The one history each server process keeps, for every listener it runs.
 pub static CONNECTS: LazyLock<ConnectHistory> =
