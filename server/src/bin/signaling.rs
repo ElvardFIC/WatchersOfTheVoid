@@ -91,29 +91,28 @@ const KEEPALIVE_INTERVAL: Duration = Duration::from_secs(5);
 // identity, which GNS renders as `gen:` + 64 hex = 68 chars. At 64 the greeting
 // was refused outright, which reads as "P2P is down" rather than as a length cap.
 const MAX_IDENTITY: usize = 80;
-// Bounded relay backlog per destination. Sizing (security audit 2026-07-16, S-1): the
-// prior 1024-deep queue of up-to-64 KiB items let ONE token-holder pin ~64 MiB per
-// stalled destination. Signaling payloads (SDP/ICE trickle) are a few KB, so a
-// registered peer's line is capped at MAX_RELAY_PAYLOAD, the frame relayed from it is
-// that line's own bytes behind the sender's name (`relay_frame`), and the queue holds
-// RELAY_QUEUE frames AND MAX_QUEUED_PER_DEST bytes. The byte cap is what bounds the whole relay: frames alone (64 x 8 KiB)
-// times the 512 authed slots came to 256 MiB, twice the unit's MemoryMax, so a few
-// sources that register and stop reading could have it OOM-killed. 128 KiB per
-// destination is 64 MiB over every slot, and still holds 64 small ICE frames.
+// Bounded relay backlog per destination. Signaling payloads (SDP/ICE trickle) are a few KB, so
+// a registered peer's line is capped at MAX_RELAY_PAYLOAD, the frame relayed from it is that
+// line's own bytes behind the sender's name (`relay_frame`), and the queue holds RELAY_QUEUE
+// frames AND MAX_QUEUED_PER_DEST bytes. The byte cap is what bounds the whole relay: frames
+// alone (64 x 8 KiB) times the 512 authed slots would be 256 MiB, twice the unit's MemoryMax.
+// 64 KiB per destination is still 8 frames at the 8 KiB cap and dozens of real ICE frames. An
+// authed connection is then ~129 KiB (this queue plus ~65 KiB of TLS buffers and line, measured
+// in tests/conn_cost.rs), 512 of them ~65 MiB.
 const RELAY_QUEUE: usize = 64;
 const MAX_RELAY_PAYLOAD: usize = 8 * 1024;
-const MAX_QUEUED_PER_DEST: usize = 128 * 1024;
+const MAX_QUEUED_PER_DEST: usize = 64 * 1024;
 
 static TOKEN: LazyLock<String> = LazyLock::new(|| env_str("COOP_SIGNALING_TOKEN", ""));
 static CLIENTS: LazyLock<Mutex<HashMap<String, Route>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
 // Connections that have not proved their key yet: the small pool an anonymous flood can fill,
 // taken at accept. A slot holds at most a 64 KiB TLS handshake buffer and a 513-byte line, and one
-// address 4 of the 128, so filling it takes 32 addresses.
+// address 4 of the 128, so filling it takes 32 addresses: 128 x ~72 KiB is ~9 MiB.
 static PENDING: LazyLock<Pool> = LazyLock::new(|| Pool::new("pre-auth", 128, 4));
 // Registered peers: one per install while it hosts or joins. A full lobby is 4, and a reconnect
 // over a half-open socket is admitted before the stale registration it replaces is gone, so 8 per
-// address; filling the pool takes 64 addresses. Its total stays: 512 x (128 KiB of queue + ~33 KiB
-// of TLS) is ~80 MiB of the unit's 128 MiB.
+// address; filling the pool takes 64 addresses. 512 x (64 KiB of queue + ~65 KiB of TLS and line)
+// is ~65 MiB of the unit's 128 MiB.
 static AUTHED: LazyLock<Pool> = LazyLock::new(|| Pool::new("authed", 512, 8));
 static CONN_SEQ: AtomicU64 = AtomicU64::new(1);
 

@@ -15,16 +15,18 @@ pub const MAX_HEADER: usize = 16 * 1024;
 /// The largest body a client of ours sends is the host announce: under 1.5 KiB with its name and
 /// world at their 63-byte input caps, fully escaped (coop/net/lobby_announcer.cpp). 4 KiB leaves
 /// room and keeps a body's parse small: a `serde_json::Value` can cost 16x its bytes
-/// (tests/conn_cost.rs: a 64 KiB array of zeros parses to 1 MiB).
+/// (tests/conn_cost.rs: a 4 KiB array of zeros parses to 65 KiB).
 pub const MAX_BODY: usize = 4 * 1024;
-/// The pool, sized against the unit's 128 MiB. One connection holds at most ~66 KiB: during the TLS
-/// handshake rustls buffers up to 64 KiB of a handshake message (its `MAX_HANDSHAKE_SIZE`); after
-/// it, one record (~17 KiB), 16 KiB of received plaintext, 16 KiB unsent (`tls::SEND_BUFFER_LIMIT`)
-/// and the 16 KiB head or the 4 KiB body. 768 x 66 KiB is ~50 MiB, leaving room for the lobby
-/// maps and the connect history (tests/conn_cost.rs measures the parts that are ours).
-pub const MAX_CONNS: usize = 768;
-/// Per source address. A browser open is three requests at once (lobbies, latest, thanks), so a
-/// household of four needs 12; filling the pool then takes 48 addresses.
+/// The pool, sized against the unit's 128 MiB from what tests/conn_cost.rs measures. One connection
+/// holds at most ~87 KiB. During the TLS handshake rustls buffers up to 64.8 KiB of a handshake
+/// message. After it, one record is held in 32 KiB (the buffer doubles past 16 KiB), plus 16 KiB
+/// of received plaintext, 16 KiB unsent (`tls::SEND_BUFFER_LIMIT`) and the 16 KiB head: 80 KiB.
+/// Either way the task's future adds ~7 KiB. 512 x ~87 KiB is ~44 MiB, leaving room for the lobby
+/// maps and the connect history.
+pub const MAX_CONNS: usize = 512;
+/// Per source address. A browser open is three requests at once (lobbies, latest, thanks) and the
+/// list refreshes every 5 s (`server_browser_native.cpp:123`), so a household of four needs 12;
+/// 512 / 16 = 32 addresses to fill the pool.
 pub const MAX_CONNS_PER_ADDR: u32 = 16;
 
 /// Every connection the master holds, the ones still in their TLS handshake included.

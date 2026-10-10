@@ -2,10 +2,13 @@
 //! allocator, for the pool sizes to rest on. One test function, so nothing else allocates while a
 //! phase is counted. `cargo test --test conn_cost -- --nocapture` prints the table.
 
+use coop_server::admission::ConnectHistory;
+use coop_server::http_transport::MAX_BODY;
 use serde_json::Value;
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicIsize, Ordering};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tokio_rustls::rustls::server::{ClientHello, ResolvesServerCert};
 use tokio_rustls::rustls::sign::CertifiedKey;
 use tokio_rustls::rustls::{ServerConfig, ServerConnection};
@@ -99,20 +102,54 @@ fn connection_costs() {
     let kib = |n: isize| n as f64 / 1024.0;
     println!("phase | heap held");
 
-    // The master's parsed body, for a body at the cap and at 8 KiB.
-    for cap in [64 * 1024usize, 8 * 1024] {
-        for shape in ["array of zeros", "many keys", "empty objects", "one long string"] {
-            let raw = body(shape, cap);
-            let (v, cost) = held(|| serde_json::from_slice::<Value>(&raw).expect("the fixture is JSON"));
-            println!("master body {cap} B, {shape}: {:.1} KiB parsed", kib(cost));
-            drop(v);
-        }
+    // Each row prints what it measured and fails the test past its bound, which sits about 25%
+    // above today's figure: a pool size in the servers rests on these rows.
+    let bound = |what: &str, cost: isize, limit_kib: f64| {
+        println!("{what}: {:.1} KiB (bound {limit_kib:.1})", kib(cost));
+        assert!(kib(cost) <= limit_kib, "{what} cost {:.1} KiB, past its bound of {limit_kib:.1}", kib(cost));
+    };
+
+    // The master's parsed body, at the cap it enforces.
+    let cap = MAX_BODY;
+    for (shape, limit) in [
+        ("array of zeros", 81.0),
+        ("many keys", 70.0),
+        ("empty objects", 81.0),
+        ("one long string", 5.8),
+    ] {
+        let raw = body(shape, cap);
+        let (v, cost) = held(|| serde_json::from_slice::<Value>(&raw).expect("the fixture is JSON"));
+        bound(&format!("master body {cap} B, {shape}, parsed"), cost, limit);
+        drop(v);
     }
+
+    // One tracked address that connected 20 times, the flood guard's per-address cost.
+    let history = ConnectHistory::new(20, Duration::from_secs(10), Duration::from_secs(60));
+    let now = Instant::now();
+    let ((), tracked) = held(|| {
+        for _ in 0..20 {
+            assert!(history.allow("203.0.113.7", now));
+        }
+    });
+    bound("connect history, one address, 20 connects", tracked, 1.0);
+
+    // The same per address once the table is full of them: what the tracked cap multiplies.
+    const MANY: usize = 1792;
+    let history = ConnectHistory::new(20, Duration::from_secs(10), Duration::from_secs(60));
+    let ((), many) = held(|| {
+        for a in 0..MANY {
+            let ip = format!("10.{}.{}.{}", a >> 16, (a >> 8) & 255, a & 255);
+            for _ in 0..20 {
+                assert!(history.allow(&ip, now));
+            }
+        }
+    });
+    bound(&format!("connect history, {MANY} addresses, 20 connects each"), many, 1320.0);
 
     // A rustls server connection holding one partial 16 KiB handshake record.
     let cfg = Arc::new(ServerConfig::builder().with_no_client_auth().with_cert_resolver(Arc::new(NoCert)));
     let (conn, new_cost) = held(|| ServerConnection::new(cfg.clone()).expect("a server connection"));
-    println!("tls server connection, new: {:.1} KiB", kib(new_cost));
+    bound("tls server connection, new", new_cost, 1.0);
     let mut conn = conn;
     let mut record = vec![0x16u8, 0x03, 0x01, 0x40, 0x00];
     record.resize(5 + 16 * 1024 - 1, 0);
@@ -124,6 +161,6 @@ fn connection_costs() {
             }
         }
     });
-    println!("tls server connection, a 16 KiB record pending: +{:.1} KiB", kib(buffered));
+    bound("tls server connection, a 16 KiB record pending", buffered, 40.0);
     drop(conn);
 }
