@@ -39,6 +39,7 @@ set(VOTVCOOP_SOURCES
     src/ue_wrap/engine/spawn_gate.cpp
     src/ue_wrap/engine/actor_end_play.cpp
     src/ue_wrap/core/ufunction_hook.cpp
+    src/ue_wrap/core/script_fingerprint.cpp
     src/ue_wrap/core/script_gate.cpp
     src/ue_wrap/core/script_loop.cpp
     src/ue_wrap/engine/engine.cpp
@@ -645,6 +646,7 @@ set(VOTVCOOP_SOURCES
     src/ui/input_focus.cpp
     src/harness/screenshot.cpp
     src/harness/mod_environment.cpp
+    src/harness/fingerprint_census.cpp
     src/harness/sdk_check.cpp
     src/l10n/po_reader.cpp
     src/l10n/plural_expr.cpp

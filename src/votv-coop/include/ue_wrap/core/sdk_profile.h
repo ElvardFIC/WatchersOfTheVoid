@@ -290,6 +290,16 @@ inline constexpr size_t UWorld_FlagsB = 0x10D;                 // byte holding b
 inline constexpr uint8_t UWorld_bIsTearingDown = 0x20;         // bit within FlagsB
 inline constexpr size_t UObject_GetWorld_VtblOff = 0x160;      // UObject::GetWorld vtable byte offset
 
+// FField::ClassPrivate (an FFieldClass*, its Name first) and Owner (FFieldVariant: the pointer, then a
+// bool saying it is a UObject), and the type object a typed property carries first after FProperty
+// (PropertyClass / Struct / Enum / SignatureFunction / an Array's Inner; an EnumProperty's Enum and a
+// Map's value one slot later): RE-UE4SS MemberVariableLayout_4_27_Template.ini [FField] [FFieldClass]
+// [FObjectPropertyBase] [FStructProperty] [FEnumProperty] [FMapProperty]. script_fingerprint reads them.
+inline constexpr size_t FField_ClassPrivate = 0x08;       // FFieldClass*
+inline constexpr size_t FField_Owner = 0x10;              // FField* or UObject*
+inline constexpr size_t FField_OwnerIsUObject = 0x18;     // bool
+inline constexpr size_t FFieldClass_Name = 0x00;          // FName
+inline constexpr size_t FProperty_TypeObject = 0x78;      // the property's type object (see above)
 inline constexpr size_t FField_Next = 0x20;               // FField*
 inline constexpr size_t FField_NamePrivate = 0x28;        // FName
 inline constexpr size_t FProperty_ElementSize = 0x38;     // int32
@@ -545,9 +555,11 @@ inline constexpr size_t UsaveSlot_objectsData              = 0x0300;  // TArray<
 
 // The EPropertyFlags bits tested (engine-stable).
 namespace cpf {
+inline constexpr uint64_t ConstParm = 0x2;
 inline constexpr uint64_t Parm = 0x80;
 inline constexpr uint64_t OutParm = 0x100;
 inline constexpr uint64_t ReturnParm = 0x400;
+inline constexpr uint64_t ReferenceParm = 0x8000000;
 inline constexpr uint64_t InstancedReference = 0x80000;  // a Blueprint's component variable carries it
 inline constexpr uint64_t NoDestructor = 0x1000000000;   // the value needs no destroy (UFunction::DestructorLink skips it)
 }  // namespace cpf
