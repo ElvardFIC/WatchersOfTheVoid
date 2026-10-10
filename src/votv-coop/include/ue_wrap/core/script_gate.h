@@ -13,6 +13,8 @@
 
 #pragma once
 
+#include "ue_wrap/facts/function_row.h"
+
 #include <cstdint>
 
 namespace ue_wrap::script_gate {
@@ -77,6 +79,16 @@ const ExecHandler* ExecHandlers();
 bool Watch(void* ufunction, int tag, PreFn pre, PostFn post);
 bool Unwatch(void* ufunction, int tag, PreFn pre, PostFn post);
 
+// The row forms (ue_wrap/facts/function_row.h): a dependency is registered through its row, and the row
+// records whether it was taken. Watch/Unwatch take a resolved row; the name forms take an AnyClass row
+// (every class's function of that name) or a Declared one (the body its class owns), and refuse others.
+bool Watch(const facts::Resolved& fn, int tag, PreFn pre, PostFn post);
+bool Unwatch(const facts::Resolved& fn, int tag, PreFn pre, PostFn post);
+bool WatchName(const facts::Function& row, int tag, PreFn pre, PostFn post);
+bool UnwatchName(const facts::Function& row, int tag, PreFn pre, PostFn post);
+bool NameWatchLive(const facts::Function& row, int tag);
+bool NameWatchSettled(const facts::Function& row, int tag);
+
 // Watch every function called `name`, on any class: a name watch fires for the overriding
 // function of a subclass as it does for the base one, which an exact watch on the base cannot --
 // the limit Relay's README Blueprint states for a watch registered on a parent class
@@ -133,6 +145,11 @@ bool ClassNameWatchSettled(const wchar_t* className, const wchar_t* name, int ta
 // live, or dead for good because its name resolved into a full table (the gate logs which). A
 // consumer re-counting its own watches can stop there. Any thread.
 int PendingNameCount();
+
+// Every enabled watch: an exact one by its function (name and class null), a name watch by its literals
+// (function null). For coop/dev/dependency_dump's equivalence record; game thread.
+using WatchVisitor = void (*)(void* ctx, void* ufunction, const wchar_t* className, const wchar_t* name, int tag);
+void DebugForEachWatch(WatchVisitor visit, void* ctx);
 
 // The gate runs while anything holds it; with no holder (the default, the solo single-player
 // state) the detour pays one load and a branch per call and never consults the tables. The coop

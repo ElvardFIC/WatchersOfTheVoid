@@ -71,6 +71,8 @@ void* CurrentResult();
 // class belongs to the script-body gate (ue_wrap/core/script_gate.h), which sees every script body
 // with its arguments and can refuse it.
 bool InstallPostHook(void* ufunction, PostNativeCallback cb, bool armed = true);
+// The row form (ue_wrap/facts/function_row.h): the patch is installed on a resolved row, which records it.
+bool InstallPostHook(const facts::Resolved& fn, PostNativeCallback cb, bool armed = true);
 
 // Arm or disarm an installed hook. Disarmed, the forwarder pays one load and a branch after the
 // original and never calls back: the shape for a seam that matters only while a call of the
@@ -99,6 +101,11 @@ using PreNativeCallback = script_gate::Verdict (*)(void* context, void* sourceOb
 // never reports a call its pre hook refused. `armed` defaults to false, the shape being a seam armed only
 // while a call of the consumer's own runs. Idempotent per (ufunction, cb). Game thread.
 bool InstallPreHook(void* ufunction, PreNativeCallback cb, bool armed = false);
+bool InstallPreHook(const facts::Resolved& fn, PreNativeCallback cb, bool armed = false);
+
+// Every installed patch, by function and kind. For coop/dev/dependency_dump; game thread.
+using HookVisitor = void (*)(void* ctx, void* ufunction, bool pre);
+void DebugForEachHook(HookVisitor visit, void* ctx);
 
 // Arm or disarm an installed pre hook, as SetArmed does a post hook. Game thread.
 bool SetArmed(void* ufunction, PreNativeCallback cb, bool armed);

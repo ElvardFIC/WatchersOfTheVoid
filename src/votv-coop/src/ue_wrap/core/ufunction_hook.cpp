@@ -380,4 +380,24 @@ bool InstallPreHook(void* ufunction, PreNativeCallback cb, bool armed) {
     return true;
 }
 
+void DebugForEachHook(HookVisitor visit, void* ctx) {
+    if (!visit) return;
+    for (int i = 0; i < g_slotCount; ++i)
+        if (g_slots[i].ufunction) visit(ctx, g_slots[i].ufunction, g_slots[i].pre != nullptr);
+}
+
+bool InstallPostHook(const facts::Resolved& fn, PostNativeCallback cb, bool armed) {
+    if (!fn) return false;  // not resolved yet: nothing was asked, nothing is recorded
+    const bool ok = InstallPostHook(fn.Fn(), cb, armed);
+    fn.Row()->NoteUse(facts::kUseNativeHook, ok);
+    return ok;
+}
+
+bool InstallPreHook(const facts::Resolved& fn, PreNativeCallback cb, bool armed) {
+    if (!fn) return false;
+    const bool ok = InstallPreHook(fn.Fn(), cb, armed);
+    fn.Row()->NoteUse(facts::kUseNativeHook, ok);
+    return ok;
+}
+
 }  // namespace ue_wrap::ufunction_hook

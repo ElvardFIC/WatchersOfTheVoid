@@ -75,6 +75,7 @@ set(VOTVCOOP_DEV_SOURCES
     src/coop/dev/grid_drill_checks.cpp
     src/coop/dev/grid_drill_upgrade.cpp
     src/coop/dev/tower_drill.cpp
+    src/coop/dev/dependency_dump.cpp
     src/coop/dev/end_play_probe.cpp
     ***REMOVED***
     src/coop/dev/death_seam_census.cpp

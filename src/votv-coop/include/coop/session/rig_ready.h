@@ -16,11 +16,18 @@
 
 #pragma once
 
+#include "coop/dev/dependency_dump.h"
 #include "ue_wrap/core/log.h"
 
 namespace coop::rig_ready {
 
-inline void Say(const char* milestone) { UE_LOGI("rig: READY %s", milestone); }
-inline void Say(const char* milestone, int slot) { UE_LOGI("rig: READY %s slot=%d", milestone, slot); }
+inline void Say(const char* milestone) {
+    UE_LOGI("rig: READY %s", milestone);
+    coop::dev::dependency_dump::OnMilestone(milestone);
+}
+inline void Say(const char* milestone, int slot) {
+    UE_LOGI("rig: READY %s slot=%d", milestone, slot);
+    coop::dev::dependency_dump::OnMilestone(milestone);
+}
 
 }  // namespace coop::rig_ready

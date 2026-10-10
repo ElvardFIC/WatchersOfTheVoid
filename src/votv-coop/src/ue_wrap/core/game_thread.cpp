@@ -441,6 +441,37 @@ bool RegisterPreObserver(void* targetUFunction, ProcessEventObserverFn cb) {
     return SetObserverSlot(g_preObservers, D::g_preObserverActive, D::g_preBloom, targetUFunction, cb);
 }
 
+void DebugForEachRegistration(RegistrationVisitor visit, void* ctx) {
+    if (!visit) return;
+    for (const InterceptorSlot& s : g_interceptors)
+        if (void* t = s.targetFn.load(std::memory_order_acquire)) visit(ctx, t, 0);
+    for (const ObserverSlot& s : g_postObservers)
+        if (void* t = s.targetFn.load(std::memory_order_acquire)) visit(ctx, t, 1);
+    for (const ObserverSlot& s : g_preObservers)
+        if (void* t = s.targetFn.load(std::memory_order_acquire)) visit(ctx, t, 2);
+}
+
+bool RegisterInterceptor(const facts::Resolved& target, UFunctionInterceptor cb) {
+    if (!target) return false;  // not resolved yet: nothing was asked, nothing is recorded
+    const bool ok = RegisterInterceptor(target.Fn(), cb);
+    target.Row()->NoteUse(facts::kUseInterceptor, ok);
+    return ok;
+}
+
+bool RegisterPostObserver(const facts::Resolved& target, ProcessEventObserverFn cb) {
+    if (!target) return false;
+    const bool ok = RegisterPostObserver(target.Fn(), cb);
+    target.Row()->NoteUse(facts::kUseObserver, ok);
+    return ok;
+}
+
+bool RegisterPreObserver(const facts::Resolved& target, ProcessEventObserverFn cb) {
+    if (!target) return false;
+    const bool ok = RegisterPreObserver(target.Fn(), cb);
+    target.Row()->NoteUse(facts::kUseObserver, ok);
+    return ok;
+}
+
 void UnregisterObservers(void* targetUFunction, ProcessEventObserverFn cb) {
     if (!targetUFunction || !cb) return;
     // Callback-specific: clears only this observer's slot, leaving any co-registered observer on

@@ -559,7 +559,67 @@ bool ClassNameWatchSettled(const wchar_t* className, const wchar_t* name, int ta
     return className && ScopedWatchSettled(className, name, tag);
 }
 
+namespace {
+// The class a name-form row scopes its watch to: none for an AnyClass row, its class for a Declared one.
+bool ScopeOf(const facts::Function& row, const wchar_t*& cls) {
+    if (row.GetMode() == facts::Mode::AnyClass && !row.Class()) {
+        cls = nullptr;
+        return true;
+    }
+    if (row.GetMode() == facts::Mode::Declared && row.Class()) {
+        cls = row.Class();
+        return true;
+    }
+    UE_LOGE("script-gate: row %s cannot be a name watch (an AnyClass row with no class, or a Declared one with "
+            "its class)", row.Ident());
+    return false;
+}
+}  // namespace
+
+bool Watch(const facts::Resolved& fn, int tag, PreFn pre, PostFn post) {
+    if (!fn) return false;  // not resolved yet: nothing was asked of the gate, nothing is recorded
+    const bool ok = Watch(fn.Fn(), tag, pre, post);
+    fn.Row()->NoteUse(facts::kUseScriptGate, ok);
+    return ok;
+}
+
+bool Unwatch(const facts::Resolved& fn, int tag, PreFn pre, PostFn post) {
+    return fn && Unwatch(fn.Fn(), tag, pre, post);
+}
+
+bool WatchName(const facts::Function& row, int tag, PreFn pre, PostFn post) {
+    const wchar_t* cls = nullptr;
+    const bool ok = ScopeOf(row, cls) && WatchNameScoped(cls, row.Name(), tag, pre, post);
+    row.NoteUse(facts::kUseScriptGate, ok);
+    return ok;
+}
+
+bool UnwatchName(const facts::Function& row, int tag, PreFn pre, PostFn post) {
+    const wchar_t* cls = nullptr;
+    return ScopeOf(row, cls) && UnwatchNameScoped(cls, row.Name(), tag, pre, post);
+}
+
+bool NameWatchLive(const facts::Function& row, int tag) {
+    const wchar_t* cls = nullptr;
+    return ScopeOf(row, cls) && ScopedWatchLive(cls, row.Name(), tag);
+}
+
+bool NameWatchSettled(const facts::Function& row, int tag) {
+    const wchar_t* cls = nullptr;
+    return ScopeOf(row, cls) && ScopedWatchSettled(cls, row.Name(), tag);
+}
+
 int PendingNameCount() { return g_namesPending.load(std::memory_order_acquire); }
+
+void DebugForEachWatch(WatchVisitor visit, void* ctx) {
+    if (!visit) return;
+    for (const Entry& e : g_fnTable)
+        if (e.key.load(std::memory_order_acquire) && e.enabled.load(std::memory_order_relaxed))
+            visit(ctx, reinterpret_cast<void*>(e.key.load(std::memory_order_relaxed)), nullptr, nullptr, e.tag);
+    for (const Entry& e : g_nameTable)
+        if (e.key.load(std::memory_order_acquire) && e.enabled.load(std::memory_order_relaxed) && e.name)
+            visit(ctx, nullptr, e.className, e.name, e.tag);
+}
 
 namespace {
 // What a class-scoped watch's class says of its name once it is loaded: a body it declares, which the loop runs;

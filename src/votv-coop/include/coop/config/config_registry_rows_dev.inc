@@ -30,6 +30,11 @@ CFG_FLAG(fingerprint_capture, "fingerprint_capture", "dev", false, "VOTVCOOP_FIN
     "canonical bytecode text and fingerprint to multivoid-fingerprints-capture.txt beside the exe: the "
     "mod's half of the comparison with the text rendered from the cooked assets, and the native half of a "
     "build's reference table (docs/bytecode-fingerprint.md). About a second of work at world load; off by default.")
+CFG_FLAG(dependency_dump, "dependency_dump", "dev", false, "VOTVCOOP_DEPENDENCY_DUMP",
+    "Refactor proof: at the readiness milestones 'joined' (client) and 'peer-world-ready' (host), write every "
+    "script_gate watch, ufunction_hook patch and game_thread observer and interceptor, sorted and counted, to "
+    "multivoid-dependency-dump-<milestone>.txt beside the exe. Two builds' dumps diffed equal prove a change left "
+    "the registered set as it was. Off by default.")
 ***REMOVED***
     ***REMOVED***
     "mainGamemode BeginPlay scans Binaries for *.dll and Content/Paks for *.pak, then pops 'Modded "

@@ -8,6 +8,8 @@
 
 #pragma once
 
+#include "ue_wrap/facts/function_row.h"
+
 #include <atomic>
 #include <functional>
 
@@ -108,6 +110,8 @@ inline constexpr int kMaxInterceptors = 56;
 // Several interceptors may target one UFunction, consulted in order until one returns true;
 // re-registering the same pair is a no-op.
 bool RegisterInterceptor(void* targetUFunction, UFunctionInterceptor cb);
+// The row form (ue_wrap/facts/function_row.h), recorded on the row; likewise the observers below.
+bool RegisterInterceptor(const facts::Resolved& target, UFunctionInterceptor cb);
 
 // Remove the (target, cb) interceptor. A no-op if absent.
 void UnregisterInterceptor(void* targetUFunction, UFunctionInterceptor cb);
@@ -130,6 +134,8 @@ bool RegisterPostObserver(void* targetUFunction, ProcessEventObserverFn cb);
 
 // Register a pre-dispatch observer. The same shape.
 bool RegisterPreObserver(void* targetUFunction, ProcessEventObserverFn cb);
+bool RegisterPostObserver(const facts::Resolved& target, ProcessEventObserverFn cb);
+bool RegisterPreObserver(const facts::Resolved& target, ProcessEventObserverFn cb);
 
 // Remove the (target, cb) observer from whichever table holds it; a co-registered observer on
 // the same UFunction survives. A no-op if absent.
@@ -137,6 +143,11 @@ void UnregisterObservers(void* targetUFunction, ProcessEventObserverFn cb);
 
 // Drop both observer tables. Called from Uninstall.
 void ClearAllObservers();
+
+// Every registered interceptor (kind 0), post-observer (1) and pre-observer (2), by target. For
+// coop/dev/dependency_dump; any thread.
+using RegistrationVisitor = void (*)(void* ctx, void* ufunction, int kind);
+void DebugForEachRegistration(RegistrationVisitor visit, void* ctx);
 
 // The perf instrumentation, driven by coop/dev/perf_probe. The detour is the hottest path in the
 // program, so its counters are gated: the dispatch count costs one relaxed load when off, and the
