@@ -25,18 +25,12 @@ if (-not $tag) { throw "tag '$TagName' fails the grammar (the judge should have 
 if ($TagSha -cnotmatch '^[0-9a-f]{40}$') { throw "TagSha '$TagSha' is not a full lowercase commit sha" }
 
 # The release hangs on the tag NAME, its assets on TagSha. The tag is re-read from
-# origin before the draft and again right before the flip makes the release public:
+# the repository before the draft and again right before the flip makes the release public:
 # a tag moved after the judge would publish these assets under another commit.
 function Assert-TagStillNamesJudgedSha {
-    $lines = @(git ls-remote --tags origin "refs/tags/$TagName*")
-    if ($LASTEXITCODE -ne 0) { throw "re-reading tag '$TagName' from origin failed" }
-    $direct = $null; $peeled = $null
-    foreach ($line in $lines) {
-        $sha, $ref = "$line" -split "`t", 2
-        if ($ref -ceq "refs/tags/$TagName") { $direct = $sha }
-        elseif ($ref -ceq "refs/tags/$TagName^{}") { $peeled = $sha }
-    }
-    $now = if ($peeled) { $peeled } else { $direct }
+    $lines = @(git ls-remote --tags "https://github.com/$Repo.git" "refs/tags/$TagName*")
+    if ($LASTEXITCODE -ne 0) { throw "re-reading tag '$TagName' from $Repo failed" }
+    $now = Select-TagCommitFromLsRemote -Lines $lines -TagName $TagName
     if ($now -cne $TagSha) { throw "tag '$TagName' now names '$now', not the judged $TagSha -- refusing to publish" }
     Write-Host "tag $TagName still names the judged $TagSha"
 }

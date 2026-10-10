@@ -7,13 +7,28 @@ Set-StrictMode -Version Latest
 
 # ONE tag grammar for the whole lane: v<game>-b<N>[-dev].
 # <game> = d.d.d + optional single letter (e.g. 0.9.0n); <N> = decimal, no leading zero.
-$script:TagRegex = '^v(?<game>\d+\.\d+\.\d+[a-z]?)-b(?<n>[1-9]\d*)(?<dev>-dev)?$'
+$script:TagRegex = '^v(?<game>\d+\.\d+\.\d+[a-z]?)-b(?<n>[1-9]\d*)(?<dev>-dev)?\z'   # \z: '$' would admit one trailing newline
 
 # Repo-relative path of the wire-revision header (kProtocolVersion) -- the same
 # file CMakeLists regex-parses for the build number.
 $script:ProtocolHeaderPath = 'src/votv-coop/include/coop/net/protocol.h'
 
 function Get-ReleaseTagRegex { $script:TagRegex }
+
+# The commit a tag names, from `git ls-remote --tags` output: the peeled line
+# (refs/tags/<name>^{}) of an annotated tag wins over the tag line itself. Ref
+# names match exact and case-sensitive, so a near-name (<name>0) never answers.
+# $null when neither line is listed.
+function Select-TagCommitFromLsRemote {
+    param([string[]]$Lines, [Parameter(Mandatory)][string]$TagName)
+    $direct = $null; $peeled = $null
+    foreach ($line in $Lines) {
+        $sha, $ref = "$line" -split "`t", 2
+        if ($ref -ceq "refs/tags/$TagName") { $direct = $sha }
+        elseif ($ref -ceq "refs/tags/$TagName^{}") { $peeled = $sha }
+    }
+    if ($peeled) { $peeled } else { $direct }
+}
 
 function ConvertFrom-ReleaseTag {
     param([Parameter(Mandatory)][string]$TagName)

@@ -34,7 +34,8 @@ $mustRefuse = @(
     'v0.9.0n-b012',       # leading zero
     'v0.9.0n-b0',         # zero build
     'v0.9.0n-b12-DEV',    # case matters
-    'v0.9.0n-b12 '        # trailing whitespace
+    'v0.9.0n-b12 ',       # trailing whitespace
+    "v0.9.0n-b12`n"       # trailing newline ('$' would admit it, '\z' does not)
 )
 foreach ($t in $mustRefuse) {
     $p = ConvertFrom-ReleaseTag $t
@@ -52,6 +53,17 @@ Assert-Case (@(Test-ReleaseNotesFormat -Content '').Count -gt 0) 'notes: empty r
 Assert-Case (@(Test-ReleaseNotesFormat -Content "## What's new`n- x").Count -gt 0) 'notes: leading heading refused (template owns the heading)'
 Assert-Case (@(Test-ReleaseNotesFormat -Content "- fine`nsource: 0123456789abcdef0123456789abcdef01234567").Count -gt 0) 'notes: source:-grammar line refused (first-match shadowing)'
 Assert-Case (@(Test-ReleaseNotesFormat -Content ("- fine`nsha256: " + ('a' * 64) + '  x.dll')).Count -gt 0) 'notes: sha256:-grammar line refused'
+
+# --- Tag-commit pick (publish's re-read of the tag on origin) ----------------
+# The pure function over `git ls-remote --tags` lines: a lightweight tag is its
+# own line; an annotated one adds a peeled ^{} line whose sha is the commit.
+$shaA = 'a' * 40; $shaB = 'b' * 40; $shaC = 'c' * 40
+Assert-Case ((Select-TagCommitFromLsRemote -Lines @("$shaA`trefs/tags/v1.0.0-b5") -TagName 'v1.0.0-b5') -ceq $shaA) 'pick: a lightweight tag names its own sha'
+Assert-Case ((Select-TagCommitFromLsRemote -Lines @("$shaB`trefs/tags/v1.0.0-b5", "$shaA`trefs/tags/v1.0.0-b5^{}") -TagName 'v1.0.0-b5') -ceq $shaA) 'pick: an annotated tag names the peeled commit'
+Assert-Case ((Select-TagCommitFromLsRemote -Lines @("$shaA`trefs/tags/v1.0.0-b5^{}", "$shaB`trefs/tags/v1.0.0-b5") -TagName 'v1.0.0-b5') -ceq $shaA) 'pick: the peeled line wins whichever line comes first'
+Assert-Case ((Select-TagCommitFromLsRemote -Lines @("$shaC`trefs/tags/v1.0.0-b50", "$shaA`trefs/tags/v1.0.0-b5") -TagName 'v1.0.0-b5') -ceq $shaA) 'pick: a near-name line (b50) beside b5 is ignored'
+Assert-Case ($null -eq (Select-TagCommitFromLsRemote -Lines @("$shaC`trefs/tags/v1.0.0-b50", "$shaC`trefs/tags/V1.0.0-B5") -TagName 'v1.0.0-b5')) 'pick: no line for the tag -> $null (a near-name or other case never answers)'
+Assert-Case ($null -eq (Select-TagCommitFromLsRemote -Lines @() -TagName 'v1.0.0-b5')) 'pick: empty input -> $null'
 
 # --- Body-writer machine-key invariants: BOTH artifact eras ------------------
 # The writer's era switch is data-driven (what the sha map holds), so both eras

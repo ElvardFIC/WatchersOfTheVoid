@@ -39,6 +39,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Public-leak gate drill
         run: python3 .github/ci/public_leak_gate_drill.py
@@ -112,6 +113,10 @@ jobs:
       - name: Ledger lint, offline (fold grammar; the README's and install doc's claims)
         shell: pwsh
         run: ./.github/ci/ledger_lint.ps1 -SkipApi
+
+      - name: Release tag grammar selftest (the tag grammar, the notes and body formats, the tag pick)
+        shell: pwsh
+        run: ./.github/ci/tag_regex_selftest.ps1
 
       # The SOURCE invariants, which need no compiler and so do not belong behind a
       # twenty-minute Windows build. They lived only inside build-core once, and while the build
