@@ -134,6 +134,8 @@ if ($tag) {
     }
 } else { Add-Check 'FOREIGN_TAG' 'FAIL' 'unevaluable (tag format failed)' }
 
+# The judge's token is read-only, so draft releases are not listed; both checks below hold over
+# live releases, which every judge sees.
 # 10. FOREIGN_RELEASE + COMPLETION (tag-association, R18).
 $completion = 'NONE'
 if ($SkipApi) {

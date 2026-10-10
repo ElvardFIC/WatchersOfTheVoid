@@ -3,11 +3,11 @@
 
 Standard library only. A fake runner answers canned `gh` output and records every call's argv and
 keyword arguments, so no process starts and the real `gh` is never run; each run happens inside a
-temporary working directory with stdout and stderr captured. The fake answers only the
-commands keygen may run (its reads, then the secret), with the output a real `gh` prints (so an echo of it is seen), and acts
-on the keyword arguments the way `subprocess.run` does. Three mutants are always run and the same
-assertion helper as the green arms must flag each of them; one starts a process, which the guard
-below must refuse.
+temporary working directory with stdout and stderr captured. The fake answers only the commands
+keygen may run (its reads, then the secret), with the output a real `gh` prints (so an echo of it
+is seen), and acts on the keyword arguments the way `subprocess.run` does. Three mutants are
+always run and the same assertion helper as the green arms must flag each of them; one starts a
+process, which the guard below must refuse.
 
 The drill names a repository that does not exist and, for its whole run, refuses the process
 routes it can see with an AssertionError, so a bypass of the injected runner through one of them

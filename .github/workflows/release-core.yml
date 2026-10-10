@@ -1,11 +1,12 @@
-# release-core -- the release lane's brain, executed from main: the trampoline
-# calls it @main, and a recovery dispatch runs the YAML of the ref it is
-# dispatched on, which the ritual picks as main (the release environment admits
-# only main and the admin-only v* tags). THIN ORCHESTRATOR (design D3): every refusal / lint /
-# predicate decision lives in .github/ci/*.ps1 executed from the MAIN
-# checkout (checkout#2) -- the self-check below guards the JUDGE, not just the
-# evidence. The run logs workflow_ref/workflow_sha as evidence (not a gate --
-# a gate cannot guard itself; residual D7(a)).
+# release-core -- the release lane's brain, executed from main: the
+# trampoline calls it @main. A recovery dispatch runs the YAML of the ref it
+# is dispatched on, which the ritual dispatches on main; the release
+# environment admits only main and the v* tags, both admin-only.
+# THIN ORCHESTRATOR (design D3): every refusal / lint / predicate decision
+# lives in .github/ci/*.ps1 executed from the MAIN checkout (checkout#2) --
+# the self-check below guards the JUDGE, not just the evidence. The run logs
+# workflow_ref/workflow_sha as evidence (not a gate -- a gate cannot guard
+# itself; residual D7(a)).
 # No ${{ }} expression is pasted into a run: script (workflow_expr_gate.py):
 # every value a script reads comes through env:, and the tag name is held to
 # the release grammar before any command sees it.
@@ -34,7 +35,7 @@ concurrency:
   cancel-in-progress: false
 
 # Read-only for every job but publish, the one that writes the Release API (D7).
-# The v* tag ruleset lets only an admin create, move or delete a release tag.
+# The rulesets let only an admin create, move or delete a v* tag or push to main.
 permissions:
   contents: read
 

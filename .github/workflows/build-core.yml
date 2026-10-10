@@ -67,7 +67,7 @@ jobs:
           $head = (git rev-parse HEAD).Trim()
           Write-Host "HEAD       = $head"
           Write-Host "source-sha = $env:SOURCE_SHA"
-          Write-Host "github.sha = $env:GITHUB_SHA (evidence only -- on a recovery dispatch this is main's HEAD while the tree is the tag's)"
+          Write-Host "github.sha = $env:GITHUB_SHA (evidence only -- on a recovery dispatch this is the dispatched ref's head, main by the ritual, while the tree is the tag's)"
           if ($head -ne $env:SOURCE_SHA) { throw "checkout mismatch: HEAD $head != source-sha $env:SOURCE_SHA" }
 
       - name: Init build submodules (third_party only; reference/* never fetched)
