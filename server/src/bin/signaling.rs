@@ -401,10 +401,9 @@ async fn handle<S: AsyncRead + AsyncWrite + Unpin>(
 /// payload and retires its registration after 45 s of silence, so a self-route guard here would
 /// make every host reconnect on a timer forever.
 fn relay_line(sender: &str, line: &[u8]) {
-    // S-1 (audit 2026-07-16): drop over-length lines BEFORE building/queuing the
-    // relayed frame. The reader already ends a connection whose line outgrows
-    // MAX_RELAY_PAYLOAD, but a line that arrives whole in one read can pass that
-    // check by up to a read's length. Real SDP/ICE frames are a few KB.
+    // The reader ends a connection whose line outgrows MAX_RELAY_PAYLOAD + 1 bytes, so the one
+    // line it can still hand over past the cap, exactly one byte over, is dropped here before
+    // a frame is built. The frame is the line's own bytes behind the sender's name.
     if line.len() > MAX_RELAY_PAYLOAD {
         return;
     }

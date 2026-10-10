@@ -360,6 +360,23 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_post_body_is_read_to_its_declared_length_and_must_be_an_object() {
+        let leave = |head_tail: &str, body: &[u8]| {
+            let mut r = format!("POST /v1/leave HTTP/1.1\r\nHost: x\r\n{head_tail}\r\n").into_bytes();
+            r.extend_from_slice(body);
+            r
+        };
+        assert_eq!(ask(leave("", b"")).await.0, 413, "a POST without a Content-Length was read");
+        // An empty body is an empty object: the leave handler answers it as it answers `{}`.
+        let (empty, _) = ask(leave("Content-Length: 0\r\n", b"")).await;
+        assert_eq!(empty, 403, "an empty body was not treated as an empty object");
+        // Bytes past the declared length are not part of the body.
+        let (cut, _) = ask(leave("Content-Length: 2\r\n", b"{}trailing junk")).await;
+        assert_eq!(cut, empty, "bytes past the Content-Length reached the parser");
+        assert_eq!(ask(leave("Content-Length: 2\r\n", b"[]")).await.0, 400, "a JSON array was taken as a body");
+    }
+
+    #[tokio::test]
     async fn a_client_that_never_sends_a_client_hello_is_dropped_at_the_deadline() {
         static POOL: LazyLock<Pool> = LazyLock::new(|| Pool::new("test", 8, 8));
         let (l, addr) = listen().await;
