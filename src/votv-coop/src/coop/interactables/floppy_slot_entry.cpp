@@ -15,6 +15,7 @@
 #include "ue_wrap/core/sdk_profile_names.h"
 #include "ue_wrap/core/ufunction_hook.h"
 #include "ue_wrap/devices/floppy_slot.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <chrono>
@@ -60,7 +61,9 @@ std::atomic<bool> g_spawnSeam{false};
 // instead of quietly costing the frame.
 constexpr uint64_t kResolveRetryMs  = 1000;
 constexpr int      kMaxResolveTries = 30;
-void*    g_deferredFn    = nullptr;
+UE_FACT_FN(kRowBeginDeferredSpawn, "floppy_slot_entry", L"GameplayStatics", L"BeginDeferredActorSpawnFromClass",
+           Declared);
+ue_wrap::facts::Resolved g_deferredFn;
 uint64_t g_nextResolveMs = 0;
 int      g_resolveTries  = 0;
 bool     g_resolveGaveUp = false;
@@ -261,10 +264,7 @@ void Install(coop::net::Session* session) {
         const uint64_t now = NowMs();
         if (now < g_nextResolveMs) return;
         g_nextResolveMs = now + kResolveRetryMs;
-        if (!g_deferredFn) {
-            if (void* gsCls = R::FindClass(P::name::GameplayStaticsClass))
-                g_deferredFn = R::FindFunction(gsCls, P::name::BeginDeferredSpawnFn);
-        }
+        if (!g_deferredFn) g_deferredFn = ue_wrap::facts::Resolve(kRowBeginDeferredSpawn);
         if (g_deferredFn && ue_wrap::ufunction_hook::InstallPostHook(g_deferredFn,
                                                                     &OnBeginDeferredSpawn)) {
             g_spawnSeam.store(true, std::memory_order_release);
@@ -285,7 +285,7 @@ void Install(coop::net::Session* session) {
 
     size_t registered = 0, named = 0;
     for (uint8_t k = 0; k < FS::kDeviceKindCount; ++k) {
-        void* fns[FS::kMaxSlotOverlapEntries] = {};
+        ue_wrap::facts::Resolved fns[FS::kMaxSlotOverlapEntries] = {};
         const size_t n = FS::SlotOverlapEntries(static_cast<FS::DeviceKind>(k), fns,
                                                 FS::kMaxSlotOverlapEntries);
         // A kind that declares no entry has nothing to guard and must not hold the install open;
@@ -300,7 +300,7 @@ void Install(coop::net::Session* session) {
             if (!GT::RegisterInterceptor(fns[i], &OnSlotOverlapPre)) continue;
             ++registered;
             if (g_registeredCount < sizeof(g_registered) / sizeof(g_registered[0]))
-                g_registered[g_registeredCount++] = fns[i];
+                g_registered[g_registeredCount++] = fns[i].Fn();
         }
     }
     if (registered != named) {

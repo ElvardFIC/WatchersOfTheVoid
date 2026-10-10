@@ -8,6 +8,7 @@
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/script_gate.h"
+#include "ue_wrap/facts/function_row.h"
 #include "ue_wrap/world/order_economy.h"
 
 #include <atomic>
@@ -25,16 +26,13 @@ namespace OE = ue_wrap::order_economy;
 std::atomic<coop::net::Session*> g_session{nullptr};
 bool g_installed = false;
 
-constexpr const wchar_t* kLaptop = L"ui_laptop_C";
-constexpr const wchar_t* kDrone  = L"drone_C";
-constexpr const wchar_t* kCycle  = L"daynightCycle_C";
-constexpr const wchar_t* kMake   = L"makeAnOrder";
-constexpr const wchar_t* kAdd    = L"addOrderCart";
-constexpr const wchar_t* kRemove = L"removeOrderCart";
-constexpr const wchar_t* kSend   = L"sendShop";
-constexpr const wchar_t* kCheck  = L"checkOrders";
-constexpr const wchar_t* kDeliver = L"compileOrder";
-constexpr const wchar_t* kHour   = L"func_newHour";
+UE_FACT_FN(kRowMakeAnOrder, "dev.order_probe", L"ui_laptop_C", L"makeAnOrder", Declared);
+UE_FACT_FN(kRowAddOrderCart, "dev.order_probe", L"ui_laptop_C", L"addOrderCart", Declared);
+UE_FACT_FN(kRowRemoveOrderCart, "dev.order_probe", L"ui_laptop_C", L"removeOrderCart", Declared);
+UE_FACT_FN(kRowSendShop, "dev.order_probe", L"drone_C", L"sendShop", Declared);
+UE_FACT_FN(kRowCheckOrders, "dev.order_probe", L"drone_C", L"checkOrders", Declared);
+UE_FACT_FN(kRowCompileOrder, "dev.order_probe", L"drone_C", L"compileOrder", Declared);
+UE_FACT_FN(kRowFuncNewHour, "dev.order_probe", L"daynightCycle_C", L"func_newHour", Declared);
 constexpr int kTagMake = 0x4F504D4B, kTagAdd = 0x4F504144, kTagRemove = 0x4F505245;  // 'OPMK' 'OPAD' 'OPRE'
 constexpr int kTagSend = 0x4F505344, kTagCheck = 0x4F504348, kTagDeliver = 0x4F504456;  // 'OPSD' 'OPCH' 'OPDV'
 constexpr int kTagHour = 0x4F50484F;                                                     // 'OPHO'
@@ -120,13 +118,13 @@ void Install(coop::net::Session* session) {
     g_session.store(session, std::memory_order_release);
     if (!IsEnabled() || g_installed) return;
     static bool s_saidFailed = false;
-    g_installed = sg::WatchClassName(kLaptop, kMake, kTagMake, &OnMakeAnOrder, nullptr) &&
-                  sg::WatchClassName(kLaptop, kAdd, kTagAdd, nullptr, &OnQueuePost) &&
-                  sg::WatchClassName(kLaptop, kRemove, kTagRemove, nullptr, &OnQueuePost) &&
-                  sg::WatchClassName(kDrone, kSend, kTagSend, &OnDroneVerb, nullptr) &&
-                  sg::WatchClassName(kDrone, kCheck, kTagCheck, &OnDroneVerb, nullptr) &&
-                  sg::WatchClassName(kDrone, kDeliver, kTagDeliver, &OnDroneVerb, nullptr) &&
-                  sg::WatchClassName(kCycle, kHour, kTagHour, &OnNewHour, nullptr);
+    g_installed = sg::WatchName(kRowMakeAnOrder, kTagMake, &OnMakeAnOrder, nullptr) &&
+                  sg::WatchName(kRowAddOrderCart, kTagAdd, nullptr, &OnQueuePost) &&
+                  sg::WatchName(kRowRemoveOrderCart, kTagRemove, nullptr, &OnQueuePost) &&
+                  sg::WatchName(kRowSendShop, kTagSend, &OnDroneVerb, nullptr) &&
+                  sg::WatchName(kRowCheckOrders, kTagCheck, &OnDroneVerb, nullptr) &&
+                  sg::WatchName(kRowCompileOrder, kTagDeliver, &OnDroneVerb, nullptr) &&
+                  sg::WatchName(kRowFuncNewHour, kTagHour, &OnNewHour, nullptr);
     if (!g_installed && s_saidFailed) return;  // asked again each tick (the watch is idempotent); said once
     s_saidFailed = !g_installed;
     UE_LOGI("[ORDER-PROBE] watches %s: makeAnOrder, addOrderCart, removeOrderCart, drone sendShop/checkOrders/"

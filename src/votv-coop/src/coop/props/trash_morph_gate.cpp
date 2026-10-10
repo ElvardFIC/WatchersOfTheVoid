@@ -7,7 +7,7 @@
 #include "ue_wrap/actors/prop.h"        // ChipPileClass / GarbageClumpClass
 #include "ue_wrap/core/reflection.h"    // FindDispatchFunction
 #include "ue_wrap/core/script_gate.h"
-#include "ue_wrap/core/sdk_profile.h"   // the three verb names
+#include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <chrono>
@@ -16,8 +16,18 @@ namespace coop::trash_morph_gate {
 namespace {
 
 namespace R = ue_wrap::reflection;
-namespace P = ue_wrap::profile;
 namespace sg = ue_wrap::script_gate;
+
+// The three trash morph verbs a client refuses. `toClump` is the pile's morph verb and covers every caller
+// of it -- the collision component's overlap handler and the arir follower alike; `playerGrabbed` spawns
+// the carried clump inline instead of calling it, so it needs its own watch; the clump's re-pile is inline
+// in its ubergraph, so the contact handler that enters there is the verb. All three are declared on the
+// two base classes, so one resolve covers every variant under them.
+UE_FACT_FN(kRowToClump, "trash_morph_gate", L"actorChipPile_C", L"toClump", Dispatch);
+UE_FACT_FN(kRowPlayerGrabbed, "trash_morph_gate", L"actorChipPile_C", L"playerGrabbed", Dispatch);
+UE_FACT_FN(kRowClumpContact, "trash_morph_gate", L"prop_garbageClump_C",
+           L"BndEvt__prop_garbageClump_StaticMesh_K2Node_ComponentBoundEvent_0_ComponentHitSignature__DelegateSignature",
+           Dispatch);
 
 // The session the role gate reads. The verdicts carry no session of their own, so they read this
 // cached pointer; Install re-stores it on every call and OnDisconnect clears it.
@@ -77,10 +87,10 @@ sg::Verdict OnClumpContact(const sg::Call& call)  { return Judge(g_clumpContact,
 // what makes one watch cover every variant under it. An EXACT watch rather than a watch by name,
 // because `playerGrabbed` is an interface event dozens of unrelated prop classes implement and a
 // name watch would judge every one of them.
-bool Register(void* cls, const wchar_t* fnName, int tag, sg::PreFn pre, const char* what) {
+bool Register(void* cls, const ue_wrap::facts::Function& row, int tag, sg::PreFn pre, const char* what) {
     if (!cls) return false;
-    void* declarer = nullptr;
-    void* fn = R::FindDispatchFunction(cls, fnName, &declarer);
+    const wchar_t* fnName = row.Name();
+    const ue_wrap::facts::Resolved fn = ue_wrap::facts::Resolve(row);
     if (!fn) {
         UE_LOGW("trash_morph_gate: '%ls' not found on the trash class -- a client can still author "
                 "%s locally", fnName, what);
@@ -91,6 +101,9 @@ bool Register(void* cls, const wchar_t* fnName, int tag, sg::PreFn pre, const ch
                 "native, or the table is full)", fnName);
         return false;
     }
+    // The row resolved it; the declaring class is asked once more, for the line below only.
+    void* declarer = nullptr;
+    R::FindDispatchFunction(cls, fnName, &declarer);
     UE_LOGI("trash_morph_gate: watching %s at the script-body gate -- '%ls' declared on '%ls'",
             what, fnName, R::ToString(R::NameOf(declarer)).c_str());
     return true;
@@ -112,9 +125,9 @@ void Install(coop::net::Session* session) {
     void* clumpCls = ue_wrap::prop::GarbageClumpClass();
     if (!pileCls || !clumpCls) return;  // classes not loaded yet -> retry on a later tick
     int n = 0;
-    n += Register(pileCls,  P::name::PileToClumpFn,       kTagToClump,      &OnToClump,       "a pile's morph to a clump") ? 1 : 0;
-    n += Register(pileCls,  P::name::PilePlayerGrabbedFn, kTagPlayerGrab,   &OnPlayerGrabbed, "a pile's grab morph") ? 1 : 0;
-    n += Register(clumpCls, P::name::ClumpContactFn,      kTagClumpContact, &OnClumpContact,  "a clump's re-pile") ? 1 : 0;
+    n += Register(pileCls,  kRowToClump,       kTagToClump,      &OnToClump,       "a pile's morph to a clump") ? 1 : 0;
+    n += Register(pileCls,  kRowPlayerGrabbed, kTagPlayerGrab,   &OnPlayerGrabbed, "a pile's grab morph") ? 1 : 0;
+    n += Register(clumpCls, kRowClumpContact,  kTagClumpContact, &OnClumpContact,  "a clump's re-pile") ? 1 : 0;
     if (n < 3) return;  // partial: retry rather than latch with a verb nobody is watching
     g_installed = true;
     UE_LOGI("trash_morph_gate: all 3 trash morph verbs watched -- on a client every pile-clump "

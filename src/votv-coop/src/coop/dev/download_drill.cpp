@@ -15,6 +15,7 @@
 #include "ue_wrap/desk/dish.h"
 #include "ue_wrap/desk/signal_dynamic.h"
 #include "ue_wrap/desk/space_renderer.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <windows.h>
 
@@ -40,7 +41,8 @@ constexpr uint64_t kClientBoundMs = 90000;  // CLIENT: world-ready to every repl
 constexpr uint64_t kCheckEveryMs = 250;
 constexpr int kTagFormCount = 0x44444646;   // 'DDFF'
 constexpr int kTagLogCount  = 0x4444464C;   // 'DDFL'
-const wchar_t* const kDeskClass = L"analogDScreenTest_C";
+UE_FACT_FN(kRowFormDownload, "dev.download_drill", L"analogDScreenTest_C", L"formDownload", Declared);
+UE_FACT_FN(kRowWriteToCoordLog2, "dev.download_drill", L"analogDScreenTest_C", L"writeToCoordLog_2", Declared);
 const wchar_t* const kLogLine = L"Signal data deleted";
 
 enum class HStep : uint8_t { Wait, Catch, CatchWait, Arm, Reset, AwaitLeave, JoinWindow, JoinCatchWait, JoinArm, Done };
@@ -332,8 +334,8 @@ void ClientTick() {
 
 void Tick(coop::net::Session* s) {
     if (!Enabled() || !s) return;
-    if (!g_formWatch) g_formWatch = sg::WatchClassName(kDeskClass, L"formDownload", kTagFormCount, nullptr, &OnFormPost);
-    if (!g_logWatch) g_logWatch = sg::WatchClassName(kDeskClass, L"writeToCoordLog_2", kTagLogCount, &OnLogPre, nullptr);
+    if (!g_formWatch) g_formWatch = sg::WatchName(kRowFormDownload, kTagFormCount, nullptr, &OnFormPost);
+    if (!g_logWatch) g_logWatch = sg::WatchName(kRowWriteToCoordLog2, kTagLogCount, &OnLogPre, nullptr);
     const uint64_t now = ::GetTickCount64();
     if (now < g_nextCheckMs) return;
     g_nextCheckMs = now + kCheckEveryMs;

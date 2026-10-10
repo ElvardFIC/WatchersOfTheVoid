@@ -132,11 +132,6 @@ void* PhysicsConstraintOf(void* hookActor);
 // a joint again. The game's own attach_b begins the same way. Game thread.
 bool BreakConstraint(void* hookActor);
 
-// UPhysicsConstraintComponent::SetConstrainedComponents, the native every route into a hook's tie
-// funnels through -- attach_a, makeAttachments and the throw's tether alike. Resolved on the
-// engine class, so it answers before any hook class has loaded. Null while unresolved.
-void* SetConstrainedComponentsFunction();
-
 // The cable length alone: `dist` and the game's setLength, without the head pose. A mirror whose
 // head rides what it bit derives its pose there, and the reel still has to reach it.
 bool SetMirrorLength(void* mirror, float dist);

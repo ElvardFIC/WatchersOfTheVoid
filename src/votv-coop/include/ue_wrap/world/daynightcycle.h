@@ -28,11 +28,6 @@ bool EnsureResolved();
 // has streamed in. Game thread.
 void* Cycle();
 
-// The cycle's own ReceiveTick event (declared on daynightCycle_C, dispatched by the engine through
-// ProcessEvent at each actor tick -- every frame by the class's defaults, which set no tick
-// interval), the seam a lane parks the cycle at: a pre-observer on it runs right before the tick
-// reads the clock. Null until EnsureResolved has succeeded. Game thread.
-void* TickFunction();
 
 // The save slot of the gamemode a given cycle belongs to, by its own `gamemode` member: no walk, so
 // a tick observer may call it every frame. Null while anything on the way is unresolved or dead.

@@ -19,6 +19,7 @@
 #include "ue_wrap/devices/laptop.h"
 #include "ue_wrap/devices/portable_pc.h"
 #include "ue_wrap/devices/power_control.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <chrono>
@@ -56,9 +57,6 @@ constexpr size_t   kMaxQueued = 32;
 // apply; a sender's presses run at this rate, the rest waiting their turn (door_verb_intent's bound).
 constexpr float kPressBurst = 4.0f;
 constexpr float kPressPerSecond = 4.0f;
-
-constexpr wchar_t kPanelClass[] = L"powerControl_C";
-constexpr wchar_t kPageClass[]  = L"ui_breakerComp_C";
 
 std::atomic<coop::net::Session*> g_session{nullptr};
 
@@ -426,18 +424,24 @@ sg::Verdict OnOwnEdgePre(const sg::Call& call) {
     return sg::Verdict::Cancel;
 }
 
+UE_FACT_FN(kRowButtonsVisibility, "power_panel", L"powerControl_C", L"buttonsVisibility", Declared);
+UE_FACT_FN(kRowActionOptionIndex, "power_panel", L"powerControl_C", L"actionOptionIndex", Declared);
+UE_FACT_FN(kRowUbergraphBreakerComp, "power_panel", L"ui_breakerComp_C", L"ExecuteUbergraph_ui_breakerComp",
+           Declared);
+UE_FACT_FN(kRowSolar, "power_panel", L"powerControl_C", L"solar", Declared);
+UE_FACT_FN(kRowVirusPb, "power_panel", L"powerControl_C", L"virus_pb", Declared);
+
 struct WatchDef {
-    const wchar_t* cls;
-    const wchar_t* fn;
+    const ue_wrap::facts::Function* row;
     int tag;
     sg::PreFn pre;
 };
 constexpr WatchDef kWatches[] = {
-    { kPanelClass, L"buttonsVisibility",              0x50504256 /*'PPBV'*/, &OnSeamPre },
-    { kPanelClass, L"actionOptionIndex",              0x5050414F /*'PPAO'*/, &OnLeverPre },
-    { kPageClass,  L"ExecuteUbergraph_ui_breakerComp", 0x50505047 /*'PPPG'*/, &OnPagePre },
-    { kPanelClass, L"solar",                          0x5050534C /*'PPSL'*/, &OnOwnEdgePre },
-    { kPanelClass, L"virus_pb",                       0x50505650 /*'PPVP'*/, &OnOwnEdgePre },
+    { &kRowButtonsVisibility,    0x50504256 /*'PPBV'*/, &OnSeamPre },
+    { &kRowActionOptionIndex,    0x5050414F /*'PPAO'*/, &OnLeverPre },
+    { &kRowUbergraphBreakerComp, 0x50505047 /*'PPPG'*/, &OnPagePre },
+    { &kRowSolar,                0x5050534C /*'PPSL'*/, &OnOwnEdgePre },
+    { &kRowVirusPb,              0x50505650 /*'PPVP'*/, &OnOwnEdgePre },
 };
 constexpr int kWatchCount = static_cast<int>(sizeof(kWatches) / sizeof(kWatches[0]));
 bool g_registered = false;
@@ -450,8 +454,9 @@ void Install(coop::net::Session* session) {
     if (g_registered) return;
     g_registered = true;
     for (const WatchDef& w : kWatches)
-        if (!sg::WatchClassName(w.cls, w.fn, w.tag, w.pre, nullptr))
-            UE_LOGE("power_panel: the script-body gate refused the watch on %ls::%ls", w.cls, w.fn);
+        if (!sg::WatchName(*w.row, w.tag, w.pre, nullptr))
+            UE_LOGE("power_panel: the script-body gate refused the watch on %ls::%ls", w.row->Class(),
+                    w.row->Name());
 }
 
 void Tick() {
@@ -467,8 +472,8 @@ void Tick() {
     sg::ResolvePendingNames();
     int live = 0, settled = 0;
     for (const WatchDef& w : kWatches) {
-        if (sg::ClassNameWatchLive(w.cls, w.fn, w.tag)) ++live;
-        if (sg::ClassNameWatchSettled(w.cls, w.fn, w.tag)) ++settled;
+        if (sg::NameWatchLive(*w.row, w.tag)) ++live;
+        if (sg::NameWatchSettled(*w.row, w.tag)) ++settled;
     }
     if (live == kWatchCount) {
         g_settled = true;

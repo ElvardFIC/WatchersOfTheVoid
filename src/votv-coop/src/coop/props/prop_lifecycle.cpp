@@ -32,6 +32,7 @@
 #include "ue_wrap/core/sdk_profile.h"
 #include "ue_wrap/core/types.h"
 #include "ue_wrap/core/ufunction_hook.h"  // the destroy seam's Func patch on K2_DestroyActor
+#include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <cstdint>
@@ -57,6 +58,9 @@ bool g_initWatchRefused = false;
 bool g_seeded = false;
 bool g_destroySeamSettled = false;
 constexpr int kTagInit = 0x50494E54;  // 'PINT'
+
+UE_FACT_FN(kRowInit, "prop_lifecycle", nullptr, L"Init", AnyClass);
+UE_FACT_FN(kRowK2DestroyActor, "prop_lifecycle", L"Actor", L"K2_DestroyActor", Declared);
 
 // The takeObj-in-flight bracket is defined in prop_container_extract.cpp and shared through
 // prop_lifecycle_detail.h; the Init POST body reads it, OnDisconnect clears it.
@@ -356,7 +360,7 @@ void Install(coop::net::Session* session) {
     if (g_allInstalled.load(std::memory_order_acquire)) return;
     if (!g_initWatchAsked) {
         g_initWatchAsked = true;
-        g_initWatchRefused = !SG::WatchName(P::name::PropInitFn, kTagInit, nullptr, &OnInitPost);
+        g_initWatchRefused = !SG::WatchName(kRowInit, kTagInit, nullptr, &OnInitPost);
         if (g_initWatchRefused)
             UE_LOGE("grab_hook: the script gate refused the Init watch -- a keyed prop born through a "
                     "ProcessEvent-dispatched Init is not expressed");
@@ -365,10 +369,10 @@ void Install(coop::net::Session* session) {
         // The seed walk waits for the watch to settle: live, a birth racing the walk while a session holds
         // the gate is caught by one or the other (a duplicate insert is a no-op); dead or refused, the
         // walk goes on without it. And for prop_C, the base of the Aprop_C lineage, to be loaded.
-        const bool watchSettled = g_initWatchRefused || SG::NameWatchSettled(P::name::PropInitFn, kTagInit);
+        const bool watchSettled = g_initWatchRefused || SG::NameWatchSettled(kRowInit, kTagInit);
         if (watchSettled && ue_wrap::object_index::ClassByName(P::name::PropClass)) {
             g_seeded = true;
-            if (!g_initWatchRefused && SG::NameWatchLive(P::name::PropInitFn, kTagInit)) {
+            if (!g_initWatchRefused && SG::NameWatchLive(kRowInit, kTagInit)) {
                 UE_LOGI("grab_hook: the Init watch is live -- seeding the known keyed props");
             } else {
                 UE_LOGE("grab_hook: the Init watch is DEAD (%s) -- seeding the known keyed props without it",
@@ -385,14 +389,14 @@ void Install(coop::net::Session* session) {
         // functions, and a patch that failed is not mended by trying it again.
         if (void* actorCls = ue_wrap::object_index::ClassByName(P::name::ActorClassName)) {
             g_destroySeamSettled = true;
-            void* fn = R::FindFunction(actorCls, P::name::DestroyActorFn);
+            const ue_wrap::facts::Resolved fn = ue_wrap::facts::Resolve(kRowK2DestroyActor);
             if (!fn) {
                 UE_LOGW("grab_hook: %ls.%ls UFunction not found -- destroy broadcast disabled",
                         P::name::ActorClassName, P::name::DestroyActorFn);
             } else if (ue_wrap::ufunction_hook::InstallPostHook(fn, &OnK2DestroyFunc)) {
                 UE_LOGI("grab_hook: Func-patched %ls.%ls @ %p (destroy seam -- catches "
                         "EX_CallMath destroys the old PE observer missed)",
-                        P::name::ActorClassName, P::name::DestroyActorFn, fn);
+                        P::name::ActorClassName, P::name::DestroyActorFn, fn.Fn());
             } else {
                 UE_LOGE("grab_hook: the Func patch on %ls.%ls failed -- destroy broadcast disabled",
                         P::name::ActorClassName, P::name::DestroyActorFn);

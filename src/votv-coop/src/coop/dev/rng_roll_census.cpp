@@ -12,6 +12,7 @@
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/call.h"
 #include "ue_wrap/core/reflection.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <chrono>
@@ -70,9 +71,16 @@ std::atomic<uint64_t> g_droppedNotes{0};        // cap-hit / unresolvable-owner 
 // standard seam for every dispatch our ProcessEvent detour cannot see. Attribution comes free: the
 // post callback's sourceObject is FFrame::Object, the CALLING BP actor -- the re-arming ticker, or
 // mainGamemode itself -- which beats the param owner and needs no FFrame stepping.
+UE_FACT_FN(kRowK2SetTimerDelegate, "dev.rng_roll_census", L"KismetSystemLibrary", L"K2_SetTimerDelegate", Declared);
+UE_FACT_FN(kRowK2SetTimer, "dev.rng_roll_census", L"KismetSystemLibrary", L"K2_SetTimer", Declared);
+UE_FACT_FN(kRowDelay, "dev.rng_roll_census", L"KismetSystemLibrary", L"Delay", Declared);
+UE_FACT_FN(kRowRetriggerableDelay, "dev.rng_roll_census", L"KismetSystemLibrary", L"RetriggerableDelay", Declared);
+UE_FACT_FN(kRowDelayFrames, "dev.rng_roll_census", L"KismetSystemLibrary", L"DelayFrames", Declared);
+UE_FACT_FN(kRowSetActorTickInterval, "dev.rng_roll_census", L"Actor", L"SetActorTickInterval", Declared);
+UE_FACT_FN(kRowQuitGame, "dev.rng_roll_census", L"KismetSystemLibrary", L"QuitGame", Declared);
+
 struct Target {
-    const wchar_t* cls;
-    const wchar_t* fn;
+    const ue_wrap::facts::Function* row;
     ue_wrap::ufunction_hook::PostNativeCallback cb;
     bool required;    // false => resolve is best-effort (DelayFrames may not exist in 4.27)
     bool registered = false;
@@ -287,36 +295,36 @@ void Install(coop::net::Session* session) {
     if ((sResolveN++ % 125) != 0) return;
 
     static Target targets[] = {
-        {L"KismetSystemLibrary", L"K2_SetTimerDelegate",  &OnSetTimerDelegate,     true},
-        {L"KismetSystemLibrary", L"K2_SetTimer",          &OnSetTimer,             true},
-        {L"KismetSystemLibrary", L"Delay",                &OnDelay,                true},
-        {L"KismetSystemLibrary", L"RetriggerableDelay",   &OnRetrigDelay,          true},
-        {L"KismetSystemLibrary", L"DelayFrames",          &OnDelayFrames,          false},
-        {L"Actor",               L"SetActorTickInterval", &OnSetActorTickInterval, true},
-        {L"KismetSystemLibrary", L"QuitGame",             &OnQuitGame,             true},
+        {&kRowK2SetTimerDelegate,  &OnSetTimerDelegate,     true},
+        {&kRowK2SetTimer,          &OnSetTimer,             true},
+        {&kRowDelay,               &OnDelay,                true},
+        {&kRowRetriggerableDelay,  &OnRetrigDelay,          true},
+        {&kRowDelayFrames,         &OnDelayFrames,          false},
+        {&kRowSetActorTickInterval, &OnSetActorTickInterval, true},
+        {&kRowQuitGame,            &OnQuitGame,             true},
     };
     int requiredTotal = 0, requiredDone = 0;
     for (const auto& t : targets)
         if (t.required) ++requiredTotal;
     for (auto& t : targets) {
         if (t.registered) { if (t.required) ++requiredDone; continue; }
-        void* cls = R::FindClass(t.cls);
+        void* cls = R::FindClass(t.row->Class());
         if (!cls) continue;
-        void* fn = R::FindFunction(cls, t.fn);
+        const ue_wrap::facts::Resolved fn = ue_wrap::facts::Resolve(*t.row);
         if (!fn) {
             if (!t.required) { t.registered = true; continue; }  // best-effort target absent: skip forever
-            UE_LOGW("[RNG-CENSUS] required native %ls::%ls not found -- retrying", t.cls, t.fn);
+            UE_LOGW("[RNG-CENSUS] required native %ls::%ls not found -- retrying", t.row->Class(), t.row->Name());
             continue;
         }
         // FUNC-PATCH, not the PE interceptor table: these natives are EX_CallMath-invoked (measured
         // -- see the seam-correction note above), invisible to ProcessEvent.
         if (!ue_wrap::ufunction_hook::InstallPostHook(fn, t.cb)) {
-            UE_LOGE("[RNG-CENSUS] InstallPostHook failed for %ls::%ls (table full?)", t.cls, t.fn);
+            UE_LOGE("[RNG-CENSUS] InstallPostHook failed for %ls::%ls (table full?)", t.row->Class(), t.row->Name());
             continue;
         }
         t.registered = true;
         if (t.required) ++requiredDone;
-        UE_LOGI("[RNG-CENSUS] Func-patch observer installed: %ls::%ls", t.cls, t.fn);
+        UE_LOGI("[RNG-CENSUS] Func-patch observer installed: %ls::%ls", t.row->Class(), t.row->Name());
     }
     if (requiredDone == requiredTotal) {
         g_installed = true;

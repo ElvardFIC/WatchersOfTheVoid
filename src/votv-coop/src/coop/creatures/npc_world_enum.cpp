@@ -23,6 +23,7 @@
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/sdk_profile.h"      // NpcClass_Wisp (the ambient-wisp walk skip)
 #include "ue_wrap/core/ufunction_hook.h"   // the EX_CallMath spawn-catch thunk
+#include "ue_wrap/facts/function_row.h"
 
 #include <cstdint>
 #include <memory>
@@ -35,6 +36,9 @@ namespace {
 
 namespace R = ue_wrap::reflection;
 namespace P = ue_wrap::profile;
+
+UE_FACT_FN(kRowBeginDeferredSpawn, "npc_world_enum", L"GameplayStatics", L"BeginDeferredActorSpawnFromClass",
+           Declared);
 
 // The single host and mirror NPC set, the same singleton the other NPC files wrap.
 using coop::element::NpcMirrors;   // canonical accessor (coop/element/mirror_managers.h)
@@ -228,11 +232,11 @@ void OnBeginDeferredExSpawn(void* /*context*/, void* srcObj, void* spawned) {
 
 }  // namespace
 
-void InstallExSpawnCatch(void* beginDeferredFn) {
-    if (!beginDeferredFn) return;
+void InstallExSpawnCatch() {
     // Idempotent per UFunction and callback inside the hook install; it chains after any other
     // Func thunk on the same UFunction (the trash collect's ambient-prop observer), and both fire.
-    if (ue_wrap::ufunction_hook::InstallPostHook(beginDeferredFn, &OnBeginDeferredExSpawn)) {
+    if (ue_wrap::ufunction_hook::InstallPostHook(ue_wrap::facts::Resolve(kRowBeginDeferredSpawn),
+                                                 &OnBeginDeferredExSpawn)) {
         UE_LOGI("npc-sync[ex-spawn]: Func-thunk catch installed on BeginDeferred (source-gated: "
                 "trigger_wispSwarm_C -> wisp_C, piramidSpawner_C -> killerwisp_C + piramid2_C, "
                 "jellyfishPath_C -> jellyfish_C, trigger_eventer_C -> ventCrawler_C + superEgger_C, "

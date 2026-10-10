@@ -10,6 +10,7 @@
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/script_gate.h"
 #include "ue_wrap/devices/portable_pc.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <windows.h>
 
@@ -25,8 +26,7 @@ namespace sg  = ue_wrap::script_gate;
 
 std::atomic<coop::net::Session*> g_session{nullptr};
 
-constexpr const wchar_t* kPcClass = L"prop_portablePc_C";
-constexpr const wchar_t* kLidVerb = L"open";
+UE_FACT_FN(kRowOpen, "portable_pc_lid", L"prop_portablePc_C", L"open", Declared);
 constexpr int kTagLid = 0x4C504344;  // 'LPCD'
 bool g_watched = false;  // registered, once a process
 bool g_settled = false;  // its names resolved at the gate, live or dead for good
@@ -252,7 +252,7 @@ void Retry(coop::net::Session* s, uint64_t now) {
 void Install(coop::net::Session* session) {
     g_session.store(session, std::memory_order_release);
     if (g_watched) return;
-    g_watched = sg::WatchClassName(kPcClass, kLidVerb, kTagLid, &OnOpenPre, &OnOpenPost);
+    g_watched = sg::WatchName(kRowOpen, kTagLid, &OnOpenPre, &OnOpenPost);
     if (!g_watched) UE_LOGW("portable_pc_lid: the lid's watch was refused -- a lid change is not sent");
 }
 
@@ -263,7 +263,7 @@ void Tick() {
         // Asked until the gate has settled every name watch: a watch refused at registration or dead in a
         // full table never goes live, and asking after that would walk the table every tick.
         sg::ResolvePendingNames();
-        if (g_watched && sg::ClassNameWatchLive(kPcClass, kLidVerb, kTagLid)) {
+        if (g_watched && sg::NameWatchLive(kRowOpen, kTagLid)) {
             g_settled = true;
             UE_LOGI("portable_pc_lid: the lid's writer is watched at the script-body gate");
         } else if (!g_watched || sg::PendingNameCount() == 0) {

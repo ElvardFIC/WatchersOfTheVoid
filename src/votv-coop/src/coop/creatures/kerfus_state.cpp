@@ -15,6 +15,7 @@
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/script_gate.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <cmath>
@@ -29,6 +30,8 @@ namespace R  = ue_wrap::reflection;
 namespace sg = ue_wrap::script_gate;
 namespace KF = coop::net::kerfus_state_flags;
 namespace UK = ue_wrap::kerfus;
+
+UE_FACT_FN(kRowReceiveTick, "kerfus_state", L"p_kerfus_C", L"ReceiveTick", Declared);
 
 constexpr int kTagTick = 0x4B465401;  // 'KFT' 1
 
@@ -143,14 +146,14 @@ bool Apply(const coop::net::KerfusStatePayload& p) {
 
 void Install(coop::net::Session* session) {
     g_session.store(session, std::memory_order_release);
-    if (!g_watched) g_watched = sg::WatchClassName(UK::kClassName, L"ReceiveTick", kTagTick, nullptr, &OnTickPost);
+    if (!g_watched) g_watched = sg::WatchName(kRowReceiveTick, kTagTick, nullptr, &OnTickPost);
 }
 
 void Tick() {
     if (!g_saidLive && g_watched) {
         // This lane drives its own watch to live, and says so once.
         sg::ResolvePendingNames();
-        if (sg::ClassNameWatchLive(UK::kClassName, L"ReceiveTick", kTagTick)) {
+        if (sg::NameWatchLive(kRowReceiveTick, kTagTick)) {
             g_saidLive = true;
             UE_LOGI("kerfus_state: the Kerfus's tick is watched -- a host sends its state");
         }

@@ -14,6 +14,7 @@
 #include "ue_wrap/desk/device_screen.h"  // the panel's claim key
 #include "ue_wrap/devices/generator.h"
 #include "ue_wrap/devices/generator_panel.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <algorithm>
 #include <atomic>
@@ -33,7 +34,6 @@ using coop::net::kPowerPuzzleFields;
 using coop::net::kPowerPuzzleFieldSwitches;
 using coop::net::kPowerPuzzleFieldRotator0;
 
-constexpr wchar_t kPanelClass[] = L"transformerMGPanel_C";
 // A drag writes its value every frame; a field goes to the host at most this often, and its last value always.
 constexpr uint64_t kInputEveryMs = 100;
 
@@ -223,17 +223,23 @@ void OnRollPost(const sg::Call& call) {
     if (s && s->role() == coop::net::Role::Host && call.object) coop::power_grid::HostPuzzleChanged();
 }
 
+UE_FACT_FN(kRowUbergraphTransformerMgPanel, "power_puzzle", L"transformerMGPanel_C",
+           L"ExecuteUbergraph_transformerMGPanel", Declared);
+UE_FACT_FN(kRowRandomizeTargets, "power_puzzle", L"transformerMGPanel_C", L"randomizeTargets", Declared);
+UE_FACT_FN(kRowRandomizeValues, "power_puzzle", L"transformerMGPanel_C", L"randomizeValues", Declared);
+UE_FACT_FN(kRowRandomizeSines, "power_puzzle", L"transformerMGPanel_C", L"randomizeSines", Declared);
+
 struct WatchDef {
-    const wchar_t* fn;
+    const ue_wrap::facts::Function* row;
     int tag;
     sg::PreFn pre;
     sg::PostFn post;
 };
 constexpr WatchDef kWatches[] = {
-    { L"ExecuteUbergraph_transformerMGPanel", 0x50505547 /*'PPUG'*/, nullptr,     &OnPanelGraphPost },
-    { L"randomizeTargets",                    0x50505254 /*'PPRT'*/, &OnRollPre, &OnRollPost },
-    { L"randomizeValues",                     0x50505256 /*'PPRV'*/, &OnRollPre, &OnRollPost },
-    { L"randomizeSines",                      0x50505253 /*'PPRS'*/, &OnRollPre, &OnRollPost },
+    { &kRowUbergraphTransformerMgPanel, 0x50505547 /*'PPUG'*/, nullptr,     &OnPanelGraphPost },
+    { &kRowRandomizeTargets,            0x50505254 /*'PPRT'*/, &OnRollPre, &OnRollPost },
+    { &kRowRandomizeValues,             0x50505256 /*'PPRV'*/, &OnRollPre, &OnRollPost },
+    { &kRowRandomizeSines,              0x50505253 /*'PPRS'*/, &OnRollPre, &OnRollPost },
 };
 constexpr int kWatchCount = static_cast<int>(sizeof(kWatches) / sizeof(kWatches[0]));
 bool g_registered = false;
@@ -246,9 +252,9 @@ void Install(coop::net::Session* session) {
     if (g_registered) return;
     g_registered = true;
     for (const WatchDef& w : kWatches)
-        if (!sg::WatchClassName(kPanelClass, w.fn, w.tag, w.pre, w.post))
+        if (!sg::WatchName(*w.row, w.tag, w.pre, w.post))
             UE_LOGE("power_puzzle: the script-body gate refused the watch on %ls::%ls -- that edge is each peer's own",
-                    kPanelClass, w.fn);
+                    w.row->Class(), w.row->Name());
 }
 
 void Fill(void* gen, PowerGridPuzzle& out) {
@@ -340,8 +346,8 @@ void Tick() {
     sg::ResolvePendingNames();
     int live = 0, settled = 0;
     for (const WatchDef& w : kWatches) {
-        if (sg::ClassNameWatchLive(kPanelClass, w.fn, w.tag)) ++live;
-        if (sg::ClassNameWatchSettled(kPanelClass, w.fn, w.tag)) ++settled;
+        if (sg::NameWatchLive(*w.row, w.tag)) ++live;
+        if (sg::NameWatchSettled(*w.row, w.tag)) ++settled;
     }
     if (live == kWatchCount) {
         g_settled = true;

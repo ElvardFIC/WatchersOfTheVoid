@@ -19,6 +19,7 @@
 #include "ue_wrap/engine/engine.h"
 #include "ue_wrap/engine/engine_mainplayer.h"
 #include "ue_wrap/engine/engine_pawn.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <chrono>
@@ -38,6 +39,8 @@ constexpr uint8_t kOpTakeOut   = 1;
 constexpr uint8_t kOpCanonical = 2;
 constexpr uint8_t kOpDeny      = 3;
 
+UE_FACT_FN(kRowPlayerUsedOn, "server_upgrade_sync", L"serverBox_C", L"playerUsedOn", Declared);
+UE_FACT_FN(kRowActionOptionIndex, "server_upgrade_sync", L"serverBox_C", L"actionOptionIndex", Declared);
 constexpr int kTagInstall = 0x53555049;  // 'SUPI'
 constexpr int kTagTakeOut = 0x5355504F;  // 'SUPO'
 
@@ -310,8 +313,8 @@ void HostApplyOp(coop::net::Session* s, const ServerUpgradeStatePayload& p, uint
 void Install(coop::net::Session* session) {
     g_session.store(session, std::memory_order_release);
     if (!g_watched)
-        g_watched = sg::WatchClassName(SB::kBoxClass, SB::kInstallVerb, kTagInstall, &OnVerbPre, &OnVerbPost) &&
-                    sg::WatchClassName(SB::kBoxClass, SB::kTakeOutVerb, kTagTakeOut, &OnVerbPre, &OnVerbPost);
+        g_watched = sg::WatchName(kRowPlayerUsedOn, kTagInstall, &OnVerbPre, &OnVerbPost) &&
+                    sg::WatchName(kRowActionOptionIndex, kTagTakeOut, &OnVerbPre, &OnVerbPost);
 }
 
 void Tick() {

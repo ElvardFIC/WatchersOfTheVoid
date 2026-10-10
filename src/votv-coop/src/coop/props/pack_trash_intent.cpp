@@ -25,6 +25,7 @@
 #include "ue_wrap/engine/engine.h"
 #include "ue_wrap/engine/engine_mainplayer.h"
 #include "ue_wrap/engine/engine_pawn.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <cstdint>
@@ -42,7 +43,7 @@ namespace sg = ue_wrap::script_gate;
 
 // The verb every hand-usable tool declares, so the watch is by name and the callback gates on the
 // tool's class -- the coin gun's lane learned that the hard way.
-const wchar_t* const kHandUseVerb = L"playerHandUse_LMB";
+UE_FACT_FN(kRowPlayerHandUseLmb, "pack_trash_intent", nullptr, L"playerHandUse_LMB", AnyClass);
 constexpr int kTagPackTrash = 0x5041434b;  // 'PACK'
 
 // A pack is an arm's-length hand use, so the sender's reach is the pile grab's: a target further
@@ -324,7 +325,7 @@ void ConsumeSpentTools() {
 void Install(coop::net::Session* session) {
     g_session.store(session, std::memory_order_release);
     if (!g_watchInstalled)
-        g_watchInstalled = sg::WatchName(kHandUseVerb, kTagPackTrash, &OnHandUsePre, nullptr);
+        g_watchInstalled = sg::WatchName(kRowPlayerHandUseLmb, kTagPackTrash, &OnHandUsePre, nullptr);
     // Install is the per-tick retry pump and a FindClass miss is not memoised, so the resolve of a
     // class the world may not hold is bound to about 1 Hz, the coin gun's shape.
     if (g_foldCls && g_rollCls) return;
@@ -337,10 +338,10 @@ void Install(coop::net::Session* session) {
 void Tick(coop::net::Session& session) {
     sg::ResolvePendingNames();
     if (!g_watchInstalled) {
-        g_watchInstalled = sg::WatchName(kHandUseVerb, kTagPackTrash, &OnHandUsePre, nullptr);
+        g_watchInstalled = sg::WatchName(kRowPlayerHandUseLmb, kTagPackTrash, &OnHandUsePre, nullptr);
         return;
     }
-    if (!g_watchLive && sg::NameWatchLive(kHandUseVerb, kTagPackTrash)) {
+    if (!g_watchLive && sg::NameWatchLive(kRowPlayerHandUseLmb, kTagPackTrash)) {
         g_watchLive = true;
         UE_LOGI("[PACK-TRASH] the hand-use gate is live");
     }

@@ -9,6 +9,7 @@
 #include "ue_wrap/core/game_thread.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/script_gate.h"
+#include "ue_wrap/facts/function_row.h"
 #include "ue_wrap/world/red_sky.h"
 
 #include <atomic>
@@ -20,6 +21,8 @@ namespace {
 namespace GT = ue_wrap::game_thread;
 namespace RS = ue_wrap::red_sky;
 namespace sg = ue_wrap::script_gate;
+
+UE_FACT_FN(kRowSpawnRedSky, "weather_redsky", L"mainGamemode_C", L"spawnRedSky", Declared);
 
 std::atomic<coop::net::Session*> g_session{nullptr};
 
@@ -98,8 +101,7 @@ void Install(coop::net::Session* session) {
     g_session.store(session, std::memory_order_release);
     if (g_gateAsked) return;
     g_gateAsked = true;
-    if (!sg::WatchClassName(L"mainGamemode_C", L"spawnRedSky", kSpawnRedSkyTag, &OnSpawnRedSkyPre,
-                            &OnSpawnRedSkyPost))
+    if (!sg::WatchName(kRowSpawnRedSky, kSpawnRedSkyTag, &OnSpawnRedSkyPre, &OnSpawnRedSkyPost))
         UE_LOGE("weather: the script gate refused the watch on mainGamemode_C.spawnRedSky -- the host's red sky does "
                 "not cross, and a client's own noon toggle runs");
 }

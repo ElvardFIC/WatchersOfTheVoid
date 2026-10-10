@@ -24,6 +24,7 @@
 #include "ue_wrap/world/world_singleton.h"
 #include "ue_wrap/core/sdk_profile.h"
 #include "ue_wrap/core/types.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <chrono>
@@ -41,18 +42,28 @@ namespace GT = ue_wrap::game_thread;
 // UFunction pointers, resolved once per process: the cycle and wind classes are loaded at the main
 // menu and live for the process (coop/dev/class_lifetime_probe measures it), so these and the
 // registrations on them hold across a world change.
-void* g_timerRainFn       = nullptr;
-void* g_timerLightningFn  = nullptr;
-void* g_fogEventFn        = nullptr;
-void* g_superFogEventFn   = nullptr;
-void* g_permaRainTimerFn  = nullptr;
+UE_FACT_FN(kRowTimerRain, "weather_sync", L"daynightCycle_C", L"timerRain", Declared);
+UE_FACT_FN(kRowTimerLightning, "weather_sync", L"daynightCycle_C", L"timerLightning", Declared);
+UE_FACT_FN(kRowFogEvent, "weather_sync", L"daynightCycle_C", L"fogEvent", Declared);
+UE_FACT_FN(kRowSuperFogEvent, "weather_sync", L"daynightCycle_C", L"superFogEvent", Declared);
+UE_FACT_FN(kRowPermaRainTimer, "weather_sync", L"daynightCycle_C", L"permaRain_timer", Declared);
+UE_FACT_FN(kRowCauseRain, "weather_sync", L"daynightCycle_C", L"causeRain", Declared);
+UE_FACT_FN(kRowSetRainProperties, "weather_sync", L"daynightCycle_C", L"setRainProperties", Declared);
+UE_FACT_FN(kRowIntComsTriggerSnow, "weather_sync", L"daynightCycle_C", L"intComs_triggerSnow", Declared);
+UE_FACT_FN(kRowChangeWindOrigin, "weather_sync", L"directionalWind_C", L"changeWindOrigin", Declared);
+
+ue_wrap::facts::Resolved g_timerRainFn;
+ue_wrap::facts::Resolved g_timerLightningFn;
+ue_wrap::facts::Resolved g_fogEventFn;
+ue_wrap::facts::Resolved g_superFogEventFn;
+ue_wrap::facts::Resolved g_permaRainTimerFn;
 
 // The three mutator observer targets (causeRain, setRainProperties, intComs_triggerSnow),
 // resolved here independently of weather_rain's own resolves of the same UFunctions: each module
 // owns what it registers or calls. The call substrate for all five mutators is weather_rain's.
-void* g_causeRainFn          = nullptr;
-void* g_setRainPropertiesFn  = nullptr;
-void* g_intComsTriggerSnowFn = nullptr;
+ue_wrap::facts::Resolved g_causeRainFn;
+ue_wrap::facts::Resolved g_setRainPropertiesFn;
+ue_wrap::facts::Resolved g_intComsTriggerSnowFn;
 
 // Lightning needs no echo-suppress flag: only the host registers the spawn observer, so a
 // client's Apply broadcasts nothing, and event_feed drops LightningStrike on the host.
@@ -247,28 +258,28 @@ bool TryResolveAllFunctions() {
     void* cls = ue_wrap::object_index::ClassByName(P::name::DaynightCycleClass);
     if (!cls) return false;
 
-    struct Entry { const wchar_t* name; void** out; };
+    struct Entry { const ue_wrap::facts::Function* row; ue_wrap::facts::Resolved* out; };
     Entry sched[] = {
-        { P::name::DaynightCycle_timerRainFn,       &g_timerRainFn       },
-        { P::name::DaynightCycle_timerLightningFn,  &g_timerLightningFn  },
-        { P::name::DaynightCycle_fogEventFn,        &g_fogEventFn        },
-        { P::name::DaynightCycle_superFogEventFn,   &g_superFogEventFn   },
-        { P::name::DaynightCycle_permaRainTimerFn,  &g_permaRainTimerFn  },
+        { &kRowTimerRain,       &g_timerRainFn       },
+        { &kRowTimerLightning,  &g_timerLightningFn  },
+        { &kRowFogEvent,        &g_fogEventFn        },
+        { &kRowSuperFogEvent,   &g_superFogEventFn   },
+        { &kRowPermaRainTimer,  &g_permaRainTimerFn  },
     };
     Entry mut[] = {
-        { P::name::DaynightCycle_causeRainFn,          &g_causeRainFn          },
-        { P::name::DaynightCycle_setRainPropertiesFn,  &g_setRainPropertiesFn  },
-        { P::name::DaynightCycle_intComsTriggerSnowFn, &g_intComsTriggerSnowFn },
+        { &kRowCauseRain,          &g_causeRainFn          },
+        { &kRowSetRainProperties,  &g_setRainPropertiesFn  },
+        { &kRowIntComsTriggerSnow, &g_intComsTriggerSnowFn },
     };
 
     int sResolved = 0, mResolved = 0;
     for (auto& e : sched) {
         if (*e.out) { ++sResolved; continue; }
-        if (void* fn = R::FindFunction(cls, e.name)) { *e.out = fn; ++sResolved; }
+        if (const ue_wrap::facts::Resolved fn = ue_wrap::facts::Resolve(*e.row)) { *e.out = fn; ++sResolved; }
     }
     for (auto& e : mut) {
         if (*e.out) { ++mResolved; continue; }
-        if (void* fn = R::FindFunction(cls, e.name)) { *e.out = fn; ++mResolved; }
+        if (const ue_wrap::facts::Resolved fn = ue_wrap::facts::Resolve(*e.row)) { *e.out = fn; ++mResolved; }
     }
     // All five schedulers (broadcast and suppression) and all three mutator targets.
     if (sResolved == 5 && mResolved == 3) return true;
@@ -304,12 +315,12 @@ void Install(coop::net::Session* session) {
         // a slot to wait for.
         if (void* wc = ue_wrap::object_index::ClassByName(P::name::DirectionalWindClass)) {
             g_windOriginInterceptorReg = true;
-            void* fn = R::FindFunction(wc, L"changeWindOrigin");
+            const ue_wrap::facts::Resolved fn = ue_wrap::facts::Resolve(kRowChangeWindOrigin);
             if (!fn) {
                 UE_LOGW("weather: directionalWind has no changeWindOrigin -- a client rolls its own gusts");
             } else if (GT::RegisterInterceptor(fn, &OnWindOriginPreSuppress)) {
                 UE_LOGI("weather: changeWindOrigin PRE-interceptor registered (@%p; "
-                        "client-suppressed wind-gust roll, host pass-through)", fn);
+                        "client-suppressed wind-gust roll, host pass-through)", fn.Fn());
             } else {
                 UE_LOGE("weather: changeWindOrigin interceptor registration FAILED (the interceptor "
                         "table is full) -- a client rolls its own gusts");
@@ -339,30 +350,30 @@ void Install(coop::net::Session* session) {
 
     if (isHost && !g_observersRegistered) {
         int n = 0;
-        struct Tgt { void* fn; const wchar_t* name; };
+        struct Tgt { const ue_wrap::facts::Resolved* fn; const ue_wrap::facts::Function* row; };
         const Tgt all[] = {
             // The five schedulers carry the organic, timer-rolled changes.
-            { g_timerRainFn,       L"timerRain" },
-            { g_timerLightningFn,  L"timerLightning" },
-            { g_fogEventFn,        L"fogEvent" },
-            { g_superFogEventFn,   L"superFogEvent" },
-            { g_permaRainTimerFn,  L"permaRain_timer" },
+            { &g_timerRainFn,       &kRowTimerRain },
+            { &g_timerLightningFn,  &kRowTimerLightning },
+            { &g_fogEventFn,        &kRowFogEvent },
+            { &g_superFogEventFn,   &kRowSuperFogEvent },
+            { &g_permaRainTimerFn,  &kRowPermaRainTimer },
             // The three mutators carry the changes that bypass the schedulers (a story event
             // calling causeRain or intComs_triggerSnow, a dev command calling setRainProperties).
             // One callback for all eight: it reads the post-mutation state and dedupes.
-            { g_causeRainFn,          L"causeRain" },
-            { g_setRainPropertiesFn,  L"setRainProperties" },
-            { g_intComsTriggerSnowFn, L"intComs_triggerSnow" },
+            { &g_causeRainFn,          &kRowCauseRain },
+            { &g_setRainPropertiesFn,  &kRowSetRainProperties },
+            { &g_intComsTriggerSnowFn, &kRowIntComsTriggerSnow },
         };
         for (const auto& t : all) {
-            if (!t.fn) {
+            if (!*t.fn) {
                 UE_LOGW("weather: HOST observer skip '%ls' -- UFunction pointer null at registration time",
-                        t.name);
+                        t.row->Name());
                 continue;
             }
-            if (!GT::RegisterPostObserver(t.fn, &OnSchedulerPost)) {
+            if (!GT::RegisterPostObserver(*t.fn, &OnSchedulerPost)) {
                 UE_LOGE("weather: HOST observer REGISTRATION FAILED for '%ls' "
-                        "(observer table full? bump kMaxObservers)", t.name);
+                        "(observer table full? bump kMaxObservers)", t.row->Name());
                 continue;
             }
             ++n;
@@ -376,10 +387,10 @@ void Install(coop::net::Session* session) {
     // installed latch is per process; the body gates at fire time.
     if (!g_interceptorsRegistered) {
         int n = 0;
-        void* targets[] = { g_timerRainFn, g_timerLightningFn, g_fogEventFn,
-                            g_superFogEventFn, g_permaRainTimerFn };
-        for (void* t : targets) {
-            if (t && GT::RegisterInterceptor(t, &OnSchedulerPreSuppress)) ++n;
+        const ue_wrap::facts::Resolved* targets[] = { &g_timerRainFn, &g_timerLightningFn, &g_fogEventFn,
+                                                      &g_superFogEventFn, &g_permaRainTimerFn };
+        for (const ue_wrap::facts::Resolved* t : targets) {
+            if (*t && GT::RegisterInterceptor(*t, &OnSchedulerPreSuppress)) ++n;
         }
         g_interceptorsRegistered = true;
         UE_LOGI("weather: scheduler PRE interceptors registered on %d/5 UFunctions "

@@ -12,6 +12,7 @@
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/script_gate.h"
 #include "ue_wrap/desk/dish.h"
+#include "ue_wrap/facts/function_row.h"
 #include "ue_wrap/world/daynightcycle.h"
 #include "ue_wrap/world/game_mode.h"
 #include "ue_wrap/world/game_rules_pane.h"
@@ -44,25 +45,37 @@ using Clock = std::chrono::steady_clock;
 // cooked Blueprint, compared case-insensitively as the engine compares names), so a name watch sees
 // that class's function and nothing else. A `burst` watch prints one line per pump tick with its
 // callers; the minute-rate ones fire on every instance every in-game minute and are only counted.
+UE_FACT_FN(kRowGenerteHashcode, "dev.rollover_watch", nullptr, L"generteHashcode", AnyClass);
+UE_FACT_FN(kRowSetTaskNew, "dev.rollover_watch", nullptr, L"setTaskNew", AnyClass);
+UE_FACT_FN(kRowSpawnBadSun, "dev.rollover_watch", nullptr, L"Spawn Bad Sun", AnyClass);
+UE_FACT_FN(kRowFuncNewMinute, "dev.rollover_watch", nullptr, L"func_newMinute", AnyClass);
+UE_FACT_FN(kRowFuncNewHour, "dev.rollover_watch", nullptr, L"func_newHour", AnyClass);
+UE_FACT_FN(kRowNewmin, "dev.rollover_watch", nullptr, L"newmin", AnyClass);
+UE_FACT_FN(kRowMin, "dev.rollover_watch", nullptr, L"min", AnyClass);
+UE_FACT_FN(kRowNewMinute, "dev.rollover_watch", nullptr, L"newMinute", AnyClass);
+UE_FACT_FN(kRowNewday, "dev.rollover_watch", nullptr, L"newday", AnyClass);
+UE_FACT_FN(kRowSpawnKrampus, "dev.rollover_watch", nullptr, L"spawnKrampus", AnyClass);
+UE_FACT_FN(kRowSpawnGifts, "dev.rollover_watch", nullptr, L"spawnGifts", AnyClass);
+UE_FACT_FN(kRowRunEvent, "dev.rollover_watch", nullptr, L"runEvent", AnyClass);
 struct WatchDef {
-    const wchar_t* name;
+    const ue_wrap::facts::Function* row;
     const char*    declarer;
     const char*    role;
     bool           burst;
 };
 constexpr WatchDef kWatches[] = {
-    { L"generteHashcode", "dish_C",            "roll",       true  },
-    { L"setTaskNew",      "lib_C",             "roll",       true  },
-    { L"Spawn Bad Sun",   "mainGamemode_C",    "roll",       true  },
-    { L"func_newMinute",  "daynightCycle_C",   "pulse",      false },
-    { L"func_newHour",    "daynightCycle_C",   "pulse",      true  },
-    { L"newmin",          "spookpath_C",       "consumer",   false },
-    { L"min",             "NewBlueprint15_C",  "consumer",   false },
-    { L"newMinute",       "triggerTimer_C",    "consumer",   false },
-    { L"newday",          "prop_shitlog_C",    "consumer",   true  },
-    { L"spawnKrampus",    "prop_xmastree_C",   "consumer",   true  },
-    { L"spawnGifts",      "prop_xmastree_C",   "consumer",   true  },
-    { L"runEvent",        "trigger_eventer_C", "event walk", true  },
+    { &kRowGenerteHashcode, "dish_C",            "roll",       true  },
+    { &kRowSetTaskNew,      "lib_C",             "roll",       true  },
+    { &kRowSpawnBadSun,     "mainGamemode_C",    "roll",       true  },
+    { &kRowFuncNewMinute,   "daynightCycle_C",   "pulse",      false },
+    { &kRowFuncNewHour,     "daynightCycle_C",   "pulse",      true  },
+    { &kRowNewmin,          "spookpath_C",       "consumer",   false },
+    { &kRowMin,             "NewBlueprint15_C",  "consumer",   false },
+    { &kRowNewMinute,       "triggerTimer_C",    "consumer",   false },
+    { &kRowNewday,          "prop_shitlog_C",    "consumer",   true  },
+    { &kRowSpawnKrampus,    "prop_xmastree_C",   "consumer",   true  },
+    { &kRowSpawnGifts,      "prop_xmastree_C",   "consumer",   true  },
+    { &kRowRunEvent,        "trigger_eventer_C", "event walk", true  },
 };
 constexpr int kCount = static_cast<int>(sizeof(kWatches) / sizeof(kWatches[0]));
 constexpr int kTagBase = 0x524F0000;  // 'RO', plus the watch's index
@@ -153,7 +166,7 @@ sg::Verdict OnPre(const sg::Call& c) {
         const std::wstring decl = outer ? R::ToString(R::NameOf(outer)) : L"?";
         const std::wstring inst = c.object ? R::ClassNameOf(c.object) : L"?";
         UE_LOGI("rollover_watch: [%c] FIRST %ls (%s) -- declared by %ls, on a %ls, from %s%s", RoleChar(),
-                kWatches[i].name, kWatches[i].role, decl.c_str(), inst.c_str(), caller,
+                kWatches[i].row->Name(), kWatches[i].role, decl.c_str(), inst.c_str(), caller,
                 c.fromOurCode ? " (a reflected call of ours)" : "");
     }
     if (kWatches[i].burst) {
@@ -178,10 +191,10 @@ void EnsureWatches() {
     if (!g_registered && !g_registerFailed) {
         if (!sg::IsInstalled()) return;
         for (int i = 0; i < kCount; ++i) {
-            if (!sg::WatchName(kWatches[i].name, kTagBase + i, &OnPre, &OnPost)) {
+            if (!sg::WatchName(*kWatches[i].row, kTagBase + i, &OnPre, &OnPost)) {
                 g_registerFailed = true;
                 UE_LOGE("rollover_watch: the gate refused the watch on %ls -- this run measures nothing",
-                        kWatches[i].name);
+                        kWatches[i].row->Name());
                 return;
             }
         }
@@ -196,7 +209,7 @@ void EnsureWatches() {
     sg::ResolvePendingNames();
     int live = 0;
     for (int i = 0; i < kCount; ++i)
-        if (sg::NameWatchLive(kWatches[i].name, kTagBase + i)) ++live;
+        if (sg::NameWatchLive(*kWatches[i].row, kTagBase + i)) ++live;
     const bool changed = (live != g_live);
     g_live = live;
     if (live == kCount) {
@@ -238,7 +251,7 @@ void FlushBursts(bool& hashBurst) {
         }
         if (t.moreCallers) callers += ", and others";
         UE_LOGI("rollover_watch: [%c] %ls x%u in one burst, ran %u -- %s of %s, caller %s | %s", RoleChar(),
-                kWatches[i].name, t.burstReached, t.burstRan, kWatches[i].role, kWatches[i].declarer,
+                kWatches[i].row->Name(), t.burstReached, t.burstRan, kWatches[i].role, kWatches[i].declarer,
                 callers.empty() ? "?" : callers.c_str(), ClockBrief().c_str());
         if (i == kIdxHashcode) hashBurst = true;
         t.burstReached = t.burstRan = 0;
@@ -373,7 +386,7 @@ void PrintDay(const char* trigger, float day, float scale) {
     char totals[900];
     int n = std::snprintf(totals, sizeof(totals), "rollover_watch: [%c] DAY totals, reached/ran --", RoleChar());
     for (int i = 0; i < kCount && n > 0 && n < static_cast<int>(sizeof(totals)); ++i)
-        n += std::snprintf(totals + n, sizeof(totals) - n, " %ls=%llu/%llu", kWatches[i].name,
+        n += std::snprintf(totals + n, sizeof(totals) - n, " %ls=%llu/%llu", kWatches[i].row->Name(),
                            static_cast<unsigned long long>(g_tally[i].reached),
                            static_cast<unsigned long long>(g_tally[i].ran));
     UE_LOGI("%s", totals);
@@ -463,7 +476,7 @@ void Tick() {
 
 uint64_t RanCount(const wchar_t* name) {
     for (int i = 0; i < kCount; ++i)
-        if (std::wcscmp(kWatches[i].name, name) == 0) return g_tally[i].ran;
+        if (std::wcscmp(kWatches[i].row->Name(), name) == 0) return g_tally[i].ran;
     return 0;
 }
 

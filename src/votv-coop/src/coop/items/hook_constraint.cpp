@@ -20,6 +20,7 @@
 #include "ue_wrap/core/ufunction_hook.h"
 #include "ue_wrap/engine/engine.h"
 #include "ue_wrap/engine/engine_component.h"
+#include "ue_wrap/facts/function_row.h"
 #include "ue_wrap/world/keyed_objects.h"
 
 #include <atomic>
@@ -37,6 +38,9 @@ namespace GT = ue_wrap::game_thread;
 namespace H  = ue_wrap::hook;
 namespace PR = ue_wrap::prop;
 namespace R  = ue_wrap::reflection;
+
+UE_FACT_FN(kRowSetConstrainedComponents, "hook_constraint", L"PhysicsConstraintComponent",
+           L"SetConstrainedComponents", Declared);
 
 std::atomic<coop::net::Session*> g_session{nullptr};
 // Read in the seam callback, written on the game thread at Install and OnDisconnect: true while this
@@ -135,7 +139,7 @@ void Install(coop::net::Session* session) {
     if (g_seamInstalled || g_seamRefused) return;
     // The seam judges a hook by its class's name before any hook class has loaded.
     if (!H::ResolveNames()) return;   // retried from Tick
-    void* fn = H::SetConstrainedComponentsFunction();
+    const ue_wrap::facts::Resolved fn = ue_wrap::facts::Resolve(kRowSetConstrainedComponents);
     if (!fn) return;   // retried from Tick
     if (!ue_wrap::ufunction_hook::InstallPostHook(fn, &OnSetConstrainedPost)) {
         g_seamRefused = true;

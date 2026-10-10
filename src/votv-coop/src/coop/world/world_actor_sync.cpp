@@ -31,6 +31,7 @@
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/sdk_profile.h"
 #include "ue_wrap/core/types.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <chrono>
@@ -51,6 +52,10 @@ namespace P  = ue_wrap::profile;
 namespace R  = ue_wrap::reflection;
 namespace E  = ue_wrap::engine;
 namespace GT = ue_wrap::game_thread;
+
+UE_FACT_FN(kRowBeginDeferredSpawn, "world_actor_sync", L"GameplayStatics", L"BeginDeferredActorSpawnFromClass",
+           Declared);
+UE_FACT_FN(kRowK2DestroyActor, "world_actor_sync", L"Actor", L"K2_DestroyActor", Declared);
 
 std::atomic<coop::net::Session*> g_session{nullptr};
 inline coop::net::Session* LoadSession() { return g_session.load(std::memory_order_acquire); }
@@ -325,7 +330,8 @@ void Install(coop::net::Session* session) {
 
     void* gsCls = R::FindClass(P::name::GameplayStaticsClass);
     if (!gsCls) { s_retry = 60; return; }
-    void* fn = R::FindFunction(gsCls, P::name::BeginDeferredSpawnFn);
+    const ue_wrap::facts::Resolved spawn = ue_wrap::facts::Resolve(kRowBeginDeferredSpawn);
+    void* fn = spawn.Fn();
     if (!fn) {
         UE_LOGW("world-actor: %ls.%ls UFunction not found -- disabled permanently",
                 P::name::GameplayStaticsClass, P::name::BeginDeferredSpawnFn);
@@ -343,8 +349,8 @@ void Install(coop::net::Session* session) {
     const int32_t xformOff = R::FindParamOffset(fn, L"SpawnTransform");  // may be -1 (position-less spawns still work)
     void* finishFn = R::FindFunction(gsCls, P::name::FinishSpawningActorFn);
     void* gsCdo    = R::FindClassDefaultObject(P::name::GameplayStaticsClass);
-    void* actorCls = R::FindClass(P::name::ActorClassName);
-    void* destroyFn = actorCls ? R::FindFunction(actorCls, P::name::DestroyActorFn) : nullptr;
+    const ue_wrap::facts::Resolved destroy = ue_wrap::facts::Resolve(kRowK2DestroyActor);
+    void* destroyFn = destroy.Fn();
     if (!finishFn || !gsCdo || !destroyFn) {
         // The lifecycle cannot close without K2_DestroyActor, and the client materialise needs
         // finish and the CDO; without a guaranteed destroy observer Elements would leak, so the
@@ -368,11 +374,11 @@ void Install(coop::net::Session* session) {
     // burn an observer slot.
     if (!g_postObserverInstalled.load(std::memory_order_acquire) ||
         !g_destroyObserverInstalled.load(std::memory_order_acquire)) {
-        const bool postOk = GT::RegisterPostObserver(fn, &WorldActorSpawn_POST);
+        const bool postOk = GT::RegisterPostObserver(spawn, &WorldActorSpawn_POST);
         if (!postOk) {
             g_disabledThisProcess.store(true, std::memory_order_release);
             UE_LOGE("world-actor: RegisterPostObserver FAILED (table full) -- WA sync DISABLED");
-        } else if (!GT::RegisterPreObserver(destroyFn, &WorldActorDestroy_PRE)) {
+        } else if (!GT::RegisterPreObserver(destroy, &WorldActorDestroy_PRE)) {
             GT::UnregisterObservers(fn, &WorldActorSpawn_POST);
             g_disabledThisProcess.store(true, std::memory_order_release);
             UE_LOGE("world-actor: RegisterPreObserver FAILED for K2_DestroyActor -- WA sync DISABLED "
@@ -391,7 +397,7 @@ void Install(coop::net::Session* session) {
     }
     // A second interceptor on BeginDeferred, conflict-free with npc_sync's: disjoint allowlists,
     // each fires, the matching one acts, and both return false on the host so the spawn proceeds.
-    GT::RegisterInterceptor(fn, &WorldActorSuppress_Interceptor);
+    GT::RegisterInterceptor(spawn, &WorldActorSuppress_Interceptor);
     UE_LOGI("world-actor: installed interceptor + observers on %ls.%ls (ActorClass@%d Return@%d Xform@%d; "
             "%zu allowlisted names; NAME-matched, lazy-load-safe)",
             P::name::GameplayStaticsClass, P::name::BeginDeferredSpawnFn,

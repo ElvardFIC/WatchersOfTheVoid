@@ -18,6 +18,7 @@
 #include "ue_wrap/core/sdk_profile.h"
 #include "ue_wrap/engine/engine.h"
 #include "ue_wrap/engine/engine_attach.h"   // SetActorRootPhysicsVelocity
+#include "ue_wrap/facts/function_row.h"
 
 #include <algorithm>
 #include <cmath>
@@ -42,6 +43,8 @@ constexpr const wchar_t* kBroomClassPath = L"/Game/objects/prop_broom.prop_broom
 constexpr float kStandCm = 70.f;
 // The drill's own watch tag, apart from the lane's.
 constexpr int kNotifyTag = 0x6D0;
+UE_FACT_FN(kRowBroomStrokeNotify, "dev.autotest_broomstroke_world", nullptr,
+           L"OnNotifyBegin_6E812E554132A6D770F1F3A21FF9EAC0", AnyClass);
 // Below this a clump is not moving: the rest the trash channel's own close reads is 5 cm/s.
 constexpr float kMovingCmS = 1.f;
 
@@ -285,7 +288,7 @@ void LookAt(const ue_wrap::FVector& target, const char* who, const char* phase) 
 bool WatchNotifies(const char* who, bool bodiesRunHere) {
     g_who = who;
     g_bodiesRunHere = bodiesRunHere;
-    const bool ok = sg::WatchName(P::name::BroomStrokeNotifyFn, kNotifyTag, &OnNotify, &OnNotifyDone);
+    const bool ok = sg::WatchName(kRowBroomStrokeNotify, kNotifyTag, &OnNotify, &OnNotifyDone);
     if (!ok) UE_LOGW("broom_drill: %s -- the gate refused the notify watch; no NOTIFY rows", who);
     return ok;
 }

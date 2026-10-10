@@ -22,6 +22,7 @@
 #include "ue_wrap/core/sdk_profile.h"
 #include "ue_wrap/engine/engine.h"
 #include "ue_wrap/engine/engine_mainplayer.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <windows.h>
 
@@ -43,7 +44,7 @@ namespace R  = ue_wrap::reflection;
 namespace sg = ue_wrap::script_gate;
 
 constexpr const wchar_t* kDisc = L"prop_floppyDisc_R_C";  // a proper disc: the insert refuses the white one
-constexpr const wchar_t* kVerb = L"actionName";
+UE_FACT_FN(kRowActionName, "dev.kerfur_serve_drill", L"kerfurOmega_C", L"actionName", Declared);
 constexpr int      kTagVerb        = 0x4B535201;  // 'KSR' 1
 constexpr float    kAwayMinCm      = 1000.f;      // the client's pile, 10 to 30 m out
 constexpr float    kAwayMaxCm      = 3000.f;
@@ -204,7 +205,7 @@ void OnVerbPost(const sg::Call& c) {
 
 void TickHost(coop::net::Session* s, uint64_t ms) {
     if (!g_watched)
-        g_watched = sg::WatchClassName(P::name::NpcClass_KerfurOmega, kVerb, kTagVerb, nullptr, &OnVerbPost);
+        g_watched = sg::WatchName(kRowActionName, kTagVerb, nullptr, &OnVerbPost);
     if (g_host == HostStep::Done) return;
     if (g_host == HostStep::WaitJoin) {
         for (int i = 1; i < static_cast<int>(coop::players::kMaxPeers); ++i)

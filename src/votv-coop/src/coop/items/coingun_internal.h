@@ -30,7 +30,6 @@ namespace coop::coingun_sync {
 //
 // The lanes watch SEPARATE verbs with SEPARATE callbacks, so neither TU needs the other's entry
 // point. A shared dispatcher would have forced the collect lane's guts back into this header.
-extern const wchar_t* const kVerbNameGunUse;    // prop_coingun_C::playerHandUse_LMB -- the shot
 extern const wchar_t* const kVerbNameCollect;   // baocoin_C::actionOptionIndex     -- the E-press
 inline constexpr int kVerbCoinGunUse  = 6;
 inline constexpr int kVerbCoinCollect = 7;
@@ -48,8 +47,7 @@ bool IsCoinActor(void* actor);
 
 // Is this thread inside the body of the verb called `name`? The SALE lane's ambient-window read;
 // the collect lane reads `b.object` off its own call and does not call this. Pointer-compares
-// first -- both lanes pass a literal they registered themselves, and WatchName requires static
-// lifetime, so the pointers are identical -- then wcscmp.
+// first -- a lane passes the name its row registered, which the watch holds by that pointer -- then wcscmp.
 bool InVerb(const ue_wrap::script_gate::Active& av, const wchar_t* name);
 
 // Abaocoin_C's UClass once resolved, else nullptr. Resolution is the SALE lane's Install (it runs

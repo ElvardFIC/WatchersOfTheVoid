@@ -8,10 +8,23 @@
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/engine/engine_component.h"  // SetStaticMesh
+#include "ue_wrap/facts/function_row.h"
 
 #include <chrono>
 
 namespace ue_wrap::floppy_slot {
+
+// The slots' overlap entries: the BeginOverlap delegates a device binds on the hitbox feeding its slot.
+UE_FACT_FN(kRowLaptopFloppyHitbox, "floppy_slot", L"laptop_C",
+           L"BndEvt__laptop_floppyHitbox_K2Node_ComponentBoundEvent_1_ComponentBeginOverlapSignature__DelegateSignature",
+           Declared);
+UE_FACT_FN(kRowLaptopZipHitbox, "floppy_slot", L"laptop_C",
+           L"BndEvt__laptop_zipHitbox_K2Node_ComponentBoundEvent_0_ComponentBeginOverlapSignature__DelegateSignature",
+           Declared);
+UE_FACT_FN(kRowServerBoxBox, "floppy_slot", L"serverBox_C",
+           L"BndEvt__serverBox_Box_K2Node_ComponentBoundEvent_0_ComponentBeginOverlapSignature__DelegateSignature",
+           Declared);
+
 namespace {
 
 namespace R = reflection;
@@ -49,7 +62,7 @@ struct Desc {
     bool           refreshMesh;    // box: floppyMesh -> lib_C::floppyFromType + SetStaticMesh
     // The BeginOverlap delegates on the hitboxes that feed the slot, null-terminated. The names
     // carry the K2Node_ segment the decompiler's rendering drops; without it FindFunction misses.
-    const wchar_t* overlapFns[kMaxSlotOverlapEntries + 1];
+    const facts::Function* overlapRows[kMaxSlotOverlapEntries + 1];
 
     int32_t offType       = -1;
     int32_t offReadWrites = -1;
@@ -63,7 +76,7 @@ struct Desc {
     bool     resolved  = false;
     uint64_t nextTryMs = 0;
 
-    void*    fnOverlap[kMaxSlotOverlapEntries] = {};
+    facts::Resolved fnOverlap[kMaxSlotOverlapEntries] = {};
     size_t   overlapCount     = 0;
     bool     overlapResolved  = false;
     bool     overlapGaveUp    = false;
@@ -73,12 +86,9 @@ struct Desc {
 
 Desc g_desc[kDeviceKindCount] = {
     { L"laptop_C",    /*zip*/ true,  /*nametype*/ true,  /*widget*/ true,  /*mesh*/ false,
-      { L"BndEvt__laptop_floppyHitbox_K2Node_ComponentBoundEvent_1_ComponentBeginOverlapSignature__DelegateSignature",
-        L"BndEvt__laptop_zipHitbox_K2Node_ComponentBoundEvent_0_ComponentBeginOverlapSignature__DelegateSignature",
-        nullptr } },
+      { &kRowLaptopFloppyHitbox, &kRowLaptopZipHitbox, nullptr } },
     { L"serverBox_C", /*zip*/ false, /*nametype*/ false, /*widget*/ false, /*mesh*/ true,
-      { L"BndEvt__serverBox_Box_K2Node_ComponentBoundEvent_0_ComponentBeginOverlapSignature__DelegateSignature",
-        nullptr, nullptr } },
+      { &kRowServerBoxBox, nullptr, nullptr } },
 };
 
 Desc* DescOf(DeviceKind kind) {
@@ -219,11 +229,11 @@ size_t SlotOverlapEntryCount(DeviceKind kind) {
     const Desc* d = DescOf(kind);
     if (!d) return 0;
     size_t n = 0;
-    while (n < kMaxSlotOverlapEntries && d->overlapFns[n]) ++n;
+    while (n < kMaxSlotOverlapEntries && d->overlapRows[n]) ++n;
     return n;
 }
 
-size_t SlotOverlapEntries(DeviceKind kind, void* out[], size_t cap) {
+size_t SlotOverlapEntries(DeviceKind kind, facts::Resolved out[], size_t cap) {
     Desc* d = DescOf(kind);
     if (!d || !out || cap == 0) return 0;
     if (!d->overlapResolved) {
@@ -236,7 +246,7 @@ size_t SlotOverlapEntries(DeviceKind kind, void* out[], size_t cap) {
         const size_t named = SlotOverlapEntryCount(kind);
         size_t found = 0;
         for (size_t i = 0; i < named; ++i)
-            if (void* fn = R::FindFunction(cls, d->overlapFns[i])) d->fnOverlap[found++] = fn;
+            if (const facts::Resolved fn = facts::Resolve(*d->overlapRows[i])) d->fnOverlap[found++] = fn;
         if (found != named) {
             // Named and not found is a fact about THIS build, not about the device: the delegate's
             // name carries the component's name and the K2Node index the asset assigned it, so a
@@ -362,7 +372,7 @@ void ResetCache() {
         // The overlap entries go with the rest: a resolved UFunction of a world's Blueprint class
         // is cached on the same terms as this file's offsets, and a caller holding one past a
         // level change would be holding it on a guess.
-        for (auto& fn : d.fnOverlap) fn = nullptr;
+        for (auto& fn : d.fnOverlap) fn = {};
         d.overlapCount = 0;
         d.overlapResolved = false;
         d.overlapGaveUp = false;

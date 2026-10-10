@@ -133,46 +133,6 @@ bool TeleportRig(void* atv, const FVector& loc, const FRotator& rot) {
     return Call(atv, f);
 }
 
-// The seven ComponentHitSignature bound events, by exact UFunction name. Taken from the class's
-// own function list rather than derived from component names: two of the seven components
-// (`car1_Capsule`, `car1_frontWheelRoot`) are NOT in ATV.uasset's name table at all, so a
-// component-flag guard would silently have covered five of seven -- the same shape as the
-// root-only guard it would have replaced. Function names have no such ambiguity.
-const wchar_t* const kHitDelegateNames[] = {
-    L"BndEvt__mesh_K2Node_ComponentBoundEvent_1_ComponentHitSignature__DelegateSignature",
-    L"BndEvt__car1_Capsule_K2Node_ComponentBoundEvent_6_ComponentHitSignature__DelegateSignature",
-    L"BndEvt__car1_backWheel_R_K2Node_ComponentBoundEvent_5_ComponentHitSignature__DelegateSignature",
-    L"BndEvt__car1_backWheel_L_K2Node_ComponentBoundEvent_1_ComponentHitSignature__DelegateSignature",
-    L"BndEvt__car1_frontWheel_R_K2Node_ComponentBoundEvent_4_ComponentHitSignature__DelegateSignature",
-    L"BndEvt__car1_frontWheelRoot_K2Node_ComponentBoundEvent_3_ComponentHitSignature__DelegateSignature",
-    L"BndEvt__car1_backWheelRoot_K2Node_ComponentBoundEvent_2_ComponentHitSignature__DelegateSignature",
-};
-
-// POSITIONAL, not compacted. The caller pairs out[i] with a per-delegate callback carrying BIT
-// i, so a COMPACTING walk -- skip a miss, keep filling from the front -- would shift every
-// later delegate down one and apply the wrong bit to the wrong collision, silently suppressing
-// the wrong things, which is the exact bug class the per-delegate mask exists to fix. It was
-// safe only because the caller refuses to arm at all unless all seven resolve, i.e. by a
-// fail-closed rule in a different branch rather than by the construction this comment used
-// to claim. A miss
-// now leaves out[i] NULL; the return is the count of non-null entries, so `ok == 7` still
-// means what it meant.
-int ResolveHitDelegates(void** out, int max) {
-    if (!out || max <= 0 || !EnsureResolved()) return 0;
-    void* const cls = AtvClass();
-    if (!cls) return 0;
-    int n = 0, i = -1;
-    for (const wchar_t* name : kHitDelegateNames) {
-        if (++i >= max) break;
-        out[i] = nullptr;
-        void* fn = R::FindFunction(cls, name);
-        if (!fn) { UE_LOGW("atv: hit delegate '%ls' unresolved", name); continue; }
-        out[i] = fn;
-        ++n;
-    }
-    return n;
-}
-
 void* SpawnMirror(const std::wstring& className, const FVector& loc, const FRotator& rot) {
     if (!EnsureResolved() || className.empty()) return nullptr;
     void* actorClass = R::FindClass(className.c_str());

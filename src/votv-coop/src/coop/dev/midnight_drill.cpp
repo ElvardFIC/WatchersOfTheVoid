@@ -23,6 +23,7 @@
 #include "ue_wrap/desk/dish.h"
 #include "ue_wrap/engine/engine.h"
 #include "ue_wrap/engine/world_identity.h"
+#include "ue_wrap/facts/function_row.h"
 #include "ue_wrap/world/active_events.h"
 #include "ue_wrap/world/daynightcycle.h"
 
@@ -104,7 +105,7 @@ coop::time_sync::LocalWrites g_m5Found{};
 // Who ends the night. Three classes declare a function of this name (the gamemode's, the player's,
 // the ATV's wakeUp), so the watch keeps only the gamemode's, by its declaring class. Each entry is
 // logged with its caller; our own sleep lane's reflected wakeup at the END is one of them.
-constexpr const wchar_t* kWakeupName = L"wakeup";
+UE_FACT_FN(kRowWakeup, "dev.midnight_drill", nullptr, L"wakeup", AnyClass);
 constexpr int kWakeupTag = 0x4D440001;  // 'MD'
 constexpr int kMaxWakeLines = 8;
 void*    g_gmClass = nullptr;     // looked up once per world: a new world may load it anew
@@ -308,7 +309,7 @@ void EnsureWakeWatch() {
     }
     if (!g_gmClass) return;
     if (!g_wakeWatched) {
-        g_wakeWatched = sg::WatchName(kWakeupName, kWakeupTag, &OnWakeupPre, nullptr);
+        g_wakeWatched = sg::WatchName(kRowWakeup, kWakeupTag, &OnWakeupPre, nullptr);
         if (!g_wakeWatched) {
             g_wakeRefused = true;
             UE_LOGW("midnight_drill: the gate refused the wakeup watch -- a wake names no caller this run");
@@ -320,7 +321,7 @@ void EnsureWakeWatch() {
     if (now < g_nextLiveCheck) return;
     g_nextLiveCheck = now + std::chrono::seconds(1);
     sg::ResolvePendingNames();
-    if (!sg::NameWatchLive(kWakeupName, kWakeupTag)) {
+    if (!sg::NameWatchLive(kRowWakeup, kWakeupTag)) {
         if (sg::PendingNameCount() == 0) {
             g_wakeRefused = true;  // resolved into a full table: it will never go live
             UE_LOGW("midnight_drill: the wakeup watch is dead in a full gate table -- a wake names no caller this run");

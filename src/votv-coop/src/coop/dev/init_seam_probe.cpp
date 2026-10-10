@@ -8,6 +8,7 @@
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/script_gate.h"
 #include "ue_wrap/engine/world_identity.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <algorithm>
 #include <chrono>
@@ -25,7 +26,7 @@ namespace SG = ue_wrap::script_gate;
 namespace WI = ue_wrap::world_identity;
 using Clock = std::chrono::steady_clock;
 
-const wchar_t* const kInitName = L"Init";
+UE_FACT_FN(kRowInit, "dev.init_seam_probe", nullptr, L"Init", AnyClass);
 constexpr int kTag = 0x49534550;  // 'ISEP'
 
 // One kind of call: the body's owner, its caller, nested inside another Init of the object, key unset.
@@ -115,7 +116,7 @@ void Tick() {
     if (!s_watched && SG::IsInstalled()) {
         s_watched = true;
         SG::Acquire("init_seam_probe");
-        SG::WatchName(kInitName, kTag, &Pre, &Post);
+        SG::WatchName(kRowInit, kTag, &Pre, &Post);
     }
     static std::uint32_t s_gen = 0;
     static Clock::time_point s_last = Clock::now();

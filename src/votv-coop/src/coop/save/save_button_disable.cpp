@@ -9,6 +9,7 @@
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/sdk_profile.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <cstdint>
@@ -20,6 +21,11 @@ namespace GT = ue_wrap::game_thread;
 namespace prof = ue_wrap::profile;
 using ue_wrap::Call;
 using ue_wrap::ParamFrame;
+
+UE_FACT_FN(kRowEscape, "save_button_disable", L"mainPlayer_C", L"InpActEvt_Escape_K2Node_InputKeyEvent_0",
+           Declared);
+// ui_menu_C::Tick(FGeometry, float): ProcessEvent-dispatched while the menu is visible.
+UE_FACT_FN(kRowMenuTick, "save_button_disable", L"ui_menu_C", L"Tick", Declared);
 
 namespace {
 
@@ -125,8 +131,10 @@ void Install(coop::net::Session* session) {
     g_setEnabledFn = R::FindFunction(widgetCls, prof::name::WidgetSetIsEnabledFn);
     g_setOpacityFn = R::FindFunction(widgetCls, prof::name::WidgetSetRenderOpacityFn);
     g_getEnabledFn = R::FindFunction(widgetCls, prof::name::WidgetGetIsEnabledFn);
-    g_escFn = R::FindFunction(mainPlayerCls, prof::name::MainPlayerEscapeFn);
-    g_tickFn = R::FindFunction(uiMenuCls, prof::name::UiMenuTickFn);
+    const ue_wrap::facts::Resolved escRow = ue_wrap::facts::Resolve(kRowEscape);
+    const ue_wrap::facts::Resolved tickRow = ue_wrap::facts::Resolve(kRowMenuTick);
+    g_escFn = escRow.Fn();
+    g_tickFn = tickRow.Fn();
     g_buttonSaveOff = R::FindPropertyOffset(uiMenuCls, prof::name::UiMenuButtonSaveProp);
     g_isPauseOff = R::FindPropertyOffset(uiMenuCls, prof::name::UiMenuIsPauseProp);
     if (!g_setEnabledFn || !g_setOpacityFn || !g_escFn || !g_tickFn ||
@@ -137,8 +145,8 @@ void Install(coop::net::Session* session) {
         return;
     }
 
-    const bool okEsc = GT::RegisterPostObserver(g_escFn, &OnEscapePost);
-    const bool okTick = GT::RegisterPostObserver(g_tickFn, &OnMenuTickPost);
+    const bool okEsc = GT::RegisterPostObserver(escRow, &OnEscapePost);
+    const bool okTick = GT::RegisterPostObserver(tickRow, &OnMenuTickPost);
     if (!okEsc || !okTick) {
         UE_LOGE("save_button_disable: RegisterPostObserver failed (esc=%d tick=%d) -- table full?",
                 okEsc ? 1 : 0, okTick ? 1 : 0);

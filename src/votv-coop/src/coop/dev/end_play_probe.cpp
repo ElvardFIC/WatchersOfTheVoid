@@ -9,6 +9,7 @@
 #include "ue_wrap/core/sdk_profile.h"
 #include "ue_wrap/core/ufunction_hook.h"
 #include "ue_wrap/engine/actor_end_play.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <algorithm>
 #include <chrono>
@@ -24,6 +25,8 @@ namespace {
 namespace R = ue_wrap::reflection;
 namespace P = ue_wrap::profile;
 namespace EP = ue_wrap::actor_end_play;
+
+UE_FACT_FN(kRowK2DestroyActor, "dev.end_play_probe", L"Actor", L"K2_DestroyActor", Declared);
 
 // A destroyed end of play waiting for the K2_DestroyActor post-hook of the call it ran inside, which
 // fires on the same stack right after it; one still unmatched at a later pump tick had none.
@@ -103,10 +106,10 @@ bool Arm() {
         UE_LOGW("end_play_probe: the end-of-play seam is not installed -- nothing to measure");
         return false;
     }
-    void* actorCls = R::FindClass(P::name::ActorClass);
-    void* k2 = actorCls ? R::FindFunction(actorCls, L"K2_DestroyActor") : nullptr;
+    const ue_wrap::facts::Resolved k2 = ue_wrap::facts::Resolve(kRowK2DestroyActor);
     if (!k2 || !ue_wrap::ufunction_hook::InstallPostHook(k2, &OnK2DestroyPost)) {
-        UE_LOGW("end_play_probe: the K2_DestroyActor post-hook did not install (fn=%p) -- nothing to compare", k2);
+        UE_LOGW("end_play_probe: the K2_DestroyActor post-hook did not install (fn=%p) -- nothing to compare",
+                k2.Fn());
         return false;
     }
     if (!EP::AddSink(&OnEndPlay)) return false;

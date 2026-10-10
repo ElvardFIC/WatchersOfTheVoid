@@ -15,6 +15,7 @@
 #include "ue_wrap/core/script_gate.h"
 #include "ue_wrap/desk/drive_chain.h"
 #include "ue_wrap/desk/drive_eraser.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <cstdint>
@@ -29,8 +30,9 @@ namespace DE = ue_wrap::drive_eraser;
 namespace R  = ue_wrap::reflection;
 namespace sg = ue_wrap::script_gate;
 
-const wchar_t* const kActionVerb = L"actionOptionIndex";
-const wchar_t* const kUberVerb   = L"ExecuteUbergraph_signalDriveEraser";
+UE_FACT_FN(kRowActionOptionIndex, "eraser_press_intent", L"signalDriveEraser_C", L"actionOptionIndex", Declared);
+UE_FACT_FN(kRowUbergraph, "eraser_press_intent", L"signalDriveEraser_C", L"ExecuteUbergraph_signalDriveEraser",
+           Declared);
 constexpr int kTagEraser = 0x45524153;  // 'ERAS'
 constexpr int kTagResume = 0x45524152;  // 'ERAR'
 
@@ -231,9 +233,9 @@ void OnResumePost(const sg::Call& call) {
 
 void InstallWatches() {
     if (!g_actionWatched)
-        g_actionWatched = sg::WatchClassName(DE::kClassName, kActionVerb, kTagEraser, &OnActionPre, &OnActionPost);
+        g_actionWatched = sg::WatchName(kRowActionOptionIndex, kTagEraser, &OnActionPre, &OnActionPost);
     if (!g_resumeWatched)
-        g_resumeWatched = sg::WatchClassName(DE::kClassName, kUberVerb, kTagResume, nullptr, &OnResumePost);
+        g_resumeWatched = sg::WatchName(kRowUbergraph, kTagResume, nullptr, &OnResumePost);
 }
 
 }  // namespace
@@ -248,13 +250,13 @@ void Tick(coop::net::Session& session) {
         sg::ResolvePendingNames();
         InstallWatches();
         if (g_actionWatched && g_resumeWatched &&
-            sg::ClassNameWatchLive(DE::kClassName, kActionVerb, kTagEraser) &&
-            sg::ClassNameWatchLive(DE::kClassName, kUberVerb, kTagResume)) {
+            sg::NameWatchLive(kRowActionOptionIndex, kTagEraser) &&
+            sg::NameWatchLive(kRowUbergraph, kTagResume)) {
             g_settled = true;
             UE_LOGI("[ERASER] the eraser's press and resume gates are live");
         } else if (g_actionWatched && g_resumeWatched &&
-                   (sg::ClassNameWatchSettled(DE::kClassName, kActionVerb, kTagEraser) ||
-                    sg::ClassNameWatchSettled(DE::kClassName, kUberVerb, kTagResume))) {
+                   (sg::NameWatchSettled(kRowActionOptionIndex, kTagEraser) ||
+                    sg::NameWatchSettled(kRowUbergraph, kTagResume))) {
             g_settled = true;
             UE_LOGE("[ERASER] an eraser gate is dead -- a client's delete press runs on the client alone");
         }

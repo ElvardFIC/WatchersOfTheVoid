@@ -109,8 +109,8 @@ inline constexpr int kMaxInterceptors = 56;
 // Register a pre-dispatch interceptor. False if the table is full or an argument is null.
 // Several interceptors may target one UFunction, consulted in order until one returns true;
 // re-registering the same pair is a no-op.
-bool RegisterInterceptor(void* targetUFunction, UFunctionInterceptor cb);
-// The row form (ue_wrap/facts/function_row.h), recorded on the row; likewise the observers below.
+// It takes a row resolved to the target (ue_wrap/facts/function_row.h), which records whether it was
+// taken; likewise the observers below. A row not resolved yet is refused with nothing recorded.
 bool RegisterInterceptor(const facts::Resolved& target, UFunctionInterceptor cb);
 
 // Remove the (target, cb) interceptor. A no-op if absent.
@@ -130,10 +130,9 @@ inline constexpr int kMaxObservers = 256;
 
 // Register a post-dispatch observer. False if the table is full or an argument is null; any
 // thread, before or after Install.
-bool RegisterPostObserver(void* targetUFunction, ProcessEventObserverFn cb);
+
 
 // Register a pre-dispatch observer. The same shape.
-bool RegisterPreObserver(void* targetUFunction, ProcessEventObserverFn cb);
 bool RegisterPostObserver(const facts::Resolved& target, ProcessEventObserverFn cb);
 bool RegisterPreObserver(const facts::Resolved& target, ProcessEventObserverFn cb);
 

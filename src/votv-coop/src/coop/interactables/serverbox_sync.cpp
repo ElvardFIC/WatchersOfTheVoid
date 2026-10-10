@@ -17,6 +17,7 @@
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/script_gate.h"
 #include "ue_wrap/devices/serverbox.h"
+#include "ue_wrap/facts/function_row.h"
 #include "ue_wrap/world/economy.h"           // AddPoints and the saveSlot: the repair reward, paid on the host
 #include "ue_wrap/engine/world_identity.h"   // Generation, the baseline's anchor
 #include "ue_wrap/world/world_singleton.h"   // Gamemode, its other anchor
@@ -44,10 +45,10 @@ constexpr long long kPollIntervalMs = 1000;
 constexpr float     kRepairReachUU  = 400.0f;  // the repair widget is used standing at the box
 constexpr auto      kSayEvery       = std::chrono::seconds(10);
 
-const wchar_t* const kBoxClass  = L"serverBox_C";
-const wchar_t* const kBreakVerb = L"breakServer";
-const wchar_t* const kTypeVerb  = L"break_type";
-const wchar_t* const kFixVerb   = L"fix";
+UE_FACT_FN(kRowBreakServer, "serverbox_sync", L"serverBox_C", L"breakServer", Declared);
+UE_FACT_FN(kRowBreakType, "serverbox_sync", L"serverBox_C", L"break_type", Declared);
+UE_FACT_FN(kRowFix, "serverbox_sync", L"serverBox_C", L"fix", Declared);
+UE_FACT_FN(kRowAddPoints, "serverbox_sync", L"lib_C", L"addPoints", Declared);
 constexpr int kTagBreak = 0x53424231;  // 'SBB1'
 constexpr int kTagType  = 0x53425432;  // 'SBT2'
 constexpr int kTagFix   = 0x53424633;  // 'SBF3'
@@ -201,7 +202,8 @@ sg::Verdict OnBreakPre(const sg::Call& call) {
     ++g_counts.refusedBreaks;
     if (SayNow(g_nextBreakSay))
         UE_LOGI("serverbox_sync: this client's own %ls refused (called from %ls; %llu refused) -- the break is the "
-                "host's", call.tag == kTagType ? kTypeVerb : kBreakVerb, CallerName(call).c_str(),
+                "host's", call.tag == kTagType ? kRowBreakType.Name() : kRowBreakServer.Name(),
+                CallerName(call).c_str(),
                 static_cast<unsigned long long>(g_counts.refusedBreaks));
     return sg::Verdict::Cancel;
 }
@@ -289,18 +291,17 @@ sg::Verdict OnFixPre(const sg::Call& call) {
 }
 
 struct Watch {
-    const wchar_t* fn;
+    const ue_wrap::facts::Function* row;
     int            tag;
     sg::PreFn      pre;
     bool           registered = false;
     bool           settled = false;
-    const wchar_t* cls = kBoxClass;
 };
 Watch g_watches[] = {
-    {kBreakVerb, kTagBreak, &OnBreakPre},
-    {kTypeVerb, kTagType, &OnBreakPre},
-    {kFixVerb, kTagFix, &OnFixPre},
-    {L"addPoints", 0x53425034 /* 'SBP4' */, &OnRewardPre, false, false, L"lib_C"},
+    {&kRowBreakServer, kTagBreak, &OnBreakPre},
+    {&kRowBreakType, kTagType, &OnBreakPre},
+    {&kRowFix, kTagFix, &OnFixPre},
+    {&kRowAddPoints, 0x53425034 /* 'SBP4' */, &OnRewardPre},
 };
 bool g_watchesSettled = false;
 
@@ -311,20 +312,20 @@ void DriveWatches() {
     for (Watch& w : g_watches) {
         if (w.settled) continue;
         if (!w.registered) {
-            w.registered = sg::WatchClassName(w.cls, w.fn, w.tag, w.pre, nullptr);
+            w.registered = sg::WatchName(*w.row, w.tag, w.pre, nullptr);
             if (!w.registered) {
                 w.settled = true;
-                UE_LOGE("serverbox_sync: the gate took no watch on %ls::%ls -- a client authors that verb", w.cls,
-                        w.fn);
+                UE_LOGE("serverbox_sync: the gate took no watch on %ls::%ls -- a client authors that verb",
+                        w.row->Class(), w.row->Name());
                 continue;
             }
         }
-        if (sg::ClassNameWatchSettled(w.cls, w.fn, w.tag)) {
+        if (sg::NameWatchSettled(*w.row, w.tag)) {
             w.settled = true;
-            if (sg::ClassNameWatchLive(w.cls, w.fn, w.tag)) UE_LOGI("serverbox_sync: the watch on %ls::%ls is live",
-                                                                     w.cls, w.fn);
-            else UE_LOGE("serverbox_sync: the watch on %ls::%ls settled dead -- a client authors that verb", w.cls,
-                         w.fn);
+            if (sg::NameWatchLive(*w.row, w.tag)) UE_LOGI("serverbox_sync: the watch on %ls::%ls is live",
+                                                           w.row->Class(), w.row->Name());
+            else UE_LOGE("serverbox_sync: the watch on %ls::%ls settled dead -- a client authors that verb",
+                         w.row->Class(), w.row->Name());
             continue;
         }
         all = false;

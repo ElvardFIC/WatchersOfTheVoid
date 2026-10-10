@@ -16,6 +16,7 @@
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/script_gate.h"
 #include "ue_wrap/devices/door.h"
+#include "ue_wrap/facts/function_row.h"
 #include "ue_wrap/world/weapon_catalog.h"    // what one swing of the held item can deal
 
 #include <atomic>
@@ -34,11 +35,15 @@ namespace V  = coop::net::door_verb;
 
 // The entry verbs, watched by name: every class's function of that name fires, so the callback
 // gates on the door class before anything else. The tag says which verb fired.
-struct VerbWatch { const wchar_t* name; int tag; uint8_t verb; const char* what; };
-constexpr VerbWatch kWatches[] = {
-    { L"actionOptionIndex", 0x44565052 /*'DVPR'*/, V::kPress, "press" },
-    { L"addDamage",         0x44564854 /*'DVHT'*/, V::kHit,   "hit" },
-    { L"crowbarOpen",       0x44565059 /*'DVPY'*/, V::kPry,   "pry" },
+UE_FACT_FN(kRowActionOptionIndex, "door_verb_intent", nullptr, L"actionOptionIndex", AnyClass);
+UE_FACT_FN(kRowAddDamage, "door_verb_intent", nullptr, L"addDamage", AnyClass);
+UE_FACT_FN(kRowCrowbarOpen, "door_verb_intent", nullptr, L"crowbarOpen", AnyClass);
+
+struct VerbWatch { const ue_wrap::facts::Function* row; int tag; uint8_t verb; const char* what; };
+const VerbWatch kWatches[] = {
+    { &kRowActionOptionIndex, 0x44565052 /*'DVPR'*/, V::kPress, "press" },
+    { &kRowAddDamage,         0x44564854 /*'DVHT'*/, V::kHit,   "hit" },
+    { &kRowCrowbarOpen,       0x44565059 /*'DVPY'*/, V::kPry,   "pry" },
 };
 constexpr int kWatchCount = static_cast<int>(sizeof(kWatches) / sizeof(kWatches[0]));
 
@@ -282,13 +287,13 @@ sg::Verdict OnVerbPre(const sg::Call& call) {
 void RegisterWatches() {
     for (int i = 0; i < kWatchCount; ++i) {
         if (g_reg[i] != Reg::Pending) continue;
-        if (sg::WatchName(kWatches[i].name, kWatches[i].tag, &OnVerbPre, nullptr)) {
+        if (sg::WatchName(*kWatches[i].row, kWatches[i].tag, &OnVerbPre, nullptr)) {
             g_reg[i] = Reg::Registered;
             continue;
         }
         g_reg[i] = Reg::Refused;
         UE_LOGE("[DOOR-VERB] the script-body gate refused the watch on '%ls' -- for the rest of this process "
-                "that door verb runs only where it is used", kWatches[i].name);
+                "that door verb runs only where it is used", kWatches[i].row->Name());
     }
 }
 
@@ -305,7 +310,7 @@ void Tick(coop::net::Session& session) {
         int live = 0, pending = 0;
         for (int i = 0; i < kWatchCount; ++i) {
             if (g_reg[i] == Reg::Pending) ++pending;
-            else if (g_reg[i] == Reg::Registered && sg::NameWatchLive(kWatches[i].name, kWatches[i].tag)) ++live;
+            else if (g_reg[i] == Reg::Registered && sg::NameWatchLive(*kWatches[i].row, kWatches[i].tag)) ++live;
         }
         if (live == kWatchCount) {
             g_settled = true;

@@ -8,6 +8,7 @@
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/devices/atv.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <cstdint>
@@ -17,8 +18,22 @@
 // proximity is not confinement and these symbols must not have external linkage.
 namespace coop::atv_hit_guard {
 
-namespace A = ue_wrap::atv;
 namespace R = ue_wrap::reflection;
+
+UE_FACT_FN(kRowHitMesh, "atv_hit_guard", L"ATV_C",
+           L"BndEvt__mesh_K2Node_ComponentBoundEvent_1_ComponentHitSignature__DelegateSignature", Declared);
+UE_FACT_FN(kRowHitCapsule, "atv_hit_guard", L"ATV_C",
+           L"BndEvt__car1_Capsule_K2Node_ComponentBoundEvent_6_ComponentHitSignature__DelegateSignature", Declared);
+UE_FACT_FN(kRowHitBackWheelR, "atv_hit_guard", L"ATV_C",
+           L"BndEvt__car1_backWheel_R_K2Node_ComponentBoundEvent_5_ComponentHitSignature__DelegateSignature", Declared);
+UE_FACT_FN(kRowHitBackWheelL, "atv_hit_guard", L"ATV_C",
+           L"BndEvt__car1_backWheel_L_K2Node_ComponentBoundEvent_1_ComponentHitSignature__DelegateSignature", Declared);
+UE_FACT_FN(kRowHitFrontWheelR, "atv_hit_guard", L"ATV_C",
+           L"BndEvt__car1_frontWheel_R_K2Node_ComponentBoundEvent_4_ComponentHitSignature__DelegateSignature", Declared);
+UE_FACT_FN(kRowHitFrontWheelRoot, "atv_hit_guard", L"ATV_C",
+           L"BndEvt__car1_frontWheelRoot_K2Node_ComponentBoundEvent_3_ComponentHitSignature__DelegateSignature", Declared);
+UE_FACT_FN(kRowHitBackWheelRoot, "atv_hit_guard", L"ATV_C",
+           L"BndEvt__car1_backWheelRoot_K2Node_ComponentBoundEvent_2_ComponentHitSignature__DelegateSignature", Declared);
 
 // The tick is not the brain. Turning a mirror's actor tick off was meant to keep the
 // accumulators and the wheel torque on one machine, and it moved the vehicle instead: the
@@ -119,15 +134,26 @@ void InstallHitGuard() {
     // delegates do not resolve.
     static std::atomic<bool> sTried{false};
     if (sTried.exchange(true, std::memory_order_acq_rel)) return;
-    void* fns[8] = {};
-    const int n = A::ResolveHitDelegates(fns, 8);
+    // POSITIONAL, not compacted: fns[i] pairs with the callback carrying bit i, so a miss leaves its
+    // slot empty and the count falls short of seven.
+    static const ue_wrap::facts::Function* const kHitRows[7] = {
+        &kRowHitMesh,        &kRowHitCapsule,        &kRowHitBackWheelR,    &kRowHitBackWheelL,
+        &kRowHitFrontWheelR, &kRowHitFrontWheelRoot, &kRowHitBackWheelRoot,
+    };
+    ue_wrap::facts::Resolved fns[7];
+    int n = 0;
+    for (int i = 0; i < 7; ++i) {
+        fns[i] = ue_wrap::facts::Resolve(*kHitRows[i]);
+        if (fns[i]) ++n;
+        else UE_LOGW("atv: hit delegate '%ls' unresolved", kHitRows[i]->Name());
+    }
     // Each delegate's own impulse offset: seven functions share one signature, so the offsets will
     // agree, and they are resolved per function anyway, since this is a raw write into an engine
     // frame and shared-signature-therefore-shared-offset is an inference.
     int offsOk = 0;
     for (int i = 0; i < 7; ++i) {
         if (!fns[i]) continue;
-        g_impulseOff[i] = R::FindParamOffset(fns[i], L"NormalImpulse");
+        g_impulseOff[i] = R::FindParamOffset(fns[i].Fn(), L"NormalImpulse");
         if (g_impulseOff[i] >= 0) ++offsOk;
     }
     using Cb = bool (*)(void*, void*);

@@ -19,6 +19,7 @@
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/sdk_profile.h"
 #include "ue_wrap/core/types.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <windows.h>
 
@@ -33,6 +34,21 @@ namespace P = ue_wrap::profile;
 namespace R = ue_wrap::reflection;
 namespace E = ue_wrap::engine;
 namespace GT = ue_wrap::game_thread;
+
+// The flashlight: `updateFlashlight` is BP-inlined into `Flashlight Update` and never dispatches through
+// ProcessEvent, so a POST observer is registered on both; the outer name has a literal space and the
+// FName lookup matches that exact string. The F input events (_13 press, _14 release; recook-fragile
+// ordinals) are always dispatched as UFunctions; both are observed and the sender dedups on last-sent
+// state. timerHoldFlashlight fires when F is held long enough to switch the beam mode (spread <->
+// focused); its body mutates `flashlightMode` and light_R's cone and intensity, which a POST observer
+// reads to send the cone shape.
+UE_FACT_FN(kRowUpdateFlashlight, "item_activate", L"mainPlayer_C", L"updateFlashlight", Declared);
+UE_FACT_FN(kRowFlashlightUpdate, "item_activate", L"mainPlayer_C", L"Flashlight Update", Declared);
+UE_FACT_FN(kRowFlashlightInput13, "item_activate", L"mainPlayer_C",
+           L"InpActEvt_flashlight_K2Node_InputActionEvent_13", Declared);
+UE_FACT_FN(kRowFlashlightInput14, "item_activate", L"mainPlayer_C",
+           L"InpActEvt_flashlight_K2Node_InputActionEvent_14", Declared);
+UE_FACT_FN(kRowTimerHoldFlashlight, "item_activate", L"mainPlayer_C", L"timerHoldFlashlight", Declared);
 
 bool g_installed = false;
 
@@ -348,27 +364,26 @@ void Install(coop::net::Session* session) {
     // updateFlashlight, timerHoldFlashlight): the inner functions are BP-inlined into the input
     // events, which the engine's input system dispatches through ProcessEvent, and registering all
     // of them survives a recook that inlines differently. The signature dedupes a double fire.
-    struct Candidate { const wchar_t* name; void** outPtr; };
+    struct Candidate { const ue_wrap::facts::Function* row; void** outPtr; };
     Candidate cs[] = {
-        { P::name::MainPlayerUpdateFlashlightFn,    &g_updateFlashlightFn    },
-        { P::name::MainPlayerFlashlightUpdateFn,    &g_flashlightUpdateFn    },
-        { P::name::MainPlayerFlashlightInput13Fn,   &g_flashlightInput13Fn   },
-        { P::name::MainPlayerFlashlightInput14Fn,   &g_flashlightInput14Fn   },
-        { P::name::MainPlayerTimerHoldFlashlightFn, &g_timerHoldFlashlightFn },
+        { &kRowUpdateFlashlight,    &g_updateFlashlightFn    },
+        { &kRowFlashlightUpdate,    &g_flashlightUpdateFn    },
+        { &kRowFlashlightInput13,   &g_flashlightInput13Fn   },
+        { &kRowFlashlightInput14,   &g_flashlightInput14Fn   },
+        { &kRowTimerHoldFlashlight, &g_timerHoldFlashlightFn },
     };
     int registered = 0;
     for (auto& c : cs) {
-        void* fn = R::FindFunction(playerCls, c.name);
+        const ue_wrap::facts::Resolved fn = ue_wrap::facts::Resolve(*c.row);
         if (!fn) {
-            UE_LOGW("flashlight: UFunction '%ls' not found on %ls", c.name,
-                    P::name::MainPlayerClass);
+            UE_LOGW("flashlight: UFunction '%ls' not found on %ls", c.row->Name(), c.row->Class());
             continue;
         }
         if (!GT::RegisterPostObserver(fn, &OnUpdateFlashlightPost)) {
-            UE_LOGW("flashlight: RegisterPostObserver(%ls) failed", c.name);
+            UE_LOGW("flashlight: RegisterPostObserver(%ls) failed", c.row->Name());
             continue;
         }
-        *c.outPtr = fn;
+        *c.outPtr = fn.Fn();
         ++registered;
     }
     if (registered == 0) {

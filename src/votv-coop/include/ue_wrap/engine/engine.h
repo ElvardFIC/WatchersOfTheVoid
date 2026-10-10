@@ -98,11 +98,6 @@ bool TryGetActorRotation(void* actor, FRotator& out);
 // locomotion blend's walk speed. Game thread.
 FVector GetActorVelocity(void* actor);
 
-// The native UFunctions behind the two reads above -- AActor's, which never unload -- for a seam
-// on the reads a Blueprint makes of an actor's heading and velocity. Null until the Actor class
-// resolves. Game thread.
-void* ActorForwardVectorFunction();
-void* ActorVelocityFunction();
 
 // AActor::K2_SetActorLocation (bSweep=false, bTeleport=true: a snap). Game thread.
 bool SetActorLocation(void* actor, const FVector& location);

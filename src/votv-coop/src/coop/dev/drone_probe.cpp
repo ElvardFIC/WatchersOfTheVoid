@@ -8,6 +8,7 @@
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/reflection.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <array>
 #include <atomic>
@@ -55,7 +56,31 @@ void OnDroneVerb(void* self, void* function, void* /*params*/) {
     }
 }
 
-void RegisterOn(const wchar_t* className, const wchar_t* fnName, const char* label, bool isTick) {
+UE_FACT_FN(kRowReceiveTickDrone, "dev.drone_probe", L"drone_C", L"ReceiveTick", Dispatch);
+UE_FACT_FN(kRowTriggerFlyDrone, "dev.drone_probe", L"drone_C", L"triggerFly", Dispatch);
+UE_FACT_FN(kRowBeginFlyDrone, "dev.drone_probe", L"drone_C", L"beginFly", Dispatch);
+UE_FACT_FN(kRowDropSackDrone, "dev.drone_probe", L"drone_C", L"dropSack", Dispatch);
+UE_FACT_FN(kRowSoundAlarmDrone, "dev.drone_probe", L"drone_C", L"soundAlarm", Dispatch);
+UE_FACT_FN(kRowCheckOrdersDrone, "dev.drone_probe", L"drone_C", L"checkOrders", Dispatch);
+UE_FACT_FN(kRowCompileOrderDrone, "dev.drone_probe", L"drone_C", L"compileOrder", Dispatch);
+UE_FACT_FN(kRowPlayerUseDrone, "dev.drone_probe", L"drone_C", L"player_use", Dispatch);
+UE_FACT_FN(kRowSendShopDrone, "dev.drone_probe", L"drone_C", L"sendShop", Dispatch);
+UE_FACT_FN(kRowReceiveBeginPlayDrone, "dev.drone_probe", L"drone_C", L"ReceiveBeginPlay", Dispatch);
+UE_FACT_FN(kRowPlayerUseDroneConsole, "dev.drone_probe", L"droneConsole_C", L"player_use", Dispatch);
+UE_FACT_FN(kRowPlayerHandUseLmbDroneConsole, "dev.drone_probe", L"droneConsole_C", L"playerHandUse_LMB", Dispatch);
+UE_FACT_FN(kRowIsButtonUsedDroneConsole, "dev.drone_probe", L"droneConsole_C", L"isButtonUsed", Dispatch);
+UE_FACT_FN(kRowSpawnOrderOrderPlace, "dev.drone_probe", L"orderPlace_C", L"spawnOrder", Dispatch);
+UE_FACT_FN(kRowInitOrderbox, "dev.drone_probe", L"prop_container_orderbox_C", L"Init", Dispatch);
+UE_FACT_FN(kRowInitGiftbox, "dev.drone_probe", L"prop_container_giftbox_C", L"Init", Dispatch);
+UE_FACT_FN(kRowReceiveBeginPlayItembox, "dev.drone_probe", L"prop_inventoryContainer_drone_C", L"ReceiveBeginPlay",
+           Dispatch);
+UE_FACT_FN(kRowSendDriveBoxDaynight, "dev.drone_probe", L"daynightCycle_C", L"sendDriveBox", Dispatch);
+UE_FACT_FN(kRowMakeDefaultOrderDaynight, "dev.drone_probe", L"daynightCycle_C", L"Make Default Order", Dispatch);
+UE_FACT_FN(kRowCreateNewTaskDaynight, "dev.drone_probe", L"daynightCycle_C", L"createNewTask", Dispatch);
+
+void RegisterOn(const ue_wrap::facts::Function& row, const char* label, bool isTick) {
+    const wchar_t* className = row.Class();
+    const wchar_t* fnName = row.Name();
     void* cls = R::FindClass(className);
     if (!cls) return;  // class not loaded yet (caller retries) / not present
     // The DISPATCH function, not the declaration: a probe row naming a leaf class that inherits
@@ -63,23 +88,23 @@ void RegisterOn(const wchar_t* className, const wchar_t* fnName, const char* lab
     // nothing, which reads in the log exactly like a verb that never fired -- the probe would
     // have reported the wrong answer. The declarer is logged, since the watch then also sees
     // that verb on sibling classes and the reader must know which instance fired.
-    void* declarer = nullptr;
-    void* fn = R::FindDispatchFunction(cls, fnName, &declarer);
+    const ue_wrap::facts::Resolved fn = ue_wrap::facts::Resolve(row);
     if (!fn) {
         UE_LOGW("[drone_probe] UFunction '%ls::%ls' not found on the class or its supers", className, fnName);
         return;
     }
+    void* declarer = R::OuterOf(fn.Fn());
     if (declarer != cls) {
         UE_LOGI("[drone_probe] %ls::%ls is declared on %ls -- the watch covers that family",
                 className, fnName, R::ToString(R::NameOf(declarer)).c_str());
     }
-    for (size_t i = 0; i < g_watchedCount; ++i) if (g_watched[i].fn == fn) return;  // dedup
+    for (size_t i = 0; i < g_watchedCount; ++i) if (g_watched[i].fn == fn.Fn()) return;  // dedup
     if (!GT::RegisterPostObserver(fn, &OnDroneVerb)) {
         UE_LOGW("[drone_probe] RegisterPostObserver failed for %s (table full?)", label);
         return;
     }
     if (g_watchedCount < g_watched.size())
-        g_watched[g_watchedCount++] = WatchedFn{fn, label, isTick};
+        g_watched[g_watchedCount++] = WatchedFn{fn.Fn(), label, isTick};
 }
 
 bool g_installed = false;
@@ -217,29 +242,29 @@ void Install() {
     // Drone verbs (POST -- observe AFTER they ran). A FIRED log = observable; SILENCE
     // during a real delivery = BP-internal (the doorOpen/flashlight trap) -> we must
     // poll the flags (state dump below) instead of hooking that verb.
-    RegisterOn(L"drone_C", L"ReceiveTick",      "drone.ReceiveTick",     /*isTick*/true);
-    RegisterOn(L"drone_C", L"triggerFly",       "drone.triggerFly",      false);
-    RegisterOn(L"drone_C", L"beginFly",         "drone.beginFly",        false);
-    RegisterOn(L"drone_C", L"dropSack",         "drone.dropSack",        false);
-    RegisterOn(L"drone_C", L"soundAlarm",       "drone.soundAlarm",      false);
-    RegisterOn(L"drone_C", L"checkOrders",      "drone.checkOrders",     false);
-    RegisterOn(L"drone_C", L"compileOrder",     "drone.compileOrder",    false);
-    RegisterOn(L"drone_C", L"player_use",       "drone.player_use",      false);
-    RegisterOn(L"drone_C", L"sendShop",         "drone.sendShop",        false);
-    RegisterOn(L"drone_C", L"ReceiveBeginPlay", "drone.ReceiveBeginPlay",false);
+    RegisterOn(kRowReceiveTickDrone,     "drone.ReceiveTick",     /*isTick*/true);
+    RegisterOn(kRowTriggerFlyDrone,      "drone.triggerFly",      false);
+    RegisterOn(kRowBeginFlyDrone,        "drone.beginFly",        false);
+    RegisterOn(kRowDropSackDrone,        "drone.dropSack",        false);
+    RegisterOn(kRowSoundAlarmDrone,      "drone.soundAlarm",      false);
+    RegisterOn(kRowCheckOrdersDrone,     "drone.checkOrders",     false);
+    RegisterOn(kRowCompileOrderDrone,    "drone.compileOrder",    false);
+    RegisterOn(kRowPlayerUseDrone,       "drone.player_use",      false);
+    RegisterOn(kRowSendShopDrone,        "drone.sendShop",        false);
+    RegisterOn(kRowReceiveBeginPlayDrone, "drone.ReceiveBeginPlay", false);
     // Console call path (the #1-risk question: is the client's call edge hookable?).
-    RegisterOn(L"droneConsole_C", L"player_use",        "console.player_use",        false);
-    RegisterOn(L"droneConsole_C", L"playerHandUse_LMB", "console.playerHandUse_LMB", false);
-    RegisterOn(L"droneConsole_C", L"isButtonUsed",      "console.isButtonUsed",      false);
+    RegisterOn(kRowPlayerUseDroneConsole,         "console.player_use",        false);
+    RegisterOn(kRowPlayerHandUseLmbDroneConsole,  "console.playerHandUse_LMB", false);
+    RegisterOn(kRowIsButtonUsedDroneConsole,      "console.isButtonUsed",      false);
     // Cargo spawn -> does the box fire the Aprop_C Init the prop pipeline observes? ([#3])
-    RegisterOn(L"orderPlace_C",                  L"spawnOrder",      "orderPlace.spawnOrder", false);
-    RegisterOn(L"prop_container_orderbox_C",     L"Init",            "orderbox.Init",         false);
-    RegisterOn(L"prop_container_giftbox_C",      L"Init",            "giftbox.Init",          false);
-    RegisterOn(L"prop_inventoryContainer_drone_C", L"ReceiveBeginPlay", "itembox.BeginPlay",  false);
+    RegisterOn(kRowSpawnOrderOrderPlace,      "orderPlace.spawnOrder", false);
+    RegisterOn(kRowInitOrderbox,              "orderbox.Init",         false);
+    RegisterOn(kRowInitGiftbox,               "giftbox.Init",          false);
+    RegisterOn(kRowReceiveBeginPlayItembox,   "itembox.BeginPlay",     false);
     // Auto-drive schedule + gift injection ([#8],[#9]).
-    RegisterOn(L"daynightCycle_C", L"sendDriveBox",       "daynight.sendDriveBox",     false);
-    RegisterOn(L"daynightCycle_C", L"Make Default Order", "daynight.MakeDefaultOrder", false);
-    RegisterOn(L"daynightCycle_C", L"createNewTask",      "daynight.createNewTask",    false);
+    RegisterOn(kRowSendDriveBoxDaynight,      "daynight.sendDriveBox",     false);
+    RegisterOn(kRowMakeDefaultOrderDaynight,  "daynight.MakeDefaultOrder", false);
+    RegisterOn(kRowCreateNewTaskDaynight,     "daynight.createNewTask",    false);
 
     g_installed = true;
     UE_LOGI("[drone_probe] installed %zu observers (drone/console/orderPlace/cargo/daynight). "

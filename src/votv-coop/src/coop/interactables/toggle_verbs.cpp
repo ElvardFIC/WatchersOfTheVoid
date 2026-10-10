@@ -13,6 +13,7 @@
 #include "ue_wrap/devices/door_box.h"
 #include "ue_wrap/devices/garage.h"
 #include "ue_wrap/devices/lightswitch.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <cstdint>
@@ -24,31 +25,39 @@ namespace sg = ue_wrap::script_gate;
 
 // A verb's name matches every class's function of that name, so each row's callback first tests
 // the row's class.
+UE_FACT_FN(kRowUse, "toggle_verbs", nullptr, L"use", AnyClass);
+UE_FACT_FN(kRowRunTrigger, "toggle_verbs", nullptr, L"runTrigger", AnyClass);
+UE_FACT_FN(kRowActionOptionIndex, "toggle_verbs", nullptr, L"actionOptionIndex", AnyClass);
+UE_FACT_FN(kRowVisual, "toggle_verbs", nullptr, L"visual", AnyClass);
+UE_FACT_FN(kRowOpen, "toggle_verbs", nullptr, L"open", AnyClass);
+UE_FACT_FN(kRowClose, "toggle_verbs", nullptr, L"close", AnyClass);
+UE_FACT_FN(kRowFix, "toggle_verbs", nullptr, L"fix", AnyClass);
+
 struct Row {
-    const wchar_t* verb;
+    const ue_wrap::facts::Function* verb;
     int tag;
     const char* what;
     bool (*IsInstance)(void* obj);
     void (*Edge)(void* actor);
 };
-constexpr Row kRows[] = {
-    { L"use", 0x4C535755 /*'LSWU'*/, "a light switch's use", &ue_wrap::lightswitch::IsLightSwitch,
+const Row kRows[] = {
+    { &kRowUse, 0x4C535755 /*'LSWU'*/, "a light switch's use", &ue_wrap::lightswitch::IsLightSwitch,
       &coop::interactable_sync::OnLightSwitchVerb },
-    { L"runTrigger", 0x47525254 /*'GRRT'*/, "a garage's runTrigger", &ue_wrap::garage::IsGarage,
+    { &kRowRunTrigger, 0x47525254 /*'GRRT'*/, "a garage's runTrigger", &ue_wrap::garage::IsGarage,
       &coop::interactable_sync::OnGarageVerb },
-    { L"actionOptionIndex", 0x41504149 /*'APAI'*/, "an appliance's action", &ue_wrap::appliance::IsAppliance,
+    { &kRowActionOptionIndex, 0x41504149 /*'APAI'*/, "an appliance's action", &ue_wrap::appliance::IsAppliance,
       &coop::interactable_sync::OnApplianceVerb },
-    { L"visual", 0x41505653 /*'APVS'*/, "a server box's visual", &ue_wrap::appliance::IsAppliance,
+    { &kRowVisual, 0x41505653 /*'APVS'*/, "a server box's visual", &ue_wrap::appliance::IsAppliance,
       &coop::interactable_sync::OnApplianceVerb },
-    { L"open", 0x44424F50 /*'DBOP'*/, "a locker's open", &ue_wrap::door_box::IsLocker,
+    { &kRowOpen, 0x44424F50 /*'DBOP'*/, "a locker's open", &ue_wrap::door_box::IsLocker,
       &coop::interactable_sync::OnDoorBoxVerb },
-    { L"actionOptionIndex", 0x44424149 /*'DBAI'*/, "a drone console's action", &ue_wrap::door_box::IsDroneConsole,
+    { &kRowActionOptionIndex, 0x44424149 /*'DBAI'*/, "a drone console's action", &ue_wrap::door_box::IsDroneConsole,
       &coop::interactable_sync::OnDoorBoxVerb },
-    { L"open", 0x53574F50 /*'SWOP'*/, "a lid's open", &ue_wrap::swinger::IsSwinger,
+    { &kRowOpen, 0x53574F50 /*'SWOP'*/, "a lid's open", &ue_wrap::swinger::IsSwinger,
       &coop::interactable_sync::OnContainerVerb },
-    { L"close", 0x5357434C /*'SWCL'*/, "a lid's close", &ue_wrap::swinger::IsSwinger,
+    { &kRowClose, 0x5357434C /*'SWCL'*/, "a lid's close", &ue_wrap::swinger::IsSwinger,
       &coop::interactable_sync::OnContainerVerb },
-    { L"fix", 0x4F564658 /*'OVFX'*/, "an oven's repair", &ue_wrap::appliance::IsOven,
+    { &kRowFix, 0x4F564658 /*'OVFX'*/, "an oven's repair", &ue_wrap::appliance::IsOven,
       &coop::interactable_sync::OnOvenVerb },
 };
 constexpr int kRowCount = static_cast<int>(sizeof(kRows) / sizeof(kRows[0]));
@@ -86,7 +95,7 @@ void Install(coop::net::Session* session) {
     g_session.store(session, std::memory_order_release);
     for (int i = 0; i < kRowCount; ++i) {
         if (g_reg[i] != Reg::Pending) continue;
-        if (sg::WatchName(kRows[i].verb, kRows[i].tag, nullptr, &OnVerbPost)) {
+        if (sg::WatchName(*kRows[i].verb, kRows[i].tag, nullptr, &OnVerbPost)) {
             g_reg[i] = Reg::Registered;
             continue;
         }
@@ -102,7 +111,7 @@ void Tick() {
     int live = 0, pending = 0;
     for (int i = 0; i < kRowCount; ++i) {
         if (g_reg[i] == Reg::Pending) ++pending;
-        else if (g_reg[i] == Reg::Registered && sg::NameWatchLive(kRows[i].verb, kRows[i].tag)) ++live;
+        else if (g_reg[i] == Reg::Registered && sg::NameWatchLive(*kRows[i].verb, kRows[i].tag)) ++live;
     }
     if (live == kRowCount) {
         g_settled = true;

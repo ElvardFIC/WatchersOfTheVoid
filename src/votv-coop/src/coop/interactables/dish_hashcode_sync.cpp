@@ -13,6 +13,7 @@
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/script_gate.h"
 #include "ue_wrap/desk/dish.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <chrono>
@@ -31,8 +32,7 @@ namespace sg = ue_wrap::script_gate;
 
 using Clock = std::chrono::steady_clock;
 
-constexpr const wchar_t* kDishClass = L"dish_C";
-constexpr const wchar_t* kRollName = L"generteHashcode";
+UE_FACT_FN(kRowGenerteHashcode, "dish_hashcode_sync", L"dish_C", L"generteHashcode", Declared);
 constexpr int kTagRoll = 0x44484301;  // 'DHC' 1
 constexpr int kMaxDishIndex = 64;     // gamemode.dishs holds 24 on this map; the digest reads up to 64
 constexpr auto kRetry = std::chrono::seconds(1);
@@ -207,7 +207,7 @@ void TickClient() {
 void Install(coop::net::Session* session) {
     g_session.store(session, std::memory_order_release);
     if (g_watched || g_refusedWatch || !sg::IsInstalled()) return;
-    g_watched = sg::WatchClassName(kDishClass, kRollName, kTagRoll, &OnRollPre, &OnRollPost);
+    g_watched = sg::WatchName(kRowGenerteHashcode, kTagRoll, &OnRollPre, &OnRollPost);
     if (!g_watched) {
         g_refusedWatch = true;
         UE_LOGE("dish_hashcode_sync: the gate refused the generteHashcode watch -- the codes do not cross");
@@ -218,9 +218,9 @@ void Tick() {
     // Driven until the watch settles, live or dead for good, and said once either way.
     if (!g_settled && g_watched) {
         sg::ResolvePendingNames();
-        if (sg::ClassNameWatchSettled(kDishClass, kRollName, kTagRoll)) {
+        if (sg::NameWatchSettled(kRowGenerteHashcode, kTagRoll)) {
             g_settled = true;
-            if (sg::ClassNameWatchLive(kDishClass, kRollName, kTagRoll))
+            if (sg::NameWatchLive(kRowGenerteHashcode, kTagRoll))
                 UE_LOGI("dish_hashcode_sync: generteHashcode is watched -- a host sends the codes, a client "
                         "refuses its own");
             else

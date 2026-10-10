@@ -21,6 +21,7 @@
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/script_gate.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <chrono>
@@ -50,6 +51,9 @@ using coop::element::LivePropActor;
 // drop intent).
 constexpr int kVerbDirty   = 1;   // addObject
 constexpr int kVerbTakeObj = 2;   // takeObj
+
+UE_FACT_FN(kRowAddObject, "container_contents_sync", nullptr, L"addObject", AnyClass);
+UE_FACT_FN(kRowTakeObj,   "container_contents_sync", nullptr, L"takeObj",   AnyClass);
 
 // The sweep drains an edge-driven set, not a poll; 250 ms coalesces a burst (a loot roll fires
 // addObject four times) into one broadcast.
@@ -535,8 +539,8 @@ void Tick() {
 
     if (!g_verbsRegistered) {
         g_verbsRegistered =
-            sg::WatchName(L"addObject", kVerbDirty, &OnVerbEntry, nullptr) &&
-            sg::WatchName(L"takeObj",   kVerbTakeObj, &OnVerbEntry, nullptr);
+            sg::WatchName(kRowAddObject, kVerbDirty, &OnVerbEntry, nullptr) &&
+            sg::WatchName(kRowTakeObj,   kVerbTakeObj, &OnVerbEntry, nullptr);
         static bool s_saidFailed = false;
         if (!g_verbsRegistered && !s_saidFailed) {
             // Once. This block retries every tick, and the failure it reports is the gate

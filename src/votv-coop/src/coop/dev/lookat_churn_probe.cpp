@@ -11,6 +11,7 @@
 #include "ue_wrap/core/script_gate.h"
 #include "ue_wrap/engine/engine_mainplayer.h"
 #include "ue_wrap/engine/engine_pawn.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <chrono>
 #include <cstdint>
@@ -47,11 +48,14 @@ constexpr uint64_t kHeldMs = 2000;
 // the answer: LookAtFunction means the trace changed its mind, the ubergraph means an input path
 // fired, lookAtLookedAway means something dropped the aim outright -- which is the third watch,
 // since that path nulls lookAtActor and the UI closes with it.
-struct Watched { const wchar_t* name; int tag; const char* what; };
+UE_FACT_FN(kRowBuildActions, "dev.lookat_churn_probe", nullptr, L"buildActions", AnyClass);
+UE_FACT_FN(kRowBuildActionList, "dev.lookat_churn_probe", nullptr, L"buildActionList", AnyClass);
+UE_FACT_FN(kRowLookAtLookedAway, "dev.lookat_churn_probe", nullptr, L"lookAtLookedAway", AnyClass);
+struct Watched { const ue_wrap::facts::Function* row; int tag; const char* what; };
 constexpr Watched kWatched[] = {
-    { L"buildActions",     0x4C4B4241, "the action row was rebuilt" },      // 'LKBA'
-    { L"buildActionList",  0x4C4B424C, "the player asked for a rebuild" },  // 'LKBL'
-    { L"lookAtLookedAway", 0x4C4B4157, "the aim was dropped" },             // 'LKAW'
+    { &kRowBuildActions,     0x4C4B4241, "the action row was rebuilt" },      // 'LKBA'
+    { &kRowBuildActionList,  0x4C4B424C, "the player asked for a rebuild" },  // 'LKBL'
+    { &kRowLookAtLookedAway, 0x4C4B4157, "the aim was dropped" },             // 'LKAW'
 };
 
 // The fourth watch, and the only one with two phases: the comparison that decides the rebuild,
@@ -66,7 +70,7 @@ constexpr Watched kWatched[] = {
 //        fresh set back, and whether a rebuild followed at all.
 //
 // A name watch, like the three above, so it survives a world load.
-constexpr const wchar_t* kCompareFn  = L"LookAtFunction";
+UE_FACT_FN(kRowLookAtFunction, "dev.lookat_churn_probe", nullptr, L"LookAtFunction", AnyClass);
 constexpr int            kCompareTag = 0x4C4B4C46;  // 'LKLF'
 
 uint64_t NowMs() {
@@ -414,8 +418,8 @@ void Tick() {
         // liveness.
         g_watchAsked = true;
         for (const Watched& w : kWatched)
-            if (!sg::WatchName(w.name, w.tag, &OnWatched, nullptr)) g_watchAsked = false;
-        if (!sg::WatchName(kCompareFn, kCompareTag, &OnComparePre, &OnComparePost))
+            if (!sg::WatchName(*w.row, w.tag, &OnWatched, nullptr)) g_watchAsked = false;
+        if (!sg::WatchName(kRowLookAtFunction, kCompareTag, &OnComparePre, &OnComparePost))
             g_watchAsked = false;
     }
     if (g_firstMs == 0) g_firstMs = NowMs();
@@ -520,8 +524,8 @@ void EmitVerdict() {
     }
     bool live = true;
     for (const Watched& w : kWatched)
-        if (!sg::NameWatchLive(w.name, w.tag)) live = false;
-    const bool cmpLive = sg::NameWatchLive(kCompareFn, kCompareTag);
+        if (!sg::NameWatchLive(*w.row, w.tag)) live = false;
+    const bool cmpLive = sg::NameWatchLive(kRowLookAtFunction, kCompareTag);
     const uint64_t runMs = (g_firstMs != 0 && NowMs() > g_firstMs) ? NowMs() - g_firstMs : 0;
     UE_LOGW("lookat_churn_probe: over %llu s of this run the action row was rebuilt %u time(s) "
             "(%.2f/s) and the aim was dropped %u time(s); %u of the %u aims went straight back to "

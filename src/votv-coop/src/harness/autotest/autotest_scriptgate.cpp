@@ -23,6 +23,7 @@
 #include "ue_wrap/core/script_gate.h"
 #include "ue_wrap/devices/serverbox.h"
 #include "ue_wrap/engine/actor_end_play.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <windows.h>
 
@@ -48,9 +49,24 @@ constexpr int   kTagScopedCycle = 6, kTagScopedWind = 7, kTagPlainTick = 8, kTag
 constexpr int   kSendNameEntry = 3501;   // the ubergraph entry sendName's stub names
 constexpr float kSentinel = -1.0f;       // no efficiency the game computes is negative
 
+// The watched functions, as rows: the class is the run-time class of a live box (or of the gamemode).
+UE_FACT_FN(kRowFix, "dev.autotest_scriptgate", L"serverBox_C", L"fix", RuntimeClass);
+UE_FACT_FN(kRowCheck, "dev.autotest_scriptgate", L"serverBox_C", L"check", RuntimeClass);
+UE_FACT_FN(kRowExecuteUbergraphServerBox, "dev.autotest_scriptgate", L"serverBox_C",
+           L"ExecuteUbergraph_serverBox", RuntimeClass);
+UE_FACT_FN(kRowCountHealth, "dev.autotest_scriptgate", L"serverBox_C", L"countHealth", RuntimeClass);
+UE_FACT_FN(kRowCalcServerEff, "dev.autotest_scriptgate", L"mainGamemode_C", L"calcServerEff", RuntimeClass);
+UE_FACT_FN(kRowTickCycle, "dev.autotest_scriptgate", L"daynightCycle_C", L"ReceiveTick", Declared);
+UE_FACT_FN(kRowTickWind, "dev.autotest_scriptgate", L"directionalWind_C", L"ReceiveTick", Declared);
+UE_FACT_FN(kRowTickPlain, "dev.autotest_scriptgate", nullptr, L"ReceiveTick", AnyClass);
+// A name the cycle's class does not declare: the arm that proves such a watch dies at its resolve. The
+// reference table records it absent, so the census reads it known-gone.
+UE_FACT_FN(kRowNoSuchTick, "dev.autotest_scriptgate", L"daynightCycle_C", L"ReceiveTick_NoSuchFunction", Declared);
+
 // The drill's state, written on the game thread only.
 void* g_boxA = nullptr;
 void* g_boxB = nullptr;
+ue_wrap::facts::Resolved g_rFix, g_rCheck, g_rCalc, g_rUber, g_rHealth;
 void* g_fnFix = nullptr;
 void* g_fnCheck = nullptr;
 void* g_fnCalc = nullptr;
@@ -155,9 +171,7 @@ void PostHealth(const SG::Call& call) {
 // scoped to the wind must call back for their own class's body only, and an unscoped watch on the
 // same name, the control, counts every class's in the same window. The counters move only while
 // the arm is on, which is switched on the game thread so no callback of one tick sees half of it.
-const wchar_t* const kTickName  = L"ReceiveTick";
 const wchar_t* const kCycleName = L"daynightCycle_C";
-const wchar_t* const kNoSuchFn  = L"ReceiveTick_NoSuchFunction";  // a name the cycle's class does not declare
 const wchar_t* const kWindName  = L"directionalWind_C";
 bool g_classArmOn = false;
 struct ClassArm { int scoped = 0, scopedForeign = 0, plain = 0; };
@@ -224,12 +238,17 @@ bool Resolve() {
     void* gm = R::FindObjectByClass(L"mainGamemode_C");
     void* gmCls = gm ? R::ClassOf(gm) : nullptr;
     if (!cls || !gmCls) return false;
-    g_fnFix = R::FindFunction(cls, L"fix");
-    g_fnCheck = R::FindFunction(cls, L"check");
-    g_fnUber = R::FindFunction(cls, L"ExecuteUbergraph_serverBox");
+    g_rFix = ue_wrap::facts::ResolveOn(kRowFix, cls);
+    g_rCheck = ue_wrap::facts::ResolveOn(kRowCheck, cls);
+    g_rUber = ue_wrap::facts::ResolveOn(kRowExecuteUbergraphServerBox, cls);
+    g_rCalc = ue_wrap::facts::ResolveOn(kRowCalcServerEff, gmCls);
+    g_rHealth = ue_wrap::facts::ResolveOn(kRowCountHealth, cls);
+    g_fnFix = g_rFix.Fn();
+    g_fnCheck = g_rCheck.Fn();
+    g_fnUber = g_rUber.Fn();
     g_fnSendName = R::FindFunction(cls, L"sendName");
-    g_fnCalc = R::FindFunction(gmCls, L"calcServerEff");
-    g_fnHealth = R::FindFunction(cls, L"countHealth");
+    g_fnCalc = g_rCalc.Fn();
+    g_fnHealth = g_rHealth.Fn();
     g_entryOff = g_fnUber ? R::FindParamOffset(g_fnUber, L"EntryPoint") : -1;
     g_healthOff = g_fnHealth ? R::FindParamOffset(g_fnHealth, L"health") : -1;
     return g_fnFix && g_fnCheck && g_fnUber && g_fnSendName && g_fnCalc && g_fnHealth &&
@@ -282,7 +301,7 @@ void RunScriptGateDrill() {
             // Pass 1: the ProcessEvent route, refused per instance. Both boxes broken; fix on A is
             // refused, fix on B runs; the break flag is the observable.
             g_cancelFixOnA = true;
-            Check(v, SG::Watch(g_fnFix, kTagFix, &PreFix, &PostFix), "watch fix");
+            Check(v, SG::Watch(g_rFix, kTagFix, &PreFix, &PostFix), "watch fix");
             SB::ApplyBreak(g_boxA, true);
             SB::ApplyBreak(g_boxB, true);
             Check(v, CallVerb(g_boxA, g_fnFix), "pass1: fix(A) dispatched");
@@ -293,7 +312,7 @@ void RunScriptGateDrill() {
             Check(v, g_fix.preB == 1 && g_fix.postB == 1, "pass1: fix(B) pre and post fired once");
             Check(v, g_fix.fromEngine == 2, "pass1: both fix calls arrived with no caller frame (ProcessEvent)");
             g_cancelFixOnA = false;
-            Check(v, SG::Unwatch(g_fnFix, kTagFix, &PreFix, &PostFix), "unwatch fix");
+            Check(v, SG::Unwatch(g_rFix, kTagFix, &PreFix, &PostFix), "unwatch fix");
 
             // Pass 2: fix runs on both; the check it calls on itself (a local virtual call) is refused
             // for A by instance and caller, and the gamemode's calcServerEff it calls through a
@@ -301,8 +320,8 @@ void RunScriptGateDrill() {
             // observable for the second; the first is a post callback only a run body reaches.
             g_cancelCheckOnA = true;
             g_cancelCalcFromA = true;
-            Check(v, SG::Watch(g_fnCheck, kTagCheck, &PreCheck, &PostCheck), "watch check");
-            Check(v, SG::Watch(g_fnCalc, kTagCalc, &PreCalc, &PostCalc), "watch calcServerEff");
+            Check(v, SG::Watch(g_rCheck, kTagCheck, &PreCheck, &PostCheck), "watch check");
+            Check(v, SG::Watch(g_rCalc, kTagCalc, &PreCalc, &PostCalc), "watch calcServerEff");
             SB::ApplyBreak(g_boxA, true);   // each apply calls check() through ProcessEvent
             SB::ApplyBreak(g_boxB, true);
             const int checkEngineBefore = g_check.fromEngine;
@@ -325,25 +344,25 @@ void RunScriptGateDrill() {
             Check(v, g_check.callerMismatch == 0 && g_calc.callerMismatch == 0, "pass2: every caller frame named fix");
             g_cancelCheckOnA = false;
             g_cancelCalcFromA = false;
-            Check(v, SG::Unwatch(g_fnCheck, kTagCheck, &PreCheck, &PostCheck), "unwatch check");
-            Check(v, SG::Unwatch(g_fnCalc, kTagCalc, &PreCalc, &PostCalc), "unwatch calcServerEff");
+            Check(v, SG::Unwatch(g_rCheck, kTagCheck, &PreCheck, &PostCheck), "unwatch check");
+            Check(v, SG::Unwatch(g_rCalc, kTagCalc, &PreCalc, &PostCalc), "unwatch calcServerEff");
         }
 
         // Pass 3: the ubergraph through a local final call from the sendName stub, with its
         // entry-point argument read off the frame; refused for A.
         g_cancelUberOnA = true;
-        Check(v, SG::Watch(g_fnUber, kTagUber, &PreUber, &PostUber), "watch ExecuteUbergraph_serverBox");
+        Check(v, SG::Watch(g_rUber, kTagUber, &PreUber, &PostUber), "watch ExecuteUbergraph_serverBox");
         Check(v, CallSendName(g_boxA), "pass3: sendName(A) dispatched");
         Check(v, CallSendName(g_boxB), "pass3: sendName(B) dispatched");
         Check(v, g_uber.preA == 1 && g_uber.preB == 1, "pass3: the sendName entry fired once per box");
         Check(v, g_uber.entryOk == 2, "pass3: EntryPoint read as 3501 with sendName as the caller, twice");
         Check(v, g_uber.postA == 0 && g_uber.postB == 1, "pass3: A's entry refused (no post), B's ran");
         g_cancelUberOnA = false;
-        Check(v, SG::Unwatch(g_fnUber, kTagUber, &PreUber, &PostUber), "unwatch the ubergraph");
+        Check(v, SG::Unwatch(g_rUber, kTagUber, &PreUber, &PostUber), "unwatch the ubergraph");
 
         // The out-parameter arm: countHealth writes its answer into the caller's storage, and
         // the post callback reads it through the frame's record.
-        Check(v, SG::Watch(g_fnHealth, kTagHealth, nullptr, &PostHealth), "watch countHealth");
+        Check(v, SG::Watch(g_rHealth, kTagHealth, nullptr, &PostHealth), "watch countHealth");
         {
             ue_wrap::ParamFrame f(g_fnHealth);
             const bool ran = f.valid() && ue_wrap::Call(g_boxA, f);
@@ -358,7 +377,7 @@ void RunScriptGateDrill() {
                   "out-param: the value read through the record equals the caller's");
             UE_LOGI("[SCRIPTGATE] countHealth(A): caller read %d, the record read %d", back, g_healthSeen);
         }
-        Check(v, SG::Unwatch(g_fnHealth, kTagHealth, nullptr, &PostHealth), "unwatch countHealth");
+        Check(v, SG::Unwatch(g_rHealth, kTagHealth, nullptr, &PostHealth), "unwatch countHealth");
 
         if (fixArms) {
             // The negative arm: no watch, the same verb, the same box -- it must run, and the retired
@@ -385,16 +404,16 @@ void RunScriptGateDrill() {
     // counted for three seconds.
     bool watched = false;
     OnGameThread([&] {
-        watched = SG::WatchClassName(kCycleName, kTickName, kTagScopedCycle, nullptr, &PostScopedCycle) &&
-                  SG::WatchClassName(kWindName, kTickName, kTagScopedWind, nullptr, &PostScopedWind) &&
-                  SG::WatchName(kTickName, kTagPlainTick, nullptr, &PostPlainTick);
+        watched = SG::WatchName(kRowTickCycle, kTagScopedCycle, nullptr, &PostScopedCycle) &&
+                  SG::WatchName(kRowTickWind, kTagScopedWind, nullptr, &PostScopedWind) &&
+                  SG::WatchName(kRowTickPlain, kTagPlainTick, nullptr, &PostPlainTick);
     });
     Check(v, watched, "class arm: the two scoped watches and the control registered");
     bool live = false;
     for (int i = 0; i < 50 && !live; ++i) {
-        live = SG::ClassNameWatchLive(kCycleName, kTickName, kTagScopedCycle) &&
-               SG::ClassNameWatchLive(kWindName, kTickName, kTagScopedWind) &&
-               SG::NameWatchLive(kTickName, kTagPlainTick);
+        live = SG::NameWatchLive(kRowTickCycle, kTagScopedCycle) &&
+               SG::NameWatchLive(kRowTickWind, kTagScopedWind) &&
+               SG::NameWatchLive(kRowTickPlain, kTagPlainTick);
         if (!live) ::Sleep(100);
     }
     Check(v, live, "class arm: all three watches live");
@@ -417,45 +436,45 @@ void RunScriptGateDrill() {
               "called back for them");
         Check(v, SG::GetStats().faults == 0, "class arm: no callback faulted");
         // Retired, so every class's ReceiveTick stops being a gate hit for the rest of the process.
-        Check(v, SG::UnwatchClassName(kCycleName, kTickName, kTagScopedCycle, nullptr, &PostScopedCycle) &&
-                 SG::UnwatchClassName(kWindName, kTickName, kTagScopedWind, nullptr, &PostScopedWind) &&
-                 SG::UnwatchName(kTickName, kTagPlainTick, nullptr, &PostPlainTick),
+        Check(v, SG::UnwatchName(kRowTickCycle, kTagScopedCycle, nullptr, &PostScopedCycle) &&
+                 SG::UnwatchName(kRowTickWind, kTagScopedWind, nullptr, &PostScopedWind) &&
+                 SG::UnwatchName(kRowTickPlain, kTagPlainTick, nullptr, &PostPlainTick),
               "class arm: the three watches retired");
-        Check(v, !SG::ClassNameWatchLive(kCycleName, kTickName, kTagScopedCycle) &&
-                 !SG::NameWatchLive(kTickName, kTagPlainTick),
+        Check(v, !SG::NameWatchLive(kRowTickCycle, kTagScopedCycle) &&
+                 !SG::NameWatchLive(kRowTickPlain, kTagPlainTick),
               "class arm: a retired watch reads as not live");
     });
 
     // A watch retired before its name resolves keeps its slot: the resolve re-keys it disabled, so watching it
     // again is live at once, with no new placeholder waiting for its name.
     OnGameThread([&] {
-        const bool reg = SG::WatchClassName(kCycleName, kTickName, kTagRetireFirst, nullptr, &PostNothing);
-        const bool retired = SG::UnwatchClassName(kCycleName, kTickName, kTagRetireFirst, nullptr, &PostNothing);
+        const bool reg = SG::WatchName(kRowTickCycle, kTagRetireFirst, nullptr, &PostNothing);
+        const bool retired = SG::UnwatchName(kRowTickCycle, kTagRetireFirst, nullptr, &PostNothing);
         SG::ResolvePendingNames();
-        const bool stayedRetired = !SG::ClassNameWatchLive(kCycleName, kTickName, kTagRetireFirst);
+        const bool stayedRetired = !SG::NameWatchLive(kRowTickCycle, kTagRetireFirst);
         const int pendingBefore = SG::PendingNameCount();
-        const bool again = SG::WatchClassName(kCycleName, kTickName, kTagRetireFirst, nullptr, &PostNothing);
-        const bool liveAtOnce = SG::ClassNameWatchLive(kCycleName, kTickName, kTagRetireFirst);
+        const bool again = SG::WatchName(kRowTickCycle, kTagRetireFirst, nullptr, &PostNothing);
+        const bool liveAtOnce = SG::NameWatchLive(kRowTickCycle, kTagRetireFirst);
         const int pendingAfter = SG::PendingNameCount();
         Check(v, reg && retired && stayedRetired,
               "retire first: a watch retired while its name was pending stays retired through the resolve");
         Check(v, again && liveAtOnce && pendingAfter == pendingBefore,
               "retire first: watching it again is live at once, with no new pending name");
-        SG::UnwatchClassName(kCycleName, kTickName, kTagRetireFirst, nullptr, &PostNothing);
+        SG::UnwatchName(kRowTickCycle, kTagRetireFirst, nullptr, &PostNothing);
     });
 
     // A loaded class that declares no function of the name makes a watch that can never fire: the resolve kills it,
     // so it reads settled and not live, and watching it again neither revives it nor leaves its name pending.
     OnGameThread([&] {
         const int pendingBefore = SG::PendingNameCount();
-        const bool reg = SG::WatchClassName(kCycleName, kNoSuchFn, kTagUndeclared, nullptr, &PostNothing);
+        const bool reg = SG::WatchName(kRowNoSuchTick, kTagUndeclared, nullptr, &PostNothing);
         SG::ResolvePendingNames();
-        const bool dead = !SG::ClassNameWatchLive(kCycleName, kNoSuchFn, kTagUndeclared) &&
-                          SG::ClassNameWatchSettled(kCycleName, kNoSuchFn, kTagUndeclared);
-        const bool again = SG::WatchClassName(kCycleName, kNoSuchFn, kTagUndeclared, nullptr, &PostNothing);
+        const bool dead = !SG::NameWatchLive(kRowNoSuchTick, kTagUndeclared) &&
+                          SG::NameWatchSettled(kRowNoSuchTick, kTagUndeclared);
+        const bool again = SG::WatchName(kRowNoSuchTick, kTagUndeclared, nullptr, &PostNothing);
         SG::ResolvePendingNames();
-        const bool stillDead = !SG::ClassNameWatchLive(kCycleName, kNoSuchFn, kTagUndeclared) &&
-                               SG::ClassNameWatchSettled(kCycleName, kNoSuchFn, kTagUndeclared);
+        const bool stillDead = !SG::NameWatchLive(kRowNoSuchTick, kTagUndeclared) &&
+                               SG::NameWatchSettled(kRowNoSuchTick, kTagUndeclared);
         Check(v, reg && dead,
               "undeclared: a loaded class that declares no such function kills the watch at its resolve");
         Check(v, again && stillDead && SG::PendingNameCount() == pendingBefore,

@@ -12,6 +12,7 @@
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/sdk_profile.h"
 #include "ue_wrap/core/ufunction_hook.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <cstdint>
@@ -22,6 +23,10 @@ namespace {
 
 namespace R = ue_wrap::reflection;
 namespace P = ue_wrap::profile;
+
+UE_FACT_FN(kRowFinishSpawningActor, "broom_push", L"GameplayStatics", L"FinishSpawningActor", Declared);
+UE_FACT_FN(kRowSetPhysicsLinearVelocity, "broom_push", L"PrimitiveComponent", L"SetPhysicsLinearVelocity",
+           Declared);
 
 std::atomic<coop::net::Session*> g_session{nullptr};
 bool g_seamInstalled = false;
@@ -81,8 +86,9 @@ void InstallDispenseSeam() {
     if (g_dispenseInstalled || g_dispenseRefused) return;
     void* cls = R::FindClass(P::name::GameplayStaticsClass);
     if (!cls) return;   // an engine class: present from boot, asked again next pass until then
-    g_finishFn = R::FindFunction(cls, P::name::FinishSpawningActorFn);
-    if (!g_finishFn || !ue_wrap::ufunction_hook::InstallPostHook(g_finishFn, &OnDispensedPost, /*armed=*/false)) {
+    const ue_wrap::facts::Resolved finish = ue_wrap::facts::Resolve(kRowFinishSpawningActor);
+    g_finishFn = finish.Fn();
+    if (!finish || !ue_wrap::ufunction_hook::InstallPostHook(finish, &OnDispensedPost, /*armed=*/false)) {
         g_dispenseRefused = true;
         UE_LOGE("[BROOM-PUSH] the dispense seam did NOT install (%s) -- trash a host's broom knocks out of "
                 "a dispenser pile falls unstreamed for the rest of this process",
@@ -104,7 +110,7 @@ void Install(coop::net::Session* session) {
     if (g_seamInstalled || g_seamRefused) return;
     void* cls = R::FindClass(P::name::PrimitiveComponentClass);
     if (!cls) return;   // an engine class: present from boot, asked again next pass until then
-    void* fn = R::FindFunction(cls, P::name::SetPhysicsLinearVelocityFn);
+    const ue_wrap::facts::Resolved fn = ue_wrap::facts::Resolve(kRowSetPhysicsLinearVelocity);
     const bool installed = fn && ue_wrap::ufunction_hook::InstallPostHook(fn, &OnSetLinearVelocityPost);
     if (!installed) {
         g_seamRefused = true;

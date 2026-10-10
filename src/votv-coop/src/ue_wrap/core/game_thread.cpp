@@ -425,20 +425,23 @@ unsigned long long TasksRun() { return g_tasksRun.load(std::memory_order_relaxed
 
 uint64_t DrainSerial() { return g_drainSerial; }
 
-bool RegisterInterceptor(void* targetUFunction, UFunctionInterceptor cb) {
+namespace {
+// The tables' own entry points; the public forms take a resolved row (game_thread.h).
+bool RegisterInterceptorFn(void* targetUFunction, UFunctionInterceptor cb) {
     return SetInterceptorSlot(targetUFunction, cb);
 }
 
-void UnregisterInterceptor(void* targetUFunction, UFunctionInterceptor cb) {
-    ClearInterceptorSlot(targetUFunction, cb);
-}
-
-bool RegisterPostObserver(void* targetUFunction, ProcessEventObserverFn cb) {
+bool RegisterPostObserverFn(void* targetUFunction, ProcessEventObserverFn cb) {
     return SetObserverSlot(g_postObservers, D::g_postObserverActive, D::g_postBloom, targetUFunction, cb);
 }
 
-bool RegisterPreObserver(void* targetUFunction, ProcessEventObserverFn cb) {
+bool RegisterPreObserverFn(void* targetUFunction, ProcessEventObserverFn cb) {
     return SetObserverSlot(g_preObservers, D::g_preObserverActive, D::g_preBloom, targetUFunction, cb);
+}
+}  // namespace
+
+void UnregisterInterceptor(void* targetUFunction, UFunctionInterceptor cb) {
+    ClearInterceptorSlot(targetUFunction, cb);
 }
 
 void DebugForEachRegistration(RegistrationVisitor visit, void* ctx) {
@@ -453,21 +456,21 @@ void DebugForEachRegistration(RegistrationVisitor visit, void* ctx) {
 
 bool RegisterInterceptor(const facts::Resolved& target, UFunctionInterceptor cb) {
     if (!target) return false;  // not resolved yet: nothing was asked, nothing is recorded
-    const bool ok = RegisterInterceptor(target.Fn(), cb);
+    const bool ok = RegisterInterceptorFn(target.Fn(), cb);
     target.Row()->NoteUse(facts::kUseInterceptor, ok);
     return ok;
 }
 
 bool RegisterPostObserver(const facts::Resolved& target, ProcessEventObserverFn cb) {
     if (!target) return false;
-    const bool ok = RegisterPostObserver(target.Fn(), cb);
+    const bool ok = RegisterPostObserverFn(target.Fn(), cb);
     target.Row()->NoteUse(facts::kUseObserver, ok);
     return ok;
 }
 
 bool RegisterPreObserver(const facts::Resolved& target, ProcessEventObserverFn cb) {
     if (!target) return false;
-    const bool ok = RegisterPreObserver(target.Fn(), cb);
+    const bool ok = RegisterPreObserverFn(target.Fn(), cb);
     target.Row()->NoteUse(facts::kUseObserver, ok);
     return ok;
 }

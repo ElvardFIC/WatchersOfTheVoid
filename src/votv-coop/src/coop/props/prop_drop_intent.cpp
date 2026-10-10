@@ -36,6 +36,7 @@
 #include "ue_wrap/desk/drive_chain.h"           // IsDriveClass whitelist
 #include "ue_wrap/core/types.h"
 #include "ue_wrap/core/ufunction_hook.h"         // InstallPostHook (chains after host_spawn_watcher's)
+#include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <cstdint>
@@ -53,11 +54,13 @@ namespace E  = ue_wrap::engine;
 namespace GT = ue_wrap::game_thread;
 namespace PT = coop::prop_element_tracker;
 
+UE_FACT_FN(kRowFinishSpawningActor, "prop_drop_intent", L"GameplayStatics", L"FinishSpawningActor", Declared);
+
 std::atomic<coop::net::Session*> g_session{nullptr};
 inline coop::net::Session* LoadSession() { return g_session.load(std::memory_order_acquire); }
 
 // The client place-detection state, game thread only.
-void* g_finishSpawnFn = nullptr;  // GameplayStatics.FinishSpawningActor (resolved once)
+ue_wrap::facts::Resolved g_finishSpawnFn;  // GameplayStatics.FinishSpawningActor (resolved once)
 bool  g_installed     = false;    // InstallPostHook done (chain once, not per tick)
 
 struct PendingPlace {
@@ -337,7 +340,7 @@ void Install(coop::net::Session* session) {
     if (!g_finishSpawnFn) {
         void* gsCls = R::FindClass(P::name::GameplayStaticsClass);
         if (!gsCls) { s_retry = 60; return; }
-        g_finishSpawnFn = R::FindFunction(gsCls, P::name::FinishSpawningActorFn);
+        g_finishSpawnFn = ue_wrap::facts::Resolve(kRowFinishSpawningActor);
         if (!g_finishSpawnFn) {
             UE_LOGW("prop_drop_intent: FinishSpawningActor UFunction not found -- client place-detect disabled");
             g_installed = true;  // permanent give-up (don't re-walk every tick)

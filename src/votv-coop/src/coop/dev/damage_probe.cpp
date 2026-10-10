@@ -8,6 +8,7 @@
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/reflection_props.h"
 #include "ue_wrap/core/script_gate.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <cstdint>
 #include <cstring>
@@ -20,7 +21,7 @@ namespace R  = ue_wrap::reflection;
 namespace sg = ue_wrap::script_gate;
 
 // The verb wisp_attack_sync watches too; a second watch on the same name with its own tag.
-constexpr const wchar_t* kDamageVerbName = L"Add Player Damage";
+UE_FACT_FN(kRowAddPlayerDamage, "dev.damage_probe", nullptr, L"Add Player Damage", AnyClass);
 constexpr int kTag = 0x444D4750;  // 'DMGP'
 
 std::wstring ClassOrNull(void* obj) { return obj ? R::ClassNameOf(obj) : std::wstring(L"null"); }
@@ -69,10 +70,10 @@ void Tick() {
     static bool s_watched = false;
     if (!s_on || s_watched) return;
     s_watched = true;
-    if (sg::WatchName(kDamageVerbName, kTag, &OnDamagePre, nullptr))
-        UE_LOGI("[DMG] probe armed on '%ls'", kDamageVerbName);
+    if (sg::WatchName(kRowAddPlayerDamage, kTag, &OnDamagePre, nullptr))
+        UE_LOGI("[DMG] probe armed on '%ls'", kRowAddPlayerDamage.Name());
     else
-        UE_LOGW("[DMG] probe could not watch '%ls'", kDamageVerbName);
+        UE_LOGW("[DMG] probe could not watch '%ls'", kRowAddPlayerDamage.Name());
 }
 
 }  // namespace coop::dev::damage_probe

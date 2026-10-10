@@ -416,7 +416,10 @@ bool RefusedUninstalled(const char* what) {
     return true;
 }
 
-bool Watch(void* ufunction, int tag, PreFn pre, PostFn post) {
+namespace {
+
+// The exact-watch table's own entry points; the public forms take a resolved row (script_gate.h).
+bool WatchFn(void* ufunction, int tag, PreFn pre, PostFn post) {
     if (!ufunction || (!pre && !post)) return false;
     if (RefusedUninstalled("Watch")) return false;
     if (Read<std::uint32_t>(ufunction, P::off::UFunction_FunctionFlags) & P::off::FUNC_Native) {
@@ -433,13 +436,11 @@ bool Watch(void* ufunction, int tag, PreFn pre, PostFn post) {
     return ok;
 }
 
-bool Unwatch(void* ufunction, int tag, PreFn pre, PostFn post) {
+bool UnwatchFn(void* ufunction, int tag, PreFn pre, PostFn post) {
     if (!ufunction) return false;
     std::lock_guard<std::mutex> lk(g_regMutex);
     return Retire(g_fnTable, g_fnWatches, reinterpret_cast<std::uintptr_t>(ufunction), tag, pre, post, nullptr);
 }
-
-namespace {
 
 inline bool SameLiteral(const wchar_t* a, const wchar_t* b) {
     return a == b || (a && b && std::wcscmp(a, b) == 0);
@@ -450,7 +451,7 @@ inline bool SameLiteral(const wchar_t* a, const wchar_t* b) {
 // unresolved, and the resolve re-keys it.
 bool WatchNameScoped(const wchar_t* className, const wchar_t* name, int tag, PreFn pre, PostFn post) {
     if (!name || !*name || (className && !*className) || (!pre && !post)) return false;
-    if (RefusedUninstalled(className ? "WatchClassName" : "WatchName")) return false;
+    if (RefusedUninstalled("WatchName")) return false;
     std::lock_guard<std::mutex> lk(g_regMutex);
     for (int i = 0; i < kSlots; ++i) {
         Entry& e = g_nameTable[i];
@@ -530,35 +531,6 @@ bool UnwatchNameScoped(const wchar_t* className, const wchar_t* name, int tag, P
 }
 }  // namespace
 
-bool WatchName(const wchar_t* name, int tag, PreFn pre, PostFn post) {
-    return WatchNameScoped(nullptr, name, tag, pre, post);
-}
-
-bool UnwatchName(const wchar_t* name, int tag, PreFn pre, PostFn post) {
-    return UnwatchNameScoped(nullptr, name, tag, pre, post);
-}
-
-bool UnwatchClassName(const wchar_t* className, const wchar_t* name, int tag, PreFn pre, PostFn post) {
-    return className && UnwatchNameScoped(className, name, tag, pre, post);
-}
-
-bool WatchClassName(const wchar_t* className, const wchar_t* name, int tag, PreFn pre, PostFn post) {
-    if (!className) return false;
-    return WatchNameScoped(className, name, tag, pre, post);
-}
-
-bool NameWatchLive(const wchar_t* name, int tag) { return ScopedWatchLive(nullptr, name, tag); }
-
-bool NameWatchSettled(const wchar_t* name, int tag) { return ScopedWatchSettled(nullptr, name, tag); }
-
-bool ClassNameWatchLive(const wchar_t* className, const wchar_t* name, int tag) {
-    return className && ScopedWatchLive(className, name, tag);
-}
-
-bool ClassNameWatchSettled(const wchar_t* className, const wchar_t* name, int tag) {
-    return className && ScopedWatchSettled(className, name, tag);
-}
-
 namespace {
 // The class a name-form row scopes its watch to: none for an AnyClass row, its class for a Declared one.
 bool ScopeOf(const facts::Function& row, const wchar_t*& cls) {
@@ -578,13 +550,13 @@ bool ScopeOf(const facts::Function& row, const wchar_t*& cls) {
 
 bool Watch(const facts::Resolved& fn, int tag, PreFn pre, PostFn post) {
     if (!fn) return false;  // not resolved yet: nothing was asked of the gate, nothing is recorded
-    const bool ok = Watch(fn.Fn(), tag, pre, post);
+    const bool ok = WatchFn(fn.Fn(), tag, pre, post);
     fn.Row()->NoteUse(facts::kUseScriptGate, ok);
     return ok;
 }
 
 bool Unwatch(const facts::Resolved& fn, int tag, PreFn pre, PostFn post) {
-    return fn && Unwatch(fn.Fn(), tag, pre, post);
+    return fn && UnwatchFn(fn.Fn(), tag, pre, post);
 }
 
 bool WatchName(const facts::Function& row, int tag, PreFn pre, PostFn post) {

@@ -21,6 +21,7 @@
 #include "ue_wrap/devices/door.h"
 #include "ue_wrap/engine/engine.h"
 #include "ue_wrap/engine/engine_mainplayer.h"  // the game's updateHold
+#include "ue_wrap/facts/function_row.h"
 #include "ue_wrap/world/weapon_catalog.h"      // what a crowbar's swing deals
 
 #include <windows.h>
@@ -301,6 +302,7 @@ int WalkerListed(void* door) {
 // again at each five-second check that finds its list holding something.
 std::atomic<void*> g_checkDoor{nullptr};
 std::atomic<int>   g_checks{0};
+UE_FACT_FN(kRowCheckSensor, "dev.door_drill", nullptr, L"checkSensor", AnyClass);
 constexpr int kTagCheck = 0x44444353;  // 'DDCS'
 bool g_checkWatched = false;
 void OnCheckSensorPost(const sg::Call& call) {
@@ -313,13 +315,18 @@ void OnCheckSensorPost(const sg::Call& call) {
 // stubs call (door_C: 7956 the begin, 8242 the end), with the event's arguments in its frame. The
 // begin handler adds the actor once per component that begins; the end handler removes every
 // entry of the actor. Each line names the component, its actor and the list the handler left.
-struct SensorEvent { const wchar_t* name; int tag; const char* what; };
+UE_FACT_FN(kRowSensorBeginOverlap, "dev.door_drill", nullptr,
+           L"BndEvt__door_sensor_K2Node_ComponentBoundEvent_2_ComponentBeginOverlapSignature__DelegateSignature",
+           AnyClass);
+UE_FACT_FN(kRowSensorEndOverlap, "dev.door_drill", nullptr,
+           L"BndEvt__door_sensor_K2Node_ComponentBoundEvent_3_ComponentEndOverlapSignature__DelegateSignature",
+           AnyClass);
+struct SensorEvent { const ue_wrap::facts::Function* row; int tag; const char* what; };
 constexpr SensorEvent kSensorEvents[] = {
-    { L"BndEvt__door_sensor_K2Node_ComponentBoundEvent_2_ComponentBeginOverlapSignature__DelegateSignature",
-      0x44444242 /*'DDBB'*/, "BEGIN" },
-    { L"BndEvt__door_sensor_K2Node_ComponentBoundEvent_3_ComponentEndOverlapSignature__DelegateSignature",
-      0x44444245 /*'DDBE'*/, "END" },
+    { &kRowSensorBeginOverlap, 0x44444242 /*'DDBB'*/, "BEGIN" },
+    { &kRowSensorEndOverlap, 0x44444245 /*'DDBE'*/, "END" },
 };
+UE_FACT_FN(kRowExecuteUbergraphDoor, "dev.door_drill", nullptr, L"ExecuteUbergraph_door", AnyClass);
 constexpr int kTagUbergraph = 0x44445547;  // 'DDUG'
 constexpr int32_t kBeginEntry = 7956, kEndEntry = 8242;
 bool g_sensorWatched[2] = {};
@@ -686,12 +693,12 @@ bool IsEnabled() {
 void Tick(coop::net::Session* session) {
     if (!IsEnabled() || !session || !session->connected() || !RoleIsReady(*session)) return;
     if (!D::EnsureResolved()) return;
-    if (!g_checkWatched) g_checkWatched = sg::WatchName(L"checkSensor", kTagCheck, nullptr, &OnCheckSensorPost);
+    if (!g_checkWatched) g_checkWatched = sg::WatchName(kRowCheckSensor, kTagCheck, nullptr, &OnCheckSensorPost);
     for (int i = 0; i < 2; ++i)
         if (!g_sensorWatched[i])
-            g_sensorWatched[i] = sg::WatchName(kSensorEvents[i].name, kSensorEvents[i].tag, nullptr, &OnSensorEventPost);
+            g_sensorWatched[i] = sg::WatchName(*kSensorEvents[i].row, kSensorEvents[i].tag, nullptr, &OnSensorEventPost);
     if (!g_ubergraphWatched)
-        g_ubergraphWatched = sg::WatchName(L"ExecuteUbergraph_door", kTagUbergraph, nullptr, &OnUbergraphPost);
+        g_ubergraphWatched = sg::WatchName(kRowExecuteUbergraphDoor, kTagUbergraph, nullptr, &OnUbergraphPost);
     sg::ResolvePendingNames();
     const auto now = std::chrono::steady_clock::now();
     if (now < g_nextSample) return;

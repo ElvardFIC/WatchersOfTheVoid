@@ -25,6 +25,7 @@
 #include "ue_wrap/engine/engine.h"
 #include "ue_wrap/engine/engine_component.h"  // GetComponentLocation
 #include "ue_wrap/engine/engine_pawn.h"       // the aim: the camera, the controller's rotation
+#include "ue_wrap/facts/function_row.h"
 
 #include <chrono>
 #include <cmath>
@@ -123,9 +124,11 @@ bool g_entryWatch = false;
 int32_t g_entryActorOff = -1;
 void* g_entryFn = nullptr;
 
-// The play port's overlap entry, as the engine names it; one literal, since the gate keys a watch on its address.
-constexpr const wchar_t* kPortEntry =
-    L"BndEvt__driveSlot_drivePort_play_K2Node_ComponentBoundEvent_0_ComponentBeginOverlapSignature__DelegateSignature";
+// The play port's overlap entry, as the engine names it; one row, since the gate keys a watch on its name's address.
+UE_FACT_FN(kRowPortEntryDriveSlot, "dev.subject_drill", L"driveSlot_C",
+           L"BndEvt__driveSlot_drivePort_play_K2Node_ComponentBoundEvent_0_ComponentBeginOverlapSignature__DelegateSignature",
+           Declared);
+UE_FACT_FN(kRowPutDriveIn, "dev.subject_drill", L"driveSlot_C", L"putDriveIn", Declared);
 
 ue_wrap::script_gate::Verdict OnPortEntryPre(const ue_wrap::script_gate::Call& call) {
     if (g_entryFn != call.function) {
@@ -204,11 +207,11 @@ void HostTick(coop::net::Session& s) {
         const int n = ArmOf() == Arm::Insert ? 2 : 1;
         if (ArmOf() == Arm::Carry) {
             if (!g_entryWatch)
-                g_entryWatch = ue_wrap::script_gate::WatchClassName(L"driveSlot_C", kPortEntry, 0x53444345 /*'SDCE'*/,
-                                                                    &OnPortEntryPre, &OnPortEntryPost);
+                g_entryWatch = ue_wrap::script_gate::WatchName(kRowPortEntryDriveSlot, 0x53444345 /*'SDCE'*/,
+                                                               &OnPortEntryPre, &OnPortEntryPost);
             if (!g_insertWatch)
-                g_insertWatch = ue_wrap::script_gate::WatchClassName(L"driveSlot_C", L"putDriveIn",
-                                                                     0x53444349 /*'SDCI'*/, &OnPutDriveInPre, nullptr);
+                g_insertWatch = ue_wrap::script_gate::WatchName(kRowPutDriveIn, 0x53444349 /*'SDCI'*/,
+                                                                &OnPutDriveInPre, nullptr);
             // The port is emptied once a client's world stands: the save seats its drive there some seconds after this
             // world is up.
             Enter(HostStep::EmptyPort);
@@ -415,8 +418,8 @@ void ClientTick() {
         if (ArmOf() == Arm::Carry) {
             // Carried into its own port by hand: the walk keeps the hold, then the aim puts the drive in the port.
             if (!g_entryWatch)
-                g_entryWatch = ue_wrap::script_gate::WatchClassName(L"driveSlot_C", kPortEntry, 0x53444345 /*'SDCE'*/,
-                                                                    &OnPortEntryPre, &OnPortEntryPost);
+                g_entryWatch = ue_wrap::script_gate::WatchName(kRowPortEntryDriveSlot, 0x53444345 /*'SDCE'*/,
+                                                               &OnPortEntryPre, &OnPortEntryPost);
             void* portComp = DC::Port(slotActor);
             if (!portComp) {
                 Abandon("client", "this copy's play slot has no port");

@@ -13,6 +13,7 @@
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/script_gate.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <cstdio>
@@ -125,22 +126,25 @@ std::string DescribeReelCase(void* rc) {
 
 // The watched classes. `relook`: the drive box's look does not follow its record and is
 // re-derived on receipt (RefreshLook); the reel case's upd() reads `lid` itself.
+UE_FACT_FN(kRowUpdBox,     "prop_record_refresh", L"prop_box_C",     L"upd", Dispatch);
+UE_FACT_FN(kRowUpdReelbox, "prop_record_refresh", L"prop_reelbox_C", L"upd", Dispatch);
+
 struct Watched {
-    const wchar_t* cls;
+    const ue_wrap::facts::Function* row;
     int tag;
     bool relook;
     std::string (*describe)(void*);
 };
 constexpr Watched kWatched[] = {
-    { L"prop_box_C",     0x44424F58, true,  &DescribeBox },       // 'DBOX'
-    { L"prop_reelbox_C", 0x5242584F, false, &DescribeReelCase },  // 'RBXO'
+    { &kRowUpdBox,     0x44424F58, true,  &DescribeBox },       // 'DBOX'
+    { &kRowUpdReelbox, 0x5242584F, false, &DescribeReelCase },  // 'RBXO'
 };
 // The UFunction each watch was armed on, so a re-armed one can be recognised. A world change can
 // re-create a Blueprint class and its functions (127 were in a same-process rejoin; these two kept
 // theirs): at a new address the old watch would never fire again, and at a recycled one it would
 // fire for whatever lives there. An exact watch is re-validated; the neighbouring lanes use name
 // watches, which resolve themselves.
-void* g_watchedFn[std::size(kWatched)] = {};  // game thread only
+ue_wrap::facts::Resolved g_watchedFn[std::size(kWatched)] = {};  // game thread only
 
 const Watched* ByTag(int tag) {
     for (const Watched& w : kWatched)
@@ -161,7 +165,7 @@ void OnUpdPost(const sg::Call& call) {
         if (w->relook) {
             if (ReadOpened(call.object, opened)) RefreshLook(call.object, opened);
         } else {
-            UE_LOGI("prop_record_refresh: a record landed on %ls -> %s", w->cls,
+            UE_LOGI("prop_record_refresh: a record landed on %ls -> %s", w->row->Class(),
                     w->describe(call.object).c_str());
         }
         return;
@@ -198,7 +202,7 @@ void OnUpdPost(const sg::Call& call) {
     // so the lid, the contents and the repaint all land together.
     if (coop::prop_save_data::Publish(s, actor, key)) {
         ++g_cPublished;
-        UE_LOGI("prop_record_refresh: published %ls key='%ls' %s (%s)", w->cls, key.c_str(),
+        UE_LOGI("prop_record_refresh: published %ls key='%ls' %s (%s)", w->row->Class(), key.c_str(),
                 w->describe(actor).c_str(),
                 s->role() == coop::net::Role::Client ? "client intent" : "host broadcast");
     }
@@ -219,18 +223,18 @@ void Install(coop::net::Session* session) {
     if (s_retry > 0) { --s_retry; return; }
     for (size_t i = 0; i < std::size(kWatched); ++i) {
         const Watched& w = kWatched[i];
-        void* cls = R::FindClass(w.cls);
+        void* cls = R::FindClass(w.row->Class());
         if (!cls) { s_retry = 60; continue; }  // not loaded yet -- a second of frames from now
         // The memoised lookup holds its answer by slot and serial, so a class re-created by a world
         // load answers with the NEW function and the comparison below re-arms on it.
-        void* fn = R::FindDispatchFunctionCached(cls, L"upd");
-        if (fn && fn == g_watchedFn[i]) continue;  // armed, on the function that is here now
+        void* fn = R::FindDispatchFunctionCached(cls, w.row->Name());
+        if (fn && fn == g_watchedFn[i].Fn()) continue;  // armed, on the function that is here now
         if (!fn) {
             static bool s_saidMissing[std::size(kWatched)] = {};
             if (!s_saidMissing[i]) {
                 s_saidMissing[i] = true;
                 UE_LOGW("prop_record_refresh: %ls::upd UFunction not found -- its record will only "
-                        "travel on its birth paths (an in-place change stays local)", w.cls);
+                        "travel on its birth paths (an in-place change stays local)", w.row->Class());
             }
             s_retry = 60;
             continue;
@@ -239,9 +243,10 @@ void Install(coop::net::Session* session) {
         // its Blueprint, a route that never reaches ProcessEvent, and an observer there saw
         // nothing. The watch is on the exact UFunction rather than on the name `upd`, which half
         // the props in the game declare.
-        if (g_watchedFn[i] && g_watchedFn[i] != fn)
+        if (g_watchedFn[i] && g_watchedFn[i].Fn() != fn)
             sg::Unwatch(g_watchedFn[i], w.tag, nullptr, &OnUpdPost);  // the world that owned it is gone
-        if (!sg::Watch(fn, w.tag, nullptr, &OnUpdPost)) {
+        const ue_wrap::facts::Resolved armed = ue_wrap::facts::Resolve(*w.row);
+        if (!armed || !sg::Watch(armed, w.tag, nullptr, &OnUpdPost)) {
             // Back off with the same sixty frames the unresolved-class branch takes, and say so
             // once: a refusal persists (the gate did not install, or its table is full), so an
             // unthrottled retry would warn and re-resolve every frame for the life of the process.
@@ -249,14 +254,14 @@ void Install(coop::net::Session* session) {
             static bool s_saidRefused = false;
             if (!s_saidRefused) {
                 s_saidRefused = true;
-                UE_LOGW("prop_record_refresh: script-gate watch on %ls::upd refused -- retrying", w.cls);
+                UE_LOGW("prop_record_refresh: script-gate watch on %ls::upd refused -- retrying", w.row->Class());
             }
             continue;
         }
-        const bool rearm = g_watchedFn[i] != nullptr;
-        g_watchedFn[i] = fn;
+        const bool rearm = static_cast<bool>(g_watchedFn[i]);
+        g_watchedFn[i] = armed;
         UE_LOGI("prop_record_refresh: %hs %ls::upd -- it republishes its own save record on "
-                "every in-place change", rearm ? "re-armed on" : "watching", w.cls);
+                "every in-place change", rearm ? "re-armed on" : "watching", w.row->Class());
     }
 }
 

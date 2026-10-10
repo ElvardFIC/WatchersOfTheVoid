@@ -21,6 +21,7 @@
 #include "ue_wrap/core/types.h"
 #include "ue_wrap/core/ufunction_hook.h"
 #include "ue_wrap/engine/engine.h"           // arm, and the holder's heading and velocity
+#include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <cmath>
@@ -39,6 +40,17 @@ namespace UH = ue_wrap::ufunction_hook;
 
 // The session the role tests and the sender read; the verdicts carry none of their own.
 std::atomic<coop::net::Session*> g_session{nullptr};
+
+UE_FACT_FN(kRowStrokeNotify, "broom_stroke", nullptr, L"OnNotifyBegin_6E812E554132A6D770F1F3A21FF9EAC0", AnyClass);
+UE_FACT_FN(kRowArm, "broom_stroke", nullptr, L"arm", AnyClass);
+// The dispenser pile's broom verb, declared on trashBitsPile_C. A stroke calls it once per pile it
+// sweeps; the body pops up to three rolled props, spawns each as a real actor, decrements the pile's
+// counters and destroys the pile on the last. Its `location` parameter is dead: the thunk writes it to
+// the persistent frame and no instruction reads it back; the spawn transform is rolled from the pile's
+// own component bounds.
+UE_FACT_FN(kRowBroomed, "broom_stroke", nullptr, L"broomed", AnyClass);
+UE_FACT_FN(kRowGetActorForwardVector, "broom_stroke", L"Actor", L"GetActorForwardVector", Declared);
+UE_FACT_FN(kRowGetVelocity, "broom_stroke", L"Actor", L"GetVelocity", Declared);
 
 // This lane's watch tags, echoed back by the gate.
 constexpr int kTagStroke  = 1;
@@ -215,20 +227,23 @@ void OnBroomedDone(const sg::Call& /*call*/) {
     coop::broom_push::OnDispenseEnd();
 }
 
-void RegisterOnce(Reg& reg, const wchar_t* name, int tag, sg::PreFn pre, sg::PostFn post = nullptr) {
+void RegisterOnce(Reg& reg, const ue_wrap::facts::Function& row, int tag, sg::PreFn pre,
+                  sg::PostFn post = nullptr) {
     if (reg != Reg::Pending) return;
-    if (sg::WatchName(name, tag, pre, post)) { reg = Reg::Registered; return; }
+    if (sg::WatchName(row, tag, pre, post)) { reg = Reg::Registered; return; }
     reg = Reg::Refused;
     UE_LOGE("[BROOM-STROKE] the script-body gate refused the watch on '%ls' -- for the rest of this "
-            "process a client's broom stroke stays its own, and a host runs none for a client", name);
+            "process a client's broom stroke stays its own, and a host runs none for a client", row.Name());
 }
 
 void InstallReadSeams() {
-    g_fwdFn = E::ActorForwardVectorFunction();
-    g_velFn = E::ActorVelocityFunction();
-    if (!g_fwdFn || !g_velFn) return;   // the Actor class resolves at boot; asked again next stroke
-    const bool a = UH::InstallPostHook(g_fwdFn, &OnHolderForward, /*armed=*/false);
-    const bool b = UH::InstallPostHook(g_velFn, &OnHolderVelocity, /*armed=*/false);
+    const ue_wrap::facts::Resolved fwd = ue_wrap::facts::Resolve(kRowGetActorForwardVector);
+    const ue_wrap::facts::Resolved vel = ue_wrap::facts::Resolve(kRowGetVelocity);
+    g_fwdFn = fwd.Fn();
+    g_velFn = vel.Fn();
+    if (!fwd || !vel) return;   // the Actor class resolves at boot; asked again next stroke
+    const bool a = UH::InstallPostHook(fwd, &OnHolderForward, /*armed=*/false);
+    const bool b = UH::InstallPostHook(vel, &OnHolderVelocity, /*armed=*/false);
     if (!a || !b) {
         g_readsRefused = true;
         UE_LOGE("[BROOM-STROKE] the heading/velocity seams did not install (forward=%d velocity=%d, "
@@ -339,18 +354,18 @@ void Install(coop::net::Session* session) {
         }
         return;
     }
-    RegisterOnce(g_regStroke, P::name::BroomStrokeNotifyFn, kTagStroke, &OnStrokeNotify);
-    RegisterOnce(g_regArm, P::name::MainPlayerArmFn, kTagArm, &OnArm);
-    RegisterOnce(g_regBroomed, P::name::PileBroomedFn, kTagBroomed, &OnBroomed, &OnBroomedDone);
+    RegisterOnce(g_regStroke, kRowStrokeNotify, kTagStroke, &OnStrokeNotify);
+    RegisterOnce(g_regArm, kRowArm, kTagArm, &OnArm);
+    RegisterOnce(g_regBroomed, kRowBroomed, kTagBroomed, &OnBroomed, &OnBroomedDone);
     if (g_live || g_regStroke != Reg::Registered || g_regArm != Reg::Registered) return;
     // A name watch is inert until the gate turns its literal into a name, and the resolve is shared,
     // so this lane drives it rather than waiting on another consumer's tick.
     sg::ResolvePendingNames();
-    if (sg::NameWatchLive(P::name::BroomStrokeNotifyFn, kTagStroke) &&
-        sg::NameWatchLive(P::name::MainPlayerArmFn, kTagArm)) {
+    if (sg::NameWatchLive(kRowStrokeNotify, kTagStroke) &&
+        sg::NameWatchLive(kRowArm, kTagArm)) {
         g_live = true;
         UE_LOGI("[BROOM-STROKE] watching the stroke, arm and '%ls' by name -- on a client every "
-                "stroke is the host's", P::name::PileBroomedFn);
+                "stroke is the host's", kRowBroomed.Name());
     } else if (++g_liveTries >= kMaxTries) {
         g_liveAbsent = true;
         UE_LOGE("[BROOM-STROKE] the stroke and arm watches registered and never went live after %d "

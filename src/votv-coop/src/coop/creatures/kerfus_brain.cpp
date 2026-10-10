@@ -9,6 +9,7 @@
 #include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/script_gate.h"
+#include "ue_wrap/facts/function_row.h"
 #include "ue_wrap/engine/engine.h"
 
 #include <atomic>
@@ -27,9 +28,21 @@ namespace sg = ue_wrap::script_gate;
 // torque, the stuck jump), the two timer events that re-path and unstick it, the movement functions,
 // the server job, the laptop's jump, the haunting, and the cord events, whose one effect is `charging`.
 // The water events set only the body's damping, and upd() only its looks and sounds, so both stay.
-constexpr const wchar_t* kBrain[] = {
-    L"ReceiveTick", L"checkJump", L"updatePath", L"movePawnTo", L"findBrokenServer", L"task",
-    L"jump", L"RCjump", L"possess", L"possessTimer", L"cordPlugged", L"cordUnplugged",
+UE_FACT_FN(kRowReceiveTick, "kerfus_brain", L"p_kerfus_C", L"ReceiveTick", Declared);
+UE_FACT_FN(kRowCheckJump, "kerfus_brain", L"p_kerfus_C", L"checkJump", Declared);
+UE_FACT_FN(kRowUpdatePath, "kerfus_brain", L"p_kerfus_C", L"updatePath", Declared);
+UE_FACT_FN(kRowMovePawnTo, "kerfus_brain", L"p_kerfus_C", L"movePawnTo", Declared);
+UE_FACT_FN(kRowFindBrokenServer, "kerfus_brain", L"p_kerfus_C", L"findBrokenServer", Declared);
+UE_FACT_FN(kRowTask, "kerfus_brain", L"p_kerfus_C", L"task", Declared);
+UE_FACT_FN(kRowJump, "kerfus_brain", L"p_kerfus_C", L"jump", Declared);
+UE_FACT_FN(kRowRCjump, "kerfus_brain", L"p_kerfus_C", L"RCjump", Declared);
+UE_FACT_FN(kRowPossess, "kerfus_brain", L"p_kerfus_C", L"possess", Declared);
+UE_FACT_FN(kRowPossessTimer, "kerfus_brain", L"p_kerfus_C", L"possessTimer", Declared);
+UE_FACT_FN(kRowCordPlugged, "kerfus_brain", L"p_kerfus_C", L"cordPlugged", Declared);
+UE_FACT_FN(kRowCordUnplugged, "kerfus_brain", L"p_kerfus_C", L"cordUnplugged", Declared);
+const ue_wrap::facts::Function* const kBrain[] = {
+    &kRowReceiveTick, &kRowCheckJump, &kRowUpdatePath, &kRowMovePawnTo, &kRowFindBrokenServer, &kRowTask,
+    &kRowJump, &kRowRCjump, &kRowPossess, &kRowPossessTimer, &kRowCordPlugged, &kRowCordUnplugged,
 };
 constexpr size_t kBrainCount = sizeof(kBrain) / sizeof(kBrain[0]);
 constexpr int kTagBrainBase = 0x4B465300;  // 'KFS' + the row
@@ -95,7 +108,7 @@ sg::Verdict OnBrainPre(const sg::Call& c) {
         if (!g_said[row]) {
             g_said[row] = true;
             UE_LOGI("kerfus_brain: refused the Kerfus's %ls on this client -- the host runs its brain (said once "
-                    "a session)", kBrain[row]);
+                    "a session)", kBrain[row]->Name());
         }
     }
     return sg::Verdict::Cancel;
@@ -104,8 +117,7 @@ sg::Verdict OnBrainPre(const sg::Call& c) {
 void Register() {
     for (size_t i = 0; i < kBrainCount; ++i)
         if (!g_watched[i])
-            g_watched[i] = sg::WatchClassName(UK::kClassName, kBrain[i], kTagBrainBase + static_cast<int>(i),
-                                              &OnBrainPre, nullptr);
+            g_watched[i] = sg::WatchName(*kBrain[i], kTagBrainBase + static_cast<int>(i), &OnBrainPre, nullptr);
 }
 
 }  // namespace
@@ -120,7 +132,7 @@ void Tick() {
     Register();
     sg::ResolvePendingNames();
     for (size_t i = 0; i < kBrainCount; ++i)
-        if (!g_watched[i] || !sg::ClassNameWatchLive(UK::kClassName, kBrain[i], kTagBrainBase + static_cast<int>(i)))
+        if (!g_watched[i] || !sg::NameWatchLive(*kBrain[i], kTagBrainBase + static_cast<int>(i)))
             return;
     g_saidLive = true;
     UE_LOGI("kerfus_brain: the Kerfus's %zu brain bodies are watched -- a client refuses them", kBrainCount);

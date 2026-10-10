@@ -15,6 +15,7 @@
 #include "ue_wrap/desk/console_desk.h"
 #include "ue_wrap/desk/coords_panel.h"
 #include "ue_wrap/desk/desk_ping.h"
+#include "ue_wrap/facts/function_row.h"
 #include "ue_wrap/world/profile.h"
 #include "ue_wrap/world/game_mode.h"
 
@@ -341,9 +342,14 @@ void OnIntent(coop::net::Session& s, const coop::net::DeskPingVerdictPayload& p,
 // stand. Without the verdict's, a client's pings roll on its own desk, unrelayed, and a host refuses verdicts; without
 // the coordinate process's, a host refuses pings; without the log line's, the sound's or the insta-catch's, a
 // client's refused verdict shows its own failure line or sound beside the host's answer.
+UE_FACT_FN(kRowGatherSignal, "desk_ping_sync", L"spaceRenderer_C", L"gatherSignal", Declared);
+UE_FACT_FN(kRowProcessCoords, "desk_ping_sync", L"analogDScreenTest_C", L"process_coords", Declared);
+UE_FACT_FN(kRowWriteToCoordLog2, "desk_ping_sync", L"analogDScreenTest_C", L"writeToCoordLog_2", Declared);
+UE_FACT_FN(kRowPlayPingSound, "desk_ping_sync", L"analogDScreenTest_C", L"playPingSound", Declared);
+UE_FACT_FN(kRowIsntaCatchSignal, "desk_ping_sync", L"analogDScreenTest_C", L"isntaCatchSignal", Declared);
+
 struct PingWatch {
-    const wchar_t* cls;
-    const wchar_t* name;
+    const ue_wrap::facts::Function* row;
     int            tag;
     sg::PreFn      pre;
     sg::PostFn     post;
@@ -352,15 +358,15 @@ struct PingWatch {
     bool           dead;
 };
 PingWatch g_watches[kWatchCount] = {
-    {DP::kRendererClass, DP::kVerdict, 0x44504730, &OnVerdictPre, &OnVerdictPost,
+    {&kRowGatherSignal, 0x44504730, &OnVerdictPre, &OnVerdictPost,
      "a client's pings roll on its own desk, and a host refuses clients' verdicts", false, false},  // 'DPG0'
-    {DP::kDeskClass, DP::kProcessCoords, 0x44504731, &OnProcessPre, nullptr,
+    {&kRowProcessCoords, 0x44504731, &OnProcessPre, nullptr,
      "a host refuses clients' pings, and a client's shows its own failure beside the host's", false, false},  // 'DPG1'
-    {DP::kDeskClass, DP::kLogLine, 0x44504732, &OnLogLinePre, nullptr,
+    {&kRowWriteToCoordLog2, 0x44504732, &OnLogLinePre, nullptr,
      "a client's refused verdict shows its own failure line", false, false},  // 'DPG2'
-    {DP::kDeskClass, DP::kPingSound, 0x44504733, &OnPingSoundPre, nullptr,
+    {&kRowPlayPingSound, 0x44504733, &OnPingSoundPre, nullptr,
      "a client's refused verdict plays its own failure sound, a host its primed stage cue", false, false},  // 'DPG3'
-    {DP::kDeskClass, DP::kInstaCatch, 0x44504734, &OnInstaPre, nullptr,
+    {&kRowIsntaCatchSignal, 0x44504734, &OnInstaPre, nullptr,
      "a client's insta-catch crosses as a ping's verdict and is refused", false, false},  // 'DPG4'
 };
 bool g_settled = false;  // every watch live or dead: the attempts end
@@ -369,10 +375,10 @@ void Register() {
     if (g_settled) return;
     for (PingWatch& w : g_watches) {
         if (w.registered || w.dead) continue;
-        w.registered = sg::WatchClassName(w.cls, w.name, w.tag, w.pre, w.post);
+        w.registered = sg::WatchName(*w.row, w.tag, w.pre, w.post);
         if (!w.registered) {
             w.dead = true;
-            UE_LOGE("desk_ping: the gate took no watch on %ls::%ls -- %s", w.cls, w.name, w.loss);
+            UE_LOGE("desk_ping: the gate took no watch on %ls::%ls -- %s", w.row->Class(), w.row->Name(), w.loss);
         }
     }
     sg::ResolvePendingNames();
@@ -380,11 +386,11 @@ void Register() {
     for (int i = 0; i < kWatchCount; ++i) {
         PingWatch& w = g_watches[i];
         if (w.dead || g_live[i]) continue;
-        if (sg::ClassNameWatchLive(w.cls, w.name, w.tag)) {
+        if (sg::NameWatchLive(*w.row, w.tag)) {
             g_live[i] = true;
-        } else if (sg::ClassNameWatchSettled(w.cls, w.name, w.tag)) {
+        } else if (sg::NameWatchSettled(*w.row, w.tag)) {
             w.dead = true;
-            UE_LOGE("desk_ping: the watch on %ls::%ls settled dead -- %s", w.cls, w.name, w.loss);
+            UE_LOGE("desk_ping: the watch on %ls::%ls settled dead -- %s", w.row->Class(), w.row->Name(), w.loss);
         } else {
             settled = false;
         }

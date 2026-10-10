@@ -13,6 +13,7 @@
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/object_index.h"
 #include "ue_wrap/core/reflection.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <cmath>
@@ -23,6 +24,8 @@ namespace {
 
 namespace R  = ue_wrap::reflection;
 namespace GT = ue_wrap::game_thread;
+
+UE_FACT_FN(kRowPlaySound2D, "inventory_pickup_sync", L"GameplayStatics", L"PlaySound2D", Declared);
 
 std::atomic<coop::net::Session*> g_session{nullptr};
 
@@ -81,7 +84,7 @@ void Install(coop::net::Session* session) {
         // A native class, in the index from boot; a missing function would be an engine change.
         void* cls = ue_wrap::object_index::ClassByName(L"GameplayStatics");
         if (!cls) return;
-        g_playSound2DFn = R::FindFunction(cls, L"PlaySound2D");
+        g_playSound2DFn = ue_wrap::facts::Resolve(kRowPlaySound2D).Fn();
         if (!g_playSound2DFn) {
             UE_LOGE("inventory_pickup: GameplayStatics has no PlaySound2D -- blip sync disabled");
             g_observerRegistered = true;
@@ -110,7 +113,7 @@ void Install(coop::net::Session* session) {
         g_observerRegistered = true;
         return;
     }
-    if (!GT::RegisterPostObserver(g_playSound2DFn, &OnPlaySound2DPost)) {
+    if (!GT::RegisterPostObserver(ue_wrap::facts::Resolve(kRowPlaySound2D), &OnPlaySound2DPost)) {
         UE_LOGE("inventory_pickup: POST observer registration FAILED (the observer table is full) -- "
                 "blip sync disabled");
         g_observerRegistered = true;

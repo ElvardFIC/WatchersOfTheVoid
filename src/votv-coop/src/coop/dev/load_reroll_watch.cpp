@@ -11,6 +11,7 @@
 #include "ue_wrap/core/script_gate.h"
 #include "ue_wrap/desk/coord_tower.h"
 #include "ue_wrap/engine/world_identity.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <chrono>
 #include <cstdint>
@@ -25,10 +26,12 @@ namespace WI = ue_wrap::world_identity;
 
 // Each name has one declaring class in the cooked game (a census of every cooked Blueprint,
 // compared case-insensitively as the engine compares names).
-struct WatchDef { const wchar_t* name; const char* declarer; };
+UE_FACT_FN(kRowUpgrades, "dev.load_reroll_watch", nullptr, L"upgrades", AnyClass);
+UE_FACT_FN(kRowScrambleRadarDish, "dev.load_reroll_watch", nullptr, L"Scramble Radar Dish", AnyClass);
+struct WatchDef { const ue_wrap::facts::Function* row; const char* declarer; };
 constexpr WatchDef kWatches[] = {
-    { L"upgrades",            "initialServerUpgradeSpawn_C" },
-    { L"Scramble Radar Dish", "coordRadarDish_C" },
+    { &kRowUpgrades,         "initialServerUpgradeSpawn_C" },
+    { &kRowScrambleRadarDish, "coordRadarDish_C" },
 };
 constexpr int kCount = static_cast<int>(sizeof(kWatches) / sizeof(kWatches[0]));
 constexpr int kTagBase = 0x4C520000;  // 'LR', plus the watch's index
@@ -67,7 +70,7 @@ sg::Verdict OnPre(const sg::Call& c) {
     const int32_t towerId = (i == 1) ? ue_wrap::coord_tower::IdOf(c.object) : -1;  // the tower's own watch only
     UE_LOGI("load_reroll_watch: [%c] ENTRY %ls on a %ls (tower id %d) -- from %ls::%ls%s | join phase %s, "
             "world generation %u",
-            RoleChar(), kWatches[i].name, inst.c_str(), towerId, cls.c_str(),
+            RoleChar(), kWatches[i].row->Name(), inst.c_str(), towerId, cls.c_str(),
             fn.c_str(), c.fromOurCode ? " (a reflected call of ours)" : "",
             coop::join_progress::PhaseName(coop::join_progress::CurrentPhase()), WI::Generation());
     return sg::Verdict::Run;
@@ -83,10 +86,10 @@ void EnsureWatches() {
     if (!g_registered && !g_registerFailed) {
         if (!sg::IsInstalled()) return;
         for (int i = 0; i < kCount; ++i) {
-            if (!sg::WatchName(kWatches[i].name, kTagBase + i, &OnPre, &OnPost)) {
+            if (!sg::WatchName(*kWatches[i].row, kTagBase + i, &OnPre, &OnPost)) {
                 g_registerFailed = true;
                 UE_LOGE("load_reroll_watch: the gate refused the watch on %ls -- this run measures nothing",
-                        kWatches[i].name);
+                        kWatches[i].row->Name());
                 return;
             }
         }
@@ -99,15 +102,15 @@ void EnsureWatches() {
     sg::ResolvePendingNames();
     int live = 0;
     for (int i = 0; i < kCount; ++i)
-        if (sg::NameWatchLive(kWatches[i].name, kTagBase + i)) ++live;
+        if (sg::NameWatchLive(*kWatches[i].row, kTagBase + i)) ++live;
     // Nothing left to resolve means a watch not live now never will be.
     const bool settled = (live == kCount || sg::PendingNameCount() == 0);
     if (live == g_live && !settled) return;
     g_live = live;
     g_liveSettled = settled;
     UE_LOGI("load_reroll_watch: [%c] %d of %d name watches LIVE%s (%ls on %s, %ls on %s)", RoleChar(), live, kCount,
-            settled && live < kCount ? ", the rest DEAD in a full gate table" : "", kWatches[0].name,
-            kWatches[0].declarer, kWatches[1].name, kWatches[1].declarer);
+            settled && live < kCount ? ", the rest DEAD in a full gate table" : "", kWatches[0].row->Name(),
+            kWatches[0].declarer, kWatches[1].row->Name(), kWatches[1].declarer);
 }
 
 }  // namespace

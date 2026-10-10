@@ -22,6 +22,7 @@
 #include "ue_wrap/desk/drive_chain.h"
 #include "ue_wrap/desk/saved_signals.h"
 #include "ue_wrap/desk/signal_dynamic.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <chrono>
@@ -40,8 +41,7 @@ using coop::net::DeskVerbPayload;
 using Clock = std::chrono::steady_clock;
 
 constexpr int kTagPress = 0x44565001;  // 'DVP' 1
-constexpr const wchar_t* kDeskClass = L"analogDScreenTest_C";
-constexpr const wchar_t* kPressName = L"actionOptionIndex";  // one pointer: the gate knows a watch by its literals
+UE_FACT_FN(kRowActionOptionIndex, "desk_verb_intent", L"analogDScreenTest_C", L"actionOptionIndex", Declared);
 
 // The seven buttons by the desk's component variables (analogDScreenTest.cpp :2860, :3048, :2606, :2691, :3128,
 // :3173, :3203).
@@ -322,7 +322,7 @@ bool Execute(coop::net::Session& s, const DeskVerbPayload& p, uint8_t slot) {
 
 void Register(coop::net::Session* session) {
     if (!g_watched && !g_watchRefused) {
-        g_watched = sg::WatchClassName(kDeskClass, kPressName, kTagPress, &OnPressPre, nullptr);
+        g_watched = sg::WatchName(kRowActionOptionIndex, kTagPress, &OnPressPre, nullptr);
         if (!g_watched) {
             g_watchRefused = true;
             UE_LOGE("desk_verb: the gate took no watch on the desk's actionOptionIndex -- a client's desk press runs on "
@@ -343,8 +343,8 @@ void Tick(coop::net::Session& session) {
     Register(&session);
     if (!g_saidLive && g_watched && !g_watchRefused) {
         sg::ResolvePendingNames();
-        if (!sg::ClassNameWatchLive(kDeskClass, kPressName, kTagPress)) {
-            if (sg::ClassNameWatchSettled(kDeskClass, kPressName, kTagPress)) {
+        if (!sg::NameWatchLive(kRowActionOptionIndex, kTagPress)) {
+            if (sg::NameWatchSettled(kRowActionOptionIndex, kTagPress)) {
                 g_watchRefused = true;
                 UE_LOGE("desk_verb: the watch on the desk's actionOptionIndex settled dead -- a client's desk press runs "
                         "on its own machine");

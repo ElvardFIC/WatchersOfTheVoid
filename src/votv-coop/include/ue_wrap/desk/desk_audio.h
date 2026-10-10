@@ -28,13 +28,6 @@ inline constexpr int kFirstLoop = 4;  // indices 4/5 are the two loops; 6 is the
 // class + instance. Throttled lazy retry; idempotent; game thread.
 bool EnsureResolved();
 
-// The hook-target UFunction objects (null until EnsureResolved). These are
-// ENGINE-class functions (AudioComponent/ActorComponent), resolvable before
-// any desk instance exists.
-void* PlayFn();
-void* SetActiveFn();
-void* ActivateFn();
-void* DeactivateFn();  // ActorComponent:Deactivate -- the deck's stop edge
 
 // Deck playback: is `comp` the desk's signalSound, the unit-3 world-audible playback component? It
 // is NOT part of the six-component DeskSndFx wire table -- its edges route to coop::deck_play_sync

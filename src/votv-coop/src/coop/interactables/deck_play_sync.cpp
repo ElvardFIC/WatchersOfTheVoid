@@ -13,6 +13,7 @@
 #include "ue_wrap/core/game_thread.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/ufunction_hook.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <chrono>
@@ -22,6 +23,10 @@ namespace {
 
 namespace CD = ue_wrap::console_desk;
 namespace DA = ue_wrap::desk_audio;
+
+UE_FACT_FN(kRowActivate, "deck_play_sync", L"ActorComponent", L"Activate", Declared);
+UE_FACT_FN(kRowDeactivate, "deck_play_sync", L"ActorComponent", L"Deactivate", Declared);
+UE_FACT_FN(kRowFin, "deck_play_sync", L"analogDScreenTest_C", L"fin", Declared);
 
 using Clock = std::chrono::steady_clock;
 
@@ -154,7 +159,7 @@ void Tick() {
     // the signalSound cache; fin resolves with the desk class (console_desk).
     if (!g_hooksInstalled) {
         if (!DA::EnsureResolved()) return;
-        void* finFn = CD::DeckFinFn();
+        const ue_wrap::facts::Resolved finFn = ue_wrap::facts::Resolve(kRowFin);
         if (!finFn) {
             // A game recook renaming fin() would leave the whole lane silently
             // dormant, so surface it once rather than early-returning forever
@@ -167,8 +172,10 @@ void Tick() {
             }
             return;  // console_desk ResolvePass retries (throttled)
         }
-        const bool a = ue_wrap::ufunction_hook::InstallPostHook(DA::ActivateFn(), &OnDeckActivate);
-        const bool d = ue_wrap::ufunction_hook::InstallPostHook(DA::DeactivateFn(), &OnDeckDeactivate);
+        const bool a = ue_wrap::ufunction_hook::InstallPostHook(ue_wrap::facts::Resolve(kRowActivate),
+                                                                   &OnDeckActivate);
+        const bool d = ue_wrap::ufunction_hook::InstallPostHook(ue_wrap::facts::Resolve(kRowDeactivate),
+                                                                   &OnDeckDeactivate);
         const bool fp = ue_wrap::game_thread::RegisterPreObserver(finFn, &OnFinPre);
         const bool fq = ue_wrap::game_thread::RegisterPostObserver(finFn, &OnFinPost);
         g_hooksInstalled = true;  // latch (installs are idempotent + process-lifetime)

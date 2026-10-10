@@ -18,6 +18,7 @@
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/sdk_profile.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <chrono>
@@ -28,6 +29,8 @@
 
 namespace coop::device_occupancy {
 namespace {
+
+UE_FACT_FN(kRowUseInput, "device_occupancy", L"mainPlayer_C", L"InpActEvt_use_K2Node_InputActionEvent_41", Declared);
 
 namespace R  = ue_wrap::reflection;
 namespace P  = ue_wrap::profile;
@@ -272,7 +275,7 @@ void InstallObservers() {
     if (g_observersInstalled) return;
     void* playerCls = R::FindClass(P::name::MainPlayerClass);
     if (!playerCls) return;  // retry until mainPlayer_C loads
-    void* fn = R::FindFunction(playerCls, P::name::MainPlayerUseInputEventFn);
+    const ue_wrap::facts::Resolved fn = ue_wrap::facts::Resolve(kRowUseInput);
     if (!fn) {
         UE_LOGW("device_occupancy: InpActEvt_use UFunction not found -- busy devices "
                 "cannot be denied on this peer");

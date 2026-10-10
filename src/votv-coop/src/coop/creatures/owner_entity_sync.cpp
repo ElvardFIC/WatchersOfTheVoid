@@ -21,6 +21,7 @@
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/sdk_profile.h"
 #include "ue_wrap/core/types.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <chrono>
@@ -36,6 +37,9 @@ namespace R  = ue_wrap::reflection;
 namespace E  = ue_wrap::engine;
 namespace GT = ue_wrap::game_thread;
 namespace P  = ue_wrap::profile;
+
+UE_FACT_FN(kRowBeginDeferredSpawn, "owner_entity_sync", L"GameplayStatics", L"BeginDeferredActorSpawnFromClass",
+           Declared);
 
 std::atomic<coop::net::Session*> g_session{nullptr};
 
@@ -183,7 +187,7 @@ void Install(coop::net::Session* session) {
     if (!g_beginDeferredFn) {
         void* gsCls = ue_wrap::object_index::ClassByName(P::name::GameplayStaticsClass);
         if (!gsCls) return;
-        g_beginDeferredFn = R::FindFunction(gsCls, P::name::BeginDeferredSpawnFn);
+        g_beginDeferredFn = ue_wrap::facts::Resolve(kRowBeginDeferredSpawn).Fn();
         if (!g_beginDeferredFn) {
             UE_LOGW("owner_entity: BeginDeferred not found -- lane disabled for process lifetime");
             g_observerArmed = true;  // give up
@@ -217,7 +221,7 @@ void Install(coop::net::Session* session) {
         }
     }
 
-    if (!GT::RegisterPostObserver(g_beginDeferredFn, &OnSpawnPost)) {
+    if (!GT::RegisterPostObserver(ue_wrap::facts::Resolve(kRowBeginDeferredSpawn), &OnSpawnPost)) {
         UE_LOGE("owner_entity: RegisterPostObserver FAILED (table full?) -- lane disabled");
         g_observerArmed = true;
         return;

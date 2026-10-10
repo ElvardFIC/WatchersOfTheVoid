@@ -23,6 +23,7 @@
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/script_gate.h"
 #include "ue_wrap/desk/drive_chain.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <chrono>
@@ -116,6 +117,10 @@ uint64_t g_cEjectRefused = 0;    // HOST: client ejects naming another drive, an
 // IsBodyActive(putDriveIn): this player's own insert runs the same body, and there the grab must end.
 // It restores what it found, so a nested replay cannot close an outer one. Game thread.
 constexpr int kReplayDropTag = 0x44524750;  // 'DRGP'
+UE_FACT_FN(kRowPutDriveIn, "drive_sync", nullptr, L"putDriveIn", AnyClass);
+UE_FACT_FN(kRowDrivePulledOut, "drive_sync", nullptr, L"drivePulledOut", AnyClass);
+UE_FACT_FN(kRowGetDrive, "drive_sync", nullptr, L"getDrive", AnyClass);
+UE_FACT_FN(kRowDropGrabObject, "drive_sync", L"mainPlayer_C", L"dropGrabObject", Declared);
 bool g_replayingInsert = false;
 struct ReplayingInsert {
     ReplayingInsert() : outer_(g_replayingInsert) { g_replayingInsert = true; }
@@ -454,10 +459,10 @@ void Install(coop::net::Session* session) {
     // One cb serves all three verb names; the tags discriminate. putDriveIn
     // covers BOTH the slot FSM and the rack (the context's class discriminates).
     const bool ok =
-        sg::WatchName(L"putDriveIn",      kVerbPutDriveIn, &OnVerbEntry, nullptr) &&
-        sg::WatchName(L"drivePulledOut",  kVerbPulledOut,  &OnVerbEntry, nullptr) &&
-        sg::WatchName(L"getDrive",        kVerbRackTake,   &OnVerbEntry, nullptr) &&
-        sg::WatchClassName(L"mainPlayer_C", L"dropGrabObject", kReplayDropTag, &OnDropGrabPre, nullptr);
+        sg::WatchName(kRowPutDriveIn,     kVerbPutDriveIn, &OnVerbEntry, nullptr) &&
+        sg::WatchName(kRowDrivePulledOut, kVerbPulledOut,  &OnVerbEntry, nullptr) &&
+        sg::WatchName(kRowGetDrive,       kVerbRackTake,   &OnVerbEntry, nullptr) &&
+        sg::WatchName(kRowDropGrabObject, kReplayDropTag, &OnDropGrabPre, nullptr);
     if (ok) {
         g_verbsRegistered = true;
         UE_LOGI("drive_sync: 3 verb watches live (dirty-marks armed at the script-body gate), and the replayed "

@@ -25,6 +25,7 @@
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/script_gate.h"
+#include "ue_wrap/facts/function_row.h"
 #include "ue_wrap/world/economy.h"
 #include "ue_wrap/world/order_economy.h"
 #include "ue_wrap/world/store_catalog.h"
@@ -195,11 +196,9 @@ void ForwardOrder(net::Session* s, const OE::OrderData& od) {
 //     queue sends (order_queue_sync);
 //   the drone's sendShop entry: refused, whoever calls it.
 // makeAnOrder's own body runs on: it clears the cart and its slot widgets, as the button expects.
-constexpr const wchar_t* kLaptopClass = L"ui_laptop_C";
-constexpr const wchar_t* kDroneClass  = L"drone_C";
-constexpr const wchar_t* kMakeVerb    = L"makeAnOrder";
-constexpr const wchar_t* kAddVerb     = L"addOrderCart";
-constexpr const wchar_t* kSendVerb    = L"sendShop";
+UE_FACT_FN(kRowMakeAnOrder, "order_sync", L"ui_laptop_C", L"makeAnOrder", Declared);
+UE_FACT_FN(kRowAddOrderCart, "order_sync", L"ui_laptop_C", L"addOrderCart", Declared);
+UE_FACT_FN(kRowSendShop, "order_sync", L"drone_C", L"sendShop", Declared);
 constexpr int kTagMake = 0x4F534D4B;  // 'OSMK'
 constexpr int kTagAdd  = 0x4F534144;  // 'OSAD'
 constexpr int kTagSend = 0x4F535344;  // 'OSSD'
@@ -234,7 +233,7 @@ sg::Verdict OnMakeAnOrderPre(const sg::Call& c) {
 sg::Verdict OnAddOrderCartPre(const sg::Call& c) {
     // The mirror's own append comes through ProcessEvent, with no calling Blueprint frame.
     if (!ClientSession() || !c.callerFunction) return sg::Verdict::Run;
-    return R::NameEquals(R::NameOf(c.callerFunction), kMakeVerb) ? sg::Verdict::Cancel : sg::Verdict::Run;
+    return R::NameEquals(R::NameOf(c.callerFunction), kRowMakeAnOrder.Name()) ? sg::Verdict::Cancel : sg::Verdict::Run;
 }
 
 sg::Verdict OnSendShopPre(const sg::Call&) {
@@ -406,9 +405,9 @@ void Install(net::Session* session) {
     // OnDisconnect, which net_pump calls on every session-teardown edge.
     g_session.store(session, std::memory_order_release);
     if (!g_gateWatched)
-        g_gateWatched = sg::WatchClassName(kLaptopClass, kMakeVerb, kTagMake, &OnMakeAnOrderPre, nullptr) &&
-                        sg::WatchClassName(kLaptopClass, kAddVerb, kTagAdd, &OnAddOrderCartPre, nullptr) &&
-                        sg::WatchClassName(kDroneClass, kSendVerb, kTagSend, &OnSendShopPre, nullptr);
+        g_gateWatched = sg::WatchName(kRowMakeAnOrder, kTagMake, &OnMakeAnOrderPre, nullptr) &&
+                        sg::WatchName(kRowAddOrderCart, kTagAdd, &OnAddOrderCartPre, nullptr) &&
+                        sg::WatchName(kRowSendShop, kTagSend, &OnSendShopPre, nullptr);
     coop::order_queue_sync::Install(session);
 }
 

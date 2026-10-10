@@ -10,6 +10,7 @@
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/script_gate.h"
 #include "ue_wrap/engine/world_identity.h"
+#include "ue_wrap/facts/function_row.h"
 #include "ue_wrap/world/economy.h"
 #include "ue_wrap/world/upgrades.h"
 
@@ -29,12 +30,12 @@ namespace UP = ue_wrap::upgrades;
 // nothing else in the game carries either name, so a name watch is exact. Watching the BUTTON and
 // not the purchase is deliberate: the handler's whole body is the jump into the ubergraph, so a
 // cancel here takes the debit, the level write, the sound and the repaint together.
-const wchar_t* const kFnBuy =
-    L"BndEvt__button_upgDownloadSpd_K2Node_ComponentBoundEvent_0_OnButtonClickedEvent__"
-    L"DelegateSignature";
-const wchar_t* const kFnSell =
-    L"BndEvt__button_upgDown_K2Node_ComponentBoundEvent_1_OnButtonClickedEvent__"
-    L"DelegateSignature";
+UE_FACT_FN(kRowBuy, "upgrade_sync", nullptr,
+           L"BndEvt__button_upgDownloadSpd_K2Node_ComponentBoundEvent_0_OnButtonClickedEvent__DelegateSignature",
+           AnyClass);
+UE_FACT_FN(kRowSell, "upgrade_sync", nullptr,
+           L"BndEvt__button_upgDown_K2Node_ComponentBoundEvent_1_OnButtonClickedEvent__DelegateSignature",
+           AnyClass);
 constexpr int kTagUpgrade = 0x55504752;  // 'UPGR'
 
 // The claim key of the shared widget the panel lives on. Holding it IS the sender's reach: the
@@ -270,8 +271,8 @@ sg::Verdict OnBuyPre(const sg::Call& call) { return OnButton(call, 0); }
 sg::Verdict OnSellPre(const sg::Call& call) { return OnButton(call, 1); }
 
 void ArmWatches() {
-    if (!g_watchBuy)  g_watchBuy  = sg::WatchName(kFnBuy,  kTagUpgrade, &OnBuyPre,  nullptr);
-    if (!g_watchSell) g_watchSell = sg::WatchName(kFnSell, kTagUpgrade, &OnSellPre, nullptr);
+    if (!g_watchBuy)  g_watchBuy  = sg::WatchName(kRowBuy,  kTagUpgrade, &OnBuyPre,  nullptr);
+    if (!g_watchSell) g_watchSell = sg::WatchName(kRowSell, kTagUpgrade, &OnSellPre, nullptr);
 }
 
 }  // namespace
@@ -286,7 +287,7 @@ void Tick(coop::net::Session& session) {
     ArmWatches();
     if (!session.running()) return;
 
-    if (!g_saidLive && sg::NameWatchLive(kFnBuy, kTagUpgrade)) {
+    if (!g_saidLive && sg::NameWatchLive(kRowBuy, kTagUpgrade)) {
         g_saidLive = true;
         UE_LOGI("upgrade_sync: the panel's buy and sell gates are live");
     }

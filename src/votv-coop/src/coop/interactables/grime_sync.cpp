@@ -26,6 +26,7 @@
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/script_gate.h"
+#include "ue_wrap/facts/function_row.h"
 #include "ue_wrap/engine/world_identity.h"     // gen-stamped index (dead-world guard)
 #include "coop/element/object_scan_hub.h"      // the shared sliced scan pass
 
@@ -329,6 +330,8 @@ void RegisterWithScanHub() {
         &HubPassBegin, &HubMatch, &HubPassComplete, /*settleScans*/ 2});
 }
 
+UE_FACT_FN(kRowClean, "grime_sync", nullptr, L"clean", AnyClass);
+UE_FACT_FN(kRowWallFixerFix, "grime_sync", nullptr, L"wallFixer_fix", AnyClass);
 constexpr int kTagGrimeClean = 0x4752494D;  // 'GRIM'
 constexpr int kTagGrimeFix   = 0x47524958;  // 'GRIX'
 bool g_cleanWatched = false;
@@ -513,8 +516,8 @@ void Tick() {
     RegisterWithScanHub();  // safety net for any order where Tick precedes Install
     // The two lowering verbs' watches and the decals' end of play, each asked again until it takes. A
     // name watch matches the verb on any class; the pre half keeps only a grime decal.
-    if (!g_cleanWatched) g_cleanWatched = sg::WatchName(L"clean", kTagGrimeClean, &OnLowerPre, &OnLowerPost);
-    if (!g_fixWatched) g_fixWatched = sg::WatchName(L"wallFixer_fix", kTagGrimeFix, &OnLowerPre, &OnLowerPost);
+    if (!g_cleanWatched) g_cleanWatched = sg::WatchName(kRowClean, kTagGrimeClean, &OnLowerPre, &OnLowerPost);
+    if (!g_fixWatched) g_fixWatched = sg::WatchName(kRowWallFixerFix, kTagGrimeFix, &OnLowerPre, &OnLowerPost);
     if (!g_endSubscribed && DS::Install()) g_endSubscribed = DS::SubscribeClass(L"grime_C", &OnGrimeEnd);
     sg::ResolvePendingNames();
 }

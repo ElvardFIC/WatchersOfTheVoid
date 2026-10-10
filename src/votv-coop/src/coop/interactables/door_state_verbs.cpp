@@ -10,6 +10,7 @@
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/script_gate.h"
 #include "ue_wrap/devices/door.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <cstdint>
@@ -27,11 +28,25 @@ namespace sg = ue_wrap::script_gate;
 // move__FinishedFunc too, so each callback gates on the door class, which also skips a door the
 // resolve has not reached yet. The swing's end is watched after its body only: a client's copy ends
 // the swings the lane applies to it.
-struct StateWatch { const wchar_t* name; int tag; const char* what; bool refuseOnClient; };
-constexpr StateWatch kWatches[] = {
-    { L"doorOpen",           0x44534f50 /*'DSOP'*/, "doorOpen",        true },
-    { L"doorClose",          0x4453434c /*'DSCL'*/, "doorClose",       true },
-    { L"move__FinishedFunc", 0x4453454e /*'DSEN'*/, "the swing's end", false },
+UE_FACT_FN(kRowDoorOpen, "door_state_verbs", nullptr, L"doorOpen", AnyClass);
+UE_FACT_FN(kRowDoorClose, "door_state_verbs", nullptr, L"doorClose", AnyClass);
+UE_FACT_FN(kRowMoveFinishedFunc, "door_state_verbs", nullptr, L"move__FinishedFunc", AnyClass);
+UE_FACT_FN(kRowMoveUpdateFunc, "door_state_verbs", nullptr, L"move__UpdateFunc", AnyClass);
+UE_FACT_FN(kRowAddDamage, "door_state_verbs", nullptr, L"addDamage", AnyClass);
+UE_FACT_FN(kRowOpenJammedFinishedFunc, "door_state_verbs", nullptr, L"openJammed__FinishedFunc", AnyClass);
+UE_FACT_FN(kRowOpenJammedJam1EventFunc, "door_state_verbs", nullptr, L"openJammed__jam1__EventFunc", AnyClass);
+UE_FACT_FN(kRowSensorBeginOverlap, "door_state_verbs", nullptr,
+           L"BndEvt__door_sensor_K2Node_ComponentBoundEvent_2_ComponentBeginOverlapSignature__DelegateSignature",
+           AnyClass);
+UE_FACT_FN(kRowSensorEndOverlap, "door_state_verbs", nullptr,
+           L"BndEvt__door_sensor_K2Node_ComponentBoundEvent_3_ComponentEndOverlapSignature__DelegateSignature",
+           AnyClass);
+
+struct StateWatch { const ue_wrap::facts::Function* row; int tag; const char* what; bool refuseOnClient; };
+const StateWatch kWatches[] = {
+    { &kRowDoorOpen,           0x44534f50 /*'DSOP'*/, "doorOpen",        true },
+    { &kRowDoorClose,          0x4453434c /*'DSCL'*/, "doorClose",       true },
+    { &kRowMoveFinishedFunc,   0x4453454e /*'DSEN'*/, "the swing's end", false },
 };
 constexpr int kWatchCount = static_cast<int>(sizeof(kWatches) / sizeof(kWatches[0]));
 
@@ -65,14 +80,12 @@ coop::net::Session* ConnectedAs(coop::net::Role role) {
 // door) -- and the sensor's begin and end, the passage of whoever walks through, each said with the swing it
 // leaves, so a SHADOW MISS can be matched to what ran before it. The component events' names carry K2Node_,
 // as the bytecode listing has them; the pseudo-C++ drops it.
-constexpr StateWatch kProbeWatches[] = {
-    { L"addDamage",                   0x44534144 /*'DSAD'*/, "a hit (addDamage)",     false },
-    { L"openJammed__FinishedFunc",    0x44534a45 /*'DSJE'*/, "the jam shake's end",   false },
-    { L"openJammed__jam1__EventFunc", 0x44534a31 /*'DSJ1'*/, "the jam's first event", false },
-    { L"BndEvt__door_sensor_K2Node_ComponentBoundEvent_2_ComponentBeginOverlapSignature__DelegateSignature",
-      0x44535342 /*'DSSB'*/, "the sensor's begin overlap", false },
-    { L"BndEvt__door_sensor_K2Node_ComponentBoundEvent_3_ComponentEndOverlapSignature__DelegateSignature",
-      0x44535345 /*'DSSE'*/, "the sensor's end overlap", false },
+const StateWatch kProbeWatches[] = {
+    { &kRowAddDamage,                 0x44534144 /*'DSAD'*/, "a hit (addDamage)",     false },
+    { &kRowOpenJammedFinishedFunc,    0x44534a45 /*'DSJE'*/, "the jam shake's end",   false },
+    { &kRowOpenJammedJam1EventFunc,   0x44534a31 /*'DSJ1'*/, "the jam's first event", false },
+    { &kRowSensorBeginOverlap,        0x44535342 /*'DSSB'*/, "the sensor's begin overlap", false },
+    { &kRowSensorEndOverlap,          0x44535345 /*'DSSE'*/, "the sensor's end overlap", false },
 };
 bool g_probeRegistered = false;
 
@@ -157,22 +170,22 @@ void RegisterWatches() {
     if (!g_probeRegistered && coop::interactable_sync::ShadowProbe()) {
         g_probeRegistered = true;
         for (const StateWatch& w : kProbeWatches)
-            if (!sg::WatchName(w.name, w.tag, nullptr, &OnProbePost))
-                UE_LOGW("[DOOR-STATE] the probe's watch on '%ls' was refused", w.name);
-        if (!sg::WatchName(L"move__UpdateFunc", kTagFinishWindow, &OnMoveUpdatePre, nullptr) ||
-            !sg::WatchName(L"move__FinishedFunc", kTagFinishSettle, nullptr, &OnMoveFinishedPost))
+            if (!sg::WatchName(*w.row, w.tag, nullptr, &OnProbePost))
+                UE_LOGW("[DOOR-STATE] the probe's watch on '%ls' was refused", w.row->Name());
+        if (!sg::WatchName(kRowMoveUpdateFunc, kTagFinishWindow, &OnMoveUpdatePre, nullptr) ||
+            !sg::WatchName(kRowMoveFinishedFunc, kTagFinishSettle, nullptr, &OnMoveFinishedPost))
             UE_LOGW("[DOOR-STATE] the probe's watches on the swing's finish window were refused");
     }
     for (int i = 0; i < kWatchCount; ++i) {
         if (g_reg[i] != Reg::Pending) continue;
-        if (sg::WatchName(kWatches[i].name, kWatches[i].tag, kWatches[i].refuseOnClient ? &OnStatePre : nullptr,
+        if (sg::WatchName(*kWatches[i].row, kWatches[i].tag, kWatches[i].refuseOnClient ? &OnStatePre : nullptr,
                           &OnStatePost)) {
             g_reg[i] = Reg::Registered;
             continue;
         }
         g_reg[i] = Reg::Refused;
         UE_LOGE("[DOOR-STATE] the script-body gate refused the watch on '%ls' -- for the rest of this process "
-                "the door lane cannot see that verb", kWatches[i].name);
+                "the door lane cannot see that verb", kWatches[i].row->Name());
     }
 }
 
@@ -189,7 +202,7 @@ void Tick() {
     int live = 0, pending = 0;
     for (int i = 0; i < kWatchCount; ++i) {
         if (g_reg[i] == Reg::Pending) ++pending;
-        else if (g_reg[i] == Reg::Registered && sg::NameWatchLive(kWatches[i].name, kWatches[i].tag)) ++live;
+        else if (g_reg[i] == Reg::Registered && sg::NameWatchLive(*kWatches[i].row, kWatches[i].tag)) ++live;
     }
     if (live == kWatchCount) {
         g_settled = true;

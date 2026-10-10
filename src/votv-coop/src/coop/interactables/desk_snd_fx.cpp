@@ -9,6 +9,7 @@
 #include "ue_wrap/desk/desk_audio.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/ufunction_hook.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <chrono>
@@ -18,6 +19,11 @@ namespace coop::desk_snd_fx {
 namespace {
 
 namespace DA = ue_wrap::desk_audio;
+
+UE_FACT_FN(kRowPlay, "desk_snd_fx", L"AudioComponent", L"Play", Declared);
+UE_FACT_FN(kRowSetActive, "desk_snd_fx", L"ActorComponent", L"SetActive", Declared);
+UE_FACT_FN(kRowActivate, "desk_snd_fx", L"ActorComponent", L"Activate", Declared);
+
 using coop::net::DeskSndComp;
 using coop::net::DeskSndFxPayload;
 using coop::net::DeskSndOp;
@@ -197,9 +203,11 @@ void Tick() {
     // (resolvable pre-world); desk_audio backoff-throttles the retries.
     if (!g_hooksInstalled) {
         if (!DA::EnsureResolved()) return;
-        const bool a = ue_wrap::ufunction_hook::InstallPostHook(DA::PlayFn(), &OnAudioPlay);
-        const bool b = ue_wrap::ufunction_hook::InstallPostHook(DA::SetActiveFn(), &OnCompSetActive);
-        const bool c = ue_wrap::ufunction_hook::InstallPostHook(DA::ActivateFn(), &OnCompActivate);
+        const bool a = ue_wrap::ufunction_hook::InstallPostHook(ue_wrap::facts::Resolve(kRowPlay), &OnAudioPlay);
+        const bool b = ue_wrap::ufunction_hook::InstallPostHook(ue_wrap::facts::Resolve(kRowSetActive),
+                                                                   &OnCompSetActive);
+        const bool c = ue_wrap::ufunction_hook::InstallPostHook(ue_wrap::facts::Resolve(kRowActivate),
+                                                                   &OnCompActivate);
         g_hooksInstalled = true;  // latch (InstallPostHook is idempotent + process-lifetime)
         UE_LOGI("desk_snd: audio seams installed (Play=%d SetActive=%d Activate=%d)",
                 a ? 1 : 0, b ? 1 : 0, c ? 1 : 0);

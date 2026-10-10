@@ -9,6 +9,7 @@
 #include "ue_wrap/devices/lightswitch.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <array>
 #include <cstdint>
@@ -43,14 +44,22 @@ void OnLightVerb(void* self, void* function, void* /*params*/) {
     }
 }
 
-void RegisterOn(const wchar_t* className, const wchar_t* fnName, const char* label) {
+UE_FACT_FN(kRowPlayerUseLightswitch, "dev.lightswitch_probe", L"lightswitch_C", L"player_use", Declared);
+UE_FACT_FN(kRowUseLightswitch, "dev.lightswitch_probe", L"lightswitch_C", L"use", Declared);
+UE_FACT_FN(kRowActionOptionIndexLightswitch, "dev.lightswitch_probe", L"lightswitch_C", L"actionOptionIndex",
+           Declared);
+UE_FACT_FN(kRowSetActiveTriggerLightRoot, "dev.lightswitch_probe", L"trigger_lightRoot_C", L"SetActive", Declared);
+
+void RegisterOn(const ue_wrap::facts::Function& row, const char* label) {
+    const wchar_t* className = row.Class();
+    const wchar_t* fnName = row.Name();
     void* cls = R::FindClass(className);
     if (!cls) return;
-    void* fn = R::FindFunction(cls, fnName);
+    const ue_wrap::facts::Resolved fn = ue_wrap::facts::Resolve(row);
     if (!fn) { UE_LOGW("[lightswitch_probe] '%ls::%ls' not found", className, fnName); return; }
-    for (size_t i = 0; i < g_watchedCount; ++i) if (g_watched[i].fn == fn) return;
+    for (size_t i = 0; i < g_watchedCount; ++i) if (g_watched[i].fn == fn.Fn()) return;
     if (!GT::RegisterPostObserver(fn, &OnLightVerb)) return;
-    if (g_watchedCount < g_watched.size()) g_watched[g_watchedCount++] = WatchedFn{fn, label};
+    if (g_watchedCount < g_watched.size()) g_watched[g_watchedCount++] = WatchedFn{fn.Fn(), label};
 }
 
 bool     g_installed   = false;
@@ -74,10 +83,10 @@ void Install() {
     LS::EnsureResolved();      // resolve the lightRoot class/offsets (best-effort)
 
     // Candidate SENDER edges (player-facing) + the current suspect-trap edge.
-    RegisterOn(L"lightswitch_C",      L"player_use",        "lightswitch.player_use");
-    RegisterOn(L"lightswitch_C",      L"use",               "lightswitch.use");
-    RegisterOn(L"lightswitch_C",      L"actionOptionIndex", "lightswitch.actionOptionIndex");
-    RegisterOn(L"trigger_lightRoot_C", L"SetActive",        "lightRoot.SetActive (current hook)");
+    RegisterOn(kRowPlayerUseLightswitch,         "lightswitch.player_use");
+    RegisterOn(kRowUseLightswitch,               "lightswitch.use");
+    RegisterOn(kRowActionOptionIndexLightswitch, "lightswitch.actionOptionIndex");
+    RegisterOn(kRowSetActiveTriggerLightRoot,    "lightRoot.SetActive (current hook)");
 
     g_aOff       = R::FindPropertyOffset(g_switchCls, L"A");
     g_triggerOff = R::FindPropertyOffset(g_switchCls, L"Trigger");

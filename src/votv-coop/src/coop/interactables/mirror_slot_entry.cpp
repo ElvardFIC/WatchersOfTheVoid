@@ -11,6 +11,7 @@
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/reflection_props.h"  // FindParamOffset
 #include "ue_wrap/core/script_gate.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <cstdint>
@@ -30,29 +31,79 @@ std::atomic<coop::net::Session*> g_session{nullptr};
 // (coop/interactables/tape_caddy_sync), and the takes that consume the prop -- a reel case's lid or reel and a drive
 // box's drive -- whose record crosses by coop/props/prop_record_refresh, the prop's destroy relayed. A device whose
 // take no lane carries is not here: refusing a mirror there would only hide that its state never crosses.
+UE_FACT_FN(kRowDriveSlotPortOverlap, "mirror_slot_entry", L"driveSlot_C",
+           L"BndEvt__driveSlot_drivePort_play_K2Node_ComponentBoundEvent_0_ComponentBeginOverlapSignature__DelegateSignature",
+           Declared);
+UE_FACT_FN(kRowDriveRackOverlap, "mirror_slot_entry", L"prop_driveRack_C", L"ReceiveActorBeginOverlap", Declared);
+UE_FACT_FN(kRowBoxOverlap, "mirror_slot_entry", L"prop_box_C", L"ReceiveActorBeginOverlap", Declared);
+UE_FACT_FN(kRowReelboxTriggerOverlap, "mirror_slot_entry", L"prop_reelbox_C",
+           L"BndEvt__prop_reelbox_trigger_K2Node_ComponentBoundEvent_0_ComponentBeginOverlapSignature__DelegateSignature",
+           Declared);
+UE_FACT_FN(kRowTapesReelboxSmallOverlap, "mirror_slot_entry", L"wallunit_tapes_C",
+           L"BndEvt__wallunit_tapes_reelbox_small_K2Node_ComponentBoundEvent_1_ComponentBeginOverlapSignature__DelegateSignature",
+           Declared);
+UE_FACT_FN(kRowTapesReelboxBigOverlap, "mirror_slot_entry", L"wallunit_tapes_C",
+           L"BndEvt__wallunit_tapes_reelbox_big_K2Node_ComponentBoundEvent_0_ComponentBeginOverlapSignature__DelegateSignature",
+           Declared);
+UE_FACT_FN(kRowDeskMod1Overlap, "mirror_slot_entry", L"analogDScreenTest_C",
+           L"BndEvt__analogDScreenTest_mod1_K2Node_ComponentBoundEvent_9_ComponentBeginOverlapSignature__DelegateSignature",
+           Declared);
+UE_FACT_FN(kRowDeskMod2Overlap, "mirror_slot_entry", L"analogDScreenTest_C",
+           L"BndEvt__analogDScreenTest_mod2_K2Node_ComponentBoundEvent_10_ComponentBeginOverlapSignature__DelegateSignature",
+           Declared);
+UE_FACT_FN(kRowDeskMod3Overlap, "mirror_slot_entry", L"analogDScreenTest_C",
+           L"BndEvt__analogDScreenTest_mod3_K2Node_ComponentBoundEvent_11_ComponentBeginOverlapSignature__DelegateSignature",
+           Declared);
+UE_FACT_FN(kRowDeskMod4Overlap, "mirror_slot_entry", L"analogDScreenTest_C",
+           L"BndEvt__analogDScreenTest_mod4_K2Node_ComponentBoundEvent_12_ComponentBeginOverlapSignature__DelegateSignature",
+           Declared);
+UE_FACT_FN(kRowDeskMod5Overlap, "mirror_slot_entry", L"analogDScreenTest_C",
+           L"BndEvt__analogDScreenTest_mod5_K2Node_ComponentBoundEvent_13_ComponentBeginOverlapSignature__DelegateSignature",
+           Declared);
+UE_FACT_FN(kRowDeskMod6Overlap, "mirror_slot_entry", L"analogDScreenTest_C",
+           L"BndEvt__analogDScreenTest_mod6_K2Node_ComponentBoundEvent_14_ComponentBeginOverlapSignature__DelegateSignature",
+           Declared);
+UE_FACT_FN(kRowDeskMod7Overlap, "mirror_slot_entry", L"analogDScreenTest_C",
+           L"BndEvt__analogDScreenTest_mod7_K2Node_ComponentBoundEvent_15_ComponentBeginOverlapSignature__DelegateSignature",
+           Declared);
+UE_FACT_FN(kRowDeskMod8Overlap, "mirror_slot_entry", L"analogDScreenTest_C",
+           L"BndEvt__analogDScreenTest_mod8_K2Node_ComponentBoundEvent_16_ComponentBeginOverlapSignature__DelegateSignature",
+           Declared);
+UE_FACT_FN(kRowDeskMod9Overlap, "mirror_slot_entry", L"analogDScreenTest_C",
+           L"BndEvt__analogDScreenTest_mod9_K2Node_ComponentBoundEvent_17_ComponentBeginOverlapSignature__DelegateSignature",
+           Declared);
+UE_FACT_FN(kRowDeskMod10Overlap, "mirror_slot_entry", L"analogDScreenTest_C",
+           L"BndEvt__analogDScreenTest_mod10_K2Node_ComponentBoundEvent_18_ComponentBeginOverlapSignature__DelegateSignature",
+           Declared);
+UE_FACT_FN(kRowDeskMod11Overlap, "mirror_slot_entry", L"analogDScreenTest_C",
+           L"BndEvt__analogDScreenTest_mod11_K2Node_ComponentBoundEvent_19_ComponentBeginOverlapSignature__DelegateSignature",
+           Declared);
+UE_FACT_FN(kRowDeskMod12Overlap, "mirror_slot_entry", L"analogDScreenTest_C",
+           L"BndEvt__analogDScreenTest_mod12_K2Node_ComponentBoundEvent_20_ComponentBeginOverlapSignature__DelegateSignature",
+           Declared);
+
 struct Entry {
-    const wchar_t* cls;
-    const wchar_t* fn;
+    const ue_wrap::facts::Function* row;
 };
-constexpr Entry kEntries[] = {
-    {L"driveSlot_C", L"BndEvt__driveSlot_drivePort_play_K2Node_ComponentBoundEvent_0_ComponentBeginOverlapSignature__DelegateSignature"},
-    {L"prop_driveRack_C", L"ReceiveActorBeginOverlap"},
-    {L"prop_box_C", L"ReceiveActorBeginOverlap"},
-    {L"prop_reelbox_C", L"BndEvt__prop_reelbox_trigger_K2Node_ComponentBoundEvent_0_ComponentBeginOverlapSignature__DelegateSignature"},
-    {L"wallunit_tapes_C", L"BndEvt__wallunit_tapes_reelbox_small_K2Node_ComponentBoundEvent_1_ComponentBeginOverlapSignature__DelegateSignature"},
-    {L"wallunit_tapes_C", L"BndEvt__wallunit_tapes_reelbox_big_K2Node_ComponentBoundEvent_0_ComponentBeginOverlapSignature__DelegateSignature"},
-    {L"analogDScreenTest_C", L"BndEvt__analogDScreenTest_mod1_K2Node_ComponentBoundEvent_9_ComponentBeginOverlapSignature__DelegateSignature"},
-    {L"analogDScreenTest_C", L"BndEvt__analogDScreenTest_mod2_K2Node_ComponentBoundEvent_10_ComponentBeginOverlapSignature__DelegateSignature"},
-    {L"analogDScreenTest_C", L"BndEvt__analogDScreenTest_mod3_K2Node_ComponentBoundEvent_11_ComponentBeginOverlapSignature__DelegateSignature"},
-    {L"analogDScreenTest_C", L"BndEvt__analogDScreenTest_mod4_K2Node_ComponentBoundEvent_12_ComponentBeginOverlapSignature__DelegateSignature"},
-    {L"analogDScreenTest_C", L"BndEvt__analogDScreenTest_mod5_K2Node_ComponentBoundEvent_13_ComponentBeginOverlapSignature__DelegateSignature"},
-    {L"analogDScreenTest_C", L"BndEvt__analogDScreenTest_mod6_K2Node_ComponentBoundEvent_14_ComponentBeginOverlapSignature__DelegateSignature"},
-    {L"analogDScreenTest_C", L"BndEvt__analogDScreenTest_mod7_K2Node_ComponentBoundEvent_15_ComponentBeginOverlapSignature__DelegateSignature"},
-    {L"analogDScreenTest_C", L"BndEvt__analogDScreenTest_mod8_K2Node_ComponentBoundEvent_16_ComponentBeginOverlapSignature__DelegateSignature"},
-    {L"analogDScreenTest_C", L"BndEvt__analogDScreenTest_mod9_K2Node_ComponentBoundEvent_17_ComponentBeginOverlapSignature__DelegateSignature"},
-    {L"analogDScreenTest_C", L"BndEvt__analogDScreenTest_mod10_K2Node_ComponentBoundEvent_18_ComponentBeginOverlapSignature__DelegateSignature"},
-    {L"analogDScreenTest_C", L"BndEvt__analogDScreenTest_mod11_K2Node_ComponentBoundEvent_19_ComponentBeginOverlapSignature__DelegateSignature"},
-    {L"analogDScreenTest_C", L"BndEvt__analogDScreenTest_mod12_K2Node_ComponentBoundEvent_20_ComponentBeginOverlapSignature__DelegateSignature"},
+const Entry kEntries[] = {
+    {&kRowDriveSlotPortOverlap},
+    {&kRowDriveRackOverlap},
+    {&kRowBoxOverlap},
+    {&kRowReelboxTriggerOverlap},
+    {&kRowTapesReelboxSmallOverlap},
+    {&kRowTapesReelboxBigOverlap},
+    {&kRowDeskMod1Overlap},
+    {&kRowDeskMod2Overlap},
+    {&kRowDeskMod3Overlap},
+    {&kRowDeskMod4Overlap},
+    {&kRowDeskMod5Overlap},
+    {&kRowDeskMod6Overlap},
+    {&kRowDeskMod7Overlap},
+    {&kRowDeskMod8Overlap},
+    {&kRowDeskMod9Overlap},
+    {&kRowDeskMod10Overlap},
+    {&kRowDeskMod11Overlap},
+    {&kRowDeskMod12Overlap},
 };
 constexpr int kEntryCount = static_cast<int>(sizeof(kEntries) / sizeof(kEntries[0]));
 constexpr int kTagBase = 0x4D534C00;  // 'MSL' and the entry's index
@@ -89,7 +140,7 @@ sg::Verdict OnEntryPre(const sg::Call& call) {
         off = R::FindParamOffset(call.function, L"OtherActor");
         if (off < 0)
             UE_LOGE("mirror_slot_entry: %ls::%ls has no OtherActor parameter -- this entry refuses nothing",
-                    kEntries[index].cls, kEntries[index].fn);
+                    kEntries[index].row->Class(), kEntries[index].row->Name());
     }
     if (off < 0) return sg::Verdict::Run;
     void* actor = *reinterpret_cast<void* const*>(call.locals + off);
@@ -118,7 +169,7 @@ void Install(coop::net::Session* session) {
     g_registered = true;
     for (int32_t& off : g_actorOff) off = kUnread;
     for (int i = 0; i < kEntryCount; ++i)
-        g_reg[i] = sg::WatchClassName(kEntries[i].cls, kEntries[i].fn, kTagBase + i, &OnEntryPre, nullptr)
+        g_reg[i] = sg::WatchName(*kEntries[i].row, kTagBase + i, &OnEntryPre, nullptr)
                        ? Reg::Registered : Reg::Refused;
 }
 
@@ -128,8 +179,8 @@ void Tick() {
     int live = 0, settled = 0;
     for (int i = 0; i < kEntryCount; ++i) {
         if (g_reg[i] == Reg::Refused) { ++settled; continue; }
-        if (sg::ClassNameWatchLive(kEntries[i].cls, kEntries[i].fn, kTagBase + i)) { ++live; ++settled; continue; }
-        if (sg::ClassNameWatchSettled(kEntries[i].cls, kEntries[i].fn, kTagBase + i)) ++settled;
+        if (sg::NameWatchLive(*kEntries[i].row, kTagBase + i)) { ++live; ++settled; continue; }
+        if (sg::NameWatchSettled(*kEntries[i].row, kTagBase + i)) ++settled;
     }
     if (settled < kEntryCount) return;
     g_settled = true;
@@ -139,9 +190,9 @@ void Tick() {
         return;
     }
     for (int i = 0; i < kEntryCount; ++i)
-        if (g_reg[i] == Reg::Refused || !sg::ClassNameWatchLive(kEntries[i].cls, kEntries[i].fn, kTagBase + i))
+        if (g_reg[i] == Reg::Refused || !sg::NameWatchLive(*kEntries[i].row, kTagBase + i))
             UE_LOGE("mirror_slot_entry: %ls::%ls is unwatched -- that device takes a remote player's carried prop on "
-                    "every peer", kEntries[i].cls, kEntries[i].fn);
+                    "every peer", kEntries[i].row->Class(), kEntries[i].row->Name());
 }
 
 uint64_t Refused() { return g_refused; }

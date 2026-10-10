@@ -61,7 +61,7 @@ int RegisterExistingWorldNpcs(NpcEnumOrigin origin);
 // real. Called by npc_sync::Install once the UFunction and the allowlist resolve and the
 // lifecycle observers are live (the same gate as the interceptor -- an Element enrolled
 // here gets the same K2_DestroyActor close). Idempotent. Game thread.
-void InstallExSpawnCatch(void* beginDeferredFn);
+void InstallExSpawnCatch();
 
 // Drain the EX-spawn catch queue: enroll each still-live, still-untracked queued actor as a host
 // Npc Element + broadcast EntitySpawn with its CURRENT (post-Finish) transform, savePersisted=0

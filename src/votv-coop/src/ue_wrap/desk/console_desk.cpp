@@ -711,6 +711,4 @@ bool CallDeckStopSound() {
     return d && ue_wrap::component_calls::CallParamless(d, g_stopSoundFn);
 }
 
-void* DeckFinFn() { return g_finFn; }
-
 }  // namespace ue_wrap::console_desk

@@ -27,6 +27,7 @@
 #include "ue_wrap/core/sdk_profile_names.h"
 #include "ue_wrap/core/ufunction_hook.h"
 #include "ue_wrap/core/script_gate.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <chrono>
@@ -46,11 +47,13 @@ namespace E  = coop::element;
 constexpr int kVerbTurnOff = 1;  // dropKerfurProp -- NPC -> prop (destroys the NPC self)
 constexpr int kVerbTurnOn  = 2;  // spawnKerfuro   -- prop -> NPC (destroys the prop self)
 
-// The two blueprint function names watched. The literals are the identity the ambient window
-// publishes (gate on the name, never on the tag), so the same pointers are what InKerfurVerb
-// compares.
-constexpr const wchar_t* kVerbNameTurnOff = L"dropKerfurProp";
-constexpr const wchar_t* kVerbNameTurnOn  = L"spawnKerfuro";
+// The two blueprint functions watched, and the two native seams. The rows' names are the identity the
+// ambient window publishes (gate on the name, never on the tag), so the same pointers are what
+// InKerfurVerb compares.
+UE_FACT_FN(kRowDropKerfurProp, "kerfur_form_assembler", nullptr, L"dropKerfurProp", AnyClass);
+UE_FACT_FN(kRowSpawnKerfuro, "kerfur_form_assembler", nullptr, L"spawnKerfuro", AnyClass);
+UE_FACT_FN(kRowFinishSpawningActor, "kerfur_form_assembler", L"GameplayStatics", L"FinishSpawningActor", Declared);
+UE_FACT_FN(kRowK2DestroyActor, "kerfur_form_assembler", L"Actor", L"K2_DestroyActor", Declared);
 
 // Is the calling thread inside one of our own two verbs? The gates below must not test the
 // active flag alone: it is true for any registered verb on this thread, and other modules
@@ -60,9 +63,9 @@ constexpr const wchar_t* kVerbNameTurnOn  = L"spawnKerfuro";
 // Reachable: the coin gun destroying a kerfur prop nests our destroy inside its bracket.
 bool InKerfurVerb(const sg::Active& av) {
     if (!av.active || !av.name) return false;
-    return av.name == kVerbNameTurnOff || av.name == kVerbNameTurnOn ||
-           std::wcscmp(av.name, kVerbNameTurnOff) == 0 ||
-           std::wcscmp(av.name, kVerbNameTurnOn) == 0;
+    return av.name == kRowDropKerfurProp.Name() || av.name == kRowSpawnKerfuro.Name() ||
+           std::wcscmp(av.name, kRowDropKerfurProp.Name()) == 0 ||
+           std::wcscmp(av.name, kRowSpawnKerfuro.Name()) == 0;
 }
 
 coop::net::Session* g_session = nullptr;
@@ -76,8 +79,6 @@ std::atomic<bool>  g_classesResolved{false};
 
 // The two native seams, patched once for the process. Own hooks, idempotent and multi-patch, so
 // they coexist with host_spawn_watcher's FinishSpawningActor patch.
-void* g_finishSpawnFn = nullptr;
-void* g_destroyFn     = nullptr;
 std::atomic<bool> g_seamsInstalled{false};
 
 // The containment counters, accruing whenever the session is enabled.
@@ -225,7 +226,7 @@ sg::Verdict OnVerbEntry(const sg::Call& b) {
 
     if (!LogVerbose()) return sg::Verdict::Run;
     if (g_logged.fetch_add(1, std::memory_order_relaxed) >= kLogCap) return sg::Verdict::Run;
-    const wchar_t* verb = (b.tag == kVerbTurnOff) ? kVerbNameTurnOff : kVerbNameTurnOn;
+    const wchar_t* verb = (b.tag == kVerbTurnOff) ? kRowDropKerfurProp.Name() : kRowSpawnKerfuro.Name();
     std::wstring cls = R::ClassNameOf(b.object);
     UE_LOGI("[kerfur_asm][%s] VERB %ls tag=%d Context=%p class=%ls depth=%d outermost=%d eid=%s%u (observe-only)",
             RoleTag(), verb, b.tag, b.object, cls.c_str(), b.depth, outermost ? 1 : 0,
@@ -347,18 +348,12 @@ void EnsureSeamsInstalled() {
         g_classesResolved.store(true, std::memory_order_relaxed);
     }
 
-    if (!g_finishSpawnFn) {
-        if (void* gsCls = R::FindClass(P::name::GameplayStaticsClass))
-            g_finishSpawnFn = R::FindFunction(gsCls, P::name::FinishSpawningActorFn);
-    }
-    if (!g_destroyFn) {
-        if (void* actorCls = R::FindClass(P::name::ActorClassName))
-            g_destroyFn = R::FindFunction(actorCls, P::name::DestroyActorFn);
-    }
-    if (!g_finishSpawnFn || !g_destroyFn) return;  // retry next tick
+    const ue_wrap::facts::Resolved finishSpawnFn = ue_wrap::facts::Resolve(kRowFinishSpawningActor);
+    const ue_wrap::facts::Resolved destroyFn     = ue_wrap::facts::Resolve(kRowK2DestroyActor);
+    if (!finishSpawnFn || !destroyFn) return;  // retry next tick
 
-    const bool a = ue_wrap::ufunction_hook::InstallPostHook(g_finishSpawnFn, &OnFinishSpawn);
-    const bool b = ue_wrap::ufunction_hook::InstallPostHook(g_destroyFn, &OnDestroy);
+    const bool a = ue_wrap::ufunction_hook::InstallPostHook(finishSpawnFn, &OnFinishSpawn);
+    const bool b = ue_wrap::ufunction_hook::InstallPostHook(destroyFn, &OnDestroy);
     g_seamsInstalled.store(true, std::memory_order_release);  // latch regardless (idempotent hooks)
     UE_LOGI("[kerfur_asm] containment seams installed: FinishSpawningActor=%d K2_DestroyActor=%d "
             "(npc=%p prop=%p; the floppy class is looked up where it is counted)", a ? 1 : 0, b ? 1 : 0,
@@ -455,8 +450,8 @@ void Install(coop::net::Session* session) {
     // lock and scans its table for a duplicate. A name watch lives as long as the process.
     static bool s_watched = false;
     if (!s_watched)
-        s_watched = sg::WatchName(kVerbNameTurnOff, kVerbTurnOff, &OnVerbEntry, nullptr) &&
-                    sg::WatchName(kVerbNameTurnOn,  kVerbTurnOn,  &OnVerbEntry, nullptr);
+        s_watched = sg::WatchName(kRowDropKerfurProp, kVerbTurnOff, &OnVerbEntry, nullptr) &&
+                    sg::WatchName(kRowSpawnKerfuro,   kVerbTurnOn,  &OnVerbEntry, nullptr);
 }
 
 void Tick() {

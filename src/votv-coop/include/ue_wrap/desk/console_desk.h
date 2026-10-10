@@ -243,9 +243,6 @@ bool ApplyPlayVolumeEffects(int32_t value);
 // divergence-capable gates and holds the audio-seam wire guard. Game thread.
 bool CallDeckPlaySignal();
 bool CallDeckStopSound();
-// The desk's fin UFunction, the audio-finished delegate callback (no direct blueprint callers,
-// so delegate-only dispatch); the deck lane's dispatch bracket target. Null until resolved.
-void* DeckFinFn();
 
 // The shift-scan accepted-branch visual for a mirror: the reflected spawnDirs, whose arrows
 // regenerate from the wire-mirrored signals. The beep does not play here; the presser's

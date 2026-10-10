@@ -9,6 +9,7 @@
 
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/script_gate.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <cstdint>
@@ -19,8 +20,7 @@ namespace {
 
 namespace sg = ue_wrap::script_gate;
 
-constexpr wchar_t kDecayClass[] = L"generatorFuckuper_C";
-constexpr wchar_t kTickFn[] = L"timer_transformers";
+UE_FACT_FN(kRowTimerTransformers, "power_decay", L"generatorFuckuper_C", L"timer_transformers", Declared);
 constexpr int kTag = 0x50474454;  // 'PGDT'
 
 std::atomic<coop::net::Session*> g_session{nullptr};
@@ -65,18 +65,18 @@ void Install(coop::net::Session* session) {
     g_session.store(session, std::memory_order_release);
     if (g_registered) return;
     g_registered = true;
-    if (!sg::WatchClassName(kDecayClass, kTickFn, kTag, &OnTickPre, nullptr))
+    if (!sg::WatchName(kRowTimerTransformers, kTag, &OnTickPre, nullptr))
         UE_LOGE("power_decay: the script-body gate refused the watch on %ls::%ls -- each peer rolls its own wear",
-                kDecayClass, kTickFn);
+                kRowTimerTransformers.Class(), kRowTimerTransformers.Name());
 }
 
 void Tick() {
     if (g_settled || !g_registered) return;
     sg::ResolvePendingNames();
-    if (sg::ClassNameWatchLive(kDecayClass, kTickFn, kTag)) {
+    if (sg::NameWatchLive(kRowTimerTransformers, kTag)) {
         g_settled = true;
         UE_LOGI("power_decay: the decay tick's gate is live");
-    } else if (sg::ClassNameWatchSettled(kDecayClass, kTickFn, kTag)) {
+    } else if (sg::NameWatchSettled(kRowTimerTransformers, kTag)) {
         g_settled = true;
         UE_LOGE("power_decay: the decay tick's gate is dead -- each peer rolls its own wear");
     }

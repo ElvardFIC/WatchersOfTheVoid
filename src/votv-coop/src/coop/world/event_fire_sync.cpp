@@ -28,6 +28,7 @@
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/script_gate.h"
 #include "ue_wrap/engine/world_identity.h"
+#include "ue_wrap/facts/function_row.h"
 #include "ue_wrap/world/world_singleton.h"
 #include "ue_wrap/world/daynightcycle.h"
 
@@ -70,8 +71,9 @@ bool g_resolveFailed = false;
 // a sequence counter only, a RunEvent dedupes on the client by name within the session, and a
 // special is re-fired every broadcast by design.
 constexpr int kTagEventFire = 0x45564652;  // 'EVFR'
-constexpr const wchar_t* kRunEvent = L"runEvent";  // one pointer: the gate matches a name watch by it
-constexpr const wchar_t* kRunSpecialEvent = L"runSpecialEvent";
+UE_FACT_FN(kRowRunEvent, "event_fire_sync", nullptr, L"runEvent", AnyClass);
+UE_FACT_FN(kRowRunSpecialEvent, "event_fire_sync", nullptr, L"runSpecialEvent", AnyClass);
+UE_FACT_FN(kRowCycleTick, "event_fire_sync", L"daynightCycle_C", L"ReceiveTick", Declared);
 bool g_watchInstalled = false;
 bool g_watchLive = false;
 bool g_watchDead = false;          // settled without going live: said once, no longer polled
@@ -190,8 +192,8 @@ std::string NarrowName(const R::FName& n) {
 // Whether the host's watch on this verb is live in an enabled gate: a connected host reaches the
 // wire only through it.
 bool WatchLive(FireKind kind) {
-    const wchar_t* name = kind == FireKind::SpecialEvent ? kRunSpecialEvent : kRunEvent;
-    return sg::NameWatchLive(name, kTagEventFire) && sg::IsEnabled();
+    const ue_wrap::facts::Function& row = kind == FireKind::SpecialEvent ? kRowRunSpecialEvent : kRowRunEvent;
+    return sg::NameWatchLive(row, kTagEventFire) && sg::IsEnabled();
 }
 
 bool IsClientSession() {
@@ -505,28 +507,28 @@ void Install(coop::net::Session* session) {
     // loads and until the gate has resolved the watch's name.
     // The PRE is the client's refusal (OnEventerVerbPre), the POST the host's emit.
     if (!g_watchInstalled)
-        g_watchInstalled = sg::WatchName(kRunEvent, kTagEventFire, &OnEventerVerbPre, &OnRunEventPost);
+        g_watchInstalled = sg::WatchName(kRowRunEvent, kTagEventFire, &OnEventerVerbPre, &OnRunEventPost);
     if (!g_specialWatchInstalled)
         g_specialWatchInstalled =
-            sg::WatchName(kRunSpecialEvent, kTagEventFire, &OnEventerVerbPre, &OnRunSpecialEventPost);
+            sg::WatchName(kRowRunSpecialEvent, kTagEventFire, &OnEventerVerbPre, &OnRunSpecialEventPost);
     const bool runPending = g_watchInstalled && !g_watchLive && !g_watchDead;
     const bool specialPending = g_specialWatchInstalled && !g_specialWatchLive && !g_specialWatchDead;
     if (runPending || specialPending) sg::ResolvePendingNames();
     if (runPending) {
-        if (sg::NameWatchLive(kRunEvent, kTagEventFire)) {
+        if (sg::NameWatchLive(kRowRunEvent, kTagEventFire)) {
             g_watchLive = true;
             UE_LOGI("event_fire: the host's fires are seen at runEvent (a script-gate watch)");
-        } else if (sg::NameWatchSettled(kRunEvent, kTagEventFire)) {
+        } else if (sg::NameWatchSettled(kRowRunEvent, kTagEventFire)) {
             g_watchDead = true;
             UE_LOGE("event_fire: the runEvent watch settled dead -- a host's fires do not cross, and "
                     "a client's own are not refused, this session");
         }
     }
     if (specialPending) {
-        if (sg::NameWatchLive(kRunSpecialEvent, kTagEventFire)) {
+        if (sg::NameWatchLive(kRowRunSpecialEvent, kTagEventFire)) {
             g_specialWatchLive = true;
             UE_LOGI("event_fire: the host's special picks are seen at runSpecialEvent (a script-gate watch)");
-        } else if (sg::NameWatchSettled(kRunSpecialEvent, kTagEventFire)) {
+        } else if (sg::NameWatchSettled(kRowRunSpecialEvent, kTagEventFire)) {
             g_specialWatchDead = true;
             UE_LOGE("event_fire: the runSpecialEvent watch settled dead -- a host's specials do not cross, "
                     "and a client's own are not refused, this session");
@@ -537,7 +539,7 @@ void Install(coop::net::Session* session) {
     if (!g_pending.empty()) DrainPending();
     namespace DNC = ue_wrap::daynightcycle;
     if (g_tickObserved || !DNC::EnsureResolved()) return;
-    void* fn = DNC::TickFunction();
+    const ue_wrap::facts::Resolved fn = ue_wrap::facts::Resolve(kRowCycleTick);
     if (!fn) {
         UE_LOGW("event_fire: daynightCycle_C::ReceiveTick not found -- a client's event walk cannot be held");
         g_tickObserved = true;

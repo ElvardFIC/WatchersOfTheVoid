@@ -27,6 +27,7 @@
 #include "ue_wrap/core/sdk_profile.h"
 #include "ue_wrap/core/types.h"       // FTransform (the reflected SpawnTransform param layout)
 #include "ue_wrap/core/ufunction_hook.h"  // the FinishSpawningActor Func patch, the keyed spawn seam
+#include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <cmath>          // asin/atan2 for the FQuat -> FRotator conversion
@@ -42,6 +43,10 @@ namespace R  = ue_wrap::reflection;
 namespace GT = ue_wrap::game_thread;
 namespace PT = coop::prop_element_tracker;
 
+UE_FACT_FN(kRowBeginDeferredSpawn, "host_spawn_watcher", L"GameplayStatics",
+           L"BeginDeferredActorSpawnFromClass", Declared);
+UE_FACT_FN(kRowFinishSpawningActor, "host_spawn_watcher", L"GameplayStatics", L"FinishSpawningActor", Declared);
+
 // The atomic session pointer: the POST observer is registered once but fires for the session
 // lifetime, and the harness re-stores the boot-lifetime pointer through the install.
 std::atomic<coop::net::Session*> g_session{nullptr};
@@ -51,11 +56,11 @@ inline coop::net::Session* LoadSession() {
 }
 
 // Resolved-once dependencies; object-array entries do not unload in the shipped engine.
-void*   g_beginDeferredFn    = nullptr;
-int32_t g_classParamOff      = -1;   // ActorClass UClass* param
+ue_wrap::facts::Resolved g_beginDeferredFn;
+int32_t g_classParamOff     = -1;   // ActorClass UClass* param
 int32_t g_returnParamOff     = -1;   // ReturnValue AActor* param
 int32_t g_xformParamOff      = -1;   // the SpawnTransform param, the spawn pose; the actor is not positioned yet at the POST
-void*   g_finishSpawnFn      = nullptr;  // FinishSpawningActor, the keyed sandbox-menu seam
+ue_wrap::facts::Resolved g_finishSpawnFn;  // FinishSpawningActor, the keyed sandbox-menu seam
 int32_t g_finishReturnOff    = -1;       // FinishSpawningActor ReturnValue (the finished actor)
 bool    g_observerRegistered = false;  // also the permanent give-up latch
 bool    g_classesResolved    = false;
@@ -273,16 +278,16 @@ void Install(coop::net::Session* session) {
     if (!g_beginDeferredFn) {
         void* gsCls = R::FindClass(P::name::GameplayStaticsClass);
         if (!gsCls) { s_retry = 60; return; }
-        g_beginDeferredFn = R::FindFunction(gsCls, P::name::BeginDeferredSpawnFn);
+        g_beginDeferredFn = ue_wrap::facts::Resolve(kRowBeginDeferredSpawn);
         if (!g_beginDeferredFn) {
             UE_LOGW("host_spawn_watcher: %ls.%ls not found -- disabled for process lifetime",
-                    P::name::GameplayStaticsClass, P::name::BeginDeferredSpawnFn);
+                    kRowBeginDeferredSpawn.Class(), kRowBeginDeferredSpawn.Name());
             g_observerRegistered = true;  // permanent give-up latch (don't re-walk)
             return;
         }
-        g_classParamOff  = R::FindParamOffset(g_beginDeferredFn, L"ActorClass");
-        g_returnParamOff = R::FindParamOffset(g_beginDeferredFn, L"ReturnValue");
-        g_xformParamOff  = R::FindParamOffset(g_beginDeferredFn, L"SpawnTransform");
+        g_classParamOff  = R::FindParamOffset(g_beginDeferredFn.Fn(), L"ActorClass");
+        g_returnParamOff = R::FindParamOffset(g_beginDeferredFn.Fn(), L"ReturnValue");
+        g_xformParamOff  = R::FindParamOffset(g_beginDeferredFn.Fn(), L"SpawnTransform");
         if (g_classParamOff < 0 || g_returnParamOff < 0 || g_xformParamOff < 0) {
             UE_LOGW("host_spawn_watcher: BeginDeferred ActorClass@%d ReturnValue@%d SpawnTransform@%d not found -- disabled",
                     g_classParamOff, g_returnParamOff, g_xformParamOff);
@@ -292,12 +297,12 @@ void Install(coop::net::Session* session) {
         // The finish, the keyed sandbox-spawn seam on the same GameplayStatics class. Non-fatal if
         // missing: the keyless pinecone detector on the deferred spawn is independent and still
         // installs.
-        g_finishSpawnFn = R::FindFunction(gsCls, P::name::FinishSpawningActorFn);
+        g_finishSpawnFn = ue_wrap::facts::Resolve(kRowFinishSpawningActor);
         if (g_finishSpawnFn) {
-            g_finishReturnOff = R::FindParamOffset(g_finishSpawnFn, L"ReturnValue");
+            g_finishReturnOff = R::FindParamOffset(g_finishSpawnFn.Fn(), L"ReturnValue");
             if (g_finishReturnOff < 0) {
                 UE_LOGW("host_spawn_watcher: FinishSpawningActor ReturnValue param not found -- Q-menu keyed sync disabled");
-                g_finishSpawnFn = nullptr;
+                g_finishSpawnFn = {};
             }
         } else {
             UE_LOGW("host_spawn_watcher: FinishSpawningActor UFunction not found -- Q-menu keyed sync disabled");
@@ -341,7 +346,7 @@ void Install(coop::net::Session* session) {
     g_observerRegistered = true;
     UE_LOGI("host_spawn_watcher: POST observer registered on %ls @ %p "
             "(ActorClass@%d, ReturnValue@%d, %zu ambient-prop classes resolved)",
-            P::name::BeginDeferredSpawnFn, g_beginDeferredFn,
+            kRowBeginDeferredSpawn.Name(), g_beginDeferredFn.Fn(),
             g_classParamOff, g_returnParamOff,
             P::name::kAmbientPropSpawnMirrorClassesSize);
 }

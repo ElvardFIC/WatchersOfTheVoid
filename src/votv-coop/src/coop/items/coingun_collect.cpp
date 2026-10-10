@@ -26,6 +26,7 @@
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/script_gate.h"
+#include "ue_wrap/facts/function_row.h"
 #include "ue_wrap/world/economy.h"
 
 #include <atomic>
@@ -50,8 +51,13 @@ constexpr uint8_t kCoinCollectAction = 7;
 std::atomic<bool> g_installed{false};
 std::atomic<bool> g_verbRegistered{false};
 
-void* g_collectFn   = nullptr;   // Abaocoin_C's collect BndEvt (the PE-visible overlap pickup)
-void* g_actionOptFn = nullptr;   // baocoin_C::actionOptionIndex -- the host's collect executor
+UE_FACT_FN(kRowActionOptionIndex, "coingun_collect", nullptr, L"actionOptionIndex", AnyClass);
+// Abaocoin_C's collect BndEvt (the PE-visible overlap pickup)
+UE_FACT_FN(kRowCoinCollectOverlap, "coingun_collect", L"baocoin_C",
+           L"BndEvt__baocoin_collect_K2Node_ComponentBoundEvent_1_ComponentBeginOverlapSignature__DelegateSignature",
+           Declared);
+
+void* g_actionOptFn = nullptr;  // baocoin_C::actionOptionIndex -- the host's collect executor
 
 // Per-entry counters, split by role so two numbers printed together count the same population:
 // which of the two entries do players use?
@@ -430,7 +436,7 @@ void internal::InstallCollect() {
     if (!coinClass) return;
 
     if (!g_verbRegistered.load(std::memory_order_acquire)) {
-        if (sg::WatchName(kVerbNameCollect, kVerbCoinCollect, &OnCollectVerb, nullptr)) {
+        if (sg::WatchName(kRowActionOptionIndex, kVerbCoinCollect, &OnCollectVerb, nullptr)) {
             g_verbRegistered.store(true, std::memory_order_release);
             UE_LOGI("coingun[collect]: watching the verb '%ls' (tag=%d) at the script-body gate -- the E-press entry",
                     kVerbNameCollect, kVerbCoinCollect);
@@ -438,12 +444,10 @@ void internal::InstallCollect() {
     }
     sg::ResolvePendingNames();
 
-    if (!g_collectFn)
-        g_collectFn = R::FindFunction(coinClass,
-            L"BndEvt__baocoin_collect_K2Node_ComponentBoundEvent_1_ComponentBeginOverlapSignature__DelegateSignature");
-    if (!g_collectFn) return;   // retry next tick
+    const ue_wrap::facts::Resolved collectFn = ue_wrap::facts::Resolve(kRowCoinCollectOverlap);
+    if (!collectFn) return;   // retry next tick
 
-    if (!GT::RegisterInterceptor(g_collectFn, &OnCollectPre)) {
+    if (!GT::RegisterInterceptor(collectFn, &OnCollectPre)) {
         UE_LOGE("coingun[collect]: overlap interceptor install FAILED -- the overlap entry is BLIND. "
                 "The E-press entry is unaffected (it rides the verb's watch).");
         return;

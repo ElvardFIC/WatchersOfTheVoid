@@ -9,6 +9,7 @@
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/script_gate.h"
 #include "ue_wrap/core/ufunction_hook.h"   // CurrentCallerFrame -- the calling Blueprint frame
+#include "ue_wrap/facts/function_row.h"
 
 namespace coop::prop_spawn_authoring {
 namespace {
@@ -16,6 +17,9 @@ namespace {
 namespace R  = ue_wrap::reflection;
 namespace GT = ue_wrap::game_thread;
 namespace sg = ue_wrap::script_gate;
+
+UE_FACT_FN(kRowSpawnPropThroughGamemode, "prop_spawn_authoring", L"mainGamemode_C",
+           L"spawnPropThroughGamemode", Declared);
 
 // The gate watch's tag. One consumer, one tag.
 constexpr int kGateTag = 0x53504157;  // 'SPAW'
@@ -107,10 +111,12 @@ void Install(bool isClient) {
     if (g_toolUberName.ComparisonIndex == 0)
         g_toolUberName = ue_wrap::fname_utils::StringToFName(L"ExecuteUbergraph_tool_spawn");
 
+    ue_wrap::facts::Resolved gamemodeSpawn;
     if (!g_gamemodeSpawnFn) {
         void* gmCls = R::FindClass(L"mainGamemode_C");
         if (!gmCls) { s_retry = 60; return; }
-        g_gamemodeSpawnFn = R::FindFunction(gmCls, L"spawnPropThroughGamemode");
+        gamemodeSpawn = ue_wrap::facts::Resolve(kRowSpawnPropThroughGamemode);
+        g_gamemodeSpawnFn = gamemodeSpawn.Fn();
         if (!g_gamemodeSpawnFn) {
             UE_LOGW("prop_spawn_authoring: mainGamemode_C::spawnPropThroughGamemode not found -- a "
                     "client's spawn-menu birth cannot be told from the world's own spawns, so it "
@@ -119,7 +125,7 @@ void Install(bool isClient) {
             return;
         }
     }
-    if (sg::Watch(g_gamemodeSpawnFn, kGateTag, &OnGamemodeSpawnPre, nullptr)) {
+    if (sg::Watch(gamemodeSpawn, kGateTag, &OnGamemodeSpawnPre, nullptr)) {
         UE_LOGI("prop_spawn_authoring: watching mainGamemode_C::spawnPropThroughGamemode -- a "
                 "spawn-menu birth is a player's, a replaceProp or impact birth is the world's");
     } else {

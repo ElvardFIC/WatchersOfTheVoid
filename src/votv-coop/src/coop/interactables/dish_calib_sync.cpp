@@ -10,6 +10,7 @@
 #include "ue_wrap/core/sdk_profile_names.h"
 #include "ue_wrap/desk/dish.h"
 #include "ue_wrap/desk/dish_writers.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <windows.h>
 
@@ -222,9 +223,12 @@ void OnVerbPost(const sg::Call& call) {
 
 // A watch's registration, once a process, and its one settle line.
 enum class Reg : uint8_t { Pending, Registered, Refused };
+UE_FACT_FN(kRowToolInit, "dish_calib_sync", L"tool_setDishCalibration_C", L"init", Declared);
+UE_FACT_FN(kRowPlayerHandUseLmb, "dish_calib_sync", L"prop_uncalibrator_C", L"playerHandUse_LMB", Declared);
+UE_FACT_FN(kRowSetPrec, "dish_calib_sync", L"mainGamemode_C", L"setPrec", Declared);
+
 struct Watch {
-    const wchar_t* cls;
-    const wchar_t* fn;
+    const ue_wrap::facts::Function* row;
     int tag;
     sg::PreFn pre;
     sg::PostFn post;
@@ -232,9 +236,9 @@ struct Watch {
     bool settled = false;
 };
 Watch g_watches[] = {
-    {DW::kToolClass, DW::kToolVerb, kTagTool, &OnVerbPre, &OnVerbPost},
-    {DW::kUncalibratorClass, DW::kUncalibratorVerb, kTagUncalibrator, &OnVerbPre, &OnVerbPost},
-    {P::name::GamemodeClass, D::kSetPrec, kTagSetPrec, &OnSetPrecPre, nullptr},
+    {&kRowToolInit, kTagTool, &OnVerbPre, &OnVerbPost},
+    {&kRowPlayerHandUseLmb, kTagUncalibrator, &OnVerbPre, &OnVerbPost},
+    {&kRowSetPrec, kTagSetPrec, &OnSetPrecPre, nullptr},
 };
 
 }  // namespace
@@ -243,7 +247,7 @@ void Install(coop::net::Session* session) {
     g_session.store(session, std::memory_order_release);
     for (Watch& w : g_watches) {
         if (w.reg != Reg::Pending) continue;
-        if (sg::WatchClassName(w.cls, w.fn, w.tag, w.pre, w.post)) {
+        if (sg::WatchName(*w.row, w.tag, w.pre, w.post)) {
             w.reg = Reg::Registered;
             continue;
         }
@@ -258,12 +262,12 @@ void Tick() {
     sg::ResolvePendingNames();
     for (Watch& w : g_watches) {
         if (w.settled || w.reg == Reg::Pending) continue;
-        if (w.reg == Reg::Registered && sg::ClassNameWatchLive(w.cls, w.fn, w.tag)) {
+        if (w.reg == Reg::Registered && sg::NameWatchLive(*w.row, w.tag)) {
             w.settled = true;
-            UE_LOGI("dish_calib_sync: the watch on %ls::%ls is live", w.cls, w.fn);
-        } else if (w.reg == Reg::Refused || sg::ClassNameWatchSettled(w.cls, w.fn, w.tag)) {
+            UE_LOGI("dish_calib_sync: the watch on %ls::%ls is live", w.row->Class(), w.row->Name());
+        } else if (w.reg == Reg::Refused || sg::NameWatchSettled(*w.row, w.tag)) {
             w.settled = true;
-            UE_LOGE("dish_calib_sync: the watch on %ls::%ls is dead -- %ls", w.cls, w.fn,
+            UE_LOGE("dish_calib_sync: the watch on %ls::%ls is dead -- %ls", w.row->Class(), w.row->Name(),
                     w.pre == &OnSetPrecPre ? L"a client's download rate can read a deviation for up to ten seconds"
                                            : L"a client's use of it is put back and never reaches the host");
         }

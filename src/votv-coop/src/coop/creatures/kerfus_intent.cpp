@@ -15,6 +15,7 @@
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/script_gate.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <cstdint>
@@ -28,6 +29,9 @@ namespace EL = coop::element;
 namespace R  = ue_wrap::reflection;
 namespace UK = ue_wrap::kerfus;
 namespace sg = ue_wrap::script_gate;
+
+UE_FACT_FN(kRowActionOptionIndex, "kerfus_intent", L"p_kerfus_C", L"actionOptionIndex", Declared);
+UE_FACT_FN(kRowActionName, "kerfus_intent", L"p_kerfus_C", L"actionName", Declared);
 
 constexpr int kTagAction = 0x4B464901;  // 'KFI' 1
 constexpr int kTagName   = 0x4B464902;
@@ -220,9 +224,9 @@ bool Execute(coop::net::Session& s, const coop::net::KerfusIntentPayload& p, uin
 
 void Register() {
     if (!g_actionWatched)
-        g_actionWatched = sg::WatchClassName(UK::kClassName, L"actionOptionIndex", kTagAction, &OnActionPre, nullptr);
+        g_actionWatched = sg::WatchName(kRowActionOptionIndex, kTagAction, &OnActionPre, nullptr);
     if (!g_nameWatched)
-        g_nameWatched = sg::WatchClassName(UK::kClassName, L"actionName", kTagName, &OnNamePre, nullptr);
+        g_nameWatched = sg::WatchName(kRowActionName, kTagName, &OnNamePre, nullptr);
 }
 
 }  // namespace
@@ -237,8 +241,8 @@ void Tick(coop::net::Session& session) {
     if (!g_saidLive && g_actionWatched && g_nameWatched) {
         // This lane drives its own watches to live, and says so once.
         sg::ResolvePendingNames();
-        if (sg::ClassNameWatchLive(UK::kClassName, L"actionOptionIndex", kTagAction) &&
-            sg::ClassNameWatchLive(UK::kClassName, L"actionName", kTagName)) {
+        if (sg::NameWatchLive(kRowActionOptionIndex, kTagAction) &&
+            sg::NameWatchLive(kRowActionName, kTagName)) {
             g_saidLive = true;
             UE_LOGI("kerfus_intent: the Kerfus's on/off, use and pat verbs are watched");
         }

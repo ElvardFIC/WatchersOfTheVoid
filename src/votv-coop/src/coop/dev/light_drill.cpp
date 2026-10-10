@@ -13,6 +13,7 @@
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/script_gate.h"
 #include "ue_wrap/devices/lightswitch.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <chrono>
 #include <cstdint>
@@ -47,9 +48,9 @@ Clock::time_point g_nextSay{};  // the next line saying the pick still waits
 
 // The states the group lane applied to the drill's group on this client, in order: its own runTrigger
 // after the body, under the lane's apply mark. A sample a tick can miss both when the host's change
-// and its press back land in one tick; the applies cannot. The watch registers once, and the name
-// is passed as the same pointer to NameWatchLive, which compares it by address.
-constexpr const wchar_t* kRunTrigger = L"runTrigger";
+// and its press back land in one tick; the applies cannot. The watch registers once, and the same
+// row is passed to NameWatchLive, which compares the row's name by address.
+UE_FACT_FN(kRowRunTrigger, "dev.light_drill", nullptr, L"runTrigger", AnyClass);
 constexpr int kTagApply = 0x4C445254;  // 'LDRT'
 enum class Reg : uint8_t { Pending, Registered, Refused };
 Reg     g_applyReg = Reg::Pending;
@@ -125,13 +126,13 @@ bool PickSwitch(int& switches) {
 // resolved from the group's own runTrigger. False says why, once.
 bool InstrumentReady() {
     if (g_applyReg == Reg::Pending)
-        g_applyReg = sg::WatchName(kRunTrigger, kTagApply, nullptr, &OnRunTriggerPost) ? Reg::Registered : Reg::Refused;
+        g_applyReg = sg::WatchName(kRowRunTrigger, kTagApply, nullptr, &OnRunTriggerPost) ? Reg::Registered : Reg::Refused;
     if (g_applyReg == Reg::Refused) {
         UE_LOGW("[LIGHT-DRILL] client: the gate refused the drill's runTrigger watch -- INCONCLUSIVE");
         return false;
     }
-    if (!sg::NameWatchLive(kRunTrigger, kTagApply)) return false;  // resolves on a later tick
-    void* fn = R::FindDispatchFunctionCached(R::ClassOf(g_group), kRunTrigger);
+    if (!sg::NameWatchLive(kRowRunTrigger, kTagApply)) return false;  // resolves on a later tick
+    void* fn = R::FindDispatchFunctionCached(R::ClassOf(g_group), kRowRunTrigger.Name());
     g_indexOff = fn ? R::FindParamOffset(fn, L"index") : -1;
     return true;
 }

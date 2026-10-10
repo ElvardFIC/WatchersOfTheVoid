@@ -15,6 +15,7 @@
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/sdk_profile.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <cstdint>
@@ -23,6 +24,10 @@ namespace coop::npc_sync {
 
 namespace P = ue_wrap::profile;
 namespace R = ue_wrap::reflection;
+
+UE_FACT_FN(kRowBeginDeferredSpawn, "npc_sync_install", L"GameplayStatics", L"BeginDeferredActorSpawnFromClass",
+           Declared);
+UE_FACT_FN(kRowK2DestroyActor, "npc_sync_install", L"Actor", L"K2_DestroyActor", Declared);
 
 // Install-owned state; the globals npc_sync_internal.h declares are the shared subset, defined
 // here and read by the seam.
@@ -89,7 +94,7 @@ void Install(coop::net::Session* session) {
             s_installRetryCountdown = 60;
             return;
         }
-        void* fn = R::FindFunction(gsCls, P::name::BeginDeferredSpawnFn);
+        void* fn = ue_wrap::facts::Resolve(kRowBeginDeferredSpawn).Fn();
         if (!fn) {
             UE_LOGW("npc-suppress: %ls.%ls UFunction not found -- disabled permanently",
                     P::name::GameplayStaticsClass, P::name::BeginDeferredSpawnFn);
@@ -154,6 +159,7 @@ void Install(coop::net::Session* session) {
         coop::npc_mirror::SetClientRefs(refs);
     }
     void* const fn = g_npcSpawnFn;
+    const ue_wrap::facts::Resolved spawnRow = ue_wrap::facts::Resolve(kRowBeginDeferredSpawn);
     const int32_t classOff = g_npcSpawnActorClassParamOff;
     const int32_t retOff = g_npcSpawnReturnParamOff;
     const int32_t xformOff = g_npcSpawnXformParamOff;
@@ -194,7 +200,8 @@ void Install(coop::net::Session* session) {
     if (!g_spawnPostObserverInstalled.load(std::memory_order_acquire) ||
         !g_destroyObserverInstalled.load(std::memory_order_acquire)) {
         void* actorCls = R::FindClass(P::name::ActorClassName);
-        void* destroyFn = actorCls ? R::FindFunction(actorCls, P::name::DestroyActorFn) : nullptr;
+        const ue_wrap::facts::Resolved destroyRow = ue_wrap::facts::Resolve(kRowK2DestroyActor);
+        void* destroyFn = actorCls ? destroyRow.Fn() : nullptr;
         if (!actorCls || !destroyFn) {
             g_npcSyncDisabledThisProcess.store(true, std::memory_order_release);
             UE_LOGE("npc-sync: cannot resolve %ls.%ls (actorCls=%p destroyFn=%p) -- NPC sync "
@@ -217,12 +224,12 @@ void Install(coop::net::Session* session) {
             // The POST observer first; if it succeeds, register the destroy PRE observer. If that
             // fails, roll back the POST, so a half-installed state does not burn an observer-table
             // slot.
-            const bool postOk = ue_wrap::game_thread::RegisterPostObserver(fn, &NpcSpawn_POST);
+            const bool postOk = ue_wrap::game_thread::RegisterPostObserver(spawnRow, &NpcSpawn_POST);
             if (!postOk) {
                 g_npcSyncDisabledThisProcess.store(true, std::memory_order_release);
                 UE_LOGE("npc-sync: RegisterPostObserver FAILED (observer table full) -- "
                         "NPC sync DISABLED for process lifetime");
-            } else if (!ue_wrap::game_thread::RegisterPreObserver(destroyFn, &NpcDestroy_PRE)) {
+            } else if (!ue_wrap::game_thread::RegisterPreObserver(destroyRow, &NpcDestroy_PRE)) {
                 // The destroy observer failed after POST succeeded: roll back POST, so it does not
                 // fire forever for a disabled system.
                 ue_wrap::game_thread::UnregisterObservers(fn, &NpcSpawn_POST);
@@ -251,7 +258,7 @@ void Install(coop::net::Session* session) {
                 "[Error] lines)");
         return;
     }
-    ue_wrap::game_thread::RegisterInterceptor(fn, &NpcSuppress_Interceptor);
+    ue_wrap::game_thread::RegisterInterceptor(spawnRow, &NpcSuppress_Interceptor);
     UE_LOGI("npc-suppress: installed interceptor on %ls.%ls @ %p (ActorClass@%d, ReturnValue@%d, SpawnTransform@%d, %zu/%zu NPC classes resolved + lifecycle observers live)",
             P::name::GameplayStaticsClass, P::name::BeginDeferredSpawnFn,
             fn, classOff, retOff, xformOff,
@@ -259,7 +266,7 @@ void Install(coop::net::Session* session) {
     // The EX_CallMath spawn catch (the Func thunk, source-gated), installed under the same
     // lifecycle gate as the interceptor: an Element it enrols gets the identical destroy close.
     // Idempotent across retries.
-    coop::npc_world_enum::InstallExSpawnCatch(fn);
+    coop::npc_world_enum::InstallExSpawnCatch();
     for (size_t i = 0; i < P::name::kNpcAllowlistSize; ++i) {
         UE_LOGI("npc-suppress: allowlist[%zu] '%ls' = %p",
                 i, P::name::kNpcAllowlist[i], g_npcAllowlist[i]);

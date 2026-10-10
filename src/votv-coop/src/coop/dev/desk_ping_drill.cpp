@@ -26,6 +26,7 @@
 #include "ue_wrap/desk/desk_press.h"
 #include "ue_wrap/desk/space_renderer.h"
 #include "ue_wrap/engine/engine_component.h"  // GetComponentLocation
+#include "ue_wrap/facts/function_row.h"
 #include "ue_wrap/world/profile.h"
 
 #include <windows.h>
@@ -49,6 +50,9 @@ namespace PS = coop::desk_ping_sync;
 namespace R = ue_wrap::reflection;
 namespace SR = ue_wrap::space_renderer;
 namespace sg = ue_wrap::script_gate;
+
+UE_FACT_FN(kRowGatherSignal, "dev.desk_ping_drill", L"spaceRenderer_C", L"gatherSignal", Declared);
+UE_FACT_FN(kRowWriteToCoordLog2, "dev.desk_ping_drill", L"analogDScreenTest_C", L"writeToCoordLog_2", Declared);
 
 bool On() {
     static const bool on = coop::config::ResolveString(::coop::config_registry::rows::desk_ping_drill) == "run";
@@ -113,18 +117,18 @@ bool g_censusDead = false;  // a watch the gate refused or that settled dead: th
 bool CensusLive() {
     if (g_live || g_censusDead) return g_live;
     if (!g_watched[0])
-        g_watched[0] = sg::WatchClassName(DG::kRendererClass, DG::kVerdict, kTagVerdict, &OnVerdictPre, &OnVerdictPost);
-    if (!g_watched[1]) g_watched[1] = sg::WatchClassName(DG::kDeskClass, DG::kLogLine, kTagLog, nullptr, &OnLogPost);
+        g_watched[0] = sg::WatchName(kRowGatherSignal, kTagVerdict, &OnVerdictPre, &OnVerdictPost);
+    if (!g_watched[1]) g_watched[1] = sg::WatchName(kRowWriteToCoordLog2, kTagLog, nullptr, &OnLogPost);
     if (!g_watched[0] || !g_watched[1]) {
         g_censusDead = true;
         return false;
     }
     sg::ResolvePendingNames();
-    const bool verdictLive = sg::ClassNameWatchLive(DG::kRendererClass, DG::kVerdict, kTagVerdict);
-    const bool logLive = sg::ClassNameWatchLive(DG::kDeskClass, DG::kLogLine, kTagLog);
+    const bool verdictLive = sg::NameWatchLive(kRowGatherSignal, kTagVerdict);
+    const bool logLive = sg::NameWatchLive(kRowWriteToCoordLog2, kTagLog);
     g_live = verdictLive && logLive;
-    g_censusDead = (!verdictLive && sg::ClassNameWatchSettled(DG::kRendererClass, DG::kVerdict, kTagVerdict)) ||
-                   (!logLive && sg::ClassNameWatchSettled(DG::kDeskClass, DG::kLogLine, kTagLog));
+    g_censusDead = (!verdictLive && sg::NameWatchSettled(kRowGatherSignal, kTagVerdict)) ||
+                   (!logLive && sg::NameWatchSettled(kRowWriteToCoordLog2, kTagLog));
     return g_live;
 }
 

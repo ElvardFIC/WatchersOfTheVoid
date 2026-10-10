@@ -23,6 +23,7 @@
 #include "ue_wrap/core/script_gate.h"
 #include "ue_wrap/core/sdk_profile.h"
 #include "ue_wrap/core/types.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <cmath>
@@ -69,7 +70,7 @@ std::atomic<unsigned> g_replays{0};  // emitters this peer replayed (ReplayCount
 
 // The host's watch on runEvent, registered once per process.
 constexpr int kTagEventCue = 0x45564355;  // 'EVCU'
-constexpr const wchar_t* kRunEvent = L"runEvent";  // one pointer: the gate matches a name watch by it
+UE_FACT_FN(kRowRunEvent, "event_cue_sync", nullptr, L"runEvent", AnyClass);
 bool g_watchInstalled = false;
 bool g_watchLive = false;
 void* g_runEventFn = nullptr;     // trigger_eventer_C::runEvent, the one function of that name
@@ -136,10 +137,10 @@ void Install(coop::net::Session* session) {
     // Called every pump tick by the install fanout, which is also the retry until the gate has
     // resolved the watch's name.
     if (!g_watchInstalled)
-        g_watchInstalled = sg::WatchName(kRunEvent, kTagEventCue, nullptr, &OnRunEventPost);
+        g_watchInstalled = sg::WatchName(kRowRunEvent, kTagEventCue, nullptr, &OnRunEventPost);
     if (g_watchInstalled && !g_watchLive) {
         sg::ResolvePendingNames();
-        if (sg::NameWatchLive(kRunEvent, kTagEventCue)) {
+        if (sg::NameWatchLive(kRowRunEvent, kTagEventCue)) {
             g_watchLive = true;
             UE_LOGI("event_cue: the host's cue fires are seen at runEvent (a script-gate watch)");
         }

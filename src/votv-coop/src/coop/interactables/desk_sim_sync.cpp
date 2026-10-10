@@ -10,6 +10,7 @@
 #include "ue_wrap/core/script_gate.h"
 #include "ue_wrap/desk/console_desk.h"
 #include "ue_wrap/desk/desk_detector.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <chrono>
@@ -130,10 +131,9 @@ bool AllFinite(const coop::net::DeskSimSnapshot& s) {
 
 // ---- the needle's crossings ----------------------------------------------------------------------------------
 
-constexpr const wchar_t* kDeskClass = L"analogDScreenTest_C";
-constexpr const wchar_t* kUbergraphName = L"ExecuteUbergraph_analogDScreenTest";
-constexpr const wchar_t* kAutoSaveName = L"autoSave";
-constexpr const wchar_t* kFormName = L"formDownload";
+UE_FACT_FN(kRowUbergraph, "desk_sim_sync", L"analogDScreenTest_C", L"ExecuteUbergraph_analogDScreenTest", Declared);
+UE_FACT_FN(kRowAutoSave, "desk_sim_sync", L"analogDScreenTest_C", L"autoSave", Declared);
+UE_FACT_FN(kRowFormDownload, "desk_sim_sync", L"analogDScreenTest_C", L"formDownload", Declared);
 constexpr int kTagUbergraph = 0x44534C30;  // 'DSL0'
 constexpr int kTagAutoSave = 0x44534C31;   // 'DSL1'
 constexpr int kTagForm = 0x44534C32;       // 'DSL2'
@@ -192,16 +192,16 @@ void OnFormPost(const sg::Call& c);
 // literals it was registered with. One the gate refuses, or one that settles dead (its name resolved into a full
 // table), is said once and ends the attempts: the gate says why, and a retry each tick would scan its table for nothing.
 struct DeskWatch {
-    const wchar_t* name;
+    const ue_wrap::facts::Function* row;
     int            tag;
     sg::PreFn      pre;
     sg::PostFn     post;
     bool           registered;
 };
 DeskWatch g_watches[] = {
-    {kUbergraphName, kTagUbergraph, &OnUbergraphPre, &OnUbergraphPost, false},
-    {kAutoSaveName, kTagAutoSave, &OnAutoSavePre, nullptr, false},
-    {kFormName, kTagForm, nullptr, &OnFormPost, false},
+    {&kRowUbergraph, kTagUbergraph, &OnUbergraphPre, &OnUbergraphPost, false},
+    {&kRowAutoSave, kTagAutoSave, &OnAutoSavePre, nullptr, false},
+    {&kRowFormDownload, kTagForm, nullptr, &OnFormPost, false},
 };
 bool g_saidLive = false;
 bool g_refused = false;
@@ -210,21 +210,21 @@ void Register() {
     if (g_saidLive || g_refused) return;
     for (DeskWatch& w : g_watches) {
         if (w.registered) continue;
-        w.registered = sg::WatchClassName(kDeskClass, w.name, w.tag, w.pre, w.post);
+        w.registered = sg::WatchName(*w.row, w.tag, w.pre, w.post);
         if (!w.registered) {
             g_refused = true;
             UE_LOGE("desk_sim: the gate took no watch on %ls::%ls -- the needle's crossing is not the host's alone",
-                    kDeskClass, w.name);
+                    w.row->Class(), w.row->Name());
             return;
         }
     }
     sg::ResolvePendingNames();
     for (const DeskWatch& w : g_watches) {
-        if (sg::ClassNameWatchLive(kDeskClass, w.name, w.tag)) continue;
-        if (sg::ClassNameWatchSettled(kDeskClass, w.name, w.tag)) {
+        if (sg::NameWatchLive(*w.row, w.tag)) continue;
+        if (sg::NameWatchSettled(*w.row, w.tag)) {
             g_refused = true;
             UE_LOGE("desk_sim: the watch on %ls::%ls settled dead -- the needle's crossing is not the host's alone",
-                    kDeskClass, w.name);
+                    w.row->Class(), w.row->Name());
         }
         return;
     }

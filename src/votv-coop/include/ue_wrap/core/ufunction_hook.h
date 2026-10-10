@@ -55,23 +55,17 @@ CallerFrame CurrentCallerFrame();
 // and for a function with no return value. Game thread.
 void* CurrentResult();
 
-// Patch `ufunction`'s native Func with a transparent forwarder that forwards to the original Func
-// (which steps the params off the bytecode stream, runs the implementation and writes *Result),
-// then reads FFrame::Object and *Result and invokes `cb` with both. No engine layout leaks upward.
-// Idempotent per (ufunction, cb). Returns false if the arguments are null, the table is full, or
-// the Func slot reads null -- a wrong offset for this build, where refusing beats corrupting the
-// UFunction. There is no unpatch: a Func patch replaces an observation scheme wholesale once
-// proven. `armed` false installs the patch disarmed (SetArmed). Game thread.
-//
-// The scope rule above is about the DISPATCH ROUTE, not the callee list. Script overrides ARE
-// patched here and DO fire -- puppet_spawn's BlueprintUpdateAnimation, save_indicator_suppress's
-// saveAnim and addHint -- because their dispatch is ProcessEvent, whose Invoke also reads Func.
-// What does not work is a script function called via EX_Local*: the patch INSTALLS, since Func is
-// ProcessInternal and non-null and passes the guard, it LOGS "patched", and it NEVER FIRES. That
-// class belongs to the script-body gate (ue_wrap/core/script_gate.h), which sees every script body
-// with its arguments and can refuse it.
-bool InstallPostHook(void* ufunction, PostNativeCallback cb, bool armed = true);
-// The row form (ue_wrap/facts/function_row.h): the patch is installed on a resolved row, which records it.
+// Patch the function a row resolves to: its native Func gets a transparent forwarder that forwards to the
+// original Func (which steps the params off the bytecode stream, runs the implementation and writes
+// *Result), then reads FFrame::Object and *Result and invokes `cb` with both. No engine layout leaks
+// upward. Idempotent per (ufunction, cb). False for a row not resolved yet (nothing recorded), a full
+// table, or a Func slot that reads null -- a wrong offset for this build, where refusing beats corrupting
+// the UFunction; the row records whether the patch went on. There is no unpatch: a Func patch replaces an
+// observation scheme wholesale once proven. `armed` false installs it disarmed (SetArmed). Game thread.
+// The scope rule is about the DISPATCH ROUTE: a script override dispatched by ProcessEvent (puppet_spawn's
+// BlueprintUpdateAnimation, saveAnim, addHint) IS patched and fires, since Invoke reads Func; a script
+// function called via EX_Local* installs, logs "patched" and NEVER fires -- that class belongs to the
+// script-body gate (ue_wrap/core/script_gate.h).
 bool InstallPostHook(const facts::Resolved& fn, PostNativeCallback cb, bool armed = true);
 
 // Arm or disarm an installed hook. Disarmed, the forwarder pays one load and a branch after the
@@ -100,7 +94,6 @@ using PreNativeCallback = script_gate::Verdict (*)(void* context, void* sourceOb
 // untouched. A pre hook stays the outermost patch on its function in either install order, so a post hook
 // never reports a call its pre hook refused. `armed` defaults to false, the shape being a seam armed only
 // while a call of the consumer's own runs. Idempotent per (ufunction, cb). Game thread.
-bool InstallPreHook(void* ufunction, PreNativeCallback cb, bool armed = false);
 bool InstallPreHook(const facts::Resolved& fn, PreNativeCallback cb, bool armed = false);
 
 // Every installed patch, by function and kind. For coop/dev/dependency_dump; game thread.

@@ -8,6 +8,7 @@
 #include "ue_wrap/core/object_index.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/script_gate.h"
+#include "ue_wrap/facts/function_row.h"
 #include "ue_wrap/hotbar/icons.h"
 
 #include <chrono>
@@ -26,7 +27,7 @@ namespace sg  = ue_wrap::script_gate;
 // enough that it is not a per-frame reader. Every read goes through ue_wrap::hotbar.
 constexpr int kPollTicks = 15;
 constexpr int kWatchTag  = 0x0F121;
-constexpr const wchar_t* kRefreshVerb = L"updateSlotInv";
+UE_FACT_FN(kRowUpdateSlotInv, "dev.hotbar_icon_probe", nullptr, L"updateSlotInv", AnyClass);
 
 std::chrono::steady_clock::time_point g_bootT0 = std::chrono::steady_clock::now();
 
@@ -106,17 +107,17 @@ void EnsureWatch() {
         if (!sg::IsInstalled()) return;
         static bool s_held = false;  // the watch below may retry; the hold is taken once
         if (!s_held) { sg::Acquire("the hotbar icon probe"); s_held = true; }
-        if (!sg::WatchName(kRefreshVerb, kWatchTag, OnRefreshPre, OnRefreshPost)) return;
+        if (!sg::WatchName(kRowUpdateSlotInv, kWatchTag, OnRefreshPre, OnRefreshPost)) return;
         s_armed = true;
         UE_LOGI("hotbar_probe: watching %ls at the script loop (registered; name resolve pending)",
-                kRefreshVerb);
+                kRowUpdateSlotInv.Name());
     }
     static bool s_live = false;
     if (s_live) return;
     sg::ResolvePendingNames();
-    if (sg::NameWatchLive(kRefreshVerb, kWatchTag)) {
+    if (sg::NameWatchLive(kRowUpdateSlotInv, kWatchTag)) {
         s_live = true;
-        UE_LOGI("hotbar_probe: %ls watch is LIVE at t=%llums", kRefreshVerb,
+        UE_LOGI("hotbar_probe: %ls watch is LIVE at t=%llums", kRowUpdateSlotInv.Name(),
                 static_cast<unsigned long long>(SinceBootMs()));
     }
 }

@@ -22,6 +22,7 @@
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/sdk_profile.h"
 #include "ue_wrap/core/types.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <chrono>
@@ -61,6 +62,7 @@ bool g_havePreSnapshot = false;
 long long g_lastCaptureMs = 0;  // defensive ~1 Hz cap on the capture walk (see PRE)
 
 constexpr const wchar_t* kFireflyClass = L"ticker_fireflySpawner_C";
+UE_FACT_FN(kRowFireflyTick, "firefly_sync", L"ticker_fireflySpawner_C", L"ReceiveTick", Declared);
 constexpr const wchar_t* kEffFireflies = L"eff_fireflies";
 constexpr const wchar_t* kPscClass     = L"ParticleSystemComponent";
 
@@ -163,8 +165,9 @@ void Install(coop::net::Session* session) {
 
     if (!g_fireflyClass) g_fireflyClass = ue_wrap::object_index::ClassByName(kFireflyClass);
     if (!g_fireflyClass) return;
-    if (!g_fireflyTickFn) g_fireflyTickFn = R::FindFunction(g_fireflyClass, L"ReceiveTick");
-    if (!g_fireflyTickFn) {
+    const ue_wrap::facts::Resolved tickFn = ue_wrap::facts::Resolve(kRowFireflyTick);
+    g_fireflyTickFn = tickFn.Fn();
+    if (!tickFn) {
         UE_LOGW("firefly: '%ls' has no ReceiveTick -- CXX dump stale?; skipping", kFireflyClass);
         g_hooksRegistered = true;  // resolved-but-nothing-to-hook: stop retrying.
         return;
@@ -174,11 +177,11 @@ void Install(coop::net::Session* session) {
     // spawns). A full observer table is a capacity fault to fix, not a slot to wait for, so a failed
     // registration ends the attempts, the PRE rolled back when the POST fails.
     g_hooksRegistered = true;
-    if (!GT::RegisterPreObserver(g_fireflyTickFn, &OnFireflyTickPre)) {
+    if (!GT::RegisterPreObserver(tickFn, &OnFireflyTickPre)) {
         UE_LOGE("firefly: PRE observer registration FAILED (the observer table is full) -- capture disabled");
         return;
     }
-    if (!GT::RegisterPostObserver(g_fireflyTickFn, &OnFireflyTickPost)) {
+    if (!GT::RegisterPostObserver(tickFn, &OnFireflyTickPost)) {
         UE_LOGE("firefly: POST observer registration FAILED (the observer table is full) -- capture disabled");
         GT::UnregisterObservers(g_fireflyTickFn, &OnFireflyTickPre);
         return;

@@ -9,6 +9,7 @@
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/sdk_profile.h"
 #include "ue_wrap/core/types.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <cstdint>
@@ -18,6 +19,28 @@ namespace {
 
 namespace P = ue_wrap::profile;
 namespace R = ue_wrap::reflection;
+
+UE_FACT_FN(kRowGrabComponentAtLocation, "grab_observer", L"PhysicsHandleComponent",
+           L"GrabComponentAtLocation", Declared);
+UE_FACT_FN(kRowGrabComponentAtLocationWithRotation, "grab_observer", L"PhysicsHandleComponent",
+           L"GrabComponentAtLocationWithRotation", Declared);
+UE_FACT_FN(kRowSetTargetLocation, "grab_observer", L"PhysicsHandleComponent", L"SetTargetLocation", Declared);
+UE_FACT_FN(kRowSetTargetLocationAndRotation, "grab_observer", L"PhysicsHandleComponent",
+           L"SetTargetLocationAndRotation", Declared);
+UE_FACT_FN(kRowReleaseComponent, "grab_observer", L"PhysicsHandleComponent", L"ReleaseComponent", Declared);
+UE_FACT_FN(kRowSetConstrainedComponents, "grab_observer", L"PhysicsConstraintComponent",
+           L"SetConstrainedComponents", Declared);
+UE_FACT_FN(kRowBreakConstraint, "grab_observer", L"PhysicsConstraintComponent", L"BreakConstraint", Declared);
+UE_FACT_FN(kRowAddImpulse, "grab_observer", L"PrimitiveComponent", L"AddImpulse", Declared);
+UE_FACT_FN(kRowSetPhysicsLinearVelocity, "grab_observer", L"PrimitiveComponent",
+           L"SetPhysicsLinearVelocity", Declared);
+UE_FACT_FN(kRowSetPhysicsAngularVelocityInDegrees, "grab_observer", L"PrimitiveComponent",
+           L"SetPhysicsAngularVelocityInDegrees", Declared);
+UE_FACT_FN(kRowUseInputEvent, "grab_observer", L"mainPlayer_C",
+           L"InpActEvt_use_K2Node_InputActionEvent_41", Declared);
+// The `grab` timeline's tick and end: a timeline's name is content, stable across a recook.
+UE_FACT_FN(kRowGrabUpdateFunc, "grab_observer", L"mainPlayer_C", L"grab__UpdateFunc", Declared);
+UE_FACT_FN(kRowGrabFinishedFunc, "grab_observer", L"mainPlayer_C", L"grab__FinishedFunc", Declared);
 
 // The idempotency flag for Install: the pump tick calls every frame until it is true, then
 // the body short-circuits. Atomic per the install pattern, since observers may run from
@@ -192,21 +215,21 @@ void Install() {
         return;
     }
 
-    auto reg = [](void* cls, const wchar_t* clsName, const wchar_t* fnName,
+    auto reg = [](const ue_wrap::facts::Function& row,
                   ue_wrap::game_thread::ProcessEventObserverFn cb, bool pre) {
-        void* fn = R::FindFunction(cls, fnName);
+        const ue_wrap::facts::Resolved fn = ue_wrap::facts::Resolve(row);
         if (!fn) {
-            UE_LOGW("grab_hook: UFunction '%ls' not found on %ls", fnName, clsName);
+            UE_LOGW("grab_hook: UFunction '%ls' not found on %ls", row.Name(), row.Class());
             return;
         }
         const bool ok = pre
             ? ue_wrap::game_thread::RegisterPreObserver(fn, cb)
             : ue_wrap::game_thread::RegisterPostObserver(fn, cb);
         if (!ok) {
-            UE_LOGW("grab_hook: register %ls failed (table full or null cb)", fnName);
+            UE_LOGW("grab_hook: register %ls failed (table full or null cb)", row.Name());
         } else {
             UE_LOGI("grab_hook: registered %s observer for %ls.%ls @ %p",
-                    pre ? "PRE" : "POST", clsName, fnName, fn);
+                    pre ? "PRE" : "POST", row.Class(), row.Name(), fn.Fn());
         }
     };
 
@@ -218,41 +241,28 @@ void Install() {
     ue_wrap::engine::WarmupPhcReleaseCache();
 
     // Primary: the engine physics handle (the light grab path).
-    reg(phcCls, P::name::PhysicsHandleComponentClass,
-        P::name::GrabComponentAtLocationFn,             GrabObserver_PHC_Grab,                  /*pre=*/false);
-    reg(phcCls, P::name::PhysicsHandleComponentClass,
-        P::name::GrabComponentAtLocationWithRotationFn, GrabObserver_PHC_GrabWithRotation,      /*pre=*/false);
-    reg(phcCls, P::name::PhysicsHandleComponentClass,
-        P::name::SetTargetLocationFn,                   GrabObserver_PHC_SetTarget,             /*pre=*/false);
-    reg(phcCls, P::name::PhysicsHandleComponentClass,
-        P::name::SetTargetLocationAndRotationFn,        GrabObserver_PHC_SetTargetWithRotation, /*pre=*/false);
-    reg(phcCls, P::name::PhysicsHandleComponentClass,
-        P::name::ReleaseComponentFn,                    GrabObserver_PHC_Release_PRE,           /*pre=*/true);
+    reg(kRowGrabComponentAtLocation,             GrabObserver_PHC_Grab,                  /*pre=*/false);
+    reg(kRowGrabComponentAtLocationWithRotation, GrabObserver_PHC_GrabWithRotation,      /*pre=*/false);
+    reg(kRowSetTargetLocation,                   GrabObserver_PHC_SetTarget,             /*pre=*/false);
+    reg(kRowSetTargetLocationAndRotation,        GrabObserver_PHC_SetTargetWithRotation, /*pre=*/false);
+    reg(kRowReleaseComponent,                    GrabObserver_PHC_Release_PRE,           /*pre=*/true);
 
     // Primary: the engine physics constraint (the heavy grab path, a different class).
-    reg(pccCls, P::name::PhysicsConstraintComponentClass,
-        P::name::SetConstrainedComponentsFn, GrabObserver_PCC_SetConstrainedComponents, /*pre=*/false);
-    reg(pccCls, P::name::PhysicsConstraintComponentClass,
-        P::name::BreakConstraintFn,          GrabObserver_PCC_BreakConstraint_PRE,      /*pre=*/true);
+    reg(kRowSetConstrainedComponents, GrabObserver_PCC_SetConstrainedComponents, /*pre=*/false);
+    reg(kRowBreakConstraint,          GrabObserver_PCC_BreakConstraint_PRE,      /*pre=*/true);
 
     // The throw signal: the primitive component's add-impulse.
-    reg(primCls, P::name::PrimitiveComponentClass,
-        P::name::AddImpulseFn,               GrabObserver_PrimComp_AddImpulse,          /*pre=*/false);
+    reg(kRowAddImpulse,               GrabObserver_PrimComp_AddImpulse,          /*pre=*/false);
 
     // The diagnostic velocity-set observers: capture whether the blueprint explicitly sets the
     // velocity on release.
-    reg(primCls, P::name::PrimitiveComponentClass,
-        P::name::SetPhysicsLinearVelocityFn,           GrabObserver_PrimComp_SetLinearVelocity_PRE,  /*pre=*/true);
-    reg(primCls, P::name::PrimitiveComponentClass,
-        P::name::SetPhysicsAngularVelocityInDegreesFn, GrabObserver_PrimComp_SetAngularVelocity_PRE, /*pre=*/true);
+    reg(kRowSetPhysicsLinearVelocity,           GrabObserver_PrimComp_SetLinearVelocity_PRE,  /*pre=*/true);
+    reg(kRowSetPhysicsAngularVelocityInDegrees, GrabObserver_PrimComp_SetAngularVelocity_PRE, /*pre=*/true);
 
     // Secondary: the blueprint timeline and input on the player.
-    reg(playerCls, P::name::MainPlayerClass,
-        P::name::MainPlayerUseInputEventFn,  GrabObserver_InpActEvt_use,      /*pre=*/false);
-    reg(playerCls, P::name::MainPlayerClass,
-        P::name::MainPlayerGrabUpdateFn,     GrabObserver_grab_Update,        /*pre=*/false);
-    reg(playerCls, P::name::MainPlayerClass,
-        P::name::MainPlayerGrabFinishedFn,   GrabObserver_grab_Finished_PRE,  /*pre=*/true);
+    reg(kRowUseInputEvent,    GrabObserver_InpActEvt_use,      /*pre=*/false);
+    reg(kRowGrabUpdateFunc,   GrabObserver_grab_Update,        /*pre=*/false);
+    reg(kRowGrabFinishedFunc, GrabObserver_grab_Finished_PRE,  /*pre=*/true);
 
     g_installed.store(true, std::memory_order_release);
     UE_LOGI("grab_hook: Stage 1+ core observers installed (5 PHC + 2 PCC + 1 PrimComp.AddImpulse + 2 PrimComp.SetVel + 3 BP-Timeline) -- press E on a prop to see hook lines");

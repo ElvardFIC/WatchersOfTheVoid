@@ -19,6 +19,7 @@
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/engine/engine.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include "hook_sync_detail.h"
 
@@ -35,6 +36,8 @@ namespace E  = ue_wrap::engine;
 namespace GT = ue_wrap::game_thread;
 namespace H  = ue_wrap::hook;
 namespace PR = ue_wrap::prop;
+
+UE_FACT_FN(kRowReceiveTick, "hook_sync", L"hook_C", L"ReceiveTick", Declared);
 
 namespace detail {
 namespace {
@@ -409,7 +412,7 @@ void Install(coop::net::Session* session) {
     detail::RegisterWorldHooksScan();
     if (g_parkInstalled || g_parkRefused) return;
     if (!H::EnsureResolved()) return;  // retried from Tick while the class loads
-    void* tickFn = H::ReceiveTickFunction();
+    const ue_wrap::facts::Resolved tickFn = ue_wrap::facts::Resolve(kRowReceiveTick);
     if (!tickFn) return;
     if (!GT::RegisterInterceptor(tickFn, &OnHookReceiveTickPre)) {
         g_parkRefused = true;

@@ -28,6 +28,7 @@
 #include "ue_wrap/core/object_index.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/sdk_profile.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <windows.h>
 
@@ -49,6 +50,8 @@ std::atomic<bool> g_retrying{false};    // a retry thread is already running
 std::atomic<bool> g_unusable{false};    // the loaded menu class lacks a member, or the table was full
 
 // Resolved once at install; the class, the function and the field offsets never move.
+// ui_menu_C::Tick(FGeometry, float): ProcessEvent-dispatched while the menu is visible.
+UE_FACT_FN(kRowTickUiMenu, "multiplayer_menu", L"ui_menu_C", L"Tick", Declared);
 void* g_tickFn = nullptr;               // ui_menu_C::Tick (observer anchor)
 int32_t g_buttonStartOff = -1;          // ui_menu_C -> button_start (UButton*, NEW GAME)
 int32_t g_isPauseOff = -1;              // ui_menu_C -> isPause (bool)
@@ -283,7 +286,8 @@ bool TryInstall() {
     void* uiMenuCls = ue_wrap::object_index::ClassByName(prof::name::UiMenuClass);
     if (!uiMenuCls) return false;  // menu BP not loaded yet -- caller retries
 
-    g_tickFn         = R::FindFunction(uiMenuCls, prof::name::UiMenuTickFn);
+    const ue_wrap::facts::Resolved tick = ue_wrap::facts::Resolve(kRowTickUiMenu);
+    g_tickFn         = tick.Fn();
     g_buttonStartOff = R::FindPropertyOffset(uiMenuCls, prof::name::UiMenuButtonStartProp);
     g_isPauseOff     = R::FindPropertyOffset(uiMenuCls, prof::name::UiMenuIsPauseProp);
     // The game's version label is the anchor for ours; non-fatal if absent, the label just does
@@ -307,7 +311,7 @@ bool TryInstall() {
                 "-- no MULTIPLAYER button this process", g_tickFn, g_buttonStartOff, g_isPauseOff);
         return false;
     }
-    if (!GT::RegisterPostObserver(g_tickFn, &OnMenuTickPost)) {
+    if (!GT::RegisterPostObserver(tick, &OnMenuTickPost)) {
         g_unusable.store(true, std::memory_order_release);
         UE_LOGE("multiplayer_menu: RegisterPostObserver(Tick) failed -- observer table full? No MULTIPLAYER "
                 "button this process");

@@ -13,6 +13,7 @@
 #include "ue_wrap/core/script_gate.h"
 #include "ue_wrap/core/sdk_profile.h"
 #include "ue_wrap/core/ufunction_hook.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <cstdint>
@@ -28,8 +29,9 @@ namespace R  = ue_wrap::reflection;
 namespace sg = ue_wrap::script_gate;
 namespace UH = ue_wrap::ufunction_hook;
 
-constexpr const wchar_t* kLibClass = L"lib_C";
-constexpr const wchar_t* kMainPlayerFn = L"getMainPlayer";
+UE_FACT_FN(kRowGetMainPlayer, "served_player", L"lib_C", L"getMainPlayer", Declared);
+UE_FACT_FN(kRowGetPlayerCharacter, "served_player", L"GameplayStatics", L"GetPlayerCharacter", Declared);
+UE_FACT_FN(kRowGetPlayerPawn, "served_player", L"GameplayStatics", L"GetPlayerPawn", Declared);
 constexpr int kTagMainPlayer = 0x53505001;  // 'SPP' 1
 
 std::atomic<coop::net::Session*> g_session{nullptr};
@@ -45,7 +47,7 @@ unsigned long long g_answered = 0;
 // A native player-0 read, post-hooked: the result is rewritten when the calling object is a robot served
 // through this seam.
 struct NativeSeam {
-    const wchar_t*            name;
+    const ue_wrap::facts::Function* row;
     uint8_t                   bit;
     UH::PostNativeCallback    cb;
     void*                     fn = nullptr;
@@ -100,8 +102,8 @@ void AnswerNative(void* source, uint8_t seam) {
 void OnCharacterPost(void* /*context*/, void* source, void* /*result*/) { AnswerNative(source, kPlayerCharacter); }
 void OnPawnPost(void* /*context*/, void* source, void* /*result*/) { AnswerNative(source, kPlayerPawn); }
 
-NativeSeam g_gpc{L"GetPlayerCharacter", kPlayerCharacter, &OnCharacterPost};
-NativeSeam g_gpp{L"GetPlayerPawn", kPlayerPawn, &OnPawnPost};
+NativeSeam g_gpc{&kRowGetPlayerCharacter, kPlayerCharacter, &OnCharacterPost};
+NativeSeam g_gpp{&kRowGetPlayerPawn, kPlayerPawn, &OnPawnPost};
 
 // lib.getMainPlayer(__WorldContext, out AsMain Player): the library's default object runs the body, so the
 // calling robot is the caller frame's object. Of a served robot's calls only the Omega's disc insert reads
@@ -147,14 +149,14 @@ void RefuseMain(const char* why) {
     DropRecordsNeeding(kMainPlayer);
 }
 
-bool MainLive() { return sg::ClassNameWatchLive(kLibClass, kMainPlayerFn, kTagMainPlayer); }
+bool MainLive() { return sg::NameWatchLive(kRowGetMainPlayer, kTagMainPlayer); }
 
 // Register the watch and resolve its names now, a game-thread engine call; until it settles, asked again on
 // the next call. UpdateArm retires it once no record needs it.
 void PrimeMain() {
     if (g_mainPrimed || g_mainRefused) return;
     if (!g_mainWatched &&
-        !(g_mainWatched = sg::WatchClassName(kLibClass, kMainPlayerFn, kTagMainPlayer, &OnMainPlayerPre, nullptr))) {
+        !(g_mainWatched = sg::WatchName(kRowGetMainPlayer, kTagMainPlayer, &OnMainPlayerPre, nullptr))) {
         RefuseMain("its watch was refused");
         return;
     }
@@ -163,18 +165,19 @@ void PrimeMain() {
         g_mainPrimed = true;
         UE_LOGI("served_player: the disc insert's getMainPlayer watch resolved -- enabled while an Omega serves a "
                 "client");
-    } else if (sg::ClassNameWatchSettled(kLibClass, kMainPlayerFn, kTagMainPlayer)) {
+    } else if (sg::NameWatchSettled(kRowGetMainPlayer, kTagMainPlayer)) {
         RefuseMain("its watch died at the name resolve");
     }
 }
 
-void InstallSeam(NativeSeam& seam, void* statics) {
+void InstallSeam(NativeSeam& seam) {
     if (seam.installed || seam.refused) return;
-    seam.fn = R::FindFunction(statics, seam.name);
-    if (!seam.fn || !UH::InstallPostHook(seam.fn, seam.cb, /*armed=*/false)) {
+    const ue_wrap::facts::Resolved resolved = ue_wrap::facts::Resolve(*seam.row);
+    seam.fn = resolved.Fn();
+    if (!seam.fn || !UH::InstallPostHook(resolved, seam.cb, /*armed=*/false)) {
         seam.refused = true;
         UE_LOGE("served_player: the %ls seam did not install -- a robot reading through it serves no client for the "
-                "rest of this process", seam.name);
+                "rest of this process", seam.row->Name());
         DropRecordsNeeding(seam.bit);
         return;
     }
@@ -197,10 +200,10 @@ void UpdateArm() {
     if (g_mainPrimed) {
         const bool need = (WantedSeams() & kMainPlayer) != 0;
         if (need && !g_mainWatched) {
-            g_mainWatched = sg::WatchClassName(kLibClass, kMainPlayerFn, kTagMainPlayer, &OnMainPlayerPre, nullptr);
+            g_mainWatched = sg::WatchName(kRowGetMainPlayer, kTagMainPlayer, &OnMainPlayerPre, nullptr);
             if (!g_mainWatched || !MainLive()) RefuseMain("its resolved watch did not come back live");
         } else if (!need && g_mainWatched) {
-            sg::UnwatchClassName(kLibClass, kMainPlayerFn, kTagMainPlayer, &OnMainPlayerPre, nullptr);
+            sg::UnwatchName(kRowGetMainPlayer, kTagMainPlayer, &OnMainPlayerPre, nullptr);
             g_mainWatched = false;
         }
     }
@@ -218,8 +221,8 @@ void Install(coop::net::Session* session) {
     if ((g_gpc.installed || g_gpc.refused) && (g_gpp.installed || g_gpp.refused)) return;
     void* statics = R::FindClass(P::name::GameplayStaticsClass);
     if (!statics) return;  // the engine class resolves at boot; asked again next call
-    InstallSeam(g_gpc, statics);
-    InstallSeam(g_gpp, statics);
+    InstallSeam(g_gpc);
+    InstallSeam(g_gpp);
 }
 
 bool SeamsReady(uint8_t seams) {

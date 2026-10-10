@@ -10,6 +10,7 @@
 
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/script_gate.h"
+#include "ue_wrap/facts/function_row.h"
 #include "ue_wrap/world/skysphere.h"
 #include "ue_wrap/core/types.h"  // FRotator
 
@@ -22,6 +23,8 @@ namespace {
 
 namespace SKY = ue_wrap::skysphere;
 namespace sg  = ue_wrap::script_gate;
+
+UE_FACT_FN(kRowSetEye, "sky_sync", L"newsky_C", L"setEye", Declared);
 
 std::atomic<coop::net::Session*> g_session{nullptr};
 std::chrono::steady_clock::time_point g_lastBroadcast{};
@@ -89,7 +92,7 @@ void Install(coop::net::Session* session) {
     SKY::EnsureResolved();  // retried via Tick until newsky_C loads
     if (!g_gateAsked) {
         g_gateAsked = true;
-        if (!sg::WatchClassName(L"newsky_C", L"setEye", kSetEyeTag, &OnSetEyePre, nullptr))
+        if (!sg::WatchName(kRowSetEye, kSetEyeTag, &OnSetEyePre, nullptr))
             UE_LOGE("sky_sync: the script gate refused the watch on newsky_C.setEye -- a client's own noon roll "
                     "can still set its eye");
     }

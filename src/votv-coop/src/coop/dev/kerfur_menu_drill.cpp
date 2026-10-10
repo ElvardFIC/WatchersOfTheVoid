@@ -14,6 +14,7 @@
 #include "ue_wrap/core/object_index.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/script_gate.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <algorithm>
 #include <atomic>
@@ -34,7 +35,7 @@ enum class Step { WaitJoin, WaitNpc, WaitProp, WaitSuccessor, Done, Invalid };
 // these two, so the exact-class index finds each form.
 constexpr const wchar_t* kNpcClass  = L"kerfurOmega_C";
 constexpr const wchar_t* kPropClass = L"prop_kerfurOmega_C";
-constexpr const wchar_t* kMenuEvent = L"actionOptionIndex";
+UE_FACT_FN(kRowActionOptionIndex, "dev.kerfur_menu_drill", nullptr, L"actionOptionIndex", AnyClass);
 constexpr int     kMenuTag      = 0x4B4D0001;  // 'KM'
 constexpr uint8_t kActionTurnOn = 8;           // the prop's event graph calls spawnKerfuro on this action alone
 
@@ -98,7 +99,7 @@ sg::Verdict OnMenuPre(const sg::Call& c) {
 void EnsureMenuWatch() {
     if (g_menuLive || g_step == Step::Invalid || !sg::IsInstalled()) return;
     if (!g_menuWatched) {
-        g_menuWatched = sg::WatchName(kMenuEvent, kMenuTag, &OnMenuPre, nullptr);
+        g_menuWatched = sg::WatchName(kRowActionOptionIndex, kMenuTag, &OnMenuPre, nullptr);
         if (!g_menuWatched) {
             Invalid("the gate refused the watch on the menu event");
             return;
@@ -108,7 +109,7 @@ void EnsureMenuWatch() {
     if (now < g_nextLiveCheck) return;
     g_nextLiveCheck = now + std::chrono::seconds(1);
     sg::ResolvePendingNames();
-    g_menuLive = sg::NameWatchLive(kMenuEvent, kMenuTag);
+    g_menuLive = sg::NameWatchLive(kRowActionOptionIndex, kMenuTag);
     if (!g_menuLive && sg::PendingNameCount() == 0) Invalid("the menu watch is dead in a full gate table");
 }
 
@@ -122,7 +123,7 @@ bool CallVerb(void* obj, const wchar_t* verb) {
 
 bool CallMenuTurnOn(void* prop) {
     void* player = coop::players::Registry::Get().Local();
-    void* fn = R::FindDispatchFunctionCached(R::ClassOf(prop), kMenuEvent);
+    void* fn = R::FindDispatchFunctionCached(R::ClassOf(prop), kRowActionOptionIndex.Name());
     if (!player || !fn) return false;
     ue_wrap::ParamFrame f(fn);
     if (!f.valid()) return false;
@@ -157,7 +158,7 @@ void TickHost(coop::net::Session* s) {
     case Step::WaitProp: {
         g_prop = FindNew(kPropClass, nullptr);
         if (!g_prop) return;
-        UE_LOGI("kerfur_menu_drill: [H] prop %p is down; turning it on through %ls, action %u", g_prop, kMenuEvent,
+        UE_LOGI("kerfur_menu_drill: [H] prop %p is down; turning it on through %ls, action %u", g_prop, kRowActionOptionIndex.Name(),
                 static_cast<unsigned>(kActionTurnOn));
         if (!CallMenuTurnOn(g_prop)) { Invalid("the menu event call did not dispatch"); return; }
         if (g_menuEntries == 0) { Invalid("the menu event ran outside the gate: no nesting to test"); return; }

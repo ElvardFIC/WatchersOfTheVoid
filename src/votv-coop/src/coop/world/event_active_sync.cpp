@@ -25,6 +25,7 @@
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/script_gate.h"
 #include "ue_wrap/engine/world_identity.h"   // Generation, the world the begin times belong to
+#include "ue_wrap/facts/function_row.h"
 #include "ue_wrap/world/active_events.h"
 
 #include <atomic>
@@ -47,7 +48,7 @@ std::atomic<coop::net::Session*> g_session{nullptr};
 
 // ---- the host's watch on setEvent (game thread) ----------------------------------------------
 constexpr int kTagEventActive = 0x45564143;  // 'EVAC'
-constexpr const wchar_t* kSetEvent = L"setEvent";  // one pointer: the gate matches a name watch by it
+UE_FACT_FN(kRowSetEvent, "event_active_sync", nullptr, L"setEvent", AnyClass);
 bool g_watchInstalled = false;
 bool g_watchLive = false;
 void* g_setEventFn = nullptr;      // lib_C::setEvent, resolved from its class on first need
@@ -199,10 +200,10 @@ void Install(coop::net::Session* session) {
     // Called every pump tick by the install fanout, which is also the retry until the gate has
     // resolved the watch's name.
     if (!g_watchInstalled)
-        g_watchInstalled = sg::WatchName(kSetEvent, kTagEventActive, nullptr, &OnSetEventPost);
+        g_watchInstalled = sg::WatchName(kRowSetEvent, kTagEventActive, nullptr, &OnSetEventPost);
     if (g_watchInstalled && !g_watchLive) {
         sg::ResolvePendingNames();
-        if (sg::NameWatchLive(kSetEvent, kTagEventActive)) {
+        if (sg::NameWatchLive(kRowSetEvent, kTagEventActive)) {
             g_watchLive = true;
             UE_LOGI("event_active: every event's begin and end is seen at lib_C::setEvent (a script-gate watch)");
         }

@@ -58,16 +58,6 @@ bool  GetBrake(void* atv);   // the handbrake
 // why the game ships two teleport forms. False on unresolved/null. Game thread.
 bool TeleportRig(void* atv, const FVector& loc, const FRotator& rot);
 
-// Resolve ATV_C's SEVEN ComponentHitSignature bound-event UFunctions (`mesh`, `car1_Capsule`,
-// `car1_backWheel_R/L`, `car1_frontWheel_R`, `car1_frontWheelRoot`, `car1_backWheelRoot`) into
-// `out`; returns how many resolved. These are the ONLY PE-visible seam for the ATV's
-// collision-authored state: each BndEvt stub just copies its params and jumps into the ubergraph
-// [V, disasm], and the work it reaches -- impulse() -> `health -= |NormalImpulse|/500000 * 2 *
-// getBumperMult()` -> explode() at <=0, and processTire() -> tire durability -> ejectWheel -- is
-// all EX_Local* and therefore invisible one level down. A non-owner that runs them explodes its
-// own copy of a vehicle the authority still has. Game thread.
-int ResolveHitDelegates(void** out, int max);
-
 // Runtime-ATV materialization: fresh-spawn an AATV_C-or-subclass (`className`) at `loc`/`rot`
 // via GameplayStatics BeginDeferred + FinishSpawning, leaving physics ON -- the result is a NATIVE
 // idle ATV the local player can grab/drive (NOT a frozen mirror). coop::atv_sync uses this when

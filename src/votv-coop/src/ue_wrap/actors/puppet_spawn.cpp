@@ -14,6 +14,7 @@
 #include "ue_wrap/core/reflected_offset.h"
 #include "ue_wrap/core/sdk_profile.h"
 #include "ue_wrap/core/ufunction_hook.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <cstdint>
 #include <string>
@@ -23,6 +24,9 @@ namespace ue_wrap::puppet {
 namespace P = profile;
 namespace R = reflection;
 namespace E = engine;
+
+// The class is the local player's AnimBP, known only at run time (ResolveOn).
+UE_FACT_FN(kRowBlueprintUpdateAnimation, "puppet_spawn", nullptr, L"BlueprintUpdateAnimation", RuntimeClass);
 
 namespace {
 
@@ -55,7 +59,8 @@ void InstallHeadGateHook(void* animClass) {
     static bool s_tried = false;   // one shot: the same class every spawn
     if (s_tried || !animClass) return;
     s_tried = true;
-    void* fn = R::FindFunction(animClass, L"BlueprintUpdateAnimation");
+    const facts::Resolved resolved = facts::ResolveOn(kRowBlueprintUpdateAnimation, animClass);
+    void* fn = resolved.Fn();
     if (!fn) {
         UE_LOGW("puppet: BlueprintUpdateAnimation not found on the AnimBP class -- head-look "
                 "state gate stays native (head will freeze when back-turned)");
@@ -68,7 +73,7 @@ void InstallHeadGateHook(void* animClass) {
                 "the head-gate hook (would fire for every AnimInstance)", fn);
         return;
     }
-    const bool ok = ue_wrap::ufunction_hook::InstallPostHook(fn, &HeadGateBUAPost);
+    const bool ok = ue_wrap::ufunction_hook::InstallPostHook(resolved, &HeadGateBUAPost);
     if (ok) {
         UE_LOGI("puppet: head-look state-gate hook installed -- post-BUA lookingAtPlayer=true on "
                 "PUPPET instances only (the LookAt nodes live INSIDE state 'lookAtPlayer'; without "

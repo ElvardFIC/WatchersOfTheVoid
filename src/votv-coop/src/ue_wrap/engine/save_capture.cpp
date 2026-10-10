@@ -9,6 +9,7 @@
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/script_gate.h"
 #include "ue_wrap/core/sdk_profile.h"
+#include "ue_wrap/facts/function_row.h"
 #include "ue_wrap/world/world_singleton.h"  // the gamemode, of the CURRENT world
 
 #include <atomic>
@@ -18,6 +19,8 @@ namespace ue_wrap::save_capture {
 
 namespace R = ue_wrap::reflection;
 namespace P = ue_wrap::profile;
+
+UE_FACT_FN(kRowGetEvent, "save_capture", L"lib_C", L"getEvent", Declared);
 
 namespace {
 
@@ -85,7 +88,8 @@ bool InstallGatherWatch() {
     void* libCls = R::FindClass(L"lib_C");
     void* gmCls = R::FindClass(P::name::GamemodeClass);
     if (!libCls || !gmCls) return false;  // Blueprint classes load with the world: ask again later
-    void* fn = R::FindFunction(libCls, L"getEvent");
+    const facts::Resolved getEvent = facts::Resolve(kRowGetEvent);
+    void* fn = getEvent.Fn();
     void* saveObjects = R::FindFunction(gmCls, P::name::MainGamemodeSaveObjectsFn);
     if (!fn || !saveObjects) {
         // Both classes are loaded and a function is not on them: a recook renamed it.
@@ -100,7 +104,7 @@ bool InstallGatherWatch() {
     // gate it could not hold instead of passing a stale half.
     g_saveTriggersFn = R::FindFunction(gmCls, P::name::MainGamemodeSaveTriggersFn);
     g_savePrimitivesFn = R::FindFunction(gmCls, L"Save Primitives");
-    if (!script_gate::Watch(fn, /*tag=*/0, &OnGetEventPre, &OnGetEventPost)) {
+    if (!script_gate::Watch(getEvent, /*tag=*/0, &OnGetEventPre, &OnGetEventPost)) {
         s_final = true;  // a full table or a refused function: Watch has said which
         return false;
     }

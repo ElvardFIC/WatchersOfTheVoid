@@ -17,6 +17,7 @@
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/script_gate.h"
 #include "ue_wrap/desk/drive_chain.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <chrono>
@@ -38,6 +39,7 @@ namespace sg = ue_wrap::script_gate;
 using Clock = std::chrono::steady_clock;
 using coop::element::LivePropActor;
 
+UE_FACT_FN(kRowUpd, "drive_payload_sync", L"prop_drive_C", L"upd", Declared);
 constexpr int  kTagUpd = 0x44525550;  // 'DRUP'
 constexpr auto kPendingTtl = std::chrono::seconds(10);
 constexpr auto kNoteTtl = std::chrono::seconds(30);
@@ -449,17 +451,17 @@ void Install(coop::net::Session* session) {
     coop::prop_save_data::DeclareClassOwnedElsewhere(L"prop_drive_C");
     g_session.store(session, std::memory_order_release);
     if (g_reg != Reg::Pending) return;
-    g_reg = sg::WatchClassName(L"prop_drive_C", L"upd", kTagUpd, nullptr, &OnUpdPost) ? Reg::Registered : Reg::Refused;
+    g_reg = sg::WatchName(kRowUpd, kTagUpd, nullptr, &OnUpdPost) ? Reg::Registered : Reg::Refused;
 }
 
 void Tick() {
     auto* s = g_session.load(std::memory_order_acquire);
     if (!g_settled && g_reg != Reg::Pending) {
         sg::ResolvePendingNames();
-        if (g_reg == Reg::Registered && sg::ClassNameWatchLive(L"prop_drive_C", L"upd", kTagUpd)) {
+        if (g_reg == Reg::Registered && sg::NameWatchLive(kRowUpd, kTagUpd)) {
             g_settled = true;
             UE_LOGI("drive_payload_sync: the watch on prop_drive_C::upd is live");
-        } else if (g_reg == Reg::Refused || sg::ClassNameWatchSettled(L"prop_drive_C", L"upd", kTagUpd)) {
+        } else if (g_reg == Reg::Refused || sg::NameWatchSettled(kRowUpd, kTagUpd)) {
             g_settled = true;
             UE_LOGE("drive_payload_sync: the watch on prop_drive_C::upd is dead -- a drive's row changes cross no peer");
         }

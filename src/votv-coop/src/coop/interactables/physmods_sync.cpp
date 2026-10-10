@@ -15,6 +15,7 @@
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/script_gate.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <chrono>
@@ -139,9 +140,8 @@ bool AdoptCanonical(const uint8_t bytes[PM::kSlots]) {
 // at exit. Neither verb runs the other; a module reborn onto a slot's trigger would plug inside the
 // press, so after a send every enclosing body's snapshot moves to the array as sent, and a change is
 // sent once.
-constexpr const wchar_t* kDeskClass = L"analogDScreenTest_C";
-constexpr const wchar_t* kPlugVerb  = L"plugInModule";
-constexpr const wchar_t* kPressVerb = L"actionOptionIndex";
+UE_FACT_FN(kRowPlugInModule, "physmods_sync", L"analogDScreenTest_C", L"plugInModule", Declared);
+UE_FACT_FN(kRowActionOptionIndex, "physmods_sync", L"analogDScreenTest_C", L"actionOptionIndex", Declared);
 constexpr int kTagPlug  = 0x504C5547;  // 'PLUG'
 constexpr int kTagPress = 0x50505253;  // 'PPRS'
 bool g_editsWatched = false;
@@ -221,8 +221,8 @@ void ClientHandleDeny(uint8_t origOp, uint8_t slot, uint8_t byte) {
 void Install(coop::net::Session* session) {
     g_session.store(session, std::memory_order_release);
     if (!g_editsWatched)
-        g_editsWatched = sg::WatchClassName(kDeskClass, kPlugVerb, kTagPlug, &OnEditPre, &OnEditPost) &&
-                         sg::WatchClassName(kDeskClass, kPressVerb, kTagPress, &OnEditPre, &OnEditPost);
+        g_editsWatched = sg::WatchName(kRowPlugInModule, kTagPlug, &OnEditPre, &OnEditPost) &&
+                         sg::WatchName(kRowActionOptionIndex, kTagPress, &OnEditPre, &OnEditPost);
 }
 
 void Tick() {

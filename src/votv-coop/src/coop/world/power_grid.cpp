@@ -21,6 +21,7 @@
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/script_gate.h"
 #include "ue_wrap/devices/generator.h"
+#include "ue_wrap/facts/function_row.h"
 #include "ue_wrap/world/weapon_catalog.h"  // whether the held item swings
 
 #include <algorithm>
@@ -45,7 +46,6 @@ static_assert(coop::net::kMaxPeers <= 4, "PowerGridPayload::ack holds four slots
 static_assert(coop::net::kMaxPeers <= 8, "the owed rows are one bit a slot");
 static_assert(kInputBurst >= coop::net::kPowerPuzzleFields, "a flush of every held field fits one burst");
 
-constexpr wchar_t kGenClass[]   = L"generator_C";
 constexpr int32_t kMaxUpgrade   = 6;    // the insert's own gate, `upgradeLevel < 6`
 constexpr int32_t kFullWear     = 100;  // what the Activate button's repair and service write the wear back to
 // A slot's ops wait, in arrival order, while the generators have not resolved or their sender has no body here
@@ -630,21 +630,28 @@ sg::Verdict OnHitPre(const sg::Call& call) {
     return sg::Verdict::Cancel;
 }
 
+UE_FACT_FN(kRowBreak, "power_grid", L"generator_C", L"break", Declared);
+UE_FACT_FN(kRowDamage, "power_grid", L"generator_C", L"damage", Declared);
+UE_FACT_FN(kRowFullFix, "power_grid", L"generator_C", L"fullFix", Declared);
+UE_FACT_FN(kRowUpdUpgrades, "power_grid", L"generator_C", L"updUpgrades", Declared);
+UE_FACT_FN(kRowUpd, "power_grid", L"generator_C", L"upd", Declared);
+UE_FACT_FN(kRowActionOptionIndex, "power_grid", L"generator_C", L"actionOptionIndex", Declared);
+UE_FACT_FN(kRowAddDamage, "power_grid", L"generator_C", L"addDamage", Declared);
+
 struct WatchDef {
-    const wchar_t* cls;
-    const wchar_t* fn;
+    const ue_wrap::facts::Function* row;
     int tag;
     sg::PreFn pre;
     sg::PostFn post;
 };
 constexpr WatchDef kWatches[] = {
-    { kGenClass,   L"break",              0x50474252 /*'PGBR'*/, &OnOwnEditPre,     &OnGenHostPost },
-    { kGenClass,   L"damage",             0x5047444D /*'PGDM'*/, &OnOwnEditPre,     &OnGenHostPost },
-    { kGenClass,   L"fullFix",            0x50474658 /*'PGFX'*/, &OnOwnEditPre,     &OnGenHostPost },
-    { kGenClass,   L"updUpgrades",        0x50475550 /*'PGUP'*/, &OnUpdUpgradesPre, &OnGenHostPost },
-    { kGenClass,   L"upd",                0x50475544 /*'PGUD'*/, &OnUpdPre,         &OnGenHostPost },
-    { kGenClass,   L"actionOptionIndex",  0x5047414F /*'PGAO'*/, &OnActivatePre,    &OnActivatePost },
-    { kGenClass,   L"addDamage",          0x50474144 /*'PGAD'*/, &OnHitPre,         nullptr },
+    { &kRowBreak,             0x50474252 /*'PGBR'*/, &OnOwnEditPre,     &OnGenHostPost },
+    { &kRowDamage,            0x5047444D /*'PGDM'*/, &OnOwnEditPre,     &OnGenHostPost },
+    { &kRowFullFix,           0x50474658 /*'PGFX'*/, &OnOwnEditPre,     &OnGenHostPost },
+    { &kRowUpdUpgrades,       0x50475550 /*'PGUP'*/, &OnUpdUpgradesPre, &OnGenHostPost },
+    { &kRowUpd,               0x50475544 /*'PGUD'*/, &OnUpdPre,         &OnGenHostPost },
+    { &kRowActionOptionIndex, 0x5047414F /*'PGAO'*/, &OnActivatePre,    &OnActivatePost },
+    { &kRowAddDamage,         0x50474144 /*'PGAD'*/, &OnHitPre,         nullptr },
 };
 constexpr int kWatchCount = static_cast<int>(sizeof(kWatches) / sizeof(kWatches[0]));
 bool g_registered = false;
@@ -660,9 +667,9 @@ void Install(coop::net::Session* session) {
     if (g_registered) return;
     g_registered = true;
     for (const WatchDef& w : kWatches)
-        if (!sg::WatchClassName(w.cls, w.fn, w.tag, w.pre, w.post))
+        if (!sg::WatchName(*w.row, w.tag, w.pre, w.post))
             UE_LOGE("power_grid: the script-body gate refused the watch on %ls::%ls -- that edge is each peer's own",
-                    w.cls, w.fn);
+                    w.row->Class(), w.row->Name());
 }
 
 void Tick() {
@@ -679,8 +686,8 @@ void Tick() {
     sg::ResolvePendingNames();
     int live = 0, settled = 0;
     for (const WatchDef& w : kWatches) {
-        if (sg::ClassNameWatchLive(w.cls, w.fn, w.tag)) ++live;
-        if (sg::ClassNameWatchSettled(w.cls, w.fn, w.tag)) ++settled;
+        if (sg::NameWatchLive(*w.row, w.tag)) ++live;
+        if (sg::NameWatchSettled(*w.row, w.tag)) ++settled;
     }
     if (live == kWatchCount) {
         g_settled = true;

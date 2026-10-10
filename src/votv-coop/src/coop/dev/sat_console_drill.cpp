@@ -17,6 +17,7 @@
 #include "ue_wrap/desk/sat_console.h"
 #include "ue_wrap/devices/serverbox.h"
 #include "ue_wrap/engine/engine.h"  // ForceGarbageCollection
+#include "ue_wrap/facts/function_row.h"
 
 #include <windows.h>
 
@@ -47,6 +48,7 @@ constexpr uint64_t kAnswerBoundMs = 30000;
 constexpr int      kDishes        = 64;
 constexpr uint64_t kCheckEveryMs  = 250;     // a wait reads the log and counts gift boxes (an object walk) 4 a second
 constexpr int      kTagCal        = 0x53434443;  // 'SCDC'
+UE_FACT_FN(kRowCalibratteDish, "dev.sat_console_drill", L"ui_console_C", L"calibratteDish", Declared);
 
 enum class Step : uint8_t { Arm, CalWait, SauceWait, HashWait, AllWait, Done };
 Step     g_step = Step::Arm;
@@ -110,7 +112,7 @@ sg::Verdict OnCalPre(const sg::Call& c) {
 void EnsureWatched() {
     if (g_watched) return;
     g_watched = true;
-    sg::WatchClassName(SC::kTerminalClass, L"calibratteDish", kTagCal, OnCalPre, nullptr);
+    sg::WatchName(kRowCalibratteDish, kTagCal, OnCalPre, nullptr);
 }
 
 std::wstring Log(void* term) {

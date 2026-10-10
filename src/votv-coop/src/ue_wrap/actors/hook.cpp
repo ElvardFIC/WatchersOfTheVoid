@@ -77,7 +77,6 @@ void* g_fnAttachComp         = nullptr;  // USceneComponent::K2_AttachToComponen
 void* g_fnDetachComp         = nullptr;  // USceneComponent::K2_DetachFromComponent
 void* g_fnGetRootComp        = nullptr;  // AActor::K2_GetRootComponent
 void* g_fnBreakConstraint    = nullptr;  // UPhysicsConstraintComponent::BreakConstraint
-void* g_fnSetConstrained     = nullptr;  // UPhysicsConstraintComponent::SetConstrainedComponents
 
 // The game's own component-by-name lookup, a static on its C++ library class. Optional: without it
 // ComponentByName still answers for a prop's mesh, which is what a hook bites in practice, and
@@ -525,17 +524,6 @@ bool BreakConstraint(void* hookActor) {
     return Call(comp, f);
 }
 
-void* SetConstrainedComponentsFunction() {
-    // Independent of the hook classes on purpose: a seam on this native has to be in place
-    // before the first hook of a loading world builds its tie, and the engine class is always
-    // loaded. A UFunction outlives every world, so the lookup is a one-time resolve.
-    if (!g_fnSetConstrained) {
-        if (void* pc = R::FindClass(P::name::PhysicsConstraintComponentClass))
-            g_fnSetConstrained = R::FindFunction(pc, P::name::SetConstrainedComponentsFn);
-    }
-    return g_fnSetConstrained;
-}
-
 void* ComponentByName(void* actor, const wchar_t* name) {
     if (!actor || !name || !*name) return nullptr;
     // The prop's mesh is what a hook bites in practice, and its name is one compare away.
@@ -576,7 +564,7 @@ void ResetCache() {
     g_fnReceiveTick = g_fnGetData = g_fnLoadData = g_fnProcessKeys = g_fnSetLength = nullptr;
     g_fnAttachA = nullptr;
     g_fnSetCompWorldLocRot = g_fnAttachComp = g_fnDetachComp = g_fnGetRootComp = nullptr;
-    g_fnBreakConstraint = nullptr;   // g_fnSetConstrained is an engine-class UFunction and stays
+    g_fnBreakConstraint = nullptr;
     g_cdoCodeLib = g_fnCompByName = nullptr;
     g_compByNameActor.clear();
     g_compByNameName.clear();

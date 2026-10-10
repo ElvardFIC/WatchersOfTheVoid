@@ -19,6 +19,7 @@
 #include "coop/net/session.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/script_gate.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <cstdint>
@@ -39,39 +40,94 @@ bool IsActiveClientSession() {
     return s && s->running() && s->role() == coop::net::Role::Client;
 }
 
-// One row: the body a client must not run, named by its class and its function. The function is
-// spelled as the live header dump spells it; names compare without case.
+// The facts rows: the body a client must not run, named by its class and its function. The function
+// is spelled as the live header dump spells it; names compare without case.
+UE_FACT_FN(kRowSpawnMushroomMaster, "spawn_authority", L"mushroomMaster_C", L"Spawn", Declared);
+UE_FACT_FN(kRowSpawnMushroomSpawner, "spawn_authority", L"mushroomSpawner_C", L"Spawn", Declared);
+UE_FACT_FN(kRowReceiveTickTickerYellowWispSpawner, "spawn_authority", L"ticker_yellowWispSpawner_C",
+           L"ReceiveTick", Declared);
+UE_FACT_FN(kRowReceiveTickTickerWispSpawner, "spawn_authority", L"ticker_wispSpawner_C", L"ReceiveTick",
+           Declared);
+UE_FACT_FN(kRowReceiveTickTickerEgSpawner, "spawn_authority", L"ticker_egSpawner_C", L"ReceiveTick", Declared);
+UE_FACT_FN(kRowSpawnJellyfishPath, "spawn_authority", L"jellyfishPath_C", L"spawn", Declared);
+UE_FACT_FN(kRowSummonRoachCockroachMaster, "spawn_authority", L"cockroachMaster_C", L"summonRoach", Declared);
+UE_FACT_FN(kRowAddRoachTimerCockroachMaster, "spawn_authority", L"cockroachMaster_C", L"addRoachTimer",
+           Declared);
+UE_FACT_FN(kRowSpawnNestTimerCockroachMaster, "spawn_authority", L"cockroachMaster_C", L"spawnNestTimer",
+           Declared);
+UE_FACT_FN(kRowCustomEventCockroachMaster, "spawn_authority", L"cockroachMaster_C", L"CustomEvent", Declared);
+UE_FACT_FN(kRowReceiveTickTickerInsomniacSpawner, "spawn_authority", L"ticker_insomniacSpawner_C",
+           L"ReceiveTick", Declared);
+UE_FACT_FN(kRowReceiveTickTickerFossilhoundSpawner, "spawn_authority", L"ticker_fossilhoundSpawner_C",
+           L"ReceiveTick", Declared);
+UE_FACT_FN(kRowReceiveTickCockroachMaster, "spawn_authority", L"cockroachMaster_C", L"ReceiveTick", Declared);
+UE_FACT_FN(kRowReceiveTickTickerRoachSummoner, "spawn_authority", L"ticker_roachSummoner_C", L"ReceiveTick",
+           Declared);
+UE_FACT_FN(kRowReceiveBeginPlayVentCrawler, "spawn_authority", L"ventCrawler_C", L"ReceiveBeginPlay", Declared);
+UE_FACT_FN(kRowBoxBeginOverlapVentCrawler, "spawn_authority", L"ventCrawler_C",
+           L"BndEvt__ventCrawler_Box_K2Node_ComponentBoundEvent_0_ComponentBeginOverlapSignature__DelegateSignature",
+           Declared);
+UE_FACT_FN(kRowReceiveBeginPlayGrayTest, "spawn_authority", L"grayTest_C", L"ReceiveBeginPlay", Declared);
+UE_FACT_FN(kRowSphereBeginOverlapGrayTest, "spawn_authority", L"grayTest_C",
+           L"BndEvt__grayTest_Sphere_K2Node_ComponentBoundEvent_0_ComponentBeginOverlapSignature__DelegateSignature",
+           Declared);
+UE_FACT_FN(kRowDeacCamsGrayTest, "spawn_authority", L"grayTest_C", L"deacCams", Declared);
+UE_FACT_FN(kRowDisableCamsGrayTest, "spawn_authority", L"grayTest_C", L"disableCams", Declared);
+UE_FACT_FN(kRowReceiveBeginPlayEg, "spawn_authority", L"eg_C", L"ReceiveBeginPlay", Declared);
+UE_FACT_FN(kRowReceiveTickEg, "spawn_authority", L"eg_C", L"ReceiveTick", Declared);
+UE_FACT_FN(kRowOnLandedEg, "spawn_authority", L"eg_C", L"OnLanded", Declared);
+UE_FACT_FN(kRowRetrieveEg, "spawn_authority", L"eg_C", L"retrieve", Declared);
+UE_FACT_FN(kRowReceiveBeginPlayTentacleBall, "spawn_authority", L"tentacleBall_C", L"ReceiveBeginPlay",
+           Declared);
+UE_FACT_FN(kRowReceiveTickTentacleBall, "spawn_authority", L"tentacleBall_C", L"ReceiveTick", Declared);
+UE_FACT_FN(kRowMoveTentacleBall, "spawn_authority", L"tentacleBall_C", L"move", Declared);
+UE_FACT_FN(kRowSphereHitTentacleBall, "spawn_authority", L"tentacleBall_C",
+           L"BndEvt__tentacleBall_Sphere_K2Node_ComponentBoundEvent_0_ComponentHitSignature__DelegateSignature",
+           Declared);
+UE_FACT_FN(kRowBeginGrayEventController, "spawn_authority", L"grayEventController_C", L"begin", Declared);
+UE_FACT_FN(kRowTurnedonGrayEventController, "spawn_authority", L"grayEventController_C", L"turnedon", Declared);
+UE_FACT_FN(kRowSpawnGrayEventController, "spawn_authority", L"grayEventController_C", L"spawn", Declared);
+UE_FACT_FN(kRowTriggerboxOverlapGrayEventController, "spawn_authority", L"grayEventController_C",
+           L"BndEvt__grayEventController_triggerbox_K2Node_ComponentBoundEvent_0_ComponentBeginOverlapSignature__DelegateSignature",
+           Declared);
+UE_FACT_FN(kRowRunTriggerTentacleBallsFollower, "spawn_authority", L"tentacleBallsFollower_C", L"runTrigger",
+           Declared);
+UE_FACT_FN(kRowReceiveTickTentacleBallsFollower, "spawn_authority", L"tentacleBallsFollower_C", L"ReceiveTick",
+           Declared);
+UE_FACT_FN(kRowReceiveBeginPlaySuperEgger, "spawn_authority", L"superEgger_C", L"ReceiveBeginPlay", Declared);
+UE_FACT_FN(kRowSpwnSuperEgger, "spawn_authority", L"superEgger_C", L"spwn", Declared);
+
+// One row: the facts row a client must not run, and the tag its refusal log carries.
 struct Row {
-    const wchar_t* cls;
-    const wchar_t* fn;
+    const ue_wrap::facts::Function* row;
     const char* tag;
 };
 constexpr Row kRows[] = {
-    {L"mushroomMaster_C",            L"Spawn",          "mushroomMaster.Spawn"},
-    {L"mushroomSpawner_C",           L"Spawn",          "mushroomSpawner.Spawn"},
+    {&kRowSpawnMushroomMaster,            "mushroomMaster.Spawn"},
+    {&kRowSpawnMushroomSpawner,           "mushroomSpawner.Spawn"},
     // A late-game class: keyed by name, the watch holds from the class's first body, whenever it loads.
-    {L"ticker_yellowWispSpawner_C",  L"ReceiveTick",    "yellowWispSpawner.ReceiveTick"},
+    {&kRowReceiveTickTickerYellowWispSpawner, "yellowWispSpawner.ReceiveTick"},
     // Sky wisps: world-anchored, so the host rolls; the source-gated catch and the variant
     // allowlist mirror the products.
-    {L"ticker_wispSpawner_C",        L"ReceiveTick",    "wispSpawner.ReceiveTick"},
+    {&kRowReceiveTickTickerWispSpawner,   "wispSpawner.ReceiveTick"},
     // The night-egg ticker: the same world-anchored shape -- its tick re-arms a 60-300 s
     // interval and rolls a weighted night spawn of one eg_C at random absolute map coordinates,
     // writing gamemode->eg (ticker_egSpawner_C UG:6-44). The host rolls, the catch mirrors the
     // egg; a client's own tick would mint a second, unsynced egg.
-    {L"ticker_egSpawner_C",          L"ReceiveTick",    "egSpawner.ReceiveTick"},
+    {&kRowReceiveTickTickerEgSpawner,     "egSpawner.ReceiveTick"},
     // The space jellyfish: the host's run is mirrored through the source-gated catch.
-    {L"jellyfishPath_C",             L"spawn",          "jellyfishPath.spawn"},
+    {&kRowSpawnJellyfishPath,             "jellyfishPath.spawn"},
     // The roach sim's entries: the ticker's cross-object call and the three looping timer
     // delegates. The roach sync drives the client population instead.
-    {L"cockroachMaster_C",           L"summonRoach",    "cockroachMaster.summonRoach"},
-    {L"cockroachMaster_C",           L"addRoachTimer",  "cockroachMaster.addRoachTimer"},
-    {L"cockroachMaster_C",           L"spawnNestTimer", "cockroachMaster.spawnNestTimer"},
-    {L"cockroachMaster_C",           L"CustomEvent",    "cockroachMaster.CustomEvent"},
+    {&kRowSummonRoachCockroachMaster,     "cockroachMaster.summonRoach"},
+    {&kRowAddRoachTimerCockroachMaster,   "cockroachMaster.addRoachTimer"},
+    {&kRowSpawnNestTimerCockroachMaster,  "cockroachMaster.spawnNestTimer"},
+    {&kRowCustomEventCockroachMaster,     "cockroachMaster.CustomEvent"},
     // The ticks.
-    {L"ticker_insomniacSpawner_C",   L"ReceiveTick",    "insomniacSpawner.ReceiveTick"},
-    {L"ticker_fossilhoundSpawner_C", L"ReceiveTick",    "fossilhoundSpawner.ReceiveTick"},
-    {L"cockroachMaster_C",           L"ReceiveTick",    "cockroachMaster.ReceiveTick"},
-    {L"ticker_roachSummoner_C",      L"ReceiveTick",    "roachSummoner.ReceiveTick"},
+    {&kRowReceiveTickTickerInsomniacSpawner,   "insomniacSpawner.ReceiveTick"},
+    {&kRowReceiveTickTickerFossilhoundSpawner, "fossilhoundSpawner.ReceiveTick"},
+    {&kRowReceiveTickCockroachMaster,     "cockroachMaster.ReceiveTick"},
+    {&kRowReceiveTickTickerRoachSummoner, "roachSummoner.ReceiveTick"},
 
     // The story-event creatures: on a client every instance is a host mirror -- the local spawn
     // paths are suppressed through the allowlist or refused below -- so their gameplay entries
@@ -84,37 +140,34 @@ constexpr Row kRows[] = {
     // and footstep events, and ends in the door writes, the setEvent flag and K2_DestroyActor
     // (ventCrawler_C UG @2669). The box overlap is the end-of-crawl contact: a client pawn
     // touching the mirror must not open the doors locally (@2363).
-    {L"ventCrawler_C",               L"ReceiveBeginPlay","ventCrawler.ReceiveBeginPlay"},
-    {L"ventCrawler_C",               L"BndEvt__ventCrawler_Box_K2Node_ComponentBoundEvent_0_ComponentBeginOverlapSignature__DelegateSignature",
-                                                            "ventCrawler.BoxBeginOverlap"},
+    {&kRowReceiveBeginPlayVentCrawler,    "ventCrawler.ReceiveBeginPlay"},
+    {&kRowBoxBeginOverlapVentCrawler,     "ventCrawler.BoxBeginOverlap"},
     // grayTest_C: BeginPlay re-attaches the mesh, waits a second and starts the wander MoveTo
     // (@1117); the 3 s loops arm from gatherTeam and step. The sphere overlap is the player
     // catch: on a mainPlayer touch it calls grayController->despawn() (@1508). disableCams is the
     // timer entry that calls deacCams (@1620), which deactivates the client's cameras, rdrone and kerfur.
-    {L"grayTest_C",                  L"ReceiveBeginPlay","grayTest.ReceiveBeginPlay"},
-    {L"grayTest_C",                  L"BndEvt__grayTest_Sphere_K2Node_ComponentBoundEvent_0_ComponentBeginOverlapSignature__DelegateSignature",
-                                                            "grayTest.SphereBeginOverlap"},
-    {L"grayTest_C",                  L"deacCams",       "grayTest.deacCams"},
-    {L"grayTest_C",                  L"disableCams",    "grayTest.disableCams"},
+    {&kRowReceiveBeginPlayGrayTest,       "grayTest.ReceiveBeginPlay"},
+    {&kRowSphereBeginOverlapGrayTest,     "grayTest.SphereBeginOverlap"},
+    {&kRowDeacCamsGrayTest,               "grayTest.deacCams"},
+    {&kRowDisableCamsGrayTest,            "grayTest.disableCams"},
     // eg_C: BeginPlay arms the wander (@1466); the tick bobs the mesh and calls retrieve() once
     // player 0's camera is within 5000 (@15) -- refusing it costs the bob, while letting it run
     // lets a client egg leave on its own. retrieve() is the fly-away despawn whose Delay loop
     // writes rendered and setEvent (@1024, @1476). OnLanded arms check and a 10-300 s
     // retrieve (@1869).
-    {L"eg_C",                        L"ReceiveBeginPlay","eg.ReceiveBeginPlay"},
-    {L"eg_C",                        L"ReceiveTick",    "eg.ReceiveTick"},
-    {L"eg_C",                        L"OnLanded",       "eg.OnLanded"},
-    {L"eg_C",                        L"retrieve",       "eg.retrieve"},
+    {&kRowReceiveBeginPlayEg,             "eg.ReceiveBeginPlay"},
+    {&kRowReceiveTickEg,                  "eg.ReceiveTick"},
+    {&kRowOnLandedEg,                     "eg.OnLanded"},
+    {&kRowRetrieveEg,                     "eg.retrieve"},
     // tentacleBall_C: BeginPlay resolves the anim instance, starts Timeline_0 and the ambient
     // loop, and arms the 15-30 s timer and the first move (@7603). The tick is the brain:
     // proximity scans, the pindown/chase decision, the stare updates (@8872). move() is the
     // MoveTo verb it reaches (@10046); the sphere hit is the melee contact (@10314). The
     // montage-notify talk/light callbacks and step() stay -- sound and light presentation.
-    {L"tentacleBall_C",              L"ReceiveBeginPlay","tentacleBall.ReceiveBeginPlay"},
-    {L"tentacleBall_C",              L"ReceiveTick",    "tentacleBall.ReceiveTick"},
-    {L"tentacleBall_C",              L"move",           "tentacleBall.move"},
-    {L"tentacleBall_C",              L"BndEvt__tentacleBall_Sphere_K2Node_ComponentBoundEvent_0_ComponentHitSignature__DelegateSignature",
-                                                            "tentacleBall.SphereHit"},
+    {&kRowReceiveBeginPlayTentacleBall,   "tentacleBall.ReceiveBeginPlay"},
+    {&kRowReceiveTickTentacleBall,        "tentacleBall.ReceiveTick"},
+    {&kRowMoveTentacleBall,               "tentacleBall.move"},
+    {&kRowSphereHitTentacleBall,          "tentacleBall.SphereHit"},
 
     // The event spawners themselves: a client's copies must never mint children. Every
     // BeginDeferred inside these graphs is bytecode-internal, so the spawn interceptor never
@@ -124,22 +177,21 @@ constexpr Row kRows[] = {
     // isRaining=false and runs the deac-cams SphereOverlap. begin() (@3064) is the eventer's
     // entry -- the player punch, the transformer break, the car zap -- and turnedon (@3388)
     // and the triggerbox overlap (@3309) are its local activations.
-    {L"grayEventController_C",       L"begin",          "grayEventController.begin"},
-    {L"grayEventController_C",       L"turnedon",       "grayEventController.turnedon"},
-    {L"grayEventController_C",       L"spawn",          "grayEventController.spawn"},
-    {L"grayEventController_C",       L"BndEvt__grayEventController_triggerbox_K2Node_ComponentBoundEvent_0_ComponentBeginOverlapSignature__DelegateSignature",
-                                                            "grayEventController.triggerboxOverlap"},
+    {&kRowBeginGrayEventController,       "grayEventController.begin"},
+    {&kRowTurnedonGrayEventController,    "grayEventController.turnedon"},
+    {&kRowSpawnGrayEventController,       "grayEventController.spawn"},
+    {&kRowTriggerboxOverlapGrayEventController, "grayEventController.triggerboxOverlap"},
     // tentacleBallsFollower_C (level-placed on both sides): runTrigger is the five-ball spawn
     // loop plus the setBuddies pass and the cleanup timers (@3432). The tick moves the follow
     // marker along the spline and writes setEvent at the resume and end points (@2012); the
     // client's copy has an empty balls array and nothing to guide.
-    {L"tentacleBallsFollower_C",     L"runTrigger",     "tentacleBallsFollower.runTrigger"},
-    {L"tentacleBallsFollower_C",     L"ReceiveTick",    "tentacleBallsFollower.ReceiveTick"},
+    {&kRowRunTriggerTentacleBallsFollower,  "tentacleBallsFollower.runTrigger"},
+    {&kRowReceiveTickTentacleBallsFollower, "tentacleBallsFollower.ReceiveTick"},
     // superEgger_C: a client's copy is a world-actor mirror, but FinishSpawning runs its
     // BeginPlay, which builds the spawn grid and chains spwn() -- the only body with the eg_C
     // BeginDeferred (@1399, @1316). Refusing both keeps the mirror a husk.
-    {L"superEgger_C",                L"ReceiveBeginPlay","superEgger.ReceiveBeginPlay"},
-    {L"superEgger_C",                L"spwn",           "superEgger.spwn"},
+    {&kRowReceiveBeginPlaySuperEgger,     "superEgger.ReceiveBeginPlay"},
+    {&kRowSpwnSuperEgger,                 "superEgger.spwn"},
 };
 constexpr int kRowCount = static_cast<int>(std::size(kRows));
 constexpr int kTagBase = 0x53410000;   // 'SA', then the row
@@ -168,11 +220,11 @@ void Install(coop::net::Session* session) {
     if (g_watched.exchange(true, std::memory_order_acq_rel)) return;
     int watched = 0;
     for (int i = 0; i < kRowCount; ++i) {
-        if (SG::WatchClassName(kRows[i].cls, kRows[i].fn, kTagBase + i, &OnRowPre, nullptr)) {
+        if (SG::WatchName(*kRows[i].row, kTagBase + i, &OnRowPre, nullptr)) {
             ++watched;
         } else {
             UE_LOGE("spawn_authority: the watch on %ls::%ls did not register -- a client runs it",
-                    kRows[i].cls, kRows[i].fn);
+                    kRows[i].row->Class(), kRows[i].row->Name());
         }
     }
     UE_LOGI("spawn_authority: %d/%d spawner watches registered by class and name, each live once the game "

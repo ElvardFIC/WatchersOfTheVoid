@@ -9,6 +9,7 @@
 
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/script_gate.h"
+#include "ue_wrap/facts/function_row.h"
 #include "ue_wrap/world/order_economy.h"
 
 #include <atomic>
@@ -32,9 +33,8 @@ constexpr uint8_t kOpReset  = 0;
 constexpr uint8_t kOpAppend = 1;
 constexpr uint8_t kOpPop    = 2;
 
-constexpr const wchar_t* kLaptopClass = L"ui_laptop_C";
-constexpr const wchar_t* kAddVerb     = L"addOrderCart";
-constexpr const wchar_t* kRemoveVerb  = L"removeOrderCart";
+UE_FACT_FN(kRowAddOrderCart, "order_queue_sync", L"ui_laptop_C", L"addOrderCart", Declared);
+UE_FACT_FN(kRowRemoveOrderCart, "order_queue_sync", L"ui_laptop_C", L"removeOrderCart", Declared);
 constexpr int kTagAdded   = 0x4F514144;  // 'OQAD'
 constexpr int kTagRemoved = 0x4F515245;  // 'OQRE'
 bool g_watched = false;
@@ -203,8 +203,8 @@ void Take(Change c) {
 void Install(net::Session* session) {
     g_session.store(session, std::memory_order_release);
     if (!g_watched)
-        g_watched = sg::WatchClassName(kLaptopClass, kAddVerb, kTagAdded, &OnQueueVerbPre, &OnAddedPost) &&
-                    sg::WatchClassName(kLaptopClass, kRemoveVerb, kTagRemoved, &OnQueueVerbPre, &OnRemovedPost);
+        g_watched = sg::WatchName(kRowAddOrderCart, kTagAdded, &OnQueueVerbPre, &OnAddedPost) &&
+                    sg::WatchName(kRowRemoveOrderCart, kTagRemoved, &OnQueueVerbPre, &OnRemovedPost);
 }
 
 void Tick() {

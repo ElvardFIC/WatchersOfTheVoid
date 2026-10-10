@@ -32,6 +32,7 @@
 #include "ue_wrap/core/sdk_profile.h"           // MainPlayer class + use/fire input-event fn names
 #include "ue_wrap/core/types.h"
 #include "ue_wrap/core/ufunction_hook.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <chrono>
@@ -46,6 +47,22 @@ namespace R  = ue_wrap::reflection;
 namespace P  = ue_wrap::profile;
 namespace GT = ue_wrap::game_thread;
 namespace PT = coop::prop_element_tracker;
+
+// The "use" action has three delegate bindings: _41 = IE_Pressed (the grab press intercepted), _38 = a
+// second IE_Pressed, _42 = IE_Released; all three reach useAction's `use_deny`, so the client suppresses
+// the deny on the two extra seams too (a side-effect-free cancel; _41 stays the sole intent sender). The
+// fire action has two (_58 press, _59 release). The ordinals are recook-fragile: the census names a
+// renumbering as a row gone.
+UE_FACT_FN(kRowUseEvt41, "trash_use_intercept", L"mainPlayer_C",
+           L"InpActEvt_use_K2Node_InputActionEvent_41", Declared);
+UE_FACT_FN(kRowUseEvt38, "trash_use_intercept", L"mainPlayer_C",
+           L"InpActEvt_use_K2Node_InputActionEvent_38", Declared);
+UE_FACT_FN(kRowUseEvt42, "trash_use_intercept", L"mainPlayer_C",
+           L"InpActEvt_use_K2Node_InputActionEvent_42", Declared);
+UE_FACT_FN(kRowFireEvt58, "trash_use_intercept", L"mainPlayer_C",
+           L"InpActEvt_fire_K2Node_InputActionEvent_58", Declared);
+UE_FACT_FN(kRowFireEvt59, "trash_use_intercept", L"mainPlayer_C",
+           L"InpActEvt_fire_K2Node_InputActionEvent_59", Declared);
 
 // The cached session: the PRE callbacks are param-less UFunction hooks, so they read a cached
 // pointer. Set by Install, cleared by OnDisconnect, read on the game thread;
@@ -256,7 +273,7 @@ void Install(coop::net::Session* session) {
     if (g_grabObserverInstalled) return;
     void* cls = R::FindClass(P::name::MainPlayerClass);
     if (!cls) return;  // mainPlayer_C not loaded yet -> retry on the next world-gated Install
-    void* fn = R::FindFunction(cls, P::name::MainPlayerUseInputEventFn);
+    const ue_wrap::facts::Resolved fn = ue_wrap::facts::Resolve(kRowUseEvt41);
     if (!fn) {
         UE_LOGW("trash_use_intercept: InpActEvt_use UFunction not found -- pile grabs cannot drop peer mirrors");
         g_grabObserverInstalled = true;  // permanent give-up (don't re-walk the class forever)
@@ -275,9 +292,9 @@ void Install(coop::net::Session* session) {
     // the second press gets the press-condition suppressor, the release the pairing-only one.
     // Best-effort: a missing ordinal after a recook just means the deny returns on that seam.
     int denySeams = 0;
-    if (void* uf38 = R::FindFunction(cls, P::name::MainPlayerUseInputEventFn38))
+    if (const ue_wrap::facts::Resolved uf38 = ue_wrap::facts::Resolve(kRowUseEvt38))
         if (GT::RegisterInterceptor(uf38, &OnPileUseDenySuppress)) ++denySeams;
-    if (void* uf42 = R::FindFunction(cls, P::name::MainPlayerUseInputEventFn42R))
+    if (const ue_wrap::facts::Resolved uf42 = ue_wrap::facts::Resolve(kRowUseEvt42))
         if (GT::RegisterInterceptor(uf42, &OnPileUseReleaseSuppress)) ++denySeams;
     UE_LOGI("trash_use_intercept: use_deny suppressors installed on %d/2 extra 'use' seam(s) (_38 2nd-Pressed = press "
             "conditions; _42 Released = paired-with-cancelled-press only) -- a cancelled client E-press now dies "
@@ -288,8 +305,8 @@ void Install(coop::net::Session* session) {
     // intent's optimistic carry-clear mean only the edge that finds a live carry acts.
     // Best-effort.
     int fireObs = 0;
-    for (const wchar_t* fireFn : { P::name::MainPlayerFireInputEventFn58, P::name::MainPlayerFireInputEventFn59 }) {
-        void* ff = R::FindFunction(cls, fireFn);
+    for (const ue_wrap::facts::Function* fireRow : { &kRowFireEvt58, &kRowFireEvt59 }) {
+        const ue_wrap::facts::Resolved ff = ue_wrap::facts::Resolve(*fireRow);
         if (ff && GT::RegisterPreObserver(ff, &OnFirePre)) ++fireObs;
     }
     UE_LOGI("trash_use_intercept: LMB hard-throw observer installed on %d/2 InpActEvt_fire handler(s) "

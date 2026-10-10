@@ -11,6 +11,7 @@
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/script_gate.h"
+#include "ue_wrap/facts/function_row.h"
 #include "ue_wrap/world/daynightcycle.h"
 
 #include <atomic>
@@ -26,6 +27,10 @@ namespace GT  = ue_wrap::game_thread;
 namespace R   = ue_wrap::reflection;
 namespace SG  = ue_wrap::script_gate;
 using Clock = std::chrono::steady_clock;
+
+UE_FACT_FN(kRowUbergraphHalloweenMaster, "time_sync", L"halloweenMaster_C", L"ExecuteUbergraph_halloweenMaster",
+           Declared);
+UE_FACT_FN(kRowCycleTick, "time_sync", L"daynightCycle_C", L"ReceiveTick", Declared);
 
 std::atomic<coop::net::Session*> g_session{nullptr};
 // The host's day number as the last applied sample carried it; -1 before the first.
@@ -249,8 +254,7 @@ void Install(coop::net::Session* session) {
     if (!g_resetWatched) {
         // Keyed by names, so it holds from the class's first load, in whichever world brings it.
         g_resetWatched = true;
-        if (SG::WatchClassName(L"halloweenMaster_C", L"ExecuteUbergraph_halloweenMaster", kTagModeReset,
-                               &OnModeResetResumePre, nullptr))
+        if (SG::WatchName(kRowUbergraphHalloweenMaster, kTagModeReset, &OnModeResetResumePre, nullptr))
             UE_LOGI("time_sync: a client refuses game mode 5's reset at its ubergraph entry %d (the loop's resume)",
                     kModeResetResume);
         else
@@ -258,7 +262,7 @@ void Install(coop::net::Session* session) {
     }
     // The install fanout calls this every pump tick, which is the retry until the cycle class loads.
     if (g_tickObserved || !DNC::EnsureResolved()) return;
-    void* fn = DNC::TickFunction();
+    const ue_wrap::facts::Resolved fn = ue_wrap::facts::Resolve(kRowCycleTick);
     if (!fn) {
         UE_LOGW("time_sync: daynightCycle_C::ReceiveTick not found -- a client's clock cannot be parked");
         g_tickObserved = true;  // a class that loaded without it never gains it

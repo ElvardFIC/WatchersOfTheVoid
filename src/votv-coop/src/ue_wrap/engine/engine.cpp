@@ -419,10 +419,6 @@ bool TryGetActorRotation(void* actor, FRotator& out) {
     return true;
 }
 
-void* ActorForwardVectorFunction() { return ResolveActorFns() ? g_getFwdFn : nullptr; }
-
-void* ActorVelocityFunction() { return ResolveActorFns() ? g_getVelFn : nullptr; }
-
 FVector GetActorVelocity(void* actor) {
     FVector vel;
     if (!actor || !ResolveActorFns() || !g_getVelFn) return vel;

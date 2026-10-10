@@ -38,6 +38,7 @@
 #include "ue_wrap/core/sdk_profile.h"     // MainPlayerClass + MainPlayerUseInputEventFn
 #include "ue_wrap/core/types.h"
 #include "ue_wrap/core/ufunction_hook.h"  // the BeginDeferred Func patch, the deterministic re-pile
+#include "ue_wrap/facts/function_row.h"
 
 #include <algorithm>
 #include <atomic>
@@ -53,6 +54,9 @@ namespace R  = ue_wrap::reflection;
 namespace PT = coop::prop_element_tracker;
 namespace GT = ue_wrap::game_thread;
 namespace P  = ue_wrap::profile;
+
+UE_FACT_FN(kRowBeginDeferredSpawn, "trash_collect_sync", L"GameplayStatics",
+           L"BeginDeferredActorSpawnFromClass", Declared);
 
 // The cached Session for the observers (a PRE callback takes no parameter); re-cached by every
 // Install for a reconnect. Read on the game thread.
@@ -379,8 +383,7 @@ void Install(coop::net::Session* session) {
     // GameplayStatics resolves; host_spawn_watcher's observer on the same UFunction is a separate
     // mechanism, and the forwarder is transparent.
     if (!g_repileThunkInstalled) {
-        void* gsCls = R::FindClass(P::name::GameplayStaticsClass);
-        void* bdFn  = gsCls ? R::FindFunction(gsCls, P::name::BeginDeferredSpawnFn) : nullptr;
+        const ue_wrap::facts::Resolved bdFn = ue_wrap::facts::Resolve(kRowBeginDeferredSpawn);
         if (bdFn) {
             ue_wrap::ufunction_hook::InstallPostHook(bdFn, &OnBeginDeferredSpawnObserve);
             g_repileThunkInstalled = true;  // latched on the attempt; InstallPostHook logs success or refusal

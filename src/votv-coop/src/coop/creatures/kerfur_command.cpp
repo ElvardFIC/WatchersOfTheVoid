@@ -17,6 +17,7 @@
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/script_gate.h"
 #include "ue_wrap/core/sdk_profile.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <cstddef>
@@ -36,7 +37,7 @@ namespace sg = ue_wrap::script_gate;
 using coop::element::ElementId;
 using coop::element::kInvalidId;
 
-constexpr const wchar_t* kStartKill = L"startKill";
+UE_FACT_FN(kRowStartKill, "kerfur_command", L"kerfurOmega_C", L"startKill", Declared);
 constexpr int kTagStartKill = 0x4B434B01;  // 'KCK' 1
 
 std::atomic<coop::net::Session*> g_session{nullptr};
@@ -207,9 +208,9 @@ sg::Verdict OnStartKillPre(const sg::Call& c) {
 void SettleKillWatch() {
     if (!g_killWatched || g_killLive || g_killRefused) return;
     sg::ResolvePendingNames();
-    if ((g_killLive = sg::ClassNameWatchLive(P::name::NpcClass_KerfurOmega, kStartKill, kTagStartKill))) {
+    if ((g_killLive = sg::NameWatchLive(kRowStartKill, kTagStartKill))) {
         UE_LOGI("kerfur_command: the Omega's startKill is watched -- murder mode ends a client's service");
-    } else if (sg::ClassNameWatchSettled(P::name::NpcClass_KerfurOmega, kStartKill, kTagStartKill)) {
+    } else if (sg::NameWatchSettled(kRowStartKill, kTagStartKill)) {
         g_killRefused = true;
         UE_LOGE("kerfur_command: the startKill watch died at the name resolve -- an Omega serves no client for the "
                 "rest of this process");
@@ -291,8 +292,7 @@ void Install(coop::net::Session* session) {
     if (g_killWatched || g_killRefused || !session || !session->running() ||
         session->role() != coop::net::Role::Host)
         return;
-    g_killWatched = sg::WatchClassName(P::name::NpcClass_KerfurOmega, kStartKill, kTagStartKill, &OnStartKillPre,
-                                       nullptr);
+    g_killWatched = sg::WatchName(kRowStartKill, kTagStartKill, &OnStartKillPre, nullptr);
     if (!g_killWatched) {
         g_killRefused = true;
         UE_LOGE("kerfur_command: the startKill watch was refused -- an Omega serves no client for the rest of this "

@@ -149,10 +149,6 @@ bool EnsureResolved() {
     return g_compsValid;
 }
 
-void* PlayFn()       { return g_playFn; }
-void* SetActiveFn()  { return g_setActiveFn; }
-void* ActivateFn()   { return g_activateFn; }
-void* DeactivateFn() { return g_deactivateFn; }
 
 bool IsSignalSound(void* comp) {
     // HOT PATH (inside the Deactivate/Activate Func-patch, game-wide): one

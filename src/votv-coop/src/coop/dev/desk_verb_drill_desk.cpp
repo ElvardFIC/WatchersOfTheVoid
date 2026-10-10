@@ -19,6 +19,7 @@
 #include "ue_wrap/desk/saved_signals.h"
 #include "ue_wrap/desk/space_renderer.h"
 #include "ue_wrap/engine/engine.h"  // SpawnActor, TryGetActorLocation
+#include "ue_wrap/facts/function_row.h"
 #include "ue_wrap/world/profile.h"
 #include "ue_wrap/world/upgrades.h"
 #include "ue_wrap/world/world_singleton.h"
@@ -39,12 +40,19 @@ namespace SS = ue_wrap::saved_signals;
 namespace sg = ue_wrap::script_gate;
 
 // The census's functions, by the class declaring each.
-const wchar_t* const kFnClass[kFns] = {
-    L"mainGamemode_C", L"saveSlot_C",          L"lib_C",               L"lib_C",              L"mainGamemode_C",
-    L"ui_laptop_C",    L"mainGamemode_C",      L"analogDScreenTest_C", L"analogDScreenTest_C", L"analogDScreenTest_C"};
-const wchar_t* const kFnName[kFns] = {
-    L"saveSignal", L"getSigObj",    L"setSignalID",     L"addGloss",   L"deleteActiveSignal",
-    L"addSignal",  L"deleteSignal", L"comp_uploadData", L"comp_start", L"comp_stop"};
+UE_FACT_FN(kRowSaveSignal, "dev.desk_verb_drill_desk", L"mainGamemode_C", L"saveSignal", Declared);
+UE_FACT_FN(kRowGetSigObj, "dev.desk_verb_drill_desk", L"saveSlot_C", L"getSigObj", Declared);
+UE_FACT_FN(kRowSetSignalId, "dev.desk_verb_drill_desk", L"lib_C", L"setSignalID", Declared);
+UE_FACT_FN(kRowAddGloss, "dev.desk_verb_drill_desk", L"lib_C", L"addGloss", Declared);
+UE_FACT_FN(kRowDeleteActiveSignal, "dev.desk_verb_drill_desk", L"mainGamemode_C", L"deleteActiveSignal", Declared);
+UE_FACT_FN(kRowAddSignal, "dev.desk_verb_drill_desk", L"ui_laptop_C", L"addSignal", Declared);
+UE_FACT_FN(kRowDeleteSignal, "dev.desk_verb_drill_desk", L"mainGamemode_C", L"deleteSignal", Declared);
+UE_FACT_FN(kRowCompUploadData, "dev.desk_verb_drill_desk", L"analogDScreenTest_C", L"comp_uploadData", Declared);
+UE_FACT_FN(kRowCompStart, "dev.desk_verb_drill_desk", L"analogDScreenTest_C", L"comp_start", Declared);
+UE_FACT_FN(kRowCompStop, "dev.desk_verb_drill_desk", L"analogDScreenTest_C", L"comp_stop", Declared);
+const ue_wrap::facts::Function* const kFnRow[kFns] = {
+    &kRowSaveSignal,       &kRowGetSigObj,    &kRowSetSignalId,    &kRowAddGloss,  &kRowDeleteActiveSignal,
+    &kRowAddSignal,        &kRowDeleteSignal, &kRowCompUploadData, &kRowCompStart, &kRowCompStop};
 constexpr int kTagBase = 0x44564430;  // 'DVD0'
 
 Census g_census;
@@ -98,20 +106,20 @@ const Census& CensusNow() { return g_census; }
 const wchar_t* CensusNotLive() {
     for (int i = 0; i < kFns; ++i)
         if (!g_watched[i] && !g_refused[i]) {
-            g_watched[i] = sg::WatchClassName(kFnClass[i], kFnName[i], kTagBase + i, &OnCensusPre, &OnCensusPost);
+            g_watched[i] = sg::WatchName(*kFnRow[i], kTagBase + i, &OnCensusPre, &OnCensusPost);
             g_refused[i] = !g_watched[i];
         }
     sg::ResolvePendingNames();
     for (int i = 0; i < kFns; ++i)
-        if (!g_watched[i] || !sg::ClassNameWatchLive(kFnClass[i], kFnName[i], kTagBase + i)) return kFnName[i];
+        if (!g_watched[i] || !sg::NameWatchLive(*kFnRow[i], kTagBase + i)) return kFnRow[i]->Name();
     return nullptr;
 }
 
 const wchar_t* CensusDead() {
     for (int i = 0; i < kFns; ++i)
-        if (g_refused[i] || (g_watched[i] && sg::ClassNameWatchSettled(kFnClass[i], kFnName[i], kTagBase + i) &&
-                             !sg::ClassNameWatchLive(kFnClass[i], kFnName[i], kTagBase + i)))
-            return kFnName[i];
+        if (g_refused[i] || (g_watched[i] && sg::NameWatchSettled(*kFnRow[i], kTagBase + i) &&
+                             !sg::NameWatchLive(*kFnRow[i], kTagBase + i)))
+            return kFnRow[i]->Name();
     return nullptr;
 }
 
@@ -129,7 +137,7 @@ std::string CensusLine(const Census& d) {
     std::string out;
     char buf[96];
     for (int i = 0; i < kFns; ++i) {
-        std::snprintf(buf, sizeof(buf), "%s%ls game=%u other=%u ran=%u", i ? ", " : "", kFnName[i], d.game[i],
+        std::snprintf(buf, sizeof(buf), "%s%ls game=%u other=%u ran=%u", i ? ", " : "", kFnRow[i]->Name(), d.game[i],
                       d.other[i], d.ran[i]);
         out += buf;
     }

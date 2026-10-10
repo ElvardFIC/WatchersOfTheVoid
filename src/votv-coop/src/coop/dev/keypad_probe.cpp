@@ -9,6 +9,7 @@
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/devices/passwordlock.h"
 #include "ue_wrap/core/reflection.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <array>
 #include <cstdint>
@@ -41,13 +42,18 @@ void OnKeypadVerb(void* self, void* function, void* /*params*/) {
     }
 }
 
-void RegisterOn(void* cls, const wchar_t* fnName, const char* label) {
+UE_FACT_FN(kRowInputNumber, "dev.keypad_probe", L"passwordLock_C", L"inputNumber", Declared);
+UE_FACT_FN(kRowOpen, "dev.keypad_probe", L"passwordLock_C", L"Open", Declared);
+UE_FACT_FN(kRowFalseEnterEvent, "dev.keypad_probe", L"passwordLock_C", L"falseEnterEvent", Declared);
+UE_FACT_FN(kRowPlayerUse, "dev.keypad_probe", L"passwordLock_C", L"player_use", Declared);
+
+void RegisterOn(void* cls, const ue_wrap::facts::Function& row, const char* label) {
     if (!cls) return;
-    void* fn = R::FindFunction(cls, fnName);
-    if (!fn) { UE_LOGW("[keypad_probe] '%ls' not found", fnName); return; }
-    for (size_t i = 0; i < g_watchedCount; ++i) if (g_watched[i].fn == fn) return;
+    const ue_wrap::facts::Resolved fn = ue_wrap::facts::Resolve(row);
+    if (!fn) { UE_LOGW("[keypad_probe] '%ls' not found", row.Name()); return; }
+    for (size_t i = 0; i < g_watchedCount; ++i) if (g_watched[i].fn == fn.Fn()) return;
     if (!GT::RegisterPostObserver(fn, &OnKeypadVerb)) return;
-    if (g_watchedCount < g_watched.size()) g_watched[g_watchedCount++] = WatchedFn{fn, label};
+    if (g_watchedCount < g_watched.size()) g_watched[g_watchedCount++] = WatchedFn{fn.Fn(), label};
 }
 
 bool     g_installed = false;
@@ -85,10 +91,10 @@ void Install() {
     PL::EnsureResolved();
 
     // Confirm these are BP-internal (NONE should fire on a real code entry).
-    RegisterOn(g_cls, L"inputNumber",     "passwordLock.inputNumber");
-    RegisterOn(g_cls, L"Open",            "passwordLock.Open");
-    RegisterOn(g_cls, L"falseEnterEvent", "passwordLock.falseEnterEvent");
-    RegisterOn(g_cls, L"player_use",      "passwordLock.player_use");
+    RegisterOn(g_cls, kRowInputNumber,     "passwordLock.inputNumber");
+    RegisterOn(g_cls, kRowOpen,            "passwordLock.Open");
+    RegisterOn(g_cls, kRowFalseEnterEvent, "passwordLock.falseEnterEvent");
+    RegisterOn(g_cls, kRowPlayerUse,       "passwordLock.player_use");
 
     g_inputNumFn = R::FindFunction(g_cls, L"inputNumber");
     g_numOff    = R::FindPropertyOffset(g_cls, L"Num");

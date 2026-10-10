@@ -23,6 +23,7 @@
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/types.h"
+#include "ue_wrap/facts/function_row.h"
 #include "ue_wrap/actors/vitals.h"
 #include "ue_wrap/actors/wisp.h"
 
@@ -56,7 +57,7 @@ std::unordered_set<void*> g_falseGrabWisps;
 std::atomic<bool> g_damageWatchInstalled{false};
 
 // The player's damage verb, watched by name so an overriding subclass is covered too.
-constexpr const wchar_t* kDamageVerbName = L"Add Player Damage";
+UE_FACT_FN(kRowAddPlayerDamage, "wisp_attack_sync", nullptr, L"Add Player Damage", AnyClass);
 constexpr int kDamageVerbTag = 1;
 
 // The health pin: the host's pre-grab health is pinned across the false-grab window. The
@@ -300,10 +301,10 @@ void Install(coop::net::Session* session) {
     // No throttle and no wait for the player class: a name watch registers immediately and the
     // gate resolves the name itself on the game thread, so the old once-a-second retry (there to
     // bound an object-array lookup that no longer happens) would only delay the guard.
-    if (sg::WatchName(kDamageVerbName, kDamageVerbTag, &OnAddPlayerDamagePre, nullptr)) {
+    if (sg::WatchName(kRowAddPlayerDamage, kDamageVerbTag, &OnAddPlayerDamagePre, nullptr)) {
         g_damageWatchInstalled.store(true, std::memory_order_release);
         UE_LOGI("wisp_attack: watching %ls at the script-body gate (attacker-scoped refusal)",
-                kDamageVerbName);
+                kRowAddPlayerDamage.Name());
     }
 }
 

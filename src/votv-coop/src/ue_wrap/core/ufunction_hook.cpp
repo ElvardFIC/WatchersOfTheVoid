@@ -294,7 +294,10 @@ bool SetArmed(void* ufunction, PreNativeCallback cb, bool armed) {
     return false;
 }
 
-bool InstallPostHook(void* ufunction, PostNativeCallback cb, bool armed) {
+namespace {
+
+// The patch table's own entry points; the public forms take a resolved row (ufunction_hook.h).
+bool InstallPostHookFn(void* ufunction, PostNativeCallback cb, bool armed) {
     if (!ufunction || !cb) return false;
     // Idempotent: the same (ufunction, cb) re-install is a no-op (the caller's Install
     // retries each world-gated pass until the class resolves).
@@ -335,7 +338,7 @@ bool InstallPostHook(void* ufunction, PostNativeCallback cb, bool armed) {
     return true;
 }
 
-bool InstallPreHook(void* ufunction, PreNativeCallback cb, bool armed) {
+bool InstallPreHookFn(void* ufunction, PreNativeCallback cb, bool armed) {
     if (!ufunction || !cb) return false;
     for (int i = 0; i < g_slotCount; ++i) {
         if (g_slots[i].ufunction == ufunction && g_slots[i].pre == cb) return true;
@@ -380,6 +383,8 @@ bool InstallPreHook(void* ufunction, PreNativeCallback cb, bool armed) {
     return true;
 }
 
+}  // namespace
+
 void DebugForEachHook(HookVisitor visit, void* ctx) {
     if (!visit) return;
     for (int i = 0; i < g_slotCount; ++i)
@@ -388,14 +393,14 @@ void DebugForEachHook(HookVisitor visit, void* ctx) {
 
 bool InstallPostHook(const facts::Resolved& fn, PostNativeCallback cb, bool armed) {
     if (!fn) return false;  // not resolved yet: nothing was asked, nothing is recorded
-    const bool ok = InstallPostHook(fn.Fn(), cb, armed);
+    const bool ok = InstallPostHookFn(fn.Fn(), cb, armed);
     fn.Row()->NoteUse(facts::kUseNativeHook, ok);
     return ok;
 }
 
 bool InstallPreHook(const facts::Resolved& fn, PreNativeCallback cb, bool armed) {
     if (!fn) return false;
-    const bool ok = InstallPreHook(fn.Fn(), cb, armed);
+    const bool ok = InstallPreHookFn(fn.Fn(), cb, armed);
     fn.Row()->NoteUse(facts::kUseNativeHook, ok);
     return ok;
 }

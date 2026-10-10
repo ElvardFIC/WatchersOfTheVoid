@@ -7,12 +7,16 @@
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/ufunction_hook.h"
+#include "ue_wrap/facts/function_row.h"
 
 namespace coop::save_indicator_suppress {
 
 namespace {
 
 namespace R = ue_wrap::reflection;
+
+UE_FACT_FN(kRowSaveAnim, "save_indicator_suppress", L"mainGamemode_C", L"saveAnim", Declared);
+UE_FACT_FN(kRowAddHint, "save_indicator_suppress", L"mainGamemode_C", L"Add Hint from Gamemode", Declared);
 
 // Game thread only (the join-save capture is synchronous on the game thread, and the
 // saveAnim/addHint Func dispatch is game-thread) -> plain values, no lock.
@@ -73,8 +77,8 @@ void EnsureInstalled() {
     if (g_installed) return;
     void* gmCls = R::FindClass(L"mainGamemode_C");
     if (!gmCls) return;  // gamemode class not loaded yet -> retry next Begin
-    void* saveAnimFn = R::FindFunction(gmCls, L"saveAnim");
-    void* addHintFn  = R::FindFunction(gmCls, L"Add Hint from Gamemode");
+    const ue_wrap::facts::Resolved saveAnimFn = ue_wrap::facts::Resolve(kRowSaveAnim);
+    const ue_wrap::facts::Resolved addHintFn  = ue_wrap::facts::Resolve(kRowAddHint);
     bool any = false;
     if (saveAnimFn) { ue_wrap::ufunction_hook::InstallPostHook(saveAnimFn, &OnSaveAnim); any = true; }
     else UE_LOGW("[SAVED-DETECT] mainGamemode.saveAnim UFunction NOT resolved -- saveAnim detect hook skipped");
@@ -84,7 +88,7 @@ void EnsureInstalled() {
     if (any)
         UE_LOGI("[SAVED-DETECT] detect hooks installed (saveAnim=%p addHint=%p) -- read-only; "
                 "both forward to the original, so the indicator still shows",
-                saveAnimFn, addHintFn);
+                saveAnimFn.Fn(), addHintFn.Fn());
 }
 
 void Begin() {

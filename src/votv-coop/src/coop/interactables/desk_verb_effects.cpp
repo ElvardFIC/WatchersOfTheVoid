@@ -12,6 +12,7 @@
 #include "ue_wrap/core/script_gate.h"
 #include "ue_wrap/core/ufunction_hook.h"
 #include "ue_wrap/engine/engine.h"
+#include "ue_wrap/facts/function_row.h"
 #include "ue_wrap/world/profile.h"
 #include "ue_wrap/world/votv_lib.h"
 
@@ -30,9 +31,8 @@ namespace DV = coop::net::desk_verb;
 using coop::net::DeskVerbPayload;
 
 constexpr int kTagGloss = 0x44564701;  // 'DVG' 1
-// One pointer per name: the gate knows a watch by the literals it was registered with.
-constexpr const wchar_t* kGlossClass = L"lib_C";
-constexpr const wchar_t* kGlossName = L"addGloss";
+UE_FACT_FN(kRowAddGloss, "desk_verb_effects", L"lib_C", L"addGloss", Declared);
+UE_FACT_FN(kRowPlaySound2D, "desk_verb_effects", L"GameplayStatics", L"PlaySound2D", Declared);
 
 std::atomic<coop::net::Session*> g_session{nullptr};
 
@@ -152,16 +152,16 @@ void ResolveGloss() {
 
 void InstallSound() {
     if (g_soundHooked || g_soundRefused) return;
-    void* cls = ue_wrap::object_index::ClassByName(L"GameplayStatics");
-    g_soundFn = cls ? R::FindFunction(cls, L"PlaySound2D") : nullptr;
-    if (!g_soundFn) return;
+    const ue_wrap::facts::Resolved soundFn = ue_wrap::facts::Resolve(kRowPlaySound2D);
+    g_soundFn = soundFn.Fn();
+    if (!soundFn) return;
     g_offSound = R::FindParamOffset(g_soundFn, L"Sound");
     g_offVolume = R::FindParamOffset(g_soundFn, L"VolumeMultiplier");
     g_offPitch = R::FindParamOffset(g_soundFn, L"PitchMultiplier");
     g_offStart = R::FindParamOffset(g_soundFn, L"StartTime");
     g_offUi = R::FindParamOffset(g_soundFn, L"bIsUISound");
     if (g_offSound < 0 || g_offVolume < 0 || g_offPitch < 0 || g_offStart < 0 || g_offUi < 0 ||
-        !UH::InstallPreHook(g_soundFn, &OnSound2DPre, /*armed=*/false)) {
+        !UH::InstallPreHook(soundFn, &OnSound2DPre, /*armed=*/false)) {
         g_soundRefused = true;
         UE_LOGE("desk_verb: no pre hook on PlaySound2D (offsets %d/%d/%d/%d/%d) -- a client's desk press will not "
                 "run on the host", g_offSound, g_offVolume, g_offPitch, g_offStart, g_offUi);
@@ -175,7 +175,7 @@ void InstallSound() {
 void Install(coop::net::Session* session) {
     g_session.store(session, std::memory_order_release);
     if (!g_glossWatched && !g_glossRefused) {
-        g_glossWatched = sg::WatchClassName(kGlossClass, kGlossName, kTagGloss, &OnGlossPre, nullptr);
+        g_glossWatched = sg::WatchName(kRowAddGloss, kTagGloss, &OnGlossPre, nullptr);
         if (!g_glossWatched) {
             g_glossRefused = true;  // a full watch table or no gate: said by the gate, and final
             UE_LOGE("desk_verb: the gate took no watch on lib_C::addGloss -- a client's desk press will not run on "
@@ -184,8 +184,8 @@ void Install(coop::net::Session* session) {
     }
     if (g_glossWatched && !g_glossLive && !g_glossRefused) {
         sg::ResolvePendingNames();
-        g_glossLive = sg::ClassNameWatchLive(kGlossClass, kGlossName, kTagGloss);
-        if (!g_glossLive && sg::ClassNameWatchSettled(kGlossClass, kGlossName, kTagGloss)) {
+        g_glossLive = sg::NameWatchLive(kRowAddGloss, kTagGloss);
+        if (!g_glossLive && sg::NameWatchSettled(kRowAddGloss, kTagGloss)) {
             g_glossRefused = true;
             UE_LOGE("desk_verb: the watch on lib_C::addGloss settled dead -- a client's desk press will not run on "
                     "the host");

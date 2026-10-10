@@ -21,6 +21,7 @@
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/script_gate.h"
 #include "ue_wrap/actors/vitals.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <cmath>
@@ -45,8 +46,13 @@ bool ValidDamage(float d) { return std::isfinite(d) && d > 0.f && d <= kMaxDamag
 // The impact-entry cancel. mainPlayer_C's three native->BP impact events, one shared PRE callback
 // registered once for each. The class is loaded at the main menu and lives for the process
 // (coop/dev/class_lifetime_probe measures it), so the registrations hold across a world change.
-const wchar_t* const kImpactEntryNames[3] = {
-    L"impactDamage", L"impactDamageCPP", L"impactSquishCPP",
+UE_FACT_FN(kRowImpactDamage, "player_damage", L"mainPlayer_C", L"impactDamage", Declared);
+UE_FACT_FN(kRowImpactDamageCpp, "player_damage", L"mainPlayer_C", L"impactDamageCPP", Declared);
+UE_FACT_FN(kRowImpactSquishCpp, "player_damage", L"mainPlayer_C", L"impactSquishCPP", Declared);
+UE_FACT_FN(kRowAddPlayerDamage, "player_damage", nullptr, L"Add Player Damage", AnyClass);
+UE_FACT_FN(kRowIgnite, "player_damage", L"mainPlayer_C", L"ignite", Declared);
+const ue_wrap::facts::Function* const kImpactEntryRows[3] = {
+    &kRowImpactDamage, &kRowImpactDamageCpp, &kRowImpactSquishCpp,
 };
 void*    g_impactFns[3] = {};
 bool     g_impactInterceptorsDone = false;
@@ -91,7 +97,6 @@ bool OnImpactEntryPre(void* self, void* /*params*/) {
 // script-body gate because the verb is Blueprint-internal on every route. The mod's own calls get no
 // pass: the origin flag spans every Blueprint call nested inside one of ours, so it proves nothing
 // about which body a nested damage or ignite was aimed at. A puppet is refused whoever asks.
-constexpr const wchar_t* kDamageVerbName = L"Add Player Damage";
 constexpr int kDamageVerbTag = 0x504C4447;  // 'PLDG'
 bool g_damageWatchDone = false;
 std::atomic<uint32_t> g_verbCanceled{0};
@@ -120,7 +125,6 @@ ue_wrap::script_gate::Verdict OnDamageVerbPre(const ue_wrap::script_gate::Call& 
 // listing). Both refusals ask IsPuppet rather than "not the local pawn", the
 // impact cancel's test, because a stale local pawn across a respawn must never make this machine's
 // own player immune.
-constexpr const wchar_t* kIgniteName = L"ignite";
 constexpr int kIgniteTag = 0x49474E54;  // 'IGNT'
 bool g_igniteWatchDone = false;
 std::atomic<uint32_t> g_igniteCanceled{0};
@@ -160,13 +164,13 @@ void Tick() {
     }
     if (!g_damageWatchDone) {
         g_damageWatchDone = true;
-        if (!ue_wrap::script_gate::WatchName(kDamageVerbName, kDamageVerbTag, &OnDamageVerbPre, nullptr))
+        if (!ue_wrap::script_gate::WatchName(kRowAddPlayerDamage, kDamageVerbTag, &OnDamageVerbPre, nullptr))
             UE_LOGE("player_damage: the damage verb watch did not register -- a burning puppet damages "
                     "this machine's player");
     }
     if (!g_igniteWatchDone) {
         g_igniteWatchDone = true;
-        if (!ue_wrap::script_gate::WatchClassName(L"mainPlayer_C", kIgniteName, kIgniteTag, &OnIgnitePre, nullptr))
+        if (!ue_wrap::script_gate::WatchName(kRowIgnite, kIgniteTag, &OnIgnitePre, nullptr))
             UE_LOGE("player_damage: the ignite watch did not register -- a peer's puppet can burn here");
     }
     if (g_impactInterceptorsDone) return;
@@ -178,10 +182,11 @@ void Tick() {
     g_impactInterceptorsDone = true;
     bool all = true;
     for (int i = 0; i < 3; ++i) {
-        g_impactFns[i] = R::FindFunction(cls, kImpactEntryNames[i]);
-        if (g_impactFns[i] && GT::RegisterInterceptor(g_impactFns[i], &OnImpactEntryPre)) continue;
+        const ue_wrap::facts::Resolved impact = ue_wrap::facts::Resolve(*kImpactEntryRows[i]);
+        g_impactFns[i] = impact.Fn();
+        if (impact && GT::RegisterInterceptor(impact, &OnImpactEntryPre)) continue;
         all = false;
-        UE_LOGE("player_damage: impact entry %ls %s -- a non-local body runs its damage body", kImpactEntryNames[i],
+        UE_LOGE("player_damage: impact entry %ls %s -- a non-local body runs its damage body", kImpactEntryRows[i]->Name(),
                 g_impactFns[i] ? "did not register (the interceptor table is full)"
                                : "is not declared on mainPlayer_C (a recooked Blueprint)");
     }

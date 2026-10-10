@@ -16,6 +16,8 @@
 
 #pragma once
 
+#include "ue_wrap/facts/function_row.h"
+
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -73,7 +75,7 @@ bool ReadDigest(DeviceKind kind, void* device, uint64_t& out, DigestScope scope)
 // Resolved on their own backoff, independent of the members above: a device whose slot fields
 // moved is a device we must not WRITE, but its entries are still worth naming.
 inline constexpr size_t kMaxSlotOverlapEntries = 2;
-size_t SlotOverlapEntries(DeviceKind kind, void* out[], size_t cap);
+size_t SlotOverlapEntries(DeviceKind kind, facts::Resolved out[], size_t cap);
 
 // How many entries this kind DECLARES, which is a fact about the class and needs no resolve. It
 // separates the two answers `SlotOverlapEntries` folds into zero: a kind that has no entry to give,

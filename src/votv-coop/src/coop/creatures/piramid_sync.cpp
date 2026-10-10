@@ -19,6 +19,7 @@
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/object_index.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <chrono>
@@ -36,6 +37,10 @@ namespace E  = ue_wrap::engine;
 namespace GT = ue_wrap::game_thread;
 
 constexpr const wchar_t* kPyramidClassName = L"piramid2_C";
+UE_FACT_FN(kRowSeeWisps, "piramid_sync", L"piramid2_C", L"seeWisps", Declared);
+UE_FACT_FN(kRowCheckIfReached, "piramid_sync", L"piramid2_C", L"checkIfReached", Declared);
+UE_FACT_FN(kRowRandLoc, "piramid_sync", L"piramid2_C", L"randLoc", Declared);
+UE_FACT_FN(kRowChangeLook, "piramid_sync", L"piramid2_C", L"changeLook", Declared);
 constexpr const char*    kPyramidTypeName  = "piramid2_C";
 
 // The native reached-check commits at a 2D distance of 10000 or less. Both actors freeze at
@@ -216,10 +221,14 @@ void TryArmHooks() {
     // the lane.
     void* cls = ue_wrap::object_index::ClassByName(kPyramidClassName);
     if (!cls) return;
-    g_fnSeeWisps = R::FindFunction(cls, L"seeWisps");
-    g_fnCheckIfReached = R::FindFunction(cls, L"checkIfReached");
-    g_fnRandLoc = R::FindFunction(cls, L"randLoc");
-    g_fnChangeLook = R::FindFunction(cls, L"changeLook");
+    const ue_wrap::facts::Resolved seeWisps = ue_wrap::facts::Resolve(kRowSeeWisps);
+    const ue_wrap::facts::Resolved checkIfReached = ue_wrap::facts::Resolve(kRowCheckIfReached);
+    const ue_wrap::facts::Resolved randLoc = ue_wrap::facts::Resolve(kRowRandLoc);
+    const ue_wrap::facts::Resolved changeLook = ue_wrap::facts::Resolve(kRowChangeLook);
+    g_fnSeeWisps = seeWisps.Fn();
+    g_fnCheckIfReached = checkIfReached.Fn();
+    g_fnRandLoc = randLoc.Fn();
+    g_fnChangeLook = changeLook.Fn();
     g_offWispTarget = R::FindPropertyOffset(cls, L"wispTarget");
     // The facing axis, auxiliary: a miss disables only the heading drive, not the lane. The two
     // heading arrow components the host's turning step rotates.
@@ -247,13 +256,13 @@ void TryArmHooks() {
     }
     // Register all or disable: a partial set would half-suppress the mirror brain, worse than
     // none; seeWisps alive with the reached-check dead latches walking forever.
-    const bool i1 = GT::RegisterInterceptor(g_fnSeeWisps, &BrainSuppress_Interceptor);
-    const bool i2 = i1 && GT::RegisterInterceptor(g_fnCheckIfReached, &BrainSuppress_Interceptor);
-    const bool i3 = i2 && GT::RegisterInterceptor(g_fnRandLoc, &BrainSuppress_Interceptor);
+    const bool i1 = GT::RegisterInterceptor(seeWisps, &BrainSuppress_Interceptor);
+    const bool i2 = i1 && GT::RegisterInterceptor(checkIfReached, &BrainSuppress_Interceptor);
+    const bool i3 = i2 && GT::RegisterInterceptor(randLoc, &BrainSuppress_Interceptor);
     // changeLook joins the suppressed set: its 1 Hz random look re-roll is the head divergence,
     // and the streamed host vector is the one writer on a mirror.
-    const bool i4 = i3 && GT::RegisterInterceptor(g_fnChangeLook, &BrainSuppress_Interceptor);
-    const bool o1 = i4 && GT::RegisterPostObserver(g_fnCheckIfReached, &CheckIfReached_POST);
+    const bool i4 = i3 && GT::RegisterInterceptor(changeLook, &BrainSuppress_Interceptor);
+    const bool o1 = i4 && GT::RegisterPostObserver(checkIfReached, &CheckIfReached_POST);
     if (!o1) {
         if (i1) GT::UnregisterInterceptor(g_fnSeeWisps, &BrainSuppress_Interceptor);
         if (i2) GT::UnregisterInterceptor(g_fnCheckIfReached, &BrainSuppress_Interceptor);

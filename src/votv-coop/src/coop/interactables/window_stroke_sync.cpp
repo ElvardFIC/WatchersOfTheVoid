@@ -13,6 +13,7 @@
 #include "ue_wrap/core/ufunction_hook.h"
 #include "ue_wrap/devices/window_canvas.h"
 #include "ue_wrap/engine/world_identity.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <chrono>
@@ -27,6 +28,8 @@ namespace {
 namespace R  = ue_wrap::reflection;
 namespace WC = ue_wrap::window_canvas;
 using Clock = std::chrono::steady_clock;
+
+UE_FACT_FN(kRowK2DrawMaterial, "window_stroke_sync", L"Canvas", L"K2_DrawMaterial", Declared);
 
 // A sponge dabs every 0.25 s, so these bounds are minutes of wiping, never reached in play.
 constexpr size_t kMaxQueued = 256;
@@ -225,8 +228,8 @@ void Tick() {
         // InstallPostHook is idempotent, so a failure is retried rather than latched: it fails when
         // the Func slot reads null or the table is full, and the first of those can be a resolve
         // that has not settled. Without the retry one bad tick left the lane dead for the process.
-        const bool ok = ue_wrap::ufunction_hook::InstallPostHook(WC::DrawMaterialFn(), &OnDrawPost,
-                                                                 /*armed=*/connected);
+        const bool ok = ue_wrap::ufunction_hook::InstallPostHook(ue_wrap::facts::Resolve(kRowK2DrawMaterial),
+                                                                 &OnDrawPost, /*armed=*/connected);
         if (ok) {
             g_hookInstalled = true;
             g_hookArmed = connected;

@@ -13,6 +13,7 @@
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/script_gate.h"  // GetStats: the gate's own count of the bodies it refused
 #include "ue_wrap/core/types.h"
+#include "ue_wrap/facts/function_row.h"
 #include "ue_wrap/world/jellyfish_path.h"
 #include "ue_wrap/world/red_sky.h"
 #include "ue_wrap/world/skysphere.h"
@@ -55,6 +56,7 @@ std::chrono::steady_clock::time_point g_nextJellyLog{};
 // The red sky arms: every set the event runs on this copy, in order ('1' red, '0' clear), counted at set itself so
 // two edges in one tick are both seen, and when the client's join was over.
 constexpr int  kRedSetTag = 0x52534b59;  // 'RSKY'
+UE_FACT_FN(kRowSetRedSkyEvent, "dev.world_roll_drill", L"redSkyEvent_C", L"set", Declared);
 constexpr auto kRedBound = std::chrono::seconds(20);
 constexpr size_t kRedSetsKept = 16;
 bool        g_redWatchAsked = false;
@@ -554,7 +556,7 @@ void Install(coop::net::Session* session) {
     g_session.store(session, std::memory_order_release);
     if (IsRedArm() && !g_redWatchAsked) {
         g_redWatchAsked = true;
-        if (!sg::WatchClassName(L"redSkyEvent_C", L"set", kRedSetTag, nullptr, &OnRedSkySetPost))
+        if (!sg::WatchName(kRowSetRedSkyEvent, kRedSetTag, nullptr, &OnRedSkySetPost))
             UE_LOGE("world_roll_drill: the script gate refused the watch on redSkyEvent_C.set -- the red sky arms "
                     "cannot count this copy's sets");
     }

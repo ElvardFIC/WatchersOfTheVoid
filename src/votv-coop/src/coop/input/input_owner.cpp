@@ -19,6 +19,7 @@
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/ufunction_hook.h"
 #include "ue_wrap/engine/world_identity.h"
+#include "ue_wrap/facts/function_row.h"
 
 namespace R = ue_wrap::reflection;
 namespace PP = coop::dev::perf_probe;
@@ -129,14 +130,22 @@ SeamState g_seam = SeamState::Pending;
 int  g_seamTries = 0;
 constexpr int kSeamMaxTries = 10;
 
+UE_FACT_FN(kRowSetInputModeUiOnlyEx, "input_owner", L"WidgetBlueprintLibrary", L"SetInputMode_UIOnlyEx", Declared);
+UE_FACT_FN(kRowSetInputModeGameAndUiEx, "input_owner", L"WidgetBlueprintLibrary", L"SetInputMode_GameAndUIEx",
+           Declared);
+UE_FACT_FN(kRowSetInputModeGameOnly, "input_owner", L"WidgetBlueprintLibrary", L"SetInputMode_GameOnly", Declared);
+UE_FACT_FN(kRowSetKeyboardFocus, "input_owner", L"Widget", L"SetKeyboardFocus", Declared);
+UE_FACT_FN(kRowSetUserFocus, "input_owner", L"Widget", L"SetUserFocus", Declared);
+UE_FACT_FN(kRowSetFocus, "input_owner", L"Widget", L"SetFocus", Declared);
+
 void InstallInputModeSeam() {
     if (g_seam != SeamState::Pending) return;
     ++g_seamTries;
     namespace UH = ue_wrap::ufunction_hook;
     void* wbl = R::FindClass(L"WidgetBlueprintLibrary");
     void* widget = R::FindClass(L"Widget");
-    struct Verb { const wchar_t* name; void* cls; ue_wrap::ufunction_hook::PostNativeCallback cb;
-                  bool required; void* fn; bool patched; };
+    struct Verb { const ue_wrap::facts::Function* row; ue_wrap::ufunction_hook::PostNativeCallback cb;
+                  bool required; ue_wrap::facts::Resolved fn; bool patched; };
     // Every verb is attempted rather than short-circuited: leaving the arming half live with the
     // parking half absent is the one asymmetry this seam must never ship.
     //
@@ -146,17 +155,17 @@ void InstallInputModeSeam() {
     // focus-taking sites. A missing belt is logged and the gate still stands on the trio; a missing
     // trio pins the latch armed and there is no gate at all.
     Verb verbs[] = {
-        {L"SetInputMode_UIOnlyEx",    wbl,    OnUiInputMode,   true,  nullptr, false},
-        {L"SetInputMode_GameAndUIEx", wbl,    OnUiInputMode,   true,  nullptr, false},
-        {L"SetInputMode_GameOnly",    wbl,    OnGameInputMode, true,  nullptr, false},
-        {L"SetKeyboardFocus",         widget, OnUiInputMode,   false, nullptr, false},
-        {L"SetUserFocus",             widget, OnUiInputMode,   false, nullptr, false},
-        {L"SetFocus",                 widget, OnUiInputMode,   false, nullptr, false},
+        {&kRowSetInputModeUiOnlyEx,    OnUiInputMode,   true,  {}, false},
+        {&kRowSetInputModeGameAndUiEx, OnUiInputMode,   true,  {}, false},
+        {&kRowSetInputModeGameOnly,    OnGameInputMode, true,  {}, false},
+        {&kRowSetKeyboardFocus,        OnUiInputMode,   false, {}, false},
+        {&kRowSetUserFocus,            OnUiInputMode,   false, {}, false},
+        {&kRowSetFocus,                OnUiInputMode,   false, {}, false},
     };
     bool all = true;
     int belt = 0;
     for (Verb& v : verbs) {
-        v.fn = v.cls ? R::FindFunction(v.cls, v.name) : nullptr;
+        v.fn = ue_wrap::facts::Resolve(*v.row);
         v.patched = v.fn && UH::InstallPostHook(v.fn, v.cb);
         if (v.required) all = all && v.patched;
         else if (v.patched) ++belt;
@@ -182,7 +191,7 @@ void InstallInputModeSeam() {
     std::string detail;
     for (const Verb& v : verbs) {
         char buf[128];
-        std::snprintf(buf, sizeof(buf), " %ls=%s/%s", v.name, v.fn ? "resolved" : "MISSING",
+        std::snprintf(buf, sizeof(buf), " %ls=%s/%s", v.row->Name(), v.fn ? "resolved" : "MISSING",
                       v.patched ? "patched" : "NOT-PATCHED");
         detail += buf;
     }

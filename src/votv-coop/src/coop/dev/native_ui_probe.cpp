@@ -19,6 +19,7 @@
 #include "ue_wrap/core/types.h"
 #include "ue_wrap/engine/engine.h"
 #include "ue_wrap/engine/world_identity.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <windows.h>
 
@@ -35,6 +36,8 @@ namespace GT  = ue_wrap::game_thread;
 namespace E   = ue_wrap::engine;
 namespace P   = ue_wrap::profile;
 namespace WID = ue_wrap::world_identity;
+
+UE_FACT_FN(kRowTickUiMenu, "dev.native_ui_probe", L"ui_menu_C", L"Tick", Declared);
 
 bool Armed() {
     static const bool s = coop::config::ResolveFlag(::coop::config_registry::rows::native_ui_probe);
@@ -839,10 +842,11 @@ bool TryInstall() {
     if (g_installed.load(std::memory_order_acquire)) return true;
     void* cls = R::FindClass(P::name::UiMenuClass);
     if (!cls) return false;  // menu BP not loaded yet -- caller retries
-    g_tickFn     = R::FindFunction(cls, P::name::UiMenuTickFn);
+    const ue_wrap::facts::Resolved tick = ue_wrap::facts::Resolve(kRowTickUiMenu);
+    g_tickFn     = tick.Fn();
     g_isPauseOff = R::FindPropertyOffset(cls, P::name::UiMenuIsPauseProp);
-    if (!g_tickFn) return false;
-    if (!GT::RegisterPostObserver(g_tickFn, &OnMenuTickPost)) {
+    if (!tick) return false;
+    if (!GT::RegisterPostObserver(tick, &OnMenuTickPost)) {
         UE_LOGE("[native_ui_probe] RegisterPostObserver(ui_menu_C::Tick) failed -- table full?");
         return false;
     }

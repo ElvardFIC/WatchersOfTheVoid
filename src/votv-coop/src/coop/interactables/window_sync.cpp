@@ -24,6 +24,7 @@
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/script_gate.h"
 #include "ue_wrap/engine/world_identity.h"     // gen-stamped index (dead-world guard)
+#include "ue_wrap/facts/function_row.h"
 #include "coop/element/object_scan_hub.h"      // the shared sliced scan pass
 
 #include <algorithm>
@@ -181,8 +182,7 @@ void ApplyResolved(void* actor, const std::wstring& key, float wireClean, bool a
 
 // ---- the sender: the wipe verb ---------------------------------------------------------------
 constexpr int kTagWindowWipe = 0x57495045;  // 'WIPE'
-constexpr const wchar_t* kWindowClass = L"baseWindow_C";  // one literal each: the gate keys watches on the pointer
-constexpr const wchar_t* kWipeVerb = L"cleanSponge";
+UE_FACT_FN(kRowCleanSponge, "window_sync", L"baseWindow_C", L"cleanSponge", Declared);
 bool g_wipeWatched = false;
 
 // The window a cleanSponge body runs on and its clean before the body. The body (ubergraph entry 29)
@@ -238,7 +238,7 @@ void MaybeSyntheticWipe() {
     if (s_done) return;
     auto* s = g_session.load(std::memory_order_acquire);
     if (!s || !s->connected() || s->role() != coop::net::Role::Host || !s->IsSlotWorldReady(1)) return;
-    if (!sg::ClassNameWatchLive(kWindowClass, kWipeVerb, kTagWindowWipe)) return;  // the send rides it
+    if (!sg::NameWatchLive(kRowCleanSponge, kTagWindowWipe)) return;  // the send rides it
     void* actor = nullptr;
     std::wstring key;
     float before = 0.f;
@@ -259,7 +259,7 @@ void MaybeSyntheticWipe() {
     s_done = true;
     // Ten dabs of 0.0001, each under the epsilon and twice it together: the watch must send once they
     // have added up past it, and the client apply that value.
-    void* fn = R::FindDispatchFunctionCached(R::ClassOf(actor), kWipeVerb);
+    void* fn = R::FindDispatchFunctionCached(R::ClassOf(actor), kRowCleanSponge.Name());
     int ran = 0;
     for (int i = 0; fn && i < 10; ++i) {
         ue_wrap::ParamFrame f(fn);
@@ -277,7 +277,7 @@ void Install(coop::net::Session* session) {
     g_session.store(session, std::memory_order_release);
     RegisterWithScanHub();  // the hub builds the index on its own cadence
     if (!g_wipeWatched)
-        g_wipeWatched = sg::WatchClassName(kWindowClass, kWipeVerb, kTagWindowWipe, &OnWipePre, &OnWipePost);
+        g_wipeWatched = sg::WatchName(kRowCleanSponge, kTagWindowWipe, &OnWipePre, &OnWipePost);
 }
 
 void OnReliable(const coop::net::KeyedScalarPayload& payload, uint8_t senderPeerSlot) {

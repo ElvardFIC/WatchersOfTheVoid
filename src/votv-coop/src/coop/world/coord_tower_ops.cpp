@@ -20,6 +20,7 @@
 #include "ue_wrap/desk/coord_tower.h"
 #include "ue_wrap/engine/engine.h"             // TryGetActorLocation
 #include "ue_wrap/engine/engine_mainplayer.h"  // what the local player holds
+#include "ue_wrap/facts/function_row.h"
 #include "ue_wrap/world/game_rules.h"          // the difficulty an insert reads
 
 #include <algorithm>
@@ -41,7 +42,6 @@ using coop::net::CoordTowerPayload;
 
 static_assert(coop::net::kMaxPeers <= 4, "CoordTowerPayload's acknowledgements hold four slots");
 
-constexpr wchar_t kTowerClass[] = L"coordRadarDish_C";
 // A slot's ops wait, in arrival order, while the towers have not resolved, their sender has no body here yet (a
 // joiner's first pose follows its world-ready by seconds) or an insert's spend has not arrived (its destroy rides
 // the bulk lane); each is taken as refused once it has waited this long (coop/world/power_grid's bound).
@@ -466,17 +466,22 @@ void OnInsertPost(const sg::Call& call) {
                g_insertWasBroken && !st.isBroken);
 }
 
+UE_FACT_FN(kRowScrambleRadarDish, "coord_tower_ops", L"coordRadarDish_C", L"Scramble Radar Dish", Declared);
+UE_FACT_FN(kRowLeverTlFinished, "coord_tower_ops", L"coordRadarDish_C", L"leverTL__FinishedFunc", Declared);
+UE_FACT_FN(kRowActionOptionIndex, "coord_tower_ops", L"coordRadarDish_C", L"actionOptionIndex", Declared);
+UE_FACT_FN(kRowPlayerUsedOn, "coord_tower_ops", L"coordRadarDish_C", L"playerUsedOn", Declared);
+
 struct WatchDef {
-    const wchar_t* fn;
+    const ue_wrap::facts::Function* row;
     int tag;
     sg::PreFn pre;
     sg::PostFn post;
 };
 constexpr WatchDef kWatches[] = {
-    { L"Scramble Radar Dish",   0x43545352 /*'CTSR'*/, &OnRollPre,   nullptr },
-    { L"leverTL__FinishedFunc", 0x4354464E /*'CTFN'*/, &OnRollPre,   nullptr },
-    { L"actionOptionIndex",     0x4354414F /*'CTAO'*/, &OnUsePre,    &OnUsePost },
-    { L"playerUsedOn",          0x43545555 /*'CTUU'*/, &OnInsertPre, &OnInsertPost },
+    { &kRowScrambleRadarDish, 0x43545352 /*'CTSR'*/, &OnRollPre,   nullptr },
+    { &kRowLeverTlFinished,   0x4354464E /*'CTFN'*/, &OnRollPre,   nullptr },
+    { &kRowActionOptionIndex, 0x4354414F /*'CTAO'*/, &OnUsePre,    &OnUsePost },
+    { &kRowPlayerUsedOn,      0x43545555 /*'CTUU'*/, &OnInsertPre, &OnInsertPost },
 };
 constexpr int kWatchCount = static_cast<int>(sizeof(kWatches) / sizeof(kWatches[0]));
 bool g_registered = false;
@@ -490,9 +495,9 @@ void Install(coop::net::Session* session) {
     g_registered = true;
     coop::remote_prop::AddDestroyListener(&OnDestroyHeard);
     for (const WatchDef& w : kWatches)
-        if (!sg::WatchClassName(kTowerClass, w.fn, w.tag, w.pre, w.post))
+        if (!sg::WatchName(*w.row, w.tag, w.pre, w.post))
             UE_LOGE("coord_tower: the script-body gate refused the watch on %ls::%ls -- that act stays each peer's own",
-                    kTowerClass, w.fn);
+                    w.row->Class(), w.row->Name());
 }
 
 void Tick() {
@@ -501,8 +506,8 @@ void Tick() {
     sg::ResolvePendingNames();
     int live = 0, settled = 0;
     for (const WatchDef& w : kWatches) {
-        if (sg::ClassNameWatchLive(kTowerClass, w.fn, w.tag)) ++live;
-        if (sg::ClassNameWatchSettled(kTowerClass, w.fn, w.tag)) ++settled;
+        if (sg::NameWatchLive(*w.row, w.tag)) ++live;
+        if (sg::NameWatchSettled(*w.row, w.tag)) ++settled;
     }
     if (live == kWatchCount) {
         g_settled = true;

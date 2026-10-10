@@ -12,6 +12,7 @@
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/script_gate.h"
 #include "ue_wrap/devices/drone_console.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <cstdint>
@@ -28,8 +29,7 @@ namespace sg = ue_wrap::script_gate;
 // The verb the console's buttons arrive on, watched on the console's own class by name, so the watch
 // matches whichever class the running world loads under that name: a level class is never kept by
 // pointer across worlds.
-const wchar_t* const kConsoleClass = L"droneConsole_C";
-const wchar_t* const kActionVerb   = L"actionOptionIndex";
+UE_FACT_FN(kRowActionOptionIndex, "drone_call_intent", L"droneConsole_C", L"actionOptionIndex", Declared);
 constexpr int kTagDroneCall = 0x44524f4e;  // 'DRON'
 
 // The action the console's own switch routes to its faces. Its other cases, 10 and 11, are the
@@ -166,16 +166,16 @@ sg::Verdict OnActionPre(const sg::Call& call) {
 void Install(coop::net::Session* session) {
     g_session.store(session, std::memory_order_release);
     if (!g_watchInstalled)
-        g_watchInstalled = sg::WatchClassName(kConsoleClass, kActionVerb, kTagDroneCall, &OnActionPre, nullptr);
+        g_watchInstalled = sg::WatchName(kRowActionOptionIndex, kTagDroneCall, &OnActionPre, nullptr);
 }
 
 void Tick(coop::net::Session& session) {
     sg::ResolvePendingNames();
     if (!g_watchInstalled) {
-        g_watchInstalled = sg::WatchClassName(kConsoleClass, kActionVerb, kTagDroneCall, &OnActionPre, nullptr);
+        g_watchInstalled = sg::WatchName(kRowActionOptionIndex, kTagDroneCall, &OnActionPre, nullptr);
         return;
     }
-    if (!g_watchLive && sg::ClassNameWatchLive(kConsoleClass, kActionVerb, kTagDroneCall)) {
+    if (!g_watchLive && sg::NameWatchLive(kRowActionOptionIndex, kTagDroneCall)) {
         g_watchLive = true;
         UE_LOGI("[DRONE-CALL] the console action gate is live");
     }

@@ -13,6 +13,7 @@
 #include "ue_wrap/world/world_singleton.h"
 #include "ue_wrap/core/sdk_profile.h"
 #include "ue_wrap/core/types.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <cstdint>
@@ -23,6 +24,8 @@ namespace {
 namespace P = ue_wrap::profile;
 namespace R = ue_wrap::reflection;
 namespace GT = ue_wrap::game_thread;
+
+UE_FACT_FN(kRowCauseRain, "weather_rain", L"daynightCycle_C", L"causeRain", Declared);
 
 // The five rain, snow and wind mutator UFunctions, resolved once in Install; a UFunction
 // pointer is class-stable across cycle recreation, so there is no re-latch machinery.
@@ -95,7 +98,8 @@ bool Install() {
     // call.
     static bool sCauseRainInterceptorReg = false;
     if (!sCauseRainInterceptorReg && g_causeRainFn) {
-        if (GT::RegisterInterceptor(g_causeRainFn, &OnCauseRainPreEchoSuppress)) {
+        const ue_wrap::facts::Resolved causeRain = ue_wrap::facts::Resolve(kRowCauseRain);
+        if (GT::RegisterInterceptor(causeRain, &OnCauseRainPreEchoSuppress)) {
             sCauseRainInterceptorReg = true;
             UE_LOGI("weather: causeRain echo-suppress PRE interceptor registered "
                     "(@%p; conditional on g_causeRainEchoSuppress flag)",

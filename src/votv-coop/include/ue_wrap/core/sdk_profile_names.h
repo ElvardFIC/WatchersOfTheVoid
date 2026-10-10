@@ -228,25 +228,6 @@ inline constexpr const wchar_t* SetAnimClassFn = L"SetAnimClass";         // USk
 inline constexpr const wchar_t* StaticMeshComponentClass = L"StaticMeshComponent";
 inline constexpr const wchar_t* SetStaticMeshFn = L"SetStaticMesh";       // UStaticMeshComponent
 
-// The three trash morph verbs a client refuses at the script-body gate (coop/props/
-// trash_morph_gate). `toClump` is the pile's morph verb and covers every caller of it -- the
-// collision component's overlap handler and the arir follower alike; `playerGrabbed` spawns the
-// carried clump inline instead of calling it, so it needs its own watch; the clump's re-pile is
-// inline in its ubergraph, so the contact handler that enters there is the verb. All three are
-// declared on the two base classes, so one resolve covers every variant under them. The classes
-// come from ue_wrap::prop::ChipPileClass / GarbageClumpClass, which already cache them.
-inline constexpr const wchar_t* PileToClumpFn = L"toClump";
-inline constexpr const wchar_t* PilePlayerGrabbedFn = L"playerGrabbed";
-inline constexpr const wchar_t* ClumpContactFn =
-    L"BndEvt__prop_garbageClump_StaticMesh_K2Node_ComponentBoundEvent_0_ComponentHitSignature__DelegateSignature";
-
-// The dispenser pile's broom verb, declared on trashBitsPile_C (ue_wrap::prop::TrashBitsPileClass).
-// A broom stroke calls it once per pile it sweeps; the body pops up to three rolled props, spawns
-// each as a real actor, decrements the pile's counters and destroys the pile on the last. Its
-// `location` parameter is dead: the thunk writes it to the persistent frame and no instruction
-// reads it back, and the spawn transform is rolled from the pile's own component bounds.
-inline constexpr const wchar_t* PileBroomedFn = L"broomed";
-
 // The broom (ue_wrap/actors/broom). Its stroke's chip-pile loop keeps the pile it is turning into a
 // clump in an ubergraph local, the one both the clump's spawn and the pile's destroy read. The
 // stroke is entered by the notify of the swing montage the right mouse button plays; the notify
@@ -382,7 +363,6 @@ inline constexpr const wchar_t* WidgetSetIsEnabledFn = L"SetIsEnabled";       //
 inline constexpr const wchar_t* WidgetSetRenderOpacityFn = L"SetRenderOpacity";  // UWidget::SetRenderOpacity(float InOpacity) -- brush-independent visual dim
 inline constexpr const wchar_t* WidgetGetIsEnabledFn = L"GetIsEnabled";       // UWidget::GetIsEnabled()->bool ReturnValue (read-back diagnostic)
 inline constexpr const wchar_t* UiMenuClass = L"ui_menu_C";                   // VOTV unified main+pause menu widget (GameInstance-owned, one live instance)
-inline constexpr const wchar_t* UiMenuTickFn = L"Tick";                       // ui_menu_C::Tick(FGeometry,float) -- engine ProcessEvent-dispatched while visible (self-heal anchor)
 inline constexpr const wchar_t* UiMenuButtonSaveProp = L"button_Save";        // UButton* @ ui_menu_C+0x2D0 (the "Save Game" button)
 inline constexpr const wchar_t* UiMenuIsPauseProp = L"isPause";               // bool @ ui_menu_C+0x4C0 (true => the in-game pause menu, not the main menu)
 
@@ -425,7 +405,6 @@ inline constexpr const wchar_t* GetBoneNameFn = L"GetBoneName";              // 
 // by the UFunction* resolved through reflection::FindFunction on the class.
 inline constexpr const wchar_t* PhysicsHandleComponentClass            = L"PhysicsHandleComponent";
 inline constexpr const wchar_t* GrabComponentAtLocationFn              = L"GrabComponentAtLocation";
-inline constexpr const wchar_t* GrabComponentAtLocationWithRotationFn  = L"GrabComponentAtLocationWithRotation";
 inline constexpr const wchar_t* SetTargetLocationFn                    = L"SetTargetLocation";
 inline constexpr const wchar_t* SetTargetLocationAndRotationFn         = L"SetTargetLocationAndRotation";
 inline constexpr const wchar_t* ReleaseComponentFn                     = L"ReleaseComponent";
@@ -441,31 +420,14 @@ inline constexpr const wchar_t* BreakConstraintFn                      = L"Break
 inline constexpr const wchar_t* PrimitiveComponentClass                = L"PrimitiveComponent";
 inline constexpr const wchar_t* AddImpulseFn                           = L"AddImpulse";
 
-// Secondary, the BP timeline and input level: the grabbed prop's identity is read from
-// mainPlayer_C.grabbing_actor inside the InpActEvt observer. The timeline name is content; the
-// "_41" K2Node ordinal is version-fragile (a BP recook can renumber it).
-inline constexpr const wchar_t* MainPlayerGrabUpdateFn       = L"grab__UpdateFunc";
-inline constexpr const wchar_t* MainPlayerGrabFinishedFn     = L"grab__FinishedFunc";
+// Secondary, the input level: the grabbed prop's identity is read from mainPlayer_C.grabbing_actor
+// inside the InpActEvt observer. The "_41" K2Node ordinal is version-fragile (a BP recook can
+// renumber it).
 inline constexpr const wchar_t* MainPlayerUseInputEventFn    = L"InpActEvt_use_K2Node_InputActionEvent_41";
-// The "use" action has three delegate bindings (mainPlayer.json Export 483): _41 = IE_Pressed
-// (the grab press intercepted), _38 = a second IE_Pressed, _42 = IE_Released; all three reach
-// useAction's `use_deny`, so the client suppresses the deny on the two extra seams too (a
-// side-effect-free cancel; _41 stays the sole intent sender). The ordinals are recook-fragile
-// (sdk_check flags it).
-inline constexpr const wchar_t* MainPlayerUseInputEventFn38  = L"InpActEvt_use_K2Node_InputActionEvent_38";
-inline constexpr const wchar_t* MainPlayerUseInputEventFn42R = L"InpActEvt_use_K2Node_InputActionEvent_42";
 // The LMB (fire) action: the native throw-when-holding seam (InpActEvt_fire -> throwHoldingProp),
 // separate from use/E. Two handlers (_58 press, _59 release); the client registers both and gates
 // on ClientCarryEid so only the edge that finds a live carry acts.
 inline constexpr const wchar_t* MainPlayerFireInputEventFn58 = L"InpActEvt_fire_K2Node_InputActionEvent_58";
-inline constexpr const wchar_t* MainPlayerFireInputEventFn59 = L"InpActEvt_fire_K2Node_InputActionEvent_59";
-// The flashlight: `updateFlashlight` is BP-inlined into `Flashlight Update` and never dispatches
-// through ProcessEvent, so a POST observer is registered on both. The outer name has a literal
-// space (mainPlayer.hpp:488 emits `void Flashlight Update();`) and the FName lookup matches that
-// exact string.
-inline constexpr const wchar_t* MainPlayerUpdateFlashlightFn = L"updateFlashlight";
-inline constexpr const wchar_t* MainPlayerFlashlightUpdateFn = L"Flashlight Update";
-
 // ULightComponent::SetIntensity(float) (Engine.hpp:13551), inherited by USpotLightComponent: the
 // receiver mirrors the sender's intensity on the puppet's light_R with it (the BP toggles
 // Intensity, not bVisible); it marks the render state dirty, which a direct field write does not.
@@ -475,18 +437,6 @@ inline constexpr const wchar_t* SetIntensityFn      = L"SetIntensity";
 // them to mirror the sender's cone; a direct field write leaves the proxy stale.
 inline constexpr const wchar_t* SetOuterConeAngleFn = L"SetOuterConeAngle";
 inline constexpr const wchar_t* SetInnerConeAngleFn = L"SetInnerConeAngle";
-
-// The F input events themselves: the engine input system always dispatches them as UFunctions
-// (the grab observer relies on the same shape). The K2Node ordinals (_13 / _14) are
-// version-fragile. Two events per input (press and release); both are observed and the sender
-// dedups on last-sent state.
-inline constexpr const wchar_t* MainPlayerFlashlightInput13Fn = L"InpActEvt_flashlight_K2Node_InputActionEvent_13";
-inline constexpr const wchar_t* MainPlayerFlashlightInput14Fn = L"InpActEvt_flashlight_K2Node_InputActionEvent_14";
-
-// timerHoldFlashlight fires when the player holds F long enough to switch the beam mode (spread
-// <-> focused); its BP body mutates `flashlightMode` and light_R's cone angles and intensity, and
-// a POST observer reads the post-mutation state to send the cone shape (mainPlayer.hpp:655).
-inline constexpr const wchar_t* MainPlayerTimerHoldFlashlightFn = L"timerHoldFlashlight";
 
 // The flashlight click is the USoundWave `/Game/audio/effects/flashlight.flashlight`; the receiver
 // plays it at the puppet's location through UGameplayStatics::PlaySoundAtLocation. Resolved by
@@ -619,10 +569,7 @@ inline constexpr const wchar_t* DirectionalWindClass = L"directionalWind_C";
 // The scheduler UFunctions: the client intercepts them (a PRE cancel) so it never decides "rain
 // now"; the host's POST observer reads the post-mutation cycle state and broadcasts WeatherState.
 inline constexpr const wchar_t* DaynightCycle_timerRainFn       = L"timerRain";
-inline constexpr const wchar_t* DaynightCycle_timerLightningFn  = L"timerLightning";
-inline constexpr const wchar_t* DaynightCycle_fogEventFn        = L"fogEvent";
 inline constexpr const wchar_t* DaynightCycle_superFogEventFn   = L"superFogEvent";
-inline constexpr const wchar_t* DaynightCycle_permaRainTimerFn  = L"permaRain_timer";
 
 // The mutator UFunctions the receiver invokes to apply the host's state: causeRain(bool) starts
 // or stops the visible rain; setRainProperties(bool, 4 floats) writes the scalar block and drives

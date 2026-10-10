@@ -21,6 +21,7 @@
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/script_gate.h"
 #include "ue_wrap/core/types.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <cstdint>
@@ -36,6 +37,10 @@ namespace GT = ue_wrap::game_thread;
 namespace E  = ue_wrap::engine;
 namespace PT = coop::prop_element_tracker;
 namespace sg = ue_wrap::script_gate;
+
+UE_FACT_FN(kRowCompUbergraph, "prop_stick_sync", L"comp_wallAttachable_C",
+           L"ExecuteUbergraph_comp_wallAttachable", Declared);
+UE_FACT_FN(kRowUnstick, "prop_stick_sync", L"comp_wallAttachable_C", L"unstick", Declared);
 
 std::atomic<coop::net::Session*> g_session{nullptr};
 // The two halves latch on their own. Signature drift (a recooked BP) latches a half
@@ -229,7 +234,8 @@ void DisableUnstickHalf() {
 }
 
 void InstallStickHalf() {
-    g_uberFn = R::FindFunction(g_compClass, L"ExecuteUbergraph_comp_wallAttachable");
+    const ue_wrap::facts::Resolved uber = ue_wrap::facts::Resolve(kRowCompUbergraph);
+    g_uberFn = uber.Fn();
     g_entryParamOff = g_uberFn ? R::FindParamOffset(g_uberFn, L"EntryPoint") : -1;
     g_forceStickFn = R::FindFunction(g_compClass, L"forceStick");
     g_skipHoldingOff = g_forceStickFn ? R::FindParamOffset(g_forceStickFn, L"skipHolding") : -1;
@@ -251,7 +257,7 @@ void InstallStickHalf() {
         DisableStickHalf();
         return;
     }
-    if (!GT::RegisterPostObserver(g_uberFn, &OnCompUbergraphPost)) {
+    if (!GT::RegisterPostObserver(uber, &OnCompUbergraphPost)) {
         UE_LOGE("prop_stick_sync: RegisterPostObserver failed (the observer table is full) -- stick half DISABLED");
         DisableStickHalf();
         return;
@@ -262,7 +268,8 @@ void InstallStickHalf() {
 }
 
 void InstallUnstickHalf() {
-    g_unstickFn = R::FindFunction(g_compClass, L"unstick");
+    const ue_wrap::facts::Resolved unstick = ue_wrap::facts::Resolve(kRowUnstick);
+    g_unstickFn = unstick.Fn();
     g_withToolOff = g_unstickFn ? R::FindParamOffset(g_unstickFn, L"withTool") : -1;
     if (!g_unstickFn || g_withToolOff < 0) {
         UE_LOGE("prop_stick_sync: unstick resolve failed (unstick=%p toolOff=%d) -- unstick half DISABLED (a "
@@ -278,7 +285,7 @@ void InstallUnstickHalf() {
         return;
     }
     // The gate refuses only a native or null function, a full table or a gate that never installed.
-    if (!sg::Watch(g_unstickFn, kTagUnstick, &OnUnstickPre, nullptr)) {
+    if (!sg::Watch(unstick, kTagUnstick, &OnUnstickPre, nullptr)) {
         UE_LOGE("prop_stick_sync: the script gate refused the unstick watch -- unstick half DISABLED");
         DisableUnstickHalf();
         return;

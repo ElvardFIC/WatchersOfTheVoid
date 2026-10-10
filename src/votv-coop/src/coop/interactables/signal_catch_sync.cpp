@@ -12,6 +12,7 @@
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/script_gate.h"
 #include "ue_wrap/desk/space_renderer.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <chrono>
@@ -96,8 +97,7 @@ bool CheckDeskInstance() {
 // It writes the signal data the save holds, which is no one's catch, so the detector takes it as its baseline, as it
 // takes our wire appliers' writes. Unprimed, a joiner's restore of the save's caught signal reads as the joiner's own
 // catch, and the host's replay of that catch resets the host's download and slews every dish.
-constexpr const wchar_t* kDeskClass = L"analogDScreenTest_C";
-constexpr const wchar_t* kRestoreName = L"setData";  // one pointer: the gate knows a watch by its literals
+UE_FACT_FN(kRowSetData, "signal_catch_sync", L"analogDScreenTest_C", L"setData", Declared);
 constexpr int kTagRestore = 0x53435230;  // 'SCR0'
 bool g_restoreWatched = false;
 bool g_restoreLive = false;
@@ -112,7 +112,7 @@ void OnRestorePost(const sg::Call&) {
 void WatchRestore() {
     if (g_restoreLive || g_restoreRefused) return;
     if (!g_restoreWatched) {
-        g_restoreWatched = sg::WatchClassName(kDeskClass, kRestoreName, kTagRestore, nullptr, &OnRestorePost);
+        g_restoreWatched = sg::WatchName(kRowSetData, kTagRestore, nullptr, &OnRestorePost);
         if (!g_restoreWatched) {
             g_restoreRefused = true;
             UE_LOGE("signal_catch: the gate took no watch on the desk's setData -- a joiner's restore reads as its "
@@ -121,10 +121,10 @@ void WatchRestore() {
         }
     }
     sg::ResolvePendingNames();
-    if (sg::ClassNameWatchLive(kDeskClass, kRestoreName, kTagRestore)) {
+    if (sg::NameWatchLive(kRowSetData, kTagRestore)) {
         g_restoreLive = true;
         UE_LOGI("signal_catch: the desk's restore from a save is watched");
-    } else if (sg::ClassNameWatchSettled(kDeskClass, kRestoreName, kTagRestore)) {
+    } else if (sg::NameWatchSettled(kRowSetData, kTagRestore)) {
         g_restoreRefused = true;
         UE_LOGE("signal_catch: the watch on the desk's setData settled dead -- a joiner's restore reads as its own "
                 "catch");

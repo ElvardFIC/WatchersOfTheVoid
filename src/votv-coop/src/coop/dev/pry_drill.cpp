@@ -19,6 +19,7 @@
 #include "ue_wrap/core/script_gate.h"
 #include "ue_wrap/engine/engine.h"
 #include "ue_wrap/engine/engine_attach.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <algorithm>
 #include <cmath>
@@ -55,6 +56,7 @@ constexpr float kWatchMoveCm     = 3.f;
 constexpr int   kRestMinTicks    = 30;
 constexpr int   kRestMaxTicks    = 600;   // ~10 s for a pried prop to come to rest
 constexpr int   kTagHint         = 0x48494E54;  // 'HINT'
+UE_FACT_FN(kRowAddHint, "dev.pry_drill", nullptr, L"addHint", AnyClass);
 
 float Dist(const ue_wrap::FVector& a, const ue_wrap::FVector& b) {
     const float dx = a.X - b.X, dy = a.Y - b.Y, dz = a.Z - b.Z;
@@ -310,7 +312,7 @@ bool IsEnabled() { return ArmOf() != Arm::Off; }
 
 void Tick(coop::net::Session* session) {
     if (!IsEnabled() || !session || !session->connected()) return;
-    if (!g_hintWatch) g_hintWatch = sg::WatchName(L"addHint", kTagHint, &OnHintPre, nullptr);
+    if (!g_hintWatch) g_hintWatch = sg::WatchName(kRowAddHint, kTagHint, &OnHintPre, nullptr);
     if (LocalActs()) {
         ActStep(*session);
         TickWatch(Who());
@@ -324,7 +326,7 @@ void Tick(coop::net::Session* session) {
             (!coop::net_pump::HasAnnouncedWorldReady() ||
              coop::join_progress::CurrentPhase() != coop::join_progress::Phase::Idle))
             return;
-        if (ArmOf() != Arm::Join && !sg::NameWatchLive(L"addHint", kTagHint)) return;
+        if (ArmOf() != Arm::Join && !sg::NameWatchLive(kRowAddHint, kTagHint)) return;
         ArmWatch(Who());
         if (ArmOf() != Arm::Join) RunHandUnstick(Who());
     }

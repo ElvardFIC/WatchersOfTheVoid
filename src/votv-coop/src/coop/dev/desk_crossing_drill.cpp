@@ -16,6 +16,7 @@
 #include "ue_wrap/desk/desk_detector.h"
 #include "ue_wrap/desk/saved_signals.h"
 #include "ue_wrap/desk/signal_dynamic.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <windows.h>
 
@@ -62,7 +63,13 @@ constexpr uint64_t kSaveBoundMs = 30000;
 
 // ---- the census: the loop resumes whose step crossed, the game's step cycles, autoSave entered and run ----
 
-constexpr const wchar_t* kDeskClass = L"analogDScreenTest_C";
+UE_FACT_FN(kRowExecuteUbergraphAnalogDScreenTest, "dev.desk_crossing_drill", L"analogDScreenTest_C",
+           L"ExecuteUbergraph_analogDScreenTest", Declared);
+UE_FACT_FN(kRowSetFullyProcessedSignalObject, "dev.desk_crossing_drill", L"analogDScreenTest_C",
+           L"setFullyProcessedSignalObject", Declared);
+UE_FACT_FN(kRowAutoSave, "dev.desk_crossing_drill", L"analogDScreenTest_C", L"autoSave", Declared);
+UE_FACT_FN(kRowDownloadPlaySignall, "dev.desk_crossing_drill", L"analogDScreenTest_C", L"download_playSignall",
+           Declared);
 constexpr int kTagUber = 0x44434430;   // 'DCD0'
 constexpr int kTagCycle = 0x44434431;  // 'DCD1'
 constexpr int kTagSave = 0x44434432;   // 'DCD2'
@@ -116,16 +123,17 @@ void OnSavePost(const sg::Call&) { ++g_census.autoSaveRan; }
 
 // Every census watch live: null; else the first function that is not.
 const wchar_t* CensusNotLive() {
-    const wchar_t* const names[4] = {L"ExecuteUbergraph_analogDScreenTest", L"setFullyProcessedSignalObject",
-                                     L"autoSave", L"download_playSignall"};
-    if (!g_watched[0]) g_watched[0] = sg::WatchClassName(kDeskClass, names[0], kTagUber, &OnUberPre, &OnUberPost);
-    if (!g_watched[1]) g_watched[1] = sg::WatchClassName(kDeskClass, names[1], kTagCycle, &OnCyclePre, nullptr);
-    if (!g_watched[2]) g_watched[2] = sg::WatchClassName(kDeskClass, names[2], kTagSave, &OnSavePre, &OnSavePost);
-    if (!g_watched[3]) g_watched[3] = sg::WatchClassName(kDeskClass, names[3], kTagPlay, &OnPlayPre, nullptr);
+    const ue_wrap::facts::Function* const rows[4] = {&kRowExecuteUbergraphAnalogDScreenTest,
+                                                     &kRowSetFullyProcessedSignalObject, &kRowAutoSave,
+                                                     &kRowDownloadPlaySignall};
+    if (!g_watched[0]) g_watched[0] = sg::WatchName(*rows[0], kTagUber, &OnUberPre, &OnUberPost);
+    if (!g_watched[1]) g_watched[1] = sg::WatchName(*rows[1], kTagCycle, &OnCyclePre, nullptr);
+    if (!g_watched[2]) g_watched[2] = sg::WatchName(*rows[2], kTagSave, &OnSavePre, &OnSavePost);
+    if (!g_watched[3]) g_watched[3] = sg::WatchName(*rows[3], kTagPlay, &OnPlayPre, nullptr);
     sg::ResolvePendingNames();
     const int tags[4] = {kTagUber, kTagCycle, kTagSave, kTagPlay};
     for (int i = 0; i < 4; ++i)
-        if (!g_watched[i] || !sg::ClassNameWatchLive(kDeskClass, names[i], tags[i])) return names[i];
+        if (!g_watched[i] || !sg::NameWatchLive(*rows[i], tags[i])) return rows[i]->Name();
     return nullptr;
 }
 

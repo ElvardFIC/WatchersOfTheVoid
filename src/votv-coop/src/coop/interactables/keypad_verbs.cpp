@@ -14,6 +14,7 @@
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/script_gate.h"
 #include "ue_wrap/devices/passwordlock.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <chrono>
@@ -36,15 +37,23 @@ using KeypadEvent = coop::net::KeypadEvent;
 // numpad's entry, watched for which key it got: its accept calls open(password == buffer), which a
 // copy whose digits are still crossing judges false, the same call its cancel makes. `post` marks the
 // verbs whose chain can settle at their own end: setActive's, a digit's and a reset's.
-struct VerbWatch { const wchar_t* name; int tag; KS::Verb verb; bool post; bool anyKey; };
-constexpr VerbWatch kWatches[] = {
-    { L"inputNumber",     0x4b50494e /*'KPIN'*/, KS::Verb::InputNumber, true,  false },
-    { L"open",            0x4b504f50 /*'KPOP'*/, KS::Verb::Open,        false, false },
-    { L"open2",           0x4b504f32 /*'KPO2'*/, KS::Verb::Open2,       false, false },
-    { L"reset",           0x4b505253 /*'KPRS'*/, KS::Verb::Reset,       true,  false },
-    { L"falseEnterEvent", 0x4b504645 /*'KPFE'*/, KS::Verb::FalseEnter,  false, false },
-    { L"setActive",       0x4b505341 /*'KPSA'*/, KS::Verb::SetActive,   true,  false },
-    { L"playerAnykey",    0x4b50414b /*'KPAK'*/, KS::Verb::InputNumber, false, true },
+UE_FACT_FN(kRowInputNumber, "keypad_verbs", nullptr, L"inputNumber", AnyClass);
+UE_FACT_FN(kRowOpen, "keypad_verbs", nullptr, L"open", AnyClass);
+UE_FACT_FN(kRowOpen2, "keypad_verbs", nullptr, L"open2", AnyClass);
+UE_FACT_FN(kRowReset, "keypad_verbs", nullptr, L"reset", AnyClass);
+UE_FACT_FN(kRowFalseEnterEvent, "keypad_verbs", nullptr, L"falseEnterEvent", AnyClass);
+UE_FACT_FN(kRowSetActive, "keypad_verbs", nullptr, L"setActive", AnyClass);
+UE_FACT_FN(kRowPlayerAnykey, "keypad_verbs", nullptr, L"playerAnykey", AnyClass);
+
+struct VerbWatch { const ue_wrap::facts::Function* row; int tag; KS::Verb verb; bool post; bool anyKey; };
+const VerbWatch kWatches[] = {
+    { &kRowInputNumber,     0x4b50494e /*'KPIN'*/, KS::Verb::InputNumber, true,  false },
+    { &kRowOpen,            0x4b504f50 /*'KPOP'*/, KS::Verb::Open,        false, false },
+    { &kRowOpen2,           0x4b504f32 /*'KPO2'*/, KS::Verb::Open2,       false, false },
+    { &kRowReset,           0x4b505253 /*'KPRS'*/, KS::Verb::Reset,       true,  false },
+    { &kRowFalseEnterEvent, 0x4b504645 /*'KPFE'*/, KS::Verb::FalseEnter,  false, false },
+    { &kRowSetActive,       0x4b505341 /*'KPSA'*/, KS::Verb::SetActive,   true,  false },
+    { &kRowPlayerAnykey,    0x4b50414b /*'KPAK'*/, KS::Verb::InputNumber, false, true },
 };
 constexpr int kWatchCount = static_cast<int>(sizeof(kWatches) / sizeof(kWatches[0]));
 
@@ -374,13 +383,13 @@ void OnVerbPost(const sg::Call& call) {
 void RegisterWatches() {
     for (int i = 0; i < kWatchCount; ++i) {
         if (g_reg[i] != Reg::Pending) continue;
-        if (sg::WatchName(kWatches[i].name, kWatches[i].tag, &OnVerbPre, kWatches[i].post ? &OnVerbPost : nullptr)) {
+        if (sg::WatchName(*kWatches[i].row, kWatches[i].tag, &OnVerbPre, kWatches[i].post ? &OnVerbPost : nullptr)) {
             g_reg[i] = Reg::Registered;
             continue;
         }
         g_reg[i] = Reg::Refused;
         UE_LOGE("[KEYPAD-VERB] the script-body gate refused the watch on '%ls' -- for the rest of this process "
-                "the keypad lane cannot see that verb", kWatches[i].name);
+                "the keypad lane cannot see that verb", kWatches[i].row->Name());
     }
 }
 
@@ -397,7 +406,7 @@ void Tick(coop::net::Session& session) {
         int live = 0, pending = 0;
         for (int i = 0; i < kWatchCount; ++i) {
             if (g_reg[i] == Reg::Pending) ++pending;
-            else if (g_reg[i] == Reg::Registered && sg::NameWatchLive(kWatches[i].name, kWatches[i].tag)) ++live;
+            else if (g_reg[i] == Reg::Registered && sg::NameWatchLive(*kWatches[i].row, kWatches[i].tag)) ++live;
         }
         if (live == kWatchCount) {
             g_settled = true;

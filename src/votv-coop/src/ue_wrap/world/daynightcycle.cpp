@@ -38,7 +38,6 @@ constexpr int32_t kTimeScaleOffFallback = 0x02B4;
 constexpr int32_t kMaxTimeOffFallback   = 0x02AC;
 constexpr int32_t kTimeZOffFallback     = 0x02D0;
 
-void* g_tickFn = nullptr;         // daynightCycle_C::ReceiveTick
 int32_t g_cycleGmOff = -1;        // AdaynightCycle_C::gamemode
 
 }  // namespace
@@ -75,7 +74,6 @@ bool EnsureResolved() {
     g_diffMultOff  = R::FindPropertyOffset(cls, L"diff_mult");
     g_settingMpOff = R::FindPropertyOffset(cls, L"settingMultiplayer");
     g_sleepDilOff  = R::FindPropertyOffset(cls, L"sleepingTimeDilation");
-    g_tickFn       = R::FindFunction(cls, L"ReceiveTick");
     g_cycleGmOff   = R::FindPropertyOffset(cls, L"gamemode");
     if (g_cycleGmOff < 0)
         UE_LOGW("daynightcycle: daynightCycle_C has no gamemode -- a ticked cycle's save slot and menu flag "
@@ -90,8 +88,6 @@ void* Cycle() {
     if (!EnsureResolved()) return nullptr;
     return world_singleton::Find(L"daynightCycle_C");
 }
-
-void* TickFunction() { return g_resolved.load(std::memory_order_acquire) ? g_tickFn : nullptr; }
 
 bool ReadClockOf(void* cycle, float& totalTime, float& day, float& timeScale) {
     if (!cycle || g_totalTimeOff < 0) return false;

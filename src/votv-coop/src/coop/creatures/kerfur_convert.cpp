@@ -18,6 +18,7 @@
 #include "ue_wrap/core/object_index.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/script_gate.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <cstdint>
@@ -56,6 +57,9 @@ void* g_spawnKerfuroFn     = nullptr;  // prop_kerfurOmega_C::spawnKerfuro (sole
 // This lane's gate watches on the two verbs; the form assembler keeps its own on the same names.
 constexpr const wchar_t* kTurnOffVerb = L"dropKerfurProp";
 constexpr const wchar_t* kTurnOnVerb  = L"spawnKerfuro";
+UE_FACT_FN(kRowActionName, "kerfur_convert", L"kerfurOmega_C", L"actionName", Declared);
+UE_FACT_FN(kRowDropKerfurProp, "kerfur_convert", nullptr, L"dropKerfurProp", AnyClass);
+UE_FACT_FN(kRowSpawnKerfuro, "kerfur_convert", nullptr, L"spawnKerfuro", AnyClass);
 constexpr int kWatchTurnOff = 0x4B430001;  // 'KC' 1
 constexpr int kWatchTurnOn  = 0x4B430002;
 
@@ -199,8 +203,9 @@ void Install(coop::net::Session* session) {
     // re-resolving.
     coop::kerfur_entity::SetKerfurClasses(g_kerfurNpcClass, g_kerfurPropClass);
 
+    const ue_wrap::facts::Resolved actionNameRow = ue_wrap::facts::Resolve(kRowActionName);
     if (!g_actionNameFn) {
-        g_actionNameFn = R::FindFunction(g_kerfurNpcClass, L"actionName");
+        g_actionNameFn = actionNameRow.Fn();
         if (g_actionNameFn) {
             g_nameParamOff = R::FindParamOffset(g_actionNameFn, L"name");
         }
@@ -231,7 +236,7 @@ void Install(coop::net::Session* session) {
     }
 
     // The relay's interceptor on the menu dispatcher.
-    if (!GT::RegisterInterceptor(g_actionNameFn, &OnKerfurActionNamePre)) {
+    if (!GT::RegisterInterceptor(actionNameRow, &OnKerfurActionNamePre)) {
         UE_LOGE("kerfur_convert: RegisterInterceptor(actionName) failed (the interceptor table is full) "
                 "-- module DISABLED");
         return;
@@ -239,8 +244,8 @@ void Install(coop::net::Session* session) {
     // The verbs themselves, at the gate: a name watch fires for a collar variant's own override as for
     // the base's. The name resolves on the game thread (kerfur_form_assembler's tick drives the gate's
     // pending names); a refused registration is a full table, logged by the gate.
-    const bool off = sg::WatchName(kTurnOffVerb, kWatchTurnOff, &OnVerbPre, &OnVerbPost);
-    const bool on  = sg::WatchName(kTurnOnVerb,  kWatchTurnOn,  &OnVerbPre, &OnVerbPost);
+    const bool off = sg::WatchName(kRowDropKerfurProp, kWatchTurnOff, &OnVerbPre, &OnVerbPost);
+    const bool on  = sg::WatchName(kRowSpawnKerfuro, kWatchTurnOn, &OnVerbPre, &OnVerbPost);
     if (!off || !on) {
         UE_LOGE("kerfur_convert: the gate refused a verb watch (turn_off=%d turn-on=%d) -- module DISABLED",
                 off ? 1 : 0, on ? 1 : 0);

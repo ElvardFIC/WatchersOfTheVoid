@@ -26,6 +26,7 @@
 #include "ue_wrap/core/ufunction_hook.h"
 #include "ue_wrap/core/script_gate.h"
 #include "ue_wrap/engine/engine.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <chrono>
@@ -46,10 +47,12 @@ namespace sg = ue_wrap::script_gate;
 
 }  // namespace
 
-// The two verb names both lanes key on, declared extern in coingun_internal.h; the name is the
-// handle, never the id or the active flag.
-const wchar_t* const kVerbNameGunUse  = L"playerHandUse_LMB";
+// The collect lane's verb name, declared extern in coingun_internal.h; the name is the handle, never the
+// id or the active flag. The shot's is its row's.
 const wchar_t* const kVerbNameCollect = L"actionOptionIndex";
+
+UE_FACT_FN(kRowPlayerHandUseLmb, "coingun_sync", nullptr, L"playerHandUse_LMB", AnyClass);
+UE_FACT_FN(kRowFinishSpawningActor, "coingun_sync", L"GameplayStatics", L"FinishSpawningActor", Declared);
 
 namespace {
 
@@ -61,7 +64,7 @@ std::atomic<bool> g_verbRegistered{false};
 
 // Resolved once at Install. The two classes are kept for the process: both are imports of the props
 // table, loaded with the boot menu, and a measured same-process rejoin kept each one's class object.
-void* g_finishSpawnFn = nullptr;
+ue_wrap::facts::Resolved g_finishSpawn;
 void* g_coinClass     = nullptr;
 void* g_gunClass      = nullptr;   // prop_coingun_C, the context gate
 
@@ -139,7 +142,7 @@ void OnFinishSpawnPost(void* /*context*/, void* /*sourceObject*/, void* spawned)
     if (!isClient) return;                       // the HOST's coins are the real ones -- never touch
 
     const sg::Active av = sg::CurrentThreadCall();
-    const bool inGunVerb = InVerb(av, kVerbNameGunUse);
+    const bool inGunVerb = InVerb(av, kRowPlayerHandUseLmb.Name());
 
     if (inGunVerb) {
         {
@@ -345,7 +348,7 @@ void DescribeCoin(void* coin, int32_t& outPoints, std::wstring& outMaterial) {
 
 bool IsInCoinGunVerb() {
     const sg::Active av = sg::CurrentThreadCall();
-    if (!InVerb(av, kVerbNameGunUse)) return false;
+    if (!InVerb(av, kRowPlayerHandUseLmb.Name())) return false;
     // The correctness gate: a name watch matches on the verb name alone, and playerHandUse_LMB is
     // declared by every hand-usable tool (the knife, the hacksaw, the flamethrower, the toolgun);
     // without this a client destroying a keyed prop with any of them would author a sale and the
@@ -529,15 +532,14 @@ void Install(coop::net::Session* session) {
     if ((sResolveN++ % 125u) != 0u) return;
 
     internal::InstallArbiter();   // the HOST half's own resolves, inside this same throttle
-    if (!g_finishSpawnFn) g_finishSpawnFn = R::FindFunction(R::FindClass(L"GameplayStatics"),
-                                                            L"FinishSpawningActor");
+    if (!g_finishSpawn) g_finishSpawn = ue_wrap::facts::Resolve(kRowFinishSpawningActor);
     // The gun verb resolves its name on the game thread, so the pending resolves are driven every
     // Install; the collect verb has its own registration in the collect lane.
     if (!g_verbRegistered.load(std::memory_order_acquire)) {
-        if (sg::WatchName(kVerbNameGunUse, kVerbCoinGunUse, &OnVerbEntry, nullptr)) {
+        if (sg::WatchName(kRowPlayerHandUseLmb, kVerbCoinGunUse, &OnVerbEntry, nullptr)) {
             g_verbRegistered.store(true, std::memory_order_release);
             UE_LOGI("coingun[sale]: watching the verb '%ls' (tag=%d) at the script-body gate",
-                    kVerbNameGunUse, kVerbCoinGunUse);
+                    kRowPlayerHandUseLmb.Name(), kVerbCoinGunUse);
         }
     }
     sg::ResolvePendingNames();
@@ -552,9 +554,9 @@ void Install(coop::net::Session* session) {
     // not depend on; a client whose lib_C CDO never resolves gets no barrier. Filed as its own
     // item.
     // The gun class too: the verb's gate reads it, and nothing resolves it once this is done.
-    if (!g_coinClass || !g_gunClass || !g_finishSpawnFn || !internal::ArbiterResolved()) return;
+    if (!g_coinClass || !g_gunClass || !g_finishSpawn || !internal::ArbiterResolved()) return;
 
-    if (!ue_wrap::ufunction_hook::InstallPostHook(g_finishSpawnFn, &OnFinishSpawnPost)) {
+    if (!ue_wrap::ufunction_hook::InstallPostHook(g_finishSpawn, &OnFinishSpawnPost)) {
         UE_LOGE("coingun[sale]: FinishSpawningActor POST install FAILED -- the client-coin barrier is "
                 "DISABLED, so a client's own coins would survive its shot");
         return;

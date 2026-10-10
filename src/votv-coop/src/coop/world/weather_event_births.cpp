@@ -11,6 +11,7 @@
 #include "ue_wrap/core/sdk_profile.h"
 #include "ue_wrap/core/ufunction_hook.h"
 #include "ue_wrap/engine/engine.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <cstdint>
@@ -22,6 +23,9 @@ namespace P  = ue_wrap::profile;
 namespace R  = ue_wrap::reflection;
 namespace GT = ue_wrap::game_thread;
 namespace E  = ue_wrap::engine;
+
+UE_FACT_FN(kRowFinishSpawningActor, "weather_event_births", L"GameplayStatics", L"FinishSpawningActor",
+           Declared);
 
 std::atomic<coop::net::Session*> g_session{nullptr};
 std::atomic<bool> g_isClient{false};
@@ -93,9 +97,7 @@ bool Install(coop::net::Session* session, bool isHost) {
         g_namesMinted = true;
     }
     if (!g_hookInstalled) {
-        void* statics = R::FindClassDefaultObject(P::name::GameplayStaticsClass);
-        void* cls = statics ? R::ClassOf(statics) : nullptr;
-        void* fn = cls ? R::FindFunction(cls, P::name::FinishSpawningActorFn) : nullptr;
+        const ue_wrap::facts::Resolved fn = ue_wrap::facts::Resolve(kRowFinishSpawningActor);
         if (!fn) return false;
         if (!ue_wrap::ufunction_hook::InstallPostHook(fn, &OnFinishSpawnPost)) {
             UE_LOGW("weather_births: FinishSpawningActor POST hook install FAILED -- retrying");

@@ -9,6 +9,7 @@
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/sdk_profile.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <chrono>
@@ -21,6 +22,8 @@ namespace P  = ue_wrap::profile;
 namespace R  = ue_wrap::reflection;
 namespace GT = ue_wrap::game_thread;
 namespace E  = ue_wrap::engine;
+
+UE_FACT_FN(kRowSpawnFog, "weather_fog", L"daynightCycle_C", L"spawnFog", Declared);
 
 // Resolved once. spawnFog spawns the fog controller into the cycle's fog slot and drives the
 // height-fog density; SetFogDensity pushes the final density into the cycle's height-fog
@@ -120,8 +123,9 @@ bool Install(bool isHost) {
 
     void* cls = R::FindClass(P::name::DaynightCycleClass);
     if (!cls) return false;  // cycle class not loaded yet -- retry next tick.
-    if (!g_spawnFogFn) g_spawnFogFn = R::FindFunction(cls, P::name::DaynightCycle_spawnFogFn);
-    if (!g_spawnFogFn) return false;
+    const ue_wrap::facts::Resolved spawnFog = ue_wrap::facts::Resolve(kRowSpawnFog);
+    g_spawnFogFn = spawnFog.Fn();
+    if (!spawnFog) return false;
     // SetFogDensity for the late-joiner density snap; best effort, since an unresolved verb only
     // delays the snapped density to the cycle's next tick.
     if (!g_setFogDensityFn) g_setFogDensityFn = R::FindFunction(cls, P::name::DaynightCycle_setFogDensityFn);
@@ -130,7 +134,7 @@ bool Install(bool isHost) {
     // pass-through on the host). Do not latch installed until it succeeds: a silently dropped
     // registration would leave a client able to make uncommanded fog, so return false to retry.
     if (!g_clientInterceptorReg) {
-        if (!GT::RegisterInterceptor(g_spawnFogFn, &OnSpawnFogPreSuppress)) {
+        if (!GT::RegisterInterceptor(spawnFog, &OnSpawnFogPreSuppress)) {
             UE_LOGW("weather_fog: spawnFog interceptor registration FAILED (table full?) "
                     "-- NOT latching; retry next tick");
             return false;

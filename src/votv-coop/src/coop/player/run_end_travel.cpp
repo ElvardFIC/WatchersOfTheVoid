@@ -25,6 +25,7 @@
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/script_gate.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <windows.h>
 
@@ -40,8 +41,8 @@ namespace sg = ue_wrap::script_gate;
 // The single travel author in the game: lib_C::loadLevel. A NAME watch rather than an exact one,
 // because `lib_C` is a BlueprintFunctionLibrary whose class loads with the first level and whose
 // UFunction address is not stable across a level reload; the name matches whatever declares it.
-constexpr const wchar_t* kLoadLevelName = L"loadLevel";
-constexpr int            kLoadLevelTag  = 0x52554E45;  // 'RUNE'
+UE_FACT_FN(kRowLoadLevel, "run_end_travel", nullptr, L"loadLevel", AnyClass);
+constexpr int kLoadLevelTag = 0x52554E45;  // 'RUNE'
 
 // The level every run-ending travel names.
 constexpr const wchar_t* kMenuLevel = L"menu";
@@ -248,20 +249,20 @@ void Install(coop::net::Session* session) {
     // while the name is pending, and stops for good once the watch is live.
     if (!g_seamLive.load(std::memory_order_acquire)) {
         sg::ResolvePendingNames();
-        if (sg::NameWatchLive(kLoadLevelName, kLoadLevelTag)) {
+        if (sg::NameWatchLive(kRowLoadLevel, kLoadLevelTag)) {
             g_seamLive.store(true, std::memory_order_release);
             UE_LOGI("run_end_travel: the watch on lib_C::%ls is LIVE -- from here a run-ending "
-                    "travel is judged, so a death can be answered", kLoadLevelName);
+                    "travel is judged, so a death can be answered", kRowLoadLevel.Name());
         }
     }
     if (g_watchInstalled.load(std::memory_order_acquire)) return;
     // A name watch registers immediately and the gate resolves the name itself on the game
     // thread, so there is nothing to wait for and no retry throttle to own.
-    if (sg::WatchName(kLoadLevelName, kLoadLevelTag, &OnLoadLevelPre, nullptr)) {
+    if (sg::WatchName(kRowLoadLevel, kLoadLevelTag, &OnLoadLevelPre, nullptr)) {
         g_watchInstalled.store(true, std::memory_order_release);
         UE_LOGI("run_end_travel: watching lib_C::%ls at the script-body gate -- the game's only "
                 "travel author, and the only place a travel still carries its own author",
-                kLoadLevelName);
+                kRowLoadLevel.Name());
     }
 }
 

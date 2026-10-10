@@ -12,6 +12,7 @@
 #include "ue_wrap/desk/comp_pane.h"
 #include "ue_wrap/desk/console_desk.h"
 #include "ue_wrap/desk/signal_dynamic.h"
+#include "ue_wrap/facts/function_row.h"
 #include "ue_wrap/world/profile.h"
 
 #include <atomic>
@@ -276,8 +277,11 @@ void OnCalcPost(const sg::Call& c) {
     ++g_counts.processedSent;
 }
 
+UE_FACT_FN(kRowCompStart, "comp_sync", L"analogDScreenTest_C", L"comp_start", Declared);
+UE_FACT_FN(kRowCalculateComp, "comp_sync", L"analogDScreenTest_C", L"calculate_comp", Declared);
+
 struct CompWatch {
-    const wchar_t* name;
+    const ue_wrap::facts::Function* row;
     int            tag;
     sg::PreFn      pre;
     sg::PostFn     post;
@@ -287,10 +291,10 @@ struct CompWatch {
     bool           dead;
 };
 CompWatch g_watches[] = {
-    {CMP::kCompStart, 0x434D5030, &OnStartPre, &OnStartPost,
+    {&kRowCompStart, 0x434D5030, &OnStartPre, &OnStartPost,
      "a client's refiner latches on its restore and decodes beside the host's, and a client's decode is the host's",
      false, false, false},  // 'CMP0'
-    {CMP::kCalculateComp, 0x434D5031, &OnCalcPre, &OnCalcPost,
+    {&kRowCalculateComp, 0x434D5031, &OnCalcPre, &OnCalcPost,
      "a completion reaches the mirrors only as an edge, and a client's gloss and processed signal stay on the "
      "host's profile", false, false, false},  // 'CMP1'
 };
@@ -300,21 +304,21 @@ void Register() {
     if (g_settled) return;
     for (CompWatch& w : g_watches) {
         if (w.registered || w.dead) continue;
-        w.registered = sg::WatchClassName(CMP::kDeskClass, w.name, w.tag, w.pre, w.post);
+        w.registered = sg::WatchName(*w.row, w.tag, w.pre, w.post);
         if (!w.registered) {
             w.dead = true;
-            UE_LOGE("comp_sync: the gate took no watch on %ls::%ls -- %s", CMP::kDeskClass, w.name, w.loss);
+            UE_LOGE("comp_sync: the gate took no watch on %ls::%ls -- %s", w.row->Class(), w.row->Name(), w.loss);
         }
     }
     sg::ResolvePendingNames();
     bool settled = true;
     for (CompWatch& w : g_watches) {
         if (w.dead || w.live) continue;
-        if (sg::ClassNameWatchLive(CMP::kDeskClass, w.name, w.tag)) {
+        if (sg::NameWatchLive(*w.row, w.tag)) {
             w.live = true;
-        } else if (sg::ClassNameWatchSettled(CMP::kDeskClass, w.name, w.tag)) {
+        } else if (sg::NameWatchSettled(*w.row, w.tag)) {
             w.dead = true;
-            UE_LOGE("comp_sync: the watch on %ls::%ls settled dead -- %s", CMP::kDeskClass, w.name, w.loss);
+            UE_LOGE("comp_sync: the watch on %ls::%ls settled dead -- %s", w.row->Class(), w.row->Name(), w.loss);
         } else {
             settled = false;
         }

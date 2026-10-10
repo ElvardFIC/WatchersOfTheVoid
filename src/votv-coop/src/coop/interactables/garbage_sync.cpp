@@ -22,6 +22,7 @@
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/object_index.h"
 #include "ue_wrap/core/reflection.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <string>
@@ -143,12 +144,18 @@ bool OnBaseCleanerTrashBitsBeginPlayPre(void* self, void* /*params*/) {
 // not pre-empt the other's retry loop.
 std::atomic<bool> g_spawnersInstalled{false};
 
+UE_FACT_FN(kRowTrashPilesOverlap, "garbage_sync", L"event_trashPiles_C",
+           L"BndEvt__event_funnyGascans_Box_K2Node_ComponentBoundEvent_0_ComponentBeginOverlapSignature__DelegateSignature",
+           Dispatch);
+UE_FACT_FN(kRowArirTrasherTrash, "garbage_sync", L"arirTrasher_C", L"trash", Dispatch);
+UE_FACT_FN(kRowTrashBitsBeginPlay, "garbage_sync", L"baseCleaner_trashBits_C", L"ReceiveBeginPlay", Dispatch);
+UE_FACT_FN(kRowReceiveTick, "garbage_sync", L"prop_garbageContainer_C", L"ReceiveTick", Dispatch);
+
 bool InstallSpawnerSuppressors() {
     if (g_spawnersInstalled.load(std::memory_order_acquire)) return true;
     using ue_wrap::game_thread::UFunctionInterceptor;
     struct Target {
-        const wchar_t* cls;
-        const wchar_t* fn;
+        const ue_wrap::facts::Function* row;
         UFunctionInterceptor cb;
         const char* tag;
         bool settled;     // registered, or refused for good: a settled row is not tried again
@@ -165,14 +172,13 @@ bool InstallSpawnerSuppressors() {
     // The declarer being the base means one UFunction serves all four cleaners, so the callback
     // filters on the instance; the comment above it says why the family is the wrong scope.
     static Target targets[] = {
-        {L"event_trashPiles_C",
-            L"BndEvt__event_funnyGascans_Box_K2Node_ComponentBoundEvent_0_ComponentBeginOverlapSignature__DelegateSignature",
+        {&kRowTrashPilesOverlap,
             &OnEventTrashPilesOverlapPre,
             "event_trashPiles.BndEvt", false, false},
-        {L"arirTrasher_C", L"trash",
+        {&kRowArirTrasherTrash,
             &OnArirTrasherTrashPre,
             "arirTrasher.trash", false, false},
-        {L"baseCleaner_trashBits_C", L"ReceiveBeginPlay",
+        {&kRowTrashBitsBeginPlay,
             &OnBaseCleanerTrashBitsBeginPlayPre,
             "baseCleaner_trashBits.BeginPlay", false, false},
     };
@@ -180,20 +186,20 @@ bool InstallSpawnerSuppressors() {
     for (auto& t : targets) {
         if (t.settled) { ++settled; continue; }
         // One index probe while the class is not loaded; the next call asks again.
-        void* cls = ue_wrap::object_index::ClassByName(t.cls);
+        void* cls = ue_wrap::object_index::ClassByName(t.row->Class());
         if (!cls) continue;
         // A Blueprint class loads with its functions, so from here the row settles either way: a
         // missing name is a recooked Blueprint, and a full table is a capacity fault to fix, not a
         // slot to wait for.
         t.settled = true;
         ++settled;
-        void* declarer = nullptr;
-        void* fn = R::FindDispatchFunction(cls, t.fn, &declarer);
+        const ue_wrap::facts::Resolved fn = ue_wrap::facts::Resolve(*t.row);
         if (!fn) {
             UE_LOGW("garbage_sync[spawner]: UFunction '%ls' not found on %ls or its supers -- that "
-                    "spawner runs on a client", t.fn, t.cls);
+                    "spawner runs on a client", t.row->Name(), t.row->Class());
             continue;
         }
+        void* const declarer = R::OuterOf(fn.Fn());  // the class the dispatch climb stopped on
         // The class its callback filters on, captured from the row that owns it -- not a second
         // lookup, which would be another walk of the object array.
         if (t.cb == &OnBaseCleanerTrashBitsBeginPlayPre) g_trashBitsCleanerCls = cls;
@@ -203,16 +209,16 @@ bool InstallSpawnerSuppressors() {
             // sibling class gets cancelled by accident.
             UE_LOGI("garbage_sync[spawner]: %ls::%ls is declared on %ls -- one object for that "
                     "family, so the callback filters on the instance",
-                    t.cls, t.fn, R::ToString(R::NameOf(declarer)).c_str());
+                    t.row->Class(), t.row->Name(), R::ToString(R::NameOf(declarer)).c_str());
         }
         if (!GT::RegisterInterceptor(fn, t.cb)) {
             UE_LOGE("garbage_sync[spawner]: RegisterInterceptor failed for %ls::%ls (the interceptor "
-                    "table is full) -- that spawner runs on a client", t.cls, t.fn);
+                    "table is full) -- that spawner runs on a client", t.row->Class(), t.row->Name());
             continue;
         }
         t.registered = true;
         UE_LOGI("garbage_sync[spawner]: PRE-interceptor installed -- %ls::%ls (%s)",
-                t.cls, t.fn, t.tag);
+                t.row->Class(), t.row->Name(), t.tag);
     }
     // Latched once every row has settled. Install drives this half on its own until then: it used
     // to be called only from the tail of the container install, which had already latched and
@@ -248,13 +254,13 @@ void Install() {
     // Settled from here, as a spawner row is above.
     g_installed.store(true, std::memory_order_release);
     g_garbageContainerCls = garbageCls;
-    void* declarer = nullptr;
-    void* tickFn = R::FindDispatchFunction(garbageCls, L"ReceiveTick", &declarer);
+    const ue_wrap::facts::Resolved tickFn = ue_wrap::facts::Resolve(kRowReceiveTick);
     if (!tickFn) {
         UE_LOGW("garbage_sync: ReceiveTick not found on prop_garbageContainer_C or its supers -- "
                 "BP class loaded but missing the expected name; the container runs on a client");
         return;
     }
+    void* const declarer = R::OuterOf(tickFn.Fn());  // the class the dispatch climb stopped on
     if (declarer != garbageCls) {
         UE_LOGI("garbage_sync: ReceiveTick is declared on %ls -- one object for that family, so the "
                 "callback filters on the instance",

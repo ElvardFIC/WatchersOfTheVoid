@@ -10,6 +10,7 @@
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/sdk_profile.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <chrono>
@@ -22,6 +23,9 @@ namespace {
 namespace R  = ue_wrap::reflection;
 namespace GT = ue_wrap::game_thread;
 namespace P  = ue_wrap::profile;
+
+UE_FACT_FN(kRowUseInputEvent, "kerfur_menu_input", L"mainPlayer_C", L"InpActEvt_use_K2Node_InputActionEvent_41",
+           Declared);
 
 std::atomic<coop::net::Session*> g_session{nullptr};
 bool g_installed = false;  // observer-registration latch (the cb stays registered for process life)
@@ -93,7 +97,7 @@ void Install(coop::net::Session* session) {
     if (g_installed) return;
     void* cls = R::FindClass(P::name::MainPlayerClass);
     if (!cls) return;  // mainPlayer_C not loaded yet -> retry on the next world-gated Install
-    void* fn = R::FindFunction(cls, P::name::MainPlayerUseInputEventFn);
+    const ue_wrap::facts::Resolved fn = ue_wrap::facts::Resolve(kRowUseInputEvent);
     if (!fn) {
         UE_LOGW("kerfur_menu_input: InpActEvt_use UFunction not found -- client kerfur menu verbs cannot be relayed");
         g_installed = true;  // permanent give-up (don't re-walk the class forever)

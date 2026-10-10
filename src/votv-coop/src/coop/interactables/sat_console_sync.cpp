@@ -16,6 +16,7 @@
 #include "ue_wrap/desk/console_desk.h"  // Instance: the desk a host terminal names as its panel
 #include "ue_wrap/desk/dish.h"          // IndexOf, DishByIndex, Count
 #include "ue_wrap/desk/sat_console.h"
+#include "ue_wrap/facts/function_row.h"
 #include "ue_wrap/engine/world_identity.h"
 
 #include <atomic>
@@ -57,6 +58,9 @@ constexpr auto   kResendEvery    = std::chrono::milliseconds(250);  // a refused
 const wchar_t* const kBusyLine = L"<r>The terminal is busy</>";  // the game's answer to a line it cannot take
 const wchar_t* const kErrLine  = L"<r>err</>";                   // the game's answer to a line it cannot run
 
+UE_FACT_FN(kRowEnterCommand, "sat_console_sync", L"ui_console_C", L"enterCommand", Declared);
+UE_FACT_FN(kRowUbergraph, "sat_console_sync", L"ui_console_C", L"ExecuteUbergraph_ui_console", Declared);
+UE_FACT_FN(kRowWriteToLog, "sat_console_sync", L"ui_console_C", L"writeToLog", Declared);
 constexpr int kTagEnter = 0x53434E45;  // 'SCNE'
 constexpr int kTagWrite = 0x53434E57;  // 'SCNW'
 constexpr int kTagGraph = 0x53434E47;  // 'SCNG'
@@ -478,13 +482,13 @@ void OnBodyPost(const sg::Call& c) {
 void EnsureWatched() {
     if (g_watched) return;
     g_watched = true;
-    const bool enter = sg::WatchClassName(SC::kTerminalClass, SC::kEnterCommand, kTagEnter, OnEnterPre, OnBodyPost);
-    const bool graph = sg::WatchClassName(SC::kTerminalClass, SC::kUbergraph, kTagGraph, nullptr, OnBodyPost);
-    const bool write = sg::WatchClassName(SC::kTerminalClass, SC::kWriteToLog, kTagWrite, OnWritePre, nullptr);
+    const bool enter = sg::WatchName(kRowEnterCommand, kTagEnter, OnEnterPre, OnBodyPost);
+    const bool graph = sg::WatchName(kRowUbergraph, kTagGraph, nullptr, OnBodyPost);
+    const bool write = sg::WatchName(kRowWriteToLog, kTagWrite, OnWritePre, nullptr);
     if (enter && graph && write) return;
-    if (enter) sg::UnwatchClassName(SC::kTerminalClass, SC::kEnterCommand, kTagEnter, OnEnterPre, OnBodyPost);
-    if (graph) sg::UnwatchClassName(SC::kTerminalClass, SC::kUbergraph, kTagGraph, nullptr, OnBodyPost);
-    if (write) sg::UnwatchClassName(SC::kTerminalClass, SC::kWriteToLog, kTagWrite, OnWritePre, nullptr);
+    if (enter) sg::UnwatchName(kRowEnterCommand, kTagEnter, OnEnterPre, OnBodyPost);
+    if (graph) sg::UnwatchName(kRowUbergraph, kTagGraph, nullptr, OnBodyPost);
+    if (write) sg::UnwatchName(kRowWriteToLog, kTagWrite, OnWritePre, nullptr);
     UE_LOGE("sat_console: a terminal watch did not register -- none kept, the SAT console's lines run where typed");
 }
 

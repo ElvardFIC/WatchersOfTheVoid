@@ -12,6 +12,7 @@
 #include "ue_wrap/core/script_gate.h"
 #include "ue_wrap/desk/console_desk.h"
 #include "ue_wrap/desk/dish.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <chrono>
@@ -26,11 +27,9 @@ namespace D  = ue_wrap::dish;
 namespace R  = ue_wrap::reflection;
 namespace sg = ue_wrap::script_gate;
 
-const wchar_t* const kDeskClass   = L"analogDScreenTest_C";
-const wchar_t* const kGameClass   = L"mainGamemode_C";
-const wchar_t* const kFormVerb    = L"formDownload";
-const wchar_t* const kInitVerb    = L"initDownloadSignal";
-const wchar_t* const kDeleteVerb  = L"deleteActiveSignal";
+UE_FACT_FN(kRowFormDownload, "download_arm_sync", L"analogDScreenTest_C", L"formDownload", Declared);
+UE_FACT_FN(kRowInitDownloadSignal, "download_arm_sync", L"analogDScreenTest_C", L"initDownloadSignal", Declared);
+UE_FACT_FN(kRowDeleteActiveSignal, "download_arm_sync", L"mainGamemode_C", L"deleteActiveSignal", Declared);
 constexpr int kTagForm   = 0x44414631;  // 'DAF1'
 constexpr int kTagInit   = 0x44414932;  // 'DAI2'
 constexpr int kTagDelete = 0x44414434;  // 'DAD4'
@@ -104,7 +103,7 @@ sg::Verdict RefuseOwn(const sg::Call& call, const wchar_t* verb) {
 
 sg::Verdict OnFormPre(const sg::Call& call) {
     if (!ClientSession()) return sg::Verdict::Run;
-    if (!g_replay.active) return RefuseOwn(call, kFormVerb);
+    if (!g_replay.active) return RefuseOwn(call, kRowFormDownload.Name());
     if (!g_replay.arm) return sg::Verdict::Run;
     CD::WriteFormDownloadArgs(call.function, call.locals, g_replay.decoded, g_replay.polarity) ? ++g_replay.written
                                                                                                : ++g_replay.unwritten;
@@ -122,7 +121,7 @@ sg::Verdict OnInitPre(const sg::Call& call) {
 
 sg::Verdict OnDeletePre(const sg::Call& call) {
     if (!ClientSession() || g_replay.active) return sg::Verdict::Run;
-    return RefuseOwn(call, kDeleteVerb);
+    return RefuseOwn(call, kRowDeleteActiveSignal.Name());
 }
 
 void SendRow(coop::net::Session* s, bool armed, int toSlot) {
@@ -166,8 +165,7 @@ void OnDeletePost(const sg::Call&) {
 
 // The three watches, each registered once and driven to settled; one refused by a full table is said once.
 struct Watch {
-    const wchar_t* cls;
-    const wchar_t* fn;
+    const ue_wrap::facts::Function* row;
     int            tag;
     sg::PreFn      pre;
     sg::PostFn     post;
@@ -175,9 +173,9 @@ struct Watch {
     bool           settled = false;
 };
 Watch g_watches[] = {
-    {kDeskClass, kFormVerb, kTagForm, &OnFormPre, &OnFormPost},
-    {kDeskClass, kInitVerb, kTagInit, &OnInitPre, nullptr},
-    {kGameClass, kDeleteVerb, kTagDelete, &OnDeletePre, &OnDeletePost},
+    {&kRowFormDownload, kTagForm, &OnFormPre, &OnFormPost},
+    {&kRowInitDownloadSignal, kTagInit, &OnInitPre, nullptr},
+    {&kRowDeleteActiveSignal, kTagDelete, &OnDeletePre, &OnDeletePost},
 };
 bool g_watchesSettled = false;
 
@@ -188,19 +186,19 @@ void DriveWatches() {
     for (Watch& w : g_watches) {
         if (w.settled) continue;
         if (!w.registered) {
-            w.registered = sg::WatchClassName(w.cls, w.fn, w.tag, w.pre, w.post);
+            w.registered = sg::WatchName(*w.row, w.tag, w.pre, w.post);
             if (!w.registered) {
                 w.settled = true;
                 UE_LOGE("download_arm: the gate took no watch on %ls::%ls -- that half of the machine is not the host's",
-                        w.cls, w.fn);
+                        w.row->Class(), w.row->Name());
                 continue;
             }
         }
-        if (sg::ClassNameWatchSettled(w.cls, w.fn, w.tag)) {
+        if (sg::NameWatchSettled(*w.row, w.tag)) {
             w.settled = true;
-            if (sg::ClassNameWatchLive(w.cls, w.fn, w.tag)) UE_LOGI("download_arm: the watch on %ls::%ls is live", w.cls, w.fn);
+            if (sg::NameWatchLive(*w.row, w.tag)) UE_LOGI("download_arm: the watch on %ls::%ls is live", w.row->Class(), w.row->Name());
             else UE_LOGE("download_arm: the watch on %ls::%ls settled dead -- that half of the machine is not the host's",
-                         w.cls, w.fn);
+                         w.row->Class(), w.row->Name());
             continue;
         }
         all = false;

@@ -12,6 +12,7 @@
 #include "ue_wrap/core/object_index.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/sdk_profile.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <cstdint>
@@ -29,9 +30,13 @@ namespace GT = ue_wrap::game_thread;
 // pattern.
 std::atomic<coop::net::Session*> g_session{nullptr};
 
+UE_FACT_FN(kRowBeginDeferredSpawn, "weather_lightning", L"GameplayStatics", L"BeginDeferredActorSpawnFromClass",
+           Declared);
+
 // Resolved-once dependencies, kept for the process: the GameplayStatics parts are native, and
 // lightningStrike_C is an import of mainPlayer_C, which is one class object in every world.
 void* g_gameplayStaticsCdo   = nullptr;
+ue_wrap::facts::Resolved g_beginDeferredSpawn;  // the row's function, handed to the observer registration
 void* g_beginDeferredSpawnFn = nullptr;
 void* g_finishSpawnFn        = nullptr;
 void* g_lightningStrikeClass = nullptr;
@@ -101,7 +106,8 @@ bool TryResolve() {
         g_spawnTransformParamOff < 0) {
         g_gameplayStaticsCdo = R::FindClassDefaultObject(P::name::GameplayStaticsClass);
         void* gsCls = g_gameplayStaticsCdo ? R::ClassOf(g_gameplayStaticsCdo) : nullptr;
-        g_beginDeferredSpawnFn = gsCls ? R::FindFunction(gsCls, P::name::BeginDeferredSpawnFn) : nullptr;
+        g_beginDeferredSpawn = ue_wrap::facts::Resolve(kRowBeginDeferredSpawn);
+        g_beginDeferredSpawnFn = g_beginDeferredSpawn.Fn();
         g_finishSpawnFn = gsCls ? R::FindFunction(gsCls, P::name::FinishSpawningActorFn) : nullptr;
         g_spawnActorClassParamOff =
             g_beginDeferredSpawnFn ? R::FindParamOffset(g_beginDeferredSpawnFn, L"ActorClass") : -1;
@@ -129,7 +135,7 @@ bool TryResolve() {
 bool RegisterHostObserver() {
     if (g_observerRegistered || g_observerRefused) return true;
     if (!TryResolve()) return false;
-    if (!GT::RegisterPostObserver(g_beginDeferredSpawnFn, &OnSpawnPostLightning)) {
+    if (!GT::RegisterPostObserver(g_beginDeferredSpawn, &OnSpawnPostLightning)) {
         g_observerRefused = true;
         UE_LOGE("weather: lightning POST observer registration FAILED "
                 "(observer table full? bump kMaxObservers) -- no strike is sent this session");

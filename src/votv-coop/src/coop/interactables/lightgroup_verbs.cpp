@@ -9,6 +9,7 @@
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/script_gate.h"
 #include "ue_wrap/devices/lightswitch.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <cstdint>
@@ -23,7 +24,7 @@ namespace sg = ue_wrap::script_gate;
 
 // Every trigger class declares runTrigger, so the callbacks see a door's, a garage's and an
 // eventer's too; each gates on the light root class first.
-constexpr const wchar_t* kVerb = L"runTrigger";
+UE_FACT_FN(kRowRunTrigger, "lightgroup_verbs", nullptr, L"runTrigger", AnyClass);
 constexpr int kTag = 0x4C475254;  // 'LGRT'
 
 std::atomic<coop::net::Session*> g_session{nullptr};
@@ -78,7 +79,7 @@ void OnTriggerPost(const sg::Call& call) {
 void Install(coop::net::Session* session) {
     g_session.store(session, std::memory_order_release);
     if (g_reg != Reg::Pending) return;
-    if (sg::WatchName(kVerb, kTag, &OnTriggerPre, &OnTriggerPost)) {
+    if (sg::WatchName(kRowRunTrigger, kTag, &OnTriggerPre, &OnTriggerPost)) {
         g_reg = Reg::Registered;
         return;
     }
@@ -90,7 +91,7 @@ void Install(coop::net::Session* session) {
 void Tick() {
     sg::ResolvePendingNames();
     if (g_settled || g_reg == Reg::Pending) return;
-    if (g_reg == Reg::Registered && sg::NameWatchLive(kVerb, kTag)) {
+    if (g_reg == Reg::Registered && sg::NameWatchLive(kRowRunTrigger, kTag)) {
         g_settled = true;
         UE_LOGI("[LIGHT-GROUP] the light group gate is live: runTrigger");
     } else if (sg::PendingNameCount() == 0) {

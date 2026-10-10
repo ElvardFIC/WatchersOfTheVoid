@@ -20,6 +20,7 @@
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/script_gate.h"
 #include "ue_wrap/engine/engine.h"             // DestroyActor
+#include "ue_wrap/facts/function_row.h"
 #include "ue_wrap/world/economy.h"             // AddPoints
 
 #include <atomic>
@@ -34,7 +35,7 @@ namespace sg = ue_wrap::script_gate;
 namespace EL = coop::element;
 
 constexpr const wchar_t* kSackClass = L"prop_pointSack_C";
-constexpr const wchar_t* kVerb      = L"actionOptionIndex";
+UE_FACT_FN(kRowActionOptionIndex, "point_sack_intent", L"prop_pointSack_C", L"actionOptionIndex", Declared);
 constexpr int kTag = 0x50534B31;  // 'PSK1'
 // The game's own reach for a prop action: mainPlayer.armLength, as the coin collect uses it.
 constexpr float kReachUU = 200.0f;
@@ -98,22 +99,23 @@ void Install(coop::net::Session* session) {
 void Tick() {
     if (g_watchSettled) return;
     if (!g_watchRegistered) {
-        g_watchRegistered = sg::WatchClassName(kSackClass, kVerb, kTag, &OnActionPre, nullptr);
+        g_watchRegistered = sg::WatchName(kRowActionOptionIndex, kTag, &OnActionPre, nullptr);
         if (!g_watchRegistered) {
             g_watchSettled = true;
             UE_LOGE("point_sack: the gate took no watch on %ls::%ls -- a client's sack pays only its own screen",
-                    kSackClass, kVerb);
+                    kRowActionOptionIndex.Class(), kRowActionOptionIndex.Name());
             return;
         }
     }
     sg::ResolvePendingNames();
-    if (!sg::ClassNameWatchSettled(kSackClass, kVerb, kTag)) return;
+    if (!sg::NameWatchSettled(kRowActionOptionIndex, kTag)) return;
     g_watchSettled = true;
-    if (sg::ClassNameWatchLive(kSackClass, kVerb, kTag))
-        UE_LOGI("point_sack: the watch on %ls::%ls is live", kSackClass, kVerb);
+    if (sg::NameWatchLive(kRowActionOptionIndex, kTag))
+        UE_LOGI("point_sack: the watch on %ls::%ls is live", kRowActionOptionIndex.Class(),
+                kRowActionOptionIndex.Name());
     else
         UE_LOGE("point_sack: the watch on %ls::%ls settled dead -- a client's sack pays only its own screen",
-                kSackClass, kVerb);
+                kRowActionOptionIndex.Class(), kRowActionOptionIndex.Name());
 }
 
 void OnRedeem(coop::net::Session& session, const coop::net::PointSackRedeemPayload& p, uint8_t senderSlot) {

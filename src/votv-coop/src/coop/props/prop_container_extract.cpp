@@ -25,6 +25,7 @@
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/sdk_profile.h"
 #include "ue_wrap/core/types.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <cstdint>
@@ -37,6 +38,8 @@ namespace P = ue_wrap::profile;
 namespace R = ue_wrap::reflection;
 namespace GT = ue_wrap::game_thread;
 namespace PT = coop::prop_element_tracker;
+
+UE_FACT_FN(kRowTakeObj, "prop_container_extract", L"propInventory_C", L"takeObj", Declared);
 
 // Install idempotency (InstallInventory only; the Init/destroy latches live
 // with Install in prop_lifecycle.cpp).
@@ -186,7 +189,7 @@ void InstallInventory(coop::net::Session* session) {
     }
     void* invCls = R::FindClass(P::name::PropInventoryClass);
     if (!invCls) return;  // not loaded yet -- retry next tick
-    void* fn = R::FindFunction(invCls, P::name::PropInventoryTakeObjFn);
+    const ue_wrap::facts::Resolved fn = ue_wrap::facts::Resolve(kRowTakeObj);
     if (!fn) {
         UE_LOGW("grab_hook: %ls.%ls UFunction not found -- Bug C disabled permanently this session",
                 P::name::PropInventoryClass, P::name::PropInventoryTakeObjFn);
@@ -205,7 +208,7 @@ void InstallInventory(coop::net::Session* session) {
                 P::name::PropInventoryClass, P::name::PropInventoryTakeObjFn);
     }
     UE_LOGI("grab_hook: registered POST observer for %ls.%ls @ %p (Bug C inventory drop ready)",
-            P::name::PropInventoryClass, P::name::PropInventoryTakeObjFn, fn);
+            P::name::PropInventoryClass, P::name::PropInventoryTakeObjFn, fn.Fn());
     g_inventoryObserverInstalled = true;
     s_done.store(true, std::memory_order_release);
 }
