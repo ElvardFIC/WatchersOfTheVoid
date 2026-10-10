@@ -86,6 +86,7 @@ struct RowState {
     std::string        detail;
     std::string        path;
     uint64_t           sig = 0, body = 0, refSig = 0, refBody = 0;
+    double             resolveUs = 0, printUs = 0;  // the row's measured cost, for the slowest-rows line
 };
 
 std::vector<RowState> g_rows;
@@ -242,14 +243,18 @@ void CheckClass(RowState& s) {
         s.settled = ref && !ref->path;
         return;
     }
+    const Clock::time_point r0 = Clock::now();
     const F::Resolved fn = row.GetMode() == F::Mode::RuntimeClass ? F::ResolveOn(row, cls) : F::Resolve(row);
+    s.resolveUs = std::chrono::duration<double, std::micro>(Clock::now() - r0).count();
     if (!fn) {
         s.outcome = !ref ? Outcome::NoReference : (ref->path ? Outcome::Gone : Outcome::KnownGone);
         s.detail = "the class does not have it";
         s.settled = true;
         return;
     }
+    const Clock::time_point p0 = Clock::now();
     const FP::Result r = FP::Of(fn.Fn());
+    s.printUs = std::chrono::duration<double, std::micro>(Clock::now() - p0).count();
     s.path = FP::PathOf(fn.Fn());
     s.sig = r.sigHash;
     s.body = r.bodyHash;
@@ -332,6 +337,20 @@ void Report() {
                   matched, classRows, anyHold, anyRows, unchecked, problems, devRows, kRefBuild, g_ms);
     CR::Line("fingerprint-census", sum);
     CR::Write();
+    // Where the pass's time went: the five costliest rows, resolve and fingerprint apart.
+    std::vector<const RowState*> slow;
+    for (const RowState& s : g_rows) slow.push_back(&s);
+    std::sort(slow.begin(), slow.end(), [](const RowState* a, const RowState* b) {
+        return a->resolveUs + a->printUs > b->resolveUs + b->printUs;
+    });
+    std::string top;
+    for (size_t i = 0; i < slow.size() && i < 5; ++i) {
+        char b[160];
+        std::snprintf(b, sizeof b, "%s%s resolve %.0f us + fingerprint %.0f us", i ? "; " : "", Key(*slow[i]->row).c_str(),
+                      slow[i]->resolveUs, slow[i]->printUs);
+        top += b;
+    }
+    UE_LOGI("fingerprint-census: costliest rows: %s", top.c_str());
     if (problems) {
         UE_LOGW("%s -- DEGRADED: the game differs from the build this mod was made for", sum);
     } else {
