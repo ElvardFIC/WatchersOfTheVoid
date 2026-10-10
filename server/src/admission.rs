@@ -8,7 +8,7 @@
 //! stops ONE source from filling the whole pool; the address is coarsened by `ip_bucket` (a full
 //! IPv4 address, an IPv6 /64), like every other per-source control in this crate.
 
-use crate::common::{env_int, env_str, ip_bucket, log};
+use crate::common::{clamp_str, env_int, env_str, ip_bucket, log};
 use std::collections::{HashMap, VecDeque};
 use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
@@ -116,7 +116,7 @@ impl Pool {
 /// costs no pool slot and no TLS handshake. A browser opens three connections and refreshes every
 /// 5 s, a host heartbeats every 30 s, so 20 per 10 s admits about ten open browsers behind one
 /// address; raise it for a known shared address, or exclude it. Both are settings, as in MTA
-/// (`httpdosthreshold`, `httpdosexclude`, CMainConfig.cpp:247-252). The same shape guards game
+/// (`httpdosthreshold`, `http_dos_exclude`, CMainConfig.cpp:247-252). The same shape guards game
 /// joins (coop/net/connect_history.cpp).
 pub struct ConnectHistory {
     // 0 turns the guard off.
@@ -151,15 +151,26 @@ const MAX_TRACKED: usize = 10_000;
 
 /// The flood guard's default: connects allowed per period. `COOP_CONNECT_FLOOD_MAX` overrides it.
 const DEFAULT_FLOOD_MAX: i64 = 20;
+/// The highest `COOP_CONNECT_FLOOD_MAX` taken: a tracked address keeps up to that many connect
+/// times, so the history's memory (`MAX_TRACKED` addresses) grows with it; at 40 it is ~9 MiB.
+const FLOOD_MAX_CEILING: i64 = 40;
 
 /// The one history each server process keeps, for every listener it runs. Built from
-/// `COOP_CONNECT_FLOOD_MAX` (0 turns the guard off) and `COOP_CONNECT_FLOOD_EXCLUDE` (a comma
-/// separated list of addresses that are never limited) the first time it is used.
+/// `COOP_CONNECT_FLOOD_MAX` (0 turns the guard off, where MTA's setting is 1..10000,
+/// CMainConfig.cpp:248; capped at `FLOOD_MAX_CEILING`) and `COOP_CONNECT_FLOOD_EXCLUDE` (a comma
+/// separated list of addresses the guard never limits; the pools' caps still apply, and an IPv6
+/// entry covers its /64) the first time it is used, and logged as built.
 pub static CONNECTS: LazyLock<ConnectHistory> = LazyLock::new(|| {
-    let max = usize::try_from(env_int("COOP_CONNECT_FLOOD_MAX", DEFAULT_FLOOD_MAX))
-        .unwrap_or(DEFAULT_FLOOD_MAX as usize);
-    ConnectHistory::new(max, Duration::from_secs(10), Duration::from_secs(60), MAX_TRACKED)
-        .with_exclude(&env_str("COOP_CONNECT_FLOOD_EXCLUDE", ""))
+    let asked = env_int("COOP_CONNECT_FLOOD_MAX", DEFAULT_FLOOD_MAX);
+    let max = if asked < 0 { DEFAULT_FLOOD_MAX } else { asked.min(FLOOD_MAX_CEILING) } as usize;
+    let history = ConnectHistory::new(max, Duration::from_secs(10), Duration::from_secs(60), MAX_TRACKED)
+        .with_exclude(&env_str("COOP_CONNECT_FLOOD_EXCLUDE", ""));
+    log(&format!(
+        "connect flood guard: {} (asked {asked}), {} excluded address(es)",
+        if max == 0 { "off".to_string() } else { format!("{max} per 10 s, then 60 s ignored") },
+        history.exclude.len()
+    ));
+    history
 });
 
 impl ConnectHistory {
@@ -176,7 +187,13 @@ impl ConnectHistory {
 
     /// Never limit or track the addresses in `list`, comma separated.
     pub fn with_exclude(mut self, list: &str) -> ConnectHistory {
-        self.exclude = list.split(',').map(str::trim).filter(|a| !a.is_empty()).map(ip_bucket).collect();
+        for entry in list.split(',').map(str::trim).filter(|a| !a.is_empty()) {
+            if entry.parse::<std::net::IpAddr>().is_ok() {
+                self.exclude.push(ip_bucket(entry));
+            } else {
+                log(&format!("connect flood guard: exclude entry '{}' is not an address, ignored", clamp_str(entry, 64)));
+            }
+        }
         self
     }
 
@@ -315,7 +332,7 @@ mod tests {
     #[test]
     fn an_excluded_address_is_allowed_past_the_max_and_leaves_no_entry() {
         let h = ConnectHistory::new(2, Duration::from_secs(10), Duration::from_secs(60), 100)
-            .with_exclude(" 192.0.2.77 , ,2001:db8:1:2::5");
+            .with_exclude(" 192.0.2.77 , ,2001:db8:1:2::5, not-an-address");
         let t0 = Instant::now();
         assert!((0..10).all(|_| h.allow("192.0.2.77", t0)), "an excluded address was limited");
         assert!((0..10).all(|_| h.allow("2001:db8:1:2::ffff", t0)), "an excluded /64 was limited");

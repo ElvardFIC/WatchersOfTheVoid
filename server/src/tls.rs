@@ -23,8 +23,8 @@ use tokio_rustls::rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use tokio_rustls::rustls::ServerConfig;
 use tokio_rustls::TlsAcceptor;
 
-/// TLS records a connection may hold unsent before a write waits for the peer to read: rustls'
-/// default is 64 KiB, the size of a whole lobby list, held by any client that stops reading.
+/// TLS records a connection may hold unsent before a write waits for the peer to read. rustls'
+/// default is 64 KiB; 16 KiB keeps a full pool's sum (`http_transport::MAX_CONNS`) bounded.
 pub const SEND_BUFFER_LIMIT: usize = 16 * 1024;
 
 /// For `TlsAcceptor::accept_with`: every accepted connection gets `SEND_BUFFER_LIMIT`.

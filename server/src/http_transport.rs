@@ -13,17 +13,16 @@ use tokio::time::timeout;
 pub const HTTP_TIMEOUT: Duration = Duration::from_secs(15);
 pub const MAX_HEADER: usize = 16 * 1024;
 /// The largest body a client of ours sends is the host announce (coop/net/lobby_announcer.cpp):
-/// under 1.5 KiB with its name at 63 bytes, fully escaped. The name field is a `char[64]`
-/// (server_browser.cpp:56) and the server clamps names to 63 characters (`lobby::MAX_NAME`).
+/// under 2 KiB with its name at the native host window's 96-byte cap (host_session_settings.cpp:59),
+/// fully escaped; the server then clamps names to 63 characters (`lobby::MAX_NAME`).
 /// 4 KiB leaves room and keeps a body's parse small: a `serde_json::Value` can cost 16x its bytes
 /// (tests/conn_cost.rs: a 4 KiB array of zeros parses to 65 KiB).
 pub const MAX_BODY: usize = 4 * 1024;
-/// The pool, sized against the unit's 128 MiB from what tests/conn_cost.rs measures. One connection
-/// holds at most ~87 KiB. During the TLS handshake rustls buffers up to 64.8 KiB of a handshake
-/// message. After it, one record is held in 32 KiB (the buffer doubles past 16 KiB), plus 16 KiB
-/// of received plaintext, 16 KiB unsent (`tls::SEND_BUFFER_LIMIT`) and the 16 KiB head: 80 KiB.
-/// Either way the task's future adds ~7 KiB. 512 x ~87 KiB is ~44 MiB, leaving room for the lobby
-/// maps and the connect history.
+/// The pool, sized against the unit's 128 MiB. One connection holds at most ~87 KiB: the larger of
+/// rustls' handshake buffer (64.8 KiB) and, after it, one record held in 32 KiB plus 16 KiB of
+/// received plaintext, 16 KiB unsent (`tls::SEND_BUFFER_LIMIT`) and the 16 KiB head (80 KiB), plus
+/// the task's ~7 KiB. 512 of them ~44 MiB; with the connect history and the lobby maps the master's
+/// worst case is ~71 MiB (tests/conn_cost.rs measures the parts that are ours).
 pub const MAX_CONNS: usize = 512;
 /// Per source address. A browser open is three requests at once (lobbies, latest, thanks) and the
 /// list refreshes every 5 s (`server_browser_native.cpp:123`), so a household of four needs 12;
@@ -120,7 +119,6 @@ pub enum HeadErr {
 pub struct Head<'a> {
     pub method: &'a str,
     pub path: &'a str,
-    pub query: &'a str,
     pub content_length: Option<&'a str>,
     pub x_real_ip: Option<&'a str>,
     pub x_forwarded_for: Option<&'a str>,
@@ -141,8 +139,8 @@ pub fn parse_head(head: &[u8]) -> Result<Head<'_>, HeadReject> {
         (Some(m), Some(p), Some(_)) => (m, p),
         _ => return Err(HeadReject::BadRequestLine),
     };
-    let (path, query) = raw_path.split_once('?').unwrap_or((raw_path, ""));
-    let mut h = Head { method, path, query, content_length: None, x_real_ip: None, x_forwarded_for: None };
+    let path = raw_path.split_once('?').map_or(raw_path, |(p, _)| p);
+    let mut h = Head { method, path, content_length: None, x_real_ip: None, x_forwarded_for: None };
     for ln in lines {
         let Some((k, v)) = ln.split_once(':') else { continue };
         let k = k.trim();
@@ -170,7 +168,7 @@ mod tests {
         let h = parse_head(b"POST /v1/host?x=1 HTTP/1.1\r\nContent-Length: 12\r\nX-Real-IP: 1.2.3.4\r\nA: b")
             .ok()
             .expect("a well-formed head was refused");
-        assert_eq!((h.method, h.path, h.query), ("POST", "/v1/host", "x=1"));
+        assert_eq!((h.method, h.path), ("POST", "/v1/host"), "the query string stayed in the path");
         assert_eq!((h.content_length, h.x_real_ip, h.x_forwarded_for), (Some("12"), Some("1.2.3.4"), None));
         let again = parse_head(b"GET / HTTP/1.1\r\ncontent-length: 1\r\nCONTENT-LENGTH: 2").ok().unwrap();
         assert_eq!(again.content_length, Some("2"), "a repeated header did not keep its last value");

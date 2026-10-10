@@ -96,9 +96,9 @@ const MAX_IDENTITY: usize = 80;
 // line's own bytes behind the sender's name (`relay_frame`), and the queue holds RELAY_QUEUE
 // frames AND MAX_QUEUED_PER_DEST bytes. The byte cap is what bounds the whole relay: frames
 // alone (64 x 8 KiB) times the 512 authed slots would be 256 MiB, twice the unit's MemoryMax.
-// 64 KiB per destination is still 8 frames at the 8 KiB cap and dozens of real ICE frames. An
-// authed connection is then ~129 KiB (this queue plus ~65 KiB of TLS buffers and line, measured
-// in tests/conn_cost.rs), 512 of them ~65 MiB.
+// 64 KiB per destination is still 8 frames at the 8 KiB cap. On the master's basis (rustls'
+// buffers, the line, the task) an authed connection is at most ~143 KiB with this queue, 512 of
+// them ~72 MiB; with the pre-auth pool and the connect history the relay's worst case is ~99 MiB.
 const RELAY_QUEUE: usize = 64;
 const MAX_RELAY_PAYLOAD: usize = 8 * 1024;
 const MAX_QUEUED_PER_DEST: usize = 64 * 1024;

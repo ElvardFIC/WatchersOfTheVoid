@@ -75,11 +75,10 @@ distinct from the secret session id, control characters stripped and strings cla
 bodies and headers, and the forwarded-for header trusted only from a loopback proxy. Both services
 admit a connection at accept, before its TLS handshake, into a pool with a total and a per-address
 cap, and one deadline bounds the handshake and everything read before the answer (on the relay,
-before registration). Filling a pool takes tens of addresses (32 for the master, 32 and 64 for the
-relay's two), each connection's memory is bounded so a full pool fits the service's limit, and an
-address that makes more than 20 connects inside ten seconds is ignored for a minute
-(`COOP_CONNECT_FLOOD_MAX` sets the 20, 0 turns it off; `COOP_CONNECT_FLOOD_EXCLUDE` lists
-addresses that are never limited).
+before registration). Each connection's memory is bounded so a full pool fits the service's
+limit, and an address that makes more than 20 connects inside ten seconds is ignored for a minute
+(`COOP_CONNECT_FLOOD_MAX` sets the 20, at most 40, 0 turns it off; `COOP_CONNECT_FLOOD_EXCLUDE`
+lists addresses the guard never limits, the pools' caps still applying).
 
 ### Direct and brokered
 
@@ -138,7 +137,7 @@ locally for a scripted run, and serves a synthetic lobby list to the browser in 
 | Route | Who | Carries |
 |---|---|---|
 | `/v1/host`, `/v1/heartbeat`, `/v1/visibility`, `/v1/leave` | the host | the announce, which carries the host's build claim (`build_sha`, `build_key`, `build_sig`, optional) and `listed`; the keepalive with players, their links, listing and the TURN credential the host holds, answered with its renewal; the listing flip; the leave |
-| `/v1/lobbies`, `/v1/join` | the client | the list for a version, each row with one word for how its players reach the host (relay, direct, lan, or none before anyone has joined) and the counts behind it, and `build_sha`, `build_key` and `build_sig`: the host's own claim of its build, recorded as sent: a field of the wrong type reads as none (no hash, key 0, an empty signature), and a claim whose hash, key and signature do not fit together is dropped with one log line (the master verifies nothing); the dialing information for a lobby |
+| `/v1/lobbies`, `/v1/join` | the client | the list, each row with one word for how its players reach the host (relay, direct, lan, or none before anyone has joined) and the counts behind it, and `build_sha`, `build_key` and `build_sig`: the host's own claim of its build, recorded as sent: a field of the wrong type reads as none (no hash, key 0, an empty signature), and a claim whose hash, key and signature do not fit together is dropped with one log line (the master verifies nothing); the dialing information for a lobby |
 | `/v1/latest`, `/healthz` | the client; an operator | the released pair; liveness |
 | `/v1/thanks` | the client, on opening the browser | the thanks list's text |
 | the signaling lines | both peers | the greeting, the challenge and its proof, the forwarded candidates |
