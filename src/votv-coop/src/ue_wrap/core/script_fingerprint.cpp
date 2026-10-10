@@ -713,7 +713,9 @@ std::string SigLine(Ctx& c, void* fn) {
         if (!(flags & P::cpf::Parm)) continue;
         if (!first) out += ",";
         first = false;
-        out += FieldName(c, f) + ":" + std::to_string(Rd<int32_t>(f, P::off::FProperty_ElementSize)) + ":";
+        // no size: a native struct's cooked size is not its run-time one (FHitResult 144 in the asset, 136
+        // in the game, measured by the agreement test), and the type already names the struct
+        out += FieldName(c, f) + ":";
         if (flags & P::cpf::ConstParm) out += 'C';
         if (flags & P::cpf::Parm) out += 'P';
         if (flags & P::cpf::OutParm) out += 'O';
@@ -811,6 +813,9 @@ Result Of(void* ufunction) {
     r.problem = c.problem;
     r.ok = c.problem.empty();
     r.hash = Fnv1a64(r.text);
+    const size_t sigEnd = r.text.find('\n');
+    r.sigHash = Fnv1a64(r.text.substr(0, sigEnd == std::string::npos ? r.text.size() : sigEnd + 1));
+    r.bodyHash = Fnv1a64(sigEnd == std::string::npos ? std::string() : r.text.substr(sigEnd + 1));
     return r;
 }
 

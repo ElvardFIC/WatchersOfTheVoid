@@ -22,6 +22,8 @@ struct Result {
     bool        ok = false;      // the whole script decoded and every code offset resolved
     bool        native = false;  // a native function: the text is its signature line only
     uint64_t    hash = 0;        // FNV-1a 64 over `text`
+    uint64_t    sigHash = 0;     // over its first line, the signature: a change means wrong parameters
+    uint64_t    bodyHash = 0;    // over the rest, the statements: a change means the logic drifted
     std::string text;            // the canonical text, one statement per line
     std::string problem;         // the first problem met, empty when ok
 };
