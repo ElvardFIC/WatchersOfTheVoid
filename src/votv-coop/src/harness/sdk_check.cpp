@@ -42,9 +42,15 @@ namespace R = ue_wrap::reflection;
 // can paste it whole into a GitHub issue when sdk-check reports DEGRADED after a game update.
 std::ostringstream g_report;
 
+using Severity = harness::compat_report::Severity;
+int g_failures[3] = {};  // by Severity, for the compat report's verdict
+
+void Failed(Severity s) { ++g_failures[static_cast<int>(s)]; }
+
 void ReportHeader() {
     g_report.str({});
     g_report.clear();
+    g_failures[0] = g_failures[1] = g_failures[2] = 0;
 
     // Local time stamp.
     char ts[32] = {};
@@ -93,30 +99,18 @@ void ReportFooter(int ok, int total, int fail, int failPriority, int skipped) {
         g_report << "  skipped (dead cls): " << skipped
                  << "  (UFunction checks whose owning UClass already failed above)\n";
     }
-    if (failPriority == 0 && fail == 0) {
-        g_report << "Status: HEALTHY (every checked name resolved against the live build)\n";
-    } else if (failPriority == 0) {
-        g_report << "Status: HEALTHY (only cosmetic failures; gameplay subsystems intact)\n";
-    } else {
-        g_report << "Status: DEGRADED -- VOTV likely diverged from the target build.\n\n";
-        g_report << "Share this report when filing an issue at the mod repository -- it identifies\n";
-        g_report << "the divergence completely. The maintainer will produce an updated SDK profile\n";
-        g_report << "and a new build targeted at the current VOTV release.\n";
-        g_report << "Baseline this mod targets: " << P::kTargetGameVersion << "\n";
-    }
 }
 
-// The section is this check's; the file beside the exe is harness/compat_report's, which the fingerprint
-// census writes its own section into.
+// The section is this check's, and so are its failures; the file beside the exe and its one verdict are
+// harness/compat_report's, which the fingerprint census writes its own section into.
 void WriteReportFile() {
     namespace CR = harness::compat_report;
     CR::Begin("sdk-check");
     std::istringstream in(g_report.str());
     for (std::string line; std::getline(in, line);) CR::Line("sdk-check", line);
+    for (int sev = 0; sev < 3; ++sev) CR::Failure("sdk-check", static_cast<Severity>(sev), g_failures[sev]);
     CR::Write();
 }
-
-enum class Severity { Critical, Important, Cosmetic };
 
 const char* SevTag(Severity s) {
     switch (s) {
@@ -272,6 +266,7 @@ void RunClassChecks(int& ok, int& fail, int& failPriority) {
             ++ok;
         } else {
             ++fail;
+            Failed(c.sev);
             if (c.sev != Severity::Cosmetic) ++failPriority;
             UE_LOGW("sdk-check[%s]: CLASS '%ls' NOT FOUND -- breaks %s",
                     SevTag(c.sev), c.name, c.purpose);
@@ -302,6 +297,7 @@ void RunFunctionChecks(int& ok, int& fail, int& failPriority, int& skipped) {
             ++ok;
         } else {
             ++fail;
+            Failed(f.sev);
             if (f.sev != Severity::Cosmetic) ++failPriority;
             UE_LOGW("sdk-check[%s]: UFUNCTION '%ls.%ls' NOT FOUND -- breaks %s",
                     SevTag(f.sev), f.className, f.fnName, f.purpose);
@@ -323,6 +319,7 @@ void RunNpcAllowlistCheck(int& ok, int& fail, int& failPriority) {
             ++ok; ++npcOk;
         } else {
             ++fail; ++failPriority;
+            Failed(kNpcSev);
             UE_LOGW("sdk-check[%s]: NPC CLASS '%ls' NOT FOUND -- this NPC will spawn on both peers (suppression no-op)",
                     SevTag(kNpcSev), P::name::kNpcAllowlist[i]);
             char buf[512];
@@ -346,6 +343,7 @@ void RunAssetChecks(int& ok, int& fail, int& failPriority) {
             ++ok;
         } else {
             ++fail;
+            Failed(a.sev);
             if (a.sev != Severity::Cosmetic) ++failPriority;
             UE_LOGW("sdk-check[%s]: ASSET '%ls' (class '%ls') NOT FOUND -- breaks %s",
                     SevTag(a.sev), a.objectName, a.className, a.purpose);

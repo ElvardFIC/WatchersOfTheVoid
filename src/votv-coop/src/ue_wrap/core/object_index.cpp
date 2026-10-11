@@ -94,17 +94,22 @@ bool IsMeta(void* cls) {
     return false;
 }
 
+// Moves whenever a class object is listed or unlisted: ClassListVersion.
+uint64_t g_classListVersion = 0;
+
 void ListClassName(int32_t index, void* classObj) {
     if (g_classNameBySlot.count(index)) return;   // listed already
     std::wstring key = R::ToString(R::NameOf(classObj));
     if (key.empty()) return;
     g_classSlotsByName[key].push_back(index);
     g_classNameBySlot.emplace(index, std::move(key));
+    ++g_classListVersion;
 }
 
 void UnlistClassName(int32_t index) {
     const auto k = g_classNameBySlot.find(index);
     if (k == g_classNameBySlot.end()) return;
+    ++g_classListVersion;
     const auto it = g_classSlotsByName.find(k->second);
     if (it != g_classSlotsByName.end()) {
         auto& v = it->second;
@@ -345,6 +350,11 @@ size_t ForEachInstance(void* cls, InstanceFn fn, void* ctx) {
     return n;
 }
 
+size_t InstanceCount(void* cls) {
+    const auto it = g_classes.find(cls);
+    return it == g_classes.end() ? 0 : static_cast<size_t>(it->second.count);
+}
+
 size_t ForEachClass(ClassFn fn, void* ctx) {
     size_t n = 0;
     for (const auto& kv : g_classes) {
@@ -359,6 +369,8 @@ size_t ForEachClass(ClassFn fn, void* ctx) {
 void SetObserver(const Observer& o) { g_observer = o; }
 
 uint64_t ClassSetVersion() { return g_classSetVersion; }
+
+uint64_t ClassListVersion() { return g_classListVersion; }
 
 void* ClassByName(const wchar_t* name) {
     UE_ASSERT_GAME_THREAD("object_index::ClassByName");

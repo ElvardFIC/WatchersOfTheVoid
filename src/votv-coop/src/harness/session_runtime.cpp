@@ -564,7 +564,7 @@ void RunPlayLoop(bool bootedIntoGameplay) {
         });
         // The fingerprint census in a task of its own, so another lane's fault in the composite cannot
         // starve it; posted only when a slice or a re-try is due.
-        if (harness::fingerprint_census::Due()) Post([] { harness::fingerprint_census::Tick(); });
+        harness::fingerprint_census::PostIfDue();
         harness::pump::TickWatchdogs();
         if (running && ++tick % 120 == 0) {  // ~every 2 s at 60 Hz: stats for the LAN tests
             Post([] {

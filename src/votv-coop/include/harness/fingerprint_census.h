@@ -12,16 +12,14 @@
 namespace harness::fingerprint_census {
 
 // Start a pass over every row (and the capture when its flag is on). Game thread, after the world is up,
-// posted with sdk_check::Run; the rows are checked over the next frames by Tick.
+// posted with sdk_check::Run; the rows are checked over the next frames.
 void Run();
 
-// A 2 ms slice of a pass while one runs, then a re-try of the rows whose class was not loaded when the
-// class set moves or every 5 s. A posted task of its own (harness/session_runtime posts it when Due),
-// so a fault in another lane's per-frame work cannot keep the census from finishing. Game thread.
-void Tick();
-
-// Is a Tick due: every frame while a pass runs, once a second while rows wait for their class, never
-// when idle. Any thread (the runtime thread asks before posting).
-bool Due();
+// Post the census's tick when one is due: a 2 ms slice every frame while a pass runs, its report in a
+// tick of its own, then a re-try of the unsettled rows once a second when the class set moved or every
+// 5 s, nothing when idle. A posted task of its own, so a fault in another lane's per-frame work cannot keep
+// the census from finishing; never a second one while one is queued, and one slice a drain. The runtime
+// thread calls it every loop.
+void PostIfDue();
 
 }  // namespace harness::fingerprint_census

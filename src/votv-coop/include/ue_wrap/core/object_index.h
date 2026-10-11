@@ -49,6 +49,9 @@ using ClassFn    = void (*)(void* ctx, void* cls, void* anyInstance);
 // Game thread; the callback must not create or destroy objects.
 size_t ForEachInstance(void* cls, InstanceFn fn, void* ctx);
 
+// How many objects of exactly `cls` the index holds, in one lookup. Game thread.
+size_t InstanceCount(void* cls);
+
 // Every class with at least one such instance, with one of them. Same contract.
 size_t ForEachClass(ClassFn fn, void* ctx);
 
@@ -57,6 +60,11 @@ size_t ForEachClass(ClassFn fn, void* ctx);
 // the class set and keyed on a looked-up class is rebuilt when the number moves or when the lookup's
 // answer changes. Game thread.
 uint64_t ClassSetVersion();
+
+// A number that moves whenever a class object is listed or unlisted: a class loaded or unloaded,
+// whether or not it has an instance. A function exists only with its class, so a list of functions
+// taken from the live array is current until this moves. Game thread.
+uint64_t ClassListVersion();
 
 // The loaded class whose short name is `name`, compared without case as the engine compares names:
 // a class object the index holds, found in one lookup whether or not the class has an instance.

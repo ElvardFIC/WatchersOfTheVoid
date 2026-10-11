@@ -7,6 +7,7 @@
 #include "coop/config/config.h"
 #include "coop/config/config_registry.h"
 #include "harness/compat_report.h"
+#include "ue_wrap/core/game_thread.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/object_index.h"
 #include "ue_wrap/core/paths.h"
@@ -36,6 +37,7 @@ namespace FP = ue_wrap::script_fingerprint;
 namespace F = ue_wrap::facts;
 namespace OI = ue_wrap::object_index;
 namespace CR = harness::compat_report;
+namespace GT = ue_wrap::game_thread;
 using Clock = std::chrono::steady_clock;
 
 // The reference of the target build: one entry per class row key (present with its two hashes, or absent),
@@ -55,14 +57,15 @@ struct RefAny {
 };
 #include VOTVCOOP_FINGERPRINT_TABLE
 
-enum class Outcome { Match, SigChanged, BodyChanged, Gone, KnownGone, Unchecked, Undecodable, NoReference, AnyHolds,
-                     AnySigChanged };
+enum class Outcome { Match, SigChanged, BodyChanged, Appeared, Gone, KnownGone, Unchecked, Undecodable, NoReference,
+                     AnyHolds, AnySigChanged };
 
 const char* Name(Outcome o) {
     switch (o) {
     case Outcome::Match: return "match";
     case Outcome::SigChanged: return "sig-changed";
     case Outcome::BodyChanged: return "body-changed";
+    case Outcome::Appeared: return "appeared";
     case Outcome::Gone: return "gone";
     case Outcome::KnownGone: return "known-gone";
     case Outcome::Unchecked: return "unchecked";
@@ -74,16 +77,24 @@ const char* Name(Outcome o) {
     return "?";
 }
 
+// Every outcome that says the running game is not the reference build, or that the census cannot judge a
+// row it was released to judge.
 bool IsProblem(Outcome o) {
-    return o == Outcome::SigChanged || o == Outcome::BodyChanged || o == Outcome::Gone || o == Outcome::Undecodable ||
-           o == Outcome::AnySigChanged;
+    return o == Outcome::SigChanged || o == Outcome::BodyChanged || o == Outcome::Appeared || o == Outcome::Gone ||
+           o == Outcome::Undecodable || o == Outcome::NoReference || o == Outcome::AnySigChanged;
 }
 
 struct RowState {
     const F::Function* row = nullptr;
+    const RefFn*       ref = nullptr;     // a class row's entry (a run-time class row's once its site resolved it)
+    const RefAny*      refAny = nullptr;  // an any-class row's
+    std::string        key;               // "class.fn", lowercase
+    std::string        order;             // the report's order: feature, then key
     Outcome            outcome = Outcome::Unchecked;
-    bool               settled = false;  // false: re-tried when the class set moves or on the timer
+    bool               settled = false;   // false: checked again on a re-try
     bool               dev = false;
+    bool               warned = false;    // its problem is logged once; the report file lists it every time
+    uint64_t           anyList = 0;       // an any-class row: the subject list it was last checked on
     std::string        detail;
     std::string        path;
     uint64_t           sig = 0, body = 0, refSig = 0, refBody = 0;
@@ -92,21 +103,26 @@ struct RowState {
 
 std::vector<RowState> g_rows;
 size_t                g_next = 0;
-bool                  g_running = false;   // a pass is under way
-bool                  g_waiting = false;   // unsettled rows wait for their class
-bool                  g_firstPass = true;  // the report of the first pass is printed whatever it holds
-bool                  g_settledMore = false;  // a re-try settled a row: the report is printed again
+bool                  g_running = false;    // a pass is under way
+bool                  g_reportDue = false;  // the pass's rows are done; its report is the next Tick's work
+bool                  g_waiting = false;    // unsettled rows are checked again on a re-try
+bool                  g_firstPass = true;   // the report of the first pass is printed whatever it holds
+bool                  g_changed = false;    // a row's outcome or detail moved this pass: the report is printed again
+bool                  g_redSaid = false;    // the red arm's verdict line is out
 uint64_t              g_classSet = 0;
+uint64_t              g_passClasses = 0;    // ClassListVersion when the pass's caches began
 Clock::time_point     g_lastTry;
-double                g_ms = 0;            // the pass's measured work
-// When the next Tick is due, for the runtime thread that posts it (Due): 0 now (a pass runs), a
+double                g_ms = 0;             // the pass's measured work
+std::string           g_red;                // [dev] fingerprint_census_red: the row whose reference is falsified
+// When the next Tick is due, for the runtime thread that posts it: 0 now (a pass or its report runs), a
 // steady-clock millisecond while unsettled rows wait, -1 never (idle).
 std::atomic<int64_t>  g_dueMs{-1};
+std::atomic<bool>     g_posted{false};      // a Tick is queued; no second one is posted
+uint64_t              g_lastDrain = 0;      // the game-thread drain the last Tick ran in
 
 int64_t NowMs() {
     return std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now().time_since_epoch()).count();
 }
-std::string           g_red;               // [dev] fingerprint_census_red: the row whose reference is falsified
 
 std::string Narrow(const wchar_t* s) {
     std::string out;
@@ -124,25 +140,23 @@ std::string Key(const F::Function& row) {
     return Lower((row.Class() ? Narrow(row.Class()) : std::string("*")) + "." + Narrow(row.Name()));
 }
 
-const RefFn* FindRef(const F::Function& row) {
-    const wchar_t* cls = row.Class() ? row.Class() : L"*";  // a run-time class row is keyed on its name alone
+const RefFn* FindRef(const wchar_t* cls, const wchar_t* fn) {
     for (const RefFn* r = kRefFns; r->cls; ++r)
-        if (_wcsicmp(r->cls, cls) == 0 && _wcsicmp(r->fn, row.Name()) == 0) return r;
+        if (_wcsicmp(r->cls, cls) == 0 && _wcsicmp(r->fn, fn) == 0) return r;
     return nullptr;
 }
 
-// The class a RuntimeClass row's site last resolved it on, found again by name; null before that.
-void* WitnessClass(const F::Function& row) {
-    const uint64_t w = row.WitnessClass();
-    if (!w) return nullptr;
-    const R::FName n{static_cast<int32_t>(w >> 32), static_cast<int32_t>(w & 0xffffffffu)};
-    return OI::ClassByName(R::ToString(n).c_str());
-}
-
-const RefAny* FindAny(const F::Function& row) {
+const RefAny* FindAny(const wchar_t* fn) {
     for (const RefAny* r = kRefAny; r->fn; ++r)
-        if (_wcsicmp(r->fn, row.Name()) == 0) return r;
+        if (_wcsicmp(r->fn, fn) == 0) return r;
     return nullptr;
+}
+
+// The name of the class a RuntimeClass row's site last resolved it on; empty before that.
+std::wstring WitnessName(const F::Function& row) {
+    const uint64_t w = row.WitnessClass();
+    if (!w) return {};
+    return R::ToString(R::FName{static_cast<int32_t>(w >> 32), static_cast<int32_t>(w & 0xffffffffu)});
 }
 
 std::string Hex(uint64_t v) {
@@ -153,30 +167,54 @@ std::string Hex(uint64_t v) {
 
 // ---- any-class subjects: every loaded function whose name an any-class row names ----
 
-std::unordered_map<std::string, std::vector<void*>> g_anySubjects;  // lowercase name -> functions
-bool g_anyScanned = false;
+// A subject and the name it had when the walk found it: checked again before it is read, so a function that
+// died and an object put at its address since are told apart.
+struct Subject {
+    void*   fn;
+    int32_t name;
+};
+std::unordered_map<std::string, std::vector<Subject>> g_anySubjects;  // lowercase name -> functions
+void*    g_fnClasses[2] = {};  // Function and DelegateFunction, native: found once
+uint64_t g_anyList = 0;        // moves with every walk that completes: the subject list's identity
+uint64_t g_anyClasses = 0;     // ClassListVersion when that walk began
+size_t   g_anyFns = 0;         // and the function objects the index held then
+bool     g_anyScanned = false; // this pass has its walk (one walk a pass at most)
+
+size_t FunctionCount() { return OI::InstanceCount(g_fnClasses[0]) + OI::InstanceCount(g_fnClasses[1]); }
+
+// A function exists only with its class, and the index counts every function object: while neither the class
+// list nor that count moved, the last walk's list is the array's.
+bool AnyListCurrent() {
+    return g_anyList != 0 && g_anyClasses == OI::ClassListVersion() && g_anyFns == FunctionCount();
+}
 
 // One walk of the object array, resumable across frames: it stops at `deadline` (checked every 256
 // objects) and goes on from there on the next slice. True when the whole array has been read.
 struct AnyScan {
     bool                               begun = false;
     int32_t                            next = 0;
-    void*                              fnClasses[2] = {};
+    uint64_t                           classes = 0;
+    size_t                             fns = 0;
     std::unordered_set<std::string>    wanted;
-    std::unordered_map<int32_t, bool>  interesting;  // comparison index -> its name is wanted
+    std::unordered_map<int32_t, bool>  interesting;  // comparison index -> its name is wanted (kept across walks)
 };
 AnyScan g_scan;
 
 bool ScanAnySubjectsStep(Clock::time_point deadline) {
     AnyScan& sc = g_scan;
     if (!sc.begun) {
-        sc = AnyScan{};
         sc.begun = true;
+        sc.next = 0;
+        if (sc.wanted.empty())
+            for (const RowState& s : g_rows)
+                if (s.row->GetMode() == F::Mode::AnyClass) sc.wanted.insert(Lower(Narrow(s.row->Name())));
+        if (!g_fnClasses[0]) {
+            g_fnClasses[0] = R::FindClass(L"Function");
+            g_fnClasses[1] = R::FindClass(L"DelegateFunction");
+        }
+        sc.classes = OI::ClassListVersion();
+        sc.fns = FunctionCount();
         g_anySubjects.clear();
-        for (const RowState& s : g_rows)
-            if (s.row->GetMode() == F::Mode::AnyClass) sc.wanted.insert(Lower(Narrow(s.row->Name())));
-        sc.fnClasses[0] = R::FindClass(L"Function");
-        sc.fnClasses[1] = R::FindClass(L"DelegateFunction");
     }
     const int32_t n = R::NumObjects();
     for (; sc.next < n; ++sc.next) {
@@ -184,66 +222,102 @@ bool ScanAnySubjectsStep(Clock::time_point deadline) {
         void* obj = R::ObjectAt(sc.next);
         if (!obj) continue;
         void* cls = R::ClassOf(obj);
-        if (cls != sc.fnClasses[0] && cls != sc.fnClasses[1]) continue;
+        if (cls != g_fnClasses[0] && cls != g_fnClasses[1]) continue;
         const R::FName& nm = R::NameOf(obj);
         auto it = sc.interesting.find(nm.ComparisonIndex);
         if (it == sc.interesting.end()) {
             const std::string s = Lower(Narrow(R::ToString(R::FName{nm.ComparisonIndex, 0}).c_str()));
             it = sc.interesting.emplace(nm.ComparisonIndex, sc.wanted.count(s) != 0).first;
         }
-        if (it->second && nm.Number == 0) g_anySubjects[Lower(Narrow(R::ToString(nm).c_str()))].push_back(obj);
+        if (it->second && nm.Number == 0)
+            g_anySubjects[Lower(Narrow(R::ToString(nm).c_str()))].push_back(Subject{obj, nm.ComparisonIndex});
     }
     sc.begun = false;
+    ++g_anyList;
+    g_anyClasses = sc.classes;
+    g_anyFns = sc.fns;
     g_anyScanned = true;
     return true;
 }
 
-void ScanAnySubjects() {  // the capture's one pass, whole
+void ScanAnySubjects() {  // the capture's one walk, whole
     g_scan.begun = false;
     while (!ScanAnySubjectsStep(Clock::time_point::max())) {}
+}
+
+// The walk's maps hold every function name of the process: kept only while an any-class row waits for more
+// of its classes to load.
+void ReleaseAnySubjects() {
+    g_scan = AnyScan{};
+    std::unordered_map<std::string, std::vector<Subject>>().swap(g_anySubjects);
+    g_anyList = 0;
 }
 
 // ---- one row ----
 
 void CheckAny(RowState& s) {
-    const RefAny* ref = FindAny(*s.row);
-    const auto it = g_anySubjects.find(Lower(Narrow(s.row->Name())));
-    const size_t loaded = it == g_anySubjects.end() ? 0 : it->second.size();
+    const RefAny* ref = s.refAny;
     if (!ref) {
         s.outcome = Outcome::NoReference;
+        s.detail = "the reference has no entry for the name";
         s.settled = true;
         return;
     }
-    size_t outside = 0;
-    if (loaded) {
-        for (void* fn : it->second) {
-            if (!R::IsLive(fn)) continue;  // found on an earlier frame: its class may have unloaded since
-            const FP::Result r = FP::SignatureOf(fn);
+    if (s.anyList == g_anyList) return;  // checked on this very list: nothing it reads has moved
+    s.anyList = g_anyList;
+    size_t loaded = 0, outside = 0;
+    const auto it = g_anySubjects.find(Lower(Narrow(s.row->Name())));
+    if (it != g_anySubjects.end()) {
+        for (const Subject& sub : it->second) {
+            if (!R::IsLive(sub.fn) || R::NameOf(sub.fn).ComparisonIndex != sub.name) continue;  // gone since the walk
+            ++loaded;
+            const FP::Result r = FP::SignatureOf(sub.fn);
             bool known = false;
             for (int k = 0; k < ref->sigCount && !known; ++k) known = kRefAnySigs[ref->firstSig + k] == r.sigHash;
             if (!known) ++outside;
         }
     }
-    s.outcome = outside ? Outcome::AnySigChanged : Outcome::AnyHolds;
-    s.detail = std::to_string(outside) + " of " + std::to_string(loaded) + " loaded signature(s) outside the reference's " +
-               std::to_string(ref->sigCount) + " (" + std::to_string(ref->classes) + " declaring classes on " +
-               kRefBuild + ")";
-    s.settled = true;
+    const std::string of = " (" + std::to_string(ref->classes) + " declaring class(es) on " + kRefBuild + ")";
+    if (outside) {
+        s.outcome = Outcome::AnySigChanged;
+        s.detail = std::to_string(outside) + " of " + std::to_string(loaded) + " loaded signature(s) outside the reference's " +
+                   std::to_string(ref->sigCount) + of;
+        s.settled = true;
+    } else if (!loaded) {
+        // Nothing to judge: no declaring class is loaded yet, or the name has no class on this build any more.
+        s.outcome = Outcome::Unchecked;
+        s.detail = "no function of the name is loaded" + of;
+    } else {
+        s.outcome = Outcome::AnyHolds;
+        s.detail = std::to_string(loaded) + " loaded, every signature inside the reference's " +
+                   std::to_string(ref->sigCount) + of;
+        s.settled = loaded >= static_cast<size_t>(ref->classes);  // until then, a class loading later is checked too
+    }
 }
 
 void CheckClass(RowState& s) {
     const F::Function& row = *s.row;
-    const RefFn* ref = FindRef(row);
+    void* cls = nullptr;
+    if (row.Class()) {
+        cls = OI::ClassByName(row.Class());
+    } else {
+        // A run-time class row is keyed on the class its site resolved it on.
+        const std::wstring witness = WitnessName(row);
+        if (witness.empty()) {
+            s.outcome = Outcome::Unchecked;
+            s.detail = "the class is known only at run time, and its site has not resolved it yet";
+            return;  // re-tried: the site may resolve it later in the session
+        }
+        cls = OI::ClassByName(witness.c_str());
+        s.ref = FindRef(witness.c_str(), row.Name());
+        s.detail.clear();
+    }
+    const RefFn* ref = s.ref;
+    s.refSig = s.refBody = 0;
     if (ref && ref->path) {
         s.refSig = ref->sig;
         s.refBody = ref->body;
-        if (!g_red.empty() && g_red == Key(row)) s.refBody ^= 1;  // the red arm: a reference that cannot match
-    }
-    void* cls = row.Class() ? OI::ClassByName(row.Class()) : WitnessClass(row);
-    if (!row.Class() && !cls) {
-        s.outcome = Outcome::Unchecked;
-        s.detail = "the class is known only at run time, and its site has not resolved it yet";
-        return;  // re-tried: the site may resolve it later in the session
+        if (!g_red.empty() && g_red == s.key) s.refBody ^= 1;  // the red arm: a reference that cannot match
     }
     if (!cls) {
         s.outcome = (ref && !ref->path) ? Outcome::KnownGone : Outcome::Unchecked;
@@ -267,13 +341,15 @@ void CheckClass(RowState& s) {
     s.sig = r.sigHash;
     s.body = r.bodyHash;
     s.settled = true;
+    s.detail.clear();
     if (!r.ok) {
         s.outcome = Outcome::Undecodable;
         s.detail = r.problem;
     } else if (!ref) {
         s.outcome = Outcome::NoReference;
+        s.detail = "the reference has no entry for this class";
     } else if (!ref->path) {
-        s.outcome = Outcome::BodyChanged;
+        s.outcome = Outcome::Appeared;
         s.detail = "present, but absent on the reference build";
     } else if (r.sigHash != s.refSig) {
         s.outcome = Outcome::SigChanged;
@@ -285,27 +361,29 @@ void CheckClass(RowState& s) {
 }
 
 void Check(RowState& s) {
+    const Outcome was = s.outcome;
+    const std::string wasDetail = s.detail;
     if (s.row->GetMode() == F::Mode::AnyClass) {
-        CheckAny(s);  // Slice has finished the scan before any any-class row is checked
+        CheckAny(s);  // Slice has its walk before any any-class row is checked
     } else {
         CheckClass(s);
     }
+    if (s.outcome != was || s.detail != wasDetail) g_changed = true;
 }
 
 // ---- the pass, its report ----
 
 void Report() {
     int classRows = 0, matched = 0, anyRows = 0, anyHold = 0, unchecked = 0, problems = 0, devRows = 0;
-    std::vector<const RowState*> sorted;
-    for (const RowState& s : g_rows) sorted.push_back(&s);
-    std::sort(sorted.begin(), sorted.end(), [](const RowState* a, const RowState* b) {
-        return std::string(a->row->Feature()) + Key(*a->row) < std::string(b->row->Feature()) + Key(*b->row);
-    });
+    std::vector<RowState*> sorted;
+    sorted.reserve(g_rows.size());
+    for (RowState& s : g_rows) sorted.push_back(&s);
+    std::sort(sorted.begin(), sorted.end(), [](const RowState* a, const RowState* b) { return a->order < b->order; });
     CR::Begin("fingerprint-census");
     CR::Line("fingerprint-census", std::string("=== Function fingerprints against ") + kRefBuild +
                                        " (docs/bytecode-fingerprint.md) ===");
-    for (const RowState* sp : sorted) {
-        const RowState& s = *sp;
+    for (RowState* sp : sorted) {
+        RowState& s = *sp;
         const F::Function& row = *s.row;
         if (s.dev) {
             ++devRows;
@@ -317,19 +395,27 @@ void Report() {
             if (s.outcome == Outcome::Match) ++matched;
         }
         if (s.outcome == Outcome::Unchecked && !s.dev) ++unchecked;
-        const bool refused = row.Refused() != 0;
+        // A kind that refused and later accepted (a retry from a tick) registered in the end.
+        const bool refused = (row.Refused() & ~row.Accepted()) != 0;
         if (!s.dev && (IsProblem(s.outcome) || refused)) {
             ++problems;
-            UE_LOGW("fingerprint-census: %s %s (feature %s)%s%s", Name(s.outcome), Key(row).c_str(), row.Feature(),
-                    refused ? " -- its registration was REFUSED" : "", s.detail.empty() ? "" : (" -- " + s.detail).c_str());
+            CR::Failure("fingerprint-census", CR::Severity::Important);
+            // Once per row: a re-try's report repeats the count and the file, not the lines already said.
+            if (!s.warned) {
+                s.warned = true;
+                UE_LOGW("fingerprint-census: %s %s (feature %s)%s%s", Name(s.outcome), s.key.c_str(), row.Feature(),
+                        refused ? " -- its registration was REFUSED" : "",
+                        s.detail.empty() ? "" : (" -- " + s.detail).c_str());
+            }
         }
-        if (!g_red.empty() && g_red == Key(row)) {
+        if (!g_redSaid && !g_red.empty() && g_red == s.key && s.settled) {
+            g_redSaid = true;
             if (s.outcome == Outcome::BodyChanged)
                 UE_LOGW("fingerprint-census: RED ARM %s reported body changed", g_red.c_str());
             else
                 UE_LOGE("fingerprint-census: RED ARM FAILED %s (%s)", g_red.c_str(), Name(s.outcome));
         }
-        std::string line = std::string(Name(s.outcome)) + "  " + row.Feature() + "  " + Key(row);
+        std::string line = std::string(Name(s.outcome)) + "  " + row.Feature() + "  " + s.key;
         if (!s.path.empty()) line += " -> " + s.path;
         if (s.sig || s.body) line += "  live " + Hex(s.sig) + "/" + Hex(s.body);
         if (s.refSig || s.refBody) line += "  ref " + Hex(s.refSig) + "/" + Hex(s.refBody);
@@ -354,7 +440,7 @@ void Report() {
     std::string top;
     for (size_t i = 0; i < slow.size() && i < 5; ++i) {
         char b[160];
-        std::snprintf(b, sizeof b, "%s%s resolve %.0f us + fingerprint %.0f us", i ? "; " : "", Key(*slow[i]->row).c_str(),
+        std::snprintf(b, sizeof b, "%s%s resolve %.0f us + fingerprint %.0f us", i ? "; " : "", slow[i]->key.c_str(),
                       slow[i]->resolveUs, slow[i]->printUs);
         top += b;
     }
@@ -366,34 +452,81 @@ void Report() {
     }
 }
 
+// The pass and its report are done: wait for the rows that are not settled, if any.
+void Finish() {
+    g_firstPass = false;
+    g_changed = false;
+    g_waiting = std::any_of(g_rows.begin(), g_rows.end(), [](const RowState& s) { return !s.settled; });
+    const bool anyWaits = std::any_of(g_rows.begin(), g_rows.end(), [](const RowState& s) {
+        return !s.settled && s.row->GetMode() == F::Mode::AnyClass;
+    });
+    if (!anyWaits) ReleaseAnySubjects();
+    g_dueMs.store(g_waiting ? NowMs() + 1000 : -1, std::memory_order_release);
+    g_classSet = OI::ClassSetVersion();
+    g_lastTry = Clock::now();
+}
+
+void BeginPassState() {
+    FP::BeginPass();
+    g_passClasses = OI::ClassListVersion();
+    g_anyScanned = AnyListCurrent();
+    g_next = 0;
+    g_running = true;
+    g_dueMs.store(0, std::memory_order_release);
+}
+
 void Slice() {
     ue_wrap::ScopedWalkTimer walk("fingerprint-census slice");
     const Clock::time_point t0 = Clock::now();
     const auto budget = std::chrono::microseconds(2000);
+    // A class unloaded or loaded since the pass began: a function the pass's caches hold may be gone, and its
+    // address a new one's. Settled rows keep what they read; the rest read afresh.
+    if (OI::ClassListVersion() != g_passClasses) {
+        FP::BeginPass();
+        g_passClasses = OI::ClassListVersion();
+    }
     const bool anyPending = std::any_of(g_rows.begin(), g_rows.end(), [](const RowState& r) {
-        return !r.settled && r.row->GetMode() == F::Mode::AnyClass;
+        return !r.settled && r.row->GetMode() == F::Mode::AnyClass && r.refAny;
     });
     if (anyPending && !g_anyScanned && !ScanAnySubjectsStep(t0 + budget)) {
         g_ms += std::chrono::duration<double, std::milli>(Clock::now() - t0).count();
-        return;  // the scan goes on next frame; the rows wait for it
+        return;  // the walk goes on next frame; the rows wait for it
     }
     while (g_next < g_rows.size() && Clock::now() - t0 < budget) {
         RowState& s = g_rows[g_next++];
         if (s.settled) continue;
         Check(s);
-        if (s.settled && !g_firstPass) g_settledMore = true;
     }
     g_ms += std::chrono::duration<double, std::milli>(Clock::now() - t0).count();
     if (g_next < g_rows.size()) return;
     g_running = false;
     FP::EndPass();
-    if (g_firstPass || g_settledMore) Report();  // a re-try that settled nothing says nothing
-    g_firstPass = false;
-    g_settledMore = false;
-    g_waiting = std::any_of(g_rows.begin(), g_rows.end(), [](const RowState& s) { return !s.settled; });
-    g_dueMs.store(g_waiting ? NowMs() + 1000 : -1, std::memory_order_release);
-    g_classSet = OI::ClassSetVersion();
-    g_lastTry = Clock::now();
+    if (g_firstPass || g_changed) {
+        g_reportDue = true;  // the report in a Tick of its own, outside the rows' budget
+        return;
+    }
+    Finish();  // a re-try that changed nothing says nothing
+}
+
+void Tick() {
+    if (g_running) {
+        Slice();
+        return;
+    }
+    if (g_reportDue) {
+        g_reportDue = false;
+        Report();
+        Finish();
+        return;
+    }
+    if (!g_waiting) return;
+    const uint64_t classSet = OI::ClassSetVersion();
+    if (classSet == g_classSet && Clock::now() - g_lastTry < std::chrono::seconds(5)) {
+        g_dueMs.store(NowMs() + 1000, std::memory_order_release);  // ask the class set again in a second
+        return;
+    }
+    // Some row waits for its class: try those again now that the class set moved or the timer ran out.
+    BeginPassState();
 }
 
 // ---- the capture ([dev] fingerprint_capture) ----
@@ -430,12 +563,14 @@ void Capture() {
     }
     ScanAnySubjects();
     for (const auto& [name, subjects] : g_anySubjects)
-        for (void* fn : subjects) fns.emplace_back(FP::PathOf(fn), fn);
+        for (const Subject& sub : subjects) fns.emplace_back(FP::PathOf(sub.fn), sub.fn);
     std::vector<std::string> rowLines;
     for (const F::Function* row = F::First(); row; row = row->Next()) {
         F::Resolved r;
-        if (row->GetMode() != F::Mode::AnyClass)
-            if (void* cls = row->Class() ? OI::ClassByName(row->Class()) : WitnessClass(*row)) r = F::ResolveOn(*row, cls);
+        if (row->GetMode() != F::Mode::AnyClass) {
+            const std::wstring witness = row->Class() ? std::wstring() : WitnessName(*row);
+            if (void* cls = OI::ClassByName(row->Class() ? row->Class() : witness.c_str())) r = F::ResolveOn(*row, cls);
+        }
         static const char* kModes[] = {"Declared", "Dispatch", "AnyClass", "RuntimeClass"};
         rowLines.push_back("#row " + std::string(row->Feature()) + " " + kModes[static_cast<int>(row->GetMode())] + " " +
                            Key(*row) + " -> " + (r ? FP::PathOf(r.Fn()) : std::string("-")));
@@ -464,6 +599,23 @@ void Capture() {
             "%d with a problem -> '%ls'", fns.size(), classes, rowLines.size(), ok, problems, path.c_str());
 }
 
+// The red arm's row, said at once when the key names none or names an any-class row: a run waiting on the
+// verdict line would otherwise wait on a clock.
+void CheckRedKey() {
+    if (g_red.empty()) return;
+    for (const RowState& s : g_rows) {
+        if (s.key != g_red) continue;
+        if (s.row->GetMode() == F::Mode::AnyClass) {
+            g_redSaid = true;
+            UE_LOGE("fingerprint-census: RED ARM FAILED %s (an any-class row: the red arm falsifies a class row's body)",
+                    g_red.c_str());
+        }
+        return;
+    }
+    g_redSaid = true;
+    UE_LOGE("fingerprint-census: RED ARM FAILED %s (no row has that key)", g_red.c_str());
+}
+
 }  // namespace
 
 void Run() {
@@ -474,45 +626,48 @@ void Run() {
         RowState s;
         s.row = row;
         s.dev = std::strncmp(row->Feature(), "dev.", 4) == 0;
+        s.key = Key(*row);
+        s.order = std::string(row->Feature()) + " " + s.key;
+        if (row->GetMode() == F::Mode::AnyClass) {
+            s.refAny = FindAny(row->Name());
+        } else if (row->Class()) {
+            s.ref = FindRef(row->Class(), row->Name());
+        }
         g_rows.push_back(s);
     }
-    g_next = 0;
+    g_redSaid = false;
+    CheckRedKey();
     g_ms = 0;
-    FP::BeginPass();
-    g_anyScanned = false;
-    g_scan.begun = false;
-    g_running = !g_rows.empty();
-    g_dueMs.store(g_running ? 0 : -1, std::memory_order_release);
     g_waiting = false;
     g_firstPass = true;
-    g_settledMore = false;
+    g_changed = false;
+    g_reportDue = false;
+    if (g_rows.empty()) {
+        g_dueMs.store(-1, std::memory_order_release);
+        return;
+    }
+    BeginPassState();
     UE_LOGI("fingerprint-census: %zu row(s) against the %s reference, checked over the next frames", g_rows.size(),
             kRefBuild);
 }
 
-void Tick() {
-    if (g_running) {
-        Slice();
-        return;
-    }
-    if (!g_waiting) return;
-    const uint64_t classSet = OI::ClassSetVersion();
-    if (classSet == g_classSet && Clock::now() - g_lastTry < std::chrono::seconds(5)) {
-        g_dueMs.store(NowMs() + 1000, std::memory_order_release);  // ask the class set again in a second
-        return;
-    }
-    // Some row's class was not loaded: try those again now that the class set moved or the timer ran out.
-    FP::BeginPass();
-    g_next = 0;
-    g_running = true;
-    g_dueMs.store(0, std::memory_order_release);
-    g_anyScanned = false;
-    g_scan.begun = false;
-}
-
-bool Due() {
+void PostIfDue() {
     const int64_t due = g_dueMs.load(std::memory_order_acquire);
-    return due == 0 || (due > 0 && NowMs() >= due);
+    if (!(due == 0 || (due > 0 && NowMs() >= due))) return;
+    bool idle = false;
+    if (!g_posted.compare_exchange_strong(idle, true, std::memory_order_acq_rel)) return;
+    GT::Post([] {
+        // Cleared as the task ends, a faulted one included (the image unwinds on a structured exception).
+        struct Clear {
+            ~Clear() { g_posted.store(false, std::memory_order_release); }
+        } clear;
+        // One Tick a drain: a drain runs every task posted while it runs, so a stall ends in one slice, not a
+        // run of slices with no engine frame between them (harness/pump.h's composite, the same rule).
+        const uint64_t drain = GT::DrainSerial();
+        if (drain == g_lastDrain) return;
+        g_lastDrain = drain;
+        Tick();
+    });
 }
 
 }  // namespace harness::fingerprint_census

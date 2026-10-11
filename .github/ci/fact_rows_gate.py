@@ -12,7 +12,9 @@ This gate holds, over the mod's source:
   3. its mode is one of Declared, Dispatch, AnyClass, RuntimeClass, and an AnyClass row has no class;
   4. its ident is used in its file beyond the declaration: a row nothing registers is a dead fact;
   5. the target's table has an entry for its key -- present or recorded absent for a class row, a
-     signature set for an any-class row -- so a release never ships a row the census cannot judge.
+     signature set for an any-class row, and for a run-time class row with no class an entry on at
+     least one class (the census keys it on the class its site resolves) -- so a release never ships a
+     row the census cannot judge.
 
   python .github/ci/fact_rows_gate.py           # PASS/FAIL over the tree
   python .github/ci/fact_rows_gate.py --drill   # the gate must fail each planted fault
@@ -68,7 +70,10 @@ def check(files, table_text):
             if mode == "AnyClass":
                 if fname not in anys:
                     faults.append("%s: no reference entry for any-class row %s" % (where, fname))
-            elif cls != "nullptr" and (cls[2:-1].lower(), fname) not in fns:
+            elif cls == "nullptr":
+                if fname not in {f for _, f in fns}:
+                    faults.append("%s: no reference entry keys run-time class row %s on any class" % (where, fname))
+            elif (cls[2:-1].lower(), fname) not in fns:
                 faults.append("%s: no reference entry for %s.%s" % (where, cls[2:-1], fn[2:-1]))
     return faults
 
@@ -95,13 +100,16 @@ def drill():
         "no reference": ({"x/a.cpp": base.replace('L"f"', 'L"h"').replace("kRowF", "kRowH")}, good_table),
         "any-class with a class": ({"x/a.cpp": 'UE_FACT_FN(kRowG, "lane", L"A_C", L"g", AnyClass);\n'
                                                'void X() { Use(kRowG); }\n'}, good_table),
+        "run-time class row keyed on no class": ({"x/a.cpp": 'UE_FACT_FN(kRowR, "lane", nullptr, L"r", RuntimeClass);\n'
+                                                            'void X() { Use(kRowR); }\n'}, good_table),
     }
     bad = 0
     for name, (files, table) in cases.items():
         if not check(files, table):
             print("drill: the gate PASSED a planted fault: %s" % name)
             bad += 1
-    if check({"x/a.cpp": base}, good_table):
+    clean = base + 'UE_FACT_FN(kRowR, "lane", nullptr, L"f", RuntimeClass);\nvoid Y() { Use(kRowR); }\n'
+    if check({"x/a.cpp": clean}, good_table):
         print("drill: the gate FAILED a clean row")
         bad += 1
     print("fact_rows_gate drill: %s (%d planted fault(s))" % ("PASS" if not bad else "FAIL", len(cases)))
