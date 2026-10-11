@@ -1,4 +1,4 @@
-// coop/dev/join_abort_drill.h -- [dev] the proof of A92's session-end seam.
+// coop/dev/join_abort_drill.h -- [dev] the proof of the client session-end seam.
 // A client presses the loading screen's Cancel mid-join (join_progress::RequestCancel), the
 // abort routes through harness::session_runtime::StopClientSession, and the drill judges that the
 // session's end tore the coop state down:

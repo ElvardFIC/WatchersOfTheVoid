@@ -44,9 +44,11 @@ static_assert(static_cast<int>(Lane::Count) == 3,
 
 Session::~Session() {
     // The listener's owner may be gone at process end, and the game's own quit runs no orderly
-    // shutdown: clear the slot first, so this Stop() reaches no other file's statics.
+    // shutdown: clear the slot first, so this stop reaches no other file's statics. DoStop_ runs the
+    // body WITHOUT the lifecycle mutex -- taking it here could hang the DLL unload on a lock a dying
+    // Start/Stop thread still holds, and at process exit nothing runs concurrently to need it.
     stopListener_.store(nullptr);
-    Stop();
+    DoStop_();
 }
 
 bool Session::TryGetReliable(ReliableMessage& out) {

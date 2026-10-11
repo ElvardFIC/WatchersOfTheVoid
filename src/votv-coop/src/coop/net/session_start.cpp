@@ -487,10 +487,18 @@ void Session::SetStopListener(void (*onStopped)()) {
 
 void Session::Stop() {
     std::lock_guard<std::mutex> lifecycle(lifecycleMutex_);
-    // We hold the mutex Start and Stop share, so running_ is ours to read then write with nothing
-    // concurrent. Bump the count BEFORE clearing running_, so a lock-free reader (net_pump::EndOwed)
-    // that sees running()==false also sees the new StopCount -- an end in flight is visible from its
-    // first instruction, never "stopped, old count" (which would let a start begin over an owed end).
+    DoStop_();
+}
+
+// The stop body. The caller guarantees exclusive access to running_: Stop() via the lifecycle mutex,
+// ~Session via process-exit quiescence (the slot is cleared first, so no Start or Stop runs
+// concurrently). The destructor cannot take the mutex -- blocking there on a lock a dying thread may
+// still hold would hang the DLL unload -- so the body lives here, reachable both ways.
+void Session::DoStop_() {
+    // Exclusive access to running_ (above). Bump the count BEFORE clearing running_, so a lock-free
+    // reader (net_pump::EndOwed) that sees running()==false also sees the new StopCount -- an end in
+    // flight is visible from its first instruction, never "stopped, old count" (which would let a start
+    // begin over an owed end).
     if (!running_.load(std::memory_order_acquire)) return;
     stopCount_.fetch_add(1, std::memory_order_acq_rel);
     running_.store(false, std::memory_order_release);

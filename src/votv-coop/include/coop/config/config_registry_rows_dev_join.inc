@@ -51,7 +51,7 @@ CFG_FLAG(rehost_rejoin, "rehost_rejoin", "dev", false, "VOTVCOOP_REHOST_REJOIN",
     "host-restart arm drops it when the relaunched host is up.")
 CFG_ENUM(join_abort, "join_abort", "dev", "off", "off|download|world",
     "VOTVCOOP_JOIN_ABORT",
-    "Drill (CLIENT): press the loading screen's Cancel mid-join and prove A92's session-end seam tore "
+    "Drill (CLIENT): press the loading screen's Cancel mid-join and prove the session-end seam tore "
     "the coop state down. 'download' (window A, before the pawn): run with the host's "
     "stall_world_stream_at_pct so the transfer cannot finish, press once the world blob is streaming "
     "with this client's apply blob held, and judge no apply blob survived the abort -- else an aborted "

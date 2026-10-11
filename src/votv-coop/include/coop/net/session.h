@@ -84,9 +84,9 @@ public:
     // flight is visible to every thread before its teardown runs (coop/session/net_pump's
     // TearDownSession latches on it). Thread-safe.
     uint64_t StopCount() const { return stopCount_.load(std::memory_order_acquire); }
-    // One function, set once at boot, called from inside Stop() the first time it stops a running
-    // session -- whoever stops it, on whatever thread. Not called from the destructor, which
-    // clears the slot before its own Stop(): at process end no other file's statics are reached.
+    // One function, set once at boot, called from inside the stop body the first time it stops a
+    // running session -- whoever stops it, on whatever thread. Not called from the destructor, which
+    // clears the slot before its own DoStop_(): at process end no other file's statics are reached.
     // A second, different listener is refused with an error line: one owner, by design.
     void SetStopListener(void (*onStopped)());
 
@@ -483,6 +483,12 @@ private:
     // is client-relayable; handshake and host-authoritative kinds never relay. Net thread.
     void RelayReliableToOtherClients(int originSlot, ReliableKind kind,
                                      const void* data, int len);
+
+    // The stop body, without the lifecycle mutex. Stop() takes the mutex then calls this; the
+    // destructor calls it directly, because at process exit no Start or Stop runs concurrently (the
+    // slot is cleared first) and blocking there on a mutex a dying thread may hold would hang the
+    // DLL unload. The caller guarantees exclusive access to running_, either way.
+    void DoStop_();
 
     Config cfg_;
     std::thread thread_;

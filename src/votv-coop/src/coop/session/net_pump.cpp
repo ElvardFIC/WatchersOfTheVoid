@@ -247,11 +247,12 @@ void TearDownSession(coop::net::Session& session, const char* why) {
     if (session.running()) return;  // a live session is not ended here; its stop comes first
     const uint64_t stops = session.StopCount();
     if (stops == g_tornDownBegun.load(std::memory_order_relaxed)) return;  // never ran, or this stop begun/done
-    // One teardown per stop: begun latches it so a later owed-end call for the same stop no-ops. The
-    // FINISHED count is published at scope exit -- cleanly AND on a fault (the destructor runs on the
+    // One teardown per stop: begun latches it so a later owed-end call for the same stop no-ops -- the
+    // run-once shape MTA has (its unload is an idempotent state change, reference/mtasa-blue/Client/core/CModManager.cpp:33-48).
+    // The FINISHED count is published at scope exit -- cleanly AND on a fault (the destructor runs on the
     // pump's own unwind, as RunAndWait's guard does) -- so EndOwed stays true until this pass ends (no
-    // start begins over it) and a faulted pass is marked done, never re-run over half-cleared state, as
-    // MTA unloads once (reference/mtasa-blue/Client/core/CModManager.cpp:79-91).
+    // start begins over it). Marking a FAULTED pass done, never re-run over half-cleared state, is ours;
+    // MTA has no fault policy.
     g_tornDownBegun.store(stops, std::memory_order_relaxed);
     struct FinishGuard {
         uint64_t stops;

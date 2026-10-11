@@ -39,7 +39,9 @@ bool StartCoopSession(const coop::net::Config& netCfg, coop::net::Refusal* why =
 // a host session that has since started. Stops on the TimelineThread, where the net-thread join
 // belongs, then RunAndWaits net_pump::TearDownSession so the coop state is gone before control
 // returns and before any next start. Returns whether it stopped a running client session (the abort
-// drain branches on it). A no-op, returning false, when no client session is running. TimelineThread.
+// drain branches on it). A no-op, returning false, when no client session is running. At process
+// shutdown it stops only and posts no teardown (the game-thread pump is uninstalled), still returning
+// true. TimelineThread.
 bool StopClientSession(const char* why);
 
 // Spawn the static 2nd player the instant the local mainPlayer_C exists

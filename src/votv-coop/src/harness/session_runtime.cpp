@@ -445,14 +445,15 @@ bool StopClientSession(const char* why) {
     if (!(g_session.running() && g_session.role() == coop::net::Role::Client)) return false;
     // Stop on this (the timeline) thread, where the net-thread join belongs, then tear the coop state
     // down on the game thread and wait for it: the next start begins on nothing this session left, and
-    // no destroy seam runs against a half-ended session -- MTA ends a client session the same way,
-    // synchronously, from its user paths (CModManager::Unload, reached by disconnect/connect in
-    // CCommandFuncs.cpp, CConnectManager.cpp:79 and quit in CCore.cpp:1597). Stop releases its lifecycle
-    // mutex before this RunAndWait, so the game thread never blocks on a timeline thread that is itself
-    // waiting on the game thread.
+    // no destroy seam runs against a half-ended session. MTA has a synchronous CModManager::Unload (its
+    // connect/reconnect in CCommandFuncs.cpp, quit in CCore.cpp:1597, and CConnectManager.cpp:79 all use
+    // it); our divergence is that EVERY end waits here synchronously, where MTA's disconnect and kick
+    // paths defer through RequestUnload. Stop releases its lifecycle mutex before this RunAndWait, so the
+    // game thread never blocks on a timeline thread that is itself waiting on the game thread.
     g_session.Stop();
-    // Process shutdown is the one exemption: the game-thread pump is uninstalled, so a RunAndWait would
-    // never drain -- stop only, no teardown, as exit skips the teardown by design.
+    // Process shutdown is the one exemption, and a divergence from MTA (whose quit runs Unload at
+    // CCore.cpp:1597 before TerminateProcess at :1602): our DoShutdown has already uninstalled the game-thread
+    // pump, so a RunAndWait would never drain -- stop only, no teardown, the process exiting regardless.
     if (coop::shutdown::IsShuttingDown()) return true;
     const int r = GT::RunAndWait([why](std::atomic<int>& done) {
         coop::net_pump::TearDownSession(g_session, why);
@@ -568,10 +569,10 @@ void RunPlayLoop(bool bootedIntoGameplay) {
         }
         const bool running = g_session.running();
         // A host session ends only through a flee (a local death the revive gave up on, or a quit),
-        // which already stopped it, tore the coop state down and travelled to the menu; the Post'd flee
-        // that used to sit here always found that done. What remains is the lobby: its lifetime is the
-        // host session's, so delist it now or the heartbeat keeps a dead lobby listed forever (a host
-        // killed in the world stayed in the browser). Blocking HTTP is fine on the TimelineThread.
+        // which stops it, tears the coop state down and travels to the menu on its own. What remains is
+        // the lobby: its lifetime is the host session's, so delist it now or the heartbeat keeps a dead
+        // lobby listed forever (a host killed in the world stayed in the browser). Blocking HTTP is fine
+        // on the TimelineThread.
         if (wasRunning && wasHostSession && !running && !coop::shutdown::IsShuttingDown()) {
             UE_LOGI("harness: host session ended -- delisting the lobby");
             coop::session_manager::EndHostedLobby();
@@ -588,10 +589,10 @@ void RunPlayLoop(bool bootedIntoGameplay) {
             if (running) {
                 coop::net_pump::Tick(g_session);
             } else {
-                // The script-gate hold ends with the session's teardown now -- TearDownSession ->
-                // DisconnectAll releases it, whatever stopped the session -- so this branch no longer
-                // heals it. A faulted teardown that left it held is the faulting module's to name, not
-                // this tick's to paper over half-cleared state.
+                // The script-gate hold ends with the session's teardown -- TearDownSession ->
+                // DisconnectAll releases it, whatever stopped the session -- so this branch leaves it
+                // alone. A faulted teardown that left it held is the faulting module's to name, not this
+                // tick's to paper over half-cleared state.
                 if (bootedIntoGameplay) {
                     // A run that auto-loaded its own world and may yet be joined: keep the coop
                     // observers armed so a session starting on this world does not begin behind.
