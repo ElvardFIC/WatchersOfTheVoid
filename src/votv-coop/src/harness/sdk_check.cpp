@@ -18,6 +18,7 @@
 
 #include "harness/compat_report.h"
 #include "ue_wrap/core/log.h"
+#include "ue_wrap/core/object_index.h"
 #include "ue_wrap/core/paths.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/sdk_profile.h"
@@ -248,6 +249,27 @@ const AssetCheck kAssets[] = {
     {P::name::FontName,                           P::name::FontClassName,                 Severity::Cosmetic,  "Roboto font for widgets (UMG falls back if missing)"},
 };
 
+// The checks run on a player's launch, in the world's first frames, so each lookup is the object index's: a
+// class in one lookup, an asset among its own class's instances. The finders' first lookup of a class, and
+// every asset lookup, walked the whole object array rendering a name per object -- 93 ms in one frame, measured.
+void* FindLoadedClass(const wchar_t* name) { return ue_wrap::object_index::ClassByName(name); }
+
+struct AssetQuery {
+    const wchar_t* name;
+    void*          found;
+};
+
+void* FindAsset(const wchar_t* objectName, const wchar_t* className) {
+    void* cls = FindLoadedClass(className);
+    if (!cls) return nullptr;
+    AssetQuery q{objectName, nullptr};
+    ue_wrap::object_index::ForEachInstance(cls, [](void* ctx, void* obj, int32_t) {
+        auto* query = static_cast<AssetQuery*>(ctx);
+        if (!query->found && R::NameEquals(R::NameOf(obj), query->name)) query->found = obj;
+    }, &q);
+    return q.found;
+}
+
 // Helper: convert a UTF-16 string to a flat narrow string for the report
 // (we only have ASCII names so this lossless-narrows). Newlines stripped.
 std::string Narrow(const wchar_t* w) {
@@ -261,7 +283,7 @@ void RunClassChecks(int& ok, int& fail, int& failPriority) {
     UE_LOGI("sdk-check: --- CLASS resolution ---");
     g_report << "--- CLASS resolution ---\n";
     for (const auto& c : kClasses) {
-        void* cls = R::FindClass(c.name);
+        void* cls = FindLoadedClass(c.name);
         if (cls) {
             ++ok;
         } else {
@@ -282,7 +304,7 @@ void RunFunctionChecks(int& ok, int& fail, int& failPriority, int& skipped) {
     UE_LOGI("sdk-check: --- UFUNCTION resolution ---");
     g_report << "--- UFUNCTION resolution ---\n";
     for (const auto& f : kFunctions) {
-        void* cls = R::FindClass(f.className);
+        void* cls = FindLoadedClass(f.className);
         if (!cls) {
             // The class was already counted as a CLASS failure (RunClassChecks). To avoid a noisy
             // double-count the function attempt is SKIPPED here, but it is tracked in the `skipped`
@@ -315,7 +337,7 @@ void RunNpcAllowlistCheck(int& ok, int& fail, int& failPriority) {
     constexpr Severity kNpcSev = Severity::Important;
     int npcOk = 0;
     for (size_t i = 0; i < P::name::kNpcAllowlistSize; ++i) {
-        if (R::FindClass(P::name::kNpcAllowlist[i])) {
+        if (FindLoadedClass(P::name::kNpcAllowlist[i])) {
             ++ok; ++npcOk;
         } else {
             ++fail; ++failPriority;
@@ -338,7 +360,7 @@ void RunAssetChecks(int& ok, int& fail, int& failPriority) {
     UE_LOGI("sdk-check: --- ASSET resolution ---");
     g_report << "--- ASSET resolution ---\n";
     for (const auto& a : kAssets) {
-        void* obj = R::FindObject(a.objectName, a.className);
+        void* obj = FindAsset(a.objectName, a.className);
         if (obj) {
             ++ok;
         } else {
