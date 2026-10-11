@@ -57,5 +57,6 @@ CFG_ENUM(join_abort, "join_abort", "dev", "off", "off|download|world",
     "with this client's apply blob held, and judge no apply blob survived the abort -- else an aborted "
     "join's inventory bleeds into the next join. 'world' (window B, after world-ready): run with the "
     "host's hold_snapshot_sec, press after this client announced world-ready, judge the announce state "
-    "is cleared, then rejoin and pass at the second world-ready. [JOIN-ABORT] lines; download has no "
+    "is cleared and that the player left the host's world for the menu, where the browser opens, then "
+    "rejoin and pass at the second world-ready. [JOIN-ABORT] lines; download has no "
     "rejoin leg (the host's stall hits every joiner).")

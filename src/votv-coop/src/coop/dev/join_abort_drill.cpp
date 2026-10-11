@@ -9,6 +9,8 @@
 #include "coop/session/session_manager.h"
 
 #include "ue_wrap/core/log.h"
+#include "ue_wrap/engine/world_identity.h"
+#include "ui/server_browser_surface.h"
 
 #include <string>
 
@@ -34,6 +36,7 @@ Arm WhichArm() {
 bool g_joinSeen = false;        // a join became active once -- so an end before a press is INCONCLUSIVE, not idle
 bool g_pressed = false;         // Cancel pressed at the arm's window
 bool g_announceJudged = false;  // world arm: the post-abort announce-clear check passed
+bool g_atMenu = false;          // world arm: the abort's end reached the menu with the browser
 bool g_rejoinDialed = false;    // world arm: the rejoin ConnectDirect fired
 bool g_done = false;            // terminal: the verdict is printed, nothing more to do
 
@@ -73,7 +76,7 @@ void OnFrameTail() {
     }
 }
 
-void OnNoSession() {
+void OnNoSession(bool leaving) {
     const Arm arm = WhichArm();
     if (arm == Arm::Off || g_done) return;
 
@@ -110,8 +113,26 @@ void OnNoSession() {
             g_done = true;  // red: no rejoin
             return;
         }
-        UE_LOGI("[JOIN-ABORT] world: announce cleared after the abort -- rejoining");
+        UE_LOGI("[JOIN-ABORT] world: announce cleared after the abort");
         g_announceJudged = true;
+    }
+
+    // Then where the player ended: the abort leaves the host's world for the menu, where the browser opens.
+    // The first pass here comes after the stop site returned, so a leave the end began is already under way;
+    // on bytes where the end begins none, that pass finds the world standing and nothing leaving it. Waits
+    // while a leave runs, or while the menu stands and the browser has not shown yet.
+    if (!g_atMenu) {
+        namespace WI = ue_wrap::world_identity;
+        const WI::WorldKind kind = WI::CurrentWorldKind();
+        if (kind != WI::WorldKind::Other) {
+            if (leaving) return;
+            UE_LOGE("[JOIN-ABORT] world FAIL: stayed-in-world");
+            g_done = true;
+            return;
+        }
+        if (!ui::server_browser_surface::IsOpen()) return;
+        UE_LOGI("[JOIN-ABORT] world: at the menu with the browser after the abort -- rejoining");
+        g_atMenu = true;
     }
 
     // Then dial the host again (once), as rehost_rejoin does; the pass is the second world-ready, noted

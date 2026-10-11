@@ -579,7 +579,9 @@ void RunPlayLoop(bool bootedIntoGameplay) {
         }
         wasRunning = running;
         if (running) wasHostSession = (g_session.role() == coop::net::Role::Host);
-        harness::pump::PostComposite([running, bootedIntoGameplay] {
+        // The leave's state is this thread's; the composite gets it by value.
+        const bool leaving = harness::join_leave::Active();
+        harness::pump::PostComposite([running, bootedIntoGameplay, leaving] {
             // One live answer per tick, on the game thread, which is where the world memo
             // refreshes; every consumer below that names a STATE reads this rather than the boot
             // parameter.
@@ -620,8 +622,8 @@ void RunPlayLoop(bool bootedIntoGameplay) {
                 // A client left at the menu by its host joins again when the rig says the host is back.
                 coop::dev::rehost_rejoin::Tick(g_session);
                 // [dev] The join-abort proof judges the abort here (after the stop + teardown) and, for
-                // the world arm, dials the rejoin; a single enum read when off.
-                coop::dev::join_abort_drill::OnNoSession();
+                // the world arm, where the player ended, then dials the rejoin; a single enum read when off.
+                coop::dev::join_abort_drill::OnNoSession(leaving);
             }
             // The roster shows a board in a world and none at the menu, which is a live question:
             // out of session it synthesises the local row, and at the menu there is nobody to show.
