@@ -410,7 +410,7 @@ void FailRefusedMenuJoin_(const coop::net::Refusal& why) {
 // A client join whose world could not be left: the notice for the dialog and the cover dropped, as a refused start
 // leaves it, and the browser back only at the menu -- never over the world the player still stands in.
 void FailLeaveForJoin_() {
-    coop::join_progress::Fail(coop::net::EndReason::CouldNotStart, "this world could not be left for the join");
+    coop::join_progress::Fail(coop::net::EndReason::WorldNotLeft, "the join from this world cannot start");
     coop::join_progress::Reset();
     if (!coop::shutdown::IsShuttingDown() &&
         ue_wrap::world_identity::CurrentWorldKind() == ue_wrap::world_identity::WorldKind::Other)
@@ -438,10 +438,11 @@ void InstallLobbyHeartbeatSources() {
     coop::session_manager::SetLinksSource(&LobbyLinkCounts);
 }
 
-bool StopClientSession(const char* why) {
+bool EndClientSession(const char* why) {
     // The client-role guard the three timeline stop sites carried, in one place: a stale cancel must
     // never Stop a host session that has since started (a self-join Cancel once killed the host the
-    // instant it started). A host, or an already-stopped session, is left alone.
+    // instant it started). A host, or an already-stopped session, is left alone: only a flee stops a
+    // client session elsewhere, and it travels to the menu itself.
     if (!(g_session.running() && g_session.role() == coop::net::Role::Client)) return false;
     // Stop on this (the timeline) thread, where the net-thread join belongs, then tear the coop state
     // down on the game thread and wait for it: the next start begins on nothing this session left, and
@@ -453,15 +454,34 @@ bool StopClientSession(const char* why) {
     g_session.Stop();
     // Process shutdown is the one exemption, and a divergence from MTA (whose quit runs Unload at
     // CCore.cpp:1597 before TerminateProcess at :1602): our DoShutdown has already uninstalled the game-thread
-    // pump, so a RunAndWait would never drain -- stop only, no teardown, the process exiting regardless.
+    // pump, so a RunAndWait would never drain -- stop only, no teardown, the process exiting regardless. Nor a
+    // return or the browser, whose opening starts HTTP workers a teardown must not.
     if (coop::shutdown::IsShuttingDown()) return true;
-    const int r = GT::RunAndWait([why](std::atomic<int>& done) {
+    // The teardown's own game-thread task also reads where the player stands, before it tears down, so a fault
+    // cannot lose the read: the world kind, which refreshes there and so is fresh even when the task waited
+    // behind a level load, and whether a flee of this session is under way -- one posted from a tick before
+    // the stop, and run first, travels to the menu itself, and a second travel would load the menu twice.
+    namespace WI = ue_wrap::world_identity;
+    WI::WorldKind kind = WI::WorldKind::Unknown;
+    bool fleeing = false;
+    const int r = GT::RunAndWait([why, &kind, &fleeing](std::atomic<int>& done) {
+        kind = WI::CurrentWorldKind();
+        fleeing = coop::net_pump::IsFleeing();
         coop::net_pump::TearDownSession(g_session, why);
         done.store(1, std::memory_order_release);
     });
     if (r == GT::kTaskFaulted)
         UE_LOGE("harness: session teardown FAULTED during a client stop (%s) -- coop state left "
                 "half-cleared; the faulting module's dump names it", why);
+    if (coop::shutdown::IsShuttingDown()) return true;  // began during the teardown's wait
+    if (fleeing) return true;                            // the flee's travel takes the player to the menu
+    // The player ends at the menu, as MTA forces its main menu back after every unload
+    // (reference/mtasa-blue/Client/core/CModManager.cpp:286-289) and as a session that a flee ended is taken
+    // there: a world that is not the menu -- the host's, which the join loaded -- is left through join_leave's
+    // travel, the browser opened once the menu stands; at the menu the browser opens now. A degraded world
+    // reader cannot tell the two apart, so it moves nobody and the browser opens as at the menu (join_leave
+    // says so once).
+    if (!harness::join_leave::BeginReturn(kind)) ui::server_browser_surface::Open();
     return true;
 }
 
@@ -470,22 +490,24 @@ void RunPlayLoop(bool bootedIntoGameplay) {
     bool wasRunning = false;     // the session's running-to-stopped edge
     bool wasHostSession = false;  // and whether the session that was running was the host's
     while (!coop::shutdown::IsShuttingDown()) {
-        // A client join abort (Cancel, or a connect failure): Stop here (the thread Stop's join
-        // belongs on), drop the loading state, reopen the browser; multiplayer_menu restores the
-        // hidden menu once join_progress goes inactive. One drain for both paths.
+        // A client join abort (Cancel, or a connect failure): end the session here (the thread Stop's
+        // join belongs on), drop the loading state, and put the player at the menu with the browser;
+        // multiplayer_menu restores the hidden menu once join_progress goes inactive. One drain for both
+        // paths.
         if (coop::join_progress::TakeAbortRequest()) {
             coop::join_progress::Reset();  // the cover first, as in the transfer loop's drain
-            // Only a client join is abortable here; StopClientSession's role guard ignores a stale
+            // Only a client join is abortable here; EndClientSession's role guard ignores a stale
             // cancel that would otherwise Stop a host session that has since started (a self-join
-            // Cancel once killed the host the instant it started), and ends the client session's coop
-            // state -- the aborted-join inventory among it -- before this returns.
-            if (StopClientSession("join aborted -- client cancelled")) {
-                UE_LOGI("harness: join aborted -- stopped the client session + reopening the browser");
-                ui::server_browser_surface::Open();
+            // Cancel once killed the host the instant it started), ends the client session's coop
+            // state -- the aborted-join inventory among it -- before this returns, and starts the
+            // player's way to the menu.
+            if (EndClientSession("join aborted -- client cancelled")) {
+                UE_LOGI("harness: join aborted -- the client session ended");
             } else if (harness::join_leave::Active()) {
-                // A join cancelled while it leaves this world for the menu: the cover goes, and the
-                // leave's next step ends it (reopening the browser once the travel had dispatched).
-                UE_LOGI("harness: join cancelled while leaving this world for the menu -- clearing the cover");
+                // A join cancelled while this world is left for the menu: the cover goes. A join's
+                // leave ends at its next step (reopening the browser once the travel had dispatched);
+                // a return goes on to the menu, where the browser opens.
+                UE_LOGI("harness: join cancelled while this world is left for the menu -- clearing the cover");
             } else {
                 // A host running, or nothing: a stale client abort; the cover is cleared only, never
                 // a Stop of the host or the browser over gameplay.
@@ -515,7 +537,8 @@ void RunPlayLoop(bool bootedIntoGameplay) {
             // done, a no-op if nothing is queued. It waits while a client join leaves this world.
             if (!harness::join_leave::Active()) harness::world_boot::DriveHostBootIfPending();
             // Browser Join / Direct connect: start immediately on the current world, or, for a client join
-            // that starts inside a world, once join_leave has left it for the menu.
+            // that starts inside a world, once join_leave has left it for the menu. A return to the menu
+            // after a client session's end is stepped here too, and a start waits for it.
             if (!g_session.running()) {
                 coop::net::Config left;
                 const harness::join_leave::Outcome leave = harness::join_leave::Step(left);
@@ -526,9 +549,20 @@ void RunPlayLoop(bool bootedIntoGameplay) {
                 } else if (leave == harness::join_leave::Outcome::CancelledLeft &&
                            !coop::shutdown::IsShuttingDown()) {
                     ui::server_browser_surface::Open();  // at the menu, as a cancelled menu join leaves it
+                } else if (leave == harness::join_leave::Outcome::ReturnFailed &&
+                           !coop::shutdown::IsShuttingDown()) {
+                    // The player is still in the world, where no browser opens: the notice tells them, with
+                    // no join or cover behind it (an earlier notice of the same join stands instead).
+                    coop::join_progress::NoteDisconnect(
+                        coop::net::EndReason::WorldNotLeft,
+                        "the session has ended; restart the game if its pause menu cannot leave either",
+                        /*afterJoin=*/false);
                 }
+                // Asked afresh, not read from `leave`: a join started above can end inside this pass and
+                // begin a return, and a pending start must not reach join_leave::Begin over it.
+                bool started = false;
                 coop::net::Config pending;
-                if (leave != harness::join_leave::Outcome::Waiting && !g_session.running() &&
+                if (!harness::join_leave::Active() && !g_session.running() &&
                     coop::session_manager::TakePendingStart(pending)) {
                     // The stale-start guard: a browser client join raises join_progress at the
                     // click, and the master round trip can QueueStart after the player cancelled; a
@@ -537,6 +571,7 @@ void RunPlayLoop(bool bootedIntoGameplay) {
                     if (pending.role == coop::net::Role::Client && !coop::join_progress::Active()) {
                         UE_LOGI("harness: discarding stale browser client start -- join no longer active (cancelled/failed)");
                     } else {
+                        started = true;
                         UE_LOGI("harness: browser-initiated coop session");
                         coop::net::Refusal why{coop::net::EndReason::CouldNotStart, {}};
                         // The menu-mode client join: connect at the menu, download the host's save,
@@ -565,6 +600,11 @@ void RunPlayLoop(bool bootedIntoGameplay) {
                         }
                     }
                 }
+                // A return that reached the menu: the browser, unless a start began in this pass or a join
+                // is under way, which owns the screen (its own end opens the browser if it fails).
+                if (leave == harness::join_leave::Outcome::Returned && !started &&
+                    !coop::join_progress::Active() && !coop::shutdown::IsShuttingDown())
+                    ui::server_browser_surface::Open();
             }
         }
         const bool running = g_session.running();

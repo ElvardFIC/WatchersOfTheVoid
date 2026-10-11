@@ -194,7 +194,8 @@ void Render() {
             ImGui::PopStyleColor();
         } else {
             // Cancel: abort the CLIENT join (the harness drains the request ->
-            // StopClientSession: the session stops, its coop state is torn down, the browser reopens).
+            // EndClientSession: the session stops, its coop state is torn down, and the player is
+            // put at the menu, leaving the host's world first if they stand in it, with the browser).
             const float btnW = S(120.0f);
             ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetContentRegionAvail().x - btnW) * 0.5f);
             if (ImGui::Button(l10n::Label(l10n::Tc("hud", "Cancel"), "cancel"), ImVec2(btnW, 0.0f)))

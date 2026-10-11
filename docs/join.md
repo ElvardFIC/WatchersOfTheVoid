@@ -257,6 +257,13 @@ end reason, so both ends log one code; `T` the transport. `MV-J28` and `MV-J29` 
 host's own start: a host from the hosting window before its world loads, with the code and the
 sentence on its status line.
 
+Wherever a join ends before it completed, the player ends at the main menu with the server browser:
+one already standing in the host's world, which the join loaded, is taken to the menu first by the
+travel the game's own quit runs, as MTA shows its main menu after every disconnect
+(`harness/join_leave`, `harness/session_runtime`). A session that ends after its join, by a death
+the revive gives up on, a quit or the host leaving, travels to the menu the same way (`coop/session/net_pump`). When the
+game will not travel, the player is told so (`MV-J31`).
+
 | Code | Meaning |
 |---|---|
 | `MV-J01` | Could not reach the server list |
@@ -289,6 +296,7 @@ sentence on its status line.
 | `MV-J28` | The player's `net.ice` is neither `all` nor `relay`, or `multivoid.ini` could not be read whole: locked or failing, or holding a zero byte or a UTF-16 mark (a file saved as UTF-16), the detail saying which of the two; nothing the policy governs starts until it is fixed |
 | `MV-J29` | `net.ice=relay`, and the session has no TURN server to relay through |
 | `MV-J30` | `net.ice=relay`, and the join is a direct one, which would show the host the player's address |
+| `MV-J31` | The game would not travel to the main menu: from a world a join starts in, or after a session ended (its game mode refused the travel, or it never dispatched or arrived); the player is still in that world |
 | `MV-H01` | Wrong password |
 | `MV-H02` | This server needs a password |
 | `MV-H03` | Too many password attempts; try again in ten minutes |

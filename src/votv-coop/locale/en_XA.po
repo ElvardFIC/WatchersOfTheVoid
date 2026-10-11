@@ -1320,6 +1320,9 @@ msgstr "[[Your body skin -- what YOU see looking down and what OTHERS see. Saved
 msgid "Your connection presented no key identity."
 msgstr "[[Your connection presented no key identity.]]"
 
+msgid "Your game could not leave this world for the main menu."
+msgstr "[[Your game could not leave this world for the main menu.]]"
+
 msgid "Your game loaded the world but never finished settling into it."
 msgstr "[[Your game loaded the world but never finished settling into it.]]"
 

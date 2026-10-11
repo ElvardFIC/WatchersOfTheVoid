@@ -67,8 +67,9 @@ enum class Stage : int {
 
 // Whether the cover represents a client join or a host boot. The two share the loading-screen
 // and menu-hide machinery but render different text and abort differently: a client join has
-// a cancel button (stop the session and reopen the browser); a host boot has no cancel (the
-// player waits for their own world) and never drives the session-stop abort path.
+// a cancel button (end the session and put the player at the menu with the browser); a host
+// boot has no cancel (the player waits for their own world) and never drives the session-stop
+// abort path.
 enum class Mode : int { Client = 0, Host = 1 };
 
 // An immutable copy for the renderer: one cheap struct, no locks held by the caller.
@@ -160,10 +161,10 @@ void NotePropApplied();                            // ++applied (clamped); no-op
 void Complete();                                   // -> Idle (cover lifts)
 void Reset();                                       // -> Idle (force hide: disconnect/shutdown/abort)
 
-// Abort the in-flight join. Two sources, one harness reaction (stop the session, hide the
-// cover, reopen the browser), drained through TakeAbortRequest on the harness thread, since
-// the render and net threads must not stop the net session directly (that joins the net
-// thread): RequestCancel is the loading screen's cancel button, and Fail is a join that could
+// Abort the in-flight join. Two sources, one harness reaction (end the session, hide the
+// cover, put the player at the menu with the browser), drained through TakeAbortRequest on the
+// harness thread, since the render and net threads must not stop the net session directly (that
+// joins the net thread): RequestCancel is the loading screen's cancel button, and Fail is a join that could
 // not be established (a master or HTTP failure, a synchronous start failure, a transport
 // connect that never reached connected), its code and detail logged so they surface in the
 // console. Both are no-ops unless a join is active, and idempotent.

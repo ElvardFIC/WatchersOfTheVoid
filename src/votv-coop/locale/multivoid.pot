@@ -1650,6 +1650,10 @@ msgid "Your connection presented no key identity."
 msgstr ""
 
 #: src/coop/net/end_reason.cpp
+msgid "Your game could not leave this world for the main menu."
+msgstr ""
+
+#: src/coop/net/end_reason.cpp
 msgid "Your game loaded the world but never finished settling into it."
 msgstr ""
 

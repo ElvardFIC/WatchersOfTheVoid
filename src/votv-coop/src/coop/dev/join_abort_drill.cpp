@@ -92,7 +92,7 @@ void OnNoSession(bool leaving) {
         return;
     }
 
-    // Pressed, and no session now runs: StopClientSession stopped it and ran TearDownSession before
+    // Pressed, and no session now runs: EndClientSession stopped it and ran TearDownSession before
     // this branch. Judge the teardown by what it owed, on the post-teardown state.
     if (arm == Arm::Download) {
         // The per-player apply blob must be gone (the teardown's DisconnectAll clears it). On the bytes

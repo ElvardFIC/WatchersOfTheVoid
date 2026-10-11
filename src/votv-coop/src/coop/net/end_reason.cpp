@@ -54,6 +54,7 @@ constexpr Row kRows[] = {
     {EndReason::IcePolicyUnreadable,   {"MV-J28", L10N_MARK("Your net.ice setting could not be read as all or relay. Set it to one of them in multivoid.ini, or make the file readable.")}},
     {EndReason::RelayWithoutServer,    {"MV-J29", L10N_MARK("Your net.ice=relay allows only a relayed connection, and this session has no relay server.")}},
     {EndReason::RelayRefusesDirect,    {"MV-J30", L10N_MARK("Your net.ice=relay keeps your address from other players, and a direct connection would show it to the host. Join a lobby that is not direct, or remove net.ice from multivoid.ini.")}},
+    {EndReason::WorldNotLeft,          {"MV-J31", L10N_MARK("Your game could not leave this world for the main menu.")}},
     // H -- the host decided
     {EndReason::WrongPassword,           {"MV-H01", L10N_MARK("Wrong password.")}},
     {EndReason::PasswordRequired,        {"MV-H02", L10N_MARK("This server needs a password.")}},

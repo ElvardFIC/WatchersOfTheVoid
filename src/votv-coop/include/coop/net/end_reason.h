@@ -71,6 +71,8 @@ enum class EndReason : uint8_t {
     IcePolicyUnreadable,    // net.ice is neither all nor relay, or multivoid.ini could not be read
     RelayWithoutServer,     // net.ice=relay and the session has no TURN server
     RelayRefusesDirect,     // net.ice=relay and the session is a direct dial
+    // LOCAL, after a session ended or before a join from a world: the game would not travel to the menu.
+    WorldNotLeft,           // the game mode refused the travel to the menu, or it never dispatched or arrived
 
     // H -- the host decided; rides the transport's application end reason. Values 40..89.
     WrongPassword = 40,
@@ -115,7 +117,7 @@ enum class EndReason : uint8_t {
     // Each family's bounds, for the table's completeness check: a family is contiguous from its
     // first enumerator, so the row count must equal the sum of the three spans.
     kJoinerFirst = MasterUnreachable,
-    kJoinerLast = RelayRefusesDirect,
+    kJoinerLast = WorldNotLeft,
     kHostFirst = WrongPassword,
     kHostLast = OfficialClientRefused,
     kTransportFirst = Timeout,

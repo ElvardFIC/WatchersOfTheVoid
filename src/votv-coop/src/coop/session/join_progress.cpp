@@ -51,7 +51,7 @@ std::atomic<int64_t>  g_hostBeaconMs{0};
 // Which of the announce gates this client is held on, and what it was when last reported. The
 // watchdog reads the phase token; this only names the gate in the failure sentence.
 std::atomic<uint8_t>  g_worldGate{0};
-std::atomic<bool>     g_abortReq{false};  // Cancel button OR a connect failure -> harness drains (Stop + reopen browser)
+std::atomic<bool>     g_abortReq{false};  // Cancel button OR a connect failure -> harness drains (end + the menu)
 
 std::mutex  g_hostMu;
 std::string g_host;  // guarded by g_hostMu
