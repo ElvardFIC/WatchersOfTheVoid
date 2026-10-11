@@ -74,6 +74,7 @@ int               g_slot = -1;
 uint64_t          g_witnessBase = 0;
 int               g_sentinelBase = 0;   // signal_park: sentinel rows already saved at arm
 int32_t           g_rowsSeen = -1;      // signal_park: the row count the last scan saw
+SS::RowKey        g_tailSeen{};         // signal_park: and the last row then
 uint32_t          g_lineSeqBase = 0;    // chat: the last line committed before arm
 Clock::time_point g_armAt{};
 
@@ -210,6 +211,7 @@ void ArmOnFirstReadySlot(coop::net::Session* s) {
     if (ArmOf() == Arm::SignalPark) {
         g_sentinelBase = CountSignalSentinels();
         g_rowsSeen = SS::Count();
+        if (g_rowsSeen > 0) SS::ReadRowKey(g_rowsSeen - 1, g_tailSeen);
     } else {
         g_lineSeqBase = LastLineSeq();
     }
@@ -229,10 +231,14 @@ void JudgeSignalPark(coop::net::Session* s) {
                  : "the receive paused on another lane's apply park");
         return;
     }
-    // The rows are read only when their count moved: the sentinel's arrival is an append.
+    // The rows are read only when the array changed: its count, or its last row, where the sentinel's
+    // append lands (an append and a removal in one tick leave the count alone, not the tail).
     const int32_t n = SS::Count();
-    if (n == g_rowsSeen) return;
+    SS::RowKey tail{};
+    if (n > 0) SS::ReadRowKey(n - 1, tail);
+    if (n == g_rowsSeen && tail == g_tailSeen) return;
     g_rowsSeen = n;
+    g_tailSeen = tail;
     if (CountSignalSentinels() > g_sentinelBase)
         Pass("the apply park never paused the receive loop; an honest saved signal still applied");
 }
@@ -296,6 +302,7 @@ void OnDisconnect() {
     g_witnessBase = 0;
     g_sentinelBase = 0;
     g_rowsSeen = -1;
+    g_tailSeen = {};
     g_lineSeqBase = 0;
     g_armAt = {};
     g_sent = false;
