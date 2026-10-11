@@ -17,6 +17,7 @@
 #include "harness/autotest.h"
 
 #include "coop/net/session.h"
+#include "coop/world/email_sync.h"
 #include "harness/session_runtime.h"
 #include "ue_wrap/core/game_thread.h"
 #include "ue_wrap/core/log.h"
@@ -29,16 +30,27 @@ namespace {
 
 namespace GT = ue_wrap::game_thread;
 
+// The email lane's own predicates live on the game thread; this thread asks them there.
+bool EmailSettled() {
+    return GT::RunAndWait([](std::atomic<int>& a) { a.store(coop::email_sync::Settled() ? 1 : 2); }) == 1;
+}
+bool SnapshotTaken(int slot) {
+    return GT::RunAndWait([slot](std::atomic<int>& a) {
+               a.store(coop::email_sync::JoinSnapshotCaptured(slot) ? 1 : 2);
+           }) == 1;
+}
+
 void AuthorDrillEmail(const wchar_t* topic) {
     GT::Post([topic] {
         ue_wrap::email::Row r;
         r.username = 0;
         r.topic = topic;
         r.text = L"seeds-arc drill row (autotest_seeddrill)";
-        if (ue_wrap::email::AddEmail(r))
+        const ue_wrap::RowApply a = ue_wrap::email::AddEmail(r);
+        if (a.result == ue_wrap::RowApplyResult::Applied)
             UE_LOGI("[SEED-DRILL] authored %ls", topic);
         else
-            UE_LOGW("[SEED-DRILL] AddEmail FAILED for %ls", topic);
+            UE_LOGW("[SEED-DRILL] AddEmail FAILED for %ls -- %s", topic, a.why);
     });
 }
 
@@ -51,12 +63,17 @@ DWORD WINAPI SeedDrillThread(LPVOID /*arg*/) {
     }
     auto& s = harness::session_runtime::Session();
 
-    // Phase 1: the SOLO email -- must land before any client connects (the smoke
-    // launches the client ~20 s after host boot; author as soon as the session
-    // runs and the world can take it). If a peer already connected, skip: the
-    // solo case needs the pre-connect save state.
+    // Phase 1: the SOLO email -- must land before any client connects. Authored the moment the
+    // session runs and the email lane has settled against its array, the state a row added to this
+    // world needs; the loop bounds below are failure bounds, never a wait. If a peer already
+    // connected, skip: the solo case needs the pre-connect save state.
     for (int i = 0; i < 600 && !s.running(); ++i) ::Sleep(100);
-    ::Sleep(8000);  // world-up settle (the email array must be live)
+    bool settled = false;
+    for (int i = 0; i < 1200 && s.running() && !(settled = EmailSettled()); ++i) ::Sleep(100);
+    if (!settled) {
+        UE_LOGW("[SEED-DRILL] the email lane never settled -- drill not run");
+        return 0;
+    }
     bool anyPeer = false;
     for (int i = 1; i < coop::net::kMaxPeers; ++i)
         if (s.IsSlotWorldReady(i)) anyPeer = true;
@@ -66,28 +83,16 @@ DWORD WINAPI SeedDrillThread(LPVOID /*arg*/) {
         UE_LOGW("[SEED-DRILL] a peer is already world-ready -- solo phase skipped");
     }
 
-    // Phase 2: the IN-WINDOW email -- wait for a slot that is CONNECTED but not
-    // yet world-ready (the joiner's load window, which starts AFTER its save
-    // snapshot is captured at the transfer OnRequest). Author once.
-    UE_LOGI("[SEED-DRILL] waiting for a connected-but-not-ready slot (the load window)...");
+    // Phase 2: the IN-WINDOW email -- authored for a slot that is CONNECTED, not yet world-ready (the
+    // joiner's load window), and whose save snapshot has been captured: a row authored before the
+    // capture would ride the SAVE and leave the loss case unexercised, so the capture itself is the
+    // state waited on. Author once. The loop bound is a failure bound.
+    UE_LOGI("[SEED-DRILL] waiting for a connected-but-not-ready slot past its snapshot...");
     for (int waited = 0; waited < 3000; ++waited) {  // up to 5 min
         for (int slot = 1; slot < coop::net::kMaxPeers; ++slot) {
-            if (s.HasPeerConn(slot) && !s.IsSlotWorldReady(slot)) {
-                // The authoring must land AFTER the OnRequest snapshot: the save serialize fires
-                // within ~2-5 s of the connect and the load window is 30-60 s long, so a 3 s wait
-                // races ahead of the request and the email rides the SAVE instead, leaving the loss
-                // case unexercised. 12 s is safely post-snapshot and still deep in the window. The
-                // log ORDER is the per-run proof: the in-window "[SEED-DRILL] authored" must follow
-                // the host's "captured ... at blob instant" line.
-                ::Sleep(12000);
-                if (s.IsSlotWorldReady(slot)) {
-                    UE_LOGW("[SEED-DRILL] slot %d raced to ready during the wait -- "
-                            "in-window phase NOT run (inconclusive, re-run)", slot);
-                    return 0;
-                }
-                AuthorDrillEmail(L"[seed-drill] in-window");
-                return 0;
-            }
+            if (!s.HasPeerConn(slot) || s.IsSlotWorldReady(slot) || !SnapshotTaken(slot)) continue;
+            AuthorDrillEmail(L"[seed-drill] in-window");
+            return 0;
         }
         ::Sleep(100);
     }

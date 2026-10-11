@@ -126,11 +126,16 @@ bool DelEmail(int32_t index) {
     return ue_wrap::Call(laptop, f);
 }
 
-bool AddEmail(const Row& row) {
+RowApply AddEmail(const Row& row) {
+    using Res = RowApplyResult;
+    // The two the game cannot be asked yet: no world, or the verb not found in it.
     void* gm = world_singleton::Gamemode();
-    if (!gm || !g_addEmailFn) return false;
+    if (!gm) return {Res::NotNow, "no gamemode"};
+    if (!g_addEmailFn) return {Res::NotNow, "addEmail not resolved"};
+    // Every other failure is final for the row: the verb's layout and the text library are fixed for
+    // the process, so what fails here fails on every try.
     ue_wrap::ParamFrame f(g_addEmailFn);
-    if (!f.valid()) return false;
+    if (!f.valid()) return {Res::Refused, "addEmail's parameter frame could not be built"};
     // Hand-build the 0x50 Fstruct_email in place inside the frame's `item`
     // param: new=true, pfp resolved-or-null, username byte, date zeroed
     // (addEmail re-stamps it from the synced daynightCycle clock), topic/text
@@ -143,10 +148,12 @@ bool AddEmail(const Row& row) {
         std::memcpy(item + kEmail_pfp, &pfp, sizeof(pfp));  // null-safe (empty brush)
     }
     item[kEmail_username] = row.username;
-    if (!FT::MintFText(row.topic.c_str(), item + kEmail_topic)) return false;
-    if (!FT::MintFText(row.text.c_str(), item + kEmail_text)) return false;
-    if (!f.SetRaw(L"item", item, kEmailStride)) return false;
-    return ue_wrap::Call(gm, f);
+    if (!FT::MintFText(row.topic.c_str(), item + kEmail_topic) ||
+        !FT::MintFText(row.text.c_str(), item + kEmail_text))
+        return {Res::Refused, "a text could not be made an FText"};
+    if (!f.SetRaw(L"item", item, kEmailStride)) return {Res::Refused, "the item parameter was refused"};
+    if (!ue_wrap::Call(gm, f)) return {Res::Refused, "addEmail faulted"};
+    return {Res::Applied, ""};
 }
 
 }  // namespace ue_wrap::email
