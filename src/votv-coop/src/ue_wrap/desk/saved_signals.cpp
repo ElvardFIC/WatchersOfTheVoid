@@ -27,11 +27,15 @@ void* g_deleteSignalFn = nullptr;
 
 std::chrono::steady_clock::time_point g_nextResolve{};
 bool g_coreResolved = false;
+// The name library saveSignal's row is minted with, found on this pass's own 2 s rhythm: asked per
+// apply, its resolve would walk the object array on every tick a missing library keeps a row parked.
+bool g_nameLib = false;
 
 void ResolvePass() {
     const auto now = std::chrono::steady_clock::now();
     if (now < g_nextResolve) return;
     g_nextResolve = now + std::chrono::seconds(2);
+    if (!g_nameLib) g_nameLib = ue_wrap::fname_utils::Resolved();
     if (!g_gamemodeCls) g_gamemodeCls = R::FindClass(L"mainGamemode_C");
     if (!g_gamemodeCls) return;
     if (g_offSavedSignals < 0)
@@ -91,7 +95,7 @@ RowApply ApplySaveSignal(const SD::Row& row) {
     void* gm = world_singleton::Gamemode();
     if (!gm) return {Res::NotNow, "no gamemode"};
     if (!g_saveSignalFn) return {Res::NotNow, "saveSignal not resolved"};
-    if (!ue_wrap::fname_utils::Resolved()) return {Res::NotNow, "the name library not resolved"};
+    if (!g_nameLib) return {Res::NotNow, "the name library not resolved"};
     // Every other failure is final for the row: the verb's layout and the name library are fixed for
     // the process, so what fails here fails on every try.
     ue_wrap::ParamFrame f(g_saveSignalFn);
@@ -126,15 +130,18 @@ bool FirstOrdinarySignalName(std::wstring& out) {
     void* gm = world_singleton::Gamemode();
     if (!gm) return false;
     // Plain (non-GUID) member names, so FindPropertyOffset resolves them; the two arrays are filled
-    // in parallel, so index i of signalUniques describes name i. Offsets of the class, found once.
+    // in parallel, so index i of signalUniques describes name i. Looked up once: a class's members do
+    // not appear later, so a miss is final too.
+    static bool looked = false;
     static int32_t offNames = -1, offUniq = -1;
-    if (offNames < 0 || offUniq < 0) {
+    if (!looked) {
         void* cls = R::ClassOf(gm);
         if (!cls) return false;
+        looked = true;
         offNames = R::FindPropertyOffset(cls, L"signalNames_default");
         offUniq = R::FindPropertyOffset(cls, L"signalUniques");
-        if (offNames < 0 || offUniq < 0) return false;
     }
+    if (offNames < 0 || offUniq < 0) return false;
     struct { R::FName* data; int32_t num; int32_t max; } names{};
     std::memcpy(&names, static_cast<uint8_t*>(gm) + offNames, sizeof(names));
     struct { uint8_t* data; int32_t num; int32_t max; } uniq{};  // TArray<bool>, 1 byte/elem

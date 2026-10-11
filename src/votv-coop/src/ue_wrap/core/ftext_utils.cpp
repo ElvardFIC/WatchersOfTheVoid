@@ -8,7 +8,6 @@
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/sdk_profile.h"
 
-#include <chrono>
 #include <cstring>
 
 namespace ue_wrap::ftext_utils {
@@ -27,16 +26,12 @@ const wchar_t* g_inputParam = nullptr;
 bool g_cached = false;
 uint8_t g_emptyBytes[kFTextSize] = {0};
 
-// A failed resolve is tried again at most every 2 s, its warning said once: a lane that asks each tick
-// while the library is missing (a port that renamed it) must not walk the object array every frame.
-std::chrono::steady_clock::time_point g_nextTry{};
+// The missing-parameter warning is said once: every call retries the resolve, and a caller that asks
+// each tick would otherwise say it each tick.
 bool g_warnedParam = false;
 
 bool Resolve() {
     if (g_ktlCdo && g_convStrToTextFn && g_inputParam) return true;
-    const auto now = std::chrono::steady_clock::now();
-    if (now < g_nextTry) return false;
-    g_nextTry = now + std::chrono::seconds(2);
     if (!g_ktlCdo) g_ktlCdo = R::FindClassDefaultObject(P::name::KismetTextLibraryClass);
     if (g_ktlCdo && !g_convStrToTextFn) {
         if (void* kc = R::ClassOf(g_ktlCdo)) {

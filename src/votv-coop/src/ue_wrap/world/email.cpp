@@ -41,11 +41,15 @@ void* g_delEmailFn = nullptr; // ui_laptop_C::delEmail(int32 Index)
 
 std::chrono::steady_clock::time_point g_nextResolve{};
 bool g_coreResolved = false;
+// The text library addEmail's item is minted with, found on this pass's own 2 s rhythm (saved_signals'
+// g_nameLib).
+bool g_textLib = false;
 
 void ResolvePass() {
     const auto now = std::chrono::steady_clock::now();
     if (now < g_nextResolve) return;
     g_nextResolve = now + std::chrono::seconds(2);
+    if (!g_textLib) g_textLib = FT::Resolved();
     if (!g_gamemodeCls) g_gamemodeCls = R::FindClass(L"mainGamemode_C");
     if (!g_gamemodeCls) return;
     if (g_offSaveSlot < 0) g_offSaveSlot = R::FindPropertyOffset(g_gamemodeCls, L"saveSlot");
@@ -133,7 +137,7 @@ RowApply AddEmail(const Row& row) {
     void* gm = world_singleton::Gamemode();
     if (!gm) return {Res::NotNow, "no gamemode"};
     if (!g_addEmailFn) return {Res::NotNow, "addEmail not resolved"};
-    if (!FT::Resolved()) return {Res::NotNow, "the text library not resolved"};
+    if (!g_textLib) return {Res::NotNow, "the text library not resolved"};
     // Every other failure is final for the row: the verb's layout and the text library are fixed for
     // the process, so what fails here fails on every try.
     ue_wrap::ParamFrame f(g_addEmailFn);
