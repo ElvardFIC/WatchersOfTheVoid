@@ -193,7 +193,7 @@ bool InstallSpawnerSuppressors() {
         // slot to wait for.
         t.settled = true;
         ++settled;
-        const ue_wrap::facts::Resolved fn = ue_wrap::facts::Resolve(*t.row);
+        const ue_wrap::facts::Resolved fn = ue_wrap::facts::ResolveOn(*t.row, cls);
         if (!fn) {
             UE_LOGW("garbage_sync[spawner]: UFunction '%ls' not found on %ls or its supers -- that "
                     "spawner runs on a client", t.row->Name(), t.row->Class());
@@ -254,7 +254,7 @@ void Install() {
     // Settled from here, as a spawner row is above.
     g_installed.store(true, std::memory_order_release);
     g_garbageContainerCls = garbageCls;
-    const ue_wrap::facts::Resolved tickFn = ue_wrap::facts::Resolve(kRowReceiveTick);
+    const ue_wrap::facts::Resolved tickFn = ue_wrap::facts::ResolveOn(kRowReceiveTick, garbageCls);
     if (!tickFn) {
         UE_LOGW("garbage_sync: ReceiveTick not found on prop_garbageContainer_C or its supers -- "
                 "BP class loaded but missing the expected name; the container runs on a client");

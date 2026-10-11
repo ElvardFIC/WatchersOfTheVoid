@@ -61,6 +61,9 @@ public:
     uint64_t WitnessClass() const { return witness_.load(std::memory_order_relaxed); }
     void     NoteWitness(uint64_t packedName) const { witness_.store(packedName, std::memory_order_relaxed); }
 
+    // True the first time a site asks the row for what its mode cannot give: the misuse is logged once per row.
+    bool FirstMisuse() const { return !misused_.exchange(true, std::memory_order_relaxed); }
+
 private:
     const char*     ident_;
     const char*     feature_;
@@ -71,6 +74,7 @@ private:
     mutable std::atomic<uint8_t> accepted_{0};
     mutable std::atomic<uint8_t> refused_{0};
     mutable std::atomic<uint64_t> witness_{0};
+    mutable std::atomic<bool>     misused_{false};
 };
 
 // Every row, linked at DLL load in no meaningful order (a report sorts them).
@@ -96,12 +100,14 @@ private:
 };
 
 // A Declared or Dispatch row's function, on the game thread; empty when the class is not loaded, does not
-// have the function, or the row is of another mode (logged once per row).
+// have the function, or the row is of another mode (logged once per row). The class is found as
+// reflection::FindClass finds it, which walks the object array the first time and on every miss: a site
+// that already looked its class up resolves with ResolveOn.
 Resolved Resolve(const Function& row);
 
 // A row's function on a class the caller already holds, by the row's mode: a RuntimeClass row's site
-// found its class at run time (and the row records which, for the census); a census that found a
-// Declared or Dispatch row's class through the object index resolves it here without a second class
+// found its class at run time (and the row records which, for the census); a site or the census that found
+// a Declared or Dispatch row's class through the object index resolves it here without a second class
 // lookup. Empty for an AnyClass row or when the class lacks it.
 Resolved ResolveOn(const Function& row, void* cls);
 

@@ -128,11 +128,8 @@ void UnregisterInterceptor(void* targetUFunction, UFunctionInterceptor cb);
 using ProcessEventObserverFn = void(*)(void* self, void* function, void* params);
 inline constexpr int kMaxObservers = 256;
 
-// Register a post-dispatch observer. False if the table is full or an argument is null; any
-// thread, before or after Install.
-
-
-// Register a pre-dispatch observer. The same shape.
+// Register a post-dispatch or a pre-dispatch observer on a row's resolved function. False if the table
+// is full or an argument is empty; any thread, before or after Install.
 bool RegisterPostObserver(const facts::Resolved& target, ProcessEventObserverFn cb);
 bool RegisterPreObserver(const facts::Resolved& target, ProcessEventObserverFn cb);
 

@@ -389,7 +389,7 @@ void Install(coop::net::Session* session) {
         // functions, and a patch that failed is not mended by trying it again.
         if (void* actorCls = ue_wrap::object_index::ClassByName(P::name::ActorClassName)) {
             g_destroySeamSettled = true;
-            const ue_wrap::facts::Resolved fn = ue_wrap::facts::Resolve(kRowK2DestroyActor);
+            const ue_wrap::facts::Resolved fn = ue_wrap::facts::ResolveOn(kRowK2DestroyActor, actorCls);
             if (!fn) {
                 UE_LOGW("grab_hook: %ls.%ls UFunction not found -- destroy broadcast disabled",
                         P::name::ActorClassName, P::name::DestroyActorFn);

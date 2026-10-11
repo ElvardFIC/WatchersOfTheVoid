@@ -32,9 +32,6 @@ bool EnsureResolved();
 // Class-pure: obj is a d_window_C. False if unresolved.
 bool IsWindow(void* obj);
 
-// UCanvas::K2_DrawMaterial, for the stroke observer's Func post-hook. Null if unresolved.
-void* DrawMaterialFn();
-
 // True iff `sourceObject` -- the frame that issued a K2_DrawMaterial -- is a window with an open
 // stroke session. Raw field reads only, so it is safe inside the Func hook.
 bool IsStrokeDraw(void* sourceObject);

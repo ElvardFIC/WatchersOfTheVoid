@@ -203,7 +203,7 @@ void Install(coop::net::Session* session) {
     // re-resolving.
     coop::kerfur_entity::SetKerfurClasses(g_kerfurNpcClass, g_kerfurPropClass);
 
-    const ue_wrap::facts::Resolved actionNameRow = ue_wrap::facts::Resolve(kRowActionName);
+    const ue_wrap::facts::Resolved actionNameRow = ue_wrap::facts::ResolveOn(kRowActionName, g_kerfurNpcClass);
     if (!g_actionNameFn) {
         g_actionNameFn = actionNameRow.Fn();
         if (g_actionNameFn) {

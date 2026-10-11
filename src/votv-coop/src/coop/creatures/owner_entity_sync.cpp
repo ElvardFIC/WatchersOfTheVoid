@@ -66,7 +66,7 @@ int ClassIdOf(void* cls) {
 }
 
 // ---- BeginDeferred seam (own resolve; host_spawn_watcher pattern) ----
-void*   g_beginDeferredFn = nullptr;
+ue_wrap::facts::Resolved g_beginDeferredFn;
 int32_t g_classParamOff   = -1;
 int32_t g_returnParamOff  = -1;
 int32_t g_xformParamOff   = -1;
@@ -187,15 +187,15 @@ void Install(coop::net::Session* session) {
     if (!g_beginDeferredFn) {
         void* gsCls = ue_wrap::object_index::ClassByName(P::name::GameplayStaticsClass);
         if (!gsCls) return;
-        g_beginDeferredFn = ue_wrap::facts::Resolve(kRowBeginDeferredSpawn).Fn();
+        g_beginDeferredFn = ue_wrap::facts::ResolveOn(kRowBeginDeferredSpawn, gsCls);
         if (!g_beginDeferredFn) {
             UE_LOGW("owner_entity: BeginDeferred not found -- lane disabled for process lifetime");
             g_observerArmed = true;  // give up
             return;
         }
-        g_classParamOff  = R::FindParamOffset(g_beginDeferredFn, L"ActorClass");
-        g_returnParamOff = R::FindParamOffset(g_beginDeferredFn, L"ReturnValue");
-        g_xformParamOff  = R::FindParamOffset(g_beginDeferredFn, L"SpawnTransform");
+        g_classParamOff  = R::FindParamOffset(g_beginDeferredFn.Fn(), L"ActorClass");
+        g_returnParamOff = R::FindParamOffset(g_beginDeferredFn.Fn(), L"ReturnValue");
+        g_xformParamOff  = R::FindParamOffset(g_beginDeferredFn.Fn(), L"SpawnTransform");
         if (g_classParamOff < 0 || g_returnParamOff < 0 || g_xformParamOff < 0) {
             UE_LOGW("owner_entity: BeginDeferred param offsets missing -- lane disabled");
             g_observerArmed = true;
@@ -221,7 +221,7 @@ void Install(coop::net::Session* session) {
         }
     }
 
-    if (!GT::RegisterPostObserver(ue_wrap::facts::Resolve(kRowBeginDeferredSpawn), &OnSpawnPost)) {
+    if (!GT::RegisterPostObserver(g_beginDeferredFn, &OnSpawnPost)) {
         UE_LOGE("owner_entity: RegisterPostObserver FAILED (table full?) -- lane disabled");
         g_observerArmed = true;
         return;
@@ -354,7 +354,7 @@ void OnSpawnMsg(const coop::net::OwnerEntitySpawnPayload& p, int senderPeerSlot)
         // The scope excludes this spawn from BOTH owner observers (ours and
         // the ambient broadcaster) -- the receiver's spawn is never re-announced.
         coop::prop_echo_suppress::ScopedMirrorSpawn scope;
-        ue_wrap::ParamFrame begin(g_beginDeferredFn);
+        ue_wrap::ParamFrame begin(g_beginDeferredFn.Fn());
         if (!begin.valid()) return;
         begin.Set<void*>(L"WorldContextObject", worldCtx);
         begin.Set<void*>(L"ActorClass", cls);

@@ -286,7 +286,7 @@ bool TryInstall() {
     void* uiMenuCls = ue_wrap::object_index::ClassByName(prof::name::UiMenuClass);
     if (!uiMenuCls) return false;  // menu BP not loaded yet -- caller retries
 
-    const ue_wrap::facts::Resolved tick = ue_wrap::facts::Resolve(kRowTickUiMenu);
+    const ue_wrap::facts::Resolved tick = ue_wrap::facts::ResolveOn(kRowTickUiMenu, uiMenuCls);
     g_tickFn         = tick.Fn();
     g_buttonStartOff = R::FindPropertyOffset(uiMenuCls, prof::name::UiMenuButtonStartProp);
     g_isPauseOff     = R::FindPropertyOffset(uiMenuCls, prof::name::UiMenuIsPauseProp);

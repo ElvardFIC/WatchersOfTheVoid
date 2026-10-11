@@ -275,11 +275,11 @@ bool TryResolveAllFunctions() {
     int sResolved = 0, mResolved = 0;
     for (auto& e : sched) {
         if (*e.out) { ++sResolved; continue; }
-        if (const ue_wrap::facts::Resolved fn = ue_wrap::facts::Resolve(*e.row)) { *e.out = fn; ++sResolved; }
+        if (const ue_wrap::facts::Resolved fn = ue_wrap::facts::ResolveOn(*e.row, cls)) { *e.out = fn; ++sResolved; }
     }
     for (auto& e : mut) {
         if (*e.out) { ++mResolved; continue; }
-        if (const ue_wrap::facts::Resolved fn = ue_wrap::facts::Resolve(*e.row)) { *e.out = fn; ++mResolved; }
+        if (const ue_wrap::facts::Resolved fn = ue_wrap::facts::ResolveOn(*e.row, cls)) { *e.out = fn; ++mResolved; }
     }
     // All five schedulers (broadcast and suppression) and all three mutator targets.
     if (sResolved == 5 && mResolved == 3) return true;
@@ -315,7 +315,7 @@ void Install(coop::net::Session* session) {
         // a slot to wait for.
         if (void* wc = ue_wrap::object_index::ClassByName(P::name::DirectionalWindClass)) {
             g_windOriginInterceptorReg = true;
-            const ue_wrap::facts::Resolved fn = ue_wrap::facts::Resolve(kRowChangeWindOrigin);
+            const ue_wrap::facts::Resolved fn = ue_wrap::facts::ResolveOn(kRowChangeWindOrigin, wc);
             if (!fn) {
                 UE_LOGW("weather: directionalWind has no changeWindOrigin -- a client rolls its own gusts");
             } else if (GT::RegisterInterceptor(fn, &OnWindOriginPreSuppress)) {

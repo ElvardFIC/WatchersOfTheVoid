@@ -165,7 +165,7 @@ void Install(coop::net::Session* session) {
 
     if (!g_fireflyClass) g_fireflyClass = ue_wrap::object_index::ClassByName(kFireflyClass);
     if (!g_fireflyClass) return;
-    const ue_wrap::facts::Resolved tickFn = ue_wrap::facts::Resolve(kRowFireflyTick);
+    const ue_wrap::facts::Resolved tickFn = ue_wrap::facts::ResolveOn(kRowFireflyTick, g_fireflyClass);
     g_fireflyTickFn = tickFn.Fn();
     if (!tickFn) {
         UE_LOGW("firefly: '%ls' has no ReceiveTick -- CXX dump stale?; skipping", kFireflyClass);

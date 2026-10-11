@@ -202,10 +202,6 @@ bool IsWindow(void* obj) {
     return cls && R::IsDescendantOfAny(cls, bases, 1);
 }
 
-void* DrawMaterialFn() {
-    return g_resolved.load(std::memory_order_acquire) ? g_drawFn : nullptr;
-}
-
 bool IsStrokeDraw(void* sourceObject) {
     if (!sourceObject || !g_resolved.load(std::memory_order_acquire)) return false;
     if (R::ClassOf(sourceObject) != g_winCls) return false;

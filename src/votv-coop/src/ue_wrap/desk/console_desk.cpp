@@ -160,7 +160,6 @@ int32_t g_offPrecMult = -1;          // DL_precMult (the dishes' average precisi
 int32_t g_offSignalSound = -1;       // signalSound (UAudioComponent* -- playback volume)
 void* g_stopSoundFn = nullptr;           // desk stopSound()
 void* g_playSignalFn = nullptr;          // desk playSignal (the deck-playback mirror replay)
-void* g_finFn = nullptr;                 // desk fin (the audio-finished delegate callback)
 void* g_spawnDirsFn = nullptr;           // desk spawnDirs() (the scan arrows)
 
 std::chrono::steady_clock::time_point g_nextResolve{};
@@ -223,7 +222,6 @@ void ResolvePass() {
     if (g_offSignalSound < 0) g_offSignalSound = R::FindPropertyOffset(g_cls, L"signalSound");
     if (!g_stopSoundFn) g_stopSoundFn = R::FindFunction(g_cls, L"stopSound");
     if (!g_playSignalFn) g_playSignalFn = R::FindFunction(g_cls, L"playSignal");
-    if (!g_finFn) g_finFn = R::FindFunction(g_cls, L"fin");
     if (!g_spawnDirsFn) g_spawnDirsFn = R::FindFunction(g_cls, L"spawnDirs");
 
     if (all && !g_coreResolved) {

@@ -182,7 +182,7 @@ void Tick() {
     g_impactInterceptorsDone = true;
     bool all = true;
     for (int i = 0; i < 3; ++i) {
-        const ue_wrap::facts::Resolved impact = ue_wrap::facts::Resolve(*kImpactEntryRows[i]);
+        const ue_wrap::facts::Resolved impact = ue_wrap::facts::ResolveOn(*kImpactEntryRows[i], cls);
         g_impactFns[i] = impact.Fn();
         if (impact && GT::RegisterInterceptor(impact, &OnImpactEntryPre)) continue;
         all = false;

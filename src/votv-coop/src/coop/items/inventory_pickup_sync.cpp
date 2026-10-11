@@ -30,7 +30,7 @@ UE_FACT_FN(kRowPlaySound2D, "inventory_pickup_sync", L"GameplayStatics", L"PlayS
 std::atomic<coop::net::Session*> g_session{nullptr};
 
 // Resolved once by Install on the game thread, before the observer registers; read-only after.
-void*   g_playSound2DFn = nullptr;
+ue_wrap::facts::Resolved g_playSound2DFn;
 // The cue is judged by its name, which lives for the process, so no pointer to the asset is held.
 R::FName g_cueName{};
 int32_t g_offSound = -1;
@@ -84,15 +84,15 @@ void Install(coop::net::Session* session) {
         // A native class, in the index from boot; a missing function would be an engine change.
         void* cls = ue_wrap::object_index::ClassByName(L"GameplayStatics");
         if (!cls) return;
-        g_playSound2DFn = ue_wrap::facts::Resolve(kRowPlaySound2D).Fn();
+        g_playSound2DFn = ue_wrap::facts::ResolveOn(kRowPlaySound2D, cls);
         if (!g_playSound2DFn) {
             UE_LOGE("inventory_pickup: GameplayStatics has no PlaySound2D -- blip sync disabled");
             g_observerRegistered = true;
             return;
         }
-        g_offSound = R::FindParamOffset(g_playSound2DFn, L"Sound");
-        g_offPitch = R::FindParamOffset(g_playSound2DFn, L"PitchMultiplier");
-        g_offWco   = R::FindParamOffset(g_playSound2DFn, L"WorldContextObject");
+        g_offSound = R::FindParamOffset(g_playSound2DFn.Fn(), L"Sound");
+        g_offPitch = R::FindParamOffset(g_playSound2DFn.Fn(), L"PitchMultiplier");
+        g_offWco   = R::FindParamOffset(g_playSound2DFn.Fn(), L"WorldContextObject");
         if (g_offSound < 0 || g_offPitch < 0 || g_offWco < 0) {
             UE_LOGW("inventory_pickup: PlaySound2D param offsets unresolved "
                     "(Sound=%d Pitch=%d WCO=%d) -- blip sync disabled",
@@ -100,7 +100,7 @@ void Install(coop::net::Session* session) {
             // Permanently DISABLED (no retry): a recook changed the signature;
             // re-walking it would yield the same miss. The observer is never
             // registered in this state, so the -1 offsets are unreachable.
-            g_playSound2DFn = nullptr;
+            g_playSound2DFn = {};
             g_observerRegistered = true;
             return;
         }
@@ -113,7 +113,7 @@ void Install(coop::net::Session* session) {
         g_observerRegistered = true;
         return;
     }
-    if (!GT::RegisterPostObserver(ue_wrap::facts::Resolve(kRowPlaySound2D), &OnPlaySound2DPost)) {
+    if (!GT::RegisterPostObserver(g_playSound2DFn, &OnPlaySound2DPost)) {
         UE_LOGE("inventory_pickup: POST observer registration FAILED (the observer table is full) -- "
                 "blip sync disabled");
         g_observerRegistered = true;
@@ -122,7 +122,7 @@ void Install(coop::net::Session* session) {
     g_observerRegistered = true;
     UE_LOGI("inventory_pickup: observer installed on GameplayStatics::PlaySound2D @ %p "
             "(offs Sound=%d Pitch=%d WCO=%d, cue name index=%d)",
-            g_playSound2DFn, g_offSound, g_offPitch, g_offWco, g_cueName.ComparisonIndex);
+            g_playSound2DFn.Fn(), g_offSound, g_offPitch, g_offWco, g_cueName.ComparisonIndex);
 }
 
 void OnReliable(const coop::net::InventoryPickupPayload& payload) {

@@ -234,7 +234,7 @@ void DisableUnstickHalf() {
 }
 
 void InstallStickHalf() {
-    const ue_wrap::facts::Resolved uber = ue_wrap::facts::Resolve(kRowCompUbergraph);
+    const ue_wrap::facts::Resolved uber = ue_wrap::facts::ResolveOn(kRowCompUbergraph, g_compClass);
     g_uberFn = uber.Fn();
     g_entryParamOff = g_uberFn ? R::FindParamOffset(g_uberFn, L"EntryPoint") : -1;
     g_forceStickFn = R::FindFunction(g_compClass, L"forceStick");
@@ -268,7 +268,7 @@ void InstallStickHalf() {
 }
 
 void InstallUnstickHalf() {
-    const ue_wrap::facts::Resolved unstick = ue_wrap::facts::Resolve(kRowUnstick);
+    const ue_wrap::facts::Resolved unstick = ue_wrap::facts::ResolveOn(kRowUnstick, g_compClass);
     g_unstickFn = unstick.Fn();
     g_withToolOff = g_unstickFn ? R::FindParamOffset(g_unstickFn, L"withTool") : -1;
     if (!g_unstickFn || g_withToolOff < 0) {

@@ -33,6 +33,7 @@ using Clock = std::chrono::steady_clock;
 std::atomic<coop::net::Session*> g_session{nullptr};
 
 bool g_hooksInstalled = false;
+bool g_finRefused = false;  // the desk's class loaded without fin(): the lane stays dormant
 
 // Armed only while the session runs AND is wired (the desk_snd_fx shape) --
 // SP / menu playback never rings.
@@ -156,21 +157,18 @@ void Tick() {
     g_armed.store(s->connected(), std::memory_order_relaxed);
 
     // Lazy latched seam install: DA gives the engine-class UFunctions +
-    // the signalSound cache; fin resolves with the desk class (console_desk).
+    // the signalSound cache; fin resolves once DA holds a live desk.
+    if (g_finRefused) return;
     if (!g_hooksInstalled) {
         if (!DA::EnsureResolved()) return;
         const ue_wrap::facts::Resolved finFn = ue_wrap::facts::Resolve(kRowFin);
         if (!finFn) {
-            // A game recook renaming fin() would leave the whole lane silently
-            // dormant, so surface it once rather than early-returning forever
-            // without a trace.
-            static bool s_finWarned = false;
-            if (!s_finWarned && CD::Instance()) {  // desk resolved but fin absent
-                s_finWarned = true;
-                UE_LOGW("deck_play: desk resolved but fin() unresolved -- lane dormant "
-                        "until it appears (recook rename? log-once)");
-            }
-            return;  // console_desk ResolvePass retries (throttled)
+            // DA resolved on a live desk, so the desk's class is loaded with its functions: a fin()
+            // that does not resolve is a recooked desk, not one still loading. Said once, and the
+            // lane stays dormant instead of asking again every tick.
+            g_finRefused = true;
+            UE_LOGW("deck_play: the desk resolved but fin() did not -- lane dormant (a recook rename?)");
+            return;
         }
         const bool a = ue_wrap::ufunction_hook::InstallPostHook(ue_wrap::facts::Resolve(kRowActivate),
                                                                    &OnDeckActivate);

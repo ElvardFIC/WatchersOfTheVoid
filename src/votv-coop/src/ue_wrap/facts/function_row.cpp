@@ -43,12 +43,10 @@ size_t Count() { return g_count; }
 
 Resolved Resolve(const Function& row) {
     if (row.GetMode() != Mode::Declared && row.GetMode() != Mode::Dispatch) {
-        static bool warned = false;  // one line, not one per call: a misuse is a code defect, fixed once
-        if (!warned) {
-            warned = true;
+        // One line per row, not one per call: a misuse is a code defect, fixed once.
+        if (row.FirstMisuse())
             UE_LOGE("facts: Resolve asked for row %s of mode %s -- only Declared and Dispatch rows resolve so",
                     row.Ident(), ModeName(row.GetMode()));
-        }
         return {};
     }
     void* cls = row.Class() ? R::FindClass(row.Class()) : nullptr;

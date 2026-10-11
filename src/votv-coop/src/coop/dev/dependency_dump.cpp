@@ -7,6 +7,7 @@
 #include "ue_wrap/core/game_thread.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/paths.h"
+#include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/script_fingerprint.h"
 #include "ue_wrap/core/script_gate.h"
 #include "ue_wrap/core/ufunction_hook.h"
@@ -27,21 +28,27 @@ std::string Narrow(const wchar_t* s) {
     return out;
 }
 
+// A registration can outlive the class a world change re-created (prop_record_refresh re-creates 127 in a
+// same-process rejoin), and PathOf reads the object unguarded: a stale pointer is named as one, not read.
+std::string PathOfLive(void* fn) {
+    return ue_wrap::reflection::IsLive(fn) ? FP::PathOf(fn) : std::string("(stale function)");
+}
+
 void OnWatch(void* ctx, void* fn, const wchar_t* cls, const wchar_t* name, int tag) {
     auto& lines = *static_cast<std::map<std::string, int>*>(ctx);
-    const std::string what = fn ? "script_gate exact " + FP::PathOf(fn)
+    const std::string what = fn ? "script_gate exact " + PathOfLive(fn)
                                 : "script_gate name " + (cls ? Narrow(cls) : std::string("*")) + "." + Narrow(name);
     ++lines[what + " tag=" + std::to_string(tag)];
 }
 
 void OnHook(void* ctx, void* fn, bool pre) {
     ++(*static_cast<std::map<std::string, int>*>(ctx))[std::string("ufunction_hook ") + (pre ? "pre " : "post ") +
-                                                        FP::PathOf(fn)];
+                                                        PathOfLive(fn)];
 }
 
 void OnRegistration(void* ctx, void* fn, int kind) {
     static const char* kKinds[] = {"interceptor ", "post-observer ", "pre-observer "};
-    ++(*static_cast<std::map<std::string, int>*>(ctx))[std::string("game_thread ") + kKinds[kind] + FP::PathOf(fn)];
+    ++(*static_cast<std::map<std::string, int>*>(ctx))[std::string("game_thread ") + kKinds[kind] + PathOfLive(fn)];
 }
 
 }  // namespace

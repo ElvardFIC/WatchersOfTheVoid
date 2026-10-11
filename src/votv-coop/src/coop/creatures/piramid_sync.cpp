@@ -221,10 +221,10 @@ void TryArmHooks() {
     // the lane.
     void* cls = ue_wrap::object_index::ClassByName(kPyramidClassName);
     if (!cls) return;
-    const ue_wrap::facts::Resolved seeWisps = ue_wrap::facts::Resolve(kRowSeeWisps);
-    const ue_wrap::facts::Resolved checkIfReached = ue_wrap::facts::Resolve(kRowCheckIfReached);
-    const ue_wrap::facts::Resolved randLoc = ue_wrap::facts::Resolve(kRowRandLoc);
-    const ue_wrap::facts::Resolved changeLook = ue_wrap::facts::Resolve(kRowChangeLook);
+    const ue_wrap::facts::Resolved seeWisps = ue_wrap::facts::ResolveOn(kRowSeeWisps, cls);
+    const ue_wrap::facts::Resolved checkIfReached = ue_wrap::facts::ResolveOn(kRowCheckIfReached, cls);
+    const ue_wrap::facts::Resolved randLoc = ue_wrap::facts::ResolveOn(kRowRandLoc, cls);
+    const ue_wrap::facts::Resolved changeLook = ue_wrap::facts::ResolveOn(kRowChangeLook, cls);
     g_fnSeeWisps = seeWisps.Fn();
     g_fnCheckIfReached = checkIfReached.Fn();
     g_fnRandLoc = randLoc.Fn();

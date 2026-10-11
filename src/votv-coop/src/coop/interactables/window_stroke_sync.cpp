@@ -49,6 +49,7 @@ std::atomic<bool> g_armed{false};  // connected: the observer ignores every draw
 int  g_wireApplyDepth = 0;         // GT: our own replay's draw is not a local stroke
 bool g_hookInstalled = false;
 bool g_hookArmed = false;
+ue_wrap::facts::Resolved g_drawHook;  // the function the post-hook is installed on, armed and disarmed there
 int  g_resolveRetry = 0;   // frames left before the next resolve attempt (GT only)
 
 // Outbound: stroke corners taken inside the Func hook, sent from Tick (both game thread).
@@ -228,8 +229,8 @@ void Tick() {
         // InstallPostHook is idempotent, so a failure is retried rather than latched: it fails when
         // the Func slot reads null or the table is full, and the first of those can be a resolve
         // that has not settled. Without the retry one bad tick left the lane dead for the process.
-        const bool ok = ue_wrap::ufunction_hook::InstallPostHook(ue_wrap::facts::Resolve(kRowK2DrawMaterial),
-                                                                 &OnDrawPost, /*armed=*/connected);
+        g_drawHook = ue_wrap::facts::Resolve(kRowK2DrawMaterial);
+        const bool ok = ue_wrap::ufunction_hook::InstallPostHook(g_drawHook, &OnDrawPost, /*armed=*/connected);
         if (ok) {
             g_hookInstalled = true;
             g_hookArmed = connected;
@@ -248,7 +249,7 @@ void Tick() {
     // The hook sits on a native the game draws through with no session at all, so it is armed only
     // while there is one: disarmed, the forwarder pays one load and a branch and never calls back.
     if (g_hookInstalled && g_hookArmed != connected) {
-        ue_wrap::ufunction_hook::SetArmed(WC::DrawMaterialFn(), &OnDrawPost, connected);
+        ue_wrap::ufunction_hook::SetArmed(g_drawHook.Fn(), &OnDrawPost, connected);
         g_hookArmed = connected;
     }
     if (!connected) {
