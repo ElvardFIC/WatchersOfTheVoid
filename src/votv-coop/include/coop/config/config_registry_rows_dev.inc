@@ -25,26 +25,8 @@ CFG_FLAG(freecam, "freecam", "dev", false, nullptr,
     "Enable the freecam toggle.")
 CFG_FLAG(spawn_menu_unlock, "spawn_menu_unlock", "dev", false, nullptr,
     "Unlock the native spawn menu while in a coop session.")
-CFG_FLAG(fingerprint_capture, "fingerprint_capture", "dev", false, "VOTVCOOP_FINGERPRINT_CAPTURE",
-    "Port tool: once gameplay is loaded, write every function of every loaded Blueprint class with its "
-    "canonical bytecode text and fingerprint to multivoid-fingerprints-capture.txt beside the exe: the "
-    "mod's half of the comparison with the text rendered from the cooked assets, and the native half of a "
-    "build's reference table (docs/bytecode-fingerprint.md). About a second of work at world load; off by default.")
-CFG_FLAG(dependency_dump, "dependency_dump", "dev", false, "VOTVCOOP_DEPENDENCY_DUMP",
-    "Refactor proof: at the readiness milestones 'joined' (client) and 'peer-world-ready' (host), write every "
-    "script_gate watch, ufunction_hook patch and game_thread observer and interceptor, sorted and counted, to "
-    "multivoid-dependency-dump-<milestone>.txt beside the exe. Two builds' dumps diffed equal prove a change left "
-    "the registered set as it was. Off by default.")
-CFG_STRING(fingerprint_census_red, "fingerprint_census_red", "dev", "", "VOTVCOOP_FINGERPRINT_CENSUS_RED", false,
-    "The fingerprint census's red arm: a row key ('class.function', lowercase) whose reference is falsified, so the "
-    "census must report it 'body changed' and print 'fingerprint-census: RED ARM <row> reported body changed', or "
-    "'RED ARM FAILED'. Empty: no red arm.")
-***REMOVED***
-    ***REMOVED***
-    "mainGamemode BeginPlay scans Binaries for *.dll and Content/Paks for *.pak, then pops 'Modded "
-    "client detected!' and quits). Empties that one scan's file list through our Func-patch substrate; "
-    ***REMOVED***
-    "public build is expected to carry no such gate, so this is off by default and never ships.")
+// The version-port tooling's rows, their own file.
+#include "coop/config/config_registry_rows_dev_port.inc"
 CFG_FLAG(desk_diag, "desk_diag", "dev", false, "VOTVCOOP_DESK_DIAG",
     "Diagnostic (BOTH peers): periodically log the signal desk's state, and the digests a day "
     "rollover or a world load rolls per machine (the dish hash codes, the coordinate towers, the "

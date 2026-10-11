@@ -44,14 +44,22 @@ $ErrorActionPreference = 'Stop'
 if (-not $Root) { $Root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot) }
 
 $incPath  = Join-Path $Root 'src\votv-coop\include\coop\config\config_registry_rows.inc'
-# The [dev] section's own file, which the row list includes at its end.
-$devIncPath = Join-Path $Root 'src\votv-coop\include\coop\config\config_registry_rows_dev.inc'
 $cfgHdr   = Join-Path $Root 'src\votv-coop\include\coop\config\config.h'
 $srcDirs  = @((Join-Path $Root 'src\votv-coop\src'), (Join-Path $Root 'src\votv-coop\include'))
-# The registry's own files self-reference every ident (decl/def/table, the
-# rows and their [dev] file) and must not satisfy the census.
-$selfFiles = @('config_registry.h', 'config_registry.cpp', 'config_registry_rows.inc',
-               'config_registry_rows_dev.inc')
+# The row files: the list and every row file it includes, recursively, as the compiler reads them (the [dev]
+# section's file, and the files that section is split into), so a split needs no change here.
+function Get-RowFiles([string]$path) {
+    $files = @($path)
+    foreach ($line in (Get-Content $path)) {
+        if ($line -match '^\s*#include\s+"coop/config/(?<f>config_registry_rows[^"]*\.inc)"') {
+            $files += Get-RowFiles (Join-Path (Split-Path -Parent $path) $Matches['f'])
+        }
+    }
+    return $files
+}
+# The registry's own files self-reference every ident (decl/def/table, and the
+# row files, added as they are read) and must not satisfy the census.
+$selfFiles = @('config_registry.h', 'config_registry.cpp')
 
 $violations = New-Object System.Collections.Generic.List[string]
 $controlFailures = New-Object System.Collections.Generic.List[string]
@@ -72,8 +80,8 @@ $writeOnlyAllow = @{
 if (-not (Test-Path $incPath)) { Write-Host "registry_gate: FAIL -- missing $incPath"; exit 1 }
 $rowIdents = New-Object System.Collections.Generic.List[string]
 $fontRoleIdents = New-Object System.Collections.Generic.List[string]
-$rowFiles = @($incPath)
-if (Test-Path $devIncPath) { $rowFiles += $devIncPath }
+$rowFiles = @(Get-RowFiles $incPath)
+$selfFiles += @($rowFiles | ForEach-Object { Split-Path -Leaf $_ })
 foreach ($line in ($rowFiles | ForEach-Object { Get-Content $_ })) {
     if ($line -cmatch '^\s*CFG_(?<kind>[A-Z_]+)\(\s*(?<ident>[A-Za-z0-9_]+)\s*,') {
         # ROWFLAGS and LABEL mark a row declared above it (config_registry_rows.inc); neither is a row.
