@@ -15,6 +15,7 @@
 
 #pragma once
 
+#include "ue_wrap/core/row_apply.h"
 #include "ue_wrap/desk/signal_dynamic.h"
 
 #include <cstdint>
@@ -50,9 +51,10 @@ bool ReadRow(int32_t index, ue_wrap::signal_dynamic::Row& out, bool withImage = 
 bool ReadRowKey(int32_t index, RowKey& out);
 
 // Reflected gamemode.saveSignal(row, new=false, checkOnly=false,
-// daq=row.downloadedAtQuality, selfQuality=true) -- the native append.
-// False on unresolved/call failure OR succ=false (validity gate).
-bool ApplySaveSignal(const ue_wrap::signal_dynamic::Row& row);
+// daq=row.downloadedAtQuality, selfQuality=true) -- the native append. NotNow when the game cannot
+// be asked (no gamemode, the verb unresolved); Refused when it said no (succ=false, the validity
+// gate) or the row cannot be put to it; the reason in `why` (ue_wrap/core/row_apply.h).
+ue_wrap::RowApply ApplySaveSignal(const ue_wrap::signal_dynamic::Row& row);
 
 // Reflected gamemode.deleteSignal(IndexToRemove) -- the native remove +
 // pane refresh.

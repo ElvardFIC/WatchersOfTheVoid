@@ -83,24 +83,28 @@ bool ReadRowKey(int32_t index, RowKey& out) {
     return true;
 }
 
-bool ApplySaveSignal(const SD::Row& row) {
+RowApply ApplySaveSignal(const SD::Row& row) {
+    using R = RowApplyResult;
+    // The two the game cannot be asked yet: no world, or the verb not found in it.
     void* gm = world_singleton::Gamemode();
-    if (!gm || !g_saveSignalFn) return false;
+    if (!gm) return {R::NotNow, "no gamemode"};
+    if (!g_saveSignalFn) return {R::NotNow, "saveSignal not resolved"};
+    // Every other failure is final for the row: the verb's layout and the name library are fixed for
+    // the process, so what fails here fails on every try.
     ue_wrap::ParamFrame f(g_saveSignalFn);
-    if (!f.valid()) return false;
+    if (!f.valid()) return {R::Refused, "saveSignal's parameter frame could not be built"};
     uint8_t sig[SD::kStride];
-    if (!SD::BuildParamBytes(row, sig)) return false;  // row outlives the call (FStrings alias it)
-    if (!f.SetRaw(L"signal", sig, SD::kStride)) return false;
+    if (!SD::BuildParamBytes(row, sig))  // row outlives the call (FStrings alias it)
+        return {R::Refused, "a name in the row could not be made an FName"};
+    if (!f.SetRaw(L"signal", sig, SD::kStride)) return {R::Refused, "the signal parameter was refused"};
     f.Set<bool>(L"new", false);          // dead param (RE: never read)
     f.Set<bool>(L"checkOnly", false);
     f.Set<float>(L"downloadedAtQuality", row.downloadedAtQuality);
     f.Set<bool>(L"selfQuality", true);   // keep the row's own quality unchanged
-    if (!ue_wrap::Call(gm, f)) return false;
-    const bool succ = f.Get<bool>(L"succ");
-    if (!succ)
-        UE_LOGW("saved_signals: saveSignal rejected row '%ls' (decoded %.2f / size %.2f)",
-                row.name.c_str(), row.decoded, row.size);
-    return succ;
+    if (!ue_wrap::Call(gm, f)) return {R::Refused, "saveSignal faulted"};
+    // succ is false on one path only, the row's own decoded >= size > 0 test (the bytecode's 1060).
+    if (!f.Get<bool>(L"succ")) return {R::Refused, "the game refused it: not decoded, or no size"};
+    return {R::Applied, ""};
 }
 
 bool DeleteSignal(int32_t index) {
