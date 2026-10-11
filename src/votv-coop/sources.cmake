@@ -18,6 +18,7 @@ set(VOTVCOOP_SOURCES
     src/loader/cppmod_stubs.asm
     src/ue_wrap/core/log.cpp
     src/ue_wrap/core/paths.cpp
+    src/ue_wrap/core/game_build.cpp
     src/ue_wrap/core/sig_scan.cpp
     src/ue_wrap/core/gc_pin.cpp
     src/ue_wrap/core/reflection.cpp
@@ -466,6 +467,7 @@ set(VOTVCOOP_SOURCES
     src/coop/build_trust/build_trust.cpp
     src/coop/build_trust/build_trust_selftest.cpp
     src/coop/build_trust/self_identity.cpp
+    src/coop/game_build/game_build.cpp
     src/coop/items/inventory_wire.cpp
     src/coop/items/save_record_wire.cpp
     src/coop/props/container_birth.cpp
@@ -649,6 +651,7 @@ set(VOTVCOOP_SOURCES
     src/ui/input_focus.cpp
     src/harness/screenshot.cpp
     src/harness/mod_environment.cpp
+    src/harness/compat_boot.cpp
     src/harness/compat_report.cpp
     src/harness/fingerprint_capture.cpp
     src/harness/fingerprint_census.cpp

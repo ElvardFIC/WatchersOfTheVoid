@@ -1,11 +1,13 @@
 # ===== Game install — never commit copyrighted binaries or assets =====
-Game/
+# Anchored to the root, where the installs live: unanchored, Game_*/ also took src/.../coop/game_build/ on a
+# case-insensitive checkout.
+/Game/
 
 # Our own toolset. Untracked whole: it is the workflow that maintains this project, not
 # something a person forking it runs. What the CI genuinely needs lives in .github/ci.
 tools/
 
-Game_*/
+/Game_*/
 *.exe
 *.dll
 *.pak

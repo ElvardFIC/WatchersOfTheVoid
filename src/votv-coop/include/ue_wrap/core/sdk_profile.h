@@ -16,12 +16,14 @@
 namespace ue_wrap::profile {
 
 // ---- target identity -----------------------------------------------------
-inline constexpr const char* kTargetGameVersion = "Alpha 0.9.0-n";
+// The game build the signatures and offsets were derived against: a row of
+// ue_wrap/facts/game_builds.inc, by its name, which holds its identity and the text a player reads.
+// coop::version::kGameTarget names the same build (a static_assert in bootstrap/boot.cpp).
+inline constexpr const char* kTargetBuild = "0.9.0n";
 inline constexpr const char* kTargetEngineVersion = "UE4.27";  // exe FileVersion 4.27.2.0
 
-// The exe the signatures were derived against; the boot HealthCheck warns on a size or version
-// mismatch. 0 = not recorded.
-inline constexpr unsigned long long kExpectedExeSize = 84751360;
+// The main pak, in <game>\VotV\Content\Paks: its footer names the build (ue_wrap/core/game_build.h).
+inline constexpr const wchar_t* kMainPakName = L"VotV-WindowsNoEditor.pak";
 
 // ---- AOB signatures (any recompile breaks these) ----------------------------
 // FName::ToString: a unique prologue; the match is the function address.

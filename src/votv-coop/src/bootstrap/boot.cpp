@@ -10,9 +10,12 @@
 ***REMOVED***
 #include "ui/native_text_field.h"   // its un-gated editing selftest
 #include "coop/build_trust/build_trust.h"  // ComputeSelf -- this DLL's hash and type
+#include "coop/game_build/game_build.h"    // which game build runs, and what it means for us
 #include "coop/net/protocol.h"  // kProtocolVersion -- the b<N> build rev in the banner
 #include "coop/version.h"
+#include "harness/compat_boot.h"  // the compat report's boot sections
 #include "harness/harness.h"
+#include "ue_wrap/core/game_build.h"
 #include "ue_wrap/core/game_thread.h"
 #include "ue_wrap/core/hook.h"
 #include "ue_wrap/core/log.h"
@@ -20,6 +23,7 @@
 #include "ue_wrap/core/paths.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/script_gate.h"
+#include "ue_wrap/core/sdk_profile.h"
 #include "ue_wrap/engine/actor_end_play.h"
 
 #include <windows.h>
@@ -28,9 +32,14 @@
 #include <cstdlib>
 #include <ctime>
 #include <string>
+#include <string_view>
 
 namespace bootstrap {
 namespace {
+
+// The CMake target and the engine profile name one game build, a row of ue_wrap/facts/game_builds.inc.
+static_assert(std::string_view(coop::version::kGameTarget) == ue_wrap::profile::kTargetBuild,
+              "VOTVCOOP_GAME_TARGET (CMakeLists.txt) and sdk_profile.h's kTargetBuild name different game builds");
 
 // UNBOOTED=0 -> BOOTING=1 at StartOnce entry (one attempt per module instance,
 // ever -- a failed half-boot must NOT be retried into half-installed hooks).
@@ -108,20 +117,35 @@ void LogUe4ssPresence() {
     UE_LOGI("boot: UE4SS host: '%ls' version %s", path.c_str(), ver);
 }
 
-// The stand-down: this build of the game is not the one the mod targets, found before anything was
-// hooked. Said on the loader's own Win32 modal, never an overlay this path must not install.
+// The sentence naming both builds: which one this Multivoid is made for, and which one runs.
+std::wstring BuildsSentence() {
+    namespace GB = coop::game_build;
+    const GB::Detected& d = GB::Running();
+    std::string mine = "This Multivoid (b" + std::to_string(coop::net::kProtocolVersion) + ") is made for VOTV " +
+                       coop::version::kGameTarget + ". ";
+    switch (d.kind) {
+    case GB::Kind::Target:
+        mine += "Your game is that version, yet the parts of it Multivoid needs are not where they should be.";
+        break;
+    case GB::Kind::Newer:  mine += std::string("Your game is VOTV ") + d.row->display + ", a newer version."; break;
+    case GB::Kind::Older:  mine += std::string("Your game is VOTV ") + d.row->display + ", an older version."; break;
+    case GB::Kind::Untested: mine += "Your game is a version this build does not know."; break;
+    }
+    return std::wstring(mine.begin(), mine.end());  // ASCII: our sentence and the rows' names
+}
+
+// The stand-down: the mod cannot run safely on this game, found before anything was hooked. Said on the
+// loader's own Win32 modal, never an overlay this path must not install; it names both builds, the one
+// the mod is made for and the one running (docs/VERSION_PORT_DRILL_ARC.md system 4 (b)).
 void StandDownUnsupportedBuild() {
     ue_wrap::log::Flush();
     bootstrap::ShowRefuseDialog(
         L"Multivoid -- unsupported game build",
-        L"Multivoid did not start.\n\n"
-        L"It could not find the parts of the game it needs, which means this "
-        L"version of Voices of the Void is not the one this build of Multivoid "
-        L"targets.\n\n"
-        L"The game itself is unaffected and will keep running normally -- "
-        L"Multivoid simply stood down instead of guessing.\n\n"
-        L"Check for a Multivoid update built for your game version. Details are "
-        L"in multivoid.log (look for 'STANDING DOWN').");
+        L"Multivoid did not start.\n\n" + BuildsSentence() + L"\n\n"
+        L"It could not find the parts of the game it needs, so it stood down instead of guessing. "
+        L"The game itself is unaffected and will keep running normally.\n\n"
+        L"Check for a Multivoid update made for your game version. Details are in multivoid.log "
+        L"(look for 'STANDING DOWN') and multivoid-compat-report.txt.");
 }
 
 DWORD WINAPI BootThread(LPVOID rawTag) {
@@ -143,22 +167,18 @@ DWORD WINAPI BootThread(LPVOID rawTag) {
     UE_LOGI("boot: entry=%s since-process-start=%llums pid=%lu", entryTag, g_loadMs,
             ::GetCurrentProcessId());
     LogUe4ssPresence();
-    {
-        char exePath[MAX_PATH] = {};
-        ::GetModuleFileNameA(nullptr, exePath, MAX_PATH);
-        WIN32_FILE_ATTRIBUTE_DATA fad{};
-        if (exePath[0] && ::GetFileAttributesExA(exePath, GetFileExInfoStandard, &fad)) {
-            const unsigned long long exeSize =
-                (static_cast<unsigned long long>(fad.nFileSizeHigh) << 32) | fad.nFileSizeLow;
-            UE_LOGI("boot: game exe '%s' size=%llu (mod targets VOTV %s)",
-                    exePath, exeSize, coop::version::kGameTarget);
-        }
-    }
+    // Which game build this is, beside kGameTarget above, so an install-skew report (a mod made for one
+    // build running on another) is one look at the log; and the compat report's first section, written
+    // now, so a boot that stands down or never reaches a world still leaves the file a bug report attaches.
+    coop::game_build::Running();
+    harness::compat_boot::WriteBuild();
     // THE NATIVE TEXT FIELD'S EDITING RULES, checked at BOOT and not at session start. The field
     // lives at the MENU -- the server browser's address box -- so a player can use it without a
     // session ever existing, and a check gated on a session start would never run at all.
     // Un-gated, pure logic, microseconds.
     ui::native_text_field::RunSelftest();
+    // The build reader's pure halves (the pak footer, the key, the rows), un-gated for the same reason.
+    ue_wrap::game_build::RunSelftest();
 
     // THE VERDICT IS A DECISION, NOT A LOG LINE.
     //
@@ -188,9 +208,12 @@ DWORD WINAPI BootThread(LPVOID rawTag) {
     }
     if (healthFails > 0) {
         UE_LOGE("boot: STANDING DOWN -- %d SDK health check(s) failed. The mod targets "
-                "VOTV %s; this game build does not match it, so ProcessEvent will NOT "
+                "VOTV %s and the game running is %s, so ProcessEvent will NOT "
                 "be hooked and no session can start. Re-derive sdk_profile.h "
-                "(docs/versioning.md).", healthFails, coop::version::kGameTarget);
+                "(docs/versioning.md).", healthFails, coop::version::kGameTarget,
+                coop::game_build::Describe().c_str());
+        harness::compat_boot::WriteStandDown(std::to_string(healthFails) +
+                                             " engine check(s) of the boot's health check failed.");
         StandDownUnsupportedBuild();
         return 0;
     }
@@ -203,9 +226,13 @@ DWORD WINAPI BootThread(LPVOID rawTag) {
         UE_LOGE("boot: STANDING DOWN -- the object index could not register with the engine's object "
                 "notifications (the uobject_listeners lines above say why). The game instance, the "
                 "gamemode and the world context are found through it, so no session can start.");
+        harness::compat_boot::WriteStandDown("the object index could not register with the engine's object "
+                                             "notifications.");
         StandDownUnsupportedBuild();
         return 0;
     }
+    // The boot passed: the world checks are owed, and the report says so until they write.
+    harness::compat_boot::WritePassed();
 
     // Establish a game-thread execution context: arm the ProcessEvent detour so we have a
     // guaranteed game-thread callback to drive UFunction calls from (ProcessEvent

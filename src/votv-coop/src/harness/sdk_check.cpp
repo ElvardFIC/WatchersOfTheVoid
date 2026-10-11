@@ -61,29 +61,15 @@ void ReportHeader() {
         localtime_s(&tm, &now);
         std::strftime(ts, sizeof(ts), "%Y-%m-%d %H:%M:%S", &tm);
     }
-    // Game exe identification: walk the running process module list to
-    // pick out VotV-Win64-Shipping.exe (or whatever the exe is named).
-    // The HMODULE for the main exe is GetModuleHandle(nullptr).
+    // The running exe's path; which build it is, the report's game-build section says.
     char exePath[MAX_PATH] = {};
     ::GetModuleFileNameA(nullptr, exePath, MAX_PATH);
-    uint64_t exeSize = 0;
-    {
-        WIN32_FILE_ATTRIBUTE_DATA fad{};
-        if (::GetFileAttributesExA(exePath, GetFileExInfoStandard, &fad)) {
-            exeSize = (static_cast<uint64_t>(fad.nFileSizeHigh) << 32) | fad.nFileSizeLow;
-        }
-    }
 
     g_report << "=== VOTV_MP coop mod -- SDK compatibility report ===\n";
     g_report << "Generated:        " << ts << "\n";
-    g_report << "Mod target VOTV:  " << P::kTargetGameVersion << "\n";
+    g_report << "Mod target VOTV:  " << P::kTargetBuild << "\n";
     g_report << "Mod target UE:    " << P::kTargetEngineVersion << "\n";
     g_report << "Running game exe: " << exePath << "\n";
-    g_report << "  size:           " << exeSize << " bytes\n";
-    g_report << "  expected size:  " << P::kExpectedExeSize << " bytes\n";
-    if (P::kExpectedExeSize != 0 && exeSize != P::kExpectedExeSize) {
-        g_report << "  *** SIZE MISMATCH: game build differs from the version this mod was authored for.\n";
-    }
     g_report << "\n";
 }
 
@@ -106,10 +92,10 @@ void ReportFooter(int ok, int total, int fail, int failPriority, int skipped) {
 // harness/compat_report's, which the fingerprint census writes its own section into.
 void WriteReportFile() {
     namespace CR = harness::compat_report;
-    CR::Begin("sdk-check");
+    CR::Begin(kReportSection);
     std::istringstream in(g_report.str());
     for (std::string line; std::getline(in, line);) CR::Line("sdk-check", line);
-    for (int sev = 0; sev < 3; ++sev) CR::Failure("sdk-check", static_cast<Severity>(sev), g_failures[sev]);
+    for (int sev = 0; sev < 3; ++sev) CR::Failure(kReportSection, static_cast<Severity>(sev), g_failures[sev]);
     CR::Write();
 }
 
@@ -381,7 +367,7 @@ void RunAssetChecks(int& ok, int& fail, int& failPriority) {
 
 int Run() {
     UE_LOGI("sdk-check: === self-check START (target VOTV %s, engine %s) ===",
-            P::kTargetGameVersion, P::kTargetEngineVersion);
+            P::kTargetBuild, P::kTargetEngineVersion);
     ReportHeader();
     int ok = 0, fail = 0, failPriority = 0, skipped = 0;
     RunClassChecks(ok, fail, failPriority);
@@ -399,7 +385,7 @@ int Run() {
                 ok, total, fail, failPriority,
                 skipped > 0 ? "; some UFunction checks skipped due to dead owning UClass" : "");
         UE_LOGE("sdk-check: VOTV build likely diverged from target (%s). Re-run UE4SS SDK dump + diff sdk_profile.h.",
-                P::kTargetGameVersion);
+                P::kTargetBuild);
         UE_LOGE("sdk-check: see multivoid-compat-report.txt next to the mod DLL for the shareable diff.");
     }
     ReportFooter(ok, total, fail, failPriority, skipped);

@@ -16,6 +16,9 @@
 
 namespace harness::sdk_check {
 
+// Its section of multivoid-compat-report.txt (harness/compat_report), marked pending at boot.
+inline constexpr const char* kReportSection = "sdk-check";
+
 // Run the full check. Logs a one-line summary at INFO level + per-failure
 // detail at WARN/ERROR. Idempotent (safe to call multiple times across the
 // session; each call re-resolves fresh).

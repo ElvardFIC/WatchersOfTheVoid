@@ -383,7 +383,7 @@ void StartCompatChecksOnce() {
     s_started = true;
     Post([] {
         ue_wrap::ScopedWalkTimer walk("compat checks start");
-        harness::fingerprint_census::Run();  // first: it marks its section pending before sdk_check writes the file
+        harness::fingerprint_census::Run();  // its pending line becomes its progress; the boot marked both pending
         harness::sdk_check::Run();
     });
 }

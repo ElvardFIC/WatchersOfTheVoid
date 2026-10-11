@@ -11,6 +11,9 @@
 
 namespace harness::fingerprint_census {
 
+// Its section of multivoid-compat-report.txt (harness/compat_report), marked pending at boot.
+inline constexpr const char* kReportSection = "fingerprint-census";
+
 // Start a pass over every row (and the capture when its flag is on). Game thread, after the world is up,
 // posted with sdk_check::Run; the rows are checked over the next frames.
 void Run();

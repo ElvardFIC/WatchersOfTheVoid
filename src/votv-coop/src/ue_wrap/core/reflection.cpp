@@ -4,6 +4,7 @@
 #include <intrin.h>  // _ReturnAddress: a walk names its caller
 #include "ue_wrap/core/cached_obj_ref.h"
 
+#include "ue_wrap/core/game_build.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/sdk_profile.h"
 #include "ue_wrap/core/sig_scan.h"
@@ -627,17 +628,12 @@ std::vector<void*> FindObjectsByClass(const wchar_t* className) {
 
 namespace {
 
-// Log the running exe's version and size, and warn if it differs from the build the profile
-// was derived against; the first thing to check on a new release.
+// Log the running exe and its engine version, and which game build it is: the first thing to check
+// on a new release. The build itself is game_build's reading (its own line), not this file's size --
+// one build measured three sizes.
 void LogGameVersion() {
     wchar_t exe[MAX_PATH] = {};
     ::GetModuleFileNameW(::GetModuleHandleW(nullptr), exe, MAX_PATH);
-
-    unsigned long long sizeBytes = 0;
-    WIN32_FILE_ATTRIBUTE_DATA fad{};
-    if (::GetFileAttributesExW(exe, GetFileExInfoStandard, &fad)) {
-        sizeBytes = (static_cast<unsigned long long>(fad.nFileSizeHigh) << 32) | fad.nFileSizeLow;
-    }
 
     // The exe file version, which catches engine-version changes that shift offsets.
     unsigned ms = 0, ls = 0;
@@ -655,17 +651,10 @@ void LogGameVersion() {
         }
     }
 
-    UE_LOGI("target build: game=%s engine=%s", P::kTargetGameVersion, P::kTargetEngineVersion);
+    UE_LOGI("target build: game=%s engine=%s", P::kTargetBuild, P::kTargetEngineVersion);
     UE_LOGI("running exe : %ls", exe);
-    UE_LOGI("exe fileversion=%u.%u.%u.%u  size=%llu bytes",
-            ms >> 16, ms & 0xFFFF, ls >> 16, ls & 0xFFFF, sizeBytes);
-    if constexpr (P::kExpectedExeSize != 0) {
-        if (sizeBytes != P::kExpectedExeSize) {
-            UE_LOGW("exe size differs from the build these signatures target (%llu) -- "
-                    "AOBs/offsets are SUSPECT; re-derive sdk_profile.h for this build.",
-                    P::kExpectedExeSize);
-        }
-    }
+    UE_LOGI("exe fileversion=%u.%u.%u.%u", ms >> 16, ms & 0xFFFF, ls >> 16, ls & 0xFFFF);
+    game_build::Running();  // logs the build it reads, once
 }
 
 }  // namespace

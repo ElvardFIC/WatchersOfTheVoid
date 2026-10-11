@@ -424,7 +424,7 @@ void Report(bool log) {
     sorted.reserve(g_rows.size());
     for (RowState& s : g_rows) sorted.push_back(&s);
     std::sort(sorted.begin(), sorted.end(), [](const RowState* a, const RowState* b) { return a->order < b->order; });
-    CR::Begin("fingerprint-census");
+    CR::Begin(kReportSection);
     CR::Line("fingerprint-census", std::string("=== Function fingerprints against ") + kRefBuild +
                                        " (docs/bytecode-fingerprint.md) ===");
     for (RowState* sp : sorted) {
@@ -448,7 +448,7 @@ void Report(bool log) {
         const bool warns = !s.dev || row.Accepted() != 0;
         if (!s.dev && (problem || refused)) {
             ++problems;
-            CR::Failure("fingerprint-census", CR::Severity::Important);
+            CR::Failure(kReportSection, CR::Severity::Important);
         }
         if (warns && (problem || refused)) {
             if ((problem && !s.warned) || (refused && !s.warnedRefused)) {
@@ -720,7 +720,7 @@ void Run() {
     char pending[160];
     std::snprintf(pending, sizeof pending, "fingerprint-census: %zu row(s) against the %s reference, still checking",
                   g_rows.size(), kRefBuild);
-    CR::Pending("fingerprint-census", pending);
+    CR::Pending(kReportSection, pending);
     UE_LOGI("fingerprint-census: %zu row(s) against the %s reference, checked over the next frames", g_rows.size(),
             kRefBuild);
 }

@@ -8,6 +8,7 @@
 
 #include <cstdio>
 #include <cstring>
+#include <mutex>
 #include <vector>
 
 namespace harness::compat_report {
@@ -19,7 +20,11 @@ struct Section {
     int                      failures[3] = {};  // by Severity
     bool                     pending = false;   // still checking: the verdict waits for it
 };
-std::vector<Section> g_sections;  // game thread only
+// Cold: a handful of calls a session. The boot thread and the game thread both write it, and the lock
+// keeps their turns apart.
+std::mutex           g_mu;
+std::vector<Section> g_sections;
+std::string          g_note;  // the verdict line's closing sentence, or empty
 
 Section& Find(const char* name) {
     for (Section& s : g_sections)
@@ -28,29 +33,45 @@ Section& Find(const char* name) {
     return g_sections.back();
 }
 
-}  // namespace
-
-void Begin(const char* section) {
+void BeginLocked(const char* section) {
     Section& s = Find(section);
     s.lines.clear();
     std::memset(s.failures, 0, sizeof s.failures);
     s.pending = false;
 }
 
+}  // namespace
+
+void Begin(const char* section) {
+    std::lock_guard<std::mutex> lock(g_mu);
+    BeginLocked(section);
+}
+
 void Pending(const char* section, const std::string& line) {
-    Begin(section);
+    std::lock_guard<std::mutex> lock(g_mu);
+    BeginLocked(section);
     Section& s = Find(section);
     s.lines.push_back(line);
     s.pending = true;
 }
 
-void Line(const char* section, const std::string& text) { Find(section).lines.push_back(text); }
+void Line(const char* section, const std::string& text) {
+    std::lock_guard<std::mutex> lock(g_mu);
+    Find(section).lines.push_back(text);
+}
 
 void Failure(const char* section, Severity severity, int count) {
+    std::lock_guard<std::mutex> lock(g_mu);
     Find(section).failures[static_cast<int>(severity)] += count;
 }
 
+void SetVerdictNote(const std::string& note) {
+    std::lock_guard<std::mutex> lock(g_mu);
+    g_note = note;
+}
+
 void Write(bool announce) {
+    std::lock_guard<std::mutex> lock(g_mu);
     const std::wstring path = ue_wrap::paths::ExeDir() + L"\\multivoid-compat-report.txt";
     FILE* f = nullptr;
     // Text mode: the file is read in Notepad by the player who attaches it, so its lines end in CRLF.
@@ -70,17 +91,18 @@ void Write(bool announce) {
     for (const Section& s : g_sections)
         std::fprintf(f, "  %-20s %d critical, %d important, %d cosmetic\n", s.name.c_str(), s.failures[0], s.failures[1],
                      s.failures[2]);
+    const std::string note = g_note.empty() ? std::string() : "; " + g_note;
     if (priority == 0 && !pending.empty()) {
-        std::fprintf(f, "Status: PENDING -- %s still checking; this file is written again when it finishes\n",
-                     pending.c_str());
+        std::fprintf(f, "Status: PENDING -- %s still checking; this file is written again when it finishes%s\n",
+                     pending.c_str(), note.c_str());
     } else if (priority == 0) {
-        std::fprintf(f, "Status: HEALTHY (no critical or important failure against %s)\n",
-                     ue_wrap::profile::kTargetGameVersion);
+        std::fprintf(f, "Status: HEALTHY (no critical or important failure against %s%s)\n",
+                     ue_wrap::profile::kTargetBuild, note.c_str());
     } else {
-        std::fprintf(f, "Status: DEGRADED -- the game differs from the build this mod was made for (%s).\n\n"
+        std::fprintf(f, "Status: DEGRADED -- the game differs from the build this mod was made for (%s%s).\n\n"
                         "Share this report when filing an issue at the mod repository: it names every\n"
                         "divergence, and the maintainer builds the mod for the current VOTV release from it.\n",
-                     ue_wrap::profile::kTargetGameVersion);
+                     ue_wrap::profile::kTargetBuild, note.c_str());
     }
     std::fclose(f);
     if (!announce) return;

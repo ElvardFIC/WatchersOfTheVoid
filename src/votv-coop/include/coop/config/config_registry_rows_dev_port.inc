@@ -1,5 +1,5 @@
 // coop/config/config_registry_rows_dev_port.inc -- the [dev] rows of the version-port tooling (the fingerprint
-// capture and census red arm, the dependency dump, the ***REMOVED***), included by
+// capture and census red arm, the dependency dump, the ***REMOVED***, the version gate's drill arm), included by
 // config_registry_rows_dev.inc where they stood, so each keeps its place in every expansion of the list.
 // The entry forms are config_registry_rows.inc's.
 
@@ -23,3 +23,8 @@ CFG_STRING(fingerprint_census_red, "fingerprint_census_red", "dev", "", "VOTVCOO
     "client detected!' and quits). Empties that one scan's file list through our Func-patch substrate; "
     ***REMOVED***
     "public build is expected to carry no such gate, so this is off by default and never ships.")
+CFG_STRING(game_build_force, "game_build_force", "dev", "", "VOTVCOOP_GAME_BUILD_FORCE", false,
+    "The version gate's drill arm: run the mod as if the game were another build -- a row id of "
+    ***REMOVED***
+    "popup, the report, the stand-down's wording and the Join's refusal can be shown on a healthy install. "
+    "Changes what the mod believes, never the game. Empty: the build as read.")
