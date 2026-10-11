@@ -354,7 +354,8 @@ void CheckClass(RowState& s) {
     }
     if (!cls) {
         s.outcome = (ref && !ref->path) ? Outcome::KnownGone : Outcome::Unchecked;
-        s.detail = ref && !ref->path ? "absent on the reference build too" : "class not loaded";
+        // Off the reference build a class not loaded and a class gone cannot be told apart: the detail says both.
+        s.detail = ref && !ref->path ? "absent on the reference build too" : "class not loaded, or absent on this build";
         s.settled = ref && !ref->path;
         return;
     }
@@ -709,6 +710,10 @@ void Run() {
         return;
     }
     BeginPassState();
+    char pending[160];
+    std::snprintf(pending, sizeof pending, "fingerprint-census: %zu row(s) against the %s reference, still checking",
+                  g_rows.size(), kRefBuild);
+    CR::Pending("fingerprint-census", pending);
     UE_LOGI("fingerprint-census: %zu row(s) against the %s reference, checked over the next frames", g_rows.size(),
             kRefBuild);
 }

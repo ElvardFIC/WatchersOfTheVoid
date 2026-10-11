@@ -60,8 +60,9 @@ uint64_t ClassSetVersion();
 
 // Every class object the index has listed, in the order listed (a class loaded again is listed again):
 // a log a consumer reads on from where it stopped, to meet every class once as it loads, with no walk.
-// ClassLogAt answers the class at a position if its slot still holds it, null once it has gone, and says
-// whether it has finished loading (its functions linked). Game thread.
+// ClassLogAt answers the class at a position while it is listed (null once it is unlisted, or its slot
+// holds another object), and says whether it has finished loading (its functions linked). The log only
+// grows, a few bytes per class load of the process. Game thread.
 size_t ClassLogSize();
 void*  ClassLogAt(size_t position, bool* loaded);
 

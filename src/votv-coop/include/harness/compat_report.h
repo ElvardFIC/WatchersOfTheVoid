@@ -22,6 +22,11 @@ void Line(const char* section, const std::string& text);
 // Count `count` failures of `severity` against `section`, for the file's verdict. Game thread.
 void Failure(const char* section, Severity severity, int count = 1);
 
+// Start `section` afresh as still checking: `line` stands for it, and the verdict reads PENDING rather than
+// HEALTHY until the section begins again with its result. A check that reports later marks itself so before
+// a sooner one writes the file. Game thread.
+void Pending(const char* section, const std::string& line);
+
 // Rewrite the file beside the exe with every section, in the order the sections first began, then the one
 // verdict over all of them: DEGRADED when any section counted a Critical or Important failure. Says so in the log
 // unless `announce` is false (a rewrite that only refreshes counts). Game thread.

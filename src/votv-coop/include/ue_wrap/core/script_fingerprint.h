@@ -26,17 +26,19 @@ struct Result {
     std::string problem;         // the first problem met, empty when ok
 };
 
-// Fingerprint one UFunction. Game thread: names render through FName::ToString. A census reads a few
-// hundred functions once (about 45 us each, measured over every loaded Blueprint function). A fault while
-// reading is absorbed and reported in `problem`.
+// Fingerprint one UFunction. Game thread: names render through FName::ToString. A census pass of the 423
+// rows costs about 45 ms, measured. A fault while reading is absorbed and reported in `problem`; a stack
+// overflow is not absorbed.
 Result Of(void* ufunction);
 
 // The signature line alone (its text and sigHash), without walking the script: what a name watch on every
 // class's function of one name depends on. Game thread; a fault reads as a zero hash.
 Result SignatureOf(void* ufunction);
 
-// A census pass: between the two, an ubergraph is decoded once however many event stubs follow it (a
-// class's stubs all enter its one ubergraph). Game thread; Begin again starts a fresh pass.
+// A census pass: between the two, every script decoded is kept (an ubergraph once however many event stubs
+// follow it, and a stub read for its ubergraph's entries is not decoded again for its own row), every
+// function's result, and every name rendered. The census begins a new pass when a class unloads, so nothing
+// is read through a pointer its class took with it. Game thread; Begin again starts a fresh pass.
 void BeginPass();
 void EndPass();
 

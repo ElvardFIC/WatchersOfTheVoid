@@ -17,6 +17,7 @@ struct Section {
     std::string              name;
     std::vector<std::string> lines;
     int                      failures[3] = {};  // by Severity
+    bool                     pending = false;   // still checking: the verdict waits for it
 };
 std::vector<Section> g_sections;  // game thread only
 
@@ -33,6 +34,14 @@ void Begin(const char* section) {
     Section& s = Find(section);
     s.lines.clear();
     std::memset(s.failures, 0, sizeof s.failures);
+    s.pending = false;
+}
+
+void Pending(const char* section, const std::string& line) {
+    Begin(section);
+    Section& s = Find(section);
+    s.lines.push_back(line);
+    s.pending = true;
 }
 
 void Line(const char* section, const std::string& text) { Find(section).lines.push_back(text); }
@@ -50,16 +59,21 @@ void Write(bool announce) {
         return;
     }
     int priority = 0;
+    std::string pending;
     for (const Section& s : g_sections) {
         for (const std::string& line : s.lines) std::fprintf(f, "%s\n", line.c_str());
         std::fputc('\n', f);
         priority += s.failures[static_cast<int>(Severity::Critical)] + s.failures[static_cast<int>(Severity::Important)];
+        if (s.pending) pending += (pending.empty() ? "" : ", ") + s.name;
     }
     std::fprintf(f, "=== VERDICT ===\n");
     for (const Section& s : g_sections)
         std::fprintf(f, "  %-20s %d critical, %d important, %d cosmetic\n", s.name.c_str(), s.failures[0], s.failures[1],
                      s.failures[2]);
-    if (priority == 0) {
+    if (priority == 0 && !pending.empty()) {
+        std::fprintf(f, "Status: PENDING -- %s still checking; this file is written again when it finishes\n",
+                     pending.c_str());
+    } else if (priority == 0) {
         std::fprintf(f, "Status: HEALTHY (no critical or important failure against %s)\n",
                      ue_wrap::profile::kTargetGameVersion);
     } else {
@@ -71,7 +85,7 @@ void Write(bool announce) {
     std::fclose(f);
     if (!announce) return;
     UE_LOGI("compat-report: wrote '%ls' (%zu section(s), %s)", path.c_str(), g_sections.size(),
-            priority ? "DEGRADED" : "HEALTHY");
+            priority ? "DEGRADED" : (pending.empty() ? "HEALTHY" : "PENDING"));
 }
 
 }  // namespace harness::compat_report
