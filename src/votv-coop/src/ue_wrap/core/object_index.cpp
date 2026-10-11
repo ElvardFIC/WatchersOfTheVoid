@@ -94,8 +94,10 @@ bool IsMeta(void* cls) {
     return false;
 }
 
-// Moves whenever a class object is listed or unlisted: ClassListVersion.
+// Moves whenever a class object is listed or unlisted: ClassListVersion; and only when one is unlisted:
+// ClassUnlistVersion.
 uint64_t g_classListVersion = 0;
+uint64_t g_classUnlistVersion = 0;
 
 void ListClassName(int32_t index, void* classObj) {
     if (g_classNameBySlot.count(index)) return;   // listed already
@@ -110,6 +112,7 @@ void UnlistClassName(int32_t index) {
     const auto k = g_classNameBySlot.find(index);
     if (k == g_classNameBySlot.end()) return;
     ++g_classListVersion;
+    ++g_classUnlistVersion;
     const auto it = g_classSlotsByName.find(k->second);
     if (it != g_classSlotsByName.end()) {
         auto& v = it->second;
@@ -371,6 +374,8 @@ void SetObserver(const Observer& o) { g_observer = o; }
 uint64_t ClassSetVersion() { return g_classSetVersion; }
 
 uint64_t ClassListVersion() { return g_classListVersion; }
+
+uint64_t ClassUnlistVersion() { return g_classUnlistVersion; }
 
 void* ClassByName(const wchar_t* name) {
     UE_ASSERT_GAME_THREAD("object_index::ClassByName");

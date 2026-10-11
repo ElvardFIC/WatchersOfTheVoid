@@ -110,7 +110,7 @@ bool                  g_firstPass = true;   // the report of the first pass is p
 bool                  g_changed = false;    // a row's outcome or detail moved this pass: the report is printed again
 bool                  g_redSaid = false;    // the red arm's verdict line is out
 uint64_t              g_classSet = 0;
-uint64_t              g_passClasses = 0;    // ClassListVersion when the pass's caches began
+uint64_t              g_passClasses = 0;    // ClassUnlistVersion when the pass's caches began
 Clock::time_point     g_lastTry;
 double                g_ms = 0;             // the pass's measured work
 std::string           g_red;                // [dev] fingerprint_census_red: the row whose reference is falsified
@@ -468,7 +468,7 @@ void Finish() {
 
 void BeginPassState() {
     FP::BeginPass();
-    g_passClasses = OI::ClassListVersion();
+    g_passClasses = OI::ClassUnlistVersion();
     g_anyScanned = AnyListCurrent();
     g_next = 0;
     g_running = true;
@@ -479,11 +479,12 @@ void Slice() {
     ue_wrap::ScopedWalkTimer walk("fingerprint-census slice");
     const Clock::time_point t0 = Clock::now();
     const auto budget = std::chrono::microseconds(2000);
-    // A class unloaded or loaded since the pass began: a function the pass's caches hold may be gone, and its
-    // address a new one's. Settled rows keep what they read; the rest read afresh.
-    if (OI::ClassListVersion() != g_passClasses) {
+    // A class unloaded since the pass began: a function the pass's caches hold may be gone, and its address a
+    // new one's. Settled rows keep what they read; the rest read afresh. A class loading frees nothing, and
+    // classes load all through a world's first seconds: dropping the caches then cost a pass half again.
+    if (OI::ClassUnlistVersion() != g_passClasses) {
         FP::BeginPass();
-        g_passClasses = OI::ClassListVersion();
+        g_passClasses = OI::ClassUnlistVersion();
     }
     const bool anyPending = std::any_of(g_rows.begin(), g_rows.end(), [](const RowState& r) {
         return !r.settled && r.row->GetMode() == F::Mode::AnyClass && r.refAny;

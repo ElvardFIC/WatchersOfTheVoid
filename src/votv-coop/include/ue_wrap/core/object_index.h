@@ -66,6 +66,11 @@ uint64_t ClassSetVersion();
 // taken from the live array is current until this moves. Game thread.
 uint64_t ClassListVersion();
 
+// A number that moves whenever a class object is unlisted: a class unloaded, its functions and their
+// scripts freed with it. A pointer to one of them read since the last move is still the object it was.
+// Game thread.
+uint64_t ClassUnlistVersion();
+
 // The loaded class whose short name is `name`, compared without case as the engine compares names:
 // a class object the index holds, found in one lookup whether or not the class has an instance.
 // Null when no such class is loaded, or while it is still being loaded. Where two packages load

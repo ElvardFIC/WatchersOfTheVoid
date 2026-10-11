@@ -170,7 +170,7 @@ std::string SigLine(Ctx& c, void* fn) {
 // A script's decoded statements, kept for a census pass: every event stub of a class follows the same
 // ubergraph, so mainPlayer_C's is decoded once instead of once per stub, and the stubs an ubergraph row
 // reads to find its entries are not decoded again when their own rows come. Keyed on the script's address
-// and size; the census begins a new pass when a class loads or unloads, so a key cannot outlive its script.
+// and size; the census begins a new pass when a class unloads, so a key cannot outlive its script.
 // Game thread.
 struct PassCache {
     std::unordered_map<const uint8_t*, std::pair<size_t, Decoded>> scans;
