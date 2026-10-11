@@ -110,10 +110,6 @@ bool HandleIntentEvent(net::Session& session,
         // renders as a silently vanished item -- the sentence is the point. A success carries the
         // price the HOST used, which can legitimately differ from the seller's own local toast
         // (`getPriceMultiplier` is per-instance and divergent).
-        if (session.role() == net::Role::Host) {
-            UE_LOGW("event_feed: CoinGunResult received on the HOST -- dropping");
-            break;
-        }
         coop::coingun_sync::OnReliableResult(msg.payload, static_cast<int>(msg.payloadLen));
         break;
     }
@@ -133,10 +129,6 @@ bool HandleIntentEvent(net::Session& session,
         // EX_LocalVirtualFunction, so it cannot be suppressed) -- the correction rides a direct
         // BalanceSync the host sends alongside; this message carries the REASON and the orderId the
         // client needs to rebuild its cart.
-        if (session.role() == net::Role::Host) {
-            UE_LOGW("event_feed: OrderRefused received on the HOST -- dropping");
-            break;
-        }
         coop::order_sync::OnReliableRefused(msg.payload, static_cast<int>(msg.payloadLen));
         break;
     }
@@ -262,14 +254,6 @@ bool HandleIntentEvent(net::Session& session,
         // HOST->CLIENT, one recipient, never relayed: the answer to a GrabIntent the host did not
         // perform, or (reason HoldEnded) the notice that the host ended the recipient's carry.
         // coop::trash_channel::OnGrabRefused.
-        if (session.role() == net::Role::Host) {
-            UE_LOGW("event_feed: GrabRefused received on the HOST -- dropping");
-            break;
-        }
-        if (msg.senderPeerSlot != 0) {
-            UE_LOGW("event_feed: GrabRefused from senderPeerSlot=%d, not the host -- dropping", msg.senderPeerSlot);
-            break;
-        }
         if (msg.payloadLen < sizeof(net::GrabRefusedPayload)) {
             UE_LOGW("event_feed: GrabRefused payload too short (%zu < %zu)",
                     static_cast<size_t>(msg.payloadLen), sizeof(net::GrabRefusedPayload));

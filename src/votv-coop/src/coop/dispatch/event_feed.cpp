@@ -201,12 +201,6 @@ void Update(net::Session& session, void* localPlayer) {
             // The dev refill of food, sleep and health (coffeePower is deliberately excluded). No
             // payload; idempotent, so an echo is harmless. Host-only origin, or any peer could
             // nullify the survival tension.
-            if (msg.senderPeerSlot != 0) {
-                UE_LOGW("event_feed: RestoreVitals from non-host senderPeerSlot=%d "
-                        "-- dropping (host-only dev-key origin)",
-                        msg.senderPeerSlot);
-                break;
-            }
             ue_wrap::game_thread::Post([] { ::coop::dev::restore_vitals::ApplyLocally(); });
             break;
         }
@@ -214,11 +208,6 @@ void Update(net::Session& session, void* localPlayer) {
             // The host detected an enemy hitting this peer's puppet and relays the damage for the
             // owner to apply. Host-only origin (only the host runs enemies); not in the relay
             // whitelist. The target id check and the apply live in player_damage.
-            if (msg.senderPeerSlot != 0) {
-                UE_LOGW("event_feed: PlayerDamage from non-host senderPeerSlot=%d "
-                        "-- dropping (host-only combat origin)", msg.senderPeerSlot);
-                break;
-            }
             if (msg.payloadLen < sizeof(net::PlayerDamagePayload)) {
                 UE_LOGW("event_feed: PlayerDamage payload too short (%zu < %zu)",
                         static_cast<size_t>(msg.payloadLen), sizeof(net::PlayerDamagePayload));
@@ -233,11 +222,6 @@ void Update(net::Session& session, void* localPlayer) {
             // The host's killer wisp grabbed this peer's puppet; the host neutralised its own death
             // and tells the owner to ragdoll-die after a fixed delay. Host-only origin;
             // wisp_tear_mirror verifies the addressed element id. Not relayed.
-            if (msg.senderPeerSlot != 0) {
-                UE_LOGW("event_feed: WispGrab from non-host senderPeerSlot=%d -- dropping "
-                        "(host-only wisp origin)", msg.senderPeerSlot);
-                break;
-            }
             if (msg.payloadLen < sizeof(net::WispGrabPayload)) {
                 UE_LOGW("event_feed: WispGrab payload too short (%zu < %zu)",
                         static_cast<size_t>(msg.payloadLen), sizeof(net::WispGrabPayload));
@@ -252,11 +236,6 @@ void Update(net::Session& session, void* localPlayer) {
         case net::ReliableKind::WispTear: {
             // The fatality tear on the local wisp mirror, then the deferred hold of the victim's
             // puppet. Host-only origin; the wisp is resolved by element id; not relayed.
-            if (msg.senderPeerSlot != 0) {
-                UE_LOGW("event_feed: WispTear from non-host senderPeerSlot=%d -- dropping "
-                        "(host-only wisp origin)", msg.senderPeerSlot);
-                break;
-            }
             if (msg.payloadLen < sizeof(net::WispTearPayload)) {
                 UE_LOGW("event_feed: WispTear payload too short (%zu < %zu)",
                         static_cast<size_t>(msg.payloadLen), sizeof(net::WispTearPayload));
@@ -271,11 +250,6 @@ void Update(net::Session& session, void* localPlayer) {
         case net::ReliableKind::UpgradeLevels: {
             // The host's canonical upgrade levels, mirrored whole. Host-only origin, and it sits
             // beside the balance on purpose: the two are one purchase seen from either end.
-            if (msg.senderPeerSlot != 0) {
-                UE_LOGW("event_feed: UpgradeLevels from non-host senderPeerSlot=%d -- dropping",
-                        msg.senderPeerSlot);
-                break;
-            }
             if (msg.payloadLen < sizeof(net::UpgradeLevelsPayload)) {
                 UE_LOGW("event_feed: UpgradeLevels payload too short (%zu < %zu)",
                         static_cast<size_t>(msg.payloadLen), sizeof(net::UpgradeLevelsPayload));
@@ -288,11 +262,6 @@ void Update(net::Session& session, void* localPlayer) {
         }
         case net::ReliableKind::BalanceSync: {
             // The host's canonical balance, mirrored. Host-only origin.
-            if (msg.senderPeerSlot != 0) {
-                UE_LOGW("event_feed: BalanceSync from non-host senderPeerSlot=%d -- dropping",
-                        msg.senderPeerSlot);
-                break;
-            }
             if (msg.payloadLen < sizeof(net::BalancePayload)) {
                 UE_LOGW("event_feed: BalanceSync payload too short (%zu < %zu)",
                         static_cast<size_t>(msg.payloadLen), sizeof(net::BalancePayload));
@@ -311,14 +280,8 @@ void Update(net::Session& session, void* localPlayer) {
                         static_cast<size_t>(msg.payloadLen), sizeof(net::TeleportClientPayload));
                 break;
             }
-            // Host-only: without the sender gate one client could teleport another through the
-            // host's fan-out.
-            if (msg.senderPeerSlot != 0) {
-                UE_LOGW("event_feed: TeleportClient from non-host senderPeerSlot=%d "
-                        "-- dropping (host-only)",
-                        msg.senderPeerSlot);
-                break;
-            }
+            // Host-only: the host's receive edge refuses a client's copy (client_authorship.h), or one
+            // client could teleport another through the host's fan-out.
             net::TeleportClientPayload p{};
             std::memcpy(&p, msg.payload, sizeof(p));
             // NaN and Inf rejected before the engine call: K2_TeleportTo with a NaN location
@@ -362,11 +325,6 @@ void Update(net::Session& session, void* localPlayer) {
                         static_cast<size_t>(msg.payloadLen), sizeof(net::JoinPhaseNotePayload));
                 break;
             }
-            if (msg.senderPeerSlot != 0) {
-                UE_LOGW("event_feed: JoinPhaseNote from non-host senderPeerSlot=%d -- dropping",
-                        msg.senderPeerSlot);
-                break;
-            }
             if (session.role() == net::Role::Host) break;  // self-echo guard
             net::JoinPhaseNotePayload p{};
             std::memcpy(&p, msg.payload, sizeof(p));
@@ -380,11 +338,6 @@ void Update(net::Session& session, void* localPlayer) {
             if (msg.payloadLen < sizeof(net::SnapshotBeginPayload)) {
                 UE_LOGW("event_feed: SnapshotBegin payload too short (%zu < %zu)",
                         static_cast<size_t>(msg.payloadLen), sizeof(net::SnapshotBeginPayload));
-                break;
-            }
-            if (msg.senderPeerSlot != 0) {
-                UE_LOGW("event_feed: SnapshotBegin from non-host senderPeerSlot=%d -- dropping",
-                        msg.senderPeerSlot);
                 break;
             }
             if (session.role() == net::Role::Host) break;  // self-echo guard (host doesn't load-screen)
@@ -452,11 +405,6 @@ void Update(net::Session& session, void* localPlayer) {
             if (msg.payloadLen < sizeof(net::SnapshotEndPayload)) {
                 UE_LOGW("event_feed: SnapshotComplete payload too short (%zu < %zu)",
                         static_cast<size_t>(msg.payloadLen), sizeof(net::SnapshotEndPayload));
-                break;
-            }
-            if (msg.senderPeerSlot != 0) {
-                UE_LOGW("event_feed: SnapshotComplete from non-host senderPeerSlot=%d -- dropping",
-                        msg.senderPeerSlot);
                 break;
             }
             if (session.role() == net::Role::Host) break;

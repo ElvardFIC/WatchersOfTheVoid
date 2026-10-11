@@ -334,11 +334,6 @@ bool HandleEntityEvent(net::Session& session,
         // our reliable channel was not ready. Host-only, not relayed. Validated, then a pending
         // correction is armed; the bound native is snapped at the quiescence sweep, or immediately
         // if the tail already quiesced.
-        if (msg.senderPeerSlot != 0) {
-            UE_LOGW("event_feed: PropSnapPos from non-host senderPeerSlot=%d -- dropping (host-only)",
-                    msg.senderPeerSlot);
-            break;
-        }
         if (msg.payloadLen < sizeof(net::PropSnapPosPayload)) {
             UE_LOGW("event_feed: PropSnapPos payload too short (%zu < %zu)",
                     static_cast<size_t>(msg.payloadLen), sizeof(net::PropSnapPosPayload));
@@ -446,11 +441,6 @@ bool HandleEntityEvent(net::Session& session,
     case net::ReliableKind::PropDriveEnd: {
         // Host to all: a driven prop's stream closed. Host-only, never relayed; validated here and
         // applied by the stream's receiver on the game thread.
-        if (msg.senderPeerSlot != 0) {
-            UE_LOGW("event_feed: PropDriveEnd from non-host senderPeerSlot=%d -- dropping (host-only)",
-                    msg.senderPeerSlot);
-            break;
-        }
         if (msg.payloadLen < sizeof(net::PropDriveEndPayload)) {
             UE_LOGW("event_feed: PropDriveEnd payload too short (%zu < %zu)",
                     static_cast<size_t>(msg.payloadLen), sizeof(net::PropDriveEndPayload));
@@ -516,14 +506,8 @@ bool HandleEntityEvent(net::Session& session,
                     static_cast<size_t>(msg.payloadLen), sizeof(net::EntitySpawnPayload));
             break;
         }
-        // Host-authoritative: without the sender gate a client could flood crafted class names and
-        // force a GUObjectArray walk per packet on the host's game thread.
-        if (msg.senderPeerSlot != 0) {
-            UE_LOGW("event_feed: EntitySpawn from non-host senderPeerSlot=%d "
-                    "-- dropping (NPC sync is host-only)",
-                    msg.senderPeerSlot);
-            break;
-        }
+        // Host-authoritative: the host's receive edge refuses a client's copy (client_authorship.h),
+        // or a client could flood crafted class names and force an object-array walk per packet here.
         net::EntitySpawnPayload p{};
         std::memcpy(&p, msg.payload, sizeof(p));
         if (p.className.len > 63) {
@@ -545,12 +529,6 @@ bool HandleEntityEvent(net::Session& session,
             break;
         }
         // Host-authoritative: a client could otherwise destroy any NPC id it learned from a spawn.
-        if (msg.senderPeerSlot != 0) {
-            UE_LOGW("event_feed: EntityDestroy from non-host senderPeerSlot=%d "
-                    "-- dropping (NPC sync is host-only)",
-                    msg.senderPeerSlot);
-            break;
-        }
         net::EntityDestroyPayload p{};
         std::memcpy(&p, msg.payload, sizeof(p));
         net::EntityDestroyPayload pCopy = p;
@@ -566,11 +544,6 @@ bool HandleEntityEvent(net::Session& session,
         if (msg.payloadLen < sizeof(net::WorldActorSpawnPayload)) {
             UE_LOGW("event_feed: WorldActorSpawn payload too short (%zu < %zu)",
                     static_cast<size_t>(msg.payloadLen), sizeof(net::WorldActorSpawnPayload));
-            break;
-        }
-        if (msg.senderPeerSlot != 0) {
-            UE_LOGW("event_feed: WorldActorSpawn from non-host senderPeerSlot=%d -- dropping (host-only)",
-                    msg.senderPeerSlot);
             break;
         }
         net::WorldActorSpawnPayload pWa{};
@@ -599,11 +572,6 @@ bool HandleEntityEvent(net::Session& session,
                     static_cast<size_t>(msg.payloadLen), sizeof(net::EntityDestroyPayload));
             break;
         }
-        if (msg.senderPeerSlot != 0) {
-            UE_LOGW("event_feed: WorldActorDestroy from non-host senderPeerSlot=%d -- dropping (host-only)",
-                    msg.senderPeerSlot);
-            break;
-        }
         net::EntityDestroyPayload pWaD{};
         std::memcpy(&pWaD, msg.payload, sizeof(pWaD));
         net::EntityDestroyPayload pWaDCopy = pWaD;
@@ -618,11 +586,6 @@ bool HandleEntityEvent(net::Session& session,
         if (msg.payloadLen < sizeof(net::PyramidGatherPayload)) {
             UE_LOGW("event_feed: PyramidGather payload too short (%zu < %zu)",
                     static_cast<size_t>(msg.payloadLen), sizeof(net::PyramidGatherPayload));
-            break;
-        }
-        if (msg.senderPeerSlot != 0) {
-            UE_LOGW("event_feed: PyramidGather from non-host senderPeerSlot=%d -- dropping (host-only)",
-                    msg.senderPeerSlot);
             break;
         }
         net::PyramidGatherPayload pGather{};

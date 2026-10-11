@@ -174,6 +174,12 @@ constexpr ClientAuthorship AuthorshipOf(ReliableKind k) {
     case ReliableKind::ServerSetting:
     case ReliableKind::CommandReply:
     case ReliableKind::PermissionGrants:
+    case ReliableKind::CoinGunResult:
+    case ReliableKind::OrderRefused:
+    case ReliableKind::OrderQueue:
+    case ReliableKind::StatOrder:
+    case ReliableKind::StatQuery:
+    case ReliableKind::PropSaveData:
         return ClientAuthorship::Host;
     case ReliableKind::SkySignalCatch:
     case ReliableKind::DeskState:
@@ -184,13 +190,7 @@ constexpr ClientAuthorship AuthorshipOf(ReliableKind k) {
     case ReliableKind::DishCalib:
     case ReliableKind::TaskNewState:
     case ReliableKind::ChatSpeaker:
-    case ReliableKind::OrderRefused:
-    case ReliableKind::CoinGunResult:
-    case ReliableKind::PropSaveData:
     case ReliableKind::HookAnchored:
-    case ReliableKind::OrderQueue:
-    case ReliableKind::StatOrder:
-    case ReliableKind::StatQuery:
         return ClientAuthorship::Unverified;
     }
     return ClientAuthorship::Host;  // a value that names no kind

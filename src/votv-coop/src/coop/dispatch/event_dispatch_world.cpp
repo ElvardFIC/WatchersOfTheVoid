@@ -112,11 +112,6 @@ bool HandleWorldEvent(net::Session& session,
             UE_LOGI("event_feed: EventFire received on host -- dropping (host is the authority)");
             break;
         }
-        if (msg.senderPeerSlot != 0) {
-            UE_LOGW("event_feed: EventFire from non-host senderPeerSlot=%d -- dropping",
-                    msg.senderPeerSlot);
-            break;
-        }
         net::EventFirePayload fp{};
         std::memcpy(&fp, msg.payload, sizeof(fp));
         coop::event_fire_sync::OnReliable(fp);
@@ -132,11 +127,6 @@ bool HandleWorldEvent(net::Session& session,
         }
         if (session.role() == net::Role::Host) {
             UE_LOGI("event_feed: EventSnapshot received on host -- dropping (host is the authority)");
-            break;
-        }
-        if (msg.senderPeerSlot != 0) {
-            UE_LOGW("event_feed: EventSnapshot from non-host senderPeerSlot=%d -- dropping",
-                    msg.senderPeerSlot);
             break;
         }
         net::EventSnapshotPayload sp{};
@@ -307,13 +297,8 @@ bool HandleWorldEvent(net::Session& session,
                     static_cast<size_t>(msg.payloadLen), sizeof(net::ChatLinePayload));
             break;
         }
-        if (msg.senderPeerSlot != 0) {
-            // Only the host authors. A client claiming to is a protocol violation, and accepting it
-            // would let any peer write the lobby's permanent record.
-            UE_LOGW("event_feed: ChatLine from senderPeerSlot=%d -- only the host "
-                    "authors chat; dropping", msg.senderPeerSlot);
-            break;
-        }
+        // Only the host authors (a client's copy is refused at the host's receive edge,
+        // client_authorship.h): accepting one would let any peer write the lobby's permanent record.
         net::ChatLinePayload lp{};
         std::memcpy(&lp, msg.payload, sizeof(lp));
         coop::chat_sync::OnChatLine(lp);
@@ -338,25 +323,17 @@ bool HandleWorldEvent(net::Session& session,
                     static_cast<size_t>(msg.payloadLen), sizeof(net::CommandReplyPayload));
             break;
         }
-        if (msg.senderPeerSlot != 0) {
-            // Only the host answers. A client claiming to would write lines into another peer's feed.
-            UE_LOGW("event_feed: CommandReply from senderPeerSlot=%d -- only the host "
-                    "answers; dropping", msg.senderPeerSlot);
-            break;
-        }
+        // Only the host answers (a client's copy is refused at the host's receive edge,
+        // client_authorship.h): one would otherwise write lines into another peer's feed.
         net::CommandReplyPayload rp{};
         std::memcpy(&rp, msg.payload, sizeof(rp));
         coop::command_sync::OnReply(rp);
         break;
     }
     case net::ReliableKind::SkyState: {
-        // The host-authoritative night-sky orientation, moon phase and eye, host to client, trust-gated
-        // to slot 0 like the clock. The client writes the sky mesh's world rotation and the moon
+        // The host-authoritative night-sky orientation, moon phase and eye, host to client, refused from a client
+        // at the host's receive edge like the clock. The client writes the sky mesh's world rotation and the moon
         // phase and runs the sky's setEye for the eye (the module no-ops on the host).
-        if (msg.senderPeerSlot != 0) {
-            UE_LOGW("event_feed: SkyState from non-host senderPeerSlot=%d -- dropping", msg.senderPeerSlot);
-            break;
-        }
         if (msg.payloadLen < sizeof(net::SkyStatePayload)) {
             UE_LOGW("event_feed: SkyState payload too short (%zu < %zu)",
                     static_cast<size_t>(msg.payloadLen), sizeof(net::SkyStatePayload));
@@ -390,15 +367,8 @@ bool HandleWorldEvent(net::Session& session,
             UE_LOGI("event_feed: RedSky received on host -- dropping");
             break;
         }
-        // Host trust-bound: the red sky is host-only, and a non-host sender is a protocol
-        // violation.
-        if (msg.senderPeerSlot != 0) {
-            UE_LOGW("event_feed: RedSky from non-host senderPeerSlot=%d "
-                    "(senderElementId=0x%08x) -- dropping",
-                    msg.senderPeerSlot, p.senderElementId);
-            break;
-        }
-        // The role-range trust on the sender element id.
+        // Host trust-bound: the red sky is host-only; a client's copy is refused at the host's receive edge
+        // (client_authorship.h). The role-range trust on the sender element id.
         if (!VerifySenderEidRange(msg.senderPeerSlot, p.senderElementId,
                                    "RedSky")) {
             break;
@@ -430,14 +400,8 @@ bool HandleWorldEvent(net::Session& session,
             UE_LOGI("event_feed: LightningStrike received on host -- dropping");
             break;
         }
-        // Host trust-bound: the strike is host-only, and a non-host sender is a protocol violation.
-        if (msg.senderPeerSlot != 0) {
-            UE_LOGW("event_feed: LightningStrike from non-host "
-                    "senderPeerSlot=%d (senderElementId=0x%08x) -- dropping",
-                    msg.senderPeerSlot, p.senderElementId);
-            break;
-        }
-        // The role-range trust on the sender element id.
+        // Host trust-bound: the strike is host-only; a client's copy is refused at the host's receive edge
+        // (client_authorship.h). The role-range trust on the sender element id.
         if (!VerifySenderEidRange(msg.senderPeerSlot, p.senderElementId,
                                    "LightningStrike")) {
             break;
@@ -474,15 +438,8 @@ bool HandleWorldEvent(net::Session& session,
                     "(host is the authority; no inbound from client)");
             break;
         }
-        // Host trust-bound: the weather is host-only, and a non-host sender is a protocol
-        // violation.
-        if (msg.senderPeerSlot != 0) {
-            UE_LOGW("event_feed: WeatherState from non-host "
-                    "senderPeerSlot=%d (senderElementId=0x%08x) -- dropping",
-                    msg.senderPeerSlot, p.senderElementId);
-            break;
-        }
-        // The role-range trust on the sender element id.
+        // Host trust-bound: the weather is host-only; a client's copy is refused at the host's receive edge
+        // (client_authorship.h). The role-range trust on the sender element id.
         if (!VerifySenderEidRange(msg.senderPeerSlot, p.senderElementId,
                                    "WeatherState")) {
             break;
