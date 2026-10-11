@@ -35,17 +35,19 @@ bool EmailSettled() {
     return GT::RunAndWait([](std::atomic<int>& a) { a.store(coop::email_sync::Settled() ? 1 : 2); }) == 1;
 }
 
-// Game thread.
-void AuthorNow(const wchar_t* topic) {
+// Game thread. False only when the game cannot be asked yet (NotNow): the caller asks again.
+bool AuthorNow(const wchar_t* topic) {
     ue_wrap::email::Row r;
     r.username = 0;
     r.topic = topic;
     r.text = L"seeds-arc drill row (autotest_seeddrill)";
     const ue_wrap::RowApply a = ue_wrap::email::AddEmail(r);
+    if (a.result == ue_wrap::RowApplyResult::NotNow) return false;
     if (a.result == ue_wrap::RowApplyResult::Applied)
         UE_LOGI("[SEED-DRILL] authored %ls", topic);
     else
         UE_LOGW("[SEED-DRILL] AddEmail FAILED for %ls -- %s", topic, a.why);
+    return true;
 }
 
 // Authors the in-window email for the first slot inside its load window past the host's taking of its
@@ -59,8 +61,7 @@ bool AuthorInWindow(coop::net::Session& s) {
                    if (!s.HasPeerConn(slot) || s.IsSlotWorldReady(slot) ||
                        !coop::save_transfer::WorldTakenFor(slot))
                        continue;
-                   AuthorNow(L"[seed-drill] in-window");
-                   a.store(1);
+                   a.store(AuthorNow(L"[seed-drill] in-window") ? 1 : 2);
                    return;
                }
                a.store(2);
@@ -88,14 +89,18 @@ DWORD WINAPI SeedDrillThread(LPVOID /*arg*/) {
     bool settled = false;
     for (int i = 0; i < 1200 && s.running() && !(settled = EmailSettled()); ++i) ::Sleep(100);
     if (!settled) {
-        UE_LOGW("[SEED-DRILL] the email lane never settled -- drill not run");
+        UE_LOGW(s.running() ? "[SEED-DRILL] the email lane never settled -- drill not run"
+                            : "[SEED-DRILL] the session stopped -- drill not run");
         return 0;
     }
     bool anyPeer = false;
     for (int i = 1; i < coop::net::kMaxPeers; ++i)
         if (s.IsSlotWorldReady(i)) anyPeer = true;
     if (!anyPeer) {
-        GT::Post([] { AuthorNow(L"[seed-drill] solo"); });
+        GT::Post([] {
+            if (!AuthorNow(L"[seed-drill] solo"))
+                UE_LOGW("[SEED-DRILL] the game could not take the solo email yet -- solo phase not run");
+        });
     } else {
         UE_LOGW("[SEED-DRILL] a peer is already world-ready -- solo phase skipped");
     }
