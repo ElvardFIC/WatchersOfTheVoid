@@ -23,7 +23,8 @@ void Line(const char* section, const std::string& text);
 void Failure(const char* section, Severity severity, int count = 1);
 
 // Rewrite the file beside the exe with every section, in the order the sections first began, then the one
-// verdict over all of them: DEGRADED when any section counted a Critical or Important failure. Game thread.
-void Write();
+// verdict over all of them: DEGRADED when any section counted a Critical or Important failure. Says so in the log
+// unless `announce` is false (a rewrite that only refreshes counts). Game thread.
+void Write(bool announce = true);
 
 }  // namespace harness::compat_report

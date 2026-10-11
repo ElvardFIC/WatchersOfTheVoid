@@ -4,13 +4,14 @@
 
 #include "harness/fingerprint_census.h"
 
+#include "fingerprint_census_detail.h"
+
 #include "coop/config/config.h"
 #include "coop/config/config_registry.h"
 #include "harness/compat_report.h"
 #include "ue_wrap/core/game_thread.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/object_index.h"
-#include "ue_wrap/core/paths.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/script_fingerprint.h"
 #include "ue_wrap/core/sdk_profile.h"
@@ -29,6 +30,7 @@
 #include <vector>
 
 namespace harness::fingerprint_census {
+using namespace detail;
 namespace {
 
 namespace R = ue_wrap::reflection;
@@ -94,6 +96,7 @@ struct RowState {
     bool               settled = false;   // false: checked again on a re-try
     bool               dev = false;
     bool               warned = false;    // its problem is logged once; the report file lists it every time
+    bool               warnedRefused = false;  // and its refused registration, once
     // An any-class row: its subjects checked so far (the next one to check, how many were read, how many fell
     // outside the reference). Checked as their classes load, each once.
     size_t             anyNext = 0, anyChecked = 0, anyOutside = 0;
@@ -127,9 +130,14 @@ std::string           g_red;                // [dev] fingerprint_census_red: the
 std::atomic<int64_t>  g_dueMs{-1};
 std::atomic<bool>     g_posted{false};      // a Tick is queued; no second one is posted
 uint64_t              g_lastDrain = 0;      // the game-thread drain the last Tick ran in
-// The registrations' refusals the last report named (facts::RefusalVersion), once a report exists.
+// The registration record the last report covered (facts::RecordVersion, RefusalVersion), once a report exists. A
+// refusal is reported at once; an acceptance refreshes the file at most once a second (lanes register in bursts).
 std::atomic<bool>     g_reportedOnce{false};
 std::atomic<uint64_t> g_refusalsReported{0};
+std::atomic<uint64_t> g_recordsReported{0};
+std::atomic<int64_t>  g_recordReportAtMs{0};
+// [dev] fingerprint_capture: written once the first pass has met the classes, from the census's own subjects.
+bool                  g_captureDue = false;
 
 int64_t NowMs() {
     return std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now().time_since_epoch()).count();
@@ -147,9 +155,6 @@ std::string Lower(std::string s) {
     return s;
 }
 
-std::string Key(const F::Function& row) {
-    return Lower((row.Class() ? Narrow(row.Class()) : std::string("*")) + "." + Narrow(row.Name()));
-}
 
 const RefFn* FindRef(const wchar_t* cls, const wchar_t* fn) {
     for (const RefFn* r = kRefFns; r->cls; ++r)
@@ -163,12 +168,6 @@ const RefAny* FindAny(const wchar_t* fn) {
     return nullptr;
 }
 
-// The name of the class a RuntimeClass row's site last resolved it on; empty before that.
-std::wstring WitnessName(const F::Function& row) {
-    const uint64_t w = row.WitnessClass();
-    if (!w) return {};
-    return R::ToString(R::FName{static_cast<int32_t>(w >> 32), static_cast<int32_t>(w & 0xffffffffu)});
-}
 
 std::string Hex(uint64_t v) {
     char b[20];
@@ -183,6 +182,7 @@ std::string Hex(uint64_t v) {
 // read: one function can be the subject of several rows.
 struct Subject {
     void*    fn;
+    int32_t  index;  // its slot when met: liveness is tested by slot, never by a read through the pointer
     int32_t  name;
     bool     read = false;
     uint64_t sig = 0;
@@ -214,7 +214,15 @@ void MeetFunctionsOf(void* cls) {
             const std::string s = Lower(Narrow(R::ToString(R::FName{nm.ComparisonIndex, 0}).c_str()));
             it = g_anyNames.emplace(nm.ComparisonIndex, g_anyWanted.count(s) != 0).first;
         }
-        if (it->second) g_anySubjects[Lower(Narrow(R::ToString(nm).c_str()))].push_back(Subject{f, nm.ComparisonIndex});
+        if (it->second)
+            g_anySubjects[Lower(Narrow(R::ToString(nm).c_str()))].push_back(Subject{f, R::InternalIndexOf(f), nm.ComparisonIndex});
+    }
+    // A class declares a few hundred functions at most; one that reaches the guard is read short, and says so once.
+    static bool s_saidLong = false;
+    if (f && !s_saidLong) {
+        s_saidLong = true;
+        UE_LOGW("fingerprint-census: class '%ls' has more than 4096 children; the any-class rows read its first 4096",
+                R::ToString(R::NameOf(cls)).c_str());
     }
 }
 
@@ -273,6 +281,7 @@ void ReleaseAnySubjects() {
     std::unordered_map<int32_t, bool>().swap(g_anyNames);
     std::vector<size_t>().swap(g_anyLoading);
     g_anyLogNext = 0;
+    g_anyGone = 0;
 }
 
 // ---- one row ----
@@ -290,7 +299,7 @@ void CheckAny(RowState& s) {
         for (; s.anyNext < it->second.size(); ++s.anyNext) {
             Subject& sub = it->second[s.anyNext];
             if (!sub.read) {
-                if (!R::IsLive(sub.fn) || R::NameOf(sub.fn).ComparisonIndex != sub.name) continue;  // gone, unread
+                if (!R::IsLiveByIndex(sub.fn, sub.index) || R::NameOf(sub.fn).ComparisonIndex != sub.name) continue;  // gone, unread
                 const FP::Result r = FP::SignatureOf(sub.fn);
                 sub.sig = r.ok ? r.sigHash : 0;  // a signature that does not read is not a known one
                 sub.read = true;
@@ -407,6 +416,7 @@ void Check(RowState& s) {
 void Report(bool log) {
     ue_wrap::ScopedWalkTimer walk("fingerprint-census report");
     g_refusalsReported.store(F::RefusalVersion(), std::memory_order_release);
+    g_recordsReported.store(F::RecordVersion(), std::memory_order_release);
     g_reportedOnce.store(true, std::memory_order_release);
     int classRows = 0, matched = 0, anyRows = 0, anyHold = 0, unchecked = 0, problems = 0, devRows = 0;
     std::vector<RowState*> sorted;
@@ -431,11 +441,13 @@ void Report(bool log) {
         if (s.outcome == Outcome::Unchecked && !s.dev) ++unchecked;
         // A kind that refused and later accepted (a retry from a tick) registered in the end.
         const bool refused = (row.Refused() & ~row.Accepted()) != 0;
-        if (!s.dev && (IsProblem(s.outcome) || refused)) {
+        const bool problem = IsProblem(s.outcome);
+        if (!s.dev && (problem || refused)) {
             ++problems;
             CR::Failure("fingerprint-census", CR::Severity::Important);
-            if (!s.warned) {
-                s.warned = true;
+            if ((problem && !s.warned) || (refused && !s.warnedRefused)) {
+                s.warned = s.warned || problem;
+                s.warnedRefused = s.warnedRefused || refused;
                 UE_LOGW("fingerprint-census: %s %s (feature %s)%s%s", Name(s.outcome), s.key.c_str(), row.Feature(),
                         refused ? " -- its registration was REFUSED" : "",
                         s.detail.empty() ? "" : (" -- " + s.detail).c_str());
@@ -463,13 +475,32 @@ void Report(bool log) {
         if (!s.detail.empty()) line += "  -- " + s.detail;
         CR::Line("fingerprint-census", line);
     }
+    // What the any-class rows have met: an unchecked one reads against it (a class can load with the world and
+    // be dropped before the census meets it, so the answer can differ from run to run).
+    std::string met;
+    if (!g_anyWanted.empty()) {
+        std::string loading;
+        for (size_t k = 0; k < g_anyLoading.size() && k < 5; ++k) {
+            bool loaded = false;
+            if (void* cls = OI::ClassLogAt(g_anyLoading[k], &loaded))
+                loading += (loading.empty() ? " (" : ", ") + Narrow(R::ToString(R::NameOf(cls)).c_str());
+        }
+        if (!loading.empty()) loading += ")";
+        char b[256];
+        std::snprintf(b, sizeof b,
+                      "fingerprint-census: %zu of %zu listed class(es) met for the any-class rows, %zu gone before they "
+                      "were met, %zu still loading",
+                      g_anyLogNext - g_anyLoading.size() - g_anyGone, OI::ClassLogSize(), g_anyGone, g_anyLoading.size());
+        met = b + loading;
+        CR::Line("fingerprint-census", met);
+    }
     char sum[256];
     std::snprintf(sum, sizeof sum,
                   "fingerprint-census: %d of %d class rows match, %d of %d any-class rows hold, %d unchecked, %d "
                   "problem row(s), %d dev row(s) apart (reference %s, %.1f ms)",
                   matched, classRows, anyHold, anyRows, unchecked, problems, devRows, kRefBuild, g_ms);
     CR::Line("fingerprint-census", sum);
-    CR::Write();
+    CR::Write(log);
     if (!log) return;
     // Where the census's time went: the five costliest rows, resolve and fingerprint apart.
     std::vector<const RowState*> slow;
@@ -485,16 +516,7 @@ void Report(bool log) {
         top += b;
     }
     UE_LOGI("fingerprint-census: costliest rows: %s", top.c_str());
-    // What the any-class rows have met: an unchecked one reads against this.
-    std::string loading;
-    for (size_t k = 0; k < g_anyLoading.size() && k < 5; ++k) {
-        bool loaded = false;
-        if (void* cls = OI::ClassLogAt(g_anyLoading[k], &loaded)) loading += (k ? ", " : " (") + Narrow(R::ToString(R::NameOf(cls)).c_str());
-    }
-    if (!loading.empty()) loading += ")";
-    UE_LOGI("fingerprint-census: %zu of %zu listed class(es) met for the any-class rows, %zu gone before they were "
-            "met, %zu still loading%s", g_anyLogNext - g_anyLoading.size() - g_anyGone, OI::ClassLogSize(), g_anyGone,
-            g_anyLoading.size(), loading.c_str());
+    if (!met.empty()) UE_LOGI("%s", met.c_str());
     if (problems) {
         UE_LOGW("%s -- DEGRADED: the game differs from the build this mod was made for", sum);
     } else {
@@ -578,14 +600,26 @@ void Tick() {
         const bool log = g_reportDue == ReportKind::Full;
         g_reportDue = ReportKind::None;
         Finish();
+        if (g_captureDue) {
+            g_captureDue = false;
+            Capture();
+        }
         Report(log);
         return;
     }
-    // A registration refused since the last report: the report names it.
-    if (g_reportedOnce.load(std::memory_order_acquire) &&
-        F::RefusalVersion() != g_refusalsReported.load(std::memory_order_acquire)) {
-        Report(true);
-        return;
+    // The registration record moved since the last report: a refusal is named at once, an acceptance refreshes
+    // the file (its "not registered" marks), at most once a second.
+    if (g_reportedOnce.load(std::memory_order_acquire)) {
+        if (F::RefusalVersion() != g_refusalsReported.load(std::memory_order_acquire)) {
+            Report(true);
+            return;
+        }
+        if (F::RecordVersion() != g_recordsReported.load(std::memory_order_acquire) &&
+            NowMs() >= g_recordReportAtMs.load(std::memory_order_acquire)) {
+            g_recordReportAtMs.store(NowMs() + 1000, std::memory_order_release);
+            Report(false);
+            return;
+        }
     }
     if (!g_waiting) return;
     const bool classRowWaits = std::any_of(g_rows.begin(), g_rows.end(), [](const RowState& s) {
@@ -602,76 +636,6 @@ void Tick() {
     }
     // A waiting class row's class may have loaded, or a class has loaded whose functions an any-class row checks.
     BeginPassState();
-}
-
-// ---- the capture ([dev] fingerprint_capture) ----
-
-// Every function of every loaded Blueprint class with its canonical text, sorted by path so two captures
-// diff line by line, and every row with what it resolves to (the native half of a reference table).
-void Capture() {
-    void* const bpClasses[] = {R::FindClass(L"BlueprintGeneratedClass"), R::FindClass(L"WidgetBlueprintGeneratedClass"),
-                               R::FindClass(L"AnimBlueprintGeneratedClass")};
-    void* const fnClasses[] = {R::FindClass(L"Function"), R::FindClass(L"DelegateFunction")};
-    std::vector<std::pair<std::string, void*>> fns;
-    const int32_t n = R::NumObjects();
-    int classes = 0;
-    for (int32_t i = 0; i < n; ++i) {
-        void* obj = R::ObjectAt(i);
-        if (!obj) continue;
-        void* cls = R::ClassOf(obj);
-        if (!cls || (cls != bpClasses[0] && cls != bpClasses[1] && cls != bpClasses[2])) continue;
-        ++classes;
-        void* field = *reinterpret_cast<void**>(static_cast<uint8_t*>(obj) + P::off::UStruct_Children);
-        for (int guard = 0; field && guard < 4096;
-             ++guard, field = *reinterpret_cast<void**>(static_cast<uint8_t*>(field) + P::off::UField_Next)) {
-            void* fc = R::ClassOf(field);
-            if (fc == fnClasses[0] || fc == fnClasses[1]) fns.emplace_back(FP::PathOf(field), field);
-        }
-    }
-    // An any-class row's subjects, natives included: the reference's signature set is the union of the
-    // pak's Blueprint declarations and these.
-    g_rows.clear();
-    for (const F::Function* row = F::First(); row; row = row->Next()) {
-        RowState s;
-        s.row = row;
-        g_rows.push_back(s);
-    }
-    MeetNewClasses(Clock::time_point::max());
-    for (const auto& [name, subjects] : g_anySubjects)
-        for (const Subject& sub : subjects) fns.emplace_back(FP::PathOf(sub.fn), sub.fn);
-    std::vector<std::string> rowLines;
-    for (const F::Function* row = F::First(); row; row = row->Next()) {
-        F::Resolved r;
-        if (row->GetMode() != F::Mode::AnyClass) {
-            const std::wstring witness = row->Class() ? std::wstring() : WitnessName(*row);
-            if (void* cls = OI::ClassByName(row->Class() ? row->Class() : witness.c_str())) r = F::ResolveOn(*row, cls);
-        }
-        static const char* kModes[] = {"Declared", "Dispatch", "AnyClass", "RuntimeClass"};
-        rowLines.push_back("#row " + std::string(row->Feature()) + " " + kModes[static_cast<int>(row->GetMode())] + " " +
-                           Key(*row) + " -> " + (r ? FP::PathOf(r.Fn()) : std::string("-")));
-        if (r) fns.emplace_back(FP::PathOf(r.Fn()), r.Fn());
-    }
-    std::sort(fns.begin(), fns.end());
-    fns.erase(std::unique(fns.begin(), fns.end()), fns.end());
-    std::sort(rowLines.begin(), rowLines.end());
-    const std::wstring path = ue_wrap::paths::ExeDir() + L"\\multivoid-fingerprints-capture.txt";
-    FILE* f = nullptr;
-    if (_wfopen_s(&f, path.c_str(), L"wb") != 0 || !f) {
-        UE_LOGE("fingerprint-census: cannot open '%ls' for the capture", path.c_str());
-        return;
-    }
-    for (const std::string& l : rowLines) std::fprintf(f, "%s\n", l.c_str());
-    int ok = 0, problems = 0;
-    for (const auto& [p, fn] : fns) {
-        const FP::Result r = FP::Of(fn);
-        if (r.ok) ++ok; else ++problems;
-        std::fprintf(f, "### %s %016llx %s\n", p.c_str(), static_cast<unsigned long long>(r.hash),
-                     r.ok ? (r.native ? "native" : "ok") : r.problem.c_str());
-        std::fwrite(r.text.data(), 1, r.text.size(), f);
-    }
-    std::fclose(f);
-    UE_LOGW("fingerprint-census: CAPTURE %zu function(s) (%d loaded Blueprint class(es) and %zu row(s)), %d decoded, "
-            "%d with a problem -> '%ls'", fns.size(), classes, rowLines.size(), ok, problems, path.c_str());
 }
 
 // The red arm's row, said at once when the key names none or names an any-class row: a run waiting on the
@@ -693,9 +657,29 @@ void CheckRedKey() {
 
 }  // namespace
 
+namespace detail {
+
+std::string Key(const F::Function& row) {
+    return Lower((row.Class() ? Narrow(row.Class()) : std::string("*")) + "." + Narrow(row.Name()));
+}
+
+std::wstring WitnessName(const F::Function& row) {
+    const uint64_t w = row.WitnessClass();
+    if (!w) return {};
+    return R::ToString(R::FName{static_cast<int32_t>(w >> 32), static_cast<int32_t>(w & 0xffffffffu)});
+}
+
+void ForEachLiveSubject(const std::function<void(void*)>& fn) {
+    for (const auto& [name, subjects] : g_anySubjects)
+        for (const Subject& sub : subjects)
+            if (R::IsLiveByIndex(sub.fn, sub.index)) fn(sub.fn);
+}
+
+}  // namespace detail
+
 void Run() {
     ResetAnySubjects();
-    if (coop::config::ResolveFlag(::coop::config_registry::rows::fingerprint_capture)) Capture();
+    g_captureDue = coop::config::ResolveFlag(::coop::config_registry::rows::fingerprint_capture);
     g_red = Lower(coop::config::ResolveString(::coop::config_registry::rows::fingerprint_census_red));
     g_rows.clear();
     for (const F::Function* row = F::First(); row; row = row->Next()) {
@@ -731,9 +715,11 @@ void Run() {
 
 void PostIfDue() {
     const int64_t due = g_dueMs.load(std::memory_order_acquire);
-    const bool refused = g_reportedOnce.load(std::memory_order_acquire) &&
-                         F::RefusalVersion() != g_refusalsReported.load(std::memory_order_acquire);
-    if (!refused && !(due == 0 || (due > 0 && NowMs() >= due))) return;
+    const bool reported = g_reportedOnce.load(std::memory_order_acquire);
+    const bool refused = reported && F::RefusalVersion() != g_refusalsReported.load(std::memory_order_acquire);
+    const bool recorded = reported && F::RecordVersion() != g_recordsReported.load(std::memory_order_acquire) &&
+                          NowMs() >= g_recordReportAtMs.load(std::memory_order_acquire);
+    if (!refused && !recorded && !(due == 0 || (due > 0 && NowMs() >= due))) return;
     bool idle = false;
     if (!g_posted.compare_exchange_strong(idle, true, std::memory_order_acq_rel)) return;
     GT::Post([] {

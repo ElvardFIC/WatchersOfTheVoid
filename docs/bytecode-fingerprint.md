@@ -101,18 +101,21 @@ for the classes a session loads later, so no walk of the object array is ever re
 `match` (an any-class row: `holds`), `sig-changed` (a hook reads wrong parameters), `body-changed` (the logic drifted), `appeared`
 (present, though the reference build lacks it), `gone` (absent though the reference has it),
 `known-gone` (absent on the reference build too), `unchecked` (its class is not loaded, or no function
-of an any-class row's name is; re-tried when the class set moves and every 5 s), `undecodable`, or
+of an any-class row's name is; a class row is tried again when the class set moves and every 5 s, an
+any-class row when a class loads), `undecodable`, or
 `no-reference` (the table cannot judge it, a run-time class it has no entry for); every outcome but
 `match`, `holds`, `known-gone` and `unchecked` is a problem. The work is sliced at 2 ms, one slice a
 runtime loop, in a game-thread task of its own so that another lane's fault in the per-frame work cannot
 keep it from finishing, with the report in a task of its own. It reads nothing while the object index
 has the engine's events still to apply, and a class unloading during a pass drops the pass's caches, so
 no function is read through a pointer its class took with it. A pass reads the 423 rows in about 45 ms
-of work, its worst slice one whole-event-graph row at about 6 ms `[V]`. The health log gets one line,
-`fingerprint-census: N of M class rows match, ...`, again only when an outcome moves, and one warning per
-problem or refused row, naming its lane, once; rows of dev instruments are counted apart.
-`multivoid-compat-report.txt` carries the
-full table, every row with its resolved function and both pairs of fingerprints, and ends in one verdict
+of work, its worst slice one whole-event-graph row at 6 to 8.5 ms `[V]`. The health log gets one line,
+`fingerprint-census: N of M class rows match, ...`, again only when an outcome moves, one warning per
+problem row and per refused registration, naming its lane, once, and a line saying how many listed classes
+the any-class rows have met, how many were gone before they were met (a class can load with the world and
+be dropped first, so an any-class row's answer can differ from run to run) and which are still loading;
+rows of dev instruments are counted apart. `multivoid-compat-report.txt` carries the full table, every row
+with its resolved function and both pairs of fingerprints, that line, and ends in one verdict
 over the SDK check and the census: every census problem row counts as an important failure. Measured on
 ***REMOVED*** reference, it named ***REMOVED***, and agreed with the port tooling's
 diff of the two builds' paks on all ***REMOVED*** `[V]`.
@@ -120,11 +123,11 @@ diff of the two builds' paks on all ***REMOVED*** `[V]`.
 `[dev] fingerprint_census_red=<class>.<function>` falsifies one row's reference: the census must report
 it `body changed` and print `fingerprint-census: RED ARM <row> reported body changed` once the row is
 settled, or `RED ARM FAILED <row>` -- also at once when no row has that key or the key names an any-class
-row.
+row. While the row is not settled it says once `fingerprint-census: RED ARM <row> waits for its row`.
 
 ### The capture
 
-`[dev] fingerprint_capture` writes, once gameplay is loaded, every function of every loaded Blueprint
+`[dev] fingerprint_capture` writes, once the census's first pass has met the loaded classes, every function of every loaded Blueprint
 class, every row's resolved function and every function an any-class row names, natives included, with
 its fingerprint and text, sorted by path, to `multivoid-fingerprints-capture.txt` beside the game's exe:
 `#row` lines first, then `### <path> <fingerprint> <ok|native|problem>` and the text. It is about a
@@ -165,6 +168,7 @@ Not applicable: every peer checks its own game when its world loads.
 | `src/votv-coop/src/ue_wrap/core/script_fingerprint.cpp` | flow order, the signature line, the fingerprints |
 | `src/votv-coop/include/ue_wrap/facts/function_row.h` | the row macro, the modes, `Resolve` and `ResolveOn` |
 | `src/votv-coop/include/ue_wrap/facts/fingerprints_<target>.inc` | the generated reference table |
-| `src/votv-coop/src/harness/fingerprint_census.cpp` | the census and the capture |
+| `src/votv-coop/src/harness/fingerprint_census.cpp` | the census |
+| `src/votv-coop/src/harness/fingerprint_capture.cpp` | the capture |
 | `src/votv-coop/src/harness/compat_report.cpp` | the report file's one writer |
 | `.github/ci/fact_rows_gate.py` | the rows' source gate |

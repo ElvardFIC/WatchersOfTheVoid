@@ -68,8 +68,8 @@ are `src/votv-coop/locale/<ll_CC>.po`, embedded by name, beside the template `mu
 
 `harness` (the scenario runner), `session_runtime`, `autotest` + `autotest_dispatch` and `harness/autotest/`
 (one file per scenario: join churn, grab, ragdoll, weather, events, death, damage, pause guard, save UI,
-scan parity and more), `sdk_check`, `fingerprint_census` (every watched or hooked game function checked
-against the build the mod was made for, [bytecode-fingerprint.md](bytecode-fingerprint.md)), `compat_report`
+scan parity and more), `sdk_check`, `fingerprint_census` + `fingerprint_capture` (every watched or hooked game function checked
+against the build the mod was made for, [bytecode-fingerprint.md](bytecode-fingerprint.md); the dev capture), `compat_report`
 (the report file both checks write, and its one verdict), `screenshot`, `mod_environment`, `harness_diag`,
 `browser_click_arm` (the test variables that open the browser, host and join as a player's click does). The launcher drives
 these from outside the game.

@@ -41,7 +41,7 @@ void Failure(const char* section, Severity severity, int count) {
     Find(section).failures[static_cast<int>(severity)] += count;
 }
 
-void Write() {
+void Write(bool announce) {
     const std::wstring path = ue_wrap::paths::ExeDir() + L"\\multivoid-compat-report.txt";
     FILE* f = nullptr;
     // Text mode: the file is read in Notepad by the player who attaches it, so its lines end in CRLF.
@@ -69,6 +69,7 @@ void Write() {
                      ue_wrap::profile::kTargetGameVersion);
     }
     std::fclose(f);
+    if (!announce) return;
     UE_LOGI("compat-report: wrote '%ls' (%zu section(s), %s)", path.c_str(), g_sections.size(),
             priority ? "DEGRADED" : "HEALTHY");
 }

@@ -81,8 +81,9 @@ private:
 const Function* First();
 size_t Count();
 
-// A number that moves whenever some row's registration is refused by a kind that had not refused it before:
-// a report taken earlier no longer names every refusal. Any thread.
+// Numbers that move when the registration record gains a bit: RecordVersion on any (a kind accepted or refused a
+// row for the first time), RefusalVersion on a refusal alone. A report taken earlier is out of date. Any thread.
+uint64_t RecordVersion();
 uint64_t RefusalVersion();
 
 // A row's function, resolved. Only Resolve and ResolveOn make one, so a registration that takes it took

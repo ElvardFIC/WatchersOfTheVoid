@@ -101,6 +101,9 @@ struct ListedClass {
     void*   obj;
 };
 std::vector<ListedClass> g_classLog;
+// A listed slot's position in the log, so unlisting marks the entry gone: a new class put in the same slot at
+// the same address is then met through its own entry alone.
+std::unordered_map<int32_t, size_t> g_classLogPosBySlot;
 // Moves whenever a class object is unlisted: ClassUnlistVersion.
 uint64_t g_classUnlistVersion = 0;
 
@@ -110,6 +113,7 @@ void ListClassName(int32_t index, void* classObj) {
     if (key.empty()) return;
     g_classSlotsByName[key].push_back(index);
     g_classNameBySlot.emplace(index, std::move(key));
+    g_classLogPosBySlot[index] = g_classLog.size();
     g_classLog.push_back(ListedClass{index, classObj});
 }
 
@@ -117,6 +121,11 @@ void UnlistClassName(int32_t index) {
     const auto k = g_classNameBySlot.find(index);
     if (k == g_classNameBySlot.end()) return;
     ++g_classUnlistVersion;
+    const auto pos = g_classLogPosBySlot.find(index);
+    if (pos != g_classLogPosBySlot.end()) {
+        g_classLog[pos->second].obj = nullptr;
+        g_classLogPosBySlot.erase(pos);
+    }
     const auto it = g_classSlotsByName.find(k->second);
     if (it != g_classSlotsByName.end()) {
         auto& v = it->second;
@@ -378,7 +387,7 @@ void* ClassLogAt(size_t position, bool* loaded) {
     UE_ASSERT_GAME_THREAD("object_index::ClassLogAt");
     if (position >= g_classLog.size()) return nullptr;
     const ListedClass& e = g_classLog[position];
-    if (e.index >= static_cast<int32_t>(g_slots.size())) return nullptr;
+    if (!e.obj || e.index >= static_cast<int32_t>(g_slots.size())) return nullptr;  // unlisted since
     const Slot& s = g_slots[static_cast<size_t>(e.index)];
     if (s.obj != e.obj || TenantOf(e.index, s.obj, s.cls) != Tenant::Named) return nullptr;
     if (loaded) *loaded = !(R::SlotFlags(e.index) & R::slot_flags::NotYetReadable);
