@@ -19,6 +19,7 @@
 #include "ue_wrap/desk/signal_dynamic.h"
 
 #include <cstdint>
+#include <string>
 
 namespace ue_wrap::saved_signals {
 
@@ -59,5 +60,13 @@ ue_wrap::RowApply ApplySaveSignal(const ue_wrap::signal_dynamic::Row& row);
 // Reflected gamemode.deleteSignal(IndexToRemove) -- the native remove +
 // pane refresh.
 bool DeleteSignal(int32_t index);
+
+// The leaf of the first ORDINARY (non-unique) signal template name, read from the gamemode's
+// signalNames_default / signalUniques (filled in parallel from the list_signals DataTable, so one
+// index serves both -- BP: mainGamemode.cpp:2399-2458, lib.cpp:3906-3917). Empty (false) if the
+// gamemode or the arrays are not up yet. A drill uses it to build a saved-signal row the native
+// accepts (succ depends only on decoded >= size > 0) with no unique-signal `specials` side effect.
+// Game thread.
+bool FirstOrdinarySignalName(std::wstring& out);
 
 }  // namespace ue_wrap::saved_signals
