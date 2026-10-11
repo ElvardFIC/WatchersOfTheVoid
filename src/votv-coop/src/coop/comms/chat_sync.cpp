@@ -12,6 +12,7 @@
 #include "coop/comms/chat_nick_color.h"
 #include "coop/config/config.h"
 #include "coop/config/config_registry.h"
+#include "coop/dev/hostile_drill.h"  // the must-fail control: its red arm turns this gate off
 #include "coop/net/protocol.h"
 #include "coop/net/session.h"
 #include "coop/session/player_handshake.h"
@@ -89,6 +90,13 @@ std::string TrimAndCap(const std::string& in) {
 // draw-time cap would be a site list that misses two.
 bool Admissible(uint8_t authorSlot, const char* p, size_t n) {
     std::wstring decoded;
+    if (coop::dev::hostile_drill::ChatGuardOff()) {
+        // The must-fail control (RB hostile drill): skip the strict refusal so an ill-formed line is
+        // NOT rejected here -- decode leniently, and the novelty budget still runs. Off in every build
+        // but the chat_ill_formed_red arm, where it proves this gate is load-bearing.
+        decoded = coop::text::FromUtf8Lossy(p, n);
+        return coop::text::AdmitRemoteText(authorSlot, decoded);
+    }
     if (!coop::text::FromUtf8Strict(p, n, &decoded)) return false;
     return coop::text::AdmitRemoteText(authorSlot, decoded);
 }
@@ -209,7 +217,11 @@ void AuthorAndBroadcast(uint8_t slot, const std::string& raw) {
 bool ShapeChatLine(std::string_view raw, std::string* out) {
     out->clear();
     std::wstring decoded;
-    if (!coop::text::FromUtf8Strict(raw.data(), raw.size(), &decoded)) return false;
+    // The SECOND strict-decode site behind Admissible: the red arm must skip it too, or the line is
+    // refused here and the must-fail control could never fail (SanitizeUtf8 passes a lone 0x80
+    // through, so skipping the strict check is what lets the ill-formed byte reach the record).
+    if (!coop::dev::hostile_drill::ChatGuardOff() &&
+        !coop::text::FromUtf8Strict(raw.data(), raw.size(), &decoded)) return false;
     std::string text = TrimAndCap(coop::text::SanitizeUtf8(raw.data(), raw.size()));
     if (text.empty()) return false;
     *out = std::move(text);
@@ -303,18 +315,6 @@ void QueueSend(const std::string& utf8Text) {
         coop::net::ChatMessagePayload p{};
         p.len = static_cast<uint8_t>(text.size());
         std::memcpy(p.text, text.data(), text.size());
-        // The dev injection, the must-fail control for the receive boundary: a validator only ever
-        // shown passing passes by construction, and the codec selftest proves the strict decode
-        // refuses, but nothing else proves chat calls it. A lone continuation byte is appended
-        // rather than overwriting one, since overwriting is not reliably corrupting (the last byte
-        // of a Cyrillic message is the tail of a two-byte sequence); a trailing continuation byte
-        // is ill-formed unconditionally.
-        if (p.len < sizeof(p.text) &&
-            coop::config::ReadEnv("VOTVCOOP_CHAT_CORRUPT_WIRE") == "1") {
-            p.text[p.len++] = static_cast<char>(0x80);
-            UE_LOGW("chat: [dev] appended a lone continuation byte to the intent "
-                    "(len %u)", static_cast<unsigned>(p.len));
-        }
         if (s->SendReliable(coop::net::ReliableKind::ChatMessage, &p, sizeof(p)))
             UE_LOGI("chat: sent intent, %u byte(s) -- awaiting the host's authored row",
                     static_cast<unsigned>(text.size()));
