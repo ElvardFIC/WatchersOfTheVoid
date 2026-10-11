@@ -21,8 +21,13 @@ DWORD WINAPI RefuseDialogThread(LPVOID raw) {
     DialogRequest* req = static_cast<DialogRequest*>(raw);
     // The up/dismissed lines are the headless drills' evidence that the dialog
     // REALLY showed (a window-probe from outside proved unreliable; the log is
-    // authoritative and kill-safe because both lines flush).
-    UE_LOGI("refuse dialog up (tid=%lu)", ::GetCurrentThreadId());
+    // authoritative and kill-safe because both lines flush). The up line carries the
+    // text the player reads, its line breaks folded, so a log attached to a report says
+    // which builds the dialog named.
+    std::wstring shown = req->body;
+    for (wchar_t& c : shown)
+        if (c == L'\n') c = L' ';
+    UE_LOGI("refuse dialog up (tid=%lu): %ls -- %ls", ::GetCurrentThreadId(), req->title.c_str(), shown.c_str());
     ue_wrap::log::Flush();
     ::MessageBoxW(nullptr, req->body.c_str(), req->title.c_str(),
                   MB_OK | MB_ICONWARNING | MB_TOPMOST | MB_SETFOREGROUND);
