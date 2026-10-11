@@ -28,7 +28,7 @@ constexpr ULONGLONG kMenuBoundMs = 60 * 1000;  // of time the game thread spends
 // One ask, shared with the task posted for it. Whichever side moves it off Pending first decides: the task
 // claims it before it travels, and a leave that ends meanwhile withdraws it, so a task that runs late never
 // travels for a join that is gone.
-enum Ask : int { kPending, kClaimed, kDispatched, kRefused, kNoGamemode, kWithdrawn };
+enum Ask : int { kPending, kClaimed, kDispatched, kRefused, kNoGameplayWorld, kWithdrawn };
 
 bool g_active = false;
 bool g_return = false;  // the leave is a return after a session's end, not a join's leave
@@ -60,7 +60,8 @@ void SayDegradedOnce() {
     if (g_degradedSaid) return;
     g_degradedSaid = true;
     UE_LOGW("harness: the world reader is degraded, so whether a world stands cannot be told -- a client join goes on "
-            "as from the menu, and a client session that ends mid-join leaves the player where they stand");
+            "as from the menu, and a client session that ends mid-join leaves the player where they stand, the "
+            "browser opened as at the menu");
 }
 
 // What a failed leave leaves behind, by purpose, for the error lines.
@@ -108,7 +109,7 @@ void PostAsk() {
             return;
         }
         if (WI::CurrentWorldKind() != WI::WorldKind::Gameplay || !ue_wrap::world_singleton::Gamemode()) {
-            ask->store(kNoGamemode, std::memory_order_release);
+            ask->store(kNoGameplayWorld, std::memory_order_release);
             return;
         }
         ask->store(ue_wrap::engine::ReturnToMainMenu() ? kDispatched : kRefused, std::memory_order_release);
@@ -179,7 +180,7 @@ Outcome Step(coop::net::Config& out) {
                             static_cast<unsigned long long>(now - g_beganMs), g_noGamemode);
                     return Outcome::Waiting;
                 }
-                if (a == kNoGamemode && g_noGamemode++ == 0)
+                if (a == kNoGameplayWorld && g_noGamemode++ == 0)
                     UE_LOGI("harness: no gameplay world with its game mode in the object index yet -- the travel is "
                             "asked again every 250 ms");
                 if (a == kRefused) {  // the game mode stands and refused: asking again changes nothing

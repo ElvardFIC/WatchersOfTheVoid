@@ -459,7 +459,7 @@ void Fail(EndReason code, const std::string& detail) {
         }
     }
     const coop::net::EndReasonInfo& info = Describe(code);
-    UE_LOGW("join_progress: join FAILED [%s] %s%s%s -- aborting + reopening the browser%s",
+    UE_LOGW("join_progress: join FAILED [%s] %s%s%s -- aborting the join%s",
             info.id, info.text, detail.empty() ? "" : " -- ", detail.c_str(),
             kept ? "" : " [notice NOT shown -- an earlier one stands]");
 }

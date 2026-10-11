@@ -257,12 +257,14 @@ end reason, so both ends log one code; `T` the transport. `MV-J28` and `MV-J29` 
 host's own start: a host from the hosting window before its world loads, with the code and the
 sentence on its status line.
 
-Wherever a join ends before it completed, the player ends at the main menu with the server browser:
-one already standing in the host's world, which the join loaded, is taken to the menu first by the
-travel the game's own quit runs, as MTA shows its main menu after every disconnect
-(`harness/join_leave`, `harness/session_runtime`). A session that ends after its join, by a death
-the revive gives up on, a quit or the host leaving, travels to the menu the same way (`coop/session/net_pump`). When the
-game will not travel, the player is told so (`MV-J31`).
+A join that a cancel, its timeout or a world that would not load ends before it completed puts the
+player at the main menu with the server browser, where a menu join starts: one already standing in
+the host's world, which the join loaded, is taken to the menu first by the travel the game's own quit
+runs (`harness/join_leave`, `harness/session_runtime`). MTA likewise forces its main menu back after
+every disconnect; the browser is this mod's. A session that ends another way (a death the revive gives
+up on, a quit, or the host closing the link once its world has started to load) travels to the menu
+from the session itself, without the browser (`coop/session/net_pump`). When the game will not travel, the player is told so (`MV-J31`),
+unless the reason the session ended is already on screen.
 
 | Code | Meaning |
 |---|---|

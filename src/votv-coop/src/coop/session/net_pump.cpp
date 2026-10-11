@@ -149,11 +149,14 @@ void FleeToMainMenu(coop::net::Session& session, const char* why, bool travel = 
         UE_LOGI("net: %s -- transition(\"/Game/menu\") dispatched; held dormant", why);
     } else {
         // The travel did not dispatch: the bypass stays armed, our actors are gone, and we are
-        // still in the gameplay world; say so loudly, and to the player.
+        // still in the gameplay world; say so loudly, and to the player unless a notice already
+        // stands -- the reason the session ended (a kick, a ban, the host's own close) comes first.
         UE_LOGE("net: %s -- ReturnToMainMenu FAILED to dispatch; still in the gameplay "
                 "world. Relaunch.", why);
-        coop::join_progress::NoteDisconnect(coop::net::EndReason::WorldNotLeft,
-                                            "the session has ended; restart the game", /*afterJoin=*/true);
+        if (!coop::join_progress::NoticePending())
+            coop::join_progress::NoteDisconnect(coop::net::EndReason::WorldNotLeft,
+                                                "the session has ended; restart the game",
+                                                /*afterJoin=*/true);
     }
 }
 
