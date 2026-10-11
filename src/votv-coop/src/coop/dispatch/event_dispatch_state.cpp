@@ -185,7 +185,7 @@ bool HandleStateEvent(net::Session& session,
         }
         net::AtvSpawnPayload asp{};
         std::memcpy(&asp, msg.payload, sizeof(asp));
-        coop::atv_sync::OnAtvSpawn(asp, 0);
+        coop::atv_sync::OnAtvSpawn(asp);
         break;
     }
     case net::ReliableKind::AtvDestroy: {
@@ -198,7 +198,7 @@ bool HandleStateEvent(net::Session& session,
         }
         net::AtvDestroyPayload adp{};
         std::memcpy(&adp, msg.payload, sizeof(adp));
-        coop::atv_sync::OnAtvDestroy(adp, 0);
+        coop::atv_sync::OnAtvDestroy(adp);
         break;
     }
     case net::ReliableKind::DroneState: {

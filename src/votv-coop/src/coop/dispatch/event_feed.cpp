@@ -200,7 +200,7 @@ void Update(net::Session& session, void* localPlayer) {
         case net::ReliableKind::RestoreVitals: {
             // The dev refill of food, sleep and health (coffeePower is deliberately excluded). No
             // payload; idempotent, so an echo is harmless. Host-only origin, or any peer could
-            // nullify the survival tension.
+            // nullify the survival tension: the host's receive edge refuses a client's copy.
             ue_wrap::game_thread::Post([] { ::coop::dev::restore_vitals::ApplyLocally(); });
             break;
         }
@@ -473,7 +473,7 @@ void Update(net::Session& session, void* localPlayer) {
             // from every family.
             if (HandleEntityEvent(session, msg, localPlayer)) break;
             if (HandleStateEvent(session, msg, localPlayer)) break;
-            if (HandleSignalEvent(session, msg)) break;
+            if (HandleSignalEvent(msg)) break;
             if (HandleIntentEvent(session, msg, localPlayer)) break;
             if (HandleWorldEvent(msg)) break;
             // An unknown kind (a newer protocol) is logged, not silently discarded.

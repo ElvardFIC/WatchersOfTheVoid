@@ -503,22 +503,11 @@ void OnChunk(coop::net::Session& s, const coop::net::BlobChunkPayload& p, uint8_
              bool intent) {
     // An intent is a claim addressed to the authority; a client receiving one has nothing to do
     // with it, and honouring it would make every peer an author. A canonical is the other half of
-    // the same rule: only the host writes one, so the host refuses a client's and a client refuses
-    // anything not from slot 0. Both are format-level refusals of a message sent by the wrong
-    // role, not a gate on state -- the record itself is never second-guessed.
+    // the same rule: only the host writes one, and the host's receive edge refuses a client's
+    // (client_authorship.h). A refusal of a message sent by the wrong role, not a gate on state --
+    // the record itself is never second-guessed.
     const bool host = PT::SessionIsHost();
     if (intent && !host) return;
-    if (!intent && host) {
-        UE_LOGW("prop_save_data: canonical record from slot %u refused -- a client does not "
-                "publish canonicals; its own records arrive as intents",
-                static_cast<unsigned>(senderSlot));
-        return;
-    }
-    if (!intent && senderSlot != 0) {
-        UE_LOGW("prop_save_data: canonical record from slot %u refused -- only the host publishes "
-                "one", static_cast<unsigned>(senderSlot));
-        return;
-    }
     std::vector<uint8_t> body;
     if (!(intent ? g_asmIntent : g_asmCanonical).OnChunk(p, senderSlot, body)) return;
     // The same ceiling the sender enforces, applied on receive: a body between it and the

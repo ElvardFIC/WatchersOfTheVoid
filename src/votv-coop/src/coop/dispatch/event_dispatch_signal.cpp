@@ -37,8 +37,7 @@
 
 namespace coop::event_feed {
 
-bool HandleSignalEvent(net::Session& /*session*/,
-                       const net::Session::ReliableMessage& msg) {
+bool HandleSignalEvent(const net::Session::ReliableMessage& msg) {
     switch (msg.kind) {
     case net::ReliableKind::SkySignalState: {
         // HOST-authoritative sky-signal SET snapshot parts (a client's copy is refused at the host's

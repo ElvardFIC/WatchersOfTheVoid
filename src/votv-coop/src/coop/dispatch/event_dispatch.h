@@ -47,8 +47,7 @@ bool HandleStateEvent(net::Session& session,
 // and its aim, the play deck, the drive slots and their rack, the desk with its input, log, scans
 // and physics mods, the refiner's decode pane, the task board, the meadow store and the
 // saved-signal list.
-bool HandleSignalEvent(net::Session& session,
-                       const net::Session::ReliableMessage& msg);
+bool HandleSignalEvent(const net::Session::ReliableMessage& msg);
 
 // CLIENT->HOST intent and request family: a client asks the host to perform something it alone is
 // authoritative for. Read the case for its gate rather than assuming one. GrabIntent, ThrowIntent,

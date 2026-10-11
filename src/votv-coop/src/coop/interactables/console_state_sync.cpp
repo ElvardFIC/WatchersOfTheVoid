@@ -405,7 +405,7 @@ void Tick() {
 
 void OnSkySignalState(const coop::net::SkySignalStatePayload& p) {
     auto* s = g_session.load(std::memory_order_acquire);
-    if (!s || s->role() == coop::net::Role::Host) return;  // host-auth: host never applies
+    if (!s) return;  // from the host alone: its receive edge refuses a client's copy
     if (p.parts == 0 || p.parts > 5 || p.part >= p.parts || p.count > 3) return;
     for (uint8_t i = 0; i < p.count; ++i)
         if (!WireRowFinite(p.rows[i])) {

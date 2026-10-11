@@ -378,7 +378,8 @@ void OnReliable(const coop::net::ServerStatePayload& payload) {
         UE_LOGW("serverbox_sync: OnReliable off-game-thread -- dropping");
         return;
     }
-    if (!ClientSession()) return;
+    auto* s = g_session.load(std::memory_order_acquire);
+    if (!s || !s->connected()) return;  // from the host alone: its receive edge refuses a client's copy
     if (!SB::EnsureBreakResolved()) {
         UE_LOGW("serverbox_sync: ServerState arrived before resolution -- dropped (the next host change / "
                 "connect-snapshot re-delivers)");
