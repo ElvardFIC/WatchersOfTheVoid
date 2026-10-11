@@ -39,7 +39,8 @@ WHAT IT HOLDS -- these FAIL the build:
      parser cannot read, or any file it cannot open. It fails CLOSED: a gate that cannot
      read its subject must not return PASS.
 
-  5. The authorship table (`client_authorship.h`, which the host's receive edge reads to refuse a kind a
+  5. The receive edge no longer asking the authorship table, or the table (`client_authorship.h`, which the
+     host's receive edge reads to refuse a kind a
      client may not author) out of step with the enum: an enumerator with no row, a row named twice, a row
      for a name that is not a kind, a relayable kind that is not Client (the edge would refuse what the relay
      forwards), or an Unverified kind not listed in `reliablekind_unverified.txt` beside this file -- a list
@@ -77,6 +78,8 @@ SESSION = "src/coop/net/session_receive.cpp"   # the receive switch and the admi
 AUTH = "src/coop/net/client_authorship.h"       # which kinds a client may author (rule 5)
 UNVERIFIED = pathlib.Path(__file__).resolve().parent / "reliablekind_unverified.txt"
 UNVERIFIED_KEY = "<reliablekind_unverified.txt>"
+# The receive edge's question, which is the only reason the table matters.
+EDGE_READS_TABLE = re.compile(r"AuthorshipOf\(\s*static_cast<ReliableKind>\(\s*rh\.kind\s*\)\s*\)")
 
 # The five family dispatchers. Each Handle*Event returns true iff msg.kind is in its
 # family, so its own switch IS the membership declaration (SyncRouter consolidation,
@@ -361,6 +364,9 @@ def check(tree: dict):
                              f"these files name these kinds in unrelated places.")
 
     # --- check 5: the authorship table is total and in step ------------------------
+    if not EDGE_READS_TABLE.search(strip_comments(tree[SESSION])):
+        fails.append(f"{SESSION} no longer asks AuthorshipOf about a received kind: the table below would "
+                     f"refuse nothing, however complete it is.")
     rows = parse_authorship(tree[AUTH])
     if rows is None:
         fails.append(f"{AUTH}: no AuthorshipOf switch found -- the receive edge's table cannot be checked.")
@@ -567,6 +573,9 @@ def drill() -> int:
     t[AUTH] = t[AUTH].replace(row("ChatMessage"), "", 1).replace(
         row("HookAnchored"), row("HookAnchored") + row("ChatMessage"), 1)
     controls.append(("an Unverified kind not in the baseline", t, "ChatMessage is Unverified"))
+    t = dict(base)
+    t[SESSION] = t[SESSION].replace("AuthorshipOf(static_cast<ReliableKind>(rh.kind))", "ClientAuthorship::Client", 1)
+    controls.append(("the receive edge no longer reads the table", t, "no longer asks AuthorshipOf"))
     t = dict(base)
     t[UNVERIFIED_KEY] = (t[UNVERIFIED_KEY] or "") + "PropSpawn\n"
     controls.append(("a baseline line for a kind that is not Unverified", t,

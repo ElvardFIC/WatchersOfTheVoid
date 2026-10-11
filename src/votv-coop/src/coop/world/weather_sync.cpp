@@ -564,7 +564,8 @@ void OnDisconnect() {
 }
 
 void ApplyFromHost(const coop::net::WeatherStatePayload& payload) {
-    // The sender-is-host check is event_feed's (senderPeerSlot 0) before this is posted. The latch
+    // From the host alone: a client's copy is refused at the host's receive edge and the host relays
+    // none (client_authorship.h). The latch
     // gate: a WeatherState applied while the mutators are still resolving would leave the cycle
     // inconsistent, so it is stashed, latest wins, until TickConnect drains it.
     void* cycle = g_installed ? ResolveCycle() : nullptr;

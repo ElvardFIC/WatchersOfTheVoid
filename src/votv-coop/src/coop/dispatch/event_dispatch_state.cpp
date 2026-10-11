@@ -515,7 +515,7 @@ bool HandleStateEvent(net::Session& session,
     case net::ReliableKind::ServerSetting:
         // The host's session value of one server-scope row; the module checks length, role, sender
         // and row. coop::server_settings_sync.
-        coop::server_settings_sync::HandleServerSetting(session, msg);
+        coop::server_settings_sync::HandleServerSetting(msg);
         break;
     case net::ReliableKind::PermissionGrants:
         // This machine's own local dev grants, from the host; the module checks length, sender,

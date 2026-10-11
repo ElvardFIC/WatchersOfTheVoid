@@ -4,7 +4,6 @@
 # is removed. The list only shrinks.
 SkySignalCatch
 DeskState
-PileResyncRequest
 DishArm
 DishSnapshot
 DishCalib

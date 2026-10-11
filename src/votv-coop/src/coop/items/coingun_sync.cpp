@@ -465,10 +465,7 @@ void Tick() {
 
 void OnReliableResult(const uint8_t* payload, int len) {
     auto* s = LoadSession();
-    if (!s || s->role() == coop::net::Role::Host) {
-        UE_LOGW("coingun[client]: CoinGunResult received on the HOST -- dropping");
-        return;
-    }
+    if (!s) return;  // the host never gets one: a client's copy is refused at the host's receive edge (client_authorship.h)
     if (!payload || len < static_cast<int>(sizeof(coop::net::CoinGunResultPayload))) {
         UE_LOGW("coingun[client]: CoinGunResult payload too small (len=%d) -- dropping", len);
         return;

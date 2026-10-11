@@ -100,7 +100,6 @@ void HandleGrants(Session& session, const Session::ReliableMessage& msg) {
     PermissionGrantsPayload p{};
     const unsigned count = msg.payloadLen >= 1 ? msg.payload[0] : 0u;
     if (msg.payloadLen != sizeof(PermissionGrantsPayload)) return Refuse("length", msg, count);
-    if (msg.senderPeerSlot != 0) return Refuse("sender", msg, count);
     if (!session.running() || session.role() != Role::Client) return Refuse("role", msg, count);
     std::memcpy(&p, msg.payload, sizeof(p));
     if (p.count != static_cast<uint8_t>(G::Projected::Count)) return Refuse("count", msg, count);

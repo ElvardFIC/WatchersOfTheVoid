@@ -715,8 +715,8 @@ private:
     std::array<std::atomic<bool>, kMaxPeers> slotWorldReady_{};
     // The receive lanes holding the receive loop paused (see SetApplyPause); reset by Start.
     ApplyPauseSet applyPause_;
-    // The receive edge's refusals of a kind no client may author (client_authorship.h): the first of each kind
-    // in a session said by name, the rest summed. Net thread; reset by the stop, after the join.
+    // The receive edge's refusals of a kind no client may author (client_authorship.h): the first of each value
+    // in a session said with its number, the rest summed. Net thread; reset by the stop, after the join.
     std::array<bool, 256> saidHostKind_{};
     RefusalTally hostKindRefusals_{"net"};
     // Per-slot relay eligibility: the hConn that announced ClientWorldReady, stamped on the net

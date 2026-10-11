@@ -373,16 +373,12 @@ void QueueConnectBroadcastForSlot(int slot) {
     else UE_LOGW("serverbox_sync: connect-snapshot to slot %d send FAILED", slot);
 }
 
-void OnReliable(const coop::net::ServerStatePayload& payload, int senderPeerSlot) {
+void OnReliable(const coop::net::ServerStatePayload& payload) {
     if (!GT::IsGameThread()) {
         UE_LOGW("serverbox_sync: OnReliable off-game-thread -- dropping");
         return;
     }
     if (!ClientSession()) return;
-    if (senderPeerSlot != 0) {
-        UE_LOGW("serverbox_sync: ServerState from non-host senderPeerSlot=%d -- dropping", senderPeerSlot);
-        return;
-    }
     if (!SB::EnsureBreakResolved()) {
         UE_LOGW("serverbox_sync: ServerState arrived before resolution -- dropped (the next host change / "
                 "connect-snapshot re-delivers)");

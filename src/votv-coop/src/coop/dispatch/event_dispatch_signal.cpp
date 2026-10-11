@@ -50,11 +50,7 @@ bool HandleSignalEvent(net::Session& /*session*/,
         }
         net::SkySignalStatePayload sp{};
         std::memcpy(&sp, msg.payload, sizeof(sp));
-        const uint8_t sslot =
-            (msg.senderPeerSlot >= 0 && msg.senderPeerSlot < net::kMaxPeers)
-                ? static_cast<uint8_t>(msg.senderPeerSlot)
-                : static_cast<uint8_t>(0xFF);
-        coop::console_state_sync::OnSkySignalState(sp, sslot);
+        coop::console_state_sync::OnSkySignalState(sp);
         break;
     }
     case net::ReliableKind::SkySignalCatch: {
@@ -548,11 +544,7 @@ bool HandleSignalEvent(net::Session& /*session*/,
         }
         net::CompStatePayload sp{};
         std::memcpy(&sp, msg.payload, sizeof(sp));
-        const uint8_t slot =
-            (msg.senderPeerSlot >= 0 && msg.senderPeerSlot < net::kMaxPeers)
-                ? static_cast<uint8_t>(msg.senderPeerSlot)
-                : static_cast<uint8_t>(0xFF);
-        coop::comp_sync::OnState(sp, slot);
+        coop::comp_sync::OnState(sp);
         break;
     }
     case net::ReliableKind::CompData: {

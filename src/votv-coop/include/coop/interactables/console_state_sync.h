@@ -33,7 +33,7 @@ void Install(coop::net::Session* session);
 void Tick();
 
 // Wire ingest. The catch message ingests in coop/interactables/signal_catch_sync.
-void OnSkySignalState(const coop::net::SkySignalStatePayload& p, uint8_t senderSlot);
+void OnSkySignalState(const coop::net::SkySignalStatePayload& p);
 void OnDeskState(const coop::net::DeskStatePayload& p, uint8_t senderSlot);
 void OnDishAim(const coop::net::DishAimStatePayload& p, uint8_t senderSlot);
 void OnDeskLogLine(const coop::net::DeskLogLinePayload& p, uint8_t senderSlot);

@@ -2,20 +2,23 @@
 //
 // MTA lets a client ask the server to run an event only if the event was registered as remotely triggerable,
 // and checks that once, where the event arrives (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:
-// 2663-2710; the server's own events register false, :1668). Ours is the same flag per kind, kept beside the lane
-// and relay tables because our kinds are the protocol's fixed enum rather than runtime registrations: the host's
-// receive edge (session_receive.cpp) drops a Host kind from a seated client before it is inboxed or relayed.
-//
-// Every enumerator is named below, and .github/ci/reliablekind_gate.py fails the build when one is missing, named
-// twice, relayable without being Client, or Unverified without a line in the gate's baseline list, which only
-// shrinks. A value that names no kind is Host. A new kind is Host or Client from its first commit.
-//   Client     -- an honest client sends it to the host (its sending path read).
-//   Host       -- no client may author it: its handler refused a non-host sender by name before this table moved
-//                 the refusal here, or its only senders are the host's (the save transfer, the trash re-skin, the
-//                 admission challenge and seat).
-//   Unverified -- accepted from a client as before, with no evidence yet either way; each moves to a row above.
-
+// 2663-2711; the server's own events register false, :1668); a packet id only the server sends is refused by
+// its packet translator's table (CPacketTranslator.cpp:62-228). Ours is the same flag per kind, kept beside the
+// lane and relay tables because our kinds are the protocol's fixed enum rather than runtime registrations: the
+// host's receive edge (session_receive.cpp) drops a Host kind, or a byte that names no kind, from a seated
+// client before it is inboxed or relayed.
 #pragma once
+
+// Every enumerator is named below, and .github/ci/reliablekind_gate.py fails the build when one is missing,
+// named twice, relayable without being Client, or Unverified without a line in the gate's baseline list.
+// A new kind is Host or Client from its first commit.
+//   Client     -- an honest client sends it to the host (its sending path read).
+//   Host       -- no client may author it: its handler refused a non-host sender by name before this table
+//                 moved the refusal here, or its only senders are the host's.
+//   Unverified -- accepted from a client as before, with no evidence yet either way; each moves to a row
+//                 above. A divergence from MTA, whose flag defaults to false: these kinds stay accepted until
+//                 read, because a census of the senders proved wrong once (a client-sent kind listed
+//                 host-only), and a wrong Host row ends a lane for every client.
 
 #include "coop/net/protocol.h"  // ReliableKind
 
@@ -23,7 +26,7 @@
 
 namespace coop::net {
 
-enum class ClientAuthorship : uint8_t { Client, Host, Unverified };
+enum class ClientAuthorship : uint8_t { Client, Host, Unverified, NotAKind };
 
 constexpr ClientAuthorship AuthorshipOf(ReliableKind k) {
     switch (k) {
@@ -182,10 +185,10 @@ constexpr ClientAuthorship AuthorshipOf(ReliableKind k) {
     case ReliableKind::PropSaveData:
     case ReliableKind::EventCue:
     case ReliableKind::ChatSpeaker:
+    case ReliableKind::PileResyncRequest:
         return ClientAuthorship::Host;
     case ReliableKind::SkySignalCatch:
     case ReliableKind::DeskState:
-    case ReliableKind::PileResyncRequest:
     case ReliableKind::DishArm:
     case ReliableKind::DishSnapshot:
     case ReliableKind::DishCalib:
@@ -193,7 +196,7 @@ constexpr ClientAuthorship AuthorshipOf(ReliableKind k) {
     case ReliableKind::HookAnchored:
         return ClientAuthorship::Unverified;
     }
-    return ClientAuthorship::Host;  // a value that names no kind
+    return ClientAuthorship::NotAKind;  // a byte value that names no kind: refused like Host
 }
 
 }  // namespace coop::net

@@ -403,14 +403,9 @@ void Tick() {
     }
 }
 
-void OnSkySignalState(const coop::net::SkySignalStatePayload& p, uint8_t senderSlot) {
+void OnSkySignalState(const coop::net::SkySignalStatePayload& p) {
     auto* s = g_session.load(std::memory_order_acquire);
     if (!s || s->role() == coop::net::Role::Host) return;  // host-auth: host never applies
-    if (senderSlot != 0) {
-        UE_LOGW("console_state: SkySignalState from non-host slot %u -- dropping",
-                static_cast<unsigned>(senderSlot));
-        return;
-    }
     if (p.parts == 0 || p.parts > 5 || p.part >= p.parts || p.count > 3) return;
     for (uint8_t i = 0; i < p.count; ++i)
         if (!WireRowFinite(p.rows[i])) {

@@ -34,7 +34,7 @@ void Tick();
 void QueueConnectBroadcastForSlot(int slot);
 
 // Game thread (event_feed drain). CLIENT: the host's state row, applied; a non-host sender is dropped.
-void OnReliable(const coop::net::ServerStatePayload& payload, int senderPeerSlot);
+void OnReliable(const coop::net::ServerStatePayload& payload);
 
 // Game thread (event_feed drain). HOST: a client's finished repair of a box; run, or answered with the state row.
 void OnRepair(const coop::net::ServerRepairPayload& payload, int senderPeerSlot);

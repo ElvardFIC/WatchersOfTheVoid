@@ -250,8 +250,8 @@ void MaybeFinishLocked_() {
 
 // Net thread, the session's bulk sink. A chunk is a u32 index plus raw bytes; one stream's chunks
 // arrive in lane order through the single net thread, so a sequential index check suffices.
-void BulkSink_(int senderPeerSlot, const uint8_t* data, int len) {
-    if (senderPeerSlot != 0) return;  // host-originated only
+void BulkSink_(int /*senderPeerSlot*/, const uint8_t* data, int len) {
+    // Host-originated only: the host's receive edge refuses a client's copy (client_authorship.h).
     if (len < 4) return;
     // A chunk can never legitimately exceed the sender's own chunk size; the receive path bounds it
     // only by the u16 payload length otherwise.
@@ -284,8 +284,8 @@ void BulkSink_(int senderPeerSlot, const uint8_t* data, int len) {
 
 // Net thread, the session's SaveTransferBegin sink: the same thread as the bulk sink by design.
 // The length is validated here, since the sink contract hands over raw bytes.
-void BeginSink_(int senderPeerSlot, const uint8_t* data, int len) {
-    if (senderPeerSlot != 0) return;  // host-originated only
+void BeginSink_(int /*senderPeerSlot*/, const uint8_t* data, int len) {
+    // Host-originated only: the host's receive edge refuses a client's copy (client_authorship.h).
     if (len < static_cast<int>(sizeof(coop::net::SaveTransferBeginPayload))) return;
     coop::net::SaveTransferBeginPayload p{};
     std::memcpy(&p, data, sizeof(p));

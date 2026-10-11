@@ -229,8 +229,7 @@ void Update(net::Session& session, void* localPlayer) {
             }
             net::WispGrabPayload p{};
             std::memcpy(&p, msg.payload, sizeof(p));
-            const uint8_t sender = static_cast<uint8_t>(msg.senderPeerSlot);
-            ue_wrap::game_thread::Post([p, sender] { coop::wisp_tear_mirror::OnWispGrab(p, sender); });
+            ue_wrap::game_thread::Post([p] { coop::wisp_tear_mirror::OnWispGrab(p); });
             break;
         }
         case net::ReliableKind::WispTear: {
@@ -243,8 +242,7 @@ void Update(net::Session& session, void* localPlayer) {
             }
             net::WispTearPayload p{};
             std::memcpy(&p, msg.payload, sizeof(p));
-            const uint8_t sender = static_cast<uint8_t>(msg.senderPeerSlot);
-            ue_wrap::game_thread::Post([p, sender] { coop::wisp_tear_mirror::OnWispTear(p, sender); });
+            ue_wrap::game_thread::Post([p] { coop::wisp_tear_mirror::OnWispTear(p); });
             break;
         }
         case net::ReliableKind::UpgradeLevels: {
@@ -274,7 +272,6 @@ void Update(net::Session& session, void* localPlayer) {
         }
         case net::ReliableKind::TeleportClient: {
             // The host's teleport-to-me dev action: its pose, applied to the client's local player.
-            // The host's own echo is a no-op below.
             if (msg.payloadLen < sizeof(net::TeleportClientPayload)) {
                 UE_LOGW("event_feed: TeleportClient payload too short (%zu < %zu)",
                         static_cast<size_t>(msg.payloadLen), sizeof(net::TeleportClientPayload));
@@ -303,12 +300,6 @@ void Update(net::Session& session, void* localPlayer) {
                         p.locX, p.locY, p.locZ);
                 break;
             }
-            // The host's own broadcast bounces back; applying it would teleport the host to its own
-            // pose.
-            if (session.role() == net::Role::Host) {
-                UE_LOGI("event_feed: TeleportClient self-echo on host -- no-op");
-                break;
-            }
             ::coop::teleport_client::ApplyArgs args{
                 p.locX, p.locY, p.locZ,
                 p.rotPitch, p.rotYaw, p.rotRoll,
@@ -325,7 +316,6 @@ void Update(net::Session& session, void* localPlayer) {
                         static_cast<size_t>(msg.payloadLen), sizeof(net::JoinPhaseNotePayload));
                 break;
             }
-            if (session.role() == net::Role::Host) break;  // self-echo guard
             net::JoinPhaseNotePayload p{};
             std::memcpy(&p, msg.payload, sizeof(p));
             coop::join_progress::NoteHostBeacon(p.phase, p.done, p.total);
@@ -340,7 +330,6 @@ void Update(net::Session& session, void* localPlayer) {
                         static_cast<size_t>(msg.payloadLen), sizeof(net::SnapshotBeginPayload));
                 break;
             }
-            if (session.role() == net::Role::Host) break;  // self-echo guard (host doesn't load-screen)
             net::SnapshotBeginPayload p{};
             std::memcpy(&p, msg.payload, sizeof(p));
             coop::join_progress::BeginSnapshot(p.propTotal);
@@ -407,7 +396,6 @@ void Update(net::Session& session, void* localPlayer) {
                         static_cast<size_t>(msg.payloadLen), sizeof(net::SnapshotEndPayload));
                 break;
             }
-            if (session.role() == net::Role::Host) break;
             // The optional per-class completeness census appended after the payload; the deferred
             // claim sweep keeps any class the host did not express completely.
             if (msg.payloadLen > sizeof(net::SnapshotEndPayload)) {

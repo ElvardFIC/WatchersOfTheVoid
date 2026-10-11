@@ -280,20 +280,27 @@ void Session::HandleMessage(int peerSlot, uint32_t hConn, const void* data, int 
             rateControl_.NoteReliableReceived(peerSlot, len);
         if (dev::wire_census::Enabled())
             dev::wire_census::NoteReliable(routeSlot, static_cast<unsigned>(rh.kind));
-        // Default deny at the edge (client_authorship.h): a kind no client may author is dropped here, counted
-        // by the two lines above and acted on by nothing below -- not diverted, echoed, inboxed or relayed. The
-        // first of each kind in a session is said by name, the rest summed per window.
-        if (cfg_.role == Role::Host &&
-            AuthorshipOf(static_cast<ReliableKind>(rh.kind)) == ClientAuthorship::Host) {
-            if (!saidHostKind_[rh.kind]) {
-                saidHostKind_[rh.kind] = true;
-                UE_LOGW("net: refused kind %u from slot %d -- only the host authors it (client_authorship.h); "
-                        "later ones are summed", static_cast<unsigned>(rh.kind), peerSlot);
-            } else {
-                hostKindRefusals_.Note(static_cast<std::uint8_t>(peerSlot), RefusalTally::Charge::None,
-                                       "a kind only the host authors", RefusalTally::Clock::now());
+        // Default deny at the edge (client_authorship.h): a kind no client may author, or a byte that names no
+        // kind, is dropped here, counted by the two lines above and acted on by nothing below -- not diverted,
+        // echoed, inboxed or relayed. The first of each value in a session is said with its number, the rest
+        // summed per window: MTA logs each refused event, and rate-limits only an unknown one
+        // (CGame.cpp:2678-2699); the fold here is ours, the net thread's log being one a client could fill.
+        // Counted for no one here: a per-sender budget belongs ahead of this check, counting every arrival, as
+        // MTA counts refused events toward its threshold (CGame.cpp:2711).
+        if (cfg_.role == Role::Host) {
+            const ClientAuthorship who = AuthorshipOf(static_cast<ReliableKind>(rh.kind));
+            if (who == ClientAuthorship::Host || who == ClientAuthorship::NotAKind) {
+                const char* why = who == ClientAuthorship::Host ? "only the host authors it" : "it names no kind";
+                if (!saidHostKind_[rh.kind]) {
+                    saidHostKind_[rh.kind] = true;
+                    UE_LOGW("net: refused kind %u from slot %d -- %s (client_authorship.h); later ones are "
+                            "summed", static_cast<unsigned>(rh.kind), peerSlot, why);
+                } else {
+                    hostKindRefusals_.Note(static_cast<std::uint8_t>(peerSlot), RefusalTally::Charge::None, why,
+                                           RefusalTally::Clock::now());
+                }
+                return;
             }
-            return;
         }
         // payloadLen is a uint16, so only the upper bound is a real guard.
         const int payloadLen = static_cast<int>(rh.payloadLen);

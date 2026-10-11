@@ -115,10 +115,9 @@ bool HandleIntentEvent(net::Session& session,
     }
     case net::ReliableKind::OrderQueue: {
         // The host's delivery order queue, as each change ran (reset, append, pop); a client mirrors
-        // it and never writes its own. HOST->CLIENT, never relayed; order_queue_sync checks the
-        // sender is slot 0 and no-ops on the host.
-        coop::order_queue_sync::OnReliable(msg.payload, static_cast<int>(msg.payloadLen),
-                                           static_cast<uint8_t>(msg.senderPeerSlot));
+        // it and never writes its own. HOST->CLIENT, never relayed; a client's copy is refused at the
+        // host's receive edge (client_authorship.h).
+        coop::order_queue_sync::OnReliable(msg.payload, static_cast<int>(msg.payloadLen));
         break;
     }
     case net::ReliableKind::OrderRefused: {

@@ -65,7 +65,7 @@ bool VerifySenderEidRange(int senderPeerSlot,
     return true;
 }
 
-bool HandleWorldEvent(net::Session& session,
+bool HandleWorldEvent(net::Session& /*session*/,
                       const net::Session::ReliableMessage& msg) {
     switch (msg.kind) {
     case net::ReliableKind::FireflySpawn: {
@@ -101,15 +101,11 @@ bool HandleWorldEvent(net::Session& session,
     case net::ReliableKind::EventFire: {
         // The host-authoritative scheduled or story event fired: the client replays the native verb
         // per the replay policy (the level, save and cosmetic flips no lane carries; lane-covered
-        // rows are logged and skipped there). World-mutating, so host trust-bound like the weather;
-        // there is no eid in the payload, and the identity is the transport slot.
+        // rows are logged and skipped there). World-mutating and host-authored, like the weather:
+        // a client's copy is refused at the host's receive edge (client_authorship.h).
         if (msg.payloadLen < sizeof(net::EventFirePayload)) {
             UE_LOGW("event_feed: EventFire payload too short (%zu < %zu)",
                     static_cast<size_t>(msg.payloadLen), sizeof(net::EventFirePayload));
-            break;
-        }
-        if (session.role() == net::Role::Host) {
-            UE_LOGI("event_feed: EventFire received on host -- dropping (host is the authority)");
             break;
         }
         net::EventFirePayload fp{};
@@ -123,10 +119,6 @@ bool HandleWorldEvent(net::Session& session,
         if (msg.payloadLen < sizeof(net::EventSnapshotPayload)) {
             UE_LOGW("event_feed: EventSnapshot payload too short (%zu < %zu)",
                     static_cast<size_t>(msg.payloadLen), sizeof(net::EventSnapshotPayload));
-            break;
-        }
-        if (session.role() == net::Role::Host) {
-            UE_LOGI("event_feed: EventSnapshot received on host -- dropping (host is the authority)");
             break;
         }
         net::EventSnapshotPayload sp{};
@@ -161,7 +153,7 @@ bool HandleWorldEvent(net::Session& session,
         }
         net::ServerStatePayload sp{};
         std::memcpy(&sp, msg.payload, sizeof(sp));
-        coop::serverbox_sync::OnReliable(sp, msg.senderPeerSlot);
+        coop::serverbox_sync::OnReliable(sp);
         break;
     }
     case net::ReliableKind::ServerRepair: {
@@ -241,7 +233,7 @@ bool HandleWorldEvent(net::Session& session,
         }
         net::RoachStatePayload rp{};
         std::memcpy(&rp, msg.payload, sizeof(rp));
-        coop::roach_sync::OnState(rp, msg.senderPeerSlot);
+        coop::roach_sync::OnState(rp);
         break;
     }
     case net::ReliableKind::InventoryPickup: {
@@ -363,10 +355,6 @@ bool HandleWorldEvent(net::Session& session,
         }
         net::RedSkyPayload p{};
         std::memcpy(&p, msg.payload, sizeof(p));
-        if (session.role() == net::Role::Host) {
-            UE_LOGI("event_feed: RedSky received on host -- dropping");
-            break;
-        }
         // Host trust-bound: the red sky is host-only; a client's copy is refused at the host's receive edge
         // (client_authorship.h). The role-range trust on the sender element id.
         if (!VerifySenderEidRange(msg.senderPeerSlot, p.senderElementId,
@@ -396,10 +384,6 @@ bool HandleWorldEvent(net::Session& session,
         }
         net::LightningStrikePayload p{};
         std::memcpy(&p, msg.payload, sizeof(p));
-        if (session.role() == net::Role::Host) {
-            UE_LOGI("event_feed: LightningStrike received on host -- dropping");
-            break;
-        }
         // Host trust-bound: the strike is host-only; a client's copy is refused at the host's receive edge
         // (client_authorship.h). The role-range trust on the sender element id.
         if (!VerifySenderEidRange(msg.senderPeerSlot, p.senderElementId,
@@ -431,13 +415,6 @@ bool HandleWorldEvent(net::Session& session,
         }
         net::WeatherStatePayload p{};
         std::memcpy(&p, msg.payload, sizeof(p));
-        // The self-echo guard: weather is host to client only, so a packet arriving on the host is
-        // a loopback bounce, dropped.
-        if (session.role() == net::Role::Host) {
-            UE_LOGI("event_feed: WeatherState received on host -- dropping "
-                    "(host is the authority; no inbound from client)");
-            break;
-        }
         // Host trust-bound: the weather is host-only; a client's copy is refused at the host's receive edge
         // (client_authorship.h). The role-range trust on the sender element id.
         if (!VerifySenderEidRange(msg.senderPeerSlot, p.senderElementId,
