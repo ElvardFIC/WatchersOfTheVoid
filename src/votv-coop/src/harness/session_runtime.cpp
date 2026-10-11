@@ -445,10 +445,15 @@ bool StopClientSession(const char* why) {
     if (!(g_session.running() && g_session.role() == coop::net::Role::Client)) return false;
     // Stop on this (the timeline) thread, where the net-thread join belongs, then tear the coop state
     // down on the game thread and wait for it: the next start begins on nothing this session left, and
-    // no destroy seam runs against a half-ended session. Stop releases its lifecycle mutex before the
-    // RunAndWait returns here, so the game thread never blocks on a timeline thread that is itself
-    // waiting on the game thread (measure.md M1).
+    // no destroy seam runs against a half-ended session -- MTA ends a client session the same way,
+    // synchronously, from its user paths (CModManager::Unload, reached by disconnect/connect in
+    // CCommandFuncs.cpp, CConnectManager.cpp:79 and quit in CCore.cpp:1597). Stop releases its lifecycle
+    // mutex before this RunAndWait, so the game thread never blocks on a timeline thread that is itself
+    // waiting on the game thread.
     g_session.Stop();
+    // Process shutdown is the one exemption: the game-thread pump is uninstalled, so a RunAndWait would
+    // never drain -- stop only, no teardown, as exit skips the teardown by design.
+    if (coop::shutdown::IsShuttingDown()) return true;
     const int r = GT::RunAndWait([why](std::atomic<int>& done) {
         coop::net_pump::TearDownSession(g_session, why);
         done.store(1, std::memory_order_release);
@@ -497,10 +502,13 @@ void RunPlayLoop(bool bootedIntoGameplay) {
             // pass; the RunAndWait runs only when an end is owed, and is a no-op by the count if the
             // flee's own teardown already ran.
             if (coop::net_pump::EndOwed(g_session)) {
-                GT::RunAndWait([](std::atomic<int>& done) {
+                const int r = GT::RunAndWait([](std::atomic<int>& done) {
                     coop::net_pump::TearDownSession(g_session, "owed end before a new start");
                     done.store(1, std::memory_order_release);
                 });
+                if (r == GT::kTaskFaulted)
+                    UE_LOGE("harness: the owed-end teardown FAULTED before a new start -- coop state "
+                            "left half-cleared; the faulting module's dump names it");
             }
             // The save picker: load the chosen world (or create the save), then host; blocks until
             // done, a no-op if nothing is queued. It waits while a client join leaves this world.

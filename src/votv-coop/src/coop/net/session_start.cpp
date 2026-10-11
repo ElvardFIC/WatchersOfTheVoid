@@ -487,8 +487,13 @@ void Session::SetStopListener(void (*onStopped)()) {
 
 void Session::Stop() {
     std::lock_guard<std::mutex> lifecycle(lifecycleMutex_);
-    if (!running_.exchange(false)) return;
+    // We hold the mutex Start and Stop share, so running_ is ours to read then write with nothing
+    // concurrent. Bump the count BEFORE clearing running_, so a lock-free reader (net_pump::EndOwed)
+    // that sees running()==false also sees the new StopCount -- an end in flight is visible from its
+    // first instruction, never "stopped, old count" (which would let a start begin over an owed end).
+    if (!running_.load(std::memory_order_acquire)) return;
     stopCount_.fetch_add(1, std::memory_order_acq_rel);
+    running_.store(false, std::memory_order_release);
     // Told once per stopped session, after running() reads false and before the teardown below.
     if (void (*onStopped)() = stopListener_.load()) onStopped();
     // The linger flush needs RunCallbacks pumping, so connections are closed after the net thread

@@ -93,11 +93,11 @@ coop::net::Session* g_tickSession = nullptr;
 // The session ticks run, which TickSerial reports.
 uint64_t g_tickSerial = 0;
 
-// The death-policy one-shot. On a local death the death arc has not armed, the pump tears every
-// coop game-side state down synchronously (the teardown stops the session before it destroys
-// anything) and flees to the menu with the detour held in transparent bypass (the game's own reload
-// would otherwise run before the deferred disconnect cleanup, leaving orphan puppets and mirrors in
-// the dying world). OnSessionStart resets it.
+// The death-policy one-shot. On a local death the death arc has not armed, the pump flees to the menu
+// -- FleeToMainMenu stops the session, then tears every coop game-side state down synchronously, then
+// travels with the detour held in transparent bypass (the game's own reload would otherwise run before
+// the deferred disconnect cleanup, leaving orphan puppets and mirrors in the dying world).
+// OnSessionStart resets it.
 bool g_localDeathHandled = false;
 
 // The ceiling on the transparent bypass after a flee. The bypass covers the world teardown (the
@@ -106,17 +106,22 @@ bool g_localDeathHandled = false;
 // this timer only bounds the case where that tick never resolves, and is generous on purpose.
 constexpr int kDeathMenuBypassMs = 30 * 1000;
 
-// The terminal eject to the main menu: reset the edge detectors, Stop (a no-op after the teardown,
-// which stops first; the host-closed eject reaches here without the teardown, so this Stop stays),
-// arm the bypass, then travel through the game's own transition verb (the bypass first, so the
-// teardown the travel triggers runs with the detour dormant). A one-shot latch: more than one path
-// can find a session dead, and the travel is dispatched once; OnSessionStart resets it.
+// The terminal eject to the main menu: Stop the session, tear every coop state down (TearDownSession,
+// which resets the edge detectors and the announce state among it), arm the bypass, then travel through
+// the game's own transition verb (the bypass first, so the engine teardown the travel triggers runs with
+// the detour dormant). Both the Stop and the teardown are no-ops on a session already ended. A one-shot
+// latch: more than one path can find a session dead, and the travel is dispatched once; OnSessionStart
+// resets it.
 bool g_fleeing = false;
 
-// The session stop TearDownSession last tore down (Session::StopCount), recorded as its pass begins. Written
-// on the game thread, read by the timeline thread's owed-end check (EndOwed). A session that never ran
-// never stopped, so the count stays at this value.
-std::atomic<uint64_t> g_tornDownStops{0};
+// The stop TearDownSession has BEGUN tearing down, and the stop it has FINISHED (both Session::StopCount
+// values). Begun is the run-once latch -- a second call for the same stop no-ops, so a teardown never runs
+// twice. Finished is what EndOwed reads, published only when the pass completes OR faults, so no start
+// begins over a teardown still running (EndOwed stays true until then) and a faulted pass is marked done,
+// never retried over half-cleared state (as MTA unloads once). Both written on the game thread; finished
+// read with acquire by the timeline's EndOwed. A session that never ran never stopped, so both stay here.
+std::atomic<uint64_t> g_tornDownBegun{0};
+std::atomic<uint64_t> g_tornDownFinished{0};
 
 // `travel` is false when the game's own quit-to-menu transition is already in flight (a second
 // transition would load the menu twice); the rest of the tail is identical.
@@ -228,7 +233,6 @@ static ue_wrap::CachedObjRef g_announcedWorldRef;
 // The save-transfer kerfur-ghost reconcile lives in npc_adoption (it owns the timing); net_pump
 // only notifies it at the announce (OnClientWorldReady) so it resets its per-world state.
 
-// The announce axis' one owner; registry_reaper only requests through here.
 // The world-ready announce state, forgotten when the connection goes and when the session ends, so the
 // next connection announces again and re-stamps its world.
 static void ForgetWorldReadyAnnounce() {
@@ -242,11 +246,17 @@ void TearDownSession(coop::net::Session& session, const char* why) {
     UE_ASSERT_GAME_THREAD("net_pump::TearDownSession (puppets + every lane's session state)");
     if (session.running()) return;  // a live session is not ended here; its stop comes first
     const uint64_t stops = session.StopCount();
-    if (stops == g_tornDownStops.load(std::memory_order_relaxed)) return;  // never ran, or torn down
-    // Recorded as the pass begins: one teardown per stop. A fault inside it is named by the game
-    // thread's firewall and is never re-run over half-cleared state, as MTA unloads once
-    // (reference/mtasa-blue/Client/core/CModManager.cpp:79-91).
-    g_tornDownStops.store(stops, std::memory_order_release);
+    if (stops == g_tornDownBegun.load(std::memory_order_relaxed)) return;  // never ran, or this stop begun/done
+    // One teardown per stop: begun latches it so a later owed-end call for the same stop no-ops. The
+    // FINISHED count is published at scope exit -- cleanly AND on a fault (the destructor runs on the
+    // pump's own unwind, as RunAndWait's guard does) -- so EndOwed stays true until this pass ends (no
+    // start begins over it) and a faulted pass is marked done, never re-run over half-cleared state, as
+    // MTA unloads once (reference/mtasa-blue/Client/core/CModManager.cpp:79-91).
+    g_tornDownBegun.store(stops, std::memory_order_relaxed);
+    struct FinishGuard {
+        uint64_t stops;
+        ~FinishGuard() { g_tornDownFinished.store(stops, std::memory_order_release); }
+    } finish{stops};
     g_wasConnected = false;
     g_wasConnectedBySlot.fill(false);
     ForgetWorldReadyAnnounce();
@@ -282,9 +292,10 @@ void TearDownSession(coop::net::Session& session, const char* why) {
 
 bool EndOwed(const coop::net::Session& session) {
     return !session.running() &&
-           session.StopCount() != g_tornDownStops.load(std::memory_order_acquire);
+           session.StopCount() != g_tornDownFinished.load(std::memory_order_acquire);
 }
 
+// The announce axis' one owner; registry_reaper only requests through here. No-op on the host.
 void MaybeRequestReAnnounce(coop::net::Session& session, void* reapWorld) {
     if (session.role() == coop::net::Role::Host) return;
     // The same world only when the same address holds the same live object; two nulls, neither reader
@@ -652,7 +663,7 @@ void Tick(coop::net::Session& session) {
         // A revive that gave up has torn the session down and fled, as the local-death branch below
         // does; nothing after it may run for this session, the lanes' Install least of all.
         if (g_fleeing) return;
-        // The death policy: on a local death the teardown stops the session and tears every coop
+        // The death policy: on a local death FleeToMainMenu stops the session and tears every coop
         // game-side state down this frame. Stopping alone is not enough: the game's death reload
         // blocks the game thread at once, so the deferred disconnect cleanup never runs. `dead` is
         // true only on a real death (a faint or KO leaves it false). The host gates on running()
