@@ -17,8 +17,6 @@
 #include "harness/harness_diag.h"
 #include "harness/screenshot.h"
 #include "harness/mod_environment.h"
-#include "harness/fingerprint_census.h"
-#include "harness/sdk_check.h"
 #include "coop/dev/freecam.h"
 #include "coop/dev/log_drill.h"  // [dev] the two-process log drill
 #include "coop/input/input_owner.h"
@@ -283,13 +281,6 @@ DWORD WINAPI TimelineThread(LPVOID param) {
                 UE_LOGE("harness: client_world_first found no world of its own to stand in -- FAIL");
             if (worldFirst && booted) Post([] { coop::dev::world_first_check::Arm(); });
         }
-        // The SDK profile is checked against the running build (after the world boot on a host; on
-        // a save-transfer client the classes load with the menu world, and every consumer
-        // self-retries).
-        Post([] {
-            harness::sdk_check::Run();
-            harness::fingerprint_census::Run();
-        });
         // With a configured net role the puppet is network-driven and our pose is sent; otherwise
         // the puppet is a static local one.
         if (netEnabled) {

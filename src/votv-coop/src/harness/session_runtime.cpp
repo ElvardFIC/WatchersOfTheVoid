@@ -5,6 +5,8 @@
 #include "harness/session_runtime.h"
 
 #include "harness/fingerprint_census.h"
+#include "harness/sdk_check.h"
+#include "ue_wrap/core/walk_timer.h"
 #include "harness/join_leave.h"
 #include "harness/pump.h"
 #include "harness/world_boot.h"
@@ -366,6 +368,22 @@ bool InGameplayWorld() {
            ue_wrap::world_identity::WorldKind::Gameplay;
 }
 
+// The compatibility checks -- sdk_check's names and the fingerprint census's bytecode -- run once a process, in its
+// first gameplay world, whatever route led there: a launcher scenario, or a player's own launch that loads or joins
+// from the menu. They are the player's check: started only by the test scenarios, a player never had them. A
+// degraded world identity reads as a gameplay world (above), which on a changed build is the launch to check.
+// Game thread; posted, so a fault in either cannot take the composite with it.
+void StartCompatChecksOnce() {
+    static bool s_started = false;
+    if (s_started) return;
+    s_started = true;
+    Post([] {
+        ue_wrap::ScopedWalkTimer walk("compat checks start");
+        harness::sdk_check::Run();
+        harness::fingerprint_census::Run();
+    });
+}
+
 // A menu-mode join whose session refused to start leaves the player where its sentence tells them
 // to act: the notice for the dialog, the cover dropped (which drains the abort as well), the save
 // transfer armed for this join disarmed, since no session will ever disconnect to do it, and the
@@ -521,6 +539,7 @@ void RunPlayLoop(bool bootedIntoGameplay) {
             // refreshes; every consumer below that names a STATE reads this rather than the boot
             // parameter.
             const bool inGameplayWorld = InGameplayWorld();
+            if (inGameplayWorld) StartCompatChecksOnce();
             if (running) {
                 coop::net_pump::Tick(g_session);
             } else {
