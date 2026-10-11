@@ -266,7 +266,7 @@ void UpdateParkPause() {
     if (depth >= kParkCap) {
         if (s->SetApplyPause(kKind, true))
             UE_LOGW("email_sync: apply park BACKPRESSURE ON (depth %zu)", depth);
-    } else if (depth < kParkCap / 2) {
+    } else if (depth < kParkCap / 2 && s->ApplyPausedBy(kKind)) {  // a load, not a write, each tick
         if (s->SetApplyPause(kKind, false))
             UE_LOGW("email_sync: apply park drained (depth %zu)", depth);
     }

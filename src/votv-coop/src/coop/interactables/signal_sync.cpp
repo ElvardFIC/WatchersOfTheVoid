@@ -61,9 +61,10 @@ std::map<uint64_t, Clock::time_point> g_tombstones;
 // park, applied or refused; nothing is retried. FIFO-ONCE-NONEMPTY: while non-empty, every newly
 // completed blob appends behind it, so a live row can never apply ahead of a still-parked one.
 // Event-anchored on our own world-up, with NO wall-clock TTL -- a timer here would be a drop one level
-// up. Reaching kParkCap raises the session's receive pause: pause, not drop. MTA keeps no such park
-// (a packet it cannot apply is a protocol error, Client/mods/deathmatch/logic/CPacketHandler.cpp:
-// 760-765); ours exists because our world loads after the link is up and travels mid-session.
+// up. Reaching kParkCap raises the session's receive pause: pause, not drop. MTA keeps no such park:
+// a packet it cannot apply yet is a protocol error
+// (reference/mtasa-blue/Client/mods/deathmatch/logic/CPacketHandler.cpp:760-765); ours exists because
+// our world loads after the link is up and travels mid-session.
 struct ParkedRow {
     std::vector<uint8_t> blob;
     uint8_t senderSlot = 0;
@@ -163,7 +164,7 @@ void UpdateParkPause() {
     if (depth >= kParkCap) {
         if (s->SetApplyPause(kKind, true))
             UE_LOGW("signal_sync: apply park BACKPRESSURE ON (depth %zu)", depth);
-    } else if (depth < kParkCap / 2) {
+    } else if (depth < kParkCap / 2 && s->ApplyPausedBy(kKind)) {  // a load, not a write, each tick
         if (s->SetApplyPause(kKind, false))
             UE_LOGW("signal_sync: apply park drained (depth %zu)", depth);
     }
