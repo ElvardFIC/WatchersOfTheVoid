@@ -292,6 +292,8 @@ void CancelJoinSnapshot(int peerSlot) { g_seeder.Cancel(peerSlot); }
 
 bool JoinSnapshotCaptured(int peerSlot) { return g_seeder.Captured(peerSlot); }
 
+bool Settled() { return g_primed; }
+
 void QueueConnectBroadcastForSlot(int peerSlot) {
     if (!IsHostRole()) return;
     g_seeder.SeedForSlot(g_session.load(std::memory_order_acquire), peerSlot);

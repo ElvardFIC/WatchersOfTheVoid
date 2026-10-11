@@ -5,6 +5,7 @@
 #include "coop/comms/chat_log.h"
 #include "coop/config/config.h"
 #include "coop/config/config_registry.h"
+#include "coop/interactables/signal_sync.h"
 #include "coop/interactables/signal_wire.h"
 #include "coop/net/blob_chunks.h"
 #include "coop/net/protocol.h"
@@ -30,47 +31,50 @@ namespace SD = ue_wrap::signal_dynamic;
 namespace SS = ue_wrap::saved_signals;
 using Clock = std::chrono::steady_clock;
 
-enum class Arm { Off, SignalPark, ChatIllFormed, ChatIllFormedRed };
+enum class Arm { Off, SignalPark, ChatIllFormed };
 
 // Resolved once: with the environment variable unset every read would scan the ini on disk, and the
-// drill is asked per tick (and ChatGuardOff per chat message).
+// drill is asked per tick.
 Arm ArmOf() {
     static const Arm a = [] {
         const std::string v =
             coop::config::ResolveEnum(::coop::config_registry::rows::hostile_drill);
-        return v == "signal_park"         ? Arm::SignalPark
-             : v == "chat_ill_formed"     ? Arm::ChatIllFormed
-             : v == "chat_ill_formed_red" ? Arm::ChatIllFormedRed
-                                          : Arm::Off;
+        return v == "signal_park"     ? Arm::SignalPark
+             : v == "chat_ill_formed" ? Arm::ChatIllFormed
+                                      : Arm::Off;
     }();
     return a;
 }
 
 const char* ArmName() {
     switch (ArmOf()) {
-    case Arm::SignalPark:       return "signal_park";
-    case Arm::ChatIllFormed:    return "chat_ill_formed";
-    case Arm::ChatIllFormedRed: return "chat_ill_formed_red";
-    default:                    return "off";
+    case Arm::SignalPark:    return "signal_park";
+    case Arm::ChatIllFormed: return "chat_ill_formed";
+    default:                 return "off";
     }
 }
 
 // The forged content, named once and shared by the sender and the host's judge so the two never drift.
 constexpr const char*    kChatForged         = "hostile-drill forged";    // + one lone 0x80 appended
-constexpr const char*    kChatSentinel        = "hostile-drill sentinel"; // one well-formed line behind it
-constexpr const wchar_t* kSignalSentinelName  = L"hostile-drill sentinel";
-constexpr int            kForgedSignals = 300;        // > kParkCap (256): on the old bytes the park fills
+constexpr const char*    kChatSentinel       = "hostile-drill sentinel";  // one well-formed line behind it
+constexpr const wchar_t* kSignalSentinelName = L"hostile-drill sentinel";
+constexpr const wchar_t* kSignalId           = L"hostile-drill";  // every row the drill sends
+constexpr int            kForgedSignals = 300;        // > kParkCap (256): enough to fill a park that keeps them
 constexpr uint32_t       kSeqBase = 0xB0570000u;      // outside the signal lane's own seq (starts at 1)
 constexpr auto           kFailBound = std::chrono::seconds(180);  // a failure bound, never a wait
 
 std::atomic<coop::net::Session*> g_session{nullptr};
 bool g_saidArm = false;
 
-// Host (receiver / judge).
+// Host (receiver / judge). The judge counts only what arrives after it arms: a sentinel left in the
+// save or the lobby record by an earlier run must never read as this run's.
 enum class Step { WaitArm, Judge, Done };
 Step              g_step = Step::WaitArm;
 int               g_slot = -1;
 uint64_t          g_witnessBase = 0;
+int               g_sentinelBase = 0;   // signal_park: sentinel rows already saved at arm
+int32_t           g_rowsSeen = -1;      // signal_park: the row count the last scan saw
+uint32_t          g_lineSeqBase = 0;    // chat: the last line committed before arm
 Clock::time_point g_armAt{};
 
 // Client (sender).
@@ -84,8 +88,8 @@ void Pass(const char* detail) {
     g_step = Step::Done;
 }
 
-// Every FAIL carries a reason token, so a red arm's EXPECTED fail is never confused with a timeout or a
-// dropped link: the rig matches the exact string, not a bare "FAIL".
+// Every FAIL carries a reason token, so an expected fail is never confused with a timeout or a dropped
+// link: the rig matches the exact string, not a bare "FAIL".
 void Fail(const char* reasonToken) {
     UE_LOGW("[HOSTILE-DRILL] %s FAIL: %s", ArmName(), reasonToken);
     g_step = Step::Done;
@@ -98,7 +102,8 @@ void SendSignalPark(coop::net::Session* s) {
     for (int i = 0; i < kForgedSignals; ++i) {
         SD::Row r;
         r.name   = std::wstring(L"hostile-drill forged ") + std::to_wstring(i);  // distinct -> distinct hash
-        r.signal = L"hostile-drill";  // non-empty so the row reaches the native; size 0 then makes it refuse
+        r.id     = kSignalId;
+        r.signal = L"hostile-drill";  // a name of no template; size 0 is what the game refuses
         r.size = 0.f;                 // the game's own gate: succ is false unless decoded >= size > 0, so
         r.decoded = 0.f;              // every forged row is refused BEFORE the "Create Signal List" rebuild
         const std::vector<uint8_t> blob = coop::signal_wire::Serialize(r);
@@ -106,11 +111,19 @@ void SendSignalPark(coop::net::Session* s) {
                                         kSeqBase + static_cast<uint32_t>(i), blob))
             ++sent;
     }
-    // The sentinel: one honest row the native accepts (decoded >= size > 0), with a real ordinary
-    // template name so there is no unique-signal `specials` side effect. Sent LAST on the ordered lane,
-    // so its arrival means the whole forged burst has already been judged.
+    // The sentinel goes only behind the whole burst: on the ordered lane its arrival then means every
+    // forged row arrived and was judged first. A burst that did not all go out is no attack; the
+    // sender says so and sends no sentinel, so the host's judge cannot pass.
+    if (sent != kForgedSignals) {
+        UE_LOGW("[HOSTILE-DRILL] signal_park sent %d/%d forged row(s)", sent, kForgedSignals);
+        Fail("the forged rows were not all sent");
+        return;
+    }
+    // One honest row the native saves (decoded >= size > 0), under a real ordinary template name so
+    // there is no unique-signal `specials` side effect.
     SD::Row sentinel;
     sentinel.name    = kSignalSentinelName;
+    sentinel.id      = kSignalId;
     sentinel.signal  = g_sentinelSignal;
     sentinel.size    = 1.f;
     sentinel.decoded = 1.f;
@@ -118,10 +131,13 @@ void SendSignalPark(coop::net::Session* s) {
     sentinel.downloadedAtQuality = 1.f;
     sentinel.date    = 0;  // a non-positive date: the native stamps Now
     const std::vector<uint8_t> sb = coop::signal_wire::Serialize(sentinel);
-    const bool sentSentinel = coop::blob_chunks::SendBlob(
-        s, coop::net::ReliableKind::SavedSignalAppend, kSeqBase + kForgedSignals, sb);
-    UE_LOGI("[HOSTILE-DRILL] signal_park sent %d/%d forged row(s) + sentinel (%s); signal '%ls'",
-            sent, kForgedSignals, sentSentinel ? "sent" : "SEND FAILED", g_sentinelSignal.c_str());
+    if (!coop::blob_chunks::SendBlob(s, coop::net::ReliableKind::SavedSignalAppend,
+                                     kSeqBase + kForgedSignals, sb)) {
+        Fail("the sentinel was not sent");
+        return;
+    }
+    UE_LOGI("[HOSTILE-DRILL] signal_park sent %d/%d forged row(s) + sentinel; signal '%ls'", sent,
+            kForgedSignals, g_sentinelSignal.c_str());
 }
 
 void SendChatIllFormed(coop::net::Session* s) {
@@ -130,15 +146,19 @@ void SendChatIllFormed(coop::net::Session* s) {
     std::memcpy(forged.text, kChatForged, fn);
     forged.text[fn] = static_cast<char>(0x80);  // a lone continuation byte: ill-formed UTF-8 unconditionally
     forged.len = static_cast<uint8_t>(fn + 1);
-    const bool f = s->SendReliable(coop::net::ReliableKind::ChatMessage, &forged, sizeof(forged));
-
+    if (!s->SendReliable(coop::net::ReliableKind::ChatMessage, &forged, sizeof(forged))) {
+        Fail("the forged line was not sent");  // and no sentinel behind it, so the host cannot pass
+        return;
+    }
     coop::net::ChatMessagePayload sentinel{};
     const size_t sn = std::strlen(kChatSentinel);
     std::memcpy(sentinel.text, kChatSentinel, sn);
     sentinel.len = static_cast<uint8_t>(sn);
-    const bool c = s->SendReliable(coop::net::ReliableKind::ChatMessage, &sentinel, sizeof(sentinel));
-    UE_LOGI("[HOSTILE-DRILL] %s sent the forged line (%s) + sentinel (%s)", ArmName(),
-            f ? "sent" : "SEND FAILED", c ? "sent" : "SEND FAILED");
+    if (!s->SendReliable(coop::net::ReliableKind::ChatMessage, &sentinel, sizeof(sentinel))) {
+        Fail("the sentinel was not sent");
+        return;
+    }
+    UE_LOGI("[HOSTILE-DRILL] %s sent the forged line + sentinel", ArmName());
 }
 
 void TickClient(coop::net::Session* s) {
@@ -161,44 +181,66 @@ void TickClient(coop::net::Session* s) {
 
 // --- the judge (host) ---
 
+int CountSignalSentinels() {
+    int found = 0;
+    const int32_t n = SS::Count();
+    for (int32_t i = 0; i < n; ++i) {
+        SD::Row r;
+        if (SS::ReadRow(i, r) && r.name == kSignalSentinelName) ++found;
+    }
+    return found;
+}
+
+uint32_t LastLineSeq() {
+    uint32_t last = 0;
+    coop::chat_log::ForEach([&](const coop::chat_log::Row& r) { if (r.lineSeq > last) last = r.lineSeq; });
+    return last;
+}
+
 void ArmOnFirstReadySlot(coop::net::Session* s) {
+    // signal_park's verdict means something only on a settled lane: an unsettled one parks every
+    // arrival by design, and the pause that would raise is the settle's, not the attack's.
+    if (ArmOf() == Arm::SignalPark && !coop::signal_sync::Settled()) return;
     for (int slot = 1; slot < static_cast<int>(coop::net::kMaxPeers) && g_slot < 0; ++slot)
         if (s->IsSlotWorldReady(slot)) g_slot = slot;
     if (g_slot < 0) return;
     // The witness: a monotonic count of a kind's apply park going from off to on. Baselined here, on
     // the game thread, in the same frame loop that drains the inbox the burst arrives on.
     g_witnessBase = s->ApplyPauseRaises();
+    if (ArmOf() == Arm::SignalPark) {
+        g_sentinelBase = CountSignalSentinels();
+        g_rowsSeen = SS::Count();
+    } else {
+        g_lineSeqBase = LastLineSeq();
+    }
     g_armAt = Clock::now();
     g_step = Step::Judge;
     UE_LOGI("[HOSTILE-DRILL] %s armed on slot %d (apply-pause raises baseline %llu)", ArmName(),
             g_slot, static_cast<unsigned long long>(g_witnessBase));
 }
 
-bool SignalSentinelApplied() {
-    const int32_t n = SS::Count();
-    for (int32_t i = 0; i < n; ++i) {
-        SD::Row r;
-        if (SS::ReadRow(i, r) && r.name == kSignalSentinelName) return true;
-    }
-    return false;
-}
-
 void JudgeSignalPark(coop::net::Session* s) {
-    // The defect: refused rows filled the apply park and raised the receive pause. On the fixed bytes a
-    // refused row is terminal and never parks, so this never rises; on the old bytes 300 > kParkCap park
-    // and it does -- red, printed the tick it is seen.
+    // The defect this arm proves fixed: refused rows filled the apply park and raised the receive
+    // pause. A refused row that is final never parks, so the witness never rises; a park that keeps
+    // them fills past kParkCap and it does -- FAIL, printed the tick it is seen, naming the kind.
     if (s->ApplyPauseRaises() > g_witnessBase) {
-        Fail("the receive paused on SavedSignalAppend's apply park");
+        Fail(s->ApplyPausedBy(coop::net::ReliableKind::SavedSignalAppend)
+                 ? "the receive paused on SavedSignalAppend's apply park"
+                 : "the receive paused on another lane's apply park");
         return;
     }
-    if (SignalSentinelApplied())
+    // The rows are read only when their count moved: the sentinel's arrival is an append.
+    const int32_t n = SS::Count();
+    if (n == g_rowsSeen) return;
+    g_rowsSeen = n;
+    if (CountSignalSentinels() > g_sentinelBase)
         Pass("the apply park never paused the receive loop; an honest saved signal still applied");
 }
 
 void JudgeChat() {
     bool found0x80 = false, foundSentinel = false;
     coop::chat_log::ForEach([&](const coop::chat_log::Row& r) {
-        if (r.slot != static_cast<uint8_t>(g_slot)) return;
+        if (r.lineSeq <= g_lineSeqBase || r.slot != static_cast<uint8_t>(g_slot)) return;
         if (r.text == kChatSentinel) foundSentinel = true;
         if (r.text.find(static_cast<char>(0x80)) != std::string::npos) found0x80 = true;
     });
@@ -206,7 +248,7 @@ void JudgeChat() {
     // that is the signal that the forged line has already been judged.
     if (!foundSentinel) return;
     if (found0x80)
-        Fail("an ill-formed line was committed");  // red arm: EXPECTED (the rig's done-marker)
+        Fail("an ill-formed line was committed");
     else
         Pass("the ill-formed line was refused; the well-formed one was kept");
 }
@@ -227,11 +269,6 @@ void TickHost(coop::net::Session* s) {
 }  // namespace
 
 bool IsEnabled() { return ArmOf() != Arm::Off; }
-
-bool ChatGuardOff() {
-    static const bool v = (ArmOf() == Arm::ChatIllFormedRed);
-    return v;
-}
 
 void Install(coop::net::Session* session) {
     if (!IsEnabled()) return;
@@ -257,6 +294,9 @@ void OnDisconnect() {
     g_saidArm = false;
     g_slot = -1;
     g_witnessBase = 0;
+    g_sentinelBase = 0;
+    g_rowsSeen = -1;
+    g_lineSeqBase = 0;
     g_armAt = {};
     g_sent = false;
     g_sentinelSignal.clear();
