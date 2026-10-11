@@ -233,7 +233,7 @@ bool RowPartsAt(int32_t i, RowParts& out) {
 
 // Will the join gate refuse this server, and which part disagrees: `game` is the host's VOTV target,
 // `gameBuild` the game the host runs, `proto` its build. The row shows the shortest true thing ("!0.9.0m"
-// when the cook differs, "!0.10.0" or "!untested" when the game running does, "!b146" when only the build
+// when the cook differs, "!0.10.0" or "!other" when the game running does, "!b146" when only the build
 // does); the details panel spells out both sides.
 std::string MismatchMark(const Row& r) {
     const bool gameBad = !r.game.empty() && r.game != sm::GameTarget();

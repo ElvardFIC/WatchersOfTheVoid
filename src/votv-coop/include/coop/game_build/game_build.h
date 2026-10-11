@@ -52,7 +52,8 @@ bool KeyShapeOk(const std::string& key);
 // the Join's refusal rides a 128-byte close reason.
 std::string VersionText(const std::string& key);
 
-// The browser row's mark for a host whose build differs: the row's version for a known build, else "untested".
+// The browser row's mark for a host whose build differs: the row's version for a known build, else "other" --
+// short, since the row's cell shows about six characters, and the details panel names the build in full.
 std::string MarkText(const std::string& key);
 
 // A host whose key is known and differs from ours runs another game build. An empty key (a host or a master

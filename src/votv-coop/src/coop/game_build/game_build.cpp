@@ -103,7 +103,7 @@ std::string VersionText(const std::string& key) {
 
 std::string MarkText(const std::string& key) {
     if (const GB::Row* row = GB::FindByKey(key.c_str())) return row->version;
-    return "untested";
+    return "other";
 }
 
 bool DiffersFromOurs(const std::string& hostKey) { return !hostKey.empty() && hostKey != Running().id.key; }
