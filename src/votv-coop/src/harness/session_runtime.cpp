@@ -476,16 +476,15 @@ bool EndClientSession(const char* why) {
     if (coop::shutdown::IsShuttingDown()) return true;  // began during the teardown's wait
     if (fleeing) return true;                            // the flee's travel takes the player to the menu
     // The player ends at the menu, as MTA forces its main menu back after every unload
-    // (reference/mtasa-blue/Client/core/CModManager.cpp:286-289) and as a session that a flee ended is taken
-    // there: a world that is not the menu -- the host's, which the join loaded -- is left through join_leave's
-    // travel; at the menu the browser opens, now or once the menu stands. The browser is ours: MTA shows its
-    // menu only, while a menu join here starts at the browser, so the player is put back where it began. Two
-    // owners travel where MTA has one funnel (TryStop, CModManager.cpp:237-289, which RequestUnload's deferred
-    // stop and Unload's immediate one both reach, :33-47 and :119-126): our menu is a level, so
-    // the end is an asynchronous travel, which a flee makes from the session's tick on the game thread, and a
-    // timeline stop site, with no tick to make it from, through join_leave's retried ask. A degraded world
-    // reader cannot tell a world from the menu, so it moves nobody and the browser opens as at the menu
-    // (join_leave says so once).
+    // (reference/mtasa-blue/Client/core/CModManager.cpp:286-289) and as a session that a flee ended is taken there:
+    // a world that is not the menu -- the host's, which the join loaded -- is left through join_leave's travel; at
+    // the menu the browser opens, now or once the menu stands. The browser is ours: MTA shows its menu only, while
+    // a menu join here starts at the browser, so the player is put back where it began. Two owners travel where MTA
+    // has one funnel (TryStop, CModManager.cpp:237-289, reached by Unload's immediate stop, :119-126, and by
+    // RequestUnload's deferred one through DoPulsePostFrame, :33-47 and :79-111): our menu is a level, so the end
+    // is an asynchronous travel, which a flee makes from the session's tick on the game thread, and a timeline stop
+    // site, with no tick to make it from, through join_leave's retried ask. A degraded world reader cannot tell a
+    // world from the menu, so it moves nobody and the browser opens as at the menu (join_leave says so once).
     if (!harness::join_leave::BeginReturn(kind)) ui::server_browser_surface::Open();
     return true;
 }
