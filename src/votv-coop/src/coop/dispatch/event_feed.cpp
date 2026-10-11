@@ -255,7 +255,7 @@ void Update(net::Session& session, void* localPlayer) {
             }
             net::UpgradeLevelsPayload p{};
             std::memcpy(&p, msg.payload, sizeof(p));
-            coop::upgrade_sync::ApplyFromHost(p);  // no-op on the host (authoritative)
+            coop::upgrade_sync::ApplyFromHost(p);
             break;
         }
         case net::ReliableKind::BalanceSync: {
@@ -267,7 +267,7 @@ void Update(net::Session& session, void* localPlayer) {
             }
             net::BalancePayload p{};
             std::memcpy(&p, msg.payload, sizeof(p));
-            coop::balance_sync::ApplyFromHost(p.value);  // no-op on the host (authoritative)
+            coop::balance_sync::ApplyFromHost(p.value);
             break;
         }
         case net::ReliableKind::TeleportClient: {
@@ -475,7 +475,7 @@ void Update(net::Session& session, void* localPlayer) {
             if (HandleStateEvent(session, msg, localPlayer)) break;
             if (HandleSignalEvent(session, msg)) break;
             if (HandleIntentEvent(session, msg, localPlayer)) break;
-            if (HandleWorldEvent(session, msg)) break;
+            if (HandleWorldEvent(msg)) break;
             // An unknown kind (a newer protocol) is logged, not silently discarded.
             UE_LOGW("event_feed: unknown ReliableKind %u -- dropping",
                     static_cast<unsigned>(msg.kind));

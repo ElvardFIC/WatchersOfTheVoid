@@ -310,8 +310,7 @@ void Session::HandleMessage(int peerSlot, uint32_t hConn, const void* data, int 
         if (static_cast<ReliableKind>(rh.kind) == ReliableKind::SaveTransferChunk) {
             if (len < static_cast<int>(sizeof(PacketHeader) + sizeof(ReliableHeader)) + payloadLen) return;
             if (BulkSinkFn sink = bulkSink_.load(std::memory_order_acquire)) {
-                sink(peerSlot,
-                     static_cast<const uint8_t*>(data) + sizeof(PacketHeader) + sizeof(ReliableHeader),
+                sink(static_cast<const uint8_t*>(data) + sizeof(PacketHeader) + sizeof(ReliableHeader),
                      payloadLen);
             }
             return;
@@ -388,8 +387,7 @@ void Session::HandleMessage(int peerSlot, uint32_t hConn, const void* data, int 
         // Begin path (two paths for one message is what created the window).
         if (static_cast<ReliableKind>(rh.kind) == ReliableKind::SaveTransferBegin) {
             if (BulkSinkFn sink = saveBeginSink_.load(std::memory_order_acquire)) {
-                sink(peerSlot,
-                     static_cast<const uint8_t*>(data) + sizeof(PacketHeader) + sizeof(ReliableHeader),
+                sink(static_cast<const uint8_t*>(data) + sizeof(PacketHeader) + sizeof(ReliableHeader),
                      payloadLen);
             }
             return;

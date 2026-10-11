@@ -3,7 +3,7 @@
 // such line is a lane that refused nothing; the rest of a burst is summed into one line per window, so a
 // sender cannot make the log the cost. MTA bounds its unknown-event error the same way, at most one line
 // per gap (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:2696-2699); its refusal of a known
-// event a client may not trigger logs each time (:2678-2689). The per-slot
+// event a client may not trigger logs each time (:2683-2691). The per-slot
 // counts are kept for the host's per-sender budget, which no code reads yet; a refusal no budget would
 // read is logged and not counted. One thread per instance: the lanes' on the game thread, the receive edge's
 // on the net thread.

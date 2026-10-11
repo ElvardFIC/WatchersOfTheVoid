@@ -65,8 +65,7 @@ bool VerifySenderEidRange(int senderPeerSlot,
     return true;
 }
 
-bool HandleWorldEvent(net::Session& /*session*/,
-                      const net::Session::ReliableMessage& msg) {
+bool HandleWorldEvent(const net::Session::ReliableMessage& msg) {
     switch (msg.kind) {
     case net::ReliableKind::FireflySpawn: {
         // The peer-symmetric ambient firefly: any peer may originate one (each runs its own spawner
@@ -144,8 +143,8 @@ bool HandleWorldEvent(net::Session& /*session*/,
     }
     case net::ReliableKind::ServerState: {
         // The host-authoritative signal-server state, host to clients only; the client drives the
-        // real actor (a raw write of the broken flag and the reflected check). The module drops a
-        // non-host sender.
+        // real actor (a raw write of the broken flag and the reflected check). A client's copy is
+        // refused at the host's receive edge (client_authorship.h).
         if (msg.payloadLen < sizeof(net::ServerStatePayload)) {
             UE_LOGW("event_feed: ServerState payload too short (%zu < %zu)",
                     static_cast<size_t>(msg.payloadLen), sizeof(net::ServerStatePayload));
@@ -225,7 +224,7 @@ bool HandleWorldEvent(net::Session& /*session*/,
     case net::ReliableKind::RoachState: {
         // The host-authoritative roach-infestation snapshot, paged. The client assembles the pages
         // and applies by ordinal (driving location and scale, or rebuilding through the game's own
-        // add and delete). The module drops a non-host sender.
+        // add and delete). A client's copy is refused at the host's receive edge (client_authorship.h).
         if (msg.payloadLen < sizeof(net::RoachStatePayload)) {
             UE_LOGW("event_feed: RoachState payload too short (%zu < %zu)",
                     static_cast<size_t>(msg.payloadLen), sizeof(net::RoachStatePayload));

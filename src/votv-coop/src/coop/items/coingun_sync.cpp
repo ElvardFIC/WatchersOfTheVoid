@@ -464,8 +464,9 @@ void Tick() {
 
 
 void OnReliableResult(const uint8_t* payload, int len) {
-    auto* s = LoadSession();
-    if (!s) return;  // the host never gets one: a client's copy is refused at the host's receive edge (client_authorship.h)
+    // From the host alone: the host's receive edge refuses a client's copy (client_authorship.h). With the lane not
+    // installed there is nothing to apply.
+    if (!LoadSession()) return;
     if (!payload || len < static_cast<int>(sizeof(coop::net::CoinGunResultPayload))) {
         UE_LOGW("coingun[client]: CoinGunResult payload too small (len=%d) -- dropping", len);
         return;

@@ -1,6 +1,6 @@
 // coop/creatures/roach_sync.cpp -- see coop/creatures/roach_sync.h for the
 // design + the bytecode ground truth. Shapes reused: serverbox_sync (lazy
-// resolve + 1 Hz host poll + host-sender-checked client apply + connect
+// resolve + 1 Hz host poll + client apply of the host's row + connect
 // replay), prop lanes (IsLiveByIndex liveness on a tracked set).
 
 #include "coop/creatures/roach_sync.h"

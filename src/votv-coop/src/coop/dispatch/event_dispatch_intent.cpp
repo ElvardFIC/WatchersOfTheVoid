@@ -531,7 +531,8 @@ bool HandleIntentEvent(net::Session& session,
                                            static_cast<uint8_t>(msg.senderPeerSlot));
         break;
     }
-    case net::ReliableKind::PileResyncRequest:  // STAGED -- ID reserved, no handler yet
+    case net::ReliableKind::PileResyncRequest:  // STAGED -- ID reserved, no sender or handler yet; the
+                                                // host's receive edge refuses it until one is built
         UE_LOGI("event_feed: STAGED ReliableKind=%u from slot=%d -- no handler yet",
                 static_cast<unsigned>(msg.kind), msg.senderPeerSlot);
         break;

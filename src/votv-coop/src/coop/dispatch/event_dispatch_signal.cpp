@@ -41,8 +41,9 @@ bool HandleSignalEvent(net::Session& /*session*/,
                        const net::Session::ReliableMessage& msg) {
     switch (msg.kind) {
     case net::ReliableKind::SkySignalState: {
-        // HOST-authoritative sky-signal SET snapshot parts. The client-only apply, the
-        // slot-0 trust gate and part assembly live in console_state_sync::OnSkySignalState.
+        // HOST-authoritative sky-signal SET snapshot parts (a client's copy is refused at the host's
+        // receive edge). The client-only apply and part assembly live in
+        // console_state_sync::OnSkySignalState.
         if (msg.payloadLen < sizeof(net::SkySignalStatePayload)) {
             UE_LOGW("event_feed: SkySignalState payload too short (%zu < %zu)",
                     static_cast<size_t>(msg.payloadLen), sizeof(net::SkySignalStatePayload));

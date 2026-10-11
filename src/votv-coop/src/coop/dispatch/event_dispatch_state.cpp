@@ -513,13 +513,13 @@ bool HandleStateEvent(net::Session& session,
         break;
     }
     case net::ReliableKind::ServerSetting:
-        // The host's session value of one server-scope row; the module checks length, role, sender
-        // and row. coop::server_settings_sync.
+        // The host's session value of one server-scope row; the module checks length and row, and
+        // a client's copy is refused at the host's receive edge. coop::server_settings_sync.
         coop::server_settings_sync::HandleServerSetting(msg);
         break;
     case net::ReliableKind::PermissionGrants:
-        // This machine's own local dev grants, from the host; the module checks length, sender,
-        // role and count. coop::session::grants_sync.
+        // This machine's own local dev grants, from the host; the module checks length, role and
+        // count, and a client's copy is refused at the host's receive edge. coop::session::grants_sync.
         coop::session::grants_sync::HandleGrants(session, msg);
         break;
     case net::ReliableKind::StatOrder:

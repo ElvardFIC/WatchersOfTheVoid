@@ -206,7 +206,7 @@ public:
     // The bulk sink: SaveTransferChunk payloads (~56 KB, over the inbox slot) go to this callback
     // on the net thread instead of the inbox. coop/save registers its assembler at install; the
     // sink is thread-safe and never touches the engine.
-    using BulkSinkFn = void (*)(int senderPeerSlot, const uint8_t* data, int len);
+    using BulkSinkFn = void (*)(const uint8_t* data, int len);
     void SetBulkSink(BulkSinkFn sink) { bulkSink_.store(sink, std::memory_order_release); }
 
     // SaveTransferBegin goes to the same net-thread lane as the chunks, so Begin is always

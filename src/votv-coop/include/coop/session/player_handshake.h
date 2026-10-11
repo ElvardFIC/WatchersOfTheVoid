@@ -148,8 +148,9 @@ bool HandleJoinMessage(coop::net::Session& session,
                        const coop::net::Session::ReliableMessage& msg);
 
 // Handle a delivered AssignPeerSlot: stamps the client's slot and binds the host's mirror
-// Player Element when the host element id is present and valid. Dropped on the host, which
-// self-assigns. True when recognised; false on a short payload.
+// Player Element when the host element id is present and valid. The host self-assigns and refuses a
+// client's copy at its receive edge (client_authorship.h). True when recognised; false on a short
+// payload.
 bool HandleAssignPeerSlot(coop::net::Session& session,
                           const coop::net::Session::ReliableMessage& msg);
 
@@ -164,7 +165,8 @@ void BroadcastRosterFromHost(coop::net::Session& session,
 
 // Client-side handling of a PlayerJoined describing a third peer: range-validates the eid,
 // binds the peer's mirror Player Element and caches its nickname, so the puppet spawned later
-// on the first relayed pose is born identified. Dropped on the host, which originates these.
+// on the first relayed pose is born identified. The host originates these and refuses a client's copy at
+// its receive edge (client_authorship.h).
 // True when recognised; false on a short payload.
 bool HandleRosterRow(coop::net::Session& session,
                         const coop::net::Session::ReliableMessage& msg);

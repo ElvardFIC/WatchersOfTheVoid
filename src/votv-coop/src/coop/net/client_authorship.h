@@ -7,6 +7,9 @@
 // lane and relay tables because our kinds are the protocol's fixed enum rather than runtime registrations: the
 // host's receive edge (session_receive.cpp) drops a Host kind, or a byte that names no kind, from a seated
 // client before it is inboxed or relayed.
+// Only the host asks the table. A Host kind reaches a client from the host alone: the host relays only Client kinds
+// (session_receive.cpp asserts it) and sends a Host kind under its own slot 0, so a client's handlers keep
+// no sender check of their own.
 #pragma once
 
 // Every enumerator is named below, and .github/ci/reliablekind_gate.py fails the build when one is missing,
@@ -14,11 +17,14 @@
 // A new kind is Host or Client from its first commit.
 //   Client     -- an honest client sends it to the host (its sending path read).
 //   Host       -- no client may author it: its handler refused a non-host sender by name before this table
-//                 moved the refusal here, or its only senders are the host's.
+//                 moved the refusal here, its only senders are the host's, or no one sends it yet (as MTA
+//                 refuses an event until it is registered; a client sender, when built, moves its row to
+//                 Client).
 //   Unverified -- accepted from a client as before, with no evidence yet either way; each moves to a row
-//                 above. A divergence from MTA, whose flag defaults to false: these kinds stay accepted until
-//                 read, because a census of the senders proved wrong once (a client-sent kind listed
-//                 host-only), and a wrong Host row ends a lane for every client.
+//                 above. A divergence from MTA, whose remote-trigger flag defaults to false (addEvent,
+//                 reference/mtasa-blue/Server/mods/deathmatch/logic/luadefs/CLuaFunctionDefs.Event.cpp:26,31):
+//                 these kinds stay accepted until read, because a census of the senders proved wrong once (a
+//                 client-sent kind listed host-only), and a wrong Host row ends a lane for every client.
 
 #include "coop/net/protocol.h"  // ReliableKind
 

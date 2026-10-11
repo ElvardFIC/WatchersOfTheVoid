@@ -39,9 +39,10 @@ WHAT IT HOLDS -- these FAIL the build:
      parser cannot read, or any file it cannot open. It fails CLOSED: a gate that cannot
      read its subject must not return PASS.
 
-  5. The receive edge no longer asking the authorship table, or the table (`client_authorship.h`, which the
-     host's receive edge reads to refuse a kind a
-     client may not author) out of step with the enum: an enumerator with no row, a row named twice, a row
+  5. The receive edge no longer asking the authorship table, or no longer refusing Host and NotAKind with a
+     return before the save-transfer diversion and the inbox; or the table (`client_authorship.h`, which
+     the host's receive edge reads to refuse a kind a client may not author) out of step with the enum: an
+     enumerator with no row, a row named twice, a row that is not Client, Host or Unverified, a row
      for a name that is not a kind, a relayable kind that is not Client (the edge would refuse what the relay
      forwards), or an Unverified kind not listed in `reliablekind_unverified.txt` beside this file -- a list
      that only shrinks: a listed kind that is no longer Unverified fails until its line is removed. So a new
@@ -80,6 +81,8 @@ UNVERIFIED = pathlib.Path(__file__).resolve().parent / "reliablekind_unverified.
 UNVERIFIED_KEY = "<reliablekind_unverified.txt>"
 # The receive edge's question, which is the only reason the table matters.
 EDGE_READS_TABLE = re.compile(r"AuthorshipOf\(\s*static_cast<ReliableKind>\(\s*rh\.kind\s*\)\s*\)")
+# What a kind's row may say; NotAKind is the fallback for a byte that names no kind, never a row.
+ROW_VALUES = ("Client", "Host", "Unverified")
 
 # The five family dispatchers. Each Handle*Event returns true iff msg.kind is in its
 # family, so its own switch IS the membership declaration (SyncRouter consolidation,
@@ -217,6 +220,27 @@ def read_tree() -> dict:
     except OSError:
         tree[UNVERIFIED_KEY] = None
     return tree
+
+
+def edge_findings(src: str) -> list:
+    """The receive edge, comment-stripped: it asks the table, refuses Host and NotAKind with a return, and
+    does so before the save-transfer diversion and the inbox."""
+    m = EDGE_READS_TABLE.search(src)
+    if not m:
+        return [f"{SESSION} no longer asks AuthorshipOf about a received kind: the table below would "
+                f"refuse nothing, however complete it is."]
+    after = [src.find(tok, m.end()) for tok in ("ReliableKind::SaveTransferChunk", "reliableInbox_.emplace_back")]
+    if min(after) < 0:
+        return [f"{SESSION}: the AuthorshipOf check no longer precedes the save-transfer diversion and the "
+                f"inbox, so a refused kind would be acted on first."]
+    seg = src[m.end():min(after)]
+    out = [f"{SESSION}: the edge no longer refuses {tok} (between the AuthorshipOf call and the "
+           f"save-transfer diversion)." for tok in ("ClientAuthorship::Host", "ClientAuthorship::NotAKind")
+           if tok not in seg]
+    if not re.search(r"\breturn\s*;", seg):
+        out.append(f"{SESSION}: the edge no longer returns on a refusal, so a refused kind goes on to the "
+                   f"inbox and the relay.")
+    return out
 
 
 def parse_authorship(text: str):
@@ -364,9 +388,7 @@ def check(tree: dict):
                              f"these files name these kinds in unrelated places.")
 
     # --- check 5: the authorship table is total and in step ------------------------
-    if not EDGE_READS_TABLE.search(strip_comments(tree[SESSION])):
-        fails.append(f"{SESSION} no longer asks AuthorshipOf about a received kind: the table below would "
-                     f"refuse nothing, however complete it is.")
+    fails.extend(edge_findings(strip_comments(tree[SESSION])))
     rows = parse_authorship(tree[AUTH])
     if rows is None:
         fails.append(f"{AUTH}: no AuthorshipOf switch found -- the receive edge's table cannot be checked.")
@@ -382,6 +404,10 @@ def check(tree: dict):
                              f"(Client) or not (Host). A kind with no row is refused at the host's edge.")
             elif len(seen[k]) > 1:
                 fails.append(f"{k} = {idof(k)} is named {len(seen[k])} times in {AUTH}.")
+        for k, rs in sorted(seen.items()):
+            if rs[0] not in ROW_VALUES:
+                fails.append(f"{k}'s row in {AUTH} is {rs[0]}; a kind's row is one of "
+                             f"{', '.join(ROW_VALUES)}.")
         relay = parse_lane_switches(tree[LANES])["relay"]
         for k in sorted(relay):
             if k in seen and seen[k][0] != "Client":
@@ -538,7 +564,7 @@ def drill() -> int:
 
     # 3. a family stops being chained: every case label survives, the call does not.
     t = dict(base)
-    t[FEED_FILE] = t[FEED_FILE].replace("if (HandleWorldEvent(session, msg)) break;", "", 1)
+    t[FEED_FILE] = t[FEED_FILE].replace("if (HandleWorldEvent(msg)) break;", "", 1)
     controls.append(("a family dispatcher no longer chained", t,
                      "HandleWorldEvent is defined in"))
 
@@ -576,6 +602,20 @@ def drill() -> int:
     t = dict(base)
     t[SESSION] = t[SESSION].replace("AuthorshipOf(static_cast<ReliableKind>(rh.kind))", "ClientAuthorship::Client", 1)
     controls.append(("the receive edge no longer reads the table", t, "no longer asks AuthorshipOf"))
+    t = dict(base)
+    t[SESSION] = t[SESSION].replace("RefusalTally::Clock::now());\n                }\n                return;\n",
+                                    "RefusalTally::Clock::now());\n                }\n", 1)
+    controls.append(("the receive edge no longer returns on a refusal", t, "no longer returns on a refusal"))
+    t = dict(base)
+    t[SESSION] = t[SESSION].replace("who == ClientAuthorship::NotAKind", "false", 1)
+    controls.append(("the receive edge accepts a byte naming no kind", t,
+                     "no longer refuses ClientAuthorship::NotAKind"))
+    t = dict(base)
+    t[AUTH] = t[AUTH].replace(row("ChatMessage"), "", 1).replace(
+        "        return ClientAuthorship::Unverified;\n    }\n",
+        "        return ClientAuthorship::Unverified;\n" + row("ChatMessage")
+        + "        return ClientAuthorship::NotAKind;\n    }\n", 1)
+    controls.append(("a kind's row is NotAKind", t, "ChatMessage's row in"))
     t = dict(base)
     t[UNVERIFIED_KEY] = (t[UNVERIFIED_KEY] or "") + "PropSpawn\n"
     controls.append(("a baseline line for a kind that is not Unverified", t,

@@ -343,8 +343,7 @@ void SendCurrentToSlot(int slot) {
 }
 
 void ApplyFromHost(const coop::net::UpgradeLevelsPayload& payload) {
-    auto* s = g_session.load(std::memory_order_acquire);
-    if (s && s->role() == coop::net::Role::Host) return;  // authoritative
+    // From the host alone: the host's receive edge refuses a client's copy (client_authorship.h).
     g_pendingApply = payload;
     g_havePendingApply = true;
     g_pendingGen = ue_wrap::world_identity::Generation();  // the world it was sent for

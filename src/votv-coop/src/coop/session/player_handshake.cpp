@@ -516,19 +516,7 @@ bool HandleAssignPeerSlot(net::Session& session,
     }
     net::AssignPeerSlotPayload p{};
     std::memcpy(&p, msg.payload, sizeof(p));
-    // Only the host sends this; rejected on the host.
-    if (session.role() == net::Role::Host) {
-        UE_LOGW("player_handshake: AssignPeerSlot received on host -- dropping "
-                "(host self-assigns slot 0; no inbound from client)");
-        return true;
-    }
-    // The sender must be the host connection, independent of the relay topology.
-    if (msg.senderPeerSlot != 0) {
-        UE_LOGW("player_handshake: AssignPeerSlot from non-host "
-                "senderPeerSlot=%d -- dropping",
-                msg.senderPeerSlot);
-        return true;
-    }
+    // Only the host sends this: the host's receive edge refuses a client's copy (client_authorship.h).
     // A valid client slot; slot 0 is the host's own.
     if (p.slot < 1 || p.slot >= net::kMaxPeers) {
         UE_LOGW("player_handshake: AssignPeerSlot slot=%u out of range [1..%u) -- dropping",
