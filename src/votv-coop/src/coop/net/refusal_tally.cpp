@@ -12,16 +12,9 @@ const char* LeftMark(bool left) { return left ? " (the sender has left)" : ""; }
 
 }  // namespace
 
-void RefusalTally::Note(std::uint8_t slot, const char* why, Clock::time_point now) {
-    if (slot < bySlot_.size()) ++bySlot_[slot];
-    Log(slot, false, why, now);
-}
-
-void RefusalTally::NoteFromLeaver(std::uint8_t slot, const char* why, Clock::time_point now) {
-    Log(slot, true, why, now);
-}
-
-void RefusalTally::Log(std::uint8_t slot, bool left, const char* why, Clock::time_point now) {
+void RefusalTally::Note(std::uint8_t slot, Charge charge, const char* why, Clock::time_point now) {
+    if (charge == Charge::Sender && slot < bySlot_.size()) ++bySlot_[slot];
+    const bool left = charge == Charge::Leaver;
     if (open_ && now - openedAt_ < kWindow) {
         ++more_;
         lastSlot_ = slot;

@@ -3,7 +3,8 @@
 // such line is a lane that refused nothing; the rest of a burst is summed into one line per window, so a
 // sender cannot make the log the cost. MTA bounds its own invalid-event error the same way, at most one
 // line per gap (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:2696-2699). The per-slot
-// counts are what a per-sender budget reads. Game thread.
+// counts are what the host's per-sender budget reads; a refusal no budget reads is logged and not
+// counted. Game thread.
 #pragma once
 
 #include "coop/player/players_registry.h"  // kMaxPeers
@@ -22,11 +23,15 @@ public:
     // `lane` names the lane in every line ("signal_sync"); a static string.
     explicit RefusalTally(const char* lane) : lane_(lane) {}
 
+    // Whom one refusal is counted against.
+    enum class Charge : std::uint8_t {
+        Sender,  // the slot's occupant, which sent the row
+        Leaver,  // a sender that has left the slot since: logged as such, counted for no one
+        None,    // a row no budget reads: logged, not counted
+    };
+
     // One refusal of a row from `slot`, for the reason `why` (a static string).
-    void Note(std::uint8_t slot, const char* why, Clock::time_point now);
-    // A refusal of a row whose sender has since left `slot`: logged like any other, counted for no
-    // one, since the slot's next occupant did not send it.
-    void NoteFromLeaver(std::uint8_t slot, const char* why, Clock::time_point now);
+    void Note(std::uint8_t slot, Charge charge, const char* why, Clock::time_point now);
     // Closes a window past its span: the burst's summed line, if more than its first refusal came.
     // Cheap when no window is open; call it from the lane's tick.
     void Flush(Clock::time_point now);
@@ -40,8 +45,6 @@ public:
     void Clear();
 
 private:
-    void Log(std::uint8_t slot, bool left, const char* why, Clock::time_point now);
-
     const char* lane_;
     std::array<std::uint32_t, coop::players::kMaxPeers> bySlot_{};
     bool open_ = false;

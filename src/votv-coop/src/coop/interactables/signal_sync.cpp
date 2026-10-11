@@ -75,23 +75,30 @@ constexpr size_t kParkCap = 256;
 
 coop::net::RefusalTally g_refusals{"signal_sync"};
 
+bool IsHostRole() {
+    auto* s = g_session.load(std::memory_order_acquire);
+    return s && s->role() == coop::net::Role::Host;
+}
+
+// The slot's occupancy generation (Session::peerGenerationForSlot), minted by the host at each admit;
+// 0 on a client, and on the host for an empty slot.
 uint32_t SlotGeneration(uint8_t slot) {
     auto* s = g_session.load(std::memory_order_acquire);
     return s ? s->peerGenerationForSlot(slot) : 0;
 }
 
-// A refusal is counted against the row's sender while it still holds the slot. A row parked across
-// its sender's leave is refused all the same and counted for no one: the slot's next occupant did
-// not send it. The leaver's rows still apply, since a row delivered before the leave is world state
-// the rest of the session may already hold.
+// The count is the host's per-sender budget input, so it is kept on the host and against the sender
+// alone: while the occupancy that sent the row still holds the slot. A row parked across its sender's
+// leave, or completed after it, is refused all the same and counted for no one, since the slot's next
+// occupant did not send it; it still applies when the game takes it, being world state the host saves
+// and has relayed at receipt. A client counts nothing: every row it gets comes through the host, and
+// bounds are for clients, never the host.
 void NoteRefusal(uint8_t slot, uint32_t senderGen, const char* why) {
-    if (SlotGeneration(slot) == senderGen) g_refusals.Note(slot, why, Clock::now());
-    else g_refusals.NoteFromLeaver(slot, why, Clock::now());
-}
-
-bool IsHostRole() {
-    auto* s = g_session.load(std::memory_order_acquire);
-    return s && s->role() == coop::net::Role::Host;
+    using Charge = coop::net::RefusalTally::Charge;
+    const Charge charge = !IsHostRole()                                     ? Charge::None
+                        : senderGen != 0 && SlotGeneration(slot) == senderGen ? Charge::Sender
+                                                                              : Charge::Leaver;
+    g_refusals.Note(slot, charge, why, Clock::now());
 }
 // The client lane is mute until its own world-ready announce: a pre-ready client line reaching
 // the host before the flip rides the seed back as a duplicate. The host is always ready.
