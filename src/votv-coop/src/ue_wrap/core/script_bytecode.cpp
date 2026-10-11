@@ -21,7 +21,7 @@ enum Kind : uint8_t {
     kNone = 0, kExpr, kList, kObj, kProp, kName, kI32, kCode, kSkip, kU8, kU16, kBool, kI64, kU64, kF32, kF64,
     kStr, kWStr, kCount,
 };
-enum Special : uint8_t { sTable = 0, sText, sSwitch, sCast, sFloats3, sTransform };
+enum Special : uint8_t { sTable = 0, sText, sSwitch, sCast, sFloats3, sTransform, sInstrumentation };
 
 struct Op {
     const char* name = nullptr;  // without EX_; null = not an opcode
@@ -134,6 +134,7 @@ const Op* Table() {
     set(0x67, "SoftObjectConst", {kExpr});
     set(0x68, "CallMath", {kObj, kList}, sTable, kParms);
     set(0x69, "SwitchValue", {}, sSwitch);
+    set(0x6A, "InstrumentationEvent", {}, sInstrumentation);
     set(0x6B, "ArrayGetByRef", {kExpr, kExpr});
     set(0x6C, "ClassSparseDataVariable", {kProp});
     set(0x6D, "FieldPathConst", {kExpr});
@@ -282,6 +283,8 @@ struct Walker {
     const std::unordered_map<uint32_t, int>* labels = nullptr;
     uint32_t (*resolve)(const void*, uint32_t) = nullptr;
     const void* resolveCtx = nullptr;
+    int depth = 0;  // expressions open around the one being read
+    static constexpr int kMaxNesting = 256;
 
     bool Need(size_t k) {
         if (pos + k > n) {
@@ -417,6 +420,17 @@ struct Walker {
 
     bool Expr() {
         if (!Need(1)) return false;
+        // A compiled Blueprint nests a few dozen deep; a script deeper than this is corrupt, and the
+        // recursion must not run the stack out reading it.
+        if (depth >= kMaxNesting) {
+            c.Fail("expressions nest too deep", pos);
+            return false;
+        }
+        struct Nest {
+            int& d;
+            explicit Nest(int& x) : d(x) { ++d; }
+            ~Nest() { --d; }
+        } nest(depth);
         const size_t at = pos;
         const uint8_t code = s[pos++];
         const Op& op = Table()[code];
@@ -426,6 +440,20 @@ struct Walker {
         }
         Emit(op.name);
         switch (op.special) {
+        case sInstrumentation: {
+            // the event type, and for an inline event (4) the event's name (UAssetAPI's EX_InstrumentationEvent)
+            uint8_t type;
+            if (!Take(type)) return false;
+            Emit("(b:" + std::to_string(type));
+            if (type == 4) {
+                int32_t ci = 0, di = 0;
+                uint32_t num = 0;
+                if (!Take(ci) || !Take(di) || !Take(num)) return false;
+                if (render) Emit(",n:" + c.names->Of(ci, num));
+            }
+            Emit(")");
+            return true;
+        }
         case sFloats3:
         case sTransform: {
             const int count = op.special == sTransform ? 10 : 3;

@@ -4,6 +4,7 @@
 #include "ue_wrap/core/script_fingerprint.h"
 
 #include "script_bytecode.h"
+#include "ue_wrap/core/hot_path_guard.h"
 #include "ue_wrap/core/sdk_profile.h"
 
 #include <windows.h>
@@ -166,9 +167,11 @@ std::string SigLine(Ctx& c, void* fn) {
 
 // ---- the pass cache ----
 
-// An ubergraph's decoded statements, kept for a census pass: every event stub of a class follows the same
-// ubergraph, and mainPlayer_C's is decoded once instead of once per stub. Keyed on the script's address
-// and size; a pass is a few seconds of one world. Game thread.
+// A script's decoded statements, kept for a census pass: every event stub of a class follows the same
+// ubergraph, so mainPlayer_C's is decoded once instead of once per stub, and the stubs an ubergraph row
+// reads to find its entries are not decoded again when their own rows come. Keyed on the script's address
+// and size; the census begins a new pass when a class loads or unloads, so a key cannot outlive its script.
+// Game thread.
 struct PassCache {
     std::unordered_map<const uint8_t*, std::pair<size_t, Decoded>> scans;
     NameCache names;  // every fingerprint of the pass renders a name once
@@ -176,7 +179,7 @@ struct PassCache {
 };
 PassCache* g_pass = nullptr;
 
-const Decoded* DecodeUbergraph(Ctx& c, const uint8_t* s, size_t n, Decoded& local) {
+const Decoded* DecodeCached(Ctx& c, const uint8_t* s, size_t n, Decoded& local) {
     if (g_pass) {
         auto it = g_pass->scans.find(s);
         if (it != g_pass->scans.end() && it->second.first == n) return &it->second.second;
@@ -203,8 +206,7 @@ void Build(void* fn, Result& r, Ctx& c) {
     if (!s || n <= 0) return;  // a delegate signature or an empty function: its signature is all there is
     Decoded own;
     const bool uber = IsUbergraph(c, fn);
-    const Decoded* decoded =
-        uber ? DecodeUbergraph(c, s, static_cast<size_t>(n), own) : (Decode(c, s, static_cast<size_t>(n), own) ? &own : nullptr);
+    const Decoded* decoded = DecodeCached(c, s, static_cast<size_t>(n), own);
     if (!decoded) return;
     const std::vector<Stmt>& stmts = decoded->stmts;
     if (uber) {
@@ -217,10 +219,17 @@ void Build(void* fn, Result& r, Ctx& c) {
             const uint8_t* ss = Rd<const uint8_t*>(f, P::off::UStruct_Script);
             const int32_t sn = Rd<int32_t>(f, P::off::UStruct_ScriptNum);
             if (!ss || sn <= 0 || f == fn) continue;
-            std::vector<Stmt> st;
-            Ctx probe;  // a stub that does not decode is not an entry, and not this function's problem
-            if (!Scan(probe, ss, static_cast<size_t>(sn), st)) continue;
-            for (const Stmt& x : st)
+            // A function of the class that does not decode may be a stub, and a stub left out is a region
+            // left out: the ubergraph's text would be short and still read as whole.
+            Ctx probe;  // its own frame map and problem; the pass's names
+            probe.names = c.names;
+            Decoded probeOwn;
+            const Decoded* pd = DecodeCached(probe, ss, static_cast<size_t>(sn), probeOwn);
+            if (!pd) {
+                c.Fail("a function of the ubergraph's class does not decode", 0);
+                return;
+            }
+            for (const Stmt& x : pd->stmts)
                 if (x.uberFn == fn) {
                     const R::FName& nm = R::NameOf(f);
                     entries.emplace_back(c.names->Of(nm.ComparisonIndex, static_cast<uint32_t>(nm.Number)), x.uberEntry);
@@ -240,7 +249,7 @@ void Build(void* fn, Result& r, Ctx& c) {
         const uint8_t* us = Rd<const uint8_t*>(st.uberFn, P::off::UStruct_Script);
         const int32_t un = Rd<int32_t>(st.uberFn, P::off::UStruct_ScriptNum);
         Decoded local;
-        const Decoded* ust = us && un > 0 ? DecodeUbergraph(c, us, static_cast<size_t>(un), local) : nullptr;
+        const Decoded* ust = us && un > 0 ? DecodeCached(c, us, static_cast<size_t>(un), local) : nullptr;
         if (!ust) {
             c.Fail("ubergraph does not decode", 0);
             return;
@@ -250,11 +259,17 @@ void Build(void* fn, Result& r, Ctx& c) {
     }
 }
 
+// A read fault is absorbed: the function reads as undecodable. A stack overflow is passed on: the guard page
+// is gone, and the engine would run on an exhausted stack (script_gate's frames make the same choice).
+int ReadFaultFilter(unsigned long code) {
+    return code == EXCEPTION_STACK_OVERFLOW ? EXCEPTION_CONTINUE_SEARCH : EXCEPTION_EXECUTE_HANDLER;
+}
+
 int BuildSEH(void* fn, Result* r, Ctx* c) {
     __try {
         Build(fn, *r, *c);
         return 0;
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
+    } __except (ReadFaultFilter(GetExceptionCode())) {
         return 1;
     }
 }
@@ -265,7 +280,7 @@ int SignatureSEH(void* fn, Result* r, Ctx* c) {
     __try {
         SignatureLine(fn, *r, *c);
         return 0;
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
+    } __except (ReadFaultFilter(GetExceptionCode())) {
         return 1;
     }
 }
@@ -273,6 +288,7 @@ int SignatureSEH(void* fn, Result* r, Ctx* c) {
 }  // namespace
 
 Result SignatureOf(void* ufunction) {
+    UE_ASSERT_GAME_THREAD("script_fingerprint::SignatureOf");
     Result r;
     Ctx c;
     if (g_pass) c.names = &g_pass->names;
@@ -287,22 +303,26 @@ Result SignatureOf(void* ufunction) {
 }
 
 void BeginPass() {
+    UE_ASSERT_GAME_THREAD("script_fingerprint::BeginPass");
     delete g_pass;
     g_pass = new PassCache;
 }
 
 void EndPass() {
+    UE_ASSERT_GAME_THREAD("script_fingerprint::EndPass");
     delete g_pass;
     g_pass = nullptr;
 }
 
 std::string PathOf(void* uobject) {
+    UE_ASSERT_GAME_THREAD("script_fingerprint::PathOf");
     Ctx c;
     if (g_pass) c.names = &g_pass->names;
     return uobject ? ObjPath(c, uobject) : std::string();
 }
 
 Result Of(void* ufunction) {
+    UE_ASSERT_GAME_THREAD("script_fingerprint::Of");
     Result r;
     if (!ufunction) {
         r.problem = "null function";
