@@ -196,6 +196,7 @@ std::unordered_set<std::string>   g_anyWanted;     // the any-class rows' names,
 std::unordered_map<int32_t, bool> g_anyNames;      // a function name's comparison index -> wanted (rendered once)
 std::vector<size_t>               g_anyLoading;    // class-log positions met while their class was loading
 size_t                            g_anyLogNext = 0;   // the next class-log position to read
+size_t                            g_anyGone = 0;      // listed classes gone before they were met (loaded and dropped)
 void*                             g_fnClasses[2] = {};  // Function and DelegateFunction, native
 bool                              g_anyMet = false;   // this pass has met the classes listed before it began
 
@@ -235,6 +236,7 @@ bool MeetNewClasses(Clock::time_point deadline) {
             continue;
         }
         if (cls) MeetFunctionsOf(cls);
+        else ++g_anyGone;
         g_anyLoading[k] = g_anyLoading.back();
         g_anyLoading.pop_back();
     }
@@ -243,7 +245,10 @@ bool MeetNewClasses(Clock::time_point deadline) {
         if ((i & 63) == 0 && Clock::now() >= deadline) return false;
         bool loaded = false;
         void* cls = OI::ClassLogAt(g_anyLogNext, &loaded);
-        if (!cls) continue;  // gone since it was listed, and its functions with it
+        if (!cls) {
+            ++g_anyGone;  // gone since it was listed, and its functions with it
+            continue;
+        }
         if (!loaded) {
             g_anyLoading.push_back(g_anyLogNext);
             continue;
@@ -258,6 +263,7 @@ void ResetAnySubjects() {
     g_anySubjects.clear();
     g_anyLoading.clear();
     g_anyLogNext = 0;
+    g_anyGone = 0;
 }
 
 // The maps hold every function name met: kept while an any-class row is still checked as classes load.
@@ -479,6 +485,16 @@ void Report(bool log) {
         top += b;
     }
     UE_LOGI("fingerprint-census: costliest rows: %s", top.c_str());
+    // What the any-class rows have met: an unchecked one reads against this.
+    std::string loading;
+    for (size_t k = 0; k < g_anyLoading.size() && k < 5; ++k) {
+        bool loaded = false;
+        if (void* cls = OI::ClassLogAt(g_anyLoading[k], &loaded)) loading += (k ? ", " : " (") + Narrow(R::ToString(R::NameOf(cls)).c_str());
+    }
+    if (!loading.empty()) loading += ")";
+    UE_LOGI("fingerprint-census: %zu of %zu listed class(es) met for the any-class rows, %zu gone before they were "
+            "met, %zu still loading%s", g_anyLogNext - g_anyLoading.size() - g_anyGone, OI::ClassLogSize(), g_anyGone,
+            g_anyLoading.size(), loading.c_str());
     if (problems) {
         UE_LOGW("%s -- DEGRADED: the game differs from the build this mod was made for", sum);
     } else {
