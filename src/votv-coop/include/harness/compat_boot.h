@@ -5,7 +5,7 @@
 //
 // Two writes on the boot thread, both before anything of ours runs on the game thread: the first before the
 // health check, so a boot that crashes or stands down still leaves a report whose first line names the build,
-// and the second once the health check has decided (docs/VERSION_PORT_DRILL_ARC.md 8.3). After them the game
+// and the second once the health check has decided (docs/versioning.md, "Which game is running"). After them the game
 // thread is the report's only writer -- the engine section's refresh here and the world checks
 // (harness/sdk_check, harness/fingerprint_census) replacing their pending lines -- so no two writers' sequences
 // interleave.

@@ -14,6 +14,9 @@ fn latest_games_parse_keeps_good_entries_and_names_bad_ones() {
     assert_eq!(games[0], LatestGame { game: "0.9.0n".into(), proto: 221, tag: "0.9.0n b221".into() });
     assert_eq!(games[1].game, "0.10.0");
     assert_eq!(refused, vec!["garbage".to_string(), "0.9.0n:0:x".to_string(), "0.9.0n:5:a:b".to_string()]);
+    let (dup, refused_dup) = parse_latest_games("0.9.0n:221:a,0.9.0n:222:b");
+    assert_eq!(dup.len(), 1, "a game named twice keeps its first entry");
+    assert_eq!(refused_dup, vec!["0.9.0n:222:b".to_string()]);
     let (none, refused_none) = parse_latest_games("");
     assert!(none.is_empty() && refused_none.is_empty());
 }

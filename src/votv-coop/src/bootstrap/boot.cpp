@@ -137,7 +137,7 @@ std::wstring BuildsSentence() {
 
 // The stand-down: the mod cannot run safely on this game, found before anything was hooked. Said on the
 // loader's own Win32 modal, never an overlay this path must not install; it names both builds, the one
-// the mod is made for and the one running (docs/VERSION_PORT_DRILL_ARC.md system 4 (b)).
+// the mod is made for and the one running (docs/versioning.md, "Which game is running").
 void StandDownUnsupportedBuild() {
     ue_wrap::log::Flush();
     bootstrap::ShowRefuseDialog(

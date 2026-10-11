@@ -97,7 +97,12 @@ bool ReadPakHashOnce(uint8_t out[kPakHashBytes], const char** problem, bool* tra
     uint8_t tail[kTailBytes] = {};
     LARGE_INTEGER size{};
     DWORD got = 0;
-    bool read = ::GetFileSizeEx(h, &size) && size.QuadPart >= static_cast<LONGLONG>(kTailBytes);
+    bool read = ::GetFileSizeEx(h, &size) != 0;
+    if (read && size.QuadPart < static_cast<LONGLONG>(kTailBytes)) {
+        ::CloseHandle(h);
+        *problem = "the main pak is too short to hold a footer";
+        return false;
+    }
     if (read) {
         LARGE_INTEGER at{};
         at.QuadPart = size.QuadPart - static_cast<LONGLONG>(kTailBytes);
@@ -221,8 +226,17 @@ const Row* FindById(const char* id) {
 
 const Row* FindByKey(const char* key) {
     if (!key) return nullptr;
-    for (const Row& row : kRows)
-        if (std::strcmp(IdentityOf(row).key, key) == 0) return &row;
+    // Each row's key, composed once: the browser asks for every listed host whose build differs.
+    struct Keys {
+        char key[sizeof kRows / sizeof kRows[0]][kKeyMax + 1];
+        Keys() {
+            for (size_t i = 0; i < sizeof kRows / sizeof kRows[0]; ++i)
+                std::memcpy(key[i], IdentityOf(kRows[i]).key, kKeyMax + 1);
+        }
+    };
+    static const Keys keys;
+    for (size_t i = 0; i < sizeof kRows / sizeof kRows[0]; ++i)
+        if (std::strcmp(keys.key[i], key) == 0) return &kRows[i];
     return nullptr;
 }
 
@@ -259,7 +273,7 @@ bool RunSelftest() {
         }
     };
 
-    // A synthetic v11 footer: the parse finds the hash at its place, and refuses another magic or version.
+    // A synthetic version-11 footer: the parse finds the hash at its place, and refuses another magic or version.
     uint8_t tail[kTailBytes] = {};
     const uint32_t magic = kPakMagic, version = kPakVersion;
     std::memcpy(tail + kTailBytes - kMagicFromEnd, &magic, 4);

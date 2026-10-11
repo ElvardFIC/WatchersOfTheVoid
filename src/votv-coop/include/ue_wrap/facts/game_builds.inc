@@ -9,7 +9,7 @@
 //   hash     FPakInfo::IndexHash of Content/Paks/VotV-WindowsNoEditor.pak, 40 lowercase hex
 //
 // A new build is a row: boot the mod on it and copy the two values from its `game-build:` log line
-// (docs/GAME_UPDATE_RUNBOOK.md section 7). Position orders the builds, so a row goes where its release
+// (docs/versioning.md, the retarget's identity step). Position orders the builds, so a row goes where its release
 // falls. The Patreon early build is a row so the rig can prove the known-newer path on real bytes; its hashes
 // disclose nothing beyond a build its developers announced. Included by ue_wrap/core/game_build.cpp only.
 

@@ -256,7 +256,7 @@ LatestInfo LobbyClient::FetchLatest(const std::string& masterUrl, int timeoutMs)
     info.mod   = J::StrN(j, "mod", 24);
     // `url` is served by the master and deliberately not parsed; see LatestInfo's header. Ignoring
     // an extra response field is forward-compatible, so it needs no wire-format change.
-    // `games`: the newest release per game version, capped as the master caps it (a master's bytes are a peer's).
+    // `games`: the newest release per game version, at most 16 and each field capped (a master's bytes are a peer's).
     const auto git = j.find("games");
     if (git != j.cend() && git->is_array()) {
         info.hasGames = true;

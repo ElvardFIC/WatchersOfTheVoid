@@ -33,6 +33,11 @@ namespace GB = coop::game_build;
 std::atomic<bool> g_open{false};
 // [dev] game_build_dialog_continue: the first frame drawn answers Continue through the button's own handler.
 std::atomic<bool> g_autoContinue{false};
+// The body, composed on the first frame drawn: the catalogue is loaded by then and never changes in a session.
+// Render thread only.
+std::string g_body;
+// One page-open in flight: a second click while the browser starts opens nothing more.
+std::atomic<bool> g_opening{false};
 
 void Continue() {
     GB::Acknowledge();
@@ -43,6 +48,7 @@ void Continue() {
 // The releases page, on a worker of its own: a browser's start can take a moment, and the frame that drew the
 // button must not wait for it. ShellExecute wants COM initialized on its thread, apartment-threaded.
 void OpenReleasesPage() {
+    if (g_opening.exchange(true, std::memory_order_acq_rel)) return;
     std::thread([] {
         const std::string url = std::string("https://") + coop::net::kReleasesUrl;
         const std::wstring wurl(url.begin(), url.end());  // ASCII
@@ -55,6 +61,7 @@ void OpenReleasesPage() {
                     static_cast<long long>(r));
         else
             UE_LOGI("game_build_dialog: opened %s", url.c_str());
+        g_opening.store(false, std::memory_order_release);
     }).detach();
 }
 
@@ -153,7 +160,8 @@ void Render() {
         ImGui::Separator();
         ImGui::Spacing();
         ImGui::PushTextWrapPos(S(460.0f));
-        ImGui::TextWrapped("%s", Body().c_str());
+        if (g_body.empty()) g_body = Body();
+        ImGui::TextWrapped("%s", g_body.c_str());
         ImGui::Spacing();
         ImGui::TextDisabled(
             "%s", l10n::T("You can play anyway. This message will not show again for this game version."));

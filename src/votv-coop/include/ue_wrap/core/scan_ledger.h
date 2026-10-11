@@ -6,7 +6,7 @@
 // Each site records its outcome once, where it decides today; nothing here searches, and nothing here says
 // what a miss costs -- that is the report writer's (harness/compat_boot), so the engine layer holds no
 // feature policy (principle 7). The report lists every row: found, missed, or not tried yet, so a miss is
-// never only a log line (docs/VERSION_PORT_DRILL_ARC.md system 5). Not every row is tried in every session:
+// never only a log line (docs/versioning.md, "Which game is running"). Not every row is tried in every session:
 // the save hook is armed with a multiplayer session's subsystems, so a solo world never tries it.
 //
 // Any thread, lock-free and log-free: the loader's call records too (actor_end_play and script_gate patch

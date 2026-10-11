@@ -88,8 +88,10 @@ bool ExtractJoinVersionFields(const uint8_t* payload, size_t len,
     if (off + 1 > len) return false;
     const size_t k = payload[off];
     if (off + 1 + k > len || k > ue_wrap::game_build::kKeyMax) return false;
-    outGameBuild->assign(reinterpret_cast<const char*>(payload + off + 1), k);
-    return coop::game_build::KeyShapeOk(*outGameBuild);
+    const std::string key(reinterpret_cast<const char*>(payload + off + 1), k);
+    if (!coop::game_build::KeyShapeOk(key)) return false;
+    *outGameBuild = key;
+    return true;
 }
 
 // The kind of a refusal and the values its sentence names, beside the English verdict string: the

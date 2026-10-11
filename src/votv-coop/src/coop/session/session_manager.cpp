@@ -223,7 +223,7 @@ constexpr uint64_t kLatestMinIntervalMs = 8000;  // no-DoS floor between /v1/lat
 namespace {
 
 // The version line and its note from the master's record, by the game this process runs
-// (docs/VERSION_PORT_DRILL_ARC.md 8.4): on the target, the target's entry as before; on a known other build,
+// (docs/versioning.md, "Which game is running"): on the target, the target's entry as before; on a known other build,
 // the release made for that game; on an untested build, the newest release, named with its game. A master
 // older than `games` gets today's comparison of its one record. No URL: the label is a one-line UTextBlock,
 // not a hyperlink, so an address would cost ~37 characters to deliver a string nobody can act on.

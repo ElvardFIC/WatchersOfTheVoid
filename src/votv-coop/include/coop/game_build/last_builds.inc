@@ -5,5 +5,6 @@
 //   build    the last Multivoid release made for it (its kProtocolVersion)
 //
 // The mod's own release history, so it is coop's and not the game-build rows' (principle 7). A retarget adds the
-// previous target's line (docs/GAME_UPDATE_RUNBOOK.md section 7); the version popup then tells a player on that
-// older game which Multivoid to use. Empty while 0.9.0n is the only target. Included by coop/game_build only.
+// previous target's line (docs/versioning.md, the retarget's identity step); the version popup then tells a
+// player on that older game which Multivoid to use. Empty while 0.9.0n is the only target. Included by
+// coop/game_build only.

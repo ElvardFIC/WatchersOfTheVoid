@@ -57,22 +57,19 @@ foreach ($url in $MasterLatestUrls) {
     $masterProto = 0
     if ($resp -and ($resp.PSObject.Properties.Name -contains 'proto')) { $masterProto = [int]$resp.proto }
 
-    if ($null -eq $expected) {
-        if ($masterProto -le 0) {
-            Write-Host "verify_latest: OK_EMPTY -- no $kind in the ledger; $url has no released record (proto<=0)"
-            continue
-        }
-        $hint = if ($AllowDev) { '' } else { ' -- if the masters were deliberately pointed at a DEV prerelease, re-run with -AllowDev' }
-        Write-Host "verify_latest: FAIL -- $url reports proto=$masterProto but the ledger has NO $kind (unrecorded release?)$hint"
-        $failed++
-        continue
-    }
-
     Write-Host "verify_latest: $url reports proto=$masterProto mod='$($resp.mod)'"
-    if ($masterProto -ne $expected.N) {
+    $hint = if ($AllowDev) { '' } else { ' -- if the masters were deliberately pointed at a DEV prerelease, re-run with -AllowDev' }
+    # The legacy pair: the legacy game's newest, or no record when the ledger has none for it.
+    if ($null -eq $expected) {
+        if ($masterProto -gt 0) {
+            Write-Host "verify_latest: FAIL -- $url reports proto=$masterProto but the ledger has NO $kind for $legacyGame (unrecorded release?)$hint"
+            $failed++
+        }
+    } elseif ($masterProto -ne $expected.N) {
         Write-Host "verify_latest: FAIL -- $url legacy proto $masterProto != ledger N $($expected.N), the newest $kind for $legacyGame (COOP_LATEST_GAMES not updated / stale?)"
         $failed++
     }
+    # Every game: each one the ledger has, at its newest; none the ledger does not.
     $listed = @{}
     if ($resp.PSObject.Properties.Name -contains 'games') {
         foreach ($e in @($resp.games)) { $listed[[string]$e.game] = [int]$e.proto }
@@ -85,6 +82,15 @@ foreach ($url in $MasterLatestUrls) {
             Write-Host "verify_latest: FAIL -- $url lists $g at N=$($listed[$g]), ledger N $($perGame[$g].N)"
             $failed++
         }
+    }
+    foreach ($g in $listed.Keys) {
+        if (-not $perGame.ContainsKey($g)) {
+            Write-Host "verify_latest: FAIL -- $url lists $g at N=$($listed[$g]) but the ledger has NO $kind for it (unrecorded release?)$hint"
+            $failed++
+        }
+    }
+    if ($perGame.Count -eq 0 -and $listed.Count -eq 0 -and $masterProto -le 0) {
+        Write-Host "verify_latest: OK_EMPTY -- no $kind in the ledger; $url has no released record"
     }
 }
 

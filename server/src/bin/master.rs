@@ -89,18 +89,6 @@ async fn handle<S: AsyncRead + AsyncWrite + Unpin>(mut stream: S, peer_ip: Strin
         };
         write_response(&mut stream, 200, &body).await;
     } else if method == "GET" && path == "/v1/latest" {
-        // The release record, from the env once (see the LATEST_URL comment in lobby.rs). A list entry that
-        // does not parse is dropped and named; an empty list is said too -- never silent.
-        static LATEST: LazyLock<Vec<u8>> = LazyLock::new(|| {
-            let (games, refused) = parse_latest_games(&env_str("COOP_LATEST_GAMES", ""));
-            for entry in &refused {
-                log(&format!("WARN: COOP_LATEST_GAMES entry '{}' refused (want <game>:<build>:<tag>)", entry));
-            }
-            if games.is_empty() {
-                log("WARN: COOP_LATEST_GAMES names no release -- /v1/latest answers with no record");
-            }
-            json_bytes(&latest_answer(&games, &env_str("COOP_LATEST_URL", LATEST_URL)))
-        });
         write_response(&mut stream, 200, &LATEST).await;
     } else if method == "GET" && path == "/v1/thanks" {
         // The thanks list the mod's main menu rolls. Three answers, and the mod acts on the
@@ -149,10 +137,25 @@ async fn read_post_body<S: AsyncRead + Unpin>(
     }
 }
 
+// The release record, from the env once (see the LATEST_URL comment in lobby.rs). A list entry that does not parse,
+// or names a game a second time, is dropped and named; an empty list is said too -- never silent.
+static LATEST: LazyLock<Vec<u8>> = LazyLock::new(|| {
+    let (games, refused) = parse_latest_games(&env_str("COOP_LATEST_GAMES", ""));
+    for entry in &refused {
+        log(&format!("WARN: COOP_LATEST_GAMES entry '{}' refused (want <game>:<build>:<tag>, each game once)", entry));
+    }
+    if games.is_empty() {
+        log("WARN: COOP_LATEST_GAMES names no release -- /v1/latest answers with no record");
+    }
+    json_bytes(&latest_answer(&games, &env_str("COOP_LATEST_URL", LATEST_URL)))
+});
+
 #[tokio::main]
 async fn main() {
     // Built now, so its settings are logged at start rather than at the first connect.
     LazyLock::force(&CONNECTS);
+    // The same for the release record: a typo in COOP_LATEST_GAMES is named at the restart that brought it.
+    LazyLock::force(&LATEST);
     // fail fast on missing secrets (same as the Python FATAL exits)
     if CFG.turn_secret.is_empty() {
         log("FATAL: COOP_TURN_SECRET not set -- refusing to mint TURN creds");

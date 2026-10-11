@@ -61,8 +61,9 @@ pub struct LatestGame {
     pub tag: String,
 }
 
-/// Parse `COOP_LATEST_GAMES`. An entry that does not parse is dropped and named in the second list (the
-/// caller logs it once): a typo in the deploy config costs that entry, never the others. Empty -> no entries.
+/// Parse `COOP_LATEST_GAMES`. An entry that does not parse, or names a game an earlier entry named, is dropped
+/// and named in the second list (the caller logs it once): a typo in the deploy config costs that entry, never the
+/// others. Empty -> no entries.
 pub fn parse_latest_games(spec: &str) -> (Vec<LatestGame>, Vec<String>) {
     let mut games = Vec::new();
     let mut refused = Vec::new();
@@ -74,7 +75,7 @@ pub fn parse_latest_games(spec: &str) -> (Vec<LatestGame>, Vec<String>) {
             && !parts[2].is_empty()
             && parts[2].len() <= MAX_VERSION
             && parts[2].bytes().all(|b| b != b':' && (b == b' ' || b.is_ascii_graphic()));
-        if ok {
+        if ok && !games.iter().any(|g: &LatestGame| g.game == parts[0]) {
             games.push(LatestGame {
                 game: parts[0].to_string(),
                 proto: parts[1].parse().unwrap_or(0),
