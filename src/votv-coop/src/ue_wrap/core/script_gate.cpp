@@ -13,6 +13,7 @@
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/object_index.h"
 #include "ue_wrap/core/reflection.h"
+#include "ue_wrap/core/scan_ledger.h"
 #include "ue_wrap/core/script_loop.h"
 #include "ue_wrap/core/sdk_profile.h"
 #include "ue_wrap/core/sig_scan.h"
@@ -252,6 +253,7 @@ bool Patch() {
         gnatives ? script_loop::ByCode(reinterpret_cast<std::uintptr_t>(gnatives), candidates) : 0;
     uintptr_t base = 0; size_t size = 0;
     ue_wrap::MainModuleRange(base, size);
+    scan_ledger::Record(scan_ledger::Scan::ScriptGate, loop != 0);
     if (!loop) {
         UE_LOGE("script_gate: the loop was not found from the image (table %p, %d functions reference it) -- "
                 "NOT patched", static_cast<void*>(gnatives), candidates);

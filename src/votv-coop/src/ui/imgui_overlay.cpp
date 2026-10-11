@@ -46,6 +46,7 @@
 #include "ue_wrap/core/game_thread.h"
 #include "ue_wrap/core/hook.h"
 #include "ue_wrap/core/log.h"
+#include "ue_wrap/core/scan_ledger.h"  // the draw seam and the resize bracket, each found or missed
 #include "ue_wrap/core/sig_scan.h"     // FindPattern -- the FD3D11Viewport::PresentChecked seam probe
 #include "ue_wrap/core/sdk_profile.h"  // the four seam signatures
 
@@ -608,8 +609,12 @@ bool Init() {
              reinterpret_cast<void**>(&g_d3d12ResizeTrampoline), false},
         };
         int drawArmed = 0;
+        // Each requirement is met by either RHI's signature, so the scan ledger's two rows are decided once
+        // the loop has tried all four.
+        bool drawFound = false, resizeFound = false;
         for (const Seam& sm : seams) {
             const uintptr_t at = ue_wrap::FindPattern(sm.sig);
+            if (at) (sm.draws ? drawFound : resizeFound) = true;
             if (!at) {
                 // Expected for the RHI this cook does not contain; zero draw seams is checked after
                 // the loop.
@@ -629,6 +634,8 @@ bool Init() {
                 UE_LOGE("imgui_overlay: %s resolved but MinHook Install FAILED", sm.name);
             }
         }
+        ue_wrap::scan_ledger::Record(ue_wrap::scan_ledger::Scan::OverlayDraw, drawFound);
+        ue_wrap::scan_ledger::Record(ue_wrap::scan_ledger::Scan::OverlayResize, resizeFound);
         // Fail closed on the draw seam only: with none there is no overlay at all, so this returns
         // false rather than install a WndProc hook that swallows keys for a UI that cannot appear.
         // A missing resize bracket is a degradation, reported above.

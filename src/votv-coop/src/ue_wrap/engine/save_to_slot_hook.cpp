@@ -5,6 +5,7 @@
 #include "ue_wrap/core/hook.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
+#include "ue_wrap/core/scan_ledger.h"
 #include "ue_wrap/core/sdk_profile.h"
 #include "ue_wrap/core/sig_scan.h"
 
@@ -118,6 +119,7 @@ bool Install() {
     if (!saveSlotCls) { s_nextTry = now + std::chrono::seconds(1); return false; }
 
     const uintptr_t addr = ue_wrap::FindPattern(prof::kSigSaveGameToSlot);
+    ue_wrap::scan_ledger::Record(ue_wrap::scan_ledger::Scan::SaveGameToSlot, addr != 0);
     if (!addr) {
         // The signature is in the .exe image; a miss means it is stale for this build, and
         // retrying will not help.

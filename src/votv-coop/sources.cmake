@@ -19,6 +19,7 @@ set(VOTVCOOP_SOURCES
     src/ue_wrap/core/log.cpp
     src/ue_wrap/core/paths.cpp
     src/ue_wrap/core/game_build.cpp
+    src/ue_wrap/core/scan_ledger.cpp
     src/ue_wrap/core/sig_scan.cpp
     src/ue_wrap/core/gc_pin.cpp
     src/ue_wrap/core/reflection.cpp

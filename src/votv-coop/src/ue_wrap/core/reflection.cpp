@@ -6,6 +6,7 @@
 
 #include "ue_wrap/core/game_build.h"
 #include "ue_wrap/core/log.h"
+#include "ue_wrap/core/scan_ledger.h"
 #include "ue_wrap/core/sdk_profile.h"
 #include "ue_wrap/core/sig_scan.h"
 
@@ -51,9 +52,11 @@ uintptr_t ProcessEventAddr() { return reinterpret_cast<uintptr_t>(g_processEvent
 bool IsResolved() { return g_objArray && g_fnameToString && g_processEvent; }
 
 bool Resolve() {
+    namespace SL = ue_wrap::scan_ledger;
     if (!g_fnameToString) {
         const uintptr_t hit = FindPattern(P::kSigFNameToString);
         if (hit) g_fnameToString = reinterpret_cast<FNameToStringFn>(hit);
+        SL::Record(SL::Scan::FNameToString, hit != 0);
     }
     if (!g_objArray) {
         const uintptr_t hit = FindPattern(P::kSigGUObjectArray);
@@ -61,10 +64,12 @@ bool Resolve() {
             const int32_t disp = *reinterpret_cast<int32_t*>(hit + P::kGUObjArrayLeaDispOff);
             g_objArray = hit + P::kGUObjArrayLeaEndOff + disp;
         }
+        SL::Record(SL::Scan::GUObjectArray, hit != 0);
     }
     if (!g_processEvent) {
         const uintptr_t hit = FindPattern(P::kSigProcessEvent);
         if (hit) g_processEvent = reinterpret_cast<ProcessEventFn>(hit);
+        SL::Record(SL::Scan::ProcessEvent, hit != 0);
     }
     ResolveEngineHeap();  // &GMalloc (engine_heap.cpp) -- best-effort, not part of IsResolved()
     return IsResolved();

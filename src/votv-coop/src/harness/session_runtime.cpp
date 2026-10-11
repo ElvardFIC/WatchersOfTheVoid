@@ -4,6 +4,7 @@
 
 #include "harness/session_runtime.h"
 
+#include "harness/compat_boot.h"
 #include "harness/fingerprint_census.h"
 #include "harness/sdk_check.h"
 #include "ue_wrap/core/object_index.h"
@@ -543,6 +544,7 @@ void RunPlayLoop(bool bootedIntoGameplay) {
             // refreshes; every consumer below that names a STATE reads this rather than the boot
             // parameter.
             const bool inGameplayWorld = InGameplayWorld();
+            harness::compat_boot::RefreshIfScansMoved();  // a scan decided since the boot's report
             if (inGameplayWorld) StartCompatChecksOnce();
             if (running) {
                 coop::net_pump::Tick(g_session);

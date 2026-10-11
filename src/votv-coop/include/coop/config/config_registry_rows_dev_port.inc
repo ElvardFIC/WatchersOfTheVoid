@@ -1,5 +1,5 @@
 // coop/config/config_registry_rows_dev_port.inc -- the [dev] rows of the version-port tooling (the fingerprint
-// capture and census red arm, the dependency dump, the ***REMOVED***, the version gate's drill arm), included by
+// capture and census red arm, the dependency dump, the ***REMOVED***, the version gate's arms), included by
 // config_registry_rows_dev.inc where they stood, so each keeps its place in every expansion of the list.
 // The entry forms are config_registry_rows.inc's.
 
@@ -28,3 +28,8 @@ CFG_STRING(game_build_force, "game_build_force", "dev", "", "VOTVCOOP_GAME_BUILD
     ***REMOVED***
     "popup, the report, the stand-down's wording and the Join's refusal can be shown on a healthy install. "
     "Changes what the mod believes, never the game. Empty: the build as read.")
+CFG_STRING(scan_ledger_red, "scan_ledger_red", "dev", "", "VOTVCOOP_SCAN_LEDGER_RED", false,
+    "The scan ledger's red arm: a scan row's name (GUObjectArray, FNameToString, ProcessEvent, FMemoryRealloc, "
+    "ScriptGate, SaveGameToSlot, OverlayDraw, OverlayResize, ActorEndPlay) the compat report reads as missed, so "
+    "it must name what that miss takes away and read DEGRADED; it prints 'scan-ledger: RED ARM <row> reported "
+    "missed', or 'RED ARM FAILED'. The report only: the scan itself is untouched. Empty: no red arm.")

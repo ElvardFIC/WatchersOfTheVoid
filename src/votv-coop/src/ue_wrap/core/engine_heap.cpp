@@ -13,6 +13,9 @@
 
 #include "ue_wrap/core/reflection.h"
 
+#include "ue_wrap/core/log.h"
+#include "ue_wrap/core/scan_ledger.h"
+
 #include "ue_wrap/core/sdk_profile.h"
 #include "ue_wrap/core/sig_scan.h"
 
@@ -33,7 +36,14 @@ void** g_gmallocSlot = nullptr;
 void ResolveEngineHeap() {
     if (g_gmallocSlot) return;
     const uintptr_t hit = FindPattern(P::kSigFMemoryRealloc);
-    if (!hit) return;
+    scan_ledger::Record(scan_ledger::Scan::FMemoryRealloc, hit != 0);
+    if (!hit) {
+        // Not silent: without GMalloc, EngineAlloc returns null and EngineFree does nothing -- the engine
+        // arrays and strings the mod writes are refused, and the buffers it frees leak.
+        UE_LOGE("engine_heap: FMemory::Realloc signature NOT found -- no engine-heap allocation or free "
+                "(sdk_profile.h kSigFMemoryRealloc stale for this build?)");
+        return;
+    }
     const int32_t disp = *reinterpret_cast<int32_t*>(hit + P::kGMallocLeaDispOff);
     g_gmallocSlot = reinterpret_cast<void**>(hit + P::kGMallocLeaEndOff + disp);
 }

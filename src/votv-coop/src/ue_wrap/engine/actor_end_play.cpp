@@ -6,6 +6,7 @@
 #include "ue_wrap/core/hook.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
+#include "ue_wrap/core/scan_ledger.h"
 #include "ue_wrap/core/sdk_profile.h"
 #include "ue_wrap/core/sig_scan.h"
 
@@ -102,6 +103,7 @@ bool HasBegunPlay(const void* actor) {
 bool Patch() {
     if (g_target) return true;
     const std::uintptr_t addr = FindByCode();
+    ue_wrap::scan_ledger::Record(ue_wrap::scan_ledger::Scan::ActorEndPlay, addr != 0);
     if (!addr) {
         UE_LOGE("actor_end_play: AActor::EndPlay was not found from the image once (sdk_profile.h "
                 "kActorEndPlayBody) -- NOT patched, no actor's end of play is seen");
