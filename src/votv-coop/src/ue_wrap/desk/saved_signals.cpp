@@ -3,6 +3,7 @@
 #include "ue_wrap/desk/saved_signals.h"
 
 #include "ue_wrap/core/call.h"
+#include "ue_wrap/core/fname_utils.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/world/world_singleton.h"
@@ -84,27 +85,29 @@ bool ReadRowKey(int32_t index, RowKey& out) {
 }
 
 RowApply ApplySaveSignal(const SD::Row& row) {
-    using R = RowApplyResult;
-    // The two the game cannot be asked yet: no world, or the verb not found in it.
+    using Res = RowApplyResult;
+    // The three the game cannot be asked yet: no world, the verb not found in it, or the name library
+    // not found (until it is, every name fails, whatever the row holds).
     void* gm = world_singleton::Gamemode();
-    if (!gm) return {R::NotNow, "no gamemode"};
-    if (!g_saveSignalFn) return {R::NotNow, "saveSignal not resolved"};
+    if (!gm) return {Res::NotNow, "no gamemode"};
+    if (!g_saveSignalFn) return {Res::NotNow, "saveSignal not resolved"};
+    if (!ue_wrap::fname_utils::Resolved()) return {Res::NotNow, "the name library not resolved"};
     // Every other failure is final for the row: the verb's layout and the name library are fixed for
     // the process, so what fails here fails on every try.
     ue_wrap::ParamFrame f(g_saveSignalFn);
-    if (!f.valid()) return {R::Refused, "saveSignal's parameter frame could not be built"};
+    if (!f.valid()) return {Res::Refused, "saveSignal's parameter frame could not be built"};
     uint8_t sig[SD::kStride];
     if (!SD::BuildParamBytes(row, sig))  // row outlives the call (FStrings alias it)
-        return {R::Refused, "a name in the row could not be made an FName"};
-    if (!f.SetRaw(L"signal", sig, SD::kStride)) return {R::Refused, "the signal parameter was refused"};
+        return {Res::Refused, "a name in the row could not be made an FName"};
+    if (!f.SetRaw(L"signal", sig, SD::kStride)) return {Res::Refused, "the signal parameter was refused"};
     f.Set<bool>(L"new", false);          // dead param (RE: never read)
     f.Set<bool>(L"checkOnly", false);
     f.Set<float>(L"downloadedAtQuality", row.downloadedAtQuality);
     f.Set<bool>(L"selfQuality", true);   // keep the row's own quality unchanged
-    if (!ue_wrap::Call(gm, f)) return {R::Refused, "saveSignal faulted"};
+    if (!ue_wrap::Call(gm, f)) return {Res::Refused, "saveSignal faulted"};
     // succ is false on one path only, the row's own decoded >= size > 0 test (the bytecode's 1060).
-    if (!f.Get<bool>(L"succ")) return {R::Refused, "the game refused it: not decoded, or no size"};
-    return {R::Applied, ""};
+    if (!f.Get<bool>(L"succ")) return {Res::Refused, "the game refused it: not decoded, or no size"};
+    return {Res::Applied, ""};
 }
 
 bool DeleteSignal(int32_t index) {

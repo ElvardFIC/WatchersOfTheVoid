@@ -104,6 +104,8 @@ bool MintFText(const wchar_t* s, void* out) {
     return f.GetRaw(L"ReturnValue", out, kFTextSize);
 }
 
+bool Resolved() { return Resolve(); }
+
 std::wstring FTextToString(const void* ftext) {
     if (!ftext || !Resolve()) return {};
     static void* sConvTextToStrFn = nullptr;

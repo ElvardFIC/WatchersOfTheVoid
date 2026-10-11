@@ -128,10 +128,12 @@ bool DelEmail(int32_t index) {
 
 RowApply AddEmail(const Row& row) {
     using Res = RowApplyResult;
-    // The two the game cannot be asked yet: no world, or the verb not found in it.
+    // The three the game cannot be asked yet: no world, the verb not found in it, or the text library
+    // not found (until it is, every text fails, whatever the row holds).
     void* gm = world_singleton::Gamemode();
     if (!gm) return {Res::NotNow, "no gamemode"};
     if (!g_addEmailFn) return {Res::NotNow, "addEmail not resolved"};
+    if (!FT::Resolved()) return {Res::NotNow, "the text library not resolved"};
     // Every other failure is final for the row: the verb's layout and the text library are fixed for
     // the process, so what fails here fails on every try.
     ue_wrap::ParamFrame f(g_addEmailFn);

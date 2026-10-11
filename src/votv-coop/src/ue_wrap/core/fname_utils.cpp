@@ -67,4 +67,6 @@ R::FName StringToFName(const std::wstring& s) {
     return f.Get<R::FName>(L"ReturnValue");
 }
 
+bool Resolved() { return Resolve(); }
+
 }  // namespace ue_wrap::fname_utils
