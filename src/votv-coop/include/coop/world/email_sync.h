@@ -35,8 +35,6 @@ void Install(coop::net::Session* session);
 void CaptureJoinSnapshot(int peerSlot);
 void CancelJoinSnapshot(int peerSlot);
 void QueueConnectBroadcastForSlot(int peerSlot);
-// Whether the slot's snapshot has been captured (the transfer's blob instant has passed). Game thread.
-bool JoinSnapshotCaptured(int peerSlot);
 // Whether the lane has settled against a count-stable email array, so a row added now is a row of
 // this world and not one the load is still filling in. Game thread.
 bool Settled();

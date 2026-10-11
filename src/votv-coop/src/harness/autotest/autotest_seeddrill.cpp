@@ -5,18 +5,18 @@
 //      transferred save, the seed's delta is 0 for it, and the vacuous adopt keeps the old
 //      retry from re-broadcasting it. The client must hold exactly ONE copy: zero wire
 //      applies of this topic is the pass, one is the duplicate reproduced.
-//   2. "[seed-drill] in-window" -- while a slot is CONNECTED but NOT world-ready, in the
-//      joiner's load window, after its save snapshot was taken. It is not in the save, so
-//      only the ready-edge seed can deliver it; the client logging "email_sync: applied
-//      email from slot 0" for this topic is the pass.
+//   2. "[seed-drill] in-window" -- while a slot is CONNECTED but NOT world-ready, after the
+//      host took its world. Only the ready-edge seed can deliver it; the client logging
+//      "email_sync: applied email from slot 0" for this topic is the pass.
 //
-// VOTVCOOP_SEED_DISABLE=1 skips CaptureJoinSnapshot in email_sync and signal_sync, so the in-window
-// email never arrives -- which is what shows the seed, not a leftover retry, is the delivery
-// mechanism. Grep key: "[SEED-DRILL] authored", once per topic.
+// VOTVCOOP_SEED_DISABLE=1 skips the seeds' capture; the in-window email is still authored (the
+// drill waits on the save transfer's instant, not on the capture) and must never arrive: the seed,
+// not a leftover retry, delivers it. Grep key: "[SEED-DRILL] authored", once per topic.
 
 #include "harness/autotest.h"
 
 #include "coop/net/session.h"
+#include "coop/save/save_transfer.h"
 #include "coop/world/email_sync.h"
 #include "harness/session_runtime.h"
 #include "ue_wrap/core/game_thread.h"
@@ -30,28 +30,41 @@ namespace {
 
 namespace GT = ue_wrap::game_thread;
 
-// The email lane's own predicates live on the game thread; this thread asks them there.
+// The email lane's own predicate lives on the game thread; this thread asks it there.
 bool EmailSettled() {
     return GT::RunAndWait([](std::atomic<int>& a) { a.store(coop::email_sync::Settled() ? 1 : 2); }) == 1;
 }
-bool SnapshotTaken(int slot) {
-    return GT::RunAndWait([slot](std::atomic<int>& a) {
-               a.store(coop::email_sync::JoinSnapshotCaptured(slot) ? 1 : 2);
-           }) == 1;
+
+// Game thread.
+void AuthorNow(const wchar_t* topic) {
+    ue_wrap::email::Row r;
+    r.username = 0;
+    r.topic = topic;
+    r.text = L"seeds-arc drill row (autotest_seeddrill)";
+    const ue_wrap::RowApply a = ue_wrap::email::AddEmail(r);
+    if (a.result == ue_wrap::RowApplyResult::Applied)
+        UE_LOGI("[SEED-DRILL] authored %ls", topic);
+    else
+        UE_LOGW("[SEED-DRILL] AddEmail FAILED for %ls -- %s", topic, a.why);
 }
 
-void AuthorDrillEmail(const wchar_t* topic) {
-    GT::Post([topic] {
-        ue_wrap::email::Row r;
-        r.username = 0;
-        r.topic = topic;
-        r.text = L"seeds-arc drill row (autotest_seeddrill)";
-        const ue_wrap::RowApply a = ue_wrap::email::AddEmail(r);
-        if (a.result == ue_wrap::RowApplyResult::Applied)
-            UE_LOGI("[SEED-DRILL] authored %ls", topic);
-        else
-            UE_LOGW("[SEED-DRILL] AddEmail FAILED for %ls -- %s", topic, a.why);
-    });
+// Authors the in-window email for the first slot inside its load window past the host's taking of its
+// world; the check and the add are one game-thread task. The ready edge sets the slot's ready flag and
+// runs its seed in one game-thread step (event_feed's ClientWorldReady), so a slot found not ready here
+// is not seeded until this task has added the row: the row cannot land after the seed and ride the
+// live broadcast instead.
+bool AuthorInWindow(coop::net::Session& s) {
+    return GT::RunAndWait([&s](std::atomic<int>& a) {
+               for (int slot = 1; slot < coop::net::kMaxPeers; ++slot) {
+                   if (!s.HasPeerConn(slot) || s.IsSlotWorldReady(slot) ||
+                       !coop::save_transfer::WorldTakenFor(slot))
+                       continue;
+                   AuthorNow(L"[seed-drill] in-window");
+                   a.store(1);
+                   return;
+               }
+               a.store(2);
+           }) == 1;
 }
 
 }  // namespace
@@ -68,6 +81,10 @@ DWORD WINAPI SeedDrillThread(LPVOID /*arg*/) {
     // world needs; the loop bounds below are failure bounds, never a wait. If a peer already
     // connected, skip: the solo case needs the pre-connect save state.
     for (int i = 0; i < 600 && !s.running(); ++i) ::Sleep(100);
+    if (!s.running()) {
+        UE_LOGW("[SEED-DRILL] the session never ran -- drill not run");
+        return 0;
+    }
     bool settled = false;
     for (int i = 0; i < 1200 && s.running() && !(settled = EmailSettled()); ++i) ::Sleep(100);
     if (!settled) {
@@ -78,22 +95,18 @@ DWORD WINAPI SeedDrillThread(LPVOID /*arg*/) {
     for (int i = 1; i < coop::net::kMaxPeers; ++i)
         if (s.IsSlotWorldReady(i)) anyPeer = true;
     if (!anyPeer) {
-        AuthorDrillEmail(L"[seed-drill] solo");
+        GT::Post([] { AuthorNow(L"[seed-drill] solo"); });
     } else {
         UE_LOGW("[SEED-DRILL] a peer is already world-ready -- solo phase skipped");
     }
 
     // Phase 2: the IN-WINDOW email -- authored for a slot that is CONNECTED, not yet world-ready (the
-    // joiner's load window), and whose save snapshot has been captured: a row authored before the
-    // capture would ride the SAVE and leave the loss case unexercised, so the capture itself is the
-    // state waited on. Author once. The loop bound is a failure bound.
-    UE_LOGI("[SEED-DRILL] waiting for a connected-but-not-ready slot past its snapshot...");
+    // joiner's load window), and whose world the host has taken: a row authored before that instant
+    // would ride the SAVE and leave the loss case unexercised, so the instant itself is the state
+    // waited on. Author once. The loop bound is a failure bound.
+    UE_LOGI("[SEED-DRILL] waiting for a connected-but-not-ready slot past its world capture...");
     for (int waited = 0; waited < 3000; ++waited) {  // up to 5 min
-        for (int slot = 1; slot < coop::net::kMaxPeers; ++slot) {
-            if (!s.HasPeerConn(slot) || s.IsSlotWorldReady(slot) || !SnapshotTaken(slot)) continue;
-            AuthorDrillEmail(L"[seed-drill] in-window");
-            return 0;
-        }
+        if (AuthorInWindow(s)) return 0;
         ::Sleep(100);
     }
     UE_LOGW("[SEED-DRILL] no load window observed -- in-window phase not run");
