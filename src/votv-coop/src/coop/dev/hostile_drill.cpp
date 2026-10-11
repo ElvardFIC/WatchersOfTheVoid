@@ -222,13 +222,15 @@ void ArmOnFirstReadySlot(coop::net::Session* s) {
 }
 
 void JudgeSignalPark(coop::net::Session* s) {
-    // The defect this arm proves fixed: refused rows filled the apply park and raised the receive
-    // pause. A refused row that is final never parks, so the witness never rises; a park that keeps
-    // them fills past kParkCap and it does -- FAIL, printed the tick it is seen, naming the kind.
+    // The attack: rows the game refuses, more than the apply park holds. A refused row that is final
+    // never parks, so the witness never rises; a park that keeps them fills past kParkCap and it does --
+    // FAIL, printed the tick it is seen, naming the kind still holding the pause (the witness counts
+    // raises, not kinds, so a pause already lowered is said as such).
     if (s->ApplyPauseRaises() > g_witnessBase) {
         Fail(s->ApplyPausedBy(coop::net::ReliableKind::SavedSignalAppend)
                  ? "the receive paused on SavedSignalAppend's apply park"
-                 : "the receive paused on another lane's apply park");
+             : s->ApplyPaused() ? "the receive paused on another lane's apply park"
+                                : "the receive paused on an apply park, lowered before the judge looked");
         return;
     }
     // The rows are read only when the array changed: its count, or its last row, where the sentinel's
