@@ -8,7 +8,7 @@
 // test that proves the fix": the same judge reads green on the gated bytes and red on bytes without
 // the gate (the commit before the fix, or a lane that deletes the gate in source and never lands), so
 // a PASS is known to be one the judge could have refused.
-//
+
 // This is defensive testing of OUR OWN mod, in OUR OWN rig. Nothing here ships enabled: the enum row
 // (hostile_drill) defaults off and gates every path -- a single read when off -- and the forged sends
 // are the same shape as the dev-gated malformed sends the tree already carries (midnight_drill's NaN
