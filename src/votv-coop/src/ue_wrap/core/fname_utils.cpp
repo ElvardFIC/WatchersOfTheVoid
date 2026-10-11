@@ -6,6 +6,7 @@
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/sdk_profile.h"
 
+#include <chrono>
 #include <cstdint>
 
 namespace ue_wrap::fname_utils {
@@ -22,8 +23,15 @@ void* g_convStrToNameFn = nullptr;
 // both via FindParamOffset, which does not log on a miss.
 const wchar_t* g_convStrToNameInputParam = nullptr;
 
+// A failed resolve is tried again at most every 2 s, its warning said once (ftext_utils' Resolve).
+std::chrono::steady_clock::time_point g_nextTry{};
+bool g_warnedParam = false;
+
 bool Resolve() {
     if (g_kslCdo && g_convStrToNameFn && g_convStrToNameInputParam) return true;
+    const auto now = std::chrono::steady_clock::now();
+    if (now < g_nextTry) return false;
+    g_nextTry = now + std::chrono::seconds(2);
     if (!g_kslCdo) g_kslCdo = R::FindClassDefaultObject(P::name::KismetStringLibraryClass);
     if (g_kslCdo && !g_convStrToNameFn) {
         if (void* kc = R::ClassOf(g_kslCdo)) {
@@ -35,7 +43,8 @@ bool Resolve() {
         // is tested is whether the parameter exists.
         if (R::FindParamOffset(g_convStrToNameFn, L"InString") >= 0) {
             g_convStrToNameInputParam = L"InString";
-        } else {
+        } else if (!g_warnedParam) {
+            g_warnedParam = true;
             UE_LOGW("fname_utils: Conv_StringToName has no 'InString' parameter -- StringToFName "
                     "will fail every call");
         }

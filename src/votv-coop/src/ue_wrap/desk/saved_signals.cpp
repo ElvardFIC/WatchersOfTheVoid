@@ -125,21 +125,25 @@ bool FirstOrdinarySignalName(std::wstring& out) {
     out.clear();
     void* gm = world_singleton::Gamemode();
     if (!gm) return false;
-    void* cls = R::ClassOf(gm);
-    if (!cls) return false;
     // Plain (non-GUID) member names, so FindPropertyOffset resolves them; the two arrays are filled
-    // in parallel, so index i of signalUniques describes name i.
-    const int32_t offNames = R::FindPropertyOffset(cls, L"signalNames_default");
-    if (offNames < 0) return false;
-    const int32_t offUniq = R::FindPropertyOffset(cls, L"signalUniques");
+    // in parallel, so index i of signalUniques describes name i. Offsets of the class, found once.
+    static int32_t offNames = -1, offUniq = -1;
+    if (offNames < 0 || offUniq < 0) {
+        void* cls = R::ClassOf(gm);
+        if (!cls) return false;
+        offNames = R::FindPropertyOffset(cls, L"signalNames_default");
+        offUniq = R::FindPropertyOffset(cls, L"signalUniques");
+        if (offNames < 0 || offUniq < 0) return false;
+    }
     struct { R::FName* data; int32_t num; int32_t max; } names{};
     std::memcpy(&names, static_cast<uint8_t*>(gm) + offNames, sizeof(names));
-    if (names.num <= 0 || !names.data) return false;  // not built yet (pre-world)
     struct { uint8_t* data; int32_t num; int32_t max; } uniq{};  // TArray<bool>, 1 byte/elem
-    if (offUniq >= 0) std::memcpy(&uniq, static_cast<uint8_t*>(gm) + offUniq, sizeof(uniq));
+    std::memcpy(&uniq, static_cast<uint8_t*>(gm) + offUniq, sizeof(uniq));
+    // Not built yet (pre-world), or not in step: with no flag for a name, it cannot be called ordinary.
+    if (names.num <= 0 || !names.data || !uniq.data || uniq.num < names.num) return false;
     for (int32_t i = 0; i < names.num; ++i) {
-        const bool unique = uniq.data && i < uniq.num && uniq.data[i] != 0;
-        if (unique) continue;  // a unique signal lands in `specials`, a side effect a drill must not fire
+        // A unique signal lands in `specials`, a side effect a drill must not fire.
+        if (uniq.data[i] != 0) continue;
         std::wstring leaf = R::ToString(names.data[i]);
         if (!leaf.empty() && leaf != L"None") { out = std::move(leaf); return true; }
     }
