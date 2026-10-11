@@ -143,11 +143,11 @@ bool Tick(coop::net::Session& session) {
             UE_LOGW("net: gameplay->MENU while a session is live (VOTV quit-to-menu?) -- "
                     "ending the session + stopping the layer churn (RAM-balloon guard)");
             coop::prop_element_tracker::SetInPurgeEpisode(false);  // left gameplay
-            // The full teardown first: skipping the disconnect fan-out left stale weather, time and
-            // sky caches and pending applies armed over the teardown. The menu transition is
-            // already in flight here, and a second dispatch loaded the menu twice, so the flee does
-            // not travel. The world is already gone on this route; the decision's route ends the
-            // session while it is still live.
+            // FleeAfterNativeMenuTravel ends the session -- the stop, then the full coop teardown:
+            // skipping the disconnect fan-out left stale weather, time and sky caches and pending
+            // applies armed. The menu transition is already in flight here, and a second dispatch
+            // loaded the menu twice, so the flee does not travel. The world is already gone on this
+            // route; the decision's route ends the session while it is still live.
             coop::net_pump::FleeAfterNativeMenuTravel(session, "left gameplay to the menu (native quit)");
             return true;
         }

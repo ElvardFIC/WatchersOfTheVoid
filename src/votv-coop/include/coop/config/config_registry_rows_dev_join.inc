@@ -49,3 +49,13 @@ CFG_FLAG(rehost_rejoin, "rehost_rejoin", "dev", false, "VOTVCOOP_REHOST_REJOIN",
     "session and no join in flight, a file named multivoid-rejoin.trigger beside the game exe is "
     "deleted and net.peer:net.port dialed through the direct connect, once per file. The rig's "
     "host-restart arm drops it when the relaunched host is up.")
+CFG_ENUM(join_abort, "join_abort", "dev", "off", "off|download|world",
+    "VOTVCOOP_JOIN_ABORT",
+    "Drill (CLIENT): press the loading screen's Cancel mid-join and prove A92's session-end seam tore "
+    "the coop state down. 'download' (window A, before the pawn): run with the host's "
+    "stall_world_stream_at_pct so the transfer cannot finish, press once the world blob is streaming "
+    "with this client's apply blob held, and judge no apply blob survived the abort -- else an aborted "
+    "join's inventory bleeds into the next join. 'world' (window B, after world-ready): run with the "
+    "host's hold_snapshot_sec, press after this client announced world-ready, judge the announce state "
+    "is cleared, then rejoin and pass at the second world-ready. [JOIN-ABORT] lines; download has no "
+    "rejoin leg (the host's stall hits every joiner).")

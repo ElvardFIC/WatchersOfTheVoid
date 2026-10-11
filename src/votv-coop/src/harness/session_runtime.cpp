@@ -24,6 +24,7 @@
 #include "coop/dev/force_weather.h"
 #include "coop/dev/hotbar_icon_probe.h"
 #include "coop/dev/load_reroll_watch.h"
+#include "coop/dev/join_abort_drill.h"
 #include "coop/dev/rehost_rejoin.h"
 #include "coop/dev/restore_vitals.h"
 #include "coop/dispatch/event_feed.h"
@@ -437,6 +438,27 @@ void InstallLobbyHeartbeatSources() {
     coop::session_manager::SetLinksSource(&LobbyLinkCounts);
 }
 
+bool StopClientSession(const char* why) {
+    // The client-role guard the three timeline stop sites carried, in one place: a stale cancel must
+    // never Stop a host session that has since started (a self-join Cancel once killed the host the
+    // instant it started). A host, or an already-stopped session, is left alone.
+    if (!(g_session.running() && g_session.role() == coop::net::Role::Client)) return false;
+    // Stop on this (the timeline) thread, where the net-thread join belongs, then tear the coop state
+    // down on the game thread and wait for it: the next start begins on nothing this session left, and
+    // no destroy seam runs against a half-ended session. Stop releases its lifecycle mutex before the
+    // RunAndWait returns here, so the game thread never blocks on a timeline thread that is itself
+    // waiting on the game thread (measure.md M1).
+    g_session.Stop();
+    const int r = GT::RunAndWait([why](std::atomic<int>& done) {
+        coop::net_pump::TearDownSession(g_session, why);
+        done.store(1, std::memory_order_release);
+    });
+    if (r == GT::kTaskFaulted)
+        UE_LOGE("harness: session teardown FAULTED during a client stop (%s) -- coop state left "
+                "half-cleared; the faulting module's dump names it", why);
+    return true;
+}
+
 void RunPlayLoop(bool bootedIntoGameplay) {
     int tick = 0;
     bool wasRunning = false;     // the session's running-to-stopped edge
@@ -446,32 +468,40 @@ void RunPlayLoop(bool bootedIntoGameplay) {
         // belongs on), drop the loading state, reopen the browser; multiplayer_menu restores the
         // hidden menu once join_progress goes inactive. One drain for both paths.
         if (coop::join_progress::TakeAbortRequest()) {
-            // Only a client join is abortable here; a stale client cancel must never Stop a host
-            // session that has since started (a self-join Cancel once killed the host the instant
-            // it started).
-            const bool isClientSession =
-                g_session.running() && g_session.role() == coop::net::Role::Client;
-            if (isClientSession) {
-                UE_LOGI("harness: join aborted -- stopping the client session + reopening the browser");
-                coop::join_progress::Reset();  // the cover first, as in the transfer loop's drain
-                g_session.Stop();
+            coop::join_progress::Reset();  // the cover first, as in the transfer loop's drain
+            // Only a client join is abortable here; StopClientSession's role guard ignores a stale
+            // cancel that would otherwise Stop a host session that has since started (a self-join
+            // Cancel once killed the host the instant it started), and ends the client session's coop
+            // state -- the aborted-join inventory among it -- before this returns.
+            if (StopClientSession("join aborted -- client cancelled")) {
+                UE_LOGI("harness: join aborted -- stopped the client session + reopening the browser");
                 ui::server_browser_surface::Open();
             } else if (harness::join_leave::Active()) {
                 // A join cancelled while it leaves this world for the menu: the cover goes, and the
                 // leave's next step ends it (reopening the browser once the travel had dispatched).
                 UE_LOGI("harness: join cancelled while leaving this world for the menu -- clearing the cover");
-                coop::join_progress::Reset();
             } else {
-                // A host running, or nothing: a stale client abort; clear the cover only, never
-                // Stop the host or pop the browser over gameplay.
+                // A host running, or nothing: a stale client abort; the cover is cleared only, never
+                // a Stop of the host or the browser over gameplay.
                 UE_LOGI("harness: stale join-abort with no client session -- clearing the cover only");
-                coop::join_progress::Reset();
             }
             // A failed or cancelled join is a milestone a bug report must capture: flush the log
             // now rather than leave it in the buffered stream.
             ue_wrap::log::Flush();
         }
         if (!g_session.running() && !coop::shutdown::IsShuttingDown()) {
+            // No start begins over an owed end: a session stopped without its game-thread teardown yet
+            // -- a flee whose teardown is in flight on the game thread while this timeline thread
+            // already sees the session stopped -- is finished here before any start below, as MTA's
+            // Start unloads a mod still loaded (CModManager.cpp:134-135). One atomic compare per idle
+            // pass; the RunAndWait runs only when an end is owed, and is a no-op by the count if the
+            // flee's own teardown already ran.
+            if (coop::net_pump::EndOwed(g_session)) {
+                GT::RunAndWait([](std::atomic<int>& done) {
+                    coop::net_pump::TearDownSession(g_session, "owed end before a new start");
+                    done.store(1, std::memory_order_release);
+                });
+            }
             // The save picker: load the chosen world (or create the save), then host; blocks until
             // done, a no-op if nothing is queued. It waits while a client join leaves this world.
             if (!harness::join_leave::Active()) harness::world_boot::DriveHostBootIfPending();
@@ -529,16 +559,13 @@ void RunPlayLoop(bool bootedIntoGameplay) {
             }
         }
         const bool running = g_session.running();
-        // A host session's death returns the player to the main menu, so they always know it ended.
-        // Host only: a client disconnect is already fled by net_pump, and a client cancel by the
-        // abort branch above; fleeing those again would arm the death bypass on a normal cancel and
-        // break a same-process retry. Idempotent through net_pump's latch.
+        // A host session ends only through a flee (a local death the revive gave up on, or a quit),
+        // which already stopped it, tore the coop state down and travelled to the menu; the Post'd flee
+        // that used to sit here always found that done. What remains is the lobby: its lifetime is the
+        // host session's, so delist it now or the heartbeat keeps a dead lobby listed forever (a host
+        // killed in the world stayed in the browser). Blocking HTTP is fine on the TimelineThread.
         if (wasRunning && wasHostSession && !running && !coop::shutdown::IsShuttingDown()) {
-            UE_LOGI("harness: host session ended -- returning to the main menu");
-            Post([] { coop::net_pump::FleeToMainMenuOnDeath(g_session, "host session ended -> main menu"); });
-            // The lobby's lifetime is the host session's: delist now, or the heartbeat keeps a dead
-            // lobby listed forever (a host killed in the world stayed in the browser). Blocking
-            // HTTP is fine on the TimelineThread.
+            UE_LOGI("harness: host session ended -- delisting the lobby");
             coop::session_manager::EndHostedLobby();
         }
         wasRunning = running;
@@ -553,9 +580,10 @@ void RunPlayLoop(bool bootedIntoGameplay) {
             if (running) {
                 coop::net_pump::Tick(g_session);
             } else {
-                // A session stopped on a path with no teardown (an aborted join) still holds the
-                // script gate; its hold ends here, on the first tick without a running session.
-                coop::subsystems::ReleaseSessionGateHold();
+                // The script-gate hold ends with the session's teardown now -- TearDownSession ->
+                // DisconnectAll releases it, whatever stopped the session -- so this branch no longer
+                // heals it. A faulted teardown that left it held is the faulting module's to name, not
+                // this tick's to paper over half-cleared state.
                 if (bootedIntoGameplay) {
                     // A run that auto-loaded its own world and may yet be joined: keep the coop
                     // observers armed so a session starting on this world does not begin behind.
@@ -582,6 +610,9 @@ void RunPlayLoop(bool bootedIntoGameplay) {
                 coop::dev::load_reroll_watch::Tick(g_session);
                 // A client left at the menu by its host joins again when the rig says the host is back.
                 coop::dev::rehost_rejoin::Tick(g_session);
+                // [dev] The join-abort proof judges the abort here (after the stop + teardown) and, for
+                // the world arm, dials the rejoin; a single enum read when off.
+                coop::dev::join_abort_drill::OnNoSession();
             }
             // The roster shows a board in a world and none at the menu, which is a live question:
             // out of session it synthesises the local row, and at the menu there is nobody to show.

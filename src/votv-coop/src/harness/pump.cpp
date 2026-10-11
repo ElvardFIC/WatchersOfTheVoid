@@ -9,6 +9,7 @@
 #include "coop/dev/object_overlay.h"
 #include "coop/dev/ragdoll_bone_overlay.h"
 #include "coop/dev/function_lookup_parity.h"
+#include "coop/dev/join_abort_drill.h"
 #include "coop/dev/world_singleton_parity.h"
 #include "coop/player/death_revive.h"
 #include "coop/player/nameplate.h"
@@ -93,6 +94,10 @@ void TickFrameTail() {
     coop::dev::init_seam_probe::Tick();
     // [dev] The walking mannequin's spawn sequence, in session or not; a single atomic read when idle.
     coop::dev::mannequin_drill::TickFrame();
+    // [dev] The join-abort proof presses Cancel mid-join here (this tail runs in the transfer wait and
+    // the play loop alike, so it catches either abort window) and notes the rejoin's world-ready; a
+    // single enum read when off.
+    coop::dev::join_abort_drill::OnFrameTail();
     TickShutdownHooks();
 }
 

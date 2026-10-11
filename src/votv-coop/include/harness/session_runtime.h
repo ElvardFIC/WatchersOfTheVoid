@@ -34,6 +34,14 @@ coop::net::Session& Session();
 // false return from Start (a start skipped for shutdown leaves it as the caller set it).
 bool StartCoopSession(const coop::net::Config& netCfg, coop::net::Refusal* why = nullptr);
 
+// End a CLIENT session from a timeline stop site (a join abort, a Cancel, a world that will not
+// load): the one owner of the client-role guard the three sites carried -- a stale cancel never stops
+// a host session that has since started. Stops on the TimelineThread, where the net-thread join
+// belongs, then RunAndWaits net_pump::TearDownSession so the coop state is gone before control
+// returns and before any next start. Returns whether it stopped a running client session (the abort
+// drain branches on it). A no-op, returning false, when no client session is running. TimelineThread.
+bool StopClientSession(const char* why);
+
 // Spawn the static 2nd player the instant the local mainPlayer_C exists
 // ([dev] static_2nd_player solo visual aid; the play scenario's non-net arm).
 void SpawnSecondPlayerWhenReady();

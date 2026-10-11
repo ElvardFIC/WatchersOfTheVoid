@@ -52,7 +52,7 @@ void Update(net::Session& session, void* localPlayer);
 // Update() would read those as per-slot "<X> left the game" departures and Push them into chat_feed
 // -- AFTER FleeToMainMenu already cleared it -- so a stale line rides its 11 s TTL into the MAIN
 // MENU overlay. It is wrong twice over: the host did not leave, the client did. Clearing the edge
-// bits here means the aggregate teardown produces no spurious peer-left toast.
+// bits here means the session teardown (net_pump::TearDownSession) produces no spurious peer-left toast.
 //
 // The HOST-stays path, its last client leaving, does NOT flee, so its legitimate "<client> left the
 // game" toast is untouched. OnSessionStart re-primes the edges for the next session, so nothing

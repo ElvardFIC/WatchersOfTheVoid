@@ -76,7 +76,14 @@ public:
     // False when the session did not start; `why` then holds the reason a player can read, which
     // is CouldNotStart with no detail when the failing site names nothing of its own.
     bool Start(const Config& cfg, Refusal* why = nullptr);
+    // Returns once the session is stopped: a second caller, on any thread, waits for the first stop
+    // to finish rather than returning while it still lingers. Start and Stop share one lock, which no
+    // holder keeps while it waits on another thread that would need it.
     void Stop();
+    // How many times Stop has stopped a running session, counted as the stop begins, so an end in
+    // flight is visible to every thread before its teardown runs (coop/session/net_pump's
+    // TearDownSession latches on it). Thread-safe.
+    uint64_t StopCount() const { return stopCount_.load(std::memory_order_acquire); }
     // One function, set once at boot, called from inside Stop() the first time it stops a running
     // session -- whoever stops it, on whatever thread. Not called from the destructor, which
     // clears the slot before its own Stop(): at process end no other file's statics are reached.
@@ -480,6 +487,9 @@ private:
     Config cfg_;
     std::thread thread_;
     std::atomic<bool> running_{false};
+    // Start's and Stop's lock (Stop above), and the count of the stops of a running session.
+    std::mutex lifecycleMutex_;
+    std::atomic<uint64_t> stopCount_{0};
     // SetStopListener's one slot; a plain function pointer, the transport knows nothing of its owner.
     std::atomic<void (*)()> stopListener_{nullptr};
     std::atomic<ConnState> state_{ConnState::Disconnected};

@@ -499,9 +499,9 @@ DisconnectStats DisconnectAll() {
     coop::host_spawn_watcher::OnDisconnect();  // drop the ambient-prop death-watch list
     coop::kerfur_convert::OnDisconnect();  // clear the open conversion verbs
     coop::kerfur_form_assembler::OnDisconnect();  // dump the containment SUMMARY (always)
-    // The session's hold on the script gate ends with the session's state, released where the old
-    // switch turned the gate off, so the lanes below tear down as they always have; a session that
-    // lives on (a host whose last client left) takes it again on its next tick.
+    // The session's hold on the script gate ends with the session's state here, the one release path
+    // now that the play loop no longer heals it, so the lanes below tear down as they always have; a
+    // session that lives on (a host whose last client left) takes it again on its next tick.
     ReleaseSessionGateHold();
     coop::kerfur_entity::OnDisconnect();  // clear the KerfurId table + free its reserved host ids
     coop::kerfur_command::OnDisconnect();  // drop pending and waiting menu commands

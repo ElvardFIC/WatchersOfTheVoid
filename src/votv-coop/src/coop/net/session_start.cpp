@@ -120,6 +120,7 @@ void Session::OnConnStatusChanged(void* info) {
 }
 
 bool Session::Start(const Config& cfg, Refusal* why) {
+    std::lock_guard<std::mutex> lifecycle(lifecycleMutex_);
     if (why) *why = Refusal{EndReason::CouldNotStart, {}};
     if (running_.load()) {
         UE_LOGW("net: Session::Start ignored -- already running");
@@ -485,7 +486,9 @@ void Session::SetStopListener(void (*onStopped)()) {
 }
 
 void Session::Stop() {
+    std::lock_guard<std::mutex> lifecycle(lifecycleMutex_);
     if (!running_.exchange(false)) return;
+    stopCount_.fetch_add(1, std::memory_order_acq_rel);
     // Told once per stopped session, after running() reads false and before the teardown below.
     if (void (*onStopped)() = stopListener_.load()) onStopped();
     // The linger flush needs RunCallbacks pumping, so connections are closed after the net thread
