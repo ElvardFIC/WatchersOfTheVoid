@@ -5,17 +5,20 @@
 #include "coop/comms/chat_log.h"
 #include "coop/config/config.h"
 #include "coop/config/config_registry.h"
+#include "coop/element/registry.h"
 #include "coop/interactables/signal_sync.h"
 #include "coop/interactables/signal_wire.h"
 #include "coop/net/blob_chunks.h"
 #include "coop/net/protocol.h"
 #include "coop/net/session.h"
+#include "coop/player/players_registry.h"
 #include "coop/session/join_progress.h"
 #include "coop/session/net_pump.h"
 
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/desk/saved_signals.h"
 #include "ue_wrap/desk/signal_dynamic.h"
+#include "ue_wrap/engine/engine.h"
 
 #include <atomic>
 #include <chrono>
@@ -31,7 +34,7 @@ namespace SD = ue_wrap::signal_dynamic;
 namespace SS = ue_wrap::saved_signals;
 using Clock = std::chrono::steady_clock;
 
-enum class Arm { Off, SignalPark, ChatIllFormed };
+enum class Arm { Off, SignalPark, ChatIllFormed, PropConvert };
 
 // Resolved once: with the environment variable unset every read would scan the ini on disk, and the
 // drill is asked per tick.
@@ -41,6 +44,7 @@ Arm ArmOf() {
             coop::config::ResolveEnum(::coop::config_registry::rows::hostile_drill);
         return v == "signal_park"     ? Arm::SignalPark
              : v == "chat_ill_formed" ? Arm::ChatIllFormed
+             : v == "prop_convert"    ? Arm::PropConvert
                                       : Arm::Off;
     }();
     return a;
@@ -50,6 +54,7 @@ const char* ArmName() {
     switch (ArmOf()) {
     case Arm::SignalPark:    return "signal_park";
     case Arm::ChatIllFormed: return "chat_ill_formed";
+    case Arm::PropConvert:   return "prop_convert";
     default:                 return "off";
     }
 }
@@ -62,6 +67,11 @@ constexpr const wchar_t* kSignalId           = L"hostile-drill";  // every row t
 constexpr int            kForgedSignals = 300;        // > kParkCap (256): enough to fill a park that keeps them
 constexpr uint32_t       kSeqBase = 0xB0570000u;      // outside the signal lane's own seq (starts at 1)
 constexpr auto           kFailBound = std::chrono::seconds(180);  // a failure bound, never a wait
+// prop_convert: the trash class both messages name, and two element ids at the top of the peer range
+// ([32768, 65536)), far from any id a run allocates; the judge refuses to run if either resolves at arm.
+constexpr const char*    kTrashClass   = "prop_garbageClump_C";
+constexpr uint32_t       kConvertEid   = 65530u;
+constexpr uint32_t       kSentinelEid  = 65531u;
 
 std::atomic<coop::net::Session*> g_session{nullptr};
 bool g_saidArm = false;
@@ -162,6 +172,46 @@ void SendChatIllFormed(coop::net::Session* s) {
     UE_LOGI("[HOSTILE-DRILL] %s sent the forged line + sentinel", ArmName());
 }
 
+template <typename Wire>
+void PutClassName(Wire& w, const char* cls) {
+    const size_t n = std::strlen(cls);
+    std::memcpy(w.data, cls, n);
+    w.len = static_cast<uint8_t>(n);
+}
+
+// A convert no honest client sends -- the trash channel's re-skin, the host's alone -- of a trash pile at
+// this client's own feet, then one honest trash spawn behind it on the same ordered lane (both Bulk): the
+// host dispatches the convert before the spawn, so the spawn's element appearing on the host means the
+// convert has been judged.
+void SendPropConvert(coop::net::Session* s, const ue_wrap::FVector& at) {
+    coop::net::PropConvertPayload c{};
+    c.oldEid = kConvertEid;
+    c.newEid = kConvertEid;
+    PutClassName(c.pileClass, kTrashClass);
+    c.locX = at.X + 120.f;
+    c.locY = at.Y;
+    c.locZ = at.Z;
+    c.scaleX = c.scaleY = c.scaleZ = 1.f;
+    c.kind = coop::net::propconvert_kind::kToPile;
+    if (!s->SendReliable(coop::net::ReliableKind::PropConvert, &c, sizeof(c))) {
+        Fail("the forged convert was not sent");  // and no sentinel behind it, so the host cannot pass
+        return;
+    }
+    coop::net::PropSpawnPayload p{};
+    PutClassName(p.className, kTrashClass);
+    p.locX = at.X - 120.f;
+    p.locY = at.Y;
+    p.locZ = at.Z;
+    p.scaleX = p.scaleY = p.scaleZ = 1.f;
+    p.elementId = kSentinelEid;
+    if (!s->SendPropSpawn(p)) {
+        Fail("the sentinel was not sent");
+        return;
+    }
+    UE_LOGI("[HOSTILE-DRILL] %s sent the convert (eid %u) + sentinel spawn (eid %u)", ArmName(), kConvertEid,
+            kSentinelEid);
+}
+
 void TickClient(coop::net::Session* s) {
     if (g_sent) return;
     // Wait for THIS client's own join to be over before sending (its world-ready announce and the
@@ -174,6 +224,11 @@ void TickClient(coop::net::Session* s) {
         if (g_sentinelSignal.empty() && !SS::FirstOrdinarySignalName(g_sentinelSignal))
             return;  // the template names are not up yet; wait (the host's fail bound covers a stall)
         SendSignalPark(s);
+    } else if (ArmOf() == Arm::PropConvert) {
+        ue_wrap::FVector at{};
+        void* pawn = coop::players::Registry::Get().Local();
+        if (!pawn || !ue_wrap::engine::TryGetActorLocation(pawn, at)) return;  // no body yet; wait
+        SendPropConvert(s, at);
     } else {
         SendChatIllFormed(s);
     }
@@ -208,7 +263,14 @@ void ArmOnFirstReadySlot(coop::net::Session* s) {
     // The witness: a monotonic count of a kind's apply park going from off to on. Baselined here, on
     // the game thread, in the same frame loop that drains the inbox the burst arrives on.
     g_witnessBase = s->ApplyPauseRaises();
-    if (ArmOf() == Arm::SignalPark) {
+    if (ArmOf() == Arm::PropConvert) {
+        // Either id already bound would make the verdict about an earlier run's element, not this one's.
+        auto& reg = coop::element::Registry::Get();
+        if (reg.Get(kConvertEid) || reg.Get(kSentinelEid)) {
+            Fail("the drill's element ids were in use at arm");
+            return;
+        }
+    } else if (ArmOf() == Arm::SignalPark) {
         g_sentinelBase = CountSignalSentinels();
         g_rowsSeen = SS::Count();
         if (g_rowsSeen > 0) SS::ReadRowKey(g_rowsSeen - 1, g_tailSeen);
@@ -261,10 +323,22 @@ void JudgeChat() {
         Pass("the ill-formed line was refused; the well-formed one was kept");
 }
 
+void JudgePropConvert() {
+    // Decide only once the sentinel spawn (sent AFTER the convert on the same ordered lane) is bound: the
+    // convert has been judged by then.
+    auto& reg = coop::element::Registry::Get();
+    if (!reg.Get(kSentinelEid)) return;
+    if (reg.Get(kConvertEid))
+        Fail("convert-applied");
+    else
+        Pass("a client's convert was not applied; the spawn sent behind it was");
+}
+
 void Judge(coop::net::Session* s) {
     if (!s->HasPeerConn(g_slot)) { Fail("the judged slot left before the verdict"); return; }
-    if (ArmOf() == Arm::SignalPark) JudgeSignalPark(s);
-    else                            JudgeChat();
+    if (ArmOf() == Arm::SignalPark)       JudgeSignalPark(s);
+    else if (ArmOf() == Arm::PropConvert) JudgePropConvert();
+    else                                  JudgeChat();
     if (g_step == Step::Judge && Clock::now() - g_armAt > kFailBound)
         Fail("timeout, the sentinel never arrived");
 }
