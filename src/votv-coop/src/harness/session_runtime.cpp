@@ -6,6 +6,7 @@
 
 #include "harness/fingerprint_census.h"
 #include "harness/sdk_check.h"
+#include "ue_wrap/core/object_index.h"
 #include "ue_wrap/core/walk_timer.h"
 #include "harness/join_leave.h"
 #include "harness/pump.h"
@@ -376,6 +377,9 @@ bool InGameplayWorld() {
 void StartCompatChecksOnce() {
     static bool s_started = false;
     if (s_started) return;
+    // The checks find classes through the object index, which applies a world load's events over several
+    // drains (145,922 queued at one load, measured): until it has caught up a loaded class reads as missing.
+    if (ue_wrap::object_index::Backlog() != 0) return;
     s_started = true;
     Post([] {
         ue_wrap::ScopedWalkTimer walk("compat checks start");
