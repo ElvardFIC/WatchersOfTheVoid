@@ -29,6 +29,25 @@ Join and is compared on the host, which refuses with a reason the client shows; 
 marks a mismatched lobby amber before a connect is tried. An old cohort keeps playing among
 itself, and the update check on the main menu informs and never gates.
 
+## Which game is running
+
+The pair says which game the mod was made for, not which game it runs on: a player can update
+the game and keep the mod. So the mod reads the running build at start from the game's own
+files -- the executable's link stamp and the main pak's index hash, both read without hashing a
+file (the file size names nothing: one build measured three sizes, packed and unpacked) -- and
+matches them against the builds it knows (`ue_wrap/facts/game_builds.inc`). On a game it was not
+made for, it warns and never forbids: a popup names both versions, with Check for an update
+(the releases page) and Continue anyway, which is remembered for that build; the menu's version
+label reads "(untested game version)"; and the first line of `multivoid-compat-report.txt` says
+what runs. Where the engine itself does not read as the mod expects, the mod stands down instead,
+and its dialog names both versions too.
+
+The build each side runs also rides the Join, after the game target: one Multivoid on two
+different games is refused (MV-J07 on the joiner, MV-H22 on the host), while two players who both
+run the same untested build may play. The lobby lists it, so the browser marks a host on another
+game build and refuses it before a connect. The update check answers per game version: a master
+lists every game's newest release, and the mod offers the one for the game it runs.
+
 ## What a game update breaks
 
 Almost all of the mod resolves the game by name at runtime and is version-agnostic. The
@@ -80,8 +99,10 @@ reports, or two SDK dumps, and names the constant each change belongs to.
    addresses, a disassembler confirms each, and a unique byte pattern with wildcarded
    displacements replaces the old one. An open-source signature resolver for Unreal executables
    is a useful independent first answer.
-6. Update the identity: the game target, the expected executable size, the build number, and
-   the game target named on [install.md](install.md), which a lint checks in CI.
+6. Update the identity: the game target, the new build's row (its link stamp and pak hash, from
+   the boot's `game-build:` line) with the profile's `kTargetBuild` naming it, the last Multivoid
+   build for the previous game version, the build number, and the game target named on
+   [install.md](install.md), which a lint checks in CI.
 7. Run the gates in order: the health check all green, the config self-test, the two-peer smoke,
    the launcher's scenarios for the systems the diff said moved, and a play session by a person.
 8. Write down what it cost. Nothing here has been done for real yet: the mod has only ever run

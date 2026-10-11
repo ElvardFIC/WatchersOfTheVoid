@@ -153,9 +153,10 @@ to 8.5 ms `[V]`.
 `(not registered this session)` or `(registration refused)` where so, and `-- <detail>` -- with a line
 saying how many listed classes the any-class rows have met, how many were gone before they were met (a
 class can load with the world and be dropped first, so an any-class row's answer can differ from run to
-run) and which are still loading, and the summary. The file ends in one verdict over the SDK check and
-the census: every census problem row counts as an important failure, and until the census has reported
-the verdict reads PENDING, never HEALTHY. The health log gets the summary,
+run) and which are still loading, and the summary. The file opens with the game build that runs and the
+boot's engine checks (written at start, so a session that never reaches a world has a report too) and
+ends in one verdict over every section: every census problem row counts as an important failure, and
+until the census has reported the verdict reads PENDING, never HEALTHY. The health log gets the summary,
 `fingerprint-census: N of M class rows match, ...`, with the costliest rows and the met line, when the
 first pass ends, when a product row's outcome moves, and when a registration is refused; a count that
 moves, a dev row, or a registration accepted (at most once a second) rewrites the file alone. Each

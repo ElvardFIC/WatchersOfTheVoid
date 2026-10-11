@@ -23,14 +23,16 @@ sends a nonce, the host answers with its own nonce and a signature over both, th
 back, and the password proof rides inside that reply (`coop/net/peer_admission`,
 `coop/net/lobby_password`). The host then assigns a slot, and that assignment is the client's
 signal to begin: there is no fourth "I am done" message. Each peer's Join carries its element id,
-nickname, skin, preferences, game target and build claim (`coop/session/player_handshake`); the host asserts
+nickname, skin, preferences, game target, build claim and game build (`coop/session/player_handshake`); the host asserts
 who occupies each slot with roster rows, re-sent as state rather than announced as events, and a
 row whose player number is zero means the slot is empty. That is how a departure reaches a
 client: it conforms to the current row, it never observes an absence.
 
 The version gate runs twice here. The build number is part of every packet header, so a peer on
 another build never parses a message at all. The game target rides the Join payload and is
-compared byte for byte; on a mismatch the host kicks with a reason and the client shows why.
+compared byte for byte; on a mismatch the host kicks with a reason and the client shows why. The
+game build each side runs (`coop/game_build`: the executable's link stamp and the pak's index
+hash) follows it and is compared the same way, so one Multivoid on two different games is refused.
 The build's own hash and whether it is the official build ride the same payload: a host on the
 official build refuses another build (MV-H30), and a host on a modified build refuses the official
 one (MV-H31), unless the host allows other builds.
@@ -380,7 +382,7 @@ and it is the reason the relay's own silence stays.
 |---|---|---|
 | `AuthHello`, `AuthChallenge`, `AuthProof` | both | the admission exchange, before any slot exists |
 | `AssignPeerSlot` | host to client | the slot and the host's element id; means admitted |
-| `Join` | each peer | element id, nickname, skin, preferences, game target, build claim |
+| `Join` | each peer | element id, nickname, skin, preferences, game target, build claim, game build |
 | `RosterRow` | host to all | who occupies a slot, zero meaning empty, and the host's number for that occupancy; re-sent as state |
 | `SaveTransferRequest`, `SaveTransferBegin`, `SaveTransferChunk` | client, then host | the request; total bytes, sidecar bytes, checksum, game mode; the chunks |
 | `PlayerInventoryBlob` | both | the per-player profile, pre-world |

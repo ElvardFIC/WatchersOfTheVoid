@@ -73,14 +73,15 @@ release is fired as the last thing; its publish job waits for the maintainer's a
    done when the page shows the asset and its SHA256; the failure email is the only backstop.
 7. **The published row.** Append `published` with the same N, game, tag, commit and today's
    date, and push it while watching the green run.
-8. **The update check.** For a stable, set `COOP_LATEST_PROTO=<N>` and
-   `COOP_LATEST_MOD=<game> b<N>` in EVERY master's environment and restart each (a player reads the
-   check from the master they chose, [master-server.md](master-server.md)); the in-game line
-   informs and never gates a join. A dev release skips this unless it is retiring an older
+8. **The update check.** For a stable, set `COOP_LATEST_GAMES` in EVERY master's environment to
+   the line the publish step printed -- every game version's newest stable, from the ledger, the
+   whole list each time -- and restart each (a player reads the check from the master they chose,
+   [master-server.md](master-server.md)); the in-game line informs and never gates a join. A dev release skips this unless it is retiring an older
    cohort, since the client has no dev-or-stable axis and compares the build number alone. Then
    `.github/ci/verify_latest.ps1` must pass: it asks every official master
-   (`kOfficialMasterSlots`), and one left behind fails it (`-AllowDev` when the masters were
-   pointed at a prerelease on purpose).
+   (`kOfficialMasterSlots`) for every game's newest release and for the 0.9.0n pair older clients
+   read, and one left behind fails it (`-AllowDev` when the masters were pointed at a prerelease on
+   purpose).
    If `src/votv-coop/assets/thanks/thanks.txt` changed since the last release, publish it to
    every master's `COOP_THANKS_FILE` too: the build embeds it, the master serves it, and the higher
    `revision` wins in the game, so the two are kept equal. **Put it in place atomically** -- copy
