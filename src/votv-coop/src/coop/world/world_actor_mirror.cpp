@@ -47,8 +47,8 @@ void OnWorldActorSpawn(const coop::net::WorldActorSpawnPayload& payload) {
     using ue_wrap::ParamFrame;
     using ue_wrap::Call;
     if (!D::Session()) return;
-    // Host-authoritative (the host's receive edge refuses a client's copy (client_authorship.h)): the eid must be in the
-    // host range.
+    // Host-authoritative: the host's receive edge refuses a client's copy (client_authorship.h). The eid
+    // must be in the host range.
     if (!coop::element::Registry::IsAllowedHostAllocatedEid(payload.elementId)) {
         UE_LOGW("world-actor[client OnSpawn]: eid=%u out of host range [1, %u) -- dropping",
                 payload.elementId, coop::element::kHostRangeSize);

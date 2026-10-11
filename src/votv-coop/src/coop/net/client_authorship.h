@@ -22,7 +22,7 @@
 //                 Client).
 //   Unverified -- accepted from a client as before, with no evidence yet either way; each moves to a row
 //                 above. A divergence from MTA, whose remote-trigger flag defaults to false (addEvent,
-//                 reference/mtasa-blue/Server/mods/deathmatch/logic/luadefs/CLuaFunctionDefs.Event.cpp:26,31):
+//                 reference/mtasa-blue/Server/mods/deathmatch/logic/luadefs/CLuaFunctionDefs.Event.cpp:26,32):
 //                 these kinds stay accepted until read, because a census of the senders proved wrong once (a
 //                 client-sent kind listed host-only), and a wrong Host row ends a lane for every client.
 

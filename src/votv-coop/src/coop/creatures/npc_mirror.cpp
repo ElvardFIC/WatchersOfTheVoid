@@ -73,8 +73,9 @@ void OnEntitySpawn(const coop::net::EntitySpawnPayload& payload) {
     using ue_wrap::ParamFrame;
     using ue_wrap::Call;
     if (!coop::npc_sync::GetSession()) return;
-    // EntitySpawn is host-authoritative (the host's receive edge refuses a client's copy (client_authorship.h), and the host
-    // never receives its own broadcasts); the eid must be in the host range.
+    // EntitySpawn is host-authoritative: the host's receive edge refuses a client's copy
+    // (client_authorship.h), and the host never receives its own broadcasts. The eid must be in the
+    // host range.
     if (!coop::element::Registry::IsAllowedHostAllocatedEid(payload.elementId)) {
         UE_LOGW("npc-sync[client OnSpawn]: elementId=%u out of allowed host range "
                 "[1, %u) -- dropping",

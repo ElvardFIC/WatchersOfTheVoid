@@ -83,6 +83,9 @@ UNVERIFIED_KEY = "<reliablekind_unverified.txt>"
 EDGE_READS_TABLE = re.compile(r"AuthorshipOf\(\s*static_cast<ReliableKind>\(\s*rh\.kind\s*\)\s*\)")
 # What a kind's row may say; NotAKind is the fallback for a byte that names no kind, never a row.
 ROW_VALUES = ("Client", "Host", "Unverified")
+# The edge's frame: the host-only wrapper, the table's answer named, and the test that opens the refusal.
+EDGE_SHAPE = re.compile(r"if\s*\(\s*cfg_\.role\s*==\s*Role::Host\s*\)\s*\{\s*const\s+ClientAuthorship\s+(\w+)\s*=\s*"
+                        r"AuthorshipOf\(\s*static_cast<ReliableKind>\(\s*rh\.kind\s*\)\s*\)\s*;\s*if\s*\(")
 
 # The five family dispatchers. Each Handle*Event returns true iff msg.kind is in its
 # family, so its own switch IS the membership declaration (SyncRouter consolidation,
@@ -222,9 +225,26 @@ def read_tree() -> dict:
     return tree
 
 
+def matching(src: str, i: int) -> int:
+    """src[i] opens a bracket: the index just past the bracket that closes it, or -1."""
+    pair = {"(": ")", "{": "}"}[src[i]]
+    depth = 0
+    for j in range(i, len(src)):
+        if src[j] == src[i]:
+            depth += 1
+        elif src[j] == pair:
+            depth -= 1
+            if depth == 0:
+                return j + 1
+    return -1
+
+
 def edge_findings(src: str) -> list:
-    """The receive edge, comment-stripped: it asks the table, refuses Host and NotAKind with a return, and
-    does so before the save-transfer diversion and the inbox."""
+    """The receive edge, comment-stripped, read as code: on the host only, the table's answer is tested at once
+    for exactly Host or NotAKind, the block that test opens ends in a return, and all of it comes before the
+    save-transfer diversion and the inbox. Tokens alone are not enough: a removed Host test once left
+    `ClientAuthorship::Host` standing in the log line's ternary."""
+    src = re.sub(r'"(?:\\.|[^"\\])*"', '""', src)   # a bracket inside a string is not code
     m = EDGE_READS_TABLE.search(src)
     if not m:
         return [f"{SESSION} no longer asks AuthorshipOf about a received kind: the table below would "
@@ -233,13 +253,25 @@ def edge_findings(src: str) -> list:
     if min(after) < 0:
         return [f"{SESSION}: the AuthorshipOf check no longer precedes the save-transfer diversion and the "
                 f"inbox, so a refused kind would be acted on first."]
-    seg = src[m.end():min(after)]
-    out = [f"{SESSION}: the edge no longer refuses {tok} (between the AuthorshipOf call and the "
-           f"save-transfer diversion)." for tok in ("ClientAuthorship::Host", "ClientAuthorship::NotAKind")
-           if tok not in seg]
-    if not re.search(r"\breturn\s*;", seg):
+    shape = EDGE_SHAPE.search(src)
+    if not shape or not shape.start() < m.start() < shape.end():
+        return [f"{SESSION}: the edge is no longer `if (cfg_.role == Role::Host) {{ const ClientAuthorship who = "
+                f"AuthorshipOf(...); if (...)`: only the host asks, and it tests the answer at once."]
+    who = shape.group(1)
+    cond_end = matching(src, shape.end() - 1)
+    cond = " ".join(src[shape.end():cond_end - 1].split())
+    want = f"{who} == ClientAuthorship::Host || {who} == ClientAuthorship::NotAKind"
+    out = []
+    if cond != want:
+        out.append(f"{SESSION}: the edge's test is `{cond}`, not `{want}`: a Host kind and a byte naming no "
+                   f"kind are refused, and nothing else is.")
+    body_start = cond_end + len(src[cond_end:]) - len(src[cond_end:].lstrip())
+    body_end = matching(src, body_start) if src[body_start:body_start + 1] == "{" else -1
+    if body_end < 0 or not re.search(r"\breturn\s*;\s*$", src[body_start + 1:body_end - 1]):
         out.append(f"{SESSION}: the edge no longer returns on a refusal, so a refused kind goes on to the "
                    f"inbox and the relay.")
+    elif body_end > min(after):
+        out.append(f"{SESSION}: the edge's refusal block runs past the save-transfer diversion or the inbox.")
     return out
 
 
@@ -608,8 +640,19 @@ def drill() -> int:
     controls.append(("the receive edge no longer returns on a refusal", t, "no longer returns on a refusal"))
     t = dict(base)
     t[SESSION] = t[SESSION].replace("who == ClientAuthorship::NotAKind", "false", 1)
-    controls.append(("the receive edge accepts a byte naming no kind", t,
-                     "no longer refuses ClientAuthorship::NotAKind"))
+    controls.append(("the receive edge accepts a byte naming no kind", t, "the edge's test is"))
+    t = dict(base)
+    t[SESSION] = t[SESSION].replace("who == ClientAuthorship::Host || who == ClientAuthorship::NotAKind",
+                                    "who == ClientAuthorship::NotAKind", 1)
+    controls.append(("the receive edge accepts a host-only kind", t, "the edge's test is"))
+    t = dict(base)
+    t[SESSION] = t[SESSION].replace("who == ClientAuthorship::NotAKind)",
+                                    "who == ClientAuthorship::NotAKind && false)", 1)
+    controls.append(("the receive edge's test can never be true", t, "the edge's test is"))
+    t = dict(base)
+    t[SESSION] = t[SESSION].replace("if (cfg_.role == Role::Host) {\n            const ClientAuthorship who",
+                                    "if (cfg_.role == Role::Client) {\n            const ClientAuthorship who", 1)
+    controls.append(("the receive edge asks on the wrong peer", t, "the edge is no longer"))
     t = dict(base)
     t[AUTH] = t[AUTH].replace(row("ChatMessage"), "", 1).replace(
         "        return ClientAuthorship::Unverified;\n    }\n",

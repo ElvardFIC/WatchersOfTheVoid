@@ -478,7 +478,8 @@ bool HandleStateEvent(net::Session& session,
         break;
     }
     // The client-to-host requests (the door open, the kerfur convert and command, the grab and
-    // throw intents, the pile resync, the prop drop) are in event_dispatch_intent.cpp.
+    // throw intents, the prop drop, and the pile resync kept for its planned sender) are in
+    // event_dispatch_intent.cpp.
     case net::ReliableKind::KerfurConvert: {
         // The host-to-all kerfur form-transition broadcast, the sole conversion-transition signal. Client-only
         // apply: the host converged its own conversion inline through the silent element ops, so it never applies
@@ -518,13 +519,13 @@ bool HandleStateEvent(net::Session& session,
         coop::server_settings_sync::HandleServerSetting(msg);
         break;
     case net::ReliableKind::PermissionGrants:
-        // This machine's own local dev grants, from the host; the module checks length, role and
-        // count, and a client's copy is refused at the host's receive edge. coop::session::grants_sync.
+        // This machine's own local dev grants, from the host; the module checks length and count,
+        // and a client's copy is refused at the host's receive edge. coop::session::grants_sync.
         coop::session::grants_sync::HandleGrants(session, msg);
         break;
     case net::ReliableKind::StatOrder:
-        // The host's order to this player's stats or effects; the module checks sender, role and
-        // bytes. coop::stat_orders.
+        // The host's order to this player's stats or effects; the module checks the bytes, and a
+        // client's copy is refused at the host's receive edge. coop::stat_orders.
         coop::stat_orders::HandleOrder(session, msg);
         break;
     case net::ReliableKind::StatOrderReply:
