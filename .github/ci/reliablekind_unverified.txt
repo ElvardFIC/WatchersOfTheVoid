@@ -4,11 +4,9 @@
 # is removed. The list only shrinks.
 SkySignalCatch
 DeskState
-EventCue
 PileResyncRequest
 DishArm
 DishSnapshot
 DishCalib
 TaskNewState
-ChatSpeaker
 HookAnchored

@@ -180,16 +180,16 @@ constexpr ClientAuthorship AuthorshipOf(ReliableKind k) {
     case ReliableKind::StatOrder:
     case ReliableKind::StatQuery:
     case ReliableKind::PropSaveData:
+    case ReliableKind::EventCue:
+    case ReliableKind::ChatSpeaker:
         return ClientAuthorship::Host;
     case ReliableKind::SkySignalCatch:
     case ReliableKind::DeskState:
-    case ReliableKind::EventCue:
     case ReliableKind::PileResyncRequest:
     case ReliableKind::DishArm:
     case ReliableKind::DishSnapshot:
     case ReliableKind::DishCalib:
     case ReliableKind::TaskNewState:
-    case ReliableKind::ChatSpeaker:
     case ReliableKind::HookAnchored:
         return ClientAuthorship::Unverified;
     }
