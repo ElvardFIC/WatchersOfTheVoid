@@ -69,7 +69,6 @@ struct ParkedRow {
     Clock::time_point lastAttempt{};  // paced at 1 Hz real time
 };
 std::deque<ParkedRow> g_applyPark;
-bool g_parkBackpressure = false;
 constexpr size_t kParkCap = 256;
 constexpr int kMaxApplyRetries = 30;
 
@@ -150,17 +149,26 @@ ApplyVerdict ApplyRowBlob(const std::vector<uint8_t>& blob, uint8_t senderSlot) 
     return ApplyVerdict::NotAppliable;
 }
 
-void SetParkBackpressure(bool on) {
-    if (on == g_parkBackpressure) return;
-    g_parkBackpressure = on;
-    if (auto* s = g_session.load(std::memory_order_acquire)) s->SetApplyBackpressure(on);
-    UE_LOGW("signal_sync: apply park %s (depth %zu)", on ? "BACKPRESSURE ON" : "drained",
-            g_applyPark.size());
+// The session's receive pause for this lane: raised at the flood bound, lowered once the park is half
+// drained. The session holds the state (coop/net/apply_pause.h) and resets it when it starts, so no
+// copy here can outlive the session that raised it.
+void UpdateParkPause() {
+    auto* s = g_session.load(std::memory_order_acquire);
+    if (!s) return;
+    constexpr auto kKind = coop::net::ReliableKind::SavedSignalAppend;
+    const size_t depth = g_applyPark.size();
+    if (depth >= kParkCap) {
+        if (s->SetApplyPause(kKind, true))
+            UE_LOGW("signal_sync: apply park BACKPRESSURE ON (depth %zu)", depth);
+    } else if (depth < kParkCap / 2) {
+        if (s->SetApplyPause(kKind, false))
+            UE_LOGW("signal_sync: apply park drained (depth %zu)", depth);
+    }
 }
 
 void ParkRow(const std::vector<uint8_t>& blob, uint8_t senderSlot) {
     g_applyPark.push_back({blob, senderSlot, 0});
-    if (g_applyPark.size() >= kParkCap) SetParkBackpressure(true);
+    UpdateParkPause();
 }
 
 void CompleteAssembly(const std::vector<uint8_t>& blob, uint8_t senderSlot) {
@@ -197,7 +205,7 @@ void DrainApplyPark() {
         }
         g_applyPark.pop_front();
     }
-    if (g_parkBackpressure && g_applyPark.size() < kParkCap / 2) SetParkBackpressure(false);
+    UpdateParkPause();
 }
 
 // --- the ready-edge join seed (shared helper + this lane's adapter) ---
@@ -467,7 +475,7 @@ void OnDisconnect() {
     // Parks and seed brackets are session-scoped: an aborted joiner's parked rows must never drain
     // into a new session's world.
     g_applyPark.clear();
-    SetParkBackpressure(false);
+    UpdateParkPause();
     g_seeder.Reset();
 }
 

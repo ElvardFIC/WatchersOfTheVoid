@@ -422,7 +422,7 @@ void Session::NetThread() {
                 inboxDepth = reliableInbox_.size();
             }
             const bool inboxFull = inboxDepth >= kReliableInboxSoftPause;
-            const bool parked    = applyBackpressureCount_.load(std::memory_order_acquire) > 0;
+            const bool parked    = applyPause_.Any();
             if (inboxFull || parked) {
                 // Attribute the pause to one trigger, depth first, so an apply park cannot read as
                 // a depth pause.

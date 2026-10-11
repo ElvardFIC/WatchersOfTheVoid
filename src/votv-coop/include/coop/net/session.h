@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include "coop/net/apply_pause.h"          // which receive lanes hold the receive loop paused
 #include "coop/net/eid_pose_lane.h"        // the trash-carry and driven-prop pose lanes
 #include "coop/net/end_reason.h"           // the code a close carries to the peer
 #include "coop/net/link_kind.h"            // how a player's traffic reaches the session
@@ -289,12 +290,12 @@ public:
         return false;
     }
 
-    // A receive lane parked at its flood bound pauses the client's inbox drain (pause, not drop).
-    // Refcounted: each lane contributes +1/-1 on its own edge, so one lane draining cannot cancel
-    // another's standing escalation.
-    void SetApplyBackpressure(bool on) {
-        applyBackpressureCount_.fetch_add(on ? 1 : -1, std::memory_order_acq_rel);
-    }
+    // A receive lane parked at its flood bound pauses this session's receive loop, keyed by the kind it
+    // parks (coop/net/apply_pause.h); true when the call changed it. Set on the game thread.
+    bool SetApplyPause(ReliableKind kind, bool on) { return applyPause_.Set(kind, on); }
+    bool ApplyPausedBy(ReliableKind kind) const { return applyPause_.Has(kind); }
+    bool ApplyPaused() const { return applyPause_.Any(); }
+    uint64_t ApplyPauseRaises() const { return applyPause_.Raises(); }
 
     // Game thread: pop one delivered reliable message (a FIFO of arrivals across peers).
     bool TryGetReliable(ReliableMessage& out);
@@ -746,8 +747,8 @@ private:
 
     // Per-slot world-ready flags (see MarkSlotWorldReady).
     std::array<std::atomic<bool>, kMaxPeers> slotWorldReady_{};
-    // The receive-side apply-backpressure refcount (see SetApplyBackpressure).
-    std::atomic<int> applyBackpressureCount_{0};
+    // The receive lanes holding the receive loop paused (see SetApplyPause); reset by Start.
+    ApplyPauseSet applyPause_;
     // Per-slot relay eligibility: the hConn that announced ClientWorldReady, stamped on the net
     // thread at receipt. The game-thread world-ready flag lags by one drain, and the relay consults
     // this so a reliable received in that gap is neither lost nor doubled; hConn-stamped so a

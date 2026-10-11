@@ -40,6 +40,7 @@
 #include "coop/net/peer_admission.h"
 #include "coop/net/peer_identity.h"
 #include "coop/net/stream_slot.h"
+#include "coop/net/apply_pause.h"
 #include "coop/permissions/permission_host.h"
 #include "coop/permissions/permissions_selftest.h"
 #include "coop/player/movement_ledger.h"
@@ -226,6 +227,9 @@ bool StartCoopSession(const coop::net::Config& netCfg, coop::net::Refusal* why) 
     // And the newest-wins latch every received stream keeps: no LAN run reorders a datagram, so the
     // batch that arrives behind one already taken is refused here, on pinned sequences.
     coop::net::stream_slot::RunSelftest();
+    // And the set of lanes that pause the receive loop: no honest run raises a pause, so its raise and
+    // lower counting once each, and its word edges, are proved here on pinned kinds.
+    coop::net::apply_pause::RunSelftest();
     // And the chat line's one shaping, which decides what the whole lobby records: a line of only
     // separators, a space between two of them, a cap landing mid-character -- none of which a typed
     // drill line reaches.

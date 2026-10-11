@@ -181,6 +181,9 @@ bool Session::Start(const Config& cfg, Refusal* why) {
     // occupied. The counter is not reset, so generations stay unique across cycles and a stale
     // captured token can never alias a fresh occupant.
     for (int i = 0; i < kMaxPeers; ++i) peerGenBySlot_[i].store(0, std::memory_order_relaxed);
+    // Nor with its receive loop paused: a lane's park belongs to the session that filled it, and one
+    // ended before its lane lowered the pause would hold this session's receive from its first pass.
+    applyPause_.Reset();
     // Everything this peer sends starts empty, whole and under the writers' locks (Start can run on
     // the harness's timeline thread, the game thread's release edges write the same state): a Session
     // reused after a Stop would otherwise fan out the prior session's last pose, pelvis, hand,
