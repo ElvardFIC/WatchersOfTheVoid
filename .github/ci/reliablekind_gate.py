@@ -39,12 +39,21 @@ WHAT IT HOLDS -- these FAIL the build:
      parser cannot read, or any file it cannot open. It fails CLOSED: a gate that cannot
      read its subject must not return PASS.
 
+  5. The authorship table (`client_authorship.h`, which the host's receive edge reads to refuse a kind a
+     client may not author) out of step with the enum: an enumerator with no row, a row named twice, a row
+     for a name that is not a kind, a relayable kind that is not Client (the edge would refuse what the relay
+     forwards), or an Unverified kind not listed in `reliablekind_unverified.txt` beside this file -- a list
+     that only shrinks: a listed kind that is no longer Unverified fails until its line is removed. So a new
+     kind enters as Host or Client, never Unverified.
+
 WHAT IT DELIBERATELY DOES NOT HOLD. `session_lanes.h`'s three switches -- `LaneForKind`,
 `IsClientRelayableReliableKind`, `IsPreWorldSendableKind` -- all default safely (Normal /
 no-relay / hold-until-world-ready), and whether a given kind SHOULD relay is a design
 decision no text scan can make. Absence there is legitimate for every host-authored kind.
 So they are reported in `--table`, not gated: this file must not manufacture a failure it
-cannot justify, or the next author learns to route around it.
+cannot justify, or the next author learns to route around it. The authorship table is the
+exception, by design: it is total -- every kind decided, Client or Host -- and only its
+membership is checked here, never whether a decision is right.
 
 Note that membership in `session_lanes.h` is NOT receiver coverage. That is not a detail:
 the 2026-09-01 dead kind WAS in that header (79 case labels), so a gate written around
@@ -65,6 +74,9 @@ SRC = ROOT / "src" / "votv-coop"
 PROTO = "include/coop/net/protocol.h"
 LANES = "src/coop/net/session_lanes.h"
 SESSION = "src/coop/net/session_receive.cpp"   # the receive switch and the admission handler
+AUTH = "src/coop/net/client_authorship.h"       # which kinds a client may author (rule 5)
+UNVERIFIED = pathlib.Path(__file__).resolve().parent / "reliablekind_unverified.txt"
+UNVERIFIED_KEY = "<reliablekind_unverified.txt>"
 
 # The five family dispatchers. Each Handle*Event returns true iff msg.kind is in its
 # family, so its own switch IS the membership declaration (SyncRouter consolidation,
@@ -187,7 +199,7 @@ def strip_comments(text: str) -> str:
 
 def read_tree() -> dict:
     """Every file the gate reasons about, as text. One dict so --drill can mutate a copy."""
-    want = {PROTO, LANES, SESSION, FEED_FILE} | set(FAMILY_FILES)
+    want = {PROTO, LANES, SESSION, FEED_FILE, AUTH} | set(FAMILY_FILES)
     for spec in NET_THREAD_TERMINAL.values():
         want |= {f for f, _rx, _what in spec["must"]}
     tree = {}
@@ -197,7 +209,30 @@ def read_tree() -> dict:
             tree[rel] = p.read_text(encoding="utf-8", errors="replace")
         except OSError:
             tree[rel] = None       # a FAIL below, not a traceback and not a skip
+    try:
+        tree[UNVERIFIED_KEY] = UNVERIFIED.read_text(encoding="utf-8")
+    except OSError:
+        tree[UNVERIFIED_KEY] = None
     return tree
+
+
+def parse_authorship(text: str):
+    """client_authorship.h's AuthorshipOf: [(kind, row)] in source order, one per case label."""
+    src = strip_comments(text)
+    i = src.find("AuthorshipOf(")
+    if i < 0:
+        return None
+    rows, pending = [], []
+    for line in src[i:].splitlines():
+        for k in CASE.findall(line):
+            pending.append(k)
+        r = re.search(r"return\s+ClientAuthorship::(\w+)\s*;", line)
+        if r and pending:
+            rows.extend((k, r.group(1)) for k in pending)
+            pending = []
+        if re.match(r"^\}", line):
+            break
+    return rows
 
 
 def parse_enum(text):
@@ -324,6 +359,41 @@ def check(tree: dict):
                              f"kind now reaches the inbox with no handler at all. Asking only "
                              f"whether the file still MENTIONS the kind is not enough -- both "
                              f"these files name these kinds in unrelated places.")
+
+    # --- check 5: the authorship table is total and in step ------------------------
+    rows = parse_authorship(tree[AUTH])
+    if rows is None:
+        fails.append(f"{AUTH}: no AuthorshipOf switch found -- the receive edge's table cannot be checked.")
+    else:
+        seen = {}
+        for k, row in rows:
+            seen.setdefault(k, []).append(row)
+        for k in sorted(set(seen) - set(enums)):
+            fails.append(f"{AUTH} has a row for '{k}', which is not a ReliableKind.")
+        for k in sorted(set(enums), key=lambda x: (enums.get(x) is None, enums.get(x) or 0)):
+            if k not in seen:
+                fails.append(f"{k} = {idof(k)} has no row in {AUTH}: decide whether a client may author it "
+                             f"(Client) or not (Host). A kind with no row is refused at the host's edge.")
+            elif len(seen[k]) > 1:
+                fails.append(f"{k} = {idof(k)} is named {len(seen[k])} times in {AUTH}.")
+        relay = parse_lane_switches(tree[LANES])["relay"]
+        for k in sorted(relay):
+            if k in seen and seen[k][0] != "Client":
+                fails.append(f"{k} is relayable but {seen[k][0]} in {AUTH}: the edge would refuse what the "
+                             f"relay forwards.")
+        listed = set()
+        if tree[UNVERIFIED_KEY] is None:
+            fails.append("reliablekind_unverified.txt: missing or unreadable.")
+        else:
+            listed = {ln.strip() for ln in tree[UNVERIFIED_KEY].splitlines()
+                      if ln.strip() and not ln.lstrip().startswith("#")}
+        unverified = {k for k, rs in seen.items() if rs and rs[0] == "Unverified"}
+        for k in sorted(unverified - listed):
+            fails.append(f"{k} is Unverified in {AUTH} but not listed in reliablekind_unverified.txt: a new "
+                         f"kind is Client or Host from its first commit.")
+        for k in sorted(listed - unverified):
+            fails.append(f"reliablekind_unverified.txt lists {k}, which is not Unverified in {AUTH}: remove "
+                         f"the line -- the list only shrinks.")
 
     # --- check 4: two families claiming one kind -----------------------------------
     for name in sorted(set(enums), key=lambda k: (enums.get(k) is None, enums.get(k) or 0)):
@@ -483,6 +553,24 @@ def drill() -> int:
     t = dict(base)
     t[PROTO] = "// the enum is gone"
     controls.append(("an unparseable enum", t, "expected >=100"))
+
+    # 7-10. the authorship table (rule 5).
+    row = lambda k: "    case ReliableKind::" + k + ":\n"
+    t = dict(base)
+    t[AUTH] = t[AUTH].replace(row("ChatMessage"), "", 1)
+    controls.append(("an authorship row removed", t, "ChatMessage = "))
+    t = dict(base)
+    t[AUTH] = t[AUTH].replace(row("ItemActivate"), "", 1).replace(
+        row("PropConvert"), row("PropConvert") + row("ItemActivate"), 1)
+    controls.append(("a relayable kind made Host", t, "ItemActivate is relayable but Host"))
+    t = dict(base)
+    t[AUTH] = t[AUTH].replace(row("ChatMessage"), "", 1).replace(
+        row("HookAnchored"), row("HookAnchored") + row("ChatMessage"), 1)
+    controls.append(("an Unverified kind not in the baseline", t, "ChatMessage is Unverified"))
+    t = dict(base)
+    t[UNVERIFIED_KEY] = (t[UNVERIFIED_KEY] or "") + "PropSpawn\n"
+    controls.append(("a baseline line for a kind that is not Unverified", t,
+                     "lists PropSpawn, which is not Unverified"))
 
     bad = 0
     for label, mutated, expect in controls:
