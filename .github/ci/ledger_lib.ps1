@@ -149,6 +149,30 @@ function Get-NewestPublished {
     $null
 }
 
+# The newest PUBLISHED stable per game target -- Get-NewestPublished's fold, per game: a hashtable
+# game -> ledger state. The masters' COOP_LATEST_GAMES is this map (docs/release.md), so a player on one game
+# is told about the newest Multivoid for that game and not about one for another.
+function Get-NewestPublishedPerGame {
+    param([Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Rows,
+          [switch]$IncludeDev)
+    $out = @{}
+    $cands = @($Rows | Where-Object { $_.Kind -eq 'published' -and ($IncludeDev -or -not $_.Dev) })
+    for ($i = $cands.Count - 1; $i -ge 0; $i--) {
+        if ($out.ContainsKey($cands[$i].Game)) { continue }
+        $st = Get-LedgerState -Rows $Rows -N $cands[$i].N
+        if ($st.State -eq 'PUBLISHED') { $out[$cands[$i].Game] = $st }
+    }
+    $out
+}
+
+# COOP_LATEST_GAMES's value for a map game -> anything with N: "<game>:<N>:<game> b<N>", comma-joined, oldest N
+# first -- the master's grammar (server/src/lobby.rs parse_latest_games).
+function Format-LatestGames {
+    param([Parameter(Mandatory)][hashtable]$PerGame)
+    (@($PerGame.GetEnumerator() | Sort-Object { [int]$_.Value.N }) |
+        ForEach-Object { "$($_.Key):$($_.Value.N):$($_.Key) b$($_.Value.N)" }) -join ','
+}
+
 # --- Proto extraction ----------------------------------------------------
 
 # kProtocolVersion at a given commit, read via `git show` (no checkout needed).

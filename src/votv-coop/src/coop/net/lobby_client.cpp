@@ -253,10 +253,23 @@ LatestInfo LobbyClient::FetchLatest(const std::string& masterUrl, int timeoutMs)
     J::Json j;
     if (!J::ParseObject(resp.body, j)) { UE_LOGW("lobby: /v1/latest -- malformed response"); return info; }
     info.proto = J::Int(j, "proto");
-    info.mod   = J::Str(j, "mod");
+    info.mod   = J::StrN(j, "mod", 24);
     // `url` is served by the master and deliberately not parsed; see LatestInfo's header. Ignoring
     // an extra response field is forward-compatible, so it needs no wire-format change.
-    info.ok    = info.proto > 0;
+    // `games`: the newest release per game version, capped as the master caps it (a master's bytes are a peer's).
+    const auto git = j.find("games");
+    if (git != j.cend() && git->is_array()) {
+        info.hasGames = true;
+        for (const auto& e : *git) {
+            if (!e.is_object() || info.games.size() >= 16) continue;
+            LatestGame g;
+            g.game  = J::StrN(e, "game", 24);
+            g.proto = J::IntClamped(e, "proto", 0, 65535);
+            g.mod   = J::StrN(e, "mod", 24);
+            if (!g.game.empty() && g.proto > 0) info.games.push_back(g);
+        }
+    }
+    info.ok    = info.proto > 0 || !info.games.empty();
     return info;
 }
 

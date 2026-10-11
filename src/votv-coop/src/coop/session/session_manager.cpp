@@ -18,6 +18,7 @@
 #include "coop/version.h"  // kGameTarget -- the game half of the Paper-pair identity (CMake-generated)
 #include "ue_wrap/core/log.h"
 
+#include <algorithm>
 #include <windows.h>
 
 #include <exception>
@@ -213,10 +214,67 @@ namespace {
 std::mutex g_latestMu;
 std::string g_latestLine;          // empty until a check completes WITH a verdict
 bool g_latestOutdated = false;     // amber tint when true
-std::string g_latestSuperseding;   // the superseding build's name when outdated, else empty
+LatestNote g_latestNote;           // what the last check found to say, for a translated surface
 std::atomic<bool> g_latestInFlight{false};
 std::atomic<uint64_t> g_latestFetchMs{0};  // GetTickCount64() of the last fetch START (0 = none yet)
 constexpr uint64_t kLatestMinIntervalMs = 8000;  // no-DoS floor between /v1/latest fetches
+}  // namespace
+
+namespace {
+
+// The version line and its note from the master's record, by the game this process runs
+// (docs/VERSION_PORT_DRILL_ARC.md 8.4): on the target, the target's entry as before; on a known other build,
+// the release made for that game; on an untested build, the newest release, named with its game. A master
+// older than `games` gets today's comparison of its one record. No URL: the label is a one-line UTextBlock,
+// not a hyperlink, so an address would cost ~37 characters to deliver a string nobody can act on.
+void ComposeLatest(const lobby::LatestInfo& info, std::string* line, LatestNote* note, bool* outdated) {
+    const int ours = static_cast<int>(net::kProtocolVersion);
+    const auto tag = [](const lobby::LatestGame& g) { return g.mod.empty() ? "b" + std::to_string(g.proto) : g.mod; };
+    const coop::game_build::Detected& running = coop::game_build::Running();
+    lobby::LatestGame mine;
+    if (!info.hasGames) {
+        static std::atomic<bool> s_said{false};
+        if (!s_said.exchange(true))
+            UE_LOGW("session_manager: this master lists no release per game version -- the update check compares "
+                    "its one record, which may be for another game");
+        if (info.proto <= 0) return;
+        mine = {coop::version::kGameTarget, info.proto, info.mod};
+    } else if (running.kind == coop::game_build::Kind::Target) {
+        const auto it = std::find_if(info.games.begin(), info.games.end(),
+                                     [](const lobby::LatestGame& g) { return g.game == coop::version::kGameTarget; });
+        if (it == info.games.end()) return;
+        mine = *it;
+    } else if (running.row) {
+        const auto it = std::find_if(info.games.begin(), info.games.end(),
+                                     [&](const lobby::LatestGame& g) { return g.game == running.row->version; });
+        if (it == info.games.end()) return;
+        *outdated = true;
+        *note = {LatestNote::Kind::ForYourGame, tag(*it), it->game};
+        *line = DisplayVersion() + " -- for your game: " + note->mod;
+        return;
+    } else {
+        const auto it = std::max_element(info.games.begin(), info.games.end(),
+                                         [](const lobby::LatestGame& a, const lobby::LatestGame& b) {
+                                             return a.proto < b.proto;
+                                         });
+        if (it == info.games.end()) return;
+        *outdated = true;
+        *note = {LatestNote::Kind::Newest, tag(*it), it->game};
+        *line = DisplayVersion() + " -- newest: " + note->mod + " for VOTV " + it->game;
+        return;
+    }
+    if (mine.proto == ours) {
+        *line = DisplayVersion() + " (latest)";
+    } else if (mine.proto > ours) {
+        *outdated = true;
+        *note = {LatestNote::Kind::Update, tag(mine), mine.game};
+        *line = DisplayVersion() + " -- UPDATE AVAILABLE: " + note->mod;
+    } else {
+        // We are newer than the master's latest (a dev build); informational.
+        *line = DisplayVersion() + " (dev; latest released b" + std::to_string(mine.proto) + ")";
+    }
+}
+
 }  // namespace
 
 void RefreshLatestVersion() {
@@ -231,33 +289,18 @@ void RefreshLatestVersion() {
         try {
             if (coop::shutdown::IsShuttingDown()) { g_latestInFlight.store(false, std::memory_order_release); return; }
             const lobby::LatestInfo info = lobby::LobbyClient::FetchLatest(masterUrl, 8000);
-            // proto <= 0: the master has no released-version record, so no verdict; the plain
-            // identity label stays rather than a fabricated "latest" line.
-            if (info.ok && info.proto > 0) {  // an unreachable master keeps the last known line
-                const int ours = static_cast<int>(net::kProtocolVersion);
-                std::string line;
-                std::string superseding;
-                bool outdated = false;
-                if (info.proto == ours) {
-                    // The current build is the latest release: the compact "(latest)" tag.
-                    line = DisplayVersion() + " (latest)";
-                } else if (info.proto > ours) {
-                    outdated = true;
-                    // No URL: the label is a one-line UTextBlock, not a hyperlink, so an address
-                    // would cost ~37 characters to deliver a string nobody can act on. What stays
-                    // is which build supersedes yours.
-                    superseding = info.mod.empty() ? ("b" + std::to_string(info.proto)) : info.mod;
-                    line = DisplayVersion() + " -- UPDATE AVAILABLE: " + superseding;
-                } else {
-                    // We are newer than the master's latest (a dev build); informational.
-                    line = DisplayVersion() + " (dev; latest released b" +
-                           std::to_string(info.proto) + ")";
-                }
+            // No record: the master has no released version, so no verdict; the plain identity label
+            // stays rather than a fabricated "latest" line. An unreachable master keeps the last line.
+            std::string line;
+            LatestNote note;
+            bool outdated = false;
+            if (info.ok) ComposeLatest(info, &line, &note, &outdated);
+            if (!line.empty()) {
                 UE_LOGI("session_manager: version check -- %s", line.c_str());
                 std::lock_guard<std::mutex> lk(g_latestMu);
                 g_latestLine = line;
                 g_latestOutdated = outdated;
-                g_latestSuperseding = superseding;
+                g_latestNote = note;
             }
         } catch (const std::exception& e) {
             UE_LOGW("session_manager: version check worker exception: %s", e.what());
@@ -272,9 +315,9 @@ std::string LatestVersionLine(bool* outdated) {
     return g_latestLine;
 }
 
-std::string LatestSuperseding() {
+LatestNote GetLatestNote() {
     std::lock_guard<std::mutex> lk(g_latestMu);
-    return g_latestSuperseding;
+    return g_latestNote;
 }
 
 void Refresh() {

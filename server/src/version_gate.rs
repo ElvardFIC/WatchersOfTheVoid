@@ -33,6 +33,23 @@ pub fn game_shape_ok(game: &str) -> bool {
         && suffix.bytes().all(|b| b.is_ascii_lowercase())
 }
 
+/// The running game build a host reads from its own install (the mod's `ue_wrap/core/game_build`):
+/// `<exe link stamp, 8 hex>-<pak index hash, 16 hex>`, or `<stamp>-nopak` when its pak could not be read;
+/// empty from a host that predates the field. A parsing concern like `game_shape_ok`: the browser compares
+/// it byte for byte and names it, so nothing else may reach that field.
+pub fn game_build_shape_ok(key: &str) -> bool {
+    if key.is_empty() {
+        return true;
+    }
+    let hex = |s: &str| s.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b));
+    match key.split_once('-') {
+        Some((stamp, rest)) => {
+            stamp.len() == 8 && hex(stamp) && (rest == "nopak" || (rest.len() == 16 && hex(rest)))
+        }
+        None => false,
+    }
+}
+
 /// Pure gate half (env resolved by the caller so this is unit-testable).
 ///
 /// SHAPE ONLY. THE MASTER DOES NOT ADJUDICATE WHICH BUILDS EXIST -- the proto ceiling
@@ -58,23 +75,26 @@ pub fn game_shape_ok(game: &str) -> bool {
 ///
 /// What STAYS is `game_shape_ok`, because that is a PARSING concern (keep arbitrary
 /// strings out of a field every browser renders), not a version-policy one.
-pub fn version_gate(game: &str, proto: i64) -> Result<(), String> {
+pub fn version_gate(game: &str, proto: i64, game_build: &str) -> Result<(), String> {
     if !game.is_empty() && !game_shape_ok(game) {
         return Err(format!("bad game version '{}'", game));
+    }
+    if !game_build_shape_ok(game_build) {
+        return Err("bad game build key".to_string());
     }
     let _ = proto;
     Ok(())
 }
 
-pub fn version_gate_env(game: &str, proto: i64) -> Result<(), String> {
+pub fn version_gate_env(game: &str, proto: i64, game_build: &str) -> Result<(), String> {
     // No env left to resolve: the ceiling and the allowlist are retired. Kept as a named
     // seam so the call site still reads as a gate and a future policy has an obvious home.
-    version_gate(game, proto)
+    version_gate(game, proto, game_build)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{game_shape_ok, version_gate};
+    use super::{game_build_shape_ok, game_shape_ok, version_gate};
 
     #[test]
     fn game_shape_accepts_real_votv_versions() {
@@ -97,23 +117,36 @@ mod tests {
         // tester running a build the master has never heard of MUST be able to host.
         // b148 against a "newest released b143" was the case the old ceiling refused,
         // and refusing it denied our own testers on every proto bump.
-        assert!(version_gate("0.9.0n", 148).is_ok());
-        assert!(version_gate("0.9.0n", 9999).is_ok());
-        assert!(version_gate("0.9.0n", 143).is_ok());
-        assert!(version_gate("0.9.0n", 133).is_ok());
+        assert!(version_gate("0.9.0n", 148, "").is_ok());
+        assert!(version_gate("0.9.0n", 9999, "").is_ok());
+        assert!(version_gate("0.9.0n", 143, "").is_ok());
+        assert!(version_gate("0.9.0n", 133, "").is_ok());
     }
 
     #[test]
     fn legacy_and_unadvertised_pass() {
-        assert!(version_gate("", 0).is_ok());        // legacy pre-v122 host
-        assert!(version_gate("0.9.0n", 0).is_ok());  // no build advertised
+        assert!(version_gate("", 0, "").is_ok());        // legacy pre-v122 host
+        assert!(version_gate("0.9.0n", 0, "").is_ok());  // no build advertised
+    }
+
+    #[test]
+    fn game_build_shape() {
+        ***REMOVED***
+            assert!(game_build_shape_ok(k), "{k} should pass");
+        }
+        for k in ["6a08597d", "6A08597D-56065b874f3bfc68", "6a08597d-56065b874f3bfc6", "6a08597-56065b874f3bfc68",
+                  "6a08597d-56065b874f3bfc68x", "6a08597d-NOPAK", "<b>-nopak", "6a08597d_nopak"] {
+            assert!(!game_build_shape_ok(k), "{k} should fail");
+        }
+        assert!(version_gate("0.9.0n", 222, "6a08597d-56065b874f3bfc68").is_ok());
+        assert!(version_gate("0.9.0n", 222, "lol").is_err());
     }
 
     #[test]
     fn gate_still_refuses_bad_shape_with_any_proto() {
         // SHAPE survives: this is a parsing concern (keep arbitrary strings out of a
         // field every browser renders), not a version-policy one.
-        assert!(version_gate("h4x0r edition", 133).is_err());
-        assert!(version_gate("h4x0r edition", 9999).is_err());
+        assert!(version_gate("h4x0r edition", 133, "").is_err());
+        assert!(version_gate("h4x0r edition", 9999, "").is_err());
     }
 }

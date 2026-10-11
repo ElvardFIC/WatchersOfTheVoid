@@ -1,5 +1,6 @@
-# verify_latest.ps1 -- the STABLE-ritual closing check (design D3): after every master's env
-# constants are updated, each master's /v1/latest must report exactly the newest published stable.
+# verify_latest.ps1 -- the STABLE-ritual closing check (design D3): after every master's COOP_LATEST_GAMES is
+# updated, each master's /v1/latest must list every game's newest published stable under `games`, and its
+# legacy `proto` must be the 0.9.0n entry's -- the game every client older than `games` targets.
 # The masters are the official slots in protocol.h (kOfficialMasterSlots): a player reads the update
 # check from the master they chose, so one master left behind tells its players a wrong verdict.
 # Fold-aware (R23): "the newest BARE-tag row whose state(N) == PUBLISHED" -- a retracted N has a
@@ -35,10 +36,14 @@ if ($MasterLatestUrls.Count -eq 0) {
 }
 
 $kind = if ($AllowDev) { 'published (dev admitted)' } else { 'published stable' }
-$expected = Get-NewestPublished -Rows (Read-Ledger -Path $LedgerPath).Rows -IncludeDev:$AllowDev
-if ($null -ne $expected) {
-    Write-Host "verify_latest: ledger newest $kind = N=$($expected.N) game=$($expected.Game) tag=$($expected.TagName)"
+$rows = (Read-Ledger -Path $LedgerPath).Rows
+$perGame = Get-NewestPublishedPerGame -Rows $rows -IncludeDev:$AllowDev
+foreach ($g in $perGame.Keys) {
+    Write-Host "verify_latest: ledger newest $kind for $g = N=$($perGame[$g].N) tag=$($perGame[$g].TagName)"
 }
+# The legacy fields answer clients older than `games`, all made for this game (server/src/lobby.rs LEGACY_GAME).
+$legacyGame = '0.9.0n'
+$expected = if ($perGame.ContainsKey($legacyGame)) { $perGame[$legacyGame] } else { $null }
 
 $failed = 0
 foreach ($url in $MasterLatestUrls) {
@@ -65,8 +70,21 @@ foreach ($url in $MasterLatestUrls) {
 
     Write-Host "verify_latest: $url reports proto=$masterProto mod='$($resp.mod)'"
     if ($masterProto -ne $expected.N) {
-        Write-Host "verify_latest: FAIL -- $url proto $masterProto != ledger N $($expected.N) from the newest $kind (env constants not updated / stale?)"
+        Write-Host "verify_latest: FAIL -- $url legacy proto $masterProto != ledger N $($expected.N), the newest $kind for $legacyGame (COOP_LATEST_GAMES not updated / stale?)"
         $failed++
+    }
+    $listed = @{}
+    if ($resp.PSObject.Properties.Name -contains 'games') {
+        foreach ($e in @($resp.games)) { $listed[[string]$e.game] = [int]$e.proto }
+    }
+    foreach ($g in $perGame.Keys) {
+        if (-not $listed.ContainsKey($g)) {
+            Write-Host "verify_latest: FAIL -- $url lists no release for $g under games (ledger N $($perGame[$g].N))"
+            $failed++
+        } elseif ($listed[$g] -ne $perGame[$g].N) {
+            Write-Host "verify_latest: FAIL -- $url lists $g at N=$($listed[$g]), ledger N $($perGame[$g].N)"
+            $failed++
+        }
     }
 }
 

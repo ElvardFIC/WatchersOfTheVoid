@@ -36,18 +36,73 @@ pub const MAX_NAME: usize = 63;
 pub const MAX_WORLD: usize = 39;
 pub const MAX_VERSION: usize = 23;
 pub const MAX_GAME: usize = 23; // v122: the host's VOTV game target ("0.9.0n")
+pub const MAX_GAME_BUILD: usize = 25; // b222: the build the host runs, "<stamp 8 hex>-<pak hash 16 hex>"
 
-// latest released mod, served by /v1/latest. DEPLOY CONFIG, not code: overridable via
-// COOP_LATEST_PROTO / COOP_LATEST_MOD / COOP_LATEST_URL in /etc/coop-master.env, so a
-// release bump is an env edit + `systemctl restart coop-master` -- no rebuild.
-// v122 (2026-07-19): the compiled-in default is proto 0 = "no released record" --
-// the client treats proto<=0 as NO VERDICT (silent identity label; it can never
-// fabricate a stale "latest" or an update nag). ZERO releases exist yet; the first
-// real release sets COOP_LATEST_PROTO (its build number) + COOP_LATEST_MOD (the
-// Paper-pair display tag, e.g. "0.9.0n-b130") per the release checklist.
-pub const LATEST_PROTO: i64 = 0;
-pub const LATEST_MOD: &str = "";
+// The latest released mod, served by /v1/latest. DEPLOY CONFIG, not code: COOP_LATEST_GAMES and
+// COOP_LATEST_URL in /etc/coop-master.env, so a release is an env edit + `systemctl restart coop-master`
+// -- no rebuild. The release ritual writes the whole list from the release ledger (publish.ps1 prints it,
+// release_master_latest.sh writes it on every master, verify_latest.ps1 checks it). No list = no record:
+// the client treats proto<=0 as NO VERDICT, so it never fabricates a "latest" or an update nag.
 pub const LATEST_URL: &str = "https://github.com/VOTV-MP/Multivoid/releases";
+
+/// The game every client older than `games` targets: all releases before b222 are for 0.9.0n. Their
+/// legacy `proto`/`mod` are this game's entry, so that cohort is never told to update to a Multivoid made
+/// for a game it does not have. A historical fact, frozen.
+pub const LEGACY_GAME: &str = "0.9.0n";
+
+/// The latest release per game version, served by /v1/latest as `games` (b222):
+***REMOVED***
+/// tag keeps the "<game> b<N>" shape and may hold spaces, never `,` or `:`. The mod picks the entry for the
+/// game it runs.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LatestGame {
+    pub game: String,
+    pub proto: i64,
+    pub tag: String,
+}
+
+/// Parse `COOP_LATEST_GAMES`. An entry that does not parse is dropped and named in the second list (the
+/// caller logs it once): a typo in the deploy config costs that entry, never the others. Empty -> no entries.
+pub fn parse_latest_games(spec: &str) -> (Vec<LatestGame>, Vec<String>) {
+    let mut games = Vec::new();
+    let mut refused = Vec::new();
+    for entry in spec.split(',').map(str::trim).filter(|e| !e.is_empty()) {
+        let parts: Vec<&str> = entry.splitn(3, ':').collect();
+        let ok = parts.len() == 3
+            && crate::version_gate::game_shape_ok(parts[0])
+            && parts[1].parse::<i64>().map(|p| p > 0 && p <= 65535).unwrap_or(false)
+            && !parts[2].is_empty()
+            && parts[2].len() <= MAX_VERSION
+            && parts[2].bytes().all(|b| b != b':' && (b == b' ' || b.is_ascii_graphic()));
+        if ok {
+            games.push(LatestGame {
+                game: parts[0].to_string(),
+                proto: parts[1].parse().unwrap_or(0),
+                tag: parts[2].to_string(),
+            });
+        } else {
+            refused.push(entry.to_string());
+        }
+    }
+    (games, refused)
+}
+
+/// /v1/latest's body: every game's latest under `games` (absent when none), and the legacy `proto`/`mod`
+/// from the LEGACY_GAME entry (0 and "" without one -- no verdict for the old cohort). `url` as given.
+pub fn latest_answer(games: &[LatestGame], url: &str) -> Value {
+    let legacy = games.iter().find(|g| g.game == LEGACY_GAME);
+    let mut body = json!({
+        "proto": legacy.map_or(0, |g| g.proto),
+        "mod": legacy.map_or("", |g| g.tag.as_str()),
+        "url": url,
+    });
+    if !games.is_empty() {
+        body["games"] = Value::Array(
+            games.iter().map(|g| json!({"game": g.game, "proto": g.proto, "mod": g.tag})).collect(),
+        );
+    }
+    body
+}
 
 pub const TRUSTED_PROXY_PEERS: [&str; 2] = ["127.0.0.1", "::1"];
 
@@ -71,6 +126,7 @@ pub struct Lobby {
     pub name: String,
     pub version: String,
     pub game: String, // v122: host's VOTV game target ("" = pre-field host)
+    pub game_build: String, // b222: the game build the host runs ("" = pre-field host)
     pub proto: i64,
     pub world: String,
     pub locked: bool,
@@ -146,6 +202,7 @@ impl Lobby {
             name: String::new(),
             version: String::new(),
             game: String::new(),
+            game_build: String::new(),
             proto: 0,
             world: String::new(),
             locked: false,
@@ -357,10 +414,11 @@ pub fn h_host(state: &mut MasterState, ip: &str, body: &Value) -> (u16, Value) {
     // fabricated default.
     lo.version = clamp_field(body, "version", MAX_VERSION);
     lo.game = clamp_field(body, "game", MAX_GAME);
+    lo.game_build = clamp_field(body, "game_build", MAX_GAME_BUILD);
     lo.proto = as_int(body, "proto", 0).clamp(0, 65535);
     // Version-pair gate (2026-08-29): shape-invalid game / impossible build
     // numbers are refused BEFORE the lobby exists -- see version_gate.rs.
-    if let Err(reason) = version_gate_env(&lo.game, lo.proto) {
+    if let Err(reason) = version_gate_env(&lo.game, lo.proto, &lo.game_build) {
         log(&format!("host REFUSED from {}: {} (name='{}')", ip, reason, lo.name));
         return (400, json!({"error": reason}));
     }
@@ -415,10 +473,11 @@ pub fn h_host(state: &mut MasterState, ip: &str, body: &Value) -> (u16, Value) {
     state.lobby_by_public.insert(lobby_id.clone(), session_id.clone());
     state.lobbies.insert(session_id.clone(), lo);
     log(&format!(
-        "host {} '{}' game={} b{} from {} ({} live)",
+        "host {} '{}' game={} ({}) b{} from {} ({} live)",
         lobby_id,
         state.lobbies[&session_id].name,
         state.lobbies[&session_id].game,
+        state.lobbies[&session_id].game_build,
         state.lobbies[&session_id].proto,
         ip,
         state.lobbies.len()
@@ -602,6 +661,7 @@ pub fn build_rows(state: &MasterState) -> Vec<Value> {
             "name": lo.name,
             "version": lo.version,
             "game": lo.game,    // v122: the host's VOTV game target (gate tier 1)
+            "game_build": lo.game_build,  // b222: the game build the host runs, compared byte for byte
             "proto": lo.proto,
             "world": lo.world,
             "locked": lo.locked,

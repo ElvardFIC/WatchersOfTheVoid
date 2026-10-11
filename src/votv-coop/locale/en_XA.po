@@ -29,8 +29,16 @@ msgid "%1$s -- UPDATE AVAILABLE: %2$s"
 msgstr "[[%1$s -- UPDATE AVAILABLE: %2$s]]"
 
 #, c-format
+msgid "%1$s -- a build for your game: %2$s"
+msgstr "[[%1$s -- a build for your game: %2$s]]"
+
+#, c-format
 msgid "%1$s -- left out: %2$s"
 msgstr "[[%1$s -- left out: %2$s]]"
+
+#, c-format
+msgid "%1$s -- newest: %2$s, for VOTV %3$s"
+msgstr "[[%1$s -- newest: %2$s, for VOTV %3$s]]"
 
 #, c-format
 msgid "%1$s = '%2$s' (%3$s) -- %4$s; not in use, %5$s overrides it."

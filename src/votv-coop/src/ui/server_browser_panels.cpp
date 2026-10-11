@@ -377,16 +377,30 @@ void Sync(bool force) {
     if (now >= g_noticeUntilMs) g_notice.clear();
     g_sNotice.Set(g_notice);
 
-    // The pane shows the update line only when a newer build exists, composed here in the player's
-    // language; the stored line stays English for the menu's label and the log.
-    const std::string superseding = sm::LatestSuperseding();
+    // The pane shows the update line only when the check found something to say, composed here in the
+    // player's language; the stored line stays English for the menu's label and the log. One msgid per kind:
+    // a newer build for this game, the release made for the game this player runs, or the newest release.
+    const sm::LatestNote note = sm::GetLatestNote();
     std::string update;
-    if (!superseding.empty()) {
-        char line[256];
-        if (l10n::Fmt(line, sizeof(line), l10n::T("%1$s -- UPDATE AVAILABLE: %2$s"), sm::DisplayVersion().c_str(),
-                      superseding.c_str()) >= 0)
-            update = line;
+    char line[256];
+    const std::string shown = sm::DisplayVersion();
+    int n = -1;
+    switch (note.kind) {
+    case sm::LatestNote::Kind::Update:
+        n = l10n::Fmt(line, sizeof(line), l10n::T("%1$s -- UPDATE AVAILABLE: %2$s"), shown.c_str(), note.mod.c_str());
+        break;
+    case sm::LatestNote::Kind::ForYourGame:
+        n = l10n::Fmt(line, sizeof(line), l10n::T("%1$s -- a build for your game: %2$s"), shown.c_str(),
+                      note.mod.c_str());
+        break;
+    case sm::LatestNote::Kind::Newest:
+        n = l10n::Fmt(line, sizeof(line), l10n::T("%1$s -- newest: %2$s, for VOTV %3$s"), shown.c_str(),
+                      note.mod.c_str(), note.game.c_str());
+        break;
+    case sm::LatestNote::Kind::None:
+        break;
     }
+    if (n >= 0) update = line;
     g_sUpdate.Set(update);
 
     // The name everyone else will see, phrased as an answer rather than as a claim about what

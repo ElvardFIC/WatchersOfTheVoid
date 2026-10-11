@@ -175,6 +175,10 @@ if ($tag.Dev) {
 Write-Host "published: $title ($TagName @ $TagSha)"
 Write-Host 'RITUAL REMINDER: verify the release page, then append the published row to .github/ci/LEDGER.tsv (closes state(N) API-free).'
 if (-not $tag.Dev) {
-    Write-Host 'STABLE: update EVERY master''s env constants, then run .github/ci/verify_latest.ps1:'
-    Write-Host "  COOP_LATEST_PROTO=$($tag.N)  COOP_LATEST_MOD=`"$($tag.Game) b$($tag.N)`""
+    # Every game's newest published stable, this one included (its published row is appended after): the whole
+    # list each time, so a master's line is replaced, never edited.
+    $perGame = Get-NewestPublishedPerGame -Rows (Read-Ledger -Path (Join-Path $PSScriptRoot 'LEDGER.tsv')).Rows
+    $perGame[$tag.Game] = [pscustomobject]@{ N = $tag.N }
+    Write-Host 'STABLE: set EVERY master''s COOP_LATEST_GAMES to this line, then run .github/ci/verify_latest.ps1:'
+    Write-Host "  COOP_LATEST_GAMES=`"$(Format-LatestGames -PerGame $perGame)`""
 }

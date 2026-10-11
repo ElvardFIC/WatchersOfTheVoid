@@ -66,6 +66,13 @@ struct JoinInfo {
     TurnCredential turn;         // the relay credential minted for this joiner, or empty
 };
 
+// One game version's newest release, as /v1/latest lists it under `games`.
+struct LatestGame {
+    std::string game;  // the game version a Multivoid targets: "0.9.0n"
+    int         proto = 0;
+    std::string mod;   // the release's tag: "0.9.0n b221"
+};
+
 // The master's latest-released-mod record. ok=false when the master is unreachable or has no
 // record; the caller stays silent then (never nag an offline player). The master also
 // serves a release-page url and we deliberately do not parse it: the version label prints
@@ -74,8 +81,10 @@ struct JoinInfo {
 // a field with no reader is retired. Re-add the parse only with a surface that renders it.
 struct LatestInfo {
     bool ok = false;
-    int proto = 0;     // latest released kProtocolVersion
-    std::string mod;   // human tag, e.g. "0.9.0-n"
+    int proto = 0;     // legacy: the newest release of 0.9.0n, the game every client before b222 targets
+    std::string mod;   // its tag
+    bool hasGames = false;          // the master lists `games` (masters from b222 on)
+    std::vector<LatestGame> games;  // the newest release per game version
 };
 
 // What the master said about the thanks list. "No list" is an answer (a 404: this master serves

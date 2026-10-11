@@ -75,6 +75,7 @@ ignored for a minute, and `COOP_CONNECT_FLOOD_EXCLUDE` (comma-separated addresse
   head-of-line-block a sender, and memory per destination is hard-bounded at 64 KiB, so every
   destination together fits the unit's memory cap.
 - Typed JSON through serde replaces hand-rolled key validation.
-- `LATEST_PROTO`, `LATEST_MOD` and `LATEST_URL` in the master binary's source are the operator
-  constants that name the newest build for the update check, which is informational and never
-  a gate; `LOBBY_TTL` sits beside them.
+- `COOP_LATEST_GAMES` (the newest release per game version, `<game>:<build>:<tag>,...`) and
+  `COOP_LATEST_URL` in the master's environment name the builds for the update check, which is
+  informational and never a gate; the release ritual writes the list from the release ledger.
+  `LOBBY_TTL` sits beside `LATEST_URL` in the source.

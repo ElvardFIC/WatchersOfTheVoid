@@ -1,7 +1,34 @@
 //! The lobby domain's unit tests.
 
-use super::{build_claim_from_body, h_host, host_listed, Lobby, LobbyLinks, MasterState, MAX_LOBBIES_GLOBAL};
+use super::{
+    build_claim_from_body, h_host, host_listed, latest_answer, parse_latest_games, LatestGame, Lobby, LobbyLinks,
+    MasterState, LATEST_URL, MAX_LOBBIES_GLOBAL,
+};
 use crate::common::{build_claim_shape_ok, identity_shape_ok};
+
+#[test]
+fn latest_games_parse_keeps_good_entries_and_names_bad_ones() {
+    let (games, refused) =
+        ***REMOVED***
+    assert_eq!(games.len(), 2);
+    assert_eq!(games[0], LatestGame { game: "0.9.0n".into(), proto: 221, tag: "0.9.0n b221".into() });
+    assert_eq!(games[1].game, "0.10.0");
+    assert_eq!(refused, vec!["garbage".to_string(), "0.9.0n:0:x".to_string(), "0.9.0n:5:a:b".to_string()]);
+    let (none, refused_none) = parse_latest_games("");
+    assert!(none.is_empty() && refused_none.is_empty());
+}
+
+#[test]
+fn latest_answer_gives_the_old_cohort_its_own_game() {
+    ***REMOVED***
+    let body = latest_answer(&games, LATEST_URL);
+    assert_eq!(body["proto"], 221, "the legacy fields are 0.9.0n's, not the newest release's");
+    assert_eq!(body["mod"], "0.9.0n b221");
+    assert_eq!(body["games"].as_array().map(|a| a.len()), Some(2));
+    let empty = latest_answer(&[], LATEST_URL);
+    assert_eq!(empty["proto"], 0);
+    assert!(empty.get("games").is_none(), "no list, no field");
+}
 
 #[test]
 fn a_lobby_row_names_its_players_links_in_one_word() {
