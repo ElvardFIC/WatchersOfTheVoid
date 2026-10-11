@@ -443,9 +443,14 @@ void Report(bool log) {
         // A kind that refused and later accepted (a retry from a tick) registered in the end.
         const bool refused = (row.Refused() & ~row.Accepted()) != 0;
         const bool problem = IsProblem(s.outcome);
+        // A dev row is counted apart, out of the verdict, and warns only while its instrument runs: it is
+        // registered only when its own [dev] switch is on.
+        const bool warns = !s.dev || row.Accepted() != 0;
         if (!s.dev && (problem || refused)) {
             ++problems;
             CR::Failure("fingerprint-census", CR::Severity::Important);
+        }
+        if (warns && (problem || refused)) {
             if ((problem && !s.warned) || (refused && !s.warnedRefused)) {
                 s.warned = s.warned || problem;
                 s.warnedRefused = s.warnedRefused || refused;
@@ -467,7 +472,9 @@ void Report(bool log) {
                         s.detail.c_str());
             }
         }
-        std::string line = std::string(Name(s.outcome)) + "  " + row.Feature() + "  " + s.key;
+        static const char* kModes[] = {"declared", "dispatch", "any-class", "runtime-class"};
+        std::string line = std::string(Name(s.outcome)) + "  " + row.Feature() + "  " +
+                           kModes[static_cast<int>(row.GetMode())] + "  " + s.key;
         if (!s.path.empty()) line += " -> " + s.path;
         if (s.sig || s.body) line += "  live " + Hex(s.sig) + "/" + Hex(s.body);
         if (s.refSig || s.refBody) line += "  ref " + Hex(s.refSig) + "/" + Hex(s.refBody);
