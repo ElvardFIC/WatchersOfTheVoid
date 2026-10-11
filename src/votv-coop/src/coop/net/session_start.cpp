@@ -533,6 +533,9 @@ void Session::DoStop_() {
       for (int i = 0; i < kMaxPeers; ++i) ResetPeerRemoteState(i); }
     // And what the host said once of a client-sent host batch: the next session says it again.
     for (auto& said : saidClientBatch_) said.store(false, std::memory_order_relaxed);
+    // So too the receive edge's refusals of a host-authored kind, its open window said now.
+    saidHostKind_.fill(false);
+    hostKindRefusals_.Clear();
 
     auto* sockets = SteamNetworkingSockets();
     if (sockets) {

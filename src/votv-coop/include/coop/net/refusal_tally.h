@@ -4,7 +4,8 @@
 // sender cannot make the log the cost. MTA bounds its own invalid-event error the same way, at most one
 // line per gap (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:2696-2699). The per-slot
 // counts are kept for the host's per-sender budget, which no code reads yet; a refusal no budget would
-// read is logged and not counted. Game thread.
+// read is logged and not counted. One thread per instance: the lanes' on the game thread, the receive edge's
+// on the net thread.
 #pragma once
 
 #include "coop/player/players_registry.h"  // kMaxPeers

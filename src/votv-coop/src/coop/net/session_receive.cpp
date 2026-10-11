@@ -9,6 +9,7 @@
 #include "coop/net/net_clock.h"        // NowMs -- the probe's echo is timed on the net layer's clock
 #include "coop/net/peer_admission.h"   // the identity challenge every peer passes
 #include "coop/net/peer_identity.h"    // GuidForPublicKey -- the proved storage name
+#include "client_authorship.h"  // co-located private header: which kinds a client may author
 #include "session_lanes.h"      // co-located private header: the admission and relayable kind lists
 #include "ue_wrap/core/log.h"
 
@@ -20,6 +21,20 @@
 #include <cstring>
 
 namespace coop::net {
+
+namespace {
+// A kind the host relays from one client to the others must be one a client may author: the edge below would
+// otherwise refuse what the relay table forwards. Every byte value is checked, so a kind added to the relay
+// table without its authorship row fails the build here.
+constexpr bool RelayedKindsAreClientAuthored() {
+    for (int v = 0; v < 256; ++v) {
+        const auto k = static_cast<ReliableKind>(v);
+        if (IsClientRelayableReliableKind(k) && AuthorshipOf(k) != ClientAuthorship::Client) return false;
+    }
+    return true;
+}
+static_assert(RelayedKindsAreClientAuthored(), "a relayable kind that is not Client in client_authorship.h");
+}  // namespace
 
 // ---- admission: what an unadmitted connection may do ----
 // A parked connection holds no seat, so it cannot reach any handler that takes a senderSlot,
@@ -265,6 +280,21 @@ void Session::HandleMessage(int peerSlot, uint32_t hConn, const void* data, int 
             rateControl_.NoteReliableReceived(peerSlot, len);
         if (dev::wire_census::Enabled())
             dev::wire_census::NoteReliable(routeSlot, static_cast<unsigned>(rh.kind));
+        // Default deny at the edge (client_authorship.h): a kind no client may author is dropped here, counted
+        // by the two lines above and acted on by nothing below -- not diverted, echoed, inboxed or relayed. The
+        // first of each kind in a session is said by name, the rest summed per window.
+        if (cfg_.role == Role::Host &&
+            AuthorshipOf(static_cast<ReliableKind>(rh.kind)) == ClientAuthorship::Host) {
+            if (!saidHostKind_[rh.kind]) {
+                saidHostKind_[rh.kind] = true;
+                UE_LOGW("net: refused kind %u from slot %d -- only the host authors it (client_authorship.h); "
+                        "later ones are summed", static_cast<unsigned>(rh.kind), peerSlot);
+            } else {
+                hostKindRefusals_.Note(static_cast<std::uint8_t>(peerSlot), RefusalTally::Charge::None,
+                                       "a kind only the host authors", RefusalTally::Clock::now());
+            }
+            return;
+        }
         // payloadLen is a uint16, so only the upper bound is a real guard.
         const int payloadLen = static_cast<int>(rh.payloadLen);
         // The save-blob chunk exceeds the inbox payload by design: diverted whole to the bulk sink

@@ -149,8 +149,8 @@ void EndAnyHoldOn(void* actor);
 // echo-destroys the old rendering: spawn, rebind, then destroy, so E never resolves to a dead
 // actor. Idempotent: a convert whose target rendering already matches (an echo, or a
 // grab-race loser's convert) is a no-op. Returns the new rendering, or null on a spawn
-// failure. The host applies a client's convert against its own local element, host authority
-// through the host-minted eid, no request or relay. Game thread only.
+// failure. Only the host sends a convert, so only a client applies one: a client's copy is refused at the
+// host's receive edge (client_authorship.h). Game thread only.
 void* OnConvert(const coop::net::PropConvertPayload& payload, void* localPlayer, int senderSlot);
 
 // The echo-suppressed local destroy of an actor we own a copy of: the incoming-destroy mark

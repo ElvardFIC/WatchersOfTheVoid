@@ -2818,9 +2818,9 @@ inline constexpr uint8_t kToPile  = 1;  // clump -> pile-B (land): spawn a settl
 
 // A trash re-skin (PropConvert): both peers own the same entity bound to the shared host-minted
 // eid, and the morph re-skins it across pile, clump and pile; oldEid == newEid on every edge, so
-// the receiver re-points its single rendering instead of creating a second entity. The owner
-// emits it from the held-object channel; the host applies a client's convert against its own
-// element.
+// the receiver re-points its single rendering instead of creating a second entity. The host alone
+// emits it, from its trash channel; a client's copy is refused at the host's receive edge
+// (client_authorship.h).
 struct PropConvertPayload {
     uint32_t      oldEid;                 // == E (the bound pile/clump being re-skinned)
     uint32_t      newEid;                 // == E (SAME id on the bind model; identity is preserved)

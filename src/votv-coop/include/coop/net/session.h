@@ -14,6 +14,7 @@
 #include "coop/net/origin_context.h"       // which occupancy a relayed stream packet belongs to
 #include "coop/net/outbound_streams.h"     // what this peer sends on its streams
 #include "coop/net/protocol.h"
+#include "coop/net/refusal_tally.h"        // the receive edge's refusals, folded
 #include "coop/net/remote_streams.h"       // what a receiver keeps of each stream, by owner
 #include "coop/net/send_admission.h"       // the send buffer's headroom rule
 #include "coop/net/send_backlog.h"         // the reliable-send delivery guarantee
@@ -714,6 +715,10 @@ private:
     std::array<std::atomic<bool>, kMaxPeers> slotWorldReady_{};
     // The receive lanes holding the receive loop paused (see SetApplyPause); reset by Start.
     ApplyPauseSet applyPause_;
+    // The receive edge's refusals of a kind no client may author (client_authorship.h): the first of each kind
+    // in a session said by name, the rest summed. Net thread; reset by the stop, after the join.
+    std::array<bool, 256> saidHostKind_{};
+    RefusalTally hostKindRefusals_{"net"};
     // Per-slot relay eligibility: the hConn that announced ClientWorldReady, stamped on the net
     // thread at receipt. The game-thread world-ready flag lags by one drain, and the relay consults
     // this so a reliable received in that gap is neither lost nor doubled; hConn-stamped so a

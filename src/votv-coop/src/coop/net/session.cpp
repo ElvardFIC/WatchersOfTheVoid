@@ -393,6 +393,8 @@ void Session::NetThread() {
         // The dev wire census flushes its counters at 1 Hz from the loop, not from arrivals, so the
         // final second before a disconnect still lands in the log.
         if (dev::wire_census::Enabled()) dev::wire_census::Tick();
+        // The receive edge's folded refusal line closes its window here, when the window has run.
+        hostKindRefusals_.Flush(RefusalTally::Clock::now());
 
         // 1) Pump GNS's timers and dispatch pending status callbacks (the trampoline runs inline on
         // this thread).

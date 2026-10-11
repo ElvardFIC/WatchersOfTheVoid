@@ -308,9 +308,8 @@ bool HandleEntityEvent(net::Session& session,
             UE_LOGW("event_feed: PropConvert pileClass.len=%u > 63 -- dropping", p.pileClass.len);
             break;
         }
-        // Either range: a convert re-skins an existing entity's eid, which is the original owner's
-        // (host-minted), not the sender's; a client grabbing a host-owned pile sends a host-range
-        // eid from a client slot. Only an id in neither range is rejected.
+        // Either range: a convert, which only the host sends, re-skins an existing entity's eid, host-minted or
+        // a client's own for the keyless trash entity it spawned. Only an id in neither range is rejected.
         auto eidOutOfBothRanges = [](uint32_t e) {
             return e != 0u && e != coop::element::kInvalidId &&
                    !coop::element::Registry::IsAllowedHostAllocatedEid(e) &&

@@ -221,14 +221,14 @@ inline Lane LaneForKind(ReliableKind k) {
 // gameplay only. A client's equipment toggle must show on its puppet everywhere; a client's drop, destroy
 // or throw must replicate; a symmetric interactable's edge must reach the other clients. Not relayed: the
 // host-authoritative kinds (weather, entity spawns and destroys, the dev keys, damage, the refiner's decode)
-// originate on the host and go direct, and the router trust-gates them on the host slot; the handshake kinds
-// are point-to-point or host-originated. PropPose rides the unreliable relay.
-inline bool IsClientRelayableReliableKind(ReliableKind k) {
+// originate on the host and go direct, and the receive edge refuses them from a client (client_authorship.h,
+// which must name every kind here Client: session_receive.cpp asserts it); the handshake kinds are
+// point-to-point or host-originated. PropPose rides the unreliable relay.
+constexpr bool IsClientRelayableReliableKind(ReliableKind k) {
     switch (k) {
     case ReliableKind::ItemActivate:
     case ReliableKind::PropSpawn:
     case ReliableKind::PropDestroy:
-    case ReliableKind::PropConvert:       // a client's clump-to-pile convert
     case ReliableKind::PropRelease:
     case ReliableKind::PropStickState:    // a client's wall-attachable stick
     // DoorState is not relayable: the host authors it, and a client's own door verbs reach the host
