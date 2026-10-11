@@ -480,7 +480,8 @@ bool EndClientSession(const char* why) {
     // there: a world that is not the menu -- the host's, which the join loaded -- is left through join_leave's
     // travel; at the menu the browser opens, now or once the menu stands. The browser is ours: MTA shows its
     // menu only, while a menu join here starts at the browser, so the player is put back where it began. Two
-    // owners travel where MTA has one funnel (RequestUnload, CModManager.cpp:33-47): our menu is a level, so
+    // owners travel where MTA has one funnel (TryStop, CModManager.cpp:237-289, which RequestUnload's deferred
+    // stop and Unload's immediate one both reach, :33-47 and :119-126): our menu is a level, so
     // the end is an asynchronous travel, which a flee makes from the session's tick on the game thread, and a
     // timeline stop site, with no tick to make it from, through join_leave's retried ask. A degraded world
     // reader cannot tell a world from the menu, so it moves nobody and the browser opens as at the menu

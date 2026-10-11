@@ -257,8 +257,9 @@ end reason, so both ends log one code; `T` the transport. `MV-J28` and `MV-J29` 
 host's own start: a host from the hosting window before its world loads, with the code and the
 sentence on its status line.
 
-A join that a cancel, its timeout or a world that would not load ends before it completed puts the
-player at the main menu with the server browser, where a menu join starts: one already standing in
+A join that ends before it completed (a cancel, its timeout, a refusal, the host closing the link
+before its world loads, or a world that would not load) puts the player at the main menu with the
+server browser, where a menu join starts: one already standing in
 the host's world, which the join loaded, is taken to the menu first by the travel the game's own quit
 runs (`harness/join_leave`, `harness/session_runtime`). MTA likewise forces its main menu back after
 every disconnect; the browser is this mod's. A session that ends another way (a death the revive gives
