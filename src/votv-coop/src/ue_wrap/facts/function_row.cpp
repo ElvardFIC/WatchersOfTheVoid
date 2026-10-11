@@ -14,6 +14,7 @@ namespace R = ue_wrap::reflection;
 // translation units' initializers.
 const Function* g_head = nullptr;
 size_t g_count = 0;
+std::atomic<uint64_t> g_refusals{0};
 
 const char* ModeName(Mode m) {
     switch (m) {
@@ -35,11 +36,14 @@ Function::Function(detail::MacroToken, const char* ident, const char* feature, c
 }
 
 void Function::NoteUse(Use use, bool accepted) const {
-    (accepted ? accepted_ : refused_).fetch_or(static_cast<uint8_t>(use), std::memory_order_relaxed);
+    const uint8_t bit = static_cast<uint8_t>(use);
+    const uint8_t was = (accepted ? accepted_ : refused_).fetch_or(bit, std::memory_order_relaxed);
+    if (!accepted && !(was & bit)) g_refusals.fetch_add(1, std::memory_order_release);
 }
 
 const Function* First() { return g_head; }
 size_t Count() { return g_count; }
+uint64_t RefusalVersion() { return g_refusals.load(std::memory_order_acquire); }
 
 Resolved Resolve(const Function& row) {
     if (row.GetMode() != Mode::Declared && row.GetMode() != Mode::Dispatch) {

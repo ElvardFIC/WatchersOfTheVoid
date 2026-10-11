@@ -9,7 +9,8 @@ This gate holds, over the mod's source:
   1. a row lives in a .cpp: in a header it would register once per translation unit;
   2. its class and function are string literals and its feature a lowercase id ([a-z0-9_.]): the
      table, this gate and a reader all read them as written;
-  3. its mode is one of Declared, Dispatch, AnyClass, RuntimeClass, and an AnyClass row has no class;
+  3. its mode is one of Declared, Dispatch, AnyClass, RuntimeClass; an AnyClass row has no class, and a
+     Declared or Dispatch row has one (it is resolved on it, and with none would never install);
   4. its ident is used in its file beyond the declaration: a row nothing registers is a dead fact;
   5. the target's table has an entry for its key -- present or recorded absent for a class row, a
      signature set for an any-class row, and for a run-time class row with no class an entry on at
@@ -62,6 +63,8 @@ def check(files, table_text):
                 faults.append("%s: mode %s is not one of %s" % (where, mode, sorted(MODES)))
             if mode == "AnyClass" and cls != "nullptr":
                 faults.append("%s: an AnyClass row names a class" % where)
+            if mode in ("Declared", "Dispatch") and cls == "nullptr":
+                faults.append("%s: a %s row names no class" % (where, mode))
             if len(re.findall(r"\b%s\b" % re.escape(ident), text)) < 2:
                 faults.append("%s: row %s is declared and never used" % (where, ident))
             if table_text is None:
@@ -100,6 +103,8 @@ def drill():
         "no reference": ({"x/a.cpp": base.replace('L"f"', 'L"h"').replace("kRowF", "kRowH")}, good_table),
         "any-class with a class": ({"x/a.cpp": 'UE_FACT_FN(kRowG, "lane", L"A_C", L"g", AnyClass);\n'
                                                'void X() { Use(kRowG); }\n'}, good_table),
+        "declared row with no class": ({"x/a.cpp": 'UE_FACT_FN(kRowD, "lane", nullptr, L"f", Declared);\n'
+                                                  'void X() { Use(kRowD); }\n'}, good_table),
         "run-time class row keyed on no class": ({"x/a.cpp": 'UE_FACT_FN(kRowR, "lane", nullptr, L"r", RuntimeClass);\n'
                                                             'void X() { Use(kRowR); }\n'}, good_table),
     }

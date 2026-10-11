@@ -81,6 +81,10 @@ private:
 const Function* First();
 size_t Count();
 
+// A number that moves whenever some row's registration is refused by a kind that had not refused it before:
+// a report taken earlier no longer names every refusal. Any thread.
+uint64_t RefusalVersion();
+
 // A row's function, resolved. Only Resolve and ResolveOn make one, so a registration that takes it took
 // a row. Valid while the function lives, which for a Blueprint class ends with its world: a site re-resolves
 // after a world change, as it re-found the pointer before.

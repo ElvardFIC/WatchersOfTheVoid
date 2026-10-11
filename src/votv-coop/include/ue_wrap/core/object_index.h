@@ -49,9 +49,6 @@ using ClassFn    = void (*)(void* ctx, void* cls, void* anyInstance);
 // Game thread; the callback must not create or destroy objects.
 size_t ForEachInstance(void* cls, InstanceFn fn, void* ctx);
 
-// How many objects of exactly `cls` the index holds, in one lookup. Game thread.
-size_t InstanceCount(void* cls);
-
 // Every class with at least one such instance, with one of them. Same contract.
 size_t ForEachClass(ClassFn fn, void* ctx);
 
@@ -61,10 +58,12 @@ size_t ForEachClass(ClassFn fn, void* ctx);
 // answer changes. Game thread.
 uint64_t ClassSetVersion();
 
-// A number that moves whenever a class object is listed or unlisted: a class loaded or unloaded,
-// whether or not it has an instance. A function exists only with its class, so a list of functions
-// taken from the live array is current until this moves. Game thread.
-uint64_t ClassListVersion();
+// Every class object the index has listed, in the order listed (a class loaded again is listed again):
+// a log a consumer reads on from where it stopped, to meet every class once as it loads, with no walk.
+// ClassLogAt answers the class at a position if its slot still holds it, null once it has gone, and says
+// whether it has finished loading (its functions linked). Game thread.
+size_t ClassLogSize();
+void*  ClassLogAt(size_t position, bool* loaded);
 
 // A number that moves whenever a class object is unlisted: a class unloaded, its functions and their
 // scripts freed with it. A pointer to one of them read since the last move is still the object it was.

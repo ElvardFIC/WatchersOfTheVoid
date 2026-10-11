@@ -94,9 +94,14 @@ bool IsMeta(void* cls) {
     return false;
 }
 
-// Moves whenever a class object is listed or unlisted: ClassListVersion; and only when one is unlisted:
-// ClassUnlistVersion.
-uint64_t g_classListVersion = 0;
+// Every class object listed, in the order listed: ClassLogSize / ClassLogAt. Append-only, a few bytes per
+// class load of the process.
+struct ListedClass {
+    int32_t index;
+    void*   obj;
+};
+std::vector<ListedClass> g_classLog;
+// Moves whenever a class object is unlisted: ClassUnlistVersion.
 uint64_t g_classUnlistVersion = 0;
 
 void ListClassName(int32_t index, void* classObj) {
@@ -105,13 +110,12 @@ void ListClassName(int32_t index, void* classObj) {
     if (key.empty()) return;
     g_classSlotsByName[key].push_back(index);
     g_classNameBySlot.emplace(index, std::move(key));
-    ++g_classListVersion;
+    g_classLog.push_back(ListedClass{index, classObj});
 }
 
 void UnlistClassName(int32_t index) {
     const auto k = g_classNameBySlot.find(index);
     if (k == g_classNameBySlot.end()) return;
-    ++g_classListVersion;
     ++g_classUnlistVersion;
     const auto it = g_classSlotsByName.find(k->second);
     if (it != g_classSlotsByName.end()) {
@@ -353,11 +357,6 @@ size_t ForEachInstance(void* cls, InstanceFn fn, void* ctx) {
     return n;
 }
 
-size_t InstanceCount(void* cls) {
-    const auto it = g_classes.find(cls);
-    return it == g_classes.end() ? 0 : static_cast<size_t>(it->second.count);
-}
-
 size_t ForEachClass(ClassFn fn, void* ctx) {
     size_t n = 0;
     for (const auto& kv : g_classes) {
@@ -373,7 +372,18 @@ void SetObserver(const Observer& o) { g_observer = o; }
 
 uint64_t ClassSetVersion() { return g_classSetVersion; }
 
-uint64_t ClassListVersion() { return g_classListVersion; }
+size_t ClassLogSize() { return g_classLog.size(); }
+
+void* ClassLogAt(size_t position, bool* loaded) {
+    UE_ASSERT_GAME_THREAD("object_index::ClassLogAt");
+    if (position >= g_classLog.size()) return nullptr;
+    const ListedClass& e = g_classLog[position];
+    if (e.index >= static_cast<int32_t>(g_slots.size())) return nullptr;
+    const Slot& s = g_slots[static_cast<size_t>(e.index)];
+    if (s.obj != e.obj || TenantOf(e.index, s.obj, s.cls) != Tenant::Named) return nullptr;
+    if (loaded) *loaded = !(R::SlotFlags(e.index) & R::slot_flags::NotYetReadable);
+    return e.obj;
+}
 
 uint64_t ClassUnlistVersion() { return g_classUnlistVersion; }
 

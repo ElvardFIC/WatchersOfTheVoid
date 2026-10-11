@@ -15,11 +15,12 @@ namespace harness::fingerprint_census {
 // posted with sdk_check::Run; the rows are checked over the next frames.
 void Run();
 
-// Post the census's tick when one is due: a 2 ms slice every frame while a pass runs, its report in a
-// tick of its own, then a re-try of the unsettled rows once a second when the class set moved or every
-// 5 s, nothing when idle. A posted task of its own, so a fault in another lane's per-frame work cannot keep
-// the census from finishing; never a second one while one is queued, and one slice a drain. The runtime
-// thread calls it every loop.
+// Post the census's tick when one is due: a 2 ms slice each runtime loop (about 60 Hz) while a pass runs,
+// its report in a tick of its own, then, once a second, a re-try of the unsettled rows when a waiting class
+// row's class may have loaded (the class set moved, or 5 s went by) or a class loaded whose functions an
+// any-class row checks; a report when a registration is refused; nothing when idle. A posted task of its
+// own, so a fault in another lane's per-frame work cannot keep the census from finishing; never a second
+// one while one is queued, and one slice a game-thread drain. The runtime thread calls it every loop.
 void PostIfDue();
 
 }  // namespace harness::fingerprint_census
