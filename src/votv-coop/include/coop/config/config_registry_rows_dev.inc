@@ -719,18 +719,9 @@ CFG_INT(atlas_texmax_drill, "atlas_texmax_drill", "dev", 0, 0, 8192,
     "VOTVCOOP_ATLAS_TEXMAX",
     "Override the font atlas size ceiling (0 = the shipped one: 2048, 4096 under a script face). Set 256 to starve "
     "the packer and prove the pack-failure detector fires.")
-// The admission drill, client side only, and that is the whole design: the host's gate has no
-// knob, no dev branch and no env check anywhere, so the drill exercises the real refusal or
-// it proves nothing; a knob on the host would make the drill's own pass conditional on a
-// bypass existing in shipped code.
-CFG_ENUM(auth_drill, "auth_drill", "dev", "off", "off|corrupt|silent|mismatch",
-    "VOTVCOOP_AUTH_DRILL",
-    "Sabotage THIS CLIENT's identity proof, to prove the host refuses it. corrupt = "
-    "send a flipped signature; silent = open the exchange and never answer. Both must "
-    "leave this peer unseated and with no save. mismatch = pretend we were sent to a "
-    "DIFFERENT host than the one that answered, which THIS peer must refuse itself "
-    "-- it is the only arm whose refusal is ours, not the host's. "
-    "Drill only.")
+// The receive boundary's drills (admission forgery, the hostile-peer drill): their own file, one
+// concept, included as _dev_port.inc is above.
+#include "coop/config/config_registry_rows_dev_boundary.inc"
 CFG_FLAG(l10n_selftest_red, "l10n_selftest_red", "dev", false, "VOTVCOOP_L10N_SELFTEST_RED",
     "The l10n selftest's red arm: one expected plural form is made wrong, so the selftest says FAIL "
     "and the rig's verdict reads it. Changes nothing else.")
