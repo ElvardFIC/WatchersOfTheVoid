@@ -84,6 +84,30 @@ const char* KindWord(Kind kind) {
 
 std::string Describe() { return DescribeOf(Running()); }
 
+bool KeyShapeOk(const std::string& key) {
+    auto hex = [](const std::string& s) {
+        for (const char c : s)
+            if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) return false;
+        return true;
+    };
+    const size_t dash = key.find('-');
+    if (dash != 8 || !hex(key.substr(0, 8))) return false;
+    const std::string rest = key.substr(9);
+    return rest == "nopak" || (rest.size() == 16 && hex(rest));
+}
+
+std::string VersionText(const std::string& key) {
+    if (const GB::Row* row = GB::FindByKey(key.c_str())) return row->display;
+    return key;
+}
+
+std::string MarkText(const std::string& key) {
+    if (const GB::Row* row = GB::FindByKey(key.c_str())) return row->version;
+    return "untested";
+}
+
+bool DiffersFromOurs(const std::string& hostKey) { return !hostKey.empty() && hostKey != Running().id.key; }
+
 bool AnswerOwed() {
     const Detected& d = Running();
     if (d.kind == Kind::Target) return false;

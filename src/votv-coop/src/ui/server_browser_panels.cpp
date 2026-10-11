@@ -5,6 +5,7 @@
 #include "l10n/l10n.h"
 
 #include "coop/net/lobby_client.h"
+#include "coop/game_build/game_build.h"
 #include "coop/net/master_slots.h"      // the list the alarm names, and whether another exists
 #include "coop/net/protocol.h"            // kProtocolVersion -- which side must update
 #include "coop/session/session_manager.h"
@@ -268,6 +269,7 @@ void Sync(bool force) {
         // release); a lower build number on the host means the host is behind; a higher one means
         // we are.
         const bool gameBad = !r.game.empty() && r.game != sm::GameTarget();
+        const bool buildBad = !gameBad && coop::game_build::DiffersFromOurs(r.gameBuild);
         const int ourProto = static_cast<int>(coop::net::kProtocolVersion);
         const bool protoBad = r.proto > 0 && r.proto != ourProto;
         // The game target, build number and master's version are identifiers; the word "unknown" is not.
@@ -281,6 +283,9 @@ void Sync(bool force) {
             l10n::Fmt(ver, sizeof(ver),
                       l10n::T("Version: %1$s%2$s  -- built for a different game version"),
                       which.c_str(), build.c_str());
+        } else if (buildBad) {
+            l10n::Fmt(ver, sizeof(ver), l10n::T("Version: %1$s%2$s  -- the host's game is VOTV %3$s"),
+                      which.c_str(), build.c_str(), coop::game_build::VersionText(r.gameBuild).c_str());
         } else if (protoBad && r.proto < ourProto) {
             l10n::Fmt(ver, sizeof(ver), l10n::T("Version: %1$s%2$s  -- the host must update"),
                       which.c_str(), build.c_str());
@@ -291,7 +296,7 @@ void Sync(bool force) {
             l10n::Fmt(ver, sizeof(ver), l10n::T("Version: %1$s%2$s"), which.c_str(),
                       build.c_str());
         }
-        g_dVersion.SetColor(gameBad || protoBad ? kBad : kDim);
+        g_dVersion.SetColor(gameBad || buildBad || protoBad ? kBad : kDim);
         g_dVersion.Set(ver);
 
         char players[256];

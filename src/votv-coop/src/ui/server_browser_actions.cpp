@@ -72,7 +72,7 @@ void DoConnect() {
         g_lastOutcome = "connect:password";
         SB::CloseNow();   // sibling hand-over, exactly as HOST does
         ui::browser_input_screens::OpenPasswordPrompt(master, row.lobbyId, row.name,
-                                                      row.proto, row.game);
+                                                      row.proto, row.game, row.gameBuild);
         return;
     }
     // Not a locked server, so anything left over from a previous prompt must not ride along: a
@@ -81,7 +81,7 @@ void DoConnect() {
     // The version pair rides along so the equality gate can refuse here, with the connect-failed
     // popup, rather than letting the wire gate drop the player later (rows show normally and are
     // rejected on join).
-    if (sm::JoinLobby(master, row.lobbyId, row.name, row.proto, row.game)) {
+    if (sm::JoinLobby(master, row.lobbyId, row.name, row.proto, row.game, row.gameBuild)) {
         g_lastOutcome = "connect:started";
         SB::Close();   // accepted: the loading screen owns the player from here
     } else {

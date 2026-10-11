@@ -44,6 +44,21 @@ std::string Describe();
 // "its game data is 0.9.0n's", or "no known build" -- the report's detail. Empty for a known build.
 std::string UntestedDetail();
 
+// A key read from a peer or a master has the reader's shape -- "<8 hex>-<16 hex>" or "<8 hex>-nopak",
+// lowercase -- before it is compared or shown: a peer's bytes never reach a sentence unchecked.
+bool KeyShapeOk(const std::string& key);
+
+// A key in a sentence after "VOTV": the row's display for a known build, else the bare key. Short on purpose:
+// the Join's refusal rides a 128-byte close reason.
+std::string VersionText(const std::string& key);
+
+// The browser row's mark for a host whose build differs: the row's version for a known build, else "untested".
+std::string MarkText(const std::string& key);
+
+// A host whose key is known and differs from ours runs another game build. An empty key (a host or a master
+// older than the field) says nothing, and the Join's own gate decides.
+bool DiffersFromOurs(const std::string& hostKey);
+
 // The version popup is owed: the game is not the target, and the player has not answered for this build
 // (the ini row game_build_ack holds the key last answered -- the ini lives beside one install, so one slot
 // asks once per build, and an install updated in place asks again).

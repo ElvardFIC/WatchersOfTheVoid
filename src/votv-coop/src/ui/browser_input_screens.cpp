@@ -78,6 +78,7 @@ struct PendingJoin {
     std::string displayName;
     int         hostProto = 0;
     std::string hostGame;
+    std::string hostGameBuild;
 };
 PendingJoin g_pendingJoin;
 void*   g_menu     = nullptr;
@@ -240,7 +241,7 @@ void Confirm(Kind kind) {
         sm::SetJoinPassword(value);
         if (!sm::JoinLobby(g_pendingJoin.masterUrl, g_pendingJoin.lobbyId,
                            g_pendingJoin.displayName, g_pendingJoin.hostProto,
-                           g_pendingJoin.hostGame)) {
+                           g_pendingJoin.hostGame, g_pendingJoin.hostGameBuild)) {
             // Dropped on a refusal, so it cannot ride into the next connection the player makes.
             sm::SetJoinPassword("");
             SetStatus(s, l10n::T("Could not start that connection -- another action is already "
@@ -416,7 +417,7 @@ void Open(Kind kind) {
 
 void OpenPasswordPrompt(const std::string& masterUrl, const std::string& lobbyId,
                         const std::string& displayName, int hostProto,
-                        const std::string& hostGame) {
+                        const std::string& hostGame, const std::string& hostGameBuild) {
     // The row travels with the request (see PendingJoin). Written before the intent is published
     // and read on the game thread after the intent is consumed: one writer, one reader, a tick
     // between them.
@@ -425,6 +426,7 @@ void OpenPasswordPrompt(const std::string& masterUrl, const std::string& lobbyId
     g_pendingJoin.displayName = displayName;
     g_pendingJoin.hostProto   = hostProto;
     g_pendingJoin.hostGame    = hostGame;
+    g_pendingJoin.hostGameBuild = hostGameBuild;
     Open(Kind::LobbyPassword);
 }
 

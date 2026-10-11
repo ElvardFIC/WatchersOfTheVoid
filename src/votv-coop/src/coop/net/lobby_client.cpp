@@ -1,6 +1,7 @@
 // coop/net/lobby_client.cpp -- see coop/net/lobby_client.h.
 
 #include "coop/net/lobby_client.h"
+#include "coop/game_build/game_build.h"
 
 #include "coop/net/http_client.h"
 #include "json_util.h"  // internal, co-located in src/coop/net/ (not a public API header)
@@ -57,6 +58,9 @@ bool FetchList(const std::string& masterUrl, const std::string& versionFilter,
         r.name       = J::StrN(e, "name", 64);
         r.version    = J::StrN(e, "version", 24);
         r.game       = J::StrN(e, "game", 24);  // the game target; empty means a host older than the field
+        // The game build the host runs, dropped unless it has the reader's shape (a master's bytes are a peer's).
+        r.gameBuild  = J::StrN(e, "game_build", 33);
+        if (!coop::game_build::KeyShapeOk(r.gameBuild)) r.gameBuild.clear();
         r.world      = J::StrN(e, "world", 40);
         r.playersCur = J::IntClamped(e, "players_cur", 0, 64);
         r.playersMax = J::IntClamped(e, "players_max", 0, 64);

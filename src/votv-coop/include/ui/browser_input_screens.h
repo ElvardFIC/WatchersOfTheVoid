@@ -36,7 +36,7 @@ enum class Kind { DirectConnect, ChangeName, LobbyPassword };
 // a convenience.
 void OpenPasswordPrompt(const std::string& masterUrl, const std::string& lobbyId,
                         const std::string& displayName, int hostProto,
-                        const std::string& hostGame);
+                        const std::string& hostGame, const std::string& hostGameBuild);
 
 // Ask for a screen. Safe from any thread: it records the intent and the next main-menu
 // tick performs it, the same deferral the browser and the hosting window use (the switcher

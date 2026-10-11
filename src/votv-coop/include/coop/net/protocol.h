@@ -30,7 +30,7 @@ inline constexpr uint32_t kMagic = 0x564D5450u;
 // This file is past the 1500-line hard cap and stays there: it is the single-feature exception the
 // rule names. One wire format, whose enum, payload structs and static_asserts are read together;
 // splitting it would put a kind's number in one file and its bytes in another.
-inline constexpr uint16_t kProtocolVersion = 221;
+inline constexpr uint16_t kProtocolVersion = 222;
 
 // Default LAN port (overridable via multivoid.ini "net.port=").
 inline constexpr uint16_t kDefaultPort = 47621;
@@ -126,11 +126,12 @@ enum class MsgType : uint8_t {
 // 22, 24, 26, 29 and 138 stay unassigned; 32 and 128 are reserved.
 enum class ReliableKind : uint8_t {
     // Each peer to the other, once after admission: the sender's Player element id, then the nick,
-    // the skin, the display flags, the nick colour, the game target and the build claim (the build's
+    // the skin, the display flags, the nick colour, the game target, the build claim (the build's
     // SHA-256, 32 bytes, then a flags byte whose bit 0 is "this build verified its own release
-    // signature"), parsed field by field. The receiver compares the game target with its own first
-    // and refuses the connection on a mismatch, before any identity side effect; a host then judges
-    // the build claim; then it establishes the mirror for the slot and names the puppet.
+    // signature") and the game build the sender runs (coop/game_build's key), parsed field by field.
+    // The receiver compares the game target, then the game build, with its own and refuses the
+    // connection on a mismatch, before any identity side effect; a host then judges the build claim;
+    // then it establishes the mirror for the slot and names the puppet.
     Join = 1,
 
     // The holder released a held prop: the prop by key, the inherited linear and angular velocity,

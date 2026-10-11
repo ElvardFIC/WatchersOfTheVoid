@@ -3,6 +3,7 @@
 // them, and the version pre-flight a lobby join makes first. The host lane is session_manager.cpp.
 
 #include "coop/session/session_manager.h"
+#include "coop/game_build/game_build.h"
 
 #include "session_manager_internal.h"  // co-located: the action latch, QueueStart, LobbyP2PConfig
 
@@ -83,13 +84,21 @@ struct PreflightVerdict {
     std::string    text;                         // the two builds, for the notice's detail
 };
 
-PreflightVerdict VersionMismatchVerdict(const std::string& hostGame, int hostProto) {
+PreflightVerdict VersionMismatchVerdict(const std::string& hostGame, int hostProto,
+                                        const std::string& hostGameBuild) {
     // Tier 1, the game cook: reachable with an equal build (a recook adaptation need not change the
     // wire), hence its own tier.
     if (!hostGame.empty() && hostGame != coop::version::kGameTarget) {
         return {net::EndReason::GameVersionMismatch,
                 std::string("host plays VOTV ") + hostGame + ", you have VOTV " +
                     coop::version::kGameTarget};
+    }
+    // Tier 1b, the game each side runs: one Multivoid on two different games. The row's key, when the
+    // master lists it; the Join's own gate compares it either way.
+    if (coop::game_build::DiffersFromOurs(hostGameBuild)) {
+        return {net::EndReason::GameVersionMismatch,
+                "host plays VOTV " + coop::game_build::VersionText(hostGameBuild) + ", you have VOTV " +
+                    coop::game_build::VersionText(coop::game_build::Running().id.key)};
     }
     // Tier 2, the build (the wire revision).
     if (hostProto > 0 && hostProto != static_cast<int>(net::kProtocolVersion)) {
@@ -112,7 +121,8 @@ void SetJoinPassword(const std::string& password) {
 }
 
 bool JoinLobby(const std::string& masterUrl, const std::string& lobbyId,
-               const std::string& displayName, int hostProto, const std::string& hostGame) {
+               const std::string& displayName, int hostProto, const std::string& hostGame,
+               const std::string& hostGameBuild) {
     // Never connect to our own lobby (the host clicking its own listed server); rejected before any
     // loading state is raised.
     if (!lobbyId.empty() && lobbyId == OwnLobbyId()) {
@@ -124,7 +134,7 @@ bool JoinLobby(const std::string& masterUrl, const std::string& lobbyId,
     // wire gate re-validates live and the header close is the final backstop. Rejected through the
     // connect-failed popup, not the footer.
     {
-        const PreflightVerdict verdict = VersionMismatchVerdict(hostGame, hostProto);
+        const PreflightVerdict verdict = VersionMismatchVerdict(hostGame, hostProto, hostGameBuild);
         if (verdict.code != net::EndReason::None) {
             UE_LOGW("session_manager: JOIN rejected -- [%s] %s (host game='%s' b%d; ours %s b%u)",
                     net::Describe(verdict.code).id, verdict.text.c_str(), hostGame.c_str(),

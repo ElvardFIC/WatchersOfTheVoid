@@ -26,6 +26,7 @@ struct LobbyRow {
     std::string name;
     std::string version;    // the host's announced version label
     std::string game;       // the host's game target, e.g. "0.9.0n" (empty: a host that predates the field)
+    std::string gameBuild;  // the game build the host runs (coop/game_build's key); empty: an older host or master
     std::string world;
     int  playersCur = 0;
     int  playersMax = 0;

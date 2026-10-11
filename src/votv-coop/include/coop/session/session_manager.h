@@ -123,12 +123,12 @@ bool HostWithSave(const SaveChoice& choice, const std::string& name, bool locked
 // that master's. `displayName` is shown on the loading screen. Raises the
 // browser-only loading state and drops it again on a master or HTTP failure. True when accepted
 // (the browser should close); false when another action is in flight. `hostProto` and
-// `hostGame` are the row's announced identity pair: the equality gate rejects here with the
-// connect-failed popup, and 0 or empty (an older host) skips that tier, leaving the wire gate
-// as the backstop.
+// `hostGame` are the row's announced identity pair and `hostGameBuild` the game build the host runs:
+// the equality gate rejects here with the connect-failed popup, and 0 or empty (an older host, or a
+// master older than the field) skips that tier, leaving the wire gate as the backstop.
 bool JoinLobby(const std::string& masterUrl, const std::string& lobbyId,
                const std::string& displayName, int hostProto = 0,
-               const std::string& hostGame = {});
+               const std::string& hostGame = {}, const std::string& hostGameBuild = {});
 
 // Direct connect, which works with the master down: "host" or "host:port". Builds a direct
 // client Config and queues a session start; raises the loading state on a good address. True

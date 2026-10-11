@@ -1,14 +1,15 @@
 // coop/session/player_handshake.cpp -- the Join handshake: what a peer sends about itself (its
-// element id, nickname, skin, display prefs, nick colour, game target and build claim), how the
-// receiver writes it into the roster ledger, the host's roster relay, the connect and joined lines,
+// element id, nickname, skin, display prefs, nick colour, game target, build claim and game build), how
+// the receiver writes it into the roster ledger, the host's roster relay, the connect and joined lines,
 // and the slot assignment. See coop/session/player_handshake.h.
-// The Join's chain: [u32 eid][nick][skin][flags][colour][game][build claim: sha256 32, u8 flags].
+// The Join's chain: [u32 eid][nick][skin][flags][colour][game][build claim: sha256 32, u8 flags][game build].
 
 #include "coop/session/player_handshake.h"
 
 #include "player_handshake_detail.h"  // co-located private header (src tree, not include/)
 
 #include "coop/build_trust/build_trust.h"  // the Join's build claim
+#include "coop/game_build/game_build.h"    // the Join's game build
 #include "coop/config/config.h"           // persist a host-assigned name
 #include "coop/config/config_registry.h"  // the my-name default
 #include "coop/text/repertoire.h"
@@ -243,6 +244,15 @@ void MaybeSendJoinToSlot(net::Session& session, int slot,
                 sha[0] ^= 0xFF;
             joinPayload.insert(joinPayload.end(), sha, sha + sizeof(sha));
             joinPayload.push_back(coop::build_trust::SelfIsOfficial() ? 1 : 0);
+        }
+        // The game build this peer runs, after the build claim: [u8 len][key ASCII], the key
+        // coop/game_build compares. The receiver checks it after the game target: a 0.9.0n player and a
+        // 0.10.0 player with one Multivoid share a target and a build number, and only this tells them apart.
+        {
+            const char* key = coop::game_build::Running().id.key;
+            const size_t keyLen = std::strlen(key);
+            joinPayload.push_back(static_cast<uint8_t>(keyLen));
+            joinPayload.insert(joinPayload.end(), key, key + keyLen);
         }
         joinPayloadBuilt = true;
     }

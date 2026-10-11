@@ -13,6 +13,7 @@
 #include "ui/host_save_picker.h"
 #include "ui/menu_sfx.h"        // native VOTV button click + rollover sounds
 #include "coop/net/protocol.h"  // kProtocolVersion (the "Ver" mismatch tint)
+#include "coop/game_build/game_build.h"
 #include "coop/session/session_manager.h"
 #include "coop/config/config.h"   // local-only ini persistence for the name + last direct address
 #include "ui/scale.h"
@@ -222,7 +223,7 @@ void Render() {
                     g_selectedId = r.lobbyId;
                     if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
                         if (isOwn) sm::SetHostStatus("That's your own server -- you're hosting it.");
-                        else if (sm::JoinLobby(g_rowsMaster, r.lobbyId, r.name, r.proto, r.game))
+                        else if (sm::JoinLobby(g_rowsMaster, r.lobbyId, r.name, r.proto, r.game, r.gameBuild))
                             Close();
                     }
                 }
@@ -242,8 +243,8 @@ void Render() {
                 // refuses on, so amber ALWAYS means "join will be refused with a popup". Unknown
                 // fields (a pre-field host) skip their axis; an empty game falls back to the legacy
                 // version tag, where old hosts announced their game version.
-                const bool gameMismatch =
-                    !r.game.empty() && r.game != sm::GameTarget();
+                const bool gameMismatch = (!r.game.empty() && r.game != sm::GameTarget()) ||
+                                          coop::game_build::DiffersFromOurs(r.gameBuild);
                 const bool verMismatch =
                     gameMismatch ||
                     (r.proto > 0 &&
@@ -273,7 +274,7 @@ void Render() {
         const bool canConnect = sel && !selOwn;
         if (!canConnect) ImGui::BeginDisabled();
         if (ui::menu_sfx::Button(selOwn ? "Your server" : "Connect", ImVec2(S(120.0f), 0.0f)) && canConnect)
-            if (sm::JoinLobby(g_rowsMaster, sel->lobbyId, sel->name, sel->proto, sel->game))
+            if (sm::JoinLobby(g_rowsMaster, sel->lobbyId, sel->name, sel->proto, sel->game, sel->gameBuild))
                 Close();
         if (!canConnect) ImGui::EndDisabled();
         ImGui::SameLine();

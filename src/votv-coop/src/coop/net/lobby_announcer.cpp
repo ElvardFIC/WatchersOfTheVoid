@@ -1,6 +1,7 @@
 // coop/net/lobby_announcer.cpp -- see coop/net/lobby_announcer.h.
 
 #include "coop/net/lobby_announcer.h"
+#include "coop/game_build/game_build.h"
 
 #include "coop/build_trust/build_trust.h"
 #include "coop/net/http_client.h"
@@ -58,6 +59,7 @@ std::string HostBody(const AnnounceRequest& r, bool listed, const BuildClaim& cl
     // The Paper-pair identity: the game target plus the build number (proto). There is no "version"
     // field -- the mod-semver axis was retired whole (RULE 2).
     b["game"] = coop::version::kGameTarget;      // join gate tier 1
+    b["game_build"] = coop::game_build::Running().id.key;  // the game this host runs, for the browser's mark
     b["proto"] = static_cast<int>(coop::net::kProtocolVersion);  // the build number (tier 2)
     b["world"] = r.world;
     // The identity joiners dial. It is this install's durable PUBLIC KEY rendered `gen:<64 hex>` --

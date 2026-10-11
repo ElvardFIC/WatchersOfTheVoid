@@ -6,6 +6,7 @@
 #include "l10n/l10n.h"
 
 #include "coop/net/protocol.h"          // kProtocolVersion -- the version-cell mismatch tint
+#include "coop/game_build/game_build.h"
 #include "coop/session/session_manager.h"
 #include "coop/text/utf8_codec.h"       // the one owner of text encoding
 #include "ui/link_format.h"             // LobbyLinkLabel -- the link cell's word, shared with the overlay
@@ -230,13 +231,15 @@ bool RowPartsAt(int32_t i, RowParts& out) {
     return true;
 }
 
-// Will the join gate refuse this server, and which half of the pair disagrees: `game` is the
-// host's VOTV target and `proto` its build. The row shows the shortest true thing ("!b146" when
-// only the build differs, "!0.9.0m" when the cook does); the details panel spells out both sides.
+// Will the join gate refuse this server, and which part disagrees: `game` is the host's VOTV target,
+// `gameBuild` the game the host runs, `proto` its build. The row shows the shortest true thing ("!0.9.0m"
+// when the cook differs, "!0.10.0" or "!untested" when the game running does, "!b146" when only the build
+// does); the details panel spells out both sides.
 std::string MismatchMark(const Row& r) {
     const bool gameBad = !r.game.empty() && r.game != sm::GameTarget();
     const bool protoBad = r.proto > 0 && r.proto != static_cast<int>(coop::net::kProtocolVersion);
     if (gameBad) return "!" + r.game;
+    if (coop::game_build::DiffersFromOurs(r.gameBuild)) return "!" + coop::game_build::MarkText(r.gameBuild);
     if (protoBad) return "!b" + std::to_string(r.proto);
     return {};
 }
