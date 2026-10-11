@@ -4,10 +4,9 @@
 // vocabulary, so a lane that parks names its kind and needs no entry here.
 //
 // Idempotent per kind: a lane that raises twice holds one pause, and a lowering of a pause never raised
-// changes nothing. The refcount this replaced counted each lane's edges, so a raise whose lower never
-// came held every later session paused, since nothing reset it between sessions; the Session resets
-// this set when it starts. Lock-free: the lanes set it on the game thread, the receive loop reads it on
-// the net thread.
+// changes nothing. The Session resets this set when it starts, so a raise whose lower never came cannot
+// hold a later session paused. Lock-free: the lanes set it on the game thread, the receive loop reads it
+// on the net thread.
 #pragma once
 
 #include "coop/net/protocol.h"  // ReliableKind

@@ -68,11 +68,26 @@ std::map<uint64_t, Clock::time_point> g_tombstones;
 struct ParkedRow {
     std::vector<uint8_t> blob;
     uint8_t senderSlot = 0;
+    uint32_t senderGen = 0;  // the slot's occupancy when the row arrived (Session::peerGenerationForSlot)
 };
 std::deque<ParkedRow> g_applyPark;
 constexpr size_t kParkCap = 256;
 
 coop::net::RefusalTally g_refusals{"signal_sync"};
+
+uint32_t SlotGeneration(uint8_t slot) {
+    auto* s = g_session.load(std::memory_order_acquire);
+    return s ? s->peerGenerationForSlot(slot) : 0;
+}
+
+// A refusal is counted against the row's sender while it still holds the slot. A row parked across
+// its sender's leave is refused all the same and counted for no one: the slot's next occupant did
+// not send it. The leaver's rows still apply, since a row delivered before the leave is world state
+// the rest of the session may already hold.
+void NoteRefusal(uint8_t slot, uint32_t senderGen, const char* why) {
+    if (SlotGeneration(slot) == senderGen) g_refusals.Note(slot, why, Clock::now());
+    else g_refusals.NoteFromLeaver(slot, why, Clock::now());
+}
 
 bool IsHostRole() {
     auto* s = g_session.load(std::memory_order_acquire);
@@ -123,7 +138,7 @@ bool ApplyDeleteByHash(uint64_t hash) {
 // cannot be asked yet, which the caller parks.
 enum class ApplyVerdict { Applied, Terminal, NotNow };
 
-ApplyVerdict ApplyRowBlob(const std::vector<uint8_t>& blob, uint8_t senderSlot) {
+ApplyVerdict ApplyRowBlob(const std::vector<uint8_t>& blob, uint8_t senderSlot, uint32_t senderGen) {
     const uint64_t hash = coop::signal_wire::ContentHash(blob);
     auto t = g_tombstones.find(hash);
     if (t != g_tombstones.end()) {
@@ -134,14 +149,14 @@ ApplyVerdict ApplyRowBlob(const std::vector<uint8_t>& blob, uint8_t senderSlot) 
     }
     SD::Row row;
     if (!coop::signal_wire::Deserialize(blob, row)) {
-        g_refusals.Note(senderSlot, "the row blob is malformed", Clock::now());
+        NoteRefusal(senderSlot, senderGen, "the row blob is malformed");
         return ApplyVerdict::Terminal;
     }
     if (!UE::EnsureResolved()) return ApplyVerdict::NotNow;
     const ue_wrap::RowApply r = UE::ApplySaveSignal(row);
     if (r.result == ue_wrap::RowApplyResult::NotNow) return ApplyVerdict::NotNow;
     if (r.result == ue_wrap::RowApplyResult::Refused) {
-        g_refusals.Note(senderSlot, r.why, Clock::now());
+        NoteRefusal(senderSlot, senderGen, r.why);
         return ApplyVerdict::Terminal;
     }
     const int32_t n = UE::Count();
@@ -170,8 +185,8 @@ void UpdateParkPause() {
     }
 }
 
-void ParkRow(const std::vector<uint8_t>& blob, uint8_t senderSlot) {
-    g_applyPark.push_back({blob, senderSlot});
+void ParkRow(const std::vector<uint8_t>& blob, uint8_t senderSlot, uint32_t senderGen) {
+    g_applyPark.push_back({blob, senderSlot, senderGen});
     UpdateParkPause();
 }
 
@@ -180,9 +195,10 @@ void CompleteAssembly(const std::vector<uint8_t>& blob, uint8_t senderSlot) {
     // never ahead. An UNSETTLED lane (!g_primed -- join load, world travel, array still filling)
     // parks every arrival too, so the park is the ONE ordering point for the whole unsettled
     // window.
-    if (!g_applyPark.empty() || !g_primed) { ParkRow(blob, senderSlot); return; }
-    if (ApplyRowBlob(blob, senderSlot) == ApplyVerdict::NotNow)
-        ParkRow(blob, senderSlot);
+    const uint32_t senderGen = SlotGeneration(senderSlot);
+    if (!g_applyPark.empty() || !g_primed) { ParkRow(blob, senderSlot, senderGen); return; }
+    if (ApplyRowBlob(blob, senderSlot, senderGen) == ApplyVerdict::NotNow)
+        ParkRow(blob, senderSlot, senderGen);
 }
 
 // Drain the park in arrival order (called every Tick once resolve succeeds).
@@ -196,7 +212,7 @@ void DrainApplyPark() {
     if (!g_primed) return;
     while (!g_applyPark.empty()) {
         const ParkedRow& front = g_applyPark.front();
-        if (ApplyRowBlob(front.blob, front.senderSlot) == ApplyVerdict::NotNow) break;
+        if (ApplyRowBlob(front.blob, front.senderSlot, front.senderGen) == ApplyVerdict::NotNow) break;
         g_applyPark.pop_front();
     }
     UpdateParkPause();

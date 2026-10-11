@@ -102,11 +102,24 @@ std::map<uint64_t, Clock::time_point> g_tombstones;
 struct ParkedRow {
     std::vector<uint8_t> blob;
     uint8_t senderSlot = 0;
+    uint32_t senderGen = 0;  // the slot's occupancy when the row arrived (Session::peerGenerationForSlot)
 };
 std::deque<ParkedRow> g_applyPark;
 constexpr size_t kParkCap = 256;
 
 coop::net::RefusalTally g_refusals{"email_sync"};
+
+uint32_t SlotGeneration(uint8_t slot) {
+    auto* s = g_session.load(std::memory_order_acquire);
+    return s ? s->peerGenerationForSlot(slot) : 0;
+}
+
+// Counted against the row's sender only while it still holds the slot; a row parked across its
+// sender's leave still applies, and its refusal is counted for no one (signal_sync's NoteRefusal).
+void NoteRefusal(uint8_t slot, uint32_t senderGen, const char* why) {
+    if (SlotGeneration(slot) == senderGen) g_refusals.Note(slot, why, Clock::now());
+    else g_refusals.NoteFromLeaver(slot, why, Clock::now());
+}
 
 bool IsHostRole() {
     auto* s = g_session.load(std::memory_order_acquire);
@@ -224,7 +237,7 @@ bool ApplyDeleteByHash(uint64_t hash, std::wstring* outTopic = nullptr) {
 // would meet the same answer again. NotNow: the game cannot be asked yet, which the caller parks.
 enum class ApplyVerdict { Applied, Terminal, NotNow };
 
-ApplyVerdict ApplyRowBlob(const std::vector<uint8_t>& blob, uint8_t senderSlot) {
+ApplyVerdict ApplyRowBlob(const std::vector<uint8_t>& blob, uint8_t senderSlot, uint32_t senderGen) {
     const uint64_t hash = Fnv64(blob.data(), blob.size());
     auto t = g_tombstones.find(hash);
     if (t != g_tombstones.end()) {
@@ -236,14 +249,14 @@ ApplyVerdict ApplyRowBlob(const std::vector<uint8_t>& blob, uint8_t senderSlot) 
     }
     UE::Row row;
     if (!DeserializeRow(blob, row)) {
-        g_refusals.Note(senderSlot, "the email blob is malformed", Clock::now());
+        NoteRefusal(senderSlot, senderGen, "the email blob is malformed");
         return ApplyVerdict::Terminal;
     }
     if (!UE::EnsureResolved()) return ApplyVerdict::NotNow;
     const ue_wrap::RowApply r = UE::AddEmail(row);
     if (r.result == ue_wrap::RowApplyResult::NotNow) return ApplyVerdict::NotNow;
     if (r.result == ue_wrap::RowApplyResult::Refused) {
-        g_refusals.Note(senderSlot, r.why, Clock::now());
+        NoteRefusal(senderSlot, senderGen, r.why);
         return ApplyVerdict::Terminal;
     }
     // Echo-proof by content hash: the next poll's append branch finds this freshly appended tail row
@@ -272,8 +285,8 @@ void UpdateParkPause() {
     }
 }
 
-void ParkRow(const std::vector<uint8_t>& blob, uint8_t senderSlot) {
-    g_applyPark.push_back({blob, senderSlot});
+void ParkRow(const std::vector<uint8_t>& blob, uint8_t senderSlot, uint32_t senderGen) {
+    g_applyPark.push_back({blob, senderSlot, senderGen});
     UpdateParkPause();
 }
 
@@ -282,9 +295,10 @@ void CompleteAssembly(const std::vector<uint8_t>& blob, uint8_t senderSlot) {
     // ahead. An unsettled lane (not primed: a join load, a world travel, the array still filling)
     // parks every arrival too, so the park is the one ordering point for the whole unsettled
     // window.
-    if (!g_applyPark.empty() || !g_primed) { ParkRow(blob, senderSlot); return; }
-    if (ApplyRowBlob(blob, senderSlot) == ApplyVerdict::NotNow)
-        ParkRow(blob, senderSlot);
+    const uint32_t senderGen = SlotGeneration(senderSlot);
+    if (!g_applyPark.empty() || !g_primed) { ParkRow(blob, senderSlot, senderGen); return; }
+    if (ApplyRowBlob(blob, senderSlot, senderGen) == ApplyVerdict::NotNow)
+        ParkRow(blob, senderSlot, senderGen);
 }
 
 void DrainApplyPark() {
@@ -296,7 +310,7 @@ void DrainApplyPark() {
     if (!g_primed) return;
     while (!g_applyPark.empty()) {
         const ParkedRow& front = g_applyPark.front();
-        if (ApplyRowBlob(front.blob, front.senderSlot) == ApplyVerdict::NotNow) break;
+        if (ApplyRowBlob(front.blob, front.senderSlot, front.senderGen) == ApplyVerdict::NotNow) break;
         g_applyPark.pop_front();
     }
     UpdateParkPause();
