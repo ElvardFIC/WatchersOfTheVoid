@@ -1078,7 +1078,7 @@ SOFTWARE.
 
 ## UAssetAPI (ported algorithm)
 
-No UAssetAPI code is linked; the operand layout of each UE4.27 Kismet bytecode instruction, as UAssetAPI's expression readers read it with their in-memory (iCode) accounting, was PORTED into the opcode table of `src/votv-coop/src/ue_wrap/core/script_fingerprint.cpp` with an attribution comment, and that portion carries the upstream MIT notice. Upstream: https://github.com/atenfyr/UAssetAPI (read from the fork https://github.com/Yangff/UAssetAPI). Source of this text: that fork's `LICENSE` at commit `0b4d2cff87bd391d56e9a208e35c92d77238bacb`, read from a local clone (the tree itself is not carried by this repository).
+No UAssetAPI code is linked; the operand layout of each UE4.27 Kismet bytecode instruction, as UAssetAPI's expression readers read it with their in-memory (iCode) accounting, was PORTED into the opcode table of `src/votv-coop/src/ue_wrap/core/script_bytecode.cpp` with an attribution comment, and that portion carries the upstream MIT notice. Upstream: https://github.com/atenfyr/UAssetAPI (read from the fork https://github.com/Yangff/UAssetAPI). Source of this text: that fork's `LICENSE` at commit `0b4d2cff87bd391d56e9a208e35c92d77238bacb`, read from a local clone (the tree itself is not carried by this repository).
 
 ```text
 MIT License

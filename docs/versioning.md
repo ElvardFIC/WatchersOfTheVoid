@@ -110,5 +110,5 @@ built from.
 |---|---|
 | the pair | `src/votv-coop/CMakeLists.txt`, `coop/net/protocol.h`, `coop/session/player_handshake_version.cpp` |
 | the version surface | `ue_wrap/core/sdk_profile.h`, `ue_wrap/core/sdk_profile_names.h` |
-| the checks | `ue_wrap/core/reflection` (the boot health check), `harness/sdk_check` |
+| the checks | `ue_wrap/core/reflection` (the boot health check), `harness/sdk_check` (names), `harness/fingerprint_census` (logic, [bytecode-fingerprint.md](bytecode-fingerprint.md)), `harness/compat_report` (their one report) |
 | the loader | `.github/ci/abi_gate.py`, `loader/cppmod_entry.cpp` |
