@@ -383,6 +383,10 @@ msgstr ""
 msgid "Chat"
 msgstr ""
 
+#: src/ui/game_build_dialog.cpp
+msgid "Check for an update"
+msgstr ""
+
 #: src/ui/world_rules_panel.cpp
 msgid "Click on the name of the rule to see its description."
 msgstr ""
@@ -427,6 +431,10 @@ msgstr ""
 
 #: src/ui/bug_report_pane.cpp
 msgid "Contact (optional, e.g. a Discord name)"
+msgstr ""
+
+#: src/ui/game_build_dialog.cpp
+msgid "Continue anyway"
 msgstr ""
 
 #: src/ui/dev_menu.cpp
@@ -710,6 +718,15 @@ msgstr ""
 
 #: src/ui/voice_panel.cpp
 msgid "Microphone"
+msgstr ""
+
+#: src/ui/game_build_dialog.cpp
+msgid "Multiplayer may not work: you may not see other players, and some features may be off. Check for a Multivoid update made for your game version."
+msgstr ""
+
+#: src/ui/game_build_dialog.cpp
+#, c-format
+msgid "Multiplayer may not work: you may not see other players, and some features may be off. Look for a Multivoid build made for VOTV %1$s."
 msgstr ""
 
 #: src/ui/browser_input_screens.cpp
@@ -1335,6 +1352,21 @@ msgstr ""
 msgid "Their identity is not proved yet."
 msgstr ""
 
+#: src/ui/game_build_dialog.cpp
+#, c-format
+msgid "This Multivoid (b%1$s) is made for VOTV %2$s. Your game is VOTV %3$s, a newer version."
+msgstr ""
+
+#: src/ui/game_build_dialog.cpp
+#, c-format
+msgid "This Multivoid (b%1$s) is made for VOTV %2$s. Your game is VOTV %3$s, an older version."
+msgstr ""
+
+#: src/ui/game_build_dialog.cpp
+#, c-format
+msgid "This Multivoid (b%1$s) is made for VOTV %2$s. Your game is a version it has not been tested on."
+msgstr ""
+
 #: src/ui/config_review_panel.cpp
 msgid "This key holds your body skin -- if the winning value is not the one you expect, keep the other line."
 msgstr ""
@@ -1426,6 +1458,10 @@ msgstr ""
 msgid "UI size"
 msgstr ""
 
+#: src/ui/game_build_dialog.cpp
+msgid "UNTESTED GAME VERSION"
+msgstr ""
+
 #: src/ui/config_review_panel.cpp
 msgid "Unknown settings (nothing reads these)"
 msgstr ""
@@ -1439,6 +1475,16 @@ msgstr[1] ""
 
 #: src/ui/server_browser_actions.cpp
 msgid "Update list"
+msgstr ""
+
+#: src/ui/game_build_dialog.cpp
+#, c-format
+msgid "Update the game to VOTV %1$s."
+msgstr ""
+
+#: src/ui/game_build_dialog.cpp
+#, c-format
+msgid "Update the game, or use Multivoid b%1$s, the last build for VOTV %2$s."
 msgstr ""
 
 #: src/ui/scoreboard.cpp
@@ -1569,6 +1615,10 @@ msgstr ""
 
 #: src/coop/net/end_reason.cpp
 msgid "You are banned from this server."
+msgstr ""
+
+#: src/ui/game_build_dialog.cpp
+msgid "You can play anyway. This message will not show again for this game version."
 msgstr ""
 
 #: src/ui/config_review_panel.cpp

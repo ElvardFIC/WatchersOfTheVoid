@@ -3,6 +3,7 @@
 // the join lane is session_join.cpp. Master-server HTTP runs on detached workers.
 
 #include "coop/session/session_manager.h"
+#include "coop/game_build/game_build.h"
 
 #include "session_manager_internal.h"  // co-located: what the host and join lanes share
 
@@ -195,10 +196,13 @@ std::string DisplayVersion() {
     // the build number is kProtocolVersion, which moves exactly when compatibility moves.
     // Function-static: the inputs never change once the session runs, and the browser header calls
     // this every frame.
+    // The running game build is decided at boot, before the menu's first call: a game this Multivoid was not
+    // made for carries the mark wherever the label is shown.
     static const std::string kLabel =
         std::string("Multivoid ") + coop::version::kGameTarget +
         " b" + std::to_string(static_cast<int>(net::kProtocolVersion)) +
-        coop::build_trust::StatusSuffix();
+        coop::build_trust::StatusSuffix() +
+        (coop::game_build::Running().kind == coop::game_build::Kind::Target ? "" : " (untested game version)");
     return kLabel;
 }
 

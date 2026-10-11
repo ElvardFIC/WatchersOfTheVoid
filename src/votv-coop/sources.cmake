@@ -533,6 +533,7 @@ set(VOTVCOOP_SOURCES
     src/ui/server_browser_surface.cpp
     src/ui/server_browser_selftest.cpp
     src/ui/boot_warning_dialog.cpp
+    src/ui/game_build_dialog.cpp
     src/ui/config_review_panel.cpp
     src/ui/end_reason_dialog.cpp
     src/ui/menu_sfx.cpp

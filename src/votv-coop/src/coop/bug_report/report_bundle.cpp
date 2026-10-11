@@ -13,6 +13,7 @@
 
 #include "coop/atomic_file/atomic_file.h"
 #include "coop/build_trust/build_trust.h"
+#include "coop/game_build/game_build.h"
 #include "coop/config/config_report.h"
 #include "coop/net/peer_identity.h"
 #include "coop/net/protocol.h"
@@ -415,6 +416,9 @@ Status Build(const Form& form, const Capture& cap) {
     Json meta;
     meta["format"] = 1;
     meta["game_target"] = coop::version::kGameTarget;
+    // The game that ran, beside the one the mod was made for: a report from an untested build says so.
+    meta["game_build"] = coop::game_build::Running().id.key;
+    meta["game_build_text"] = coop::game_build::Describe();
     meta["build"] = coop::net::kProtocolVersion;
     meta["build_official"] = coop::build_trust::SelfIsOfficial();
     meta["build_sha"] = coop::build_trust::SelfShaHex();

@@ -309,6 +309,9 @@ msgstr "[[Change name]]"
 msgid "Chat"
 msgstr "[[Chat]]"
 
+msgid "Check for an update"
+msgstr "[[Check for an update]]"
+
 msgid "Click on the name of the rule to see its description."
 msgstr "[[Click on the name of the rule to see its description.]]"
 
@@ -346,6 +349,9 @@ msgstr "[[Console]]"
 
 msgid "Contact (optional, e.g. a Discord name)"
 msgstr "[[Contact (optional, e.g. a Discord name)]]"
+
+msgid "Continue anyway"
+msgstr "[[Continue anyway]]"
 
 msgid "Cosmetics"
 msgstr "[[Cosmetics]]"
@@ -571,6 +577,13 @@ msgstr "[[Mic muted]]"
 
 msgid "Microphone"
 msgstr "[[Microphone]]"
+
+msgid "Multiplayer may not work: you may not see other players, and some features may be off. Check for a Multivoid update made for your game version."
+msgstr "[[Multiplayer may not work: you may not see other players, and some features may be off. Check for a Multivoid update made for your game version.]]"
+
+#, c-format
+msgid "Multiplayer may not work: you may not see other players, and some features may be off. Look for a Multivoid build made for VOTV %1$s."
+msgstr "[[Multiplayer may not work: you may not see other players, and some features may be off. Look for a Multivoid build made for VOTV %1$s.]]"
 
 msgid "Multivoid  -  Change name"
 msgstr "[[Multivoid  -  Change name]]"
@@ -1073,6 +1086,18 @@ msgstr "[[The transport handshake with the host failed.]]"
 msgid "Their identity is not proved yet."
 msgstr "[[Their identity is not proved yet.]]"
 
+#, c-format
+msgid "This Multivoid (b%1$s) is made for VOTV %2$s. Your game is VOTV %3$s, a newer version."
+msgstr "[[This Multivoid (b%1$s) is made for VOTV %2$s. Your game is VOTV %3$s, a newer version.]]"
+
+#, c-format
+msgid "This Multivoid (b%1$s) is made for VOTV %2$s. Your game is VOTV %3$s, an older version."
+msgstr "[[This Multivoid (b%1$s) is made for VOTV %2$s. Your game is VOTV %3$s, an older version.]]"
+
+#, c-format
+msgid "This Multivoid (b%1$s) is made for VOTV %2$s. Your game is a version it has not been tested on."
+msgstr "[[This Multivoid (b%1$s) is made for VOTV %2$s. Your game is a version it has not been tested on.]]"
+
 msgid "This key holds your body skin -- if the winning value is not the one you expect, keep the other line."
 msgstr "[[This key holds your body skin -- if the winning value is not the one you expect, keep the other line.]]"
 
@@ -1147,6 +1172,9 @@ msgstr "[[Type the password this server was locked with.]]"
 msgid "UI size"
 msgstr "[[UI size]]"
 
+msgid "UNTESTED GAME VERSION"
+msgstr "[[UNTESTED GAME VERSION]]"
+
 msgid "Unknown settings (nothing reads these)"
 msgstr "[[Unknown settings (nothing reads these)]]"
 
@@ -1158,6 +1186,14 @@ msgstr[1] "[[Up:    %1$s now,  %2$s total,  %3$llu packets]]"
 
 msgid "Update list"
 msgstr "[[Update list]]"
+
+#, c-format
+msgid "Update the game to VOTV %1$s."
+msgstr "[[Update the game to VOTV %1$s.]]"
+
+#, c-format
+msgid "Update the game, or use Multivoid b%1$s, the last build for VOTV %2$s."
+msgstr "[[Update the game, or use Multivoid b%1$s, the last build for VOTV %2$s.]]"
 
 msgid "V: voice settings"
 msgstr "[[V: voice settings]]"
@@ -1258,6 +1294,9 @@ msgstr "[[Wrong password.]]"
 
 msgid "You are banned from this server."
 msgstr "[[You are banned from this server.]]"
+
+msgid "You can play anyway. This message will not show again for this game version."
+msgstr "[[You can play anyway. This message will not show again for this game version.]]"
 
 #, c-format
 msgid "Your body skin (%s) could not be saved to multivoid.ini this launch -- it is temporary for this session. Fix whatever keeps the file from being read or saved (a lock from an editor or antivirus, permissions, or a file saved as UTF-16); nothing is lost once a launch can save again."

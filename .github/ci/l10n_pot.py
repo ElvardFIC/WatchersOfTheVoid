@@ -70,6 +70,7 @@ ALLOWLIST = [
     "src/ui/dev_menu.cpp",
     "src/ui/end_reason_dialog.cpp",
     "src/ui/fonts.cpp",
+    "src/ui/game_build_dialog.cpp",
     "src/ui/hud.cpp",
     "src/ui/join_curtain.cpp",
     "src/ui/link_format.cpp",

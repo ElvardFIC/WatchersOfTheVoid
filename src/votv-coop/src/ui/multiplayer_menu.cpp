@@ -9,6 +9,7 @@
 #include "ui/multiplayer_menu.h"
 
 #include "coop/config/config.h"
+#include "coop/game_build/game_build.h"
 #include "ui/input_focus.h"
 #include "coop/session/join_progress.h"
 #include "coop/session/session_manager.h"  // LatestVersionLine, DisplayVersion
@@ -123,6 +124,8 @@ std::string VersionLine(bool* outdated) {
         // The plain identity: the display version composite.
         line = coop::session_manager::DisplayVersion();
     }
+    // A game this Multivoid was not made for is the label's attention too, beside an outdated build.
+    if (outdated && coop::game_build::Running().kind != coop::game_build::Kind::Target) *outdated = true;
     return line;
 }
 

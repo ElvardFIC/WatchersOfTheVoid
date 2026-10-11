@@ -6,6 +6,7 @@
 #include "coop/config/config_registry.h"
 #include "ue_wrap/core/log.h"
 
+#include <cstring>
 #include <mutex>
 
 namespace coop::game_build {
@@ -15,6 +16,18 @@ namespace GB = ue_wrap::game_build;
 
 Detected g_running;
 std::once_flag g_once;
+
+struct LastBuild {
+    const char* version;
+    unsigned    build;
+};
+// The table may be empty: the sentinel row ends it and is never a version.
+constexpr LastBuild kLastBuilds[] = {
+#define LAST_BUILD(version, build) {version, build},
+#include "coop/game_build/last_builds.inc"
+#undef LAST_BUILD
+    {nullptr, 0},
+};
 
 Kind KindOf(const GB::Row* row) {
     const GB::Row* target = GB::Target();
@@ -70,6 +83,23 @@ const char* KindWord(Kind kind) {
 }
 
 std::string Describe() { return DescribeOf(Running()); }
+
+bool AnswerOwed() {
+    const Detected& d = Running();
+    if (d.kind == Kind::Target) return false;
+    return coop::config::ResolveString(coop::config_registry::rows::game_build_ack) != d.id.key;
+}
+
+void Acknowledge() {
+    coop::config::SetValue(coop::config_registry::rows::game_build_ack, Running().id.key);
+}
+
+unsigned LastBuildFor(const char* version) {
+    if (!version) return 0;
+    for (const LastBuild& last : kLastBuilds)
+        if (last.version && std::strcmp(last.version, version) == 0) return last.build;
+    return 0;
+}
 
 std::string UntestedDetail() {
     const Detected& d = Running();

@@ -44,4 +44,16 @@ std::string Describe();
 // "its game data is 0.9.0n's", or "no known build" -- the report's detail. Empty for a known build.
 std::string UntestedDetail();
 
+// The version popup is owed: the game is not the target, and the player has not answered for this build
+// (the ini row game_build_ack holds the key last answered -- the ini lives beside one install, so one slot
+// asks once per build, and an install updated in place asks again).
+bool AnswerOwed();
+
+// The player answered "Continue anyway": this build's key into game_build_ack.
+void Acknowledge();
+
+// The last Multivoid build made for a game version the mod has moved past (coop/game_build/last_builds.inc),
+// or 0 when none is recorded.
+unsigned LastBuildFor(const char* version);
+
 }  // namespace coop::game_build

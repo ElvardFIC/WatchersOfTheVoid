@@ -188,6 +188,9 @@ CFG_STRING(browser_lastdirect, "browser.lastdirect", "ui", ::coop::net::kDefault
 CFG_ROWFLAGS(browser_lastdirect, kRowAddress)
 CFG_FLAG(multiplayer_menu_off, "multiplayer_menu_off", "ui", false, nullptr,
     "Set to 1 to hide the Multiplayer main-menu button (the mod stays loaded).")
+CFG_STRING(game_build_ack, "game_build_ack", "ui", "", nullptr, false,
+    "The game build the version popup was last answered for, written by its 'Continue anyway': the popup "
+    "is asked once per game build, not per launch. Empty: never answered.")
 // The composed font family, per-role enum rows. The default family per role: the menus, chat
 // and the toast use fixedsys, the net overlay and the nameplates use roboto; the family index
 // order is the font family token list.

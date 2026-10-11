@@ -33,3 +33,8 @@ CFG_STRING(scan_ledger_red, "scan_ledger_red", "dev", "", "VOTVCOOP_SCAN_LEDGER_
     "ScriptGate, SaveGameToSlot, OverlayDraw, OverlayResize, ActorEndPlay) the compat report reads as missed, so "
     "it must name what that miss takes away and read DEGRADED; it prints 'scan-ledger: RED ARM <row> reported "
     "missed', or 'RED ARM FAILED'. The report only: the scan itself is untouched. Empty: no red arm.")
+CFG_FLAG(game_build_dialog_continue, "game_build_dialog_continue", "dev", false,
+    "VOTVCOOP_GAME_BUILD_DIALOG_CONTINUE",
+    "The version popup's drill arm: the first frame it draws answers 'Continue anyway' through the button's own "
+    "handler, so a run proves the draw and the remembered answer without a click, and a forced-build run is not "
+    "held at a modal that takes the input. Off by default.")

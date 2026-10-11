@@ -17,6 +17,7 @@
 #include "ui/scoreboard.h"
 #include "ui/server_browser.h"
 #include "ui/boot_warning_dialog.h"
+#include "ui/game_build_dialog.h"
 #include "ui/config_review_panel.h"
 #include "ui/end_reason_dialog.h"
 #include "ui/host_save_picker.h"
@@ -98,18 +99,19 @@ inline bool ChatOpen()    { return ui::chat_input::IsOpen(); }
 inline bool VoiceOpen()   { return ui::voice_panel::IsOpen(); }
 inline bool EndReasonOpen() { return ui::end_reason_dialog::IsOpen(); }
 inline bool BootWarningOpen()   { return ui::boot_warning_dialog::IsOpen(); }
+inline bool GameBuildOpen()     { return ui::game_build_dialog::IsOpen(); }
 inline bool ConfigReviewOpen()  { return ui::config_review_panel::IsOpen(); }
 // VOTV's native pause menu is up (a render-thread-safe atomic in multiplayer_menu); the passive HUD
 // and the chat never draw over it.
 inline bool PauseMenuOpen() { return coop::multiplayer_menu::IsPauseMenuOpen(); }
 inline bool AnyOpen()     { return MenuOpen() || ScoreOpen() || BrowserOpen() || PickerOpen() ||
                                    LoadingOpen() || ConsoleOpen() || ChatOpen() || VoiceOpen() ||
-                                   EndReasonOpen() || BootWarningOpen() || ConfigReviewOpen(); }
+                                   EndReasonOpen() || BootWarningOpen() || GameBuildOpen() || ConfigReviewOpen(); }
 inline bool CaptureActive() {
     // The surfaces that take the cursor and input; the host scoreboard is one, the client
     // scoreboard is a passive peek.
     return MenuOpen() || BrowserOpen() || PickerOpen() || LoadingOpen() || ConsoleOpen() ||
-           ChatOpen() || VoiceOpen() || EndReasonOpen() || BootWarningOpen() ||
+           ChatOpen() || VoiceOpen() || EndReasonOpen() || BootWarningOpen() || GameBuildOpen() ||
            ConfigReviewOpen() || (ScoreOpen() && ui::scoreboard::LocalIsHost());
 }
 
@@ -336,6 +338,10 @@ void RenderFrameGuarded(IDXGISwapChain* sc) {
         // The config review (the settings check): persistent until dismissed, under the
         // boot-warning modal and over the regular surfaces.
         if (ConfigReviewOpen()) ui::config_review_panel::Render();
+        // The game-build popup (the game is not the build this Multivoid was made for), under the
+        // boot-warning modal and only while that one is closed: one updated game can arm both, and the
+        // install problem is read first.
+        if (GameBuildOpen() && !BootWarningOpen()) ui::game_build_dialog::Render();
         // The boot-warning modal (an install problem found at boot) layers over whatever is up
         // until acknowledged.
         if (ui::boot_warning_dialog::IsOpen()) ui::boot_warning_dialog::Render();
@@ -374,6 +380,7 @@ void RenderFrameGuarded(IDXGISwapChain* sc) {
         coop::join_progress::ClearNotice();
         // The boot-warning modal's pending text is its open flag, the same guard.
         ui::boot_warning_dialog::Clear();
+        ui::game_build_dialog::Clear();  // the same guard
         // The picker too: left open, a faulted Render re-enters every frame.
         ui::host_save_picker::Close();
         // The loading screen (which also resets join_progress, so a faulted join does not stay
@@ -698,6 +705,7 @@ std::string CaptureOwners() {
     if (VoiceOpen())         add("voice");
     if (EndReasonOpen())     add("endReason");
     if (BootWarningOpen())   add("bootWarning");
+    if (GameBuildOpen())     add("gameBuild");
     if (ConfigReviewOpen())  add("configReview");
     if (ScoreOpen() && ui::scoreboard::LocalIsHost()) add("scoreboard");
     return buf.empty() ? std::string("none") : buf;

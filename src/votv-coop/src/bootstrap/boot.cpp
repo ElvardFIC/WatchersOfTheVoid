@@ -8,6 +8,7 @@
 
 #include "bootstrap/refuse_dialog.h"  // the stand-down modal (never the overlay's dialog)
 ***REMOVED***
+#include "ui/game_build_dialog.h"    // the popup naming a game this Multivoid was not made for
 #include "ui/native_text_field.h"   // its un-gated editing selftest
 #include "coop/build_trust/build_trust.h"  // ComputeSelf -- this DLL's hash and type
 #include "coop/game_build/game_build.h"    // which game build runs, and what it means for us
@@ -179,6 +180,7 @@ DWORD WINAPI BootThread(LPVOID rawTag) {
     ui::native_text_field::RunSelftest();
     // The build reader's pure halves (the pak footer, the key, the rows), un-gated for the same reason.
     ue_wrap::game_build::RunSelftest();
+    ui::game_build_dialog::RunSelftest();  // every variant of the popup's text formats
 
     // THE VERDICT IS A DECISION, NOT A LOG LINE.
     //
@@ -231,8 +233,10 @@ DWORD WINAPI BootThread(LPVOID rawTag) {
         StandDownUnsupportedBuild();
         return 0;
     }
-    // The boot passed: the world checks are owed, and the report says so until they write.
+    // The boot passed: the world checks are owed, and the report says so until they write. The popup that names
+    // a game this Multivoid was not made for is armed now, so it shows on the overlay's first frame.
     harness::compat_boot::WritePassed();
+    ui::game_build_dialog::Arm();
 
     // Establish a game-thread execution context: arm the ProcessEvent detour so we have a
     // guaranteed game-thread callback to drive UFunction calls from (ProcessEvent
