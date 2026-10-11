@@ -244,7 +244,6 @@ def edge_findings(src: str) -> list:
     for exactly Host or NotAKind, the block that test opens ends in a return, and all of it comes before the
     save-transfer diversion and the inbox. Tokens alone are not enough: a removed Host test once left
     `ClientAuthorship::Host` standing in the log line's ternary."""
-    src = re.sub(r'"(?:\\.|[^"\\])*"', '""', src)   # a bracket inside a string is not code
     m = EDGE_READS_TABLE.search(src)
     if not m:
         return [f"{SESSION} no longer asks AuthorshipOf about a received kind: the table below would "
@@ -272,6 +271,9 @@ def edge_findings(src: str) -> list:
                    f"inbox and the relay.")
     elif body_end > min(after):
         out.append(f"{SESSION}: the edge's refusal block runs past the save-transfer diversion or the inbox.")
+    elif not src[body_end:].lstrip().startswith("}"):
+        out.append(f"{SESSION}: the host-only block holds more than the table's question and its refusal, "
+                   f"so what follows the refusal there runs on every message a client sends.")
     return out
 
 
@@ -653,6 +655,11 @@ def drill() -> int:
     t[SESSION] = t[SESSION].replace("if (cfg_.role == Role::Host) {\n            const ClientAuthorship who",
                                     "if (cfg_.role == Role::Client) {\n            const ClientAuthorship who", 1)
     controls.append(("the receive edge asks on the wrong peer", t, "the edge is no longer"))
+    t = dict(base)
+    t[SESSION] = t[SESSION].replace(
+        "            }\n        }\n        // payloadLen is a uint16",
+        "            }\n            return;\n        }\n        // payloadLen is a uint16", 1)
+    controls.append(("a return after the refusal ends every message", t, "holds more than the table's"))
     t = dict(base)
     t[AUTH] = t[AUTH].replace(row("ChatMessage"), "", 1).replace(
         "        return ClientAuthorship::Unverified;\n    }\n",

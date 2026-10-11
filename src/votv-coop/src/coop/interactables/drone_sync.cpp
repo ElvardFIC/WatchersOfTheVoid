@@ -5,8 +5,8 @@
 // own ReceiveTick (so it is purely a mirror) and drives the streamed transform kinematically with a
 // LerpWindow interp.
 //
-// Singleton (no key) -> the sky_sync host-auth push shape (host streams; client applies; host
-// early-returns) + the atv_sync LerpWindow interp. No index (one drone).
+// Singleton (no key) -> the sky_sync host-auth push shape (host streams; client applies) + the
+// atv_sync LerpWindow interp. No index (one drone).
 
 #include "coop/interactables/drone_sync.h"
 

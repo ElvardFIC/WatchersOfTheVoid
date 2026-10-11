@@ -324,7 +324,7 @@ bool HandleWorldEvent(const net::Session::ReliableMessage& msg) {
     case net::ReliableKind::SkyState: {
         // The host-authoritative night-sky orientation, moon phase and eye, host to client, refused from a client
         // at the host's receive edge like the clock. The client writes the sky mesh's world rotation and the moon
-        // phase and runs the sky's setEye for the eye (the module no-ops on the host).
+        // phase and runs the sky's setEye for the eye.
         if (msg.payloadLen < sizeof(net::SkyStatePayload)) {
             UE_LOGW("event_feed: SkyState payload too short (%zu < %zu)",
                     static_cast<size_t>(msg.payloadLen), sizeof(net::SkyStatePayload));
