@@ -2,6 +2,7 @@
 
 #include "coop/interactables/dish_calib_sync.h"
 
+#include "coop/net/intent_bucket.h"
 #include "coop/net/session.h"
 #include "coop/session/net_pump.h"  // IsInAnnouncedWorld
 
@@ -34,8 +35,7 @@ constexpr int kTagUncalibrator = 0x44435755;  // 'DCWU'
 constexpr int kTagSetPrec = 0x44435350;       // 'DCSP'
 
 // A client's intents, per peer: a player's verbs come a few a second at most.
-constexpr float    kIntentBurst = 8.f;
-constexpr float    kIntentsPerSecond = 4.f;
+constexpr coop::net::IntentBudget kIntentBudget{8.f, 4.f};
 constexpr uint64_t kRefusalSayMs = 10000;
 
 std::atomic<coop::net::Session*> g_session{nullptr};
@@ -51,10 +51,9 @@ bool  g_saidRefusedBatch = false;  // a batch not the host's to be sent, said on
 Counts g_counts;
 
 struct Bucket {
-    float    tokens = kIntentBurst;
-    uint64_t lastMs = 0;
-    uint64_t nextSayMs = 0;
-    int      overBudget = 0, notFinite = 0, noDish = 0;  // refused since the last line said so
+    coop::net::IntentBucket rate;
+    uint64_t                nextSayMs = 0;
+    int                     overBudget = 0, notFinite = 0, noDish = 0;  // refused since the last line said so
 };
 Bucket g_budget[coop::net::kMaxPeers];
 
@@ -84,18 +83,7 @@ void SayRefusals(uint8_t slot, uint64_t now, bool force) {
     b.overBudget = b.notFinite = b.noDish = 0;
 }
 
-bool TakeToken(uint8_t slot) {
-    Bucket& b = g_budget[slot];
-    const uint64_t now = ::GetTickCount64();
-    if (b.lastMs != 0 && now > b.lastMs) {
-        b.tokens += kIntentsPerSecond * static_cast<float>(now - b.lastMs) / 1000.0f;
-        if (b.tokens > kIntentBurst) b.tokens = kIntentBurst;
-    }
-    b.lastMs = now;
-    if (b.tokens < 1.0f) return false;
-    b.tokens -= 1.0f;
-    return true;
-}
+bool TakeToken(uint8_t slot) { return g_budget[slot].rate.Take(kIntentBudget, ::GetTickCount64()); }
 
 void SendAll(coop::net::Session* s, const D::DishCalibration* rows, int32_t n, int toSlot) {
     coop::net::DishCalibPayload p{};
