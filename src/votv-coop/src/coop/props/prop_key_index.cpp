@@ -203,6 +203,7 @@ void ReadParked() {
             g_parked[keep++] = p;
             continue;
         }
+        if (!R::IsLiveByIndex(p.obj, p.idx)) continue;  // marked for death while it loaded
         const KeyField f = FieldOf(R::ClassOf(p.obj));
         if (f != KeyField::None && !R::NameStartsWith(R::NameOf(p.obj), L"Default__")) Index(p.obj, p.idx, f);
     }
@@ -399,10 +400,11 @@ void TrySeed() {
     }
     if (!WatchLive(kRowInit) || !WatchLive(kRowSetKey) || !WatchLive(kRowGetKey) || !WatchLive(kRowLoadData))
         return;  // a name still resolving: the next tick
-    if (!OI::IsSeeded()) return;  // the object index's own first drain is still to come
-    // No catch-up here: a birth the object index has not applied yet reaches the listener once Live, and an
-    // object whose death is still queued is refused by every read until its death drains.
+    // Caught up first: the seed is the moment the index promises to hold every live keyed prop, and the
+    // host's uniqueness check reads it as it stands in the very ticks the census enrols the world. Seeding
+    // from a half-applied object index left it empty there while a load's births were still queued.
     const auto t0 = Clock::now();
+    if (OI::DrainAll() == SIZE_MAX) return;
     g_byKey.clear();
     g_bySlot.clear();
     g_parked.clear();

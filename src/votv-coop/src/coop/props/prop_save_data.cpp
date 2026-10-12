@@ -302,9 +302,9 @@ bool TryApply(void* actor, const std::wstring& key, const SR::SaveRecord& rec) {
     if (!Covers(actor)) { coop::dev::food_clock_probe::NoteRefused(actor); return false; }
     // The HOST applies only a CLIENT's record here (its receive edge refuses a canonical from a
     // client), with its world up and the object index current: it resolves the record's class names
-    // through object_index so an attacker's unknown name is an O(1) miss, not a whole-array walk. A
-    // CLIENT applies only the host's own record, possibly mid-load with the index trailing, so it
-    // keeps the authoritative FindClass walk (a cheating host is out of scope here).
+    // through object_index so an unknown name is an O(1) miss, not a whole-array walk. A CLIENT
+    // applies only the host's own record, possibly mid-load with the index trailing, so it keeps the
+    // authoritative FindClass walk.
     const SR::ClassResolver resolve =
         PT::SessionIsHost() ? &ue_wrap::object_index::ClassByName : nullptr;
     if (!SR::ApplyRecord(actor, rec, resolve)) return false;
@@ -593,7 +593,11 @@ void DriveRetries() {
         if (now < it->second.nextTryMs) { ++it; continue; }
         void* actor = nullptr;
         const auto read = coop::prop_key_index::Resolve(it->first, &actor);
-        if (read == coop::prop_key_index::Read::Pending) { ++it; continue; }  // cannot tell yet: the next frame
+        if (read == coop::prop_key_index::Read::Pending) {  // cannot tell yet: ask again after the base wait
+            it->second.nextTryMs = now + kRetryBackoffMs;
+            ++it;
+            continue;
+        }
         if (read == coop::prop_key_index::Read::Miss) { it = g_retry.erase(it); continue; }  // gone: nothing to re-send
         if (it->second.tries >= kMaxRetryTries) {
             UE_LOGW("prop_save_data: gave up re-sending the record for key '%ls' after %d "
