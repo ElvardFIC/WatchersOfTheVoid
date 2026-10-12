@@ -80,8 +80,18 @@ bool ReceiveBudget::RunSelftest() {
         check(b.TakePacket(1, 7, MsgType::Reliable, 100'000) == T::Spent, "spent stays spent for that connection");
         check(b.TakePacket(1, 8, MsgType::Reliable, 100'000) == T::Ok, "a new connection on the slot starts full");
         check(b.TakePacket(2, 9, MsgType::Reliable, 100'000) == T::Ok, "another slot is its own");
-        check(b.TakePacket(3, 5, static_cast<MsgType>(200), 100'000) == T::Ok,
-              "a type no stream names counts as a message");
+    }
+    {
+        // A type no stream names, a batch only the host sends, and a header that did not parse are messages: each
+        // spends the one token a burst of 1 holds, and the reliable after it empties the bucket.
+        const MsgType messages[] = {static_cast<MsgType>(200), MsgType::EntityPose, MsgType{}};
+        for (const MsgType m : messages) {
+            ReceiveBudget b;
+            b.Configure(1, 1);
+            b.ConfigureStreams(3);
+            check(b.TakePacket(1, 7, m, 1000) == T::Ok && b.TakePacket(1, 7, MsgType::Reliable, 1000) == T::Emptied,
+                  "a packet no stream names counts against the message bucket");
+        }
     }
     {
         ReceiveBudget b;
@@ -98,7 +108,16 @@ bool ReceiveBudget::RunSelftest() {
         check(b.TakePacket(2, 9, MsgType::PoseSnapshot, 1000) == T::StreamOver, "and drops past it");
         check(b.TakePacket(2, 9, MsgType::VoiceFrame, 1000) == T::Ok, "another stream type is its own");
         check(b.TakePacket(2, 9, MsgType::PoseSnapshot, 1334) == T::Ok, "a third of a second refills one");
-        check(b.TakePacket(2, 9, MsgType::Reliable, 1334) == T::Ok, "a dropped stream spends no message");
+    }
+    {
+        // A dropped stream spends nothing of the message bucket: a burst of 1 still holds its token after it.
+        ReceiveBudget b;
+        b.Configure(1, 1);
+        b.ConfigureStreams(1);
+        check(b.TakePacket(1, 7, MsgType::PoseSnapshot, 1000) == T::Ok &&
+                  b.TakePacket(1, 7, MsgType::PoseSnapshot, 1000) == T::StreamOver &&
+                  b.TakePacket(1, 7, MsgType::Reliable, 1000) == T::Ok,
+              "a dropped stream spends no message");
     }
     {
         ReceiveBudget b;

@@ -84,6 +84,10 @@ public:
     // hammering a closed door does not extend its own refusal, and the door reopens on the
     // policy's clock alone.
     Verdict Note(const Key& key, uint64_t nowMs);
+    // Record one event and refuse the source from now for the policy's refusal, whatever the count: the flood
+    // history's use, a source refused from the moment the host ended it rather than from its first return. Like
+    // Record, a full table keeps nothing new.
+    void Ban(const Key& key, uint64_t nowMs);
 
     // Rows that are live right now (inside a window or a refusal); the selftest reads it.
     int LiveRows(uint64_t nowMs) const;
@@ -123,10 +127,11 @@ void ConfigureConnects(long cap, long windowS);
 
 // The flood history: a source whose link the host ended for sending more than its receive budget allows
 // (receive_budget.h), keyed by the identity it proved and by its address where the transport has one, and refused
-// at the accept edge and at the proof for kFloodRefusalMs from the end (Session::RecordFlood starts it). MTA's flood
-// history likewise outlives the connection (CConnectHistory.cpp:95-143). One event fills a row, the end itself; the
-// table outlives the session, since a host that starts another must not let the source straight back in. A full table
-// keeps refusing the rows it holds; a source rotating identities is refused by its address row. Net thread.
+// at the accept edge and at the proof for kFloodRefusalMs from the end (Session::RecordFlood bans it). MTA's join-flood
+// table keeps a source's row past its connection until its ban has run (CConnectHistory.cpp:111-115). One event fills a
+// row, the end itself; the table outlives the session, since a host that starts another must not let the source
+// straight back in. A full table keeps refusing the rows it holds; where the transport has an address, a source that
+// rotates its identity is still refused by its address row. Net thread.
 inline constexpr uint64_t kFloodRefusalMs = 600'000;  // ten minutes, as MV-H32's sentence tells the player
 History& Floods();
 

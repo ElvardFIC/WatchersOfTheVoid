@@ -106,7 +106,7 @@ enum class EndReason : uint8_t {
     ConnectFlood,           // over the per-source connection cap; refused before any handshake
     UnofficialClientRefused, // an official host, a client of another build, and the host's setting off
     OfficialClientRefused,   // a modified host, an official client of another build, and the setting off
-    ReliableFlood,           // past the host's bound on a client's reliable messages, or refused for a while after
+    ReliableFlood,           // past the host's bound on a client's messages, or refused for a while after
 
     // T -- the transport decided. Values 90..127.
     Timeout = 90,           // no answer from the host, at the dial or later

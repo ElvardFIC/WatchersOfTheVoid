@@ -1,17 +1,18 @@
 // coop/net/receive_budget.h -- the host's bound on what each seated client sends it, counted at the receive edge on
-// every packet. A stream type has a bucket per slot at twice the send rate, and a datagram past it is dropped: a lost
-// pose is one the next replaces, a lost voice frame a gap the jitter buffer covers, and the bound caps what the host
-// relays to every other client. Every other packet counts against one message bucket per slot; a client that empties
-// it is past anything a client of this build sends, so the host ends its link (Session::TakeBudget). The bound is the
-// transport's; a kind's own cost is bounded in its lane. Net thread only, no lock.
+// every packet. A stream type has a bucket per slot at twice the send rate; a datagram past it is dropped (a lost pose
+// is one the next replaces, a lost voice frame a gap the decoder conceals), capping what the host relays. Every other
+// packet counts against one message bucket per slot; a client that empties it is past anything a client of this build
+// sends, so the host ends its link (Session::TakeBudget). A kind's own cost is its lane's. Net thread only, no lock.
 //
-// MTA counts each event a client triggers on an element, refused or not, toward a per-player threshold and raises an
-// event for the server's scripts past it (CGame.cpp:2663-2711,4927-4976). Ours counts every packet, sync included,
-// with numbers to match; a token bucket holds a burst and a rate in one, where MTA's fixed window, opened by the first
-// event, passes up to twice its count across a boundary; the host answers by ending the link; and a rate of 0 turns it
-// off, which MTA's row cannot (mtaserver.conf:316-319). MTA relays every near player's puresync (CPlayer.cpp:981-1028,
-// zone 0 in CBandwidthSettings.h:37,52); the stream bound is Source's shape, a client's commands budgeted per server
-// tick and the rest dropped (player.cpp:3100-3101,3243,3392-3414).
+// MTA counts each event a client triggers on an element that resolves, refused or not, toward a per-player threshold
+// and raises an event for the server's scripts past it (CGame.cpp:2663-2711,4927-4976). Ours counts every packet,
+// sync and an unresolvable one included, so its numbers sit far above MTA's 100 a second; a token bucket holds a burst
+// and a rate in one, where MTA's fixed window, opened by the first event, passes up to twice its count across a
+// boundary; the host answers by ending the link; and a rate of 0 turns it off, which MTA's row cannot
+// (mtaserver.conf:316-319). MTA relays the puresync of a player in zone 0 every time and paces the farther zones for
+// bandwidth (CPlayer.cpp:981-1028, CBandwidthSettings.h:37-55); the stream bound is Source's shape, itself a token
+// bucket: +1 a server tick, capped, spent per command, the rest dropped (player.cpp:3243,3392-3414,
+// player_command.cpp:318-335).
 
 #pragma once
 

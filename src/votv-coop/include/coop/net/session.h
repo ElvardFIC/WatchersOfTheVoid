@@ -726,7 +726,7 @@ private:
     RefusalTally staleEpochRefusals_{"net"};
     // The receive budget's stream drops, folded the same way. Net thread; cleared with the two above.
     RefusalTally streamRateRefusals_{"net"};
-    // The host's bound on each client's reliable messages (receive_budget.h). Net thread only.
+    // The host's bound on what each client sends, every packet (receive_budget.h). Net thread only.
     ReceiveBudget receiveBudget_;
     // The receive budget's answer to one packet (receive_budget.h): true to go on. A stream past its rate is dropped;
     // a client that empties its message bucket is recorded in the flood history and its link ended. Net thread.

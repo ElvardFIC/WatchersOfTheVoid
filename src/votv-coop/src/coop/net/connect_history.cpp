@@ -191,6 +191,14 @@ void ConfigureConnects(long cap, long windowS) {
     }
 }
 
+void History::Ban(const Key& key, uint64_t nowMs) {
+    if (policy_.max <= 0) return;
+    Bucket* b = Find(key, nowMs);
+    if (!b) return;
+    Record(key, nowMs);
+    b->ignoreUntilMs = nowMs + policy_.ignoreMs;
+}
+
 // --- the flood history -------------------------------------------------------
 
 History& Floods() {
@@ -360,17 +368,18 @@ bool RunSelftest() {
               "two guids differing in the last character are two sources");
     }
 
-    // The flood history's use: one recorded event, then a check at once, refuses from the record for the whole window.
+    // The flood history's use: a ban refuses from the moment it is made, not from the source's first return.
     {
         History h{Policy{1, kFloodRefusalMs, kFloodRefusalMs}};
         const Key a = AddrKey(9);
-        check(!h.Blocked(a, 1000).refused, "a source never recorded is not refused");
-        h.Record(a, 1000);
-        Verdict v = h.Blocked(a, 1000);
-        check(v.refused && v.retryMs == kFloodRefusalMs, "a record checked at once is refused for the window");
-        v = h.Blocked(a, 300'000);
-        check(v.refused && v.retryMs == kFloodRefusalMs - 299'000, "the refusal runs from the record, not the return");
-        check(!h.Blocked(a, 1000 + kFloodRefusalMs).refused, "and lifts when the window has passed");
+        const Key b = AddrKey(10);
+        check(!h.Blocked(a, 1000).refused, "a source never banned is not refused");
+        h.Ban(a, 1000);
+        const Verdict v = h.Blocked(a, 300'000);
+        check(v.refused && v.retryMs == 1000 + kFloodRefusalMs - 300'000,
+              "the refusal runs from the ban, not from the first return");
+        check(!h.Blocked(a, 1000 + kFloodRefusalMs).refused, "and lifts when its window has passed");
+        check(!h.Blocked(b, 300'000).refused, "a ban is the banned source's alone");
     }
 
     if (pass == total) {

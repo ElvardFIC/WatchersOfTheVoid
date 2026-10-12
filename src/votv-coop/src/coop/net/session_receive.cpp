@@ -158,6 +158,10 @@ void Session::HandleMessage(int peerSlot, uint32_t hConn, const void* data, int 
     uint32_t senderEpoch;
     uint8_t headerSenderSlot;
     if (!ParseHeader(data, len, type, seq, senderEpoch, headerSenderSlot)) {
+        // Counted by the host's budget like any packet a seated connection sends (TakeBudget below), as a message.
+        if (cfg_.role == Role::Host && peerSlot >= 1 && peerSlot < kMaxPeers &&
+            !TakeBudget(peerSlot, hConn, MsgType{}, data, len))
+            return;
         // Distinguish garbage (a silent drop) from a peer on another protocol version (a clean
         // close with a readable reason, so both ends see why): the silent alternative is a
         // connection that stays "Connected" with every packet dropped.
@@ -189,8 +193,8 @@ void Session::HandleMessage(int peerSlot, uint32_t hConn, const void* data, int 
     net_stats::AddRecv(static_cast<uint32_t>(len));
 
     // The host's bound on what one client sends (receive_budget.h, TakeBudget below), counted on every packet a seated
-    // connection sends, ahead of the epoch latch and every check after it, so a packet any of them drops costs the
-    // sender as much as one they pass.
+    // connection sends, one whose header does not parse included (above), ahead of the epoch latch and every check
+    // after it, so a packet any of them drops costs the sender as much as one they pass.
     if (cfg_.role == Role::Host && !TakeBudget(peerSlot, hConn, type, data, len)) return;
 
     // The per-peer epoch latch: the slot's first packet sets the expected senderEpoch, later
@@ -242,7 +246,6 @@ void Session::HandleMessage(int peerSlot, uint32_t hConn, const void* data, int 
     if (type != MsgType::Reliable && dev::wire_census::Enabled())
         dev::wire_census::NoteStream(routeSlot, static_cast<unsigned>(type));
 
-
     switch (type) {
     case MsgType::PoseSnapshot:
     case MsgType::PropPose:
@@ -290,8 +293,9 @@ void Session::HandleMessage(int peerSlot, uint32_t hConn, const void* data, int 
         // Default deny at the edge (client_authorship.h): a kind no client may author, or a byte that names no
         // kind, is dropped here, counted by the budget ahead of the epoch latch and acted on by nothing below --
         // not diverted, echoed, inboxed or relayed. The first of each value in a session is said with its number,
-        // the rest summed per window: MTA logs each refused event, and rate-limits only an unknown one
-        // (CGame.cpp:2678-2699); the fold here is ours, the net thread's log being one a client could fill.
+        // the rest summed per window: MTA logs each refused event, and rate-limits only an unknown one, one line
+        // per gap for the whole server (CGame.cpp:2683-2707); the fold here is ours, the net thread's log being one
+        // a client could fill.
         if (cfg_.role == Role::Host) {
             const ClientAuthorship who = AuthorshipOf(static_cast<ReliableKind>(rh.kind));
             if (who == ClientAuthorship::Host || who == ClientAuthorship::NotAKind) {
@@ -485,17 +489,10 @@ bool Session::TakeBudget(int peerSlot, uint32_t hConn, MsgType type, const void*
 }
 
 void Session::RecordFlood(int slot, uint32_t hConn) {
-    // Blocked right after Record starts the refusal at the kick, not at the source's first return.
     const uint64_t nowMs = NowMs();
     connect_history::Key key;
-    if (connect_history::KeyFromAddress(hConn, key)) {
-        connect_history::Floods().Record(key, nowMs);
-        (void)connect_history::Floods().Blocked(key, nowMs);
-    }
-    if (connect_history::KeyFromProvedGuid(ProvedGuidForSlot(slot), key)) {
-        connect_history::Floods().Record(key, nowMs);
-        (void)connect_history::Floods().Blocked(key, nowMs);
-    }
+    if (connect_history::KeyFromAddress(hConn, key)) connect_history::Floods().Ban(key, nowMs);
+    if (connect_history::KeyFromProvedGuid(ProvedGuidForSlot(slot), key)) connect_history::Floods().Ban(key, nowMs);
 }
 
 }  // namespace coop::net
