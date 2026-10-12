@@ -9,6 +9,7 @@
 #include "coop/net/session.h"
 #include "coop/player/players_registry.h"
 #include "coop/props/prop_element_tracker.h"
+#include "coop/props/prop_key_index.h"
 
 #include "ue_wrap/actors/hook.h"
 #include "ue_wrap/core/game_thread.h"
@@ -179,7 +180,7 @@ SaveRecord Arbitrate(const SaveRecord& sent, uint8_t ownerSlot, uint16_t seq, H:
         for (size_t i = 0; i < 2 && i < out.names[kNameSlot].size(); ++i) {
             const std::wstring& k = out.names[kNameSlot][i];
             if (k.empty() || k == L"None") continue;
-            void* anchor = coop::prop_element_tracker::FindLiveActorByKey(k);
+            void* anchor = coop::prop_key_index::Find(k);
             if (!anchor) anchor = ue_wrap::keyed_objects::Resolve(k.c_str());
             if (!anchor) continue;          // not ours to judge; the game resolves it or does not
             if (!clientSender) continue;    // the host's own anchors: it may cheat, by definition

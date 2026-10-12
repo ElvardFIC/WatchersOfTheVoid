@@ -18,6 +18,7 @@
 #include "coop/player/remote_player.h"   // the sender's puppet body, its reach
 #include "coop/props/prop_echo_suppress.h"   // MarkArbiterConsumedKey
 #include "coop/props/prop_element_tracker.h"
+#include "coop/props/prop_key_index.h"
 
 #include "ue_wrap/actors/prop.h"
 #include "ue_wrap/core/cached_obj_ref.h"
@@ -181,7 +182,7 @@ void OnReliable(const uint8_t* payload, int len, uint8_t senderSlot) {
     // likes.
     void* prop = nullptr;
     const wchar_t* how = L"key";
-    if (!keyStr.empty()) prop = coop::prop_element_tracker::FindLiveActorByKey(keyStr);
+    if (!keyStr.empty()) prop = coop::prop_key_index::Find(keyStr);
     if (!prop && p.elementId != 0u) {
         // The keyless fallback, for a prop whose Key reads None: an O(1) registry lookup. Reachable
         // through the gun: its gate is an interface check, not class descent, and the keyless pile

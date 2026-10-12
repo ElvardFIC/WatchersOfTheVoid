@@ -246,7 +246,6 @@ void OnSpawn(const coop::net::PropSpawnPayload& payload, int senderSlot,
     // and re-expressed under the host identity; the sender adopts the host eid. A client-band
     // mirror prior falls through to the idempotent adopt; a kerfur is enrolled only (KerfurConvert
     // owns it).
-    bool dedupeFellBack = false;
     void* existing = nullptr;
     if (fromConvert) {
         // A convert re-skins an eid in place, and the old rendering is still at Registry::Get(E);
@@ -261,14 +260,7 @@ void OnSpawn(const coop::net::PropSpawnPayload& payload, int senderSlot,
             if (a && R::IsLiveByIndex(a, e->GetInternalIdx())) existing = a;
         }
     } else {
-        existing = coop::prop_element_tracker::ResolveLiveActorByKey(keyW, &dedupeFellBack);
-        if (dedupeFellBack) {
-            // The key index was stale (a world change purged the indexed actors), so this dedupe
-            // paid an O(N) array scan; during the snapshot ~2,300 PropSpawns arrive in a burst, and
-            // each scanning balloons the client by gigabytes. Self-heal now (throttled to once per
-            // 200 ms) so the rest of the burst resolves O(1).
-            coop::prop_element_tracker::ReconcileIndexThrottled();
-        }
+        existing = coop::prop_element_tracker::ResolveLiveActorByKey(keyW);
     }
     if (existing) {
         // Host authority first, before the claim, the physics branches, the converge and the bind.
@@ -508,10 +500,10 @@ void OnSpawn(const coop::net::PropSpawnPayload& payload, int senderSlot,
         } else {
             UE_LOGW("remote_prop::OnSpawn: Gap-I-1 rekey skipped -- setKey UFunction unresolved");
         }
-        // Index the matched actor under the wire key unconditionally: resolution binds through our
-        // index, independent of the engine-level setKey, and a setKey failure once left a held prop
-        // on a per-packet array scan. keyW is validated at entry; the match is live.
-        coop::prop_element_tracker::IndexActorKey(fuzzy, keyW);
+        // Track the matched actor under the wire key, as the other peers count it. The key index follows
+        // the setKey above on its own; if setKey failed the actor does not carry the wire key and is
+        // found by the eid binding below instead.
+        coop::prop_element_tracker::TrackActorKey(fuzzy, keyW);
         // The collision restore, as on the exact-key path: the match came through the client's own
         // spawner with no collision, and the host's release would drop it through the floor.
         RestoreCollisionIfNeeded(L"fuzzy", classW, fuzzy);

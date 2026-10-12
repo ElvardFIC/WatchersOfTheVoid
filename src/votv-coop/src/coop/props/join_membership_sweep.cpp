@@ -248,8 +248,8 @@ static void RunDivergenceSweep_(void* localPlayer) {
             if (!ke.actor) continue;
             if (!R::IsLiveByIndex(ke.actor, ke.internalIdx)) {
                 // A dead entry is evicted now: an element-less keyed entry has no registry row, so
-                // the reaper never sees it; this sweep, the lookup's lazy evict and
-                // DrainDeadKeyIndexEntries are its only collectors.
+                // the reaper never sees it; this sweep and DrainDeadKeyIndexEntries are its only
+                // collectors.
                 coop::prop_element_tracker::EvictKeyIndexEntryIfStale(ke.actor, ke.key);
                 continue;
             }

@@ -8,6 +8,8 @@
 
 #include "prop_element_tracker_detail.h"  // co-located private header (src tree, not include/)
 
+#include "coop/props/prop_key_index.h"  // ResolveLiveActorByKey asks it first
+
 #include "ue_wrap/engine/engine.h"  // TryGetActorLocation
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/actors/prop.h"
@@ -86,14 +88,9 @@ void EraseKeyIndexForActor_(void* actor) {
 
 // The public lookups.
 
-void IndexActorKey(void* actor, const std::wstring& key) {
+void TrackActorKey(void* actor, const std::wstring& key) {
     if (!actor || key.empty() || key == L"None") return;
     IndexKeyForActor_(actor, key, R::InternalIndexOf(actor));
-}
-
-size_t KeyIndexSize() {
-    std::lock_guard<std::mutex> lk(g_keyIndexMutex);
-    return g_keyToActor.size();
 }
 
 void CollectKeyIndexEntries(std::vector<KeyIndexEntry>& out) {
@@ -120,10 +117,9 @@ void EvictKeyIndexEntryIfStale(void* actor, const std::wstring& key) {
 
 size_t DrainDeadKeyIndexEntries() {
     // The collector for element-less keyed entries: a client's save-loaded keyed props live only
-    // in this index (no registry row), so an actor dying without a destroy call (a mass purge, an
+    // in this map (no registry row), so an actor dying without a destroy call (a mass purge, an
     // engine teardown) leaves an entry the element reaper cannot see. Its owners: the post-purge
-    // world-change re-seed edge and the stale-index self-heal, both cold, plus the join sweep's
-    // per-entry evict and the lookup's lazy evict for the steady trickle. Snapshot under the leaf
+    // world-change re-seed edge, cold, and the join sweep's per-entry evict. Snapshot under the leaf
     // mutex, validate liveness outside it, erase under it with the same still-this-pair gate.
     std::vector<KeyIndexEntry> snap;
     CollectKeyIndexEntries(snap);
@@ -144,77 +140,21 @@ size_t DrainDeadKeyIndexEntries() {
     return drained;
 }
 
-void* FindLiveActorByKey(const std::wstring& key) {
+void* ResolveLiveActorByKey(const std::wstring& key) {
     if (key.empty() || key == L"None") return nullptr;
-    void* actor = nullptr;
-    int32_t internalIdx = -1;
-    {
-        std::lock_guard<std::mutex> lk(g_keyIndexMutex);
-        auto it = g_keyToActor.find(key);
-        if (it == g_keyToActor.end()) return nullptr;
-        actor = it->second.actor;
-        internalIdx = it->second.internalIdx;
-    }
-    // Validate liveness without dereferencing the cached pointer (it may have been freed since
-    // indexing): the by-index check reads only the object-array slot. A stale entry reports not
-    // live; evict it lazily so a recycle never looked up again cannot accumulate, then return
-    // null and the caller falls back to the cold scan.
-    if (R::IsLiveByIndex(actor, internalIdx)) return actor;
-    {
-        std::lock_guard<std::mutex> lk(g_keyIndexMutex);
-        auto it = g_keyToActor.find(key);
-        if (it != g_keyToActor.end() && it->second.actor == actor &&
-            it->second.internalIdx == internalIdx) {
-            g_keyToActor.erase(it);
-            g_actorToKey.erase(actor);
-        }
-    }
-    return nullptr;
-}
-
-void* ResolveLiveActorByKey(const std::wstring& key, bool* outFellBackToScan) {
-    if (outFellBackToScan) *outFellBackToScan = false;
-    if (key.empty() || key == L"None") return nullptr;
-    if (void* a = FindLiveActorByKey(key)) return a;  // O(1) maintained-index hit
-    // The cold fallback: a prop that exists locally but is not indexed yet; the object-array scan
-    // runs only on an index miss. A successful fallback means the index was stale (it points at
-    // dead actors after a world-change purge the slow re-seed has not caught up with), and the
-    // caller uses the flag to trigger a throttled re-seed so the rest of a snapshot burst
-    // resolves in constant time. A scan miss leaves the flag false: nothing to re-seed, the
-    // caller spawns.
+    if (void* a = coop::prop_key_index::Find(key)) return a;
+    // The scan behind the index stays while the wire receivers still treat a miss as "look harder". A scan
+    // that finds what the index did not is a prop the index should hold, or one it holds out on purpose (a
+    // hand, a child actor, another world): the first is named, and every one is counted.
     void* scanned = ue_wrap::prop::FindByKeyString(key);
-    if (scanned && outFellBackToScan) *outFellBackToScan = true;
+    if (scanned) {
+        static uint64_t sFound = 0;
+        if (++sFound == 1 || (sFound & (sFound - 1)) == 0)
+            UE_LOGW("prop_tracked_keys: the scan found key '%ls' on a %ls the key index did not answer with "
+                    "(found %llu time(s) this run)", key.c_str(), R::ClassNameOf(scanned).c_str(),
+                    static_cast<unsigned long long>(sFound));
+    }
     return scanned;
-}
-
-bool ReconcileIndexThrottled() {
-    // The self-heal for a stale key index detected mid-dedupe (a world change purged the indexed
-    // actors and the steady-state re-seed, gated on the slow reaper, has not caught up): drain
-    // the dead Prop elements, then re-seed, so the index reflects the current world and the
-    // in-flight burst dedupes in constant time. Throttled so only the first stale fallback in a
-    // burst pays the full re-seed walk. Game thread only.
-    static std::mutex sThrottleMutex;
-    static std::chrono::steady_clock::time_point sLast{};
-    static bool sEver = false;
-    const auto now = std::chrono::steady_clock::now();
-    {
-        std::lock_guard<std::mutex> lk(sThrottleMutex);
-        if (sEver && (now - sLast) < std::chrono::milliseconds(200)) return false;
-        sLast = now;
-        sEver = true;
-    }
-    size_t drained = 0;
-    for (int pass = 0; pass < 8; ++pass) {
-        const size_t r = ReapDeadLocalPropElements(4096);
-        drained += r;
-        if (r < 4096) break;  // backlog cleared
-    }
-    // Also the element-less keyed entries, which the element reap above cannot see.
-    drained += DrainDeadKeyIndexEntries();
-    const size_t added = ReSeedKnownKeyedProps();
-    UE_LOGI("prop_element_tracker: stale-index self-heal -- drained %zu dead, re-seeded %zu new keyed prop(s) into the key index (snapshot de-dupe now O(1))",
-            drained, added);
-    return true;
 }
 
 void CollectTrackedKeyedPropKeys(std::unordered_set<std::wstring>& out) {

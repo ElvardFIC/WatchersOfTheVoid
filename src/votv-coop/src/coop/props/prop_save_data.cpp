@@ -7,6 +7,7 @@
 #include "coop/net/blob_chunks.h"
 #include "coop/net/session.h"
 #include "coop/props/prop_element_tracker.h"
+#include "coop/props/prop_key_index.h"
 #include "ue_wrap/actors/prop.h"          // GetInteractableKeyString (the host birth path)
 #include "ue_wrap/actors/save_record.h"
 #include "ue_wrap/core/log.h"
@@ -329,7 +330,7 @@ bool LandRecord(const std::wstring& key, SR::SaveRecord&& rec, uint8_t senderSlo
     // The index only, never ResolveLiveActorByKey: that one falls back to a cold GUObjectArray
     // scan on a miss, and a join hands this lane hundreds of arrivals at once. A prop the index
     // does not know yet is parked and retried at O(1) on the next frame instead.
-    void* actor = (!budgeted || g_applyBudget > 0) ? PT::FindLiveActorByKey(key) : nullptr;
+    void* actor = (!budgeted || g_applyBudget > 0) ? coop::prop_key_index::Find(key) : nullptr;
     if (actor && TryApply(actor, key, rec)) {
         if (budgeted) --g_applyBudget;
         return true;
@@ -545,7 +546,7 @@ void OnChunk(coop::net::Session& s, const coop::net::BlobChunkPayload& p, uint8_
     // same authority. A birth's record (a prop the host spawned from this author's intent) is
     // published by its land instead (TryApply), from what the host then holds.
     g_session = &s;
-    void* actor = PT::FindLiveActorByKey(key);
+    void* actor = coop::prop_key_index::Find(key);
     if (actor && !Covers(actor)) {
         // The claim names a class another lane owns, or one that carries no save state of its own.
         // Neither applying nor re-publishing it is this lane's business, and re-publishing would
@@ -590,7 +591,7 @@ void DriveRetries() {
     int sent = 0;
     for (auto it = g_retry.begin(); it != g_retry.end() && sent < kRetriesPerFrame;) {
         if (now < it->second.nextTryMs) { ++it; continue; }
-        void* actor = PT::FindLiveActorByKey(it->first);
+        void* actor = coop::prop_key_index::Find(it->first);
         if (!actor) { it = g_retry.erase(it); continue; }   // the prop is gone; nothing to re-send
         if (it->second.tries >= kMaxRetryTries) {
             UE_LOGW("prop_save_data: gave up re-sending the record for key '%ls' after %d "
@@ -634,7 +635,7 @@ void Drive() {
         // replace the node this iterator names.
         const std::wstring key = it->first;
         void* actor = (it->second.failures < kMaxApplyFailures)
-                          ? PT::FindLiveActorByKey(key) : nullptr;
+                          ? coop::prop_key_index::Find(key) : nullptr;
         if (actor) {
             // The budget buys a DISPATCH, not a success: a row whose apply fails past the base
             // capture has already paid for one, and counting only successes let a handful of

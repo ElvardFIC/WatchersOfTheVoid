@@ -18,6 +18,7 @@
 #include "coop/net/session.h"
 #include "coop/player/hand_item.h"  // hand-axis boundary: CollectHandAxisActors (SeedWalk_ skip; local hand + remote mirrors)
 #include "coop/props/prop_synth_key.h"  // MintFreshKeyForDuplicate, the host's re-key of a clone
+#include "coop/props/prop_key_index.h"  // AnotherHolder, the host's uniqueness check
 #include "coop/interactables/drive_payload_sync.h"
 #include "ue_wrap/engine/engine.h"  // TryGetActorLocation
 #include "ue_wrap/core/game_thread.h"  // IsGameThread; setKey is a dispatch, so the re-key is game-thread gated
@@ -247,33 +248,35 @@ std::wstring MarkPropElement(void* actor, const std::wstring& key, const std::ws
     // onto one actor and the join reconcile re-expresses the rest into occupied positions. A keyed
     // actor enrolling while a different live actor carries its Key is re-keyed before anything sees
     // it; the game re-saves the live Key, so the fix persists. A dead incumbent is a loadObjects
-    // re-create inheriting its identity, spared by the liveness check. A client never re-keys, and
-    // setKey is a dispatch, so off the game thread the duplicate enrols loudly instead.
+    // re-create inheriting its identity, spared by the liveness check. A client never re-keys. The key
+    // index answers whether another live actor holds the key; when it cannot answer (off the game thread,
+    // where setKey could not run anyway, or before its session seed), the actor enrols under its key and
+    // the first such enrolment is said.
     std::wstring enrollKey = key;
     if (isHost && !enrollKey.empty() && enrollKey != L"None") {
-        void* incumbent = FindLiveActorByKey(enrollKey);
-        if (incumbent && incumbent != actor) {
-            if (!ue_wrap::game_thread::IsGameThread()) {
-                UE_LOGW("prop_element_tracker: KEY-UNIQUENESS tripwire -- duplicate Key '%ls' on '%ls' "
-                        "enrolling OFF the game thread (actor=%p incumbent=%p); cannot setKey here -- "
-                        "enrolling under the duplicate", enrollKey.c_str(), cls.c_str(), actor, incumbent);
+        const auto held = coop::prop_key_index::AnotherHolder(enrollKey, actor);
+        if (held == coop::prop_key_index::Read::Pending) {
+            static std::atomic<bool> sSaid{false};
+            if (!sSaid.exchange(true))
+                UE_LOGW("prop_element_tracker: KEY-UNIQUENESS unchecked -- the key index could not answer for '%ls' "
+                        "on '%ls' (%s); enrolling under its key (said once)", enrollKey.c_str(), cls.c_str(),
+                        ue_wrap::game_thread::IsGameThread() ? "not seeded yet" : "off the game thread");
+        } else if (held == coop::prop_key_index::Read::Hit) {
+            ue_wrap::FVector dupLoc{};
+            const char* const dupUnread =
+                ue_wrap::engine::TryGetActorLocation(actor, dupLoc) ? "" : " (unread)";
+            const std::wstring fresh = coop::prop_synth_key::MintFreshKeyForDuplicate(actor);
+            if (!fresh.empty() && fresh != enrollKey) {
+                UE_LOGW("prop_element_tracker: KEY-UNIQUENESS -- second live actor carried Key '%ls': "
+                        "'%ls' loc=(%.1f,%.1f,%.1f)%s re-keyed -> '%ls' (save-born clone family; host key "
+                        "authority -- the new key persists via the game's own save)",
+                        enrollKey.c_str(), cls.c_str(), dupLoc.X, dupLoc.Y, dupLoc.Z, dupUnread,
+                        fresh.c_str());
+                enrollKey = fresh;
             } else {
-                ue_wrap::FVector dupLoc{};
-                const char* const dupUnread =
-                    ue_wrap::engine::TryGetActorLocation(actor, dupLoc) ? "" : " (unread)";
-                const std::wstring fresh = coop::prop_synth_key::MintFreshKeyForDuplicate(actor);
-                if (!fresh.empty() && fresh != enrollKey) {
-                    UE_LOGW("prop_element_tracker: KEY-UNIQUENESS -- second live actor carried Key '%ls': "
-                            "'%ls' loc=(%.1f,%.1f,%.1f)%s re-keyed -> '%ls' (save-born clone family; host key "
-                            "authority -- the new key persists via the game's own save)",
-                            enrollKey.c_str(), cls.c_str(), dupLoc.X, dupLoc.Y, dupLoc.Z, dupUnread,
-                            fresh.c_str());
-                    enrollKey = fresh;
-                } else {
-                    UE_LOGW("prop_element_tracker: KEY-UNIQUENESS -- re-key FAILED for duplicate '%ls' "
-                            "key='%ls' loc=(%.1f,%.1f,%.1f)%s -- enrolling under the duplicate (pre-fix behavior)",
-                            cls.c_str(), enrollKey.c_str(), dupLoc.X, dupLoc.Y, dupLoc.Z, dupUnread);
-                }
+                UE_LOGW("prop_element_tracker: KEY-UNIQUENESS -- re-key FAILED for duplicate '%ls' "
+                        "key='%ls' loc=(%.1f,%.1f,%.1f)%s -- enrolling under the duplicate (pre-fix behavior)",
+                        cls.c_str(), enrollKey.c_str(), dupLoc.X, dupLoc.Y, dupLoc.Z, dupUnread);
             }
         }
     }

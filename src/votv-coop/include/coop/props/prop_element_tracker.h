@@ -84,29 +84,18 @@ bool IsBoundMirrorNative(void* actor);
 // with rebindInPlace). Keyless props only; the key index is untouched. Game thread.
 void RebindLocalElementActor(coop::element::ElementId eid, void* newActor);
 
-// The key-to-live-actor index: O(1) resolution of a wire key to the local actor, replacing the
-// per-call GUObjectArray walk that made the connect-time dedupe O(props x objects) and ballooned
-// a client to gigabytes on connect. Maintained by MarkPropElement (insert) and
-// UnmarkKnownKeyedProp and the reaper (evict).
+// The tracked keyed props by key: the props this peer enrolled (MarkPropElement), tracked from a census
+// without an element (a client's save-loaded props), or bound as a wire mirror (TrackActorKey). Evicted by
+// UnmarkKnownKeyedProp and the reaper. Read only by the enumerations below; a key on the wire resolves
+// through coop/props/prop_key_index, which holds every live keyed prop.
 
-// `key` to a live local actor through the index only; null on a miss. Liveness by index, and a
-// stale entry found on the way is evicted.
-void* FindLiveActorByKey(const std::wstring& key);
+// `key` to a live local actor: coop/props/prop_key_index first, then a GUObjectArray scan when it holds
+// none. Game thread.
+void* ResolveLiveActorByKey(const std::wstring& key);
 
-// `key` to a live local actor: the index first, then a cold GUObjectArray scan on a miss, so a
-// not-yet-indexed prop still resolves; the wire receivers call this. Game thread or worker.
-// outFellBackToScan is set only when the index missed and the scan found the actor, a stale index
-// (a world change purged the indexed actors faster than the re-seed rebuilt it); the snapshot
-// dedupe then calls ReconcileIndexThrottled so the rest of the burst resolves O(1).
-void* ResolveLiveActorByKey(const std::wstring& key, bool* outFellBackToScan = nullptr);
-
-// The self-heal for a stale index: a drain of the dead entries and a re-seed, throttled to one per
-// 200 ms; true when it ran. Game thread.
-bool ReconcileIndexThrottled();
-
-// Re-indexes `actor` under `key` (after a fuzzy-match rekey, say), so a rekeyed held prop resolves
-// O(1) per grab; idempotent, a no-op for an empty or None key.
-void IndexActorKey(void* actor, const std::wstring& key);
+// Tracks `actor` under `key`: a wire mirror bound to the sender's key, or a fuzzy match rekeyed to it, so
+// the enumerations below count it as the other peers do; idempotent, a no-op for an empty or None key.
+void TrackActorKey(void* actor, const std::wstring& key);
 
 // The join sweep's keyed universe: a client's save-loaded keyed props have no element row, the
 // index is their tracked membership, so the sweep adjudicates them from these entries (the row
@@ -119,9 +108,6 @@ struct KeyIndexEntry {
 };
 void CollectKeyIndexEntries(std::vector<KeyIndexEntry>& out);
 
-// How many keyed props the index holds. Any thread.
-size_t KeyIndexSize();
-
 // Erases the index entry for `actor` only if it still maps this key to this actor: a
 // recycled-address impostor or an un-reindexed rekey falls out of the sweep universe instead of
 // dooming a fresh actor, and the live actor re-enters at the next census.
@@ -129,7 +115,7 @@ void EvictKeyIndexEntryIfStale(void* actor, const std::wstring& key);
 
 // Drops every index entry whose actor is dead: an element-less keyed entry has no Registry row,
 // so the reaper cannot evict it, and a death without K2_DestroyActor would leak the pair for the
-// process. Cold paths: the post-purge re-seed edge and the stale-index self-heal. Returns the
+// process. A cold path: the post-purge re-seed edge. Returns the
 // count. Game thread.
 size_t DrainDeadKeyIndexEntries();
 

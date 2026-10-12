@@ -148,8 +148,8 @@ bool OnDestroyImpl_(const coop::net::PropDestroyPayload& payload, void* localPla
     if (!actor && !keyW.empty()) {
         // The arbiter echo short-circuit: if we destroyed this key ourselves as the authority's
         // half of a transaction a client asked for, the client's own destroy behind it is an echo
-        // with nothing left to find; our destroy evicted the key from the index, so the resolve
-        // below would miss and pay a full object-array walk to rediscover what we know. One-shot,
+        // with nothing left to find; the resolve below would miss, and a miss here still falls through
+        // to a full object-array walk to rediscover what we know. One-shot,
         // so only the echo is short-circuited and a later destroy of a re-placed prop under the
         // same key resolves normally.
         if (coop::prop_echo_suppress::ConsumeArbiterConsumedKey(keyW)) {

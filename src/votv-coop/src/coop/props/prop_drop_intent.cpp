@@ -550,7 +550,7 @@ void OnPropDropIntent(coop::net::Session& session, const coop::net::PropDropInte
     // The duplicate guard: if the host somehow still has this key live (the grab destroy did not
     // cross), do not spawn a second one. The park-set invariant normally guarantees the host has
     // no copy here.
-    if (coop::prop_element_tracker::ResolveLiveActorByKey(key, nullptr)) {
+    if (coop::prop_element_tracker::ResolveLiveActorByKey(key)) {
         UE_LOGW("[PROP-DROP] HOST already has key='%ls' live -- skip drop-intent re-spawn (no dup)", key.c_str());
         return;
     }

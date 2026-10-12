@@ -10,7 +10,7 @@
 
 #include "coop/comms/peer_action_feed.h"
 #include "coop/element/registry.h"
-#include "coop/props/prop_element_tracker.h"  // the host key index, for the NoSuchProp diagnosis
+#include "coop/props/prop_key_index.h"  // the key index, for the NoSuchProp diagnosis
 #include "coop/net/protocol.h"
 #include "coop/net/session.h"
 #include "coop/player/players_registry.h"
@@ -409,7 +409,7 @@ void Tick() {
             sNextMs = nowMs + 30000;
             UE_LOGI("coingun[arbiter]: host key index holds %zu keyed prop(s) -- a NoSuchProp "
                     "refusal against a NEAR-ZERO index is an enrollment gap, not a bad key",
-                    coop::prop_element_tracker::KeyIndexSize());
+                    coop::prop_key_index::Size());
         }
     }
     // The host half: consumed artifacts whose prop has died are erased, the consumption guard's
