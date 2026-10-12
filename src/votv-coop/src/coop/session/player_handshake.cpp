@@ -66,7 +66,7 @@ bool g_cliJoinSent = false;
 // The connect line already shown for this slot, a one-shot latch outside the row. On the HOST a
 // repeat Join is now refused at the top of HandleJoinMessage (g_joinAnswered below), so the host
 // never reaches this latch's repeat branch. It stays for the CLIENT: it is the only guard against a
-// hostile HOST that sends two Joins (WP-6), where the second would otherwise reprint the line.
+// hostile HOST that sends two Joins (a cheating host), where the second would otherwise reprint the line.
 coop::roster_ledger::PerSlotState<bool> g_connectAnnounced;
 
 // Host: whether this occupancy has already sent a Join. A second Join from the same occupant is refused
@@ -346,7 +346,7 @@ bool HandleJoinMessage(net::Session& session,
     // well-formed, undersized or mismatched -- costs only this compare, refused once per occupancy (MTA
     // logs each attempt). Nothing retries a Join: the client sends exactly one per connection, so
     // latching early refuses no honest resend. A client reads nothing of this -- a host that double-Joins
-    // is WP-6's, guarded by g_connectAnnounced.
+    // is out of scope here (a cheating host), guarded by g_connectAnnounced.
     if (session.role() == net::Role::Host) {
         if (g_joinAnswered[senderSlot]) {
             if (!g_joinRefuseLineSaid[senderSlot]) {
@@ -479,7 +479,7 @@ bool HandleJoinMessage(net::Session& session,
     // game". Both transient: the joined line is the event history keeps. Once per join, latched
     // (g_connectAnnounced clears with the slot's occupant, so a peer that leaves and rejoins is
     // announced again). On the host this branch is unreachable -- a repeat Join is refused at the top --
-    // so it fires only on a client whose HOST double-Joins (WP-6's hostile host).
+    // so it fires only on a client whose HOST double-Joins (a cheating host).
     if (g_connectAnnounced[senderSlot]) {
         UE_LOGI("player_handshake: slot %d connect line already shown -- suppressing the "
                 "repeat (a double-Join host, client-side)", senderSlot);
