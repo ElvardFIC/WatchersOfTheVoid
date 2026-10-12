@@ -8,11 +8,9 @@
 
 #include "prop_element_tracker_detail.h"  // co-located private header (src tree, not include/)
 
-#include "coop/props/prop_key_index.h"  // ResolveLiveActorByKey asks it first
 
 #include "ue_wrap/engine/engine.h"  // TryGetActorLocation
 #include "ue_wrap/core/log.h"
-#include "ue_wrap/actors/prop.h"
 #include "ue_wrap/core/reflection.h"
 
 #include <chrono>
@@ -134,23 +132,6 @@ size_t DrainDeadTrackedKeys() {
         if (ait != g_actorToKey.end() && ait->second == ke.key) g_actorToKey.erase(ait);
     }
     return drained;
-}
-
-void* ResolveLiveActorByKey(const std::wstring& key) {
-    if (key.empty() || key == L"None") return nullptr;
-    if (void* a = coop::prop_key_index::Find(key)) return a;
-    // The scan behind the index stays while the wire receivers still treat a miss as "look harder". A scan
-    // that finds what the index did not is a prop the index should hold, or one it holds out on purpose (a
-    // hand, a child actor, another world): the first is named, and every one is counted.
-    void* scanned = ue_wrap::prop::FindByKeyString(key);
-    if (scanned) {
-        static uint64_t sFound = 0;
-        if (++sFound == 1 || (sFound & (sFound - 1)) == 0)
-            UE_LOGW("prop_tracked_keys: the scan found key '%ls' on a %ls the key index did not answer with "
-                    "(found %llu time(s) this run)", key.c_str(), R::ClassNameOf(scanned).c_str(),
-                    static_cast<unsigned long long>(sFound));
-    }
-    return scanned;
 }
 
 void CollectTrackedKeyedPropKeys(std::unordered_set<std::wstring>& out) {

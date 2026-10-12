@@ -534,8 +534,7 @@ void* FindNearbySameClass(const std::wstring& className,
         if (!obj) continue;
         if (!IsDescendantOfProp(obj)) continue;
         // Cheapest checks first: IsLive is a flag read, cheaper than the class name, which
-        // allocates a string. So descendant, live, CDO name, class name. FindByKeyString orders
-        // differently because it needs the name first, to skip stale dying same-key matches.
+        // allocates a string. So descendant, live, CDO name, class name.
         if (!R::IsLive(obj)) continue;
         // A child-actor component's child (a kerfur's eye camera) never has independent cross-peer
         // identity, so a wire spawn of a standalone same-class prop near a kerfur must not
@@ -616,29 +615,6 @@ void* FindNearestChipPile(const FVector& anchor, float radiusCm, float* outDist)
     }
     if (best && outDist) *outDist = std::sqrt(bestD2);
     return best;
-}
-
-void* FindByKeyString(const std::wstring& keyString) {
-    if (keyString.empty()) return nullptr;
-    void* base = PropBaseClass();
-    if (!base) return nullptr;
-    walk_census::NoteArrayWalk(_ReturnAddress());  // a whole-array walk, counted as the finders' are
-    const int32_t n = R::NumObjects();
-    for (int32_t i = 0; i < n; ++i) {
-        void* obj = R::ObjectAt(i);
-        if (!obj) continue;
-        // The descendant check before the string compare.
-        if (!IsDescendantOfProp(obj)) continue;
-        const std::wstring nm = R::ToString(R::NameOf(obj));
-        if (nm.rfind(L"Default__", 0) == 0) continue;
-        if (GetKeyString(obj) != keyString) continue;
-        // The liveness gate: the engine keeps a dying actor in its array slot until the purge, so
-        // without it the old instance could be returned after a level reload, when the same key is
-        // re-spawned on a fresh actor.
-        if (!R::IsLive(obj)) continue;
-        return obj;
-    }
-    return nullptr;
 }
 
 namespace {

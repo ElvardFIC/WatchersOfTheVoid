@@ -89,10 +89,6 @@ void RebindLocalElementActor(coop::element::ElementId eid, void* newActor);
 // UnmarkKnownKeyedProp and the reaper. Read only by the enumerations below; a key on the wire resolves
 // through coop/props/prop_key_index, which holds every live keyed prop.
 
-// `key` to a live local actor: coop/props/prop_key_index first, then a GUObjectArray scan when it holds
-// none. Game thread.
-void* ResolveLiveActorByKey(const std::wstring& key);
-
 // Tracks `actor` under `key`: a wire mirror bound to the sender's key, or a fuzzy match rekeyed to it, so
 // the enumerations below count it as the other peers do; idempotent, a no-op for an empty or None key.
 void TrackActorKey(void* actor, const std::wstring& key);

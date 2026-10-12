@@ -28,6 +28,7 @@
 #include "coop/props/snapshot_census.h"  // the per-class completeness floor for the claim sweep
 #include "coop/dev/force_overdestroy_test.h"  // dev-only: floor-disable toggle for the controlled proof
 #include "coop/props/prop_element_tracker.h"
+#include "coop/props/prop_key_index.h"  // a key on the wire to a live actor
 #include "ue_wrap/core/object_index.h"  // ClassByName -- the host's O(1) class resolve for a client's spawn
 #include "coop/props/prop_drive_stream.h"  // IsParked: a prop the host's driven stream owns
 #include "coop/props/prop_snapshot.h"      // ExpressIncrementalSpawn, the handback re-express
@@ -260,7 +261,7 @@ void OnSpawn(const coop::net::PropSpawnPayload& payload, int senderSlot,
             if (a && R::IsLiveByIndex(a, e->GetInternalIdx())) existing = a;
         }
     } else {
-        existing = coop::prop_element_tracker::ResolveLiveActorByKey(keyW);
+        existing = coop::prop_key_index::Find(keyW);
     }
     if (existing) {
         // Host authority first, before the claim, the physics branches, the converge and the bind.

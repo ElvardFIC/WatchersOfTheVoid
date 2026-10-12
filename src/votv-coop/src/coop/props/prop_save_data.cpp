@@ -327,9 +327,8 @@ bool LandRecord(const std::wstring& key, SR::SaveRecord&& rec, uint8_t senderSlo
     // The predecessor goes BEFORE the apply, so a record parked under this Key while loadData runs
     // can only be a newer one, and nothing below removes it.
     DropParked(key);
-    // The index only, never ResolveLiveActorByKey: that one falls back to a cold GUObjectArray
-    // scan on a miss, and a join hands this lane hundreds of arrivals at once. A prop the index
-    // does not know yet is parked and retried at O(1) on the next frame instead.
+    // A join hands this lane hundreds of arrivals at once: a prop the index does not know yet is
+    // parked and retried at O(1) on the next frame, never searched for.
     void* actor = (!budgeted || g_applyBudget > 0) ? coop::prop_key_index::Find(key) : nullptr;
     if (actor && TryApply(actor, key, rec)) {
         if (budgeted) --g_applyBudget;

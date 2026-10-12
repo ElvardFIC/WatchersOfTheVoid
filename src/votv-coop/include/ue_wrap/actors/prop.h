@@ -224,10 +224,6 @@ NearestResult FindNearest(const FVector& anchor, bool wantHeavy = false,
                           const wchar_t* lineage = nullptr,
                           const NearbyExclusion& excluded = {});
 
-// A prop by key string: one GUObjectArray walk, the first live Aprop_C whose key matches, or
-// null. The cold fallback behind the key index (prop_key_index), not a per-packet path.
-void* FindByKeyString(const std::wstring& keyString);
-
 // The body's velocity at this instant, through UPrimitiveComponent UFunctions on the StaticMesh;
 // the host's release edge captures the inherited tracking velocity, the launch energy of a
 // flick. Linear in cm/s, angular in deg/s; ok is false when the prop, mesh or UFunctions do not

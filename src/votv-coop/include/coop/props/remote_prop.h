@@ -127,9 +127,11 @@ void AddDestroyListener(DestroyHeardFn fn);
 // The deferred re-apply of a destroy that arrived before its target loaded, the
 // destroy-before-load race. Called only by the drain-edge order owner at the quiescence sweep,
 // after the bind, so an out-of-order destroy reconciles instead of leaking a duplicate.
-// Resolves the local player itself. True if the now-loaded actor was destroyed (erase from
-// the pending queue); false means still not loaded, keep queued. Never re-arms. Game thread.
-bool TryApplyDestroy(const coop::net::PropDestroyPayload& payload);
+// Resolves the local player itself. Applied: the now-loaded actor was destroyed (erase from the
+// pending queue). NotFound: still not loaded (an attempt spent). NotYet: the prop key index cannot
+// answer yet, which spends no attempt within the queue's own bound for it. Never re-arms. Game thread.
+enum class DestroyApply : uint8_t { Applied, NotFound, NotYet };
+DestroyApply TryApplyDestroy(const coop::net::PropDestroyPayload& payload);
 
 // Clear every slot's kinematic-drive cache entry for `actor`, so nothing drives a destroyed
 // actor next tick. The adoption sweep destroys actors through the same teardown contract, one

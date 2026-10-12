@@ -334,8 +334,8 @@ void OnReliable(const uint8_t* payload, int len, uint8_t senderSlot) {
     // seller's own PropDestroy then lands as an echo no-op. What the guard covers now is not a
     // same-frame replay (both resolvers reject a PendingKill actor before the guard is consulted)
     // but the failed-destroy case: minted, and still resolvable. The key is marked before the
-    // destroy: our destroy evicts it from the index, and the seller's PropDestroy arriving behind
-    // us would otherwise pay a full cold walk to rediscover a prop that is gone.
+    // destroy, so the seller's PropDestroy arriving behind us is not resolved by its key, which
+    // would find any other prop that shares it.
     if (!keyStr.empty()) coop::prop_echo_suppress::MarkArbiterConsumedKey(keyStr);
     E::DestroyActor(prop);
 

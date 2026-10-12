@@ -13,7 +13,8 @@
 #include "coop/props/prop_save_data.h"
 #include "coop/props/prop_spawn_authoring.h" // BirthIsPlayerAuthored (the spawn menu / the toolgun)
 #include "coop/props/prop_wire_parity.h"    // PhysFlagsOf, the one builder of a live prop's flags
-#include "coop/props/prop_element_tracker.h"// GetPropElementIdForActor, ResolveLiveActorByKey
+#include "coop/props/prop_element_tracker.h"// GetPropElementIdForActor
+#include "coop/props/prop_key_index.h"  // a key on the wire to a live actor
 #include "coop/props/container_contents_sync.h"  // TakeObjInFlight -- mark a container-extraction birth
 #include "coop/props/container_birth.h"           // a thrown container's birth slice
 #include "coop/session/world_load_episode.h"  // InEpisode (quiet during the join loadObjects churn)
@@ -550,7 +551,7 @@ void OnPropDropIntent(coop::net::Session& session, const coop::net::PropDropInte
     // The duplicate guard: if the host somehow still has this key live (the grab destroy did not
     // cross), do not spawn a second one. The park-set invariant normally guarantees the host has
     // no copy here.
-    if (coop::prop_element_tracker::ResolveLiveActorByKey(key)) {
+    if (coop::prop_key_index::Find(key)) {
         UE_LOGW("[PROP-DROP] HOST already has key='%ls' live -- skip drop-intent re-spawn (no dup)", key.c_str());
         return;
     }
