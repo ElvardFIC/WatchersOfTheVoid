@@ -19,6 +19,7 @@
 #include "ue_wrap/core/call.h"
 #include "ue_wrap/core/game_thread.h"
 #include "ue_wrap/core/log.h"
+#include "ue_wrap/core/object_index.h"   // ForEachInstance -- only the trigger_alarm_C instances, not a walk
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/actors/save_record.h"  // ReadFNameAt
 
@@ -86,19 +87,33 @@ void ResolvePass() {
 void* g_trigger = nullptr;
 int32_t g_triggerIdx = -1;
 
+// The key the wired trigger keeps (also the class-default key the CDO carries -- see the callback).
+struct TriggerSearch { int32_t offKey; void* found; };
+
 void* Trigger() {
     if (!g_trigger || !R::IsLiveByIndex(g_trigger, g_triggerIdx)) {
         g_trigger = nullptr;
         g_triggerIdx = -1;
         if (!g_cls) return nullptr;
         if (g_offKey < 0) return nullptr;  // unresolved layout -- cannot tell the two apart
-        for (void* obj : R::FindObjectsByClass(L"trigger_alarm_C")) {
-            if (!obj || !R::IsLive(obj) || R::NameStartsWith(R::NameOf(obj), L"Default__"))
-                continue;
-            if (ue_wrap::save_record::ReadFNameAt(obj, g_offKey) != L"alarmTrigger") continue;
-            g_trigger = obj;
-            g_triggerIdx = R::InternalIndexOf(obj);
-            break;
+        // Only the trigger_alarm_C instances, from the object index, not a whole-array
+        // FindObjectsByClass per call: an AlarmState flood in a world whose trigger is unbound no
+        // longer walks ~250k objects each message (A70-A). The loop's own checks stay in the
+        // callback -- the index lists the class default object, which carries the default key
+        // 'alarmTrigger', and the index's tenant check is weaker than IsLive. [[RECEIVE_BOUNDARY]]
+        TriggerSearch srch{g_offKey, nullptr};
+        ue_wrap::object_index::ForEachInstance(g_cls, [](void* ctx, void* obj, int32_t index) {
+            auto& s = *static_cast<TriggerSearch*>(ctx);
+            if (s.found || !obj) return;                                      // keep the first
+            if (R::NameStartsWith(R::NameOf(obj), L"Default__")) return;      // the CDO's default key
+            if (!R::IsLive(obj)) return;                                      // PendingKill/Dying
+            if (R::SlotFlags(index) & R::slot_flags::NotYetReadable) return;  // still loading
+            if (ue_wrap::save_record::ReadFNameAt(obj, s.offKey) != L"alarmTrigger") return;
+            s.found = obj;
+        }, &srch);
+        if (srch.found) {
+            g_trigger = srch.found;
+            g_triggerIdx = R::InternalIndexOf(srch.found);
         }
     }
     return g_trigger;
