@@ -76,14 +76,15 @@ void* PropSetKeyFn() {
 
 void* Materialize(const coop::net::PropSpawnPayload& payload, int senderSlot,
                   const std::wstring& classW, const std::wstring& keyW,
-                  const std::wstring& propNameW, bool skipBind) {
+                  const std::wstring& propNameW, bool skipBind,
+                  void* (*resolve)(const wchar_t*)) {
     using ue_wrap::ParamFrame;
     using ue_wrap::Call;
     if (!ResolveSpawnFns()) {
         UE_LOGW("remote_prop::OnSpawn: spawn UFunctions unresolved -- dropping");
         return nullptr;
     }
-    void* actorClass = R::FindClass(classW.c_str());
+    void* actorClass = resolve ? resolve(classW.c_str()) : R::FindClass(classW.c_str());
     if (!actorClass) {
         UE_LOGW("remote_prop::OnSpawn: class '%ls' not found in GUObjectArray -- dropping (likely cooked-content class not loaded)",
                 classW.c_str());

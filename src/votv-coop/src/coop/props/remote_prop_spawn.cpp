@@ -28,6 +28,7 @@
 #include "coop/props/snapshot_census.h"  // the per-class completeness floor for the claim sweep
 #include "coop/dev/force_overdestroy_test.h"  // dev-only: floor-disable toggle for the controlled proof
 #include "coop/props/prop_element_tracker.h"
+#include "ue_wrap/core/object_index.h"  // ClassByName -- the host's O(1) class resolve for a client's spawn
 #include "coop/props/prop_drive_stream.h"  // IsParked: a prop the host's driven stream owns
 #include "coop/props/prop_snapshot.h"      // ExpressIncrementalSpawn, the handback re-express
 #include "coop/props/prop_fresh_spawn.h"   // the deferred-spawn materialiser
@@ -131,6 +132,12 @@ void OnSpawn(const coop::net::PropSpawnPayload& payload, int senderSlot,
     using ue_wrap::Call;
     const std::wstring classW = ClassNameToWString(payload.className);
     const std::wstring keyW   = coop::remote_prop::KeyToWString(payload.key);
+    // The HOST mirrors a CLIENT's spawn with its world up, so it resolves the wire class name through
+    // object_index (an attacker's unknown class is an O(1) miss, not a whole-array walk per distinct
+    // name); a CLIENT mirrors the host's spawn and keeps FindClass, its index able to trail a load
+    // (A70-A). One resolver for every class lookup this spawn makes. [[RECEIVE_BOUNDARY]]
+    void* (*classResolve)(const wchar_t*) =
+        coop::prop_element_tracker::SessionIsHost() ? &ue_wrap::object_index::ClassByName : nullptr;
     // The Aprop_C identity row (empty for a non-Aprop_C sender), for the fuzzy identity gate and
     // the pre-Finish write.
     const std::wstring propNameW = coop::remote_prop::KeyToWString(payload.propName);
@@ -154,7 +161,7 @@ void OnSpawn(const coop::net::PropSpawnPayload& payload, int senderSlot,
     // uses to author its own morph on a client. It branches before the Aprop_C dedupe, converge
     // and physics machinery, because a pile is keyless and carries its identity as an eid. With
     // skipBind, OnConvert binds the element itself.
-    if (ue_wrap::prop::IsTrashClassName(classW)) {
+    if (ue_wrap::prop::IsTrashClassName(classW, classResolve)) {
         // The sender's look of this pile, kept per eid: the bound actor takes it now, and an actor
         // bound later -- a pending own-save bind, a re-bind after GC churn -- takes it at the bind.
         coop::pile_look::OnHostLook(payload.elementId, payload.look, senderSlot);
@@ -170,7 +177,7 @@ void OnSpawn(const coop::net::PropSpawnPayload& payload, int senderSlot,
                 return;
             }
         }
-        const bool isClump = ue_wrap::prop::IsClumpClassName(classW);
+        const bool isClump = ue_wrap::prop::IsClumpClassName(classW, classResolve);
         const ue_wrap::FVector  loc{payload.locX, payload.locY, payload.locZ};
         const ue_wrap::FVector  scale{payload.scaleX, payload.scaleY, payload.scaleZ};
         const ue_wrap::FRotator rot{payload.rotPitch, payload.rotYaw, payload.rotRoll};
@@ -214,7 +221,7 @@ void OnSpawn(const coop::net::PropSpawnPayload& payload, int senderSlot,
         // itself (unless skipBind, OnConvert's), and the bind gives the pile the look kept above.
         void* mirror = coop::trash_mirror::Materialize(payload.elementId, classW, payload.chipType,
                                                        loc, rot, scale, senderSlot, skipBind,
-                                                       /*rebindInPlace=*/false);
+                                                       /*rebindInPlace=*/false, classResolve);
         if (!mirror) {
             UE_LOGW("remote_prop::OnSpawn: trash mirror spawn FAILED for eid=%u class='%ls'",
                     payload.elementId, classW.c_str());
@@ -524,7 +531,7 @@ void OnSpawn(const coop::net::PropSpawnPayload& payload, int senderSlot,
     // No local match anywhere: materialise a fresh mirror (prop_fresh_spawn); with skipBind,
     // OnConvert binds the element itself.
     void* spawned = coop::prop_fresh_spawn::Materialize(payload, senderSlot, classW, keyW,
-                                                        propNameW, skipBind);
+                                                        propNameW, skipBind, classResolve);
     if (spawned && outSpawned) *outSpawned = spawned;
 }
 

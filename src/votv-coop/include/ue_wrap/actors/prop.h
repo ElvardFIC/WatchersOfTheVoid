@@ -58,8 +58,12 @@ bool IsTrashActor(void* obj);
 // descendant test against the two bases rather than a string match, memoised per name so a spawn
 // burst walks the object array once per distinct class. An unloaded class answers false and is
 // not memoised. Game thread.
-bool IsTrashClassName(const std::wstring& className);
-bool IsClumpClassName(const std::wstring& className);
+// `resolve` governs how an unmemoised name resolves: null = reflection::FindClass (a whole-array
+// walk on a miss). The host resolving a CLIENT's PropSpawn class passes object_index::ClassByName,
+// so an attacker's distinct unknown names cost a lookup each, not a walk each (A70-A); a client keeps
+// the default, since its index can trail a load. Type is save_record::ClassResolver.
+bool IsTrashClassName(const std::wstring& className, void* (*resolve)(const wchar_t*) = nullptr);
+bool IsClumpClassName(const std::wstring& className, void* (*resolve)(const wchar_t*) = nullptr);
 
 // The two trash base UClasses themselves, from the same cache the tests above use; null until
 // the class is loaded. A caller that needs the class rather than the test -- a hook resolving a

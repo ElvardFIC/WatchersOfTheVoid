@@ -126,11 +126,11 @@ inline void* ActorChipPileCls() { return g_actorChipPileCls.load(std::memory_ord
 struct TrashClassKind { bool isTrash = false; bool isClump = false; };
 std::unordered_map<std::wstring, TrashClassKind> g_trashClassKind;
 
-TrashClassKind ResolveTrashClassKind(const std::wstring& className) {
+TrashClassKind ResolveTrashClassKind(const std::wstring& className, void* (*resolve)(const wchar_t*)) {
     if (className.empty()) return {};
     if (auto it = g_trashClassKind.find(className); it != g_trashClassKind.end()) return it->second;
     ResolveExtraBases();
-    void* cls = R::FindClass(className.c_str());
+    void* cls = resolve ? resolve(className.c_str()) : R::FindClass(className.c_str());
     if (!cls) return {};  // class not loaded yet -- do NOT memoise (it could load later)
     TrashClassKind k;
     k.isClump = WalksToBase(cls, GarbageClumpCls());
@@ -154,8 +154,12 @@ bool WalksToBase(void* cls, void* base) {
     return false;
 }
 
-bool IsTrashClassName(const std::wstring& className) { return ResolveTrashClassKind(className).isTrash; }
-bool IsClumpClassName(const std::wstring& className)  { return ResolveTrashClassKind(className).isClump; }
+bool IsTrashClassName(const std::wstring& className, void* (*resolve)(const wchar_t*)) {
+    return ResolveTrashClassKind(className, resolve).isTrash;
+}
+bool IsClumpClassName(const std::wstring& className, void* (*resolve)(const wchar_t*)) {
+    return ResolveTrashClassKind(className, resolve).isClump;
+}
 
 void* ChipPileClass() {
     ResolveExtraBases();
