@@ -25,8 +25,9 @@ actor is enrolled if untracked and re-expressed under the host's id. `[V]`
 **A key on the wire resolves through `coop/props/prop_key_index`**, which holds every live keyed prop
 of the current world: membership from the engine's own birth and death notifications, the key from
 the four bodies that write it (`init`, `loadData`, the `setKey` event, and a `getKey` after another
-object wrote the key). A miss is answered only after the object index has caught up, so it means no
-such prop here. The tracked set the census keeps by key is a different thing, what this peer has
+object wrote the key). A wire read that misses first catches the object index up, so its miss means
+no such prop here; a read that cannot answer yet (no session seed, no current world, a birth still
+loading) says so instead, and the host's uniqueness check at enrolment reads the index as it stands. The tracked set the census keeps by key is a different thing, what this peer has
 enrolled or tracked, and only the join sweep and the save-transfer key diff count it. `[V]`
 
 **Tracking is gated on hosting, never on a peer being connected.** Every catch and enrol below

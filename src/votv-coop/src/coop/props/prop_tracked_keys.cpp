@@ -28,21 +28,17 @@ namespace {
 
 namespace R = ue_wrap::reflection;
 
-// The key-to-live-actor index, maintained beside the actor-to-element map: every keyed prop
-// that commits a Prop element is indexed key to {actor, internal index}, and evicted on
-// unmark and on the dead-element reap. It replaces the by-key object-array walk in the
-// connect-time spawn dedupe: one full walk with a per-candidate string allocation and a
-// key-getter dispatch, per re-snapshotted prop, ballooned the client to gigabytes and stalled
-// the session; with the index each dedupe is one hash lookup and one IsLiveByIndex.
-// Bidirectional: the forward map for the lookup, the reverse for actor-keyed removal (unmark
-// and reap have the actor, not the key). The forward entry caches the object-array index so
-// the lookup validates liveness without dereferencing a possibly freed pointer. Keys are not
-// unique across a level reload (a purged prop's key can reappear on a fresh actor) and an
-// actor address can be recycled, so insert overwrites (the newest live actor wins); a stale
-// forward entry surviving an address recycle is harmless, since the by-index check rejects it
-// and the lookup evicts it lazily, and removal goes by the actor's current key so it never
-// clobbers a newer prop at the same address. The mutex is a leaf: acquired alone, released
-// before any engine or registry call, so it cannot invert against a sibling mutex.
+// The tracked keyed props, kept beside the actor-to-element map: every keyed prop that commits a
+// Prop element, a client's census-tracked prop and a bound wire mirror are filed key to {actor,
+// internal index}, and evicted on unmark and on the dead-element reap. The enumerations below read
+// it: the join sweep's keyed universe, the save-transfer key diff, the save-time positions. A key on
+// the wire is resolved by coop/props/prop_key_index, not here. Bidirectional: the forward map is what
+// the enumerations count, one actor per key (insert overwrites, the newest wins), and the reverse
+// serves actor-keyed removal (unmark and reap have the actor, not the key). The forward entry caches
+// the object-array index so a reader validates liveness without dereferencing a possibly freed
+// pointer; removal goes by the actor's current key, so it never clobbers a newer prop at the same
+// address. The mutex is a leaf: acquired alone, released before any engine or registry call, so it
+// cannot invert against a sibling mutex.
 struct KeyActorEntry {
     void*   actor       = nullptr;
     int32_t internalIdx = -1;

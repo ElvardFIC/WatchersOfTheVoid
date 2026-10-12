@@ -395,7 +395,7 @@ void SendSaleForDyingProp(const std::wstring& key, uint32_t elementId) {
 
 void Tick() {
     // The host's key index, periodically: every NoSuchProp refusal is a lookup into it, and the
-    // refusal alone cannot say whether the key was wrong or the index empty. On the tick rather
+    // refusal alone cannot say whether the key was wrong or the index not seeded. On the tick rather
     // than the teardown summary, since a killed process never reaches a teardown.
     {
         // Periodic: a one-shot fired on the first connected tick and read the index while the world
@@ -407,8 +407,8 @@ void Tick() {
         auto* ls = LoadSession();
         if (nowMs >= sNextMs && ls && ls->connected() && ls->role() == coop::net::Role::Host) {
             sNextMs = nowMs + 30000;
-            UE_LOGI("coingun[arbiter]: host key index holds %zu keyed prop(s) -- a NoSuchProp "
-                    "refusal against a NEAR-ZERO index is an enrollment gap, not a bad key",
+            UE_LOGI("coingun[arbiter]: host key index holds %zu keyed prop(s), every live one of this "
+                    "world -- a NoSuchProp refusal against a ZERO index is an unseeded index, not a bad key",
                     coop::prop_key_index::Size());
         }
     }

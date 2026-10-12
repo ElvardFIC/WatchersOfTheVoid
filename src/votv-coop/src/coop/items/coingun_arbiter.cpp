@@ -176,10 +176,8 @@ void OnReliable(const uint8_t* payload, int len, uint8_t senderSlot) {
     // Resolve the artifact against our own world, key first: a client mints no Element row for its
     // own save-loaded keyed prop, so the eid it sends is 0 for exactly the props a player shoots,
     // and the key is the identity that survives; the eid stays as the keyless fallback. Index only,
-    // no walk: a key not in the maintained index is not a prop this peer can have shot, since the
-    // client knows the key only because it mirrored the prop from us, which put it in the index. A
-    // cold walk on an attacker-chosen key would be a guaranteed miss at whatever rate the sender
-    // likes.
+    // no walk: the key index holds every live keyed prop of this world, so a key it does not hold
+    // names no prop here.
     void* prop = nullptr;
     const wchar_t* how = L"key";
     if (!keyStr.empty()) prop = coop::prop_key_index::Find(keyStr);
@@ -193,19 +191,18 @@ void OnReliable(const uint8_t* payload, int len, uint8_t senderSlot) {
     if (!prop) {
         const bool logIt = Refuse(s, senderSlot, coop::net::CoinGunResultCode::NoSuchProp);
         if (logIt) UE_LOGW("coingun[host]: REFUSED slot=%u artifact='%ls' (key='%ls' eid=%u) -- "
-                "REASON=no-such-prop. NEITHER name resolves to a live prop in our world. The usual "
-                "cause is on this side: a key index holding a few dozen props against a world of "
-                "thousands sends every sale of an ordinary save-loaded prop here. That root "
-                "is fixed (registry_reaper publishes it now); reaching this line again means a "
-                "genuinely unknown key. The client's own destroy still lands, so it costs the "
-                "ITEM -- the lane's header names that invariant and does not yet hold it.",
+                "REASON=no-such-prop. NEITHER name resolves to a live prop in our world: the key "
+                "index holds every live keyed prop, so the key names none here (one already sold "
+                "or destroyed, or a key that never existed). The client's own destroy still lands, "
+                "so it costs the ITEM -- the lane's header names that invariant and does not yet "
+                "hold it.",
                 senderSlot, artifact.c_str(), keyStr.empty() ? L"None" : keyStr.c_str(),
                 p.elementId);
         return;
     }
 
     // The authorisation gate, the first question about the actor, before every remaining question
-    // about the artifact, so a peer probing keys learns nothing it did not have. The shared
+    // about the artifact. The shared
     // IntentTarget owns the question: the same producer-derived reach, the measured-bounds
     // expansion, the staleness budget, and a fail-closed answer when the sender has no live puppet.
     // Authorize rather than Resolve, since identity was answered by key above.

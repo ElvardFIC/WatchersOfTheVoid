@@ -60,7 +60,7 @@ void UnmarkKnownKeyedProp(void* actor);
 // extract, a held-item express, a pile self-seed) mints and announces on any peer, while the
 // passive census walk on a client mints nothing for a keyed prop (keyed identity is
 // host-authored: a save-loaded prop adopts the host eid by key, a client-born prop mints at its
-// express seam) and only refreshes the key index; a silent local eid nobody was told about was a
+// express seam) and only tracks it by key; a silent local eid nobody was told about was a
 // zombie double-row factory, thousands per join.
 enum class EnrollSource : uint8_t { kExpressSeam, kPassiveCensus };
 std::wstring MarkPropElement(void* actor, const std::wstring& key, const std::wstring& cls,
@@ -81,7 +81,7 @@ bool IsBoundMirrorNative(void* actor);
 // peer's own pile re-skins (pile, clump, pile again) the eid follows the new object so the
 // held-pose stream and a later grab or destroy resolve it. The Registry reverse follows through
 // SetActor. A no-op for an unknown or mirror eid (a mirror rebinds through RegisterPropMirror
-// with rebindInPlace). Keyless props only; the key index is untouched. Game thread.
+// with rebindInPlace). Keyless props only; the tracked keys are untouched. Game thread.
 void RebindLocalElementActor(coop::element::ElementId eid, void* newActor);
 
 // The tracked keyed props by key: the props this peer enrolled (MarkPropElement), tracked from a census
