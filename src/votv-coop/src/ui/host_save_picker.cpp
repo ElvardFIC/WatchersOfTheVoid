@@ -100,7 +100,8 @@ void DoHostExisting(const sb::SaveInfo& info) {
     // so the user can't wander into the browser and connect to their own lobby while the
     // world loads, and gives "Starting your server -- loading <world>" feedback.
     // DriveHostBootIfPending Reset()s it on session-start/failure; if HostWithSave is
-    // rejected (busy) there is no pending boot to Reset, so we must NOT raise it.
+    // rejected (busy, or this build starts no session) there is no pending boot to Reset, so we
+    // must NOT raise it.
     coop::net::Refusal refused;
     if (!sm::HostWithSave(c, g_hostName, g_hostLocked, HostPassword(), g_hostMax,
                           coop::net::master_slots::Selected().url, HostModeFromPicker(), &refused)) {

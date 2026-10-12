@@ -82,6 +82,9 @@ void DoConnect() {
     // The version pair rides along so the equality gate can refuse here, with the connect-failed
     // popup, rather than letting the wire gate drop the player later (rows show normally and are
     // rejected on join).
+    // This click supersedes any notice still up from an earlier one, as a connect's start does, so a
+    // notice after a refusal below is this click's.
+    coop::join_progress::ClearNotice();
     if (sm::JoinLobby(master, row.lobbyId, row.name, row.proto, row.game, row.gameBuild)) {
         g_lastOutcome = "connect:started";
         SB::Close();   // accepted: the loading screen owns the player from here
@@ -89,8 +92,9 @@ void DoConnect() {
         // A refusal before the start (the version gate, a build that starts no session) is already
         // on screen as the connect-failed notice; only a busy action is said here.
         coop::join_progress::Notice refusedNotice;
-        g_lastOutcome = coop::join_progress::PeekNotice(refusedNotice) ? "connect:refused" : "connect:busy";
-        if (g_lastOutcome == std::string("connect:busy"))
+        const bool refused = coop::join_progress::PeekNotice(refusedNotice);
+        g_lastOutcome = refused ? "connect:refused" : "connect:busy";
+        if (!refused)
             SB::SetNotice(l10n::T("Could not start that connection -- another action is already "
                                   "in flight."));
     }

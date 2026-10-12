@@ -481,8 +481,10 @@ void DoHost() {
         // it.
         if (refused.code != coop::net::EndReason::None) {
             const auto& info = coop::net::Describe(refused.code);
-            const std::string line = std::string("Host failed [") + info.id + "]: " + info.text;
-            SetStatus(std::wstring(line.begin(), line.end()), kBad);  // ASCII: our code and sentence
+            SetStatus(Widen(std::string("Host failed [") + info.id + "]: " + info.text), kBad);
+            // The same line is on the host status the poll below repaints from; taken as seen, so the
+            // poll does not paint it again in the plain colour a frame later.
+            g_lastHostStatus = sm::HostStatus();
         } else {
             SetStatus(L"Busy -- another host or join is already starting.", kBad);
         }
