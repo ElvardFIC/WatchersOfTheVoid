@@ -62,6 +62,9 @@ coop::roster_ledger::PerSlotState<bool> g_joinSent;
 // the line printed on both.
 coop::roster_ledger::PerSlotState<bool> g_connectAnnounced;
 
+// Host: the Joins from each slot's occupant that passed the version gate and were answered.
+coop::roster_ledger::PerSlotState<uint32_t> g_joinsAnswered;
+
 }  // namespace
 
 // Stores the skin and applies it now if the slot's puppet is already spawned (a mid-session
@@ -172,6 +175,64 @@ void Reset() {
     coop::hand_item::Reset();  // destroy the hand-item display mirrors and states
 }
 
+void BuildJoinPayload(uint32_t selfEid, std::vector<uint8_t>& joinPayload) {
+    // The prefix: [uint32 senderElementId], then [uint8 nicklen][nick UTF-8]. The receiver registers the id as a
+    // mirror in the sender's slot, so packets carrying it resolve through Registry::Get.
+    joinPayload.resize(4);  // not-name-text: a 4-byte wire field
+    std::memcpy(joinPayload.data(), &selfEid, 4);
+    // What the human typed, never a suffix the host handed us last time, or a reconnect would ratchet the number up.
+    // Capped on a character boundary: a raw resize manufactures the ill-formed tail the receive boundary refuses, and
+    // our own name would reach the host as the placeholder.
+    const std::string nickStr = coop::text::CapUtf8Bytes(
+        coop::text::ToUtf8(RequestedNickname()), coop::text::kNickMaxBytes);
+    joinPayload.push_back(static_cast<uint8_t>(nickStr.size()));
+    joinPayload.insert(joinPayload.end(), nickStr.begin(), nickStr.end());
+    // No guid on the wire: the host keyed a peer's inventory file by a guid the peer named itself, which the receive
+    // boundary could only check the shape of. The host derives it from the public key the peer proved at admission
+    // (Session::ProvedGuidForSlot); with no reader left the field cannot come back. The skin follows the nick as
+    // [uint8 skinlen][skin ASCII], the at-join announce of local_body's choice (48 chars at most).
+    const std::string& skin = coop::local_body::LocalSkinName();
+    const uint8_t skinLen = static_cast<uint8_t>(skin.size() > 48 ? 48 : skin.size());
+    joinPayload.push_back(skinLen);
+    joinPayload.insert(joinPayload.end(), skin.begin(), skin.begin() + skinLen);
+    // The prefs flags after the skin (bit 0 = nameplate visible), so a late joiner agrees with a peer that hid its
+    // plate before they arrived.
+    joinPayload.push_back(BuildLocalPrefsFlags());
+    // The nick colour after the flags byte.
+    AppendNickColorField(joinPayload, coop::nick_color::LocalPacked());
+    // The game target, [u8 gamelen][game ASCII] after the colour (the build claim follows it, below): the other half
+    // of the version pair (the build number rides the packet header as the protocol version). The receiver checks it
+    // by byte equality at the top of HandleJoinMessage, the wire-level gate that also covers direct connect and env
+    // boot, where no browser pre-flight ran. At most 23 chars.
+    {
+        const char* game = coop::version::kGameTarget;
+        const size_t gameLen = std::min<size_t>(std::strlen(game), 23);
+        joinPayload.push_back(static_cast<uint8_t>(gameLen));
+        joinPayload.insert(joinPayload.end(), game, game + gameLen);
+    }
+    // The build claim after the game target: [sha256 32 bytes][u8 flags], flags bit 0 = this build verified its own
+    // release signature. A host judges it at the Join seam (player_handshake_version.cpp); a client reads nothing of
+    // the host's. The hash and the flag are read when the payload is built. build_claim_foreign flips the hash's
+    // first byte so a host reads this peer as another build (the build-trust drill's arm).
+    {
+        uint8_t sha[coop::build_trust::kShaBytes];
+        std::memcpy(sha, coop::build_trust::Self().sha256, sizeof(sha));
+        if (coop::config::ResolveFlag(coop::config_registry::rows::build_claim_foreign))
+            sha[0] ^= 0xFF;
+        joinPayload.insert(joinPayload.end(), sha, sha + sizeof(sha));
+        joinPayload.push_back(coop::build_trust::SelfIsOfficial() ? 1 : 0);
+    }
+    // The game build this peer runs, after the build claim: [u8 len][key ASCII], the key coop/game_build compares.
+    // The receiver checks it after the game target: a 0.9.0n player and a 0.10.0 player with one Multivoid share a
+    // target and a build number, and only this tells them apart.
+    {
+        const char* key = coop::game_build::Running().id.key;
+        const size_t keyLen = std::strlen(key);
+        joinPayload.push_back(static_cast<uint8_t>(keyLen));
+        joinPayload.insert(joinPayload.end(), key, key + keyLen);
+    }
+}
+
 void MaybeSendJoinToSlot(net::Session& session, int slot,
                          std::vector<uint8_t>& joinPayload,
                          bool& joinPayloadBuilt) {
@@ -189,71 +250,9 @@ void MaybeSendJoinToSlot(net::Session& session, int slot,
         return;  // retry next tick
     }
     if (!joinPayloadBuilt) {
-        // The prefix: [uint32 senderElementId], then [uint8 nicklen][nick UTF-8]. The receiver
-        // registers the id as a mirror in the sender's slot, so packets carrying it resolve through
-        // Registry::Get.
-        const uint32_t selfEidWire = selfEidProbe;
-        joinPayload.resize(4);  // not-name-text: a 4-byte wire field
-        std::memcpy(joinPayload.data(), &selfEidWire, 4);
-        // What the human typed, never a suffix the host handed us last time, or a reconnect would
-        // ratchet the number up. Capped on a character boundary: a raw resize manufactures the
-        // ill-formed tail the receive boundary refuses, and our own name would reach the host as
-        // the placeholder.
-        const std::string nickStr = coop::text::CapUtf8Bytes(
-            coop::text::ToUtf8(RequestedNickname()), coop::text::kNickMaxBytes);
-        std::vector<uint8_t> nickUtf8(nickStr.begin(), nickStr.end());
+        BuildJoinPayload(selfEidProbe, joinPayload);
         UE_LOGI("handshake: Join to slot %d asks for '%ls' (%zu bytes)",
-                slot, RequestedNickname().c_str(), nickUtf8.size());
-        joinPayload.push_back(static_cast<uint8_t>(nickUtf8.size()));
-        joinPayload.insert(joinPayload.end(), nickUtf8.begin(), nickUtf8.end());
-        // No guid on the wire: the host keyed a peer's inventory file by a guid the peer named
-        // itself, which the receive boundary could only check the shape of. The host derives it
-        // from the public key the peer proved at admission (Session::ProvedGuidForSlot); with no
-        // reader left the field cannot come back. The skin follows the nick as [uint8 skinlen][skin
-        // ASCII], the at-join announce of local_body's choice (48 chars at most).
-        const std::string& skin = coop::local_body::LocalSkinName();
-        const uint8_t skinLen = static_cast<uint8_t>(skin.size() > 48 ? 48 : skin.size());
-        joinPayload.push_back(skinLen);
-        joinPayload.insert(joinPayload.end(), skin.begin(), skin.begin() + skinLen);
-        // The prefs flags after the skin (bit 0 = nameplate visible), so a late joiner agrees with
-        // a peer that hid its plate before they arrived.
-        joinPayload.push_back(BuildLocalPrefsFlags());
-        // The nick colour after the flags byte.
-        AppendNickColorField(joinPayload, coop::nick_color::LocalPacked());
-        // The game target, [u8 gamelen][game ASCII] after the colour (the build claim follows it,
-        // below): the other half of the version pair (the build number rides the packet header
-        // as the protocol version). The receiver checks it by byte equality at the top of
-        // HandleJoinMessage, the wire-level gate that also covers direct connect and env boot,
-        // where no browser pre-flight ran. At most 23 chars.
-        {
-            const char* game = coop::version::kGameTarget;
-            const size_t gameLen = std::min<size_t>(std::strlen(game), 23);
-            joinPayload.push_back(static_cast<uint8_t>(gameLen));
-            joinPayload.insert(joinPayload.end(), game, game + gameLen);
-        }
-        // The build claim after the game target: [sha256 32 bytes][u8 flags], flags bit 0 = this
-        // build verified its own release signature. A host judges it at the Join seam
-        // (player_handshake_version.cpp); a client reads nothing of the host's. The hash and the
-        // flag are read when the payload is built: once per pump tick that sends a Join (the latch
-        // is the caller's per-tick local). build_claim_foreign flips the hash's first byte so a
-        // host reads this peer as another build (the build-trust drill's arm).
-        {
-            uint8_t sha[coop::build_trust::kShaBytes];
-            std::memcpy(sha, coop::build_trust::Self().sha256, sizeof(sha));
-            if (coop::config::ResolveFlag(coop::config_registry::rows::build_claim_foreign))
-                sha[0] ^= 0xFF;
-            joinPayload.insert(joinPayload.end(), sha, sha + sizeof(sha));
-            joinPayload.push_back(coop::build_trust::SelfIsOfficial() ? 1 : 0);
-        }
-        // The game build this peer runs, after the build claim: [u8 len][key ASCII], the key
-        // coop/game_build compares. The receiver checks it after the game target: a 0.9.0n player and a
-        // 0.10.0 player with one Multivoid share a target and a build number, and only this tells them apart.
-        {
-            const char* key = coop::game_build::Running().id.key;
-            const size_t keyLen = std::strlen(key);
-            joinPayload.push_back(static_cast<uint8_t>(keyLen));
-            joinPayload.insert(joinPayload.end(), key, key + keyLen);
-        }
+                slot, RequestedNickname().c_str(), static_cast<size_t>(joinPayload[4]));
         joinPayloadBuilt = true;
     }
     if (session.SendReliableToSlot(slot, net::ReliableKind::Join,
@@ -288,6 +287,10 @@ void InstallLedgerSubscribers() {
     InstallRosterPulseSubscriber();  // player_handshake_roster.cpp
 }
 
+
+uint32_t JoinsAnswered(int slot) {
+    return (slot >= 0 && slot < net::kMaxPeers) ? g_joinsAnswered[slot] : 0;
+}
 
 bool IsValidGuid(const std::string& guid) {
     if (guid.size() != 32) return false;
@@ -328,6 +331,7 @@ bool HandleJoinMessage(net::Session& session,
     // This handler's own walk below stops after the colour and reads neither the game nor the claim.
     if (ValidateJoinVersionOrRefuse(session, senderSlot, msg.payload, msg.payloadLen))
         return true;
+    if (session.role() == net::Role::Host) ++g_joinsAnswered[senderSlot];
     // On a client this Join is the host introducing itself, and row 0 is born here: the host's
     // player number is a role constant, so no wire field and no dependence on the roster pulse. On
     // the host the sender's row was born by the reconcile.

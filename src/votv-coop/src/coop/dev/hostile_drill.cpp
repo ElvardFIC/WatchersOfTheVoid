@@ -16,6 +16,8 @@
 #include "coop/player/players_registry.h"
 #include "coop/session/join_progress.h"
 #include "coop/session/net_pump.h"
+#include "coop/session/player_handshake.h"  // BuildJoinPayload, JoinsAnswered (repeat_join_ready)
+#include "coop/session/subsystems.h"        // ReplaysRun (repeat_join_ready)
 
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/desk/saved_signals.h"
@@ -26,6 +28,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -37,7 +40,8 @@ namespace SD = ue_wrap::signal_dynamic;
 namespace SS = ue_wrap::saved_signals;
 using Clock = std::chrono::steady_clock;
 
-enum class Arm { Off, SignalPark, ChatIllFormed, PropConvert, ReliableFlood };
+enum class Arm { Off, SignalPark, ChatIllFormed, PropConvert, ReliableFlood, RepeatJoin,
+                 RepeatWorldReady, RepeatSaveRequest };
 
 // Resolved once: with the environment variable unset every read would scan the ini on disk, and the
 // drill is asked per tick.
@@ -45,23 +49,37 @@ Arm ArmOf() {
     static const Arm a = [] {
         const std::string v =
             coop::config::ResolveEnum(::coop::config_registry::rows::hostile_drill);
-        return v == "signal_park"     ? Arm::SignalPark
-             : v == "chat_ill_formed" ? Arm::ChatIllFormed
-             : v == "prop_convert"    ? Arm::PropConvert
-             : v == "reliable_flood"  ? Arm::ReliableFlood
-                                      : Arm::Off;
+        return v == "signal_park"         ? Arm::SignalPark
+             : v == "chat_ill_formed"     ? Arm::ChatIllFormed
+             : v == "prop_convert"        ? Arm::PropConvert
+             : v == "reliable_flood"      ? Arm::ReliableFlood
+             : v == "repeat_join"         ? Arm::RepeatJoin
+             : v == "repeat_world_ready"  ? Arm::RepeatWorldReady
+             : v == "repeat_save_request" ? Arm::RepeatSaveRequest
+                                          : Arm::Off;
     }();
     return a;
 }
 
 const char* ArmName() {
     switch (ArmOf()) {
-    case Arm::SignalPark:    return "signal_park";
-    case Arm::ChatIllFormed: return "chat_ill_formed";
-    case Arm::PropConvert:   return "prop_convert";
-    case Arm::ReliableFlood: return "reliable_flood";
-    default:                 return "off";
+    case Arm::SignalPark:        return "signal_park";
+    case Arm::ChatIllFormed:     return "chat_ill_formed";
+    case Arm::PropConvert:       return "prop_convert";
+    case Arm::ReliableFlood:     return "reliable_flood";
+    case Arm::RepeatJoin:        return "repeat_join";
+    case Arm::RepeatWorldReady:  return "repeat_world_ready";
+    case Arm::RepeatSaveRequest: return "repeat_save_request";
+    default:                     return "off";
     }
+}
+
+// reliable_flood, repeat_world_ready and repeat_save_request are judged by the SENDER (the host's answer
+// is this session ending, with a code): the host runs no judge, the client reads the end on OnDisconnect.
+// repeat_join is host-judged: its answer is the host refusing the repeat and KEEPING the link.
+bool ClientJudged() {
+    return ArmOf() == Arm::ReliableFlood || ArmOf() == Arm::RepeatWorldReady ||
+           ArmOf() == Arm::RepeatSaveRequest;
 }
 
 // The forged content, named once and shared by the sender and the host's judge so the two never drift.
@@ -84,6 +102,17 @@ constexpr uint32_t       kSentinelEid  = 65531u;
 constexpr int            kFloodUnder = 49152;     // three quarters of 65536
 constexpr int            kFloodOver  = 251072;    // twice 65536, plus 15 s of 8000 a second
 constexpr const char*    kFloodEndId = "MV-H32";  // the code's id string, so the judge needs no symbol of the fix
+// repeat_join (host-judged): a joined client re-sends its own Join twice, then one chat line. The host must
+// refuse every repeat and KEEP the link; the judge reads the host's answered-Join count at the sentinel.
+constexpr const char* kRepeatJoinSentinel = "hostile-drill repeat-join sentinel";
+constexpr int         kRepeatJoins = 2;  // both repeats; the honest join already sent one
+// repeat_world_ready (client-judged): a joined client re-sends its world-ready announce six times. The host
+// runs the burst and ends this client; the client judges by the code. Six far exceed the replay burst of 2.
+constexpr int            kRepeatReadies         = 6;
+constexpr const char*    kRepeatWorldReadyEndId = "MV-H34";  // id string: the judge needs no symbol of the fix
+// repeat_save_request (client-judged): a joined client asks the host for the world save a second time (the
+// honest menu-mode join already asked once); the host ends this client, and the client judges by the code.
+constexpr const char*    kRepeatSaveEndId = "MV-H33";
 
 std::atomic<coop::net::Session*> g_session{nullptr};
 bool g_saidArm = false;
@@ -97,7 +126,8 @@ uint64_t          g_witnessBase = 0;
 int               g_sentinelBase = 0;   // signal_park: sentinel rows already saved at arm
 int32_t           g_rowsSeen = -1;      // signal_park: the row count the last scan saw
 SS::RowKey        g_tailSeen{};         // signal_park: and the last row then
-uint32_t          g_lineSeqBase = 0;    // chat: the last line committed before arm
+uint32_t          g_lineSeqBase = 0;    // chat / repeat_join: the last line committed before arm
+uint32_t          g_joinsBase = 0;      // repeat_join: JoinsAnswered(slot) at arm
 Clock::time_point g_armAt{};
 
 // Client (sender).
@@ -109,6 +139,12 @@ enum class Flood { Idle, UnderSent, OverSent, Done };
 Flood             g_flood = Flood::Idle;
 std::string       g_floodStamp;
 Clock::time_point g_floodAt{};
+// repeat_world_ready and repeat_save_request: the client sends its repeat(s) + one stamped chat line, then judges
+// by the session's end code. The same per-run stamp guards against a line the host's record kept from a prior run.
+enum class RepeatSend { Idle, Sent, Done };
+RepeatSend        g_repeat = RepeatSend::Idle;
+std::string       g_repeatStamp;
+Clock::time_point g_repeatAt{};
 
 bool IsHost(coop::net::Session* s) { return s->role() == coop::net::Role::Host; }
 
@@ -244,6 +280,21 @@ bool FeedHas(const std::string& line) {
     return found;
 }
 
+// One well-formed chat line, the sentinel the repeat arms send behind their burst on the same ordered lane.
+bool SendChatLine(coop::net::Session* s, const std::string& text) {
+    coop::net::ChatMessagePayload line{};
+    const size_t n = std::min(text.size(), sizeof(line.text));
+    std::memcpy(line.text, text.data(), n);
+    line.len = static_cast<uint8_t>(n);
+    return s->SendReliable(coop::net::ReliableKind::ChatMessage, &line, sizeof(line));
+}
+
+// repeat_world_ready / repeat_save_request: the per-run-stamped sentinel, named per arm so a world-ready run's
+// line never matches a save run's, and a line the host's record kept from a prior run never reads as this one's.
+std::string RepeatSentinel() {
+    return std::string("hostile-drill ") + ArmName() + " sentinel " + g_repeatStamp;
+}
+
 // `count` messages of a kind only the host authors, one byte each, then one chat line: all on the Normal lane,
 // which GNS keeps in order, so the line arriving at the host means every message before it has arrived.
 bool SendFloodBurst(coop::net::Session* s, int count, const std::string& sentinel) {
@@ -325,9 +376,99 @@ void JudgeFloodEnd() {
     g_flood = Flood::Done;
 }
 
+// repeat_join (client sends, host judges). This client's own Join, built exactly as MaybeSendJoinToSlot
+// builds it (so each passes the version gate and is a Join the host would answer), sent twice -- both
+// repeats, the honest join already sent one -- then one chat sentinel last on the same ordered lane.
+void SendRepeatJoin(coop::net::Session* s, uint32_t selfEid) {
+    std::vector<uint8_t> join;
+    coop::player_handshake::BuildJoinPayload(selfEid, join);
+    for (int i = 0; i < kRepeatJoins; ++i) {
+        if (!s->SendReliableToSlot(0, coop::net::ReliableKind::Join, join.data(),
+                                   static_cast<int>(join.size()))) {
+            Fail("a repeat Join was not sent");  // no sentinel behind it, so the host cannot pass
+            return;
+        }
+    }
+    if (!SendChatLine(s, kRepeatJoinSentinel)) {
+        Fail("the sentinel was not sent");
+        return;
+    }
+    UE_LOGI("[HOSTILE-DRILL] repeat_join sent %d repeat Join(s) + sentinel (self eid %u)", kRepeatJoins,
+            selfEid);
+}
+
+// repeat_world_ready / repeat_save_request (client sends and judges, since the host's answer is this
+// session ending with a code). The repeat(s) then one stamped chat line, all Normal-lane, so the line's
+// return in this client's own feed means the host drained the repeats, answered them and KEPT the link.
+void TickClientRepeat(coop::net::Session* s) {
+    if (g_repeat == RepeatSend::Done) return;
+    if (g_repeat == RepeatSend::Idle) {
+        if (!coop::net_pump::HasAnnouncedWorldReady() ||
+            coop::join_progress::CurrentPhase() != coop::join_progress::Phase::Idle)
+            return;
+        g_repeatStamp = std::to_string(static_cast<unsigned long long>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now().time_since_epoch()).count()));
+        bool sent = true;
+        if (ArmOf() == Arm::RepeatWorldReady) {
+            // Six world-ready re-announces: far over the replay burst of 2, so the host runs the burst and
+            // kicks the rest.
+            for (int i = 0; i < kRepeatReadies && sent; ++i)
+                sent = s->SendReliableToSlot(0, coop::net::ReliableKind::ClientWorldReady, nullptr, 0);
+        } else {  // RepeatSaveRequest: one repeat (the honest menu-mode join already asked once)
+            sent = s->SendReliableToSlot(0, coop::net::ReliableKind::SaveTransferRequest, nullptr, 0);
+        }
+        if (!sent) {
+            Fail("the repeat(s) were not all sent");  // no sentinel behind them, so the host cannot pass
+            g_repeat = RepeatSend::Done;
+            return;
+        }
+        if (!SendChatLine(s, RepeatSentinel())) {
+            Fail("the sentinel was not sent");
+            g_repeat = RepeatSend::Done;
+            return;
+        }
+        UE_LOGI("[HOSTILE-DRILL] %s sent the repeat(s) + sentinel", ArmName());
+        g_repeat = RepeatSend::Sent;
+        g_repeatAt = Clock::now();
+        return;
+    }
+    // Sent: the sentinel's return (the host kept the link and answered the repeat) is the RED; the GREEN is
+    // the host ending the session, read on OnDisconnect by the code.
+    if (FeedHas(RepeatSentinel())) {
+        Fail(ArmOf() == Arm::RepeatWorldReady ? "flood-accepted" : "request-accepted");
+        g_repeat = RepeatSend::Done;
+        return;
+    }
+    if (Clock::now() - g_repeatAt > kFailBound) {
+        Fail("timeout");
+        g_repeat = RepeatSend::Done;
+    }
+}
+
+// The session ended while a repeat was out (repeat_world_ready / repeat_save_request): only the host's
+// matching end code passes. Before the sentinel came back; after it, the sender already FAILed.
+void JudgeRepeatEnd() {
+    if (g_repeat != RepeatSend::Sent) return;
+    const char* want = ArmOf() == Arm::RepeatWorldReady ? kRepeatWorldReadyEndId : kRepeatSaveEndId;
+    coop::join_progress::Notice n;
+    const char* id = coop::join_progress::PeekNotice(n) ? coop::net::Describe(n.code).id : "";
+    UE_LOGI("[HOSTILE-DRILL] %s: the session ended with code '%s'", ArmName(), id);
+    if (std::strcmp(id, want) == 0)
+        Pass(ArmOf() == Arm::RepeatWorldReady
+                 ? "the host ran only the replay burst and ended this client for the world-ready flood"
+                 : "the host ended this client for asking the world save twice");
+    else
+        Fail("closed-otherwise");
+    g_repeat = RepeatSend::Done;
+}
+
 void TickClient(coop::net::Session* s) {
     if (ArmOf() == Arm::ReliableFlood) {
         TickClientFlood(s);
+        return;
+    }
+    if (ArmOf() == Arm::RepeatWorldReady || ArmOf() == Arm::RepeatSaveRequest) {
+        TickClientRepeat(s);
         return;
     }
     if (g_sent) return;
@@ -346,6 +487,10 @@ void TickClient(coop::net::Session* s) {
         void* pawn = coop::players::Registry::Get().Local();
         if (!pawn || !ue_wrap::engine::TryGetActorLocation(pawn, at)) return;  // no body yet; wait
         SendPropConvert(s, at);
+    } else if (ArmOf() == Arm::RepeatJoin) {
+        const coop::element::ElementId selfEid = coop::players::Registry::Get().LocalPlayerElementId();
+        if (selfEid == coop::element::kInvalidId) return;  // no element yet; wait (the fail bound covers a stall)
+        SendRepeatJoin(s, static_cast<uint32_t>(selfEid));
     } else {
         SendChatIllFormed(s);
     }
@@ -391,6 +536,9 @@ void ArmOnFirstReadySlot(coop::net::Session* s) {
         g_sentinelBase = CountSignalSentinels();
         g_rowsSeen = SS::Count();
         if (g_rowsSeen > 0) SS::ReadRowKey(g_rowsSeen - 1, g_tailSeen);
+    } else if (ArmOf() == Arm::RepeatJoin) {
+        g_joinsBase = coop::player_handshake::JoinsAnswered(g_slot);
+        g_lineSeqBase = LastLineSeq();
     } else {
         g_lineSeqBase = LastLineSeq();
     }
@@ -451,11 +599,35 @@ void JudgePropConvert() {
         Pass("a client's convert was not applied; the spawn sent behind it was");
 }
 
+void JudgeRepeatJoin(coop::net::Session* s) {
+    (void)s;
+    // Decide once the sentinel (sent AFTER the repeat Joins on the same ordered lane) is committed to the
+    // host's chat record from the judged slot: the repeats have been drained and judged by then, and its
+    // arrival is itself the proof the host KEPT the link (a kicked client sends nothing more). A sentinel
+    // that never arrives (a repeat Join wrongly kicked, say) ends on the generic bound below.
+    bool sawSentinel = false;
+    coop::chat_log::ForEach([&](const coop::chat_log::Row& r) {
+        if (r.lineSeq > g_lineSeqBase && r.slot == static_cast<uint8_t>(g_slot) &&
+            r.text == kRepeatJoinSentinel)
+            sawSentinel = true;
+    });
+    if (!sawSentinel) return;
+    const uint32_t answered = coop::player_handshake::JoinsAnswered(g_slot) - g_joinsBase;
+    if (answered > 0) {
+        char buf[64];
+        std::snprintf(buf, sizeof(buf), "answered-repeats (%u repeat Join(s) answered)", answered);
+        Fail(buf);
+    } else {
+        Pass("every repeat Join was refused and the link kept; an honest line still arrived");
+    }
+}
+
 void Judge(coop::net::Session* s) {
     if (!s->HasPeerConn(g_slot)) { Fail("the judged slot left before the verdict"); return; }
-    if (ArmOf() == Arm::SignalPark)       JudgeSignalPark(s);
-    else if (ArmOf() == Arm::PropConvert) JudgePropConvert();
-    else                                  JudgeChat();
+    if (ArmOf() == Arm::SignalPark)        JudgeSignalPark(s);
+    else if (ArmOf() == Arm::PropConvert)  JudgePropConvert();
+    else if (ArmOf() == Arm::RepeatJoin)   JudgeRepeatJoin(s);
+    else                                   JudgeChat();
     if (g_step == Step::Judge && Clock::now() - g_armAt > kFailBound)
         Fail("timeout, the sentinel never arrived");
 }
@@ -482,11 +654,11 @@ void Tick() {
     if (!g_saidArm) {
         g_saidArm = true;
         UE_LOGI("[HOSTILE-DRILL] %s -- this peer is the %s", ArmName(),
-                ArmOf() == Arm::ReliableFlood ? (host ? "HOST (under test)" : "CLIENT (sender and judge)")
-                                              : (host ? "HOST (judge)" : "CLIENT (sender)"));
+                ClientJudged() ? (host ? "HOST (under test)" : "CLIENT (sender and judge)")
+                               : (host ? "HOST (judge)" : "CLIENT (sender)"));
     }
     if (host) {
-        if (ArmOf() != Arm::ReliableFlood) TickHost(s);  // reliable_flood: the client judges
+        if (!ClientJudged()) TickHost(s);  // client-judged arms: the client judges, the host only answers
     } else {
         TickClient(s);
     }
@@ -494,6 +666,7 @@ void Tick() {
 
 void OnDisconnect() {
     if (ArmOf() == Arm::ReliableFlood) JudgeFloodEnd();
+    else if (ArmOf() == Arm::RepeatWorldReady || ArmOf() == Arm::RepeatSaveRequest) JudgeRepeatEnd();
     g_step = Step::WaitArm;
     g_saidArm = false;
     g_slot = -1;
@@ -502,12 +675,16 @@ void OnDisconnect() {
     g_rowsSeen = -1;
     g_tailSeen = {};
     g_lineSeqBase = 0;
+    g_joinsBase = 0;
     g_armAt = {};
     g_sent = false;
     g_sentinelSignal.clear();
     g_flood = Flood::Idle;
     g_floodStamp.clear();
     g_floodAt = {};
+    g_repeat = RepeatSend::Idle;
+    g_repeatStamp.clear();
+    g_repeatAt = {};
 }
 
 }  // namespace coop::dev::hostile_drill

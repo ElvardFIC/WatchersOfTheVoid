@@ -105,6 +105,14 @@ void MaybeSendJoinToSlot(coop::net::Session& session, int slot,
                           std::vector<uint8_t>& joinPayload,
                           bool& joinPayloadBuilt);
 
+// The Join this peer sends about itself, for its element `selfEid`: [u32 eid][nick][skin][flags][colour][game]
+// [build claim][game build]. MaybeSendJoinToSlot's payload, and the hostile drill's repeated Join. Game thread.
+void BuildJoinPayload(uint32_t selfEid, std::vector<uint8_t>& out);
+
+// Host: the Joins from `slot`'s occupant that passed the version gate and were answered; cleared with the
+// occupant. The hostile drill's repeat_join arm reads it. Game thread.
+uint32_t JoinsAnswered(int slot);
+
 // Person-state teardown is driven by the roster ledger's row transition, which fires on a
 // replacement as well as a departure; a disconnect callback cannot see a slot recycled between
 // two ticks. Registers the module's subscribers once.

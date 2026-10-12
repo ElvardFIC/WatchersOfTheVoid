@@ -24,7 +24,9 @@ CFG_ENUM(auth_drill, "auth_drill", "dev", "off", "off|corrupt|silent|mismatch",
 // printed by the mod so the rig reads a marker. Set on BOTH peers: the client sends, and on the host
 // the row only names the judge; it changes nothing the host's gates do. Off by default.
 CFG_ENUM(hostile_drill, "hostile_drill", "dev", "off",
-    "off|signal_park|chat_ill_formed|prop_convert|reliable_flood", "VOTVCOOP_HOSTILE_DRILL",
+    "off|signal_park|chat_ill_formed|prop_convert|reliable_flood|repeat_join|repeat_world_ready|"
+    "repeat_save_request",
+    "VOTVCOOP_HOSTILE_DRILL",
     "Receive-boundary drill (BOTH peers). signal_park: a client floods refused saved-signal rows "
     "(size 0, so the game's own gate rejects each) and the host must keep them from filling the apply "
     "park and pausing the receive loop, while an honest saved signal sent behind them still applies. "
@@ -34,4 +36,10 @@ CFG_ENUM(hostile_drill, "hostile_drill", "dev", "off",
     "and judges once the spawn is bound. reliable_flood: a client sends a burst under the most an honest "
     "client may send at once, then one far over it, each followed by a chat line; the host must keep the link "
     "after the first and end it after the second, and the client judges by the code it was given. Pin the "
-    "client's net.sendrate_kbs so the bursts arrive at the link's pace. Drill only.")
+    "client's net.sendrate_kbs so the bursts arrive at the link's pace. repeat_join: a joined client re-sends "
+    "its own Join twice, then a chat line; the host must answer no repeat Join and keep the link, and judges "
+    "by its own answered-Join count at the chat line. repeat_world_ready: a joined client re-sends its "
+    "world-ready announce six times; the host must run only the burst's worth of connect replays and then end "
+    "this client, and the client judges by the code it was given. repeat_save_request: a joined client asks "
+    "the host for its world save a second time; the host must end this client, and the client judges by the "
+    "code it was given. Drill only.")
