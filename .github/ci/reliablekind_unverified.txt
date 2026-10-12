@@ -1,7 +1,7 @@
 # reliablekind_unverified.txt -- the kinds client_authorship.h still calls Unverified: accepted from a client
 # with no evidence yet whether a client sends them. reliablekind_gate.py rule 5 holds it to the table: a kind
 # may be Unverified only if listed here, and a line for a kind that has moved to Client or Host fails until it
-# is removed. The list only shrinks.
+# is removed. A line is added only by an edit review sees; the gate does not refuse one.
 SkySignalCatch
 DeskState
 DishArm

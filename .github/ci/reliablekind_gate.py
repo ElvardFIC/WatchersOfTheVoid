@@ -45,8 +45,8 @@ WHAT IT HOLDS -- these FAIL the build:
      enumerator with no row, a row named twice, a row that is not Client, Host or Unverified, a row
      for a name that is not a kind, a relayable kind that is not Client (the edge would refuse what the relay
      forwards), or an Unverified kind not listed in `reliablekind_unverified.txt` beside this file -- a list
-     that only shrinks: a listed kind that is no longer Unverified fails until its line is removed. So a new
-     kind enters as Host or Client, never Unverified.
+     that a gate holds in one direction: a listed kind that is no longer Unverified fails until its line is
+     removed. A new Unverified kind passes only with its line added in the same commit, an edit review sees.
 
 WHAT IT DELIBERATELY DOES NOT HOLD. `session_lanes.h`'s three switches -- `LaneForKind`,
 `IsClientRelayableReliableKind`, `IsPreWorldSendableKind` -- all default safely (Normal /
@@ -54,7 +54,7 @@ no-relay / hold-until-world-ready), and whether a given kind SHOULD relay is a d
 decision no text scan can make. Absence there is legitimate for every host-authored kind.
 So they are reported in `--table`, not gated: this file must not manufacture a failure it
 cannot justify, or the next author learns to route around it. The authorship table is the
-exception, by design: it is total -- every kind decided, Client or Host -- and only its
+exception, by design: it is total -- every kind decided, Client, Host or Unverified -- and only its
 membership is checked here, never whether a decision is right.
 
 Note that membership in `session_lanes.h` is NOT receiver coverage. That is not a detail:

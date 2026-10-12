@@ -506,8 +506,7 @@ bool HandleEntityEvent(net::Session& session,
                     static_cast<size_t>(msg.payloadLen), sizeof(net::EntitySpawnPayload));
             break;
         }
-        // Host-authoritative: the host's receive edge refuses a client's copy (client_authorship.h),
-        // or a client could flood crafted class names and force an object-array walk per packet here.
+        // Host-authoritative: the host's receive edge refuses a client's copy (client_authorship.h).
         net::EntitySpawnPayload p{};
         std::memcpy(&p, msg.payload, sizeof(p));
         if (p.className.len > 63) {
