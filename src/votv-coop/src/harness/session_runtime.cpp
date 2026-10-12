@@ -73,8 +73,6 @@
 #include "coop/world/spawn_authority.h"
 #include "ui/server_browser.h"
 #include "coop/net/end_reason.h"  // the named reason a join that reached the world load ends on
-#include "ue_wrap/core/script_gate.h"  // IsInstalled: a build whose script loop could not be hooked starts no session
-#include "coop/props/prop_key_index.h"  // Unavailable: an install that cannot index starts no session either
 #include "ui/server_browser_surface.h"  // WHICH browser this session uses
 #include "ue_wrap/engine/engine.h"
 #include "ue_wrap/engine/world_identity.h"
@@ -169,16 +167,6 @@ void SpawnSecondPlayerWhenReady() {
     UE_LOGW("play: gave up waiting for local mainPlayer_C");
 }
 
-coop::net::Refusal SubstrateRefusal() {
-    // The script gate arms at boot or never (bootstrap/boot.cpp), and the key index installs on the first
-    // game-thread task after it (harness::Start), so both answers are in by the time a session can start.
-    if (!ue_wrap::script_gate::IsInstalled())
-        return {coop::net::EndReason::ScriptHooksUnavailable, "the script loop could not be hooked"};
-    if (coop::prop_key_index::Unavailable())
-        return {coop::net::EndReason::ScriptHooksUnavailable, "the prop key watches were refused"};
-    return {};
-}
-
 // Bring up a session on g_session: reset the per-session edge state, wire every subsystem,
 // (host) back the save up and load the ban list on every topology, then Start. The one path for
 // "start a coop session", from the env boot and from a browser action; on the TimelineThread,
@@ -192,8 +180,10 @@ bool StartCoopSession(const coop::net::Config& netCfg, coop::net::Refusal* why) 
         return false;
     }
     // Refused before anything is wired, under a code the player can read, as Session::Start refuses
-    // what the ICE policy refuses.
-    if (const coop::net::Refusal r = SubstrateRefusal(); r.code != coop::net::EndReason::None) {
+    // what the ICE policy refuses: the backstop for a door that starts a session directly (the env and
+    // dev boots); every join and host action has refused already (coop/session/session_manager.h).
+    if (const coop::net::Refusal r = coop::session_manager::SubstrateRefusal();
+        r.code != coop::net::EndReason::None) {
         UE_LOGW("harness: refusing to start a session -- [%s] %s (%s)", coop::net::Describe(r.code).id,
                 coop::net::Describe(r.code).text, r.detail.c_str());
         if (why) *why = r;
@@ -618,13 +608,7 @@ void RunPlayLoop(bool bootedIntoGameplay) {
                         // assumes the menu (join_leave).
                         if (pending.role == coop::net::Role::Client &&
                             !(bootedIntoGameplay && InGameplayWorld())) {
-                            // Refused before this world is left for the menu, so a build that cannot
-                            // start a session leaves the player where they stand.
-                            if (const coop::net::Refusal r = SubstrateRefusal();
-                                r.code != coop::net::EndReason::None)
-                                coop::join_progress::Fail(r.code, r.detail);
-                            else if (!harness::join_leave::Begin(pending))
-                                StartMenuModeJoin_(pending);
+                            if (!harness::join_leave::Begin(pending)) StartMenuModeJoin_(pending);
                         } else if (!StartCoopSession(pending, &why)) {
                             // A client standing in its own booted world gets the notice,
                             // and the abort drain clears the cover: never a browser over

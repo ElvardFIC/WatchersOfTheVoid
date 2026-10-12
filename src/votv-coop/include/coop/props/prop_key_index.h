@@ -25,8 +25,9 @@
 // Game thread, all of it.
 namespace coop::prop_key_index {
 
-// The watches and the object-index listener, registered once from the frame tail, which then drives the
-// watches' names to resolve, so they have resolved before any session. A latched read after that.
+// The watches and the object-index listener, registered once: harness::Start posts it as the first
+// game-thread task, and the frame tail and a session's seed call it again to drive the watches' names to
+// resolve. A latched read after that.
 void Install();
 
 // The session's edges. Begin when the session takes the script gate: the store is seeded from the object

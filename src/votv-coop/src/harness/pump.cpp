@@ -85,8 +85,8 @@ void TickFrameTail() {
     coop::nameplate::Update();
     coop::dev::object_overlay::Update(); coop::dev::ragdoll_bone_overlay::Update();
     coop::chat_feed::Tick();
-    // The prop key index's watches and object-index listener, once the script gate is armed; a latched read
-    // after that.
+    // The prop key index's watches' names, driven to resolve (the install itself is harness::Start's first
+    // game-thread task); a latched read after that.
     coop::prop_key_index::Install();
     // [dev] The lookup parity probes, once per world, the menu's included: the singleton probe, since a
     // lookup that outlived the world it came from would show there, and the function-list probe, since

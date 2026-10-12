@@ -110,6 +110,12 @@ Clock::time_point g_sumSince{};
 std::unordered_map<void*, KeyField> g_fieldOf;
 uint64_t g_fieldOfVersion = 0;
 
+// Both classes a key field can come from are loaded: until then a class asked may read as keyless only because
+// its base is still loading.
+bool KeyBasesLoaded() {
+    return OI::ClassByName(ue_wrap::profile::name::PropClass) && OI::ClassByName(L"trashBitsPile_C");
+}
+
 KeyField FieldOf(void* cls) {
     if (!cls) return KeyField::None;
     const uint64_t v = OI::ClassUnlistVersion();
@@ -122,8 +128,7 @@ KeyField FieldOf(void* cls) {
     const KeyField f = ue_wrap::prop::KeyFieldOf(cls);
     // A None is kept only once both bases are loaded: one still loading reads as absent, and a subclass
     // asked in that moment would stay out for good.
-    if (f != KeyField::None || (OI::ClassByName(ue_wrap::profile::name::PropClass) &&
-                                OI::ClassByName(L"trashBitsPile_C")))
+    if (f != KeyField::None || KeyBasesLoaded())
         g_fieldOf.emplace(cls, f);
     return f;
 }
@@ -409,9 +414,7 @@ bool ParityReady() { return g_live; }
 bool ParityIsInstance(void* obj) { return FieldOf(R::ClassOf(obj)) != KeyField::None; }  // class-pure
 // FieldOf answers None for a class asked while a base is still loading, without keeping it; the hub keeps its
 // verdicts, so it takes them again when both bases have loaded.
-uint64_t ParityBasesLoaded() {
-    return (OI::ClassByName(ue_wrap::profile::name::PropClass) && OI::ClassByName(L"trashBitsPile_C")) ? 1 : 0;
-}
+uint64_t ParityBasesLoaded() { return KeyBasesLoaded() ? 1 : 0; }
 void ParityBegin(void*, bool) {}
 
 void ParityMatch(void*, void* obj) {
@@ -473,8 +476,8 @@ bool SeedHeldForDrill() {
 }
 
 void TrySeed() {
-    // A session's first tick can come before the frame tail's first install: install here too, and wait
-    // while the script gate itself is not armed.
+    // The install is harness::Start's first game-thread task; asked again here, it drives the watches'
+    // names on, and waits while the script gate itself is not armed.
     Install();
     if (!g_installed || g_deadSaid) return;
     if (g_watchRefused || !g_listening || WatchDead(kRowInit) || WatchDead(kRowSetKey) || WatchDead(kRowGetKey) ||
@@ -566,16 +569,29 @@ void Install() {
     g_watchRefused = !ok;
     g_listening = OI::AddListener(OI::Listener{nullptr, &OnCreated, &OnDeleted});
     if (g_watchRefused || !g_listening) g_unavailable.store(true, std::memory_order_release);
-    coop::element::scan_hub::Register(coop::element::scan_hub::Consumer{
-        "prop_key_parity", nullptr, &ParityReady, &ParityIsInstance, &ParityBegin, &ParityMatch, &ParityComplete,
-        /*settleScans*/ 0,  // demand-exempt: rides the tail passes and the full backstop
-        &ParityBasesLoaded});
+    // [dev] key_index_refuse_install: the install reads as unable to index, the one way to see a session refused
+    // (MV-J32) on a build that hooks fine. Nothing is refused in the gate or the watches themselves.
+    if (coop::config::ResolveFlag(coop::config_registry::rows::key_index_refuse_install)) {
+        UE_LOGW("prop_key_index: [dev] key_index_refuse_install -- this install reads as unable to index");
+        g_unavailable.store(true, std::memory_order_release);
+    }
     if (g_watchRefused || !g_listening)
         UE_LOGE("prop_key_index: install incomplete (watches %s, listener %s)", ok ? "taken" : "REFUSED",
                 g_listening ? "taken" : "REFUSED");
 }
 
 void Begin() {
+    // The parity pass joins the scan hub at the first session, as the hub's other consumers do: the hub is
+    // ticked only in a session, so a consumer registered at boot would set its observer collecting births for
+    // a single-player game that never drains them.
+    static bool sParityRegistered = false;
+    if (!sParityRegistered) {
+        sParityRegistered = true;
+        coop::element::scan_hub::Register(coop::element::scan_hub::Consumer{
+            "prop_key_parity", nullptr, &ParityReady, &ParityIsInstance, &ParityBegin, &ParityMatch,
+            &ParityComplete, /*settleScans*/ 0,  // demand-exempt: rides the tail passes and the full backstop
+            &ParityBasesLoaded});
+    }
     g_wanted = true;
     g_beganAt = Clock::now();
     g_findPendingSaid = false;

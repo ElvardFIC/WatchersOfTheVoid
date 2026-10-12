@@ -133,7 +133,8 @@ seeded for that world, no purge is running, the probe has settled, and the prop 
 world (`coop/session/net_pump`). This is the join barrier: no authoritative state lands in a world
 that is still churning. The key index term has no deadline and no degraded announce: an index that
 does not hold the world would duplicate it, so a build whose index cannot exist ends the join
-(`MV-J32`) instead, and on any other build the term clears on the first tick after the seed. On
+(`MV-J32`) instead, and on any other build the term clears once the index has seeded and the
+object index's last drain left no backlog, the session's first ticks. On
 every appearance in a co-op world the client is placed by the mod, never left at the host's saved
 position that the transferred save carries: at the last spot its profile says it was standing
 on, once, for a returning player, and at the base gate otherwise.

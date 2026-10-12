@@ -14,7 +14,13 @@ CFG_INT(key_index_seed_hold_sec, "key_index_seed_hold_sec", "dev", 0, 0, 600,
     "VOTVCOOP_DEV_KEY_INDEX_SEED_HOLD_SEC",
     "Client testing knob: the prop key index seeds N seconds after the session starts (0 = off), so the "
     "joiner's world-ready announce waits on it. On a healthy run the index is seeded before the announce "
-    "asks, so this is the one way to see that wait named on the join screen and in the log, then cleared.")
+    "asks, so this is the one way to see that wait named in the log, then cleared.")
+CFG_FLAG(key_index_refuse_install, "key_index_refuse_install", "dev", false,
+    "VOTVCOOP_DEV_KEY_INDEX_REFUSE_INSTALL",
+    "Testing knob: the prop key index's install reads as unable to index on this peer, so every session it "
+    "would start is refused with MV-J32 before anything starts (a join through its connect-failed notice, a "
+    "host on its status line). The watches and the script gate are untouched; it stages the refusal a build "
+    "that cannot hook the game would meet.")
 CFG_INT(stall_world_stream_at_pct, "stall_world_stream_at_pct", "dev", 0, 0, 99,
     "VOTVCOOP_DEV_STALL_WORLD_STREAM_AT_PCT",
     "Host testing knob: stop feeding a joiner's world blob once N% of it has been handed to the "

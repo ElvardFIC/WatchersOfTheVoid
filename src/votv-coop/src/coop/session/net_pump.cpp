@@ -458,13 +458,15 @@ void Tick(coop::net::Session& session) {
     }
 
     // A client announces world-ready once per connection, when a gameplay world is up, the prop
-    // registry expresses it, the load tail has quiesced and the prop key index holds the world, so
-    // the host's stream is read by key against it (MTA's barrier has no such term: its ids are minted
-    // by their owner, reference/mtasa-blue/Server/mods/deathmatch/logic/CElementIDs.cpp:23): the MTA
-    // INITIAL_DATA_STREAM barrier
-    // (CGame.cpp). The host streams the whole world state on it, so announcing into a churning load
-    // would put the authoritative stream into it. The probe is deadline-capped, so a pathological
-    // load still announces. Re-fires on a re-announce request under the same coherence gate.
+    // registry expresses it, the load tail has quiesced and the prop key index holds the world, so the
+    // host's stream is read by key against it: the MTA INITIAL_DATA_STREAM barrier
+    // (reference/mtasa-blue/Client/mods/deathmatch/logic/CPacketHandler.cpp:463,
+    // reference/mtasa-blue/Server/mods/deathmatch/logic/CRPCFunctions.cpp:54), whose own terms have no key
+    // index to wait for, its ids being minted by their owner
+    // (reference/mtasa-blue/Server/mods/deathmatch/logic/CElementIDs.cpp:23). The host streams the whole
+    // world state on it, so announcing into a churning load would put the authoritative stream into it.
+    // The probe is deadline-capped, so a pathological load still announces. Re-fires on a re-announce
+    // request under the same coherence gate.
     const bool reAnnounce = g_reAnnounceWorldReady.load(std::memory_order_relaxed);
     if (!isHost && isConnected &&
         (!g_worldReadyAnnounced.load(std::memory_order_relaxed) || reAnnounce)) {

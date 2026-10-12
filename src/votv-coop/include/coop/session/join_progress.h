@@ -121,12 +121,11 @@ void BeginWorldLoad();
 // WHY THIS CLIENT HAS NOT ANNOUNCED WORLD-READY YET. Between the engine reaching gameplay and
 // the announce sit gates that are this machine's own, and five of the six carry no deadline of
 // their own: a local player that never resolves, three registry-coherence reads, and the prop key
-// index (which clears on the tick after its seed, and ends the join, MV-J32, on an install that can
-// never seed). The sixth, the load-tail quiescence probe, carries its own 120 s ceiling and always
-// latches. Until B2 the
-// only thing standing behind any of them was the 240 s whole-join failsafe, which is deleted --
-// so the pump names the gate it is blocked on, once a tick, and the phase waits on THAT changing.
-// The same rule as the host's beacon, pointed at ourselves.
+// index (which clears once it has seeded and the object index has no backlog, and ends the join,
+// MV-J32, on an install that can never seed). The sixth, the load-tail quiescence probe, carries its
+// own 120 s ceiling and always latches. Until B2 the only thing standing behind any of them was the
+// 240 s whole-join failsafe, which is deleted -- so the pump names the gate it is blocked on, once a
+// tick, and the phase waits on THAT changing. The same rule as the host's beacon, pointed at ourselves.
 enum class WorldGate : uint8_t {
     None = 0,
     NoLocalPlayer,       // no possessed local player in a gameplay world yet

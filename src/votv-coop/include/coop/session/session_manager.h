@@ -117,6 +117,13 @@ bool HostWithSave(const SaveChoice& choice, const std::string& name, bool locked
                   const std::string& password, int playersMax, const std::string& masterUrl,
                   coop::session::HostMode mode = {});
 
+// The refusal every session start owes on this build, or None: a game whose script loop could not be hooked
+// at boot (ue_wrap/core/script_gate), or whose prop key watches were refused (coop/props/prop_key_index), never
+// has a prop's key seen written, so a session would duplicate a joiner's props in silence. Asked first by every
+// join and host action here, before any cover, server-list call or world load, and by
+// harness::session_runtime::StartCoopSession for the doors that start a session directly. Any thread.
+coop::net::Refusal SubstrateRefusal();
+
 // Join a master lobby by its opaque id (the join request on a worker), building a client
 // Config and queuing a session start. `masterUrl` is the master the lobby was listed on, from its
 // row: a lobby id means nothing on another master, and the relay the join is answered with is
