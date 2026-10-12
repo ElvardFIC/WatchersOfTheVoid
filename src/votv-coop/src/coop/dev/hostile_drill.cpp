@@ -2,6 +2,7 @@
 
 #include "coop/dev/hostile_drill.h"
 
+#include "coop/comms/chat_feed.h"
 #include "coop/comms/chat_log.h"
 #include "coop/config/config.h"
 #include "coop/config/config_registry.h"
@@ -9,6 +10,7 @@
 #include "coop/interactables/signal_sync.h"
 #include "coop/interactables/signal_wire.h"
 #include "coop/net/blob_chunks.h"
+#include "coop/net/end_reason.h"
 #include "coop/net/protocol.h"
 #include "coop/net/session.h"
 #include "coop/player/players_registry.h"
@@ -20,6 +22,7 @@
 #include "ue_wrap/desk/signal_dynamic.h"
 #include "ue_wrap/engine/engine.h"
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
@@ -34,7 +37,7 @@ namespace SD = ue_wrap::signal_dynamic;
 namespace SS = ue_wrap::saved_signals;
 using Clock = std::chrono::steady_clock;
 
-enum class Arm { Off, SignalPark, ChatIllFormed, PropConvert };
+enum class Arm { Off, SignalPark, ChatIllFormed, PropConvert, ReliableFlood };
 
 // Resolved once: with the environment variable unset every read would scan the ini on disk, and the
 // drill is asked per tick.
@@ -45,6 +48,7 @@ Arm ArmOf() {
         return v == "signal_park"     ? Arm::SignalPark
              : v == "chat_ill_formed" ? Arm::ChatIllFormed
              : v == "prop_convert"    ? Arm::PropConvert
+             : v == "reliable_flood"  ? Arm::ReliableFlood
                                       : Arm::Off;
     }();
     return a;
@@ -55,6 +59,7 @@ const char* ArmName() {
     case Arm::SignalPark:    return "signal_park";
     case Arm::ChatIllFormed: return "chat_ill_formed";
     case Arm::PropConvert:   return "prop_convert";
+    case Arm::ReliableFlood: return "reliable_flood";
     default:                 return "off";
     }
 }
@@ -72,6 +77,13 @@ constexpr auto           kFailBound = std::chrono::seconds(180);  // a failure b
 constexpr const char*    kTrashClass   = "prop_garbageClump_C";
 constexpr uint32_t       kConvertEid   = 65530u;
 constexpr uint32_t       kSentinelEid  = 65531u;
+// reliable_flood: two bursts of a kind only the host sends, each followed by a chat line on the same ordered lane.
+// The first is under the most reliable messages an honest client is allowed to send at once (65536, refilled at
+// 8000 a second) and the second far over it, with time to refill counted in; so the host must keep the link after
+// the first and end it after the second, with its code for a sender past that bound.
+constexpr int            kFloodUnder = 49152;     // three quarters of 65536
+constexpr int            kFloodOver  = 251072;    // twice 65536, plus 15 s of 8000 a second
+constexpr const char*    kFloodEndId = "MV-H32";  // the code's id string, so the judge needs no symbol of the fix
 
 std::atomic<coop::net::Session*> g_session{nullptr};
 bool g_saidArm = false;
@@ -91,6 +103,12 @@ Clock::time_point g_armAt{};
 // Client (sender).
 bool         g_sent = false;
 std::wstring g_sentinelSignal;  // signal_park: an ordinary template name, resolved once
+// reliable_flood: the client judges, since the host's answer is this session ending. The sentinels carry a per-run
+// stamp, so a line the host's lobby record kept from an earlier run, and seeds at join, never reads as this run's.
+enum class Flood { Idle, UnderSent, OverSent, Done };
+Flood             g_flood = Flood::Idle;
+std::string       g_floodStamp;
+Clock::time_point g_floodAt{};
 
 bool IsHost(coop::net::Session* s) { return s->role() == coop::net::Role::Host; }
 
@@ -212,7 +230,106 @@ void SendPropConvert(coop::net::Session* s, const ue_wrap::FVector& at) {
             kSentinelEid);
 }
 
+std::string FloodSentinel(int which) {
+    return "hostile-drill flood sentinel " + std::to_string(which) + " " + g_floodStamp;
+}
+
+// Is the host's copy of this client's sentinel line in this client's chat record? The host commits a client's line and
+// sends it back to every client, the sender included.
+bool FeedHas(const std::string& line) {
+    bool found = false;
+    coop::chat_feed::ForEachRow([&](const coop::chat_feed::RowView& r) {
+        if (r.line.find(line) != std::string_view::npos) found = true;
+    });
+    return found;
+}
+
+// `count` messages of a kind only the host authors, one byte each, then one chat line: all on the Normal lane,
+// which GNS keeps in order, so the line arriving at the host means every message before it has arrived.
+bool SendFloodBurst(coop::net::Session* s, int count, const std::string& sentinel) {
+    const uint8_t filler = 0;
+    for (int i = 0; i < count; ++i) {
+        if (!s->SendReliable(coop::net::ReliableKind::ChatLine, &filler, sizeof(filler))) {
+            UE_LOGW("[HOSTILE-DRILL] reliable_flood sent %d/%d before a refusal", i, count);
+            return false;
+        }
+    }
+    coop::net::ChatMessagePayload line{};
+    const size_t n = std::min(sentinel.size(), sizeof(line.text));
+    std::memcpy(line.text, sentinel.data(), n);
+    line.len = static_cast<uint8_t>(n);
+    return s->SendReliable(coop::net::ReliableKind::ChatMessage, &line, sizeof(line));
+}
+
+void TickClientFlood(coop::net::Session* s) {
+    if (g_flood == Flood::Done) return;
+    if (g_flood == Flood::Idle) {
+        if (!coop::net_pump::HasAnnouncedWorldReady() ||
+            coop::join_progress::CurrentPhase() != coop::join_progress::Phase::Idle)
+            return;
+        // The bursts must arrive faster than the host refills, which an unpinned link opening at its measured rate need
+        // not do: a FAIL then would be the link's, not the host's.
+        if (coop::config::ResolveInt(::coop::config_registry::rows::net_sendrate_kbs) < 4096) {
+            Fail("the link is not pinned (net.sendrate_kbs below 4096)");
+            g_flood = Flood::Done;
+            return;
+        }
+        g_floodStamp = std::to_string(static_cast<unsigned long long>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now().time_since_epoch()).count()));
+        if (!SendFloodBurst(s, kFloodUnder, FloodSentinel(1))) {
+            Fail("the first burst was not sent");
+            g_flood = Flood::Done;
+            return;
+        }
+        UE_LOGI("[HOSTILE-DRILL] reliable_flood sent %d + sentinel 1", kFloodUnder);
+        g_flood = Flood::UnderSent;
+        g_floodAt = Clock::now();
+        return;
+    }
+    if (g_flood == Flood::UnderSent && FeedHas(FloodSentinel(1))) {
+        if (!SendFloodBurst(s, kFloodOver, FloodSentinel(2))) {
+            Fail("the second burst was not sent");
+            g_flood = Flood::Done;
+            return;
+        }
+        UE_LOGI("[HOSTILE-DRILL] reliable_flood sentinel 1 came back; sent %d + sentinel 2", kFloodOver);
+        g_flood = Flood::OverSent;
+        g_floodAt = Clock::now();
+        return;
+    }
+    if (g_flood == Flood::OverSent && FeedHas(FloodSentinel(2))) {
+        Fail("flood-accepted");
+        g_flood = Flood::Done;
+        return;
+    }
+    if (Clock::now() - g_floodAt > kFailBound) {
+        Fail("timeout");
+        g_flood = Flood::Done;
+    }
+}
+
+// The session ended while a burst was out: the host's code decides. Before sentinel 1 came back, a burst under the
+// bound was cut; after it, only the host's flood code passes.
+void JudgeFloodEnd() {
+    if (g_flood != Flood::UnderSent && g_flood != Flood::OverSent) return;
+    coop::join_progress::Notice n;
+    const char* id = coop::join_progress::PeekNotice(n) ? coop::net::Describe(n.code).id : "";
+    const bool floodCode = std::strcmp(id, kFloodEndId) == 0;
+    UE_LOGI("[HOSTILE-DRILL] reliable_flood: the session ended with code '%s'", id);
+    if (g_flood == Flood::UnderSent)
+        Fail(floodCode ? "kicked-under-burst" : "closed-otherwise");
+    else if (floodCode)
+        Pass("the host kept the link after the first burst and ended it after the second");
+    else
+        Fail("closed-otherwise");
+    g_flood = Flood::Done;
+}
+
 void TickClient(coop::net::Session* s) {
+    if (ArmOf() == Arm::ReliableFlood) {
+        TickClientFlood(s);
+        return;
+    }
     if (g_sent) return;
     // Wait for THIS client's own join to be over before sending (its world-ready announce and the
     // host's connect replay are both behind this edge), so the host has armed. A readiness predicate,
@@ -365,13 +482,18 @@ void Tick() {
     if (!g_saidArm) {
         g_saidArm = true;
         UE_LOGI("[HOSTILE-DRILL] %s -- this peer is the %s", ArmName(),
-                host ? "HOST (judge)" : "CLIENT (sender)");
+                ArmOf() == Arm::ReliableFlood ? (host ? "HOST (under test)" : "CLIENT (sender and judge)")
+                                              : (host ? "HOST (judge)" : "CLIENT (sender)"));
     }
-    if (host) TickHost(s);
-    else      TickClient(s);
+    if (host) {
+        if (ArmOf() != Arm::ReliableFlood) TickHost(s);  // reliable_flood: the client judges
+    } else {
+        TickClient(s);
+    }
 }
 
 void OnDisconnect() {
+    if (ArmOf() == Arm::ReliableFlood) JudgeFloodEnd();
     g_step = Step::WaitArm;
     g_saidArm = false;
     g_slot = -1;
@@ -383,6 +505,9 @@ void OnDisconnect() {
     g_armAt = {};
     g_sent = false;
     g_sentinelSignal.clear();
+    g_flood = Flood::Idle;
+    g_floodStamp.clear();
+    g_floodAt = {};
 }
 
 }  // namespace coop::dev::hostile_drill

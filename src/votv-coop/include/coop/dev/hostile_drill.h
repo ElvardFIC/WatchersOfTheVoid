@@ -1,19 +1,17 @@
 // coop/dev/hostile_drill.h -- the receive boundary's drill: a hostile peer, judged by the receiver.
 //
-// A dev-gated harness for the receive boundary's answer to a hostile peer: one peer sends deliberately
-// malformed coop packets of a chosen kind, and the RECEIVING peer's mod judges whether the boundary
-// refused them without stalling the session, the verdict PRINTED by the mod so the rig reads a marker,
-// never a guess. Each arm proves its one attack, on the row content it forges, and nothing more:
-// chunk framing and every other kind are not proven by this drill yet. The discipline is "write the
-// test that proves the fix": the same judge reads green on the gated bytes and red on bytes without
-// the gate (the commit before the fix, or a lane that deletes the gate in source and never lands), so
-// a PASS is known to be one the judge could have refused.
+// One peer sends malformed coop packets of a chosen kind and the RECEIVING peer's mod judges whether the
+// boundary refused them without stalling the session, the verdict PRINTED for the rig to read. Each arm
+// proves its one attack and nothing more. The same judge reads green on the gated bytes and red on bytes
+// without the gate (the commit before the fix), so a PASS is one the judge could have refused. One arm,
+// reliable_flood, is judged by the sender: the host's answer is its session ending, with a code.
 
 // This is defensive testing of OUR OWN mod, in OUR OWN rig. Nothing here ships enabled: the enum row
 // (hostile_drill) defaults off and gates every path -- a single read when off -- and the forged sends
 // are the same shape as the dev-gated malformed sends the tree already carries (midnight_drill's NaN
-// clock, drive_drill's forged row). Set on BOTH peers: the client sends, the host judges; the host's
-// gates read nothing of it. Protocol waits on readiness (rig_ready milestones), never a clock.
+// clock, drive_drill's forged row). Set on BOTH peers: the client sends, the host judges (reliable_flood: the
+// client judges); the host's gates read nothing of it. Protocol waits on readiness (rig_ready milestones),
+// never a clock.
 #pragma once
 
 namespace coop::net { class Session; }

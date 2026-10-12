@@ -24,11 +24,14 @@ CFG_ENUM(auth_drill, "auth_drill", "dev", "off", "off|corrupt|silent|mismatch",
 // printed by the mod so the rig reads a marker. Set on BOTH peers: the client sends, and on the host
 // the row only names the judge; it changes nothing the host's gates do. Off by default.
 CFG_ENUM(hostile_drill, "hostile_drill", "dev", "off",
-    "off|signal_park|chat_ill_formed|prop_convert", "VOTVCOOP_HOSTILE_DRILL",
+    "off|signal_park|chat_ill_formed|prop_convert|reliable_flood", "VOTVCOOP_HOSTILE_DRILL",
     "Receive-boundary drill (BOTH peers). signal_park: a client floods refused saved-signal rows "
     "(size 0, so the game's own gate rejects each) and the host must keep them from filling the apply "
     "park and pausing the receive loop, while an honest saved signal sent behind them still applies. "
     "chat_ill_formed: a client sends an ill-formed UTF-8 chat line; the host must refuse it and keep a "
     "well-formed one sent behind it. prop_convert: a client sends a trash re-skin, which only the host "
     "authors, then an honest trash spawn behind it on the same lane; the host must not apply the re-skin, "
-    "and judges once the spawn is bound. Drill only.")
+    "and judges once the spawn is bound. reliable_flood: a client sends a burst under the most an honest "
+    "client may send at once, then one far over it, each followed by a chat line; the host must keep the link "
+    "after the first and end it after the second, and the client judges by the code it was given. Pin the "
+    "client's net.sendrate_kbs so the bursts arrive at the link's pace. Drill only.")
