@@ -755,6 +755,10 @@ msgstr ""
 msgid "Multivoid  -  Server Browser"
 msgstr ""
 
+#: src/coop/net/end_reason.cpp
+msgid "Multivoid could not hook this game version where its scripts run, so it cannot match objects between players and no session can start. Check for a Multivoid update made for your game version."
+msgstr ""
+
 #: src/ui/scoreboard.cpp
 msgid "Mute for me"
 msgstr ""

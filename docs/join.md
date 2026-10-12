@@ -254,8 +254,8 @@ A join that cannot be established, and a session that ends after it, both close 
 COULD NOT CONNECT or DISCONNECTED, one sentence, the site's own words, and a stable code to paste
 into a report; a cancel is silent (`coop/net/end_reason`, `ui/end_reason_dialog`). The letter says
 who decided: `J` the joiner; `H` the host, whose refusal travels as the transport's application
-end reason, so both ends log one code; `T` the transport. `MV-J28` and `MV-J29` also refuse a
-host's own start: a host from the hosting window before its world loads, with the code and the
+end reason, so both ends log one code; `T` the transport. `MV-J28`, `MV-J29` and `MV-J32` also refuse
+a host's own start: a host from the hosting window before its world loads, with the code and the
 sentence on its status line.
 
 A join that ends before it completed, whatever ended it (a cancel, a connection that could not be
@@ -303,6 +303,7 @@ travel, the player is told so (`MV-J31`), unless the reason the session ended is
 | `MV-J29` | `net.ice=relay`, and the session has no TURN server to relay through |
 | `MV-J30` | `net.ice=relay`, and the join is a direct one, which would show the host the player's address |
 | `MV-J31` | The game would not travel to the main menu: from a world a join starts in, or after a session ended (its game mode refused the travel, or it never dispatched or arrived); the player is still in that world |
+| `MV-J32` | The game's script loop was not found at boot, so a prop's key is never seen written and props cannot be matched between players by key; no session starts, a join or a host's own, the host's before its world loads |
 | `MV-H01` | Wrong password |
 | `MV-H02` | This server needs a password |
 | `MV-H03` | Too many password attempts; try again in ten minutes |

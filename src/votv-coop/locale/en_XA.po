@@ -605,6 +605,9 @@ msgstr "[[Multivoid  -  Password]]"
 msgid "Multivoid  -  Server Browser"
 msgstr "[[Multivoid  -  Server Browser]]"
 
+msgid "Multivoid could not hook this game version where its scripts run, so it cannot match objects between players and no session can start. Check for a Multivoid update made for your game version."
+msgstr "[[Multivoid could not hook this game version where its scripts run, so it cannot match objects between players and no session can start. Check for a Multivoid update made for your game version.]]"
+
 msgid "Mute for me"
 msgstr "[[Mute for me]]"
 

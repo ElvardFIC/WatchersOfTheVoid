@@ -73,6 +73,7 @@
 #include "coop/world/spawn_authority.h"
 #include "ui/server_browser.h"
 #include "coop/net/end_reason.h"  // the named reason a join that reached the world load ends on
+#include "ue_wrap/core/script_gate.h"  // IsInstalled: a build whose script loop was not found starts no session
 #include "ui/server_browser_surface.h"  // WHICH browser this session uses
 #include "ue_wrap/engine/engine.h"
 #include "ue_wrap/engine/world_identity.h"
@@ -172,11 +173,26 @@ void SpawnSecondPlayerWhenReady() {
 // "start a coop session", from the env boot and from a browser action; on the TimelineThread,
 // since Start spawns the net thread and the save backup is a blocking copy. Returns Start()'s
 // success, which the browser-join path uses to Fail the join when no connect edge will arrive.
+coop::net::Refusal SubstrateRefusal() {
+    // The script gate arms at boot or never (bootstrap/boot.cpp), so the answer is fixed by the time a
+    // session can start.
+    if (!ue_wrap::script_gate::IsInstalled()) return {coop::net::EndReason::ScriptGateUnarmed, {}};
+    return {};
+}
+
 bool StartCoopSession(const coop::net::Config& netCfg, coop::net::Refusal* why) {
     // Never start once teardown has begun: the net thread would be spawned after the single Stop()
     // and joined at static destruction, the loader-lock hazard the project forbids.
     if (coop::shutdown::IsShuttingDown()) {
         UE_LOGW("harness: StartCoopSession ignored -- shutdown in progress");
+        return false;
+    }
+    // Refused before anything is wired, under a code the player can read, as Session::Start refuses
+    // what the ICE policy refuses.
+    if (const coop::net::Refusal r = SubstrateRefusal(); r.code != coop::net::EndReason::None) {
+        UE_LOGW("harness: refusing to start a session -- [%s] %s", coop::net::Describe(r.code).id,
+                coop::net::Describe(r.code).text);
+        if (why) *why = r;
         return false;
     }
     // The nickname's source of truth is session_manager (config at boot, the browser after).

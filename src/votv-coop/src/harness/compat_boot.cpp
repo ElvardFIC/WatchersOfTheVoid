@@ -40,7 +40,9 @@ constexpr ScanCost kCosts[] = {
      "frees leak, and growing the engine's object-notification lists stands the mod down",
      "not tried yet"},
     {"ScriptGate", CR::Severity::Important,
-     "Blueprint-internal calls are neither watched nor refused: every script_gate watch is off", "not tried yet"},
+     "Blueprint-internal calls are neither watched nor refused: every script_gate watch is off, and no multiplayer "
+     "session starts, since a prop's key is never seen written",
+     "not tried yet"},
     {"SaveGameToSlot", CR::Severity::Important,
      "the world-save gate: a client in a session can save the host's world over its own",
      "tried when a multiplayer session starts"},

@@ -301,10 +301,15 @@ void DriveHostBootIfPending() {
     // per tick, forever, for nothing.
     coop::session_manager::PendingHost pending;
     if (!coop::session_manager::TakePendingHostWithSave(pending)) return;
-    // What Session::Start would refuse after the load is refused before it: the same verdict
-    // (coop/net/ice_policy.h) on the Config the start will take.
+    // What the start would refuse after the load is refused before it: the same verdicts, the ICE
+    // policy's (coop/net/ice_policy.h) on the Config the start will take, and the build's.
     if (const coop::net::Refusal r =
             coop::net::IcePolicyRefusal(coop::net::ResolveIcePolicy(), pending.cfg);
+        r.code != coop::net::EndReason::None) {
+        FailHostBeforeLoad_(r);
+        return;
+    }
+    if (const coop::net::Refusal r = harness::session_runtime::SubstrateRefusal();
         r.code != coop::net::EndReason::None) {
         FailHostBeforeLoad_(r);
         return;
