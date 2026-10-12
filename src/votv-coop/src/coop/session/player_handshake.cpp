@@ -49,12 +49,19 @@ namespace coop::player_handshake {
 
 namespace {
 
-// Whether our Join has gone out over a link, per slot. Not a ledger row field: a client sends its
-// Join to slot 0 before row 0 exists (the row is born from the host's own Join), and a row setter
-// ignores an unoccupied slot, so the client would re-send every tick forever. PerSlotState clears
-// itself when the occupant changes. The person's own fields (nick, guid, skin, joinAnnounced)
-// live on the row and die with it.
+// Whether the HOST's Join to a given slot has gone out, per slot. Not a ledger row field: a row setter
+// ignores an unoccupied slot, so it would re-send every tick forever before the row is born. PerSlotState
+// clears itself when the occupant changes, so a recycled slot's new occupant gets a fresh Join. The
+// person's own fields (nick, guid, skin, joinAnnounced) live on the row and die with it. The CLIENT does
+// NOT use this -- its latch is g_cliJoinSent below, because row 0's birth (from the host's Join) would
+// clear a PerSlotState[0] mid-connection.
 coop::roster_ledger::PerSlotState<bool> g_joinSent;
+
+// The client's own Join-sent latch: a plain bool, cleared only at session start (Reset), never at a row
+// transition. A rejoin is a new session, so Reset gives a fresh latch; within a connection the client
+// sends its Join exactly once, regardless of whether its Join or the host's arrives first (the fix for
+// the honest double-Join, field log b134; see MaybeSendJoinToSlot).
+bool g_cliJoinSent = false;
 
 // The connect line already shown for this slot, a one-shot latch outside the row for the same
 // reason. The Join legitimately arrives twice (a joiner with no element yet sends the 0 sentinel
@@ -173,6 +180,7 @@ void Reset() {
     // every registered teardown. The load-bearing clear is ClearAll at session stop.
     coop::roster_ledger::Reset();
     coop::hand_item::Reset();  // destroy the hand-item display mirrors and states
+    g_cliJoinSent = false;     // a new session (a rejoin included) re-sends the client's one Join
 }
 
 void BuildJoinPayload(uint32_t selfEid, std::vector<uint8_t>& joinPayload) {
@@ -240,7 +248,15 @@ void MaybeSendJoinToSlot(net::Session& session, int slot,
     // before the pump sends any Join.
     UE_ASSERT_GAME_THREAD("g_localNick/g_joinSent (MaybeSendJoinToSlot)");
     if (slot < 0 || slot >= net::kMaxPeers) return;
-    if (g_joinSent[slot]) return;
+    // The client's Join-sent latch is a plain connect-edge bool, cleared only at session start (Reset),
+    // NOT the per-slot ledger state: on a client row 0 is born from the HOST's own Join, which clears a
+    // PerSlotState[0] mid-connection, so a client whose Join went out first would re-send a second one
+    // (the honest double-Join, field log b134). The HOST keeps the per-slot PerSlotState, so a recycled
+    // slot's new occupant gets a fresh Join. A mismatched client still sends its Join either way, so the
+    // host's symmetric version gate still closes the wire.
+    const bool isClient = (session.role() == net::Role::Client);
+    bool& joinSent = isClient ? g_cliJoinSent : g_joinSent[slot];
+    if (joinSent) return;
     // The first Join waits for our own Player element: sent with senderElementId 0 the receiver
     // installs no mirror, and Registry::Get(senderElementId) would never resolve for the session. A
     // client allocates one pump tick after AssignPeerSlot; the host has its element at pump start.
@@ -258,7 +274,7 @@ void MaybeSendJoinToSlot(net::Session& session, int slot,
     if (session.SendReliableToSlot(slot, net::ReliableKind::Join,
                                    joinPayload.data(),
                                    static_cast<int>(joinPayload.size()))) {
-        g_joinSent[slot] = true;
+        joinSent = true;
     }
     // A failed send is retried next tick.
 }
