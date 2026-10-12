@@ -541,7 +541,8 @@ void Session::DoStop_() {
     // So too the receive edge's refusals of a host-authored kind, its open window said now.
     saidHostKind_.fill(false);
     hostKindRefusals_.Clear();
-    epochRefusals_.Clear();
+    zeroEpochRefusals_.Clear();
+    staleEpochRefusals_.Clear();
     streamRateRefusals_.Clear();
 
     auto* sockets = SteamNetworkingSockets();

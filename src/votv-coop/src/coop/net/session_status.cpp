@@ -68,8 +68,8 @@ EndReason JudgeDial(const DialReport& d) {
 }
 
 // The host's accept policy, shared by both accept sites (the Connecting edge, and the Connected
-// branch when GNS skips Connecting): the per-address connection cap. None accepts; otherwise the
-// code the refused peer is told, with whyOut as the close text. It runs before AcceptConnection,
+// branch when GNS skips Connecting): the flood history, then the per-address connection cap. None
+// accepts; otherwise the code the refused peer is told, with whyOut as the close text. It runs before AcceptConnection,
 // so a refusal costs no handshake and no band entry. The ban list is not asked here: no id is
 // proved yet, and on the internet lane no address either; it is asked at the identity proof
 // (HandlePendingMessage). MTA checks its join flood at the join packet, inside the

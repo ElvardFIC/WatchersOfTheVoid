@@ -194,7 +194,7 @@ void ConfigureConnects(long cap, long windowS) {
 // --- the flood history -------------------------------------------------------
 
 History& Floods() {
-    static History h{Policy{1, 600'000, 600'000}, "flood history"};
+    static History h{Policy{1, kFloodRefusalMs, kFloodRefusalMs}, "flood history"};
     return h;
 }
 
@@ -358,6 +358,19 @@ bool RunSelftest() {
         check(KeyFromProvedGuid("0123456789abcdef0123456789abcdee", other) &&
                   std::memcmp(k.bytes, other.bytes, 16) != 0,
               "two guids differing in the last character are two sources");
+    }
+
+    // The flood history's use: one recorded event, then a check at once, refuses from the record for the whole window.
+    {
+        History h{Policy{1, kFloodRefusalMs, kFloodRefusalMs}};
+        const Key a = AddrKey(9);
+        check(!h.Blocked(a, 1000).refused, "a source never recorded is not refused");
+        h.Record(a, 1000);
+        Verdict v = h.Blocked(a, 1000);
+        check(v.refused && v.retryMs == kFloodRefusalMs, "a record checked at once is refused for the window");
+        v = h.Blocked(a, 300'000);
+        check(v.refused && v.retryMs == kFloodRefusalMs - 299'000, "the refusal runs from the record, not the return");
+        check(!h.Blocked(a, 1000 + kFloodRefusalMs).refused, "and lifts when the window has passed");
     }
 
     if (pass == total) {

@@ -2,6 +2,8 @@
 
 #include "coop/net/receive_budget.h"
 
+#include "ue_wrap/core/log.h"
+
 namespace coop::net {
 
 void ReceiveBudget::Configure(long burst, long perSecond) {
@@ -37,26 +39,83 @@ ReceiveBudget::Slot& ReceiveBudget::For(int slot, uint32_t hConn) {
     if (s.hConn != hConn) {
         s.hConn = hConn;
         s.spent = false;
-        s.reliable.Reset();
+        s.messages.Reset();
         for (IntentBucket& b : s.streams) b.Reset();
     }
     return s;
 }
 
-ReceiveBudget::Take ReceiveBudget::TakeReliable(int slot, uint32_t hConn, uint64_t nowMs) {
-    if (!On() || slot < 0 || slot >= static_cast<int>(coop::players::kMaxPeers)) return Take::Ok;
+ReceiveBudget::Take ReceiveBudget::TakePacket(int slot, uint32_t hConn, MsgType type, uint64_t nowMs) {
+    if (slot < 0 || slot >= static_cast<int>(coop::players::kMaxPeers)) return Take::Ok;
+    const int stream = StreamIndex(type);
+    if (stream >= 0) {
+        if (streamBudget_.perSecond <= 0.0f) return Take::Ok;
+        return For(slot, hConn).streams[stream].Take(streamBudget_, nowMs) ? Take::Ok : Take::StreamOver;
+    }
+    if (budget_.perSecond <= 0.0f) return Take::Ok;
     Slot& s = For(slot, hConn);
     if (s.spent) return Take::Spent;
-    if (s.reliable.Take(budget_, nowMs)) return Take::Ok;
+    if (s.messages.Take(budget_, nowMs)) return Take::Ok;
     s.spent = true;
     return Take::Emptied;
 }
 
-bool ReceiveBudget::TakeStream(int slot, uint32_t hConn, MsgType type, uint64_t nowMs) {
-    if (streamBudget_.perSecond <= 0.0f || slot < 0 || slot >= static_cast<int>(coop::players::kMaxPeers)) return true;
-    const int i = StreamIndex(type);
-    if (i < 0) return true;
-    return For(slot, hConn).streams[i].Take(streamBudget_, nowMs);
+bool ReceiveBudget::RunSelftest() {
+    int pass = 0, total = 0;
+    auto check = [&](bool ok, const char* what) {
+        ++total;
+        if (ok) { ++pass; return; }
+        UE_LOGE("receive_budget selftest FAIL: %s", what);
+    };
+    using T = Take;
+    {
+        ReceiveBudget b;
+        b.Configure(4, 2);
+        b.ConfigureStreams(3);
+        bool ok = true;
+        for (int i = 0; i < 4; ++i) ok = ok && b.TakePacket(1, 7, MsgType::Reliable, 1000) == T::Ok;
+        check(ok, "a fresh connection takes its burst");
+        check(b.TakePacket(1, 7, MsgType::Reliable, 1000) == T::Emptied, "the next empties it");
+        check(b.TakePacket(1, 7, MsgType::Reliable, 1001) == T::Spent, "and the one after finds it spent");
+        check(b.TakePacket(1, 7, MsgType::Reliable, 100'000) == T::Spent, "spent stays spent for that connection");
+        check(b.TakePacket(1, 8, MsgType::Reliable, 100'000) == T::Ok, "a new connection on the slot starts full");
+        check(b.TakePacket(2, 9, MsgType::Reliable, 100'000) == T::Ok, "another slot is its own");
+        check(b.TakePacket(3, 5, static_cast<MsgType>(200), 100'000) == T::Ok,
+              "a type no stream names counts as a message");
+    }
+    {
+        ReceiveBudget b;
+        b.Configure(2, 10);
+        b.ConfigureStreams(3);
+        check(b.TakePacket(1, 7, MsgType::Reliable, 1000) == T::Ok, "one of two");
+        check(b.TakePacket(1, 7, MsgType::Reliable, 1100) == T::Ok &&
+                  b.TakePacket(1, 7, MsgType::Reliable, 1100) == T::Ok,
+              "a tenth of a second at 10 a second refills one");
+        check(b.TakePacket(1, 7, MsgType::Reliable, 1100) == T::Emptied, "and no more");
+        bool ok = true;
+        for (int i = 0; i < 3; ++i) ok = ok && b.TakePacket(2, 9, MsgType::PoseSnapshot, 1000) == T::Ok;
+        check(ok, "a stream takes its burst");
+        check(b.TakePacket(2, 9, MsgType::PoseSnapshot, 1000) == T::StreamOver, "and drops past it");
+        check(b.TakePacket(2, 9, MsgType::VoiceFrame, 1000) == T::Ok, "another stream type is its own");
+        check(b.TakePacket(2, 9, MsgType::PoseSnapshot, 1334) == T::Ok, "a third of a second refills one");
+        check(b.TakePacket(2, 9, MsgType::Reliable, 1334) == T::Ok, "a dropped stream spends no message");
+    }
+    {
+        ReceiveBudget b;
+        b.Configure(4, 0);
+        b.ConfigureStreams(0);
+        bool ok = true;
+        for (int i = 0; i < 100; ++i)
+            ok = ok && b.TakePacket(1, 7, MsgType::Reliable, 1000) == T::Ok &&
+                 b.TakePacket(1, 7, MsgType::PoseSnapshot, 1000) == T::Ok;
+        check(ok, "a rate of 0 bounds nothing");
+    }
+    if (pass == total) {
+        UE_LOGI("receive_budget selftest: ALL PASS (%d checks)", total);
+        return true;
+    }
+    UE_LOGE("receive_budget selftest: %d of %d checks FAILED", total - pass, total);
+    return false;
 }
 
 }  // namespace coop::net

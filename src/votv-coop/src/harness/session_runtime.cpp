@@ -212,6 +212,9 @@ bool StartCoopSession(const coop::net::Config& netCfg, coop::net::Refusal* why) 
     // And the per-source history behind the connection cap and the password-guess bound: a count
     // that refuses, a refusal that lifts, a window that slides, a full table that refuses nobody.
     coop::net::connect_history::RunSelftest();
+    // And the receive edge's bound on what each client sends: a burst, its refill, the latch, a new connection's full
+    // bucket, the streams apart, a rate of 0. Its numbers are rows, so the arithmetic is what a selftest can hold.
+    coop::net::ReceiveBudget::RunSelftest();
     // And the commands' line splitter, target resolver, registry and dispatcher: a resolver that
     // picks the wrong player kicks the wrong player, and a wrong pick reads as working until then.
     coop::commands::RunSelftest();

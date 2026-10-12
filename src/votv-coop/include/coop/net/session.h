@@ -720,14 +720,19 @@ private:
     // in a session said with its number, the rest summed. Net thread; reset by the stop, after the join.
     std::array<bool, 256> saidHostKind_{};
     RefusalTally hostKindRefusals_{"net"};
-    // The epoch latch's drops (HandleMessage), folded the same way. Net thread; cleared with the one above.
-    RefusalTally epochRefusals_{"net"};
+    // The epoch latch's drops (HandleMessage), each cause folded on its own: a zero epoch is a sender's bug, an
+    // earlier connection's epoch a benign reconnect race. Net thread; cleared with the one above.
+    RefusalTally zeroEpochRefusals_{"net"};
+    RefusalTally staleEpochRefusals_{"net"};
     // The receive budget's stream drops, folded the same way. Net thread; cleared with the two above.
     RefusalTally streamRateRefusals_{"net"};
     // The host's bound on each client's reliable messages (receive_budget.h). Net thread only.
     ReceiveBudget receiveBudget_;
+    // The receive budget's answer to one packet (receive_budget.h): true to go on. A stream past its rate is dropped;
+    // a client that empties its message bucket is recorded in the flood history and its link ended. Net thread.
+    bool TakeBudget(int peerSlot, uint32_t hConn, MsgType type, const void* data, int len);
     // The flood history's record of a slot's occupant before its link is ended for flooding: its proved identity and
-    // its address where the transport has one (connect_history::Floods). Net thread.
+    // its address where the transport has one, refused from now (connect_history::Floods). Net thread.
     void RecordFlood(int slot, uint32_t hConn);
     // Per-slot relay eligibility: the hConn that announced ClientWorldReady, stamped on the net
     // thread at receipt. The game-thread world-ready flag lags by one drain, and the relay consults
