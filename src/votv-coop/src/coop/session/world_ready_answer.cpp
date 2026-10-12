@@ -23,10 +23,12 @@ namespace {
 
 using Clock = std::chrono::steady_clock;
 
-// Burst 2, refill 0.5/s. A legitimate re-announce is spaced at least 2.0 s by the quiesce probe
-// (world_load_episode.cpp: 10 stable scans at least 200 ms apart), so it never empties the bucket; a
-// flood does. An honest pattern at the floor keeps one token spare.
-constexpr coop::net::IntentBudget kReplayBudget{2.0f, 0.5f};
+// Burst 2, NO refill: a hard cap of two re-announce replays per occupancy. A positive refill would let a
+// client paced at exactly that rate (0.5/s -> a replay every 2 s) run forever, a standing cost no honest
+// client incurs (honest re-announces are at most one per occupancy, 0 of 1825 archived sessions have two).
+// With no refill, a flood at ANY pace empties the burst and is ended. The bucket resets to full at the
+// successor's row birth (PerSlotState), so a rejoin gets a fresh two.
+constexpr coop::net::IntentBudget kReplayBudget{2.0f, 0.0f};
 
 // Per slot. PerSlotState resets it to a full IntentBucket at the successor's row birth, so a recycled
 // slot starts fresh -- no manual clear beside the automatic one, and no missed-window raw clear.
@@ -64,9 +66,9 @@ void OnAnnounce(coop::net::Session& session, int slot) {
     }
 
     // A later announce. The connect replay is some 64 lane calls + a walk of the whole object array
-    // (npc_world_enum.cpp), so an unbounded re-announce flood would cost that per message. A legitimate
-    // world-change re-seed finds a token (it is spaced by the probe); a flood empties the bucket and the
-    // slot is ended -- a rate no honest client reaches, by the bucket's own arithmetic.
+    // (npc_world_enum.cpp), so an unbounded re-announce flood would cost that per message. The bucket caps
+    // it at two per occupancy (no refill): a legitimate world-change re-seed (at most one) is within the
+    // cap; a flood at any pace empties the burst and the slot is ended.
     if (g_rate[slot].Take(kReplayBudget, NowMs())) {
         coop::subsystems::ConnectReplayForSlot(slot);
     } else {

@@ -69,10 +69,11 @@ bool g_cliJoinSent = false;
 // hostile HOST that sends two Joins (WP-6), where the second would otherwise reprint the line.
 coop::roster_ledger::PerSlotState<bool> g_connectAnnounced;
 
-// Host: whether this occupancy's Join was already answered. A second Join from the same occupant is
-// refused and the link kept (MTA CPlayerManager.cpp:79-85); the ledger clears it when the occupant
-// changes, so a rejoin answers again. Set only once a Join is actually answered (below the length and
-// version checks), so an undersized FIRST Join the sender retries is not pre-refused.
+// Host: whether this occupancy has already sent a Join. A second Join from the same occupant is refused
+// and the link kept (MTA CPlayerManager.cpp:79-85); the ledger clears it when the occupant changes, so a
+// rejoin is answered again. Latched on ARRIVAL, as MTA (the socket already holds a player): nothing
+// retries a Join (the client sends exactly one per connection, g_cliJoinSent), so latching early refuses
+// no honest resend.
 coop::roster_ledger::PerSlotState<bool> g_joinAnswered;
 // The once-per-occupancy refusal line, a second latch so a flood of repeat Joins prints one line.
 coop::roster_ledger::PerSlotState<bool> g_joinRefuseLineSaid;
@@ -339,19 +340,23 @@ bool HandleJoinMessage(net::Session& session,
         return true;
     }
     // A joined peer that sends a second Join is a protocol error. The host refuses it and KEEPS the
-    // link, as MTA (CPlayerManager::Create returns no player on a known socket, CPlayerManager.cpp:79-85;
-    // CGame::Packet_PlayerJoinData returns on that, CGame.cpp:1811-1814). The check is here, before the
-    // length and version work, so a repeat -- even an undersized or mismatched one -- costs only this
-    // compare and no line per message (MTA logs each attempt; we say one line per occupancy). The latch
-    // is set below, once a Join is actually answered, so an undersized FIRST Join the sender retries is
-    // not pre-refused. A client reads nothing of it -- a host that double-Joins is WP-6's, g_connectAnnounced.
-    if (session.role() == net::Role::Host && g_joinAnswered[senderSlot]) {
-        if (!g_joinRefuseLineSaid[senderSlot]) {
-            g_joinRefuseLineSaid[senderSlot] = true;
-            UE_LOGI("player_handshake: slot %d sent a second Join in one occupancy; it and any later "
-                    "one are refused unanswered, the link kept", senderSlot);
+    // link, as MTA: CPlayerManager::Create returns no player on a known socket (CPlayerManager.cpp:79-85)
+    // and CGame::Packet_PlayerJoinData returns on that (CGame.cpp:1811-1814). Latched on arrival, as
+    // MTA's (the socket already holds a player), before the length and version work, so a repeat --
+    // well-formed, undersized or mismatched -- costs only this compare, refused once per occupancy (MTA
+    // logs each attempt). Nothing retries a Join: the client sends exactly one per connection, so
+    // latching early refuses no honest resend. A client reads nothing of this -- a host that double-Joins
+    // is WP-6's, guarded by g_connectAnnounced.
+    if (session.role() == net::Role::Host) {
+        if (g_joinAnswered[senderSlot]) {
+            if (!g_joinRefuseLineSaid[senderSlot]) {
+                g_joinRefuseLineSaid[senderSlot] = true;
+                UE_LOGI("player_handshake: slot %d sent a second Join in one occupancy; it and any later "
+                        "one are refused unanswered, the link kept", senderSlot);
+            }
+            return true;
         }
-        return true;
+        g_joinAnswered[senderSlot] = true;  // latch on arrival (MTA); a later Join from this occupant is refused
     }
     // An undersized Join is dropped rather than degraded to no-mirror routing, which would leave
     // the peer without the stale-generation defence for the session; the sender's retry produces a
@@ -370,10 +375,8 @@ bool HandleJoinMessage(net::Session& session,
     // This handler's own walk below stops after the colour and reads neither the game nor the claim.
     if (ValidateJoinVersionOrRefuse(session, senderSlot, msg.payload, msg.payloadLen))
         return true;
-    if (session.role() == net::Role::Host) {
-        g_joinAnswered[senderSlot] = true;  // this occupancy's Join is answered; later ones refused above
-        ++g_joinsAnswered[senderSlot];      // the hostile-drill instrument (counts answered Joins)
-    }
+    if (session.role() == net::Role::Host)
+        ++g_joinsAnswered[senderSlot];  // the hostile-drill instrument (counts Joins answered past the gate)
     // On a client this Join is the host introducing itself, and row 0 is born here: the host's
     // player number is a role constant, so no wire field and no dependence on the roster pulse. On
     // the host the sender's row was born by the reconcile.
@@ -492,8 +495,9 @@ bool HandleJoinMessage(net::Session& session,
         UE_LOGI("player_handshake: slot %d connect line shown ('%ls')", senderSlot, nick.c_str());
     }
     // On the host this Join came from a client: the two-way roster broadcast (MTA's initial data
-    // stream) tells every client about the joiner and the joiner about every client. Skipped for
-    // the 0 sentinel; the retry Join with a real eid triggers it.
+    // stream) tells every client about the joiner and the joiner about every client. The eid guard is
+    // defensive -- a client now waits for its own element before sending its Join (MaybeSendJoinToSlot),
+    // so an eid of 0 or kInvalidId no longer reaches here, and a broadcast of one would bind no mirror.
     if (session.role() == net::Role::Host &&
         senderElementId != 0u &&
         senderElementId != coop::element::kInvalidId) {

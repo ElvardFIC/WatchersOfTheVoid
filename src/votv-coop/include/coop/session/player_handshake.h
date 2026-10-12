@@ -3,9 +3,10 @@
 // the AssignPeerSlot it issues, each peer's Join carries its own element id, and the receiver
 // binds a mirror for the sender's slot, so every peer's element registry agrees on the id of
 // each Player Element. Per-slot identity state (nickname, guid, skin, the join-announced latch)
-// lives in the roster ledger; this module owns only the local nickname and the per-slot
-// Join-sent latch, a property of the link rather than of the person. Teardown is a ledger row
-// transition, which fires on a replacement as well as a departure. Game thread only.
+// lives in the roster ledger; this module owns the local nickname, the host's per-slot Join-sent
+// latch and the client's own connect-edge Join latch -- properties of the link rather than of the
+// person. Teardown is a ledger row transition, which fires on a replacement as well as a departure.
+// Game thread only.
 
 #pragma once
 

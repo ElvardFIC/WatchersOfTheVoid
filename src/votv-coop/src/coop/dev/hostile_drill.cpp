@@ -16,8 +16,7 @@
 #include "coop/player/players_registry.h"
 #include "coop/session/join_progress.h"
 #include "coop/session/net_pump.h"
-#include "coop/session/player_handshake.h"  // BuildJoinPayload, JoinsAnswered (repeat_join_ready)
-#include "coop/session/subsystems.h"        // ReplaysRun (repeat_join_ready)
+#include "coop/session/player_handshake.h"  // BuildJoinPayload, JoinsAnswered (repeat_join)
 
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/desk/saved_signals.h"
