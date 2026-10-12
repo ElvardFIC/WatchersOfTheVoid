@@ -2,7 +2,7 @@
 
 #include "coop/props/prop_key_index.h"
 
-#include "coop/config/config.h"            // [dev] key_index_gate_hold_sec
+#include "coop/config/config.h"            // [dev] key_index_seed_hold_sec, key_index_forget_one
 #include "coop/config/config_registry.h"
 #include "coop/element/object_scan_hub.h"  // the parity pass rides its slices
 #include "coop/player/hand_item.h"         // CollectHandAxisActors: a hand is never a holder
@@ -89,11 +89,7 @@ bool g_findPendingSaid = false;  // the first Find that met Pending this session
 bool g_forgotOne = false;        // [dev] key_index_forget_one: done for this session
 const char* g_pendingWhy = "";   // why the last Pending was answered, for the line that names one
 uint64_t g_offThreadBase = 0;  // the script gate's off-thread count when the summary window opened
-// [dev] key_index_gate_hold_sec: CanAnswer answers false for that long from its first ask in a session, the one way
-// to stage the world-ready gate's wait on this index, which on a healthy run is Live and caught up before the gate
-// asks. Armed per session.
-bool g_holdArmed = false;
-Clock::time_point g_holdUntil{};
+Clock::time_point g_beganAt{};  // the session's Begin, which the dev seed hold counts from
 std::atomic<uint64_t> g_offThreadReads{0};  // reads from another thread, which answer Pending
 
 // The 60 s summary.
@@ -459,6 +455,14 @@ bool WatchDead(const ue_wrap::facts::Function& row) {
     return SG::PendingNameCount() == 0 && SG::NameWatchSettled(row, kTag) && !SG::NameWatchLive(row, kTag);
 }
 
+// [dev] key_index_seed_hold_sec: the session's seed waits that long from Begin, so the index is not Live and a
+// joiner's world-ready gate names its wait on it and then clears, which a healthy run never shows. It delays only
+// this machine's own seed, as a slow name resolve would, and opens nothing: not a switch on a receiving gate.
+bool SeedHeldForDrill() {
+    static const long sHoldSec = coop::config::ResolveInt(coop::config_registry::rows::key_index_seed_hold_sec);
+    return sHoldSec > 0 && Clock::now() < g_beganAt + std::chrono::seconds(sHoldSec);
+}
+
 void TrySeed() {
     // A session's first tick can come before the frame tail's first install: install here too, and wait
     // while the script gate itself is not armed.
@@ -475,6 +479,7 @@ void TrySeed() {
     }
     if (!WatchLive(kRowInit) || !WatchLive(kRowSetKey) || !WatchLive(kRowGetKey) || !WatchLive(kRowLoadData))
         return;  // a name still resolving: the next tick
+    if (SeedHeldForDrill()) return;
     // Caught up first: the seed is the moment the index promises to hold every live keyed prop, and the
     // host's uniqueness check reads it as it stands in the very ticks the census enrols the world. Seeding
     // from a half-applied object index left it empty there while a load's births were still queued.
@@ -560,7 +565,7 @@ void Install() {
 
 void Begin() {
     g_wanted = true;
-    g_holdArmed = false;
+    g_beganAt = Clock::now();
     g_findPendingSaid = false;
     g_forgotOne = false;
     if (!g_live) TrySeed();
@@ -609,18 +614,6 @@ Read AnotherHolder(const std::wstring& key, void* self, void** other) {
 
 bool CanAnswer() {
     if (!g_wanted) return true;  // no session index to wait for
-    {
-        // Read once: ResolveInt reads the ini from disk.
-        static const long sHoldSec = coop::config::ResolveInt(coop::config_registry::rows::key_index_gate_hold_sec);
-        if (sHoldSec > 0) {
-            const auto now = Clock::now();
-            if (!g_holdArmed) {
-                g_holdArmed = true;
-                g_holdUntil = now + std::chrono::seconds(sHoldSec);
-            }
-            if (now < g_holdUntil) return false;
-        }
-    }
     // Live comes on the first session tick after the four names resolve, and an any-class name watch never
     // dies; a build whose script gate did not arm never starts a session. The per-batch drain reaches a zero
     // backlog on its own: a gate asked every tick never drains (DrainAll answers a miss, not a tick). A birth

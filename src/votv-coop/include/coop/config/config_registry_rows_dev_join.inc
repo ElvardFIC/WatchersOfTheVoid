@@ -10,12 +10,11 @@ CFG_INT(hold_snapshot_sec, "hold_snapshot_sec", "dev", 0, 0, 600,
     "(0 = off). Reproduces the one host-side wait nothing else can stage -- a joiner with a "
     "healthy link and a world, waiting on a bracket the host is holding. Under the joiner's "
     "budget the join still completes; over it, it fails naming the host's phase.")
-CFG_INT(key_index_gate_hold_sec, "key_index_gate_hold_sec", "dev", 0, 0, 600,
-    "VOTVCOOP_DEV_KEY_INDEX_GATE_HOLD_SEC",
-    "Client testing knob: the joiner's world-ready announce waits N more seconds on the prop key index "
-    "(0 = off), counted from the first time the announce asks it in a session. On a healthy run the index "
-    "has caught up before the announce asks, so this is the one way to see that wait named on the join "
-    "screen and in the log, then cleared.")
+CFG_INT(key_index_seed_hold_sec, "key_index_seed_hold_sec", "dev", 0, 0, 600,
+    "VOTVCOOP_DEV_KEY_INDEX_SEED_HOLD_SEC",
+    "Client testing knob: the prop key index seeds N seconds after the session starts (0 = off), so the "
+    "joiner's world-ready announce waits on it. On a healthy run the index is seeded before the announce "
+    "asks, so this is the one way to see that wait named on the join screen and in the log, then cleared.")
 CFG_INT(stall_world_stream_at_pct, "stall_world_stream_at_pct", "dev", 0, 0, 99,
     "VOTVCOOP_DEV_STALL_WORLD_STREAM_AT_PCT",
     "Host testing knob: stop feeding a joiner's world blob once N% of it has been handed to the "
