@@ -204,8 +204,10 @@ void WriteSaveRecord(uint8_t* base, const SaveRecord& r, ClassResolver resolve) 
     // unknown names, and the old per-leaf line was its own flood on exactly that input. The first
     // missing name is kept so an honest single miss can still be chased.
     if (classMiss > 0)
-        UE_LOGE("save_record: %d class name(s) in this record are not loaded (first: '%ls') -- written "
-                "WITHOUT their class", classMiss, firstMiss.c_str());
+        // %.64ls, never %ls: the name is attacker-chosen and the wire admits up to 262144 chars, so
+        // an unbounded print would be a 256 KB log line per crafted record.
+        UE_LOGE("save_record: %d class name(s) in this record are not loaded (first: '%.64ls') -- "
+                "written WITHOUT their class", classMiss, firstMiss.c_str());
     WriteGroups(base, kSave_vectors, 12, r.vectors,
                 [](uint8_t* e, const std::array<float, 3>& v) { std::memcpy(e, v.data(), 12); });
     WriteGroups(base, kSave_rotators, 12, r.rotators,

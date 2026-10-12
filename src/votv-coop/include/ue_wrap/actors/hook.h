@@ -206,8 +206,7 @@ bool CaptureRecord(void* hookActor, ue_wrap::save_record::SaveRecord& out);
 // loadData also re-enables both collision spheres, so a mirror's caller turns collision off again.
 // `resolve` governs how the record's class leaves resolve (null = FindClass); the host adopting a
 // CLIENT's commit passes object_index::ClassByName so an attacker's class name costs a lookup, not a
-// whole-array walk. A client adopting the host's HookAnchored keeps the
-// default.
+// whole-array walk. A client adopting the host's HookAnchored keeps the default.
 bool AdoptRecord(void* hookActor, const ue_wrap::save_record::SaveRecord& r,
                  ue_wrap::save_record::ClassResolver resolve = nullptr);
 

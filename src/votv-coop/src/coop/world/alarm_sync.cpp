@@ -95,9 +95,10 @@ void* Trigger() {
         g_trigger = nullptr;
         g_triggerIdx = -1;
         if (g_offKey < 0) return nullptr;  // unresolved layout -- cannot tell the two apart
-        // Resolve the class fresh from the index each time, not off a cached pointer: a cached
-        // UClass could in principle be unlisted and re-created at another address, and the old
-        // FindObjectsByClass(name) re-resolved by name too. O(1), so there is no cost in doing so.
+        // Resolve the class fresh from the index for the instance search, not off a cached pointer,
+        // matching the old FindObjectsByClass(name) that re-resolved by name too (a cached UClass
+        // could in principle be unlisted and re-created at another address). O(1). The property
+        // offsets ResolvePass latches are a separate matter, left as they were.
         void* cls = ue_wrap::object_index::ClassByName(L"trigger_alarm_C");
         if (!cls) return nullptr;  // class not loaded/indexed yet -- keep trying
         // Only the trigger_alarm_C instances, from the object index, not a whole-array
