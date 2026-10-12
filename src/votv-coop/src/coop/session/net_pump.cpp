@@ -27,7 +27,7 @@
 #include "coop/world/event_fire_sync.h"  // OnClientWorldReady: the fires queued in the join window
 #include "coop/world/daily_task_sync.h"  // OnClientWorldReady: a task kept from the world left behind
 #include "coop/player/puppet_drive.h"      // the puppet array and its drive
-#include "coop/props/prop_key_index.h"     // Tick, before the tick reads its inbox
+#include "coop/props/prop_key_index.h"     // Tick before the inbox; CanAnswer at the world-ready gate
 #include "coop/props/registry_reaper.h"    // the reaper and the re-seed engine
 #include "coop/props/remote_prop_spawn.h"  // OnClientWorldReadyResetSweep (deferred prop sweep per-world reset)
 #include "coop/props/join_membership_sweep.h"  // the join claim and the divergence sweep
@@ -222,6 +222,10 @@ static std::atomic<bool> g_worldReadyAnnounced{false};
 // host eid). Reset on send and on disconnect.
 static std::atomic<bool> g_reAnnounceWorldReady{false};
 
+// The gate a re-announce after the join last waited on, named by the pump: the join is Idle then, so
+// join_progress names nothing. Game thread; reset with the announce state.
+static coop::join_progress::WorldGate g_reAnnounceGate = coop::join_progress::WorldGate::None;
+
 // The UWorld last announced against (game thread), by the reaper's own reader, held as a weak identity.
 // A re-seed re-announces only when the UWorld actually swapped: the join's menu-to-game shadow drain is a
 // reap inside the announced world, and treating it as a change would replay the full snapshot and
@@ -244,6 +248,7 @@ static ue_wrap::CachedObjRef g_announcedWorldRef;
 static void ForgetWorldReadyAnnounce() {
     g_worldReadyAnnounced.store(false, std::memory_order_relaxed);
     g_reAnnounceWorldReady.store(false, std::memory_order_relaxed);
+    g_reAnnounceGate = coop::join_progress::WorldGate::None;
     g_announcedWorld.Reset();
     g_announcedWorldRef.Reset();
 }
@@ -453,34 +458,49 @@ void Tick(coop::net::Session& session) {
     }
 
     // A client announces world-ready once per connection, when a gameplay world is up, the prop
-    // registry expresses it and the load tail has quiesced: the MTA INITIAL_DATA_STREAM barrier
+    // registry expresses it, the load tail has quiesced and the prop key index holds the world, so
+    // the host's stream is read by key against it: the MTA INITIAL_DATA_STREAM barrier
     // (CGame.cpp). The host streams the whole world state on it, so announcing into a churning load
     // would put the authoritative stream into it. The probe is deadline-capped, so a pathological
     // load still announces. Re-fires on a re-announce request under the same coherence gate.
     const bool reAnnounce = g_reAnnounceWorldReady.load(std::memory_order_relaxed);
     if (!isHost && isConnected &&
         (!g_worldReadyAnnounced.load(std::memory_order_relaxed) || reAnnounce)) {
-        // Name the gate BEFORE testing the rest: four of these five have no deadline of their
-        // own, and with the whole-join failsafe deleted the joiner's phase token is what stands
-        // behind them. TickQuiesceProbe must still run every tick, so it is called first and its
-        // result reused -- naming a gate must never cost the probe a tick.
+        // Name the gate BEFORE testing the rest: most of these have no deadline of their own, and
+        // with the whole-join failsafe deleted the joiner's phase token is what stands behind them.
+        // TickQuiesceProbe must still run every tick, so it is called first and its result reused --
+        // naming a gate must never cost the probe a tick. The key index is asked last, once the rest
+        // are clear.
         const bool seeded   = coop::prop_element_tracker::HasSeededOnce();
         const bool thisWorld = seeded && coop::prop_element_tracker::IsRegistrySeededForCurrentWorld();
         const bool purging  = coop::prop_element_tracker::InPurgeEpisode();
         const bool quiesced = coop::world_load_episode::TickQuiesceProbe();
+        const bool keysReady = worldUp && seeded && thisWorld && !purging && quiesced &&
+                               coop::prop_key_index::CanAnswer();
         using WG = coop::join_progress::WorldGate;
-        coop::join_progress::NoteWorldReadyGate(
-            !worldUp    ? WG::NoLocalPlayer
-            : !seeded   ? WG::RegistryUnseeded
-            : !thisWorld ? WG::RegistryOtherWorld
-            : purging   ? WG::RegistryPurging
-            : !quiesced ? WG::WorldSettling
-                        : WG::None);
-        if (worldUp && seeded && thisWorld && !purging && quiesced) {
+        const WG gate = !worldUp    ? WG::NoLocalPlayer
+                      : !seeded   ? WG::RegistryUnseeded
+                      : !thisWorld ? WG::RegistryOtherWorld
+                      : purging   ? WG::RegistryPurging
+                      : !quiesced ? WG::WorldSettling
+                      : !keysReady ? WG::KeyIndexPending
+                                  : WG::None;
+        coop::join_progress::NoteWorldReadyGate(gate);
+        // A re-announce made after the join (a world change) waits at the same gates with the join Idle,
+        // where the call above names nothing.
+        if (reAnnounce && coop::join_progress::CurrentPhase() == coop::join_progress::Phase::Idle &&
+            gate != g_reAnnounceGate) {
+            g_reAnnounceGate = gate;
+            if (gate != WG::None)
+                UE_LOGI("net_pump: the re-announce waits on this machine -- %s",
+                        coop::join_progress::WorldGateText(gate));
+        }
+        if (keysReady) {
             if (session.SendReliableToSlot(0, coop::net::ReliableKind::ClientWorldReady,
                                            nullptr, 0)) {
                 g_worldReadyAnnounced.store(true, std::memory_order_relaxed);
                 g_reAnnounceWorldReady.store(false, std::memory_order_relaxed);
+                g_reAnnounceGate = WG::None;
                 // Stamp the world announced against, once per real announce. The same reader as the
                 // reaper's world gate: the two are compared in MaybeRequestReAnnounce, and
                 // FindObjectByClass answers "a world object exists" (the incoming world, while the
@@ -501,7 +521,7 @@ void Tick(coop::net::Session& session) {
                 // a wait that is the host's, and the phase gets a watchdog of its own.
                 coop::join_progress::NoteWorldReady();
                 UE_LOGI("net_pump: ClientWorldReady announced (world up + registry coherent + load "
-                        "tail quiesced%s)",
+                        "tail quiesced + key index caught up%s)",
                         reAnnounce ? " -- re-announce after world-change" : "");
                 coop::rig_ready::Say("world-ready");
             }

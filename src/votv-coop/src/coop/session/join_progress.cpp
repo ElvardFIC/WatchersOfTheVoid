@@ -142,6 +142,7 @@ const char* WorldGateName(uint8_t g) {
     case WorldGate::RegistryOtherWorld: return "the prop registry expresses a different world";
     case WorldGate::RegistryPurging:    return "the prop registry is still draining a dead world";
     case WorldGate::WorldSettling:      return "the load tail has not settled";
+    case WorldGate::KeyIndexPending:    return "the prop key index has not caught up with the loaded world";
     case WorldGate::None:               return "nothing -- every gate is clear";
     default:                            return "a gate this build does not name";
     }
@@ -362,6 +363,8 @@ void NoteWorldReadyGate(WorldGate gate) {
     StampToken();
     UE_LOGI("join_progress: waiting on this machine -- %s", WorldGateName(g));
 }
+
+const char* WorldGateText(WorldGate gate) { return WorldGateName(static_cast<uint8_t>(gate)); }
 
 void NoteHostBeacon(uint8_t phase, uint32_t done, uint32_t total) {
     if (!Active()) return;

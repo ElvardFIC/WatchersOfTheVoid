@@ -2,6 +2,8 @@
 
 #include "coop/props/prop_key_index.h"
 
+#include "coop/config/config.h"            // [dev] key_index_gate_hold_sec
+#include "coop/config/config_registry.h"
 #include "coop/player/hand_item.h"         // CollectHandAxisActors: a hand is never a holder
 #include "coop/player/players_registry.h"  // kMaxPeers
 #include "ue_wrap/actors/prop.h"           // KeyFieldOf, ReadKeyField
@@ -83,6 +85,11 @@ bool g_deadSaid = false;
 bool g_namesSettled = false;  // all four watches live or dead for good
 bool g_staleParkSaid = false;
 uint64_t g_offThreadBase = 0;  // the script gate's off-thread count when the summary window opened
+// [dev] key_index_gate_hold_sec: CanAnswer answers false for that long from its first ask in a session, the one way
+// to stage the world-ready gate's wait on this index, which on a healthy run is Live and caught up before the gate
+// asks. Armed per session.
+bool g_holdArmed = false;
+Clock::time_point g_holdUntil{};
 std::atomic<uint64_t> g_offThreadReads{0};  // reads from another thread, which answer Pending
 
 // The 60 s summary.
@@ -480,6 +487,7 @@ void Install() {
 
 void Begin() {
     g_wanted = true;
+    g_holdArmed = false;
     if (!g_live) TrySeed();
 }
 
@@ -509,6 +517,28 @@ void* Find(const std::wstring& key) {
 
 Read AnotherHolder(const std::wstring& key, void* self, void** other) {
     return Ask(key, self, other, /*catchUp=*/false);
+}
+
+bool CanAnswer() {
+    if (!g_wanted) return true;  // no session index to wait for
+    {
+        // Read once: ResolveInt reads the ini from disk.
+        static const long sHoldSec = coop::config::ResolveInt(coop::config_registry::rows::key_index_gate_hold_sec);
+        if (sHoldSec > 0) {
+            const auto now = Clock::now();
+            if (!g_holdArmed) {
+                g_holdArmed = true;
+                g_holdUntil = now + std::chrono::seconds(sHoldSec);
+            }
+            if (now < g_holdUntil) return false;
+        }
+    }
+    // Live comes on the first session tick after the four names resolve, and an any-class name watch never
+    // dies; a build whose script gate did not arm never starts a session. The per-batch drain reaches a zero
+    // backlog on its own: a gate asked every tick never drains (DrainAll answers a miss, not a tick). A birth
+    // still loading does not hold the gate, since one after another could hold it without end; a read that
+    // meets one answers Pending, and the summary counts it.
+    return g_live && OI::Backlog() == 0;
 }
 
 size_t Size() { return g_bySlot.size(); }

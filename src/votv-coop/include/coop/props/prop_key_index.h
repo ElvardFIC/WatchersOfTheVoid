@@ -55,6 +55,11 @@ void* Find(const std::wstring& key);
 // `other` is set on Hit when given.
 Read AnotherHolder(const std::wstring& key, void* self, void** other = nullptr);
 
+// Whether a read now is answered by an index that holds this world: seeded, and the object index's last drain
+// left no backlog. The client's world-ready gate asks it, so the host's world arrives on an index that holds
+// this one. True outside a session.
+bool CanAnswer();
+
 // How many props the index holds now, for a diagnostic line.
 size_t Size();
 

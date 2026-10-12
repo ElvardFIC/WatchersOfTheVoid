@@ -132,11 +132,15 @@ enum class WorldGate : uint8_t {
     RegistryOtherWorld,  // it is seeded, but for a world that is not the one we loaded
     RegistryPurging,     // it is draining a dead world
     WorldSettling,       // the load tail has not quiesced -- the ONE gate with its own bound
+    KeyIndexPending,     // the prop key index has not caught up with the loaded world
 };
 
 // The pump's per-tick report while the announce is pending. A gate that CHANGED is progress; the
 // same gate again is not, and is not logged either. Client, game thread.
 void NoteWorldReadyGate(WorldGate gate);
+
+// The sentence a gate is named by, for a waiter outside a join (a re-announce after a world change).
+const char* WorldGateText(WorldGate gate);
 
 // This client announced world-ready: the wait is the host's from here (its bracket, deferred or
 // streaming). Driven by the pump at the announce. Accepts LoadingWorld (a menu-mode join whose
