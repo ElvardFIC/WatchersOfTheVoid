@@ -741,6 +741,11 @@ CFG_FLAG(init_seam_probe, "init_seam_probe", "dev", false, "VOTVCOOP_INIT_SEAM_P
     "Probe: a script-gate watch on every Init body of a keyed prop, counted by the body's owning "
     "class, its caller, whether it runs inside another Init of the same object and whether the key "
     "is still unset; logged every 30 s and at each world change. Holds the gate; read-only.")
+CFG_FLAG(key_parity_probe, "key_parity_probe", "dev", false, "VOTVCOOP_KEY_PARITY_PROBE",
+    "Probe: a shadow prop key index fed only by script-gate POST watches on init, setKey, getKey and "
+    "loadData, and the key index the mod keeps, each compared every 2 s against a walk of the live keyed "
+    "props; logs the props each lacks or holds under another key, with examples per world. Holds the "
+    "gate; read-only but for the slot serials it assigns.")
 CFG_FLAG(selftest_break_permissions, "selftest_break_permissions", "dev", false, "VOTVCOOP_SELFTEST_BREAK_PERMISSIONS",
     "Red arm of the permissions selftest: its first case expects the opposite answer, so it must fail.")
 CFG_FLAG(selftest_break_action_log, "selftest_break_action_log", "dev", false, "VOTVCOOP_SELFTEST_BREAK_ACTION_LOG",
