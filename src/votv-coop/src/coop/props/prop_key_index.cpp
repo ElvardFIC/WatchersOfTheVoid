@@ -4,6 +4,7 @@
 
 #include "coop/config/config.h"            // [dev] key_index_gate_hold_sec
 #include "coop/config/config_registry.h"
+#include "coop/element/object_scan_hub.h"  // the parity pass rides its slices
 #include "coop/player/hand_item.h"         // CollectHandAxisActors: a hand is never a holder
 #include "coop/player/players_registry.h"  // kMaxPeers
 #include "ue_wrap/actors/prop.h"           // KeyFieldOf, ReadKeyField
@@ -84,6 +85,9 @@ bool g_live = false;    // seeded in this hold
 bool g_deadSaid = false;
 bool g_namesSettled = false;  // all four watches live or dead for good
 bool g_staleParkSaid = false;
+bool g_findPendingSaid = false;  // the first Find that met Pending this session is named
+bool g_forgotOne = false;        // [dev] key_index_forget_one: done for this session
+const char* g_pendingWhy = "";   // why the last Pending was answered, for the line that names one
 uint64_t g_offThreadBase = 0;  // the script gate's off-thread count when the summary window opened
 // [dev] key_index_gate_hold_sec: CanAnswer answers false for that long from its first ask in a session, the one way
 // to stage the world-ready gate's wait on this index, which on a healthy run is Live and caught up before the gate
@@ -95,7 +99,7 @@ std::atomic<uint64_t> g_offThreadReads{0};  // reads from another thread, which 
 // The 60 s summary.
 struct Sum {
     uint64_t births = 0, deaths = 0, postsIn = 0, postsOut = 0, reindexed = 0, reads = 0, hits = 0, misses = 0,
-             pending = 0, catchUps = 0, unobserved = 0, pruned = 0;
+             pending = 0, findPending = 0, catchUps = 0, unobserved = 0, pruned = 0, visited = 0;
     size_t parkedHigh = 0;
 };
 Sum g_sum;
@@ -235,6 +239,16 @@ bool ParkedHoldsPending() {
     return young;
 }
 
+// A filing the feeds missed, found by a read (a key that moved through a body no watch saw) or by the parity
+// pass (a prop never filed, or filed under a key it no longer holds): one count for the run, the first named
+// with what found it, counted before it is filed again so the repair can never be what makes the count zero.
+void NoteUnobserved(void* obj, int32_t idx, const wchar_t* was, const char* foundBy) {
+    if (++g_sum.unobserved == 1)
+        UE_LOGW("prop_key_index: a filing the feeds missed -- %ls slot=%d filed under '%ls' (found by %s; filed "
+                "again; the first of this run)",
+                R::ClassNameOf(obj).c_str(), idx, was, foundBy);
+}
+
 // Holders whose object is gone, dropped in one pass: a death the object index reports for a slot it
 // never listed reaches no listener, so the read's own drop is not the only collector.
 void PruneDead() {
@@ -319,10 +333,7 @@ void* Best(const std::wstring& key, void* world, void* skip) {
     }
     for (const Holder& h : dead) DropHolder(key, h.idx, h.obj);
     for (const Holder& h : moved) {
-        if (++g_sum.unobserved == 1)
-            UE_LOGW("prop_key_index: a key changed with no watched body -- %ls slot=%d was '%ls', now another key "
-                    "(re-indexed; the first of this run)",
-                    R::ClassNameOf(h.obj).c_str(), h.idx, key.c_str());
+        NoteUnobserved(h.obj, h.idx, key.c_str(), "a read: the key changed");
         Index(h.obj, h.idx, FieldOf(R::ClassOf(h.obj)));
     }
     return best;
@@ -333,13 +344,14 @@ void* Best(const std::wstring& key, void* world, void* skip) {
 Read Ask(const std::wstring& key, void* skip, void** out, bool catchUp) {
     if (!ue_wrap::game_thread::IsGameThread()) {
         g_offThreadReads.fetch_add(1, std::memory_order_relaxed);
-        return Read::Pending;
+        return Read::Pending;  // no reason kept: g_pendingWhy is the game thread's
     }
     ++g_sum.reads;
     // No current world is "not yet" across a travel; on a build whose world lookup could not resolve it is
     // for good, and the world term fails open there, as world_identity asks of a term that guards a read.
     void* const world = WI::CurrentWorld();
     if (!g_live || (!world && !WI::Degraded())) {
+        g_pendingWhy = !g_live ? "the index is not seeded" : "no current world";
         ++g_sum.pending;
         return Read::Pending;
     }
@@ -355,6 +367,7 @@ Read Ask(const std::wstring& key, void* skip, void** out, bool catchUp) {
     }
     if (!catchUp) {
         if (ParkedHoldsPending()) {
+            g_pendingWhy = "a prop still loading may hold it";
             ++g_sum.pending;
             return Read::Pending;
         }
@@ -365,6 +378,7 @@ Read Ask(const std::wstring& key, void* skip, void** out, bool catchUp) {
     // finished loading, and ask again. A miss after that is the truth now.
     ++g_sum.catchUps;
     if (OI::DrainAll() == SIZE_MAX) {
+        g_pendingWhy = "asked inside an object-index drain";
         ++g_sum.pending;
         return Read::Pending;
     }
@@ -375,11 +389,65 @@ Read Ask(const std::wstring& key, void* skip, void** out, bool catchUp) {
         return Read::Hit;
     }
     if (ParkedHoldsPending()) {
+        g_pendingWhy = "a prop still loading may hold it";
         ++g_sum.pending;
         return Read::Pending;
     }
     ++g_sum.misses;
     return Read::Miss;
+}
+
+// ---- the parity pass ----
+//
+// A scan-hub consumer over every class with a key field: an object the hub hands out (live, readable, in the
+// current world, its slot still holding it) whose key the store does not file in that slot, with that serial,
+// under that key, is a filing the feeds missed. MTA asserts the same parity at each mutation
+// (reference/mtasa-blue/Server/mods/deathmatch/logic/CPlayerManager.cpp:395,403), a debug assert compiled out of
+// a release, with no repair; ours runs in the shipped build and files the prop again, since a filing missed here
+// is a prop no read by key finds.
+bool ParityReady() { return g_live; }
+bool ParityIsInstance(void* obj) { return FieldOf(R::ClassOf(obj)) != KeyField::None; }  // class-pure
+void ParityBegin(void*, bool) {}
+
+void ParityMatch(void*, void* obj) {
+    if (!g_live) return;
+    ++g_sum.visited;
+    const KeyField f = FieldOf(R::ClassOf(obj));
+    const int32_t idx = R::InternalIndexOf(obj);
+    if (f == KeyField::None || idx < 0 || !R::IsLiveByIndex(obj, idx)) return;
+    const R::FName key = ue_wrap::prop::ReadKeyField(obj, f);
+    const auto st = g_bySlot.find(idx);
+    const bool slotIsIt = st != g_bySlot.end() && st->second.obj == obj && st->second.serial == R::SlotSerial(idx);
+    // A prop without a key is filed nowhere; one with a key is filed under it.
+    if (key.ComparisonIndex == 0 ? !slotIsIt : (slotIsIt && SameName(st->second.key, key))) return;
+    if (R::NameStartsWith(R::NameOf(obj), L"Default__")) return;  // never filed: it holds the class's default
+    for (const Parked& p : g_parked) {
+        if (p.idx == idx && p.obj == obj) {  // finished loading since ReadParked ran: filed now, not a miss
+            Index(obj, idx, f);
+            return;
+        }
+    }
+    NoteUnobserved(obj, idx, slotIsIt ? st->second.keyStr.c_str() : L"(nothing)", "the parity pass");
+    Index(obj, idx, f);
+}
+
+size_t ParityComplete(void*, bool, uint32_t) { return g_bySlot.size(); }
+
+// [dev] key_index_forget_one: once a session, one filed prop of the current world is dropped from the store, the
+// miss the parity pass exists to find; the pass must name it and file it again within a full pass.
+void ForgetOneIfAsked() {
+    static const bool sOn = coop::config::ResolveFlag(coop::config_registry::rows::key_index_forget_one);
+    if (!sOn || g_forgotOne) return;
+    void* const world = WI::CurrentWorld();
+    if (!world) return;
+    for (const auto& [idx, e] : g_bySlot) {
+        if (!R::IsLiveByIndex(e.obj, idx) || WI::WorldOf(e.obj) != world) continue;
+        UE_LOGI("prop_key_index: [dev] key_index_forget_one dropped %ls slot=%d key '%ls' from the store",
+                R::ClassNameOf(e.obj).c_str(), idx, e.keyStr.c_str());
+        g_forgotOne = true;
+        Unindex(idx);
+        return;
+    }
 }
 
 // ---- the session ----
@@ -442,16 +510,18 @@ void SummaryIfDue() {
     const uint64_t gateOffThread = SG::GetStats().offGameThread;
     UE_LOGI("prop_key_index: summary (60s): keys=%zu props=%zu parked=%zu (high %zu) births=%llu deaths=%llu "
             "posts=%llu in-domain/%llu other reindexed=%llu reads=%llu hit=%llu miss=%llu pending=%llu "
-            "catch-ups=%llu off-thread=%llu unobserved=%llu pruned=%llu gate-off-thread=%llu",
+            "find-pending=%llu catch-ups=%llu off-thread=%llu unobserved=%llu pruned=%llu parity-visited=%llu "
+            "gate-off-thread=%llu",
             g_byKey.size(), g_bySlot.size(), g_parked.size(), g_sum.parkedHigh,
             static_cast<unsigned long long>(g_sum.births), static_cast<unsigned long long>(g_sum.deaths),
             static_cast<unsigned long long>(g_sum.postsIn), static_cast<unsigned long long>(g_sum.postsOut),
             static_cast<unsigned long long>(g_sum.reindexed), static_cast<unsigned long long>(g_sum.reads),
             static_cast<unsigned long long>(g_sum.hits), static_cast<unsigned long long>(g_sum.misses),
-            static_cast<unsigned long long>(g_sum.pending), static_cast<unsigned long long>(g_sum.catchUps),
+            static_cast<unsigned long long>(g_sum.pending), static_cast<unsigned long long>(g_sum.findPending),
+            static_cast<unsigned long long>(g_sum.catchUps),
             static_cast<unsigned long long>(g_offThreadReads.exchange(0, std::memory_order_relaxed)),
             static_cast<unsigned long long>(g_sum.unobserved),
-            static_cast<unsigned long long>(g_sum.pruned),
+            static_cast<unsigned long long>(g_sum.pruned), static_cast<unsigned long long>(g_sum.visited),
             static_cast<unsigned long long>(gateOffThread - g_offThreadBase));
     g_offThreadBase = gateOffThread;
     const uint64_t unobserved = g_sum.unobserved;
@@ -480,6 +550,9 @@ void Install() {
                     SG::WatchName(kRowLoadData, kTag, nullptr, &OnPost);
     g_watchRefused = !ok;
     g_listening = OI::AddListener(OI::Listener{nullptr, &OnCreated, &OnDeleted});
+    coop::element::scan_hub::Register(coop::element::scan_hub::Consumer{
+        "prop_key_parity", nullptr, &ParityReady, &ParityIsInstance, &ParityBegin, &ParityMatch, &ParityComplete,
+        /*settleScans*/ 0});  // demand-exempt: rides the tail passes and the full backstop
     if (g_watchRefused || !g_listening)
         UE_LOGE("prop_key_index: install incomplete (watches %s, listener %s)", ok ? "taken" : "REFUSED",
                 g_listening ? "taken" : "REFUSED");
@@ -488,6 +561,8 @@ void Install() {
 void Begin() {
     g_wanted = true;
     g_holdArmed = false;
+    g_findPendingSaid = false;
+    g_forgotOne = false;
     if (!g_live) TrySeed();
 }
 
@@ -505,6 +580,7 @@ void Tick() {
     if (!g_live) return;
     RefreshHand();
     if (!g_parked.empty()) ReadParked();
+    ForgetOneIfAsked();
     SummaryIfDue();
 }
 
@@ -512,7 +588,19 @@ Read Resolve(const std::wstring& key, void** out) { return Ask(key, nullptr, out
 
 void* Find(const std::wstring& key) {
     void* actor = nullptr;
-    return Ask(key, nullptr, &actor, /*catchUp=*/true) == Read::Hit ? actor : nullptr;
+    const Read r = Ask(key, nullptr, &actor, /*catchUp=*/true);
+    // A Pending here is answered as no holder, the one place "not yet" becomes "not here": counted apart, and the
+    // first of a session named, since a run that shows none is the evidence this costs nothing.
+    if (r == Read::Pending && g_wanted && ue_wrap::game_thread::IsGameThread()) {
+        ++g_sum.findPending;
+        if (!g_findPendingSaid) {
+            g_findPendingSaid = true;
+            UE_LOGW("prop_key_index: a read by key could not be answered -- '%ls' (%s); its caller takes it as no "
+                    "holder (the first this session)",
+                    key.c_str(), g_pendingWhy);
+        }
+    }
+    return r == Read::Hit ? actor : nullptr;
 }
 
 Read AnotherHolder(const std::wstring& key, void* self, void** other) {

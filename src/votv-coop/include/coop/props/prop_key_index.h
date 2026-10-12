@@ -33,7 +33,8 @@ void Install();
 // index once the four watches are live (until then, and for good if one is dead, the reads answer Pending).
 // End when it lets go: the store is cleared, since a write while no session holds the gate goes unobserved.
 // Tick on each session tick: a seed still owed, the births parked while their object loaded, the hand set,
-// the 60 s summary.
+// the 60 s summary. A scan-hub consumer checks the store against the live props in the hub's slices and files
+// again what the feeds missed, counted as unobserved.
 void Begin();
 void End();
 void Tick();
@@ -47,7 +48,8 @@ enum class Read : uint8_t { Hit, Miss, Pending };
 // a player's hand are never one. `out` is set on Hit only.
 Read Resolve(const std::wstring& key, void** out);
 
-// Resolve for a caller whose "not yet" and "not here" are the same answer: the actor on Hit, else null.
+// Resolve for a caller whose "not yet" and "not here" are the same answer: the actor on Hit, else null. A
+// Pending answered so is counted in the summary, and the first of a session is named.
 void* Find(const std::wstring& key);
 
 // Whether an actor other than `self` holds `key`, by the same rule: a uniqueness check at enrolment, which
