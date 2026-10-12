@@ -92,8 +92,9 @@ void SetObserver(const Observer& o);
 // index of a few classes as current as this one: after the observer's callbacks for a birth, before the
 // unlink for a death, which carries the class the slot was listed under (a tenant replaced before its own
 // death drained is reported dead too). Seeded objects are not reported, so a listener enumerates what it
-// needs with ForEachInstance when it starts. A callback must not create or destroy objects. At most four;
-// false when full. Game thread. Source keeps entity listeners the same way
+// needs with ForEachInstance when it starts. A death's object may already be freed: compare its pointer,
+// never read through it. A callback must not create or destroy objects. At most four, a second add of the
+// same callbacks a no-op; false when full. Game thread. Source keeps entity listeners the same way
 // (reference/source-sdk-2013/src/game/server/entitylist.h:343, IEntityListener).
 struct Listener {
     void* ctx;

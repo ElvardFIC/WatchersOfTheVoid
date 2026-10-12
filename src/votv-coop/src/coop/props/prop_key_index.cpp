@@ -15,6 +15,7 @@
 #include "ue_wrap/engine/world_identity.h"
 #include "ue_wrap/facts/function_row.h"
 
+#include <atomic>
 #include <chrono>
 #include <climits>
 #include <cstdint>
@@ -64,7 +65,9 @@ struct Parked {
 };
 // A birth still loading after this long stops holding a miss at Pending: loading is seconds, and one
 // object stuck in it must not keep every miss from being an answer. It stays parked and is still indexed
-// when it finishes; the first one this happens to is named.
+// when it finishes; the first one this happens to is named. Source tells its listeners when an entity has
+// finished spawning (entitylist.cpp:1176, OnEntitySpawned); the engine's object notifications here carry
+// no such event, so a birth still loading is polled until it reads as loaded.
 constexpr auto kParkedHoldsPending = std::chrono::seconds(5);
 
 std::unordered_map<std::wstring, std::vector<Holder>> g_byKey;
@@ -80,11 +83,12 @@ bool g_deadSaid = false;
 bool g_namesSettled = false;  // all four watches live or dead for good
 bool g_staleParkSaid = false;
 uint64_t g_offThreadBase = 0;  // the script gate's off-thread count when the summary window opened
+std::atomic<uint64_t> g_offThreadReads{0};  // reads from another thread, which answer Pending
 
 // The 60 s summary.
 struct Sum {
     uint64_t births = 0, deaths = 0, postsIn = 0, postsOut = 0, reindexed = 0, reads = 0, hits = 0, misses = 0,
-             pending = 0, offThread = 0, catchUps = 0, unobserved = 0, pruned = 0;
+             pending = 0, catchUps = 0, unobserved = 0, pruned = 0;
     size_t parkedHigh = 0;
 };
 Sum g_sum;
@@ -168,10 +172,19 @@ void Index(void* obj, int32_t idx, KeyField f) {
     ++g_sum.reindexed;
 }
 
-// A domain object the index meets: indexed if readable, parked while it still loads. A class default
-// object holds the class's default key and is never an instance.
+// A domain object the index meets: indexed if readable, parked while it still loads. One the slot already
+// files is re-read straight away (a write after its birth); otherwise an object marked for death is left
+// out, and a class default object, which holds the class's default key, is never an instance.
 void Admit(void* obj, int32_t idx, KeyField f) {
+    const auto st = g_bySlot.find(idx);
+    if (st != g_bySlot.end() && st->second.obj == obj && st->second.serial == R::SlotSerial(idx)) {
+        Index(obj, idx, f);
+        return;
+    }
+    if (!R::IsLiveByIndex(obj, idx)) return;
     if (R::SlotFlags(idx) & R::slot_flags::NotYetReadable) {
+        for (const Parked& p : g_parked)
+            if (p.idx == idx && p.obj == obj) return;  // parked already
         g_parked.push_back(Parked{obj, idx, Clock::now()});
         if (g_parked.size() > g_sum.parkedHigh) g_sum.parkedHigh = g_parked.size();
         return;
@@ -270,7 +283,7 @@ Verdict Judge(const Holder& h, void* world) {
     if (f == KeyField::None) return Verdict::Dead;
     if (!SameName(ue_wrap::prop::ReadKeyField(h.obj, f), h.key)) return Verdict::Moved;
     if (ue_wrap::engine::IsChildActor(h.obj) || IsHand(h.obj)) return Verdict::Excluded;
-    if (WI::WorldOf(h.obj) != world) return Verdict::Excluded;
+    if (world && WI::WorldOf(h.obj) != world) return Verdict::Excluded;
     return Verdict::Counts;
 }
 
@@ -311,12 +324,14 @@ void* Best(const std::wstring& key, void* world, void* skip) {
 // "none indexed now", which a uniqueness check at enrolment asks for, run inside a script body.
 Read Ask(const std::wstring& key, void* skip, void** out, bool catchUp) {
     if (!ue_wrap::game_thread::IsGameThread()) {
-        ++g_sum.offThread;
+        g_offThreadReads.fetch_add(1, std::memory_order_relaxed);
         return Read::Pending;
     }
     ++g_sum.reads;
+    // No current world is "not yet" across a travel; on a build whose world lookup could not resolve it is
+    // for good, and the world term fails open there, as world_identity asks of a term that guards a read.
     void* const world = WI::CurrentWorld();
-    if (!g_live || !world) {
+    if (!g_live || (!world && !WI::Degraded())) {
         ++g_sum.pending;
         return Read::Pending;
     }
@@ -372,7 +387,7 @@ void TrySeed() {
     // A session's first tick can come before the frame tail's first install: install here too, and wait
     // while the script gate itself is not armed.
     Install();
-    if (!g_installed) return;
+    if (!g_installed || g_deadSaid) return;
     if (g_watchRefused || !g_listening || WatchDead(kRowInit) || WatchDead(kRowSetKey) || WatchDead(kRowGetKey) ||
         WatchDead(kRowLoadData)) {
         if (!g_deadSaid) {
@@ -384,8 +399,10 @@ void TrySeed() {
     }
     if (!WatchLive(kRowInit) || !WatchLive(kRowSetKey) || !WatchLive(kRowGetKey) || !WatchLive(kRowLoadData))
         return;  // a name still resolving: the next tick
+    if (!OI::IsSeeded()) return;  // the object index's own first drain is still to come
+    // No catch-up here: a birth the object index has not applied yet reaches the listener once Live, and an
+    // object whose death is still queued is refused by every read until its death drains.
     const auto t0 = Clock::now();
-    if (OI::DrainAll() == SIZE_MAX) return;
     g_byKey.clear();
     g_bySlot.clear();
     g_parked.clear();
@@ -423,7 +440,8 @@ void SummaryIfDue() {
             static_cast<unsigned long long>(g_sum.reindexed), static_cast<unsigned long long>(g_sum.reads),
             static_cast<unsigned long long>(g_sum.hits), static_cast<unsigned long long>(g_sum.misses),
             static_cast<unsigned long long>(g_sum.pending), static_cast<unsigned long long>(g_sum.catchUps),
-            static_cast<unsigned long long>(g_sum.offThread), static_cast<unsigned long long>(g_sum.unobserved),
+            static_cast<unsigned long long>(g_offThreadReads.exchange(0, std::memory_order_relaxed)),
+            static_cast<unsigned long long>(g_sum.unobserved),
             static_cast<unsigned long long>(g_sum.pruned),
             static_cast<unsigned long long>(gateOffThread - g_offThreadBase));
     g_offThreadBase = gateOffThread;

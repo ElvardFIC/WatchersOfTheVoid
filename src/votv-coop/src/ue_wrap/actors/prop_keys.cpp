@@ -97,9 +97,10 @@ std::wstring GetInteractableKeyString(void* obj) {
 
 KeyField KeyFieldOf(void* cls) {
     if (!cls) return KeyField::None;
-    if (IsClassDescendantOfProp(cls)) return KeyField::Prop;
-    // The object index answers a class that is not loaded in one lookup; FindClass would walk the
-    // object array on every such miss, once per class asked.
+    // Both bases through the object index, which answers a class that is not loaded in one lookup; FindClass
+    // would walk the object array on every such miss, once per class asked.
+    void* prop = object_index::ClassByName(P::name::PropClass);
+    if (prop && WalksToBase(cls, prop)) return KeyField::Prop;
     void* bits = object_index::ClassByName(L"trashBitsPile_C");
     return (bits && WalksToBase(cls, bits)) ? KeyField::ActorSave : KeyField::None;
 }

@@ -322,8 +322,8 @@ bool Install() {
     if (g_installed) return true;
     if (!uobject_listeners::Install()) return false;
     g_installed = true;
-    // The index's one driver: the dispatcher drains it before every batch of posted tasks, the boot's
-    // included. A drain only the play loop made left every boot task an unseeded index, and the boot's
+    // The index's steady driver: the dispatcher drains it before every batch of posted tasks, the boot's
+    // included (DrainAll is the other, asked for by a reader that needs it current now). A drain only the play loop made left every boot task an unseeded index, and the boot's
     // save load, which asks it for the game instance, retried for two minutes and gave up.
     game_thread::SetPumpPrologue(&DrainBeforeTasks);
     return true;
@@ -381,7 +381,12 @@ size_t DrainAll() {
 
 bool AddListener(const Listener& l) {
     UE_ASSERT_GAME_THREAD("object_index::AddListener");
-    if ((!l.OnCreated && !l.OnDeleted) || g_listenerCount >= kMaxListeners) return false;
+    if (!l.OnCreated && !l.OnDeleted) return false;
+    for (size_t i = 0; i < g_listenerCount; ++i)
+        if (g_listeners[i].ctx == l.ctx && g_listeners[i].OnCreated == l.OnCreated &&
+            g_listeners[i].OnDeleted == l.OnDeleted)
+            return true;  // registered already
+    if (g_listenerCount >= kMaxListeners) return false;
     g_listeners[g_listenerCount++] = l;
     return true;
 }

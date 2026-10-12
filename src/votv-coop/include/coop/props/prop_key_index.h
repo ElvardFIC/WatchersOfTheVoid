@@ -16,9 +16,10 @@
 #include <string>
 #include <vector>
 
-// MTA's id map is minted by its owner (CElementIDs::PopUniqueID), so it is complete and unique by
-// construction and its read refuses an element being deleted. Here the game and the save mint the keys, so
-// every holder of a key is kept and a miss is answered only after the object index has caught up.
+// MTA's id map is minted by its owner (PopUniqueID,
+// reference/mtasa-blue/Server/mods/deathmatch/logic/CElementIDs.cpp:23), so it is complete and unique by
+// construction, and its read refuses an element being deleted (:57). Here the game and the save mint the
+// keys, so every holder of a key is kept and a miss is answered only after the object index has caught up.
 // Game thread, all of it.
 namespace coop::prop_key_index {
 

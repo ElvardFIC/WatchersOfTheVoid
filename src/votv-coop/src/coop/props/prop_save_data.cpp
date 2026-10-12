@@ -591,8 +591,10 @@ void DriveRetries() {
     int sent = 0;
     for (auto it = g_retry.begin(); it != g_retry.end() && sent < kRetriesPerFrame;) {
         if (now < it->second.nextTryMs) { ++it; continue; }
-        void* actor = coop::prop_key_index::Find(it->first);
-        if (!actor) { it = g_retry.erase(it); continue; }   // the prop is gone; nothing to re-send
+        void* actor = nullptr;
+        const auto read = coop::prop_key_index::Resolve(it->first, &actor);
+        if (read == coop::prop_key_index::Read::Pending) { ++it; continue; }  // cannot tell yet: the next frame
+        if (read == coop::prop_key_index::Read::Miss) { it = g_retry.erase(it); continue; }  // gone: nothing to re-send
         if (it->second.tries >= kMaxRetryTries) {
             UE_LOGW("prop_save_data: gave up re-sending the record for key '%ls' after %d "
                     "attempts -- that peer's copy of this prop stays divergent",

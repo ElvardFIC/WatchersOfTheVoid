@@ -123,6 +123,7 @@ constexpr int kPersistSamples = 3;
 std::unordered_map<std::wstring, int> g_lookupRun;
 int g_lookupPersistNamed = 0;
 int g_indexNamed = 0;  // the key index's misses and stale entries named, per world
+bool g_anotherChecked = false;  // the AnotherHolder check ran in this world
 
 void NoteMiss(std::unordered_map<int32_t, Run>& runs, std::unordered_map<int32_t, Run>& next, int& named,
               const char* which, void* obj, int32_t idx, const std::wstring& keyStr) {
@@ -197,7 +198,7 @@ Counts Sample() {
     }
     c.truth = truth.size();
 
-    // The index we keep today, copied (no lookup: a lookup evicts).
+    // The tracker's tracked keys, copied.
     std::vector<PT::KeyIndexEntry> live;
     PT::CollectKeyIndexEntries(live);
     std::unordered_map<void*, std::wstring> liveByActor;
@@ -299,6 +300,27 @@ Counts Sample() {
             ++c.indexWrong;
         }
     }
+    // The uniqueness read, once per world, on the first live key with a single holder: asked for that
+    // holder it must find no other (Miss), asked for nobody it must find the holder (Hit).
+    if (!g_anotherChecked) {
+        for (const Truth& t : truth) {
+            const std::wstring keyStr = R::ToString(t.key);
+            const auto h = holders.find(keyStr);
+            if (h == holders.end() || h->second != 1) continue;
+            void* other = nullptr;
+            const auto self = coop::prop_key_index::AnotherHolder(keyStr, t.obj);
+            const auto anyone = coop::prop_key_index::AnotherHolder(keyStr, nullptr, &other);
+            if (self == coop::prop_key_index::Read::Pending || anyone == coop::prop_key_index::Read::Pending) break;
+            g_anotherChecked = true;
+            const bool pass = self == coop::prop_key_index::Read::Miss &&
+                              anyone == coop::prop_key_index::Read::Hit && other == t.obj;
+            UE_LOGI("key_parity: AnotherHolder check %s key='%ls' (self -> %s, anyone -> %s)", pass ? "PASS" : "FAIL",
+                    keyStr.c_str(), self == coop::prop_key_index::Read::Miss ? "Miss" : "Hit",
+                    anyone == coop::prop_key_index::Read::Hit ? "Hit" : "Miss");
+            break;
+        }
+    }
+
     std::vector<coop::prop_key_index::DebugEntry> entries;
     coop::prop_key_index::DebugCollect(entries);
     c.indexEntries = entries.size();
@@ -385,6 +407,7 @@ void Tick() {
         g_shadowPersistNamed = 0;
         g_lookupPersistNamed = 0;
         g_indexNamed = 0;
+        g_anotherChecked = false;
         UE_LOGI("key_parity: world generation %u", gen);
     }
     if (!flip && now - s_last < std::chrono::seconds(2)) return;

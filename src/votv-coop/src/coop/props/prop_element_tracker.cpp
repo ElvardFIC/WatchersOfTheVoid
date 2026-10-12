@@ -235,8 +235,9 @@ std::wstring MarkPropElement(void* actor, const std::wstring& key, const std::ws
     // prop, since keyed identity is host-authored (a save-loaded prop adopts the host eid by key; a
     // client-born prop mints at its express seam, which broadcasts the identity in the same
     // breath). A silent census mint produced ~2,200 zombie double rows per join. The actor is
-    // key-indexed instead (the adopt burst resolves through the index; the sweep's universe reads
-    // it). Keyless (chipPile) census mints are untouched; no session keeps minting.
+    // tracked by key instead (the sweep's universe reads it; the adopt burst resolves through the key
+    // index, which holds it anyway). Keyless (chipPile) census mints are untouched; no session keeps
+    // minting.
     if (src == EnrollSource::kPassiveCensus && s != nullptr &&
         s->role() == coop::net::Role::Client && !key.empty() && key != L"None") {
         IndexKeyForActor_(actor, key, R::InternalIndexOf(actor));
@@ -256,11 +257,14 @@ std::wstring MarkPropElement(void* actor, const std::wstring& key, const std::ws
     if (isHost && !enrollKey.empty() && enrollKey != L"None") {
         const auto held = coop::prop_key_index::AnotherHolder(enrollKey, actor);
         if (held == coop::prop_key_index::Read::Pending) {
-            static std::atomic<bool> sSaid{false};
-            if (!sSaid.exchange(true))
+            // Counted, and said at the first and at each power of two, so a later skip is never silent.
+            static std::atomic<uint64_t> sUnchecked{0};
+            const uint64_t n = sUnchecked.fetch_add(1, std::memory_order_relaxed) + 1;
+            if ((n & (n - 1)) == 0)
                 UE_LOGW("prop_element_tracker: KEY-UNIQUENESS unchecked -- the key index could not answer for '%ls' "
-                        "on '%ls' (%s); enrolling under its key (said once)", enrollKey.c_str(), cls.c_str(),
-                        ue_wrap::game_thread::IsGameThread() ? "not seeded yet" : "off the game thread");
+                        "on '%ls' (%s); enrolling under its key (%llu unchecked this run)", enrollKey.c_str(),
+                        cls.c_str(), ue_wrap::game_thread::IsGameThread() ? "not ready" : "off the game thread",
+                        static_cast<unsigned long long>(n));
         } else if (held == coop::prop_key_index::Read::Hit) {
             ue_wrap::FVector dupLoc{};
             const char* const dupUnread =
@@ -289,8 +293,8 @@ std::wstring MarkPropElement(void* actor, const std::wstring& key, const std::ws
     if (!enrollKey.empty()) el->SetName(toStr(enrollKey));
     if (!cls.empty()) el->SetTypeName(toStr(cls));
     // Capture the GUObjectArray index while the actor is live, so the late-joiner snapshot can
-    // validate the pointer with IsLiveByIndex without dereferencing it after a purge; reused to
-    // seed the key index.
+    // validate the pointer with IsLiveByIndex without dereferencing it after a purge; reused for
+    // the tracked keys.
     const int32_t internalIdx = R::InternalIndexOf(actor);
     el->SetActor(actor, internalIdx);
     // AllocAndInstall into the one manager (the host range when host, the peer range when client;
@@ -313,8 +317,8 @@ std::wstring MarkPropElement(void* actor, const std::wstring& key, const std::ws
             coop::element::ElementDeleter::Get().Enqueue(std::move(taken));
         return enrollKey;
     }
-    // Index key to actor for the connect re-snapshot's O(1) wire-key de-dupe, after the commit and
-    // only on the winning path, so the index and the reverse stay consistent.
+    // Track the actor by key, after the commit and only on the winning path, so the tracked keys and
+    // the reverse stay consistent.
     IndexKeyForActor_(actor, enrollKey, internalIdx);
     // A data drive's row travels with its enrolment (drive_payload_sync): the host's, and a client's own.
     coop::drive_payload_sync::OnEnrolled(actor, static_cast<uint32_t>(eid));
