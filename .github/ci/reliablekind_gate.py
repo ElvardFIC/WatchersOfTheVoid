@@ -455,11 +455,11 @@ def check(tree: dict):
                       if ln.strip() and not ln.lstrip().startswith("#")}
         unverified = {k for k, rs in seen.items() if rs and rs[0] == "Unverified"}
         for k in sorted(unverified - listed):
-            fails.append(f"{k} is Unverified in {AUTH} but not listed in reliablekind_unverified.txt: a new "
-                         f"kind is Client or Host from its first commit.")
+            fails.append(f"{k} is Unverified in {AUTH} but not listed in reliablekind_unverified.txt: file a "
+                         f"new kind Client or Host from its first commit.")
         for k in sorted(listed - unverified):
             fails.append(f"reliablekind_unverified.txt lists {k}, which is not Unverified in {AUTH}: remove "
-                         f"the line -- the list only shrinks.")
+                         f"the line -- a kind that left Unverified leaves the list.")
 
     # --- check 4: two families claiming one kind -----------------------------------
     for name in sorted(set(enums), key=lambda k: (enums.get(k) is None, enums.get(k) or 0)):

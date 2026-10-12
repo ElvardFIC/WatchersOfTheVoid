@@ -288,8 +288,7 @@ bool HandleWorldEvent(const net::Session::ReliableMessage& msg) {
                     static_cast<size_t>(msg.payloadLen), sizeof(net::ChatLinePayload));
             break;
         }
-        // Only the host authors (a client's copy is refused at the host's receive edge,
-        // client_authorship.h): accepting one would let any peer write the lobby's permanent record.
+        // Only the host authors: the host's receive edge refuses a client's copy (client_authorship.h).
         net::ChatLinePayload lp{};
         std::memcpy(&lp, msg.payload, sizeof(lp));
         coop::chat_sync::OnChatLine(lp);
@@ -314,8 +313,7 @@ bool HandleWorldEvent(const net::Session::ReliableMessage& msg) {
                     static_cast<size_t>(msg.payloadLen), sizeof(net::CommandReplyPayload));
             break;
         }
-        // Only the host answers (a client's copy is refused at the host's receive edge,
-        // client_authorship.h): one would otherwise write lines into another peer's feed.
+        // Only the host answers: the host's receive edge refuses a client's copy (client_authorship.h).
         net::CommandReplyPayload rp{};
         std::memcpy(&rp, msg.payload, sizeof(rp));
         coop::command_sync::OnReply(rp);

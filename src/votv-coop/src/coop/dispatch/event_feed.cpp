@@ -277,8 +277,7 @@ void Update(net::Session& session, void* localPlayer) {
                         static_cast<size_t>(msg.payloadLen), sizeof(net::TeleportClientPayload));
                 break;
             }
-            // Host-only: the host's receive edge refuses a client's copy (client_authorship.h), or one
-            // client could teleport another through the host's fan-out.
+            // Host-only: the host's receive edge refuses a client's copy (client_authorship.h).
             net::TeleportClientPayload p{};
             std::memcpy(&p, msg.payload, sizeof(p));
             // NaN and Inf rejected before the engine call: K2_TeleportTo with a NaN location

@@ -371,7 +371,7 @@ bool HandleRosterRow(net::Session& session,
                         const net::Session::ReliableMessage& msg) {
     UE_ASSERT_GAME_THREAD("ledger row (HandleRosterRow)");
     // The host asserts rows and never receives one: the host's receive edge refuses a client's copy
-    // (client_authorship.h), which would inject a forged occupant or evict a real one.
+    // (client_authorship.h).
     // The park gate: until AssignPeerSlot stamps our slot we cannot tell a row about us from a row
     // about a remote peer, and misfiling it would apply the host's relayed copy of our own skin
     // and colour back onto us.
