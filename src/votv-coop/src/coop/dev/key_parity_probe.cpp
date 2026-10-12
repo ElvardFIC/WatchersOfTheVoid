@@ -8,6 +8,7 @@
 #include "coop/player/hand_item.h"  // CollectHandAxisActors: the index never holds the hand axis
 #include "coop/player/players_registry.h"  // kMaxPeers
 #include "coop/props/prop_element_tracker.h"
+#include "coop/props/prop_key_index.h"
 #include "ue_wrap/actors/prop.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/object_index.h"
@@ -97,10 +98,14 @@ struct Counts {
     size_t liveMiss = 0, liveStale = 0;
     size_t shadowMiss = 0, shadowStale = 0;
     size_t lookupKeys = 0, lookupMiss = 0, lookupWrong = 0;  // per distinct live key, through the lookup itself
+    // The key index: per distinct live key, Resolve's answer; and its entries the world no longer confirms.
+    size_t indexMiss = 0, indexWrong = 0, indexPending = 0, indexEntries = 0, indexStale = 0, indexDead = 0;
     bool operator==(const Counts& o) const {
         return truth == o.truth && dupKeys == o.dupKeys && liveMiss == o.liveMiss && liveStale == o.liveStale &&
                shadowMiss == o.shadowMiss && shadowStale == o.shadowStale && lookupKeys == o.lookupKeys &&
-               lookupMiss == o.lookupMiss && lookupWrong == o.lookupWrong;
+               lookupMiss == o.lookupMiss && lookupWrong == o.lookupWrong && indexMiss == o.indexMiss &&
+               indexWrong == o.indexWrong && indexPending == o.indexPending && indexEntries == o.indexEntries &&
+               indexStale == o.indexStale && indexDead == o.indexDead;
     }
 };
 
@@ -117,6 +122,7 @@ constexpr int kPersistSamples = 3;
 // The lookup's misses by key, the same persistence rule: consecutive samples, named once at the third.
 std::unordered_map<std::wstring, int> g_lookupRun;
 int g_lookupPersistNamed = 0;
+int g_indexNamed = 0;  // the key index's misses and stale entries named, per world
 
 void NoteMiss(std::unordered_map<int32_t, Run>& runs, std::unordered_map<int32_t, Run>& next, int& named,
               const char* which, void* obj, int32_t idx, const std::wstring& keyStr) {
@@ -169,6 +175,9 @@ Counts Sample() {
     const size_t handN = coop::hand_item::CollectHandAxisActors(hand, 1 + coop::players::kMaxPeers);
     std::vector<Truth> truth;
     truth.reserve(4096);
+    // The world the game is running: a prop of another (the menu's backdrop, a dying world) is never a
+    // key's answer, by the key index's own rule.
+    void* const world = WI::CurrentWorld();
     const int32_t n = R::NumObjects();
     for (int32_t i = 0; i < n; ++i) {
         void* obj = R::ObjectAt(i);
@@ -178,6 +187,7 @@ Counts Sample() {
         if (!R::IsLive(obj)) continue;
         if (R::NameStartsWith(R::NameOf(obj), L"Default__")) continue;
         if (ue_wrap::engine::IsChildActor(obj)) continue;
+        if (world && WI::WorldOf(obj) != world) continue;
         bool isHand = false;
         for (size_t h = 0; h < handN; ++h) isHand = isHand || hand[h] == obj;
         if (isHand) continue;
@@ -247,11 +257,11 @@ Counts Sample() {
     g_shadowRun.swap(shadowNext);
 
     // The lookup a wire key goes through, asked once per distinct live key: it must answer with an actor
-    // that carries that key. The lookup evicts a dead entry it meets, so this column is taken last.
+    // that carries that key. Asked last: a lookup that misses catches the object index up.
     std::unordered_map<std::wstring, int> lookupNext;
     for (const auto& [keyStr, holderCount] : holders) {
         ++c.lookupKeys;
-        void* found = PT::FindLiveActorByKey(keyStr);
+        void* found = coop::prop_key_index::Find(keyStr);
         bool miss = false;
         if (!found) {
             ++c.lookupMiss;
@@ -271,16 +281,55 @@ Counts Sample() {
         }
     }
     g_lookupRun.swap(lookupNext);
+
+    // The key index asked the same question, and its entries checked the other way: each must be a live
+    // object still holding the key it is filed under. An entry whose death has not drained yet counts here.
+    for (const auto& [keyStr, holderCount] : holders) {
+        void* found = nullptr;
+        const auto r = coop::prop_key_index::Resolve(keyStr, &found);
+        if (r == coop::prop_key_index::Read::Pending) {
+            ++c.indexPending;
+        } else if (r == coop::prop_key_index::Read::Miss) {
+            ++c.indexMiss;
+            if (g_indexNamed < kExamples) {
+                ++g_indexNamed;
+                UE_LOGI("key_parity: index MISS key='%ls' holders=%d", keyStr.c_str(), holderCount);
+            }
+        } else if (R::ToString(ue_wrap::prop::GetInteractableKey(found)) != keyStr) {
+            ++c.indexWrong;
+        }
+    }
+    std::vector<coop::prop_key_index::DebugEntry> entries;
+    coop::prop_key_index::DebugCollect(entries);
+    c.indexEntries = entries.size();
+    for (const auto& e : entries) {
+        if (!R::IsLiveByIndex(e.actor, e.idx)) {
+            ++c.indexDead;  // its death not drained yet: a read drops it, and so does the summary's pass
+            continue;
+        }
+        if (R::ToString(ue_wrap::prop::GetInteractableKey(e.actor)) != e.key) {
+            ++c.indexStale;
+            if (g_indexNamed < kExamples) {
+                ++g_indexNamed;
+                UE_LOGI("key_parity: index STALE entry key='%ls' slot=%d live=%d", e.key.c_str(), e.idx,
+                        R::IsLiveByIndex(e.actor, e.idx) ? 1 : 0);
+            }
+        }
+    }
     return c;
 }
 
 void Report(const Counts& c, const char* why) {
     const char* role = PT::SessionIsHost() ? "host" : (PT::SessionIsClient() ? "client" : "none");
     UE_LOGI("key_parity: %s role=%s gen=%u truth=%zu dupkeys=%zu | live miss=%zu stale=%zu | shadow miss=%zu "
-            "stale=%zu | lookup keys=%zu miss=%zu wrong=%zu | posts init=%llu setKey=%llu getKey=%llu loadData=%llu changed=%llu/%llu/%llu/%llu | "
+            "stale=%zu | lookup keys=%zu miss=%zu wrong=%zu | index miss=%zu wrong=%zu pending=%zu entries=%zu "
+            "stale=%zu dead=%zu verdict=%s | posts init=%llu setKey=%llu getKey=%llu loadData=%llu changed=%llu/%llu/%llu/%llu | "
             "offgt=%llu backlog=%zu shadow=%zu",
             why, role, WI::Generation(), c.truth, c.dupKeys, c.liveMiss, c.liveStale, c.shadowMiss, c.shadowStale,
-            c.lookupKeys, c.lookupMiss, c.lookupWrong,
+            c.lookupKeys, c.lookupMiss, c.lookupWrong, c.indexMiss, c.indexWrong, c.indexPending, c.indexEntries,
+            c.indexStale, c.indexDead,
+            c.indexEntries == 0 ? "UNSEEDED"
+                                : (c.indexMiss + c.indexWrong + c.indexPending + c.indexStale == 0 ? "PASS" : "FAIL"),
             static_cast<unsigned long long>(g_posts[kInit]), static_cast<unsigned long long>(g_posts[kSetKey]),
             static_cast<unsigned long long>(g_posts[kGetKey]), static_cast<unsigned long long>(g_posts[kLoadData]),
             static_cast<unsigned long long>(g_changed[kInit]), static_cast<unsigned long long>(g_changed[kSetKey]),
@@ -335,6 +384,7 @@ void Tick() {
         g_livePersistNamed = 0;
         g_shadowPersistNamed = 0;
         g_lookupPersistNamed = 0;
+        g_indexNamed = 0;
         UE_LOGI("key_parity: world generation %u", gen);
     }
     if (!flip && now - s_last < std::chrono::seconds(2)) return;

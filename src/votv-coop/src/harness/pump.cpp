@@ -3,6 +3,7 @@
 #include "harness/pump.h"
 
 #include "coop/comms/chat_feed.h"
+#include "coop/props/prop_key_index.h"
 #include "coop/dev/class_lifetime_probe.h"
 #include "coop/dev/init_seam_probe.h"
 #include "coop/dev/key_parity_probe.h"
@@ -84,6 +85,9 @@ void TickFrameTail() {
     coop::nameplate::Update();
     coop::dev::object_overlay::Update(); coop::dev::ragdoll_bone_overlay::Update();
     coop::chat_feed::Tick();
+    // The prop key index's watches and object-index listener, once the script gate is armed; a latched read
+    // after that.
+    coop::prop_key_index::Install();
     // [dev] The lookup parity probes, once per world, the menu's included: the singleton probe, since a
     // lookup that outlived the world it came from would show there, and the function-list probe, since
     // a class the menu loads is judged too; each a latched read when off.

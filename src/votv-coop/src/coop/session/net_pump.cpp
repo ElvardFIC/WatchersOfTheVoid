@@ -27,6 +27,7 @@
 #include "coop/world/event_fire_sync.h"  // OnClientWorldReady: the fires queued in the join window
 #include "coop/world/daily_task_sync.h"  // OnClientWorldReady: a task kept from the world left behind
 #include "coop/player/puppet_drive.h"      // the puppet array and its drive
+#include "coop/props/prop_key_index.h"     // Tick, before the tick reads its inbox
 #include "coop/props/registry_reaper.h"    // the reaper and the re-seed engine
 #include "coop/props/remote_prop_spawn.h"  // OnClientWorldReadyResetSweep (deferred prop sweep per-world reset)
 #include "coop/props/join_membership_sweep.h"  // the join claim and the divergence sweep
@@ -343,6 +344,7 @@ void Tick(coop::net::Session& session) {
     // tick (coop/session/subsystems.h). Here, since both loops that drive a session tick come through: the
     // play loop, and a menu-mode join's transfer wait, which blocks the play loop until the world load.
     coop::subsystems::HoldSessionGate();
+    coop::prop_key_index::Tick();  // a seed still owed, the births that finished loading: before any inbox read
     coop::subsystems::InstallLoadWatchers(session);
 
     // ---- Hitch and source probe (diagnostic, always on, near free) ----

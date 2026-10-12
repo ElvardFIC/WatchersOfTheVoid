@@ -38,6 +38,7 @@
 #include "coop/interactables/floppy_slot_sync.h"
 #include "coop/interactables/floppybox_sync.h"  // the disc crate LIFO lane
 #include "coop/props/container_birth.h"
+#include "coop/props/prop_key_index.h"  // Begin/End at the gate hold
 #include "coop/props/container_contents_sync.h"  // the world-container GObjStack slice
 #include "coop/props/container_view_close.h"  // a view into a container ends where the player's reach does
 #include "coop/props/prop_food_state.h"  // the food family's live state and who authors it
@@ -169,10 +170,14 @@ void HoldSessionGate() {
     ue_wrap::script_gate::Acquire("the coop session");
     coop::element::death_seam::Acquire("the coop session");
     g_sessionHoldsGate = true;
+    // The key index sees every key write from here on, so it seeds now (or on a later tick, once its watches
+    // are live).
+    coop::prop_key_index::Begin();
 }
 
 void ReleaseSessionGateHold() {
     if (!g_sessionHoldsGate) return;
+    coop::prop_key_index::End();  // a write with the gate let go goes unobserved: the next hold seeds again
     ue_wrap::script_gate::Release("the coop session");
     coop::element::death_seam::Release("the coop session");
     g_sessionHoldsGate = false;

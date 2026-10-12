@@ -1,0 +1,66 @@
+// coop/props/prop_key_index.h -- every live keyed prop of this peer by its key, for the reads that turn a
+// key on the wire into an actor: complete at every instant of a session, so "no holder" means there is no
+// such prop here.
+//
+// Membership comes from the engine's own create and delete notifications (ue_wrap/core/object_index's
+// listeners), the key from the bodies that write it: prop_C writes its key in init (from getKey, which turns
+// None into a fresh key), in loadData (which then runs init) and in the setKey event, and the one write the
+// game makes to another object's key (ATV.createContainer) is followed by that object's getKey. Script-gate
+// POST watches on those four bodies, every class, re-read the key field after each. trashBitsPile keeps
+// actor_save's key, written by its loadData and setKey. The chip pile and the garbage clump have no key field
+// and are not here (their identity is the eid).
+
+#pragma once
+
+#include <cstdint>
+#include <string>
+#include <vector>
+
+// MTA's id map is minted by its owner (CElementIDs::PopUniqueID), so it is complete and unique by
+// construction and its read refuses an element being deleted. Here the game and the save mint the keys, so
+// every holder of a key is kept and a miss is answered only after the object index has caught up.
+// Game thread, all of it.
+namespace coop::prop_key_index {
+
+// The watches and the object-index listener, registered once from the frame tail, which then drives the
+// watches' names to resolve, so they have resolved before any session. A latched read after that.
+void Install();
+
+// The session's edges. Begin when the session takes the script gate: the store is seeded from the object
+// index once the four watches are live (until then, and for good if one is dead, the reads answer Pending).
+// End when it lets go: the store is cleared, since a write while no session holds the gate goes unobserved.
+// Tick on each session tick: a seed still owed, the births parked while their object loaded, the hand set,
+// the 60 s summary.
+void Begin();
+void End();
+void Tick();
+
+// Hit: an actor holds the key now. Miss: none does, after the object index caught up. Pending: the index
+// cannot answer yet (no session seed, no current world, a birth still loading, off the game thread, or
+// inside an object-index drain).
+enum class Read : uint8_t { Hit, Miss, Pending };
+
+// The live actor of the current world that holds `key`, the lowest slot of those that do; a child actor and
+// a player's hand are never one. `out` is set on Hit only.
+Read Resolve(const std::wstring& key, void** out);
+
+// Resolve for a caller whose "not yet" and "not here" are the same answer: the actor on Hit, else null.
+void* Find(const std::wstring& key);
+
+// Whether an actor other than `self` holds `key`, by the same rule: a uniqueness check at enrolment, which
+// runs inside a script body, so it never catches the object index up: Miss here means none indexed now.
+// `other` is set on Hit when given.
+Read AnotherHolder(const std::wstring& key, void* self, void** other = nullptr);
+
+// How many props the index holds now, for a diagnostic line.
+size_t Size();
+
+// [dev] Every entry as the store holds it, for the parity probe's stale count.
+struct DebugEntry {
+    void*        actor;
+    int32_t      idx;
+    std::wstring key;
+};
+void DebugCollect(std::vector<DebugEntry>& out);
+
+}  // namespace coop::prop_key_index
