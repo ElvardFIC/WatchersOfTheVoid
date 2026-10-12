@@ -49,12 +49,24 @@ constexpr const char* kSentinelClass = "prop_garbageClump_C";  // a real class s
 // world -- which a fresh save is -- reads INCONCLUSIVE, never a false FAIL, and the alarm fix is then
 // proven by code (record_bad_classes carries the HIGH).
 constexpr int      kAlarmBurst      = 64;
+// bad_prop_key: PropDestroys naming keys no prop holds, eid 0, so the host's only route is the key; on
+// the bytes with the scan behind the key index each pays one whole-array walk.
+constexpr int      kKeyBurst        = 64;
+// bad_prop_spawn: keyed spawns of a loaded class away from every instance of it. On the bytes with the
+// scans each pays two walks, the exact-key dedupe's and the fuzzy dedupe's; the host spawns a real prop
+// for each on every bytes, the arm's known cost, so the burst is small.
+constexpr int      kSpawnBurst      = 16;
+constexpr uint32_t kSpawnEidBase    = 65500u;   // 65500..65515, below the sentinel, clear of any run's ids
+constexpr const char* kSpawnClass   = "prop_C";
 
 // record_bad_classes is proven by a large delta (~kBadNames). A clean green is zero plus the
 // sentinel spawn's own one class resolution, so anything past a handful is the walk this arc closes.
 constexpr unsigned long long kRecordRedFloor = 64;
 // bad_alarm: half the burst (see above).
 constexpr unsigned long long kAlarmRedFloor  = static_cast<unsigned long long>(kAlarmBurst) / 2;
+// The two prop arms: half the walks their red would pay, well above a window's ambient finder walks.
+constexpr unsigned long long kKeyRedFloor    = static_cast<unsigned long long>(kKeyBurst) / 2;
+constexpr unsigned long long kSpawnRedFloor  = static_cast<unsigned long long>(kSpawnBurst);
 
 constexpr auto kFailBound = std::chrono::seconds(180);  // a failure bound, never a wait
 
@@ -179,6 +191,67 @@ void SendBadAlarm(coop::net::Session* s) {
     g_send = Send::Sent;
 }
 
+void PutKey(coop::net::WireKey& w, const char* key) {
+    const size_t n = std::strlen(key);
+    std::memcpy(w.data, key, n);
+    w.len = static_cast<uint8_t>(n);
+}
+
+// The Bulk sentinel behind a burst on the same lane: its binding on the host means every message before
+// it was drained and applied, so the walk count is final when the judge reads it.
+bool SendSentinelSpawn(coop::net::Session* s, const ue_wrap::FVector& at) {
+    coop::net::PropSpawnPayload p{};
+    PutClassName(p.className, kSentinelClass);
+    p.locX = at.X + 120.f;
+    p.locY = at.Y;
+    p.locZ = at.Z;
+    p.scaleX = p.scaleY = p.scaleZ = 1.f;
+    p.elementId = kWalkSentinelEid;
+    return s->SendPropSpawn(p);
+}
+
+void SendBadPropKey(coop::net::Session* s, Arm a) {
+    ue_wrap::FVector at{};
+    void* pawn = coop::players::Registry::Get().Local();
+    if (!pawn || !ue_wrap::engine::TryGetActorLocation(pawn, at)) return;  // no body yet; wait
+    for (int i = 0; i < kKeyBurst; ++i) {
+        coop::net::PropDestroyPayload d{};
+        char key[24];
+        std::snprintf(key, sizeof(key), "nokey_%04d", i);
+        PutKey(d.key, key);
+        d.elementId = 0;
+        if (!s->SendPropDestroy(d)) { Inconclusive(a, "the PropDestroy burst was not sent"); return; }
+    }
+    if (!SendSentinelSpawn(s, at)) { Inconclusive(a, "the sentinel spawn was not sent"); return; }
+    UE_LOGI("[HOSTILE-DRILL] bad_prop_key sent %d PropDestroy + sentinel spawn (eid %u)", kKeyBurst,
+            kWalkSentinelEid);
+    g_send = Send::Sent;
+}
+
+void SendBadPropSpawn(coop::net::Session* s, Arm a) {
+    ue_wrap::FVector at{};
+    void* pawn = coop::players::Registry::Get().Local();
+    if (!pawn || !ue_wrap::engine::TryGetActorLocation(pawn, at)) return;  // no body yet; wait
+    for (int i = 0; i < kSpawnBurst; ++i) {
+        coop::net::PropSpawnPayload p{};
+        PutClassName(p.className, kSpawnClass);
+        char key[24];
+        std::snprintf(key, sizeof(key), "nospawn_%02d", i);
+        PutKey(p.key, key);
+        // A ring of spots 3 m out and 2 m up, each well clear of the others and of any prop at rest.
+        p.locX = at.X + 300.f * static_cast<float>((i % 4) - 1.5f);
+        p.locY = at.Y + 300.f * static_cast<float>((i / 4) - 1.5f);
+        p.locZ = at.Z + 200.f;
+        p.scaleX = p.scaleY = p.scaleZ = 1.f;
+        p.elementId = kSpawnEidBase + static_cast<uint32_t>(i);
+        if (!s->SendPropSpawn(p)) { Inconclusive(a, "the PropSpawn burst was not sent"); return; }
+    }
+    if (!SendSentinelSpawn(s, at)) { Inconclusive(a, "the sentinel spawn was not sent"); return; }
+    UE_LOGI("[HOSTILE-DRILL] bad_prop_spawn sent %d keyed %s spawns + sentinel spawn (eid %u)", kSpawnBurst,
+            kSpawnClass, kWalkSentinelEid);
+    g_send = Send::Sent;
+}
+
 // ---- host (judge) ----
 enum class Step { WaitArm, Judge, Done };
 Step                 g_step = Step::WaitArm;
@@ -205,8 +278,8 @@ void ArmHost(coop::net::Session* s, Arm a) {
         if (s->IsSlotWorldReady(slot)) g_slot = slot;
     if (g_slot < 0) return;
     // An id already bound would make the record arm's verdict about an earlier run's element.
-    if (a == Arm::RecordBadClasses && coop::element::Registry::Get().Get(kWalkSentinelEid)) {
-        UE_LOGW("[HOSTILE-DRILL] record_bad_classes INCONCLUSIVE: the sentinel eid was in use at arm");
+    if (a != Arm::BadAlarm && coop::element::Registry::Get().Get(kWalkSentinelEid)) {
+        UE_LOGW("[HOSTILE-DRILL] %s INCONCLUSIVE: the sentinel eid was in use at arm", ArmName(a));
         g_step = Step::Done;
         return;
     }
@@ -219,7 +292,7 @@ void ArmHost(coop::net::Session* s, Arm a) {
 }
 
 bool SentinelLanded(Arm a) {
-    if (a == Arm::RecordBadClasses) return coop::element::Registry::Get().Get(kWalkSentinelEid) != nullptr;
+    if (a != Arm::BadAlarm) return coop::element::Registry::Get().Get(kWalkSentinelEid) != nullptr;
     bool seen = false;
     const std::string want = kAlarmSentinel;
     coop::chat_log::ForEach([&](const coop::chat_log::Row& r) {
@@ -237,11 +310,14 @@ void JudgeHost(coop::net::Session* s, Arm a) {
         return;
     }
     const unsigned long long delta = ue_wrap::walk_census::ArrayWalkCountTotal() - g_walkBase;
-    const unsigned long long floor = a == Arm::RecordBadClasses ? kRecordRedFloor : kAlarmRedFloor;
+    const unsigned long long floor = a == Arm::RecordBadClasses ? kRecordRedFloor
+                                   : a == Arm::BadPropKey       ? kKeyRedFloor
+                                   : a == Arm::BadPropSpawn     ? kSpawnRedFloor
+                                                                : kAlarmRedFloor;
     if (delta >= floor)
-        Done("FAIL", a, "walked the object array %llu time(s) on an attacker's class name", delta);
-    else if (a == Arm::RecordBadClasses)
-        Done("PASS", a, "no whole-array walk on the attacker's class names (%llu)", delta);
+        Done("FAIL", a, "walked the object array %llu time(s) on the sender's names", delta);
+    else if (a != Arm::BadAlarm)
+        Done("PASS", a, "no whole-array walk on the sender's names (%llu)", delta);
     else
         // bad_alarm green is ambiguous (a bound trigger never walks either way), so it is never a PASS.
         Done("INCONCLUSIVE", a, "no walk observed (%llu); the trigger was bound -- alarm proven by code",
@@ -254,6 +330,8 @@ const char* ArmName(Arm a) {
     switch (a) {
     case Arm::RecordBadClasses: return "record_bad_classes";
     case Arm::BadAlarm:         return "bad_alarm";
+    case Arm::BadPropKey:       return "bad_prop_key";
+    case Arm::BadPropSpawn:     return "bad_prop_spawn";
     default:                    return "off";
     }
 }
@@ -262,6 +340,8 @@ void TickClient(coop::net::Session* s, Arm a) {
     if (g_send != Send::Idle || !OwnJoinOver()) return;
     if (a == Arm::RecordBadClasses) SendRecordBadClasses(s);
     else if (a == Arm::BadAlarm)    SendBadAlarm(s);
+    else if (a == Arm::BadPropKey)  SendBadPropKey(s, a);
+    else if (a == Arm::BadPropSpawn) SendBadPropSpawn(s, a);
 }
 
 void TickHostJudge(coop::net::Session* s, Arm a) {

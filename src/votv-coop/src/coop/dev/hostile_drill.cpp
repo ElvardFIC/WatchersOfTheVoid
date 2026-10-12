@@ -43,7 +43,8 @@ using Clock = std::chrono::steady_clock;
 // The walk arms (record_bad_classes, bad_alarm) live in hostile_drill_walk.cpp -- this file is
 // the dispatcher that owns the arm selection and routes those two to that module's sender and judge.
 enum class Arm { Off, SignalPark, ChatIllFormed, PropConvert, ReliableFlood, RepeatJoin,
-                 RepeatWorldReady, RepeatSaveRequest, RecordBadClasses, BadAlarm };
+                 RepeatWorldReady, RepeatSaveRequest, RecordBadClasses, BadAlarm, BadPropKey,
+                 BadPropSpawn };
 
 // Resolved once: with the environment variable unset every read would scan the ini on disk, and the
 // drill is asked per tick.
@@ -60,6 +61,8 @@ Arm ArmOf() {
              : v == "repeat_save_request" ? Arm::RepeatSaveRequest
              : v == "record_bad_classes"  ? Arm::RecordBadClasses
              : v == "bad_alarm"           ? Arm::BadAlarm
+             : v == "bad_prop_key"        ? Arm::BadPropKey
+             : v == "bad_prop_spawn"      ? Arm::BadPropSpawn
                                           : Arm::Off;
     }();
     return a;
@@ -76,6 +79,8 @@ const char* ArmName() {
     case Arm::RepeatSaveRequest: return "repeat_save_request";
     case Arm::RecordBadClasses:  return "record_bad_classes";
     case Arm::BadAlarm:          return "bad_alarm";
+    case Arm::BadPropKey:        return "bad_prop_key";
+    case Arm::BadPropSpawn:      return "bad_prop_spawn";
     default:                     return "off";
     }
 }
@@ -86,6 +91,8 @@ walk::Arm WalkArmOf() {
     switch (ArmOf()) {
     case Arm::RecordBadClasses: return walk::Arm::RecordBadClasses;
     case Arm::BadAlarm:         return walk::Arm::BadAlarm;
+    case Arm::BadPropKey:       return walk::Arm::BadPropKey;
+    case Arm::BadPropSpawn:     return walk::Arm::BadPropSpawn;
     default:                    return walk::Arm::None;
     }
 }

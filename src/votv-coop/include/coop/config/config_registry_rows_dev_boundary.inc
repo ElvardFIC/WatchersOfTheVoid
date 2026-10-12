@@ -25,7 +25,7 @@ CFG_ENUM(auth_drill, "auth_drill", "dev", "off", "off|corrupt|silent|mismatch",
 // the row only names the judge; it changes nothing the host's gates do. Off by default.
 CFG_ENUM(hostile_drill, "hostile_drill", "dev", "off",
     "off|signal_park|chat_ill_formed|prop_convert|reliable_flood|repeat_join|repeat_world_ready|"
-    "repeat_save_request|record_bad_classes|bad_alarm",
+    "repeat_save_request|record_bad_classes|bad_alarm|bad_prop_key|bad_prop_spawn",
     "VOTVCOOP_HOSTILE_DRILL",
     "Receive-boundary drill (BOTH peers). signal_park: a client floods refused saved-signal rows "
     "(size 0, so the game's own gate rejects each) and the host must keep them from filling the apply "
@@ -48,4 +48,7 @@ CFG_ENUM(hostile_drill, "hostile_drill", "dev", "off",
     "spawn (a large rise FAILs, zero PASSes). bad_alarm: a joined client sends a burst of AlarmState; without "
     "the fix an unbound alarm trigger re-walks the array per message. A world with the trigger bound cannot "
     "stage it, so this arm FAILs on an observed walk and is otherwise INCONCLUSIVE (the alarm fix is proven by "
-    "code). Drill only.")
+    "code). bad_prop_key: a joined client sends 64 PropDestroys with no element id and keys no prop holds, "
+    "then a sentinel spawn; bad_prop_spawn: 16 keyed spawns of a loaded class away from every instance of "
+    "it, then the sentinel. For both the host judges by its own whole-array walk count at the sentinel (at or "
+    "past half the walks a scan per message would pay FAILs). Drill only.")

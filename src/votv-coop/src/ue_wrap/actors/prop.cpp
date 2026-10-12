@@ -10,10 +10,12 @@
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/reflection.h"
+#include "ue_wrap/core/walk_census.h"  // the two hand-written walks below note themselves too
 #include "ue_wrap/core/sdk_profile.h"
 #include "ue_wrap/desk/tape_caddy.h"  // the reel Progress reader and writer
 
 #include <atomic>
+#include <intrin.h>  // _ReturnAddress: a walk names its caller
 #include <cmath>
 #include <cstdint>
 #include <mutex>
@@ -522,6 +524,7 @@ void* FindNearbySameClass(const std::wstring& className,
     if (className.empty() || radiusCm <= 0.f) return nullptr;
     void* base = PropBaseClass();
     if (!base) return nullptr;
+    walk_census::NoteArrayWalk(_ReturnAddress());  // a whole-array walk, counted as the finders' are
     const float r2 = radiusCm * radiusCm;
     const int32_t n = R::NumObjects();
     // The first accepted candidate, which is the result whether or not the walk runs to the end.
@@ -619,6 +622,7 @@ void* FindByKeyString(const std::wstring& keyString) {
     if (keyString.empty()) return nullptr;
     void* base = PropBaseClass();
     if (!base) return nullptr;
+    walk_census::NoteArrayWalk(_ReturnAddress());  // a whole-array walk, counted as the finders' are
     const int32_t n = R::NumObjects();
     for (int32_t i = 0; i < n; ++i) {
         void* obj = R::ObjectAt(i);
