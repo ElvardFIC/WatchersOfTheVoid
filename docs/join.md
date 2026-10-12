@@ -333,6 +333,7 @@ travel, the player is told so (`MV-J31`), unless the reason the session ended is
 | `MV-H29` | Too many connections in a short time from one address, or from one proved identity over a relayed internet route; the cap is a host setting |
 | `MV-H30` | The host runs the official build and this client another one (its build hash differs); the popup says to install the official release |
 | `MV-H31` | The host runs a modified build and this client the official one |
+| `MV-H32` | This client sent more reliable messages than the host's bound allows (a host setting), or was refused for ten minutes after such a close |
 | `MV-T01` | No answer from the host, at the dial or later |
 | `MV-T02` | No route to the host through its firewall or router |
 | `MV-T03` | The signaling server could not reach the host |

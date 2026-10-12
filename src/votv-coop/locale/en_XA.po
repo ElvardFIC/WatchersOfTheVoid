@@ -1116,6 +1116,9 @@ msgstr "[[This launch runs on environment overrides and built-in defaults; the s
 msgid "This machine has no working connection to the signaling server, so the host could not be dialled."
 msgstr "[[This machine has no working connection to the signaling server, so the host could not be dialled.]]"
 
+msgid "This machine sent the host more than a player can. Wait ten minutes before joining again."
+msgstr "[[This machine sent the host more than a player can. Wait ten minutes before joining again.]]"
+
 msgid ""
 "This rule is achievement-locked!\n"
 "Unlock this rule by getting following achievements:"

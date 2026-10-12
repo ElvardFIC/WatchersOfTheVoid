@@ -1390,6 +1390,10 @@ msgstr ""
 msgid "This machine has no working connection to the signaling server, so the host could not be dialled."
 msgstr ""
 
+#: src/coop/net/end_reason.cpp
+msgid "This machine sent the host more than a player can. Wait ten minutes before joining again."
+msgstr ""
+
 #: src/ui/world_rules_panel.cpp
 msgid ""
 "This rule is achievement-locked!\n"
