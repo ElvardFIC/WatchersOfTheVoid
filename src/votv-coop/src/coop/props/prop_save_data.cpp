@@ -10,6 +10,7 @@
 #include "ue_wrap/actors/prop.h"          // GetInteractableKeyString (the host birth path)
 #include "ue_wrap/actors/save_record.h"
 #include "ue_wrap/core/log.h"
+#include "ue_wrap/core/object_index.h"    // ClassByName -- the host's O(1) class resolve for a client's record
 #include "ue_wrap/core/reflection.h"
 
 #include <algorithm>
@@ -298,7 +299,14 @@ bool AllowIntent(uint8_t senderSlot) {
 bool TryApply(void* actor, const std::wstring& key, const SR::SaveRecord& rec) {
     if (!actor) return false;
     if (!Covers(actor)) { coop::dev::food_clock_probe::NoteRefused(actor); return false; }
-    if (!SR::ApplyRecord(actor, rec)) return false;
+    // The HOST applies only a CLIENT's record here (its receive edge refuses a canonical from a
+    // client), with its world up and the object index current: it resolves the record's class names
+    // through object_index so an attacker's unknown name is an O(1) miss, not a whole-array walk. A
+    // CLIENT applies only the host's own record, possibly mid-load with the index trailing, so it
+    // keeps the authoritative FindClass walk (A70-A; a hostile host is WP-6's). [[RECEIVE_BOUNDARY]]
+    const SR::ClassResolver resolve =
+        PT::SessionIsHost() ? &ue_wrap::object_index::ClassByName : nullptr;
+    if (!SR::ApplyRecord(actor, rec, resolve)) return false;
     ++g_appliedTotal;
     coop::dev::food_clock_probe::NoteApply(actor, key, rec);
     // The author's record has LANDED, so the host may publish this key again, and does so here, from

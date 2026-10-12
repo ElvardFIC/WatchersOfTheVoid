@@ -13,6 +13,7 @@
 #include "ue_wrap/actors/hook.h"
 #include "ue_wrap/core/game_thread.h"
 #include "ue_wrap/core/log.h"
+#include "ue_wrap/core/object_index.h"  // ClassByName -- the host's O(1) class resolve for a client's record
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/engine/engine.h"
 #include "ue_wrap/world/keyed_objects.h"
@@ -261,7 +262,7 @@ CommitResult SendCommit(uint16_t seq, H::Kind kind, void* hookActor) {
         // The host's hook IS the canonical one already -- it is not respawned, only named. The
         // record carries the minted key into it, and the two attached flags are re-asserted for
         // the same reason a client's adoption needs them.
-        if (!H::AdoptRecord(hookActor, applied)) {
+        if (!H::AdoptRecord(hookActor, applied, &ue_wrap::object_index::ClassByName)) {
             UE_LOGW("hook_anchor: loadData refused on the host's own hook seq %u", (unsigned)seq);
             return CommitResult::Failed;
         }
@@ -332,7 +333,7 @@ void OnCommitChunk(const coop::net::BlobChunkPayload& p, uint8_t senderSlot) {
         return;
     }
     const SaveRecord applied = Arbitrate(rec, senderSlot, seq, kind, H::MaxDistOf(actor));
-    if (!H::AdoptRecord(actor, applied)) {
+    if (!H::AdoptRecord(actor, applied, &ue_wrap::object_index::ClassByName)) {
         UE_LOGW("hook_anchor: loadData refused on the canonical hook for slot %u seq %u",
                 (unsigned)senderSlot, (unsigned)seq);
         E::DestroyActor(actor);
