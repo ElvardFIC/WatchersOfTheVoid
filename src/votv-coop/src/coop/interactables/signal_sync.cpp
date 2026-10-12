@@ -68,7 +68,6 @@ std::map<uint64_t, Clock::time_point> g_tombstones;
 struct ParkedRow {
     std::vector<uint8_t> blob;
     uint8_t senderSlot = 0;
-    uint32_t senderGen = 0;  // the slot's occupancy when the row arrived (Session::peerGenerationForSlot)
 };
 std::deque<ParkedRow> g_applyPark;
 constexpr size_t kParkCap = 256;
@@ -80,25 +79,8 @@ bool IsHostRole() {
     return s && s->role() == coop::net::Role::Host;
 }
 
-// The slot's occupancy generation (Session::peerGenerationForSlot), minted by the host at each admit;
-// 0 on a client, and on the host for an empty slot.
-uint32_t SlotGeneration(uint8_t slot) {
-    auto* s = g_session.load(std::memory_order_acquire);
-    return s ? s->peerGenerationForSlot(slot) : 0;
-}
-
-// The count is the host's per-sender budget input, so it is kept on the host and against the sender
-// alone: while the occupancy that sent the row still holds the slot. A row parked across its sender's
-// leave, or completed after it, is refused all the same and counted for no one, since the slot's next
-// occupant did not send it; it still applies when the game takes it, being world state the host saves
-// and has relayed at receipt. A client counts nothing: every row it gets comes through the host, and
-// bounds are for clients, never the host.
-void NoteRefusal(uint8_t slot, uint32_t senderGen, const char* why) {
-    using Charge = coop::net::RefusalTally::Charge;
-    const Charge charge = !IsHostRole()                                     ? Charge::None
-                        : senderGen != 0 && SlotGeneration(slot) == senderGen ? Charge::Sender
-                                                                              : Charge::Leaver;
-    g_refusals.Note(slot, charge, why, Clock::now());
+void NoteRefusal(uint8_t slot, const char* why) {
+    g_refusals.Note(slot, why, Clock::now());
 }
 // The client lane is mute until its own world-ready announce: a pre-ready client line reaching
 // the host before the flip rides the seed back as a duplicate. The host is always ready.
@@ -145,7 +127,7 @@ bool ApplyDeleteByHash(uint64_t hash) {
 // cannot be asked yet, which the caller parks.
 enum class ApplyVerdict { Applied, Terminal, NotNow };
 
-ApplyVerdict ApplyRowBlob(const std::vector<uint8_t>& blob, uint8_t senderSlot, uint32_t senderGen) {
+ApplyVerdict ApplyRowBlob(const std::vector<uint8_t>& blob, uint8_t senderSlot) {
     const uint64_t hash = coop::signal_wire::ContentHash(blob);
     auto t = g_tombstones.find(hash);
     if (t != g_tombstones.end()) {
@@ -156,14 +138,14 @@ ApplyVerdict ApplyRowBlob(const std::vector<uint8_t>& blob, uint8_t senderSlot, 
     }
     SD::Row row;
     if (!coop::signal_wire::Deserialize(blob, row)) {
-        NoteRefusal(senderSlot, senderGen, "the row blob is malformed");
+        NoteRefusal(senderSlot, "the row blob is malformed");
         return ApplyVerdict::Terminal;
     }
     if (!UE::EnsureResolved()) return ApplyVerdict::NotNow;
     const ue_wrap::RowApply r = UE::ApplySaveSignal(row);
     if (r.result == ue_wrap::RowApplyResult::NotNow) return ApplyVerdict::NotNow;
     if (r.result == ue_wrap::RowApplyResult::Refused) {
-        NoteRefusal(senderSlot, senderGen, r.why);
+        NoteRefusal(senderSlot, r.why);
         return ApplyVerdict::Terminal;
     }
     const int32_t n = UE::Count();
@@ -192,8 +174,8 @@ void UpdateParkPause() {
     }
 }
 
-void ParkRow(const std::vector<uint8_t>& blob, uint8_t senderSlot, uint32_t senderGen) {
-    g_applyPark.push_back({blob, senderSlot, senderGen});
+void ParkRow(const std::vector<uint8_t>& blob, uint8_t senderSlot) {
+    g_applyPark.push_back({blob, senderSlot});
     UpdateParkPause();
 }
 
@@ -202,10 +184,9 @@ void CompleteAssembly(const std::vector<uint8_t>& blob, uint8_t senderSlot) {
     // never ahead. An UNSETTLED lane (!g_primed -- join load, world travel, array still filling)
     // parks every arrival too, so the park is the ONE ordering point for the whole unsettled
     // window.
-    const uint32_t senderGen = SlotGeneration(senderSlot);
-    if (!g_applyPark.empty() || !g_primed) { ParkRow(blob, senderSlot, senderGen); return; }
-    if (ApplyRowBlob(blob, senderSlot, senderGen) == ApplyVerdict::NotNow)
-        ParkRow(blob, senderSlot, senderGen);
+    if (!g_applyPark.empty() || !g_primed) { ParkRow(blob, senderSlot); return; }
+    if (ApplyRowBlob(blob, senderSlot) == ApplyVerdict::NotNow)
+        ParkRow(blob, senderSlot);
 }
 
 // Drain the park in arrival order (called every Tick once resolve succeeds).
@@ -219,7 +200,7 @@ void DrainApplyPark() {
     if (!g_primed) return;
     while (!g_applyPark.empty()) {
         const ParkedRow& front = g_applyPark.front();
-        if (ApplyRowBlob(front.blob, front.senderSlot, front.senderGen) == ApplyVerdict::NotNow) break;
+        if (ApplyRowBlob(front.blob, front.senderSlot) == ApplyVerdict::NotNow) break;
         g_applyPark.pop_front();
     }
     UpdateParkPause();
@@ -304,7 +285,6 @@ void OnDisconnectSlot(int peerSlot) {
     // assemblies and seed bracket must not survive into a recycled occupant.
     if (peerSlot >= 0 && peerSlot < 256) {
         g_assembler.ClearSlot(static_cast<uint8_t>(peerSlot));
-        g_refusals.ClearSlot(static_cast<uint8_t>(peerSlot));  // a count is the sender's, not the slot's
     }
     g_seeder.Cancel(peerSlot);
 }

@@ -191,12 +191,14 @@ void Session::HandleMessage(int peerSlot, uint32_t hConn, const void* data, int 
     // packets must match or are dropped; ResetPeerRemoteState clears it on disconnect so the next
     // occupant re-latches. senderEpoch 0 is never latched (a sender that forgot to mint). Checked
     // under remoteMutex_, the lock every per-peer store below takes, so the latch is atomic with
-    // the reset's clear.
+    // the reset's clear. A packet it drops is said once and the rest summed per window
+    // (epochRefusals_): a sender could otherwise make the log the cost, one line per packet.
     {
         std::lock_guard<std::mutex> lk(remoteMutex_);
         if (senderEpoch == 0) {
-            UE_LOGW("net: dropping packet from slot %d with senderEpoch=0 (malformed sender)",
-                    peerSlot);
+            epochRefusals_.Note(static_cast<std::uint8_t>(peerSlot),
+                                "its senderEpoch is 0, a sender that never minted one",
+                                RefusalTally::Clock::now());
             return;
         }
         const uint32_t expected = expectedEpoch_[peerSlot];
@@ -205,13 +207,11 @@ void Session::HandleMessage(int peerSlot, uint32_t hConn, const void* data, int 
             UE_LOGI("net: latched senderEpoch=0x%08x for peer slot %d",
                     static_cast<unsigned>(senderEpoch), peerSlot);
         } else if (expected != senderEpoch) {
-            // INFO, not WARN: the common cause is a reconnect race (in-flight packets from the old
-            // connection arriving after the new one re-latched), benign and self-correcting.
-            UE_LOGI("net: stale-gen drop slot=%d expected=0x%08x got=0x%08x kind=%u",
-                    peerSlot,
-                    static_cast<unsigned>(expected),
-                    static_cast<unsigned>(senderEpoch),
-                    static_cast<unsigned>(type));
+            // The common cause is a reconnect race (in-flight packets from the old connection arriving
+            // after the new one re-latched), benign and self-correcting.
+            epochRefusals_.Note(static_cast<std::uint8_t>(peerSlot),
+                                "its senderEpoch is not the one this slot latched (an earlier connection's)",
+                                RefusalTally::Clock::now());
             return;
         }
     }
@@ -312,7 +312,7 @@ void Session::HandleMessage(int peerSlot, uint32_t hConn, const void* data, int 
                     UE_LOGW("net: refused kind %u from slot %d -- %s (client_authorship.h); later ones are "
                             "summed", static_cast<unsigned>(rh.kind), peerSlot, why);
                 } else {
-                    hostKindRefusals_.Note(static_cast<std::uint8_t>(peerSlot), RefusalTally::Charge::None, why,
+                    hostKindRefusals_.Note(static_cast<std::uint8_t>(peerSlot), why,
                                            RefusalTally::Clock::now());
                 }
                 return;

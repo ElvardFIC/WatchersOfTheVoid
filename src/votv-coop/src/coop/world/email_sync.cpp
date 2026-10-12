@@ -108,11 +108,11 @@ constexpr size_t kParkCap = 256;
 
 coop::net::RefusalTally g_refusals{"email_sync"};
 
-// Emails are host-authored: a client's append is dropped at the host's dispatch and never relayed, so
-// every row this lane receives arrives on a client, from the host. Logged, and counted for no one:
-// bounds are for clients, never the host (signal_sync's NoteRefusal).
+// Emails are host-authored: the host's receive edge refuses a client's append (client_authorship.h), so
+// every row this lane receives arrives on a client, from the host. Logged only: bounds are for clients,
+// never the host.
 void NoteRefusal(uint8_t slot, const char* why) {
-    g_refusals.Note(slot, coop::net::RefusalTally::Charge::None, why, Clock::now());
+    g_refusals.Note(slot, why, Clock::now());
 }
 
 bool IsHostRole() {

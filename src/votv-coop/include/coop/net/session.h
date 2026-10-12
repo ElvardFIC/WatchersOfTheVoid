@@ -720,6 +720,8 @@ private:
     // in a session said with its number, the rest summed. Net thread; reset by the stop, after the join.
     std::array<bool, 256> saidHostKind_{};
     RefusalTally hostKindRefusals_{"net"};
+    // The epoch latch's drops (HandleMessage), folded the same way. Net thread; cleared with the one above.
+    RefusalTally epochRefusals_{"net"};
     // The host's bound on each client's reliable messages (receive_budget.h). Net thread only.
     ReceiveBudget receiveBudget_;
     // Per-slot relay eligibility: the hConn that announced ClientWorldReady, stamped on the net

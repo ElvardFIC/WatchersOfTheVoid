@@ -1,17 +1,12 @@
-// coop/net/refusal_tally.h -- one receive lane's refusals of what its peers sent: a count per sender slot,
-// and the lane's log of them. The first refusal after a quiet spell is said at once, so a log with no
-// such line is a lane that refused nothing; the rest of a burst is summed into one line per window, so a
-// sender cannot make the log the cost. MTA bounds its unknown-event error the same way, at most one line
-// per gap (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:2696-2699); its refusal of a known
-// event a client may not trigger logs each time (:2683-2691). The per-slot
-// counts are kept for the host's per-sender budget, which no code reads yet; a refusal no budget would
-// read is logged and not counted. One thread per instance: the lanes' on the game thread, the receive edge's
-// on the net thread.
+// coop/net/refusal_tally.h -- one receive lane's log of the refusals of what its peers sent. The first refusal
+// after a quiet spell is said at once, so a log with no such line is a lane that refused nothing; the rest of a
+// burst is summed into one line per window, so a sender cannot make the log the cost. MTA bounds its unknown-event
+// error the same way, at most one line per gap (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:2696-2699);
+// its refusal of a known event a client may not trigger logs each time (:2683-2691). What a sender may send at all
+// is the receive edge's bound (receive_budget.h), not a count kept here. One thread per instance: the lanes' on the
+// game thread, the receive edge's on the net thread.
 #pragma once
 
-#include "coop/player/players_registry.h"  // kMaxPeers
-
-#include <array>
 #include <chrono>
 #include <cstdint>
 
@@ -25,35 +20,20 @@ public:
     // `lane` names the lane in every line ("signal_sync"); a static string.
     explicit RefusalTally(const char* lane) : lane_(lane) {}
 
-    // Whom one refusal is counted against.
-    enum class Charge : std::uint8_t {
-        Sender,  // the slot's occupant, which sent the row
-        Leaver,  // a sender that has left the slot since: logged as such, counted for no one
-        None,    // a row no budget reads: logged, not counted
-    };
-
     // One refusal of a row from `slot`, for the reason `why` (a static string).
-    void Note(std::uint8_t slot, Charge charge, const char* why, Clock::time_point now);
+    void Note(std::uint8_t slot, const char* why, Clock::time_point now);
     // Closes a window past its span: the burst's summed line, if more than its first refusal came.
     // Cheap when no window is open; call it from the lane's tick.
     void Flush(Clock::time_point now);
 
-    std::uint32_t From(std::uint8_t slot) const {
-        return slot < bySlot_.size() ? bySlot_[slot] : 0;
-    }
-    void ClearSlot(std::uint8_t slot) {
-        if (slot < bySlot_.size()) bySlot_[slot] = 0;
-    }
     void Clear();
 
 private:
     const char* lane_;
-    std::array<std::uint32_t, coop::players::kMaxPeers> bySlot_{};
     bool open_ = false;
     Clock::time_point openedAt_{};
     std::uint32_t more_ = 0;       // refusals in the open window after its first
     std::uint8_t lastSlot_ = 0;
-    bool lastLeft_ = false;
     const char* lastWhy_ = "";
 };
 
