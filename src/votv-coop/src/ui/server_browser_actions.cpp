@@ -13,6 +13,7 @@
 #include "coop/config/config_registry.h"           // BuildButton + the palette
 
 #include "coop/net/lobby_client.h"
+#include "coop/session/join_progress.h"  // PeekNotice: a refusal already on screen
 #include "coop/session/session_manager.h"
 #include "coop/text/utf8_codec.h"          // a looked-up (UTF-8) label, widened for the native widgets
 
@@ -85,9 +86,13 @@ void DoConnect() {
         g_lastOutcome = "connect:started";
         SB::Close();   // accepted: the loading screen owns the player from here
     } else {
-        g_lastOutcome = "connect:busy";
-        SB::SetNotice(l10n::T("Could not start that connection -- another action is already "
-                              "in flight."));
+        // A refusal before the start (the version gate, a build that starts no session) is already
+        // on screen as the connect-failed notice; only a busy action is said here.
+        coop::join_progress::Notice refusedNotice;
+        g_lastOutcome = coop::join_progress::PeekNotice(refusedNotice) ? "connect:refused" : "connect:busy";
+        if (g_lastOutcome == std::string("connect:busy"))
+            SB::SetNotice(l10n::T("Could not start that connection -- another action is already "
+                                  "in flight."));
     }
 }
 

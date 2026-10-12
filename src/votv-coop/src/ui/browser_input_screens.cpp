@@ -8,6 +8,7 @@
 
 #include "coop/config/config.h"
 #include "coop/config/config_registry.h"
+#include "coop/session/join_progress.h"  // PeekNotice: a refusal already on screen
 #include "coop/session/session_manager.h"
 #include "coop/text/utf8_codec.h"
 #include "ui/input_focus.h"
@@ -244,8 +245,11 @@ void Confirm(Kind kind) {
                            g_pendingJoin.hostGame, g_pendingJoin.hostGameBuild)) {
             // Dropped on a refusal, so it cannot ride into the next connection the player makes.
             sm::SetJoinPassword("");
-            SetStatus(s, l10n::T("Could not start that connection -- another action is already "
-                                 "in flight."), kBad);
+            // A refusal before the start is on screen as the connect-failed notice already.
+            coop::join_progress::Notice refusedNotice;
+            if (!coop::join_progress::PeekNotice(refusedNotice))
+                SetStatus(s, l10n::T("Could not start that connection -- another action is already "
+                                     "in flight."), kBad);
             return;
         }
         UE_LOGI("browser_input_screens: join with a password accepted -- join_progress "
@@ -277,8 +281,10 @@ void Confirm(Kind kind) {
     // password is non-empty, and its check sits inside that branch.
     sm::SetJoinPassword(s.field2 ? TF::Text(s.field2) : std::string());
     if (!sm::ConnectDirect(value)) {
-        SetStatus(s, l10n::T("Could not connect to that address -- check it, or another action is "
-                             "already in flight."), kBad);
+        coop::join_progress::Notice refusedNotice;
+        if (!coop::join_progress::PeekNotice(refusedNotice))
+            SetStatus(s, l10n::T("Could not connect to that address -- check it, or another action is "
+                                 "already in flight."), kBad);
         return;
     }
     // Written only after the accept gate passed: the row means the last address actually tried and

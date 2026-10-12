@@ -98,24 +98,22 @@ struct SaveChoice {
     bool        nameIsDerived = false;   // true only when no human typed `newName`
 };
 
-// Host on a chosen save: the harness loads the world or creates the new save before starting
-// the host session. The announce runs on a worker and queues a pending host-with-save the
-// harness drains via TakePendingHostWithSave. True when accepted (raise the host-boot cover and
-// close the picker); false when another action is in flight, so the caller leaves the picker
-// open and raises no cover nothing would drop. `mode` says how the session is reachable, one
-// value rather than three booleans: Brokered is master-brokered P2P, direct when NAT allows and
-// the TURN relay as the automatic fallback, always listed since the master is a relay game's
-// only rendezvous (`listed` is forced true rather than trusted); Direct is our own UDP listen
-// on net.port on every interface, reached as-is on the same network or through a forwarded
-// port, and when unlisted nothing leaves the machine (IsMasterFree). There is no LAN-only
-// choice: an accept filter refusing non-private remotes did the router's job, and the password
-// and the admission challenge are the controls on every lane. `password` is the secret the caller
-// holds (the native window its field, the fallback picker the stored row), dropped unless `locked`
-// and passed because a re-read is ini file I/O the net thread must not do. `masterUrl` is what the
-// window showed: the announce, whose master is then the lobby's relay, must go where it said.
+// Host on a chosen save: the harness loads the world or creates the new save before starting the host session. The
+// announce runs on a worker and queues a pending host-with-save the harness drains via TakePendingHostWithSave. True
+// when accepted (raise the host-boot cover, close the picker); false when this build refuses every session
+// (`refused` gets the code) or another action is in flight: the picker stays open, no cover is raised. `mode` says
+// how the session is reachable: Brokered is master-brokered P2P, direct when NAT allows and the TURN relay as the
+// automatic fallback, always listed since the master is a relay game's only rendezvous (`listed` is forced true
+// rather than trusted); Direct is our own UDP listen on net.port on every interface, reached as-is on the same
+// network or through a forwarded port, and when unlisted nothing leaves the machine (IsMasterFree). There is no LAN-
+// only choice: an accept filter refusing non-private remotes did the router's job, and the password and the
+// admission challenge are the controls on every lane. `password` is the secret the caller holds (the native window
+// its field, the fallback picker the stored row), dropped unless `locked` and passed because a re-read is ini file
+// I/O the net thread must not do. `masterUrl` is what the window showed: the announce, whose master is then the
+// lobby's relay, must go where it said.
 bool HostWithSave(const SaveChoice& choice, const std::string& name, bool locked,
                   const std::string& password, int playersMax, const std::string& masterUrl,
-                  coop::session::HostMode mode = {});
+                  coop::session::HostMode mode = {}, coop::net::Refusal* refused = nullptr);
 
 // The refusal every session start owes on this build, or None: a game whose script loop could not be hooked
 // at boot (ue_wrap/core/script_gate), or whose prop key watches were refused (coop/props/prop_key_index), never
@@ -129,7 +127,9 @@ coop::net::Refusal SubstrateRefusal();
 // row: a lobby id means nothing on another master, and the relay the join is answered with is
 // that master's. `displayName` is shown on the loading screen. Raises the
 // browser-only loading state and drops it again on a master or HTTP failure. True when accepted
-// (the browser should close); false when another action is in flight. `hostProto` and
+// (the browser should close); false when it is refused before it starts (the version gate, or a build
+// that refuses every session: the connect-failed notice is then up, join_progress::PeekNotice) or another
+// action is in flight. `hostProto` and
 // `hostGame` are the row's announced identity pair and `hostGameBuild` the game build the host runs:
 // the equality gate rejects here with the connect-failed popup, and 0 or empty (an older host, or a
 // master older than the field) skips that tier, leaving the wire gate as the backstop.

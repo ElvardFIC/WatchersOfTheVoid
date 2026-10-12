@@ -342,10 +342,11 @@ bool RowsHaveData() { return Client().HasData(); }
 
 namespace {
 // A host this build cannot start, refused before its lobby is announced or its world loads, with the code and
-// the sentence on the host's status line (the hosting window paints it).
-bool HostRefusedBySubstrate() {
+// the sentence on the host's status line (the hosting window paints it); `out` gets the refusal when given.
+bool HostRefusedBySubstrate(net::Refusal* out = nullptr) {
     const net::Refusal r = SubstrateRefusal();
     if (r.code == net::EndReason::None) return false;
+    if (out) *out = r;
     const auto& info = net::Describe(r.code);
     UE_LOGW("session_manager: HOST refused -- [%s] %s (%s)", info.id, info.text, r.detail.c_str());
     SetHostStatus(std::string("Host failed [") + info.id + "]: " + info.text);
@@ -413,8 +414,9 @@ void AnnounceEnvHostHidden(const std::string& name, const std::string& world) {
 
 bool HostWithSave(const SaveChoice& choice, const std::string& name, bool locked,
                   const std::string& password, int playersMax, const std::string& masterUrl,
-                  coop::session::HostMode mode) {
-    if (HostRefusedBySubstrate()) return false;
+                  coop::session::HostMode mode, net::Refusal* refused) {
+    if (refused) *refused = net::Refusal{};
+    if (HostRefusedBySubstrate(refused)) return false;
     if (g_actionBusy.exchange(true)) { UE_LOGW("session_manager: action busy -- HostWithSave ignored"); return false; }
     // The secret this session will require, resolved once and carried into whichever host path
     // runs: empty unless `locked`, so the caller's bool alone decides whether the lock has teeth.

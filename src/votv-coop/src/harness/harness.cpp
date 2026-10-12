@@ -515,8 +515,8 @@ void Start() {
     // rather than reaching back into the lifecycle driver that drives it.
     pump::SetSession(&session_runtime::Session());
     // The prop key index's watches and object-index listener, on the first game-thread task, so whether they
-    // were taken is known before any session can start (session_runtime::SubstrateRefusal reads it); the
-    // frame tail drives their names on after.
+    // were taken is known before any session can start (coop::session_manager::SubstrateRefusal reads it);
+    // the frame tail drives their names on after.
     GT::Post([] { coop::prop_key_index::Install(); });
     // A config change's subscribers run on the game thread.
     cfg::SetNotifier([](std::function<void()> task) { GT::Post(std::move(task)); });
