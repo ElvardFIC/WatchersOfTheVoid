@@ -396,6 +396,7 @@ void Session::NetThread() {
         // The receive edge's folded refusal lines close their windows here, when a window has run.
         hostKindRefusals_.Flush(RefusalTally::Clock::now());
         epochRefusals_.Flush(RefusalTally::Clock::now());
+        streamRateRefusals_.Flush(RefusalTally::Clock::now());
 
         // 1) Pump GNS's timers and dispatch pending status callbacks (the trampoline runs inline on
         // this thread).

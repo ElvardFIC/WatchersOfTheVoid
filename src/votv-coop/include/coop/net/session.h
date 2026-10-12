@@ -722,6 +722,8 @@ private:
     RefusalTally hostKindRefusals_{"net"};
     // The epoch latch's drops (HandleMessage), folded the same way. Net thread; cleared with the one above.
     RefusalTally epochRefusals_{"net"};
+    // The receive budget's stream drops, folded the same way. Net thread; cleared with the two above.
+    RefusalTally streamRateRefusals_{"net"};
     // The host's bound on each client's reliable messages (receive_budget.h). Net thread only.
     ReceiveBudget receiveBudget_;
     // Per-slot relay eligibility: the hConn that announced ClientWorldReady, stamped on the net

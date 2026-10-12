@@ -236,6 +236,18 @@ void Session::HandleMessage(int peerSlot, uint32_t hConn, const void* data, int 
     if (type != MsgType::Reliable && dev::wire_census::Enabled())
         dev::wire_census::NoteStream(routeSlot, static_cast<unsigned>(type));
 
+    // The host's bound on a client's streams (receive_budget.h): per type, twice the send rate, and a datagram past it
+    // dropped before the store and the relay, without a kick, since a stream is newest-wins. MTA has no such bound, its
+    // zone intervals pacing a far player's relay for bandwidth while zone 0 relays every puresync
+    // (CPlayer.cpp:981-1028, CBandwidthSettings.h:37,52); the shape is Source's per-tick budget on a client's commands
+    // (player.cpp:3243,3392-3414).
+    if (cfg_.role == Role::Host && type != MsgType::Reliable &&
+        !receiveBudget_.TakeStream(peerSlot, hConn, type, NowMs())) {
+        streamRateRefusals_.Note(static_cast<std::uint8_t>(peerSlot),
+                                 "a stream sent faster than twice the send rate", RefusalTally::Clock::now());
+        return;
+    }
+
     switch (type) {
     case MsgType::PoseSnapshot:
     case MsgType::PropPose:

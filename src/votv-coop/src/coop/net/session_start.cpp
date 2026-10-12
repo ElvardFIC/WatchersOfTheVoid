@@ -258,6 +258,7 @@ bool Session::Start(const Config& cfg, Refusal* why) {
         receiveBudget_.Configure(
             coop::config::ResolveInt(coop::config_registry::rows::net_reliable_burst),
             coop::config::ResolveInt(coop::config_registry::rows::net_reliable_rate));
+        receiveBudget_.ConfigureStreams(2 * cfg_.sendHz);
     }
 
     g_session.store(this, std::memory_order_release);
@@ -541,6 +542,7 @@ void Session::DoStop_() {
     saidHostKind_.fill(false);
     hostKindRefusals_.Clear();
     epochRefusals_.Clear();
+    streamRateRefusals_.Clear();
 
     auto* sockets = SteamNetworkingSockets();
     if (sockets) {
