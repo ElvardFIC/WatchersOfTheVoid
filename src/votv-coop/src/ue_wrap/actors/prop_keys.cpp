@@ -5,6 +5,7 @@
 #include "ue_wrap/actors/prop.h"
 
 #include "ue_wrap/core/call.h"
+#include "ue_wrap/core/object_index.h"  // ClassByName, the trash base in one lookup
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/sdk_profile.h"
 
@@ -92,6 +93,24 @@ std::wstring GetInteractableKeyString(void* obj) {
     if (!obj) return {};
     const R::FName key = GetInteractableKey(obj);
     return R::ToString(key);
+}
+
+KeyField KeyFieldOf(void* cls) {
+    if (!cls) return KeyField::None;
+    if (IsClassDescendantOfProp(cls)) return KeyField::Prop;
+    // The object index answers a class that is not loaded in one lookup; FindClass would walk the
+    // object array on every such miss, once per class asked.
+    void* bits = object_index::ClassByName(L"trashBitsPile_C");
+    return (bits && WalksToBase(cls, bits)) ? KeyField::ActorSave : KeyField::None;
+}
+
+R::FName ReadKeyField(void* obj, KeyField where) {
+    if (!obj) return R::FName{0, 0};
+    switch (where) {
+        case KeyField::Prop:      return ReadField<R::FName>(obj, P::off::Aprop_Key);
+        case KeyField::ActorSave: return ReadField<R::FName>(obj, kAactorSaveKeyOff);
+        default:                  return R::FName{0, 0};
+    }
 }
 
 R::FName GetKey(void* prop) {

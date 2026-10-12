@@ -108,6 +108,19 @@ std::wstring GetInteractableKeyString(void* obj);
 // thread.
 std::wstring GetActorSaveKeyString(void* obj);
 
+// Where a class keeps its key FIELD: prop_C's lineage its own `key`, trashBitsPile_C's lineage
+// actor_save_C's. None for every other class, the chip pile and the garbage clump included: they have
+// no key field and answer only through their blueprint getKey. Class-pure, so a caller may memoise
+// it per class pointer. The trash base resolves through the object index, one lookup whether or not
+// it is loaded. Game thread.
+enum class KeyField : uint8_t { None, Prop, ActorSave };
+KeyField KeyFieldOf(void* cls);
+
+// The key in that field, {0,0} (None) for KeyField::None. A field read that never dispatches, so a
+// script-gate callback on getKey may call it. The caller has established that `obj` is live and of a
+// class with that field.
+reflection::FName ReadKeyField(void* obj, KeyField where);
+
 // Aprop_C.Key; {0,0} for null. The caller has established a live Aprop_C.
 reflection::FName GetKey(void* prop);
 
