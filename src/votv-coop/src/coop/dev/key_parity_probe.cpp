@@ -96,9 +96,11 @@ struct Counts {
     size_t truth = 0, dupKeys = 0;
     size_t liveMiss = 0, liveStale = 0;
     size_t shadowMiss = 0, shadowStale = 0;
+    size_t lookupKeys = 0, lookupMiss = 0, lookupWrong = 0;  // per distinct live key, through the lookup itself
     bool operator==(const Counts& o) const {
         return truth == o.truth && dupKeys == o.dupKeys && liveMiss == o.liveMiss && liveStale == o.liveStale &&
-               shadowMiss == o.shadowMiss && shadowStale == o.shadowStale;
+               shadowMiss == o.shadowMiss && shadowStale == o.shadowStale && lookupKeys == o.lookupKeys &&
+               lookupMiss == o.lookupMiss && lookupWrong == o.lookupWrong;
     }
 };
 
@@ -112,6 +114,9 @@ struct Run { void* obj = nullptr; int samples = 0; bool named = false; };
 std::unordered_map<int32_t, Run> g_liveRun, g_shadowRun;
 int g_livePersistNamed = 0, g_shadowPersistNamed = 0;
 constexpr int kPersistSamples = 3;
+// The lookup's misses by key, the same persistence rule: consecutive samples, named once at the third.
+std::unordered_map<std::wstring, int> g_lookupRun;
+int g_lookupPersistNamed = 0;
 
 void NoteMiss(std::unordered_map<int32_t, Run>& runs, std::unordered_map<int32_t, Run>& next, int& named,
               const char* which, void* obj, int32_t idx, const std::wstring& keyStr) {
@@ -240,15 +245,42 @@ Counts Sample() {
     }
     g_liveRun.swap(liveNext);
     g_shadowRun.swap(shadowNext);
+
+    // The lookup a wire key goes through, asked once per distinct live key: it must answer with an actor
+    // that carries that key. The lookup evicts a dead entry it meets, so this column is taken last.
+    std::unordered_map<std::wstring, int> lookupNext;
+    for (const auto& [keyStr, holderCount] : holders) {
+        ++c.lookupKeys;
+        void* found = PT::FindLiveActorByKey(keyStr);
+        bool miss = false;
+        if (!found) {
+            ++c.lookupMiss;
+            miss = true;
+        } else if (R::ToString(ue_wrap::prop::GetInteractableKey(found)) != keyStr) {
+            ++c.lookupWrong;
+            miss = true;
+        }
+        if (!miss) continue;
+        const auto it = g_lookupRun.find(keyStr);
+        const int runs = (it == g_lookupRun.end() ? 0 : it->second) + 1;
+        lookupNext[keyStr] = runs;
+        if (runs == kPersistSamples && g_lookupPersistNamed < kExamples) {
+            ++g_lookupPersistNamed;
+            UE_LOGI("key_parity: lookup PERSISTENT %s (%d samples) key='%ls' holders=%d", found ? "WRONG" : "MISS",
+                    runs, keyStr.c_str(), holderCount);
+        }
+    }
+    g_lookupRun.swap(lookupNext);
     return c;
 }
 
 void Report(const Counts& c, const char* why) {
     const char* role = PT::SessionIsHost() ? "host" : (PT::SessionIsClient() ? "client" : "none");
     UE_LOGI("key_parity: %s role=%s gen=%u truth=%zu dupkeys=%zu | live miss=%zu stale=%zu | shadow miss=%zu "
-            "stale=%zu | posts init=%llu setKey=%llu getKey=%llu loadData=%llu changed=%llu/%llu/%llu/%llu | "
+            "stale=%zu | lookup keys=%zu miss=%zu wrong=%zu | posts init=%llu setKey=%llu getKey=%llu loadData=%llu changed=%llu/%llu/%llu/%llu | "
             "offgt=%llu backlog=%zu shadow=%zu",
             why, role, WI::Generation(), c.truth, c.dupKeys, c.liveMiss, c.liveStale, c.shadowMiss, c.shadowStale,
+            c.lookupKeys, c.lookupMiss, c.lookupWrong,
             static_cast<unsigned long long>(g_posts[kInit]), static_cast<unsigned long long>(g_posts[kSetKey]),
             static_cast<unsigned long long>(g_posts[kGetKey]), static_cast<unsigned long long>(g_posts[kLoadData]),
             static_cast<unsigned long long>(g_changed[kInit]), static_cast<unsigned long long>(g_changed[kSetKey]),
@@ -292,20 +324,25 @@ void Tick() {
     static Counts s_prev{};
     const auto now = Clock::now();
     const std::uint32_t gen = WI::Generation();
+    // A world change is sampled on the tick that sees it, so the first moments of a new world are read on
+    // an edge rather than by the luck of the cadence.
+    bool flip = false;
     if (gen != s_gen) {
         s_gen = gen;
+        flip = true;
         g_liveExamples = 0;
         g_shadowExamples = 0;
         g_livePersistNamed = 0;
         g_shadowPersistNamed = 0;
+        g_lookupPersistNamed = 0;
         UE_LOGI("key_parity: world generation %u", gen);
     }
-    if (now - s_last < std::chrono::seconds(2)) return;
+    if (!flip && now - s_last < std::chrono::seconds(2)) return;
     s_last = now;
     const Counts c = Sample();
-    // A line when a count moved, else one every 30 s.
-    if (!(c == s_prev) || now - s_lastPrint >= std::chrono::seconds(30)) {
-        Report(c, c == s_prev ? "steady" : "moved");
+    // A line when a count moved or the world changed, else one every 30 s.
+    if (flip || !(c == s_prev) || now - s_lastPrint >= std::chrono::seconds(30)) {
+        Report(c, flip ? "world-flip" : (c == s_prev ? "steady" : "moved"));
         s_prev = c;
         s_lastPrint = now;
     }
