@@ -1,8 +1,8 @@
-// coop/props/prop_key_index.cpp -- the key-to-live-actor index of coop::prop_element_tracker
-// (see coop/props/prop_element_tracker.h). One TU owns the whole index: the state, the private
-// insert and evict helpers the tracker's mark, unmark and reap call (shared through
-// prop_element_tracker_detail.h), and the public lookups and collectors built on it. The
-// tracker never touches the maps directly.
+// coop/props/prop_tracked_keys.cpp -- the tracked keyed props of coop::prop_element_tracker, by key
+// and by actor (see coop/props/prop_element_tracker.h). One TU owns the whole map: the state, the
+// private insert and evict helpers the tracker's mark, unmark and reap call (shared through
+// prop_element_tracker_detail.h), and the public lookups and collectors built on it. The tracker
+// never touches the maps directly.
 
 #include "coop/props/prop_element_tracker.h"
 

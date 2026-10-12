@@ -2,7 +2,7 @@
 // dedupe set, the known-keyed set, MarkPropElement (the one place a local Prop Element is minted,
 // with the host's key-uniqueness authority), the actor-to-eid reads, the save-time transform
 // captures, the dead-Element reaper and its self-test. The census walk lives in prop_census.cpp and
-// the key index in prop_key_index.cpp.
+// the tracked keys in prop_tracked_keys.cpp.
 
 #include "coop/props/prop_element_tracker.h"
 
@@ -80,7 +80,7 @@ using coop::element::PropMirrors;   // canonical accessor (coop/element/mirror_m
 // Whether an actor is a save-loaded native is an Element field (IsSaveNative, set by
 // save_identity_bind); an actor-keyed set could read stale relative to the binding.
 
-// The key-to-actor index lives in prop_key_index.cpp; this file reaches it through
+// The key-to-actor map lives in prop_tracked_keys.cpp; this file reaches it through
 // IndexKeyForActor_ and EraseKeyIndexForActor_.
 
 }  // namespace

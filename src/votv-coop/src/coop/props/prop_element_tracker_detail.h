@@ -1,6 +1,6 @@
 // coop/props/prop_element_tracker_detail.h -- INTERNAL shared state between
 // prop_element_tracker.cpp (Mark/Unmark maintenance + reaper),
-// prop_census.cpp (the seed/re-seed GUObjectArray walk) and prop_key_index.cpp
+// prop_census.cpp (the seed/re-seed GUObjectArray walk) and prop_tracked_keys.cpp
 // (the key -> live-actor index family).
 //
 // Sibling-internal header (the coop/net/session_lanes.h / event_dispatch.h
@@ -26,7 +26,7 @@ extern std::mutex g_knownKeyedPropsMutex;
 extern std::unordered_set<void*> g_knownKeyedProps;
 inline constexpr size_t kKnownKeyedPropsCap = 16384;
 
-// Key-index private helpers (defined in prop_key_index.cpp, which solely owns
+// Key-map private helpers (defined in prop_tracked_keys.cpp, which solely owns
 // the g_keyToActor / g_actorToKey maps + their leaf mutex). The tracker's
 // MarkPropElement / UnmarkKnownKeyedProp / ReapDeadLocalPropElements call these
 // two; every other index access goes through the public header's lookups.
