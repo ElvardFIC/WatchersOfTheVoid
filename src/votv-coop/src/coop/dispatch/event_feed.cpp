@@ -34,6 +34,7 @@
 #include "coop/player/nick_color.h"  // ResetSlots() at bringup -- a colour lands before its row
 #include "coop/player/nameplate.h"   // ResetSlots() at bringup -- so does a hidden-plate pref
 #include "coop/session/player_handshake.h"
+#include "coop/session/world_ready_answer.h"  // the host's answer to ClientWorldReady
 #include "coop/session/grants_sync.h"  // HostTick: the local dev grants to a proved slot
 #include "coop/session/server_settings_sync.h"  // HostTick: the snapshot to a ready slot
 #include "coop/player/players_registry.h"
@@ -174,26 +175,11 @@ void Update(net::Session& session, void* localPlayer) {
         // while the payload landed on the net thread let a hostile host accumulate bytes with no
         // announced size.
         case net::ReliableKind::ClientWorldReady: {
-            // The joiner's world is up and registry-coherent: the world-ready send gate opens and
-            // the connect replay runs.
-            if (session.role() == net::Role::Host &&
-                msg.senderPeerSlot >= 1 && msg.senderPeerSlot < net::kMaxPeers) {
-                // The join window closes for this joiner here: a host pile moved before this line
-                // reconciles by its save-time key; a move after it is a normal live edit.
-                UE_LOGI("[PILE-1C] slot %d world-ready -- JOIN-WINDOW CLOSED (in-window host pile moves are "
-                        "now save-time-key reconciled by the connect replay)", msg.senderPeerSlot);
-                static const bool s_pileProbe =
-                    coop::config::ResolveFlag(::coop::config_registry::rows::pile_delta_probe);
-                if (s_pileProbe)
-                    coop::chat_feed::Push(L"[1c-test] JOIN-WINDOW CLOSED -- joiner world-ready; drops from here are post-load (not in-window)",
-                                          coop::chat_feed::Keep::Transient);
-                session.MarkSlotWorldReady(msg.senderPeerSlot, true);
-                coop::subsystems::ConnectReplayForSlot(msg.senderPeerSlot);
-                // The joined-the-game line fires at the joiner's puppet appearance; this call
-                // announces only a puppet that spawned before world-ready (a pre-world menu pose),
-                // a no-op otherwise.
-                coop::player_handshake::OnClientWorldReady(msg.senderPeerSlot);
-            }
+            // The joiner's world is up and registry-coherent. The first announce completes the join
+            // (marks the slot world-ready and runs the connect replay); a later one runs under a
+            // per-slot replay bucket or ends the slot past it (MV-H34). world_ready_answer owns the
+            // host/range guard and the rate.
+            coop::world_ready_answer::OnAnnounce(session, msg.senderPeerSlot);
             break;
         }
 

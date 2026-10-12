@@ -1122,6 +1122,9 @@ msgstr "[[This machine has no working connection to the signaling server, so the
 msgid "This machine sent the host more than a player can. Wait ten minutes before joining again."
 msgstr "[[This machine sent the host more than a player can. Wait ten minutes before joining again.]]"
 
+msgid "This machine told the host its world was ready far more often than a join does."
+msgstr "[[This machine told the host its world was ready far more often than a join does.]]"
+
 msgid ""
 "This rule is achievement-locked!\n"
 "Unlock this rule by getting following achievements:"

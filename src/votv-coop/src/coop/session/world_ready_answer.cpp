@@ -1,0 +1,79 @@
+// coop/session/world_ready_answer.cpp -- see coop/session/world_ready_answer.h.
+
+#include "coop/session/world_ready_answer.h"
+
+#include "coop/comms/chat_feed.h"
+#include "coop/config/config.h"
+#include "coop/config/config_registry.h"
+#include "coop/net/end_reason.h"
+#include "coop/net/intent_bucket.h"
+#include "coop/net/protocol.h"  // kMaxPeers, Role
+#include "coop/net/session.h"
+#include "coop/player/roster_ledger.h"  // PerSlotState
+#include "coop/session/player_handshake.h"  // OnClientWorldReady
+#include "coop/session/subsystems.h"  // ConnectReplayForSlot
+
+#include "ue_wrap/core/log.h"
+
+#include <chrono>
+#include <cstdint>
+
+namespace coop::world_ready_answer {
+namespace {
+
+using Clock = std::chrono::steady_clock;
+
+// Burst 2, refill 0.5/s. A legitimate re-announce is spaced at least 2.0 s by the quiesce probe
+// (world_load_episode.cpp: 10 stable scans at least 200 ms apart), so it never empties the bucket; a
+// flood does. An honest pattern at the floor keeps one token spare.
+constexpr coop::net::IntentBudget kReplayBudget{2.0f, 0.5f};
+
+// Per slot. PerSlotState resets it to a full IntentBucket at the successor's row birth, so a recycled
+// slot starts fresh -- no manual clear beside the automatic one, and no missed-window raw clear.
+coop::roster_ledger::PerSlotState<coop::net::IntentBucket> g_rate;
+
+uint64_t NowMs() {
+    return static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now().time_since_epoch()).count());
+}
+
+}  // namespace
+
+void OnAnnounce(coop::net::Session& session, int slot) {
+    if (session.role() != coop::net::Role::Host) return;
+    if (slot < 1 || slot >= static_cast<int>(coop::net::kMaxPeers)) return;
+
+    if (!session.IsSlotWorldReady(slot)) {
+        // The first announce of this occupancy completes the join. The join window closes for this joiner
+        // here: a host pile moved before this line reconciles by its save-time key; a move after it is a
+        // normal live edit. Runs free (no bucket take) -- it is the join, not a repeat.
+        UE_LOGI("[PILE-1C] slot %d world-ready -- JOIN-WINDOW CLOSED (in-window host pile moves are now "
+                "save-time-key reconciled by the connect replay)", slot);
+        static const bool s_pileProbe =
+            coop::config::ResolveFlag(::coop::config_registry::rows::pile_delta_probe);
+        if (s_pileProbe)
+            coop::chat_feed::Push(
+                L"[1c-test] JOIN-WINDOW CLOSED -- joiner world-ready; drops from here are post-load (not in-window)",
+                coop::chat_feed::Keep::Transient);
+        session.MarkSlotWorldReady(slot, true);
+        coop::subsystems::ConnectReplayForSlot(slot);
+        // The joined-the-game line fires at the joiner's puppet appearance; this call announces only a
+        // puppet that spawned before world-ready (a pre-world menu pose), a no-op otherwise.
+        coop::player_handshake::OnClientWorldReady(slot);
+        return;
+    }
+
+    // A later announce. The connect replay is some 64 lane calls + a walk of the whole object array
+    // (npc_world_enum.cpp), so an unbounded re-announce flood would cost that per message. A legitimate
+    // world-change re-seed finds a token (it is spaced by the probe); a flood empties the bucket and the
+    // slot is ended -- a rate no honest client reaches, by the bucket's own arithmetic.
+    if (g_rate[slot].Take(kReplayBudget, NowMs())) {
+        coop::subsystems::ConnectReplayForSlot(slot);
+    } else {
+        UE_LOGI("world_ready_answer: slot %d re-announced world-ready past the replay burst -- ending it "
+                "(MV-H34); no join announces this often", slot);
+        session.Kick(slot, coop::net::EndReason::RepeatedWorldReady, "repeated world-ready");
+    }
+}
+
+}  // namespace coop::world_ready_answer

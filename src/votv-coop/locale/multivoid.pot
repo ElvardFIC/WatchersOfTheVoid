@@ -1398,6 +1398,10 @@ msgstr ""
 msgid "This machine sent the host more than a player can. Wait ten minutes before joining again."
 msgstr ""
 
+#: src/coop/net/end_reason.cpp
+msgid "This machine told the host its world was ready far more often than a join does."
+msgstr ""
+
 #: src/ui/world_rules_panel.cpp
 msgid ""
 "This rule is achievement-locked!\n"

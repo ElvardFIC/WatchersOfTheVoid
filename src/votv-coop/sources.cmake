@@ -424,6 +424,7 @@ set(VOTVCOOP_SOURCES
     src/coop/props/registry_reaper.cpp
     src/coop/session/pause_guard.cpp
     src/coop/session/subsystems.cpp
+    src/coop/session/world_ready_answer.cpp
     src/coop/player/local_streams.cpp
     src/coop/interactables/device_occupancy.cpp
     src/coop/interactables/console_state_sync.cpp

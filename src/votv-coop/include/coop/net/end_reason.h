@@ -108,6 +108,7 @@ enum class EndReason : uint8_t {
     OfficialClientRefused,   // a modified host, an official client of another build, and the setting off
     ReliableFlood,           // past the host's bound on a client's messages, or refused for a while after
     RepeatedRequest,         // asked the host for its world save a second time in one visit (no join does)
+    RepeatedWorldReady,      // said its world was ready more times than any join does (a flood past the burst)
 
     // T -- the transport decided. Values 90..127.
     Timeout = 90,           // no answer from the host, at the dial or later
@@ -121,7 +122,7 @@ enum class EndReason : uint8_t {
     kJoinerFirst = MasterUnreachable,
     kJoinerLast = WorldNotLeft,
     kHostFirst = WrongPassword,
-    kHostLast = RepeatedRequest,
+    kHostLast = RepeatedWorldReady,
     kTransportFirst = Timeout,
     kTransportLast = LinkLost,
 };
