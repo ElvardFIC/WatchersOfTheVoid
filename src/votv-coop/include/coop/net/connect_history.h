@@ -121,6 +121,13 @@ History& Connects();
 // of 0 disables it. The refusal lasts one window.
 void ConfigureConnects(long cap, long windowS);
 
+// The flood history: a source whose link the host ended for sending more than its receive budget allows
+// (receive_budget.h), keyed by the identity it proved and by its address where the transport has one, and refused
+// at the accept edge and at the proof for ten minutes. MTA's flood history likewise outlives the connection
+// (CConnectHistory.cpp:95-143). One event fills a row, the end itself; the table outlives the session, since a host
+// that starts another must not let the source straight back in. Net thread.
+History& Floods();
+
 // The arithmetic selftest, run once per session start beside the identity ones: the count that
 // refuses, the refusal that lifts, a window that slides, a refused event that is not recorded,
 // keys of two kinds that do not collide, a guid that is and is not one, and a full table that

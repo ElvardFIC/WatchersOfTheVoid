@@ -6,6 +6,7 @@
 #include "coop/net/session.h"
 
 #include "coop/dev/wire_census.h"
+#include "coop/net/connect_history.h"  // Floods -- the source a flood ended stays refused
 #include "coop/net/net_clock.h"        // NowMs -- the probe's echo is timed on the net layer's clock
 #include "coop/net/peer_admission.h"   // the identity challenge every peer passes
 #include "coop/net/peer_identity.h"    // GuidForPublicKey -- the proved storage name
@@ -306,6 +307,7 @@ void Session::HandleMessage(int peerSlot, uint32_t hConn, const void* data, int 
                 UE_LOGW("net: slot %d sent more than %.0f reliable messages at once and %.0f a second -- ending its "
                         "link [%s]", peerSlot, receiveBudget_.Budget().burst, receiveBudget_.Budget().perSecond,
                         Describe(EndReason::ReliableFlood).id);
+                RecordFlood(peerSlot, hConn);
                 Kick(peerSlot, EndReason::ReliableFlood, "this machine sent more than a player can");
             }
             if (take != ReceiveBudget::Take::Ok) return;
@@ -474,6 +476,13 @@ void Session::HandleMessage(int peerSlot, uint32_t hConn, const void* data, int 
     default:
         break;
     }
+}
+
+void Session::RecordFlood(int slot, uint32_t hConn) {
+    const uint64_t nowMs = NowMs();
+    connect_history::Key key;
+    if (connect_history::KeyFromAddress(hConn, key)) connect_history::Floods().Record(key, nowMs);
+    if (connect_history::KeyFromProvedGuid(ProvedGuidForSlot(slot), key)) connect_history::Floods().Record(key, nowMs);
 }
 
 }  // namespace coop::net

@@ -191,6 +191,13 @@ void ConfigureConnects(long cap, long windowS) {
     }
 }
 
+// --- the flood history -------------------------------------------------------
+
+History& Floods() {
+    static History h{Policy{1, 600'000, 600'000}, "flood history"};
+    return h;
+}
+
 // --- the selftest ------------------------------------------------------------
 
 namespace {

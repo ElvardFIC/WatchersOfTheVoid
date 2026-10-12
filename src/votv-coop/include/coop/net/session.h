@@ -726,6 +726,9 @@ private:
     RefusalTally streamRateRefusals_{"net"};
     // The host's bound on each client's reliable messages (receive_budget.h). Net thread only.
     ReceiveBudget receiveBudget_;
+    // The flood history's record of a slot's occupant before its link is ended for flooding: its proved identity and
+    // its address where the transport has one (connect_history::Floods). Net thread.
+    void RecordFlood(int slot, uint32_t hConn);
     // Per-slot relay eligibility: the hConn that announced ClientWorldReady, stamped on the net
     // thread at receipt. The game-thread world-ready flag lags by one drain, and the relay consults
     // this so a reliable received in that gap is neither lost nor doubled; hConn-stamped so a

@@ -91,6 +91,18 @@ EndReason AcceptPolicy(ISteamNetworkingSockets* sockets, HSteamNetConnection hCo
     }
     connect_history::Key key;
     if (connect_history::KeyFromAddressBytes(cinfo.m_addrRemote.m_ipv6, key)) {
+        // A source the host ended for flooding stays refused for the flood history's window, before it counts here.
+        const connect_history::Verdict f = connect_history::Floods().Blocked(key, NowMs());
+        if (f.refused) {
+            if (whyOut && whyLen > 0)
+                std::snprintf(whyOut, static_cast<size_t>(whyLen),
+                              "this machine sent the host more than a player can; try again in %llu s",
+                              static_cast<unsigned long long>((f.retryMs + 999) / 1000));
+            UE_LOGW("net: flood history -- %s was ended for flooding; refusing for %llu s [%s]",
+                    ue_wrap::log::Addr(ip).c_str(), static_cast<unsigned long long>((f.retryMs + 999) / 1000),
+                    Describe(EndReason::ReliableFlood).id);
+            return EndReason::ReliableFlood;
+        }
         *countedOut = true;
         const connect_history::Verdict v = connect_history::Connects().Note(key, NowMs());
         if (v.refused) {
