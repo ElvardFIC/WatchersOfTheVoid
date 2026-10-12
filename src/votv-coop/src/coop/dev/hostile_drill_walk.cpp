@@ -84,7 +84,7 @@ bool SendChatLine(coop::net::Session* s, const std::string& text) {
 // host's record apply runs -- a class that declares its own getData below Aprop_C AND that no dedicated
 // lane has claimed -- so a prop that passes it here is one the host will actually apply the record to
 // (OverridesGetData alone is not enough: the ATV container overrides getData but a dedicated lane owns
-// it, and the host drops its record unapplied). The key index mirrors the host's world, so a key
+// it, and the host drops its record unapplied). The tracked keys mirror the host's world, so a key
 // covered here is covered on the host too. Empty when the loaded world carries no such prop -- the arm
 // then reports it could not stage, never a false pass.
 bool FindCoveredPropKey(std::wstring& outKey) {

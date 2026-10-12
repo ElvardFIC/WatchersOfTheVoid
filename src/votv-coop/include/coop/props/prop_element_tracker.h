@@ -108,12 +108,12 @@ struct TrackedKeyEntry {
 };
 void CollectTrackedKeyEntries(std::vector<TrackedKeyEntry>& out);
 
-// Erases the index entry for `actor` only if it still maps this key to this actor: a
+// Erases the tracked entry for `actor` only if it still maps this key to this actor: a
 // recycled-address impostor or an un-reindexed rekey falls out of the sweep universe instead of
 // dooming a fresh actor, and the live actor re-enters at the next census.
 void EvictTrackedKeyIfStale(void* actor, const std::wstring& key);
 
-// Drops every index entry whose actor is dead: an element-less keyed entry has no Registry row,
+// Drops every tracked entry whose actor is dead: an element-less keyed entry has no Registry row,
 // so the reaper cannot evict it, and a death without K2_DestroyActor would leak the pair for the
 // process. A cold path: the post-purge re-seed edge. Returns the
 // count. Game thread.

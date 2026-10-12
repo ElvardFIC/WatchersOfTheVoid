@@ -43,7 +43,7 @@ struct KeyActorEntry {
     void*   actor       = nullptr;
     int32_t internalIdx = -1;
 };
-std::mutex g_keyIndexMutex;
+std::mutex g_trackedKeysMutex;
 std::unordered_map<std::wstring, KeyActorEntry> g_keyToActor;
 std::unordered_map<void*, std::wstring> g_actorToKey;
 
@@ -55,7 +55,7 @@ std::unordered_map<void*, std::wstring> g_actorToKey;
 // mutex.
 void TrackKeyForActor_(void* actor, const std::wstring& key, int32_t internalIdx) {
     if (!actor || key.empty() || key == L"None") return;
-    std::lock_guard<std::mutex> lk(g_keyIndexMutex);
+    std::lock_guard<std::mutex> lk(g_trackedKeysMutex);
     auto ait = g_actorToKey.find(actor);
     if (ait != g_actorToKey.end() && ait->second != key) {
         auto oldit = g_keyToActor.find(ait->second);
@@ -72,7 +72,7 @@ void TrackKeyForActor_(void* actor, const std::wstring& key, int32_t internalIdx
 // caller holds no other mutex.
 void EraseTrackedKeyForActor_(void* actor) {
     if (!actor) return;
-    std::lock_guard<std::mutex> lk(g_keyIndexMutex);
+    std::lock_guard<std::mutex> lk(g_trackedKeysMutex);
     auto ait = g_actorToKey.find(actor);
     if (ait == g_actorToKey.end()) return;
     auto kit = g_keyToActor.find(ait->second);
@@ -93,7 +93,7 @@ void CollectTrackedKeyEntries(std::vector<TrackedKeyEntry>& out) {
     // The sweep's keyed universe. A leaf-mutex copy; liveness and ownership validation is the
     // caller's (by-index liveness, current-key re-validation before any doom). No engine calls
     // under the lock.
-    std::lock_guard<std::mutex> lk(g_keyIndexMutex);
+    std::lock_guard<std::mutex> lk(g_trackedKeysMutex);
     out.reserve(out.size() + g_keyToActor.size());
     for (const auto& kv : g_keyToActor)
         out.push_back(TrackedKeyEntry{kv.second.actor, kv.second.internalIdx, kv.first});
@@ -104,7 +104,7 @@ void EvictTrackedKeyIfStale(void* actor, const std::wstring& key) {
     // while the maps still hold exactly this pair, so a concurrent re-index of either side is
     // never clobbered.
     if (!actor || key.empty()) return;
-    std::lock_guard<std::mutex> lk(g_keyIndexMutex);
+    std::lock_guard<std::mutex> lk(g_trackedKeysMutex);
     auto kit = g_keyToActor.find(key);
     if (kit != g_keyToActor.end() && kit->second.actor == actor) g_keyToActor.erase(kit);
     auto ait = g_actorToKey.find(actor);
@@ -123,7 +123,7 @@ size_t DrainDeadTrackedKeys() {
     for (const auto& ke : snap) {
         if (!ke.actor) continue;
         if (R::IsLiveByIndex(ke.actor, ke.internalIdx)) continue;
-        std::lock_guard<std::mutex> lk(g_keyIndexMutex);
+        std::lock_guard<std::mutex> lk(g_trackedKeysMutex);
         auto kit = g_keyToActor.find(ke.key);
         if (kit != g_keyToActor.end() && kit->second.actor == ke.actor &&
             kit->second.internalIdx == ke.internalIdx) {
@@ -157,7 +157,7 @@ void CollectTrackedKeyedPropKeys(std::unordered_set<std::wstring>& out) {
     // The tracked keys hold the live keyed props that minted a Prop element with a non-empty wire
     // key, the keyed set the save persists; keyless chipPiles never enter it, which is the
     // key diff's scope. A leaf-mutex copy; no engine calls under the lock.
-    std::lock_guard<std::mutex> lk(g_keyIndexMutex);
+    std::lock_guard<std::mutex> lk(g_trackedKeysMutex);
     out.reserve(out.size() + g_keyToActor.size());
     for (const auto& kv : g_keyToActor) out.insert(kv.first);
 }
@@ -171,7 +171,7 @@ void CollectTrackedKeyedPropTransforms(
     struct KeyedActor { void* actor; int32_t idx; };
     std::vector<KeyedActor> actors;
     {
-        std::lock_guard<std::mutex> lk(g_keyIndexMutex);
+        std::lock_guard<std::mutex> lk(g_trackedKeysMutex);
         actors.reserve(g_keyToActor.size());
         for (const auto& kv : g_keyToActor)
             actors.push_back({kv.second.actor, kv.second.internalIdx});

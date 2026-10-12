@@ -20,7 +20,8 @@
 // MTA's id map is minted by its owner (PopUniqueID,
 // reference/mtasa-blue/Server/mods/deathmatch/logic/CElementIDs.cpp:23), so it is complete and unique by
 // construction, and its read refuses an element being deleted (:57). Here the game and the save mint the
-// keys, so every holder of a key is kept and a miss is answered only after the object index has caught up.
+// keys, so every holder of a key is kept and a wire read's miss is answered only after the object index
+// has caught up.
 // Game thread, all of it.
 namespace coop::prop_key_index {
 
@@ -37,9 +38,9 @@ void Begin();
 void End();
 void Tick();
 
-// Hit: an actor holds the key now. Miss: none does, after the object index caught up. Pending: the index
-// cannot answer yet (no session seed, no current world, a birth still loading, off the game thread, or
-// inside an object-index drain).
+// Hit: an actor holds the key now. Miss: none does (for Resolve and Find, after the object index caught up;
+// for AnotherHolder, as the index stands). Pending: the index cannot answer yet (no session seed, no current
+// world, a birth still loading, off the game thread, or inside an object-index drain).
 enum class Read : uint8_t { Hit, Miss, Pending };
 
 // The live actor of the current world that holds `key`, the lowest slot of those that do; a child actor and
