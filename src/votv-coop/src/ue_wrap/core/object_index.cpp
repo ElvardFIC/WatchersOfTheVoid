@@ -323,8 +323,9 @@ bool Install() {
     if (!uobject_listeners::Install()) return false;
     g_installed = true;
     // The index's steady driver: the dispatcher drains it before every batch of posted tasks, the boot's
-    // included (DrainAll is the other, asked for by a reader that needs it current now). A drain only the play loop made left every boot task an unseeded index, and the boot's
-    // save load, which asks it for the game instance, retried for two minutes and gave up.
+    // included (DrainAll is the other, asked for by a reader that needs it current now). A drain only the
+    // play loop made left every boot task an unseeded index, and the boot's save load, which asks it for
+    // the game instance, retried for two minutes and gave up.
     game_thread::SetPumpPrologue(&DrainBeforeTasks);
     return true;
 }

@@ -154,8 +154,8 @@ void* ResolveLiveActorByKey(const std::wstring& key) {
 }
 
 void CollectTrackedKeyedPropKeys(std::unordered_set<std::wstring>& out) {
-    // The index holds exactly the live keyed props that minted a Prop element with a non-empty
-    // wire key, the keyed set the save persists; keyless chipPiles never enter it, which is the
+    // The tracked keys hold the live keyed props that minted a Prop element with a non-empty wire
+    // key, the keyed set the save persists; keyless chipPiles never enter it, which is the
     // key diff's scope. A leaf-mutex copy; no engine calls under the lock.
     std::lock_guard<std::mutex> lk(g_keyIndexMutex);
     out.reserve(out.size() + g_keyToActor.size());
@@ -166,7 +166,7 @@ void CollectTrackedKeyedPropTransforms(
     std::unordered_map<coop::element::ElementId, ue_wrap::FVector>& out) {
     // The host's save-time keyed-prop positions by host eid (see the header). Copy the actor set
     // under the leaf mutex, then read the eid and position outside it. No self-seed needed: keyed
-    // props are index-tracked by the connect seed; an unindexed one is skipped, since only a
+    // props are tracked by the connect seed; an untracked one is skipped, since only a
     // host-moved prop needs this correction and a moved prop is tracked.
     struct KeyedActor { void* actor; int32_t idx; };
     std::vector<KeyedActor> actors;
@@ -177,8 +177,8 @@ void CollectTrackedKeyedPropTransforms(
             actors.push_back({kv.second.actor, kv.second.internalIdx});
     }
     for (const KeyedActor& ka : actors) {
-        // By index, not the raw liveness check: the index may hold a recycled slot, which the
-        // by-index check rejects.
+        // By index, not the raw liveness check: the map may hold a recycled slot, which the by-index
+        // check rejects.
         if (!ka.actor || !R::IsLiveByIndex(ka.actor, ka.idx)) continue;
         const coop::element::ElementId eid = GetPropElementIdForActor(ka.actor);
         if (eid == coop::element::kInvalidId || eid == 0u) continue;

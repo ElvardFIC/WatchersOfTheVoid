@@ -1,6 +1,6 @@
 // coop/props/prop_key_index.h -- every live keyed prop of this peer by its key, for the reads that turn a
-// key on the wire into an actor: complete at every instant of a session, so "no holder" means there is no
-// such prop here.
+// key on the wire into an actor. Seeded complete when a session takes the script gate and kept so; a read
+// that misses catches the object index up before it answers, so its "no holder" means no such prop here.
 //
 // Membership comes from the engine's own create and delete notifications (ue_wrap/core/object_index's
 // listeners), the key from the bodies that write it: prop_C writes its key in init (from getKey, which turns

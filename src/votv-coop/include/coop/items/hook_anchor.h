@@ -55,8 +55,8 @@ CommitResult SendCommit(uint16_t seq, ue_wrap::hook::Kind kind, void* hookActor)
 // HOST: a commit arrived.
 //
 // A key that resolves to nothing is passed through unchanged rather than refused: our key index
-// covers the props WE track, not everything the game's registry holds, so refusing an unresolvable
-// key would break a legitimate anchor onto something we simply do not index. An unresolvable key
+// holds the keyed props, not everything the game's registry holds (a door, a lock, a trigger), so
+// refusing an unresolvable key would break a legitimate anchor onto something we do not index. An unresolvable key
 // leaves the hook tied to nothing, the game's own no-anchor case, and is harmless. An out-of-reach
 // anchor is LOGGED and applied -- bounds are client-scoped and a discontinuity costs trust, never
 // display.

@@ -235,8 +235,8 @@ static void RunDivergenceSweep_(void* localPlayer) {
         doomedClass.push_back(acls);
         ++doomedByClass[acls];
     }
-    // The index half: a client's save-loaded keyed props have no element row (the key index is
-    // their tracked membership), so the row walk cannot see them. They are adjudicated here under
+    // The index half: a client's save-loaded keyed props have no element row (the tracked keys are
+    // their membership), so the row walk cannot see them. They are adjudicated here under
     // the same rules: claimed survive, per-player skipped, keyed-churn re-binds spared, the rest
     // doomed under the same per-class accounting. An actor with an element row belongs to the row
     // walk, so the two halves partition and nothing is counted twice.
@@ -524,7 +524,7 @@ void TickClientReconcile() {
     // A save-transfer join goes through two level loads, and a keyed prop re-created by the second
     // (or by GC churn) reuses a freed GUObjectArray slot: NumObjects stays flat and the steady
     // re-seed's grew-gate never indexes it, so it is invisible to the membership here and survives
-    // as a duplicate (the joining client's starting suitcase, twice). The key-index membership is
+    // as a duplicate (the joining client's starting suitcase, twice). The tracked-key membership is
     // refreshed at this one cold per-join point, so the re-create is either re-bind-spared or
     // doomed, leaving exactly one. One array walk per join.
     coop::prop_element_tracker::ReSeedKnownKeyedProps(nullptr);

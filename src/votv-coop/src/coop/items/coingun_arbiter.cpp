@@ -80,8 +80,8 @@ constexpr float kGunReachUU = 1000.0f;
 
 void* FindLiveGun() {
     // `sell` reads no gun state and positions the coins from the sold prop's component, so any
-    // live instance behaves identically. Cached and walked only on a miss: the sale rate is
-    // attacker-controlled, and FindObjectByClass is a full walk.
+    // live instance behaves identically. Cached and walked only on a miss: the sale rate is the
+    // sender's, and FindObjectByClass is a full walk.
     if (void* cached = g_gunRef.Get()) return cached;
     // The miss is throttled too: a world with no gun (the ordinary world; the gun is placed in
     // three maps) would otherwise re-walk on every packet. 250 ms collapses a burst to one walk and
@@ -143,7 +143,7 @@ void OnReliable(const uint8_t* payload, int len, uint8_t senderSlot) {
     std::memcpy(&p, payload, sizeof(p));
 
     // The artifact's name off the wire. WireKey's contract says the bytes beyond `len` are zero,
-    // and a hostile sender is not bound by it: clamp the length and stop at the first NUL.
+    // and nothing on the wire enforces it: clamp the length and stop at the first NUL.
     std::wstring keyStr;
     {
         const uint8_t klen = (p.key.len <= sizeof(p.key.data))
@@ -193,9 +193,9 @@ void OnReliable(const uint8_t* payload, int len, uint8_t senderSlot) {
         if (logIt) UE_LOGW("coingun[host]: REFUSED slot=%u artifact='%ls' (key='%ls' eid=%u) -- "
                 "REASON=no-such-prop. NEITHER name resolves to a live prop in our world: the key "
                 "index holds every live keyed prop, so the key names none here (one already sold "
-                "or destroyed, or a key that never existed). The client's own destroy still lands, "
-                "so it costs the ITEM -- the lane's header names that invariant and does not yet "
-                "hold it.",
+                "or destroyed, or a key that never existed), or the index could not answer yet. "
+                "The client's own destroy still lands, so it costs the ITEM -- the lane's header "
+                "names that invariant and does not yet hold it.",
                 senderSlot, artifact.c_str(), keyStr.empty() ? L"None" : keyStr.c_str(),
                 p.elementId);
         return;
@@ -328,7 +328,7 @@ void OnReliable(const uint8_t* payload, int len, uint8_t senderSlot) {
     // The arbiter consumes what it paid for. The sold prop's destroy lives in the gun's ubergraph
     // right after the sell call, not inside sell, so sell alone mints coins and leaves the prop
     // standing; delegated to the client's own PropDestroy it was a cost paid on the counterparty's
-    // honour, and an attacker simply omitted it. It runs here in the native order on the host's own
+    // honour, and a sender could simply omit it. It runs here in the native order on the host's own
     // copy, and needs no broadcast of its own: DestroyActor dispatches K2_DestroyActor, the
     // UFunction the destroy seam patches, so the ordinary PropDestroy goes to every peer, and the
     // seller's own PropDestroy then lands as an echo no-op. What the guard covers now is not a

@@ -1,5 +1,4 @@
-// coop/dev/key_parity_probe.cpp -- [dev] a key index fed only at the key writes, against the world. See the
-// header.
+// coop/dev/key_parity_probe.cpp -- [dev] the prop key index against the live world. See the header.
 #include "coop/dev/key_parity_probe.h"
 
 #include "coop/config/config.h"

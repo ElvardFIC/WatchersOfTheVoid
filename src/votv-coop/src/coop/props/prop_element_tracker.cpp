@@ -252,7 +252,7 @@ std::wstring MarkPropElement(void* actor, const std::wstring& key, const std::ws
     // re-create inheriting its identity, spared by the liveness check. A client never re-keys. The key
     // index answers whether another live actor holds the key; when it cannot answer (off the game thread,
     // where setKey could not run anyway, or before its session seed), the actor enrols under its key and
-    // the first such enrolment is said.
+    // such enrolments are counted, the first and each power of two said.
     std::wstring enrollKey = key;
     if (isHost && !enrollKey.empty() && enrollKey != L"None") {
         const auto held = coop::prop_key_index::AnotherHolder(enrollKey, actor);
@@ -474,9 +474,9 @@ size_t ReapDeadLocalPropElements(size_t maxEvictions,
                 g_knownKeyedProps.erase(pr.actor);
             }
             UnmarkProcessedInit(pr.actor);
-            // Evict the key index entry too, under the same ownership gate; a rare stale entry
-            // under an unused key is harmless (IsLiveByIndex rejects it, and the by-key resolve
-            // evicts it lazily).
+            // Drop the tracked key too, under the same ownership gate; a rare stale entry under an
+            // unused key is harmless (every reader validates by index, and the dead-entry drain at the
+            // purge edge collects it).
             EraseKeyIndexForActor_(pr.actor);
         }
         // Take the dead Element out of the manager by eid and defer its destruction to the
