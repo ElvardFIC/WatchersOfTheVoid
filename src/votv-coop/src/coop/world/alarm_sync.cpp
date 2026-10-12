@@ -94,15 +94,19 @@ void* Trigger() {
     if (!g_trigger || !R::IsLiveByIndex(g_trigger, g_triggerIdx)) {
         g_trigger = nullptr;
         g_triggerIdx = -1;
-        if (!g_cls) return nullptr;
         if (g_offKey < 0) return nullptr;  // unresolved layout -- cannot tell the two apart
+        // Resolve the class fresh from the index each time, not off a cached pointer: a cached
+        // UClass could in principle be unlisted and re-created at another address, and the old
+        // FindObjectsByClass(name) re-resolved by name too. O(1), so there is no cost in doing so.
+        void* cls = ue_wrap::object_index::ClassByName(L"trigger_alarm_C");
+        if (!cls) return nullptr;  // class not loaded/indexed yet -- keep trying
         // Only the trigger_alarm_C instances, from the object index, not a whole-array
         // FindObjectsByClass per call: an AlarmState flood in a world whose trigger is unbound no
-        // longer walks ~250k objects each message (A70-A). The loop's own checks stay in the
+        // longer walks ~250k objects each message. The loop's own checks stay in the
         // callback -- the index lists the class default object, which carries the default key
-        // 'alarmTrigger', and the index's tenant check is weaker than IsLive. [[RECEIVE_BOUNDARY]]
+        // 'alarmTrigger', and the index's tenant check is weaker than IsLive.
         TriggerSearch srch{g_offKey, nullptr};
-        ue_wrap::object_index::ForEachInstance(g_cls, [](void* ctx, void* obj, int32_t index) {
+        ue_wrap::object_index::ForEachInstance(cls, [](void* ctx, void* obj, int32_t index) {
             auto& s = *static_cast<TriggerSearch*>(ctx);
             if (s.found || !obj) return;                                      // keep the first
             if (R::NameStartsWith(R::NameOf(obj), L"Default__")) return;      // the CDO's default key

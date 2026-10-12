@@ -179,8 +179,10 @@ void ReadSaveRecord(const void* base, SaveRecord& rec) {
 }
 
 void WriteSaveRecord(uint8_t* base, const SaveRecord& r, ClassResolver resolve) {
-    int classMiss = 0;  // non-empty class leaves that did not resolve, said once below
-    if (!WriteClassField(base + kSave_class, r.className, resolve)) ++classMiss;
+    int classMiss = 0;          // non-empty class leaves that did not resolve, said once below
+    std::wstring firstMiss;     // the first one's name, so an honest single miss is still debuggable
+    auto noteMiss = [&](const std::wstring& leaf) { if (firstMiss.empty()) firstMiss = leaf; ++classMiss; };
+    if (!WriteClassField(base + kSave_class, r.className, resolve)) noteMiss(r.className);
     ue_wrap::FTransform t;  // identity defaults; we set all 10 packed floats
     t.RotX = r.xform[0]; t.RotY = r.xform[1]; t.RotZ = r.xform[2]; t.RotW = r.xform[3];
     t.TX = r.xform[4]; t.TY = r.xform[5]; t.TZ = r.xform[6];
@@ -196,13 +198,14 @@ void WriteSaveRecord(uint8_t* base, const SaveRecord& r, ClassResolver resolve) 
     WriteGroups(base, kSave_strings, 16, r.strings,
                 [](uint8_t* e, const std::wstring& v) { ue_wrap::fstring_utils::MintFString(v, e); });
     WriteGroups(base, kSave_classes, 8, r.classes,
-                [&](uint8_t* e, const std::wstring& v) { if (!WriteClassField(e, v, resolve)) ++classMiss; });
+                [&](uint8_t* e, const std::wstring& v) { if (!WriteClassField(e, v, resolve)) noteMiss(v); });
     // One line per record, not per leaf. A record with a null class is an item the game cannot
     // materialise, said out loud rather than lost -- but a crafted `classes` group is thousands of
-    // unknown names, and the old per-leaf line was its own flood on exactly that input.
+    // unknown names, and the old per-leaf line was its own flood on exactly that input. The first
+    // missing name is kept so an honest single miss can still be chased.
     if (classMiss > 0)
-        UE_LOGE("save_record: %d class name(s) in this record are not loaded -- written WITHOUT their "
-                "class", classMiss);
+        UE_LOGE("save_record: %d class name(s) in this record are not loaded (first: '%ls') -- written "
+                "WITHOUT their class", classMiss, firstMiss.c_str());
     WriteGroups(base, kSave_vectors, 12, r.vectors,
                 [](uint8_t* e, const std::array<float, 3>& v) { std::memcpy(e, v.data(), 12); });
     WriteGroups(base, kSave_rotators, 12, r.rotators,

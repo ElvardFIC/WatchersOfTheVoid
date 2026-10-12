@@ -30,9 +30,9 @@ namespace ue_wrap::save_record {
 // but costs a whole-array walk per unresolved name. A peer applying data IT RECEIVED FROM AN
 // ATTACKER (the host taking a client's record) passes ue_wrap::object_index::ClassByName instead: a
 // one-step lookup that answers a loaded class and a miss alike, so an attacker's unknown name costs a
-// hash probe, not a 250k-object walk (RECEIVE_BOUNDARY_ARC A70-A). A client applying the host's own
+// hash probe, not a 250k-object walk. A client applying the host's own
 // record keeps the default: its object index can trail during a blocking world load, where the walk
-// still finds a class the index does not list yet, and a hostile host is WP-6's, not A70's.
+// still finds a class the index does not list yet, and a cheating host is out of scope here.
 using ClassResolver = void* (*)(const wchar_t*);
 
 // One Fstruct_save record as engine-agnostic POD (the wire layer serializes this).

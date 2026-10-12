@@ -2,7 +2,7 @@
 
 #include "coop/dev/hostile_drill.h"
 
-#include "coop/dev/hostile_drill_walk.h"  // the A70 walk arms (record_bad_classes, bad_alarm)
+#include "coop/dev/hostile_drill_walk.h"  // the walk arms (record_bad_classes, bad_alarm)
 #include "coop/comms/chat_feed.h"
 #include "coop/comms/chat_log.h"
 #include "coop/config/config.h"
@@ -40,7 +40,7 @@ namespace SD = ue_wrap::signal_dynamic;
 namespace SS = ue_wrap::saved_signals;
 using Clock = std::chrono::steady_clock;
 
-// The A70 walk arms (record_bad_classes, bad_alarm) live in hostile_drill_walk.cpp -- this file is
+// The walk arms (record_bad_classes, bad_alarm) live in hostile_drill_walk.cpp -- this file is
 // the dispatcher that owns the arm selection and routes those two to that module's sender and judge.
 enum class Arm { Off, SignalPark, ChatIllFormed, PropConvert, ReliableFlood, RepeatJoin,
                  RepeatWorldReady, RepeatSaveRequest, RecordBadClasses, BadAlarm };
@@ -80,7 +80,7 @@ const char* ArmName() {
     }
 }
 
-// The two A70 arms are host-JUDGED (the host reads its own whole-array walk count), so they route to
+// The two walk arms are host-JUDGED (the host reads its own whole-array walk count), so they route to
 // hostile_drill_walk, not to the Step machine below. None when the active arm is not one of them.
 walk::Arm WalkArmOf() {
     switch (ArmOf()) {

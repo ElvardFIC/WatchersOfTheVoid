@@ -31,7 +31,7 @@ namespace coop::trash_mirror {
 // (coop/props/pile_look.h). Returns the actor, or nullptr on failure. Game thread.
 // `resolve` governs the class-name lookup: null = reflection::FindClass (a whole-array walk on a
 // miss); the host receiving a CLIENT's spawn/convert passes object_index::ClassByName so an
-// attacker's unknown class costs a lookup, not a walk (A70-A). A client keeps the default.
+// attacker's unknown class costs a lookup, not a walk. A client keeps the default.
 void* Materialize(coop::element::ElementId eid, const std::wstring& className, uint8_t chipType,
                   const ue_wrap::FVector& loc, const ue_wrap::FRotator& rot,
                   const ue_wrap::FVector& scale, int senderSlot, bool skipBind, bool rebindInPlace,

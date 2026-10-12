@@ -220,10 +220,10 @@ void OnClientFinishSpawn(void* /*context*/, void* /*srcObj*/, void* result) {
 void* HostSpawnPlacedProp(const coop::net::PropDropIntentPayload& p, const std::wstring& cls,
                           const std::wstring& key, uint8_t authorSlot) {
     // Host resolving a CLIENT's placed-prop class: object_index, so an attacker's unknown class is an
-    // O(1) miss, not a whole-array walk (A70-A). Host world is always up, so the index is current.
+    // O(1) miss, not a whole-array walk. Host world is always up, so the index is current.
     void* clsObj = ue_wrap::object_index::ClassByName(cls.c_str());
     if (!clsObj) {
-        UE_LOGW("[PROP-DROP] HOST FindClass('%ls') failed -- cannot spawn placed prop key='%ls'",
+        UE_LOGW("[PROP-DROP] HOST class '%ls' not found -- cannot spawn placed prop key='%ls'",
                 cls.c_str(), key.c_str());
         return nullptr;
     }
@@ -572,7 +572,7 @@ void OnReelEjectIntent(coop::net::Session& session, const coop::net::PropDropInt
     // (the socket unplug), drives, floppy discs and server upgrades (a box's take-out). Not a general
     // client-spawn door; any other class here is a protocol violation, dropped.
     const std::wstring cls = WireToWide(p.className.len, p.className.data, sizeof(p.className.data));
-    // Host resolving a CLIENT's eject class: object_index (A70-A), host world up so the index is current.
+    // Host resolving a CLIENT's eject class: object_index, host world up so the index is current.
     void* clsObj = ue_wrap::object_index::ClassByName(cls.c_str());
     const bool isReel = clsObj && ue_wrap::tape_caddy::EnsureResolved() &&
                         ue_wrap::tape_caddy::IsReelClass(clsObj);

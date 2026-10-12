@@ -118,7 +118,7 @@ void* OnConvert(const coop::net::PropConvertPayload& payload, void* /*localPlaye
     coop::pile_look::OnHostLook(E, payload.look, senderSlot);
     if (!wantClump)
         coop::trash_clump_pose_stream::ClearDriveForEid(E);  // the carry ends at the land
-    // Host mirrors a client's convert with its world up -> object_index; a client keeps FindClass (A70-A).
+    // Host mirrors a client's convert with its world up -> object_index; a client keeps FindClass.
     void* (*classResolve)(const wchar_t*) =
         coop::prop_element_tracker::SessionIsHost() ? &ue_wrap::object_index::ClassByName : nullptr;
     void* next = coop::trash_mirror::Materialize(E, cls, payload.chipType, loc, rot, scale,

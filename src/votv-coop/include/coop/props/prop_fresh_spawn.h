@@ -27,7 +27,7 @@ namespace coop::prop_fresh_spawn {
 // unknown class / no world / engine call failure). Game thread only.
 // `resolve` governs the class-name lookup: null = reflection::FindClass (a whole-array walk on a
 // miss); the host receiving a CLIENT's spawn passes object_index::ClassByName so an attacker's
-// unknown class costs a lookup, not a walk (A70-A). A client keeps the default (its index can trail).
+// unknown class costs a lookup, not a walk. A client keeps the default (its index can trail a load).
 void* Materialize(const coop::net::PropSpawnPayload& payload, int senderSlot,
                   const std::wstring& classW, const std::wstring& keyW,
                   const std::wstring& propNameW, bool skipBind,

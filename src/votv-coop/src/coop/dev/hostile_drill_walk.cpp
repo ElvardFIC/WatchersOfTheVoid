@@ -140,7 +140,7 @@ void SendRecordBadClasses(coop::net::Session* s) {
     void* pawn = coop::players::Registry::Get().Local();
     if (!pawn || !ue_wrap::engine::TryGetActorLocation(pawn, at)) return;  // no body yet; wait
     const std::vector<uint8_t> body = BuildBadRecordBody(key);
-    if (!coop::blob_chunks::SendBlob(s, coop::net::ReliableKind::PropSaveDataIntent, 0xA7000001u, body)) {
+    if (!coop::blob_chunks::SendBlob(s, coop::net::ReliableKind::PropSaveDataIntent, 0x7D000001u, body)) {
         Inconclusive(Arm::RecordBadClasses, "the crafted intent was not sent (link refused it)");
         return;
     }
@@ -249,13 +249,6 @@ void JudgeHost(coop::net::Session* s, Arm a) {
 }
 
 }  // namespace
-
-Arm ParseArm(const char* v) {
-    if (!v) return Arm::None;
-    if (std::strcmp(v, "record_bad_classes") == 0) return Arm::RecordBadClasses;
-    if (std::strcmp(v, "bad_alarm") == 0) return Arm::BadAlarm;
-    return Arm::None;
-}
 
 const char* ArmName(Arm a) {
     switch (a) {

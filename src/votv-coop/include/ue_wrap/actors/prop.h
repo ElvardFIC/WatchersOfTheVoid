@@ -60,7 +60,7 @@ bool IsTrashActor(void* obj);
 // not memoised. Game thread.
 // `resolve` governs how an unmemoised name resolves: null = reflection::FindClass (a whole-array
 // walk on a miss). The host resolving a CLIENT's PropSpawn class passes object_index::ClassByName,
-// so an attacker's distinct unknown names cost a lookup each, not a walk each (A70-A); a client keeps
+// so an attacker's distinct unknown names cost a lookup each, not a walk each; a client keeps
 // the default, since its index can trail a load. Type is save_record::ClassResolver.
 bool IsTrashClassName(const std::wstring& className, void* (*resolve)(const wchar_t*) = nullptr);
 bool IsClumpClassName(const std::wstring& className, void* (*resolve)(const wchar_t*) = nullptr);

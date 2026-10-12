@@ -303,7 +303,7 @@ bool TryApply(void* actor, const std::wstring& key, const SR::SaveRecord& rec) {
     // client), with its world up and the object index current: it resolves the record's class names
     // through object_index so an attacker's unknown name is an O(1) miss, not a whole-array walk. A
     // CLIENT applies only the host's own record, possibly mid-load with the index trailing, so it
-    // keeps the authoritative FindClass walk (A70-A; a hostile host is WP-6's). [[RECEIVE_BOUNDARY]]
+    // keeps the authoritative FindClass walk (a cheating host is out of scope here).
     const SR::ClassResolver resolve =
         PT::SessionIsHost() ? &ue_wrap::object_index::ClassByName : nullptr;
     if (!SR::ApplyRecord(actor, rec, resolve)) return false;

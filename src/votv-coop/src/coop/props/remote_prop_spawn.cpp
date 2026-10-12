@@ -135,7 +135,7 @@ void OnSpawn(const coop::net::PropSpawnPayload& payload, int senderSlot,
     // The HOST mirrors a CLIENT's spawn with its world up, so it resolves the wire class name through
     // object_index (an attacker's unknown class is an O(1) miss, not a whole-array walk per distinct
     // name); a CLIENT mirrors the host's spawn and keeps FindClass, its index able to trail a load
-    // (A70-A). One resolver for every class lookup this spawn makes. [[RECEIVE_BOUNDARY]]
+    // the host game thread. One resolver for every class lookup this spawn makes.
     void* (*classResolve)(const wchar_t*) =
         coop::prop_element_tracker::SessionIsHost() ? &ue_wrap::object_index::ClassByName : nullptr;
     // The Aprop_C identity row (empty for a non-Aprop_C sender), for the fuzzy identity gate and

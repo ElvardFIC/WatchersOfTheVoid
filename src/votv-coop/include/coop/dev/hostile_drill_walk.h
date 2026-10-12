@@ -1,20 +1,10 @@
-// coop/dev/hostile_drill_walk.h -- the receive boundary's A70 drill: an attacker-chosen class name
-// must not cost the host a walk of the whole object array. Two arms, both judged by the HOST reading
-// its own whole-array walk count (ue_wrap::walk_census) across a sentinel the attack rides behind:
-//
-//   record_bad_classes -- a client sends ONE PropSaveDataIntent for a real covered prop's key, whose
-//     `classes` group carries ~1024 distinct unknown names. On bytes without the fix each name is a
-//     FindClass miss and a whole-array walk; with it each is one object_index lookup. The host's walk
-//     count rises by about the name count on the red bytes and by zero on the green. A sentinel spawn
-//     rides the same Bulk FIFO behind the intent, so its binding means the intent drained and applied.
-//   bad_alarm -- a client sends a burst of AlarmState while the alarm trigger is unbound, which
-//     re-walks for trigger_alarm_C per message on the red bytes. A fresh world usually has the trigger
-//     BOUND, where no walk is possible either way, so this arm FAILs on an observed walk (red) and is
-//     INCONCLUSIVE otherwise (the alarm fix is then proven by code; record_bad_classes carries the HIGH).
-//
-// This is defensive testing of OUR OWN mod, in OUR OWN rig, per coop/dev/hostile_drill.h. Nothing
-// here ships enabled. The judge reads nothing of the fix: it counts walks, a counter the tree already
-// keeps, so the same judge reads red on the commit before the fix and green on it.
+// coop/dev/hostile_drill_walk.h -- two drill arms proving an attacker's chosen class name must not
+// cost the host a walk of the whole object array. Both are judged by the HOST reading its own
+// whole-array walk count (ue_wrap::walk_census) across a sentinel the attack rides behind, so the
+// same judge reads a large walk count on the bytes before the fix and zero on it. record_bad_classes
+// sends one PropSaveDataIntent for a real covered prop's key carrying ~1024 unknown names; bad_alarm
+// sends an AlarmState burst (INCONCLUSIVE when the trigger is bound, where no walk happens either
+// way). Defensive testing of OUR OWN mod, per coop/dev/hostile_drill.h; nothing here ships enabled.
 
 #pragma once
 
@@ -22,11 +12,10 @@ namespace coop::net { class Session; }
 
 namespace coop::dev::hostile_drill::walk {
 
-// The two A70 sub-arms; None when the active drill arm is not one of ours.
+// The two sub-arms; None when the active drill arm is not one of ours.
 enum class Arm { None, RecordBadClasses, BadAlarm };
 
-// Map the hostile_drill enum string to a walk arm (else None), and its name for the markers.
-Arm        ParseArm(const char* enumValue);
+// The arm's name, for the verdict markers.
 const char* ArmName(Arm a);
 
 // Client (sender), game thread: once this peer's own join is over, craft and send the attack and its

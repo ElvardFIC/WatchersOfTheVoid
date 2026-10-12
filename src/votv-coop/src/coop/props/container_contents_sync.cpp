@@ -319,7 +319,7 @@ Ingest ApplyContents(uint32_t eid, const std::vector<SR::SaveRecord>& recs, uint
     }
     // The HOST applies a CLIENT's contents with its world up, so it resolves each record's class
     // names through object_index (an attacker's unknown name is an O(1) miss, not a whole-array walk);
-    // a CLIENT applying the host's broadcast may be mid-load, so it keeps FindClass (A70-A). [[RECEIVE_BOUNDARY]]
+    // a CLIENT applying the host's broadcast may be mid-load, so it keeps FindClass (its index can trail).
     const SR::ClassResolver resolve = IsHost() ? &ue_wrap::object_index::ClassByName : nullptr;
     for (int32_t i = 0; i < n; ++i)
         SR::WriteSaveRecord(reinterpret_cast<uint8_t*>(buf) + static_cast<size_t>(i) * SR::kSaveStride,

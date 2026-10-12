@@ -129,9 +129,11 @@ std::unordered_map<std::wstring, TrashClassKind> g_trashClassKind;
 TrashClassKind ResolveTrashClassKind(const std::wstring& className, void* (*resolve)(const wchar_t*)) {
     if (className.empty()) return {};
     if (auto it = g_trashClassKind.find(className); it != g_trashClassKind.end()) return it->second;
-    ResolveExtraBases();
     void* cls = resolve ? resolve(className.c_str()) : R::FindClass(className.c_str());
     if (!cls) return {};  // class not loaded yet -- do NOT memoise (it could load later)
+    // Only after the name resolves: an unknown name (an attacker's, say) returns above without paying
+    // the base resolves, which are their own object-array lookups while a trash base is unloaded.
+    ResolveExtraBases();
     TrashClassKind k;
     k.isClump = WalksToBase(cls, GarbageClumpCls());
     k.isTrash = k.isClump || WalksToBase(cls, ActorChipPileCls());

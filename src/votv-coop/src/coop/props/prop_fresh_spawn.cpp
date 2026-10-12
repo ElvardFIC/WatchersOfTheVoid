@@ -86,7 +86,7 @@ void* Materialize(const coop::net::PropSpawnPayload& payload, int senderSlot,
     }
     void* actorClass = resolve ? resolve(classW.c_str()) : R::FindClass(classW.c_str());
     if (!actorClass) {
-        UE_LOGW("remote_prop::OnSpawn: class '%ls' not found in GUObjectArray -- dropping (likely cooked-content class not loaded)",
+        UE_LOGW("remote_prop::OnSpawn: class '%ls' not found -- dropping (likely cooked-content class not loaded)",
                 classW.c_str());
         return nullptr;
     }
