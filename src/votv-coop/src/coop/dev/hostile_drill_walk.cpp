@@ -238,7 +238,8 @@ void SendBadPropSpawn(coop::net::Session* s, Arm a) {
         char key[24];
         std::snprintf(key, sizeof(key), "nospawn_%02d", i);
         PutKey(p.key, key);
-        // A ring of spots 3 m out and 2 m up, each well clear of the others and of any prop at rest.
+        // A 4x4 lattice of spots 3 m apart and 2 m up, each well clear of the others and of any prop at
+        // rest; a prop within the dedupe's radius of one would be adopted, which the verdict ignores.
         p.locX = at.X + 300.f * static_cast<float>((i % 4) - 1.5f);
         p.locY = at.Y + 300.f * static_cast<float>((i / 4) - 1.5f);
         p.locZ = at.Z + 200.f;
@@ -317,7 +318,7 @@ void JudgeHost(coop::net::Session* s, Arm a) {
     if (delta >= floor)
         Done("FAIL", a, "walked the object array %llu time(s) on the sender's names", delta);
     else if (a != Arm::BadAlarm)
-        Done("PASS", a, "no whole-array walk on the sender's names (%llu)", delta);
+        Done("PASS", a, "no counted whole-array walk on the sender's names (%llu)", delta);
     else
         // bad_alarm green is ambiguous (a bound trigger never walks either way), so it is never a PASS.
         Done("INCONCLUSIVE", a, "no walk observed (%llu); the trigger was bound -- alarm proven by code",

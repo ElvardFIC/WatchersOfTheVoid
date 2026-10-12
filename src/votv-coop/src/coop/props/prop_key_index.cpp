@@ -83,6 +83,9 @@ bool g_listening = false;
 bool g_wanted = false;  // the session holds the gate: Begin was called and End not yet
 bool g_live = false;    // seeded in this hold
 bool g_deadSaid = false;
+// The install cannot index: a watch or the listener refused, or a watch dead for good. Read off the game thread
+// by the session start's refusal.
+std::atomic<bool> g_unavailable{false};
 bool g_namesSettled = false;  // all four watches live or dead for good
 bool g_staleParkSaid = false;
 bool g_findPendingSaid = false;  // the first Find that met Pending this session is named
@@ -397,12 +400,18 @@ Read Ask(const std::wstring& key, void* skip, void** out, bool catchUp) {
 //
 // A scan-hub consumer over every class with a key field: an object the hub hands out (live, readable, in the
 // current world, its slot still holding it) whose key the store does not file in that slot, with that serial,
-// under that key, is a filing the feeds missed. MTA asserts the same parity at each mutation
-// (reference/mtasa-blue/Server/mods/deathmatch/logic/CPlayerManager.cpp:395,403), a debug assert compiled out of
-// a release, with no repair; ours runs in the shipped build and files the prop again, since a filing missed here
-// is a prop no read by key finds.
+// under that key, is a filing the feeds missed. MTA asserts the parity of two containers it mutates itself, at
+// each mutation (reference/mtasa-blue/Server/mods/deathmatch/logic/CPlayerManager.cpp:395,403), and its assert
+// stays on in a release and stops the process (reference/mtasa-blue/Shared/sdk/SharedUtil.Defines.h:155-165).
+// Ours checks a store against objects the engine owns, where a miss is a write no feed saw rather than our own
+// bug, so it is counted, named and filed again instead.
 bool ParityReady() { return g_live; }
 bool ParityIsInstance(void* obj) { return FieldOf(R::ClassOf(obj)) != KeyField::None; }  // class-pure
+// FieldOf answers None for a class asked while a base is still loading, without keeping it; the hub keeps its
+// verdicts, so it takes them again when both bases have loaded.
+uint64_t ParityBasesLoaded() {
+    return (OI::ClassByName(ue_wrap::profile::name::PropClass) && OI::ClassByName(L"trashBitsPile_C")) ? 1 : 0;
+}
 void ParityBegin(void*, bool) {}
 
 void ParityMatch(void*, void* obj) {
@@ -470,6 +479,7 @@ void TrySeed() {
     if (!g_installed || g_deadSaid) return;
     if (g_watchRefused || !g_listening || WatchDead(kRowInit) || WatchDead(kRowSetKey) || WatchDead(kRowGetKey) ||
         WatchDead(kRowLoadData)) {
+        g_unavailable.store(true, std::memory_order_release);
         if (!g_deadSaid) {
             g_deadSaid = true;
             UE_LOGE("prop_key_index: a key watch or the object-index listener is not available -- the index "
@@ -555,9 +565,11 @@ void Install() {
                     SG::WatchName(kRowLoadData, kTag, nullptr, &OnPost);
     g_watchRefused = !ok;
     g_listening = OI::AddListener(OI::Listener{nullptr, &OnCreated, &OnDeleted});
+    if (g_watchRefused || !g_listening) g_unavailable.store(true, std::memory_order_release);
     coop::element::scan_hub::Register(coop::element::scan_hub::Consumer{
         "prop_key_parity", nullptr, &ParityReady, &ParityIsInstance, &ParityBegin, &ParityMatch, &ParityComplete,
-        /*settleScans*/ 0});  // demand-exempt: rides the tail passes and the full backstop
+        /*settleScans*/ 0,  // demand-exempt: rides the tail passes and the full backstop
+        &ParityBasesLoaded});
     if (g_watchRefused || !g_listening)
         UE_LOGE("prop_key_index: install incomplete (watches %s, listener %s)", ok ? "taken" : "REFUSED",
                 g_listening ? "taken" : "REFUSED");
@@ -596,7 +608,7 @@ void* Find(const std::wstring& key) {
     const Read r = Ask(key, nullptr, &actor, /*catchUp=*/true);
     // A Pending here is answered as no holder, the one place "not yet" becomes "not here": counted apart, and the
     // first of a session named, since a run that shows none is the evidence this costs nothing.
-    if (r == Read::Pending && g_wanted && ue_wrap::game_thread::IsGameThread()) {
+    if (r == Read::Pending && ue_wrap::game_thread::IsGameThread() && g_wanted) {
         ++g_sum.findPending;
         if (!g_findPendingSaid) {
             g_findPendingSaid = true;
@@ -615,12 +627,16 @@ Read AnotherHolder(const std::wstring& key, void* self, void** other) {
 bool CanAnswer() {
     if (!g_wanted) return true;  // no session index to wait for
     // Live comes on the first session tick after the four names resolve, and an any-class name watch never
-    // dies; a build whose script gate did not arm never starts a session. The per-batch drain reaches a zero
+    // dies once resolved; an install that cannot index never starts a session, and a join that meets one ends
+    // (Unavailable). Unlike the barrier's other terms this one has no deadline and no degraded announce: an
+    // index that does not hold the world would duplicate it. The per-batch drain reaches a zero
     // backlog on its own: a gate asked every tick never drains (DrainAll answers a miss, not a tick). A birth
     // still loading does not hold the gate, since one after another could hold it without end; a read that
     // meets one answers Pending, and the summary counts it.
     return g_live && OI::Backlog() == 0;
 }
+
+bool Unavailable() { return g_unavailable.load(std::memory_order_acquire); }
 
 size_t Size() { return g_bySlot.size(); }
 

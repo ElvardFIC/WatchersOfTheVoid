@@ -116,8 +116,8 @@ void DestroyResolvedLocalActor_(void* actor, const std::wstring& keyW,
 // raced ahead), the destroy is queued on the drain-edge order owner and re-applied after the
 // bind at the quiescence sweep, never dropped, since a destroy dropped before the load left
 // the prop to load unopposed, a duplicate. Without it, the deferred re-apply: a still-missing
-// actor returns false to stay queued. True iff a local actor was destroyed or a mirror
-// retired. Game thread.
+// actor answers NotFound and a key the index cannot answer yet NotYet, both staying queued.
+// Applied iff a local actor was destroyed or a mirror retired. Game thread.
 DestroyApply OnDestroyImpl_(const coop::net::PropDestroyPayload& payload, void* localPlayer, int senderSlot,
                             bool allowDefer) {
     // Dispatched from the event drain on the game thread.
@@ -227,9 +227,9 @@ void AddDestroyListener(DestroyHeardFn fn) {
 }
 
 // The deferred re-apply, called by the drain-edge order owner at the quiescence sweep.
-// Resolves the local player itself (the sweep has no caller-passed pawn). True iff the doomed
+// Resolves the local player itself (the sweep has no caller-passed pawn). Applied iff the doomed
 // actor has now loaded and was destroyed, so the owner erases it from the pending queue;
-// false keeps it queued. Never re-arms.
+// NotFound and NotYet keep it queued. Never re-arms.
 DestroyApply TryApplyDestroy(const coop::net::PropDestroyPayload& payload) {
     void* localPlayer = coop::players::Registry::Get().Local();
     return OnDestroyImpl_(payload, localPlayer, /*senderSlot=*/-1, /*allowDefer=*/false);

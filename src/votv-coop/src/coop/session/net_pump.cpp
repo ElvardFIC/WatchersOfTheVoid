@@ -459,7 +459,9 @@ void Tick(coop::net::Session& session) {
 
     // A client announces world-ready once per connection, when a gameplay world is up, the prop
     // registry expresses it, the load tail has quiesced and the prop key index holds the world, so
-    // the host's stream is read by key against it: the MTA INITIAL_DATA_STREAM barrier
+    // the host's stream is read by key against it (MTA's barrier has no such term: its ids are minted
+    // by their owner, reference/mtasa-blue/Server/mods/deathmatch/logic/CElementIDs.cpp:23): the MTA
+    // INITIAL_DATA_STREAM barrier
     // (CGame.cpp). The host streams the whole world state on it, so announcing into a churning load
     // would put the authoritative stream into it. The probe is deadline-capped, so a pathological
     // load still announces. Re-fires on a re-announce request under the same coherence gate.
@@ -475,6 +477,11 @@ void Tick(coop::net::Session& session) {
         const bool thisWorld = seeded && coop::prop_element_tracker::IsRegistrySeededForCurrentWorld();
         const bool purging  = coop::prop_element_tracker::InPurgeEpisode();
         const bool quiesced = coop::world_load_episode::TickQuiesceProbe();
+        // An install found unable to index after the session started (its watches resolve on the game
+        // thread) can never clear the key term: the join ends by name rather than waiting on it.
+        if (coop::prop_key_index::Unavailable())
+            coop::join_progress::Fail(coop::net::EndReason::ScriptHooksUnavailable,
+                                      "the prop key index cannot hold this world");
         const bool keysReady = worldUp && seeded && thisWorld && !purging && quiesced &&
                                coop::prop_key_index::CanAnswer();
         using WG = coop::join_progress::WorldGate;

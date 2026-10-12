@@ -34,10 +34,11 @@ coop::net::Session& Session();
 // false return from Start (a start skipped for shutdown leaves it as the caller set it).
 bool StartCoopSession(const coop::net::Config& netCfg, coop::net::Refusal* why = nullptr);
 
-// The refusal every session start owes on this build, or None: a game whose script loop was not found at
-// boot (ue_wrap/core/script_gate) never sees a prop's key written, so the prop key index cannot hold the world
-// and a session would duplicate the joiner's props in silence. StartCoopSession asks it first, and a host
-// asks it before loading its world. Any thread.
+// The refusal every session start owes on this build, or None: a game whose script loop could not be hooked
+// at boot (ue_wrap/core/script_gate), or whose prop key watches were refused, never has a prop's key seen
+// written, so the prop key index cannot hold the world and a session would duplicate the joiner's props in
+// silence. StartCoopSession asks it first, a join from a world before leaving it, and a host before loading
+// its world. Any thread.
 coop::net::Refusal SubstrateRefusal();
 
 // End a CLIENT session from a timeline stop site (a join abort, a Cancel, a world that will not

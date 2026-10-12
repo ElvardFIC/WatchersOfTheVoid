@@ -49,7 +49,9 @@ enum class Read : uint8_t { Hit, Miss, Pending };
 Read Resolve(const std::wstring& key, void** out);
 
 // Resolve for a caller whose "not yet" and "not here" are the same answer: the actor on Hit, else null. A
-// Pending answered so is counted in the summary, and the first of a session is named.
+// Pending answered so is counted in the summary, and the first of a session is named. A wire message whose key
+// names no prop is then dropped, as MTA drops a packet naming an element it does not hold
+// (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:2424-2425, :2672-2673); nothing searches further.
 void* Find(const std::wstring& key);
 
 // Whether an actor other than `self` holds `key`, by the same rule: a uniqueness check at enrolment, which
@@ -61,6 +63,12 @@ Read AnotherHolder(const std::wstring& key, void* self, void** other = nullptr);
 // left no backlog. The client's world-ready gate asks it, so the host's world arrives on an index that holds
 // this one. True outside a session.
 bool CanAnswer();
+
+// Whether this install can never index: a watch or the object-index listener refused, or a watch dead for good
+// (each logged where it was found). Known on the first game-thread task after boot (harness::Start installs
+// it there) or at a session's seed. A session start refuses on it, and a join waiting to announce ends on it
+// (MV-J32). Any thread.
+bool Unavailable();
 
 // How many props the index holds now, for a diagnostic line.
 size_t Size();

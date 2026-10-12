@@ -522,8 +522,8 @@ void* FindNearbySameClass(const std::wstring& className,
                           const NearbyExclusion& excluded,
                           NearbyTrace* outTrace) {
     if (className.empty() || radiusCm <= 0.f) return nullptr;
-    // The one loaded class of that name, and a prop's, or nothing: the name comes off the wire, and a
-    // class of any other lineage answering here would let a sender steer the adoption onto a pawn.
+    // The one loaded class of that name, and a prop's, or nothing: the name comes off the wire, and only a
+    // prop's class may be adopted.
     void* const cls = object_index::ClassByName(className.c_str());
     if (!cls || !IsClassDescendantOfProp(cls)) return nullptr;
     // Its instances, collected before any engine call (the hand-out must not create or destroy), then in
@@ -540,7 +540,9 @@ void* FindNearbySameClass(const std::wstring& className,
     std::sort(sInst.begin(), sInst.end());
     const float r2 = radiusCm * radiusCm;
     for (const auto& [idx, obj] : sInst) {
-        // Cheapest first, and nothing allocates: the slot's flags, the child-actor read, the CDO's name.
+        // Cheapest first: the slot's flags, the child-actor read, the CDO's name. No string is built per
+        // instance (the name compares render into the engine's scratch); the location read below is a
+        // reflected call, made only for an instance of the right row.
         if (!R::IsLiveByIndex(obj, idx) || (R::SlotFlags(idx) & R::slot_flags::NotYetReadable)) continue;
         // A child-actor component's child (a kerfur's eye camera) never has independent cross-peer
         // identity, so a wire spawn of a standalone same-class prop near a kerfur must not
@@ -552,7 +554,9 @@ void* FindNearbySameClass(const std::wstring& className,
         // identity (a cube and a wall panel are both prop_C). When the wire carries a row it must
         // match, or two co-located different props would fuzzy-merge and the rekey would bind the
         // wrong object; an empty expected name is a class-only match.
-        if (!expectedPropName.empty() && !R::NameEquals(GetPropName(obj), expectedPropName.c_str())) {
+        // The row field read straight: the class is a prop's, proven once above.
+        if (!expectedPropName.empty() &&
+            !R::NameEquals(ReadField<R::FName>(obj, P::off::Aprop_Name), expectedPropName.c_str())) {
             if (outTrace) ++outTrace->rowNameRejects;
             continue;
         }

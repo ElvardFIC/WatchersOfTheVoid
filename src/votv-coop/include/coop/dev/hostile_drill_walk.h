@@ -1,6 +1,6 @@
 // coop/dev/hostile_drill_walk.h -- drill arms proving a sender's chosen class name or prop key must not
 // cost the host a walk of the whole object array. Both are judged by the HOST reading its own
-// whole-array walk count (ue_wrap::walk_census) across a sentinel the attack rides behind, so the
+// whole-array walk count (ue_wrap::walk_census) across a sentinel the burst rides behind, so the
 // same judge reads a large walk count on the bytes before the fix and zero on it. record_bad_classes
 // sends one PropSaveDataIntent for a real covered prop's key carrying ~1024 unknown names; bad_alarm
 // sends an AlarmState burst (INCONCLUSIVE when the trigger is bound, where no walk happens either

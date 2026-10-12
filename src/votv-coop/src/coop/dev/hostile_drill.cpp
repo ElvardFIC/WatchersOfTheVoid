@@ -2,7 +2,7 @@
 
 #include "coop/dev/hostile_drill.h"
 
-#include "coop/dev/hostile_drill_walk.h"  // the walk arms (record_bad_classes, bad_alarm)
+#include "coop/dev/hostile_drill_walk.h"  // the four walk arms
 #include "coop/comms/chat_feed.h"
 #include "coop/comms/chat_log.h"
 #include "coop/config/config.h"
@@ -40,8 +40,9 @@ namespace SD = ue_wrap::signal_dynamic;
 namespace SS = ue_wrap::saved_signals;
 using Clock = std::chrono::steady_clock;
 
-// The walk arms (record_bad_classes, bad_alarm) live in hostile_drill_walk.cpp -- this file is
-// the dispatcher that owns the arm selection and routes those two to that module's sender and judge.
+// The walk arms (record_bad_classes, bad_alarm, bad_prop_key, bad_prop_spawn) live in
+// hostile_drill_walk.cpp -- this file is the dispatcher that owns the arm selection and routes those
+// four to that module's sender and judge.
 enum class Arm { Off, SignalPark, ChatIllFormed, PropConvert, ReliableFlood, RepeatJoin,
                  RepeatWorldReady, RepeatSaveRequest, RecordBadClasses, BadAlarm, BadPropKey,
                  BadPropSpawn };

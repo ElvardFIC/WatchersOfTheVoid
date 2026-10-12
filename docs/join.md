@@ -129,8 +129,11 @@ consecutive scans. Two deadlines bound a pathological load, one on no progress a
 past either the client announces anyway, logged loudly as degraded.
 
 The client announces ready once per world, when a gameplay world is up, the prop registry is
-seeded for that world, no purge is running, and the probe has settled (`coop/session/net_pump`).
-This is the join barrier: no authoritative state lands in a world that is still churning. On
+seeded for that world, no purge is running, the probe has settled, and the prop key index holds the
+world (`coop/session/net_pump`). This is the join barrier: no authoritative state lands in a world
+that is still churning. The key index term has no deadline and no degraded announce: an index that
+does not hold the world would duplicate it, so a build whose index cannot exist ends the join
+(`MV-J32`) instead, and on any other build the term clears on the first tick after the seed. On
 every appearance in a co-op world the client is placed by the mod, never left at the host's saved
 position that the transferred save carries: at the last spot its profile says it was standing
 on, once, for a returning player, and at the base gate otherwise.
@@ -303,7 +306,7 @@ travel, the player is told so (`MV-J31`), unless the reason the session ended is
 | `MV-J29` | `net.ice=relay`, and the session has no TURN server to relay through |
 | `MV-J30` | `net.ice=relay`, and the join is a direct one, which would show the host the player's address |
 | `MV-J31` | The game would not travel to the main menu: from a world a join starts in, or after a session ended (its game mode refused the travel, or it never dispatched or arrived); the player is still in that world |
-| `MV-J32` | The game's script loop was not found at boot, so a prop's key is never seen written and props cannot be matched between players by key; no session starts, a join or a host's own, the host's before its world loads |
+| `MV-J32` | The game's script loop could not be hooked at boot, or the prop key watches were refused, so a prop's key is never seen written and props cannot be matched between players by key; no session starts, a join or a host's own, the host's before its world loads, and a join from a world before the world is left |
 | `MV-H01` | Wrong password |
 | `MV-H02` | This server needs a password |
 | `MV-H03` | Too many password attempts; try again in ten minutes |

@@ -101,6 +101,8 @@ std::vector<PendingDestroy> g_pendingDestroy;
 constexpr int kMaxDeferApplies = 8;  // about 2 s at the 250 ms debounce
 // A pass the key index cannot answer spends no attempt, up to this many: about 6 s at the debounce, past the
 // index's 5 s bound on a prop still loading. Beyond it every pass is an attempt, so the entry still leaves.
+// MTA has no deferred destroy to budget: its ids are minted by their owner, so a destroy names an element
+// that exists (reference/mtasa-blue/Server/mods/deathmatch/logic/CElementIDs.cpp:23).
 constexpr int kMaxNotYetPasses = 24;
 
 // Trigger timing for the steady-state reconcile.
