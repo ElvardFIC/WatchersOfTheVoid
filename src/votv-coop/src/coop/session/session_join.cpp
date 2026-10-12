@@ -137,10 +137,12 @@ net::Refusal SubstrateRefusal() {
 }
 
 namespace {
-// A join this build cannot start, refused before any cover or connect, as the version gate refuses one.
-bool RefusedBySubstrate(const char* what) {
+// A join this build cannot start, refused before any cover or connect, as the version gate refuses one;
+// `out` (reset by the caller) gets the refusal.
+bool RefusedBySubstrate(const char* what, net::Refusal* out) {
     const net::Refusal r = SubstrateRefusal();
     if (r.code == net::EndReason::None) return false;
+    if (out) *out = r;
     UE_LOGW("session_manager: %s refused -- [%s] %s (%s)", what, net::Describe(r.code).id,
             net::Describe(r.code).text, r.detail.c_str());
     coop::join_progress::RefuseJoin(r.code, r.detail);
@@ -150,7 +152,8 @@ bool RefusedBySubstrate(const char* what) {
 
 bool JoinLobby(const std::string& masterUrl, const std::string& lobbyId,
                const std::string& displayName, int hostProto, const std::string& hostGame,
-               const std::string& hostGameBuild) {
+               const std::string& hostGameBuild, net::Refusal* refused) {
+    if (refused) *refused = net::Refusal{};
     // Never connect to our own lobby (the host clicking its own listed server); rejected before any
     // loading state is raised.
     if (!lobbyId.empty() && lobbyId == OwnLobbyId()) {
@@ -158,7 +161,7 @@ bool JoinLobby(const std::string& masterUrl, const std::string& lobbyId,
         SetHostStatus("That's your own server -- you're already hosting it.");
         return false;
     }
-    if (RefusedBySubstrate("JOIN")) return false;
+    if (RefusedBySubstrate("JOIN", refused)) return false;
     // The version gate, pre-flight from the browser row ("show normally, reject on Join"); the Join
     // wire gate re-validates live and the header close is the final backstop. Rejected through the
     // connect-failed popup, not the footer.
@@ -170,6 +173,7 @@ bool JoinLobby(const std::string& masterUrl, const std::string& lobbyId,
                     hostProto, coop::version::kGameTarget,
                     static_cast<unsigned>(net::kProtocolVersion));
             coop::join_progress::RefuseJoin(verdict.code, verdict.text);
+            if (refused) *refused = net::Refusal{verdict.code, verdict.text};
             return false;
         }
     }
@@ -242,8 +246,9 @@ bool JoinLobby(const std::string& masterUrl, const std::string& lobbyId,
     return true;
 }
 
-bool ConnectDirect(const std::string& hostPort) {
-    if (RefusedBySubstrate("direct connect")) return false;
+bool ConnectDirect(const std::string& hostPort, net::Refusal* refused) {
+    if (refused) *refused = net::Refusal{};
+    if (RefusedBySubstrate("direct connect", refused)) return false;
     if (g_actionBusy.exchange(true)) { UE_LOGW("session_manager: action busy -- Direct ignored"); return false; }
     std::string host;
     uint16_t port = 0;
@@ -278,12 +283,13 @@ bool ConnectDirect(const std::string& hostPort) {
     return ok;
 }
 
-bool ConnectP2PDirect(const std::string& hostIdentity, const net::Config& p2pFields) {
+bool ConnectP2PDirect(const std::string& hostIdentity, const net::Config& p2pFields, net::Refusal* refused) {
     // The P2P twin of ConnectDirect: dial a host by identity through a signaling server with no
     // master in the loop, for the env test client and for a dev dialling a `gen:` line copied from
     // a log. The signaling and ICE half comes from the caller's already resolved config:
     // FillP2PFields is the one place those fields are assembled.
-    if (RefusedBySubstrate("P2P connect")) return false;
+    if (refused) *refused = net::Refusal{};
+    if (RefusedBySubstrate("P2P connect", refused)) return false;
     if (g_actionBusy.exchange(true)) {
         UE_LOGW("session_manager: action busy -- P2P connect ignored");
         return false;

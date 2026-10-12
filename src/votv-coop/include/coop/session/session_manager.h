@@ -128,27 +128,29 @@ coop::net::Refusal SubstrateRefusal();
 // that master's. `displayName` is shown on the loading screen. Raises the
 // browser-only loading state and drops it again on a master or HTTP failure. True when accepted
 // (the browser should close); false when it is refused before it starts (the version gate, or a build
-// that refuses every session: the connect-failed notice is then up, join_progress::PeekNotice) or another
-// action is in flight. `hostProto` and
-// `hostGame` are the row's announced identity pair and `hostGameBuild` the game build the host runs:
-// the equality gate rejects here with the connect-failed popup, and 0 or empty (an older host, or a
-// master older than the field) skips that tier, leaving the wire gate as the backstop.
+// that refuses every session; `refused`, reset on entry, gets the code, and the connect-failed notice is
+// up) or another action is in flight. `hostProto` and `hostGame` are the row's announced identity pair
+// and `hostGameBuild` the game build the host runs: the equality gate rejects here with the
+// connect-failed popup, and 0 or empty (an older host, or a master older than the field) skips that
+// tier, leaving the wire gate as the backstop.
 bool JoinLobby(const std::string& masterUrl, const std::string& lobbyId,
                const std::string& displayName, int hostProto = 0,
-               const std::string& hostGame = {}, const std::string& hostGameBuild = {});
+               const std::string& hostGame = {}, const std::string& hostGameBuild = {},
+               coop::net::Refusal* refused = nullptr);
 
 // Direct connect, which works with the master down: "host" or "host:port". Builds a direct
 // client Config and queues a session start; raises the loading state on a good address. True
-// when accepted; false on a bad address, a busy action, or a build that starts no session (the
-// connect-failed notice is then up).
-bool ConnectDirect(const std::string& hostPort);
+// when accepted; false on a bad address, a busy action, or a build that starts no session
+// (`refused`, reset on entry, gets the code; the connect-failed notice is then up).
+bool ConnectDirect(const std::string& hostPort, coop::net::Refusal* refused = nullptr);
 
 // Dial a host by identity over signaling with no master in the loop, the P2P twin of
 // ConnectDirect. `hostIdentity` is the host's rendered identity (gen: and 64 hex, the dial line
 // in its log); `p2pFields` supplies the resolved signaling and ICE server fields, from the config
 // the caller read. False when either is missing, an action is in flight, or this build starts no
-// session (the connect-failed notice is then up).
-bool ConnectP2PDirect(const std::string& hostIdentity, const coop::net::Config& p2pFields);
+// session (`refused`, reset on entry, gets the code; the connect-failed notice is then up).
+bool ConnectP2PDirect(const std::string& hostIdentity, const coop::net::Config& p2pFields,
+                      coop::net::Refusal* refused = nullptr);
 
 // Kick an async fetch of the latest version, triggered from the browser surface. Self-debounced:
 // one worker in flight and a minimum interval between fetch starts. LatestVersionLine is empty

@@ -8,7 +8,6 @@
 
 #include "coop/config/config.h"
 #include "coop/config/config_registry.h"
-#include "coop/session/join_progress.h"  // PeekNotice: a refusal already on screen
 #include "coop/session/session_manager.h"
 #include "coop/text/utf8_codec.h"
 #include "ui/input_focus.h"
@@ -240,15 +239,14 @@ void Confirm(Kind kind) {
         // Handed over, never stored: SetJoinPassword holds it for one join attempt and nothing
         // writes it to the ini, the file people paste into bug reports.
         sm::SetJoinPassword(value);
-        coop::join_progress::ClearNotice();  // this click supersedes an older notice, as a connect's start does
+        coop::net::Refusal refused;
         if (!sm::JoinLobby(g_pendingJoin.masterUrl, g_pendingJoin.lobbyId,
                            g_pendingJoin.displayName, g_pendingJoin.hostProto,
-                           g_pendingJoin.hostGame, g_pendingJoin.hostGameBuild)) {
+                           g_pendingJoin.hostGame, g_pendingJoin.hostGameBuild, &refused)) {
             // Dropped on a refusal, so it cannot ride into the next connection the player makes.
             sm::SetJoinPassword("");
             // A refusal before the start is on screen as the connect-failed notice already.
-            coop::join_progress::Notice refusedNotice;
-            if (!coop::join_progress::PeekNotice(refusedNotice))
+            if (refused.code == coop::net::EndReason::None)
                 SetStatus(s, l10n::T("Could not start that connection -- another action is already "
                                      "in flight."), kBad);
             return;
@@ -281,10 +279,10 @@ void Confirm(Kind kind) {
     // ignores whatever is typed: the host sets the password-required flag only when its own lobby
     // password is non-empty, and its check sits inside that branch.
     sm::SetJoinPassword(s.field2 ? TF::Text(s.field2) : std::string());
-    coop::join_progress::ClearNotice();  // this click supersedes an older notice, as a connect's start does
-    if (!sm::ConnectDirect(value)) {
-        coop::join_progress::Notice refusedNotice;
-        if (!coop::join_progress::PeekNotice(refusedNotice))
+    coop::net::Refusal refused;
+    if (!sm::ConnectDirect(value, &refused)) {
+        // A refusal before the start is on screen as the connect-failed notice already.
+        if (refused.code == coop::net::EndReason::None)
             SetStatus(s, l10n::T("Could not connect to that address -- check it, or another action is "
                                  "already in flight."), kBad);
         return;

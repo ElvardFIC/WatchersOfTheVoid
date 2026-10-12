@@ -13,7 +13,6 @@
 #include "coop/config/config_registry.h"           // BuildButton + the palette
 
 #include "coop/net/lobby_client.h"
-#include "coop/session/join_progress.h"  // PeekNotice: a refusal already on screen
 #include "coop/session/session_manager.h"
 #include "coop/text/utf8_codec.h"          // a looked-up (UTF-8) label, widened for the native widgets
 
@@ -82,21 +81,18 @@ void DoConnect() {
     // The version pair rides along so the equality gate can refuse here, with the connect-failed
     // popup, rather than letting the wire gate drop the player later (rows show normally and are
     // rejected on join).
-    // This click supersedes any notice still up from an earlier one, as a connect's start does, so a
-    // notice after a refusal below is this click's.
-    coop::join_progress::ClearNotice();
-    if (sm::JoinLobby(master, row.lobbyId, row.name, row.proto, row.game, row.gameBuild)) {
+    coop::net::Refusal refused;
+    if (sm::JoinLobby(master, row.lobbyId, row.name, row.proto, row.game, row.gameBuild, &refused)) {
         g_lastOutcome = "connect:started";
         SB::Close();   // accepted: the loading screen owns the player from here
+    } else if (refused.code != coop::net::EndReason::None) {
+        // Refused before the start (the version gate, a build that starts no session): the
+        // connect-failed notice says it.
+        g_lastOutcome = "connect:refused";
     } else {
-        // A refusal before the start (the version gate, a build that starts no session) is already
-        // on screen as the connect-failed notice; only a busy action is said here.
-        coop::join_progress::Notice refusedNotice;
-        const bool refused = coop::join_progress::PeekNotice(refusedNotice);
-        g_lastOutcome = refused ? "connect:refused" : "connect:busy";
-        if (!refused)
-            SB::SetNotice(l10n::T("Could not start that connection -- another action is already "
-                                  "in flight."));
+        g_lastOutcome = "connect:busy";
+        SB::SetNotice(l10n::T("Could not start that connection -- another action is already "
+                              "in flight."));
     }
 }
 
