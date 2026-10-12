@@ -280,13 +280,29 @@ void Session::HandleMessage(int peerSlot, uint32_t hConn, const void* data, int 
             rateControl_.NoteReliableReceived(peerSlot, len);
         if (dev::wire_census::Enabled())
             dev::wire_census::NoteReliable(routeSlot, static_cast<unsigned>(rh.kind));
+        // The host's bound on what one client sends (receive_budget.h), ahead of every check below so a refused
+        // message counts as much as an applied one: MTA counts each event a client triggers on an element, refused
+        // or not, toward its per-player threshold (CGame.cpp:2663-2711). Four things here are ours: every reliable
+        // is counted, where MTA counts script events and leaves its sync uncounted; a token bucket, where MTA counts
+        // a fixed window opened by the first event; the numbers (net.reliable_*), far above MTA's 100 a second since
+        // ours count sync too; and the answer, the link ended at once, where MTA raises onPlayerTriggerEventThreshold
+        // for the server's scripts (CGame.cpp:4927-4976) and a host has none to ask. The kick tears the slot down here
+        // on the net thread; the receive loop's connection check drops the rest of the batch from that connection.
+        if (cfg_.role == Role::Host) {
+            const ReceiveBudget::Take take = receiveBudget_.TakeReliable(peerSlot, hConn, NowMs());
+            if (take == ReceiveBudget::Take::Emptied) {
+                UE_LOGW("net: slot %d sent more than %.0f reliable messages at once and %.0f a second -- ending its "
+                        "link [%s]", peerSlot, receiveBudget_.Budget().burst, receiveBudget_.Budget().perSecond,
+                        Describe(EndReason::ReliableFlood).id);
+                Kick(peerSlot, EndReason::ReliableFlood, "this machine sent more than a player can");
+            }
+            if (take != ReceiveBudget::Take::Ok) return;
+        }
         // Default deny at the edge (client_authorship.h): a kind no client may author, or a byte that names no
-        // kind, is dropped here, counted by the two lines above and acted on by nothing below -- not diverted,
+        // kind, is dropped here, counted by the budget above and acted on by nothing below -- not diverted,
         // echoed, inboxed or relayed. The first of each value in a session is said with its number, the rest
         // summed per window: MTA logs each refused event, and rate-limits only an unknown one
         // (CGame.cpp:2678-2699); the fold here is ours, the net thread's log being one a client could fill.
-        // Counted for no one here: a per-sender budget belongs ahead of this check, counting every arrival, as
-        // MTA counts refused events toward its threshold (CGame.cpp:2711).
         if (cfg_.role == Role::Host) {
             const ClientAuthorship who = AuthorshipOf(static_cast<ReliableKind>(rh.kind));
             if (who == ClientAuthorship::Host || who == ClientAuthorship::NotAKind) {

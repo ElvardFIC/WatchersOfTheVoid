@@ -254,6 +254,10 @@ bool Session::Start(const Config& cfg, Refusal* why) {
         connect_history::ConfigureConnects(
             coop::config::ResolveInt(coop::config_registry::rows::net_connect_cap),
             coop::config::ResolveInt(coop::config_registry::rows::net_connect_window_s));
+        // The receive budget's rows likewise, before the net thread exists, its only thread after.
+        receiveBudget_.Configure(
+            coop::config::ResolveInt(coop::config_registry::rows::net_reliable_burst),
+            coop::config::ResolveInt(coop::config_registry::rows::net_reliable_rate));
     }
 
     g_session.store(this, std::memory_order_release);
