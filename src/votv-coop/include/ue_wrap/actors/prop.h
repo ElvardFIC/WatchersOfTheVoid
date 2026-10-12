@@ -246,7 +246,7 @@ struct NearbyCandidate {
 // Everything the scan saw, filled only for a caller that asks. `candidates[0]` is what the scan
 // returns, so a trace records the choice without changing it.
 struct NearbyTrace {
-    std::vector<NearbyCandidate> candidates;        // accepted, in scan order
+    std::vector<NearbyCandidate> candidates;        // accepted, in slot order
     int32_t classMatches       = 0;                 // live, non-CDO actors of the class, any distance
     int32_t rowNameRejects     = 0;                 // ... rejected because the list_props row differed
     int32_t unreadRejects      = 0;                 // ... skipped because its location could not be read
@@ -256,12 +256,14 @@ struct NearbyTrace {
 
 // The fuzzy dedupe for divergent-key spawns: the per-peer natural spawners (mushrooms,
 // underground garbage) place the same logical entity with a different Key at a slightly different
-// position, so the exact-key resolve fails and a duplicate follows. The first same-class Aprop
-// within `radiusCm` of `anchor` in GUObjectArray order, or null; class by leaf name.
-// `expectedPropName`, when non-empty, must also match the list_props row (cube and cubicleP_1 are
-// both class prop_C; merging them rekeys the wrong object). One array walk per call; for spawn
-// events, not hot paths. Passing `outTrace` walks the whole array instead of stopping at the
-// first hit, which costs the rest of the walk and returns the same actor.
+// position, so the exact-key resolve fails and a duplicate follows. The instance in the lowest slot
+// of the one loaded class named `className` (object_index::ClassByName, compared without case)
+// within `radiusCm` of `anchor`, or null; null too when that class is not a prop's. Exactly that
+// class, not its subclasses. `expectedPropName`, when non-empty, must also match the list_props row
+// (cube and cubicleP_1 are both class prop_C; merging them rekeys the wrong object). Reads the
+// object index as it stands, so a caller wanting the births up to now catches it up first. Its
+// cost is that class's instances, never the object array. Passing `outTrace` checks every instance
+// instead of stopping at the first accepted, and returns the same actor.
 void* FindNearbySameClass(const std::wstring& className,
                           const FVector& anchor,
                           float radiusCm,

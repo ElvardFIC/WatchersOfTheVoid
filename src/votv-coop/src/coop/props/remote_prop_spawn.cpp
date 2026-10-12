@@ -134,7 +134,7 @@ void OnSpawn(const coop::net::PropSpawnPayload& payload, int senderSlot,
     const std::wstring classW = ClassNameToWString(payload.className);
     const std::wstring keyW   = coop::remote_prop::KeyToWString(payload.key);
     // The HOST mirrors a CLIENT's spawn with its world up, so it resolves the wire class name through
-    // object_index (an attacker's unknown class is an O(1) miss, not a whole-array walk per distinct
+    // object_index (a sender's unknown class is an O(1) miss, not a whole-array walk per distinct
     // name); a CLIENT mirrors the host's spawn and keeps FindClass, its index able to trail a load.
     // One resolver for every class lookup this spawn makes, on the host game thread.
     void* (*classResolve)(const wchar_t*) =
@@ -392,6 +392,10 @@ void OnSpawn(const coop::net::PropSpawnPayload& payload, int senderSlot,
     void* handAxis[1 + coop::players::kMaxPeers];
     const ue_wrap::prop::NearbyExclusion notAdoptable{
         handAxis, coop::hand_item::CollectHandAxisActors(handAxis, 1 + coop::players::kMaxPeers)};
+    // The fuzzy query reads the object index as it stands. The exact-key read caught it up on its
+    // miss, unless it answered before reaching the catch-up (the key index not seeded, no world), so
+    // it is caught up here too; with nothing queued that costs a check.
+    if (!eidOnly) ue_wrap::object_index::DrainAll();
     void* fuzzy = eidOnly ? nullptr : ue_wrap::prop::FindNearbySameClass(
             classW,
             fuzzyAnchor,

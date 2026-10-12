@@ -9,13 +9,13 @@
 #include "ue_wrap/engine/engine.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/cached_obj_ref.h"
+#include "ue_wrap/core/object_index.h"  // the fuzzy dedupe: one class and its instances
 #include "ue_wrap/core/reflection.h"
-#include "ue_wrap/core/walk_census.h"  // the two hand-written walks below note themselves too
 #include "ue_wrap/core/sdk_profile.h"
 #include "ue_wrap/desk/tape_caddy.h"  // the reel Progress reader and writer
 
+#include <algorithm>
 #include <atomic>
-#include <intrin.h>  // _ReturnAddress: a walk names its caller
 #include <cmath>
 #include <cstdint>
 #include <mutex>
@@ -522,34 +522,37 @@ void* FindNearbySameClass(const std::wstring& className,
                           const NearbyExclusion& excluded,
                           NearbyTrace* outTrace) {
     if (className.empty() || radiusCm <= 0.f) return nullptr;
-    void* base = PropBaseClass();
-    if (!base) return nullptr;
-    walk_census::NoteArrayWalk(_ReturnAddress());  // a whole-array walk, counted as the finders' are
+    // The one loaded class of that name, and a prop's, or nothing: the name comes off the wire, and a
+    // class of any other lineage answering here would let a sender steer the adoption onto a pawn.
+    void* const cls = object_index::ClassByName(className.c_str());
+    if (!cls || !IsClassDescendantOfProp(cls)) return nullptr;
+    // Its instances, collected before any engine call (the hand-out must not create or destroy), then in
+    // slot order: the first accepted is the one in the lowest slot, what the old walk of the array met
+    // first. The buffer is reused; nothing called below re-enters this query. Game thread.
+    static std::vector<std::pair<int32_t, void*>> sInst;
+    sInst.clear();
+    object_index::ForEachInstance(
+        cls,
+        [](void* ctx, void* obj, int32_t idx) {
+            static_cast<std::vector<std::pair<int32_t, void*>>*>(ctx)->emplace_back(idx, obj);
+        },
+        &sInst);
+    std::sort(sInst.begin(), sInst.end());
     const float r2 = radiusCm * radiusCm;
-    const int32_t n = R::NumObjects();
-    // The first accepted candidate, which is the result whether or not the walk runs to the end.
-    void* first = nullptr;
-    for (int32_t i = 0; i < n; ++i) {
-        void* obj = R::ObjectAt(i);
-        if (!obj) continue;
-        if (!IsDescendantOfProp(obj)) continue;
-        // Cheapest checks first: IsLive is a flag read, cheaper than the class name, which
-        // allocates a string. So descendant, live, CDO name, class name.
-        if (!R::IsLive(obj)) continue;
+    for (const auto& [idx, obj] : sInst) {
+        // Cheapest first, and nothing allocates: the slot's flags, the child-actor read, the CDO's name.
+        if (!R::IsLiveByIndex(obj, idx) || (R::SlotFlags(idx) & R::slot_flags::NotYetReadable)) continue;
         // A child-actor component's child (a kerfur's eye camera) never has independent cross-peer
         // identity, so a wire spawn of a standalone same-class prop near a kerfur must not
-        // fuzzy-steal its eye. A cheap read, placed before the string allocations.
+        // fuzzy-steal its eye.
         if (engine::IsChildActor(obj)) continue;
-        const std::wstring nm = R::ToString(R::NameOf(obj));
-        if (nm.rfind(L"Default__", 0) == 0) continue;
-        // Class match on the leaf name.
-        if (R::ClassNameOf(obj) != className) continue;
+        if (R::NameStartsWith(R::NameOf(obj), L"Default__")) continue;
         if (outTrace) ++outTrace->classMatches;
         // Same class is not the same prop for a generic prop: the list-props row name is the
         // identity (a cube and a wall panel are both prop_C). When the wire carries a row it must
         // match, or two co-located different props would fuzzy-merge and the rekey would bind the
         // wrong object; an empty expected name is a class-only match.
-        if (!expectedPropName.empty() && GetPropNameString(obj) != expectedPropName) {
+        if (!expectedPropName.empty() && !R::NameEquals(GetPropName(obj), expectedPropName.c_str())) {
             if (outTrace) ++outTrace->rowNameRejects;
             continue;
         }
@@ -570,18 +573,16 @@ void* FindNearbySameClass(const std::wstring& className,
             }
             continue;
         }
-        // Last, because it is the caller's knowledge rather than the scan's: an actor inside the
-        // radius that the caller has named is not a candidate at all. Tested here, on the handful
-        // that reach it, rather than at the top of a walk over every object.
+        // Last, because it is the caller's knowledge rather than the query's: an actor inside the
+        // radius that the caller has named is not a candidate at all.
         if (excluded.Holds(obj)) {
             if (outTrace) ++outTrace->excludedRejects;
             continue;
         }
-        if (!first) first = obj;
-        if (!outTrace) return first;   // untraced: the walk stops at the result, as before
-        outTrace->candidates.push_back(NearbyCandidate{obj, i, std::sqrt(d2)});
+        if (!outTrace) return obj;  // untraced: the first accepted is the answer
+        outTrace->candidates.push_back(NearbyCandidate{obj, idx, std::sqrt(d2)});
     }
-    return first;
+    return (outTrace && !outTrace->candidates.empty()) ? outTrace->candidates[0].actor : nullptr;
 }
 
 void* FindNearestChipPile(const FVector& anchor, float radiusCm, float* outDist) {
