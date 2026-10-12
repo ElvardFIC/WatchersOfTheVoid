@@ -2,6 +2,7 @@
 
 #include "coop/dev/hostile_drill.h"
 
+#include "coop/dev/hostile_drill_walk.h"  // the A70 walk arms (record_bad_classes, bad_alarm)
 #include "coop/comms/chat_feed.h"
 #include "coop/comms/chat_log.h"
 #include "coop/config/config.h"
@@ -39,8 +40,10 @@ namespace SD = ue_wrap::signal_dynamic;
 namespace SS = ue_wrap::saved_signals;
 using Clock = std::chrono::steady_clock;
 
+// The A70 walk arms (record_bad_classes, bad_alarm) live in hostile_drill_walk.cpp -- this file is
+// the dispatcher that owns the arm selection and routes those two to that module's sender and judge.
 enum class Arm { Off, SignalPark, ChatIllFormed, PropConvert, ReliableFlood, RepeatJoin,
-                 RepeatWorldReady, RepeatSaveRequest };
+                 RepeatWorldReady, RepeatSaveRequest, RecordBadClasses, BadAlarm };
 
 // Resolved once: with the environment variable unset every read would scan the ini on disk, and the
 // drill is asked per tick.
@@ -55,6 +58,8 @@ Arm ArmOf() {
              : v == "repeat_join"         ? Arm::RepeatJoin
              : v == "repeat_world_ready"  ? Arm::RepeatWorldReady
              : v == "repeat_save_request" ? Arm::RepeatSaveRequest
+             : v == "record_bad_classes"  ? Arm::RecordBadClasses
+             : v == "bad_alarm"           ? Arm::BadAlarm
                                           : Arm::Off;
     }();
     return a;
@@ -69,9 +74,22 @@ const char* ArmName() {
     case Arm::RepeatJoin:        return "repeat_join";
     case Arm::RepeatWorldReady:  return "repeat_world_ready";
     case Arm::RepeatSaveRequest: return "repeat_save_request";
+    case Arm::RecordBadClasses:  return "record_bad_classes";
+    case Arm::BadAlarm:          return "bad_alarm";
     default:                     return "off";
     }
 }
+
+// The two A70 arms are host-JUDGED (the host reads its own whole-array walk count), so they route to
+// hostile_drill_walk, not to the Step machine below. None when the active arm is not one of them.
+walk::Arm WalkArmOf() {
+    switch (ArmOf()) {
+    case Arm::RecordBadClasses: return walk::Arm::RecordBadClasses;
+    case Arm::BadAlarm:         return walk::Arm::BadAlarm;
+    default:                    return walk::Arm::None;
+    }
+}
+bool IsWalkArm() { return WalkArmOf() != walk::Arm::None; }
 
 // reliable_flood, repeat_world_ready and repeat_save_request are judged by the SENDER (the host's answer
 // is this session ending, with a code): the host runs no judge, the client reads the end on OnDisconnect.
@@ -657,15 +675,18 @@ void Tick() {
                                : (host ? "HOST (judge)" : "CLIENT (sender)"));
     }
     if (host) {
-        if (!ClientJudged()) TickHost(s);  // client-judged arms: the client judges, the host only answers
+        if (IsWalkArm())          walk::TickHostJudge(s, WalkArmOf());  // host counts its own walks
+        else if (!ClientJudged()) TickHost(s);  // client-judged arms: the client judges, the host only answers
     } else {
-        TickClient(s);
+        if (IsWalkArm()) walk::TickClient(s, WalkArmOf());
+        else             TickClient(s);
     }
 }
 
 void OnDisconnect() {
     if (ArmOf() == Arm::ReliableFlood) JudgeFloodEnd();
     else if (ArmOf() == Arm::RepeatWorldReady || ArmOf() == Arm::RepeatSaveRequest) JudgeRepeatEnd();
+    walk::OnDisconnect();
     g_step = Step::WaitArm;
     g_saidArm = false;
     g_slot = -1;

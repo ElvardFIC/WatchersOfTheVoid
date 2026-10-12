@@ -25,7 +25,7 @@ CFG_ENUM(auth_drill, "auth_drill", "dev", "off", "off|corrupt|silent|mismatch",
 // the row only names the judge; it changes nothing the host's gates do. Off by default.
 CFG_ENUM(hostile_drill, "hostile_drill", "dev", "off",
     "off|signal_park|chat_ill_formed|prop_convert|reliable_flood|repeat_join|repeat_world_ready|"
-    "repeat_save_request",
+    "repeat_save_request|record_bad_classes|bad_alarm",
     "VOTVCOOP_HOSTILE_DRILL",
     "Receive-boundary drill (BOTH peers). signal_park: a client floods refused saved-signal rows "
     "(size 0, so the game's own gate rejects each) and the host must keep them from filling the apply "
@@ -42,4 +42,10 @@ CFG_ENUM(hostile_drill, "hostile_drill", "dev", "off",
     "world-ready announce six times; the host must run only the burst's worth of connect replays and then end "
     "this client, and the client judges by the code it was given. repeat_save_request: a joined client asks "
     "the host for its world save a second time; the host must end this client, and the client judges by the "
-    "code it was given. Drill only.")
+    "code it was given. record_bad_classes: a joined client sends one PropSaveDataIntent for a real covered "
+    "prop's key whose record carries ~1024 unknown class names; without the fix the host walks the whole object "
+    "array per name resolving each, and the host judges by its own whole-array walk count across a sentinel "
+    "spawn (a large rise FAILs, zero PASSes). bad_alarm: a joined client sends a burst of AlarmState; without "
+    "the fix an unbound alarm trigger re-walks the array per message. A world with the trigger bound cannot "
+    "stage it, so this arm FAILs on an observed walk and is otherwise INCONCLUSIVE (the alarm fix is proven by "
+    "code). Drill only.")
