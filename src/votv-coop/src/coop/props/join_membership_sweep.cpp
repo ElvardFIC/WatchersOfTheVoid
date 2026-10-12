@@ -241,16 +241,16 @@ static void RunDivergenceSweep_(void* localPlayer) {
     // doomed under the same per-class accounting. An actor with an element row belongs to the row
     // walk, so the two halves partition and nothing is counted twice.
     {
-        std::vector<coop::prop_element_tracker::KeyIndexEntry> keyedIdx;
-        coop::prop_element_tracker::CollectKeyIndexEntries(keyedIdx);
+        std::vector<coop::prop_element_tracker::TrackedKeyEntry> keyedIdx;
+        coop::prop_element_tracker::CollectTrackedKeyEntries(keyedIdx);
         int idxUniverse = 0, idxClaimed = 0, idxEvicted = 0;
         for (const auto& ke : keyedIdx) {
             if (!ke.actor) continue;
             if (!R::IsLiveByIndex(ke.actor, ke.internalIdx)) {
                 // A dead entry is evicted now: an element-less keyed entry has no registry row, so
-                // the reaper never sees it; this sweep and DrainDeadKeyIndexEntries are its only
+                // the reaper never sees it; this sweep and DrainDeadTrackedKeys are its only
                 // collectors.
-                coop::prop_element_tracker::EvictKeyIndexEntryIfStale(ke.actor, ke.key);
+                coop::prop_element_tracker::EvictTrackedKeyIfStale(ke.actor, ke.key);
                 continue;
             }
             if (coop::element::Registry::Get().EidForActor(ke.actor) !=
@@ -268,7 +268,7 @@ static void RunDivergenceSweep_(void* localPlayer) {
             // walk. Paid only for would-be-doomed entries.
             const std::wstring liveKey = ue_wrap::prop::GetInteractableKeyString(ke.actor);
             if (liveKey != ke.key) {
-                coop::prop_element_tracker::EvictKeyIndexEntryIfStale(ke.actor, ke.key);
+                coop::prop_element_tracker::EvictTrackedKeyIfStale(ke.actor, ke.key);
                 ++idxEvicted;
                 continue;
             }

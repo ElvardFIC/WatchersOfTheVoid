@@ -82,7 +82,7 @@ using coop::element::PropMirrors;   // canonical accessor (coop/element/mirror_m
 // save_identity_bind); an actor-keyed set could read stale relative to the binding.
 
 // The key-to-actor map lives in prop_tracked_keys.cpp; this file reaches it through
-// IndexKeyForActor_ and EraseKeyIndexForActor_.
+// TrackKeyForActor_ and EraseTrackedKeyForActor_.
 
 }  // namespace
 
@@ -162,9 +162,9 @@ void UnmarkKnownKeyedProp(void* actor) {
         std::lock_guard<std::mutex> lk(g_knownKeyedPropsMutex);
         g_knownKeyedProps.erase(actor);
     }
-    // Evict the key index entry first, under its own leaf mutex, only if it still points at this
-    // actor (an address recycle that re-indexed a newer prop is left intact).
-    EraseKeyIndexForActor_(actor);
+    // Drop the tracked key first, under its own leaf mutex, only if it still points at this actor
+    // (an address recycle that re-tracked a newer prop is left intact).
+    EraseTrackedKeyForActor_(actor);
     // Resolve the local eid through the Registry reverse (locals only: a mirror actor is not ours
     // to drain), then Take the Element and route it through the ElementDeleter: this observer can
     // fire on a parallel-anim worker, and a worker-instant ~Prop and FreeId would race any
@@ -240,7 +240,7 @@ std::wstring MarkPropElement(void* actor, const std::wstring& key, const std::ws
     // minting.
     if (src == EnrollSource::kPassiveCensus && s != nullptr &&
         s->role() == coop::net::Role::Client && !key.empty() && key != L"None") {
-        IndexKeyForActor_(actor, key, R::InternalIndexOf(actor));
+        TrackKeyForActor_(actor, key, R::InternalIndexOf(actor));
         return key;
     }
     // The host is the key-uniqueness authority (MTA: the server owns element-id uniqueness). VOTV's
@@ -251,8 +251,9 @@ std::wstring MarkPropElement(void* actor, const std::wstring& key, const std::ws
     // it; the game re-saves the live Key, so the fix persists. A dead incumbent is a loadObjects
     // re-create inheriting its identity, spared by the liveness check. A client never re-keys. The key
     // index answers whether another live actor holds the key; when it cannot answer (off the game thread,
-    // where setKey could not run anyway, or before its session seed), the actor enrols under its key and
-    // such enrolments are counted, the first and each power of two said.
+    // where setKey could not run anyway; before its session seed; with no current world; while a birth is
+    // still loading), the actor enrols under its key and such enrolments are counted, the first and each
+    // power of two said.
     std::wstring enrollKey = key;
     if (isHost && !enrollKey.empty() && enrollKey != L"None") {
         const auto held = coop::prop_key_index::AnotherHolder(enrollKey, actor);
@@ -319,7 +320,7 @@ std::wstring MarkPropElement(void* actor, const std::wstring& key, const std::ws
     }
     // Track the actor by key, after the commit and only on the winning path, so the tracked keys and
     // the reverse stay consistent.
-    IndexKeyForActor_(actor, enrollKey, internalIdx);
+    TrackKeyForActor_(actor, enrollKey, internalIdx);
     // A data drive's row travels with its enrolment (drive_payload_sync): the host's, and a client's own.
     coop::drive_payload_sync::OnEnrolled(actor, static_cast<uint32_t>(eid));
     return enrollKey;
@@ -475,9 +476,9 @@ size_t ReapDeadLocalPropElements(size_t maxEvictions,
             }
             UnmarkProcessedInit(pr.actor);
             // Drop the tracked key too, under the same ownership gate; a rare stale entry under an
-            // unused key is harmless (every reader validates by index, and the dead-entry drain at the
-            // purge edge collects it).
-            EraseKeyIndexForActor_(pr.actor);
+            // unused key is harmless (a reader that resolves its actor validates it by index, the key
+            // diff only counts keys, and the dead-entry drain at the purge edge collects it).
+            EraseTrackedKeyForActor_(pr.actor);
         }
         // Take the dead Element out of the manager by eid and defer its destruction to the
         // game-thread flush, UnmarkKnownKeyedProp's drain minus the broadcast; Take returns null if

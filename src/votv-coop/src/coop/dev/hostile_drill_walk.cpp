@@ -80,7 +80,7 @@ bool SendChatLine(coop::net::Session* s, const std::string& text) {
     return s->SendReliable(coop::net::ReliableKind::ChatMessage, &line, sizeof(line));
 }
 
-// A live covered prop's Key, discovered from this peer's own key index. `Covers` is the SAME gate the
+// A live covered prop's Key, discovered from this peer's own tracked keys. `Covers` is the SAME gate the
 // host's record apply runs -- a class that declares its own getData below Aprop_C AND that no dedicated
 // lane has claimed -- so a prop that passes it here is one the host will actually apply the record to
 // (OverridesGetData alone is not enough: the ATV container overrides getData but a dedicated lane owns
@@ -88,8 +88,8 @@ bool SendChatLine(coop::net::Session* s, const std::string& text) {
 // covered here is covered on the host too. Empty when the loaded world carries no such prop -- the arm
 // then reports it could not stage, never a false pass.
 bool FindCoveredPropKey(std::wstring& outKey) {
-    std::vector<coop::prop_element_tracker::KeyIndexEntry> entries;
-    coop::prop_element_tracker::CollectKeyIndexEntries(entries);
+    std::vector<coop::prop_element_tracker::TrackedKeyEntry> entries;
+    coop::prop_element_tracker::CollectTrackedKeyEntries(entries);
     for (const auto& e : entries) {
         if (!e.actor || e.key.empty()) continue;
         if (!R::IsLiveByIndex(e.actor, e.internalIdx)) continue;

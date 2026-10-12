@@ -177,7 +177,7 @@ void OnReliable(const uint8_t* payload, int len, uint8_t senderSlot) {
     // own save-loaded keyed prop, so the eid it sends is 0 for exactly the props a player shoots,
     // and the key is the identity that survives; the eid stays as the keyless fallback. Index only,
     // no walk: the key index holds every live keyed prop of this world, so a key it does not hold
-    // names no prop here.
+    // names no prop here (or the index could not answer yet, a refusal all the same).
     void* prop = nullptr;
     const wchar_t* how = L"key";
     if (!keyStr.empty()) prop = coop::prop_key_index::Find(keyStr);

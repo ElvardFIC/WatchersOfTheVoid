@@ -53,7 +53,7 @@ std::unordered_map<void*, std::wstring> g_actorToKey;
 // (non-syncable props are never looked up by key). A rekey drops the old forward entry first,
 // so it cannot linger pointing at the live actor under a dead key. The caller holds no other
 // mutex.
-void IndexKeyForActor_(void* actor, const std::wstring& key, int32_t internalIdx) {
+void TrackKeyForActor_(void* actor, const std::wstring& key, int32_t internalIdx) {
     if (!actor || key.empty() || key == L"None") return;
     std::lock_guard<std::mutex> lk(g_keyIndexMutex);
     auto ait = g_actorToKey.find(actor);
@@ -70,7 +70,7 @@ void IndexKeyForActor_(void* actor, const std::wstring& key, int32_t internalIdx
 // Remove the entries for `actor`, both directions. The forward entry goes only if it still
 // points at this actor, so a newer prop that recycled the address is not disturbed. The
 // caller holds no other mutex.
-void EraseKeyIndexForActor_(void* actor) {
+void EraseTrackedKeyForActor_(void* actor) {
     if (!actor) return;
     std::lock_guard<std::mutex> lk(g_keyIndexMutex);
     auto ait = g_actorToKey.find(actor);
@@ -86,20 +86,20 @@ void EraseKeyIndexForActor_(void* actor) {
 
 void TrackActorKey(void* actor, const std::wstring& key) {
     if (!actor || key.empty() || key == L"None") return;
-    IndexKeyForActor_(actor, key, R::InternalIndexOf(actor));
+    TrackKeyForActor_(actor, key, R::InternalIndexOf(actor));
 }
 
-void CollectKeyIndexEntries(std::vector<KeyIndexEntry>& out) {
+void CollectTrackedKeyEntries(std::vector<TrackedKeyEntry>& out) {
     // The sweep's keyed universe. A leaf-mutex copy; liveness and ownership validation is the
     // caller's (by-index liveness, current-key re-validation before any doom). No engine calls
     // under the lock.
     std::lock_guard<std::mutex> lk(g_keyIndexMutex);
     out.reserve(out.size() + g_keyToActor.size());
     for (const auto& kv : g_keyToActor)
-        out.push_back(KeyIndexEntry{kv.second.actor, kv.second.internalIdx, kv.first});
+        out.push_back(TrackedKeyEntry{kv.second.actor, kv.second.internalIdx, kv.first});
 }
 
-void EvictKeyIndexEntryIfStale(void* actor, const std::wstring& key) {
+void EvictTrackedKeyIfStale(void* actor, const std::wstring& key) {
     // Drop a sweep-detected stale pairing (a recycled slot or an un-reindexed rekey); erase only
     // while the maps still hold exactly this pair, so a concurrent re-index of either side is
     // never clobbered.
@@ -111,14 +111,14 @@ void EvictKeyIndexEntryIfStale(void* actor, const std::wstring& key) {
     if (ait != g_actorToKey.end() && ait->second == key) g_actorToKey.erase(ait);
 }
 
-size_t DrainDeadKeyIndexEntries() {
+size_t DrainDeadTrackedKeys() {
     // The collector for element-less keyed entries: a client's save-loaded keyed props live only
     // in this map (no registry row), so an actor dying without a destroy call (a mass purge, an
     // engine teardown) leaves an entry the element reaper cannot see. Its owners: the post-purge
     // world-change re-seed edge, cold, and the join sweep's per-entry evict. Snapshot under the leaf
     // mutex, validate liveness outside it, erase under it with the same still-this-pair gate.
-    std::vector<KeyIndexEntry> snap;
-    CollectKeyIndexEntries(snap);
+    std::vector<TrackedKeyEntry> snap;
+    CollectTrackedKeyEntries(snap);
     size_t drained = 0;
     for (const auto& ke : snap) {
         if (!ke.actor) continue;

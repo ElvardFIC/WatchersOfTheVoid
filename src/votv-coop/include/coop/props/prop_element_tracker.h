@@ -101,23 +101,23 @@ void TrackActorKey(void* actor, const std::wstring& key);
 // index is their tracked membership, so the sweep adjudicates them from these entries (the row
 // walk owns the element-bound ones). A snapshot copy under the leaf mutex; validate each by index
 // before use.
-struct KeyIndexEntry {
+struct TrackedKeyEntry {
     void*        actor       = nullptr;
     int32_t      internalIdx = -1;
     std::wstring key;
 };
-void CollectKeyIndexEntries(std::vector<KeyIndexEntry>& out);
+void CollectTrackedKeyEntries(std::vector<TrackedKeyEntry>& out);
 
 // Erases the index entry for `actor` only if it still maps this key to this actor: a
 // recycled-address impostor or an un-reindexed rekey falls out of the sweep universe instead of
 // dooming a fresh actor, and the live actor re-enters at the next census.
-void EvictKeyIndexEntryIfStale(void* actor, const std::wstring& key);
+void EvictTrackedKeyIfStale(void* actor, const std::wstring& key);
 
 // Drops every index entry whose actor is dead: an element-less keyed entry has no Registry row,
 // so the reaper cannot evict it, and a death without K2_DestroyActor would leak the pair for the
 // process. A cold path: the post-purge re-seed edge. Returns the
 // count. Game thread.
-size_t DrainDeadKeyIndexEntries();
+size_t DrainDeadTrackedKeys();
 
 // The wire keys of every tracked keyed prop, the host's live set. save_transfer snapshots it at
 // the blob capture and again at the connect edge and sends an explicit PropDestroy per key the

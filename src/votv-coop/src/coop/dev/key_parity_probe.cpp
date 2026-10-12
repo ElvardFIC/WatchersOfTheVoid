@@ -198,8 +198,8 @@ Counts Sample() {
     c.truth = truth.size();
 
     // The tracker's tracked keys, copied.
-    std::vector<PT::KeyIndexEntry> live;
-    PT::CollectKeyIndexEntries(live);
+    std::vector<PT::TrackedKeyEntry> live;
+    PT::CollectTrackedKeyEntries(live);
     std::unordered_map<void*, std::wstring> liveByActor;
     liveByActor.reserve(live.size());
     for (const auto& e : live)

@@ -31,7 +31,7 @@ inline constexpr size_t kKnownKeyedPropsCap = 16384;
 // MarkPropElement / UnmarkKnownKeyedProp / ReapDeadLocalPropElements call these
 // two; every other index access goes through the public header's lookups.
 // Caller must hold NO other mutex (the key-index mutex is a LEAF).
-void IndexKeyForActor_(void* actor, const std::wstring& key, int32_t internalIdx);
-void EraseKeyIndexForActor_(void* actor);
+void TrackKeyForActor_(void* actor, const std::wstring& key, int32_t internalIdx);
+void EraseTrackedKeyForActor_(void* actor);
 
 }  // namespace coop::prop_element_tracker
