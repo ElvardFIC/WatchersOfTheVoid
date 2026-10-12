@@ -88,6 +88,7 @@ constexpr Row kRows[] = {
     {EndReason::UnofficialClientRefused, {"MV-H30", L10N_MARK("This server admits only the official Multivoid build. Install the official release (the whole zip).")}},
     {EndReason::OfficialClientRefused,   {"MV-H31", L10N_MARK("This server runs a modified (unofficial) Multivoid build and admits only modified builds.")}},
     {EndReason::ReliableFlood,           {"MV-H32", L10N_MARK("This machine sent the host more than a player can. Wait ten minutes before joining again.")}},
+    {EndReason::RepeatedRequest,         {"MV-H33", L10N_MARK("This machine asked the host for its world a second time in one visit, which this game never does.")}},
     // T -- the transport decided
     {EndReason::Timeout,            {"MV-T01", L10N_MARK("No answer from the host.")}},
     {EndReason::NoRoute,            {"MV-T02", L10N_MARK("No route to the host through its firewall or router.")}},

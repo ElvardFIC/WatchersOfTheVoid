@@ -1387,6 +1387,10 @@ msgid "This launch runs on environment overrides and built-in defaults; the sett
 msgstr ""
 
 #: src/coop/net/end_reason.cpp
+msgid "This machine asked the host for its world a second time in one visit, which this game never does."
+msgstr ""
+
+#: src/coop/net/end_reason.cpp
 msgid "This machine has no working connection to the signaling server, so the host could not be dialled."
 msgstr ""
 
