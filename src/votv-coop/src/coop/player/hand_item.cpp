@@ -2,6 +2,7 @@
 
 #include "coop/player/hand_item.h"
 
+#include "coop/net/latest_wins.h"
 #include "coop/net/protocol.h"
 #include "coop/player/hand_item_pose.h"  // where the mirror sits: the owner's measure, the per-tick drive
 #include "coop/player/players_registry.h"
@@ -22,6 +23,7 @@
 #include "ue_wrap/core/sdk_profile.h"  // the prop base's class name (ResolveHandClass)
 #include "ue_wrap/core/types.h"
 
+#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <cwchar>
@@ -233,6 +235,27 @@ void ApplyHandState(coop::net::Session& session, uint8_t slot, const SlotHand& i
     h.haveRel = in.has;
     SendState(session, slot, h);
     ++g_statesApplied[slot];
+}
+
+// The hand's budget (RECEIVE_BOUNDARY_ARC.md §3m 3b-3b): an application is a mirror destroyed and spawned on every
+// peer and two sends; eight at once covers a quick scroll, and past it the newest state lands within a quarter second.
+constexpr coop::net::IntentBudget kHandBudget{8.0f, 4.0f};
+
+// Host: per slot, the newest changed hand state and its pace (net/latest_wins.h); one struct, so both clear with the
+// occupant.
+struct PendingHand { SlotHand value; coop::net::LatestWins pace; };
+coop::roster_ledger::PerSlotState<PendingHand> g_pendingHand;
+
+uint64_t NowMs() {
+    return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count());
+}
+
+// Whether two states hold the same thing: emptiness, the class without case, the name and the item. The hold
+// transform is not compared: the pose stream overwrites the applied one each sample.
+bool SameHeld(const SlotHand& a, const SlotHand& b) {
+    if (a.has != b.has) return false;
+    return !a.has || (::_wcsicmp(a.cls.c_str(), b.cls.c_str()) == 0 && a.name == b.name && a.item == b.item);
 }
 
 void DestroyMirror(uint8_t slot, const char* why) {
@@ -636,7 +659,14 @@ bool HandleHandItem(coop::net::Session& session,
         in.has = has; in.cls = cls; in.name = name; in.item = item;
         std::memcpy(in.relPos, relPos, sizeof(relPos));
         std::memcpy(in.relRot, relRot, sizeof(relRot));
-        ApplyHandState(session, describedSlot, in);
+        // The newest state kept, applied at the budget's pace (net/latest_wins.h); an unchanged one costs a compare.
+        PendingHand& pend = g_pendingHand[describedSlot];
+        if (SameHeld(in, g_hands[describedSlot])) {
+            pend.pace.Withdraw();
+            return true;
+        }
+        pend.value = in;
+        if (pend.pace.Offer(kHandBudget, NowMs())) ApplyHandState(session, describedSlot, in);
         return true;
     }
 
@@ -706,6 +736,15 @@ bool LastHeldClassIs(uint8_t slot, const wchar_t* cls) {
     if (slot >= coop::players::kMaxPeers || !cls) return false;
     const SlotHand& h = g_hands[slot];
     return !h.lastCls.empty() && ::_wcsicmp(h.lastCls.c_str(), cls) == 0;
+}
+
+void PayOwed(coop::net::Session& session) {
+    if (session.role() != coop::net::Role::Host) return;
+    const uint64_t now = NowMs();
+    for (int slot = 1; slot < static_cast<int>(coop::players::kMaxPeers); ++slot) {
+        PendingHand& pend = g_pendingHand[slot];
+        if (pend.pace.Due(kHandBudget, now)) ApplyHandState(session, static_cast<uint8_t>(slot), pend.value);
+    }
 }
 
 bool HoldsItem(uint8_t slot) {

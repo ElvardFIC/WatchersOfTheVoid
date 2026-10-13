@@ -131,6 +131,10 @@ void Update(net::Session& session, void* localPlayer) {
                                              coop::local_body::LocalSkinName());
     coop::roster_ledger::ReconcileFromSession(session);   // host: conform to the generations
     coop::player_handshake::PulseRosterRows(session);     // host: re-assert to clients
+    // Host: the newest client display changes that arrived past their budget, applied once it allows. Here, after the
+    // reconcile, so a debt whose occupant left was cleared with its row before it could be paid.
+    coop::player_handshake::PayOwedPrefs(session);
+    coop::hand_item::PayOwed(session);
 
     // The per-slot Join send. The payload is built on first need: in steady state the vector is
     // never constructed, so the pump tick does not pay the UTF-8 conversion and allocation.

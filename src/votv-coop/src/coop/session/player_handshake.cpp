@@ -112,7 +112,8 @@ void TickSkinConverge() {
 }
 
 // One [u8 len][ASCII] field; returns the bytes consumed (0 if malformed or absent), and writes
-// `out` only for a well-formed non-empty name that validates as a skin.
+// `out` only for a well-formed non-empty name that validates as a skin. Logs nothing: a caller
+// says an invalid name at the rate its own message comes.
 size_t ParseSkinField(const uint8_t* p, size_t remaining, std::string* out) {
     if (remaining < 1) return 0;
     const int len = p[0];
@@ -120,10 +121,7 @@ size_t ParseSkinField(const uint8_t* p, size_t remaining, std::string* out) {
     if (len > 0) {
         std::string name(reinterpret_cast<const char*>(p + 1), static_cast<size_t>(len));
         // The name becomes a LoadObject package path component.
-        if (coop::skins::IsValidSkinName(name))
-            *out = std::move(name);
-        else
-            UE_LOGW("handshake: peer sent an invalid skin name (%d bytes) -- ignored", len);
+        if (coop::skins::IsValidSkinName(name)) *out = std::move(name);
     }
     return 1 + static_cast<size_t>(len);
 }
@@ -424,6 +422,8 @@ bool HandleJoinMessage(net::Session& session,
                                       nickRemaining - nickFieldLen, &skin);
         if (skinFieldLen > 0 && !skin.empty()) {
             StoreSkinForSlot(senderSlot, std::move(skin));
+        } else if (skinFieldLen > 1) {
+            UE_LOGW("handshake: peer sent an invalid skin name (%zu bytes) -- ignored", skinFieldLen - 1);
         }
     }
     // The prefs flags follow the skin; absent, the defaults (visible) stand.

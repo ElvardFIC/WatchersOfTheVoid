@@ -37,6 +37,7 @@
 #include "coop/element/intent_authority.h"
 #include "coop/element/portable_identity.h"
 #include "coop/net/connect_history.h"
+#include "coop/net/latest_wins.h"
 #include "coop/net/lobby_password.h"
 #include "coop/net/peer_admission.h"
 #include "coop/net/peer_identity.h"
@@ -225,6 +226,9 @@ bool StartCoopSession(const coop::net::Config& netCfg, coop::net::Refusal* why) 
     // And the receive edge's bound on what each client sends: a burst, its refill, the latch, a new connection's full
     // bucket, the streams apart, a rate of 0. Its numbers are rows, so the arithmetic is what a selftest can hold.
     coop::net::ReceiveBudget::RunSelftest();
+    // And the host's pace on a client's display changes: a first change at once, a debt past the burst paid at a
+    // refill and only when owed, a withdrawal.
+    coop::net::LatestWins::RunSelftest();
     // And the commands' line splitter, target resolver, registry and dispatcher: a resolver that
     // picks the wrong player kicks the wrong player, and a wrong pick reads as working until then.
     coop::commands::RunSelftest();

@@ -352,6 +352,8 @@ bool ApplyRosterRow(net::Session& session, const uint8_t* payload, size_t payloa
                                           nickRemaining - nickFieldLen, &skin);
             if (skinFieldLen > 0 && !skin.empty())
                 StoreSkinForSlot(describedSlot, std::move(skin));  // itself change-gated
+            else if (skinFieldLen > 1)
+                UE_LOGW("handshake: peer sent an invalid skin name (%zu bytes) -- ignored", skinFieldLen - 1);
         }
         if (skinFieldLen > 0 && nickFieldLen + skinFieldLen < nickRemaining) {
             StorePrefsFlagsForSlot(describedSlot, nickStart[nickFieldLen + skinFieldLen]);

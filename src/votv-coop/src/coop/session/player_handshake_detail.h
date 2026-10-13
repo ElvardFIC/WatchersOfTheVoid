@@ -33,7 +33,7 @@ void StoreSkinForSlot(int slot, std::string name);
 // Parse one [u8 len][ASCII] skin field. Returns bytes consumed (0 =
 // malformed/absent); `out` untouched unless a well-formed non-empty field
 // validated as a skin name (IsValidSkinName -- it becomes a LoadObject
-// package path component).
+// package path component). Logs nothing; the caller says an invalid name.
 size_t ParseSkinField(const uint8_t* p, size_t remaining, std::string* out);
 
 // UTF-8 -> wide (defined in player_handshake.cpp; shared with the version

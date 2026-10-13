@@ -94,6 +94,10 @@ bool LastHeldClassIs(uint8_t slot, const wchar_t* cls);
 // nothing. Game thread only.
 std::wstring HeldItem(uint8_t slot);
 
+// Host, each tick after the roster reconcile and before the drain (event_feed::Update): a client's newest hand state
+// that arrived past its budget is applied once the budget allows it. Game thread only.
+void PayOwed(coop::net::Session& session);
+
 // Whether `slot`'s hand holds anything, as the lane holds it. Game thread only.
 bool HoldsItem(uint8_t slot);
 

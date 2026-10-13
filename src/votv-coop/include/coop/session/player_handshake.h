@@ -118,6 +118,10 @@ uint32_t JoinsAnswered(int slot);
 // re-sent); cleared with the occupant. The hostile drill's keep_latest arm reads it. Game thread.
 uint32_t PrefApplies(int slot, net::ReliableKind kind);
 
+// Host, each tick after the roster reconcile and before the drain (event_feed::Update): a client's newest skin,
+// nameplate or nick colour change that arrived past its budget is applied once the budget allows it. Game thread.
+void PayOwedPrefs(net::Session& session);
+
 // Person-state teardown is driven by the roster ledger's row transition, which fires on a
 // replacement as well as a departure; a disconnect callback cannot see a slot recycled between
 // two ticks. Registers the module's subscribers once.

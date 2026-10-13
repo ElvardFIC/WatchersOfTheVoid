@@ -15,6 +15,7 @@
 #include "player_handshake_detail.h"  // co-located private header (src tree, not include/)
 
 #include "coop/comms/chat_feed.h"
+#include "coop/net/latest_wins.h"
 #include "coop/net/session.h"
 #include "coop/player/nameplate.h"
 #include "coop/player/nick_color.h"
@@ -26,6 +27,7 @@
 #include "ue_wrap/core/log.h"
 
 #include <array>
+#include <chrono>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -104,7 +106,49 @@ void ApplyNickColorChange(net::Session& session, uint8_t slot, uint32_t packed) 
     ++g_prefApplies[slot][2];
 }
 
+// The budgets (RECEIVE_BOUNDARY_ARC.md §3m 3b-3b): a skin's application puts a persistent line on every peer, so it
+// is paced as Source paces a player's chat, tier 1: four at once, one per 3 s (game/server/player.cpp:98-99); a
+// plate's or a colour's is a store and two sends, one a second past four at once.
+constexpr net::IntentBudget kSkinBudget{4.0f, 1.0f / 3.0f};
+constexpr net::IntentBudget kPrefBudget{4.0f, 1.0f};
+
+// Host: per slot and kind, the newest changed value and its pace; one struct, so both clear with the occupant.
+struct PendingSkin  { std::string value; net::LatestWins pace; };
+struct PendingPlate { bool value = false; net::LatestWins pace; };
+struct PendingColor { uint32_t value = 0; net::LatestWins pace; };
+coop::roster_ledger::PerSlotState<PendingSkin>  g_pendingSkin;
+coop::roster_ledger::PerSlotState<PendingPlate> g_pendingPlate;
+coop::roster_ledger::PerSlotState<PendingColor> g_pendingColor;
+
+uint64_t NowMs() {
+    return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count());
+}
+
+// The messages of this family dropped or refused, per sender, for the log: the first and each power of two, the hand
+// lane's shape (hand_item.cpp), so a sender at the edge's rate cannot flood it. The count when this one is to be
+// said, else 0.
+coop::roster_ledger::PerSlotState<uint32_t> g_refusedBySender;
+uint32_t RefuseToLog(int sender) {
+    if (sender < 0 || sender >= net::kMaxPeers) return 1;
+    const uint32_t n = ++g_refusedBySender[sender];
+    return (n & (n - 1)) == 0 ? n : 0;
+}
+
 }  // namespace
+
+void PayOwedPrefs(net::Session& session) {
+    if (session.role() != net::Role::Host) return;
+    const uint64_t now = NowMs();
+    for (int slot = 1; slot < net::kMaxPeers; ++slot) {
+        const uint8_t s = static_cast<uint8_t>(slot);
+        if (g_pendingSkin[slot].pace.Due(kSkinBudget, now)) ApplySkinChange(session, s, g_pendingSkin[slot].value);
+        if (g_pendingPlate[slot].pace.Due(kPrefBudget, now))
+            ApplyNameplateChange(session, s, g_pendingPlate[slot].value);
+        if (g_pendingColor[slot].pace.Due(kPrefBudget, now))
+            ApplyNickColorChange(session, s, g_pendingColor[slot].value);
+    }
+}
 
 uint32_t PrefApplies(int slot, net::ReliableKind kind) {
     if (slot < 0 || slot >= net::kMaxPeers) return 0;
@@ -140,16 +184,18 @@ bool HandleSkinChange(net::Session& session,
                       const net::Session::ReliableMessage& msg) {
     UE_ASSERT_GAME_THREAD("ledger row skin (HandleSkinChange)");
     if (msg.payloadLen < 2) {
-        UE_LOGW("player_handshake: SkinChange payload %zu B too short -- dropping",
-                static_cast<size_t>(msg.payloadLen));
+        if (const uint32_t n = RefuseToLog(msg.senderPeerSlot))
+            UE_LOGW("player_handshake: SkinChange payload %zu B too short -- dropping (%u from slot %d)",
+                    static_cast<size_t>(msg.payloadLen), n, msg.senderPeerSlot);
         return true;
     }
     const uint8_t describedSlot = msg.payload[0];
     std::string name;
     if (ParseSkinField(msg.payload + 1, static_cast<size_t>(msg.payloadLen) - 1, &name) == 0 ||
         name.empty()) {
-        UE_LOGW("player_handshake: SkinChange malformed/invalid name from slot %d -- dropping",
-                msg.senderPeerSlot);
+        if (const uint32_t n = RefuseToLog(msg.senderPeerSlot))
+            UE_LOGW("player_handshake: SkinChange malformed/invalid name -- dropping (%u from slot %d)", n,
+                    msg.senderPeerSlot);
         return true;
     }
     if (describedSlot >= net::kMaxPeers) return true;
@@ -157,11 +203,19 @@ bool HandleSkinChange(net::Session& session,
     if (session.role() == net::Role::Host) {
         // Forgery guard: a client may only change ITS OWN skin.
         if (msg.senderPeerSlot != describedSlot || describedSlot == 0) {
-            UE_LOGW("player_handshake: SkinChange slot=%u from senderSlot=%d -- forged, dropping",
-                    static_cast<unsigned>(describedSlot), msg.senderPeerSlot);
+            if (const uint32_t n = RefuseToLog(msg.senderPeerSlot))
+                UE_LOGW("player_handshake: SkinChange slot=%u from senderSlot=%d -- forged, dropping (%u from "
+                        "that slot)", static_cast<unsigned>(describedSlot), msg.senderPeerSlot, n);
             return true;
         }
-        ApplySkinChange(session, describedSlot, name);
+        // The newest value kept, applied at the budget's pace (net/latest_wins.h); an unchanged one costs a compare.
+        PendingSkin& pend = g_pendingSkin[describedSlot];
+        if (name == coop::roster_ledger::Get(describedSlot).skin) {
+            pend.pace.Withdraw();
+            return true;
+        }
+        pend.value = name;
+        if (pend.pace.Offer(kSkinBudget, NowMs())) ApplySkinChange(session, describedSlot, name);
         return true;
     }
 
@@ -200,8 +254,9 @@ bool HandleNameplateChange(net::Session& session,
                            const net::Session::ReliableMessage& msg) {
     UE_ASSERT_GAME_THREAD("HandleNameplateChange");
     if (msg.payloadLen < 2) {
-        UE_LOGW("player_handshake: NameplateChange payload %zu B too short -- dropping",
-                static_cast<size_t>(msg.payloadLen));
+        if (const uint32_t n = RefuseToLog(msg.senderPeerSlot))
+            UE_LOGW("player_handshake: NameplateChange payload %zu B too short -- dropping (%u from slot %d)",
+                    static_cast<size_t>(msg.payloadLen), n, msg.senderPeerSlot);
         return true;
     }
     const uint8_t describedSlot = msg.payload[0];
@@ -211,11 +266,18 @@ bool HandleNameplateChange(net::Session& session,
     if (session.role() == net::Role::Host) {
         // Forgery guard: a client may only toggle ITS OWN plate.
         if (msg.senderPeerSlot != describedSlot || describedSlot == 0) {
-            UE_LOGW("player_handshake: NameplateChange slot=%u from senderSlot=%d -- forged, dropping",
-                    static_cast<unsigned>(describedSlot), msg.senderPeerSlot);
+            if (const uint32_t n = RefuseToLog(msg.senderPeerSlot))
+                UE_LOGW("player_handshake: NameplateChange slot=%u from senderSlot=%d -- forged, dropping (%u from "
+                        "that slot)", static_cast<unsigned>(describedSlot), msg.senderPeerSlot, n);
             return true;
         }
-        ApplyNameplateChange(session, describedSlot, visible);
+        PendingPlate& pend = g_pendingPlate[describedSlot];
+        if (visible == coop::nameplate::VisibleForSlot(describedSlot)) {
+            pend.pace.Withdraw();
+            return true;
+        }
+        pend.value = visible;
+        if (pend.pace.Offer(kPrefBudget, NowMs())) ApplyNameplateChange(session, describedSlot, visible);
         return true;
     }
 
@@ -254,8 +316,9 @@ bool HandleNickColorChange(net::Session& session,
                            const net::Session::ReliableMessage& msg) {
     UE_ASSERT_GAME_THREAD("HandleNickColorChange");
     if (msg.payloadLen < 5) {
-        UE_LOGW("player_handshake: NickColorChange payload %zu B too short -- dropping",
-                static_cast<size_t>(msg.payloadLen));
+        if (const uint32_t n = RefuseToLog(msg.senderPeerSlot))
+            UE_LOGW("player_handshake: NickColorChange payload %zu B too short -- dropping (%u from slot %d)",
+                    static_cast<size_t>(msg.payloadLen), n, msg.senderPeerSlot);
         return true;
     }
     const uint8_t describedSlot = msg.payload[0];
@@ -267,11 +330,18 @@ bool HandleNickColorChange(net::Session& session,
     if (session.role() == net::Role::Host) {
         // Forgery guard: a client may only color ITS OWN nick.
         if (msg.senderPeerSlot != describedSlot || describedSlot == 0) {
-            UE_LOGW("player_handshake: NickColorChange slot=%u from senderSlot=%d -- forged, dropping",
-                    static_cast<unsigned>(describedSlot), msg.senderPeerSlot);
+            if (const uint32_t n = RefuseToLog(msg.senderPeerSlot))
+                UE_LOGW("player_handshake: NickColorChange slot=%u from senderSlot=%d -- forged, dropping (%u from "
+                        "that slot)", static_cast<unsigned>(describedSlot), msg.senderPeerSlot, n);
             return true;
         }
-        ApplyNickColorChange(session, describedSlot, packed);
+        PendingColor& pend = g_pendingColor[describedSlot];
+        if (packed == coop::nick_color::PackedForSlot(describedSlot)) {
+            pend.pace.Withdraw();
+            return true;
+        }
+        pend.value = packed;
+        if (pend.pace.Offer(kPrefBudget, NowMs())) ApplyNickColorChange(session, describedSlot, packed);
         return true;
     }
 
