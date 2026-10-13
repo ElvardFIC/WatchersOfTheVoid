@@ -114,6 +114,10 @@ void BuildJoinPayload(uint32_t selfEid, std::vector<uint8_t>& out);
 // occupant. The hostile drill's repeat_join arm reads it. Game thread.
 uint32_t JoinsAnswered(int slot);
 
+// Host: the SkinChange, NameplateChange or NickColorChange values applied for `slot`'s occupant (stored and
+// re-sent); cleared with the occupant. The hostile drill's keep_latest arm reads it. Game thread.
+uint32_t PrefApplies(int slot, net::ReliableKind kind);
+
 // Person-state teardown is driven by the roster ledger's row transition, which fires on a
 // replacement as well as a departure; a disconnect callback cannot see a slot recycled between
 // two ticks. Registers the module's subscribers once.

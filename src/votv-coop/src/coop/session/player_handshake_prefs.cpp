@@ -19,11 +19,13 @@
 #include "coop/player/nameplate.h"
 #include "coop/player/nick_color.h"
 #include "coop/player/players_registry.h"
+#include "coop/player/roster_ledger.h"
 #include "coop/player/skin_registry.h"
 #include "l10n/l10n.h"
 #include "ue_wrap/core/hot_path_guard.h"
 #include "ue_wrap/core/log.h"
 
+#include <array>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -67,7 +69,52 @@ void PushSkinChangedLine(uint8_t describedSlot, const std::string& skin) {
         coop::chat_feed::Push(std::string(line), coop::chat_feed::Keep::History);
 }
 
+// Host: the changes of each kind applied for a slot's occupant (PrefApplies); [0] skin, [1] plate, [2] colour.
+coop::roster_ledger::PerSlotState<std::array<uint32_t, 3>> g_prefApplies;
+
+// Host: re-send a slot's change to every other ready client, the originator excluded.
+void ResendToOthers(net::Session& session, uint8_t slot, net::ReliableKind kind,
+                    const std::vector<uint8_t>& p) {
+    for (int x = 1; x < net::kMaxPeers; ++x) {
+        if (x == slot) continue;
+        if (!session.IsSlotReady(x)) continue;
+        session.SendReliableToSlot(x, kind, p.data(), static_cast<int>(p.size()));
+    }
+}
+
+// Host: one client's change applied -- stored, its line said where it has one, and re-sent to the others.
+void ApplySkinChange(net::Session& session, uint8_t slot, const std::string& name) {
+    StoreSkinForSlot(slot, name);
+    PushSkinChangedLine(slot, name);
+    ResendToOthers(session, slot, net::ReliableKind::SkinChange, BuildSkinChangePayload(slot, name));
+    ++g_prefApplies[slot][0];
+}
+
+void ApplyNameplateChange(net::Session& session, uint8_t slot, bool visible) {
+    coop::nameplate::StoreVisibleForSlot(slot, visible);
+    ResendToOthers(session, slot, net::ReliableKind::NameplateChange,
+                   BuildNameplateChangePayload(slot, visible));
+    ++g_prefApplies[slot][1];
+}
+
+void ApplyNickColorChange(net::Session& session, uint8_t slot, uint32_t packed) {
+    coop::nick_color::StoreForSlot(slot, packed);
+    ResendToOthers(session, slot, net::ReliableKind::NickColorChange,
+                   BuildNickColorChangePayload(slot, packed));
+    ++g_prefApplies[slot][2];
+}
+
 }  // namespace
+
+uint32_t PrefApplies(int slot, net::ReliableKind kind) {
+    if (slot < 0 || slot >= net::kMaxPeers) return 0;
+    switch (kind) {
+    case net::ReliableKind::SkinChange:      return g_prefApplies[slot][0];
+    case net::ReliableKind::NameplateChange: return g_prefApplies[slot][1];
+    case net::ReliableKind::NickColorChange: return g_prefApplies[slot][2];
+    default:                                 return 0;
+    }
+}
 
 void AnnounceLocalSkin(net::Session& session, const std::string& name) {
     UE_ASSERT_GAME_THREAD("AnnounceLocalSkin");
@@ -114,16 +161,7 @@ bool HandleSkinChange(net::Session& session,
                     static_cast<unsigned>(describedSlot), msg.senderPeerSlot);
             return true;
         }
-        StoreSkinForSlot(describedSlot, name);
-        PushSkinChangedLine(describedSlot, name);
-        // Rebroadcast to every other ready client (originator excluded).
-        const std::vector<uint8_t> p = BuildSkinChangePayload(describedSlot, name);
-        for (int x = 1; x < net::kMaxPeers; ++x) {
-            if (x == describedSlot) continue;
-            if (!session.IsSlotReady(x)) continue;
-            session.SendReliableToSlot(x, net::ReliableKind::SkinChange,
-                                       p.data(), static_cast<int>(p.size()));
-        }
+        ApplySkinChange(session, describedSlot, name);
         return true;
     }
 
@@ -177,15 +215,7 @@ bool HandleNameplateChange(net::Session& session,
                     static_cast<unsigned>(describedSlot), msg.senderPeerSlot);
             return true;
         }
-        coop::nameplate::StoreVisibleForSlot(describedSlot, visible);
-        // Rebroadcast to every other ready client (originator excluded).
-        const std::vector<uint8_t> p = BuildNameplateChangePayload(describedSlot, visible);
-        for (int x = 1; x < net::kMaxPeers; ++x) {
-            if (x == describedSlot) continue;
-            if (!session.IsSlotReady(x)) continue;
-            session.SendReliableToSlot(x, net::ReliableKind::NameplateChange,
-                                       p.data(), static_cast<int>(p.size()));
-        }
+        ApplyNameplateChange(session, describedSlot, visible);
         return true;
     }
 
@@ -241,15 +271,7 @@ bool HandleNickColorChange(net::Session& session,
                     static_cast<unsigned>(describedSlot), msg.senderPeerSlot);
             return true;
         }
-        coop::nick_color::StoreForSlot(describedSlot, packed);
-        // Rebroadcast to every other ready client (originator excluded).
-        const std::vector<uint8_t> p = BuildNickColorChangePayload(describedSlot, packed);
-        for (int x = 1; x < net::kMaxPeers; ++x) {
-            if (x == describedSlot) continue;
-            if (!session.IsSlotReady(x)) continue;
-            session.SendReliableToSlot(x, net::ReliableKind::NickColorChange,
-                                       p.data(), static_cast<int>(p.size()));
-        }
+        ApplyNickColorChange(session, describedSlot, packed);
         return true;
     }
 

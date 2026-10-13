@@ -3,6 +3,7 @@
 #include "coop/dev/hostile_drill.h"
 
 #include "coop/dev/hostile_drill_hand.h"  // the hand-item class arm
+#include "coop/dev/hostile_drill_latest.h"  // the keep-the-latest arm
 #include "coop/dev/hostile_drill_walk.h"  // the four walk arms
 #include "coop/comms/chat_feed.h"
 #include "coop/comms/chat_log.h"
@@ -42,12 +43,12 @@ namespace SS = ue_wrap::saved_signals;
 using Clock = std::chrono::steady_clock;
 
 // The walk arms (record_bad_classes, bad_alarm, bad_prop_key, bad_prop_spawn) live in
-// hostile_drill_walk.cpp and the hand arms (bad_hand_class, bad_hand_family) in hostile_drill_hand.cpp --
-// this file is the dispatcher that owns the arm selection and routes those six to their module's sender
-// and judge.
+// hostile_drill_walk.cpp, the hand arms (bad_hand_class, bad_hand_family) in hostile_drill_hand.cpp and
+// keep_latest in hostile_drill_latest.cpp -- this file is the dispatcher that owns the arm selection and routes
+// those seven to their module's sender and judge.
 enum class Arm { Off, SignalPark, ChatIllFormed, PropConvert, ReliableFlood, RepeatJoin,
                  RepeatWorldReady, RepeatSaveRequest, RecordBadClasses, BadAlarm, BadPropKey,
-                 BadPropSpawn, BadHandClass, BadHandFamily };
+                 BadPropSpawn, BadHandClass, BadHandFamily, KeepLatest };
 
 // Resolved once: with the environment variable unset every read would scan the ini on disk, and the
 // drill is asked per tick.
@@ -68,6 +69,7 @@ Arm ArmOf() {
              : v == "bad_prop_spawn"      ? Arm::BadPropSpawn
              : v == "bad_hand_class"      ? Arm::BadHandClass
              : v == "bad_hand_family"     ? Arm::BadHandFamily
+             : v == "keep_latest"         ? Arm::KeepLatest
                                           : Arm::Off;
     }();
     return a;
@@ -88,6 +90,7 @@ const char* ArmName() {
     case Arm::BadPropSpawn:      return "bad_prop_spawn";
     case Arm::BadHandClass:      return "bad_hand_class";
     case Arm::BadHandFamily:     return "bad_hand_family";
+    case Arm::KeepLatest:        return "keep_latest";
     default:                     return "off";
     }
 }
@@ -691,14 +694,17 @@ void Tick() {
     const hand::Arm handArm = ArmOf() == Arm::BadHandClass  ? hand::Arm::BadHandClass
                             : ArmOf() == Arm::BadHandFamily ? hand::Arm::BadHandFamily
                                                             : hand::Arm::None;
+    const latest::Arm latestArm = ArmOf() == Arm::KeepLatest ? latest::Arm::KeepLatest : latest::Arm::None;
     if (host) {
-        if (IsWalkArm())                     walk::TickHostJudge(s, WalkArmOf());  // host counts its own walks
-        else if (handArm != hand::Arm::None) hand::TickHostJudge(s, handArm);
-        else if (!ClientJudged())            TickHost(s);  // client-judged arms: the client judges, the host only answers
+        if (IsWalkArm())                         walk::TickHostJudge(s, WalkArmOf());  // host counts its own walks
+        else if (handArm != hand::Arm::None)     hand::TickHostJudge(s, handArm);
+        else if (latestArm != latest::Arm::None) latest::TickHostJudge(s, latestArm);
+        else if (!ClientJudged())                TickHost(s);  // client-judged arms: the client judges, the host only answers
     } else {
-        if (IsWalkArm())                     walk::TickClient(s, WalkArmOf());
-        else if (handArm != hand::Arm::None) hand::TickClient(s, handArm);
-        else                                 TickClient(s);
+        if (IsWalkArm())                         walk::TickClient(s, WalkArmOf());
+        else if (handArm != hand::Arm::None)     hand::TickClient(s, handArm);
+        else if (latestArm != latest::Arm::None) latest::TickClient(s, latestArm);
+        else                                     TickClient(s);
     }
 }
 
@@ -707,6 +713,7 @@ void OnDisconnect() {
     else if (ArmOf() == Arm::RepeatWorldReady || ArmOf() == Arm::RepeatSaveRequest) JudgeRepeatEnd();
     walk::OnDisconnect();
     hand::OnDisconnect();
+    latest::OnDisconnect();
     g_step = Step::WaitArm;
     g_saidArm = false;
     g_slot = -1;

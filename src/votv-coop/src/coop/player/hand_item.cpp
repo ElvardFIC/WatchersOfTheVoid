@@ -6,6 +6,7 @@
 #include "coop/player/hand_item_pose.h"  // where the mirror sits: the owner's measure, the per-tick drive
 #include "coop/player/players_registry.h"
 #include "coop/player/remote_player.h"
+#include "coop/player/roster_ledger.h"
 #include "coop/props/prop_echo_suppress.h"
 #include "coop/props/prop_lifecycle.h"  // the two prop families never on the wire (ResolveHandClass)
 #include "coop/props/trash_collect_sync.h"  // EnsureHeldItemBroadcast (hand-edge world release)
@@ -215,6 +216,23 @@ void SendState(coop::net::Session& session, uint8_t slot, const SlotHand& h) {
         session.SendReliableToSlot(0, coop::net::ReliableKind::HandItem,
                                    p.data(), static_cast<int>(p.size()));
     }
+}
+
+// Host: the hand states applied for a slot's occupant (StatesApplied).
+coop::roster_ledger::PerSlotState<uint32_t> g_statesApplied;
+
+// Host: one client's hand state applied, field by field: `lastCls` moves only while the hand holds
+// something, since the pry gate reads it once the hand is empty (LastHeldClassIs). Then re-sent to
+// every other ready client.
+void ApplyHandState(coop::net::Session& session, uint8_t slot, const SlotHand& in) {
+    SlotHand& h = g_hands[slot];
+    h.has = in.has; h.cls = in.cls; h.name = in.name; h.item = in.item;
+    if (in.has) h.lastCls = in.cls;
+    std::memcpy(h.relPos, in.relPos, sizeof(h.relPos));
+    std::memcpy(h.relRot, in.relRot, sizeof(h.relRot));
+    h.haveRel = in.has;
+    SendState(session, slot, h);
+    ++g_statesApplied[slot];
 }
 
 void DestroyMirror(uint8_t slot, const char* why) {
@@ -614,20 +632,11 @@ bool HandleHandItem(coop::net::Session& session,
             return true;
         }
         if (kind == HandClass::Hand) cls = own;
-        SlotHand& h = g_hands[describedSlot];
-        h.has = has; h.cls = cls; h.name = name; h.item = item;
-        if (has) h.lastCls = cls;
-        std::memcpy(h.relPos, relPos, sizeof(relPos));
-        std::memcpy(h.relRot, relRot, sizeof(relRot));
-        h.haveRel = has;
-        // Rebroadcast to every other ready client, the originator excluded.
-        const std::vector<uint8_t> out = BuildPayload(describedSlot, h);
-        for (int x = 1; x < coop::net::kMaxPeers; ++x) {
-            if (x == describedSlot) continue;
-            if (!session.IsSlotReady(x)) continue;
-            session.SendReliableToSlot(x, coop::net::ReliableKind::HandItem,
-                                       out.data(), static_cast<int>(out.size()));
-        }
+        SlotHand in;
+        in.has = has; in.cls = cls; in.name = name; in.item = item;
+        std::memcpy(in.relPos, relPos, sizeof(relPos));
+        std::memcpy(in.relRot, relRot, sizeof(relRot));
+        ApplyHandState(session, describedSlot, in);
         return true;
     }
 
@@ -697,6 +706,14 @@ bool LastHeldClassIs(uint8_t slot, const wchar_t* cls) {
     if (slot >= coop::players::kMaxPeers || !cls) return false;
     const SlotHand& h = g_hands[slot];
     return !h.lastCls.empty() && ::_wcsicmp(h.lastCls.c_str(), cls) == 0;
+}
+
+bool HoldsItem(uint8_t slot) {
+    return slot < coop::players::kMaxPeers && g_hands[slot].has;
+}
+
+uint32_t StatesApplied(int slot) {
+    return (slot >= 0 && slot < static_cast<int>(coop::players::kMaxPeers)) ? g_statesApplied[slot] : 0;
 }
 
 std::wstring HeldItem(uint8_t slot) {

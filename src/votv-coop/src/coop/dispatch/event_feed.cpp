@@ -88,6 +88,9 @@ void InstallLeaveLineSubscriber() {
     coop::roster_ledger::SubscribeSlotReplaced(&OnSlotReplaced_LeaveLine);
 }
 
+// The messages the drain handed to a handler, per sender slot and kind (DrainedFrom).
+coop::roster_ledger::PerSlotState<std::array<uint32_t, 256>> g_drained;
+
 }  // namespace
 
 void SetLocalNickname(const std::wstring& nick) {
@@ -156,6 +159,8 @@ void Update(net::Session& session, void* localPlayer) {
     // is the single membership declaration).
     net::Session::ReliableMessage msg;
     while (session.TryGetReliable(msg)) {
+        if (msg.senderPeerSlot >= 0 && msg.senderPeerSlot < net::kMaxPeers)
+            ++g_drained[msg.senderPeerSlot][static_cast<uint8_t>(msg.kind)];
         switch (msg.kind) {
         case net::ReliableKind::Join: {
             coop::player_handshake::HandleJoinMessage(session, msg);
@@ -468,6 +473,10 @@ void Update(net::Session& session, void* localPlayer) {
         }
         }
     }
+}
+
+uint32_t DrainedFrom(int slot, net::ReliableKind kind) {
+    return (slot >= 0 && slot < net::kMaxPeers) ? g_drained[slot][static_cast<uint8_t>(kind)] : 0;
 }
 
 }  // namespace coop::event_feed

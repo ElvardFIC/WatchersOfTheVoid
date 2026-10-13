@@ -12,6 +12,9 @@
 
 #pragma once
 
+#include "coop/net/protocol.h"  // ReliableKind
+
+#include <cstdint>
 #include <string>
 
 namespace coop {
@@ -58,6 +61,10 @@ void Update(net::Session& session, void* localPlayer);
 // game" toast is untouched. OnSessionStart re-primes the edges for the next session, so nothing
 // needs restoring.
 void SuppressPeerLeaveEdges();
+
+// The messages of `kind` from `slot`'s occupant that the drain handed to a handler; cleared with the
+// occupant. The hostile drill's judges read it to know a flood was drained, not to time it. Game thread.
+uint32_t DrainedFrom(int slot, net::ReliableKind kind);
 
 }  // namespace event_feed
 }  // namespace coop

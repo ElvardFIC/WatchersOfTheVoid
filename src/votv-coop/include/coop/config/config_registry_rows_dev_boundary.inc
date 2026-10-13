@@ -26,7 +26,7 @@ CFG_ENUM(auth_drill, "auth_drill", "dev", "off", "off|corrupt|silent|mismatch",
 CFG_ENUM(hostile_drill, "hostile_drill", "dev", "off",
     "off|signal_park|chat_ill_formed|prop_convert|reliable_flood|repeat_join|repeat_world_ready|"
     "repeat_save_request|record_bad_classes|bad_alarm|bad_prop_key|bad_prop_spawn|bad_hand_class|"
-    "bad_hand_family",
+    "bad_hand_family|keep_latest",
     "VOTVCOOP_HOSTILE_DRILL",
     "Receive-boundary drill (BOTH peers). signal_park: a client floods refused saved-signal rows "
     "(size 0, so the game's own gate rejects each) and the host must keep them from filling the apply "
@@ -56,4 +56,6 @@ CFG_ENUM(hostile_drill, "hostile_drill", "dev", "off",
     "holds the engine's base actor class, which is not a prop, then sends a chat line; the host must not keep "
     "that class for the slot nor build a mirror of it, and judges at the chat line. bad_hand_family: the same, "
     "naming the per-player inventory container's class in capitals (class names compare without case); the "
-    "host must not keep it. Drill only.")
+    "host must not keep it. keep_latest: a joined client sends, in one tick, 120 skin, nameplate, nick colour and "
+    "hand changes each alternating two values, then a third value of each; the host judges by its own counts that "
+    "it applied no more of each than the kind's budget allows, then that each kind's third value landed. Drill only.")

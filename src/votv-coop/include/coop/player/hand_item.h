@@ -94,6 +94,13 @@ bool LastHeldClassIs(uint8_t slot, const wchar_t* cls);
 // nothing. Game thread only.
 std::wstring HeldItem(uint8_t slot);
 
+// Whether `slot`'s hand holds anything, as the lane holds it. Game thread only.
+bool HoldsItem(uint8_t slot);
+
+// Host: the hand states applied for `slot`'s occupant (kept and re-sent); cleared with the occupant.
+// The hostile drill's keep_latest arm reads it. Game thread only.
+uint32_t StatesApplied(int slot);
+
 // Snapshot the current hand-axis actors (local hand + live remote mirrors)
 // into out[]; returns the count (<= 1 + kMaxPeers). For per-walk hoisting.
 size_t CollectHandAxisActors(void* out[], size_t cap);
