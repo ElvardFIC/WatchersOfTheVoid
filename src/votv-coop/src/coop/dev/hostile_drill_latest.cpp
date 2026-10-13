@@ -251,8 +251,8 @@ void WaitLatest(Arm a) {
     const long long ms =
         std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - g_drainedAt).count();
     Verdict(a, "PASS",
-            std::string("each kind applied no more than its burst plus one, and each last value owed at the read was "
-                        "paid ") + std::to_string(ms) + " ms after the drain");
+            std::string("each kind applied no more than its budget pays over the drain, and each last value owed at "
+                        "the read was paid ") + std::to_string(ms) + " ms after the drain");
 }
 
 }  // namespace
