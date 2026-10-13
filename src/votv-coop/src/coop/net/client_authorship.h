@@ -7,13 +7,11 @@
 // lane and relay tables because our kinds are the protocol's fixed enum rather than runtime registrations: the
 // host's receive edge (session_receive.cpp) drops a Host kind, or a byte that names no kind, from a seated
 // client before it is inboxed or relayed.
-// Only the host asks the table. A Host kind reaches a client from the host alone: the host relays only Client kinds
-// (session_receive.cpp asserts it) and sends each Host kind itself, so a client's handlers keep no sender check of
-// their own. The sender slot a client reads on a Host kind may name the origin the host stamped on it (a signal
-// catch names its catcher), so no handler takes it for an authenticity test. MTA's client also refuses a
-// server-triggered event not marked remote (Client/mods/deathmatch/logic/CPacketHandler.cpp:5026-5040); ours
-// does not ask: a client's one link is the host's, which sends it its own kinds and relays some Client kinds
-// (session_lanes.h), and a client keeps no table of what may reach it.
+// Only the host asks the table. A Host kind reaches a client from the host alone (the host relays only Client
+// kinds, session_receive.cpp asserts it), so a client's handlers keep no sender check; the slot a client reads on
+// one may name an origin the host stamped (a signal catch's catcher), never an authenticity test. MTA's client also
+// refuses a server event not marked remote (its CPacketHandler.cpp:5026-5040); ours does not ask: a client's one
+// link is the host's, which relays some Client kinds besides its own (session_lanes.h).
 #pragma once
 
 // Every enumerator is named below, and .github/ci/reliablekind_gate.py fails the build when one is missing,
