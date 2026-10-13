@@ -6,6 +6,7 @@
 #include "coop/player/players_registry.h"
 #include "coop/player/remote_player.h"
 #include "coop/props/prop_echo_suppress.h"
+#include "coop/props/prop_lifecycle.h"  // the two prop families never on the wire (ResolveHandClass)
 #include "coop/props/trash_collect_sync.h"  // EnsureHeldItemBroadcast (hand-edge world release)
 #include "ue_wrap/engine/engine.h"
 #include "ue_wrap/actors/prop.h"
@@ -203,6 +204,26 @@ int32_t PropNameOffset() {
     return s_off;
 }
 
+// What a class name off the wire is to this lane. The owner announces its holding actor only when it
+// is a prop descendant (local_streams), so a hand item is a prop; and not of the two prop families the
+// coop layer never puts on the wire (prop_lifecycle): a per-player state actor, of which each peer owns
+// exactly one, and a wire-suppressed variant, which a client's own Init destroys. The receipt and the
+// spawn both ask it, so the two cannot drift.
+enum class HandClass { Hand, NotHand, Unresolved };
+HandClass ResolveHandClass(const std::wstring& name, void** outCls) {
+    void* cls = ue_wrap::object_index::ClassByName(name.c_str());
+    if (outCls) *outCls = cls;
+    if (!cls) return HandClass::Unresolved;
+    if (!ue_wrap::prop::IsClassDescendantOfProp(cls) || coop::prop_lifecycle::IsPerPlayerPropClass(name) ||
+        coop::prop_lifecycle::IsWireSuppressedPropClass(name))
+        return HandClass::NotHand;
+    return HandClass::Hand;
+}
+
+// Hand states the host refused, per slot, for the log: the first and then each power of two, so a
+// sender at the edge budget's rate cannot flood it.
+uint32_t g_refusedBySlot[coop::players::kMaxPeers] = {};
+
 std::wstring ReadItemName(void* actor) {
     const int32_t off = PropNameOffset();
     if (off < 0 || !actor) return {};
@@ -280,13 +301,24 @@ void SpawnMirror(uint8_t slot, void* puppetActor) {
     const SlotHand& want = g_hands[slot];
     // One index lookup a tick: Blueprint classes load on demand, and one this peer has not loaded, or is
     // still loading, answers null and is asked for again next tick, warned once per class.
-    void* cls = ue_wrap::object_index::ClassByName(want.cls.c_str());
-    if (!cls) {
+    void* cls = nullptr;
+    const HandClass kind = ResolveHandClass(want.cls, &cls);
+    if (kind == HandClass::Unresolved) {
         static std::wstring sWarned;
         if (sWarned != want.cls) {
             sWarned = want.cls;
             UE_LOGW("hand_item: class '%ls' not found (unloaded?) -- will retry", want.cls.c_str());
         }
+        return;
+    }
+    // A mirror is built only from a hand item's class, whoever authored the state: the name stamp below
+    // writes at the prop name field's offset, which only a prop has. This is also where a class judged
+    // nowhere else is judged: one the host could not resolve when it relayed it, and, on a client, the
+    // host's own hand, which no receipt checks.
+    if (kind == HandClass::NotHand) {
+        UE_LOGW("hand_item: slot %u class '%ls' is not a hand item -- no mirror, not tried again until the "
+                "item or the puppet changes", static_cast<unsigned>(slot), want.cls.c_str());
+        NoteSpawnFailed(slot, want, puppetActor);
         return;
     }
     ue_wrap::FVector loc{};
@@ -580,6 +612,8 @@ bool HandleHandItem(coop::net::Session& session,
         UE_LOGW("hand_item: truncated class field -- dropping");
         return true;
     }
+    // Each string within the cap BuildPayload writes to, so what the host keeps is what it relays.
+    if (clsLen > kMaxStr) return true;
     std::wstring cls;
     for (uint8_t i = 0; i < clsLen; ++i) cls.push_back(static_cast<wchar_t>(p[off++]));
     const uint8_t nameLen = p[off++];
@@ -587,6 +621,7 @@ bool HandleHandItem(coop::net::Session& session,
         UE_LOGW("hand_item: truncated name field -- dropping");
         return true;
     }
+    if (nameLen > kMaxStr) return true;
     std::wstring name;
     for (uint8_t i = 0; i < nameLen; ++i) name.push_back(static_cast<wchar_t>(p[off++]));
     if (off + 1 > static_cast<size_t>(msg.payloadLen)) {
@@ -598,6 +633,7 @@ bool HandleHandItem(coop::net::Session& session,
         UE_LOGW("hand_item: truncated item field -- dropping");
         return true;
     }
+    if (itemLen > kMaxStr) return true;
     std::wstring item;
     for (uint8_t i = 0; i < itemLen; ++i) item.push_back(static_cast<wchar_t>(p[off++]));
 
@@ -630,6 +666,21 @@ bool HandleHandItem(coop::net::Session& session,
         if (msg.senderPeerSlot != describedSlot || describedSlot == 0) {
             UE_LOGW("hand_item: slot=%u from senderSlot=%d -- forged, dropping",
                     static_cast<unsigned>(describedSlot), msg.senderPeerSlot);
+            return true;
+        }
+        // A class this host resolves and that is not a hand item is not kept and not relayed, and the
+        // slot keeps the state it had; the link stays. One it cannot resolve yet is kept and relayed, and
+        // judged where it would be built (SpawnMirror): the owner announces only on a change, so an
+        // honest state refused here would never come again. MTA's keysync checks a client's weapon
+        // against the server's own record of that player and skips the data on a mismatch
+        // (reference/mtasa-blue/Server/mods/deathmatch/logic/packets/CKeysyncPacket.cpp:71-75); the
+        // host holds no record of a client's hold slot (the client streams its own profile), so it
+        // checks what it can, the lane's type.
+        if (has && ResolveHandClass(cls, nullptr) == HandClass::NotHand) {
+            const uint32_t n = ++g_refusedBySlot[describedSlot];
+            if ((n & (n - 1)) == 0)
+                UE_LOGW("hand_item: slot %u names class '%ls', which is not a hand item -- not kept or relayed "
+                        "(%u refused from this slot)", static_cast<unsigned>(describedSlot), cls.c_str(), n);
             return true;
         }
         SlotHand& h = g_hands[describedSlot];
@@ -687,6 +738,7 @@ void Reset() {
     for (uint8_t s = 0; s < coop::players::kMaxPeers; ++s) {
         DestroyMirror(s, "session reset");
         g_hands[s] = SlotHand{};
+        g_refusedBySlot[s] = 0;
     }
     g_ownHas = false;
     g_ownCls.clear();
@@ -723,6 +775,7 @@ void OnSlotDisconnected(uint8_t slot) {
     if (slot >= coop::players::kMaxPeers) return;
     DestroyMirror(slot, "peer disconnected");
     g_hands[slot] = SlotHand{};
+    g_refusedBySlot[slot] = 0;
 }
 
 }  // namespace coop::hand_item
