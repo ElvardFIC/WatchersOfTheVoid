@@ -252,9 +252,9 @@ void QueueConnectBroadcastForSlot(int peerSlot) {
     if (!L::EnsureResolved() || !L::Instance()) return;
     // The target, not the laptop's state: while a replay runs, isOpened still holds the value it leaves. MTA sends a
     // joiner a moving object's animation with its progress
-    // (reference/mtasa-blue/Server/mods/deathmatch/logic/packets/CEntityAddPacket.cpp:255-260), which the joiner resumes
-    // (reference/mtasa-blue/Shared/animation/CPositionRotationAnimation.cpp:60-74); a latent chain cannot be resumed,
-    // so the joiner replays the destination fresh. A press of the host's own still in its chain reaches
+    // (reference/mtasa-blue/Server/mods/deathmatch/logic/packets/CEntityAddPacket.cpp:255-260), which the joiner
+    // resumes (reference/mtasa-blue/Shared/animation/CPositionRotationAnimation.cpp:111-125); a latent chain cannot be
+    // resumed, so the joiner replays the destination fresh. A press of the host's own still in its chain reaches
     // the joiner as the chain's end, broadcast to every ready slot.
     bool target = false;
     if (!Target(target)) return;

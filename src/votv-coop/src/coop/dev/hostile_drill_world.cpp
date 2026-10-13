@@ -214,15 +214,17 @@ void WaitLatest(Arm a) {
         if (Read(i, v) && v == g_last[i] && Applied(i) > g_appliedAtRead[i]) continue;
         all = false;
         if (Clock::now() - g_readAt > kLatestWindow) {
-            Fail(a, std::string("latest-lost (the ") + kKindNames[i] + "'s last value was not applied by a payment within " +
-                        std::to_string(kLatestWindow.count()) + " ms)");
+            Fail(a, std::string("latest-lost (the ") + kKindNames[i] +
+                        "'s last value was not applied by a payment within " + std::to_string(kLatestWindow.count()) +
+                        " ms)");
             return;
         }
     }
     if (!all) return;
     UE_LOGI("[HOSTILE-DRILL] %s each last value owed at the read was paid %lld ms after it; the laptop settles next",
             ArmName(a),
-            static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - g_readAt).count()));
+            static_cast<long long>(
+                std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - g_readAt).count()));
     g_step = Step::WaitSettle;
 }
 

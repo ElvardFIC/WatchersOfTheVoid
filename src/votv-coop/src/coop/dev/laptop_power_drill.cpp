@@ -291,7 +291,8 @@ void HostTick(coop::net::Session& s) {
         bool opened = false;
         if (LS::ClientEdgesApplied(g_slot) < g_appliedBase + 4 || !LS::Settled(opened)) {
             if (Expired()) {
-                UE_LOGW("[LAPTOP-POWER-DRILL] FAIL: the client's crossing edges did not settle on the host within 60 s");
+                UE_LOGW("[LAPTOP-POWER-DRILL] FAIL: the client's crossing edges did not settle on the host within "
+                        "60 s");
                 Enter(HostStep::Done);
             }
             return;
