@@ -12,7 +12,8 @@
 // their own. The sender slot a client reads on a Host kind may name the origin the host stamped on it (a signal
 // catch names its catcher), so no handler takes it for an authenticity test. MTA's client also refuses a
 // server-triggered event not marked remote (Client/mods/deathmatch/logic/CPacketHandler.cpp:5026-5040); ours
-// does not ask, since the host relays every Client kind to the clients too and a client trusts its one link.
+// does not ask: a client's one link is the host's, which sends it its own kinds and relays some Client kinds
+// (session_lanes.h), and a client keeps no table of what may reach it.
 #pragma once
 
 // Every enumerator is named below, and .github/ci/reliablekind_gate.py fails the build when one is missing,
