@@ -34,26 +34,27 @@ using Clock = std::chrono::steady_clock;
 using Kind = coop::net::ReliableKind;
 
 // The flood: per kind, kAlternates messages alternating A and B, then one C, which differs from every value the
-// burst can leave applied. Both peers know A, B and C but for the hand's two classes, which the client picks from
+// burst can leave applied, the plate's excepted (below). Both peers know A, B and C but for the hand's two classes, which the client picks from
 // its own world (the hand's C is an empty hand), and the plate's (below).
 constexpr int         kAlternates = 120;
 constexpr uint32_t    kPerKind    = kAlternates + 1;
 constexpr const char* kSkinA      = "kerfur_omega";    // built-in skins: every peer loads them by asset path
 constexpr const char* kSkinB      = "kerfur_omega_h";
 constexpr const char* kSkinC      = "kerfur_omega_m";
-// The plate has two values, so its are the client's own (A) and the other (B and C): the burst ends on A, and C is
-// owed. The host expects the opposite of the plate it held for the slot at arm.
+// The plate has two values, so its are the client's own (A) and the other (B and C), and C equals B: an even count
+// of applies at the first read leaves A held and C owed; an odd count (a refill during the drain) leaves C held with
+// nothing owed, and the plate's leg is then not judged. The host expects the opposite of the plate it held at arm.
 const uint32_t        kColorA     = coop::nick_color::Pack(255, 0, 0);
 const uint32_t        kColorB     = coop::nick_color::Pack(0, 255, 0);
 const uint32_t        kColorC     = coop::nick_color::Pack(0, 0, 255);
 
-// The judge's numbers, literals from RECEIVE_BOUNDARY_ARC.md §3m 3b-3b (no symbol of the change itself): at the
-// first read after the drain, a kind has applied at least two of its alternating values and at most its burst plus
-// one; each kind's C must then be applied within its refill period plus 10 s.
+// The judge's numbers, literals written from the lanes' budgets (no symbol of the change itself): at the first read
+// after the drain, a kind has applied at least two of its alternating values and at most its burst plus one; each
+// kind's C must then be applied, by a payment after that read, within its refill period plus 10 s.
 constexpr uint32_t kMinApplies     = 2;
 constexpr uint32_t kPrefMaxApplies = 5;   // burst 4, + 1
-constexpr uint32_t kHandMaxApplies = 9;   // burst 8, + 1
-constexpr auto     kSkinWindow  = std::chrono::milliseconds(13000);  // one per 3 s, + 10 s
+constexpr uint32_t kHandMaxApplies = 13;  // burst 12, + 1
+constexpr auto     kSkinWindow  = std::chrono::milliseconds(20000);  // one per 10 s, + 10 s
 constexpr auto     kPrefWindow  = std::chrono::milliseconds(11000);  // one per 1 s, + 10 s
 constexpr auto     kHandWindow  = std::chrono::milliseconds(10250);  // four per 1 s, + 10 s
 constexpr auto     kFailBound   = std::chrono::seconds(180);         // a failure bound, never a wait
@@ -124,6 +125,8 @@ Clock::time_point g_drainedAt{};
 constexpr Kind    kKinds[4] = {Kind::SkinChange, Kind::NameplateChange, Kind::NickColorChange, Kind::HandItem};
 uint32_t          g_drainedBase[4] = {};
 uint32_t          g_appliedBase[4] = {};
+uint32_t          g_appliedAtRead[4] = {};
+bool              g_plateJudged = true;
 bool              g_plateAtArm = true;
 
 uint32_t Applied(int slot, int i) {
@@ -194,6 +197,11 @@ void WaitDrained(Arm a) {
         g_step = Step::Done;
         return;
     }
+    for (int i = 0; i < 4; ++i) g_appliedAtRead[i] = Applied(g_slot, i);
+    g_plateJudged = (applied[1] % 2) == 0;
+    if (!g_plateJudged)
+        UE_LOGI("[HOSTILE-DRILL] %s the plate applied an odd count (%u): it already holds its last value, so its leg is "
+                "not judged", ArmName(a), applied[1]);
     g_drainedAt = Clock::now();
     g_step = Step::WaitLatest;
 }
@@ -203,7 +211,9 @@ void WaitLatest(Arm a) {
     const std::chrono::milliseconds windows[4] = {kSkinWindow, kPrefWindow, kPrefWindow, kHandWindow};
     bool all = true;
     for (int i = 0; i < 4; ++i) {
-        if (LatestLanded(i)) continue;
+        if (i == 1 && !g_plateJudged) continue;
+        // Landed by a payment after the first read: the burst cannot have left this kind's C applied.
+        if (LatestLanded(i) && Applied(g_slot, i) > g_appliedAtRead[i]) continue;
         all = false;
         if (Clock::now() - g_drainedAt > windows[i]) {
             UE_LOGW("[HOSTILE-DRILL] %s FAIL: latest-lost (the %s's last value was not applied within %lld ms)",
@@ -215,8 +225,8 @@ void WaitLatest(Arm a) {
     if (!all) return;
     const long long ms =
         std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - g_drainedAt).count();
-    Verdict(a, "PASS", "each kind applied no more than its burst plus one, and its last value landed " +
-                           std::to_string(ms) + " ms after the drain");
+    Verdict(a, "PASS", std::string("each kind applied no more than its burst plus one, and its last value was paid ") +
+                           std::to_string(ms) + " ms after the drain" + (g_plateJudged ? "" : " (the plate's leg not judged)"));
 }
 
 }  // namespace
@@ -272,7 +282,8 @@ void OnDisconnect() {
     g_slot = -1;
     g_armAt = {};
     g_drainedAt = {};
-    for (int i = 0; i < 4; ++i) g_drainedBase[i] = g_appliedBase[i] = 0;
+    for (int i = 0; i < 4; ++i) g_drainedBase[i] = g_appliedBase[i] = g_appliedAtRead[i] = 0;
+    g_plateJudged = true;
     g_plateAtArm = true;
 }
 

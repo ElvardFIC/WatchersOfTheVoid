@@ -70,8 +70,9 @@ const std::string& SkinForSlot(int slot);
 void AnnounceLocalSkin(coop::net::Session& session, const std::string& name);
 
 // Handle a delivered SkinChange ([u8 slot][u8 len][name]). Host: the sender must match the
-// slot, then stored, applied to the slot's puppet and rebroadcast to the other clients. Client:
-// host-only sender, stored, applied. True when recognised.
+// slot; an unchanged name costs a compare, and a changed one is stored, applied to the slot's
+// puppet and re-sent to the other clients at the kind's pace, the newest kept past it (TickPrefs).
+// Client: host-only sender, stored, applied. True when recognised.
 bool HandleSkinChange(coop::net::Session& session,
                       const coop::net::Session::ReliableMessage& msg);
 
@@ -79,8 +80,9 @@ bool HandleSkinChange(coop::net::Session& session,
 // skin. The at-join state rides the prefs flags byte of the Join. Game thread only.
 void AnnounceLocalNameplate(coop::net::Session& session, bool visible);
 
-// Handle a delivered NameplateChange ([u8 slot][u8 visible]). Host: sender-checked, stored,
-// rebroadcast; client: host-only sender, stored. True when recognised.
+// Handle a delivered NameplateChange ([u8 slot][u8 visible]). Host: sender-checked, then as the
+// skin: a changed value stored and re-sent at the kind's pace; client: host-only sender, stored.
+// True when recognised.
 bool HandleNameplateChange(coop::net::Session& session,
                            const coop::net::Session::ReliableMessage& msg);
 
@@ -118,9 +120,10 @@ uint32_t JoinsAnswered(int slot);
 // re-sent); cleared with the occupant. The hostile drill's keep_latest arm reads it. Game thread.
 uint32_t PrefApplies(int slot, net::ReliableKind kind);
 
-// Host, each tick after the roster reconcile and before the drain (event_feed::Update): a client's newest skin,
-// nameplate or nick colour change that arrived past its budget is applied once the budget allows it. Game thread.
-void PayOwedPrefs(net::Session& session);
+// Each tick after the roster reconcile and before the drain (event_feed::Update): the display prefs' refusal log
+// is flushed, and on the host a client's newest skin, nameplate or nick colour change that arrived past its budget
+// is applied once the budget allows it. Game thread.
+void TickPrefs(net::Session& session);
 
 // Person-state teardown is driven by the roster ledger's row transition, which fires on a
 // replacement as well as a departure; a disconnect callback cannot see a slot recycled between

@@ -7,9 +7,12 @@
 // this helper's: it is a verb, paced in its lane. One thread per instance, as IntentBucket.
 //
 // MTA relays a player's sync to the others at a zone's interval and skips what falls inside it, the next update
-// carrying the state then current (Server/mods/deathmatch/logic/CPlayer.cpp:981-1028; CBandwidthSettings.h:98, set at
-// :40,55,70). Its sync is a stream, so a skipped update is always followed by a newer one; the states this paces are
-// sent once per change, so the newest skipped value is kept and paid when the budget allows -- the divergence.
+// carrying the state then current (CPlayer.cpp:981-1030; the intervals, CBandwidthSettings.h:98, set per preset).
+// Source keeps a player's changed client settings pending while its rules refuse them and applies the newest on a
+// later think (player.cpp:3467-3473,3536,4641-4645). Ours
+// diverges from MTA's skip in four ways: the states are sent once per change, not as a stream, so the newest skipped
+// value is kept and paid when the budget allows; the host's own copy is paced, not only the relay; a burst is allowed
+// before the pace; and the pace is per sender, not per viewer.
 
 #pragma once
 

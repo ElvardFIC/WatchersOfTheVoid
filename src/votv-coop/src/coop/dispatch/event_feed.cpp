@@ -133,7 +133,7 @@ void Update(net::Session& session, void* localPlayer) {
     coop::player_handshake::PulseRosterRows(session);     // host: re-assert to clients
     // Host: the newest client display changes that arrived past their budget, applied once it allows. Here, after the
     // reconcile, so a debt whose occupant left was cleared with its row before it could be paid.
-    coop::player_handshake::PayOwedPrefs(session);
+    coop::player_handshake::TickPrefs(session);
     coop::hand_item::PayOwed(session);
 
     // The per-slot Join send. The payload is built on first need: in steady state the vector is
@@ -438,25 +438,24 @@ void Update(net::Session& session, void* localPlayer) {
             break;
         }
         case net::ReliableKind::SkinChange: {
-            // Store and live re-skin the slot's puppet; the handler also does the host's
-            // rebroadcast.
+            // Store and live re-skin the slot's puppet; on the host the handler re-sends a change
+            // at the kind's pace (TickPrefs pays what is owed).
             coop::player_handshake::HandleSkinChange(session, msg);
             break;
         }
         case net::ReliableKind::NameplateChange: {
-            // The per-peer nameplate visibility preference; the handler also rebroadcasts on the
-            // host.
+            // The per-peer nameplate visibility preference; paced on the host as the skin.
             coop::player_handshake::HandleNameplateChange(session, msg);
             break;
         }
         case net::ReliableKind::NickColorChange: {
-            // The per-peer nick colour; the handler also rebroadcasts on the host.
+            // The per-peer nick colour; paced on the host as the skin.
             coop::player_handshake::HandleNickColorChange(session, msg);
             break;
         }
         case net::ReliableKind::HandItem: {
-            // The hotbar hand-item display state; the handler rebroadcasts on the host and
-            // TickMirrors applies.
+            // The hotbar hand-item display state; the host re-sends a change at the lane's pace
+            // (PayOwed pays what is owed) and TickMirrors applies.
             coop::hand_item::HandleHandItem(session, msg);
             break;
         }

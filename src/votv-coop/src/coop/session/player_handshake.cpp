@@ -187,6 +187,7 @@ void Reset() {
     // every registered teardown. The load-bearing clear is ClearAll at session stop.
     coop::roster_ledger::Reset();
     coop::hand_item::Reset();  // destroy the hand-item display mirrors and states
+    ClearPrefRefusals();
     g_cliJoinSent = false;     // a new session (a rejoin included) re-sends the client's one Join
 }
 
@@ -435,6 +436,7 @@ bool HandleJoinMessage(net::Session& session,
             ParseNickColorField(nickStart + colorOff, nickRemaining - colorOff,
                                 senderSlot);
     }
+    WithdrawOwedPrefs(senderSlot);  // the Join's values are the newest; an older owed change is not applied after them
     // A mirror Player element for this sender, so packets carrying its senderElementId resolve
     // here; 0 means no element yet, and routing falls back to the sender slot. Range-validated
     // against the sender's role first: a host must send a host-range eid and a client a peer-range

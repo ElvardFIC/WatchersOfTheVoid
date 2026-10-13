@@ -29,6 +29,14 @@ bool LatestWins::RunSelftest() {
         w.Offer(budget, 1000);
         w.Offer(budget, 1000);
         w.Offer(budget, 1000);
+        check(!w.Offer(budget, 1500) && w.Owed(), "a newer value while one is owed and no token: still owed");
+        check(w.Offer(budget, 2500) && !w.Owed(), "a newer value with a token: applied, nothing owed");
+    }
+    {
+        LatestWins w;
+        w.Offer(budget, 1000);
+        w.Offer(budget, 1000);
+        w.Offer(budget, 1000);
         w.Withdraw();
         check(!w.Owed() && !w.Due(budget, 9000), "a withdrawn debt is not paid");
         check(w.Offer(budget, 9000), "and the bucket it left still pays a later change");
