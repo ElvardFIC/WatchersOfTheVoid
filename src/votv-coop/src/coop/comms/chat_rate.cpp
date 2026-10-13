@@ -27,11 +27,11 @@ TalkVerdict Attempt(TalkBudget& b, uint64_t nowMs) {
     // CanPlayerTalk (player.cpp:8809-8818): the interval, then the bucket, both on every attempt.
     const bool intervalOk = b.lastTalkMs == 0 || b.lastTalkMs + kTalkIntervalMs < nowMs;
 
-    // ArePlayerTalkMessagesAvailable (player.cpp:8771-8804), in its order and in float. Two divergences, neither a
-    // change of verdict: the clock is the host's steady milliseconds, not the map's float curtime, so the elapsed time
-    // is the integer difference turned into seconds and the floats stay small however long the machine has run; and 0
-    // stands for never, which the steady clock never reads once a session runs, so a first attempt meets full tiers as
-    // a first say on a long-running map does (Source starts both times at 0, :613-614).
+    // ArePlayerTalkMessagesAvailable (player.cpp:8771-8804), in its order and in float. Two divergences: the clock is
+    // the host's steady milliseconds, not the map's float curtime, so the elapsed time is the integer difference turned
+    // into seconds and the floats stay small however long the machine has run; and 0 stands for never (Source starts
+    // both times at 0, :613-614), which on a clock counted from the machine's boot gives a slot's first attempt full
+    // tiers, as Source gives a first say once its map has run 200 s; a younger map's first say meets less of tier 2.
     const float elapsed = static_cast<float>(nowMs > b.lastAttemptMs ? nowMs - b.lastAttemptMs : 0) / 1000.0f;
     b.lastAttemptMs = nowMs;
     // Tier 1, the short term: every attempt spends one, the counter may fall to -2.5, and a debt slows the refill.

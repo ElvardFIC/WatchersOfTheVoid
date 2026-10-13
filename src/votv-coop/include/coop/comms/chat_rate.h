@@ -2,9 +2,10 @@
 // A line passes when 0.66 s have gone since its sender last talked and a two-tier token bucket allows it. Every
 // attempt spends from the bucket, a line that passed starts the interval, and a refused line is dropped for good, with
 // no answer (reference/source-sdk-2013/src/game/server/player.cpp:8771-8818, client.cpp:843-862). MTA's server has no
-// chat rate, only a length cap and a mute (reference/mtasa-blue/Server/mods/deathmatch/logic/CConsoleCommands.cpp:
-// 356-357), so Source is the precedent. One state per slot, cleared with the occupant. The host's own lines are not
-// counted: bounds apply to clients, where Source's listen host is a player like any other. Game thread.
+// chat rate, only a length cap (reference/mtasa-blue/Server/mods/deathmatch/Config.h:34) and a mute, both in its say
+// (reference/mtasa-blue/Server/mods/deathmatch/logic/CConsoleCommands.cpp:356-369), so Source is the precedent. One
+// state per slot, cleared with the occupant. The host's own lines are not counted: bounds apply to clients, where
+// Source's listen host is a player like any other. Game thread.
 
 #pragma once
 

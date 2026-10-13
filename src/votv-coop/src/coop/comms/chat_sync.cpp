@@ -70,8 +70,9 @@ Speaker g_speakers[kMaxSpeakers];
 // chat line became pre-world sendable.
 bool g_seeded[coop::net::kMaxPeers] = {};
 
-// The receipt's refusals before a line is read, the rate's two and a short payload: said at the first after a quiet
-// spell and summed per window (coop/net/refusal_tally.h), so a sender at the edge's rate cannot make the log the cost.
+// The receipt's refusals before a line is read, the rate's two and a short payload on the host, a chat intent on a
+// client: said at the first after a quiet spell and summed per window (coop/net/refusal_tally.h), so a sender at the
+// edge's rate cannot make the log the cost.
 // Deliberate divergence: Source logs nothing when CanPlayerTalk refuses (client.cpp:843-862); a host owner reading the
 // log should see a flood was refused.
 coop::net::RefusalTally g_refusals{"chat_sync"};
