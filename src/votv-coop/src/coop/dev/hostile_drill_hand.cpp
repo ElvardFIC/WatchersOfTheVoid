@@ -7,6 +7,7 @@
 #include "coop/net/session.h"
 #include "coop/player/hand_item.h"
 #include "coop/player/players_registry.h"
+#include "coop/player/remote_player.h"
 #include "coop/session/join_progress.h"
 #include "coop/session/net_pump.h"
 
@@ -73,14 +74,16 @@ bool SendChatLine(coop::net::Session* s, const char* text) {
 }
 
 // ---- host (judge) ----
-// Judge waits for the sentinel; ReadMirror is the one call after it, when the stored state has had one
-// mirror pass: the pump runs the drills before local_streams (which runs hand_item::TickMirrors) and
-// drains the inbox after both, so the call that first sees the sentinel precedes that pass and the next
-// one follows it.
+// Judge waits for the sentinel. A stored class then needs the slot's puppet: the mirror pass skips a slot
+// whose puppet is not up, and a joiner's first pose can come after its first messages. ReadMirror reads
+// the mirror on the call after the one that first sees the puppet live: the pump runs the drills, then
+// local_streams (hand_item::TickMirrors), then the puppet drive, so that call's mirror pass had the
+// puppet, and the next call follows it.
 enum class Step { WaitArm, Judge, ReadMirror, Done };
 Step              g_step = Step::WaitArm;
 int               g_slot = -1;
 uint32_t          g_lineSeqBase = 0;
+bool              g_puppetSeen = false;
 Clock::time_point g_armAt{};
 
 void Verdict(const char* what, const char* detail) {
@@ -125,12 +128,18 @@ void Judge() {
                         "sent behind it arrived");
         return;
     }
-    UE_LOGI("[HOSTILE-DRILL] %s the host STORED the forged class for slot %d; reading its mirror after the "
-            "next mirror pass", ArmName(), g_slot);
+    UE_LOGI("[HOSTILE-DRILL] %s the host STORED the forged class for slot %d; reading its mirror after a "
+            "mirror pass with the slot's puppet up", ArmName(), g_slot);
     g_step = Step::ReadMirror;
 }
 
 void ReadMirror() {
+    if (!g_puppetSeen) {
+        coop::RemotePlayer* pup = coop::players::Registry::Get().Puppet(static_cast<uint8_t>(g_slot));
+        if (pup && pup->valid()) g_puppetSeen = true;
+        else if (Clock::now() - g_armAt > kFailBound) Verdict("INCONCLUSIVE", "the slot's puppet never came up");
+        return;
+    }
     void* m = coop::hand_item::MirrorActorForSlot(static_cast<uint8_t>(g_slot));
     if (m && !ue_wrap::prop::IsDescendantOfProp(m)) {
         const std::wstring cls = R::ClassNameOf(m);
@@ -178,6 +187,7 @@ void OnDisconnect() {
     g_step = Step::WaitArm;
     g_slot = -1;
     g_lineSeqBase = 0;
+    g_puppetSeen = false;
     g_armAt = {};
 }
 

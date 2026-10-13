@@ -1,8 +1,8 @@
 // coop/dev/hostile_drill_hand.h -- the drill arm proving a hand-item message cannot make a peer build an
 // actor of a class that is not a prop. bad_hand_class: a joined client describes its own hand as holding
 // the engine's base actor class, then sends one chat line behind it on the same lane. The HOST judges at
-// that line: the class stored for the slot, then on its next call the slot's display mirror, which one
-// mirror pass has had the chance to build by then. Defensive testing of OUR OWN mod, per
+// that line: the class stored for the slot, then the slot's display mirror, read after a mirror pass that
+// ran with the slot's puppet up (the pass skips a slot without one). Defensive testing of OUR OWN mod, per
 // coop/dev/hostile_drill.h; nothing here ships enabled.
 
 #pragma once
