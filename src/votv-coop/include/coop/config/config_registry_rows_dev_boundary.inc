@@ -26,13 +26,13 @@ CFG_ENUM(auth_drill, "auth_drill", "dev", "off", "off|corrupt|silent|mismatch",
 CFG_ENUM(hostile_drill, "hostile_drill", "dev", "off",
     "off|signal_park|chat_ill_formed|prop_convert|reliable_flood|repeat_join|repeat_world_ready|"
     "repeat_save_request|record_bad_classes|bad_alarm|bad_prop_key|bad_prop_spawn|bad_hand_class|"
-    "bad_hand_family|keep_latest",
+    "bad_hand_family|keep_latest|chat_flood",
     "VOTVCOOP_HOSTILE_DRILL",
     "Receive-boundary drill (BOTH peers). signal_park: a client floods refused saved-signal rows "
     "(size 0, so the game's own gate rejects each) and the host must keep them from filling the apply "
     "park and pausing the receive loop, while an honest saved signal sent behind them still applies. "
     "chat_ill_formed: a client sends an ill-formed UTF-8 chat line; the host must refuse it and keep a "
-    "well-formed one sent behind it. prop_convert: a client sends a trash re-skin, which only the host "
+    "well-formed one sent behind it at the drills' chat spacing. prop_convert: a client sends a trash re-skin, which only the host "
     "authors, then an honest trash spawn behind it on the same lane; the host must not apply the re-skin, "
     "and judges once the spawn is bound. reliable_flood: a client sends a burst under the most an honest "
     "client may send at once, then one far over it, each followed by a chat line; the host must keep the link "
@@ -60,4 +60,7 @@ CFG_ENUM(hostile_drill, "hostile_drill", "dev", "off",
     "hand changes each alternating two values, then a last value of each; the host judges by its own counts that "
     "it applied no more of each than the kind's budget pays over the drain it measured, then that each last value "
     "still owed was paid (a kind "
-    "the burst left holding its last value owes nothing and is not judged). Drill only.")
+    "the burst left holding its last value owes nothing and is not judged). chat_flood: a joined client sends ten "
+    "chat lines in one tick, then one line once the first is back and the debt is waited out, then four lines 0.9 s "
+    "apart once that one is back and the bucket refilled; the host must commit the burst's first line only, the "
+    "next line, and three of the four, and judges by its own lobby record. Drill only.")

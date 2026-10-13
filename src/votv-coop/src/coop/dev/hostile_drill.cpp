@@ -44,12 +44,12 @@ namespace SS = ue_wrap::saved_signals;
 using Clock = std::chrono::steady_clock;
 
 // The walk arms (record_bad_classes, bad_alarm, bad_prop_key, bad_prop_spawn) live in
-// hostile_drill_walk.cpp, the hand arms (bad_hand_class, bad_hand_family) in hostile_drill_hand.cpp, the chat arm
-// (chat_ill_formed) in hostile_drill_chat.cpp and keep_latest in hostile_drill_latest.cpp -- this file is the
-// dispatcher that owns the arm selection and routes those eight to their module's sender and judge.
+// hostile_drill_walk.cpp, the hand arms (bad_hand_class, bad_hand_family) in hostile_drill_hand.cpp, the chat arms
+// (chat_ill_formed, chat_flood) in hostile_drill_chat.cpp and keep_latest in hostile_drill_latest.cpp -- this file
+// is the dispatcher that owns the arm selection and routes those nine to their module's sender and judge.
 enum class Arm { Off, SignalPark, ChatIllFormed, PropConvert, ReliableFlood, RepeatJoin,
                  RepeatWorldReady, RepeatSaveRequest, RecordBadClasses, BadAlarm, BadPropKey,
-                 BadPropSpawn, BadHandClass, BadHandFamily, KeepLatest };
+                 BadPropSpawn, BadHandClass, BadHandFamily, KeepLatest, ChatFlood };
 
 // Resolved once: with the environment variable unset every read would scan the ini on disk, and the
 // drill is asked per tick.
@@ -71,6 +71,7 @@ Arm ArmOf() {
              : v == "bad_hand_class"      ? Arm::BadHandClass
              : v == "bad_hand_family"     ? Arm::BadHandFamily
              : v == "keep_latest"         ? Arm::KeepLatest
+             : v == "chat_flood"          ? Arm::ChatFlood
                                           : Arm::Off;
     }();
     return a;
@@ -92,6 +93,7 @@ const char* ArmName() {
     case Arm::BadHandClass:      return "bad_hand_class";
     case Arm::BadHandFamily:     return "bad_hand_family";
     case Arm::KeepLatest:        return "keep_latest";
+    case Arm::ChatFlood:         return "chat_flood";
     default:                     return "off";
     }
 }
@@ -652,7 +654,9 @@ void Tick() {
                             : ArmOf() == Arm::BadHandFamily ? hand::Arm::BadHandFamily
                                                             : hand::Arm::None;
     const latest::Arm latestArm = ArmOf() == Arm::KeepLatest ? latest::Arm::KeepLatest : latest::Arm::None;
-    const chat::Arm chatArm = ArmOf() == Arm::ChatIllFormed ? chat::Arm::ChatIllFormed : chat::Arm::None;
+    const chat::Arm chatArm = ArmOf() == Arm::ChatIllFormed ? chat::Arm::ChatIllFormed
+                            : ArmOf() == Arm::ChatFlood     ? chat::Arm::ChatFlood
+                                                            : chat::Arm::None;
     if (host) {
         if (IsWalkArm())                         walk::TickHostJudge(s, WalkArmOf());  // host counts its own walks
         else if (handArm != hand::Arm::None)     hand::TickHostJudge(s, handArm);
