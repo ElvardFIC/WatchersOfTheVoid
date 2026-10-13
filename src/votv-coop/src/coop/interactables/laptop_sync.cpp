@@ -32,11 +32,15 @@ bool     g_havePrev = false;
 bool     g_prevOpened = false;
 uint64_t g_nextPoll = 0;
 
-// Wire-target power convergence: a pending target consumes the matching local edge as
-// wire-transient (a state predicate, not a flag timer); a non-matching edge is organic and
-// broadcasts.
+// The wire's target, converged on through the laptop's own toggle. The toggle runs a latent chain: laptop_C's
+// actionOptionIndex sets `anim` inside the call and returns at once while `anim` is set, and the chain's end flips
+// `isOpened` and clears `anim` in one block. So a target is reached only once no chain runs, and the edge that ends a
+// chain we dispatched is ours: the replay's flag holds the value that chain leaves, and that edge is consumed, not
+// broadcast as this peer's own.
 bool g_wantValid = false;
 bool g_wantOpened = false;
+bool g_replayInFlight = false;  // a toggle we dispatched is running
+bool g_replayTo = false;        // ...and the isOpened its end leaves
 
 bool g_announced = false;
 
@@ -65,14 +69,20 @@ void ApplyPowerTarget() {
     if (!g_wantValid) return;
     L::PowerState ps;
     if (!L::ReadPower(ps)) return;
-    if (ps.isOpened == g_wantOpened) { g_wantValid = false; return; }  // converged
-    if (ps.anim) return;               // boot/shutdown latent running -- retry next poll
+    if (ps.anim) return;               // a chain runs: isOpened is not final until its end -- retry next poll
+    if (ps.isOpened == g_wantOpened) { g_wantValid = false; return; }  // reached
+    // Our last chain's edge is not judged yet (it ended after the last poll): a new chain now would replace the value
+    // that edge is consumed by. The next poll judges it and ends the flag.
+    if (g_replayInFlight) return;
     if (!ps.powered && g_wantOpened) return;  // wall power lags the panel's canonical -- retry
-    if (L::CallPowerToggle())
-        UE_LOGI("laptop_sync: power replay dispatched (target isOpened=%u)",
-                static_cast<unsigned>(g_wantOpened));
-    // The opened flag settles after the native latent chain; the poll's want-target predicate
-    // consumes that edge as wire-transient.
+    if (!L::CallPowerToggle()) return;
+    // A call the blueprint's own early returns met starts no chain, so only a chain seen running is ours.
+    L::PowerState after;
+    if (L::ReadPower(after) && after.anim) {
+        g_replayInFlight = true;
+        g_replayTo = !ps.isOpened;
+    }
+    UE_LOGI("laptop_sync: power replay dispatched (target isOpened=%u)", static_cast<unsigned>(g_wantOpened));
 }
 
 // Instruments (the world_latest drill): the host's applications of a client's line, per sender, and the edges this
@@ -80,13 +90,12 @@ void ApplyPowerTarget() {
 coop::roster_ledger::PerSlotState<uint32_t> g_clientEdges;
 uint32_t g_organicSent = 0;
 
-// A wire target applied: converge on it through the native toggle and re-prime the poll. The host re-fans a client's
-// power edge (op 0) to the other clients, the origin excluded.
+// A wire target applied: converge on it through the native toggle, whose end the replay's flag consumes. The host
+// re-fans a client's power edge (op 0) to the other clients, the origin excluded.
 void ApplyTarget(coop::net::Session* s, const coop::net::LaptopStatePayload& p, uint8_t senderSlot) {
     g_wantValid = true;
     g_wantOpened = p.isOpened != 0;
     ApplyPowerTarget();
-    PrimeBaselines();
     if (s->role() != coop::net::Role::Host) return;
     if (p.op == 0) SendOut(s, p, /*exceptSlot*/ senderSlot);
     ++g_clientEdges[senderSlot];
@@ -112,13 +121,13 @@ void Tick() {
     }
     if (!g_havePrev) { PrimeBaselines(); return; }
 
-    ApplyPowerTarget();
-
+    // The edge first, judged against the chain that made it; a chain dispatched below is judged on a later poll.
     L::PowerState ps;
     if (!L::ReadPower(ps)) return;
     if (s->connected() && ps.isOpened != g_prevOpened) {
-        if (g_wantValid && ps.isOpened == g_wantOpened) {
-            g_wantValid = false;  // wire-transient settle -- consume silently
+        if (g_replayInFlight && ps.isOpened == g_replayTo) {
+            g_replayInFlight = false;  // our replay's end: consumed. A press in the gap before this poll went the
+                                       // other way, so its own edge is still to come, and goes out.
         } else {
             coop::net::LaptopStatePayload p{};
             p.op = 0;
@@ -128,7 +137,11 @@ void Tick() {
             UE_LOGI("laptop_sync: local POWER edge (isOpened=%u) -- broadcast", static_cast<unsigned>(p.isOpened));
         }
     }
+    // A chain that ended without its edge (the wall power changed under it) ends the flag too.
+    if (g_replayInFlight && !ps.anim) g_replayInFlight = false;
     g_prevOpened = ps.isOpened;
+
+    ApplyPowerTarget();
 }
 
 void OnLaptopState(const coop::net::LaptopStatePayload& p, uint8_t senderSlot) {
@@ -152,11 +165,12 @@ void QueueConnectBroadcastForSlot(int peerSlot) {
     auto* s = g_session.load(std::memory_order_acquire);
     if (!s || s->role() != coop::net::Role::Host) return;
     if (!L::EnsureResolved() || !L::Instance()) return;
-    L::PowerState ps;
-    if (!L::ReadPower(ps)) return;
+    // The target, not the laptop's state: while a replay runs, isOpened still holds the value it leaves.
+    bool target = false;
+    if (!Target(target)) return;
     coop::net::LaptopStatePayload p{};
     p.op = 3;
-    p.isOpened = ps.isOpened ? 1 : 0;
+    p.isOpened = target ? 1 : 0;
     s->SendReliableToSlot(peerSlot, coop::net::ReliableKind::LaptopState, &p, sizeof(p));
     UE_LOGI("laptop_sync: connect state -> slot %d (isOpened=%u)", peerSlot, static_cast<unsigned>(p.isOpened));
 }
@@ -184,7 +198,7 @@ bool Settled(bool& opened) {
     L::PowerState ps;
     if (!L::EnsureResolved() || !L::ReadPower(ps)) return false;
     opened = ps.isOpened;
-    return !ps.anim && !g_wantValid && g_havePrev && g_prevOpened == ps.isOpened;
+    return !ps.anim && !g_wantValid && !g_replayInFlight && g_havePrev && g_prevOpened == ps.isOpened;
 }
 
 void OnDisconnect() {
@@ -192,6 +206,7 @@ void OnDisconnect() {
     g_prevOpened = false;
     g_nextPoll = 0;
     g_wantValid = false;
+    g_replayInFlight = false;
     g_announced = false;
 }
 
