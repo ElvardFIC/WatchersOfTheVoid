@@ -3,6 +3,9 @@
 #include "coop/interactables/laptop_sync.h"
 
 #include "coop/interactables/portable_pc_lid.h"  // op 6 goes to the portable PC's lid lane
+#include "coop/net/latest_wins.h"
+#include "coop/net/net_clock.h"
+#include "coop/net/refusal_tally.h"
 #include "coop/net/session.h"
 #include "coop/player/roster_ledger.h"  // PerSlotState
 
@@ -101,6 +104,28 @@ void ApplyTarget(coop::net::Session* s, const coop::net::LaptopStatePayload& p, 
     ++g_clientEdges[senderSlot];
 }
 
+// A client's power edges, the newest kept at a pace (coop/net/latest_wins.h). The value on the wire is a level, the
+// laptop's power, sent on its edge; the sender is one edge per 4 Hz poll (kPollMs) with the laptop's boot or shutdown,
+// 4.5 to 7 s, between two of its toggles, and an application is a toggle and a re-fan to each other client: two at
+// once, then one a second. An unchanged edge costs the compare and is not re-fanned.
+constexpr coop::net::IntentBudget kEdgeBudget{2.0f, 1.0f};
+struct PendingPower {
+    bool opened = false;
+    coop::net::LatestWins pace;
+};
+coop::roster_ledger::PerSlotState<PendingPower> g_pending;
+
+// True when the host's target is `opened` already; an unread one counts as changed.
+bool Holds(bool opened);
+
+// The refusals of what a peer sent, said at the first after a quiet spell and summed per window, so a sender cannot
+// make the log the cost (coop/net/refusal_tally.h).
+coop::net::RefusalTally g_refusals{"laptop_sync"};
+
+void Refuse(int sender, const char* why) {
+    g_refusals.Note(static_cast<uint8_t>(sender), why, coop::net::RefusalTally::Clock::now());
+}
+
 }  // namespace
 
 void Install(coop::net::Session* session) {
@@ -152,13 +177,52 @@ void OnLaptopState(const coop::net::LaptopStatePayload& p, uint8_t senderSlot) {
         coop::portable_pc_lid::OnLid(p, senderSlot);
         return;
     }
-    if (p.op != 0 && p.op != 3) return;
-    if (!L::EnsureResolved() || !L::Instance()) {
-        UE_LOGW("laptop_sync: wire op=%u declined (laptop unresolved)", p.op);
+    const bool host = s->role() == coop::net::Role::Host;
+    if (p.op != 0 && p.op != 3) {
+        if (host) Refuse(senderSlot, "an unknown laptop op");
         return;
     }
-    // A power edge (0) or a joiner's state (3): the target converges through the native toggle.
-    ApplyTarget(s, p, senderSlot);
+    if (host && p.op == 3) {  // the host's own state for a joiner, which no client sends
+        Refuse(senderSlot, "a joiner's laptop state from a client");
+        return;
+    }
+    if (!L::EnsureResolved() || !L::Instance()) {
+        Refuse(senderSlot, "the laptop is unresolved here");
+        return;
+    }
+    if (!host) {  // the host's power edge (0) or its state for this joiner (3)
+        ApplyTarget(s, p, senderSlot);
+        return;
+    }
+    // A client's power edge, the newest kept at the edge budget's pace.
+    PendingPower& pend = g_pending[senderSlot];
+    const bool opened = p.isOpened != 0;
+    if (Holds(opened)) {
+        pend.pace.Withdraw();
+        return;
+    }
+    pend.opened = opened;
+    if (pend.pace.Offer(kEdgeBudget, coop::net::NowMs())) ApplyTarget(s, p, senderSlot);
+}
+
+void PayOwed(coop::net::Session& session) {
+    g_refusals.Flush(coop::net::RefusalTally::Clock::now());
+    if (session.role() != coop::net::Role::Host) return;
+    uint64_t now = 0;  // read once, and only when an edge is owed
+    for (int slot = 1; slot < static_cast<int>(coop::net::kMaxPeers); ++slot) {
+        PendingPower& pend = g_pending[slot];
+        if (!pend.pace.Owed()) continue;
+        if (Holds(pend.opened)) {  // the host's own press or another client's edge got there first
+            pend.pace.Withdraw();
+            continue;
+        }
+        if (now == 0) now = coop::net::NowMs();
+        if (!pend.pace.Due(kEdgeBudget, now)) continue;
+        coop::net::LaptopStatePayload p{};
+        p.op = 0;
+        p.isOpened = pend.opened ? 1 : 0;
+        ApplyTarget(&session, p, static_cast<uint8_t>(slot));
+    }
 }
 
 void QueueConnectBroadcastForSlot(int peerSlot) {
@@ -194,6 +258,13 @@ bool Target(bool& out) {
     return ReadLocalOpened(out);
 }
 
+namespace {
+bool Holds(bool opened) {
+    bool cur = false;
+    return Target(cur) && cur == opened;
+}
+}  // namespace
+
 bool Settled(bool& opened) {
     L::PowerState ps;
     if (!L::EnsureResolved() || !L::ReadPower(ps)) return false;
@@ -208,6 +279,7 @@ void OnDisconnect() {
     g_wantValid = false;
     g_replayInFlight = false;
     g_announced = false;
+    g_refusals.Clear();
 }
 
 }  // namespace coop::laptop_sync

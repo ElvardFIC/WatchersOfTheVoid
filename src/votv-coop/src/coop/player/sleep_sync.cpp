@@ -3,6 +3,8 @@
 #include "coop/player/sleep_sync.h"
 
 #include "coop/comms/chat_feed.h"
+#include "coop/net/latest_wins.h"
+#include "coop/net/net_clock.h"
 #include "coop/net/session.h"
 #include "coop/player/roster_ledger.h"  // PerSlotState
 #include "l10n/l10n.h"
@@ -160,6 +162,18 @@ void ApplyReport(coop::net::Session* s, int slot, bool inBed) {
     HostRetally(s);
 }
 
+// A client's bed reports, the newest kept at a pace (coop/net/latest_wins.h). The flag on the wire is a level, the
+// bed's state, sent on its edge; a player's entries and exits peak at 1 a second and 3 in ten in the archived client
+// logs, and a changed flag retallies, which can broadcast a tally and a chat line or run the night's accelerate or
+// end: four at once, then one a second. A flag still owed when the night ends is paid after it like any other: only a
+// sender past its burst is ever owed, and it could send the same flag again.
+constexpr coop::net::IntentBudget kReportBudget{4.0f, 1.0f};
+struct PendingBed {
+    bool inBed = false;
+    coop::net::LatestWins pace;
+};
+coop::roster_ledger::PerSlotState<PendingBed> g_pending;
+
 void ReportLocalEdge(coop::net::Session* s, bool inBed) {
     if (IsHost(s)) {
         g_inBed[0] = inBed;
@@ -265,8 +279,14 @@ void OnReliable(const coop::net::SleepStatePayload& p, uint8_t senderSlot) {
         // Host ingests Reports only; trust = the transport sender slot.
         if (p.op != 0) return;
         if (senderSlot == 0 || senderSlot >= coop::net::kMaxPeers) return;
-        if (g_inBed[senderSlot] == (p.flag != 0)) return;
-        ApplyReport(s, senderSlot, p.flag != 0);
+        PendingBed& pend = g_pending[senderSlot];
+        const bool inBed = p.flag != 0;
+        if (g_inBed[senderSlot] == inBed) {
+            pend.pace.Withdraw();
+            return;
+        }
+        pend.inBed = inBed;
+        if (pend.pace.Offer(kReportBudget, coop::net::NowMs())) ApplyReport(s, senderSlot, inBed);
         return;
     }
     // Client: phase broadcasts from the host only (transport-trusted slot 0).
@@ -310,6 +330,21 @@ void OnDisconnectForSlot(int slot) {
 }
 
 bool InAcceleratePhase() { return g_accelerate; }
+
+void PayOwed(coop::net::Session& session) {
+    if (session.role() != coop::net::Role::Host) return;
+    uint64_t now = 0;  // read once, and only when a report is owed
+    for (int slot = 1; slot < static_cast<int>(coop::net::kMaxPeers); ++slot) {
+        PendingBed& pend = g_pending[slot];
+        if (!pend.pace.Owed()) continue;
+        if (g_inBed[slot] == pend.inBed) {  // the night's end or the slot's own arrival got there first
+            pend.pace.Withdraw();
+            continue;
+        }
+        if (now == 0) now = coop::net::NowMs();
+        if (pend.pace.Due(kReportBudget, now)) ApplyReport(&session, slot, pend.inBed);
+    }
+}
 
 uint32_t ReportsApplied(int slot) { return g_reportsApplied[slot]; }
 

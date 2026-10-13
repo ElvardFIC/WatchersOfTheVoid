@@ -12,6 +12,8 @@
 
 #include "coop/world/alarm_sync.h"
 
+#include "coop/net/latest_wins.h"
+#include "coop/net/net_clock.h"
 #include "coop/net/protocol.h"
 #include "coop/net/session.h"
 #include "coop/player/players_registry.h"  // coop::players::kMaxPeers
@@ -196,6 +198,22 @@ bool ReadCurrent(bool& out) {
     return trig && ReadActive(trig, out);
 }
 
+// A client's requests, the newest kept at a pace (coop/net/latest_wins.h). Its sender is one edge per 1 Hz poll
+// (kPollIntervalMs), and a request that changes the trigger runs the alarm's whole fanout: two at once, then one a
+// second. An unchanged request costs the trigger's byte.
+constexpr coop::net::IntentBudget kRequestBudget{2.0f, 1.0f};
+struct PendingAlarm {
+    bool active = false;
+    coop::net::LatestWins pace;
+};
+coop::roster_ledger::PerSlotState<PendingAlarm> g_pending;
+
+// True when the trigger reads `active` already; an unreadable trigger counts as changed.
+bool Holds(bool active) {
+    bool cur = false;
+    return ReadCurrent(cur) && cur == active;
+}
+
 }  // namespace
 
 void Install(coop::net::Session* session) {
@@ -280,7 +298,14 @@ void OnReliable(const coop::net::AlarmStatePayload& payload, int senderPeerSlot)
     const bool active = payload.active != 0;
     ResolvePass();
     if (s->role() == coop::net::Role::Host) {
-        ApplyClientRequest(senderPeerSlot, active);  // a client's local transition
+        // A client's local transition, the newest kept at the request budget's pace.
+        PendingAlarm& pend = g_pending[senderPeerSlot];
+        if (Holds(active)) {
+            pend.pace.Withdraw();
+            return;
+        }
+        pend.active = active;
+        if (pend.pace.Offer(kRequestBudget, coop::net::NowMs())) ApplyClientRequest(senderPeerSlot, active);
     } else {
         if (senderPeerSlot != 0) {
             UE_LOGW("alarm_sync: AlarmState from non-host senderPeerSlot=%d -- dropping",
@@ -299,6 +324,21 @@ void DevForce(bool active) {
         ResolvePass();
         Apply(active, /*suppressDetection=*/false);
     });
+}
+
+void PayOwed(coop::net::Session& session) {
+    if (session.role() != coop::net::Role::Host) return;
+    uint64_t now = 0;  // read once, and only when a request is owed
+    for (int slot = 1; slot < static_cast<int>(coop::players::kMaxPeers); ++slot) {
+        PendingAlarm& pend = g_pending[slot];
+        if (!pend.pace.Owed()) continue;
+        if (Holds(pend.active)) {  // the host's own scan or another client got there first
+            pend.pace.Withdraw();
+            continue;
+        }
+        if (now == 0) now = coop::net::NowMs();
+        if (pend.pace.Due(kRequestBudget, now)) ApplyClientRequest(slot, pend.active);
+    }
 }
 
 uint32_t ClientApplies(int slot) { return g_clientApplies[slot]; }

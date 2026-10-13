@@ -52,6 +52,10 @@ void Tick();
 //   them all: the host broadcasts End{natural} and receivers reflect wakeup().
 void OnReliable(const coop::net::SleepStatePayload& p, uint8_t senderSlot);
 
+// HOST, game thread, each event_feed update after the reconcile: a client's bed flag owed by its pace (the host keeps
+// each client's newest and applies a changed one at a pace) is applied once a token refills, unless already held.
+void PayOwed(coop::net::Session& session);
+
 // HOST: a joiner arrived (world-ready) -- ends a running accelerate phase
 // (someone is now awake in the world) and re-tallies.
 void QueueConnectBroadcastForSlot(int peerSlot);

@@ -28,6 +28,9 @@
 #include "coop/creatures/npc_adoption.h"
 #include "coop/creatures/kerfur_prop_adoption.h"  // OnSnapshotComplete
 #include "coop/player/hand_item.h"  // the hand-item handler
+#include "coop/interactables/laptop_sync.h"  // PayOwed: a client's laptop power at its pace
+#include "coop/player/sleep_sync.h"          // PayOwed: a client's bed flag at its pace
+#include "coop/world/alarm_sync.h"           // PayOwed: a client's alarm request at its pace
 #include "coop/player/player_damage.h"
 #include "coop/creatures/wisp_tear_mirror.h"  // WispGrab and WispTear receivers
 #include "coop/player/local_body.h"     // the host's own skin belongs in its own roster row
@@ -136,6 +139,9 @@ void Update(net::Session& session, void* localPlayer) {
     coop::player_handshake::TickPrefs(session);
     coop::hand_item::PayOwed(session);
     coop::chat_sync::Tick();  // the chat receipt's refusal window
+    coop::alarm_sync::PayOwed(session);   // a client's world levels owed by their pace
+    coop::sleep_sync::PayOwed(session);
+    coop::laptop_sync::PayOwed(session);
 
     // The per-slot Join send. The payload is built on first need: in steady state the vector is
     // never constructed, so the pump tick does not pay the UTF-8 conversion and allocation.

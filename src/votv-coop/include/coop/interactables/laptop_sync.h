@@ -26,8 +26,14 @@ void Install(coop::net::Session* session);
 // coop/interactables/portable_pc_lid's, on op 6.
 void Tick();
 
-// Wire ingest (both roles). HOST: applies + re-fans (except origin). Op 6 goes to the lid lane.
+// Wire ingest (both roles). A client applies the host's lines. The HOST keeps each client's newest power edge, applies
+// a changed one at a pace and re-fans it (except to its origin), and refuses op 3, its own state for a joiner, from a
+// client. Op 6 goes to the lid lane.
 void OnLaptopState(const coop::net::LaptopStatePayload& p, uint8_t senderSlot);
+
+// Each event_feed update after the reconcile, game thread: the lane's refusal window flushed on both roles; on the
+// HOST, a client's edge owed by its pace applied once a token refills, unless the target already holds it.
+void PayOwed(coop::net::Session& session);
 
 // HOST: ship the joiner the laptop's target (op=3): the wire's while one is pending, else the laptop's power. The lid
 // lane sends its own rows.

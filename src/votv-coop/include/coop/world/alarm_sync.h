@@ -37,8 +37,13 @@ void QueueConnectBroadcastForSlot(int slot);
 // Game thread (event_feed drain): a peer's alarm state, applied as a reflected
 // runTrigger(nullptr, active) on the local trigger. We dispatch that through ProcessEvent
 // ourselves, so the blueprint-internal invisibility does not matter, and the native idempotency
-// breaks every echo loop. A client applies; the host applies and lets its own poll broadcast.
+// breaks every echo loop. A client applies the host's; the host keeps each client's newest request,
+// applies a changed one at a pace and lets its own poll broadcast.
 void OnReliable(const coop::net::AlarmStatePayload& payload, int senderPeerSlot);
+
+// HOST, game thread, each event_feed update after the reconcile: a client's request owed by its pace is applied
+// once a token refills, unless the trigger already holds it.
+void PayOwed(coop::net::Session& session);
 
 // Test/dev seam: post a game-thread native runTrigger(active) on the LOCAL trigger -- the
 // lane's own poll then detects + broadcasts, so an e2e exercises the shipping path
