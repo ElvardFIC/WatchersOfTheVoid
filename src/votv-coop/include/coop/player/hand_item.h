@@ -45,11 +45,11 @@ void TickMirrors();
 
 // event_feed router entry. Parses (each string within the cap the sender writes to, with no control
 // character), forgery-guards, and on the host applies a changed state (kept and re-sent) at the lane's
-// pace, the newest kept past it (PayOwed); an unchanged state costs the parse and a compare. A hand item's class is a prop's, outside the
-// two prop families the coop layer never puts on the wire, names compared without case: the host keeps
-// and relays no class it resolves to anything else, and keeps a hand item under the engine's spelling;
-// TickMirrors builds no mirror of one, which also judges a class the host could not resolve. Drops and
-// refusals are logged at the first and each power of two per sender.
+// pace, the newest kept past it (PayOwed); an unchanged state costs the parse and a compare. A hand
+// item's class is a prop's, outside the two prop families the coop layer never puts on the wire, names
+// compared without case: the host keeps and relays no class it resolves to anything else, and keeps a
+// hand item under the engine's spelling; TickMirrors builds no mirror of one, which also judges a class
+// the host could not resolve. Drops and refusals are logged at the first and each power of two per sender.
 bool HandleHandItem(coop::net::Session& session,
                     const coop::net::Session::ReliableMessage& msg);
 

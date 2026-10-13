@@ -58,4 +58,5 @@ CFG_ENUM(hostile_drill, "hostile_drill", "dev", "off",
     "naming the per-player inventory container's class in capitals (class names compare without case); the "
     "host must not keep it. keep_latest: a joined client sends, in one tick, 120 skin, nameplate, nick colour and "
     "hand changes each alternating two values, then a last value of each; the host judges by its own counts that "
-    "it applied no more of each than the kind's budget allows, then that each kind's last value was paid. Drill only.")
+    "it applied no more of each than the kind's budget allows, then that each kind's last value was paid (the plate's "
+    "leg skipped when the burst left it holding its last value). Drill only.")

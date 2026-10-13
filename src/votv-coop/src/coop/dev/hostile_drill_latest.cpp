@@ -34,23 +34,25 @@ using Clock = std::chrono::steady_clock;
 using Kind = coop::net::ReliableKind;
 
 // The flood: per kind, kAlternates messages alternating A and B, then one C, which differs from every value the
-// burst can leave applied. Both peers know A, B and C, but for the hand's two classes, which the client picks from
-// its own world (the hand's C is an empty hand), and the plate, which has two values (below).
+// burst can leave applied -- but the plate's, which has two values (below). Both peers know A, B and C, but for the
+// hand's two classes, which the client picks from its own world (the hand's C is an empty hand).
 constexpr int         kAlternates = 120;
 constexpr uint32_t    kPerKind    = kAlternates + 1;
 constexpr const char* kSkinA      = "kerfur_omega";    // built-in skins: every peer loads them by asset path
 constexpr const char* kSkinB      = "kerfur_omega_h";
 constexpr const char* kSkinC      = "kerfur_omega_m";
-// The plate has two values, so its are the client's own (A) and the other (B and C), and C equals B: an even count
-// of applies at the first read leaves A held and C owed; an odd count (a refill during the drain) leaves C held with
-// nothing owed, and the plate's leg is then not judged. The host expects the opposite of the plate it held at arm.
+// The plate has two values, so its values are the client's own (A) and the other (B and C), and C equals B: an even
+// count of applies at the first read leaves A held and C owed; an odd count (a refill during the drain) leaves C held
+// with nothing owed, and the plate's leg is then not judged. The host expects the opposite of the plate it held at
+// arm.
 const uint32_t        kColorA     = coop::nick_color::Pack(255, 0, 0);
 const uint32_t        kColorB     = coop::nick_color::Pack(0, 255, 0);
 const uint32_t        kColorC     = coop::nick_color::Pack(0, 0, 255);
 
 // The judge's numbers, literals written from the lanes' budgets (no symbol of the change itself): at the first read
 // after the drain, a kind has applied at least two of its alternating values and at most its burst plus one; each
-// kind's C must then be applied, by a payment after that read, within its refill period plus 10 s.
+// kind's C must then be applied, by a payment after that read, within its refill period plus 10 s (the plate's leg
+// skipped on an odd count, above).
 constexpr uint32_t kMinApplies     = 2;
 constexpr uint32_t kPrefMaxApplies = 5;   // burst 4, + 1
 constexpr uint32_t kHandMaxApplies = 13;  // burst 12, + 1
@@ -200,8 +202,8 @@ void WaitDrained(Arm a) {
     for (int i = 0; i < 4; ++i) g_appliedAtRead[i] = Applied(g_slot, i);
     g_plateJudged = (applied[1] % 2) == 0;
     if (!g_plateJudged)
-        UE_LOGI("[HOSTILE-DRILL] %s the plate applied an odd count (%u): it already holds its last value, so its leg is "
-                "not judged", ArmName(a), applied[1]);
+        UE_LOGI("[HOSTILE-DRILL] %s the plate applied an odd count (%u): it already holds its last value, so its "
+                "leg is not judged", ArmName(a), applied[1]);
     g_drainedAt = Clock::now();
     g_step = Step::WaitLatest;
 }
@@ -226,8 +228,9 @@ void WaitLatest(Arm a) {
     if (!all) return;
     const long long ms =
         std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - g_drainedAt).count();
-    Verdict(a, "PASS", std::string("each kind applied no more than its burst plus one, and its last value was paid ") +
-                           std::to_string(ms) + " ms after the drain" + (g_plateJudged ? "" : " (the plate's leg not judged)"));
+    Verdict(a, "PASS",
+            std::string("each kind applied no more than its burst plus one, and its last value was paid ") +
+                std::to_string(ms) + " ms after the drain" + (g_plateJudged ? "" : " (the plate's leg not judged)"));
 }
 
 }  // namespace
