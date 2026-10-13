@@ -15,7 +15,8 @@ namespace coop::slot_file_read {
 // CRC-32 (IEEE, table-driven).
 uint32_t Crc32(const uint8_t* data, size_t len);
 
-// The whole file into `out`; false when it cannot be opened or is empty.
+// The whole file into `out`; false when it cannot be opened, is empty or the
+// read is incomplete. On failure the caller must not use `out`.
 bool ReadWholeFile(const std::filesystem::path& p, std::vector<uint8_t>& out);
 
 // One file's read in progress, polled until it holds still.

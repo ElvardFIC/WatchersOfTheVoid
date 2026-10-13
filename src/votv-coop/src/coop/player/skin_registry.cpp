@@ -99,6 +99,18 @@ bool DirProvidesSkin(const std::wstring& dirW, const char* skin) {
     return false;
 }
 
+std::wstring PreviewPath(const std::vector<std::wstring>& dirs, const char* skin) {
+    std::error_code ec;
+    for (const std::wstring& dirW : dirs) {
+        for (const wchar_t* ext : {L".png", L".bmp"}) {
+            fs::path candidate = fs::path(dirW) / skin;
+            candidate += ext;
+            if (fs::is_regular_file(candidate, ec)) return candidate.wstring();
+        }
+    }
+    return {};
+}
+
 }  // namespace
 
 bool IsValidSkinName(const std::string& name) {
@@ -183,24 +195,15 @@ const std::vector<SkinEntry>& Entries(bool rescan) {
     if (g_scanned && !rescan) return g_entries;
     g_scanned = true;
     g_entries.clear();
-    g_entries.push_back({kNativeSkinName, L""});  // the stock body is always offered
 
+    std::error_code ec;
     const std::vector<std::wstring> dirs = PakDirs();
+    g_entries.push_back({kNativeSkinName, PreviewPath(dirs, kNativeSkinName)});
 
     // Builtin kerfur skins: always offered (game assets, no pak). Preview tile =
     // the same sidecar convention, looked up across the pak dirs by skin name.
-    std::error_code ec;
     for (const auto& b : kBuiltinSkins) {
-        std::wstring preview;
-        for (const std::wstring& dirW : dirs) {
-            for (const wchar_t* pext : {L".png", L".bmp"}) {
-                fs::path cand = fs::path(dirW) / b.name;
-                cand += pext;
-                if (fs::is_regular_file(cand, ec)) { preview = cand.wstring(); break; }
-            }
-            if (!preview.empty()) break;
-        }
-        g_entries.push_back({b.name, std::move(preview)});
+        g_entries.push_back({b.name, PreviewPath(dirs, b.name)});
     }
 
     if (dirs.empty()) {

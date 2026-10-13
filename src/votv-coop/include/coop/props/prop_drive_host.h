@@ -10,7 +10,8 @@
 // host's physics flags and the velocity. MTA's unoccupied-vehicle syncer, with the host as the
 // only syncer since props are host-authoritative.
 //
-// HOST-ONLY, game thread. Verb-fed and never scanned: the set holds only what a caller claimed.
+// HOST-ONLY, game thread. A verb claims or coasts a prop, and a hit from one of those onto another
+// prop coasts the one that was hit. The set is never a scan of every prop.
 
 #pragma once
 
@@ -31,8 +32,12 @@ void Release(void* actor);
 
 // An instant push moved `actor`: stream it, coasting, until it rests. A prop a verb has claimed
 // stays claimed, and one already coasting starts its rest clock again; the refusals are Claim's.
+// A hand release starts a new generation even if a very brief grab was not observed by Tick.
 // `reason` names the push for the log. Game thread.
-void Coast(void* actor, const char* reason);
+void Coast(void* actor, const char* reason, bool afterHandRelease = false);
+
+// Read-only contact feeder query; includes claimed and coasting live props.
+bool IsDriven(void* actor);
 
 // A peer's world just came up: every driven prop's current pose is re-sent on the next tick, so
 // the joiner parks the resting ones too, which the delta gate would otherwise never send it.

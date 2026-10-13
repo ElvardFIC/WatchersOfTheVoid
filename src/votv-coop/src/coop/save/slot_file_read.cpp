@@ -7,6 +7,7 @@
 #include <windows.h>
 
 #include <atomic>
+#include <array>
 #include <fstream>
 
 namespace coop::slot_file_read {
@@ -17,23 +18,22 @@ constexpr uint64_t kStablePollMs = 300;
 }  // namespace
 
 uint32_t Crc32(const uint8_t* data, size_t len) {
-    static uint32_t table[256];
-    static std::atomic<bool> init{false};
-    if (!init.load(std::memory_order_acquire)) {
+    static const auto table = [] {
+        std::array<uint32_t, 256> values{};
         for (uint32_t i = 0; i < 256; ++i) {
             uint32_t c = i;
             for (int k = 0; k < 8; ++k) c = (c & 1) ? (0xEDB88320u ^ (c >> 1)) : (c >> 1);
-            table[i] = c;
+            values[i] = c;
         }
-        init.store(true, std::memory_order_release);
-    }
+        return values;
+    }();
     uint32_t crc = 0xFFFFFFFFu;
     for (size_t i = 0; i < len; ++i) crc = table[(crc ^ data[i]) & 0xFF] ^ (crc >> 8);
     return crc ^ 0xFFFFFFFFu;
 }
 
-bool ReadWholeFile(const std::filesystem::path& p, std::vector<uint8_t>& out) {
-    std::ifstream f(p, std::ios::binary);
+namespace {
+bool ReadWholeStream_(std::istream& f, std::vector<uint8_t>& out) {
     if (!f) return false;
     f.seekg(0, std::ios::end);
     const std::streamoff n = f.tellg();
@@ -41,7 +41,15 @@ bool ReadWholeFile(const std::filesystem::path& p, std::vector<uint8_t>& out) {
     out.resize(static_cast<size_t>(n));
     f.seekg(0, std::ios::beg);
     f.read(reinterpret_cast<char*>(out.data()), n);
-    return f.good() || f.eof();
+    // The game rewrites saves in place. EOF here means the file shrank after
+    // tellg(), not a complete read: never CRC/send a zero-filled unread tail.
+    return f.good() && f.gcount() == n;
+}
+}  // namespace
+
+bool ReadWholeFile(const std::filesystem::path& p, std::vector<uint8_t>& out) {
+    std::ifstream f(p, std::ios::binary);
+    return ReadWholeStream_(f, out);
 }
 
 Poll PollStable(StableRead& st, const std::filesystem::path& file, int slot, std::vector<uint8_t>& out,

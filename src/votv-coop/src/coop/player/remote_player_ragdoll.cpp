@@ -25,9 +25,9 @@ namespace {
 // needs no bookkeeping.
 void SetPuppetKelMeshesVisible(void* puppetActor, bool visible) {
     E::SetSceneComponentVisibility(
-        ue_wrap::puppet::GetNativeBodyMeshComponent(puppetActor), visible, /*propagate=*/false);
+        ue_wrap::puppet::GetNativeBodyMeshComponent(puppetActor), visible, /*propagate=*/true);
     E::SetSceneComponentVisibility(
-        ue_wrap::puppet::GetMeshPlayerVisibleComponent(puppetActor), visible, /*propagate=*/false);
+        ue_wrap::puppet::GetMeshPlayerVisibleComponent(puppetActor), visible, /*propagate=*/true);
 }
 
 }  // namespace
@@ -44,15 +44,13 @@ bool RagdollDisplay::OnWireBit(bool ragdollBit, void* puppetActor, int32_t puppe
 }
 
 bool RagdollDisplay::SetPose(const coop::net::RagdollPoseSnapshot& snap) {
-    // Velocity half of the pose stream only: slave the plushie's pelvis rigid body to the sender so
-    // the visible flop TRACKS the real ragdoll. The streamed pelvis ROTATION is unused since the
-    // visible-plushy rework -- it existed to tumble the kel-attached actor -- and stays on the wire
-    // untouched, for protocol stability.
-    if (active_ && body_ && R::IsLiveByIndex(body_, bodyIdx_)) {
-        E::DriveRagdollBodyPelvisVelocity(
-            body_,
-            ue_wrap::FVector{snap.linVelX, snap.linVelY, snap.linVelZ},
-            ue_wrap::FVector{snap.angVelX, snap.angVelY, snap.angVelZ});
+    // Velocity half of the pose stream only: slave the body's pelvis rigid body to the sender so
+    // the visible flop TRACKS the real ragdoll. The streamed pelvis ROTATION is unused and stays
+    // on the wire untouched, for protocol stability.
+    if (active_ && bodyRef_.Get()) {
+        const ue_wrap::FVector linVel(snap.linVelX, snap.linVelY, snap.linVelZ);
+        const ue_wrap::FVector angVel(snap.angVelX, snap.angVelY, snap.angVelZ);
+        E::DriveRagdollBodyPelvisVelocity(body_, linVel, angVel);
         return true;
     }
     return false;
@@ -60,8 +58,8 @@ bool RagdollDisplay::SetPose(const coop::net::RagdollPoseSnapshot& snap) {
 
 RagdollDisplay::Drive RagdollDisplay::DriveAttached(void* puppetActor, int32_t puppetIdx) {
     if (!active_) return Drive::Inactive;
-    if (body_ && R::IsLiveByIndex(body_, bodyIdx_)) {
-        // The VISIBLE plushie body is the whole display; the (hidden-kel) puppet actor
+    if (bodyRef_.Get()) {
+        // The VISIBLE player-model body is the whole display; the puppet actor
         // just rides the pelvis attach. Nothing to drive per frame.
         return Drive::Attached;
     }
@@ -77,20 +75,21 @@ void RagdollDisplay::TeardownForDestroy() {
     // an orphan. IsLiveByIndex-guarded so a GC-recycled address isn't mistaken
     // for our body. No detach + no kel un-hide: the puppet actor (and its
     // hidden meshes) is destroyed right after.
-    if (body_ && R::IsLiveByIndex(body_, bodyIdx_)) E::DestroyActor(body_);
+    if (bodyRef_.Get()) E::DestroyActor(body_);
     body_ = nullptr;
     bodyIdx_ = -1;
+    bodyRef_.Reset();
     wireState_ = false;  // a recycled puppet starts un-ragdolled + re-converges
     active_ = false;
 }
 
 void RagdollDisplay::Start(void* puppetActor, int32_t puppetIdx) {
     if (!puppetActor || !R::IsLiveByIndex(puppetActor, puppetIdx)) return;
+    ue_wrap::CachedObjRef puppetRef; puppetRef.Set(puppetActor);
 
-    // Spawn VOTV's own playerRagdoll_C VISIBLE, co-located with the puppet: the game's plushie
-    // ragdoll, the full six-bone chain physics and the exact body single-player shows in mirrors.
-    // If it fails, leave the puppet UPRIGHT and pose-driving (active_ stays false) -- graceful. The
-    // body's Player field points at this puppet, and the spawn is DEATH-FREE: no ragdollMode.
+    // Spawn VOTV's playerRagdoll_C VISIBLE with this puppet's current player mesh and materials.
+    // If it fails, leave the puppet UPRIGHT and pose-driving (active_ stays false) -- never show the
+    // placeholder ragdoll. The body's Player field points at this puppet; no ragdollMode is called.
     ue_wrap::FVector loc{};
     ue_wrap::FRotator rot{};
     if (!E::TryGetActorLocation(puppetActor, loc) || !E::TryGetActorRotation(puppetActor, rot)) {
@@ -105,24 +104,23 @@ void RagdollDisplay::Start(void* puppetActor, int32_t puppetIdx) {
     }
     body_ = body;
     bodyIdx_ = R::InternalIndexOf(body);
+    bodyRef_.Set(body);
 
     // PELVIS-attach the puppet actor to the body: the position anchor (nameplate +
     // recover hand-off follow the flop). The puppet itself goes INVISIBLE next -- the
-    // plushie is the display. If the attach fails, destroy the body + stay upright.
-    if (!E::AttachActorToRagdollBody(puppetActor, body)) {
+    // copied player model is the display. If the attach fails, destroy the body + stay upright.
+    if (!puppetRef.Get() || !E::AttachActorToRagdollBody(puppetActor, body) || !bodyRef_.Get() || !puppetRef.Get()) {
         UE_LOGW("RagdollDisplay::Start: pelvis-attach failed -- destroying body, puppet stays upright");
-        E::DestroyActor(body);
-        body_ = nullptr; bodyIdx_ = -1;
+        if (bodyRef_.Get()) E::DestroyActor(body);
+        body_ = nullptr; bodyIdx_ = -1; bodyRef_.Reset();
         return;
     }
-    // Hide the standing kel for the flop -- otherwise it double-images over the
-    // plushie (the June "plushy on a stick" rejection, inverted: now the plushie is
-    // the visible one). The skin effect rig (belly light / joint sparks) hides
-    // with it -- floating sparks over an invisible body break the plushie trick.
+    // Hide the standing player model for the flop so it does not double-image with the
+    // ragdoll. The skin effect rig (belly light / joint sparks) hides with it as well.
     SetPuppetKelMeshesVisible(puppetActor, false);
     coop::skin_effects::SetRigVisible(puppetActor, false);
     active_ = true;
-    UE_LOGI("RagdollDisplay::Start: VISIBLE plushie body=%p spawned, puppet pelvis-attached + kel meshes hidden", body);
+    UE_LOGI("RagdollDisplay::Start: VISIBLE player-model body=%p spawned, puppet pelvis-attached + meshes hidden", body);
 }
 
 void RagdollDisplay::Stop(void* puppetActor, int32_t puppetIdx) {
@@ -136,11 +134,12 @@ void RagdollDisplay::Stop(void* puppetActor, int32_t puppetIdx) {
         E::DetachActorFromRagdollBody(puppetActor);
     }
     // Destroy the physics body (IsLiveByIndex-guarded against a recycled addr).
-    if (body_ && R::IsLiveByIndex(body_, bodyIdx_)) E::DestroyActor(body_);
+    if (bodyRef_.Get()) E::DestroyActor(body_);
     body_ = nullptr;
     bodyIdx_ = -1;
+    bodyRef_.Reset();
     active_ = false;
-    UE_LOGI("RagdollDisplay::Stop: kel meshes restored, puppet detached, plushie body destroyed");
+    UE_LOGI("RagdollDisplay::Stop: player meshes restored, puppet detached, ragdoll body destroyed");
 }
 
 }  // namespace coop

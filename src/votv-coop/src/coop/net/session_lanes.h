@@ -124,6 +124,16 @@ inline Lane LaneForKind(ReliableKind k) {
     // sender a mirror, nor the AtvSpawn of a runtime ATV it names. Not relayable: the host decides
     // where it applies.
     case ReliableKind::AtvConditionEdit: return Lane::Normal;
+    case ReliableKind::EventGather:      return Lane::High;
+    case ReliableKind::SitAnchor:        return Lane::Normal;
+    case ReliableKind::MediaState:       return Lane::Normal;
+    case ReliableKind::RadioState:       return Lane::Normal;
+    case ReliableKind::KitchenState:     return Lane::Normal;
+    case ReliableKind::KitchenIntent:    return Lane::Normal;
+    case ReliableKind::CordState:        return Lane::Normal;
+    case ReliableKind::CordIntent:       return Lane::Normal;
+    case ReliableKind::PropSupport:      return Lane::Normal;
+    case ReliableKind::ServicePanel:     return Lane::Normal;
     // DeskState, DeskInput and DeskScanEvent are order-coupled (adopt before deltas, charge before
     // scan); pinned together.
     case ReliableKind::DeskState:      return Lane::Normal;
@@ -198,6 +208,11 @@ inline Lane LaneForKind(ReliableKind k) {
     case ReliableKind::HookDestroy:       return Lane::Normal;
     case ReliableKind::HookAnchorCommit:  return Lane::Normal;
     case ReliableKind::HookAnchored:      return Lane::Normal;
+    case ReliableKind::PlacedSave:        return Lane::Normal; // creation, acknowledgement and retirement in order
+    case ReliableKind::HookRetrieve:      return Lane::Normal; // ordered with anchor births/retirement; host intent, never relayed
+    case ReliableKind::MadnessState:      return Lane::Normal; // host-owned event audio/HUD snapshot
+    case ReliableKind::DingusMusic:       return Lane::Normal; // authorized here, never blindly relayed
+    case ReliableKind::HandToyAudio:      return Lane::Normal; // validated hand generation, no blind relay
     // PropDriveEnd is host-to-all and ordered against nothing: its stream is unreliable on its own
     // datagram kind, and a receiver that never parked the prop treats the end as a closed
     // generation and no more. The default, by decision.
@@ -216,6 +231,16 @@ inline Lane LaneForKind(ReliableKind k) {
     // A desk press names what it acts on by content; its answers go to the presser alone. The default, by decision.
     case ReliableKind::DeskVerb:          return Lane::Normal;
     case ReliableKind::DeskPingVerdict:   return Lane::Normal;
+    // A credit names an artifact the host resolves; a chest's flags and a food's condition are
+    // host-authored and ordered against nothing but themselves. A bite names the food. The hand
+    // the Omega took is one message to its owner. The radio source rides with the ATV's other
+    // state. The default, by decision.
+    case ReliableKind::CreditIntent:      return Lane::Normal;
+    case ReliableKind::ChestFlags:        return Lane::Normal;
+    case ReliableKind::FoodState:         return Lane::Bulk;
+    case ReliableKind::FoodBite:          return Lane::Bulk;
+    case ReliableKind::HandTaken:         return Lane::Normal;
+    case ReliableKind::AtvRadio:          return Lane::Normal;
     default:                           return Lane::Normal;
     }
 }
@@ -228,6 +253,11 @@ inline Lane LaneForKind(ReliableKind k) {
 // are point-to-point or host-originated. PropPose rides the unreliable relay.
 inline bool IsClientRelayableReliableKind(ReliableKind k) {
     switch (k) {
+    // Both new actions terminate at host: DreamScene is host-authored; PropActionIntent is a
+    // client request whose native result must be spawned by the host, never peer-relayed.
+    case ReliableKind::DreamScene:
+    case ReliableKind::PropActionIntent:
+        return false;
     case ReliableKind::ItemActivate:
     case ReliableKind::PropSpawn:
     case ReliableKind::PropDestroy:
@@ -250,7 +280,7 @@ inline bool IsClientRelayableReliableKind(ReliableKind k) {
     case ReliableKind::DeskScanEvent:     // presser-authored; every mirror replays the visual
     case ReliableKind::DeskSndFx:         // presser-authored
     case ReliableKind::PlayDeckEvent:     // presser-authored; any peer may stop
-    case ReliableKind::DishAimState:      // claim-owner-authoritative
+    // DishAimState: client visual samples terminate at host; canonical is host-only.
     // KeypadState is not relayable: the host authors it, and a client's own keypad entries reach the
     // host as KeypadIntent. Nor are DrivePayload (the host authors a drive's row; a client's own rows go
     // to it alone) and DriveSlotState (the host relays only the slot lines it accepted).
@@ -284,6 +314,8 @@ inline bool IsClientRelayableReliableKind(ReliableKind k) {
     case ReliableKind::ReelSlot:          // presser-authored
     case ReliableKind::MeadowAppend:      // presser-symmetric
     case ReliableKind::MeadowDelete:      // player-symmetric
+    case ReliableKind::SitAnchor:         // the chair a peer sat on
+    case ReliableKind::AtvRadio:          // the driver's radio source, like the pose
         return true;
     default:
         return false;
@@ -305,6 +337,7 @@ inline bool IsPreWorldSendableKind(ReliableKind k) {
     case ReliableKind::SkinChange:
     // The nameplate preference: the same family, a plain per-slot flag store.
     case ReliableKind::NameplateChange:
+    case ReliableKind::PvpChange:
     // The nick colour: the same family, a per-slot atomic store.
     case ReliableKind::NickColorChange:
     case ReliableKind::SaveTransferRequest:

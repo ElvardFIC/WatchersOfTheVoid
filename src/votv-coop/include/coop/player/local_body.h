@@ -36,4 +36,13 @@ void RequestSkin(const std::string& name);
 void Install(coop::net::Session* session);
 void Tick();
 
+// F1 > Cosmetics > Playermodel. Local only: this machine's own body stays visible
+// when an event hides it. Other players' view of your puppet is unchanged.
+bool AlwaysSeePlayermodel();
+void SetAlwaysSeePlayermodel(bool on);
+
+// Re-show the local body if the setting is on. The game hides it again during an
+// event, so the pump calls this at the end of the tick. No-op when the setting is off.
+void KeepPlayermodelVisible();
+
 }  // namespace coop::local_body

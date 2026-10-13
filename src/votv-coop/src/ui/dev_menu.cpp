@@ -16,8 +16,15 @@
 #include "coop/dev/spawn_menu_unlock.h"
 #include "coop/dev/spawn_npc.h"
 #include "coop/session/teleport_client.h"
+#include "coop/player/players_registry.h"
+#include "ue_wrap/core/call.h"
+#include "ue_wrap/core/game_thread.h"
+#include "ue_wrap/core/log.h"
+#include "ue_wrap/core/reflection.h"
 #include "coop/comms/peer_action_feed.h"
+#include "coop/player/local_body.h"
 #include "coop/player/nameplate.h"
+#include "coop/player/pvp.h"
 #include "coop/player/nick_color.h"
 #include "coop/config/config.h"
 #include "ui/fonts.h"
@@ -66,6 +73,29 @@ void RenderTeleportClients() {
     if (ImGui::Button("Teleport clients to me")) coop::teleport_client::TeleportClientsToHost();
     ImGui::SameLine();
     ImGui::TextDisabled("(host only)");
+}
+
+// F1 > Player > Debug. The game's own base teleport is the input action debugtp, bound to the
+// numpad decimal (the "." key). NumPadZero is the cheat menu, not this. Calling the action
+// is the keypress, so a keyboard without a numpad still uses the game's teleport.
+void RenderTeleportToBase() {
+    if (ImGui::Button("Teleport to base")) {
+        ue_wrap::game_thread::Post([] {
+            namespace R = ue_wrap::reflection;
+            void* local = coop::players::Registry::Get().Local();
+            if (!local || !R::IsLive(local)) return;
+            void* cls = R::ClassOf(local);
+            void* fn = cls ? R::FindFunction(cls, L"InpActEvt_debugtp_K2Node_InputActionEvent") : nullptr;
+            if (!fn) {
+                UE_LOGW("dev_menu: debugtp (numpad decimal) was not found on the player");
+                return;
+            }
+            ue_wrap::ParamFrame frame(fn);
+            if (!frame.valid() || !ue_wrap::Call(local, frame))
+                UE_LOGW("dev_menu: debugtp did not run");
+        });
+    }
+    ImGui::TextDisabled("The game's base teleport: numpad decimal (.). Only you.");
 }
 
 void RenderFreecam() {
@@ -358,6 +388,25 @@ void RenderChatPref() {
 
 // The local player's plate-visibility preference. SYNCED (a live NameplateChange plus the
 // Join prefs byte for late joiners) and persisted (multivoid.ini nameplate=).
+void RenderPlayermodelPref() {
+    bool on = coop::local_body::AlwaysSeePlayermodel();
+    if (ImGui::Checkbox("Always see playermodel", &on))
+        coop::local_body::SetAlwaysSeePlayermodel(on);
+    ImGui::TextDisabled("On: your body stays visible when you look down or use spectator,");
+    ImGui::TextDisabled("including while an event would hide it. Only on your screen.");
+    ImGui::TextDisabled("Other players still see your puppet the way they always do.");
+}
+
+void RenderPvpPref() {
+    bool on = coop::pvp::LocalOn();
+    if (ImGui::Checkbox("PVP", &on))
+        coop::pvp::RequestLocal(on);
+    ImGui::TextDisabled("On: you and anyone else with this on can hit each other");
+    ImGui::TextDisabled("with a swing (a shovel, a crowbar) or a thrown prop.");
+    ImGui::TextDisabled("That deals damage and ragdolls. Off: those do nothing to you.");
+    ImGui::TextDisabled("A pipe bomb or a gas can still hits everyone.");
+}
+
 void RenderNameplatePref() {
     bool on = coop::nameplate::LocalVisible();
     if (ImGui::Checkbox("Show my nameplate to other players", &on))
@@ -486,10 +535,11 @@ void RenderWorldRules() { ui::world_rules_panel::Render(); }
 const std::vector<Cat>& Tree() {
     static const std::vector<Cat> kTree = {
         { "Player", {
+            { "Debug",    { { &RenderTeleportToBase, false } }, false },
             { "Movement", { { &RenderTeleportClients, true }, { &RenderFreecam, true } }, true },
             { "Vitals",   { { &RenderRestoreVitals, true } }, true },
             { "HUD",      { { &RenderPosHud, true }, { &RenderObjectOverlay, true }, { &RenderRagdollBones, true } }, true },
-        }, true },
+        }, false },
         { "World", {
             // Rules is for EVERYONE (host+clients+solo): a read-only view of the
             // world rules this peer runs under (mainGameInstance.gameRules) +
@@ -520,7 +570,9 @@ const std::vector<Cat>& Tree() {
         }, false, true },
         { "Cosmetics", {
             { "Skins",     { { &RenderSkins, false } }, false },
-            { "Nameplate", { { &RenderNameplatePref, false } }, false },
+            { "Nameplate",   { { &RenderNameplatePref, false } }, false },
+            { "Playermodel", { { &RenderPlayermodelPref, false } }, false },
+            { "PVP",         { { &RenderPvpPref, false } }, false },
             { "Chat",      { { &RenderChatPref, false } }, false },
             { "Interface", { { &RenderFontPref, false } }, false },
         }, false },

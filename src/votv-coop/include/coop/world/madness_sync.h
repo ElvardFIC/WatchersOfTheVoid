@@ -1,0 +1,11 @@
+#pragma once
+#include "coop/net/protocol.h"
+namespace coop::net {class Session;}
+namespace coop::madness_sync {
+void Install(net::Session* session);
+void Tick();
+void Receive(const net::MadnessStatePayload& state,uint8_t sender);
+void QueueConnect(int slot);
+void OnPeerLeft(int slot);
+void OnDisconnect();
+}

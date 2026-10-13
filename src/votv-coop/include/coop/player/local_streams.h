@@ -36,6 +36,12 @@ void* LastHeldActor();
 // happened; the stick lane stamps its message with it, so the stick closes the hold it ended.
 uint16_t CurrentHoldGen();
 
+// The host already said an Omega took `actor` (HandTaken, or the host's take release). The next
+// release edge of that same actor carries the take flag, so the other machines leave physics off.
+// One shot, consumed by that edge: a later real throw is not one. A reflection of the host's
+// message, not a guess from this machine's kerfur table. Game thread.
+void ArmKerfurTakeRelease(void* actor);
+
 // Per-tick outbound publish. `local` is the live local mainPlayer_C,
 // `controller` its cached controller (may be null -- pose pitch falls back to
 // actor rotation). Publishes the pose snapshot, streams the held prop's world

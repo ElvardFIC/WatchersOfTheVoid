@@ -5,6 +5,7 @@
 #include "ue_wrap/core/call.h"
 #include "ue_wrap/engine/engine.h"  // GetWorldContext
 #include "ue_wrap/core/log.h"
+#include "ue_wrap/core/object_index.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/world/world_singleton.h"
 #include "ue_wrap/core/sdk_profile.h"
@@ -45,7 +46,10 @@ void ResolvePass() {
     if (now < g_nextResolve) return;
     g_nextResolve = now + std::chrono::seconds(2);
 
-    if (!g_gmCls) g_gmCls = R::FindClass(L"mainGamemode_C");
+    // Called throughout the session, including load and worlds without a base
+    // bed. An unresolved optional class must not cause a full UObject scan every
+    // two seconds; the maintained index also notices a class loaded later.
+    if (!g_gmCls) g_gmCls = object_index::ClassByName(L"mainGamemode_C");
     if (!g_gmCls) return;
     if (g_offIsSleep < 0) g_offIsSleep = R::FindPropertyOffset(g_gmCls, L"isSleep");
     if (g_offDreamProb < 0) g_offDreamProb = R::FindPropertyOffset(g_gmCls, L"dreamProbability");
@@ -53,7 +57,7 @@ void ResolvePass() {
     if (!g_wakeupFn) g_wakeupFn = R::FindFunction(g_gmCls, L"wakeup");
     if (!g_sleepFn) g_sleepFn = R::FindFunction(g_gmCls, L"sleep");
 
-    if (!g_saveSlotCls) g_saveSlotCls = R::FindClass(L"saveSlot_C");
+    if (!g_saveSlotCls) g_saveSlotCls = object_index::ClassByName(L"saveSlot_C");
     if (g_saveSlotCls && g_offSleepNeed < 0)
         g_offSleepNeed = R::FindPropertyOffset(g_saveSlotCls, L"sleep");
 
@@ -65,7 +69,7 @@ void ResolvePass() {
         if (gsCls && !g_getDilationFn)
             g_getDilationFn = R::FindFunction(gsCls, L"GetGlobalTimeDilation");
     }
-    if (!g_bedCls) g_bedCls = R::FindClass(L"bed_C");  // optional (probe only)
+    if (!g_bedCls) g_bedCls = object_index::ClassByName(L"bed_C");  // optional (probe only)
     // Optional camera surface (the WAITING-state view hold) -- never gates core.
     if (g_offSleepCam < 0) g_offSleepCam = R::FindPropertyOffset(g_gmCls, L"sleepCam");
     if (g_offSleepingPawn < 0)

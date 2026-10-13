@@ -375,6 +375,7 @@ void OnDisconnect() {
     // Drop queued, undrained EX-spawn catches: a stale address must never drain into the next
     // session.
     coop::npc_world_enum::ClearPendingExSpawns();
+    DropKerfurHolds();
 }
 
 // The install-owned state (the param offsets, the allowlist, the disabled flag) is defined in

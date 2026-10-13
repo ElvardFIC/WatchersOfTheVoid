@@ -85,6 +85,10 @@ public:
     // into X's partial.
     void ClearSlot(uint8_t senderSlot);
 
+    // Snapshot consumers: discard partial blobs at/before an accepted sequence, while keeping
+    // newer in-flight snapshots from this sender. Uses the same wrap order as net::SeqLatch.
+    void DiscardThrough(uint8_t senderSlot, uint32_t sequence);
+
 private:
     struct Assembly {
         uint16_t expectChunks = 0, gotChunks = 0;

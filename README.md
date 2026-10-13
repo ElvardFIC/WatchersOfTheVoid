@@ -1,4 +1,15 @@
-# Multivoid
+# Watchers of the Void
+
+Authored and maintained by **ElvardFIC**. A community fork of **Multivoid by Pelmentor**.
+Based on the **MultiVoidKindaPlus** codebase, with help from **AquariumFishTeam**.
+Thanks to **Zoomard** and **Бритый 2-D <3** for testing and bug reports.
+Source: [ElvardFIC/WatchersOfTheVoid](https://github.com/ElvardFIC/WatchersOfTheVoid).
+See [the package page text](package/README.md). Original attribution and licenses are retained.
+
+Local Plus release: **2150** (includes development work through WORK_2192).
+See [release evidence](package/RELEASE_2150.md), [remaining work](agent/TODO_2150.md)
+and [Plus changelog](package/CHANGELOG_PLUS.md). The upstream overview below describes
+the original project; local packaging uses `package/build_2150.ps1` and `package/pack.ps1`.
 
 > **Multiplayer for Voices of the Void.**
 > A mod that adds drop-in co-op to a single-player UE4.27 game —

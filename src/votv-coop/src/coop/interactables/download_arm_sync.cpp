@@ -16,6 +16,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <deque>
 #include <string>
 
 namespace coop::download_arm_sync {
@@ -38,6 +39,20 @@ constexpr auto kRefusalSayEvery = std::chrono::seconds(10);
 
 std::atomic<coop::net::Session*> g_session{nullptr};
 Counts g_counts;
+struct PendingSend {
+    coop::net::DishArmPayload payload{};
+    int slot = -1;
+    uint64_t queuedAt = 0;
+};
+std::deque<PendingSend> g_pendingSends;
+constexpr size_t kMaxPendingSends = 64;
+std::deque<coop::net::DishArmPayload> g_pendingReceives;
+constexpr size_t kMaxPendingReceives = 32;
+
+uint64_t NowMs() {
+    using namespace std::chrono;
+    return static_cast<uint64_t>(duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count());
+}
 
 // CLIENT: the host's values while a replay runs the game's verb; the PREs write them into the verb's parameters.
 struct Replay {
@@ -130,8 +145,17 @@ void SendRow(coop::net::Session* s, bool armed, int toSlot) {
     p.armed = armed ? 1 : 0;
     CD::ReadDownloadProgress(p.decoded, p.polarity);
     if (!armed) p.decoded = 0.f;
-    if (toSlot < 0) s->SendReliable(coop::net::ReliableKind::DishArm, &p, sizeof(p));
-    else s->SendReliableToSlot(toSlot, coop::net::ReliableKind::DishArm, &p, sizeof(p));
+    const bool sent = toSlot < 0
+        ? s->SendReliable(coop::net::ReliableKind::DishArm, &p, sizeof(p))
+        : s->SendReliableToSlot(toSlot, coop::net::ReliableKind::DishArm, &p, sizeof(p));
+    if (!sent) {
+        if (g_pendingSends.size() < kMaxPendingSends) {
+            g_pendingSends.push_back({p, toSlot, NowMs()});
+        } else {
+            UE_LOGE("download_arm: outbound queue full; %s row for slot %d was lost",
+                    armed ? "ARM" : "RESET", toSlot);
+        }
+    }
 }
 
 // HOST: the arm, when the body formed one (it returns early when the objects table has no row for the caught signal).
@@ -266,6 +290,23 @@ void ReplayReset(int32_t polarity) {
     UE_LOGI("download_arm: RESET replayed through the game's own reset (polarity=%d)", polarity);
 }
 
+bool CanApplyReceived(const coop::net::DishArmPayload& p) {
+    if (!D::EnsureResolved() || !CD::EnsureResolved() || !CD::Instance()) return false;
+    if (p.armed) {
+        CD::CoordSignal sig;
+        // DishArm may overtake the client's local signal-catch materialization.
+        // Keep it queued until that actor exists; otherwise the reliable event
+        // is consumed and this peer remains permanently unarmed.
+        if (!CD::ReadCoordSignal(sig) || sig.objectName.empty() || sig.objectName == L"None") return false;
+    }
+    return true;
+}
+
+void ApplyReceived(const coop::net::DishArmPayload& p) {
+    if (p.armed) ReplayArm(p.decoded, p.polarity);
+    else ReplayReset(p.polarity);
+}
+
 }  // namespace
 
 void Install(coop::net::Session* session) {
@@ -273,17 +314,54 @@ void Install(coop::net::Session* session) {
     DriveWatches();
 }
 
-void Tick() { DriveWatches(); }
+void Tick() {
+    DriveWatches();
+    if (ClientSession() && !g_pendingReceives.empty() && CanApplyReceived(g_pendingReceives.front())) {
+        ApplyReceived(g_pendingReceives.front());
+        g_pendingReceives.pop_front();
+    }
+    auto* s = HostSession();
+    if (!s) return;
+    const uint64_t now = NowMs();
+    const size_t queued = g_pendingSends.size();
+    for (size_t i = 0; i < queued && !g_pendingSends.empty(); ++i) {
+        PendingSend pending = g_pendingSends.front();
+        g_pendingSends.pop_front();
+        if (now < pending.queuedAt || now - pending.queuedAt > 30000) {
+            UE_LOGW("download_arm: expired queued %s row for slot %d",
+                    pending.payload.armed ? "ARM" : "RESET", pending.slot);
+            continue;
+        }
+        if (pending.slot >= 0 && !s->IsSlotReady(pending.slot)) {
+            g_pendingSends.push_back(pending);
+            continue;
+        }
+        const bool sent = pending.slot < 0
+            ? s->SendReliable(coop::net::ReliableKind::DishArm, &pending.payload, sizeof(pending.payload))
+            : s->SendReliableToSlot(pending.slot, coop::net::ReliableKind::DishArm,
+                                    &pending.payload, sizeof(pending.payload));
+        if (!sent) {
+            g_pendingSends.push_front(pending);
+            break;
+        }
+    }
+}
 
 void OnDishArm(const coop::net::DishArmPayload& p, uint8_t senderSlot) {
     if (!ClientSession() || senderSlot != 0) return;
-    if (!D::EnsureResolved() || !CD::EnsureResolved() || !CD::Instance()) {
-        ++g_counts.dropped;
-        UE_LOGW("download_arm: a DishArm row dropped -- the dish or desk surface is not resolved yet");
+    if (g_pendingReceives.empty() && CanApplyReceived(p)) {
+        ApplyReceived(p);
         return;
     }
-    if (p.armed) ReplayArm(p.decoded, p.polarity);
-    else ReplayReset(p.polarity);
+    if (g_pendingReceives.size() >= kMaxPendingReceives) {
+        ++g_counts.dropped;
+        UE_LOGE("download_arm: receive queue full; host %s row was dropped",
+                p.armed ? "ARM" : "RESET");
+        return;
+    }
+    g_pendingReceives.push_back(p);
+    UE_LOGI("download_arm: queued host %s row until the client's %s is ready (%zu pending)",
+            p.armed ? "ARM" : "RESET", p.armed ? "caught signal" : "desk", g_pendingReceives.size());
 }
 
 void CaptureJoinSnapshot(int peerSlot) {
@@ -293,6 +371,11 @@ void CaptureJoinSnapshot(int peerSlot) {
 
 void CancelJoinSnapshot(int peerSlot) {
     if (peerSlot >= 0 && peerSlot < coop::net::kMaxPeers) g_captured[peerSlot] = Captured{};
+}
+
+void OnPeerLeft(int peerSlot) {
+    if (peerSlot < 1 || peerSlot >= coop::net::kMaxPeers) return;
+    std::erase_if(g_pendingSends, [peerSlot](const PendingSend& p) { return p.slot == peerSlot; });
 }
 
 void QueueConnectResetForSlot(int peerSlot) {
@@ -337,6 +420,8 @@ void OnDisconnect() {
     for (auto& c : g_captured) c = Captured{};
     g_replay = Replay{};
     g_resetSerial = 0;
+    g_pendingSends.clear();
+    g_pendingReceives.clear();
 }
 
 Counts LaneCounts() { return g_counts; }

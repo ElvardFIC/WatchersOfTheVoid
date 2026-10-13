@@ -2,9 +2,8 @@
 // Gameplay layer (principle 7): engine access via ue_wrap only. Game thread only.
 //
 // When a remote player ragdolls (wire kStateBitRagdoll), spawn VOTV's own
-// playerRagdoll_C body VISIBLE -- the game's plushie ragdoll, whose mesh is
-// natively rigged to the full six-bone physics chain and is what single-player
-// shows in mirrors -- and HIDE the puppet's two kel body meshes for the flop.
+// playerRagdoll_C body with the puppet's active mesh and material overrides,
+// and HIDE the puppet's two body meshes for the flop.
 // Hiding is SetVisibility only, never a mesh-asset clear, so a pak-loaded
 // custom-skin asset keeps its component reference and cannot be collected
 // mid-flop. The puppet actor stays pelvis-attached to the body as the position
@@ -15,6 +14,7 @@
 // off the return values, so this class never reaches back into its state.
 
 #pragma once
+#include "ue_wrap/core/cached_obj_ref.h"
 
 #include "coop/net/protocol.h"
 
@@ -34,14 +34,14 @@ public:
     bool OnWireBit(bool ragdollBit, void* puppetActor, int32_t puppetIdx);
 
     // Ragdoll PHYSICS sync (RemotePlayer::SetRagdollPose): slave the live body's
-    // pelvis velocity to the sender's streamed state so the plushie tumbles to TRACK
+    // pelvis velocity to the sender's streamed state so the body tumbles to TRACK
     // the sender's real ragdoll. The snapshot's pelvis ROTATION is not read -- it
     // tumbled an earlier, kel-attached display -- and stays on the wire untouched.
     // Returns true when applied to a live body; a packet racing ahead of the spawn
     // edge is dropped harmless, and the next one applies.
     bool SetPose(const coop::net::RagdollPoseSnapshot& snap);
 
-    // ApplyToEngine head. While ragdolled the VISIBLE plushie body is the whole
+    // ApplyToEngine head. While ragdolled the VISIBLE player-model body is the whole
     // display and the attachment owns the puppet transform -- pose-driving would fight
     // it; there is nothing to drive per frame. Keeping the kel meshes visible and
     // slaving them to the body with a master pose is not an option either: name-based
@@ -79,6 +79,7 @@ private:
     bool active_ = false;
     // The spawned (visible) playerRagdoll_C body + its GUObjectArray index
     // (IsLiveByIndex safety across ticks). null/-1 when not ragdolled.
+    ue_wrap::CachedObjRef bodyRef_;
     void*   body_ = nullptr;
     int32_t bodyIdx_ = -1;
 };

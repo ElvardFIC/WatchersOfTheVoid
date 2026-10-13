@@ -138,11 +138,12 @@ struct ActiveScope {
     ActiveScope* prev;
     int prevTag; void* prevObject; void* prevFunction; const wchar_t* prevName;
     void* self;     // the body THIS node published, so a walk reads each node without re-deriving
+    void* receiver;
     void* caller;   // PreviousFrame->Node: WHO called this body, which a verb shared by several
                     // callers needs to tell a player's route from the world's own
     ActiveScope(int tag, void* object, void* function, const wchar_t* name, void* callerFunction)
         : prev(t_activeHead), prevTag(t_tag), prevObject(t_object), prevFunction(t_function),
-          prevName(t_name), self(function), caller(callerFunction) {
+          prevName(t_name), self(function), receiver(object), caller(callerFunction) {
         ++t_depth; t_tag = tag; t_object = object; t_function = function; t_name = name;
         t_activeHead = this;
     }
@@ -749,6 +750,13 @@ bool IsBodyActive(void* function, void* callerFunction) {
     if (!function) return false;
     for (const ActiveScope* s = t_activeHead; s; s = s->prev)
         if (s->self == function && (!callerFunction || s->caller == callerFunction)) return true;
+    return false;
+}
+
+bool IsObjectBodyActive(void* function, void* object) {
+    if (!function || !object) return false;
+    for (const ActiveScope* s = t_activeHead; s; s = s->prev)
+        if (s->self == function && s->receiver == object) return true;
     return false;
 }
 

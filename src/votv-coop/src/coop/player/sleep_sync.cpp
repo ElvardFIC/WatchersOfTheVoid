@@ -6,10 +6,15 @@
 #include "coop/net/session.h"
 
 #include "ue_wrap/core/log.h"
+#include "ue_wrap/core/call.h"
+#include "ue_wrap/core/reflection.h"
+#include "ue_wrap/core/script_gate.h"
 #include "ue_wrap/actors/sleep.h"
 #include "ue_wrap/world/world_singleton.h"
+#include "coop/net/wire_key_util.h"
 
 #include <atomic>
+#include <chrono>
 #include <cstdio>
 
 namespace coop::sleep_sync {
@@ -25,12 +30,90 @@ bool g_waitUndone = false;      // WAITING enforcement latch (dilation undone fo
 bool g_accelerate = false;      // the 20x phase is on (host decides; mirrored from the wire on clients)
 bool g_dreamProbSuppressed = false;  // we hold gamemode.dreamProbability at 0
 void* g_gmInst = nullptr;       // gamemode instance the policy/edge state was applied to
+void* g_createDreamFn = nullptr;
+int32_t g_offDreamActor = -1;
+bool g_dreamHookInstalled = false;
+bool g_dreamHookMissSaid = false;
+bool g_endWakeup = false;
+int g_dreamHookRetry = 0;
+std::wstring g_pendingDreamClass; // host's selected class, sent after SleepState::End
+coop::net::DreamScenePayload g_dreamToSend{};
+coop::net::DreamScenePayload g_dreamToReplay{};
+bool g_dreamSendPending = false;
+bool g_dreamReplayPending = false;
+std::chrono::steady_clock::time_point g_dreamReplayRetry{};
+constexpr int kDreamHookTag = 0x534C4452; // 'SLDR'
 
 // ---- host tally -------------------------------------------------------------
 bool g_inBed[coop::net::kMaxPeers] = {};
 uint8_t g_lastCount = 0, g_lastTotal = 0;
 
 bool IsHost(coop::net::Session* s) { return s->role() == coop::net::Role::Host; }
+
+void OnCreateDreamPost(const ue_wrap::script_gate::Call& call) {
+    auto* s = g_session.load(std::memory_order_acquire);
+    if (!s || !s->connected() || !IsHost(s) || (!g_accelerate && !g_endWakeup) ||
+        !call.object || g_offDreamActor < 0) return;
+    void* dream = *reinterpret_cast<void**>(reinterpret_cast<uint8_t*>(call.object) + g_offDreamActor);
+    if (!dream || !ue_wrap::reflection::IsLive(dream)) return;
+    const std::wstring selected = ue_wrap::reflection::ClassNameOf(dream);
+    if (selected.empty() || selected.size() > 31) {
+        UE_LOGW("sleep_sync: selected dream class '%ls' cannot fit DreamScene -- presentation not mirrored",
+                selected.c_str());
+        return;
+    }
+    g_pendingDreamClass = selected;
+    UE_LOGI("sleep_sync: host selected nightmare class '%ls'; queued for clients", selected.c_str());
+}
+
+void EnsureDreamHook(void* gm) {
+    if (g_dreamHookInstalled || !gm) return;
+    if (g_dreamHookRetry > 0) {
+        --g_dreamHookRetry;
+        return;
+    }
+    g_dreamHookRetry = 120;
+    namespace R = ue_wrap::reflection;
+    void* cls = R::ClassOf(gm);
+    if (!cls) return;
+    g_createDreamFn = R::FindFunction(cls, L"createDream");
+    g_offDreamActor = R::FindPropertyOffset(cls, L"dream");
+    if (!g_createDreamFn || g_offDreamActor < 0) {
+        if (!g_dreamHookMissSaid) {
+            g_dreamHookMissSaid = true;
+            UE_LOGW("sleep_sync: mainGamemode::createDream or its dream field is unresolved; "
+                    "nightmare presentation cannot be mirrored yet");
+        }
+        return;
+    }
+    if (ue_wrap::script_gate::Watch(g_createDreamFn, kDreamHookTag, nullptr, &OnCreateDreamPost)) {
+        g_dreamHookInstalled = true;
+        UE_LOGI("sleep_sync: watching mainGamemode::createDream to share the host-selected scene");
+    } else {
+        UE_LOGW("sleep_sync: could not install the createDream post-hook; retrying after backoff");
+    }
+}
+
+bool ReplayDreamScene(const coop::net::DreamScenePayload& p) {
+    namespace R = ue_wrap::reflection;
+    const std::wstring className = coop::net::StringFromWireKey(p.dreamClass);
+    if (className.empty() || className.size() > 31) return false;
+    void* dreamClass = R::FindClass(className.c_str());
+    void* gm = ue_wrap::world_singleton::Gamemode();
+    void* fn = gm ? R::FindFunction(R::ClassOf(gm), L"createDream") : nullptr;
+    if (!dreamClass || !gm || !fn) {
+        UE_LOGW("sleep_sync: cannot replay nightmare '%ls' (class=%p gamemode=%p function=%p)",
+                className.c_str(), dreamClass, gm, fn);
+        return false;
+    }
+    ue_wrap::ParamFrame frame(fn);
+    if (!frame.valid() || !frame.Set<void*>(L"customDream", dreamClass) || !ue_wrap::Call(gm, frame)) {
+        UE_LOGW("sleep_sync: native createDream replay failed for '%ls'", className.c_str());
+        return false;
+    }
+    UE_LOGI("sleep_sync: replayed nightmare '%ls' through native createDream", className.c_str());
+    return true;
+}
 
 void PushCounterLine(uint8_t count, uint8_t total) {
     if (count == 0) return;
@@ -84,8 +167,12 @@ void ApplyAccelerateLocal(coop::net::Session* s, bool on) {
 // call time -- the native waker keeps its own native roll; mirrors must not
 // add one), the need write after.
 void ApplyEndLocal(coop::net::Session* s, bool natural) {
+    if (SLP::IsSleeping()) {
+        g_endWakeup = IsHost(s) && s->connected();
+        SLP::CallWakeup();
+        g_endWakeup = false;
+    }
     ApplyAccelerateLocal(s, false);
-    if (SLP::IsSleeping()) SLP::CallWakeup();
     if (natural) SLP::WriteSleepNeed(100.f);
     coop::chat_feed::Push(natural ? L"Good morning -- everyone is rested."
                                   : L"Sleep interrupted -- everyone wakes up.",
@@ -144,6 +231,14 @@ void HostRetally(coop::net::Session* s) {
         g_lastCount = 0;
         HostBroadcast(s, 3 /*End*/, natural ? 1 : 0, 0, total);
         ApplyEndLocal(s, natural);
+        if (!g_pendingDreamClass.empty()) {
+            coop::net::WireKeyFromString(g_pendingDreamClass, g_dreamToSend.dreamClass);
+            g_dreamSendPending = true;
+            if (s->SendReliable(coop::net::ReliableKind::DreamScene, &g_dreamToSend, sizeof(g_dreamToSend)))
+                g_dreamSendPending = false;
+            UE_LOGI("sleep_sync: selected nightmare '%ls' queued after End", g_pendingDreamClass.c_str());
+            g_pendingDreamClass.clear();
+        }
     }
 }
 
@@ -169,9 +264,18 @@ void Install(coop::net::Session* session) {
 void Tick() {
     auto* s = g_session.load(std::memory_order_acquire);
     if (!s || !s->running()) return;
+    if (g_dreamSendPending && s->connected() && IsHost(s) &&
+        s->SendReliable(coop::net::ReliableKind::DreamScene, &g_dreamToSend, sizeof(g_dreamToSend)))
+        g_dreamSendPending = false;
+    if (g_dreamReplayPending && s->connected() && !IsHost(s) &&
+        std::chrono::steady_clock::now() >= g_dreamReplayRetry) {
+        if (ReplayDreamScene(g_dreamToReplay)) g_dreamReplayPending = false;
+        else g_dreamReplayRetry = std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
+    }
     if (!SLP::EnsureResolved()) return;
     void* gm = ue_wrap::world_singleton::Gamemode();
     if (!gm) return;
+    EnsureDreamHook(gm);
 
     // Fresh gamemode (boot / level reload): re-prime the edge state + re-apply
     // the nightmare policy on the new instance (the signal_catch shape). A
@@ -185,6 +289,7 @@ void Tick() {
         g_accelerate = false;
         for (bool& b : g_inBed) b = false;
         g_lastCount = g_lastTotal = 0;
+        g_pendingDreamClass.clear();
         if (s->connected()) ApplyDreamProbPolicy(s);
     }
 
@@ -274,6 +379,17 @@ void OnReliable(const coop::net::SleepStatePayload& p, uint8_t senderSlot) {
     }
 }
 
+void OnDreamScene(const coop::net::DreamScenePayload& p, uint8_t senderSlot) {
+    auto* s = g_session.load(std::memory_order_acquire);
+    if (!s || !s->connected() || IsHost(s) || senderSlot != 0) return;
+    // Keep the event if it arrives while the client's gamemode/world is not
+    // ready. Dream scenes are one-shot; dropping a transient native failure
+    // leaves the client permanently out of that event.
+    g_dreamToReplay = p;
+    g_dreamReplayPending = true;
+    g_dreamReplayRetry = std::chrono::steady_clock::now();
+}
+
 void QueueConnectBroadcastForSlot(int peerSlot) {
     auto* s = g_session.load(std::memory_order_acquire);
     if (!s || !IsHost(s)) return;
@@ -309,9 +425,15 @@ void OnDisconnect() {
         g_dreamProbSuppressed = false;
     }
     g_accelerate = false;
+    g_endWakeup = false;
     g_waitUndone = false;
     g_lastInBed = false;
     g_gmInst = nullptr;
+    g_pendingDreamClass.clear();
+    g_dreamSendPending = false;
+    g_dreamReplayPending = false;
+    g_dreamToSend = {};
+    g_dreamToReplay = {};
     for (bool& b : g_inBed) b = false;
     g_lastCount = g_lastTotal = 0;
 }

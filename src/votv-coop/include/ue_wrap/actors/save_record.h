@@ -28,7 +28,9 @@ namespace ue_wrap::save_record {
 // One Fstruct_save record as engine-agnostic POD (the wire layer serializes this).
 struct SaveRecord {
     std::wstring className;          // TSubclassOf<AActor> leaf name; empty = null class
-    std::array<float, 10> xform{};   // FTransform: quat(x,y,z,w) + loc(x,y,z) + scale(x,y,z)
+    // Match the game's empty struct_save, including the identity quaternion/scale.
+    // AddEquipment compares the WHOLE empty equipment record when finding a free slot.
+    std::array<float, 10> xform{0, 0, 0, 1, 0, 0, 0, 1, 1, 1};
     std::wstring key;                // FName
     // Value groups: TArray<Fstruct_mX> (each Fstruct_mX = TArray<X>) -> vector<vector<X>>.
     std::vector<std::vector<uint8_t>>               bools;

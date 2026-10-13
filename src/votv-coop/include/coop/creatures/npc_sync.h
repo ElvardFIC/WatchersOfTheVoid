@@ -110,6 +110,20 @@ void RefreshLateAllowlist();
 // a disconnect.
 void OnDisconnect();
 
+// The host's table of what each Omega is carrying. Cleared on disconnect without releasing those
+// props: the prop-drive disconnect drops the claims. Game thread.
+void DropKerfurHolds();
+
+// True while an Omega's holdObject is this actor, including the moment take-object just
+// succeeded and before the next pose tick. A hand-release coast must not throw that prop.
+bool KerfurIsHolding(void* actor);
+void NoteKerfurHolding(void* actor);
+
+// A client noted a take from the host's release. A new grab of that prop means the robot has
+// let go; leaving the note would make the next throw look like another take. No-op on the host,
+// whose table the pose sweep owns. Game thread.
+void ForgetKerfurHolding(void* actor);
+
 // Host only, the connect snapshot: re-send an entity spawn (class and current transform) for
 // every already-spawned Npc Element to the freshly connected client, so a joiner materialises
 // mirrors of NPCs that spawned before it joined. The client's existing receiver materialises

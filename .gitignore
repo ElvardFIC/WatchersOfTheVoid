@@ -273,3 +273,9 @@ docs/**
 !docs/versioning.md
 !docs/voice-and-chat.md
 reference/agency-agents/
+
+# Local Plus development and packaging artifacts
+/dist/
+/_toolchain/
+/_research/
+!docs/plus-fork.md

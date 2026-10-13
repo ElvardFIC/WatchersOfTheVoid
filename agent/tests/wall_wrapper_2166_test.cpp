@@ -1,0 +1,64 @@
+#include "../../src/votv-coop/src/ue_wrap/actors/wall_build.cpp"
+#include "../../src/votv-coop/src/ue_wrap/core/call.cpp"
+#include <cstdio>
+#include <cstdlib>
+#define CHECK(x) do{if(!(x)){std::fprintf(stderr,"FAIL %d: %s\n",__LINE__,#x);std::exit(1);}}while(0)
+namespace test {
+struct Obj {int id=0,serial=1;bool live=true;void* overlap=nullptr;} objs[7];
+bool touches=true,callOk=true,kill=false,fields=true,materialOK=true;int feeds=0,restores=0;
+bool solid=false,locationOK=true,damageFields=true;int damages=0;uint32_t world=1;
+void (*locCallback)()=nullptr;
+}
+namespace ue_wrap::reflection {
+bool IsLive(void* a){return a&&static_cast<test::Obj*>(a)->live;}
+void* ClassOf(void* a){return a;}
+int32_t InternalIndexOf(void* a){return a?static_cast<test::Obj*>(a)->id:-1;}
+bool IsLiveByIndex(void* a,int32_t i){return i>=0&&i<7&&a==&test::objs[i]&&IsLive(a);}
+int32_t SlotSerial(int32_t i){return test::objs[i].serial;}
+void* ObjectAt(int32_t i){return i>=0&&i<7?&test::objs[i]:nullptr;}
+int32_t AllocateSlotSerial(int32_t i){return SlotSerial(i);}
+int32_t InstanceOffset::Of(void*){return test::fields?offsetof(test::Obj,overlap):-1;}
+void* FindDispatchFunctionCached(void*,const wchar_t* n){return &test::objs[!wcscmp(n,L"damage")?6:!wcscmp(n,L"IsOverlappingActor")?3:!wcscmp(n,L"findMat")?5:4];}
+int32_t StructSize(void*){return 16;}
+int32_t FunctionFrameSize(void* f){return f==&test::objs[6]?32:16;}
+std::vector<ParamInfo> FunctionParams(void* f){
+ if(f==&test::objs[6]){ParamInfo a{},b{},c{};a.name=L"damage";a.offset=0;b.name=L"Location";b.offset=4;c.name=test::damageFields?L"Rotation":L"wrong";c.offset=16;return {a,b,c};}
+ ParamInfo a{},b{};a.name=f==&test::objs[3]?L"Other":f==&test::objs[5]?L"B":L"OtherActor";a.offset=0;
+ b.name=f==&test::objs[5]?L"return":L"ReturnValue";b.offset=8;return {a,b};
+}
+bool CallFunction(void* a,void* f,void* raw){
+ if(!test::callOk)return false;
+ auto* p=static_cast<uint8_t*>(raw);
+ if(f==&test::objs[3]){CHECK(a==&test::objs[2]&&*reinterpret_cast<void**>(p)==&test::objs[1]);p[8]=test::touches;if(test::kill)test::objs[1].live=false;}
+ else if(f==&test::objs[4]){CHECK(a==&test::objs[0]&&*reinterpret_cast<void**>(p)==&test::objs[1]);++test::feeds;}
+ else if(f==&test::objs[6]){CHECK(*reinterpret_cast<float*>(p)==20.f);auto* location=reinterpret_cast<FVector*>(p+4);CHECK(location->X==1&&location->Y==2&&location->Z==3);++test::damages;if(test::kill)test::objs[0].live=false;}
+ else {CHECK(a==&test::objs[0]&&reinterpret_cast<FName*>(p)->ComparisonIndex==9);p[8]=test::materialOK;++test::restores;}
+ return true;
+}
+}
+namespace ue_wrap::world_identity {void* CurrentWorld(){return nullptr;}void* WorldOf(void*){return nullptr;}uint32_t Generation(){return test::world;}}
+namespace ue_wrap::engine {bool TryGetActorLocation(void*,FVector& p){p={1,2,3};if(test::locCallback)test::locCallback();return test::locationOK;}}
+namespace ue_wrap::save_record {std::wstring ReadFNameAt(const void*,int32_t){return L"native_wall_17";}}
+namespace ue_wrap::log {void Write(Level,const char*,...) {}}
+namespace ue_wrap::fname_utils {reflection::FName StringToFName(const std::wstring&){return {9,0};}}
+namespace ue_wrap::placed_save {Kind Type(void* a){return a==&test::objs[0]&&reflection::IsLive(a)?(test::solid?Kind::Wall:Kind::WallOutline):Kind::None;}}
+int main(){using namespace test;namespace W=ue_wrap::wall_build;
+ for(int i=0;i<7;++i)objs[i].id=i;objs[0].overlap=&objs[2];
+ CHECK(W::Feed(&objs[0],&objs[1])&&feeds==1);
+ touches=false;CHECK(W::Feed(&objs[0],&objs[1])&&feeds==1);touches=true;
+ fields=false;CHECK(!W::Feed(&objs[0],&objs[1]));fields=true;
+ callOk=false;CHECK(!W::Feed(&objs[0],&objs[1])&&feeds==1);callOk=true;
+ kill=true;CHECK(W::Feed(&objs[0],&objs[1])&&feeds==1);kill=false;objs[1].live=true;
+ CHECK(W::RestoreMaterial(&objs[0],L"")&&restores==0);
+ CHECK(W::RestoreMaterial(&objs[0],L"brick")&&restores==1);
+ materialOK=false;CHECK(!W::RestoreMaterial(&objs[0],L"invalid"));
+ CHECK(!W::Damage(&objs[0],20.f));solid=true;
+ CHECK(W::Key(&objs[0])==L"native_wall_17");fields=false;CHECK(W::Key(&objs[0]).empty());fields=true;
+ CHECK(W::Damage(&objs[0],20.f)&&damages==1);
+ CHECK(!W::Damage(&objs[0],0)&&!W::Damage(&objs[0],NAN));
+ damageFields=false;++objs[6].serial;CHECK(!W::Damage(&objs[0],20.f)&&damages==1);damageFields=true;++objs[6].serial;
+ locationOK=false;CHECK(!W::Damage(&objs[0],20.f));locationOK=true;
+ locCallback=[]{++world;};CHECK(!W::Damage(&objs[0],20.f)&&damages==1);locCallback=nullptr;
+ kill=true;CHECK(W::Damage(&objs[0],20.f)&&damages==2&&!objs[0].live);
+ puts("PASS real wall wrapper/ParamFrame: live overlap, native arguments, dead source, failures and restored material lookup");
+}

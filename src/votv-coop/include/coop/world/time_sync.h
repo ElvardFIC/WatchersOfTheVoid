@@ -33,8 +33,8 @@ void Tick();
 
 // CLIENT: whether this client's clock mirror owns a cycle about to tick -- a connected client
 // session, and a cycle the gamemode has not flagged as the menu scene's. It fails toward holding: a
-// cycle whose gamemode is null, dead or unresolvable counts as a world's. The event walk's hold asks
-// the same question, so the two switch on together. Game thread.
+// cycle whose gamemode is null, dead or unresolvable counts as a world's. Event scheduling is
+// held separately at saveSlot.settime, including calls before the clock's first tick. Game thread.
 bool HoldsCycle(void* cycle);
 
 // CLIENT: the host's day number as the last applied sample carried it, -1 before the first and

@@ -271,6 +271,13 @@ bool ConsumeInput(void* term) {
     return Call(box, f);
 }
 
+bool ClearLog(void* term) {
+    if(!g_resolved || !IsTerminal(term) || !WriteFStringField(term,g_offLog,L""))return false;
+    const int logText=R::FindPropertyOffset(R::ClassOf(term),L"logText");
+    if(logText>=0 && !WriteFStringField(term,logText,L""))return false;
+    return CallWriteToLog(term,L"",0);
+}
+
 std::wstring PanelName(void* panel) {
     if (!panel || !R::IsLive(panel)) return {};
     return R::ToString(R::NameOf(panel));

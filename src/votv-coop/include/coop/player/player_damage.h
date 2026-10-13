@@ -18,8 +18,9 @@ namespace coop::player_damage {
 void Install(coop::net::Session* session);
 
 // Per tick, game thread: once mainPlayer_C is loaded, resolve its three impact entries and register
-// the non-local-body PRE cancel, settled on that first attempt; one latched read after. Called from
-// subsystems::TickGameplay.
+// the non-local-body PRE cancel, settled on that first attempt. Also installs
+// class-scoped script guards for foreign ragdoll/death/fire bodies, covering
+// internal Blueprint calls as well. Called from subsystems::TickGameplay.
 void Tick();
 
 // Owner side: validate the payload, verify on the game thread that it addresses this peer

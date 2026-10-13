@@ -32,6 +32,37 @@ std::atomic<coop::net::Session*> g_session{nullptr};
 enum class Reg : uint8_t { Pending, Registered, Refused };
 Reg  g_reg = Reg::Pending;
 bool g_settled = false;
+bool g_lampWatched = false;
+bool g_ambientWatched = false;
+constexpr int kLampTag = 0x4C414D50;
+constexpr int kAmbientTag = 0x414D424C;
+coop::net::Session* ConnectedAs(coop::net::Role role);
+
+sg::Verdict OnLampPre(const sg::Call& call) {
+    if (call.fromOurCode || !ConnectedAs(coop::net::Role::Client)) return sg::Verdict::Run;
+    if (!call.object || !LS::IsCeilingLamp(call.object) ||
+        !coop::net_pump::IsInAnnouncedWorld(call.object) ||
+        coop::interactable_sync::CeilingLampKey(call.object).empty()) return sg::Verdict::Run;
+    // Native flick() and its delayed continuations bypass runTrigger and write lamps
+    // directly. Only the host's lamp/group replay may repaint an indexed client lamp.
+    return sg::Verdict::Cancel;
+}
+void OnLampPost(const sg::Call& call) {
+    if (ConnectedAs(coop::net::Role::Host) && call.object && LS::IsCeilingLamp(call.object))
+        coop::interactable_sync::OnCeilingLampVerb(call.object);
+}
+
+sg::Verdict OnAmbientPre(const sg::Call& call) {
+    if (call.fromOurCode || !ConnectedAs(coop::net::Role::Client)) return sg::Verdict::Run;
+    if (!call.object || !LS::IsAmbientLight(call.object) ||
+        !coop::net_pump::IsInAnnouncedWorld(call.object) ||
+        coop::interactable_sync::AmbientLightKey(call.object).empty()) return sg::Verdict::Run;
+    return sg::Verdict::Cancel;
+}
+void OnAmbientPost(const sg::Call& call) {
+    if (ConnectedAs(coop::net::Role::Host) && call.object && LS::IsAmbientLight(call.object))
+        coop::interactable_sync::OnAmbientLightVerb(call.object);
+}
 
 uint64_t g_refused = 0, g_edges = 0;
 uint64_t g_loadNative = 0;  // a client's calls run natively as its own world's load (IsInAnnouncedWorld)
@@ -77,6 +108,12 @@ void OnTriggerPost(const sg::Call& call) {
 
 void Install(coop::net::Session* session) {
     g_session.store(session, std::memory_order_release);
+    if (!g_ambientWatched)
+        g_ambientWatched = sg::WatchClassName(L"ambientLight_C", L"setActive", kAmbientTag,
+                                             &OnAmbientPre, &OnAmbientPost);
+    if (!g_lampWatched)
+        g_lampWatched = sg::WatchClassName(L"ceilingLamp_C", L"setActive", kLampTag,
+                                          &OnLampPre, &OnLampPost);
     if (g_reg != Reg::Pending) return;
     if (sg::WatchName(kVerb, kTag, &OnTriggerPre, &OnTriggerPost)) {
         g_reg = Reg::Registered;
@@ -101,6 +138,7 @@ void Tick() {
 }
 
 void OnDisconnect() {
+    g_session.store(nullptr, std::memory_order_release);
     if (g_refused || g_edges || g_loadNative)
         UE_LOGI("[LIGHT-GROUP] session end -- a client refused %llu local runTrigger call(s) on %zu group(s) "
                 "and ran %llu of its own world's load; the host saw %llu",

@@ -35,6 +35,16 @@ void Install(coop::net::Session* session);
 // thread. No-op on the host, or on empty pending.
 void Tick(coop::net::Session* session);
 
+// An accepted drop request is waiting for the host's identity echo. The hand
+// release/carry fallback must not independently publish this actor as PropSpawn.
+bool IsAwaitingHost(void* actor);
+// A birth passed placement admission but is still retrying capture/send. This is
+// sweep protection only; it must not be mistaken for an accepted wire request.
+bool IsPendingHostPlacement(void* actor);
+// Resolve the original local throw before consulting the world-key index. Its
+// freshly restored key may not be indexed yet, or may still name the old husk.
+void* FindAwaitingHost(const std::wstring& key, const std::wstring& className);
+
 // Called from prop_lifecycle::DestroySeamBody right AFTER a CLIENT broadcasts a keyed-prop DESTROY:
 // park the key so a later same-key place authors a host-authoritative drop intent, and only then.
 // The park is the SAFETY INVARIANT -- it means the host has already destroyed its copy, so the

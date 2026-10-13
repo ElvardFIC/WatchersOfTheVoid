@@ -16,13 +16,18 @@
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/script_gate.h"
 #include "ue_wrap/devices/door.h"
+#include "ue_wrap/devices/cremator.h"
 #include "ue_wrap/world/weapon_catalog.h"    // what one swing of the held item can deal
 
 #include <atomic>
+#include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <deque>
 #include <string>
+#include <vector>
 
 namespace coop::door_verb_intent {
 namespace {
@@ -84,6 +89,61 @@ std::deque<coop::net::DoorVerbIntentPayload> g_pending[coop::net::kMaxPeers];
 bool g_waitSaid[coop::net::kMaxPeers] = {};  // a sender's wait for its body, said once a streak
 bool g_cutSaid[coop::net::kMaxPeers]  = {};  // a sender's hit cut to its item's swing, said once
 uint64_t g_hitRefusals = 0;                  // hits refused as no swing: said for three, then every twentieth
+struct CrematorRow { coop::net::KeyedTogglePayload payload{}; uint8_t mask = 0; };
+std::vector<CrematorRow> g_crematorRows;
+std::vector<coop::net::KeyedTogglePayload> g_pendingCrematorApply;
+bool g_replayingCremator = false;
+struct CrematorObservedState { std::wstring key; bool active = false; };
+std::vector<CrematorObservedState> g_crematorObserved;
+uint64_t g_lastCrematorPollMs = 0;
+
+struct CrematorReplayGuard {
+    bool previous = g_replayingCremator;
+    CrematorReplayGuard() { g_replayingCremator = true; }
+    ~CrematorReplayGuard() { g_replayingCremator = previous; }
+};
+
+void PublishCrematorLever(void* machine, bool desiredActive, int toSlot = -1) {
+    auto* s = g_session.load(std::memory_order_acquire);
+    if (!s || s->role() != coop::net::Role::Host || !machine) return;
+    const std::wstring key = ue_wrap::cremator::LeverWireKey(machine);
+    if (key.empty()) return;
+    coop::net::KeyedTogglePayload p{};
+    coop::net::WireKeyFromString(key, p.key);
+    p.action = desiredActive ? 1 : 0;
+    if (toSlot >= 0) {
+        if (!s->SendReliableToSlot(toSlot, coop::net::ReliableKind::ContainerState, &p, sizeof(p)) &&
+            toSlot < coop::net::kMaxPeers && g_crematorRows.size() < 32)
+            g_crematorRows.push_back({p, static_cast<uint8_t>(1u << toSlot)});
+        return;
+    }
+    if (s->SendReliable(coop::net::ReliableKind::ContainerState, &p, sizeof(p))) return;
+    for (auto& row : g_crematorRows) {
+        if (row.payload.key.len == p.key.len && std::memcmp(row.payload.key.data, p.key.data, p.key.len) == 0) {
+            row.payload = p;
+            row.mask = static_cast<uint8_t>(((1u << coop::net::kMaxPeers) - 1u) & ~1u);
+            return;
+        }
+    }
+    if (g_crematorRows.size() < 32)
+        g_crematorRows.push_back({p, static_cast<uint8_t>(((1u << coop::net::kMaxPeers) - 1u) & ~1u)});
+    else
+        UE_LOGE("[DOOR-VERB] cremator lever state queue full -- one lever state may not reach clients");
+}
+
+bool ApplyCrematorState(const coop::net::KeyedTogglePayload& p) {
+    const std::wstring key = coop::net::StringFromWireKey(p.key);
+    void* machine = ue_wrap::cremator::FindByLeverWireKey(key);
+    if (!machine) return false;
+    bool active = false;
+    if (!ue_wrap::cremator::TryReadLeverActive(machine, active)) return false;
+    const bool wanted = p.action != 0;
+    if (active == wanted) return true;
+    if (!ue_wrap::cremator::CanReplayLever(machine)) return false;
+    CrematorReplayGuard replay;
+    const bool called = ue_wrap::cremator::CallUseLever(machine);
+    return called;
+}
 
 bool TakeToken(uint8_t slot) {
     Bucket& b = g_rate[slot];
@@ -110,6 +170,36 @@ const char* VerbName(uint8_t verb) {
 // being lost. Everything else is run or refused, and consumed.
 bool Execute(coop::net::Session& s, const coop::net::DoorVerbIntentPayload& p, uint8_t slot) {
     const std::wstring key = coop::net::StringFromWireKey(p.key);
+    if (p.verb == V::kPress) {
+        void* cremator = ue_wrap::cremator::FindByLeverWireKey(key);
+        if (cremator) {
+            const auto subject = coop::element::IntentTarget::ForClientIntent(s, slot, kDoorReachUU).Authorize(cremator);
+            if (subject.outcome == coop::element::IntentOutcome::NoBody) return false;
+            if (!subject || p.action != 4 || !ue_wrap::cremator::CanReplayLever(cremator)) {
+                ++g_denied;
+                return true;
+            }
+            bool active = false;
+            if (!ue_wrap::cremator::TryReadLeverActive(cremator, active)) { ++g_denied; return true; }
+            bool called = false;
+            {
+                CrematorReplayGuard replay;
+                called = ue_wrap::cremator::CallUseLever(cremator);
+            }
+            if (!called) {
+                ++g_denied;
+                return true;
+            }
+            bool activeAfter = false;
+            if (ue_wrap::cremator::TryReadLeverActive(cremator, activeAfter))
+                PublishCrematorLever(cremator, activeAfter);
+            ++g_ran;
+            UE_LOGI("[DOOR-VERB] host ran slot %u's cremator lever at '%ls' (active %u -> %u)",
+                    static_cast<unsigned>(slot), key.c_str(), active ? 1u : 0u,
+                    activeAfter ? 1u : 0u);
+            return true;
+        }
+    }
     void* door = key.empty() ? nullptr : coop::interactable_sync::ResolveDoor(key);
     if (!door) {
         ++g_denied;
@@ -219,6 +309,28 @@ const ParamOffsets& OffsetsOf(const sg::Call& call, int watchIndex, uint8_t verb
 sg::Verdict OnVerbPre(const sg::Call& call) {
     auto* s = g_session.load(std::memory_order_acquire);
     if (!s || !s->connected() || s->role() != coop::net::Role::Client) return sg::Verdict::Run;
+    if (call.object && ue_wrap::cremator::IsCremator(call.object)) {
+        if (call.tag != 0x44565052) return sg::Verdict::Run;
+        if (!coop::net_pump::IsInAnnouncedWorld(call.object)) { ++g_loadNative; return sg::Verdict::Run; }
+        const ParamOffsets& offsets = OffsetsOf(call, 0, V::kPress);
+        if (offsets.first < 0 || !call.locals ||
+            *reinterpret_cast<const uint8_t*>(call.locals + offsets.first) != 4 ||
+            !ue_wrap::cremator::CanUseLever(call.object)) return sg::Verdict::Run;
+        const std::wstring key = ue_wrap::cremator::LeverWireKey(call.object);
+        if (key.empty()) return sg::Verdict::Cancel;
+        coop::net::DoorVerbIntentPayload p{};
+        coop::net::WireKeyFromString(key, p.key);
+        p.verb = V::kPress;
+        p.action = 4;
+        if (!s->SendReliable(coop::net::ReliableKind::DoorVerbIntent, &p, sizeof(p))) {
+            UE_LOGW("[DOOR-VERB] cremator lever press was not queued; the host remains authoritative");
+        } else {
+            ++g_sent;
+            ++g_sentPress;
+            UE_LOGI("[DOOR-VERB] CLIENT SENT cremator lever press key='%ls'", key.c_str());
+        }
+        return sg::Verdict::Cancel;
+    }
     if (!call.object || !D::IsDoor(call.object)) return sg::Verdict::Run;
     // A call on an object of a world this client has not announced ready is that world's load, the
     // host's save: it runs natively, and the host's own states for what the lane owns follow the
@@ -316,6 +428,29 @@ void Tick(coop::net::Session& session) {
                     "those verbs run only where they are used", kWatchCount - live, kWatchCount);
         }
     }
+    if (session.running() && session.role() == coop::net::Role::Host) {
+        const uint64_t now = NowMs();
+        if (now - g_lastCrematorPollMs >= 200) {
+            g_lastCrematorPollMs = now;
+            for (void* machine : ue_wrap::cremator::Instances()) {
+                bool active = false;
+                const std::wstring key = ue_wrap::cremator::LeverWireKey(machine);
+                if (key.empty() || !ue_wrap::cremator::TryReadLeverActive(machine, active)) continue;
+                auto it = std::find_if(g_crematorObserved.begin(), g_crematorObserved.end(),
+                    [&](const CrematorObservedState& row) { return row.key == key; });
+                if (it == g_crematorObserved.end()) g_crematorObserved.push_back({key, active});
+                else if (it->active != active) {
+                    it->active = active;
+                    PublishCrematorLever(machine, active);
+                }
+            }
+        }
+    }
+    if (session.running() && session.role() == coop::net::Role::Client) {
+        for (auto it = g_pendingCrematorApply.begin(); it != g_pendingCrematorApply.end();) {
+            if (ApplyCrematorState(*it)) it = g_pendingCrematorApply.erase(it); else ++it;
+        }
+    }
     if (!session.running() || session.role() != coop::net::Role::Host) return;
     // The weapon table is built once the host's session runs, not on a client's first hit: its build
     // finds the table by walking every object. Ready() throttles a retry while the table is not loaded.
@@ -331,12 +466,23 @@ void Tick(coop::net::Session& session) {
             g_rate[slot].tokens += 1.0f;     // a wait runs nothing, so it spends no token
         }
     }
+    for (auto it = g_crematorRows.begin(); it != g_crematorRows.end();) {
+        for (uint8_t slot = 1; slot < coop::net::kMaxPeers; ++slot) {
+            if (!(it->mask & (1u << slot))) continue;
+            if (session.SendReliableToSlot(slot, coop::net::ReliableKind::ContainerState,
+                                           &it->payload, sizeof(it->payload)))
+                it->mask &= static_cast<uint8_t>(~(1u << slot));
+        }
+        if (!it->mask) it = g_crematorRows.erase(it); else ++it;
+    }
 }
 
 void OnDoorVerbIntent(coop::net::Session& session, const coop::net::DoorVerbIntentPayload& payload,
                       uint8_t senderSlot) {
     if (session.role() != coop::net::Role::Host) return;
     if (senderSlot < 1 || senderSlot >= coop::net::kMaxPeers) return;
+    if (!payload.key.len || payload.key.len > sizeof(payload.key.data) || payload.verb > V::kPry ||
+        payload._pad[0] || payload._pad[1] || !std::isfinite(payload.damage)) return;
     auto& q = g_pending[senderSlot];
     if (q.size() >= kMaxPending) {
         Bucket& b = g_rate[senderSlot];
@@ -352,12 +498,48 @@ void OnDoorVerbIntent(coop::net::Session& session, const coop::net::DoorVerbInte
     q.push_back(payload);
 }
 
+void OnCrematorState(const coop::net::KeyedTogglePayload& payload, uint8_t senderSlot) {
+    auto* s = g_session.load(std::memory_order_acquire);
+    if (!s || s->role() != coop::net::Role::Client || senderSlot != 0 ||
+        payload.key.len == 0 || payload.key.len > sizeof(payload.key.data) || payload.action > 1) return;
+    for (uint8_t b : payload._pad) if (b) return;
+    const std::wstring key = coop::net::StringFromWireKey(payload.key);
+    if (ue_wrap::cremator::FindByLeverWireKey(key) && ApplyCrematorState(payload)) {
+        return;
+    }
+    for (auto& row : g_pendingCrematorApply) {
+        if (row.key.len == payload.key.len && std::memcmp(row.key.data, payload.key.data, payload.key.len) == 0) {
+            row = payload;
+            return;
+        }
+    }
+    if (g_pendingCrematorApply.size() < 32) g_pendingCrematorApply.push_back(payload);
+}
+
+void QueueCrematorSnapshot(int peerSlot) {
+    auto* s = g_session.load(std::memory_order_acquire);
+    if (!s || s->role() != coop::net::Role::Host || peerSlot < 1 || peerSlot >= coop::net::kMaxPeers) return;
+    for (void* machine : ue_wrap::cremator::Instances()) {
+        bool active = false;
+        const std::wstring key = ue_wrap::cremator::LeverWireKey(machine);
+        if (key.empty() || !ue_wrap::cremator::TryReadLeverActive(machine, active)) continue;
+        coop::net::KeyedTogglePayload p{};
+        coop::net::WireKeyFromString(key, p.key);
+        p.action = active ? 1 : 0;
+        if (!s->SendReliableToSlot(peerSlot, coop::net::ReliableKind::ContainerState, &p, sizeof(p)) &&
+            g_crematorRows.size() < 32)
+            g_crematorRows.push_back({p, static_cast<uint8_t>(1u << peerSlot)});
+    }
+}
+
 void OnPeerLeft(uint8_t slot) {
     if (slot >= coop::net::kMaxPeers) return;
     g_pending[slot].clear();
     g_rate[slot] = Bucket{};
     g_waitSaid[slot] = false;
     g_cutSaid[slot] = false;
+    for (auto& row : g_crematorRows) row.mask &= static_cast<uint8_t>(~(1u << slot));
+    std::erase_if(g_crematorRows, [](const CrematorRow& row) { return row.mask == 0; });
 }
 
 uint64_t SentPressCount() { return g_sentPress; }
@@ -379,6 +561,10 @@ void OnDisconnect() {
     g_sentPress = 0;
     g_quietHits = 0;
     g_hitRefusals = 0;
+    g_crematorRows.clear();
+    g_pendingCrematorApply.clear();
+    g_crematorObserved.clear();
+    g_lastCrematorPollMs = 0;
 }
 
 }  // namespace coop::door_verb_intent

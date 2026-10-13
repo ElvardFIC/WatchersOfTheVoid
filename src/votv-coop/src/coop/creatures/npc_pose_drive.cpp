@@ -14,7 +14,9 @@
 #include "coop/net/protocol.h"
 #include "ue_wrap/engine/engine.h"
 #include "ue_wrap/actors/kerfur.h"   // DriveKerfurState -- host-authoritative command and spooky flag
+#include "ue_wrap/devices/floppy_slot.h"  // kSlotTypeCount -- the seven disc types floppyFromType indexes
 #include "ue_wrap/actors/puppet.h"
+#include "ue_wrap/actors/sit_pose.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/actors/wisp.h"     // DriveWispLanding -- the fade-in edge on a wisp_C mirror
 
@@ -72,6 +74,15 @@ void Npc::SetTargetNpcPose(const coop::net::EntityPoseSnapshot& snap) {
     if (hasKerfState_) {
         kerfState_  = snap.kerfState;
         kerfSpooky_ = (snap.stateBits & coop::net::kEntityPoseBitKerfurSpooky) != 0;
+    }
+    // The reports disc. Bit clear, or a type outside the seven the game indexes, is an empty slot.
+    // Applied in Tick, not here: the mesh swap can fail while the library is still loading, and a
+    // failed apply has to be asked again on a later frame even when the pose itself has settled.
+    {
+        const bool hasDisc = (snap.stateBits & coop::net::kEntityPoseBitKerfurHasFloppy) != 0;
+        const int t = hasDisc ? static_cast<int>(snap.floppyType) : -1;
+        wantFloppy_ = (t >= 0 && t < ue_wrap::floppy_slot::kSlotTypeCount)
+                          ? static_cast<int8_t>(t) : int8_t{-1};
     }
 
     // First packet OR a teleport (error beyond the snap threshold) -> SNAP, no LERP across.
@@ -134,6 +145,14 @@ void Npc::Tick() {
     if (!hasPose_) return;  // no pose yet -- leave the mirror at its spawn transform
     AdvanceInterp();
     if (dirty_) { ApplyToEngine(); dirty_ = false; }
+    // The disc is not part of the pose dirty bit: a swap that failed (the mesh component or the
+    // disc library not ready yet) retries on the next frame, including while the body is still.
+    if (hasKerfState_ && shownFloppy_ != wantFloppy_) {
+        const bool has = wantFloppy_ >= 0;
+        const auto type = static_cast<uint8_t>(has ? wantFloppy_ : 0);
+        if (ue_wrap::kerfur::DriveKerfurFloppy(actor, has, type))
+            shownFloppy_ = wantFloppy_;
+    }
 }
 
 void Npc::ApplyToEngine() {
@@ -170,6 +189,7 @@ void Npc::ApplyToEngine() {
     // state machine matches the host (the mirror runs no AI -> it can't pick its own). Class-gated
     // inside -> safe no-op on non-kerfur NPCs.
     if (hasKerfState_) ue_wrap::kerfur::DriveKerfurState(actor, kerfState_, kerfSpooky_);
+    ue_wrap::sit_pose::DriveSitting(actor, (curStateBits_ & coop::net::kEntityPoseBitKerfurOnAtv) != 0);
 }
 
 }  // namespace coop::element

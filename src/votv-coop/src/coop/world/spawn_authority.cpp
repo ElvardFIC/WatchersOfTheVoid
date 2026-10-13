@@ -79,6 +79,13 @@ constexpr Row kRows[] = {
     {L"ufoDropper_pig_C",            L"ReceiveBeginPlay", "ufoDropper_pig.ReceiveBeginPlay"},
     {L"ufoDropper_tank_C",           L"ReceiveBeginPlay", "ufoDropper_tank.ReceiveBeginPlay"},
     {L"firetankDeploy_C",            L"ReceiveBeginPlay", "firetankDeploy.ReceiveBeginPlay"},
+    // Mimics are prop_impostor, with a props-table disguise chosen BEFORE finish.
+    // The ordinary keyed prop lane preserves both the real class and that row.
+    {L"impostorPropsMaster_C",       L"gen",              "impostorPropsMaster.gen"},
+    // Its tick only culls the actor when unseen and far from the LOCAL camera.
+    // A mirror must survive the client's view; host PropDestroy ends its lifetime.
+    // Keep BeginPlay/init intact: they install the disguise and flesh material.
+    {L"prop_impostor_C",             L"ReceiveTick",      "prop_impostor.ReceiveTick"},
 };
 constexpr int kRowCount = static_cast<int>(std::size(kRows));
 constexpr int kTagBase = 0x53410000;   // 'SA', then the row

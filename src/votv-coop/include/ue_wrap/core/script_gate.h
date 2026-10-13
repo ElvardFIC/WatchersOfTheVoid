@@ -181,6 +181,9 @@ Active CurrentThreadCall();
 // pre would stay raised for the life of the process and answer "my verb is running" forever.
 // Game thread in practice (the gate never fires callbacks off it); any thread reads its own chain.
 bool IsBodyActive(void* function, void* callerFunction = nullptr);
+// Same stack-lifetime check, narrowed to one receiver. Never retain a pre/post
+// counter to authorize births: cancellation and faults can skip the post phase.
+bool IsObjectBodyActive(void* function, void* object);
 
 // The caller's storage for the out parameter at `paramOffset` (an Offset_Internal), or null when
 // the frame carries no such record.

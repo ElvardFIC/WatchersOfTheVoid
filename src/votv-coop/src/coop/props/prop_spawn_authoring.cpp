@@ -1,6 +1,8 @@
 // coop/props/prop_spawn_authoring.cpp -- see coop/props/prop_spawn_authoring.h for the design.
 
 #include "coop/props/prop_spawn_authoring.h"
+#include "coop/player/hand_item.h"
+#include "coop/props/bucket_sync.h"
 
 #include "ue_wrap/core/fname_utils.h"     // StringToFName -- the two verb names, once
 #include "ue_wrap/core/game_thread.h"
@@ -129,7 +131,10 @@ void Install(bool isClient) {
     g_watchInstalled = true;
 }
 
-bool BirthIsPlayerAuthored() {
+bool BirthIsPlayerAuthored(void* sourceObject) {
+    // Only an active native use/pour on the local material owner admits these
+    // replacements. Arbitrary lib.replaceProp, loading and passive replicas stay out.
+    if (coop::bucket_sync::IsMaterialBirth()) return true;
     // The menu: is the gamemode's spawn verb running on this thread, entered from the menu's own
     // spawn()? The gate answers from the RAII scope it pushes around the body, so the window
     // cannot outlive the body on any exit path, and an inner watched body belonging to some other
@@ -140,6 +145,42 @@ bool BirthIsPlayerAuthored() {
     // since its bytecode is what is running.
     const void* caller = ue_wrap::ufunction_hook::CurrentCallerFrame().function;
     if (!caller) return false;
+    // The workbench finishes crafted output directly in its ubergraph (@6085 in
+    // 0.9.0n), outside the menu/gamemode bracket. Without this provenance the
+    // client's output is discarded by the drop-intent whitelist until picked up.
+    // Match BOTH function and declaring class: loading/replaceProp and unrelated
+    // graphs must remain local. Portable benches inherit this same craft graph.
+    void* owner = R::OuterOf(const_cast<void*>(caller));
+    // World MRE opening is host-authoritative. A personal hand MRE still opens
+    // natively on its owner; its exact spawn body/source admits the resulting
+    // contents immediately, without admitting world/loader copies of that body.
+    if (sourceObject && owner &&
+        R::NameEquals(R::NameOf(owner), L"prop_food_mre_C") &&
+        R::NameEquals(R::NameOf(const_cast<void*>(caller)), L"spawn") &&
+        sourceObject == coop::hand_item::LocalHandActor())
+        return true;
+    if (owner && R::NameEquals(R::NameOf(owner), L"prop_workbench_C") &&
+        R::NameEquals(R::NameOf(const_cast<void*>(caller)), L"ExecuteUbergraph_prop_workbench"))
+        return true;
+    // Unfold creates sleepingbagWrap (bed_C -> prop_C); fold creates the rolled
+    // prop again. Both are explicit player transformations, not the begin-play
+    // gen() or an arbitrary replaceProp. Native destroy already removes the old
+    // keyed representation through the existing lifecycle seam.
+    if (owner && R::NameEquals(R::NameOf(owner), L"prop_sleepingbag_C") &&
+        R::NameEquals(R::NameOf(const_cast<void*>(caller)), L"ExecuteUbergraph_prop_sleepingbag"))
+        return true;
+    if (owner && R::NameEquals(R::NameOf(owner), L"sleepingbagWrap_C") &&
+        R::NameEquals(R::NameOf(const_cast<void*>(caller)), L"fold"))
+        return true;
+    // A mattress ON a bunk takes a separate branch: putMattressOn finishes a
+    // bed_bunkMattress, never sleepingbagWrap. Rolling it back up is that bed's
+    // own action graph. Keep both independent from arbitrary bed/world spawns.
+    if (owner && R::NameEquals(R::NameOf(owner), L"prop_bunkbedSleepable_C") &&
+        R::NameEquals(R::NameOf(const_cast<void*>(caller)), L"putMattressOn"))
+        return true;
+    if (owner && R::NameEquals(R::NameOf(owner), L"bed_bunkMattress_C") &&
+        R::NameEquals(R::NameOf(const_cast<void*>(caller)), L"ExecuteUbergraph_bed_bunkMattress"))
+        return true;
     if (caller == g_toolUberFn) return true;
     if (!g_toolUberFn &&
         FunctionIs(const_cast<void*>(caller), g_toolUberName, L"tool_spawn_C")) {

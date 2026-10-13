@@ -108,13 +108,18 @@ never converts a kerfur itself; the host's verb converges at its return on the s
 captured deterministically at its spawn through the gate's window
 (`coop/creatures/kerfur_form_assembler`), and every client takes the new form from the broadcast.
 
-The radial menu (follow, idle, patrol, fix the servers, get the reports, fix the transformers) is
+The radial menu (follow, idle, patrol, fix the servers, get the reports, fix the transformers,
+take an object, pat, equipment) is
 relayed host-authoritatively (`coop/creatures/kerfur_command`): the host cancels the local
 dispatch on both roles and re-runs the game's own verb with the kerfur serving the peer who asked
 (`coop/creatures/served_player`), so its reads of the player answer that peer: follow follows it,
 patrol circles it. A request waits while the host has no body for its sender, and a verb the game
-refuses changes nobody's service. Nothing writes a puppet's hand yet, so a client's get the reports
-gets the game's refusal hint, shown on the host. On a client the chosen verb is read at the E-input seam, the
+refuses changes nobody's service. For take-object, equipment and get-reports the host stages the
+asking player's held item onto the puppet for that verb, and never the host's own hand. A disc the robot is already holding rides the pose
+(`kEntityPoseBitKerfurHasFloppy` and the type byte) and the mirror sets `floppyMesh` from
+`lib_C::floppyFromType`, because the mirror's tick is off and will not swap the mesh itself. A world
+prop the robot is holding is claimed on the prop-drive channel, so it follows the host's copy until
+the robot lets go. On a client the chosen verb is read at the E-input seam, the
 one dispatched through the engine, before the local dispatch runs
 (`coop/creatures/kerfur_menu_input`). At a join a save-loaded kerfur prop is adopted by class and
 nearest pose once the load tail settles (`coop/creatures/kerfur_prop_adoption`), and a kerfur
@@ -139,7 +144,7 @@ on [players.md](players.md).
 | Kind | Direction | Carries |
 |---|---|---|
 | `EntitySpawn`, `EntityDestroy` | the host to all | class, id, transform, scale, whether save-persisted; the id |
-| `EntityPose` (stream) | the host to all | a pose batch, fair-share rotated |
+| `EntityPose` (stream) | the host to all | a pose batch, fair-share rotated; a kerfur's reports disc and its type |
 | `OwnerEntitySpawn`, `OwnerEntityPose`, `OwnerEntityDestroy` | the owner to all | a stalker's birth, pose and death |
 | `WispGrab`, `WispTear` | the host to the victim; the host to all | the grab and its delay; the tear to play on the mirror |
 | `RoachState`, `RoachConsumed` | the host to all; a client to the host | a page of the infestation; a stomped or eaten roach |
@@ -159,8 +164,10 @@ wisp in flight is transient and owes nothing.
 
 | Limit | Evidence |
 |---|---|
-| The Omega's take-object, pat, equipment, kill and sit-on-the-ATV verbs are not synced | `[V]` `coop/creatures/kerfur_command`, the verb table |
-| The Omega's floppy state is not synced, so a relayed get-reports diverges on its result; its accessories and carried object likewise | `[V]` no lane under `coop/creatures` carries them |
+| The Omega's kill verb is not a menu command: murder mode ends whoever the robot was serving | `[V]` `coop/creatures/kerfur_command`, the startKill watch |
+| A client's take-object or equipment still cannot see an item that is only in that player's pocket, not in the hand | `[V]` `coop/creatures/kerfur_command` stages the hand mirror or the driven world prop, not the pocket |
+| The Omega sitting on an ATV is streamed as `isOnAtv` on the pose (`kEntityPoseBitKerfurOnAtv`); the verb that puts it there still runs on the host | `[V]` `coop/creatures/npc_pose_host.cpp`, `ue_wrap/actors/sit_pose` |
+| A client's get-reports sees the disc that client is holding. It does not take a disc out of the host's hand. The disc the robot already holds does travel, and so does a world prop it is carrying. An item the game turns into a private attachment, with no world prop and no hand actor left, does not | `[V]` `kerfur_command` stages the puppet hand; `npc_pose_host` streams `hasFloppy` and claims `holdObject` |
 | Only one stalker class is owned per peer so far | `[V]` `coop/creatures/owner_entity_sync`, the member table |
 | The conversion is detected by a poll, five times a second, not at the verb | `[V]` `coop/creatures/kerfur_convert`; the lane reads the result rather than the call, because a peer's own conversion has already happened by the time any watch of ours runs |
 | Nine ambient spawner families are neither mirrored nor refused, so each peer grows its own deer, hexahives, walking trees and the rest | `[V]` they appear in no lane under `coop/creatures` and in no row of `coop/world/spawn_authority` |

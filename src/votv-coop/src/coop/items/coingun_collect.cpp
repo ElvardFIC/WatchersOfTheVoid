@@ -3,10 +3,8 @@
 // (ProcessEvent-visible, hooked and cancellable) and actionOptionIndex, the E-press, which
 // mainPlayer dispatches as EX_LocalVirtualFunction (invisible to ProcessEvent and to a Func
 // hook; the script-body gate sees it, and this lane observes it there). So the shape is
-// forward-and-reconcile: the client forwards the coin's identity and the host runs the coin's
-// own verb on the authoritative instance; the E-press's local credit is a phantom the host's
-// balance broadcast corrects, and the overlap entry forwards first and then cancels. Game
-// thread throughout.
+// forward-and-authority: the client forwards the coin's identity and cancels its local mirror
+// entry; the host runs the coin's own verb on the authoritative instance. Game thread throughout.
 
 #include "coop/items/coingun_sync.h"
 
@@ -32,6 +30,7 @@
 #include <cstdint>
 #include <cstring>
 #include <unordered_map>
+#include <vector>
 
 namespace coop::coingun_sync {
 namespace {
@@ -71,6 +70,17 @@ std::atomic<unsigned long long> g_replayed{0};
 // compares identity and an entry reads dead once the coin or its world is gone.
 std::unordered_map<uint32_t, ue_wrap::CachedObjRef> g_collected;
 
+struct PendingCollect {
+    ue_wrap::CachedObjRef coin;
+    uint64_t expiresMs = 0;
+};
+std::vector<PendingCollect> g_pendingCollects;
+uint64_t g_nextCollectRetryMs = 0;
+uint64_t CollectNowMs() {
+    return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count());
+}
+
 // "Is this coin the host's?" has one predicate. A coin collected inside its own materialisation
 // window (shoot a prop at your feet and the coins land on you; a mirror's delegates bind during
 // BeginPlay inside FinishSpawning, before the row is installed) must answer yes, and the second
@@ -83,7 +93,7 @@ bool IsHostOwnedCoin(void* coin) {
 
 // The client half: forward. Called from both entries; true iff a forward was sent, so the
 // overlap entry can log what it cancelled.
-bool ForwardCollectToHost(void* coin, const wchar_t* entry) {
+bool TryForwardCollect(void* coin, const wchar_t* entry) {
     auto* s = I::Session();
     if (!s || !s->connected() || s->role() != coop::net::Role::Client) return false;
     if (!I::IsCoinActor(coin)) return false;
@@ -108,24 +118,38 @@ bool ForwardCollectToHost(void* coin, const wchar_t* entry) {
         }
     }
     if (eid == coop::element::kInvalidId || eid == 0u) {
-        // Loud: a mirror with no eid and no open window means the reverse map and the mirror set
-        // disagree, an identity fault; silent, it would look exactly like the bug this lane fixes.
-        UE_LOGE("coingun[collect seam]: %ls entry on MIRROR coin=%p that has NO element id and no "
-                "open materialization window -- cannot forward. The mirror set and the actor->eid "
-                "reverse disagree about this actor; the credit will stay local and be erased by the "
-                "host's next balance broadcast.", entry, coin);
+        // A materializing mirror may not have its row yet. Leave it intact;
+        // the bounded retry below can use the row once spawning finishes.
         return false;
     }
 
     coop::net::CoinCollectPayload p{};
     p.elementId = static_cast<uint32_t>(eid);
-    s->SendReliable(coop::net::ReliableKind::CoinCollect, &p, sizeof(p));
+    if (!s->SendReliable(coop::net::ReliableKind::CoinCollect, &p, sizeof(p))) return false;
     g_forwarded.fetch_add(1, std::memory_order_relaxed);
     // The proof line, greppable: "coingun[collect seam]".
     UE_LOGI("coingun[collect seam] entry=%ls ctx=%p forwarding eid=%u (id from %ls) -- the host "
-            "performs the collect on its own coin; our local credit (if the entry allowed one) is a "
-            "phantom the balance broadcast corrects", entry, coin, p.elementId, idFrom);
+            "performs the collect on its own coin; this client's mirror entry is cancelled",
+            entry, coin, p.elementId, idFrom);
     return true;
+}
+
+bool ForwardCollectToHost(void* coin, const wchar_t* entry) {
+    const bool sent = TryForwardCollect(coin, entry);
+    for (auto it = g_pendingCollects.begin(); it != g_pendingCollects.end(); ++it) {
+        if (!it->coin.Is(coin)) continue;
+        if (sent) g_pendingCollects.erase(it);
+        return sent;
+    }
+    if (!sent && coin && IsHostOwnedCoin(coin) && g_pendingCollects.size() < 128) {
+        PendingCollect pending;
+        pending.coin.Set(coin);
+        pending.expiresMs = CollectNowMs() + 2000;
+        g_pendingCollects.push_back(pending);
+        UE_LOGW("coingun[collect]: request pending for coin=%p (transport or identity unavailable); "
+                "the mirror stays intact", coin);
+    }
+    return sent;
 }
 
 // Entry 1, the overlap: one interceptor for both roles. The host never cancels; it observes so
@@ -184,9 +208,9 @@ bool OnCollectPre(void* self, void* params) {
         // Forward first, then cancel: after `return true` there is no seam left.
         const bool fwd = ForwardCollectToHost(self, L"overlap");
         UE_LOGI("coingun[client collect]: SUPPRESSED on mirror coin=%p (tripped by LOCAL %p), "
-                "forwarded=%d. The local credit is cancelled outright on THIS entry (unlike the "
-                "E-press, which is EX_LocalVirtualFunction and uncancellable); the host performs the "
-                "collect on its own coin.", self, other, fwd ? 1 : 0);
+                "forwarded=%d. The local credit is cancelled outright on THIS entry; the E-press "
+                "is independently gated at the script body. The host performs the collect on its "
+                "own coin.", self, other, fwd ? 1 : 0);
         return true;                             // cancel: no local addPoints, no local destroy
     }
 
@@ -220,7 +244,7 @@ bool OnCollectPre(void* self, void* params) {
     return false;
 }
 
-// Entry 2: the E-press, through the verb's watch at the gate, observe-only.
+// Entry 2: the E-press, through the verb's watch at the gate.
 sg::Verdict OnCollectVerb(const sg::Call& b) {
     // The host performs a forwarded collect by calling this same verb through reflection, which
     // the gate sees like a press; that echo is ours and is not counted.
@@ -245,11 +269,25 @@ sg::Verdict OnCollectVerb(const sg::Call& b) {
 
     g_seenPressClient.fetch_add(1, std::memory_order_relaxed);
 
-    // Not refused here by choice (the lane forwards and reconciles): the local credit and the local self-destroy of our mirror
-    // happen; the phantom credit is corrected by the balance broadcast, and the mirror's absence by
-    // the host's WorldActorDestroy, or by the re-announce below.
-    ForwardCollectToHost(b.object, L"press");
-    return sg::Verdict::Run;
+    if (I::IsCapturedCoin(b.object)) {
+        UE_LOGI("coingun[client collect]: SUPPRESSED on OUR OWN pre-barrier coin=%p via E-press -- "
+                "the host has not confirmed the sale yet; if no sale is authored, the barrier "
+                "releases this coin and it can be collected again.", b.object);
+        return sg::Verdict::Cancel;
+    }
+
+    // A map-placed coin exists independently on both peers; it has no host-owned eid to forward.
+    // Keep its native, local behavior, matching the overlap entry.
+    if (!IsHostOwnedCoin(b.object)) return sg::Verdict::Run;
+
+    // The client must not locally credit and destroy a mirror while asking the host to do the same:
+    // on refusal the host leaves its coin alive, and on success its normal balance/destroy lanes
+    // update the client. Suppressing both is what makes the operation exactly once.
+    const bool forwarded = ForwardCollectToHost(b.object, L"press");
+    UE_LOGI("coingun[client collect]: SUPPRESSED E-press on mirror coin=%p, forwarded=%d -- "
+            "the host performs the collect on its authoritative copy.", b.object,
+            forwarded ? 1 : 0);
+    return sg::Verdict::Cancel;
 }
 
 }  // namespace
@@ -257,12 +295,12 @@ sg::Verdict OnCollectVerb(const sg::Call& b) {
 // The host half: perform.
 void OnCoinCollect(const uint8_t* payload, int len, uint8_t senderSlot, void* localPlayer) {
     auto* s = I::Session();
-    if (!s || s->role() != coop::net::Role::Host) {
+    if (!s || !s->connected() || s->role() != coop::net::Role::Host) {
         UE_LOGW("coingun[host]: CoinCollect received off the HOST -- dropping");
         return;
     }
-    if (!payload || len < static_cast<int>(sizeof(coop::net::CoinCollectPayload))) {
-        UE_LOGW("coingun[host]: CoinCollect payload too small (len=%d) -- dropping", len);
+    if (!payload || len != static_cast<int>(sizeof(coop::net::CoinCollectPayload))) {
+        UE_LOGW("coingun[host]: CoinCollect payload size invalid (len=%d) -- dropping", len);
         return;
     }
     coop::net::CoinCollectPayload p{};
@@ -284,9 +322,8 @@ void OnCoinCollect(const uint8_t* payload, int len, uint8_t senderSlot, void* lo
 
     // Resolved against our own registry, fail-closed on type, and gated on reach: may this sender
     // name this coin? The reach is mainPlayer.armLength, 200 units, the game's own reach for
-    // picking a coin up. A refusal costs a retry, never an item: the client's phantom credit is
-    // corrected by the next balance broadcast either way, and the coin stays on the ground for
-    // whoever stands near it.
+    // picking a coin up. A refusal costs a retry, never an item: the client's local entry was
+    // cancelled, and the authoritative coin stays on the ground for whoever stands near it.
     constexpr float kCollectReachUU = 200.0f;
     const auto tok = coop::element::IntentTarget::ForClientIntent(*s, senderSlot, kCollectReachUU);
     const coop::element::IntentSubject sub = tok.Resolve(
@@ -348,8 +385,8 @@ void OnCoinCollect(const uint8_t* payload, int len, uint8_t senderSlot, void* lo
     }
 
     // The balance is read around the dispatch, the only way to know the collect took: the credit is
-    // lib_C::addPoints, EX_LocalVirtualFunction, with no return value and no seam. A silent no-op
-    // would leave the client's mirror destroyed while the host's coin lives on.
+    // lib_C::addPoints, EX_LocalVirtualFunction, with no return value and no seam.
+    // A no-op leaves both authoritative coin and client mirror available for another try.
     int32_t before = 0;
     const bool haveBefore = ue_wrap::economy::ReadPoints(&before);
 
@@ -363,8 +400,10 @@ void OnCoinCollect(const uint8_t* payload, int len, uint8_t senderSlot, void* lo
     // too, which never writes the player, so it cannot depend on it, and the truthful value is
     // right either way. `hit` stays zeroed and `lookAtComponent` null, as on the overlap entry;
     // `action` is inert (kCoinCollectAction).
-    f.Set<void*>(L"player", localPlayer);
-    f.Set<uint8_t>(L"action", kCoinCollectAction);
+    if (!f.Set<void*>(L"player", localPlayer) || !f.Set<uint8_t>(L"action", kCoinCollectAction)) return;
+    // Capture while the native object is still healthy; the verb destroys it.
+    ue_wrap::CachedObjRef collected;
+    collected.Set(coin);
     const bool dispatched = ue_wrap::Call(coin, f);
 
     int32_t after = 0;
@@ -373,7 +412,7 @@ void OnCoinCollect(const uint8_t* payload, int len, uint8_t senderSlot, void* lo
 
     if (dispatched && credited) {
         g_performed.fetch_add(1, std::memory_order_relaxed);
-        g_collected[p.elementId].Set(coin);   // consumed
+        g_collected[p.elementId] = collected;
         UE_LOGI("coingun[host collect]: PERFORMED slot=%u eid=%u coin=%p -- balance %d -> %d (+%d). "
                 "The coin's own verb ran, so its native credit and self-destroy are the game's, not "
                 "ours; the WorldActorDestroy that follows removes every peer's mirror.",
@@ -381,15 +420,13 @@ void OnCoinCollect(const uint8_t* payload, int len, uint8_t senderSlot, void* lo
         return;
     }
 
-    // The coin is live and something went wrong. The forwarding client already destroyed its own
-    // mirror on the E-press path, so leaving this alone makes the host's coin invisible to that
-    // peer for good.
+    // The authoritative coin is still live and the balance did not move. The client cancelled its
+    // mirror entry while requesting this collect, so no replica repair is needed.
     g_noCredit.fetch_add(1, std::memory_order_relaxed);
 
     if (!haveBefore || !haveAfter) {
         // Unknown is not "no credit": treating an unreadable balance as a failed collect would act
-        // on absence of evidence, and fire a world re-announce on every collect while the read
-        // stayed broken.
+        // on absence of evidence.
         UE_LOGE("coingun[host collect]: slot=%u eid=%u coin=%p dispatch=%d -- the balance was NOT "
                 "readable (before=%d after=%d), so whether this credited is UNKNOWN. Taking no "
                 "repair action: acting on an unreadable value would be inventing a verdict.",
@@ -398,27 +435,35 @@ void OnCoinCollect(const uint8_t* payload, int len, uint8_t senderSlot, void* lo
         return;
     }
 
-    // Known: the coin lives and the balance did not move. The world is re-announced to that slot so
-    // the mirror comes back; the stale-row guard in world_actor_mirror lets that announce land on a
-    // row whose actor the client already killed. Throttled per slot, since the announce carries
-    // every world actor.
-    static std::unordered_map<uint8_t, long long> s_lastRepairMs;
-    const long long nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::steady_clock::now().time_since_epoch()).count();
-    auto& last = s_lastRepairMs[senderSlot];
-    const bool repair = (nowMs - last) >= 2000;
     UE_LOGE("coingun[host collect]: slot=%u eid=%u coin=%p dispatch=%d -- the coin is LIVE and the "
-            "balance did NOT move (%d -> %d). The client's mirror is already gone on its side, so "
-            "%s.", senderSlot, p.elementId, coin, dispatched ? 1 : 0, before, after,
-            repair ? "re-announcing world actors to that slot"
-                   : "SKIPPING the re-announce (one fired for this slot < 2 s ago)");
-    if (repair) {
-        last = nowMs;
-        coop::world_actor_sync::QueueConnectBroadcastForSlot(static_cast<int>(senderSlot));
-    }
+            "balance did NOT move (%d -> %d); the client's matching mirror remains live because "
+            "its entry was cancelled.", senderSlot, p.elementId, coin, dispatched ? 1 : 0, before,
+            after);
 }
 
 bool internal::CollectInstalled() { return g_installed.load(std::memory_order_acquire); }
+
+void internal::TickCollect() {
+    if (g_pendingCollects.empty()) return;
+    auto* s = I::Session();
+    if (!s || !s->connected() || s->role() != coop::net::Role::Client) {
+        g_pendingCollects.clear();
+        g_nextCollectRetryMs = 0;
+        return;
+    }
+    const uint64_t now = CollectNowMs();
+    if (now < g_nextCollectRetryMs) return;
+    g_nextCollectRetryMs = now + 250;
+    for (auto it = g_pendingCollects.begin(); it != g_pendingCollects.end();) {
+        void* coin = it->coin.Get();
+        if (!coin || now >= it->expiresMs || !IsHostOwnedCoin(coin) ||
+            TryForwardCollect(coin, L"retry")) {
+            it = g_pendingCollects.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
 
 void internal::InstallCollect() {
     if (g_installed.load(std::memory_order_acquire)) return;
@@ -472,11 +517,10 @@ void internal::OnDisconnectCollect() {
             g_unresolved.load(std::memory_order_relaxed),
             g_noCredit.load(std::memory_order_relaxed),
             g_replayed.load(std::memory_order_relaxed));
-    // Nothing world-scoped is held apart from g_collected, which goes whole: g_actionOptFn is a
-    // UFunction, and the repair throttle is a timestamp map by slot that a new session may reuse (a
-    // stale window can only delay a repair). A consumption guard keyed on a dead world's eids must
-    // not survive into a new session.
+    // Session-owned requests and consumption guards cannot enter the next session.
     g_collected.clear();
+    g_pendingCollects.clear();
+    g_nextCollectRetryMs = 0;
 }
 
 }  // namespace coop::coingun_sync

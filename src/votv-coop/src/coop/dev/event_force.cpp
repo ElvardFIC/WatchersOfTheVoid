@@ -59,7 +59,7 @@ constexpr NoteRow kNotes[] = {
     { "agrav",         "no-op unless lib.isPhysicalEvents (physical-events setting ON)" },
     { "bedEvent",      "arms the dream system -- fires on your NEXT sleep" },
     { "treehouseSleep","fires on your NEXT sleep (kidnap teleport)" },
-    { "earthTp",       "teleports THE TRIGGERING PLAYER immediately (skysphere.tp)" },
+    { "earthTp",       "black-hole sky sequence (skysphere.tp; no player teleport)" },
     { "peace",         "signal joins the SETI pool NOW -- see it in the dish downloads" },
     { "arirSignal",    "signal joins the SETI pool NOW -- see it in the dish downloads" },
     { "arirSpk",       "signal joins the SETI pool NOW -- see it in the dish downloads" },

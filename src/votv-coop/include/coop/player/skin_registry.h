@@ -6,8 +6,8 @@
 // a single-skin pak's stem being both the skin name and the package name the runtime
 // loads. A BUNDLE pak carries several skins, and since assets are addressed by their
 // internal paths its filename says nothing: kSkinBundles maps a stem to its members. A
-// preview tile is a <name>.png or .bmp in a pak directory named after the SKIN -- bundle
-// members and builtins included, neither having a pak of its own.
+// preview tile is a <name>.png or .bmp in a LogicMods subdirectory -- bundle members,
+// builtins and the native dr_kel skin included, none of which need a pak of their own.
 //
 // The catalog half is filesystem only and Entries() has one caller, the UI on the render
 // thread, which is what makes the absence of a lock correct. The usability half loads

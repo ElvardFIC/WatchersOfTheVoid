@@ -141,6 +141,14 @@ void Assembler::Sweep(std::chrono::steady_clock::time_point now, std::chrono::se
 
 void Assembler::Clear() { map_.clear(); }
 
+void Assembler::DiscardThrough(uint8_t senderSlot, uint32_t sequence) {
+    for (auto it = map_.begin(); it != map_.end();) {
+        if (it->first.first == senderSlot && static_cast<int32_t>(sequence - it->first.second) >= 0)
+            it = map_.erase(it);
+        else ++it;
+    }
+}
+
 void Assembler::ClearSlot(uint8_t senderSlot) {
     // Slot teardown is a ROW TRANSITION: slots recycle lowest-free with no observable absence, so
     // person Y's chunks must never merge into person X's half-assembly under the same slot id. The

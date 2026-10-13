@@ -142,6 +142,8 @@ constexpr const wchar_t* kExSpawnSourceClasses[] = {
     L"ticker_wispSpawner_C",  // the ambient sky wisps
     L"prop_coingun_C",        // the sell gun's coin mint
     L"jellyfishPath_C",       // the space jellyfish's seven, on the world-actor lane
+    L"ticker_insomniacSpawner_C", // sleep-deprivation demon; its tick's EX_CallMath spawn
+    L"insomniac_C",           // nightmare/dream actors created by the demon's createDream graph
     L"trigger_eventer_C",       // every list_events row's own spawns
     L"boarInvasion_C",          // the boar war: grayboar_C, npc_ariral_shooter_C, firetank_C
     L"ufoDropper_pig_C",        // the pig drop: grayboar_C
@@ -217,7 +219,8 @@ void InstallExSpawnCatch(void* beginDeferredFn) {
     if (ue_wrap::ufunction_hook::InstallPostHook(beginDeferredFn, &OnBeginDeferredExSpawn)) {
         UE_LOGI("npc-sync[ex-spawn]: Func-thunk catch installed on BeginDeferred (source-gated, %zu "
                 "source classes: the wisp swarm, the pyramid, the sky wisps, the coin gun, the "
-                "jellyfish path, the eventer and its event controllers; EX_CallMath spawns now enroll)",
+                "jellyfish path, the Insomniac dream graph, the eventer and its event controllers; "
+                "EX_CallMath spawns now enroll)",
                 std::size(kExSpawnSourceClasses));
     } else {
         UE_LOGW("npc-sync[ex-spawn]: InstallPostHook FAILED -- EX_CallMath creature spawns will "

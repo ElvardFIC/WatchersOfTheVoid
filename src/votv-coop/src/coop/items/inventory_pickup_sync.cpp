@@ -1,22 +1,28 @@
 // coop/items/inventory_pickup_sync.cpp -- see coop/items/inventory_pickup_sync.h.
 
 #include "coop/items/inventory_pickup_sync.h"
+#include "container_extract_restore.h"
 
 #include "coop/net/protocol.h"
 #include "coop/net/session.h"
 #include "coop/player/players_registry.h"
+#include "coop/props/prop_save_data.h"
 #include "coop/props/prop_sound.h"
 
+#include "ue_wrap/actors/prop.h"
 #include "ue_wrap/engine/engine.h"
 #include "ue_wrap/core/fname_utils.h"
 #include "ue_wrap/core/game_thread.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/object_index.h"
 #include "ue_wrap/core/reflection.h"
+#include "ue_wrap/core/script_gate.h"
 
 #include <atomic>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
+#include <string>
 
 namespace coop::inventory_pickup_sync {
 namespace {
@@ -34,6 +40,72 @@ int32_t g_offSound = -1;
 int32_t g_offPitch = -1;
 int32_t g_offWco   = -1;
 bool    g_observerRegistered = false;
+bool    g_pocketWatchRegistered = false;
+
+// A successful putObjectInventory2 captures getData into the player's personal store and then
+// destroys the actor. Publish the live keyed record before that capture/destruction edge so the
+// host does not retain an older copy and later restore the item's data on another interaction.
+constexpr const wchar_t* kPocketVerb = L"putObjectInventory2";
+constexpr int kPocketTag = 0x504F434B;  // 'POCK'
+ue_wrap::script_gate::Verdict OnPocketPre(const ue_wrap::script_gate::Call& call) {
+    auto* s = g_session.load(std::memory_order_acquire);
+    if (!s || !s->connected() || !call.locals || !call.function) return ue_wrap::script_gate::Verdict::Run;
+    void* local = coop::players::Registry::Get().Local();
+    if (!local || call.object != local) return ue_wrap::script_gate::Verdict::Run;
+
+    static ue_wrap::CachedObjRef s_fn;
+    static int32_t s_inputOff = -1;
+    static int32_t s_returnOff = -1;
+    if (!s_fn.Is(call.function)) {
+        s_fn.Set(call.function);
+        s_inputOff = R::FindParamOffset(call.function, L"InputPin");
+        s_returnOff = R::FindParamOffset(call.function, L"return");
+        const int32_t frame = R::FunctionFrameSize(call.function);
+        if (s_inputOff < 0 || s_inputOff > frame || sizeof(void*) > frame - s_inputOff)
+            s_inputOff = -1;
+        if (s_returnOff < 0 || s_returnOff >= frame) s_returnOff = -1;
+        if (s_inputOff < 0)
+            UE_LOGW("inventory_pickup: %ls InputPin did not resolve -- mutable pocket state cannot be published",
+                    kPocketVerb);
+    }
+    if (s_inputOff < 0) return ue_wrap::script_gate::Verdict::Run;
+    const auto cancelPickup = [&] {
+        // Cancel preserves out parameters. A reused caller frame may still hold
+        // true from its previous pickup: explicitly report that no transfer took place.
+        if (s_returnOff >= 0) {
+            call.locals[s_returnOff] = 0;
+            if (uint8_t* out = ue_wrap::script_gate::OutParamPtr(call, s_returnOff)) *out = 0;
+        }
+        return ue_wrap::script_gate::Verdict::Cancel;
+    };
+    void* actor = nullptr;
+    std::memcpy(&actor, call.locals + s_inputOff, sizeof(actor));
+    if (!actor || !R::IsLive(actor) || !ue_wrap::prop::IsKeyedInteractable(actor))
+        return ue_wrap::script_gate::Verdict::Run;
+    ue_wrap::CachedObjRef carrier;
+    carrier.Set(actor);
+    const auto extracted = detail::RestoreContainerCarrier(call, actor);
+    if (extracted != detail::ExtractRestore::Unrelated) {
+        if (extracted == detail::ExtractRestore::Failed)
+            UE_LOGW("inventory_pickup: container carrier restore failed; native extraction continues");
+        // The container lane owns this transfer. A temporary carrier's pre-pocket record must
+        // not become a stale parked world update. If pocketing fails, the normal spawn drain
+        // publishes the surviving, now restored world actor instead.
+        return carrier.Get() == actor ? ue_wrap::script_gate::Verdict::Run
+                                      : cancelPickup();
+    }
+    const std::wstring key = ue_wrap::prop::GetInteractableKeyString(actor);
+    if (carrier.Get() != actor) return cancelPickup();
+    if (key.empty() || key == L"None") return ue_wrap::script_gate::Verdict::Run;
+    if (!coop::prop_save_data::PrepareForCapture(actor, key))
+        return cancelPickup();
+    const std::wstring className = R::ClassNameOf(actor);
+    if (coop::prop_save_data::Publish(s, actor, key))
+        UE_LOGI("inventory_pickup: published mutable state before pocketing key='%ls' cls='%ls'",
+                key.c_str(), className.c_str());
+    return carrier.Get() == actor ? ue_wrap::script_gate::Verdict::Run
+                                  : cancelPickup();
+}
 
 // POST observer on UGameplayStatics::PlaySound2D, which dispatches at human-event rate game-wide
 // (UI clicks, 2D cues); the body is three cached-offset reads and compares, exiting on the first
@@ -75,6 +147,13 @@ void OnPlaySound2DPost(void* /*self*/, void* /*function*/, void* params) {
 
 void Install(coop::net::Session* session) {
     g_session.store(session, std::memory_order_release);
+    if (!g_pocketWatchRegistered &&
+        ue_wrap::script_gate::WatchName(kPocketVerb, kPocketTag, &OnPocketPre, nullptr)) {
+        g_pocketWatchRegistered = true;
+        UE_LOGI("inventory_pickup: watching %ls -- keyed save state publishes before pocket capture",
+                kPocketVerb);
+    }
+    ue_wrap::script_gate::ResolvePendingNames();
     if (g_observerRegistered) return;
 
     if (!g_playSound2DFn) {

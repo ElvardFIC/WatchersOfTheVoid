@@ -3,6 +3,7 @@
 #include "coop/player/players_registry.h"
 #include "coop/net/protocol.h"
 #include "coop/net/session.h"
+#include "coop/props/active_drive.h"
 #include "ue_wrap/core/call.h"
 #include "ue_wrap/engine/engine.h"
 #include "ue_wrap/core/game_thread.h"
@@ -10,8 +11,10 @@
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/sdk_profile.h"
 #include "ue_wrap/core/types.h"
+#include "ue_wrap/engine/world_identity.h"
 
 #include <atomic>
+#include <array>
 #include <cmath>
 #include <string>
 
@@ -25,6 +28,17 @@ namespace GT = ue_wrap::game_thread;
 namespace {
 
 std::atomic<coop::net::Session*> g_session{nullptr};
+struct PendingGather {ApplyArgs args{};uint64_t deadline=0,retryAt=0,serial=0;bool active=false;};
+std::array<PendingGather,coop::net::kMaxPeers> g_gathers{};
+coop::net::Session* g_gatherSession=nullptr;
+uint32_t g_gatherWorld=0;
+uint64_t g_gatherSerial=0;
+void RefreshGathers(coop::net::Session* s) {
+    const auto world=ue_wrap::world_identity::Generation();
+    if(g_gatherSession!=s||g_gatherWorld!=world||!s||!s->connected()) {
+        g_gathers={};g_gatherSession=s;g_gatherWorld=world;++g_gatherSerial;
+    }
+}
 
 // Cached teleportWObackrooms UFunction. VOTV's own player constraints silently revert a
 // large-distance K2_TeleportTo or SetActorLocation -- the actor snaps back near the save spawn,
@@ -150,6 +164,52 @@ void SnapshotAndSendToSlot(coop::net::Session* s, int slot) {
 }
 
 }  // namespace
+
+void GatherOthersTo(uint8_t anchorSlot, float x, float y, float z, float yaw) {
+    auto* s = g_session.load(std::memory_order_acquire);
+    RefreshGathers(s);
+    if (!s || !s->connected() || s->role() != coop::net::Role::Host) return;
+    if(anchorSlot>=coop::net::kMaxPeers)return;
+    if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z) || !std::isfinite(yaw)) return;
+    const uint8_t localSlot = coop::players::Registry::Get().LocalPeerId();
+    const auto now=coop::active_drive::NowMs();
+    g_gathers[anchorSlot]={}; // a newer event cannot move its own initiator to an older anchor
+    for (int slot = 0; slot < coop::net::kMaxPeers; ++slot) {
+        if (static_cast<uint8_t>(slot) == anchorSlot) continue;
+        const float ang = (slot + 1) * 1.7f;
+        const ApplyArgs args{ x + std::cos(ang) * 110.f, y + std::sin(ang) * 110.f, z,
+                              0.f, yaw, 0.f };
+        if (slot!=localSlot && (!s->HasPeerConn(slot)||!s->IsSlotWorldReady(slot))) {g_gathers[slot]={};continue;}
+        g_gathers[slot]={args,now+5000,now,++g_gatherSerial,true};
+    }
+    TickGather();
+    UE_LOGI("teleport_client: requested gather to slot %u at (%.0f, %.0f, %.0f)",
+            static_cast<unsigned>(anchorSlot), x, y, z);
+}
+
+void TickGather() {
+    auto* s=g_session.load(std::memory_order_acquire);RefreshGathers(s);
+    if(!s||!s->connected()||s->role()!=coop::net::Role::Host)return;
+    const auto now=coop::active_drive::NowMs();const auto world=g_gatherWorld;
+    const auto local=coop::players::Registry::Get().LocalPeerId();
+    for(int slot=0;slot<coop::net::kMaxPeers;++slot) {
+        auto& pending=g_gathers[slot];if(!pending.active)continue;
+        if(now>=pending.deadline || (slot!=local&&(!s->HasPeerConn(slot)||!s->IsSlotWorldReady(slot)))) {pending={};continue;}
+        if(now<pending.retryAt)continue;
+        const auto copy=pending;pending.retryAt=now+200;
+        bool ok=false;
+        if(slot==local)ok=ApplyLocally(copy.args);
+        else {
+            coop::net::TeleportClientPayload p{};
+            p.locX=copy.args.locX;p.locY=copy.args.locY;p.locZ=copy.args.locZ;
+            p.rotPitch=copy.args.rotPitch;p.rotYaw=copy.args.rotYaw;p.rotRoll=copy.args.rotRoll;
+            ok=s->SendReliableToSlot(slot,coop::net::ReliableKind::TeleportClient,&p,sizeof(p));
+        }
+        if(g_session.load()!=s||ue_wrap::world_identity::Generation()!=world)return;
+        if(ok&&pending.serial==copy.serial)pending={};
+    }
+}
+void ClearGather(){g_gathers={};g_gatherSession=nullptr;++g_gatherSerial;}
 
 void TeleportClientsToHost() {
     // Sender-gates to Role::Host only -- on a client this is a no-op (per scope:

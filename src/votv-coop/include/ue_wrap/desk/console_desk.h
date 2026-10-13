@@ -55,6 +55,9 @@ bool EnsureResolved();
 // when the class or instance has not loaded.
 void* Instance();
 
+// Native shortCircuit guard; the sequence owns sparks/sound and finishes in a blackout.
+bool ReadShortCircuit(void* desk, bool& active);
+
 // The console's parameterless painter verbs, one bit each. A caller names the ones the field it
 // changed actually needs, because the chain is NOT side-effect free: `updToggles` ends by nulling
 // the local player's `lookAtComponent` (the game's own look-at invalidation, see the chain in

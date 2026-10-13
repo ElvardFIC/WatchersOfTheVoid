@@ -32,6 +32,7 @@ void CaptureJoinSnapshot(int peerSlot);
 void CancelJoinSnapshot(int peerSlot);
 void QueueConnectResetForSlot(int peerSlot);
 void QueueConnectArmForSlot(int peerSlot);
+void OnPeerLeft(int peerSlot);
 
 void OnDisconnect();
 

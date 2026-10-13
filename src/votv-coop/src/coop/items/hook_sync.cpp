@@ -2,6 +2,7 @@
 // anchor is hook_anchor.cpp; see the header for the authority split both halves share.
 
 #include "coop/items/hook_sync.h"
+#include "coop/items/hook_retrieve.h"
 
 #include "coop/items/hook_anchor.h"
 #include "coop/items/hook_constraint.h"       // the tie lives on the host: bites, breaks
@@ -405,6 +406,7 @@ void Install(coop::net::Session* session) {
     if (!GT::IsGameThread()) return;
     detail::SetSession(session);
     coop::hook_anchor::Install(session);
+    coop::hook_retrieve::Install(session);
     coop::hook_constraint::Install(session);
     detail::RegisterWorldHooksScan();
     if (g_parkInstalled || g_parkRefused) return;
@@ -441,6 +443,7 @@ void Tick() {
     TickOwner(now);
     PruneMirrors();
     coop::hook_anchor::TickHost(now);
+    coop::hook_retrieve::Tick();
     if (s->role() == coop::net::Role::Host) detail::TickPropClaims();
 }
 
@@ -578,6 +581,7 @@ void OnPeerLeftSlot(int slot) {
     }
     g_saidSlotFull = static_cast<uint8_t>(g_saidSlotFull & ~(1u << (slot & 7u)));
     coop::hook_anchor::OnPeerLeftSlot(slot);
+    coop::hook_retrieve::OnPeerLeftSlot(slot);
     if (dropped) UE_LOGI("hook_sync: slot %d left -- %zu owner-phase mirrors dropped", slot, dropped);
 }
 
@@ -612,6 +616,7 @@ void OnDisconnect() {
     g_parkRefused   = false;
 
     coop::hook_anchor::OnDisconnect();
+    coop::hook_retrieve::OnDisconnect();
     coop::hook_constraint::OnDisconnect();
     H::ResetCache();
     detail::SetSession(nullptr);

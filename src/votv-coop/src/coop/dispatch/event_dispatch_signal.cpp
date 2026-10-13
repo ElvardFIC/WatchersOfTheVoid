@@ -491,14 +491,13 @@ bool HandleSignalEvent(net::Session& /*session*/,
         break;
     }
     case net::ReliableKind::DishAimState: {
-        // The claim owner's dish-aim stream (host-relayed). The holder gate lives in
-        // OnDishAim.
-        if (msg.payloadLen < sizeof(net::DishAimStatePayload)) {
+        // Client samples terminate at the host; only its canonical reaches observers.
+        if (msg.payloadLen < sizeof(net::DeskVisualPayload)) {
             UE_LOGW("event_feed: DishAimState payload too short (%zu < %zu)",
-                    static_cast<size_t>(msg.payloadLen), sizeof(net::DishAimStatePayload));
+                    static_cast<size_t>(msg.payloadLen), sizeof(net::DeskVisualPayload));
             break;
         }
-        net::DishAimStatePayload ap{};
+        net::DeskVisualPayload ap{};
         std::memcpy(&ap, msg.payload, sizeof(ap));
         const uint8_t aslot =
             (msg.senderPeerSlot >= 0 && msg.senderPeerSlot < net::kMaxPeers)

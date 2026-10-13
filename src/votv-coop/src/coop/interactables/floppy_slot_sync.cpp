@@ -35,7 +35,9 @@ namespace GT = ue_wrap::game_thread;
 
 std::atomic<coop::net::Session*> g_session{nullptr};
 
-constexpr uint64_t kSweepMs = 1000;   // the server lane's own cadence
+// Slot occupancy is interaction state. A one-second poll lets an eject race an insert that the
+// other peer has not observed yet. The digest read is allocation-free for empty slots.
+constexpr uint64_t kSweepMs = 50;
 
 // The identity is the device's index in its kind's own list, and the list is the gamemode's
 // servers[]: the level places the boxes, so both peers build the same order. The cap is
@@ -185,6 +187,12 @@ std::set<uint32_t> g_unsendable;     // slots this peer cannot put on the wire a
 // connect set is its own blob and a refused one is retried alone: the boxes' set landing first says
 // nothing about the laptop.
 bool g_haveCanonical[FS::kDeviceKindCount] = {};
+
+// The connect snapshot can arrive before the local gamemode has populated its device array.
+// Retain canonical values until their target exists so a later local save load cannot be claimed
+// over the host's value.
+std::map<uint32_t, Slot> g_pendingCanonical;
+std::map<uint32_t, uint32_t> g_pendingCanonicalGen;
 
 // CLIENT: a claim the host drops -- for its rate, its size, a bad index or a malformed body --
 // gets no answer of any kind, and this peer primed its shadow when the claim was SENT. Without
@@ -351,6 +359,31 @@ bool ApplySlot(FS::DeviceKind kind, size_t index, void* device, const Slot& s) {
     PrimeShadow(kind, index, device);
     PrimeQuadIfLaptop(kind);
     return true;
+}
+
+// Apply staged host values when a device that was not present during the connect snapshot appears.
+// The canonical is retained per device index; a later host value replaces an earlier staged one.
+void DrainPendingCanonicals(FS::DeviceKind kind, const std::vector<void*>& devices) {
+    for (auto it = g_pendingCanonical.begin(); it != g_pendingCanonical.end();) {
+        if (static_cast<FS::DeviceKind>(it->first >> 16) != kind) { ++it; continue; }
+        const size_t index = static_cast<uint16_t>(it->first);
+        if (index >= devices.size() || !devices[index] || !R::IsLive(devices[index])) {
+            ++it;
+            continue;
+        }
+        ApplySlot(kind, index, devices[index], it->second);
+        g_haveCanonical[static_cast<uint8_t>(kind)] = true;
+        if (kind == FS::DeviceKind::Laptop) {
+            const auto gen = g_pendingCanonicalGen.find(it->first);
+            if (gen != g_pendingCanonicalGen.end()) {
+                g_laptopGen = gen->second;
+                g_pendingCanonicalGen.erase(gen);
+            }
+        } else {
+            g_pendingCanonicalGen.erase(it->first);
+        }
+        it = g_pendingCanonical.erase(it);
+    }
 }
 
 // ---- host ----
@@ -584,6 +617,14 @@ void Tick() {
     if (host) DrainConnectRetries(s);
 
     for (FS::DeviceKind kind : kKinds) SweepKind(s, kind, host);
+    if (!host) {
+        for (FS::DeviceKind kind : kKinds) {
+            if (!FS::EnsureResolved(kind)) continue;
+            std::vector<void*> devices;
+            ReadDevices(kind, devices);
+            DrainPendingCanonicals(kind, devices);
+        }
+    }
 }
 
 void OnChunk(const coop::net::BlobChunkPayload& p, uint8_t senderSlot) {
@@ -606,17 +647,17 @@ void OnChunk(const coop::net::BlobChunkPayload& p, uint8_t senderSlot) {
         return;
     }
     const auto kind = static_cast<FS::DeviceKind>(kindB);
-    if (!FS::EnsureResolved(kind)) {
-        UE_LOGW("floppy_slot_sync: chunk arrived before %u resolved -- dropped (the 1 Hz sweep "
-                "and the connect set re-deliver)", static_cast<unsigned>(kindB));
-        return;
-    }
-    std::vector<void*> devices;
-    const size_t n = ReadDevices(kind, devices);
     const bool host = IsHost();
 
     if (op == kOpClaim) {
         if (!host) return;  // a client never takes another peer's claim; only the host's canonical
+        if (!FS::EnsureResolved(kind)) {
+            UE_LOGW("floppy_slot_sync: claim arrived before device kind %u resolved -- dropped; "
+                    "the client's answer deadline will retry it", static_cast<unsigned>(kindB));
+            return;
+        }
+        std::vector<void*> devices;
+        const size_t n = ReadDevices(kind, devices);
         if (blob.size() > kMaxSlotBytes) {
             UE_LOGW("floppy_slot_sync: claim from slot %u is %zu B, past the %zu B ceiling -- "
                     "dropped", static_cast<unsigned>(senderSlot), blob.size(), kMaxSlotBytes);
@@ -680,25 +721,38 @@ void OnChunk(const coop::net::BlobChunkPayload& p, uint8_t senderSlot) {
                 "dropped", static_cast<unsigned>(count), kMaxDevices);
         return;
     }
-    int applied = 0, skipped = 0, unchanged = 0;
+    std::vector<std::pair<uint8_t, Slot>> parsed;
+    parsed.reserve(count);
     for (uint16_t k = 0; k < count && r.ok; ++k) {
         const uint8_t index = r.U8();
         Slot in;
         if (!ParseSlot(r, in)) break;
-        if (index >= n || !devices[index] || !R::IsLive(devices[index])) { ++skipped; continue; }
-        if (!FS::IsSlotType(in.st.floppyType)) { ++skipped; continue; }
-        g_awaiting.erase(ShadowKey(kind, index));
-        if (ApplySlot(kind, index, devices[index], in)) ++applied;
-        else ++unchanged;
+        if (index >= kMaxDevices || !FS::IsSlotType(in.st.floppyType)) {
+            UE_LOGW("floppy_slot_sync: canonical carries invalid device=%u type=%d -- whole "
+                    "canonical dropped", static_cast<unsigned>(index), in.st.floppyType);
+            return;
+        }
+        parsed.emplace_back(index, std::move(in));
     }
-    if (!r.ok)
-        UE_LOGW("floppy_slot_sync: canonical truncated after %d of %u device(s)",
-                applied + unchanged + skipped, count);
-    g_haveCanonical[kindB] = true;
-    if (kind == FS::DeviceKind::Laptop && r.ok) g_laptopGen = gen;
-    if (applied || skipped)
-        UE_LOGI("floppy_slot_sync: CLIENT applied canonical -- %d device(s) written, %d already "
-                "matched, %d skipped (of %zu local)", applied, unchanged, skipped, n);
+    if (!r.ok || parsed.size() != count || r.off != blob.size()) {
+        UE_LOGW("floppy_slot_sync: malformed canonical (%zu of %u device(s), %zu trailing B) -- "
+                "whole canonical dropped", parsed.size(), count,
+                r.off <= blob.size() ? blob.size() - r.off : 0);
+        return;
+    }
+    for (auto& entry : parsed) {
+        const uint32_t key = ShadowKey(kind, entry.first);
+        g_awaiting.erase(key);
+        g_pendingCanonical[key] = std::move(entry.second);
+        if (kind == FS::DeviceKind::Laptop) g_pendingCanonicalGen[key] = gen;
+    }
+    std::vector<void*> devices;
+    if (FS::EnsureResolved(kind)) ReadDevices(kind, devices);
+    const size_t before = g_pendingCanonical.size();
+    DrainPendingCanonicals(kind, devices);
+    const size_t applied = before - g_pendingCanonical.size();
+    UE_LOGI("floppy_slot_sync: CLIENT canonical -- %zu device(s) reconciled, %zu staged until "
+            "their local targets exist", applied, g_pendingCanonical.size());
 }
 
 void QueueConnectBroadcastForSlot(int peerSlot) {
@@ -741,6 +795,8 @@ void OnDisconnect() {
     g_retry.clear();
     g_unsendable.clear();
     g_awaiting.clear();
+    g_pendingCanonical.clear();
+    g_pendingCanonicalGen.clear();
     g_connectRetry.clear();
     for (bool& have : g_haveCanonical) have = false;
     g_laptopGen = 0;

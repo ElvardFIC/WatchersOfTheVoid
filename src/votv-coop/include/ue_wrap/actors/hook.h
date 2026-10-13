@@ -83,6 +83,13 @@ struct State {
 };
 bool ReadState(void* hookActor, State& out);
 
+// Traceable endpoints on a parked client anchor, with no physics or overlap events.
+bool EnableAnchorQueries(void* actor);
+bool ReadAnchorEnds(void* actor, FVector& head, FVector& tail);
+// Native drophook override (normal/flesh/rope), then retire the deployed anchor.
+// The recovered prop stays in the world for the ordinary inventory pickup path.
+bool RecoverToWorld(void* actor, void* atActor);
+
 // The two actors a hook's ends are tied to: `actor_a` is what the head bit, `actor_b` the tail's
 // anchor -- the thrower while the hook is in hand (attach_a writes the player there), the second
 // anchor once attach_b has run. Raw field reads; either can be null, and a caller that keeps one

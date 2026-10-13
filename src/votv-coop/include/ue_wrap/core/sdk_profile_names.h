@@ -168,6 +168,7 @@ inline constexpr const wchar_t* kWorldActorAllowlist[] = {
                                    // EX_CallMath, so this entry alone does nothing: prop_coingun_C in
                                    // kExSpawnSourceClasses lets the Func-thunk drain reach
                                    // world_actor_sync::HostEnrollExSpawn, which allocates the eid.
+    L"dreamer_dreambase_C",         // the sleep-horror dreambase event actor (host spawn + transform lane)
 };
 inline constexpr size_t kWorldActorAllowlistSize =
     sizeof(kWorldActorAllowlist) / sizeof(kWorldActorAllowlist[0]);

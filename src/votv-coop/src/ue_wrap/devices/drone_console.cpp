@@ -55,6 +55,13 @@ bool IsCursorOnKeyboard(void* console) {
     return ConsoleBool(console, g_conKeyboardOff, L"lookatKeyboard", on) && on;
 }
 
+bool IsCursorOnDeparture(void* console) {
+    if (!IsConsole(console)) return false;
+    int32_t off = -1; uint8_t mask = 0;
+    return R::FindBoolProperty(R::ClassOf(console), L"lookat_changeTime", off, mask) &&
+           (static_cast<const uint8_t*>(console)[off] & mask) != 0;
+}
+
 bool IsCursorOnLid(void* console) {
     bool on = false;
     return ConsoleBool(console, g_conLidOff, L"lookatDoor", on) && on;

@@ -58,6 +58,8 @@ bool  ReadLog(void* term, std::wstring& out);  // the printed lines, the last 30
 bool CallInit(void* term, const std::wstring& name, bool hide, void* dish);
 bool RunCommand(void* term, const std::wstring& line);
 bool CallWriteToLog(void* term, const std::wstring& text, uint8_t bracketsType);
+// Native clr's display-only effect; no command parser or world effects.
+bool ClearLog(void* term);
 bool ConsumeInput(void* term);
 
 // The panels, named by the placed actor's name, which the map gives every machine alike: a panel's

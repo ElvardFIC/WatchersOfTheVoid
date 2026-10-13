@@ -141,10 +141,13 @@ int64_t SendRateControl::ServedPeak_(const Measured& m) {
     return peak;
 }
 
+void SendRateControl::NoteBaseRtt_(Measured& m, int rttMs) {
+    if (rttMs<=0) return; // GNS can report an unavailable ping as zero
+    const int bounded=rttMs<kMaxBaseRttMs ? rttMs : kMaxBaseRttMs;
+    if (m.baseRttMs<0 || bounded<m.baseRttMs) m.baseRttMs=bounded;
+}
+
 void SendRateControl::Steer_(Measured& m) {
-    // THE LAW. Every term below is a byte count or a ratio of two byte counts; nothing here is
-    // compared against a reference derived from its own past, which is the single property both
-    // refuted laws lacked (docs/send-path.md carries the measurement that refutes them).
 
     // An idle link decides nothing. A rate is a CEILING, so with nothing queued it costs nothing to
     // leave where it is -- and a rate raised on an empty link is the rate the next burst opens at,
@@ -179,13 +182,20 @@ void SendRateControl::Steer_(Measured& m) {
                  : m.relBps > 0 ? unacked * 1000 / m.relBps
                                 : kQueueBrakeMs * 2;
 
-    if (m.inflightMs > kQueueBrakeMs) {
+    // ACK time includes propagation even on an empty path. An absolute 150 ms
+    // climb gate strands a healthy 200 ms link at its opening rate (or below).
+    // Unlike the old rolling-baseline law, this minimum never rises under load;
+    // the delivery anchor remains the final bound on every growth decision.
+    const int base=m.baseRttMs>0 ? m.baseRttMs : 0;
+    m.excessMs=m.inflightMs>base ? m.inflightMs-base : 0;
+    if (unacked>0 && m.relBps<=0) m.excessMs=kQueueBrakeMs*2;
+    if (m.excessMs > kQueueBrakeMs) {
         // Braking goes straight to the measurement rather than to a fraction of the current rate:
         // a multiplicative back-off from a rate that is already hundreds of times too high takes
         // hundreds of decisions to arrive, and the link has been telling us its capacity all along.
         m.rateBps = m.servedBps;
         ++m.brakeCount;
-    } else if (m.inflightMs <= kQueueClimbMs) {
+    } else if (m.excessMs <= kQueueClimbMs) {
         m.rateBps = m.rateBps * kClimbNum / kClimbDen + kClimbStepBps;
         ++m.climbCount;
     } else {
@@ -248,6 +258,7 @@ void SendRateControl::Sample(int slot, const LinkSample& in, uint64_t nowMs) {
                static_cast<int64_t>(in.pendingUnreliable) +
                static_cast<int64_t>(in.backlogBytes);
     m.last = in;
+    NoteBaseRtt_(m,in.gnsPingMs);
     // Busy in EITHER direction. A link with queued work of its own is busy, and so is one merely
     // delivering to us at megabytes a second: the receive counter is the second, independent
     // measurement a sender's goodput estimate gets checked against, and a downloading joiner has
@@ -327,7 +338,7 @@ void SendRateControl::Sample(int slot, const LinkSample& in, uint64_t nowMs) {
     // a finished transfer is in the log.
     if (m.sawTraffic || m.wasBusy) {
         UE_LOGI("send_rate[slot %d]: goodput=%lld B/s (peak %lld B/s) recv=%lld B/s "
-                "rate=%lld B/s gnsRate=%d B/s over=%lld%% served=%lld B/s inflight=%lld ms "
+                "rate=%lld B/s gnsRate=%d B/s over=%lld%% served=%lld B/s inflight=%lld ms baseRtt=%d excess=%lld ms "
                 "law climb=%d brake=%d anchor=%d dead=%d hold=%d writes=%d "
                 "rtt=%d ms win=%d/%d/%d (min/avg/max) rttMin=%d queueDelay=%d "
                 "ping=%d probes sent=%d echo=%d refused=%d lost=%d stray=%d skipped=%d "
@@ -338,6 +349,7 @@ void SendRateControl::Sample(int slot, const LinkSample& in, uint64_t nowMs) {
                 static_cast<long long>(m.rateBps), m.last.gnsRateBps,
                 static_cast<long long>(overPct), static_cast<long long>(m.servedBps),
                 static_cast<long long>(m.inflightMs),
+                m.baseRttMs, static_cast<long long>(m.excessMs),
                 m.climbCount, m.brakeCount, m.anchorCount, m.deadCount, m.holdCount, m.rateWrites,
                 m.rttLastMs,
                 m.rttMinWindow, rttAvg, m.rttMaxWindow, rttMin, queueDelay, m.last.gnsPingMs,
@@ -411,6 +423,7 @@ void SendRateControl::NoteProbeReply(int slot, const LinkProbePayload& reply, ui
         // genuinely measures 0, and an unfloored 0 would make the accelerate test trivially true.
         const int raw = static_cast<int>(nowMs - sentMs);
         const int rtt = raw < 1 ? 1 : raw;
+        NoteBaseRtt_(m,rtt);
         m.rttLastMs = rtt;
         ++m.probesReplied;
         m.rttSumWindow += rtt;
@@ -425,11 +438,9 @@ void SendRateControl::NoteProbeReply(int slot, const LinkProbePayload& reply, ui
         } else if (rtt < m.rttBucketMin[b]) {
             m.rttBucketMin[b] = rtt;
         }
-        // The law is NOT run here, and that is the point of this change: a round trip is recorded
-        // and reported, never steered on. It stays because it is the only true round trip we can
-        // see -- the transport's own ping read 0 in every sample of both archived runs -- and
-        // because it is the cross-check that says whether the byte-derived `inflight` is telling
-        // the truth about a real link. RULE 2 exempts instruments; this is one.
+        // Decisions still run only at Sample cadence. A validated echo can lower
+        // the propagation baseline when GNS ping is unavailable; it cannot raise
+        // that baseline to disguise a persistent queue.
         return;
     }
     // An echo for a token we do not have outstanding: a reply that came back after its probe was

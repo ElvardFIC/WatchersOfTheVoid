@@ -3,7 +3,7 @@
 #include "coop/interactables/device_occupancy.h"
 
 #include "coop/comms/peer_action_feed.h"  // the busy-notice chat line (AnnounceDirect)
-#include "coop/interactables/atv_sync.h"  // IsOccupiedByOther -> ATV seating deny gate
+#include "coop/interactables/atv_sync.h"  // IsOccupiedByOther -> ATV driver-seat deny gate
 #include "coop/interactables/desk_input_sync.h"  // PingActiveSlot, the desk FSM-hold
 #include "coop/net/session.h"
 #include "coop/net/wire_key_util.h"
@@ -218,10 +218,12 @@ void OnUseInputPre(void* self, void*, void*) {
     void* aimed = ue_wrap::engine::ReadMainPlayerLookAtActor(self);
     if (!aimed) return;
 
-    // The ATV occupancy gate: if another peer is already seated on this ATV, deny seating.
+    // An occupied or carried ATV cannot enter the E menu. A carrier's physics
+    // handle must be released before a rider takes control of the rig.
     if (ue_wrap::atv::EnsureResolved() && ue_wrap::atv::IsAtv(aimed)) {
         uint8_t holder = 0xFF;
-        if (coop::atv_sync::IsOccupiedByOther(aimed, &holder)) {
+        if (coop::atv_sync::IsHeldForMount(aimed, &holder) ||
+            coop::atv_sync::IsOccupiedByOther(aimed, &holder)) {
             g_memoName = L"the ATV";
             g_memoKey = L"atv";
             g_memoLastTick = coop::net_pump::TickSerial() + kMemoFreshTicks;

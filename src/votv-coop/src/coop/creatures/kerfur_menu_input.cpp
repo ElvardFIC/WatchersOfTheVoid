@@ -30,8 +30,7 @@ bool g_installed = false;  // observer-registration latch (the cb stays register
 // bytecode-verified (votv-npc-action-menu-RE, kerfurOmega::getActionOptions):
 //   [0:turn_off, 1:follow, 2:idle, 3:patrol, 4:fix_servers, 5:get_reports, 6:fix_transformers,
 //    7:take_object, 8:pat, 9:equipment].
-// We relay only the 6 State verbs (1..6). turn_off is poll-driven (kerfur_convert); take_object /
-// pat / equipment are out of v1 scope (held-object resolution / cosmetic montage / per-player UI).
+// turn_off is poll-driven (kerfur_convert). take_object, pat and equipment ride the same relay.
 const wchar_t* VerbFromNonBusyIndex(int32_t idx) {
     switch (idx) {
         case 1: return L"follow";
@@ -40,16 +39,18 @@ const wchar_t* VerbFromNonBusyIndex(int32_t idx) {
         case 4: return L"fix_servers";
         case 5: return L"get_reports";
         case 6: return L"fix_transformers";
+        case 7: return L"take_object";
+        case 8: return L"pat";
+        case 9: return L"equipment";
         default: return nullptr;
     }
 }
 
 // CLIENT radial-confirm detection. PRE observer on AmainPlayer_C::InpActEvt_use (PE-visible; the
 // SAME seam interactable_sync uses for doors). Fires BEFORE the local useSelectedAction body, so
-// actionIndex/releaseEToUse still hold the selection. We do NOT cancel: the local actionName then
-// runs transiently on the parked mirror and the host's authoritative State stream re-asserts it (no
-// flicker for an accepted verb). Puppets are unpossessed -> never process input -> this fires only
-// for the local player.
+// actionIndex/releaseEToUse still hold the selection. This observer does not cancel the input:
+// actionName then runs, and its interceptor cancels that dispatch and keeps a single record.
+// Puppets are unpossessed, so this fires only for the local player.
 void OnUseInputPre(void* self, void* /*function*/, void* /*params*/) {
     if (!self) return;
     auto* s = g_session.load(std::memory_order_acquire);
@@ -64,11 +65,14 @@ void OnUseInputPre(void* self, void* /*function*/, void* /*params*/) {
     bool spooky = false;
     uint8_t face = 0;
     if (!ue_wrap::kerfur::ReadKerfurState(kerfur, state, spooky, face)) return;
-    // A BUSY kerfur (State 3/4/5 = the fix_servers/get_reports/fix_transformers task) offers only
-    // [turn_off, equipment] -> no State verb is reachable, so an index here would mis-map. Skip.
-    if (state == 3 || state == 4 || state == 5) return;
-    const wchar_t* verb = VerbFromNonBusyIndex(idx);
-    if (!verb) return;  // turn_off (poll) / take_object / pat / equipment -> not relayed in v1
+    // A BUSY kerfur (State 3/4/5) offers only [turn_off, equipment]. Index 1 is equipment.
+    const wchar_t* verb = nullptr;
+    if (state == 3 || state == 4 || state == 5) {
+        if (idx == 1) verb = L"equipment";
+    } else {
+        verb = VerbFromNonBusyIndex(idx);
+    }
+    if (!verb) return;  // turn_off stays with kerfur_convert
     // InpActEvt_use fires on BOTH press + release; releaseEToUse already isolates the confirm, but
     // collapse any same-kerfur repeat within a tap window defensively (game-thread-only map).
     static std::unordered_map<void*, std::chrono::steady_clock::time_point> s_last;

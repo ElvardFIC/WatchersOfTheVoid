@@ -6,9 +6,12 @@
 #include "coop/player/players_registry.h"
 #include "coop/player/remote_player.h"
 #include "coop/props/prop_echo_suppress.h"
+#include "coop/props/prop_fire_sync.h"
 #include "coop/props/trash_collect_sync.h"  // EnsureHeldItemBroadcast (hand-edge world release)
 #include "ue_wrap/engine/engine.h"
 #include "ue_wrap/actors/prop.h"
+#include "ue_wrap/actors/canned_food.h"
+#include "ue_wrap/actors/prop_fire.h"
 #include "ue_wrap/actors/puppet.h"  // GetSkeletalMeshComponent (owner head-bone anchor for the hold measure)
 #include "ue_wrap/core/fname_utils.h"
 #include "ue_wrap/core/game_thread.h"
@@ -18,8 +21,10 @@
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/types.h"
+#include "ue_wrap/core/cached_obj_ref.h"
 
 #include <cmath>
+#include <chrono>
 #include <cstring>
 #include <cwchar>
 #include <string>
@@ -34,7 +39,7 @@ namespace E = ue_wrap::engine;
 // Wire caps: class names and item names are short ASCII, one length byte each.
 constexpr size_t kMaxStr = 63;
 // The largest HandItem: slot, has, three length-prefixed strings at the cap, the hold transform.
-static_assert(2 + 3 * (1 + kMaxStr) + 6 * sizeof(float) <= static_cast<size_t>(coop::net::kMaxReliablePayload),
+static_assert(2 + 3 * (1 + kMaxStr) + 6 * sizeof(float) + sizeof(uint32_t) + 2 <= static_cast<size_t>(coop::net::kMaxReliablePayload),
               "a HandItem at its string caps must fit one reliable datagram");
 
 // Display placement: the held item appears in front of the camera, as in the single-player
@@ -54,6 +59,7 @@ constexpr float kFallbackRelPos[3] = {45.f, 10.f, -40.f};  // fwd/right/up cm
 
 // Per-slot wire state: what each peer's hand holds.
 struct SlotHand {
+    uint32_t generation = 0;
     bool has = false;
     std::wstring cls;   // BP class name, e.g. L"prop_physgun_C"
     std::wstring name;  // Aprop_C 'name' FName (drives the generic prop mesh), may be empty
@@ -63,6 +69,8 @@ struct SlotHand {
     float relPos[3] = {kFallbackRelPos[0], kFallbackRelPos[1], kFallbackRelPos[2]};
     float relRot[3] = {0.f, 0.f, 0.f};  // item rotator {pitch,yaw,roll} in the view frame
     bool  haveRel = false;              // owner measured (vs the fallback defaults)
+    bool hasCan = false;
+    ue_wrap::canned_food::State can;
 };
 SlotHand g_hands[coop::players::kMaxPeers];  // GT-only
 
@@ -70,6 +78,10 @@ SlotHand g_hands[coop::players::kMaxPeers];  // GT-only
 // is not tried again until either changes: a begin or a finish that failed for them fails the same way
 // on the next tick, and each attempt is a spawn.
 struct Mirror {
+    uint32_t generation = 0;
+    uint64_t retryAt = 0;
+    ue_wrap::CachedObjRef identity;
+    bool placed = false;
     void*        actor = nullptr;
     int32_t      idx   = -1;  // GUObjectArray index (IsLiveByIndex validation)
     std::wstring cls;
@@ -94,10 +106,18 @@ std::wstring g_ownItem;
 // call.
 void*        g_ownHeldPtr = nullptr;
 int32_t      g_ownHeldIdx = -1;
+ue_wrap::CachedObjRef g_ownIdentity;
+uint32_t g_generation = 0;
+uint64_t g_replayAt = 0;
+uint64_t g_handEpoch = 0;
+bool g_dirty[coop::players::kMaxPeers]{};
+uint64_t Now() { using namespace std::chrono; return duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count(); }
+uint32_t NextGeneration() { if (!++g_generation) ++g_generation; return g_generation; }
 
 // The local player, cached by TickOwner for the fresh holding-actor read. Game thread only.
 void*        g_localPlayer    = nullptr;
 int32_t      g_localPlayerIdx = -1;
+ue_wrap::CachedObjRef g_localIdentity;
 
 // The hand-edge world release. A drop or quick-slot place is not a spawn: the game releases
 // the ex-hand actor into the world (the same actor, with physics and collision re-enabled),
@@ -119,7 +139,10 @@ void ExpressReleasedHandActor(coop::net::Session& session, void* prev, int32_t p
         return;
     }
     // The previous actor survived the hand edge: a genuine same-actor release into the world.
+    ue_wrap::CachedObjRef released; released.Set(prev);
+    const auto epoch = g_handEpoch;
     if (coop::trash_collect_sync::EnsureHeldItemBroadcast(prev, &session)) {
+        if (epoch == g_handEpoch && released.Get()) coop::prop_fire_sync::OnHandReleased(prev);
         UE_LOGI("hand_item: released ex-hand actor %p expressed as a world prop "
                 "(R-drop/place -- peers see it this tick)", prev);
     } else {
@@ -236,40 +259,57 @@ std::vector<uint8_t> BuildPayload(uint8_t slot, const SlotHand& h) {
         out.resize(base + sizeof(rel));
         std::memcpy(out.data() + base, rel, sizeof(rel));
     }
+    const size_t base = out.size();
+    out.resize(base + sizeof(h.generation));
+    std::memcpy(out.data() + base, &h.generation, sizeof(h.generation));
+    // Two-byte trailer fits even three maximal strings: present, opened, type(2), foods(12).
+    const uint16_t canBits = h.has && h.hasCan
+        ? uint16_t(1u | (h.can.opened ? 2u : 0u) | (uint32_t(h.can.type) << 2) |
+                   (uint32_t(h.can.foods) << 4)) : 0;
+    out.push_back(uint8_t(canBits));
+    out.push_back(uint8_t(canBits >> 8));
     return out;
 }
 
 void SendState(coop::net::Session& session, uint8_t slot, const SlotHand& h) {
     const std::vector<uint8_t> p = BuildPayload(slot, h);
+    bool sent = true;
     if (session.role() == coop::net::Role::Host) {
         for (int x = 1; x < coop::net::kMaxPeers; ++x) {
             if (x == slot) continue;                 // never echo the originator
             if (!session.IsSlotReady(x)) continue;
-            session.SendReliableToSlot(x, coop::net::ReliableKind::HandItem,
-                                       p.data(), static_cast<int>(p.size()));
+            sent = session.SendReliableToSlot(x, coop::net::ReliableKind::HandItem,
+                                       p.data(), static_cast<int>(p.size())) && sent;
         }
     } else {
-        session.SendReliableToSlot(0, coop::net::ReliableKind::HandItem,
+        sent = session.SendReliableToSlot(0, coop::net::ReliableKind::HandItem,
                                    p.data(), static_cast<int>(p.size()));
     }
+    g_dirty[slot] = !sent;
 }
 
 void DestroyMirror(uint8_t slot, const char* why) {
     Mirror& m = g_mirrors[slot];
-    if (m.actor && R::IsLiveByIndex(m.actor, m.idx)) {
+    const Mirror old = m;
+    m = Mirror{}; // Detach first: destruction can synchronously reset the session.
+    if (void* actor = old.identity.Get()) {
+        // Native OnDestroyed only deactivates the particle/audio. Extinguish first
+        // also clears the spread timer and the game mode's allBurningObjects row.
+        ue_wrap::prop_fire::Extinguish(actor);
+        if (!old.identity.Get()) return;
         // Suppress the destroy observer's echo; the host would otherwise broadcast a destroy for a
         // display-only actor.
-        coop::prop_echo_suppress::MarkIncomingDestroy(m.actor);
-        E::DestroyActor(m.actor);
+        coop::prop_echo_suppress::MarkIncomingDestroy(actor);
+        E::DestroyActor(actor);
         UE_LOGI("hand_item: slot %u mirror destroyed (%s)", static_cast<unsigned>(slot), why);
     }
-    m = Mirror{};
 }
 
 void NoteSpawnFailed(uint8_t slot, const SlotHand& want, void* puppetActor) {
     Mirror& m = g_mirrors[slot];
     m = Mirror{};
     m.cls = want.cls;
+    m.generation = want.generation;
     m.name = want.name;
     m.puppetIdx = R::InternalIndexOf(puppetActor);
     m.puppetSerial = R::AllocateSlotSerial(m.puppetIdx);
@@ -277,7 +317,14 @@ void NoteSpawnFailed(uint8_t slot, const SlotHand& want, void* puppetActor) {
 }
 
 void SpawnMirror(uint8_t slot, void* puppetActor) {
-    const SlotHand& want = g_hands[slot];
+    if (Now() < g_mirrors[slot].retryAt) return;
+    const SlotHand want = g_hands[slot];
+    const auto epoch = g_handEpoch;
+    const auto world = ue_wrap::world_identity::Generation();
+    ue_wrap::CachedObjRef puppet; puppet.Set(puppetActor);
+    const auto current = [&] { return epoch == g_handEpoch &&
+        world == ue_wrap::world_identity::Generation() && puppet.Get() &&
+        g_hands[slot].has && g_hands[slot].generation == want.generation; };
     // One index lookup a tick: Blueprint classes load on demand, and one this peer has not loaded, or is
     // still loading, answers null and is asked for again next tick, warned once per class.
     void* cls = ue_wrap::object_index::ClassByName(want.cls.c_str());
@@ -289,8 +336,12 @@ void SpawnMirror(uint8_t slot, void* puppetActor) {
         }
         return;
     }
+    if (!ue_wrap::prop::IsClassDescendantOfProp(cls)) {
+        if (current()) NoteSpawnFailed(slot, want, puppetActor);
+        return;
+    }
     ue_wrap::FVector loc{};
-    if (!E::TryGetActorLocation(puppetActor, loc)) return;   // retried next tick, as a missing class is
+    if (!E::TryGetActorLocation(puppetActor, loc) || !current()) return;
     const ue_wrap::FRotator rot{};
     // The begin dispatches through ProcessEvent, so the spawn observers (the ambient broadcaster's among
     // them, which a held pinecone, stick or crystal passes) run inside it, before the actor exists to be
@@ -303,15 +354,24 @@ void SpawnMirror(uint8_t slot, void* puppetActor) {
     if (!actor) {
         UE_LOGW("hand_item: slot %u BeginDeferredSpawn '%ls' failed -- not tried again until the item or the "
                 "puppet changes", static_cast<unsigned>(slot), want.cls.c_str());
-        NoteSpawnFailed(slot, want, puppetActor);
+        if (current()) NoteSpawnFailed(slot, want, puppetActor);
         return;
     }
+    ue_wrap::CachedObjRef identity; identity.Set(actor);
+    const auto cleanup = [&] {
+        if (void* live = identity.Get()) {
+            coop::prop_echo_suppress::MarkIncomingDestroy(live);
+            E::DestroyActor(live);
+        }
+    };
+    if (!current() || !identity.Get()) { cleanup(); return; }
     // The item name is stamped before Init runs: generic prop meshes are name-driven, the game's
     // own updateHold pattern.
     if (!want.name.empty()) {
         const int32_t off = PropNameOffset();
         if (off >= 0) {
             R::FName n = ue_wrap::fname_utils::StringToFName(want.name);
+            if (!current() || !identity.Get()) { cleanup(); return; }
             std::memcpy(reinterpret_cast<uint8_t*>(actor) + off, &n, sizeof(n));
         }
     }
@@ -323,16 +383,30 @@ void SpawnMirror(uint8_t slot, void* puppetActor) {
         UE_LOGW("hand_item: slot %u FinishDeferredSpawn '%ls' failed -- the begun actor is destroyed, and the "
                 "spawn is not tried again until the item or the puppet changes",
                 static_cast<unsigned>(slot), want.cls.c_str());
-        coop::prop_echo_suppress::MarkIncomingDestroy(actor);
-        E::DestroyActor(actor);
-        NoteSpawnFailed(slot, want, puppetActor);
+        cleanup();
+        if (current()) NoteSpawnFailed(slot, want, puppetActor);
         return;
     }
-    E::SetActorSimulatePhysics(actor, false);
-    E::SetActorEnableCollision(actor, false);
+    if (!current() || !identity.Get()) { cleanup(); return; }
+    if (want.hasCan) {
+        const bool applied = ue_wrap::canned_food::Apply(actor, want.can);
+        if (!current() || !identity.Get()) { cleanup(); return; }
+        if (!applied) {
+            cleanup();
+            if (current()) g_mirrors[slot].retryAt = Now() + 500;
+            return;
+        }
+    }
+    const bool noPhysics = E::SetActorSimulatePhysics(actor, false);
+    if (!current() || !identity.Get()) { cleanup(); return; }
+    const bool noCollision = E::SetActorEnableCollision(actor, false);
+    if (!current() || !identity.Get()) { cleanup(); return; }
+    if (!noPhysics || !noCollision) { cleanup(); if (current()) NoteSpawnFailed(slot, want, puppetActor); return; }
     Mirror& m = g_mirrors[slot];
     m = Mirror{};
     m.actor = actor;
+    m.identity.Set(actor);
+    m.generation = want.generation;
     m.idx = R::InternalIndexOf(actor);
     m.cls = want.cls;
     m.name = want.name;
@@ -345,13 +419,15 @@ void SpawnMirror(uint8_t slot, void* puppetActor) {
 // Re-command the mirror to the puppet's view-space hold point every tick: rebuild the roll-0
 // view basis from the synced aim and re-compose the owner-measured transform onto it. With
 // the fallback this degrades to the camera-front placement, facing along the look.
-void DriveMirror(void* mirrorActor, coop::RemotePlayer* pup, const SlotHand& hand) {
+bool DriveMirror(void* mirrorActor, coop::RemotePlayer* pup, const SlotHand& hand) {
+    ue_wrap::CachedObjRef identity; identity.Set(mirrorActor);
+    const auto epoch = g_handEpoch;
     ue_wrap::FVector eye{};
-    if (!pup->TryGetHeadPosition(eye)) return;   // no anchor this tick: the last placement stays
+    if (!pup->TryGetHeadPosition(eye)) return false;
     const ue_wrap::FVector fwd = pup->GetSyncedAimDirection();
     // A degenerate near-vertical aim keeps the last tick's placement.
     const float rl = std::sqrt(fwd.X * fwd.X + fwd.Y * fwd.Y);
-    if (rl < 1e-3f) return;
+    if (rl < 1e-3f) return false;
     const float yawDeg   = std::atan2(fwd.Y, fwd.X) * kRadToDeg;
     const float pitchDeg = std::atan2(fwd.Z, rl) * kRadToDeg;
     float V[3][3];
@@ -368,21 +444,32 @@ void DriveMirror(void* mirrorActor, coop::RemotePlayer* pup, const SlotHand& han
     for (int i = 0; i < 3; ++i)
         for (int j = 0; j < 3; ++j)
             W[i][j] = Q[i][0] * V[0][j] + Q[i][1] * V[1][j] + Q[i][2] * V[2][j];
-    E::SetActorLocation(mirrorActor, pos);
-    E::SetActorRotation(mirrorActor, RotatorFromRows(W));
+    return epoch == g_handEpoch && identity.Get() && E::SetActorLocation(mirrorActor, pos) &&
+        epoch == g_handEpoch && identity.Get() && E::SetActorRotation(mirrorActor, RotatorFromRows(W)) &&
+        epoch == g_handEpoch && identity.Get();
 }
 
 }  // namespace
 
 void TickOwner(coop::net::Session& session, void* local, void* holdingProp) {
     g_session = &session;
-    if (local && local != g_localPlayer) {
+    if (local && !g_localIdentity.Is(local)) {
         g_localPlayer    = local;
         g_localPlayerIdx = R::InternalIndexOf(local);
+        g_localIdentity.Set(local);
     }
     if (!session.connected()) return;
     const uint8_t self = coop::players::Registry::Get().LocalPeerId();
     if (self >= coop::players::kMaxPeers) return;
+
+    // Retry rejected sends; refresh all known host states for a join that raced its replay.
+    const auto now = Now();
+    const bool heartbeat = now >= g_replayAt;
+    if (heartbeat) g_replayAt = now + 2000;
+    for (uint8_t slot = 0; slot < coop::players::kMaxPeers; ++slot)
+        if ((slot == self || session.role() == coop::net::Role::Host) &&
+            g_hands[slot].generation && (heartbeat || g_dirty[slot]))
+            SendState(session, slot, g_hands[slot]);
 
     if (holdingProp) {
         // The live view-relative hold transform is measured and latched every tick while holding;
@@ -403,27 +490,38 @@ void TickOwner(coop::net::Session& session, void* local, void* holdingProp) {
         // pointer latch would never see.
         static uint32_t sSameStreak = 0;
         const int32_t idx = R::InternalIndexOf(holdingProp);
-        if (holdingProp == g_ownHeldPtr && idx == g_ownHeldIdx &&
+        const bool identityChanged = !g_ownIdentity.Is(holdingProp);
+        if (!identityChanged &&
             (++sSameStreak % 30) != 0) {
             return;
         }
         if (holdingProp != g_ownHeldPtr && g_ownHeldPtr) {
             // The identity changed with a previous actor latched: if it survived, it was released
             // to the world (place, then the next slot).
-            ExpressReleasedHandActor(session, g_ownHeldPtr, g_ownHeldIdx);
+            ExpressReleasedHandActor(session, g_ownIdentity.Get(), g_ownHeldIdx);
         }
         g_ownHeldPtr = holdingProp;
         g_ownHeldIdx = idx;
+        g_ownIdentity.Set(holdingProp);
         const std::wstring cls = R::ClassNameOf(holdingProp);
         const std::wstring name = ReadItemName(holdingProp);
         const std::wstring item = ue_wrap::inventory::ReadHeldItemName();
-        if (!g_ownHas || cls != g_ownCls || name != g_ownName || item != g_ownItem) {
+        ue_wrap::canned_food::State can;
+        bool hasCan = ue_wrap::canned_food::Read(holdingProp, can);
+        const SlotHand& old = g_hands[self];
+        // A temporary reflection/index miss on the same actor is not a reset to
+        // the class defaults. Keep its last sample and retry the next poll.
+        if (!hasCan && !identityChanged && old.hasCan) { hasCan = true; can = old.can; }
+        const bool canChanged = hasCan != old.hasCan || (hasCan && !(can == old.can));
+        if (identityChanged || !g_ownHas || cls != g_ownCls || name != g_ownName || item != g_ownItem || canChanged) {
             g_ownHas = true;
             g_ownCls = cls;
             g_ownName = name;
             g_ownItem = item;
             SlotHand& h = g_hands[self];
+            h.generation = NextGeneration();
             h.has = true; h.cls = cls; h.name = name; h.item = item; h.lastCls = cls;
+            h.hasCan = hasCan; h.can = can;
             // The first measure of the weld's view-relative transform, which may land a tick early;
             // the periodic re-check corrects it. Measured into scratch and reset on failure: on a
             // quick-slot switch a failed measure would otherwise ship the previous item's transform
@@ -451,9 +549,10 @@ void TickOwner(coop::net::Session& session, void* local, void* holdingProp) {
         // The hand is empty this tick: an ex-hand actor that survived the edge was released into
         // the world, so express it now, then drop the identity latch so a re-appearance re-renders
         // and re-compares.
-        ExpressReleasedHandActor(session, g_ownHeldPtr, g_ownHeldIdx);
+        ExpressReleasedHandActor(session, g_ownIdentity.Get(), g_ownHeldIdx);
         g_ownHeldPtr = nullptr;
         g_ownHeldIdx = -1;
+        g_ownIdentity.Reset();
         // The stow announce is edge-instant: a quick-slot switch is one synchronous updateHold call
         // (destroy, spawn, then the holding name), so a poll never observes a mid-switch null and
         // no debounce is needed.
@@ -464,6 +563,7 @@ void TickOwner(coop::net::Session& session, void* local, void* holdingProp) {
         SlotHand& h = g_hands[self];
         const std::wstring last = h.lastCls;
         h = SlotHand{};
+        h.generation = NextGeneration();
         h.lastCls = last;
         SendState(session, self, h);
         UE_LOGI("hand_item: local hand -> EMPTY (announced)");
@@ -473,7 +573,7 @@ void TickOwner(coop::net::Session& session, void* local, void* holdingProp) {
 }
 
 void* LocalHandActor() {
-    if (!g_localPlayer || !R::IsLiveByIndex(g_localPlayer, g_localPlayerIdx))
+    if (!g_localIdentity.Get())
         return nullptr;
     ue_wrap::engine::MainPlayerGrabState gs{};
     if (!ue_wrap::engine::ReadMainPlayerGrabState(g_localPlayer, gs)) return nullptr;
@@ -488,7 +588,24 @@ void* LocalHandActor() {
 void* MirrorActorForSlot(uint8_t slot) {
     if (slot >= coop::players::kMaxPeers) return nullptr;
     const Mirror& m = g_mirrors[slot];
-    return (m.actor && R::IsLiveByIndex(m.actor, m.idx)) ? m.actor : nullptr;
+    return m.identity.Get();
+}
+
+uint32_t Generation(uint8_t slot) {
+    if (slot >= coop::players::kMaxPeers || !g_hands[slot].has) return 0;
+    if (slot == coop::players::Registry::Get().LocalPeerId() && !g_ownIdentity.Is(LocalHandActor())) return 0;
+    return g_hands[slot].generation;
+}
+uint32_t MirrorGeneration(uint8_t slot) {
+    if (slot >= coop::players::kMaxPeers || !MirrorActorForSlot(slot) || !g_mirrors[slot].placed ||
+        g_mirrors[slot].generation != Generation(slot)) return 0;
+    return g_mirrors[slot].generation;
+}
+bool IsMirrorActor(void* actor) {
+    if (!actor) return false;
+    for (uint8_t slot = 0; slot < coop::players::kMaxPeers; ++slot)
+        if (MirrorActorForSlot(slot) == actor) return true;
+    return false;
 }
 
 size_t CollectHandAxisActors(void* out[], size_t cap) {
@@ -498,7 +615,7 @@ size_t CollectHandAxisActors(void* out[], size_t cap) {
         const Mirror& m = g_mirrors[slot];
         // IsLiveByIndex, not a bare pointer match: a dead mirror's recycled address belongs to a
         // different actor that must stay adoptable.
-        if (m.actor && R::IsLiveByIndex(m.actor, m.idx)) out[n++] = m.actor;
+        if (void* actor = m.identity.Get()) out[n++] = actor;
     }
     return n;
 }
@@ -519,7 +636,7 @@ void TickMirrors() {
         if (slot == self) continue;  // never mirror our own hand
         const SlotHand& want = g_hands[slot];
         Mirror& m = g_mirrors[slot];
-        const bool mirrorLive = m.actor && R::IsLiveByIndex(m.actor, m.idx);
+        const bool mirrorLive = m.identity.Get() != nullptr;
 
         if (!want.has) {
             if (mirrorLive || m.actor) DestroyMirror(slot, "hand now empty");
@@ -529,7 +646,7 @@ void TickMirrors() {
         coop::RemotePlayer* pup = reg.Puppet(slot);
         // valid() is IsLiveByIndex on the puppet's captured index, never bare IsLive on the cached
         // actor.
-        void* puppetActor = (pup && pup->valid()) ? pup->GetActor() : nullptr;
+        void* puppetActor = (pup && pup->valid() && pup->HasPose()) ? pup->GetActor() : nullptr;
         if (!puppetActor) {
             // The puppet not up yet (the join window) or torn down: keep the state, drop any
             // orphaned mirror, retry next tick.
@@ -549,17 +666,17 @@ void TickMirrors() {
             }
         }
         const int32_t pupIdx = R::InternalIndexOf(puppetActor);
-        const bool sameWant = m.cls == want.cls && m.name == want.name && m.puppetIdx == pupIdx &&
+        const bool sameWant = m.generation == want.generation && m.cls == want.cls && m.name == want.name && m.puppetIdx == pupIdx &&
                               R::SlotSerial(pupIdx) == m.puppetSerial;
         if (mirrorLive && sameWant) {
-            DriveMirror(m.actor, pup, want);  // steady state: re-command the view hold
+            if (DriveMirror(m.actor, pup, want)) m.placed = true;
             continue;
         }
         if (m.failed && sameWant) continue;  // this item failed to spawn on this puppet (see Mirror)
         if (mirrorLive || m.actor) DestroyMirror(slot, "state/puppet changed");
         SpawnMirror(slot, puppetActor);
         Mirror& nm = g_mirrors[slot];
-        if (nm.actor) DriveMirror(nm.actor, pup, want);  // no first-frame pop at spawn pos
+        if (nm.identity.Get() && DriveMirror(nm.actor, pup, want)) nm.placed = true;
     }
 }
 
@@ -574,16 +691,17 @@ bool HandleHandItem(coop::net::Session& session,
     const uint8_t* p = msg.payload;
     size_t off = 0;
     const uint8_t describedSlot = p[off++];
+    if (p[off] > 1) return true;
     const bool has = p[off++] != 0;
     const uint8_t clsLen = p[off++];
-    if (off + clsLen + 1 > static_cast<size_t>(msg.payloadLen)) {
+    if (clsLen > kMaxStr || off + clsLen + 1 > static_cast<size_t>(msg.payloadLen)) {
         UE_LOGW("hand_item: truncated class field -- dropping");
         return true;
     }
     std::wstring cls;
     for (uint8_t i = 0; i < clsLen; ++i) cls.push_back(static_cast<wchar_t>(p[off++]));
     const uint8_t nameLen = p[off++];
-    if (off + nameLen > static_cast<size_t>(msg.payloadLen)) {
+    if (nameLen > kMaxStr || off + nameLen > static_cast<size_t>(msg.payloadLen)) {
         UE_LOGW("hand_item: truncated name field -- dropping");
         return true;
     }
@@ -594,7 +712,7 @@ bool HandleHandItem(coop::net::Session& session,
         return true;
     }
     const uint8_t itemLen = p[off++];
-    if (off + itemLen > static_cast<size_t>(msg.payloadLen)) {
+    if (itemLen > kMaxStr || off + itemLen > static_cast<size_t>(msg.payloadLen)) {
         UE_LOGW("hand_item: truncated item field -- dropping");
         return true;
     }
@@ -622,8 +740,27 @@ bool HandleHandItem(coop::net::Session& session,
         }
     }
 
+    if (off + sizeof(uint32_t) + 2 != static_cast<size_t>(msg.payloadLen)) return true;
+    uint32_t generation = 0;
+    std::memcpy(&generation, p + off, sizeof(generation));
+    off += sizeof(generation);
+    const uint16_t canBits = uint16_t(p[off]) | (uint16_t(p[off + 1]) << 8);
+    off += 2;
+    const bool hasCan = (canBits & 1u) != 0;
+    ue_wrap::canned_food::State can;
+    if (hasCan) {
+        if (!has) return true;
+        can.opened = (canBits & 2u) != 0;
+        can.type = (canBits >> 2) & 3u;
+        can.foods = canBits >> 4;
+        if (!ue_wrap::canned_food::Valid(can)) return true;
+    } else if (canBits != 0) return true;
+    if (off != static_cast<size_t>(msg.payloadLen)) return true;
+    if (!generation) return true;
     if (describedSlot >= coop::net::kMaxPeers) return true;
     if (has && cls.empty()) return true;  // malformed: "has item" with no class
+    const auto previous = g_hands[describedSlot].generation;
+    if (previous && static_cast<int32_t>(generation - previous) <= 0) return true;
 
     if (session.role() == coop::net::Role::Host) {
         // The forgery guard: a client may only describe its own hand.
@@ -633,19 +770,15 @@ bool HandleHandItem(coop::net::Session& session,
             return true;
         }
         SlotHand& h = g_hands[describedSlot];
+        h.generation = generation;
         h.has = has; h.cls = cls; h.name = name; h.item = item;
+        h.hasCan = hasCan; h.can = can;
         if (has) h.lastCls = cls;
         std::memcpy(h.relPos, relPos, sizeof(relPos));
         std::memcpy(h.relRot, relRot, sizeof(relRot));
         h.haveRel = has;
         // Rebroadcast to every other ready client, the originator excluded.
-        const std::vector<uint8_t> out = BuildPayload(describedSlot, h);
-        for (int x = 1; x < coop::net::kMaxPeers; ++x) {
-            if (x == describedSlot) continue;
-            if (!session.IsSlotReady(x)) continue;
-            session.SendReliableToSlot(x, coop::net::ReliableKind::HandItem,
-                                       out.data(), static_cast<int>(out.size()));
-        }
+        SendState(session, describedSlot, h);
         return true;
     }
 
@@ -657,7 +790,9 @@ bool HandleHandItem(coop::net::Session& session,
     }
     if (describedSlot == coop::players::Registry::Get().LocalPeerId()) return true;  // own echo
     SlotHand& h = g_hands[describedSlot];
+    h.generation = generation;
     h.has = has; h.cls = cls; h.name = name; h.item = item;
+    h.hasCan = hasCan; h.can = can;
     if (has) h.lastCls = cls;
     std::memcpy(h.relPos, relPos, sizeof(relPos));
     std::memcpy(h.relRot, relRot, sizeof(relRot));
@@ -681,6 +816,7 @@ void ReplayPeerStatesToSlot(int slot) {
 }
 
 void Reset() {
+    ++g_handEpoch;
     // Stop the hand-pose stream before the session cache drops, or a stale latch would stream the
     // dead session's transform into the next one.
     if (g_session) g_session->SetLocalHandPose(false, {});
@@ -694,10 +830,15 @@ void Reset() {
     g_ownItem.clear();
     g_ownHeldPtr = nullptr;
     g_ownHeldIdx = -1;
+    g_ownIdentity.Reset();
+    g_generation = 0;
+    g_replayAt = 0;
+    for (auto& dirty : g_dirty) dirty = false;
     // Cached engine pointers die with the session too: a stale local player would satisfy the
     // index check across a world reload only by luck; TickOwner re-caches.
     g_localPlayer    = nullptr;
     g_localPlayerIdx = -1;
+    g_localIdentity.Reset();
     g_session        = nullptr;
 }
 
@@ -721,8 +862,10 @@ std::wstring HeldItem(uint8_t slot) {
 
 void OnSlotDisconnected(uint8_t slot) {
     if (slot >= coop::players::kMaxPeers) return;
+    ++g_handEpoch;
     DestroyMirror(slot, "peer disconnected");
     g_hands[slot] = SlotHand{};
+    g_dirty[slot] = false;
 }
 
 }  // namespace coop::hand_item

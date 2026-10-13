@@ -9,10 +9,15 @@
 
 namespace ue_wrap::engine {
 
-// Spawn the game's playerRagdoll_C for `ownerPlayer` as the visible flop body: its Player field is
-// stamped before Finish, so BeginPlay configures the mesh from the owner, and then the simulation
-// starts. Death-free, since ragdollMode would kill the host. The AActor*, or nullptr. Game thread.
+// Spawn playerRagdoll_C as an actor shell, then install the owner's selected mesh,
+// materials and a compatible articulated physics asset before starting simulation.
+// No plushie substitute on failure. Death-free (never calls ragdollMode).
 void* SpawnPlayerRagdollBody(void* ownerPlayer, const FVector& location, const FRotator& rotation);
+
+// Copy the selected model/materials and install the full compatible physical
+// skeleton, replacing playerRagdoll_C's plushie physics override. No simulation
+// starts until this succeeds. Unsupported rigs return false without a substitute.
+bool ConfigurePlayerRagdollMesh(void* sourceMesh, void* targetMesh);
 
 // Attach `actor` to `body`'s mesh at the pelvis bone (KeepWorld), so it follows the flop; Detach
 // reverses it. Game thread.

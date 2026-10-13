@@ -26,6 +26,7 @@
 #include "coop/creatures/kerfur_prop_adoption.h"  // OnClientWorldReady: the deferred-adoption per-world reset
 #include "coop/world/event_fire_sync.h"  // OnClientWorldReady: the fires queued in the join window
 #include "coop/player/puppet_drive.h"      // the puppet array and its drive
+#include "coop/player/sit_pose.h"
 #include "coop/props/registry_reaper.h"    // the reaper and the re-seed engine
 #include "coop/props/remote_prop_spawn.h"  // OnClientWorldReadyResetSweep (deferred prop sweep per-world reset)
 #include "coop/props/join_membership_sweep.h"  // the join claim and the divergence sweep
@@ -686,6 +687,8 @@ void Tick(coop::net::Session& session) {
     if (worldUp) {
         coop::puppet_drive::DriveTick(session,
                                       g_worldReadyAnnounced.load(std::memory_order_relaxed));
+        coop::sit_pose::DriveRemotes();
+        coop::sit_pose::DriveAtvDrivers();
 
         // The receiver-side held-prop driver: the latest PropPose applied (a Key lookup on first
         // arrival, transform writes after); a stream stop over 500 ms is an implicit release.

@@ -2,7 +2,7 @@
 // (Anewsky_C: the star dome + celestial body meshes, owned by AdaynightCycle_C::skysphere).
 // Principle-7 engine-wrapper layer (no network/coop state); coop::sky_sync drives the sync.
 //
-// Three values diverge per-peer and are NOT covered by the clock sync (which already converges the
+// Four values diverge per-peer and are NOT covered by the clock sync (which already converges the
 // sun/moon ORBIT + brightness from the clock):
 //   (1) the star-dome orientation -- Anewsky_C's `sky` mesh is given an UNSEEDED random yaw,
 //       RandomFloatInRange(-45,-135), once on the BeginPlay path, then spun by DeltaSeconds/32
@@ -10,6 +10,7 @@
 //   (2) the moon phase -- the BP recomputes it from the LOCAL wall clock, so peers in
 //       different timezones disagree;
 //   (3) the eye -- the day cycle's noon roll calls setEye on every peer (p 0.005).
+//   (4) earthTp's black-hole material and directional light (skyHidden/light_blackhole).
 // This wrapper reads/writes the sky component's WORLD rotation and the moon phase, and reads the eye
 // and runs the sky's own setEye, so the host can snapshot them (host-authoritative).
 
@@ -49,5 +50,13 @@ bool ReadEye(bool& eye);
 // The sky's own setEye(eye), the verb the noon roll calls. False if not streamed in or the verb did not
 // resolve. Game thread.
 bool CallSetEye(bool eye);
+
+// earthTp is the black-hole sky event, not a player teleport. Read its actual
+// presentation (also covers the permanent-black-hole gamerule). False while
+// the sky/materials/components are not ready; never substitute host-clear.
+bool ReadBlackHole(bool& hidden, bool& lightVisible);
+// Applies skyVisibility plus the black-hole light, without replaying tp's
+// delays, sounds, emails or event registration. Idempotent, retries are safe.
+bool ApplyBlackHole(bool hidden, bool lightVisible);
 
 }  // namespace ue_wrap::skysphere

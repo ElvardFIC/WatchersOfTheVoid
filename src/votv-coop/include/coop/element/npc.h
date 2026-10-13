@@ -69,6 +69,8 @@ private:
     uint8_t          kerfState_      = 0;     // streamed kerfur command (enum_kerfurCommand) -- snapped, drives the
     bool             kerfSpooky_     = false; //   AnimBP state machine on the parked mirror; spooky = the kill/spooky flag
     bool             hasKerfState_   = false; //   valid iff the host sent it (kerfur-family only)
+    int8_t           wantFloppy_     = -2;    // reports disc the host says this mirror shows: -1 empty, 0..6 a type,
+    int8_t           shownFloppy_    = -2;    //   -2 not yet driven. The mesh is swapped only when the two differ.
     bool             hasPose_        = false;  // first packet snaps
     bool             dirty_          = true;   // unapplied change to push to the engine
     bool             isWispMirror_   = false;  // wisp_C mirror: replay the landing edge (fade-in)

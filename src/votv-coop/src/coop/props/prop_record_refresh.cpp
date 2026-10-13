@@ -3,6 +3,7 @@
 #include "coop/props/prop_record_refresh.h"
 
 #include "coop/net/session.h"
+#include "coop/player/hand_item.h"
 #include "coop/props/join_membership_sweep.h"
 #include "coop/props/prop_save_data.h"
 
@@ -32,6 +33,31 @@ namespace sg = ue_wrap::script_gate;
 using Clock = std::chrono::steady_clock;
 
 std::atomic<coop::net::Session*> g_session{nullptr};
+
+// Cans descend directly from prop_C, not prop_food_C. Their own open/eat bodies
+// change opened/foods and call init(), not the box/reel upd() watched below.
+constexpr int kTagCanOpen = 0x43414E01;
+constexpr int kTagCanEat = 0x43414E02;
+bool g_canOpenWatched = false;
+bool g_canEatWatched = false;
+
+void OnCanChanged(const sg::Call& call) {
+    if (call.fromOurCode || !call.object || !R::IsLive(call.object)) return;
+    auto* s = g_session.load(std::memory_order_acquire);
+    if (!s || !s->connected()) return;
+    // The record lane addresses world actors by key. A held actor's record must
+    // travel through the hand lifecycle, not overwrite a world copy with its key.
+    if (coop::hand_item::IsHandAxisActor(call.object)) return;
+    if (s->role() == coop::net::Role::Client &&
+        !coop::join_membership_sweep::HasLoadTailQuiesced()) return;
+    const std::wstring key = ue_wrap::prop::GetInteractableKeyString(call.object);
+    if (key.empty() || key == L"None") return;
+    // Never use the box's time-only coalescing here: open followed immediately by
+    // eat (or two bites) has different contents. Publish also retains failed sends.
+    // Native loadData restores opened/type/foods, then prop_C.loadData invokes the
+    // can's init() to select its closed/open/empty mesh without replaying a meal.
+    coop::prop_save_data::Publish(s, call.object, key);
+}
 
 // The coalescing window. One player action can end in more than one upd() -- the open path runs
 // it and the equip behind it can run it again -- and the record is the whole state either way,
@@ -209,6 +235,12 @@ void OnUpdPost(const sg::Call& call) {
 void Install(coop::net::Session* session) {
     g_session.store(session, std::memory_order_release);
     if (!GT::IsGameThread()) return;
+    if (!g_canOpenWatched)
+        g_canOpenWatched = sg::WatchClassName(L"prop_cannedFood_C", L"open", kTagCanOpen,
+                                             nullptr, &OnCanChanged);
+    if (!g_canEatWatched)
+        g_canEatWatched = sg::WatchClassName(L"prop_cannedFood_C", L"eat", kTagCanEat,
+                                            nullptr, &OnCanChanged);
     // Throttle the class walks while a class is unresolved, the shape prop_spawn_authoring and
     // prop_drop_intent use: this Install is the per-tick retry pump, a FindClass MISS is not cached
     // (a class can load later), and a walk renders a name per object, so an unresolved class would

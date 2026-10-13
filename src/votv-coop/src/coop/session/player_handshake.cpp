@@ -19,6 +19,7 @@
 #include "coop/net/session.h"
 #include "coop/player/local_body.h"
 #include "coop/player/nameplate.h"
+#include "coop/player/pvp.h"
 #include "coop/player/hand_item.h"  // hand-item mirrors: reset and slot disconnect
 #include "coop/player/nick_color.h"
 #include "coop/player/nickname_arbiter.h"
@@ -110,10 +111,12 @@ namespace {
 // The display-prefs flags byte (after the skin field in Join and PlayerJoined): the bit layout is
 // the wire contract, extended with new bits, never re-ordered.
 constexpr uint8_t kPrefNameplateVisible = 0x01;
+constexpr uint8_t kPrefPvp               = 0x02;
 
 uint8_t BuildLocalPrefsFlags() {
     uint8_t f = 0;
     if (coop::nameplate::LocalVisible()) f |= kPrefNameplateVisible;
+    if (coop::pvp::LocalOn())            f |= kPrefPvp;
     return f;
 }
 
@@ -123,11 +126,13 @@ uint8_t BuildLocalPrefsFlags() {
 uint8_t PrefsFlagsForSlot(int slot) {
     uint8_t f = 0;
     if (coop::nameplate::VisibleForSlot(slot)) f |= kPrefNameplateVisible;
+    if (coop::pvp::OnForSlot(slot))            f |= kPrefPvp;
     return f;
 }
 
 void StorePrefsFlagsForSlot(int slot, uint8_t flags) {
     coop::nameplate::StoreVisibleForSlot(slot, (flags & kPrefNameplateVisible) != 0);
+    coop::pvp::StoreForSlot(slot, (flags & kPrefPvp) != 0);
 }
 
 // The nick colour field, [u8 has][u8 r][u8 g][u8 b] after the prefs byte in Join and RosterRow;
@@ -246,6 +251,7 @@ void OnSlotReplaced_TearDownPerson(int slot, const coop::roster_ledger::Row& out
                                    const coop::roster_ledger::Row& /*incoming*/) {
     if (!outgoing.occupied()) return;  // nothing was there; nothing to tear down
     coop::nameplate::OnSlotDisconnected(slot);   // plate pref back to visible
+    coop::pvp::OnSlotDisconnected(slot);         // PVP back to off
     coop::nick_color::OnSlotDisconnected(slot);  // nick colour back to default
     coop::chat_bubbles::OnSlotDisconnected(slot);  // no inherited bubble
     coop::hand_item::OnSlotDisconnected(static_cast<uint8_t>(slot));  // drop the hand mirror

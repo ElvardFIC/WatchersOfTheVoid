@@ -63,8 +63,8 @@ void Render() {
     ImGui::TextDisabled("Skins come from converter .pak files under Content/Paks/LogicMods "
                         "(any subfolder). One pak may carry several skins -- the four "
                         "scientists ship together in scientists.pak.");
-    ImGui::TextDisabled("Preview tile = <skin name>.png/.bmp beside the pak; its title, one "
-                        "line in <skin name>.txt.");
+    ImGui::TextDisabled("Preview tile = <skin name>.png/.bmp in a LogicMods subfolder; its "
+                        "title, one line in <skin name>.txt.");
     ImGui::TextDisabled("Peers WITHOUT that pak see the default kel body instead. Hover a tile "
                         "for its fingerprint: the same name and fingerprint means the same file.");
     ImGui::TextDisabled("A pak that carries no skin (another mod's) is dropped from this "

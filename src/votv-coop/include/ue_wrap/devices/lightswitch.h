@@ -94,4 +94,16 @@ bool TryReadBreaker(void* root, bool& open);
 // null/unresolved.
 bool CallSetBreaker(void* root, bool open);
 
+// Ceiling-lamp presentation is distinct from the root's persistent switch state.
+bool EnsureLampResolved();
+bool IsCeilingLamp(void* actor);
+bool TryReadLampActive(void* actor, bool& on);
+bool ApplyLampActive(void* actor, bool on);
+
+// Ambient companions have no isActive field: bottomLight.bVisible stores the phase.
+bool EnsureAmbientResolved();
+bool IsAmbientLight(void* actor);
+bool TryReadAmbientActive(void* actor, bool& on);
+bool ApplyAmbientActive(void* actor, bool on);
+
 }  // namespace ue_wrap::lightswitch

@@ -51,7 +51,7 @@ void* OpenScreen() {
     void* const gm = Gamemode();
     void* const screen = PointerAt(gm, g.propInventory);
     void* const player = PointerAt(gm, g.mainPlayer);
-    if (!screen || !player) return nullptr;
+    if (!R::IsLive(screen) || !R::IsLive(player)) return nullptr;
     if (void* const cls = R::ClassOf(player); cls != g.playerCls) {
         g.playerCls = cls;
         g.activeInterface = R::FindPropertyOffset(cls, L"activeInterface");
@@ -99,6 +99,16 @@ bool Open(void* container) {
     if (!f.valid()) return false;
     f.Set<void*>(L"prop", container);
     return Call(gm, f);
+}
+
+bool Refresh(void* container) {
+    if (!R::IsLive(container)) return false;
+    void* const screen = OpenScreen();
+    if (!screen || PointerAt(screen, g.entered) != container) return false;
+    void* const fn = R::FindDispatchFunctionCached(R::ClassOf(screen), L"gen");
+    if (!fn) return false;
+    ParamFrame f(fn);
+    return f.valid() && Call(screen, f);
 }
 
 bool Close() {

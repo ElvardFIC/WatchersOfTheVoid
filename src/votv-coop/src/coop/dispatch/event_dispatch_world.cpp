@@ -15,11 +15,31 @@
 #include "coop/world/event_active_sync.h"
 #include "coop/world/event_cue_sync.h"
 #include "coop/world/event_fire_sync.h"
+#include "coop/world/media_sync.h"
+#include "coop/interactables/kitchen_sync.h"
+#include "coop/interactables/cord_sync.h"
+#include "coop/props/prop_support_sync.h"
+#include "coop/world/service_panel_sync.h"
+#include "coop/world/desk_short_circuit_sync.h"
+#include "coop/world/madness_sync.h"
+#include "coop/props/dingus_music_sync.h"
+#include "coop/world/radio_sync.h"
+#include "coop/world/cargo_lift_sync.h"
+#include "coop/props/prop_fire_sync.h"
+#include "coop/props/explosion_sync.h"
+#include "coop/props/explosion_events.h"
+#include "coop/player/hand_fire_sync.h"
+#include "coop/player/hand_extinguisher_sync.h"
+#include "coop/player/hand_toy_audio.h"
+#include "coop/player/sit_pose.h"
+#include "coop/player/players_registry.h"
 #include "coop/world/coord_tower_ops.h"
 #include "coop/world/coord_tower_rows.h"
 #include "coop/world/firefly_sync.h"
 #include "coop/world/power_grid.h"
 #include "coop/items/inventory_pickup_sync.h"
+#include "coop/items/hook_retrieve.h"
+#include "coop/world/placed_save_sync.h"
 #include "coop/world/sky_sync.h"
 #include "coop/world/weather_lightning.h"
 #include "coop/world/weather_redsky.h"
@@ -67,6 +87,134 @@ bool VerifySenderEidRange(int senderPeerSlot,
 bool HandleWorldEvent(net::Session& session,
                       const net::Session::ReliableMessage& msg) {
     switch (msg.kind) {
+    case net::ReliableKind::PlacedSave: {
+        if (msg.payloadLen != sizeof(net::BlobChunkPayload) || msg.senderPeerSlot < 0 ||
+            msg.senderPeerSlot >= net::kMaxPeers) break;
+        net::BlobChunkPayload chunk{};
+        std::memcpy(&chunk, msg.payload, sizeof(chunk));
+        coop::placed_save_sync::Receive(chunk, static_cast<uint8_t>(msg.senderPeerSlot));
+        break;
+    }
+    case net::ReliableKind::HandToyAudio: {
+        if(msg.payloadLen!=sizeof(net::HandToyAudioPayload) || msg.senderPeerSlot<0 || msg.senderPeerSlot>=net::kMaxPeers)break;
+        net::HandToyAudioPayload p{};std::memcpy(&p,msg.payload,sizeof(p));
+        coop::hand_toy_audio::Receive(p,static_cast<uint8_t>(msg.senderPeerSlot));break;
+    }
+    case net::ReliableKind::DingusMusic: {
+        if(msg.payloadLen!=sizeof(net::DingusMusicPayload) || msg.senderPeerSlot<0 || msg.senderPeerSlot>=net::kMaxPeers)break;
+        net::DingusMusicPayload p{};std::memcpy(&p,msg.payload,sizeof(p));
+        coop::dingus_music_sync::Receive(p,static_cast<uint8_t>(msg.senderPeerSlot));break;
+    }
+    case net::ReliableKind::MadnessState: {
+        if(msg.senderPeerSlot!=0 || msg.payloadLen!=sizeof(net::MadnessStatePayload))break;
+        net::MadnessStatePayload p{};std::memcpy(&p,msg.payload,sizeof(p));
+        coop::madness_sync::Receive(p,0);break;
+    }
+    case net::ReliableKind::HookRetrieve: {
+        if(msg.payloadLen!=sizeof(net::HookRetrievePayload) || msg.senderPeerSlot<0 ||
+           msg.senderPeerSlot>=net::kMaxPeers)break;
+        net::HookRetrievePayload p{};std::memcpy(&p,msg.payload,sizeof(p));
+        coop::hook_retrieve::Receive(p,static_cast<uint8_t>(msg.senderPeerSlot));break;
+    }
+    case net::ReliableKind::DeskShortCircuit: {
+        if (msg.payloadLen != sizeof(net::DeskShortCircuitPayload) || msg.senderPeerSlot < 0 ||
+            msg.senderPeerSlot >= net::kMaxPeers) break;
+        net::DeskShortCircuitPayload p{};
+        std::memcpy(&p, msg.payload, sizeof(p));
+        coop::desk_short_circuit_sync::Receive(p, static_cast<uint8_t>(msg.senderPeerSlot));
+        break;
+    }
+    case net::ReliableKind::PropFire: {
+        if(msg.payloadLen!=sizeof(net::PropFirePayload)||msg.senderPeerSlot<0||msg.senderPeerSlot>=net::kMaxPeers)break;
+        net::PropFirePayload p{};std::memcpy(&p,msg.payload,sizeof(p));
+        coop::prop_fire_sync::Receive(p,static_cast<uint8_t>(msg.senderPeerSlot));
+        break;
+    }
+    case net::ReliableKind::Explosion: {
+        if(msg.payloadLen!=sizeof(net::ExplosionPayload)||msg.senderPeerSlot<0||msg.senderPeerSlot>=net::kMaxPeers)break;
+        net::ExplosionPayload p{};std::memcpy(&p,msg.payload,sizeof(p));
+        coop::explosion_sync::Receive(p,static_cast<uint8_t>(msg.senderPeerSlot));
+        break;
+    }
+    case net::ReliableKind::ExplosionEvent: {
+        if(msg.payloadLen!=sizeof(net::ExplosionEventPayload)||msg.senderPeerSlot<0||msg.senderPeerSlot>=net::kMaxPeers)break;
+        net::ExplosionEventPayload p{};std::memcpy(&p,msg.payload,sizeof(p));
+        coop::explosion_events::Receive(p,static_cast<uint8_t>(msg.senderPeerSlot));
+        break;
+    }
+    case net::ReliableKind::HandFire: {
+        if (msg.payloadLen != sizeof(net::HandFirePayload) || msg.senderPeerSlot < 0 || msg.senderPeerSlot >= net::kMaxPeers) break;
+        net::HandFirePayload p{}; std::memcpy(&p, msg.payload, sizeof(p));
+        coop::hand_fire_sync::Receive(p, static_cast<uint8_t>(msg.senderPeerSlot));
+        break;
+    }
+    case net::ReliableKind::HandExtinguisher: {
+        if (msg.payloadLen != sizeof(net::HandExtinguisherPayload) || msg.senderPeerSlot < 0 ||
+            msg.senderPeerSlot >= net::kMaxPeers) break;
+        net::HandExtinguisherPayload p{};
+        std::memcpy(&p, msg.payload, sizeof(p));
+        coop::hand_extinguisher_sync::Receive(p, static_cast<uint8_t>(msg.senderPeerSlot));
+        break;
+    }
+    case net::ReliableKind::CargoLift: {
+        if(msg.payloadLen!=sizeof(net::CargoLiftPayload)||msg.senderPeerSlot<0||msg.senderPeerSlot>=net::kMaxPeers)break;
+        net::CargoLiftPayload p{};std::memcpy(&p,msg.payload,sizeof(p));
+        coop::cargo_lift_sync::Receive(p,static_cast<uint8_t>(msg.senderPeerSlot));
+        break;
+    }
+    case net::ReliableKind::ServicePanel: {
+        if (msg.payloadLen!=sizeof(net::ServicePanelPayload) || msg.senderPeerSlot<0 || msg.senderPeerSlot>=net::kMaxPeers) break;
+        net::ServicePanelPayload p{};
+        std::memcpy(&p,msg.payload,sizeof(p));
+        coop::service_panel_sync::Receive(p,static_cast<uint8_t>(msg.senderPeerSlot));
+        break;
+    }
+    case net::ReliableKind::RadioState: {
+        if (msg.payloadLen!=sizeof(net::RadioStatePayload) || msg.senderPeerSlot<0 || msg.senderPeerSlot>=net::kMaxPeers) break;
+        net::RadioStatePayload p{}; std::memcpy(&p,msg.payload,sizeof(p));
+        coop::radio_sync::Receive(p,static_cast<uint8_t>(msg.senderPeerSlot));
+        break;
+    }
+    case net::ReliableKind::CordState: {
+        if (msg.payloadLen != sizeof(net::CordStatePayload) ||
+            session.role() != net::Role::Client || msg.senderPeerSlot != 0) break;
+        net::CordStatePayload p{};
+        std::memcpy(&p, msg.payload, sizeof(p));
+        coop::cord_sync::Apply(p);
+        break;
+    }
+    case net::ReliableKind::CordIntent: {
+        if (msg.payloadLen != sizeof(net::CordStatePayload) || session.role() != net::Role::Host ||
+            msg.senderPeerSlot <= 0 || msg.senderPeerSlot >= net::kMaxPeers) break;
+        net::CordStatePayload p{};
+        std::memcpy(&p, msg.payload, sizeof(p));
+        coop::cord_sync::OnIntent(p, static_cast<uint8_t>(msg.senderPeerSlot));
+        break;
+    }
+    case net::ReliableKind::PropSupport: {
+        if (msg.payloadLen != sizeof(net::PropSupportPayload) || session.role() != net::Role::Host ||
+            msg.senderPeerSlot <= 0 || msg.senderPeerSlot >= net::kMaxPeers) break;
+        net::PropSupportPayload p{};
+        std::memcpy(&p, msg.payload, sizeof(p));
+        coop::prop_support_sync::OnIntent(session, p, static_cast<uint8_t>(msg.senderPeerSlot));
+        break;
+    }
+    case net::ReliableKind::KitchenState: {
+        if (msg.payloadLen != sizeof(net::KitchenStatePayload) ||
+            session.role() != net::Role::Client || msg.senderPeerSlot != 0) break;
+        net::KitchenStatePayload p{};
+        std::memcpy(&p,msg.payload,sizeof(p));
+        coop::kitchen_sync::Apply(p);
+        break;
+    }
+    case net::ReliableKind::KitchenIntent: {
+        if (msg.payloadLen != sizeof(net::KitchenIntentPayload) ||
+            session.role() != net::Role::Host || msg.senderPeerSlot <= 0 || msg.senderPeerSlot >= net::kMaxPeers) break;
+        net::KitchenIntentPayload p{};
+        std::memcpy(&p,msg.payload,sizeof(p));
+        coop::kitchen_sync::OnIntent(p,static_cast<uint8_t>(msg.senderPeerSlot));
+        break;
+    }
     case net::ReliableKind::FireflySpawn: {
         // The peer-symmetric ambient firefly: any peer may originate one (each runs its own spawner
         // near its own camera and shares), and the host relays a client's spawn to the other
@@ -119,6 +267,30 @@ bool HandleWorldEvent(net::Session& session,
         net::EventFirePayload fp{};
         std::memcpy(&fp, msg.payload, sizeof(fp));
         coop::event_fire_sync::OnReliable(fp);
+        break;
+    }
+    case net::ReliableKind::EventGather: {
+        if (msg.payloadLen < sizeof(net::EventGatherPayload)) break;
+        if (session.role() != net::Role::Host || msg.senderPeerSlot == 0) break;
+        net::EventGatherPayload gp{};
+        std::memcpy(&gp, msg.payload, sizeof(gp));
+        coop::event_fire_sync::OnLocationGather(gp, static_cast<uint8_t>(msg.senderPeerSlot));
+        break;
+    }
+    case net::ReliableKind::SitAnchor: {
+        if (msg.payloadLen < sizeof(net::SitAnchorPayload)) break;
+        if (msg.senderPeerSlot < 0 || msg.senderPeerSlot >= coop::players::kMaxPeers) break;
+        net::SitAnchorPayload sp{};
+        std::memcpy(&sp, msg.payload, sizeof(sp));
+        coop::sit_pose::OnAnchor(static_cast<uint8_t>(msg.senderPeerSlot), sp);
+        break;
+    }
+    case net::ReliableKind::MediaState: {
+        if (msg.payloadLen < sizeof(net::MediaStatePayload)) break;
+        if (session.role() != net::Role::Client || msg.senderPeerSlot != 0) break;
+        net::MediaStatePayload mp{};
+        std::memcpy(&mp, msg.payload, sizeof(mp));
+        coop::media_sync::OnReliable(mp);
         break;
     }
     case net::ReliableKind::EventSnapshot: {

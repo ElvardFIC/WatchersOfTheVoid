@@ -64,11 +64,13 @@ DroneMirror g_m;
 // state when Active or the FX / gate bits differ from it. The check itself runs at the send cadence,
 // so a parked drone costs a few memory reads twenty times a second.
 uint64_t g_nextCheckMs = 0;
+uint64_t g_lastSendMs = 0;
 bool     g_haveSent   = false;
 FVector  g_sentLoc{};
 FRotator g_sentRot{};
 bool     g_sentActive = false;
 uint8_t  g_sentBits   = 0;
+float    g_sentRotorPitch = 0.f;
 bool     g_installLogged  = false;  // latch the install log (Install is the per-tick ensure path)
 
 uint64_t NowMs() {
@@ -78,6 +80,7 @@ uint64_t NowMs() {
 
 // The host's drone as one check reads it, from memory.
 struct HostRead {
+    float rotorPitch = 0.f;
     FVector  loc{};
     FRotator rot{};
     bool     active = false;
@@ -88,6 +91,10 @@ bool ReadHost(void* drone, HostRead& r) {
     if (!D::ReadPose(drone, r.loc, r.rot)) return false;
     r.active = D::IsActive(drone);
     r.bits = D::ReadFxBits(drone);
+    r.rotorPitch = D::ReadRotorPitch(drone);
+    bool leave = false;
+    if (D::ReadDeparturePreference(drone, leave))
+        r.bits |= D::kDepartureValid | (leave ? D::kLeaveAfter5min : 0);
     return true;
 }
 
@@ -98,6 +105,7 @@ void FillPayload(void* drone, const HostRead& r, bool adopt, coop::net::DroneSta
     p.active = r.active ? 1 : 0;
     p.stateBits = r.bits;
     p.adopt = adopt ? 1 : 0;
+    p.rotorPitch = r.rotorPitch;
     // The dust anchor: the blueprint pins the bAbsoluteLocation eff_droneDust to its ground-trace
     // hit every tick, and the mirror replays from this. A dust bit without a readable anchor is
     // unusable on the receiver, so clear it.
@@ -169,6 +177,7 @@ namespace {
 // One word of the host's onto this peer's drone: the pose into the interpolation, then the FX and gate
 // state. Game thread.
 void ApplyState(void* drone, const coop::net::DroneStatePayload& payload) {
+    D::ApplyRotorPitch(drone, payload.rotorPitch);
     if (!g_m.suppressed) { D::SuppressTick(drone); g_m.suppressed = true; }
     SetTarget(g_m, payload, /*snap*/ payload.adopt != 0);
     // FX mirror: the suppressed tick kills the rotor-dust particle and the delivery alarm cue, so
@@ -184,6 +193,7 @@ void ApplyState(void* drone, const coop::net::DroneStatePayload& payload) {
     // Interaction gate: write canTakeOff (THE gate) + hasSack (option prerequisite) onto the mirror so
     // a parked drone is interactable instead of "in motion" (the suppressed tick never sets them).
     D::WriteGateFields(drone, canTakeOff, hasSack);
+    if (nb & D::kDepartureValid) D::WriteDeparturePreference(drone, (nb & D::kLeaveAfter5min) != 0);
     if (hasSack)
         D::RepointContainer(drone);  // cargo aboard -> point the mirror at the prop-mirrored container.
                                      // EVERY hasSack packet (not just the rising edge): the container
@@ -226,7 +236,8 @@ void OnReliable(const coop::net::DroneStatePayload& payload) {
     if (!s || s->role() == coop::net::Role::Host) return;  // host is the authority -- never applies
     if (!std::isfinite(payload.x) || !std::isfinite(payload.y) || !std::isfinite(payload.z) ||
         !std::isfinite(payload.pitch) || !std::isfinite(payload.yaw) || !std::isfinite(payload.roll) ||
-        !std::isfinite(payload.dustX) || !std::isfinite(payload.dustY) || !std::isfinite(payload.dustZ)) {
+        !std::isfinite(payload.dustX) || !std::isfinite(payload.dustY) || !std::isfinite(payload.dustZ) ||
+        !std::isfinite(payload.rotorPitch) || payload.rotorPitch < 0.f || payload.rotorPitch > 4.f) {
         UE_LOGW("drone: OnReliable non-finite pose -- dropping");
         return;
     }
@@ -284,15 +295,18 @@ void Tick() {
             std::fabs(ue_wrap::NormalizeAxis(r.rot.Yaw - g_sentRot.Yaw)) > kTurnEpsDeg ||
             std::fabs(ue_wrap::NormalizeAxis(r.rot.Roll - g_sentRot.Roll)) > kTurnEpsDeg;
         const bool streaming = r.active || (r.bits & D::kFxDust) != 0;
-        if (!streaming && !moved && r.active == g_sentActive && r.bits == g_sentBits) return;
+        if (!streaming && !moved && r.active == g_sentActive && r.bits == g_sentBits &&
+            std::fabs(r.rotorPitch - g_sentRotorPitch) < 0.001f && nowMs - g_lastSendMs < 2000) return;
         coop::net::DroneStatePayload p{};
         FillPayload(drone, r, /*adopt*/false, p);
         if (!s->SendReliable(coop::net::ReliableKind::DroneState, &p, sizeof(p))) return;
         g_haveSent = true;
+        g_lastSendMs = nowMs;
         g_sentLoc = r.loc;
         g_sentRot = r.rot;
         g_sentActive = r.active;
         g_sentBits = r.bits;  // the bits as read: FillPayload drops the dust bit when its anchor is unread
+        g_sentRotorPitch = r.rotorPitch;
     } else {
         // CLIENT: the drone is ALWAYS a mirror -- suppress its own flight tick once, take a word that
         // waited for the drone to resolve, then drive the interp toward the last streamed pose (no-op
@@ -313,12 +327,14 @@ void OnDisconnect() {
         if (void* drone = D::Find()) D::RestoreTick(drone);  // restore single-player flight
     }
     g_m = DroneMirror{};
-    g_nextCheckMs = 0;
+    g_nextCheckMs = g_lastSendMs = 0;
+    g_session.store(nullptr, std::memory_order_release);
     g_haveSent = false;
     g_sentLoc = FVector{};
     g_sentRot = FRotator{};
     g_sentActive = false;
     g_sentBits = 0;
+    g_sentRotorPitch = 0.f;
     g_installLogged = false;
 }
 

@@ -4,6 +4,7 @@
 // per-class completeness floor and a >50% valve.
 
 #include "coop/props/join_membership_sweep.h"
+#include "coop/props/local_birth_protection.h"
 #include "coop/session/world_load_episode.h"  // the load-tail quiescence probe
 
 #include "coop/creatures/kerfur_entity.h"
@@ -54,8 +55,10 @@ std::unordered_set<void*> g_claimedActors;
 // it owes nothing to a bracket and survives BeginClaimTracking. Emptied wherever a sweep has
 // adjudicated the world, and at teardown, so it holds at most what one player made between two
 // joins. See RecordSelfAuthored.
-std::unordered_set<void*> g_selfAuthored;
+LocalBirths g_selfAuthored;
 bool g_claimTrackingActive = false;
+uint64_t g_claimEpoch = 0;
+bool g_reconcileRunning = false;
 
 // The deferred sweep: SnapshotComplete arms it, TickClientReconcile fires it once the load tail
 // has quiesced. Game thread only.
@@ -97,10 +100,11 @@ void RecordSelfAuthored(void* actor) {
     // its seam was a no-op and BeginClaimTracking would have cleared it anyway. What saved it that
     // run was the host's echo landing first; a slower round trip would not have.
     if (!actor) return;
-    g_selfAuthored.insert(actor);
+    g_selfAuthored[actor].Set(actor);
 }
 
 void BeginClaimTracking() {
+    ++g_claimEpoch;
     g_claimedActors.clear();
     // g_selfAuthored deliberately SURVIVES: see RecordSelfAuthored. It is emptied where it stops
     // meaning anything -- when a sweep has adjudicated the world, and at teardown.
@@ -122,7 +126,8 @@ void BeginClaimTracking() {
 }
 
 // The one sweep, driven by TickClientReconcile once the load tail has quiesced.
-static void RunDivergenceSweep_(void* localPlayer) {
+static void RunDivergenceSweep_(void* localPlayer, const ReconcilePass& pass) {
+    if (!pass.Current()) return;
     if (!g_claimTrackingActive) {
         // A SnapshotComplete without its Begin must not sweep with an empty claim set: that would
         // destroy every in-universe actor.
@@ -168,7 +173,7 @@ static void RunDivergenceSweep_(void* localPlayer) {
     };
     int inClass = 0;        // live, non-mirror, LOCAL Prop Elements (the membership universe)
     int claimedCount = 0;
-    std::vector<void*> doomed;
+    std::vector<SweepCandidate> doomed;
     doomed.reserve(propPairs.size());
     std::vector<std::wstring> doomedClass;  // Phase 0: class per doomed actor, parallel to `doomed`
     doomedClass.reserve(propPairs.size());
@@ -176,6 +181,7 @@ static void RunDivergenceSweep_(void* localPlayer) {
     std::unordered_map<std::wstring, int> claimedByClass;  // Phase 0: claimed count per class (floor numerator)
     std::unordered_map<std::wstring, int> keylessSkippedByClass;
     for (const auto& pr : propPairs) {
+        if (!pass.Current()) return;
         if (pr.mirror) continue;                                    // host-driven mirror -> not a save divergence (automatic kerfur exemption)
         if (!pr.actor) continue;
         if (!R::IsLiveByIndex(pr.actor, pr.internalIdx)) continue;  // dead (no deref) -- the reaper owns it
@@ -185,12 +191,20 @@ static void RunDivergenceSweep_(void* localPlayer) {
         // class.
         const std::wstring acls = R::ClassNameOf(a);
         if (g_claimedActors.count(a)) { ++claimedCount; ++claimedByClass[acls]; continue; }  // host-expressed / self-claimed -> converged, keep
+        // Exempt local births without counting them as host snapshot coverage.
+        if (ProtectedLocalBirth(a, g_selfAuthored)) {
+            g_claimedActors.insert(a);
+            continue;
+        }
         // A per-player state actor (the inventory container) is this player's own save state, never
         // host expressed and never swept; membership alone would doom it, and the sweep once
         // destroyed the client's inventory container, which fataled at the next GC purge.
-        if (coop::prop_lifecycle::IsPerPlayerPropClass(acls)) continue;
+        if (coop::prop_lifecycle::IsPerPlayerPropClass(acls)) {
+            g_claimedActors.insert(a);
+            continue;
+        }
         if (ue_wrap::prop::IsTrashActor(a)) {          // a pile or a clump at rest: expressible on the eid lane
-            doomed.push_back(a);
+            doomed.emplace_back(a);
             doomedClass.push_back(acls);
             ++doomedByClass[acls];
             continue;
@@ -224,14 +238,7 @@ static void RunDivergenceSweep_(void* localPlayer) {
                 continue;
             }
         }
-        // A swept trashBitsPile is unwatched from the counter channel before it dies: the sweep
-        // runs after join_progress::Complete in the same drain, and the next tick's death-watch
-        // would otherwise see a near-camera vanish and broadcast a keyed PropDestroy for a pile the
-        // host still has.
-        if (ue_wrap::prop::IsTrashBitsPile(a)) {
-            coop::trash_pile_sync::NotifyWireDestroy(key);
-        }
-        doomed.push_back(a);
+        doomed.emplace_back(a);
         doomedClass.push_back(acls);
         ++doomedByClass[acls];
     }
@@ -245,6 +252,7 @@ static void RunDivergenceSweep_(void* localPlayer) {
         coop::prop_element_tracker::CollectKeyIndexEntries(keyedIdx);
         int idxUniverse = 0, idxClaimed = 0, idxEvicted = 0;
         for (const auto& ke : keyedIdx) {
+            if (!pass.Current()) return;
             if (!ke.actor) continue;
             if (!R::IsLiveByIndex(ke.actor, ke.internalIdx)) {
                 // A dead entry is evicted now: an element-less keyed entry has no registry row, so
@@ -261,6 +269,7 @@ static void RunDivergenceSweep_(void* localPlayer) {
                 ++claimedCount; ++claimedByClass[acls]; ++idxClaimed;   // floor numerator keeps its semantics
                 continue;
             }
+            if (ProtectedLocalBirth(ke.actor, g_selfAuthored)) continue;
             if (coop::prop_lifecycle::IsPerPlayerPropClass(acls)) continue;
             // A cached (actor, idx) pair can survive a slot recycle; only the live actor's current
             // key proves the entry still names it. A mismatch (an impostor or an un-reindexed
@@ -289,10 +298,7 @@ static void RunDivergenceSweep_(void* localPlayer) {
                     continue;
                 }
             }
-            if (ue_wrap::prop::IsTrashBitsPile(ke.actor)) {
-                coop::trash_pile_sync::NotifyWireDestroy(liveKey);      // unwatch before the death, as above
-            }
-            doomed.push_back(ke.actor);
+            doomed.emplace_back(ke.actor);
             doomedClass.push_back(acls);
             ++doomedByClass[acls];
         }
@@ -330,9 +336,10 @@ static void RunDivergenceSweep_(void* localPlayer) {
     // the snapshot for that class is incomplete. Exact, not a percentage, so a legitimate clear
     // (host has 0, no census entry) still dooms. Applied before the valve, so the valve sees the
     // genuine remainder.
+    if (!pass.Current()) return;
     if (coop::snapshot_census::HasCensus() && !doomed.empty() &&
         !coop::dev::force_overdestroy_test::FloorDisabledForTest()) {
-        std::vector<void*> keptDoomed;
+        std::vector<SweepCandidate> keptDoomed;
         std::vector<std::wstring> keptDoomedClass;
         keptDoomed.reserve(doomed.size());
         keptDoomedClass.reserve(doomed.size());
@@ -396,27 +403,55 @@ static void RunDivergenceSweep_(void* localPlayer) {
     // The destroys, with OnDestroy-parity teardown and echo-suppressed so the K2_DestroyActor
     // observer does not broadcast them; deferred=false, since this runs from the event_feed drain,
     // not inside a BP graph.
-    for (void* a : doomed) {
+    int destroyRequests = 0;
+    std::unordered_map<std::wstring, int> destroyedByClass;
+    for (const auto& candidate : doomed) {
+        if (!pass.Current()) return;
+        const auto resolve = [&] {
+            return pass.Current() ? candidate.Resolve(g_claimedActors, g_selfAuthored) : nullptr;
+        };
+        void* a = resolve();
+        if (!a) continue;
         // One line per doomed actor with its class, key and position; the histogram below says what
         // died, this says which and where. Cold path, once per join.
         {
             const std::wstring dk = ue_wrap::prop::GetInteractableKeyString(a);
+            if (!resolve()) continue;
             ue_wrap::FVector dl{};
             const bool dlRead = ue_wrap::engine::TryGetActorLocation(a, dl);
+            if (!resolve()) continue;
             UE_LOGI("join_membership_sweep:   dooming '%ls' key='%ls' loc=(%.1f,%.1f,%.1f)%s",
                     R::ClassNameOf(a).c_str(), dk.c_str(), dl.X, dl.Y, dl.Z, dlRead ? "" : " (unread)");
         }
         coop::remote_prop::ClearAnyDriveFor(a);
+        if (!resolve()) continue;
         ue_wrap::engine::ReleaseMainPlayerGrabIfHolding(localPlayer, a);
+        if (!resolve()) continue;
+        // Do this only after the completeness floor, abort valve and final lifetime checks.
+        // Selection is provisional: unwatched survivors would lose queued pile state.
+        // Use the same finalization for both selection paths. Unwatch before the
+        // local death so it is not mistaken for player collection and echoed to the host.
+        if (ue_wrap::prop::IsTrashBitsPile(a)) {
+            if (!resolve()) continue;
+            const std::wstring key = ue_wrap::prop::GetInteractableKeyString(a);
+            if (!resolve()) continue;
+            coop::trash_pile_sync::NotifyWireDestroy(key);
+        }
+        if (!resolve()) continue;
+        const std::wstring destroyedClass = R::ClassNameOf(a);
         coop::prop_lifecycle::DestroyLocalProp(a, /*deferred=*/false);
+        if (!pass.Current()) return;
+        ++destroyRequests;
+        ++destroyedByClass[destroyedClass];
     }
+    if (!pass.Current()) return;
     UE_LOGI("join_membership_sweep: claim sweep -- %d in-universe actors live, "
-            "%d claimed (expressed on the wire this bracket), %d unclaimed locals destroyed "
+            "%d claimed (expressed on the wire this bracket), %d unclaimed local destruction requests "
             "(client adopts host world)",
-            inClass, claimedCount, static_cast<int>(doomed.size()));
+            inClass, claimedCount, destroyRequests);
     // The doomed-class histogram: a wrongly-universed class shows up here, not as a delayed crash.
     {
-        std::vector<std::pair<std::wstring, int>> hist(doomedByClass.begin(), doomedByClass.end());
+        std::vector<std::pair<std::wstring, int>> hist(destroyedByClass.begin(), destroyedByClass.end());
         std::sort(hist.begin(), hist.end(),
                   [](const auto& l, const auto& r) { return l.second > r.second; });
         int shown = 0;
@@ -443,6 +478,7 @@ static void RunDivergenceSweep_(void* localPlayer) {
     // right at the sweep and churns the GUObjectArray, so stored indices false-negative on every
     // survivor. One array walk per join.
     coop::pile_spawn_bind::LogCensus();
+    if (!pass.Current()) return;
     // The kerfur off-to-active retire is RunReconcile's step 3; when no bracket armed (a lost
     // SnapshotBegin) quiescence_drain::OnTick covers it every client tick.
 
@@ -450,6 +486,7 @@ static void RunDivergenceSweep_(void* localPlayer) {
     g_selfAuthored.clear();   // the sweep has adjudicated; a later bracket re-decides from the host's snapshot
     g_claimTrackingActive = false;
     coop::pile_spawn_bind::Reset();  // the candidate pointers would dangle past the GC below; the deferred reconcile queues survive
+    if (!pass.Current()) return;
     // The engine's own purge follows the mass destroy, as after a level transition: otherwise the
     // pending-kill actors and the bracket's transients sit until the periodic purge, a client RSS
     // plateau over 10 GB that grazed the process commit cap. Under the join cover, the hitch is
@@ -481,13 +518,17 @@ void ArmDivergenceSweep() {
 }
 
 void TickClientReconcile() {
+    ReconcilePass pass(g_claimEpoch, g_reconcileRunning);
+    if (!pass.Current()) return;
     // The steady-state identity reconcile runs every tick, self-gated (a quiescence bool, a
     // pending-work bool, a 250 ms debounce); it walks the array only when a save pile moved after a
     // twin was armed. Below it is the join one-shot, zero cost when disarmed.
     coop::element::quiescence_drain::OnTick();
+    if (!pass.Current()) return;
     // The one probe owner, also driven from net_pump for the announce gate; double-driving is
     // throttled inside.
     const bool quiesced = coop::world_load_episode::TickQuiesceProbe();
+    if (!pass.Current()) return;
     if (!g_sweepPending) {
         // The lost-bracket backstop (kBracketFlakeMs): quiescence declared without a doom sweep, no
         // claims exist on this path. Client only: the probe arms only on client paths.
@@ -510,6 +551,7 @@ void TickClientReconcile() {
     // The local player is re-resolved here (a pointer stashed at arm time could go stale); the
     // sweep releases its grab if a doomed actor is held. One FindObjectByClass, cold.
     void* localPlayer = R::FindObjectByClass(P::name::MainPlayerClass);
+    if (!pass.Current()) return;
     const auto msSinceArm = std::chrono::duration_cast<std::chrono::milliseconds>(
                                 std::chrono::steady_clock::now() - g_sweepArmedAt).count();
     UE_LOGI("join_membership_sweep: divergence sweep FIRING (probe latched; %lldms after arm)",
@@ -517,10 +559,12 @@ void TickClientReconcile() {
     g_sweepPending = false;
     g_sweepFired = true;  // load tail drained -> npc_adoption may now fresh-spawn no-twin save NPCs
     coop::save_identity_bind::ForceSaveChurnForTest();  // dev: a synthetic unbind so the re-bind lane runs with N > 0
+    if (!pass.Current()) return;
     // The deferred reconcile runs before the doom adjudication with claim tracking still armed, so
     // a reconcile that converge-binds a re-create claims it and the sweep spares it. Doom judges
     // last.
     coop::element::quiescence_drain::RunReconcile();
+    if (!pass.Current()) return;
     // A save-transfer join goes through two level loads, and a keyed prop re-created by the second
     // (or by GC churn) reuses a freed GUObjectArray slot: NumObjects stays flat and the steady
     // re-seed's grew-gate never indexes it, so it is invisible to the membership here and survives
@@ -528,9 +572,12 @@ void TickClientReconcile() {
     // refreshed at this one cold per-join point, so the re-create is either re-bind-spared or
     // doomed, leaving exactly one. One array walk per join.
     coop::prop_element_tracker::ReSeedKnownKeyedProps(nullptr);
-    RunDivergenceSweep_(localPlayer);
+    if (!pass.Current()) return;
+    RunDivergenceSweep_(localPlayer, pass);
+    if (!pass.Current()) return;
     // The read-only probes and the bind summary report at quiescence.
     coop::dev::spawn_order_probe::EmitVerdictAtQuiescence();
+    if (!pass.Current()) return;
     coop::dev::join_window_pos_trace::EmitVerdictAtQuiescence();
     coop::save_identity_bind::EmitBindSummary();
     // The sweep just destroyed the join-window ghosts and duplicates, so every still-hidden
@@ -549,7 +596,7 @@ bool IsInDivergenceUniverseUnclaimed(void* actor) {
     // claim above cannot carry that fact: it is bracket-scoped and cleared when one opens, while a
     // player-authored birth can precede the bracket by a second and still be waiting on the host's
     // answer when the sweep runs.
-    if (g_selfAuthored.count(actor)) return false;
+    if (ProtectedLocalBirth(actor, g_selfAuthored)) return false;
     void* cls = R::ClassOf(actor);
     if (!ue_wrap::prop::IsClassKeyedInteractable(cls)) return false;  // out of the divergence universe
     if (!R::IsLive(actor)) return false;
@@ -571,6 +618,7 @@ bool IsPendingSweepCandidate(void* actor) {
 bool HasLoadTailQuiesced() { return g_sweepFired; }
 
 void OnClientWorldReadyResetSweep() {
+    ++g_claimEpoch;
     if (g_sweepPending)
         UE_LOGI("join_membership_sweep: client world-ready -- cancelling a pending divergence sweep "
                 "from the prior world (the new snapshot bracket will re-arm it)");
@@ -579,6 +627,7 @@ void OnClientWorldReadyResetSweep() {
 }
 
 void ResetClaimTracking() {
+    ++g_claimEpoch;
     if (g_claimTrackingActive) {
         UE_LOGI("join_membership_sweep: claim tracking reset mid-snapshot (disconnect) -- "
                 "%zu claims dropped, no sweep", g_claimedActors.size());

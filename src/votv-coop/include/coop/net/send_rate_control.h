@@ -68,11 +68,15 @@ public:
     // retry outranks the lane-0 pose datagram, so it is the probe margin BBR uses and no more.
     static constexpr int kOverdriveNum = 5, kOverdriveDen = 4;
 
-    // THE BRAKE and its dead band, in milliseconds of delivery standing on the wire. The climb
-    // stops where health stopped and the brake fires an order of magnitude under the collapse;
-    // between them the rate is left alone, because a controller with no dead band hunts.
+    // Brake/dead band in excess ACK time after subtracting lifetime minimum RTT.
+    // Raw inflight time includes propagation: healthy high-ping links must climb
+    // too. The delivery anchor below remains independent of the RTT allowance.
     static constexpr int64_t kQueueClimbMs = 150;
     static constexpr int64_t kQueueBrakeMs = 400;
+    // Compensate propagation, not a moving congestion baseline. The minimum
+    // only falls during a connection; reconnect resets it. Cap even the first
+    // (possibly already congested) observation so it cannot hide a long stall.
+    static constexpr int kMaxBaseRttMs = 1000;
 
     // The climb, per decision while the brake is silent. The additive term is what carries a rate
     // off the floor, where a purely multiplicative step crawls.
@@ -209,6 +213,7 @@ private:
         uint64_t    lastProbeMs = 0;
         Outstanding out[kMaxOutstanding];
         int         rttLastMs = -1;
+        int         baseRttMs = -1; // lifetime minimum, unlike the diagnostic 10 s window
         int         rttMinWindow = -1, rttMaxWindow = -1;
         int64_t     rttSumWindow = 0;
         int         rttCountWindow = 0;
@@ -235,6 +240,7 @@ private:
         // The last decision's inputs, kept for the reported line: a field log that cannot show why
         // the rate moved is the state this whole arc started in.
         int64_t  inflightMs = 0;
+        int64_t  excessMs = 0; // reliable ACK time beyond the connection's baseline
         // What the law wants, and what the connection was last told, so a write costs one per move.
         // Both open at the rate `TuneConnection` already wrote, NOT at zero: a link whose demand
         // never reaches kIdleDemandBytes decides nothing, and zeroes here would report a rate of 0
@@ -274,6 +280,7 @@ private:
 
     // The law, run once per 10 Hz sample against the two smoothed rates -- on the SAMPLE cadence,
     // not the reported second, because a join has to climb inside its own download.
+    static void NoteBaseRtt_(Measured& m, int rttMs);
     static void Steer_(Measured& m);
 
     Slot slots_[kSlots];

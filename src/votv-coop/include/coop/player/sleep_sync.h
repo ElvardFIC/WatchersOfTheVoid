@@ -52,6 +52,9 @@ void Tick();
 //   them all: the host broadcasts End{natural} and receivers reflect wakeup().
 void OnReliable(const coop::net::SleepStatePayload& p, uint8_t senderSlot);
 
+// Host-selected nightmare replay, ordered after the SleepState End edge.
+void OnDreamScene(const coop::net::DreamScenePayload& p, uint8_t senderSlot);
+
 // HOST: a joiner arrived (world-ready) -- ends a running accelerate phase
 // (someone is now awake in the world) and re-tallies.
 void QueueConnectBroadcastForSlot(int peerSlot);

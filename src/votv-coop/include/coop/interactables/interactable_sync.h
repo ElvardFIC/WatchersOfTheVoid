@@ -70,6 +70,10 @@ std::wstring LightSwitchKey(void* sw);
 // The light group lane's key for `root`, or "" when the lane does not index it in the current world.
 // Game thread.
 std::wstring LightGroupKey(void* root);
+std::wstring CeilingLampKey(void* lamp);
+std::wstring AmbientLightKey(void* lamp);
+void OnAmbientLightVerb(void* lamp);
+void OnCeilingLampVerb(void* lamp);
 
 // Host: a group's runTrigger just ran on `root` (coop/interactables/lightgroup_verbs); the group lane
 // sends the state it left when that changed. Game thread.
@@ -111,6 +115,7 @@ bool ApplyingLightGroup(void* root);
 // ON) must be pushed too -- the receiver idempotently skips already-matching ones.
 // Called from the net-pump connect edge. Game thread.
 void QueueConnectBroadcastForSlot(int peerSlot);
+void OnPeerLeft(int peerSlot);
 
 // Per-tick retry pump for deferred applies (instances still streaming in). No-op
 // when nothing is deferred; otherwise THROTTLED per channel. Call every net-pump

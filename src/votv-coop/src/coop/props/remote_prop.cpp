@@ -4,6 +4,7 @@
 // remote_prop_convert.cpp; the physics calls are ue_wrap/engine/engine_physics.
 
 #include "coop/props/remote_prop.h"
+#include "coop/interactables/cord_sync.h"
 
 #include "coop/props/active_drive.h"   // the fixed-delay snapshot interp, shared with the trash carry stream
 #include "coop/props/prop_sound.h"
@@ -14,6 +15,7 @@
 #include "coop/element/registry.h"
 #include "coop/net/session.h"
 #include "coop/player/players_registry.h"
+#include "coop/player/local_prop_hold.h"
 #include "coop/props/pile_look.h"
 #include "coop/props/prop_drive_stream.h"  // IsParked: the host's channel owns a parked copy
 #include "coop/props/prop_park.h"  // Park / Unpark: a held prop, and a Character welded on it
@@ -23,10 +25,16 @@
 #include "coop/props/prop_wire_parity.h"  // ConvergeFrozenSleep, the release's flags
 #include "coop/props/unresolved_pose_ledger.h"  // a pose-before-spawn race vs a sustained identity gap
 #include "coop/element/identity_create.h"  // CreateOrAdoptPropMirror, the prop-mirror bind
+#include "coop/creatures/npc_sync.h"  // KerfurIsHolding: a take's release is not a throw
+#include "coop/player/local_streams.h"  // ArmKerfurTakeRelease: the holder's let-go repeats the host
+#include "coop/player/pvp.h"
+#include "coop/props/prop_drive_host.h"  // Claim: the kerfur drive starts once the hand drive ends
 #include "coop/props/trash_channel.h"  // the per-eid sync-time context; stale carry and release drops
 #include "coop/interactables/drive_payload_sync.h"
 #include "ue_wrap/core/call.h"
+#include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/engine/engine.h"
+#include "ue_wrap/engine/engine_mainplayer.h"  // IsMainPlayerGrabbing: arm the holder's own let-go
 #include "ue_wrap/core/fname_utils.h"
 #include "ue_wrap/core/hot_path_guard.h"
 #include "ue_wrap/core/log.h"
@@ -65,9 +73,8 @@ std::array<coop::active_drive::ActiveDrive, coop::players::kMaxPeers> g_drives{}
 // cache still holds. A generation of 0 is unversioned and passes. The shape is MTA's sync time
 // context, which settles a state change against sync still in flight (CElement.cpp), with one
 // divergence: MTA's server also keeps one syncer per unoccupied vehicle and relays only that
-// syncer's packets (CUnoccupiedVehicleSync.cpp), as the driven-prop channel's host claims a prop,
-// while here the holder mints a generation per hold and nothing assigns a prop to one holder -- two
-// peers grabbing one prop both stream it (docs/props.md, Known limits).
+// syncer's packets (CUnoccupiedVehicleSync.cpp). Receivers keep only the lowest-slot remote
+// drive on a body. Local grabs still take precedence; this is not a host grant protocol.
 struct HoldGate {
     uint16_t closedGen   = 0;
     bool     haveClosed  = false;
@@ -76,6 +83,9 @@ struct HoldGate {
     uint16_t preludeGen  = 0;      // the hold the grab's prelude ran for
     uint16_t tailSaidGen = 0;      // the closed hold a late pose was said for
     uint32_t relatches   = 0;      // re-latches during the drive, said at the first and at the loud mark
+    ue_wrap::CachedObjRef conflictTarget;
+    uint16_t conflictGen = 0;
+    int conflictOwner = -1;
 };
 std::array<HoldGate, coop::players::kMaxPeers> g_holds{};
 
@@ -84,6 +94,45 @@ bool GenAfter(uint16_t a, uint16_t b) { return static_cast<int16_t>(a - b) > 0; 
 
 bool IsHoldClosed(const HoldGate& h, uint16_t gen) {
     return gen != 0 && h.haveClosed && !GenAfter(gen, h.closedGen);
+}
+
+void NoteConflict(int slot, uint16_t generation, void* target, int winner) {
+    auto& h = g_holds[slot];
+    if (h.conflictTarget.Is(target) && h.conflictGen == generation && h.conflictOwner == winner) return;
+    h.conflictTarget.Set(target);
+    h.conflictGen = generation;
+    h.conflictOwner = winner;
+    UE_LOGI("remote_prop: slot %d hold %u yields prop %p to slot %d", slot, unsigned(generation), target, winner);
+}
+
+bool CanTakeRemoteDrive(int slot, uint16_t generation, void* target) {
+    // Inspect all competitors before displacing any: a losing claim must not
+    // clear a third slot's drive on its way to discovering the winner.
+    for (int other = 0; other < slot; ++other) {
+        if (g_drives[other].LiveActor() != target) continue;
+        NoteConflict(slot, generation, target, other);
+        return false;
+    }
+    return true;
+}
+
+bool TakeRemoteDrive(int slot, uint16_t generation, void* target) {
+    if (!CanTakeRemoteDrive(slot, generation, target)) return false;
+    for (int other = slot + 1; other < int(g_drives.size()); ++other) {
+        if (g_drives[other].LiveActor() != target) continue;
+        NoteConflict(other, g_holds[other].driveGen, target, slot);
+        // Preserve the body's park across the transfer; no one-frame physics kick.
+        ResetDriveState(g_drives[other]);
+    }
+    g_holds[slot].conflictTarget.Reset();
+    g_holds[slot].conflictOwner = -1;
+    return true;
+}
+
+bool IsRejectedRelease(int slot, uint16_t generation, void* target) {
+    if (slot < 0 || slot >= int(g_holds.size()) || !target) return false;
+    const auto& h = g_holds[slot];
+    return h.conflictGen == generation && h.conflictTarget.Get() == target;
 }
 
 // A drive whose copy the game switches back to simulating this many times is being fought every
@@ -114,6 +163,14 @@ bool IsActorUnderAnyDrive(void* actor) {
         if (d.actor == actor) return true;
     }
     return false;
+}
+
+void* DrivenActor(int slot) {
+    UE_ASSERT_GAME_THREAD("g_drives (DrivenActor)");
+    if (slot < 0 || slot >= static_cast<int>(coop::players::kMaxPeers)) return nullptr;
+    const auto& d = g_drives[static_cast<size_t>(slot)];
+    if (!d.actor || !R::IsLiveByIndex(d.actor, d.actorIdx)) return nullptr;
+    return d.actor;
 }
 
 // The WireKey as a wstring, for the key index.
@@ -210,6 +267,12 @@ void ResolveAndStartDrive(int slot, const coop::net::PropPoseSnapshot& pose) {
         return;
     }
     coop::unresolved_pose_ledger::Clear(slot, keyW, pose.elementId);
+    // The live pawn may have grabbed between network ticks. Never park a local
+    // hand/gun target merely because an older peer pose arrived afterwards.
+    if (coop::local_prop_hold::IsHeld(prop)) return;
+    if (!CanTakeRemoteDrive(slot, pose.holdGen, prop)) return;
+    ue_wrap::CachedObjRef candidate;
+    candidate.Set(prop);
     // The half of the grab this peer never ran. A grab runs its prelude on the grabbing machine only:
     // prop_C's playerGrabbed_pre clears the prop's lifespan, broadcasts `touched` and runs
     // awakeUnfreeze on a frozen or sleeping prop, and a prop carrying the wall-attach component (the
@@ -251,6 +314,9 @@ void ResolveAndStartDrive(int slot, const coop::net::PropPoseSnapshot& pose) {
             }
         }
     }
+    // The native prelude can invoke Blueprint callbacks; revalidate before using
+    // the object again, and only transfer the previous drive after setup succeeds.
+    if (!candidate.Get() || coop::local_prop_hold::IsHeld(prop)) return;
     // GetStaticMesh is null for the clump by design (it is driven through the root physics); only
     // an Aprop_C without a mesh is an error.
     void* mesh = ue_wrap::prop::GetStaticMesh(prop);
@@ -258,6 +324,7 @@ void ResolveAndStartDrive(int slot, const coop::net::PropPoseSnapshot& pose) {
         UE_LOGW("remote_prop: slot %d prop %p (Aprop_C) has null StaticMesh -- cannot drive", slot, prop);
         return;
     }
+    if (!TakeRemoteDrive(slot, pose.holdGen, prop)) return;
     UE_LOGI("remote_prop: slot %d GRAB-IN key='%ls' eid=%u -> local actor=%p mesh=%p (%s)",
             slot, keyW.c_str(), pose.elementId, prop, mesh,
             mesh ? "Aprop physics-off" : "clump kinematic (generic physics-off)");
@@ -269,6 +336,9 @@ void ResolveAndStartDrive(int slot, const coop::net::PropPoseSnapshot& pose) {
     // Simulation off so the per-packet SetActorLocation sticks: a kinematic follow, the clump
     // through the generic root toggle, and a Character welded on the prop stopped (prop_park.h).
     coop::prop_park::Park(prop, mesh);
+    // A drive starting on this prop is a hand holding it again. A client that still remembers
+    // the robot's take would treat the let-go as another take. The host's table is untouched.
+    coop::npc_sync::ForgetKerfurHolding(prop);
     g_drives[slot].actor = prop;
     g_drives[slot].actorIdx = R::InternalIndexOf(prop);  // live here; cache for LiveActor()
     g_drives[slot].mesh  = mesh;
@@ -311,9 +381,17 @@ void Tick(coop::net::Session& session) {
     for (int slot = firstSlot; slot < lastSlot; ++slot) {
         if (!isHost && static_cast<uint8_t>(slot) == localSlot) continue;
         ActiveDrive& drive = g_drives[slot];
+        if (void* a=drive.LiveActor(); a && coop::local_prop_hold::IsHeld(a)) {
+            coop::prop_park::Unpark(a,drive.mesh,!StickHoldsPhysicsOff(a));
+            ResetDriveState(drive);
+        }
         coop::net::PropPoseSnapshot pose{};
         bool isNew = false;
         const bool have = session.TryGetRemotePropPose(slot, pose, &isNew);
+        if (have && isNew && coop::cord_sync::IsDragPose(pose)) {
+            coop::cord_sync::ApplyDragPose(pose, static_cast<uint8_t>(slot));
+            continue; // this reserved pose identity moves a cord plug, not an Aprop_C
+        }
         HoldGate& hold = g_holds[slot];
         if (have && isNew && IsHoldClosed(hold, pose.holdGen)) {
             // Poses the holder sent before its release or stick, arriving after it: the ended hold
@@ -474,11 +552,46 @@ void OnRelease(int senderSlot, const coop::net::PropReleasePayload& payload, voi
             }
         }
     }
+    // A displaced/rejected hold never acquired this receiver's body. Its delayed
+    // throw must not teleport it even after the winning slot has let go. A later
+    // successful claim clears the conflict, so its own release works normally.
+    if (IsRejectedRelease(senderSlot, payload.holdGen, propActor)) return;
+    // The hand let go because an Omega took the prop. Leaving physics on here is what throws the
+    // item on the floor a moment after the robot's hands close. The pad is the host's take
+    // release, or the holder's let-go repeating it. The hold set is what the host recorded when
+    // the take ran, and what a client copies off that release so a later zero pad is not a throw.
+    const bool robotHasIt = propActor && coop::npc_sync::KerfurIsHolding(propActor);
+    if (payload._pad == 1 || robotHasIt) {
+        UE_LOGI("remote_prop: RELEASE for a prop the kerfur is holding %p -- physics stays off",
+                propActor);
+        auto* session = coop::npc_sync::GetSession();
+        const bool isHost = session && session->role() == coop::net::Role::Host;
+        if (session && !isHost && payload._pad == 1 && propActor)
+            coop::npc_sync::NoteKerfurHolding(propActor);
+        // The holder may not have emitted its let-go yet. Arm that edge so it cannot go out
+        // with a zero pad and land before this mark.
+        if (payload._pad == 1 && propActor && localPlayer &&
+            ue_wrap::engine::IsMainPlayerGrabbing(localPlayer, propActor))
+            coop::local_streams::ArmKerfurTakeRelease(propActor);
+        // End the hand drive without turning physics on. Claim at take time refuses while this
+        // drive still owns the prop; the hold is over now, so the host's kerfur channel can open.
+        if (propActor) EndAnyHoldOn(propActor);
+        else if (releasedSlot >= 0) ResetDriveState(g_drives[releasedSlot]);
+        if (isHost && robotHasIt)
+            coop::prop_drive_host::Claim(propActor, "kerfur-take");
+        return;
+    }
+    if (propActor && linSpeed > 150.f && senderSlot >= 0 &&
+        senderSlot < static_cast<int>(coop::players::kMaxPeers)) {
+        const uint16_t nonce = static_cast<uint16_t>(payload.throwNonce[0] |
+                                                     (payload.throwNonce[1] << 8));
+        coop::pvp::NoteThrow(propActor, static_cast<uint8_t>(senderSlot), nonce);
+    }
     // Someone else moves the prop -- this peer's own player, another slot's drive, the host's
     // driven-prop channel parking it: that owner has its physics and its flags, and this release
     // closes its own hold, clears its own drive and moves nothing. This slot's drive left the copy
     // kinematic, which this peer's own grab cannot hold, so a grab here gets its body back.
-    const bool localGrab = propActor && localPlayer && ue_wrap::engine::IsMainPlayerGrabbing(localPlayer, propActor);
+    const bool localGrab = coop::local_prop_hold::IsHeld(propActor);
     const bool otherOwner = propActor && (IsActorDrivenByOtherThan(propActor, releasedSlot) ||
                                           coop::prop_drive_stream::IsParked(propActor));
     if (localGrab || otherOwner) {
@@ -486,7 +599,7 @@ void OnRelease(int senderSlot, const coop::net::PropReleasePayload& payload, voi
                 static_cast<unsigned>(payload.holdGen), propActor,
                 otherOwner ? "another drive" : "this peer's own grab");
         if (releasedSlot >= 0) {
-            if (localGrab && !otherOwner)
+            if (localGrab)
                 coop::prop_park::Unpark(propActor, meshToActOn,
                                         !StickHoldsPhysicsOff(propActor) && !HostAuthorsTrashBody(propActor));
             ResetDriveState(g_drives[releasedSlot]);

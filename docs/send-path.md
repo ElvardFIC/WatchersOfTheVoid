@@ -34,7 +34,7 @@ overdrive is precisely what puts a bulk retry in front of the pose datagram. The
 that stood with the floor went for a plainer reason: reaching it needed an init ping under
 0.17 ms, and no measurement in the arc came near that.
 
-### Two byte counters, and no reference that can drift
+### Byte counters and propagation allowance (b2128)
 
 Each slot is measured on two quantities, both byte counters:
 
@@ -44,13 +44,14 @@ Each slot is measured on two quantities, both byte counters:
   acknowledged at. Little's law read backwards: the milliseconds of delivery standing on the wire.
   Both terms are reliable-only, which is the only way the division means anything.
 
-A round trip is timed as well, on the high lane the pose stream rides, and is kept as a diagnostic
-rather than as a control input. A busy link is probed ten times a second and reports once; an idle
-one is probed once a second with the same 32-byte datagram, so a baseline is never taken only under
-load.
+A round trip is timed on the high lane the pose stream rides. A busy link is probed ten times
+a second; an idle one once a second. Positive GNS ping samples and validated echoes contribute
+to a connection-lifetime minimum RTT, capped at 1,000 ms. The minimum may only FALL until the
+slot resets; the rolling diagnostic RTT minimum cannot raise it. Subtract this propagation
+allowance from reliable inflight time (clamped at zero) to obtain **excess** time. Missing ACK
+delivery with outstanding bytes still takes the brake path, regardless of the allowance.
 
-Neither term is compared against a reference derived from its own past, and that is the whole
-design. Two laws built before this one were, and both were refuted on the same property: a
+Historical caution: two earlier laws used a drifting reference and failed: a
 delay-versus-baseline rule of the LEDBAT family, and a port of ENet's peer throttle, which judges
 against the previous interval's lowest smoothed round trip
 (`reference/enet/protocol.c:908-911`). A standing queue moves that reference,
@@ -68,15 +69,19 @@ One decision per sample, ten times a second, so a join can climb inside its own 
 | Branch | When | What it does |
 |---|---|---|
 | hold | nothing queued, or delivery not measured yet | leaves the rate alone |
-| brake | inflight above 400 ms, which includes a wire holding reliable bytes while nothing at all is being acknowledged | drops straight to the measured delivery |
-| climb | inflight at or under 150 ms | 5/4 of the rate plus 8 KB/s |
+| brake | excess above 400 ms, including outstanding reliable bytes with no ACK delivery | drops straight to the measured delivery |
+| climb | excess at or under 150 ms | 5/4 of the rate plus 8 KB/s |
 | dead band | between the two | leaves the rate alone, because a controller with no dead band hunts |
 | anchor | after the above, whenever there is delivery to measure | a rate may not stand above 5/4 of the largest recent delivery reading |
 | envelope | last, and unconditionally | clamps the result into the floor and ceiling below, so on a link under about 26 KB/s the floor stands above what the anchor just allowed |
 
-The thresholds are the regimes above: the climb stops where health stopped (p90 163 ms) and the
-brake fires an order of magnitude under the collapse (p10 1,458 ms), so a threshold between them
-flags 93.4% of the collapse and none of the health. The brake goes to the measurement rather than
+Those thresholds originally used absolute inflight time and were derived from the low-RTT
+regimes above. The user's later host log had ~184 ms baseline RTT and only ~9–12 ms excess
+delay, yet the 150 ms absolute climb gate stranded transfers around 62–108 KiB/s. b2128 keeps
+the byte-delivery anchor and excess-delay thresholds, but allows for propagation. A route whose
+physical latency increases after a low minimum was recorded can still be conservatively capped;
+reconnection resets the minimum. Real GNS throughput and voice/pose latency still need a two-peer
+test. The brake goes to the measurement rather than
 to a fraction of the current rate, because a multiplicative back-off from a rate hundreds of times
 too high takes hundreds of decisions to arrive.
 

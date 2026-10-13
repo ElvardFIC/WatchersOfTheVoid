@@ -7,6 +7,7 @@
 // singleton's drone_C.
 
 #include "ue_wrap/devices/drone.h"
+#include "ue_wrap/core/cached_obj_ref.h"
 
 #include "ue_wrap/core/call.h"
 #include "ue_wrap/engine/engine.h"
@@ -179,6 +180,39 @@ void ActivateComponent(void* comp) {
 
 }  // namespace
 
+namespace {
+bool DepartureField(void* drone, int32_t& offset, uint8_t& mask) {
+    if (!drone || !R::IsLive(drone)) return false;
+    static CachedObjRef cachedClass;
+    static int32_t cachedOffset = -1;
+    static uint8_t cachedMask = 0;
+    void* cls = R::ClassOf(drone);
+    if (!cls) return false;
+    if (cachedClass.Get() != cls || cachedOffset < 0) {
+        cachedClass.Set(cls); cachedOffset = -1; cachedMask = 0;
+        if (!R::FindBoolProperty(cls, L"leaveAfter5min", cachedOffset, cachedMask)) {
+            cachedOffset = -1; cachedMask = 0;
+            return false;
+        }
+    }
+    offset = cachedOffset; mask = cachedMask;
+    return offset >= 0 && mask != 0;
+}
+}
+bool ReadDeparturePreference(void* drone, bool& value) {
+    int32_t offset; uint8_t mask;
+    if (!DepartureField(drone, offset, mask)) return false;
+    value = (static_cast<uint8_t*>(drone)[offset] & mask) != 0;
+    return true;
+}
+bool WriteDeparturePreference(void* drone, bool value) {
+    int32_t offset; uint8_t mask;
+    if (!DepartureField(drone, offset, mask)) return false;
+    auto& b = static_cast<uint8_t*>(drone)[offset];
+    b = uint8_t(value ? b | mask : b & ~mask);
+    return true;
+}
+
 bool EnsureResolved() {
     if (g_resolved.load(std::memory_order_acquire)) return true;
     void* cls = object_index::ClassByName(L"drone_C");   // one lookup, loaded or not
@@ -313,6 +347,33 @@ void PlayArrivalCue(void* drone) {
     if (!drone || !EnsureFxResolved()) return;
     // audio_alarm.Activate(true) = the "items ready" ding. Fire-and-forget on the arrival edge.
     if (void* audio = ReadComp(drone, g_audioAlarmOff)) ActivateComponent(audio);
+}
+
+float ReadRotorPitch(void* drone) {
+    if (!drone || !R::IsLive(drone)) return 0.f;
+    const int32_t offset = R::FindPropertyOffset(R::ClassOf(drone), L"blades");
+    void* audio = ReadComp(drone, offset);
+    if (!audio) return 0.f;
+    const int32_t pitchOffset = R::FindPropertyOffset(R::ClassOf(audio), L"PitchMultiplier");
+    if (pitchOffset < 0) return 0.f;
+    float value = 0.f;
+    std::memcpy(&value, static_cast<uint8_t*>(audio) + pitchOffset, sizeof(value));
+    return std::isfinite(value) && value > 0.f && value <= 4.f ? value : 0.f;
+}
+
+void ApplyRotorPitch(void* drone, float pitch) {
+    if (!drone || !R::IsLive(drone) || !std::isfinite(pitch) || pitch <= 0.f || pitch > 4.f) return;
+    CachedObjRef identity; identity.Set(drone);
+    // Both loops receive the same pitch in the native drone Blueprint.
+    for (const wchar_t* component : {L"blades", L"blades_distant"}) {
+        if (!identity.Get()) return;
+        void* audio = ReadComp(drone, R::FindPropertyOffset(R::ClassOf(drone), component));
+        if (!audio) continue;
+        void* fn = R::FindDispatchFunctionCached(R::ClassOf(audio), L"SetPitchMultiplier");
+        if (!fn) continue;
+        ParamFrame frame(fn);
+        if (frame.valid() && frame.Set<float>(L"NewPitchMultiplier", pitch)) Call(audio, frame);
+    }
 }
 
 void SetSignalLight(void* drone, bool on) {

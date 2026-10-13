@@ -95,6 +95,7 @@ uint64_t g_opsTaken = 0, g_opsRefused = 0, g_noisyAnswered = 0, g_inputsTaken = 
 uint64_t g_rowsBroadcast = 0;
 bool g_puzzleDirty = false;
 uint64_t g_lastRowsMs = 0;
+uint64_t g_nextDoorPoll = 0;
 
 // The generator verbs whose exit sends the rows, recorded as each begins and held by slot and serial: only the
 // outermost of them sends, so a break's rows follow the blackout canonical its solar() sent, and a client never
@@ -108,7 +109,7 @@ void RecordVerb(int verb, void* fn) {
 
 // CLIENT: my predicted ops the host has not taken, oldest first; the host's last rows, and whether they still
 // wait for this peer's generators; the Activate press in flight, its generator and its row as it began.
-struct Pending { uint16_t seq; uint8_t op; uint8_t index; };
+struct Pending { uint16_t seq; uint8_t op; uint8_t index; uint8_t value=0; uint64_t triedAt=0; };
 std::vector<Pending> g_pending;
 uint16_t g_seq = 0;
 PowerGridPayload g_rows{};
@@ -164,7 +165,7 @@ bool TakeToken(Bucket& b, float burst, float perSecond) {
 // them; a hit breaks a generator, which only the host's world does.
 bool Predicted(uint8_t op) {
     return op == coop::net::kPowerGridOpActivate || op == coop::net::kPowerGridOpUpgrade ||
-           op == coop::net::kPowerGridOpPuzzle;
+           op == coop::net::kPowerGridOpPuzzle || op == coop::net::kPowerGridOpDoor;
 }
 
 const char* OpName(uint8_t op) {
@@ -173,6 +174,7 @@ const char* OpName(uint8_t op) {
     case coop::net::kPowerGridOpUpgrade:  return "upgrade";
     case coop::net::kPowerGridOpHit:      return "hit";
     case coop::net::kPowerGridOpPuzzle:   return "puzzle input";
+    case coop::net::kPowerGridOpDoor:     return "repair door";
     default:                              return "?";
     }
 }
@@ -193,6 +195,7 @@ bool ReadRows(PowerGridPayload& p) {
         w.cyc = r.cyc ? 1 : 0;
         w.upgradeLevel = static_cast<uint8_t>(std::clamp(r.upgradeLevel, 0, kMaxUpgrade));
         w.cycle = r.cycle;
+        w.door = r.door;
         coop::power_puzzle::Fill(gens[i], w.puzzle);
     }
     return true;
@@ -204,7 +207,7 @@ bool SameRows(const PowerGridPayload& a, const PowerGridPayload& b) {
         const auto& x = a.rows[i];
         const auto& y = b.rows[i];
         if (x.present != y.present || x.broken != y.broken || x.cyc != y.cyc || x.upgradeLevel != y.upgradeLevel ||
-            x.cycle != y.cycle || !coop::power_puzzle::SamePuzzle(x.puzzle, y.puzzle))
+            x.cycle != y.cycle || x.door != y.door || !coop::power_puzzle::SamePuzzle(x.puzzle, y.puzzle))
             return false;
     }
     return true;
@@ -214,22 +217,22 @@ bool SameRows(const PowerGridPayload& a, const PowerGridPayload& b) {
 
 // The rows with every slot's acknowledgement: to `onlySlot`, or to every peer when they or an acknowledgement
 // changed since the last broadcast.
-void HostSendRows(coop::net::Session* s, int onlySlot = -1) {
+bool HostSendRows(coop::net::Session* s, int onlySlot = -1) {
     PowerGridPayload p{};
-    if (!ReadRows(p)) return;
+    if (!ReadRows(p)) return false;
     for (int i = 0; i < coop::net::kMaxPeers; ++i) p.ack[i] = g_ack[i];
     if (onlySlot >= 0) {
-        s->SendReliableToSlot(onlySlot, coop::net::ReliableKind::PowerGridState, &p, sizeof(p));
-        return;
+        return s->SendReliableToSlot(onlySlot, coop::net::ReliableKind::PowerGridState, &p, sizeof(p));
     }
     g_puzzleDirty = false;
-    if (!g_ackDirty && g_haveSent && SameRows(p, g_lastSent)) return;
-    s->SendReliable(coop::net::ReliableKind::PowerGridState, &p, sizeof(p));
+    if (!g_ackDirty && g_haveSent && SameRows(p, g_lastSent)) return true;
+    if (!s->SendReliable(coop::net::ReliableKind::PowerGridState, &p, sizeof(p))) { g_ackDirty=true;return false; }
     ++g_rowsBroadcast;
     g_lastSent = p;
     g_haveSent = true;
     g_ackDirty = false;
     g_lastRowsMs = NowMs();
+    return true;
 }
 
 // A hit is a swing: the player's attack swings only an item whose list_weapons row carries a montage and the
@@ -284,6 +287,10 @@ Take HostTakeOp(coop::net::Session* s, const Waiting& wt, uint8_t sender) {
     // end runs the setters. The press waits for it, a fifth of a second at most.
     if (!refusal && p.op == coop::net::kPowerGridOpActivate && coop::power_puzzle::Settling(gen) && !waited)
         return Take::Wait;
+    if (!refusal && p.op==coop::net::kPowerGridOpDoor && !GEN::SetDoor(gen,p.value!=0)) {
+        if (!waited) return Take::Wait;
+        refusal="door animation or layout unavailable";
+    }
     if (predicted) {
         g_ack[sender] = p.seq;
         g_ackDirty = true;
@@ -416,21 +423,21 @@ void HostServeOwed(coop::net::Session* s) {
     PowerGridPayload probe{};
     if (!ReadRows(probe)) return;
     for (int slot = 1; slot < coop::net::kMaxPeers; ++slot)
-        if (g_owed & (1u << slot)) HostSendRows(s, slot);
-    g_owed = 0;
+        if ((g_owed & (1u << slot)) && HostSendRows(s, slot)) g_owed&=static_cast<uint8_t>(~(1u<<slot));
 }
 
 // ---- a client ------------------------------------------------------------------------------------------------
 
-void ClientSendOp(coop::net::Session* s, uint8_t op, int32_t index, float damage = 0.f) {
+void ClientSendOp(coop::net::Session* s, uint8_t op, int32_t index, float damage = 0.f,uint8_t value=0) {
     coop::power_puzzle::FlushInputs();  // an op rests on the inputs before it
     PowerGridPayload p{};
     p.op = op;
     p.index = static_cast<uint8_t>(index);
     p.damage = damage;
+    p.value = value;
     if (Predicted(op)) {
         p.seq = NextSeq();
-        g_pending.push_back({p.seq, op, p.index});
+        g_pending.push_back({p.seq, op, p.index,value});
     }
     s->SendReliableToSlot(0, coop::net::ReliableKind::PowerGridState, &p, sizeof(p));
     ++g_opsSent;
@@ -445,6 +452,7 @@ GEN::Row Expected(const coop::net::PowerGridRow& w, int32_t index) {
     e.cyc = w.cyc != 0;
     e.cycle = w.cycle;
     e.upgradeLevel = w.upgradeLevel;
+    e.door = w.door;
     for (const Pending& d : g_pending) {
         if (d.index != index) continue;
         if (d.op == coop::net::kPowerGridOpActivate) {
@@ -452,6 +460,8 @@ GEN::Row Expected(const coop::net::PowerGridRow& w, int32_t index) {
             e.cycle = kFullWear;
         } else if (d.op == coop::net::kPowerGridOpUpgrade && e.upgradeLevel < kMaxUpgrade) {
             ++e.upgradeLevel;
+        } else if (d.op == coop::net::kPowerGridOpDoor) {
+            e.door=d.value ? 2 : 1;
         }
     }
     return e;
@@ -475,6 +485,7 @@ void ClientReconcile() {
         GEN::Row r{};
         if (!w.present || !gens[i] || !GEN::ReadRow(gens[i], r)) continue;
         const GEN::Row e = Expected(w, static_cast<int32_t>(i));
+        if (e.door && !GEN::SetDoor(gens[i],e.door==2)) g_rowsWaiting=true;
         if (e.broken != r.broken) {
             // A break blacks the base out through the panel and scrambles the puzzle; a repair runs as the host
             // runs a player's, its turn-on at the generator included.
@@ -630,6 +641,17 @@ sg::Verdict OnHitPre(const sg::Call& call) {
     return sg::Verdict::Cancel;
 }
 
+sg::Verdict OnDoorPre(const sg::Call& call) {
+    auto* s=Connected();
+    if (!IsClient(s) || g_applying || call.fromOurCode || !call.locals ||
+        !coop::net_pump::IsInAnnouncedWorld(call.object)) return sg::Verdict::Run;
+    static R::ParamOffset open{L"open"};
+    const int off=open.Of(call.function),idx=GEN::IndexOf(call.object);
+    if (off>=0 && idx>=0 && idx<kPowerGridGenerators)
+        ClientSendOp(s,coop::net::kPowerGridOpDoor,idx,0.f,call.locals[off] ? 1 : 0);
+    return sg::Verdict::Run;
+}
+
 struct WatchDef {
     const wchar_t* cls;
     const wchar_t* fn;
@@ -638,6 +660,7 @@ struct WatchDef {
     sg::PostFn post;
 };
 constexpr WatchDef kWatches[] = {
+    { kGenClass,   L"openDoor",           0x50474452 /*'PGDR'*/, &OnDoorPre,       &OnGenHostPost },
     { kGenClass,   L"break",              0x50474252 /*'PGBR'*/, &OnOwnEditPre,     &OnGenHostPost },
     { kGenClass,   L"damage",             0x5047444D /*'PGDM'*/, &OnOwnEditPre,     &OnGenHostPost },
     { kGenClass,   L"fullFix",            0x50474658 /*'PGFX'*/, &OnOwnEditPre,     &OnGenHostPost },
@@ -670,8 +693,16 @@ void Tick() {
         HostDrainWaiting(s);
         HostServeOwed(s);
         if (g_puzzleDirty && NowMs() - g_lastRowsMs >= kPuzzleRowsEveryMs) HostSendRows(s);
+        if (NowMs()>=g_nextDoorPoll) { g_nextDoorPoll=NowMs()+500;HostSendRows(s); }
     } else if (g_rowsWaiting && GEN::EnsureResolved()) {
         ClientReconcile();
+    }
+    if (auto* s=Connected(); IsClient(s) && !g_pending.empty()) {
+        auto& pending=g_pending.front();
+        if (pending.op==coop::net::kPowerGridOpDoor && NowMs()-pending.triedAt>=1000) {
+            PowerGridPayload p{};p.op=pending.op;p.index=pending.index;p.value=pending.value;p.seq=pending.seq;
+            s->SendReliableToSlot(0,coop::net::ReliableKind::PowerGridState,&p,sizeof(p));pending.triedAt=NowMs();
+        }
     }
     coop::power_decay::Tick();
     coop::power_puzzle::Tick();
@@ -696,6 +727,11 @@ void Tick() {
 void OnReliable(const coop::net::PowerGridPayload& payload, uint8_t senderSlot) {
     auto* s = Connected();
     if (!s) return;
+    if (senderSlot>=coop::net::kMaxPeers || payload.op>coop::net::kPowerGridOpDoor ||
+        payload.count>kPowerGridGenerators || (payload.op && payload.index>=kPowerGridGenerators) ||
+        (payload.op==coop::net::kPowerGridOpDoor && (!payload.seq || payload.value>1))) return;
+    if (payload.op==coop::net::kPowerGridOpRows)
+        for (int i=0;i<payload.count;++i) if (payload.rows[i].door>2) return;
     if (s->role() == coop::net::Role::Host) {
         HostOffer(s, payload, senderSlot);
         return;
@@ -713,7 +749,7 @@ void QueueConnectBroadcastForSlot(int slot) {
         UE_LOGI("power_grid: slot %d's rows wait for the host's generators to resolve", slot);
 }
 
-uint16_t NextSeq() { return ++g_seq; }
+uint16_t NextSeq() { if (++g_seq==0) ++g_seq;return g_seq; }
 
 void HostPuzzleChanged() { g_puzzleDirty = true; }
 
@@ -763,6 +799,7 @@ void OnDisconnect() {
     g_opsTaken = g_opsRefused = g_noisyAnswered = g_inputsTaken = g_queuesFull = g_rowsBroadcast = 0;
     g_haveSent = g_ackDirty = g_puzzleDirty = false;
     g_lastRowsMs = 0;
+    g_nextDoorPoll = 0;
     for (int slot = 0; slot < coop::net::kMaxPeers; ++slot) {
         g_waiting[slot].clear();
         g_rate[slot] = Bucket{};

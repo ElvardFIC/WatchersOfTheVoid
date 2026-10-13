@@ -10,6 +10,7 @@
 #include "coop/player/local_body.h"
 #include "coop/player/skin_effects.h"
 #include "coop/player/players_registry.h"
+#include "ue_wrap/actors/sit_pose.h"
 #include "ue_wrap/core/call.h"
 #include "ue_wrap/engine/engine.h"
 #include "ue_wrap/engine/world_identity.h"
@@ -501,7 +502,10 @@ void RemotePlayer::ApplyToEngine() {
             0.f,
         };
         const bool inAir = (curStateBits_ & coop::net::kStateBitInAir) != 0;
-        Pup::DriveCharacterMovement(actor_, vel, inAir);
+        const bool sitting = (curStateBits_ & coop::net::kStateBitSitting) != 0 &&
+                             (curStateBits_ & coop::net::kStateBitRagdoll) == 0;
+        Pup::DriveCharacterMovement(actor_, sitting ? ue_wrap::FVector{} : vel, sitting ? false : inAir);
+        ue_wrap::sit_pose::DriveSitting(actor_, sitting);
         // Run-loudness parity: lib_C::step's volume reads MaxWalkSpeed, which the parked puppet
         // never updates, so the native sprint knob is mirrored from the streamed speed at the
         // stride emitter's run boundary.
@@ -513,7 +517,7 @@ void RemotePlayer::ApplyToEngine() {
         // step and the skin step effects (two accumulators drift apart into doubled steps). The
         // default step's volume is the skin layer's call: a replace-mode variant mutes it to 0, and
         // lib step still runs its trace, water and friction side effects.
-        if (footsteps_.StepDue(curPos_, curSpeed_, !inAir)) {
+        if (!sitting && footsteps_.StepDue(curPos_, curSpeed_, !inAir)) {
             ue_wrap::votv_lib::CharacterStep(
                 actor_, coop::skin_effects::DefaultStepVolume(
                             actor_, coop::puppet_footsteps::Stride::kStepVolume));

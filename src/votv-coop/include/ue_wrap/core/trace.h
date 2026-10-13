@@ -24,4 +24,10 @@ namespace ue_wrap::trace {
 // Game thread only (dispatches a UFunction).
 int LineBlockedStatDyn(void* worldCtx, const FVector& start, const FVector& end);
 
+// Placement queries. Ignore worldCtx (the source actor). Box sweep also includes
+// pawns/physics bodies/vehicles. Return -1 on missing metadata or failed calls.
+int BoxBlocked(void* worldCtx, const FVector& start, const FVector& end, const FVector& halfSize);
+// Static/dynamic floor with an upward normal; false includes unresolved/no hit.
+bool FindFloor(void* worldCtx, const FVector& start, const FVector& end, FVector& point);
+
 }  // namespace ue_wrap::trace

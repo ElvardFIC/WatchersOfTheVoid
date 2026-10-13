@@ -13,6 +13,7 @@
 #include <cwctype>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <map>
 #include <mutex>
 #include <thread>
@@ -86,22 +87,24 @@ std::wstring GameLogicModsDir() {
     return (fs::path(base).parent_path().parent_path() / L"Content" / L"Paks" / L"LogicMods").wstring();
 }
 
-// The shimloader passes the directory it maps LogicMods to on the command line; an install without
-// it uses its own LogicMods.
-std::wstring RealLogicModsDir() {
-    int argc = 0;
-    if (LPWSTR* argv = ::CommandLineToArgvW(::GetCommandLineW(), &argc)) {
-        std::wstring dir;
-        for (int i = 0; i + 1 < argc; ++i) {
-            if (::_wcsicmp(argv[i], L"--pak-dir") == 0) {
-                dir = argv[i + 1];
-                break;
-            }
-        }
-        ::LocalFree(argv);
-        if (!dir.empty()) return dir;
-    }
-    return GameLogicModsDir();
+// Where a folder of the game's really is. Under the shimloader LogicMods is a mapping onto the
+// r2modman profile that only this process sees (its --pak-dir argument is gone from the command
+// line by the time the mod boots); a handle opened through the mapping names the real folder, and
+// that is the one Explorer, a separate process, has to be given.
+std::wstring OnDiskPath(const fs::path& dir) {
+    HANDLE h = ::CreateFileW(dir.c_str(), FILE_READ_ATTRIBUTES,
+                             FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                             OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+    if (h == INVALID_HANDLE_VALUE) return dir.wstring();
+    wchar_t buf[MAX_PATH * 2] = {};
+    const DWORD n = ::GetFinalPathNameByHandleW(h, buf, static_cast<DWORD>(std::size(buf)),
+                                                FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
+    ::CloseHandle(h);
+    if (n == 0 || n >= std::size(buf)) return dir.wstring();
+    const std::wstring p(buf, n);
+    if (p.rfind(L"\\\\?\\UNC\\", 0) == 0) return L"\\\\" + p.substr(8);
+    if (p.rfind(L"\\\\?\\", 0) == 0) return p.substr(4);
+    return p;
 }
 
 std::wstring InboxDir() {
@@ -254,7 +257,7 @@ void Import(const fs::path& inbox, const fs::path& folder, Report& r) {
 
 void PrepareAtBoot() {
     Report r;
-    const std::wstring logicMods = RealLogicModsDir();
+    const std::wstring logicMods = GameLogicModsDir();
     if (logicMods.empty()) {
         UE_LOGW("model_folder: no LogicMods directory -- the models folder is not prepared");
         return;
@@ -268,7 +271,7 @@ void PrepareAtBoot() {
         return;
     }
     EnsureNote(folder);
-    r.folder = folder.wstring();
+    r.folder = OnDiskPath(folder);
     r.inbox = inbox;
     if (!inbox.empty()) {
         fs::create_directories(inbox, ec);

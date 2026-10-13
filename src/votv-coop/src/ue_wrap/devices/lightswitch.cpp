@@ -3,11 +3,15 @@
 // reflection (version-portable); the Alpha 0.9.0-n values are logged fallbacks.
 
 #include "ue_wrap/devices/lightswitch.h"
+#include "ue_wrap/core/cached_obj_ref.h"
+#include "ue_wrap/core/object_index.h"
 
 #include "ue_wrap/core/call.h"
 #include "ue_wrap/core/field_io.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
+#include "ue_wrap/core/ufunction_hook.h"
+#include "ue_wrap/engine/engine.h"
 
 #include <atomic>
 #include <cstdint>
@@ -37,6 +41,52 @@ int32_t g_swAOff  = -1;       // Alightswitch_C::A (the flip bool, 0x02A0)
 void*   g_useFn   = nullptr;  // use()
 int32_t g_objectsOff = -1;    // triggerBase_C::objects (TArray<UObject*>): objects[0] is the switch's group
 constexpr int32_t kSwitchAOffFallback = 0x02A0;
+
+// Native use() plays a UI sound even when replayed across the map. Limit this
+// replacement to the synchronous replay; local presses retain their native cue.
+void* g_replayedSwitch = nullptr;
+int32_t g_soundOff = -1, g_volumeOff = -1, g_pitchOff = -1;
+void* g_clickAttenuation = nullptr; // SpawnSoundAttenuation roots it against GC.
+bool g_clickHookReady = false;
+
+script_gate::Verdict OnReplaySound(void*, void* source, const uint8_t* params) {
+    if (!g_replayedSwitch || source != g_replayedSwitch || !params)
+        return script_gate::Verdict::Run;
+    FVector at{};
+    void* cue = *reinterpret_cast<void* const*>(params + g_soundOff);
+    if (cue && g_clickAttenuation && engine::TryGetActorLocation(source, at)) {
+        engine::PlaySoundAtLocation(source, cue, at, g_clickAttenuation,
+            *reinterpret_cast<const float*>(params + g_volumeOff),
+            *reinterpret_cast<const float*>(params + g_pitchOff));
+    }
+    // Failure to obtain a position must not fall back to a map-wide UI click.
+    return script_gate::Verdict::Cancel;
+}
+
+void EnsureReplaySound() {
+    if (g_clickHookReady && g_clickAttenuation) return;
+    void* cls = R::FindClass(L"GameplayStatics");
+    void* fn = cls ? R::FindFunction(cls, L"PlaySound2D") : nullptr;
+    if (!fn) return;
+    g_soundOff = R::FindParamOffset(fn, L"Sound");
+    g_volumeOff = R::FindParamOffset(fn, L"VolumeMultiplier");
+    g_pitchOff = R::FindParamOffset(fn, L"PitchMultiplier");
+    if (g_soundOff < 0 || g_volumeOff < 0 || g_pitchOff < 0) return;
+    if (!g_clickAttenuation) {
+        engine::SoundAttenuationConfig cfg{};
+        cfg.distanceAlgorithm = 0; // Linear fade from 1 m to silence at 15 m.
+        cfg.extents[0] = 100.f;
+        cfg.falloffDistance = 1400.f;
+        g_clickAttenuation = engine::SpawnSoundAttenuation(cfg);
+    }
+    g_clickHookReady = ufunction_hook::InstallPreHook(fn, &OnReplaySound, true);
+}
+
+struct ReplaySwitchScope {
+    void* previous;
+    explicit ReplaySwitchScope(void* sw) : previous(g_replayedSwitch) { g_replayedSwitch = sw; }
+    ~ReplaySwitchScope() { g_replayedSwitch = previous; }
+};
 
 }  // namespace
 
@@ -152,6 +202,8 @@ bool CallUse(void* sw) {
     if (!sw || !g_useFn) return false;
     ParamFrame f(g_useFn);
     if (!f.valid()) return false;
+    EnsureReplaySound();
+    ReplaySwitchScope scope(sw);
     return Call(sw, f);
 }
 
@@ -188,6 +240,91 @@ bool CallSetBreaker(void* root, bool open) {
     if (!f.valid()) return false;
     f.Set<bool>(L"active", open);
     return Call(root, f);
+}
+
+namespace {
+CachedObjRef g_lampClass;
+int32_t g_lampActive = -1;
+uint8_t g_lampMask = 0;
+}
+bool EnsureLampResolved() {
+    void* cls = object_index::ClassByName(L"ceilingLamp_C");
+    if (!cls) return false;
+    if (g_lampClass.Is(cls)) return true;
+    g_lampClass.Reset();
+    if (!R::FindBoolProperty(cls, L"isActive", g_lampActive, g_lampMask) ||
+        g_lampActive < 0 || !g_lampMask) return false;
+    g_lampClass.Set(cls);
+    return true;
+}
+bool IsCeilingLamp(void* actor) {
+    if (!actor || !EnsureLampResolved()) return false;
+    void* base = g_lampClass.Get();
+    void* cls = R::ClassOf(actor);
+    return base && cls && (cls == base || R::IsDescendantOfAny(cls, &base, 1));
+}
+bool TryReadLampActive(void* actor, bool& on) {
+    if (!R::IsLive(actor) || !IsCeilingLamp(actor)) return false;
+    on = (static_cast<const uint8_t*>(actor)[g_lampActive] & g_lampMask) != 0;
+    return true;
+}
+bool ApplyLampActive(void* actor, bool on) {
+    if (!R::IsLive(actor) || !IsCeilingLamp(actor)) return false;
+    void* fn = R::FindDispatchFunctionCached(R::ClassOf(actor), L"setActive");
+    if (!fn) return false;
+    ParamFrame f(fn);
+    if (!f.valid() || !f.Set<bool>(L"isActive", on)) return false;
+    CachedObjRef identity; identity.Set(actor);
+    return Call(actor, f) && identity.Get() == actor;
+}
+
+namespace {
+CachedObjRef g_ambientClass, g_ambientComponentClass;
+int32_t g_bottomLight = -1, g_ambientVisible = -1;
+uint8_t g_ambientVisibleMask = 0;
+}
+bool EnsureAmbientResolved() {
+    void* cls = object_index::ClassByName(L"ambientLight_C");
+    if (!cls) return false;
+    if (g_ambientClass.Is(cls)) return true;
+    g_ambientClass.Reset();
+    g_bottomLight = R::FindPropertyOffset(cls, L"bottomLight");
+    if (g_bottomLight < 0) return false;
+    g_ambientClass.Set(cls);
+    return true;
+}
+bool IsAmbientLight(void* actor) {
+    if (!actor || !EnsureAmbientResolved()) return false;
+    void* base = g_ambientClass.Get();
+    void* cls = R::ClassOf(actor);
+    return base && cls && (cls == base || R::IsDescendantOfAny(cls, &base, 1));
+}
+bool TryReadAmbientActive(void* actor, bool& on) {
+    if (!R::IsLive(actor) || !IsAmbientLight(actor)) return false;
+    void* component = *reinterpret_cast<void* const*>(static_cast<const char*>(actor) + g_bottomLight);
+    if (!R::IsLive(component)) return false;
+    void* cls = R::ClassOf(component);
+    if (!cls) return false;
+    if (!g_ambientComponentClass.Is(cls)) {
+        g_ambientComponentClass.Reset();
+        if (!R::FindBoolProperty(cls, L"bVisible", g_ambientVisible, g_ambientVisibleMask) ||
+            g_ambientVisible < 0 || !g_ambientVisibleMask) return false;
+        g_ambientComponentClass.Set(cls);
+    }
+    on = (static_cast<const uint8_t*>(component)[g_ambientVisible] & g_ambientVisibleMask) != 0;
+    return true;
+}
+bool ApplyAmbientActive(void* actor, bool on) {
+    if (!R::IsLive(actor) || !IsAmbientLight(actor)) return false;
+    // Do not invoke a partially constructed actor's component setter.
+    bool current = false;
+    if (!TryReadAmbientActive(actor, current)) return false;
+    void* fn = R::FindDispatchFunctionCached(R::ClassOf(actor), L"setActive");
+    if (!fn) return false;
+    ParamFrame f(fn);
+    if (!f.valid() || !f.Set<bool>(L"active", on)) return false;
+    CachedObjRef identity; identity.Set(actor);
+    return Call(actor, f) && identity.Get() == actor;
 }
 
 }  // namespace ue_wrap::lightswitch

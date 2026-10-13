@@ -130,7 +130,7 @@ DWORD WINAPI BootThread(LPVOID rawTag) {
     WriteMarker(entryTag);
     UE_LOGI("==== %s ====", coop::version::kDisplayLabel);
     // The Paper-pair identity line: game target + build number (= kProtocolVersion).
-    UE_LOGI("boot: Multivoid+ %s b%u (community build on Multivoid b208)", coop::version::kGameTarget,
+    UE_LOGI("boot: Watchers of the Void by ElvardFIC %s b%u (Multivoid fork; original by Pelmentor)", coop::version::kGameTarget,
             static_cast<unsigned>(coop::net::kProtocolVersion));
     // Build triage line: discriminates same-proto rebuilds in bug reports
     // (banner-only -- never announced, never gated; the DLL hash stays the deploy

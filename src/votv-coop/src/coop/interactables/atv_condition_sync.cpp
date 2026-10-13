@@ -8,6 +8,7 @@
 #include "coop/net/protocol.h"
 
 #include "ue_wrap/core/log.h"
+#include "ue_wrap/devices/atv.h"
 #include "ue_wrap/devices/atv_condition.h"
 
 #include <atomic>
@@ -259,7 +260,9 @@ void ApplyPayload(coop::atv_sync::AtvEntry& e, const coop::net::AtvStatePayload&
     // Change groups vs the EXPRESSED baseline, over the WRITTEN set only (presence
     // terms leave the groups entirely when presence is not applied, else updTires would refire
     // at 20 Hz through the whole deliberately-divergent client-eject window).
-    const bool presenceDiffers = in.mask != ex.mask || in.hasSpare != ex.hasSpare;
+    const uint8_t maskWas = ex.mask;
+    const bool spareWas = ex.hasSpare;
+    const bool presenceDiffers = in.mask != maskWas || in.hasSpare != spareWas;
     const bool typesDiffer = std::memcmp(in.types, ex.types, sizeof(in.types)) != 0;
     const bool groupTires = applyPresence && (in.mask != ex.mask || typesDiffer);
     const bool groupDirt = DirtGroupChanged(in, ex);
@@ -268,22 +271,73 @@ void ApplyPayload(coop::atv_sync::AtvEntry& e, const coop::net::AtvStatePayload&
                             std::fabs(in.spareDirt - ex.spareDirt) > kDirtEps;
     const bool groupHealth = std::fabs(in.health - ex.health) > kHealthEps;
 
+    bool mountTires = false;
+    bool mountSpare = false;
+    uint8_t added = 0;
     if (!applyPresence && presenceDiffers) {
-        // The KNOWN-BROKEN direction, counted and visible (CRUTCHES row; (b2) asserts it):
-        // a non-host author's presence claim is not consumed -- its paired wheel-prop birth
-        // cannot travel, so consuming the mask would persist an item loss on the host.
-        const auto n = g_presenceSkipped.fetch_add(1, std::memory_order_relaxed) + 1;
-        if (n == 1 || n % 100 == 0)
-            UE_LOGW("atv_condition: presence from slot %u DIFFERS (mask %02X vs expressed %02X) "
-                    "-- skipped by the authority rule, x%llu (KNOWN divergence until the "
-                    "act-as-host tire-eject intent lane)",
-                    static_cast<unsigned>(senderSlot), p.tiresMask, ex.mask, n);
+        // A client who is driving owns the tick, so the service scan never runs for them and a
+        // tyre they pull off never becomes an AtvConditionEdit. The pose stream already carries
+        // the mask. Bits that turned off are ejected here, which is what births the wheel prop
+        // on the host. Bits that turned on are the driver mounting a tyre: the item was spent on
+        // the driver's machine, so this copy only sets the presence the game's putTire would have
+        // written. It does not spawn a tyre into anyone's inventory.
+        const uint8_t dropped = static_cast<uint8_t>(maskWas & static_cast<uint8_t>(~in.mask));
+        added = static_cast<uint8_t>(in.mask & static_cast<uint8_t>(~maskWas));
+        bool attempted = false;
+        for (int i = 0; i < 4; ++i) {
+            const uint8_t bit = static_cast<uint8_t>(1u << i);
+            if (!(dropped & bit) || (e.presenceEjectFailed & bit)) continue;
+            attempted = true;
+            if (!ue_wrap::atv::EjectWheel(actor, i))
+                e.presenceEjectFailed = static_cast<uint8_t>(e.presenceEjectFailed | bit);
+        }
+        if (spareWas && !in.hasSpare) {
+            AC::Snapshot cur;
+            if (AC::Read(actor, cur) && cur.hasSpare) {
+                cur.hasSpare = false;
+                AC::WritePresence(actor, cur.mask, false);
+                AC::CallVerb(actor, AC::Verb::UpdSpareTire);
+            }
+            attempted = true;
+        }
+        if (attempted) {
+            AC::Snapshot cur;
+            if (AC::Read(actor, cur)) {
+                e.condExpressed.mask = cur.mask;
+                e.condExpressed.hasSpare = cur.hasSpare;
+            }
+        }
+        if (dropped == 0) e.presenceEjectFailed = 0;
+        const bool author = senderSlot != 0 && senderSlot != 0xFF && p.authorSlot == senderSlot;
+        if (author && added != 0) mountTires = true;
+        if (author && in.hasSpare && !spareWas) mountSpare = true;
+        if ((added != 0 || (in.hasSpare && !spareWas)) && !mountTires && !mountSpare) {
+            const auto n = g_presenceSkipped.fetch_add(1, std::memory_order_relaxed) + 1;
+            if (n == 1 || n % 100 == 0)
+                UE_LOGW("atv_condition: presence from slot %u ADDED a tyre or the spare "
+                        "(mask %02X vs expressed %02X) -- not applied, x%llu",
+                        static_cast<unsigned>(senderSlot), in.mask, maskWas, n);
+        }
     }
 
     // Fields first, always: values are cheap truth; verbs are the gated part.
     AC::WriteAccumulators(actor, in);
     if (applyPresence && presenceDiffers)
         AC::WritePresence(actor, in.mask, in.hasSpare);
+    else if (mountTires || mountSpare) {
+        AC::Snapshot cur;
+        if (AC::Read(actor, cur)) {
+            if (mountTires) cur.mask = static_cast<uint8_t>(cur.mask | added);
+            if (mountSpare) cur.hasSpare = true;
+            AC::WritePresence(actor, cur.mask, cur.hasSpare);
+            if (mountTires) AC::CallVerb(actor, AC::Verb::UpdTires);
+            if (mountSpare) AC::CallVerb(actor, AC::Verb::UpdSpareTire);
+            e.condExpressed.mask = cur.mask;
+            e.condExpressed.hasSpare = cur.hasSpare;
+            UE_LOGI("atv_condition: driver slot %u mounted a tyre (mask %02X, spare %d) without a local item",
+                    static_cast<unsigned>(senderSlot), cur.mask, cur.hasSpare ? 1 : 0);
+        }
+    }
     g_applied.fetch_add(1, std::memory_order_relaxed);
     // Whatever path leaves below, the copy now holds the author's write and the verbs it ran.
     struct NoteOnExit {
@@ -401,6 +455,11 @@ bool TakeLocalService(coop::atv_sync::AtvEntry& e, bool inReach,
     down(kFloorBodyDirt, cur.bodyDirt, ref.bodyDirt, out.bodyDirt);
     for (int i = 0; i < 4; ++i) {
         const uint8_t bit = static_cast<uint8_t>(1u << i);
+        if ((ref.mask & bit) && !(cur.mask & bit)) {
+            out.tiresRemoved = static_cast<uint8_t>(out.tiresRemoved | bit);
+            fields |= FloorTyreOn(i);
+            continue;
+        }
         if (!(cur.mask & bit)) continue;
         if (!(ref.mask & bit)) {
             out.tiresAdded |= bit;
@@ -415,7 +474,10 @@ bool TakeLocalService(coop::atv_sync::AtvEntry& e, bool inReach,
         if (fields & FloorDur(i)) out.tiresFixes[i] = static_cast<int8_t>(cur.fixes[i] - ref.fixes[i]);
         down(FloorDirt(i), cur.dirt[i], ref.dirt[i], out.tiresDirt[i]);
     }
-    if (cur.hasSpare && !ref.hasSpare) {
+    if (ref.hasSpare && !cur.hasSpare) {
+        out.spareRemoved = 1;
+        fields |= kFloorSpareOn;
+    } else if (cur.hasSpare && !ref.hasSpare) {
         out.spareAdded = 1;
         out.spareDurability = cur.spareDur;
         out.spareDirt = cur.spareDirt;
@@ -457,6 +519,8 @@ void MergeService(coop::net::AtvConditionEditPayload& into,
         into.tiresDirt[i] += add.tiresDirt[i];
         into.tiresFixes[i] = i8(into.tiresFixes[i] + add.tiresFixes[i]);
     }
+    into.tiresRemoved = static_cast<uint8_t>(into.tiresRemoved | add.tiresRemoved);
+    if (add.spareRemoved) into.spareRemoved = 1;
     if (add.spareAdded) {
         into.spareAdded = 1;
         into.spareDurability = add.spareDurability;
@@ -492,6 +556,27 @@ void ApplyService(coop::atv_sync::AtvEntry& e, const coop::net::AtvConditionEdit
     auto i8 = [](int v) { return static_cast<int8_t>(v < -128 ? -128 : (v > 127 ? 127 : v)); };
 
     bool tyreOn = false, spareOn = false;
+    if (presence && (p.tiresRemoved != 0 || p.spareRemoved != 0)) {
+        // damageWheel already runs ejectWheel and updTires. A second updTires on a settled rig
+        // breaks its constraints, so the verb below fires only for a wheel the eject did not take.
+        for (int i = 0; i < 4; ++i) {
+            const uint8_t bit = static_cast<uint8_t>(1u << i);
+            if ((p.tiresRemoved & bit) && (s.mask & bit))
+                ue_wrap::atv::EjectWheel(actor, i);
+        }
+        AC::Read(actor, s);
+        for (int i = 0; i < 4; ++i) {
+            const uint8_t bit = static_cast<uint8_t>(1u << i);
+            if ((p.tiresRemoved & bit) && (s.mask & bit)) {
+                s.mask = static_cast<uint8_t>(s.mask & ~bit);
+                tyreOn = true;
+            }
+        }
+        if (p.spareRemoved && s.hasSpare) {
+            s.hasSpare = false;
+            spareOn = true;
+        }
+    }
     if (presence) {
         for (int i = 0; i < 4; ++i) {
             const uint8_t bit = static_cast<uint8_t>(1u << i);

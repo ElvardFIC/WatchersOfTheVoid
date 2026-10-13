@@ -2,10 +2,9 @@
 //
 // One concept: everything the transport is TOLD about a connection once it is ours, as opposed to
 // what the connection then does (session_status.cpp owns the slot's life) or what we send over it.
-// Three parameters live here, and they are one concept because they are written at one moment, to
-// one connection, through one API, and each is meaningless without the others: the priority lanes
-// the reliable kinds ride, the send buffer those lanes share, and the rate the whole connection is
-// paced at.
+// The parameters live here because they are written at one moment, to one connection, through one
+// API: the priority lanes the reliable kinds ride, the send buffer those lanes share, the rate the
+// whole connection is paced at, and a zero nagle wait so a small reliable is not held to coalesce.
 //
 // It was extracted from session_status.cpp when that file crossed the 800-line soft cap, and the
 // function it came from was called ConfigureLanesForPeer while also setting the buffer and the

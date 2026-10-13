@@ -28,9 +28,11 @@ void Tick();
 // Wire ingest (both roles). HOST: applies + re-fans (except origin). Op 6 goes to the lid lane.
 void OnLaptopState(const coop::net::LaptopStatePayload& p, uint8_t senderSlot);
 
-// HOST: ship the joiner the laptop's power (op=3). The lid lane sends its own rows.
+// HOST: queue the joiner's settled laptop power (op=3); retry actor loading and enqueue
+// refusal. The lid lane sends its own rows.
 void QueueConnectBroadcastForSlot(int peerSlot);
 
+void OnPeerLeft(int peerSlot);
 void OnDisconnect();
 
 }  // namespace coop::laptop_sync

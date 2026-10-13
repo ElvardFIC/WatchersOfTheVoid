@@ -43,8 +43,9 @@ void Install(coop::net::Session* session);
 // Drain the FinishSpawningActor pending queue: express (prop_lifecycle::ExpressSpawnedProp)
 // every finished keyed Aprop_C spawn that is live, still untracked, and NOT the local hotbar
 // hand actor (the hand edge in coop/player/hand_item owns that actor's eventual world release).
-// ONE express attempt per entry -- the queue is cleared unconditionally, so a still-unkeyed
-// actor falls to the periodic safety census rather than being retried here. Host-side express;
+// ONE express attempt per entry. A proven fresh floor-bed birth first initializes
+// its native key, with bounded retries on failure. Owned batches and captured
+// serial/world identity protect native callbacks and disconnect. Host-side express;
 // game thread (net-pump tick).
 void DrainPendingSpawns(coop::net::Session* session);
 

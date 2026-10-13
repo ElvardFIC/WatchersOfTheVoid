@@ -11,6 +11,8 @@
 
 #pragma once
 
+#include <cstdint>
+
 namespace coop::net { class Session; }
 
 namespace coop::teleport_client {
@@ -45,5 +47,13 @@ struct ApplyArgs {
 // can still revert a K2_TeleportTo. A caller that needs to know the player actually MOVED
 // must read the position back (coop::death_revive's revive conjunction does exactly that).
 bool ApplyLocally(const ApplyArgs& args);
+
+// Host, game thread: move every peer except `anchorSlot` to this point, a step apart so they
+// do not spawn inside one capsule. The anchor stays where they are. Used when a location event
+// starts on one player.
+void GatherOthersTo(uint8_t anchorSlot, float x, float y, float z, float yaw);
+// Retry only refused event-gather sends/local moves; never repeats an accepted packet.
+void TickGather();
+void ClearGather();
 
 }  // namespace coop::teleport_client

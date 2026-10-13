@@ -28,6 +28,7 @@
 #include "coop/props/snapshot_census.h"  // the per-class completeness floor for the claim sweep
 #include "coop/dev/force_overdestroy_test.h"  // dev-only: floor-disable toggle for the controlled proof
 #include "coop/props/prop_element_tracker.h"
+#include "coop/props/prop_drop_intent.h"
 #include "coop/props/prop_drive_stream.h"  // IsParked: a prop the host's driven stream owns
 #include "coop/props/prop_snapshot.h"      // ExpressIncrementalSpawn, the handback re-express
 #include "coop/props/prop_fresh_spawn.h"   // the deferred-spawn materialiser
@@ -35,6 +36,7 @@
 #include "coop/props/prop_stick_sync.h"    // ConvergeStuck, a wall-attach copy's stuck state
 #include "coop/props/prop_wire_parity.h"   // the shared physics and collision helpers
 #include "coop/props/remote_prop.h"
+#include "coop/player/local_prop_hold.h"
 #include "coop/props/trash_mirror.h"  // a rooted real chipPile native as the pile mirror
 #include "ue_wrap/core/call.h"
 #include "ue_wrap/engine/engine.h"
@@ -254,7 +256,12 @@ void OnSpawn(const coop::net::PropSpawnPayload& payload, int senderSlot,
             if (a && R::IsLiveByIndex(a, e->GetInternalIdx())) existing = a;
         }
     } else {
-        existing = coop::prop_element_tracker::ResolveLiveActorByKey(keyW, &dedupeFellBack);
+        // A locally thrown birth already exists. Prefer that exact actor over
+        // a stale key-index hit or a proximity match after it has flown away.
+        if (senderSlot == 0 && !coop::prop_element_tracker::SessionIsHost())
+            existing = coop::prop_drop_intent::FindAwaitingHost(keyW, classW);
+        if (!existing)
+            existing = coop::prop_element_tracker::ResolveLiveActorByKey(keyW, &dedupeFellBack);
         if (dedupeFellBack) {
             // The key index was stale (a world change purged the indexed actors), so this dedupe
             // paid an O(N) array scan; during the snapshot ~2,300 PropSpawns arrive in a burst, and
@@ -274,7 +281,7 @@ void OnSpawn(const coop::net::PropSpawnPayload& payload, int senderSlot,
         // disabled.
         if (!eidOnly && !fromConvert && !keyW.empty() && keyW != L"None" &&
             coop::dev::join_window_pos_trace::IsEnabled()) {
-            const bool hostHeld = ue_wrap::engine::IsMainPlayerGrabbing(localPlayer, existing)
+            const bool hostHeld = coop::local_prop_hold::IsHeld(existing)
                                || coop::remote_prop::IsActorUnderAnyDrive(existing);
             coop::dev::join_window_pos_trace::NoteSnapshotExpression(
                 keyW, static_cast<uint32_t>(payload.elementId), existing,
@@ -283,7 +290,7 @@ void OnSpawn(const coop::net::PropSpawnPayload& payload, int senderSlot,
         // The local player's grab is authoritative for what they hold (symmetric with the remote
         // drive skip below): converging a held prop kinematic would break the live physics-handle
         // hold, so it is claimed and bound with no physics or transform touch.
-        if (ue_wrap::engine::IsMainPlayerGrabbing(localPlayer, existing)) {
+        if (coop::local_prop_hold::IsHeld(existing)) {
             UE_LOGI("remote_prop::OnSpawn: key '%ls' is held by the LOCAL player -- skipping reconcile/converge (local grab owns it)",
                     keyW.c_str());
             coop::remote_prop::RegisterPropMirror(payload.elementId, existing, keyW, classW, senderSlot);
@@ -449,7 +456,7 @@ void OnSpawn(const coop::net::PropSpawnPayload& payload, int senderSlot,
         // The local-held guard, as on the exact-key path (reached when an earlier bracket rekeyed
         // the held prop and this one fuzzy-matches it); the rekey is skipped too, and correctness
         // rides the eid binding.
-        if (ue_wrap::engine::IsMainPlayerGrabbing(localPlayer, fuzzy)) {
+        if (coop::local_prop_hold::IsHeld(fuzzy)) {
             UE_LOGI("remote_prop::OnSpawn: fuzzy match '%ls' is held by the LOCAL player -- skipping reconcile/converge/rekey (local grab owns it)",
                     classW.c_str());
             coop::remote_prop::RegisterPropMirror(payload.elementId, fuzzy, keyW, classW, senderSlot);

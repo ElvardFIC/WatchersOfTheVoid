@@ -395,6 +395,7 @@ void SendSaleForDyingProp(const std::wstring& key, uint32_t elementId) {
 }
 
 void Tick() {
+    internal::TickCollect();
     // The host's key index, periodically: every NoSuchProp refusal is a lookup into it, and the
     // refusal alone cannot say whether the key was wrong or the index empty. On the tick rather
     // than the teardown summary, since a killed process never reaches a teardown.

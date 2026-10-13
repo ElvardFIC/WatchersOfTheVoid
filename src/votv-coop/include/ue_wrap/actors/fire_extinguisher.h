@@ -14,6 +14,7 @@
 // cooked class in every world.
 
 #pragma once
+#include "ue_wrap/core/types.h"
 
 namespace ue_wrap::fire_extinguisher {
 
@@ -36,5 +37,10 @@ void* MountedExtinguisher(void* mount);
 bool ReadCharge(void* ext, float& out);
 bool ReadSpraying(void* ext, bool& out);
 bool ReadThrusting(void* ext, bool& out);
+bool WriteCharge(void* ext, float value);
+bool WriteSpraying(void* ext, bool value);
+// Display-only hand mirror: no camera traces or local charge consumption.
+bool SetRemoteSpray(void* ext, bool spraying);
+bool AimRemoteSpray(void* ext, const FRotator& rotation);
 
 }  // namespace ue_wrap::fire_extinguisher

@@ -21,6 +21,10 @@
 namespace ue_wrap::drone {
 
 // Resolve Adrone_C + the Active offset. Idempotent; true once resolved. Game thread.
+bool ReadDeparturePreference(void* drone, bool& leaveAfter5min);
+bool WriteDeparturePreference(void* drone, bool leaveAfter5min);
+inline constexpr uint8_t kLeaveAfter5min = 8, kDepartureValid = 16;
+
 bool EnsureResolved();
 
 // The singleton delivery drone actor, or nullptr if not present: the world singleton's drone_C
@@ -80,6 +84,11 @@ bool ReadDustAnchor(void* drone, FVector& out);
 // IsActive!=on edge (also re-arms the self-completing 20s system), pin the component to `anchor`,
 // write the 'dust' intensity (1 - dist/2000). Call per received DroneState packet. Game thread.
 void ApplyDustMirror(void* drone, bool on, const FVector& anchor);
+
+// ReceiveTick updates rotor audio on the host; the client has that tick disabled.
+// Zero denotes an unavailable sample, positive values are AudioComponent pitch.
+float ReadRotorPitch(void* drone);
+void ApplyRotorPitch(void* drone, float pitch);
 
 // CLIENT mirror: play the delivery "items ready" alarm cue once (audio_alarm.Activate). Call on the
 // canTakeOff rising edge. Game thread.

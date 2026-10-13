@@ -35,6 +35,7 @@ struct Entry {
     const wchar_t* fn;
 };
 constexpr Entry kEntries[] = {
+    {L"analogDScreenTest_C", L"ReceiveActorBeginOverlap"}, // returned rear covers
     {L"driveSlot_C", L"BndEvt__driveSlot_drivePort_play_K2Node_ComponentBoundEvent_0_ComponentBeginOverlapSignature__DelegateSignature"},
     {L"prop_driveRack_C", L"ReceiveActorBeginOverlap"},
     {L"prop_box_C", L"ReceiveActorBeginOverlap"},

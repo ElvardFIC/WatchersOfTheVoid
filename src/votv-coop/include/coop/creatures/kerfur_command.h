@@ -8,8 +8,14 @@
 // so those reads answer that player's puppet and the game's own follow follows it; a request waits while
 // the host has no body for its sender. A command the game refuses (kill mode, a job) changes nobody's
 // service, the host's own hands the kerfur back to player 0, a leaver's ends, and murder mode's at its
-// startKill, before the chase reads anyone. Nothing writes a puppet's hand, so a client's get_reports gets
-// the game's refusal hint, shown on the host. turn_off stays in kerfur_convert. Page: docs/npcs-and-kerfur.md.
+// startKill, before the chase reads anyone. take_object, equipment and get_reports read the asking
+// player's hand. For a client that hand is staged onto the puppet for the verb: the display mirror of
+// the hand item, or the world prop that client's hold is driving, never the host player's own hand.
+// A pocket that is not in the hand still is not there. When the verb consumes what was staged, the
+// client is told and lets go of that class on both carry paths, the hotbar item and the physics
+// grab. The grab is released, not destroyed: the host's copy is the one the robot now carries.
+// turn_off stays in kerfur_convert.
+// Page: docs/npcs-and-kerfur.md.
 //
 // Principle 7: gameplay/network module; engine access through ue_wrap/kerfur and game_thread only.
 
@@ -21,6 +27,7 @@
 namespace coop::net {
 class Session;
 struct KerfurCommandPayload;
+struct HandTakenPayload;
 }  // namespace coop::net
 
 namespace coop::kerfur_command {
@@ -33,12 +40,15 @@ enum class Command : uint8_t {
     FixServers = 3,
     GetReports = 4,
     FixTransformers = 5,
+    TakeObject = 6,
+    Pat = 7,
+    Equipment = 8,
     Invalid = 0xFF,
 };
 
 // Map a radial actionName verb string to a relayed Command (Invalid if it is not one we relay --
 // the interceptor then leaves that dispatch untouched). turn_off maps to Invalid here (handled by
-// kerfur_convert); take_object/equipment/pat are Invalid (per-player / UI / montage, out of scope).
+// kerfur_convert).
 Command CommandFromActionName(const std::wstring& name);
 
 // Record a menu verb and cancel its local dispatch. Two seams call it: the actionName
@@ -75,5 +85,10 @@ void OnPeerLeft(uint8_t slot);
 // Clear the pending queue and the waiting requests. Net disconnect (all peers gone); served_player drops
 // the served kerfurs.
 void OnDisconnect();
+
+// CLIENT: the host says the Omega consumed what this machine had staged. Lets go of that class on
+// the hotbar and on the physics grab; a different item in either slot stays. The grab is released
+// through the physics handle and is not destroyed. Game thread.
+void OnHandTaken(const coop::net::HandTakenPayload& payload);
 
 }  // namespace coop::kerfur_command

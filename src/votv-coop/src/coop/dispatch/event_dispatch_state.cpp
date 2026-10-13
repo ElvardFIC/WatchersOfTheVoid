@@ -7,6 +7,9 @@
 #include "event_dispatch.h"  // co-located private header (src tree, not include/)
 
 #include "coop/interactables/atv_sync.h"
+#include "coop/props/prop_food_sync.h"
+#include "coop/props/prop_action_sync.h"
+#include "coop/world/credit_intent.h"
 #include "coop/player/sleep_sync.h"
 #include "coop/interactables/device_occupancy.h"
 #include "coop/world/email_sync.h"
@@ -43,18 +46,23 @@ bool HandleStateEvent(net::Session& session,
     case net::ReliableKind::ApplianceState:
     case net::ReliableKind::OvenRepairState:    // the oven's repair, one way
     case net::ReliableKind::LightGroupState:    // the light group's active flag, host-authored
+    case net::ReliableKind::CeilingLampState:  // actual lamp phase, independent of the root flag
+    case net::ReliableKind::AmbientLightState:
     case net::ReliableKind::LockerDoorState: {  // lockers and the drone-console doors, the same shape
-        // DoorState and LightGroupState are the host-authored kinds in this otherwise symmetric
+        // Door/group/lamp presentation states are host-authored in this otherwise symmetric
         // family, so they do not get the family's any-peer-may-send treatment: a client that
         // authored one would drive the host's and every other client's doors or lights, the
         // pollution host authority prevents. The channel's receive performs no role or sender check
         // of its own, so the drop is here, at the family boundary; refused on a receiving client
-        // too, since the host relays neither kind, so a packet from a non-host slot is not ours
+        // too, since the host relays none of these kinds, so a non-host slot is not ours
         // either way.
-        if ((msg.kind == net::ReliableKind::DoorState || msg.kind == net::ReliableKind::LightGroupState) &&
+        if ((msg.kind == net::ReliableKind::DoorState || msg.kind == net::ReliableKind::LightGroupState ||
+             msg.kind == net::ReliableKind::CeilingLampState || msg.kind == net::ReliableKind::AmbientLightState) &&
             msg.senderPeerSlot != 0) {
             UE_LOGW("event_feed: %s from slot %d refused -- this kind is host-authored",
-                    msg.kind == net::ReliableKind::DoorState ? "DoorState" : "LightGroupState",
+                    msg.kind == net::ReliableKind::DoorState ? "DoorState" :
+                    msg.kind == net::ReliableKind::CeilingLampState ? "CeilingLampState" :
+                    msg.kind == net::ReliableKind::AmbientLightState ? "AmbientLightState" : "LightGroupState",
                     msg.senderPeerSlot);
             return true;  // claimed by this family, deliberately not applied
         }
@@ -165,6 +173,61 @@ bool HandleStateEvent(net::Session& session,
                 ? static_cast<uint8_t>(msg.senderPeerSlot)
                 : static_cast<uint8_t>(0xFF);
         coop::atv_sync::OnReliable(ap, senderSlot);
+        break;
+    }
+    case net::ReliableKind::AtvRadio: {
+        if (msg.payloadLen < sizeof(net::AtvRadioPayload)) {
+            UE_LOGW("event_feed: AtvRadio payload too short (%zu < %zu)",
+                    static_cast<size_t>(msg.payloadLen), sizeof(net::AtvRadioPayload));
+            break;
+        }
+        net::AtvRadioPayload rp{};
+        std::memcpy(&rp, msg.payload, sizeof(rp));
+        rp.url[sizeof(rp.url) - 1] = 0;
+        const uint8_t senderSlot =
+            (msg.senderPeerSlot >= 0 && msg.senderPeerSlot < net::kMaxPeers)
+                ? static_cast<uint8_t>(msg.senderPeerSlot)
+                : static_cast<uint8_t>(0xFF);
+        coop::atv_sync::OnRadio(rp, senderSlot);
+        break;
+    }
+    case net::ReliableKind::ChestFlags: {
+        if (msg.senderPeerSlot != 0) {
+            UE_LOGW("event_feed: ChestFlags from non-host senderPeerSlot=%d -- dropping",
+                    msg.senderPeerSlot);
+            break;
+        }
+        if (msg.payloadLen < sizeof(net::ChestFlagsPayload)) {
+            UE_LOGW("event_feed: ChestFlags payload too short (%zu < %zu)",
+                    static_cast<size_t>(msg.payloadLen), sizeof(net::ChestFlagsPayload));
+            break;
+        }
+        net::ChestFlagsPayload cp{};
+        std::memcpy(&cp, msg.payload, sizeof(cp));
+        coop::credit_intent::ApplyFlags(cp);
+        break;
+    }
+    case net::ReliableKind::FoodState: {
+        if (msg.payloadLen < sizeof(net::FoodStatePayload)) {
+            UE_LOGW("event_feed: FoodState payload too short (%zu < %zu)",
+                    static_cast<size_t>(msg.payloadLen), sizeof(net::FoodStatePayload));
+            break;
+        }
+        net::FoodStatePayload fp{};
+        std::memcpy(&fp, msg.payload, sizeof(fp));
+        if (session.role() == net::Role::Host) {
+            if (msg.senderPeerSlot < 1 || msg.senderPeerSlot >= net::kMaxPeers) {
+                UE_LOGW("event_feed: FoodState intent from invalid senderPeerSlot=%d -- dropping",
+                        msg.senderPeerSlot);
+                break;
+            }
+            coop::props::prop_food_sync::OnHandState(fp, static_cast<uint8_t>(msg.senderPeerSlot));
+        } else if (msg.senderPeerSlot == 0) {
+            coop::props::prop_food_sync::Apply(fp);
+        } else {
+            UE_LOGW("event_feed: FoodState from non-host senderPeerSlot=%d -- dropping",
+                    msg.senderPeerSlot);
+        }
         break;
     }
     case net::ReliableKind::AtvRelease: {
@@ -433,6 +496,24 @@ bool HandleStateEvent(net::Session& session,
                 ? static_cast<uint8_t>(msg.senderPeerSlot)
                 : static_cast<uint8_t>(0xFF);
         coop::sleep_sync::OnReliable(sp, sslot);
+        break;
+    }
+    case net::ReliableKind::DreamScene: {
+        if (msg.payloadLen < sizeof(net::DreamScenePayload)) break;
+        net::DreamScenePayload dream{};
+        std::memcpy(&dream, msg.payload, sizeof(dream));
+        const uint8_t slot = (msg.senderPeerSlot >= 0 && msg.senderPeerSlot < net::kMaxPeers)
+            ? static_cast<uint8_t>(msg.senderPeerSlot) : static_cast<uint8_t>(0xFF);
+        coop::sleep_sync::OnDreamScene(dream, slot);
+        break;
+    }
+    case net::ReliableKind::PropActionIntent: {
+        if (msg.payloadLen != sizeof(net::PropActionIntentPayload)) break;
+        net::PropActionIntentPayload action{};
+        std::memcpy(&action, msg.payload, sizeof(action));
+        const uint8_t slot = (msg.senderPeerSlot >= 0 && msg.senderPeerSlot < net::kMaxPeers)
+            ? static_cast<uint8_t>(msg.senderPeerSlot) : static_cast<uint8_t>(0xFF);
+        coop::prop_action_sync::OnReliable(action, slot);
         break;
     }
     case net::ReliableKind::EmailAppend: {

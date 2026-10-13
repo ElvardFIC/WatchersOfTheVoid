@@ -11,8 +11,11 @@
 #include "ue_wrap/core/game_thread.h"
 #include "ue_wrap/core/hot_path_guard.h"
 #include "ue_wrap/core/log.h"
+#include "ue_wrap/core/sdk_profile.h"
 #include "ue_wrap/actors/puppet.h"
 #include "ue_wrap/core/reflection.h"
+#include "ue_wrap/engine/engine_component.h"
+#include "ue_wrap/engine/engine_mainplayer.h"
 
 #include <atomic>
 #include <chrono>
@@ -27,6 +30,33 @@ namespace R = ue_wrap::reflection;
 using clock = std::chrono::steady_clock;
 
 std::atomic<coop::net::Session*> g_session{nullptr};
+
+std::atomic<bool> g_alwaysSee{true};
+std::once_flag    g_alwaysSeeOnce;
+
+void EnsureAlwaysSeeLoaded() {
+    std::call_once(g_alwaysSeeOnce, [] {
+        g_alwaysSee.store(
+            coop::config::ResolveFlag(coop::config_registry::rows::always_see_playermodel),
+            std::memory_order_relaxed);
+    });
+}
+
+void* LiveComp(void* pawn, size_t off) {
+    if (!pawn || !R::IsLive(pawn)) return nullptr;
+    void* c = *reinterpret_cast<void**>(static_cast<uint8_t*>(pawn) + off);
+    return (c && R::IsLive(c)) ? c : nullptr;
+}
+
+// The bits puppet_spawn logs. A component the game has not hidden is left alone: calling
+// SetVisibility every frame dirties the render state and flickers a mesh that was already shown.
+bool CompIsHidden(void* comp) {
+    namespace P = ue_wrap::profile;
+    const auto* b = static_cast<const uint8_t*>(comp);
+    const bool shown = (b[P::off::USceneComponent_VisFlagsByte] & (1u << 4)) != 0;
+    const bool hidden = (b[P::off::USceneComponent_HiddenFlagsByte] & (1u << 2)) != 0;
+    return !shown || hidden;
+}
 
 // Game-thread-owned state (boot-thread SetInitialSkin runs before the pump
 // ticks -- the SetLocalNickname discipline). The UI reads via the mutex copy.
@@ -123,6 +153,43 @@ void RequestSkin(const std::string& name) {
 
 void Install(coop::net::Session* session) {
     g_session.store(session, std::memory_order_release);
+}
+
+bool AlwaysSeePlayermodel() {
+    EnsureAlwaysSeeLoaded();
+    return g_alwaysSee.load(std::memory_order_relaxed);
+}
+
+void SetAlwaysSeePlayermodel(bool on) {
+    EnsureAlwaysSeeLoaded();
+    g_alwaysSee.store(on, std::memory_order_relaxed);
+    coop::config::WriteIniValue(coop::config_registry::rows::always_see_playermodel,
+                                on ? "1" : "0");
+}
+
+void KeepPlayermodelVisible() {
+    if (!AlwaysSeePlayermodel()) return;
+    void* local = coop::players::Registry::Get().Local();
+    if (!local || !R::IsLive(local)) return;
+    // A faint and a death hide the standing body on purpose and put the ragdoll in its place.
+    // Showing the standing mesh there draws a second body on top of the flop.
+    bool ragdoll = false, dead = false;
+    if (ue_wrap::engine::ReadMainPlayerRagdollState(local, ragdoll, dead) && (ragdoll || dead))
+        return;
+    namespace P = ue_wrap::profile;
+    // The body you see looking down, and in spectator, is mesh_playerVisible. It is a
+    // child of the inherited mesh: a hide on that parent blanks the child even when the
+    // child itself stays "visible". playermodel is the overlay the game's own
+    // hidePlayermodel turns off during an event. Show each one, and do not propagate,
+    // so the first-person arms stay hidden.
+    void* const comps[] = {
+        LiveComp(local, P::off::ACharacter_Mesh),
+        LiveComp(local, P::off::AmainPlayer_mesh_playerVisible),
+        LiveComp(local, P::off::AmainPlayer_playermodel),
+    };
+    for (void* c : comps)
+        if (c && CompIsHidden(c))
+            ue_wrap::engine::SetComponentVisible(c, true, /*propagate=*/false);
 }
 
 void Tick() {

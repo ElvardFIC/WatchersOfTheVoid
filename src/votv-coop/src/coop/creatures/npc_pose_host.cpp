@@ -21,8 +21,11 @@
 #include "coop/dev/kerfur_census.h"        // [dev] kerfur_census=1: periodic HOST census (5-vs-6 measurement)
 #include "coop/net/protocol.h"
 #include "coop/net/session.h"
+#include "coop/props/prop_drive_host.h"  // a world prop the Omega is holding follows the host copy
 #include "ue_wrap/engine/engine.h"
+#include "ue_wrap/engine/engine_attach.h"
 #include "ue_wrap/actors/kerfur.h"  // HasSaveKey (savePersisted flag) + ReadKerfurState (mirror fidelity)
+#include "ue_wrap/actors/sit_pose.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/actors/puppet.h"
 #include "ue_wrap/core/reflection.h"
@@ -31,6 +34,7 @@
 #include <cmath>
 #include <cstdint>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 namespace coop::npc_sync {
@@ -42,7 +46,112 @@ namespace R = ue_wrap::reflection;
 // npc_mirror.cpp wrap; MirrorManager<Npc>::Instance() owns the storage).
 using coop::element::NpcMirrors;   // canonical accessor (coop/element/mirror_managers.h)
 
+// One Omega's current holdObject. The prop-drive channel moves a world prop the robot picked up;
+// a hold that is not a keyed prop is refused there, and an empty hand releases the previous one
+// so it coasts to rest instead of staying glued to the last pose.
+struct KerfurHold {
+    void*   kerfur    = nullptr;
+    int32_t kerfurIdx = -1;
+    void*   held      = nullptr;
+    int32_t heldIdx   = -1;
+};
+std::vector<KerfurHold> g_kerfurHolds;
+std::unordered_set<void*> g_kerfurHeldNow;
+
+void RememberHeld(void* actor) {
+    if (actor) g_kerfurHeldNow.insert(actor);
+}
+void ForgetHeld(void* actor) {
+    if (actor) g_kerfurHeldNow.erase(actor);
+}
+
+bool StillLive(void* actor, int32_t idx) {
+    return actor && idx >= 0 && R::IsLiveByIndex(actor, idx);
+}
+
+void ForgetKerfurHold(void* kerfur) {
+    for (size_t i = 0; i < g_kerfurHolds.size();) {
+        if (g_kerfurHolds[i].kerfur != kerfur) { ++i; continue; }
+        ForgetHeld(g_kerfurHolds[i].held);
+        g_kerfurHolds[i] = g_kerfurHolds.back();
+        g_kerfurHolds.pop_back();
+    }
+}
+
+void SyncKerfurHold(void* kerfur) {
+    void* held = ue_wrap::kerfur::ReadHoldObject(kerfur);
+    KerfurHold* row = nullptr;
+    for (KerfurHold& h : g_kerfurHolds)
+        if (h.kerfur == kerfur && StillLive(h.kerfur, h.kerfurIdx)) { row = &h; break; }
+    if (!row) {
+        if (!held) return;
+        g_kerfurHolds.push_back(KerfurHold{kerfur, R::InternalIndexOf(kerfur),
+                                           held, R::InternalIndexOf(held)});
+        RememberHeld(held);
+        ue_wrap::engine::SetActorSimulatePhysics(held, false);
+        coop::prop_drive_host::Claim(held, "kerfur");
+        return;
+    }
+    if (row->held != held || !StillLive(row->held, row->heldIdx)) {
+        if (StillLive(row->held, row->heldIdx)) {
+            ForgetHeld(row->held);
+            ue_wrap::engine::SetActorSimulatePhysics(row->held, true);
+            coop::prop_drive_host::Release(row->held);
+        }
+        row->held = held;
+        row->heldIdx = held ? R::InternalIndexOf(held) : -1;
+        RememberHeld(held);
+    }
+    if (!held) {
+        ForgetKerfurHold(kerfur);
+        return;
+    }
+    // Every pass, not only the edge: a claimed row the drive closed is re-opened by the next
+    // claim, which is how that channel expects a verb that still holds. Physics stays off so a
+    // hand-release that arrived in the same moment cannot throw the prop out of the robot's hands.
+    ue_wrap::engine::SetActorSimulatePhysics(held, false);
+    coop::prop_drive_host::Claim(held, "kerfur");
+}
+
+void SweepKerfurHolds() {
+    for (size_t i = 0; i < g_kerfurHolds.size();) {
+        KerfurHold& h = g_kerfurHolds[i];
+        if (StillLive(h.kerfur, h.kerfurIdx)) { ++i; continue; }
+        if (StillLive(h.held, h.heldIdx)) {
+            ForgetHeld(h.held);
+            coop::prop_drive_host::Release(h.held);
+        }
+        g_kerfurHolds[i] = g_kerfurHolds.back();
+        g_kerfurHolds.pop_back();
+    }
+}
+
 }  // namespace
+
+void DropKerfurHolds() {
+    // The prop-drive set is cleared by its own disconnect, later in the same teardown. Releasing
+    // here would coast props the session is already throwing away, and a pointer kept past this
+    // point can be a new object by the next session.
+    g_kerfurHolds.clear();
+    g_kerfurHeldNow.clear();
+}
+
+bool KerfurIsHolding(void* actor) {
+    return actor && g_kerfurHeldNow.count(actor) != 0;
+}
+
+void NoteKerfurHolding(void* actor) {
+    RememberHeld(actor);
+}
+
+void ForgetKerfurHolding(void* actor) {
+    // The host's rows are the pose sweep's: it forgets when holdObject changes, and a grab
+    // restarting a drive must not wipe a take the robot still has. A client only has the note
+    // the host's take release planted, and the next grab of that prop is the robot letting go.
+    auto* s = GetSession();
+    if (!actor || !s || s->role() != coop::net::Role::Client) return;
+    ForgetHeld(actor);
+}
 
 void QueueConnectBroadcastForSlot(int peerSlot) {
     // HOST-only: re-send EntitySpawn (class + CURRENT transform) for every already-spawned NPC
@@ -155,6 +264,9 @@ void TickPoseStream() {
             coop::npc_sync::SyncDestroyedNpcByEid(el->GetId(), actor);
             continue;
         }
+        // Before the peer check: a carry that starts while nobody is connected is already claimed
+        // when the first peer arrives, and the drive's join resend parks it for them.
+        SyncKerfurHold(actor);
         if (!connected) continue;  // no peers: lifecycle-only pass, no batch to build
         if (static_cast<int>(batch.size()) >= coop::net::kMaxNpcBatchEntries) { ++truncated; continue; }
         coop::net::EntityPoseSnapshot snap{};
@@ -203,9 +315,18 @@ void TickPoseStream() {
             snap.kerfFace  = kFace;
             snap.stateBits |= coop::net::kEntityPoseBitHasKerfurState;
             if (kSpooky) snap.stateBits |= coop::net::kEntityPoseBitKerfurSpooky;
+            bool hasDisc = false;
+            uint8_t discType = 0;
+            if (ue_wrap::kerfur::ReadKerfurFloppy(actor, hasDisc, discType) && hasDisc) {
+                snap.stateBits |= coop::net::kEntityPoseBitKerfurHasFloppy;
+                snap.floppyType = discType;
+            }
         }
+        if (ue_wrap::sit_pose::ReadIsOnAtv(actor))
+            snap.stateBits |= coop::net::kEntityPoseBitKerfurOnAtv;
         batch.push_back(snap);
     }
+    SweepKerfurHolds();
     if (!connected) return;  // publish is peer-dependent
     if (truncated > 0) {
         static bool s_warnedTrunc = false;

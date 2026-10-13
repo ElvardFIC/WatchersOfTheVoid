@@ -33,6 +33,7 @@
 #include "coop/player/local_body.h"     // the host's own skin belongs in its own roster row
 #include "coop/player/nick_color.h"  // ResetSlots() at bringup -- a colour lands before its row
 #include "coop/player/nameplate.h"   // ResetSlots() at bringup -- so does a hidden-plate pref
+#include "coop/player/pvp.h"
 #include "coop/session/player_handshake.h"
 #include "coop/player/players_registry.h"
 #include "coop/player/remote_player.h"
@@ -508,6 +509,17 @@ void Update(net::Session& session, void* localPlayer) {
             // The per-peer nameplate visibility preference; the handler also rebroadcasts on the
             // host.
             coop::player_handshake::HandleNameplateChange(session, msg);
+            break;
+        }
+        case net::ReliableKind::PvpChange: {
+            coop::player_handshake::HandlePvpChange(session, msg);
+            break;
+        }
+        case net::ReliableKind::PvpHit: {
+            if (msg.payloadLen < sizeof(net::PvpHitPayload)) break;
+            net::PvpHitPayload hit{};
+            std::memcpy(&hit, msg.payload, sizeof(hit));
+            coop::pvp::OnHit(hit, static_cast<uint8_t>(msg.senderPeerSlot));
             break;
         }
         case net::ReliableKind::NickColorChange: {

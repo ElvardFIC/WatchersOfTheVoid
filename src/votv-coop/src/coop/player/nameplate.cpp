@@ -3,6 +3,7 @@
 #include "coop/comms/chat_bubbles.h"
 #include "coop/comms/chat_feed.h"
 #include "coop/player/nick_color.h"
+#include "coop/player/pvp.h"
 #include "coop/player/players_registry.h"
 #include "coop/player/remote_player.h"
 #include "coop/player/roster_ledger.h"
@@ -159,6 +160,7 @@ void Update() {
         pl.linkKind = link.kind;
         pl.voiceIcon = static_cast<uint8_t>(coop::voice_chat::IconForSlot(slot));  // badge
         pl.colorRGB = coop::nick_color::PackedForSlot(slot);  // custom nick color
+        pl.pvp = coop::pvp::OnForSlot(slot);
         pl.bubbleAlpha = coop::chat_bubbles::BubbleForSlot(slot, pl.bubble);  // 12g overhead bubble
         coop::text::CopyUtf8ToBuffer(pl.nick, p->GetNickname());
 

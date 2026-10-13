@@ -57,6 +57,10 @@ void CloseHold(int slot, uint16_t holdGen);
 // frame, a visible pop.
 bool IsActorUnderAnyDrive(void* actor);
 
+// The actor `slot`'s hold is driving on this machine, or nullptr. The host uses it as the world prop
+// a client's hand is carrying. Game thread.
+void* DrivenActor(int slot);
+
 // Register a wire-received prop mirror Element at `eid` bound to `actor`. Idempotent for
 // duplicate eids (a silent no-op); skips an eid of 0 (an unminted sender) and the invalid id.
 // The register-mirror pattern: allocate, insert under the manager mutex, register, roll back

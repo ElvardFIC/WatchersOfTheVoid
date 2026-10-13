@@ -4,12 +4,15 @@
 
 #include "coop/net/protocol.h"
 #include "coop/net/session.h"
+#include "coop/player/local_prop_hold.h"
 #include "coop/props/active_drive.h"
+#include "coop/props/drive_generation.h"
 #include "coop/props/prop_element_tracker.h"  // FindLiveActorByKey: the index only, never the cold walk
 #include "coop/props/prop_park.h"             // Park / Unpark: the parked prop, and a Character welded on it
 #include "coop/props/prop_wire_parity.h"      // the join converge's own physics restore
 #include "coop/props/remote_prop.h"           // ResolveLiveActorByEid, IsActorUnderAnyDrive
 #include "ue_wrap/actors/prop.h"
+#include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/hot_path_guard.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
@@ -30,6 +33,8 @@ namespace R  = ue_wrap::reflection;
 
 struct Drive {
     AD::ActiveDrive d;
+    ue_wrap::CachedObjRef actorRef, meshRef;
+    void* LiveActor() const { return actorRef.Get(); }
     uint8_t gen = 0;
     bool physicsParked = false;   // this module turned simulation off, so the end turns it on
     uint32_t relatches = 0;       // the game switched the parked copy's simulation back on, this park
@@ -61,7 +66,10 @@ constexpr uint64_t kPendingEndMs = 30000;
 std::vector<coop::net::PropPoseSnapshot> g_batch;
 
 // Newer-than on the wrapping byte the stream carries.
-bool GenAfter(uint8_t a, uint8_t b) { return static_cast<int8_t>(a - b) > 0; }
+bool GenAfter(uint8_t a, uint8_t b) { return drive_generation::After(a, b); }
+bool Held(void* actor) {
+    return local_prop_hold::IsHeld(actor) || remote_prop::IsActorUnderAnyDrive(actor);
+}
 
 // A frozen or static prop keeps its physics off whatever the stream did: it is moved kinematically
 // and left so, the stuck wall-attachable rule the held-prop receiver applies.
@@ -78,8 +86,16 @@ void* Resolve(uint32_t eid, const coop::net::WireKey& key) {
 void GiveBackPhysics(Drive& dr, void* actor) {
     if (!dr.physicsParked || !actor) return;
     const bool simulate = !PhysicsStaysOff(actor);
-    coop::prop_park::Unpark(actor, dr.d.mesh, simulate);
-    if (simulate) dr.physicsParked = false;
+    coop::prop_park::Unpark(actor, PR::GetStaticMesh(actor), simulate);
+    dr.physicsParked = false;
+}
+
+void YieldToHand(uint32_t eid, uint8_t gen, void* actor, Drive* dr) {
+    // A local PHC/beam needs simulation. A remote hand already owns its kinematic
+    // park, so restoring simulation there would break that other stream instead.
+    if (dr && dr->LiveActor() == actor && local_prop_hold::IsHeld(actor)) GiveBackPhysics(*dr, actor);
+    g_endedGen[eid] = gen;
+    g_pendingEnd.erase(eid);
 }
 
 // The end edge on a live prop: the final pose, then the host's physics flags through the same
@@ -122,11 +138,14 @@ void TickApplyAndDrive(coop::net::Session& s) {
             if (ended != g_endedGen.end() && !GenAfter(e.ctx, ended->second)) continue;
             auto it = g_drives.find(eid);
             if (it != g_drives.end()) {
-                if (GenAfter(it->second.gen, e.ctx)) continue;
+                if (!drive_generation::AtLeast(e.ctx, it->second.gen)) continue;
                 if (it->second.gen == e.ctx) {
                     // The steady state: the row already names the actor. No resolve, no string.
-                    if (void* live = it->second.d.LiveActor()) {
-                        if (!coop::remote_prop::IsActorUnderAnyDrive(live))   // a hand's stream wins
+                    if (void* live = it->second.LiveActor()) {
+                        if (Held(live)) {
+                            YieldToHand(eid, e.ctx, live, &it->second);
+                            g_drives.erase(it);
+                        } else
                             AD::BeginLerpToPose(it->second.d, ue_wrap::FVector{e.x, e.y, e.z},
                                                 ue_wrap::FRotator{e.pitch, e.yaw, e.roll}, nowMs);
                         continue;
@@ -150,17 +169,24 @@ void TickApplyAndDrive(coop::net::Session& s) {
             if (!PR::IsDescendantOfProp(actor)) continue;
             // A hand's stream on the same prop wins: the holder is its syncer for as long as it
             // holds it, and the host closes this stream the moment it sees the hand.
-            if (coop::remote_prop::IsActorUnderAnyDrive(actor)) continue;
+            if (Held(actor)) {
+                YieldToHand(eid, e.ctx, actor, it != g_drives.end() ? &it->second : nullptr);
+                if (it != g_drives.end()) g_drives.erase(it);
+                continue;
+            }
             Drive& dr = g_drives[eid];
-            if (dr.d.actor && dr.d.actor != actor) GiveBackPhysics(dr, dr.d.LiveActor());
+            if (dr.d.actor && dr.d.actor != actor) GiveBackPhysics(dr, dr.LiveActor());
+            const bool alreadyParked = dr.physicsParked && dr.LiveActor() == actor;
             AD::ResetDriveState(dr.d);
             dr.d.actor    = actor;
             dr.d.actorIdx = R::InternalIndexOf(actor);
             dr.d.mesh     = PR::GetStaticMesh(actor);
+            dr.actorRef.Set(actor);
+            dr.meshRef.Set(dr.d.mesh);
             dr.d.isTrashMirror = true;  // the fixed-delay follow of a carried clump: freeze on a gap
             dr.d.lastEid  = eid;
             dr.gen        = e.ctx;
-            dr.physicsParked = false;
+            dr.physicsParked = alreadyParked; // a new generation still owns this body's existing park
             dr.relatches  = 0;
             if (dr.d.mesh && !PhysicsStaysOff(actor)) {
                 coop::prop_park::Park(actor, dr.d.mesh);
@@ -180,13 +206,14 @@ void TickApplyAndDrive(coop::net::Session& s) {
     }
     for (auto it = g_drives.begin(); it != g_drives.end();) {
         Drive& dr = it->second;
-        void* actor = dr.d.LiveActor();
+        void* actor = dr.LiveActor();
         if (!actor) { it = g_drives.erase(it); continue; }   // the destroy crossed on its own seam
-        if (coop::remote_prop::IsActorUnderAnyDrive(actor)) {
+        if (Held(actor)) {
             // A hand took it before the end edge landed: the holder's drive owns the actor from here,
             // and its release restores the physics. This drive yields for good rather than writing
             // a stale target back once the hand lets go.
             UE_LOGI("[PROP-DRIVE] CLIENT yield eid=%u -- a held-prop stream owns the actor", it->first);
+            YieldToHand(it->first, dr.gen, actor, &dr);
             it = g_drives.erase(it);
             continue;
         }
@@ -194,6 +221,10 @@ void TickApplyAndDrive(coop::net::Session& s) {
         // kinematic when the game here switches its simulation back on. That includes a copy parked
         // frozen, which the park left as it was, and which an unstick or an unfreeze here has since
         // freed: it is parked kinematic from then on, and the end edge hands its physics back.
+        if (dr.d.mesh && !dr.meshRef.Alive()) {
+            dr.d.mesh = PR::GetStaticMesh(actor);
+            dr.meshRef.Set(dr.d.mesh);
+        }
         if (dr.d.mesh && ue_wrap::engine::IsComponentSimulatingPhysics(dr.d.mesh)) {
             coop::prop_park::Park(actor, dr.d.mesh);
             dr.physicsParked = true;
@@ -216,7 +247,7 @@ void TickApplyAndDrive(coop::net::Session& s) {
         }
         void* actor = coop::remote_prop::ResolveLiveActorByEid(it->first);
         if (!actor) { ++it; continue; }
-        if (PR::IsDescendantOfProp(actor) && !coop::remote_prop::IsActorUnderAnyDrive(actor)) {
+        if (PR::IsDescendantOfProp(actor) && !Held(actor)) {
             ApplyEnd(actor, it->second.p, /*parkedHere=*/false);
             UE_LOGI("[PROP-DRIVE] CLIENT END eid=%u gen=%u -> (%.1f,%.1f,%.1f) applied late (the "
                     "prop arrived after its stream ended)", it->first,
@@ -229,15 +260,21 @@ void TickApplyAndDrive(coop::net::Session& s) {
 
 void OnEnd(const coop::net::PropDriveEndPayload& p) {
     UE_ASSERT_GAME_THREAD("prop_drive_stream::OnEnd");
+    if (!p.eid) return;
+    const auto ended = g_endedGen.find(p.eid);
+    if (ended != g_endedGen.end() && !GenAfter(p.gen, ended->second)) return;
     auto it = g_drives.find(p.eid);
     if (it == g_drives.end()) {
+        // The actor may have appeared since an older end was queued. Once this newer
+        // end lands immediately, that old retry must never overwrite it next tick.
+        g_pendingEnd.erase(p.eid);
         // Never parked here. The generation still closes, so a pose of it in flight cannot park
         // the prop now; the rest pose is applied if the prop is here, kept for it if not, and
         // dropped only for a prop a hand holds -- that stream owns it.
         g_endedGen[p.eid] = p.gen;
         void* actor = coop::remote_prop::ResolveLiveActorByEid(p.eid);
         if (actor) {
-            if (PR::IsDescendantOfProp(actor) && !coop::remote_prop::IsActorUnderAnyDrive(actor)) {
+            if (PR::IsDescendantOfProp(actor) && !Held(actor)) {
                 ApplyEnd(actor, p, /*parkedHere=*/false);
                 UE_LOGI("[PROP-DRIVE] CLIENT END eid=%u gen=%u -> (%.1f,%.1f,%.1f) (never parked here)",
                         p.eid, static_cast<unsigned>(p.gen), p.x, p.y, p.z);
@@ -248,9 +285,10 @@ void OnEnd(const coop::net::PropDriveEndPayload& p) {
         return;
     }
     Drive& dr = it->second;
-    if (GenAfter(dr.gen, p.gen)) return;   // an end for an older generation than the live drive
-    if (void* actor = dr.d.LiveActor()) {
-        if (coop::remote_prop::IsActorUnderAnyDrive(actor)) {
+    if (!drive_generation::AtLeast(p.gen, dr.gen)) return;
+    if (void* actor = dr.LiveActor()) {
+        if (Held(actor)) {
+            YieldToHand(p.eid, p.gen, actor, &dr);
             // A hand's stream parked this prop after ours did, and its release will hand the
             // physics back; touching the pose or the physics here would undo that park.
             UE_LOGI("[PROP-DRIVE] CLIENT END eid=%u gen=%u -- a held-prop stream owns the actor; "
@@ -273,12 +311,12 @@ bool IsParked(void* actor) {
     // The live actor, not the cached pointer: a row whose actor died is erased only on the next tick,
     // and a new actor at the freed address is not parked.
     for (const auto& kv : g_drives)
-        if (kv.second.d.LiveActor() == actor) return true;
+        if (kv.second.LiveActor() == actor) return true;
     return false;
 }
 
 void OnDisconnect() {
-    for (auto& kv : g_drives) GiveBackPhysics(kv.second, kv.second.d.LiveActor());
+    for (auto& kv : g_drives) GiveBackPhysics(kv.second, kv.second.LiveActor());
     g_drives.clear();
     g_endedGen.clear();
     g_miss.clear();

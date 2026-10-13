@@ -1,20 +1,12 @@
 // ue_wrap/engine/engine_playerragdoll.cpp -- AplayerRagdoll_C engine substrate (principle 7).
 //
-// VOTV's `playerRagdoll_C` is the plushie ragdoll body ragdollMode spawns when a player faints: the
-// visible flopping kel body, whose SkeletalMesh self-configures to `kel_lmao` / `inst_kel_body` and
-// is natively rigged to the six-bone chain lowlegs-thighs-pelvis-chest-head-head_end. We spawn it
-// OURSELVES on a puppet (coop/remote_player) as the visible flop display, and the caller hides the
-// puppet's own kel meshes for it. We never call ragdollMode: it is globally scoped and kills the
-// host, firing the death event whatever its params say.
-//
-// The recipe, from an SP-solo probe (harness/autotest/autotest_ragdoll_spawn_probe.cpp):
-// BeginDeferredSpawn(playerRagdoll_C); write Player, an Expose-On-Spawn field that must land
-// BEFORE Finish for ReceiveBeginPlay to self-configure the visible kel mesh; FinishDeferredSpawn;
-// then StartBodySim for collision and the two simulate-physics calls, since BeginPlay builds the
-// rigid bodies and leaves them FROZEN, as ragdollMode also does. The spawn is DEATH-FREE: it
-// never touches the owner's dead or isRagdoll fields. coop/remote_player owns the lifecycle.
+// playerRagdoll_C supplies the actor and native interaction shell. The selected
+// player mesh/materials and full compatible physics asset replace its plushie
+// defaults after construction, before any simulation. Native ragdollMode is never
+// invoked on a puppet because it can affect the local player's death state.
 
 #include "ue_wrap/engine/engine.h"
+#include "ue_wrap/actors/puppet.h"
 
 #include "ue_wrap/core/call.h"
 #include "ue_wrap/core/log.h"
@@ -43,9 +35,6 @@ constexpr size_t kMainPlayer_ragdollActor = 0x0C40;
 // caches -- no atomics/mutex (the incremental-link DLL-corruption rule does not
 // structurally trigger), consistent with the engine_mainplayer.cpp precedent.
 ue_wrap::CachedObjRef g_ragdollClass;
-void* g_setAllBodiesSimFn = nullptr;
-void* g_setSimPhysFn      = nullptr;
-void* g_setCollisionFn    = nullptr;
 // Pelvis reads: the sender samples its native ragdoll's pelvis location, rotation and velocity for
 // the wire (ReadLocalRagdollPelvisPhysics). The "pelvis" FName is one GNames entry, stable across
 // every ragdoll body, so the eight bytes are cached once alongside the functions.
@@ -71,26 +60,18 @@ void* ResolveRagdollClass() {
 // does NOT (the bare body stays frozen at the spawn transform). Proven by the SP
 // probe: with this the body falls to the floor + settles; without it, rigid.
 // Game thread only.
-void StartBodySim(void* comp) {
-    if (!comp || !R::IsLive(comp)) return;
-    if (!g_setCollisionFn) {
-        if (void* c = R::FindClass(L"PrimitiveComponent")) g_setCollisionFn = R::FindFunction(c, L"SetCollisionEnabled");
-    }
-    if (g_setCollisionFn) {  // QueryAndPhysics(3) so the bodies have a floor to rest on
-        ParamFrame f(g_setCollisionFn); f.Set<uint8_t>(L"NewType", uint8_t{3}); Call(comp, f);
-    }
-    if (!g_setAllBodiesSimFn) {
-        if (void* c = R::FindClass(L"SkeletalMeshComponent")) g_setAllBodiesSimFn = R::FindFunction(c, L"SetAllBodiesSimulatePhysics");
-    }
-    if (g_setAllBodiesSimFn) {
-        ParamFrame f(g_setAllBodiesSimFn); f.Set<bool>(L"bNewSimulate", true); Call(comp, f);
-    }
-    if (!g_setSimPhysFn) {
-        if (void* c = R::FindClass(L"PrimitiveComponent")) g_setSimPhysFn = R::FindFunction(c, L"SetSimulatePhysics");
-    }
-    if (g_setSimPhysFn) {
-        ParamFrame f(g_setSimPhysFn); f.Set<bool>(L"bSimulate", true); Call(comp, f);
-    }
+bool StartBodySim(void* comp) {
+    CachedObjRef ref; ref.Set(comp);
+    if (!ref.Get()) return false;
+    void* cls = R::ClassOf(comp);
+    ParamFrame collision(R::FindDispatchFunctionCached(cls, L"SetCollisionEnabled"));
+    if (!collision.Set<uint8_t>(L"NewType", 3) || !Call(comp, collision) || !ref.Get()) return false;
+    ParamFrame bodies(R::FindDispatchFunctionCached(cls, L"SetAllBodiesSimulatePhysics"));
+    if (!bodies.Set<bool>(L"bNewSimulate", true) || !Call(comp, bodies) || !ref.Get()) return false;
+    ParamFrame simulation(R::FindDispatchFunctionCached(cls, L"SetSimulatePhysics"));
+    if (!simulation.Set<bool>(L"bSimulate", true) || !Call(comp, simulation) || !ref.Get()) return false;
+    ParamFrame check(R::FindDispatchFunctionCached(cls, L"IsAnySimulatingPhysics"));
+    return check.valid() && Call(comp, check) && ref.Get() && check.Get<bool>(L"ReturnValue");
 }
 
 // Find the 8-byte FName of the bone named `wantName` on a skeletal-mesh component
@@ -166,25 +147,25 @@ void* RagdollMeshOf(void* ragdollActor) {
 }  // namespace
 
 void* SpawnPlayerRagdollBody(void* ownerPlayer, const FVector& location, const FRotator& rotation) {
-    if (!ownerPlayer || !R::IsLive(ownerPlayer)) return nullptr;
+    CachedObjRef owner; owner.Set(ownerPlayer);
+    if (!owner.Get()) return nullptr;
     void* cls = ResolveRagdollClass();
-    if (!cls) { UE_LOGW("ragdoll_body: playerRagdoll_C class unresolved -- cannot spawn"); return nullptr; }
+    if (!cls) return nullptr;
     void* body = BeginDeferredSpawn(cls, location, rotation);
-    if (!body) { UE_LOGW("ragdoll_body: BeginDeferredSpawn returned null"); return nullptr; }
-    // Expose-On-Spawn: stamp Player (kPlayerRagdoll_Player) BEFORE FinishDeferredSpawn runs
-    // BeginPlay, so the BP's construction sees the owner it expects.
+    CachedObjRef bodyRef; bodyRef.Set(body);
+    if (!bodyRef.Get()) return nullptr;
     *reinterpret_cast<void**>(reinterpret_cast<uint8_t*>(body) + kPlayerRagdoll_Player) = ownerPlayer;
-    FinishDeferredSpawn(body, location, rotation);
-    if (!R::IsLive(body)) { UE_LOGW("ragdoll_body: body died during FinishDeferredSpawn"); return nullptr; }
-    // BeginPlay built the rigid bodies but left them frozen -- start the sim so it actually flops
-    // (the probe proved this necessary). The body's own mesh stays VISIBLE: it IS the display, the
-    // game's own plushie ragdoll with its six-bone chain natively rigged to the physics, exactly
-    // what single-player shows in mirrors. The caller hides the puppet's kel meshes for the flop
-    // instead of coupling them, so there is no double image and no skeleton mapping at all.
-    void* comp = *reinterpret_cast<void**>(reinterpret_cast<uint8_t*>(body) + kAragdoll_SkeletalMesh);
-    if (comp && R::IsLive(comp)) StartBodySim(comp);
-    UE_LOGI("ragdoll_body: spawned VISIBLE playerRagdoll_C flop body @%p (owner=%p) at (%.0f,%.0f,%.0f), sim started",
-            body, ownerPlayer, location.X, location.Y, location.Z);
+    const bool finished = FinishDeferredSpawn(body, location, rotation);
+    if (!bodyRef.Get()) return nullptr;
+    void* comp = RagdollMeshOf(body);
+    if (!finished || !owner.Get() || !comp ||
+        !ConfigurePlayerRagdollMesh(puppet::GetMeshPlayerVisibleComponent(ownerPlayer), comp) ||
+        !bodyRef.Get() || !owner.Get() || !StartBodySim(comp)) {
+        UE_LOGW("ragdoll_body: selected model/physics could not initialize; no substitute body shown");
+        if (bodyRef.Get()) DestroyActor(body);
+        return nullptr;
+    }
+    UE_LOGI("ragdoll_body: selected player model with articulated physics ready (%p)", body);
     return body;
 }
 
@@ -206,7 +187,7 @@ bool AttachActorToRagdollBody(void* actor, void* body) {
     f.Set<uint8_t>(L"RotationRule", uint8_t{1});       // KeepWorld
     f.Set<uint8_t>(L"ScaleRule",    uint8_t{1});       // KeepWorld
     f.Set<bool>(L"bWeldSimulatedBodies", false);
-    return Call(actor, f);
+    return Call(actor, f) && f.Get<bool>(L"ReturnValue");
 }
 
 // Detach `actor` from its parent (the ragdoll body), KeepWorld so it stays where the

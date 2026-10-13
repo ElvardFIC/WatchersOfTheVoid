@@ -10,6 +10,31 @@ scientists.pak     (walter_v1sc + sci_v1sc + rvi_scientist_v1sc + luther_v1sc)
 walter_v1sc.png  sci_v1sc.png  rvi_scientist_v1sc.png  luther_v1sc.png
 ```
 
+Additional preview tiles are included for skins already present in the game. Their filenames
+are the skin keys used by the skin browser; `dr_kel.png` previews the pak-less native body.
+The supplied duplicate white-robot image is included only once.
+
+| Preview file | Skin |
+|---|---|
+| `dr_kel.png` | Native Dr. Kel |
+| `kerfur_maxwell.png` | Maxwell cat |
+| `scrappy_keith.png` | Scrappy Keith |
+| `kerfur_antibreather.png` | Antibreather |
+| `kerfur_ariral.png` | Ariral |
+| `kerfur_alien.png` | Ayy Lmao / alien figure |
+| `kerfur_maid.png` | Striped maid robot |
+| `kerfur_monique.png` | Alternate striped maid robot |
+| `kerfur_mannequin.png` | Mannequin |
+| `kerfur_erie_v4.png` | Erie V4 |
+| `kerfur_keljoy.png` | Keljoy |
+| `kerfur_krampus.png` | Krampus |
+| `kerfur_omega.png` | White Omega |
+| `kerfur_omega_h.png` | Purple Omega |
+| `kerfur_omega_m.png` | Red Omega |
+| `kerfur_omega_nc.png` | Blue Omega |
+| `kerfur_mynet.png` | Mynet (user-confirmed supplied preview) |
+| `kerfur_skeleton.png` | Skeleton |
+
 The bundle-to-members mapping lives in `skin_registry.cpp` (`kSkinBundles`); the loader itself
 never keys on the pak filename, since assets resolve by their internal
 `/Game/Mods/VOTVCoop/<name>` paths. Rebuild the bundle from the four single-skin paks with repak

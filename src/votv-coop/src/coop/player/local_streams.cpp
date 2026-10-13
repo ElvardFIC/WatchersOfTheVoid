@@ -3,16 +3,24 @@
 // coop/player/local_streams.h.
 
 #include "coop/player/local_streams.h"
+#include "coop/items/gravity_motion.h"
+#include "ue_wrap/devices/kitchen_machine.h"
 
 #include "coop/dev/perf_probe.h"
 #include "coop/element/element.h"
 #include "coop/config/config.h"
 #include "coop/creatures/kerfur_entity.h"  // GetKerfurMirrorEidForActor, the held kerfur prop's eid
+#include "coop/creatures/npc_sync.h"       // KerfurIsHolding: a take is not a throw
 #include "coop/net/protocol.h"
 #include "coop/net/session.h"
+#include "coop/interactables/cord_sync.h"
 #include "coop/player/hand_item.h"     // the hotbar hand-item axis
+#include "coop/player/players_registry.h"
+#include "coop/player/pvp.h"           // a fast let-go is a throw that can hit another player
+#include "coop/player/sit_pose.h"
 #include "coop/player/skin_effects.h"  // own-body step FX at the wire-pose stride
 #include "coop/props/trash_channel.h"   // CtxForEid, the trash sync-time context
+#include "coop/props/prop_drive_host.h"  // a hand's let-go coasts on the host until the body rests
 #include "coop/props/prop_element_tracker.h"
 #include "coop/props/prop_wire_parity.h"  // PhysFlagsOf, the flags a release carries
 #include "coop/props/remote_prop.h"     // ResolveMirrorEidByActor (the bound-clump held-pose eid fallback)
@@ -64,6 +72,9 @@ uint64_t g_ragdollEmitCount = 0;
 coop::element::ElementId g_relEdgeLoggedEid = coop::element::kInvalidId;
 int  g_relEdgeLoggedSkip = -1;  // -1 = nothing reported yet, else the last relSkip reported
 coop::element::ElementId g_gapLoggedEid = coop::element::kInvalidId;
+// The actor HandTaken, or the host's take release, named. The release edge consumes it so that
+// one let-go carries the host's decision. A later grab is a different edge and is not armed.
+void* g_kerfurTakeActor = nullptr;
 
 // The local player's pose, on the game thread at the send rate.
 bool ReadLocalPose(void* local, void* controller, coop::net::PoseSnapshot& out) {
@@ -111,6 +122,10 @@ bool ReadLocalPose(void* local, void* controller, coop::net::PoseSnapshot& out) 
             isRagdoll && !dead) {
             out.stateBits |= coop::net::kStateBitRagdoll;
         }
+    }
+    if ((out.stateBits & coop::net::kStateBitRagdoll) == 0 &&
+        coop::sit_pose::LocalIsSitting()) {
+        out.stateBits |= coop::net::kStateBitSitting;
     }
     // The vitals (health fraction, food, sleep) in three bytes: ue_wrap::vitals reads this
     // machine's UsaveSlot_C, so each peer packs its own. Full (255) until the save resolves, so a
@@ -176,6 +191,12 @@ void NotifyPropEidRebound(void* actor) {
 
 uint16_t CurrentHoldGen() { return g_holdGen; }
 
+void ArmKerfurTakeRelease(void* actor) {
+    // The release edge runs on a later tick than the message that armed it. Keeping the actor
+    // (not a flag on "whatever is held") means a different item let go in between stays a throw.
+    if (actor) g_kerfurTakeActor = actor;
+}
+
 void* LastHeldActor() {
     // The local player's held actor, or null, for the trash channel's rest exclusion; live-guarded
     // so a stale pointer never aliases a recycled address.
@@ -192,6 +213,7 @@ void OnSessionStart() {
     g_relEdgeLoggedEid = coop::element::kInvalidId;
     g_relEdgeLoggedSkip = -1;
     g_gapLoggedEid = coop::element::kInvalidId;
+    g_kerfurTakeActor = nullptr;
 }
 
 void Tick(coop::net::Session& session, void* local, void* controller) {
@@ -222,6 +244,9 @@ void Tick(coop::net::Session& session, void* local, void* controller) {
         // Aprop_C in holding_actor is the hotbar hand item, player expression rather than a world
         // entity (updateHold respawns it per switch), and goes to coop::hand_item; only the trash
         // lineage stays here.
+        if (!heldActor) heldActor = gs.gravityActor;
+        if (!heldActor) heldActor = gs.physicsActor;
+        if (!heldActor) heldActor = coop::gravity_motion::Target();
         if (gs.holdingActor && R::IsLive(gs.holdingActor) &&
             ue_wrap::prop::IsKeyedInteractable(gs.holdingActor)) {
             if (ue_wrap::prop::IsDescendantOfProp(gs.holdingActor))
@@ -237,6 +262,10 @@ void Tick(coop::net::Session& session, void* local, void* controller) {
     // The ATV belongs to coop::atv_sync: a grabbed ATV is not a keyed interactable and would emit
     // zero-key poses the receivers drop.
     if (heldActor && ue_wrap::atv::IsAtv(heldActor)) heldActor = nullptr;
+    // Appliance hinges are child actors, with local keys and a constrained root.
+    // KitchenState carries their relative pose; the loose-prop lane would adopt
+    // an unrelated child identity and fight the same hinge's physics.
+    if (heldActor && ue_wrap::kitchen_machine::DoorParent(heldActor)) heldActor=nullptr;
     // The garbage-pickup probe (ini garbage_pickup_probe=1): which of grabbing_actor and
     // holding_actor a clump pickup sets, plus the held class, key and keyed verdict; while
     // something is held, about 4 Hz; one bool load when off.
@@ -274,11 +303,19 @@ void Tick(coop::net::Session& session, void* local, void* controller) {
                     (heldActor && hLive) ? "MAIN(pose)" : (g_lastHeldProp.Raw() ? "RELEASE-EDGE" : "idle"));
         }
     }
+    // A gun can sweep straight from A to B without an empty frame. Give A its
+    // reliable release before opening B's stream on the following frame.
+    if (heldActor && g_lastHeldProp.Raw() && heldActor!=g_lastHeldProp.Raw() &&
+        !coop::trash_channel::IsCarrying(g_lastHeldEid)) heldActor=nullptr;
     if (heldActor && R::IsLive(heldActor)) {
         // The held item: an Aprop_C carries a force-minted key; the non-keyable trash clump rides
         // the same pipeline identified by eid (key None), renders as the bare dirtball, floats in
         // front of the puppet through this stream and gets physics on release.
         if (heldActor != g_lastHeldProp.Raw()) {
+            // A new grab of a prop an Omega took is the robot having let go. On a client the note
+            // would otherwise make this hold's let-go look like another take. The host's table
+            // is the pose sweep's, and the call is a no-op there.
+            coop::npc_sync::ForgetKerfurHolding(heldActor);
             // The new-held edge. A held trash clump is adopted here onto the grabbed pile's eid:
             // the birth certificate the BeginDeferred thunk recorded at its spawn carries the pile
             // eid and chipType, and this edge consumes it and broadcasts the ToClump convert.
@@ -397,6 +434,7 @@ void Tick(coop::net::Session& session, void* local, void* controller) {
             // An unreadable held prop streams no pose this tick; its identity is kept below.
         } else if (pp.key.len > 0 || pp.elementId != 0) {
             session.SetLocalPropPose(true, pp);
+            coop::gravity_motion::NoteStreamed(heldActor);
             // The first 3 and every 60th, matching the receiver's throttle so the two logs diff
             // line for line.
             const uint64_t n = ++g_propEmitCount;
@@ -501,6 +539,7 @@ void Tick(coop::net::Session& session, void* local, void* controller) {
                                     ? 0u : static_cast<uint32_t>(g_lastHeldEid);
         const bool isTrashEid = (g_lastHeldEid != coop::element::kInvalidId &&
                                  coop::trash_channel::CtxForEid(g_lastHeldEid) != 0);
+        void* coastActor = nullptr;
         if (isTrashEid) {
             UE_LOGI("[PILE] HOST trash release eid=%u -- PropRelease SUPPRESSED (host-auth flight-stream + "
                     "ToPile convert own the throw end; client drives no clump physics, ToPile clears the drive)",
@@ -546,13 +585,47 @@ void Tick(coop::net::Session& session, void* local, void* controller) {
                     rel.hasPose = 1;
                 }
             }
+            // A kerfur that just took this prop must not be told it was thrown. The host's own
+            // give is in the kerfur table before this edge. A client does not have that table:
+            // HandTaken, or the host's take release, arms this one let-go, which only repeats
+            // what the host already decided. The pad tells every receiver to leave physics off;
+            // the nonce on a real toss makes the hit land once.
+            uint16_t throwNonce = 0;
+            // A hotbar mirror used to be armed and then destroyed. Drop a dead arm before the
+            // compare, so its address cannot satisfy a later prop that the allocator reused.
+            if (g_kerfurTakeActor && !R::IsLive(g_kerfurTakeActor)) g_kerfurTakeActor = nullptr;
+            const bool armed = g_kerfurTakeActor && g_lastHeldProp.Alive() &&
+                               g_kerfurTakeActor == g_lastHeldProp.Raw();
+            if (armed) g_kerfurTakeActor = nullptr;
+            const bool kerfurTook = g_lastHeldProp.Alive() &&
+                                    (coop::npc_sync::KerfurIsHolding(g_lastHeldProp.Raw()) || armed);
+            if (kerfurTook) {
+                rel.linVelX = rel.linVelY = rel.linVelZ = 0.f;
+                rel.angVelX = rel.angVelY = rel.angVelZ = 0.f;
+                rel._pad = 1;
+            } else if (linMagSq > 150.f * 150.f && g_lastHeldProp.Alive()) {
+                throwNonce = coop::pvp::MintThrowNonce();
+            }
+            rel.throwNonce[0] = static_cast<uint8_t>(throwNonce & 0xFF);
+            rel.throwNonce[1] = static_cast<uint8_t>(throwNonce >> 8);
             session.SendPropRelease(rel);
+            if (throwNonce != 0)
+                coop::pvp::NoteThrow(g_lastHeldProp.Raw(),
+                                     coop::players::Registry::Get().LocalPeerId(), throwNonce);
+            coastActor = g_lastHeldProp.Get();
         }
         g_lastHeldProp.Reset();
+        // The host's copy is the one that lands; a fresh drive generation prevents old
+        // pre-grab packets from competing with this throw on the receivers.
+        if (coastActor && session.role() == coop::net::Role::Host)
+            coop::prop_drive_host::Coast(coastActor, "drop", /*afterHandRelease=*/true);
         g_lastHeldKey = {};
         g_lastHeldEid = coop::element::kInvalidId;  // the cached held eid goes with the release
         }
     }
+
+    coop::cord_sync::UpdateLocalDragPose(
+        session, (heldActor && R::IsLive(heldActor)) || g_lastHeldProp.Alive());
 
     // The ragdoll physics stream: while the native ragdoll exists (the C key, a faint, a KO) the
     // pelvis world transform and velocities are published so each peer's mirror slaves its pelvis

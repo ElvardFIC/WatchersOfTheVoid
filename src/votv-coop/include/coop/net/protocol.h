@@ -30,7 +30,7 @@ inline constexpr uint32_t kMagic = 0x564D5450u;
 // This file is past the 1500-line hard cap and stays there: it is the single-feature exception the
 // rule names. One wire format, whose enum, payload structs and static_asserts are read together;
 // splitting it would put a kind's number in one file and its bytes in another.
-inline constexpr uint16_t kProtocolVersion = 2081;
+inline constexpr uint16_t kProtocolVersion = 2150;  // consolidated release 2150 (includes development work through 2192)
 
 // Default LAN port (overridable via multivoid.ini "net.port=").
 inline constexpr uint16_t kDefaultPort = 47621;
@@ -343,9 +343,8 @@ enum class ReliableKind : uint8_t {
     // input rides DeskInput and the simulation rides DeskSimPose. DeskStatePayload.
     DeskState = 54,
 
-    // From the desk occupant, relayed: the committed coordinate locks and the direction toggle,
-    // change-gated and snapshotted on connect. The live cursor rides DeskCursorPose.
-    // DishAimStatePayload.
+    // DeskVisualPayload: claimant sample -> host-validated canonical geometry/progress.
+    // Never blindly relayed. Seeds work while idle; the live cursor is DeskCursorPose.
     DishAimState = 55,
 
     // Any peer, relayed by the host: one new email as a chunked blob (BlobChunkPayload); the
@@ -489,7 +488,9 @@ enum class ReliableKind : uint8_t {
     // What a player's hand shows: [u8 slot][u8 has][u8 clsLen][cls][u8 nameLen][name][u8 itemLen]
     // [item], then, when it has one, the hold transform (relPos, relRot: six floats). `item` is the
     // name the hold slot holds it under. The trust shape of SkinChange. Receivers keep a display-only
-    // mirror on the puppet; the host replays every non-empty hand to a joiner.
+    // mirror on the puppet; the host replays every non-empty hand to a joiner. All messages end
+    // with u32 generation and u16 can state: bit0 present, bit1 opened, bits2-3 type,
+    // bits4-15 remaining portions. Zero trailer for non-cans/empty hands.
     HandItem = 89,
 
     // Client to host: I placed this keyed prop I had picked up; spawn it by key at this transform
@@ -939,9 +940,125 @@ enum class ReliableKind : uint8_t {
     // Never relayed; a sender's edits run at a bounded rate. Late join: nothing to replay, the result
     // rides AtvState. AtvConditionEditPayload.
     AtvConditionEdit = 165,
+
+    // Client to host: I walked into a location event (a trigger volume whose scene only exists
+    // where the player is standing, the door-lock among them). The host brings every other peer
+    // to this pose. For the door lock it also runs the event on its own eventer, so the keypad
+    // locks replicate. Never relayed. Late join: nothing to replay. EventGatherPayload.
+    EventGather = 166,
+
+    // Any peer, relayed: I sat down on a chair or stood up. The point is the seat, so the other
+    // machines put that puppet on it instead of leaving the sit pose at the standing capsule.
+    // SitAnchorPayload.
+    SitAnchor = 167,
+
+    // Host to all: a MediaPlayer (a TV, a video, a file of music) is playing this url at this
+    // time, or has stopped. Clients open the same url and seek when they drift. Never relayed.
+    // Late join: the next tick sends whatever is still playing. MediaStatePayload.
+    MediaState = 168,
+    RadioState = 183, // specific custom radio; local-file state / client request
+
+    // A player toggled PVP: [u8 slot][u8 on]. The trust shape of NameplateChange. The at-join
+    // state is bit 1 of the prefs flags byte. A hit lands only when both peers have it on.
+    PvpChange = 169,
+
+    // Attacker to host, host to the victim: a swing connected. The victim applies it on their own
+    // pawn. Explosions do not use this. PvpHitPayload.
+    PvpHit = 170,
+
+    // Client to host: I used a point sack, a treasure chest (its key, its open, or its gold), or
+    // an achievement just completed. The payload NAMES the artifact. The host runs the game's own
+    // credit for that artifact and refuses a second one. Never relayed. Late join: nothing, the
+    // balance broadcast already carries the total. CreditIntentPayload.
+    CreditIntent = 171,
+
+    // Host to all: one treasure chest's hasKey, opened and hasGold, so a client's copy shows the
+    // same gold the host credited. Never relayed. Late join: every chest at world-ready.
+    // ChestFlagsPayload.
+    ChestFlags = 172,
+
+    // Host to all: one world food's temperature, ripeness and use count. The client's own food
+    // tick does not run, so these are the only writers. Never relayed. Late join: every world
+    // food at world-ready. FoodStatePayload.
+    FoodState = 173,
+
+    // Client to host: I ate a world food. The host decrements that food's use count (and destroys
+    // it at zero) without feeding the host's own player. Never relayed. Late join: nothing, the
+    // use count rides FoodState. FoodBitePayload.
+    FoodBite = 174,
+
+    // Host to the asking client: the Omega's verb consumed the hand item that client was holding.
+    // The client empties its hand slot. Never relayed. Late join: nothing. HandTakenPayload.
+    HandTaken = 175,
+
+    // The ATV radio's playing source. The author (the driver, or the host when nobody drives)
+    // sends the media player's url and whether it is playing; the host relays a client's. A
+    // receiver opens that url on THAT scooter's radio. Late join: the connect snapshot sends the
+    // current source. AtvRadioPayload.
+    AtvRadio = 176,
+    // Host-authored kitchen-machine fields and client button/lid intents. Neither is relayed.
+    // Cooking, ingredient consumption, cup births and coffee-vending charges run on the host.
+    KitchenState = 177,
+    KitchenIntent = 178,
+    // Host-authored cord/socket link and socket power; client asks for a plug/unplug.
+    // Both use CordStatePayload. Neither is relayed; world-ready replays all links.
+    CordState = 179,
+    CordIntent = 180,
+    // Client names its movement base. Host validates reach and keeps the ordinary
+    // PropDrivePose stream alive under that player. No client transform or force.
+    PropSupport = 181,
+    // Desk covers / radio tower: host state, validated client operations. Never relayed.
+    ServicePanel = 182,
+    PropFire = 185, // physical keyed item fire state/intents; never blindly relayed
+    HandFire = 186, // owner fire snapshot, tied to the current HandItem generation
+    HandExtinguisher = 187, // held extinguisher/washer spray and supply, tied to the owner's hand generation
+    Explosion = 191, // gascan break request / host blast; never blindly relayed or replayed at join
+    ExplosionEvent = 188, // native gameplay blasts, source identity and canonical host event
+    CargoLift = 184, // client button request / host physical platform; never relayed
+    DreamScene = 189, // host-selected dream actor class; clients replay createDream natively
+    PropActionIntent = 190, // client prop/wall damage, saw, MRE, safe completion; host-authoritative outcomes
+    DeskShortCircuit = 192, // client water impact request / host transient spark sequence; no blind relay
+    HookRetrieve = 193, // client anchored-hook request / host keyed retirement; no blind relay
+    MadnessState = 194, // host event audio/HUD state, never a second event simulation
+    DingusMusic = 195, // world Maxwell-family music state / authorized switch request
+    HandToyAudio = 196, // generation-matched hand music / transient squeaks; no blind relay
+    PlacedSave = 197, // validated placement commits / host save actors and retirement; chunked, never relayed
+    CeilingLampState = 198, // KeyedTogglePayload, actual lamp presentation including flicker; host only
+    AmbientLightState = 199, // KeyedTogglePayload, ambient bottom-light visibility; host only
 };
 
 #pragma pack(push, 1)
+
+struct MadnessStatePayload {
+    uint32_t sequence,eventId;
+    int32_t kills;
+    float elapsed;
+    uint8_t active,hud,playing,reserved;
+};
+static_assert(sizeof(MadnessStatePayload)==20,"MadnessStatePayload wire size");
+
+struct HandToyAudioPayload {
+    uint32_t generation,sequence;
+    float value; // volume for op0 state; pitch for op1 transient squeak
+    uint8_t slot,op,playing,used;
+};
+static_assert(sizeof(HandToyAudioPayload)==16,"HandToyAudioPayload wire size");
+
+struct DeskShortCircuitPayload {
+    uint32_t sequence;
+    uint8_t op; // 0=request, 1=host effect, 2=request acknowledgement (accepted or refused)
+    uint8_t reserved[3];
+};
+static_assert(sizeof(DeskShortCircuitPayload) == 8, "DeskShortCircuitPayload wire size");
+
+struct HookRetrievePayload {
+    uint32_t seq;
+    uint8_t op; // 0 request, 1 retired (host canonical), 2 refusal (host reply)
+    uint8_t keyLen;
+    uint8_t reserved[2];
+    char key[96];
+};
+static_assert(sizeof(HookRetrievePayload) == 104, "HookRetrievePayload wire size");
 
 // Every datagram starts with this. seq is per sender and monotonic; the receiver drops anything
 // older than the last it saw. senderEpoch is the sender's per-process epoch, minted non-zero at
@@ -1010,7 +1127,8 @@ inline uint32_t NowStateTimeMs24() {
 //   speed        -- horizontal velocity magnitude (cm/s), the locomotion blend input.
 //   stateBits    -- bit 0 in air (the source's movement mode is falling; clears the puppet's foot
 //                   IK), bit 1 ragdolled and not dead (every ragdoll cause; the receiver toggles
-//                   ragdollMode and forceGetUp on the edges), bits 2..7 reserved.
+//                   ragdollMode and forceGetUp on the edges), bit 2 sitting (a chair, the ATV, or
+//                   the ATV passenger seat: the puppet plays the kerfur sit pose instead of idle).
 struct PoseSnapshot {
     float   x, y, z;
     float   yaw;
@@ -1032,6 +1150,7 @@ namespace match_form { constexpr uint8_t kNone = 0; constexpr uint8_t kPile = 1;
 // PoseSnapshot.stateBits flags. Single-byte field; flags assigned bit-by-bit.
 inline constexpr uint8_t kStateBitInAir   = 0x01;
 inline constexpr uint8_t kStateBitRagdoll = 0x02;  // the source is ragdolled (faint, manual, knock-out), not dead
+inline constexpr uint8_t kStateBitSitting = 0x04;  // seated: a chair, the ATV driver seat, or the ATV passenger seat
 
 // The game's vital scalars (food, sleep, the default max health) top out at 100. health is
 // normalised by the peer's own max health before quantisation; food and sleep by this.
@@ -1071,12 +1190,79 @@ struct WireKey {
 };
 static_assert(sizeof(WireKey) == 32, "WireKey must be 32 bytes");
 
+struct DingusMusicPayload {
+    WireKey key;
+    uint32_t sequence;
+    float volume; // music volume; squeak pitch for op3/4
+    uint8_t op,playing,used,reserved; // 0 host state, 1 toggle, 2 first touch, 3 squeak request, 4 host squeak
+};
+static_assert(sizeof(DingusMusicPayload)==44,"DingusMusicPayload wire size");
+
+struct PropFirePayload {
+    WireKey key;
+    uint32_t sequence;
+    float fuel, fuelSpeed;
+    uint8_t op, burning; // op0 ignite request, op1 extinguish request, op2 host state
+    uint16_t reserved;
+};
+static_assert(sizeof(PropFirePayload)==48,"PropFirePayload wire size");
+
+struct HandFirePayload {
+    uint32_t generation, sequence;
+    float fuel, fuelSpeed;
+    uint8_t slot, burning;
+    uint16_t reserved;
+};
+static_assert(sizeof(HandFirePayload)==20,"HandFirePayload wire size");
+
+struct HandExtinguisherPayload {
+    uint8_t  slot;
+    uint8_t  spraying;
+    uint8_t  tool;     // 0 extinguisher, 1 washer, 2 trowel (0..5), 3 water (0..38), 4 concrete bucket (0..20); 2+ never spray
+    uint8_t  reserved; // tool3: bit0 soap, bit1 alcohol; tool4: bit0 dry; otherwise zero
+    uint32_t generation;
+    uint32_t sequence;
+    float    charge;
+};
+static_assert(sizeof(HandExtinguisherPayload) == 16, "HandExtinguisherPayload wire size");
+
+struct ExplosionPayload {
+    WireKey key;
+    uint32_t sequence;
+    float x,y,z,scale,radius,damage,fireStrength,fireFuel,innerShake,outerShake;
+    uint8_t op,fire,ignoreWalls,skipSetting; // op0 keyed break request, op1 host blast
+};
+static_assert(sizeof(ExplosionPayload)==80,"ExplosionPayload wire size");
+
+struct CargoLiftPayload {
+    WireKey key; // stable placed controller name; child platform has no wire eid
+    float alpha;
+    float anchorX,anchorY,anchorZ;
+    float x,y,z,pitch,yaw,roll;
+    uint32_t sequence; // request sequence or host motion-phase revision (stable on heartbeat)
+    uint8_t op,moving,direction,button; // op0 request, op1 idle alignment, op2 native start; button0..2
+};
+static_assert(sizeof(CargoLiftPayload)==80,"CargoLiftPayload wire size");
+
 // A Blueprint class leaf name ("Aprop_equipment_flashlight_C"). Bytes beyond len are zero.
 struct WireClassName {
     uint8_t len;       // 0..63 chars in `data`
     char    data[63];  // ASCII (VOTV class names are ASCII)
 };
 static_assert(sizeof(WireClassName) == 64, "WireClassName must be 64 bytes");
+
+struct ExplosionEventPayload {
+    WireKey key;
+    WireClassName sourceClass;
+    uint32_t sequence,ordinal,handGeneration;
+    float qx,qy,qz,qw,x,y,z,sx,sy,sz;
+    float radius,damage,fireStrength,fireFuel,innerShake,outerShake,force,debrisForce,ix,iy,iz;
+    int32_t debris;
+    uint8_t op,scope,variant,shake,ignoreWalls,skipSetting,origin,reserved;
+    // op0 request,1 host blast,2 client source destruction. scope0 keyed world,
+    // 1 owner's hand,2 local action/projectile,3 host-owned world event.
+};
+static_assert(sizeof(ExplosionEventPayload)==204,"ExplosionEventPayload wire size");
 
 // A held prop's world transform, sent unreliably while the sender holds it. The receiver resolves
 // the prop by key (by eid for a keyless trash entity), disables its physics and drives the
@@ -1118,10 +1304,10 @@ struct EntityPoseSnapshot {
                                          // stateBits has kEntityPoseBitHasLookAt. Only kerfur-family
                                          // NPCs carry it; the rest leave it zero with the bit clear.
     float    bodyYaw;     // 4  -- the kerfur's visible body yaw, decoupled from the actor root; valid iff kEntityPoseBitHasBodyYaw
-    uint8_t  stateBits;   // 1  -- bit0=inAir, bit1=hasLookAt, bit2=hasBodyYaw, bit3=hasKerfurState, bit4=kerfurSpooky
+    uint8_t  stateBits;   // 1  -- bit0=inAir, bit1=hasLookAt, bit2=hasBodyYaw, bit3=hasKerfurState, bit4=kerfurSpooky, bit5=kerfurOnAtv, bit6=kerfurHasFloppy
     uint8_t  kerfState;   // 1  -- the kerfur's command state; valid iff bit 3. Drives the parked mirror's state machine.
     uint8_t  kerfFace;    // 1  -- the kerfur's face material index; valid iff bit 3.
-    uint8_t  _pad;        // 1  -- 4-byte alignment
+    uint8_t  floppyType;  // 1  -- the reports disc's type (0..6) iff bit 6; otherwise 0. Same width the pad was.
 };
 static_assert(sizeof(EntityPoseSnapshot) == 44, "EntityPoseSnapshot must be 44 bytes");
 
@@ -1130,6 +1316,8 @@ inline constexpr uint8_t kEntityPoseBitHasLookAt = 0x02;  // lookAt{X,Y,Z} carri
 inline constexpr uint8_t kEntityPoseBitHasBodyYaw = 0x04;  // bodyYaw carries a valid visible-body world yaw
 inline constexpr uint8_t kEntityPoseBitHasKerfurState = 0x08;  // kerfState + kerfFace carry valid kerfur command/face
 inline constexpr uint8_t kEntityPoseBitKerfurSpooky   = 0x10;  // the kerfur is in its spooky/kill state
+inline constexpr uint8_t kEntityPoseBitKerfurOnAtv    = 0x20;  // the Omega is sitting on an ATV (AnimBP isOnAtv)
+inline constexpr uint8_t kEntityPoseBitKerfurHasFloppy = 0x40; // the Omega holds a reports disc; floppyType is its type (0..6)
 
 // The header of a pose batch datagram; N entries follow.
 struct EntityPoseBatchHeader {
@@ -1330,7 +1518,8 @@ static_assert(sizeof(KerfurConvertBroadcastPayload) <= 256 - 20 - 8,
 // sender slot; a self-declared slot would be spoofable.
 struct KerfurCommandPayload {
     uint32_t elementId;  // host Npc eid of the target kerfur
-    uint8_t  command;    // KerfurMenuCommand (follow/idle/patrol/fix_servers/get_reports/fix_transformers)
+    uint8_t  command;    // follow, idle, patrol, fix_servers, get_reports, fix_transformers,
+                        // take_object, pat, equipment
     uint8_t  _pad[3];    // zeroed
 };
 static_assert(sizeof(KerfurCommandPayload) == 8, "KerfurCommandPayload must be 8 bytes");
@@ -1425,7 +1614,11 @@ struct PropReleasePayload {
     float    locX, locY, locZ;           // world cm at the edge
     float    rotPitch, rotYaw, rotRoll;  // degrees at the edge
     uint8_t  hasPose;    // 0: the prop was gone at the edge (pocketed), and the transform is unset
-    uint8_t  _pad[3];
+    // A throw's nonce, shared by the let-go and the receiver, so one toss damages a player once.
+    // Zero when the let-go was not a throw.
+    uint8_t  throwNonce[2];
+    uint8_t  _pad;  // 1: an Omega kerfur took the prop, so the receiver leaves physics off.
+                    // The host sends that when the take lands; the holder's later let-go repeats it.
 };
 static_assert(sizeof(PropReleasePayload) == 92, "PropReleasePayload must be 92 bytes");
 // Every reliable payload carries this guard: a payload past one datagram's budget would be
@@ -1545,9 +1738,12 @@ struct PropDropIntentPayload {
     float         rotPitch, rotYaw, rotRoll;    // 12 -- placement FRotator
     float         scaleX, scaleY, scaleZ;       // 12 -- placed actor's GetActorScale3D
     uint8_t       physFlags;                    // 1  -- propspawn_flags (kStatic/kFrozen/kSleep/kRemoveWOrespawn parity)
-    uint8_t       _pad[3];                      // 3  -- 4-byte alignment; zero on the wire
+    uint8_t       hasFoodCondition;             // 1 -- live food state, captured AFTER local loadData
+    uint8_t       _pad[2];                      // 2 -- zero on the wire
+    float         foodTemperature, foodRipeness;
+    int32_t       foodUses;                     // excludes the sender's save clock stamp
 };
-static_assert(sizeof(PropDropIntentPayload) == 168, "PropDropIntentPayload must be 168 bytes");
+static_assert(sizeof(PropDropIntentPayload) == 180, "PropDropIntentPayload must be 180 bytes");
 static_assert(sizeof(PropDropIntentPayload) <= 256 - 20 - 8, "PropDropIntentPayload must fit one datagram");
 
 // --- The save transfer ---
@@ -1561,9 +1757,9 @@ inline constexpr uint32_t kSaveChunkBytes = 56u * 1024u;
 // (fresh-hosted world whose slot never wrote, or a persistent read failure) ->
 // the client falls back to the fresh-world boot instead of waiting forever.
 struct SaveTransferBeginPayload {
-    uint32_t totalBytes;   // whole STREAMED blob size = sidecarBytes + .sav size (0 = no save available)
+    uint32_t totalBytes;   // wire bytes, possibly XPRESS_HUFF compressed (0 = no save available)
     uint32_t chunkCount;   // ceil(totalBytes / kSaveChunkBytes)
-    uint32_t crc32;        // CRC-32 of the whole streamed blob (sidecar + .sav; client verifies pre-write)
+    uint32_t crc32;        // CRC-32 of DECODED sidecar + .sav; client verifies pre-write
     uint8_t  gameMode;     // host's enum_gamemode ordinal (story=0) -- the zcoop_
                            // slot prefix can't prefix-match a mode, so the client
                            // threads this into LoadStorySave(forceGameMode)
@@ -1571,8 +1767,9 @@ struct SaveTransferBeginPayload {
     uint32_t sidecarBytes;  // the leading bytes of the blob that are the identity sidecar (the map from save object
                            // index to host eid for the keyless natives), carried inside the same CRC'd stream. 0 = no
                            // sidecar.
+    uint32_t decodedBytes; // 0 = raw; otherwise XPRESS_HUFF decoded size including sidecar
 };
-static_assert(sizeof(SaveTransferBeginPayload) == 20, "SaveTransferBeginPayload must be 20 bytes");
+static_assert(sizeof(SaveTransferBeginPayload) == 24, "SaveTransferBeginPayload must be 24 bytes");
 static_assert(sizeof(PropDestroyPayload) <= 256 - 20 - 8,
               "PropDestroyPayload must fit in one reliable datagram");
 
@@ -1583,6 +1780,62 @@ struct KeyedTogglePayload {
     uint8_t  action;     // 1  -- 0 = closed/off, 1 = open/on (the state AFTER the edge)
     uint8_t  _pad[7];    // 7  -- 8-byte alignment / reserved
 };
+
+struct KitchenStatePayload {
+    WireKey key;
+    uint32_t elementId;
+    uint8_t kind;
+    uint8_t flags;
+    int32_t mode;
+    float remaining;
+    float timer;
+    float power;
+    int32_t coals;    // grill only, native capacity 16
+    float burn;       // grill's fractional coal-consumption timer
+    uint8_t hasDoorPose;
+    float doorPose[10]; // relative quaternion xyzw, translation xyz, scale xyz; no padding
+};
+static_assert(sizeof(KitchenStatePayload) == 103, "Kitchen state wire layout");
+struct KitchenIntentPayload {
+    WireKey key;
+    uint32_t elementId;
+    uint8_t op;       // 1=button, 2=open lid, 3=close lid, 4=hinge mouse movement, 5/6=grill ignite/extinguish
+    uint8_t action;   // game's actionOptionIndex: 4, or microwave start 8
+    uint8_t control;  // minioven switch=1, temperature=2; others=0
+    float mouseX, mouseY; // op 4, bounded accumulated native mouse deltas
+};
+static_assert(sizeof(KitchenIntentPayload) == 47, "Kitchen intent wire layout");
+struct CordEndpoint {
+    WireKey key;
+    uint32_t elementId;
+    char name[64];    // placed actor name (kind 2), or ChildActorComponent name (kind 3)
+    uint8_t kind;     // 0=none, 1=key/eid, 2=level actor name, 3=child of keyed/eid parent
+};
+struct CordStatePayload {
+    CordEndpoint cord;
+    CordEndpoint socket;  // kind 0 = unplugged
+    uint8_t powered;      // host only; ignored in an intent
+};
+static_assert(sizeof(CordStatePayload) == 203, "Cord link wire layout");
+static_assert(sizeof(CordStatePayload) <= 256 - 20 - 8, "Cord link fits one datagram");
+struct PropSupportPayload {
+    WireKey key;
+    uint32_t elementId;    // both empty = player stepped off
+};
+static_assert(sizeof(PropSupportPayload) == 36, "Support intent wire layout");
+struct ServicePanelPayload {
+    uint8_t family;   // 1=desk, 2=radio tower (singletons in this game)
+    uint8_t op;       // 0=host row, 1=desk delta, 2=radio press, 3=fuse insert, 4=fuse pull, 5=cover pull, 6=cover return
+    uint8_t index;
+    uint8_t action;   // desk: changed cover/screw bits; radio: button/reset/confirm
+    uint32_t seq;
+    uint32_t ack[4];  // slot count is checked against Session's kMaxPeers by the consumer
+    uint8_t before[16];
+    uint8_t state[16];
+    WireKey coverKey; // op 6: physical part to consume, never just a cover index
+    uint32_t coverEid;
+};
+static_assert(sizeof(ServicePanelPayload)<=256-20-8,"Service panel fits a reliable datagram");
 static_assert(sizeof(KeyedTogglePayload) == 40, "KeyedTogglePayload must be 40 bytes");
 static_assert(sizeof(KeyedTogglePayload) <= 256 - 20 - 8,
               "KeyedTogglePayload must fit in one reliable datagram");
@@ -1736,6 +1989,21 @@ struct SleepStatePayload {
 };
 static_assert(sizeof(SleepStatePayload) == 4, "SleepStatePayload must be 4 bytes");
 
+struct DreamScenePayload { WireKey dreamClass; };
+static_assert(sizeof(DreamScenePayload) == 32, "DreamScenePayload must be 32 bytes");
+
+// Client action against a keyed prop, or a supported actor_save wall for action5.
+struct PropActionIntentPayload {
+    WireKey key;
+    float damage;
+    float impactX, impactY, impactZ;
+    uint8_t action, clean; // 1=prop damage, 2=saw, 3=MRE, 4=safe completion, 5=wall damage; clean is saw-only
+    uint8_t _pad[2];
+};
+static_assert(sizeof(PropActionIntentPayload) == 52, "PropActionIntentPayload must be 52 bytes");
+static_assert(sizeof(PropActionIntentPayload) <= 256 - 20 - 8,
+              "PropActionIntentPayload must fit in one reliable datagram");
+
 // An event fire (EventFire), host to all: dispatch 0 runEvent, 1 runSpecialEvent, and the row name.
 // Receivers replay only policy-allowlisted rows. No special-event field: the only special is a
 // host-local random prank.
@@ -1744,6 +2012,137 @@ struct EventFirePayload {
     char name[31];     // 31 -- the row/case FName, ASCII, NUL-bound (longest live row = 18 chars)
 };
 static_assert(sizeof(EventFirePayload) == 32, "EventFirePayload must be 32 bytes");
+
+// A location-event gather (EventGather): the row name and where the player who tripped it stands.
+struct EventGatherPayload {
+    char  name[32];  // 32 -- ASCII, NUL-bound
+    float x, y, z;   // 12 -- world cm
+    float yaw;       // 4  -- the player's facing
+};
+static_assert(sizeof(EventGatherPayload) == 48, "EventGatherPayload must be 48 bytes");
+static_assert(sizeof(EventGatherPayload) <= 256 - 20 - 8,
+              "EventGatherPayload must fit in one reliable datagram");
+
+// A chair (SitAnchor). active 0 means they stood up; the point is otherwise where the seat is.
+struct SitAnchorPayload {
+    float   x, y, z;
+    float   yaw;
+    uint8_t active;
+    uint8_t pad[3];
+    WireKey chairKey;
+    float chairPitch, chairYaw, chairRoll;
+};
+static_assert(sizeof(SitAnchorPayload) == 64, "SitAnchorPayload must be 64 bytes");
+
+// One MediaPlayer (MediaState). url is what GetUrl returned; ticks are FTimespan (100 ns).
+struct MediaStatePayload {
+    char    url[160];
+    int64_t ticks;
+    uint8_t playing;
+    uint8_t pad[7];
+};
+struct RadioStatePayload {
+    WireKey key;
+    uint32_t elementId;
+    uint32_t seq;
+    uint32_t ack[4];
+    uint64_t track; // hash of relative local catalog filename (UTF-16), never a remote path
+    int64_t ticks;
+    uint8_t op; // 0 host canonical, 1 client state request, 2 host ack without a loaded track
+    uint8_t playing;
+    uint8_t mode;
+    uint8_t pad[5];
+};
+static_assert(sizeof(RadioStatePayload)<=228,"RadioState must fit one reliable datagram");
+static_assert(sizeof(MediaStatePayload) == 176, "MediaStatePayload must be 176 bytes");
+static_assert(sizeof(MediaStatePayload) <= 256 - 20 - 8,
+              "MediaStatePayload must fit in one reliable datagram");
+
+// A swing that connected (PvpHit). The host checks both PVP flags, the reach and the rate, then
+// the victim's machine applies the damage and the ragdoll.
+struct PvpHitPayload {
+    uint8_t targetSlot;
+    uint8_t throwNonce[2];  // the PropRelease nonce when this hit is a throw; zero for a swing
+    uint8_t isThrow;        // 1: throwNonce names the toss, and the victim applies it once
+    float   damage;
+};
+static_assert(sizeof(PvpHitPayload) == 8, "PvpHitPayload must be 8 bytes");
+
+// A shared-points intent (CreditIntent). The client names the artifact; the host credits through
+// the game's own path for that artifact. `name` is the achievement row. `auxId` is the treasure
+// key's element id when `kind` is ChestKey. `action` is the interaction byte the chest or sack
+// verb was given.
+enum class CreditKind : uint8_t {
+    Sack          = 1,
+    ChestKey      = 2,
+    ChestOpen     = 3,
+    ChestGold     = 4,
+    Achievement   = 5,
+    MiningFarm    = 6,
+};
+struct CreditIntentPayload {
+    uint8_t  kind;         // 1 -- CreditKind
+    uint8_t  action;       // 1 -- the interaction byte (sack / chest)
+    uint8_t  _pad[2];      // 2
+    uint32_t elementId;    // 4 -- the sack or the chest, 0 when the key is enough
+    uint32_t auxId;        // 4 -- the treasure key, for ChestKey
+    WireKey  key;          // 32 -- the sack or the chest
+    char     name[48];     // 48 -- the achievement row, NUL-terminated ASCII
+};
+static_assert(sizeof(CreditIntentPayload) == 92, "CreditIntentPayload must be 92 bytes");
+static_assert(sizeof(CreditIntentPayload) <= 256 - 20 - 8,
+              "CreditIntentPayload must fit in one reliable datagram");
+
+// A treasure chest's three flags (ChestFlags). Bit 0 hasKey, bit 1 opened, bit 2 hasGold.
+struct ChestFlagsPayload {
+    WireKey  key;          // 32
+    uint32_t elementId;    // 4
+    uint8_t  flags;        // 1
+    uint8_t  _pad[3];      // 3
+};
+static_assert(sizeof(ChestFlagsPayload) == 40, "ChestFlagsPayload must be 40 bytes");
+inline constexpr uint8_t kChestFlagKey    = 0x01;
+inline constexpr uint8_t kChestFlagOpened = 0x02;
+inline constexpr uint8_t kChestFlagGold   = 0x04;
+
+// One world food's live condition (FoodState). Not a save record: loadData treats the stamp as
+// elapsed time, and these three move continuously.
+struct FoodStatePayload {
+    WireKey  key;          // 32
+    uint32_t elementId;    // 4 -- world eid; high-bit-set values address a hand slot/generation
+    float    temperature;  // 4 -- kelvin, the actor's own field
+    float    ripeness;     // 4
+    int32_t  uses;         // 4
+};
+static_assert(sizeof(FoodStatePayload) == 48, "FoodStatePayload must be 48 bytes");
+static_assert(sizeof(FoodStatePayload) <= 256 - 20 - 8,
+              "FoodStatePayload must fit in one reliable datagram");
+
+// A bite of a world food (FoodBite). The host decrements `uses` on its copy.
+struct FoodBitePayload {
+    WireKey  key;          // 32
+    uint32_t elementId;    // 4
+};
+static_assert(sizeof(FoodBitePayload) == 36, "FoodBitePayload must be 36 bytes");
+
+// The Omega consumed the asking client's hand item (HandTaken). `cls` is the class leaf the
+// client was holding, so a hand that has since switched is left alone.
+struct HandTakenPayload {
+    WireClassName cls;     // 64
+};
+static_assert(sizeof(HandTakenPayload) == 64, "HandTakenPayload must be 64 bytes");
+
+// The ATV radio source (AtvRadio). `url` is the media player's current url, NUL-terminated.
+// `playing` is 1 when that player is playing.
+struct AtvRadioPayload {
+    WireKey key;           // 32
+    uint8_t playing;       // 1
+    uint8_t _pad[3];       // 3
+    char    url[160];      // 160
+};
+static_assert(sizeof(AtvRadioPayload) == 196, "AtvRadioPayload must be 196 bytes");
+static_assert(sizeof(AtvRadioPayload) <= 256 - 20 - 8,
+              "AtvRadioPayload must fit in one reliable datagram");
 
 // One in-flight event (EventSnapshot), host to a joiner: the event's class, the mapped list_events
 // row ('' when unmapped: logged and skipped) and its elapsed seconds.
@@ -1951,6 +2350,17 @@ struct DishAimStatePayload {
 };
 static_assert(sizeof(DishAimStatePayload) == 32, "DishAimStatePayload must be 32 bytes");
 
+// DishAimState wire message: client sample (op0) -> host-validated canonical (op1).
+// Display progress only; never sets coord_isPing or runs a signal verdict.
+// The compact aim above remains embedded unchanged in DeskPingVerdictPayload.
+struct DeskVisualPayload {
+    DishAimStatePayload aim;
+    float outer, inner, ping;
+    uint32_t revision;
+    uint8_t op, active, owner, reserved;
+};
+static_assert(sizeof(DeskVisualPayload) == 52, "DeskVisualPayload must be 52 bytes");
+
 // DeskPingVerdict's ops (coop/interactables/desk_ping_sync).
 namespace desk_ping {
 inline constexpr uint8_t kOpIntent = 0;   // client to host: roll the verdict of this ping
@@ -2100,6 +2510,7 @@ inline constexpr uint8_t kPowerGridOpActivate = 1;
 inline constexpr uint8_t kPowerGridOpUpgrade = 2;
 inline constexpr uint8_t kPowerGridOpHit = 3;
 inline constexpr uint8_t kPowerGridOpPuzzle = 4;
+inline constexpr uint8_t kPowerGridOpDoor = 5; // value: 0 closed, 1 open
 // Op 4's fields: the three sines (offset, frequency, amplitude), the switches as one byte, then the nine rotators.
 inline constexpr uint8_t kPowerPuzzleFieldSwitches = 3;
 inline constexpr uint8_t kPowerPuzzleFieldRotator0 = 4;
@@ -2120,6 +2531,7 @@ struct PowerGridRow {
     uint8_t upgradeLevel;    // 1  -- 0..6
     uint8_t present;         // 1  -- 0 when the host's slot holds no live generator
     int32_t cycle;           // 4  -- the wear, 100 new, 0 broken
+    uint8_t door;            // 1  -- 0 unavailable, 1 closed/closing, 2 open/opening
     PowerGridPuzzle puzzle;  // 30
 };
 struct PowerGridPayload {
@@ -2132,11 +2544,11 @@ struct PowerGridPayload {
     float        damage;   // 4  -- op 3
     uint8_t      value;    // 1  -- op 4
     uint8_t      _pad;     // 1
-    PowerGridRow rows[kPowerGridGenerators];  // 152
+    PowerGridRow rows[kPowerGridGenerators];  // 156
 };
 static_assert(sizeof(PowerGridPuzzle) == 30, "PowerGridPuzzle must be 30 bytes");
-static_assert(sizeof(PowerGridRow) == 38, "PowerGridRow must be 38 bytes");
-static_assert(sizeof(PowerGridPayload) == 172, "PowerGridPayload must be 172 bytes");
+static_assert(sizeof(PowerGridRow) == 39, "PowerGridRow must be 39 bytes");
+static_assert(sizeof(PowerGridPayload) == 176, "PowerGridPayload must be 176 bytes");
 static_assert(sizeof(PowerGridPayload) <= 256 - 20 - 8, "PowerGridPayload must fit one reliable datagram");
 
 // The coordinate towers (CoordTowerState) by their id; a row past `count` is unused. Op 0, the host's rows, with
@@ -2197,8 +2609,13 @@ struct AtvStatePayload {
                            //      so a peer merely GRABBING the ATV must not appear here.
     uint8_t  authorSlot;   // 1  -- who is streaming this ATV (the driver or the grabber); 0xFF = nobody, which
                            //      elects the host as its syncer
-    uint8_t  stateBits;    // 1  -- bit0=isDriven, bit1=brake, bit2=grabbed (produced, not yet read)
+    uint8_t  stateBits;    // 1  -- bit0=isDriven, bit1=brake, bit2=grabbed. Bits 3-6 are unused
+                           //      (they used to name a rear passenger; a packet with bit6 set is dropped)
     uint8_t  adopt;        // 1  -- 1 = host connect-snapshot (warp as is), 0 = live stream
+    uint8_t  cockpit;      // 1  -- bit0 lights, bit1 turbo, bit2 honk edge, bit3 radio playing,
+                           //      bit4 the map upgrade (hasMap). Bits 5 and 7 are unused.
+    uint8_t  modules;      // 1  -- bit i set when that frame module is showing
+    uint16_t _padCockpit;  // 2
     // The condition block: the author's accumulators travel; a mirror's own accrual is held at zero,
     // so overwriting never races an irreversible act. Presence (tiresMask, hasSpare) is consumed
     // from host-authored packets only: a client's eject ships a mask bit whose wheel-prop birth
@@ -2220,7 +2637,19 @@ struct AtvStatePayload {
     uint8_t  tiresTypes[4];       // 4  -- setWheelsType input (zero runtime writers measured; kept
                                   //      because it IS reducer input and 4 B closes the class)
 };
-static_assert(sizeof(AtvStatePayload) == 148, "AtvStatePayload must be 148 bytes");
+static_assert(sizeof(AtvStatePayload) == 152, "AtvStatePayload must be 152 bytes");
+
+// AtvStatePayload.stateBits packing. Bits 0-2 are the flags. Bit 6 is the retired rear-seat
+// packet: receivers drop it so an older sender cannot move the rig with a passenger-only claim.
+inline constexpr uint8_t kAtvStateBitDriven  = 0x01;
+inline constexpr uint8_t kAtvStateBitBrake   = 0x02;
+inline constexpr uint8_t kAtvStateBitGrabbed = 0x04;
+inline constexpr uint8_t kAtvStateBitPassengerOnly = 0x40;
+inline constexpr uint8_t kAtvCockpitLights = 0x01;
+inline constexpr uint8_t kAtvCockpitTurbo  = 0x02;
+inline constexpr uint8_t kAtvCockpitHonk   = 0x04;
+inline constexpr uint8_t kAtvCockpitRadio  = 0x08;
+inline constexpr uint8_t kAtvCockpitMap    = 0x10;  // hasMap: the digital map upgrade is showing
 
 // A runtime ATV (AtvSpawn): the host-assigned synthetic key (its own save key is random per peer)
 // and the class, so the client spawns the exact skin.
@@ -2267,8 +2696,11 @@ struct AtvConditionEditPayload {
     uint8_t  tiresAdded;           // 1  -- bit i: the sender put a tyre on at tires[i]
     uint8_t  spareAdded;           // 1  -- 1: the sender put the spare on
     uint8_t  originSlot;           // 1  -- host to author: the peer that serviced it; 0 from a client
+    uint8_t  tiresRemoved;         // 1  -- bit i: the sender took tires[i] off
+    uint8_t  spareRemoved;         // 1  -- 1: the sender took the spare off
+    uint16_t _padEdit;             // 2
 };
-static_assert(sizeof(AtvConditionEditPayload) == 96, "AtvConditionEditPayload must be 96 bytes");
+static_assert(sizeof(AtvConditionEditPayload) == 100, "AtvConditionEditPayload must be 100 bytes");
 static_assert(sizeof(AtvConditionEditPayload) <= 256 - 20 - 8,
               "AtvConditionEditPayload must fit in one reliable datagram (kMaxReliablePayload)");
 
@@ -2278,13 +2710,14 @@ struct DroneStatePayload {
     float   pitch, yaw, roll;  // 12 -- full rotation (the drone leans/pitches in flight)
     uint8_t active;            // 1  -- Adrone_C::Active (dormant<->flying); a change is sent at once
     uint8_t stateBits;         // 1  -- bit 0 rotor dust active, bit 1 can take off (arrived: the alarm cue and the
-                               //        interaction gate), bit 2 has sack (cargo aboard)
+                               //        interaction gate), bit 2 has sack, bit 3 leave-after-5min, bit 4 preference valid
     uint8_t adopt;             // 1  -- 1 = host connect-snapshot (snap as is), 0 = live stream
     uint8_t _pad;              // 1
     float   dustX, dustY, dustZ;  // 12 -- the dust emitter's world location, which the host's tick pins to its ground
                                   //        trace; the mirror replays the same calls. Valid while bit 0 is set.
+    float   rotorPitch;         // 4 -- host rotor AudioComponent pitch; 0 = unavailable
 };
-static_assert(sizeof(DroneStatePayload) == 40, "DroneStatePayload must be 40 bytes");
+static_assert(sizeof(DroneStatePayload) == 44, "DroneStatePayload must be 44 bytes");
 
 // A shop order (OrderRequest), client to host: this header, then chunkItems packed items, each
 //     uint8  head;        // low 7 bits: the name's length (1..kMaxOrderRowName); top bit: the kind,
@@ -2830,8 +3263,9 @@ static_assert(sizeof(GrabRefusedPayload) == 8, "GrabRefusedPayload must be 8 byt
 // console carries no identity to name (see the kind's comment), so the host resolves the console
 // the sender stands at and re-tests the lid there.
 struct DroneFlyIntentPayload {
-    uint8_t verb;        // 0 = the keyboard's call-or-send; the leave-timer face has no lane yet
-    uint8_t _pad[7];     // 8-byte alignment; bytes beyond the verb zero
+    uint8_t verb;        // 0 = call/send, 1 = set departure preference
+    uint8_t leaveAfter5min; // verb 1: desired bool (not a toggle)
+    uint8_t _pad[6];     // zero
 };
 static_assert(sizeof(DroneFlyIntentPayload) == 8, "DroneFlyIntentPayload must be 8 bytes");
 static_assert(sizeof(DroneFlyIntentPayload) <= 256 - 20 - 8,
@@ -3171,14 +3605,21 @@ static_assert(sizeof(TaskNewStatePayload) <= 256 - 20 - 8,
               "TaskNewStatePayload must fit in one reliable datagram");
 
 // The night sky (SkyState): the star dome's world rotation (its random initial yaw plus spin), the
-// moon phase and the eye; the client writes the first two and runs the sky's setEye for the eye.
+// moon phase, eye and black-hole presentation. No native earthTp sequence replay.
+namespace sky_flags {
+inline constexpr uint8_t kBlackHoleValid = 1;
+inline constexpr uint8_t kHidden = 2;
+inline constexpr uint8_t kLightVisible = 4;
+inline constexpr uint8_t kKnown = kBlackHoleValid | kHidden | kLightVisible;
+}
 struct SkyStatePayload {
     float skyPitch;    // sky mesh WORLD rotation (FRotator) -- pitch
     float skyYaw;      //   yaw  (the dominant value: random initial offset + accumulated spin)
     float skyRoll;     //   roll
     float moonPhase;   // Anewsky_C::moonPhase_mirror (= UsaveSlot_C::moonPhase)
     uint8_t eye;       // Anewsky_C::eye, the noon roll's setEye (the moon's texture swapped for an eye's)
-    uint8_t pad[3];
+    uint8_t blackHoleFlags; // valid + actual skyHidden/light_blackhole.bVisible; 0 = unread
+    uint8_t pad[2];
 };
 static_assert(sizeof(SkyStatePayload) == 20, "SkyStatePayload must be 20 bytes");
 

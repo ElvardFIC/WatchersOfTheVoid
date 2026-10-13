@@ -42,7 +42,8 @@ bool Covers(void* actor);
 // Publish `actor`'s record. On the host that is PropSaveData to every peer; on a client it is
 // PropSaveDataIntent to the host, whose re-publish is also the acknowledgement. False when the class
 // is not covered, no peer could receive it, the capture fails, or the send did not take every chunk.
-// A caller may ignore it: a refused send is registered and re-sent from the live actor on a widening
+// A caller may ignore it: a failed capture on a still-current actor or a refused send is registered
+// and retried from the live actor on a widening
 // backoff, and only a give-up past that ceiling is logged as a divergence.
 // The record-as-payload precedent is named in ue_wrap/actors/save_record.h, on CaptureRecord.
 bool Publish(coop::net::Session* s, void* actor, const std::wstring& key);
@@ -73,11 +74,19 @@ void OnChunk(coop::net::Session& s, const coop::net::BlobChunkPayload& p, uint8_
 // Apply a parked record to `actor`, whose Key is now readable; called at every mirror-birth seam.
 // Unbudgeted, unlike the park drain: a newborn mirror must be right at birth, and the birth rate is
 // already paced by whatever seam produced it.
-// A record for a prop this peer has not created yet is parked BY KEY, with no expiry and no retry
-// count: an element id names an actor, and the point of the lane is that the actor is destroyed
+// A record for a prop this peer has not created yet is parked BY KEY with no expiry deadline:
+// an element id names an actor, and the point of the lane is that the actor is destroyed
 // and remade, while a Key survives that. The park is capped by count and an eviction is loud,
 // because a bound on memory is not a deadline on an identity.
+// Periodic failed dispatches stop after four attempts; an explicit new-birth call may retry.
+// Same-key native reentry is deferred, and replacement records survive an older apply.
 bool ApplyParked(void* actor, const std::wstring& key);
+
+// Before a live actor becomes a personal inventory record, drain an already
+// received canonical state even when this frame's background budget is spent.
+// False means the pending apply failed/re-entered or the actor/world disappeared;
+// the caller must defer capture rather than save stale class-default values.
+bool PrepareForCapture(void* actor, const std::wstring& key);
 
 // Per frame: spends a bounded apply budget on the park (an apply is a ProcessEvent into the prop's
 // own loadData, so a join's worth of them in one frame is a stall), and sweeps the chunk

@@ -56,6 +56,7 @@ struct Desc {
     int32_t offData       = -1;
     int32_t offObjectData = -1;
     int32_t offZip        = -1;
+    uint8_t maskZip       = 0;
     int32_t offNametype   = -1;
     int32_t offWidget     = -1;
     int32_t offMesh       = -1;
@@ -177,6 +178,10 @@ void MixFString(uint64_t& h, const void* base, int32_t off) {
 
 }  // namespace
 
+bool MeshForSlotType(void* worldContext, int32_t type, void*& outMesh) {
+    return MeshForType(worldContext, type, outMesh);
+}
+
 bool EnsureResolved(DeviceKind kind) {
     Desc* d = DescOf(kind);
     if (!d) return false;
@@ -192,13 +197,16 @@ bool EnsureResolved(DeviceKind kind) {
     d->offReadWrites = R::FindPropertyOffset(cls, L"floppyReadwrites");
     d->offData       = R::FindPropertyOffset(cls, L"floppyData");
     d->offObjectData = R::FindPropertyOffset(cls, L"floppyObjectData");
-    if (d->hasZip)      d->offZip      = R::FindPropertyOffset(cls, L"zip");
+    if (d->hasZip && !R::FindBoolProperty(cls, L"zip", d->offZip, d->maskZip)) {
+        d->offZip = -1;
+        d->maskZip = 0;
+    }
     if (d->hasNametype) d->offNametype = R::FindPropertyOffset(cls, L"floppyNametype");
     if (d->refreshWidget) d->offWidget = R::FindPropertyOffset(cls, L"Widget");
     if (d->refreshMesh) d->offMesh = R::FindPropertyOffset(cls, L"floppyMesh");
 
     const bool ok = d->offType >= 0 && d->offReadWrites >= 0 && d->offData >= 0 &&
-                    d->offObjectData >= 0 && (!d->hasZip || d->offZip >= 0) &&
+                    d->offObjectData >= 0 && (!d->hasZip || (d->offZip >= 0 && d->maskZip != 0)) &&
                     (!d->hasNametype || d->offNametype >= 0) &&
                     (!d->refreshWidget || d->offWidget >= 0) &&
                     (!d->refreshMesh || d->offMesh >= 0);
@@ -265,7 +273,7 @@ bool ReadScalars(DeviceKind kind, void* device, Scalars& out) {
     const auto* p = reinterpret_cast<const uint8_t*>(device);
     out.floppyType = *reinterpret_cast<const int32_t*>(p + d->offType);
     out.readWrites = *reinterpret_cast<const int32_t*>(p + d->offReadWrites);
-    out.zip        = d->offZip >= 0 && p[d->offZip] != 0;
+    out.zip        = d->offZip >= 0 && (p[d->offZip] & d->maskZip) != 0;
     return true;
 }
 
@@ -295,7 +303,10 @@ bool ReadDigest(DeviceKind kind, void* device, uint64_t& out, DigestScope scope)
     // own second phase clears floppyObjectData once it has read it -- floppyReadwrites it never
     // clears at all -- and a poll reading either would publish twice.
     if (*reinterpret_cast<const int32_t*>(p + d->offType) < 0) { out = h; return true; }
-    if (d->offZip >= 0) Mix(h, p + d->offZip, 1);
+    if (d->offZip >= 0) {
+        const bool zip = (p[d->offZip] & d->maskZip) != 0;
+        Mix(h, &zip, sizeof(zip));
+    }
     MixFString(h, device, d->offNametype);
     MixFString(h, device, d->offObjectData);
     if (scope == DigestScope::Occupancy) { out = h; return true; }
@@ -315,7 +326,11 @@ bool WriteSlot(DeviceKind kind, void* device, const Scalars& st, const Content& 
     auto* p = reinterpret_cast<uint8_t*>(device);
     *reinterpret_cast<int32_t*>(p + d->offType)       = st.floppyType;
     *reinterpret_cast<int32_t*>(p + d->offReadWrites) = st.readWrites;
-    if (d->offZip >= 0) p[d->offZip] = st.zip ? 1 : 0;
+    if (d->offZip >= 0) {
+        auto& zipByte = p[d->offZip];
+        zipByte = static_cast<uint8_t>(st.zip ? zipByte | d->maskZip
+                                               : zipByte & ~d->maskZip);
+    }
     if (d->offNametype >= 0) WriteFStringField(device, d->offNametype, content.nametype);
     WriteFStringField(device, d->offObjectData, content.objectData);
     WriteFStringArrayField(device, d->offData, content.data);
@@ -345,6 +360,7 @@ void ResetCache() {
         d.nextTryMs = 0;
         d.offType = d.offReadWrites = d.offData = d.offObjectData = -1;
         d.offZip = d.offNametype = d.offWidget = d.offMesh = -1;
+        d.maskZip = 0;
         // The overlap entries go with the rest: a resolved UFunction of a world's Blueprint class
         // is cached on the same terms as this file's offsets, and a caller holding one past a
         // level change would be holding it on a guess.

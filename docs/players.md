@@ -28,8 +28,8 @@ has a controller is the local-versus-puppet test everywhere in the code
 ### The pose stream
 
 Each peer streams its own pose per tick as an unreliable, newest-wins message: position, yaw,
-pitch, the head-to-body yaw delta, speed, a byte of state bits, and health, food and sleep as
-fractions (`coop/player/local_streams`). Receivers interpolate in MTA's fixed-window linear form
+pitch, the head-to-body yaw delta, speed, a byte of state bits (in air, ragdoll, sitting), and
+health, food and sleep as fractions (`coop/player/local_streams`). Receivers interpolate in MTA's fixed-window linear form
 (`coop/element/lerp_window`): the error is cached once when a packet arrives and applied
 linearly over the window, then the target is snapped so float drift cannot accumulate.
 
@@ -60,6 +60,14 @@ The receiver spawns the game's own plushie ragdoll body, hides the puppet's mesh
 and slaves the body's pelvis velocity to the streamed ragdoll pose so the flop tracks the sender;
 the puppet stays attached as the anchor for the nameplate and the recovery hand-off
 (`coop/player/remote_player_ragdoll`).
+
+### Sitting
+
+A second state bit says the sender is seated: on a chair or sitBox (`sittingOn`), or driving the
+ATV. Custom skins share the kerfur Omega skeleton, and the game
+leaves that AnimBP in idle, so a seated body used to stand through the furniture. The local
+peer drives `isOnAtv` (the Omega's own sit-on-ATV sequence) and turns foot IK off
+(`coop/player/sit_pose`, `ue_wrap/actors/sit_pose`); the puppet does the same from the bit.
 
 ### What the player holds and toggles
 
@@ -130,7 +138,9 @@ on any body that is not the local possessed player, and the victim's own machine
 same contact natively (`coop/player/player_damage`). Enemy hits are the one relay: the host runs
 the enemies, and when one hits a peer's puppet the host sends that peer a reliable damage event,
 which the peer applies on its own pawn, armour and inventory mitigation included, so its health
-stream and hurt flash follow.
+stream and hurt flash follow. A swing or a throw between players lands only when both have PVP
+on (F1, persisted, announced); the victim then takes the damage and ragdolls. A pipe bomb or a
+gas can still hits everyone.
 
 Death is per peer and runs natively to its end: the sound, the dead flag, the black screen. The
 cut is the last stage, the travel that would unload the world.
@@ -268,6 +278,7 @@ dead peer through the ragdoll bit of its next pose.
 | the remote player and its engine actor | `coop/player/remote_player`, `coop/player/remote_player_ragdoll`, `ue_wrap/actors/puppet` |
 | the per-slot puppet lifecycle and drive | `coop/player/puppet_drive`, `coop/player/puppet_body_yaw`, `coop/player/puppet_footsteps`, `coop/player/puppet_carry_drive` |
 | the local player's outbound streams | `coop/player/local_streams`, `coop/player/movement_ledger` |
+| the seated pose | `coop/player/sit_pose`, `ue_wrap/actors/sit_pose` |
 | identity and the roster | `coop/player/players_registry`, `coop/player/roster_ledger`, `coop/player/roster`, `coop/player/nickname_arbiter` |
 | name, colour, nameplate | `coop/player/nameplate`, `coop/player/nick_color`, `ui/hud`, `ui/scoreboard` |
 | skins | `coop/player/client_model`, `coop/player/skin_registry`, `coop/player/skin_effects`, `coop/player/local_body`, `coop/player/skin_preview`, `ui/skins_panel`, `assets/paks/` |

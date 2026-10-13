@@ -9,8 +9,8 @@
 // unconditionally at every world load, so the zeroed count self-heals and can never poison a
 // save; and the client REPLAYS the same native verb for allowlisted rows only, which is our own
 // per-row policy -- it and its reasoning are in docs/events-and-weather.md.
-// One owner: this module owns the whole scheduled-event authority axis -- suppression,
-// observation, the native-fire primitive and replay. The F1 dev menu (coop/dev/event_trigger)
+// This module owns observation, the native-fire primitive and replay; it installs
+// event_schedule_authority for the common client schedule hold. The F1 dev menu (coop/dev/event_trigger)
 // dispatches THROUGH HostFire, so dev depends on coop/world and never the reverse.
 
 #pragma once
@@ -21,6 +21,7 @@
 namespace coop::net {
 class Session;
 struct EventFirePayload;
+struct EventGatherPayload;
 }  // namespace coop::net
 
 namespace coop::event_fire_sync {
@@ -31,12 +32,10 @@ enum class FireKind : uint8_t {
     SpecialEvent = 1,  // trigger_eventer.runSpecialEvent(name)
 };
 
-// Cache the session; register the host's watch on runEvent (once per process); and, once the
-// daynightCycle_C class has loaded, register the client's hold on the cycle's own tick (once per
-// process): right before each tick, allEvents.Num is held at 0. The cycle's settime walks that list
-// on every clock change the host's samples make, so without the hold due rows would fire natively
-// on the client -- and the first sample after a world load, which the clock lane writes at the same
-// tick, could make many due at once. Restored on disconnect; the local world resumes scheduling.
+// Register the host's runEvent watch and the client's class-qualified saveSlot.settime
+// hold. Every route into settime holds allEvents empty before the scheduler walk:
+// clock ticks, Blueprint-internal boot calls and reflected updates alike. Time still
+// updates normally. Restored on disconnect while the same object/array survives.
 // Called every pump tick by the install fanout. Game thread.
 //
 // Three classes of fire the watch leaves alone, all deliberate. A trigger-volume fire (bedEvent,
@@ -78,6 +77,10 @@ void OnClientWorldReady();
 // Teardown: restore the client's allEvents.Num (SP scheduler resumes), clear the pending queue +
 // replayed-set, drop the session pointer. Game thread.
 void OnDisconnect();
+
+// A peer walked into a location event. Host: run the door-lock on this machine when the row is
+// the passlock, and bring every other peer to the pose. Game thread.
+void OnLocationGather(const coop::net::EventGatherPayload& payload, uint8_t senderSlot);
 
 // [dev] How many fires this client has replayed natively, for the event drill. Any thread.
 unsigned ReplayCount();
