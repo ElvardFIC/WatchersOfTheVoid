@@ -25,7 +25,8 @@ CFG_ENUM(auth_drill, "auth_drill", "dev", "off", "off|corrupt|silent|mismatch",
 // the row only names the judge; it changes nothing the host's gates do. Off by default.
 CFG_ENUM(hostile_drill, "hostile_drill", "dev", "off",
     "off|signal_park|chat_ill_formed|prop_convert|reliable_flood|repeat_join|repeat_world_ready|"
-    "repeat_save_request|record_bad_classes|bad_alarm|bad_prop_key|bad_prop_spawn|bad_hand_class",
+    "repeat_save_request|record_bad_classes|bad_alarm|bad_prop_key|bad_prop_spawn|bad_hand_class|"
+    "bad_hand_family",
     "VOTVCOOP_HOSTILE_DRILL",
     "Receive-boundary drill (BOTH peers). signal_park: a client floods refused saved-signal rows "
     "(size 0, so the game's own gate rejects each) and the host must keep them from filling the apply "
@@ -53,4 +54,6 @@ CFG_ENUM(hostile_drill, "hostile_drill", "dev", "off",
     "it, then the sentinel. For both the host judges by its own whole-array walk count at the sentinel (at or "
     "past half the walks a scan per message would pay FAILs). bad_hand_class: a joined client says its hand "
     "holds the engine's base actor class, which is not a prop, then sends a chat line; the host must not keep "
-    "that class for the slot nor build a mirror of it, and judges at the chat line. Drill only.")
+    "that class for the slot nor build a mirror of it, and judges at the chat line. bad_hand_family: the same, "
+    "naming the per-player inventory container's class in capitals (class names compare without case); the "
+    "host must not keep it. Drill only.")

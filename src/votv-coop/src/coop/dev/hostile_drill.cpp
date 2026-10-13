@@ -42,11 +42,12 @@ namespace SS = ue_wrap::saved_signals;
 using Clock = std::chrono::steady_clock;
 
 // The walk arms (record_bad_classes, bad_alarm, bad_prop_key, bad_prop_spawn) live in
-// hostile_drill_walk.cpp and bad_hand_class in hostile_drill_hand.cpp -- this file is the dispatcher that
-// owns the arm selection and routes those five to their module's sender and judge.
+// hostile_drill_walk.cpp and the hand arms (bad_hand_class, bad_hand_family) in hostile_drill_hand.cpp --
+// this file is the dispatcher that owns the arm selection and routes those six to their module's sender
+// and judge.
 enum class Arm { Off, SignalPark, ChatIllFormed, PropConvert, ReliableFlood, RepeatJoin,
                  RepeatWorldReady, RepeatSaveRequest, RecordBadClasses, BadAlarm, BadPropKey,
-                 BadPropSpawn, BadHandClass };
+                 BadPropSpawn, BadHandClass, BadHandFamily };
 
 // Resolved once: with the environment variable unset every read would scan the ini on disk, and the
 // drill is asked per tick.
@@ -66,6 +67,7 @@ Arm ArmOf() {
              : v == "bad_prop_key"        ? Arm::BadPropKey
              : v == "bad_prop_spawn"      ? Arm::BadPropSpawn
              : v == "bad_hand_class"      ? Arm::BadHandClass
+             : v == "bad_hand_family"     ? Arm::BadHandFamily
                                           : Arm::Off;
     }();
     return a;
@@ -85,6 +87,7 @@ const char* ArmName() {
     case Arm::BadPropKey:        return "bad_prop_key";
     case Arm::BadPropSpawn:      return "bad_prop_spawn";
     case Arm::BadHandClass:      return "bad_hand_class";
+    case Arm::BadHandFamily:     return "bad_hand_family";
     default:                     return "off";
     }
 }
@@ -685,15 +688,17 @@ void Tick() {
                 ClientJudged() ? (host ? "HOST (under test)" : "CLIENT (sender and judge)")
                                : (host ? "HOST (judge)" : "CLIENT (sender)"));
     }
-    const bool handArm = ArmOf() == Arm::BadHandClass;
+    const hand::Arm handArm = ArmOf() == Arm::BadHandClass  ? hand::Arm::BadHandClass
+                            : ArmOf() == Arm::BadHandFamily ? hand::Arm::BadHandFamily
+                                                            : hand::Arm::None;
     if (host) {
-        if (IsWalkArm())          walk::TickHostJudge(s, WalkArmOf());  // host counts its own walks
-        else if (handArm)         hand::TickHostJudge(s);
-        else if (!ClientJudged()) TickHost(s);  // client-judged arms: the client judges, the host only answers
+        if (IsWalkArm())                     walk::TickHostJudge(s, WalkArmOf());  // host counts its own walks
+        else if (handArm != hand::Arm::None) hand::TickHostJudge(s, handArm);
+        else if (!ClientJudged())            TickHost(s);  // client-judged arms: the client judges, the host only answers
     } else {
-        if (IsWalkArm())  walk::TickClient(s, WalkArmOf());
-        else if (handArm) hand::TickClient(s);
-        else              TickClient(s);
+        if (IsWalkArm())                     walk::TickClient(s, WalkArmOf());
+        else if (handArm != hand::Arm::None) hand::TickClient(s, handArm);
+        else                                 TickClient(s);
     }
 }
 
