@@ -139,14 +139,16 @@ int32_t PropNameOffset() {
 // spells it.
 enum class HandClass { Hand, NotHand, Unresolved };
 HandClass ResolveHandClass(const std::wstring& name, void** outCls, std::wstring* outOwn) {
+    if (outCls) *outCls = nullptr;
+    // The two families are named classes: refused by name, loaded or not.
+    if (coop::prop_lifecycle::IsPerPlayerPropClass(name) || coop::prop_lifecycle::IsWireSuppressedPropClass(name))
+        return HandClass::NotHand;
     void* cls = ue_wrap::object_index::ClassByName(name.c_str());
     if (outCls) *outCls = cls;
     if (!cls) return HandClass::Unresolved;
     void* base = ue_wrap::object_index::ClassByName(ue_wrap::profile::name::PropClass);
     if (!base) return HandClass::Unresolved;
-    if (!ue_wrap::prop::WalksToBase(cls, base) || coop::prop_lifecycle::IsPerPlayerPropClass(name) ||
-        coop::prop_lifecycle::IsWireSuppressedPropClass(name))
-        return HandClass::NotHand;
+    if (!ue_wrap::prop::WalksToBase(cls, base)) return HandClass::NotHand;
     if (outOwn) *outOwn = R::ToString(R::NameOf(cls));
     return HandClass::Hand;
 }
@@ -240,12 +242,12 @@ void NoteSpawnFailed(uint8_t slot, const SlotHand& want, void* puppetActor) {
 void SpawnMirror(uint8_t slot, void* puppetActor) {
     const SlotHand& want = g_hands[slot];
     // Two index lookups a tick, the class and the prop base: Blueprint classes load on demand, and one
-    // this peer has not loaded, or is still loading, answers null and is asked for again next tick, warned
-    // once per slot and class.
+    // this peer has not loaded, or is still loading, answers null and is asked for again next tick; the
+    // classes a slot waits on are warned at the first and each power of two.
     void* cls = nullptr;
     const HandClass kind = ResolveHandClass(want.cls, &cls, nullptr);
     if (kind == HandClass::Unresolved) {
-        if (g_unresolvedWarned[slot] != want.cls) {
+        if (::_wcsicmp(g_unresolvedWarned[slot].c_str(), want.cls.c_str()) != 0) {
             g_unresolvedWarned[slot] = want.cls;
             const uint32_t n = ++g_unresolvedBySlot[slot];
             if ((n & (n - 1)) == 0)
@@ -496,7 +498,8 @@ void TickMirrors() {
             }
         }
         const int32_t pupIdx = R::InternalIndexOf(puppetActor);
-        const bool sameWant = m.cls == want.cls && m.name == want.name && m.puppetIdx == pupIdx &&
+        const bool sameWant = ::_wcsicmp(m.cls.c_str(), want.cls.c_str()) == 0 && m.name == want.name &&
+                              m.puppetIdx == pupIdx &&
                               R::SlotSerial(pupIdx) == m.puppetSerial;
         if (mirrorLive && sameWant) {
             coop::hand_item_pose::DriveMirror(m.actor, pup, want.relPos, want.relRot);  // steady state: re-command the view hold
@@ -574,8 +577,14 @@ bool HandleHandItem(coop::net::Session& session,
         }
     }
 
-    if (describedSlot >= coop::net::kMaxPeers) return true;
-    if (has && cls.empty()) return true;  // malformed: "has item" with no class
+    const char* malformed = describedSlot >= coop::net::kMaxPeers ? "a slot out of range"
+                          : has && cls.empty()                   ? "an item with no class"
+                                                                 : nullptr;
+    if (malformed) {
+        if (const uint32_t n = DropToLog(msg.senderPeerSlot))
+            UE_LOGW("hand_item: %s -- dropping (%u from slot %d)", malformed, n, msg.senderPeerSlot);
+        return true;
+    }
 
     if (session.role() == coop::net::Role::Host) {
         // The forgery guard: a client may only describe its own hand.
