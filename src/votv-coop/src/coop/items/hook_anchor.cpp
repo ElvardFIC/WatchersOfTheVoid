@@ -359,11 +359,8 @@ void OnCommitChunk(const coop::net::BlobChunkPayload& p, uint8_t senderSlot) {
 
 void OnAnchoredChunk(const coop::net::BlobChunkPayload& p, uint8_t senderSlot) {
     if (!GT::IsGameThread()) return;
-    // The host built it; its own broadcast never comes back, and a client forging this kind must
-    // not be able to occupy an assembly slot on the host either -- so the role gate comes BEFORE
-    // the assembler, not after it.
-    if (IsHost()) return;
-    if (senderSlot != 0) return;  // host-authored only
+    // From the host alone: the host's receive edge refuses a client's copy (client_authorship.h), so no client
+    // occupies an assembly slot on the host. The slot keys the assembler.
 
     std::vector<uint8_t> blob;
     if (!g_asmAnchored.OnChunk(p, senderSlot, blob)) return;

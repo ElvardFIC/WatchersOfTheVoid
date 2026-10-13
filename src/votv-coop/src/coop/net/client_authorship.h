@@ -13,18 +13,13 @@
 #pragma once
 
 // Every enumerator is named below, and .github/ci/reliablekind_gate.py fails the build when one is missing,
-// named twice, relayable without being Client, or Unverified without a line in the gate's baseline list.
-// A new kind is Host or Client from its first commit.
-//   Client     -- an honest client sends it to the host (its sending path read).
-//   Host       -- no client may author it: its handler refused a non-host sender by name before this table
-//                 moved the refusal here, its only senders are the host's, or no one sends it yet (as MTA
-//                 refuses an event until it is registered; a client sender, when built, moves its row to
-//                 Client).
-//   Unverified -- accepted from a client as before, with no evidence yet either way; each moves to a row
-//                 above. A divergence from MTA, whose remote-trigger flag defaults to false (addEvent,
-//                 reference/mtasa-blue/Server/mods/deathmatch/logic/luadefs/CLuaFunctionDefs.Event.cpp:26,32):
-//                 these kinds stay accepted until read, because a census of the senders proved wrong once (a
-//                 client-sent kind listed host-only), and a wrong Host row ends a lane for every client.
+// named twice, or relayable without being Client. A new kind is Host or Client from its first commit.
+//   Client -- an honest client sends it to the host (its sending path read).
+//   Host   -- no client may author it: its handler refused a non-host sender by name before this table moved
+//             the refusal here, its only senders are the host's, or no one sends it yet (as MTA refuses an
+//             event until it is registered, its remote-trigger flag false by default: addEvent,
+//             reference/mtasa-blue/Server/mods/deathmatch/logic/luadefs/CLuaFunctionDefs.Event.cpp:26,32; a
+//             client sender, when built, moves its row to Client).
 
 #include "coop/net/protocol.h"  // ReliableKind
 
@@ -32,7 +27,7 @@
 
 namespace coop::net {
 
-enum class ClientAuthorship : uint8_t { Client, Host, Unverified, NotAKind };
+enum class ClientAuthorship : uint8_t { Client, Host, NotAKind };
 
 constexpr ClientAuthorship AuthorshipOf(ReliableKind k) {
     switch (k) {
@@ -192,7 +187,6 @@ constexpr ClientAuthorship AuthorshipOf(ReliableKind k) {
     case ReliableKind::EventCue:
     case ReliableKind::ChatSpeaker:
     case ReliableKind::PileResyncRequest:
-        return ClientAuthorship::Host;
     case ReliableKind::SkySignalCatch:
     case ReliableKind::DeskState:
     case ReliableKind::DishArm:
@@ -200,7 +194,7 @@ constexpr ClientAuthorship AuthorshipOf(ReliableKind k) {
     case ReliableKind::DishCalib:
     case ReliableKind::TaskNewState:
     case ReliableKind::HookAnchored:
-        return ClientAuthorship::Unverified;
+        return ClientAuthorship::Host;
     }
     return ClientAuthorship::NotAKind;  // a byte value that names no kind: refused like Host
 }

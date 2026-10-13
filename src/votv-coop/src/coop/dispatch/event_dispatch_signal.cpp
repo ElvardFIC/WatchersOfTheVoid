@@ -54,11 +54,8 @@ bool HandleSignalEvent(const net::Session::ReliableMessage& msg) {
         break;
     }
     case net::ReliableKind::SkySignalCatch: {
-        // The signal-catch consume replay. HOST: dedup through the recent-catch TTL, replay,
-        // rebroadcast. There is deliberately NO holder check -- the desk hold releases in the
-        // same second as the catch edge, so a holder-equals-sender test raced exactly as the
-        // detector's claim gate did. CLIENTS replay (transport-trusted). The gates live in
-        // signal_catch_sync::OnReliable.
+        // The signal-catch consume replay, the host's catch replayed on a client; its sender slot names the
+        // catcher. The gates live in signal_catch_sync::OnReliable.
         if (msg.payloadLen < sizeof(net::SkySignalCatchPayload)) {
             UE_LOGW("event_feed: SkySignalCatch payload too short (%zu < %zu)",
                     static_cast<size_t>(msg.payloadLen), sizeof(net::SkySignalCatchPayload));
@@ -315,11 +312,7 @@ bool HandleSignalEvent(const net::Session::ReliableMessage& msg) {
         }
         net::DishArmPayload ap{};
         std::memcpy(&ap, msg.payload, sizeof(ap));
-        const uint8_t aslot =
-            (msg.senderPeerSlot >= 0 && msg.senderPeerSlot < net::kMaxPeers)
-                ? static_cast<uint8_t>(msg.senderPeerSlot)
-                : static_cast<uint8_t>(0xFF);
-        coop::download_arm_sync::OnDishArm(ap, aslot);
+        coop::download_arm_sync::OnDishArm(ap);
         break;
     }
     case net::ReliableKind::DishSnapshot: {
@@ -331,11 +324,7 @@ bool HandleSignalEvent(const net::Session::ReliableMessage& msg) {
         }
         net::DishSnapshotPayload sp2{};
         std::memcpy(&sp2, msg.payload, sizeof(sp2));
-        const uint8_t s2slot =
-            (msg.senderPeerSlot >= 0 && msg.senderPeerSlot < net::kMaxPeers)
-                ? static_cast<uint8_t>(msg.senderPeerSlot)
-                : static_cast<uint8_t>(0xFF);
-        coop::dish_sync::OnDishSnapshot(sp2, s2slot);
+        coop::dish_sync::OnDishSnapshot(sp2);
         break;
     }
     case net::ReliableKind::DishCalib: {
@@ -347,11 +336,7 @@ bool HandleSignalEvent(const net::Session::ReliableMessage& msg) {
         }
         net::DishCalibPayload cp2{};
         std::memcpy(&cp2, msg.payload, sizeof(cp2));
-        const uint8_t c2slot =
-            (msg.senderPeerSlot >= 0 && msg.senderPeerSlot < net::kMaxPeers)
-                ? static_cast<uint8_t>(msg.senderPeerSlot)
-                : static_cast<uint8_t>(0xFF);
-        coop::dish_calib_sync::OnDishCalib(cp2, c2slot);
+        coop::dish_calib_sync::OnDishCalib(cp2);
         break;
     }
     case net::ReliableKind::DishCalibIntent: {
@@ -387,7 +372,7 @@ bool HandleSignalEvent(const net::Session::ReliableMessage& msg) {
         break;
     }
     case net::ReliableKind::TaskNewState: {
-        // The host's saveSlot.taskNew mirror (host-authored; trust-gated in the handler).
+        // The host's saveSlot.taskNew mirror (a client's copy is refused at the host's receive edge).
         if (msg.payloadLen < sizeof(net::TaskNewStatePayload)) {
             UE_LOGW("event_feed: TaskNewState payload too short (%zu < %zu)",
                     static_cast<size_t>(msg.payloadLen), sizeof(net::TaskNewStatePayload));
@@ -395,11 +380,7 @@ bool HandleSignalEvent(const net::Session::ReliableMessage& msg) {
         }
         net::TaskNewStatePayload tnp{};
         std::memcpy(&tnp, msg.payload, sizeof(tnp));
-        const uint8_t tslot =
-            (msg.senderPeerSlot >= 0 && msg.senderPeerSlot < net::kMaxPeers)
-                ? static_cast<uint8_t>(msg.senderPeerSlot)
-                : static_cast<uint8_t>(0xFF);
-        coop::daily_task_sync::OnTaskNewState(tnp, tslot);
+        coop::daily_task_sync::OnTaskNewState(tnp);
         break;
     }
     case net::ReliableKind::DeskLogLine: {
@@ -428,11 +409,7 @@ bool HandleSignalEvent(const net::Session::ReliableMessage& msg) {
         }
         net::DeskStatePayload dp{};
         std::memcpy(&dp, msg.payload, sizeof(dp));
-        const uint8_t dslot =
-            (msg.senderPeerSlot >= 0 && msg.senderPeerSlot < net::kMaxPeers)
-                ? static_cast<uint8_t>(msg.senderPeerSlot)
-                : static_cast<uint8_t>(0xFF);
-        coop::console_state_sync::OnDeskState(dp, dslot);
+        coop::console_state_sync::OnDeskState(dp);
         break;
     }
     case net::ReliableKind::DeskInput: {

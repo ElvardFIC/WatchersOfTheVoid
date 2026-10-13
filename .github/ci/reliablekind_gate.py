@@ -42,11 +42,8 @@ WHAT IT HOLDS -- these FAIL the build:
   5. The receive edge no longer asking the authorship table, or no longer refusing Host and NotAKind with a
      return before the save-transfer diversion and the inbox; or the table (`client_authorship.h`, which
      the host's receive edge reads to refuse a kind a client may not author) out of step with the enum: an
-     enumerator with no row, a row named twice, a row that is not Client, Host or Unverified, a row
-     for a name that is not a kind, a relayable kind that is not Client (the edge would refuse what the relay
-     forwards), or an Unverified kind not listed in `reliablekind_unverified.txt` beside this file -- a list
-     that a gate holds in one direction: a listed kind that is no longer Unverified fails until its line is
-     removed. A new Unverified kind passes only with its line added in the same commit, an edit review sees.
+     enumerator with no row, a row named twice, a row that is not Client or Host, a row for a name that is
+     not a kind, or a relayable kind that is not Client (the edge would refuse what the relay forwards).
 
 WHAT IT DELIBERATELY DOES NOT HOLD. `session_lanes.h`'s three switches -- `LaneForKind`,
 `IsClientRelayableReliableKind`, `IsPreWorldSendableKind` -- all default safely (Normal /
@@ -54,7 +51,7 @@ no-relay / hold-until-world-ready), and whether a given kind SHOULD relay is a d
 decision no text scan can make. Absence there is legitimate for every host-authored kind.
 So they are reported in `--table`, not gated: this file must not manufacture a failure it
 cannot justify, or the next author learns to route around it. The authorship table is the
-exception, by design: it is total -- every kind decided, Client, Host or Unverified -- and only its
+exception, by design: it is total -- every kind decided, Client or Host -- and only its
 membership is checked here, never whether a decision is right.
 
 Note that membership in `session_lanes.h` is NOT receiver coverage. That is not a detail:
@@ -77,12 +74,10 @@ PROTO = "include/coop/net/protocol.h"
 LANES = "src/coop/net/session_lanes.h"
 SESSION = "src/coop/net/session_receive.cpp"   # the receive switch and the admission handler
 AUTH = "src/coop/net/client_authorship.h"       # which kinds a client may author (rule 5)
-UNVERIFIED = pathlib.Path(__file__).resolve().parent / "reliablekind_unverified.txt"
-UNVERIFIED_KEY = "<reliablekind_unverified.txt>"
 # The receive edge's question, which is the only reason the table matters.
 EDGE_READS_TABLE = re.compile(r"AuthorshipOf\(\s*static_cast<ReliableKind>\(\s*rh\.kind\s*\)\s*\)")
 # What a kind's row may say; NotAKind is the fallback for a byte that names no kind, never a row.
-ROW_VALUES = ("Client", "Host", "Unverified")
+ROW_VALUES = ("Client", "Host")
 # The edge's frame: the host-only wrapper, the table's answer named, and the test that opens the refusal.
 EDGE_SHAPE = re.compile(r"if\s*\(\s*cfg_\.role\s*==\s*Role::Host\s*\)\s*\{\s*const\s+ClientAuthorship\s+(\w+)\s*=\s*"
                         r"AuthorshipOf\(\s*static_cast<ReliableKind>\(\s*rh\.kind\s*\)\s*\)\s*;\s*if\s*\(")
@@ -218,10 +213,6 @@ def read_tree() -> dict:
             tree[rel] = p.read_text(encoding="utf-8", errors="replace")
         except OSError:
             tree[rel] = None       # a FAIL below, not a traceback and not a skip
-    try:
-        tree[UNVERIFIED_KEY] = UNVERIFIED.read_text(encoding="utf-8")
-    except OSError:
-        tree[UNVERIFIED_KEY] = None
     return tree
 
 
@@ -447,19 +438,6 @@ def check(tree: dict):
             if k in seen and seen[k][0] != "Client":
                 fails.append(f"{k} is relayable but {seen[k][0]} in {AUTH}: the edge would refuse what the "
                              f"relay forwards.")
-        listed = set()
-        if tree[UNVERIFIED_KEY] is None:
-            fails.append("reliablekind_unverified.txt: missing or unreadable.")
-        else:
-            listed = {ln.strip() for ln in tree[UNVERIFIED_KEY].splitlines()
-                      if ln.strip() and not ln.lstrip().startswith("#")}
-        unverified = {k for k, rs in seen.items() if rs and rs[0] == "Unverified"}
-        for k in sorted(unverified - listed):
-            fails.append(f"{k} is Unverified in {AUTH} but not listed in reliablekind_unverified.txt: file a "
-                         f"new kind Client or Host from its first commit.")
-        for k in sorted(listed - unverified):
-            fails.append(f"reliablekind_unverified.txt lists {k}, which is not Unverified in {AUTH}: remove "
-                         f"the line -- a kind that left Unverified leaves the list.")
 
     # --- check 4: two families claiming one kind -----------------------------------
     for name in sorted(set(enums), key=lambda k: (enums.get(k) is None, enums.get(k) or 0)):
@@ -630,10 +608,6 @@ def drill() -> int:
         row("PropConvert"), row("PropConvert") + row("ItemActivate"), 1)
     controls.append(("a relayable kind made Host", t, "ItemActivate is relayable but Host"))
     t = dict(base)
-    t[AUTH] = t[AUTH].replace(row("ChatMessage"), "", 1).replace(
-        row("HookAnchored"), row("HookAnchored") + row("ChatMessage"), 1)
-    controls.append(("an Unverified kind not in the baseline", t, "ChatMessage is Unverified"))
-    t = dict(base)
     t[SESSION] = t[SESSION].replace("AuthorshipOf(static_cast<ReliableKind>(rh.kind))", "ClientAuthorship::Client", 1)
     controls.append(("the receive edge no longer reads the table", t, "no longer asks AuthorshipOf"))
     t = dict(base)
@@ -660,16 +634,13 @@ def drill() -> int:
         "            }\n        }\n        // payloadLen is a uint16",
         "            }\n            return;\n        }\n        // payloadLen is a uint16", 1)
     controls.append(("a return after the refusal ends every message", t, "holds more than the table's"))
-    t = dict(base)
-    t[AUTH] = t[AUTH].replace(row("ChatMessage"), "", 1).replace(
-        "        return ClientAuthorship::Unverified;\n    }\n",
-        "        return ClientAuthorship::Unverified;\n" + row("ChatMessage")
-        + "        return ClientAuthorship::NotAKind;\n    }\n", 1)
-    controls.append(("a kind's row is NotAKind", t, "ChatMessage's row in"))
-    t = dict(base)
-    t[UNVERIFIED_KEY] = (t[UNVERIFIED_KEY] or "") + "PropSpawn\n"
-    controls.append(("a baseline line for a kind that is not Unverified", t,
-                     "lists PropSpawn, which is not Unverified"))
+    for value in ("NotAKind", "Unverified"):
+        t = dict(base)
+        t[AUTH] = t[AUTH].replace(row("ChatMessage"), "", 1).replace(
+            "        return ClientAuthorship::Host;\n    }\n",
+            "        return ClientAuthorship::Host;\n" + row("ChatMessage")
+            + "        return ClientAuthorship::" + value + ";\n    }\n", 1)
+        controls.append(("a kind's row is " + value, t, "ChatMessage's row in"))
 
     bad = 0
     for label, mutated, expect in controls:
