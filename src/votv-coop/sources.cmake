@@ -202,6 +202,7 @@ set(VOTVCOOP_SOURCES
     src/coop/dispatch/event_dispatch_state.cpp
     src/coop/dispatch/event_dispatch_world.cpp
     src/coop/comms/chat_sync.cpp
+    src/coop/comms/chat_rate.cpp
     src/coop/interactables/turbine_sync.cpp
     src/coop/interactables/upgrade_sync.cpp
     src/coop/interactables/interactable_sync.cpp

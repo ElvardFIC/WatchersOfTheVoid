@@ -17,6 +17,7 @@
 #include "coop/bug_report/report_core.h"
 #include "coop/build_trust/build_trust.h"
 #include "coop/commands/commands_selftest.h"
+#include "coop/comms/chat_rate.h"
 #include "coop/comms/chat_sync.h"
 #include "coop/config/config.h"
 #include "coop/creatures/npc_sync.h"
@@ -229,6 +230,9 @@ bool StartCoopSession(const coop::net::Config& netCfg, coop::net::Refusal* why) 
     // And the host's pace on a client's display changes: a first change at once, a debt past the burst paid at a
     // refill and only when owed, a newer value while one is owed, a withdrawal.
     coop::net::LatestWins::RunSelftest();
+    // And a client's chat rate, Source's two tiers: the interval, a burst's debt, the slowed refill, tier 2's long run
+    // and both floors, each row from a stated state -- arithmetic no honest run reaches.
+    coop::chat_rate::RunChatRateSelftest();
     // And the commands' line splitter, target resolver, registry and dispatcher: a resolver that
     // picks the wrong player kicks the wrong player, and a wrong pick reads as working until then.
     coop::commands::RunSelftest();

@@ -135,6 +135,7 @@ void Update(net::Session& session, void* localPlayer) {
     // reconcile, so a debt whose occupant left was cleared with its row before it could be paid.
     coop::player_handshake::TickPrefs(session);
     coop::hand_item::PayOwed(session);
+    coop::chat_sync::Tick();  // the chat receipt's refusal window
 
     // The per-slot Join send. The payload is built on first need: in steady state the vector is
     // never constructed, so the pump tick does not pay the UTF-8 conversion and allocation.

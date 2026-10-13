@@ -251,21 +251,16 @@ bool HandleWorldEvent(const net::Session::ReliableMessage& msg) {
     }
     case net::ReliableKind::ChatMessage: {
         // A client's chat intent, client to host only. Identity comes from the transport slot, so a
-        // peer cannot speak as someone else, and the payload is text only, decoded strictly at the
-        // boundary in chat_sync before it can enter the lobby's record or reach a screen.
-        if (msg.payloadLen < sizeof(net::ChatMessagePayload)) {
-            UE_LOGW("event_feed: ChatMessage payload too short (%zu < %zu)",
-                    static_cast<size_t>(msg.payloadLen), sizeof(net::ChatMessagePayload));
-            break;
-        }
+        // peer cannot speak as someone else. No length check or log line here: OnReliable takes the
+        // sender's chat rate first and then judges the length, so a flood of short messages is
+        // limited like any other; the text is decoded strictly there before it can enter the
+        // lobby's record or reach a screen.
         if (msg.senderPeerSlot < 0 || msg.senderPeerSlot >= net::kMaxPeers) {
             UE_LOGW("event_feed: ChatMessage invalid senderPeerSlot=%d -- dropping",
                     msg.senderPeerSlot);
             break;
         }
-        net::ChatMessagePayload cp{};
-        std::memcpy(&cp, msg.payload, sizeof(cp));
-        coop::chat_sync::OnReliable(cp, static_cast<uint8_t>(msg.senderPeerSlot));
+        coop::chat_sync::OnReliable(msg.payload, msg.payloadLen, msg.senderPeerSlot);
         break;
     }
     case net::ReliableKind::ChatSpeaker: {
