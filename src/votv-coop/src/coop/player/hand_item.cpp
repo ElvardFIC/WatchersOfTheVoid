@@ -134,26 +134,35 @@ int32_t PropNameOffset() {
 // coop layer never puts on the wire (prop_lifecycle): a per-player state actor, of which each peer owns
 // exactly one, and a wire-suppressed variant, which a client's own Init destroys. The receipt and the
 // spawn both ask it, so the two cannot drift. The index finds a class whatever the letter case of the
-// name, so the families are tested on the class's own name, never on the wire's spelling. Without the
-// prop base this peer cannot judge, and says so rather than refusing.
+// name, and the family predicates compare without case too. Without the prop base this peer cannot
+// judge, and says so rather than refusing. `outOwn`, when asked, gets a hand item's class as the engine
+// spells it.
 enum class HandClass { Hand, NotHand, Unresolved };
-HandClass ResolveHandClass(const std::wstring& name, void** outCls) {
+HandClass ResolveHandClass(const std::wstring& name, void** outCls, std::wstring* outOwn) {
     void* cls = ue_wrap::object_index::ClassByName(name.c_str());
     if (outCls) *outCls = cls;
+    if (!cls) return HandClass::Unresolved;
     void* base = ue_wrap::object_index::ClassByName(ue_wrap::profile::name::PropClass);
-    if (!cls || !base) return HandClass::Unresolved;
-    if (!ue_wrap::prop::WalksToBase(cls, base)) return HandClass::NotHand;
-    const std::wstring own = R::ToString(R::NameOf(cls));
-    if (coop::prop_lifecycle::IsPerPlayerPropClass(own) || coop::prop_lifecycle::IsWireSuppressedPropClass(own))
+    if (!base) return HandClass::Unresolved;
+    if (!ue_wrap::prop::WalksToBase(cls, base) || coop::prop_lifecycle::IsPerPlayerPropClass(name) ||
+        coop::prop_lifecycle::IsWireSuppressedPropClass(name))
         return HandClass::NotHand;
+    if (outOwn) *outOwn = R::ToString(R::NameOf(cls));
     return HandClass::Hand;
 }
 
-// Hand states the host refused, per slot, for the log: the first and then each power of two, so a
-// sender at the edge budget's rate cannot flood it.
-uint32_t g_refusedBySlot[coop::players::kMaxPeers] = {};
-// The class each slot's mirror last waited on, unresolved, so that wait is warned once per slot.
+// HandItems this peer dropped or refused, per sender, for the log: the first and then each power of two,
+// so a sender at the edge budget's rate cannot flood it. The count when this drop is one to log, else 0.
+uint32_t g_droppedBySender[coop::players::kMaxPeers] = {};
+uint32_t DropToLog(int sender) {
+    if (sender < 0 || sender >= static_cast<int>(coop::players::kMaxPeers)) return 1;
+    const uint32_t n = ++g_droppedBySender[sender];
+    return (n & (n - 1)) == 0 ? n : 0;
+}
+// The class each slot's mirror last waited on unresolved, and how many such classes it has waited on,
+// warned at the first and each power of two, so a slot whose class keeps changing cannot flood the log.
 std::wstring g_unresolvedWarned[coop::players::kMaxPeers];
+uint32_t     g_unresolvedBySlot[coop::players::kMaxPeers] = {};
 
 std::wstring ReadItemName(void* actor) {
     const int32_t off = PropNameOffset();
@@ -234,20 +243,23 @@ void SpawnMirror(uint8_t slot, void* puppetActor) {
     // this peer has not loaded, or is still loading, answers null and is asked for again next tick, warned
     // once per slot and class.
     void* cls = nullptr;
-    const HandClass kind = ResolveHandClass(want.cls, &cls);
+    const HandClass kind = ResolveHandClass(want.cls, &cls, nullptr);
     if (kind == HandClass::Unresolved) {
         if (g_unresolvedWarned[slot] != want.cls) {
             g_unresolvedWarned[slot] = want.cls;
-            UE_LOGW("hand_item: slot %u class '%ls' not found (unloaded?) -- will retry",
-                    static_cast<unsigned>(slot), want.cls.c_str());
+            const uint32_t n = ++g_unresolvedBySlot[slot];
+            if ((n & (n - 1)) == 0)
+                UE_LOGW("hand_item: slot %u class '%ls' or the prop base not loaded yet -- will retry (%u class(es) "
+                        "waited on for this slot)", static_cast<unsigned>(slot), want.cls.c_str(), n);
         }
         return;
     }
     // A mirror is built only from a hand item's class, whoever authored the state: the name stamp below
     // writes at the prop name field's offset, which only a prop has. This is also where a class judged
     // nowhere else is judged: one the host could not resolve when it relayed it, and, on a client, the
-    // host's own hand, which no receipt checks. MTA's receiving client does not build from a model id off
-    // the wire either (reference/mtasa-blue/Client/mods/deathmatch/logic/CPacketHandler.cpp:4818-4822).
+    // host's own hand, which no receipt checks. MTA's receiving client builds a vehicle from a model id off
+    // the wire only once its own table accepts it
+    // (reference/mtasa-blue/Client/mods/deathmatch/logic/CPacketHandler.cpp:3278-3282).
     if (kind == HandClass::NotHand) {
         UE_LOGW("hand_item: slot %u class '%ls' is not a hand item -- no mirror, not tried again until the "
                 "item or the puppet changes", static_cast<unsigned>(slot), want.cls.c_str());
@@ -502,8 +514,9 @@ bool HandleHandItem(coop::net::Session& session,
                     const coop::net::Session::ReliableMessage& msg) {
     UE_ASSERT_GAME_THREAD("HandleHandItem");
     if (msg.payloadLen < 4) {
-        UE_LOGW("hand_item: payload %zu B too short -- dropping",
-                static_cast<size_t>(msg.payloadLen));
+        if (const uint32_t n = DropToLog(msg.senderPeerSlot))
+            UE_LOGW("hand_item: payload %zu B too short -- dropping (%u from slot %d)",
+                    static_cast<size_t>(msg.payloadLen), n, msg.senderPeerSlot);
         return true;
     }
     const uint8_t* p = msg.payload;
@@ -512,19 +525,24 @@ bool HandleHandItem(coop::net::Session& session,
     const uint8_t describedSlot = p[off++];
     const bool has = p[off++] != 0;
     // Each string: within the cap BuildPayload writes to, so what the host keeps is what it relays, and
-    // with no NUL, which would end the name the class index reads before the string does.
+    // with no control character -- a NUL would end the name the class index reads before the string
+    // does, and a line break would split the log lines that quote it.
     auto readStr = [&](const char* field, std::wstring& out) -> bool {
         if (off + 1 > len) {
-            UE_LOGW("hand_item: no %s field -- dropping", field);
+            if (const uint32_t c = DropToLog(msg.senderPeerSlot))
+                UE_LOGW("hand_item: no %s field -- dropping (%u from slot %d)", field, c, msg.senderPeerSlot);
             return false;
         }
         const uint8_t n = p[off++];
-        if (off + n > len) {
-            UE_LOGW("hand_item: truncated %s field -- dropping", field);
-            return false;
-        }
-        if (n > kMaxStr || std::memchr(p + off, 0, n)) {
-            UE_LOGW("hand_item: %s field over %zu chars or holding a NUL -- dropping", field, kMaxStr);
+        bool control = false;
+        for (size_t i = off; i < off + n && i < len; ++i) control = control || p[i] < 0x20 || p[i] == 0x7F;
+        const char* why = off + n > len ? "truncated"
+                        : n > kMaxStr   ? "over the cap"
+                        : control       ? "with a control character"
+                                        : nullptr;
+        if (why) {
+            if (const uint32_t c = DropToLog(msg.senderPeerSlot))
+                UE_LOGW("hand_item: %s field %s -- dropping (%u from slot %d)", field, why, c, msg.senderPeerSlot);
             return false;
         }
         for (uint8_t i = 0; i < n; ++i) out.push_back(static_cast<wchar_t>(p[off++]));
@@ -539,7 +557,9 @@ bool HandleHandItem(coop::net::Session& session,
     float relRot[3] = {0.f, 0.f, 0.f};
     if (has) {
         if (off + 24 > len) {
-            UE_LOGW("hand_item: missing hold-transform field -- dropping");
+            if (const uint32_t n = DropToLog(msg.senderPeerSlot))
+                UE_LOGW("hand_item: missing hold-transform field -- dropping (%u from slot %d)", n,
+                        msg.senderPeerSlot);
             return true;
         }
         float rel[6];
@@ -560,8 +580,9 @@ bool HandleHandItem(coop::net::Session& session,
     if (session.role() == coop::net::Role::Host) {
         // The forgery guard: a client may only describe its own hand.
         if (msg.senderPeerSlot != describedSlot || describedSlot == 0) {
-            UE_LOGW("hand_item: slot=%u from senderSlot=%d -- forged, dropping",
-                    static_cast<unsigned>(describedSlot), msg.senderPeerSlot);
+            if (const uint32_t n = DropToLog(msg.senderPeerSlot))
+                UE_LOGW("hand_item: slot=%u from senderSlot=%d -- forged, dropping (%u from that slot)",
+                        static_cast<unsigned>(describedSlot), msg.senderPeerSlot, n);
             return true;
         }
         // A class this host resolves and that is not a hand item is not kept and not relayed, and the
@@ -571,14 +592,18 @@ bool HandleHandItem(coop::net::Session& session,
         // set it knows and keeps the link
         // (reference/mtasa-blue/Server/mods/deathmatch/logic/packets/CBulletsyncPacket.cpp:78-82). It
         // can also hold a weapon against its own record of the player; this host's only copy of a
-        // client's hold slot is the profile that client streams itself, so it checks the lane's type.
-        if (has && ResolveHandClass(cls, nullptr) == HandClass::NotHand) {
-            const uint32_t n = ++g_refusedBySlot[describedSlot];
-            if ((n & (n - 1)) == 0)
+        // client's hold slot is the profile that client streams itself, so it checks the lane's type. A
+        // hand item is kept and relayed under its class's own spelling, so a sender changing only the
+        // letter case changes nothing a peer compares.
+        std::wstring own;
+        const HandClass kind = has ? ResolveHandClass(cls, nullptr, &own) : HandClass::Unresolved;
+        if (kind == HandClass::NotHand) {
+            if (const uint32_t n = DropToLog(msg.senderPeerSlot))
                 UE_LOGW("hand_item: slot %u names class '%ls', which is not a hand item -- not kept or relayed "
-                        "(%u refused from this slot)", static_cast<unsigned>(describedSlot), cls.c_str(), n);
+                        "(%u from this slot)", static_cast<unsigned>(describedSlot), cls.c_str(), n);
             return true;
         }
+        if (kind == HandClass::Hand) cls = own;
         SlotHand& h = g_hands[describedSlot];
         h.has = has; h.cls = cls; h.name = name; h.item = item;
         if (has) h.lastCls = cls;
@@ -598,8 +623,9 @@ bool HandleHandItem(coop::net::Session& session,
 
     // Client: only the host relays hand states.
     if (msg.senderPeerSlot != 0) {
-        UE_LOGW("hand_item: HandItem from non-host senderPeerSlot=%d -- dropping",
-                msg.senderPeerSlot);
+        if (const uint32_t n = DropToLog(msg.senderPeerSlot))
+            UE_LOGW("hand_item: HandItem from non-host senderPeerSlot=%d -- dropping (%u from that slot)",
+                    msg.senderPeerSlot, n);
         return true;
     }
     if (describedSlot == coop::players::Registry::Get().LocalPeerId()) return true;  // own echo
@@ -634,8 +660,9 @@ void Reset() {
     for (uint8_t s = 0; s < coop::players::kMaxPeers; ++s) {
         DestroyMirror(s, "session reset");
         g_hands[s] = SlotHand{};
-        g_refusedBySlot[s] = 0;
+        g_droppedBySender[s] = 0;
         g_unresolvedWarned[s].clear();
+        g_unresolvedBySlot[s] = 0;
     }
     g_ownHas = false;
     g_ownCls.clear();
@@ -672,8 +699,9 @@ void OnSlotDisconnected(uint8_t slot) {
     if (slot >= coop::players::kMaxPeers) return;
     DestroyMirror(slot, "peer disconnected");
     g_hands[slot] = SlotHand{};
-    g_refusedBySlot[slot] = 0;
+    g_droppedBySender[slot] = 0;
     g_unresolvedWarned[slot].clear();
+    g_unresolvedBySlot[slot] = 0;
 }
 
 }  // namespace coop::hand_item

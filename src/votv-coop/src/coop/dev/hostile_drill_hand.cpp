@@ -138,8 +138,8 @@ void Judge(Arm a) {
     }
     const std::wstring forged = Widen(ForgedClass(a));
     if (!coop::hand_item::HeldClassIs(static_cast<uint8_t>(g_slot), forged.c_str())) {
-        Verdict(a, "PASS", "the forged hand class was refused at receipt: not stored, not relayed; the line "
-                           "sent behind it arrived");
+        Verdict(a, "PASS", "the forged hand class was not stored for the slot (and the host relays only what "
+                           "it stores); the line sent behind it arrived");
         return;
     }
     if (a == Arm::BadHandFamily) {
