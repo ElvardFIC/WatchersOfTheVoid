@@ -304,7 +304,8 @@ void QueueSend(const std::string& utf8Text) {
             // lobby has nobody to send to, and the line still belongs in the record so the next
             // joiner is seeded with it. The line goes in raw; the commit point shapes it. Deliberate
             // divergence: Source's listen host types through the same say and meets the same
-            // CanPlayerTalk (client.cpp:843-851); ours is not counted, a bound being a client's.
+            // CanPlayerTalk (client.cpp:843-851); ours is not counted, a bound being a client's, as
+            // Source's server console says with no rate (client.cpp:854-861).
             AuthorAndBroadcast(0, utf8Text);
             return;
         }
@@ -330,9 +331,8 @@ void QueueSend(const std::string& utf8Text) {
 void OnReliable(const uint8_t* bytes, size_t len, int senderSlot) {
     if (!IsHost()) {
         // Nothing sends a chat message to a client; reaching here means a peer speaks a retired
-        // protocol.
-        UE_LOGW("chat: a ChatMessage arrived on a CLIENT from slot %d -- chat is "
-                "host-authored; dropping", senderSlot);
+        // protocol. Said through the tally, so a host that sends them cannot make the log the cost.
+        Refuse(senderSlot, "a chat intent reached a client; chat is host-authored");
         return;
     }
     // Source's chat flood guard, FIRST: every message is an attempt, judged before its length, its
