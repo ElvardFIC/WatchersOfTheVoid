@@ -642,25 +642,27 @@ bool HandleHandItem(coop::net::Session& session,
         // client's hold slot is the profile that client streams itself, so it checks the lane's type. A
         // hand item is kept and relayed under its class's own spelling, and every peer compares the class
         // without case.
-        std::wstring own;
-        const HandClass kind = has ? ResolveHandClass(cls, nullptr, &own) : HandClass::Unresolved;
-        if (kind == HandClass::NotHand) {
-            if (const uint32_t n = DropToLog(msg.senderPeerSlot))
-                UE_LOGW("hand_item: slot %u names class '%ls', which is not a hand item -- not kept or relayed "
-                        "(%u from this slot)", static_cast<unsigned>(describedSlot), cls.c_str(), n);
-            return true;
-        }
-        if (kind == HandClass::Hand) cls = own;
         SlotHand in;
         in.has = has; in.cls = std::move(cls); in.name = std::move(name); in.item = std::move(item);
         std::memcpy(in.relPos, relPos, sizeof(relPos));
         std::memcpy(in.relRot, relRot, sizeof(relRot));
-        // The newest state kept, applied at the budget's pace (coop/net/latest_wins.h); an unchanged one costs a compare.
+        // The newest state kept, applied at the budget's pace (coop/net/latest_wins.h). An unchanged one costs the
+        // parse and a compare, ahead of the class gate: the applied state passed it, and the compare reads the
+        // class without case. The host's verbs and its mirror read the applied state, at most a refill behind.
         PendingHand& pend = g_pendingHand[describedSlot];
         if (SameHeld(in, g_hands[describedSlot])) {
             pend.pace.Withdraw();
             return true;
         }
+        std::wstring own;
+        const HandClass kind = in.has ? ResolveHandClass(in.cls, nullptr, &own) : HandClass::Unresolved;
+        if (kind == HandClass::NotHand) {
+            if (const uint32_t n = DropToLog(msg.senderPeerSlot))
+                UE_LOGW("hand_item: slot %u names class '%ls', which is not a hand item -- not kept or relayed "
+                        "(%u from this slot)", static_cast<unsigned>(describedSlot), in.cls.c_str(), n);
+            return true;
+        }
+        if (kind == HandClass::Hand) in.cls = own;
         pend.value = in;
         if (pend.pace.Offer(kHandBudget, coop::net::NowMs())) ApplyHandState(session, describedSlot, in);
         return true;

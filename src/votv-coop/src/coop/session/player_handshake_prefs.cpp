@@ -109,8 +109,9 @@ void ApplyNickColorChange(net::Session& session, uint8_t slot, uint32_t packed) 
 }
 
 // The budgets, each above the most an honest player sent in the archived logs. A skin's application puts a persistent
-// line on every peer, so it borrows Source's chat numbers: tier 1's bucket of 4 and tier 2's pace, one per 10 s
-// (player.cpp:98-101); where Source drops a line, the newest skin is kept.
+// line on every peer, so it borrows two of Source's chat numbers: tier 1's bucket size, 4, and tier 2's pace, one per
+// 10 s (player.cpp:98-101). Source passes a line only while a tier stays above 1 after its spend (two from a full
+// bucket) and adds a 0.66 s interval; here the bucket's four pass, and the newest skin is kept where Source drops.
 // A plate's or a colour's application is a store and two sends: four at once, then one a second.
 constexpr net::IntentBudget kSkinBudget{4.0f, 0.1f};
 constexpr net::IntentBudget kPrefBudget{4.0f, 1.0f};

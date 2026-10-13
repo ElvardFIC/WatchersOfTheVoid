@@ -5,14 +5,6 @@
 // nothing is refused. One instance per slot and kind, beside the lane's pending value in one PerSlotState so both
 // clear with the occupant. A keyed state (one value per device) or a claim that owes its sender an answer is not
 // this helper's: it is a verb, paced in its lane. One thread per instance, as IntentBucket.
-//
-// MTA relays a player's sync to the others at a zone's interval and skips what falls inside it, the next update
-// carrying the state then current (CPlayer.cpp:981-1030; the intervals, CBandwidthSettings.h:98, set per preset).
-// Source keeps a player's changed client settings pending while its rules refuse them and applies the newest on a
-// later think (player.cpp:3467-3473,3536,4641-4645). Ours
-// diverges from MTA's skip in four ways: the states are sent once per change, not as a stream, so the newest skipped
-// value is kept and paid when the budget allows; the host's own copy is paced, not only the relay; a burst is allowed
-// before the pace; and the pace is per sender, not per viewer.
 
 #pragma once
 
@@ -21,6 +13,17 @@
 #include <cstdint>
 
 namespace coop::net {
+
+// MTA relays a player's sync to the others at a zone's interval and skips what falls inside it, the next update
+// carrying the state then current (CPlayer.cpp:981-1030; the intervals, CBandwidthSettings.h:98, set per preset).
+// Ours diverges in four ways, each for the cost it bounds. The states are sent once per change, not as a stream, so
+// the newest skipped value is kept and paid when the budget allows. The host's own copy is paced, not only the relay:
+// the host's application is itself the cost (a mirror spawned, a model loaded, a feed line), so the host's view of
+// the state lags the newest by at most a refill. A burst comes before the pace, so an honest quick run of changes
+// lands at once. The pace is per sender, not per viewer: what is bounded is what one client makes every peer do.
+// Source keeps a player's changed settings pending while its rules refuse them and applies them on a later think
+// (player.cpp:3467-3473,3536,4641-4645); its flag holds no value, reading the engine's current settings when it
+// applies, and waits on a rule, where ours holds the value the wire carried once and waits on a rate.
 
 class LatestWins {
 public:

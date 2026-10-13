@@ -1,8 +1,9 @@
 // coop/dev/hostile_drill_latest.h -- the keep_latest drill arm, proving a client's display state costs the host
 // at most its budget however fast the client changes it, and that the newest value still lands. A joined client
 // sends, in one tick, 120 SkinChange, NameplateChange, NickColorChange and HandItem messages each alternating two
-// values, then a third value of each; the HOST judges by its own counts: once it has drained all of them, how many
-// of each it applied, and then whether each kind's applied value became the third. Defensive testing of OUR OWN
+// values, then a last value of each; the HOST judges by its own counts: once it has drained all of them, how many
+// of each it applied, and then whether each kind's last value was applied by a later payment (the plate's leg is
+// skipped when the burst already left it holding its last value). Defensive testing of OUR OWN
 // mod, per coop/dev/hostile_drill.h; nothing here ships enabled.
 
 #pragma once

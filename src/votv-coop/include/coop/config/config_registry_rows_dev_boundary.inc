@@ -57,5 +57,5 @@ CFG_ENUM(hostile_drill, "hostile_drill", "dev", "off",
     "that class for the slot nor build a mirror of it, and judges at the chat line. bad_hand_family: the same, "
     "naming the per-player inventory container's class in capitals (class names compare without case); the "
     "host must not keep it. keep_latest: a joined client sends, in one tick, 120 skin, nameplate, nick colour and "
-    "hand changes each alternating two values, then a third value of each; the host judges by its own counts that "
-    "it applied no more of each than the kind's budget allows, then that each kind's third value landed. Drill only.")
+    "hand changes each alternating two values, then a last value of each; the host judges by its own counts that "
+    "it applied no more of each than the kind's budget allows, then that each kind's last value was paid. Drill only.")

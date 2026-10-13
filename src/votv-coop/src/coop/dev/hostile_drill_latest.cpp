@@ -34,8 +34,8 @@ using Clock = std::chrono::steady_clock;
 using Kind = coop::net::ReliableKind;
 
 // The flood: per kind, kAlternates messages alternating A and B, then one C, which differs from every value the
-// burst can leave applied, the plate's excepted (below). Both peers know A, B and C but for the hand's two classes, which the client picks from
-// its own world (the hand's C is an empty hand), and the plate's (below).
+// burst can leave applied. Both peers know A, B and C, but for the hand's two classes, which the client picks from
+// its own world (the hand's C is an empty hand), and the plate, which has two values (below).
 constexpr int         kAlternates = 120;
 constexpr uint32_t    kPerKind    = kAlternates + 1;
 constexpr const char* kSkinA      = "kerfur_omega";    // built-in skins: every peer loads them by asset path
@@ -212,7 +212,8 @@ void WaitLatest(Arm a) {
     bool all = true;
     for (int i = 0; i < 4; ++i) {
         if (i == 1 && !g_plateJudged) continue;
-        // Landed by a payment after the first read: the burst cannot have left this kind's C applied.
+        // Landed by a payment after the first read: the burst cannot have left this kind's C applied. A payment
+        // before that read (a hitch past a refill while the flood drained) reads as latest-lost: run it again.
         if (LatestLanded(i) && Applied(g_slot, i) > g_appliedAtRead[i]) continue;
         all = false;
         if (Clock::now() - g_drainedAt > windows[i]) {
