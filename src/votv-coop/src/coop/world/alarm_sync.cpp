@@ -15,6 +15,7 @@
 #include "coop/net/protocol.h"
 #include "coop/net/session.h"
 #include "coop/player/players_registry.h"  // coop::players::kMaxPeers
+#include "coop/player/roster_ledger.h"     // PerSlotState
 
 #include "ue_wrap/core/call.h"
 #include "ue_wrap/core/game_thread.h"
@@ -177,6 +178,24 @@ void Apply(bool active, bool suppressDetection) {
     }
 }
 
+// The host's applications of a client's request, per sender (an instrument: the world_latest drill counts them).
+coop::roster_ledger::PerSlotState<uint32_t> g_clientApplies;
+
+// The host applies a client's request natively WITHOUT suppressing detection: its next poll sees the flip and
+// broadcasts to everyone, the originator included, whose re-apply is a native no-op.
+void ApplyClientRequest(int slot, bool active) {
+    UE_LOGI("alarm_sync: client slot=%d requests active=%d", slot, active ? 1 : 0);
+    Apply(active, /*suppressDetection=*/false);
+    ++g_clientApplies[slot];
+}
+
+// The trigger's state, or false when the lane is unresolved or no trigger is bound.
+bool ReadCurrent(bool& out) {
+    if (!Resolved()) return false;
+    void* trig = Trigger();
+    return trig && ReadActive(trig, out);
+}
+
 }  // namespace
 
 void Install(coop::net::Session* session) {
@@ -261,11 +280,7 @@ void OnReliable(const coop::net::AlarmStatePayload& payload, int senderPeerSlot)
     const bool active = payload.active != 0;
     ResolvePass();
     if (s->role() == coop::net::Role::Host) {
-        // A client's local transition. Apply natively WITHOUT suppressing detection -- the
-        // host's next poll sees the flip and broadcasts to everyone (incl. the originator,
-        // whose re-apply is a native no-op).
-        UE_LOGI("alarm_sync: client slot=%d requests active=%d", senderPeerSlot, active ? 1 : 0);
-        Apply(active, /*suppressDetection=*/false);
+        ApplyClientRequest(senderPeerSlot, active);  // a client's local transition
     } else {
         if (senderPeerSlot != 0) {
             UE_LOGW("alarm_sync: AlarmState from non-host senderPeerSlot=%d -- dropping",
@@ -285,6 +300,10 @@ void DevForce(bool active) {
         Apply(active, /*suppressDetection=*/false);
     });
 }
+
+uint32_t ClientApplies(int slot) { return g_clientApplies[slot]; }
+
+bool ReadLocalActive(bool& out) { return ReadCurrent(out); }
 
 void OnDisconnect() {
     g_trigger = nullptr;

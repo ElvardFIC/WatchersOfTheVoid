@@ -12,6 +12,8 @@
 
 #pragma once
 
+#include <cstdint>
+
 namespace coop::net {
 class Session;
 struct AlarmStatePayload;
@@ -42,6 +44,11 @@ void OnReliable(const coop::net::AlarmStatePayload& payload, int senderPeerSlot)
 // lane's own poll then detects + broadcasts, so an e2e exercises the shipping path
 // (harness/autotest/autotest_alarmforce; RULE-2-exempt diagnostics).
 void DevForce(bool active);
+
+// Instruments (the world_latest drill, coop/dev/hostile_drill_world), game thread: how many of a client's requests
+// the host applied from `slot`, and this peer's trigger state (false when the trigger is unresolved or unbound).
+uint32_t ClientApplies(int slot);
+bool ReadLocalActive(bool& out);
 
 // Teardown: drop the cached trigger + baseline, clear the session.
 void OnDisconnect();

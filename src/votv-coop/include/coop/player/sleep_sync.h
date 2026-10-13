@@ -65,6 +65,12 @@ void OnDisconnectForSlot(int slot);
 // the WAITING enforcement undoes it. Read-only, for instruments. Game thread.
 bool InAcceleratePhase();
 
+// Instruments (the world_latest drill, coop/dev/hostile_drill_world), game thread: how many of a client's bed
+// reports the host applied from `slot`; the host's bed flag for `slot`; this peer's own last polled bed edge.
+uint32_t ReportsApplied(int slot);
+bool InBed(int slot);
+bool LocalInBed();
+
 void OnDisconnect();
 
 }  // namespace coop::sleep_sync

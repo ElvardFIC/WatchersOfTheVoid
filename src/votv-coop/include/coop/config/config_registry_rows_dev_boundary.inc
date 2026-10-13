@@ -26,7 +26,7 @@ CFG_ENUM(auth_drill, "auth_drill", "dev", "off", "off|corrupt|silent|mismatch",
 CFG_ENUM(hostile_drill, "hostile_drill", "dev", "off",
     "off|signal_park|chat_ill_formed|prop_convert|reliable_flood|repeat_join|repeat_world_ready|"
     "repeat_save_request|record_bad_classes|bad_alarm|bad_prop_key|bad_prop_spawn|bad_hand_class|"
-    "bad_hand_family|keep_latest|chat_flood",
+    "bad_hand_family|keep_latest|chat_flood|world_latest",
     "VOTVCOOP_HOSTILE_DRILL",
     "Receive-boundary drill (BOTH peers). signal_park: a client floods refused saved-signal rows "
     "(size 0, so the game's own gate rejects each) and the host must keep them from filling the apply "
@@ -63,4 +63,6 @@ CFG_ENUM(hostile_drill, "hostile_drill", "dev", "off",
     "the burst left holding its last value owes nothing and is not judged). chat_flood: a joined client sends ten "
     "chat lines in one tick, then one line once the first is back and the debt is waited out, then four lines 0.9 s "
     "apart once that one is back and the bucket refilled; the host must commit the burst's first line only, the "
-    "next line, and three of the four, and judges by its own lobby record. Drill only.")
+    "next line, and three of the four, and judges by its own lobby record. world_latest: a joined client sends, in "
+    "one tick, 120 alarm, bed and laptop-power values alternating two, then a last one; the host must apply each at "
+    "its budget, still apply the last, and its laptop settle on it. Drill only.")

@@ -31,6 +31,17 @@ void OnLaptopState(const coop::net::LaptopStatePayload& p, uint8_t senderSlot);
 // HOST: ship the joiner the laptop's power (op=3). The lid lane sends its own rows.
 void QueueConnectBroadcastForSlot(int peerSlot);
 
+// Instruments (the world_latest drill, coop/dev/hostile_drill_world), game thread: how many of a client's lines the
+// host applied from `slot`; how many edges this peer broadcast as its own; this peer's laptop power; and the
+// target this peer converges on (the wire's while one is pending, else the laptop's own). False when unread.
+// Settled: no toggle runs, no target is pending and the lane's poll has seen the laptop's current state; `opened`
+// is that state.
+uint32_t ClientEdgesApplied(int slot);
+uint32_t OrganicEdgesSent();
+bool ReadLocalOpened(bool& out);
+bool Target(bool& out);
+bool Settled(bool& opened);
+
 void OnDisconnect();
 
 }  // namespace coop::laptop_sync

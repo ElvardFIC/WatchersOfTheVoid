@@ -4,6 +4,7 @@
 
 #include "coop/comms/chat_feed.h"
 #include "coop/net/session.h"
+#include "coop/player/roster_ledger.h"  // PerSlotState
 #include "l10n/l10n.h"
 
 #include "ue_wrap/core/log.h"
@@ -149,6 +150,16 @@ void HostRetally(coop::net::Session* s) {
     }
 }
 
+// The host's applications of a client's bed report, per sender (an instrument: the world_latest drill counts them).
+coop::roster_ledger::PerSlotState<uint32_t> g_reportsApplied;
+
+// HOST: a client's changed bed flag, stored and tallied.
+void ApplyReport(coop::net::Session* s, int slot, bool inBed) {
+    g_inBed[slot] = inBed;
+    ++g_reportsApplied[slot];
+    HostRetally(s);
+}
+
 void ReportLocalEdge(coop::net::Session* s, bool inBed) {
     if (IsHost(s)) {
         g_inBed[0] = inBed;
@@ -255,8 +266,7 @@ void OnReliable(const coop::net::SleepStatePayload& p, uint8_t senderSlot) {
         if (p.op != 0) return;
         if (senderSlot == 0 || senderSlot >= coop::net::kMaxPeers) return;
         if (g_inBed[senderSlot] == (p.flag != 0)) return;
-        g_inBed[senderSlot] = p.flag != 0;
-        HostRetally(s);
+        ApplyReport(s, senderSlot, p.flag != 0);
         return;
     }
     // Client: phase broadcasts from the host only (transport-trusted slot 0).
@@ -300,6 +310,14 @@ void OnDisconnectForSlot(int slot) {
 }
 
 bool InAcceleratePhase() { return g_accelerate; }
+
+uint32_t ReportsApplied(int slot) { return g_reportsApplied[slot]; }
+
+bool InBed(int slot) {
+    return slot >= 0 && slot < static_cast<int>(coop::net::kMaxPeers) && g_inBed[slot];
+}
+
+bool LocalInBed() { return g_lastInBed; }
 
 void OnDisconnect() {
     // Restore the SP nightmare sentinel + normal time policy. A peer still in

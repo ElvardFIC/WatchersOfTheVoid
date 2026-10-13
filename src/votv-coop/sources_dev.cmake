@@ -28,6 +28,7 @@ set(VOTVCOOP_DEV_SOURCES
     src/coop/dev/hostile_drill_chat.cpp
     src/coop/dev/hostile_drill_hand.cpp
     src/coop/dev/hostile_drill_latest.cpp
+    src/coop/dev/hostile_drill_world.cpp
     src/coop/dev/hostile_drill_walk.cpp
     src/coop/dev/world_roll_drill.cpp
     src/coop/dev/kerfur_menu_drill.cpp

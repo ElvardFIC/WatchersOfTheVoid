@@ -4,6 +4,7 @@
 
 #include "coop/interactables/portable_pc_lid.h"  // op 6 goes to the portable PC's lid lane
 #include "coop/net/session.h"
+#include "coop/player/roster_ledger.h"  // PerSlotState
 
 #include "ue_wrap/devices/laptop.h"
 #include "ue_wrap/core/log.h"
@@ -74,6 +75,23 @@ void ApplyPowerTarget() {
     // consumes that edge as wire-transient.
 }
 
+// Instruments (the world_latest drill): the host's applications of a client's line, per sender, and the edges this
+// peer broadcast as its own.
+coop::roster_ledger::PerSlotState<uint32_t> g_clientEdges;
+uint32_t g_organicSent = 0;
+
+// A wire target applied: converge on it through the native toggle and re-prime the poll. The host re-fans a client's
+// power edge (op 0) to the other clients, the origin excluded.
+void ApplyTarget(coop::net::Session* s, const coop::net::LaptopStatePayload& p, uint8_t senderSlot) {
+    g_wantValid = true;
+    g_wantOpened = p.isOpened != 0;
+    ApplyPowerTarget();
+    PrimeBaselines();
+    if (s->role() != coop::net::Role::Host) return;
+    if (p.op == 0) SendOut(s, p, /*exceptSlot*/ senderSlot);
+    ++g_clientEdges[senderSlot];
+}
+
 }  // namespace
 
 void Install(coop::net::Session* session) {
@@ -106,6 +124,7 @@ void Tick() {
             p.op = 0;
             p.isOpened = ps.isOpened ? 1 : 0;
             SendOut(s, p, -1);
+            ++g_organicSent;
             UE_LOGI("laptop_sync: local POWER edge (isOpened=%u) -- broadcast", static_cast<unsigned>(p.isOpened));
         }
     }
@@ -126,12 +145,7 @@ void OnLaptopState(const coop::net::LaptopStatePayload& p, uint8_t senderSlot) {
         return;
     }
     // A power edge (0) or a joiner's state (3): the target converges through the native toggle.
-    g_wantValid = true;
-    g_wantOpened = p.isOpened != 0;
-    ApplyPowerTarget();
-    PrimeBaselines();
-    // The host re-fans a client's power edge to the other clients (the origin excluded).
-    if (s->role() == coop::net::Role::Host && p.op == 0) SendOut(s, p, /*exceptSlot*/ senderSlot);
+    ApplyTarget(s, p, senderSlot);
 }
 
 void QueueConnectBroadcastForSlot(int peerSlot) {
@@ -145,6 +159,32 @@ void QueueConnectBroadcastForSlot(int peerSlot) {
     p.isOpened = ps.isOpened ? 1 : 0;
     s->SendReliableToSlot(peerSlot, coop::net::ReliableKind::LaptopState, &p, sizeof(p));
     UE_LOGI("laptop_sync: connect state -> slot %d (isOpened=%u)", peerSlot, static_cast<unsigned>(p.isOpened));
+}
+
+uint32_t ClientEdgesApplied(int slot) { return g_clientEdges[slot]; }
+
+uint32_t OrganicEdgesSent() { return g_organicSent; }
+
+bool ReadLocalOpened(bool& out) {
+    L::PowerState ps;
+    if (!L::EnsureResolved() || !L::ReadPower(ps)) return false;
+    out = ps.isOpened;
+    return true;
+}
+
+bool Target(bool& out) {
+    if (g_wantValid) {
+        out = g_wantOpened;
+        return true;
+    }
+    return ReadLocalOpened(out);
+}
+
+bool Settled(bool& opened) {
+    L::PowerState ps;
+    if (!L::EnsureResolved() || !L::ReadPower(ps)) return false;
+    opened = ps.isOpened;
+    return !ps.anim && !g_wantValid && g_havePrev && g_prevOpened == ps.isOpened;
 }
 
 void OnDisconnect() {
