@@ -26,8 +26,9 @@ namespace coop::net {
 // applies, and waits on a rule, where ours holds the value the wire carried once and waits on a rate.
 // MTA's nearest analog for a client changing a shared state is element data (CGame.cpp:2715-2796): applied at once,
 // relayed to all but the source, the server's value sent back to the source when a handler cancels it. Paced here for
-// the host's own cost and compared at the receiver (MTA's client compares, CStaticFunctionDefinitions.cpp:1032); an
-// owed sender is not re-told, so what a crossing leaves apart falls on the sender past its budget, never an honest one.
+// the host's own cost; compared by the receiver, where MTA's sending client compares (CStaticFunctionDefinitions.cpp:1032)
+// and its server applies every arrival; an owed sender is not re-told, so a crossing leaves apart only the one past
+// its budget.
 
 class LatestWins {
 public:

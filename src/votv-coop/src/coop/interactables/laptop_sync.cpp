@@ -41,7 +41,8 @@ uint64_t g_nextPoll = 0;
 // `isOpened` and clears `anim` in one block. So a target is reached only once no chain runs, and the edge that ends a
 // chain we dispatched is ours: the replay's flag holds the value that chain leaves, and that edge is consumed, not
 // broadcast as this peer's own. MTA keeps an applied change from being sent again by never sending from the apply path
-// (reference/mtasa-blue/Client/mods/deathmatch/logic/CClientEntity.cpp:472-495), and Source drops the predicting client
+// (reference/mtasa-blue/Client/mods/deathmatch/logic/rpc/CElementRPCs.cpp:84-102 into
+// reference/mtasa-blue/Client/mods/deathmatch/logic/CClientEntity.cpp:472-495), and Source drops the predicting client
 // from the recipients at send time (reference/source-sdk-2013/src/game/server/recipientfilter.cpp:288-304); here the
 // edge is read from the laptop's state, because every entry verb is EX-invisible, and the chain ends seconds after the
 // call, so the edge it ends with is consumed.
@@ -112,7 +113,12 @@ void ApplyTarget(coop::net::Session* s, const coop::net::LaptopStatePayload& p, 
     g_noChainSaid = false;
     ApplyPowerTarget();
     if (s->role() != coop::net::Role::Host) return;
-    if (p.op == 0) SendOut(s, p, /*exceptSlot*/ senderSlot);
+    if (p.op == 0) {
+        coop::net::LaptopStatePayload out{};  // built here: a client's padding and eid bytes are not passed on
+        out.op = 0;
+        out.isOpened = g_wantOpened ? 1 : 0;
+        SendOut(s, out, /*exceptSlot*/ senderSlot);
+    }
     ++g_clientEdges[senderSlot];
 }
 
@@ -246,8 +252,9 @@ void QueueConnectBroadcastForSlot(int peerSlot) {
     if (!L::EnsureResolved() || !L::Instance()) return;
     // The target, not the laptop's state: while a replay runs, isOpened still holds the value it leaves. MTA sends a
     // joiner a moving object's animation with its progress
-    // (reference/mtasa-blue/Server/mods/deathmatch/logic/packets/CEntityAddPacket.cpp:255-260); a latent chain cannot
-    // be resumed, so the joiner replays the destination fresh. A press of the host's own still in its chain reaches
+    // (reference/mtasa-blue/Server/mods/deathmatch/logic/packets/CEntityAddPacket.cpp:255-260), which the joiner resumes
+    // (reference/mtasa-blue/Shared/animation/CPositionRotationAnimation.cpp:60-74); a latent chain cannot be resumed,
+    // so the joiner replays the destination fresh. A press of the host's own still in its chain reaches
     // the joiner as the chain's end, broadcast to every ready slot.
     bool target = false;
     if (!Target(target)) return;

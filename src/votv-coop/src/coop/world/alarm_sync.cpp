@@ -192,9 +192,9 @@ coop::roster_ledger::PerSlotState<uint32_t> g_clientApplies;
 
 // The host applies a client's request natively WITHOUT suppressing detection: its next poll sees the flip and
 // broadcasts to everyone, the originator included, whose re-apply is a native no-op while the host holds its newest
-// request; a sender with a request owed is shown the host's older state until it is paid. MTA and Source leave the
-// source out of such a relay (CGame.cpp:2745-2764, recipientfilter.cpp:288-304); this lane's one poll broadcast
-// serves the host's own scan and every client's request alike.
+// request; a sender with a request owed is shown the host's older state until it is paid. MTA leaves the source out of
+// its relay of a client's element data (CGame.cpp:2759-2771); this lane's one poll broadcast serves the host's own scan
+// and every client's request alike.
 void ApplyClientRequest(int slot, bool active) {
     UE_LOGI("alarm_sync: client slot=%d requests active=%d", slot, active ? 1 : 0);
     Apply(active, /*suppressDetection=*/false);
@@ -286,6 +286,7 @@ void QueueConnectBroadcastForSlot(int slot) {
     if (!s || !s->connected() || s->role() != coop::net::Role::Host) return;
     if (slot < 0 || slot >= static_cast<int>(coop::players::kMaxPeers)) return;
     if (!Resolved()) return;  // no world yet -> nothing to snapshot; the first transition delivers
+    g_nextTriggerSearch = {};  // one-shot, no retry: a miss latched a moment ago must not skip a trigger now bound
     void* trig = Trigger();
     bool active = false;
     if (!trig || !ReadActive(trig, active)) return;

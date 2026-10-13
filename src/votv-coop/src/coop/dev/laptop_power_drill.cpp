@@ -209,7 +209,7 @@ void HostTick(coop::net::Session& s) {
         Enter(HostStep::WaitClient);
         return;
     case HostStep::WaitClient:
-        if (LS::ClientEdgesApplied(g_slot) - g_appliedBase < 1 || !SettledOn(!g_v0)) {
+        if (LS::ClientEdgesApplied(g_slot) < g_appliedBase + 1 || !SettledOn(!g_v0)) {
             if (Expired()) {
                 UE_LOGW("[LAPTOP-POWER-DRILL] FAIL: the client's press did not settle on the host within 60 s");
                 Enter(HostStep::Done);
@@ -247,7 +247,7 @@ void HostTick(coop::net::Session& s) {
         Enter(HostStep::WaitClient2);
         return;
     case HostStep::WaitClient2:
-        if (LS::ClientEdgesApplied(g_slot) - g_appliedBase < 2 || !SettledOn(!g_v0)) {
+        if (LS::ClientEdgesApplied(g_slot) < g_appliedBase + 2 || !SettledOn(!g_v0)) {
             if (Expired()) {
                 UE_LOGW("[LAPTOP-POWER-DRILL] FAIL: the client's second press did not settle on the host within 60 s");
                 Enter(HostStep::Done);
@@ -289,7 +289,7 @@ void HostTick(coop::net::Session& s) {
         // The first edge starts a toggle away from V; the second sets the target back to V while it runs. The laptop
         // must come back to V once that toggle ends, with no edge of its own sent for either replay.
         bool opened = false;
-        if (LS::ClientEdgesApplied(g_slot) - g_appliedBase < 4 || !LS::Settled(opened)) {
+        if (LS::ClientEdgesApplied(g_slot) < g_appliedBase + 4 || !LS::Settled(opened)) {
             if (Expired()) {
                 UE_LOGW("[LAPTOP-POWER-DRILL] FAIL: the client's crossing edges did not settle on the host within 60 s");
                 Enter(HostStep::Done);
