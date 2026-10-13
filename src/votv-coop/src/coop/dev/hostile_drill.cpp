@@ -2,6 +2,7 @@
 
 #include "coop/dev/hostile_drill.h"
 
+#include "coop/dev/hostile_drill_hand.h"  // the hand-item class arm
 #include "coop/dev/hostile_drill_walk.h"  // the four walk arms
 #include "coop/comms/chat_feed.h"
 #include "coop/comms/chat_log.h"
@@ -41,11 +42,11 @@ namespace SS = ue_wrap::saved_signals;
 using Clock = std::chrono::steady_clock;
 
 // The walk arms (record_bad_classes, bad_alarm, bad_prop_key, bad_prop_spawn) live in
-// hostile_drill_walk.cpp -- this file is the dispatcher that owns the arm selection and routes those
-// four to that module's sender and judge.
+// hostile_drill_walk.cpp and bad_hand_class in hostile_drill_hand.cpp -- this file is the dispatcher that
+// owns the arm selection and routes those five to their module's sender and judge.
 enum class Arm { Off, SignalPark, ChatIllFormed, PropConvert, ReliableFlood, RepeatJoin,
                  RepeatWorldReady, RepeatSaveRequest, RecordBadClasses, BadAlarm, BadPropKey,
-                 BadPropSpawn };
+                 BadPropSpawn, BadHandClass };
 
 // Resolved once: with the environment variable unset every read would scan the ini on disk, and the
 // drill is asked per tick.
@@ -64,6 +65,7 @@ Arm ArmOf() {
              : v == "bad_alarm"           ? Arm::BadAlarm
              : v == "bad_prop_key"        ? Arm::BadPropKey
              : v == "bad_prop_spawn"      ? Arm::BadPropSpawn
+             : v == "bad_hand_class"      ? Arm::BadHandClass
                                           : Arm::Off;
     }();
     return a;
@@ -82,6 +84,7 @@ const char* ArmName() {
     case Arm::BadAlarm:          return "bad_alarm";
     case Arm::BadPropKey:        return "bad_prop_key";
     case Arm::BadPropSpawn:      return "bad_prop_spawn";
+    case Arm::BadHandClass:      return "bad_hand_class";
     default:                     return "off";
     }
 }
@@ -682,12 +685,15 @@ void Tick() {
                 ClientJudged() ? (host ? "HOST (under test)" : "CLIENT (sender and judge)")
                                : (host ? "HOST (judge)" : "CLIENT (sender)"));
     }
+    const bool handArm = ArmOf() == Arm::BadHandClass;
     if (host) {
         if (IsWalkArm())          walk::TickHostJudge(s, WalkArmOf());  // host counts its own walks
+        else if (handArm)         hand::TickHostJudge(s);
         else if (!ClientJudged()) TickHost(s);  // client-judged arms: the client judges, the host only answers
     } else {
-        if (IsWalkArm()) walk::TickClient(s, WalkArmOf());
-        else             TickClient(s);
+        if (IsWalkArm())  walk::TickClient(s, WalkArmOf());
+        else if (handArm) hand::TickClient(s);
+        else              TickClient(s);
     }
 }
 
@@ -695,6 +701,7 @@ void OnDisconnect() {
     if (ArmOf() == Arm::ReliableFlood) JudgeFloodEnd();
     else if (ArmOf() == Arm::RepeatWorldReady || ArmOf() == Arm::RepeatSaveRequest) JudgeRepeatEnd();
     walk::OnDisconnect();
+    hand::OnDisconnect();
     g_step = Step::WaitArm;
     g_saidArm = false;
     g_slot = -1;
