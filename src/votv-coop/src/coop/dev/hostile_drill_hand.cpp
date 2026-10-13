@@ -30,9 +30,9 @@ using Clock = std::chrono::steady_clock;
 // bad_hand_class names the engine's base actor. Every peer has it loaded, it is not a prop, and an
 // instance of it is inert (no root component, so a mirror's placement calls do nothing).
 constexpr const char* kActorClass = "Actor";
-// bad_hand_family names the per-player inventory container in capitals. Each peer has its own container,
-// so the class is loaded on the host, and the class index compares names without case, so this spelling
-// resolves to it; the judge's HeldClassIs compares without case too.
+// bad_hand_family names the per-player inventory container in capitals: the engine compares names without
+// case, so this spelling names that class (each peer has its own container, so it is loaded on the host),
+// and a receipt that compares exactly lets it through. The judge's HeldClassIs compares without case too.
 constexpr const char* kFamilyClass = "PROP_INVENTORYCONTAINER_PLAYER_C";
 
 const char* ForgedClass(Arm a) { return a == Arm::BadHandFamily ? kFamilyClass : kActorClass; }

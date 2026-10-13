@@ -594,16 +594,17 @@ bool HandleHandItem(coop::net::Session& session,
                         static_cast<unsigned>(describedSlot), msg.senderPeerSlot, n);
             return true;
         }
-        // A class this host resolves and that is not a hand item is not kept and not relayed, and the
-        // slot keeps the state it had; the link stays. One it cannot resolve yet is kept and relayed, and
+        // A class that is not a hand item -- one of the two families by name, or a class this host resolves
+        // to something else -- is not kept and not relayed, and the slot keeps the state it had; the link
+        // stays. Any other class this host cannot resolve yet is kept and relayed, and
         // judged where it would be built (SpawnMirror): the owner announces only on a change, so an
         // honest state refused here would never come again. MTA's server drops a weapon id outside the
         // set it knows and keeps the link
         // (reference/mtasa-blue/Server/mods/deathmatch/logic/packets/CBulletsyncPacket.cpp:78-82). It
         // can also hold a weapon against its own record of the player; this host's only copy of a
         // client's hold slot is the profile that client streams itself, so it checks the lane's type. A
-        // hand item is kept and relayed under its class's own spelling, so a sender changing only the
-        // letter case changes nothing a peer compares.
+        // hand item is kept and relayed under its class's own spelling, and every peer compares the class
+        // without case.
         std::wstring own;
         const HandClass kind = has ? ResolveHandClass(cls, nullptr, &own) : HandClass::Unresolved;
         if (kind == HandClass::NotHand) {
