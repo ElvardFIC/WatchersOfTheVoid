@@ -30,7 +30,8 @@ uint64_t NowMs() {
     return static_cast<uint64_t>(::GetTickCount64());
 }
 
-// The poll baseline, primed on every wire apply (the apply-and-prime shape).
+// The poll baseline, primed at a session's first poll; a wire apply leaves it alone, since the replay's flag consumes
+// the edge that ends the replay.
 bool     g_havePrev = false;
 bool     g_prevOpened = false;
 uint64_t g_nextPoll = 0;
@@ -39,11 +40,16 @@ uint64_t g_nextPoll = 0;
 // actionOptionIndex sets `anim` inside the call and returns at once while `anim` is set, and the chain's end flips
 // `isOpened` and clears `anim` in one block. So a target is reached only once no chain runs, and the edge that ends a
 // chain we dispatched is ours: the replay's flag holds the value that chain leaves, and that edge is consumed, not
-// broadcast as this peer's own.
+// broadcast as this peer's own. MTA keeps an applied change from being sent again by never sending from the apply path
+// (reference/mtasa-blue/Client/mods/deathmatch/logic/CClientEntity.cpp:472-495), and Source drops the predicting client
+// from the recipients at send time (reference/source-sdk-2013/src/game/server/recipientfilter.cpp:288-304); here the
+// edge is read from the laptop's state, because every entry verb is EX-invisible, and the chain ends seconds after the
+// call, so the edge it ends with is consumed.
 bool g_wantValid = false;
 bool g_wantOpened = false;
 bool g_replayInFlight = false;  // a toggle we dispatched is running
 bool g_replayTo = false;        // ...and the isOpened its end leaves
+bool g_noChainSaid = false;     // a dispatch that started no chain, said once per target
 
 bool g_announced = false;
 
@@ -84,8 +90,13 @@ void ApplyPowerTarget() {
     if (L::ReadPower(after) && after.anim) {
         g_replayInFlight = true;
         g_replayTo = !ps.isOpened;
+        g_noChainSaid = false;
+        UE_LOGI("laptop_sync: power replay dispatched (target isOpened=%u)", static_cast<unsigned>(g_wantOpened));
+    } else if (!g_noChainSaid) {
+        g_noChainSaid = true;
+        UE_LOGW("laptop_sync: the laptop's toggle started no chain (target isOpened=%u) -- retried each poll",
+                static_cast<unsigned>(g_wantOpened));
     }
-    UE_LOGI("laptop_sync: power replay dispatched (target isOpened=%u)", static_cast<unsigned>(g_wantOpened));
 }
 
 // Instruments (the world_latest drill): the host's applications of a client's line, per sender, and the edges this
@@ -98,6 +109,7 @@ uint32_t g_organicSent = 0;
 void ApplyTarget(coop::net::Session* s, const coop::net::LaptopStatePayload& p, uint8_t senderSlot) {
     g_wantValid = true;
     g_wantOpened = p.isOpened != 0;
+    g_noChainSaid = false;
     ApplyPowerTarget();
     if (s->role() != coop::net::Role::Host) return;
     if (p.op == 0) SendOut(s, p, /*exceptSlot*/ senderSlot);
@@ -107,7 +119,9 @@ void ApplyTarget(coop::net::Session* s, const coop::net::LaptopStatePayload& p, 
 // A client's power edges, the newest kept at a pace (coop/net/latest_wins.h). The value on the wire is a level, the
 // laptop's power, sent on its edge; the sender is one edge per 4 Hz poll (kPollMs) with the laptop's boot or shutdown,
 // 4.5 to 7 s, between two of its toggles, and an application is a toggle and a re-fan to each other client: two at
-// once, then one a second. An unchanged edge costs the compare and is not re-fanned.
+// once, then one a second. An unchanged edge costs the compare and is not re-fanned. MTA applies a client's element
+// data at once (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:2757); paced here for the application's
+// cost.
 constexpr coop::net::IntentBudget kEdgeBudget{2.0f, 1.0f};
 struct PendingPower {
     bool opened = false;
@@ -195,6 +209,7 @@ void OnLaptopState(const coop::net::LaptopStatePayload& p, uint8_t senderSlot) {
         return;
     }
     // A client's power edge, the newest kept at the edge budget's pace.
+    if (senderSlot < 1 || senderSlot >= coop::net::kMaxPeers) return;
     PendingPower& pend = g_pending[senderSlot];
     const bool opened = p.isOpened != 0;
     if (Holds(opened)) {
@@ -229,7 +244,11 @@ void QueueConnectBroadcastForSlot(int peerSlot) {
     auto* s = g_session.load(std::memory_order_acquire);
     if (!s || s->role() != coop::net::Role::Host) return;
     if (!L::EnsureResolved() || !L::Instance()) return;
-    // The target, not the laptop's state: while a replay runs, isOpened still holds the value it leaves.
+    // The target, not the laptop's state: while a replay runs, isOpened still holds the value it leaves. MTA sends a
+    // joiner a moving object's animation with its progress
+    // (reference/mtasa-blue/Server/mods/deathmatch/logic/packets/CEntityAddPacket.cpp:255-260); a latent chain cannot
+    // be resumed, so the joiner replays the destination fresh. A press of the host's own still in its chain reaches
+    // the joiner as the chain's end, broadcast to every ready slot.
     bool target = false;
     if (!Target(target)) return;
     coop::net::LaptopStatePayload p{};
@@ -278,6 +297,7 @@ void OnDisconnect() {
     g_nextPoll = 0;
     g_wantValid = false;
     g_replayInFlight = false;
+    g_noChainSaid = false;
     g_announced = false;
     g_refusals.Clear();
 }

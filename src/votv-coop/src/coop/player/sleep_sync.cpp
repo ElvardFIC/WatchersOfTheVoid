@@ -166,7 +166,8 @@ void ApplyReport(coop::net::Session* s, int slot, bool inBed) {
 // bed's state, sent on its edge; a player's entries and exits peak at 1 a second and 3 in ten in the archived client
 // logs, and a changed flag retallies, which can broadcast a tally and a chat line or run the night's accelerate or
 // end: four at once, then one a second. A flag still owed when the night ends is paid after it like any other: only a
-// sender past its burst is ever owed, and it could send the same flag again.
+// sender past its burst is ever owed, and it could send the same flag again. MTA applies a client's element data at
+// once (CGame.cpp:2757); paced here for the retally's cost.
 constexpr coop::net::IntentBudget kReportBudget{4.0f, 1.0f};
 struct PendingBed {
     bool inBed = false;

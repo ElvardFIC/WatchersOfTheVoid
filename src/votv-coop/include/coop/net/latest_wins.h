@@ -24,6 +24,10 @@ namespace coop::net {
 // Source keeps a player's changed settings pending while its rules refuse them and applies them on a later think
 // (player.cpp:3467-3473,3536,4641-4645); its flag holds no value, reading the engine's current settings when it
 // applies, and waits on a rule, where ours holds the value the wire carried once and waits on a rate.
+// MTA's nearest analog for a client changing a shared state is element data (CGame.cpp:2715-2796): applied at once,
+// relayed to all but the source, the server's value sent back to the source when a handler cancels it. Paced here for
+// the host's own cost and compared at the receiver (MTA's client compares, CStaticFunctionDefinitions.cpp:1032); an
+// owed sender is not re-told, so what a crossing leaves apart falls on the sender past its budget, never an honest one.
 
 class LatestWins {
 public:

@@ -89,6 +89,9 @@ void ResolvePass() {
 // driving the wrong trigger is worse than driving none.
 void* g_trigger = nullptr;
 int32_t g_triggerIdx = -1;
+// A search that bound nothing is not repeated for a second (the poll's period): a client's requests while the trigger
+// is unbound cost a clock read each, not a search each.
+std::chrono::steady_clock::time_point g_nextTriggerSearch{};
 
 // The key the wired trigger keeps (also the class-default key the CDO carries -- see the callback).
 struct TriggerSearch { int32_t offKey; void* found; };
@@ -98,6 +101,8 @@ void* Trigger() {
         g_trigger = nullptr;
         g_triggerIdx = -1;
         if (g_offKey < 0) return nullptr;  // unresolved layout -- cannot tell the two apart
+        const auto now = std::chrono::steady_clock::now();
+        if (now < g_nextTriggerSearch) return nullptr;
         // Resolve the class fresh from the index for the instance search, not off a cached pointer,
         // matching the old FindObjectsByClass(name) that re-resolved by name too (a cached UClass
         // could in principle be unlisted and re-created at another address). O(1). The property
@@ -122,6 +127,8 @@ void* Trigger() {
         if (srch.found) {
             g_trigger = srch.found;
             g_triggerIdx = R::InternalIndexOf(srch.found);
+        } else {
+            g_nextTriggerSearch = now + std::chrono::seconds(1);
         }
     }
     return g_trigger;
@@ -184,7 +191,10 @@ void Apply(bool active, bool suppressDetection) {
 coop::roster_ledger::PerSlotState<uint32_t> g_clientApplies;
 
 // The host applies a client's request natively WITHOUT suppressing detection: its next poll sees the flip and
-// broadcasts to everyone, the originator included, whose re-apply is a native no-op.
+// broadcasts to everyone, the originator included, whose re-apply is a native no-op while the host holds its newest
+// request; a sender with a request owed is shown the host's older state until it is paid. MTA and Source leave the
+// source out of such a relay (CGame.cpp:2745-2764, recipientfilter.cpp:288-304); this lane's one poll broadcast
+// serves the host's own scan and every client's request alike.
 void ApplyClientRequest(int slot, bool active) {
     UE_LOGI("alarm_sync: client slot=%d requests active=%d", slot, active ? 1 : 0);
     Apply(active, /*suppressDetection=*/false);
@@ -200,7 +210,8 @@ bool ReadCurrent(bool& out) {
 
 // A client's requests, the newest kept at a pace (coop/net/latest_wins.h). Its sender is one edge per 1 Hz poll
 // (kPollIntervalMs), and a request that changes the trigger runs the alarm's whole fanout: two at once, then one a
-// second. An unchanged request costs the trigger's byte.
+// second. An unchanged request costs the trigger's byte. MTA applies a client's element data at once (CGame.cpp:2757);
+// paced here for the fanout's cost.
 constexpr coop::net::IntentBudget kRequestBudget{2.0f, 1.0f};
 struct PendingAlarm {
     bool active = false;
@@ -299,6 +310,7 @@ void OnReliable(const coop::net::AlarmStatePayload& payload, int senderPeerSlot)
     ResolvePass();
     if (s->role() == coop::net::Role::Host) {
         // A client's local transition, the newest kept at the request budget's pace.
+        if (senderPeerSlot < 1 || senderPeerSlot >= static_cast<int>(coop::players::kMaxPeers)) return;
         PendingAlarm& pend = g_pending[senderPeerSlot];
         if (Holds(active)) {
             pend.pace.Withdraw();
@@ -348,6 +360,7 @@ bool ReadLocalActive(bool& out) { return ReadCurrent(out); }
 void OnDisconnect() {
     g_trigger = nullptr;
     g_triggerIdx = -1;
+    g_nextTriggerSearch = {};
     g_polledTrigger = nullptr;
     g_lastPolled = -1;
     g_lastPollMs = 0;
