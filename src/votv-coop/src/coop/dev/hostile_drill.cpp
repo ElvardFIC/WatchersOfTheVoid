@@ -2,6 +2,7 @@
 
 #include "coop/dev/hostile_drill.h"
 
+#include "coop/dev/hostile_drill_chat.h"  // the chat arms
 #include "coop/dev/hostile_drill_hand.h"  // the hand-item class arm
 #include "coop/dev/hostile_drill_latest.h"  // the keep-the-latest arm
 #include "coop/dev/hostile_drill_walk.h"  // the four walk arms
@@ -43,9 +44,9 @@ namespace SS = ue_wrap::saved_signals;
 using Clock = std::chrono::steady_clock;
 
 // The walk arms (record_bad_classes, bad_alarm, bad_prop_key, bad_prop_spawn) live in
-// hostile_drill_walk.cpp, the hand arms (bad_hand_class, bad_hand_family) in hostile_drill_hand.cpp and
-// keep_latest in hostile_drill_latest.cpp -- this file is the dispatcher that owns the arm selection and routes
-// those seven to their module's sender and judge.
+// hostile_drill_walk.cpp, the hand arms (bad_hand_class, bad_hand_family) in hostile_drill_hand.cpp, the chat arm
+// (chat_ill_formed) in hostile_drill_chat.cpp and keep_latest in hostile_drill_latest.cpp -- this file is the
+// dispatcher that owns the arm selection and routes those eight to their module's sender and judge.
 enum class Arm { Off, SignalPark, ChatIllFormed, PropConvert, ReliableFlood, RepeatJoin,
                  RepeatWorldReady, RepeatSaveRequest, RecordBadClasses, BadAlarm, BadPropKey,
                  BadPropSpawn, BadHandClass, BadHandFamily, KeepLatest };
@@ -117,8 +118,6 @@ bool ClientJudged() {
 }
 
 // The forged content, named once and shared by the sender and the host's judge so the two never drift.
-constexpr const char*    kChatForged         = "hostile-drill forged";    // + one lone 0x80 appended
-constexpr const char*    kChatSentinel       = "hostile-drill sentinel";  // one well-formed line behind it
 constexpr const wchar_t* kSignalSentinelName = L"hostile-drill sentinel";
 constexpr const wchar_t* kSignalId           = L"hostile-drill";  // every row the drill sends
 constexpr int            kForgedSignals = 300;        // > kParkCap (256): enough to fill a park that keeps them
@@ -160,7 +159,7 @@ uint64_t          g_witnessBase = 0;
 int               g_sentinelBase = 0;   // signal_park: sentinel rows already saved at arm
 int32_t           g_rowsSeen = -1;      // signal_park: the row count the last scan saw
 SS::RowKey        g_tailSeen{};         // signal_park: and the last row then
-uint32_t          g_lineSeqBase = 0;    // chat / repeat_join: the last line committed before arm
+uint32_t          g_lineSeqBase = 0;    // repeat_join: the last line committed before arm
 uint32_t          g_joinsBase = 0;      // repeat_join: JoinsAnswered(slot) at arm
 Clock::time_point g_armAt{};
 
@@ -237,27 +236,6 @@ void SendSignalPark(coop::net::Session* s) {
     }
     UE_LOGI("[HOSTILE-DRILL] signal_park sent %d/%d forged row(s) + sentinel; signal '%ls'", sent,
             kForgedSignals, g_sentinelSignal.c_str());
-}
-
-void SendChatIllFormed(coop::net::Session* s) {
-    coop::net::ChatMessagePayload forged{};
-    const size_t fn = std::strlen(kChatForged);
-    std::memcpy(forged.text, kChatForged, fn);
-    forged.text[fn] = static_cast<char>(0x80);  // a lone continuation byte: ill-formed UTF-8 unconditionally
-    forged.len = static_cast<uint8_t>(fn + 1);
-    if (!s->SendReliable(coop::net::ReliableKind::ChatMessage, &forged, sizeof(forged))) {
-        Fail("the forged line was not sent");  // and no sentinel behind it, so the host cannot pass
-        return;
-    }
-    coop::net::ChatMessagePayload sentinel{};
-    const size_t sn = std::strlen(kChatSentinel);
-    std::memcpy(sentinel.text, kChatSentinel, sn);
-    sentinel.len = static_cast<uint8_t>(sn);
-    if (!s->SendReliable(coop::net::ReliableKind::ChatMessage, &sentinel, sizeof(sentinel))) {
-        Fail("the sentinel was not sent");
-        return;
-    }
-    UE_LOGI("[HOSTILE-DRILL] %s sent the forged line + sentinel", ArmName());
 }
 
 template <typename Wire>
@@ -521,12 +499,10 @@ void TickClient(coop::net::Session* s) {
         void* pawn = coop::players::Registry::Get().Local();
         if (!pawn || !ue_wrap::engine::TryGetActorLocation(pawn, at)) return;  // no body yet; wait
         SendPropConvert(s, at);
-    } else if (ArmOf() == Arm::RepeatJoin) {
+    } else {  // RepeatJoin
         const coop::element::ElementId selfEid = coop::players::Registry::Get().LocalPlayerElementId();
         if (selfEid == coop::element::kInvalidId) return;  // no element yet; wait (the fail bound covers a stall)
         SendRepeatJoin(s, static_cast<uint32_t>(selfEid));
-    } else {
-        SendChatIllFormed(s);
     }
     g_sent = true;
 }
@@ -573,8 +549,6 @@ void ArmOnFirstReadySlot(coop::net::Session* s) {
     } else if (ArmOf() == Arm::RepeatJoin) {
         g_joinsBase = coop::player_handshake::JoinsAnswered(g_slot);
         g_lineSeqBase = LastLineSeq();
-    } else {
-        g_lineSeqBase = LastLineSeq();
     }
     g_armAt = Clock::now();
     g_step = Step::Judge;
@@ -604,22 +578,6 @@ void JudgeSignalPark(coop::net::Session* s) {
     g_tailSeen = tail;
     if (CountSignalSentinels() > g_sentinelBase)
         Pass("the apply park never paused the receive loop; an honest saved signal still applied");
-}
-
-void JudgeChat() {
-    bool found0x80 = false, foundSentinel = false;
-    coop::chat_log::ForEach([&](const coop::chat_log::Row& r) {
-        if (r.lineSeq <= g_lineSeqBase || r.slot != static_cast<uint8_t>(g_slot)) return;
-        if (r.text == kChatSentinel) foundSentinel = true;
-        if (r.text.find(static_cast<char>(0x80)) != std::string::npos) found0x80 = true;
-    });
-    // Decide only once the sentinel (sent AFTER the forged line on the same ordered lane) is committed:
-    // that is the signal that the forged line has already been judged.
-    if (!foundSentinel) return;
-    if (found0x80)
-        Fail("an ill-formed line was committed");
-    else
-        Pass("the ill-formed line was refused; the well-formed one was kept");
 }
 
 void JudgePropConvert() {
@@ -660,8 +618,7 @@ void Judge(coop::net::Session* s) {
     if (!s->HasPeerConn(g_slot)) { Fail("the judged slot left before the verdict"); return; }
     if (ArmOf() == Arm::SignalPark)        JudgeSignalPark(s);
     else if (ArmOf() == Arm::PropConvert)  JudgePropConvert();
-    else if (ArmOf() == Arm::RepeatJoin)   JudgeRepeatJoin(s);
-    else                                   JudgeChat();
+    else                                   JudgeRepeatJoin(s);
     if (g_step == Step::Judge && Clock::now() - g_armAt > kFailBound)
         Fail("timeout, the sentinel never arrived");
 }
@@ -695,15 +652,18 @@ void Tick() {
                             : ArmOf() == Arm::BadHandFamily ? hand::Arm::BadHandFamily
                                                             : hand::Arm::None;
     const latest::Arm latestArm = ArmOf() == Arm::KeepLatest ? latest::Arm::KeepLatest : latest::Arm::None;
+    const chat::Arm chatArm = ArmOf() == Arm::ChatIllFormed ? chat::Arm::ChatIllFormed : chat::Arm::None;
     if (host) {
         if (IsWalkArm())                         walk::TickHostJudge(s, WalkArmOf());  // host counts its own walks
         else if (handArm != hand::Arm::None)     hand::TickHostJudge(s, handArm);
         else if (latestArm != latest::Arm::None) latest::TickHostJudge(s, latestArm);
+        else if (chatArm != chat::Arm::None)     chat::TickHostJudge(s, chatArm);
         else if (!ClientJudged())                TickHost(s);  // client-judged arms: the client judges, the host only answers
     } else {
         if (IsWalkArm())                         walk::TickClient(s, WalkArmOf());
         else if (handArm != hand::Arm::None)     hand::TickClient(s, handArm);
         else if (latestArm != latest::Arm::None) latest::TickClient(s, latestArm);
+        else if (chatArm != chat::Arm::None)     chat::TickClient(s, chatArm);
         else                                     TickClient(s);
     }
 }
@@ -714,6 +674,7 @@ void OnDisconnect() {
     walk::OnDisconnect();
     hand::OnDisconnect();
     latest::OnDisconnect();
+    chat::OnDisconnect();
     g_step = Step::WaitArm;
     g_saidArm = false;
     g_slot = -1;
