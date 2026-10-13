@@ -63,6 +63,8 @@ CFG_FLAG(meadow_selftest, "meadow_selftest", "dev", false, "VOTVCOOP_MEADOW_SELF
     "Autonomous selftest: the laptop signal database lane, every writer on the host and a client's row.")
 CFG_FLAG(lid_drill, "lid_drill", "dev", false, "VOTVCOOP_LID_DRILL",
     "Autonomous drill: the portable PC's lid, opened on the host and closed on the client.")
+CFG_FLAG(laptop_power_drill, "laptop_power_drill", "dev", false, "VOTVCOOP_LAPTOP_POWER_DRILL",
+    "Autonomous drill: the stationary laptop's power, pressed on each peer; a replay must not come back as an edge.")
 CFG_FLAG(selftest_break_runtime_layer, "selftest_break_runtime_layer", "dev", false, "VOTVCOOP_SELFTEST_BREAK_RUNTIME_LAYER",
     "Red arm of the runtime-layer selftest: its first SetValue is skipped, so every check that reads the value it would have set must fail.")
 CFG_FLAG(selftest_break_quoting, "selftest_break_quoting", "dev", false, "VOTVCOOP_SELFTEST_BREAK_QUOTING",
