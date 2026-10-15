@@ -1085,6 +1085,11 @@ enum class ReliableKind : uint8_t {
     // prop_lifecycle carry the replacement birth and source death. Late join: host save plus the
     // ordinary prop snapshot. Never relayed.
     SleepingbagIntent = 190,
+
+    // A closed notebook editor's final page text. Clients send it to the host, which accepts it
+    // only from the peer holding that notebook's occupancy claim and broadcasts the canonical
+    // text. Chunked NotebookTextBlob; never relayed.
+    NotebookText = 191,
 };
 
 #pragma pack(push, 1)
