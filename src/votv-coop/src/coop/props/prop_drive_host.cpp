@@ -76,14 +76,6 @@ Driven* Find(void* actor) {
     return nullptr;
 }
 
-// A prop in a hand: this player's grab slot, a peer's held-prop stream, or the hotbar hand axis
-// (the local hand actor and every peer's display mirror), which the hand lane owns outright.
-bool HeldBySomeone(void* actor) {
-    return actor == coop::local_streams::LastHeldActor() ||
-           coop::remote_prop::IsActorUnderAnyDrive(actor) ||
-           coop::hand_item::IsHandAxisActor(actor);
-}
-
 bool Moved(const Driven& d, const ue_wrap::FVector& loc, const ue_wrap::FRotator& rot) {
     if (!d.everSent || d.resend) return true;
     if (std::fabs(loc.X - d.sentLoc.X) > kSendEpsCm) return true;
@@ -129,7 +121,7 @@ void SendEnd(coop::net::Session& s, const Driven& d, void* actor, const ue_wrap:
 // hand, of a class peers hold. Null otherwise. `claimed` false opens it coasting.
 Driven* Open(void* actor, bool claimed, const char* why) {
     if (!PR::IsDescendantOfProp(actor)) return nullptr;
-    if (HeldBySomeone(actor)) return nullptr;   // the held-prop lane owns a prop in a hand
+    if (InAHand(actor)) return nullptr;   // the held-prop lane owns a prop in a hand
     const coop::element::ElementId eid = coop::prop_element_tracker::GetPropElementIdForActor(actor);
     if (eid == coop::element::kInvalidId || eid == 0u) {
         // A feeder asks again every pass while the tie holds, so the line is per actor, not per pass.
@@ -164,6 +156,12 @@ Driven* Open(void* actor, bool claimed, const char* why) {
 }
 
 }  // namespace
+
+bool InAHand(void* actor) {
+    return actor == coop::local_streams::LastHeldActor() ||
+           coop::remote_prop::IsActorUnderAnyDrive(actor) ||
+           coop::hand_item::IsHandAxisActor(actor);
+}
 
 void Claim(void* actor, const char* reason) {
     UE_ASSERT_GAME_THREAD("prop_drive_host::Claim");
@@ -253,7 +251,7 @@ void Tick(coop::net::Session& s) {
             d.dead = true;
             continue;
         }
-        if (HeldBySomeone(actor)) {
+        if (InAHand(actor)) {
             // A hand took it: the held-prop lane streams it from here and its release hands the
             // velocity back. The end edge closes this stream's generation first, whatever the
             // prop's turn in the queue.

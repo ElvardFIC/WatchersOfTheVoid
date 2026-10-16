@@ -393,6 +393,15 @@ void ArmPendingPosCorrection(coop::element::ElementId eid,
             static_cast<unsigned>(driveGen), static_cast<unsigned>(driveOpen));
 }
 
+void SupersedePosCorrection(coop::element::ElementId eid, const char* by) {
+    const auto it = g_pendingPosCorrection.find(static_cast<uint32_t>(eid));
+    if (it == g_pendingPosCorrection.end()) return;
+    UE_LOGI("[PILE-B3] CLIENT pos-correction eid=%u host=(%.1f,%.1f,%.1f) superseded by %s -- a newer pose "
+            "of this prop landed after the arm; not applied",
+            static_cast<unsigned>(eid), it->second.x, it->second.y, it->second.z, by);
+    g_pendingPosCorrection.erase(it);
+}
+
 void ApplyPendingPosCorrections() {
     if (g_pendingPosCorrection.empty()) return;  // game-thread only (the event_feed drain / the sweep), by contract
     // The local player, resolved once for the settled-skip below. A cold path.

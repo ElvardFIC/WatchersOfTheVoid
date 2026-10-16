@@ -185,10 +185,15 @@ void FlushDivergedPositions_(int peerSlot, bool firstRun) {
         void* actor = el ? el->LiveActor() : nullptr;  // slot-validated
         if (!actor) continue;  // dead (e.g. hold-R pickup destroyed it) -> skip
         // The keyed path arms only the generic correction (the receiver's pile matcher matches
-        // nothing for a keyed eid, so no twin and no dupe risk), and a host carrying the prop
-        // mid-join sends transient positions that the late arm corrects, so no resting gate. A
-        // keyed eid resolving to a pile is the pile map's row.
+        // nothing for a keyed eid, so no twin and no dupe risk). A keyed eid resolving to a pile
+        // is the pile map's row.
         if (ue_wrap::prop::IsChipPile(actor)) continue;
+        // A prop in a hand is the hand's: its stream is continuous and its release carries the
+        // pose, while a transient read here could land after that release on the Bulk lane and
+        // pull the copy back. Its lastSent row is kept, so the first pass after the release
+        // compares against what was last delivered. A driven prop is still sent, stamped with its
+        // drive context, and the client orders it.
+        if (coop::prop_drive_host::InAHand(actor)) continue;
         const auto st = g_blobKeyedState[peerSlot].find(eid);
         const int captured = (st == g_blobKeyedState[peerSlot].end()) ? -1 : st->second;
         if (sendCorrection(eid, savePos, actor, g_lastFlushedKeyedPos[peerSlot], "keyed", captured)) ++sentKeyed;

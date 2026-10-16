@@ -36,6 +36,10 @@ size_t CoastingCount();
 struct DriveContext { uint8_t gen = 0; bool open = false; };
 DriveContext ContextOf(void* actor, uint32_t eid);
 
+// A hand holds `actor`: this player's grab slot, a peer's held-prop stream, or the hotbar hand axis.
+// Game thread.
+bool InAHand(void* actor);
+
 // The verb let go of `actor`: the prop coasts under the stream until it rests, then the end edge
 // fires. A no-op for an unclaimed actor. Game thread.
 void Release(void* actor);
