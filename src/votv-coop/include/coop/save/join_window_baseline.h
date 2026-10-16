@@ -81,7 +81,8 @@ bool HasCapture(int peerSlot);
 
 // True while `peerSlot`'s late flush is armed: a keyed prop the host moves now reaches that joiner
 // as a position correction, the join's own reconcile rather than the lane that owns the move. A
-// drill measuring a lane's own delivery starts once this is false.
+// drill measuring a lane's own delivery starts once this is false. False during the settle phase that
+// can follow the window, which watches only the props a hand held.
 bool IsLateWindowOpen(int peerSlot);
 
 }  // namespace coop::join_window_baseline

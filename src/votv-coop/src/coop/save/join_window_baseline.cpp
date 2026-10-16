@@ -170,13 +170,14 @@ bool FlushKeyedProp_(int peerSlot, const char* phase, coop::element::ElementId e
                      const ue_wrap::FVector& savePos) {
     coop::element::Element* el = coop::element::Registry::Get().Get(eid);
     void* actor = el ? el->LiveActor() : nullptr;  // slot-validated
-    if (!actor) return false;  // dead (e.g. hold-R pickup destroyed it) -> skip
+    auto& handSince = g_handSinceSent[peerSlot];
+    // Dead (e.g. a hold-R pickup destroyed it): nothing left to correct, and no follow-up owed.
+    if (!actor) { handSince.erase(eid); return false; }
     // The keyed path arms only the generic correction (the receiver's pile matcher matches
     // nothing for a keyed eid, so no twin and no dupe risk). A keyed eid resolving to a pile
     // is the pile map's row.
-    if (ue_wrap::prop::IsChipPile(actor)) return false;
+    if (ue_wrap::prop::IsChipPile(actor)) { handSince.erase(eid); return false; }
     auto& lastSent = g_lastFlushedKeyedPos[peerSlot];
-    auto& handSince = g_handSinceSent[peerSlot];
     if (coop::prop_drive_host::InAHand(actor)) {
         if (lastSent.count(eid)) handSince.insert(eid);
         return false;
@@ -488,7 +489,10 @@ bool HasCapture(int peerSlot) {
 
 bool IsLateWindowOpen(int peerSlot) {
     if (peerSlot < 1 || peerSlot >= coop::net::kMaxPeers) return false;
-    return g_flushArmUntil[peerSlot].time_since_epoch().count() != 0;  // disarmed at expiry and at ClearForSlot
+    // Disarmed at expiry and at ClearForSlot. A settle phase is past the window: only the props a hand
+    // held are still watched, and a host move of any other prop no longer reaches the joiner this way.
+    return g_flushArmUntil[peerSlot].time_since_epoch().count() != 0 &&
+           g_settleUntil[peerSlot].time_since_epoch().count() == 0;
 }
 
 }  // namespace coop::join_window_baseline
