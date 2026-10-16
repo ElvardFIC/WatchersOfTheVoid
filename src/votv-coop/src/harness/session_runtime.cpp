@@ -232,7 +232,7 @@ bool StartCoopSession(const coop::net::Config& netCfg, coop::net::Refusal* why) 
     // refill and only when owed, a newer value while one is owed, a withdrawal.
     coop::net::LatestWins::RunSelftest();
     // And a client's queued intents: the cap's refusal, no token serving nothing, a Done leaving and a Wait keeping its
-    // head with the token back, a keyed replace in place, a value-initialised instance.
+    // head with the token back, a value-initialised instance.
     coop::net::RunIntentQueueSelftest();
     // And a client's chat rate, Source's two tiers: the interval, a burst's debt, the slowed refill, tier 2's long run
     // and both floors, each row from a stated state -- arithmetic no honest run reaches.
