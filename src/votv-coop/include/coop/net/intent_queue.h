@@ -20,13 +20,13 @@ namespace coop::net {
 enum class Served : uint8_t { Done, Wait };
 
 // Source drops a client's excess past a token budget: when a client's pending command ticks pass
-// sv_maxusrcmdprocessticks the server runs a copy of the last command and clamps the rest to the budget
-// (reference/source-sdk-2013 game/server/player.cpp:3392-3414). MTA counts a player's client-triggered events per
-// interval and raises a script event past a threshold, running each event meanwhile (reference/mtasa-blue
-// Server/mods/deathmatch/logic/CGame.cpp:2663-2711, 4927-4976). Ours queues up to `cap` and refuses past it, because
-// the transport releases an honest client's held output at once (an honest burst of 54 fresh-birth props in 2 s was
-// measured), and a drop would lose honest intents. A sender sitting at the cap is refused at no cost to the host and
-// escalates nowhere; the receive edge's budget (receive_budget.h) is what ends a flooding link.
+// sv_maxusrcmdprocessticks the server runs a copy of the last command and clamps the rest to the budget (Source SDK
+// 2013, player.cpp:3392-3414). MTA counts a player's client-triggered events per interval and raises a script event
+// past a threshold, running each event meanwhile (CGame.cpp:2663-2711, 4927-4976). Ours queues up to `cap` and
+// refuses past it, because the transport releases an honest client's held output at once (an honest burst of 54
+// fresh-birth props in 2 s was measured), and a drop would lose honest intents. A sender sitting at the cap is
+// refused at no cost to the host and escalates nowhere; the receive edge's budget (receive_budget.h) is what ends a
+// flooding link.
 template <class T>
 class IntentQueue {
 public:
