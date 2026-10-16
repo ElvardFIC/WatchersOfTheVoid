@@ -195,9 +195,9 @@ inline Lane LaneForKind(ReliableKind k) {
     case ReliableKind::HookDestroy:       return Lane::Normal;
     case ReliableKind::HookAnchorCommit:  return Lane::Normal;
     case ReliableKind::HookAnchored:      return Lane::Normal;
-    // PropDriveEnd is host-to-all and ordered against nothing: its stream is unreliable on its own
-    // datagram kind, and a receiver that never parked the prop treats the end as a closed
-    // generation and no more. The default, by decision.
+    // PropDriveEnd is host-to-all, with no lane order against other kinds: its stream is unreliable on
+    // its own datagram kind, and a never-parked receiver closes the generation and no more. A
+    // join-window PropSnapPos (Bulk) is ordered against it by its drive context. The default.
     case ReliableKind::PropDriveEnd:      return Lane::Normal;
     // The Kerfus pair is ordered against nothing: a state for a Kerfus whose mirror has not bound
     // waits for the bind, and the host resolves an intent by eid. The default, by decision.

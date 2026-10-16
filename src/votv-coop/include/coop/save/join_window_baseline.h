@@ -10,7 +10,8 @@
 // pile carries no position on the wire at all, and a keyed prop's is clobbered by the joiner's own
 // loadObjects afterwards. The flush is LATE-ARMED past the connect edge, because a pile moved late
 // in a long load tail would get no correction from a one-shot; its expiry is the join window's
-// true close and retires the maps. A stale-fallback join captures nothing and every entry point is
+// true close and retires the maps (a prop a hand held after its correction went out keeps its keyed
+// map through a settle phase). A stale-fallback join captures nothing and every entry point is
 // then a no-op, the divergence sweep keeping full responsibility. See docs/join.md.
 
 #pragma once
@@ -39,7 +40,9 @@ void SendDivergenceDeletes(int peerSlot);
 void FlushDivergedPositions(int peerSlot);
 
 // The late-arm cadence: re-flush each armed joiner's diverged positions until its window expires,
-// then retire that slot's maps. From the transfer's host tick.
+// then retire that slot's maps -- the keyed ones after a settle of at most 30 s when a hand held a
+// prop after its correction went out, so that prop gets a follow-up once it is out of the hand and
+// at rest. From the transfer's host tick.
 void TickLateArm();
 
 // The save-time position of keyless chipPile `eid` for `peerSlot`. False (out untouched) for a
