@@ -1,9 +1,9 @@
 // coop/player/sleep_sync.h -- who rests: every peer's sleep state, known to every peer. Game thread
 // throughout.
 //
-// Every peer sleeps NATIVELY on its own machine: the game's own sleep
-// entry, view, restore and wake. Nothing here holds a peer's dilation, camera or wake, and nothing
-// waits for anyone. What crosses the wire is the fact of rest:
+// Every peer sleeps NATIVELY on its own machine: the game's own sleep entry, view, restore and wake
+// (a client's world is held at the normal rate by coop/player/sleep_rest). Nothing here holds a peer's
+// dilation, camera or wake, and nothing waits for anyone. What crosses the wire is the fact of rest:
 //   - each peer's state (awake, resting in a bed or fainted, dreaming in a nightmare) with the bed's
 //     class name, sent by a client to the host on a change and relayed by the host to every client;
 //   - the host's own sleeping flag, which a client shows as one chat line when it rises (the world is

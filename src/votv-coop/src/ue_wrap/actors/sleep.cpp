@@ -22,6 +22,7 @@ void* g_gmCls = nullptr;
 int32_t g_offIsSleep = -1;     // mainGamemode.isSleep
 int32_t g_offDreamProb = -1;   // mainGamemode.dreamProbability (-1 = the SP sentinel)
 int32_t g_offBed = -1;         // mainGamemode.bed (Abed_C*)
+int32_t g_offOrigPawn = -1;    // mainGamemode.origPawn (APawn*)
 void* g_sleepFn = nullptr;     // gamemode.sleep(bed, dropItem, ignoreRagdoll)
 
 void* g_gsCdo = nullptr;            // GameplayStatics CDO
@@ -43,6 +44,7 @@ void ResolvePass() {
     if (g_offIsSleep < 0) g_offIsSleep = R::FindPropertyOffset(g_gmCls, L"isSleep");
     if (g_offDreamProb < 0) g_offDreamProb = R::FindPropertyOffset(g_gmCls, L"dreamProbability");
     if (g_offBed < 0) g_offBed = R::FindPropertyOffset(g_gmCls, L"bed");
+    if (g_offOrigPawn < 0) g_offOrigPawn = R::FindPropertyOffset(g_gmCls, L"origPawn");
     if (!g_sleepFn) g_sleepFn = R::FindFunction(g_gmCls, L"sleep");
 
     if (!g_gsCdo) g_gsCdo = R::FindClassDefaultObject(P::name::GameplayStaticsClass);
@@ -59,9 +61,9 @@ void ResolvePass() {
                       g_setDilationFn;
     if (core && !g_coreResolved) {
         g_coreResolved = true;
-        UE_LOGI("sleep: resolved (isSleep=0x%X dreamProb=0x%X bed=0x%X sleep=%s "
+        UE_LOGI("sleep: resolved (isSleep=0x%X dreamProb=0x%X bed=0x%X origPawn=0x%X sleep=%s "
                 "dilation set/get=%s/%s bedCls=%s)",
-                g_offIsSleep, g_offDreamProb, g_offBed,
+                g_offIsSleep, g_offDreamProb, g_offBed, g_offOrigPawn,
                 g_sleepFn ? "yes" : "NO", g_setDilationFn ? "yes" : "NO",
                 g_getDilationFn ? "yes" : "NO", g_bedCls ? "yes" : "NO");
     }
@@ -86,6 +88,13 @@ std::wstring BedClassName() {
     void* bed = *reinterpret_cast<void**>(reinterpret_cast<uint8_t*>(gm) + g_offBed);
     if (!bed || !R::IsLive(bed)) return std::wstring();
     return R::ClassNameOf(bed);
+}
+
+void* OrigPawn() {
+    void* gm = world_singleton::Gamemode();
+    if (!gm || g_offOrigPawn < 0) return nullptr;
+    void* pawn = *reinterpret_cast<void**>(reinterpret_cast<uint8_t*>(gm) + g_offOrigPawn);
+    return (pawn && R::IsLive(pawn)) ? pawn : nullptr;
 }
 
 bool SetDreamProbability(float v) {

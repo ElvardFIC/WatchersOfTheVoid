@@ -32,6 +32,12 @@ bool IsSleeping();
 // empty with no bed or unresolved. Game thread.
 std::wstring BedClassName();
 
+// mainGamemode.origPawn: the pawn `sleep` took from the controller before it possessed the sleeping
+// pawn, which is the player's body for the length of the rest. Null with no gamemode, unresolved or
+// unset; the pointer is as live as the game keeps it, so a caller holding it across ticks wraps it in a
+// CachedObjRef. Game thread.
+void* OrigPawn();
+
 // mainGamemode.dreamProbability: -1 = SP sentinel (use bed.dreamProb);
 // 0 = nightmares suppressed. Returns false if unresolved.
 bool SetDreamProbability(float v);

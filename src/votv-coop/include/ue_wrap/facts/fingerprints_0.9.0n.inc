@@ -184,6 +184,7 @@ inline constexpr RefFn kRefFns[] = {
     {L"maingamemode_c", L"saveanim", L"maingamemode_c.saveanim", 0x72b3d5f8ca0d3208ull, 0x8da4a7f736efe61bull},
     {L"maingamemode_c", L"savesignal", L"maingamemode_c.savesignal", 0x306a6d0c11d7acaeull, 0xe92e0ec65c65dd38ull},
     {L"maingamemode_c", L"setprec", L"maingamemode_c.setprec", 0x6a2d5d90ab51fa2dull, 0x2a0a871518f47d30ull},
+    {L"maingamemode_c", L"sleep", L"maingamemode_c.sleep", 0xb255b4049e4bdc3aull, 0x0004666f0076855cull},
     {L"maingamemode_c", L"spawnpropthroughgamemode", L"maingamemode_c.spawnpropthroughgamemode", 0x81c7f044842fbf06ull, 0x7259b28b02fc0c32ull},
     {L"maingamemode_c", L"spawnredsky", L"maingamemode_c.spawnredsky", 0x6a2d5d90ab51fa2dull, 0xde7d3630ddc779f8ull},
     {L"mainplayer_c", L"dropgrabobject", L"mainplayer_c.dropgrabobject", 0x6a2d5d90ab51fa2dull, 0x36febe04e6e99a34ull},

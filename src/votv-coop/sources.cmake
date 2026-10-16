@@ -466,6 +466,7 @@ set(VOTVCOOP_SOURCES
     src/coop/interactables/floppy_slot_sync.cpp
     src/coop/interactables/floppybox_sync.cpp
     src/coop/interactables/signal_catch_sync.cpp
+    src/coop/player/sleep_rest.cpp
     src/coop/player/sleep_sync.cpp
     src/coop/creatures/wisp_attack_sync.cpp
     src/coop/creatures/wisp_grab_hold.cpp

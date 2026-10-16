@@ -166,14 +166,17 @@ Other peers see the death through the ragdoll bit.
 
 ### Sleep
 
-Every peer sleeps with the game's own sleep on its own machine, its entry, view, restore and
-wake, and nothing holds a peer's time dilation or waits for another player
-(`coop/player/sleep_sync`). What crosses the wire is who rests. Each peer's state (awake,
-resting in a bed or fainted, dreaming in a nightmare) with the bed's class name goes from a
-client to the host, which relays it to every client; the host's own sleeping flag goes to the
-clients, which show one chat line naming the host when it rises. A joiner is sent the host's flag
-and every peer's state that is not awake, and a leaver is told to every client as awake. A client
-holds its nightmare chance at zero, so a nightmare is a roll of the host's machine alone. `[?]`
+The host sleeps with the game's own sleep: its world runs at the game's speed-up and a client sees the
+clock and the host's actors move faster (`coop/player/sleep_sync`). A client that sleeps keeps its
+world at the normal rate: a watch on the game's sleep call takes the world's dilation back to 1 in
+the frame of the call and, while the rest lasts, runs the player's body and the world's effects at
+the game's own factor, with food and coffee settled to the rate they would have had
+(`coop/player/sleep_rest`). What crosses the wire is who rests. Each peer's state (awake, resting
+in a bed or fainted, dreaming in a nightmare) with the bed's class name goes from a client to the
+host, which relays it to every client; the host's own sleeping flag goes to the clients, which show
+one chat line naming the host when it rises. A joiner is sent the host's flag and every peer's
+state that is not awake, and a leaver is told to every client as awake. A client holds its
+nightmare chance at zero, so a nightmare is a roll of the host's machine alone. `[?]`
 
 ### Inventory
 
@@ -319,7 +322,7 @@ dead peer through the ragdoll bit of its next pose.
 | skins | `coop/player/client_model`, `coop/player/skin_registry`, `coop/player/skin_effects`, `coop/player/local_body`, `coop/player/skin_preview`, `ui/skins_panel`, `assets/paks/` |
 | held and toggled items | `coop/player/hand_item`, `coop/player/item_activate`, `coop/player/flashlight_click_sound` |
 | damage and death | `coop/player/player_damage`, `coop/player/death_revive`, `coop/player/run_end_travel`, `coop/player/ragdoll_gate` |
-| sleep | `coop/player/sleep_sync` |
+| sleep | `coop/player/sleep_sync`, `coop/player/sleep_rest` |
 | inventory | `coop/items/player_inventory_sync` |
 | moderation | `coop/moderation/moderation`, `coop/moderation/ban_list`, `coop/moderation/seen_players` |
 | tests | `harness/autotest/autotest_death.cpp` (the drill) + `death_state_probe.cpp` (the reads it and `autotest_runend.cpp` share), `autotest_damage.cpp`, `autotest_playerdmg.cpp`, `autotest_ragdoll.cpp`, `autotest_puppetframe.cpp` |

@@ -124,6 +124,12 @@ bool SetActorHiddenInGame(void* actor, bool hidden);
 // nor physics-active. Game thread.
 bool SetActorEnableCollision(void* actor, bool enabled);
 
+// AActor::CustomTimeDilation, the actor's own multiplier on its tick delta (the world's global dilation
+// still applies on top). A native property with no setter function: the offset is resolved from the
+// actor's class and kept per class, and the float is stored raw. False, and one warning per class,
+// when the property does not resolve. `actor` is live in this game-thread task. Game thread.
+bool SetCustomTimeDilation(void* actor, float value);
+
 // K2_TeleportTo: the engine's own long-range teleport; K2_SetActorLocation can be silently reverted
 // by Character constraints when the move is far. Game thread.
 bool TeleportTo(void* actor, const FVector& location, const FRotator& rotation);

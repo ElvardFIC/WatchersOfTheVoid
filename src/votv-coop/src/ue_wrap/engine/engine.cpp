@@ -553,6 +553,31 @@ bool SetActorEnableCollision(void* actor, bool enabled) {
     return Call(actor, f);
 }
 
+namespace {
+// CustomTimeDilation's offset per actor class, found or (-1) not: a class asked again is not searched
+// again and its warning is said once. A handful of classes ask (the player's body, the effect classes).
+struct TimeDilationOffset { void* cls; int32_t off; };
+std::vector<TimeDilationOffset> g_timeDilationOffsets;
+}  // namespace
+
+bool SetCustomTimeDilation(void* actor, float value) {
+    if (!actor || !std::isfinite(value)) return false;
+    void* const cls = R::ClassOf(actor);
+    if (!cls) return false;
+    int32_t off = -2;
+    for (const TimeDilationOffset& e : g_timeDilationOffsets)
+        if (e.cls == cls) { off = e.off; break; }
+    if (off == -2) {
+        off = R::FindPropertyOffset(cls, L"CustomTimeDilation");
+        g_timeDilationOffsets.push_back({cls, off});
+        if (off < 0)
+            UE_LOGW("engine: CustomTimeDilation did not resolve on %ls", R::ToString(R::NameOf(cls)).c_str());
+    }
+    if (off < 0) return false;
+    *reinterpret_cast<float*>(static_cast<uint8_t*>(actor) + off) = value;
+    return true;
+}
+
 
 
 namespace { void* g_teleportToFn = nullptr; void* g_getActorBoundsFn = nullptr; }
