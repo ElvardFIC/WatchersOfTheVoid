@@ -220,16 +220,19 @@ void NoteBlocked(void* blocker, float blockerCm, float hitCm, float originCm) {
 
 // Could the sender have struck `actor` at the request's hit point, from the eye the host holds for it? The strength
 // against a forged origin is the pose-staleness ball around the eye, not the segment: a sender that names an origin
-// on the hit point leaves a segment of no length. Source re-traces a shot from the server's own eye and takes no
-// origin from the client (player_lagcompensation.cpp); MTA bounds the claimed shot origin to its copy of the player
-// and traces nothing (CBulletsyncPacket.cpp:148-196). This lane does both, because the host has the world.
+// on the hit point leaves a segment of no length. Source takes a shot's origin from the server's own eye and never
+// from the client (reference/source-sdk-2013/src/game/shared/baseplayer_shared.cpp:817 and
+// reference/source-sdk-2013/src/game/shared/basecombatweapon_shared.cpp:2313); MTA bounds the claimed origin to its
+// copy of the player and traces nothing
+// (reference/mtasa-blue/Server/mods/deathmatch/logic/packets/CBulletsyncPacket.cpp:167-191).
+// This lane does both, because the host has the world.
 Verdict JudgeSight(void* puppet, void* actor, const Queued& q) {
     const coop::net::RemoverRequestPayload& p = q.req;
     const FVector origin{p.origin[0], p.origin[1], p.origin[2]};
     const FVector hitAt{p.hit[0], p.hit[1], p.hit[2]};
     if (!q.haveEye) return Decided(RemoverReason::NotReady, "no eye (the sender's head position did not read)");
     // The client's origin is only a consistency check against the eye the host captured when the request arrived.
-    if (Dist(origin, q.eye) > EL::kPoseStalenessUU)
+    if (!(Dist(origin, q.eye) <= EL::kPoseStalenessUU))   // written so that a NaN fails
         return Decided(RemoverReason::OutOfSight, "origin far from the eye");
     // The hit point on the prop: inside the sphere of the bounds of ALL its components, plus a margin. A zero extent is
     // no bounds, never a point-sized prop at the world origin.
@@ -241,7 +244,7 @@ Verdict JudgeSight(void* puppet, void* actor, const Queued& q) {
     } else if (!E::TryGetActorLocation(actor, centre)) {
         return Decided(RemoverReason::Failed, "the prop's bounds and location did not read");
     }
-    if (Dist(hitAt, centre) > radius + kOnPropSlackCm)
+    if (!(Dist(hitAt, centre) <= radius + kOnPropSlackCm))
         return Decided(RemoverReason::OutOfSight, "hit point off the prop");
     // The segment from the eye to the hit point meets nothing the shot itself would stop at (the toolgun traces these
     // four object types) before it, but the puppet and the prop themselves.
@@ -250,7 +253,7 @@ Verdict JudgeSight(void* puppet, void* actor, const Queued& q) {
     ue_wrap::trace::Hit blocker;
     if (!ue_wrap::trace::LineHitForObjects(puppet, q.eye, hitAt, types, 4, ignore, 2, &blocker))
         return Decided(RemoverReason::Failed, "the sight trace did not run");
-    if (blocker.blocked && Dist(q.eye, blocker.point) < Dist(q.eye, hitAt) - kBlockedSlackCm) {
+    if (blocker.blocked && !(Dist(q.eye, blocker.point) >= Dist(q.eye, hitAt) - kBlockedSlackCm)) {
         NoteBlocked(blocker.actor, Dist(q.eye, blocker.point), Dist(q.eye, hitAt), Dist(origin, q.eye));
         return Decided(RemoverReason::OutOfSight, "segment blocked before the hit point");
     }
@@ -399,7 +402,7 @@ void OnRequest(const coop::net::RemoverRequestPayload& payload, uint8_t senderSl
     // Only a puppet that has had its first pose has an eye: before it, it stands at its spawn point.
     coop::RemotePlayer& rp = coop::puppet_drive::Puppet(senderSlot);
     q.haveEye = rp.valid() && rp.HasPose() && rp.TryGetEyePosition(q.eye);
-    if (!g_slots[senderSlot].queue.Push(std::move(q), kMaxPending)) Refuse(senderSlot, "queue full");
+    g_slots[senderSlot].queue.Push(std::move(q), kMaxPending);   // room was checked above
 }
 
 void NoteRefused(uint8_t senderSlot, const char* why) { Refuse(senderSlot, why); }

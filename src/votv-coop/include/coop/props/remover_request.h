@@ -8,7 +8,7 @@
 //
 // The host queues a client's requests (cap 8, a pace of 4 then 2 a second), serves one head a tick and answers each
 // with RemoverResult. The right is the node multivoid.gameplay.toolgun.remove, default granted. A client shows NoRight,
-// Unsupported, Held and OutOfSight once per reason per five seconds. A modified client that skips the cancel still
+// Unsupported, Held, OutOfSight and Failed once per reason per five seconds. A modified client that skips the cancel still
 // destroys its own copy, whose PropDestroy the host relays type-blind (session_lanes.h): that half waits for the
 // destroy judge. MTA's shape: a client never destroys a server-owned element
 // (reference/mtasa-blue/Client/mods/deathmatch/logic/CStaticFunctionDefinitions.cpp) and the server checks the right
@@ -40,7 +40,7 @@ void OnRequest(const coop::net::RemoverRequestPayload& payload, uint8_t senderSl
 // HOST: a refusal the router made (a short payload), into the lane's tally.
 void NoteRefused(uint8_t senderSlot, const char* why);
 
-// CLIENT: the host's answer; the four visible reasons are shown. Game thread.
+// CLIENT: the host's answer; the five visible reasons are shown. Game thread.
 void OnResult(const coop::net::RemoverResultPayload& payload);
 
 // The tally emptied and the shown notices forgotten. A sender's queue and counts go with its occupant (the roster

@@ -396,8 +396,8 @@ bool HandleIntentEvent(net::Session& session,
         break;
     }
     case net::ReliableKind::RemoverResult: {
-        // HOST->CLIENT: what the host did with this client's RemoverRequest (coop::remover_request shows the four
-        // visible reasons and counts every one).
+        // HOST->CLIENT: what the host did with this client's RemoverRequest (coop::remover_request shows the five
+        // visible reasons).
         if (session.role() != net::Role::Client || msg.senderPeerSlot != 0 ||
             msg.payloadLen < sizeof(net::RemoverResultPayload)) {
             UE_LOGW("event_feed: RemoverResult dropped (role, sender slot %d or length %zu)", msg.senderPeerSlot,
