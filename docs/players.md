@@ -166,12 +166,14 @@ Other peers see the death through the ragdoll bit.
 
 ### Sleep
 
-Sleeping in the game is a per-process time dilation, so a lone sleeper would run twenty times
-faster than a shared clock. The gate is Minecraft's (`coop/player/sleep_sync`): a peer entering
-a bed keeps the cosmetic half while the dilation is undone every tick; each peer's in-bed edge is
-reported, the host tallies and announces how many are sleeping, and when everyone is in bed the
-host broadcasts the acceleration. Any wake ends the night for everyone; only a natural end, the
-host sleeping it out, grants everyone a full night. Nightmares roll on the host only.
+Every peer sleeps with the game's own sleep on its own machine, its entry, view, restore and
+wake, and nothing holds a peer's time dilation or waits for another player
+(`coop/player/sleep_sync`). What crosses the wire is who rests. Each peer's state (awake,
+resting in a bed or fainted, dreaming in a nightmare) with the bed's class name goes from a
+client to the host, which relays it to every client; the host's own sleeping flag goes to the
+clients, which show one chat line naming the host when it rises. A joiner is sent the host's flag
+and every peer's state that is not awake, and a leaver is told to every client as awake. A client
+holds its nightmare chance at zero, so a nightmare is a roll of the host's machine alone. `[?]`
 
 ### Inventory
 
@@ -267,7 +269,7 @@ host. A setting that holds a password is never set or shown by command.
 | damage from contact | the victim's machine | other bodies' impact entries are cancelled |
 | damage from enemies | the host detects, the victim applies | a reliable relay to the hit peer |
 | death and revive | that peer | the native chain; the run-ending travel refused by its author |
-| sleep | each peer reports; the host tallies, accelerates and ends | |
+| sleep | each peer sleeps natively; each peer reports its rest state, the host relays it and its own sleeping flag | |
 | inventory | that peer; the host stores it | never on the wire as gameplay |
 | roster, kick, ban | the host | rows asserted as state; a ban by id and address at the identity proof |
 
@@ -281,7 +283,7 @@ host. A setting that holds a password is never set or shown by command.
 | `SkinChange`, `NameplateChange`, `NickColorChange` | each peer, relayed | the three preferences |
 | `HandItem`, `ItemActivate` | each peer, relayed | the held item's class, its actor's name and its hold slot's item name (the key of the game's item tables); the flashlight state |
 | `PlayerDamage` | host to the hit peer | an enemy hit to apply |
-| `SleepState` | each peer to the host; the host to all | in bed or not; the tally; accelerate; end |
+| `SleepState` | a client to the host; the host to all | a rest state with its bed (awake, resting, dreaming); the host's sleeping flag; one peer's rest state relayed |
 | `PlayerInventoryBlob` | both | the per-player profile (items, vitals, standing spot), pre-world |
 | `TeleportClient` | host to one peer | a placement; the administration action, not the join |
 
@@ -290,8 +292,8 @@ host. A setting that holds a password is never set or shown by command.
 The puppet spawns on the first pose that arrives. The roster rows, skin, nameplate and colour
 preferences are in the set of messages a host may send before the joiner's world exists, so a
 choice made during the load is not lost. Hand items and item states are replayed to the joiner
-at its ready edge. A joiner arrives awake: a running acceleration is ended and the tally re-run.
-The inventory is seeded before the world. A peer's death state is not seeded; a joiner sees a
+at its ready edge. A joiner is sent the host's sleeping flag and the rest state of every peer
+that is not awake. The inventory is seeded before the world. A peer's death state is not seeded; a joiner sees a
 dead peer through the ragdoll bit of its next pose.
 
 ## Known limits
