@@ -451,7 +451,7 @@ void DisconnectSlot(coop::net::Session& session, int slot) {
     coop::trash_mirror::OnDisconnectForSlot(slot);  // phase 1: retire the leaver's trash mirrors BEFORE the generic mirror drain (else the rooted actor leaks)
     coop::trash_channel::OnGrabHolderLeft(session, static_cast<uint8_t>(slot));  // the leaver's carried clump is let go: it falls, streams, lands
     coop::broom_stroke::OnPeerLeft(static_cast<uint8_t>(slot));  // the leaver's stroke rate goes with it
-    coop::kerfus_lanes::OnPeerLeft(static_cast<uint8_t>(slot));  // and its Kerfus verbs
+    coop::kerfus_lanes::OnPeerLeft(static_cast<uint8_t>(slot));  // and the Kerfuses it turned on follow the host again (its verbs' queue goes with its slot)
     coop::dish_calib_sync::OnPeerLeft(static_cast<uint8_t>(slot));  // and its precision-intent budget
     coop::drive_payload_sync::OnPeerLeft(static_cast<uint8_t>(slot));  // and its drive rows in assembly, parked or owed
     coop::wisp_grab_hold::OnPeerLeft(static_cast<uint8_t>(slot));  // drop the leaver's grab-window puppet hold
@@ -585,8 +585,8 @@ DisconnectStats DisconnectAll() {
     coop::trash_pile_sync::OnDisconnect();
     coop::broom_stroke::OnDisconnect();  // with no session the game's broom sweeps as written
     coop::pack_trash_intent::OnDisconnect();  // with no session the game's own bagging stands
-    coop::verb_lanes::OnDisconnect();  // and each verb lane's queues, rates and summary line
-    coop::kerfus_lanes::OnDisconnect();  // and the Kerfus lanes' records, waiting states and queues
+    coop::verb_lanes::OnDisconnect();  // and each verb lane's counters and summary line (a sender's queue goes with its slot)
+    coop::kerfus_lanes::OnDisconnect();  // and the Kerfus lanes' records and waiting states
     coop::served_player::OnDisconnect();  // and every served robot's record: its seams disarm
     coop::broom_push::OnDisconnect();  // forget pushes not yet handed on
     coop::trash_collect_sync::OnDisconnect();
