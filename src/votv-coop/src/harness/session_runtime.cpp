@@ -38,6 +38,7 @@
 #include "coop/element/intent_authority.h"
 #include "coop/element/portable_identity.h"
 #include "coop/net/connect_history.h"
+#include "coop/net/intent_queue.h"
 #include "coop/net/latest_wins.h"
 #include "coop/net/lobby_password.h"
 #include "coop/net/peer_admission.h"
@@ -230,6 +231,9 @@ bool StartCoopSession(const coop::net::Config& netCfg, coop::net::Refusal* why) 
     // And the host's pace on a client's display changes: a first change at once, a debt past the burst paid at a
     // refill and only when owed, a newer value while one is owed, a withdrawal.
     coop::net::LatestWins::RunSelftest();
+    // And a client's queued intents: the cap's refusal, no token serving nothing, a Done leaving and a Wait keeping its
+    // head with the token back, a keyed replace in place, a value-initialised instance.
+    coop::net::RunIntentQueueSelftest();
     // And a client's chat rate, Source's two tiers: the interval, a burst's debt, the slowed refill, tier 2's long run
     // and both floors, each row from a stated state -- arithmetic no honest run reaches.
     coop::chat_rate::RunChatRateSelftest();
