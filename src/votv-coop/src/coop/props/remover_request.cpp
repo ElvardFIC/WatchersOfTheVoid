@@ -173,8 +173,16 @@ sg::Verdict OnInitPre(const sg::Call& c) {
 constexpr coop::net::IntentBudget kBudget{4.0f, 2.0f};
 constexpr size_t kMaxPending = 8;
 
+// A request with the sender's eye as the host held it when the request arrived: queued presses are judged against the
+// pose they were made at, not the pose of the tick that serves them.
+struct Queued {
+    coop::net::RemoverRequestPayload req;
+    FVector eye{};
+    bool haveEye = false;
+};
+
 struct Slot {
-    coop::net::IntentQueue<coop::net::RemoverRequestPayload> queue;
+    coop::net::IntentQueue<Queued> queue;
     uint32_t answered[kReasons] = {};
 };
 coop::roster_ledger::PerSlotState<Slot> g_slots;
@@ -202,13 +210,14 @@ constexpr float kBlockedSlackCm = 25.f;
 
 enum class Sight : uint8_t { Ok, No, Unknown };
 
-// Could `puppet`'s camera, at the request's origin, have struck `actor` at the request's hit point?
-Sight JudgeSight(void* puppet, void* actor, const coop::net::RemoverRequestPayload& p) {
+// Could the sender have struck `actor` at the request's hit point, from the eye the host holds for it?
+Sight JudgeSight(void* puppet, void* actor, const Queued& q) {
+    const coop::net::RemoverRequestPayload& p = q.req;
     const FVector origin{p.origin[0], p.origin[1], p.origin[2]};
     const FVector hitAt{p.hit[0], p.hit[1], p.hit[2]};
-    FVector camera{};
-    if (!E::ReadMainPlayerCameraLocation(puppet, camera)) return Sight::Unknown;
-    if (Dist(origin, camera) > EL::kPoseStalenessUU) return Sight::No;
+    if (!q.haveEye) return Sight::Unknown;
+    // The client's origin is only a consistency check against the eye the host captured when the request arrived.
+    if (Dist(origin, q.eye) > EL::kPoseStalenessUU) return Sight::No;
     // The hit point on the prop: inside the sphere of the bounds of ALL its components, plus a margin. A zero extent is
     // no bounds, never a point-sized prop at the world origin.
     FVector centre{}, extent{};
@@ -225,9 +234,9 @@ Sight JudgeSight(void* puppet, void* actor, const coop::net::RemoverRequestPaylo
     const uint8_t types[2] = {0, 1};   // WorldStatic, WorldDynamic
     void* ignore[2] = {puppet, actor};
     ue_wrap::trace::Hit blocker;
-    if (!ue_wrap::trace::LineHitForObjects(puppet, origin, hitAt, types, 2, ignore, 2, &blocker))
+    if (!ue_wrap::trace::LineHitForObjects(puppet, q.eye, hitAt, types, 2, ignore, 2, &blocker))
         return Sight::Unknown;
-    if (blocker.blocked && Dist(origin, blocker.point) < Dist(origin, hitAt) - kBlockedSlackCm) return Sight::No;
+    if (blocker.blocked && Dist(q.eye, blocker.point) < Dist(q.eye, hitAt) - kBlockedSlackCm) return Sight::No;
     return Sight::Ok;
 }
 
@@ -239,7 +248,8 @@ bool HostHolds(void* actor) {
 }
 
 // Judges one request in the lane's order; on Removed `*out` is the prop to remove.
-RemoverReason Judge(coop::net::Session& s, uint8_t slot, const coop::net::RemoverRequestPayload& p, void** out) {
+RemoverReason Judge(coop::net::Session& s, uint8_t slot, const Queued& q, void** out) {
+    const coop::net::RemoverRequestPayload& p = q.req;
     if (slot < 1 || slot >= coop::players::kMaxPeers || !s.IsSlotWorldReady(slot)) return RemoverReason::NotReady;
     const std::string guid = s.ProvedGuidForSlotWithToken(slot, coop::roster_ledger::Get(slot).bornGeneration);
     if (guid.empty() || !Finite3(p.origin) || !Finite3(p.hit)) return RemoverReason::NotReady;
@@ -262,7 +272,7 @@ RemoverReason Judge(coop::net::Session& s, uint8_t slot, const coop::net::Remove
     if (coop::remote_prop::IsActorUnderAnyDrive(actor) || coop::prop_drive_host::InAHand(actor) || HostHolds(actor))
         return RemoverReason::Held;
 
-    switch (JudgeSight(puppet, actor, p)) {
+    switch (JudgeSight(puppet, actor, q)) {
     case Sight::No:      return RemoverReason::OutOfSight;
     case Sight::Unknown: return RemoverReason::NotReady;
     case Sight::Ok:      break;
@@ -284,10 +294,11 @@ void Answer(coop::net::Session& s, uint8_t slot, uint32_t eid, RemoverReason rea
 // A request judged: the host does what the BP does -- K2_DestroyActor on its own actor -- and the prop seam broadcasts
 // the destroy to every world-ready peer, the sender included. Nothing of the receive path's listeners runs: a
 // remover's removal is not a spend.
-void Serve(coop::net::Session& s, uint8_t slot, const coop::net::RemoverRequestPayload& p) {
+void Serve(coop::net::Session& s, uint8_t slot, const Queued& q) {
+    const coop::net::RemoverRequestPayload& p = q.req;
     ++g_runs[slot];
     void* actor = nullptr;
-    RemoverReason reason = Judge(s, slot, p, &actor);
+    RemoverReason reason = Judge(s, slot, q, &actor);
     if (reason == RemoverReason::Removed) {
         ue_wrap::CachedObjRef incarnation;
         incarnation.Set(actor);
@@ -302,8 +313,8 @@ void Serve(coop::net::Session& s, uint8_t slot, const coop::net::RemoverRequestP
 
 void ServeQueues(coop::net::Session& s) {
     for (uint8_t slot = 1; slot < coop::players::kMaxPeers; ++slot) {
-        g_slots[slot].queue.Serve(kBudget, coop::net::NowMs, [&](const coop::net::RemoverRequestPayload& p) {
-            Serve(s, slot, p);
+        g_slots[slot].queue.Serve(kBudget, coop::net::NowMs, [&](const Queued& q) {
+            Serve(s, slot, q);
             return coop::net::Served::Done;
         });
     }
@@ -354,8 +365,15 @@ void OnRequest(const coop::net::RemoverRequestPayload& payload, uint8_t senderSl
         Refuse(senderSlot, "unknown sender");
         return;
     }
-    coop::net::RemoverRequestPayload copy = payload;
-    if (!g_slots[senderSlot].queue.Push(std::move(copy), kMaxPending)) Refuse(senderSlot, "queue full");
+    // A full queue refuses before anything is read: a flood must not pay the eye read per message.
+    if (g_slots[senderSlot].queue.size() >= kMaxPending) {
+        Refuse(senderSlot, "queue full");
+        return;
+    }
+    Queued q;
+    q.req = payload;
+    q.haveEye = coop::puppet_drive::Puppet(senderSlot).TryGetHeadPosition(q.eye);
+    if (!g_slots[senderSlot].queue.Push(std::move(q), kMaxPending)) Refuse(senderSlot, "queue full");
 }
 
 void NoteRefused(uint8_t senderSlot, const char* why) { Refuse(senderSlot, why); }
