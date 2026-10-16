@@ -229,12 +229,12 @@ Sight JudgeSight(void* puppet, void* actor, const Queued& q) {
         return Sight::Unknown;
     }
     if (Dist(hitAt, centre) > radius + kOnPropSlackCm) return Sight::No;
-    // The segment from the origin to the hit point meets nothing static or dynamic before it, but the puppet and the
-    // prop themselves.
-    const uint8_t types[2] = {0, 1};   // WorldStatic, WorldDynamic
+    // The segment from the eye to the hit point meets nothing the shot itself would stop at (the toolgun traces these
+    // four object types) before it, but the puppet and the prop themselves.
+    const uint8_t types[4] = {0, 1, 2, 3};   // the shot's own set: WorldStatic, WorldDynamic, Pawn, PhysicsBody
     void* ignore[2] = {puppet, actor};
     ue_wrap::trace::Hit blocker;
-    if (!ue_wrap::trace::LineHitForObjects(puppet, q.eye, hitAt, types, 2, ignore, 2, &blocker))
+    if (!ue_wrap::trace::LineHitForObjects(puppet, q.eye, hitAt, types, 4, ignore, 2, &blocker))
         return Sight::Unknown;
     if (blocker.blocked && Dist(q.eye, blocker.point) < Dist(q.eye, hitAt) - kBlockedSlackCm) return Sight::No;
     return Sight::Ok;
