@@ -56,30 +56,31 @@ bool TryRecordMenuCommand(void* self, const std::wstring& name, bool isClient);
 // serves no client. The actionName interceptor belongs to kerfur_convert. Game thread.
 void Install(coop::net::Session* session);
 
-// HOST-only receiver for a KerfurCommand request, wired in event_dispatch_intent. It waits while the host
-// has no posed body for the sender or the Omega's seams are still settling (the sender's latest request per
-// kerfur, in arrival order), then resolves the eid to a kerfur and drops the request unless the eid is in
-// the host-allocated range, the actor is live, it is a kerfur, the command is a known one, and the kerfur is
+// HOST-only receiver for a KerfurCommand request, wired in event_dispatch_intent. It refuses an unknown sender
+// or command into the lane's refusal tally, and queues the rest per sender, up to a cap, refusing past it. Tick
+// serves one queued request per sender at a bounded rate, in arrival order: the head waits while the host has no
+// posed body for the sender or the Omega's seams are still settling, then resolves the eid to a kerfur and drops
+// the request unless the eid is in the host-allocated range, the actor is live, it is a kerfur, and the kerfur is
 // not in kill mode or on a job -- the last two matching the game's own guards. Then the kerfur serves the
 // sending slot and the real actionName runs; a verb that did not run restores whom it served. Game thread.
 void OnCommandRequest(const coop::net::KerfurCommandPayload& payload, uint8_t senderPeerSlot);
 
 // Game thread (net-pump tick): drain the recorded actions (client -> send request; host -> execute
-// locally), run the waiting requests whose sender can now be served, and settle the startKill watch.
+// locally), serve each sender's queued request, say the refusals' summed line, and settle the startKill watch.
 // Cheap no-op when nothing is pending.
 void Tick();
 
 // Instruments (the kerfur_flood drill, coop/dev/hostile_drill_kerfur), game thread, per sender slot: how many
-// requests entered RunRequest, and how many the lane refused before running one. Nothing increments the second
-// yet; it reads 0 until the lane refuses into a tally.
+// requests entered RunRequest, and how many the lane refused into its tally (every note, the router's included).
 uint32_t RunsFor(int slot);
 uint32_t RefusedFor(int slot);
 
-// A peer left: its waiting requests go. Game thread, on the per-slot disconnect edge.
-void OnPeerLeft(uint8_t slot);
+// A refusal the router made before the lane saw the request (a short payload), said through the lane's tally. The
+// slot is the router's, 0xFF for an unknown sender. Game thread.
+void NoteRefused(uint8_t senderPeerSlot, const char* why);
 
-// Clear the pending queue and the waiting requests. Net disconnect (all peers gone); served_player drops
-// the served kerfurs.
+// Clear the recorded actions and the tally. Net disconnect (all peers gone); served_player drops the served
+// kerfurs, and a sender's queue goes with its slot's occupant.
 void OnDisconnect();
 
 }  // namespace coop::kerfur_command

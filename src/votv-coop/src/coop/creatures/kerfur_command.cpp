@@ -8,7 +8,10 @@
 #include "coop/element/mirror_manager.h"
 #include "coop/element/npc.h"
 #include "coop/element/registry.h"
+#include "coop/net/intent_queue.h"
+#include "coop/net/net_clock.h"
 #include "coop/net/protocol.h"
+#include "coop/net/refusal_tally.h"
 #include "coop/net/session.h"
 #include "coop/player/players_registry.h"  // Local() / kPeerIdHost
 #include "coop/player/remote_player.h"
@@ -54,17 +57,21 @@ bool g_saidUnserved = false;
 // Its follow, patrol, hand-back and turn read GetPlayerPawn, its disc insert getMainPlayer.
 constexpr uint8_t kOmegaSeams = SP::kPlayerPawn | SP::kMainPlayer;
 
-// A client's request waits while the host cannot yet run it for the sender: no posed body for it (the
-// seconds between a joiner's curtain and its first pose, a mid-join window rather than a verdict), or the
-// Omega's seams and its startKill watch still settling -- since the verb's own reads would take the host.
-// Only a sender's latest request per kerfur is kept, and a sender with requests waiting queues behind them.
-// A leaver's go. Game thread.
-struct Parked {
-    coop::net::KerfurCommandPayload payload;
-    uint8_t slot;
+// A sender's requests run in arrival order from a bounded queue at a bounded rate. The head waits, with its
+// token given back, while the host cannot yet run it for the sender: no posed body for it (the seconds between a
+// joiner's curtain and its first pose, a mid-join window rather than a verdict), or the Omega's seams and its
+// startKill watch still settling -- since the verb's own reads would take the host. A request past the cap, or
+// one that can never run (an unknown sender or command), is refused into the tally. Per-slot state: a leaver's
+// queue goes with its occupant. Game thread.
+constexpr coop::net::IntentBudget kBudget{4.0f, 2.0f};
+constexpr size_t kMaxPending = 8;
+
+struct Slot {
+    coop::net::IntentQueue<coop::net::KerfurCommandPayload> queue;
+    bool waitSaid = false;  // the head's wait, said once a streak
 };
-std::vector<Parked> g_parked;
-bool g_parkSaid[coop::players::kMaxPeers] = {};
+coop::roster_ledger::PerSlotState<Slot> g_slots;
+coop::net::RefusalTally g_tally{"kerfur_command"};
 
 // Instruments (the kerfur_flood drill reads them against a baseline), per sender.
 coop::roster_ledger::PerSlotState<uint32_t> g_runs;
@@ -131,25 +138,10 @@ bool Settling() {
 
 bool CanRunFor(uint8_t slot) { return HasBody(slot) && !Settling(); }
 
-bool HasParked(uint8_t slot) {
-    for (const Parked& p : g_parked)
-        if (p.slot == slot) return true;
-    return false;
-}
-
-void Park(const coop::net::KerfurCommandPayload& payload, uint8_t slot) {
-    for (Parked& p : g_parked) {
-        if (p.slot == slot && p.payload.elementId == payload.elementId) {
-            p.payload = payload;  // a newer command for that kerfur replaces the waiting one
-            return;
-        }
-    }
-    g_parked.push_back(Parked{payload, slot});
-    if (!g_parkSaid[slot]) {
-        g_parkSaid[slot] = true;
-        UE_LOGI("kerfur_command: slot %u's commands wait: the host has no body for it, or the Omega's seams are "
-                "still settling", static_cast<unsigned>(slot));
-    }
+// One refusal into the tally, and into the sender's count when the slot is a real one.
+void Refuse(uint8_t slot, const char* why) {
+    if (slot < coop::players::kMaxPeers) ++g_refused[slot];
+    g_tally.Note(slot, why, coop::net::RefusalTally::Clock::now());
 }
 
 // The game's own guard on every relayed verb (bytecode @20950-@22108): a kerfur on a job -- fixing
@@ -248,21 +240,26 @@ void RunRequest(const coop::net::KerfurCommandPayload& payload, uint8_t senderPe
         UE_LOGI("kerfur_command: command eid=%u denied -- kerfur is in kill mode (SP parity)", payload.elementId);
         return;
     }
-    if (payload.command > static_cast<uint8_t>(Command::FixTransformers)) {
-        UE_LOGW("kerfur_command: unknown command=%u eid=%u -- dropped", payload.command, payload.elementId);
-        return;
-    }
     ExecuteHostCommand(eid, actor, static_cast<Command>(payload.command), senderPeerSlot);
 }
 
-// In arrival order: a sender's requests all run in the tick it can be served.
-void RunParked() {
-    for (size_t i = 0; i < g_parked.size();) {
-        if (!CanRunFor(g_parked[i].slot)) { ++i; continue; }
-        const Parked p = g_parked[i];
-        g_parked.erase(g_parked.begin() + static_cast<std::ptrdiff_t>(i));
-        g_parkSaid[p.slot] = false;
-        RunRequest(p.payload, p.slot);
+// Each sender's queue head, once a token allows it: waiting while the host cannot serve the sender, else run.
+void ServeQueues() {
+    for (uint8_t slot = 1; slot < coop::players::kMaxPeers; ++slot) {
+        Slot& sl = g_slots[slot];
+        sl.queue.Serve(kBudget, coop::net::NowMs(), [&](const coop::net::KerfurCommandPayload& p) {
+            if (!CanRunFor(slot)) {
+                if (!sl.waitSaid) {
+                    sl.waitSaid = true;
+                    UE_LOGI("kerfur_command: slot %u's commands wait: the host has no body for it, or the Omega's "
+                            "seams are still settling", static_cast<unsigned>(slot));
+                }
+                return coop::net::Served::Wait;
+            }
+            sl.waitSaid = false;
+            RunRequest(p, slot);
+            return coop::net::Served::Done;
+        });
     }
 }
 
@@ -314,13 +311,19 @@ void OnCommandRequest(const coop::net::KerfurCommandPayload& payload, uint8_t se
         UE_LOGW("kerfur_command: KerfurCommand received on a non-host -- dropping");
         return;
     }
-    if (senderPeerSlot >= coop::players::kMaxPeers) return;
-    if (!CanRunFor(senderPeerSlot) || HasParked(senderPeerSlot)) {
-        Park(payload, senderPeerSlot);
+    if (senderPeerSlot >= coop::players::kMaxPeers) {
+        Refuse(senderPeerSlot, "unknown sender");
         return;
     }
-    RunRequest(payload, senderPeerSlot);
+    if (payload.command > static_cast<uint8_t>(Command::FixTransformers)) {
+        Refuse(senderPeerSlot, "unknown command");
+        return;
+    }
+    coop::net::KerfurCommandPayload copy = payload;
+    if (!g_slots[senderPeerSlot].queue.Push(std::move(copy), kMaxPending)) Refuse(senderPeerSlot, "queue full");
 }
+
+void NoteRefused(uint8_t senderPeerSlot, const char* why) { Refuse(senderPeerSlot, why); }
 
 void Tick() {
     auto* s = LoadSession();
@@ -356,26 +359,19 @@ void Tick() {
         }
     }
 
-    // 2) the requests whose sender now has a body, in arrival order; 3) the startKill watch, until settled.
-    if (!g_parked.empty()) RunParked();
+    // 2) each sender's queued request, once its pace and its body allow; 3) the refusals' summed line once its
+    // window has passed; 4) the startKill watch, until settled.
+    ServeQueues();
+    g_tally.Flush(coop::net::RefusalTally::Clock::now());
     SettleKillWatch();
 }
 
 uint32_t RunsFor(int slot) { return g_runs[slot]; }
 uint32_t RefusedFor(int slot) { return g_refused[slot]; }
 
-void OnPeerLeft(uint8_t slot) {
-    for (auto it = g_parked.begin(); it != g_parked.end();) {
-        if (it->slot == slot) it = g_parked.erase(it);
-        else ++it;
-    }
-    if (slot < coop::players::kMaxPeers) g_parkSaid[slot] = false;
-}
-
 void OnDisconnect() {
     { std::lock_guard<std::mutex> lk(g_qMutex); g_queue.clear(); }
-    g_parked.clear();
-    for (bool& said : g_parkSaid) said = false;
+    g_tally.Clear();
 }
 
 }  // namespace coop::kerfur_command

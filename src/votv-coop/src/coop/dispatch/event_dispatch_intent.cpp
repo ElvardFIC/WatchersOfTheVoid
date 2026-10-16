@@ -235,17 +235,16 @@ bool HandleIntentEvent(net::Session& session,
             UE_LOGW("event_feed: KerfurCommand received on a client -- dropping");
             break;
         }
-        if (msg.payloadLen < sizeof(net::KerfurCommandPayload)) {
-            UE_LOGW("event_feed: KerfurCommand payload too short (%zu < %zu)",
-                    static_cast<size_t>(msg.payloadLen), sizeof(net::KerfurCommandPayload));
-            break;
-        }
-        net::KerfurCommandPayload p{};
-        std::memcpy(&p, msg.payload, sizeof(p));
         const uint8_t senderSlot =
             (msg.senderPeerSlot >= 0 && msg.senderPeerSlot < net::kMaxPeers)
                 ? static_cast<uint8_t>(msg.senderPeerSlot)
                 : static_cast<uint8_t>(0xFF);
+        if (msg.payloadLen < sizeof(net::KerfurCommandPayload)) {
+            coop::kerfur_command::NoteRefused(senderSlot, "payload too short");
+            break;
+        }
+        net::KerfurCommandPayload p{};
+        std::memcpy(&p, msg.payload, sizeof(p));
         coop::kerfur_command::OnCommandRequest(p, senderSlot);
         break;
     }
