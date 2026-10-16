@@ -307,9 +307,10 @@ void ClientWatchRest() {
         g_nextRead = now + kSample;
         if (!ReadWorld(nullptr)) return Fail(false, "the world's dilation did not read");
         if (!g_secondCall && SLP::IsSleeping() && now - g_t0 >= std::chrono::seconds(2)) {
-            g_secondCall = true;
             const bool again = g_restBed && SLP::CallSleep(g_restBed);
-            UE_LOGI("sleep_drill: [client] a second sleep call inside the rest -- %s", again ? "dispatched" : "FAILED");
+            g_secondCall = again;  // PASS needs a call that dispatched, not one that was tried
+            if (!again) return Fail(false, "the second sleep call inside the rest did not dispatch");
+            UE_LOGI("sleep_drill: [client] a second sleep call inside the rest -- dispatched");
         }
     }
     if (SLP::IsSleeping()) return;

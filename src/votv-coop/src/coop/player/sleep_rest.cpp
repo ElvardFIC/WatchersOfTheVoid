@@ -139,7 +139,8 @@ void EndRest(const char* why) {
 // The call has run: the game set the world's dilation and the sleeping flag inside it. A refusal leaves the
 // flag down and nothing to undo. Our own reflected calls come through here as the game's do. The game has no
 // isSleep guard on `sleep` (mainGamemode.cpp:5495-5583), so a second call while resting sets the world's
-// factor again: it is put back to 1 here as well, and begins no new rest.
+// factor again: it is put back to 1 here as well, and begins no new rest. A second call the game refused
+// leaves the world at the 1 the rest holds, which is legal and returns before the factor check.
 void OnSleepPost(const sg::Call&) {
     if (!ConnectedClient()) return;
     float asleep = 0.f;
