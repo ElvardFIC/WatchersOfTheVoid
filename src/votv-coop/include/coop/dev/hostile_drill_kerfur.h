@@ -3,7 +3,8 @@
 // sends, in one tick, 121 KerfurCommand and 121 KerfurConvertRequest, each naming a distinct host-range id that
 // nothing on the client holds; the HOST judges by its own per-sender counters of how many entered each lane's cost
 // path and how many the lane refused: once all 121 of a kind are accounted for, whether the runs reached the lane's
-// cap, followed the lane's pace from the first run, and stayed within the cap plus what the pace pays. The ids name
+// cap, followed the lane's pace from the first run, and never held more than the cap unserved and unrefused (the
+// messages the drain handed over, less the runs and the refusals). The ids name
 // no live kerfur, so a run is judged at the cost path, never at a verb's effect. Defensive testing of OUR OWN mod,
 // per coop/dev/hostile_drill.h; nothing here ships enabled.
 

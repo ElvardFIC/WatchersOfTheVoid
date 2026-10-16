@@ -4,6 +4,7 @@
 
 #include "coop/creatures/kerfur_command.h"
 #include "coop/creatures/kerfur_convert_host.h"
+#include "coop/dispatch/event_feed.h"
 #include "coop/element/mirror_manager.h"
 #include "coop/element/npc.h"
 #include "coop/element/prop.h"
@@ -25,6 +26,7 @@ namespace coop::dev::hostile_drill::kerfur {
 namespace {
 
 using Clock = std::chrono::steady_clock;
+using Kind  = coop::net::ReliableKind;
 namespace EL = coop::element;
 
 // The flood: per kind, kPerKind messages in one tick. 121 is far over either cap and over what either pace pays in
@@ -68,11 +70,13 @@ Clock::time_point g_armAt{};
 struct KindState {
     uint32_t          runsBase = 0;
     uint32_t          refusedBase = 0;
+    uint32_t          drainedBase = 0;
     uint32_t          runs = 0;
     uint32_t          refused = 0;
     Clock::time_point t0{};     // the first read that saw a run
     Clock::time_point tLast{};  // the last read at which the runs grew
     std::string       paceFail;  // the first read the pace was exceeded, said
+    std::string       capFail;   // the first read the queue depth was over the cap, said
 };
 KindState g_kind[2];
 
@@ -84,6 +88,13 @@ uint32_t RefusedNow(int i) {
     return i == 0 ? coop::kerfur_command::RefusedFor(g_slot) : coop::kerfur_convert_host::RefusedFor(g_slot);
 }
 
+// The messages the drain handed to a handler since arm. event_feed counts a slot's message as it pulls it, before
+// the router; every message of this flood is well-formed, from a known slot, on the host, so each one reaches
+// OnCommandRequest / OnConvertRequest and this is exactly what the lane was handed.
+uint32_t DrainedNow(int i) {
+    return coop::event_feed::DrainedFrom(g_slot, i == 0 ? Kind::KerfurCommand : Kind::KerfurConvertRequest);
+}
+
 double SecondsBetween(Clock::time_point a, Clock::time_point b) {
     return std::chrono::duration<double>(b - a).count();
 }
@@ -93,6 +104,13 @@ void Sample(int i, Clock::time_point now) {
     const uint32_t prev = k.runs;
     k.runs = RunsNow(i) - k.runsBase;
     k.refused = RefusedNow(i) - k.refusedBase;
+    // What the lane holds unserved and unrefused, at every read: handed over, neither run nor refused.
+    const int64_t depth = static_cast<int64_t>(DrainedNow(i) - k.drainedBase) - k.runs - k.refused;
+    if (depth > static_cast<int64_t>(kSpecs[i].cap) && k.capFail.empty()) {
+        char buf[96];
+        std::snprintf(buf, sizeof(buf), "cap (depth %lld > cap %u)", static_cast<long long>(depth), kSpecs[i].cap);
+        k.capFail = buf;
+    }
     if (k.runs > prev) {
         if (prev == 0) k.t0 = now;
         k.tLast = now;
@@ -139,6 +157,7 @@ void ArmHost(coop::net::Session* s, Arm a) {
         g_kind[i] = KindState{};
         g_kind[i].runsBase = RunsNow(i);
         g_kind[i].refusedBase = RefusedNow(i);
+        g_kind[i].drainedBase = DrainedNow(i);
     }
     g_armAt = Clock::now();
     g_step = Step::WaitAccounted;
@@ -164,14 +183,6 @@ KindVerdict Judge(int i) {
     } else if (!k.paceFail.empty()) {
         v.what = "FAIL";
         v.why = k.paceFail;
-    } else {
-        const double span = SecondsBetween(k.t0, k.tLast);
-        const double most = sp.cap + sp.burst + sp.perSecond * span + 1.0;
-        if (k.runs > most) {
-            std::snprintf(buf, sizeof(buf), "cap (%u runs over %.0f ms, at most %.1f)", k.runs, span * 1000.0, most);
-            v.what = "FAIL";
-            v.why = buf;
-        }
     }
     return v;
 }
@@ -181,12 +192,17 @@ void WaitAccounted(Arm a) {
     bool all = true;
     for (int i = 0; i < 2; ++i) {
         Sample(i, now);
+        if (!g_kind[i].capFail.empty()) { Finish(a, "FAIL", kSpecs[i].name, g_kind[i].capFail); return; }
         all = all && g_kind[i].runs + g_kind[i].refused == kPerKind;
     }
     if (!all) {
         if (now - g_armAt <= kFailBound) return;
         for (int i = 0; i < 2; ++i) {
             if (g_kind[i].runs + g_kind[i].refused == kPerKind) continue;
+            if (g_kind[i].runs == 0) {
+                Finish(a, "INCONCLUSIVE", kSpecs[i].name, "never-ran (the lane never became ready)");
+                return;
+            }
             Finish(a, "FAIL", kSpecs[i].name,
                    "timeout (" + std::to_string(g_kind[i].runs + g_kind[i].refused) + " of " +
                        std::to_string(kPerKind) + " accounted for)");
