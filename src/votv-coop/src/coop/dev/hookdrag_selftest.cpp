@@ -7,6 +7,7 @@
 #include "coop/net/session.h"
 #include "coop/player/hand_item.h"            // CollectHandAxisActors: the hand is not a world prop
 #include "coop/player/players_registry.h"
+#include "coop/player/sleep_sync.h"           // HostAsleepNow: the beside arm's start gate
 #include "coop/props/prop_element_tracker.h"
 #include "coop/props/prop_key_index.h"  // Find: the world prop a key names
 #include "coop/props/remote_prop.h"           // ResolveMirrorEidByActor: the eid a client's copy carries
@@ -58,6 +59,14 @@ bool PlantsHere(bool isHost) {
     const std::string& r = Role();
     if (r == "both") return true;
     return (r == "client") ? !isHost : isHost;
+}
+
+// The sleep drill's `beside` arm runs this drill under a sleeping host: the origin waits for the
+// sleep, on both peers (a client reads the host's flag). Read once from the same row on this peer.
+bool BesideArmed() {
+    static const bool s =
+        coop::config::ResolveEnum(::coop::config_registry::rows::sleep_drill) == "beside";
+    return s;
 }
 
 uint64_t NowMs() {
@@ -365,6 +374,7 @@ void Tick() {
         // Only a CLIENT announces ClientWorldReady; the host learns the same fact as that slot
         // going world-ready.
         if (isHost ? !s->IsSlotWorldReady(1) : !coop::net_pump::HasAnnouncedWorldReady()) return;
+        if (BesideArmed() && !coop::sleep_sync::HostAsleepNow()) return;
         g_originMs = now;
         EnterPhase(Phase::Pick, now);
         UE_LOGI("hookdrag_selftest: ARMED role=%s plants=%d (each phase ends on its event: pick, plant, "
@@ -490,6 +500,10 @@ void EmitVerdict() {
     UE_LOGI("hookdrag_selftest: VERDICT role=%s key='%ls' plant=%s maxMoved=%.1f cm goneAt=%.2f unreadAt=%.2f",
             isHost ? "HOST" : "CLIENT", g_targetKey.c_str(),
             PlantsHere(isHost) ? g_plantNote : "n/a", g_maxMovedCm, g_goneAtS, g_unreadAtS);
+}
+
+bool HostEnded() {
+    return Enabled() && g_phase == Phase::Ended;
 }
 
 void OnDisconnect() {

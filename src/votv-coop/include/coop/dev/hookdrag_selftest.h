@@ -32,6 +32,11 @@ void Tick();
 // the rig kills its peers rather than disconnecting them.
 void EmitVerdict();
 
+// Has this peer's drag ended: its verdict was printed, by the run's last phase or by a FAIL. "Ended"
+// and not "passed", for the sleep drill's `beside` arm, which holds the host asleep until it is true
+// and whose origin waits for that sleep on both peers. Game thread. False with the flag off.
+bool HostEnded();
+
 // Clear the phase and the target so a reconnect re-runs the drag.
 void OnDisconnect();
 

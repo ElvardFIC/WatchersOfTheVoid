@@ -3,6 +3,7 @@
 #include "coop/dev/sleep_drill.h"
 
 #include "coop/config/config.h"
+#include "coop/dev/hookdrag_selftest.h"  // HostEnded: when the beside arm lets the host wake
 #include "coop/net/protocol.h"
 #include "coop/net/session.h"
 #include "coop/player/players_registry.h"
@@ -35,7 +36,7 @@ namespace DNC = ue_wrap::daynightcycle;
 namespace AE  = ue_wrap::active_events;
 using Clock = std::chrono::steady_clock;
 
-enum class Arm { Off, HostAsleep, ClientRest };
+enum class Arm { Off, HostAsleep, ClientRest, Beside };
 
 // The host: the join, a quiet world, its bed and its sleep, then (client_rest) the client's rest. The client:
 // the join, the host's sleep and then (host_asleep) ten seconds of its clock, or (client_rest) the host's wake,
@@ -52,6 +53,8 @@ constexpr float kNativeFactor  = 20.f;   // the game's sleep dilation (mainGamem
 constexpr float kHostFactorTol = 0.5f;
 constexpr float kWorldTol      = 0.01f;  // a client's world must read 1
 constexpr float kRestedNeed    = 99.f;   // a rest that reached it ended on the game's own wake, not on an interrupt
+constexpr float kHoldNeed      = 50.f;   // beside: written every tick, so the native wake at 100 never comes
+constexpr float kReleaseNeed   = 100.f;  // beside: written once the paired drill ended; the game's own poll wakes on it
 constexpr float kClockShare    = 0.9f;   // of the native rate the client's clock must show while the host sleeps
 constexpr float kFoodShare     = 0.25f;  // the food rate asleep may differ from awake by this much
 constexpr auto  kWindow        = std::chrono::seconds(10);
@@ -90,12 +93,20 @@ float             g_restNeed0 = 0.f;
 Arm ArmOf() {
     static const Arm a = [] {
         const std::string v = coop::config::ResolveEnum(::coop::config_registry::rows::sleep_drill);
-        return v == "host_asleep" ? Arm::HostAsleep : v == "client_rest" ? Arm::ClientRest : Arm::Off;
+        return v == "host_asleep" ? Arm::HostAsleep : v == "client_rest" ? Arm::ClientRest
+             : v == "beside" ? Arm::Beside : Arm::Off;
     }();
     return a;
 }
 
-const char* ArmName() { return ArmOf() == Arm::HostAsleep ? "host_asleep" : ArmOf() == Arm::ClientRest ? "client_rest" : "off"; }
+const char* ArmName() {
+    switch (ArmOf()) {
+    case Arm::HostAsleep: return "host_asleep";
+    case Arm::ClientRest: return "client_rest";
+    case Arm::Beside:     return "beside";
+    default:              return "off";
+    }
+}
 
 bool IsHost(coop::net::Session* s) { return s->role() == coop::net::Role::Host; }
 const char* RoleName(bool host) { return host ? "host" : "client"; }
@@ -167,6 +178,8 @@ void* NearestBedToBody() {
 
 // ---- the host ---------------------------------------------------------------------------------
 
+bool g_released = false;  // beside: the paired drill ended and the need was written to 100
+
 // Awake, a quiet world, then the bed: the entry refuses with an event active, food at 10, no floor.
 void HostGoToBed() {
     int32_t events = -1;
@@ -185,7 +198,9 @@ void HostGoToBed() {
     g_hostT0 = Clock::now();
     UE_LOGI("sleep_drill: [host] asleep -- world dilation %.2f (the game's is %.0f), need %.1f | %s",
             g_hostDilation, kNativeFactor, g_hostNeed0, in);
-    Enter(Step::HostAsleep, "the host to wake", kSleepBound);
+    g_dilReads = 0;
+    g_released = false;
+    Enter(Step::HostAsleep, ArmOf() == Arm::Beside ? "the paired drill to end" : "the host to wake", kSleepBound);
 }
 
 // A world event wakes a sleeper natively: a sleep it ended measured nothing, so the arm says so and ends.
@@ -211,6 +226,39 @@ void HostWatchWake() {
     Enter(Step::HostWaitClientRest, "the client to rest", kPeerBound + kWindow);
 }
 
+bool ReadWorld(float* out);  // the client's section below: one read of this world's dilation into the window
+
+// The world reads the game's native dilation at every read taken while held.
+bool HeldAtNative() {
+    return g_dilReads > 0 && g_dilMin >= kNativeFactor - kHostFactorTol && g_dilMax <= kNativeFactor + kHostFactorTol;
+}
+
+// beside: the host is held asleep while the hook drill runs beside it, then let wake. The need is
+// written to 50 every tick, so the game's wake at 100 never comes; the hold ends when the paired drill
+// ended (passed or failed), by writing 100, which the game's own poll wakes on the next frame.
+void HostHold() {
+    if (g_released) {
+        if (!SLP::IsSleeping()) Finish(true);  // the wake: the arm's DONE
+        return;
+    }
+    const float need = ReadField(V::Field::Sleep);
+    if (!SLP::IsSleeping()) {
+        if (EventWoke(true, need)) return Finish(true);
+        return Fail(true, "the host woke before the paired drill ended | need %.1f food %.1f", need,
+                    ReadField(V::Field::Food));
+    }
+    ReadWorld(nullptr);
+    if (!coop::dev::hookdrag_selftest::HostEnded()) {
+        V::Write(V::Field::Sleep, kHoldNeed);
+        return;
+    }
+    V::Write(V::Field::Sleep, kReleaseNeed);
+    g_released = true;
+    const float secs = std::chrono::duration<float>(Clock::now() - g_hostT0).count();
+    Say(true, HeldAtNative(), "held %.1f s at world dilation %.2f..%.2f over %d reads (the game's is %.0f)", secs, g_dilMin,
+        g_dilMax, g_dilReads, kNativeFactor);
+}
+
 void TickHost(coop::net::Session* s) {
     namespace SS = coop::sleep_sync;
     switch (g_step) {
@@ -222,7 +270,10 @@ void TickHost(coop::net::Session* s) {
         Enter(Step::HostQuiet, "no active event", kQuietBound);
         return;
     case Step::HostQuiet:     HostGoToBed(); return;
-    case Step::HostAsleep:    HostWatchWake(); return;
+    case Step::HostAsleep:
+        if (ArmOf() == Arm::Beside) HostHold();
+        else HostWatchWake();
+        return;
     case Step::HostWaitClientRest:
         if (SS::PeerState(g_slot) == coop::net::SleepPeerState::Awake) return;
         Enter(Step::HostWaitClientWake, "the client's rest to end", kSleepBound);
@@ -389,6 +440,9 @@ void TickClient() {
 }
 
 const char* ArmPlan(bool host) {
+    if (ArmOf() == Arm::Beside)
+        return host ? "to bed once a client's join is over, then held asleep until the hook drill beside it ends"
+                    : "nothing: the hook drill is this client's measure";
     if (ArmOf() == Arm::HostAsleep)
         return host ? "to bed once a client's join is over, then its own native sleep"
                     : "reading this client's world and clock while the host sleeps";
@@ -416,6 +470,7 @@ void Tick() {
         Enter(Step::WaitJoin, "the join", kJoinBound);
         UE_LOGI("[SLEEP-DRILL] %s %s armed -- %s", ArmName(), RoleName(host), ArmPlan(host));
     }
+    if (!host && ArmOf() == Arm::Beside) return;  // the armed line is all this arm says on a client
     if (Clock::now() > g_deadline)
         return Fail(host, "timed out waiting for %s", g_waitingFor);
     if (host) TickHost(s);
@@ -428,6 +483,7 @@ void OnDisconnect() {
     g_saidArm = false;
     g_slot = -1;
     g_dilReads = 0;
+    g_released = false;
     g_awakeRate = 0.f;
 }
 

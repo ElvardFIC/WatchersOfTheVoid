@@ -1,5 +1,5 @@
 // coop/dev/sleep_drill.h -- drill: what a host's sleep and a client's rest do to the clock and the needs
-// (ini sleep_drill=off|host_asleep|client_rest / env VOTVCOOP_SLEEP_DRILL; BOTH peers, a fresh host world,
+// (ini sleep_drill=off|host_asleep|client_rest|beside / env VOTVCOOP_SLEEP_DRILL; BOTH peers, a fresh host world,
 // a client joined). Every phase waits on a state its peer can read, never on a clock; a phase that does not
 // come ends FAIL with the reason after a bound. Each verdict is one line, "[SLEEP-DRILL] <arm> <host|client>
 // PASS|FAIL <numbers>", and the host's last line of an arm is its DONE.
@@ -16,6 +16,14 @@
 // (T_client): the two logs are compared, since no wire carries T_host. PASS: the world stayed at 1, the rest
 // ended at a need of 99 or more, and the food fell per real second within 25% of the awake rate. The host's
 // DONE comes when the client's state is back to awake.
+//
+// beside: the hook drag selftest (hookdrag_selftest=1, hookdrag_role=client, on both peers) runs beside a
+// sleeping host. The host sleeps as above and is HELD asleep, its need written to 50 every tick so the
+// game's wake at 100 never comes, until the host's drag has ended (coop/dev/hookdrag_selftest HostEnded:
+// printed its verdict, passed or failed); then it writes 100 and the game's own poll wakes it. PASS: the
+// world read the game's dilation (20) at every read while held. The host's DONE comes at the wake. A world
+// event that wakes it first ends the arm INCONCLUSIVE; any other early wake is a FAIL. The client prints
+// its armed line and nothing else; the hook drill is its measure.
 
 namespace coop::net { class Session; }
 
