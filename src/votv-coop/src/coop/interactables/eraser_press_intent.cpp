@@ -252,7 +252,7 @@ void Tick(coop::net::Session& session) {
     if (!session.running() || session.role() != coop::net::Role::Host) return;
     for (uint8_t slot = 1; slot < coop::net::kMaxPeers; ++slot) {
         Slot& sl = g_slots[slot];
-        sl.queue.Serve(kPressBudget, coop::active_drive::NowMs(), [&](const uint32_t& driveEid) {
+        sl.queue.Serve(kPressBudget, coop::active_drive::NowMs, [&](const uint32_t& driveEid) {
             if (!Execute(session, driveEid, slot)) return coop::net::Served::Wait;  // a wait runs nothing: no token spent
             sl.waitSaid = false;
             return coop::net::Served::Done;

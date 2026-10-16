@@ -269,7 +269,7 @@ void Tick() {
     auto* s = g_session.load(std::memory_order_acquire);
     if (!s || !s->running() || s->role() != coop::net::Role::Host) return;
     for (uint8_t slot = 1; slot < coop::net::kMaxPeers; ++slot) {
-        g_slots[slot].queue.Serve(kBudget, coop::net::NowMs(), [&](const coop::net::KerfurConvertPayload& p) {
+        g_slots[slot].queue.Serve(kBudget, coop::net::NowMs, [&](const coop::net::KerfurConvertPayload& p) {
             RunRequest(p, slot);
             return coop::net::Served::Done;
         });

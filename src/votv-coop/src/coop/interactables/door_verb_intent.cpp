@@ -315,7 +315,7 @@ void Tick(coop::net::Session& session) {
     if (!s_weaponsReady) s_weaponsReady = ue_wrap::weapon_catalog::Ready();
     for (uint8_t slot = 1; slot < coop::net::kMaxPeers; ++slot) {
         Slot& sl = g_slots[slot];
-        sl.queue.Serve(kVerbBudget, NowMs(), [&](const coop::net::DoorVerbIntentPayload& p) {
+        sl.queue.Serve(kVerbBudget, NowMs, [&](const coop::net::DoorVerbIntentPayload& p) {
             if (!Execute(session, p, slot)) return coop::net::Served::Wait;  // a wait runs nothing: no token spent
             sl.waitSaid = false;  // a consumed verb ends the wait's streak
             return coop::net::Served::Done;

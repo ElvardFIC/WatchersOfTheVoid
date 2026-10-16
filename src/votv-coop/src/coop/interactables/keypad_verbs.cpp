@@ -410,7 +410,7 @@ void Tick(coop::net::Session& session) {
     if (!session.running() || session.role() != coop::net::Role::Host) return;
     for (uint8_t slot = 1; slot < coop::net::kMaxPeers; ++slot) {
         Slot& sl = g_slots[slot];
-        sl.queue.Serve(kIntentBudget, NowMs(), [&](const coop::net::KeypadIntentPayload& p) {
+        sl.queue.Serve(kIntentBudget, NowMs, [&](const coop::net::KeypadIntentPayload& p) {
             if (!Execute(session, p, slot)) return coop::net::Served::Wait;  // a wait runs nothing: no token spent
             sl.waitSaid = 0;  // a consumed intent ends the wait's streak
             return coop::net::Served::Done;

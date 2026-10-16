@@ -29,12 +29,13 @@ public:
         return true;
     }
 
-    // At most one head at `nowMs`, a steady clock's milliseconds: nothing when empty; else one token is taken, and
-    // with it `fn(head)` answers Done (the head leaves) or Wait (the token returns, the head stays for the next call).
-    template <class Fn>
-    void Serve(const IntentBudget& b, uint64_t nowMs, Fn&& fn) {
+    // At most one head, at `now()`, a steady clock's milliseconds read only once the queue holds something: nothing
+    // when empty; else one token is taken, and with it `fn(head)` answers Done (the head leaves) or Wait (the token
+    // returns, the head stays for the next call).
+    template <class NowFn, class Fn>
+    void Serve(const IntentBudget& b, NowFn&& now, Fn&& fn) {
         if (q_.empty()) return;
-        if (!bucket_.Take(b, nowMs)) return;
+        if (!bucket_.Take(b, now())) return;
         if (fn(q_.front()) == Served::Done) {
             q_.pop_front();
         } else {

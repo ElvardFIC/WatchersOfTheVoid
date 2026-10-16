@@ -171,7 +171,7 @@ void Tick(coop::net::Session& session) {
     if (session.role() != coop::net::Role::Host) return;
     for (uint8_t slot = 1; slot < coop::net::kMaxPeers; ++slot) {
         Slot& sl = g_slots[slot];
-        sl.queue.Serve(kPressBudget, coop::active_drive::NowMs(), [&](const coop::net::DroneFlyIntentPayload& p) {
+        sl.queue.Serve(kPressBudget, coop::active_drive::NowMs, [&](const coop::net::DroneFlyIntentPayload& p) {
             if (!Execute(session, p, slot)) return coop::net::Served::Wait;  // a wait runs nothing: no token spent
             sl.waitSaid = false;  // a consumed press ends the wait's streak
             return coop::net::Served::Done;

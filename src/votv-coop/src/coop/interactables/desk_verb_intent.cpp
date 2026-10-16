@@ -353,7 +353,7 @@ void Tick(coop::net::Session& session) {
     if (!session.running() || session.role() != coop::net::Role::Host) return;
     for (uint8_t slot = 1; slot < coop::net::kMaxPeers; ++slot) {
         Slot& sl = g_slots[slot];
-        sl.queue.Serve(kBudget, coop::net::NowMs(), [&](const DeskVerbPayload& p) {
+        sl.queue.Serve(kBudget, coop::net::NowMs, [&](const DeskVerbPayload& p) {
             if (!Execute(session, p, slot)) return coop::net::Served::Wait;  // a wait runs nothing: no token spent
             sl.waitSaid = false;  // a consumed press ends the wait's streak
             return coop::net::Served::Done;

@@ -337,7 +337,7 @@ void Tick(coop::net::Session& session) {
     if (!g_spent.empty()) ConsumeSpentTools();
     if (session.role() != coop::net::Role::Host) return;
     for (uint8_t slot = 1; slot < coop::net::kMaxPeers; ++slot) {
-        g_slots[slot].queue.Serve(kPackBudget, coop::active_drive::NowMs(),
+        g_slots[slot].queue.Serve(kPackBudget, coop::active_drive::NowMs,
                                   [&](const coop::net::PackTrashIntentPayload& p) {
             Execute(session, p, slot);
             return coop::net::Served::Done;

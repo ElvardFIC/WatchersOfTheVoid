@@ -312,7 +312,7 @@ void Tick(coop::net::Session& session) {
 
     Publish(session, "polled");
     for (uint8_t slot = 1; slot < coop::net::kMaxPeers; ++slot) {
-        g_slots[slot].queue.Serve(kPressBudget, NowMs(), [&](const coop::net::UpgradeIntentPayload& p) {
+        g_slots[slot].queue.Serve(kPressBudget, NowMs, [&](const coop::net::UpgradeIntentPayload& p) {
             Execute(session, p, slot);
             return coop::net::Served::Done;
         });

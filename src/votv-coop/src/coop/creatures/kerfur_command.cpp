@@ -247,7 +247,7 @@ void RunRequest(const coop::net::KerfurCommandPayload& payload, uint8_t senderPe
 void ServeQueues() {
     for (uint8_t slot = 1; slot < coop::players::kMaxPeers; ++slot) {
         Slot& sl = g_slots[slot];
-        sl.queue.Serve(kBudget, coop::net::NowMs(), [&](const coop::net::KerfurCommandPayload& p) {
+        sl.queue.Serve(kBudget, coop::net::NowMs, [&](const coop::net::KerfurCommandPayload& p) {
             if (!CanRunFor(slot)) {
                 if (!sl.waitSaid) {
                     sl.waitSaid = true;
