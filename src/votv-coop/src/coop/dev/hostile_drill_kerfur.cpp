@@ -180,8 +180,9 @@ KindVerdict Judge(int i) {
     KindVerdict v;
     char buf[200];
     if (k.runs < sp.cap) {
-        std::snprintf(buf, sizeof(buf), "floor (fewer than the cap ran: %u < %u)", k.runs, sp.cap);
-        v.what = "INCONCLUSIVE";
+        // All 121 are accounted for and fewer than the cap ran: the lane refused while it had room.
+        std::snprintf(buf, sizeof(buf), "under-cap (%u < %u)", k.runs, sp.cap);
+        v.what = "FAIL";
         v.why = buf;
     } else if (!k.paceFail.empty()) {
         v.what = "FAIL";
@@ -270,10 +271,10 @@ void TickHostJudge(coop::net::Session* s, Arm a) {
     }
     // The per-slot counters reset when the slot's occupant changes, so a replaced slot is not judged on them.
     if (coop::roster_ledger::Get(g_slot).playerNo != g_playerNo) {
-        int kind = 0;
-        for (int i = 0; i < 2; ++i)
-            if (g_kind[i].runs + g_kind[i].refused != kPerKind) { kind = i; break; }
-        Finish(a, "INCONCLUSIVE", kSpecs[kind].name, "slot-replaced (the judged slot's occupant changed)");
+        const char* kind = "judge";  // the first kind not fully accounted for, else the judge
+        for (int i = 1; i >= 0; --i)
+            if (g_kind[i].runs + g_kind[i].refused != kPerKind) kind = kSpecs[i].name;
+        Finish(a, "INCONCLUSIVE", kind, "slot-replaced (the judged slot's occupant changed)");
         return;
     }
     WaitAccounted(a);

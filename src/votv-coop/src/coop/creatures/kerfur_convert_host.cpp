@@ -197,7 +197,7 @@ void ConvergeAtReturn(void* oldActor, int32_t oldIdx, EL::ElementId oldEid, bool
 namespace {
 
 // A refusal at the serve, said through the tally. It is not in RefusedFor: the request entered RunRequest, so it is
-// one of the runs, and a run plus a refusal per request is what the drill's accounting holds.
+// a run, and each request is a run or a refusal, never both, which is what the drill's accounting holds.
 void RefuseAtServe(uint8_t slot, const char* why) {
     g_tally.Note(slot, why, coop::net::RefusalTally::Clock::now());
 }

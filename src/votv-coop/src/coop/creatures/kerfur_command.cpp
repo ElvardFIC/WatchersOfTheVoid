@@ -215,7 +215,7 @@ void SettleKillWatch() {
 }
 
 // A refusal at the serve, said through the tally. It is not in RefusedFor: the request entered RunRequest, so it is
-// one of the runs, and a run plus a refusal per request is what the drill's accounting holds.
+// a run, and each request is a run or a refusal, never both, which is what the drill's accounting holds.
 void RefuseAtServe(uint8_t slot, const char* why) {
     g_tally.Note(slot, why, coop::net::RefusalTally::Clock::now());
 }
@@ -223,11 +223,6 @@ void RefuseAtServe(uint8_t slot, const char* why) {
 // A request whose sender has a body: validated against the kerfur as it is now, then run.
 void RunRequest(const coop::net::KerfurCommandPayload& payload, uint8_t senderPeerSlot) {
     ++g_runs[senderPeerSlot];
-    if (!coop::element::Registry::IsAllowedHostAllocatedEid(
-            static_cast<ElementId>(payload.elementId))) {
-        RefuseAtServe(senderPeerSlot, "eid outside the host range");
-        return;
-    }
     const auto eid = static_cast<ElementId>(payload.elementId);
     auto* el = coop::element::MirrorManager<coop::element::Npc>::Instance().Get(eid);
     void* actor = el ? el->GetActor() : nullptr;
@@ -322,6 +317,11 @@ void OnCommandRequest(const coop::net::KerfurCommandPayload& payload, uint8_t se
     }
     if (payload.command > static_cast<uint8_t>(Command::FixTransformers)) {
         Refuse(senderPeerSlot, "unknown command");
+        return;
+    }
+    // Every legitimate target is a host-range element; an out-of-range id cannot change while the request waits.
+    if (!coop::element::Registry::IsAllowedHostAllocatedEid(static_cast<ElementId>(payload.elementId))) {
+        Refuse(senderPeerSlot, "eid outside the host range");
         return;
     }
     coop::net::KerfurCommandPayload copy = payload;

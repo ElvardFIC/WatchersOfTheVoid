@@ -51,8 +51,10 @@ void Tick();
 
 // Instruments (the kerfur_flood drill, coop/dev/hostile_drill_kerfur), game thread, per client slot (0 for any
 // other, the host's included): how many
-// requests were served (entered the cost path: the checks and the verb), and how many the lane refused into its
-// tally (every note, the router's included).
+// requests were served (entered the cost path: the checks and the verb), and how many the lane refused before the
+// serve: the router's refusals (a short payload, a bad toProp), an unknown sender, a request before install, an eid
+// outside the host range, and a full queue. A refusal at the serve (no live kerfur of that form, kill mode) is a run
+// and is not counted here.
 uint32_t RunsFor(int slot);
 uint32_t RefusedFor(int slot);
 

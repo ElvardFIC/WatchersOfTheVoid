@@ -56,12 +56,12 @@ bool TryRecordMenuCommand(void* self, const std::wstring& name, bool isClient);
 // serves no client. The actionName interceptor belongs to kerfur_convert. Game thread.
 void Install(coop::net::Session* session);
 
-// HOST-only receiver for a KerfurCommand request, wired in event_dispatch_intent. It refuses an unknown sender
-// or command into the lane's refusal tally, and queues the rest per sender, up to a cap, refusing past it. Tick
-// serves one queued request per sender at a bounded rate, in arrival order: the head waits while the host has no
-// posed body for the sender or the Omega's seams are still settling, then resolves the eid to a kerfur and drops
-// the request unless the eid is in the host-allocated range, the actor is live, it is a kerfur, and the kerfur is
-// not in kill mode or on a job -- the last two matching the game's own guards. Then the kerfur serves the
+// HOST-only receiver for a KerfurCommand request, wired in event_dispatch_intent. It refuses an unknown sender,
+// an unknown command and an eid outside the host-allocated range into the lane's refusal tally, and queues the
+// rest per sender, up to a cap, refusing past it. Tick serves one queued request per sender at a bounded rate, in
+// arrival order: the head waits while the host has no posed body for the sender or the Omega's seams are still
+// settling, then resolves the eid to a kerfur and drops the request unless the actor is live, it is a kerfur, and
+// the kerfur is not in kill mode or on a job -- the last two matching the game's own guards. Then the kerfur serves the
 // sending slot and the real actionName runs; a verb that did not run restores whom it served. Game thread.
 void OnCommandRequest(const coop::net::KerfurCommandPayload& payload, uint8_t senderPeerSlot);
 
@@ -72,7 +72,9 @@ void Tick();
 
 // Instruments (the kerfur_flood drill, coop/dev/hostile_drill_kerfur), game thread, per client slot (0 for any
 // other, the host's included): how many
-// requests entered RunRequest, and how many the lane refused into its tally (every note, the router's included).
+// requests entered RunRequest, and how many the lane refused before the serve: the router's refusals (a short payload),
+// an unknown sender or command, an eid outside the host range, and a full queue. A refusal at the serve (the kerfur
+// gone, not a kerfur, in kill mode) is a run and is not counted here.
 uint32_t RunsFor(int slot);
 uint32_t RefusedFor(int slot);
 
