@@ -1,17 +1,16 @@
 // coop/dev/remover_drill.h -- [dev] the tool gun's remover pressed by a client, each peer judging its own copies
 // (ini remover_drill=granted|withheld, env VOTVCOOP_REMOVER_DRILL; BOTH peers, the same value).
 //
-//   HOST   -- once slot 1's world is ready and its puppet stands, spawns sacks about the puppet (a prop the remover
-//             may remove) and, in `granted`, a kerfurOmega beside them (a creature it may not). It judges its own
-//             copies when the client's closing chat line reaches it.
-//   CLIENT -- finds the host's props about itself, spawns a toolgun and, per shot, a tool_remover_C; writes the
-//             toolgun's outHit at the target and runs the tool's init(toolgun), the body a press runs. It waits on
-//             what its own copies and screen show, never a clock.
-//             granted:  one prop gone; six presses at once on another; twenty props in its sight one after another,
-//                       each gone and none refused for sight; then the creature, which stays and is answered.
-//             withheld: one prop, refused by the host's permissions: it stays and the refusal shows.
-// A FAIL is the lane failing, an ABANDONED the drill unable to do its part; each leg prints "client leg". The drill
-// names no symbol of the remover's request lane: it reads the copies and the screen's notices by their text.
+//   HOST   -- once slot 1's world is ready, spawns sacks about the puppet (props the remover may remove) and, in
+//             `granted`, a kerfurOmega (a creature it may not). It judges its copies and its own count of answers
+//             when the client's closing chat line reaches it.
+//   CLIENT -- finds the host's props, spawns a toolgun and, per shot, a tool_remover_C; writes the toolgun's outHit
+//             at the target and runs init(toolgun), the body a press runs. It waits on what its copies and screen show.
+//             granted:  one prop; six presses at once on another; every ring prop in its sight (ten at least), one
+//                       after another, none refused for sight; then the creature, which stays and is answered.
+//             withheld: one prop the host's permissions refuse: it stays and the refusal shows.
+// A FAIL is the lane failing, an ABANDONED the drill unable to do its part; each leg prints "client leg". A removal
+// the client did natively and the host merely applied cannot pass: the host's answered counts are part of its verdict.
 
 #pragma once
 

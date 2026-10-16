@@ -174,6 +174,7 @@ struct Queued {
 struct Slot {
     coop::net::IntentQueue<Queued> queue;
     uint32_t answered[kReasons] = {};
+    const char* lastWhy = nullptr;   // the branch of the last refusal tallied for this sender
 };
 coop::roster_ledger::PerSlotState<Slot> g_slots;
 coop::roster_ledger::PerSlotState<uint32_t> g_runs;
@@ -293,6 +294,7 @@ Verdict Judge(coop::net::Session& s, uint8_t slot, const Queued& q, void** out) 
 void Answer(coop::net::Session& s, uint8_t slot, uint32_t eid, const Verdict& v) {
     ++g_slots[slot].answered[static_cast<size_t>(v.reason)];
     if (v.reason != RemoverReason::Removed && v.reason != RemoverReason::Gone) {
+        g_slots[slot].lastWhy = v.why;
         g_tally.Note(slot, v.why, coop::net::RefusalTally::Clock::now());
         // A request that could not be judged, or a destroy that did not take, is the host failing the sender: said at
         // once with its cause, not left to the window's summed line.
@@ -403,6 +405,9 @@ void OnDisconnect() {
 
 uint32_t RunsFor(int slot) { return slot >= 1 && slot < coop::players::kMaxPeers ? g_runs[slot] : 0; }
 uint32_t RefusedFor(int slot) { return slot >= 1 && slot < coop::players::kMaxPeers ? g_refused[slot] : 0; }
+const char* LastWhyFor(int slot) {
+    return slot >= 1 && slot < coop::players::kMaxPeers ? g_slots[slot].lastWhy : nullptr;
+}
 uint32_t AnsweredFor(int slot, RemoverReason reason) {
     const size_t i = static_cast<size_t>(reason);
     return slot >= 1 && slot < coop::players::kMaxPeers && i < kReasons ? g_slots[slot].answered[i] : 0;

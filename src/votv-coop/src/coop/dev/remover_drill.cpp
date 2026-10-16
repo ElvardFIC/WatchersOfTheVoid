@@ -12,6 +12,7 @@
 #include "coop/player/players_registry.h"
 #include "coop/player/puppet_drive.h"
 #include "coop/player/remote_player.h"
+#include "coop/props/remover_request.h"
 #include "coop/props/prop_snapshot.h"
 #include "coop/save/join_window_baseline.h"
 #include "coop/session/join_progress.h"
@@ -73,7 +74,7 @@ constexpr const char* kUnsupported = "The remover cannot remove that in multipla
 // The host's layout about its client's puppet, in centimetres: the two single props a hand's reach off on the X axis,
 // a ring of kRing about them, the creature beyond the ring on Y. The client tells the roles by distance and side.
 constexpr int   kRing         = 28;
-constexpr int   kSweep        = 20;    // the ring props the client shoots, of those it has in sight
+constexpr int   kSweepFloor   = 10;    // the fewest ring props in sight that make the sweep a measurement
 constexpr int   kMashShots    = 6;
 constexpr float kPairCm       = 90.f;
 constexpr float kRingNearCm   = 230.f;
@@ -147,25 +148,48 @@ bool ClientEnded() {
     return found;
 }
 
+// The host's own count of its answers to slot 1, by reason.
+uint32_t Answered(coop::net::RemoverReason r) { return coop::remover_request::AnsweredFor(1, r); }
+
+// The prop is gone on the host AND the host performed it: the answers it gave are the host's own word, so a removal
+// the client did natively and the host merely applied cannot pass.
 void HostJudge() {
-    char why[200];
+    using RR = coop::net::RemoverReason;
+    char why[240];
+    const uint32_t removed = Answered(RR::Removed);
+    const uint32_t noRight = Answered(RR::NoRight);
+    const uint32_t other = Answered(RR::NotReady) + Answered(RR::Unsupported) + Answered(RR::Held) +
+                           Answered(RR::OutOfSight) + Answered(RR::Failed);
     if (PhaseOf() == Phase::Withheld) {
-        if (g_hSingle.Get()) End("host", "PASS", "the prop the host's permissions refuse stands here", false);
-        else End("host", "FAIL", "the refused prop is gone on the host", true);
+        if (g_hSingle.Get() && removed == 0 && noRight >= 1)
+            End("host", "PASS", "the prop the host's permissions refuse stands here; NoRight was answered", false);
+        else {
+            std::snprintf(why, sizeof(why), "refused prop standing=%d, Removed answered %u, NoRight answered %u",
+                          g_hSingle.Get() ? 1 : 0, removed, noRight);
+            End("host", "FAIL", why, true);
+        }
         return;
     }
     int ringGone = 0;
     for (const auto& r : g_hRing)
         if (!r.Get()) ++ringGone;
     const bool single = !g_hSingle.Get(), mash = !g_hMash.Get(), npc = g_hNpc.Get() != nullptr;
-    if (single && mash && ringGone == kSweep && npc) {
+    // One Removed for the single prop, one for the mashed one (the rest of its presses were answered Gone), one per ring
+    // prop; the sweep's presses were each judged in sight, and the creature was answered Unsupported.
+    const uint32_t wantRemoved = 2u + static_cast<uint32_t>(ringGone);
+    if (single && mash && ringGone >= kSweepFloor && npc && removed == wantRemoved && other == Answered(RR::Unsupported) &&
+        Answered(RR::Unsupported) >= 1) {
         std::snprintf(why, sizeof(why), "the single prop, the mashed one and %d of %d ring props are gone here; the "
-                      "creature stands", ringGone, kRing);
+                      "host answered Removed %u times; the creature stands", ringGone, kRing, removed);
         End("host", "PASS", why, false);
         return;
     }
-    std::snprintf(why, sizeof(why), "single gone=%d mash gone=%d ring gone=%d (want %d) creature standing=%d",
-                  single ? 1 : 0, mash ? 1 : 0, ringGone, kSweep, npc ? 1 : 0);
+    std::snprintf(why, sizeof(why),
+                  "single gone=%d mash gone=%d ring gone=%d (want at least %d) creature standing=%d; answered Removed %u "
+                  "(want %u), OutOfSight %u, Failed %u, NotReady %u, Held %u, Unsupported %u",
+                  single ? 1 : 0, mash ? 1 : 0, ringGone, kSweepFloor, npc ? 1 : 0, removed, wantRemoved,
+                  Answered(RR::OutOfSight), Answered(RR::Failed), Answered(RR::NotReady), Answered(RR::Held),
+                  Answered(RR::Unsupported));
     End("host", "FAIL", why, true);
 }
 
@@ -199,7 +223,8 @@ enum class Step : uint8_t {
 };
 Step g_step = Step::Arm;
 ue_wrap::CachedObjRef g_toolgun, g_single, g_mash, g_npc;
-ue_wrap::CachedObjRef g_sweep[kSweep];
+ue_wrap::CachedObjRef g_sweep[kRing];   // every ring prop the client has in sight, the shots of the sweep
+int g_sweepN = 0;
 int g_sweepAt = 0;
 int g_noticeBase = 0;   // the leg's notice count before its shot
 
@@ -312,11 +337,12 @@ bool Find(void* player) {
         g_npc.Set(npc);
         int n = 0;
         for (void* r : ring) {
-            if (n < kSweep && InSight(player, r)) g_sweep[n++].Set(r);
+            if (n < kRing && InSight(player, r)) g_sweep[n++].Set(r);
         }
-        if (n < kSweep) {
+        g_sweepN = n;
+        if (n < kSweepFloor) {
             char why[120];
-            std::snprintf(why, sizeof(why), "%d of the ring props are in this client's sight, %d are needed", n, kSweep);
+            std::snprintf(why, sizeof(why), "%d of the ring props are in this client's sight, %d are needed", n, kSweepFloor);
             Abandon(why);
             return true;
         }
@@ -424,7 +450,7 @@ void ClientTick(coop::net::Session* s) {
         }
         return;
     case Step::Sweep:
-        if (g_sweepAt >= kSweep) { LegPass("sweep", Step::Npc); return; }
+        if (g_sweepAt >= g_sweepN) { LegPass("sweep", Step::Npc); return; }
         if (Fire(player, g_sweep[g_sweepAt], kOutOfSight)) Next(Step::SweepWait);
         return;
     case Step::SweepWait:
@@ -472,6 +498,7 @@ void OnDisconnect() {
     g_npc.Reset();
     for (auto& r : g_sweep) r.Reset();
     g_sweepAt = 0;
+    g_sweepN = 0;
     g_noticeBase = 0;
 }
 

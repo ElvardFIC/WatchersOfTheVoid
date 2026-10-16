@@ -199,10 +199,14 @@ void JudgeOne(Arm a) {
             Finish(a, "INCONCLUSIVE", "no request was answered (the client found nothing to ask for, or the lane never served)");
         return;
     }
-    if (now[static_cast<size_t>(Reason::OutOfSight)] == 1 && total == 1)
-        Finish(a, "PASS", "the host answered OutOfSight once and answered nothing else");
+    // OutOfSight once and nothing else, by the branch the arm exists to reach: far by the origin bound, so a blocked
+    // segment cannot pass it; hidden by the blocked segment.
+    const char* want = a == Arm::RemoverFar ? "origin far from the eye" : "segment blocked before the hit point";
+    const char* got = RR::LastWhyFor(g_slot);
+    if (now[static_cast<size_t>(Reason::OutOfSight)] == 1 && total == 1 && got && std::string(got) == want)
+        Finish(a, "PASS", std::string("the host answered OutOfSight once and answered nothing else: ") + want);
     else
-        Finish(a, "FAIL", "the host answered" + seen + " (wanted OutOfSight once)");
+        Finish(a, "FAIL", "the host answered" + seen + ", last refusal '" + (got ? got : "none") + "' (wanted OutOfSight once, '" + want + "')");
 }
 
 void SampleFlood(Clock::time_point now) {

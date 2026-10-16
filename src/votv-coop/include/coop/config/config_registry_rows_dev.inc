@@ -191,7 +191,7 @@ CFG_ENUM(grants_drill_expect, "grants_drill_expect", "dev", "same", "same|grant|
     "VOTVCOOP_GRANTS_DRILL_EXPECT", "Judges the grants drill against another arm's expectation (a red arm).")
 CFG_ENUM(remover_drill, "remover_drill", "dev", "off", "off|granted|withheld", "VOTVCOOP_REMOVER_DRILL",
     "Drill (BOTH peers): the tool gun's remover pressed by a client at props the host spawned about its puppet, "
-    "each peer judging its own copies. granted: one prop, six presses at once on another, twenty distinct props in "
+    "each peer judging its own copies. granted: one prop, six presses at once on another, every distinct ring prop in "
     "sight one after another, then a creature the remover cannot remove -- the props must go on both peers and the "
     "creature stay. withheld: one prop, which the host's permissions refuse to this client and which must stay on "
     "both peers. The client ends with a chat line the host judges at.")
