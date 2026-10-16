@@ -12,6 +12,7 @@
 #include "coop/net/protocol.h"
 #include "coop/net/session.h"
 #include "coop/player/players_registry.h"
+#include "coop/player/roster_ledger.h"
 #include "coop/session/join_progress.h"
 #include "coop/session/net_pump.h"
 
@@ -65,6 +66,7 @@ bool HeldHere(EL::ElementId id) {
 enum class Step { WaitArm, WaitAccounted, Done };
 Step g_step = Step::WaitArm;
 int  g_slot = -1;
+uint16_t g_playerNo = 0;  // the judged slot's occupant at arm: the counters reset when it changes
 Clock::time_point g_armAt{};
 
 struct KindState {
@@ -159,6 +161,7 @@ void ArmHost(coop::net::Session* s, Arm a) {
         g_kind[i].refusedBase = RefusedNow(i);
         g_kind[i].drainedBase = DrainedNow(i);
     }
+    g_playerNo = coop::roster_ledger::Get(g_slot).playerNo;
     g_armAt = Clock::now();
     g_step = Step::WaitAccounted;
     UE_LOGI("[HOSTILE-DRILL] %s armed on slot %d (runs %u/%u, refused %u/%u)", ArmName(a), g_slot,
@@ -177,7 +180,7 @@ KindVerdict Judge(int i) {
     KindVerdict v;
     char buf[200];
     if (k.runs < sp.cap) {
-        std::snprintf(buf, sizeof(buf), "floor (%u runs, at least %u: the lane never became ready)", k.runs, sp.cap);
+        std::snprintf(buf, sizeof(buf), "floor (fewer than the cap ran: %u < %u)", k.runs, sp.cap);
         v.what = "INCONCLUSIVE";
         v.why = buf;
     } else if (!k.paceFail.empty()) {
@@ -265,6 +268,14 @@ void TickHostJudge(coop::net::Session* s, Arm a) {
         Finish(a, "INCONCLUSIVE", "judge", "the judged slot left before the verdict");
         return;
     }
+    // The per-slot counters reset when the slot's occupant changes, so a replaced slot is not judged on them.
+    if (coop::roster_ledger::Get(g_slot).playerNo != g_playerNo) {
+        int kind = 0;
+        for (int i = 0; i < 2; ++i)
+            if (g_kind[i].runs + g_kind[i].refused != kPerKind) { kind = i; break; }
+        Finish(a, "INCONCLUSIVE", kSpecs[kind].name, "slot-replaced (the judged slot's occupant changed)");
+        return;
+    }
     WaitAccounted(a);
 }
 
@@ -272,6 +283,7 @@ void OnDisconnect() {
     g_sent = false;
     g_step = Step::WaitArm;
     g_slot = -1;
+    g_playerNo = 0;
     g_armAt = {};
     for (KindState& k : g_kind) k = KindState{};
 }
