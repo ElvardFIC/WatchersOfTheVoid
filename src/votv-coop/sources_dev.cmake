@@ -24,6 +24,7 @@ set(VOTVCOOP_DEV_SOURCES
     src/coop/dev/desk_diag.cpp
     src/coop/dev/rollover_watch.cpp
     src/coop/dev/midnight_drill.cpp
+    src/coop/dev/sleep_drill.cpp
     src/coop/dev/hostile_drill.cpp
     src/coop/dev/hostile_drill_chat.cpp
     src/coop/dev/hostile_drill_hand.cpp

@@ -335,6 +335,15 @@ CFG_ENUM(midnight_drill, "midnight_drill", "dev", "off", "off|awake|asleep|cheat
     "the host sets its clock just short of midnight once it has taken a joiner's world, so the midnight "
     "falls inside the join, and both peers print their dishes' hash digest; equal is a pass. Run it on a "
     "fresh host world; every refused step is logged and ends the arm as invalid.")
+CFG_ENUM(sleep_drill, "sleep_drill", "dev", "off", "off|host_asleep|client_rest", "VOTVCOOP_SLEEP_DRILL",
+    "Drill (BOTH peers), once a client's join is over: what a host's sleep and a client's rest do. "
+    "host_asleep: the host sets its need to 30 and sleeps natively and says the world's dilation it "
+    "reads (20); the client reads its own world's dilation (1) and its clock for 10 s, and the clock "
+    "must run at 0.9 of the native rate. client_rest: the host sleeps and prints its real seconds; "
+    "when it wakes the client reads its food for 10 s, sleeps from a need of 30 in the nearest bed "
+    "and prints its real seconds, its world's dilation, and its food and need at both ends. The host "
+    "holds its nightmare chance at 0 for the arm. Every phase ends on a verdict line "
+    "([SLEEP-DRILL] <arm> <role> PASS|FAIL), and a phase that does not come is a FAIL after a bound.")
 CFG_ENUM(world_roll_drill, "world_roll_drill", "dev", "off",
     "off|eye_host|eye_client|eye_join|jelly_host|jelly_client|jelly_join|redsky_host|redsky_client|redsky_join",
     "VOTVCOOP_WORLD_ROLL_DRILL",
