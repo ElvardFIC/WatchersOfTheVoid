@@ -118,18 +118,15 @@ sg::Verdict OnInitPre(const sg::Call& c) {
     coop::net::Session* s = LoadSession();
     if (!s || !s->running() || s->role() != coop::net::Role::Client || !coop::net_pump::IsInAnnouncedWorld(c.object))
         return sg::Verdict::Run;
-    static void* sFn = nullptr;
-    static int32_t sToolgunOff = -1;
-    if (c.function != sFn) {
-        sFn = c.function;
-        sToolgunOff = R::FindParamOffset(c.function, L"toolgun");
-    }
+    static R::ParamOffset sToolgun{L"toolgun"};
+    const int32_t toolgunOff = sToolgun.Of(c.function);
     void* toolgun = nullptr;
-    if (sToolgunOff >= 0 && c.locals) std::memcpy(&toolgun, c.locals + sToolgunOff, sizeof(toolgun));
+    if (toolgunOff >= 0 && c.locals) std::memcpy(&toolgun, c.locals + toolgunOff, sizeof(toolgun));
     ue_wrap::hit_result::Hit hit;
     if (!toolgun || !R::IsLive(toolgun) || !ue_wrap::hit_result::ReadField(toolgun, L"outHit", &hit))
         return Unplaceable(c, "the toolgun's outHit did not read");
-    if (!hit.blocking) return sg::Verdict::Run;   // a press on nothing: the game's body does nothing
+    // The game's body does nothing for a miss, and for a hit that names no component: both run natively.
+    if (!hit.blocking || !hit.component) return sg::Verdict::Run;
     if (!hit.actor) return Unplaceable(c, "a blocking hit names no live actor");
     const EL::ElementId eid = EL::Registry::Get().EidForActor(hit.actor);
     if (eid == EL::kInvalidId) {
@@ -157,7 +154,7 @@ sg::Verdict OnInitPre(const sg::Call& c) {
 
 // ---- host -----------------------------------------------------------------------------------------------------
 
-// A sender's requests run in arrival order from a bounded queue at a bounded rate (§3n's shape for a press). A
+// A sender's requests run in arrival order from a bounded queue at a bounded rate (kerfur_convert_host's shape). A
 // request past the cap, or from an unknown sender, is refused into the tally. Per-slot state: a leaver's queue goes
 // with its occupant. Game thread.
 constexpr coop::net::IntentBudget kBudget{4.0f, 2.0f};

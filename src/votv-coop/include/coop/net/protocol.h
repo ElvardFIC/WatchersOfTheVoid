@@ -1874,8 +1874,8 @@ struct RemoverRequestPayload {
 };
 static_assert(sizeof(RemoverRequestPayload) == 28, "RemoverRequestPayload must be 28 bytes");
 
-// Why the host did what it did with a RemoverRequest (RemoverResult). Removed, NotReady and Gone are said to the
-// sender's counters alone; the other four are shown to the player.
+// Why the host did what it did with a RemoverRequest (RemoverResult). Removed, NotReady and Gone are not shown to the
+// player; NoRight, Unsupported, Held, OutOfSight and Failed are.
 enum class RemoverReason : uint8_t {
     Removed     = 0,  // the host removed the prop
     NotReady    = 1,  // the sender, its body or the host's classes were not ready; nothing was judged

@@ -21,17 +21,6 @@ void* g_cdo = nullptr;
 void* g_makeFn = nullptr;
 void* g_hitStruct = nullptr;  // FHitResult's UScriptStruct, the return value's type
 
-// The object a hit's weak pointer `field` resolves to through the object array, as the engine's own
-// BreakHitResult reads it; null when it is stale or the field does not resolve.
-void* Weak(const uint8_t* hit, const wchar_t* field) {
-    const int32_t off = R::FindPropertyOffset(g_hitStruct, field);
-    if (off < 0) return nullptr;
-    int32_t idx = 0, serial = 0;
-    std::memcpy(&idx, hit + off, sizeof(idx));
-    std::memcpy(&serial, hit + off + sizeof(idx), sizeof(serial));
-    return R::ResolveWeakObject(idx, serial);
-}
-
 // FHitResult's members the reader takes, by the struct's own reflection, resolved once.
 struct Layout {
     bool    tried = false, ok = false;
@@ -58,8 +47,22 @@ const Layout& Members() {
     return l;
 }
 
-// Does the built hit's weak pointer `field` resolve to `object`?
-bool Names(const uint8_t* hit, const wchar_t* field, void* object) { return Weak(hit, field) == object; }
+enum class Member : uint8_t { Actor, Component };
+
+// The object a hit's weak pointer member resolves to through the object array, as the engine's own BreakHitResult
+// reads it; null when it is stale or the member did not resolve. The offsets are the ones Members() holds.
+void* Weak(const uint8_t* hit, Member m) {
+    const Layout& l = Members();
+    const int32_t off = m == Member::Actor ? l.actor : l.component;
+    if (off < 0) return nullptr;
+    int32_t idx = 0, serial = 0;
+    std::memcpy(&idx, hit + off, sizeof(idx));
+    std::memcpy(&serial, hit + off + sizeof(idx), sizeof(serial));
+    return R::ResolveWeakObject(idx, serial);
+}
+
+// Does the built hit's weak pointer `m` resolve to `object`?
+bool Names(const uint8_t* hit, Member m, void* object) { return Weak(hit, m) == object; }
 
 bool Resolve() {
     if (!g_cdo) g_cdo = R::FindClassDefaultObject(L"GameplayStatics");
@@ -86,9 +89,9 @@ bool Build(void* actor, void* component, const FVector& location, uint8_t* hit, 
     // Weak pointers and names only: the bytes are the whole value, with nothing to release.
     if (!f.GetRaw(L"ReturnValue", hit, size)) return false;
     // A hit that does not name what it was built on would send the call somewhere else.
-    if (!Names(hit, L"Component", component) || !Names(hit, L"Actor", actor)) {
+    if (!Names(hit, Member::Component, component) || !Names(hit, Member::Actor, actor)) {
         UE_LOGW("hit_result: not built: the hit does not resolve back (component=%d actor=%d)",
-                Names(hit, L"Component", component) ? 1 : 0, Names(hit, L"Actor", actor) ? 1 : 0);
+                Names(hit, Member::Component, component) ? 1 : 0, Names(hit, Member::Actor, actor) ? 1 : 0);
         return false;
     }
     return true;
@@ -138,8 +141,8 @@ bool Parse(const void* hit, int32_t bytes, Hit* out) {
     const auto* b = static_cast<const uint8_t*>(hit);
     *out = Hit{};
     out->blocking = (b[l.blockByte] & l.blockMask) != 0;
-    out->actor = Weak(b, L"Actor");
-    out->component = Weak(b, L"Component");
+    out->actor = Weak(b, Member::Actor);
+    out->component = Weak(b, Member::Component);
     std::memcpy(&out->location, b + l.point, sizeof(FVector));
     std::memcpy(&out->normal, b + l.normal, sizeof(FVector));
     return true;
@@ -156,7 +159,7 @@ bool ReadField(void* object, const wchar_t* field, Hit* out) {
 
 void* Component(const void* hit) {
     if (!hit || !Resolve()) return nullptr;
-    return Weak(static_cast<const uint8_t*>(hit), L"Component");
+    return Weak(static_cast<const uint8_t*>(hit), Member::Component);
 }
 
 }  // namespace ue_wrap::hit_result

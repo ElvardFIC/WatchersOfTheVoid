@@ -10,8 +10,9 @@
 // with RemoverResult. The right is the node multivoid.gameplay.toolgun.remove, default granted. A client shows NoRight,
 // Unsupported, Held and OutOfSight once per reason per five seconds. A modified client that skips the cancel still
 // destroys its own copy, whose PropDestroy the host relays type-blind (session_lanes.h): that half waits for the
-// destroy judge. MTA's shape: the server runs the function and checks the right where the request arrives
-// (reference/mtasa-blue/Server/mods/deathmatch/logic/CStaticFunctionDefinitions.cpp).
+// destroy judge. MTA's shape: a client never destroys a server-owned element
+// (reference/mtasa-blue/Client/mods/deathmatch/logic/CStaticFunctionDefinitions.cpp) and the server checks the right
+// where the request arrives (reference/mtasa-blue/Server/mods/deathmatch/logic/CRegisteredCommands.cpp).
 
 #pragma once
 
@@ -42,7 +43,8 @@ void NoteRefused(uint8_t senderSlot, const char* why);
 // CLIENT: the host's answer; the four visible reasons are shown. Game thread.
 void OnResult(const coop::net::RemoverResultPayload& payload);
 
-// Back to the first state, the queues and tally emptied. Net disconnect.
+// The tally emptied and the shown notices forgotten. A sender's queue and counts go with its occupant (the roster
+// ledger clears them), not here. Net disconnect.
 void OnDisconnect();
 
 // HOST, per sender (slots 1 and up; 0 for anything else): the requests the lane took off a queue to judge, those it
