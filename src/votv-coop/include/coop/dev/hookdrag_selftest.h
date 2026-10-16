@@ -23,15 +23,16 @@ namespace coop::dev::hookdrag_selftest {
 // Cache the session pointer. Call once at boot. No-op with the flag off.
 void Install(coop::net::Session* session);
 
-// Game thread, per tick. Fires the step due for this role and samples the target on both. No-op
+// Game thread, per tick. Advances this peer through its phases, each ended by its event and bounded (a
+// bound that passes ends the run with a FAIL line naming the phase), and samples the target on both. No-op
 // with the flag off or before both peers are in the world.
 void Tick();
 
-// Print the target and how far it moved here. Called at the schedule's end and at teardown, since
+// Print the target and how far it moved here. Called when the run ends and at teardown, since
 // the rig kills its peers rather than disconnecting them.
 void EmitVerdict();
 
-// Clear the schedule and the target so a reconnect re-runs the drag.
+// Clear the phase and the target so a reconnect re-runs the drag.
 void OnDisconnect();
 
 }  // namespace coop::dev::hookdrag_selftest

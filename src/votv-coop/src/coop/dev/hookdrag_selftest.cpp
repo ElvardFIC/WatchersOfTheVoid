@@ -11,6 +11,8 @@
 #include "coop/props/prop_key_index.h"  // Find: the world prop a key names
 #include "coop/props/remote_prop.h"           // ResolveMirrorEidByActor: the eid a client's copy carries
 #include "coop/player/remote_player.h"
+#include "coop/props/prop_snapshot.h"  // IsBracketClosed: the host's end of a join
+#include "coop/session/join_progress.h"  // CurrentPhase: the client's end of a join
 #include "coop/session/net_pump.h"  // HasAnnouncedWorldReady
 #include "ue_wrap/actors/hook.h"
 #include "ue_wrap/actors/prop.h"
@@ -25,7 +27,9 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <cstdarg>
 #include <cstdint>
+#include <cstdio>
 #include <string>
 
 namespace coop::dev::hookdrag_selftest {
@@ -61,22 +65,39 @@ uint64_t NowMs() {
         std::chrono::steady_clock::now().time_since_epoch()).count());
 }
 
-// The schedule, from the first tick at which BOTH peers are in the world -- the shared origin the
-// disc driver uses, and for the same reason: the two connect clocks sit about ten seconds apart.
-constexpr uint64_t kPickMs       =  8000;   // both roles name the target
-constexpr uint64_t kPlantMs      = 12000;   // the host plants the hook
-constexpr uint64_t kWalkOutMs    = 14000;   // the host walks away from the prop ...
-constexpr uint64_t kWalkBackMs   = 19000;   // ... and back
-constexpr uint64_t kWalkLegMs    =  3000;
-constexpr uint64_t kUnhookMs     = 25000;   // the hook is destroyed; the prop coasts and rests
-constexpr uint64_t kVerdictMs    = 33000;
+// The phases, each ended by what happened and not by a count of seconds. The origin is the first
+// tick at which BOTH peers are in the world, the shared point the disc driver uses and for the same
+// reason: the two connect clocks sit about ten seconds apart. Every phase has a bound, the backstop
+// that turns a phase that never comes into a FAIL line naming it; no bound is a schedule.
+//   planter: Pick -> Plant -> WalkOut -> WalkBack -> Unhook -> Rest -> Ended
+//   other:   Pick -> Drag -> Rest -> Ended
+enum class Phase { Pick, Plant, WalkOut, WalkBack, Unhook, Drag, Rest, Ended };
+
 constexpr uint64_t kSampleMs     =   250;   // the position log, both roles
 constexpr float    kPickRadiusCm =  1500.f;
+// The host-role runs on record walked 1199..1211 cm in the 3 s the old schedule gave the leg out.
+constexpr float    kWalkCm       =  1200.f; // the walker is this far from where it planted: the leg out is over
+constexpr float    kBackCm       =   100.f; // ... and this close to it again: the leg back is over (the runs
+                                            // on record ended 7..22 cm from it)
+constexpr float    kMovedCm      =   100.f; // the prop stood this far from its start: a drag happened (the
+                                            // distance the driver's verdict counts a drag by)
+constexpr float    kRestCm       =     5.f; // a sample this close to the one before it is a prop at rest ...
+constexpr int      kRestSamples  =       6; // ... and this many in a row (1.5 s) end the run
+// The backstops. Plant and Unhook are one dispatch each: their event arrives in the tick they start.
+constexpr uint64_t kPickBoundMs  =  60000;  // the join is over and the anchor reads
+constexpr uint64_t kWalkBoundMs  =  20000;  // one leg of the walk
+constexpr uint64_t kDragBoundMs  =  90000;  // the peer that does not plant: the other's pick, plant and walk out
+constexpr uint64_t kRestBoundMs  =  60000;
 
 uint64_t g_originMs     = 0;
 uint64_t g_nextSampleMs = 0;
-bool     g_picked = false, g_planted = false, g_walkOutStarted = false, g_walkBackStarted = false;
-bool     g_unhooked = false, g_verdict = false;
+uint64_t g_phaseMs      = 0;                // when the current phase began
+Phase    g_phase = Phase::Pick;
+int      g_restRun = 0;                     // consecutive samples within kRestCm of the one before
+const char* g_waitWhy = "";                 // what the current phase is waiting on, for its FAIL line
+float    g_waitCm = -1.f;                   // the last distance it read while waiting, or -1
+bool     g_havePrev = false;
+ue_wrap::FVector g_prevLoc{};
 ue_wrap::CachedObjRef g_target;
 ue_wrap::CachedObjRef g_hook;
 std::wstring          g_targetKey;
@@ -86,6 +107,39 @@ float                 g_maxMovedCm = 0.f;
 float                 g_goneAtS    = -1.f;   // when the target died under the sampler, or -1
 float                 g_unreadAtS  = -1.f;   // when the target's location stopped reading, or -1
 const char*           g_plantNote  = "not attempted";
+
+const char* PhaseName(Phase p) {
+    switch (p) {
+    case Phase::Pick:     return "pick";
+    case Phase::Plant:    return "plant";
+    case Phase::WalkOut:  return "walk out";
+    case Phase::WalkBack: return "walk back";
+    case Phase::Unhook:   return "unhook";
+    case Phase::Drag:     return "drag";
+    case Phase::Rest:     return "rest";
+    case Phase::Ended:    return "ended";
+    }
+    return "?";
+}
+
+// 0: the phase waits on nothing, so it has no bound.
+uint64_t BoundMs(Phase p) {
+    switch (p) {
+    case Phase::Pick:     return kPickBoundMs;
+    case Phase::WalkOut:
+    case Phase::WalkBack: return kWalkBoundMs;
+    case Phase::Drag:     return kDragBoundMs;
+    case Phase::Rest:     return kRestBoundMs;
+    default:              return 0;
+    }
+}
+
+void EnterPhase(Phase p, uint64_t now) {
+    g_phase = p;
+    g_phaseMs = now;
+    g_waitWhy = "";
+    g_waitCm = -1.f;
+}
 
 void* LocalPlayer() {
     void* p = coop::players::Registry::Get().Local();
@@ -197,6 +251,13 @@ void Sample(uint64_t since, bool isHost) {
     const float dx = loc.X - g_targetStart.X, dy = loc.Y - g_targetStart.Y, dz = loc.Z - g_targetStart.Z;
     const float moved = std::sqrt(dx * dx + dy * dy + dz * dz);
     if (moved > g_maxMovedCm) g_maxMovedCm = moved;
+    // The rest the last phase waits on: samples in a row that stood where the one before did.
+    if (g_havePrev) {
+        const float px = loc.X - g_prevLoc.X, py = loc.Y - g_prevLoc.Y, pz = loc.Z - g_prevLoc.Z;
+        g_restRun = std::sqrt(px * px + py * py + pz * pz) < kRestCm ? g_restRun + 1 : 0;
+    }
+    g_prevLoc = loc;
+    g_havePrev = true;
     // The walker's own position beside the prop's, so a drag that stops short can be read as the
     // player stopping (a wall, or the hook's own pull on the player winning over the walk) rather
     // than guessed. The local player on both peers: on the non-planting peer it is a bystander.
@@ -219,6 +280,67 @@ void WalkStep(bool outward) {
     E::AddMovementInput(p, ue_wrap::FVector{g_walkDir.X * s, g_walkDir.Y * s, 0.f}, 1.0f, true);
 }
 
+
+// Is this peer's end of the join over: the host's bracket for the joiner closed, the client's join
+// progress idle. The pick reads props and a puppet the join delivers, so it waits for the join.
+bool JoinOver(bool isHost) {
+    return isHost ? coop::prop_snapshot::IsBracketClosed(1)
+                  : coop::join_progress::CurrentPhase() == coop::join_progress::Phase::Idle;
+}
+
+// The local player's horizontal distance from where the walk began; false while its location is unread.
+bool WalkerDistance(float& out) {
+    void* p = LocalPlayer();
+    ue_wrap::FVector me{};
+    if (!p || !E::TryGetActorLocation(p, me)) return false;
+    const float dx = me.X - g_walkBase.X, dy = me.Y - g_walkBase.Y;
+    out = std::sqrt(dx * dx + dy * dy);
+    return true;
+}
+
+// Where the leg out heads: away from the prop in the horizontal plane; straight +X if the two
+// coincide, there is no prop, or the prop's position is unread. False when the walker's own
+// position is unread: a walk with no base cannot be measured.
+bool BeginWalkOut(bool isHost) {
+    void* p = LocalPlayer();
+    void* t = g_target.Get();
+    if (!p || !E::TryGetActorLocation(p, g_walkBase)) return false;
+    ue_wrap::FVector tl{};
+    const bool tlRead = t && E::TryGetActorLocation(t, tl);
+    float dx = 1.f, dy = 0.f;
+    if (tlRead) {
+        dx = g_walkBase.X - tl.X; dy = g_walkBase.Y - tl.Y;
+        const float n = std::sqrt(dx * dx + dy * dy);
+        if (n > 1.f) { dx /= n; dy /= n; } else { dx = 1.f; dy = 0.f; }
+    }
+    // With both peers pulling, the client walks at a right angle to the host: two
+    // players standing together would otherwise drag along one line, and a tug in
+    // opposite directions leaves the prop where it was, which a drag verdict cannot
+    // tell from a channel that carried nothing.
+    if (!isHost && Role() == "both") { const float t2 = dx; dx = -dy; dy = t2; }
+    g_walkDir = ue_wrap::FVector{dx, dy, 0.f};
+    UE_LOGI("hookdrag_selftest: WALK OUT to %.0f cm along (%.2f,%.2f) from (%.1f,%.1f,%.1f)", kWalkCm, dx, dy,
+            g_walkBase.X, g_walkBase.Y, g_walkBase.Z);
+    return true;
+}
+
+// The run is over for this peer: the verdict line the driver waits on, said once.
+void End() {
+    g_phase = Phase::Ended;
+    EmitVerdict();
+}
+
+// A phase did not come, or could not be measured: the run ends at it, naming it.
+void Fail(bool isHost, const char* fmt, ...) {
+    char buf[256];
+    va_list ap;
+    va_start(ap, fmt);
+    std::vsnprintf(buf, sizeof(buf), fmt, ap);
+    va_end(ap);
+    UE_LOGW("hookdrag_selftest: FAIL role=%s phase=%s -- %s", isHost ? "HOST" : "CLIENT", PhaseName(g_phase), buf);
+    End();
+}
+
 }  // namespace
 
 void Install(coop::net::Session* session) {
@@ -236,7 +358,7 @@ void Install(coop::net::Session* session) {
 void Tick() {
     if (!Enabled()) return;
     auto* s = g_session.load(std::memory_order_acquire);
-    if (!s || !s->connected()) return;
+    if (!s || !s->connected() || g_phase == Phase::Ended) return;
     const bool isHost = s->role() == coop::net::Role::Host;
     const uint64_t now = NowMs();
     if (!g_originMs) {
@@ -244,114 +366,120 @@ void Tick() {
         // going world-ready.
         if (isHost ? !s->IsSlotWorldReady(1) : !coop::net_pump::HasAnnouncedWorldReady()) return;
         g_originMs = now;
-        UE_LOGI("hookdrag_selftest: ARMED role=%s plants=%d (pick +%llus, plant +%llus, walk "
-                "+%llus..+%llus, unhook +%llus, verdict +%llus)", isHost ? "HOST" : "CLIENT",
-                PlantsHere(isHost) ? 1 : 0,
-                static_cast<unsigned long long>(kPickMs / 1000),
-                static_cast<unsigned long long>(kPlantMs / 1000),
-                static_cast<unsigned long long>(kWalkOutMs / 1000),
-                static_cast<unsigned long long>((kWalkBackMs + kWalkLegMs) / 1000),
-                static_cast<unsigned long long>(kUnhookMs / 1000),
-                static_cast<unsigned long long>(kVerdictMs / 1000));
+        EnterPhase(Phase::Pick, now);
+        UE_LOGI("hookdrag_selftest: ARMED role=%s plants=%d (each phase ends on its event: pick, plant, "
+                "walk %.0f cm out and back to within %.0f cm, unhook, rest)", isHost ? "HOST" : "CLIENT",
+                PlantsHere(isHost) ? 1 : 0, kWalkCm, kBackCm);
     }
     const uint64_t since = now - g_originMs;
+    if (const uint64_t bound = BoundMs(g_phase); bound && now - g_phaseMs > bound) {
+        if (g_waitCm >= 0.f)
+            return Fail(isHost, "no event within %llu s: %s (last read %.0f cm)",
+                        static_cast<unsigned long long>(bound / 1000), g_waitWhy, g_waitCm);
+        return Fail(isHost, "no event within %llu s: %s", static_cast<unsigned long long>(bound / 1000), g_waitWhy);
+    }
     if (!H::EnsureResolved()) return;
 
-    if (!g_picked && since >= kPickMs) {
-        g_picked = true;
-        ue_wrap::FVector anchor{};
-        const char* why = "";
-        if (!Anchor(isHost, anchor, why)) {
-            UE_LOGW("hookdrag_selftest: PICK role=%s -- no anchor (%s)", isHost ? "HOST" : "CLIENT", why);
-        } else if (void* t = PickTarget(anchor, g_targetKey, g_targetStart)) {
-            g_target.Set(t);
-            const float dx = g_targetStart.X - anchor.X, dy = g_targetStart.Y - anchor.Y,
-                        dz = g_targetStart.Z - anchor.Z;
-            // The eid is the cross-peer identity: the host's local element, the client's mirror
-            // row from the join snapshot. Two keys can differ where two eids agree.
-            const coop::element::ElementId eid =
-                isHost ? coop::prop_element_tracker::GetPropElementIdForActor(t)
-                       : coop::remote_prop::ResolveMirrorEidByActor(t);
-            UE_LOGI("hookdrag_selftest: TARGET role=%s key='%ls' eid=%u at (%.1f,%.1f,%.1f), %.0f cm "
-                    "from the anchor", isHost ? "HOST" : "CLIENT", g_targetKey.c_str(),
-                    eid == coop::element::kInvalidId ? 0u : static_cast<unsigned>(eid),
-                    g_targetStart.X, g_targetStart.Y, g_targetStart.Z,
-                    std::sqrt(dx * dx + dy * dy + dz * dz));
-            g_nextSampleMs = now;
-        } else {
-            UE_LOGW("hookdrag_selftest: PICK role=%s -- no keyed physics prop within %.0f cm",
-                    isHost ? "HOST" : "CLIENT", kPickRadiusCm);
-        }
-    }
-    if (g_target.Raw() && g_goneAtS < 0.f && g_unreadAtS < 0.f && now >= g_nextSampleMs && since < kVerdictMs) {
+    if (g_target.Raw() && g_goneAtS < 0.f && g_unreadAtS < 0.f && now >= g_nextSampleMs) {
         g_nextSampleMs = now + kSampleMs;
         Sample(since, isHost);
     }
-    if (PlantsHere(isHost)) {
-        if (!g_planted && since >= kPlantMs) {
-            g_planted = true;
-            void* p = LocalPlayer();
-            void* t = g_target.Get();
-            if (p && t && Plant(p, t))
-                UE_LOGI("hookdrag_selftest: PLANT key='%ls' hook=%p -- attach_a with the head on the "
-                        "prop and the tail on the player", g_targetKey.c_str(), g_hook.Raw());
-            else
-                UE_LOGW("hookdrag_selftest: PLANT FAILED -- %s", g_plantNote);
-        }
-        if (g_hook.Raw() && since >= kWalkOutMs && since < kWalkOutMs + kWalkLegMs) {
-            if (!g_walkOutStarted) {
-                g_walkOutStarted = true;
-                void* p = LocalPlayer();
-                void* t = g_target.Get();
-                const bool baseRead = p && E::TryGetActorLocation(p, g_walkBase);
-                // Away from the prop in the horizontal plane; straight +X if the two coincide, there is
-                // no prop, or either position is unread.
-                ue_wrap::FVector tl{};
-                const bool tlRead = t && E::TryGetActorLocation(t, tl);
-                float dx = 1.f, dy = 0.f;
-                if (baseRead && tlRead) {
-                    dx = g_walkBase.X - tl.X; dy = g_walkBase.Y - tl.Y;
-                    const float n = std::sqrt(dx * dx + dy * dy);
-                    if (n > 1.f) { dx /= n; dy /= n; } else { dx = 1.f; dy = 0.f; }
-                }
-                // With both peers pulling, the client walks at a right angle to the host: two
-                // players standing together would otherwise drag along one line, and a tug in
-                // opposite directions leaves the prop where it was, which a drag verdict cannot
-                // tell from a channel that carried nothing.
-                if (!isHost && Role() == "both") { const float t2 = dx; dx = -dy; dy = t2; }
-                g_walkDir = ue_wrap::FVector{dx, dy, 0.f};
-                UE_LOGI("hookdrag_selftest: WALK OUT %llu ms along (%.2f,%.2f) from (%.1f,%.1f,%.1f)%s",
-                        static_cast<unsigned long long>(kWalkLegMs), dx, dy, g_walkBase.X,
-                        g_walkBase.Y, g_walkBase.Z, baseRead ? "" : " (unread)");
-            }
-            WalkStep(/*outward=*/true);
-        }
-        if (g_hook.Raw() && since >= kWalkBackMs && since < kWalkBackMs + kWalkLegMs) {
-            if (!g_walkBackStarted) {
-                g_walkBackStarted = true;
-                UE_LOGI("hookdrag_selftest: WALK BACK");
-            }
-            WalkStep(/*outward=*/false);
-        }
-        if (!g_unhooked && since >= kUnhookMs) {
-            g_unhooked = true;
-            // The item's cancel: the field this driver wrote is cleared whether or not the hook
-            // still stands, then the actor goes.
-            if (g_hook.Raw()) {
-                if (void* p = LocalPlayer()) H::WriteActiveHook(p, nullptr);
-            }
-            if (void* h = g_hook.Get()) {
-                E::DestroyActor(h);
-                UE_LOGI("hookdrag_selftest: UNHOOK -- the hook is destroyed; the prop coasts and rests");
-            } else if (g_hook.Raw()) {
-                UE_LOGW("hookdrag_selftest: UNHOOK -- the hook had already died");
-            }
-            g_hook.Reset();
-        }
+    if (g_target.Raw() && (g_goneAtS >= 0.f || g_unreadAtS >= 0.f))
+        return Fail(isHost, "the target is %s; the series stops there", g_goneAtS >= 0.f ? "gone" : "unreadable");
+
+    switch (g_phase) {
+    case Phase::Pick: {
+        // Ends when the pick succeeds. One shot: it waits for the join and the anchor, and a miss
+        // after that is final.
+        g_waitWhy = "the join is not over";
+        if (!JoinOver(isHost)) return;
+        ue_wrap::FVector anchor{};
+        const char* why = "";
+        if (!Anchor(isHost, anchor, why)) { g_waitWhy = why; return; }
+        void* t = PickTarget(anchor, g_targetKey, g_targetStart);
+        if (!t) return Fail(isHost, "no keyed physics prop within %.0f cm", kPickRadiusCm);
+        g_target.Set(t);
+        const float dx = g_targetStart.X - anchor.X, dy = g_targetStart.Y - anchor.Y,
+                    dz = g_targetStart.Z - anchor.Z;
+        // The eid is the cross-peer identity: the host's local element, the client's mirror
+        // row from the join snapshot. Two keys can differ where two eids agree.
+        const coop::element::ElementId eid =
+            isHost ? coop::prop_element_tracker::GetPropElementIdForActor(t)
+                   : coop::remote_prop::ResolveMirrorEidByActor(t);
+        UE_LOGI("hookdrag_selftest: TARGET role=%s key='%ls' eid=%u at (%.1f,%.1f,%.1f), %.0f cm "
+                "from the anchor", isHost ? "HOST" : "CLIENT", g_targetKey.c_str(),
+                eid == coop::element::kInvalidId ? 0u : static_cast<unsigned>(eid),
+                g_targetStart.X, g_targetStart.Y, g_targetStart.Z,
+                std::sqrt(dx * dx + dy * dy + dz * dz));
+        g_nextSampleMs = now;
+        EnterPhase(PlantsHere(isHost) ? Phase::Plant : Phase::Drag, now);
+        return;
     }
-    if (!g_verdict && since >= kVerdictMs) {
-        g_verdict = true;
-        EmitVerdict();
+    case Phase::Plant: {
+        // Ends when the attach dispatched. A client's tie is built on the host and nothing of it
+        // reaches this peer, so the host's own log carries that line.
+        void* p = LocalPlayer();
+        void* t = g_target.Get();
+        if (!p || !t) g_plantNote = !p ? "no-local-player" : "target-gone";
+        if (!p || !t || !Plant(p, t)) return Fail(isHost, "%s", g_plantNote);
+        UE_LOGI("hookdrag_selftest: PLANT key='%ls' hook=%p -- attach_a with the head on the "
+                "prop and the tail on the player", g_targetKey.c_str(), g_hook.Raw());
+        if (!BeginWalkOut(isHost)) return Fail(isHost, "the walker's position could not be read");
+        EnterPhase(Phase::WalkOut, now);
+        return;
+    }
+    case Phase::WalkOut:
+        // Ends when the walker is kWalkCm from where it planted.
+        g_waitWhy = "the walker did not get that far";
+        if (WalkerDistance(g_waitCm) && g_waitCm >= kWalkCm) {
+            UE_LOGI("hookdrag_selftest: WALK BACK from %.0f cm", g_waitCm);
+            EnterPhase(Phase::WalkBack, now);
+            return;
+        }
+        WalkStep(/*outward=*/true);
+        return;
+    case Phase::WalkBack:
+        // Ends when the walker is back within kBackCm of where it planted.
+        g_waitWhy = "the walker did not get back";
+        if (WalkerDistance(g_waitCm) && g_waitCm <= kBackCm) {
+            EnterPhase(Phase::Unhook, now);
+            return;
+        }
+        WalkStep(/*outward=*/false);
+        return;
+    case Phase::Unhook:
+        // Ends when the hook is destroyed. The item's cancel: the field this driver wrote is
+        // cleared whether or not the hook still stands, then the actor goes.
+        if (void* p = LocalPlayer()) H::WriteActiveHook(p, nullptr);
+        if (void* h = g_hook.Get()) {
+            E::DestroyActor(h);
+            UE_LOGI("hookdrag_selftest: UNHOOK -- the hook is destroyed; the prop coasts and rests");
+        } else {
+            UE_LOGW("hookdrag_selftest: UNHOOK -- the hook had already died");
+        }
+        g_hook.Reset();
+        g_restRun = 0;
+        EnterPhase(Phase::Rest, now);
+        return;
+    case Phase::Drag:
+        // The peer that does not plant: ends when the prop has stood kMovedCm from its start.
+        g_waitWhy = "the prop did not move that far";
+        g_waitCm = g_maxMovedCm;
+        if (g_maxMovedCm < kMovedCm) return;
+        UE_LOGI("hookdrag_selftest: DRAG seen -- the prop stood %.0f cm from its start", g_maxMovedCm);
+        g_restRun = 0;
+        EnterPhase(Phase::Rest, now);
+        return;
+    case Phase::Rest:
+        // Ends when the prop has stood still for kRestSamples samples since the unhook (or, for
+        // the peer that did not plant, since it was seen dragged).
+        g_waitWhy = "the prop did not come to rest";
+        if (g_restRun < kRestSamples) return;
+        UE_LOGI("hookdrag_selftest: REST -- the prop stood still for %d samples", g_restRun);
+        End();
+        return;
+    case Phase::Ended:
+        return;
     }
 }
 
@@ -367,7 +495,12 @@ void EmitVerdict() {
 void OnDisconnect() {
     g_originMs = 0;
     g_nextSampleMs = 0;
-    g_picked = g_planted = g_walkOutStarted = g_walkBackStarted = g_unhooked = g_verdict = false;
+    g_phaseMs = 0;
+    g_phase = Phase::Pick;
+    g_restRun = 0;
+    g_havePrev = false;
+    g_waitWhy = "";
+    g_waitCm = -1.f;
     g_target.Reset();
     g_hook.Reset();
     g_targetKey.clear();
