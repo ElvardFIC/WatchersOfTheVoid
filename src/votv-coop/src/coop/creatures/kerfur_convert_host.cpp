@@ -14,6 +14,7 @@
 #include "coop/element/registry.h"
 #include "coop/net/protocol.h"
 #include "coop/net/session.h"
+#include "coop/player/roster_ledger.h"  // PerSlotState
 #include "coop/props/prop_element_tracker.h"
 #include "coop/props/prop_lifecycle.h"
 #include "ue_wrap/engine/engine.h"
@@ -47,6 +48,10 @@ std::atomic<bool> g_ready{false};  // the request latch
 // at the verb's entry (RequestSlotFor). Verbs are synchronous on the game thread, so one pair does.
 void* g_runningObject = nullptr;
 int   g_runningSlot   = -1;
+
+// Instruments (the kerfur_flood drill reads them against a baseline), per sender.
+coop::roster_ledger::PerSlotState<uint32_t> g_runs;
+coop::roster_ledger::PerSlotState<uint32_t> g_refused;
 
 // The pose the converge binds the new form at: its own, read whole. No pose of the old form's stands
 // in for it, since the verb places the new form itself: the turn-on stands the NPC upright 50 cm above
@@ -177,6 +182,7 @@ void ConvergeAtReturn(void* oldActor, int32_t oldIdx, EL::ElementId oldEid, bool
 void OnConvertRequest(const coop::net::KerfurConvertPayload& payload, uint8_t senderPeerSlot) {
     // Host-only (gated by the event_dispatch_intent router). Game thread (the event_feed drain): the
     // verb's dispatches, its gate watch's return included, run inside this call.
+    if (senderPeerSlot < coop::net::kMaxPeers) ++g_runs[senderPeerSlot];
     if (!g_ready.load(std::memory_order_acquire)) {
         UE_LOGW("kerfur_convert: request before install resolved -- dropped");
         return;
@@ -220,6 +226,9 @@ void OnConvertRequest(const coop::net::KerfurConvertPayload& payload, uint8_t se
     g_runningObject = nullptr;
     g_runningSlot = -1;
 }
+
+uint32_t RunsFor(int slot) { return g_runs[slot]; }
+uint32_t RefusedFor(int slot) { return g_refused[slot]; }
 
 void SetSession(coop::net::Session* session) {
     g_session.store(session, std::memory_order_release);

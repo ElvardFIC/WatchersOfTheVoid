@@ -69,6 +69,12 @@ void OnCommandRequest(const coop::net::KerfurCommandPayload& payload, uint8_t se
 // Cheap no-op when nothing is pending.
 void Tick();
 
+// Instruments (the kerfur_flood drill, coop/dev/hostile_drill_kerfur), game thread, per sender slot: how many
+// requests entered RunRequest, and how many the lane refused before running one. Nothing increments the second
+// yet; it reads 0 until the lane refuses into a tally.
+uint32_t RunsFor(int slot);
+uint32_t RefusedFor(int slot);
+
 // A peer left: its waiting requests go. Game thread, on the per-slot disconnect edge.
 void OnPeerLeft(uint8_t slot);
 

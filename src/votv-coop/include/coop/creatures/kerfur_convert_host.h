@@ -39,6 +39,12 @@ void SetVerbs(void* spawnKerfuroFn, int32_t killOff);
 // asked, which the converge's log names. Game thread (the event_feed drain).
 void OnConvertRequest(const coop::net::KerfurConvertPayload& payload, uint8_t senderPeerSlot);
 
+// Instruments (the kerfur_flood drill, coop/dev/hostile_drill_kerfur), game thread, per sender slot: how many
+// requests from a known slot entered OnConvertRequest, and how many the lane refused before its cost path.
+// Nothing increments the second yet; it reads 0 until the lane refuses into a tally.
+uint32_t RunsFor(int slot);
+uint32_t RefusedFor(int slot);
+
 // The slot whose request is running a verb on `object` right now, or -1: the verb's entry records it,
 // so its return can name whose request it was. Game thread.
 int RequestSlotFor(void* object);

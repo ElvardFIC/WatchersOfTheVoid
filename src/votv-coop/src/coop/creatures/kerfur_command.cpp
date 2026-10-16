@@ -12,6 +12,7 @@
 #include "coop/net/session.h"
 #include "coop/player/players_registry.h"  // Local() / kPeerIdHost
 #include "coop/player/remote_player.h"
+#include "coop/player/roster_ledger.h"     // PerSlotState
 #include "ue_wrap/actors/kerfur.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
@@ -64,6 +65,10 @@ struct Parked {
 };
 std::vector<Parked> g_parked;
 bool g_parkSaid[coop::players::kMaxPeers] = {};
+
+// Instruments (the kerfur_flood drill reads them against a baseline), per sender.
+coop::roster_ledger::PerSlotState<uint32_t> g_runs;
+coop::roster_ledger::PerSlotState<uint32_t> g_refused;
 
 // Re-entrancy guard: the host executes a verb by re-invoking actionName via ProcessEvent (HostRunVerb),
 // which re-enters the actionName interceptor. The thread-local flag makes TryRecordMenuCommand pass that
@@ -219,6 +224,7 @@ void SettleKillWatch() {
 
 // A request whose sender has a body: validated against the kerfur as it is now, then run.
 void RunRequest(const coop::net::KerfurCommandPayload& payload, uint8_t senderPeerSlot) {
+    ++g_runs[senderPeerSlot];
     if (!coop::element::Registry::IsAllowedHostAllocatedEid(
             static_cast<ElementId>(payload.elementId))) {
         UE_LOGW("kerfur_command: request eid=%u outside the host range -- dropped (slot %u)",
@@ -354,6 +360,9 @@ void Tick() {
     if (!g_parked.empty()) RunParked();
     SettleKillWatch();
 }
+
+uint32_t RunsFor(int slot) { return g_runs[slot]; }
+uint32_t RefusedFor(int slot) { return g_refused[slot]; }
 
 void OnPeerLeft(uint8_t slot) {
     for (auto it = g_parked.begin(); it != g_parked.end();) {

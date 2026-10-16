@@ -1,0 +1,263 @@
+// coop/dev/hostile_drill_kerfur.cpp -- see coop/dev/hostile_drill_kerfur.h.
+
+#include "coop/dev/hostile_drill_kerfur.h"
+
+#include "coop/creatures/kerfur_command.h"
+#include "coop/creatures/kerfur_convert_host.h"
+#include "coop/element/mirror_manager.h"
+#include "coop/element/npc.h"
+#include "coop/element/prop.h"
+#include "coop/element/registry.h"
+#include "coop/net/protocol.h"
+#include "coop/net/session.h"
+#include "coop/player/players_registry.h"
+#include "coop/session/join_progress.h"
+#include "coop/session/net_pump.h"
+
+#include "ue_wrap/core/log.h"
+
+#include <chrono>
+#include <cstdint>
+#include <cstdio>
+#include <string>
+
+namespace coop::dev::hostile_drill::kerfur {
+namespace {
+
+using Clock = std::chrono::steady_clock;
+namespace EL = coop::element;
+
+// The flood: per kind, kPerKind messages in one tick. 121 is far over either cap and over what either pace pays in
+// the span of a burst, so a lane that bounds nothing runs them all.
+constexpr uint32_t kPerKind = 121;
+
+// The judge's numbers, literals written from the lanes' budgets (no symbol of the change itself): the pace's burst
+// and per-second refill, and the cap of messages a lane queues per sender.
+struct KindSpec {
+    const char* name;
+    uint32_t    cap;
+    float       burst;
+    float       perSecond;
+};
+constexpr KindSpec kSpecs[2] = {{"kerfur_command", 8, 4.f, 2.f}, {"kerfur_convert", 4, 2.f, 1.f}};
+constexpr auto     kFailBound = std::chrono::seconds(180);  // a failure bound, never a wait
+
+// A command value the lane relays: follow, idle, patrol, fix_servers, get_reports, fix_transformers.
+constexpr uint32_t kCommandValues = 6;
+
+// ---- client (sender) ----
+bool g_sent = false;
+
+bool OwnJoinOver() {
+    return coop::net_pump::HasAnnouncedWorldReady() &&
+           coop::join_progress::CurrentPhase() == coop::join_progress::Phase::Idle;
+}
+
+// A mirror of either form on this client names a live element; a flood id must not.
+bool HeldHere(EL::ElementId id) {
+    return EL::MirrorManager<EL::Npc>::Instance().Get(id) != nullptr ||
+           EL::MirrorManager<EL::Prop>::Instance().Get(id) != nullptr;
+}
+
+// ---- host (judge) ----
+enum class Step { WaitArm, WaitAccounted, Done };
+Step g_step = Step::WaitArm;
+int  g_slot = -1;
+Clock::time_point g_armAt{};
+
+struct KindState {
+    uint32_t          runsBase = 0;
+    uint32_t          refusedBase = 0;
+    uint32_t          runs = 0;
+    uint32_t          refused = 0;
+    Clock::time_point t0{};     // the first read that saw a run
+    Clock::time_point tLast{};  // the last read at which the runs grew
+    std::string       paceFail;  // the first read the pace was exceeded, said
+};
+KindState g_kind[2];
+
+uint32_t RunsNow(int i) {
+    return i == 0 ? coop::kerfur_command::RunsFor(g_slot) : coop::kerfur_convert_host::RunsFor(g_slot);
+}
+
+uint32_t RefusedNow(int i) {
+    return i == 0 ? coop::kerfur_command::RefusedFor(g_slot) : coop::kerfur_convert_host::RefusedFor(g_slot);
+}
+
+double SecondsBetween(Clock::time_point a, Clock::time_point b) {
+    return std::chrono::duration<double>(b - a).count();
+}
+
+void Sample(int i, Clock::time_point now) {
+    KindState& k = g_kind[i];
+    const uint32_t prev = k.runs;
+    k.runs = RunsNow(i) - k.runsBase;
+    k.refused = RefusedNow(i) - k.refusedBase;
+    if (k.runs > prev) {
+        if (prev == 0) k.t0 = now;
+        k.tLast = now;
+    }
+    if (k.runs == 0 || !k.paceFail.empty()) return;
+    // From the first run at t0, at every read: the burst, what the refill paid since, and one for a refill inside
+    // the frame the read did not see.
+    const double sinceFirst = SecondsBetween(k.t0, now);
+    const double most = kSpecs[i].burst + kSpecs[i].perSecond * sinceFirst + 1.0;
+    if (k.runs > most) {
+        char buf[160];
+        std::snprintf(buf, sizeof(buf), "pace (%u runs %.0f ms after the first, at most %.1f)", k.runs,
+                      sinceFirst * 1000.0, most);
+        k.paceFail = buf;
+    }
+}
+
+std::string Summary() {
+    std::string out;
+    for (int i = 0; i < 2; ++i) {
+        const KindState& k = g_kind[i];
+        char buf[160];
+        std::snprintf(buf, sizeof(buf), "%s%s runs %u refused %u span %.0f ms", i ? "; " : "", kSpecs[i].name,
+                      k.runs, k.refused, k.runs ? SecondsBetween(k.t0, k.tLast) * 1000.0 : 0.0);
+        out += buf;
+    }
+    return out;
+}
+
+void Finish(Arm a, const char* what, const char* kind, const std::string& why) {
+    if (kind) {
+        UE_LOGW("[HOSTILE-DRILL] %s %s %s %s -- %s", ArmName(a), what, kind, why.c_str(), Summary().c_str());
+    } else {
+        UE_LOGI("[HOSTILE-DRILL] %s %s -- %s", ArmName(a), what, Summary().c_str());
+    }
+    g_step = Step::Done;
+}
+
+void ArmHost(coop::net::Session* s, Arm a) {
+    for (int slot = 1; slot < static_cast<int>(coop::net::kMaxPeers) && g_slot < 0; ++slot)
+        if (s->IsSlotWorldReady(slot)) g_slot = slot;
+    if (g_slot < 0) return;
+    for (int i = 0; i < 2; ++i) {
+        g_kind[i] = KindState{};
+        g_kind[i].runsBase = RunsNow(i);
+        g_kind[i].refusedBase = RefusedNow(i);
+    }
+    g_armAt = Clock::now();
+    g_step = Step::WaitAccounted;
+    UE_LOGI("[HOSTILE-DRILL] %s armed on slot %d (runs %u/%u, refused %u/%u)", ArmName(a), g_slot,
+            g_kind[0].runsBase, g_kind[1].runsBase, g_kind[0].refusedBase, g_kind[1].refusedBase);
+}
+
+// One kind's verdict, once all of it is accounted for: empty is a pass, else the marker word and why.
+struct KindVerdict {
+    const char* what = nullptr;  // "FAIL" / "INCONCLUSIVE"; null passes
+    std::string why;
+};
+
+KindVerdict Judge(int i) {
+    const KindState& k = g_kind[i];
+    const KindSpec& sp = kSpecs[i];
+    KindVerdict v;
+    char buf[200];
+    if (k.runs < sp.cap) {
+        std::snprintf(buf, sizeof(buf), "floor (%u runs, at least %u: the lane never became ready)", k.runs, sp.cap);
+        v.what = "INCONCLUSIVE";
+        v.why = buf;
+    } else if (!k.paceFail.empty()) {
+        v.what = "FAIL";
+        v.why = k.paceFail;
+    } else {
+        const double span = SecondsBetween(k.t0, k.tLast);
+        const double most = sp.cap + sp.burst + sp.perSecond * span + 1.0;
+        if (k.runs > most) {
+            std::snprintf(buf, sizeof(buf), "cap (%u runs over %.0f ms, at most %.1f)", k.runs, span * 1000.0, most);
+            v.what = "FAIL";
+            v.why = buf;
+        }
+    }
+    return v;
+}
+
+void WaitAccounted(Arm a) {
+    const Clock::time_point now = Clock::now();
+    bool all = true;
+    for (int i = 0; i < 2; ++i) {
+        Sample(i, now);
+        all = all && g_kind[i].runs + g_kind[i].refused == kPerKind;
+    }
+    if (!all) {
+        if (now - g_armAt <= kFailBound) return;
+        for (int i = 0; i < 2; ++i) {
+            if (g_kind[i].runs + g_kind[i].refused == kPerKind) continue;
+            Finish(a, "FAIL", kSpecs[i].name,
+                   "timeout (" + std::to_string(g_kind[i].runs + g_kind[i].refused) + " of " +
+                       std::to_string(kPerKind) + " accounted for)");
+            return;
+        }
+        return;
+    }
+    KindVerdict v[2] = {Judge(0), Judge(1)};
+    for (int i = 0; i < 2; ++i)
+        if (v[i].what && std::string(v[i].what) == "FAIL") { Finish(a, "FAIL", kSpecs[i].name, v[i].why); return; }
+    for (int i = 0; i < 2; ++i)
+        if (v[i].what) { Finish(a, v[i].what, kSpecs[i].name, v[i].why); return; }
+    Finish(a, "PASS", nullptr, "");
+}
+
+}  // namespace
+
+const char* ArmName(Arm a) { return a == Arm::KerfurFlood ? "kerfur_flood" : "off"; }
+
+void TickClient(coop::net::Session* s, Arm a) {
+    if (g_sent || !OwnJoinOver()) return;
+    const uint8_t self = coop::players::Registry::Get().LocalPeerId();
+    if (self == 0 || self >= coop::players::kMaxPeers) return;  // no slot yet; wait
+    g_sent = true;
+    // 2 * kPerKind distinct ids from the top of the host's range, none held on this client.
+    EL::ElementId ids[2 * kPerKind];
+    uint32_t have = 0;
+    for (EL::ElementId id = EL::kHostRangeSize - 1; have < 2 * kPerKind && EL::Registry::IsAllowedHostAllocatedEid(id);
+         --id)
+        if (!HeldHere(id)) ids[have++] = id;
+    if (have < 2 * kPerKind) {
+        UE_LOGW("[HOSTILE-DRILL] %s INCONCLUSIVE: only %u unheld host-range ids found", ArmName(a), have);
+        return;
+    }
+    bool ok = true;
+    for (uint32_t n = 0; n < kPerKind && ok; ++n) {
+        coop::net::KerfurCommandPayload c{};
+        c.elementId = static_cast<uint32_t>(ids[n]);
+        c.command = static_cast<uint8_t>(n % kCommandValues);
+        ok = s->SendReliableToSlot(0, coop::net::ReliableKind::KerfurCommand, &c, sizeof(c));
+        if (!ok) break;
+        coop::net::KerfurConvertPayload r{};
+        r.elementId = static_cast<uint32_t>(ids[kPerKind + n]);
+        r.toProp = static_cast<uint8_t>(n % 2);
+        ok = s->SendReliableToSlot(0, coop::net::ReliableKind::KerfurConvertRequest, &r, sizeof(r));
+    }
+    if (!ok) {
+        UE_LOGW("[HOSTILE-DRILL] %s INCONCLUSIVE: a message of the flood was not sent", ArmName(a));
+        return;
+    }
+    UE_LOGI("[HOSTILE-DRILL] %s sent %u KerfurCommand and %u KerfurConvertRequest for slot %u (ids %u down to %u)",
+            ArmName(a), kPerKind, kPerKind, static_cast<unsigned>(self), static_cast<unsigned>(ids[0]),
+            static_cast<unsigned>(ids[2 * kPerKind - 1]));
+}
+
+void TickHostJudge(coop::net::Session* s, Arm a) {
+    if (g_step == Step::WaitArm) { ArmHost(s, a); return; }
+    if (g_step == Step::Done) return;
+    if (!s->HasPeerConn(g_slot)) {
+        Finish(a, "INCONCLUSIVE", "judge", "the judged slot left before the verdict");
+        return;
+    }
+    WaitAccounted(a);
+}
+
+void OnDisconnect() {
+    g_sent = false;
+    g_step = Step::WaitArm;
+    g_slot = -1;
+    g_armAt = {};
+    for (KindState& k : g_kind) k = KindState{};
+}
+
+}  // namespace coop::dev::hostile_drill::kerfur
