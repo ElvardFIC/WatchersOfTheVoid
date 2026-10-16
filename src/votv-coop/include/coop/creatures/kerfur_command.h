@@ -70,7 +70,8 @@ void OnCommandRequest(const coop::net::KerfurCommandPayload& payload, uint8_t se
 // Cheap no-op when nothing is pending.
 void Tick();
 
-// Instruments (the kerfur_flood drill, coop/dev/hostile_drill_kerfur), game thread, per sender slot: how many
+// Instruments (the kerfur_flood drill, coop/dev/hostile_drill_kerfur), game thread, per client slot (0 for any
+// other, the host's included): how many
 // requests entered RunRequest, and how many the lane refused into its tally (every note, the router's included).
 uint32_t RunsFor(int slot);
 uint32_t RefusedFor(int slot);

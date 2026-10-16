@@ -233,9 +233,9 @@ void RunRequest(const coop::net::KerfurConvertPayload& payload, uint8_t senderPe
     g_runningSlot = -1;
 }
 
-// One refusal into the tally, and into the sender's count when the slot is a real one.
+// One refusal into the tally, and into the sender's count when the slot is a client's (1 and up).
 void Refuse(uint8_t slot, const char* why) {
-    if (slot < coop::net::kMaxPeers) ++g_refused[slot];
+    if (slot >= 1 && slot < coop::net::kMaxPeers) ++g_refused[slot];
     g_tally.Note(slot, why, coop::net::RefusalTally::Clock::now());
 }
 
@@ -244,7 +244,8 @@ void Refuse(uint8_t slot, const char* why) {
 void OnConvertRequest(const coop::net::KerfurConvertPayload& payload, uint8_t senderPeerSlot) {
     // Host-only (gated by the event_dispatch_intent router). Game thread (the event_feed drain). The request is
     // checked for what cannot change while it waits, then queued; Tick serves it.
-    if (senderPeerSlot >= coop::net::kMaxPeers) {
+    // Slot 0 is the host, whose own requests never arrive over the wire.
+    if (senderPeerSlot == 0 || senderPeerSlot >= coop::net::kMaxPeers) {
         Refuse(senderPeerSlot, "unknown sender");
         return;
     }
@@ -276,8 +277,8 @@ void Tick() {
     g_tally.Flush(coop::net::RefusalTally::Clock::now());
 }
 
-uint32_t RunsFor(int slot) { return g_runs[slot]; }
-uint32_t RefusedFor(int slot) { return g_refused[slot]; }
+uint32_t RunsFor(int slot) { return slot >= 1 && slot < coop::net::kMaxPeers ? g_runs[slot] : 0; }
+uint32_t RefusedFor(int slot) { return slot >= 1 && slot < coop::net::kMaxPeers ? g_refused[slot] : 0; }
 
 void SetSession(coop::net::Session* session) {
     g_session.store(session, std::memory_order_release);

@@ -138,9 +138,9 @@ bool Settling() {
 
 bool CanRunFor(uint8_t slot) { return HasBody(slot) && !Settling(); }
 
-// One refusal into the tally, and into the sender's count when the slot is a real one.
+// One refusal into the tally, and into the sender's count when the slot is a client's (1 and up).
 void Refuse(uint8_t slot, const char* why) {
-    if (slot < coop::players::kMaxPeers) ++g_refused[slot];
+    if (slot >= 1 && slot < coop::players::kMaxPeers) ++g_refused[slot];
     g_tally.Note(slot, why, coop::net::RefusalTally::Clock::now());
 }
 
@@ -311,7 +311,8 @@ void OnCommandRequest(const coop::net::KerfurCommandPayload& payload, uint8_t se
         UE_LOGW("kerfur_command: KerfurCommand received on a non-host -- dropping");
         return;
     }
-    if (senderPeerSlot >= coop::players::kMaxPeers) {
+    // Slot 0 is the host, whose own requests never arrive over the wire.
+    if (senderPeerSlot == 0 || senderPeerSlot >= coop::players::kMaxPeers) {
         Refuse(senderPeerSlot, "unknown sender");
         return;
     }
@@ -369,8 +370,8 @@ void Tick() {
     SettleKillWatch();
 }
 
-uint32_t RunsFor(int slot) { return g_runs[slot]; }
-uint32_t RefusedFor(int slot) { return g_refused[slot]; }
+uint32_t RunsFor(int slot) { return slot >= 1 && slot < coop::players::kMaxPeers ? g_runs[slot] : 0; }
+uint32_t RefusedFor(int slot) { return slot >= 1 && slot < coop::players::kMaxPeers ? g_refused[slot] : 0; }
 
 void OnDisconnect() {
     { std::lock_guard<std::mutex> lk(g_qMutex); g_queue.clear(); }

@@ -49,7 +49,8 @@ void NoteRefused(uint8_t senderPeerSlot, const char* why);
 // Game thread.
 void Tick();
 
-// Instruments (the kerfur_flood drill, coop/dev/hostile_drill_kerfur), game thread, per sender slot: how many
+// Instruments (the kerfur_flood drill, coop/dev/hostile_drill_kerfur), game thread, per client slot (0 for any
+// other, the host's included): how many
 // requests were served (entered the cost path: the checks and the verb), and how many the lane refused into its
 // tally (every note, the router's included).
 uint32_t RunsFor(int slot);
