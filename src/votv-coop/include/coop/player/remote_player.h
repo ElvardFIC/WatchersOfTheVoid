@@ -84,6 +84,11 @@ public:
     // not valid or neither its head bone nor its pivot can be read.
     bool TryGetHeadPosition(ue_wrap::FVector& out) const;
 
+    // The point this peer looks from, for a judge that measures a claim against it: the puppet's camera component
+    // location, else its head bone as it is (no nameplate lift, no filter). False when the puppet is not valid or
+    // neither reads, or the point is not finite. Game thread.
+    bool TryGetEyePosition(ue_wrap::FVector& out) const;
+
     // The unit forward vector of the puppet's synced aim (curYaw_ plus curHeadYawDelta_,
     // curPitch_), the convention DriveHeadLookAtWorld uses, so it points where the puppet looks.
     // Positions a puppet-held item at the hand, since the puppet's own tick does not drive it. Game
@@ -124,6 +129,9 @@ private:
     // Spawn's before-finish callback (engine::SpawnActor): keeps the deferred actor and registers it
     // under pendingSlot_, so the registry knows the body before its BeginPlay runs.
     static void OnBeforeFinish(void* ctx, void* actor);
+
+    // The head bone of the mesh that renders this peer, as the engine reports it; the two head accessors build on it.
+    bool TryReadHeadBone(ue_wrap::FVector& out) const;
 
     // The owner's burning bit onto this puppet's flame; SetTargetPose is its one caller, so the flame
     // follows the bit and nothing else.

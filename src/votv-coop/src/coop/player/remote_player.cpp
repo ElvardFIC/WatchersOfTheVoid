@@ -631,17 +631,13 @@ ue_wrap::FVector RemotePlayer::GetSyncedAimDirection() const {
     return { cp * std::cos(yawRad), cp * std::sin(yawRad), std::sin(pitchRad) };
 }
 
-bool RemotePlayer::TryGetHeadPosition(ue_wrap::FVector& out) const {
-    out = {};
+// The head bone of whatever mesh renders the peer right now: the visible flop body while ragdolled (the kel meshes are
+// hidden and the actor rides the pelvis attach, which is why a pivot anchor went wild in a flop), else the visible skin
+// mesh (the native kel, the built-in skins and the converted client models all carry a head bone). One
+// GetSocketLocation dispatch. False when no bone reads.
+bool RemotePlayer::TryReadHeadBone(ue_wrap::FVector& raw) const {
+    raw = {};
     if (!valid()) return false;
-    // The anchor is the head bone of whatever mesh renders the peer right now: the visible flop
-    // body while ragdolled (the kel meshes are hidden and the actor rides the pelvis attach, which
-    // is why a pivot anchor went wild in a flop), else the visible skin mesh (the native kel, the
-    // built-in skins and the converted client models all carry a head bone; a bone-less mesh
-    // anchors at the component transform). One GetSocketLocation dispatch per call; the per-frame
-    // anim jitter is smoothed below.
-    constexpr float kPlateLiftCm = 33.f;  // float the plate above the skull
-    ue_wrap::FVector raw{};
     bool haveBone = false;
     if (ragdoll_.Active()) {
         void* body = ragdoll_.Body();
@@ -654,6 +650,35 @@ bool RemotePlayer::TryGetHeadPosition(ue_wrap::FVector& out) const {
         if (mesh && R::IsLive(mesh))
             haveBone = E::GetBoneWorldLocationByName(mesh, L"head", raw);
     }
+    return haveBone;
+}
+
+bool RemotePlayer::TryGetEyePosition(ue_wrap::FVector& out) const {
+    out = {};
+    if (!valid()) return false;
+    // The puppet's own camera component first: the point its game traces from. A component whose world location did not
+    // read answers the exact origin, which no camera is at.
+    ue_wrap::FVector cam{};
+    if (E::ReadMainPlayerCameraLocation(actor_, cam) && !(cam.X == 0.f && cam.Y == 0.f && cam.Z == 0.f) &&
+        std::isfinite(cam.X) && std::isfinite(cam.Y) && std::isfinite(cam.Z)) {
+        out = cam;
+        return true;
+    }
+    // Else the head bone as it is: no nameplate lift, no filter -- a point the sender's eye can be measured against.
+    ue_wrap::FVector bone{};
+    if (!TryReadHeadBone(bone) || !std::isfinite(bone.X) || !std::isfinite(bone.Y) || !std::isfinite(bone.Z)) return false;
+    out = bone;
+    return true;
+}
+
+bool RemotePlayer::TryGetHeadPosition(ue_wrap::FVector& out) const {
+    out = {};
+    if (!valid()) return false;
+    // The anchor is the head bone (TryReadHeadBone; a bone-less mesh anchors at the component transform), lifted above
+    // the skull. The per-frame anim jitter is smoothed below.
+    constexpr float kPlateLiftCm = 33.f;  // float the plate above the skull
+    ue_wrap::FVector raw{};
+    const bool haveBone = TryReadHeadBone(raw);
     if (haveBone) {
         raw.Z += kPlateLiftCm;
     } else {

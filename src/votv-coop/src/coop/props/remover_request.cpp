@@ -205,6 +205,19 @@ struct Verdict {
 
 constexpr Verdict Decided(RemoverReason r, const char* why) { return {r, why}; }
 
+// What stopped a segment, said once per tally window at INFO and not per message: the blocker's class and how far it
+// stood from the eye, how far the hit point was, and how far the client's own origin lay from the eye. A diagnostic
+// for an honest shot refused for sight, bounded like the tally's lines.
+void NoteBlocked(void* blocker, float blockerCm, float hitCm, float originCm) {
+    static coop::net::RefusalTally::Clock::time_point sLast{};
+    const auto now = coop::net::RefusalTally::Clock::now();
+    if (sLast != coop::net::RefusalTally::Clock::time_point{} && now - sLast < coop::net::RefusalTally::kWindow) return;
+    sLast = now;
+    const std::wstring cls = blocker ? R::ClassNameOf(blocker) : std::wstring(L"(no actor)");
+    UE_LOGI("remover_request: a segment was blocked by %ls at %.0f uu from the eye; the hit point is %.0f uu away and "
+            "the client's origin %.0f uu from the eye", cls.c_str(), blockerCm, hitCm, originCm);
+}
+
 // Could the sender have struck `actor` at the request's hit point, from the eye the host holds for it? The strength
 // against a forged origin is the pose-staleness ball around the eye, not the segment: a sender that names an origin
 // on the hit point leaves a segment of no length. Source re-traces a shot from the server's own eye and takes no
@@ -237,8 +250,10 @@ Verdict JudgeSight(void* puppet, void* actor, const Queued& q) {
     ue_wrap::trace::Hit blocker;
     if (!ue_wrap::trace::LineHitForObjects(puppet, q.eye, hitAt, types, 4, ignore, 2, &blocker))
         return Decided(RemoverReason::Failed, "the sight trace did not run");
-    if (blocker.blocked && Dist(q.eye, blocker.point) < Dist(q.eye, hitAt) - kBlockedSlackCm)
+    if (blocker.blocked && Dist(q.eye, blocker.point) < Dist(q.eye, hitAt) - kBlockedSlackCm) {
+        NoteBlocked(blocker.actor, Dist(q.eye, blocker.point), Dist(q.eye, hitAt), Dist(origin, q.eye));
         return Decided(RemoverReason::OutOfSight, "segment blocked before the hit point");
+    }
     return Decided(RemoverReason::Removed, "");
 }
 
@@ -381,7 +396,7 @@ void OnRequest(const coop::net::RemoverRequestPayload& payload, uint8_t senderSl
     }
     Queued q;
     q.req = payload;
-    q.haveEye = coop::puppet_drive::Puppet(senderSlot).TryGetHeadPosition(q.eye);
+    q.haveEye = coop::puppet_drive::Puppet(senderSlot).TryGetEyePosition(q.eye);
     if (!g_slots[senderSlot].queue.Push(std::move(q), kMaxPending)) Refuse(senderSlot, "queue full");
 }
 
