@@ -216,7 +216,6 @@ void FlushDivergedPositions_(int peerSlot, bool firstRun) {
         g_lastFlushedPilePos[peerSlot].clear();
         g_lastFlushedKeyedPos[peerSlot].clear();
         g_handSinceSent[peerSlot].clear();
-        g_settleUntil[peerSlot] = {};
         g_keyedLateArmTick[peerSlot] = 0;
         g_flushArmUntil[peerSlot] = std::chrono::steady_clock::now() + kFlushLateWindow;
     }
@@ -394,12 +393,16 @@ void TickLateArm() {
             // A prop a hand held after its correction went out may still owe a follow-up: the slot
             // then stays armed through a settle phase, with its keyed map, state and dedupe, until
             // SettleTick_ retires them. Otherwise the keyed half retires here with the rest.
-            // A hold begun after the last keyed scan is not noted yet, and its correction may still be
-            // queued behind the release: noted now, from the props corrected this join.
-            for (const auto& sent : g_lastFlushedKeyedPos[slot]) {
-                coop::element::Element* el = coop::element::Registry::Get().Get(sent.first);
-                void* actor = el ? el->LiveActor() : nullptr;
-                if (actor && coop::prop_drive_host::InAHand(actor)) g_handSinceSent[slot].insert(sent.first);
+            // A last word for every prop corrected this join, read now: one moved since its last
+            // delivery (a grab and release inside the last scan interval among them) is sent its
+            // follow-up on the same Bulk lane, behind anything still queued; one in a hand now is
+            // watched. Cold: the dedupe holds only the props corrected this join.
+            std::vector<coop::element::ElementId> corrected;
+            corrected.reserve(g_lastFlushedKeyedPos[slot].size());
+            for (const auto& sent : g_lastFlushedKeyedPos[slot]) corrected.push_back(sent.first);
+            for (const coop::element::ElementId eid : corrected) {
+                const auto kit = g_blobKeyedXforms[slot].find(eid);
+                if (kit != g_blobKeyedXforms[slot].end()) FlushKeyedProp_(slot, "expiry", eid, kit->second);
             }
             const size_t held = g_handSinceSent[slot].size();
             if (held == 0) {

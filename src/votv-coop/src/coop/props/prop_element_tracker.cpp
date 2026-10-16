@@ -276,17 +276,18 @@ std::wstring MarkPropElement(void* actor, const std::wstring& key, const std::ws
                 ue_wrap::engine::TryGetActorLocation(actor, dupLoc) ? "" : " (unread)";
             const std::wstring fresh = coop::prop_synth_key::MintFreshKeyForDuplicate(actor);
             if (!fresh.empty() && fresh != enrollKey) {
-                // By `src`: the passive census walks the world as loaded, so a duplicate it finds is
-                // game content (a clone family of the level) re-keyed on every load: INFO. Any other
-                // source is a live birth carrying a key a live actor already holds, a runtime clone
-                // worth a look: WARN. The FAILED branch below stays a warning.
+                // By `src`: the passive census walks the world, at the session seed (the world as
+                // loaded, where the level's clone families sit, re-keyed on every load) and at its
+                // re-seeds, so a duplicate it finds is reported plainly: INFO. Any other source is a
+                // live birth carrying a key a live actor already holds, a runtime clone worth a look:
+                // WARN. The FAILED branch below stays a warning.
                 const bool content = src == EnrollSource::kPassiveCensus;
                 ue_wrap::log::Write(content ? ue_wrap::log::Level::Info : ue_wrap::log::Level::Warn,
                         "prop_element_tracker: KEY-UNIQUENESS -- second live actor carried Key '%ls': "
                         "'%ls' loc=(%.1f,%.1f,%.1f)%s re-keyed -> '%ls' (%s; host key "
                         "authority -- the new key persists if the actor lives to a save)",
                         enrollKey.c_str(), cls.c_str(), dupLoc.X, dupLoc.Y, dupLoc.Z, dupUnread,
-                        fresh.c_str(), content ? "clone family" : "a live birth, not the loaded world");
+                        fresh.c_str(), content ? "found by the census" : "a live birth carrying it");
                 enrollKey = fresh;
             } else {
                 UE_LOGW("prop_element_tracker: KEY-UNIQUENESS -- re-key FAILED for duplicate '%ls' "
