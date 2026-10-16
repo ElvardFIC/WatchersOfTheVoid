@@ -71,18 +71,23 @@ constexpr const char* kNoRight     = "The host does not allow the remover";
 constexpr const char* kOutOfSight  = "You can't see that from there";
 constexpr const char* kUnsupported = "The remover cannot remove that in multiplayer";
 
-// The host's layout about its client's puppet, in centimetres: the two single props a hand's reach off on the X axis,
-// a ring of kRing about them, the creature beyond the ring on Y. The client tells the roles by distance and side.
+// The host's layout about its client's puppet, in centimetres along its facing: the single and the mashed props side
+// by side ahead of it, a ring of kRing about it clear of the cone it faces, the creature beyond the ring. The client
+// tells the roles by distance: the nearer of the pair is the single prop.
 constexpr int   kRing         = 28;
 constexpr int   kSweepFloor   = 10;    // the fewest ring props in sight that make the sweep a measurement
 constexpr int   kMashShots    = 6;
-constexpr float kPairCm       = 90.f;
-constexpr float kRingNearCm   = 230.f;
+constexpr float kSingleAheadCm = 120.f;
+constexpr float kMashAheadCm   = 190.f;
+constexpr float kPairSideCm    = 45.f;   // either side of the facing line, so neither prop stands in the other's way
+constexpr float kRingConeDeg   = 30.f;   // the ring keeps this far off the facing line, each side
+constexpr float kRingNearCm   = 260.f;
 constexpr float kRingStepCm   = 30.f;
-constexpr float kNpcCm        = 380.f;
-constexpr float kDropCm       = 20.f;  // above the puppet's height, so a prop settles on the floor
+constexpr float kNpcCm        = 420.f;
+constexpr float kPuppetHalfHeightCm = 90.f;   // the floor when the puppet's bounds do not read
+constexpr float kDropCm       = 20.f;  // above the floor, so a prop settles
 constexpr float kFindRadiusCm = 700.f;
-constexpr float kPairMaxCm    = 160.f; // inside this from the client: one of the pair
+constexpr float kPairMaxCm    = 230.f; // inside this from the client: one of the pair (the ring starts at 260)
 constexpr float kSightSlackCm = 25.f;
 
 constexpr uint64_t kFindBoundMs  = 60000;   // CLIENT: the join's end to every prop the host spawned being here
@@ -117,24 +122,38 @@ HostStep g_hostStep = HostStep::Arm;
 ue_wrap::CachedObjRef g_hSingle, g_hMash, g_hNpc;
 ue_wrap::CachedObjRef g_hRing[kRing];
 
-// Spawns the host's layout about the client's puppet. False when a prop did not spawn.
-bool SpawnLayout(const FVector& at) {
+// Spawns the host's layout about the client's puppet, on the floor and by its facing: the single and the mashed props
+// side by side ahead of it (the single nearer), nothing of the ring in the cone it faces and nothing of it between the
+// client and the pair, and the creature to its right beyond the ring. False when a prop did not spawn.
+bool SpawnLayout(void* puppet, const FVector& at) {
     void* cls = ue_wrap::asset_load::LoadObjectByPath(kSackPath);
     if (!cls) return false;
-    const auto spawn = [&](float dx, float dy, ue_wrap::CachedObjRef& into) {
-        void* p = E::SpawnActor(cls, {at.X + dx, at.Y + dy, at.Z + kDropCm});
+    FVector fwd = E::GetActorForwardVector(puppet);
+    const float flat = std::sqrt(fwd.X * fwd.X + fwd.Y * fwd.Y);
+    if (flat < 0.01f) fwd = {1.f, 0.f, 0.f};
+    else fwd = {fwd.X / flat, fwd.Y / flat, 0.f};
+    const FVector right{-fwd.Y, fwd.X, 0.f};
+    // The floor under the puppet: the bottom of its bounds, else a capsule's half-height under its centre.
+    FVector centre{}, extent{};
+    const bool bounds = E::GetActorBounds(puppet, false, centre, extent) && extent.Z > 0.f;
+    const float floorZ = bounds ? centre.Z - extent.Z : at.Z - kPuppetHalfHeightCm;
+    const auto spawn = [&](float ahead, float side, ue_wrap::CachedObjRef& into) {
+        void* p = E::SpawnActor(cls, {at.X + fwd.X * ahead + right.X * side, at.Y + fwd.Y * ahead + right.Y * side,
+                                      floorZ + kDropCm});
         into.Set(p);
         return p != nullptr;
     };
-    if (!spawn(kPairCm, 0.f, g_hSingle)) return false;
+    if (!spawn(kSingleAheadCm, kPairSideCm, g_hSingle)) return false;
     if (PhaseOf() == Phase::Withheld) return true;
-    if (!spawn(-kPairCm, 0.f, g_hMash)) return false;
+    if (!spawn(kMashAheadCm, -kPairSideCm, g_hMash)) return false;
     for (int i = 0; i < kRing; ++i) {
-        const float a = 6.2831853f * static_cast<float>(i) / static_cast<float>(kRing);
+        const float a = (kRingConeDeg + (360.f - 2.f * kRingConeDeg) * static_cast<float>(i) /
+                                            static_cast<float>(kRing - 1)) * 0.0174532925f;
         const float r = kRingNearCm + kRingStepCm * static_cast<float>(i % 3);
         if (!spawn(std::cos(a) * r, std::sin(a) * r, g_hRing[i])) return false;
     }
-    void* npc = coop::dev::spawn_npc::SpawnAt(kNpcClass, {at.X, at.Y + kNpcCm, at.Z + kDropCm});
+    void* npc = coop::dev::spawn_npc::SpawnAt(kNpcClass, {at.X + right.X * kNpcCm, at.Y + right.Y * kNpcCm,
+                                                          floorZ + kDropCm});
     g_hNpc.Set(npc);
     return npc != nullptr;
 }
@@ -210,7 +229,7 @@ void HostTick(coop::net::Session* s) {
         void* puppet = rp.valid() && rp.HasPose() ? rp.GetActor() : nullptr;
         FVector at{};
         if (!puppet || !R::IsLive(puppet) || !E::TryGetActorLocation(puppet, at)) return;
-        if (!SpawnLayout(at)) { End("host", "ABANDONED", "a prop of the layout did not spawn", true); return; }
+        if (!SpawnLayout(puppet, at)) { End("host", "ABANDONED", "a prop of the layout did not spawn", true); return; }
         UE_LOGI("[REMOVER-DRILL] host: the layout is spawned about the client's puppet (%s)", PhaseName());
         g_hostStep = HostStep::Await;
         g_stepMs = now;
@@ -330,14 +349,10 @@ bool Find(void* player) {
     std::vector<void*> pair, ring;
     for (const Seen& s : seen) (s.cm < kPairMaxCm ? pair : ring).push_back(s.actor);
     if (pair.size() != (granted ? 2u : 1u)) { Abandon("the host's pair of props did not stand apart from the ring"); return true; }
-    FVector a{}, b{};
-    E::TryGetActorLocation(pair[0], a);
-    if (granted) E::TryGetActorLocation(pair[1], b);
-    // Single is the one on the positive X side of the client; the other is the mashed one.
-    const bool firstIsSingle = !granted || a.X >= b.X;
-    g_single.Set(firstIsSingle ? pair[0] : pair[1]);
+    // `seen` is nearest first, so the nearer of the pair is the single prop and the other the mashed one.
+    g_single.Set(pair[0]);
     if (granted) {
-        g_mash.Set(firstIsSingle ? pair[1] : pair[0]);
+        g_mash.Set(pair[1]);
         g_npc.Set(npc);
         int n = 0;
         for (void* r : ring) {
