@@ -32,6 +32,32 @@ void* Weak(const uint8_t* hit, const wchar_t* field) {
     return R::ResolveWeakObject(idx, serial);
 }
 
+// FHitResult's members the reader takes, by the struct's own reflection, resolved once.
+struct Layout {
+    bool    tried = false, ok = false;
+    int32_t size = 0, blockByte = -1, actor = -1, component = -1, point = -1, normal = -1;
+    uint8_t blockMask = 0;
+};
+
+const Layout& Members() {
+    static Layout l;
+    if (l.tried) return l;
+    l.tried = true;
+    l.size = R::StructSize(g_hitStruct);
+    l.actor = R::FindPropertyOffset(g_hitStruct, L"Actor");
+    l.component = R::FindPropertyOffset(g_hitStruct, L"Component");
+    l.point = R::FindPropertyOffset(g_hitStruct, L"ImpactPoint");
+    l.normal = R::FindPropertyOffset(g_hitStruct, L"ImpactNormal");
+    const bool block = R::FindBoolProperty(g_hitStruct, L"bBlockingHit", l.blockByte, l.blockMask);
+    const auto fits = [&](int32_t off, int32_t n) { return off >= 0 && off + n <= l.size; };
+    l.ok = block && fits(l.blockByte, 1) && fits(l.actor, 8) && fits(l.component, 8) && fits(l.point, 12) &&
+           fits(l.normal, 12);
+    if (!l.ok)
+        UE_LOGW("hit_result: FHitResult's members did not resolve (size %d, blocking %d, actor %d, component %d, "
+                "point %d, normal %d)", l.size, l.blockByte, l.actor, l.component, l.point, l.normal);
+    return l;
+}
+
 // Does the built hit's weak pointer `field` resolve to `object`?
 bool Names(const uint8_t* hit, const wchar_t* field, void* object) { return Weak(hit, field) == object; }
 
@@ -101,6 +127,29 @@ bool WriteField(void* object, const wchar_t* field, void* actor, void* component
     if (!Build(actor, component, location, hit.data(), size)) return false;
     std::memcpy(reinterpret_cast<uint8_t*>(object) + off, hit.data(), hit.size());
     return true;
+}
+
+bool Parse(const void* hit, int32_t bytes, Hit* out) {
+    if (!hit || !out || !Resolve()) return false;
+    const Layout& l = Members();
+    if (!l.ok || bytes < l.size) return false;
+    const auto* b = static_cast<const uint8_t*>(hit);
+    *out = Hit{};
+    out->blocking = (b[l.blockByte] & l.blockMask) != 0;
+    out->actor = Weak(b, L"Actor");
+    out->component = Weak(b, L"Component");
+    std::memcpy(&out->location, b + l.point, sizeof(FVector));
+    std::memcpy(&out->normal, b + l.normal, sizeof(FVector));
+    return true;
+}
+
+bool ReadField(void* object, const wchar_t* field, Hit* out) {
+    void* cls = object && R::IsLive(object) ? R::ClassOf(object) : nullptr;
+    if (!cls || !out || !Resolve()) return false;
+    const int32_t off = R::FindPropertyOffset(cls, field);
+    void* inner = R::PropertyInnerStruct(cls, field);
+    if (off < 0 || inner != g_hitStruct) return false;
+    return Parse(reinterpret_cast<const uint8_t*>(object) + off, R::StructSize(inner), out);
 }
 
 void* Component(const void* hit) {
