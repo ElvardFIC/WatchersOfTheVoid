@@ -158,6 +158,7 @@ Driven* Open(void* actor, bool claimed, const char* why) {
 }  // namespace
 
 bool InAHand(void* actor) {
+    UE_ASSERT_GAME_THREAD("prop_drive_host::InAHand");
     return actor == coop::local_streams::LastHeldActor() ||
            coop::remote_prop::IsActorUnderAnyDrive(actor) ||
            coop::hand_item::IsHandAxisActor(actor);
@@ -199,6 +200,7 @@ size_t CoastingCount() {
 }
 
 DriveContext ContextOf(void* actor, uint32_t eid) {
+    UE_ASSERT_GAME_THREAD("prop_drive_host::ContextOf");
     DriveContext c;
     const auto it = g_genByEid.find(eid);   // find, never operator[]: a read inserts nothing
     if (it != g_genByEid.end()) c.gen = it->second;

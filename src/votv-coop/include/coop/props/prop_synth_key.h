@@ -40,9 +40,10 @@ std::wstring EnsureKeyForBroadcast(void* self, const std::wstring& currentKey,
 // already-indexed Key, which the level produces -- it places clone families, which a New Game
 // saves as they are, sharing one GUID, and the identity layer assumes uniqueness. Resolves
 // setKey by climbing from the actual class to the nearest ancestor that declares it, since
-// FindFunction matches the exact owner: actorChipPile and prop_garbageClump declare their own, trashBitsPile takes
-// actor_save's, the prop lineage Aprop_C's. Returns the CONFIRMED re-read key, or an empty
-// string on any failure, where the caller keeps the old key and logs. Game thread only.
+// FindFunction matches the exact owner: actorChipPile and prop_garbageClump declare their own,
+// trashBitsPile takes actor_save's, the prop lineage Aprop_C's. Returns the CONFIRMED re-read key,
+// or an empty string on any failure, where the caller keeps the old key and logs. Game thread
+// only.
 std::wstring MintFreshKeyForDuplicate(void* self);
 
 // The key format that mint uses, on its own: `rk_<64-bit-random-hex>`, 19 characters, inside the

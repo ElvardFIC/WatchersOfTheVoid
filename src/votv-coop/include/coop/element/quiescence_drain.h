@@ -64,10 +64,10 @@ void ArmPendingPosCorrection(coop::element::ElementId eid,
                              const ue_wrap::FVector& loc, const ue_wrap::FRotator& rot, uint8_t physFlags,
                              uint8_t driveGen, bool driveOpen);
 
-// A newer authoritative pose of `eid` landed (a hold's release pose): a correction armed before it
-// is older and is dropped, never applied over it. MTA's sync time context
-// (CElement.h:220-221 server, CPacketHandler.cpp:1595 client) with the release as the context.
-// `by` names the writer for the log. Game thread.
+// A newer authoritative pose of `eid` landed (a hold's release pose): a correction ARMED before it
+// is older and is dropped, never applied over it. One arriving after the release is not covered
+// here: it is answered by the host's follow-up read after the release. `by` names the writer for
+// the log. Game thread.
 void SupersedePosCorrection(coop::element::ElementId eid, const char* by);
 
 // Drain the armed corrections (applied ones erased). Called from the sequence and, for a
