@@ -203,7 +203,11 @@ void HostTick(coop::net::Session* s) {
         if (!s->IsSlotWorldReady(1) || !coop::prop_snapshot::IsBracketClosed(1) ||
             coop::join_window_baseline::IsLateWindowOpen(1))
             return;
-        void* puppet = coop::puppet_drive::Puppet(1).GetActor();
+        // The layout is spawned only once the host holds a posed puppet for the client, and the client presses only
+        // after it finds the layout: by then the host can place the client's eye. Before its first pose a puppet
+        // stands at its spawn point.
+        coop::RemotePlayer& rp = coop::puppet_drive::Puppet(1);
+        void* puppet = rp.valid() && rp.HasPose() ? rp.GetActor() : nullptr;
         FVector at{};
         if (!puppet || !R::IsLive(puppet) || !E::TryGetActorLocation(puppet, at)) return;
         if (!SpawnLayout(at)) { End("host", "ABANDONED", "a prop of the layout did not spawn", true); return; }

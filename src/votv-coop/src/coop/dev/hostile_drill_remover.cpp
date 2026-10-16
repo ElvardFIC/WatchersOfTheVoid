@@ -11,10 +11,15 @@
 #include "coop/player/players_registry.h"
 #include "coop/player/roster_ledger.h"
 #include "coop/props/remover_request.h"
+#include "coop/player/puppet_drive.h"
+#include "coop/player/remote_player.h"
+#include "coop/props/prop_snapshot.h"
+#include "coop/save/join_window_baseline.h"
 #include "coop/session/join_progress.h"
 #include "coop/session/net_pump.h"
 
 #include "ue_wrap/actors/prop.h"
+#include "ue_wrap/core/asset_load.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/trace.h"
@@ -54,10 +59,12 @@ constexpr auto     kFailBound = std::chrono::seconds(180);  // a failure bound, 
 constexpr float kFarCm       = 2000.f;  // far's origin from the camera: past the lane's 600 uu staleness bound
 constexpr float kSeenMaxCm   = 2500.f;  // hidden: only props this near the camera are tried
 constexpr float kSightSlack  = 25.f;
+constexpr float kBlockedMarginCm = 100.f;  // hidden: the blocker stands this far short of the lane's own slack
 constexpr size_t kReasons = static_cast<size_t>(Reason::Count);
 
 // ---- client (sender) ----
 bool g_sent = false;
+Clock::time_point g_waitSince{};   // the first tick far or hidden waited for the bait
 
 bool OwnJoinOver() {
     return coop::net_pump::HasAnnouncedWorldReady() &&
@@ -101,25 +108,39 @@ bool Send(coop::net::Session* s, EL::ElementId id, const FVector& origin, const 
 
 void Inconclusive(Arm a, const char* why) { UE_LOGW("[HOSTILE-DRILL] %s INCONCLUSIVE: %s", ArmName(a), why); }
 
-// far: a real prop, asked for from a point 2000 uu off the camera.
+// The bait the host spawns beside the sender's puppet once it holds a posed puppet for it: the sender's mirror of it
+// is the readiness the arms wait on, so a request is only sent when the host can place the sender's eye.
+constexpr const wchar_t* kBaitClass = L"prop_pointSack_C";
+constexpr const wchar_t* kBaitPath = L"/Game/objects/prop_pointSack.prop_pointSack_C";
+constexpr float kBaitNearCm = 500.f;
+constexpr float kBaitAheadCm = 150.f;
+constexpr float kBaitDropCm = 20.f;
+
+bool IsBait(const Candidate& c) { return c.cm < kBaitNearCm && R::ClassNameOf(c.actor) == kBaitClass; }
+
+// far: the bait, asked for from a point 2000 uu off the camera.
 void SendFar(coop::net::Session* s, Arm a, const FVector& camera) {
-    const std::vector<Candidate> props = HostProps(camera);
-    if (props.empty()) { Inconclusive(a, "this client holds no plain host prop"); return; }
-    const FVector far{camera.X + kFarCm, camera.Y, camera.Z};
-    if (!Send(s, props[0].id, far, props[0].at)) { Inconclusive(a, "the request was not sent"); return; }
-    UE_LOGI("[HOSTILE-DRILL] %s sent one request for element %u from %.0f uu off the camera", ArmName(a),
-            static_cast<unsigned>(props[0].id), kFarCm);
+    for (const Candidate& c : HostProps(camera)) {
+        if (!IsBait(c)) continue;
+        const FVector far{camera.X + kFarCm, camera.Y, camera.Z};
+        if (!Send(s, c.id, far, c.at)) { Inconclusive(a, "the request was not sent"); return; }
+        UE_LOGI("[HOSTILE-DRILL] %s sent one request for element %u from %.0f uu off the camera", ArmName(a),
+                static_cast<unsigned>(c.id), kFarCm);
+        return;
+    }
+    Inconclusive(a, "the bait went before the request");
 }
 
-// hidden: the first prop the camera cannot see, asked for from the real camera.
+// hidden: the first prop the camera cannot see, asked for from the real camera. Traced as the host traces: the shot's
+// four object types, from the camera, ignoring the player and the prop, and the blocker well short of the prop.
 void SendHidden(coop::net::Session* s, Arm a, void* player, const FVector& camera) {
-    const uint8_t types[2] = {0, 1};  // WorldStatic, WorldDynamic: the lane's own set
-    void* ignore[1] = {player};
+    const uint8_t types[4] = {0, 1, 2, 3};
     for (const Candidate& c : HostProps(camera)) {
         if (c.cm > kSeenMaxCm) break;
+        void* ignore[2] = {player, c.actor};
         ue_wrap::trace::Hit blocker;
-        if (!ue_wrap::trace::LineHitForObjects(player, camera, c.at, types, 2, ignore, 1, &blocker)) continue;
-        if (!blocker.blocked || blocker.actor == c.actor || Dist(camera, blocker.point) >= c.cm - kSightSlack) continue;
+        if (!ue_wrap::trace::LineHitForObjects(player, camera, c.at, types, 4, ignore, 2, &blocker)) continue;
+        if (!blocker.blocked || Dist(camera, blocker.point) >= c.cm - kSightSlack - kBlockedMarginCm) continue;
         if (!Send(s, c.id, camera, c.at)) { Inconclusive(a, "the request was not sent"); return; }
         UE_LOGI("[HOSTILE-DRILL] %s sent one request for element %u, %.0f uu away behind a blocker %.0f uu away",
                 ArmName(a), static_cast<unsigned>(c.id), c.cm, Dist(camera, blocker.point));
@@ -150,6 +171,7 @@ enum class Step { WaitArm, Wait, Done };
 Step g_step = Step::WaitArm;
 int  g_slot = -1;
 uint16_t g_playerNo = 0;  // the judged slot's occupant at arm: the counters reset when it changes
+bool g_baitSpawned = false;
 Clock::time_point g_armAt{};
 uint32_t g_answeredBase[kReasons] = {};
 uint32_t g_runsBase = 0, g_refusedBase = 0, g_drainedBase = 0;
@@ -170,6 +192,20 @@ void ArmHost(coop::net::Session* s, Arm a) {
     for (int slot = 1; slot < static_cast<int>(coop::net::kMaxPeers) && g_slot < 0; ++slot)
         if (s->IsSlotWorldReady(slot)) g_slot = slot;
     if (g_slot < 0) return;
+    // far and hidden judge a request that needs the host's eye for the sender, which exists once the sender's puppet has
+    // had its first pose: the host spawns the bait then, and the sender sends only after it sees it. The flood is judged
+    // at the lane's cost path and needs no body.
+    if (a != Arm::RemoverFlood && !g_baitSpawned) {
+        if (!coop::prop_snapshot::IsBracketClosed(g_slot) || coop::join_window_baseline::IsLateWindowOpen(g_slot)) return;
+        coop::RemotePlayer& rp = coop::puppet_drive::Puppet(g_slot);
+        void* puppet = rp.valid() && rp.HasPose() ? rp.GetActor() : nullptr;
+        FVector at{};
+        if (!puppet || !R::IsLive(puppet) || !E::TryGetActorLocation(puppet, at)) return;
+        void* cls = ue_wrap::asset_load::LoadObjectByPath(kBaitPath);
+        void* bait = cls ? E::SpawnActor(cls, {at.X + kBaitAheadCm, at.Y, at.Z + kBaitDropCm}) : nullptr;
+        if (!bait) { Finish(a, "INCONCLUSIVE", "the bait did not spawn"); return; }
+        g_baitSpawned = true;
+    }
     for (size_t i = 0; i < kReasons; ++i) g_answeredBase[i] = RR::AnsweredFor(g_slot, static_cast<Reason>(i));
     g_runsBase = RR::RunsFor(g_slot);
     g_refusedBase = RR::RefusedFor(g_slot);
@@ -181,7 +217,7 @@ void ArmHost(coop::net::Session* s, Arm a) {
     g_playerNo = coop::roster_ledger::Get(g_slot).playerNo;
     g_armAt = Clock::now();
     g_step = Step::Wait;
-    UE_LOGI("[HOSTILE-DRILL] %s armed on slot %d", ArmName(a), g_slot);
+    UE_LOGI("[HOSTILE-DRILL] %s armed on slot %d (the host holds a posed puppet for it)", ArmName(a), g_slot);
 }
 
 // far and hidden: one request, one answer, and it is OutOfSight.
@@ -268,11 +304,24 @@ const char* ArmName(Arm a) {
 
 void TickClient(coop::net::Session* s, Arm a) {
     if (g_sent || !OwnJoinOver()) return;
-    g_sent = true;
-    if (a == Arm::RemoverFlood) { SendFlood(s, a); return; }
+    if (a == Arm::RemoverFlood) { g_sent = true; SendFlood(s, a); return; }
     void* player = coop::players::Registry::Get().Local();
     FVector camera{};
-    if (!player || !E::ReadMainPlayerCameraLocation(player, camera)) { g_sent = false; return; }  // not up yet; wait
+    if (!player || !E::ReadMainPlayerCameraLocation(player, camera)) return;  // not up yet; wait
+    // far and hidden wait for the host's bait: the host spawns it only once it holds a posed puppet for this client.
+    static int sTicks = 0;
+    if (g_waitSince != Clock::time_point{} && ++sTicks % 15 != 0) return;   // a registry walk: a few times a second
+    bool baited = false;
+    for (const Candidate& c : HostProps(camera)) baited = baited || IsBait(c);
+    if (!baited) {
+        if (g_waitSince == Clock::time_point{}) g_waitSince = Clock::now();
+        if (Clock::now() - g_waitSince > kFailBound) {
+            g_sent = true;
+            Inconclusive(a, "the host's bait never appeared (it has no posed puppet for this client)");
+        }
+        return;
+    }
+    g_sent = true;
     if (a == Arm::RemoverFar) SendFar(s, a, camera);
     else SendHidden(s, a, player, camera);
 }
@@ -294,6 +343,8 @@ void TickHostJudge(coop::net::Session* s, Arm a) {
 }
 
 void OnDisconnect() {
+    g_waitSince = {};
+    g_baitSpawned = false;
     g_sent = false;
     g_step = Step::WaitArm;
     g_slot = -1;
