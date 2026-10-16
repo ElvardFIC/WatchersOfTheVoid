@@ -2955,7 +2955,9 @@ static_assert(sizeof(PileResyncRequestPayload) == 8, "PileResyncRequestPayload m
 
 // A position correction (PropSnapPos): the eid and the host's current transform, and for a prop its
 // physics flags there; the client snaps its bound native at the quiescence sweep and converges the
-// prop's frozen and sleep to the host's. Identity is preserved; idempotent.
+// prop's frozen and sleep to the host's. Identity is preserved; idempotent. It carries the host's
+// drive context for the prop, and the client drops one older than a drive END still on its copy; a
+// keyed prop a hand held after its correction went out gets a follow-up after the release.
 struct PropSnapPosPayload {
     uint32_t eid;                       // the save-authoritative pile eid to reposition
     float    locX, locY, locZ;          // host's CURRENT authoritative world position (cm)
