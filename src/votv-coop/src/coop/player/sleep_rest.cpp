@@ -74,12 +74,22 @@ void* CurrentBody() {
     return SLP::OrigPawn();
 }
 
-// Dilate one effect and remember it. One the table cannot hold is left alone and said once: an actor not
-// remembered could not be put back.
+// An effect that ended mid-rest (lsd and foodPoison destroy themselves) leaves a dead entry; its slot is freed.
+void ReclaimDeadEffects() {
+    for (int i = 0; i < g_dilatedCount;) {
+        if (g_dilated[i].Alive()) { ++i; continue; }
+        g_dilated[i] = g_dilated[--g_dilatedCount];
+        g_dilated[g_dilatedCount].Reset();
+    }
+}
+
+// Dilate one effect and remember it. One the table cannot hold, even after the dead entries are reclaimed, is
+// left alone and said once: an actor not remembered could not be put back.
 void DilateEffect(void* effect, void* ctx) {
     bool known = false;
     for (int i = 0; i < g_dilatedCount && !known; ++i) known = g_dilated[i].Is(effect);
     if (!known) {
+        if (g_dilatedCount >= kMaxDilatedEffects) ReclaimDeadEffects();
         if (g_dilatedCount >= kMaxDilatedEffects) {
             if (!g_saidDilatedFull) {
                 g_saidDilatedFull = true;
@@ -126,10 +136,11 @@ void EndRest(const char* why) {
 }
 
 // The call has run: the game set the world's dilation and the sleeping flag inside it. A refusal leaves the
-// flag down and nothing to undo. Our own reflected calls come through here as the game's do.
+// flag down and nothing to undo. Our own reflected calls come through here as the game's do. The game has no
+// isSleep guard on `sleep` (mainGamemode.cpp:5495-5583), so a second call while resting sets the world's
+// factor again: it is put back to 1 here as well, and begins no new rest.
 void OnSleepPost(const sg::Call&) {
-    // A second `sleep` while resting is refused by the game with the flag still up: it begins nothing.
-    if (!ConnectedClient() || g_resting) return;
+    if (!ConnectedClient()) return;
     float asleep = 0.f;
     if (!V::Read(V::Field::Sleeping, &asleep) || asleep == 0.f) return;
     if (!SLP::EnsureResolved()) {
@@ -147,7 +158,7 @@ void OnSleepPost(const sg::Call&) {
         UE_LOGE("sleep_rest: the world's dilation could not be set back to 1 after the game's sleep");
         return;
     }
-    BeginRest();
+    if (!g_resting) BeginRest();
 }
 
 // Register the watch, then ask the gate to resolve its name until it is live or settled dead. At most once a

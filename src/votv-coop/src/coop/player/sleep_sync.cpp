@@ -56,19 +56,21 @@ bool SameBed(const WireKey& a, const WireKey& b) {
 }
 
 // A bed name is a class name: identifier characters inside `len` and zero past it. WireKey's contract says so
-// and nothing on the wire enforces it (coop/items/coingun_arbiter.cpp:145-155 reads its key the same way);
-// a name with a line break would forge a line in every peer's log, and a tail byte would pass for a change.
-bool BedWellFormed(const WireKey& k) {
-    if (k.len > sizeof(k.data)) return false;
+// and nothing on the wire enforces it (coop/items/coingun_arbiter.cpp:145-155 clamps the length and stops at
+// the first NUL, where this refuses); a name with a line break would forge a line in every peer's log, and a
+// tail byte would pass for a change. True with the first fault found.
+bool BedFaulty(const WireKey& k, BedRefusal* why) {
+    if (k.len > sizeof(k.data)) { *why = BedRefusal::Length; return true; }
     for (size_t i = 0; i < sizeof(k.data); ++i) {
         const unsigned char c = static_cast<unsigned char>(k.data[i]);
         if (i >= k.len) {
-            if (c != 0) return false;
+            if (c != 0) { *why = BedRefusal::Tail; return true; }
         } else if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_')) {
-            return false;
+            *why = BedRefusal::Charset;
+            return true;
         }
     }
-    return true;
+    return false;
 }
 
 // One warning per refused field, at most one every five seconds each: a hostile sender cannot fill the log, and
@@ -88,6 +90,16 @@ void Refuse(const char* field, int senderSlot) {
     row->said = true;
     row->lastMs = now;
     UE_LOGW("sleep_sync: SleepState refused -- %s (sender slot %d)", field, senderSlot);
+}
+
+// The bed refusals, counted per sender and reason for the hostile drill (coop/dev/hostile_drill_world).
+struct BedRefusals { uint32_t n[4] = {}; };
+coop::roster_ledger::PerSlotState<BedRefusals> g_bedRefused;
+
+void RefuseBed(BedRefusal why, int senderSlot) {
+    if (senderSlot > 0 && senderSlot < static_cast<int>(coop::net::kMaxPeers))
+        ++g_bedRefused[senderSlot].n[static_cast<int>(why)];
+    Refuse("bed", senderSlot);
 }
 
 // The host's name for the chat line; the ledger owns the fallback when the host's row has no nick.
@@ -147,7 +159,8 @@ bool HoldsRest(int slot, SleepPeerState state, const WireKey& bed) {
 }
 
 // HOST: a client's changed rest state, stored and relayed to every client but the reporter, as MTA's element-data
-// relay skips its source (CGame.cpp:2760-2766).
+// relay skips its source (CGame.cpp:2761, the skip at :2768). MTA relays to joined players only; ours is the same
+// through SendReliableToSlot's pre-world gate (coop/net/session.cpp:99).
 void ApplyRest(coop::net::Session* s, int slot, SleepPeerState state, const WireKey& bed) {
     g_state[slot] = state;
     g_bed[slot] = bed;
@@ -167,6 +180,18 @@ bool ReadLocal(SleepPeerState* state, bool* sleeping) {
     *state = dreaming != 0.f ? SleepPeerState::Dreaming
                              : (*sleeping ? SleepPeerState::Resting : SleepPeerState::Awake);
     return true;
+}
+
+// A CLIENT: this peer's polled state to the host. Recorded as sent only when the transport took it.
+void SendClientRest(coop::net::Session* s) {
+    SleepStatePayload p{};
+    p.op = static_cast<uint8_t>(SleepOp::ClientRest);
+    p.state = static_cast<uint8_t>(g_localState);
+    p.bed = g_localBed;
+    if (s->SendReliableToSlot(0, coop::net::ReliableKind::SleepState, &p, sizeof(p))) {
+        g_sentState = g_localState;
+        g_sentBed = g_localBed;
+    }
 }
 
 }  // namespace
@@ -197,8 +222,8 @@ void Tick() {
     if (!ReadLocal(&state, &sleeping)) return;
     if (state != g_localState || sleeping != g_localSleeping) {
         // The bed is read at the edge only: the gamemode sets it before isSleep rises, and a read per tick
-        // would allocate. Into a dream the bed is kept as published: wakeup() clears gamemode.bed before the
-        // dream, so a read there finds none.
+        // would allocate. Into a dream the bed is kept as published: the non-ariral wakeup() clears
+        // gamemode.bed before the dream, so a read there finds none.
         WireKey bed{};
         if (state == SleepPeerState::Dreaming && g_localState != SleepPeerState::Awake) bed = g_localBed;
         else if (state != SleepPeerState::Awake) coop::net::WireKeyFromString(SLP::BedClassName(), bed);
@@ -229,16 +254,7 @@ void Tick() {
     // A client holds its nightmare rolls off for the session: a nightmare is the host's machine's roll alone.
     if (!g_dreamProbSuppressed && SLP::SetDreamProbability(0.f)) g_dreamProbSuppressed = true;
 
-    if (g_localState != g_sentState || !SameBed(g_localBed, g_sentBed)) {
-        SleepStatePayload p{};
-        p.op = static_cast<uint8_t>(SleepOp::ClientRest);
-        p.state = static_cast<uint8_t>(g_localState);
-        p.bed = g_localBed;
-        if (s->SendReliableToSlot(0, coop::net::ReliableKind::SleepState, &p, sizeof(p))) {
-            g_sentState = g_localState;
-            g_sentBed = g_localBed;
-        }
-    }
+    if (g_localState != g_sentState || !SameBed(g_localBed, g_sentBed)) SendClientRest(s);
 }
 
 void OnReliable(const uint8_t* payload, size_t len, uint8_t senderSlot) {
@@ -252,7 +268,8 @@ void OnReliable(const uint8_t* payload, size_t len, uint8_t senderSlot) {
                                            ? SleepPeerState::Resting
                                            : SleepPeerState::Dreaming))
         return Refuse("state", senderSlot);
-    if (!BedWellFormed(p.bed)) return Refuse("bed", senderSlot);
+    BedRefusal fault{};
+    if (BedFaulty(p.bed, &fault)) return RefuseBed(fault, senderSlot);
     if (p.op == static_cast<uint8_t>(SleepOp::HostAsleep)) {
         if (p.slot != 0) return Refuse("slot", senderSlot);
         if (p.bed.len != 0) return Refuse("bed", senderSlot);
@@ -266,7 +283,7 @@ void OnReliable(const uint8_t* payload, size_t len, uint8_t senderSlot) {
         // MTA acts on a joined player's reports only (CGame.cpp:2376; coop/interactables/dish_calib_sync.cpp).
         if (!s->IsSlotWorldReady(senderSlot)) return Refuse("slot", senderSlot);
         const SleepPeerState state = static_cast<SleepPeerState>(p.state);
-        if (state == SleepPeerState::Awake && p.bed.len != 0) return Refuse("bed", senderSlot);
+        if (state == SleepPeerState::Awake && p.bed.len != 0) return RefuseBed(BedRefusal::AwakeWithBed, senderSlot);
         PendingRest& pend = g_pending[senderSlot];
         if (HoldsRest(senderSlot, state, p.bed)) {
             pend.pace.Withdraw();
@@ -286,6 +303,9 @@ void OnReliable(const uint8_t* payload, size_t len, uint8_t senderSlot) {
         if (now && !g_hostSleeping) PushHostAsleepLine();
         if (now != g_hostSleeping) UE_LOGI("sleep_sync: the host is %s", now ? "asleep" : "awake");
         g_hostSleeping = now;
+        // The host refuses a rest from a slot it does not yet hold world-ready, so a rest sent early is sent
+        // again here (the connect broadcast reaches this slot only once it is); a held one is dropped there.
+        if (g_localState != SleepPeerState::Awake) SendClientRest(s);
         break;
     }
     case SleepOp::PeerRest: {
@@ -352,6 +372,10 @@ void PayOwed(coop::net::Session& session) {
 }
 
 uint32_t ReportsApplied(int slot) { return g_reportsApplied[slot]; }
+
+uint32_t BedRefusalsFrom(int slot, BedRefusal why) {
+    return g_bedRefused[slot].n[static_cast<int>(why)];
+}
 
 bool LocalInBed() { return g_localState != SleepPeerState::Awake; }
 

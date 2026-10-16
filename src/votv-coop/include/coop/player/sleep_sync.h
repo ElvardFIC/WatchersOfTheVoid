@@ -1,15 +1,15 @@
-// coop/player/sleep_sync.h -- who rests: every peer's sleep state, known to every peer. Game thread
-// throughout.
+// coop/player/sleep_sync.h -- who rests: each peer's sleep state, known to the host and to the other clients.
+// Game thread throughout.
 //
 // Every peer sleeps NATIVELY on its own machine: the game's own sleep entry, view, restore and wake
 // (a client's world is held at the normal rate by coop/player/sleep_rest). Nothing here holds a peer's
 // dilation, camera or wake, and nothing waits for anyone. What crosses the wire is the fact of rest:
 //   - each peer's state (awake, resting in a bed or fainted, dreaming in a nightmare) with the bed's
-//     class name, sent by a client to the host on a change and relayed by the host to every client;
+//     class name, sent by a client to the host on a change and relayed by the host to every other client;
 //   - the host's own sleeping flag, which a client shows as one chat line when it rises (the world is
 //     about to run faster: the host's machine runs the game's native speed-up, and a client sees it
 //     through the host's clock and streams).
-// Late join: a joiner is sent the host's flag and every peer's state that is not awake.
+// Late join: a joiner gets the host's flag and every non-awake state; a client repeats its own on each flag it gets.
 //
 // A client holds dreamProbability at 0 for the session: a nightmare is a roll of the host's machine
 // alone. The host's own roll is never written (the game's native -1).
@@ -61,6 +61,12 @@ bool HostAsleepNow();
 // client's rest reports the host applied from `slot`; whether this peer's own polled state is not awake.
 uint32_t ReportsApplied(int slot);
 bool LocalInBed();
+
+// Why a bed was refused at the door: a length past the name's room, a character outside an identifier, a nonzero
+// byte past the length, or an Awake report that carries a bed.
+enum class BedRefusal : uint8_t { Length = 0, Charset = 1, Tail = 2, AwakeWithBed = 3 };
+// How many reports `slot` sent that were refused for `why` (an instrument: the hostile drill's bed judge).
+uint32_t BedRefusalsFrom(int slot, BedRefusal why);
 
 void OnDisconnect();
 

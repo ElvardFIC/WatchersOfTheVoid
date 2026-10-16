@@ -36,15 +36,33 @@ std::chrono::steady_clock::time_point g_nextResolve{};
 bool g_coreResolved = false;  // isSleep, dreamProbability, bed and the dilation setter: latched once they are
 bool g_allResolved = false;   // the optional members as well: nothing is looked up after this
 
+bool IsCdo(void* obj) { return R::NameStartsWith(R::NameOf(obj), L"Default__"); }
+
+void OnStaticsInstance(void* ctx, void* obj, int32_t) {
+    void*& found = *static_cast<void**>(ctx);
+    if (!found && IsCdo(obj)) found = obj;
+}
+
+// The GameplayStatics default object: the one listed instance of the class that is named Default__*, through the
+// index and never the object array. Null while the class is not listed yet.
+void* FindStaticsCdo() {
+    void* const cls = object_index::ClassByName(P::name::GameplayStaticsClass);
+    if (!cls) return nullptr;
+    void* found = nullptr;
+    object_index::ForEachInstance(cls, &OnStaticsInstance, &found);
+    return found;
+}
+
 // Before the core resolves the pass retries every 2 s; after it, the optional members (origPawn, the sleep verb,
-// the dilation getter) are asked again every 30 s until they resolve. No lookup here walks the object array.
+// the dilation getter) are asked again every 30 s until they resolve. No lookup here walks the object array: the
+// classes come from the index by name, and the default object from the index's list of its class's instances.
 void ResolvePass() {
     if (g_allResolved) return;
     const auto now = std::chrono::steady_clock::now();
     if (now < g_nextResolve) return;
     g_nextResolve = now + (g_coreResolved ? std::chrono::seconds(30) : std::chrono::seconds(2));
 
-    if (!g_gmCls) g_gmCls = R::FindClass(L"mainGamemode_C");
+    if (!g_gmCls) g_gmCls = object_index::ClassByName(L"mainGamemode_C");
     if (!g_gmCls) return;
     if (g_offIsSleep < 0) g_offIsSleep = R::FindPropertyOffset(g_gmCls, L"isSleep");
     if (g_offDreamProb < 0) g_offDreamProb = R::FindPropertyOffset(g_gmCls, L"dreamProbability");
@@ -52,7 +70,7 @@ void ResolvePass() {
     if (g_offOrigPawn < 0) g_offOrigPawn = R::FindPropertyOffset(g_gmCls, L"origPawn");
     if (!g_sleepFn) g_sleepFn = R::FindFunction(g_gmCls, L"sleep");
 
-    if (!g_gsCdo) g_gsCdo = R::FindClassDefaultObject(P::name::GameplayStaticsClass);
+    if (!g_gsCdo) g_gsCdo = FindStaticsCdo();
     if (g_gsCdo) {
         void* gsCls = R::ClassOf(g_gsCdo);
         if (gsCls && !g_setDilationFn)
@@ -136,7 +154,6 @@ namespace {
 // instances), so a bed is matched by descent from bed_C and never by class name. The one test both finders use.
 void* BedBase() { return object_index::ClassByName(L"bed_C"); }
 bool IsBedClass(void* cls, void* base) { return cls && base && R::IsDescendantOfAny(cls, &base, 1); }
-bool IsCdo(void* obj) { return R::NameStartsWith(R::NameOf(obj), L"Default__"); }
 
 struct BedPick {
     void* base = nullptr;

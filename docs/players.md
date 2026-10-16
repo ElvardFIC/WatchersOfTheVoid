@@ -173,7 +173,7 @@ the frame of the call and, while the rest lasts, runs the player's body and the 
 the game's own factor, with food and coffee settled to the rate they would have had
 (`coop/player/sleep_rest`). What crosses the wire is who rests. Each peer's state (awake, resting
 in a bed or fainted, dreaming in a nightmare) with the bed's class name goes from a client to the
-host, which relays it to every client; the host's own sleeping flag goes to the clients, which show
+host, which relays it to every other client; the host's own sleeping flag goes to the clients, which show
 one chat line naming the host when it rises. A joiner is sent the host's flag and every peer's
 state that is not awake, and a leaver is told to every client as awake. A client holds its
 nightmare chance at zero, so a nightmare is a roll of the host's machine alone. `[?]`
@@ -296,7 +296,8 @@ The puppet spawns on the first pose that arrives. The roster rows, skin, namepla
 preferences are in the set of messages a host may send before the joiner's world exists, so a
 choice made during the load is not lost. Hand items and item states are replayed to the joiner
 at its ready edge. A joiner is sent the host's sleeping flag and the rest state of every peer
-that is not awake. The inventory is seeded before the world. A peer's death state is not seeded; a joiner sees a
+that is not awake. A joiner that rests before the host holds its world ready has that report refused, and repeats
+it each time the host's sleeping flag reaches it, which the host sends once it holds the joiner ready. The inventory is seeded before the world. A peer's death state is not seeded; a joiner sees a
 dead peer through the ragdoll bit of its next pose.
 
 ## Known limits
