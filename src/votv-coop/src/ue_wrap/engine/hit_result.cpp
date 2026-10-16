@@ -129,6 +129,8 @@ bool WriteField(void* object, const wchar_t* field, void* actor, void* component
     return true;
 }
 
+bool Readable() { return Resolve() && Members().ok; }
+
 bool Parse(const void* hit, int32_t bytes, Hit* out) {
     if (!hit || !out || !Resolve()) return false;
     const Layout& l = Members();

@@ -43,7 +43,8 @@ struct Hit {
 // values, one byte each: 0 WorldStatic, 1 WorldDynamic, 2 Pawn, 3 PhysicsBody) and ignoring the actors
 // `ignore[0..nIgnore)` (null when nIgnore is 0). The arrays are only read, for the length of the call.
 // bTraceComplex=false, bIgnoreSelf=true: `worldCtx`'s own actor is ignored too. False when
-// unresolvable (as -1 above), on a null `out`, or when a blocking hit's FHitResult did not read.
+// unresolvable (as -1 above), on a null `out`, or when FHitResult's layout does not resolve: a
+// hit that cannot be read is "could not trace", never a clear line.
 // Game thread only.
 bool LineHitForObjects(void* worldCtx, const FVector& start, const FVector& end, const uint8_t* objectTypes,
                        int32_t nTypes, void* const* ignore, int32_t nIgnore, Hit* out);

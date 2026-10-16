@@ -38,6 +38,10 @@ struct Hit {
     FVector normal{};
 };
 
+// Can Parse read an FHitResult at all (the struct and every member it reads resolve)? Lets a caller refuse
+// before it runs a call whose hit it could not read afterwards. Game thread.
+bool Readable();
+
 // Read the FHitResult of `bytes` bytes at `hit` (a trace's OutHit, a frame's local) into `out`. False when
 // the struct does not resolve or `bytes` cannot hold it. Game thread.
 bool Parse(const void* hit, int32_t bytes, Hit* out);

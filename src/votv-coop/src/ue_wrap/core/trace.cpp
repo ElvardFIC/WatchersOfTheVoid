@@ -62,23 +62,25 @@ bool Run(ParamFrame& f, void* worldCtx, const FVector& start, const FVector& end
 }
 
 // The trace: 1 blocked, 0 clear, -1 unresolvable (also a bad argument, or a blocking hit whose FHitResult did
-// not read). A non-null `out` is filled with the first blocking hit.
+// not read). A non-null `out` is filled with the first blocking hit, and needs FHitResult's layout resolved
+// before the trace runs: a hit that cannot be read answers -1, never a clear line.
 int Cast(void* worldCtx, const FVector& start, const FVector& end, const uint8_t* types, int32_t nTypes,
          void* const* ignore, int32_t nIgnore, Hit* out) {
     if (!worldCtx || !types || nTypes <= 0 || nIgnore < 0 || (nIgnore > 0 && !ignore) || !Resolved()) return -1;
+    static int32_t s_outHit = 0;  // the OutHit parameter's size, read once
+    if (out && s_outHit <= 0) s_outHit = R::FindParamSize(g_traceFn, L"OutHit");
+    const int32_t size = s_outHit;
+    if (out && (size <= 0 || size > kHitBytes || !hit_result::Readable())) return -1;
     ParamFrame f(g_traceFn);
     if (!Run(f, worldCtx, start, end, types, nTypes, ignore, nIgnore)) return -1;
     const bool blocked = f.Get<bool>(L"ReturnValue");
-    if (out) {
-        *out = Hit{};
-        out->blocked = blocked;
-    }
-    if (!blocked || !out) return blocked ? 1 : 0;
-    const int32_t size = R::FindParamSize(g_traceFn, L"OutHit");
+    if (!out) return blocked ? 1 : 0;
+    *out = Hit{};
+    out->blocked = blocked;
+    if (!blocked) return 0;
     unsigned char raw[kHitBytes];
     hit_result::Hit hit;
-    if (size <= 0 || size > kHitBytes || !f.GetRaw(L"OutHit", raw, size) || !hit_result::Parse(raw, size, &hit))
-        return -1;
+    if (!f.GetRaw(L"OutHit", raw, size) || !hit_result::Parse(raw, size, &hit)) return -1;
     out->point = hit.location;
     out->normal = hit.normal;
     out->actor = hit.actor;
