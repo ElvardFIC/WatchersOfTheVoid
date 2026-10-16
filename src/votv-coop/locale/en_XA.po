@@ -127,6 +127,10 @@ msgid "%1$s deleted an email: %2$s"
 msgstr "[[%1$s deleted an email: %2$s]]"
 
 #, c-format
+msgid "%1$s is asleep -- the world runs faster"
+msgstr "[[%1$s is asleep -- the world runs faster]]"
+
+#, c-format
 msgid "%1$s is connecting to the game..."
 msgstr "[[%1$s is connecting to the game...]]"
 
@@ -167,10 +171,6 @@ msgstr "[[%1$s was turned away: unofficial build %2$s [%3$s]]]"
 #, c-format
 msgid "%1$u / %2$u objects"
 msgstr "[[%1$u / %2$u objects]]"
-
-#, c-format
-msgid "%1$u/%2$u players sleeping"
-msgstr "[[%1$u/%2$u players sleeping]]"
 
 #, c-format
 msgid "%d LAN"
@@ -468,9 +468,6 @@ msgstr "[[Enter = send, Esc = close, Up/Down = history]]"
 msgid "Everyone in the registry is online."
 msgstr "[[Everyone in the registry is online.]]"
 
-msgid "Everyone is asleep -- the night passes..."
-msgstr "[[Everyone is asleep -- the night passes...]]"
-
 msgid "Everything scales with the screen automatically; this is your extra zoom."
 msgstr "[[Everything scales with the screen automatically; this is your extra zoom.]]"
 
@@ -486,9 +483,6 @@ msgstr "[[Finding a route to %s]]"
 
 msgid "Gamemode:"
 msgstr "[[Gamemode:]]"
-
-msgid "Good morning -- everyone is rested."
-msgstr "[[Good morning -- everyone is rested.]]"
 
 #, c-format
 msgid "Graphics API: %s"
@@ -938,9 +932,6 @@ msgstr "[[Skins]]"
 
 msgid "Skins come from converter .pak files under Content/Paks/LogicMods (any subfolder). One pak may carry several skins -- the four scientists ship together in scientists.pak."
 msgstr "[[Skins come from converter .pak files under Content/Paks/LogicMods (any subfolder). One pak may carry several skins -- the four scientists ship together in scientists.pak.]]"
-
-msgid "Sleep interrupted -- everyone wakes up."
-msgstr "[[Sleep interrupted -- everyone wakes up.]]"
 
 msgid "Something was sent before the identity was proved."
 msgstr "[[Something was sent before the identity was proved.]]"

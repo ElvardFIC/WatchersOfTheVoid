@@ -21,21 +21,15 @@ void* g_gmCls = nullptr;
 
 int32_t g_offIsSleep = -1;     // mainGamemode.isSleep
 int32_t g_offDreamProb = -1;   // mainGamemode.dreamProbability (-1 = the SP sentinel)
-int32_t g_offSaveSlot = -1;    // mainGamemode.saveSlot (UsaveSlot_C*)
+int32_t g_offBed = -1;         // mainGamemode.bed (Abed_C*)
 void* g_wakeupFn = nullptr;    // gamemode.wakeup() -- the timelapse END
 void* g_sleepFn = nullptr;     // gamemode.sleep(bed, dropItem, ignoreRagdoll)
-
-void* g_saveSlotCls = nullptr;
-int32_t g_offSleepNeed = -1;   // saveSlot.sleep (the 0..100 need)
 
 void* g_gsCdo = nullptr;            // GameplayStatics CDO
 void* g_setDilationFn = nullptr;    // SetGlobalTimeDilation(WorldContextObject, TimeDilation)
 void* g_getDilationFn = nullptr;    // GetGlobalTimeDilation(WorldContextObject) -> float
 
-void* g_bedCls = nullptr;           // bed_C (probe helper)
-
-int32_t g_offSleepCam = -1;         // mainGamemode.sleepCam (ACameraActor)
-int32_t g_offSleepingPawn = -1;     // mainGamemode.sleepingPawn (the body in bed)
+void* g_bedCls = nullptr;           // bed_C (FindBed)
 
 std::chrono::steady_clock::time_point g_nextResolve{};
 bool g_coreResolved = false;
@@ -49,13 +43,9 @@ void ResolvePass() {
     if (!g_gmCls) return;
     if (g_offIsSleep < 0) g_offIsSleep = R::FindPropertyOffset(g_gmCls, L"isSleep");
     if (g_offDreamProb < 0) g_offDreamProb = R::FindPropertyOffset(g_gmCls, L"dreamProbability");
-    if (g_offSaveSlot < 0) g_offSaveSlot = R::FindPropertyOffset(g_gmCls, L"saveSlot");
+    if (g_offBed < 0) g_offBed = R::FindPropertyOffset(g_gmCls, L"bed");
     if (!g_wakeupFn) g_wakeupFn = R::FindFunction(g_gmCls, L"wakeup");
     if (!g_sleepFn) g_sleepFn = R::FindFunction(g_gmCls, L"sleep");
-
-    if (!g_saveSlotCls) g_saveSlotCls = R::FindClass(L"saveSlot_C");
-    if (g_saveSlotCls && g_offSleepNeed < 0)
-        g_offSleepNeed = R::FindPropertyOffset(g_saveSlotCls, L"sleep");
 
     if (!g_gsCdo) g_gsCdo = R::FindClassDefaultObject(P::name::GameplayStaticsClass);
     if (g_gsCdo) {
@@ -65,30 +55,18 @@ void ResolvePass() {
         if (gsCls && !g_getDilationFn)
             g_getDilationFn = R::FindFunction(gsCls, L"GetGlobalTimeDilation");
     }
-    if (!g_bedCls) g_bedCls = R::FindClass(L"bed_C");  // optional (probe only)
-    // Optional camera surface (the WAITING-state view hold) -- never gates core.
-    if (g_offSleepCam < 0) g_offSleepCam = R::FindPropertyOffset(g_gmCls, L"sleepCam");
-    if (g_offSleepingPawn < 0)
-        g_offSleepingPawn = R::FindPropertyOffset(g_gmCls, L"sleepingPawn");
+    if (!g_bedCls) g_bedCls = R::FindClass(L"bed_C");  // optional (FindBed only)
 
-    const bool core = g_offIsSleep >= 0 && g_offDreamProb >= 0 && g_offSaveSlot >= 0 &&
-                      g_wakeupFn && g_offSleepNeed >= 0 && g_setDilationFn;
+    const bool core = g_offIsSleep >= 0 && g_offDreamProb >= 0 && g_offBed >= 0 && g_wakeupFn &&
+                      g_setDilationFn;
     if (core && !g_coreResolved) {
         g_coreResolved = true;
-        UE_LOGI("sleep: resolved (isSleep=0x%X dreamProb=0x%X saveSlot=0x%X sleepNeed=0x%X "
-                "wakeup=%s sleep=%s dilation set/get=%s/%s bedCls=%s)",
-                g_offIsSleep, g_offDreamProb, g_offSaveSlot, g_offSleepNeed,
-                g_wakeupFn ? "yes" : "NO", g_sleepFn ? "yes" : "NO",
-                g_setDilationFn ? "yes" : "NO", g_getDilationFn ? "yes" : "NO",
-                g_bedCls ? "yes" : "NO");
+        UE_LOGI("sleep: resolved (isSleep=0x%X dreamProb=0x%X bed=0x%X wakeup=%s sleep=%s "
+                "dilation set/get=%s/%s bedCls=%s)",
+                g_offIsSleep, g_offDreamProb, g_offBed, g_wakeupFn ? "yes" : "NO",
+                g_sleepFn ? "yes" : "NO", g_setDilationFn ? "yes" : "NO",
+                g_getDilationFn ? "yes" : "NO", g_bedCls ? "yes" : "NO");
     }
-}
-
-void* SaveSlot() {
-    void* gm = world_singleton::Gamemode();
-    if (!gm || g_offSaveSlot < 0) return nullptr;
-    void* ss = *reinterpret_cast<void**>(reinterpret_cast<uint8_t*>(gm) + g_offSaveSlot);
-    return (ss && R::IsLive(ss)) ? ss : nullptr;
 }
 
 }  // namespace
@@ -102,6 +80,14 @@ bool IsSleeping() {
     void* gm = world_singleton::Gamemode();
     if (!gm || g_offIsSleep < 0) return false;
     return *(reinterpret_cast<uint8_t*>(gm) + g_offIsSleep) != 0;
+}
+
+std::wstring BedClassName() {
+    void* gm = world_singleton::Gamemode();
+    if (!gm || g_offBed < 0) return std::wstring();
+    void* bed = *reinterpret_cast<void**>(reinterpret_cast<uint8_t*>(gm) + g_offBed);
+    if (!bed || !R::IsLive(bed)) return std::wstring();
+    return R::ClassNameOf(bed);
 }
 
 bool SetDreamProbability(float v) {
@@ -141,46 +127,11 @@ float GetGlobalTimeDilation() {
     return f.Get<float>(L"ReturnValue");
 }
 
-bool ReadSleepNeed(float& out) {
-    void* ss = SaveSlot();
-    if (!ss || g_offSleepNeed < 0) return false;
-    out = *reinterpret_cast<float*>(reinterpret_cast<uint8_t*>(ss) + g_offSleepNeed);
-    return true;
-}
-
-bool WriteSleepNeed(float v) {
-    void* ss = SaveSlot();
-    if (!ss || g_offSleepNeed < 0) return false;
-    *reinterpret_cast<float*>(reinterpret_cast<uint8_t*>(ss) + g_offSleepNeed) = v;
-    return true;
-}
-
-namespace {
-void* GmActorField(int32_t off) {
-    void* gm = world_singleton::Gamemode();
-    if (!gm || off < 0) return nullptr;
-    void* a = *reinterpret_cast<void**>(reinterpret_cast<uint8_t*>(gm) + off);
-    return (a && R::IsLive(a)) ? a : nullptr;
-}
-}  // namespace
-
-void* SleepCam() { return GmActorField(g_offSleepCam); }
-void* SleepingPawn() { return GmActorField(g_offSleepingPawn); }
-
-bool SetSleepViewTarget(void* target) {
-    if (!target) return false;
-    void* pawn = SleepingPawn();
-    if (!pawn) return false;
-    void* pc = ue_wrap::engine::GetController(pawn);
-    if (!pc) return false;
-    return ue_wrap::engine::SetViewTargetWithBlend(pc, target, 0.25f);
-}
-
 void* FindBed() {
     // The PLACED base bed is a cooked SUBCLASS (bed_b_C / bed_m_C / ... --
     // the 00:17 smoke proved zero exact bed_C instances), so match by
     // descendant-of-bed_C over the object array instead of by class name.
-    // Probe-only one-shot walk; never on a hot path.
+    // One-shot walk; never on a hot path.
     if (!g_bedCls) return nullptr;
     const int32_t n = R::NumObjects();
     for (int32_t i = 0; i < n; ++i) {

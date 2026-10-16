@@ -64,8 +64,9 @@ bool SendLevel(coop::net::Session* s, int i, bool value) {
     }
     case 1: {
         coop::net::SleepStatePayload p{};
-        p.op = 0;  // Report
-        p.flag = value ? 1 : 0;
+        p.op = static_cast<uint8_t>(coop::net::SleepOp::ClientRest);
+        p.state = static_cast<uint8_t>(value ? coop::net::SleepPeerState::Resting
+                                             : coop::net::SleepPeerState::Awake);
         return s->SendReliableToSlot(0, Kind::SleepState, &p, sizeof(p));
     }
     default: {
@@ -102,7 +103,7 @@ uint32_t Applied(int i) {
 bool Read(int i, bool& out) {
     switch (i) {
     case 0:  return coop::alarm_sync::ReadLocalActive(out);
-    case 1:  out = coop::sleep_sync::InBed(g_slot); return true;
+    case 1:  out = coop::sleep_sync::PeerState(g_slot) != coop::net::SleepPeerState::Awake; return true;
     default: return coop::laptop_sync::Target(out);
     }
 }

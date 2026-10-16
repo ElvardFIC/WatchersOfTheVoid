@@ -46,14 +46,14 @@ namespace WI  = ue_wrap::world_identity;
 
 enum class Arm { Off, Awake, Asleep, Cheat, Mode5, Malformed, JoinWindow };
 
-// The host: the join and the set, then (asleep) a quiet world, the bed, the fast-forward, the wake;
+// The host: the join and the set, then (asleep) a quiet world, the bed, its own sleep, the wake;
 // (joinwindow) the set at a joiner's taken world, then the roll. The client: (asleep) the join, the bed,
-// the fast-forward, the wake; (cheat) its writes. The set and the sleep entry both finish inside their
+// the host's sleep (its flag), the wake; (cheat) its writes. The set and the sleep entry both finish inside their
 // call, so each is judged the moment it returns.
-enum class Step { WaitJoin, WaitQuiet, WaitAccelerate, WatchWake, WatchRoll, Done, Invalid };
+enum class Step { WaitJoin, WaitQuiet, WaitHostAsleep, WatchWake, WatchRoll, Done, Invalid };
 
 constexpr float kAwakeFraction  = 0.999f;  // a few game units before the wrap
-constexpr float kAsleepFraction = 0.98f;   // runway for the bed and the gate, burnt at 1x until then
+constexpr float kAsleepFraction = 0.98f;   // runway for the bed and the host's sleep, burnt at 1x until then
 constexpr float kJoinFraction   = 0.9999f; // under a second at 1x, against a joiner's load of many
 constexpr float kNeedForTheArm  = 30.f;    // the wake loop ends a sleep at a need of 100
 constexpr int   kCheatWrites    = 3;       // one write can meet a host sample at the same tick
@@ -70,7 +70,7 @@ bool    g_saidArm = false;
 bool    g_saidEvents = false;
 int     g_slot = -1;          // the host's client whose join armed it
 int32_t g_setDayZ = -1;       // the host's day number when it set the clock
-uint64_t g_minutesAtAccel = 0;  // this peer's minute pulses when the fast-forward began
+uint64_t g_minutesAtHostAsleep = 0;  // this peer's minute pulses when the host was first seen asleep
 bool     g_pokedRate = false;   // the clock latch's control write is done (client, once per session)
 bool     g_musicsCleared = false;  // this peer's music flags were cleared for the midnight (once per session)
 
@@ -172,7 +172,7 @@ std::string SleepInputs(bool withDilation = true) {
     float food = -1.f, need = -1.f;
     int32_t events = -1;
     ue_wrap::vitals::Read(ue_wrap::vitals::Field::Food, &food);
-    SLP::ReadSleepNeed(need);
+    ue_wrap::vitals::Read(ue_wrap::vitals::Field::Sleep, &need);
     AE::ReadCount(events);
     char buf[128];
     int n = std::snprintf(buf, sizeof(buf), "food %.1f need %.1f activeEvents %d isSleep %d", food, need, events,
@@ -229,7 +229,7 @@ bool HostDayMoved() {
 // asleep, or refused (an active event, food at 10, no floor under the player or the bed).
 void GoToBed(char role) {
     const std::string before = SleepInputs();
-    SLP::WriteSleepNeed(kNeedForTheArm);
+    ue_wrap::vitals::Write(ue_wrap::vitals::Field::Sleep, kNeedForTheArm);
     void* bed = SLP::FindBed();
     const bool called = bed && SLP::CallSleep(bed);
     const std::string after = SleepInputs();
@@ -244,26 +244,26 @@ void GoToBed(char role) {
         Invalid(role, why.c_str());
         return;
     }
-    UE_LOGI("midnight_drill: [%c] in bed; waiting for the shared fast-forward", role);
-    g_step = Step::WaitAccelerate;
+    UE_LOGI("midnight_drill: [%c] in bed; waiting for the host to be asleep", role);
+    g_step = Step::WaitHostAsleep;
 }
 
-void CheckAccelerate(char role) {
-    if (coop::sleep_sync::InAcceleratePhase()) {
+void CheckHostAsleep(char role) {
+    if (coop::sleep_sync::HostAsleepNow()) {
         float total = 0.f, day = 0.f, scale = 0.f;
         DNC::ReadClock(total, day, scale);
-        g_minutesAtAccel = coop::dev::rollover_watch::RanCount(L"func_newMinute");
-        UE_LOGI("midnight_drill: [%c] ACCELERATE -- timescale %.3f day=%.2f | %s", role, scale, day,
+        g_minutesAtHostAsleep = coop::dev::rollover_watch::RanCount(L"func_newMinute");
+        UE_LOGI("midnight_drill: [%c] HOST ASLEEP -- timescale %.3f day=%.2f | %s", role, scale, day,
                 SleepInputs().c_str());
         g_step = Step::WatchWake;
         return;
     }
     if (role == 'H' && HostDayMoved()) {
-        Invalid(role, "the host reached midnight before the fast-forward began: the runway burnt out at 1x");
+        Invalid(role, "the host reached midnight before it was asleep: the runway burnt out at 1x");
         return;
     }
     if (!SLP::IsSleeping()) {
-        const std::string why = "woken before the fast-forward began | " + SleepInputs();
+        const std::string why = "woken before the host was seen asleep | " + SleepInputs();
         Invalid(role, why.c_str());
     }
 }
@@ -278,9 +278,9 @@ void WatchWake(char role) {
     DNC::ReadSavedTime(h, m, z);
     // The minute pulses this peer ran through the night: a client that saw every game minute of the
     // host's clock matches the host's count; one whose samples skipped minutes falls short.
-    const uint64_t minutes = coop::dev::rollover_watch::RanCount(L"func_newMinute") - g_minutesAtAccel;
+    const uint64_t minutes = coop::dev::rollover_watch::RanCount(L"func_newMinute") - g_minutesAtHostAsleep;
     UE_LOGI("midnight_drill: [%c] woke -- savedtime %d:%02d day %d, day=%.2f, %llu minute pulses since the "
-            "fast-forward | %s", role, h, m, z, day, static_cast<unsigned long long>(minutes),
+            "host's sleep | %s", role, h, m, z, day, static_cast<unsigned long long>(minutes),
             SleepInputs().c_str());
     g_step = Step::Done;
 }
@@ -452,7 +452,7 @@ void TickHost(coop::net::Session* s) {
         GoToBed('H');
         return;
     }
-    case Step::WaitAccelerate: CheckAccelerate('H'); return;
+    case Step::WaitHostAsleep: CheckHostAsleep('H'); return;
     case Step::WatchWake:      WatchWake('H'); return;
     case Step::WatchRoll:      WatchRoll(s); return;
     default:                   return;
@@ -635,7 +635,7 @@ void TickClient() {
         UE_LOGI("midnight_drill: [C] arm asleep -- joined; going to bed");
         GoToBed('C');
         return;
-    case Step::WaitAccelerate: CheckAccelerate('C'); return;
+    case Step::WaitHostAsleep: CheckHostAsleep('C'); return;
     case Step::WatchWake:      WatchWake('C'); return;
     default:                   return;
     }
@@ -674,7 +674,7 @@ void OnDisconnect() {
     g_saidEvents = false;
     g_slot = -1;
     g_setDayZ = -1;
-    g_minutesAtAccel = 0;
+    g_minutesAtHostAsleep = 0;
     g_pokedRate = false;
     g_musicsCleared = false;
     g_malformedSent = 0;

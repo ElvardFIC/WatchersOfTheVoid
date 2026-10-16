@@ -154,6 +154,11 @@ msgstr ""
 msgid "%1$s deleted an email: %2$s"
 msgstr ""
 
+#: src/coop/player/sleep_sync.cpp
+#, c-format
+msgid "%1$s is asleep -- the world runs faster"
+msgstr ""
+
 #: src/coop/session/player_handshake.cpp
 #, c-format
 msgid "%1$s is connecting to the game..."
@@ -204,11 +209,6 @@ msgstr ""
 #: src/ui/loading_screen.cpp
 #, c-format
 msgid "%1$u / %2$u objects"
-msgstr ""
-
-#: src/coop/player/sleep_sync.cpp
-#, c-format
-msgid "%1$u/%2$u players sleeping"
 msgstr ""
 
 #: src/ui/server_browser_panels.cpp
@@ -582,10 +582,6 @@ msgstr ""
 msgid "Everyone in the registry is online."
 msgstr ""
 
-#: src/coop/player/sleep_sync.cpp
-msgid "Everyone is asleep -- the night passes..."
-msgstr ""
-
 #: src/ui/dev_menu.cpp
 msgid "Everything scales with the screen automatically; this is your extra zoom."
 msgstr ""
@@ -605,10 +601,6 @@ msgstr ""
 
 #: src/ui/world_rules_panel.cpp
 msgid "Gamemode:"
-msgstr ""
-
-#: src/coop/player/sleep_sync.cpp
-msgid "Good morning -- everyone is rested."
 msgstr ""
 
 #: src/ui/dev_menu.cpp
@@ -1157,10 +1149,6 @@ msgstr ""
 
 #: src/ui/skins_panel.cpp
 msgid "Skins come from converter .pak files under Content/Paks/LogicMods (any subfolder). One pak may carry several skins -- the four scientists ship together in scientists.pak."
-msgstr ""
-
-#: src/coop/player/sleep_sync.cpp
-msgid "Sleep interrupted -- everyone wakes up."
 msgstr ""
 
 #: src/coop/net/end_reason.cpp

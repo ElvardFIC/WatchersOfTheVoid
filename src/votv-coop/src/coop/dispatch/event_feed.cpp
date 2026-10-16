@@ -29,7 +29,7 @@
 #include "coop/creatures/kerfur_prop_adoption.h"  // OnSnapshotComplete
 #include "coop/player/hand_item.h"  // the hand-item handler
 #include "coop/interactables/laptop_sync.h"  // PayOwed: a client's laptop power at its pace
-#include "coop/player/sleep_sync.h"          // PayOwed: a client's bed flag at its pace
+#include "coop/player/sleep_sync.h"          // PayOwed: a client's rest state at its pace
 #include "coop/world/alarm_sync.h"           // PayOwed: a client's alarm request at its pace
 #include "coop/player/player_damage.h"
 #include "coop/creatures/wisp_tear_mirror.h"  // WispGrab and WispTear receivers

@@ -30,7 +30,7 @@ inline constexpr uint32_t kMagic = 0x564D5450u;
 // This file is past the 1500-line hard cap and stays there: it is the single-feature exception the
 // rule names. One wire format, whose enum, payload structs and static_asserts are read together;
 // splitting it would put a kind's number in one file and its bytes in another.
-inline constexpr uint16_t kProtocolVersion = 226;
+inline constexpr uint16_t kProtocolVersion = 227;
 
 // Default LAN port (overridable via multivoid.ini "net.port=").
 inline constexpr uint16_t kDefaultPort = 47621;
@@ -392,8 +392,9 @@ enum class ReliableKind : uint8_t {
     // wrote it; the receiver appends it natively. DeskLogLinePayload.
     DeskLogLine = 65,
 
-    // Both directions on one kind: op Report is a peer's in-bed edge toward the host; Tally,
-    // Accelerate and End are host to all. SleepStatePayload.
+    // Both directions on one kind, multiplexed by op: a client's rest state to the host, the
+    // host's own sleeping flag to the clients, and one peer's rest state relayed to the clients.
+    // SleepStatePayload.
     SleepState = 66,
 
     // Host to one client: the killer wisp grabbed your puppet; die for real after killDelayMs.
@@ -1769,19 +1770,24 @@ struct DeskLogLinePayload {
 };
 static_assert(sizeof(DeskLogLinePayload) == 124, "DeskLogLinePayload must be 124 bytes");
 
-// The sleep gate (SleepState). op:
-//   0 Report     (peer -> host)  flag = inBed (the sender's isSleep edge)
-//   1 Tally      (host -> all)   count/total for the "N/M sleeping" feed line
-//   2 Accelerate (host -> all)   everyone is in bed: start the 20x phase
-//   3 End        (host -> all)   flag = natural (1: the host slept to full and every peer is
-//                                 granted sleep=100; 0: an early interrupt, peers keep their need)
+// SleepState: op-multiplexed, one fixed size. Every peer sleeps
+// natively on its own machine; the wire carries who rests, and the host's sleeping flag.
+//   ClientRest (client -> host)   state and bed: the sender's own rest state, sent on a change.
+//   HostAsleep (host -> clients)  state 0/1: the host's own isSleep, on a change and at the join.
+//   PeerRest   (host -> clients)  slot, state and bed: one peer's rest state (slot 0 = the host),
+//                                 on a change, at the join for every peer not awake, and with
+//                                 Awake when a peer leaves.
+enum class SleepOp : uint8_t { ClientRest = 0, HostAsleep = 1, PeerRest = 2 };
+// A peer's sleep state: awake, resting (in a bed, or fainted), dreaming (in a nightmare).
+enum class SleepPeerState : uint8_t { Awake = 0, Resting = 1, Dreaming = 2 };
 struct SleepStatePayload {
-    uint8_t op;     // 1
-    uint8_t flag;   // 1 -- Report: inBed; End: natural
-    uint8_t count;  // 1 -- Tally: peers in bed
-    uint8_t total;  // 1 -- Tally: world-ready peers
+    uint8_t op;     // 1 -- SleepOp
+    uint8_t state;  // 1 -- SleepPeerState; HostAsleep uses 0/1 only
+    uint8_t slot;   // 1 -- PeerRest: the peer it describes (0 = the host); 0 for the other ops
+    uint8_t _pad;   // 1
+    WireKey bed;    // 32 -- ClientRest / PeerRest: the bed's class name (empty: bedless or awake); empty for HostAsleep
 };
-static_assert(sizeof(SleepStatePayload) == 4, "SleepStatePayload must be 4 bytes");
+static_assert(sizeof(SleepStatePayload) == 36, "SleepStatePayload must be 36 bytes");
 
 // An event fire (EventFire), host to all: dispatch 0 runEvent, 1 runSpecialEvent, and the row name.
 // Receivers replay only policy-allowlisted rows. No special-event field: the only special is a

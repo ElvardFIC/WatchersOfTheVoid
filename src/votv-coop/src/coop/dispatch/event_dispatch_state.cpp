@@ -371,20 +371,13 @@ bool HandleStateEvent(net::Session& session,
     // The signal-pipeline kinds (the sky signals, the desk, the dish, the laptop, the saved
     // signals, the refiner) are in event_dispatch_signal.cpp.
     case net::ReliableKind::SleepState: {
-        // The sleep gate: a peer's report to the host, and the host's tally, accelerate and end to
-        // all; the role and slot trust gates live in the module.
-        if (msg.payloadLen < sizeof(net::SleepStatePayload)) {
-            UE_LOGW("event_feed: SleepState payload too short (%zu < %zu)",
-                    static_cast<size_t>(msg.payloadLen), sizeof(net::SleepStatePayload));
-            break;
-        }
-        net::SleepStatePayload sp{};
-        std::memcpy(&sp, msg.payload, sizeof(sp));
+        // A client's rest state to the host, the host's sleeping flag and one peer's rest state to
+        // the clients; the length, role, slot and field checks live in the module.
         const uint8_t sslot =
             (msg.senderPeerSlot >= 0 && msg.senderPeerSlot < net::kMaxPeers)
                 ? static_cast<uint8_t>(msg.senderPeerSlot)
                 : static_cast<uint8_t>(0xFF);
-        coop::sleep_sync::OnReliable(sp, sslot);
+        coop::sleep_sync::OnReliable(msg.payload, msg.payloadLen, sslot);
         break;
     }
     case net::ReliableKind::EmailAppend: {
