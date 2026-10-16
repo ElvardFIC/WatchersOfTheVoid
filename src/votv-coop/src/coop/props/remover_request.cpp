@@ -396,7 +396,9 @@ void OnRequest(const coop::net::RemoverRequestPayload& payload, uint8_t senderSl
     }
     Queued q;
     q.req = payload;
-    q.haveEye = coop::puppet_drive::Puppet(senderSlot).TryGetEyePosition(q.eye);
+    // Only a puppet that has had its first pose has an eye: before it, it stands at its spawn point.
+    coop::RemotePlayer& rp = coop::puppet_drive::Puppet(senderSlot);
+    q.haveEye = rp.valid() && rp.HasPose() && rp.TryGetEyePosition(q.eye);
     if (!g_slots[senderSlot].queue.Push(std::move(q), kMaxPending)) Refuse(senderSlot, "queue full");
 }
 
