@@ -213,6 +213,10 @@ inline Lane LaneForKind(ReliableKind k) {
     // A desk press names what it acts on by content; its answers go to the presser alone. The default, by decision.
     case ReliableKind::DeskVerb:          return Lane::Normal;
     case ReliableKind::DeskPingVerdict:   return Lane::Normal;
+    // A remover press reaches the host in the order its client made it, and the answer follows the host's serve of it.
+    // Not relayable: the request goes to the host alone and the answer to its sender alone. The default, by decision.
+    case ReliableKind::RemoverRequest:    return Lane::Normal;
+    case ReliableKind::RemoverResult:     return Lane::Normal;
     default:                           return Lane::Normal;
     }
 }

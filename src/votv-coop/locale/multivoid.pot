@@ -857,6 +857,10 @@ msgstr ""
 msgid "Nobody in the registry yet (players are recorded when they join)."
 msgstr ""
 
+#: src/coop/props/remover_request.cpp
+msgid "Not removable right now"
+msgstr ""
+
 #: src/ui/dev_menu.cpp
 msgid ""
 "Off = your floating name/health bar disappears on every peer's\n"
@@ -1186,6 +1190,10 @@ msgstr ""
 msgid "Teleport to me"
 msgstr ""
 
+#: src/coop/props/remover_request.cpp
+msgid "That is being held"
+msgstr ""
+
 #: src/coop/commands/command_sync.cpp
 msgid "That line is too long."
 msgstr ""
@@ -1262,6 +1270,10 @@ msgstr ""
 msgid "The host did not answer through the signaling server. It may be offline, or reconnecting -- try again in a minute."
 msgstr ""
 
+#: src/coop/props/remover_request.cpp
+msgid "The host does not allow the remover"
+msgstr ""
+
 #: src/coop/net/end_reason.cpp
 msgid "The host ended the session."
 msgstr ""
@@ -1328,6 +1340,10 @@ msgstr ""
 
 #: src/coop/net/end_reason.cpp
 msgid "The join failed before it started. The log has the error."
+msgstr ""
+
+#: src/coop/props/remover_request.cpp
+msgid "The remover cannot remove that in multiplayer"
 msgstr ""
 
 #: src/coop/bug_report/report_bundle.cpp
@@ -1638,6 +1654,10 @@ msgstr ""
 
 #: src/ui/game_build_dialog.cpp
 msgid "You can play anyway. This message will not show again for this game version."
+msgstr ""
+
+#: src/coop/props/remover_request.cpp
+msgid "You can't see that from there"
 msgstr ""
 
 #: src/ui/config_review_panel.cpp

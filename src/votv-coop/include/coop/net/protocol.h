@@ -30,7 +30,7 @@ inline constexpr uint32_t kMagic = 0x564D5450u;
 // This file is past the 1500-line hard cap and stays there: it is the single-feature exception the
 // rule names. One wire format, whose enum, payload structs and static_asserts are read together;
 // splitting it would put a kind's number in one file and its bytes in another.
-inline constexpr uint16_t kProtocolVersion = 227;
+inline constexpr uint16_t kProtocolVersion = 228;
 
 // Default LAN port (overridable via multivoid.ini "net.port=").
 inline constexpr uint16_t kDefaultPort = 47621;
@@ -985,6 +985,18 @@ enum class ReliableKind : uint8_t {
     // record, gone once opened. Trust: the amount is the host's copy's and the reach the host's pose of the
     // sender; the client names the sack and nothing else. PointSackRedeemPayload.
     PointSackRedeem = 173,
+
+    // Client to host: my player pressed the tool gun's remover on this element, seen from this camera point at
+    // this hit point. The host judges the sender's right, the element, who holds it and whether the sender could
+    // see it, and removes the prop itself; the client's own press is cancelled. Never relayed. Late join: none --
+    // a request is an act, and a joiner's snapshot no longer holds a prop the host removed. Trust: the eid is
+    // re-resolved by the host and the origin and the hit point are a claim the host re-traces.
+    // RemoverRequestPayload.
+    RemoverRequest = 174,
+
+    // Host to one client: what the host did with its RemoverRequest. Never relayed. Late join: none -- it
+    // answers a live request. Trust: from the host alone. RemoverResultPayload.
+    RemoverResult = 175,
 };
 
 #pragma pack(push, 1)
@@ -1852,6 +1864,36 @@ struct PointSackRedeemPayload {
     uint32_t _pad;       // 4  -- zeroed
 };
 static_assert(sizeof(PointSackRedeemPayload) == 40, "PointSackRedeemPayload must be 40 bytes");
+
+// A client's press of the tool gun's remover (RemoverRequest): the element it hit, the camera point it looked
+// from and the point its shot struck, in world centimetres. The host judges all three; none is trusted.
+struct RemoverRequestPayload {
+    uint32_t elementId;  // 4  -- the hit actor's Element id on the sender
+    float    origin[3];  // 12 -- the sender's camera location at the press
+    float    hit[3];     // 12 -- the impact point of the shot
+};
+static_assert(sizeof(RemoverRequestPayload) == 28, "RemoverRequestPayload must be 28 bytes");
+
+// Why the host did what it did with a RemoverRequest (RemoverResult). Removed, NotReady and Gone are said to the
+// sender's counters alone; the other four are shown to the player.
+enum class RemoverReason : uint8_t {
+    Removed     = 0,  // the host removed the prop
+    NotReady    = 1,  // the sender, its body or the host's classes were not ready; nothing was judged
+    Gone        = 2,  // the element is no longer live (a second press, or another player's)
+    Unsupported = 3,  // the element is not a prop the remover removes in multiplayer
+    NoRight     = 4,  // the host withholds the remover from this player
+    Held        = 5,  // someone is holding or dragging the prop
+    OutOfSight  = 6,  // the sender's shot does not stand: too far from its body, off the prop, or blocked
+    Count       = 7,
+};
+
+// The host's answer to a RemoverRequest, to the sender alone.
+struct RemoverResultPayload {
+    uint32_t elementId;  // 4 -- the request's element id
+    uint8_t  reason;     // 1 -- RemoverReason
+    uint8_t  _pad[3];    // 3 -- zeroed
+};
+static_assert(sizeof(RemoverResultPayload) == 8, "RemoverResultPayload must be 8 bytes");
 
 // The server upgrades lane (ServerUpgradeState). Ops 0 (install) and 1 (take-out) name a box by its
 // servers[] index; op 2, the canonical, carries every box's level in servers[] order (a farm past 64

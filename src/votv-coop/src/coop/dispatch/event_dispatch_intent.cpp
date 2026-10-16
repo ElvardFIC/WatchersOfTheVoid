@@ -30,6 +30,7 @@
 #include "coop/items/order_sync.h"
 #include "coop/props/pack_trash_intent.h"  // CLIENT->HOST bagging of a pile or clump
 #include "coop/props/prop_drop_intent.h"  // CLIENT->HOST client-placed keyed prop
+#include "coop/props/remover_request.h"  // CLIENT->HOST the tool gun's remover; HOST->CLIENT its answer
 #include "coop/items/broom_stroke.h"
 #include "coop/interactables/upgrade_sync.h"  // CLIENT->HOST upgrade purchase
 #include "coop/props/trash_channel.h"
@@ -370,6 +371,42 @@ bool HandleIntentEvent(net::Session& session,
         net::PointSackRedeemPayload p{};
         std::memcpy(&p, msg.payload, sizeof(p));
         coop::point_sack_intent::OnRedeem(session, p, static_cast<uint8_t>(msg.senderPeerSlot));
+        break;
+    }
+    case net::ReliableKind::RemoverRequest: {
+        // CLIENT->HOST: a client pressed the tool gun's remover. The host judges the sender's right, the element, who
+        // holds it and whether the sender could see it, and removes the prop itself (coop::remover_request). Never
+        // relayed.
+        if (session.role() != net::Role::Host) {
+            UE_LOGW("event_feed: RemoverRequest received on a client -- dropping");
+            break;
+        }
+        const uint8_t senderSlot =
+            (msg.senderPeerSlot >= 0 && msg.senderPeerSlot < net::kMaxPeers)
+                ? static_cast<uint8_t>(msg.senderPeerSlot)
+                : static_cast<uint8_t>(0xFF);
+        // The refusal is the lane's to say, in its tally: a sender cannot make the router's log the cost.
+        if (msg.payloadLen < sizeof(net::RemoverRequestPayload)) {
+            coop::remover_request::NoteRefused(senderSlot, "payload too short");
+            break;
+        }
+        net::RemoverRequestPayload p{};
+        std::memcpy(&p, msg.payload, sizeof(p));
+        coop::remover_request::OnRequest(p, senderSlot);
+        break;
+    }
+    case net::ReliableKind::RemoverResult: {
+        // HOST->CLIENT: what the host did with this client's RemoverRequest (coop::remover_request shows the four
+        // visible reasons and counts every one).
+        if (session.role() != net::Role::Client || msg.senderPeerSlot != 0 ||
+            msg.payloadLen < sizeof(net::RemoverResultPayload)) {
+            UE_LOGW("event_feed: RemoverResult dropped (role, sender slot %d or length %zu)", msg.senderPeerSlot,
+                    static_cast<size_t>(msg.payloadLen));
+            break;
+        }
+        net::RemoverResultPayload p{};
+        std::memcpy(&p, msg.payload, sizeof(p));
+        coop::remover_request::OnResult(p);
         break;
     }
     case net::ReliableKind::EraserPressIntent: {

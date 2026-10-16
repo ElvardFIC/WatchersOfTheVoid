@@ -177,6 +177,7 @@ set(VOTVCOOP_SOURCES
     src/coop/player/skin_effects.cpp
     src/coop/player/skin_registry.cpp
     src/coop/player/local_body.cpp
+    src/coop/props/remover_request.cpp
     src/coop/props/remote_prop.cpp
     src/coop/props/unresolved_pose_ledger.cpp
     src/coop/props/remote_prop_convert.cpp
@@ -594,6 +595,7 @@ set(VOTVCOOP_SOURCES
     src/coop/permissions/inheritance.cpp
     src/coop/permissions/resolution.cpp
     src/coop/permissions/grants_core.cpp
+    src/coop/permissions/gameplay_nodes.cpp
     src/coop/permissions/permission_files.cpp
     src/coop/permissions/action_log.cpp
     src/coop/permissions/permission_edit.cpp
