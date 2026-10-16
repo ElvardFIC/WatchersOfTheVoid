@@ -1,9 +1,9 @@
 // coop/net/intent_queue.h -- one client's intents of one kind, queued on the host in arrival order and served one
 // head per tick at the lane's budget: a client past its budget costs the host no work beyond a queue of `cap`
 // entries, and what the lane cannot yet do (a target not ready, a line still being said) waits at the head without
-// spending the budget. Past `cap` the push is refused, and the lane counts it and answers as it does today. A keyed
-// change replaces its queued entry in place (Find). One instance per slot and kind, inside the lane's PerSlotState,
-// so the queue and its bucket clear with the occupant; there is no Clear. One thread per instance, as IntentBucket.
+// spending the budget. Past `cap` the push is refused, and the lane counts it and answers as it does today. One
+// instance per slot and kind, inside the lane's PerSlotState, so the queue and its bucket clear with the occupant;
+// there is no Clear. One thread per instance, as IntentBucket.
 
 #pragma once
 
@@ -29,15 +29,6 @@ public:
         return true;
     }
 
-    // The first queued entry `pred` accepts, or null.
-    template <class P>
-    T* Find(P pred) {
-        for (T& e : q_) {
-            if (pred(e)) return &e;
-        }
-        return nullptr;
-    }
-
     // At most one head at `nowMs`, a steady clock's milliseconds: nothing when empty; else one token is taken, and
     // with it `fn(head)` answers Done (the head leaves) or Wait (the token returns, the head stays for the next call).
     template <class Fn>
@@ -59,8 +50,8 @@ private:
     IntentBucket  bucket_;
 };
 
-// The queue's arithmetic: the cap's refusal, no token serving nothing, Done and Wait, the in-place replace and a
-// value-initialised instance. Logs ALL PASS or each failure.
+// The queue's arithmetic: the cap's refusal, no token serving nothing, Done and Wait, and a value-initialised
+// instance. Logs ALL PASS or each failure.
 bool RunIntentQueueSelftest();
 
 }  // namespace coop::net

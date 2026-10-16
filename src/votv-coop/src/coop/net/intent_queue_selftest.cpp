@@ -53,17 +53,6 @@ bool RunIntentQueueSelftest() {
     {
         IntentQueue<Entry> q;
         q.Push(Entry{1, 10}, 4);
-        q.Push(Entry{2, 20}, 4);
-        Entry* hit = q.Find([](const Entry& e) { return e.key == 2; });
-        check(hit != nullptr && hit->val == 20, "Find returns the matching entry");
-        if (hit) hit->val = 99;
-        Entry* again = q.Find([](const Entry& e) { return e.key == 2; });
-        check(again != nullptr && again->val == 99 && q.size() == 2, "a write through it replaces in place");
-        check(q.Find([](const Entry& e) { return e.key == 7; }) == nullptr, "no match is null");
-    }
-    {
-        IntentQueue<Entry> q;
-        q.Push(Entry{1, 10}, 4);
         q.Serve(oneThenNone, 1000, done);
         q = IntentQueue<Entry>{};
         q.Push(Entry{1, 10}, 4);
