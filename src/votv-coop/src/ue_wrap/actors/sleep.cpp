@@ -3,13 +3,16 @@
 #include "ue_wrap/actors/sleep.h"
 
 #include "ue_wrap/core/call.h"
-#include "ue_wrap/engine/engine.h"  // GetWorldContext
+#include "ue_wrap/engine/engine.h"  // GetWorldContext, TryGetActorLocation
 #include "ue_wrap/core/log.h"
+#include "ue_wrap/core/object_index.h"
 #include "ue_wrap/core/reflection.h"
+#include "ue_wrap/core/types.h"
 #include "ue_wrap/world/world_singleton.h"
 #include "ue_wrap/core/sdk_profile.h"
 
 #include <chrono>
+#include <vector>
 
 namespace ue_wrap::sleep {
 namespace {
@@ -29,15 +32,17 @@ void* g_gsCdo = nullptr;            // GameplayStatics CDO
 void* g_setDilationFn = nullptr;    // SetGlobalTimeDilation(WorldContextObject, TimeDilation)
 void* g_getDilationFn = nullptr;    // GetGlobalTimeDilation(WorldContextObject) -> float
 
-void* g_bedCls = nullptr;           // bed_C (FindBed)
-
 std::chrono::steady_clock::time_point g_nextResolve{};
-bool g_coreResolved = false;
+bool g_coreResolved = false;  // isSleep, dreamProbability, bed and the dilation setter: latched once they are
+bool g_allResolved = false;   // the optional members as well: nothing is looked up after this
 
+// Before the core resolves the pass retries every 2 s; after it, the optional members (origPawn, the sleep verb,
+// the dilation getter) are asked again every 30 s until they resolve. No lookup here walks the object array.
 void ResolvePass() {
+    if (g_allResolved) return;
     const auto now = std::chrono::steady_clock::now();
     if (now < g_nextResolve) return;
-    g_nextResolve = now + std::chrono::seconds(2);
+    g_nextResolve = now + (g_coreResolved ? std::chrono::seconds(30) : std::chrono::seconds(2));
 
     if (!g_gmCls) g_gmCls = R::FindClass(L"mainGamemode_C");
     if (!g_gmCls) return;
@@ -55,18 +60,17 @@ void ResolvePass() {
         if (gsCls && !g_getDilationFn)
             g_getDilationFn = R::FindFunction(gsCls, L"GetGlobalTimeDilation");
     }
-    if (!g_bedCls) g_bedCls = R::FindClass(L"bed_C");  // optional (FindBed only)
-
     const bool core = g_offIsSleep >= 0 && g_offDreamProb >= 0 && g_offBed >= 0 &&
                       g_setDilationFn;
     if (core && !g_coreResolved) {
         g_coreResolved = true;
         UE_LOGI("sleep: resolved (isSleep=0x%X dreamProb=0x%X bed=0x%X origPawn=0x%X sleep=%s "
-                "dilation set/get=%s/%s bedCls=%s)",
+                "dilation set/get=%s/%s)",
                 g_offIsSleep, g_offDreamProb, g_offBed, g_offOrigPawn,
                 g_sleepFn ? "yes" : "NO", g_setDilationFn ? "yes" : "NO",
-                g_getDilationFn ? "yes" : "NO", g_bedCls ? "yes" : "NO");
+                g_getDilationFn ? "yes" : "NO");
     }
+    g_allResolved = core && g_offOrigPawn >= 0 && g_sleepFn && g_getDilationFn;
 }
 
 }  // namespace
@@ -126,22 +130,65 @@ float GetGlobalTimeDilation() {
     return f.Get<float>(L"ReturnValue");
 }
 
+namespace {
+
+// The PLACED base bed is a cooked SUBCLASS (bed_b_C / bed_m_C / ... -- the 00:17 smoke proved zero exact bed_C
+// instances), so a bed is matched by descent from bed_C and never by class name. The one test both finders use.
+void* BedBase() { return object_index::ClassByName(L"bed_C"); }
+bool IsBedClass(void* cls, void* base) { return cls && base && R::IsDescendantOfAny(cls, &base, 1); }
+bool IsCdo(void* obj) { return R::NameStartsWith(R::NameOf(obj), L"Default__"); }
+
+struct BedPick {
+    void* base = nullptr;
+    std::vector<void*> classes;
+    FVector from;
+    void* best = nullptr;
+    float bestD2 = 0.f;
+};
+
+void OnBedClass(void* ctx, void* cls, void*) {
+    auto* p = static_cast<BedPick*>(ctx);
+    if (IsBedClass(cls, p->base)) p->classes.push_back(cls);
+}
+
+void OnBedInstance(void* ctx, void* obj, int32_t) {
+    auto* p = static_cast<BedPick*>(ctx);
+    if (IsCdo(obj)) return;
+    FVector at;
+    if (!engine::TryGetActorLocation(obj, at)) return;
+    const float dx = at.X - p->from.X, dy = at.Y - p->from.Y, dz = at.Z - p->from.Z;
+    const float d2 = dx * dx + dy * dy + dz * dz;
+    if (!p->best || d2 < p->bestD2) {
+        p->best = obj;
+        p->bestD2 = d2;
+    }
+}
+
+}  // namespace
+
 void* FindBed() {
-    // The PLACED base bed is a cooked SUBCLASS (bed_b_C / bed_m_C / ... --
-    // the 00:17 smoke proved zero exact bed_C instances), so match by
-    // descendant-of-bed_C over the object array instead of by class name.
-    // One-shot walk; never on a hot path.
-    if (!g_bedCls) return nullptr;
+    // One-shot walk over the object array; never on a hot path.
+    void* const base = BedBase();
+    if (!base) return nullptr;
     const int32_t n = R::NumObjects();
     for (int32_t i = 0; i < n; ++i) {
         void* obj = R::ObjectAt(i);
         if (!obj || !R::IsLive(obj)) continue;
-        void* cls = R::ClassOf(obj);
-        if (!cls || !R::IsDescendantOfAny(cls, &g_bedCls, 1)) continue;
-        if (R::NameStartsWith(R::NameOf(obj), L"Default__")) continue;  // CDOs
+        if (!IsBedClass(R::ClassOf(obj), base)) continue;
+        if (IsCdo(obj)) continue;
         return obj;
     }
     return nullptr;
+}
+
+void* NearestBed(const FVector& from) {
+    BedPick pick;
+    pick.base = BedBase();
+    pick.from = from;
+    if (!pick.base) return nullptr;
+    object_index::ForEachClass(&OnBedClass, &pick);
+    for (void* cls : pick.classes) object_index::ForEachInstance(cls, &OnBedInstance, &pick);
+    return pick.best;
 }
 
 bool CallSleep(void* bed) {

@@ -2,6 +2,7 @@
 
 #include "ue_wrap/core/call.h"
 #include "ue_wrap/core/fname_utils.h"
+#include "ue_wrap/core/hot_path_guard.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/world/world_singleton.h"
@@ -561,6 +562,7 @@ std::vector<TimeDilationOffset> g_timeDilationOffsets;
 }  // namespace
 
 bool SetCustomTimeDilation(void* actor, float value) {
+    UE_ASSERT_GAME_THREAD("engine::SetCustomTimeDilation");
     if (!actor || !std::isfinite(value)) return false;
     void* const cls = R::ClassOf(actor);
     if (!cls) return false;

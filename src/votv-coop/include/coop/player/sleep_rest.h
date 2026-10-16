@@ -1,6 +1,6 @@
 // coop/player/sleep_rest.h -- a client's rest at the game's native sleep rate, with the world's clock
 // left at 1. Game thread throughout.
-//
+
 // The game's sleep is one engine call, SetGlobalTimeDilation(20), and every need it restores rides the
 // dilated tick delta. A client cannot run the world at 20 (the host's world is what the others live in),
 // so a script_gate POST watch on mainGamemode_C::sleep takes the dilation back to 1 in the frame of the
@@ -14,6 +14,10 @@
 // is the game's own, at the game's own speed.
 
 #pragma once
+
+// Divergence from MTA, which syncs one game speed to every client (CMapManager.cpp:463): only the host
+// runs the game's native x20. An awake client at x20 is unplayable, and this rest restores the client's
+// needs without speeding its game.
 
 namespace coop::net { class Session; }
 

@@ -14,8 +14,6 @@
 #include "ue_wrap/actors/sleep.h"
 #include "ue_wrap/actors/vitals.h"
 #include "ue_wrap/core/log.h"
-#include "ue_wrap/core/object_index.h"
-#include "ue_wrap/core/reflection.h"
 #include "ue_wrap/engine/engine.h"
 #include "ue_wrap/world/active_events.h"
 #include "ue_wrap/world/daynightcycle.h"
@@ -27,7 +25,6 @@
 #include <cstdint>
 #include <cstdio>
 #include <string>
-#include <vector>
 
 namespace coop::dev::sleep_drill {
 namespace {
@@ -36,8 +33,6 @@ namespace SLP = ue_wrap::sleep;
 namespace V   = ue_wrap::vitals;
 namespace DNC = ue_wrap::daynightcycle;
 namespace AE  = ue_wrap::active_events;
-namespace R   = ue_wrap::reflection;
-namespace OI  = ue_wrap::object_index;
 using Clock = std::chrono::steady_clock;
 
 enum class Arm { Off, HostAsleep, ClientRest };
@@ -160,41 +155,12 @@ void InputsInto(char* buf, size_t n) {
 
 // ---- the nearest bed -------------------------------------------------------------------------
 
-struct BedPick {
-    void* base = nullptr;
-    std::vector<void*> classes;
-    ue_wrap::FVector from;
-    void* best = nullptr;
-    float bestD2 = 0.f;
-};
-
-void OnBedClass(void* ctx, void* cls, void*) {
-    auto* p = static_cast<BedPick*>(ctx);
-    if (R::IsDescendantOfAny(cls, &p->base, 1)) p->classes.push_back(cls);
-}
-
-void OnBedInstance(void* ctx, void* obj, int32_t) {
-    auto* p = static_cast<BedPick*>(ctx);
-    if (R::NameStartsWith(R::NameOf(obj), L"Default__")) return;
-    ue_wrap::FVector at;
-    if (!ue_wrap::engine::TryGetActorLocation(obj, at)) return;
-    const float dx = at.X - p->from.X, dy = at.Y - p->from.Y, dz = at.Z - p->from.Z;
-    const float d2 = dx * dx + dy * dy + dz * dz;
-    if (!p->best || d2 < p->bestD2) {
-        p->best = obj;
-        p->bestD2 = d2;
-    }
-}
-
 // The bed (bed_C or a descendant) nearest this peer's body, or null.
-void* NearestBed() {
-    BedPick pick;
-    pick.base = OI::ClassByName(L"bed_C");
+void* NearestBedToBody() {
+    ue_wrap::FVector from;
     void* body = coop::players::Registry::Get().Local();
-    if (!pick.base || !body || !ue_wrap::engine::TryGetActorLocation(body, pick.from)) return nullptr;
-    OI::ForEachClass(&OnBedClass, &pick);
-    for (void* cls : pick.classes) OI::ForEachInstance(cls, &OnBedInstance, &pick);
-    return pick.best;
+    if (!body || !ue_wrap::engine::TryGetActorLocation(body, from)) return nullptr;
+    return SLP::NearestBed(from);
 }
 
 // ---- the host ---------------------------------------------------------------------------------
@@ -311,7 +277,7 @@ void ClientGoToBed() {
     V::Write(V::Field::Sleep, kNeed);
     g_restNeed0 = ReadField(V::Field::Sleep);
     g_restFood0 = ReadField(V::Field::Food);
-    void* bed = NearestBed();
+    void* bed = NearestBedToBody();
     if (!bed) return Fail(false, "no bed_C in the world, or no local body to measure from");
     const bool called = SLP::CallSleep(bed);
     char in[128];

@@ -2,6 +2,7 @@
 
 #include "coop/player/sleep_rest.h"
 
+#include "coop/net/net_clock.h"
 #include "coop/net/session.h"
 #include "coop/player/players_registry.h"
 
@@ -40,12 +41,20 @@ std::atomic<coop::net::Session*> g_session{nullptr};
 
 bool g_watchRegistered = false;
 bool g_watchSettled = false;
+bool g_saidWatchFail = false;
+uint64_t g_nextWatchMs = 0;  // the watch is asked about at most once a second
 bool g_saidFactor = false;  // a factor other than the pinned one is said once, whatever the cause
 
 // The rest in progress. The gamemode and the body are held by identity: a world change or a new body ends it.
 bool g_resting = false;
 ue_wrap::CachedObjRef g_gm;
 ue_wrap::CachedObjRef g_body;
+// Each effect actor the rest dilated, so the end puts back those and not the list as it stands then:
+// effect_poo leaves the list with its actor alive. The game keeps one effect per kind.
+constexpr int kMaxDilatedEffects = 16;
+ue_wrap::CachedObjRef g_dilated[kMaxDilatedEffects];
+int  g_dilatedCount = 0;
+bool g_saidDilatedFull = false;
 // Food and coffee as the last tick read them (after our own write). Unset on the first tick of a rest, which
 // takes the baselines and corrects nothing.
 bool  g_haveFood = false;
@@ -65,7 +74,22 @@ void* CurrentBody() {
     return SLP::OrigPawn();
 }
 
-void SetEffectFactor(void* effect, void* ctx) {
+// Dilate one effect and remember it. One the table cannot hold is left alone and said once: an actor not
+// remembered could not be put back.
+void DilateEffect(void* effect, void* ctx) {
+    bool known = false;
+    for (int i = 0; i < g_dilatedCount && !known; ++i) known = g_dilated[i].Is(effect);
+    if (!known) {
+        if (g_dilatedCount >= kMaxDilatedEffects) {
+            if (!g_saidDilatedFull) {
+                g_saidDilatedFull = true;
+                UE_LOGW("sleep_rest: more than %d effect actors in the world -- the extra ones stay at factor 1",
+                        kMaxDilatedEffects);
+            }
+            return;
+        }
+        g_dilated[g_dilatedCount++].Set(effect);
+    }
     EN::SetCustomTimeDilation(effect, *static_cast<const float*>(ctx));
 }
 
@@ -73,6 +97,7 @@ void BeginRest() {
     void* const gm = ue_wrap::world_singleton::Gamemode();
     void* const body = CurrentBody();
     if (!gm || !body) {
+        // The degrade: no body to dilate, so the world stays at 1 and the sleep runs at 1/20 of the game's speed.
         UE_LOGW("sleep_rest: a rest began with no local body (%p) or gamemode (%p) -- it restores at the world's rate",
                 body, gm);
         return;
@@ -88,8 +113,11 @@ void BeginRest() {
 
 void EndRest(const char* why) {
     if (void* b = g_body.Get()) EN::SetCustomTimeDilation(b, 1.f);
-    float one = 1.f;
-    FX::ForEachWorldEffect(&SetEffectFactor, &one);
+    for (int i = 0; i < g_dilatedCount; ++i) {
+        if (void* e = g_dilated[i].Get()) EN::SetCustomTimeDilation(e, 1.f);
+        g_dilated[i].Reset();
+    }
+    g_dilatedCount = 0;
     g_resting = false;
     g_gm.Reset();
     g_body.Reset();
@@ -100,7 +128,8 @@ void EndRest(const char* why) {
 // The call has run: the game set the world's dilation and the sleeping flag inside it. A refusal leaves the
 // flag down and nothing to undo. Our own reflected calls come through here as the game's do.
 void OnSleepPost(const sg::Call&) {
-    if (!ConnectedClient()) return;
+    // A second `sleep` while resting is refused by the game with the flag still up: it begins nothing.
+    if (!ConnectedClient() || g_resting) return;
     float asleep = 0.f;
     if (!V::Read(V::Field::Sleeping, &asleep) || asleep == 0.f) return;
     if (!SLP::EnsureResolved()) {
@@ -121,11 +150,21 @@ void OnSleepPost(const sg::Call&) {
     BeginRest();
 }
 
-// Register the watch, then ask the gate to resolve its name until it is live or settled dead.
+// Register the watch, then ask the gate to resolve its name until it is live or settled dead. At most once a
+// second: a registration the gate refuses is said once, and asked again at that pace.
 void EnsureWatch() {
     if (g_watchSettled) return;
+    const uint64_t now = coop::net::NowMs();
+    if (now < g_nextWatchMs) return;
+    g_nextWatchMs = now + 1000;
     if (!g_watchRegistered) g_watchRegistered = sg::WatchName(kRowSleep, kTagSleepRest, nullptr, &OnSleepPost);
-    if (!g_watchRegistered) return;
+    if (!g_watchRegistered) {
+        if (!g_saidWatchFail) {
+            g_saidWatchFail = true;
+            UE_LOGW("sleep_rest: the gate did not take the sleep watch -- asked again each second");
+        }
+        return;
+    }
     sg::ResolvePendingNames();
     if (sg::NameWatchLive(kRowSleep, kTagSleepRest)) {
         g_watchSettled = true;
@@ -172,10 +211,12 @@ void Tick() {
     if (!gm || gm != g_gm.Raw() || !g_gm.Alive()) return EndRest("the gamemode changed");
     void* const body = CurrentBody();
     if (!body || body != g_body.Raw() || !g_body.Alive()) return EndRest("the body changed");
+    // The wake itself happens in the game; the body and the effects run at the native factor until this tick
+    // sees the flag fall, one frame at most.
     float asleep = 0.f;
     if (!V::Read(V::Field::Sleeping, &asleep) || asleep == 0.f) return EndRest("the sleeping flag fell");
     float factor = kNativeSleepDilation;
-    FX::ForEachWorldEffect(&SetEffectFactor, &factor);
+    FX::ForEachWorldEffect(&DilateEffect, &factor);
     SettleNeeds();
 }
 

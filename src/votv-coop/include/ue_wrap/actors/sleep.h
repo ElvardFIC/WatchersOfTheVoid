@@ -18,6 +18,8 @@
 #include <cstdint>
 #include <string>
 
+namespace ue_wrap { struct FVector; }
+
 namespace ue_wrap::sleep {
 
 // Resolve mainGamemode_C fields/verbs + the GameplayStatics dilation calls (throttled lazy
@@ -28,8 +30,8 @@ bool EnsureResolved();
 bool IsSleeping();
 
 // The class name of the bed the gamemode sleeps in (mainGamemode.bed, set by sleep() before
-// isSleep rises, null for a bedless entry; wakeup() leaves it, so read it only while asleep);
-// empty with no bed or unresolved. Game thread.
+// isSleep rises, null for a bedless entry; the non-ariral wakeup() path clears it, so read it
+// only while asleep and keep it across a dream); empty with no bed or unresolved. Game thread.
 std::wstring BedClassName();
 
 // mainGamemode.origPawn: the pawn `sleep` took from the controller before it possessed the sleeping
@@ -47,10 +49,13 @@ bool SetDreamProbability(float v);
 bool SetGlobalTimeDilation(float v);
 float GetGlobalTimeDilation();
 
-// ---- dev-drill helpers (coop/dev/midnight_drill) ----
+// ---- dev-drill helpers (coop/dev/midnight_drill and coop/dev/sleep_drill) ----
 // First live bed actor (bed_C or a descendant), or null. One GUObjectArray walk per call --
 // one-shot use only.
 void* FindBed();
+// The bed actor (bed_C or a descendant) nearest `from`, or null; one pass over the object index per
+// call, one-shot use only. Same descent test as FindBed.
+void* NearestBed(const FVector& from);
 // Reflected gamemode.sleep(bed, dropItem=false, ignoreRagdoll=true) -- the
 // native entry incl. its validation gates (event/hunger/ragdoll aborts).
 bool CallSleep(void* bed);
