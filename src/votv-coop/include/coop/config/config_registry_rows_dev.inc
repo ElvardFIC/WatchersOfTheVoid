@@ -338,10 +338,10 @@ CFG_ENUM(midnight_drill, "midnight_drill", "dev", "off", "off|awake|asleep|cheat
     "fresh host world; every refused step is logged and ends the arm as invalid.")
 CFG_ENUM(sleep_drill, "sleep_drill", "dev", "off", "off|host_asleep|client_rest|beside", "VOTVCOOP_SLEEP_DRILL",
     "Drill (BOTH peers), once a client's join is over: what a host's sleep and a client's rest do. "
-    "host_asleep: the host sets its need to 30 and sleeps natively and says the world's dilation it "
+    "host_asleep: the host sets its need to 80 and sleeps natively and says the world's dilation it "
     "reads (20); the client reads its own world's dilation (1) and its clock for 10 s, and the clock "
     "must run at 0.9 of the native rate. client_rest: the host sleeps and prints its real seconds; "
-    "when it wakes the client reads its food for 10 s, sleeps from a need of 30 in the nearest bed "
+    "when it wakes the client reads its food for 10 s, sleeps from a need of 80 in the nearest bed "
     "and prints its real seconds, its world's dilation, and its food and need at both ends. The host "
     "holds its nightmare chance at 0 for the arm. beside: the host sleeps and is held asleep (its need is "
     "written to 50 every tick) until the hook drag selftest has ended on it, then wakes; run it with "

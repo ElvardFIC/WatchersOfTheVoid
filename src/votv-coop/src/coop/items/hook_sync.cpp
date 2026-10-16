@@ -565,6 +565,15 @@ void OnDestroyMsg(const coop::net::HookDestroyPayload& p, int senderPeerSlot) {
     }
 }
 
+bool HasMirrorFrom(int ownerSlot, bool tied) {
+    if (!GT::IsGameThread() || ownerSlot < 0 || ownerSlot >= coop::players::kMaxPeers) return false;
+    for (const auto& kv : Mirrors()) {
+        if (SlotOf(kv.first) != static_cast<uint8_t>(ownerSlot) || !kv.second.ref.Alive()) continue;
+        if (!tied || kv.second.bitten) return true;
+    }
+    return false;
+}
+
 void OnPeerLeftSlot(int slot) {
     if (!GT::IsGameThread() || slot < 0 || slot >= coop::players::kMaxPeers) return;
     size_t dropped = 0;

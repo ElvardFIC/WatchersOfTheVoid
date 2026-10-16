@@ -63,6 +63,12 @@ void OnDestroyMsg(const coop::net::HookDestroyPayload& p, int senderPeerSlot);
 // those now, and the peer leaving has nothing to do with them.
 void OnPeerLeftSlot(int slot);
 
+// Whether this peer holds a live mirror of a hook that peer `ownerSlot` owns, in its owner phase or
+// anchored. With `tied` the mirror must also carry this host's own constraint on what the owner's
+// hook bit: HOST only, a client never ties a mirror. Read by the hook drag selftest, which sees the
+// hook the other peer plants as this peer holds it. Game thread.
+bool HasMirrorFrom(int ownerSlot, bool tied);
+
 // Session end: destroy every mirror. They are actors WE spawned and must not linger into
 // single-player.
 //

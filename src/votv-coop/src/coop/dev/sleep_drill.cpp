@@ -254,6 +254,7 @@ void HostHold() {
     }
     V::Write(V::Field::Sleep, kReleaseNeed);
     g_released = true;
+    Enter(Step::HostAsleep, "the host to wake", kPeerBound);
     const float secs = std::chrono::duration<float>(Clock::now() - g_hostT0).count();
     Say(true, HeldAtNative(), "held %.1f s at world dilation %.2f..%.2f over %d reads (the game's is %.0f)", secs, g_dilMin,
         g_dilMax, g_dilReads, kNativeFactor);
@@ -469,6 +470,8 @@ void Tick() {
         g_saidArm = true;
         Enter(Step::WaitJoin, "the join", kJoinBound);
         UE_LOGI("[SLEEP-DRILL] %s %s armed -- %s", ArmName(), RoleName(host), ArmPlan(host));
+        if (host && ArmOf() == Arm::Beside && !coop::dev::hookdrag_selftest::IsEnabled())
+            return Fail(true, "beside needs the hook drill armed on this peer (hookdrag_selftest)");
     }
     if (!host && ArmOf() == Arm::Beside) return;  // the armed line is all this arm says on a client
     if (Clock::now() > g_deadline)

@@ -37,6 +37,9 @@ void EmitVerdict();
 // and whose origin waits for that sleep on both peers. Game thread. False with the flag off.
 bool HostEnded();
 
+// Is the drill armed on this peer (the flag row). The sleep drill's `beside` arm needs it on the host.
+bool IsEnabled();
+
 // Clear the phase and the target so a reconnect re-runs the drag.
 void OnDisconnect();
 

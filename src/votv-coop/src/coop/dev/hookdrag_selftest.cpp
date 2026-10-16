@@ -4,6 +4,7 @@
 
 #include "coop/config/config.h"
 #include "coop/config/config_registry.h"
+#include "coop/items/hook_sync.h"             // HasMirrorFrom: the planter's hook, as this peer holds it
 #include "coop/net/session.h"
 #include "coop/player/hand_item.h"            // CollectHandAxisActors: the hand is not a world prop
 #include "coop/player/players_registry.h"
@@ -79,24 +80,24 @@ uint64_t NowMs() {
 // reason: the two connect clocks sit about ten seconds apart. Every phase has a bound, the backstop
 // that turns a phase that never comes into a FAIL line naming it; no bound is a schedule.
 //   planter: Pick -> Plant -> WalkOut -> WalkBack -> Unhook -> Rest -> Ended
-//   other:   Pick -> Drag -> Rest -> Ended
-enum class Phase { Pick, Plant, WalkOut, WalkBack, Unhook, Drag, Rest, Ended };
+//   other:   Pick -> Tie -> Release -> Rest -> Ended   (the planter's hook held here, then gone, then the prop at rest)
+enum class Phase { Pick, Plant, WalkOut, WalkBack, Unhook, Tie, Release, Rest, Ended };
 
 constexpr uint64_t kSampleMs     =   250;   // the position log, both roles
 constexpr float    kPickRadiusCm =  1500.f;
-// The host-role runs on record walked 1199..1211 cm in the 3 s the old schedule gave the leg out.
+// The host-role runs on record walked 1199..1211 cm out.
 constexpr float    kWalkCm       =  1200.f; // the walker is this far from where it planted: the leg out is over
 constexpr float    kBackCm       =   100.f; // ... and this close to it again: the leg back is over (the runs
                                             // on record ended 7..22 cm from it)
-constexpr float    kMovedCm      =   100.f; // the prop stood this far from its start: a drag happened (the
-                                            // distance the driver's verdict counts a drag by)
 constexpr float    kRestCm       =     5.f; // a sample this close to the one before it is a prop at rest ...
 constexpr int      kRestSamples  =       6; // ... and this many in a row (1.5 s) end the run
 // The backstops. Plant and Unhook are one dispatch each: their event arrives in the tick they start.
 constexpr uint64_t kPickBoundMs  =  60000;  // the join is over and the anchor reads
 constexpr uint64_t kWalkBoundMs  =  20000;  // one leg of the walk
-constexpr uint64_t kDragBoundMs  =  90000;  // the peer that does not plant: the other's pick, plant and walk out
+constexpr uint64_t kTieBoundMs   =  90000;  // the peer that does not plant: the other's pick and plant
 constexpr uint64_t kRestBoundMs  =  60000;
+// The peer that does not plant: the planter's two legs, then its unhook reaching here.
+constexpr uint64_t kReleaseBoundMs = kRestBoundMs;
 
 uint64_t g_originMs     = 0;
 uint64_t g_nextSampleMs = 0;
@@ -124,7 +125,8 @@ const char* PhaseName(Phase p) {
     case Phase::WalkOut:  return "walk out";
     case Phase::WalkBack: return "walk back";
     case Phase::Unhook:   return "unhook";
-    case Phase::Drag:     return "drag";
+    case Phase::Tie:      return "tie";
+    case Phase::Release:  return "release";
     case Phase::Rest:     return "rest";
     case Phase::Ended:    return "ended";
     }
@@ -137,7 +139,8 @@ uint64_t BoundMs(Phase p) {
     case Phase::Pick:     return kPickBoundMs;
     case Phase::WalkOut:
     case Phase::WalkBack: return kWalkBoundMs;
-    case Phase::Drag:     return kDragBoundMs;
+    case Phase::Tie:      return kTieBoundMs;
+    case Phase::Release:  return kReleaseBoundMs;
     case Phase::Rest:     return kRestBoundMs;
     default:              return 0;
     }
@@ -166,6 +169,8 @@ bool Anchor(bool isHost, ue_wrap::FVector& out, const char*& why) {
     }
     coop::RemotePlayer* pup = coop::players::Registry::Get().Puppet(0);
     if (!pup || !pup->valid() || !pup->GetActor()) { why = "the host puppet is not here yet"; return false; }
+    // Until its first network pose a puppet stands on a placeholder: a pick around it names the wrong prop.
+    if (!pup->HasPose()) { why = "the host puppet has no pose yet"; return false; }
     return E::TryGetActorLocation(pup->GetActor(), out);
 }
 
@@ -333,6 +338,20 @@ bool BeginWalkOut(bool isHost) {
     return true;
 }
 
+// The item's cancel: the field this driver wrote is cleared whether or not the hook still stands,
+// then the actor goes. True when the hook still stood.
+bool ReleaseHook() {
+    if (void* p = LocalPlayer()) H::WriteActiveHook(p, nullptr);
+    void* h = g_hook.Get();
+    if (h) E::DestroyActor(h);
+    g_hook.Reset();
+    return h != nullptr;
+}
+
+// The peer that does not plant holds the planter's hook as that slot's: the joiner's for the host,
+// the host's for a client.
+int PlanterSlot(bool isHost) { return isHost ? 1 : 0; }
+
 // The run is over for this peer: the verdict line the driver waits on, said once.
 void End() {
     g_phase = Phase::Ended;
@@ -346,6 +365,8 @@ void Fail(bool isHost, const char* fmt, ...) {
     va_start(ap, fmt);
     std::vsnprintf(buf, sizeof(buf), fmt, ap);
     va_end(ap);
+    // A planted hook does not outlive the run that failed, nor the host's constraint on it.
+    if (g_hook.Raw()) ReleaseHook();
     UE_LOGW("hookdrag_selftest: FAIL role=%s phase=%s -- %s", isHost ? "HOST" : "CLIENT", PhaseName(g_phase), buf);
     End();
 }
@@ -422,7 +443,7 @@ void Tick() {
                 g_targetStart.X, g_targetStart.Y, g_targetStart.Z,
                 std::sqrt(dx * dx + dy * dy + dz * dz));
         g_nextSampleMs = now;
-        EnterPhase(PlantsHere(isHost) ? Phase::Plant : Phase::Drag, now);
+        EnterPhase(PlantsHere(isHost) ? Phase::Plant : Phase::Tie, now);
         return;
     }
     case Phase::Plant: {
@@ -458,31 +479,32 @@ void Tick() {
         WalkStep(/*outward=*/false);
         return;
     case Phase::Unhook:
-        // Ends when the hook is destroyed. The item's cancel: the field this driver wrote is
-        // cleared whether or not the hook still stands, then the actor goes.
-        if (void* p = LocalPlayer()) H::WriteActiveHook(p, nullptr);
-        if (void* h = g_hook.Get()) {
-            E::DestroyActor(h);
+        // Ends when the hook is destroyed.
+        if (ReleaseHook())
             UE_LOGI("hookdrag_selftest: UNHOOK -- the hook is destroyed; the prop coasts and rests");
-        } else {
+        else
             UE_LOGW("hookdrag_selftest: UNHOOK -- the hook had already died");
-        }
-        g_hook.Reset();
         g_restRun = 0;
         EnterPhase(Phase::Rest, now);
         return;
-    case Phase::Drag:
-        // The peer that does not plant: ends when the prop has stood kMovedCm from its start.
-        g_waitWhy = "the prop did not move that far";
-        g_waitCm = g_maxMovedCm;
-        if (g_maxMovedCm < kMovedCm) return;
-        UE_LOGI("hookdrag_selftest: DRAG seen -- the prop stood %.0f cm from its start", g_maxMovedCm);
+    case Phase::Tie:
+        // The peer that does not plant: ends when the planter's hook is tied to what it bit. The host
+        // holds its own constraint on the client's hook; a client holds the host's hook mirror.
+        g_waitWhy = isHost ? "the host did not tie the client's hook" : "the host's hook did not appear here";
+        if (!coop::hook_sync::HasMirrorFrom(PlanterSlot(isHost), /*tied=*/isHost)) return;
+        UE_LOGI("hookdrag_selftest: HOOK %s -- the planter's hook is held here", isHost ? "TIED" : "MIRRORED");
+        EnterPhase(Phase::Release, now);
+        return;
+    case Phase::Release:
+        // The peer that does not plant: ends when the planter's unhook has reached it.
+        g_waitWhy = "the planter's hook was not destroyed";
+        if (coop::hook_sync::HasMirrorFrom(PlanterSlot(isHost), /*tied=*/false)) return;
+        UE_LOGI("hookdrag_selftest: HOOK GONE -- the planter's hook is destroyed; the prop coasts and rests");
         g_restRun = 0;
         EnterPhase(Phase::Rest, now);
         return;
     case Phase::Rest:
-        // Ends when the prop has stood still for kRestSamples samples since the unhook (or, for
-        // the peer that did not plant, since it was seen dragged).
+        // Ends when the prop has stood still for kRestSamples samples since the hook's destruction.
         g_waitWhy = "the prop did not come to rest";
         if (g_restRun < kRestSamples) return;
         UE_LOGI("hookdrag_selftest: REST -- the prop stood still for %d samples", g_restRun);
@@ -501,6 +523,8 @@ void EmitVerdict() {
             isHost ? "HOST" : "CLIENT", g_targetKey.c_str(),
             PlantsHere(isHost) ? g_plantNote : "n/a", g_maxMovedCm, g_goneAtS, g_unreadAtS);
 }
+
+bool IsEnabled() { return Enabled(); }
 
 bool HostEnded() {
     return Enabled() && g_phase == Phase::Ended;
