@@ -30,6 +30,10 @@ struct AttachedCharacter {
 // another actor owns names that actor, whose own attachments are not walked. Game thread.
 int AttachedCharactersOf(void* actor, AttachedCharacter* out, int max);
 
+// `actor`'s root component (K2_GetRootComponent), live, or null: the component a hit on the actor names when a
+// test builds the hit itself.
+void* ActorRootComponent(void* actor);
+
 // ---- Generic actor root-physics substrate ----
 // The root component through K2_GetRootComponent, never the Aprop_C mesh offset, so they work on the
 // non-Aprop_C trash clump. Each body call answers only a live primitive root and refuses any other (false,

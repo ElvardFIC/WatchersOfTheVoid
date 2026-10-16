@@ -189,6 +189,12 @@ CFG_ENUM(grants_drill, "grants_drill", "dev", "off", "off|grant|none|hostdeny", 
     "The local grants drill: checks this machine's dev grants against an arm's expectation.")
 CFG_ENUM(grants_drill_expect, "grants_drill_expect", "dev", "same", "same|grant|none|hostdeny",
     "VOTVCOOP_GRANTS_DRILL_EXPECT", "Judges the grants drill against another arm's expectation (a red arm).")
+CFG_ENUM(remover_drill, "remover_drill", "dev", "off", "off|granted|withheld", "VOTVCOOP_REMOVER_DRILL",
+    "Drill (BOTH peers): the tool gun's remover pressed by a client at props the host spawned about its puppet, "
+    "each peer judging its own copies. granted: one prop, six presses at once on another, twenty distinct props in "
+    "sight one after another, then a creature the remover cannot remove -- the props must go on both peers and the "
+    "creature stay. withheld: one prop, which the host's permissions refuse to this client and which must stay on "
+    "both peers. The client ends with a chat line the host judges at.")
 CFG_ENUM(chat_drill, "chat_drill", "dev", "off", "off|history|seed|i18n|span", "VOTVCOOP_CHAT_DRILL",
     "Developer: chat checks judged in memory -- history (the host), seed (the second joiner), i18n "
     "(every peer), span (every peer: a mid-line nick's span through the feed); each prints "

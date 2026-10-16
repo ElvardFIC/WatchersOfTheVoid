@@ -80,6 +80,8 @@ void* ReadPtrAt(const void* obj, size_t off) {
 
 }  // namespace
 
+void* ActorRootComponent(void* actor) { return RootComponentOf(actor); }
+
 bool SetActorSimulatePhysics(void* actor, bool simulate) {
     void* root = PrimitiveRootOf(actor);
     return root && SetComponentSimulatePhysics(root, simulate);
