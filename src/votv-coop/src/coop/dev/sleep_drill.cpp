@@ -45,7 +45,9 @@ enum class Step {
     ClientWaitHost, ClientSample, ClientWaitHostWake, ClientAwake, ClientQuiet, ClientResting, Done
 };
 
-constexpr float kNeed          = 30.f;   // the need both peers sleep from; the wake loop ends a sleep at 100
+constexpr float kNeed          = 80.f;   // the need both peers sleep from (the bed's own ceiling); a native
+                                         // sleep from it lasts about 15 s, which keeps the window a world
+                                         // event (it wakes a sleeper, natively) can fall in short
 constexpr float kNativeFactor  = 20.f;   // the game's sleep dilation (mainGamemode.cpp:5428)
 constexpr float kHostFactorTol = 0.5f;
 constexpr float kWorldTol      = 0.01f;  // a client's world must read 1
@@ -186,10 +188,20 @@ void HostGoToBed() {
     Enter(Step::HostAsleep, "the host to wake", kSleepBound);
 }
 
+// A world event wakes a sleeper natively: a sleep it ended measured nothing, so the arm says so and ends.
+bool EventWoke(bool host, float need) {
+    int32_t events = 0;
+    if (need >= kRestedNeed || !AE::ReadCount(events) || events <= 0) return false;
+    UE_LOGW("[SLEEP-DRILL] %s %s INCONCLUSIVE a world event woke the sleeper (%d active)", ArmName(), RoleName(host),
+            static_cast<int>(events));
+    return true;
+}
+
 void HostWatchWake() {
     if (SLP::IsSleeping()) return;
     const float secs = std::chrono::duration<float>(Clock::now() - g_hostT0).count();
     const float need = ReadField(V::Field::Sleep);
+    if (EventWoke(true, need)) return Finish(true);
     const bool pass = std::fabs(g_hostDilation - kNativeFactor) <= kHostFactorTol && need >= kRestedNeed;
     Say(true, pass, "T_host=%.1f s, world dilation %.2f asleep (the game's is %.0f), need %.1f -> %.1f%s", secs,
         g_hostDilation, kNativeFactor, g_hostNeed0, need, need >= kRestedNeed ? "" : " (woken before it was rested)");
@@ -256,9 +268,16 @@ void ClientSample() {
     if (now < g_nextRead) return;
     g_nextRead = now + kSample;
     if (!ReadWorld(nullptr)) return Fail(false, "the world's dilation did not read");
-    if (!coop::sleep_sync::HostAsleepNow())
+    if (!coop::sleep_sync::HostAsleepNow()) {
+        int32_t events = 0;
+        if (AE::ReadCount(events) && events > 0) {
+            UE_LOGW("[SLEEP-DRILL] %s client INCONCLUSIVE a world event woke the host", ArmName());
+            g_step = Step::Done;
+            return;
+        }
         return Fail(false, "the host woke after %.1f s, before the window ended",
                     std::chrono::duration<float>(now - g_t0).count());
+    }
     if (now - g_t0 < kWindow) return;
     float total = 0.f, day = 0.f, scale = 0.f;
     if (!DNC::ReadClock(total, day, scale)) return;
