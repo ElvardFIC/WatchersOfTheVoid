@@ -244,12 +244,13 @@ std::wstring MarkPropElement(void* actor, const std::wstring& key, const std::ws
         return key;
     }
     // The host is the key-uniqueness authority (MTA: the server owns element-id uniqueness). VOTV's
-    // level places duplicate interactable Keys (85 trashBitsPile_C in untitled_1 share four baked
-    // keys), the game keeps any non-None key unchecked, and a New Game saves them all; every identity
+    // level content carries duplicate interactable Keys, present before any save record loads (85
+    // trashBitsPile_C in untitled_1 share four baked keys), the game keeps any non-None key
+    // unchecked, and a New Game saves them all; every identity
     // layer assumes uniqueness: a clone family funnels its wire rows onto one actor and the join
     // reconcile re-expresses the rest into occupied positions. A keyed actor enrolling while a
     // different live actor carries its Key is re-keyed before anything sees it. The new key persists
-    // for an actor that lives to a save; a placed actor that a save's load then destroys (loadObjects
+    // for an actor that lives to a save; an actor that a save's load then destroys (loadObjects
     // re-creates every actor_save from its records) takes its throwaway key with it, at no cost
     // beyond the mint. A dead incumbent is a loadObjects re-create inheriting its identity, spared by
     // the liveness check. A client never re-keys. The key

@@ -73,11 +73,12 @@ are peer-gated. `[V]`
   changes, so an adoption binds a wire identity to an actor that is about to vanish on somebody
   else's schedule and the prop the birth named never appears there. The hand axis has one owner
   and both walks that must respect it -- the census outward, this scan inward -- ask it. `[V]`
-- **Key uniqueness.** The game's level places duplicate keys, a clone family of dozens of
+- **Key uniqueness.** The level's own content carries duplicate keys (present before any save record
+  loads, at the same keys and places every load), a clone family of dozens of
   trash-bit piles on one key among them, and a New Game saves them as they are; every identity
   layer assumes uniqueness. The host is the key authority: at enrolment, a keyed actor whose key
   another live actor already carries is re-keyed with a fresh random key, once. The fix bakes into
-  the host's save and every transferred world for an actor that lives to a save; a placed actor
+  the host's save and every transferred world for an actor that lives to a save; an actor
   that a save's load destroys and re-creates from its records takes its throwaway key with it.
   A dead incumbent's recreate inherits its identity. Clients never re-key. `[V]`
 - **A client never authors a save-loaded prop.** Three intent doors route around it: the drop

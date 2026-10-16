@@ -37,8 +37,8 @@ std::wstring EnsureKeyForBroadcast(void* self, const std::wstring& currentKey,
 
 // KEY-UNIQUENESS AUTHORITY mint: force-mint a fresh unique Key onto `self` REGARDLESS of its
 // current Key. The host census calls it when a second live actor is found carrying an
-// already-indexed Key, which the level produces -- it places clone families, which a New Game
-// saves as they are, sharing one GUID, and the identity layer assumes uniqueness. Resolves
+// already-indexed Key, which the level's content produces -- its clone families share one GUID,
+// and a New Game saves them as they are, and the identity layer assumes uniqueness. Resolves
 // setKey by climbing from the actual class to the nearest ancestor that declares it, since
 // FindFunction matches the exact owner: actorChipPile and prop_garbageClump declare their own,
 // trashBitsPile takes actor_save's, the prop lineage Aprop_C's. Returns the CONFIRMED re-read key,

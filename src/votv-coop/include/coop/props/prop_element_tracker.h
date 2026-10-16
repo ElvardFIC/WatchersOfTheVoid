@@ -53,7 +53,7 @@ void UnmarkKnownKeyedProp(void* actor);
 
 // The Prop element shadow: a Prop element for `actor`, idempotent, allocated in the host or peer
 // range by the role read inside the lock; name and class optional. Returns the key the actor is
-// actually enrolled under: the level places clone families on one key (85 trashBitsPile_C on four
+// actually enrolled under: the level's clone families share a key (85 trashBitsPile_C on four
 // keys, 65 on one GUID), and the host re-keys a true duplicate (a different live actor already
 // carries the key) before enrolling, so a broadcast builds its payload from the return, never the
 // input. Every caller names its enrolment source: an explicit express seam (the Init broadcast, a
