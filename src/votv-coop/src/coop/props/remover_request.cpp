@@ -60,19 +60,6 @@ coop::net::Session* LoadSession() { return g_session.load(std::memory_order_acqu
 
 constexpr size_t kReasons = static_cast<size_t>(RemoverReason::Count);
 
-const char* ReasonName(RemoverReason r) {
-    switch (r) {
-    case RemoverReason::Removed:     return "removed";
-    case RemoverReason::NotReady:    return "not ready";
-    case RemoverReason::Gone:        return "gone";
-    case RemoverReason::Unsupported: return "unsupported element";
-    case RemoverReason::NoRight:     return "no right";
-    case RemoverReason::Held:        return "held";
-    case RemoverReason::OutOfSight:  return "out of sight";
-    default:                         return "unknown";
-    }
-}
-
 // ---- client ---------------------------------------------------------------------------------------------------
 
 // A notice is shown at most once per reason per window; the slot after the host's reasons is the client's own
@@ -103,6 +90,9 @@ void ShowReason(RemoverReason r) {
         return;
     case RemoverReason::OutOfSight:
         Show(static_cast<size_t>(r), std::string(l10n::T("You can't see that from there")));
+        return;
+    case RemoverReason::Failed:
+        Show(static_cast<size_t>(r), std::string(l10n::T("Not removable right now")));
         return;
     default:
         return;
@@ -208,16 +198,28 @@ inline float Dist(const FVector& a, const FVector& b) {
 constexpr float kOnPropSlackCm = 50.f;
 constexpr float kBlockedSlackCm = 25.f;
 
-enum class Sight : uint8_t { Ok, No, Unknown };
+// What the judge decided and, for a reason that is not Removed or Gone, the exact branch it took: a static string the
+// tally and the log carry, so a refusal says which check stopped it.
+struct Verdict {
+    RemoverReason reason;
+    const char*   why;
+};
 
-// Could the sender have struck `actor` at the request's hit point, from the eye the host holds for it?
-Sight JudgeSight(void* puppet, void* actor, const Queued& q) {
+constexpr Verdict Decided(RemoverReason r, const char* why) { return {r, why}; }
+
+// Could the sender have struck `actor` at the request's hit point, from the eye the host holds for it? The strength
+// against a forged origin is the pose-staleness ball around the eye, not the segment: a sender that names an origin
+// on the hit point leaves a segment of no length. Source re-traces a shot from the server's own eye and takes no
+// origin from the client (player_lagcompensation.cpp); MTA bounds the claimed shot origin to its copy of the player
+// and traces nothing (CBulletsyncPacket.cpp:148-196). This lane does both, because the host has the world.
+Verdict JudgeSight(void* puppet, void* actor, const Queued& q) {
     const coop::net::RemoverRequestPayload& p = q.req;
     const FVector origin{p.origin[0], p.origin[1], p.origin[2]};
     const FVector hitAt{p.hit[0], p.hit[1], p.hit[2]};
-    if (!q.haveEye) return Sight::Unknown;
+    if (!q.haveEye) return Decided(RemoverReason::NotReady, "no eye (the sender's head position did not read)");
     // The client's origin is only a consistency check against the eye the host captured when the request arrived.
-    if (Dist(origin, q.eye) > EL::kPoseStalenessUU) return Sight::No;
+    if (Dist(origin, q.eye) > EL::kPoseStalenessUU)
+        return Decided(RemoverReason::OutOfSight, "origin far from the eye");
     // The hit point on the prop: inside the sphere of the bounds of ALL its components, plus a margin. A zero extent is
     // no bounds, never a point-sized prop at the world origin.
     FVector centre{}, extent{};
@@ -226,18 +228,20 @@ Sight JudgeSight(void* puppet, void* actor, const Queued& q) {
         !(extent.X == 0.f && extent.Y == 0.f && extent.Z == 0.f)) {
         radius = std::sqrt(extent.X * extent.X + extent.Y * extent.Y + extent.Z * extent.Z);
     } else if (!E::TryGetActorLocation(actor, centre)) {
-        return Sight::Unknown;
+        return Decided(RemoverReason::Failed, "the prop's bounds and location did not read");
     }
-    if (Dist(hitAt, centre) > radius + kOnPropSlackCm) return Sight::No;
+    if (Dist(hitAt, centre) > radius + kOnPropSlackCm)
+        return Decided(RemoverReason::OutOfSight, "hit point off the prop");
     // The segment from the eye to the hit point meets nothing the shot itself would stop at (the toolgun traces these
     // four object types) before it, but the puppet and the prop themselves.
     const uint8_t types[4] = {0, 1, 2, 3};   // the shot's own set: WorldStatic, WorldDynamic, Pawn, PhysicsBody
     void* ignore[2] = {puppet, actor};
     ue_wrap::trace::Hit blocker;
     if (!ue_wrap::trace::LineHitForObjects(puppet, q.eye, hitAt, types, 4, ignore, 2, &blocker))
-        return Sight::Unknown;
-    if (blocker.blocked && Dist(q.eye, blocker.point) < Dist(q.eye, hitAt) - kBlockedSlackCm) return Sight::No;
-    return Sight::Ok;
+        return Decided(RemoverReason::Failed, "the sight trace did not run");
+    if (blocker.blocked && Dist(q.eye, blocker.point) < Dist(q.eye, hitAt) - kBlockedSlackCm)
+        return Decided(RemoverReason::OutOfSight, "segment blocked before the hit point");
+    return Decided(RemoverReason::Removed, "");
 }
 
 // The host's own hand holds `actor`.
@@ -248,46 +252,56 @@ bool HostHolds(void* actor) {
 }
 
 // Judges one request in the lane's order; on Removed `*out` is the prop to remove.
-RemoverReason Judge(coop::net::Session& s, uint8_t slot, const Queued& q, void** out) {
+Verdict Judge(coop::net::Session& s, uint8_t slot, const Queued& q, void** out) {
     const coop::net::RemoverRequestPayload& p = q.req;
-    if (slot < 1 || slot >= coop::players::kMaxPeers || !s.IsSlotWorldReady(slot)) return RemoverReason::NotReady;
+    if (slot < 1 || slot >= coop::players::kMaxPeers) return Decided(RemoverReason::NotReady, "slot out of range");
+    if (!s.IsSlotWorldReady(slot))
+        return Decided(RemoverReason::NotReady, "the sender's world is not announced ready");
     const std::string guid = s.ProvedGuidForSlotWithToken(slot, coop::roster_ledger::Get(slot).bornGeneration);
-    if (guid.empty() || !Finite3(p.origin) || !Finite3(p.hit)) return RemoverReason::NotReady;
+    if (guid.empty()) return Decided(RemoverReason::NotReady, "the sender's id is not proved");
+    if (!Finite3(p.origin) || !Finite3(p.hit))
+        return Decided(RemoverReason::NotReady, "a non-finite origin or hit point");
     coop::RemotePlayer& rp = coop::puppet_drive::Puppet(slot);
     void* puppet = rp.valid() && rp.HasPose() ? rp.GetActor() : nullptr;
-    if (!puppet) return RemoverReason::NotReady;
+    if (!puppet) return Decided(RemoverReason::NotReady, "no posed puppet for the sender");
 
     const EL::Element* el = p.elementId < EL::kMaxElements ? EL::Registry::Get().Get(p.elementId) : nullptr;
     void* actor = el ? el->LiveActor() : nullptr;
-    if (!actor) return RemoverReason::Gone;
-    if (!coop::kerfur_entity::KerfurPropBound()) return RemoverReason::NotReady;
-    if (el->GetType() != EL::ElementType::Prop || ue_wrap::prop::IsTrashActor(actor) ||
-        ue_wrap::prop::IsTrashBitsPile(actor) || coop::kerfur_entity::IsKerfurPropClass(R::ClassOf(actor)))
-        return RemoverReason::Unsupported;
+    if (!actor) return Decided(RemoverReason::Gone, "no live element");
+    if (!coop::kerfur_entity::KerfurPropBound())
+        return Decided(RemoverReason::NotReady, "the kerfur prop class is not bound yet");
+    if (el->GetType() != EL::ElementType::Prop)
+        return Decided(RemoverReason::Unsupported, "the element is not a prop");
+    if (ue_wrap::prop::IsTrashActor(actor)) return Decided(RemoverReason::Unsupported, "a trash pile or clump");
+    if (ue_wrap::prop::IsTrashBitsPile(actor)) return Decided(RemoverReason::Unsupported, "a trash bits pile");
+    if (coop::kerfur_entity::IsKerfurPropClass(R::ClassOf(actor)))
+        return Decided(RemoverReason::Unsupported, "a kerfur prop");
 
     namespace GN = coop::permissions::gameplay_nodes;
     if (!coop::permissions::host::Allows(guid, GN::kToolgunRemove.node, GN::kToolgunRemove.defaultGranted, false))
-        return RemoverReason::NoRight;
+        return Decided(RemoverReason::NoRight, "the remover node is withheld from the sender");
 
-    if (coop::remote_prop::IsActorUnderAnyDrive(actor) || coop::prop_drive_host::InAHand(actor) || HostHolds(actor))
-        return RemoverReason::Held;
+    if (coop::remote_prop::IsActorUnderAnyDrive(actor)) return Decided(RemoverReason::Held, "held by a peer's drive");
+    if (coop::prop_drive_host::InAHand(actor)) return Decided(RemoverReason::Held, "held in a hand");
+    if (HostHolds(actor)) return Decided(RemoverReason::Held, "held by the host's own grab");
 
-    switch (JudgeSight(puppet, actor, q)) {
-    case Sight::No:      return RemoverReason::OutOfSight;
-    case Sight::Unknown: return RemoverReason::NotReady;
-    case Sight::Ok:      break;
-    }
-    *out = actor;
-    return RemoverReason::Removed;
+    const Verdict sight = JudgeSight(puppet, actor, q);
+    if (sight.reason == RemoverReason::Removed) *out = actor;
+    return sight;
 }
 
-void Answer(coop::net::Session& s, uint8_t slot, uint32_t eid, RemoverReason reason) {
-    ++g_slots[slot].answered[static_cast<size_t>(reason)];
-    if (reason != RemoverReason::Removed && reason != RemoverReason::Gone)
-        g_tally.Note(slot, ReasonName(reason), coop::net::RefusalTally::Clock::now());
+void Answer(coop::net::Session& s, uint8_t slot, uint32_t eid, const Verdict& v) {
+    ++g_slots[slot].answered[static_cast<size_t>(v.reason)];
+    if (v.reason != RemoverReason::Removed && v.reason != RemoverReason::Gone) {
+        g_tally.Note(slot, v.why, coop::net::RefusalTally::Clock::now());
+        // A request that could not be judged, or a destroy that did not take, is the host failing the sender: said at
+        // once with its cause, not left to the window's summed line.
+        if (v.reason == RemoverReason::Failed)
+            UE_LOGW("remover_request: slot %u's element %u not removed: %s", slot, eid, v.why);
+    }
     coop::net::RemoverResultPayload rp{};
     rp.elementId = eid;
-    rp.reason = static_cast<uint8_t>(reason);
+    rp.reason = static_cast<uint8_t>(v.reason);
     s.SendReliableToSlot(slot, coop::net::ReliableKind::RemoverResult, &rp, sizeof(rp));
 }
 
@@ -295,20 +309,16 @@ void Answer(coop::net::Session& s, uint8_t slot, uint32_t eid, RemoverReason rea
 // the destroy to every world-ready peer, the sender included. Nothing of the receive path's listeners runs: a
 // remover's removal is not a spend.
 void Serve(coop::net::Session& s, uint8_t slot, const Queued& q) {
-    const coop::net::RemoverRequestPayload& p = q.req;
     ++g_runs[slot];
     void* actor = nullptr;
-    RemoverReason reason = Judge(s, slot, q, &actor);
-    if (reason == RemoverReason::Removed) {
+    Verdict v = Judge(s, slot, q, &actor);
+    if (v.reason == RemoverReason::Removed) {
         ue_wrap::CachedObjRef incarnation;
         incarnation.Set(actor);
         E::DestroyActor(actor);
-        if (incarnation.Is(actor)) {
-            UE_LOGW("remover_request: slot %u's element %u is still live after its destroy", slot, p.elementId);
-            reason = RemoverReason::NotReady;
-        }
+        if (incarnation.Is(actor)) v = Decided(RemoverReason::Failed, "the destroy left the actor live");
     }
-    Answer(s, slot, p.elementId, reason);
+    Answer(s, slot, q.req.elementId, v);
 }
 
 void ServeQueues(coop::net::Session& s) {

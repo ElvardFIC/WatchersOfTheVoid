@@ -1884,7 +1884,8 @@ enum class RemoverReason : uint8_t {
     NoRight     = 4,  // the host withholds the remover from this player
     Held        = 5,  // someone is holding or dragging the prop
     OutOfSight  = 6,  // the sender's shot does not stand: too far from its body, off the prop, or blocked
-    Count       = 7,
+    Failed      = 7,  // the host could not judge the sight, or its destroy left the prop live; shown as "not removable"
+    Count       = 8,
 };
 
 // The host's answer to a RemoverRequest, to the sender alone.
