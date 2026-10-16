@@ -360,9 +360,12 @@ void Tick() {
     }
 
     // 2) each sender's queued request, once its pace and its body allow; 3) the refusals' summed line once its
-    // window has passed; 4) the startKill watch, until settled.
-    ServeQueues();
-    g_tally.Flush(coop::net::RefusalTally::Clock::now());
+    // window has passed, both only on a running host: the queues are the host's, and the roster's bringup resets them
+    // off this thread, so no Tick touches them outside a running host session; 4) the startKill watch, until settled.
+    if (s->running() && s->role() == coop::net::Role::Host) {
+        ServeQueues();
+        g_tally.Flush(coop::net::RefusalTally::Clock::now());
+    }
     SettleKillWatch();
 }
 
