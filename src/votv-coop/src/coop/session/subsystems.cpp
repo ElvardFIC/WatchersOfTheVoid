@@ -451,7 +451,6 @@ void DisconnectSlot(coop::net::Session& session, int slot) {
     coop::trash_channel::OnGrabHolderLeft(session, static_cast<uint8_t>(slot));  // the leaver's carried clump is let go: it falls, streams, lands
     coop::broom_stroke::OnPeerLeft(static_cast<uint8_t>(slot));  // the leaver's stroke rate goes with it
     coop::pack_trash_intent::OnPeerLeft(static_cast<uint8_t>(slot));  // and so does its pack queue
-    coop::verb_lanes::OnPeerLeft(static_cast<uint8_t>(slot));  // and its console presses, door verbs, keypad entries
     coop::kerfus_lanes::OnPeerLeft(static_cast<uint8_t>(slot));  // and its Kerfus verbs
     coop::dish_calib_sync::OnPeerLeft(static_cast<uint8_t>(slot));  // and its precision-intent budget
     coop::drive_payload_sync::OnPeerLeft(static_cast<uint8_t>(slot));  // and its drive rows in assembly, parked or owed

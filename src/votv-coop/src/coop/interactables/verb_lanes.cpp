@@ -41,14 +41,6 @@ void Tick(coop::net::Session& session) {
     { ue_wrap::ScopedWalkTimer _w{"sync:desk_verb"}; coop::desk_verb_intent::Tick(session); }  // settle its seams; HOST: run one queued desk press a tick a client
 }
 
-void OnPeerLeft(uint8_t slot) {
-    coop::drone_call_intent::OnPeerLeft(slot);  // its console presses
-    coop::eraser_press_intent::OnPeerLeft(slot);  // its eraser presses
-    coop::door_verb_intent::OnPeerLeft(slot);   // its door verbs
-    coop::keypad_verbs::OnPeerLeft(slot);       // its keypad entries
-    coop::desk_verb_intent::OnPeerLeft(slot);   // its desk presses
-}
-
 void OnDisconnect() {
     coop::drone_call_intent::OnDisconnect();  // its own console button stands
     coop::eraser_press_intent::OnDisconnect();  // its own eraser button stands
