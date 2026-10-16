@@ -14,6 +14,7 @@
 #include "coop/player/hand_item.h"
 #include "coop/props/remote_prop.h"           // ResolveLiveActorByEid, IsActorUnderAnyDrive
 #include "ue_wrap/actors/prop.h"
+#include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/hot_path_guard.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
@@ -46,8 +47,9 @@ struct Drive {
 constexpr uint32_t kRelatchLoud = 60;
 std::unordered_map<uint32_t, Drive>   g_drives;    // eid -> drive
 std::unordered_map<uint32_t, uint8_t> g_endedGen;  // eid -> the generation its end edge closed
-// eid -> the generation whose END pose ApplyEnd wrote, and onto which actor (its object-array index).
-struct EndOnActor { uint8_t gen; int32_t idx; };
+// eid -> the generation whose END pose ApplyEnd wrote, and onto which actor: captured with its slot
+// serial, so a successor re-created in the same slot does not read as the actor the pose was written on.
+struct EndOnActor { uint8_t gen = 0; ue_wrap::CachedObjRef actor; };
 std::unordered_map<uint32_t, EndOnActor> g_endOnActor;
 // eid -> a generation a hand took over before its end edge landed. Its end pose is older than
 // whatever the hand did since, so a late end of it closes the generation and writes nothing.
@@ -129,7 +131,9 @@ size_t g_endCount = 0;   // ends recorded since the session began; the newest is
 // assigning a velocity wakes a body at rest.
 void ApplyEnd(void* actor, const coop::net::PropDriveEndPayload& p, bool parkedHere) {
     E::SetActorLocation(actor, ue_wrap::FVector{p.x, p.y, p.z});
-    g_endOnActor[p.eid] = EndOnActor{p.gen, R::InternalIndexOf(actor)};
+    EndOnActor& on = g_endOnActor[p.eid];
+    on.gen = p.gen;
+    on.actor.Set(actor);
     g_ends[g_endCount++ % kRecentEnds] = AppliedEnd{p.eid, ue_wrap::FVector{p.x, p.y, p.z}, ::GetTickCount64()};
     E::SetActorRotation(actor, ue_wrap::FRotator{p.pitch, p.yaw, p.roll});
     // The host's frozen and sleep at the end first: a hook that bites a frozen prop unfreezes it on
@@ -224,6 +228,8 @@ void TickApplyAndDrive(coop::net::Session& s) {
             }
             if (ended != g_endedGen.end()) g_endedGen.erase(ended);
             g_yieldedGen.erase(eid);
+            // The parked newer generation supersedes the END pose a correction was judged against.
+            g_endOnActor.erase(eid);
             // A pose of a closed generation never reaches here, so a pending end for this prop is
             // of an OLDER generation than the one parking now: stale, and dropped before it can
             // land on the new stream.
@@ -356,10 +362,10 @@ bool IsCorrectionStale(uint32_t eid, uint8_t gen, bool open) {
     const auto e = g_endOnActor.find(eid);
     if (e == g_endOnActor.end()) return false;
     // The END pose died with its actor (a load-tail re-create, a purge) unless the bound actor is
-    // still the one it was written onto.
+    // still the one it was written onto: the same pointer, its slot still carrying the serial taken then.
     coop::element::Element* el = coop::element::Registry::Get().Get(eid);
     void* actor = el ? el->GetActor() : nullptr;
-    if (!actor || !R::IsLiveByIndex(actor, el->GetInternalIdx()) || el->GetInternalIdx() != e->second.idx)
+    if (!actor || !R::IsLiveByIndex(actor, el->GetInternalIdx()) || !e->second.actor.Is(actor))
         return false;
     return GenAfter(e->second.gen, gen) || (e->second.gen == gen && open);
 }

@@ -36,7 +36,8 @@ void CaptureForSlot(int peerSlot);
 void SendDivergenceDeletes(int peerSlot);
 
 // The connect edge, after the snapshot trigger: one position correction per save-authoritative
-// entity the host moved since the capture. Arms the late window and resets its dedupe.
+// entity the host moved since the capture. Arms the late window and resets its dedupe. A no-op,
+// said once, while the slot is in its hand settle: the window is over and does not re-open.
 void FlushDivergedPositions(int peerSlot);
 
 // The late-arm cadence: re-flush each armed joiner's diverged positions until its window expires,
@@ -75,8 +76,9 @@ void RecordGrabTimePileXform(coop::element::ElementId eid, const ue_wrap::FVecto
 // A peer left, or its stream was cancelled: drop its baseline and disarm its late flush.
 void ClearForSlot(int peerSlot);
 
-// True from `peerSlot`'s capture instant until its join window closes: the world a joiner is
-// handed has been taken, whether or not its load is over.
+// True from `peerSlot`'s capture instant until its keyed map retires: the window's close, or, when a
+// settle phase follows it, that phase's end (<= 30 s later). The world a joiner is handed has been
+// taken, whether or not its load is over.
 bool HasCapture(int peerSlot);
 
 // True while `peerSlot`'s late flush is armed: a keyed prop the host moves now reaches that joiner
