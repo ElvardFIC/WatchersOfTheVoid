@@ -179,7 +179,11 @@ KindVerdict Judge(int i) {
     const KindSpec& sp = kSpecs[i];
     KindVerdict v;
     char buf[200];
-    if (k.runs < sp.cap) {
+    if (k.runs == 0) {
+        // All 121 were refused before any could run: the lane never served, which says nothing of its cap.
+        v.what = "INCONCLUSIVE";
+        v.why = "never-ran (refused before it could run)";
+    } else if (k.runs < sp.cap) {
         // All 121 are accounted for and fewer than the cap ran: the lane refused while it had room.
         std::snprintf(buf, sizeof(buf), "under-cap (%u < %u)", k.runs, sp.cap);
         v.what = "FAIL";

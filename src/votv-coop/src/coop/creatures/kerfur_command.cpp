@@ -61,8 +61,8 @@ constexpr uint8_t kOmegaSeams = SP::kPlayerPawn | SP::kMainPlayer;
 // token given back, while the host cannot yet run it for the sender: no posed body for it (the seconds between a
 // joiner's curtain and its first pose, a mid-join window rather than a verdict), or the Omega's seams and its
 // startKill watch still settling -- since the verb's own reads would take the host. A request past the cap, or
-// one that can never run (an unknown sender or command), is refused into the tally. Per-slot state: a leaver's
-// queue goes with its occupant. Game thread.
+// one that can never run (an unknown sender or command, an eid outside the host range), is refused into the
+// tally. Per-slot state: a leaver's queue goes with its occupant. Game thread.
 constexpr coop::net::IntentBudget kBudget{4.0f, 2.0f};
 constexpr size_t kMaxPending = 8;
 
