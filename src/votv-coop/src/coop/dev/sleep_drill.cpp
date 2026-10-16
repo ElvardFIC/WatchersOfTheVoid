@@ -189,6 +189,8 @@ void HostGoToBed() {
 }
 
 // A world event wakes a sleeper natively: a sleep it ended measured nothing, so the arm says so and ends.
+// Run the arms with mp.py's --host-fresh: the rig save carries a persistent Bad Sun, which the day cycle
+// spawns at every new game hour in that save's mode (daynightCycle.cpp:455-510), so its sleeps never finish.
 bool EventWoke(bool host, float need) {
     int32_t events = 0;
     if (need >= kRestedNeed || !AE::ReadCount(events) || events <= 0) return false;
