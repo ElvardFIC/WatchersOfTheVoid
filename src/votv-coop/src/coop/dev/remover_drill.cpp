@@ -59,6 +59,12 @@ Phase PhaseOf() {
 }
 const char* PhaseName() { return PhaseOf() == Phase::Granted ? "granted" : "withheld"; }
 
+// Three plain props of three classes (none trash, kerfur or keyed-special), one per role: the single prop a dumbbell,
+// the mashed one a beer bottle, the ring sacks.
+constexpr const wchar_t* kSinglePath  = L"/Game/objects/prop_dumbell.prop_dumbell_C";
+constexpr const wchar_t* kSingleClass = L"prop_dumbell_C";
+constexpr const wchar_t* kMashPath    = L"/Game/objects/prop_beerBottle.prop_beerBottle_C";
+constexpr const wchar_t* kMashClass   = L"prop_beerBottle_C";
 constexpr const wchar_t* kSackPath    = L"/Game/objects/prop_pointSack.prop_pointSack_C";
 constexpr const wchar_t* kSackClass   = L"prop_pointSack_C";
 constexpr const wchar_t* kToolPath    = L"/Game/objects/tool_remover.tool_remover_C";
@@ -73,7 +79,7 @@ constexpr const char* kUnsupported = "The remover cannot remove that in multipla
 
 // The host's layout about its client's puppet, in centimetres along its facing: the single and the mashed props side
 // by side ahead of it, a ring of kRing about it clear of the cone it faces, the creature beyond the ring. The client
-// tells the roles by distance: the nearer of the pair is the single prop.
+// tells the roles by class (kSingleClass, kMashClass, the sacks), never by where physics left them.
 constexpr int   kRing         = 28;
 constexpr int   kSweepFloor   = 10;    // the fewest ring props in sight that make the sweep a measurement
 constexpr int   kMashShots    = 6;
@@ -87,7 +93,6 @@ constexpr float kNpcCm        = 420.f;
 constexpr float kPuppetHalfHeightCm = 90.f;   // the floor when the puppet's bounds do not read
 constexpr float kDropCm       = 20.f;  // above the floor, so a prop settles
 constexpr float kFindRadiusCm = 700.f;
-constexpr float kPairMaxCm    = 230.f; // inside this from the client: one of the pair (the ring starts at 260)
 constexpr float kSightSlackCm = 25.f;
 
 constexpr uint64_t kFindBoundMs  = 60000;   // CLIENT: the join's end to every prop the host spawned being here
@@ -126,8 +131,10 @@ ue_wrap::CachedObjRef g_hRing[kRing];
 // side by side ahead of it (the single nearer), nothing of the ring in the cone it faces and nothing of it between the
 // client and the pair, and the creature to its right beyond the ring. False when a prop did not spawn.
 bool SpawnLayout(void* puppet, const FVector& at) {
-    void* cls = ue_wrap::asset_load::LoadObjectByPath(kSackPath);
-    if (!cls) return false;
+    void* singleCls = ue_wrap::asset_load::LoadObjectByPath(kSinglePath);
+    void* mashCls = ue_wrap::asset_load::LoadObjectByPath(kMashPath);
+    void* ringCls = ue_wrap::asset_load::LoadObjectByPath(kSackPath);
+    if (!singleCls || !mashCls || !ringCls) return false;
     FVector fwd = E::GetActorForwardVector(puppet);
     const float flat = std::sqrt(fwd.X * fwd.X + fwd.Y * fwd.Y);
     if (flat < 0.01f) fwd = {1.f, 0.f, 0.f};
@@ -137,20 +144,20 @@ bool SpawnLayout(void* puppet, const FVector& at) {
     FVector centre{}, extent{};
     const bool bounds = E::GetActorBounds(puppet, false, centre, extent) && extent.Z > 0.f;
     const float floorZ = bounds ? centre.Z - extent.Z : at.Z - kPuppetHalfHeightCm;
-    const auto spawn = [&](float ahead, float side, ue_wrap::CachedObjRef& into) {
+    const auto spawn = [&](void* cls, float ahead, float side, ue_wrap::CachedObjRef& into) {
         void* p = E::SpawnActor(cls, {at.X + fwd.X * ahead + right.X * side, at.Y + fwd.Y * ahead + right.Y * side,
                                       floorZ + kDropCm});
         into.Set(p);
         return p != nullptr;
     };
-    if (!spawn(kSingleAheadCm, kPairSideCm, g_hSingle)) return false;
+    if (!spawn(singleCls, kSingleAheadCm, kPairSideCm, g_hSingle)) return false;
     if (PhaseOf() == Phase::Withheld) return true;
-    if (!spawn(kMashAheadCm, -kPairSideCm, g_hMash)) return false;
+    if (!spawn(mashCls, kMashAheadCm, -kPairSideCm, g_hMash)) return false;
     for (int i = 0; i < kRing; ++i) {
         const float a = (kRingConeDeg + (360.f - 2.f * kRingConeDeg) * static_cast<float>(i) /
                                             static_cast<float>(kRing - 1)) * 0.0174532925f;
         const float r = kRingNearCm + kRingStepCm * static_cast<float>(i % 3);
-        if (!spawn(std::cos(a) * r, std::sin(a) * r, g_hRing[i])) return false;
+        if (!spawn(ringCls, std::cos(a) * r, std::sin(a) * r, g_hRing[i])) return false;
     }
     void* npc = coop::dev::spawn_npc::SpawnAt(kNpcClass, {at.X + right.X * kNpcCm, at.Y + right.Y * kNpcCm,
                                                           floorZ + kDropCm});
@@ -304,10 +311,10 @@ bool InSight(void* player, void* target) {
 
 struct Seen { void* actor; float cm; };
 
-// The sacks about `from`, nearest first.
-std::vector<Seen> SacksAbout(const FVector& from) {
+// The host's props of one class about `from`, nearest first.
+std::vector<Seen> PropsAbout(const wchar_t* className, const FVector& from) {
     std::vector<Seen> out;
-    void* cls = ue_wrap::object_index::ClassByName(kSackClass);
+    void* cls = ue_wrap::object_index::ClassByName(className);
     if (!cls) return out;
     struct Ctx { const FVector* from; std::vector<Seen>* out; } ctx{&from, &out};
     ue_wrap::object_index::ForEachInstance(cls, [](void* c, void* obj, int32_t) {
@@ -335,36 +342,35 @@ void* NearestNpc(const FVector& from) {
     return ctx.best;
 }
 
-// The host's pair is the two nearest props, on either side along X; the rest is the ring. Fills the client's roles.
-// False while the host's props are not all here; Abandons when they are but cannot be told apart.
+// The host's three roles, each a class of its own (the single prop a dumbbell, the mashed one a beer bottle, the ring
+// sacks), so a role is found by what it is and not by where physics left it. Fills the client's roles; false while the
+// host's props are not all here.
 bool Find(void* player) {
     FVector me{};
     if (!E::TryGetActorLocation(player, me)) return false;
-    const std::vector<Seen> seen = SacksAbout(me);
     const bool granted = PhaseOf() == Phase::Granted;
-    const size_t want = granted ? 2 + kRing : 1;
-    if (seen.size() < want) return false;
-    void* npc = granted ? NearestNpc(me) : nullptr;
-    if (granted && !npc) return false;
-    std::vector<void*> pair, ring;
-    for (const Seen& s : seen) (s.cm < kPairMaxCm ? pair : ring).push_back(s.actor);
-    if (pair.size() != (granted ? 2u : 1u)) { Abandon("the host's pair of props did not stand apart from the ring"); return true; }
-    // `seen` is nearest first, so the nearer of the pair is the single prop and the other the mashed one.
-    g_single.Set(pair[0]);
-    if (granted) {
-        g_mash.Set(pair[1]);
-        g_npc.Set(npc);
-        int n = 0;
-        for (void* r : ring) {
-            if (n < kRing && InSight(player, r)) g_sweep[n++].Set(r);
-        }
-        g_sweepN = n;
-        if (n < kSweepFloor) {
-            char why[120];
-            std::snprintf(why, sizeof(why), "%d of the ring props are in this client's sight, %d are needed", n, kSweepFloor);
-            Abandon(why);
-            return true;
-        }
+    const std::vector<Seen> single = PropsAbout(kSingleClass, me);
+    if (single.empty()) return false;
+    if (!granted) {
+        g_single.Set(single[0].actor);
+        return true;
+    }
+    const std::vector<Seen> mash = PropsAbout(kMashClass, me);
+    const std::vector<Seen> ring = PropsAbout(kSackClass, me);
+    void* npc = NearestNpc(me);
+    if (mash.empty() || ring.size() < static_cast<size_t>(kRing) || !npc) return false;
+    g_single.Set(single[0].actor);
+    g_mash.Set(mash[0].actor);
+    g_npc.Set(npc);
+    int n = 0;
+    for (const Seen& r : ring) {
+        if (n < kRing && InSight(player, r.actor)) g_sweep[n++].Set(r.actor);
+    }
+    g_sweepN = n;
+    if (n < kSweepFloor) {
+        char why[120];
+        std::snprintf(why, sizeof(why), "%d of the ring props are in this client's sight, %d are needed", n, kSweepFloor);
+        Abandon(why);
     }
     return true;
 }
