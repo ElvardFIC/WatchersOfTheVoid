@@ -104,7 +104,7 @@ coop::time_sync::LocalWrites g_m5Found{};
 
 // Who ends the night. Three classes declare a function of this name (the gamemode's, the player's,
 // the ATV's wakeUp), so the watch keeps only the gamemode's, by its declaring class. Each entry is
-// logged with its caller; our own sleep lane's reflected wakeup at the END is one of them.
+// logged with its caller, a reflected call of ours marked as such.
 UE_FACT_FN(kRowWakeup, "dev.midnight_drill", nullptr, L"wakeup", AnyClass);
 constexpr int kWakeupTag = 0x4D440001;  // 'MD'
 constexpr int kMaxWakeLines = 8;
@@ -156,7 +156,7 @@ const char* ArmPlan(bool host) {
         return host ? "setting the clock just short of midnight once a joiner's world is taken"
                     : "reading this client's hash codes as its world loads and once joined";
     if (host) return "waiting for a client's join to end";
-    return ArmOf() == Arm::Asleep ? "going to bed once joined" : "watching; the host sets the clock";
+    return ArmOf() == Arm::Asleep ? "going to bed once joined and the host is asleep" : "watching; the host sets the clock";
 }
 
 bool IsHost(coop::net::Session* s) { return s->role() == coop::net::Role::Host; }
@@ -268,16 +268,17 @@ void CheckHostAsleep(char role) {
     }
 }
 
-// The night's end, with the inputs the wake loop reads: a need of 100, food at 20, an active event.
-// None of them set means something called wakeup() directly (a nightmare, the ariral, the drone).
+// The night's end is the HOST's wake, on both peers: HostAsleepNow() falling. The inputs the host's wake
+// loop reads are a need of 100, food at 20, an active event; none of them set means something called
+// wakeup() directly (a nightmare, the ariral, the drone).
 void WatchWake(char role) {
-    if (SLP::IsSleeping()) return;
+    if (coop::sleep_sync::HostAsleepNow()) return;
     float total = 0.f, day = 0.f, scale = 0.f;
     DNC::ReadClock(total, day, scale);
     int32_t h = 0, m = 0, z = 0;
     DNC::ReadSavedTime(h, m, z);
-    // The minute pulses this peer ran through the night: a client that saw every game minute of the
-    // host's clock matches the host's count; one whose samples skipped minutes falls short.
+    // The minute pulses this peer ran from the host's sleep to the host's wake: a client that saw every
+    // game minute of the host's clock matches the host's count; one whose samples skipped minutes falls short.
     const uint64_t minutes = coop::dev::rollover_watch::RanCount(L"func_newMinute") - g_minutesAtHostAsleep;
     UE_LOGI("midnight_drill: [%c] woke -- savedtime %d:%02d day %d, day=%.2f, %llu minute pulses since the "
             "host's sleep | %s", role, h, m, z, day, static_cast<unsigned long long>(minutes),
@@ -632,7 +633,11 @@ void TickClient() {
         if (!coop::net_pump::HasAnnouncedWorldReady() ||
             coop::join_progress::CurrentPhase() != coop::join_progress::Phase::Idle)
             return;
-        UE_LOGI("midnight_drill: [C] arm asleep -- joined; going to bed");
+        // The client rests natively and wakes on its own need, so it goes to bed only once the host is seen
+        // asleep: the host's bed comes after the join and a quiet world, and a client in bed earlier could
+        // wake first.
+        if (!coop::sleep_sync::HostAsleepNow()) return;
+        UE_LOGI("midnight_drill: [C] arm asleep -- joined and the host is asleep; going to bed");
         GoToBed('C');
         return;
     case Step::WaitHostAsleep: CheckHostAsleep('C'); return;

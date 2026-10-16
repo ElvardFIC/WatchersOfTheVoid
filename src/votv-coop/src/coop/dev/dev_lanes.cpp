@@ -74,7 +74,7 @@
 #include "coop/dev/lookat_aim_drill.h"  // hold a peer's aim on a resting prop, so the churn probe has a reading
 #include "coop/dev/lookat_churn_probe.h"  // how often the interaction UI's look-at set is rebuilt under a held aim
 #include "coop/dev/meadow_selftest.h"  // [dev] a row into the host's signal database and out, the client's copy following
-#include "coop/dev/midnight_drill.h"  // [dev] the host's midnight on demand, awake or inside the shared sleep
+#include "coop/dev/midnight_drill.h"  // [dev] the host's midnight on demand, awake or inside the host's own sleep
 #include "coop/dev/sleep_drill.h"  // [dev] a host's native sleep and a client's rest at the native rate, measured
 #include "coop/dev/hostile_drill.h"  // [dev] the receive boundary: a client forges malformed packets, the host judges
 #include "coop/dev/native_pile_inert_probe.h"

@@ -326,8 +326,9 @@ CFG_FLAG(rollover_watch, "rollover_watch", "dev", false, "VOTVCOOP_ROLLOVER_WATC
 CFG_ENUM(midnight_drill, "midnight_drill", "dev", "off", "off|awake|asleep|cheat|mode5|malformed|joinwindow",
     "VOTVCOOP_MIDNIGHT_DRILL",
     "Drill (BOTH peers, with rollover_watch), once a client's join is over. awake and asleep: the "
-    "host sets its clock just short of midnight; awake: both peers stay up; asleep: both go to bed "
-    "first, so the midnight falls inside the shared sleep's fast-forward. cheat: the host leaves its "
+    "host sets its clock just short of midnight; awake: both peers stay up; asleep: the host goes to "
+    "bed and the client follows once it sees the host asleep, so the midnight falls inside the host's "
+    "own fast-forward (each peer sleeps on its own). cheat: the host leaves its "
     "clock alone and the client writes a day onto its own, three times, as the cheat menu's day "
     "button does. mode5: each peer spawns game mode 5's master, which resets the day every second, "
     "and the client says whether its own reset kept running. malformed: the host puts three clock "
