@@ -88,7 +88,6 @@
 #include "coop/dev/rollover_watch.h"  // [dev] the day rollover: its verbs, the pulses' consumers, the day numbers and the hash digest
 #include "coop/dev/roster_token_selftest.h"  // [dev] successor-ban drill (moderation token vs a recycled slot)
 #include "coop/dev/run_and_wait_selftest.h"  // [dev] the one game-thread wait's five endings, provoked
-#include "coop/dev/sleep_probe.h"
 #include "coop/dev/spawn_match_probe.h"  // the fuzzy-match candidate set and adoption watch
 #include "coop/dev/store_table_probe.h"  // which mechanism can read a list_store row
 #include "coop/dev/toggle_drill.h"  // [dev] whether a toggle device's state crosses both ways
@@ -297,8 +296,6 @@ void TickProbes(coop::net::Session& session, bool isConnected, bool isHost) {
     coop::dev::atv_probe::Tick(session, isHost);  // samples vehicleGetParts + vitals every 500 ms when on
     coop::dev::pinecone_probe::Install();  // dev-only pinecone-scare sync verification (ini pinecone_probe=1)
     coop::dev::pinecone_probe::Tick(isConnected, isHost);  // host force-spawns one pinecone ~5s after a client connects -> confirm it mirrors
-    coop::dev::sleep_probe::Install();  // dev-only sleep-gate exerciser (ini sleep_probe=1)
-    coop::dev::sleep_probe::Tick(isConnected, isHost);  // client sleeps T+15, host T+25 (ACCELERATE), host wakes T+40 (END)
     coop::dev::lightswitch_probe::Install();  // dev-only light-switch sync RE probe (ini lightswitch_probe=1)
     coop::dev::lightswitch_probe::Tick();  // one-shot synthetic flip: is SetActive blueprint-internal, and does the use verb flip both the switch and the lights
     coop::dev::light_group_census::Tick();  // dev-only READ-ONLY light-GROUP census (ini lightgroup_census=1); self-installs

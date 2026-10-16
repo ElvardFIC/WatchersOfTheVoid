@@ -22,7 +22,6 @@ void* g_gmCls = nullptr;
 int32_t g_offIsSleep = -1;     // mainGamemode.isSleep
 int32_t g_offDreamProb = -1;   // mainGamemode.dreamProbability (-1 = the SP sentinel)
 int32_t g_offBed = -1;         // mainGamemode.bed (Abed_C*)
-void* g_wakeupFn = nullptr;    // gamemode.wakeup() -- the timelapse END
 void* g_sleepFn = nullptr;     // gamemode.sleep(bed, dropItem, ignoreRagdoll)
 
 void* g_gsCdo = nullptr;            // GameplayStatics CDO
@@ -44,7 +43,6 @@ void ResolvePass() {
     if (g_offIsSleep < 0) g_offIsSleep = R::FindPropertyOffset(g_gmCls, L"isSleep");
     if (g_offDreamProb < 0) g_offDreamProb = R::FindPropertyOffset(g_gmCls, L"dreamProbability");
     if (g_offBed < 0) g_offBed = R::FindPropertyOffset(g_gmCls, L"bed");
-    if (!g_wakeupFn) g_wakeupFn = R::FindFunction(g_gmCls, L"wakeup");
     if (!g_sleepFn) g_sleepFn = R::FindFunction(g_gmCls, L"sleep");
 
     if (!g_gsCdo) g_gsCdo = R::FindClassDefaultObject(P::name::GameplayStaticsClass);
@@ -57,13 +55,13 @@ void ResolvePass() {
     }
     if (!g_bedCls) g_bedCls = R::FindClass(L"bed_C");  // optional (FindBed only)
 
-    const bool core = g_offIsSleep >= 0 && g_offDreamProb >= 0 && g_offBed >= 0 && g_wakeupFn &&
+    const bool core = g_offIsSleep >= 0 && g_offDreamProb >= 0 && g_offBed >= 0 &&
                       g_setDilationFn;
     if (core && !g_coreResolved) {
         g_coreResolved = true;
-        UE_LOGI("sleep: resolved (isSleep=0x%X dreamProb=0x%X bed=0x%X wakeup=%s sleep=%s "
+        UE_LOGI("sleep: resolved (isSleep=0x%X dreamProb=0x%X bed=0x%X sleep=%s "
                 "dilation set/get=%s/%s bedCls=%s)",
-                g_offIsSleep, g_offDreamProb, g_offBed, g_wakeupFn ? "yes" : "NO",
+                g_offIsSleep, g_offDreamProb, g_offBed,
                 g_sleepFn ? "yes" : "NO", g_setDilationFn ? "yes" : "NO",
                 g_getDilationFn ? "yes" : "NO", g_bedCls ? "yes" : "NO");
     }
@@ -95,14 +93,6 @@ bool SetDreamProbability(float v) {
     if (!gm || g_offDreamProb < 0) return false;
     *reinterpret_cast<float*>(reinterpret_cast<uint8_t*>(gm) + g_offDreamProb) = v;
     return true;
-}
-
-bool CallWakeup() {
-    void* gm = world_singleton::Gamemode();
-    if (!gm || !g_wakeupFn) return false;
-    ue_wrap::ParamFrame f(g_wakeupFn);
-    if (!f.valid()) return false;
-    return ue_wrap::Call(gm, f);
 }
 
 bool SetGlobalTimeDilation(float v) {

@@ -645,8 +645,6 @@ CFG_FLAG(lightswitch_probe, "lightswitch_probe", "dev", false, "VOTVCOOP_LIGHTSW
     "Diagnostic probe: light switch interactions + the light-group apply selftest. MUTATES the world (one-shot synthetic use()) -- never enable it on two peers at once. The env var exists so `mp.py lightgroup` can arm it: an ini-only dev row is unreachable to every launcher, which is how this selftest went unrun after a refactor.")
 CFG_FLAG(lightgroup_census, "lightgroup_census", "dev", false, "VOTVCOOP_LIGHTGROUP_CENSUS",
     "Diagnostic census: per-key light GROUP state (isActive / active gate / buffIsActive) + switch A. Read-only; enable on BOTH peers and diff by key. It has an environment twin so a run can turn it OFF as its named variable: it dumps a line per group on a period, and any measurement of a per-frame or per-second effect has to be able to rule that out.")
-CFG_FLAG(sleep_probe, "sleep_probe", "dev", false, nullptr,
-    "Diagnostic probe: sleep/wake cycle.")
 CFG_FLAG(script_gate_log, "script_gate_log", "dev", false, nullptr,
     "Diagnostic logging for the script-body gate's consumers (the kerfur form assembler's per-verb lines).")
 CFG_FLAG(rng_roll_census, "rng_roll_census", "dev", false, nullptr,

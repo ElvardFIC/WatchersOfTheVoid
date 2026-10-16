@@ -132,7 +132,6 @@ set(VOTVCOOP_DEV_SOURCES
     src/coop/dev/atv_probe.cpp
     src/coop/dev/atv_tire_probe.cpp
     src/coop/dev/pinecone_probe.cpp
-    src/coop/dev/sleep_probe.cpp
     src/coop/dev/event_trigger.cpp
     src/coop/dev/event_force.cpp
     src/coop/dev/light_group_census.cpp

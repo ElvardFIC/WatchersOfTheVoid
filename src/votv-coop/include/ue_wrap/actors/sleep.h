@@ -36,10 +36,6 @@ std::wstring BedClassName();
 // 0 = nightmares suppressed. Returns false if unresolved.
 bool SetDreamProbability(float v);
 
-// Reflected gamemode.wakeup() -- the native timelapse END (idempotent: BP
-// no-ops when !isSleep). Game thread.
-bool CallWakeup();
-
 // UGameplayStatics::SetGlobalTimeDilation / GetGlobalTimeDilation via the
 // CDO + a persistent WorldContextObject. Get returns <= 0 on failure.
 bool SetGlobalTimeDilation(float v);
