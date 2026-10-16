@@ -207,22 +207,21 @@ bool HandleIntentEvent(net::Session& session,
             UE_LOGW("event_feed: KerfurConvertRequest received on a client -- dropping");
             break;
         }
+        const uint8_t senderSlot =
+            (msg.senderPeerSlot >= 0 && msg.senderPeerSlot < net::kMaxPeers)
+                ? static_cast<uint8_t>(msg.senderPeerSlot)
+                : static_cast<uint8_t>(0xFF);
+        // Both refusals are the lane's to say, in its tally: a sender cannot make the router's log the cost.
         if (msg.payloadLen < sizeof(net::KerfurConvertPayload)) {
-            UE_LOGW("event_feed: KerfurConvertRequest payload too short (%zu < %zu)",
-                    static_cast<size_t>(msg.payloadLen), sizeof(net::KerfurConvertPayload));
+            coop::kerfur_convert_host::NoteRefused(senderSlot, "payload too short");
             break;
         }
         net::KerfurConvertPayload p{};
         std::memcpy(&p, msg.payload, sizeof(p));
         if (p.toProp != 0 && p.toProp != 1) {
-            UE_LOGW("event_feed: KerfurConvertRequest toProp=%u out of range -- dropping",
-                    static_cast<unsigned>(p.toProp));
+            coop::kerfur_convert_host::NoteRefused(senderSlot, "toProp out of range");
             break;
         }
-        const uint8_t senderSlot =
-            (msg.senderPeerSlot >= 0 && msg.senderPeerSlot < net::kMaxPeers)
-                ? static_cast<uint8_t>(msg.senderPeerSlot)
-                : static_cast<uint8_t>(0xFF);
         coop::kerfur_convert_host::OnConvertRequest(p, senderSlot);
         break;
     }
