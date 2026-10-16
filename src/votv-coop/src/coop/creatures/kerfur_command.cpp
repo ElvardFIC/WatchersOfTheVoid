@@ -214,13 +214,18 @@ void SettleKillWatch() {
     }
 }
 
+// A refusal at the serve, said through the tally. It is not in RefusedFor: the request entered RunRequest, so it is
+// one of the runs, and a run plus a refusal per request is what the drill's accounting holds.
+void RefuseAtServe(uint8_t slot, const char* why) {
+    g_tally.Note(slot, why, coop::net::RefusalTally::Clock::now());
+}
+
 // A request whose sender has a body: validated against the kerfur as it is now, then run.
 void RunRequest(const coop::net::KerfurCommandPayload& payload, uint8_t senderPeerSlot) {
     ++g_runs[senderPeerSlot];
     if (!coop::element::Registry::IsAllowedHostAllocatedEid(
             static_cast<ElementId>(payload.elementId))) {
-        UE_LOGW("kerfur_command: request eid=%u outside the host range -- dropped (slot %u)",
-                payload.elementId, senderPeerSlot);
+        RefuseAtServe(senderPeerSlot, "eid outside the host range");
         return;
     }
     const auto eid = static_cast<ElementId>(payload.elementId);
@@ -228,16 +233,15 @@ void RunRequest(const coop::net::KerfurCommandPayload& payload, uint8_t senderPe
     void* actor = el ? el->GetActor() : nullptr;
     const int32_t idx = el ? el->GetInternalIdx() : -1;
     if (!actor || !R::IsLiveByIndex(actor, idx)) {
-        UE_LOGW("kerfur_command: command eid=%u from slot %u -- no live kerfur (stale) -- dropped",
-                payload.elementId, senderPeerSlot);
+        RefuseAtServe(senderPeerSlot, "no live kerfur (stale)");
         return;
     }
     if (!K::IsKerfurActor(actor)) {
-        UE_LOGW("kerfur_command: command eid=%u targets a non-kerfur element -- dropped", payload.elementId);
+        RefuseAtServe(senderPeerSlot, "targets a non-kerfur element");
         return;
     }
     if (K::ReadKill(actor)) {  // the BP's own actionName guard (a murderfur refuses the menu)
-        UE_LOGI("kerfur_command: command eid=%u denied -- kerfur is in kill mode (SP parity)", payload.elementId);
+        RefuseAtServe(senderPeerSlot, "kill mode (SP parity)");
         return;
     }
     ExecuteHostCommand(eid, actor, static_cast<Command>(payload.command), senderPeerSlot);

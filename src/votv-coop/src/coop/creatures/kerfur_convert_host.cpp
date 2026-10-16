@@ -196,6 +196,12 @@ void ConvergeAtReturn(void* oldActor, int32_t oldIdx, EL::ElementId oldEid, bool
 
 namespace {
 
+// A refusal at the serve, said through the tally. It is not in RefusedFor: the request entered RunRequest, so it is
+// one of the runs, and a run plus a refusal per request is what the drill's accounting holds.
+void RefuseAtServe(uint8_t slot, const char* why) {
+    g_tally.Note(slot, why, coop::net::RefusalTally::Clock::now());
+}
+
 // One queued request, at its serve: the checks of the world as it is now, then the real verb on the host's copy.
 // Game thread: the verb's dispatches, its gate watch's return included, run inside this call.
 void RunRequest(const coop::net::KerfurConvertPayload& payload, uint8_t senderPeerSlot) {
@@ -207,21 +213,20 @@ void RunRequest(const coop::net::KerfurConvertPayload& payload, uint8_t senderPe
         : static_cast<EL::Element*>(EL::MirrorManager<EL::Prop>::Instance().Get(eid));
     void* actor = el ? el->GetActor() : nullptr;
     if (!actor || !R::IsLiveByIndex(actor, el->GetInternalIdx())) {
-        UE_LOGW("kerfur_convert: %s request eid=%u from slot %u -- no live kerfur of that form (already converted "
-                "or stale) -- dropped", what, payload.elementId, senderPeerSlot);
+        RefuseAtServe(senderPeerSlot, "no live kerfur of that form (converted or stale)");
         return;
     }
     void* cls = R::ClassOf(actor);
     void* base = payload.toProp ? g_kerfurNpcClass : g_kerfurPropClass;
     if (!cls || !R::IsDescendantOfAny(cls, &base, 1)) {
-        UE_LOGW("kerfur_convert: %s request eid=%u targets no kerfur of that form -- dropped", what, payload.elementId);
+        RefuseAtServe(senderPeerSlot, "targets no kerfur of that form");
         return;
     }
     // The BP's own guard before dropKerfurProp (actionName: `if (kill) return;`), replicated byte-exactly
     // from the disassembly, since the request calls the verb directly.
     if (payload.toProp && g_killOff >= 0 &&
         *(reinterpret_cast<const bool*>(reinterpret_cast<const uint8_t*>(actor) + g_killOff))) {
-        UE_LOGI("kerfur_convert: turn_off eid=%u denied -- the kerfur is in kill mode (SP parity)", payload.elementId);
+        RefuseAtServe(senderPeerSlot, "kill mode (SP parity)");
         return;
     }
     UE_LOGI("kerfur_convert: HOST running %s eid=%u for slot %u's request", what, payload.elementId, senderPeerSlot);
