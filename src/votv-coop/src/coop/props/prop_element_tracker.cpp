@@ -244,12 +244,15 @@ std::wstring MarkPropElement(void* actor, const std::wstring& key, const std::ws
         return key;
     }
     // The host is the key-uniqueness authority (MTA: the server owns element-id uniqueness). VOTV's
-    // own saves ship duplicate interactable Keys (one host save carried 85 trashBitsPile_C across
-    // four keys), and every identity layer assumes uniqueness: a clone family funnels its wire rows
-    // onto one actor and the join reconcile re-expresses the rest into occupied positions. A keyed
-    // actor enrolling while a different live actor carries its Key is re-keyed before anything sees
-    // it; the game re-saves the live Key, so the fix persists. A dead incumbent is a loadObjects
-    // re-create inheriting its identity, spared by the liveness check. A client never re-keys. The key
+    // level places duplicate interactable Keys (85 trashBitsPile_C in untitled_1 share four baked
+    // keys), the game keeps any non-None key unchecked, and a New Game saves them all; every identity
+    // layer assumes uniqueness: a clone family funnels its wire rows onto one actor and the join
+    // reconcile re-expresses the rest into occupied positions. A keyed actor enrolling while a
+    // different live actor carries its Key is re-keyed before anything sees it. The new key persists
+    // for an actor that lives to a save; a placed actor that a save's load then destroys (loadObjects
+    // re-creates every actor_save from its records) takes its throwaway key with it, at no cost
+    // beyond the mint. A dead incumbent is a loadObjects re-create inheriting its identity, spared by
+    // the liveness check. A client never re-keys. The key
     // index answers whether another live actor holds the key; when it cannot answer (off the game thread,
     // where setKey could not run anyway; before its session seed; with no current world; while a birth is
     // still loading), the actor enrols under its key and such enrolments are counted, the first and each
@@ -272,9 +275,11 @@ std::wstring MarkPropElement(void* actor, const std::wstring& key, const std::ws
                 ue_wrap::engine::TryGetActorLocation(actor, dupLoc) ? "" : " (unread)";
             const std::wstring fresh = coop::prop_synth_key::MintFreshKeyForDuplicate(actor);
             if (!fresh.empty() && fresh != enrollKey) {
-                UE_LOGW("prop_element_tracker: KEY-UNIQUENESS -- second live actor carried Key '%ls': "
-                        "'%ls' loc=(%.1f,%.1f,%.1f)%s re-keyed -> '%ls' (save-born clone family; host key "
-                        "authority -- the new key persists via the game's own save)",
+                // INFO, not WARN: a placed clone family is the game's own data, re-keyed on every
+                // load of a level that carries one. The FAILED branch below stays a warning.
+                UE_LOGI("prop_element_tracker: KEY-UNIQUENESS -- second live actor carried Key '%ls': "
+                        "'%ls' loc=(%.1f,%.1f,%.1f)%s re-keyed -> '%ls' (clone family; host key "
+                        "authority -- the new key persists if the actor lives to a save)",
                         enrollKey.c_str(), cls.c_str(), dupLoc.X, dupLoc.Y, dupLoc.Z, dupUnread,
                         fresh.c_str());
                 enrollKey = fresh;

@@ -73,12 +73,13 @@ are peer-gated. `[V]`
   changes, so an adoption binds a wire identity to an actor that is about to vanish on somebody
   else's schedule and the prop the birth named never appears there. The hand axis has one owner
   and both walks that must respect it -- the census outward, this scan inward -- ask it. `[V]`
-- **Key uniqueness.** The game's own saves ship duplicate keys, a clone family of dozens of
-  trash-bit piles on one key among them, and every identity layer assumes uniqueness. The host
-  is the key authority: at enrolment, a keyed actor whose key another live actor already carries
-  is re-keyed with a fresh random key, once, and the game re-saves the live keys so the fix bakes
-  into the host's save and every transferred world. A dead incumbent's recreate inherits its
-  identity. Clients never re-key. `[V]`
+- **Key uniqueness.** The game's level places duplicate keys, a clone family of dozens of
+  trash-bit piles on one key among them, and a New Game saves them as they are; every identity
+  layer assumes uniqueness. The host is the key authority: at enrolment, a keyed actor whose key
+  another live actor already carries is re-keyed with a fresh random key, once. The fix bakes into
+  the host's save and every transferred world for an actor that lives to a save; a placed actor
+  that a save's load destroys and re-creates from its records takes its throwaway key with it.
+  A dead incumbent's recreate inherits its identity. Clients never re-key. `[V]`
 - **A client never authors a save-loaded prop.** Three intent doors route around it: the drop
   intent for a parked key placed after a pickup, the whitelisted births (a reel, a module, a
   drive, a container extract) the client cannot avoid, and a birth a PLAYER's own spawn verb
