@@ -200,6 +200,14 @@ size_t CoastingCount() {
     return n;
 }
 
+DriveContext ContextOf(void* actor, uint32_t eid) {
+    DriveContext c;
+    const auto it = g_genByEid.find(eid);   // find, never operator[]: a read inserts nothing
+    if (it != g_genByEid.end()) c.gen = it->second;
+    c.open = actor && Find(actor) != nullptr;
+    return c;
+}
+
 void Release(void* actor) {
     UE_ASSERT_GAME_THREAD("prop_drive_host::Release");
     Driven* d = Find(actor);

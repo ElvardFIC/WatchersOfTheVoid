@@ -36,6 +36,11 @@ void OnEnd(const coop::net::PropDriveEndPayload& p);
 // would move it or re-run its init() leaves it alone, as it leaves a held prop. Game thread.
 bool IsParked(void* actor);
 
+// True when a join-window correction read under drive context (gen, open) is older than a pose this
+// copy already took from that prop's drive stream: a newer generation parked or ended here, or the
+// same generation ended here while the correction was read with it still open. Game thread.
+bool IsCorrectionStale(uint32_t eid, uint8_t gen, bool open);
+
 // Session end: every driven prop gets its physics back. Game thread.
 void OnDisconnect();
 

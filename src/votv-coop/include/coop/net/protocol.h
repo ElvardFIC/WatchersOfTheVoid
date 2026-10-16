@@ -30,7 +30,7 @@ inline constexpr uint32_t kMagic = 0x564D5450u;
 // This file is past the 1500-line hard cap and stays there: it is the single-feature exception the
 // rule names. One wire format, whose enum, payload structs and static_asserts are read together;
 // splitting it would put a kind's number in one file and its bytes in another.
-inline constexpr uint16_t kProtocolVersion = 225;
+inline constexpr uint16_t kProtocolVersion = 226;
 
 // Default LAN port (overridable via multivoid.ini "net.port=").
 inline constexpr uint16_t kDefaultPort = 47621;
@@ -2961,7 +2961,12 @@ struct PropSnapPosPayload {
     float    locX, locY, locZ;          // host's CURRENT authoritative world position (cm)
     float    rotPitch, rotYaw, rotRoll; // host's CURRENT authoritative rotation (deg)
     uint8_t  physFlags;                 // propspawn_flags on the host; meaningful for an Aprop_C only
-    uint8_t  _pad[3];
+    // The host's drive context for the eid when this was read (prop_drive_host): the claim
+    // generation (0 = never driven this session) and 1 while that generation's drive is open, 0 once
+    // its end edge went out. The client drops a correction older than a drive end it applied.
+    uint8_t  driveGen;
+    uint8_t  driveOpen;
+    uint8_t  _pad;
 };
 static_assert(sizeof(PropSnapPosPayload) == 32, "PropSnapPosPayload must be 32 bytes (eid + loc + rot + flags)");
 static_assert(sizeof(PropSnapPosPayload) <= 256 - 20 - 8, "PropSnapPosPayload must fit one datagram");

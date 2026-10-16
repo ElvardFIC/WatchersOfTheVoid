@@ -57,9 +57,12 @@ bool HasPendingSaveTimeTwin(coop::element::ElementId eid);
 // the host moved while the joiner's reliable channel was not ready. Armed on receipt; the latest
 // wins. Applied at quiescence, or immediately by the caller via ApplyPendingPosCorrections if
 // already quiesced; a keyed prop's frozen and sleep converge to `physFlags` after the snap when
-// they were read off the host's prop (kLiveState).
+// they were read off the host's prop (kLiveState). `driveGen` and `driveOpen` are the host's drive
+// context for the prop when it read the pose: the drain drops the correction if a drive end newer
+// than that context landed here after the arm (prop_drive_stream::IsCorrectionStale).
 void ArmPendingPosCorrection(coop::element::ElementId eid,
-                             const ue_wrap::FVector& loc, const ue_wrap::FRotator& rot, uint8_t physFlags);
+                             const ue_wrap::FVector& loc, const ue_wrap::FRotator& rot, uint8_t physFlags,
+                             uint8_t driveGen, bool driveOpen);
 
 // Drain the armed corrections (applied ones erased). Called from the sequence and, for a
 // late arrival after the sweep already fired and bound, immediately from the receive

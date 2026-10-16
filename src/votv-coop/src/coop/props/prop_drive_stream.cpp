@@ -352,6 +352,14 @@ bool IsParked(void* actor) {
     return false;
 }
 
+bool IsCorrectionStale(uint32_t eid, uint8_t gen, bool open) {
+    UE_ASSERT_GAME_THREAD("prop_drive_stream::IsCorrectionStale");
+    if (const auto d = g_drives.find(eid); d != g_drives.end()) return GenAfter(d->second.gen, gen);
+    if (const auto e = g_endedGen.find(eid); e != g_endedGen.end())
+        return GenAfter(e->second, gen) || (e->second == gen && open);
+    return false;
+}
+
 void OnDisconnect() {
     for (auto& kv : g_drives) GiveBackPhysics(kv.second, kv.second.d.LiveActor());
     g_drives.clear();

@@ -5,6 +5,7 @@
 #include "coop/element/element.h"    // Element::LiveActor
 #include "coop/element/registry.h"   // the host's eid-to-actor lookup
 #include "coop/net/session.h"
+#include "coop/props/prop_drive_host.h"       // ContextOf: the drive context a correction carries
 #include "coop/props/prop_element_tracker.h"  // the capture-instant collectors
 #include "coop/props/prop_wire_parity.h"      // PhysFlagsOf, the state a correction carries
 #include "ue_wrap/actors/prop.h"     // IsChipPile: a grabbed clump belongs to the convert stream
@@ -141,12 +142,17 @@ void FlushDivergedPositions_(int peerSlot, bool firstRun) {
         p.locX = cur.X; p.locY = cur.Y; p.locZ = cur.Z;
         p.rotPitch = rot.Pitch; p.rotYaw = rot.Yaw; p.rotRoll = rot.Roll;
         p.physFlags = flags;
+        const coop::prop_drive_host::DriveContext ctx =
+            coop::prop_drive_host::ContextOf(actor, static_cast<uint32_t>(eid));
+        p.driveGen  = ctx.gen;
+        p.driveOpen = ctx.open ? 1 : 0;
         g_session->SendReliableToSlot(peerSlot, coop::net::ReliableKind::PropSnapPos, &p, sizeof(p));
         lastSent[eid] = FlushedAt{cur, flags};
         UE_LOGI("[PILE-B3] HOST slot %d %s pos-correction eid=%u save=(%.1f,%.1f,%.1f) -> current=(%.1f,%.1f,%.1f) "
-                "drift=%.1fcm flags=0x%02x (%s in-window move -> deliver the authoritative position)",
+                "drift=%.1fcm flags=0x%02x gen=%u open=%u (%s in-window move -> deliver the authoritative position)",
                 peerSlot, kind, static_cast<unsigned>(eid), savePos.X, savePos.Y, savePos.Z,
                 cur.X, cur.Y, cur.Z, std::sqrt(dx * dx + dy * dy + dz * dz), static_cast<unsigned>(flags),
+                static_cast<unsigned>(p.driveGen), static_cast<unsigned>(p.driveOpen),
                 firstRun ? "one-shot" : "late-arm");
         return true;
     };
