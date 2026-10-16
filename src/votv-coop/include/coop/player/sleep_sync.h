@@ -9,7 +9,7 @@
 //   - the host's own sleeping flag, which a client shows as one chat line when it rises (the world is
 //     about to run faster: the host's machine runs the game's native speed-up, and a client sees it
 //     through the host's clock and streams).
-// Late join: a joiner gets the host's flag and every non-awake state; a client repeats its own on each flag it gets.
+// Late join: a joiner gets the host's flag and every non-awake state; a client repeats a non-awake state on each flag it gets.
 //
 // A client holds dreamProbability at 0 for the session: a nightmare is a roll of the host's machine
 // alone. The host's own roll is never written (the game's native -1).

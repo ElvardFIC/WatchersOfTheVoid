@@ -132,6 +132,7 @@ void EndRest(const char* why) {
     g_gm.Reset();
     g_body.Reset();
     g_haveFood = g_haveCoffee = false;
+    g_saidDilatedFull = false;  // said once per rest
     UE_LOGI("sleep_rest: rest ended (%s) -- the body and the effects are back at 1", why);
 }
 
@@ -148,6 +149,9 @@ void OnSleepPost(const sg::Call&) {
         return;
     }
     const float found = SLP::GetGlobalTimeDilation();
+    // Inside a rest the world already runs at 1: a second call the game refused set nothing, and there is
+    // nothing to compare or undo.
+    if (g_resting && std::fabs(found - 1.f) <= 0.01f) return;
     if (std::fabs(found - kNativeSleepDilation) > 0.01f && !g_saidFactor) {
         g_saidFactor = true;
         UE_LOGW("sleep_rest: the game's sleep set a world dilation of %.3f, not the pinned %.1f -- a game update "

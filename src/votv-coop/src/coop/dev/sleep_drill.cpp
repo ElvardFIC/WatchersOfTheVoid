@@ -271,6 +271,11 @@ void ClientSample() {
     Finish(false);
 }
 
+// The bed of the client's rest, called a second time two seconds in: the game has no isSleep guard on `sleep`,
+// so that call sets its x20 again, and the rest must put the world back to 1 (sleep_rest's POST watch).
+void* g_restBed = nullptr;
+bool g_secondCall = false;
+
 void ClientGoToBed() {
     int32_t events = -1;
     if (!AE::ReadCount(events) || events > 0) return;  // the bound names the wait
@@ -280,6 +285,8 @@ void ClientGoToBed() {
     void* bed = NearestBedToBody();
     if (!bed) return Fail(false, "no bed_C in the world, or no local body to measure from");
     const bool called = SLP::CallSleep(bed);
+    g_restBed = bed;
+    g_secondCall = false;
     char in[128];
     InputsInto(in, sizeof(in));
     if (!called) return Fail(false, "the sleep call did not dispatch | %s", in);
@@ -299,6 +306,11 @@ void ClientWatchRest() {
     if (now >= g_nextRead) {
         g_nextRead = now + kSample;
         if (!ReadWorld(nullptr)) return Fail(false, "the world's dilation did not read");
+        if (!g_secondCall && SLP::IsSleeping() && now - g_t0 >= std::chrono::seconds(2)) {
+            g_secondCall = true;
+            const bool again = g_restBed && SLP::CallSleep(g_restBed);
+            UE_LOGI("sleep_drill: [client] a second sleep call inside the rest -- %s", again ? "dispatched" : "FAILED");
+        }
     }
     if (SLP::IsSleeping()) return;
     const float secs = std::chrono::duration<float>(now - g_t0).count();
@@ -306,9 +318,9 @@ void ClientWatchRest() {
     const float food = ReadField(V::Field::Food);
     const float rate = secs > 0.f ? (g_restFood0 - food) / secs : 0.f;
     const float diff = g_awakeRate > 0.f ? (rate - g_awakeRate) / g_awakeRate : 0.f;
-    const bool pass = WorldHeldAtOne() && need >= kRestedNeed && std::fabs(diff) <= kFoodShare;
-    Say(false, pass, "T_client=%.1f s, world dilation %.2f..%.2f over %d reads, need %.1f -> %.1f, food %.2f -> %.2f = "
-        "%.4f/s against %.4f/s awake (%+.0f%%)", secs, g_dilMin, g_dilMax, g_dilReads, g_restNeed0, need, g_restFood0,
+    const bool pass = WorldHeldAtOne() && g_secondCall && need >= kRestedNeed && std::fabs(diff) <= kFoodShare;
+    Say(false, pass, "second call %s, T_client=%.1f s, world dilation %.2f..%.2f over %d reads, need %.1f -> %.1f, food %.2f -> %.2f = "
+        "%.4f/s against %.4f/s awake (%+.0f%%)", g_secondCall ? "made" : "NOT made", secs, g_dilMin, g_dilMax, g_dilReads, g_restNeed0, need, g_restFood0,
         food, rate, g_awakeRate, diff * 100.f);
     Finish(false);
 }
