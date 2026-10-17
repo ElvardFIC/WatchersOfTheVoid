@@ -1,6 +1,6 @@
 // coop/world/weather_sync.cpp -- the weather lane's hub: the host's cycle observers broadcast
 // WeatherState, the client's interceptors suppress its own scheduler rolls, and the fog, rain,
-// lightning, red-sky and event-birth modules hang off Install. See coop/world/weather_sync.h.
+// lightning, red-sky, bad-sun and event-birth modules hang off Install. See coop/world/weather_sync.h.
 
 #include "coop/world/weather_sync.h"
 
@@ -10,6 +10,7 @@
 #include "coop/player/players_registry.h"
 #include "coop/config/config.h"
 #include "coop/dev/weather_probe.h"
+#include "coop/world/weather_badsun.h"
 #include "coop/world/weather_event_births.h"
 #include "coop/world/weather_fog.h"
 #include "coop/world/weather_lightning.h"
@@ -408,6 +409,9 @@ void Install(coop::net::Session* session) {
     // and a client refuses its own.
     coop::weather_redsky::Install(session);
 
+    // Bad Sun: the host's `Spawn Bad Sun` and a copy's remove() are watched at the script gate the same way.
+    coop::weather_badsun::Install(session);
+
     // Fog: the role-gated, echo-suppressed spawnFog interceptor, so a client never makes
     // uncommanded fog. The latch waits on it: an unregistered interceptor must retry, not leave the
     // client unsuppressed.
@@ -429,6 +433,18 @@ void QueueConnectBroadcastForSlot(int peerSlot) {
         UE_LOGW("weather: QueueConnectBroadcastForSlot peerSlot=%d out of [1..%u)",
                 peerSlot, static_cast<unsigned>(coop::players::kMaxPeers));
         return;
+    }
+    // The Bad Sun's seed comes first, ahead of the cycle early return below: the joiner is told whether a Bad Sun
+    // exists even when this host has no cycle to read the weather from. Every state is absolute, so it and a live
+    // edge on one lane cannot disorder (coop/world/weather_badsun).
+    {
+        coop::net::BadSunPayload bp{};
+        bp.state = coop::weather_badsun::LocalBadSunPresent() ? 1 : 0;
+        if (!s->SendReliableToSlot(peerSlot, coop::net::ReliableKind::BadSun, &bp, sizeof(bp)))
+            UE_LOGW("weather: the Bad Sun seed to slot %d was not queued", peerSlot);
+        else
+            UE_LOGI("weather: connect-broadcast slot=%d BadSun seed state=%u", peerSlot,
+                    static_cast<unsigned>(bp.state));
     }
     void* cycle = ResolveCycle();
     if (!cycle) {
@@ -460,6 +476,8 @@ void QueueConnectBroadcastForSlot(int peerSlot) {
 void TickConnect() {
     // The ini-gated weather and wind probes; cheap when off.
     coop::dev::weather_probe::Tick(g_session.load(std::memory_order_acquire));
+    // The Bad Sun lane's watches say once whether they are live.
+    coop::weather_badsun::Tick();
     // The deferred apply drains once the cycle is live (a state defer, not a channel retry).
     if (g_pendingApply && g_installed) {
         void* cycle = ResolveCycle();
@@ -550,6 +568,7 @@ void OnDisconnect() {
     coop::weather_rain::OnDisconnect();
     coop::weather_lightning::OnDisconnect();
     coop::weather_redsky::OnDisconnect();
+    coop::weather_badsun::OnDisconnect();
     coop::weather_fog::OnDisconnect();
     coop::weather_event_births::OnDisconnect();
     // The wind gate drops, so a disconnected client's own gust rolls resume instead of freezing at

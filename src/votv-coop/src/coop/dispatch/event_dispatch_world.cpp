@@ -24,6 +24,7 @@
 #include "coop/world/sky_sync.h"
 #include "coop/world/weather_lightning.h"
 #include "coop/world/weather_redsky.h"
+#include "coop/world/weather_badsun.h"
 #include "coop/world/weather_sync.h"
 
 #include "ue_wrap/core/game_thread.h"
@@ -361,6 +362,32 @@ bool HandleWorldEvent(const net::Session::ReliableMessage& msg) {
         net::RedSkyPayload pCopy = p;
         ue_wrap::game_thread::Post([pCopy] {
             ::coop::weather_redsky::Apply(pCopy);
+        });
+        break;
+    }
+    case net::ReliableKind::BadSun: {
+        // Whether a Bad Sun exists: the host sends it as each call that changes it leaves it (watched at the
+        // script gate); the receiver spawns one through the gamemode's verb or destroys its inactive copies.
+        if (msg.payloadLen < sizeof(net::BadSunPayload)) {
+            UE_LOGW("event_feed: BadSun payload too short (%zu < %zu)",
+                    static_cast<size_t>(msg.payloadLen), sizeof(net::BadSunPayload));
+            break;
+        }
+        net::BadSunPayload p{};
+        std::memcpy(&p, msg.payload, sizeof(p));
+        // Host trust-bound: a client's copy is refused at the host's receive edge (client_authorship.h). The
+        // role-range trust on the sender element id.
+        if (!VerifySenderEidRange(msg.senderPeerSlot, p.senderElementId, "BadSun")) {
+            break;
+        }
+        if (p.state != 0 && p.state != 1) {
+            UE_LOGW("event_feed: BadSun state=%u out of range -- dropping",
+                    static_cast<unsigned>(p.state));
+            break;
+        }
+        net::BadSunPayload pCopy = p;
+        ue_wrap::game_thread::Post([pCopy] {
+            ::coop::weather_badsun::Apply(pCopy);
         });
         break;
     }

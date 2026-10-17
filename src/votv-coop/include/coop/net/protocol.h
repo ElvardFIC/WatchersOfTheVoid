@@ -30,7 +30,7 @@ inline constexpr uint32_t kMagic = 0x564D5450u;
 // This file is past the 1500-line hard cap and stays there: it is the single-feature exception the
 // rule names. One wire format, whose enum, payload structs and static_asserts are read together;
 // splitting it would put a kind's number in one file and its bytes in another.
-inline constexpr uint16_t kProtocolVersion = 228;
+inline constexpr uint16_t kProtocolVersion = 229;
 
 // Default LAN port (overridable via multivoid.ini "net.port=").
 inline constexpr uint16_t kDefaultPort = 47621;
@@ -997,6 +997,13 @@ enum class ReliableKind : uint8_t {
     // Host to one client: what the host did with its RemoverRequest. Never relayed. Late join: none -- it
     // answers a live request. Trust: from the host alone. RemoverResultPayload.
     RemoverResult = 175,
+
+    // Host to all: whether a Bad Sun exists -- the gamemode's badSun after a `Spawn Bad Sun` call (1), or 0 when a
+    // copy's own remove() ran. A client holding none spawns one through the same verb; on a 0 it destroys its
+    // inactive copies and lets an active one end by its own clock. Never relayed; a client's own is refused at
+    // the host's receive edge. Late join: the seed at the joiner's world-ready, the same payload. Every state is
+    // absolute. BadSunPayload.
+    BadSun = 176,
 };
 
 #pragma pack(push, 1)
@@ -3354,6 +3361,18 @@ struct RedSkyPayload {
 static_assert(sizeof(RedSkyPayload) == 8, "RedSkyPayload must be 8 bytes");
 static_assert(sizeof(RedSkyPayload) <= 256 - 20 - 8,
               "RedSkyPayload must fit in one reliable datagram");
+
+// The Bad Sun (BadSun): whether a copy of the world event exists. The receiver spawns one or destroys its inactive
+// copies to match; the effect itself is each peer's own.
+struct BadSunPayload {
+    // The sender's Player element id; the receiver requires slot 0.
+    uint32_t senderElementId;
+    uint8_t  state;          // 0 = no Bad Sun, 1 = one exists
+    uint8_t  _pad[3];        // zero
+};
+static_assert(sizeof(BadSunPayload) == 8, "BadSunPayload must be 8 bytes");
+static_assert(sizeof(BadSunPayload) <= 256 - 20 - 8,
+              "BadSunPayload must fit in one reliable datagram");
 
 // A lightning strike (LightningStrike): the strike's world location; the receiver spawns the
 // strike actor there, and it destroys itself.
