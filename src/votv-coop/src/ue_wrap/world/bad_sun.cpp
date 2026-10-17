@@ -91,6 +91,18 @@ bool ReadActive(void* copy, bool& active) {
     return true;
 }
 
+bool ReadWidgetAlpha(void* copy, float& alpha) {
+    static R::InstanceOffset s_alpha{L"a"};  // ui_badSun_C::a
+    alpha = 0.f;
+    if (!copy || !EnsureResolved()) return false;
+    void* widget = *reinterpret_cast<void* const*>(static_cast<const uint8_t*>(copy) + g_offWidget);
+    if (!widget || !R::IsLive(widget)) return false;
+    const int32_t off = s_alpha.Of(widget);
+    if (off < 0) return false;
+    alpha = *reinterpret_cast<const float*>(static_cast<const uint8_t*>(widget) + off);
+    return true;
+}
+
 bool ReadIsSender(void* copy, bool& sender) {
     sender = false;
     if (!copy) return false;

@@ -10,6 +10,8 @@
 
 #pragma once
 
+#include <cstdint>
+
 namespace coop::net { class Session; struct BadSunPayload; }
 
 // MTA's shape, which this follows. The HOST sends its state at the call that changes it, as MTA's server stores a
@@ -47,6 +49,19 @@ bool ReadLocalBadSun(bool& present);
 // applies it once the world has both; a payload that applies, or that a newer one reaches, leaves no older one kept.
 // A client's call: with no session, or on the host, it returns at once. Game thread.
 void Apply(const coop::net::BadSunPayload& payload);
+
+// This session's counts and the last apply that counted the copies, for a drill to judge a run by (the lane's own
+// state, not its log). The totals are the ones OnDisconnect says. `removesRan`: copies of this peer whose own remove()
+// ran. `sentAbsent`: the host's sends of "no Bad Sun". `lastApply*`: the newest apply that proceeded to count the live
+// copies (`lastApplied` unset until one did): the state it was asked for, the copies it counted, and whether it
+// spawned one. Game thread.
+struct Counts {
+    uint64_t refused = 0, sent = 0, sentAbsent = 0, spawned = 0, destroyed = 0, leftActive = 0, applyFailed = 0;
+    uint64_t removesRan = 0;
+    bool lastApplied = false, lastApplyWant = false, lastApplySpawned = false;
+    int lastApplyLive = 0;
+};
+Counts GetCounts();
 
 // The session ended: its counts are said and cleared, and a kept payload dropped.
 void OnDisconnect();

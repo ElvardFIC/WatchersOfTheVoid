@@ -362,14 +362,18 @@ CFG_ENUM(sleep_drill, "sleep_drill", "dev", "off", "off|host_asleep|client_rest|
     "hookdrag_selftest=1 and hookdrag_role=client on both peers. The client prints its armed line only. "
     "Every phase ends on a verdict line "
     "([SLEEP-DRILL] <arm> <role> PASS|FAIL), and a phase that does not come is a FAIL after a bound.")
-CFG_ENUM(badsun_drill, "badsun_drill", "dev", "off", "off|clock", "VOTVCOOP_BADSUN_DRILL",
+CFG_ENUM(badsun_drill, "badsun_drill", "dev", "off", "off|clock|midnight|spawn|cheat|join|end|absent_stale", "VOTVCOOP_BADSUN_DRILL",
     "Drill (BOTH peers), on the save that holds one saved Bad Sun: does a peer's own loaded copy go "
     "active by its own clock. clock: the host parks the clock at 05:00 at hosting and sets 06:30 once a "
     "client's join is over; each peer reads its count of live copies (it must be 1), its copy's widget "
     "and its place in the active events' senders, and its own clock every second, from before 07:00; "
     "the copy must stay inactive until the clock reads 07:00 and be active by both tests within 15 s "
     "after it. Each peer ends on a verdict line ([BADSUN-DRILL] clock <role> PASS|FAIL|INCONCLUSIVE; "
-    "INCONCLUSIVE: the save's copy was active at hosting, or the peer did not see its clock cross 07:00).")
+    "INCONCLUSIVE: the save's copy was active at hosting, or the peer did not see its clock cross 07:00). "
+    "midnight, spawn, cheat, join, end and absent_stale: whether the host's existence of a Bad Sun reaches "
+    "each peer's own copies through the lane (the day edge's in-graph spawn, the host's call, a client's own refused "
+    "call, a joiner's seed, the end by the host's clock, a stale copy in a joiner's blob); each arm's set-up, "
+    "pass and red are in coop/dev/badsun_drill.h, and each ends on its verdict line.")
 CFG_ENUM(world_roll_drill, "world_roll_drill", "dev", "off",
     "off|eye_host|eye_client|eye_join|jelly_host|jelly_client|jelly_join|redsky_host|redsky_client|redsky_join",
     "VOTVCOOP_WORLD_ROLL_DRILL",

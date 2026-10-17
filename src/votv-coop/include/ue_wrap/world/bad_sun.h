@@ -29,6 +29,12 @@ int CountLive(void** copies, int cap = 1);
 // false, with `active` false, for null or while the member has not resolved (unknown, not "inactive").
 bool ReadActive(void* copy, bool& active);
 
+// Read the alpha `a` of `copy`'s widget: the ramp up to 1 over 60 s from its creation, and, once the hour is 18 or
+// later, the fade down to 0 over 60 s of real time, at which the widget resets the sky and calls the copy's remove().
+// Returns whether it could read: false, with `alpha` 0, for null, for a copy with no live widget (inactive) and while
+// the member did not resolve.
+bool ReadWidgetAlpha(void* copy, float& alpha);
+
 // Read whether `copy` is among the gamemode's activeEvents_senders, the list setEvent(true) appends its caller to.
 // Returns whether it could read: false, with `sender` false, for null or while that list does not read.
 bool ReadIsSender(void* copy, bool& sender);

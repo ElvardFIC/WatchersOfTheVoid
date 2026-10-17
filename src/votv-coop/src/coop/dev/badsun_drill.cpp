@@ -26,7 +26,14 @@ namespace detail {
 Arm ArmOf() {
     static const Arm a = [] {
         const std::string v = coop::config::ResolveEnum(::coop::config_registry::rows::badsun_drill);
-        return v == "clock" ? Arm::ClockArm : Arm::Off;
+        return v == "clock"        ? Arm::ClockArm
+             : v == "midnight"     ? Arm::Midnight
+             : v == "spawn"        ? Arm::Spawn
+             : v == "cheat"        ? Arm::Cheat
+             : v == "join"         ? Arm::Join
+             : v == "end"          ? Arm::End
+             : v == "absent_stale" ? Arm::AbsentStale
+                                   : Arm::Off;
     }();
     return a;
 }
@@ -75,10 +82,13 @@ void Tick() {
     const bool host = detail::IsHost(s);
     switch (detail::ArmOf()) {
     case detail::Arm::ClockArm: detail::ClockTick(s, host); return;
-    default:                    return;
+    default:                    detail::LaneTick(s, host); return;
     }
 }
 
-void OnDisconnect() { detail::ClockReset(); }
+void OnDisconnect() {
+    detail::ClockReset();
+    detail::LaneReset();
+}
 
 }  // namespace coop::dev::badsun_drill

@@ -73,6 +73,10 @@ uint64_t g_spawned = 0;       // the host's Bad Sun spawned here
 uint64_t g_destroyed = 0;     // an inactive copy destroyed here
 uint64_t g_leftActive = 0;    // an active copy left to end by its own clock
 uint64_t g_applyFailed = 0;   // an apply that did not leave this peer as the host's state
+uint64_t g_sentAbsent = 0;    // the host's "no Bad Sun" sent
+uint64_t g_removesRan = 0;    // a copy's own remove() ran on this peer
+bool g_lastApplied = false, g_lastWant = false, g_lastSpawned = false;  // the newest apply that counted the copies
+int  g_lastLive = 0;
 
 // The lane's own apply, for the length of one spawn: the gate lets exactly this call run.
 struct Applying {
@@ -140,6 +144,7 @@ void SendState(coop::net::Session* s, bool present, const char* what) {
         return;
     }
     ++g_sent;
+    if (!present) ++g_sentAbsent;
     UE_LOGI("weather: the host's %s ran -- sent Bad Sun %d", what, present ? 1 : 0);
 }
 
@@ -158,6 +163,7 @@ void OnSpawnPost(const sg::Call& call) {
 // EVERY peer, after a copy's own remove() ran; on the host also the end the clients are told. Nothing else sends
 // absent: a world's teardown or a session's end is no edge.
 void OnRemovePost(const sg::Call& /*call*/) {
+    ++g_removesRan;
     UE_LOGI("weather: this copy's own remove() ran");
     auto* s = g_session.load(std::memory_order_acquire);
     if (!IsHost(s)) return;
@@ -288,6 +294,10 @@ void Apply(const coop::net::BadSunPayload& payload) {
         return;
     }
     g_keptSaid = -1;
+    g_lastApplied = true;
+    g_lastWant = want;
+    g_lastLive = n;
+    g_lastSpawned = false;
     UE_LOGI("weather: apply Bad Sun %d in world %ls -- index backlog %zu, %d live cop%s", want ? 1 : 0,
             worldName.c_str(), backlog, n, n == 1 ? "y" : "ies");
     if (want) {
@@ -300,6 +310,7 @@ void Apply(const coop::net::BadSunPayload& payload) {
             n = BS::CountLive(copies, BS::kMaxLive);
             if (ran && n == 1) {
                 ++g_spawned;
+                g_lastSpawned = true;
                 UE_LOGI("weather: applied the host's Bad Sun 1 -- spawned one copy (%s)", StateOf(copies[0]));
             } else {
                 char why[96];
@@ -335,6 +346,23 @@ void Apply(const coop::net::BadSunPayload& payload) {
     }
 }
 
+Counts GetCounts() {
+    Counts c;
+    c.refused = g_refused;
+    c.sent = g_sent;
+    c.sentAbsent = g_sentAbsent;
+    c.spawned = g_spawned;
+    c.destroyed = g_destroyed;
+    c.leftActive = g_leftActive;
+    c.applyFailed = g_applyFailed;
+    c.removesRan = g_removesRan;
+    c.lastApplied = g_lastApplied;
+    c.lastApplyWant = g_lastWant;
+    c.lastApplySpawned = g_lastSpawned;
+    c.lastApplyLive = g_lastLive;
+    return c;
+}
+
 void OnDisconnect() {
     if (g_refused || g_sent || g_spawned || g_destroyed || g_leftActive || g_applyFailed)
         UE_LOGI("weather: Bad Sun session end -- %llu of this client's own spawns refused, %llu sent, %llu spawned, "
@@ -343,6 +371,9 @@ void OnDisconnect() {
                 static_cast<unsigned long long>(g_spawned), static_cast<unsigned long long>(g_destroyed),
                 static_cast<unsigned long long>(g_leftActive), static_cast<unsigned long long>(g_applyFailed));
     g_refused = g_sent = g_spawned = g_destroyed = g_leftActive = g_applyFailed = 0;
+    g_sentAbsent = g_removesRan = 0;
+    g_lastApplied = g_lastWant = g_lastSpawned = false;
+    g_lastLive = 0;
     g_saidRefused = false;
     g_hasPending = false;
     g_pending = {};
