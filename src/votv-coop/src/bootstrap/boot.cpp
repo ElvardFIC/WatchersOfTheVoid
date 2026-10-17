@@ -16,6 +16,7 @@
 #include "coop/version.h"
 #include "harness/compat_boot.h"  // the compat report's boot sections
 #include "harness/harness.h"
+#include "ue_wrap/core/caller_locals.h"
 #include "ue_wrap/core/game_build.h"
 #include "ue_wrap/core/game_thread.h"
 #include "ue_wrap/core/hook.h"
@@ -180,6 +181,8 @@ DWORD WINAPI BootThread(LPVOID rawTag) {
     ui::native_text_field::RunSelftest();
     // The build reader's pure halves (the pak footer, the key, the rows), un-gated for the same reason.
     ue_wrap::game_build::RunSelftest();
+    // A caller's local edited in place (an actor array, a hit result), on buffers of its own.
+    ue_wrap::caller_locals::RunSelftest();
     ui::game_build_dialog::RunSelftest();  // every variant of the popup's text formats
 
     // THE VERDICT IS A DECISION, NOT A LOG LINE.
