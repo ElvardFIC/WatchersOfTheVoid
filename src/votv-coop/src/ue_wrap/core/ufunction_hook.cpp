@@ -118,6 +118,18 @@ inline void* ReadPtr(void* base, size_t off) {
     return *reinterpret_cast<void**>(reinterpret_cast<uint8_t*>(base) + off);
 }
 
+// Where the frame's bytecode stands, from the start of the frame's function's Script data; -1 with no code
+// pointer (a native reached by ProcessEvent), no function or a pointer outside the function's own script.
+int32_t CodeOffsetOf(void* stack) {
+    const uint8_t* code = static_cast<const uint8_t*>(ReadPtr(stack, P::off::FFrame_Code));
+    void* fn = ReadPtr(stack, P::off::FFrame_Node);
+    if (!code || !fn) return -1;
+    const uint8_t* script = static_cast<const uint8_t*>(ReadPtr(fn, P::off::UStruct_Script));
+    const int32_t num = *reinterpret_cast<const int32_t*>(static_cast<const uint8_t*>(fn) + P::off::UStruct_ScriptNum);
+    if (!script || code < script || code > script + num) return -1;
+    return static_cast<int32_t>(code - script);
+}
+
 template <int N>
 void __fastcall NativeThunk(void* context, void* stack, void* result) {
     Slot& s = g_slots[N];
@@ -128,12 +140,14 @@ void __fastcall NativeThunk(void* context, void* stack, void* result) {
     // FFrame::Object is the actor whose bytecode is executing -- the SOURCE entity for a spawn
     // issued from its ubergraph -- and Node and Locals are the function and storage of that
     // frame. Read after the forward: stepping the parameters moves the frame's code pointer and
-    // never writes those three.
+    // never writes those three. The code pointer stands at the call's end by then.
     void* srcObj = stack ? ReadPtr(stack, P::off::FFrame_Object) : nullptr;
-    const CallerFrame frame = stack
-        ? CallerFrame{ReadPtr(stack, P::off::FFrame_Node),
-                      static_cast<uint8_t*>(ReadPtr(stack, P::off::FFrame_Locals))}
-        : CallerFrame{nullptr, nullptr};
+    CallerFrame frame{nullptr, nullptr};
+    if (stack) {
+        frame.function = ReadPtr(stack, P::off::FFrame_Node);
+        frame.locals = static_cast<uint8_t*>(ReadPtr(stack, P::off::FFrame_Locals));
+        frame.codeOffset = CodeOffsetOf(stack);
+    }
     // *Result = the native fn's RESULT_PARAM (the spawned actor for BeginDeferred). NULL-safe:
     // a failed spawn leaves it null -> the cb gets null + logs it (never derefs blind).
     void* spawned = result ? *reinterpret_cast<void**>(result) : nullptr;

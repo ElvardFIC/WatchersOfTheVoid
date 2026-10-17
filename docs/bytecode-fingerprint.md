@@ -214,7 +214,7 @@ Not applicable: every peer checks its own game, once a process, in its first gam
 | File | What |
 |---|---|
 | `src/votv-coop/src/ue_wrap/core/script_bytecode.cpp` | the decoder: the opcode table, one expression scanned or rendered, a script's statements |
-| `src/votv-coop/src/ue_wrap/core/script_fingerprint.cpp` | flow order, the signature line, the fingerprints |
+| `src/votv-coop/src/ue_wrap/core/script_fingerprint.cpp` | flow order, the signature line, the fingerprints, and `script_calls::EnumerateCalls`, the call expressions in the same order |
 | `src/votv-coop/include/ue_wrap/facts/function_row.h` | the row macro, the modes, `Resolve` and `ResolveOn` |
 | `src/votv-coop/include/ue_wrap/facts/fingerprints_<target>.inc` | the generated reference table |
 | `src/votv-coop/src/harness/fingerprint_census.cpp` | the census |

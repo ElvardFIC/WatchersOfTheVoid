@@ -279,6 +279,8 @@ struct Walker {
     bool           render = false;
     std::string*   out = nullptr;
     std::vector<uint32_t>* targets = nullptr;
+    // the call expressions met, pre-order (a nested call after the call around it); null = not collected
+    std::vector<script_calls::CallSite>* calls = nullptr;
     // label of a code offset (render mode); null = scan mode
     const std::unordered_map<uint32_t, int>* labels = nullptr;
     uint32_t (*resolve)(const void*, uint32_t) = nullptr;
@@ -418,6 +420,20 @@ struct Walker {
         }
     }
 
+    // The record of the call opcode just read at `at`, reserved before its operands so a call nested in
+    // them lists after it; the callee is its first operand (a pointer, or an FName's index and number).
+    size_t BeginCall(uint8_t code, size_t at) {
+        script_calls::CallSite site{code, nullptr, 0, 0, static_cast<int32_t>(at), 0};
+        if (IsObjectCallOp(code)) {
+            if (pos + sizeof(void*) <= n) std::memcpy(&site.callee, s + pos, sizeof(void*));
+        } else if (pos + 12 <= n) {
+            std::memcpy(&site.nameComparisonIndex, s + pos, 4);
+            std::memcpy(&site.nameNumber, s + pos + 8, 4);
+        }
+        calls->push_back(site);
+        return calls->size() - 1;
+    }
+
     bool Expr() {
         if (!Need(1)) return false;
         // A compiled Blueprint nests a few dozen deep; a script deeper than this is corrupt, and the
@@ -535,6 +551,8 @@ struct Walker {
         default: break;
         }
         if (op.ops[0] == kNone) return true;  // no operand: the name alone
+        const bool listed = calls && IsCallOp(code);
+        const size_t site = listed ? BeginCall(code, at) : 0;
         Emit("(");
         bool wrote = false;
         for (Kind k : op.ops) {
@@ -542,6 +560,7 @@ struct Walker {
             if (!Operand(k, op.listEnd, wrote)) return false;
         }
         Emit(")");
+        if (listed) (*calls)[site].end = static_cast<int32_t>(pos);
         return true;
     }
 };
@@ -554,7 +573,7 @@ bool IsUbergraph(Ctx& c, void* fn) {
     return c.names->Of(n.ComparisonIndex, 0).rfind("executeubergraph_", 0) == 0;
 }
 
-bool Scan(Ctx& c, const uint8_t* s, size_t n, std::vector<Stmt>& out) {
+bool Scan(Ctx& c, const uint8_t* s, size_t n, std::vector<Stmt>& out, bool wantCalls) {
     size_t pos = 0;
     while (pos < n) {
         Stmt st;
@@ -563,6 +582,7 @@ bool Scan(Ctx& c, const uint8_t* s, size_t n, std::vector<Stmt>& out) {
         Walker w{c, s, n};
         w.pos = pos;
         w.targets = &st.targets;
+        w.calls = wantCalls ? &st.calls : nullptr;
         if (!w.Expr()) return false;
         st.end = static_cast<uint32_t>(w.pos);
         // an event stub's call into its ubergraph: (Local)FinalFunction(ExecuteUbergraph_*, IntConst(entry), ...)
