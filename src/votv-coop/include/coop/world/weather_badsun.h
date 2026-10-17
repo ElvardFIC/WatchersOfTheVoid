@@ -22,8 +22,9 @@ namespace coop::weather_badsun {
 // weather_sync::Install on every re-entry.
 void Install(coop::net::Session* session);
 
-// Ask whether each watch settled and say, once each, whether it is live. Called from weather_sync::TickConnect;
-// a single bool read once both are said.
+// Say, once each, whether each watch is live (final once its class has loaded), and apply the host's Bad Sun that
+// Apply kept for a world with no gamemode or day cycle, once this world has both. Called from
+// weather_sync::TickConnect; a few bool reads once both watches are said and nothing waits.
 void Tick();
 
 // Read whether the running world's gamemode holds a live Bad Sun: the seed a joiner's world-ready gets (principle
@@ -32,10 +33,11 @@ void Tick();
 bool ReadLocalBadSun(bool& present);
 
 // The host's state on this client: spawn one through the gamemode's own verb when it has none, destroy its inactive
-// copies when the host has none. Game thread.
+// copies when the host has none. A world with no gamemode or no day cycle keeps the payload, the newest, and Tick
+// applies it once the world has both. Game thread.
 void Apply(const coop::net::BadSunPayload& payload);
 
-// The session ended: its counts are said and cleared.
+// The session ended: its counts are said and cleared, and a kept payload dropped.
 void OnDisconnect();
 
 }  // namespace coop::weather_badsun

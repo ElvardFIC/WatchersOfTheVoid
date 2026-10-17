@@ -14,7 +14,6 @@
 #include "ue_wrap/engine/world_identity.h"
 #include "ue_wrap/facts/function_row.h"
 #include "ue_wrap/world/bad_sun.h"
-#include "ue_wrap/world/world_singleton.h"
 
 #include <atomic>
 #include <cstdint>
@@ -38,9 +37,29 @@ std::atomic<coop::net::Session*> g_session{nullptr};
 constexpr int kSpawnTag = 0x42535350;   // 'BSSP'
 constexpr int kRemoveTag = 0x42535245;  // 'BSRE'
 bool g_gateAsked = false;     // the watches were registered (or refused, said)
-bool g_saidSpawnWatch = false;   // the spawn watch's settled state was said
-bool g_saidRemoveWatch = false;  // the remove watch's settled state was said
 bool g_applying = false;      // the lane's own apply of the host's Bad Sun runs
+// The one payload that met no gamemode or no day cycle, the newest: applied from Tick once both exist.
+bool g_hasPending = false;
+coop::net::BadSunPayload g_pending{};
+
+// One name watch and what Tick has said of it. `said`: its state is final and was logged, or the gate refused it
+// and said so. `settled`: the gate's name resolve finished (live, or dead for good). A settled watch is final once
+// its class has loaded, because the gate asks the class then and can still kill the watch.
+struct Watch {
+    const ue_wrap::facts::Function* row;
+    int tag;
+    const wchar_t* cls;
+    const char* what;
+    const char* consequence;
+    bool said = false;
+    bool settled = false;
+};
+Watch g_spawnWatch{&kRowSpawnBadSun, kSpawnTag, L"mainGamemode_C", "Spawn Bad Sun",
+                   "the host's fresh Bad Sun sends nothing, and a client's own Spawn Bad Sun runs"};
+Watch g_removeWatch{&kRowRemove, kRemoveTag, L"badSun_C", "remove",
+                    "client copies still end by their clocks; the host's removal sends nothing"};
+bool g_seenVersionValid = false;
+uint64_t g_seenVersion = 0;   // the class set's version at Tick's last pass
 // This session's counts, said at its end.
 uint64_t g_refused = 0;       // a client's own `Spawn Bad Sun` refused
 bool     g_saidRefused = false;
@@ -129,14 +148,34 @@ const char* StateOf(void* copy) {
     return active ? "active" : "inactive";
 }
 
-// One watch's settled state, said once.
-void SayWatch(bool& said, const ue_wrap::facts::Function& row, int tag, const char* what, const char* consequence) {
-    if (said || !sg::NameWatchSettled(row, tag)) return;
-    said = true;
-    if (sg::NameWatchLive(row, tag))
-        UE_LOGI("weather: the %s watch is live", what);
+// One watch's final state, said once. A settled live watch is not final until its class has loaded; until then it
+// is asked again only when the class set moved (`classMoved`), or at once when it has just settled.
+void SayWatch(Watch& w, bool classMoved) {
+    if (w.said) return;
+    bool justSettled = false;
+    if (!w.settled) {
+        if (!sg::NameWatchSettled(*w.row, w.tag)) return;
+        w.settled = true;
+        justSettled = true;
+    }
+    if (!justSettled && !classMoved) return;
+    const bool live = sg::NameWatchLive(*w.row, w.tag);
+    if (live && !ue_wrap::object_index::ClassByName(w.cls)) return;
+    w.said = true;
+    if (live)
+        UE_LOGI("weather: the %s watch is live", w.what);
     else
-        UE_LOGE("weather: the %s watch is dead -- %s", what, consequence);
+        UE_LOGE("weather: the %s watch is dead -- %s", w.what, w.consequence);
+}
+
+// The host's payload that waited: the lane's own apply, now that this world can take it.
+void Keep(const coop::net::BadSunPayload& payload) {
+    const bool fresh = !g_hasPending;
+    g_pending = payload;
+    g_hasPending = true;
+    if (fresh)
+        UE_LOGI("weather: the host's Bad Sun %d kept until this world has a gamemode and a day cycle",
+                payload.state != 0 ? 1 : 0);
 }
 
 }  // namespace
@@ -145,23 +184,38 @@ void Install(coop::net::Session* session) {
     g_session.store(session, std::memory_order_release);
     if (g_gateAsked) return;
     g_gateAsked = true;
-    if (!sg::WatchName(kRowSpawnBadSun, kSpawnTag, &OnSpawnPre, &OnSpawnPost))
+    if (!sg::WatchName(kRowSpawnBadSun, kSpawnTag, &OnSpawnPre, &OnSpawnPost)) {
+        g_spawnWatch.said = g_spawnWatch.settled = true;  // the refusal is said here; there is no watch to wait on
         UE_LOGE("weather: the script gate refused the watch on mainGamemode_C.Spawn Bad Sun -- the host's fresh Bad "
                 "Sun does not cross, and a client's own Spawn Bad Sun runs");
-    if (!sg::WatchName(kRowRemove, kRemoveTag, nullptr, &OnRemovePost))
+    }
+    if (!sg::WatchName(kRowRemove, kRemoveTag, nullptr, &OnRemovePost)) {
+        g_removeWatch.said = g_removeWatch.settled = true;
         UE_LOGE("weather: the script gate refused the watch on badSun_C.remove -- client copies still end by their "
                 "clocks; the host's removal sends nothing");
+    }
 }
 
 void Tick() {
-    if (g_saidSpawnWatch && g_saidRemoveWatch) return;
+    // The host's payload that waited for a gamemode and a day cycle. Cleared before the apply, which keeps it
+    // again should the world have lost either since.
+    if (g_hasPending && GT::IsGameThread() && BS::HasCycle()) {
+        const coop::net::BadSunPayload p = g_pending;
+        g_hasPending = false;
+        UE_LOGI("weather: applying the Bad Sun %d kept for this world", p.state != 0 ? 1 : 0);
+        Apply(p);
+    }
+    if (g_spawnWatch.said && g_removeWatch.said) return;
     if (!g_gateAsked) return;
-    // The class loads lazily: its watch goes live when the class resolves.
-    sg::ResolvePendingNames();
-    SayWatch(g_saidSpawnWatch, kRowSpawnBadSun, kSpawnTag, "Spawn Bad Sun",
-             "the host's fresh Bad Sun sends nothing, and a client's own Spawn Bad Sun runs");
-    SayWatch(g_saidRemoveWatch, kRowRemove, kRemoveTag, "remove",
-             "client copies still end by their clocks; the host's removal sends nothing");
+    // The class loads lazily: the gate asks it when the class set moves, so the names resolve while a watch is
+    // unsettled and the class judgement runs when the set moved.
+    const uint64_t version = ue_wrap::object_index::ClassSetVersion();
+    const bool classMoved = !g_seenVersionValid || version != g_seenVersion;
+    if (!g_spawnWatch.settled || !g_removeWatch.settled || classMoved) sg::ResolvePendingNames();
+    SayWatch(g_spawnWatch, classMoved);
+    SayWatch(g_removeWatch, classMoved);
+    g_seenVersionValid = true;
+    g_seenVersion = version;
 }
 
 bool ReadLocalBadSun(bool& present) {
@@ -176,18 +230,14 @@ void Apply(const coop::net::BadSunPayload& payload) {
     }
     // From the host alone: the host's receive edge refuses a client's copy (client_authorship.h).
     const bool want = payload.state != 0;
-    if (!ue_wrap::world_singleton::Gamemode()) {
-        UE_LOGI("weather: the host's Bad Sun %d arrived before this client's gamemode -- its world-ready seed "
-                "carries it", want ? 1 : 0);
+    // No gamemode, or no day cycle in it (a world a copy cannot run in): the payload waits, the newest of them,
+    // and Tick applies it once this world has both.
+    if (!BS::HasCycle()) {
+        Keep(payload);
         return;
     }
     void* const world = ue_wrap::world_identity::CurrentWorld();
     const std::wstring worldName = world ? R::ToString(R::NameOf(world)) : std::wstring(L"?");
-    if (!BS::HasCycle()) {
-        UE_LOGI("weather: the host's Bad Sun %d arrived in world %ls, which has no day cycle here; the re-seed at "
-                "the return carries it", want ? 1 : 0, worldName.c_str());
-        return;
-    }
     const size_t backlog = ue_wrap::object_index::Backlog();
     void* copies[BS::kMaxLive] = {};
     int n = BS::CountLive(copies, BS::kMaxLive);
@@ -247,6 +297,8 @@ void OnDisconnect() {
                 static_cast<unsigned long long>(g_leftActive), static_cast<unsigned long long>(g_applyFailed));
     g_refused = g_sent = g_spawned = g_destroyed = g_leftActive = g_applyFailed = 0;
     g_saidRefused = false;
+    g_hasPending = false;
+    g_pending = {};
     g_applying = false;
     g_session.store(nullptr, std::memory_order_release);
 }
