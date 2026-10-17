@@ -149,7 +149,28 @@ RemotePlayer* Registry::Puppet(uint8_t peerSessionId) {
     return puppetByPeer_[peerSessionId];
 }
 
+int Registry::PuppetCount_() const {
+    int count = 0;
+    for (int i = 0; i < kMaxPeers; ++i)
+        if (puppetByPeer_[i]) ++count;
+    return count;
+}
+
+void Registry::NotifyPuppetCount_(int before) {
+    const int now = PuppetCount_();
+    if (now != before && puppetCountListener_) puppetCountListener_(now);
+}
+
+Registry::PuppetCountFn Registry::SetPuppetCountListener(PuppetCountFn fn) {
+    UE_ASSERT_GAME_THREAD("players::Registry::SetPuppetCountListener (puppetCountListener_)");
+    const PuppetCountFn previous = puppetCountListener_;
+    puppetCountListener_ = fn;
+    if (fn) fn(PuppetCount_());
+    return previous;
+}
+
 void Registry::RegisterPuppet(uint8_t peerSessionId, RemotePlayer* puppet) {
+    UE_ASSERT_GAME_THREAD("players::Registry::RegisterPuppet (puppetByPeer_)");
     if (peerSessionId >= kMaxPeers) {
         UE_LOGW("players::Registry: peerSessionId %u out of range (max=%u)",
                 peerSessionId, static_cast<unsigned>(kMaxPeers));
@@ -165,25 +186,32 @@ void Registry::RegisterPuppet(uint8_t peerSessionId, RemotePlayer* puppet) {
         }
         return;
     }
+    const int countBefore = PuppetCount_();
     puppetByPeer_[peerSessionId] = puppet;
     // Create or refresh the Player Element for this peer.
     EnsurePlayerElement_(peerSessionId, puppet);
     UE_LOGI("players::Registry: registered puppet peerId=%u -> %p", peerSessionId, puppet);
+    NotifyPuppetCount_(countBefore);
 }
 
 void Registry::UnregisterPuppet(uint8_t peerSessionId) {
+    UE_ASSERT_GAME_THREAD("players::Registry::UnregisterPuppet (puppetByPeer_)");
     if (peerSessionId >= kMaxPeers) return;
+    const int countBefore = PuppetCount_();
     puppetByPeer_[peerSessionId] = nullptr;
     DropPlayerElement_(peerSessionId);
+    NotifyPuppetCount_(countBefore);
 }
 
 void Registry::ClearPuppet(uint8_t peerSessionId) {
     UE_ASSERT_GAME_THREAD("players::Registry::ClearPuppet (puppetByPeer_)");
     if (peerSessionId >= kMaxPeers) return;
+    const int countBefore = PuppetCount_();
     puppetByPeer_[peerSessionId] = nullptr;
     // The Element keeps its place; only its copy of the puppet fact goes, so the two agree. The
     // Element then has a null puppet without being the local one: the local peer is localPeerId_.
     if (auto* element = playerBySlot_[peerSessionId].get()) element->SetPuppet_(nullptr);
+    NotifyPuppetCount_(countBefore);
 }
 
 bool Registry::IsLocal(void* actor) {
@@ -219,6 +247,24 @@ uint8_t Registry::PeerIdOfActor(void* actor) {
         }
     }
     return kPeerIdUnknown;
+}
+
+uint8_t Registry::SlotOfBody_(void* actor) const {
+    if (!actor) return kMaxPeers;
+    for (int i = 0; i < kMaxPeers; ++i) {
+        const RemotePlayer* puppet = puppetByPeer_[i];
+        if (!puppet) continue;
+        void* const body = puppet->RagdollBody();
+        if (puppet->GetActor() == actor || (body && body == actor)) return static_cast<uint8_t>(i);
+    }
+    return kMaxPeers;
+}
+
+bool Registry::IsPuppetBody(void* actor) { return SlotOfBody_(actor) != kMaxPeers; }
+
+uint8_t Registry::PeerIdOfBody(void* actor) {
+    const uint8_t slot = SlotOfBody_(actor);
+    return slot == kMaxPeers ? kPeerIdUnknown : slot;
 }
 
 coop::element::Player* Registry::GetPlayerElement(uint8_t peerSlot) {

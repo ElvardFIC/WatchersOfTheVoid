@@ -8,9 +8,10 @@
 // invariants: Local returns the local player's actor (the one with a controller) or null;
 // Puppet returns the peer's RemotePlayer or null; IsLocal is the canonical
 // is-this-the-local-player predicate, used instead of a controller check; PeerIdOfActor gives
-// the peer id of the local or any puppet. All object access on the game thread; lookups are
-// cached pointers, with the initial scan on the first Local call and liveness re-validated per
-// query, since the engine recycles actor slots on a level change.
+// the peer id of the local or any puppet; IsPuppetBody is IsPuppet plus a puppet's ragdoll display
+// body, and SetPuppetCountListener tells one consumer when the number of puppets changes. All object
+// access on the game thread; lookups are cached pointers, with the initial scan on the first Local
+// call and liveness re-validated per query, since the engine recycles actor slots on a level change.
 
 #pragma once
 
@@ -80,6 +81,27 @@ public:
     // The peer session id for `actor`, or unknown if not in the registry.
     uint8_t PeerIdOfActor(void* actor);
 
+    // True if `actor` is a puppet's actor (IsPuppet) or the ragdoll display body of a registered puppet
+    // (RemotePlayer::RagdollBody, non-null). False for null. The ragdoll body is compared as a pointer
+    // and never dereferenced, so a body freed within the frame is at worst one stale compare.
+    bool IsPuppetBody(void* actor);
+
+    // The peer session id of the puppet whose actor or ragdoll display body `actor` is, or unknown.
+    // Unlike PeerIdOfActor it does not answer for the local player.
+    uint8_t PeerIdOfBody(void* actor);
+
+    // The puppet count.
+
+    // Called with the number of registered puppets; a plain function, no context.
+    using PuppetCountFn = void (*)(int count);
+
+    // Install the one listener for the puppet count (a single consumer; a second would turn this
+    // into a list). Calls `fn` once, immediately, with the current count, so a consumer set up after
+    // puppets exist starts in sync, then after each RegisterPuppet / UnregisterPuppet / ClearPuppet
+    // that changes the count of registered puppets. A null `fn` is stored and never called. Returns the
+    // previous listener so a caller can put it back. Game thread only.
+    PuppetCountFn SetPuppetCountListener(PuppetCountFn fn);
+
     // The Element shadow.
 
     // The Player Element for this peer slot, or null if the slot is empty (no puppet registered,
@@ -113,6 +135,12 @@ private:
     void EnsurePlayerElement_(uint8_t peerSlot, coop::RemotePlayer* puppet);
     void DropPlayerElement_(uint8_t peerSlot);
 
+    // The number of non-null puppet slots, and the listener call when it differs from `before`.
+    int PuppetCount_() const;
+    void NotifyPuppetCount_(int before);
+    // The slot whose puppet's actor or non-null ragdoll body is `actor`, or kMaxPeers.
+    uint8_t SlotOfBody_(void* actor) const;
+
 private:
     Registry() = default;
     Registry(const Registry&) = delete;
@@ -139,6 +167,7 @@ private:
     // reference and the local peer id. So on client 1, slot 0 is the host's puppet on this
     // process, and the other slots carry the other clients.
     RemotePlayer* puppetByPeer_[kMaxPeers] = {};
+    PuppetCountFn puppetCountListener_ = nullptr;
 
     // The Player Element shadows, one per peer slot, null if not allocated. Owned by the
     // registry: constructed by the puppet registration or the local id, destroyed by the
