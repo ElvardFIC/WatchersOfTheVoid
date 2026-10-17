@@ -64,7 +64,7 @@ using identity_crypto::SweepDeadScratchKeys;
 using identity_crypto::ToHex;
 using identity_key_file::AccountKeyFileName;
 using identity_key_file::AccountKeyFilePath;
-using identity_key_file::InstallKeyFilePath;
+using identity_key_file::KeyFilePath;
 using identity_key_file::ReadKeyFile;
 using identity_key_file::ReadResult;
 using identity_key_file::WriteKeyFile;
@@ -279,21 +279,21 @@ static bool RunSelftestBody() {
               "our rendered identity does not parse back to our own public key");
 
         // 21-24: this account's key path resolves exactly when its SID does, is stable, and sits
-        // beside the install under a 16-hex id; 24 pins the name to the SID alone with a known
+        // beside the folder's key under a 16-hex id; 24 pins the name to the SID alone with a known
         // answer (the SYSTEM SID), since two accounts on one install are two players only while
         // the name is derived from the account and from nothing else.
         const std::wstring a = AccountKeyFilePath();
-        check(KeyFileAcl().userSid.empty() == a.empty(),
-              "the account key path does not resolve exactly when the SID does");
+        check((KeyFileAcl().userSid.empty() || ue_wrap::paths::ModDataDir().empty()) == a.empty(),
+              "the account key path does not resolve exactly when the SID and the data folder do");
         if (!a.empty()) {
-            const std::wstring exe = ue_wrap::paths::ExeDir();
-            check(a == AccountKeyFilePath() && a != InstallKeyFilePath() &&
-                  a == exe + L"\\" + AccountKeyFileName(KeyFileAcl().userSid.data(),
+            const std::wstring dir = ue_wrap::paths::ModDataDir();
+            check(a == AccountKeyFilePath() && a != KeyFilePath() &&
+                  a == dir + L"\\" + AccountKeyFileName(KeyFileAcl().userSid.data(),
                                                       KeyFileAcl().userSid.size()) &&
-                  a.rfind(exe + L"\\multivoid_identity_", 0) == 0 &&
-                  a.size() == exe.size() + 20 + 16 + 4 &&
+                  a.rfind(dir + L"\\multivoid_identity_", 0) == 0 &&
+                  a.size() == dir.size() + 20 + 16 + 4 &&
                   a.compare(a.size() - 4, 4, L".key") == 0,
-                  "the account key path is not stable, or not beside the install");
+                  "the account key path is not stable, or not beside the folder's key");
             bool hex = true;
             for (size_t i = a.size() - 4 - 16; i < a.size() - 4; ++i) {
                 const wchar_t c = a[i];
@@ -311,18 +311,18 @@ static bool RunSelftestBody() {
 
     // 25-29: the key file is written whole through coop/atomic_file, with the access list on the
     // result: a malformed file replaced, a second create-only write refused, the list protected
-    // with the two entries. The file is a scratch one, never the install's key, and no g_ state is
+    // with the two entries. The file is a scratch one, never the real key, and no g_ state is
     // touched.
     {
         const bool breakIt =
             coop::config::ResolveFlag(coop::config_registry::rows::selftest_break_identity);
-        const std::wstring exe = ue_wrap::paths::ExeDir();
-        if (exe.empty()) {
-            check(false, "the executable folder does not resolve (key-write case)");
+        const std::wstring dir = ue_wrap::paths::ModDataDir();
+        if (dir.empty()) {
+            UE_LOGI("peer_identity selftest: the mod has no data folder this session -- the key-write cases are skipped");
         } else {
-            SweepDeadScratchKeys(exe);
+            SweepDeadScratchKeys(dir);
             const std::wstring scratch =
-                exe + L"\\" + kScratchKeyPrefix + std::to_wstring(::GetCurrentProcessId()) + L".key";
+                dir + L"\\" + kScratchKeyPrefix + std::to_wstring(::GetCurrentProcessId()) + L".key";
             ::DeleteFileW(scratch.c_str());
             const bool seeded =
                 coop::atomic_file::Write(scratch, "malformed", coop::atomic_file::Mode::Replace,
@@ -337,15 +337,16 @@ static bool RunSelftestBody() {
             // The seed's own failure is named here, and adds a check only when it fails.
             if (!seeded)
                 check(false, "the key-write case's seed (a malformed file) was not written");
-            check(seeded && WriteKeyFile(scratch, want, &werr, coop::atomic_file::Mode::Replace),
+            check(seeded && WriteKeyFile(scratch, want, "selftest", &werr, coop::atomic_file::Mode::Replace),
                   "the key file was not written over a malformed one (Replace)");
             uint8_t got[kPrivKeyBytes]{};
+            std::string gotBound;
             DWORD rerr = 0;
-            check(ReadKeyFile(scratch, got, &rerr) == ReadResult::Loaded &&
+            check(ReadKeyFile(scratch, got, &gotBound, &rerr) == ReadResult::Loaded && gotBound == "selftest" &&
                       std::memcmp(got, expect, kPrivKeyBytes) == 0,
                   "the key file does not read back as the key that was written");
             DWORD cerr = 0;
-            check(!WriteKeyFile(scratch, want, &cerr, coop::atomic_file::Mode::CreateOnly) &&
+            check(!WriteKeyFile(scratch, want, "selftest", &cerr, coop::atomic_file::Mode::CreateOnly) &&
                       (cerr == ERROR_ALREADY_EXISTS || cerr == ERROR_FILE_EXISTS),
                   "a create-only key write over an existing file was not refused");
             if (coop::atomic_file::VolumeKeepsAcls(scratch) && KeyFileAcl().ok) {

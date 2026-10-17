@@ -25,6 +25,12 @@ bool Sha256(const void* data, size_t len, uint8_t out[32]);
 std::string ToHex(const uint8_t* p, size_t n);
 bool FromHex(const std::string& hex, uint8_t* out, size_t n);
 
+// The binding of a key file to a machine: SHA-256 over the UTF-8 bytes of the tag
+// "multivoid-identity-binding-v1" plus a newline, then the machine id lower-cased (ASCII), as 64
+// lower-case hex; `none` when the machine id is empty (unreadable) or the hash fails. A pure
+// function of its argument: the caller reads the machine id.
+std::string BindingValue(const std::string& machineGuid);
+
 // The key file's own access list: this account and the system, full control, nothing inherited.
 // Built once per process from the process token; `ok` is false when the OS refused, and a file
 // then keeps its folder's inherited list. `userSid` is this account's SID bytes, empty when the

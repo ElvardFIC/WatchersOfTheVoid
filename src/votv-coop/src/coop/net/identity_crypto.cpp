@@ -54,6 +54,16 @@ bool FromHex(const std::string& hex, uint8_t* out, size_t n) {
     return true;
 }
 
+std::string BindingValue(const std::string& machineGuid) {
+    if (machineGuid.empty()) return "none";
+    std::string bytes = "multivoid-identity-binding-v1\n";
+    for (const char c : machineGuid)
+        bytes.push_back(c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c);
+    uint8_t digest[32];
+    if (!Sha256(bytes.data(), bytes.size(), digest)) return "none";
+    return ToHex(digest, sizeof(digest));
+}
+
 // A key file under a restrictive access list is on the list of edge protections Relay, Moddy's
 // VOTV mod, publishes in its README (docs/credits.md).
 const PrivateAcl& KeyFileAcl() {

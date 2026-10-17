@@ -24,6 +24,17 @@ namespace ue_wrap::paths {
 // a GetModuleFileNameW failure (callers treat empty as "skip the write").
 std::wstring ExeDir();
 
+// The mod's own data folder, the one home every file the mod keeps for itself is read from and written
+// to: the PACKAGE folder that holds `dlls\main.dll` and `enabled.txt` (`Mods\Multivoid`), or, when a
+// manager's shimloader launched the process (it exports SHIMLOADER_MOD_DIR, the profile's mod folder),
+// `<SHIMLOADER_MOD_DIR>\<pkg>` -- the real profile path, since the module's own path is the logical one
+// and a rename there is remapped. `<pkg>` is the folder above `dlls\` in the module's path. No trailing
+// slash. Empty on any failure (no module path, the module not under a `dlls` folder, the profile's
+// package folder missing), with one log line saying which; every caller treats empty as "no data
+// folder". Safe on the boot thread from the first ini read: it uses the process environment and the
+// module's path only, reads no config row, and resolves once (latched). Any thread.
+std::wstring ModDataDir();
+
 // The loaded UE4SS module's full path (the official "UE4SS.dll" or shimloader's lowercase
 // "ue4ss.dll": the module lookup is case-insensitive) and its folder (no trailing slash). Both
 // empty when no such module is loaded or its path cannot be read. Any thread.
