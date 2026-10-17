@@ -3,6 +3,7 @@
 #include "coop/dev/pi3_observer.h"
 
 #include "coop/player/players_registry.h"
+#include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/object_index.h"
 #include "ue_wrap/core/reflection.h"
@@ -136,9 +137,10 @@ Mode     g_mode = Mode::Spawner;
 int      g_nClasses = 0;
 // The armed classes by name, read at Arm. A class object is perishable (unloaded, loaded again at a new address) and
 // the engine never frees a name, so a caller's class chain is matched against these and no class pointer is held.
-// {-1, 0} matches nothing.
-R::FName g_classFNames[2] = {{-1, 0}, {-1, 0}};
-void*    g_site = nullptr;
+R::FName g_classFNames[2] = {};  // the first g_nClasses are the armed classes' names
+// The spawned site, slot-checked: a site that destroyed itself inside the window is not matched by an object born
+// at its address after it.
+ue_wrap::CachedObjRef g_site;
 bool     g_contactArmed[kContactCount] = {};
 bool     g_changed = false;  // a record moved since TakeChanged
 uint64_t g_armAt = 0;
@@ -218,7 +220,7 @@ bool ChainHasArmedName(void* cls) {
 // creature of an armed class.
 bool Attributed(void* obj) {
     if (!g_armed || !obj) return false;
-    if (g_site) return obj == g_site;
+    if (g_site.Raw()) return g_site.Alive() && obj == g_site.Raw();
     return ChainHasArmedName(R::ClassOf(obj));
 }
 
@@ -396,9 +398,9 @@ bool FirstPending(char* out, size_t cap) {
 }
 
 void Arm(void* const* classes, int n, Mode mode) {
-    g_nClasses = n < 1 ? 0 : (n > 2 ? 2 : n);
-    for (int i = 0; i < 2; ++i)
-        g_classFNames[i] = i < g_nClasses && classes[i] ? R::NameOf(classes[i]) : R::FName{-1, 0};
+    g_nClasses = 0;  // a null class is skipped, never stored
+    for (int i = 0; i < n && g_nClasses < 2; ++i)
+        if (classes[i]) g_classFNames[g_nClasses++] = R::NameOf(classes[i]);
     for (int i = 0; i < kContactCount; ++i) {
         g_contactArmed[i] = false;
         for (int k = 0; k < g_nClasses; ++k)
@@ -407,7 +409,7 @@ void Arm(void* const* classes, int n, Mode mode) {
     for (Rec& r : g_rec) r = Rec{};
     g_changed = false;
     g_mode = mode;
-    g_site = nullptr;
+    g_site.Reset();
     g_puppetContacts = g_ownContacts = 0;
     g_armAt = Now();
     g_anchorAt = mode == Mode::Still ? g_armAt : 0;
@@ -417,11 +419,11 @@ void Arm(void* const* classes, int n, Mode mode) {
     Refresh();
 }
 
-void Bind(void* site) { g_site = site; }
+void Bind(void* site) { g_site.Set(site); }
 
 void Disarm() {
     g_armed = false;
-    g_site = nullptr;
+    g_site.Reset();
     ArmHooks(false);
     g_ws.valid = false;
 }
