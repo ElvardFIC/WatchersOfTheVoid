@@ -30,7 +30,7 @@ const char* const kRewind = "daynightCycle_C::rewind";
 #define PI3_WISP_W_JUDGED \
     { "saveSlot_C::save", "save_main_C::save", kQuit, "gib", "SetControlRotation" }
 
-// Each horizon is twice the slowest judged verb of the arm's complete red (lane pi3red, 2026-10-17), at least
+// Each horizon is twice the slowest judged verb of the arm's complete red (lane pi3red), at least
 // 1000 ms: wisp_w 1985, orborb 5094, the client arm's wisp_w 2000, the rest at the contact itself.
 // The paths are the object paths of the class dumps (VotV/Content/<x>/<y>.<y>_C is /Game/<x>/<y>.<y>_C).
 const Spec kSpecs[kSpecCount] = {
