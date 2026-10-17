@@ -59,12 +59,13 @@ Phase PhaseOf() {
 }
 const char* PhaseName() { return PhaseOf() == Phase::Granted ? "granted" : "withheld"; }
 
-// Three plain props of three classes (none trash, kerfur or keyed-special), one per role: the single prop a dumbbell,
-// the mashed one a beer bottle, the ring sacks.
-constexpr const wchar_t* kSinglePath  = L"/Game/objects/prop_dumbell.prop_dumbell_C";
-constexpr const wchar_t* kSingleClass = L"prop_dumbell_C";
-constexpr const wchar_t* kMashPath    = L"/Game/objects/prop_beerBottle.prop_beerBottle_C";
-constexpr const wchar_t* kMashClass   = L"prop_beerBottle_C";
+// Three plain props of three classes (none trash, kerfur or keyed-special), one per role: the single prop a medium sack,
+// the mashed one a small sack, the ring plain sacks. Sacks settle at a spawn at floor height; a dumbbell and a beer
+// bottle spawned the same way fall through the floor on the host and are destroyed far below it.
+constexpr const wchar_t* kSinglePath  = L"/Game/objects/prop_pointSack_m.prop_pointSack_m_C";
+constexpr const wchar_t* kSingleClass = L"prop_pointSack_m_C";
+constexpr const wchar_t* kMashPath    = L"/Game/objects/prop_pointSack_s.prop_pointSack_s_C";
+constexpr const wchar_t* kMashClass   = L"prop_pointSack_s_C";
 constexpr const wchar_t* kSackPath    = L"/Game/objects/prop_pointSack.prop_pointSack_C";
 constexpr const wchar_t* kSackClass   = L"prop_pointSack_C";
 constexpr const wchar_t* kToolPath    = L"/Game/objects/tool_remover.tool_remover_C";
@@ -91,7 +92,7 @@ constexpr float kRingNearCm   = 260.f;
 constexpr float kRingStepCm   = 30.f;
 constexpr float kNpcCm        = 420.f;
 constexpr float kPuppetHalfHeightCm = 90.f;   // the floor when the puppet's bounds do not read
-constexpr float kDropCm       = 20.f;  // above the floor, so a prop settles
+constexpr float kDropCm       = 40.f;  // above the floor, so a prop settles
 constexpr float kFindRadiusCm = 700.f;
 constexpr float kSightSlackCm = 25.f;
 
@@ -342,7 +343,7 @@ void* NearestNpc(const FVector& from) {
     return ctx.best;
 }
 
-// The host's three roles, each a class of its own (the single prop a dumbbell, the mashed one a beer bottle, the ring
+// The host's three roles, each a class of its own (the single prop a medium sack, the mashed one a small sack, the ring
 // sacks), so a role is found by what it is and not by where physics left it. Fills the client's roles; false while the
 // host's props are not all here.
 bool Find(void* player) {
