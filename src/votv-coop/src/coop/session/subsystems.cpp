@@ -540,7 +540,7 @@ DisconnectStats DisconnectAll() {
     coop::floppy_slot_sync::OnDisconnect();  // drop the slot shadows, the retry set and the per-sender rate windows
     coop::floppy_slot_entry::OnDisconnect();  // counters, then the transit marks and the interceptors: the line above drops the UFunctions they name
     coop::mirror_slot_entry::OnDisconnect();
-    coop::puppet_identity::OnDisconnect();  // the resolved classes and stubs, the grunt window
+    coop::puppet_identity::OnDisconnect();  // the resolved classes and stubs, the grunt and wisp_p windows
     coop::roach_sync::OnDisconnect();  // drop snapshot assembly + tracked set + baselines
     coop::owner_entity_sync::OnDisconnect();  // destroy ALL owner-entity mirrors (our spawned actors must not linger into SP)
     coop::hook_sync::OnDisconnect();  // same, for every hook mirror, anchored included

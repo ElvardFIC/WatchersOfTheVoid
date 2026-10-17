@@ -548,7 +548,7 @@ bool RunSelftest() {
         ++checks;
         if (!cond) {
             ++failed;
-            UE_LOGE("object-index selftest FAIL: %s", what);
+            UE_LOGE("object_index selftest FAIL: %s", what);
         }
     };
 

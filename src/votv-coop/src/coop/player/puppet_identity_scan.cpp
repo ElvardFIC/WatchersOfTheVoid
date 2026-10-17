@@ -14,6 +14,7 @@
 #include "ue_wrap/core/reflection_props.h"  // FindPropertyOffset
 #include "ue_wrap/core/script_calls.h"
 #include "ue_wrap/core/script_gate.h"
+#include "ue_wrap/core/sdk_profile_names.h"
 #include "ue_wrap/core/ufunction_hook.h"
 #include "ue_wrap/engine/engine_pawn.h"
 #include "ue_wrap/facts/function_row.h"
@@ -32,6 +33,7 @@ namespace SC = ue_wrap::script_calls;
 namespace CL = ue_wrap::caller_locals;
 namespace OI = ue_wrap::object_index;
 namespace E  = ue_wrap::engine;
+namespace P  = ue_wrap::profile;
 namespace PL = coop::players;
 
 UE_FACT_FN(kRowPuppetGetOverlappingActors, "puppet_identity", L"PrimitiveComponent", L"GetOverlappingActors",
@@ -157,12 +159,16 @@ void OnTracePost(void*, void*, void*) {
     if (CL::ClearHitActor(hit, g_layout)) NoteRefused(row.counter, actor);
 }
 
-// Only player 0's controller: the grunt's tail turns GetPlayerController(0). While this machine's player does not
-// resolve (a travel) the call is left alone, as every refusal of this module is when its test cannot be made.
+// Only player 0's controller: the grunt's tail turns GetPlayerController(0). That is the one PlayerController a coop
+// world holds (a peer's puppet never takes one, engine.h:44-47), and it stays this machine's while its player drives
+// the ATV or sits on a kerfur, where the player's pawn has no controller -- so the test is the controller's class, not
+// the pawn's controller. Until the class is listed the call is left alone, as every refusal of this module is when its
+// test cannot be made.
 sg::Verdict OnSetRotationPre(void* context, void*, const uint8_t*) {
-    if (!InGruntScope()) return sg::Verdict::Run;
-    void* const local = PL::Registry::Get().Local();
-    if (!local || !context || context != E::GetController(local)) return sg::Verdict::Run;
+    if (!InGruntScope() || !context) return sg::Verdict::Run;
+    static void* s_pcClass = nullptr;  // an engine class: listed at boot, never unlisted
+    if (!s_pcClass) s_pcClass = OI::ClassByName(P::name::PlayerControllerClassName);
+    if (!s_pcClass || !R::IsDescendantOfAny(R::ClassOf(context), &s_pcClass, 1)) return sg::Verdict::Run;
     NoteRefused(kGrunt, nullptr);
     return sg::Verdict::Cancel;
 }

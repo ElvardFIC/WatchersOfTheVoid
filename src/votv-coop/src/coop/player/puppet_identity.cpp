@@ -249,6 +249,8 @@ sg::Verdict OnWispPPre(const sg::Call& call) {
         NoteRefused(kWispP, actor);
         return sg::Verdict::Cancel;
     }
+    // No scope bit (logged at Install) or no resolved stub: the stub runs whole, sound and flashbang with it, the one
+    // window row 3 has that a WHOLE cancel did not.
     if (!g_bit || !g_wispPStub) return sg::Verdict::Run;
     sg::MarkScope(call, g_bit);
     scan::ArmWindow(scan::kWispPWindow, true);
@@ -338,7 +340,12 @@ void NoteRefused(Row row, void* actor) {
     const uint32_t bit = uint32_t{1} << row;
     if (g_logged & bit) return;
     g_logged |= bit;
-    const uint8_t slot = actor ? PL::Registry::Get().PeerIdOfBody(actor) : PL::kPeerIdUnknown;
+    // A native seam's refusal and a scan's removal have no toucher in hand; a stub's does.
+    if (!actor) {
+        UE_LOGI("[PI] refused %s for a puppet body", g_counters[row].row);
+        return;
+    }
+    const uint8_t slot = PL::Registry::Get().PeerIdOfBody(actor);
     if (slot == PL::kPeerIdUnknown)
         UE_LOGI("[PI] refused %s toucher=puppet slot=unknown", g_counters[row].row);
     else
@@ -391,7 +398,7 @@ void OnDisconnect() {
     const RowCounter* counters = Counters(rows);
     for (int i = 0; i < rows; ++i)
         if (counters[i].refused)
-            UE_LOGI("[PI] session end -- %s refused %u puppet touch(es) since the process started", counters[i].row,
+            UE_LOGI("[PI] session end -- %s refused %u call(s) since the process started", counters[i].row,
                     static_cast<unsigned>(counters[i].refused));
     g_boxCls = g_gruntCls = g_wispPCls = nullptr;
     g_boxListing = g_gruntListing = g_wispPListing = 0;
