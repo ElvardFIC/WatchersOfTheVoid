@@ -63,6 +63,7 @@
 #include "ue_wrap/engine/engine.h"
 #include "ue_wrap/core/game_thread.h"
 #include "ue_wrap/core/log.h"
+#include "ue_wrap/core/paths.h"  // ModDataDir, named at boot
 #include "ue_wrap/actors/prop.h"
 #include "ue_wrap/actors/puppet.h"
 #include "ue_wrap/core/reflection.h"
@@ -147,6 +148,10 @@ DWORD WINAPI TimelineThread(LPVOID param) {
     // The binding that decides whether a key file is this machine's, checked on pinned vectors before
     // the key is read (coop/net/peer_identity.h): pure, microseconds, impossible to switch off.
     coop::net::peer_identity::RunBindingSelftest();
+    // Which data layout these bytes keep and where the mod's data folder is: the line a rig run reads
+    // to know the bytes it is measuring (dl1: the identity key in the mod folder, the rest beside the exe).
+    UE_LOGI("data: layout dl1, folder %ls", ue_wrap::paths::ModDataDir().empty()
+                                              ? L"(none)" : ue_wrap::paths::ModDataDir().c_str());
     // The durable player identity: an Ed25519 keypair whose public key is the network identity and
     // whose 32-character guid (the key of the host-side inventory) is derived from it, replacing an
     // ini value the peer chose for itself and every host believed (coop/net/peer_identity.h).
