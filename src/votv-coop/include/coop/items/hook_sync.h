@@ -69,6 +69,13 @@ void OnPeerLeftSlot(int slot);
 // hook the other peer plants as this peer holds it. Game thread.
 bool HasMirrorFrom(int ownerSlot, bool tied);
 
+// The element id of what peer `ownerSlot`'s hook bit, as that hook's latest state on this peer
+// named it: the host's id for a tracked prop, which a client holds as its mirror row's id too.
+// Zero when this peer holds no live mirror of that peer's hook, the hook has bitten nothing, or
+// what it bit is not a tracked prop. Read by the hook drag selftest, whose peer that does not
+// plant takes the planter's prop from it. Game thread.
+uint32_t BittenEidFrom(int ownerSlot);
+
 // Session end: destroy every mirror. They are actors WE spawned and must not linger into
 // single-player.
 //

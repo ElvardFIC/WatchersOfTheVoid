@@ -62,6 +62,7 @@ constexpr auto  kSample        = std::chrono::seconds(1);
 constexpr auto  kJoinBound     = std::chrono::seconds(300);
 constexpr auto  kQuietBound    = std::chrono::seconds(120);
 constexpr auto  kSleepBound    = std::chrono::seconds(240);
+constexpr auto  kBesideSlack   = std::chrono::seconds(30);  // beside: past the hook drill's own worst case
 constexpr auto  kPeerBound     = std::chrono::seconds(120);
 
 std::atomic<coop::net::Session*> g_session{nullptr};
@@ -200,7 +201,11 @@ void HostGoToBed() {
             g_hostDilation, kNativeFactor, g_hostNeed0, in);
     g_dilReads = 0;
     g_released = false;
-    Enter(Step::HostAsleep, ArmOf() == Arm::Beside ? "the paired drill to end" : "the host to wake", kSleepBound);
+    // The beside hold lasts as long as the hook drill beside it can run, which its bounds sum to.
+    const std::chrono::seconds held = ArmOf() == Arm::Beside
+        ? std::chrono::seconds(coop::dev::hookdrag_selftest::WorstCaseMs(true) / 1000) + kBesideSlack
+        : std::chrono::seconds(kSleepBound);
+    Enter(Step::HostAsleep, ArmOf() == Arm::Beside ? "the paired drill to end" : "the host to wake", held);
 }
 
 // A world event wakes a sleeper natively: a sleep it ended measured nothing, so the arm says so and ends.

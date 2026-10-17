@@ -489,6 +489,7 @@ void OnStateMsg(const coop::net::HookStatePayload& p, int senderPeerSlot) {
         it->second.tailAttached = AttachTailToSlotBody(m, slot);
     }
     Mirror& row = it->second;
+    row.biteEid = (p.flags & coop::net::kHookStateBitten) ? p.biteEid : 0u;
     void* m = row.ref.Get();
     if (!m) return;
 
@@ -571,6 +572,15 @@ bool HasMirrorFrom(int ownerSlot, bool tied) {
         if (!tied || kv.second.bitten) return true;
     }
     return false;
+}
+
+uint32_t BittenEidFrom(int ownerSlot) {
+    if (!GT::IsGameThread() || ownerSlot < 0 || ownerSlot >= coop::players::kMaxPeers) return 0;
+    for (const auto& kv : Mirrors()) {
+        if (SlotOf(kv.first) != static_cast<uint8_t>(ownerSlot) || !kv.second.ref.Alive()) continue;
+        if (kv.second.biteEid != 0) return kv.second.biteEid;
+    }
+    return 0;
 }
 
 void OnPeerLeftSlot(int slot) {
