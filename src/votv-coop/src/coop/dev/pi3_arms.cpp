@@ -30,33 +30,35 @@ const char* const kRewind = "daynightCycle_C::rewind";
 #define PI3_WISP_W_JUDGED \
     { "saveSlot_C::save", "save_main_C::save", kQuit, "gib", "SetControlRotation" }
 
+// Each horizon is twice the slowest judged verb of the arm's complete red (lane pi3red, 2026-10-17), at least
+// 1000 ms: wisp_w 1985, orborb 5094, the client arm's wisp_w 2000, the rest at the contact itself.
 // The paths are the object paths of the class dumps (VotV/Content/<x>/<y>.<y>_C is /Game/<x>/<y>.<y>_C).
 const Spec kSpecs[kSpecCount] = {
     // The row arms: the host spawns, the client's puppet is the site.
     {"wisp_w", L"wisp_w_C", L"/Game/objects/wisp_w.wisp_w_C", nullptr, "wisp_w", PI3_WISP_W_JUDGED, {}, nullptr,
-     true, kRedWindowMs},
+     true, 3970},
     {"wisp_o", L"wisp_o_C", L"/Game/objects/wisp_o.wisp_o_C", nullptr, "wisp_o", {"lib_C::setSettings"}, {}, nullptr,
-     true, kRedWindowMs},
+     true, 1000},
     {"wisp_p", L"wisp_p_C", L"/Game/objects/wisp_p.wisp_p_C", nullptr, "wisp_p", {"PlaySound2D", "AddToViewport"},
-     {kRewind}, "rewind", true, kRedWindowMs},
+     {kRewind}, "rewind", true, 1000},
     {"kelura", L"kelura_C", L"/Game/objects/kelura.kelura_C", nullptr, "kelura", {kRowEnd, kQuit}, {}, nullptr, true,
-     kRedWindowMs},
+     1000},
     // The orborb ends the game in its own BeginPlay unless this string is stamped first (npc_orborb.cpp:203).
     {"orborb", L"npc_orborb_C", L"/Game/objects/npc/npc_orborb.npc_orborb_C", L"O0ttQI_-jnVwHSztT-bb_w", "orborb",
-     {kRowEnd, kQuit}, {}, nullptr, true, kRedWindowMs},
+     {kRowEnd, kQuit}, {}, nullptr, true, 10188},
     {"grunt", L"prop_grunt_C", L"/Game/objects/prop_grunt.prop_grunt_C", nullptr, "grunt", {"SetControlRotation"}, {},
-     nullptr, true, kRedWindowMs},
+     nullptr, true, 1000},
     // The control: this machine's own player IS served, as in single player, and the verbs are cancelled by the drill.
     {"control", L"kelura_C", L"/Game/objects/kelura.kelura_C", nullptr, "kelura", {}, {kRowEnd, kQuit}, "served",
-     false, kRedWindowMs},
+     false, 1000},
     // The client arm: wisp_w at the host's puppet, wisp_p at the host's puppet (whole on a client), wisp_p at the
     // client's own pawn (a reading).
     {"client", L"wisp_w_C", L"/Game/objects/wisp_w.wisp_w_C", nullptr, "wisp_w", PI3_WISP_W_JUDGED, {}, nullptr, true,
-     kRedWindowMs},
+     4000},
     {"client", L"wisp_p_C", L"/Game/objects/wisp_p.wisp_p_C", nullptr, "wisp_p",
-     {kRewind, "PlaySound2D", "AddToViewport"}, {}, nullptr, true, kRedWindowMs},
+     {kRewind, "PlaySound2D", "AddToViewport"}, {}, nullptr, true, 1000},
     {"client", L"wisp_p_C", L"/Game/objects/wisp_p.wisp_p_C", nullptr, "wisp_p", {}, {}, nullptr, false,
-     kRedWindowMs},
+     1000},
 };
 
 #undef PI3_WISP_W_JUDGED

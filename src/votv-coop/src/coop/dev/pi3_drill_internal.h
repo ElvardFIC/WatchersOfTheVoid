@@ -10,9 +10,6 @@
 
 namespace coop::dev::pi3_drill::detail {
 
-// How long an arm watches after its anchor: every arm starts at the red window, and the follow-up measurement sets
-// each arm's own.
-constexpr int kRedWindowMs = 15000;
 constexpr int kMaxVerbs = 6;
 
 enum class ArmId : uint8_t { Off, WispW, WispO, WispP, Kelura, Orborb, Grunt, Control, Client };
@@ -33,7 +30,7 @@ struct Spec {
     const char*    required[kMaxVerbs];
     const char*    unmet;
     bool           counterMoves;  // the PI counter must rise (a puppet's touch is refused); false: it must stand
-    int            horizonMs;
+    int            horizonMs;   // how long the arm watches after its anchor, measured from its red (pi3_arms.cpp)
 };
 
 // The table's rows, in the order the arms use them: a row arm's own, the control's, and the client arm's three legs.
