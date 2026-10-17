@@ -42,6 +42,7 @@
 #include "coop/dev/puppet_reg_probe.h"  // [dev] a remote player's puppet is registered at its begin-play
 #include "coop/dev/pi0_selftest.h"  // [dev] a cleared Player Element keeps its id
 #include "coop/dev/pi1_selftest.h"  // [dev] the scope mark, the call site, the const-reference hook and the caller's locals
+#include "coop/dev/pi2_selftest.h"  // [dev] the call locals, the puppet-count listener, the puppet-body query
 #include "coop/dev/event_drill.h"  // [dev] the event lanes: a scheduler fire, a dev fire, the join snapshot
 #include "coop/dev/command_drill.h"  // [dev] a typed command is run by the host and answered privately
 #include "coop/dev/mv_drill.h"  // [dev] the /mv commands end to end against a seeded permission store
@@ -285,6 +286,7 @@ void TickDrills(coop::net::Session& session) {
     coop::dev::puppet_reg_probe::Tick();  // [dev] each puppet judged at its begin-play and end of play (latched read when off)
     coop::dev::pi0_selftest::Tick(&session);  // [dev] a cleared Player Element keeps its id, once (latched read when off)
     coop::dev::pi1_selftest::Tick(&session);  // [dev] the substrate primitives' selftest, once (latched read when off)
+    coop::dev::pi2_selftest::Tick(&session);  // [dev] the puppet-identity substrate's selftest, once (latched read when off)
     coop::dev::death_seam_census::Tick();  // [dev] every element end the death seam announces (latched read when off)
     coop::dev::damage_probe::Tick();  // [dev] every player damage verb call: whose body, source, caller (latched read when off)
     coop::dev::grime_drill::Tick(&session);  // [dev] the grime drill's legs (a latched read when off)

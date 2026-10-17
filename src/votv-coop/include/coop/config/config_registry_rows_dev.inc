@@ -799,3 +799,8 @@ CFG_FLAG(pi1_selftest, "pi1_selftest", "dev", false, "VOTVCOOP_PI1_SELFTEST",
     "site, a const reference into a native pre hook and a caller's local edited in place, each one "
     "[PI-1] PASS or FAIL line, then [PI-1] DONE. Calls two read-only library functions and turns the "
     "local player's camera 90 degrees and back.")
+CFG_FLAG(pi2_selftest, "pi2_selftest", "dev", false, "VOTVCOOP_PI2_SELFTEST",
+    "Autonomous selftest (BOTH peers): the locals a bytecode call writes, the puppet-count listener, the "
+    "caller-locals boot check and the registry's puppet-body query, each one [PI-2] PASS or FAIL line, "
+    "then [PI-2] DONE. Registers and clears a test puppet on a spare peer slot; reads the bytecode of "
+    "three classes, loading any that is not yet loaded.")
