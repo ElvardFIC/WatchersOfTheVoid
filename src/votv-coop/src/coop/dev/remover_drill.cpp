@@ -93,7 +93,6 @@ constexpr float kRingStepCm   = 30.f;
 constexpr float kNpcAheadCm   = 330.f;   // the creature stands straight ahead, beyond the pair and inside the ring-free cone
 constexpr float kNpcUpCm      = 60.f;    // the height of its middle above the floor, for the clear-segment test
 constexpr float kTargetUpCm   = 30.f;    // the height of a sack's middle above the floor, for the same test
-constexpr float kPuppetHalfHeightCm = 90.f;   // the floor when the puppet's bounds do not read
 constexpr float kDropCm       = 40.f;  // above the floor, so a prop settles
 constexpr float kFindRadiusCm = 700.f;
 constexpr float kSightSlackCm = 25.f;
@@ -131,27 +130,82 @@ HostStep g_hostStep = HostStep::Arm;
 ue_wrap::CachedObjRef g_hSingle, g_hMash, g_hNpc;
 ue_wrap::CachedObjRef g_hRing[kRing];
 
-// Is the straight segment from `eye` to `pt` clear for the shot the judge re-traces: over the four object types the
-// toolgun's shot takes, every player body ignored (a body is no cover and the host's own player may stand at the sender's
-// spawn point), nothing met before `pt`?
-bool ClearTo(void* puppet, const FVector& eye, const FVector& pt) {
+// What testing one spot found: whether it stands, the floor under it, and, when it does not, the branch and the blocker.
+struct Spot {
+    bool         ok = false;
+    float        floorZ = 0.f;
+    const char*  why = "";
+    std::wstring blocker;
+    float        blockedAt = 0.f, toPoint = 0.f;
+};
+
+// How far under the eye a spot's floor is looked for.
+constexpr float kFloorSearchCm = 500.f;
+
+// The floor under the column at (x, y): the first WorldStatic or WorldDynamic thing a trace meets going down from `fromZ`,
+// every player body ignored. False when none is met, or when the column starts inside geometry.
+bool FloorAt(void* puppet, float x, float y, float fromZ, float* floorZ, const char** why) {
+    const uint8_t types[2] = {0, 1};
+    void* ignore[coop::players::kMaxPeers];
+    const int nIgnore = coop::players::Registry::Get().LiveBodies(ignore, coop::players::kMaxPeers);
+    ue_wrap::trace::Hit hit;
+    if (!ue_wrap::trace::LineHitForObjects(puppet, {x, y, fromZ}, {x, y, fromZ - kFloorSearchCm}, types, 2, ignore,
+                                           nIgnore, &hit)) {
+        *why = "the floor trace did not run";
+        return false;
+    }
+    if (!hit.blocked) { *why = "no floor within 500 cm under the spot"; return false; }
+    if (Dist({x, y, fromZ}, hit.point) < 5.f) { *why = "the spot's column starts inside geometry"; return false; }
+    *floorZ = hit.point.Z;
+    return true;
+}
+
+// Can a prop stand at (x, y), `up` cm above the floor found there, and be seen from `eye`? The floor is found by a trace
+// of its own, never read off the puppet's bounds, and the segment from the eye to the prop's middle is the judge's: the four
+// object types, every player body ignored, nothing met before the point.
+Spot CheckSpot(void* puppet, const FVector& eye, float x, float y, float up) {
+    Spot s;
+    if (!FloorAt(puppet, x, y, eye.Z, &s.floorZ, &s.why)) return s;
+    const FVector pt{x, y, s.floorZ + up};
     const uint8_t types[4] = {0, 1, 2, 3};
     void* ignore[coop::players::kMaxPeers];
     const int nIgnore = coop::players::Registry::Get().LiveBodies(ignore, coop::players::kMaxPeers);
     ue_wrap::trace::Hit hit;
-    if (!ue_wrap::trace::LineHitForObjects(puppet, eye, pt, types, 4, ignore, nIgnore, &hit)) return false;
-    return !hit.blocked || Dist(eye, hit.point) >= Dist(eye, pt) - kSightSlackCm;
+    if (!ue_wrap::trace::LineHitForObjects(puppet, eye, pt, types, 4, ignore, nIgnore, &hit)) {
+        s.why = "the segment trace did not run";
+        return s;
+    }
+    s.toPoint = Dist(eye, pt);
+    if (hit.blocked && Dist(eye, hit.point) < s.toPoint - kSightSlackCm) {
+        s.why = "the segment is blocked";
+        s.blockedAt = Dist(eye, hit.point);
+        s.blocker = hit.actor ? R::ClassNameOf(hit.actor) : std::wstring(L"(no actor)");
+        return s;
+    }
+    s.ok = true;
+    return s;
 }
 
 // The yaw steps, in degrees, a layout is tried at round the puppet's facing: straight ahead first, then alternating
 // sides until the whole circle is covered.
 constexpr float kFanDeg[] = {0.f, 25.f, -25.f, 50.f, -50.f, 75.f, -75.f, 100.f, -100.f, 130.f, -130.f, 160.f, -160.f, 180.f};
 
-// Spawns the host's layout about the client's puppet, on the floor and by its facing: the single and the mashed props
-// side by side ahead of it (the single nearer), the creature straight ahead beyond them, and the ring about it clear of
-// the cone it faces. The pair and the creature are laid only where the segment from the puppet's own eye to each of them
-// is clear -- the same trace the judge runs -- trying the facing and then a fan round it, so the drill measures the lane
-// and not the map. Null on success; else the reason nothing was laid.
+// Says what one tested direction found, one line a direction: a layout is attempted once, so the lines are bounded.
+void SayDirection(float deg, const char* which, const Spot& s, const FVector& eye) {
+    if (s.blocker.empty()) {
+        UE_LOGI("[REMOVER-DRILL] host: direction %.0f deg, %s: %s (floor %.0f, eye %.0f)", deg, which,
+                s.ok ? "clear" : s.why, s.floorZ, eye.Z);
+        return;
+    }
+    UE_LOGI("[REMOVER-DRILL] host: direction %.0f deg, %s: %s -- %ls stands %.0f cm from the eye, the point is %.0f cm away "
+            "(floor %.0f, eye %.0f)", deg, which, s.why, s.blocker.c_str(), s.blockedAt, s.toPoint, s.floorZ, eye.Z);
+}
+
+// Spawns the host's layout about the client's puppet, by its facing: the single and the mashed props side by side ahead
+// of it (the single nearer), the creature straight ahead beyond them, and the ring about it clear of the cone it faces.
+// The pair and the creature are laid only where each spot has a floor of its own and the segment from the puppet's eye
+// to it is clear -- the trace the judge runs -- trying the facing and then a fan round it, so the drill measures the
+// lane and not the map. Null on success; else the reason nothing was laid.
 const char* SpawnLayout(coop::RemotePlayer& rp, const FVector& at) {
     void* puppet = rp.GetActor();
     void* singleCls = ue_wrap::asset_load::LoadObjectByPath(kSinglePath);
@@ -164,49 +218,62 @@ const char* SpawnLayout(coop::RemotePlayer& rp, const FVector& at) {
     const float flat = std::sqrt(fwd0.X * fwd0.X + fwd0.Y * fwd0.Y);
     if (flat < 0.01f) fwd0 = {1.f, 0.f, 0.f};
     else fwd0 = {fwd0.X / flat, fwd0.Y / flat, 0.f};
-    // The floor under the puppet: the bottom of its bounds, else a capsule's half-height under its centre.
-    FVector centre{}, extent{};
-    const bool bounds = E::GetActorBounds(puppet, false, centre, extent) && extent.Z > 0.f;
-    const float floorZ = bounds ? centre.Z - extent.Z : at.Z - kPuppetHalfHeightCm;
     const bool granted = PhaseOf() == Phase::Granted;
+    UE_LOGI("[REMOVER-DRILL] host: laying the layout -- puppet at (%.0f, %.0f, %.0f), its eye at (%.0f, %.0f, %.0f)", at.X,
+            at.Y, at.Z, eye.X, eye.Y, eye.Z);
 
     FVector fwd{}, right{};
+    Spot single, mash, npc;
     bool found = false;
     for (const float deg : kFanDeg) {
         const float rad = deg * 0.0174532925f;
         fwd = {fwd0.X * std::cos(rad) - fwd0.Y * std::sin(rad), fwd0.X * std::sin(rad) + fwd0.Y * std::cos(rad), 0.f};
         right = {-fwd.Y, fwd.X, 0.f};
-        const auto spot = [&](float ahead, float side, float up) {
-            return FVector{at.X + fwd.X * ahead + right.X * side, at.Y + fwd.Y * ahead + right.Y * side, floorZ + up};
+        const auto where = [&](float ahead, float side) {
+            return FVector{at.X + fwd.X * ahead + right.X * side, at.Y + fwd.Y * ahead + right.Y * side, 0.f};
         };
-        if (!ClearTo(puppet, eye, spot(kSingleAheadCm, kPairSideCm, kTargetUpCm))) continue;
-        if (granted && (!ClearTo(puppet, eye, spot(kMashAheadCm, -kPairSideCm, kTargetUpCm)) ||
-                        !ClearTo(puppet, eye, spot(kNpcAheadCm, 0.f, kNpcUpCm))))
-            continue;
+        const FVector p1 = where(kSingleAheadCm, kPairSideCm);
+        single = CheckSpot(puppet, eye, p1.X, p1.Y, kTargetUpCm);
+        SayDirection(deg, "the single prop", single, eye);
+        if (!single.ok) continue;
+        if (granted) {
+            const FVector p2 = where(kMashAheadCm, -kPairSideCm);
+            mash = CheckSpot(puppet, eye, p2.X, p2.Y, kTargetUpCm);
+            SayDirection(deg, "the mashed prop", mash, eye);
+            if (!mash.ok) continue;
+            const FVector p3 = where(kNpcAheadCm, 0.f);
+            npc = CheckSpot(puppet, eye, p3.X, p3.Y, kNpcUpCm);
+            SayDirection(deg, "the creature", npc, eye);
+            if (!npc.ok) continue;
+        }
         found = true;
         break;
     }
-    if (!found) return "no direction round the puppet has a clear segment from its eye to the layout";
+    if (!found) return "no direction round the puppet has a floor and a clear segment from its eye to the layout";
 
-    const auto spawn = [&](void* cls, float ahead, float side, ue_wrap::CachedObjRef& into) {
+    // The ring sits on the floor under the puppet's own column, found the same way.
+    float ringFloor = single.floorZ;
+    const char* ringWhy = "";
+    if (granted && !FloorAt(puppet, at.X, at.Y, eye.Z, &ringFloor, &ringWhy)) ringFloor = single.floorZ;
+    const auto spawn = [&](void* cls, float ahead, float side, float floorZ, ue_wrap::CachedObjRef& into) {
         void* p = E::SpawnActor(cls, {at.X + fwd.X * ahead + right.X * side, at.Y + fwd.Y * ahead + right.Y * side,
                                       floorZ + kDropCm});
         into.Set(p);
         return p != nullptr;
     };
-    if (!spawn(singleCls, kSingleAheadCm, kPairSideCm, g_hSingle)) return "the single prop did not spawn";
+    if (!spawn(singleCls, kSingleAheadCm, kPairSideCm, single.floorZ, g_hSingle)) return "the single prop did not spawn";
     if (!granted) return nullptr;
-    if (!spawn(mashCls, kMashAheadCm, -kPairSideCm, g_hMash)) return "the mashed prop did not spawn";
+    if (!spawn(mashCls, kMashAheadCm, -kPairSideCm, mash.floorZ, g_hMash)) return "the mashed prop did not spawn";
     for (int i = 0; i < kRing; ++i) {
         const float a = (kRingConeDeg + (360.f - 2.f * kRingConeDeg) * static_cast<float>(i) /
                                             static_cast<float>(kRing - 1)) * 0.0174532925f;
         const float r = kRingNearCm + kRingStepCm * static_cast<float>(i % 3);
-        if (!spawn(ringCls, std::cos(a) * r, std::sin(a) * r, g_hRing[i])) return "a ring prop did not spawn";
+        if (!spawn(ringCls, std::cos(a) * r, std::sin(a) * r, ringFloor, g_hRing[i])) return "a ring prop did not spawn";
     }
-    void* npc = coop::dev::spawn_npc::SpawnAt(kNpcClass, {at.X + fwd.X * kNpcAheadCm, at.Y + fwd.Y * kNpcAheadCm,
-                                                          floorZ + kDropCm});
-    g_hNpc.Set(npc);
-    return npc ? nullptr : "the creature did not spawn";
+    void* npcActor = coop::dev::spawn_npc::SpawnAt(kNpcClass, {at.X + fwd.X * kNpcAheadCm, at.Y + fwd.Y * kNpcAheadCm,
+                                                               npc.floorZ + kDropCm});
+    g_hNpc.Set(npcActor);
+    return npcActor ? nullptr : "the creature did not spawn";
 }
 
 bool ClientEnded() {
