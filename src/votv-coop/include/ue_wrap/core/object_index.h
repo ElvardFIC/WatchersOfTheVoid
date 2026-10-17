@@ -134,8 +134,9 @@ Parity DebugCompareWithWalk();
 // A boot check of the class listing identity (ClassListingId) on fake class objects and a fake name driven
 // through the listing functions, so it needs no engine: listed, unlisted, listed again at the same address, a
 // second class unlisting, and an address listed under two slots. Run before Install; it leaves no entry
-// behind, and advances ClassUnlistVersion by 4 (no reader holds its absolute value). It runs on the boot thread and calls
-// a game-thread accessor, silent there only because the game thread is not yet known: it must stay before Install.
+// behind, and advances ClassUnlistVersion by 4 (no reader holds its absolute value). It runs on the boot thread
+// and calls a game-thread accessor, silent there only because the game thread is not yet known: it must stay
+// before Install.
 // Logs "object_index selftest ALL PASS (<n> checks)" or one FAIL line per check.
 bool RunSelftest();
 

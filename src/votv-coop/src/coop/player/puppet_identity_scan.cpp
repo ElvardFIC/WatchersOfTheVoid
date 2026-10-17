@@ -6,7 +6,6 @@
 
 #include "puppet_identity_internal.h"  // the rows and seams shared with the main file (src-local)
 
-#include "coop/player/players_registry.h"
 #include "ue_wrap/core/caller_locals.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/object_index.h"
@@ -16,7 +15,6 @@
 #include "ue_wrap/core/script_gate.h"
 #include "ue_wrap/core/sdk_profile_names.h"
 #include "ue_wrap/core/ufunction_hook.h"
-#include "ue_wrap/engine/engine_pawn.h"
 #include "ue_wrap/facts/function_row.h"
 
 #include <cstdint>
@@ -32,9 +30,7 @@ namespace UH = ue_wrap::ufunction_hook;
 namespace SC = ue_wrap::script_calls;
 namespace CL = ue_wrap::caller_locals;
 namespace OI = ue_wrap::object_index;
-namespace E  = ue_wrap::engine;
 namespace P  = ue_wrap::profile;
-namespace PL = coop::players;
 
 UE_FACT_FN(kRowPuppetGetOverlappingActors, "puppet_identity", L"PrimitiveComponent", L"GetOverlappingActors",
            Declared);
