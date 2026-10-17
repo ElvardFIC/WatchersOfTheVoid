@@ -797,3 +797,4 @@ CFG_FLAG(selftest_break_action_log, "selftest_break_action_log", "dev", false, "
 // The puppet-identity arc's selftests and drill (PI-1, PI-2, PI-3): their own file, one concept, included as
 // _dev_port.inc is above.
 #include "coop/config/config_registry_rows_dev_pi.inc"
+#include "coop/config/config_registry_rows_dev_nb.inc"
