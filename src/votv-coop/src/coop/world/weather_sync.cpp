@@ -608,6 +608,8 @@ void ApplyFromHost(const coop::net::WeatherStatePayload& payload) {
                 g_installed ? 1 : 0, cycle);
         return;
     }
+    // A payload that applies at once is newer than a stashed one: TickConnect's drain never re-applies the older over it.
+    g_pendingApply = false;
 
     // The current state, for the delta: causeRain and intComs_triggerSnow fan out to BP listeners
     // and start or stop particle systems, so they are not called with the value they already hold.
