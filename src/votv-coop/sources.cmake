@@ -160,6 +160,7 @@ set(VOTVCOOP_SOURCES
     src/ue_wrap/actors/prop.cpp
     src/ue_wrap/actors/prop_keys.cpp
     src/ue_wrap/actors/prop_flags.cpp
+    src/ue_wrap/actors/spawner_stamp.cpp
     src/ue_wrap/actors/prop_events.cpp
     src/ue_wrap/actors/garbage_bag.cpp
     src/ue_wrap/actors/vitals.cpp

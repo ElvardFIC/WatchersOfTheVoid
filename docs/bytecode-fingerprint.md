@@ -115,7 +115,9 @@ nearest ancestor), `AnyClass` (a name watch on every class), `RuntimeClass` (the
 run time; the site resolves it with `facts::ResolveOn`, which records the class's name for the census).
 The registration calls of `script_gate`, `ufunction_hook` and `game_thread` accept only a row or a
 `facts::Resolved` made from one, so a dependency cannot be added without its row, and each row records
-whether its registration was taken or refused.
+whether its registration was taken or refused. A function a constant the mod writes depends on (the string a game spawner
+stamps into an actor before its BeginPlay reads it) is a row too, resolved by the site that writes the constant,
+though nothing hooks it, so a build that moved the function is named by the census.
 
 ### The census
 
