@@ -30,21 +30,18 @@ public:
     // nothing, and a rate is a ceiling, so with nothing queued it costs nothing to leave alone.
     static constexpr int64_t kIdleDemandBytes = 8 * 1024;
 
-    // Probe cadence, busy and idle. The idle one is what makes `rttMin` a BASELINE rather than a
-    // reading of the bottleneck queue. 1 Hz of a 32-byte datagram is 32 B/s per peer, so an idle
-    // link is measured for free.
+    // Probe cadence, busy and idle. The idle one keeps `rttMin` a BASELINE, not a reading of the
+    // bottleneck queue, and costs 32 B/s per peer (1 Hz of a 32-byte datagram).
     static constexpr uint64_t kProbeIntervalMs     = 100;
     static constexpr uint64_t kIdleProbeIntervalMs = 1'000;
-    // How many probes may be outstanding at once. A ninth would ask nothing the eight unanswered
-    // ones have not, so the mint is skipped and counted; retirement is kProbeLostMs, not this.
+    // Probes outstanding at once: a ninth asks nothing the eight unanswered do not, so it is skipped.
     static constexpr int      kMaxOutstanding  = 8;
     // When an unanswered probe stops being a slow reading and becomes a lost one. Our policy, not
     // the transport's, whose connected-timeout is twice it -- so the link is still live when we
     // retire a probe, and an echo that arrives later lands in `stray`.
     static constexpr uint64_t kProbeLostMs = 5'000;
 
-    // The window rttMin is taken over, in one-second buckets: long enough that a queue filling for
-    // a few seconds cannot drag the baseline up behind it.
+    // The rttMin window in one-second buckets: a queue filling for seconds cannot drag it up.
     static constexpr int kRttMinBuckets = 10;
 
     // The BASE delay: the smallest round trip a probe measured while the wire held at most one
@@ -167,29 +164,36 @@ public:
     // Fold one sample for a slot (net thread, ~10 Hz) and emit that slot's line at 1 Hz.
     void Sample(int slot, const LinkSample& in, uint64_t nowMs);
 
+    // The last sample's published view, the one read the game thread may make. `sampleMs` is that
+    // sample's `nowMs` (0 = none since the slot reset), `deliveredBytes` the delivered reliable
+    // bytes (never below an earlier value), `queueBytes` the reliable bytes still owed (pending,
+    // unacknowledged, in our backlog). The stamp loads first, so the values are its sample's or a
+    // LATER one's, never older. Any thread.
+    struct Published {
+        int64_t sampleMs       = 0;
+        int64_t deliveredBytes = 0;
+        int64_t queueBytes     = 0;
+    };
+    Published PublishedFor(int slot) const;
+
     // The probe this slot owes, if one is due; false when the link is idle or a probe went out
     // within the cadence. Net thread. The caller sends `out` and, if the send fails, says so.
     bool NextProbe(int slot, uint64_t nowMs, LinkProbePayload& out);
-    // The send of a minted probe failed. Expected, not exceptional: with the send buffer at the
-    // brim -- the state a bulk transfer creates -- every new message is refused, probes included.
+    // The send of a minted probe failed: expected at the brim, where a bulk transfer refuses all.
     void NoteProbeRefused(int slot, uint32_t token);
-    // An echo came back. The round trip is measured against OUR record of when that token went out;
-    // the payload is the token alone and carries no time, so an echo has none to invent one from.
+    // An echo came back, timed against OUR record of when that token went out (it carries no time).
     void NoteProbeReply(int slot, const LinkProbePayload& reply, uint64_t nowMs);
 
     // The rate this slot's link should now be paced at, or -1 when there is nothing to write --
     // control disabled, or the law left the rate where the connection already has it. Net thread,
-    // and a PEEK: the decision is not spent until `NoteRateWritten` says it reached the transport.
-    // Latching here would retire a decision a failed write never delivered, and the dead band can
-    // leave the rate still for a long time, so one missed write would strand the link.
+    // and a PEEK: the decision is spent only when `NoteRateWritten` says it reached the transport,
+    // so a failed write cannot strand the link at a stale rate through the dead band.
     int64_t PendingRateWrite(int slot);
-    // The write landed. `us` is what it cost, folded into the per-second cost line beside the
-    // status read's, because a config write per decision is a claim of its own. Net thread.
+    // The write landed. `us` is what it cost, folded into the per-second cost line. Net thread.
     void NoteRateWritten(int slot, int64_t bps, uint64_t us);
 
-    // What the status reads themselves cost, per net-thread pass; reported once a second while any
-    // link is busy. `links` is how many connections that pass read, which is why the line reports
-    // passes and link samples as two numbers -- on a three-client host they differ by 3x.
+    // What the status reads cost per net-thread pass, reported once a second while any link is
+    // busy. `links` is how many connections the pass read: on a three-client host they differ 3x.
     void NoteSampleCost(uint64_t us, int links, uint64_t nowMs);
 
     // The base history's pure cases, run once per process at the first Session::Start.
@@ -267,11 +271,9 @@ private:
         int64_t  servedRing[kServedPeakSamples]{};
         int      servedRingIdx = 0;
         int64_t  prevUnrel  = 0;       // the unreliable counter at the previous sample
-        // The last decision's inputs, kept for the reported line: a field log that cannot show why
-        // the rate moved is the state this whole arc started in.
+        // The last decision's inputs, kept for the reported line, so a log can show why a rate moved.
         int64_t  inflightMs = 0;
-        // inflight less the base delay (the whole inflight while no base exists), computed beside it:
-        // the number both thresholds of the law read, and printed.
+        // inflight less the base delay (all of it while no base exists): both thresholds read it.
         int64_t  queueMs = 0;
         bool     stalled = false;      // the last measuring decision was a stall; held through Hold
         // The kind of the previous decision, so a change of it is one log line.
@@ -296,6 +298,15 @@ private:
         std::atomic<uint64_t> recvBytes{0};
         // Set by FreeSlot from whichever thread tore the slot down; consumed by the net thread.
         std::atomic<bool> resetArmed{false};
+        // The published view: Sample stores the values, then the stamp (release).
+        std::atomic<int64_t> pubDelivered{0};
+        std::atomic<int64_t> pubQueue{0};
+        std::atomic<int64_t> pubSampleMs{0};
+        void ClearPublished() {
+            pubSampleMs.store(0, std::memory_order_relaxed);
+            pubDelivered.store(0, std::memory_order_relaxed);
+            pubQueue.store(0, std::memory_order_relaxed);
+        }
         Measured m;
     };
 

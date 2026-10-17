@@ -19,6 +19,7 @@ void SendRateControl::Reset(bool controlEnabled, long pinnedKbs) {
         s.unrelBytes.store(0, std::memory_order_relaxed);
         s.recvBytes.store(0, std::memory_order_relaxed);
         s.resetArmed.store(false, std::memory_order_relaxed);
+        s.ClearPublished();
         s.m = Measured{};
         s.m.rateBps = s.m.rateWritten = StartRateBps();
     }
@@ -58,6 +59,7 @@ SendRateControl::Measured& SendRateControl::Take_(int slot) {
         s.queuedBytes.store(0, std::memory_order_relaxed);
         s.unrelBytes.store(0, std::memory_order_relaxed);
         s.recvBytes.store(0, std::memory_order_relaxed);
+        s.ClearPublished();
         s.m = Measured{};
         s.m.rateBps = s.m.rateWritten = StartRateBps();
     }
@@ -353,6 +355,17 @@ void SendRateControl::NoteRateWritten(int slot, int64_t bps, uint64_t us) {
     ++rateWriteCount_;
 }
 
+SendRateControl::Published SendRateControl::PublishedFor(int slot) const {
+    Published out;
+    if (slot < 0 || slot >= kSlots) return out;
+    const Slot& s = slots_[slot];
+    // The stamp first: every value store sequenced before its release is visible after this load.
+    out.sampleMs = s.pubSampleMs.load(std::memory_order_acquire);
+    out.deliveredBytes = s.pubDelivered.load(std::memory_order_relaxed);
+    out.queueBytes = s.pubQueue.load(std::memory_order_relaxed);
+    return out;
+}
+
 void SendRateControl::Sample(int slot, const LinkSample& in, uint64_t nowMs) {
     if (slot < 0 || slot >= kSlots) return;
     Measured& m = Take_(slot);
@@ -376,6 +389,20 @@ void SendRateControl::Sample(int slot, const LinkSample& in, uint64_t nowMs) {
                static_cast<int64_t>(in.pendingUnreliable) +
                static_cast<int64_t>(in.backlogBytes);
     m.last = in;
+    // Published before any return below, so the game thread's view is never older than this pass.
+    // The delivered count is clamped monotone: the header bias and the read order can make one
+    // sample read low, and a reader comparing two of them must never see delivery go backwards.
+    // The stamp is `nowMs` as handed in, taken before the status read, so a sample stamped after
+    // an event was read after it. Values first (relaxed), the stamp last (release).
+    {
+        const int64_t last = s.pubDelivered.load(std::memory_order_relaxed);
+        s.pubDelivered.store(delivered > last ? delivered : last, std::memory_order_relaxed);
+        s.pubQueue.store(static_cast<int64_t>(in.pendingReliable) +
+                             static_cast<int64_t>(in.sentUnackedReliable) +
+                             static_cast<int64_t>(in.backlogBytes),
+                         std::memory_order_relaxed);
+        s.pubSampleMs.store(static_cast<int64_t>(nowMs), std::memory_order_release);
+    }
     // Busy in EITHER direction. A link with queued work of its own is busy, and so is one merely
     // delivering to us at megabytes a second: the receive counter is the second, independent
     // measurement a sender's goodput estimate gets checked against, and a downloading joiner has
