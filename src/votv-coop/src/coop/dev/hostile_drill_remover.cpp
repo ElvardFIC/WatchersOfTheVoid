@@ -66,7 +66,7 @@ constexpr size_t kReasons = static_cast<size_t>(Reason::Count);
 
 // ---- client (sender) ----
 bool g_sent = false;
-Clock::time_point g_waitSince{};   // the first tick far or hidden waited for the bait
+Clock::time_point g_waitSince{};   // the first tick far or hidden waited for the host's ready line
 
 bool OwnJoinOver() {
     return coop::net_pump::HasAnnouncedWorldReady() &&
