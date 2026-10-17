@@ -38,6 +38,10 @@ void Tick(coop::net::Session& session);
 void OnCameraToggleIntent(coop::net::Session& session, const coop::net::CameraToggleIntentPayload& payload,
                           uint8_t senderSlot);
 
+// CLIENT: how many requests this client has sent the host this session, for a drill that reads whether a press
+// went. Game thread.
+uint64_t SentCount();
+
 // The session ended: the counters, with one summary line. A sender's queue, its rate and its said-once latches
 // live in its per-slot state and go with its occupant.
 void OnDisconnect();

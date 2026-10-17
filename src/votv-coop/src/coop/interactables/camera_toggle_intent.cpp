@@ -347,6 +347,8 @@ void OnCameraToggleIntent(coop::net::Session& session, const coop::net::CameraTo
     }
 }
 
+uint64_t SentCount() { return g_sent; }
+
 void OnDisconnect() {
     if (g_sent || g_ran || g_converged || g_denied || g_tickRefused || g_unindexed || g_loadNative)
         UE_LOGI("[CAMERA-INTENT] session end -- sent=%llu ran=%llu changed-nothing=%llu denied=%llu cursed ticks "

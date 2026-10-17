@@ -59,4 +59,11 @@ bool CallUpdCam(void* widget);
 // updCam() on every laptop widget that has `cam` selected. The number repainted.
 int RefreshLaptopsShowing(void* cam);
 
+// [dev] The drills' hands on the laptop's camera panel: the interface widget this world holds (null before it
+// is built), the camera it has selected (setCam's own write of `cam`, without the camera slot it also builds),
+// and its camera-light button's click, dispatched as the button's own event.
+void* LaptopWidget();
+bool SetLaptopCam(void* widget, void* cam);
+bool CallLaptopLightClick(void* widget);
+
 }  // namespace ue_wrap::security_camera

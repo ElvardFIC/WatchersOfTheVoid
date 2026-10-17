@@ -25,6 +25,7 @@
 #include "coop/dev/server_upgrade_drill.h"  // [dev] a client's install and take-out at a server box
 #include "coop/dev/server_drill.h"  // [dev] a server box's break is the host's; a client's repair runs there
 #include "coop/dev/camera_drill.h"  // [dev] a picked-up camera: does it stick to its wall again, and by whose hand
+#include "coop/dev/camera_state_drill.h"  // [dev] a security camera's two bits are the host's: the camera drill's acceptance arms
 #include "coop/dev/sat_console_drill.h"  // [dev] a client's SAT console commands run on the host
 #include "coop/dev/calib_drill.h"  // [dev] a dish's precision is the host's; a player's verb reaches it
 #include "coop/dev/desk_crossing_drill.h"  // [dev] the desk's detection needle crosses on the host alone
@@ -170,6 +171,7 @@ void EndSession() {
     coop::dev::server_upgrade_drill::OnDisconnect();  // [dev] the box and the legs belong to one world
     coop::dev::server_drill::OnDisconnect();  // [dev] the same for the server break drill
     coop::dev::camera_drill::OnDisconnect();  // [dev] a rejoin's client walks to the camera again
+    coop::dev::camera_state_drill::OnDisconnect();  // [dev] a rejoin's client reads the camera again
     coop::dev::sat_console_drill::OnDisconnect();  // [dev] the steps and the host's counts belong to one session
     coop::dev::calib_drill::OnDisconnect();  // [dev] a rejoin's peers run their legs again
     coop::dev::drive_drill::OnDisconnect();  // [dev] the same for the drive drill
@@ -265,6 +267,7 @@ void TickDrills(coop::net::Session& session) {
     coop::dev::server_upgrade_drill::Tick(&session);  // [dev] the server upgrade drill (a single bool read when off)
     coop::dev::server_drill::Tick(&session);  // [dev] the server break drill (two short string compares when off)
     coop::dev::camera_drill::Tick(&session);  // [dev] the camera re-stick drill (a latched bool read when off)
+    coop::dev::camera_state_drill::Tick(&session);  // [dev] the camera state arms (a latched string compare when off)
     coop::dev::sat_console_drill::Tick(&session);  // [dev] the SAT console drill (two short string compares when off)
     coop::dev::calib_drill::Tick(&session);  // [dev] the precision drill (two short string compares when off)
     coop::dev::drive_drill::Tick(&session);  // [dev] the drive drill (two short string compares when off)

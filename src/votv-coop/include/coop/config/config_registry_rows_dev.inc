@@ -552,7 +552,11 @@ CFG_STRING(camera_drill, "camera_drill", "dev", "", "VOTVCOOP_CAMERA_DRILL", fal
     "it, holds 3 s of world time, lets go and watches 2.5 s more; the prop-stick lines of both peers carry the "
     "cause. grab_near -- the same, the walk ending as close to the wall as the director allows. host_grab_near -- "
     "the host does the near grab on its own camera (the control; no client needed). Lines tagged [CAMERA-DRILL]; "
-    "the grabber's DONE line ends it.")
+    "the grabber's DONE line ends it. The state arms, each ended by the client's \"[CAMERA-DRILL] <arm> PASS|FAIL\" "
+    "line: host-toggle -- the host switches a camera on, the client reads it on; client-toggle -- the client's press "
+    "is refused here and performed by the host; light -- the same for the laptop's camera-light button, after a walk "
+    "to the laptop; host-event -- the host fires the gray event beside a switched-on camera, the client reads it on "
+    "and then off; join -- the host switches both bits on before any client joins, every session reads both.")
 CFG_STRING(server_upgrade_drill, "server_upgrade_drill", "dev", "", "VOTVCOOP_SERVER_UPGRADE_DRILL", false,
     "Drill (BOTH peers): a client installs an upgrade into a server box and takes one out. apply: the host "
     "applies both; refuse: the host refuses both, as if each had lost its race, and the client sees its install "

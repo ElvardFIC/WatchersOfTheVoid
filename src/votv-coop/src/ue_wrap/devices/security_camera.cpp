@@ -180,4 +180,30 @@ int RefreshLaptopsShowing(void* cam) {
     return repainted;
 }
 
+void* LaptopWidget() {
+    void* cls = object_index::ClassByName(kWidgetClass);
+    if (!cls) return nullptr;
+    void* found = nullptr;
+    object_index::ForEachInstance(cls,
+        [](void* ctx, void* widget, int32_t) {
+            auto* out = static_cast<void**>(ctx);
+            if (!*out && !R::NameStartsWith(R::NameOf(widget), L"Default__")) *out = widget;
+        },
+        &found);
+    return found;
+}
+
+bool SetLaptopCam(void* widget, void* cam) {
+    if (!widget) return false;
+    const int32_t off = g_widgetCam.Of(widget);
+    if (off < 0) return false;
+    *reinterpret_cast<void**>(reinterpret_cast<uint8_t*>(widget) + off) = cam;
+    return true;
+}
+
+bool CallLaptopLightClick(void* widget) {
+    return widget && component_calls::CallParamlessNamed(
+        widget, L"BndEvt__umg_laptop_Button_camFl_K2Node_ComponentBoundEvent_31_OnButtonClickedEvent__DelegateSignature");
+}
+
 }  // namespace ue_wrap::security_camera
