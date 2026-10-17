@@ -91,9 +91,10 @@ pub fn version_gate(game: &str, proto: i64, game_build: &str) -> Result<(), Stri
 /// listed unproved. A fact about the protocol, so a code constant; the maintainer's floor
 /// (`COOP_MIN_LISTED_PROTO`) is the config that retires the unproved tier.
 ///
-/// PROVISIONAL: the land of the proof's client half sets this to the kProtocolVersion of the
-/// release that ships it; 230 stands in until then.
-pub const MIN_PROVED_PROTO: i64 = 230;
+/// This is the kProtocolVersion of the build that first carries the proof's client half. A server
+/// test reads `protocol.h` and fails when this exceeds the tree's own kProtocolVersion, so a value
+/// no build can reach (no build is then required to prove) cannot be committed.
+pub const MIN_PROVED_PROTO: i64 = 229;
 
 /// A create from this build cannot be listed without a valid proof.
 pub fn proof_required(proto: i64) -> bool {
@@ -123,6 +124,19 @@ mod tests {
         assert!(!below_floor(0, 0), "the default floor refuses nothing");
         assert!(!below_floor(230, 230));
         assert!(below_floor(229, 230));
+    }
+
+    #[test]
+    fn the_proof_floor_is_a_protocol_the_tree_has_reached() {
+        let header = concat!(env!("CARGO_MANIFEST_DIR"), "/../src/votv-coop/include/coop/net/protocol.h");
+        let text = std::fs::read_to_string(header).unwrap_or_else(|e| panic!("cannot read {header}: {e}"));
+        let line = text
+            .lines()
+            .find(|l| l.contains("kProtocolVersion =") && l.contains("uint16_t"))
+            .expect("protocol.h has no kProtocolVersion definition");
+        let digits: String = line.split('=').nth(1).expect("no value").chars().filter(char::is_ascii_digit).collect();
+        let version: i64 = digits.parse().expect("kProtocolVersion is not a number");
+        assert!(MIN_PROVED_PROTO <= version, "MIN_PROVED_PROTO {MIN_PROVED_PROTO} is above kProtocolVersion {version}");
     }
 
     #[test]

@@ -53,6 +53,31 @@ pub fn parse_public_names(domain: &str, aliases: &str) -> (Vec<String>, Vec<Stri
     (names, refused)
 }
 
+/// What is wrong with the master's settings, one line each; empty when it may start. `domain` is
+/// `COOP_DOMAIN` as written: it must be a bare host name, because the name a client signs is the
+/// host of the URL it dialled, and a URL, a path, a login or a port written here would match no
+/// client for good while the master ran and answered `/healthz`. `floor` is
+/// `COOP_MIN_LISTED_PROTO` as written ("" when unset): a value that is not a decimal number would
+/// otherwise read as 0 and silently lift the floor.
+pub fn config_faults(domain: &str, floor: &str) -> Vec<String> {
+    let mut faults = Vec::new();
+    let d = domain.trim();
+    if !d.is_empty() {
+        let lower = d.to_ascii_lowercase();
+        let bare = lower.strip_suffix('.').unwrap_or(&lower);
+        if d.contains("://") || d.contains('/') || d.contains('@') || d.chars().any(char::is_whitespace) {
+            faults.push(format!("COOP_DOMAIN '{d}' is not a bare host name (no scheme, path, login or spaces)"));
+        } else if canon_host_name(d) != bare {
+            faults.push(format!("COOP_DOMAIN '{d}' is not a bare host name (no port, plain ASCII)"));
+        }
+    }
+    let f = floor.trim();
+    if !f.is_empty() && !(f.bytes().all(|b| b.is_ascii_digit()) && f.parse::<i64>().is_ok()) {
+        faults.push(format!("COOP_MIN_LISTED_PROTO '{f}' is not a decimal number"));
+    }
+    faults
+}
+
 impl Config {
     fn from_env() -> Config {
         let (public_names, refused) =
@@ -77,7 +102,7 @@ pub static CFG: LazyLock<Config> = LazyLock::new(Config::from_env);
 
 #[cfg(test)]
 mod tests {
-    use super::{is_loopback_name, parse_public_names};
+    use super::{config_faults, is_loopback_name, parse_public_names};
 
     #[test]
     fn loopback_names_are_recognised() {
@@ -108,5 +133,30 @@ mod tests {
     fn no_domain_and_no_alias_is_no_name() {
         assert!(parse_public_names("", "").0.is_empty());
         assert!(parse_public_names("  ", " , ").0.is_empty());
+    }
+
+    #[test]
+    fn a_domain_must_be_a_bare_host_and_a_floor_a_decimal_number() {
+        for d in ["master.multivoid.dev", " Master.Multivoid.dev ", "master.multivoid.dev.", "203.0.113.7", "[2001:db8::1]", "", "  "] {
+            assert!(config_faults(d, "").is_empty(), "'{d}' was refused");
+        }
+        for d in [
+            "https://master.multivoid.dev",
+            "master.multivoid.dev/v1",
+            "user@master.multivoid.dev",
+            "master.multivoid.dev:10443",
+            "[::1]:10443",
+            "master multivoid.dev",
+            "b\u{fc}cher.example",
+        ] {
+            assert_eq!(config_faults(d, "").len(), 1, "'{d}' was accepted");
+        }
+        for f in ["", " ", "0", "230", " 230 "] {
+            assert!(config_faults("a.example", f).is_empty(), "floor '{f}' was refused");
+        }
+        for f in ["abc", "23x", "-1", "2.5", "99999999999999999999"] {
+            assert_eq!(config_faults("a.example", f).len(), 1, "floor '{f}' was accepted");
+        }
+        assert_eq!(config_faults("https://a.example", "x").len(), 2, "both faults are named");
     }
 }

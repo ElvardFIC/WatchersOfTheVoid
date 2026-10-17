@@ -21,7 +21,7 @@ use coop_server::lobby::{
     dispatch_post, latest_answer, lobbies_snapshot, lock_state, parse_latest_games, resolve_client_ip, sweeper,
     LATEST_URL,
 };
-use coop_server::master_config::CFG;
+use coop_server::master_config::{config_faults, CFG};
 use coop_server::thanks::{thanks_answer, Answer};
 use coop_server::tls;
 use serde_json::{json, Value};
@@ -163,6 +163,14 @@ async fn main() {
     }
     if CFG.signaling_token.is_empty() {
         log("FATAL: COOP_SIGNALING_TOKEN not set -- clients could not reach signaling");
+        std::process::exit(1);
+    }
+    // A name or a floor of the wrong shape would start a master that no client can use.
+    let faults = config_faults(&env_str("COOP_DOMAIN", ""), &env_str("COOP_MIN_LISTED_PROTO", ""));
+    for fault in &faults {
+        log(&format!("FATAL: {fault}"));
+    }
+    if !faults.is_empty() {
         std::process::exit(1);
     }
     // A lobby proof is signed for the master's name, so a master with none could verify nothing.
