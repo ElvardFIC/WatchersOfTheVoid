@@ -16,9 +16,10 @@ use std::time::Instant;
 
 /// Make room for one more row: while the table is full, drop the stalest UNPROVED row, and only
 /// when every row is proved the stalest proved one. A proved create is never refused at the cap;
-/// an unproved one is, before this runs, when every row is proved. MTA caps nothing: its master
-/// queries each announced port itself (CServerList.cpp:490-595), so a flood costs it probes, not
-/// rows; a master that takes pushes needs a cap, and the proof is what ranks who leaves first.
+/// an unproved one is, before this runs, when every row is proved. MTA caps nothing: each client
+/// queries the port of every row it lists itself (Client/core/ServerBrowser/CServerList.cpp:490-595),
+/// so a bogus row costs a viewer a probe and the master nothing (its own side is not in the
+/// reference tree); a master that takes pushes needs a cap, and the proof ranks who leaves first.
 pub fn evict_if_full(state: &mut MasterState) {
     while state.lobbies.len() >= MAX_LOBBIES_GLOBAL {
         let victim = state
@@ -124,13 +125,6 @@ pub fn h_host(state: &mut MasterState, ctx: &HostCtx, ip: &str, body: &Value) ->
             return (400, json!({"error": "this build is too old to host -- update Multivoid"}));
         }
     }
-    // The operator's block (MTA's master flags a row RESTRICTION_BLOCK_SERVER and every client hides
-    // it, Client/core/ServerBrowser/CServerList.h:75 and CServerBrowser.cpp:1358). Asked before the
-    // nonce is spent, so a blocked host burns nothing and costs no signature check.
-    if ctx.blocked.contains(&lo.host_identity) {
-        log(&format!("host REFUSED from {ip}: blocked identity (b{})", lo.proto));
-        return (403, json!({"error": "blocked"}));
-    }
     lo.world = clamp_field(body, "world", MAX_WORLD);
     lo.locked = as_bool(body, "locked", false);
     lo.players_max = as_int(body, "players_max", 4).clamp(1, 4);
@@ -162,6 +156,16 @@ pub fn h_host(state: &mut MasterState, ctx: &HostCtx, ip: &str, body: &Value) ->
     if below_floor(lo.proto, ctx.min_listed_proto) {
         log(&format!("host REFUSED from {ip}: b{} is below the listed floor {}", lo.proto, ctx.min_listed_proto));
         return (403, json!({"error": "build-too-old"}));
+    }
+    // The operator's block (MTA's master flags a row RESTRICTION_BLOCK_SERVER and every client hides
+    // it, Client/core/ServerBrowser/CServerList.h:75 and CServerBrowser.cpp:1358). Asked after the
+    // proof and the floor: a build that must prove learns its key is blocked only by proving it, so
+    // an unauthenticated create cannot probe the list. A create of an older build, which need not
+    // prove, proves nothing and so may learn it; it is refused here all the same. A proved blocked
+    // create has spent its nonce, as any proved create does.
+    if ctx.blocked.contains(&lo.host_identity) {
+        log(&format!("host REFUSED from {ip}: blocked identity (b{})", lo.proto));
+        return (403, json!({"error": "blocked"}));
     }
 
     // One row per proved key: the caps count the rows listing it as gone; nothing drops until they pass.

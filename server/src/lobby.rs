@@ -27,9 +27,10 @@ pub const MAX_LOBBIES_GLOBAL: usize = 1000;
 // Hard cap on distinct rate-limit keys, so a source-diverse flood can't grow the `rate`
 // table toward MemoryMax between the 30s sweeps (security audit 2026-07-16, M3). At the cap
 // a NEW key is admitted and the least recently seen one forgotten (`rate_table`): the table
-// degrades to forgetting old flooders and never refuses an address it does not hold. MTA's
-// ASE fails open the same way, switching its per-IP protection off once its own table holds
-// 100 flooding entries (reference/mtasa-blue/Server/mods/deathmatch/logic/ASE.cpp:183).
+// degrades to forgetting old flooders and never refuses an address it does not hold. MTA bounds
+// its mitigation otherwise: once its own table holds 100 flooding entries it stops counting
+// queries per address and answers the rest (reference/mtasa-blue/Server/mods/deathmatch/logic/
+// ASE.cpp:183); this table keeps counting every key it holds.
 pub const MAX_RATE_KEYS: usize = 50_000;
 
 // per-(IP, class) sliding-window rate limits: (window, max events).
@@ -38,7 +39,8 @@ pub const RL_CREATE: (Duration, usize) = (Duration::from_secs(60), 10);
 pub const RL_JOIN: (Duration, usize) = (Duration::from_secs(60), 20);
 pub const RL_MUTATE: (Duration, usize) = (Duration::from_secs(60), 240);
 // GET /v1/lobbies: the 5 s snapshot cache bounds the work, this bounds the bytes an address can pull.
-pub const RL_BROWSE: (Duration, usize) = (Duration::from_secs(60), 30);
+// An open browser fetches every 5 s (12 a minute), so 120 leaves room for ten players behind one address.
+pub const RL_BROWSE: (Duration, usize) = (Duration::from_secs(60), 120);
 
 pub const MAX_NAME: usize = 63;
 pub const MAX_WORLD: usize = 39;
@@ -373,12 +375,12 @@ pub fn rate_ok(state: &mut MasterState, ip: &str, cls: &str, window: Duration, l
 }
 
 /// `GET /v1/lobbies`: the cached list body for an address within its read rate, else None (the
-/// caller answers `429`). Rows of a blocked identity are not in it.
-pub fn h_browse(state: &mut MasterState, ip: &str, blocked: &[String]) -> Option<Arc<Vec<u8>>> {
+/// caller answers `429`).
+pub fn h_browse(state: &mut MasterState, ip: &str) -> Option<Arc<Vec<u8>>> {
     if !rate_ok(state, ip, "browse", RL_BROWSE.0, RL_BROWSE.1) {
         return None;
     }
-    Some(lobbies_snapshot(state, blocked))
+    Some(lobbies_snapshot(state))
 }
 
 
@@ -548,11 +550,11 @@ pub fn h_join(state: &mut MasterState, ip: &str, body: &Value) -> (u16, Value) {
     (200, Value::Object(resp))
 }
 
-pub fn build_rows(state: &MasterState, blocked: &[String]) -> Vec<Value> {
+pub fn build_rows(state: &MasterState) -> Vec<Value> {
     let now = Instant::now();
     let mut rows = Vec::new();
     for lo in state.lobbies.values() {
-        if !lo.listed || blocked.contains(&lo.host_identity) {
+        if !lo.listed {
             continue;
         }
         rows.push(json!({
@@ -583,14 +585,14 @@ pub fn build_rows(state: &MasterState, blocked: &[String]) -> Vec<Value> {
 /// Refresh the /v1/lobbies cache if stale and return a cheap Arc handle to the cached
 /// body. Called UNDER the lock; the caller writes it AFTER dropping the lock (audit
 /// L5 — the ~200 KB body is no longer cloned or serialized under the global mutex).
-pub fn lobbies_snapshot(state: &mut MasterState, blocked: &[String]) -> Arc<Vec<u8>> {
+pub fn lobbies_snapshot(state: &mut MasterState) -> Arc<Vec<u8>> {
     let now = Instant::now();
     let stale = match state.cache_t {
         Some(t) => now.duration_since(t) >= LOBBIES_CACHE_TTL,
         None => true,
     };
     if stale {
-        let rows = build_rows(state, blocked);
+        let rows = build_rows(state);
         let body = serde_json::to_vec(&json!({"lobbies": rows})).unwrap_or_default();
         state.cache_all_body = Arc::new(body);
         state.cache_t = Some(now);

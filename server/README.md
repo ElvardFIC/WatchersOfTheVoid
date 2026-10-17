@@ -10,7 +10,7 @@ them.
 
 | bin | default port | env |
 |---|---|---|
-| `coop-master` | `COOP_MASTER_PORT` (10001) | `COOP_TURN_SECRET`*, `COOP_SIGNALING_TOKEN`*, `COOP_DOMAIN`*, `COOP_MASTER_NAME_ALIASES`, `COOP_MIN_LISTED_PROTO`, `COOP_SIGNALING_URL`, `COOP_STUN_URI`, `COOP_TURN_URI` |
+| `coop-master` | `COOP_MASTER_PORT` (10001) | `COOP_TURN_SECRET`*, `COOP_SIGNALING_TOKEN`*, `COOP_DOMAIN`*, `COOP_MASTER_NAME_ALIASES`, `COOP_MIN_LISTED_PROTO`, `COOP_BLOCKED_IDENTITIES`, `COOP_SIGNALING_URL`, `COOP_STUN_URI`, `COOP_TURN_URI` |
 | `coop-signaling` | `COOP_SIGNALING_PORT` (10000) | `COOP_SIGNALING_TOKEN`* |
 
 `*` required: the process refuses to start (exit 1) without it. All secrets are env-only;
@@ -55,14 +55,14 @@ limits and per-IP caps are the wrong fixture for many synthetic rows from one ad
   shared vector in `tests/vectors/lobby_proof.json`). The nonce is stateless: its expiry, random
   bytes and an HMAC (a secret drawn when the master starts) over the caller's address bucket, so
   issuing stores nothing and no flood of challenges can fill the master; only a spent nonce is
-  kept, until it expires (single use; a full set, 500000, the create rate times the rate table, answers
+  kept, until it expires (single use; a full set, 65536 (sized to the master's memory), answers
   `503 busy` and never forgets a nonce). A restart voids
   outstanding nonces and the host asks again. The challenge has its own rate class. A build at or
   above `MIN_PROVED_PROTO` (`src/version_gate.rs`) without a valid proof is `409 proof-required`;
   a proof that is present must verify (`400 bad-proof`); a nonce that is not this master's for
   this address, or is spent or expired, is `410 nonce-expired`; a build below
   `COOP_MIN_LISTED_PROTO` is `403 build-too-old`; an identity in `COOP_BLOCKED_IDENTITIES` (comma
-  list of `gen:` keys; an entry of another shape refuses the start) is `403 blocked` and never listed.
+  list of `gen:` keys; an entry of another shape refuses the start) is `403 blocked` and never listed (asked after the proof and the floor, so only a create that proves its key, or a build that need not, learns it).
   A valid proof marks the row `proved`, and a
   proved create for a key already listed replaces that key's row (new session and token). When
   the table is full a create evicts the stalest unproved row, then the stalest proved one; an
@@ -89,7 +89,7 @@ Rightmost `X-Forwarded-For` from a loopback proxy only, so the rate-limit and ta
 cannot be spoofed; constant-time token compare; an opaque `lobbyId` against a secret `sessionId`;
 control-character strip and codepoint clamp on every string; per-(address, class) sliding-window
 rate limits (the table of them holds 50000 keys and, full, forgets the least recently seen rather
-than refuse a new address; `GET /v1/lobbies` has its own class, 30 per minute); a global LRU and per-address lobby caps; a `LOBBY_TTL` sweep; bounded header and
+than refuse a new address; `GET /v1/lobbies` has its own class, 120 per minute); a global LRU and per-address lobby caps; a `LOBBY_TTL` sweep; bounded header and
 body; connection admission at accept (`admission.rs`: a total and a per-address cap, taken before
 the TLS handshake) under one deadline that covers the handshake and every read before the
 answer, or on the relay before registration; a relay destination's queue is capped in bytes;

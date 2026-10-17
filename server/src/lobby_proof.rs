@@ -11,9 +11,9 @@ use ring::rand::{SecureRandom, SystemRandom};
 use std::collections::{HashSet, VecDeque};
 use std::time::{Duration, Instant};
 
-// MTA's announce is one unsigned GET (CMasterServerAnnouncer.h:235-267) that its master and every
-// client then check by querying the announced port (CServerList.cpp:490-595). A P2P host is
-// reached only through the relay and cannot be dialled, so the host signs a challenge the master
+// MTA's announce is one unsigned GET (CMasterServerAnnouncer.h:235-267) that every client then
+// checks by querying the announced port (Client/core/ServerBrowser/CServerList.cpp:490-595). A P2P
+// host is reached only through the relay and cannot be dialled, so the host signs a challenge the master
 // issued, the direction of MTA's own server-side challenge route (CHTTPD.cpp:131-170).
 
 // Domain tag of the announce proof. It differs from the signaling registration's
@@ -64,7 +64,7 @@ pub const NONCE_LIFE: Duration = Duration::from_secs(30);
 /// runs under `MemoryMax=128M` (`tools/vps_provision.sh`'s unit template), and an entry costs about
 /// 150 bytes across the set and its expiry queue, so 65,536 entries are about 10 MB. A set that is
 /// full answers `503 busy` to creates and does NOT forget: this is not MTA's flood table, which
-/// fails open (`reference/mtasa-blue/Server/mods/deathmatch/logic/ASE.cpp:183`) because a forgotten
+/// stops counting past 100 entries (`reference/mtasa-blue/Server/mods/deathmatch/logic/ASE.cpp:183`) because a forgotten
 /// counter costs it only a count, whereas a nonce forgotten before its expiry spends twice. No
 /// finite size covers every inflow, since the rate table forgets its oldest buckets at its cap, so
 /// the residual is said: filling the set takes more than 2,100 proved-shape creates a second for

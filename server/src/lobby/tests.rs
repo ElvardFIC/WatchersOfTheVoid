@@ -210,10 +210,10 @@ fn a_full_rate_table_forgets_the_oldest_flooder_and_keeps_the_newest() {
 fn the_list_has_its_own_rate_class() {
     let mut state = MasterState::new();
     for n in 0..RL_BROWSE.1 {
-        assert!(h_browse(&mut state, "198.51.100.5", &[]).is_some(), "read {n} was refused");
+        assert!(h_browse(&mut state, "198.51.100.5").is_some(), "read {n} was refused");
     }
-    assert!(h_browse(&mut state, "198.51.100.5", &[]).is_none(), "the list was not rate limited");
-    assert!(h_browse(&mut state, "198.51.100.6", &[]).is_some(), "another address shared the budget");
+    assert!(h_browse(&mut state, "198.51.100.5").is_none(), "the list was not rate limited");
+    assert!(h_browse(&mut state, "198.51.100.6").is_some(), "another address shared the budget");
     // Reading the list spends no other class's budget.
     assert_eq!(super::h_heartbeat(&mut state, "198.51.100.5", &serde_json::json!({})).0, 403);
 }

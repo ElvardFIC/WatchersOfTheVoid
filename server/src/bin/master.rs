@@ -85,7 +85,7 @@ async fn handle<S: AsyncRead + AsyncWrite + Unpin>(mut stream: S, peer_ip: Strin
         // is not read: every client asks for the whole list. The list has its own rate class.
         let body = {
             let mut state = lock_state();
-            h_browse(&mut state, &client_ip, &CFG.blocked_identities)
+            h_browse(&mut state, &client_ip)
         };
         match body {
             Some(body) => write_response(&mut stream, 200, &body).await,

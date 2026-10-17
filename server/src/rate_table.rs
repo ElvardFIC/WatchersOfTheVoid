@@ -3,9 +3,11 @@
 //! The table holds at most `cap` keys. When a key it does not hold arrives at the cap, the key
 //! seen LEAST RECENTLY is forgotten to make room, so a flood of new addresses fills the table
 //! with the flooders and costs the oldest of them their window; it never refuses a request from
-//! an address the table does not hold. The precedent fails open the same way: MTA switches its
-//! per-IP protection off once its own table holds 100 flooding entries, so the mitigation cannot
-//! become the sink (`reference/mtasa-blue/Server/mods/deathmatch/logic/ASE.cpp:183`).
+//! an address the table does not hold. The precedent bounds its mitigation too: once its own
+//! table holds 100 flooding entries MTA stops counting queries per address and answers the rest
+//! (`reference/mtasa-blue/Server/mods/deathmatch/logic/ASE.cpp:183`); this table keeps counting
+//! every key it holds and forgets the oldest, the stricter shape, so the mitigation cannot become
+//! the sink.
 //!
 //! Recency is a queue of (stamp, key) pushed on every request; a key's live entry is the one
 //! whose stamp equals the stamp its slot holds, and the older ones are dead. Eviction pops the
