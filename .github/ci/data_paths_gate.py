@@ -65,6 +65,15 @@ SUFFIXES = (".cpp", ".h", ".hpp", ".inc")
 HEX_DIGITS = frozenset("0123456789abcdefABCDEF")  # a set: the empty string at a text edge is not a member
 
 
+def number_run(text, i):
+    """Whether the word behind text[i] starts with a digit: a number (1, 700, 0xFF), where a quote is a
+    separator; case'a' and u8'a' are words, and their quote opens a character literal."""
+    j = i
+    while j > 0 and (text[j - 1].isalnum() or text[j - 1] == "_"):
+        j -= 1
+    return text[j:j + 1].isdigit()
+
+
 def strip(text):
     """The code of a C++ text, its comments and string and character literals blanked (newlines kept)."""
     out, i, n = [], 0, len(text)
@@ -80,7 +89,7 @@ def strip(text):
             j = n if j < 0 else j + 2
             out.append("\n" * text.count("\n", i, j))
             i = j
-        elif c == "'" and text[i - 1:i] in HEX_DIGITS and text[i + 1:i + 2] in HEX_DIGITS:
+        elif c == "'" and text[i - 1:i] in HEX_DIGITS and text[i + 1:i + 2] in HEX_DIGITS and number_run(text, i):
             out.append(c)  # a C++14 digit separator (1'700'000'000), not the start of a character literal
             i += 1
         elif c == '"' or c == "'":
@@ -143,6 +152,8 @@ def drill():
             "coop/x/a.cpp": "::GetModuleFileNameW(::GetModuleHandleW(nullptr), exe, MAX_PATH);\n"},
         "ExeDir after a digit separator": {
             "coop/x/a.cpp": "constexpr long k = 1'700'000'000;\nauto d = paths::ExeDir();\n// it's\n"},
+        "ExeDir after case'a'": {"coop/x/a.cpp": "switch (x) { case'a': auto d = paths::ExeDir(); }\n"},
+        "ExeDir after u8'a'": {"coop/x/a.cpp": "auto s = u8'a'; auto d = paths::ExeDir();\n"},
         "GetModuleFileName(NULL, over two lines": {
             "coop/x/a.cpp": "GetModuleFileNameW(\n    NULL,\n    buf, n);\n"},
     }
