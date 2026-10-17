@@ -92,11 +92,13 @@ CFG_INT(net_fakejitter_ms, "net.fakejitter_ms", "net", 0, 0, 1000, "VOTVCOOP_NET
     "0 = off. Testing knob for the send-rate law on a link whose round trip wanders.")
 CFG_STRING(net_fakelink_steps, "net.fakelink_steps", "net", "", "VOTVCOOP_NET_FAKELINK_STEPS", false,
     "Changes the fake-link knobs above DURING a run, timed from the world transfer's own events: "
-    "steps separated by ';', each <origin>+<seconds>:<key>=<value>[,<key>=<value>]. Origin: begin "
+    "steps separated by ';', each <origin>+<seconds>:<key>=<value>[&<key>=<value>] (keys join "
+    "with '&', because the rig's --config splits on commas). Origin: begin "
     "(the world blob's announce -- the joiner's Begin, the host's first chunk) or wr (the "
     "joiner's world-ready -- its announce, the host's receipt of it). Keys: lag, jitter, "
-    "loss_send, loss_recv, kbs (net.fakelink_kbs). Example: begin+3:lag=150,loss_send=2;wr+0:lag=0. "
-    "A schedule that does not parse is ignored whole. Empty = none. Testing knob.")
+    "loss_send, loss_recv, kbs (net.fakelink_kbs). Example: begin+3:lag=150&loss_send=2;wr+0:lag=0. "
+    "A schedule that does not parse is ignored whole. Every session start first returns all five "
+    "knobs to their own rows' values. Empty = none. Testing knob.")
 CFG_INT(net_fakereorder_pct, "net.fakereorder_pct", "net", 0, 0, 100, "VOTVCOOP_NET_FAKEREORDER_PCT",
     "Percent of RECEIVED packets held back by net.fakereorder_ms (GNS FakePacketReorder_Recv, "
     "process-global), so the packets behind them arrive first: a reordering link, which a LAN "

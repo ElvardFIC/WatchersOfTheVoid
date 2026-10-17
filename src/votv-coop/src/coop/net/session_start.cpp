@@ -74,48 +74,11 @@ bool EnsureGnsInit() {
     // decides it and `coop/net/connection_tuning` opens it, so a global write here would be a
     // second writer of a quantity that has an owner. docs/send-path.md carries the measurements.
     //
-    // The fake-link drill knobs are the only things still written globally, and correctly so: the
-    // first simulates a thin outbound link with the transport's send policer, which silently drops
-    // packets beyond the token budget. That is the PHYSICS of the box's uplink, not a policy about
-    // a link. 0 is off, the shipped default.
+    // The fake-link drill knobs are the only things still written globally, and correctly so: they
+    // simulate the PHYSICS of the box's uplink, not a policy about a link. 0 is off, the shipped
+    // default. Five are rewritten at every session start (`coop/net/fake_link_steps`), since a
+    // step can change them; the reorder pair below is never stepped, so once per process is enough.
     if (auto* utils = SteamNetworkingUtils()) {
-        const long fakeKbs =
-            coop::config::ResolveInt(coop::config_registry::rows::net_fakelink_kbs);
-        if (fakeKbs > 0) {
-            fake_link_steps::WriteLinkKbs(static_cast<int>(fakeKbs));
-            UE_LOGW("net: FAKE LINK LIMIT %ld KB/s outbound (drill knob net.fakelink_kbs) -- "
-                    "packets beyond the budget are silently dropped",
-                    fakeKbs);
-        }
-        // The rest of the simulated link, the same physics: delay, loss and jitter on the wire.
-        // Their steps (net.fakelink_steps) rewrite the same globals later, through the same writers.
-        const long fakeLagMs = coop::config::ResolveInt(coop::config_registry::rows::net_fakelag_ms);
-        if (fakeLagMs > 0) {
-            fake_link_steps::WriteLagMs(static_cast<int>(fakeLagMs));
-            UE_LOGW("net: FAKE LAG %ld ms on every outbound packet (drill knob net.fakelag_ms)",
-                    fakeLagMs);
-        }
-        const long fakeLossSend =
-            coop::config::ResolveInt(coop::config_registry::rows::net_fakeloss_send_pct);
-        if (fakeLossSend > 0) {
-            fake_link_steps::WriteLossSendPct(static_cast<int>(fakeLossSend));
-            UE_LOGW("net: FAKE LOSS %ld%% of outbound packets discarded (drill knob "
-                    "net.fakeloss_send_pct)", fakeLossSend);
-        }
-        const long fakeLossRecv =
-            coop::config::ResolveInt(coop::config_registry::rows::net_fakeloss_recv_pct);
-        if (fakeLossRecv > 0) {
-            fake_link_steps::WriteLossRecvPct(static_cast<int>(fakeLossRecv));
-            UE_LOGW("net: FAKE LOSS %ld%% of received packets discarded (drill knob "
-                    "net.fakeloss_recv_pct)", fakeLossRecv);
-        }
-        const long fakeJitterMs =
-            coop::config::ResolveInt(coop::config_registry::rows::net_fakejitter_ms);
-        if (fakeJitterMs > 0) {
-            fake_link_steps::WriteJitterMs(static_cast<int>(fakeJitterMs));
-            UE_LOGW("net: FAKE JITTER mean %ld ms on every outbound packet (drill knob "
-                    "net.fakejitter_ms)", fakeJitterMs);
-        }
         // The reordering knob, the same physics on the receiving side: a LAN delivers in order, so
         // without it no run ever exercises a stream's newest-wins store against an older datagram.
         const long reorderPct =
@@ -222,8 +185,13 @@ bool Session::Start(const Config& cfg, Refusal* why) {
     ResetOutboundStreams();
 
     if (!EnsureGnsInit()) return false;
-    // A new session's step schedule and origins; its keys are written only when an origin comes due.
+    // A new session's fake-link globals (the rows' values), step schedule and origins; a step's keys
+    // are written only when its origin comes due.
     fake_link_steps::Arm();
+    // The step parser's selftest sits beside Arm, its only caller and the first reader of
+    // net.fakelink_steps, once per process: a red parser logs its line next to the "armed" line of
+    // the text it parsed, and the config is read by now. The result is logged, not acted on, like
+    // the harness's net selftests.
     static const bool kFakeLinkStepsOk = fake_link_steps::RunSelftest();
     (void)kFakeLinkStepsOk;
 
