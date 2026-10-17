@@ -96,6 +96,7 @@
 #include "coop/dev/pry_drill.h"  // [dev] a stuck pryable pried off its wall, watched on both peers
 #include "coop/dev/recycled_slot_drill.h"  // [dev] a recycled object slot, staged on the local pawn
 #include "coop/dev/rng_roll_census.h"  // the dev roll census
+#include "coop/dev/server_breaker_census.h"  // [dev] the server breaker's inputs, every 30 s
 #include "coop/dev/rollover_watch.h"  // [dev] the day rollover: its verbs, the pulses' consumers, the day numbers and the hash digest
 #include "coop/dev/roster_token_selftest.h"  // [dev] successor-ban drill (moderation token vs a recycled slot)
 #include "coop/dev/run_and_wait_selftest.h"  // [dev] the one game-thread wait's five endings, provoked
@@ -114,6 +115,7 @@ namespace coop::dev::dev_lanes {
 
 void Install(coop::net::Session& session) {
     coop::dev::rng_roll_census::Install(&session);  // [dev] driver/QuitGame interceptors (no-op unless rng_roll_census=1)
+    coop::dev::server_breaker_census::Install(&session);  // [dev] the server breaker census (no-op unless server_breaker_census=1)
     coop::dev::desk_diag::Install(&session);  // [dev] desk divergence census: per-peer desk/comp/dish/coordLog snapshot (no-op unless desk_diag=1)
     coop::dev::rollover_watch::Install(&session);  // [dev] the day rollover instrument (no-op unless rollover_watch=1)
     coop::dev::midnight_drill::Install(&session);  // [dev] the midnight drill (no-op unless midnight_drill is set)
@@ -223,6 +225,7 @@ void TickLoadWindow(coop::net::Session& session) {
 
 void TickDrills(coop::net::Session& session) {
     coop::dev::rng_roll_census::Tick();  // [dev] the roll censuses (a single bool read when off)
+    coop::dev::server_breaker_census::Tick();  // [dev] the server breaker census (a single bool read when off)
     coop::dev::desk_diag::Tick();  // [dev] desk divergence census (single bool read when off; self-throttled)
     coop::dev::rollover_watch::Tick();  // [dev] the day rollover (a single bool read when off)
     coop::dev::midnight_drill::Tick();  // [dev] the midnight drill's phases (a single enum read when off)

@@ -55,5 +55,7 @@ CFG_FLAG(script_gate_log, "script_gate_log", "dev", false, nullptr,
     "Diagnostic logging for the script-body gate's consumers (the kerfur form assembler's per-verb lines).")
 CFG_FLAG(rng_roll_census, "rng_roll_census", "dev", false, nullptr,
     "Diagnostic census: RNG roll sites.")
+CFG_FLAG(server_breaker_census, "server_breaker_census", "dev", false, "VOTVCOOP_SERVER_BREAKER_CENSUS",
+    "Diagnostic census (BOTH peers): every 30 s the server breaker's inputs in one line (its ticker, the game mode byte, the difficulty, the day, the server list against the live boxes, the broken count against the boxes actually broken), and a line per breakServer, fix and break_type. Read-only.")
 CFG_FLAG(leak_probe, "leak_probe", "dev", false, nullptr,
     "Diagnostic probe: object/memory leak counters.")
