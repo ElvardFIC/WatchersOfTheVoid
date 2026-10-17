@@ -433,7 +433,7 @@ struct Walker {
     // The record of the call opcode just read at `at`, reserved before its operands so a call nested in
     // them lists after it; the callee is its first operand (a pointer, or an FName's index and number).
     size_t BeginCall(uint8_t code, size_t at) {
-        script_calls::CallSite site{code, nullptr, 0, 0, static_cast<int32_t>(at), 0, {}, 0};
+        script_calls::CallSite site{code, nullptr, 0, 0, static_cast<int32_t>(at), 0, {}, 0, false};
         if (IsObjectCallOp(code)) {
             if (pos + sizeof(void*) <= n) std::memcpy(&site.callee, s + pos, sizeof(void*));
         } else if (pos + 12 <= n) {
@@ -456,6 +456,7 @@ struct Walker {
             std::memcpy(&site.locals[site.localCount++], s + pos, sizeof(void*));
             return;
         }
+        site.localsTruncated = true;
         static std::atomic<bool> said{false};
         if (!said.exchange(true, std::memory_order_relaxed))
             UE_LOGI("script_calls: a call takes more than %zu locals; the first %zu are kept", std::size(site.locals),

@@ -130,7 +130,7 @@ void CheckListener() {
     PL::Registry& reg = PL::Registry::Get();
     constexpr uint8_t kSpareSlot = PL::kMaxPeers - 1;
     if (reg.LocalPeerId() == kSpareSlot || reg.Puppet(kSpareSlot) || reg.GetPlayerElement(kSpareSlot)) {
-        Fail("listener", "the spare slot %u is in use", static_cast<unsigned>(kSpareSlot));
+        UE_LOGI("[PI-2] ABANDONED listener slot in use");
         return;
     }
     // Never spawned: GetActor() is null, which is all the registry's count reads of it.
@@ -229,7 +229,7 @@ bool Ready(coop::net::Session* session) {
                            : coop::net_pump::HasAnnouncedWorldReady();
     if (!up || !ue_wrap::object_index::ClassByName(L"lib_C") || !reg.Local()) return false;
     coop::RemotePlayer* peer = reg.Puppet(PeerSlot());
-    return peer && peer->GetActor();
+    return peer && peer->valid();
 }
 
 void RunChecks() {

@@ -5,12 +5,14 @@
 
 #include "script_bytecode.h"
 #include "ue_wrap/core/hot_path_guard.h"
+#include "ue_wrap/core/log.h"
 #include "ue_wrap/core/script_calls.h"
 #include "ue_wrap/core/sdk_profile.h"
 
 #include <windows.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cwchar>
 #include <iterator>
 #include <string>
@@ -457,10 +459,13 @@ bool SameCallee(const CallSite& site, void* ufunction) {
     return site.callee == ufunction;
 }
 
-bool CallHasLocal(const CallSite& site, const wchar_t* localName) {
-    UE_ASSERT_GAME_THREAD("script_calls::CallHasLocal");
-    if (!localName) return false;
-    namespace F = ue_wrap::script_fingerprint;
+namespace {
+
+namespace F = ue_wrap::script_fingerprint;
+
+// The name compare over the stored property pointers, which are engine memory (no SEH in this function:
+// it owns strings).
+bool HasLocalRead(const CallSite& site, const wchar_t* localName) {
     F::detail::Ctx c;
     if (F::g_pass) c.names = &F::g_pass->names;
     const size_t want = std::wcslen(localName);
@@ -478,6 +483,36 @@ bool CallHasLocal(const CallSite& site, const wchar_t* localName) {
         if (same) return true;
     }
     return false;
+}
+
+// A read fault is absorbed as "no match", the same wrap ListCallsSEH gives the walk.
+int HasLocalSEH(const CallSite* site, const wchar_t* localName, bool* found) {
+    __try {
+        *found = HasLocalRead(*site, localName);
+        return 0;
+    } __except (F::ReadFaultFilter(GetExceptionCode())) {
+        return 1;
+    }
+}
+
+}  // namespace
+
+bool CallHasLocal(const CallSite& site, const wchar_t* localName) {
+    UE_ASSERT_GAME_THREAD("script_calls::CallHasLocal");
+    if (!localName) return false;
+    bool found = false;
+    if (HasLocalSEH(&site, localName, &found)) {
+        static std::atomic<bool> faulted{false};
+        if (!faulted.exchange(true, std::memory_order_relaxed))
+            UE_LOGE("script_calls: CallHasLocal faulted reading a stored local; the CallSite outlived its class?");
+        return false;
+    }
+    if (!found && site.localsTruncated) {
+        static std::atomic<bool> said{false};
+        if (!said.exchange(true, std::memory_order_relaxed))
+            UE_LOGI("script_calls: CallHasLocal asked of a call with more locals than it stores; false is not known");
+    }
+    return found;
 }
 
 }  // namespace ue_wrap::script_calls

@@ -21,7 +21,8 @@ namespace ue_wrap::script_calls {
 // the call's last operand, which is where a native post hook sees the frame's code pointer. `locals`
 // holds the FProperty* of each EX_LocalVariable / EX_LocalOutVariable that is itself one of the call's
 // parameters (not one nested inside a parameter's expression), in parameter order; `localCount` is how
-// many it holds, the first six at most.
+// many it holds, the first six at most; `localsTruncated` is set when the call took more than six, so
+// `locals` is then not the whole list.
 struct CallSite {
     uint8_t  op;
     void*    callee;
@@ -31,6 +32,7 @@ struct CallSite {
     int32_t  end;
     void*    locals[6];
     uint8_t  localCount;
+    bool     localsTruncated;
 };
 
 // Every call expression of `ufunction`'s bytecode, the fingerprint's own order: a plain function in its
@@ -50,7 +52,12 @@ bool SameCallee(const CallSite& site, void* ufunction);
 
 // Does one of `site`'s recorded locals carry exactly the name `localName`: the whole name, its number
 // included and case ignored, so "x_overlappingactors" does not match "x_overlappingactors_1" (the
-// engine renders a name of number n+1 as "_n"). Game thread.
+// engine renders a name of number n+1 as "_n"). A site with `localsTruncated` whose stored locals do not
+// hold the name answers false and logs once: the name may be among the dropped ones, so false there means
+// "not known", never "absent". A CallSite's `locals` are property pointers read at EnumerateCalls and are
+// valid only while the function's class stays loaded: a consumer calls CallHasLocal in the same resolve
+// as EnumerateCalls and re-resolves when object_index::ClassUnlistVersion has moved. The read runs under
+// a fault guard and answers false on a fault. Game thread.
 bool CallHasLocal(const CallSite& site, const wchar_t* localName);
 
 }  // namespace ue_wrap::script_calls

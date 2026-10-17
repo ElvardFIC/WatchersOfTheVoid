@@ -82,15 +82,14 @@ public:
     uint8_t PeerIdOfActor(void* actor);
 
     // True if `actor` is a puppet's actor (IsPuppet) or the ragdoll display body of a registered puppet
-    // (RemotePlayer::RagdollBody, non-null). False for null. The ragdoll body is compared as a pointer
-    // and never dereferenced, so a body freed within the frame is at worst one stale compare.
+    // (RemotePlayer::RagdollBody, non-null, and live at its recorded object-array index, so a recycled
+    // address reads false). False for null. The puppet's own actor is a pointer compare; no body is
+    // dereferenced.
     bool IsPuppetBody(void* actor);
 
     // The peer session id of the puppet whose actor or ragdoll display body `actor` is, or unknown.
     // Unlike PeerIdOfActor it does not answer for the local player.
     uint8_t PeerIdOfBody(void* actor);
-
-    // The puppet count.
 
     // Called with the number of registered puppets; a plain function, no context.
     using PuppetCountFn = void (*)(int count);
@@ -99,7 +98,10 @@ public:
     // into a list). Calls `fn` once, immediately, with the current count, so a consumer set up after
     // puppets exist starts in sync, then after each RegisterPuppet / UnregisterPuppet / ClearPuppet
     // that changes the count of registered puppets. A null `fn` is stored and never called. Returns the
-    // previous listener so a caller can put it back. Game thread only.
+    // previous listener so a caller can put it back. The listener runs on the game thread and can fire
+    // inside a puppet's deferred spawn: RegisterPuppet runs in the before-finish callback, before the
+    // actor's BeginPlay. It must be O(1) and must not call the registry (no Register, Unregister or Clear:
+    // the notify has no re-entry latch). Game thread only.
     PuppetCountFn SetPuppetCountListener(PuppetCountFn fn);
 
     // The Element shadow.

@@ -50,6 +50,16 @@ int RemoveCore(uint8_t* locals, int32_t arrayOffset, bool (*drop)(void*, void*),
     return dropped;
 }
 
+// RemoveCore plus the public contract on `remaining`: written on a removal, left as it was on a refusal.
+// What RemoveActors runs, without its log, so the selftest proves the code the public entry runs.
+int RemoveInto(uint8_t* locals, int32_t arrayOffset, bool (*drop)(void*, void*), void* ctx, int* remaining,
+               const char** why) {
+    int32_t kept = 0;
+    const int dropped = RemoveCore(locals, arrayOffset, drop, ctx, why, &kept);
+    if (dropped >= 0 && remaining) *remaining = kept;
+    return dropped;
+}
+
 bool FitsHit(const HitLayout& l) {
     return l.size > 0 && l.actor >= 0 && l.component >= 0 && l.actor + kWeakBytes <= l.size &&
            l.component + kWeakBytes <= l.size;
@@ -62,9 +72,7 @@ std::atomic<bool> g_selftestPassed{false};
 int RemoveActors(uint8_t* locals, int32_t arrayOffset, bool (*drop)(void* ctx, void* actor), void* ctx,
                  int* remaining) {
     const char* why = nullptr;
-    int32_t kept = 0;
-    const int dropped = RemoveCore(locals, arrayOffset, drop, ctx, &why, &kept);
-    if (dropped >= 0 && remaining) *remaining = kept;
+    const int dropped = RemoveInto(locals, arrayOffset, drop, ctx, remaining, &why);
     if (dropped < 0) {
         static std::atomic<bool> s_said{false};
         if (!s_said.exchange(true, std::memory_order_relaxed))
@@ -143,17 +151,20 @@ bool RunSelftest() {
     std::memcpy(bad + kArrayAt, &over, sizeof(over));
     uint8_t badCopy[96];
     std::memcpy(badCopy, bad, sizeof(bad));
-    int32_t keptOnRefusal = -7;
-    ok(RemoveCore(bad, kArrayAt, +dropTwo, &which, &why, &keptOnRefusal) == -1 && why &&
-           std::memcmp(bad, badCopy, sizeof(bad)) == 0 && keptOnRefusal == -7,
+    int refusedRemaining = -7;
+    ok(RemoveInto(bad, kArrayAt, +dropTwo, &which, &refusedRemaining, &why) == -1 && why &&
+           std::memcmp(bad, badCopy, sizeof(bad)) == 0 && refusedRemaining == -7,
        "a count past the capacity is refused, left alone, and writes no remaining");
     const ArrayView nodata{nullptr, 2, 8};
     std::memcpy(bad + kArrayAt, &nodata, sizeof(nodata));
-    ok(RemoveCore(bad, kArrayAt, +dropTwo, &which, &why) == -1, "a null buffer with a count is refused");
+    ok(RemoveInto(bad, kArrayAt, +dropTwo, &which, &refusedRemaining, &why) == -1 && refusedRemaining == -7,
+       "a null buffer with a count is refused");
     const ArrayView negative{reinterpret_cast<uint8_t*>(fake), -1, 8};
     std::memcpy(bad + kArrayAt, &negative, sizeof(negative));
-    ok(RemoveCore(bad, kArrayAt, +dropTwo, &which, &why) == -1, "a negative count is refused");
-    ok(RemoveCore(locals, -1, +dropTwo, &which, &why) == -1 && RemoveCore(nullptr, kArrayAt, +dropTwo, &which, &why) == -1,
+    ok(RemoveInto(bad, kArrayAt, +dropTwo, &which, &refusedRemaining, &why) == -1 && refusedRemaining == -7,
+       "a negative count is refused");
+    ok(RemoveInto(locals, -1, +dropTwo, &which, &refusedRemaining, &why) == -1 &&
+           RemoveInto(nullptr, kArrayAt, +dropTwo, &which, &refusedRemaining, &why) == -1 && refusedRemaining == -7,
        "a negative offset and null locals are refused");
 
     // An FHitResult stand-in with synthetic member offsets: both weak pointers become the null value and no
