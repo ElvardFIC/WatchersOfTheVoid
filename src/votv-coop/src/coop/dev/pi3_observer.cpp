@@ -4,6 +4,7 @@
 
 #include "coop/player/players_registry.h"
 #include "ue_wrap/core/cached_obj_ref.h"
+#include "ue_wrap/core/game_thread.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/object_index.h"
 #include "ue_wrap/core/reflection.h"
@@ -22,6 +23,7 @@ namespace coop::dev::pi3_observer {
 namespace {
 
 namespace R  = ue_wrap::reflection;
+namespace GT = ue_wrap::game_thread;
 namespace sg = ue_wrap::script_gate;
 namespace UH = ue_wrap::ufunction_hook;
 namespace OI = ue_wrap::object_index;
@@ -272,8 +274,9 @@ sg::Verdict OnContactPre(const sg::Call& call) {
 }
 
 // The native hooks attribute by FFrame::Object, the Blueprint whose bytecode made the call. A pre hook and a name
-// watch forward an off-thread call untouched (ufunction_hook.h: "Off the game thread it forwards untouched"); a post
-// hook is game-thread code by that facility's contract.
+// watch forward an off-thread call untouched (ufunction_hook.h: "Off the game thread it forwards untouched"). Each
+// post hook returns first off the game thread, the shape of the tree's other post callbacks
+// (coop/props/host_spawn_watcher.cpp OnSpawnPost): these write the observer's plain statics.
 sg::Verdict OnQuitPre(void*, void* source, const uint8_t*) {
     if (!Attributed(source)) return sg::Verdict::Run;
     Note(kQuit, true);
@@ -281,19 +284,23 @@ sg::Verdict OnQuitPre(void*, void* source, const uint8_t*) {
 }
 
 void OnSetRotationPost(void* context, void* source, void*) {
+    if (!GT::IsGameThread()) return;
     if (Attributed(source) && IsPlayerController(context)) Note(kSetRot, false);
 }
 
 void OnPlaySoundPost(void*, void* source, void*) {
+    if (!GT::IsGameThread()) return;
     if (Attributed(source)) Note(kPlaySound, false);
 }
 
 void OnAddViewportPost(void*, void* source, void*) {
+    if (!GT::IsGameThread()) return;
     if (Attributed(source)) Note(kAddViewport, false);
 }
 
 // A gib: a deferred spawn whose result is a prop.
 void OnSpawnPost(void*, void* source, void* result) {
+    if (!GT::IsGameThread()) return;
     if (!result || !Attributed(source)) return;
     void* prop = OI::ClassByName(P::name::PropClass);
     if (prop && R::IsDescendantOfAny(R::ClassOf(result), &prop, 1)) Note(kGib, false);
@@ -303,6 +310,7 @@ void OnSpawnPost(void*, void* source, void* result) {
 // so every verb of that birth is recorded by the time this post fires, or never will be. The result is the finished
 // actor; the match is by the class names, as a caller's is, so a mirror (no bound site) is counted too.
 void OnFinishPost(void*, void*, void* result) {
+    if (!GT::IsGameThread()) return;
     if (g_armed && result && ChainHasArmedName(R::ClassOf(result))) Note(kBirth, false);
 }
 
