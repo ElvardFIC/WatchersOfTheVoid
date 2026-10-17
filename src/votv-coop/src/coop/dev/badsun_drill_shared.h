@@ -48,7 +48,8 @@ enum class Arm {
     // copy; when a rejoining slot's world is taken and not yet ready it destroys that copy, so the blob holds one the
     // host no longer has. Joiner PASS: the seed applied absent, the lane's destroyed count 1, no copy 10 s later.
     // INCONCLUSIVE when the seed said present, the blob carried no copy, or its copy was active. FAIL when the seed
-    // applied absent to a live copy and destroyed none.
+    // applied absent to a live copy and destroyed none. The host's session ends when the life-1 client leaves, so its
+    // drill re-arms and resumes on the copy this process made.
     AbsentStale,
 };
 

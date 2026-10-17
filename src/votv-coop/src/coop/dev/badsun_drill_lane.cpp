@@ -1,6 +1,7 @@
 // coop/dev/badsun_drill_lane.cpp -- the Bad Sun drill's six lane arms: the host's existence of a Bad Sun against
 // every peer's own copies (coop/world/weather_badsun). See badsun_drill_shared.h for what each arm sets up and
-// judges. Every arm is readiness-armed on the join being over and every wait ends on a state this peer can read; the
+// judges. absent_stale's host resumes after its session ends at the rejoin, on the copy it made. Every arm is
+// readiness-armed on the join being over and every wait ends on a state this peer can read; the
 // bounds below only end a phase that did not come. The lane's own counters are the receiver evidence.
 
 #include "badsun_drill_shared.h"  // co-located private header (src tree, not include/)
@@ -233,6 +234,10 @@ bool Take(bool host, Snap& out) {
 
 uint64_t RollRan() { return coop::dev::rollover_watch::RanCount(L"Spawn Bad Sun"); }
 
+// absent_stale, the HOST: set once this process's own Spawn Bad Sun made the arm's copy. LaneReset keeps it: the host's
+// session ends when the last client leaves for the rejoin, and only a copy this process made may be resumed on.
+bool g_staleSpawned = false;
+
 // ---- the host's setup, after the join ------------------------------------------------------------------------
 
 void HostSetup() {
@@ -294,6 +299,7 @@ void HostSetup() {
     case Arm::AbsentStale:
         if (!coop::dev::set_clock::ApplyTimeFraction(kAt0200)) return Fail(true, "the clock set to 02:00 was refused");
         if (!BS::CallSpawn()) return Fail(true, "the gamemode's Spawn Bad Sun did not run");
+        g_staleSpawned = true;
         UE_LOGI("badsun_drill: [host] slot %d's join is over; clock to 02:00 and Spawn Bad Sun called; the copy stays "
                 "inactive outside 07:00..18:00", g_slot);
         Enter(P::HostCopy, kSetupBound);
@@ -672,6 +678,9 @@ void OnDeadline(bool host) {
         if (removes > g_c0.removesRan && sn.n == 0)
             return Fail(false, "this copy ended but the sky's sunIntensityMult did not read within %d s of the host's absent",
                         static_cast<int>(kOwnRemoveBound.count()));
+        if (removes > g_c0.removesRan)
+            return Fail(false, "this copy's own remove() ran but %d copies are still live %d s after the host's absent", sn.n,
+                        static_cast<int>(kOwnRemoveBound.count()));
         return Fail(false, "this copy's own remove() did not run within %d s of the host's absent (removes %llu)", static_cast<int>(kOwnRemoveBound.count()), static_cast<unsigned long long>(removes));
     }
     default:            return Fail(host, "timed out in phase %d", static_cast<int>(g_phase));
@@ -681,13 +690,20 @@ void OnDeadline(bool host) {
 // absent_stale, the HOST: the last client leaving ends the host's session too, so the drill re-arms from Begin at the
 // rejoin while its world keeps the copy it made. One inactive copy at that arm is this run's own, and the arm resumes
 // at the window it waits for (a joiner's world taken, not yet ready) instead of reading it as a stale world.
-bool ResumeStaleHost() {
+// 0 = not a resume (the arm starts as usual), 1 = resumed, -1 = a resume whose read failed: Begin asks again.
+int ResumeStaleHost() {
+    if (!g_staleSpawned) return 0;
     Snap sn;
-    if (!Take(true, sn) || sn.n != 1 || sn.inactive != 1) return false;
+    if (!Take(true, sn)) return -1;
+    if (sn.n != 1 || sn.inactive != 1) {
+        Inconclusive(true, "resumed after the session's end with %d copies (%d inactive), not this run's one", sn.n,
+                     sn.inactive);
+        return 1;
+    }
     UE_LOGI("badsun_drill: [host] arm absent_stale resumed after the session's end: this run's inactive copy is here; "
             "waiting for the joiner's world to be taken");
     Enter(P::HostRejoin, kRejoinBound);
-    return true;
+    return 1;
 }
 
 }  // namespace
@@ -695,7 +711,10 @@ bool ResumeStaleHost() {
 void LaneTick(coop::net::Session* s, bool host) {
     if (g_phase == P::Done) return;
     if (g_phase == P::Begin) {
-        if (host && ArmOf() == Arm::AbsentStale && ResumeStaleHost()) return;
+        if (host && ArmOf() == Arm::AbsentStale) {
+            const int r = ResumeStaleHost();
+            if (r != 0) return;  // resumed, judged, or asked again next tick
+        }
         Enter(P::WaitJoin, kJoinBound);
         UE_LOGI("badsun_drill: [%s] arm %s armed; waiting for the join to be over", RoleName(host), ArmName());
     }
