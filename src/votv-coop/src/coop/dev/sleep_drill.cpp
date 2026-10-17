@@ -209,8 +209,8 @@ void HostGoToBed() {
 }
 
 // A world event wakes a sleeper natively: a sleep it ended measured nothing, so the arm says so and ends.
-// Run the arms with mp.py's --host-fresh: the rig save holds a saved Bad Sun, an active event from 07:00 to
-// 18:00 game time (badSun_C's own poll), and the rig's sleep starts just before 07:00, so x20 meets it at once.
+// Run the arms with mp.py's --host-fresh: the rig save holds a saved Bad Sun, active from its first poll inside
+// 07:00..18:00 until its widget's fade after 18:00, and the save's clock crosses 07:00 during a join, so x20 meets it.
 bool EventWoke(bool host, float need) {
     int32_t events = 0;
     if (need >= kRestedNeed || !AE::ReadCount(events) || events <= 0) return false;
