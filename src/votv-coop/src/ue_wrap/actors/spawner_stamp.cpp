@@ -75,7 +75,10 @@ bool Stamp(void* actorClass, void* deferredActor) {
     // A class the index does not list yet (id 0) cannot be told from a reloaded one: it is resolved afresh.
     const uint64_t listing = OI::ClassListingId(actorClass);
     if (listing == 0 || e.cls != actorClass || e.listing != listing) {
-        for (const facts::Function* fact : row.rows) facts::Resolve(*fact);
+        // Each row on its class through the object index (no array walk); a class not loaded here, as the spawner's
+        // often is on a client, is left for the census to find.
+        for (const facts::Function* fact : row.rows)
+            if (void* cls = OI::ClassByName(fact->Class())) facts::ResolveOn(*fact, cls);
         e = Entry{actorClass, listing, StringOffset(row, actorClass), false, false};
     }
     if (deferredActor && e.off >= 0 && field_io::WriteFStringField(deferredActor, e.off, row.value)) {

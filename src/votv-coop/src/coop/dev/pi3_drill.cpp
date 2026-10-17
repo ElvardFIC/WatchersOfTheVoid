@@ -562,7 +562,9 @@ void Install(coop::net::Session*) {
 
 void Tick(coop::net::Session* session) {
     const ArmId arm = ArmOf();
-    if (arm == ArmId::Off || !session || !session->connected() || (g_latched && !g_active)) return;
+    if (arm == ArmId::Off || !session || (g_latched && !g_active)) return;
+    // A Hold site keeps its camera on the orb while no client is connected (the join run's gap between lives).
+    if (!session->connected() && g_phase != Phase::Hold) return;
     OB::Tick();
     if (!g_worldUpAt) {
         if (!PL::Registry::Get().Local()) return;
