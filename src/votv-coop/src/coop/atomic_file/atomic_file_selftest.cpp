@@ -108,7 +108,7 @@ void SweepDeadScratch(const std::wstring& exeDir) {
     ::FindClose(h);
 }
 
-// The key file's access list shape (coop/net/peer_identity KeyFileAcl): this account and the
+// The key file's access list shape (coop/net/identity_crypto KeyFileAcl): this account and the
 // system, full control, nothing inherited, protected. Built here because this module may not
 // include coop/net.
 struct ProtectedDacl {

@@ -382,6 +382,8 @@ set(VOTVCOOP_SOURCES
     src/coop/net/connect_history.cpp
     src/coop/net/connection_tuning.cpp
     src/coop/net/lobby_password.cpp
+    src/coop/net/identity_crypto.cpp
+    src/coop/net/identity_key_file.cpp
     src/coop/net/peer_identity.cpp
     src/coop/net/session.cpp
     src/coop/net/session_receive.cpp
