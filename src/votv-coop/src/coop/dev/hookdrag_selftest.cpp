@@ -94,7 +94,9 @@ constexpr float    kPickRadiusCm =  1500.f;
 constexpr float    kWalkCm       =  1200.f;
 constexpr float    kArriveCm     =   100.f; // a leg ends this close to its point (the runs on record
                                             // ended 7..22 cm from the start they walked back to)
-constexpr float    kRestCm       =     5.f; // a sample this close to the one before it is a prop at rest ...
+constexpr float    kRestCm       =     1.f; // a sample this close to the one before it (4 cm/s) is a prop at
+                                            // rest: at 5 cm (20 cm/s) a prop still creeping down a slope
+                                            // read as rested and the peer's last sample was not its rest ...
 constexpr int      kRestSamples  =      12; // ... and this many in a row (3 s) end the run: the verdict's "final"
                                             // reads the last 3 s, which must then be rest, not the coast
 // The director's own bound on one leg: a fixed share and the straight length at a pace under half the
