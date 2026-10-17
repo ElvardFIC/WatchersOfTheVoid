@@ -1,5 +1,5 @@
-// coop/config/config_registry_rows_dev_probes.inc -- the [dev] diagnostic probe and census rows of the entity
-// and prop seams: the place/birth key probe, the spawn match probe, the lifetime trace, the pinecone and
+// coop/config/config_registry_rows_dev_probes.inc -- the [dev] diagnostic probes and censuses that sat
+// together in the dev row list, moved in their order: the place/birth key probe, the spawn match probe, the lifetime trace, the pinecone and
 // store readouts, the hotbar icon readout, the heap, drone and pile probes, the performance probe and its
 // variants, the light probes and census, the script gate log, the RNG roll census and the leak probe. Included by
 // config_registry_rows_dev.inc where they stood, so each row keeps its place in every expansion of the list. The

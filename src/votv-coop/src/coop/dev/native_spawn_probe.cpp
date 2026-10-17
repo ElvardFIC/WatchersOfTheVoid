@@ -110,9 +110,11 @@ void SayKey(const char* verb, const Key& k, bool counted) {
             Render(k.src).c_str(), Render(k.fn).c_str(), k.offset, tail);
 }
 
-// The post hook: game thread, deep inside the engine spawn, so allocation-free until a new key prints or an orb is held.
-// The game-thread guard is the shape of the tree's other post callbacks (coop/props/host_spawn_watcher.cpp
-// OnSpawnPost): spawning is game-thread-only, and the plain statics below are touched by nothing else.
+// The post hook: game thread, deep inside the engine spawn, so allocation-free until a new key prints or an
+// orb is held.
+// The game-thread guard is the one host_spawn_watcher's OnSpawnPost carries (coop/props/host_spawn_watcher.cpp):
+// spawning is game-thread-only, so it never misses a spawn, and it keeps the plain statics below one
+// thread's.
 void OnSpawnPost(void*, void* source, void* result) {
     if (!GT::IsGameThread()) return;
     if (!g_session || !g_session->running()) return;  // no session: not a measurement
@@ -171,7 +173,7 @@ void TryHook() {
 void DriveInstance(void*, void* obj, int32_t) {
     auto* base = static_cast<uint8_t*>(obj);
     bool  known = false;
-    for (const Spawner& s : g_spawners) known = known || s.ref.Raw() == obj;
+    for (const Spawner& s : g_spawners) known = known || s.ref.Is(obj);
     if (!known) {
         g_spawners.push_back(Spawner{{}, *reinterpret_cast<float*>(base + g_angleOff)});
         g_spawners.back().ref.Set(obj);
@@ -288,12 +290,15 @@ void OnDisconnect() {
         g_orbs.clear();
         UE_LOGI("[NB-0] orb ABANDONED");
         g_orb = Orb::Wait;
-        g_orbStartAt = 0;
-        g_orbInstances = 0;
     } else if (g_orb == Orb::Verify) {
         ConcludeSpawned();
     }
-    g_session = nullptr;  // the record is silent until the next session's Install
+    if (g_orb == Orb::Wait) {  // a session that ended before or during the drive starts the next one's clock afresh
+        g_orbStartAt = 0;
+        g_orbInstances = 0;
+    }
+    // Cleared until the next session's Install sets it; the record also returns while no session runs.
+    g_session = nullptr;
 }
 
 }  // namespace coop::dev::native_spawn_probe

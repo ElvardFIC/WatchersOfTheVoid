@@ -275,8 +275,8 @@ sg::Verdict OnContactPre(const sg::Call& call) {
 
 // The native hooks attribute by FFrame::Object, the Blueprint whose bytecode made the call. A pre hook and a name
 // watch forward an off-thread call untouched (ufunction_hook.h: "Off the game thread it forwards untouched"). Each
-// post hook returns first off the game thread, the shape of the tree's other post callbacks
-// (coop/props/host_spawn_watcher.cpp OnSpawnPost): these write the observer's plain statics.
+// post hook returns first off the game thread, as host_spawn_watcher's OnSpawnPost does
+// (coop/props/host_spawn_watcher.cpp): these write the observer's plain statics.
 sg::Verdict OnQuitPre(void*, void* source, const uint8_t*) {
     if (!Attributed(source)) return sg::Verdict::Run;
     Note(kQuit, true);
