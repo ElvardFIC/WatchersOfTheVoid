@@ -1,4 +1,6 @@
-//! The lobby domain's unit tests.
+//! The lobby domain's unit tests. The announce proof through `h_host` is in `tests/proof.rs`.
+
+mod proof;
 
 use super::{
     build_claim_from_body, h_challenge, h_host, host_listed, latest_answer, parse_latest_games, HostCtx, LatestGame,
