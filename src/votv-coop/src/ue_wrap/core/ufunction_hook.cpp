@@ -34,6 +34,8 @@ constexpr int     kMaxPreParams = 16;
 constexpr int     kPreFrameBytes = 256;
 constexpr int     kPreFrameSlack = 8;
 constexpr uint8_t kExEndFunctionParms = 0x16;
+// A const reference is an out reference marked const; a pre hook steps and reads it as an input.
+constexpr uint64_t kConstRef = P::cpf::OutParm | P::cpf::ReferenceParm | P::cpf::ConstParm;
 
 struct Slot {
     void*              ufunction = nullptr;
@@ -58,9 +60,9 @@ struct Slot {
 // is GENERATED from this constant, so growing it means editing this one line. Size it for the
 // whole roster rather than a handful: peers install asymmetrically, so a table that fits one
 // role can be full on the other, and a hook that cannot install makes a fix work on one peer
-// and not the other. The count here covers the standing installs plus the driver natives and
-// QuitGame that a probe patches on top.
-constexpr int kMaxNativeHooks = 40;
+// and not the other. The count here covers the standing installs, a dev build's probes (the driver
+// natives and QuitGame among them) and the natives the puppet-identity rows patch, with headroom.
+constexpr int kMaxNativeHooks = 56;
 Slot g_slots[kMaxNativeHooks];
 int  g_slotCount = 0;
 // The VM's exec-handler table, taken from script_gate by the first pre hook's install.
@@ -265,7 +267,8 @@ bool ReadPreSignature(void* ufunction, Slot& into) {
         const char* why = nullptr;
         const int32_t written = p.size > 4 ? p.size : 4;   // a bool is written as four bytes
         if (p.flags & P::cpf::ReturnParm) why = "a return value, which a refused call would leave unwritten";
-        else if (p.flags & P::cpf::OutParm) why = "an out or reference parameter";
+        else if ((p.flags & P::cpf::OutParm) && (p.flags & kConstRef) != kConstRef)
+            why = "an out parameter, or a reference that is not const";
         else if (!(p.flags & P::cpf::NoDestructor))
             why = "a parameter the engine destroys (a raw frame cannot)";
         else if (count >= kMaxPreParams || p.offset < 0 ||

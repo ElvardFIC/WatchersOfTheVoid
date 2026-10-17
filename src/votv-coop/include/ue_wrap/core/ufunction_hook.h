@@ -96,8 +96,9 @@ using PreNativeCallback = script_gate::Verdict (*)(void* context, void* sourceOb
 // through the same table (script_gate::ExecHandlers) into a frame of its own. Run rewinds the caller's code
 // pointer and forwards, so the original steps them again: the engine's own shape for a native it calls both
 // remotely and locally (UObject::CallFunction). A ProcessEvent call's parameters are read from its frame.
-// Refused at install, logged: a script function, a return value, an out or reference parameter, a parameter
-// the engine must destroy, a frame past this one's, no exec-handler table. Off the game thread it forwards
+// A const reference parameter is read as an input. Refused at install, logged: a script function, a return
+// value, an out parameter or a reference that is not const, a parameter the engine must destroy, a frame
+// past this one's, no exec-handler table. Off the game thread it forwards
 // untouched. A pre hook stays the outermost patch on its function in either install order, so a post hook
 // never reports a call its pre hook refused. `armed` defaults to false, the shape being a seam armed only
 // while a call of the consumer's own runs. Idempotent per (ufunction, cb). Game thread.
