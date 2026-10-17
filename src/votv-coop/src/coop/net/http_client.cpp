@@ -74,11 +74,21 @@ bool SplitHostPort(const std::string& in, std::string& host, uint16_t& port, boo
 
 }  // namespace
 
+// The name a lobby proof is signed for, by the rules of the master's canon_host_name
+// (server/src/common.rs), whose cases server/tests/vectors/master_names.json holds for both sides:
+// the host Request dials, a login ("name@") dropped, one trailing dot dropped, ASCII lower-cased.
+// A host holding a non-ASCII byte has no name: the master compares ASCII only, so the proof for it
+// could never match.
 std::string HostName(const std::string& hostPort) {
     std::string host;
     uint16_t port = 0;
     bool secure = true;
     if (!SplitHostPort(hostPort, host, port, secure)) return std::string();
+    for (char c : host)
+        if (static_cast<unsigned char>(c) >= 0x80) return std::string();
+    const size_t at = host.rfind('@');
+    if (at != std::string::npos) host.erase(0, at + 1);
+    if (!host.empty() && host.back() == '.') host.pop_back();
     for (char& c : host) if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
     return host;
 }

@@ -2,6 +2,7 @@
 
 #include "coop/net/lobby_proof.h"
 
+#include "coop/net/http_client.h"
 #include "coop/net/peer_identity.h"
 #include "identity_crypto.h"  // co-located: the one hex codec the identity is built with
 #include "ue_wrap/core/log.h"
@@ -114,6 +115,28 @@ bool RunSelftestBody() {
               !ShapesOk(identity, nonce, std::string()) &&
               !ShapesOk(identity.substr(1), nonce, masterName),
           "a malformed input passes the shape check");
+
+    // The URL -> signed-name rows: a copy of server/tests/vectors/master_names.json, whose twin test
+    // in the server checks the same rows against canon_host_name. The two must stay equal.
+    struct NameRow { const char* url; const char* name; };
+    static const NameRow kNameRows[] = {
+        {"master.multivoid.dev:10443", "master.multivoid.dev"},
+        {"https://master.multivoid.dev:10443", "master.multivoid.dev"},
+        {"http://203.0.113.7:10443", "203.0.113.7"},
+        {"HTTPS://Master.Multivoid.DEV:10443", "master.multivoid.dev"},
+        {"https://master.multivoid.dev:10443/v1/lobbies", "master.multivoid.dev"},
+        {"https://master.multivoid.dev.:10443", "master.multivoid.dev"},
+        {"https://alice:pw@master.multivoid.dev:10443", "master.multivoid.dev"},
+        {"[::1]:10443", "[::1]"},
+        {"https://[2001:db8::1]:10443/", "[2001:db8::1]"},
+        {"https://b\xC3\xBC" "cher.example:10443", ""},
+    };
+    for (const NameRow& row : kNameRows) {
+        const std::string got = http::HostName(row.url);
+        if (got != row.name)
+            UE_LOGE("lobby_proof selftest: HostName(%s) = '%s', want '%s'", row.url, got.c_str(), row.name);
+        check(got == row.name, "a URL does not give the name the master compares");
+    }
 
     // Our own key, when it is loaded: the proof ProofHex makes verifies, and not for another name.
     const std::string& self = peer_identity::LocalIdentityString();

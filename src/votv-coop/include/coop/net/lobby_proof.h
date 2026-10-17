@@ -27,8 +27,9 @@ std::string ProofHex(const std::string& identity, const std::string& nonceHex,
                      const std::string& masterName);
 
 // The blob's bytes against the shared vector, the vector's signature against its identity's key,
-// a flipped bit refused, a proof for another master name refused, and, when our key is loaded, a
-// round trip through our own. Once per process (a later call returns the first run's verdict,
+// a flipped bit refused, a proof for another master name refused, the URL-to-name rows the
+// master's tests check too (through http::HostName), and, when our key is loaded, a round trip
+// through our own. Once per process (a later call returns the first run's verdict,
 // silently); logs an all-pass line or one failure line per failing check. Un-gated, for the
 // reason the other identity selftests are: a proof the master rejects does not crash, it unlists
 // the host.

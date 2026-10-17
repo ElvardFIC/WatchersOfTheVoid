@@ -138,13 +138,25 @@ std::string ErrorWord(const http::Response& resp) {
 // (400) is a bug or a misconfigured master and is not retried. A master with no challenge route is
 // an old master and gets the create it understands, unproved: a P2P host's signaling and TURN
 // come only from that answer, so an unlisted host would fall back to a direct listen.
-http::Response CreateLobby(const AnnounceRequest& r, bool listed, const BuildClaim& claim) {
+//
+// `stop`, when given, is the flag whose being set ends the work: before every POST after the first
+// the flag and the process shutdown are read, so a slow master cannot hold a stopping caller for
+// the sum of four requests. An abandoned create returns a response that is not ok.
+http::Response CreateLobby(const AnnounceRequest& r, bool listed, const BuildClaim& claim,
+                           const std::atomic<bool>* stop) {
+    auto stopped = [stop] {
+        const bool now = coop::shutdown::IsShuttingDown() || (stop != nullptr && stop->load());
+        if (now) UE_LOGI("lobby: host announce -- stopped before the next request");
+        return now;
+    };
     http::Response resp;
     for (int attempt = 0; attempt < 2; ++attempt) {
+        if (attempt > 0 && stopped()) return http::Response{};
         std::string nonce;
         http::Response failure;
         const Challenge ch = FetchChallenge(r, nonce, failure);
         if (ch == Challenge::Failed) return failure;
+        if (stopped()) return http::Response{};
         if (ch == Challenge::OldMaster) {
             static std::atomic<bool> said{false};
             if (!said.exchange(true))
@@ -167,11 +179,15 @@ http::Response CreateLobby(const AnnounceRequest& r, bool listed, const BuildCla
             UE_LOGW("lobby: host announce -- the master refused the proof (bad-proof)");
             return resp;
         }
+        if (resp.status == 403) {
+            UE_LOGW("lobby: host announce -- the master refuses this build -- update Multivoid");
+            return resp;
+        }
         const bool retryable = (resp.status == 410 && why == "nonce-expired") ||
                                (resp.status == 409 && why == "proof-required");
         if (!retryable) return resp;
         if (attempt == 1 && resp.status == 409)
-            UE_LOGW("lobby: host announce -- the master still wants a proof (proof-required)");
+            UE_LOGW("lobby: host announce -- the master requires a signed announce and refused this one");
     }
     return resp;
 }
@@ -190,7 +206,9 @@ HostInfo LobbyAnnouncer::Host(const std::string& masterUrl, const std::string& n
     const BuildClaim claim = ReadBuildClaim();
     if (claim.present)
         UE_LOGI("lobby: announcing the build claim key=%u sha=%.8s", claim.key, claim.sha.c_str());
-    const http::Response resp = CreateLobby(req, true, claim);
+    // Stop() above left stop_ set (it ends the old heartbeat), so the flag cannot be read here:
+    // only the process shutdown ends this create early.
+    const http::Response resp = CreateLobby(req, true, claim, nullptr);
     // No master address in these lines: they reach the console, and which master was asked is the
     // caller's to name (master_slots::DisplayName).
     if (!resp.ok) { UE_LOGW("lobby: host announce -- master unreachable"); return info; }
@@ -257,7 +275,7 @@ ReannounceResult LobbyAnnouncer::Reannounce() {
     out.listed = listed;
     // Outside mu_: a POST never runs under it. The claim is read again, so the re-announced lobby
     // carries the same one.
-    const http::Response resp = CreateLobby(req, listed, ReadBuildClaim());
+    const http::Response resp = CreateLobby(req, listed, ReadBuildClaim(), &stop_);
     out.reached = resp.ok;
     out.status = resp.status;
     if (!resp.ok || resp.status != 200) return out;

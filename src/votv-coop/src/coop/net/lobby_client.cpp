@@ -19,6 +19,14 @@ namespace {
 
 namespace J = coop::net::jsonu;
 
+// The master clamps each text to this many CHARACTERS (MAX_NAME, MAX_VERSION, MAX_GAME, MAX_WORLD in
+// server/src/lobby.rs); a UTF-8 character is at most 4 bytes.
+constexpr size_t kNameChars = 63;
+constexpr size_t kVersionChars = 23;
+constexpr size_t kGameChars = 23;
+constexpr size_t kWorldChars = 39;
+constexpr size_t kUtf8Max = 4;
+
 // A master-supplied text as the browser may draw it: through the name filter, as a stranger's name.
 // Ill-formed UTF-8 (the JSON parser already refuses it, so this is a backstop) draws as nothing.
 std::string ShownText(const std::string& raw) {
@@ -66,20 +74,22 @@ bool FetchList(const std::string& masterUrl, const std::string& versionFilter,
         if (!e.is_object()) continue;
         LobbyRow r;
         // Length-cap and range-clamp every server-supplied field: a hostile or on-path master must
-        // not feed oversized strings or out-of-range numbers into the browser. The caps mirror the
-        // master's own clamps.
+        // not feed oversized strings or out-of-range numbers into the browser. A text is capped at the
+        // master's own clamp, which counts characters (server/src/lobby.rs MAX_NAME..MAX_GAME), times
+        // the 4 bytes a character takes at most, so a long non-ASCII name is not shortened to a
+        // quarter; the cut still falls on a codepoint boundary (jsonu::StrN).
         r.lobbyId    = J::StrN(e, "lobbyId", 64);
         // Every text the browser draws goes through the name filter after the length cap: the
         // master's bytes are a stranger's, and a name that holds a control, a bidi override or a
         // zero-width character can hide or reorder the text around it.
-        r.name       = ShownText(J::StrN(e, "name", 64));
+        r.name       = ShownText(J::StrN(e, "name", kNameChars * kUtf8Max));
         if (r.name.empty()) r.name = "(unnamed)";
-        r.version    = ShownText(J::StrN(e, "version", 24));
-        r.game       = ShownText(J::StrN(e, "game", 24));  // the game target; empty means a host older than the field
+        r.version    = ShownText(J::StrN(e, "version", kVersionChars * kUtf8Max));
+        r.game       = ShownText(J::StrN(e, "game", kGameChars * kUtf8Max));  // the game target; empty means a host older than the field
         // The game build the host runs, dropped unless it has the reader's shape (a master's bytes are a peer's).
         r.gameBuild  = J::StrN(e, "game_build", 33);
         if (!coop::game_build::KeyShapeOk(r.gameBuild)) r.gameBuild.clear();
-        r.world      = ShownText(J::StrN(e, "world", 40));
+        r.world      = ShownText(J::StrN(e, "world", kWorldChars * kUtf8Max));
         // The key the host advertises, kept only if it is the shape a key is; whether the host
         // PROVED it is the master's word (`proved`), a bool the browser sorts by.
         r.identity   = J::StrN(e, "identity", 68);
@@ -290,7 +300,7 @@ LatestInfo LobbyClient::FetchLatest(const std::string& masterUrl, int timeoutMs)
         for (const auto& e : *git) {
             if (!e.is_object() || info.games.size() >= 16) continue;
             LatestGame g;
-            g.game  = J::StrN(e, "game", 24);
+            g.game  = J::StrN(e, "game", kGameChars * kUtf8Max);
             g.proto = J::IntClamped(e, "proto", 0, 65535);
             g.mod   = J::StrN(e, "mod", 24);
             if (!g.game.empty() && g.proto > 0) info.games.push_back(g);
