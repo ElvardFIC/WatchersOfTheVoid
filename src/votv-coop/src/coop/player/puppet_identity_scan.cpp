@@ -69,6 +69,7 @@ struct ScanRow {
     const wchar_t* local;
     int            pinned;
     void*          resolvedCls;
+    uint64_t       resolvedListing;  // ClassListingId of resolvedCls when the row was resolved
     void*          ubergraph;
     int32_t        outOffset;
     int32_t        ends[kMaxEnds];
@@ -78,11 +79,11 @@ struct ScanRow {
 enum ScanIndex : int { kBirchRow, kErieRow, kShowerRow, kScanCount };
 ScanRow g_scan[kScanCount] = {
     {kBirch, kOverlap, L"birch_C", L"ExecuteUbergraph_birch", L"CallFunc_GetOverlappingActors_OverlappingActors", 5,
-     nullptr, nullptr, -1, {}, 0, false},
+     nullptr, 0, nullptr, -1, {}, 0, false},
     {kErie, kSphere, L"npc_angryErieFlesh_C", L"ExecuteUbergraph_npc_angryErieFlesh",
-     L"CallFunc_SphereOverlapActors_OutActors", 1, nullptr, nullptr, -1, {}, 0, false},
+     L"CallFunc_SphereOverlapActors_OutActors", 1, nullptr, 0, nullptr, -1, {}, 0, false},
     {kShower, kTrace, L"prop_shower_C", L"ExecuteUbergraph_prop_shower", L"CallFunc_LineTraceSingleForObjects_OutHit",
-     1, nullptr, nullptr, -1, {}, 0, false},
+     1, nullptr, 0, nullptr, -1, {}, 0, false},
 };
 
 constexpr uint64_t kNoVersion = UINT64_MAX;
@@ -157,10 +158,13 @@ bool InstallSeam(Seam& seam) {
 }
 
 // One scan row looked at again: its ubergraph, the pinned calls of its native that write its out local, and the
-// local's offset. A row that does not match the pinned count refuses nothing, said once per resolve.
-void ResolveRow(ScanRow& row, void* cls) {
+// local's offset. A row that does not match the pinned count, or the shower's layout that does not resolve,
+// refuses nothing, said once: the row is looked at again only when its own class changes (Resolve), so a failure
+// is neither re-run nor re-said until then.
+void ResolveRow(ScanRow& row, void* cls, uint64_t listing) {
     row.ready = false;
     row.resolvedCls = cls;
+    row.resolvedListing = listing;
     row.ubergraph = nullptr;
     row.outOffset = -1;
     row.endCount = 0;
@@ -226,13 +230,17 @@ void Rearm(int puppets) {
 }
 
 bool Resolve(uint64_t unlistVersion) {
-    const bool versionMoved = unlistVersion != g_scanVer;
+    // A class held non-null changes only through an unload, which moves the number: no lookup while it stands.
+    bool held = true;
+    for (const ScanRow& row : g_scan) held = held && row.resolvedCls;
+    if (held && unlistVersion == g_scanVer) return false;
     bool looked = false;
     for (ScanRow& row : g_scan) {
         void* cls = OI::ClassByName(row.cls);
-        if (!versionMoved && cls == row.resolvedCls) continue;
+        const uint64_t listing = OI::ClassListingId(cls);
+        if (cls == row.resolvedCls && listing == row.resolvedListing) continue;
         looked = true;
-        ResolveRow(row, cls);
+        ResolveRow(row, cls, listing);
     }
     g_scanVer = unlistVersion;
     return looked;
@@ -250,6 +258,7 @@ void Clear() {
     for (ScanRow& row : g_scan) {
         row.ready = false;
         row.resolvedCls = nullptr;
+        row.resolvedListing = 0;
         row.ubergraph = nullptr;
         row.endCount = 0;
     }

@@ -79,39 +79,36 @@ sg::Verdict OnRunTriggerPre(const sg::Call& call);
 sg::Verdict OnGruntPre(const sg::Call& call);
 void OnGruntPost(const sg::Call& call);
 
-// One name watch. Whole: the stub is cancelled for a puppet toucher. BoxMark and GruntMark: the stub marks its
-// scope for a puppet toucher (the grunt's also opens the SetControlRotation window). RunTrigger: the body is
-// cancelled while the box stub's mark is on the chain.
-enum class Kind : uint8_t { Whole, BoxMark, RunTrigger, GruntMark };
-
+// One name watch. OnWholePre cancels the stub for a puppet toucher. OnBoxMarkPre and OnGruntPre mark the stub's
+// scope for a puppet toucher (the grunt's also opens the SetControlRotation window). OnRunTriggerPre cancels the
+// body while the box stub's mark is on the chain.
 struct Watch {
     const ue_wrap::facts::Function* row;
-    Kind                            kind;
     Row                             counter;  // kRowCount: the marking stub, which refuses nothing itself
     sg::PreFn                       pre;
     sg::PostFn                      post;
 };
 
 const Watch kWatches[] = {
-    {&kRowPuppetWispW, Kind::Whole, kWispW, &OnWholePre, nullptr},
-    {&kRowPuppetWispO, Kind::Whole, kWispO, &OnWholePre, nullptr},
-    {&kRowPuppetWispP, Kind::Whole, kWispP, &OnWholePre, nullptr},
-    {&kRowPuppetKelura, Kind::Whole, kKelura, &OnWholePre, nullptr},
-    {&kRowPuppetOrborb, Kind::Whole, kOrborb, &OnWholePre, nullptr},
-    {&kRowPuppetWellTpBegin, Kind::Whole, kWellTpBegin, &OnWholePre, nullptr},
-    {&kRowPuppetWellTpEnd, Kind::Whole, kWellTpEnd, &OnWholePre, nullptr},
-    {&kRowPuppetDreamBoulder, Kind::Whole, kDreamBoulder, &OnWholePre, nullptr},
-    {&kRowPuppetMapTransition, Kind::Whole, kMapTransition, &OnWholePre, nullptr},
-    {&kRowPuppetBoxMark, Kind::BoxMark, kRowCount, &OnBoxMarkPre, nullptr},
-    {&kRowPuppetRunTriggerOpenLevel, Kind::RunTrigger, kTriggerOpenLevel, &OnRunTriggerPre, nullptr},
-    {&kRowPuppetRunTriggerSpikes, Kind::RunTrigger, kTriggerSpikes, &OnRunTriggerPre, nullptr},
-    {&kRowPuppetDreamClimb, Kind::Whole, kDreamClimb, &OnWholePre, nullptr},
-    {&kRowPuppetDreamJump, Kind::Whole, kDreamJump, &OnWholePre, nullptr},
-    {&kRowPuppetDreamRunFin, Kind::Whole, kDreamRunFin, &OnWholePre, nullptr},
-    {&kRowPuppetDreamRunWok, Kind::Whole, kDreamRunWok, &OnWholePre, nullptr},
-    {&kRowPuppetDreamfillDoor, Kind::Whole, kDreamfillDoor, &OnWholePre, nullptr},
-    {&kRowPuppetGruntMark, Kind::GruntMark, kRowCount, &OnGruntPre, &OnGruntPost},
-    {&kRowPuppetSkullzone, Kind::Whole, kSkullzone, &OnWholePre, nullptr},
+    {&kRowPuppetWispW, kWispW, &OnWholePre, nullptr},
+    {&kRowPuppetWispO, kWispO, &OnWholePre, nullptr},
+    {&kRowPuppetWispP, kWispP, &OnWholePre, nullptr},
+    {&kRowPuppetKelura, kKelura, &OnWholePre, nullptr},
+    {&kRowPuppetOrborb, kOrborb, &OnWholePre, nullptr},
+    {&kRowPuppetWellTpBegin, kWellTpBegin, &OnWholePre, nullptr},
+    {&kRowPuppetWellTpEnd, kWellTpEnd, &OnWholePre, nullptr},
+    {&kRowPuppetDreamBoulder, kDreamBoulder, &OnWholePre, nullptr},
+    {&kRowPuppetMapTransition, kMapTransition, &OnWholePre, nullptr},
+    {&kRowPuppetBoxMark, kRowCount, &OnBoxMarkPre, nullptr},
+    {&kRowPuppetRunTriggerOpenLevel, kTriggerOpenLevel, &OnRunTriggerPre, nullptr},
+    {&kRowPuppetRunTriggerSpikes, kTriggerSpikes, &OnRunTriggerPre, nullptr},
+    {&kRowPuppetDreamClimb, kDreamClimb, &OnWholePre, nullptr},
+    {&kRowPuppetDreamJump, kDreamJump, &OnWholePre, nullptr},
+    {&kRowPuppetDreamRunFin, kDreamRunFin, &OnWholePre, nullptr},
+    {&kRowPuppetDreamRunWok, kDreamRunWok, &OnWholePre, nullptr},
+    {&kRowPuppetDreamfillDoor, kDreamfillDoor, &OnWholePre, nullptr},
+    {&kRowPuppetGruntMark, kRowCount, &OnGruntPre, &OnGruntPost},
+    {&kRowPuppetSkullzone, kSkullzone, &OnWholePre, nullptr},
 };
 constexpr int kWatchCount = static_cast<int>(sizeof(kWatches) / sizeof(kWatches[0]));
 static_assert(kWatchCount == 19, "nineteen name watches: seventeen stubs and two runTrigger bodies");
@@ -144,12 +141,16 @@ uintptr_t g_bit = 0;
 // The registered puppets, from the registry's listener.
 int g_count = 0;
 
-// What the last resolve described: the two marking stubs' classes and functions, and the class-set number. A
-// callback that reads a stub pointer first checks the number still stands (a class unloaded since frees them).
+// What the last resolve described: the two marking stubs' classes, each class's listing identity
+// (ClassListingId) and the stub functions, and the class-unlist number. A stub is looked at again only when its
+// own class changed; the number is the callbacks' guard, which checks it still stands before reading a stub
+// pointer (a class unloaded since frees them) and which the resolve renews each time it moves.
 constexpr uint64_t kNoVersion = UINT64_MAX;
 uint64_t g_resolvedVer = kNoVersion;
 void*    g_boxCls = nullptr;
 void*    g_gruntCls = nullptr;
+uint64_t g_boxListing = 0;
+uint64_t g_gruntListing = 0;
 void*    g_boxStub = nullptr;
 void*    g_gruntStub = nullptr;
 int      g_gen = 0;  // moves with each resolve that looked at anything
@@ -169,8 +170,8 @@ void* Toucher(int index, const sg::Call& call) {
     return *reinterpret_cast<void* const*>(call.locals + off);
 }
 
-// Is the marked scope of the box stub on the chain: the world still described, the stub resolved and a puppet
-// toucher marked it.
+// Is the scope of `stub` (the box stub or the grunt stub) marked on this thread's chain: the bit exists, the
+// stub is resolved, the world is still described and a puppet toucher marked it.
 bool InScope(void* stub) {
     return g_bit && stub && WorldCurrent() && (sg::ScopeBits(stub) & g_bit) != 0;
 }
@@ -202,8 +203,9 @@ sg::Verdict OnRunTriggerPre(const sg::Call& call) {
 }
 
 sg::Verdict OnGruntPre(const sg::Call& call) {
-    if (!g_bit || !g_gruntStub || !WorldCurrent()) return sg::Verdict::Run;
-    void* actor = Toucher(call.tag - kPiTagBase, call);
+    const int index = call.tag - kPiTagBase;
+    if (!g_bit || !g_gruntStub || index < 0 || index >= kWatchCount || !WorldCurrent()) return sg::Verdict::Run;
+    void* actor = Toucher(index, call);
     if (!actor || !PL::Registry::Get().IsPuppetBody(actor)) return sg::Verdict::Run;
     sg::MarkScope(call, g_bit);
     scan::ArmGruntWindow(true);
@@ -223,14 +225,17 @@ void OnPuppetCount(int count) {
 
 void Settle() {
     sg::ResolvePendingNames();
+    // At no pending name every watch is live or dead for good (script_gate.h), so the walk below waits for that
+    // instead of running each frame a name still waits for its FName.
+    if (sg::PendingNameCount() != 0) return;
     int live = 0, settled = 0;
     for (int i = 0; i < kWatchCount; ++i) {
         if (g_reg[i] == Reg::Refused) { ++settled; continue; }
         if (sg::NameWatchLive(*kWatches[i].row, kPiTagBase + i)) { ++live; ++settled; continue; }
         if (sg::NameWatchSettled(*kWatches[i].row, kPiTagBase + i)) ++settled;
     }
-    g_live = live;
     if (settled < kWatchCount) return;
+    g_live = live;
     g_settled = true;
     UE_LOGI("[PI] watches live=%d unresolved=%d", WatchesLive(), kWatchCount - WatchesLive());
     for (int i = 0; i < kWatchCount; ++i)
@@ -249,21 +254,32 @@ void* StubOn(const ue_wrap::facts::Function& row, void* cls) {
     return fn;
 }
 
-// The per-world resolve, when a class pointer or the class-set number moved since the last one.
+// One marking stub looked at again when its class is another or was listed again. True when it was.
+bool ResolveStub(const wchar_t* clsName, const ue_wrap::facts::Function& row, void*& cls, uint64_t& listing,
+                 void*& stub) {
+    void* const now = OI::ClassByName(clsName);
+    const uint64_t id = OI::ClassListingId(now);
+    if (now == cls && id == listing) return false;
+    cls = now;
+    listing = id;
+    stub = StubOn(row, now);
+    return true;
+}
+
+// The per-world resolve. A class pointer held non-null changes only through an unload, which moves the
+// unlist number, so while the number stands and both stub classes are held the five class lookups are skipped.
+// When it moved, each class is compared on its own listing: an unrelated class's unload renews the guard
+// number and nothing else.
 void ResolveWorld() {
     const uint64_t ver = OI::ClassUnlistVersion();
-    void* const box = OI::ClassByName(L"trigger_box_C");
-    void* const grunt = OI::ClassByName(L"prop_grunt_C");
-    const bool stubsMoved = ver != g_resolvedVer || box != g_boxCls || grunt != g_gruntCls;
-    const bool scanMoved = scan::Resolve(ver);
-    if (!stubsMoved && !scanMoved) return;
-    if (stubsMoved) {
-        g_boxCls = box;
-        g_gruntCls = grunt;
-        g_boxStub = StubOn(kRowPuppetBoxMark, box);
-        g_gruntStub = StubOn(kRowPuppetGruntMark, grunt);
+    bool moved = false;
+    if (ver != g_resolvedVer || !g_boxCls || !g_gruntCls) {
+        moved |= ResolveStub(L"trigger_box_C", kRowPuppetBoxMark, g_boxCls, g_boxListing, g_boxStub);
+        moved |= ResolveStub(L"prop_grunt_C", kRowPuppetGruntMark, g_gruntCls, g_gruntListing, g_gruntStub);
+        g_resolvedVer = ver;
     }
-    g_resolvedVer = ver;
+    moved |= scan::Resolve(ver);
+    if (!moved) return;
     ++g_gen;
     g_logged = 0;
 }
@@ -306,7 +322,7 @@ void Tick() {
     if (!g_watched) return;
     if (!g_settled) Settle();
     ResolveWorld();
-    // A window a Cancel or a fault left open: the pump runs outside every body, so any armed window is one.
+    // A window a Cancel or a fault left open: it is armed and no body of the grunt stub is open on the chain.
     if (scan::GruntWindowArmed() && !sg::IsBodyActive(g_gruntStub)) scan::ArmGruntWindow(false);
 }
 
@@ -325,6 +341,7 @@ void OnDisconnect() {
             UE_LOGI("[PI] session end -- %s refused %u puppet touch(es) since the process started", counters[i].row,
                     static_cast<unsigned>(counters[i].refused));
     g_boxCls = g_gruntCls = nullptr;
+    g_boxListing = g_gruntListing = 0;
     g_boxStub = g_gruntStub = nullptr;
     g_resolvedVer = kNoVersion;
     g_logged = 0;

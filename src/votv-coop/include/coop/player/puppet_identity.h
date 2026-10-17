@@ -19,14 +19,15 @@ namespace coop::puppet_identity {
 // class resolves. Retried every pump tick; idempotent.
 void Install();
 
-// Settle the watches' registration and say once how many are live, then re-resolve the per-world pointers when a
-// class or the class set moved. Game thread, per frame.
+// Settle the watches' registration and say once how many are live, then re-resolve the per-world pointers of
+// each of the module's own classes that was loaded, unloaded or loaded again. Game thread, per frame.
 void Tick();
 
 // The session's caches. Session end.
 void OnDisconnect();
 
-// How many of the module's name watches are live at the gate.
+// How many of the module's name watches were live when they settled (the count the settle line says): 0 until
+// then, and not recounted after.
 int WatchesLive();
 
 // A row's name and how many times it refused a puppet since the process started. The drills' read.

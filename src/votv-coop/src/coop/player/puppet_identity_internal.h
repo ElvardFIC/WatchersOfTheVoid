@@ -33,8 +33,9 @@ void InstallPump(int generation, int puppets);
 // Arm the three post hooks while a puppet exists. Idempotent.
 void Rearm(int puppets);
 
-// Re-resolve the scan rows whose class moved, or all of them when `unlistVersion` moved. True when any row was
-// looked at again.
+// Re-resolve the scan rows whose own class changed (another class, or the same one listed again). `unlistVersion`
+// is renewed as the callbacks' guard each call; a row whose class stands is not decoded again whatever else
+// unloaded. True when any row was looked at again.
 bool Resolve(uint64_t unlistVersion);
 
 // The SetControlRotation pre hook, armed only while a grunt's touch by a puppet runs.
