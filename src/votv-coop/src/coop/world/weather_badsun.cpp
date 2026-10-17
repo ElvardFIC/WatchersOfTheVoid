@@ -215,6 +215,8 @@ void Keep(const coop::net::BadSunPayload& payload, Until until) {
 
 }  // namespace
 
+void SetSession(coop::net::Session* session) { g_session.store(session, std::memory_order_release); }
+
 void Install(coop::net::Session* session) {
     g_session.store(session, std::memory_order_release);
     if (g_gateAsked) return;

@@ -302,6 +302,8 @@ uint32_t WindRollSuppressed() {
 
 void Install(coop::net::Session* session) {
     g_session.store(session, std::memory_order_release);
+    // The Bad Sun lane holds its session from the first call, so a payload in the latch's wait is kept.
+    coop::weather_badsun::SetSession(session);
 
     // The wind interceptor sits above the cycle-gated early-out: the directionalWind class may load
     // after the cycle. The role gates refresh every call (a reconnect with the other role needs no
