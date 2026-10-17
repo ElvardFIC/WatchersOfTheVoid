@@ -3,6 +3,7 @@
 #include "coop/dev/pi3_observer.h"
 
 #include "coop/player/players_registry.h"
+#include "ue_wrap/core/game_thread.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/object_index.h"
 #include "ue_wrap/core/reflection.h"
@@ -15,12 +16,15 @@
 #include <windows.h>
 
 #include <cstdint>
+#include <cstdio>
+#include <string>
 
 namespace coop::dev::pi3_observer {
 namespace {
 
 namespace R  = ue_wrap::reflection;
 namespace sg = ue_wrap::script_gate;
+namespace GT = ue_wrap::game_thread;
 namespace UH = ue_wrap::ufunction_hook;
 namespace OI = ue_wrap::object_index;
 namespace P  = ue_wrap::profile;
@@ -134,6 +138,11 @@ bool     g_armed = false;
 Mode     g_mode = Mode::Spawner;
 void*    g_classes[2] = {};
 int      g_nClasses = 0;
+// What each armed class was armed as: its name, and the identity of the listing the pointer came from. A class
+// object is perishable (unloaded, loaded again at a new address), so Tick looks the name up again when the
+// listing no longer stands.
+std::wstring g_classNames[2];
+uint64_t g_classIds[2] = {};
 void*    g_site = nullptr;
 bool     g_contactArmed[kContactCount] = {};
 uint64_t g_armAt = 0;
@@ -142,6 +151,24 @@ int      g_puppetContacts = 0;
 int      g_ownContacts = 0;
 int      g_hookTries = 0;
 uint64_t g_hookTryAt = 0;
+
+// The last class-set number Tick saw, and the tick count (the watch sweep runs at most once a tick while pending).
+uint64_t g_setVer = 0;
+uint64_t g_tickNo = 0;
+
+// The name watches' state, swept once and kept: every watch settled, and the live ones, in the Live sense (a
+// contact watch only for the armed classes once armed) and in the ContactWatchLive sense. A settled sweep is
+// asked again only when the class set moved (a contact watch is judged when its class gets its first listed
+// instance) or Arm/Disarm changed which watches are required.
+struct Watches {
+    bool     valid;
+    bool     pending;
+    bool     live;
+    bool     contactLive;
+    uint64_t ver;
+    uint64_t tick;
+};
+Watches g_ws = {};
 
 // A hook whose row has not resolved is looked for again twice a second, ten times, and then called broken.
 constexpr int      kHookTries = 10;
@@ -159,12 +186,79 @@ void Note(int verb, bool cancelled) {
     if (cancelled) ++r.cancelled;
 }
 
+void Refresh() {
+    const uint64_t ver = OI::ClassSetVersion();
+    if (g_ws.valid && g_ws.ver == ver && (!g_ws.pending || g_ws.tick == g_tickNo)) return;
+    bool pending = false, live = true, contactLive = true;
+    for (int i = 0; i < kScriptVerbs; ++i) {
+        if (!sg::NameWatchSettled(*kScripts[i], kTagVerb + i)) {
+            pending = true;
+            live = false;
+        } else if (live && !sg::NameWatchLive(*kScripts[i], kTagVerb + i)) {
+            live = false;
+        }
+    }
+    for (int i = 0; i < kContactCount; ++i) {
+        const bool settled = sg::NameWatchSettled(*kContacts[i], kTagContact + i);
+        if (!settled) pending = true;
+        const bool armedHere = g_armed && g_contactArmed[i];
+        if (g_armed && !armedHere) continue;
+        if (!settled || !sg::NameWatchLive(*kContacts[i], kTagContact + i)) {
+            live = false;
+            if (armedHere) contactLive = false;
+        }
+    }
+    g_ws = Watches{true, pending, live, contactLive, ver, g_tickNo};
+}
+
+// A small memo of the class -> attributed answers, so the descent walk runs once per class and not per call. A
+// move of the class set, a re-resolved armed class and Arm clear it.
+struct Memo {
+    void* cls;
+    bool  yes;
+};
+constexpr int kMemo = 16;
+Memo g_memo[kMemo] = {};
+int  g_memoN = 0;
+int  g_memoNext = 0;
+
+void ClearMemo() { g_memoN = g_memoNext = 0; }
+
+bool ByClass(void* cls) {
+    if (!cls) return false;
+    for (int i = 0; i < g_memoN; ++i)
+        if (g_memo[i].cls == cls) return g_memo[i].yes;
+    bool yes = false;
+    for (int k = 0; k < g_nClasses && !yes; ++k)
+        yes = g_classes[k] && R::IsDescendantOfAny(cls, &g_classes[k], 1);
+    g_memo[g_memoNext] = Memo{cls, yes};
+    g_memoNext = (g_memoNext + 1) % kMemo;
+    if (g_memoN < kMemo) ++g_memoN;
+    return yes;
+}
+
+// Each armed class whose listing no longer stands is looked up by its name again, and its pointer and identity
+// replaced (null while no class of the name is loaded). O(1) per class while they stand.
+void RefreshClasses() {
+    for (int i = 0; i < g_nClasses; ++i) {
+        void* const held = g_classes[i];
+        const uint64_t id = held ? OI::ClassListingId(held) : 0;
+        if (id != 0 && id == g_classIds[i]) continue;
+        void* const now = OI::ClassByName(g_classNames[i].c_str());
+        const uint64_t nowId = now ? OI::ClassListingId(now) : 0;
+        if (now == held && nowId == g_classIds[i]) continue;
+        g_classes[i] = now;
+        g_classIds[i] = nowId;
+        ClearMemo();
+    }
+}
+
 // Does a call whose caller is `obj` belong to the arm: armed, and the site itself once it is named, else any
 // creature of an armed class.
 bool Attributed(void* obj) {
     if (!g_armed || !obj) return false;
     if (g_site) return obj == g_site;
-    return R::IsDescendantOfAny(R::ClassOf(obj), g_classes, static_cast<size_t>(g_nClasses));
+    return ByClass(R::ClassOf(obj));
 }
 
 bool IsPlayerController(void* obj) {
@@ -191,12 +285,15 @@ sg::Verdict OnContactPre(const sg::Call& call) {
     if (index < 0 || index >= kContactCount || !g_contactArmed[index] || !Attributed(call.object))
         return sg::Verdict::Run;
     int32_t& off = g_actorOff[index];
-    if (off == kUnread) off = R::FindParamOffset(call.function, L"OtherActor");
+    if (off == kUnread) {
+        off = R::FindParamOffset(call.function, L"OtherActor");
+        if (off < 0) UE_LOGI("[PI-3] BROKEN contact-offset %ls", kContacts[index]->Class());
+    }
     if (off < 0 || !call.locals) return sg::Verdict::Run;
     void* const other = *reinterpret_cast<void* const*>(call.locals + off);
     if (!other) return sg::Verdict::Run;
     const bool puppet = PL::Registry::Get().IsPuppetBody(other);
-    const bool own = !puppet && other == PL::Registry::Get().Local();
+    const bool own = !puppet && PL::Registry::Get().IsLocal(other);
     if (!puppet && !own) return sg::Verdict::Run;
     if (g_mode != Mode::Still && !g_anchorAt) g_anchorAt = Now();
     if (puppet) {
@@ -209,26 +306,26 @@ sg::Verdict OnContactPre(const sg::Call& call) {
 
 // The native hooks attribute by FFrame::Object, the Blueprint whose bytecode made the call.
 sg::Verdict OnQuitPre(void*, void* source, const uint8_t*) {
-    if (!Attributed(source)) return sg::Verdict::Run;
+    if (!GT::IsGameThread() || !Attributed(source)) return sg::Verdict::Run;
     Note(kQuit, true);
     return sg::Verdict::Cancel;
 }
 
 void OnSetRotationPost(void* context, void* source, void*) {
-    if (Attributed(source) && IsPlayerController(context)) Note(kSetRot, false);
+    if (GT::IsGameThread() && Attributed(source) && IsPlayerController(context)) Note(kSetRot, false);
 }
 
 void OnPlaySoundPost(void*, void* source, void*) {
-    if (Attributed(source)) Note(kPlaySound, false);
+    if (GT::IsGameThread() && Attributed(source)) Note(kPlaySound, false);
 }
 
 void OnAddViewportPost(void*, void* source, void*) {
-    if (Attributed(source)) Note(kAddViewport, false);
+    if (GT::IsGameThread() && Attributed(source)) Note(kAddViewport, false);
 }
 
 // A gib: a deferred spawn whose result is a prop.
 void OnSpawnPost(void*, void* source, void* result) {
-    if (!result || !Attributed(source)) return;
+    if (!result || !GT::IsGameThread() || !Attributed(source)) return;
     void* prop = OI::ClassByName(P::name::PropClass);
     if (prop && R::IsDescendantOfAny(R::ClassOf(result), &prop, 1)) Note(kGib, false);
 }
@@ -266,14 +363,6 @@ void TryHooks(bool final) {
     }
 }
 
-bool AnyWatchPending() {
-    for (int i = 0; i < kScriptVerbs; ++i)
-        if (!sg::NameWatchSettled(*kScripts[i], kTagVerb + i)) return true;
-    for (int i = 0; i < kContactCount; ++i)
-        if (!sg::NameWatchSettled(*kContacts[i], kTagContact + i)) return true;
-    return false;
-}
-
 }  // namespace
 
 void Install() {
@@ -285,12 +374,18 @@ void Install() {
     for (int i = 0; i < kContactCount; ++i)
         if (!sg::WatchName(*kContacts[i], kTagContact + i, &OnContactPre, nullptr))
             UE_LOGI("[PI-3] BROKEN hook %ls::contact", kContacts[i]->Class());
-    for (int32_t& off : g_actorOff) off = kUnread;
     TryHooks(/*final=*/false);
 }
 
 void Tick() {
     if (!g_installed) return;
+    ++g_tickNo;
+    const uint64_t ver = OI::ClassSetVersion();
+    if (ver != g_setVer) {
+        g_setVer = ver;
+        ClearMemo();
+    }
+    if (g_armed) RefreshClasses();
     bool hooksPending = false;
     for (const Hook& h : g_hooks) hooksPending = hooksPending || (!h.done && !h.failed);
     if (hooksPending && Now() - g_hookTryAt >= kHookRetryMs) {
@@ -298,7 +393,8 @@ void Tick() {
         TryHooks(++g_hookTries >= kHookTries);
         if (g_armed) ArmHooks(true);
     }
-    if (g_armed || AnyWatchPending()) sg::ResolvePendingNames();
+    if (g_armed || !g_ws.valid || g_ws.pending) sg::ResolvePendingNames();
+    Refresh();
     if (!g_liveSaid && Live()) {
         g_liveSaid = true;
         UE_LOGI("[PI-3] observer live hooks=%d watches=%d", kHookCount, kScriptVerbs + kContactCount);
@@ -309,22 +405,44 @@ bool Live() {
     if (!g_installed) return false;
     for (const Hook& h : g_hooks)
         if (!h.done) return false;
-    for (int i = 0; i < kScriptVerbs; ++i)
-        if (!sg::NameWatchLive(*kScripts[i], kTagVerb + i)) return false;
-    for (int i = 0; i < kContactCount; ++i)
-        if ((!g_armed || g_contactArmed[i]) && !sg::NameWatchLive(*kContacts[i], kTagContact + i)) return false;
-    return true;
+    Refresh();
+    return g_ws.live;
 }
 
 bool ContactWatchLive() {
+    Refresh();
+    return g_ws.contactLive;
+}
+
+bool FirstPending(char* out, size_t cap) {
+    if (!out || cap == 0) return false;
+    out[0] = '\0';
+    for (const Hook& h : g_hooks)
+        if (!h.done) {
+            std::snprintf(out, cap, "hook %s", kVerbNames[h.verb]);
+            return true;
+        }
+    for (int i = 0; i < kScriptVerbs; ++i)
+        if (!sg::NameWatchLive(*kScripts[i], kTagVerb + i)) {
+            std::snprintf(out, cap, "%ls::%ls", kScripts[i]->Class(), kScripts[i]->Name());
+            return true;
+        }
     for (int i = 0; i < kContactCount; ++i)
-        if (g_armed && g_contactArmed[i] && !sg::NameWatchLive(*kContacts[i], kTagContact + i)) return false;
-    return true;
+        if ((!g_armed || g_contactArmed[i]) && !sg::NameWatchLive(*kContacts[i], kTagContact + i)) {
+            std::snprintf(out, cap, "%ls::%ls", kContacts[i]->Class(), kContacts[i]->Name());
+            return true;
+        }
+    return false;
 }
 
 void Arm(void* const* classes, int n, Mode mode) {
     g_nClasses = n < 1 ? 0 : (n > 2 ? 2 : n);
-    for (int i = 0; i < 2; ++i) g_classes[i] = i < g_nClasses ? classes[i] : nullptr;
+    for (int i = 0; i < 2; ++i) {
+        g_classes[i] = i < g_nClasses ? classes[i] : nullptr;
+        g_classNames[i] = g_classes[i] ? R::ToString(R::NameOf(g_classes[i])) : std::wstring();
+        g_classIds[i] = g_classes[i] ? OI::ClassListingId(g_classes[i]) : 0;
+    }
+    ClearMemo();
     for (int i = 0; i < kContactCount; ++i) {
         g_contactArmed[i] = false;
         for (int k = 0; k < g_nClasses; ++k)
@@ -338,6 +456,8 @@ void Arm(void* const* classes, int n, Mode mode) {
     g_anchorAt = mode == Mode::Still ? g_armAt : 0;
     g_armed = true;
     ArmHooks(true);
+    g_ws.valid = false;
+    Refresh();
 }
 
 void Bind(void* site) { g_site = site; }
@@ -346,6 +466,7 @@ void Disarm() {
     g_armed = false;
     g_site = nullptr;
     ArmHooks(false);
+    g_ws.valid = false;
 }
 
 const Seen* Report(int& n) {

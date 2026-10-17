@@ -21,6 +21,7 @@
 #include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/field_io.h"
 #include "ue_wrap/core/log.h"
+#include "ue_wrap/core/object_index.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/reflection_props.h"  // FindPropertyOffset
 #include "ue_wrap/engine/engine.h"
@@ -31,6 +32,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <memory>
 #include <string>
 #include <vector>
@@ -41,6 +43,7 @@ namespace {
 using namespace detail;
 namespace E  = ue_wrap::engine;
 namespace R  = ue_wrap::reflection;
+namespace OI = ue_wrap::object_index;
 namespace OB = coop::dev::pi3_observer;
 namespace PL = coop::players;
 namespace PI = coop::puppet_identity;
@@ -58,6 +61,7 @@ constexpr float    kApartMinCm = 1500.f;    // flat distance from the body at wh
 constexpr float    kRestMoveCm = 5.f;       // the body moved less than this in total over kRestStillMs
 constexpr uint64_t kRestStillMs = 1000;
 constexpr int      kPiWatches = 19;         // PI-2b's table: its module has settled when this many are live
+constexpr uint64_t kStillLineMs = 500;      // a still peer's STILL lines: at most one in this long
 
 ArmId ArmOf() {
     static const ArmId arm = [] {
@@ -86,6 +90,8 @@ bool     g_stamped = true;   // the spawn's stamp took (false: the spawn is aban
 uint32_t g_baseline = 0;
 uint64_t g_restRefAt = 0;
 uint64_t g_stillSig = 0;
+uint64_t g_stillSaidAt = 0;
+bool     g_stillDirty = false;  // the records changed since the last STILL line
 bool     g_stillArmed = false;
 bool     g_uncancelledSaid = false;
 ue_wrap::FVector g_bodyPos{};
@@ -134,6 +140,44 @@ void Abandon(ArmId arm, const char* why) {
     g_phase = Phase::Done;
 }
 
+// A Wait that ran out of its bound. The observer's names the first thing it is still waiting on.
+void AbandonWait(ArmId arm, const char* what) {
+    char why[256];
+    const int w = std::snprintf(why, sizeof why, "wait %s", what);
+    char pending[192];
+    if (w > 0 && std::strcmp(what, "observer") == 0 && OB::FirstPending(pending, sizeof pending))
+        std::snprintf(why + w, sizeof why - static_cast<size_t>(w), " %s", pending);
+    Abandon(arm, why);
+}
+
+// The specs whose classes an arm waits on: the still peer's (the arm's first row, and the client arm's wisp_p) or
+// the spawner's (every leg's). Returns how many, into `ids`.
+int WaitSpecs(ArmId arm, bool spawner, int* ids) {
+    int n = 0;
+    ids[n++] = SpecIdOf(arm, 1);
+    if (arm == ArmId::Client) {
+        ids[n++] = kSpecClientWispP;
+        if (spawner) ids[n++] = kSpecClientReading;
+    }
+    return n;
+}
+
+// A spec's class and the listing identity it was resolved under. A class held across ticks stands only while its
+// listing does; a class that does not is looked up again (the index, else its asset path).
+struct ResolvedClass {
+    void*    cls;
+    uint64_t id;
+};
+ResolvedClass g_res[kSpecCount] = {};
+
+void* ClassOfSpec(int specId) {
+    ResolvedClass& r = g_res[specId];
+    if (r.cls && r.id != 0 && OI::ClassListingId(r.cls) == r.id) return r.cls;
+    void* const cls = ResolveClass(SpecOf(specId));
+    r = ResolvedClass{cls, cls ? OI::ClassListingId(cls) : 0};
+    return cls;
+}
+
 // A contact watch the engine killed for its class (the class lacks the stub): the instrument is broken, said once.
 void CheckContacts(ArmId arm) {
     if (!g_obsArmed || g_brokenSaid || OB::ContactWatchLive()) return;
@@ -147,20 +191,23 @@ void CheckContacts(ArmId arm) {
 
 void StillTick(coop::net::Session* session, ArmId arm) {
     if (!g_stillArmed) {
+        const bool late = Now() - g_worldUpAt >= kWaitBoundMs;
         if (!OB::Live()) {
-            if (Now() - g_worldUpAt >= kWaitBoundMs) Abandon(arm, "wait observer");
+            if (late) AbandonWait(arm, "observer");
             return;
         }
         void* classes[2] = {};
-        int n = 0;
-        const int firstSpec = SpecIdOf(arm, 1);
-        classes[n++] = ResolveClass(SpecOf(firstSpec));
-        if (arm == ArmId::Client) classes[n++] = ResolveClass(SpecOf(kSpecClientWispP));
-        for (int i = 0; i < n; ++i)
-            if (!classes[i]) {
-                Abandon(arm, "wait class");
-                return;
-            }
+        int ids[3];
+        const int n = WaitSpecs(arm, /*spawner=*/false, ids);
+        bool resolved = true;
+        for (int i = 0; i < n; ++i) {
+            classes[i] = ClassOfSpec(ids[i]);
+            resolved = resolved && classes[i];
+        }
+        if (!resolved) {
+            if (late) AbandonWait(arm, "class");
+            return;
+        }
         OB::Arm(classes, n, OB::Mode::Still);
         g_obsArmed = true;
         g_stillArmed = true;
@@ -180,19 +227,30 @@ void StillTick(coop::net::Session* session, ArmId arm) {
             UE_LOGI("[PI-3] FAIL %s still-uncancelled %s", ArmName(arm), verb);
         }
     const uint64_t sig = Signature(seen, n, OB::PuppetContacts(), OB::OwnContacts());
-    if (sig == g_stillSig) return;
-    g_stillSig = sig;
+    if (sig != g_stillSig) {
+        g_stillSig = sig;
+        g_stillDirty = true;
+    }
+    // A verb that repeats at tick rate changes the records every tick: the lines are coalesced, and the last state
+    // is said once the interval has passed.
+    if (!g_stillDirty || Now() - g_stillSaidAt < kStillLineMs) return;
+    g_stillDirty = false;
+    g_stillSaidAt = Now();
     LogStill(ArmName(arm), seen, n, OB::OwnContacts());
 }
 
 // What stands between the spawner and its arm, or null when it is ready.
-const char* NotReady(coop::net::Session* session) {
+const char* NotReady(coop::net::Session* session, ArmId arm) {
     const bool host = session->role() == coop::net::Role::Host;
     if (!OB::Live()) return "observer";
     if (PI::WatchesLive() != kPiWatches) return "pi";
     if (host && !session->IsSlotWorldReady(1)) return "peer";
     if (!StillBody(host)) return "puppet";
     if (!host && !coop::npc_adoption::GhostSweepDone()) return "sweep";
+    int ids[3];
+    const int n = WaitSpecs(arm, /*spawner=*/true, ids);
+    for (int i = 0; i < n; ++i)
+        if (!ClassOfSpec(ids[i])) return "class";
     return nullptr;
 }
 
@@ -213,7 +271,7 @@ void BeforeFinish(void* ctx, void* actor) {
 void DoSpawn(ArmId arm) {
     const Spec& spec = SpecOf(SpecIdOf(arm, g_leg));
     const bool reading = arm == ArmId::Client && g_leg == 3;
-    void* cls = ResolveClass(spec);
+    void* cls = ClassOfSpec(SpecIdOf(arm, g_leg));
     ue_wrap::FVector at = g_bodyPos;
     bool placed = true;
     if (arm == ArmId::Control || reading) {
@@ -232,6 +290,7 @@ void DoSpawn(ArmId arm) {
     if (arm == ArmId::Client) coop::npc_sync::MarkIncomingNpcSpawn(cls);
     SpawnCtx ctx{&spec, cls};
     void* site = E::SpawnActor(cls, at, /*inertPawn=*/false, &BeforeFinish, &ctx);
+    if (arm == ArmId::Client) coop::npc_sync::ClearIncomingNpcSpawn();
     if (site) g_site.Set(site);
     if (!site || !g_stamped) {
         Abandon(arm, "spawn");
@@ -315,12 +374,8 @@ void ObserveTick(ArmId arm) {
 void SpawnerTick(coop::net::Session* session, ArmId arm) {
     const bool host = session->role() == coop::net::Role::Host;
     if (g_phase == Phase::Wait) {
-        if (const char* what = NotReady(session)) {
-            if (Now() - g_worldUpAt >= kWaitBoundMs) {
-                char why[32];
-                std::snprintf(why, sizeof why, "wait %s", what);
-                Abandon(arm, why);
-            }
+        if (const char* what = NotReady(session, arm)) {
+            if (Now() - g_worldUpAt >= kWaitBoundMs) AbandonWait(arm, what);
             return;
         }
         g_spawner = true;

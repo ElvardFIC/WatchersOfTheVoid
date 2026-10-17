@@ -16,6 +16,8 @@
 
 #pragma once
 
+#include <cstddef>
+
 namespace coop::dev::pi3_observer {
 
 // Spawner: the contact only records (the module under test decides). Still: the contact also cancels the creature's
@@ -41,15 +43,20 @@ void Install();
 void Tick();
 
 // Every name watch is live, every contact watch included (only the armed classes' once armed), and every hook is
-// installed.
+// installed. The watches' answer is swept once settled and asked again only when the class set moves or Arm/Disarm
+// changes the required set; so a caller may ask each tick.
 bool Live();
 
 // Every armed class' contact watch is still live. A class is judged for the function it watches when it gets its
-// first listed instance, so this can turn false after Live was true; true while unarmed.
+// first listed instance, so this can turn false after Live was true; true while unarmed. Kept like Live's answer.
 bool ContactWatchLive();
 
+// The first thing Live is waiting on, as "hook <verb>" or "<class>::<function>" into `out`; false when there is none.
+bool FirstPending(char* out, size_t cap);
+
 // Attribute the calls whose caller descends from one of `classes[0..n)` (n is 1 or 2), reset the records, arm the
-// hooks. Before the spawn: an overlap fires as the collider registers, inside the spawn.
+// hooks. Before the spawn: an overlap fires as the collider registers, inside the spawn. The classes are held by
+// name and listing identity: Tick looks one up again when its listing no longer stands.
 void Arm(void* const* classes, int n, Mode mode);
 
 // The spawned site: from here a call counts only when its caller IS the site.
