@@ -34,7 +34,8 @@ public:
     // live by ApplySkin. `peerSlot` is the peer this puppet is, or kPeerIdUnknown for a puppet no
     // session owns (the boot-time dev scenarios): a slot registers the puppet in players::Registry
     // from inside the spawn, before its BeginPlay, so it answers IsPuppet from its first overlap;
-    // the caller unregisters it after Destroy. A slot out of range returns false before spawning.
+    // the caller unregisters it after Destroy. A slot out of range, or this machine's own slot, returns false
+    // before spawning.
     // A failed spawn leaves actor() null; the slot's puppet pointer is cleared when the callback had
     // registered it, and untouched when the spawn failed before the callback ran.
     bool Spawn(const std::string& skinName = std::string(),

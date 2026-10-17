@@ -48,10 +48,10 @@ bool DestroySlot(int slot) {
     // damage and ignite cancels, the travel refusal) must still know the dying body. MTA ends a ped's
     // contacts and clears its pool mapping before deleting it (CClientPed.cpp:3814-3819,
     // CPoolsSA.cpp:481), and unlinks the player first (CClientPlayer.cpp:110, a destructor-order
-    // artefact); that GTA's ped delete runs no script, so nothing calls back, is the MTA lens's
-    // reading and was not measured. DestroyActor runs the body's Blueprint end-play and end-overlap
+    // artefact); that GTA's ped delete runs no script, so nothing calls back, is an unmeasured
+    // reading of MTA's source. DestroyActor runs the body's Blueprint end-play and end-overlap
     // code into hooks that classify by IsPuppet, so the reverse order is deliberate.
-    // Registry::Puppet(slot) has about thirty readers, which see the puppet half-torn between the
+    // Registry::Puppet(slot) has many readers, which see the puppet half-torn between the
     // destroy and the unregister below; the ones read (tick readers) are not reached from the
     // puppet's end of play, by inspection, and the rest were not enumerated.
     const bool had = g_puppets[slot].valid();

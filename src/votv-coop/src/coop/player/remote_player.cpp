@@ -71,6 +71,12 @@ bool RemotePlayer::Spawn(const std::string& skinName, uint8_t peerSlot) {
         UE_LOGW("RemotePlayer::Spawn: peer slot %u is out of range", static_cast<unsigned>(peerSlot));
         return false;
     }
+    // The local peer's slot never takes a puppet; Registry::RegisterPuppet refuses it too, as the
+    // backstop. An unknown local id (not yet assigned) lets any slot through.
+    if (peerSlot != players::kPeerIdUnknown && peerSlot == players::Registry::Get().LocalPeerId()) {
+        UE_LOGW("RemotePlayer::Spawn: peer slot %u is the local peer's", static_cast<unsigned>(peerSlot));
+        return false;
+    }
     // A pointer left by an earlier world never reads as this call's.
     actor_ = nullptr;
     internalIdx_ = -1;

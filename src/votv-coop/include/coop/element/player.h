@@ -10,8 +10,9 @@
 // maps. players::Registry owns the Elements as unique_ptr<Player>[kMaxPeers], built by
 // RegisterPuppet, by EstablishMirrorForSlot or by SetLocalPeerId. A puppet is bound onto an
 // existing Element in place (a mirror, or one ClearPuppet emptied); ClearPuppet nulls it without
-// dropping the Element. UnregisterPuppet, a changed local id, or one real puppet replacing
-// another destroys it. No global reset exists.
+// dropping the Element. UnregisterPuppet, a changed local id, one real puppet replacing another,
+// or EstablishMirrorForSlot replacing it with the wire-bound mirror destroys it. No global reset
+// exists.
 
 #pragma once
 
@@ -40,9 +41,11 @@ public:
 
 private:
     // The puppet pointer is mutable so players::Registry can bind a real puppet onto a MIRROR
-    // Player Element created before RegisterPuppet ran. Without it the mirror, and the wire-bound
-    // ElementId it holds, would be dropped whenever the AssignPeerSlot/Join handshake landed ahead
-    // of the puppet's first PoseSnapshot. Only Registry is expected to drive that transition.
+    // Player Element created before RegisterPuppet ran, or onto an Element ClearPuppet emptied.
+    // Without it the mirror, and the wire-bound ElementId it holds, would be dropped whenever the
+    // AssignPeerSlot/Join handshake landed ahead of the puppet's first PoseSnapshot. Only Registry
+    // calls it: the mirror bind and the cleared-Element rebind in EnsurePlayerElement_, and
+    // ClearPuppet's clear.
     friend class coop::players::Registry;
     void SetPuppet_(coop::RemotePlayer* p) { m_puppet = p; }
 

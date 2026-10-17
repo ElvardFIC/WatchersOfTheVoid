@@ -36,6 +36,11 @@ void Run() {
     }
     const coop::element::ElementId oldId = first->GetId();
     reg.ClearPuppet(kSpareSlot);
+    if (reg.Puppet(kSpareSlot) || first->Puppet()) {
+        UE_LOGI("[PI-0-SELFTEST] FAIL clear left the puppet bound");
+        reg.UnregisterPuppet(kSpareSlot);
+        return;
+    }
     reg.RegisterPuppet(kSpareSlot, &s_puppet);
     const coop::element::Player* second = reg.GetPlayerElement(kSpareSlot);
     const coop::element::ElementId newId = second ? second->GetId() : coop::element::kInvalidId;
@@ -51,7 +56,7 @@ void Run() {
 
 void Tick(coop::net::Session* session) {
     static const bool s_on = coop::config::ResolveFlag(::coop::config_registry::rows::pi0_selftest);
-    if (!s_on || !session || !session->connected() || session->role() != coop::net::Role::Host) return;
+    if (!s_on || !session || session->role() != coop::net::Role::Host) return;
     static bool s_done = false;
     if (s_done) return;
     PL::Registry& reg = PL::Registry::Get();
