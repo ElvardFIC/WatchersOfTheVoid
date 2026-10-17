@@ -29,8 +29,9 @@ enum class LegacyFile : uint8_t {
 
 // When `name` exists beside the exe (and the exe folder is not itself the data folder), logs once
 // per (file, name): INFO "legacy <name> beside the exe -- ignoring; this data now lives in
-// <the data folder>", and for IdentityKey, whose loss is a reset identity, a WARN. An entry holds
-// at most two names (the identity key and the per-account key). Any thread.
+// <the data folder>", and for IdentityKey, whose loss is a reset identity, a WARN naming the
+// file's full path. A name already noted costs no stat; one that is absent is asked again. An
+// entry holds at most two names (the identity key and the per-account key). Any thread.
 void Once(LegacyFile file, const wchar_t* name);
 
 // Logs once, WARN, when ue_wrap::paths::ModDataDir() is empty: the session runs on defaults and

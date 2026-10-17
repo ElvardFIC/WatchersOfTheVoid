@@ -26,9 +26,10 @@ std::wstring ExeDir();
 
 // Whether a file or folder named `name` (one path component) exists directly in ExeDir(): a pure
 // test that logs nothing. False when the exe folder is unknown, and when it is the data folder (a
-// file there is the mod's own, not a leftover). Only coop/mod_data/legacy_note asks
-// it, for the files an older build kept beside the exe. Any thread.
-bool ExistsBesideExe(const wchar_t* name);
+// file there is the mod's own, not a leftover). When it exists and `pathOut` is set, the full path
+// is stored there. Only coop/mod_data/legacy_note asks it, for the files an older build kept beside
+// the exe. Any thread.
+bool ExistsBesideExe(const wchar_t* name, std::wstring* pathOut = nullptr);
 
 // The mod's own data folder, the one home every file the mod keeps for itself is read from and written
 // to: the PACKAGE folder that holds `dlls\main.dll` and `enabled.txt` (`Mods\Multivoid`), or, when a

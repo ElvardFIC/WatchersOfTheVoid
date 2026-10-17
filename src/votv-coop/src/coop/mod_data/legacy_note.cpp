@@ -37,20 +37,35 @@ bool Claim(LegacyFile file, uint32_t h) {
     return false;
 }
 
+// True once `h` was claimed in `file`'s row: read only, so a name already noted costs two loads.
+bool Noted(LegacyFile file, uint32_t h) {
+    const std::atomic<uint32_t>* row = g_noted[static_cast<size_t>(file)];
+    for (size_t i = 0; i < kNamesPerEntry; ++i)
+        if (row[i].load(std::memory_order_acquire) == h) return true;
+    return false;
+}
+
 }  // namespace
 
 void Once(LegacyFile file, const wchar_t* name) {
     if (!name || !*name || static_cast<size_t>(file) >= kEntries) return;
-    if (!ue_wrap::paths::ExistsBesideExe(name)) return;
-    if (!Claim(file, HashOf(name))) return;
+    const uint32_t h = HashOf(name);
+    // Absence is not latched (the file can appear later): only a name already noted skips the stat.
+    if (Noted(file, h)) return;
+    std::wstring path;
+    if (!ue_wrap::paths::ExistsBesideExe(name, &path)) return;
+    if (!Claim(file, h)) return;
     if (file == LegacyFile::IdentityKey) {
         UE_LOGW("identity: legacy identity beside the exe (%ls) -- ignoring; a new identity is in "
-                "the mod's folder", name);
+                "the mod's folder", path.c_str());
         return;
     }
     const std::wstring data = ue_wrap::paths::ModDataDir();
-    UE_LOGI("legacy %ls beside the exe -- ignoring; this data now lives in %ls", name,
-            data.empty() ? L"(no data folder)" : data.c_str());
+    if (data.empty()) {
+        UE_LOGI("legacy %ls beside the exe -- ignoring; the mod has no data folder to hold it", name);
+        return;
+    }
+    UE_LOGI("legacy %ls beside the exe -- ignoring; this data now lives in %ls", name, data.c_str());
 }
 
 void WarnIfNoDataFolder() {

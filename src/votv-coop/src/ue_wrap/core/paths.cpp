@@ -7,6 +7,8 @@
 #include <windows.h>
 #include <wchar.h>
 
+#include <utility>
+
 namespace ue_wrap::paths {
 
 std::wstring ExeDir() {
@@ -18,13 +20,16 @@ std::wstring ExeDir() {
     return sep == std::wstring::npos ? std::wstring{} : p.substr(0, sep);
 }
 
-bool ExistsBesideExe(const wchar_t* name) {
+bool ExistsBesideExe(const wchar_t* name, std::wstring* pathOut) {
     if (!name || !*name) return false;
     const std::wstring exe = ExeDir();
     if (exe.empty()) return false;
     // Where the data folder is the exe folder, a file of that name is the mod's own, not a leftover.
     if (_wcsicmp(exe.c_str(), ModDataDir().c_str()) == 0) return false;
-    return ::GetFileAttributesW((exe + L"\\" + name).c_str()) != INVALID_FILE_ATTRIBUTES;
+    std::wstring path = exe + L"\\" + name;
+    if (::GetFileAttributesW(path.c_str()) == INVALID_FILE_ATTRIBUTES) return false;
+    if (pathOut) *pathOut = std::move(path);
+    return true;
 }
 
 namespace {

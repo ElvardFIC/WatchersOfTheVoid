@@ -210,7 +210,13 @@ static bool RunSelftestBody() {
             UE_LOGE("atomic_file selftest: %d/%d checks passed", pass, total);
             return false;
         }
-        UE_LOGI("atomic_file selftest: disk cases skipped -- no data folder (%d checks passed)", total);
+        if (breakIt) {
+            UE_LOGE("atomic_file selftest: the red arm cannot run -- no data folder, so the disk cases "
+                    "it breaks are skipped");
+            return false;
+        }
+        UE_LOGI("atomic_file selftest: disk cases skipped, the mod has no data folder (%d checks passed)",
+                total);
         return true;
     }
     SweepDeadScratch(dataDir);

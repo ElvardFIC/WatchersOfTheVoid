@@ -1,10 +1,9 @@
 // coop/config/config.h -- the env and ini configuration readers. multivoid.ini lives in the mod's
 // data folder (ue_wrap::paths::ModDataDir); the LAN test framework overrides through environment
-// variables, since one DLL location
-// serves two instances and per-file configs would alias. Precedence: the session's value of a
-// server-scope row while a session runs (the session layer), then a value set while the game runs
-// (the runtime layer), then the environment variable (set by the test launcher), then the ini
-// value, then the row default.
+// variables, since one DLL location serves two instances and per-file configs would alias.
+// Precedence: the session's value of a server-scope row while a session runs (the session layer),
+// then a value set while the game runs (the runtime layer), then the environment variable (set by
+// the test launcher), then the ini value, then the row default.
 
 #pragma once
 
