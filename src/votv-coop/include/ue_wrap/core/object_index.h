@@ -71,6 +71,14 @@ void*  ClassLogAt(size_t position, bool* loaded);
 // Game thread.
 uint64_t ClassUnlistVersion();
 
+// The identity of `cls`'s current listing: 0 when the index does not list it, else a number no other listing of
+// any class ever has, so a class unlisted and listed again, even at the same address, answers a new one. A holder
+// of a pointer to a class, and of what it derived from the class, compares this with the value it stored: equal
+// means that class was neither unloaded nor loaded again, whatever other classes did (ClassUnlistVersion moves
+// for any). Never reads through `cls`, so a pointer to a class unloaded since is safe to ask. O(1), no
+// allocation. Game thread (asserted), like the rest of the listing state.
+uint64_t ClassListingId(void* cls);
+
 // The loaded class whose short name is `name`, compared without case as the engine compares names:
 // a class object the index holds, found in one lookup whether or not the class has an instance.
 // Null when no such class is loaded, or while it is still being loaded. Where two packages load

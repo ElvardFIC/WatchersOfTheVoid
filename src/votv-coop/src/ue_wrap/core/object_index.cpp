@@ -112,6 +112,9 @@ std::vector<ListedClass> g_classLog;
 // A listed slot's position in the log, so unlisting marks the entry gone: a new class put in the same slot at
 // the same address is then met through its own entry alone.
 std::unordered_map<int32_t, size_t> g_classLogPosBySlot;
+// The same position by the class object's address, so ClassListingId answers for a pointer without reading
+// through it: the pointer a caller holds may be a class unloaded since.
+std::unordered_map<void*, size_t> g_classLogPosByObj;
 // Moves whenever a class object is unlisted: ClassUnlistVersion.
 uint64_t g_classUnlistVersion = 0;
 
@@ -122,6 +125,7 @@ void ListClassName(int32_t index, void* classObj) {
     g_classSlotsByName[key].push_back(index);
     g_classNameBySlot.emplace(index, std::move(key));
     g_classLogPosBySlot[index] = g_classLog.size();
+    g_classLogPosByObj[classObj] = g_classLog.size();
     g_classLog.push_back(ListedClass{index, classObj});
 }
 
@@ -131,6 +135,7 @@ void UnlistClassName(int32_t index) {
     ++g_classUnlistVersion;
     const auto pos = g_classLogPosBySlot.find(index);
     if (pos != g_classLogPosBySlot.end()) {
+        g_classLogPosByObj.erase(g_classLog[pos->second].obj);
         g_classLog[pos->second].obj = nullptr;
         g_classLogPosBySlot.erase(pos);
     }
@@ -446,6 +451,12 @@ void* ClassLogAt(size_t position, bool* loaded) {
 }
 
 uint64_t ClassUnlistVersion() { return g_classUnlistVersion; }
+
+uint64_t ClassListingId(void* cls) {
+    UE_ASSERT_GAME_THREAD("object_index::ClassListingId");
+    const auto it = g_classLogPosByObj.find(cls);
+    return it == g_classLogPosByObj.end() ? 0 : static_cast<uint64_t>(it->second) + 1;
+}
 
 void* ClassByName(const wchar_t* name) {
     UE_ASSERT_GAME_THREAD("object_index::ClassByName");
