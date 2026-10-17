@@ -678,11 +678,24 @@ void OnDeadline(bool host) {
     }
 }
 
+// absent_stale, the HOST: the last client leaving ends the host's session too, so the drill re-arms from Begin at the
+// rejoin while its world keeps the copy it made. One inactive copy at that arm is this run's own, and the arm resumes
+// at the window it waits for (a joiner's world taken, not yet ready) instead of reading it as a stale world.
+bool ResumeStaleHost() {
+    Snap sn;
+    if (!Take(true, sn) || sn.n != 1 || sn.inactive != 1) return false;
+    UE_LOGI("badsun_drill: [host] arm absent_stale resumed after the session's end: this run's inactive copy is here; "
+            "waiting for the joiner's world to be taken");
+    Enter(P::HostRejoin, kRejoinBound);
+    return true;
+}
+
 }  // namespace
 
 void LaneTick(coop::net::Session* s, bool host) {
     if (g_phase == P::Done) return;
     if (g_phase == P::Begin) {
+        if (host && ArmOf() == Arm::AbsentStale && ResumeStaleHost()) return;
         Enter(P::WaitJoin, kJoinBound);
         UE_LOGI("badsun_drill: [%s] arm %s armed; waiting for the join to be over", RoleName(host), ArmName());
     }
