@@ -43,6 +43,7 @@
 #include "coop/dev/pi0_selftest.h"  // [dev] a cleared Player Element keeps its id
 #include "coop/dev/pi1_selftest.h"  // [dev] the scope mark, the call site, the const-reference hook and the caller's locals
 #include "coop/dev/pi2_selftest.h"  // [dev] the call locals, the puppet-count listener, the puppet-body query
+#include "coop/dev/pi3_drill.h"  // [dev] a creature spawned at a still peer's puppet is not served as this machine's player
 #include "coop/dev/event_drill.h"  // [dev] the event lanes: a scheduler fire, a dev fire, the join snapshot
 #include "coop/dev/command_drill.h"  // [dev] a typed command is run by the host and answered privately
 #include "coop/dev/mv_drill.h"  // [dev] the /mv commands end to end against a seeded permission store
@@ -128,6 +129,7 @@ void Install(coop::net::Session& session) {
     coop::dev::floppy_selftest::Install(&session);  // [dev] disc/server insert+eject episodes (no-op unless floppy_selftest=1)
     coop::dev::hookdrag_selftest::Install(&session);  // [dev] a hook-dragged prop, both peers logging its position (no-op unless hookdrag_selftest=1)
     coop::dev::roster_token_selftest::Install(&session);  // [dev] successor-ban drill: a token captured from the previous occupant must be refused (no-op unless roster_token_selftest=1)
+    coop::dev::pi3_drill::Install(&session);  // [dev] the PI-3 drill's observer (no-op unless pi3_drill is set)
 }
 
 void EndSession() {
@@ -193,6 +195,7 @@ void EndSession() {
     coop::dev::lookat_aim_drill::OnDisconnect();  // [dev] the held target, which the next world does not have
     coop::dev::fireext_drill::OnDisconnect();  // [dev] back to the first step, the watch emptied
     coop::dev::pry_drill::OnDisconnect();  // [dev] back to the first step, the watch emptied
+    coop::dev::pi3_drill::OnDisconnect();  // [dev] a spawner mid-arm is abandoned, a still peer lets go
     coop::dev::floppy_selftest::EmitVerdict();  // [dev] which disc episodes fired, and which never did
     coop::dev::hookdrag_selftest::EmitVerdict();  // [dev] how far the dragged prop moved here
     coop::dev::hand_drop_selftest::EmitVerdict();  // [dev] which hand episodes fired, and what each peer counted
@@ -287,6 +290,7 @@ void TickDrills(coop::net::Session& session) {
     coop::dev::pi0_selftest::Tick(&session);  // [dev] a cleared Player Element keeps its id, once (latched read when off)
     coop::dev::pi1_selftest::Tick(&session);  // [dev] the substrate primitives' selftest, once (latched read when off)
     coop::dev::pi2_selftest::Tick(&session);  // [dev] the puppet-identity substrate's selftest, once (latched read when off)
+    coop::dev::pi3_drill::Tick(&session);  // [dev] the puppet-identity verb drill (a latched read when off)
     coop::dev::death_seam_census::Tick();  // [dev] every element end the death seam announces (latched read when off)
     coop::dev::damage_probe::Tick();  // [dev] every player damage verb call: whose body, source, caller (latched read when off)
     coop::dev::grime_drill::Tick(&session);  // [dev] the grime drill's legs (a latched read when off)
