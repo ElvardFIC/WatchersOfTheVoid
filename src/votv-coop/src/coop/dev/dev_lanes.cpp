@@ -80,6 +80,7 @@
 #include "coop/dev/meadow_selftest.h"  // [dev] a row into the host's signal database and out, the client's copy following
 #include "coop/dev/midnight_drill.h"  // [dev] the host's midnight on demand, awake or inside the host's own sleep
 #include "coop/dev/sleep_drill.h"  // [dev] a host's native sleep and a client's rest at the native rate, measured
+#include "coop/dev/badsun_drill.h"  // [dev] a peer's own Bad Sun copy against its own clock, measured
 #include "coop/dev/hostile_drill.h"  // [dev] the receive boundary: a client forges malformed packets, the host judges
 #include "coop/dev/native_pile_inert_probe.h"
 #include "coop/dev/order_probe.h"  // who writes the order queue, and what the drone delivers, per peer
@@ -112,6 +113,7 @@ void Install(coop::net::Session& session) {
     coop::dev::rollover_watch::Install(&session);  // [dev] the day rollover instrument (no-op unless rollover_watch=1)
     coop::dev::midnight_drill::Install(&session);  // [dev] the midnight drill (no-op unless midnight_drill is set)
     coop::dev::sleep_drill::Install(&session);  // [dev] the sleep drill (no-op unless sleep_drill is set)
+    coop::dev::badsun_drill::Install(&session);  // [dev] the Bad Sun drill (no-op unless badsun_drill is set)
     coop::dev::hostile_drill::Install(&session);  // [dev] the receive-boundary drill (no-op unless hostile_drill is set)
     coop::dev::world_roll_drill::Install(&session);  // [dev] the world roll drill (no-op unless world_roll_drill is set)
     coop::dev::kerfur_menu_drill::Install(&session);  // [dev] the kerfur menu drill (no-op unless kerfur_menu_drill=1)
@@ -138,6 +140,7 @@ void EndSession() {
     coop::dev::rollover_watch::OnDisconnect();  // [dev] the per-world arm and the session's watch totals
     coop::dev::midnight_drill::OnDisconnect();  // [dev] back to the first phase
     coop::dev::sleep_drill::OnDisconnect();  // [dev] back to the first phase, the host's nightmare chance restored
+    coop::dev::badsun_drill::OnDisconnect();  // [dev] back to the first phase
     coop::dev::hostile_drill::OnDisconnect();  // [dev] back to WaitArm; a rejoin re-arms
     coop::dev::world_roll_drill::OnDisconnect();  // [dev] back to the first phase
     coop::dev::kerfur_menu_drill::OnDisconnect();  // [dev] back to the first phase
@@ -213,6 +216,7 @@ void TickDrills(coop::net::Session& session) {
     coop::dev::rollover_watch::Tick();  // [dev] the day rollover (a single bool read when off)
     coop::dev::midnight_drill::Tick();  // [dev] the midnight drill's phases (a single enum read when off)
     coop::dev::sleep_drill::Tick();  // [dev] the sleep drill's phases (a single enum read when off)
+    coop::dev::badsun_drill::Tick();  // [dev] the Bad Sun drill's phases (a single enum read when off)
     coop::dev::hostile_drill::Tick();  // [dev] the receive-boundary drill's arm/judge (a single enum read when off)
     coop::dev::world_roll_drill::Tick();  // [dev] the world roll drill's arms (a single enum read when off)
     coop::dev::kerfur_menu_drill::Tick();  // [dev] the kerfur menu drill's phases (a single bool read when off)

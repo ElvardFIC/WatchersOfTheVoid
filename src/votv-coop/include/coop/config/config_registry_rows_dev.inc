@@ -362,6 +362,13 @@ CFG_ENUM(sleep_drill, "sleep_drill", "dev", "off", "off|host_asleep|client_rest|
     "hookdrag_selftest=1 and hookdrag_role=client on both peers. The client prints its armed line only. "
     "Every phase ends on a verdict line "
     "([SLEEP-DRILL] <arm> <role> PASS|FAIL), and a phase that does not come is a FAIL after a bound.")
+CFG_ENUM(badsun_drill, "badsun_drill", "dev", "off", "off|clock", "VOTVCOOP_BADSUN_DRILL",
+    "Drill (BOTH peers), once a client's join is over, on the save that holds one saved Bad Sun: "
+    "does a peer's own loaded copy go active by its own clock. clock: the host sets the clock to "
+    "06:58; each peer reads its count of live copies (it must be 1), its copy's widget and its place "
+    "in the active events' senders, and its own clock every second; the copy must stay inactive until "
+    "the clock reads 07:00 and be active by both tests within 15 s after it. Each peer ends on a "
+    "verdict line ([BADSUN-DRILL] clock <role> PASS|FAIL).")
 CFG_ENUM(world_roll_drill, "world_roll_drill", "dev", "off",
     "off|eye_host|eye_client|eye_join|jelly_host|jelly_client|jelly_join|redsky_host|redsky_client|redsky_join",
     "VOTVCOOP_WORLD_ROLL_DRILL",
