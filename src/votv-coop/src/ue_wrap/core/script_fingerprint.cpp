@@ -11,6 +11,9 @@
 #include <windows.h>
 
 #include <algorithm>
+#include <cwchar>
+#include <iterator>
+#include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -426,7 +429,7 @@ Result Of(void* ufunction) {
 
 }  // namespace ue_wrap::script_fingerprint
 
-// script_calls.h has no source of its own: both functions live here, beside the walk and the decoder.
+// script_calls.h has no source of its own: its three functions live here, beside the walk and the decoder.
 namespace ue_wrap::script_calls {
 
 bool EnumerateCalls(void* ufunction, std::vector<CallSite>& out) {
@@ -452,6 +455,29 @@ bool SameCallee(const CallSite& site, void* ufunction) {
                static_cast<uint32_t>(n.Number) == site.nameNumber;
     }
     return site.callee == ufunction;
+}
+
+bool CallHasLocal(const CallSite& site, const wchar_t* localName) {
+    UE_ASSERT_GAME_THREAD("script_calls::CallHasLocal");
+    if (!localName) return false;
+    namespace F = ue_wrap::script_fingerprint;
+    F::detail::Ctx c;
+    if (F::g_pass) c.names = &F::g_pass->names;
+    const size_t want = std::wcslen(localName);
+    for (uint8_t i = 0; i < site.localCount && i < std::size(site.locals); ++i) {
+        if (!site.locals[i]) continue;
+        // The renderer folds to lowercase and writes number n+1 as "_n": the whole string is the name.
+        const std::string have = F::detail::FieldName(c, site.locals[i]);
+        if (have.size() != want) continue;
+        bool same = true;
+        for (size_t k = 0; same && k < want; ++k) {
+            wchar_t ch = localName[k];
+            if (ch >= L'A' && ch <= L'Z') ch = static_cast<wchar_t>(ch - L'A' + L'a');
+            same = static_cast<wchar_t>(static_cast<unsigned char>(have[k])) == ch;
+        }
+        if (same) return true;
+    }
+    return false;
 }
 
 }  // namespace ue_wrap::script_calls

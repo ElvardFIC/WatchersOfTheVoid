@@ -19,7 +19,9 @@ constexpr uint64_t kNullWeakObjectPtr = 0x00000000FFFFFFFFull;
 // for, keeping the order of the rest, and shrink its count; the buffer is the caller's and is neither
 // reallocated nor freed. Returns the count dropped. Refuses, returning -1 and logging once, a null `locals`
 // or `drop`, a negative offset, a count outside [0, max] or a null data pointer with a positive count.
-int RemoveActors(uint8_t* locals, int32_t arrayOffset, bool (*drop)(void* ctx, void* actor), void* ctx);
+// `remaining`, when given, receives the array's count after the removal; on a refusal it is not written.
+int RemoveActors(uint8_t* locals, int32_t arrayOffset, bool (*drop)(void* ctx, void* actor), void* ctx,
+                 int* remaining = nullptr);
 
 // Where FHitResult keeps its hit actor and component (TWeakObjectPtr members) and how large it is, by the
 // engine struct's own reflection.

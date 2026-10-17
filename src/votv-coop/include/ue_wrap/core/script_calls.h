@@ -1,8 +1,9 @@
 // ue_wrap/core/script_calls.h -- the calls inside a Blueprint function's bytecode, in the order the
 // bytecode fingerprint walks it (script_fingerprint.h). A native post hook names the call that reached
 // it by the call's END offset (ufunction_hook::CallerFrame::codeOffset); this lists a function's calls
-// with their [start, end) offsets so a consumer can pin one by its ordinal while the function's
-// fingerprint hash matches. There is no script_calls.cpp: the two functions are defined in
+// with their [start, end) offsets and the locals they take, so a consumer can pin one by its ordinal
+// while the function's fingerprint hash matches, or by the local it writes. There is no
+// script_calls.cpp: the three functions (EnumerateCalls, SameCallee, CallHasLocal) are defined in
 // script_fingerprint.cpp, beside the walk and the decoder they share. Engine-wrapper layer
 // (principle 7): no gameplay or network logic.
 
@@ -17,7 +18,10 @@ namespace ue_wrap::script_calls {
 // 0x68 EX_CallMath name a UFunction (`callee`); 0x1B EX_VirtualFunction and 0x45 EX_LocalVirtualFunction
 // name a function by its FName (`callee` null, the FName's comparison index and number). Offsets count
 // from the start of the function's own Script data: `start` is the opcode's, `end` the first byte after
-// the call's last operand, which is where a native post hook sees the frame's code pointer.
+// the call's last operand, which is where a native post hook sees the frame's code pointer. `locals`
+// holds the FProperty* of each EX_LocalVariable / EX_LocalOutVariable that is itself one of the call's
+// parameters (not one nested inside a parameter's expression), in parameter order; `localCount` is how
+// many it holds, the first six at most.
 struct CallSite {
     uint8_t  op;
     void*    callee;
@@ -25,6 +29,8 @@ struct CallSite {
     uint32_t nameNumber;
     int32_t  start;
     int32_t  end;
+    void*    locals[6];
+    uint8_t  localCount;
 };
 
 // Every call expression of `ufunction`'s bytecode, the fingerprint's own order: a plain function in its
@@ -41,5 +47,10 @@ bool EnumerateCalls(void* ufunction, std::vector<CallSite>& out);
 // Does `site` call `ufunction`: the pointer for the opcodes that carry one, the FName's {comparison
 // index, number} for the ones that carry a name.
 bool SameCallee(const CallSite& site, void* ufunction);
+
+// Does one of `site`'s recorded locals carry exactly the name `localName`: the whole name, its number
+// included and case ignored, so "x_overlappingactors" does not match "x_overlappingactors_1" (the
+// engine renders a name of number n+1 as "_n"). Game thread.
+bool CallHasLocal(const CallSite& site, const wchar_t* localName);
 
 }  // namespace ue_wrap::script_calls

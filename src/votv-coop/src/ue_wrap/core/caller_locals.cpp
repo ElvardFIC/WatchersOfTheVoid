@@ -27,7 +27,8 @@ constexpr size_t kActorBytes = sizeof(void*);
 constexpr int32_t kWeakBytes = 8;   // a TWeakObjectPtr: {int32 index, int32 serial}
 
 // The removal itself, with no logging: -1 and the reason when the array does not read as one.
-int RemoveCore(uint8_t* locals, int32_t arrayOffset, bool (*drop)(void*, void*), void* ctx, const char** why) {
+int RemoveCore(uint8_t* locals, int32_t arrayOffset, bool (*drop)(void*, void*), void* ctx, const char** why,
+               int32_t* keptOut = nullptr) {
     *why = nullptr;
     if (!locals || !drop) { *why = "no locals or no predicate"; return -1; }
     if (arrayOffset < 0) { *why = "a negative array offset"; return -1; }
@@ -45,6 +46,7 @@ int RemoveCore(uint8_t* locals, int32_t arrayOffset, bool (*drop)(void*, void*),
     }
     const int dropped = view.num - kept;
     std::memcpy(locals + arrayOffset + offsetof(ArrayView, num), &kept, sizeof(kept));
+    if (keptOut) *keptOut = kept;
     return dropped;
 }
 
@@ -57,9 +59,12 @@ std::atomic<bool> g_selftestPassed{false};
 
 }  // namespace
 
-int RemoveActors(uint8_t* locals, int32_t arrayOffset, bool (*drop)(void* ctx, void* actor), void* ctx) {
+int RemoveActors(uint8_t* locals, int32_t arrayOffset, bool (*drop)(void* ctx, void* actor), void* ctx,
+                 int* remaining) {
     const char* why = nullptr;
-    const int dropped = RemoveCore(locals, arrayOffset, drop, ctx, &why);
+    int32_t kept = 0;
+    const int dropped = RemoveCore(locals, arrayOffset, drop, ctx, &why, &kept);
+    if (dropped >= 0 && remaining) *remaining = kept;
     if (dropped < 0) {
         static std::atomic<bool> s_said{false};
         if (!s_said.exchange(true, std::memory_order_relaxed))
@@ -114,7 +119,8 @@ bool RunSelftest() {
     Drop which{fake[2], fake[4]};
     void* const before[8] = {fake[0], fake[1], fake[2], fake[3], fake[4], fake[5], fake[6], fake[7]};
     const char* why = nullptr;
-    const int dropped = RemoveActors(locals, kArrayAt, +dropTwo, &which);
+    int remaining = -7;
+    const int dropped = RemoveActors(locals, kArrayAt, +dropTwo, &which, &remaining);
     ArrayView after;
     std::memcpy(&after, locals + kArrayAt, sizeof(after));
     ok(dropped == 2 && after.num == 3, "dropping the middle and the last of five leaves three");
@@ -123,8 +129,12 @@ bool RunSelftest() {
        "bytes past the new count are untouched");
     ok(after.data == view.data && after.max == view.max, "the buffer and its capacity are not touched");
 
-    // Nothing to drop changes nothing.
-    ok(RemoveActors(locals, kArrayAt, +dropNone, nullptr) == 0, "no drop returns zero");
+    ok(remaining == 3, "the count after the removal is written to remaining");
+
+    // Nothing to drop changes nothing, and remaining is the count it was.
+    remaining = -7;
+    ok(RemoveActors(locals, kArrayAt, +dropNone, nullptr, &remaining) == 0 && remaining == 3,
+       "no drop returns zero and remaining is the unchanged count");
 
     // An array that does not read as one is refused whole, and left as it was.
     uint8_t bad[96];
@@ -133,8 +143,10 @@ bool RunSelftest() {
     std::memcpy(bad + kArrayAt, &over, sizeof(over));
     uint8_t badCopy[96];
     std::memcpy(badCopy, bad, sizeof(bad));
-    ok(RemoveCore(bad, kArrayAt, +dropTwo, &which, &why) == -1 && why && std::memcmp(bad, badCopy, sizeof(bad)) == 0,
-       "a count past the capacity is refused and left alone");
+    int32_t keptOnRefusal = -7;
+    ok(RemoveCore(bad, kArrayAt, +dropTwo, &which, &why, &keptOnRefusal) == -1 && why &&
+           std::memcmp(bad, badCopy, sizeof(bad)) == 0 && keptOnRefusal == -7,
+       "a count past the capacity is refused, left alone, and writes no remaining");
     const ArrayView nodata{nullptr, 2, 8};
     std::memcpy(bad + kArrayAt, &nodata, sizeof(nodata));
     ok(RemoveCore(bad, kArrayAt, +dropTwo, &which, &why) == -1, "a null buffer with a count is refused");

@@ -4,10 +4,13 @@
 
 #include "script_bytecode.h"
 
+#include "ue_wrap/core/log.h"
 #include "ue_wrap/core/sdk_profile.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cstdio>
+#include <iterator>
 
 namespace ue_wrap::script_fingerprint::detail {
 namespace R = ue_wrap::reflection;
@@ -287,6 +290,13 @@ struct Walker {
     const void* resolveCtx = nullptr;
     int depth = 0;  // expressions open around the one being read
     static constexpr int kMaxNesting = 256;
+    // The call expressions being read, innermost last: the record's index in `calls` and the call's own
+    // expression depth. Touched only when `calls` is collected.
+    struct OpenCall {
+        size_t site;
+        int    depth;
+    };
+    std::vector<OpenCall> open;
 
     bool Need(size_t k) {
         if (pos + k > n) {
@@ -423,7 +433,7 @@ struct Walker {
     // The record of the call opcode just read at `at`, reserved before its operands so a call nested in
     // them lists after it; the callee is its first operand (a pointer, or an FName's index and number).
     size_t BeginCall(uint8_t code, size_t at) {
-        script_calls::CallSite site{code, nullptr, 0, 0, static_cast<int32_t>(at), 0};
+        script_calls::CallSite site{code, nullptr, 0, 0, static_cast<int32_t>(at), 0, {}, 0};
         if (IsObjectCallOp(code)) {
             if (pos + sizeof(void*) <= n) std::memcpy(&site.callee, s + pos, sizeof(void*));
         } else if (pos + 12 <= n) {
@@ -431,7 +441,25 @@ struct Walker {
             std::memcpy(&site.nameNumber, s + pos + 8, 4);
         }
         calls->push_back(site);
+        open.push_back({calls->size() - 1, depth});
         return calls->size() - 1;
+    }
+
+    // A local read as an operand of the innermost open call, when this expression is one of that call's
+    // own parameters: one level inside the call's expression, not inside a parameter's.
+    void NoteLocal(uint8_t code) {
+        if (open.empty() || depth != open.back().depth + 1) return;
+        if (code != EX_LocalVariable && code != EX_LocalOutVariable) return;
+        if (pos + sizeof(void*) > n) return;
+        script_calls::CallSite& site = (*calls)[open.back().site];
+        if (site.localCount < std::size(site.locals)) {
+            std::memcpy(&site.locals[site.localCount++], s + pos, sizeof(void*));
+            return;
+        }
+        static std::atomic<bool> said{false};
+        if (!said.exchange(true, std::memory_order_relaxed))
+            UE_LOGI("script_calls: a call takes more than %zu locals; the first %zu are kept", std::size(site.locals),
+                    std::size(site.locals));
     }
 
     bool Expr() {
@@ -551,6 +579,7 @@ struct Walker {
         default: break;
         }
         if (op.ops[0] == kNone) return true;  // no operand: the name alone
+        if (calls) NoteLocal(code);
         const bool listed = calls && IsCallOp(code);
         const size_t site = listed ? BeginCall(code, at) : 0;
         Emit("(");
@@ -560,7 +589,10 @@ struct Walker {
             if (!Operand(k, op.listEnd, wrote)) return false;
         }
         Emit(")");
-        if (listed) (*calls)[site].end = static_cast<int32_t>(pos);
+        if (listed) {
+            (*calls)[site].end = static_cast<int32_t>(pos);
+            open.pop_back();
+        }
         return true;
     }
 };

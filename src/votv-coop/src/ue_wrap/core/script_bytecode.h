@@ -17,6 +17,7 @@
 
 namespace ue_wrap::script_fingerprint::detail {
 
+constexpr uint8_t EX_LocalVariable = 0x00, EX_LocalOutVariable = 0x48;
 constexpr uint8_t EX_Return = 0x04, EX_Jump = 0x06, EX_EndFunctionParms = 0x16, EX_IntConst = 0x1D,
                   EX_FinalFunction = 0x1C, EX_LocalFinalFunction = 0x46, EX_PopExecutionFlow = 0x4D,
                   EX_ComputedJump = 0x4E, EX_EndOfScript = 0x53, EX_VirtualFunction = 0x1B,
