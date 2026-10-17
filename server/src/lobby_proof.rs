@@ -11,6 +11,11 @@ use ring::rand::{SecureRandom, SystemRandom};
 use std::collections::{HashSet, VecDeque};
 use std::time::{Duration, Instant};
 
+// MTA's announce is one unsigned GET (CMasterServerAnnouncer.h:235-267) that its master and every
+// client then check by querying the announced port (CServerList.cpp:490-595). A P2P host is
+// reached only through the relay and cannot be dialled, so the host signs a challenge the master
+// issued, the direction of MTA's own server-side challenge route (CHTTPD.cpp:131-170).
+
 // Domain tag of the announce proof. It differs from the signaling registration's
 // (`multivoid-signaling-register-v1`) and the peer admission's (`multivoid-peer-admission-v1`) in
 // its first bytes, so no choice of nonce can make a blob signed for one the blob of another: all
@@ -83,7 +88,8 @@ pub enum NonceFault {
 /// (16)`, the MAC an HMAC-SHA256 under a secret drawn when the master starts, over the tag, the
 /// address bucket it was issued to, the expiry and the random part. Issuing stores nothing, so
 /// no number of challenges can fill anything; only a nonce that was SPENT is kept, until its
-/// expiry, so it spends once. The shape is the SYN cookie's: the server answers a token it can
+/// expiry, so it spends once. MTA's announce carries no nonce (CMasterServerAnnouncer.h:235-267), so
+/// there is no precedent to follow; the shape is the SYN cookie's: the server answers a token it can
 /// re-derive. A restart draws a new secret, which voids every outstanding nonce (a `410`, and
 /// the client asks again). The clock is passed in; seconds count from the master's start.
 pub struct Nonces {

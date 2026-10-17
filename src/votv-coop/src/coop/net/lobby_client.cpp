@@ -129,6 +129,8 @@ bool FetchList(const std::string& masterUrl, const std::string& versionFilter,
     // ASCII-only lowering that suggests itself here is the hand-rolled casing rule that header
     // exists to have retired.
     std::sort(out.begin(), out.end(), [](const LobbyRow& a, const LobbyRow& b) {
+        // MTA keeps the master's order with a tie-break position (CServerList.cpp:714-722); this list
+        // arrives with none, so proof, name and id are the position.
         if (a.proved != b.proved) return a.proved;
         if (a.name != b.name) return a.name < b.name;
         return a.lobbyId < b.lobbyId;

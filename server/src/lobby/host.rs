@@ -16,7 +16,9 @@ use std::time::Instant;
 
 /// Make room for one more row: while the table is full, drop the stalest UNPROVED row, and only
 /// when every row is proved the stalest proved one. A proved create is never refused at the cap;
-/// an unproved one is, before this runs, when every row is proved.
+/// an unproved one is, before this runs, when every row is proved. MTA caps nothing: its master
+/// queries each announced port itself (CServerList.cpp:490-595), so a flood costs it probes, not
+/// rows; a master that takes pushes needs a cap, and the proof is what ranks who leaves first.
 pub fn evict_if_full(state: &mut MasterState) {
     while state.lobbies.len() >= MAX_LOBBIES_GLOBAL {
         let victim = state
@@ -50,7 +52,10 @@ pub fn lobbies_per_ip(state: &MasterState, ip: &str) -> usize {
 
 /// `POST /v1/host/challenge`: the nonce a create signs. Counted in its own rate class, bound to
 /// the caller's address bucket, single use, alive 30 s. Issuing stores nothing (see
-/// `lobby_proof::Nonces`), so no flood of challenges can refuse an honest host.
+/// `lobby_proof::Nonces`), so no flood of challenges can fill a table; the rate class cannot
+/// refuse an honest host either (`rate_table`). MTA's announce has no challenge
+/// (CMasterServerAnnouncer.h:235-267) and its server-side one is answered, not issued
+/// (CHTTPD.cpp:131-170): here the master issues it because it is the party that must be convinced.
 pub fn h_challenge(state: &mut MasterState, now: Instant, ip: &str) -> (u16, Value) {
     if !rate_ok(state, ip, "challenge", RL_CHALLENGE.0, RL_CHALLENGE.1) {
         return (429, json!({"error": "rate"}));
@@ -160,6 +165,8 @@ pub fn h_host(state: &mut MasterState, ctx: &HostCtx, ip: &str, body: &Value) ->
     }
 
     // One row per proved key: the caps count the rows listing it as gone; nothing drops until they pass.
+    // MTA's identity of a row is address and port (CServerList.cpp:700-706); a P2P host has no stable
+    // address a joiner could dial, so its key is the identity and a restarted host keeps one row.
     let replaced = if lo.proved { rows_of_key(state, &lo.host_identity) } else { Vec::new() };
     let mine = |sid: &String| state.lobbies.get(sid).is_some_and(|row| ip_bucket(&row.ip) == ip_bucket(ip));
     if lobbies_per_ip(state, ip) - replaced.iter().filter(|(sid, _)| mine(sid)).count() >= MAX_LOBBIES_PER_IP {

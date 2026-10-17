@@ -176,6 +176,8 @@ http::Response CreateLobby(const AnnounceRequest& r, bool listed, const BuildCla
         if (now) UE_LOGI("lobby: host announce -- stopped before the next request");
         return now;
     };
+    // MTA sends one request per announce and retries only a timeout (CMasterServerAnnouncer.h:154);
+    // here a create is a challenge and a POST, and a spent or missing nonce is retried once.
     http::Response resp;
     for (int attempt = 0; attempt < 2; ++attempt) {
         if (attempt > 0 && stopped()) return http::Response{};
