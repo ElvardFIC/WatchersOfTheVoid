@@ -109,7 +109,8 @@ void FailTimeout(bool host) {
     case Step::WaitJoin:
         return Fail(host, "timed out waiting for the join");
     case Step::WaitStart:
-        return Fail(host, "the clock never read hour %d or later within %d s of the join being over (last read %02d:%02d)",
+        return Fail(host, "the clock never read hour %d or later within %d s of the join being over, or no host clock sample arrived "
+                    "(last read %02d:%02d)",
                     kStartHour, static_cast<int>(kClockBound.count()), g_lastHour, g_lastMin);
     default:
         break;
@@ -158,7 +159,8 @@ void HostPark() {
         return Inconclusive(true, "the save's copy was active at hosting (%02d:%02d); the arm needs a save before 07:00",
                             g_lastHour, g_lastMin);
     // The named clock (timeZ) is rebuilt on the cycle's next tick: a copy that polls in this frame reads the old
-    // hour. Sample's first-sample rule catches the peer that began after 07:00 on that read.
+    // hour, and if that hour is 7 or later it goes active at 05:00, which the host's first sample FAILs as active
+    // before 07:00. The copy read inactive just above, so only a save reaching 07:00 in this very frame can do it.
     if (!coop::dev::set_clock::ApplyTimeFraction(kParkFraction))
         return Fail(true, "the clock set to 05:00 was refused");
     g_deadline = Steady::now() + kJoinBound;
