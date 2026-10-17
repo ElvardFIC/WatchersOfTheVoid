@@ -55,12 +55,15 @@ limits and per-IP caps are the wrong fixture for many synthetic rows from one ad
   shared vector in `tests/vectors/lobby_proof.json`). The nonce is stateless: its expiry, random
   bytes and an HMAC (a secret drawn when the master starts) over the caller's address bucket, so
   issuing stores nothing and no flood of challenges can fill the master; only a spent nonce is
-  kept, until it expires (single use; a full set, 65536, answers `503 busy`). A restart voids
+  kept, until it expires (single use; a full set, 500000, the create rate times the rate table, answers
+  `503 busy` and never forgets a nonce). A restart voids
   outstanding nonces and the host asks again. The challenge has its own rate class. A build at or
   above `MIN_PROVED_PROTO` (`src/version_gate.rs`) without a valid proof is `409 proof-required`;
   a proof that is present must verify (`400 bad-proof`); a nonce that is not this master's for
   this address, or is spent or expired, is `410 nonce-expired`; a build below
-  `COOP_MIN_LISTED_PROTO` is `403 build-too-old`. A valid proof marks the row `proved`, and a
+  `COOP_MIN_LISTED_PROTO` is `403 build-too-old`; an identity in `COOP_BLOCKED_IDENTITIES` (comma
+  list of `gen:` keys; an entry of another shape refuses the start) is `403 blocked` and never listed.
+  A valid proof marks the row `proved`, and a
   proved create for a key already listed replaces that key's row (new session and token). When
   the table is full a create evicts the stalest unproved row, then the stalest proved one; an
   unproved create is refused (`429`) when every row is proved. `/v1/lobbies` rows carry
@@ -85,7 +88,8 @@ limits and per-IP caps are the wrong fixture for many synthetic rows from one ad
 Rightmost `X-Forwarded-For` from a loopback proxy only, so the rate-limit and target address
 cannot be spoofed; constant-time token compare; an opaque `lobbyId` against a secret `sessionId`;
 control-character strip and codepoint clamp on every string; per-(address, class) sliding-window
-rate limits; a global LRU and per-address lobby caps; a `LOBBY_TTL` sweep; bounded header and
+rate limits (the table of them holds 50000 keys and, full, forgets the least recently seen rather
+than refuse a new address; `GET /v1/lobbies` has its own class, 30 per minute); a global LRU and per-address lobby caps; a `LOBBY_TTL` sweep; bounded header and
 body; connection admission at accept (`admission.rs`: a total and a per-address cap, taken before
 the TLS handshake) under one deadline that covers the handshake and every read before the
 answer, or on the relay before registration; a relay destination's queue is capped in bytes;

@@ -1,7 +1,7 @@
 //! The master's own environment: the ports and the secrets it refuses to start without.
 //! Read once, at first use, and never mutated -- so every module reads one snapshot.
 
-use crate::common::{canon_host_name, env_int, env_str, log};
+use crate::common::{canon_host_name, env_int, env_str, identity_shape_ok, log};
 use std::sync::LazyLock;
 
 pub struct Config {
@@ -16,6 +16,8 @@ pub struct Config {
     pub public_names: Vec<String>,
     /// `COOP_MIN_LISTED_PROTO`: a create below it is refused. 0 (the default) refuses nothing.
     pub min_listed_proto: i64,
+    /// `COOP_BLOCKED_IDENTITIES`: key identities (`gen:<64 hex>`) the operator keeps off the list.
+    pub blocked_identities: Vec<String>,
 }
 
 /// Whether a (canonical) name points back at the machine that dials it: `localhost`, a 0.0.0.0 or
@@ -112,6 +114,32 @@ pub fn config_faults(domain: &str, aliases: &str, floor: &str) -> Vec<String> {
     faults
 }
 
+/// The identities of `COOP_BLOCKED_IDENTITIES` as written: a comma list, each entry trimmed, an empty
+/// one skipped, a repeat dropped. An entry that is not `gen:<64 lower-case hex>` is named in the
+/// second list (the caller refuses to start on it: a block that silently matched nothing is worse
+/// than none).
+pub fn parse_blocked_identities(spec: &str) -> (Vec<String>, Vec<String>) {
+    let mut blocked = Vec::new();
+    let mut invalid = Vec::new();
+    for entry in spec.split(',').map(str::trim).filter(|e| !e.is_empty()) {
+        if !identity_shape_ok(entry) {
+            invalid.push(entry.to_string());
+        } else if !blocked.iter().any(|b| b == entry) {
+            blocked.push(entry.to_string());
+        }
+    }
+    (blocked, invalid)
+}
+
+/// What is wrong with `COOP_BLOCKED_IDENTITIES` as written, one line each; empty when it may start.
+pub fn blocked_faults(spec: &str) -> Vec<String> {
+    parse_blocked_identities(spec)
+        .1
+        .iter()
+        .map(|e| format!("COOP_BLOCKED_IDENTITIES entry '{e}' is not a key identity (gen: and 64 lower-case hex)"))
+        .collect()
+}
+
 impl Config {
     fn from_env() -> Config {
         let (public_names, refused) =
@@ -128,6 +156,7 @@ impl Config {
             turn_uri: env_str("COOP_TURN_URI", ""),
             public_names,
             min_listed_proto: env_int("COOP_MIN_LISTED_PROTO", 0).max(0),
+            blocked_identities: parse_blocked_identities(&env_str("COOP_BLOCKED_IDENTITIES", "")).0,
         }
     }
 }
@@ -136,7 +165,7 @@ pub static CFG: LazyLock<Config> = LazyLock::new(Config::from_env);
 
 #[cfg(test)]
 mod tests {
-    use super::{config_faults, is_loopback_name, parse_public_names};
+    use super::{blocked_faults, config_faults, is_loopback_name, parse_blocked_identities, parse_public_names};
 
     #[test]
     fn loopback_names_are_recognised() {
@@ -235,5 +264,32 @@ mod tests {
         let two = config_faults("a.example", "ok.example,https://x.example,y.example:abc", "");
         assert_eq!(two.len(), 2, "each bad entry is named: {two:?}");
         assert!(two[0].contains("https://x.example") && two[1].contains("y.example:abc"));
+    }
+
+    #[test]
+    fn the_block_list_is_a_trimmed_comma_list_of_key_identities() {
+        let (a, b) = (format!("gen:{}", "ab".repeat(32)), format!("gen:{}", "01".repeat(32)));
+        let (blocked, invalid) = parse_blocked_identities(&format!(" {a} ,, {b},{a}"));
+        assert_eq!(blocked, vec![a, b]);
+        assert!(invalid.is_empty());
+        assert!(parse_blocked_identities("").0.is_empty() && parse_blocked_identities(" , ").0.is_empty());
+        assert!(blocked_faults("").is_empty());
+    }
+
+    #[test]
+    fn a_block_entry_that_is_not_a_key_identity_refuses_the_start() {
+        let good = format!("gen:{}", "ab".repeat(32));
+        for bad in [
+            "h0123456789abcdef".to_string(),
+            "ab".repeat(32),
+            format!("gen:{}", "AB".repeat(32)),
+            format!("gen:{}", "ab".repeat(31)),
+            format!("{good}0"),
+        ] {
+            let faults = blocked_faults(&format!("{good},{bad}"));
+            assert_eq!(faults.len(), 1, "'{bad}' was accepted: {faults:?}");
+            assert!(faults[0].contains(&bad));
+        }
+        assert_eq!(blocked_faults("x,y").len(), 2, "each bad entry is named");
     }
 }

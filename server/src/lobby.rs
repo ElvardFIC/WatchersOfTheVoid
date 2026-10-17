@@ -6,6 +6,7 @@ use crate::common::{build_claim_shape_ok, clamp_str, ct_eq, ip_bucket, log, toke
 use crate::ice::{heartbeat_turn, ice_block, turn_creds, HostTurn, TURN_TTL_HOST, TURN_TTL_JOIN};
 use crate::lobby_proof::Nonces;
 use crate::master_config::CFG;
+use crate::rate_table::RateTable;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -23,11 +24,12 @@ pub const LOBBIES_CACHE_TTL: Duration = Duration::from_secs(5);
 
 pub const MAX_LOBBIES_PER_IP: usize = 8;
 pub const MAX_LOBBIES_GLOBAL: usize = 1000;
-// Hard cap on distinct rate-limit buckets, so a source-diverse flood can't grow the
-// `rate` map toward MemoryMax between the 30s sweeps (security audit 2026-07-16, M3).
-// With /64 IPv6 coarsening a flood needs distinct routable prefixes to add keys, so
-// this is a belt-and-suspenders ceiling; when hit, new buckets are refused (the
-// flooding prefixes are simply treated as rate-limited).
+// Hard cap on distinct rate-limit keys, so a source-diverse flood can't grow the `rate`
+// table toward MemoryMax between the 30s sweeps (security audit 2026-07-16, M3). At the cap
+// a NEW key is admitted and the least recently seen one forgotten (`rate_table`): the table
+// degrades to forgetting old flooders and never refuses an address it does not hold. MTA's
+// ASE fails open the same way, switching its per-IP protection off once its own table holds
+// 100 flooding entries (reference/mtasa-blue/Server/mods/deathmatch/logic/ASE.cpp:183).
 pub const MAX_RATE_KEYS: usize = 50_000;
 
 // per-(IP, class) sliding-window rate limits: (window, max events).
@@ -35,6 +37,8 @@ pub const RL_CHALLENGE: (Duration, usize) = (Duration::from_secs(60), 10);
 pub const RL_CREATE: (Duration, usize) = (Duration::from_secs(60), 10);
 pub const RL_JOIN: (Duration, usize) = (Duration::from_secs(60), 20);
 pub const RL_MUTATE: (Duration, usize) = (Duration::from_secs(60), 240);
+// GET /v1/lobbies: the 5 s snapshot cache bounds the work, this bounds the bytes an address can pull.
+pub const RL_BROWSE: (Duration, usize) = (Duration::from_secs(60), 30);
 
 pub const MAX_NAME: usize = 63;
 pub const MAX_WORLD: usize = 39;
@@ -249,7 +253,7 @@ impl Lobby {
 pub struct MasterState {
     pub lobbies: HashMap<String, Lobby>,      // sessionId -> Lobby
     pub lobby_by_public: HashMap<String, String>, // lobbyId -> sessionId
-    pub rate: HashMap<String, Vec<Instant>>,  // "ipbucket|class" -> recent timestamps
+    pub rate: RateTable, // "ipbucket|class" -> recent timestamps, capped at MAX_RATE_KEYS
     pub cache_t: Option<Instant>,
     // Arc so /v1/lobbies can clone the cached body cheaply under the lock and write the
     // response OUTSIDE it (audit L5: serializing a ~200 KB body under the global lock
@@ -263,7 +267,7 @@ impl MasterState {
         MasterState {
             lobbies: HashMap::new(),
             lobby_by_public: HashMap::new(),
-            rate: HashMap::new(),
+            rate: RateTable::new(MAX_RATE_KEYS),
             nonces: Nonces::new(),
             cache_t: None,
             cache_all_body: Arc::new(Vec::new()),
@@ -365,19 +369,16 @@ pub fn resolve_client_ip(peer_ip: &str, x_real_ip: Option<&str>, x_forwarded_for
 
 pub fn rate_ok(state: &mut MasterState, ip: &str, cls: &str, window: Duration, limit: usize) -> bool {
     let key = format!("{}|{}", ip_bucket(ip), cls);
-    let now = Instant::now();
-    // Bound the map: refuse a brand-new bucket once at the ceiling (audit M3) so a
-    // source-diverse flood can't outgrow the 30s sweeper. Existing buckets still work.
-    if !state.rate.contains_key(&key) && state.rate.len() >= MAX_RATE_KEYS {
-        return false;
+    state.rate.hit(&key, Instant::now(), window, limit)
+}
+
+/// `GET /v1/lobbies`: the cached list body for an address within its read rate, else None (the
+/// caller answers `429`). Rows of a blocked identity are not in it.
+pub fn h_browse(state: &mut MasterState, ip: &str, blocked: &[String]) -> Option<Arc<Vec<u8>>> {
+    if !rate_ok(state, ip, "browse", RL_BROWSE.0, RL_BROWSE.1) {
+        return None;
     }
-    let bucket = state.rate.entry(key).or_default();
-    bucket.retain(|ts| now.duration_since(*ts) < window);
-    if bucket.len() >= limit {
-        return false;
-    }
-    bucket.push(now);
-    true
+    Some(lobbies_snapshot(state, blocked))
 }
 
 
@@ -547,11 +548,11 @@ pub fn h_join(state: &mut MasterState, ip: &str, body: &Value) -> (u16, Value) {
     (200, Value::Object(resp))
 }
 
-pub fn build_rows(state: &MasterState) -> Vec<Value> {
+pub fn build_rows(state: &MasterState, blocked: &[String]) -> Vec<Value> {
     let now = Instant::now();
     let mut rows = Vec::new();
     for lo in state.lobbies.values() {
-        if !lo.listed {
+        if !lo.listed || blocked.contains(&lo.host_identity) {
             continue;
         }
         rows.push(json!({
@@ -582,14 +583,14 @@ pub fn build_rows(state: &MasterState) -> Vec<Value> {
 /// Refresh the /v1/lobbies cache if stale and return a cheap Arc handle to the cached
 /// body. Called UNDER the lock; the caller writes it AFTER dropping the lock (audit
 /// L5 — the ~200 KB body is no longer cloned or serialized under the global mutex).
-pub fn lobbies_snapshot(state: &mut MasterState) -> Arc<Vec<u8>> {
+pub fn lobbies_snapshot(state: &mut MasterState, blocked: &[String]) -> Arc<Vec<u8>> {
     let now = Instant::now();
     let stale = match state.cache_t {
         Some(t) => now.duration_since(t) >= LOBBIES_CACHE_TTL,
         None => true,
     };
     if stale {
-        let rows = build_rows(state);
+        let rows = build_rows(state, blocked);
         let body = serde_json::to_vec(&json!({"lobbies": rows})).unwrap_or_default();
         state.cache_all_body = Arc::new(body);
         state.cache_t = Some(now);
@@ -612,7 +613,7 @@ pub fn dispatch_post(path: &str, ip: &str, body: &Value) -> Option<(u16, Value)>
 }
 
 pub async fn sweeper() {
-    let max_window = [RL_CHALLENGE.0, RL_CREATE.0, RL_JOIN.0, RL_MUTATE.0].into_iter().max().unwrap();
+    let max_window = [RL_CHALLENGE.0, RL_CREATE.0, RL_JOIN.0, RL_MUTATE.0, RL_BROWSE.0].into_iter().max().unwrap();
     loop {
         tokio::time::sleep(Duration::from_secs(30)).await;
         let now = Instant::now();
@@ -628,10 +629,12 @@ pub async fn sweeper() {
             drop_lobby(&mut state, &sid, &pub_id);
             log(&format!("expired {pub_id} (stale {stale}s)"));
         }
-        // prune fully-stale rate buckets (else `rate` leaks one entry per distinct IP)
-        state
-            .rate
-            .retain(|_, v| v.last().map(|last| now.duration_since(*last) < max_window).unwrap_or(false));
+        // prune fully-stale rate keys (else `rate` holds one entry per distinct IP until the cap)
+        state.rate.prune(now, max_window);
+        let forgotten = state.rate.take_forgotten();
+        if forgotten > 0 {
+            log(&format!("rate table at its cap: forgot {forgotten} least-recently-seen keys to admit new ones"));
+        }
     }
 }
 

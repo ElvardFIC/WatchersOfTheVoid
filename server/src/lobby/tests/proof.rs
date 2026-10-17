@@ -1,5 +1,5 @@
 //! `h_host` and the announce proof: a handler-level test over a constructed `MasterState`, with the
-//! master's clock, names and floor injected through `HostCtx`.
+//! master's clock, names, floor and block list injected through `HostCtx`.
 
 use crate::lobby::host::{h_challenge, h_host, HostCtx};
 use crate::lobby::{build_rows, h_heartbeat, Lobby, MasterState, MAX_LOBBIES_GLOBAL};
@@ -35,20 +35,22 @@ fn sign(h: &Host, nonce: &str, name: &str) -> String {
     hex(h.kp.sign(&blob(&h.ident, nonce, name)).as_ref())
 }
 
-/// The master's side of the world: its clock, the names it answers to, its floor.
+/// The master's side of the world: its clock, the names it answers to, its floor, its block list.
 struct Env {
     now: Instant,
     names: Vec<String>,
     floor: i64,
+    blocked: Vec<String>,
 }
 
 impl Env {
     fn new() -> Env {
-        Env { now: Instant::now(), names: vec![NAME.to_string()], floor: 0 }
+        Env { now: Instant::now(), names: vec![NAME.to_string()], floor: 0, blocked: Vec::new() }
     }
 
     fn create(&self, state: &mut MasterState, ip: &str, body: &Value) -> (u16, Value) {
-        h_host(state, &HostCtx { now: self.now, names: &self.names, min_listed_proto: self.floor }, ip, body)
+        let ctx = HostCtx { now: self.now, names: &self.names, min_listed_proto: self.floor, blocked: &self.blocked };
+        h_host(state, &ctx, ip, body)
     }
 
     fn nonce(&self, state: &mut MasterState, ip: &str) -> String {
@@ -103,7 +105,7 @@ fn a_valid_proof_lists_a_proved_row_that_names_its_key() {
     let body = env.signed(&mut state, IP, &h, NEW, NAME);
     let (status, answer) = env.create(&mut state, IP, &body);
     assert_eq!(status, 200, "{answer}");
-    let rows = build_rows(&state);
+    let rows = build_rows(&state, &[]);
     let mine = rows_of(&rows, &h);
     assert_eq!(mine.len(), 1);
     assert_eq!(mine[0]["proved"], true);
@@ -255,7 +257,7 @@ fn a_build_that_signs_is_refused_without_a_proof_and_an_older_one_is_listed_unpr
     assert_eq!(error_of(&env.create(&mut state, IP, &plain(&new_host, 65535))), (409, "proof-required"));
     assert!(state.lobbies.is_empty());
     assert_eq!(env.create(&mut state, IP, &plain(&old_host, OLD)).0, 200);
-    let rows = build_rows(&state);
+    let rows = build_rows(&state, &[]);
     let mine = rows_of(&rows, &old_host);
     assert_eq!((mine.len(), &mine[0]["proved"]), (1, &json!(false)));
 }
@@ -348,7 +350,7 @@ fn a_proved_create_takes_over_an_unproved_row_listing_its_key_and_a_refused_one_
     assert_eq!(status, 200);
     assert_eq!(state.lobbies.len(), 1);
     assert_eq!(answer["lobbyId"], squat["lobbyId"]);
-    let rows = build_rows(&state);
+    let rows = build_rows(&state, &[]);
     assert_eq!(rows_of(&rows, &h)[0]["proved"], true);
 }
 
@@ -392,4 +394,35 @@ fn the_eight_row_cap_per_address_still_holds_for_unproved_rows() {
     }
     let (status, answer) = env.create(&mut state, "203.0.113.50", &plain(&host(), OLD));
     assert_eq!((status, answer["error"].as_str()), (429, Some("too many lobbies for this address")));
+}
+
+#[test]
+fn a_blocked_identity_is_refused_403_blocked_proved_or_not_and_burns_no_nonce() {
+    let (mut env, mut state, h) = (Env::new(), MasterState::new(), host());
+    env.blocked = vec![h.ident.clone()];
+    let nonce = env.nonce(&mut state, IP);
+    let mut signed = plain(&h, NEW);
+    signed["nonce"] = json!(nonce);
+    signed["proof"] = json!(sign(&h, &nonce, NAME));
+    assert_eq!(error_of(&env.create(&mut state, IP, &signed)), (403, "blocked"));
+    assert_eq!(error_of(&env.create(&mut state, IP, &plain(&h, OLD))), (403, "blocked"), "an unproved create got through");
+    assert!(state.lobbies.is_empty(), "a blocked create was listed");
+    assert_eq!(state.nonces.spent_len(), 0, "a blocked create spent a nonce");
+}
+
+#[test]
+fn a_block_list_refuses_only_the_identities_it_names() {
+    let (mut env, mut state, victim, other) = (Env::new(), MasterState::new(), host(), host());
+    env.blocked = vec![victim.ident.clone()];
+    let body = env.signed(&mut state, IP, &other, NEW, NAME);
+    assert_eq!(env.create(&mut state, IP, &body).0, 200, "an unlisted identity was refused");
+}
+
+#[test]
+fn a_row_of_a_blocked_identity_is_not_listed() {
+    let (env, mut state, h) = (Env::new(), MasterState::new(), host());
+    let body = env.signed(&mut state, IP, &h, NEW, NAME);
+    assert_eq!(env.create(&mut state, IP, &body).0, 200);
+    assert_eq!(rows_of(&build_rows(&state, &[]), &h).len(), 1);
+    assert!(rows_of(&build_rows(&state, &[h.ident.clone()]), &h).is_empty(), "a blocked row was listed");
 }

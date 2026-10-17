@@ -18,10 +18,10 @@ use coop_server::http_transport::{
     MAX_HEADER,
 };
 use coop_server::lobby::{
-    dispatch_post, latest_answer, lobbies_snapshot, lock_state, parse_latest_games, resolve_client_ip, sweeper,
+    dispatch_post, h_browse, latest_answer, lock_state, parse_latest_games, resolve_client_ip, sweeper,
     LATEST_URL,
 };
-use coop_server::master_config::{config_faults, CFG};
+use coop_server::master_config::{blocked_faults, config_faults, CFG};
 use coop_server::thanks::{thanks_answer, Answer};
 use coop_server::tls;
 use serde_json::{json, Value};
@@ -82,12 +82,15 @@ async fn handle<S: AsyncRead + AsyncWrite + Unpin>(mut stream: S, peer_ip: Strin
     // ---- route ----
     if method == "GET" && path == "/v1/lobbies" {
         // Refresh + snapshot under the lock; the write happens OFF the lock (L5). The query string
-        // is not read: every client asks for the whole list.
+        // is not read: every client asks for the whole list. The list has its own rate class.
         let body = {
             let mut state = lock_state();
-            lobbies_snapshot(&mut state)
+            h_browse(&mut state, &client_ip, &CFG.blocked_identities)
         };
-        write_response(&mut stream, 200, &body).await;
+        match body {
+            Some(body) => write_response(&mut stream, 200, &body).await,
+            None => write_response(&mut stream, 429, &json_bytes(&json!({"error": "rate"}))).await,
+        }
     } else if method == "GET" && path == "/v1/latest" {
         write_response(&mut stream, 200, &LATEST).await;
     } else if method == "GET" && path == "/v1/thanks" {
@@ -166,11 +169,13 @@ async fn main() {
         std::process::exit(1);
     }
     // A name missing, or a name or a floor of the wrong shape, would start a master no client can use.
-    let faults = config_faults(
+    let mut faults = config_faults(
         &env_str("COOP_DOMAIN", ""),
         &env_str("COOP_MASTER_NAME_ALIASES", ""),
         &env_str("COOP_MIN_LISTED_PROTO", ""),
     );
+    // A block-list entry that is not a key identity would match no host and say nothing.
+    faults.extend(blocked_faults(&env_str("COOP_BLOCKED_IDENTITIES", "")));
     for fault in &faults {
         log(&format!("FATAL: {fault}"));
     }
@@ -192,12 +197,13 @@ async fn main() {
         }
     };
     log(&format!(
-        "master listening on {addr} (signaling={} stun={} turn={} names={} min_listed_proto={})",
+        "master listening on {addr} (signaling={} stun={} turn={} names={} min_listed_proto={} blocked={})",
         if CFG.signaling_url.is_empty() { "?" } else { &CFG.signaling_url },
         if CFG.stun_uri.is_empty() { "?" } else { &CFG.stun_uri },
         if CFG.turn_uri.is_empty() { "off" } else { "on" },
         CFG.public_names.join(","),
-        CFG.min_listed_proto
+        CFG.min_listed_proto,
+        CFG.blocked_identities.len()
     ));
 
     tokio::spawn(sweeper());

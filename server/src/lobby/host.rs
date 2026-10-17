@@ -58,20 +58,27 @@ pub fn h_challenge(state: &mut MasterState, now: Instant, ip: &str) -> (u16, Val
     (200, json!({"nonce": state.nonces.issue(&ip_bucket(ip), now)}))
 }
 
-/// What `h_host` reads from outside the request: the clock, this master's names, the floor.
+/// What `h_host` reads from outside the request: the clock, this master's names, the floor, the block list.
 pub struct HostCtx<'a> {
     pub now: Instant,
     pub names: &'a [String],
     pub min_listed_proto: i64,
+    /// The operator's block list (`COOP_BLOCKED_IDENTITIES`): identities no create may list.
+    pub blocked: &'a [String],
 }
 
 impl HostCtx<'static> {
     pub fn live() -> HostCtx<'static> {
-        HostCtx { now: Instant::now(), names: &CFG.public_names, min_listed_proto: CFG.min_listed_proto }
+        HostCtx {
+            now: Instant::now(),
+            names: &CFG.public_names,
+            min_listed_proto: CFG.min_listed_proto,
+            blocked: &CFG.blocked_identities,
+        }
     }
 }
 
-/// `POST /v1/host`. Refusals run in this order: shape, nonce, proof, floor, caps, then the eviction.
+/// `POST /v1/host`. Refusals run in this order: shape, block list, nonce, proof, floor, caps, then the eviction.
 pub fn h_host(state: &mut MasterState, ctx: &HostCtx, ip: &str, body: &Value) -> (u16, Value) {
     if !rate_ok(state, ip, "create", RL_CREATE.0, RL_CREATE.1) {
         return (429, json!({"error": "rate"}));
@@ -111,6 +118,13 @@ pub fn h_host(state: &mut MasterState, ctx: &HostCtx, ip: &str, body: &Value) ->
             log(&format!("host REFUSED from {}: missing/bad identity", ip));
             return (400, json!({"error": "this build is too old to host -- update Multivoid"}));
         }
+    }
+    // The operator's block (MTA's master flags a row RESTRICTION_BLOCK_SERVER and every client hides
+    // it, Client/core/ServerBrowser/CServerList.h:75 and CServerBrowser.cpp:1358). Asked before the
+    // nonce is spent, so a blocked host burns nothing and costs no signature check.
+    if ctx.blocked.contains(&lo.host_identity) {
+        log(&format!("host REFUSED from {ip}: blocked identity (b{})", lo.proto));
+        return (403, json!({"error": "blocked"}));
     }
     lo.world = clamp_field(body, "world", MAX_WORLD);
     lo.locked = as_bool(body, "locked", false);
