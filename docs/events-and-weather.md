@@ -69,8 +69,9 @@ and now crosses). A client's own `Spawn Bad Sun` is refused at the script-body g
 keeps exactly one copy: the host's present spawns one if none lives, and the host's absent destroys
 an inactive copy at once and leaves an active one to fade by its own clock
 (`coop/world/weather_badsun`). The clock half is `[V]` (a client's own copy activates at 07:00); the
-wire half is `[?]` until the lane's drill runs, and both Blueprint routes (the day cycle's midnight,
-the cheat menu) are `[RD]`. The black fog and the rolling fog the clock rolls
+wire half is `[V]` (the lane's drill: a spawn, a refused client spawn, the end, a rejoin and a joiner's
+stale copy, each with its red), the day cycle's midnight route `[V]`, and the cheat menu's `[RD]` (its
+handler needs a Sandbox or flying world). The black fog and the rolling fog the clock rolls
 funnel through the engine's finish-spawning call, where a client-side catch destroys any birth
 the host did not command (`coop/world/weather_event_births`).
 
