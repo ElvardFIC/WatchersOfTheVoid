@@ -66,10 +66,11 @@ HEX_DIGITS = frozenset("0123456789abcdefABCDEF")  # a set: the empty string at a
 
 
 def number_run(text, i):
-    """Whether the word behind text[i] starts with a digit: a number (1, 700, 0xFF), where a quote is a
-    separator; case'a' and u8'a' are words, and their quote opens a character literal."""
+    """Whether the word behind text[i] starts with a digit: a number (1, 700, 0xFF, 0xAB'CD'EF; the walk
+    crosses the earlier separators), where a quote is a separator; case'a' and u8'a' are words, and
+    their quote opens a character literal."""
     j = i
-    while j > 0 and (text[j - 1].isalnum() or text[j - 1] == "_"):
+    while j > 0 and (text[j - 1].isalnum() or text[j - 1] in "_'"):
         j -= 1
     return text[j:j + 1].isdigit()
 
@@ -152,6 +153,10 @@ def drill():
             "coop/x/a.cpp": "::GetModuleFileNameW(::GetModuleHandleW(nullptr), exe, MAX_PATH);\n"},
         "ExeDir after a digit separator": {
             "coop/x/a.cpp": "constexpr long k = 1'700'000'000;\nauto d = paths::ExeDir();\n// it's\n"},
+        "ExeDir after a 3-group hex literal": {
+            "coop/x/a.cpp": "auto k = 0xAB'CD'EF; auto d = paths::ExeDir();\n"},
+        "ExeDir after a letter-led hex group": {
+            "coop/x/a.cpp": "auto k = 0xDEAD'BEEF'CAFE; auto d = paths::ExeDir();\n"},
         "ExeDir after case'a'": {"coop/x/a.cpp": "switch (x) { case'a': auto d = paths::ExeDir(); }\n"},
         "ExeDir after u8'a'": {"coop/x/a.cpp": "auto s = u8'a'; auto d = paths::ExeDir();\n"},
         "GetModuleFileName(NULL, over two lines": {
