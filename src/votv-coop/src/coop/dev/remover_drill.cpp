@@ -97,6 +97,8 @@ constexpr float kDropCm       = 40.f;  // above the floor, so a prop settles
 constexpr float kFindRadiusCm = 700.f;
 constexpr float kSightSlackCm = 25.f;
 constexpr float kAimPastCm    = 50.f;   // the press aims this far past the target's middle
+constexpr float kRestMoveCm   = 1.f;    // a prop that moved less than this between two reads is at rest
+constexpr int   kRestChecks   = 4;      // ...that many reads in a row, a check apart
 
 constexpr uint64_t kFindBoundMs  = 60000;   // CLIENT: the join's end to every prop the host spawned being here
 constexpr uint64_t kLegBoundMs   = 30000;   // CLIENT: a shot to what it must show (a failure bound, never a wait)
@@ -360,18 +362,30 @@ void HostTick(coop::net::Session* s) {
 // ---- client -----------------------------------------------------------------------------------------------------
 
 enum class Step : uint8_t {
-    Arm, Find, Single, SingleWait, Mash, MashWait, Sweep, SweepWait, Npc, NpcWait, Finish
+    Arm, Find, Settle, Single, SingleWait, Mash, MashWait, Sweep, SweepWait, Npc, NpcWait, Finish
 };
 Step g_step = Step::Arm;
 ue_wrap::CachedObjRef g_toolgun, g_single, g_mash, g_npc;
-ue_wrap::CachedObjRef g_sweep[kRing];   // every ring prop the client has in sight, the shots of the sweep
+ue_wrap::CachedObjRef g_ring[kRing];    // every ring prop the host laid
+int g_ringN = 0;
+ue_wrap::CachedObjRef g_sweep[kRing];   // the ring props the camera's trace meets first: the shots of the sweep
 int g_sweepN = 0;
 int g_sweepAt = 0;
 int g_noticeBase = 0;   // the leg's notice count before its shot
+char g_aimWhy[200] = "";   // why the last AimedHit or press failed
+FVector g_restAt[kRing + 2];   // where the pair and the ring stood at the last rest read
+int g_restReads = 0;           // reads in a row at which none of them had moved
 
 void Next(Step s) { g_step = s; g_stepMs = ::GetTickCount64(); }
 void Fail(const char* what) { End("client", "FAIL", what, true); }
 void Abandon(const char* why) { End("client", "ABANDONED", why, true); }
+
+// An abandon that carries the aim's own reason after `what`.
+void AbandonAim(const char* what) {
+    char why[300];
+    std::snprintf(why, sizeof(why), "%s: %s", what, g_aimWhy);
+    Abandon(why);
+}
 
 void LegPass(const char* name, Step next) {
     UE_LOGI("[REMOVER-DRILL] client leg %s PASS", name);
@@ -397,32 +411,59 @@ void DestroyIfLive(void* actor) {
 // trace would stop at the other's capsule. True when that first thing is the target and the hit names a component.
 bool AimedHit(void* player, void* target, ue_wrap::trace::Hit* hit) {
     FVector cam{}, at{};
-    if (!E::ReadMainPlayerCameraLocation(player, cam) || !E::TryGetActorLocation(target, at)) return false;
+    if (!E::ReadMainPlayerCameraLocation(player, cam) || !E::TryGetActorLocation(target, at)) {
+        std::snprintf(g_aimWhy, sizeof(g_aimWhy), "the camera or the target's location did not read");
+        return false;
+    }
     const float len = Dist(cam, at);
-    if (!(len > 1.f)) return false;
+    if (!(len > 1.f)) {
+        std::snprintf(g_aimWhy, sizeof(g_aimWhy), "the target is at the camera");
+        return false;
+    }
     const float past = (len + kAimPastCm) / len;
     const FVector end{cam.X + (at.X - cam.X) * past, cam.Y + (at.Y - cam.Y) * past, cam.Z + (at.Z - cam.Z) * past};
     const uint8_t types[4] = {0, 1, 2, 3};
     void* ignore[coop::players::kMaxPeers];
     const int nIgnore = coop::players::Registry::Get().LiveBodies(ignore, coop::players::kMaxPeers);
-    if (!ue_wrap::trace::LineHitForObjects(player, cam, end, types, 4, ignore, nIgnore, hit)) return false;
-    return hit->blocked && hit->actor == target && hit->component;
+    if (!ue_wrap::trace::LineHitForObjects(player, cam, end, types, 4, ignore, nIgnore, hit)) {
+        std::snprintf(g_aimWhy, sizeof(g_aimWhy), "the trace did not run");
+        return false;
+    }
+    if (hit->blocked && hit->actor == target && hit->component) return true;
+    if (!hit->blocked)
+        std::snprintf(g_aimWhy, sizeof(g_aimWhy), "the trace met nothing, %.0f cm to the target", len);
+    else if (hit->actor == target)
+        std::snprintf(g_aimWhy, sizeof(g_aimWhy), "the hit on the target names no component");
+    else
+        std::snprintf(g_aimWhy, sizeof(g_aimWhy), "the trace met %ls at %.0f cm, %.0f cm short of the target's middle",
+                      hit->actor ? R::ClassNameOf(hit->actor).c_str() : L"(no actor)", Dist(cam, hit->point), len);
+    return false;
 }
 
-// One press of the remover on `target`: a fresh tool, the toolgun's outHit the blocking hit AimedHit found, and the tool's
+// One press of the remover on `target` with the hit the toolgun is to hold: a fresh tool, outHit written, and the tool's
 // init(toolgun) -- the body the toolgun's press runs. The tool is gone after it on every path (the game's body destroys
 // it, the lane's watch destroys it); one left standing is destroyed here.
-bool Press(void* player, void* target) {
-    ue_wrap::trace::Hit hit;
+bool PressWith(void* player, void* target, const ue_wrap::trace::Hit& hit) {
     void* toolgun = g_toolgun.Get();
     void* cls = ue_wrap::object_index::ClassByName(kToolClass);
     FVector me{};
-    if (!toolgun || !cls || !AimedHit(player, target, &hit) || !E::TryGetActorLocation(player, me)) return false;
+    if (!toolgun || !cls || !E::TryGetActorLocation(player, me)) {
+        std::snprintf(g_aimWhy, sizeof(g_aimWhy), "the toolgun, the tool class or the player's location is missing");
+        return false;
+    }
     void* tool = DW::SpawnTool(cls, {me.X, me.Y, me.Z + 90.f});
+    if (!tool) std::snprintf(g_aimWhy, sizeof(g_aimWhy), "the tool did not spawn");
     const bool ran = tool && ue_wrap::hit_result::WriteField(toolgun, L"outHit", target, hit.component, hit.point) &&
                      DW::CallToolInit(tool, toolgun);
+    if (tool && !ran) std::snprintf(g_aimWhy, sizeof(g_aimWhy), "outHit could not be written or init did not run");
     DestroyIfLive(tool);
     return ran;
+}
+
+// One press at `target` aimed afresh: the real hit, then the press. False with g_aimWhy saying which part failed.
+bool Press(void* player, void* target) {
+    ue_wrap::trace::Hit hit;
+    return AimedHit(player, target, &hit) && PressWith(player, target, hit);
 }
 
 struct Seen { void* actor; float cm; };
@@ -458,21 +499,15 @@ void* NearestNpc(const FVector& from) {
     return ctx.best;
 }
 
-// The host's three roles, each a class of its own (the single prop a medium sack, the mashed one a small sack, the ring
-// sacks), so a role is found by what it is and not by where physics left it. Fills the client's roles; false while the
-// host's props are not all here.
+// The host's roles, each a class of its own (the single prop a medium sack, the mashed one a small sack, the ring plain
+// sacks, the creature a kerfurOmega), so a role is found by what it is and not by where physics left it. Fills the client's
+// roles; false while the host's props are not all here. Whether the camera can press each is Choose's, once they rest.
 bool Find(void* player) {
     FVector me{};
     if (!E::TryGetActorLocation(player, me)) return false;
     const bool granted = PhaseOf() == Phase::Granted;
     const std::vector<Seen> single = PropsAbout(kSingleClass, me);
     if (single.empty()) return false;
-    // A press must be one the game itself could make: the camera's own trace meets each target first.
-    ue_wrap::trace::Hit probe;
-    if (!AimedHit(player, single[0].actor, &probe)) {
-        Abandon("the camera's trace does not meet the single prop first");
-        return true;
-    }
     if (!granted) {
         g_single.Set(single[0].actor);
         return true;
@@ -481,17 +516,46 @@ bool Find(void* player) {
     const std::vector<Seen> ring = PropsAbout(kSackClass, me);
     void* npc = NearestNpc(me);
     if (mash.empty() || ring.size() < static_cast<size_t>(kRing) || !npc) return false;
-    if (!AimedHit(player, mash[0].actor, &probe) || !AimedHit(player, npc, &probe)) {
-        Abandon("the camera's trace does not meet the mashed prop or the creature first");
-        return true;
-    }
     g_single.Set(single[0].actor);
     g_mash.Set(mash[0].actor);
     g_npc.Set(npc);
+    g_ringN = kRing;
+    for (int i = 0; i < kRing; ++i) g_ring[i].Set(ring[static_cast<size_t>(i)].actor);
+    return true;
+}
+
+// Have the pair and the ring stopped moving: no one of them has moved more than a centimetre since the last read, as
+// sack_drill waits for its sack. A press at a prop still falling or coasting is not a press at the layout the host laid.
+bool AtRest() {
+    bool still = true;
     int n = 0;
-    for (const Seen& r : ring) {
-        ue_wrap::trace::Hit seen;
-        if (n < kRing && AimedHit(player, r.actor, &seen)) g_sweep[n++].Set(r.actor);
+    const auto visit = [&](const ue_wrap::CachedObjRef& ref) {
+        FVector at{};
+        void* a = ref.Get();
+        if (!a || !E::TryGetActorLocation(a, at)) { still = false; ++n; return; }
+        if (Dist(at, g_restAt[n]) >= kRestMoveCm) still = false;
+        g_restAt[n++] = at;
+    };
+    visit(g_single);
+    if (PhaseOf() == Phase::Granted) {
+        visit(g_mash);
+        for (int i = 0; i < g_ringN; ++i) visit(g_ring[i]);
+    }
+    return still;
+}
+
+// Once the layout is at rest: the camera's own trace must meet each target first (a press must be one the game itself could
+// make), and the sweep is every ring prop it meets first. Abandons by name when a target cannot be pressed.
+void Choose(void* player) {
+    ue_wrap::trace::Hit probe;
+    if (!AimedHit(player, g_single.Get(), &probe)) { AbandonAim("the camera's trace does not meet the single prop first"); return; }
+    if (PhaseOf() != Phase::Granted) return;
+    if (!AimedHit(player, g_mash.Get(), &probe)) { AbandonAim("the camera's trace does not meet the mashed prop first"); return; }
+    if (!AimedHit(player, g_npc.Get(), &probe)) { AbandonAim("the camera's trace does not meet the creature first"); return; }
+    int n = 0;
+    for (int i = 0; i < g_ringN; ++i) {
+        void* r = g_ring[i].Get();
+        if (r && AimedHit(player, r, &probe)) g_sweep[n++].Set(r);
     }
     g_sweepN = n;
     if (n < kSweepFloor) {
@@ -499,7 +563,6 @@ bool Find(void* player) {
         std::snprintf(why, sizeof(why), "%d of the ring props are in this client's sight, %d are needed", n, kSweepFloor);
         Abandon(why);
     }
-    return true;
 }
 
 bool SpawnToolgun(void* player) {
@@ -517,7 +580,7 @@ bool Fire(void* player, const ue_wrap::CachedObjRef& ref, const char* notice) {
     void* target = ref.Get();
     if (!target) { Abandon("the target is gone before its press"); return false; }
     g_noticeBase = notice ? NoticeCount(notice) : 0;
-    if (!Press(player, target)) { Abandon("the press did not run (tool, toolgun, hit or init)"); return false; }
+    if (!Press(player, target)) { AbandonAim("the press did not run"); return false; }
     return true;
 }
 
@@ -565,8 +628,7 @@ void ClientTick(coop::net::Session* s) {
         if (g_done) return;
         if (!SpawnToolgun(player)) { Abandon("the toolgun or the remover tool could not be spawned"); return; }
         UE_LOGI("[REMOVER-DRILL] client: the host's props are here and the toolgun is up (%s)", PhaseName());
-        Next(Step::Single);
-        return;
+Next(Step::Settle);        return;    case Step::Settle:        g_restReads = AtRest() ? g_restReads + 1 : 0;        if (g_restReads < kRestChecks) {            if (Expired(kFindBoundMs)) Abandon("the host's props did not come to rest within 60 s");            return;        }        Choose(player);        if (g_done) return;        UE_LOGI("[REMOVER-DRILL] client: the host's props are at rest and the camera's trace meets each target first");        Next(Step::Single);        return;
     case Step::Single:
         if (Fire(player, g_single, kNoRight)) Next(Step::SingleWait);
         return;
@@ -583,14 +645,19 @@ void ClientTick(coop::net::Session* s) {
         return;
     case Step::Mash: {
         g_noticeBase = NoticeCount(kNoRight);
+        // One aim, then every press in this tick from it, before any destroy can come back: the mash is six presses of one
+        // shot, so the host answers the first Removed and the rest Gone.
+        void* target = g_mash.Get();
+        ue_wrap::trace::Hit hit;
+        if (!target) { Abandon("the mashed prop is gone before its presses"); return; }
+        if (!AimedHit(player, target, &hit)) { AbandonAim("the mash aim failed"); return; }
         int shots = 0;
         for (int i = 0; i < kMashShots; ++i) {
-            void* target = g_mash.Get();
-            if (!target) break;   // a press that removed the prop here at once leaves nothing to press
-            if (!Press(player, target)) { Abandon("a mash press did not run"); return; }
+            void* t = g_mash.Get();
+            if (!t) break;   // a press that removed the prop here at once leaves nothing to press
+            if (!PressWith(player, t, hit)) { AbandonAim("a mash press did not run"); return; }
             ++shots;
         }
-        if (shots == 0) { Abandon("the mashed prop is gone before its presses"); return; }
         UE_LOGI("[REMOVER-DRILL] client: %d presses on one prop in one tick", shots);
         Next(Step::MashWait);
         return;
@@ -651,6 +718,10 @@ void OnDisconnect() {
     for (auto& r : g_sweep) r.Reset();
     g_sweepAt = 0;
     g_sweepN = 0;
+    g_ringN = 0;
+    g_restReads = 0;
+    for (auto& r : g_ring) r.Reset();
+    for (auto& p : g_restAt) p = {};
     g_noticeBase = 0;
 }
 
