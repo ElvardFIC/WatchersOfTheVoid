@@ -4,6 +4,7 @@
 
 #include "puppet_identity_internal.h"  // the rows and seams shared with the scan file (src-local)
 
+#include "coop/net/session.h"
 #include "coop/player/players_registry.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/object_index.h"
@@ -12,6 +13,7 @@
 #include "ue_wrap/core/script_gate.h"
 #include "ue_wrap/facts/function_row.h"
 
+#include <atomic>
 #include <cstdint>
 
 namespace coop::puppet_identity {
@@ -78,10 +80,12 @@ sg::Verdict OnBoxMarkPre(const sg::Call& call);
 sg::Verdict OnRunTriggerPre(const sg::Call& call);
 sg::Verdict OnGruntPre(const sg::Call& call);
 void OnGruntPost(const sg::Call& call);
+sg::Verdict OnWispPPre(const sg::Call& call);
+void OnWispPPost(const sg::Call& call);
 
-// One name watch. OnWholePre cancels the stub for a puppet toucher. OnBoxMarkPre and OnGruntPre mark the stub's
-// scope for a puppet toucher (the grunt's also opens the SetControlRotation window). OnRunTriggerPre cancels the
-// body while the box stub's mark is on the chain.
+// One name watch. OnWholePre cancels the stub for a puppet toucher. OnBoxMarkPre, OnGruntPre and OnWispPPre mark
+// the stub's scope for a puppet toucher (the grunt's opens the SetControlRotation window, the wisp_p's the
+// PlaySound2D and AddToViewport window). OnRunTriggerPre cancels the body while the box stub's mark is on the chain.
 struct Watch {
     const ue_wrap::facts::Function* row;
     Row                             counter;  // kRowCount: the marking stub, which refuses nothing itself
@@ -92,7 +96,7 @@ struct Watch {
 const Watch kWatches[] = {
     {&kRowPuppetWispW, kWispW, &OnWholePre, nullptr},
     {&kRowPuppetWispO, kWispO, &OnWholePre, nullptr},
-    {&kRowPuppetWispP, kWispP, &OnWholePre, nullptr},
+    {&kRowPuppetWispP, kWispP, &OnWispPPre, &OnWispPPost},
     {&kRowPuppetKelura, kKelura, &OnWholePre, nullptr},
     {&kRowPuppetOrborb, kOrborb, &OnWholePre, nullptr},
     {&kRowPuppetWellTpBegin, kWellTpBegin, &OnWholePre, nullptr},
@@ -134,14 +138,22 @@ uint32_t g_logged = 0;  // a bit per row: said since the last resolve
 constexpr int32_t kUnread = INT32_MIN;
 int32_t g_actorOff[kWatchCount] = {};
 
-// The scope mark rows 9 and 11 put on a puppet's touch and read downstream. Its address is the owner.
+// The scope mark rows 3, 9 and 11 put on a puppet's touch and read downstream. Its address is the owner.
 int       g_markOwner = 0;
 uintptr_t g_bit = 0;
 
 // The registered puppets, from the registry's listener.
 int g_count = 0;
 
-// What the last resolve described: the two marking stubs' classes, each class's listing identity
+// The session, for the role: row 3 is narrow on the host and whole on a client.
+std::atomic<coop::net::Session*> g_session{nullptr};
+
+bool OnHost() {
+    const coop::net::Session* s = g_session.load(std::memory_order_acquire);
+    return s && s->role() == coop::net::Role::Host;
+}
+
+// What the last resolve described: the three marking stubs' classes, each class's listing identity
 // (ClassListingId) and the stub functions, and the class-unlist number. A stub is looked at again only when its
 // own class changed. A callback that acts on a stub pointer first checks its class's listing still stands
 // (ClassStands: a class unloaded since frees the stub); the number only tells the resolve that no class was
@@ -150,10 +162,13 @@ constexpr uint64_t kNoVersion = UINT64_MAX;
 uint64_t g_resolvedVer = kNoVersion;
 void*    g_boxCls = nullptr;
 void*    g_gruntCls = nullptr;
+void*    g_wispPCls = nullptr;
 uint64_t g_boxListing = 0;
 uint64_t g_gruntListing = 0;
+uint64_t g_wispPListing = 0;
 void*    g_boxStub = nullptr;
 void*    g_gruntStub = nullptr;
+void*    g_wispPStub = nullptr;
 int      g_gen = 0;  // moves with each resolve that looked at anything
 
 // The stub's toucher, or null.
@@ -169,13 +184,17 @@ void* Toucher(int index, const sg::Call& call) {
     return *reinterpret_cast<void* const*>(call.locals + off);
 }
 
-// Is the scope of `stub` (the box stub or the grunt stub, of `cls` as listed at `listing`) marked on this
+// Is the scope of `stub` (the box, grunt or wisp_p stub, of `cls` as listed at `listing`) marked on this
 // thread's chain: the bit exists, the stub is resolved, a puppet toucher marked it, and the stub's class was not
 // unloaded since the resolve. The class test comes last, after the cheap ones.
 bool InScope(void* stub, void* cls, uint64_t listing) {
     return g_bit && stub && (sg::ScopeBits(stub) & g_bit) != 0 && ClassStands(cls, listing);
 }
 
+// Every stub below tests IsPuppetBody (a deny-list), not a positive "is not this machine's player": Local() is
+// null for a moment across a travel or a respawn, and a positive test would refuse this machine's own player's
+// legitimate touch then. The cost is a known gap: an unregistered mainPlayer_C (the F1 skin-preview mannequin)
+// is served as SP would serve it.
 sg::Verdict OnWholePre(const sg::Call& call) {
     const int index = call.tag - kPiTagBase;
     if (index < 0 || index >= kWatchCount) return sg::Verdict::Run;
@@ -208,14 +227,37 @@ sg::Verdict OnGruntPre(const sg::Call& call) {
     void* actor = Toucher(index, call);
     if (!actor || !PL::Registry::Get().IsPuppetBody(actor)) return sg::Verdict::Run;
     sg::MarkScope(call, g_bit);
-    scan::ArmGruntWindow(true);
+    scan::ArmWindow(scan::kGruntWindow, true);
     return sg::Verdict::Run;
 }
 
 // The window closes when no other grunt body is still open on the chain. IsBodyActive compares the pointer and
 // reads nothing through it, so closing needs no class test: a window left open is the worse failure.
 void OnGruntPost(const sg::Call&) {
-    if (!sg::IsBodyActive(g_gruntStub)) scan::ArmGruntWindow(false);
+    if (!sg::IsBodyActive(g_gruntStub)) scan::ArmWindow(scan::kGruntWindow, false);
+}
+
+// wisp_p (row 3). On a client the wisp is a mirror and the clock the host's, so the stub is cancelled whole. On
+// the host the stub runs (its rewind is the host's world clock, carried to every peer by time_sync) and a puppet
+// toucher only marks its scope and opens the window in which its 2D sound and flashbang are refused.
+sg::Verdict OnWispPPre(const sg::Call& call) {
+    const int index = call.tag - kPiTagBase;
+    if (index < 0 || index >= kWatchCount) return sg::Verdict::Run;
+    void* actor = Toucher(index, call);
+    if (!actor || !PL::Registry::Get().IsPuppetBody(actor)) return sg::Verdict::Run;
+    if (!OnHost()) {
+        NoteRefused(kWispP, actor);
+        return sg::Verdict::Cancel;
+    }
+    if (!g_bit || !g_wispPStub) return sg::Verdict::Run;
+    sg::MarkScope(call, g_bit);
+    scan::ArmWindow(scan::kWispPWindow, true);
+    return sg::Verdict::Run;
+}
+
+// As OnGruntPost: closes unless another wisp_p body is still open on the chain.
+void OnWispPPost(const sg::Call&) {
+    if (!sg::IsBodyActive(g_wispPStub)) scan::ArmWindow(scan::kWispPWindow, false);
 }
 
 void OnPuppetCount(int count) {
@@ -267,15 +309,17 @@ bool ResolveStub(const wchar_t* clsName, const ue_wrap::facts::Function& row, vo
     return true;
 }
 
-// The per-world resolve. A class pointer held non-null changes only through an unload, which moves the
-// unlist number, so while the number stands and both stub classes are held the five class lookups are skipped.
-// When it moved, each class is compared on its own listing: an unrelated class's unload only renews the number.
+// The per-world resolve. Class names are unique, so a class pointer held non-null changes only through an
+// unload, which moves the unlist number: while the number stands and the three stub classes are held, their
+// lookups are skipped, and the scan rows' own lookups too (scan::Resolve). When it moved, each class is compared
+// on its own listing: an unrelated class's unload only renews the number.
 void ResolveWorld() {
     const uint64_t ver = OI::ClassUnlistVersion();
     bool moved = false;
-    if (ver != g_resolvedVer || !g_boxCls || !g_gruntCls) {
+    if (ver != g_resolvedVer || !g_boxCls || !g_gruntCls || !g_wispPCls) {
         moved |= ResolveStub(L"trigger_box_C", kRowPuppetBoxMark, g_boxCls, g_boxListing, g_boxStub);
         moved |= ResolveStub(L"prop_grunt_C", kRowPuppetGruntMark, g_gruntCls, g_gruntListing, g_gruntStub);
+        moved |= ResolveStub(L"wisp_p_C", kRowPuppetWispP, g_wispPCls, g_wispPListing, g_wispPStub);
         g_resolvedVer = ver;
     }
     moved |= scan::Resolve(ver);
@@ -303,15 +347,19 @@ void NoteRefused(Row row, void* actor) {
 
 bool InGruntScope() { return InScope(g_gruntStub, g_gruntCls, g_gruntListing); }
 
+bool InWispPScope() { return InScope(g_wispPStub, g_wispPCls, g_wispPListing); }
+
 bool ClassStands(void* cls, uint64_t listing) { return cls && OI::ClassListingId(cls) == listing; }
 
-void Install() {
+void Install(coop::net::Session* session) {
+    g_session.store(session, std::memory_order_release);
     if (!g_watched) {
         g_watched = true;
         for (int32_t& off : g_actorOff) off = kUnread;
         g_bit = sg::ScopeBitFor(&g_markOwner);
         if (!g_bit)
-            UE_LOGE("[PI] no scope-mark bit is free -- trigger.openLevel, trigger.spikes and grunt refuse nothing");
+            UE_LOGE("[PI] no scope-mark bit is free -- trigger.openLevel, trigger.spikes, grunt and wisp_p (on the "
+                    "host) refuse nothing");
         for (int i = 0; i < kWatchCount; ++i)
             g_reg[i] = sg::WatchName(*kWatches[i].row, kPiTagBase + i, kWatches[i].pre, kWatches[i].post)
                            ? Reg::Registered : Reg::Refused;
@@ -324,8 +372,11 @@ void Tick() {
     if (!g_watched) return;
     if (!g_settled) Settle();
     ResolveWorld();
-    // A window a Cancel or a fault left open: it is armed and no body of the grunt stub is open on the chain.
-    if (scan::GruntWindowArmed() && !sg::IsBodyActive(g_gruntStub)) scan::ArmGruntWindow(false);
+    // A window a Cancel or a fault left open: it is armed and no body of its stub is open on the chain.
+    if (scan::WindowArmed(scan::kGruntWindow) && !sg::IsBodyActive(g_gruntStub))
+        scan::ArmWindow(scan::kGruntWindow, false);
+    if (scan::WindowArmed(scan::kWispPWindow) && !sg::IsBodyActive(g_wispPStub))
+        scan::ArmWindow(scan::kWispPWindow, false);
 }
 
 int WatchesLive() { return g_live; }
@@ -342,9 +393,9 @@ void OnDisconnect() {
         if (counters[i].refused)
             UE_LOGI("[PI] session end -- %s refused %u puppet touch(es) since the process started", counters[i].row,
                     static_cast<unsigned>(counters[i].refused));
-    g_boxCls = g_gruntCls = nullptr;
-    g_boxListing = g_gruntListing = 0;
-    g_boxStub = g_gruntStub = nullptr;
+    g_boxCls = g_gruntCls = g_wispPCls = nullptr;
+    g_boxListing = g_gruntListing = g_wispPListing = 0;
+    g_boxStub = g_gruntStub = g_wispPStub = nullptr;
     g_resolvedVer = kNoVersion;
     g_logged = 0;
     scan::Clear();

@@ -23,10 +23,15 @@ void NoteRefused(Row row, void* actor);
 
 // Is `cls` still the class listed at `listing`, the identity (ObjectIndex ClassListingId) it had when the
 // module resolved from it: false once it was unloaded, or loaded again, since. Reads nothing through `cls`.
+// A refusal that fails here leaves the call alone until the next Tick re-resolves, so a class unloaded or
+// loaded again is served as SP would for that one frame.
 bool ClassStands(void* cls, uint64_t listing);
 
 // Is the grunt stub's marked scope on this thread's chain, and its class not unloaded since the resolve.
 bool InGruntScope();
+
+// The same for the wisp_p stub: a puppet's touch of a purple wisp is running on the host.
+bool InWispPScope();
 
 namespace scan {
 
@@ -38,15 +43,17 @@ void InstallPump(int generation, int puppets);
 void Rearm(int puppets);
 
 // Re-resolve the scan rows whose own class changed (another class, or the same one listed again). `unlistVersion`
-// is the number of class unloads seen, so no lookup runs while it stands; a row whose class stands is not
-// decoded again whatever else unloaded. True when any row was looked at again.
+// is the number of class unloads seen: no lookup runs while every class is held and the number stands; a row
+// whose class stands is not decoded again whatever else unloaded. True when any row was looked at again.
 bool Resolve(uint64_t unlistVersion);
 
-// The SetControlRotation pre hook, armed only while a grunt's touch by a puppet runs.
-void ArmGruntWindow(bool on);
-bool GruntWindowArmed();
+// A window is the stretch of one creature's touch by a puppet in which its native pre hooks are armed: the
+// grunt's (SetControlRotation) and the purple wisp's (PlaySound2D, AddToViewport).
+enum Window : uint8_t { kGruntWindow, kWispPWindow };
+void ArmWindow(Window window, bool on);
+bool WindowArmed(Window window);
 
-// Forget every resolved pointer and disarm the grunt window.
+// Forget every resolved pointer and disarm both windows.
 void Clear();
 
 }  // namespace scan

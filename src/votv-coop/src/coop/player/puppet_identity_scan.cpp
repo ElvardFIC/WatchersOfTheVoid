@@ -1,10 +1,12 @@
-// coop/player/puppet_identity_scan.cpp -- the four native seams of coop/player/puppet_identity: the three scans a
+// coop/player/puppet_identity_scan.cpp -- the six native seams of coop/player/puppet_identity: the three scans a
 // Blueprint reads the result of (birch's overlap loop, the angry erie's sphere, the shower's trace), which drop a
-// puppet from what the Blueprint is about to read, and the camera call the grunt's touch ends in, which is refused
-// while a puppet's touch of a grunt is running.
+// puppet from what the Blueprint is about to read, and the three natives a touch ends in that belong to the
+// toucher's own machine alone (the grunt's camera turn, the purple wisp's 2D sound and flashbang), refused while a
+// puppet's touch of that creature is running.
 
 #include "puppet_identity_internal.h"  // the rows and seams shared with the main file (src-local)
 
+#include "coop/player/players_registry.h"
 #include "ue_wrap/core/caller_locals.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/object_index.h"
@@ -13,6 +15,7 @@
 #include "ue_wrap/core/script_calls.h"
 #include "ue_wrap/core/script_gate.h"
 #include "ue_wrap/core/ufunction_hook.h"
+#include "ue_wrap/engine/engine_pawn.h"
 #include "ue_wrap/facts/function_row.h"
 
 #include <cstdint>
@@ -28,6 +31,8 @@ namespace UH = ue_wrap::ufunction_hook;
 namespace SC = ue_wrap::script_calls;
 namespace CL = ue_wrap::caller_locals;
 namespace OI = ue_wrap::object_index;
+namespace E  = ue_wrap::engine;
+namespace PL = coop::players;
 
 UE_FACT_FN(kRowPuppetGetOverlappingActors, "puppet_identity", L"PrimitiveComponent", L"GetOverlappingActors",
            Declared);
@@ -35,27 +40,35 @@ UE_FACT_FN(kRowPuppetSphereOverlapActors, "puppet_identity", L"KismetSystemLibra
 UE_FACT_FN(kRowPuppetLineTraceSingleForObjects, "puppet_identity", L"KismetSystemLibrary",
            L"LineTraceSingleForObjects", Declared);
 UE_FACT_FN(kRowPuppetSetControlRotation, "puppet_identity", L"Controller", L"SetControlRotation", Declared);
+UE_FACT_FN(kRowPuppetPlaySound2D, "puppet_identity", L"GameplayStatics", L"PlaySound2D", Declared);
+UE_FACT_FN(kRowPuppetAddToViewport, "puppet_identity", L"UserWidget", L"AddToViewport", Declared);
 
 void OnOverlapPost(void* context, void* sourceObject, void* result);
 void OnSpherePost(void* context, void* sourceObject, void* result);
 void OnTracePost(void* context, void* sourceObject, void* result);
 sg::Verdict OnSetRotationPre(void* context, void* sourceObject, const uint8_t* parms);
+sg::Verdict OnPlaySoundPre(void* context, void* sourceObject, const uint8_t* parms);
+sg::Verdict OnAddToViewportPre(void* context, void* sourceObject, const uint8_t* parms);
 
-// One native: a post hook that watches the scan, or the pre hook of the grunt window.
+// One native: a post hook that watches the scan, or a pre hook armed only while its window is open (`window`).
 struct Seam {
     const ue_wrap::facts::Function* row;
     UH::PostNativeCallback          post;
     UH::PreNativeCallback           pre;
+    int                             window;  // a Window, or -1 for a scan's post hook
     void*                           fn;
     bool                            installed;
+    bool                            armed;  // a pre hook's last arming
     int                             triedGen;
 };
-enum SeamIndex : int { kOverlap, kSphere, kTrace, kSetRotation, kSeamCount };
+enum SeamIndex : int { kOverlap, kSphere, kTrace, kSetRotation, kPlaySound, kAddViewport, kSeamCount };
 Seam g_seams[kSeamCount] = {
-    {&kRowPuppetGetOverlappingActors, &OnOverlapPost, nullptr, nullptr, false, -1},
-    {&kRowPuppetSphereOverlapActors, &OnSpherePost, nullptr, nullptr, false, -1},
-    {&kRowPuppetLineTraceSingleForObjects, &OnTracePost, nullptr, nullptr, false, -1},
-    {&kRowPuppetSetControlRotation, nullptr, &OnSetRotationPre, nullptr, false, -1},
+    {&kRowPuppetGetOverlappingActors, &OnOverlapPost, nullptr, -1, nullptr, false, false, -1},
+    {&kRowPuppetSphereOverlapActors, &OnSpherePost, nullptr, -1, nullptr, false, false, -1},
+    {&kRowPuppetLineTraceSingleForObjects, &OnTracePost, nullptr, -1, nullptr, false, false, -1},
+    {&kRowPuppetSetControlRotation, nullptr, &OnSetRotationPre, kGruntWindow, nullptr, false, false, -1},
+    {&kRowPuppetPlaySound2D, nullptr, &OnPlaySoundPre, kWispPWindow, nullptr, false, false, -1},
+    {&kRowPuppetAddToViewport, nullptr, &OnAddToViewportPre, kWispPWindow, nullptr, false, false, -1},
 };
 
 // One scan: the Blueprint function whose pinned calls of the native write the out local, and where that local
@@ -90,7 +103,6 @@ constexpr uint64_t kNoVersion = UINT64_MAX;
 uint64_t              g_scanVer = kNoVersion;
 CL::HitLayout         g_layout;
 bool                  g_layoutOk = false;
-bool                  g_gruntArmed = false;
 
 // The native's UFunction, from its row: found at install, else here.
 void* NativeFn(Seam& seam) {
@@ -145,9 +157,27 @@ void OnTracePost(void*, void*, void*) {
     if (CL::ClearHitActor(hit, g_layout)) NoteRefused(row.counter, actor);
 }
 
-sg::Verdict OnSetRotationPre(void*, void*, const uint8_t*) {
+// Only player 0's controller: the grunt's tail turns GetPlayerController(0). While this machine's player does not
+// resolve (a travel) the call is left alone, as every refusal of this module is when its test cannot be made.
+sg::Verdict OnSetRotationPre(void* context, void*, const uint8_t*) {
     if (!InGruntScope()) return sg::Verdict::Run;
+    void* const local = PL::Registry::Get().Local();
+    if (!local || !context || context != E::GetController(local)) return sg::Verdict::Run;
     NoteRefused(kGrunt, nullptr);
+    return sg::Verdict::Cancel;
+}
+
+// The purple wisp's 2D sound and flashbang are heard and seen on this machine alone: refused while a puppet's
+// touch of a wisp_p runs on the host. The touch's world half (the clock's rewind) runs on.
+sg::Verdict OnPlaySoundPre(void*, void*, const uint8_t*) {
+    if (!InWispPScope()) return sg::Verdict::Run;
+    NoteRefused(kWispP, nullptr);
+    return sg::Verdict::Cancel;
+}
+
+sg::Verdict OnAddToViewportPre(void*, void*, const uint8_t*) {
+    if (!InWispPScope()) return sg::Verdict::Run;
+    NoteRefused(kWispP, nullptr);
     return sg::Verdict::Cancel;
 }
 
@@ -231,7 +261,8 @@ void Rearm(int puppets) {
 }
 
 bool Resolve(uint64_t unlistVersion) {
-    // A class held non-null changes only through an unload, which moves the number: no lookup while it stands.
+    // Class names are unique, so a class held non-null changes only through an unload, which moves the number:
+    // no lookup runs while every class is held and the number stands.
     bool held = true;
     for (const ScanRow& row : g_scan) held = held && row.resolvedCls;
     if (held && unlistVersion == g_scanVer) return false;
@@ -247,13 +278,18 @@ bool Resolve(uint64_t unlistVersion) {
     return looked;
 }
 
-void ArmGruntWindow(bool on) {
-    Seam& seam = g_seams[kSetRotation];
-    if (!seam.installed || g_gruntArmed == on) return;
-    if (UH::SetArmed(seam.fn, seam.pre, on)) g_gruntArmed = on;
+void ArmWindow(Window window, bool on) {
+    for (Seam& seam : g_seams) {
+        if (seam.window != window || !seam.installed || seam.armed == on) continue;
+        if (UH::SetArmed(seam.fn, seam.pre, on)) seam.armed = on;
+    }
 }
 
-bool GruntWindowArmed() { return g_gruntArmed; }
+bool WindowArmed(Window window) {
+    for (const Seam& seam : g_seams)
+        if (seam.window == window && seam.armed) return true;
+    return false;
+}
 
 void Clear() {
     for (ScanRow& row : g_scan) {
@@ -264,7 +300,8 @@ void Clear() {
         row.endCount = 0;
     }
     g_scanVer = kNoVersion;
-    ArmGruntWindow(false);
+    ArmWindow(kGruntWindow, false);
+    ArmWindow(kWispPWindow, false);
 }
 
 }  // namespace coop::puppet_identity::scan
