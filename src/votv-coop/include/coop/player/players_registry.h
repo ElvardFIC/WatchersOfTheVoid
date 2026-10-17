@@ -54,7 +54,8 @@ public:
 
     // Register or unregister a puppet. The RemotePlayer is owned by the caller; the registry holds
     // a non-owning pointer and clears it on unregister. A puppet is registered by its spawn, before
-    // its BeginPlay (RemotePlayer::Spawn), and unregistered by the caller after its destroy.
+    // its BeginPlay (RemotePlayer::Spawn), and unregistered by the caller after its destroy. The
+    // local slot is refused: the local peer's Element never takes a puppet.
     void RegisterPuppet(uint8_t peerSessionId, RemotePlayer* puppet);
     void UnregisterPuppet(uint8_t peerSessionId);
 

@@ -155,6 +155,16 @@ void Registry::RegisterPuppet(uint8_t peerSessionId, RemotePlayer* puppet) {
                 peerSessionId, static_cast<unsigned>(kMaxPeers));
         return;
     }
+    // The local peer's Element never takes a puppet: its slot is localPeerId_, and a puppet is a remote
+    // peer's body. A caller that names it has the slot wrong.
+    if (peerSessionId == localPeerId_) {
+        static bool s_said = false;
+        if (!s_said) {
+            s_said = true;
+            UE_LOGW("players::Registry: RegisterPuppet refused for the local slot %u", peerSessionId);
+        }
+        return;
+    }
     puppetByPeer_[peerSessionId] = puppet;
     // Create or refresh the Player Element for this peer.
     EnsurePlayerElement_(peerSessionId, puppet);
@@ -171,7 +181,8 @@ void Registry::ClearPuppet(uint8_t peerSessionId) {
     UE_ASSERT_GAME_THREAD("players::Registry::ClearPuppet (puppetByPeer_)");
     if (peerSessionId >= kMaxPeers) return;
     puppetByPeer_[peerSessionId] = nullptr;
-    // The Element keeps its place; only its copy of the puppet fact goes, so the two agree.
+    // The Element keeps its place; only its copy of the puppet fact goes, so the two agree. The
+    // Element then has a null puppet without being the local one: the local peer is localPeerId_.
     if (auto* element = playerBySlot_[peerSessionId].get()) element->SetPuppet_(nullptr);
 }
 
