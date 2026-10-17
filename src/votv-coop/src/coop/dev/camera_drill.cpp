@@ -42,10 +42,16 @@ using ue_wrap::FVector;
 constexpr const wchar_t* kCameraPath = L"/Game/objects/prop_camera_bad.prop_camera_bad_C";
 constexpr const wchar_t* kCameraClass = L"prop_camera_bad_C";
 
-constexpr int      kDirs          = 16;      // HOST: horizontal probe directions round the player's start
+constexpr int      kProbeDirs     = 8;       // HOST: horizontal probe directions from each origin (45 degrees apart)
+constexpr int      kRingDirs      = 8;       // HOST: origins round the player's start: this many yaw steps...
+constexpr float    kRingCm[]      = {300.f, 600.f, 900.f};  // ...at each of these distances, besides the start itself
+constexpr int      kMaxRouted     = 24;      // HOST: wall candidates a search asks a route of, nearest first
+constexpr float    kRoutableProbeCm = 300.f; // HOST: the readiness probe: a route to a point this far off, in any of 8 directions
+constexpr float    kRoutableBoundS  = 60.f;  // HOST: world seconds of a routable director without a wall before it gives up
+constexpr uint64_t kHostEveryMs   = 1000;
 constexpr float    kProbeUpCm     = 40.f;    // HOST: the probe's height above the player's location (about eye height)
 constexpr float    kProbeReachCm  = 1500.f;
-constexpr float    kMinWallCm     = 250.f;   // HOST: a wall nearer than this to the start is not used
+constexpr float    kMinWallCm     = 120.f;   // HOST: a wall nearer than this to the origin that probed it is not used
 constexpr float    kWallFloorZ    = 0.15f;   // HOST: a hit whose normal leans more than this to vertical is no wall
 constexpr float    kFacingDot     = 0.5f;    // HOST: the wall must face the probe at least this squarely
 constexpr float    kFlatSideCm    = 25.f;    // HOST: the wall is probed this far to each side...
@@ -70,6 +76,9 @@ CStep    g_client = CStep::Ready;
 uint64_t g_stepMs = 0;
 uint64_t g_nextCheckMs = 0;
 uint64_t g_nextScanMs = 0;
+float    g_routableSinceS = -1.f;  // HOST: the world clock when the director first routed
+int      g_searches = 0;           // HOST: wall searches that found none
+bool     g_saidWaiting = false;    // HOST: the wait for the director said once
 ue_wrap::CachedObjRef g_hostCam;   // HOST: the camera it hung
 ue_wrap::CachedObjRef g_cam;       // CLIENT: the camera it walks to, grabs and watches
 std::shared_ptr<D::BackgroundWalk> g_walk;
@@ -96,10 +105,10 @@ void Abandon(const char* why) {
     g_client = CStep::Done;
 }
 
-bool Due() {
+bool Due(uint64_t every) {
     const uint64_t now = ::GetTickCount64();
     if (now < g_nextCheckMs) return false;
-    g_nextCheckMs = now + kCheckEveryMs;
+    g_nextCheckMs = now + every;
     return true;
 }
 
@@ -130,38 +139,75 @@ bool Probe(void* me, const FVector& from, float dx, float dy, void* const* ignor
     return ue_wrap::trace::LineHitForObjects(me, from, to, types, 1, ignore, nIgnore, &hit) && hit.blocked;
 }
 
-// The walls round `start` that are flat, face it, and lie in one plane across 50 cm, nearest first.
-std::vector<Wall> FlatWalls(void* me, const FVector& start) {
+// What one wall search found and why each probe failed, for the one line the host says when it gives up.
+struct Tally {
+    int origins = 0, probes = 0;
+    int noHit = 0, slope = 0, facing = 0, tooNear = 0, notPlanar = 0;  // probes rejected, by the first test they failed
+    int walls = 0, routed = 0, noRoute = 0, untried = 0;            // flat walls, those asked a route, and the outcomes
+};
+
+float Dist2D(const FVector& a, const FVector& b) { return std::sqrt((a.X - b.X) * (a.X - b.X) + (a.Y - b.Y) * (a.Y - b.Y)); }
+
+// The probe origins: the player's start, then a ring of kRingDirs yaw steps at each of kRingCm.
+std::vector<FVector> Origins(const FVector& start) {
+    std::vector<FVector> o{start};
+    for (const float d : kRingCm)
+        for (int j = 0; j < kRingDirs; ++j) {
+            const float ang = 6.28318530718f * static_cast<float>(j) / static_cast<float>(kRingDirs);
+            o.push_back({start.X + std::cos(ang) * d, start.Y + std::sin(ang) * d, start.Z});
+        }
+    return o;
+}
+
+// The walls the probes find that are flat, face their origin and lie in one plane across 50 cm, nearest to `at` first.
+std::vector<Wall> FlatWalls(void* me, const FVector& at, const FVector& start, Tally& t) {
     std::vector<Wall> walls;
     void* ignore[coop::players::kMaxPeers];
     const int nIgnore = coop::players::Registry::Get().LiveBodies(ignore, coop::players::kMaxPeers);
-    for (int i = 0; i < kDirs; ++i) {
-        const float ang = 6.28318530718f * static_cast<float>(i) / static_cast<float>(kDirs);
-        const float dx = std::cos(ang), dy = std::sin(ang);
-        ue_wrap::trace::Hit hit;
-        if (!Probe(me, start, dx, dy, ignore, nIgnore, hit)) continue;
-        const float len = std::sqrt(hit.normal.X * hit.normal.X + hit.normal.Y * hit.normal.Y);
-        if (len < 0.1f || std::fabs(hit.normal.Z) > kWallFloorZ) continue;
-        Wall w;
-        w.n = {hit.normal.X / len, hit.normal.Y / len, 0.f};
-        w.point = hit.point;
-        w.dist = std::sqrt((hit.point.X - start.X) * (hit.point.X - start.X) +
-                           (hit.point.Y - start.Y) * (hit.point.Y - start.Y));
-        if (w.dist < kMinWallCm || Dot2(w.n, dx, dy) > -kFacingDot) continue;
-        bool flat = true;
-        for (const float off : {-kFlatSideCm, kFlatSideCm}) {
-            const FVector side{start.X - w.n.Y * off, start.Y + w.n.X * off, start.Z};
-            ue_wrap::trace::Hit sh;
-            if (!Probe(me, side, dx, dy, ignore, nIgnore, sh) ||
-                std::fabs(Dot2(w.n, sh.point.X - w.point.X, sh.point.Y - w.point.Y)) > kFlatSlackCm) {
-                flat = false;
-                break;
+    for (const FVector& origin : Origins(start)) {
+        ++t.origins;
+        for (int i = 0; i < kProbeDirs; ++i) {
+            ++t.probes;
+            const float ang = 6.28318530718f * static_cast<float>(i) / static_cast<float>(kProbeDirs);
+            const float dx = std::cos(ang), dy = std::sin(ang);
+            ue_wrap::trace::Hit hit;
+            if (!Probe(me, origin, dx, dy, ignore, nIgnore, hit)) { ++t.noHit; continue; }
+            const float len = std::sqrt(hit.normal.X * hit.normal.X + hit.normal.Y * hit.normal.Y);
+            if (len < 0.1f || std::fabs(hit.normal.Z) > kWallFloorZ) { ++t.slope; continue; }
+            Wall w;
+            w.n = {hit.normal.X / len, hit.normal.Y / len, 0.f};
+            w.point = hit.point;
+            w.dist = Dist2D(hit.point, at);
+            if (Dist2D(hit.point, origin) < kMinWallCm) { ++t.tooNear; continue; }
+            if (Dot2(w.n, dx, dy) > -kFacingDot) { ++t.facing; continue; }
+            bool flat = true;
+            for (const float off : {-kFlatSideCm, kFlatSideCm}) {
+                const FVector side{origin.X - w.n.Y * off, origin.Y + w.n.X * off, origin.Z};
+                ue_wrap::trace::Hit sh;
+                if (!Probe(me, side, dx, dy, ignore, nIgnore, sh) ||
+                    std::fabs(Dot2(w.n, sh.point.X - w.point.X, sh.point.Y - w.point.Y)) > kFlatSlackCm) {
+                    flat = false;
+                    break;
+                }
             }
+            if (!flat) { ++t.notPlanar; continue; }
+            walls.push_back(w);
+            ++t.walls;
         }
-        if (flat) walls.push_back(w);
     }
     std::sort(walls.begin(), walls.end(), [](const Wall& a, const Wall& b) { return a.dist < b.dist; });
     return walls;
+}
+
+// Whether the director can route at all from the player's start: a route to a point kRoutableProbeCm off, in any of
+// eight directions. Before the NavMesh is up no route exists and a wall search would only fail on it.
+bool DirectorRoutes(void* me, const FVector& at) {
+    for (int i = 0; i < 8; ++i) {
+        const float ang = 6.28318530718f * static_cast<float>(i) / 8.f;
+        const FVector to{at.X + std::cos(ang) * kRoutableProbeCm, at.Y + std::sin(ang) * kRoutableProbeCm, at.Z};
+        if (D::RouteInLegs(me, at, to, kRouteReachCm)) return true;
+    }
+    return false;
 }
 
 // The walker's standpoint for a camera at `at` whose back is to the wall facing `n`.
@@ -177,19 +223,45 @@ void HostTick(coop::net::Session* s) {
     void* cls = ue_wrap::asset_load::LoadObjectByPath(kCameraPath);
     if (!cls) { Abandon("host: prop_camera_bad_C did not load"); return; }
 
-    const FVector probe{at.X, at.Y, at.Z + kProbeUpCm};
-    const std::vector<Wall> walls = FlatWalls(me, probe);
-    const Wall* chosen = nullptr;
-    for (const Wall& w : walls) {
-        if (D::RouteInLegs(me, at, Standpoint(w.point, w.n.X, w.n.Y), kRouteReachCm)) { chosen = &w; break; }
-    }
-    if (!chosen) {
-        Abandon("host: no wall near the player's start is flat, faces it and ends a NavMesh route within reach");
+    // Readiness, not a clock: nothing is searched until the director can route at all.
+    float worldNow = 0.f;
+    if (!E::TryGetWorldTimeSeconds(worldNow)) return;
+    if (!DirectorRoutes(me, at)) {
+        if (!g_saidWaiting) {
+            g_saidWaiting = true;
+            UE_LOGI("camera_drill: host waits for the director to route from the player's start");
+        }
         return;
     }
-    UE_LOGI("camera_drill: host wall at (%.0f, %.0f, %.0f) %.0f cm out, normal (%.2f, %.2f); %d flat walls, the nearest "
-            "with a route taken", chosen->point.X, chosen->point.Y, chosen->point.Z, chosen->dist, chosen->n.X,
-            chosen->n.Y, static_cast<int>(walls.size()));
+    if (g_routableSinceS < 0.f) {
+        g_routableSinceS = worldNow;
+        UE_LOGI("camera_drill: host: the director routes; searching for a wall (retried every second)");
+    }
+
+    const FVector probe{at.X, at.Y, at.Z + kProbeUpCm};
+    Tally t;
+    const std::vector<Wall> walls = FlatWalls(me, at, probe, t);
+    const Wall* chosen = nullptr;
+    for (const Wall& w : walls) {
+        if (t.routed >= kMaxRouted) { ++t.untried; continue; }
+        ++t.routed;
+        if (D::RouteInLegs(me, at, Standpoint(w.point, w.n.X, w.n.Y), kRouteReachCm)) { chosen = &w; break; }
+        ++t.noRoute;
+    }
+    if (!chosen) {
+        ++g_searches;
+        if (worldNow - g_routableSinceS < kRoutableBoundS) return;
+        UE_LOGW("camera_drill: host gave up after %d searches -- last search: %d origins, %d probes: %d hit nothing, "
+                "%d on a slope, %d too near, %d facing away, %d not in one plane; %d flat walls, %d asked a route "
+                "(%d refused), %d left untried", g_searches, t.origins, t.probes, t.noHit, t.slope, t.tooNear, t.facing,
+                t.notPlanar, t.walls, t.routed, t.noRoute, t.untried);
+        Abandon("host: the director routed for 60 s of world time and no wall near the player's start was flat, "
+                "facing its probe and at the end of a route");
+        return;
+    }
+    UE_LOGI("camera_drill: host wall at (%.0f, %.0f, %.0f) %.0f cm out, normal (%.2f, %.2f); %d flat walls, %d asked a "
+            "route, search %d", chosen->point.X, chosen->point.Y, chosen->point.Z, chosen->dist, chosen->n.X,
+            chosen->n.Y, t.walls, t.routed, g_searches + 1);
 
     // The camera's back is its stick arrow (yaw 180 off the actor's forward): the actor faces away from the wall.
     const FVector origin{chosen->point.X + chosen->n.X * kOutCm, chosen->point.Y + chosen->n.Y * kOutCm,
@@ -372,13 +444,13 @@ void ClientTick(void* player) {
 void Tick(coop::net::Session* s) {
     if (!Enabled() || !s) return;
     if (s->role() == coop::net::Role::Host) {
-        if (g_host == HStep::Wait && Due()) HostTick(s);
+        if (g_host == HStep::Wait && Due(kHostEveryMs)) HostTick(s);
         return;
     }
     if (!s->connected() || g_client == CStep::Done) return;
     void* player = coop::players::Registry::Get().Local();
     if (!player) return;
-    if (g_client == CStep::Ready && !Due()) return;
+    if (g_client == CStep::Ready && !Due(kCheckEveryMs)) return;
     ClientTick(player);
 }
 
@@ -393,7 +465,12 @@ void OnDisconnect() {
     g_t0 = 0.f;
     g_cam.Reset();
     // The host's camera outlives a client, so a rejoin's client finds it again; one that is gone is hung afresh.
-    if (!g_hostCam.Get()) g_host = HStep::Wait;
+    if (!g_hostCam.Get()) {
+        g_host = HStep::Wait;
+        g_routableSinceS = -1.f;
+        g_searches = 0;
+        g_saidWaiting = false;
+    }
 }
 
 }  // namespace coop::dev::camera_drill

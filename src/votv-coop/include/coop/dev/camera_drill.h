@@ -1,6 +1,7 @@
 // coop/dev/camera_drill.h -- [dev] a picked-up camera: does it stick to its wall again, and by whose hand.
-//   HOST   -- once its world is up, with no wait for a client: finds a flat wall near the player's start that a walker
-//             reaches by a NavMesh route, hangs a prop_camera_bad_C on it, sticks it through the prop-stick lane's
+//   HOST   -- once its world is up and the director can route (checked each second), with no wait for a client: finds,
+//             from the player's start and a ring of origins round it, a flat wall that a walker reaches by a NavMesh
+//             route (retried each second, given up after 60 s of world time of a routable director), hangs a prop_camera_bad_C on it, sticks it through the prop-stick lane's
 //             converge, and reads whether the camera is stuck AND attached to the wall (a raw frozen-write fallback
 //             is frozen but attached to nothing, and is reported as a failure, never as stuck). It says
 //             "camera_drill: host READY stuck key=... at=..." only when it reads so.
