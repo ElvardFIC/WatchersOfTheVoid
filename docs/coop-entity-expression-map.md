@@ -261,7 +261,7 @@ registry recycled that id. `[V]`
   `[V]`
 - **A prop a hook is tied to.** The constraint exists on the HOST and nowhere else, whichever
   peer fired the hook (`coop/items/hook_constraint`): a client's game breaks every tie a hook of
-  the lane's classes builds on it, in the frame that built it (a post watch on `makeAttachments`), and the host ties
+  the lane's classes builds on it, in the frame that built it (a post watch on `makeAttachments`, `[?]` until a run shows it), and the host ties
   a client's hook on its own mirror of it, against that client's puppet, from the bite the owner's
   state names -- the actor's key and element id, the component, the head in the component's frame,
   and whether the hook flew before it bit, which is what wakes a frozen prop. Every prop under a

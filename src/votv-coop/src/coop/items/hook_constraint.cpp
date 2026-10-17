@@ -40,9 +40,10 @@ namespace PR = ue_wrap::prop;
 namespace R  = ue_wrap::reflection;
 namespace sg = ue_wrap::script_gate;
 
-// makeAttachments is the one body that builds a hook's A-to-B tie: attach_a calls it last, after a
-// SetConstrainedComponents of its own that the call rebuilds, and the ubergraph calls it for a hook
-// that loads or adopts an anchored tie. All three of PhysicsConstraint's SetConstrainedComponents
+// makeAttachments is the one body that builds a hook's A-to-B tie: attach_a calls it after a
+// SetConstrainedComponents of its own that the call rebuilds (seven more statements follow it: the
+// reference position, the distance and length, the audio, the owner's hooked callback and the
+// broadcast; none builds a tie), and the ubergraph calls it for a hook that loads or adopts an anchored tie. All three of PhysicsConstraint's SetConstrainedComponents
 // outside attach_a are inside it, and the flight tether, throwConstraint, is built in the throw's
 // ubergraph and never here (hook_C's decompiled body).
 constexpr int kTagMakeAttachments = 0x484B4D41;  // 'HKMA'
@@ -105,7 +106,9 @@ void OnMakeAttachmentsPost(const sg::Call& c) {
     const H::Kind kind = H::KindOf(c.object);
     if (kind == H::Kind::Count) return;
     const unsigned k = static_cast<unsigned>(kind);
-    if (!H::EnsureResolved()) {
+    // Unpaced: the hook body that just ran is the proof the class is loaded, and a tie left standing
+    // for want of a resolve is the divergence this watch exists to prevent.
+    if (!H::ResolveNow()) {
         UE_LOGW("hook_constraint: a tie on %p was built before the hook members resolved -- left "
                 "standing", c.object);
         return;
@@ -123,6 +126,14 @@ void OnMakeAttachmentsPost(const sg::Call& c) {
 // once a second: a registration the gate refuses is said once, and asked again at that pace.
 void EnsureWatch() {
     if (g_watchSettled) return;
+    // The gate arms at boot or never: asked again, a gate that is not installed refuses the same way
+    // for the life of the process.
+    if (!sg::IsInstalled()) {
+        g_watchSettled = true;
+        UE_LOGE("hook_constraint: the script gate is not installed -- no makeAttachments watch this "
+                "process, so a client's hook keeps its own constraint and a prop it hooks diverges");
+        return;
+    }
     const uint64_t now = NowMs();
     if (now < g_nextWatchMs) return;
     g_nextWatchMs = now + 1000;

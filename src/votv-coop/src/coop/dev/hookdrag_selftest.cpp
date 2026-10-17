@@ -180,9 +180,9 @@ bool Anchor(ue_wrap::FVector& out, const char*& why) {
 }
 
 // The nearest keyed, simulating, light Aprop_C to `anchor` within the radius: one object-array
-// walk, once per run, the nearest-prop shape with the static, frozen and heavy props left out
-// (the movable ones: the physics flags PhysFlagsOf puts on the wire), since a hook drags none of
-// them cleanly. Two more exclusions make it a WORLD prop: the hand axis (the local hotbar hand
+// walk, once per run, the nearest-prop shape with the props that test IsStatic, IsFrozen or
+// IsHeavy left out (a sleeping prop still passes; the TARGET line logs the physics flags), since a
+// hook drags none of them cleanly. Two more exclusions make it a WORLD prop: the hand axis (the local hotbar hand
 // and every peer's display mirror stand at a player's hands and follow the player whether or not
 // anything drags them), and membership in the tracked-prop key index, which is what the census
 // gives a world prop and withholds from a hand actor. Only the planter runs it; the other peer
@@ -371,6 +371,11 @@ void Fail(bool isHost, const char* fmt, ...) {
     va_end(ap);
     // A planted hook does not outlive the run that failed, nor the host's constraint on it.
     if (g_hook.Raw()) ReleaseHook();
+    // The walker stops where it stands: a leg still walking would move the player after the verdict.
+    if (g_walk) {
+        coop::director::CancelBackgroundWalk(*g_walk);
+        g_walk.reset();
+    }
     UE_LOGW("hookdrag_selftest: FAIL role=%s phase=%s -- %s", isHost ? "HOST" : "CLIENT", PhaseName(g_phase), buf);
     End();
 }
