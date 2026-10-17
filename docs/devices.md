@@ -87,10 +87,10 @@ plays the click, else `upd`, then repaints a laptop camera panel that has the ca
 
 A client's own use of a camera and its press of the laptop's camera-light button are refused at
 their bodies and sent to the host (`coop/interactables/camera_toggle_intent`). The host checks the
-sender's reach, of the camera for the use and of the base laptop for the light, and sets the bit to
-the value the sender wanted, so two presses that race collapse to one change. A bit already at that
-value changes nothing and is sent again to that sender alone, so a client whose copy diverged
-converges and its button is never dead. The cursed camera's tick is refused on a client: the host
+sender's reach, of the camera for the use and of any device showing the laptop interface (the base
+laptop or a portable PC) for the light, and sets the bit to the value the sender wanted, so two
+presses that race collapse to one change. A bit already at that value changes nothing and is sent again
+to that sender alone, so a client whose copy diverged converges and its button is never dead. The cursed camera's tick is refused on a client: the host
 rolls it. A camera whose key is empty, or the key its class carries by default, is addressed by no
 lane; a client's press on it is refused and sends nothing. A client's copy of a wisp still switches
 that client's own cameras off until the creature mirror stops running the wisp's world writes `[?]`.

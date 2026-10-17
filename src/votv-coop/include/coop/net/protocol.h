@@ -1019,8 +1019,8 @@ enum class ReliableKind : uint8_t {
     // wanted, and the result reaches every peer as CameraActiveState or CameraLightState. A bit already at the wanted
     // value changes nothing and is sent again to the sender alone. Never relayed. Late join: nothing to replay -- a
     // request is an act. Trust: the key must be one the host indexes, the bit and the value are range-checked, the
-    // sender must be within reach of the camera (the use) or of the base laptop (the light), and its intents run from
-    // a bounded queue at a bounded rate. CameraToggleIntentPayload.
+    // sender must be within reach of the camera (the use) or of a device showing the laptop interface (the light),
+    // and its intents run from a bounded queue at a bounded rate. CameraToggleIntentPayload.
     CameraToggleIntent = 183,
 };
 

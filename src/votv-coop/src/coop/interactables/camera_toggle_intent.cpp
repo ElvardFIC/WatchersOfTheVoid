@@ -19,6 +19,7 @@
 #include "ue_wrap/core/script_gate.h"
 #include "ue_wrap/devices/appliance.h"  // CallAction: a player's interaction dispatch, on any actor
 #include "ue_wrap/devices/laptop.h"
+#include "ue_wrap/devices/portable_pc.h"
 #include "ue_wrap/devices/security_camera.h"
 #include "ue_wrap/facts/function_row.h"
 
@@ -123,6 +124,42 @@ void Deny(uint8_t slot, const coop::net::CameraToggleIntentPayload& p, const std
                 key.c_str(), why, static_cast<unsigned long long>(g_denied));
 }
 
+// The devices whose screen shows the laptop interface widget: the base laptop and every portable PC (the PC is a
+// remote terminal to the same widget), the default object left out.
+struct Screens { void* v[8]; int n = 0; };
+
+void CollectScreens(Screens& out) {
+    ue_wrap::laptop::EnsureResolved();
+    if (void* l = ue_wrap::laptop::Instance()) out.v[out.n++] = l;
+    ue_wrap::portable_pc::ForEachPc(
+        [](void* ctx, void* pc) {
+            auto* o = static_cast<Screens*>(ctx);
+            if (o->n < 8 && !R::NameStartsWith(R::NameOf(pc), L"Default__")) o->v[o->n++] = pc;
+        },
+        &out);
+}
+
+// The verdict on a request's reach. The use is judged against the camera. The light button is on a screen, and the
+// payload names none, so it is judged against every screen device: the first one the sender is within reach of
+// passes; else the verdict is the nearest one's (a NoBody on any wins, as the sender then has no pose to measure).
+// `screens` is how many devices were asked (0 for the use).
+coop::element::IntentSubject Judge(coop::net::Session& s, uint8_t slot, uint8_t bit, void* cam, int& screens) {
+    const coop::element::IntentTarget target = coop::element::IntentTarget::ForClientIntent(s, slot, kReachUU);
+    screens = 0;
+    if (bit != CT::kLight) return target.Authorize(cam);
+    Screens devices;
+    CollectScreens(devices);
+    screens = devices.n;
+    coop::element::IntentSubject best;
+    bool have = false;
+    for (int i = 0; i < devices.n; ++i) {
+        const coop::element::IntentSubject sub = target.Authorize(devices.v[i]);
+        if (sub || sub.outcome == coop::element::IntentOutcome::NoBody) return sub;
+        if (!have || (sub.distUU >= 0.f && (best.distUU < 0.f || sub.distUU < best.distUU))) { best = sub; have = true; }
+    }
+    return best;
+}
+
 // False keeps the request at its sender's queue head: the host has no body for the sender yet (its first pose
 // has not arrived), so its reach cannot be measured, and the request waits for the body rather than being lost.
 // Everything else is run or refused, and consumed.
@@ -139,19 +176,12 @@ bool Execute(coop::net::Session& s, const coop::net::CameraToggleIntentPayload& 
         }
         return true;
     }
-    // The use is judged against the camera; the light button is on the laptop's screen, so it is judged against
-    // the base laptop the sender stands at (the payload names no laptop: any reach of the one laptop counts).
-    void* anchor = cam;
-    if (p.bit == CT::kLight) {
-        ue_wrap::laptop::EnsureResolved();
-        anchor = ue_wrap::laptop::Instance();
-        if (!anchor) {
-            Deny(slot, p, key, "this world has no base laptop to measure the light button from");
-            return true;
-        }
+    int screens = 0;
+    const coop::element::IntentSubject subject = Judge(s, slot, p.bit, cam, screens);
+    if (p.bit == CT::kLight && screens == 0) {
+        Deny(slot, p, key, "no device in this world shows the laptop interface to measure the light button from");
+        return true;
     }
-    const coop::element::IntentSubject subject =
-        coop::element::IntentTarget::ForClientIntent(s, slot, kReachUU).Authorize(anchor);
     if (subject.outcome == coop::element::IntentOutcome::NoBody) {
         if (!g_slots[slot].waitSaid) {
             g_slots[slot].waitSaid = true;
@@ -162,8 +192,8 @@ bool Execute(coop::net::Session& s, const coop::net::CameraToggleIntentPayload& 
     }
     if (!subject) {
         char why[96];
-        std::snprintf(why, sizeof why, "%s (%.0f uu of %.0f)", coop::element::OutcomeName(subject.outcome),
-                      subject.distUU, subject.reachUU);
+        std::snprintf(why, sizeof why, "%s (%.0f uu of %.0f%s)", coop::element::OutcomeName(subject.outcome),
+                      subject.distUU, subject.reachUU, screens ? ", the nearest screen device" : "");
         Deny(slot, p, key, why);
         return true;
     }
