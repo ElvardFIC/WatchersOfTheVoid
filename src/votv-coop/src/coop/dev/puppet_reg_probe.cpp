@@ -81,7 +81,7 @@ void OnEndPlay(void* actor, EP::Reason /*reason*/) {
         if (p && p->GetActor() == actor)
             UE_LOGI("[PI-0] PASS slot=%u puppet at end-play life=%u", static_cast<unsigned>(r.slot), r.life);
         else
-            UE_LOGI("[PI-0] FAIL slot=%u puppet unregistered before its end-play life=%u",
+            UE_LOGI("[PI-0] FAIL slot=%u puppet not the slot's at its end-play life=%u",
                     static_cast<unsigned>(r.slot), r.life);
         return;
     }
@@ -117,9 +117,13 @@ bool Arm() {
         UE_LOGW("puppet_reg_probe: the end-of-play seam is not installed -- nothing to judge at end of play");
         return false;
     }
-    if (!EP::AddSink(&OnEndPlay)) return false;
     if (!sg::WatchName(kRowBeginPlay, kTag, &OnBeginPlayPre, nullptr)) {
         UE_LOGW("puppet_reg_probe: the gate refused the watch on mainPlayer_C::ReceiveBeginPlay");
+        return false;
+    }
+    if (!EP::AddSink(&OnEndPlay)) {
+        UE_LOGW("puppet_reg_probe: the end-of-play sink table is full -- the begin-play watch is withdrawn");
+        sg::UnwatchName(kRowBeginPlay, kTag, &OnBeginPlayPre, nullptr);
         return false;
     }
     UE_LOGI("puppet_reg_probe: armed -- each puppet judged at its begin-play and at its end of play");

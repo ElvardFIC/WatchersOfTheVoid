@@ -171,6 +171,8 @@ void Registry::ClearPuppet(uint8_t peerSessionId) {
     UE_ASSERT_GAME_THREAD("players::Registry::ClearPuppet (puppetByPeer_)");
     if (peerSessionId >= kMaxPeers) return;
     puppetByPeer_[peerSessionId] = nullptr;
+    // The Element keeps its place; only its copy of the puppet fact goes, so the two agree.
+    if (auto* element = playerBySlot_[peerSessionId].get()) element->SetPuppet_(nullptr);
 }
 
 bool Registry::IsLocal(void* actor) {
@@ -293,6 +295,14 @@ void Registry::EnsurePlayerElement_(uint8_t peerSlot, coop::RemotePlayer* puppet
             UE_LOGI("players::Registry: bound puppet=%p to existing MIRROR "
                     "Player Element eid=0x%08x peerSlot=%u",
                     puppet, existing->GetId(), static_cast<unsigned>(peerSlot));
+            return;
+        }
+        // An Element whose puppet ClearPuppet took after a failed spawn keeps its id: the retry's
+        // puppet is bound in place, as for a mirror, so no id is minted twice for one peer.
+        if (!existing->Puppet() && puppet) {
+            existing->SetPuppet_(puppet);
+            UE_LOGI("players::Registry: bound puppet=%p to the cleared Player Element eid=0x%08x "
+                    "peerSlot=%u", puppet, existing->GetId(), static_cast<unsigned>(peerSlot));
             return;
         }
         // A mismatch, the same slot with a different puppet: drop the old before re-creating.

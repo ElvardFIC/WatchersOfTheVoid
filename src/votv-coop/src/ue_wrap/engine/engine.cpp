@@ -234,7 +234,8 @@ void* SpawnActor(void* actorClass, const FVector& location, bool inertPawn, Befo
     if (!Call(g_gsCdo, finish)) {
         UE_LOGE("engine: FinishSpawningActor call failed");
         // The begun actor is not left in the world, half made: no caller holds it (the result is null), and the
-        // engine would keep it. It never began play, so its destroy has no end of play to announce.
+        // engine would keep it. A failed finish call may have faulted past begin-play; the destroy is safe
+        // either way, because the tracking seams bind at begin-play.
         if (R::IsLiveByIndex(actor, actorIdx)) {
             UE_LOGW("engine: SpawnActor: the finish of a '%ls' failed -- the begun actor is destroyed",
                     R::ClassNameOf(actor).c_str());

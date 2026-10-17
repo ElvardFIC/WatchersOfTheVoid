@@ -35,7 +35,8 @@ public:
     // session owns (the boot-time dev scenarios): a slot registers the puppet in players::Registry
     // from inside the spawn, before its BeginPlay, so it answers IsPuppet from its first overlap;
     // the caller unregisters it after Destroy. A slot out of range returns false before spawning.
-    // A failed spawn leaves actor() null and the slot's puppet pointer cleared.
+    // A failed spawn leaves actor() null; the slot's puppet pointer is cleared when the callback had
+    // registered it, and untouched when the spawn failed before the callback ran.
     bool Spawn(const std::string& skinName = std::string(),
                uint8_t peerSlot = players::kPeerIdUnknown);
 

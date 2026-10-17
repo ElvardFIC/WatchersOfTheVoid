@@ -44,9 +44,14 @@ coop::RemotePlayer& Puppet(int slot) {
 bool DestroySlot(int slot) {
     UE_ASSERT_GAME_THREAD("g_puppets (puppet_drive::DestroySlot)");
     // The destroy comes first, so the puppet is still registered through its end of play and the
-    // end-overlaps it reports as it dies, where the host's contact refusals must still know the dying
-    // body. MTA unlinks a player before its ped (CClientPlayer.cpp:105); the order here is the reverse
-    // on purpose.
+    // end-overlaps it reports as it dies: the identity consumers (the damage and ignite cancels, the
+    // travel refusal) must still know the dying body. MTA ends a ped's contacts and clears its
+    // pool mapping before deleting it (CClientPed.cpp:3814-3819, CPoolsSA.cpp:481), and unlinks the
+    // player first (CClientPlayer.cpp:110, a destructor-order artefact); GTA's ped delete runs no
+    // script, so nothing calls back. DestroyActor runs the body's Blueprint end-play and end-overlap
+    // code into hooks that classify by IsPuppet, so the reverse order is deliberate.
+    // Readers that resolve a slot (wisp_attack_sync.cpp:178,358,375; run_end_travel.cpp:183) can see
+    // the half-torn puppet; none is reachable from the puppet's end of play (by inspection).
     const bool had = g_puppets[slot].valid();
     if (had) g_puppets[slot].Destroy();
     // UnregisterPuppet drops the Player Element from players::Registry, on every path: a puppet never

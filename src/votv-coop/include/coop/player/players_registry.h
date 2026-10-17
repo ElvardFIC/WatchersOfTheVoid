@@ -53,15 +53,14 @@ public:
     RemotePlayer* Puppet(uint8_t peerSessionId);
 
     // Register or unregister a puppet. The RemotePlayer is owned by the caller; the registry holds
-    // a non-owning pointer and clears it on unregister, or when the actor goes away on a level
-    // change. A puppet is registered by its spawn, before its BeginPlay (RemotePlayer::Spawn), and
-    // unregistered by the caller after its destroy.
+    // a non-owning pointer and clears it on unregister. A puppet is registered by its spawn, before
+    // its BeginPlay (RemotePlayer::Spawn), and unregistered by the caller after its destroy.
     void RegisterPuppet(uint8_t peerSessionId, RemotePlayer* puppet);
     void UnregisterPuppet(uint8_t peerSessionId);
 
-    // Forget the slot's puppet pointer and nothing else: the slot's Player Element stays (the mirror
-    // the peer's packets resolve to), and a retried spawn's RegisterPuppet rebinds it. For a spawn
-    // that registered its puppet and then failed to finish. Game thread only.
+    // Forget the slot's puppet pointer, and the slot's Player Element's copy of it: the Element
+    // itself stays (the mirror the peer's packets resolve to), and a retried spawn's RegisterPuppet
+    // rebinds it. For a spawn that registered its puppet and then failed to finish. Game thread only.
     void ClearPuppet(uint8_t peerSessionId);
 
     // The identity queries.

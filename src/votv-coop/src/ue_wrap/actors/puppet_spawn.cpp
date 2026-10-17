@@ -118,12 +118,9 @@ static void* SpawnPuppetMainPlayer(const FVector& loc,
     // no local input is hijacked. The caller's callback runs in the same window, so the body is
     // already known to its owner when its BeginPlay and its colliders' first overlaps run.
     void* actor = E::SpawnActor(cls, loc, /*inertPawn=*/true, beforeFinish, ctx);
-    if (!actor) {
-        UE_LOGE("puppet[MainPlayer]: SpawnActor(mainPlayer_C) failed");
-        return nullptr;
-    }
     // gamemode.mainPlayer restored if the orphan's BeginPlay overwrote it: the autosave timer would
-    // otherwise serialise the orphan's position as the save's player transform.
+    // otherwise serialise the orphan's position as the save's player transform. A failed finish
+    // restores it too, since the begun orphan may have written it before it was destroyed.
     if (gamemode) {
         void* gmMainPlayerAfter = ReadPtr(gamemode, P::off::mainGamemode_mainPlayer);
         if (gmMainPlayerAfter != gmMainPlayerBefore) {
@@ -131,6 +128,10 @@ static void* SpawnPuppetMainPlayer(const FVector& loc,
             UE_LOGI("puppet[MainPlayer]: gamemode.mainPlayer was overwritten by orphan (%p -> %p); restored to %p",
                     gmMainPlayerBefore, gmMainPlayerAfter, gmMainPlayerBefore);
         }
+    }
+    if (!actor) {
+        UE_LOGE("puppet[MainPlayer]: SpawnActor(mainPlayer_C) failed");
+        return nullptr;
     }
     // The orphan's cached GameMode pointer nulled, so its ReceiveTick graphs (which null-check it
     // and return) neither re-overwrite gamemode.mainPlayer nor invoke gamemode methods.
