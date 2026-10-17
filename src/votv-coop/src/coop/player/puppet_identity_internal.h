@@ -1,5 +1,5 @@
 // coop/player/puppet_identity_internal.h -- what puppet_identity.cpp (the stub rows, the arming, the per-world
-// resolve) and puppet_identity_scan.cpp (the four native seams) share.
+// resolve) and puppet_identity_scan.cpp (the six native seams) share.
 
 #pragma once
 
