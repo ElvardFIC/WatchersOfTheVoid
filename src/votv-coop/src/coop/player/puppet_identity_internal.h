@@ -21,7 +21,11 @@ bool IsPuppetBodyFn(void* ctx, void* actor);
 // Count a refusal and say it once per row per world: the toucher's slot when `actor` is in hand, else unknown.
 void NoteRefused(Row row, void* actor);
 
-// Is the grunt stub's marked scope on this thread's chain, in a world the resolve still describes.
+// Is `cls` still the class listed at `listing`, the identity (ObjectIndex ClassListingId) it had when the
+// module resolved from it: false once it was unloaded, or loaded again, since. Reads nothing through `cls`.
+bool ClassStands(void* cls, uint64_t listing);
+
+// Is the grunt stub's marked scope on this thread's chain, and its class not unloaded since the resolve.
 bool InGruntScope();
 
 namespace scan {
@@ -34,8 +38,8 @@ void InstallPump(int generation, int puppets);
 void Rearm(int puppets);
 
 // Re-resolve the scan rows whose own class changed (another class, or the same one listed again). `unlistVersion`
-// is renewed as the callbacks' guard each call; a row whose class stands is not decoded again whatever else
-// unloaded. True when any row was looked at again.
+// is the number of class unloads seen, so no lookup runs while it stands; a row whose class stands is not
+// decoded again whatever else unloaded. True when any row was looked at again.
 bool Resolve(uint64_t unlistVersion);
 
 // The SetControlRotation pre hook, armed only while a grunt's touch by a puppet runs.

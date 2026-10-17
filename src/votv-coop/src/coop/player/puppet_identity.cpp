@@ -143,8 +143,9 @@ int g_count = 0;
 
 // What the last resolve described: the two marking stubs' classes, each class's listing identity
 // (ClassListingId) and the stub functions, and the class-unlist number. A stub is looked at again only when its
-// own class changed; the number is the callbacks' guard, which checks it still stands before reading a stub
-// pointer (a class unloaded since frees them) and which the resolve renews each time it moves.
+// own class changed. A callback that acts on a stub pointer first checks its class's listing still stands
+// (ClassStands: a class unloaded since frees the stub); the number only tells the resolve that no class was
+// unloaded since, so it can skip its lookups.
 constexpr uint64_t kNoVersion = UINT64_MAX;
 uint64_t g_resolvedVer = kNoVersion;
 void*    g_boxCls = nullptr;
@@ -154,8 +155,6 @@ uint64_t g_gruntListing = 0;
 void*    g_boxStub = nullptr;
 void*    g_gruntStub = nullptr;
 int      g_gen = 0;  // moves with each resolve that looked at anything
-
-bool WorldCurrent() { return OI::ClassUnlistVersion() == g_resolvedVer; }
 
 // The stub's toucher, or null.
 void* Toucher(int index, const sg::Call& call) {
@@ -170,10 +169,11 @@ void* Toucher(int index, const sg::Call& call) {
     return *reinterpret_cast<void* const*>(call.locals + off);
 }
 
-// Is the scope of `stub` (the box stub or the grunt stub) marked on this thread's chain: the bit exists, the
-// stub is resolved, the world is still described and a puppet toucher marked it.
-bool InScope(void* stub) {
-    return g_bit && stub && WorldCurrent() && (sg::ScopeBits(stub) & g_bit) != 0;
+// Is the scope of `stub` (the box stub or the grunt stub, of `cls` as listed at `listing`) marked on this
+// thread's chain: the bit exists, the stub is resolved, a puppet toucher marked it, and the stub's class was not
+// unloaded since the resolve. The class test comes last, after the cheap ones.
+bool InScope(void* stub, void* cls, uint64_t listing) {
+    return g_bit && stub && (sg::ScopeBits(stub) & g_bit) != 0 && ClassStands(cls, listing);
 }
 
 sg::Verdict OnWholePre(const sg::Call& call) {
@@ -195,7 +195,7 @@ sg::Verdict OnBoxMarkPre(const sg::Call& call) {
 
 // The two targets of the box that leave the level or the game. The box's other targets run on.
 sg::Verdict OnRunTriggerPre(const sg::Call& call) {
-    if (!InScope(g_boxStub)) return sg::Verdict::Run;
+    if (!InScope(g_boxStub, g_boxCls, g_boxListing)) return sg::Verdict::Run;
     const int index = call.tag - kPiTagBase;
     if (index < 0 || index >= kWatchCount) return sg::Verdict::Run;
     NoteRefused(kWatches[index].counter, nullptr);
@@ -204,7 +204,7 @@ sg::Verdict OnRunTriggerPre(const sg::Call& call) {
 
 sg::Verdict OnGruntPre(const sg::Call& call) {
     const int index = call.tag - kPiTagBase;
-    if (!g_bit || !g_gruntStub || index < 0 || index >= kWatchCount || !WorldCurrent()) return sg::Verdict::Run;
+    if (!g_bit || !g_gruntStub || index < 0 || index >= kWatchCount) return sg::Verdict::Run;
     void* actor = Toucher(index, call);
     if (!actor || !PL::Registry::Get().IsPuppetBody(actor)) return sg::Verdict::Run;
     sg::MarkScope(call, g_bit);
@@ -212,9 +212,9 @@ sg::Verdict OnGruntPre(const sg::Call& call) {
     return sg::Verdict::Run;
 }
 
-// The window closes when no other grunt body is still open on the chain.
+// The window closes when no other grunt body is still open on the chain. IsBodyActive compares the pointer and
+// reads nothing through it, so closing needs no class test: a window left open is the worse failure.
 void OnGruntPost(const sg::Call&) {
-    if (!WorldCurrent()) return;
     if (!sg::IsBodyActive(g_gruntStub)) scan::ArmGruntWindow(false);
 }
 
@@ -225,6 +225,7 @@ void OnPuppetCount(int count) {
 
 void Settle() {
     sg::ResolvePendingNames();
+    // It waits on the process-wide pending count; that only delays the settle line, never a row's behaviour.
     // At no pending name every watch is live or dead for good (script_gate.h), so the walk below waits for that
     // instead of running each frame a name still waits for its FName.
     if (sg::PendingNameCount() != 0) return;
@@ -268,8 +269,7 @@ bool ResolveStub(const wchar_t* clsName, const ue_wrap::facts::Function& row, vo
 
 // The per-world resolve. A class pointer held non-null changes only through an unload, which moves the
 // unlist number, so while the number stands and both stub classes are held the five class lookups are skipped.
-// When it moved, each class is compared on its own listing: an unrelated class's unload renews the guard
-// number and nothing else.
+// When it moved, each class is compared on its own listing: an unrelated class's unload only renews the number.
 void ResolveWorld() {
     const uint64_t ver = OI::ClassUnlistVersion();
     bool moved = false;
@@ -301,7 +301,9 @@ void NoteRefused(Row row, void* actor) {
         UE_LOGI("[PI] refused %s toucher=puppet slot=%u", g_counters[row].row, static_cast<unsigned>(slot));
 }
 
-bool InGruntScope() { return InScope(g_gruntStub); }
+bool InGruntScope() { return InScope(g_gruntStub, g_gruntCls, g_gruntListing); }
+
+bool ClassStands(void* cls, uint64_t listing) { return cls && OI::ClassListingId(cls) == listing; }
 
 void Install() {
     if (!g_watched) {

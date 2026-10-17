@@ -98,14 +98,15 @@ void* NativeFn(Seam& seam) {
     return seam.fn;
 }
 
-// Is the call this post reports one of the row's pinned calls: the resolve current, the caller the row's
-// ubergraph, the code standing at one of the calls' ends. Fills `frame` with the caller's frame.
+// Is the call this post reports one of the row's pinned calls: the row resolved, the caller the row's
+// ubergraph, the code standing at one of the calls' ends, and the row's class not unloaded since the resolve
+// (tested last, once the call is known to be the row's). Fills `frame` with the caller's frame.
 bool OwnCall(const ScanRow& row, UH::CallerFrame& frame) {
-    if (!row.ready || OI::ClassUnlistVersion() != g_scanVer) return false;
+    if (!row.ready) return false;
     frame = UH::CurrentCallerFrame();
     if (frame.function != row.ubergraph || !frame.locals) return false;
     for (int i = 0; i < row.endCount; ++i)
-        if (frame.codeOffset == row.ends[i]) return true;
+        if (frame.codeOffset == row.ends[i]) return ClassStands(row.resolvedCls, row.resolvedListing);
     return false;
 }
 
