@@ -19,12 +19,12 @@ bool EnsureResolved();
 // thread, or inside a drain): the caller asks again.
 int CountLive(void** first);
 
-// Read whether `copy`'s widget is set, the design's definition of an active copy. False, with `active` false, for
-// null or while the member has not resolved: the answer is then unknown, not "inactive".
-bool IsActive(void* copy, bool& active);
+// Read whether `copy`'s widget is set, the design's definition of an active copy. Returns whether it could read:
+// false, with `active` false, for null or while the member has not resolved (unknown, not "inactive").
+bool ReadActive(void* copy, bool& active);
 
 // Read whether `copy` is among the gamemode's activeEvents_senders, the list setEvent(true) appends its caller to.
-// False, with `sender` false, for null or while that list does not read.
-bool IsActiveEventSender(void* copy, bool& sender);
+// Returns whether it could read: false, with `sender` false, for null or while that list does not read.
+bool ReadIsSender(void* copy, bool& sender);
 
 }  // namespace ue_wrap::bad_sun

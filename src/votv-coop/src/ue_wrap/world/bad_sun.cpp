@@ -48,14 +48,14 @@ int CountLive(void** first) {
     return static_cast<int>(n);
 }
 
-bool IsActive(void* copy, bool& active) {
+bool ReadActive(void* copy, bool& active) {
     active = false;
     if (!copy || !EnsureResolved()) return false;
     active = *reinterpret_cast<void* const*>(static_cast<const uint8_t*>(copy) + g_offWidget) != nullptr;
     return true;
 }
 
-bool IsActiveEventSender(void* copy, bool& sender) {
+bool ReadIsSender(void* copy, bool& sender) {
     sender = false;
     if (!copy) return false;
     active_events::Senders s{};

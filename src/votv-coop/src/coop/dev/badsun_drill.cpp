@@ -9,6 +9,7 @@
 #include "coop/props/prop_snapshot.h"
 #include "coop/session/join_progress.h"
 #include "coop/session/net_pump.h"
+#include "coop/world/time_sync.h"
 
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/world/bad_sun.h"
@@ -31,12 +32,12 @@ using Steady = std::chrono::steady_clock;
 enum class Arm { Off, ClockArm };
 
 // Begin: the first tick picks the peer's road. HostPark: the host reads the save's clock and copy, then parks the
-// clock before any join. WaitJoin: the join is over. WaitStart: the first clock reading of hour 6 or later.
-// Sample: the count and the copy's tests, every second.
+// clock before any join. WaitJoin: the join is over. WaitStart: the first clock reading of hour 6 or later (a
+// client also waits for the first host sample to land). Sample: the count and the copy's tests, every second.
 enum class Step { Begin, HostPark, WaitJoin, WaitStart, Sample, Done };
 
 constexpr float kParkFraction = (5 * 60) / 1440.f;       // 05:00, two game hours before the copy's hour test
-constexpr float kSetFraction  = (6 * 60 + 58) / 1440.f;  // 06:58, two game minutes before the copy's hour test
+constexpr float kSetFraction  = (6 * 60 + 30) / 1440.f;  // 06:30, about 94 s of real time before the copy's hour test
 constexpr int   kStartHour   = 6;
 constexpr int   kActiveHour  = 7;
 constexpr int   kMaxDrainFails = 10;
@@ -142,9 +143,13 @@ void HostPark() {
     g_drainFails = 0;
     bool active = false;
     if (first) {
+        // A copy exists, so badSun_C has loaded: a widget read that fails is the reader's latched resolve failure.
+        // The sender read also fails while the gamemode has not loaded yet; that waits for the next tick, and the
+        // join bound ends a latch of it.
         bool widget = false, sender = false;
-        if (!BS::IsActive(first, widget) || !BS::IsActiveEventSender(first, sender))
+        if (!BS::ReadActive(first, widget))
             return Fail(true, "the Bad Sun reader did not resolve (clock %02d:%02d)", g_lastHour, g_lastMin);
+        if (!BS::ReadIsSender(first, sender)) return;
         active = widget || sender;
     }
     UE_LOGI("badsun_drill: [host] the save's clock reads %02d:%02d, %d copies, active %d", g_lastHour, g_lastMin, n,
@@ -152,24 +157,28 @@ void HostPark() {
     if (active)
         return Inconclusive(true, "the save's copy was active at hosting (%02d:%02d); the arm needs a save before 07:00",
                             g_lastHour, g_lastMin);
+    // The named clock (timeZ) is rebuilt on the cycle's next tick: a copy that polls in this frame reads the old
+    // hour. Sample's first-sample rule catches the peer that began after 07:00 on that read.
     if (!coop::dev::set_clock::ApplyTimeFraction(kParkFraction))
         return Fail(true, "the clock set to 05:00 was refused");
     g_deadline = Steady::now() + kJoinBound;
     g_step = Step::WaitJoin;
 }
 
-// Both peers, once the join is over: the clock window opens; the host also sets the clock to 06:58.
+// Both peers, once the join is over: the clock window opens; the host also sets the clock to 06:30.
 void BeginArm(bool host) {
     if (host) {
-        UE_LOGI("badsun_drill: [host] slot %d's join is over; setting the clock to 06:58", g_slot);
+        UE_LOGI("badsun_drill: [host] slot %d's join is over; setting the clock to 06:30", g_slot);
         if (!coop::dev::set_clock::ApplyTimeFraction(kSetFraction))
-            return Fail(true, "the clock set to 06:58 was refused");
+            return Fail(true, "the clock set to 06:30 was refused");
     }
     g_deadline = Steady::now() + kClockBound;
     g_step = Step::WaitStart;
 }
 
 void WaitStart(bool host) {
+    // A client's clock holds its own world's value until the first host sample lands: not the host's clock.
+    if (!host && coop::time_sync::LastHostDayZ() < 0) return;
     if (!ReadClock() || g_lastHour < kStartHour) return;
     UE_LOGI("badsun_drill: [%s] the clock reads %02d:%02d; sampling", RoleName(host), g_lastHour, g_lastMin);
     g_nextSample = Steady::now();
@@ -202,14 +211,14 @@ void Sample(bool host) {
                     g_lastMin);
     if (!first) return Fail(host, "the Bad Sun copy is gone (%d live, clock %02d:%02d)", n, g_lastHour, g_lastMin);
 
-    if (!BS::IsActive(first, g_lastWidget) || !BS::IsActiveEventSender(first, g_lastSender))
+    if (!BS::ReadActive(first, g_lastWidget) || !BS::ReadIsSender(first, g_lastSender))
         return Fail(host, "the Bad Sun reader did not resolve (clock %02d:%02d)", g_lastHour, g_lastMin);
     UE_LOGI("badsun_drill: [%s] clock %02d:%02d, %d live, widget %d, sender %d", RoleName(host), g_lastHour, g_lastMin,
             n, g_lastWidget ? 1 : 0, g_lastSender ? 1 : 0);
     const bool active = g_lastWidget || g_lastSender;
-    if (firstSample && active && g_lastHour >= kActiveHour)
-        return Inconclusive(host, "this peer began sampling after 07:00 with its copy already active (%02d:%02d)",
-                            g_lastHour, g_lastMin);
+    if (firstSample && g_lastHour >= kActiveHour)
+        return Inconclusive(host, "this peer did not see its clock cross 07:00 (first sample %02d:%02d, widget %d, sender %d)",
+                            g_lastHour, g_lastMin, g_lastWidget ? 1 : 0, g_lastSender ? 1 : 0);
     if (!g_t07Seen) {
         if (active)
             Fail(host, "the copy went active at %02d:%02d, before 07:00 (widget %d, sender %d): it did not read this clock",
@@ -232,7 +241,7 @@ bool JoinOver(coop::net::Session* s, bool host) {
     if (!coop::net_pump::HasAnnouncedWorldReady() ||
         coop::join_progress::CurrentPhase() != coop::join_progress::Phase::Idle)
         return false;
-    UE_LOGI("badsun_drill: [client] joined; waiting for the clock to reach hour %d", kStartHour);
+    UE_LOGI("badsun_drill: [client] joined; waiting for the host's clock, then hour %d", kStartHour);
     return true;
 }
 
@@ -254,7 +263,7 @@ void Tick() {
         g_deadline = Steady::now() + kJoinBound;
         g_step = host ? Step::HostPark : Step::WaitJoin;
         UE_LOGI("badsun_drill: [%s] armed -- %s", RoleName(host),
-                host ? "the clock to 05:00 at hosting, to 06:58 once a client's join is over, then this peer's own copy"
+                host ? "the clock to 05:00 at hosting, to 06:30 once a client's join is over, then this peer's own copy"
                      : "once joined, this peer's own copy against its own clock");
     }
     if (Steady::now() > g_deadline) return FailTimeout(host);
