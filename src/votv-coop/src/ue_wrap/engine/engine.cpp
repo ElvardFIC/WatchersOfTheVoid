@@ -202,6 +202,8 @@ void* SpawnActor(void* actorClass, const FVector& location, bool inertPawn) {
         UE_LOGE("engine: BeginDeferredActorSpawnFromClass returned null");
         return nullptr;
     }
+    // Read while the actor is known live, so the failed-finish branch below can tell it from a recycled address.
+    const int32_t actorIdx = R::InternalIndexOf(actor);
 
     // Before FinishSpawningActor runs BeginPlay, zero the fields that make a pawn behave as a
     // local player: BeginPlay's native auto-possess reads AutoPossessPlayer, and clearing it
@@ -228,6 +230,13 @@ void* SpawnActor(void* actorClass, const FVector& location, bool inertPawn) {
     finish.SetRaw(L"SpawnTransform", &xform, sizeof(xform));
     if (!Call(g_gsCdo, finish)) {
         UE_LOGE("engine: FinishSpawningActor call failed");
+        // The begun actor is not left in the world, half made: no caller holds it (the result is null), and the
+        // engine would keep it. It never began play, so its destroy has no end of play to announce.
+        if (R::IsLiveByIndex(actor, actorIdx)) {
+            UE_LOGW("engine: SpawnActor: the finish of a '%ls' failed -- the begun actor is destroyed",
+                    R::ClassNameOf(actor).c_str());
+            DestroyActor(actor);
+        }
         return nullptr;
     }
     void* finished = finish.Get<void*>(L"ReturnValue");
