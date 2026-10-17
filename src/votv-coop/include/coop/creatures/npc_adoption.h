@@ -36,7 +36,9 @@ void ArmAdoption(uint32_t eid, const std::wstring& classW, void* actorClass,
 //      entry's local twin as a host mirror (class-match: live, allowlisted, untracked, non-CDO,
 //      ClassOf==actorClass; nearest to the host pose when several twins exist), parks it host-
 //      driven, and -- if no twin appears within the timeout -- fresh-spawns a mirror
-//      (npc_mirror::SpawnFreshNpcMirror) so a host NPC is never permanently lost.
+//      (npc_mirror::SpawnFreshNpcMirror) so a host NPC without a local twin still gets one. That
+//      spawn is made once: a class whose spawner stamp is unknown is dropped (npc_mirror.cpp, the
+//      stamp drop) and the entry is not re-armed, so such an NPC stays absent on this client.
 //  (2) ONE-SHOT ghost sweep: after the connect snapshot is delivered (OnSnapshotComplete) AND no
 //      entries remain pending, fires npc_mirror::DestroyUntrackedClientNpcs() to remove genuine
 //      orphans. Gated this way so it NEVER destroys a local twin before its adoption has a chance

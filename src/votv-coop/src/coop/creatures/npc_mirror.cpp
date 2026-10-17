@@ -240,9 +240,15 @@ bool SpawnFreshNpcMirror(const std::wstring& classW, void* actorClass, uint32_t 
     // Spawned as the game's own spawner spawns the class: what that spawner writes between the two halves is
     // written here, before the finish runs the class's BeginPlay on it.
     if (!ue_wrap::spawner_stamp::Stamp(actorClass, spawned)) {
-        // Said once per listing of the class: the stamp's own line carries the property, this one the mirror.
+        // The drop: Source warns and skips an entity it cannot spawn (reference/source-sdk-2013/src/game/server/
+        // mapentities.cpp:585, "Can't init %s"), and MTA either fails the add packet or keeps the element for the
+        // streamer to retry. Here the spawn is dropped, not retried: a mirror whose guard constant is unknown
+        // would run the class's BeginPlay unstamped, and that quits this machine's game. A game that changed the
+        // constant's path changes it for every later attempt too, so a retry would only repeat the drop.
+        // Said once per listing of the class (once per class object while the index does not list it): the
+        // stamp's own line carries the property, this one the mirror.
         const uint64_t listing = OI::ClassListingId(actorClass);
-        if (listing == 0 || actorClass != g_stampDropClass || listing != g_stampDropListing) {
+        if (actorClass != g_stampDropClass || listing != g_stampDropListing) {
             g_stampDropClass = actorClass;
             g_stampDropListing = listing;
             UE_LOGE("npc-sync[client OnSpawn]: no spawner stamp for '%ls' -- mirror eid=%u dropped, its begun "

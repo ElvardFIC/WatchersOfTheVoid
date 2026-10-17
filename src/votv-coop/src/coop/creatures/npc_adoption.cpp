@@ -173,6 +173,7 @@ void ResolvePending() {
                     e.eid, e.classW.c_str(),
                     quiesced ? "load tail quiesced (props+NPCs settled)" : "last-resort timeout",
                     e.polls, MsSince(e.armedAt));
+            // A false return is final (a class whose spawner stamp is unknown is dropped, see Tick's header).
             coop::npc_mirror::SpawnFreshNpcMirror(e.classW, e.actorClass, e.eid,
                                                   e.locX, e.locY, e.locZ,
                                                   e.rotPitch, e.rotYaw, e.rotRoll);
