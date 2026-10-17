@@ -65,6 +65,8 @@ struct ReannounceResult {
     bool reached = false;   // the master answered at all
     int status = 0;
     bool listed = false;
+    std::string refused;    // the master's word of a refusal no retry can clear ("bad-proof",
+                            // "build-too-old", "blocked"); empty for every other outcome
     std::string lobbyId;    // the new lobby's id when ok
 };
 

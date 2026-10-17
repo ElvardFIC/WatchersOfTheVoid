@@ -131,6 +131,19 @@ std::string ErrorWord(const http::Response& resp) {
     return J::ParseObject(resp.body, j) ? J::Str(j, "error") : std::string();
 }
 
+// The word of a refusal that waiting cannot clear: a proof the master will not accept, a build
+// below its floor, an identity it blocks. Empty for anything else, which may clear. MTA retries
+// only a timeout (CMasterServerAnnouncer.h:154) and gives up on every other answer (:169-180); we
+// also retry what the host's own clock or the master's restart can clear (410, 409, 5xx).
+std::string PermanentRefusal(const http::Response& resp) {
+    if (!resp.ok) return {};
+    const std::string why = ErrorWord(resp);
+    if ((resp.status == 400 && why == "bad-proof") ||
+        (resp.status == 403 && (why == "build-too-old" || why == "blocked")))
+        return why;
+    return {};
+}
+
 // What ends a create early, besides the process shutdown. The heartbeat thread's re-announce is
 // ended by the announcer's stop flag. A Host() worker cannot read that flag (its own leading Stop()
 // left it set); it is ended by a Stop() that began after its own, which moved the generation.
@@ -199,6 +212,8 @@ http::Response CreateLobby(const AnnounceRequest& r, bool listed, const BuildCla
         if (resp.status == 403) {
             if (why == "build-too-old")
                 UE_LOGW("lobby: host announce -- the master refuses this build -- update Multivoid");
+            else if (why == "blocked")
+                UE_LOGW("lobby: host announce -- the master has blocked this install's identity");
             else
                 UE_LOGW("lobby: host announce -- the master refused it (403)");
             return resp;
@@ -318,6 +333,7 @@ ReannounceResult LobbyAnnouncer::Reannounce() {
     const http::Response resp = CreateLobby(req, listed, ReadBuildClaim(), CreateStop{&stop_, nullptr, 0});
     out.reached = resp.ok;
     out.status = resp.status;
+    out.refused = PermanentRefusal(resp);
     if (!resp.ok || resp.status != 200) return out;
     J::Json j;
     if (!J::ParseObject(resp.body, j)) return out;
@@ -357,6 +373,14 @@ void LobbyAnnouncer::HeartbeatLoop() {
         if (forgotten) {
             const ReannounceResult r = Reannounce();
             if (r.stopped) break;
+            if (!r.refused.empty()) {
+                // The one line for this hosting; the game goes on, unlisted. A host that wants the
+                // listing back hosts again.
+                UE_LOGW("lobby: the master refused announcing again (%s) and waiting cannot change "
+                        "that -- no more tries for this hosting, the game stays unlisted",
+                        r.refused.c_str());
+                break;
+            }
             retryS = (retryS == 0) ? 30 : std::min(retryS * 2, 300);
             if (r.ok) {
                 forgotten = false;
@@ -401,18 +425,18 @@ void LobbyAnnouncer::HeartbeatLoop() {
         }
         if (ours) b["turn_user"] = held;
         const http::Response resp = http::Post(url, "/v1/heartbeat", J::Dump(b), 8000);
-        // The master's own answer to a session it does not hold (server/src/lobby.rs:452) is
-        // "unknown session or bad token"; the match is on "unknown session", and
-        // the local fake master (fake_master.py) answers the same words. A 403 from anything
-        // else, a proxy, is a plain failure and mints no duplicate lobby. MTA re-announces on a
-        // timer: after a timeout it retries 5 times, 5 minutes apart, and otherwise gives up to a
-        // 24 h reminder
-        // (:48-49, :154-181 and :232 of
-        // reference/mtasa-blue/Server/mods/deathmatch/utils/CMasterServerAnnouncer.h), and its
-        // push re-sends the same entry every 10 minutes (:50, :96-109), an upsert. We retry on the
+        // The master's own answer to a session it does not hold (h_heartbeat, server/src/lobby.rs)
+        // is "unknown session or bad token"; the match is on "unknown session", and the local fake
+        // master (fake_master.py) answers the same words. A 403 from anything else, a proxy, is a
+        // plain failure and mints no duplicate lobby. MTA re-announces on a timer: after a timeout
+        // it retries 5 times, 5 minutes apart, and otherwise gives up to a 24 h reminder (:48-49,
+        // :154-181 and :232 of reference/mtasa-blue/Server/mods/deathmatch/utils/
+        // CMasterServerAnnouncer.h), and its push re-sends the same entry every 10 minutes (:50,
+        // :96-109), an upsert on address. A proved create is an upsert on the host's key (it
+        // replaces that key's row and keeps its lobbyId, server/src/lobby/host.rs); a lobby the
+        // master forgot has no row to replace, so the re-announce mints a new one. We retry on the
         // 30/60/120/240/300 s schedule until the master answers, because a lobby the master forgot
-        // is missing from the browser; our /v1/host mints a new lobby per call, so the 403
-        // triggers a re-announce that replaces the lost one.
+        // is missing from the browser.
         if (resp.ok && resp.status == 403 &&
             resp.body.find("unknown session") != std::string::npos) {
             UE_LOGW("lobby: the master no longer knows lobbyId=%s (403) -- announcing again",
