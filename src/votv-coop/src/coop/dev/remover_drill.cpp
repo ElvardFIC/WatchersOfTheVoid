@@ -9,6 +9,7 @@
 #include "coop/dev/spawn_npc.h"
 #include "coop/net/protocol.h"
 #include "coop/net/session.h"
+#include "coop/element/registry.h"
 #include "coop/player/players_registry.h"
 #include "coop/player/puppet_drive.h"
 #include "coop/player/remote_player.h"
@@ -46,6 +47,7 @@ namespace {
 namespace E  = ue_wrap::engine;
 namespace R  = ue_wrap::reflection;
 namespace DW = ue_wrap::dish_writers;
+namespace EL = coop::element;
 using ue_wrap::FVector;
 
 enum class Phase : uint8_t { Off, Granted, Withheld };
@@ -97,6 +99,8 @@ constexpr float kDropCm       = 40.f;  // above the floor, so a prop settles
 constexpr float kFindRadiusCm = 700.f;
 constexpr float kSightSlackCm = 25.f;
 constexpr float kAimPastCm    = 50.f;   // the press aims this far past the target's middle
+constexpr float kNearCm       = 400.f;  // host: props this near the eye are listed once per layout
+constexpr int   kNearSaid     = 12;     // ...at most this many
 constexpr float kRestMoveCm   = 1.f;    // a prop that moved less than this between two reads is at rest
 constexpr int   kRestChecks   = 4;      // ...that many reads in a row, a check apart
 
@@ -253,6 +257,22 @@ const char* SpawnLayout(coop::RemotePlayer& rp, const FVector& at) {
     }
     if (!found) return "no direction round the puppet has a floor and a clear segment from its eye to the layout";
 
+    // The props the host holds within 400 cm of the eye, once per layout: what the client's own trace can be compared with
+    // when it meets something the host's did not.
+    {
+        std::vector<EL::Registry::ActorIdPair> rows;
+        EL::Registry::Get().SnapshotActorsByType(EL::ElementType::Prop, rows);
+        int said = 0;
+        for (const auto& r : rows) {
+            FVector p{};
+            if (said >= kNearSaid || !r.actor || !R::IsLiveByIndex(r.actor, r.internalIdx) ||
+                !E::TryGetActorLocation(r.actor, p) || Dist(p, eye) > kNearCm)
+                continue;
+            ++said;
+            UE_LOGI("[REMOVER-DRILL] host: near the eye: %ls, element %u, at (%.0f, %.0f, %.0f), %.0f cm away",
+                    R::ClassNameOf(r.actor).c_str(), static_cast<unsigned>(r.id), p.X, p.Y, p.Z, Dist(p, eye));
+        }
+    }
     // The ring sits on the floor under the puppet's own column, found the same way.
     float ringFloor = single.floorZ;
     const char* ringWhy = "";
@@ -372,7 +392,7 @@ ue_wrap::CachedObjRef g_sweep[kRing];   // the ring props the camera's trace mee
 int g_sweepN = 0;
 int g_sweepAt = 0;
 int g_noticeBase = 0;   // the leg's notice count before its shot
-char g_aimWhy[200] = "";   // why the last AimedHit or press failed
+char g_aimWhy[420] = "";   // why the last AimedHit or press failed
 FVector g_restAt[kRing + 2];   // where the pair and the ring stood at the last rest read
 int g_restReads = 0;           // reads in a row at which none of them had moved
 
@@ -382,7 +402,7 @@ void Abandon(const char* why) { End("client", "ABANDONED", why, true); }
 
 // An abandon that carries the aim's own reason after `what`.
 void AbandonAim(const char* what) {
-    char why[300];
+    char why[560];
     std::snprintf(why, sizeof(why), "%s: %s", what, g_aimWhy);
     Abandon(why);
 }
@@ -430,13 +450,19 @@ bool AimedHit(void* player, void* target, ue_wrap::trace::Hit* hit) {
         return false;
     }
     if (hit->blocked && hit->actor == target && hit->component) return true;
+    FVector bat{};   // where the actor the trace met stands, to set against where the other peer holds it
+    if (hit->actor) E::TryGetActorLocation(hit->actor, bat);
     if (!hit->blocked)
         std::snprintf(g_aimWhy, sizeof(g_aimWhy), "the trace met nothing, %.0f cm to the target", len);
     else if (hit->actor == target)
         std::snprintf(g_aimWhy, sizeof(g_aimWhy), "the hit on the target names no component");
     else
-        std::snprintf(g_aimWhy, sizeof(g_aimWhy), "the trace met %ls at %.0f cm, %.0f cm short of the target's middle",
-                      hit->actor ? R::ClassNameOf(hit->actor).c_str() : L"(no actor)", Dist(cam, hit->point), len);
+        std::snprintf(g_aimWhy, sizeof(g_aimWhy),
+                      "the trace met %ls (element %u, at %.0f, %.0f, %.0f) at %.0f cm of the %.0f cm to the target's middle "
+                      "(camera %.0f, %.0f, %.0f; target %.0f, %.0f, %.0f)",
+                      hit->actor ? R::ClassNameOf(hit->actor).c_str() : L"(no actor)",
+                      static_cast<unsigned>(coop::element::Registry::Get().EidForActor(hit->actor)), bat.X, bat.Y,
+                      bat.Z, Dist(cam, hit->point), len, cam.X, cam.Y, cam.Z, at.X, at.Y, at.Z);
     return false;
 }
 
