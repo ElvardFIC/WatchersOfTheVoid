@@ -60,6 +60,10 @@ constexpr float    kOutCm         = 1.5f;    // the camera's origin stands this 
 constexpr float    kStandoffCm    = 70.f;    // where a walker stands, off the wall
 constexpr float    kRouteReachCm  = 100.f;   // a route must end this near the standpoint, flat
 constexpr float    kWalkReachCm   = 80.f;    // the director's stop at the standpoint
+constexpr float    kNearStandoffCm   = 38.f; // the near arms: as close as the capsule (about 34 cm out) allows
+constexpr float    kNearRouteReachCm = 60.f;
+constexpr float    kNearWalkReachCm  = 15.f;
+constexpr float    kHeldLineWorldS   = 0.25f; // a held-camera line every this many world seconds
 constexpr int      kWalkDeadlineS = 300;
 constexpr float    kHoldWorldS    = 3.f;     // CLIENT: the hold, on the engine's world clock
 constexpr float    kTailWorldS    = 2.5f;    // CLIENT: the watch after the release, on the same clock
@@ -70,9 +74,9 @@ constexpr uint64_t kScanEveryMs   = 1000;
 constexpr int      kMaxScanned    = 16;
 
 enum class HStep : uint8_t { Wait, Done };
-enum class CStep : uint8_t { Ready, Find, Walk, Grab, Hold, Tail, Done };
+enum class Leg : uint8_t { Ready, Find, Walk, Grab, Hold, Tail, Done };
 HStep    g_host = HStep::Wait;
-CStep    g_client = CStep::Ready;
+Leg    g_leg = Leg::Ready;
 uint64_t g_stepMs = 0;
 uint64_t g_nextCheckMs = 0;
 uint64_t g_nextScanMs = 0;
@@ -86,23 +90,45 @@ std::unique_ptr<D::AimedGrab> g_grab;
 float    g_t0 = 0.f;            // CLIENT: the world clock at the grab, then at the release
 bool     g_restuck = false;     // CLIENT: a stuck sample between the grab and the release
 bool     g_stuckEnd = false;    // CLIENT: the last stuck sample after the release
+bool     g_hostLeg = false;     // HOST (host_grab_near): the grab leg runs on the host, once its camera reads stuck
+FVector  g_planeP{};            // the wall plane: a point on it (the stuck camera's origin, whose stick arrow sits on the wall)...
+FVector  g_planeN{};            // ...and its flat unit normal (the stuck camera's forward)
+float    g_lastLineS = 0.f;     // the world clock at the last held-camera line
 
-bool Enabled() {
-    static const bool on = coop::config::ResolveString(::coop::config_registry::rows::camera_drill) == "grab";
-    return on;
+// The arms: grab (the client walks to 70 cm off the wall), grab_near (it walks as close as the director allows) and
+// host_grab_near (the host does the near grab on its own camera, the control: no client is needed).
+enum class Arm : uint8_t { Off, Grab, GrabNear, HostGrabNear };
+Arm ArmOf() {
+    static const Arm arm = [] {
+        const std::string& v = coop::config::ResolveString(::coop::config_registry::rows::camera_drill);
+        return v == "grab" ? Arm::Grab : v == "grab_near" ? Arm::GrabNear : v == "host_grab_near" ? Arm::HostGrabNear : Arm::Off;
+    }();
+    return arm;
 }
+bool Enabled() { return ArmOf() != Arm::Off; }
+bool NearArm() { return ArmOf() == Arm::GrabNear || ArmOf() == Arm::HostGrabNear; }
+const char* Who() { return ArmOf() == Arm::HostGrabNear ? "host" : "client"; }
+float StandoffCm() { return NearArm() ? kNearStandoffCm : kStandoffCm; }
+float RouteReachCm() { return NearArm() ? kNearRouteReachCm : kRouteReachCm; }
+float WalkReachCm() { return NearArm() ? kNearWalkReachCm : kWalkReachCm; }
+
 bool Expired(uint64_t bound) { return ::GetTickCount64() - g_stepMs > bound; }
-void CGo(CStep s) { g_client = s; g_stepMs = ::GetTickCount64(); }
+void LGo(Leg s) { g_leg = s; g_stepMs = ::GetTickCount64(); }
 
 void Fail(const char* role, const char* what) {
     UE_LOGW("[CAMERA-DRILL] FAIL %s: %s", role, what);
     g_host = HStep::Done;
-    g_client = CStep::Done;
+    g_leg = Leg::Done;
 }
 void Abandon(const char* why) {
     UE_LOGW("[CAMERA-DRILL] ABANDONED %s", why);
     g_host = HStep::Done;
-    g_client = CStep::Done;
+    g_leg = Leg::Done;
+}
+void AbandonLeg(const char* why) {
+    UE_LOGW("[CAMERA-DRILL] ABANDONED %s: %s", Who(), why);
+    g_host = HStep::Done;
+    g_leg = Leg::Done;
 }
 
 bool Due(uint64_t every) {
@@ -212,7 +238,26 @@ bool DirectorRoutes(void* me, const FVector& at) {
 
 // The walker's standpoint for a camera at `at` whose back is to the wall facing `n`.
 FVector Standpoint(const FVector& at, float nx, float ny) {
-    return {at.X + nx * kStandoffCm, at.Y + ny * kStandoffCm, at.Z};
+    return {at.X + nx * StandoffCm(), at.Y + ny * StandoffCm(), at.Z};
+}
+
+// The leg's first step, for either role: a route to the standpoint off the camera's wall, and the director's walk there.
+// The camera stands stuck (or is being hung, on the host) with its back to the wall, so its forward is the wall's normal.
+void BeginWalk(void* player, void* cam) {
+    FVector me{}, camAt{};
+    const FVector fwd = E::GetActorForwardVector(cam);
+    const float len = std::sqrt(fwd.X * fwd.X + fwd.Y * fwd.Y);
+    if (!E::TryGetActorLocation(player, me) || !E::TryGetActorLocation(cam, camAt) || len < 0.1f) {
+        AbandonLeg("the camera's place or facing did not read");
+        return;
+    }
+    const FVector stand = Standpoint(camAt, fwd.X / len, fwd.Y / len);
+    if (!D::RouteInLegs(player, me, stand, RouteReachCm())) {
+        AbandonLeg("no NavMesh route reaches the camera's wall");
+        return;
+    }
+    g_walk = D::StartBackgroundWalk(stand, WalkReachCm(), kWalkDeadlineS);
+    LGo(Leg::Walk);
 }
 
 void HostTick(coop::net::Session* s) {
@@ -245,7 +290,7 @@ void HostTick(coop::net::Session* s) {
     for (const Wall& w : walls) {
         if (t.routed >= kMaxRouted) { ++t.untried; continue; }
         ++t.routed;
-        if (D::RouteInLegs(me, at, Standpoint(w.point, w.n.X, w.n.Y), kRouteReachCm)) { chosen = &w; break; }
+        if (D::RouteInLegs(me, at, Standpoint(w.point, w.n.X, w.n.Y), RouteReachCm())) { chosen = &w; break; }
         ++t.noRoute;
     }
     if (!chosen) {
@@ -297,6 +342,11 @@ void HostTick(coop::net::Session* s) {
     FVector now{};
     E::TryGetActorLocation(cam, now);
     UE_LOGI("camera_drill: host READY stuck key=%ls at=%.0f,%.0f,%.0f", key.c_str(), now.X, now.Y, now.Z);
+    if (ArmOf() == Arm::HostGrabNear) {
+        g_cam.Set(cam);
+        g_hostLeg = true;
+        BeginWalk(me, cam);
+    }
 }
 
 // ---- CLIENT ----------------------------------------------------------------------------------------------
@@ -339,99 +389,112 @@ void FindStep(void* player) {
     int stuckSeen = 0;
     void* cam = NearestStuckCamera(me, stuckSeen);
     if (!cam) {
-        if (Expired(kSeenBoundMs)) Fail("client", "no stuck camera ever stood in this world");
+        if (Expired(kSeenBoundMs)) Fail(Who(), "no stuck camera ever stood in this world");
         return;
     }
     g_cam.Set(cam);
     UE_LOGI("camera_drill: client sees stuck key=%ls", KeyOf(cam).c_str());
     UE_LOGI("camera_drill: client's copy -- %d stuck camera(s) in this world, attached to a wall actor=%d", stuckSeen,
             AttachedToSomething(cam) ? 1 : 0);
-
-    FVector camAt{};
-    const FVector fwd = E::GetActorForwardVector(cam);
-    const float len = std::sqrt(fwd.X * fwd.X + fwd.Y * fwd.Y);
-    if (!E::TryGetActorLocation(cam, camAt) || len < 0.1f) {
-        Abandon("client: the camera's place or facing did not read");
-        return;
-    }
-    const FVector stand = Standpoint(camAt, fwd.X / len, fwd.Y / len);
-    if (!D::RouteInLegs(player, me, stand, kRouteReachCm)) {
-        Abandon("client: no NavMesh route reaches the camera's wall");
-        return;
-    }
-    g_walk = D::StartBackgroundWalk(stand, kWalkReachCm, kWalkDeadlineS);
-    CGo(CStep::Walk);
+    BeginWalk(player, cam);
 }
 
-void ClientTick(void* player) {
-    switch (g_client) {
-    case CStep::Ready:
+
+// How far a point stands off the wall plane the grab was aimed at: positive on the open side.
+float OffWall(const FVector& p) {
+    return (p.X - g_planeP.X) * g_planeN.X + (p.Y - g_planeP.Y) * g_planeN.Y;
+}
+
+// The grab leg, for the client (after its Find) or the host (after its camera reads stuck, host_grab_near): the walk,
+// the grab by the use key's chain, the hold on the world clock, the release and the tail.
+void LegTick(void* player) {
+    switch (g_leg) {
+    case Leg::Ready:
         if (!coop::net_pump::HasAnnouncedWorldReady() || coop::join_progress::CurrentPhase() != coop::join_progress::Phase::Idle)
             return;
-        CGo(CStep::Find);
+        LGo(Leg::Find);
         return;
-    case CStep::Find:
+    case Leg::Find:
         FindStep(player);
         return;
-    case CStep::Walk: {
+    case Leg::Walk: {
         const int st = g_walk ? g_walk->state.load() : 2;
         if (st == 0) return;
-        if (st == 2) { Abandon("client: the walk to the camera did not arrive"); return; }
+        if (st == 2) { AbandonLeg("the walk to the camera did not arrive"); return; }
         void* cam = g_cam.Get();
-        if (!cam) { Abandon("client: the camera died during the walk"); return; }
+        FVector camAt{}, me{};
+        const FVector fwd = cam ? E::GetActorForwardVector(cam) : FVector{};
+        const float len = std::sqrt(fwd.X * fwd.X + fwd.Y * fwd.Y);
+        if (!cam || !E::TryGetActorLocation(cam, camAt) || !E::TryGetActorLocation(player, me) || len < 0.1f) {
+            AbandonLeg("the camera died or did not read at the walk's end");
+            return;
+        }
+        g_planeP = camAt;
+        g_planeN = {fwd.X / len, fwd.Y / len, 0.f};
+        UE_LOGI("camera_drill: %s walk ended %.1f cm from the wall plane (the standpoint is %.0f cm off it)", Who(),
+                OffWall(me), StandoffCm());
         g_grab = std::make_unique<D::AimedGrab>(player, cam);
-        CGo(CStep::Grab);
+        LGo(Leg::Grab);
         return;
     }
-    case CStep::Grab: {
+    case Leg::Grab: {
         const D::GrabState st = g_grab->Tick();
         if (st == D::GrabState::Working) return;
-        if (st == D::GrabState::Failed) { Abandon(g_grab->Why()); return; }
+        if (st == D::GrabState::Failed) { AbandonLeg(g_grab->Why()); return; }
         void* cam = g_cam.Get();
         float now = 0.f;
-        if (!cam || !E::TryGetWorldTimeSeconds(now)) { Abandon("client: the camera or the world clock did not read at the grab"); return; }
+        if (!cam || !E::TryGetWorldTimeSeconds(now)) { AbandonLeg("the camera or the world clock did not read at the grab"); return; }
         const bool stuck = StuckFlags(cam);
-        UE_LOGI("camera_drill: client grabbed key=%ls stuck_at_grab=%d", KeyOf(cam).c_str(), stuck ? 1 : 0);
-        if (stuck) { Fail("client", "the grab left the camera stuck: its unstick did not run, so no re-stick is measured"); return; }
+        UE_LOGI("camera_drill: %s grabbed key=%ls stuck_at_grab=%d", Who(), KeyOf(cam).c_str(), stuck ? 1 : 0);
+        if (stuck) { Fail(Who(), "the grab left the camera stuck: its unstick did not run, so no re-stick is measured"); return; }
         g_t0 = now;
+        g_lastLineS = now - kHeldLineWorldS;  // the first held line is at +0
         g_restuck = false;
-        CGo(CStep::Hold);
+        LGo(Leg::Hold);
         return;
     }
-    case CStep::Hold: {
+    case Leg::Hold: {
         void* cam = g_cam.Get();
         float now = 0.f;
-        if (!cam || !E::TryGetWorldTimeSeconds(now)) { Abandon("client: the camera or the world clock did not read while held"); return; }
-        if (!g_restuck && StuckFlags(cam)) {
+        if (!cam || !E::TryGetWorldTimeSeconds(now)) { AbandonLeg("the camera or the world clock did not read while held"); return; }
+        const bool stuck = StuckFlags(cam);
+        if (!g_restuck && stuck) {
             g_restuck = true;
             UE_LOGI("camera_drill: re-stuck while held at +%.0fms", static_cast<double>(now - g_t0) * 1000.0);
         }
+        FVector camNow{}, me{};
+        if (now - g_lastLineS >= kHeldLineWorldS && E::TryGetActorLocation(cam, camNow) &&
+            E::TryGetActorLocation(player, me)) {
+            g_lastLineS = now;
+            UE_LOGI("camera_drill: held at +%.0fms cam-to-wall=%.1f player-to-wall=%.1f stuck=%d",
+                    static_cast<double>(now - g_t0) * 1000.0, OffWall(camNow), OffWall(me), stuck ? 1 : 0);
+        }
         if (now - g_t0 < kHoldWorldS) {
-            if (Expired(kClockBoundMs)) Fail("client", "the world clock did not advance through the hold");
+            if (Expired(kClockBoundMs)) Fail(Who(), "the world clock did not advance through the hold");
             return;
         }
         const bool held = D::Grabbing(player) == cam;
-        if (!D::CallOnPlayer(player, L"dropGrabObject")) { Abandon("client: dropGrabObject did not run"); return; }
-        UE_LOGI("camera_drill: client at the release -- still held=%d, stuck=%d", held ? 1 : 0, StuckFlags(cam) ? 1 : 0);
-        UE_LOGI("camera_drill: client released key=%ls", KeyOf(cam).c_str());
+        if (!D::CallOnPlayer(player, L"dropGrabObject")) { AbandonLeg("dropGrabObject did not run"); return; }
+        UE_LOGI("camera_drill: %s at the release -- still held=%d, stuck=%d", Who(), held ? 1 : 0, StuckFlags(cam) ? 1 : 0);
+        UE_LOGI("camera_drill: %s released key=%ls", Who(), KeyOf(cam).c_str());
         g_t0 = now;
         g_stuckEnd = false;
-        CGo(CStep::Tail);
+        LGo(Leg::Tail);
         return;
     }
-    case CStep::Tail: {
+    case Leg::Tail: {
         void* cam = g_cam.Get();
         float now = 0.f;
-        if (!cam || !E::TryGetWorldTimeSeconds(now)) { Abandon("client: the camera or the world clock did not read in the tail"); return; }
+        if (!cam || !E::TryGetWorldTimeSeconds(now)) { AbandonLeg("the camera or the world clock did not read in the tail"); return; }
         g_stuckEnd = StuckFlags(cam);
         if (now - g_t0 < kTailWorldS) {
-            if (Expired(kClockBoundMs)) Fail("client", "the world clock did not advance through the tail");
+            if (Expired(kClockBoundMs)) Fail(Who(), "the world clock did not advance through the tail");
             return;
         }
-        UE_LOGI("camera_drill: client end state -- stuck=%d, attached to a wall actor=%d", g_stuckEnd ? 1 : 0,
+        UE_LOGI("camera_drill: %s end state -- stuck=%d, attached to a wall actor=%d", Who(), g_stuckEnd ? 1 : 0,
                 AttachedToSomething(cam) ? 1 : 0);
-        UE_LOGI("[CAMERA-DRILL] client DONE stuck_after_grab=%d", g_restuck ? 1 : 0);
-        g_client = CStep::Done;
+        UE_LOGI("[CAMERA-DRILL] %s DONE stuck_after_grab=%d", Who(), g_restuck ? 1 : 0);
+        g_leg = Leg::Done;
         return;
     }
     default:
@@ -444,22 +507,29 @@ void ClientTick(void* player) {
 void Tick(coop::net::Session* s) {
     if (!Enabled() || !s) return;
     if (s->role() == coop::net::Role::Host) {
-        if (g_host == HStep::Wait && Due(kHostEveryMs)) HostTick(s);
+        if (g_host == HStep::Wait) {
+            if (Due(kHostEveryMs)) HostTick(s);
+            return;
+        }
+        if (g_hostLeg && g_leg != Leg::Done) {
+            if (void* player = coop::players::Registry::Get().Local()) LegTick(player);
+        }
         return;
     }
-    if (!s->connected() || g_client == CStep::Done) return;
+    if (ArmOf() == Arm::HostGrabNear) return;  // the control arm is the host's alone
+    if (!s->connected() || g_leg == Leg::Done) return;
     void* player = coop::players::Registry::Get().Local();
     if (!player) return;
-    if (g_client == CStep::Ready && !Due(kCheckEveryMs)) return;
-    ClientTick(player);
+    if (g_leg == Leg::Ready && !Due(kCheckEveryMs)) return;
+    LegTick(player);
 }
 
 void OnDisconnect() {
-    if (!Enabled()) return;
+    if (!Enabled() || ArmOf() == Arm::HostGrabNear) return;  // the control arm does not depend on a client
     if (g_walk && g_walk->state.load() == 0) D::CancelBackgroundWalk(*g_walk);
     g_walk.reset();
     g_grab.reset();
-    g_client = CStep::Ready;
+    g_leg = Leg::Ready;
     g_stepMs = g_nextCheckMs = g_nextScanMs = 0;
     g_restuck = g_stuckEnd = false;
     g_t0 = 0.f;

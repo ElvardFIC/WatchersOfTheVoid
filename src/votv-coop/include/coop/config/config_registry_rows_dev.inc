@@ -550,7 +550,9 @@ CFG_STRING(camera_drill, "camera_drill", "dev", "", "VOTVCOOP_CAMERA_DRILL", fal
     "Drill (BOTH peers): does a picked-up camera stick to its wall again, and by whose hand. grab -- the host hangs "
     "a camera on a wall a walker reaches (before any client joins); the client finds it stuck, walks to it, grabs "
     "it, holds 3 s of world time, lets go and watches 2.5 s more; the prop-stick lines of both peers carry the "
-    "cause. Lines tagged [CAMERA-DRILL]; the client's DONE line ends it.")
+    "cause. grab_near -- the same, the walk ending as close to the wall as the director allows. host_grab_near -- "
+    "the host does the near grab on its own camera (the control; no client needed). Lines tagged [CAMERA-DRILL]; "
+    "the grabber's DONE line ends it.")
 CFG_STRING(server_upgrade_drill, "server_upgrade_drill", "dev", "", "VOTVCOOP_SERVER_UPGRADE_DRILL", false,
     "Drill (BOTH peers): a client installs an upgrade into a server box and takes one out. apply: the host "
     "applies both; refuse: the host refuses both, as if each had lost its race, and the client sees its install "

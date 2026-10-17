@@ -1,18 +1,16 @@
 // coop/dev/camera_drill.h -- [dev] a picked-up camera: does it stick to its wall again, and by whose hand.
-//   HOST   -- once its world is up and the director can route (checked each second), with no wait for a client: finds,
-//             from the player's start and a ring of origins round it, a flat wall that a walker reaches by a NavMesh
-//             route (retried each second, given up after 60 s of world time of a routable director), hangs a prop_camera_bad_C on it, sticks it through the prop-stick lane's
-//             converge, and reads whether the camera is stuck AND attached to the wall (a raw frozen-write fallback
-//             is frozen but attached to nothing, and is reported as a failure, never as stuck). It says
-//             "camera_drill: host READY stuck key=... at=..." only when it reads so.
-//   CLIENT -- once world-ready: scans (once a second) for the nearest stuck prop_camera_bad_C in its world, walks to it
-//             by the director, grabs it by the use key's grab chain, holds 3 s of the world's own clock standing still,
-//             lets go, and watches 2.5 s more. Every tick while held it samples the camera's stuck flags; the first
-//             stuck sample is "camera_drill: re-stuck while held at +...ms".
-// The deciding read is the prop-stick lane's own lines on both peers (broadcast UNSTICK / STICK, STICK applied);
-// this drill adds none of its own wire. "[CAMERA-DRILL] FAIL" is the lane failing a step (--fail-marker),
-// "[CAMERA-DRILL] ABANDONED" the drill unable to do its part (--dead-marker). Run with camera_drill=grab and
-// --done-marker "[CAMERA-DRILL] client DONE".
+//   HOST   -- once the director can route (checked each second), with no wait for a client: finds a flat wall that a
+//             walker reaches by a NavMesh route (retried each second, given up after 60 s of world time), hangs a
+//             prop_camera_bad_C on it, sticks it through the prop-stick lane's converge, and says
+//             "camera_drill: host READY stuck key=... at=..." only if it reads frozen AND attached to a wall actor.
+//   CLIENT -- scans for the nearest stuck camera in its world, walks to it by the director, grabs it by the use key's
+//             chain, holds 3 s of the world's own clock, lets go, and watches 2.5 s more. The first stuck sample while
+//             held is "camera_drill: re-stuck while held at +...ms"; a line every 0.25 s gives the held camera's and the
+//             player's distance off the wall plane.
+// Arms: grab (the walk ends 70 cm off the wall), grab_near (as close as the director allows) and host_grab_near (the
+// host does the near grab on its own camera, the control; no client is needed). The deciding read is the prop-stick
+// lane's own lines. "[CAMERA-DRILL] FAIL" is the lane failing a step (--fail-marker), "[CAMERA-DRILL] ABANDONED" the
+// drill unable to do its part (--dead-marker), and its DONE line (--done-marker) is the grabber's, client or host.
 
 #pragma once
 
