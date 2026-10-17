@@ -80,7 +80,7 @@ bool HandleEntityEvent(net::Session& session,
             (msg.senderPeerSlot >= 0 && msg.senderPeerSlot < net::kMaxPeers)
                 ? static_cast<uint8_t>(msg.senderPeerSlot)
                 : static_cast<uint8_t>(0xFF);
-        coop::prop_stick_sync::OnStickState(p, senderSlot, localPlayer);
+        coop::prop_stick_sync::OnStickState(p, senderSlot);
         break;
     }
     case net::ReliableKind::PropRelease: {

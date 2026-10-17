@@ -118,6 +118,13 @@ bool IsActorUnderAnyDrive(void* actor) {
     return false;
 }
 
+bool IsOwnedHere(void* actor) {
+    if (!actor) return false;
+    if (IsActorUnderAnyDrive(actor) || coop::prop_drive_stream::IsParked(actor)) return true;
+    void* const localPlayer = coop::players::Registry::Get().Local();
+    return localPlayer && ue_wrap::engine::IsMainPlayerGrabbing(localPlayer, actor);
+}
+
 // The WireKey as a wstring, for the key index.
 std::wstring KeyToWString(const coop::net::WireKey& k) {
     std::wstring s;
