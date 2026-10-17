@@ -116,7 +116,8 @@ bool SameRot(const ue_wrap::FRotator& a, const ue_wrap::FRotator& b, float tol =
 // The tolerance the value the pre hook read is judged by.
 constexpr float kReadTol = 0.01f;
 
-// A value no rotation passed in has, so a hook that read nothing cannot match.
+// A value the selftest never passes, so a hook that read nothing does not match (a roll of -9999 is 81 degrees
+// under the full-turn compare, and the player's roll is 0).
 void ClearSeen() { g_lastSeen.Pitch = g_lastSeen.Yaw = g_lastSeen.Roll = -9999.f; }
 
 // A library function of lib_C that takes the world context and writes an out value: called on the library's
@@ -402,17 +403,13 @@ bool LagLocation(ue_wrap::FVector& out) {
     return true;
 }
 
-// What makeLookAt's non-seated branch and its interpolation step need of the local player: the name of the one
-// that does not hold, else null.
+// What makeLookAt's non-seated branch needs of the local player: the name of the condition that does not hold,
+// else null. Its interpolation speed is worldDeltaSeconds, and a zero speed returns the target, so no delta is
+// required.
 const char* LookAtPrecondition() {
     void* sitting = nullptr;
     if (!E::ReadMainPlayerSittingOn(g_local, sitting)) return "sittingOn unreadable";
     if (sitting) return "the player is sitting";
-    const int32_t off = R::FindPropertyOffset(R::ClassOf(g_local), L"worldDeltaSeconds");
-    if (off < 0) return "worldDeltaSeconds unresolved";
-    float dt = 0.f;
-    std::memcpy(&dt, static_cast<const uint8_t*>(g_local) + off, sizeof dt);
-    if (!(dt > 0.f)) return "worldDeltaSeconds is not positive";
     return nullptr;
 }
 

@@ -6,9 +6,10 @@
 // world-ready, both with the Blueprint library class loaded and a local player), installs its watches and
 // hooks, waits for the name watches to settle, then runs every check in ONE tick so each result line is
 // printed before a rig can end the run. Each check (scope-mark, call-sites, const-ref-pre,
-// const-ref-bytecode, caller-locals) logs one PASS or FAIL line tagged PI-1, and a DONE line naming the
-// role ends the run. It calls two read-only library functions, turns the local player's controller 90
-// degrees and puts it back. Armed per run by pi1_selftest=1.
+// const-ref-bytecode, caller-locals) logs a PASS line tagged PI-1 or the FAIL lines of what it found, and a
+// DONE line naming the role ends the run. It calls two read-only library functions, turns the local
+// player's controller by a reflected call and by makeLookAt (once refused, once not), and puts it back each
+// time. Armed per run by pi1_selftest=1.
 #pragma once
 
 namespace coop::net { class Session; }
