@@ -4,6 +4,7 @@
 
 #include "coop/comms/chat_feed.h"
 #include "coop/comms/chat_log.h"
+#include "coop/comms/chat_sync.h"
 #include "coop/config/config.h"
 #include "coop/config/config_registry.h"
 #include "coop/dev/spawn_npc.h"
@@ -195,6 +196,7 @@ Spot CheckSpot(void* puppet, const FVector& eye, float x, float y, float up) {
 // The yaw steps, in degrees, a layout is tried at round the puppet's facing: straight ahead first, then alternating
 // sides until the whole circle is covered.
 constexpr float kFanDeg[] = {0.f, 25.f, -25.f, 50.f, -50.f, 75.f, -75.f, 100.f, -100.f, 130.f, -130.f, 160.f, -160.f, 180.f};
+constexpr int kFanCount = static_cast<int>(sizeof(kFanDeg) / sizeof(kFanDeg[0]));
 
 // Says what one tested direction found, one line a direction: a layout is attempted once, so the lines are bounded.
 void SayDirection(float deg, const char* which, const Spot& s, const FVector& eye) {
@@ -211,8 +213,9 @@ void SayDirection(float deg, const char* which, const Spot& s, const FVector& ey
 // of it (the single nearer), the creature straight ahead beyond them, and the ring about it clear of the cone it faces.
 // The pair and the creature are laid only where each spot has a floor of its own and the segment from the puppet's eye
 // to it is clear -- the trace the judge runs -- trying the facing and then a fan round it, so the drill measures the
-// lane and not the map. Null on success; else the reason nothing was laid.
-const char* SpawnLayout(coop::RemotePlayer& rp, const FVector& at) {
+// lane and not the map. The fan is walked from step `start` (a re-lay passes the step after the last), and `*chosen` is the
+// step that was laid. Null on success; else the reason nothing was laid.
+const char* SpawnLayout(coop::RemotePlayer& rp, const FVector& at, int start, int* chosen) {
     void* puppet = rp.GetActor();
     void* singleCls = ue_wrap::asset_load::LoadObjectByPath(kSinglePath);
     void* mashCls = ue_wrap::asset_load::LoadObjectByPath(kMashPath);
@@ -231,7 +234,8 @@ const char* SpawnLayout(coop::RemotePlayer& rp, const FVector& at) {
     FVector fwd{}, right{};
     Spot single, mash, npc;
     bool found = false;
-    for (const float deg : kFanDeg) {
+    for (int fan = start; fan < kFanCount; ++fan) {
+        const float deg = kFanDeg[fan];
         const float rad = deg * 0.0174532925f;
         fwd = {fwd0.X * std::cos(rad) - fwd0.Y * std::sin(rad), fwd0.X * std::sin(rad) + fwd0.Y * std::cos(rad), 0.f};
         right = {-fwd.Y, fwd.X, 0.f};
@@ -253,6 +257,7 @@ const char* SpawnLayout(coop::RemotePlayer& rp, const FVector& at) {
             if (!npc.ok) continue;
         }
         found = true;
+        *chosen = fan;
         break;
     }
     if (!found) return "no direction round the puppet has a floor and a clear segment from its eye to the layout";
@@ -352,6 +357,73 @@ void HostJudge() {
     End("host", "FAIL", why, true);
 }
 
+// The handshake that lets the client judge its own sight. The client says "remover-drill relay n cam x y z eid E at x y z"
+// when its own camera's trace meets something before a target; the host answers "remover-drill laid n=<n>;" once it has
+// laid the layout again in the next fan direction, or "remover-drill relay-failed;" when the fan has none left.
+constexpr const char* kRelayPrefix = "remover-drill relay ";
+int g_fanIdx = 0;       // the fan step the layout stands at
+int g_relaysDone = 0;   // the relay numbers the host has answered
+
+void Destroy(ue_wrap::CachedObjRef& ref) {
+    if (void* a = ref.Get()) E::DestroyActor(a);
+    ref.Reset();
+}
+
+// Takes the next relay line the client said, if any: lays the layout again from the step after the last. The numbers in
+// the line are the client's camera and the element its trace met with where it stands there, set here against the host's
+// own eye and the host's position of that element: the measurement of whether the two peers agree.
+void HostRelay() {
+    char text[256] = "";
+    const std::string want = std::string(kRelayPrefix) + std::to_string(g_relaysDone + 1);
+    coop::chat_log::ForEach([&](const coop::chat_log::Row& r) {
+        if (r.slot == 1 && r.text.compare(0, want.size(), want) == 0 && (r.text.size() == want.size() || r.text[want.size()] == ' '))
+            std::snprintf(text, sizeof(text), "%s", r.text.c_str());
+    });
+    if (!text[0]) return;
+    ++g_relaysDone;
+    float cx = 0, cy = 0, cz = 0, bx = 0, by = 0, bz = 0;
+    unsigned eid = 0;
+    int n = 0;
+    const int got = sscanf_s(text, "remover-drill relay %d cam %f %f %f eid %u at %f %f %f", &n, &cx, &cy, &cz, &eid, &bx,
+                                &by, &bz);
+    coop::RemotePlayer& rp = coop::puppet_drive::Puppet(1);
+    FVector eye{}, at{};
+    const bool haveEye = rp.valid() && rp.HasPose() && rp.TryGetEyePosition(eye) && E::TryGetActorLocation(rp.GetActor(), at);
+    if (got == 8 && haveEye) {
+        FVector hostAt{};
+        const EL::Element* el = EL::Registry::Get().Get(eid);
+        void* a = el ? el->LiveActor() : nullptr;
+        const bool held = a && E::TryGetActorLocation(a, hostAt);
+        UE_LOGI("[REMOVER-DRILL] host: relay %d -- the client's camera is %.0f cm from the host's eye: (%.0f, %.0f, %.0f) "
+                "against (%.0f, %.0f, %.0f)", n, Dist({cx, cy, cz}, eye), cx, cy, cz, eye.X, eye.Y, eye.Z);
+        if (held)
+            UE_LOGI("[REMOVER-DRILL] host: relay %d -- the blocker, element %u, stands %.0f cm from where the client holds it: "
+                    "(%.0f, %.0f, %.0f) here against (%.0f, %.0f, %.0f) there", n, eid, Dist({bx, by, bz}, hostAt), hostAt.X,
+                    hostAt.Y, hostAt.Z, bx, by, bz);
+        else
+            UE_LOGI("[REMOVER-DRILL] host: relay %d -- the blocker, element %u, is not a live element here; the client holds "
+                    "it at (%.0f, %.0f, %.0f)", n, eid, bx, by, bz);
+    }
+    if (!haveEye) {
+        coop::chat_sync::QueueSend("remover-drill relay-failed;");
+        End("host", "ABANDONED", "the sender's eye did not read for a relay", true);
+        return;
+    }
+    Destroy(g_hSingle);
+    Destroy(g_hMash);
+    Destroy(g_hNpc);
+    for (auto& r : g_hRing) Destroy(r);
+    int chosen = g_fanIdx;
+    if (const char* why = SpawnLayout(rp, at, g_fanIdx + 1, &chosen)) {
+        UE_LOGW("[REMOVER-DRILL] host: relay %d -- no further direction: %s", n, why);
+        coop::chat_sync::QueueSend("remover-drill relay-failed;");
+        return;
+    }
+    g_fanIdx = chosen;
+    UE_LOGI("[REMOVER-DRILL] host: relay %d -- the layout is laid again at fan step %d", n, chosen);
+    coop::chat_sync::QueueSend("remover-drill laid n=" + std::to_string(n) + ";");
+}
+
 void HostTick(coop::net::Session* s) {
     if (g_done) return;
     const uint64_t now = ::GetTickCount64();
@@ -369,12 +441,13 @@ void HostTick(coop::net::Session* s) {
         void* puppet = rp.valid() && rp.HasPose() ? rp.GetActor() : nullptr;
         FVector at{};
         if (!puppet || !R::IsLive(puppet) || !E::TryGetActorLocation(puppet, at)) return;
-        if (const char* why = SpawnLayout(rp, at)) { End("host", "ABANDONED", why, true); return; }
+        if (const char* why = SpawnLayout(rp, at, 0, &g_fanIdx)) { End("host", "ABANDONED", why, true); return; }
         UE_LOGI("[REMOVER-DRILL] host: the layout is spawned about the client's puppet (%s)", PhaseName());
         g_hostStep = HostStep::Await;
         g_stepMs = now;
         return;
     }
+    HostRelay();
     if (ClientEnded()) { HostJudge(); return; }
     if (Expired(kAwaitBoundMs)) End("host", "ABANDONED", "the client's closing line never came", true);
 }
@@ -382,7 +455,7 @@ void HostTick(coop::net::Session* s) {
 // ---- client -----------------------------------------------------------------------------------------------------
 
 enum class Step : uint8_t {
-    Arm, Find, Settle, Single, SingleWait, Mash, MashWait, Sweep, SweepWait, Npc, NpcWait, Finish
+    Arm, Find, Settle, Relay, Cleared, Single, SingleWait, Mash, MashWait, Sweep, SweepWait, Npc, NpcWait, Finish
 };
 Step g_step = Step::Arm;
 ue_wrap::CachedObjRef g_toolgun, g_single, g_mash, g_npc;
@@ -395,6 +468,10 @@ int g_noticeBase = 0;   // the leg's notice count before its shot
 char g_aimWhy[420] = "";   // why the last AimedHit or press failed
 FVector g_restAt[kRing + 2];   // where the pair and the ring stood at the last rest read
 int g_restReads = 0;           // reads in a row at which none of them had moved
+int g_relay = 0;                 // relays asked of the host for this run
+std::string g_relayWhy;          // what each direction's blocked trace met, for the abandon that ends the fan
+FVector g_aimCam{}, g_aimBlkAt{};   // the last miss: the camera, and where the actor its trace met stands
+uint32_t g_aimBlkEid = 0;
 
 void Next(Step s) { g_step = s; g_stepMs = ::GetTickCount64(); }
 void Fail(const char* what) { End("client", "FAIL", what, true); }
@@ -430,6 +507,9 @@ void DestroyIfLive(void* actor) {
 // shot takes. Every player body is ignored, as the host's judge ignores them: with both players at one spawn point a native
 // trace would stop at the other's capsule. True when that first thing is the target and the hit names a component.
 bool AimedHit(void* player, void* target, ue_wrap::trace::Hit* hit) {
+    g_aimCam = {};
+    g_aimBlkAt = {};
+    g_aimBlkEid = 0;
     FVector cam{}, at{};
     if (!E::ReadMainPlayerCameraLocation(player, cam) || !E::TryGetActorLocation(target, at)) {
         std::snprintf(g_aimWhy, sizeof(g_aimWhy), "the camera or the target's location did not read");
@@ -452,6 +532,9 @@ bool AimedHit(void* player, void* target, ue_wrap::trace::Hit* hit) {
     if (hit->blocked && hit->actor == target && hit->component) return true;
     FVector bat{};   // where the actor the trace met stands, to set against where the other peer holds it
     if (hit->actor) E::TryGetActorLocation(hit->actor, bat);
+    g_aimCam = cam;
+    g_aimBlkAt = bat;
+    g_aimBlkEid = hit->actor ? static_cast<uint32_t>(coop::element::Registry::Get().EidForActor(hit->actor)) : 0u;
     if (!hit->blocked)
         std::snprintf(g_aimWhy, sizeof(g_aimWhy), "the trace met nothing, %.0f cm to the target", len);
     else if (hit->actor == target)
@@ -570,14 +653,45 @@ bool AtRest() {
     return still;
 }
 
+// Says `text` to the host as a chat line, through the session's own reliable lane (the host reads it from its lobby record).
+bool SayToHost(coop::net::Session* s, const std::string& text) {
+    coop::net::ChatMessagePayload p{};
+    if (text.empty() || text.size() > sizeof(p.text)) return false;
+    std::memcpy(p.text, text.data(), text.size());
+    p.len = static_cast<uint8_t>(text.size());
+    return s->SendReliable(coop::net::ReliableKind::ChatMessage, &p, sizeof(p));
+}
+
+// A target the camera's own trace does not meet first: the host's trace judged the segment clear from its eye, and the
+// client is the judge of its own shot. It asks the host, in a chat line that carries its camera and what its trace met, to
+// lay the layout again in the next fan direction, up to the fan's size; then it abandons with every direction's reason.
+// False: the run goes on only after the relay, or it has ended.
+bool Blocked(coop::net::Session* s, const char* which) {
+    char one[460];
+    std::snprintf(one, sizeof(one), "%s%s: %s", g_relayWhy.empty() ? "" : "; ", which, g_aimWhy);
+    if (g_relayWhy.size() < 1400) g_relayWhy += one;
+    if (g_relay >= kFanCount - 1) {
+        Abandon(("every direction the host laid was blocked from this camera -- " + g_relayWhy).c_str());
+        return false;
+    }
+    ++g_relay;
+    char line[200];
+    std::snprintf(line, sizeof(line), "remover-drill relay %d cam %.0f %.0f %.0f eid %u at %.0f %.0f %.0f", g_relay, g_aimCam.X,
+                  g_aimCam.Y, g_aimCam.Z, static_cast<unsigned>(g_aimBlkEid), g_aimBlkAt.X, g_aimBlkAt.Y, g_aimBlkAt.Z);
+    if (!SayToHost(s, line)) { Abandon("the relay line was not sent"); return false; }
+    UE_LOGI("[REMOVER-DRILL] client: %s: %s -- asking the host to lay again (relay %d)", which, g_aimWhy, g_relay);
+    Next(Step::Relay);
+    return false;
+}
+
 // Once the layout is at rest: the camera's own trace must meet each target first (a press must be one the game itself could
-// make), and the sweep is every ring prop it meets first. Abandons by name when a target cannot be pressed.
-void Choose(void* player) {
+// make), and the sweep is every ring prop it meets first. True when the run goes on.
+bool Choose(void* player, coop::net::Session* s) {
     ue_wrap::trace::Hit probe;
-    if (!AimedHit(player, g_single.Get(), &probe)) { AbandonAim("the camera's trace does not meet the single prop first"); return; }
-    if (PhaseOf() != Phase::Granted) return;
-    if (!AimedHit(player, g_mash.Get(), &probe)) { AbandonAim("the camera's trace does not meet the mashed prop first"); return; }
-    if (!AimedHit(player, g_npc.Get(), &probe)) { AbandonAim("the camera's trace does not meet the creature first"); return; }
+    if (!AimedHit(player, g_single.Get(), &probe)) return Blocked(s, "the single prop");
+    if (PhaseOf() != Phase::Granted) return true;
+    if (!AimedHit(player, g_mash.Get(), &probe)) return Blocked(s, "the mashed prop");
+    if (!AimedHit(player, g_npc.Get(), &probe)) return Blocked(s, "the creature");
     int n = 0;
     for (int i = 0; i < g_ringN; ++i) {
         void* r = g_ring[i].Get();
@@ -588,7 +702,9 @@ void Choose(void* player) {
         char why[120];
         std::snprintf(why, sizeof(why), "%d of the ring props are in this client's sight, %d are needed", n, kSweepFloor);
         Abandon(why);
+        return false;
     }
+    return true;
 }
 
 bool SpawnToolgun(void* player) {
@@ -619,12 +735,8 @@ bool GoneOrFail(const ue_wrap::CachedObjRef& ref, const char* unexpected, const 
 }
 
 void Finish(coop::net::Session* s) {
-    coop::net::ChatMessagePayload p{};
-    const std::string line = EndLine();
-    std::memcpy(p.text, line.data(), line.size());
-    p.len = static_cast<uint8_t>(line.size());
-    // Sent through the session's own reliable lane; the host judges when it commits the line.
-    if (!s->SendReliable(coop::net::ReliableKind::ChatMessage, &p, sizeof(p))) {
+    // The host judges when it commits the closing line.
+    if (!SayToHost(s, EndLine())) {
         Abandon("the closing chat line was not sent");
         return;
     }
@@ -652,9 +764,55 @@ void ClientTick(coop::net::Session* s) {
             return;
         }
         if (g_done) return;
-        if (!SpawnToolgun(player)) { Abandon("the toolgun or the remover tool could not be spawned"); return; }
+        if (!g_toolgun.Alive() && !SpawnToolgun(player)) {
+            Abandon("the toolgun or the remover tool could not be spawned");
+            return;
+        }
         UE_LOGI("[REMOVER-DRILL] client: the host's props are here and the toolgun is up (%s)", PhaseName());
-Next(Step::Settle);        return;    case Step::Settle:        g_restReads = AtRest() ? g_restReads + 1 : 0;        if (g_restReads < kRestChecks) {            if (Expired(kFindBoundMs)) Abandon("the host's props did not come to rest within 60 s");            return;        }        Choose(player);        if (g_done) return;        UE_LOGI("[REMOVER-DRILL] client: the host's props are at rest and the camera's trace meets each target first");        Next(Step::Single);        return;
+        Next(Step::Settle);
+        return;
+    case Step::Settle:
+        g_restReads = AtRest() ? g_restReads + 1 : 0;
+        if (g_restReads < kRestChecks) {
+            if (Expired(kFindBoundMs)) Abandon("the host's props did not come to rest within 60 s");
+            return;
+        }
+        if (!Choose(player, s)) return;
+        UE_LOGI("[REMOVER-DRILL] client: the host's props are at rest and the camera's trace meets each target first");
+        Next(Step::Single);
+        return;
+    case Step::Relay:
+        // The host lays the layout again and says so; or it has no further direction.
+        if (NoticeCount(("remover-drill laid n=" + std::to_string(g_relay) + ";").c_str()) > 0) {
+            Next(Step::Cleared);
+        } else if (NoticeCount("remover-drill relay-failed;") > 0) {
+            Abandon(("the host has no direction left that its own trace clears; every one it laid was blocked from this "
+                     "camera -- " + g_relayWhy).c_str());
+        } else if (Expired(kFindBoundMs)) {
+            Abandon("the host did not answer the relay within 60 s");
+        }
+        return;
+    case Step::Cleared: {
+        // The old layout's mirrors go with the host's destroys; the roles are found again only once every one has gone, or
+        // the find would take an old prop for a new one.
+        bool gone = !g_single.Alive() && !g_mash.Alive() && !g_npc.Alive();
+        for (int i = 0; i < g_ringN; ++i) gone = gone && !g_ring[i].Alive();
+        if (!gone) {
+            if (Expired(kFindBoundMs)) Abandon("the old layout's mirrors did not go within 60 s of the re-lay");
+            return;
+        }
+        g_single.Reset();
+        g_mash.Reset();
+        g_npc.Reset();
+        for (auto& r : g_ring) r.Reset();
+        for (auto& r : g_sweep) r.Reset();
+        for (auto& p : g_restAt) p = {};
+        g_ringN = 0;
+        g_sweepN = 0;
+        g_restReads = 0;
+        Next(Step::Find);
+        return;
+    }
     case Step::Single:
         if (Fire(player, g_single, kNoRight)) Next(Step::SingleWait);
         return;
@@ -731,6 +889,8 @@ void OnDisconnect() {
     ++g_session;
     g_done = false;
     g_hostStep = HostStep::Arm;
+    g_fanIdx = 0;
+    g_relaysDone = 0;
     g_step = Step::Arm;
     g_stepMs = g_nextCheckMs = 0;
     g_hSingle.Reset();
@@ -745,6 +905,8 @@ void OnDisconnect() {
     g_sweepAt = 0;
     g_sweepN = 0;
     g_ringN = 0;
+    g_relay = 0;
+    g_relayWhy.clear();
     g_restReads = 0;
     for (auto& r : g_ring) r.Reset();
     for (auto& p : g_restAt) p = {};
