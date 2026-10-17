@@ -180,4 +180,5 @@ set(VOTVCOOP_DEV_SOURCES
     src/coop/dev/pi3_observer.cpp
     src/coop/dev/pi3_arms.cpp
     src/coop/dev/pi3_drill.cpp
+    src/coop/dev/native_spawn_probe.cpp
 )
