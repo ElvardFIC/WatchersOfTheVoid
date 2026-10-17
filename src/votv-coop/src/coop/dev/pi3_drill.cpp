@@ -50,7 +50,9 @@ namespace PI = coop::puppet_identity;
 namespace DR = coop::director;
 
 // Failure bounds only: each step ends on the state it waits for.
-constexpr uint64_t kWaitBoundMs = 60000;    // this peer's world up to the arm's readiness
+constexpr const char* kWaitPeer = "peer";  // the one wait the rig bounds
+// The spawner: each wait from when it holds the arm (the join excepted); the still peer: from its world up.
+constexpr uint64_t kWaitBoundMs = 60000;
 constexpr uint64_t kRestBoundMs = 60000;    // the still body coming to a stand
 constexpr uint64_t kNoContactMs = 10000;    // the spawn to the first contact
 constexpr float    kRingCm = 1800.f;        // the ring about the still body the spawner walks to
@@ -82,6 +84,8 @@ bool     g_brokenSaid = false;
 Phase    g_phase = Phase::Wait;
 int      g_leg = 1;          // the client arm's leg
 uint64_t g_worldUpAt = 0;
+const char* g_waitWhat = nullptr;  // the spawner's current wait, and since when it holds the arm
+uint64_t g_waitSince = 0;
 uint64_t g_phaseAt = 0;
 uint64_t g_spawnAt = 0;
 uint64_t g_anchorAt = 0;     // the drill's sight of the first contact: the horizon counts from it
@@ -250,17 +254,19 @@ void StillTick(coop::net::Session* session, ArmId arm) {
 }
 
 // What stands between the spawner and its arm, or null when it is ready.
+// This machine's own readiness first, then the other peer's: its join (the host waiting on the client), its puppet,
+// the client's sweep.
 const char* NotReady(coop::net::Session* session, ArmId arm) {
     const bool host = session->role() == coop::net::Role::Host;
     if (!OB::Live()) return "observer";
     if (PI::WatchesLive() != kPiWatches) return "pi";
-    if (host && !session->IsSlotWorldReady(1)) return "peer";
-    if (!StillBody(host)) return "puppet";
-    if (!host && !coop::npc_adoption::GhostSweepDone()) return "sweep";
     int ids[3];
     const int n = WaitSpecs(arm, /*spawner=*/true, ids);
     for (int i = 0; i < n; ++i)
         if (!ClassOfSpec(ids[i])) return "class";
+    if (host && !session->IsSlotWorldReady(1)) return kWaitPeer;
+    if (!StillBody(host)) return "puppet";
+    if (!host && !coop::npc_adoption::GhostSweepDone()) return "sweep";
     return nullptr;
 }
 
@@ -388,7 +394,11 @@ void SpawnerTick(coop::net::Session* session, ArmId arm) {
     const bool host = session->role() == coop::net::Role::Host;
     if (g_phase == Phase::Wait) {
         if (const char* what = NotReady(session, arm)) {
-            if (Now() - g_worldUpAt >= kWaitBoundMs) AbandonWait(arm, what);
+            // Each wait has its own bound, counted from when it became the one holding the arm, so a long join never
+            // spends the bound of what comes after it. The join itself has none here: the rig ends a run whose client
+            // never reaches its world (its own ready timeout).
+            if (!g_waitWhat || std::strcmp(what, g_waitWhat) != 0) { g_waitWhat = what; g_waitSince = Now(); }
+            if (what != kWaitPeer && Now() - g_waitSince >= kWaitBoundMs) AbandonWait(arm, what);
             return;
         }
         g_spawner = true;
@@ -508,6 +518,7 @@ void OnDisconnect() {
     }
     if (!g_latched) {
         g_worldUpAt = 0;
+        g_waitWhat = nullptr;
         g_phase = Phase::Wait;
     }
 }
