@@ -10,11 +10,17 @@ them.
 
 | bin | default port | env |
 |---|---|---|
-| `coop-master` | `COOP_MASTER_PORT` (10001) | `COOP_TURN_SECRET`*, `COOP_SIGNALING_TOKEN`*, `COOP_SIGNALING_URL`, `COOP_STUN_URI`, `COOP_TURN_URI` |
+| `coop-master` | `COOP_MASTER_PORT` (10001) | `COOP_TURN_SECRET`*, `COOP_SIGNALING_TOKEN`*, `COOP_DOMAIN`*, `COOP_MASTER_NAME_ALIASES`, `COOP_MIN_LISTED_PROTO`, `COOP_SIGNALING_URL`, `COOP_STUN_URI`, `COOP_TURN_URI` |
 | `coop-signaling` | `COOP_SIGNALING_PORT` (10000) | `COOP_SIGNALING_TOKEN`* |
 
 `*` required: the process refuses to start (exit 1) without it. All secrets are env-only;
 nothing is hardcoded, and it stays that way.
+
+The master's names: `COOP_DOMAIN` is the name its clients dial, and a lobby proof is signed for
+it. `COOP_MASTER_NAME_ALIASES` is an optional comma list of other names it answers to (an IP
+literal, a dev host); names are trimmed, lower-cased and compared without a port, and a loopback
+alias is dropped with a warning. `COOP_MIN_LISTED_PROTO` (default 0) refuses a create from a
+build below it.
 
 ## Build
 
@@ -36,7 +42,7 @@ limits and per-IP caps are the wrong fixture for many synthetic rows from one ad
 
 ## The wire
 
-- **Endpoints**: `/v1/host`, `/v1/heartbeat`, `/v1/leave`, `/v1/visibility`, `/v1/join`,
+- **Endpoints**: `/v1/host/challenge`, `/v1/host`, `/v1/heartbeat`, `/v1/leave`, `/v1/visibility`, `/v1/join`,
   `/v1/lobbies`, `/v1/latest`, `/v1/thanks`, `/healthz`. The mod's side is
   `coop/net/lobby_client` and `coop/net/lobby_announcer`.
 - **The thanks list**: `/v1/thanks` answers `{"text": ...}` with the file `COOP_THANKS_FILE`

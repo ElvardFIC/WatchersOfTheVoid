@@ -158,6 +158,25 @@ pub fn build_claim_shape_ok(sha: &str, key: i64, sig: &str) -> bool {
     }
 }
 
+/// A host name as the master compares it with the name a lobby proof was signed for: trimmed,
+/// lower-case, a trailing `:port` stripped, an IPv6 literal kept with its brackets. The client
+/// derives the name it signs from the URL it dialled by the same rule.
+pub fn canon_host_name(s: &str) -> String {
+    let s = s.trim().to_lowercase();
+    if s.starts_with('[') {
+        return match s.find(']') {
+            Some(end) => s[..=end].to_string(),
+            None => s,
+        };
+    }
+    match s.rsplit_once(':') {
+        Some((host, port)) if !host.contains(':') && !port.is_empty() && port.bytes().all(|b| b.is_ascii_digit()) => {
+            host.to_string()
+        }
+        _ => s,
+    }
+}
+
 /// Decode an EXACTLY-`N`-byte lowercase-hex string. Returns `None` on any wrong
 /// length, odd length, or non-hex byte -- there is no partial success, because
 /// every caller here is deciding whether to trust a remote peer and a
@@ -228,6 +247,18 @@ mod tests {
         assert_eq!(ip_bucket("::ffff:203.0.113.7"), "203.0.113.7");
         assert_ne!(ip_bucket("::ffff:203.0.113.7"), ip_bucket("::ffff:198.51.100.1"));
         assert_eq!(ip_bucket("2001:db8:1:2::1"), "2001:db8:1:2::/64");
+    }
+
+    #[test]
+    fn a_host_name_is_compared_lower_case_without_its_port() {
+        assert_eq!(canon_host_name(" Master.Multivoid.DEV "), "master.multivoid.dev");
+        assert_eq!(canon_host_name("master.multivoid.dev:10443"), "master.multivoid.dev");
+        assert_eq!(canon_host_name("203.0.113.7:10443"), "203.0.113.7");
+        assert_eq!(canon_host_name("[2001:DB8::1]:10443"), "[2001:db8::1]");
+        assert_eq!(canon_host_name("[2001:db8::1]"), "[2001:db8::1]");
+        assert_eq!(canon_host_name("2001:db8::1"), "2001:db8::1", "a bare v6 literal has no port to strip");
+        assert_eq!(canon_host_name("host:"), "host:", "an empty port is not stripped");
+        assert_eq!(canon_host_name("host:80x"), "host:80x");
     }
 
     #[test]

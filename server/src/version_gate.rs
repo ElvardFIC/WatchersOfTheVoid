@@ -86,6 +86,15 @@ pub fn version_gate(game: &str, proto: i64, game_build: &str) -> Result<(), Stri
     Ok(())
 }
 
+/// The first `kProtocolVersion` whose host signs its announce (the lobby proof): a create from a
+/// build at or above it must carry a valid proof, a create from an older build cannot sign and is
+/// listed unproved. A fact about the protocol, so a code constant; the maintainer's floor
+/// (`COOP_MIN_LISTED_PROTO`) is the config that retires the unproved tier.
+///
+/// PROVISIONAL: the land of the proof's client half sets this to the kProtocolVersion of the
+/// release that ships it; 230 stands in until then.
+pub const MIN_PROVED_PROTO: i64 = 230;
+
 pub fn version_gate_env(game: &str, proto: i64, game_build: &str) -> Result<(), String> {
     // No env left to resolve: the ceiling and the allowlist are retired. Kept as a named
     // seam so the call site still reads as a gate and a future policy has an obvious home.

@@ -165,6 +165,11 @@ async fn main() {
         log("FATAL: COOP_SIGNALING_TOKEN not set -- clients could not reach signaling");
         std::process::exit(1);
     }
+    // A lobby proof is signed for the master's name, so a master with none could verify nothing.
+    if CFG.public_names.is_empty() {
+        log("FATAL: COOP_DOMAIN not set -- a lobby proof names its master and this one has no name");
+        std::process::exit(1);
+    }
 
     // Resolve the TLS decision BEFORE binding anything: with COOP_REQUIRE_TLS=1
     // and no cert this exits, and it must do so without having briefly bound a
@@ -180,10 +185,12 @@ async fn main() {
         }
     };
     log(&format!(
-        "master listening on {addr} (signaling={} stun={} turn={})",
+        "master listening on {addr} (signaling={} stun={} turn={} names={} min_listed_proto={})",
         if CFG.signaling_url.is_empty() { "?" } else { &CFG.signaling_url },
         if CFG.stun_uri.is_empty() { "?" } else { &CFG.stun_uri },
-        if CFG.turn_uri.is_empty() { "off" } else { "on" }
+        if CFG.turn_uri.is_empty() { "off" } else { "on" },
+        CFG.public_names.join(","),
+        CFG.min_listed_proto
     ));
 
     tokio::spawn(sweeper());
@@ -360,6 +367,15 @@ mod tests {
         assert_eq!(ask(post("/v1/host", &over)).await.0, 413, "a body past the cap was read");
         assert_eq!(ask(post("/v1/host", b"{nope")).await.0, 400);
         assert_eq!(ask(b"GET / HTTP/1.1\r\nA: \xff\r\n\r\n".to_vec()).await.0, 400, "a non-text head was read");
+    }
+
+    #[tokio::test]
+    async fn the_challenge_route_answers_a_nonce() {
+        let (status, body) = ask(post("/v1/host/challenge", b"{}")).await;
+        assert_eq!(status, 200, "the challenge was refused: {body}");
+        let answer: serde_json::Value = serde_json::from_str(&body).unwrap();
+        let nonce = answer["nonce"].as_str().expect("no nonce");
+        assert!(nonce.len() == 64 && nonce.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)));
     }
 
     #[tokio::test]

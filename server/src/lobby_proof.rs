@@ -1,9 +1,12 @@
 //! The lobby announce proof. A lobby's identity IS an Ed25519 public key, so its host signs a
 //! challenge the master issued, together with the master's own name, before the row may be
 //! marked proved. The decision lives here, apart from the handler's I/O, so known-answer vectors
-//! can watch it refuse (the shape of `registration.rs`).
+//! can watch it refuse (the shape of `registration.rs`). The nonces it signs over are issued from
+//! the table at the foot of this file.
 
-use crate::common::hex_to_bytes;
+use crate::common::{hex_to_bytes, token_hex};
+use std::collections::HashMap;
+use std::time::{Duration, Instant};
 
 // Domain tag of the announce proof. It differs from the signaling registration's
 // (`multivoid-signaling-register-v1`) and the peer admission's (`multivoid-peer-admission-v1`) in
@@ -44,12 +47,89 @@ pub fn check_lobby_proof(
         .map_err(|_| "does not hold the key this identity names")
 }
 
+// ---- the challenge table ------------------------------------------------------------------
+
+/// How long an issued nonce may be answered.
+pub const NONCE_LIFE: Duration = Duration::from_secs(30);
+/// Pending nonces one address bucket may hold, and the table in all.
+pub const MAX_PENDING_PER_BUCKET: usize = 4;
+pub const MAX_PENDING: usize = 4096;
+
+struct Pending {
+    bucket: String,
+    expires: Instant,
+}
+
+/// Why a challenge was not issued.
+#[derive(Debug, PartialEq, Eq)]
+pub enum IssueRefusal {
+    /// The caller's bucket already holds `MAX_PENDING_PER_BUCKET` live nonces.
+    Bucket,
+    /// The table holds `MAX_PENDING`.
+    Table,
+}
+
+/// The nonces the master has issued and not yet seen answered: single use, bound to the address
+/// bucket they were issued to, alive `NONCE_LIFE`. The clock is passed in, and every call sweeps
+/// the expired first, so the table is bounded by its caps and by nothing that waits on a timer.
+#[derive(Default)]
+pub struct Challenges {
+    pending: HashMap<String, Pending>,
+}
+
+impl Challenges {
+    pub fn new() -> Challenges {
+        Challenges::default()
+    }
+
+    fn sweep(&mut self, now: Instant) {
+        self.pending.retain(|_, p| p.expires > now);
+    }
+
+    /// A fresh 64-hex nonce for `bucket`, or the cap that refuses it.
+    pub fn issue(&mut self, bucket: &str, now: Instant) -> Result<String, IssueRefusal> {
+        self.sweep(now);
+        if self.pending.len() >= MAX_PENDING {
+            return Err(IssueRefusal::Table);
+        }
+        if self.pending.values().filter(|p| p.bucket == bucket).count() >= MAX_PENDING_PER_BUCKET {
+            return Err(IssueRefusal::Bucket);
+        }
+        let nonce = token_hex(32);
+        self.pending.insert(nonce.clone(), Pending { bucket: bucket.to_string(), expires: now + NONCE_LIFE });
+        Ok(nonce)
+    }
+
+    /// Spend `nonce`: true only for a live nonce issued to this `bucket`, and never twice. A nonce
+    /// of another bucket is left alone, so a caller cannot burn what it was not issued.
+    pub fn take(&mut self, nonce: &str, bucket: &str, now: Instant) -> bool {
+        self.sweep(now);
+        if self.pending.get(nonce).is_some_and(|p| p.bucket == bucket) {
+            self.pending.remove(nonce);
+            return true;
+        }
+        false
+    }
+
+    pub fn len(&self) -> usize {
+        self.pending.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.pending.is_empty()
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{blob, check_lobby_proof, ANNOUNCE_TAG};
-    use crate::common::identity_shape_ok;
+    use super::{
+        blob, check_lobby_proof, Challenges, IssueRefusal, ANNOUNCE_TAG, MAX_PENDING, MAX_PENDING_PER_BUCKET,
+        NONCE_LIFE,
+    };
+    use crate::common::{hex_to_bytes, identity_shape_ok};
     use ring::rand::SystemRandom;
     use ring::signature::{Ed25519KeyPair, KeyPair};
+    use std::time::{Duration, Instant};
 
     // The vector the client's selftest reads as well: one fixed seed, its identity, a nonce, a
     // master name, the blob and the signature an independent Ed25519 implementation produced.
@@ -158,5 +238,57 @@ mod tests {
             let at = ANNOUNCE_TAG.iter().zip(other).position(|(a, b)| a != b).expect("tags share a prefix");
             assert!(at <= 12, "the announce tag and {:?} share {at} leading bytes", String::from_utf8_lossy(other));
         }
+    }
+
+    #[test]
+    fn a_nonce_is_64_hex_and_spent_once() {
+        let (mut c, t0) = (Challenges::new(), Instant::now());
+        let nonce = c.issue("198.51.100.1", t0).unwrap();
+        assert!(hex_to_bytes::<32>(&nonce).is_some(), "not 64 lower-case hex: {nonce}");
+        assert!(c.take(&nonce, "198.51.100.1", t0));
+        assert!(!c.take(&nonce, "198.51.100.1", t0), "a nonce was spent twice");
+        assert!(c.is_empty());
+    }
+
+    #[test]
+    fn a_nonce_lives_thirty_seconds_and_no_longer() {
+        let (mut c, t0) = (Challenges::new(), Instant::now());
+        let early = c.issue("198.51.100.1", t0).unwrap();
+        let late = c.issue("198.51.100.1", t0).unwrap();
+        assert!(c.take(&early, "198.51.100.1", t0 + NONCE_LIFE - Duration::from_millis(1)));
+        assert!(!c.take(&late, "198.51.100.1", t0 + NONCE_LIFE), "an expired nonce was spent");
+        assert!(c.is_empty(), "an expired nonce was left in the table");
+    }
+
+    #[test]
+    fn another_buckets_nonce_is_refused_and_not_burnt() {
+        let (mut c, t0) = (Challenges::new(), Instant::now());
+        let nonce = c.issue("198.51.100.1", t0).unwrap();
+        assert!(!c.take(&nonce, "198.51.100.2", t0));
+        assert!(c.take(&nonce, "198.51.100.1", t0), "the owner lost its nonce to another bucket's try");
+        assert!(!c.take("not a nonce", "198.51.100.1", t0));
+    }
+
+    #[test]
+    fn a_bucket_holds_four_and_expiry_frees_it() {
+        let (mut c, t0) = (Challenges::new(), Instant::now());
+        for _ in 0..MAX_PENDING_PER_BUCKET {
+            c.issue("198.51.100.1", t0).unwrap();
+        }
+        assert_eq!(c.issue("198.51.100.1", t0), Err(IssueRefusal::Bucket));
+        assert!(c.issue("198.51.100.2", t0).is_ok(), "one bucket's cap refused another");
+        assert!(c.issue("198.51.100.1", t0 + NONCE_LIFE).is_ok(), "an expired nonce still counted");
+    }
+
+    #[test]
+    fn the_table_holds_4096_and_sweeps_on_each_call() {
+        let (mut c, t0) = (Challenges::new(), Instant::now());
+        for i in 0..MAX_PENDING {
+            c.issue(&format!("bucket-{}", i / MAX_PENDING_PER_BUCKET), t0).unwrap();
+        }
+        assert_eq!(c.len(), MAX_PENDING);
+        assert_eq!(c.issue("fresh", t0), Err(IssueRefusal::Table));
+        assert!(c.issue("fresh", t0 + NONCE_LIFE).is_ok());
+        assert_eq!(c.len(), 1, "the sweep did not drop the expired");
     }
 }

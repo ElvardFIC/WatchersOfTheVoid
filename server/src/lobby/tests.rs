@@ -1,8 +1,8 @@
 //! The lobby domain's unit tests.
 
 use super::{
-    build_claim_from_body, h_host, host_listed, latest_answer, parse_latest_games, LatestGame, Lobby, LobbyLinks,
-    MasterState, LATEST_URL, MAX_LOBBIES_GLOBAL,
+    build_claim_from_body, h_challenge, h_host, host_listed, latest_answer, parse_latest_games, LatestGame, Lobby,
+    LobbyLinks, MasterState, LATEST_URL, MAX_LOBBIES_GLOBAL,
 };
 use crate::common::{build_claim_shape_ok, identity_shape_ok};
 
@@ -141,4 +141,31 @@ fn a_refused_create_at_the_global_cap_evicts_nothing() {
     assert_eq!(status, 400);
     assert_eq!(state.lobbies.len(), MAX_LOBBIES_GLOBAL, "a refused create evicted a live lobby");
     assert!(before.iter().all(|sid| state.lobbies.contains_key(sid)));
+}
+
+#[test]
+fn a_challenge_is_a_nonce_for_the_callers_bucket_and_a_bucket_holds_four() {
+    let (mut state, now) = (MasterState::new(), std::time::Instant::now());
+    let mut nonces = Vec::new();
+    for _ in 0..4 {
+        let (status, body) = h_challenge(&mut state, now, "198.51.100.9");
+        assert_eq!(status, 200);
+        nonces.push(body["nonce"].as_str().expect("no nonce").to_string());
+    }
+    nonces.sort();
+    nonces.dedup();
+    assert_eq!(nonces.len(), 4, "two challenges answered one nonce");
+    let (status, body) = h_challenge(&mut state, now, "198.51.100.9");
+    assert_eq!((status, body["error"].as_str()), (429, Some("too many challenges for this address")));
+    assert_eq!(h_challenge(&mut state, now, "198.51.100.10").0, 200, "one address's cap refused another");
+}
+
+#[test]
+fn a_challenge_is_counted_in_the_create_rate_class() {
+    let (mut state, now) = (MasterState::new(), std::time::Instant::now());
+    for _ in 0..10 {
+        h_challenge(&mut state, now, "198.51.100.9");
+    }
+    let (status, body) = h_challenge(&mut state, now, "198.51.100.9");
+    assert_eq!((status, body["error"].as_str()), (429, Some("rate")));
 }

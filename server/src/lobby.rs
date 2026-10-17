@@ -1,10 +1,11 @@
 //! The lobby domain: what a lobby is, the state every request mutates, and the handlers behind
-//! `/v1/host`, `/v1/heartbeat`, `/v1/leave`, `/v1/visibility` and `/v1/join`, plus the browse
-//! snapshot and the sweeper that reaps what stopped heartbeating.
+//! `/v1/host/challenge`, `/v1/host`, `/v1/heartbeat`, `/v1/leave`, `/v1/visibility` and
+//! `/v1/join`, plus the browse snapshot and the sweeper that reaps what stopped heartbeating.
 
 use crate::common::{build_claim_shape_ok, clamp_str, ct_eq, identity_shape_ok, ip_bucket, log, token_hex, token_urlsafe};
 use crate::version_gate::version_gate_env;
 use crate::ice::{heartbeat_turn, ice_block, turn_creds, HostTurn, TURN_TTL_HOST, TURN_TTL_JOIN};
+use crate::lobby_proof::{Challenges, IssueRefusal};
 use crate::master_config::CFG;
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -232,6 +233,8 @@ pub struct MasterState {
     // response OUTSIDE it (audit L5: serializing a ~200 KB body under the global lock
     // serialized it against all host/join/heartbeat processing).
     pub cache_all_body: Arc<Vec<u8>>,
+    // The nonces `/v1/host/challenge` issued and no create has spent yet.
+    pub challenges: Challenges,
 }
 
 impl MasterState {
@@ -240,6 +243,7 @@ impl MasterState {
             lobbies: HashMap::new(),
             lobby_by_public: HashMap::new(),
             rate: HashMap::new(),
+            challenges: Challenges::new(),
             cache_t: None,
             cache_all_body: Arc::new(Vec::new()),
         }
@@ -398,6 +402,22 @@ pub fn auth_by_session<'a>(state: &'a MasterState, body: &Value) -> Option<&'a L
 }
 
 // ---- endpoint handlers : return (status, body) ------------------------------
+
+/// `POST /v1/host/challenge`: the nonce a create signs. Counted in the create rate class, bound
+/// to the caller's address bucket, single use, alive 30 s (see `lobby_proof::Challenges`).
+pub fn h_challenge(state: &mut MasterState, now: Instant, ip: &str) -> (u16, Value) {
+    if !rate_ok(state, ip, "create", RL_CREATE.0, RL_CREATE.1) {
+        return (429, json!({"error": "rate"}));
+    }
+    match state.challenges.issue(&ip_bucket(ip), now) {
+        Ok(nonce) => (200, json!({"nonce": nonce})),
+        Err(IssueRefusal::Bucket) => (429, json!({"error": "too many challenges for this address"})),
+        Err(IssueRefusal::Table) => {
+            log("challenge table full");
+            (503, json!({"error": "busy"}))
+        }
+    }
+}
 
 pub fn h_host(state: &mut MasterState, ip: &str, body: &Value) -> (u16, Value) {
     if !rate_ok(state, ip, "create", RL_CREATE.0, RL_CREATE.1) {
@@ -702,6 +722,7 @@ pub fn dispatch_post(path: &str, ip: &str, body: &Value) -> Option<(u16, Value)>
     let mut state = lock_state();
     let r = match path {
         "/v1/host" => h_host(&mut state, ip, body),
+        "/v1/host/challenge" => h_challenge(&mut state, Instant::now(), ip),
         "/v1/heartbeat" => h_heartbeat(&mut state, ip, body),
         "/v1/leave" => h_leave(&mut state, ip, body),
         "/v1/visibility" => h_visibility(&mut state, ip, body),
