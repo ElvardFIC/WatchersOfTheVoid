@@ -300,7 +300,7 @@ LatestInfo LobbyClient::FetchLatest(const std::string& masterUrl, int timeoutMs)
         for (const auto& e : *git) {
             if (!e.is_object() || info.games.size() >= 16) continue;
             LatestGame g;
-            g.game  = J::StrN(e, "game", kGameChars * kUtf8Max);
+            g.game  = J::StrN(e, "game", 24);
             g.proto = J::IntClamped(e, "proto", 0, 65535);
             g.mod   = J::StrN(e, "mod", 24);
             if (!g.game.empty() && g.proto > 0) info.games.push_back(g);
