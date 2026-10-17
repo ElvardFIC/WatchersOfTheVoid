@@ -1,5 +1,5 @@
 // coop/dev/badsun_drill_lane.cpp -- the Bad Sun drill's six lane arms: the host's existence of a Bad Sun against
-// every peer's own copies (coop/world/weather_badsun). See coop/dev/badsun_drill.h for what each arm sets up and
+// every peer's own copies (coop/world/weather_badsun). See badsun_drill_shared.h for what each arm sets up and
 // judges. Every arm is readiness-armed on the join being over and every wait ends on a state this peer can read; the
 // bounds below only end a phase that did not come. The lane's own counters are the receiver evidence.
 
@@ -38,11 +38,10 @@ namespace WB  = coop::weather_badsun;
 enum class P {
     Begin, WaitJoin, Setup, Done,
     // The host.
-    HostQuiet,    // cheat: its copies stay zero while the client's own call is refused
-    HostEdge,     // midnight: the day number moves
+    HostEdge,    // midnight: the day number moves
     HostRoll,     // midnight: the in-graph Spawn Bad Sun is seen and the copy is held
     HostActive,   // join: its own copy goes active
-    HostAlpha,    // end: its widget's ramp reaches the gate
+    HostAlpha,    // end: its widget's ramp reaches 1.0 and stays there
     HostRemove,   // end: its own remove() runs and the lane sends absent
     HostCopy,     // absent_stale: its one inactive copy exists
     HostRejoin,   // absent_stale: a joiner's world is taken and not yet ready
@@ -68,7 +67,10 @@ constexpr float kAt0800 = (8 * 60) / 1440.f;
 constexpr float kAt1859 = (18 * 60 + 59) / 1440.f;
 constexpr float kAt2358 = (23 * 60 + 58) / 1440.f;
 constexpr int   kBadSunMode = 7;       // the midnight roll's "always" game mode
-constexpr float kAlphaGate = 0.5f;     // the end arm's gate: the ramp half done, the client's copy long active
+// The end arm's gate: the widget's ramp clamped at 1.0 and held there for kAlphaHold. Both peers' ramps then fade for
+// the same 60 s, so the host's remove() runs first by the clock lag and the client's copy is still fading when the
+// host's absent lands. The hold is a margin for the two copies' own 5 s activation poll, not a readiness clock.
+constexpr float kAlphaGate = 1.0f;
 constexpr float kSkyTolerance = 0.001f;
 constexpr int   kMaxDrainFails = 10;
 constexpr auto  kSample = std::chrono::seconds(1);
@@ -78,11 +80,11 @@ constexpr auto  kAppearBound = std::chrono::seconds(15);  // spawn: the copy arr
 constexpr auto  kActiveBound = std::chrono::seconds(15);  // spawn, join: it goes active
 constexpr auto  kEdgeBound = std::chrono::seconds(180);   // midnight: the clock reaches the day edge
 constexpr auto  kEdgeCopyBound = std::chrono::seconds(10);  // midnight: the copy exists after the edge
-constexpr auto  kQuietBound = std::chrono::seconds(20);   // cheat: the host's quiet window
 constexpr auto  kCallBound = std::chrono::seconds(10);    // cheat: after the client's own call
 constexpr auto  kClockBound = std::chrono::seconds(60);   // the host's clock reaches 08:00 on the client
 constexpr auto  kApplyBound = std::chrono::seconds(60);   // the seed's apply lands
-constexpr auto  kAlphaBound = std::chrono::seconds(120);  // end: the ramp reaches the gate
+constexpr auto  kAlphaHold = std::chrono::seconds(6);     // end: the ramp has been full this long
+constexpr auto  kAlphaBound = std::chrono::seconds(120);  // end: the ramp reaches the gate and holds
 constexpr auto  kRemoveBound = std::chrono::seconds(150); // end: the host's fade and remove()
 constexpr auto  kAbsentBound = std::chrono::seconds(400); // end: the client waits for the host's whole run
 constexpr auto  kOwnRemoveBound = std::chrono::seconds(70);  // end: the fade (60 s) plus 10 s
@@ -193,8 +195,11 @@ bool ReadClock() {
 
 const char* StateWord(bool widget, bool sender) { return widget && sender ? "active" : !widget && !sender ? "inactive" : "half"; }
 
+// The cheat gate for a log line: an unread gate is not "0".
+const char* CheatsWord(bool read, bool allowed) { return !read ? "unread" : allowed ? "1" : "0"; }
+
 // The live copies and each one's two tests. False while the index cannot drain or a test does not read; a run of
-// drain failures ends the arm.
+// either failure ends the arm. A caller that sees the phase already Done has had its verdict from here.
 bool Take(bool host, Snap& out) {
     void* copies[BS::kMaxLive] = {};
     const int n = BS::CountLive(copies, BS::kMaxLive);
@@ -202,7 +207,6 @@ bool Take(bool host, Snap& out) {
         if (++g_drainFails >= kMaxDrainFails) Fail(host, "the index could not drain (%d tries in a row)", g_drainFails);
         return false;
     }
-    g_drainFails = 0;
     Snap s;
     s.n = n;
     s.first = copies[0];
@@ -210,13 +214,18 @@ bool Take(bool host, Snap& out) {
     int len = std::snprintf(desc, sizeof(desc), "%d", n);
     for (int i = 0; i < n && i < BS::kMaxLive; ++i) {
         bool widget = false, sender = false;
-        if (!BS::ReadActive(copies[i], widget) || !BS::ReadIsSender(copies[i], sender)) return false;
+        if (!BS::ReadActive(copies[i], widget) || !BS::ReadIsSender(copies[i], sender)) {
+            if (++g_drainFails >= kMaxDrainFails)
+                Fail(host, "a copy's two tests did not read (%d tries in a row)", g_drainFails);
+            return false;
+        }
         if (widget && sender) ++s.active;
         else if (!widget && !sender) ++s.inactive;
         if (len > 0 && len < static_cast<int>(sizeof(desc)))
             len += std::snprintf(desc + len, sizeof(desc) - len, "%s%s", i == 0 ? ": " : ", ", StateWord(widget, sender));
     }
     std::snprintf(g_desc, sizeof(g_desc), "%s", desc);
+    g_drainFails = 0;
     out = s;
     return true;
 }
@@ -226,6 +235,7 @@ uint64_t RollRan() { return coop::dev::rollover_watch::RanCount(L"Spawn Bad Sun"
 // ---- the host's setup, after the join ------------------------------------------------------------------------
 
 void HostSetup() {
+    if (!Due()) return;
     Snap sn;
     if (!Take(true, sn)) return;
     const Arm a = ArmOf();
@@ -262,9 +272,10 @@ void HostSetup() {
         return;
     case Arm::Cheat:
         if (!coop::dev::set_clock::ApplyTimeFraction(kAt0800)) return Fail(true, "the clock set to 08:00 was refused");
-        UE_LOGI("badsun_drill: [host] slot %d's join is over; clock to 08:00; this host's copies must stay zero while the "
-                "client's own Spawn Bad Sun is refused", g_slot);
-        Enter(P::HostQuiet, kQuietBound);
+        // A client's own Spawn Bad Sun makes a local actor that never reaches this host, so a host count could not go
+        // red: the verdict is the client's.
+        UE_LOGI("badsun_drill: [host] slot %d's join is over; clock to 08:00; the verdict is the client's", g_slot);
+        g_phase = P::Done;
         return;
     case Arm::Join:
         if (!coop::dev::set_clock::ApplyTimeFraction(kAt0800)) return Fail(true, "the clock set to 08:00 was refused");
@@ -274,8 +285,9 @@ void HostSetup() {
         return;
     case Arm::End:
         if (!coop::dev::set_clock::ApplyTimeFraction(kAt0800)) return Fail(true, "the clock set to 08:00 was refused");
-        UE_LOGI("badsun_drill: [host] slot %d's join is over; clock to 08:00, waiting for the widget's alpha to read %.1f",
-                g_slot, kAlphaGate);
+        UE_LOGI("badsun_drill: [host] slot %d's join is over; clock to 08:00, waiting for the widget's alpha to read %.1f "
+                "for %d s", g_slot, kAlphaGate, static_cast<int>(kAlphaHold.count()));
+        g_tMark = {};
         Enter(P::HostAlpha, kAlphaBound);
         return;
     case Arm::AbsentStale:
@@ -311,12 +323,6 @@ void ClientSetup() {
 
 // ---- the host's phases -----------------------------------------------------------------------------------------
 
-void HostQuiet() {
-    if (!Due()) return;
-    Snap sn;
-    if (Take(true, sn) && sn.n > 0) Fail(true, "this host holds %d Bad Sun copies; none was spawned here", sn.n);
-}
-
 void HostEdge() {
     int32_t h = 0, m = 0, z = 0;
     if (!DNC::ReadSavedTime(h, m, z) || z == g_dayZ) return;
@@ -350,11 +356,16 @@ void HostAlpha() {
     if (!Take(true, sn)) return;
     if (sn.n != 1) return Fail(true, "%d live copies on this host, expected 1", sn.n);
     float alpha = 0.f;
-    if (!BS::ReadWidgetAlpha(sn.first, alpha) || alpha < kAlphaGate) return;
+    if (!BS::ReadWidgetAlpha(sn.first, alpha) || alpha < kAlphaGate) {
+        g_tMark = {};
+        return;
+    }
+    if (g_tMark == Steady::time_point{}) g_tMark = Steady::now();
+    if (Steady::now() - g_tMark < kAlphaHold) return;
     g_c0 = WB::GetCounts();
     if (!coop::dev::set_clock::ApplyTimeFraction(kAt1859)) return Fail(true, "the clock set to 18:59 was refused");
-    UE_LOGI("badsun_drill: [host] the widget's alpha reads %.2f; clock to 18:59, waiting for its own remove() and the "
-            "lane's absent", alpha);
+    UE_LOGI("badsun_drill: [host] the widget's alpha has read %.2f for %d s; clock to 18:59, waiting for its own "
+            "remove() and the lane's absent", alpha, static_cast<int>(kAlphaHold.count()));
     Enter(P::HostRemove, kRemoveBound);
 }
 
@@ -425,9 +436,10 @@ void CopyActive() {
     if (!Take(false, sn)) return;
     if (sn.n != 1) return Fail(false, "%d live copies, expected 1", sn.n);
     if (sn.active != 1) return;
+    const uint64_t spawned = WB::GetCounts().spawned;
+    if (spawned == 0) return Fail(false, "one active copy, but the lane spawned none: it came by another path");
     Pass(false, "exactly one copy, active %.1f s after it arrived; the lane spawned %llu",
-         std::chrono::duration<float>(Steady::now() - g_tMark).count(),
-         static_cast<unsigned long long>(WB::GetCounts().spawned));
+         std::chrono::duration<float>(Steady::now() - g_tMark).count(), static_cast<unsigned long long>(spawned));
 }
 
 // cheat and join: the host's 08:00 reaches this clock.
@@ -439,17 +451,18 @@ void ClockWait() {
         Enter(P::JoinActive, kActiveBound);
         return;
     }
+    if (!Due()) return;
     Snap sn;
     if (!Take(false, sn)) return;
     if (sn.n != 0) return Inconclusive(false, "%d live copies before this client's own call", sn.n);
     g_refused0 = WB::GetCounts().refused;
     bool cheats = false;
-    GM::CheatsAllowed(cheats);
+    const bool cheatsRead = GM::CheatsAllowed(cheats);
     // The cheat menu's own handler is gated by hasWeapon, which only Sandbox or flying sets; a New Game is Story, so the
     // handler would stop at its "Illegal action" and never reach the verb. The reflected verb meets the same gate.
     if (!BS::CallSpawn()) return Fail(false, "the gamemode's Spawn Bad Sun did not run");
-    UE_LOGI("badsun_drill: [client] clock %02d:%02d; this client's own Spawn Bad Sun called (cheats allowed %d); "
-            "watching %d s", g_hour, g_min, cheats ? 1 : 0, static_cast<int>(kCallBound.count()));
+    UE_LOGI("badsun_drill: [client] clock %02d:%02d; this client's own Spawn Bad Sun called (cheats allowed %s); "
+            "watching %d s", g_hour, g_min, CheatsWord(cheatsRead, cheats), static_cast<int>(kCallBound.count()));
     Enter(P::CallWatch, kCallBound);
 }
 
@@ -476,7 +489,7 @@ void JoinActive() {
 // midnight: the first sample, before the host's edge.
 void BaseWait() {
     const int32_t hostDay = coop::time_sync::LastHostDayZ();
-    if (hostDay < 0 || !ReadClock()) return;
+    if (hostDay < 0 || !ReadClock() || !Due()) return;
     Snap sn;
     if (!Take(false, sn)) return;
     if (g_hour == 0) return Inconclusive(false, "this peer's first sample came after the host's edge (clock %02d:%02d)", g_hour, g_min);
@@ -526,9 +539,14 @@ void ApplyWait() {
     if (c.lastApplyWant)
         return Inconclusive(false, "the seed said a Bad Sun is present: the host's destroy came after this world-ready (see "
                             "the host's line)");
-    if (c.lastApplyLive >= 1 && c.destroyed == 0)
-        return Inconclusive(false, "the blob's copy was not inactive when the seed applied (left active %llu)",
+    // At 02:00 the blob's copy cannot be active: one that was (left active) is not the case built, and one that
+    // stayed alive with nothing left active is the lane failing to destroy a stale copy.
+    if (c.lastApplyLive >= 1 && c.leftActive > 0)
+        return Inconclusive(false, "the blob's copy was active when the seed applied (left active %llu)",
                             static_cast<unsigned long long>(c.leftActive));
+    if (c.lastApplyLive >= 1 && c.destroyed == 0)
+        return Fail(false, "the stale copy was not destroyed: the seed applied absent to %d live copies and destroyed "
+                    "none (apply failures %llu)", c.lastApplyLive, static_cast<unsigned long long>(c.applyFailed));
     if (c.lastApplyLive >= 1) {
         UE_LOGI("badsun_drill: [client] the seed applied absent to the blob's copy: destroyed %llu; checking for no copy "
                 "in %d s", static_cast<unsigned long long>(c.destroyed), static_cast<int>(kZeroBound.count()));
@@ -554,6 +572,8 @@ void AbsentWait() {
     const WB::Counts c = WB::GetCounts();
     Snap sn;
     Take(false, sn);
+    if (g_phase == P::Done) return;
+    const bool absentApplied = c.lastApplied && !c.lastApplyWant;
     if (c.leftActive > g_c0.leftActive) {
         g_tMark = Steady::now();
         UE_LOGI("badsun_drill: [client] the host's absent arrived while this copy was active; waiting for its own "
@@ -561,6 +581,9 @@ void AbsentWait() {
         Enter(P::OwnRemove, kOwnRemoveBound);
     } else if (c.destroyed > g_c0.destroyed) {
         Inconclusive(false, "the copy was inactive when the host's absent arrived");
+    } else if (absentApplied && c.lastApplyLive >= 1) {
+        Fail(false, "the absent apply counted %d live copies and neither left an active one nor destroyed an inactive "
+             "one (apply failures %llu)", c.lastApplyLive, static_cast<unsigned long long>(c.applyFailed));
     } else if (c.removesRan > g_c0.removesRan) {
         Inconclusive(false, "this copy's own remove() ran before the host's absent arrived");
     }
@@ -572,7 +595,8 @@ void OwnRemove() {
     Snap sn;
     if (!Take(false, sn) || sn.n != 0 || c.removesRan <= g_c0.removesRan) return;
     float mult = 0.f;
-    if (!ue_wrap::skysphere::ReadSunIntensityMult(mult)) return Fail(false, "the sky's sunIntensityMult did not read");
+    // The copy is gone and cannot change back: an unread sky (its lookup is throttled) is asked again until the bound.
+    if (!ue_wrap::skysphere::ReadSunIntensityMult(mult)) return;
     if (std::fabs(mult - 1.f) > kSkyTolerance)
         return Fail(false, "the copy ended but the sky's sunIntensityMult reads %.3f, not 1", mult);
     Pass(false, "absent arrived while the copy was active; its own remove() ran %.1f s later and the sky's "
@@ -585,26 +609,25 @@ void OnDeadline(bool host) {
     ReadClock();
     Snap sn;
     switch (g_phase) {
-    case P::HostQuiet:
-        if (!Take(true, sn)) return Fail(true, "this host's copies did not read");
-        if (sn.n != 0) return Fail(true, "this host holds %d Bad Sun copies", sn.n);
-        return Pass(true, "zero copies here %d s after the clock read 08:00; a client's own Spawn Bad Sun cannot make one "
-                    "here", static_cast<int>(kQuietBound.count()));
     case P::CallWatch: {
         const uint64_t moved = WB::GetCounts().refused - g_refused0;
-        if (!Take(false, sn)) return Fail(false, "this client's copies did not read");
+        const bool read = Take(false, sn);
+        if (g_phase == P::Done) return;
+        if (!read) return Fail(false, "this client's copies did not read");
         if (sn.n != 0) return Fail(false, "%d live copies after its own Spawn Bad Sun", sn.n);
         bool cheats = false;
-        GM::CheatsAllowed(cheats);
+        const bool cheatsRead = GM::CheatsAllowed(cheats);
         if (moved == 0) return Fail(false, "no copy, but the lane's refusal count did not move");
         return Pass(false, "no copy %d s after its own Spawn Bad Sun and the lane refused it (%llu); the reflected verb, "
-                    "since the cheat menu's own handler needs hasWeapon (Sandbox or flying; cheats allowed %d): the "
+                    "since the cheat menu's own handler needs hasWeapon (Sandbox or flying; cheats allowed %s): the "
                     "in-graph route stays RD (read, not driven)", static_cast<int>(kCallBound.count()),
-                    static_cast<unsigned long long>(moved), cheats ? 1 : 0);
+                    static_cast<unsigned long long>(moved), CheatsWord(cheatsRead, cheats));
     }
     case P::ZeroWatch: {
         const WB::Counts c = WB::GetCounts();
-        if (!Take(false, sn)) return Fail(false, "this client's copies did not read");
+        const bool read = Take(false, sn);
+        if (g_phase == P::Done) return;
+        if (!read) return Fail(false, "this client's copies did not read");
         if (sn.n != 0) return Fail(false, "the joiner keeps %d copies after the seed applied absent", sn.n);
         if (c.destroyed != 1) return Fail(false, "the lane destroyed %llu copies, expected 1", static_cast<unsigned long long>(c.destroyed));
         return Pass(false, "the seed applied absent to the blob's inactive copy (the lane destroyed 1); no copy %d s later",
@@ -614,8 +637,9 @@ void OnDeadline(bool host) {
         break;
     }
     Take(host, sn);
+    if (g_phase == P::Done) return;
     switch (g_phase) {
-    case P::WaitJoin:   return Fail(host, "timed out waiting for the join");
+    case P::WaitJoin:  return Fail(host, "timed out waiting for the join");
     case P::Setup:      return Fail(host, "the world did not read within %d s of the join being over", static_cast<int>(kSetupBound.count()));
     case P::HostEdge:   return Fail(true, "the day number did not move within %d s of the clock set to 23:58 (clock %02d:%02d)", static_cast<int>(kEdgeBound.count()), g_hour, g_min);
     case P::HostRoll: {
@@ -626,7 +650,7 @@ void OnDeadline(bool host) {
                     present ? 1 : 0);
     }
     case P::HostActive: return Fail(true, "its copy was not active by both tests %d s after the clock set to 08:00", static_cast<int>(kActiveBound.count()));
-    case P::HostAlpha:  return Fail(true, "the widget's alpha never reached %.1f within %d s", kAlphaGate, static_cast<int>(kAlphaBound.count()));
+    case P::HostAlpha:  return Fail(true, "the widget's alpha did not read %.1f for %d s within %d s", kAlphaGate, static_cast<int>(kAlphaHold.count()), static_cast<int>(kAlphaBound.count()));
     case P::HostRemove: return Fail(true, "no own remove() with the lane's absent within %d s of the clock set to 18:59 (clock %02d:%02d)", static_cast<int>(kRemoveBound.count()), g_hour, g_min);
     case P::HostCopy:   return Fail(true, "no inactive copy within %d s of Spawn Bad Sun", static_cast<int>(kSetupBound.count()));
     case P::HostRejoin: return Fail(true, "no joiner's world was taken within %d s of the first copy", static_cast<int>(kRejoinBound.count()));
@@ -641,7 +665,13 @@ void OnDeadline(bool host) {
     case P::ApplyWait:  return Fail(false, "no apply of the host's state within %d s of the join", static_cast<int>(kApplyBound.count()));
     case P::LiveWait:   return Inconclusive(false, "no copy came, from the blob or a live edge, within %d s: the blob carried none", static_cast<int>(kLiveBound.count()));
     case P::AbsentWait: return Fail(false, "the host's absent never arrived within %d s", static_cast<int>(kAbsentBound.count()));
-    case P::OwnRemove:  return Fail(false, "this copy's own remove() did not run within %d s of the host's absent (removes %llu)", static_cast<int>(kOwnRemoveBound.count()), static_cast<unsigned long long>(WB::GetCounts().removesRan));
+    case P::OwnRemove: {
+        const uint64_t removes = WB::GetCounts().removesRan;
+        if (removes > g_c0.removesRan)
+            return Fail(false, "this copy ended but the sky's sunIntensityMult did not read within %d s of the host's absent",
+                        static_cast<int>(kOwnRemoveBound.count()));
+        return Fail(false, "this copy's own remove() did not run within %d s of the host's absent (removes %llu)", static_cast<int>(kOwnRemoveBound.count()), static_cast<unsigned long long>(removes));
+    }
     default:            return Fail(host, "timed out in phase %d", static_cast<int>(g_phase));
     }
 }
@@ -665,7 +695,6 @@ void LaneTick(coop::net::Session* s, bool host) {
         return;
     }
     switch (g_phase) {
-    case P::HostQuiet:  HostQuiet(); return;
     case P::HostEdge:   HostEdge(); return;
     case P::HostRoll:   HostRoll(); return;
     case P::HostActive: HostActive(); return;

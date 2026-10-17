@@ -1,5 +1,5 @@
 // coop/dev/badsun_drill_clock.cpp -- the drill's `clock` arm: a peer's own loaded copy against its own clock. See
-// coop/dev/badsun_drill.h; the shared verdict and join helpers are coop/dev/badsun_drill_shared.h.
+// coop/dev/badsun_drill_shared.h (the arm's set-up and verdicts); the shared verdict and join helpers are coop/dev/badsun_drill_shared.h.
 
 #include "badsun_drill_shared.h"  // co-located private header (src tree, not include/)
 

@@ -24,24 +24,31 @@ enum class Arm {
     // midnight, fresh world, rollover_watch=1 on the host: the host writes game mode 7 (put back after), sets 23:58
     // and waits for the day edge. Host PASS: the day cycle's in-graph Spawn Bad Sun counted by the watch and
     // gamemode.badSun present. Client PASS: exactly one inactive copy within 10 s of the host's day number moving.
+    // Until its verdict (6 to 190 s) the host's GameInstance holds game mode 7, so a save written in that window
+    // carries it; the mode is put back on the verdict and on the session's end.
     Midnight,
-    // spawn, fresh: the host sets 08:00 and calls Spawn Bad Sun. Client PASS: exactly one copy, active.
+    // spawn, fresh: the host sets 08:00 and calls Spawn Bad Sun. Client PASS: exactly one copy, active, and the
+    // lane's own spawn count moved.
     Spawn,
     // cheat, fresh: the client calls its own Spawn Bad Sun at 08:00 by the reflected verb; the cheat menu's own handler
-    // needs hasWeapon (Sandbox or flying) and a New Game is Story, so that route stays unproven. PASS on both peers is
-    // no copy 10 s later, and on the client the lane's refusal count moved.
+    // needs hasWeapon (Sandbox or flying) and a New Game is Story, so that route stays unproven. Client PASS: no copy
+    // 10 s later and the lane's refusal count moved. The host sets 08:00 and judges nothing: a client's own spawn
+    // never reaches it.
     Cheat,
     // join, rig save, a rejoin on the client's first verdict: the host sets 08:00. Joiner PASS: the seed's apply
     // counted one copy (the blob's) and spawned none, and that copy goes active.
     Join,
-    // end, rig save: the host sets 08:00, waits for its widget's alpha to read 0.5, sets 18:59. Host PASS: its own
-    // remove() ran and the lane sent absent. Client PASS: absent received while its copy was active, its own remove()
-    // after, and the sky's sunIntensityMult back at 1.
+    // end, rig save: the host sets 08:00, waits for its widget's alpha to read 1.0 for 6 s (both copies' ramps then
+    // clamp, so their fades are the same length), sets 18:59. Host PASS: its own remove() ran and the lane sent absent.
+    // Client PASS: absent received while its copy was active, its own remove() after, and the sky's sunIntensityMult
+    // back at 1. FAIL when the absent apply neither left an active copy nor destroyed an inactive one.
+    // INCONCLUSIVE when the client's own remove() ran first.
     End,
     // absent_stale, fresh, a rejoin on the life-1 client's ready line: the host sets 02:00 and spawns one inactive
     // copy; when a rejoining slot's world is taken and not yet ready it destroys that copy, so the blob holds one the
     // host no longer has. Joiner PASS: the seed applied absent, the lane's destroyed count 1, no copy 10 s later.
-    // INCONCLUSIVE when the seed said present or the blob carried no copy.
+    // INCONCLUSIVE when the seed said present, the blob carried no copy, or its copy was active. FAIL when the seed
+    // applied absent to a live copy and destroyed none.
     AbsentStale,
 };
 

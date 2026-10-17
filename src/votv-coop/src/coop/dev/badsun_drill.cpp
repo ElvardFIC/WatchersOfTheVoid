@@ -1,5 +1,6 @@
 // coop/dev/badsun_drill.cpp -- see coop/dev/badsun_drill.h. The enum, Install, Tick and OnDisconnect, and the helpers
-// every arm shares; the arms are badsun_drill_clock.cpp.
+// every arm shares; the arms are badsun_drill_clock.cpp and
+// badsun_drill_lane.cpp.
 
 #include "coop/dev/badsun_drill.h"
 
