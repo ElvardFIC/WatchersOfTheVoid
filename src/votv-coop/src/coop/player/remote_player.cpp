@@ -56,7 +56,24 @@ float Dist3(const ue_wrap::FVector& a, const ue_wrap::FVector& b) {
 
 }  // namespace
 
-bool RemotePlayer::Spawn(const std::string& skinName) {
+void RemotePlayer::OnBeforeFinish(void* ctx, void* actor) {
+    auto* const self = static_cast<RemotePlayer*>(ctx);
+    // The slot is captured while the puppet is known live; valid() uses IsLiveByIndex, plain IsLive is
+    // defeated by a recycled address.
+    self->actor_ = actor;
+    self->internalIdx_ = R::InternalIndexOf(actor);
+    if (self->pendingSlot_ != players::kPeerIdUnknown)
+        players::Registry::Get().RegisterPuppet(self->pendingSlot_, self);
+}
+
+bool RemotePlayer::Spawn(const std::string& skinName, uint8_t peerSlot) {
+    if (peerSlot != players::kPeerIdUnknown && peerSlot >= players::kMaxPeers) {
+        UE_LOGW("RemotePlayer::Spawn: peer slot %u is out of range", static_cast<unsigned>(peerSlot));
+        return false;
+    }
+    // A pointer left by an earlier world never reads as this call's.
+    actor_ = nullptr;
+    internalIdx_ = -1;
     ResetBurning();   // a new body owes no flame state to the one before it
     // Registry::Local() first (controller-filtered: the genuine local, not a puppet, which is also
     // a mainPlayer_C); FindObjectByClass as the fallback during the splash and pre-possession
@@ -123,14 +140,23 @@ bool RemotePlayer::Spawn(const std::string& skinName) {
     // actor doubled it), and the -halfH mesh Z composes on both. A spawn-time chain measurement
     // raced the BP construction on a world-fresh client and sank the puppet by halfH into the
     // floor, where the engine's depenetration fought the per-tick SetActorLocation.
-    actor_ = Pup::SpawnPuppet(loc, skin, animClass);
-    if (!actor_) {
+    // The actor is kept, and registered when a slot is given, inside the spawn (OnBeforeFinish), so
+    // its BeginPlay sees a registered puppet.
+    pendingSlot_ = peerSlot;
+    void* const spawned = Pup::SpawnPuppet(loc, skin, animClass, &RemotePlayer::OnBeforeFinish, this);
+    if (!spawned) {
+        // A null result with actor_ set is a finish that failed after the callback ran: the begun
+        // actor is already destroyed, and what the callback registered is undone. With actor_ unset
+        // the spawn returned before the callback and nothing changed.
+        if (actor_ && pendingSlot_ != players::kPeerIdUnknown)
+            players::Registry::Get().ClearPuppet(pendingSlot_);
+        actor_ = nullptr;
+        internalIdx_ = -1;
+        pendingSlot_ = players::kPeerIdUnknown;
         UE_LOGE("RemotePlayer::Spawn: SpawnPuppet failed");
         return false;
     }
-    // Capture the puppet's GUObjectArray slot while it is live, so valid() can use IsLiveByIndex;
-    // plain IsLive is defeated by a recycled address.
-    internalIdx_ = R::InternalIndexOf(actor_);
+    pendingSlot_ = players::kPeerIdUnknown;
 
     // Complete the skin (the atlas texture on both body components) after both SetSkeletalMesh
     // writes, so a later mesh swap cannot reset the override; ApplySkinToBody's mesh writes are

@@ -117,14 +117,14 @@ void DriveTick(coop::net::Session& session, bool worldReadyAnnounced) {
                 // or a later SkinChange), any slot incl. the
                 // host. Empty (not yet announced) -> kel baseline; the skin re-applies
                 // live when it lands (player_handshake::StoreSkinForSlot).
-                if (!g_puppets[slot].Spawn(coop::player_handshake::SkinForSlot(slot))) {
+                // The spawn registers the puppet with the central Registry (peerId == slot directly)
+                // before its BeginPlay.
+                if (!g_puppets[slot].Spawn(coop::player_handshake::SkinForSlot(slot),
+                                           static_cast<uint8_t>(slot))) {
                     UE_LOGW("net: slot %d puppet spawn failed; will retry in 1 s", slot);
                     sNextSpawnAttempt[slot] = now + seconds(1);
                     continue;
                 }
-                // Register with the central Registry. peerId == slot directly.
-                coop::players::Registry::Get().RegisterPuppet(
-                    static_cast<uint8_t>(slot), &g_puppets[slot]);
                 // Apply the cached nickname now that the puppet exists. The identity
                 // (Join / PlayerJoined) can arrive BEFORE the first pose spawns the
                 // puppet -- in that race the handler cached the nick and found no

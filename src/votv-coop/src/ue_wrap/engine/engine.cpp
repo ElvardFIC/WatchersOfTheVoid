@@ -177,7 +177,8 @@ bool ResolveActorFns() {
 
 }  // namespace
 
-void* SpawnActor(void* actorClass, const FVector& location, bool inertPawn) {
+void* SpawnActor(void* actorClass, const FVector& location, bool inertPawn, BeforeFinishFn beforeFinish,
+                 void* ctx) {
     if (!actorClass) return nullptr;
     if (!ResolveSpawn()) {
         UE_LOGE("engine: SpawnActor unresolved (cdo=%p begin=%p finish=%p)",
@@ -222,6 +223,8 @@ void* SpawnActor(void* actorClass, const FVector& location, bool inertPawn) {
         *reinterpret_cast<void**>(a + P::off::APawn_AIControllerClass) = nullptr;
         UE_LOGI("engine: SpawnActor inertPawn -> no player possess, AIControllerClass=null, bBlockInput=1");
     }
+    // The caller's last word on the deferred actor: what must hold from its BeginPlay on is set here.
+    if (beforeFinish) beforeFinish(ctx, actor);
 
     // Step two: FinishSpawningActor runs the actor's construction and BeginPlay and returns the
     // same actor.

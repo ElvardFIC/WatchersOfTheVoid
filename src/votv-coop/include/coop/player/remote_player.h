@@ -13,6 +13,7 @@
 #include "coop/element/lerp_window.h"
 #include "coop/net/protocol.h"
 #include "coop/player/puppet_body_yaw.h"
+#include "coop/player/players_registry.h"  // kPeerIdUnknown
 #include "coop/player/puppet_footsteps.h"
 #include "coop/player/remote_player_ragdoll.h"
 #include "ue_wrap/core/types.h"
@@ -30,8 +31,13 @@ public:
     // "dr_kel" or an unresolvable pak gives the pristine kel baseline (local_body::NativeBodyMesh,
     // not the local pawn's live mesh, which may itself be skin-swapped). A custom skin rides the
     // same skeleton, so the local AnimClass drives it. A skin that lands after spawn is applied
-    // live by ApplySkin.
-    bool Spawn(const std::string& skinName = std::string());
+    // live by ApplySkin. `peerSlot` is the peer this puppet is, or kPeerIdUnknown for a puppet no
+    // session owns (the boot-time dev scenarios): a slot registers the puppet in players::Registry
+    // from inside the spawn, before its BeginPlay, so it answers IsPuppet from its first overlap;
+    // the caller unregisters it after Destroy. A slot out of range returns false before spawning.
+    // A failed spawn leaves actor() null and the slot's puppet pointer cleared.
+    bool Spawn(const std::string& skinName = std::string(),
+               uint8_t peerSlot = players::kPeerIdUnknown);
 
     // Re-skin a live puppet (a mid-session SkinChange, or a Join that raced the first pose). A
     // no-op when the puppet is not spawned (the skin is per-slot state in player_handshake, read by
@@ -113,6 +119,10 @@ public:
     void* actor() const { return actor_; }
 
 private:
+    // Spawn's before-finish callback (engine::SpawnActor): keeps the deferred actor and registers it
+    // under pendingSlot_, so the registry knows the body before its BeginPlay runs.
+    static void OnBeforeFinish(void* ctx, void* actor);
+
     // The owner's burning bit onto this puppet's flame; SetTargetPose is its one caller, so the flame
     // follows the bit and nothing else.
     void ShowBurning(bool burning);
@@ -148,8 +158,11 @@ private:
 
     void* actor_ = nullptr;  // the engine puppet actor, a mainPlayer_C orphan; owned by the engine
 
-    // The GUObjectArray InternalIndex of actor_, captured at Spawn while the puppet was known live;
-    // valid() checks IsLiveByIndex, never plain IsLive. A mass GC purge can free the puppet without
+    // The peer slot Spawn registers the puppet under, read by OnBeforeFinish during the spawn call.
+    uint8_t pendingSlot_ = players::kPeerIdUnknown;
+
+    // The GUObjectArray InternalIndex of actor_, captured in Spawn's before-finish callback while the
+    // puppet was known live; valid() checks IsLiveByIndex, never plain IsLive. A mass GC purge can free the puppet without
     // our Destroy path running and recycle its slot to a smaller object; plain IsLive reads the
     // index from the object's own memory and passes on that impostor, and ApplyToEngine then
     // dereferences it at mainPlayer_C offsets. -1 means no puppet.

@@ -167,6 +167,12 @@ void Registry::UnregisterPuppet(uint8_t peerSessionId) {
     DropPlayerElement_(peerSessionId);
 }
 
+void Registry::ClearPuppet(uint8_t peerSessionId) {
+    UE_ASSERT_GAME_THREAD("players::Registry::ClearPuppet (puppetByPeer_)");
+    if (peerSessionId >= kMaxPeers) return;
+    puppetByPeer_[peerSessionId] = nullptr;
+}
+
 bool Registry::IsLocal(void* actor) {
     if (!actor) return false;
     return actor == Local();
