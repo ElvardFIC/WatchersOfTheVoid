@@ -3,6 +3,7 @@
 #include "identity_key_file.h"
 
 #include "identity_crypto.h"
+#include "coop/mod_data/legacy_note.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/paths.h"
 
@@ -118,17 +119,11 @@ std::wstring SetAside(const std::wstring& path, unsigned long* errorOut) {
 // A key left beside the executable by a build from before the key moved into the mod's folder is read
 // by nothing now; say so once, so a player who looks for it finds the answer.
 void NoteLegacy() {
-    const std::wstring exe = ue_wrap::paths::ExeDir();
-    if (exe.empty() || exe == ue_wrap::paths::ModDataDir()) return;
     const std::vector<uint8_t>& sid = KeyFileAcl().userSid;
     const std::wstring names[2] = {KeyFileName(), AccountKeyFileName(sid.data(), sid.size())};
     for (const std::wstring& name : names) {
         if (name.empty()) continue;
-        const std::wstring path = exe + L"\\" + name;
-        const DWORD a = ::GetFileAttributesW(path.c_str());
-        if (a == INVALID_FILE_ATTRIBUTES || (a & FILE_ATTRIBUTE_DIRECTORY)) continue;
-        UE_LOGW("identity: legacy identity beside the exe (%ls) -- ignoring; a new identity is in the "
-                "mod's folder", path.c_str());
+        coop::legacy_note::Once(coop::legacy_note::LegacyFile::IdentityKey, name.c_str());
     }
 }
 

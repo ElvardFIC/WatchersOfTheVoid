@@ -48,6 +48,7 @@
 #include "coop/permissions/permission_host.h"
 #include "coop/permissions/permissions_selftest.h"
 #include "coop/player/movement_ledger.h"
+#include "coop/player/player_profile_store.h"
 #include "coop/player/players_registry.h"
 #include "coop/player/puppet_drive.h"
 #include "coop/player/remote_player.h"
@@ -322,6 +323,9 @@ bool StartCoopSession(const coop::net::Config& netCfg, coop::net::Refusal* why) 
         // Snapshot the canonical save before coop injects state (host only; clients are
         // save-blocked); synchronous, so it completes before Start.
         coop::save_guard::BackupSaveOnSessionStart();
+        // The players' profile folder of an older build, said once: the store reaches a path only
+        // at a new-game forget, a world save or a join.
+        coop::player_profile_store::NoteLegacyFolder();
         // The seen-players registry, host bookkeeping on any topology (on a relayed or unknown
         // path a record keeps the address it last had, and none if it never had one).
         coop::seen_players::Load();

@@ -46,6 +46,11 @@ Found Get(const std::string& guid, std::vector<uint8_t>& outBlob);
 // they are for recovery: a starter kit streamed back must not overwrite them.
 void Quarantine(const std::string& guid);
 
+// At a host session start: notes once (coop/mod_data/legacy_note) that a `coop_players` folder an
+// older build left beside the exe is read by nothing now. The store's own first path comes only at
+// a new-game ForgetSlot, a world save or a join, so the notice cannot wait for it. Any thread.
+void NoteLegacyFolder();
+
 // A save was just CREATED under `slot`. Its name was free, which the name of a deleted save is as
 // well, and the profile files such a save left behind belong to no world: they are removed, so a
 // returning player is a first joiner of the new world and not the owner of items it never held.

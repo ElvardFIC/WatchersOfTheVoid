@@ -3,6 +3,7 @@
 #include "coop/player/player_profile_store.h"
 
 #include "coop/atomic_file/atomic_file.h"
+#include "coop/mod_data/legacy_note.h"
 #include "coop/net/blob_chunks.h"  // Fnv64, the file's integrity hash
 #include "coop/save/save_transfer.h"  // HostSlot, the world the profiles belong to
 #include "coop/session/player_handshake.h"  // IsValidGuid
@@ -66,7 +67,7 @@ fs::path SlotDir(const std::wstring& slot) {
     if (slot.empty() || slot == L"." || slot == L".." ||
         slot.find_first_of(L"\\/:*?\"<>|") != std::wstring::npos)
         return {};
-    const std::wstring base = ue_wrap::paths::ExeDir();
+    const std::wstring base = ue_wrap::paths::ModDataDir();
     if (base.empty()) return {};
     return fs::path(base) / L"coop_players" / slot;
 }
@@ -371,6 +372,10 @@ void Quarantine(const std::string& guid) {
         UE_LOGE("player_profile: the stored profile of guid=%s did NOT read -- nothing of this player "
                 "is held or written for the rest of this hosted world; the files are left as they "
                 "are for recovery", guid.c_str());
+}
+
+void NoteLegacyFolder() {
+    coop::legacy_note::Once(coop::legacy_note::LegacyFile::CoopPlayers, L"coop_players");
 }
 
 size_t ForgetSlot(const std::wstring& slot) {
