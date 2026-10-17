@@ -414,6 +414,7 @@ set(VOTVCOOP_SOURCES
     src/coop/net/send_admission.cpp
     src/coop/net/send_backlog.cpp
     src/coop/net/send_rate_control.cpp
+    src/coop/net/fake_link_steps.cpp
     src/coop/net/ice_config.cpp
     src/coop/net/ice_policy.cpp
     src/coop/net/signaling_client.cpp

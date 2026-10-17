@@ -20,6 +20,7 @@
 #include "coop/session/join_progress.h"
 #include "coop/player/local_streams.h"
 #include "ui/multiplayer_menu.h"  // MenuTickFn(): the death-flee bypass release condition
+#include "coop/net/fake_link_steps.h"  // Tick, and the joiner's `wr` origin
 #include "coop/net/protocol.h"
 #include "coop/net/session.h"
 #include "coop/creatures/npc_adoption.h"
@@ -402,6 +403,7 @@ void Tick(coop::net::Session& session) {
 
     // The host's pending save-transfer chunk sends; a no-op without an active stream.
     if (session.role() == coop::net::Role::Host) coop::save_transfer::TickHost();
+    coop::net::fake_link_steps::Tick();  // the fake-link steps that came due
 
 
     // The world-up gate: a save-transfer joiner runs this Tick at the menu for 30-60 s, where the
@@ -529,6 +531,7 @@ void Tick(coop::net::Session& session) {
                 // is the host's bracket. Named so, the cover stops saying "loading the world" over
                 // a wait that is the host's, and the phase gets a watchdog of its own.
                 coop::join_progress::NoteWorldReady();
+                coop::net::fake_link_steps::NoteOrigin(coop::net::fake_link_steps::Origin::WorldReady);
                 UE_LOGI("net_pump: ClientWorldReady announced (world up + registry coherent + load "
                         "tail quiesced + key index caught up%s)",
                         reAnnounce ? " -- re-announce after world-change" : "");
