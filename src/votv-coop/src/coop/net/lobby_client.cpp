@@ -30,7 +30,10 @@ bool FetchList(const std::string& masterUrl, const std::string& versionFilter,
             vf += ch;
     std::string path = "/v1/lobbies";
     if (!vf.empty()) path += "?version=" + vf;
-    const http::Response resp = http::Get(masterUrl, path, 8000);
+    // 2 MiB for this call alone: a full table of 1000 rows is about 1.1 MB, and a list cut short
+    // would parse as malformed and read as a broken master.
+    constexpr size_t kListBodyCap = 2u << 20;
+    const http::Response resp = http::Get(masterUrl, path, 8000, kListBodyCap);
 
     // A failed fetch does not mean there are no servers: publishing the empty parse on every path
     // once emptied the browser on one unanswered request, and the player watched every server
