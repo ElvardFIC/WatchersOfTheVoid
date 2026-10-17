@@ -110,8 +110,29 @@ bool CheckOneClass(const ScanClass& sc) {
     return ok;
 }
 
-void CheckCallLocals() {
+// Two sites built by hand, needing no engine state: a truncated one with no stored local must answer
+// false (not known), and one whose stored local is an address no FProperty lives at must answer false
+// under the fault guard instead of faulting. The fault logs one [Error] line, once per process.
+bool CheckSyntheticSites() {
     bool ok = true;
+    SC::CallSite truncated{};
+    truncated.localsTruncated = true;
+    if (SC::CallHasLocal(truncated, L"x")) {
+        Fail("call-locals", "truncated-site arm: a truncated site with no stored local answered true");
+        ok = false;
+    }
+    SC::CallSite bad{};
+    bad.localCount = 1;
+    bad.locals[0] = reinterpret_cast<void*>(uintptr_t{8});
+    if (SC::CallHasLocal(bad, L"x")) {
+        Fail("call-locals", "bad-pointer arm: a stored local at an unreadable address answered true");
+        ok = false;
+    }
+    return ok;
+}
+
+void CheckCallLocals() {
+    bool ok = CheckSyntheticSites();
     for (const ScanClass& sc : kClasses) ok = CheckOneClass(sc) && ok;
     if (ok) Pass("call-locals");
 }

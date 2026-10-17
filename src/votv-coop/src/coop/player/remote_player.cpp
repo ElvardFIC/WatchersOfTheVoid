@@ -232,6 +232,14 @@ bool RemotePlayer::valid() const {
     return actor_ != nullptr && R::IsLiveByIndex(actor_, internalIdx_);
 }
 
+bool RemotePlayer::OwnsBody(void* actor) const {
+    if (!actor) return false;
+    if (actor_ == actor) return true;
+    // The ragdoll body is cleared only on the next drive, so a recycled address must not read as a body.
+    void* const body = ragdoll_.Body();
+    return body == actor && R::IsLiveByIndex(body, ragdoll_.BodyIdx());
+}
+
 void RemotePlayer::SetVitals(float health01, float food01, float sleep01) {
     // Edge-detect a health drop before overwriting health_ and arm the hurt flash; kHurtEpsilon is
     // over one wire quantisation step, so dequantisation jitter at a steady health never trips it,

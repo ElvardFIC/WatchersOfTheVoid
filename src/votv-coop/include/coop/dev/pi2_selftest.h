@@ -1,5 +1,6 @@
 // coop/dev/pi2_selftest.h -- [dev] proves the three pieces the puppet-identity module rests on, on the
-// live game: the locals a bytecode call writes (script_calls::CallHasLocal), the registry's puppet-count
+// live game: the locals a bytecode call writes (script_calls::CallHasLocal, with two hand-built sites for
+// its truncated and unreadable-local answers; the second logs one [Error] line), the registry's puppet-count
 // listener, the caller-locals boot check (which now covers RemoveActors' remaining), and the registry's
 // puppet-body query.
 //

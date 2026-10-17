@@ -254,12 +254,7 @@ uint8_t Registry::SlotOfBody_(void* actor) const {
     for (int i = 0; i < kMaxPeers; ++i) {
         const RemotePlayer* puppet = puppetByPeer_[i];
         if (!puppet) continue;
-        if (puppet->GetActor() == actor) return static_cast<uint8_t>(i);
-        // The ragdoll body is cleared only on the puppet's next drive, so a recycled address must not read
-        // as a body: the ragdoll arm also needs the body live at its recorded index.
-        void* const body = puppet->RagdollBody();
-        if (body && body == actor && R::IsLiveByIndex(body, puppet->RagdollBodyIdx()))
-            return static_cast<uint8_t>(i);
+        if (puppet->OwnsBody(actor)) return static_cast<uint8_t>(i);
     }
     return kMaxPeers;
 }

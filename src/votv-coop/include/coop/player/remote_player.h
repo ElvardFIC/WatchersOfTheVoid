@@ -122,6 +122,9 @@ public:
     // tests.
     void* RagdollBody() const { return ragdoll_.Body(); }
     int32_t RagdollBodyIdx() const { return ragdoll_.BodyIdx(); }
+    // True if `actor` is this puppet's actor (a pointer compare) or its ragdoll display body while that body
+    // is live at its recorded index. False for null.
+    bool OwnsBody(void* actor) const;
 
     void* actor() const { return actor_; }
 

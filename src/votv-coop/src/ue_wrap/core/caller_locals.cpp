@@ -28,7 +28,7 @@ constexpr int32_t kWeakBytes = 8;   // a TWeakObjectPtr: {int32 index, int32 ser
 
 // The removal itself, with no logging: -1 and the reason when the array does not read as one.
 int RemoveCore(uint8_t* locals, int32_t arrayOffset, bool (*drop)(void*, void*), void* ctx, const char** why,
-               int32_t* keptOut = nullptr) {
+               int32_t* keptOut) {
     *why = nullptr;
     if (!locals || !drop) { *why = "no locals or no predicate"; return -1; }
     if (arrayOffset < 0) { *why = "a negative array offset"; return -1; }
@@ -46,7 +46,7 @@ int RemoveCore(uint8_t* locals, int32_t arrayOffset, bool (*drop)(void*, void*),
     }
     const int dropped = view.num - kept;
     std::memcpy(locals + arrayOffset + offsetof(ArrayView, num), &kept, sizeof(kept));
-    if (keptOut) *keptOut = kept;
+    *keptOut = kept;
     return dropped;
 }
 

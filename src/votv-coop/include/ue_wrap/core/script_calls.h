@@ -57,7 +57,8 @@ bool SameCallee(const CallSite& site, void* ufunction);
 // "not known", never "absent". A CallSite's `locals` are property pointers read at EnumerateCalls and are
 // valid only while the function's class stays loaded: a consumer calls CallHasLocal in the same resolve
 // as EnumerateCalls and re-resolves when object_index::ClassUnlistVersion has moved. The read runs under
-// a fault guard and answers false on a fault. Game thread.
+// a fault guard and answers false on a fault. So false covers absent, truncated and faulted alike (the
+// two unusual ones log once): a consumer treats all three as "not this call". Game thread.
 bool CallHasLocal(const CallSite& site, const wchar_t* localName);
 
 }  // namespace ue_wrap::script_calls

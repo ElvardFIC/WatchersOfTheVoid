@@ -83,8 +83,10 @@ public:
 
     // True if `actor` is a puppet's actor (IsPuppet) or the ragdoll display body of a registered puppet
     // (RemotePlayer::RagdollBody, non-null, and live at its recorded object-array index, so a recycled
-    // address reads false). False for null. The puppet's own actor is a pointer compare; no body is
-    // dereferenced.
+    // address reads false). False for null. The puppet actor arm is a pointer compare, as IsPuppet; the
+    // ragdoll arm also checks liveness. The extent is the puppet actor and its ragdoll display body: a
+    // vehicle the puppet drives (the ATV) or a prop it carries is NOT a body, as MTA tests a vehicle as its
+    // own element (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:2505-2510).
     bool IsPuppetBody(void* actor);
 
     // The peer session id of the puppet whose actor or ragdoll display body `actor` is, or unknown.
@@ -101,7 +103,12 @@ public:
     // previous listener so a caller can put it back. The listener runs on the game thread and can fire
     // inside a puppet's deferred spawn: RegisterPuppet runs in the before-finish callback, before the
     // actor's BeginPlay. It must be O(1) and must not call the registry (no Register, Unregister or Clear:
-    // the notify has no re-entry latch). Game thread only.
+    // the notify has no re-entry latch). A second setter displaces the first without telling it; a restore
+    // of the returned listener re-syncs it through the set-time call. Game thread only.
+    // Divergence: MTA pulls a count (reference/mtasa-blue/Server/mods/deathmatch/logic/ASE.cpp:166) and fires
+    // onPlayerJoin after the join completes (CGame.cpp:1499); Source has a one-slot hook
+    // (reference/source-sdk-2013/src/game/server/gameinterface.cpp:245,268). Here a push, fired at the
+    // registry write inside the deferred spawn, because the consumer must arm before the puppet's first overlap.
     PuppetCountFn SetPuppetCountListener(PuppetCountFn fn);
 
     // The Element shadow.
