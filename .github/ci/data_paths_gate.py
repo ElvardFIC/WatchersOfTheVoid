@@ -62,6 +62,7 @@ EXE_PATH_CALL = re.compile(
     r"\bGetModuleFileName[WA]?\s*\(\s*(?:" + NULL_ARG +
     r"|(?:::\s*)?GetModuleHandle[WA]?\s*\(\s*" + NULL_ARG + r"\s*\))\s*,")
 SUFFIXES = (".cpp", ".h", ".hpp", ".inc")
+HEX_DIGITS = frozenset("0123456789abcdefABCDEF")  # a set: the empty string at a text edge is not a member
 
 
 def strip(text):
@@ -79,6 +80,9 @@ def strip(text):
             j = n if j < 0 else j + 2
             out.append("\n" * text.count("\n", i, j))
             i = j
+        elif c == "'" and text[i - 1:i] in HEX_DIGITS and text[i + 1:i + 2] in HEX_DIGITS:
+            out.append(c)  # a C++14 digit separator (1'700'000'000), not the start of a character literal
+            i += 1
         elif c == '"' or c == "'":
             m = re.match(r'([^()\\ ]{0,16})\(', text[i + 1:i + 19]) if c == '"' and text[i - 1:i] == "R" else None
             if m:
@@ -137,6 +141,8 @@ def drill():
         "GetModuleFileNameW(0": {"coop/x/a.cpp": "GetModuleFileNameW( 0 , buf, n);\n"},
         "GetModuleFileName of GetModuleHandle(nullptr)": {
             "coop/x/a.cpp": "::GetModuleFileNameW(::GetModuleHandleW(nullptr), exe, MAX_PATH);\n"},
+        "ExeDir after a digit separator": {
+            "coop/x/a.cpp": "constexpr long k = 1'700'000'000;\nauto d = paths::ExeDir();\n// it's\n"},
         "GetModuleFileName(NULL, over two lines": {
             "coop/x/a.cpp": "GetModuleFileNameW(\n    NULL,\n    buf, n);\n"},
     }
@@ -149,6 +155,8 @@ def drill():
         "the module's base": {"coop/x/a.cpp": "auto b = ::GetModuleHandleW(nullptr);\n"},
         "GetModuleFileNameEx of a process": {
             "coop/x/a.cpp": "K32GetModuleFileNameExW(proc, nullptr, path, MAX_PATH);\n"},
+        "a character literal beside a digit separator": {
+            "coop/x/a.cpp": "char c = 'a'; // ExeDir(\nint n = 0xFF'FF; char d = '\\'';\n"},
         "ModDataDir": {"coop/config/config.cpp": "auto d = ue_wrap::paths::ModDataDir();\n"},
     }
     bad = 0
