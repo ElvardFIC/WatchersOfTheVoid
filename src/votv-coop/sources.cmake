@@ -280,6 +280,8 @@ set(VOTVCOOP_SOURCES
     src/coop/items/inventory_pickup_sync.cpp
     src/coop/session/shutdown.cpp
     src/coop/player/players_registry.cpp
+    src/coop/player/puppet_identity.cpp
+    src/coop/player/puppet_identity_scan.cpp
     src/coop/element/mirror_defer.cpp
     src/ui/join_curtain.cpp
     src/coop/creatures/npc_adoption.cpp
