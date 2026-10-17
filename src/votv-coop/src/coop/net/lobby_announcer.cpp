@@ -131,21 +131,35 @@ std::string ErrorWord(const http::Response& resp) {
     return J::ParseObject(resp.body, j) ? J::Str(j, "error") : std::string();
 }
 
+// What ends a create early, besides the process shutdown. The heartbeat thread's re-announce is
+// ended by the announcer's stop flag. A Host() worker cannot read that flag (its own leading Stop()
+// left it set); it is ended by a Stop() that began after its own, which moved the generation.
+struct CreateStop {
+    const std::atomic<bool>* flag = nullptr;
+    const std::atomic<uint64_t>* gen = nullptr;
+    uint64_t genAtStart = 0;
+
+    bool Now() const {
+        return coop::shutdown::IsShuttingDown() || (flag != nullptr && flag->load()) ||
+               (gen != nullptr && gen->load() != genAtStart);
+    }
+};
+
 // One create, proved. The first announce and every re-announce come through here, so both sign the
 // same way. A create is a challenge then a POST that carries the signed nonce; the signature is
 // made fresh on every try, since a nonce is single-use. A refused nonce (410) or a missing proof
-// (409) is retried ONCE with a new challenge, so a create takes at most two POSTs; a bad proof
-// (400) is a bug or a misconfigured master and is not retried. A master with no challenge route is
-// an old master and gets the create it understands, unproved: a P2P host's signaling and TURN
-// come only from that answer, so an unlisted host would fall back to a direct listen.
+// (409) is retried ONCE with a new challenge, so a create takes at most four POSTs (two
+// challenges, two creates); a bad proof (400) is a bug or a misconfigured master and is not
+// retried. A master with no challenge route is an old master and gets the create it understands,
+// unproved: a P2P host's signaling and TURN come only from that answer, so an unlisted host would
+// fall back to a direct listen.
 //
-// `stop`, when given, is the flag whose being set ends the work: before every POST after the first
-// the flag and the process shutdown are read, so a slow master cannot hold a stopping caller for
-// the sum of four requests. An abandoned create returns a response that is not ok.
+// `stop` is read before every POST after the first, so a slow master cannot hold a stopping caller
+// for the sum of four requests. An abandoned create returns a response that is not ok.
 http::Response CreateLobby(const AnnounceRequest& r, bool listed, const BuildClaim& claim,
-                           const std::atomic<bool>* stop) {
-    auto stopped = [stop] {
-        const bool now = coop::shutdown::IsShuttingDown() || (stop != nullptr && stop->load());
+                           const CreateStop& stop) {
+    auto stopped = [&stop] {
+        const bool now = stop.Now();
         if (now) UE_LOGI("lobby: host announce -- stopped before the next request");
         return now;
     };
@@ -158,6 +172,9 @@ http::Response CreateLobby(const AnnounceRequest& r, bool listed, const BuildCla
         if (ch == Challenge::Failed) return failure;
         if (stopped()) return http::Response{};
         if (ch == Challenge::OldMaster) {
+            // RETIREMENT: this branch goes when every master in the compiled-in list answers the
+            // challenge route (the lobby-proof design, "Retirement"); the build that drops it says so
+            // in its release notes.
             static std::atomic<bool> said{false};
             if (!said.exchange(true))
                 UE_LOGW("lobby: this master predates the lobby proof -- announcing unproved");
@@ -180,7 +197,10 @@ http::Response CreateLobby(const AnnounceRequest& r, bool listed, const BuildCla
             return resp;
         }
         if (resp.status == 403) {
-            UE_LOGW("lobby: host announce -- the master refuses this build -- update Multivoid");
+            if (why == "build-too-old")
+                UE_LOGW("lobby: host announce -- the master refuses this build -- update Multivoid");
+            else
+                UE_LOGW("lobby: host announce -- the master refused it (403)");
             return resp;
         }
         const bool retryable = (resp.status == 410 && why == "nonce-expired") ||
@@ -190,6 +210,15 @@ http::Response CreateLobby(const AnnounceRequest& r, bool listed, const BuildCla
             UE_LOGW("lobby: host announce -- the master requires a signed announce and refused this one");
     }
     return resp;
+}
+
+// POST /v1/leave for a session: the retraction of a lobby this process announced.
+void SendLeave(const std::string& url, const std::string& sessionId, const std::string& token) {
+    J::Json b;
+    b["sessionId"] = sessionId;
+    b["token"] = token;
+    const http::Response resp = http::Post(url, "/v1/leave", J::Dump(b), 5000);
+    UE_LOGI("lobby: left lobby -> %s (%d)", resp.ok ? "ok" : "unreachable", resp.status);
 }
 
 }  // namespace
@@ -206,9 +235,11 @@ HostInfo LobbyAnnouncer::Host(const std::string& masterUrl, const std::string& n
     const BuildClaim claim = ReadBuildClaim();
     if (claim.present)
         UE_LOGI("lobby: announcing the build claim key=%u sha=%.8s", claim.key, claim.sha.c_str());
-    // Stop() above left stop_ set (it ends the old heartbeat), so the flag cannot be read here:
-    // only the process shutdown ends this create early.
-    const http::Response resp = CreateLobby(req, true, claim, nullptr);
+    // Stop() above left stop_ set (it ends the old heartbeat), so the flag cannot be read here: a
+    // Stop() that begins from now on is told by the generation it moves, and the process shutdown
+    // ends this create too. The generation is read after our own Stop(), never before.
+    const uint64_t gen = gen_.load();
+    const http::Response resp = CreateLobby(req, true, claim, CreateStop{nullptr, &gen_, gen});
     // No master address in these lines: they reach the console, and which master was asked is the
     // caller's to name (master_slots::DisplayName).
     if (!resp.ok) { UE_LOGW("lobby: host announce -- master unreachable"); return info; }
@@ -238,23 +269,32 @@ HostInfo LobbyAnnouncer::Host(const std::string& masterUrl, const std::string& n
     // can never move-assign over a joinable hbThread_ (which would std::terminate).
     {
         std::lock_guard<std::mutex> tl(threadMu_);
-        StopHeartbeatLocked();  // join anything that snuck in since the top Stop()
-        {
-            std::lock_guard<std::mutex> lk(mu_);
-            request_   = req;
-            sessionId_ = info.sessionId;
-            token_     = info.token;
-            lobbyId_   = info.lobbyId;
-            turnCur_   = info.turn.user;
-            turnPrev_.clear();
-            listed_    = true;
+        // A Stop() bumps the generation before it takes threadMu_, so an unchanged generation here
+        // means any later Stop() runs after the heartbeat below exists, and its /leave retracts this
+        // lobby; a changed one means the session this lobby was made for has ended.
+        if (gen_.load() == gen) {
+            StopHeartbeatLocked();  // join anything that snuck in since the top Stop()
+            {
+                std::lock_guard<std::mutex> lk(mu_);
+                request_   = req;
+                sessionId_ = info.sessionId;
+                token_     = info.token;
+                lobbyId_   = info.lobbyId;
+                turnCur_   = info.turn.user;
+                turnPrev_.clear();
+                listed_    = true;
+            }
+            stop_.store(false);
+            active_.store(true);
+            hbThread_ = std::thread(&LobbyAnnouncer::HeartbeatLoop, this);
+            UE_LOGI("lobby: announced '%s' lobbyId=%s -- heartbeating", name.c_str(), info.lobbyId.c_str());
+            return info;
         }
-        stop_.store(false);
-        active_.store(true);
-        hbThread_ = std::thread(&LobbyAnnouncer::HeartbeatLoop, this);
     }
-    UE_LOGI("lobby: announced '%s' lobbyId=%s -- heartbeating", name.c_str(), info.lobbyId.c_str());
-    return info;
+    // The POST runs outside threadMu_, like Stop()'s.
+    UE_LOGI("lobby: host announce -- stopped while it was made; leaving lobbyId=%s", info.lobbyId.c_str());
+    SendLeave(masterUrl, info.sessionId, info.token);
+    return HostInfo{};
 }
 
 std::string LobbyAnnouncer::OwnLobbyId() const {
@@ -264,7 +304,7 @@ std::string LobbyAnnouncer::OwnLobbyId() const {
 
 ReannounceResult LobbyAnnouncer::Reannounce() {
     ReannounceResult out;
-    if (stop_.load() || coop::shutdown::IsShuttingDown()) { out.stopped = true; return out; }
+    if (stop_.load() || coop::shutdown::IsShuttingDown()) { out.stopped = true; return out; }  // before any POST
     AnnounceRequest req;
     bool listed;
     {
@@ -275,7 +315,7 @@ ReannounceResult LobbyAnnouncer::Reannounce() {
     out.listed = listed;
     // Outside mu_: a POST never runs under it. The claim is read again, so the re-announced lobby
     // carries the same one.
-    const http::Response resp = CreateLobby(req, listed, ReadBuildClaim(), &stop_);
+    const http::Response resp = CreateLobby(req, listed, ReadBuildClaim(), CreateStop{&stop_, nullptr, 0});
     out.reached = resp.ok;
     out.status = resp.status;
     if (!resp.ok || resp.status != 200) return out;
@@ -436,6 +476,9 @@ void LobbyAnnouncer::StopHeartbeatLocked() {
 }
 
 void LobbyAnnouncer::Stop() {
+    // First, before anything can block: a Host() in flight on another thread reads this to know the
+    // session it announces for has ended (its own leading Stop() runs this too, before it reads).
+    gen_.fetch_add(1);
     bool was;
     std::string url, sid, tok;
     {
@@ -451,13 +494,7 @@ void LobbyAnnouncer::Stop() {
         sessionId_.clear(); token_.clear(); lobbyId_.clear(); turnCur_.clear(); turnPrev_.clear();
     }
     if (!was) return;  // nothing was announced -> no /leave to send
-    if (!url.empty() && !sid.empty()) {
-        J::Json b;
-        b["sessionId"] = sid;
-        b["token"] = tok;
-        const http::Response resp = http::Post(url, "/v1/leave", J::Dump(b), 5000);
-        UE_LOGI("lobby: left lobby -> %s (%d)", resp.ok ? "ok" : "unreachable", resp.status);
-    }
+    if (!url.empty() && !sid.empty()) SendLeave(url, sid, tok);
 }
 
 }  // namespace coop::net::lobby
