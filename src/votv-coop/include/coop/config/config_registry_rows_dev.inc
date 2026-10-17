@@ -145,6 +145,9 @@ CFG_FLAG(end_play_probe, "end_play_probe", "dev", false, "VOTVCOOP_END_PLAY_PROB
 CFG_FLAG(puppet_reg_probe, "puppet_reg_probe", "dev", false, "VOTVCOOP_PUPPET_REG_PROBE",
     "Probe (BOTH peers): each remote player's puppet judged at its begin-play and at its end of play -- "
     "registered in the player registry or not -- one [PI-0] line per puppet life. Read-only.")
+CFG_FLAG(pi0_selftest, "pi0_selftest", "dev", false, "VOTVCOOP_PI0_SELFTEST",
+    "Autonomous selftest (HOST): a Player Element whose puppet was cleared keeps its id when the retry's "
+    "puppet is registered -- one [PI-0-SELFTEST] line, on a spare peer slot, the registry left as found.")
 CFG_FLAG(death_seam_census, "death_seam_census", "dev", false, "VOTVCOOP_DEATH_SEAM_CENSUS",
     "Probe: every element end the death seam announces, one [DEATH] line each -- the element's type "
     "and id, mirror or local, destroyed or streamed out, and its class -- to pair with the lanes' own "
