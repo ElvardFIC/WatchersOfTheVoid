@@ -79,6 +79,7 @@ set(VOTVCOOP_DEV_SOURCES
     src/coop/dev/log_drill.cpp
     src/coop/dev/server_upgrade_drill.cpp
     src/coop/dev/server_drill.cpp
+    src/coop/dev/camera_drill.cpp
     src/coop/dev/sat_console_drill.cpp
     src/coop/dev/calib_drill.cpp
     src/coop/dev/drive_drill.cpp

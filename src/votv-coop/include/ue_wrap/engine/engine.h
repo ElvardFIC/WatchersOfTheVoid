@@ -41,6 +41,11 @@ bool IsGamePaused();
 
 bool SetGamePaused(bool paused);
 
+// UGameplayStatics::GetTimeSeconds on the cached world context: the world's own clock in seconds, which
+// stops while the game is paused and runs at the world's time dilation. False on a resolution miss or a
+// failed call. Game thread.
+bool TryGetWorldTimeSeconds(float& seconds);
+
 // Spawn `actorClass` at `location` through the deferred GameplayStatics pair (AlwaysSpawn); the
 // AActor* or nullptr. `inertPawn` zeroes AutoPossessPlayer, AutoPossessAI and AutoReceiveInput and
 // sets bBlockInput in the deferred window, so the pawn never takes a PlayerController or the local

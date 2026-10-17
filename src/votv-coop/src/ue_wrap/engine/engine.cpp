@@ -88,6 +88,7 @@ namespace {
 void* g_pauseGsCdo   = nullptr;
 void* g_isPausedFn   = nullptr;  // UGameplayStatics::IsGamePaused(WorldContextObject)
 void* g_setPausedFn  = nullptr;  // UGameplayStatics::SetGamePaused(WorldContextObject, bPaused)
+void* g_getTimeFn    = nullptr;  // UGameplayStatics::GetTimeSeconds(WorldContextObject)
 
 bool ResolvePauseFns() {
     if (g_pauseGsCdo && g_isPausedFn && g_setPausedFn) return true;
@@ -123,6 +124,24 @@ bool SetGamePaused(bool paused) {
     f.Set<bool>(L"bPaused", paused);
     if (!Call(g_pauseGsCdo, f)) return false;
     return f.Get<bool>(L"ReturnValue");
+}
+
+bool TryGetWorldTimeSeconds(float& seconds) {
+    seconds = 0.f;
+    void* const ctx = GetWorldContext();
+    if (!ctx) return false;
+    if (!g_pauseGsCdo) g_pauseGsCdo = R::FindClassDefaultObject(P::name::GameplayStaticsClass);
+    if (!g_pauseGsCdo) return false;
+    if (!g_getTimeFn) {
+        if (void* cls = R::ClassOf(g_pauseGsCdo)) g_getTimeFn = R::FindFunction(cls, L"GetTimeSeconds");
+    }
+    if (!g_getTimeFn) return false;
+    ParamFrame f(g_getTimeFn);
+    if (!f.valid()) return false;
+    f.Set<void*>(L"WorldContextObject", ctx);
+    if (!Call(g_pauseGsCdo, f)) return false;
+    seconds = f.Get<float>(L"ReturnValue");
+    return true;
 }
 
 // Actor spawning and transform.
