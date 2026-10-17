@@ -125,9 +125,10 @@ fn is_display_safe(c: char) -> bool {
 
 /// A peer identity as GNS renders a 32-byte `GenericBytes` one: `gen:` + 64
 /// lowercase hex. Since b144 a host publishes its durable PUBLIC KEY here and
-/// joiners dial exactly this string, so the master's job is to store it verbatim
-/// -- it neither mints it nor can verify it, and it must not silently accept a
-/// shape that would dial nobody. Lowercase is required, not merely preferred:
+/// joiners dial exactly this string. The master stores it verbatim and never mints it; this
+/// shape check cannot tell whether the sender holds the key (the announce proof in
+/// `lobby_proof` does that), but it must not accept a shape that would dial nobody.
+/// Lowercase is required, not merely preferred:
 /// `[V]` GNS hashes and byte-compares identity strings and its own parser rejects
 /// uppercase prefixes for that reason, so `GEN:AB..` would register under one
 /// spelling and be dialled under another.

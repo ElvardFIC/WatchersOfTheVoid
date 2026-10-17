@@ -95,6 +95,16 @@ pub fn version_gate(game: &str, proto: i64, game_build: &str) -> Result<(), Stri
 /// release that ships it; 230 stands in until then.
 pub const MIN_PROVED_PROTO: i64 = 230;
 
+/// A create from this build cannot be listed without a valid proof.
+pub fn proof_required(proto: i64) -> bool {
+    proto >= MIN_PROVED_PROTO
+}
+
+/// A create from this build is below the maintainer's floor (`COOP_MIN_LISTED_PROTO`).
+pub fn below_floor(proto: i64, floor: i64) -> bool {
+    proto < floor
+}
+
 pub fn version_gate_env(game: &str, proto: i64, game_build: &str) -> Result<(), String> {
     // No env left to resolve: the ceiling and the allowlist are retired. Kept as a named
     // seam so the call site still reads as a gate and a future policy has an obvious home.
@@ -103,7 +113,17 @@ pub fn version_gate_env(game: &str, proto: i64, game_build: &str) -> Result<(), 
 
 #[cfg(test)]
 mod tests {
-    use super::{game_build_shape_ok, game_shape_ok, version_gate};
+    use super::{below_floor, game_build_shape_ok, game_shape_ok, proof_required, version_gate, MIN_PROVED_PROTO};
+
+    #[test]
+    fn a_build_that_signs_must_prove_and_the_floor_is_a_plain_bound() {
+        assert!(!proof_required(MIN_PROVED_PROTO - 1));
+        assert!(proof_required(MIN_PROVED_PROTO));
+        assert!(proof_required(65535));
+        assert!(!below_floor(0, 0), "the default floor refuses nothing");
+        assert!(!below_floor(230, 230));
+        assert!(below_floor(229, 230));
+    }
 
     #[test]
     fn game_shape_accepts_real_votv_versions() {

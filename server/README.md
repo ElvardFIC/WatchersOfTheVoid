@@ -45,6 +45,16 @@ limits and per-IP caps are the wrong fixture for many synthetic rows from one ad
 - **Endpoints**: `/v1/host/challenge`, `/v1/host`, `/v1/heartbeat`, `/v1/leave`, `/v1/visibility`, `/v1/join`,
   `/v1/lobbies`, `/v1/latest`, `/v1/thanks`, `/healthz`. The mod's side is
   `coop/net/lobby_client` and `coop/net/lobby_announcer`.
+- **The lobby proof**: a create is two calls. `POST /v1/host/challenge` (body `{}`) answers a
+  `nonce`; `POST /v1/host` then carries `nonce` and `proof`, the host's Ed25519 signature over
+  `"multivoid-lobby-announce-v1" || identity || nonce || master_name` (`src/lobby_proof.rs`, the
+  shared vector in `tests/vectors/lobby_proof.json`). A build at or above `MIN_PROVED_PROTO`
+  (`src/version_gate.rs`) without a valid proof is `409 proof-required`; a proof that is present
+  must verify (`400 bad-proof`); a nonce that is spent, expired, or issued to another address is
+  `410 nonce-expired`; a build below `COOP_MIN_LISTED_PROTO` is `403 build-too-old`. A valid proof
+  marks the row `proved`, and a proved create for a key already listed replaces that key's row
+  (new session and token). When the table is full a create evicts the stalest unproved row, then
+  the stalest proved one. `/v1/lobbies` rows carry `identity` and `proved`.
 - **The thanks list**: `/v1/thanks` answers `{"text": ...}` with the file `COOP_THANKS_FILE`
   names (default `/etc/coop-thanks.txt`), a copy of `src/votv-coop/assets/thanks/thanks.txt`.
   Re-read at most every thirty seconds, capped at 64 KiB, 404 when it cannot be served whole.

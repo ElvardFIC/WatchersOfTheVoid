@@ -3,9 +3,9 @@
 //! `/v1/join`, plus the browse snapshot and the sweeper that reaps what stopped heartbeating.
 
 use crate::common::{build_claim_shape_ok, clamp_str, ct_eq, identity_shape_ok, ip_bucket, log, token_hex, token_urlsafe};
-use crate::version_gate::version_gate_env;
+use crate::version_gate::{below_floor, version_gate_env};
 use crate::ice::{heartbeat_turn, ice_block, turn_creds, HostTurn, TURN_TTL_HOST, TURN_TTL_JOIN};
-use crate::lobby_proof::{Challenges, IssueRefusal};
+use crate::lobby_proof::{judge, Challenges, IssueRefusal};
 use crate::master_config::CFG;
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -125,6 +125,7 @@ pub struct Lobby {
     pub lobby_id: String,
     pub token: String,
     pub host_identity: String,
+    pub proved: bool, // the create proved its host holds the key `host_identity` names
     pub name: String,
     pub version: String,
     pub game: String, // v122: host's VOTV game target ("" = pre-field host)
@@ -201,6 +202,7 @@ impl Lobby {
             // it asserts on a host's behalf is one nobody can prove, and since
             // 2026-08-29 the relay registers only proved keys.
             host_identity: String::new(),
+            proved: false,
             name: String::new(),
             version: String::new(),
             game: String::new(),
@@ -233,8 +235,7 @@ pub struct MasterState {
     // response OUTSIDE it (audit L5: serializing a ~200 KB body under the global lock
     // serialized it against all host/join/heartbeat processing).
     pub cache_all_body: Arc<Vec<u8>>,
-    // The nonces `/v1/host/challenge` issued and no create has spent yet.
-    pub challenges: Challenges,
+    pub challenges: Challenges, // issued by /v1/host/challenge, spent by /v1/host
 }
 
 impl MasterState {
@@ -365,22 +366,30 @@ pub fn drop_lobby(state: &mut MasterState, session_id: &str, lobby_id: &str) {
     state.lobby_by_public.remove(lobby_id);
 }
 
+/// Make room for one more row: while the table is full, drop the stalest UNPROVED row, and only
+/// when every row is proved the stalest proved one. A create is never refused at the cap.
 pub fn evict_if_full(state: &mut MasterState) {
     while state.lobbies.len() >= MAX_LOBBIES_GLOBAL {
-        // drop the stalest last_seen
-        let stalest = state
+        let victim = state
             .lobbies
             .values()
-            .min_by_key(|lo| lo.last_seen)
-            .map(|lo| (lo.session_id.clone(), lo.lobby_id.clone()));
-        match stalest {
-            Some((sid, pub_id)) => {
+            .min_by_key(|lo| (lo.proved, lo.last_seen))
+            .map(|lo| (lo.session_id.clone(), lo.lobby_id.clone(), lo.proved));
+        match victim {
+            Some((sid, pub_id, proved)) => {
                 drop_lobby(state, &sid, &pub_id);
-                log(&format!("evicted stalest lobby {pub_id} (global cap)"));
+                let tier = if proved { "proved" } else { "unproved" };
+                log(&format!("evicted stalest {tier} lobby {pub_id} (global cap)"));
             }
             None => break,
         }
     }
+}
+
+/// The (session, lobby) ids of every row that lists `identity`.
+fn rows_of_key(state: &MasterState, identity: &str) -> Vec<(String, String)> {
+    let rows = state.lobbies.values().filter(|lo| lo.host_identity == identity);
+    rows.map(|lo| (lo.session_id.clone(), lo.lobby_id.clone())).collect()
 }
 
 pub fn lobbies_per_ip(state: &MasterState, ip: &str) -> usize {
@@ -412,19 +421,27 @@ pub fn h_challenge(state: &mut MasterState, now: Instant, ip: &str) -> (u16, Val
     match state.challenges.issue(&ip_bucket(ip), now) {
         Ok(nonce) => (200, json!({"nonce": nonce})),
         Err(IssueRefusal::Bucket) => (429, json!({"error": "too many challenges for this address"})),
-        Err(IssueRefusal::Table) => {
-            log("challenge table full");
-            (503, json!({"error": "busy"}))
-        }
+        Err(IssueRefusal::Table) => (503, json!({"error": "busy"})),
     }
 }
 
-pub fn h_host(state: &mut MasterState, ip: &str, body: &Value) -> (u16, Value) {
+/// What `h_host` reads from outside the request: the clock, this master's names, the floor.
+pub struct HostCtx<'a> {
+    pub now: Instant,
+    pub names: &'a [String],
+    pub min_listed_proto: i64,
+}
+
+impl HostCtx<'static> {
+    pub fn live() -> HostCtx<'static> {
+        HostCtx { now: Instant::now(), names: &CFG.public_names, min_listed_proto: CFG.min_listed_proto }
+    }
+}
+
+/// `POST /v1/host`. Refusals run in this order: shape, nonce, proof, floor, caps, then the eviction.
+pub fn h_host(state: &mut MasterState, ctx: &HostCtx, ip: &str, body: &Value) -> (u16, Value) {
     if !rate_ok(state, ip, "create", RL_CREATE.0, RL_CREATE.1) {
         return (429, json!({"error": "rate"}));
-    }
-    if lobbies_per_ip(state, ip) >= MAX_LOBBIES_PER_IP {
-        return (429, json!({"error": "too many lobbies for this address"}));
     }
 
     let mut lo = Lobby::new(ip);
@@ -479,7 +496,34 @@ pub fn h_host(state: &mut MasterState, ip: &str, body: &Value) -> (u16, Value) {
         lo.direct_port = dp;
     }
     lo.players_cur = 1;
-    lo.last_seen = Instant::now();
+    lo.last_seen = ctx.now;
+
+    // The proof. A nonce is spent here, so every shape refusal above leaves it alive.
+    match judge(&mut state.challenges, ctx.names, &ip_bucket(ip), ctx.now, body, &lo.host_identity, lo.proto) {
+        Ok(proved) => lo.proved = proved,
+        Err(why) => {
+            let (status, error) = why.answer();
+            log(&format!("host REFUSED from {ip}: {error} (b{})", lo.proto));
+            return (status, json!({"error": error}));
+        }
+    }
+    if below_floor(lo.proto, ctx.min_listed_proto) {
+        log(&format!("host REFUSED from {ip}: b{} is below the listed floor {}", lo.proto, ctx.min_listed_proto));
+        return (403, json!({"error": "build-too-old"}));
+    }
+
+    // One row per proved key: the caps count the rows listing it as gone; nothing drops until they pass.
+    let replaced = if lo.proved { rows_of_key(state, &lo.host_identity) } else { Vec::new() };
+    let mine = |sid: &String| state.lobbies.get(sid).is_some_and(|row| ip_bucket(&row.ip) == ip_bucket(ip));
+    if lobbies_per_ip(state, ip) - replaced.iter().filter(|(sid, _)| mine(sid)).count() >= MAX_LOBBIES_PER_IP {
+        return (429, json!({"error": "too many lobbies for this address"}));
+    }
+    if let Some((_, public_id)) = replaced.first() {
+        lo.lobby_id = public_id.clone(); // the row keeps its public id; session and token are re-issued
+    }
+    for (sid, public_id) in &replaced {
+        drop_lobby(state, sid, public_id);
+    }
 
     let session_id = lo.session_id.clone();
     let lobby_id = lo.lobby_id.clone();
@@ -491,18 +535,11 @@ pub fn h_host(state: &mut MasterState, ip: &str, body: &Value) -> (u16, Value) {
     // Room is made only for a create that passed every check above: a refused one must cost
     // nobody else their lobby.
     evict_if_full(state);
+    let said = format!("host {lobby_id} '{}' game={} ({}) b{}", lo.name, lo.game, lo.game_build, lo.proto);
+    let said = format!("{said} {} from {ip}", if lo.proved { "proved" } else { "unproved" });
     state.lobby_by_public.insert(lobby_id.clone(), session_id.clone());
     state.lobbies.insert(session_id.clone(), lo);
-    log(&format!(
-        "host {} '{}' game={} ({}) b{} from {} ({} live)",
-        lobby_id,
-        state.lobbies[&session_id].name,
-        state.lobbies[&session_id].game,
-        state.lobbies[&session_id].game_build,
-        state.lobbies[&session_id].proto,
-        ip,
-        state.lobbies.len()
-    ));
+    log(&format!("{said} ({} live)", state.lobbies.len()));
 
     let mut resp = serde_json::Map::new();
     resp.insert("sessionId".into(), json!(session_id));
@@ -679,6 +716,8 @@ pub fn build_rows(state: &MasterState) -> Vec<Value> {
         }
         rows.push(json!({
             "lobbyId": lo.lobby_id,
+            "identity": lo.host_identity, // the host's key; `proved` says it signed for it
+            "proved": lo.proved,
             "name": lo.name,
             "version": lo.version,
             "game": lo.game,    // v122: the host's VOTV game target (gate tier 1)
@@ -721,7 +760,7 @@ pub fn lobbies_snapshot(state: &mut MasterState) -> Arc<Vec<u8>> {
 pub fn dispatch_post(path: &str, ip: &str, body: &Value) -> Option<(u16, Value)> {
     let mut state = lock_state();
     let r = match path {
-        "/v1/host" => h_host(&mut state, ip, body),
+        "/v1/host" => h_host(&mut state, &HostCtx::live(), ip, body),
         "/v1/host/challenge" => h_challenge(&mut state, Instant::now(), ip),
         "/v1/heartbeat" => h_heartbeat(&mut state, ip, body),
         "/v1/leave" => h_leave(&mut state, ip, body),

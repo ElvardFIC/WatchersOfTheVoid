@@ -5,6 +5,7 @@
 //! the table at the foot of this file.
 
 use crate::common::{hex_to_bytes, token_hex};
+use crate::version_gate::proof_required;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
@@ -117,6 +118,65 @@ impl Challenges {
 
     pub fn is_empty(&self) -> bool {
         self.pending.is_empty()
+    }
+}
+
+// ---- the create's verdict -----------------------------------------------------------------
+
+/// Why a create's proof is refused, each with its HTTP answer.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Refusal {
+    /// A build that signs sent no proof.
+    ProofRequired,
+    /// A proof that is malformed, or does not verify under any name this master answers to.
+    BadProof,
+    /// The nonce is unknown, spent, expired, or was issued to another address bucket.
+    NonceExpired,
+}
+
+impl Refusal {
+    pub fn answer(&self) -> (u16, &'static str) {
+        match self {
+            Refusal::ProofRequired => (409, "proof-required"),
+            Refusal::BadProof => (400, "bad-proof"),
+            Refusal::NonceExpired => (410, "nonce-expired"),
+        }
+    }
+}
+
+/// The verdict on a create body's `nonce` and `proof`: `Ok(true)` for a proved row, `Ok(false)`
+/// for an unproved one (a build below `MIN_PROVED_PROTO` that sent no proof), else the refusal.
+/// A proof that is present must verify whatever the build. The nonce is spent as soon as a
+/// well-formed proof presents it, whether or not the proof then verifies. The proof is tried
+/// against each name the master answers to: the body names none, the signature does.
+pub fn judge(
+    challenges: &mut Challenges,
+    names: &[String],
+    bucket: &str,
+    now: Instant,
+    body: &serde_json::Value,
+    identity: &str,
+    proto: i64,
+) -> Result<bool, Refusal> {
+    let proof = match body.get("proof") {
+        None | Some(serde_json::Value::Null) => None,
+        Some(serde_json::Value::String(s)) => Some(s.as_str()),
+        Some(_) => return Err(Refusal::BadProof),
+    };
+    let Some(proof) = proof else {
+        return if proof_required(proto) { Err(Refusal::ProofRequired) } else { Ok(false) };
+    };
+    let nonce = body.get("nonce").and_then(serde_json::Value::as_str).unwrap_or("");
+    if hex_to_bytes::<32>(nonce).is_none() || hex_to_bytes::<64>(proof).is_none() {
+        return Err(Refusal::BadProof);
+    }
+    if !challenges.take(nonce, bucket, now) {
+        return Err(Refusal::NonceExpired);
+    }
+    if names.iter().any(|name| check_lobby_proof(identity, nonce, name, proof).is_ok()) {
+        Ok(true)
+    } else {
+        Err(Refusal::BadProof)
     }
 }
 
