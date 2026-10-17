@@ -78,9 +78,9 @@ constexpr const char* kNoRight     = "The host does not allow the remover";
 constexpr const char* kOutOfSight  = "You can't see that from there";
 constexpr const char* kUnsupported = "The remover cannot remove that in multiplayer";
 
-// The host's layout about its client's puppet, in centimetres along its facing: the single and the mashed props side
-// by side ahead of it, a ring of kRing about it clear of the cone it faces, the creature beyond the ring. The client
-// tells the roles by class (kSingleClass, kMashClass, the sacks), never by where physics left them.
+// The host's layout about its client's puppet, in centimetres along its facing: the single and the mashed props side by
+// side ahead of it, the creature straight ahead beyond them, a ring of kRing about it clear of the cone it faces. The
+// client tells the roles by class (kSingleClass, kMashClass, the sacks), never by where physics left them.
 constexpr int   kRing         = 28;
 constexpr int   kSweepFloor   = 10;    // the fewest ring props in sight that make the sweep a measurement
 constexpr int   kMashShots    = 6;
@@ -90,11 +90,14 @@ constexpr float kPairSideCm    = 45.f;   // either side of the facing line, so n
 constexpr float kRingConeDeg   = 30.f;   // the ring keeps this far off the facing line, each side
 constexpr float kRingNearCm   = 260.f;
 constexpr float kRingStepCm   = 30.f;
-constexpr float kNpcCm        = 420.f;
+constexpr float kNpcAheadCm   = 330.f;   // the creature stands straight ahead, beyond the pair and inside the ring-free cone
+constexpr float kNpcUpCm      = 60.f;    // the height of its middle above the floor, for the clear-segment test
+constexpr float kTargetUpCm   = 30.f;    // the height of a sack's middle above the floor, for the same test
 constexpr float kPuppetHalfHeightCm = 90.f;   // the floor when the puppet's bounds do not read
 constexpr float kDropCm       = 40.f;  // above the floor, so a prop settles
 constexpr float kFindRadiusCm = 700.f;
 constexpr float kSightSlackCm = 25.f;
+constexpr float kAimPastCm    = 50.f;   // the press aims this far past the target's middle
 
 constexpr uint64_t kFindBoundMs  = 60000;   // CLIENT: the join's end to every prop the host spawned being here
 constexpr uint64_t kLegBoundMs   = 30000;   // CLIENT: a shot to what it must show (a failure bound, never a wait)
@@ -128,42 +131,82 @@ HostStep g_hostStep = HostStep::Arm;
 ue_wrap::CachedObjRef g_hSingle, g_hMash, g_hNpc;
 ue_wrap::CachedObjRef g_hRing[kRing];
 
+// Is the straight segment from `eye` to `pt` clear for the shot the judge re-traces: over the four object types the
+// toolgun's shot takes, every player body ignored (a body is no cover and the host's own player may stand at the sender's
+// spawn point), nothing met before `pt`?
+bool ClearTo(void* puppet, const FVector& eye, const FVector& pt) {
+    const uint8_t types[4] = {0, 1, 2, 3};
+    void* ignore[coop::players::kMaxPeers];
+    const int nIgnore = coop::players::Registry::Get().LiveBodies(ignore, coop::players::kMaxPeers);
+    ue_wrap::trace::Hit hit;
+    if (!ue_wrap::trace::LineHitForObjects(puppet, eye, pt, types, 4, ignore, nIgnore, &hit)) return false;
+    return !hit.blocked || Dist(eye, hit.point) >= Dist(eye, pt) - kSightSlackCm;
+}
+
+// The yaw steps, in degrees, a layout is tried at round the puppet's facing: straight ahead first, then alternating
+// sides until the whole circle is covered.
+constexpr float kFanDeg[] = {0.f, 25.f, -25.f, 50.f, -50.f, 75.f, -75.f, 100.f, -100.f, 130.f, -130.f, 160.f, -160.f, 180.f};
+
 // Spawns the host's layout about the client's puppet, on the floor and by its facing: the single and the mashed props
-// side by side ahead of it (the single nearer), nothing of the ring in the cone it faces and nothing of it between the
-// client and the pair, and the creature to its right beyond the ring. False when a prop did not spawn.
-bool SpawnLayout(void* puppet, const FVector& at) {
+// side by side ahead of it (the single nearer), the creature straight ahead beyond them, and the ring about it clear of
+// the cone it faces. The pair and the creature are laid only where the segment from the puppet's own eye to each of them
+// is clear -- the same trace the judge runs -- trying the facing and then a fan round it, so the drill measures the lane
+// and not the map. Null on success; else the reason nothing was laid.
+const char* SpawnLayout(coop::RemotePlayer& rp, const FVector& at) {
+    void* puppet = rp.GetActor();
     void* singleCls = ue_wrap::asset_load::LoadObjectByPath(kSinglePath);
     void* mashCls = ue_wrap::asset_load::LoadObjectByPath(kMashPath);
     void* ringCls = ue_wrap::asset_load::LoadObjectByPath(kSackPath);
-    if (!singleCls || !mashCls || !ringCls) return false;
-    FVector fwd = E::GetActorForwardVector(puppet);
-    const float flat = std::sqrt(fwd.X * fwd.X + fwd.Y * fwd.Y);
-    if (flat < 0.01f) fwd = {1.f, 0.f, 0.f};
-    else fwd = {fwd.X / flat, fwd.Y / flat, 0.f};
-    const FVector right{-fwd.Y, fwd.X, 0.f};
+    if (!singleCls || !mashCls || !ringCls) return "a prop class of the layout did not load";
+    FVector eye{};
+    if (!rp.TryGetEyePosition(eye)) return "the sender's eye did not read on the host";
+    FVector fwd0 = E::GetActorForwardVector(puppet);
+    const float flat = std::sqrt(fwd0.X * fwd0.X + fwd0.Y * fwd0.Y);
+    if (flat < 0.01f) fwd0 = {1.f, 0.f, 0.f};
+    else fwd0 = {fwd0.X / flat, fwd0.Y / flat, 0.f};
     // The floor under the puppet: the bottom of its bounds, else a capsule's half-height under its centre.
     FVector centre{}, extent{};
     const bool bounds = E::GetActorBounds(puppet, false, centre, extent) && extent.Z > 0.f;
     const float floorZ = bounds ? centre.Z - extent.Z : at.Z - kPuppetHalfHeightCm;
+    const bool granted = PhaseOf() == Phase::Granted;
+
+    FVector fwd{}, right{};
+    bool found = false;
+    for (const float deg : kFanDeg) {
+        const float rad = deg * 0.0174532925f;
+        fwd = {fwd0.X * std::cos(rad) - fwd0.Y * std::sin(rad), fwd0.X * std::sin(rad) + fwd0.Y * std::cos(rad), 0.f};
+        right = {-fwd.Y, fwd.X, 0.f};
+        const auto spot = [&](float ahead, float side, float up) {
+            return FVector{at.X + fwd.X * ahead + right.X * side, at.Y + fwd.Y * ahead + right.Y * side, floorZ + up};
+        };
+        if (!ClearTo(puppet, eye, spot(kSingleAheadCm, kPairSideCm, kTargetUpCm))) continue;
+        if (granted && (!ClearTo(puppet, eye, spot(kMashAheadCm, -kPairSideCm, kTargetUpCm)) ||
+                        !ClearTo(puppet, eye, spot(kNpcAheadCm, 0.f, kNpcUpCm))))
+            continue;
+        found = true;
+        break;
+    }
+    if (!found) return "no direction round the puppet has a clear segment from its eye to the layout";
+
     const auto spawn = [&](void* cls, float ahead, float side, ue_wrap::CachedObjRef& into) {
         void* p = E::SpawnActor(cls, {at.X + fwd.X * ahead + right.X * side, at.Y + fwd.Y * ahead + right.Y * side,
                                       floorZ + kDropCm});
         into.Set(p);
         return p != nullptr;
     };
-    if (!spawn(singleCls, kSingleAheadCm, kPairSideCm, g_hSingle)) return false;
-    if (PhaseOf() == Phase::Withheld) return true;
-    if (!spawn(mashCls, kMashAheadCm, -kPairSideCm, g_hMash)) return false;
+    if (!spawn(singleCls, kSingleAheadCm, kPairSideCm, g_hSingle)) return "the single prop did not spawn";
+    if (!granted) return nullptr;
+    if (!spawn(mashCls, kMashAheadCm, -kPairSideCm, g_hMash)) return "the mashed prop did not spawn";
     for (int i = 0; i < kRing; ++i) {
         const float a = (kRingConeDeg + (360.f - 2.f * kRingConeDeg) * static_cast<float>(i) /
                                             static_cast<float>(kRing - 1)) * 0.0174532925f;
         const float r = kRingNearCm + kRingStepCm * static_cast<float>(i % 3);
-        if (!spawn(ringCls, std::cos(a) * r, std::sin(a) * r, g_hRing[i])) return false;
+        if (!spawn(ringCls, std::cos(a) * r, std::sin(a) * r, g_hRing[i])) return "a ring prop did not spawn";
     }
-    void* npc = coop::dev::spawn_npc::SpawnAt(kNpcClass, {at.X + right.X * kNpcCm, at.Y + right.Y * kNpcCm,
+    void* npc = coop::dev::spawn_npc::SpawnAt(kNpcClass, {at.X + fwd.X * kNpcAheadCm, at.Y + fwd.Y * kNpcAheadCm,
                                                           floorZ + kDropCm});
     g_hNpc.Set(npc);
-    return npc != nullptr;
+    return npc ? nullptr : "the creature did not spawn";
 }
 
 bool ClientEnded() {
@@ -237,7 +280,7 @@ void HostTick(coop::net::Session* s) {
         void* puppet = rp.valid() && rp.HasPose() ? rp.GetActor() : nullptr;
         FVector at{};
         if (!puppet || !R::IsLive(puppet) || !E::TryGetActorLocation(puppet, at)) return;
-        if (!SpawnLayout(puppet, at)) { End("host", "ABANDONED", "a prop of the layout did not spawn", true); return; }
+        if (const char* why = SpawnLayout(rp, at)) { End("host", "ABANDONED", why, true); return; }
         UE_LOGI("[REMOVER-DRILL] host: the layout is spawned about the client's puppet (%s)", PhaseName());
         g_hostStep = HostStep::Await;
         g_stepMs = now;
@@ -281,35 +324,38 @@ void DestroyIfLive(void* actor) {
     if (actor && R::IsLive(actor)) E::DestroyActor(actor);
 }
 
-// One press of the remover on `target`: a fresh tool, the toolgun's outHit a blocking hit on the target's root at its
-// location, and the tool's init(toolgun) -- the body the toolgun's press runs. The tool is gone after it on every path
-// (the game's body destroys it, the lane's watch destroys it); one left standing is destroyed here.
+// The hit the game itself would write for a press at `target`: the first thing a trace from this player's camera toward the
+// target's middle (and a little past it, so the ray crosses its body) meets, over the four object types the toolgun's
+// shot takes. Every player body is ignored, as the host's judge ignores them: with both players at one spawn point a native
+// trace would stop at the other's capsule. True when that first thing is the target and the hit names a component.
+bool AimedHit(void* player, void* target, ue_wrap::trace::Hit* hit) {
+    FVector cam{}, at{};
+    if (!E::ReadMainPlayerCameraLocation(player, cam) || !E::TryGetActorLocation(target, at)) return false;
+    const float len = Dist(cam, at);
+    if (!(len > 1.f)) return false;
+    const float past = (len + kAimPastCm) / len;
+    const FVector end{cam.X + (at.X - cam.X) * past, cam.Y + (at.Y - cam.Y) * past, cam.Z + (at.Z - cam.Z) * past};
+    const uint8_t types[4] = {0, 1, 2, 3};
+    void* ignore[coop::players::kMaxPeers];
+    const int nIgnore = coop::players::Registry::Get().LiveBodies(ignore, coop::players::kMaxPeers);
+    if (!ue_wrap::trace::LineHitForObjects(player, cam, end, types, 4, ignore, nIgnore, hit)) return false;
+    return hit->blocked && hit->actor == target && hit->component;
+}
+
+// One press of the remover on `target`: a fresh tool, the toolgun's outHit the blocking hit AimedHit found, and the tool's
+// init(toolgun) -- the body the toolgun's press runs. The tool is gone after it on every path (the game's body destroys
+// it, the lane's watch destroys it); one left standing is destroyed here.
 bool Press(void* player, void* target) {
+    ue_wrap::trace::Hit hit;
     void* toolgun = g_toolgun.Get();
     void* cls = ue_wrap::object_index::ClassByName(kToolClass);
-    void* comp = E::ActorRootComponent(target);
-    FVector at{}, me{};
-    if (!toolgun || !cls || !comp || !E::TryGetActorLocation(target, at) || !E::TryGetActorLocation(player, me))
-        return false;
+    FVector me{};
+    if (!toolgun || !cls || !AimedHit(player, target, &hit) || !E::TryGetActorLocation(player, me)) return false;
     void* tool = DW::SpawnTool(cls, {me.X, me.Y, me.Z + 90.f});
-    const bool ran = tool && ue_wrap::hit_result::WriteField(toolgun, L"outHit", target, comp, at) &&
+    const bool ran = tool && ue_wrap::hit_result::WriteField(toolgun, L"outHit", target, hit.component, hit.point) &&
                      DW::CallToolInit(tool, toolgun);
     DestroyIfLive(tool);
     return ran;
-}
-
-// Is `target` in this player's sight: the segment from its camera to the target meets nothing before the target (its
-// own body is the first thing met, or nothing is), over the object types the remover's own trace takes.
-bool InSight(void* player, void* target) {
-    FVector cam{}, at{};
-    if (!E::ReadMainPlayerCameraLocation(player, cam) || !E::TryGetActorLocation(target, at)) return false;
-    const uint8_t types[4] = {0, 1, 2, 3};
-    // Players are people, not cover: every player body is ignored, as the host's judge ignores them.
-    void* ignore[coop::players::kMaxPeers];
-    const int nIgnore = coop::players::Registry::Get().LiveBodies(ignore, coop::players::kMaxPeers);
-    ue_wrap::trace::Hit hit;
-    if (!ue_wrap::trace::LineHitForObjects(player, cam, at, types, 4, ignore, nIgnore, &hit)) return false;
-    return !hit.blocked || hit.actor == target || Dist(cam, hit.point) >= Dist(cam, at) - kSightSlackCm;
 }
 
 struct Seen { void* actor; float cm; };
@@ -354,6 +400,12 @@ bool Find(void* player) {
     const bool granted = PhaseOf() == Phase::Granted;
     const std::vector<Seen> single = PropsAbout(kSingleClass, me);
     if (single.empty()) return false;
+    // A press must be one the game itself could make: the camera's own trace meets each target first.
+    ue_wrap::trace::Hit probe;
+    if (!AimedHit(player, single[0].actor, &probe)) {
+        Abandon("the camera's trace does not meet the single prop first");
+        return true;
+    }
     if (!granted) {
         g_single.Set(single[0].actor);
         return true;
@@ -362,12 +414,17 @@ bool Find(void* player) {
     const std::vector<Seen> ring = PropsAbout(kSackClass, me);
     void* npc = NearestNpc(me);
     if (mash.empty() || ring.size() < static_cast<size_t>(kRing) || !npc) return false;
+    if (!AimedHit(player, mash[0].actor, &probe) || !AimedHit(player, npc, &probe)) {
+        Abandon("the camera's trace does not meet the mashed prop or the creature first");
+        return true;
+    }
     g_single.Set(single[0].actor);
     g_mash.Set(mash[0].actor);
     g_npc.Set(npc);
     int n = 0;
     for (const Seen& r : ring) {
-        if (n < kRing && InSight(player, r.actor)) g_sweep[n++].Set(r.actor);
+        ue_wrap::trace::Hit seen;
+        if (n < kRing && AimedHit(player, r.actor, &seen)) g_sweep[n++].Set(r.actor);
     }
     g_sweepN = n;
     if (n < kSweepFloor) {
