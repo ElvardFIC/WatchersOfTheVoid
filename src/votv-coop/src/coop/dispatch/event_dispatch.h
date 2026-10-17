@@ -51,7 +51,7 @@ bool HandleSignalEvent(const net::Session::ReliableMessage& msg);
 
 // CLIENT->HOST intent and request family: a client asks the host to perform something it alone is
 // authoritative for. Read the case for its gate rather than assuming one. GrabIntent, ThrowIntent,
-// PropDropIntent, ReelEjectIntent, DoorVerbIntent and KeypadIntent check role()==Host AND a client
+// PropDropIntent, ReelEjectIntent, DoorVerbIntent, CameraToggleIntent and KeypadIntent check role()==Host AND a client
 // sender slot; KerfurConvertRequest and KerfurCommand check the role only, mapping an out-of-range
 // slot to the 0xFF sentinel and handing it on; OrderRequest, CoinGunSell and CoinCollect check the
 // slot here and leave the role gate to the module they call; CoinGunResult and OrderRefused are

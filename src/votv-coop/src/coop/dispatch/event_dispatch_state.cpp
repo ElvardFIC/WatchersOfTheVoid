@@ -47,12 +47,14 @@ bool HandleStateEvent(net::Session& session,
     case net::ReliableKind::ApplianceState:
     case net::ReliableKind::OvenRepairState:    // the oven's repair, one way
     case net::ReliableKind::LightGroupState:    // the light group's active flag, host-authored
+    case net::ReliableKind::CameraActiveState:  // a security camera's active bit, host-authored
+    case net::ReliableKind::CameraLightState:   // a security camera's spotlight bit, host-authored
     case net::ReliableKind::LockerDoorState: {  // lockers and the drone-console doors, the same shape
-        // DoorState and LightGroupState are the host-authored kinds in this otherwise symmetric
-        // family, so they do not get the family's any-peer-may-send treatment: a client that
-        // authored one would drive the host's and every other client's doors or lights, the
-        // pollution host authority prevents. The host's receive edge refuses a client's copy
-        // (client_authorship.h), and the host relays neither kind, so here they come from the host.
+        // DoorState, LightGroupState and the two camera kinds are the host-authored kinds in this
+        // otherwise symmetric family, so they do not get the family's any-peer-may-send treatment: a
+        // client that authored one would drive the host's and every other client's doors, lights or
+        // cameras, the pollution host authority prevents. The host's receive edge refuses a client's
+        // copy (client_authorship.h), and the host relays none of them, so here they come from the host.
         // A peer toggled a keyed interactable (a light switch, a container lid, a garage, an
         // appliance, a locker) or repaired an oven, or the host moved a door or a light group. On a symmetric kind any
         // peer can send, and the host relays a client-originated edge to the other clients before

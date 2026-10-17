@@ -30,7 +30,7 @@ inline constexpr uint32_t kMagic = 0x564D5450u;
 // This file is past the 1500-line hard cap and stays there: it is the single-feature exception the
 // rule names. One wire format, whose enum, payload structs and static_asserts are read together;
 // splitting it would put a kind's number in one file and its bytes in another.
-inline constexpr uint16_t kProtocolVersion = 231;
+inline constexpr uint16_t kProtocolVersion = 232;
 
 // Default LAN port (overridable via multivoid.ini "net.port=").
 inline constexpr uint16_t kDefaultPort = 47621;
@@ -1004,6 +1004,24 @@ enum class ReliableKind : uint8_t {
     // the host's receive edge. Late join: the seed at the joiner's world-ready, the same payload. Every state is
     // absolute. BadSunPayload.
     BadSun = 176,
+
+    // Host to all: a security camera's `active` bit (the LED, the click, the laptop's camera list), by the camera's
+    // prop key, absolute, whoever wrote it -- a player's use, a wisp, the gray events, the cursed camera's night roll.
+    // A client renders it and never authors it; a client's own copy is refused at the host's receive edge. Never
+    // relayed. Late join: the host's state for every indexed camera at the joiner's world-ready. KeyedTogglePayload.
+    CameraActiveState = 181,
+
+    // Host to all: a security camera's `isLight` bit (the spotlight), the same shape and rules as CameraActiveState.
+    CameraLightState = 182,
+
+    // Client to host: my player pressed this camera's use or the laptop's camera-light button. A client refuses both
+    // at their own bodies and asks here; the host judges the sender's reach and sets the bit to the value the sender
+    // wanted, and the result reaches every peer as CameraActiveState or CameraLightState. A bit already at the wanted
+    // value changes nothing and is sent again to the sender alone. Never relayed. Late join: nothing to replay -- a
+    // request is an act. Trust: the key must be one the host indexes, the bit and the value are range-checked, the
+    // sender must be within reach of the camera (the use) or of the base laptop (the light), and its intents run from
+    // a bounded queue at a bounded rate. CameraToggleIntentPayload.
+    CameraToggleIntent = 183,
 };
 
 #pragma pack(push, 1)
@@ -1669,6 +1687,19 @@ struct DoorVerbIntentPayload {
 static_assert(sizeof(DoorVerbIntentPayload) == 40, "DoorVerbIntentPayload must be 40 bytes");
 static_assert(sizeof(DoorVerbIntentPayload) <= 256 - 20 - 8,
               "DoorVerbIntentPayload must fit one datagram");
+
+// A camera toggle intent (CameraToggleIntent): the camera by its prop key, which of its two bits, and the value
+// the sender's press wants it to have (the sender's own copy negated). The use of the camera is the active bit; the
+// laptop's camera-light button is the light bit.
+namespace camera_toggle { constexpr uint8_t kActive = 0; constexpr uint8_t kLight = 1; }
+struct CameraToggleIntentPayload {
+    WireKey  key;        // 32 -- the camera's prop key, as the camera lane indexes it
+    uint8_t  bit;        // 1  -- camera_toggle::kActive or kLight
+    uint8_t  desired;    // 1  -- 0 = off, 1 = on
+};
+static_assert(sizeof(CameraToggleIntentPayload) == 34, "CameraToggleIntentPayload must be 34 bytes");
+static_assert(sizeof(CameraToggleIntentPayload) <= 256 - 20 - 8,
+              "CameraToggleIntentPayload must fit one datagram");
 
 // A keypad intent (KeypadIntent): the keypad by its Key and what the client's player did to it. A
 // submit carries no verdict, since the host judges the code on its own copy; a keycard's verdict is

@@ -457,6 +457,7 @@ set(VOTVCOOP_SOURCES
     src/coop/interactables/eraser_press_intent.cpp
     src/coop/interactables/drone_call_intent.cpp
     src/coop/interactables/door_verb_intent.cpp
+    src/coop/interactables/camera_toggle_intent.cpp
     src/coop/interactables/door_state_verbs.cpp
     src/coop/interactables/lightgroup_verbs.cpp
     src/coop/interactables/verb_lanes.cpp

@@ -217,6 +217,10 @@ inline Lane LaneForKind(ReliableKind k) {
     // Not relayable: the request goes to the host alone and the answer to its sender alone. The default, by decision.
     case ReliableKind::RemoverRequest:    return Lane::Normal;
     case ReliableKind::RemoverResult:     return Lane::Normal;
+    // The camera kinds are ordered against nothing else and not relayable. The default, by decision.
+    case ReliableKind::CameraActiveState:  return Lane::Normal;
+    case ReliableKind::CameraLightState:   return Lane::Normal;
+    case ReliableKind::CameraToggleIntent: return Lane::Normal;
     default:                           return Lane::Normal;
     }
 }

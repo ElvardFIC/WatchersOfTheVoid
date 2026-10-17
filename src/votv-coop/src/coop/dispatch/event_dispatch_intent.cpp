@@ -17,6 +17,7 @@
 #include "coop/creatures/kerfur_command.h"
 #include "coop/creatures/kerfur_convert_host.h"
 #include "coop/creatures/roach_sync.h"    // CLIENT->HOST local roach consumption intent
+#include "coop/interactables/camera_toggle_intent.h"  // CLIENT->HOST use of a security camera, or its laptop light button
 #include "coop/interactables/door_verb_intent.h"  // CLIENT->HOST press, hit or pry of a base door
 #include "coop/interactables/keypad_verbs.h"  // CLIENT->HOST digit, submit, cancel, keycard, reset
 #include "coop/interactables/drone_call_intent.h"  // CLIENT->HOST press of the drone console
@@ -166,6 +167,37 @@ bool HandleIntentEvent(net::Session& session,
         }
         coop::door_verb_intent::OnDoorVerbIntent(session, p,
                                                  static_cast<uint8_t>(msg.senderPeerSlot));
+        break;
+    }
+    case net::ReliableKind::CameraToggleIntent: {
+        // CLIENT->HOST: a client used a security camera or pressed the laptop's camera-light button,
+        // and the host sets the bit to the value that client wanted. The camera's resolve, the reach
+        // and the rate live in the module; the format lives here.
+        // coop::camera_toggle_intent::OnCameraToggleIntent.
+        if (session.role() != net::Role::Host) {
+            UE_LOGW("event_feed: CameraToggleIntent received on a client -- dropping");
+            break;
+        }
+        if (msg.senderPeerSlot < 1 || msg.senderPeerSlot >= net::kMaxPeers) {
+            UE_LOGW("event_feed: CameraToggleIntent from invalid senderPeerSlot=%d -- dropping",
+                    msg.senderPeerSlot);
+            break;
+        }
+        if (msg.payloadLen < sizeof(net::CameraToggleIntentPayload)) {
+            UE_LOGW("event_feed: CameraToggleIntent payload too short (%zu < %zu)",
+                    static_cast<size_t>(msg.payloadLen), sizeof(net::CameraToggleIntentPayload));
+            break;
+        }
+        net::CameraToggleIntentPayload p{};
+        std::memcpy(&p, msg.payload, sizeof(p));
+        // The trust boundary: one of the two bits, and a value that is a bool.
+        if (p.bit > net::camera_toggle::kLight || p.desired > 1) {
+            UE_LOGW("event_feed: CameraToggleIntent bit=%u desired=%u out of range -- dropping",
+                    static_cast<unsigned>(p.bit), static_cast<unsigned>(p.desired));
+            break;
+        }
+        coop::camera_toggle_intent::OnCameraToggleIntent(session, p,
+                                                         static_cast<uint8_t>(msg.senderPeerSlot));
         break;
     }
     case net::ReliableKind::KeypadIntent: {

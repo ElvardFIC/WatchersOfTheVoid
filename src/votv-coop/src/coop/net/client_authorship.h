@@ -131,6 +131,7 @@ constexpr ClientAuthorship AuthorshipOf(ReliableKind k) {
     case ReliableKind::StatQueryReply:
     case ReliableKind::PointSackRedeem:
     case ReliableKind::RemoverRequest:
+    case ReliableKind::CameraToggleIntent:
         return ClientAuthorship::Client;
     case ReliableKind::EntitySpawn:
     case ReliableKind::EntityDestroy:
@@ -200,6 +201,8 @@ constexpr ClientAuthorship AuthorshipOf(ReliableKind k) {
     case ReliableKind::TaskNewState:
     case ReliableKind::HookAnchored:
     case ReliableKind::RemoverResult:
+    case ReliableKind::CameraActiveState:
+    case ReliableKind::CameraLightState:
         return ClientAuthorship::Host;
     }
     return ClientAuthorship::NotAKind;  // a byte value that names no kind: refused like Host

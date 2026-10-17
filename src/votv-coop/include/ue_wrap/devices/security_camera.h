@@ -16,6 +16,10 @@
 
 namespace ue_wrap::security_camera {
 
+// The one action a camera offers a player (its getActionOptions lists only this): actionOptionIndex with it
+// negates `active` and runs updState().
+inline constexpr uint8_t kUseAction = 8;
+
 // Resolve the base class and the two bits. True once both bits resolved; a class not loaded yet costs one
 // object-index lookup. Idempotent. Game thread.
 bool EnsureResolved();

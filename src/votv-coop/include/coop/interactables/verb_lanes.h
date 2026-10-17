@@ -1,7 +1,7 @@
 // coop/interactables/verb_lanes.h -- the interactable lanes that stand on a device's own verbs at the
 // script-body gate, wired in one place: the drone console's press, a door's press, hit and pry and
-// its open state, a light group's runTrigger, a toggle device's verb, a keypad's verbs, a press on
-// the main desk's save family. Each lane
+// its open state, a light group's runTrigger, a toggle device's verb, a security camera's use and
+// laptop light button, a keypad's verbs, a press on the main desk's save family. Each lane
 // registers its watches (Install, a per-tick retry), settles them and runs its host queue (Tick), and says its
 // session's summary (OnDisconnect); a leaver's queues go with its slot's per-slot state. This calls them, in that
 // order. Game thread.
