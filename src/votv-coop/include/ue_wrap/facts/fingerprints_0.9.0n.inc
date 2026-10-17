@@ -204,6 +204,7 @@ inline constexpr RefFn kRefFns[] = {
     {L"mainplayer_c", L"inpactevt_use_k2node_inputactionevent_38", L"mainplayer_c.inpactevt_use_k2node_inputactionevent_38", 0xba244dce9f431cf1ull, 0xfd56550f599d09b6ull},
     {L"mainplayer_c", L"inpactevt_use_k2node_inputactionevent_41", L"mainplayer_c.inpactevt_use_k2node_inputactionevent_41", 0xba244dce9f431cf1ull, 0xef9ff7400e6b4662ull},
     {L"mainplayer_c", L"inpactevt_use_k2node_inputactionevent_42", L"mainplayer_c.inpactevt_use_k2node_inputactionevent_42", 0xba244dce9f431cf1ull, 0x67508ad087f97475ull},
+    {L"mainplayer_c", L"receivebeginplay", L"mainplayer_c.receivebeginplay", 0x6a2d5d90ab51fa2dull, 0xdbe4817d5ef6ae24ull},
     {L"mainplayer_c", L"timerholdflashlight", L"mainplayer_c.timerholdflashlight", 0x6a2d5d90ab51fa2dull, 0x760d7e465c2c5551ull},
     {L"mainplayer_c", L"updateflashlight", L"mainplayer_c.updateflashlight", 0x6a2d5d90ab51fa2dull, 0x730f5fa3202142acull},
     {L"mushroommaster_c", L"spawn", L"mushroommaster_c.spawn", 0x6a2d5d90ab51fa2dull, 0xcda8e5571000d622ull},
