@@ -1,7 +1,8 @@
 //! `h_host` and the announce proof: a handler-level test over a constructed `MasterState`, with the
 //! master's clock, names and floor injected through `HostCtx`.
 
-use crate::lobby::{build_rows, h_challenge, h_heartbeat, h_host, HostCtx, Lobby, MasterState, MAX_LOBBIES_GLOBAL};
+use crate::lobby::host::{h_challenge, h_host, HostCtx};
+use crate::lobby::{build_rows, h_heartbeat, Lobby, MasterState, MAX_LOBBIES_GLOBAL};
 use crate::lobby_proof::{blob, NONCE_LIFE};
 use crate::version_gate::MIN_PROVED_PROTO;
 use ring::rand::SystemRandom;

@@ -2,9 +2,10 @@
 
 mod proof;
 
+use super::host::{h_challenge, h_host, HostCtx};
 use super::{
-    build_claim_from_body, h_challenge, h_host, host_listed, latest_answer, parse_latest_games, HostCtx, LatestGame,
-    Lobby, LobbyLinks, MasterState, LATEST_URL, MAX_LOBBIES_GLOBAL,
+    build_claim_from_body, host_listed, latest_answer, parse_latest_games, LatestGame, Lobby, LobbyLinks, MasterState,
+    LATEST_URL, MAX_LOBBIES_GLOBAL,
 };
 use crate::common::{build_claim_shape_ok, identity_shape_ok};
 
