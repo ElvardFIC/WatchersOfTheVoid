@@ -83,7 +83,7 @@ const char* PhaseName(HostJoinPhase p) {
     case HostJoinPhase::StreamingWorld:    return "streaming the world";
     case HostJoinPhase::SnapshotDeferred:  return "holding the bracket";
     case HostJoinPhase::StreamingSnapshot: return "streaming the bracket";
-    case HostJoinPhase::Draining:          return "Draining";
+    case HostJoinPhase::Draining:          return "delivering the bracket";
     }
     return "?";
 }

@@ -132,7 +132,7 @@ const char* HostPhaseName(uint8_t p) {
     case coop::net::HostJoinPhase::StreamingWorld:    return "streaming its world";
     case coop::net::HostJoinPhase::SnapshotDeferred:  return "holding the bracket until its world settles";
     case coop::net::HostJoinPhase::StreamingSnapshot: return "streaming the bracket";
-    case coop::net::HostJoinPhase::Draining:          return "Draining";
+    case coop::net::HostJoinPhase::Draining:          return "delivering the bracket";
     }
     return "in a phase this build does not know";
 }
@@ -586,8 +586,7 @@ void MaybeTimeout() {
                           PhaseName(ph), HostPhaseName(hp),
                           static_cast<long long>((now - beaconMs) / 1000));
         } else {
-            std::snprintf(detail, sizeof(detail), "%s: %s, and the host never answered at all",
-                          PhaseName(ph), w.detail);
+            std::snprintf(detail, sizeof(detail), "%s: the host never answered at all", PhaseName(ph));
         }
         Fail(w.code, detail);
         return;
