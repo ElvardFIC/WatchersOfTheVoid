@@ -169,4 +169,5 @@ set(VOTVCOOP_DEV_SOURCES
     src/coop/dev/menu_proceed.cpp
     src/coop/dev/object_overlay.cpp
     src/coop/dev/ragdoll_bone_overlay.cpp
+    src/coop/dev/pi1_selftest.cpp
 )

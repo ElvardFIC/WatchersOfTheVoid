@@ -776,3 +776,8 @@ CFG_FLAG(selftest_break_permissions, "selftest_break_permissions", "dev", false,
 CFG_FLAG(selftest_break_action_log, "selftest_break_action_log", "dev", false, "VOTVCOOP_SELFTEST_BREAK_ACTION_LOG",
     "Red arm of the commands selftest's action-log cases: the first acting case of each cases file expects "
     "no record, so it must fail.")
+CFG_FLAG(pi1_selftest, "pi1_selftest", "dev", false, "VOTVCOOP_PI1_SELFTEST",
+    "Autonomous selftest (BOTH peers): the script gate's scope mark, a native post hook's bytecode call "
+    "site, a const reference into a native pre hook and a caller's local edited in place, each one "
+    "[PI-1] PASS or FAIL line, then [PI-1] DONE. Calls two read-only library functions and turns the "
+    "local player's camera 90 degrees and back.")
