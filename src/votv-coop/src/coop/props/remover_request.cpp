@@ -253,7 +253,10 @@ Verdict JudgeSight(void* puppet, void* actor, const Queued& q) {
     // four object types) before it, but the players' bodies and the prop.
     const uint8_t types[4] = {0, 1, 2, 3};   // the shot's own set: WorldStatic, WorldDynamic, Pawn, PhysicsBody
     // Players are people, not cover: every player body (this process's own and each puppet) is ignored, with the prop. A
-    // body that holds the sender's eye -- two players standing at one spot -- would otherwise block at no distance.
+    // body that holds the sender's eye -- two players standing at one spot -- would otherwise block at no distance. The
+    // host is deliberately more lenient here than the native shot, which traces the same four types ignoring only its
+    // shooter and so stops at another player's capsule: a modified client gains nothing from the leniency, as a body is
+    // mobile cover and not geometry, and the eye ball and the prop's sphere still bound the claim.
     void* ignore[coop::players::kMaxPeers + 1];
     int nIgnore = coop::players::Registry::Get().LiveBodies(ignore, coop::players::kMaxPeers);
     ignore[nIgnore++] = actor;
