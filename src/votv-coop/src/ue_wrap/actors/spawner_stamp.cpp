@@ -3,6 +3,7 @@
 #include "ue_wrap/actors/spawner_stamp.h"
 
 #include "ue_wrap/core/field_io.h"
+#include "ue_wrap/core/fname_utils.h"
 #include "ue_wrap/core/hot_path_guard.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/object_index.h"
@@ -12,6 +13,7 @@
 
 #include <cstdint>
 #include <cwchar>
+#include <string>
 
 namespace ue_wrap::spawner_stamp {
 namespace {
@@ -19,49 +21,70 @@ namespace {
 namespace R  = reflection;
 namespace OI = object_index;
 
-// The two functions a row stands on, for the version census: the class's BeginPlay stub (its fingerprint is the
-// guard's path) and the spawner's whole graph (its stub is not singled out, so it moves on any edit of the graph).
+// The two functions a row stands on, for the version census. The GUARD row is the class's own function the guarded
+// path runs in (its BeginPlay stub, whose path compares the constant): a stamp is made only while the loaded class
+// still declares it. The SPAWNER row is the spawner's whole graph (its stub is not singled out, so it moves on any
+// edit of the graph): the census's, kept in the table so a change to what the spawner writes is seen.
 UE_FACT_FN(kRowOrborbBeginPlay, "spawner_stamp", L"npc_orborb_C", L"ReceiveBeginPlay", Declared);
 UE_FACT_FN(kRowBlackballSpawner, "spawner_stamp", L"blackballSpawner_C", L"ExecuteUbergraph_blackballSpawner",
            Declared);
+UE_FACT_FN(kRowBirchBeginPlay, "spawner_stamp", L"birch_C", L"ReceiveBeginPlay", Declared);
+UE_FACT_FN(kRowBirchSpawner, "spawner_stamp", L"birchSpawner_C", L"ExecuteUbergraph_birchSpawner", Declared);
 
-// One class's native spawner: the FString property it writes, the constant, and the functions that constant
-// depends on. blackballSpawner_C's ubergraph writes NewVar_0 between the spawn's halves and npc_orborb_C's
-// BeginPlay compares it, else ends the game.
+// One class's native spawner: the FString property it writes, the constant, and the two fact rows the constant
+// depends on. blackballSpawner_C's ubergraph writes NewVar_0 between the spawn's halves and npc_orborb_C's BeginPlay
+// compares it, else ends the game; birchSpawner_C and birch_C are the same shape.
 struct Row {
-    const wchar_t*                  cls;
-    const wchar_t*                  prop;
-    const wchar_t*                  value;
-    const facts::Function* const    rows[2];
+    const wchar_t*         cls;
+    const wchar_t*         prop;
+    const wchar_t*         value;
+    const facts::Function& guard;
+    const facts::Function& spawner;
 };
 const Row kRows[] = {
-    {L"npc_orborb_C", L"NewVar_0", L"O0ttQI_-jnVwHSztT-bb_w", {&kRowOrborbBeginPlay, &kRowBlackballSpawner}},
+    {L"npc_orborb_C", L"NewVar_0", L"O0ttQI_-jnVwHSztT-bb_w", kRowOrborbBeginPlay, kRowBlackballSpawner},
+    {L"birch_C", L"NewVar_0", L"1nQmIuuHPiU9vlTy4ubQ5g==", kRowBirchBeginPlay, kRowBirchSpawner},
 };
 constexpr int kRowCount = static_cast<int>(sizeof kRows / sizeof kRows[0]);
+
+// Each row's class as an FName ({0,0} until converted): an index compare tells a spawn's class from the row's.
+R::FName g_rowNames[kRowCount] = {};
 
 // What a row learned about one listing of its class.
 struct Entry {
     void*    cls = nullptr;
     uint64_t listing = 0;
-    int32_t  off = -1;  // -1: the property is missing or is not an FString
+    int32_t  off = -1;  // -1: the guard function, the property or its FString type is missing
     bool     saidStamped = false;
     bool     saidFailed = false;
 };
 Entry g_entries[kRowCount];
 int   g_failures = 0;
 
+// The row of `cls`, or -1. A row's name converts once (the engine's name pool is process-wide, so it holds across
+// worlds); a row not yet converted, because the string library is not up, is compared by rendering the name, so a
+// class with a row is never passed over for want of its FName.
 int RowOf(void* cls) {
     const R::FName& name = R::NameOf(cls);
-    for (int i = 0; i < kRowCount; ++i)
-        if (R::NameEquals(name, kRows[i].cls)) return i;
+    for (int i = 0; i < kRowCount; ++i) {
+        R::FName& rowName = g_rowNames[i];
+        if (rowName.ComparisonIndex == 0) rowName = fname_utils::StringToFName(kRows[i].cls);
+        const bool same = rowName.ComparisonIndex != 0
+                              ? name.ComparisonIndex == rowName.ComparisonIndex && name.Number == rowName.Number
+                              : R::NameEquals(name, kRows[i].cls);
+        if (same) return i;
+    }
     return -1;
 }
 
-// The property's offset when it is an FString, else -1. Names compare without case, as the engine's do.
+// The property's offset when the class still declares the row's guard function and the property is an FString,
+// else -1. Names compare without case, as the engine's do.
 int32_t StringOffset(const Row& row, void* cls) {
-    const int32_t off = R::FindPropertyOffset(cls, row.prop);
-    if (off < 0) return -1;
-    return ::_wcsicmp(R::PropertyClassName(cls, row.prop).c_str(), L"StrProperty") == 0 ? off : -1;
+    if (!facts::ResolveOn(row.guard, cls)) return -1;
+    int32_t      off = -1;
+    std::wstring type;
+    if (!R::PropertyOffsetAndClass(cls, row.prop, off, type)) return -1;
+    return ::_wcsicmp(type.c_str(), L"StrProperty") == 0 ? off : -1;
 }
 
 }  // namespace
@@ -72,14 +95,15 @@ bool Stamp(void* actorClass, void* deferredActor) {
     if (index < 0) return true;
     const Row& row = kRows[index];
     Entry& e = g_entries[index];
-    // A class the index does not list yet (id 0) cannot be told from a reloaded one: it is resolved afresh.
+    // A class the index does not list yet (id 0) cannot be told from a reloaded one: it is resolved afresh on every
+    // call, its once-lines kept for as long as it is the same class object.
     const uint64_t listing = OI::ClassListingId(actorClass);
-    if (listing == 0 || e.cls != actorClass || e.listing != listing) {
-        // Each row on its class through the object index (no array walk); a class not loaded here, as the spawner's
-        // often is on a client, is left for the census to find.
-        for (const facts::Function* fact : row.rows)
-            if (void* cls = OI::ClassByName(fact->Class())) facts::ResolveOn(*fact, cls);
-        e = Entry{actorClass, listing, StringOffset(row, actorClass), false, false};
+    const bool sameListing = e.cls == actorClass && e.listing == listing;
+    if (listing == 0 || !sameListing) {
+        const bool keepSaid = listing == 0 && sameListing;
+        const bool saidStamped = keepSaid && e.saidStamped;
+        const bool saidFailed = keepSaid && e.saidFailed;
+        e = Entry{actorClass, listing, StringOffset(row, actorClass), saidStamped, saidFailed};
     }
     if (deferredActor && e.off >= 0 && field_io::WriteFStringField(deferredActor, e.off, row.value)) {
         if (!e.saidStamped) {

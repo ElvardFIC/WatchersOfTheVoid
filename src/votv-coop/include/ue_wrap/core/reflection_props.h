@@ -44,11 +44,14 @@ int32_t FindParamSize(void* function, const wchar_t* paramName);
 // a miss. -1 if not found. Cache the result; the walk is linear.
 int32_t FindPropertyOffset(void* owningClass, const wchar_t* propName);
 
-// The type of an instance property named `propName` on `owningStruct` (a UClass* or UScriptStruct*), as its
-// FFieldClass names it ("StrProperty", "IntProperty", "ObjectProperty"...): the property's FField::ClassPrivate
-// then FFieldClass::Name, the read the fingerprint walk makes. The same case-insensitive name lookup and
-// SuperStruct climb as FindPropertyOffset. Empty when the property is not found. The walk is linear: cache it.
-std::wstring PropertyClassName(void* owningStruct, const wchar_t* propName);
+// An instance property's byte offset and its type in one walk, for a caller that needs both: the offset
+// FindPropertyOffset gives, and the type as its FFieldClass names it ("StrProperty", "IntProperty",
+// "ObjectProperty"...), the property's FField::ClassPrivate then FFieldClass::Name, the read the fingerprint
+// walk makes. `owningStruct` is a UClass* or UScriptStruct*; the case-insensitive name lookup and the SuperStruct
+// climb are FindPropertyOffset's. False when the property is not found (outOffset -1, outClassName empty); true
+// with an empty outClassName if the field carries no class. The walk is linear: cache it.
+bool PropertyOffsetAndClass(void* owningStruct, const wchar_t* propName, int32_t& outOffset,
+                            std::wstring& outClassName);
 
 // A property's offset on the class of the instance it is asked with, for a wrapper that holds an
 // instance rather than a class by name: the instance's class is loaded by construction, so nothing
