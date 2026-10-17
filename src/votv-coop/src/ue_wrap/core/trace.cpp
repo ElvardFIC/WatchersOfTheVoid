@@ -85,6 +85,16 @@ int Cast(void* worldCtx, const FVector& start, const FVector& end, const uint8_t
     out->normal = hit.normal;
     out->actor = hit.actor;
     out->component = hit.component;
+    // The engine must not report an actor it was told to ignore (or the context actor, which bIgnoreSelf ignores). One
+    // reported means ActorsToIgnore did not take effect and every verdict drawn from this trace is wrong: said once.
+    static bool sSaid = false;
+    bool ignored = out->actor && out->actor == worldCtx;
+    for (int32_t i = 0; i < nIgnore && !ignored; ++i) ignored = out->actor && out->actor == ignore[i];
+    if (ignored && !sSaid) {
+        sSaid = true;
+        UE_LOGE("trace: the engine reported an actor on the ignore list (%p) as the first blocking hit -- "
+                "ActorsToIgnore did not take effect for this trace", out->actor);
+    }
     return 1;
 }
 

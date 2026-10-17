@@ -132,15 +132,19 @@ void SendFar(coop::net::Session* s, Arm a, const FVector& camera) {
 }
 
 // hidden: the first prop the camera cannot see, asked for from the real camera. Traced as the host traces: the shot's
-// four object types, from the camera, ignoring the player and the prop, and the blocker well short of the prop.
+// four object types, from the camera, ignoring every player body and the prop, and the blocker well short of the prop.
+// A blocker that is a player body is no wall: the arm must be refused by geometry, so it never takes one for cover.
 void SendHidden(coop::net::Session* s, Arm a, void* player, const FVector& camera) {
     const uint8_t types[4] = {0, 1, 2, 3};
     for (const Candidate& c : HostProps(camera)) {
         if (c.cm > kSeenMaxCm) break;
-        void* ignore[2] = {player, c.actor};
+        void* ignore[coop::players::kMaxPeers + 1];
+        int nIgnore = coop::players::Registry::Get().LiveBodies(ignore, coop::players::kMaxPeers);
+        ignore[nIgnore++] = c.actor;
         ue_wrap::trace::Hit blocker;
-        if (!ue_wrap::trace::LineHitForObjects(player, camera, c.at, types, 4, ignore, 2, &blocker)) continue;
+        if (!ue_wrap::trace::LineHitForObjects(player, camera, c.at, types, 4, ignore, nIgnore, &blocker)) continue;
         if (!blocker.blocked || Dist(camera, blocker.point) >= c.cm - kSightSlack - kBlockedMarginCm) continue;
+        if (blocker.actor && R::ClassNameOf(blocker.actor) == L"mainPlayer_C") continue;
         if (!Send(s, c.id, camera, c.at)) { Inconclusive(a, "the request was not sent"); return; }
         UE_LOGI("[HOSTILE-DRILL] %s sent one request for element %u, %.0f uu away behind a blocker %.0f uu away",
                 ArmName(a), static_cast<unsigned>(c.id), c.cm, Dist(camera, blocker.point));
@@ -239,10 +243,13 @@ void JudgeOne(Arm a) {
     // segment cannot pass it; hidden by the blocked segment.
     const char* want = a == Arm::RemoverFar ? "origin far from the eye" : "segment blocked before the hit point";
     const char* got = RR::LastWhyFor(g_slot);
-    if (now[static_cast<size_t>(Reason::OutOfSight)] == 1 && total == 1 && got && std::string(got) == want)
+    // hidden must be stopped by geometry: the blocker is a class, and not a player body (mainPlayer_C).
+    const std::wstring blockerCls = RR::LastBlockerClass();
+    const bool wall = a != Arm::RemoverHidden || (!blockerCls.empty() && blockerCls != L"mainPlayer_C");
+    if (now[static_cast<size_t>(Reason::OutOfSight)] == 1 && total == 1 && got && std::string(got) == want && wall)
         Finish(a, "PASS", std::string("the host answered OutOfSight once and answered nothing else: ") + want);
     else
-        Finish(a, "FAIL", "the host answered" + seen + ", last refusal '" + (got ? got : "none") + "' (wanted OutOfSight once, '" + want + "')");
+        Finish(a, "FAIL", "the host answered" + seen + ", last refusal '" + (got ? got : "none") + "' (wanted OutOfSight once, '" + want + "')" + (wall ? "" : "; the blocker was a player body or unnamed, not a wall"));
 }
 
 void SampleFlood(Clock::time_point now) {

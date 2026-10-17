@@ -56,5 +56,7 @@ uint32_t AnsweredFor(int slot, coop::net::RemoverReason reason);
 // The branch of the last refusal answered to `slot` (a static string), or null: what the hostile drill reads to tell
 // which check stopped a request, not only that one did.
 const char* LastWhyFor(int slot);
+// The class that stopped the last blocked sight segment (empty before any): a wall is not a player body.
+const wchar_t* LastBlockerClass();
 
 }  // namespace coop::remover_request

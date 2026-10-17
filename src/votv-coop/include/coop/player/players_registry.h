@@ -72,6 +72,11 @@ public:
     // True if `actor` is one of our spawned puppets, any peer.
     bool IsPuppet(void* actor);
 
+    // The live bodies of every player this process has: the local player's and each spawned puppet's, up to `max`,
+    // into `out`; returns how many. What a trace that asks about the world, and not about the people in it, ignores.
+    // Game thread only.
+    int LiveBodies(void** out, int max);
+
     // The peer session id for `actor`, or unknown if not in the registry.
     uint8_t PeerIdOfActor(void* actor);
 

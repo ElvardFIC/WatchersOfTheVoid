@@ -191,6 +191,17 @@ bool Registry::IsLocal(void* actor) {
     return actor == Local();
 }
 
+int Registry::LiveBodies(void** out, int max) {
+    int n = 0;
+    if (max <= 0) return 0;
+    if (void* local = Local()) out[n++] = local;
+    for (int i = 0; i < kMaxPeers && n < max; ++i) {
+        void* a = puppetByPeer_[i] && puppetByPeer_[i]->valid() ? puppetByPeer_[i]->GetActor() : nullptr;
+        if (a && ue_wrap::reflection::IsLive(a)) out[n++] = a;
+    }
+    return n;
+}
+
 bool Registry::IsPuppet(void* actor) {
     if (!actor) return false;
     for (int i = 0; i < kMaxPeers; ++i) {

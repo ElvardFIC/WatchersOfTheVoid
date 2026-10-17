@@ -304,9 +304,11 @@ bool InSight(void* player, void* target) {
     FVector cam{}, at{};
     if (!E::ReadMainPlayerCameraLocation(player, cam) || !E::TryGetActorLocation(target, at)) return false;
     const uint8_t types[4] = {0, 1, 2, 3};
-    void* ignore[1] = {player};
+    // Players are people, not cover: every player body is ignored, as the host's judge ignores them.
+    void* ignore[coop::players::kMaxPeers];
+    const int nIgnore = coop::players::Registry::Get().LiveBodies(ignore, coop::players::kMaxPeers);
     ue_wrap::trace::Hit hit;
-    if (!ue_wrap::trace::LineHitForObjects(player, cam, at, types, 4, ignore, 1, &hit)) return false;
+    if (!ue_wrap::trace::LineHitForObjects(player, cam, at, types, 4, ignore, nIgnore, &hit)) return false;
     return !hit.blocked || hit.actor == target || Dist(cam, hit.point) >= Dist(cam, at) - kSightSlackCm;
 }
 

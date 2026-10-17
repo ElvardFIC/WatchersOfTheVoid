@@ -208,12 +208,15 @@ constexpr Verdict Decided(RemoverReason r, const char* why) { return {r, why}; }
 // What stopped a segment, said once per tally window at INFO and not per message: the blocker's class and how far it
 // stood from the eye, how far the hit point was, and how far the client's own origin lay from the eye. A diagnostic
 // for an honest shot refused for sight, bounded like the tally's lines.
+std::wstring g_lastBlockerClass;   // the class that stopped the last blocked segment, for the hostile drill
+
 void NoteBlocked(void* blocker, float blockerCm, float hitCm, float originCm) {
+    const std::wstring cls = blocker ? R::ClassNameOf(blocker) : std::wstring(L"(no actor)");
+    g_lastBlockerClass = cls;
     static coop::net::RefusalTally::Clock::time_point sLast{};
     const auto now = coop::net::RefusalTally::Clock::now();
     if (sLast != coop::net::RefusalTally::Clock::time_point{} && now - sLast < coop::net::RefusalTally::kWindow) return;
     sLast = now;
-    const std::wstring cls = blocker ? R::ClassNameOf(blocker) : std::wstring(L"(no actor)");
     UE_LOGI("remover_request: a segment was blocked by %ls at %.0f uu from the eye; the hit point is %.0f uu away and "
             "the client's origin %.0f uu from the eye", cls.c_str(), blockerCm, hitCm, originCm);
 }
@@ -247,11 +250,15 @@ Verdict JudgeSight(void* puppet, void* actor, const Queued& q) {
     if (!(Dist(hitAt, centre) <= radius + kOnPropSlackCm))
         return Decided(RemoverReason::OutOfSight, "hit point off the prop");
     // The segment from the eye to the hit point meets nothing the shot itself would stop at (the toolgun traces these
-    // four object types) before it, but the puppet and the prop themselves.
+    // four object types) before it, but the players' bodies and the prop.
     const uint8_t types[4] = {0, 1, 2, 3};   // the shot's own set: WorldStatic, WorldDynamic, Pawn, PhysicsBody
-    void* ignore[2] = {puppet, actor};
+    // Players are people, not cover: every player body (this process's own and each puppet) is ignored, with the prop. A
+    // body that holds the sender's eye -- two players standing at one spot -- would otherwise block at no distance.
+    void* ignore[coop::players::kMaxPeers + 1];
+    int nIgnore = coop::players::Registry::Get().LiveBodies(ignore, coop::players::kMaxPeers);
+    ignore[nIgnore++] = actor;
     ue_wrap::trace::Hit blocker;
-    if (!ue_wrap::trace::LineHitForObjects(puppet, q.eye, hitAt, types, 4, ignore, 2, &blocker))
+    if (!ue_wrap::trace::LineHitForObjects(puppet, q.eye, hitAt, types, 4, ignore, nIgnore, &blocker))
         return Decided(RemoverReason::Failed, "the sight trace did not run");
     if (blocker.blocked && !(Dist(q.eye, blocker.point) >= Dist(q.eye, hitAt) - kBlockedSlackCm)) {
         NoteBlocked(blocker.actor, Dist(q.eye, blocker.point), Dist(q.eye, hitAt), Dist(origin, q.eye));
@@ -422,6 +429,8 @@ void OnDisconnect() {
 
 uint32_t RunsFor(int slot) { return slot >= 1 && slot < coop::players::kMaxPeers ? g_runs[slot] : 0; }
 uint32_t RefusedFor(int slot) { return slot >= 1 && slot < coop::players::kMaxPeers ? g_refused[slot] : 0; }
+const wchar_t* LastBlockerClass() { return g_lastBlockerClass.c_str(); }
+
 const char* LastWhyFor(int slot) {
     return slot >= 1 && slot < coop::players::kMaxPeers ? g_slots[slot].lastWhy : nullptr;
 }
