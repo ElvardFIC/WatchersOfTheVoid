@@ -4,6 +4,8 @@
 
 #include "ue_wrap/core/log.h"
 
+#include <cstdio>
+
 namespace coop::net {
 
 void SendRateControl::Reset(bool controlEnabled, long pinnedKbs) {
@@ -141,7 +143,7 @@ int64_t SendRateControl::ServedPeak_(const Measured& m) {
     return peak;
 }
 
-void SendRateControl::Steer_(Measured& m) {
+SendRateControl::LawKind SendRateControl::Steer_(Measured& m) {
     // THE LAW. Every term below is a byte count or a ratio of two byte counts; nothing here is
     // compared against a reference derived from its own past, which is the single property both
     // refuted laws lacked (docs/send-path.md carries the measurement that refutes them).
@@ -149,7 +151,7 @@ void SendRateControl::Steer_(Measured& m) {
     // An idle link decides nothing. A rate is a CEILING, so with nothing queued it costs nothing to
     // leave where it is -- and a rate raised on an empty link is the rate the next burst opens at,
     // which is root A rebuilt by the thing meant to end it.
-    if (m.demand < kIdleDemandBytes) { ++m.holdCount; return; }
+    if (m.demand < kIdleDemandBytes) { ++m.holdCount; return LawKind::Hold; }
     // NOT MEASURED, in either of the two ways that happens: an estimate younger than its own time
     // constant, or one that has decayed to nothing because the link went silent while work stayed
     // queued. There is one state here, and it holds the rate where it is.
@@ -166,7 +168,7 @@ void SendRateControl::Steer_(Measured& m) {
     const int64_t peak = ServedPeak_(m);
     if (m.servedSamples < kServedWarmupSamples || m.servedBps <= 0 || peak <= 0) {
         ++m.holdCount;
-        return;
+        return LawKind::Hold;
     }
 
     // Little's law, read backwards: the bytes the transport has on the wire and unacknowledged,
@@ -178,17 +180,25 @@ void SendRateControl::Steer_(Measured& m) {
     m.inflightMs = unacked <= 0 ? 0
                  : m.relBps > 0 ? unacked * 1000 / m.relBps
                                 : kQueueBrakeMs * 2;
+    // The queue is what the in-flight bytes cost beyond the link's own base round trip. Printed, not
+    // yet steered on: the branches below still compare inflightMs.
+    const int baseMs = BaseMs_(m);
+    m.queueMs = baseMs >= 0 ? (m.inflightMs > baseMs ? m.inflightMs - baseMs : 0) : m.inflightMs;
 
+    LawKind kind;
     if (m.inflightMs > kQueueBrakeMs) {
+        kind = LawKind::Brake;
         // Braking goes straight to the measurement rather than to a fraction of the current rate:
         // a multiplicative back-off from a rate that is already hundreds of times too high takes
         // hundreds of decisions to arrive, and the link has been telling us its capacity all along.
         m.rateBps = m.servedBps;
         ++m.brakeCount;
     } else if (m.inflightMs <= kQueueClimbMs) {
+        kind = LawKind::Climb;
         m.rateBps = m.rateBps * kClimbNum / kClimbDen + kClimbStepBps;
         ++m.climbCount;
     } else {
+        kind = LawKind::Dead;
         ++m.deadCount;
     }
 
@@ -209,6 +219,48 @@ void SendRateControl::Steer_(Measured& m) {
     }
     if (m.rateBps < kFloorBps) m.rateBps = kFloorBps;
     if (m.rateBps > kCeilingBps) m.rateBps = kCeilingBps;
+    return kind;
+}
+
+void SendRateControl::FormatBase_(const Measured& m, char* buf, size_t cap) {
+    const int base = BaseMs_(m);
+    if (base < 0) snprintf(buf, cap, "-");
+    else          snprintf(buf, cap, "%d ms", base);
+}
+
+const char* SendRateControl::LawName_(LawKind kind) {
+    switch (kind) {
+        case LawKind::Hold:  return "hold";
+        case LawKind::Brake: return "brake";
+        case LawKind::Climb: return "climb";
+        case LawKind::Dead:  return "dead";
+    }
+    return "?";
+}
+
+int SendRateControl::BaseMs_(const Measured& m) {
+    int best = m.baseCurMin;
+    for (int i = 0; i < m.baseCount; ++i) {
+        if (best < 0 || m.baseHist[i] < best) best = m.baseHist[i];
+    }
+    return best;
+}
+
+void SendRateControl::RollBaseMinute_(Measured& m, uint64_t nowMs) {
+    if (m.baseMinuteStartMs == 0) {
+        m.baseMinuteStartMs = nowMs;
+        return;
+    }
+    if (nowMs - m.baseMinuteStartMs < kBaseMinuteMs) return;
+    // A minute with no admitted reply says nothing about the base and pushes nothing, so a link kept
+    // busy for ten minutes keeps the last quiet minutes rather than a history of absences.
+    if (m.baseCurMin >= 0) {
+        m.baseHist[m.baseNext] = m.baseCurMin;
+        m.baseNext = (m.baseNext + 1) % kBaseHistMinutes;
+        if (m.baseCount < kBaseHistMinutes) ++m.baseCount;
+    }
+    m.baseCurMin = -1;
+    m.baseMinuteStartMs = nowMs;
 }
 
 int64_t SendRateControl::PendingRateWrite(int slot) {
@@ -231,6 +283,8 @@ void SendRateControl::Sample(int slot, const LinkSample& in, uint64_t nowMs) {
     if (slot < 0 || slot >= kSlots) return;
     Measured& m = Take_(slot);
     Slot& s = slots_[slot];
+    // Before the law, so the queue it computes reads the base as of this very sample.
+    RollBaseMinute_(m, nowMs);
 
     const int64_t queued = static_cast<int64_t>(s.queuedBytes.load(std::memory_order_relaxed));
     const int64_t unrel = static_cast<int64_t>(s.unrelBytes.load(std::memory_order_relaxed));
@@ -290,7 +344,21 @@ void SendRateControl::Sample(int slot, const LinkSample& in, uint64_t nowMs) {
         // expires within the window rather than being propped up by a link that has stopped.
         m.servedRing[m.servedRingIdx] = servedSample;
         m.servedRingIdx = (m.servedRingIdx + 1) % kServedPeakSamples;
-        Steer_(m);
+        const LawKind kind = Steer_(m);
+        // A decision that differs from the previous one is a line of its own, with the quantities the
+        // law saw: the per-second counts cannot say WHEN the law changed its mind, and a link that
+        // stays in one kind prints nothing here.
+        if (kind != m.lastKind) {
+            char base[24];
+            FormatBase_(m, base, sizeof(base));
+            UE_LOGI("send_rate[slot %d]: law %s -> %s at %llu ms inflight=%lld ms queue=%lld ms "
+                    "base=%s rel=%lld B/s rate=%lld B/s",
+                    slot, LawName_(m.lastKind), LawName_(kind),
+                    static_cast<unsigned long long>(nowMs), static_cast<long long>(m.inflightMs),
+                    static_cast<long long>(m.queueMs), base, static_cast<long long>(m.relBps),
+                    static_cast<long long>(m.rateBps));
+            m.lastKind = kind;
+        }
     }
     m.prevDelivered = delivered;
     m.prevUnrel = unrel;
@@ -326,9 +394,11 @@ void SendRateControl::Sample(int slot, const LinkSample& in, uint64_t nowMs) {
     // Quiet while the link is idle, plus one closing line on the falling edge so the last state of
     // a finished transfer is in the log.
     if (m.sawTraffic || m.wasBusy) {
+        char base[24];
+        FormatBase_(m, base, sizeof(base));
         UE_LOGI("send_rate[slot %d]: goodput=%lld B/s (peak %lld B/s) recv=%lld B/s "
                 "rate=%lld B/s gnsRate=%d B/s over=%lld%% served=%lld B/s inflight=%lld ms "
-                "law climb=%d brake=%d anchor=%d dead=%d hold=%d writes=%d "
+                "base=%s queue=%lld ms law climb=%d brake=%d anchor=%d dead=%d hold=%d writes=%d "
                 "rtt=%d ms win=%d/%d/%d (min/avg/max) rttMin=%d queueDelay=%d "
                 "ping=%d probes sent=%d echo=%d refused=%d lost=%d stray=%d skipped=%d "
                 "echoRefused=%d pendRel=%d unacked=%d pendUnrel=%d backlog=%zu "
@@ -337,7 +407,7 @@ void SendRateControl::Sample(int slot, const LinkSample& in, uint64_t nowMs) {
                 static_cast<long long>(recvBps),
                 static_cast<long long>(m.rateBps), m.last.gnsRateBps,
                 static_cast<long long>(overPct), static_cast<long long>(m.servedBps),
-                static_cast<long long>(m.inflightMs),
+                static_cast<long long>(m.inflightMs), base, static_cast<long long>(m.queueMs),
                 m.climbCount, m.brakeCount, m.anchorCount, m.deadCount, m.holdCount, m.rateWrites,
                 m.rttLastMs,
                 m.rttMinWindow, rttAvg, m.rttMaxWindow, rttMin, queueDelay, m.last.gnsPingMs,
@@ -378,6 +448,9 @@ bool SendRateControl::NextProbe(int slot, uint64_t nowMs, LinkProbePayload& out)
     do { ++m.probeCounter; } while (m.probeCounter == 0);
     m.out[free].token = m.probeCounter;
     m.out[free].sentMs = nowMs;
+    // `m.last` is this very pass's status read: Sample ran just before, in the same net-thread
+    // iteration (session.cpp), so it is the wire as this probe leaves.
+    m.out[free].admitted = m.last.sentUnackedReliable <= kBaseAdmitUnackedBytes;
     m.lastProbeMs = nowMs;
     ++m.probesSent;
     out.token = m.probeCounter;
@@ -406,11 +479,13 @@ void SendRateControl::NoteProbeReply(int slot, const LinkProbePayload& reply, ui
         // by construction and needs no guard; a guard here would also drop the probe out of every
         // counter and quietly stop the ledger from adding up.
         const uint64_t sentMs = m.out[i].sentMs;
+        const bool admitted = m.out[i].admitted;
         m.out[i].token = 0;
         // `protocol.c:872` floors the sample at 1 ms before anything reads it; on loopback ours
         // genuinely measures 0, and an unfloored 0 would make the accelerate test trivially true.
         const int raw = static_cast<int>(nowMs - sentMs);
         const int rtt = raw < 1 ? 1 : raw;
+        if (admitted && (m.baseCurMin < 0 || rtt < m.baseCurMin)) m.baseCurMin = rtt;
         m.rttLastMs = rtt;
         ++m.probesReplied;
         m.rttSumWindow += rtt;

@@ -47,6 +47,17 @@ public:
     // a few seconds cannot drag the baseline up behind it.
     static constexpr int kRttMinBuckets = 10;
 
+    // The BASE delay: the smallest round trip a probe measured while the wire held at most one
+    // packet of ours, kept as the minimum of the last kBaseHistMinutes one-minute minima (RFC 6817
+    // section 2.5 keeps ten; libutp's base-delay history keeps thirteen). A minute is the unit so a
+    // route change ages out in ten minutes, and an hour-long queue cannot become the baseline.
+    static constexpr int kBaseHistMinutes = 10;
+    static constexpr uint64_t kBaseMinuteMs = 60'000;
+    // A probe is ADMITTED to the base when the reliable bytes on the wire and unacknowledged at the
+    // moment it went out were no more than this: one packet, so the probe did not wait behind a
+    // queue of our own making. It is the reading `queue = inflight - base` is measured from.
+    static constexpr int kBaseAdmitUnackedBytes = 1200;
+
     // ---- The control law's constants ----
 
     // The envelope. The floor is an honest minimum -- a join on a link that thin is slow, not
@@ -183,7 +194,11 @@ private:
     struct Outstanding {
         uint32_t token  = 0;   // 0 = the entry is free
         uint64_t sentMs = 0;
+        bool     admitted = false;  // minted with <= kBaseAdmitUnackedBytes on the wire: base material
     };
+
+    // What one run of the law decided; the per-slot change of it is printed as a transition.
+    enum class LawKind : uint8_t { Hold = 0, Brake, Climb, Dead };
 
     // Everything the net thread alone owns, in one struct so an armed teardown is one assignment
     // (the two counters beside it are atomics, written from any thread, and cannot be copied over).
@@ -218,6 +233,12 @@ private:
         int         echoesRefused = 0;  // OUR answers the send buffer would not take
         int         rttBucketMin[kRttMinBuckets]{};
         uint64_t    rttBucketSec[kRttMinBuckets]{};
+        // The base delay's history: the finished minutes' minima (a ring, oldest overwritten), the
+        // minute being filled, and when it began. A minute with no admitted reply pushes nothing.
+        int         baseHist[kBaseHistMinutes]{};
+        int         baseCount = 0, baseNext = 0;
+        int         baseCurMin = -1;
+        uint64_t    baseMinuteStartMs = 0;
 
         // ---- The law's state: two smoothed byte rates and what they decided ----
         // Acknowledged delivery, smoothed. The term `inflight` is divided by, so RELIABLE-ONLY:
@@ -235,6 +256,11 @@ private:
         // The last decision's inputs, kept for the reported line: a field log that cannot show why
         // the rate moved is the state this whole arc started in.
         int64_t  inflightMs = 0;
+        // inflight less the base delay (the whole inflight while no base exists), computed beside it
+        // and printed; the law does not read it yet.
+        int64_t  queueMs = 0;
+        // The kind of the previous decision, so a change of it is one log line.
+        LawKind  lastKind = LawKind::Hold;
         // What the law wants, and what the connection was last told, so a write costs one per move.
         // Both open at the rate `TuneConnection` already wrote, NOT at zero: a link whose demand
         // never reaches kIdleDemandBytes decides nothing, and zeroes here would report a rate of 0
@@ -263,6 +289,14 @@ private:
 
     // The smallest round trip in the rttMin window, or -1 with nothing measured yet.
     static int RttMinFor_(const Measured& m, uint64_t nowMs);
+    // The base delay: the minimum over the minute history and the minute being filled, or -1 with
+    // no admitted probe measured yet.
+    static int BaseMs_(const Measured& m);
+    // Close the base minute that has run its 60 s: push its minimum if it has one, start the next.
+    static void RollBaseMinute_(Measured& m, uint64_t nowMs);
+    static const char* LawName_(LawKind kind);
+    // "<n> ms", or "-" while there is no base: the text both log lines print after `base=`.
+    static void FormatBase_(const Measured& m, char* buf, size_t cap);
     // Retire outstanding probes older than kProbeLostMs, counting them lost.
     static void ExpireOutstanding_(Measured& m, uint64_t nowMs);
     // The anchor's bound: the largest raw `served` reading in the window. Separate from the EWMA
@@ -273,8 +307,9 @@ private:
     static void OpenWindow_(Measured& m, uint64_t nowMs, int64_t delivered, uint64_t recv);
 
     // The law, run once per 10 Hz sample against the two smoothed rates -- on the SAMPLE cadence,
-    // not the reported second, because a join has to climb inside its own download.
-    static void Steer_(Measured& m);
+    // not the reported second, because a join has to climb inside its own download. Returns what it
+    // decided; the caller prints the change.
+    static LawKind Steer_(Measured& m);
 
     Slot slots_[kSlots];
     // Whether the law's decisions are handed to the transport at all.
