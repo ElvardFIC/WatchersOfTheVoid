@@ -49,26 +49,32 @@ constexpr int kRowCount = static_cast<int>(sizeof kRows / sizeof kRows[0]);
 
 // Each row's class as an FName ({0,0} until converted): an index compare tells a spawn's class from the row's.
 R::FName g_rowNames[kRowCount] = {};
+bool     g_rowAsked[kRowCount] = {};
 
 // What a row learned about one listing of its class.
 struct Entry {
     void*    cls = nullptr;
     uint64_t listing = 0;
     int32_t  off = -1;  // -1: the guard function, the property or its FString type is missing
+    const wchar_t* missing = L"";  // what is missing when off is -1: L"guard" or the property's name
     bool     saidStamped = false;
     bool     saidFailed = false;
 };
 Entry g_entries[kRowCount];
 int   g_failures = 0;
 
-// The row of `cls`, or -1. A row's name converts once (the engine's name pool is process-wide, so it holds across
-// worlds); a row not yet converted, because the string library is not up, is compared by rendering the name, so a
-// class with a row is never passed over for want of its FName.
+// The row of `cls`, or -1. A row's name converts once, after the string library is up (the engine's name pool is
+// process-wide, so it holds across worlds); it is asked once only, so a conversion that failed is not asked again
+// on every spawn. A row with no converted name is compared by rendering the class's, so a class with a row is never
+// passed over for want of its FName.
 int RowOf(void* cls) {
     const R::FName& name = R::NameOf(cls);
     for (int i = 0; i < kRowCount; ++i) {
         R::FName& rowName = g_rowNames[i];
-        if (rowName.ComparisonIndex == 0) rowName = fname_utils::StringToFName(kRows[i].cls);
+        if (!g_rowAsked[i] && fname_utils::Resolved()) {
+            g_rowAsked[i] = true;
+            rowName = fname_utils::StringToFName(kRows[i].cls);
+        }
         const bool same = rowName.ComparisonIndex != 0
                               ? name.ComparisonIndex == rowName.ComparisonIndex && name.Number == rowName.Number
                               : R::NameEquals(name, kRows[i].cls);
@@ -78,9 +84,11 @@ int RowOf(void* cls) {
 }
 
 // The property's offset when the class still declares the row's guard function and the property is an FString,
-// else -1. Names compare without case, as the engine's do.
-int32_t StringOffset(const Row& row, void* cls) {
+// else -1, with `what` naming the missing piece. Names compare without case, as the engine's do.
+int32_t StringOffset(const Row& row, void* cls, const wchar_t*& what) {
+    what = L"guard";
     if (!facts::ResolveOn(row.guard, cls)) return -1;
+    what = row.prop;
     int32_t      off = -1;
     std::wstring type;
     if (!R::PropertyOffsetAndClass(cls, row.prop, off, type)) return -1;
@@ -103,7 +111,9 @@ bool Stamp(void* actorClass, void* deferredActor) {
         const bool keepSaid = listing == 0 && sameListing;
         const bool saidStamped = keepSaid && e.saidStamped;
         const bool saidFailed = keepSaid && e.saidFailed;
-        e = Entry{actorClass, listing, StringOffset(row, actorClass), saidStamped, saidFailed};
+        const wchar_t* missing = L"";
+        const int32_t off = StringOffset(row, actorClass, missing);
+        e = Entry{actorClass, listing, off, missing, saidStamped, saidFailed};
     }
     if (deferredActor && e.off >= 0 && field_io::WriteFStringField(deferredActor, e.off, row.value)) {
         if (!e.saidStamped) {
@@ -115,7 +125,7 @@ bool Stamp(void* actorClass, void* deferredActor) {
     ++g_failures;
     if (!e.saidFailed) {
         e.saidFailed = true;
-        UE_LOGE("[NQ] stamp failed %ls %ls", row.cls, row.prop);
+        UE_LOGE("[NQ] stamp failed %ls %ls", row.cls, e.off < 0 ? e.missing : row.prop);
     }
     return false;
 }

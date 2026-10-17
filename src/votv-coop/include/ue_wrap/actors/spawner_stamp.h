@@ -22,7 +22,7 @@ namespace ue_wrap::spawner_stamp {
 // no longer known. The guard, the property's offset and its type are resolved once per listing of the class
 // (object_index::ClassListingId), the cost of a call after that being the listing compare; a class the index does
 // not list (id 0) is resolved on every call. The first stamp says `[NQ] stamped <class> <property>`, a failed one
-// `[NQ] stamp failed <class> <property>`, each once per listing, and once per class object while the index does
+// `[NQ] stamp failed <class> <what>` (`guard`, or the property's name), each once per listing, and once per class object while the index does
 // not list it. Game thread.
 bool Stamp(void* actorClass, void* deferredActor);
 

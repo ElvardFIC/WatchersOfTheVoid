@@ -241,10 +241,12 @@ bool SpawnFreshNpcMirror(const std::wstring& classW, void* actorClass, uint32_t 
     // written here, before the finish runs the class's BeginPlay on it.
     if (!ue_wrap::spawner_stamp::Stamp(actorClass, spawned)) {
         // The drop: Source warns and skips an entity it cannot spawn (reference/source-sdk-2013/src/game/server/
-        // mapentities.cpp:585, "Can't init %s"), and MTA either fails the add packet or keeps the element for the
-        // streamer to retry. Here the spawn is dropped, not retried: a mirror whose guard constant is unknown
-        // would run the class's BeginPlay unstamped, and that quits this machine's game. A game that changed the
-        // constant's path changes it for every later attempt too, so a retry would only repeat the drop.
+        // mapentities.cpp:585, "Can't init %s"); MTA keeps an element whose game entity it cannot create, for the
+        // streamer to retry (reference/mtasa-blue/Client/mods/deathmatch/logic/CClientStreamElement.cpp:107), and
+        // drops the connection on a packet it cannot read (its CPacketHandler.cpp:5648). Here the spawn is dropped, not retried: a mirror whose
+        // guard constant is unknown would run the class's BeginPlay unstamped, and that quits this machine's game. A
+        // game that changed the constant's path changes it for every later attempt too, so a retry would only
+        // repeat the drop.
         // Said once per listing of the class (once per class object while the index does not list it): the
         // stamp's own line carries the property, this one the mirror.
         const uint64_t listing = OI::ClassListingId(actorClass);
