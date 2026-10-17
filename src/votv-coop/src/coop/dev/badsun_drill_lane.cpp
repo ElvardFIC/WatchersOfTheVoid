@@ -69,7 +69,8 @@ constexpr float kAt2358 = (23 * 60 + 58) / 1440.f;
 constexpr int   kBadSunMode = 7;       // the midnight roll's "always" game mode
 // The end arm's gate: the widget's ramp clamped at 1.0 and held there for kAlphaHold. Both peers' ramps then fade for
 // the same 60 s, so the host's remove() runs first by the clock lag and the client's copy is still fading when the
-// host's absent lands. The hold is a margin for the two copies' own 5 s activation poll, not a readiness clock.
+// host's absent lands. The hold is a margin for the two copies' own 5 s activation poll plus the clock lag, not a
+// readiness clock: at 6 s the rig's client copy was still ramping and ended 7 s before the host's.
 constexpr float kAlphaGate = 1.0f;
 constexpr float kSkyTolerance = 0.001f;
 constexpr int   kMaxDrainFails = 10;
@@ -83,7 +84,7 @@ constexpr auto  kEdgeCopyBound = std::chrono::seconds(10);  // midnight: the cop
 constexpr auto  kCallBound = std::chrono::seconds(10);    // cheat: after the client's own call
 constexpr auto  kClockBound = std::chrono::seconds(60);   // the host's clock reaches 08:00 on the client
 constexpr auto  kApplyBound = std::chrono::seconds(60);   // the seed's apply lands
-constexpr auto  kAlphaHold = std::chrono::seconds(6);     // end: the ramp has been full this long
+constexpr auto  kAlphaHold = std::chrono::seconds(15);    // end: the ramp has been full this long
 constexpr auto  kAlphaBound = std::chrono::seconds(120);  // end: the ramp reaches the gate and holds
 constexpr auto  kRemoveBound = std::chrono::seconds(150); // end: the host's fade and remove()
 constexpr auto  kAbsentBound = std::chrono::seconds(400); // end: the client waits for the host's whole run
@@ -395,6 +396,7 @@ void HostCopy() {
 // lane's own absent apply. It runs once a joiner's world is taken and not yet ready, so the blob holds a copy the
 // host no longer has and the seed at the joiner's world-ready says absent.
 void HostRejoin(coop::net::Session* s) {
+    if (!Due()) return;
     for (int slot = 1; slot < static_cast<int>(coop::players::kMaxPeers); ++slot) {
         if (!coop::save_transfer::WorldTakenFor(slot) || s->IsSlotWorldReady(slot)) continue;
         Snap sn;
@@ -667,7 +669,7 @@ void OnDeadline(bool host) {
     case P::AbsentWait: return Fail(false, "the host's absent never arrived within %d s", static_cast<int>(kAbsentBound.count()));
     case P::OwnRemove: {
         const uint64_t removes = WB::GetCounts().removesRan;
-        if (removes > g_c0.removesRan)
+        if (removes > g_c0.removesRan && sn.n == 0)
             return Fail(false, "this copy ended but the sky's sunIntensityMult did not read within %d s of the host's absent",
                         static_cast<int>(kOwnRemoveBound.count()));
         return Fail(false, "this copy's own remove() did not run within %d s of the host's absent (removes %llu)", static_cast<int>(kOwnRemoveBound.count()), static_cast<unsigned long long>(removes));

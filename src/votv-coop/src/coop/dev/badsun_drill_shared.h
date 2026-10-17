@@ -38,7 +38,7 @@ enum class Arm {
     // join, rig save, a rejoin on the client's first verdict: the host sets 08:00. Joiner PASS: the seed's apply
     // counted one copy (the blob's) and spawned none, and that copy goes active.
     Join,
-    // end, rig save: the host sets 08:00, waits for its widget's alpha to read 1.0 for 6 s (both copies' ramps then
+    // end, rig save: the host sets 08:00, waits for its widget's alpha to read 1.0 for 15 s (both copies' ramps then
     // clamp, so their fades are the same length), sets 18:59. Host PASS: its own remove() ran and the lane sent absent.
     // Client PASS: absent received while its copy was active, its own remove() after, and the sky's sunIntensityMult
     // back at 1. FAIL when the absent apply neither left an active copy nor destroyed an inactive one.
