@@ -21,7 +21,9 @@
 #include "ue_wrap/core/call.h"
 #include "ue_wrap/engine/engine.h"
 #include "ue_wrap/actors/kerfur.h"  // NeutralizeAiTimers
+#include "ue_wrap/actors/spawner_stamp.h"
 #include "ue_wrap/core/log.h"
+#include "ue_wrap/core/object_index.h"
 #include "ue_wrap/actors/puppet.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/sdk_profile.h"  // NpcClass_Wisp (the wisp mirror keeps its actor tick)
@@ -39,6 +41,7 @@ namespace {
 
 namespace R = ue_wrap::reflection;
 namespace E = ue_wrap::engine;
+namespace OI = ue_wrap::object_index;
 
 // The client-side UFunction cache, filled by SetClientRefs once npc_sync::Install resolves them.
 // Plain storage: SetClientRefs and the receivers all run on the game thread.
@@ -47,6 +50,10 @@ void*   g_finishSpawnFn       = nullptr;
 void*   g_gsCdo               = nullptr;
 int32_t g_spawnReturnParamOff = -1;
 void*   g_k2DestroyFn         = nullptr;
+
+// The class listing a dropped stamp was last said for (the pointer is compared, never read through).
+void*    g_stampDropClass   = nullptr;
+uint64_t g_stampDropListing = 0;
 
 using coop::element::NpcMirrors;   // canonical accessor (coop/element/mirror_managers.h)
 
@@ -228,6 +235,26 @@ bool SpawnFreshNpcMirror(const std::wstring& classW, void* actorClass, uint32_t 
                 classW.c_str(), elementId);
         // Cleared so a later local spawn of the same class does not pass through.
         coop::npc_sync::ClearIncomingNpcSpawn();
+        return false;
+    }
+    // Spawned as the game's own spawner spawns the class: what that spawner writes between the two halves is
+    // written here, before the finish runs the class's BeginPlay on it.
+    if (!ue_wrap::spawner_stamp::Stamp(actorClass, spawned)) {
+        // Said once per listing of the class: the stamp's own line carries the property, this one the mirror.
+        const uint64_t listing = OI::ClassListingId(actorClass);
+        if (listing == 0 || actorClass != g_stampDropClass || listing != g_stampDropListing) {
+            g_stampDropClass = actorClass;
+            g_stampDropListing = listing;
+            UE_LOGE("npc-sync[client OnSpawn]: no spawner stamp for '%ls' -- mirror eid=%u dropped, its begun "
+                    "actor destroyed unfinished (the class's BeginPlay would end this game)",
+                    classW.c_str(), elementId);
+        }
+        if (g_k2DestroyFn && R::IsLive(spawned)) {
+            R::CallFunction(spawned, g_k2DestroyFn, nullptr);
+        } else if (!g_k2DestroyFn) {
+            UE_LOGE("npc-sync[client OnSpawn]: g_k2DestroyFn=nullptr at stamp-failure cleanup -- actor %p "
+                    "LEAKS (Install gating invariant violated)", spawned);
+        }
         return false;
     }
     {

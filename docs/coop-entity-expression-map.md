@@ -176,7 +176,8 @@ graph spawns are caught at the native seam and enrolled at the next pose tick. A
 character on a joiner is adopted by class after a deferred poll, never by key, because the
 kerfur's key is random per peer. Pose is a batch, rotated fair-share past a batch's worth. A
 destroy is caught before it runs; a self-destroy inside the Blueprint is found dead by the pose
-walk and retired. `[V]`
+walk and retired. `[V]` A client's mirror of a character is stamped as the native spawner (`spawner_stamp`): the
+constants a class's own spawner writes between the two spawn halves are written there too. `[?]`
 
 The wisp swarm's spawns are `EX_CallMath` from the swarm trigger's graph and are caught at the
 native seam gated by the calling class; the ambient sky wisps are host-authored, their spawner
