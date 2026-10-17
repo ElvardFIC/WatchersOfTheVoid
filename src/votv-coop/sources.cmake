@@ -350,6 +350,7 @@ set(VOTVCOOP_SOURCES
     src/coop/text/repertoire.cpp
     src/coop/text/name_filter.cpp
     src/coop/config/config_census.cpp
+    src/coop/config/config_ini_read.cpp
     src/coop/config/config_example.cpp
     src/coop/config/config_ini_write.cpp
     src/coop/config/config_registry.cpp

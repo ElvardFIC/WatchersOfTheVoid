@@ -2,8 +2,9 @@
 // the ini mutation engine (config_ini_write.cpp), the runtime layer (config_runtime.cpp), the
 // session layer (config_session.cpp) and the selftest TU.
 //
-// The internal-header pattern: shared primitives are declared here and defined in config.cpp,
-// and never exported to include/ -- product code uses the public coop/config/config.h API only.
+// The internal-header pattern: shared primitives are declared here and defined in config.cpp or
+// config_ini_read.cpp, and never exported to include/ -- product code uses the public
+// coop/config/config.h API only.
 
 #pragma once
 
