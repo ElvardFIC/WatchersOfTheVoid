@@ -94,7 +94,7 @@ pub fn version_gate(game: &str, proto: i64, game_build: &str) -> Result<(), Stri
 /// This is the kProtocolVersion of the build that first carries the proof's client half. A server
 /// test reads `protocol.h` and fails when this exceeds the tree's own kProtocolVersion, so a value
 /// no build can reach (no build is then required to prove) cannot be committed.
-pub const MIN_PROVED_PROTO: i64 = 229;
+pub const MIN_PROVED_PROTO: i64 = 230;
 
 /// A create from this build cannot be listed without a valid proof.
 pub fn proof_required(proto: i64) -> bool {
