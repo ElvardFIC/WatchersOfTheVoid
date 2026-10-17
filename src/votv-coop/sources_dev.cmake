@@ -118,6 +118,7 @@ set(VOTVCOOP_DEV_SOURCES
     src/coop/dev/rehost_rejoin.cpp
     src/coop/dev/join_abort_drill.cpp
     src/coop/dev/puppet_head_probe.cpp
+    src/coop/dev/puppet_reg_probe.cpp
     src/coop/dev/wire_census.cpp
     src/coop/dev/perf_probe.cpp
     src/coop/dev/input_focus_probe.cpp
