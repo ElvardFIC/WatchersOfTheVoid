@@ -195,6 +195,15 @@ native seam; on a client those creatures' own bodies are refused, so a mirror ar
 mirror's tick is parked and whatever component its class simulates with is stopped, found from the
 class's members, so the pose drive alone moves it. `[V]`
 
+**The Bad Sun** is the event actor no mirror expresses: every peer runs its own `badSun_C` copy and
+its harm is local, so nothing crosses as a pose. Identity: none, a copy is found by class. Birth:
+the save (a joiner's copy comes with the join blob) or `Spawn Bad Sun`. Existence is the host's,
+through `coop/world/weather_badsun`: the host's spawn and its copy's `remove()` send an absolute
+present or absent, a client's own spawn is refused at the script-body gate, and a joiner is seeded
+at its world-ready. A client keeps exactly one copy. End: each copy's own fade; the host's absent
+destroys an inactive copy at once and leaves an active one to end by its own clock. The wire half is
+`[?]` until the lane's drill runs; the Blueprint routes are `[RD]`.
+
 **The materialisation window.** A mirror's component delegates bind during its begin-play, inside
 the finish-spawning call, while its row is installed only after that call returns; so for a
 moment a row lookup answers "not a mirror" for an actor that is. The window is published as a
@@ -297,6 +306,7 @@ Every place two seams can express one actor, and what deduplicates it:
 | a joiner's save-loaded anchored hook and the host's replay of the same hook | the host mints the save key, and the joiner skips a key the game already resolves `[V]` |
 | a level-placed hook variant, which attaches itself on every peer | it is not in the lane's class table, and the owner's own field can never name it `[V]` |
 | a conversion's fresh prop and the generic spawn seams | the captured form is tracked and its broadcast suppressed `[V]` |
+| a joiner's save-loaded Bad Sun copy and the seed's present, or the host's live present | the apply counts the live copies first: one copy is left alone, none is spawned, two are logged and not repaired `[?]` |
 | a client's menu-spawned prop and the host's copy of it, spawned from the intent | the client's own actor IS the mirror: the host sets the client's key, and the echo resolves it back to that actor and converges its pose instead of minting a second `[V]` |
 
 ## Needs a probe

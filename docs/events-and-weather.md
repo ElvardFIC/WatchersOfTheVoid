@@ -61,7 +61,16 @@ strike is a transient actor; the host observes its spawn and sends the location
 toggles at noon on every peer -- a living one ends, else a one-percent roll starts one --
 dispatched inside the Blueprint, where the script-body gate still sees the toggle: the host sends
 its red sky as each toggle leaves it, and a client refuses its own and runs the host's through
-the same toggle (`coop/world/weather_redsky`). The black fog and the rolling fog the clock rolls
+the same toggle (`coop/world/weather_redsky`). The Bad Sun is a story event actor too, but every
+peer runs its own copy by the shared clock and the harm is local: its widget traces from the local
+camera and hurts the local player. The host owns whether a copy exists -- it sends its state as
+`Spawn Bad Sun` returns and as its copy's own `remove()` returns (the midnight roll stays the host's,
+and now crosses). A client's own `Spawn Bad Sun` is refused at the script-body gate, and a client
+keeps exactly one copy: the host's present spawns one if none lives, and the host's absent destroys
+an inactive copy at once and leaves an active one to fade by its own clock
+(`coop/world/weather_badsun`). The clock half is `[V]` (a client's own copy activates at 07:00); the
+wire half is `[?]` until the lane's drill runs, and both Blueprint routes (the day cycle's midnight,
+the cheat menu) are `[RD]`. The black fog and the rolling fog the clock rolls
 funnel through the engine's finish-spawning call, where a client-side catch destroys any birth
 the host did not command (`coop/world/weather_event_births`).
 
@@ -171,6 +180,7 @@ task's state and pay no reward. The rewards land in the shared balance, on
 | the clock, the sky | the host | streamed; the client's clock held at zero rate |
 | rain, snow, fog, wind, lightning | the host | scheduler observed on the host, cancelled on the client; the client's births killed |
 | the red sky | the host | its toggle sent from the host as it returns, refused on the client |
+| the Bad Sun's existence | the host | its spawn and its copy's `remove()` sent as they return, a client's own spawn refused; each peer's copy runs by the shared clock and its harm is local |
 | fireflies | each peer | peer-symmetric union |
 | ambient spawners | the host | refused on clients at the script-body gate; the camera-anchored ones per peer |
 | a scheduled or story event | the host | observed at its verb; replayed on the client per row |
@@ -185,7 +195,7 @@ task's state and pay no reward. The rewards land in the shared balance, on
 | Kind | Direction | Carries |
 |---|---|---|
 | `ClockPose` (stream), `SkyState` | the host to all | the clock and the day number; the dome, the moon and the eye |
-| `WeatherState`, `LightningStrike`, `RedSky` | the host to all | the state fields; a strike location; the red sky's edge |
+| `WeatherState`, `LightningStrike`, `RedSky`, `BadSun` | the host to all | the state fields; a strike location; the red sky's edge; whether a Bad Sun exists |
 | `FireflySpawn` | each peer, relayed | one spawn |
 | `EventFire`, `EventSnapshot`, `EventCue` | the host to all; the host to one joiner; the host to all | a fired row; an in-flight event; an emitter cue |
 | `WorldActorSpawn`, `WorldActorDestroy`, `WorldActorPose` (stream) | the host to all | an event actor's birth with scale and blob; its death; full-rotation poses |
@@ -196,8 +206,9 @@ task's state and pay no reward. The rewards land in the shared balance, on
 ## Late join
 
 The clock streams from the connect, so a joiner's first sample once its world exists sets its time
-and day number; the sky (its eye included), the weather state and the red sky's state, red or
-clear, are seeded at the joiner's world-ready.
+and day number; the sky (its eye included), the weather state, the red sky's state, red or
+clear, and whether a Bad Sun exists are seeded at the joiner's world-ready; the join blob already
+carries a saved Bad Sun copy, and the seed settles it against the host's state.
 The in-flight events arrive as snapshot entries and replay with the override; the live cues are
 re-sent; every tracked event actor is re-spawned on the joiner; the pyramid's gather in flight
 is re-sent after its mirrors exist; the alarm's current flag is sent unconditionally, and the
@@ -222,7 +233,7 @@ edge. A one-shot cue a joiner was not present for is missed, by definition.
 | Concept | Files |
 |---|---|
 | the clock and the sky | `coop/world/time_sync`, `coop/world/day_edge`, `coop/world/sky_sync`, `ue_wrap/world/daynightcycle`, `ue_wrap/world/profile`, `ue_wrap/world/event_list`, `ue_wrap/world/skysphere` |
-| weather | `coop/world/weather_sync`, `coop/world/weather_rain`, `coop/world/weather_fog`, `coop/world/weather_lightning`, `coop/world/weather_redsky`, `coop/world/weather_event_births`, `ue_wrap/world/directionalwind` |
+| weather | `coop/world/weather_sync`, `coop/world/weather_rain`, `coop/world/weather_fog`, `coop/world/weather_lightning`, `coop/world/weather_redsky`, `coop/world/weather_badsun`, `coop/world/weather_event_births`, `ue_wrap/world/directionalwind`, `ue_wrap/world/bad_sun` |
 | fireflies and the spawners | `coop/world/firefly_sync`, `coop/world/spawn_authority` |
 | events | `coop/world/event_fire_sync`, `coop/world/event_active_sync`, `coop/world/event_cue_sync`, `coop/dev/event_trigger` |
 | event actors and the pyramid | `coop/world/world_actor_sync`, `coop/world/world_actor_mirror`, `coop/creatures/piramid_sync` |
