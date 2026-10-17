@@ -209,6 +209,16 @@ void* PropertyInnerStruct(void* owningClass, const wchar_t* propName) {
     return nullptr;
 }
 
+std::wstring PropertyClassName(void* owningStruct, const wchar_t* propName) {
+    const uint8_t* field = FindPropertyField(owningStruct, propName);
+    if (!field) return {};
+    // FField::ClassPrivate (an FFieldClass*, its Name first): RE-UE4SS MemberVariableLayout_4_27_Template.ini
+    // [FField] [FFieldClass], the read script_fingerprint makes for a property's type.
+    const uint8_t* const fieldClass = *reinterpret_cast<const uint8_t* const*>(field + O::FField_ClassPrivate);
+    if (!fieldClass) return {};
+    return ToString(*reinterpret_cast<const FName*>(fieldClass + O::FFieldClass_Name));
+}
+
 void* PropertyEnum(void* owningStruct, const wchar_t* propName) {
     uint8_t* field = FindPropertyField(owningStruct, propName);
     if (!field) return nullptr;
