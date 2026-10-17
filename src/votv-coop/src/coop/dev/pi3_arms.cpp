@@ -35,29 +35,33 @@ const char* const kRewind = "daynightCycle_C::rewind";
 // The paths are the object paths of the class dumps (VotV/Content/<x>/<y>.<y>_C is /Game/<x>/<y>.<y>_C).
 const Spec kSpecs[kSpecCount] = {
     // The row arms: the host spawns, the client's puppet is the site.
-    {"wisp_w", L"wisp_w_C", L"/Game/objects/wisp_w.wisp_w_C", nullptr, "wisp_w", PI3_WISP_W_JUDGED, {}, nullptr,
+    {"wisp_w", L"wisp_w_C", L"/Game/objects/wisp_w.wisp_w_C", "wisp_w", PI3_WISP_W_JUDGED, {}, nullptr,
      true, 3970},
-    {"wisp_o", L"wisp_o_C", L"/Game/objects/wisp_o.wisp_o_C", nullptr, "wisp_o", {"lib_C::setSettings"}, {}, nullptr,
+    {"wisp_o", L"wisp_o_C", L"/Game/objects/wisp_o.wisp_o_C", "wisp_o", {"lib_C::setSettings"}, {}, nullptr,
      true, 1000},
-    {"wisp_p", L"wisp_p_C", L"/Game/objects/wisp_p.wisp_p_C", nullptr, "wisp_p", {"PlaySound2D", "AddToViewport"},
+    {"wisp_p", L"wisp_p_C", L"/Game/objects/wisp_p.wisp_p_C", "wisp_p", {"PlaySound2D", "AddToViewport"},
      {kRewind}, "rewind", true, 1000},
-    {"kelura", L"kelura_C", L"/Game/objects/kelura.kelura_C", nullptr, "kelura", {kRowEnd, kQuit}, {}, nullptr, true,
+    {"kelura", L"kelura_C", L"/Game/objects/kelura.kelura_C", "kelura", {kRowEnd, kQuit}, {}, nullptr, true,
      1000},
-    // The orborb ends the game in its own BeginPlay unless this string is stamped first (npc_orborb.cpp:203).
-    {"orborb", L"npc_orborb_C", L"/Game/objects/npc/npc_orborb.npc_orborb_C", L"O0ttQI_-jnVwHSztT-bb_w", "orborb",
+    // The orborb ends the game in its own BeginPlay unless its spawner's string is stamped first
+    // (ue_wrap/actors/spawner_stamp.h): the drill's spawn stamps it as every arm's does.
+    {"orborb", L"npc_orborb_C", L"/Game/objects/npc/npc_orborb.npc_orborb_C", "orborb",
      {kRowEnd, kQuit}, {}, nullptr, true, 10188},
-    {"grunt", L"prop_grunt_C", L"/Game/objects/prop_grunt.prop_grunt_C", nullptr, "grunt", {"SetControlRotation"}, {},
+    // The orb's birth on the still peer (no verdict of the spawner's: the host holds the orb alive for the rig's
+    // join): no judged verbs, no horizon. The counter is the orborb's, which the host reads and no one judges.
+    {"orbbirth", L"npc_orborb_C", L"/Game/objects/npc/npc_orborb.npc_orborb_C", "orborb", {}, {}, nullptr, true, 0},
+    {"grunt", L"prop_grunt_C", L"/Game/objects/prop_grunt.prop_grunt_C", "grunt", {"SetControlRotation"}, {},
      nullptr, true, 1000},
     // The control: this machine's own player IS served, as in single player, and the verbs are cancelled by the drill.
-    {"control", L"kelura_C", L"/Game/objects/kelura.kelura_C", nullptr, "kelura", {}, {kRowEnd, kQuit}, "served",
+    {"control", L"kelura_C", L"/Game/objects/kelura.kelura_C", "kelura", {}, {kRowEnd, kQuit}, "served",
      false, 1000},
     // The client arm: wisp_w at the host's puppet, wisp_p at the host's puppet (whole on a client), wisp_p at the
     // client's own pawn (a reading).
-    {"client", L"wisp_w_C", L"/Game/objects/wisp_w.wisp_w_C", nullptr, "wisp_w", PI3_WISP_W_JUDGED, {}, nullptr, true,
+    {"client", L"wisp_w_C", L"/Game/objects/wisp_w.wisp_w_C", "wisp_w", PI3_WISP_W_JUDGED, {}, nullptr, true,
      4000},
-    {"client", L"wisp_p_C", L"/Game/objects/wisp_p.wisp_p_C", nullptr, "wisp_p",
+    {"client", L"wisp_p_C", L"/Game/objects/wisp_p.wisp_p_C", "wisp_p",
      {kRewind, "PlaySound2D", "AddToViewport"}, {}, nullptr, true, 1000},
-    {"client", L"wisp_p_C", L"/Game/objects/wisp_p.wisp_p_C", nullptr, "wisp_p", {}, {}, nullptr, false,
+    {"client", L"wisp_p_C", L"/Game/objects/wisp_p.wisp_p_C", "wisp_p", {}, {}, nullptr, false,
      1000},
 };
 
@@ -76,7 +80,8 @@ const Spec& SpecOf(int id) { return kSpecs[id >= 0 && id < kSpecCount ? id : 0];
 ArmId ArmFromName(const char* name) {
     static const struct { const char* name; ArmId arm; } kArms[] = {
         {"wisp_w", ArmId::WispW}, {"wisp_o", ArmId::WispO}, {"wisp_p", ArmId::WispP}, {"kelura", ArmId::Kelura},
-        {"orborb", ArmId::Orborb}, {"grunt", ArmId::Grunt}, {"control", ArmId::Control}, {"client", ArmId::Client},
+        {"orborb", ArmId::Orborb}, {"orbbirth", ArmId::OrbBirth}, {"grunt", ArmId::Grunt},
+        {"control", ArmId::Control}, {"client", ArmId::Client},
     };
     for (const auto& a : kArms)
         if (name && std::strcmp(a.name, name) == 0) return a.arm;
@@ -90,6 +95,7 @@ const char* ArmName(ArmId arm) {
     case ArmId::WispP: return "wisp_p";
     case ArmId::Kelura: return "kelura";
     case ArmId::Orborb: return "orborb";
+    case ArmId::OrbBirth: return "orbbirth";
     case ArmId::Grunt: return "grunt";
     case ArmId::Control: return "control";
     case ArmId::Client: return "client";
@@ -105,6 +111,7 @@ int SpecIdOf(ArmId arm, int leg) {
     case ArmId::WispP: return kSpecWispP;
     case ArmId::Kelura: return kSpecKelura;
     case ArmId::Orborb: return kSpecOrborb;
+    case ArmId::OrbBirth: return kSpecOrbBirth;
     case ArmId::Grunt: return kSpecGrunt;
     case ArmId::Control: return kSpecControl;
     case ArmId::Client: return leg == 3 ? kSpecClientReading : leg == 2 ? kSpecClientWispP : kSpecClientWispW;
@@ -145,6 +152,8 @@ const char* FirstUncancelled(const Seen* seen, int n) {
             if (std::strcmp(seen[i].verb, verb) == 0 && seen[i].count > seen[i].cancelled) return seen[i].verb;
     return nullptr;
 }
+
+bool BirthGuardReached(const Seen* seen, int n) { return Find(seen, n, kRowEnd) || Find(seen, n, kQuit); }
 
 bool Complete(const Spec& spec, const Seen* seen, int n) {
     for (int i = 0; i < kMaxVerbs && spec.judged[i]; ++i)

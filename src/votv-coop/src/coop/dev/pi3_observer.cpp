@@ -43,6 +43,7 @@ UE_FACT_FN(kRowPi3SetControlRotation, "dev.pi3_drill", L"Controller", L"SetContr
 UE_FACT_FN(kRowPi3PlaySound2D, "dev.pi3_drill", L"GameplayStatics", L"PlaySound2D", Declared);
 UE_FACT_FN(kRowPi3AddToViewport, "dev.pi3_drill", L"UserWidget", L"AddToViewport", Declared);
 UE_FACT_FN(kRowPi3Spawn, "dev.pi3_drill", L"GameplayStatics", L"BeginDeferredActorSpawnFromClass", Declared);
+UE_FACT_FN(kRowPi3Finish, "dev.pi3_drill", L"GameplayStatics", L"FinishSpawningActor", Declared);
 
 // The six row stubs of PI-2b's names (rows 1-5 and 11), watched here under this file's own tags.
 UE_FACT_FN(kRowPi3ContactWispW, "dev.pi3_drill", L"wisp_w_C",
@@ -70,13 +71,13 @@ UE_FACT_FN(kRowPi3ContactGrunt, "dev.pi3_drill", L"prop_grunt_C",
 enum Verb : int {
     kLoadLevel, kEnd, kSetSettings, kSaveSlot, kSaveMain, kGamemodeSave, kRewind, kPunch,
     kScriptVerbs,
-    kQuit = kScriptVerbs, kSetRot, kPlaySound, kAddViewport, kGib,
+    kQuit = kScriptVerbs, kSetRot, kPlaySound, kAddViewport, kGib, kBirth,
     kVerbCount
 };
 const char* const kVerbNames[kVerbCount] = {
     "lib_C::loadLevel", "lib_C::end", "lib_C::setSettings", "saveSlot_C::save", "save_main_C::save",
     "mainGamemode_C::save", "daynightCycle_C::rewind", "mainPlayer_C::punch",
-    "QuitGame", "SetControlRotation", "PlaySound2D", "AddToViewport", "gib",
+    "QuitGame", "SetControlRotation", "PlaySound2D", "AddToViewport", "gib", "birth",
 };
 // The verbs cancelled when attributed; the others are recorded and run.
 bool Cancels(int verb) { return verb <= kGamemodeSave || verb == kQuit; }
@@ -101,6 +102,7 @@ void OnSetRotationPost(void* context, void* source, void* result);
 void OnPlaySoundPost(void* context, void* source, void* result);
 void OnAddViewportPost(void* context, void* source, void* result);
 void OnSpawnPost(void* context, void* source, void* result);
+void OnFinishPost(void* context, void* source, void* result);
 
 // One native hook: a pre hook that cancels (QuitGame) or a post hook that records.
 struct Hook {
@@ -112,13 +114,14 @@ struct Hook {
     bool                            done;
     bool                            failed;
 };
-constexpr int kHookCount = 5;
+constexpr int kHookCount = 6;
 Hook g_hooks[kHookCount] = {
     {&kRowPi3QuitGame, kQuit, &OnQuitPre, nullptr, nullptr, false, false},
     {&kRowPi3SetControlRotation, kSetRot, nullptr, &OnSetRotationPost, nullptr, false, false},
     {&kRowPi3PlaySound2D, kPlaySound, nullptr, &OnPlaySoundPost, nullptr, false, false},
     {&kRowPi3AddToViewport, kAddViewport, nullptr, &OnAddViewportPost, nullptr, false, false},
     {&kRowPi3Spawn, kGib, nullptr, &OnSpawnPost, nullptr, false, false},
+    {&kRowPi3Finish, kBirth, nullptr, &OnFinishPost, nullptr, false, false},
 };
 
 // ---- the state ----
@@ -296,6 +299,13 @@ void OnSpawnPost(void*, void* source, void* result) {
     if (prop && R::IsDescendantOfAny(R::ClassOf(result), &prop, 1)) Note(kGib, false);
 }
 
+// A birth: a spawn finished whose actor descends from an armed class. The class's BeginPlay runs inside the finish,
+// so every verb of that birth is recorded by the time this post fires, or never will be. The result is the finished
+// actor; the match is by the class names, as a caller's is, so a mirror (no bound site) is counted too.
+void OnFinishPost(void*, void*, void* result) {
+    if (g_armed && result && ChainHasArmedName(R::ClassOf(result))) Note(kBirth, false);
+}
+
 // ---- the installs ----
 
 void ArmHooks(bool on) {
@@ -449,5 +459,7 @@ bool TakeChanged() {
 int PuppetContacts() { return g_puppetContacts; }
 
 int OwnContacts() { return g_ownContacts; }
+
+int Births() { return g_rec[kBirth].count; }
 
 }  // namespace coop::dev::pi3_observer

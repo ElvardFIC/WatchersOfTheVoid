@@ -12,11 +12,12 @@ namespace coop::dev::pi3_drill::detail {
 
 constexpr int kMaxVerbs = 6;
 
-enum class ArmId : uint8_t { Off, WispW, WispO, WispP, Kelura, Orborb, Grunt, Control, Client };
+enum class ArmId : uint8_t { Off, WispW, WispO, WispP, Kelura, Orborb, OrbBirth, Grunt, Control, Client };
 
 // The spawner's steps: Wait for the session and the observer, Apart (walk away from the still body), Face it, Rest
-// (the body comes to a stand), Spawn the site with the observer armed, Observe until the horizon.
-enum class Phase : uint8_t { Wait, Apart, Face, Rest, Spawn, Observe, Done };
+// (the body comes to a stand), Spawn the site with the observer armed, Observe until the horizon. Hold is the
+// orbbirth arm's: the site lives on and is kept in view, with no verdict, for the join the rig makes after it.
+enum class Phase : uint8_t { Wait, Apart, Face, Rest, Spawn, Observe, Hold, Done };
 
 // One site and its verdict. `judged` are the verbs a puppet's touch must not reach (recorded: FAIL); `required` are
 // the verbs that must be recorded (a green's rewind, the control's served end and quit), `unmet` naming them.
@@ -24,7 +25,6 @@ struct Spec {
     const char*    label;    // the arm's config value, and its name on every line
     const wchar_t* cls;
     const wchar_t* path;     // the /Game object path the class is loaded from when the index lacks it
-    const wchar_t* stamp;    // written into NewVar_0 before BeginPlay (the orborb), else null
     const char*    counter;  // the PI-2b row counter the verdict reads
     const char*    judged[kMaxVerbs];
     const char*    required[kMaxVerbs];
@@ -35,7 +35,7 @@ struct Spec {
 
 // The table's rows, in the order the arms use them: a row arm's own, the control's, and the client arm's three legs.
 enum SpecId : int {
-    kSpecWispW, kSpecWispO, kSpecWispP, kSpecKelura, kSpecOrborb, kSpecGrunt, kSpecControl,
+    kSpecWispW, kSpecWispO, kSpecWispP, kSpecKelura, kSpecOrborb, kSpecOrbBirth, kSpecGrunt, kSpecControl,
     kSpecClientWispW, kSpecClientWispP, kSpecClientReading,
     kSpecCount
 };
@@ -63,6 +63,9 @@ const char* FirstJudged(const Spec& spec, const Seen* seen, int n);
 
 // A cancel-list verb with more calls than cancels, or null.
 const char* FirstUncancelled(const Seen* seen, int n);
+
+// The report holds a verb the orb's BeginPlay guard runs when it fails: lib_C::end or QuitGame.
+bool BirthGuardReached(const Seen* seen, int n);
 
 // Every judged and every required verb of the spec is in the report.
 bool Complete(const Spec& spec, const Seen* seen, int n);

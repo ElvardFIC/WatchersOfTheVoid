@@ -12,7 +12,8 @@
 // The verbs the observer cancels, in every mode and build, when attributed: lib_C::loadLevel, lib_C::end,
 // lib_C::setSettings, saveSlot_C::save, save_main_C::save, mainGamemode_C::save and QuitGame. The ones it records
 // and lets run: daynightCycle_C::rewind, mainPlayer_C::punch (on this machine's player), SetControlRotation (a
-// PlayerController's), PlaySound2D, AddToViewport and gib (BeginDeferredActorSpawnFromClass of a prop_C).
+// PlayerController's), PlaySound2D, AddToViewport, gib (BeginDeferredActorSpawnFromClass of a prop_C) and birth
+// (FinishSpawningActor of an actor of an armed class).
 
 #pragma once
 
@@ -76,5 +77,10 @@ bool TakeChanged();
 // Contacts of the armed classes' stubs since Arm, by toucher.
 int PuppetContacts();
 int OwnContacts();
+
+// The spawns of an armed class finished since Arm, by any caller (the verb "birth" of Report): a mirror the NPC
+// lane makes counts as the drill's own site does. Every verb the class's BeginPlay ran in that finish is in Report by
+// the time this counts it.
+int Births();
 
 }  // namespace coop::dev::pi3_observer

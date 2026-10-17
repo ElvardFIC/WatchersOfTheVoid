@@ -18,12 +18,11 @@
 #include "coop/player/remote_player.h"
 #include "coop/session/net_pump.h"  // HasAnnouncedWorldReady
 
+#include "ue_wrap/actors/spawner_stamp.h"
 #include "ue_wrap/core/cached_obj_ref.h"
-#include "ue_wrap/core/field_io.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/object_index.h"
 #include "ue_wrap/core/reflection.h"
-#include "ue_wrap/core/reflection_props.h"  // FindPropertyOffset
 #include "ue_wrap/engine/engine.h"
 #include "ue_wrap/engine/engine_pawn.h"
 
@@ -91,7 +90,10 @@ uint64_t g_spawnAt = 0;
 uint64_t g_anchorAt = 0;     // the drill's sight of the first contact: the horizon counts from it
 bool     g_failSaid = false;
 bool     g_legsOk = true;    // the client arm: every leg so far passed
-bool     g_stamped = true;   // the spawn's stamp took (false: the spawn is abandoned)
+bool     g_stamped = true;   // the spawn's stamp took (false: the spawn is abandoned, orbbirth's goes on)
+bool     g_holdLostSaid = false;  // orbbirth's Hold: the site died, said once
+bool     g_birthSaid = false;     // orbbirth's still peer: the first birth was judged and DONE said
+int      g_stampBaseline = 0;     // spawner_stamp::FailureCount() when the still peer armed
 uint32_t g_baseline = 0;
 uint64_t g_restRefAt = 0;
 uint64_t g_stillSaidAt = 0;
@@ -99,8 +101,9 @@ uint32_t g_contactTicks = 0;  // CheckContacts' call count, for its one-in-kCont
 bool     g_stillDirty = false;  // the records changed since the last STILL line
 bool     g_stillArmed = false;
 bool     g_uncancelledSaid = false;
-ue_wrap::FVector g_bodyPos{};
+ue_wrap::FVector g_spawnPos{};  // where the site is made: the body's rest for every arm, orbbirth's ring point B
 ue_wrap::FVector g_restRef{};
+std::vector<ue_wrap::FVector> g_ring;  // Apart's ring points, kept across the walk (orbbirth picks B from them)
 ue_wrap::CachedObjRef g_site;
 std::shared_ptr<DR::BackgroundWalk> g_walk;
 
@@ -205,6 +208,25 @@ void* ClassOfSpec(int specId) {
     return cls;
 }
 
+// The orbbirth still peer's verdict, on the first birth of the orb class its observer records: the class's birth
+// guard reached (lib_C::end or QuitGame, cancelled by the observer) is the FAIL, else PASS. A stamp that failed drops
+// the mirror before its finish, so a rise of the stamp's failure count with no birth is the other FAIL. DONE follows
+// WITHOUT EndLeg: the observer stays armed in Still mode until the session ends, so a mirror that wanders into this
+// machine's own player during the rig's grace is cancelled still.
+void JudgeOrbBirth(const Seen* seen, int n) {
+    const bool born = OB::Births() > 0;
+    if (!born && ue_wrap::spawner_stamp::FailureCount() <= g_stampBaseline) return;
+    g_birthSaid = true;
+    CheckContacts(ArmId::OrbBirth, /*now=*/true);
+    if (!born)
+        UE_LOGI("[PI-3] FAIL orbbirth stamp-failed");
+    else if (BirthGuardReached(seen, n))
+        UE_LOGI("[PI-3] FAIL orbbirth guard");
+    else
+        UE_LOGI("[PI-3] PASS orbbirth");
+    UE_LOGI("[PI-3] DONE orbbirth");
+}
+
 void StillTick(coop::net::Session* session, ArmId arm) {
     if (!g_stillArmed) {
         const bool late = Now() - g_worldUpAt >= kWaitBoundMs;
@@ -224,6 +246,7 @@ void StillTick(coop::net::Session* session, ArmId arm) {
             if (late) AbandonWait(arm, "class");
             return;
         }
+        g_stampBaseline = ue_wrap::spawner_stamp::FailureCount();
         OB::Arm(classes, n, OB::Mode::Still);
         g_obsArmed = true;
         g_stillArmed = true;
@@ -243,6 +266,7 @@ void StillTick(coop::net::Session* session, ArmId arm) {
             CheckContacts(arm, /*now=*/true);
             UE_LOGI("[PI-3] FAIL %s still-uncancelled %s", ArmName(arm), verb);
         }
+    if (arm == ArmId::OrbBirth && !g_birthSaid) JudgeOrbBirth(seen, n);
     if (OB::TakeChanged()) g_stillDirty = true;
     // A verb that repeats at tick rate changes the records every tick: the lines are coalesced, and the last state
     // is said once the interval has passed.
@@ -270,25 +294,26 @@ const char* NotReady(coop::net::Session* session, ArmId arm) {
     return nullptr;
 }
 
-// The stamp and the bind, inside the spawn: before the actor's BeginPlay and the overlaps its colliders report.
+// The stamp and the bind, inside the spawn: before the actor's BeginPlay and the overlaps its colliders report. The
+// stamp is every arm's (a class without a row stamps nothing and answers true).
 struct SpawnCtx {
-    const Spec* spec;
-    void*       cls;
+    ArmId arm;
+    void* cls;
 };
 
 void BeforeFinish(void* ctx, void* actor) {
     const SpawnCtx& c = *static_cast<const SpawnCtx*>(ctx);
     OB::Bind(actor);
-    if (!c.spec->stamp) return;
-    const int32_t off = R::FindPropertyOffset(c.cls, L"NewVar_0");
-    g_stamped = off >= 0 && ue_wrap::field_io::WriteFStringField(actor, off, c.spec->stamp);
+    g_stamped = ue_wrap::spawner_stamp::Stamp(c.cls, actor);
+    // The orbbirth host goes on: its own orb quits only into the observer's cancel, and the client's run is the proof.
+    if (!g_stamped && c.arm == ArmId::OrbBirth) UE_LOGI("[PI-3] host stamp failed");
 }
 
 void DoSpawn(ArmId arm) {
     const Spec& spec = SpecOf(SpecIdOf(arm, g_leg));
     const bool reading = arm == ArmId::Client && g_leg == 3;
     void* cls = ClassOfSpec(SpecIdOf(arm, g_leg));
-    ue_wrap::FVector at = g_bodyPos;
+    ue_wrap::FVector at = g_spawnPos;
     bool placed = true;
     if (arm == ArmId::Control || reading) {
         void* pawn = PL::Registry::Get().Local();
@@ -304,18 +329,54 @@ void DoSpawn(ArmId arm) {
     g_baseline = Counter(spec.counter);
     g_stamped = true;
     if (arm == ArmId::Client) coop::npc_sync::MarkIncomingNpcSpawn(cls);
-    SpawnCtx ctx{&spec, cls};
+    SpawnCtx ctx{arm, cls};
     void* site = E::SpawnActor(cls, at, /*inertPawn=*/false, &BeforeFinish, &ctx);
     if (arm == ArmId::Client) coop::npc_sync::ClearIncomingNpcSpawn();
     if (site) g_site.Set(site);
-    if (!site || !g_stamped) {
+    if (!site || (!g_stamped && arm != ArmId::OrbBirth)) {
         Abandon(arm, "spawn");
+        return;
+    }
+    if (arm == ArmId::OrbBirth) {
+        UE_LOGI("[PI-3] SPAWNED orbbirth");
+        g_holdLostSaid = false;
+        Go(Phase::Hold);
         return;
     }
     g_spawnAt = Now();
     g_anchorAt = 0;
     g_failSaid = false;
     Go(Phase::Observe);
+}
+
+// orbbirth's spawn point B: the point of Apart's ring farthest (flat) from `pawnAt`, which must be over kApartMinCm
+// away. The ring is the one the walk's first point A was taken from, so B is as far from the still body as A is.
+bool PickSpawnPoint(const ue_wrap::FVector& pawnAt) {
+    float best = -1.f;
+    for (const ue_wrap::FVector& p : g_ring) {
+        const float d = Dist(p, pawnAt, /*flat=*/true);
+        if (d > best) {
+            best = d;
+            g_spawnPos = p;
+        }
+    }
+    return best > kApartMinCm;
+}
+
+// Hold (orbbirth): no verdict and no end. The orb wanders, and a touch of this machine's own pawn runs a chain that
+// destroys it when the camera faces away from it, so the camera tracks the orb. A site that died is said once.
+void HoldTick(void* pawn) {
+    void* site = g_site.Get();
+    if (!site) {
+        if (!g_holdLostSaid) {
+            g_holdLostSaid = true;
+            UE_LOGI("[PI-3] HOLD lost orbbirth");
+        }
+        return;
+    }
+    ue_wrap::FVector at{};
+    if (pawn && E::TryGetActorLocation(site, at))
+        E::SetControlRotation(E::GetController(pawn), DR::LookAt(E::GetCameraLocation(), at));
 }
 
 // The leg ends: the next leg of the client arm, else the arm.
@@ -413,7 +474,7 @@ void SpawnerTick(coop::net::Session* session, ArmId arm) {
     void* body = StillBody(host);
     // The control's site and the client arm's last leg are made at the spawner's own pawn, once it stands apart.
     const bool ownSite = arm == ArmId::Control || (arm == ArmId::Client && g_leg == 3);
-    if ((g_phase <= Phase::Rest || !ownSite) && !body) {
+    if ((g_phase <= Phase::Rest || !ownSite) && !body && g_phase != Phase::Hold) {
         Abandon(arm, "peer-lost");
         return;
     }
@@ -426,12 +487,12 @@ void SpawnerTick(coop::net::Session* session, ArmId arm) {
             return;
         }
         if (!g_walk) {
-            const auto ring = DR::ReachableStandpoints(pawn, bodyAt, kRingCm, kRingPoints, kStandReachCm);
-            if (ring.empty()) {
+            g_ring = DR::ReachableStandpoints(pawn, bodyAt, kRingCm, kRingPoints, kStandReachCm);
+            if (g_ring.empty()) {
                 Abandon(arm, "apart");
                 return;
             }
-            g_walk = DR::StartBackgroundWalk(ring.front(), kStandReachCm, kWalkDeadlineS);
+            g_walk = DR::StartBackgroundWalk(g_ring.front(), kStandReachCm, kWalkDeadlineS);
             return;
         }
         const int state = g_walk->state.load();
@@ -439,6 +500,10 @@ void SpawnerTick(coop::net::Session* session, ArmId arm) {
         g_walk.reset();
         if (state != 1 || !E::TryGetActorLocation(pawn, pawnAt) || Dist(pawnAt, bodyAt, true) <= kApartMinCm) {
             Abandon(arm, "apart");
+            return;
+        }
+        if (arm == ArmId::OrbBirth && !PickSpawnPoint(pawnAt)) {
+            Abandon(arm, "spawn-point");
             return;
         }
         Go(Phase::Face);
@@ -451,7 +516,8 @@ void SpawnerTick(coop::net::Session* session, ArmId arm) {
         }
         // Load-bearing for the orborb: its timeline end quits the game only when the camera faces the orb.
         E::SetControlRotation(E::GetController(pawn), DR::LookAt(E::GetCameraLocation(), bodyAt));
-        g_bodyPos = g_restRef = bodyAt;
+        g_restRef = bodyAt;
+        if (arm != ArmId::OrbBirth) g_spawnPos = bodyAt;
         g_restRefAt = Now();
         Go(arm == ArmId::Control ? Phase::Spawn : Phase::Rest);
         return;
@@ -460,7 +526,7 @@ void SpawnerTick(coop::net::Session* session, ArmId arm) {
         const bool read = E::TryGetActorLocation(body, bodyAt);
         if (read && Dist(bodyAt, g_restRef) <= kRestMoveCm) {
             if (Now() - g_restRefAt >= kRestStillMs) {
-                g_bodyPos = bodyAt;
+                if (arm != ArmId::OrbBirth) g_spawnPos = bodyAt;
                 Go(Phase::Spawn);
             }
             return;
@@ -477,6 +543,9 @@ void SpawnerTick(coop::net::Session* session, ArmId arm) {
         return;
     case Phase::Observe:
         ObserveTick(arm);
+        return;
+    case Phase::Hold:
+        HoldTick(pawn);
         return;
     case Phase::Wait:
     case Phase::Done:
@@ -510,7 +579,8 @@ void OnDisconnect() {
     if (arm == ArmId::Off) return;
     if (g_active) {
         if (g_spawner) {
-            Abandon(arm, "peer-lost");
+            // A Hold site outlives the peer: the rig's join run needs the orb alive when the client returns.
+            if (g_phase != Phase::Hold) Abandon(arm, "peer-lost");
         } else {
             Disarm();
             g_active = false;

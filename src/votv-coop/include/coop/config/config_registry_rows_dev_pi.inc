@@ -12,8 +12,9 @@ CFG_FLAG(pi2_selftest, "pi2_selftest", "dev", false, "VOTVCOOP_PI2_SELFTEST",
     "caller-locals boot check and the registry's puppet-body query, each one [PI-2] PASS or FAIL line, "
     "then [PI-2] DONE. Registers and clears a test puppet on a spare peer slot; reads the bytecode of "
     "three classes, loading any that is not yet loaded.")
-CFG_ENUM(pi3_drill, "pi3_drill", "dev", "off", "off|wisp_w|wisp_o|wisp_p|kelura|orborb|grunt|control|client",
+CFG_ENUM(pi3_drill, "pi3_drill", "dev", "off", "off|wisp_w|wisp_o|wisp_p|kelura|orborb|orbbirth|grunt|control|client",
     "VOTVCOOP_PI3_DRILL",
     "Autonomous drill (BOTH peers): a creature or prop spawned at a still peer's puppet is not served as this "
     "machine's player, and the verbs it reaches are cancelled; [PI-3] PASS or FAIL then [PI-3] DONE, or "
-    "[PI-3] ABANDONED.")
+    "[PI-3] ABANDONED. orbbirth: the host spawns a black orb and holds it; the client's mirror of it must not "
+    "end that client's game at its birth ([PI-3] PASS or FAIL orbbirth, then DONE, printed by the client).")
