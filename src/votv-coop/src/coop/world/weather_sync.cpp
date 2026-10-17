@@ -302,7 +302,8 @@ uint32_t WindRollSuppressed() {
 
 void Install(coop::net::Session* session) {
     g_session.store(session, std::memory_order_release);
-    // The Bad Sun lane holds its session from the first call, so a payload in the latch's wait is kept.
+    // The Bad Sun lane holds its session from the first call, as the lightning lane does (below), so a payload
+    // in the latch's wait is kept.
     coop::weather_badsun::SetSession(session);
 
     // The wind interceptor sits above the cycle-gated early-out: the directionalWind class may load
@@ -413,7 +414,7 @@ void Install(coop::net::Session* session) {
     coop::weather_redsky::Install(session);
 
     // Bad Sun: the host's `Spawn Bad Sun` and a copy's remove() are watched at the script gate the same way.
-    coop::weather_badsun::Install(session);
+    coop::weather_badsun::Install();
 
     // Fog: the role-gated, echo-suppressed spawnFog interceptor, so a client never makes
     // uncommanded fog. The latch waits on it: an unregistered interceptor must retry, not leave the

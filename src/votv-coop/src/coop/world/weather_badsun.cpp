@@ -223,8 +223,7 @@ void Keep(const coop::net::BadSunPayload& payload, Until until) {
 
 void SetSession(coop::net::Session* session) { g_session.store(session, std::memory_order_release); }
 
-void Install(coop::net::Session* session) {
-    g_session.store(session, std::memory_order_release);
+void Install() {
     if (g_gateAsked) return;
     g_gateAsked = true;
     if (!sg::WatchName(kRowSpawnBadSun, kSpawnTag, &OnSpawnPre, &OnSpawnPost)) {

@@ -27,12 +27,12 @@ namespace coop::net { class Session; struct BadSunPayload; }
 namespace coop::weather_badsun {
 
 // Cache the session, before weather_sync's install latch: a client's payload that arrives while that latch still
-// waits is kept, not dropped as sessionless. Called first in weather_sync::Install, as weather_rain::SetSession.
+// waits is kept, not dropped as sessionless. Called first in weather_sync::Install, as weather_lightning::SetSession is.
 void SetSession(coop::net::Session* session);
 
-// Cache the session and, once, watch `Spawn Bad Sun` and badSun_C's `remove` at the script gate. Called from
-// weather_sync::Install on every re-entry.
-void Install(coop::net::Session* session);
+// Once, watch `Spawn Bad Sun` and badSun_C's `remove` at the script gate. Called from weather_sync::Install on every
+// re-entry, after SetSession has cached the session.
+void Install();
 
 // Say, once each, whether each watch is live (final once its class has loaded), and apply the host's Bad Sun that
 // Apply kept for a world with no gamemode or day cycle, once this world has both. Called from
