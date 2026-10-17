@@ -226,9 +226,9 @@ bool WriteKeyFile(const std::wstring& path, const uint8_t priv[kPrivKeyBytes], c
         "# Multivoid durable player identity -- KEEP THIS FILE SECRET.\n"
         "# Anyone who has this key can play as you: it is what proves your identity\n"
         "# to every host you join, and it is what your stored inventory is named by.\n"
-        "# Copy it to another PC, named\n"
-        "# multivoid_identity.key, to take your identity with you; never paste it into\n"
-        "# a bug report, a screenshot or a Discord message.\n"
+        "# The bound= line ties it to this PC: a copy on another PC is set aside there\n"
+        "# and that PC starts a new identity. Never paste it into a bug report, a\n"
+        "# screenshot or a Discord message.\n"
         "key=";
     text += ToHex(priv, kPrivKeyBytes);
     text += "\nbound=" + bound + "\n";

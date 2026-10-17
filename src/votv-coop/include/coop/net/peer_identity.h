@@ -8,11 +8,11 @@
 // pass every check the library makes; the admission challenge in coop/net/peer_admission.h, where
 // a peer must sign with the key its identity names, is what makes the identity mean anything. Sign
 // and Verify are pure and re-entrant, touching only the immutable key loaded at boot. The key file
-// is the install's, beside the ini but never in it (inis get pasted into bug reports), under a
-// private access list of its own (this account and the system, nothing inherited) re-applied at
-// every load, since anyone holding it can be you; an account that cannot read the install's file
-// keeps its own key for that install beside it, and reads it there while the install has none. A
-// Steam library move carries it, and a tester's two installs are two players.
+// is in the mod's own folder, never in the ini (inis get pasted into bug reports), bound to the
+// machine it was made on, under a private access list of its own (this account and the system,
+// nothing inherited) re-applied at every load, since anyone holding it can be you; an account that
+// cannot read the folder's file keeps its own key beside it, and reads it there while the folder has
+// none. A key from another machine is set aside and a new one made (coop/net/identity_key_file.h).
 
 #pragma once
 
@@ -32,8 +32,8 @@ using PubKey = std::array<uint8_t, kPubKeyBytes>;
 using Sig    = std::array<uint8_t, kSigBytes>;
 
 // Load the durable keypair, generating and persisting one on first launch; an account that cannot
-// read the install's file gets its own beside it (read there too while the install has none), and a
-// folder that refuses the write leaves a temporary one. False only when no key could be established
+// read the mod folder's file gets its own beside it (read there too while the folder has none), and a
+// folder that refuses the write, or none at all, leaves a temporary one. False only when no key could be established
 // at all, in which case the session must not start, since an identity-less peer cannot be admitted
 // anywhere; a key that could not be persisted still works for this session and says so in the log.
 bool Load();

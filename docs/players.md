@@ -207,7 +207,7 @@ folder, and one world is written under more than one name: a quicksave writes a 
 and a plain save made after loading a subsave writes the main slot, so a save to another slot
 first copies the whole set beside that file. A profile reaches the host up to a second after the
 pickup it reports, so a save inside that second holds a profile one pickup behind its world. That identity is
-a key file beside the game executable, under a private access list that admits only the
+a key file in the mod's own folder, bound to the machine it was made on, under a private access list that admits only the
 account that made it (`coop/net/peer_identity`; [install.md](install.md) says where and
 what a second account on the same PC gets). The world-side effect of a pickup or a drop is
 on the props lane.
