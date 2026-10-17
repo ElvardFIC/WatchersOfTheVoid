@@ -24,6 +24,11 @@ namespace ue_wrap::paths {
 // a GetModuleFileNameW failure (callers treat empty as "skip the write").
 std::wstring ExeDir();
 
+// Whether a file or folder named `name` (one path component) exists directly in ExeDir(): a pure
+// test that logs nothing. False when the exe folder is unknown. Only coop/mod_data/legacy_note asks
+// it, for the files an older build kept beside the exe. Any thread.
+bool ExistsBesideExe(const wchar_t* name);
+
 // The mod's own data folder, the one home every file the mod keeps for itself is read from and written
 // to: the PACKAGE folder that holds `dlls\main.dll` and `enabled.txt` (`Mods\Multivoid`), or, when a
 // manager's shimloader launched the process (it exports SHIMLOADER_MOD_DIR, the profile's mod folder),

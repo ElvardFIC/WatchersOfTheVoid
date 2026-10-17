@@ -199,6 +199,11 @@ static bool RunSelftestBody() {
     const bool breakIt =
         coop::config::ResolveFlag(coop::config_registry::rows::selftest_break_atomic_file);
 
+    {
+        const Result r = Write(fs::path{}, "x", Mode::Replace, Sync::Cached);
+        check(!r.ok() && r.failedAt == Step::Open, "case 0: an empty target is refused");
+    }
+
     const std::wstring exeDir = ue_wrap::paths::ExeDir();
     if (exeDir.empty()) {
         check(false, "the executable folder resolves");

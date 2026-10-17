@@ -358,6 +358,7 @@ set(VOTVCOOP_SOURCES
     src/coop/config/config_session.cpp
     src/coop/config/config_selftest.cpp
     src/coop/config/config_review.cpp
+    src/coop/mod_data/legacy_note.cpp
     src/coop/atomic_file/atomic_file.cpp
     src/coop/atomic_file/atomic_file_selftest.cpp
     src/coop/bug_report/report_redact.cpp

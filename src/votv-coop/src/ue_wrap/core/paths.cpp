@@ -18,6 +18,13 @@ std::wstring ExeDir() {
     return sep == std::wstring::npos ? std::wstring{} : p.substr(0, sep);
 }
 
+bool ExistsBesideExe(const wchar_t* name) {
+    if (!name || !*name) return false;
+    const std::wstring exe = ExeDir();
+    if (exe.empty()) return false;
+    return ::GetFileAttributesW((exe + L"\\" + name).c_str()) != INVALID_FILE_ATTRIBUTES;
+}
+
 namespace {
 
 constexpr DWORD kPathCap = 32768;  // the long-path ceiling: a module or profile path is never cut

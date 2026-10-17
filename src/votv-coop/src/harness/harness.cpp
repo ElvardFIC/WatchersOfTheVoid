@@ -32,6 +32,7 @@
 #include "coop/player/players_registry.h"
 #include "coop/config/config.h"
 #include "coop/config/config_review.h"      // RunBootSweep, the settings check
+#include "coop/mod_data/legacy_note.h"      // the old-place notices, the empty-folder warning
 #include "coop/net/master_slots.h"         // the master list and the chosen slot
 #include "coop/net/peer_identity.h"        // the durable Ed25519 identity
 #include "coop/player/local_body.h"         // SetInitialSkin
@@ -123,6 +124,12 @@ DWORD WINAPI TimelineThread(LPVOID param) {
     // A fresh install seeds the multivoid.ini skeleton before anything reads or writes the file
     // this launch: absent-only, atomic.
     cfg::EnsureIniSkeleton();
+    // The mod's data folder, said once: missing (a session on defaults that saves nothing), and the
+    // ini or its example left beside the exe by an older build, which nothing reads now. After the
+    // seeder, so none of its early returns skips them.
+    coop::legacy_note::WarnIfNoDataFolder();
+    coop::legacy_note::Once(coop::legacy_note::LegacyFile::Ini, L"multivoid.ini");
+    coop::legacy_note::Once(coop::legacy_note::LegacyFile::IniExample, L"multivoid.ini.example");
     // multivoid.ini.example regenerates beside the DLL, every key with its description, default and
     // env twin; deterministic, compare-first, fail-soft, and never read back.
     cfg::GenerateExampleCatalog();
