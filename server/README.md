@@ -17,11 +17,12 @@ them.
 nothing is hardcoded, and it stays that way.
 
 The master's names: `COOP_DOMAIN` is required and is the name its clients dial, written as a
-bare host (`master.example.org`: no scheme, path, login or port; the master refuses to start on
-anything else). A lobby proof is signed for that name, so the `net.masters` entry a player adds
+bare host (`master.example.org` or an IPv4 literal: no scheme, path, login, port or IPv6 form; the
+master refuses to start without it or on anything else). A lobby proof is signed for that name, so the `net.masters` entry a player adds
 must dial the same host. `COOP_MASTER_NAME_ALIASES` is an optional comma list of other names it
-answers to (an IP literal, a dev host); names are trimmed, lower-cased and compared without a
-port, and a loopback alias is dropped with a warning. `COOP_MIN_LISTED_PROTO` (default 0) is the
+answers to, never a substitute for it (an IPv4 literal, a dev host): each entry follows the same rules
+bar an optional `:port`, which is stripped, and an invalid entry stops the master at start; names are
+trimmed and lower-cased, and a loopback alias is dropped with a warning. `COOP_MIN_LISTED_PROTO` (default 0) is the
 floor: a create from a build below it is refused, and a value that is not a decimal number
 stops the master at start.
 

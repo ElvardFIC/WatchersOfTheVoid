@@ -12,23 +12,27 @@ pub struct Config {
     pub stun_uri: String,
     pub turn_uri: String,
     /// The names a lobby proof may have been signed for: `COOP_DOMAIN` first, then each of
-    /// `COOP_MASTER_NAME_ALIASES`. Empty when neither is set, and the binary refuses to start.
+    /// `COOP_MASTER_NAME_ALIASES`. `COOP_DOMAIN` is required, so a master that started holds one.
     pub public_names: Vec<String>,
     /// `COOP_MIN_LISTED_PROTO`: a create below it is refused. 0 (the default) refuses nothing.
     pub min_listed_proto: i64,
 }
 
-/// Whether a (canonical) name points back at the machine that dials it: `localhost`, a 127.x.x.x
-/// or 0.0.0.0 literal, the IPv6 loopback. Such a name is a dev master's, never a production one's.
+/// Whether a (canonical) name points back at the machine that dials it: `localhost`, a 0.0.0.0 or
+/// 127.x literal (the short forms `127.1` and `127.0.1` too, which the system resolver reads as
+/// loopback), the IPv6 loopback and its IPv4-mapped form. Such a name is a dev master's, never a
+/// production one's.
 pub fn is_loopback_name(name: &str) -> bool {
     if name == "localhost" || name.ends_with(".localhost") || name == "0.0.0.0" {
         return true;
     }
-    if matches!(name, "::1" | "[::1]") {
+    let inner = name.strip_prefix('[').and_then(|n| n.strip_suffix(']')).unwrap_or(name);
+    if inner == "::1" {
         return true;
     }
-    let octets: Vec<&str> = name.split('.').collect();
-    octets.len() == 4
+    let v4 = inner.strip_prefix("::ffff:").unwrap_or(inner);
+    let octets: Vec<&str> = v4.split('.').collect();
+    (2..=4).contains(&octets.len())
         && octets.iter().all(|o| !o.is_empty() && o.len() <= 3 && o.bytes().all(|b| b.is_ascii_digit()))
         && octets[0].parse::<u16>() == Ok(127)
 }
@@ -53,22 +57,52 @@ pub fn parse_public_names(domain: &str, aliases: &str) -> (Vec<String>, Vec<Stri
     (names, refused)
 }
 
+/// Why a written name is not a bare host name, or None. The name a client signs is the host of the
+/// URL it dialled, so a URL, a path, a login, a bracketed literal or a ':' left after the optional
+/// port would match no client for good while the master ran and answered `/healthz`: a production
+/// master's name is a DNS name or an IPv4 literal. `with_port` lets one trailing ':digits' through
+/// (an alias is often copied from a `host:port` entry; it is stripped when names are compared).
+fn name_fault(written: &str, with_port: bool) -> Option<&'static str> {
+    let s = written.trim();
+    if s.contains("://") || s.contains(['/', '@', '[', ']']) || s.chars().any(char::is_whitespace) {
+        return Some("is not a bare host name (no scheme, path, login, brackets or spaces)");
+    }
+    if !s.is_ascii() {
+        return Some("is not a bare host name (plain ASCII only)");
+    }
+    let host = match s.rsplit_once(':') {
+        Some((h, p)) if with_port && !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()) => h,
+        _ => s,
+    };
+    if host.contains(':') {
+        return Some(if with_port {
+            "is not a bare host name (no IPv6 literal; a port is digits only)"
+        } else {
+            "is not a bare host name (no ':' at all: no port, no IPv6 literal)"
+        });
+    }
+    if host.strip_suffix('.').unwrap_or(host).is_empty() {
+        return Some("is not a bare host name (empty)");
+    }
+    None
+}
+
 /// What is wrong with the master's settings, one line each; empty when it may start. `domain` is
-/// `COOP_DOMAIN` as written: it must be a bare host name, because the name a client signs is the
-/// host of the URL it dialled, and a URL, a path, a login or a port written here would match no
-/// client for good while the master ran and answered `/healthz`. `floor` is
-/// `COOP_MIN_LISTED_PROTO` as written ("" when unset): a value that is not a decimal number would
-/// otherwise read as 0 and silently lift the floor.
-pub fn config_faults(domain: &str, floor: &str) -> Vec<String> {
+/// `COOP_DOMAIN` as written and is required (aliases are additional names, never a substitute);
+/// `aliases` is `COOP_MASTER_NAME_ALIASES` as written, every non-empty entry held to the same rules
+/// as the domain bar an allowed ':port'. `floor` is `COOP_MIN_LISTED_PROTO` as written ("" when
+/// unset): a value that is not a decimal number would otherwise read as 0 and silently lift it.
+pub fn config_faults(domain: &str, aliases: &str, floor: &str) -> Vec<String> {
     let mut faults = Vec::new();
     let d = domain.trim();
-    if !d.is_empty() {
-        let lower = d.to_ascii_lowercase();
-        let bare = lower.strip_suffix('.').unwrap_or(&lower);
-        if d.contains("://") || d.contains('/') || d.contains('@') || d.chars().any(char::is_whitespace) {
-            faults.push(format!("COOP_DOMAIN '{d}' is not a bare host name (no scheme, path, login or spaces)"));
-        } else if canon_host_name(d) != bare {
-            faults.push(format!("COOP_DOMAIN '{d}' is not a bare host name (no port, plain ASCII)"));
+    if d.is_empty() {
+        faults.push("COOP_DOMAIN not set -- a lobby proof names its master and this one has no name".to_string());
+    } else if let Some(why) = name_fault(d, false) {
+        faults.push(format!("COOP_DOMAIN '{d}' {why}"));
+    }
+    for a in aliases.split(',').map(str::trim).filter(|a| !a.is_empty()) {
+        if let Some(why) = name_fault(a, true) {
+            faults.push(format!("COOP_MASTER_NAME_ALIASES entry '{a}' {why}"));
         }
     }
     let f = floor.trim();
@@ -106,10 +140,16 @@ mod tests {
 
     #[test]
     fn loopback_names_are_recognised() {
-        for n in ["localhost", "dev.localhost", "127.0.0.1", "127.1.2.3", "0.0.0.0", "::1", "[::1]"] {
+        for n in [
+            "localhost", "dev.localhost", "127.0.0.1", "127.1.2.3", "0.0.0.0", "::1", "[::1]", "127.1", "127.0.1",
+            "::ffff:127.0.0.1", "[::ffff:127.0.0.1]",
+        ] {
             assert!(is_loopback_name(n), "{n} should be loopback");
         }
-        for n in ["master.multivoid.dev", "203.0.113.7", "128.0.0.1", "1270.0.0.1", "127.0.0", "localhost.example"] {
+        for n in [
+            "master.multivoid.dev", "203.0.113.7", "128.0.0.1", "1270.0.0.1", "127", "128.1", "::ffff:128.0.0.1",
+            "localhost.example",
+        ] {
             assert!(!is_loopback_name(n), "{n} should not be loopback");
         }
     }
@@ -137,26 +177,63 @@ mod tests {
 
     #[test]
     fn a_domain_must_be_a_bare_host_and_a_floor_a_decimal_number() {
-        for d in ["master.multivoid.dev", " Master.Multivoid.dev ", "master.multivoid.dev.", "203.0.113.7", "[2001:db8::1]", "", "  "] {
-            assert!(config_faults(d, "").is_empty(), "'{d}' was refused");
+        for d in ["master.multivoid.dev", " Master.Multivoid.dev ", "master.multivoid.dev.", "203.0.113.7"] {
+            assert!(config_faults(d, "", "").is_empty(), "'{d}' was refused");
         }
         for d in [
             "https://master.multivoid.dev",
             "master.multivoid.dev/v1",
             "user@master.multivoid.dev",
             "master.multivoid.dev:10443",
+            "master.multivoid.dev:abc",
             "[::1]:10443",
+            "[2001:db8::1]",
+            "2001:db8::1",
             "master multivoid.dev",
             "b\u{fc}cher.example",
+            ".",
         ] {
-            assert_eq!(config_faults(d, "").len(), 1, "'{d}' was accepted");
+            assert_eq!(config_faults(d, "", "").len(), 1, "'{d}' was accepted");
         }
         for f in ["", " ", "0", "230", " 230 "] {
-            assert!(config_faults("a.example", f).is_empty(), "floor '{f}' was refused");
+            assert!(config_faults("a.example", "", f).is_empty(), "floor '{f}' was refused");
         }
         for f in ["abc", "23x", "-1", "2.5", "99999999999999999999"] {
-            assert_eq!(config_faults("a.example", f).len(), 1, "floor '{f}' was accepted");
+            assert_eq!(config_faults("a.example", "", f).len(), 1, "floor '{f}' was accepted");
         }
-        assert_eq!(config_faults("https://a.example", "x").len(), 2, "both faults are named");
+        assert_eq!(config_faults("https://a.example", "", "x").len(), 2, "both faults are named");
+    }
+
+    #[test]
+    fn the_domain_is_required_and_aliases_do_not_stand_in_for_it() {
+        for d in ["", "  "] {
+            assert_eq!(config_faults(d, "", "").len(), 1, "'{d}' was accepted");
+            assert_eq!(config_faults(d, "203.0.113.7", "").len(), 1, "an alias stood in for '{d}'");
+        }
+    }
+
+    #[test]
+    fn an_alias_is_held_to_the_domains_rules_and_may_carry_a_port() {
+        for a in ["", " , ,", "203.0.113.7:10443", " Dev.Example , 203.0.113.7:1 ", "dev.example.", "localhost,127.0.0.1:1"] {
+            assert!(config_faults("a.example", a, "").is_empty(), "aliases '{a}' were refused");
+        }
+        for a in [
+            "https://dev.example",
+            "dev.example/v1",
+            "user@dev.example",
+            "dev.example:abc",
+            "dev.example:",
+            "dev.example:1:2",
+            "[::1]",
+            "[2001:db8::1]:10443",
+            "2001:db8::1",
+            "dev example",
+            "b\u{fc}cher.example",
+        ] {
+            assert_eq!(config_faults("a.example", a, "").len(), 1, "alias '{a}' was accepted");
+        }
+        let two = config_faults("a.example", "ok.example,https://x.example,y.example:abc", "");
+        assert_eq!(two.len(), 2, "each bad entry is named: {two:?}");
+        assert!(two[0].contains("https://x.example") && two[1].contains("y.example:abc"));
     }
 }

@@ -165,17 +165,16 @@ async fn main() {
         log("FATAL: COOP_SIGNALING_TOKEN not set -- clients could not reach signaling");
         std::process::exit(1);
     }
-    // A name or a floor of the wrong shape would start a master that no client can use.
-    let faults = config_faults(&env_str("COOP_DOMAIN", ""), &env_str("COOP_MIN_LISTED_PROTO", ""));
+    // A name missing, or a name or a floor of the wrong shape, would start a master no client can use.
+    let faults = config_faults(
+        &env_str("COOP_DOMAIN", ""),
+        &env_str("COOP_MASTER_NAME_ALIASES", ""),
+        &env_str("COOP_MIN_LISTED_PROTO", ""),
+    );
     for fault in &faults {
         log(&format!("FATAL: {fault}"));
     }
     if !faults.is_empty() {
-        std::process::exit(1);
-    }
-    // A lobby proof is signed for the master's name, so a master with none could verify nothing.
-    if CFG.public_names.is_empty() {
-        log("FATAL: COOP_DOMAIN not set -- a lobby proof names its master and this one has no name");
         std::process::exit(1);
     }
 
