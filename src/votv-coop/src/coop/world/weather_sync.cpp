@@ -441,9 +441,13 @@ void QueueConnectBroadcastForSlot(int peerSlot) {
     {
         coop::net::BadSunPayload bp{};
         bool present = false;
+        bool hasCycle = false;
         if (!coop::weather_badsun::ReadLocalBadSun(present)) {
             UE_LOGW("weather: the Bad Sun seed to slot %d was not sent -- the host's state did not read", peerSlot);
-        } else if (!ue_wrap::bad_sun::HasCycle()) {
+        } else if (!ue_wrap::bad_sun::ReadHasCycle(hasCycle)) {
+            UE_LOGW("weather: the Bad Sun seed to slot %d was not sent -- the host's state did not read (the "
+                    "gamemode's day cycle member did not resolve)", peerSlot);
+        } else if (!hasCycle) {
             UE_LOGI("weather: the host's world has no day cycle; no Bad Sun seed to slot %d", peerSlot);
         } else {
             bp.state = present ? 1 : 0;

@@ -38,9 +38,14 @@ constexpr int kSpawnTag = 0x42535350;   // 'BSSP'
 constexpr int kRemoveTag = 0x42535245;  // 'BSRE'
 bool g_gateAsked = false;     // the watches were registered (or refused, said)
 bool g_applying = false;      // the lane's own apply of the host's Bad Sun runs
-// The one payload that met no gamemode or no day cycle, the newest: applied from Tick once both exist.
+// The one payload that met no gamemode, no day cycle or no drainable index, the newest: a client's, applied from
+// Tick once the world can take it. `g_keptSaid`: the reason of the last kept line, said once per reason a payload
+// waits on (-1 = nothing said; cleared when an apply counts the copies).
+enum class Until { World, Index };
 bool g_hasPending = false;
 coop::net::BadSunPayload g_pending{};
+int g_keptSaid = -1;
+bool g_saidCycleUnreadable = false;
 
 // One name watch and what Tick has said of it. `said`: its state is final and was logged, or the gate refused it
 // and said so. `settled`: the gate's name resolve finished (live, or dead for good). A settled watch is final once
@@ -78,6 +83,28 @@ struct Applying {
 };
 
 bool IsHost(coop::net::Session* s) { return s && s->connected() && s->role() == coop::net::Role::Host; }
+
+// A kept payload and an apply are a client's: no session, or the host's, has nothing to hold or to apply.
+bool IsClientSession() {
+    auto* s = g_session.load(std::memory_order_acquire);
+    return s && s->role() != coop::net::Role::Host;
+}
+
+// This world's day cycle, the world a copy can run in. `Unreadable`: the gamemode's member did not resolve (said once
+// per session); the payload then waits like any other.
+enum class Cycle { Absent, Present, Unreadable };
+Cycle ReadCycle() {
+    bool has = false;
+    if (!BS::ReadHasCycle(has)) {
+        if (!g_saidCycleUnreadable) {
+            g_saidCycleUnreadable = true;
+            UE_LOGW("weather: the gamemode's day cycle member did not resolve -- a Bad Sun payload is kept and none "
+                    "applies on this peer");
+        }
+        return Cycle::Unreadable;
+    }
+    return has ? Cycle::Present : Cycle::Absent;
+}
 
 // CLIENT, before the gamemode's `Spawn Bad Sun`: the host's state owns whether a copy exists, and only the lane's
 // apply runs. No world's load calls this verb (a saved copy comes back with the world), so no clause for a world
@@ -161,8 +188,11 @@ void SayWatch(Watch& w, bool classMoved) {
         justSettled = true;
     }
     if (!justSettled && !classMoved) return;
+    // The class first: a settled watch with its class unloaded cannot change state, so the name table is not walked.
+    const bool loaded = ue_wrap::object_index::ClassByName(w.cls) != nullptr;
+    if (!justSettled && !loaded) return;
     const bool live = sg::NameWatchLive(*w.row, w.tag);
-    if (live && !ue_wrap::object_index::ClassByName(w.cls)) return;
+    if (live && !loaded) return;
     w.said = true;
     if (live)
         UE_LOGI("weather: the %s watch is live", w.what);
@@ -171,13 +201,13 @@ void SayWatch(Watch& w, bool classMoved) {
 }
 
 // The host's payload that waited: the lane's own apply, now that this world can take it.
-void Keep(const coop::net::BadSunPayload& payload) {
-    const bool fresh = !g_hasPending;
+void Keep(const coop::net::BadSunPayload& payload, Until until) {
     g_pending = payload;
     g_hasPending = true;
-    if (fresh)
-        UE_LOGI("weather: the host's Bad Sun %d kept until this world has a gamemode and a day cycle",
-                payload.state != 0 ? 1 : 0);
+    if (g_keptSaid == static_cast<int>(until)) return;
+    g_keptSaid = static_cast<int>(until);
+    UE_LOGI("weather: the host's Bad Sun %d kept until %s", payload.state != 0 ? 1 : 0,
+            until == Until::World ? "this world has a gamemode and a day cycle" : "the object index can drain");
 }
 
 }  // namespace
@@ -199,12 +229,12 @@ void Install(coop::net::Session* session) {
 }
 
 void Tick() {
-    // The host's payload that waited for a gamemode and a day cycle. Cleared before the apply, which keeps it
-    // again should the world have lost either since.
-    if (g_hasPending && GT::IsGameThread() && BS::HasCycle()) {
+    // The host's payload that waited for a gamemode and a day cycle, or for the index to drain. Apply clears it as it
+    // proceeds and keeps it again should the world have lost either since.
+    if (g_hasPending && GT::IsGameThread() && IsClientSession() && ReadCycle() == Cycle::Present) {
         const coop::net::BadSunPayload p = g_pending;
-        g_hasPending = false;
-        UE_LOGI("weather: applying the Bad Sun %d kept for this world", p.state != 0 ? 1 : 0);
+        if (g_keptSaid != static_cast<int>(Until::Index))  // an index retry says nothing each tick
+            UE_LOGI("weather: applying the Bad Sun %d kept for this world", p.state != 0 ? 1 : 0);
         Apply(p);
     }
     if (g_spawnWatch.said && g_removeWatch.said) return;
@@ -213,6 +243,7 @@ void Tick() {
     // unsettled and the class judgement runs when the set moved.
     const uint64_t version = ue_wrap::object_index::ClassSetVersion();
     const bool classMoved = !g_seenVersionValid || version != g_seenVersion;
+    // The gate judges a watch's class inside this resolve, so a moved class set runs it for a settled watch too.
     if (!g_spawnWatch.settled || !g_removeWatch.settled || classMoved) sg::ResolvePendingNames();
     SayWatch(g_spawnWatch, classMoved);
     SayWatch(g_removeWatch, classMoved);
@@ -230,23 +261,28 @@ void Apply(const coop::net::BadSunPayload& payload) {
         UE_LOGW("weather: the host's Bad Sun applied off the game thread -- dropping");
         return;
     }
-    // From the host alone: the host's receive edge refuses a client's copy (client_authorship.h).
+    // From the host alone: the host's receive edge refuses a client's copy (client_authorship.h). A task posted
+    // before a session's stop and run after it finds no session, and a host holds nothing: neither keeps a payload.
+    if (!IsClientSession()) return;
     const bool want = payload.state != 0;
     // No gamemode, or no day cycle in it (a world a copy cannot run in): the payload waits, the newest of them,
     // and Tick applies it once this world has both.
-    if (!BS::HasCycle()) {
-        Keep(payload);
+    if (ReadCycle() != Cycle::Present) {
+        Keep(payload, Until::World);
         return;
     }
+    // A payload that proceeds is newer than any kept one: the kept slot never outlives it.
+    g_hasPending = false;
     void* const world = ue_wrap::world_identity::CurrentWorld();
     const std::wstring worldName = world ? R::ToString(R::NameOf(world)) : std::wstring(L"?");
     const size_t backlog = ue_wrap::object_index::Backlog();
     void* copies[BS::kMaxLive] = {};
     int n = BS::CountLive(copies, BS::kMaxLive);
     if (n < 0) {
-        FailedApply("the object index could not drain", want);
+        Keep(payload, Until::Index);  // the next Tick asks again
         return;
     }
+    g_keptSaid = -1;
     UE_LOGI("weather: apply Bad Sun %d in world %ls -- index backlog %zu, %d live cop%s", want ? 1 : 0,
             worldName.c_str(), backlog, n, n == 1 ? "y" : "ies");
     if (want) {
@@ -304,6 +340,8 @@ void OnDisconnect() {
     g_saidRefused = false;
     g_hasPending = false;
     g_pending = {};
+    g_keptSaid = -1;
+    g_saidCycleUnreadable = false;
     g_applying = false;
     g_session.store(nullptr, std::memory_order_release);
 }

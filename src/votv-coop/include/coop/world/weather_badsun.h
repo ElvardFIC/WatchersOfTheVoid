@@ -40,7 +40,8 @@ bool ReadLocalBadSun(bool& present);
 
 // The host's state on this client: spawn one through the gamemode's own verb when it has none, destroy its inactive
 // copies when the host has none. A world with no gamemode or no day cycle keeps the payload, the newest, and Tick
-// applies it once the world has both. Game thread.
+// applies it once the world has both; a payload that applies, or that a newer one reaches, leaves no older one kept.
+// A client's call: with no session, or on the host, it returns at once. Game thread.
 void Apply(const coop::net::BadSunPayload& payload);
 
 // The session ended: its counts are said and cleared, and a kept payload dropped.

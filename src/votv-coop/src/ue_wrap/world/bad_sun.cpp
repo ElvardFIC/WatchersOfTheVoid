@@ -108,9 +108,14 @@ bool ReadGamemodeCopy(void* gamemode, bool& present) {
     return read;
 }
 
-bool HasCycle() {
+bool ReadHasCycle(bool& has) {
+    has = false;
+    void* gm = world_singleton::Gamemode();
+    if (!gm) return true;  // no gamemode is a world with no cycle, not an unread member
     void* cycle = nullptr;
-    return ReadGmObject(g_gmCycle, nullptr, cycle) && cycle != nullptr;
+    if (!ReadGmObject(g_gmCycle, gm, cycle)) return false;
+    has = cycle != nullptr;
+    return true;
 }
 
 bool CallSpawn() {
