@@ -60,16 +60,20 @@ pub fn check_lobby_proof(
 /// How long, at the least, an issued nonce may be answered. The expiry is carried in whole
 /// seconds of the master's own clock, so a nonce lives between `NONCE_LIFE` and one second more.
 pub const NONCE_LIFE: Duration = Duration::from_secs(30);
-/// The most spent nonces the master remembers. A spend is a create, and a create first passes
-/// the create rate class: 10 per 60 s per address bucket, so at most 10 per bucket in any 31 s (a
-/// nonce is remembered from its spend to one second past its expiry, `NONCE_LIFE` + 1 s). The rate
-/// table counts at most 50,000 buckets (`lobby::MAX_RATE_KEYS`), so the set holds at most 10 x
-/// 50,000 = 500,000 live entries; a test pins the product. A set that is full anyway answers
-/// `503 busy` and does NOT forget: this is not MTA's flood table, which fails open
-/// (`reference/mtasa-blue/Server/mods/deathmatch/logic/ASE.cpp:183`) because a forgotten counter
-/// costs it only a count, whereas a nonce forgotten before its expiry spends twice. A bucket the
-/// rate table forgot at its cap counts afresh, which costs a request from a further address.
-pub const MAX_SPENT: usize = 500_000;
+/// The most spent nonces the master remembers, sized to MEMORY, not to the worst inflow: the master
+/// runs under `MemoryMax=128M` (`tools/vps_provision.sh`'s unit template), and an entry costs about
+/// 150 bytes across the set and its expiry queue, so 65,536 entries are about 10 MB. A set that is
+/// full answers `503 busy` to creates and does NOT forget: this is not MTA's flood table, which
+/// fails open (`reference/mtasa-blue/Server/mods/deathmatch/logic/ASE.cpp:183`) because a forgotten
+/// counter costs it only a count, whereas a nonce forgotten before its expiry spends twice. No
+/// finite size covers every inflow, since the rate table forgets its oldest buckets at its cap, so
+/// the residual is said: filling the set takes more than 2,100 proved-shape creates a second for
+/// 31 s (a create spends one nonce, remembered `NONCE_LIFE` + 1 s), about 12,700 address buckets
+/// each at its own create budget -- a botnet's price, and only creates are refused meanwhile.
+pub const MAX_SPENT: usize = 65_536;
+/// The bytes one remembered nonce is budgeted at (the set's entry and its queue entry), for the
+/// memory pin below.
+pub const SPENT_ENTRY_BYTES: usize = 160;
 
 // Domain tag of the nonce's MAC: a nonce is not a signature over anything else this key makes.
 const NONCE_TAG: &[u8] = b"multivoid-lobby-nonce-v1";

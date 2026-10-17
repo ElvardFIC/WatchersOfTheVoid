@@ -5,10 +5,10 @@ mod proof;
 use super::host::{h_challenge, h_host, HostCtx};
 use super::{
     build_claim_from_body, h_browse, host_listed, latest_answer, parse_latest_games, rate_ok, LatestGame, Lobby,
-    LobbyLinks, MasterState, LATEST_URL, MAX_LOBBIES_GLOBAL, MAX_RATE_KEYS, RL_BROWSE, RL_CREATE,
+    LobbyLinks, MasterState, LATEST_URL, MAX_LOBBIES_GLOBAL, MAX_RATE_KEYS, RL_BROWSE,
 };
 use crate::common::{build_claim_shape_ok, identity_shape_ok};
-use crate::lobby_proof::MAX_SPENT;
+use crate::lobby_proof::{MAX_SPENT, SPENT_ENTRY_BYTES};
 
 #[test]
 fn latest_games_parse_keeps_good_entries_and_names_bad_ones() {
@@ -219,6 +219,7 @@ fn the_list_has_its_own_rate_class() {
 }
 
 #[test]
-fn the_spent_set_holds_what_the_create_rate_can_put_in_it() {
-    assert_eq!(MAX_SPENT, RL_CREATE.1 * MAX_RATE_KEYS, "MAX_SPENT is no longer the create rate x the rate table");
+fn the_spent_set_fits_the_masters_memory_budget() {
+    // 16 MiB of the unit's 128M: the set must never be the reason the master is killed.
+    assert!(MAX_SPENT * SPENT_ENTRY_BYTES <= 16 << 20, "MAX_SPENT outgrew its memory budget");
 }
