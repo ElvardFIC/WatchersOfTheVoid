@@ -157,6 +157,7 @@ inline constexpr RefFn kRefFns[] = {
     {L"graytest_c", L"disablecams", L"graytest_c.disablecams", 0x6a2d5d90ab51fa2dull, 0x26230add3056c2cdull},
     {L"graytest_c", L"receivebeginplay", L"graytest_c.receivebeginplay", 0x6a2d5d90ab51fa2dull, 0x80549b59737be412ull},
     {L"halloweenmaster_c", L"executeubergraph_halloweenmaster", L"halloweenmaster_c.executeubergraph_halloweenmaster", 0xd3c93c9d2749b427ull, 0x57e383588992b77dull},
+    {L"hook_c", L"makeattachments", L"hook_c.makeattachments", 0x6a2d5d90ab51fa2dull, 0x5be19ef06c296e15ull},
     {L"hook_c", L"receivetick", L"hook_c.receivetick", 0x6082ffdfa2cda429ull, 0x008782d5eff6e7e7ull},
     {L"jellyfishpath_c", L"spawn", L"jellyfishpath_c.spawn", 0x6a2d5d90ab51fa2dull, 0x980ec4be5a716afcull},
     {L"kerfuromega_c", L"actionname", L"kerfuromega_c.actionname", 0x9fad63190f5a36e0ull, 0x1f000fc99fac65feull},

@@ -435,9 +435,8 @@ void Tick() {
     g_lastDriverMs = now;
 
     if (!g_parkInstalled && !g_parkRefused) Install(s);
-    // Before this lane's own resolve gate: a tie a hook built before the members resolved waits a
-    // bounded time and is then let go with a warning, which behind a gate that never opens -- a
-    // build whose hook members differ -- it would never be.
+    // Before this lane's own resolve gate: the watch needs the hook class names and the gate's name
+    // resolve, not the member table.
     coop::hook_constraint::Tick();
     if (!H::EnsureResolved()) return;
 
