@@ -366,6 +366,10 @@ void NoteWorldReadyGate(WorldGate gate) {
 
 const char* WorldGateText(WorldGate gate) { return WorldGateName(static_cast<uint8_t>(gate)); }
 
+bool BeaconRenews(uint8_t wasPhase, uint32_t wasDone, uint8_t phase, uint32_t done) {
+    return wasPhase != phase || done > wasDone;
+}
+
 void NoteHostBeacon(uint8_t phase, uint32_t done, uint32_t total) {
     if (!Active()) return;
     if (g_mode.load(std::memory_order_relaxed) != static_cast<int>(Mode::Client)) return;
@@ -383,7 +387,7 @@ void NoteHostBeacon(uint8_t phase, uint32_t done, uint32_t total) {
     // wait on it lets a host that is stuck hold a joiner forever, which is the failure the whole
     // watchdog exists to end (measured: a host holding its bracket kept a joiner waiting out 125
     // beacons and 120 seconds). A phase that changed, or a numerator that moved, IS progress.
-    if (was != phase || done > wasDone) StampToken();
+    if (BeaconRenews(was, wasDone, phase, done)) StampToken();
 }
 
 void NotePropApplied() {

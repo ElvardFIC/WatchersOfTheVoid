@@ -643,11 +643,11 @@ void Tick(coop::net::Session& session) {
     // empty).
     if (isConnected && worldUp) { PP::Scope _s{PP::Bucket::SnapshotDrain}; coop::prop_snapshot::DrainChunk(); }
 
-    // The host's once-a-second word to each joiner, after the three owners of a join's host-side
-    // phases have had their pass (the chunk pump above, the capture inside it, the bracket drain
-    // just now). Ungated by worldUp: a host serving a joiner is by definition in a world, and the
-    // gate exists for the joiner's own menu ticks. A no-op on a client and for every slot nobody
-    // worked this pass, which is how the beacon falls silent when the work stops.
+    // The host's once-a-second word to each joiner. Its owners: save_transfer (the chunk pump and
+    // the capture), prop_snapshot::DrainChunk (the bracket, just now), and join_beacon itself for
+    // the Draining phase once the bracket is closed. Ungated by worldUp: a host serving a joiner is
+    // in a world, and the gate is for the joiner's own menu ticks. A no-op on a client; a slot
+    // nobody worked falls silent, and a delivered bracket stops its own Draining.
     if (isHost) coop::join_beacon::Tick();
 
     // Outside the world-up gate on purpose: what these dev readers see lies inside the world load,

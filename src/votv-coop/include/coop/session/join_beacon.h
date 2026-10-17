@@ -30,6 +30,19 @@ void SetSession(coop::net::Session* session);
 // clock read -- because the owners call it from their per-tick loops.
 void NotePhase(int slot, coop::net::HostJoinPhase phase, uint32_t done, uint32_t total);
 
+// The slot's bracket closed (its SnapshotComplete went into the transport or the backlog) at
+// `closedAtMs` on the steady clock; or it was cleared, abandoned or never opened. Pushed by
+// prop_snapshot, which owns the bracket: from the close until the link's queue has drained, Tick
+// beacons the Draining phase for the slot itself, so the joiner's wait reads the delivery of the
+// bracket after the host has finished enqueueing it.
+void NoteBracketClosed(int slot, int64_t closedAtMs);
+void NoteBracketReset(int slot);
+
+// The Draining decision's table and the joiner's renewal rule across it (join_progress::
+// BeaconRenews), run once per process at the first session start. One PASS line each; false when
+// any case failed.
+bool RunDrainingSelftest();
+
 // Send what is due: one note per slot noted since the last Tick, at most one ATTEMPT a second, and
 // one at once when the phase changed (a joiner should see a transition without a second of lag).
 // The cadence bounds attempts rather than arrivals, so a link that refuses a note does not turn

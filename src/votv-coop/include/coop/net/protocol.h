@@ -30,7 +30,7 @@ inline constexpr uint32_t kMagic = 0x564D5450u;
 // This file is past the 1500-line hard cap and stays there: it is the single-feature exception the
 // rule names. One wire format, whose enum, payload structs and static_asserts are read together;
 // splitting it would put a kind's number in one file and its bytes in another.
-inline constexpr uint16_t kProtocolVersion = 230;
+inline constexpr uint16_t kProtocolVersion = 231;
 
 // Default LAN port (overridable via multivoid.ini "net.port=").
 inline constexpr uint16_t kDefaultPort = 47621;
@@ -3408,19 +3408,19 @@ static_assert(sizeof(LinkProbePayload) == 4, "LinkProbePayload must be 4 bytes")
 
 // The phases of a join the HOST owns, and therefore the ones whose silence only the host can
 // explain. The joiner's own phases (its download, its engine load) are watched on its own side
-// from what it can see. A value this receiver does not know is still a beacon: it proves the host
-// is answering, which is the token, so an unknown phase renews the wait and only its label is
-// dropped.
+// from what it can see. A value this receiver does not know is a phase change like any other: it
+// renews the wait once, and only its label is dropped.
 enum class HostJoinPhase : uint8_t {
     CapturingWorld = 1,    // reading the host's save to a stable blob (no numerator: it retries until stable)
     StreamingWorld = 2,    // handing the blob to the transport: bytes accepted / blob bytes
     SnapshotDeferred = 3,  // the bracket is held because the host's registry does not express its world
-    StreamingSnapshot = 4, // draining the connect bracket: props sent / candidates
+    StreamingSnapshot = 4, // enqueueing the connect bracket: props sent / candidates
+    Draining = 5,          // the bracket is enqueued and the link is delivering it: KiB delivered / 0
 };
 
 // The beacon itself. `done` and `total` are the phase's own numerator and denominator, both 0 for a
-// phase that has none; the joiner reads a rising `done` as progress and the message's ARRIVAL as
-// liveness, so a phase with no numerator still renews the wait.
+// phase that has none; the joiner renews its wait on a phase change or a rise of `done`, never on a
+// repeat. In Draining `done` is the KiB the link has delivered to this joiner and `total` is 0.
 struct JoinPhaseNotePayload {
     uint8_t  phase;    // HostJoinPhase
     uint8_t  _pad[3];  // reserved, zero

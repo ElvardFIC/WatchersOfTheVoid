@@ -156,6 +156,11 @@ void NoteWorldReady();
 // build cannot label is still proof the host is answering. From the event feed, game thread.
 void NoteHostBeacon(uint8_t phase, uint32_t done, uint32_t total);
 
+// The renewal rule of NoteHostBeacon as a pure test: `wasPhase`/`wasDone` are the previous beacon's
+// (phase 0 = none heard yet), and a beacon renews the wait when its phase differs or its `done`
+// strictly rose. Its own function so a selftest can run the rule without a join in flight.
+bool BeaconRenews(uint8_t wasPhase, uint32_t wasDone, uint8_t phase, uint32_t done);
+
 // Driven by the harness, host only. Raise the cover for a host boot: hides the menu (so the
 // player cannot wander into the browser and self-join while the world loads) and shows the
 // starting-your-server text with the world name. No cancel button and no abort path; the

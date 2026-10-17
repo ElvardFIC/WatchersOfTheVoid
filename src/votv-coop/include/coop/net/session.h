@@ -321,6 +321,10 @@ public:
     // thread. Not const: SendBacklog::DepthBytes is not.
     bool SlotReliableIdle(int slot);
 
+    // What the net thread last published about this slot's link: delivered and still-owed reliable
+    // bytes, with the sample's time on the net clock. See SendRateControl::Published. Any thread.
+    SendRateControl::Published LinkDeliveryOf(int slot) const { return rateControl_.PublishedFor(slot); }
+
     // The slot's occupancy generation: a host-minted, never reused, non-zero token naming who holds
     // the slot; 0 = empty. A change between reads is a replacement, which lowest-free slot reuse
     // hides from a connected boolean. Never on the wire; kick and ban validate a captured token
