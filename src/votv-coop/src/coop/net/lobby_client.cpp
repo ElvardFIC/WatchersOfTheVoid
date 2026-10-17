@@ -4,6 +4,9 @@
 #include "coop/game_build/game_build.h"
 
 #include "coop/net/http_client.h"
+#include "coop/net/peer_identity.h"  // PublicKeyFromIdentityString -- the shape of a listed key
+#include "coop/text/name_filter.h"
+#include "coop/text/utf8_codec.h"
 #include "json_util.h"  // internal, co-located in src/coop/net/ (not a public API header)
 #include "ue_wrap/core/log.h"
 
@@ -15,6 +18,14 @@ namespace coop::net::lobby {
 namespace {
 
 namespace J = coop::net::jsonu;
+
+// A master-supplied text as the browser may draw it: through the name filter, as a stranger's name.
+// Ill-formed UTF-8 (the JSON parser already refuses it, so this is a backstop) draws as nothing.
+std::string ShownText(const std::string& raw) {
+    std::wstring wide;
+    if (!coop::text::FromUtf8Strict(raw.data(), raw.size(), &wide)) return std::string();
+    return coop::text::ToUtf8(coop::text::FilterNameChars(wide));
+}
 
 // One GET of `masterUrl`'s lobby list, parsed into `out`. True when the rows are a real answer;
 // false with `st` saying why not. Blocking: the refresh worker's body.
@@ -58,13 +69,23 @@ bool FetchList(const std::string& masterUrl, const std::string& versionFilter,
         // not feed oversized strings or out-of-range numbers into the browser. The caps mirror the
         // master's own clamps.
         r.lobbyId    = J::StrN(e, "lobbyId", 64);
-        r.name       = J::StrN(e, "name", 64);
-        r.version    = J::StrN(e, "version", 24);
-        r.game       = J::StrN(e, "game", 24);  // the game target; empty means a host older than the field
+        // Every text the browser draws goes through the name filter after the length cap: the
+        // master's bytes are a stranger's, and a name that holds a control, a bidi override or a
+        // zero-width character can hide or reorder the text around it.
+        r.name       = ShownText(J::StrN(e, "name", 64));
+        if (r.name.empty()) r.name = "(unnamed)";
+        r.version    = ShownText(J::StrN(e, "version", 24));
+        r.game       = ShownText(J::StrN(e, "game", 24));  // the game target; empty means a host older than the field
         // The game build the host runs, dropped unless it has the reader's shape (a master's bytes are a peer's).
         r.gameBuild  = J::StrN(e, "game_build", 33);
         if (!coop::game_build::KeyShapeOk(r.gameBuild)) r.gameBuild.clear();
-        r.world      = J::StrN(e, "world", 40);
+        r.world      = ShownText(J::StrN(e, "world", 40));
+        // The key the host advertises, kept only if it is the shape a key is; whether the host
+        // PROVED it is the master's word (`proved`), a bool the browser sorts by.
+        r.identity   = J::StrN(e, "identity", 68);
+        peer_identity::PubKey keyBytes{};
+        if (!peer_identity::PublicKeyFromIdentityString(r.identity, keyBytes)) r.identity.clear();
+        r.proved     = J::Bool(e, "proved");
         r.playersCur = J::IntClamped(e, "players_cur", 0, 64);
         r.playersMax = J::IntClamped(e, "players_max", 0, 64);
         r.ageSec     = J::IntClamped(e, "age", 0, 2000000000);
@@ -88,14 +109,17 @@ bool FetchList(const std::string& masterUrl, const std::string& versionFilter,
     // reader every refresh. Here, not in the browser: this is the one place the list is produced,
     // and both surfaces (the native browser and the overlay fallback) read the rows, so sorting in
     // one would leave the other with the defect; it also costs once per fetch on this worker
-    // rather than once per sync on the game thread. The key is the name, then the lobby id, and
-    // may not be anything else that moves: sorting by player count reorders the list every time
-    // somebody joins or leaves a server the player is not even looking at, the same defect
-    // wearing a reason; the id breaks ties so two servers sharing a name still hold a fixed
-    // order. Byte-wise on UTF-8, which is codepoint order, and deliberately not case-folded: a
-    // correct fold needs the repertoire table (coop/text/case_fold.h), and the ASCII-only lowering
-    // that suggests itself here is the hand-rolled casing rule that header exists to have retired.
+    // rather than once per sync on the game thread. The key is proof, then the name, then the lobby
+    // id, and may not be anything else that moves: sorting by player count reorders the list every
+    // time somebody joins or leaves a server the player is not even looking at, the same defect
+    // wearing a reason. Proof is stable (a host's row keeps its mark between fetches) and puts the
+    // hosts that hold their key first, so the row cap below cuts unproved rows before proved ones.
+    // The id breaks ties. Byte-wise on UTF-8, which is codepoint order, and deliberately not
+    // case-folded: a correct fold needs the repertoire table (coop/text/case_fold.h), and the
+    // ASCII-only lowering that suggests itself here is the hand-rolled casing rule that header
+    // exists to have retired.
     std::sort(out.begin(), out.end(), [](const LobbyRow& a, const LobbyRow& b) {
+        if (a.proved != b.proved) return a.proved;
         if (a.name != b.name) return a.name < b.name;
         return a.lobbyId < b.lobbyId;
     });
