@@ -174,8 +174,66 @@ fn another_buckets_nonce_is_expired_and_its_owner_keeps_it() {
 fn a_nonce_older_than_thirty_seconds_is_expired() {
     let (mut env, mut state, h) = (Env::new(), MasterState::new(), host());
     let body = env.signed(&mut state, IP, &h, NEW, NAME);
-    env.now += NONCE_LIFE;
+    // The expiry is whole seconds, so a nonce lives a little over thirty: two more clears it.
+    env.now += NONCE_LIFE + Duration::from_secs(2);
     assert_eq!(error_of(&env.create(&mut state, IP, &body)), (410, "nonce-expired"));
+}
+
+#[test]
+fn a_nonce_still_answers_at_thirty_seconds() {
+    let (mut env, mut state, h) = (Env::new(), MasterState::new(), host());
+    let body = env.signed(&mut state, IP, &h, NEW, NAME);
+    env.now += NONCE_LIFE;
+    assert_eq!(env.create(&mut state, IP, &body).0, 200, "a nonce died before its thirty seconds");
+}
+
+#[test]
+fn a_nonce_with_a_flipped_digit_is_expired_even_with_a_valid_proof_over_it() {
+    let (env, mut state, h) = (Env::new(), MasterState::new(), host());
+    let nonce = env.nonce(&mut state, IP);
+    for at in [0, 20, 63] {
+        let mut digits = nonce.clone().into_bytes();
+        digits[at] = if digits[at] == b'0' { b'1' } else { b'0' };
+        let forged = String::from_utf8(digits).unwrap();
+        let mut body = plain(&h, NEW);
+        body["proof"] = json!(sign(&h, &forged, NAME)); // the holder signs the forged nonce itself
+        body["nonce"] = json!(forged);
+        assert_eq!(error_of(&env.create(&mut state, IP, &body)), (410, "nonce-expired"), "digit {at}");
+    }
+    assert!(state.lobbies.is_empty());
+}
+
+#[test]
+fn a_nonce_from_another_master_is_expired() {
+    let (env, mut one, mut two, h) = (Env::new(), MasterState::new(), MasterState::new(), host());
+    let body = env.signed(&mut one, IP, &h, NEW, NAME);
+    assert_eq!(error_of(&env.create(&mut two, IP, &body)), (410, "nonce-expired"), "two secrets, one nonce");
+    assert_eq!(env.create(&mut one, IP, &body).0, 200, "the issuing master lost its own nonce");
+}
+
+#[test]
+fn a_flood_of_challenges_refuses_no_honest_create() {
+    let (env, mut state, h) = (Env::new(), MasterState::new(), host());
+    for n in 0..2000 {
+        let ip = format!("203.0.{}.{}", n / 250, n % 250);
+        assert_eq!(h_challenge(&mut state, env.now, &ip).0, 200);
+    }
+    let body = env.signed(&mut state, IP, &h, NEW, NAME);
+    assert_eq!(env.create(&mut state, IP, &body).0, 200);
+}
+
+#[test]
+fn an_unproved_create_at_a_full_table_of_proved_rows_is_refused_and_evicts_nobody() {
+    let (env, h) = (Env::new(), host());
+    let (mut state, sessions) = full_table(|_| true, env.now);
+    let refused = env.create(&mut state, IP, &plain(&h, OLD));
+    assert_eq!(refused.0, 429, "{}", refused.1);
+    assert_eq!(state.lobbies.len(), MAX_LOBBIES_GLOBAL);
+    assert!(sessions.iter().all(|s| state.lobbies.contains_key(s)), "an unproved create evicted a proved row");
+    // The refusal costs a proved host nothing: its create still takes the stalest proved row's place.
+    let body = env.signed(&mut state, IP, &h, NEW, NAME);
+    assert_eq!(env.create(&mut state, IP, &body).0, 200);
+    assert!(!state.lobbies.contains_key(&sessions[0]));
 }
 
 #[test]

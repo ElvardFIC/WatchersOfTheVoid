@@ -148,28 +148,27 @@ fn a_refused_create_at_the_global_cap_evicts_nothing() {
 }
 
 #[test]
-fn a_challenge_is_a_nonce_for_the_callers_bucket_and_a_bucket_holds_four() {
+fn a_challenge_answers_a_new_nonce_each_time_and_holds_no_table() {
     let (mut state, now) = (MasterState::new(), std::time::Instant::now());
-    let mut nonces = Vec::new();
-    for _ in 0..4 {
-        let (status, body) = h_challenge(&mut state, now, "198.51.100.9");
+    let mut nonces = std::collections::HashSet::new();
+    for n in 0..10 {
+        let (status, body) = h_challenge(&mut state, now, &format!("198.51.100.{n}"));
         assert_eq!(status, 200);
-        nonces.push(body["nonce"].as_str().expect("no nonce").to_string());
+        nonces.insert(body["nonce"].as_str().expect("no nonce").to_string());
     }
-    nonces.sort();
-    nonces.dedup();
-    assert_eq!(nonces.len(), 4, "two challenges answered one nonce");
-    let (status, body) = h_challenge(&mut state, now, "198.51.100.9");
-    assert_eq!((status, body["error"].as_str()), (429, Some("too many challenges for this address")));
-    assert_eq!(h_challenge(&mut state, now, "198.51.100.10").0, 200, "one address's cap refused another");
+    assert_eq!(nonces.len(), 10, "two challenges answered one nonce");
+    assert_eq!(state.nonces.spent_len(), 0, "a challenge left something in the master");
 }
 
 #[test]
-fn a_challenge_is_counted_in_the_create_rate_class() {
+fn a_challenge_is_counted_in_its_own_rate_class() {
     let (mut state, now) = (MasterState::new(), std::time::Instant::now());
     for _ in 0..10 {
-        h_challenge(&mut state, now, "198.51.100.9");
+        assert_eq!(h_challenge(&mut state, now, "198.51.100.9").0, 200);
     }
     let (status, body) = h_challenge(&mut state, now, "198.51.100.9");
     assert_eq!((status, body["error"].as_str()), (429, Some("rate")));
+    // The create class is untouched: a create from the same address is judged, not rate-limited.
+    let ctx = HostCtx { now, names: &[], min_listed_proto: 0 };
+    assert_eq!(h_host(&mut state, &ctx, "198.51.100.9", &serde_json::json!({})).0, 400);
 }

@@ -4,18 +4,19 @@
 use super::{
     as_bool, as_int, as_str, build_claim_from_body, clamp_field, drop_lobby, host_listed, rate_ok, Lobby,
     MasterState, MAX_GAME, MAX_GAME_BUILD, MAX_LOBBIES_GLOBAL, MAX_LOBBIES_PER_IP, MAX_NAME, MAX_VERSION,
-    MAX_WORLD, RL_CREATE,
+    MAX_WORLD, RL_CHALLENGE, RL_CREATE,
 };
 use crate::common::{identity_shape_ok, ip_bucket, log};
 use crate::ice::{ice_block, HostTurn, TURN_TTL_HOST};
-use crate::lobby_proof::{judge, IssueRefusal};
+use crate::lobby_proof::judge;
 use crate::master_config::CFG;
 use crate::version_gate::{below_floor, version_gate_env};
 use serde_json::{json, Value};
 use std::time::Instant;
 
 /// Make room for one more row: while the table is full, drop the stalest UNPROVED row, and only
-/// when every row is proved the stalest proved one. A create is never refused at the cap.
+/// when every row is proved the stalest proved one. A proved create is never refused at the cap;
+/// an unproved one is, before this runs, when every row is proved.
 pub fn evict_if_full(state: &mut MasterState) {
     while state.lobbies.len() >= MAX_LOBBIES_GLOBAL {
         let victim = state
@@ -47,17 +48,14 @@ pub fn lobbies_per_ip(state: &MasterState, ip: &str) -> usize {
     state.lobbies.values().filter(|lo| ip_bucket(&lo.ip) == bucket).count()
 }
 
-/// `POST /v1/host/challenge`: the nonce a create signs. Counted in the create rate class, bound
-/// to the caller's address bucket, single use, alive 30 s (see `lobby_proof::Challenges`).
+/// `POST /v1/host/challenge`: the nonce a create signs. Counted in its own rate class, bound to
+/// the caller's address bucket, single use, alive 30 s. Issuing stores nothing (see
+/// `lobby_proof::Nonces`), so no flood of challenges can refuse an honest host.
 pub fn h_challenge(state: &mut MasterState, now: Instant, ip: &str) -> (u16, Value) {
-    if !rate_ok(state, ip, "create", RL_CREATE.0, RL_CREATE.1) {
+    if !rate_ok(state, ip, "challenge", RL_CHALLENGE.0, RL_CHALLENGE.1) {
         return (429, json!({"error": "rate"}));
     }
-    match state.challenges.issue(&ip_bucket(ip), now) {
-        Ok(nonce) => (200, json!({"nonce": nonce})),
-        Err(IssueRefusal::Bucket) => (429, json!({"error": "too many challenges for this address"})),
-        Err(IssueRefusal::Table) => (503, json!({"error": "busy"})),
-    }
+    (200, json!({"nonce": state.nonces.issue(&ip_bucket(ip), now)}))
 }
 
 /// What `h_host` reads from outside the request: the clock, this master's names, the floor.
@@ -79,7 +77,7 @@ pub fn h_host(state: &mut MasterState, ctx: &HostCtx, ip: &str, body: &Value) ->
         return (429, json!({"error": "rate"}));
     }
 
-    let mut lo = Lobby::new(ip);
+    let mut lo = Lobby::draft(ip);
     let name = clamp_field(body, "name", MAX_NAME);
     lo.name = if name.is_empty() { "VOTV Coop".into() } else { name };
     // v122 Paper-pair identity: game + proto. `version` is the LEGACY pre-v122
@@ -134,7 +132,7 @@ pub fn h_host(state: &mut MasterState, ctx: &HostCtx, ip: &str, body: &Value) ->
     lo.last_seen = ctx.now;
 
     // The proof. A nonce is spent here, so every shape refusal above leaves it alive.
-    match judge(&mut state.challenges, ctx.names, &ip_bucket(ip), ctx.now, body, &lo.host_identity, lo.proto) {
+    match judge(&mut state.nonces, ctx.names, &ip_bucket(ip), ctx.now, body, &lo.host_identity, lo.proto) {
         Ok(proved) => lo.proved = proved,
         Err(why) => {
             let (status, error) = why.answer();
@@ -153,6 +151,13 @@ pub fn h_host(state: &mut MasterState, ctx: &HostCtx, ip: &str, body: &Value) ->
     if lobbies_per_ip(state, ip) - replaced.iter().filter(|(sid, _)| mine(sid)).count() >= MAX_LOBBIES_PER_IP {
         return (429, json!({"error": "too many lobbies for this address"}));
     }
+    // A table of nothing but proved rows is not made room in by an unproved create: that would
+    // let unproved junk churn real hosts out. A proved create always gets a place.
+    if !lo.proved && state.lobbies.len() >= MAX_LOBBIES_GLOBAL && state.lobbies.values().all(|row| row.proved) {
+        log(&format!("host REFUSED from {ip}: b{} unproved, every row is proved and the table is full", lo.proto));
+        return (429, json!({"error": "the master is full of proved lobbies"}));
+    }
+    lo.draw_ids();
     if let Some((_, public_id)) = replaced.first() {
         lo.lobby_id = public_id.clone(); // the row keeps its public id; session and token are re-issued
     }

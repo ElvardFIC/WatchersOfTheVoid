@@ -4,7 +4,7 @@
 
 use crate::common::{build_claim_shape_ok, clamp_str, ct_eq, ip_bucket, log, token_hex, token_urlsafe};
 use crate::ice::{heartbeat_turn, ice_block, turn_creds, HostTurn, TURN_TTL_HOST, TURN_TTL_JOIN};
-use crate::lobby_proof::Challenges;
+use crate::lobby_proof::Nonces;
 use crate::master_config::CFG;
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -31,6 +31,7 @@ pub const MAX_LOBBIES_GLOBAL: usize = 1000;
 pub const MAX_RATE_KEYS: usize = 50_000;
 
 // per-(IP, class) sliding-window rate limits: (window, max events).
+pub const RL_CHALLENGE: (Duration, usize) = (Duration::from_secs(60), 10);
 pub const RL_CREATE: (Duration, usize) = (Duration::from_secs(60), 10);
 pub const RL_JOIN: (Duration, usize) = (Duration::from_secs(60), 20);
 pub const RL_MUTATE: (Duration, usize) = (Duration::from_secs(60), 240);
@@ -194,11 +195,28 @@ impl LobbyLinks {
 }
 
 impl Lobby {
+    /// A row with its ids drawn (the tests' way to put a row in a table).
+    #[cfg(test)]
     fn new(ip: &str) -> Lobby {
+        let mut lo = Lobby::draft(ip);
+        lo.draw_ids();
+        lo
+    }
+
+    /// The three random ids: session, public lobby id, host token.
+    fn draw_ids(&mut self) {
+        self.session_id = token_hex(16);
+        self.lobby_id = token_hex(8);
+        self.token = token_urlsafe(24);
+    }
+
+    /// A row with no ids yet. `h_host` fills it from the body and draws the ids only after
+    /// every refusal has passed, so a refused create pays for no randomness.
+    fn draft(ip: &str) -> Lobby {
         Lobby {
-            session_id: token_hex(16),
-            lobby_id: token_hex(8),
-            token: token_urlsafe(24),
+            session_id: String::new(),
+            lobby_id: String::new(),
+            token: String::new(),
             // Empty until `/v1/host` supplies the host's own public key, which it
             // must (see h_host). The master no longer mints a routing name: a name
             // it asserts on a host's behalf is one nobody can prove, and since
@@ -237,7 +255,7 @@ pub struct MasterState {
     // response OUTSIDE it (audit L5: serializing a ~200 KB body under the global lock
     // serialized it against all host/join/heartbeat processing).
     pub cache_all_body: Arc<Vec<u8>>,
-    pub challenges: Challenges, // issued by /v1/host/challenge, spent by /v1/host
+    pub nonces: Nonces, // minted by /v1/host/challenge, spent by /v1/host
 }
 
 impl MasterState {
@@ -246,7 +264,7 @@ impl MasterState {
             lobbies: HashMap::new(),
             lobby_by_public: HashMap::new(),
             rate: HashMap::new(),
-            challenges: Challenges::new(),
+            nonces: Nonces::new(),
             cache_t: None,
             cache_all_body: Arc::new(Vec::new()),
         }
@@ -594,7 +612,7 @@ pub fn dispatch_post(path: &str, ip: &str, body: &Value) -> Option<(u16, Value)>
 }
 
 pub async fn sweeper() {
-    let max_window = [RL_CREATE.0, RL_JOIN.0, RL_MUTATE.0].into_iter().max().unwrap();
+    let max_window = [RL_CHALLENGE.0, RL_CREATE.0, RL_JOIN.0, RL_MUTATE.0].into_iter().max().unwrap();
     loop {
         tokio::time::sleep(Duration::from_secs(30)).await;
         let now = Instant::now();

@@ -1,12 +1,14 @@
 //! The lobby announce proof. A lobby's identity IS an Ed25519 public key, so its host signs a
 //! challenge the master issued, together with the master's own name, before the row may be
 //! marked proved. The decision lives here, apart from the handler's I/O, so known-answer vectors
-//! can watch it refuse (the shape of `registration.rs`). The nonces it signs over are issued from
-//! the table at the foot of this file.
+//! can watch it refuse (the shape of `registration.rs`). The nonces it signs over are minted and
+//! spent by `Nonces`, below.
 
-use crate::common::{hex_to_bytes, token_hex};
+use crate::common::{ct_eq, hex_to_bytes};
 use crate::version_gate::proof_required;
-use std::collections::HashMap;
+use ring::hmac;
+use ring::rand::{SecureRandom, SystemRandom};
+use std::collections::{HashSet, VecDeque};
 use std::time::{Duration, Instant};
 
 // Domain tag of the announce proof. It differs from the signaling registration's
@@ -48,78 +50,113 @@ pub fn check_lobby_proof(
         .map_err(|_| "does not hold the key this identity names")
 }
 
-// ---- the challenge table ------------------------------------------------------------------
+// ---- the nonce ----------------------------------------------------------------------------
 
-/// How long an issued nonce may be answered.
+/// How long, at the least, an issued nonce may be answered. The expiry is carried in whole
+/// seconds of the master's own clock, so a nonce lives between `NONCE_LIFE` and one second more.
 pub const NONCE_LIFE: Duration = Duration::from_secs(30);
-/// Pending nonces one address bucket may hold, and the table in all.
-pub const MAX_PENDING_PER_BUCKET: usize = 4;
-pub const MAX_PENDING: usize = 4096;
+/// The most spent nonces the master remembers. Spends are paced by the create rate class, so
+/// the set holds a few dozen live entries; a full set answers `503 busy` rather than forget.
+pub const MAX_SPENT: usize = 65536;
 
-struct Pending {
-    bucket: String,
-    expires: Instant,
-}
+// Domain tag of the nonce's MAC: a nonce is not a signature over anything else this key makes.
+const NONCE_TAG: &[u8] = b"multivoid-lobby-nonce-v1";
+const MAC_LEN: usize = 16;
 
-/// Why a challenge was not issued.
+/// Why a nonce was not spent.
 #[derive(Debug, PartialEq, Eq)]
-pub enum IssueRefusal {
-    /// The caller's bucket already holds `MAX_PENDING_PER_BUCKET` live nonces.
-    Bucket,
-    /// The table holds `MAX_PENDING`.
-    Table,
+pub enum NonceFault {
+    /// Not minted here for this address bucket (its MAC fails), expired, or already spent.
+    Invalid,
+    /// The spent set holds `MAX_SPENT` live entries.
+    Full,
 }
 
-/// The nonces the master has issued and not yet seen answered: single use, bound to the address
-/// bucket they were issued to, alive `NONCE_LIFE`. The clock is passed in, and every call sweeps
-/// the expired first, so the table is bounded by its caps and by nothing that waits on a timer.
-#[derive(Default)]
-pub struct Challenges {
-    pending: HashMap<String, Pending>,
+/// The nonces a create signs. A nonce is `expiry (8, big-endian seconds) || random (8) || MAC
+/// (16)`, the MAC an HMAC-SHA256 under a secret drawn when the master starts, over the tag, the
+/// address bucket it was issued to, the expiry and the random part. Issuing stores nothing, so
+/// no number of challenges can fill anything; only a nonce that was SPENT is kept, until its
+/// expiry, so it spends once. The shape is the SYN cookie's: the server answers a token it can
+/// re-derive. A restart draws a new secret, which voids every outstanding nonce (a `410`, and
+/// the client asks again). The clock is passed in; seconds count from the master's start.
+pub struct Nonces {
+    rng: SystemRandom,
+    key: hmac::Key,
+    origin: Instant,
+    spent: HashSet<[u8; 32]>,
+    /// The spent nonces by expiry, ascending: the sweep pops the expired from the front.
+    order: VecDeque<(u64, [u8; 32])>,
 }
 
-impl Challenges {
-    pub fn new() -> Challenges {
-        Challenges::default()
-    }
-
-    fn sweep(&mut self, now: Instant) {
-        self.pending.retain(|_, p| p.expires > now);
-    }
-
-    /// A fresh 64-hex nonce for `bucket`, or the cap that refuses it.
-    pub fn issue(&mut self, bucket: &str, now: Instant) -> Result<String, IssueRefusal> {
-        self.sweep(now);
-        if self.pending.len() >= MAX_PENDING {
-            return Err(IssueRefusal::Table);
+impl Nonces {
+    pub fn new() -> Nonces {
+        let rng = SystemRandom::new();
+        let mut secret = [0u8; 32];
+        rng.fill(&mut secret).expect("OS CSPRNG unavailable");
+        Nonces {
+            rng,
+            key: hmac::Key::new(hmac::HMAC_SHA256, &secret),
+            origin: Instant::now(),
+            spent: HashSet::new(),
+            order: VecDeque::new(),
         }
-        if self.pending.values().filter(|p| p.bucket == bucket).count() >= MAX_PENDING_PER_BUCKET {
-            return Err(IssueRefusal::Bucket);
+    }
+
+    fn secs(&self, now: Instant) -> u64 {
+        now.saturating_duration_since(self.origin).as_secs()
+    }
+
+    fn mac(&self, bucket: &str, expiry_and_random: &[u8]) -> [u8; MAC_LEN] {
+        let mut msg = Vec::with_capacity(NONCE_TAG.len() + bucket.len() + expiry_and_random.len());
+        msg.extend_from_slice(NONCE_TAG);
+        msg.extend_from_slice(bucket.as_bytes());
+        msg.extend_from_slice(expiry_and_random);
+        let mut out = [0u8; MAC_LEN];
+        out.copy_from_slice(&hmac::sign(&self.key, &msg).as_ref()[..MAC_LEN]);
+        out
+    }
+
+    /// A fresh 64-hex nonce for `bucket`. Stores nothing.
+    pub fn issue(&self, bucket: &str, now: Instant) -> String {
+        let mut nonce = [0u8; 32];
+        nonce[..8].copy_from_slice(&(self.secs(now) + NONCE_LIFE.as_secs()).to_be_bytes());
+        self.rng.fill(&mut nonce[8..16]).expect("OS CSPRNG unavailable");
+        let mac = self.mac(bucket, &nonce[..16]);
+        nonce[16..].copy_from_slice(&mac);
+        nonce.iter().map(|b| format!("{b:02x}")).collect()
+    }
+
+    /// Spend `nonce` for `bucket`: only a nonce this master minted for this bucket, not yet
+    /// expired, never spent before. A try that fails changes nothing, so a caller cannot burn a
+    /// nonce it was not issued.
+    pub fn take(&mut self, nonce: &[u8; 32], bucket: &str, now: Instant) -> Result<(), NonceFault> {
+        let now_s = self.secs(now);
+        while let Some(&(expiry, old)) = self.order.front() {
+            if expiry >= now_s {
+                break;
+            }
+            self.order.pop_front();
+            self.spent.remove(&old);
         }
-        let nonce = token_hex(32);
-        self.pending.insert(nonce.clone(), Pending { bucket: bucket.to_string(), expires: now + NONCE_LIFE });
-        Ok(nonce)
-    }
-
-    /// Spend `nonce`: true only for a live nonce issued to this `bucket`, and never twice. A nonce
-    /// of another bucket is left alone, so a caller cannot burn what it was not issued.
-    pub fn take(&mut self, nonce: &str, bucket: &str, now: Instant) -> bool {
-        self.sweep(now);
-        if self.pending.get(nonce).is_some_and(|p| p.bucket == bucket) {
-            self.pending.remove(nonce);
-            return true;
+        let expiry = u64::from_be_bytes(nonce[..8].try_into().expect("8 bytes"));
+        if !ct_eq(&self.mac(bucket, &nonce[..16]), &nonce[16..]) || expiry < now_s || self.spent.contains(nonce) {
+            return Err(NonceFault::Invalid);
         }
-        false
+        if self.spent.len() >= MAX_SPENT {
+            return Err(NonceFault::Full);
+        }
+        self.spent.insert(*nonce);
+        let at = self.order.partition_point(|&(e, _)| e <= expiry);
+        self.order.insert(at, (expiry, *nonce));
+        Ok(())
     }
 
-    pub fn len(&self) -> usize {
-        self.pending.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.pending.is_empty()
+    /// How many spent nonces are remembered.
+    pub fn spent_len(&self) -> usize {
+        self.spent.len()
     }
 }
+
 
 // ---- the create's verdict -----------------------------------------------------------------
 
@@ -130,8 +167,11 @@ pub enum Refusal {
     ProofRequired,
     /// A proof that is malformed, or does not verify under any name this master answers to.
     BadProof,
-    /// The nonce is unknown, spent, expired, or was issued to another address bucket.
+    /// The nonce is not one this master minted for this address bucket, or it expired or was
+    /// already spent.
     NonceExpired,
+    /// The spent set is full.
+    Busy,
 }
 
 impl Refusal {
@@ -140,6 +180,7 @@ impl Refusal {
             Refusal::ProofRequired => (409, "proof-required"),
             Refusal::BadProof => (400, "bad-proof"),
             Refusal::NonceExpired => (410, "nonce-expired"),
+            Refusal::Busy => (503, "busy"),
         }
     }
 }
@@ -150,7 +191,7 @@ impl Refusal {
 /// well-formed proof presents it, whether or not the proof then verifies. The proof is tried
 /// against each name the master answers to: the body names none, the signature does.
 pub fn judge(
-    challenges: &mut Challenges,
+    nonces: &mut Nonces,
     names: &[String],
     bucket: &str,
     now: Instant,
@@ -167,11 +208,13 @@ pub fn judge(
         return if proof_required(proto) { Err(Refusal::ProofRequired) } else { Ok(false) };
     };
     let nonce = body.get("nonce").and_then(serde_json::Value::as_str).unwrap_or("");
-    if hex_to_bytes::<32>(nonce).is_none() || hex_to_bytes::<64>(proof).is_none() {
+    let (Some(nonce_bytes), Some(_)) = (hex_to_bytes::<32>(nonce), hex_to_bytes::<64>(proof)) else {
         return Err(Refusal::BadProof);
-    }
-    if !challenges.take(nonce, bucket, now) {
-        return Err(Refusal::NonceExpired);
+    };
+    match nonces.take(&nonce_bytes, bucket, now) {
+        Ok(()) => {}
+        Err(NonceFault::Invalid) => return Err(Refusal::NonceExpired),
+        Err(NonceFault::Full) => return Err(Refusal::Busy),
     }
     if names.iter().any(|name| check_lobby_proof(identity, nonce, name, proof).is_ok()) {
         Ok(true)
@@ -183,12 +226,12 @@ pub fn judge(
 #[cfg(test)]
 mod tests {
     use super::{
-        blob, check_lobby_proof, Challenges, IssueRefusal, ANNOUNCE_TAG, MAX_PENDING, MAX_PENDING_PER_BUCKET,
-        NONCE_LIFE,
+        blob, check_lobby_proof, judge, NonceFault, Nonces, Refusal, ANNOUNCE_TAG, MAX_SPENT, NONCE_LIFE,
     };
     use crate::common::{hex_to_bytes, identity_shape_ok};
     use ring::rand::SystemRandom;
     use ring::signature::{Ed25519KeyPair, KeyPair};
+    use std::collections::HashSet;
     use std::time::{Duration, Instant};
 
     // The vector the client's selftest reads as well: one fixed seed, its identity, a nonce, a
@@ -300,55 +343,128 @@ mod tests {
         }
     }
 
-    #[test]
-    fn a_nonce_is_64_hex_and_spent_once() {
-        let (mut c, t0) = (Challenges::new(), Instant::now());
-        let nonce = c.issue("198.51.100.1", t0).unwrap();
-        assert!(hex_to_bytes::<32>(&nonce).is_some(), "not 64 lower-case hex: {nonce}");
-        assert!(c.take(&nonce, "198.51.100.1", t0));
-        assert!(!c.take(&nonce, "198.51.100.1", t0), "a nonce was spent twice");
-        assert!(c.is_empty());
+    const A: &str = "198.51.100.1";
+    const B: &str = "198.51.100.2";
+    // Past the life by a margin the whole-second expiry cannot straddle.
+    const DEAD: Duration = Duration::from_secs(NONCE_LIFE.as_secs() + 2);
+
+    fn raw(nonce: &str) -> [u8; 32] {
+        hex_to_bytes::<32>(nonce).expect("a nonce is 64 lower-case hex")
+    }
+
+    /// `nonce` with the hex digit at `at` changed to another digit.
+    fn flip(nonce: &str, at: usize) -> String {
+        let mut b = nonce.as_bytes().to_vec();
+        b[at] = if b[at] == b'0' { b'1' } else { b'0' };
+        String::from_utf8(b).unwrap()
     }
 
     #[test]
-    fn a_nonce_lives_thirty_seconds_and_no_longer() {
-        let (mut c, t0) = (Challenges::new(), Instant::now());
-        let early = c.issue("198.51.100.1", t0).unwrap();
-        let late = c.issue("198.51.100.1", t0).unwrap();
-        assert!(c.take(&early, "198.51.100.1", t0 + NONCE_LIFE - Duration::from_millis(1)));
-        assert!(!c.take(&late, "198.51.100.1", t0 + NONCE_LIFE), "an expired nonce was spent");
-        assert!(c.is_empty(), "an expired nonce was left in the table");
+    fn a_nonce_is_64_hex_carries_its_expiry_and_is_spent_once() {
+        let (mut n, t0) = (Nonces::new(), Instant::now());
+        let nonce = n.issue(A, t0);
+        let bytes = raw(&nonce);
+        let expiry = u64::from_be_bytes(bytes[..8].try_into().unwrap());
+        assert_eq!(expiry, t0.saturating_duration_since(n.origin).as_secs() + NONCE_LIFE.as_secs());
+        assert_eq!(n.take(&bytes, A, t0), Ok(()));
+        assert_eq!(n.take(&bytes, A, t0), Err(NonceFault::Invalid), "a nonce was spent twice");
+        assert_eq!(n.spent_len(), 1);
     }
 
     #[test]
-    fn another_buckets_nonce_is_refused_and_not_burnt() {
-        let (mut c, t0) = (Challenges::new(), Instant::now());
-        let nonce = c.issue("198.51.100.1", t0).unwrap();
-        assert!(!c.take(&nonce, "198.51.100.2", t0));
-        assert!(c.take(&nonce, "198.51.100.1", t0), "the owner lost its nonce to another bucket's try");
-        assert!(!c.take("not a nonce", "198.51.100.1", t0));
+    fn issuing_stores_nothing_and_never_repeats() {
+        let (n, t0) = (Nonces::new(), Instant::now());
+        let all: HashSet<String> = (0..2000).map(|_| n.issue(A, t0)).collect();
+        assert_eq!(all.len(), 2000, "two challenges answered one nonce");
+        assert_eq!(n.spent_len(), 0, "issuing left something behind");
     }
 
     #[test]
-    fn a_bucket_holds_four_and_expiry_frees_it() {
-        let (mut c, t0) = (Challenges::new(), Instant::now());
-        for _ in 0..MAX_PENDING_PER_BUCKET {
-            c.issue("198.51.100.1", t0).unwrap();
+    fn a_nonce_lives_thirty_seconds_and_not_much_longer() {
+        let (mut n, t0) = (Nonces::new(), Instant::now());
+        let (early, late) = (n.issue(A, t0), n.issue(A, t0));
+        assert_eq!(n.take(&raw(&early), A, t0 + NONCE_LIFE), Ok(()), "a nonce died before its thirty seconds");
+        assert_eq!(n.take(&raw(&late), A, t0 + DEAD), Err(NonceFault::Invalid), "an expired nonce was spent");
+        assert_eq!(n.spent_len(), 0, "the sweep kept an expired nonce");
+    }
+
+    #[test]
+    fn another_buckets_nonce_is_refused_and_its_owner_keeps_it() {
+        let (mut n, t0) = (Nonces::new(), Instant::now());
+        let nonce = raw(&n.issue(A, t0));
+        assert_eq!(n.take(&nonce, B, t0), Err(NonceFault::Invalid));
+        assert_eq!(n.spent_len(), 0, "a stranger's try burnt the owner's nonce");
+        assert_eq!(n.take(&nonce, A, t0), Ok(()));
+    }
+
+    #[test]
+    fn a_nonce_with_any_flipped_digit_is_refused() {
+        let (mut n, t0) = (Nonces::new(), Instant::now());
+        let nonce = n.issue(A, t0);
+        // The expiry, the random part and the MAC: each part is covered by the MAC.
+        for at in [0, 15, 16, 31, 32, 47, 63] {
+            assert_eq!(n.take(&raw(&flip(&nonce, at)), A, t0), Err(NonceFault::Invalid), "digit {at}");
         }
-        assert_eq!(c.issue("198.51.100.1", t0), Err(IssueRefusal::Bucket));
-        assert!(c.issue("198.51.100.2", t0).is_ok(), "one bucket's cap refused another");
-        assert!(c.issue("198.51.100.1", t0 + NONCE_LIFE).is_ok(), "an expired nonce still counted");
+        assert_eq!(n.take(&raw(&nonce), A, t0), Ok(()), "a refused try burnt the real nonce");
     }
 
     #[test]
-    fn the_table_holds_4096_and_sweeps_on_each_call() {
-        let (mut c, t0) = (Challenges::new(), Instant::now());
-        for i in 0..MAX_PENDING {
-            c.issue(&format!("bucket-{}", i / MAX_PENDING_PER_BUCKET), t0).unwrap();
+    fn a_master_with_another_secret_does_not_accept_the_nonce() {
+        let (mut one, mut two, t0) = (Nonces::new(), Nonces::new(), Instant::now());
+        let nonce = raw(&one.issue(A, t0));
+        assert_eq!(two.take(&nonce, A, t0), Err(NonceFault::Invalid));
+        assert_eq!(one.take(&nonce, A, t0), Ok(()));
+    }
+
+    #[test]
+    fn a_spent_nonce_is_forgotten_at_its_expiry_and_in_expiry_order() {
+        let (mut n, t0) = (Nonces::new(), Instant::now());
+        // Spent out of issue order: the later-expiring one first.
+        let later = raw(&n.issue(A, t0 + Duration::from_secs(10)));
+        let sooner = raw(&n.issue(A, t0));
+        let t = t0 + Duration::from_secs(12);
+        assert_eq!((n.take(&later, A, t), n.take(&sooner, A, t)), (Ok(()), Ok(())));
+        assert_eq!(n.order.iter().map(|e| e.0).collect::<Vec<_>>(), {
+            let mut v: Vec<u64> = n.order.iter().map(|e| e.0).collect();
+            v.sort_unstable();
+            v
+        });
+        // Past the first's expiry only the first goes; past both, only the newest is left.
+        let fresh = raw(&n.issue(A, t0 + Duration::from_secs(35)));
+        assert_eq!(n.take(&fresh, A, t0 + Duration::from_secs(35)), Ok(()));
+        assert_eq!(n.spent_len(), 2, "the sweep dropped a live nonce or kept a dead one");
+        let last = raw(&n.issue(A, t0 + Duration::from_secs(100)));
+        assert_eq!(n.take(&last, A, t0 + Duration::from_secs(100)), Ok(()));
+        assert_eq!(n.spent_len(), 1);
+        assert_eq!(n.order.len(), 1);
+    }
+
+    #[test]
+    fn a_full_spent_set_answers_busy_until_the_sweep_frees_it() {
+        let (mut n, t0) = (Nonces::new(), Instant::now());
+        for _ in 0..MAX_SPENT {
+            assert_eq!(n.take(&raw(&n.issue(A, t0)), A, t0), Ok(()));
         }
-        assert_eq!(c.len(), MAX_PENDING);
-        assert_eq!(c.issue("fresh", t0), Err(IssueRefusal::Table));
-        assert!(c.issue("fresh", t0 + NONCE_LIFE).is_ok());
-        assert_eq!(c.len(), 1, "the sweep did not drop the expired");
+        let next = raw(&n.issue(A, t0));
+        assert_eq!(n.take(&next, A, t0), Err(NonceFault::Full));
+        assert_eq!(n.spent_len(), MAX_SPENT);
+        let after = t0 + DEAD;
+        let fresh = raw(&n.issue(A, after));
+        assert_eq!(n.take(&fresh, A, after), Ok(()), "the sweep did not free a full set");
+        assert_eq!(n.spent_len(), 1);
+    }
+
+    #[test]
+    fn judge_answers_each_nonce_fault_with_its_status() {
+        let (mut n, t0, p) = (Nonces::new(), Instant::now(), peer());
+        let names = vec![NAME.to_string()];
+        let body = |nonce: &str| serde_json::json!({"nonce": nonce, "proof": proof(&p, &p.ident, nonce, NAME)});
+        let nonce = n.issue(A, t0);
+        let go = |n: &mut Nonces, bucket: &str, b: &serde_json::Value| judge(n, &names, bucket, t0, b, &p.ident, 230);
+        assert_eq!(go(&mut n, B, &body(&nonce)), Err(Refusal::NonceExpired));
+        assert_eq!(go(&mut n, A, &body(&nonce)), Ok(true));
+        assert_eq!(go(&mut n, A, &body(&nonce)), Err(Refusal::NonceExpired), "a replay was judged");
+        assert_eq!(Refusal::NonceExpired.answer(), (410, "nonce-expired"));
+        assert_eq!(Refusal::Busy.answer(), (503, "busy"));
     }
 }
