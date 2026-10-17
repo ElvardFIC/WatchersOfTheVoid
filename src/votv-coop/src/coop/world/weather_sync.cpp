@@ -22,6 +22,7 @@
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/object_index.h"
 #include "ue_wrap/core/reflection.h"
+#include "ue_wrap/world/bad_sun.h"
 #include "ue_wrap/world/world_singleton.h"
 #include "ue_wrap/core/sdk_profile.h"
 #include "ue_wrap/core/types.h"
@@ -434,17 +435,24 @@ void QueueConnectBroadcastForSlot(int peerSlot) {
                 peerSlot, static_cast<unsigned>(coop::players::kMaxPeers));
         return;
     }
-    // The Bad Sun's seed comes first, ahead of the cycle early return below: the joiner is told whether a Bad Sun
-    // exists even when this host has no cycle to read the weather from. Every state is absolute, so it and a live
-    // edge on one lane cannot disorder (coop/world/weather_badsun).
+    // The Bad Sun's seed comes first, ahead of the cycle early return below, and goes only from a state the host
+    // could read: a state that did not read, or a world with no day cycle, sends nothing rather than "absent".
+    // Every state is absolute, so it and a live edge on one lane cannot disorder (coop/world/weather_badsun).
     {
         coop::net::BadSunPayload bp{};
-        bp.state = coop::weather_badsun::LocalBadSunPresent() ? 1 : 0;
-        if (!s->SendReliableToSlot(peerSlot, coop::net::ReliableKind::BadSun, &bp, sizeof(bp)))
-            UE_LOGW("weather: the Bad Sun seed to slot %d was not queued", peerSlot);
-        else
-            UE_LOGI("weather: connect-broadcast slot=%d BadSun seed state=%u", peerSlot,
-                    static_cast<unsigned>(bp.state));
+        bool present = false;
+        if (!coop::weather_badsun::ReadLocalBadSun(present)) {
+            UE_LOGW("weather: the Bad Sun seed to slot %d was not sent -- the host's state did not read", peerSlot);
+        } else if (!ue_wrap::bad_sun::HasCycle()) {
+            UE_LOGI("weather: the host's world has no day cycle; no Bad Sun seed to slot %d", peerSlot);
+        } else {
+            bp.state = present ? 1 : 0;
+            if (!s->SendReliableToSlot(peerSlot, coop::net::ReliableKind::BadSun, &bp, sizeof(bp)))
+                UE_LOGW("weather: the Bad Sun seed to slot %d was not queued", peerSlot);
+            else
+                UE_LOGI("weather: connect-broadcast slot=%d BadSun seed state=%u", peerSlot,
+                        static_cast<unsigned>(bp.state));
+        }
     }
     void* cycle = ResolveCycle();
     if (!cycle) {

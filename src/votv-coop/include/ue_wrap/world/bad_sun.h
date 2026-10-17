@@ -38,8 +38,9 @@ bool ReadIsSender(void* copy, bool& sender);
 // there is no gamemode or the member did not resolve.
 bool ReadGamemodeCopy(void* gamemode, bool& present);
 
-// Whether the running world has a day cycle: the object a copy's poll reads the hour from and its widget the sun
-// from. A world without one cannot show a Bad Sun.
+// Whether the running gamemode holds a live day cycle in its own `daynightCycle` member: the object a copy's poll
+// reads the hour from and its widget the sun from. A world without one cannot show a Bad Sun. False too when there
+// is no gamemode or the member did not resolve.
 bool HasCycle();
 
 // The running gamemode's own `Spawn Bad Sun`, reached through ProcessEvent: it spawns a copy and stores it in

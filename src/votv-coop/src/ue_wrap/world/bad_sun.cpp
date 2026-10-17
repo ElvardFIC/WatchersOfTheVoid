@@ -8,7 +8,6 @@
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/engine/engine_pawn.h"
 #include "ue_wrap/world/active_events.h"
-#include "ue_wrap/world/daynightcycle.h"
 #include "ue_wrap/world/world_instances.h"
 #include "ue_wrap/world/world_singleton.h"
 
@@ -25,21 +24,36 @@ constexpr const wchar_t* kSpawnFn = L"Spawn Bad Sun";  // on mainGamemode_C
 int32_t g_offWidget = -1;  // badSun_C::widget (ui_badSun_C object pointer)
 bool g_resolveFailed = false;
 
-int32_t g_offGmCopy = -1;  // mainGamemode_C::badSun (badSun_C object pointer)
-bool g_gmCopyFailed = false;
+// Two members of mainGamemode_C, each found once off its class: the class's layout is the same in every world.
+struct GmMember {
+    const wchar_t* name;
+    int32_t off = -1;
+    bool failed = false;
+};
+GmMember g_gmCopy{L"badSun"};          // the badSun_C object pointer
+GmMember g_gmCycle{L"daynightCycle"};  // the daynightCycle_C object pointer
 
-// The gamemode's own member, found once off its class: the class's layout is the same in every world.
-bool EnsureGmCopy(void* gamemode) {
-    if (g_offGmCopy >= 0) return true;
-    if (g_gmCopyFailed) return false;
-    g_offGmCopy = R::FindPropertyOffset(R::ClassOf(gamemode), L"badSun");
-    if (g_offGmCopy >= 0) {
-        UE_LOGI("bad_sun: resolved (mainGamemode.badSun=0x%X)", g_offGmCopy);
+bool EnsureGmMember(GmMember& m, void* gamemode) {
+    if (m.off >= 0) return true;
+    if (m.failed) return false;
+    m.off = R::FindPropertyOffset(R::ClassOf(gamemode), m.name);
+    if (m.off >= 0) {
+        UE_LOGI("bad_sun: resolved (mainGamemode.%ls=0x%X)", m.name, m.off);
         return true;
     }
-    g_gmCopyFailed = true;  // a member missing from a loaded class does not appear later
-    UE_LOGW("bad_sun: mainGamemode_C.badSun did not resolve -- latched OFF; game version mismatch?");
+    m.failed = true;  // a member missing from a loaded class does not appear later
+    UE_LOGW("bad_sun: mainGamemode_C.%ls did not resolve -- latched OFF; game version mismatch?", m.name);
     return false;
+}
+
+// The live object a gamemode member points at (null when unset or dead); false when the member does not read.
+bool ReadGmObject(GmMember& m, void* gamemode, void*& obj) {
+    obj = nullptr;
+    void* gm = gamemode ? gamemode : world_singleton::Gamemode();
+    if (!gm || !EnsureGmMember(m, gm)) return false;
+    void* p = *reinterpret_cast<void* const*>(static_cast<const uint8_t*>(gm) + m.off);
+    obj = p && R::IsLive(p) ? p : nullptr;
+    return true;
 }
 
 }  // namespace
@@ -88,15 +102,16 @@ bool ReadIsSender(void* copy, bool& sender) {
 }
 
 bool ReadGamemodeCopy(void* gamemode, bool& present) {
-    present = false;
-    void* gm = gamemode ? gamemode : world_singleton::Gamemode();
-    if (!gm || !EnsureGmCopy(gm)) return false;
-    void* copy = *reinterpret_cast<void* const*>(static_cast<const uint8_t*>(gm) + g_offGmCopy);
-    present = copy && R::IsLive(copy);
-    return true;
+    void* copy = nullptr;
+    const bool read = ReadGmObject(g_gmCopy, gamemode, copy);
+    present = copy != nullptr;
+    return read;
 }
 
-bool HasCycle() { return daynightcycle::Cycle() != nullptr; }
+bool HasCycle() {
+    void* cycle = nullptr;
+    return ReadGmObject(g_gmCycle, nullptr, cycle) && cycle != nullptr;
+}
 
 bool CallSpawn() {
     void* gm = world_singleton::Gamemode();

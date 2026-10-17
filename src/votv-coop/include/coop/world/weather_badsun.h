@@ -26,9 +26,10 @@ void Install(coop::net::Session* session);
 // a single bool read once both are said.
 void Tick();
 
-// Whether the running world's gamemode holds a live Bad Sun: the seed a joiner's world-ready gets (principle 8).
-// Game thread.
-bool LocalBadSunPresent();
+// Read whether the running world's gamemode holds a live Bad Sun: the seed a joiner's world-ready gets (principle
+// 8). Returns whether it could read: false, with `present` false, off the game thread or when `gamemode.badSun`
+// does not read.
+bool ReadLocalBadSun(bool& present);
 
 // The host's state on this client: spawn one through the gamemode's own verb when it has none, destroy its inactive
 // copies when the host has none. Game thread.

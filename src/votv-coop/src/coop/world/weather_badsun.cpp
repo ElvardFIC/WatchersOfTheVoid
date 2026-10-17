@@ -164,9 +164,9 @@ void Tick() {
              "client copies still end by their clocks; the host's removal sends nothing");
 }
 
-bool LocalBadSunPresent() {
-    bool present = false;
-    return GT::IsGameThread() && BS::ReadGamemodeCopy(nullptr, present) && present;
+bool ReadLocalBadSun(bool& present) {
+    present = false;
+    return GT::IsGameThread() && BS::ReadGamemodeCopy(nullptr, present);
 }
 
 void Apply(const coop::net::BadSunPayload& payload) {
