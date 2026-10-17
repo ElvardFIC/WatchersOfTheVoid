@@ -377,4 +377,75 @@ bool RunSelftest() {
     return verdict;
 }
 
+static bool RunBindingSelftestBody() {
+    int pass = 0, total = 0;
+    auto check = [&](bool ok, const char* what) {
+        ++total;
+        if (ok) { ++pass; return; }
+        UE_LOGE("identity binding selftest FAIL: %s", what);
+    };
+    using identity_key_file::Binding;
+    using identity_key_file::JudgeBinding;
+    using identity_key_file::ParseKeyText;
+
+    // The fingerprint against a vector fixed outside this code (sha256 of the tag, a newline and
+    // "abc"): the machine id is lower-cased first, an unreadable one binds `none`, and a fake id
+    // stands in for the registry value.
+    const std::string abc = "65007aa6fa75a9b6d93789c5c7a6c16c7bc1dc5aa0c87538083aa6435c515b0d";
+    check(identity_crypto::BindingValue("abc") == abc, "the binding of \"abc\" is not the vector");
+    check(identity_crypto::BindingValue("ABC") == abc, "the machine id is not lower-cased");
+    check(identity_crypto::BindingValue("") == "none", "an empty machine id does not bind `none`");
+    check(identity_crypto::BindingValue("abd") != abc, "two machine ids bind the same");
+
+    // The verdict, over every state of the file against every state of the machine.
+    const std::string other = identity_crypto::BindingValue("other");
+    check(JudgeBinding(abc, abc) == Binding::Match, "a matching bound is not accepted");
+    check(JudgeBinding(other, abc) == Binding::Foreign, "another machine's bound is not foreign");
+    check(JudgeBinding("", abc) == Binding::Foreign, "a file with no bound line is not foreign");
+    check(JudgeBinding("not hex", abc) == Binding::Foreign, "a malformed bound is not foreign");
+    check(JudgeBinding("none", abc) == Binding::Rebind, "a bound of none is not re-bound");
+    check(JudgeBinding(abc, "none") == Binding::MachineUnknown &&
+          JudgeBinding("", "none") == Binding::MachineUnknown &&
+          JudgeBinding("none", "none") == Binding::MachineUnknown,
+          "an unreadable machine id does not leave the key as it is");
+
+    // The file text to its key and its bound value.
+    const std::string hex(64, 'a');
+    uint8_t seed[kPrivKeyBytes]{};
+    std::string bound = "stale";
+    check(ParseKeyText("# h\nkey=" + hex + "\nbound=" + abc + "\n", seed, &bound) ==
+              identity_key_file::ReadResult::Loaded && bound == abc && seed[0] == 0xaa,
+          "a key and its bound do not parse");
+    check(ParseKeyText("key=" + hex + "\r\nbound=none\r\n", seed, &bound) ==
+              identity_key_file::ReadResult::Loaded && bound == "none",
+          "a CRLF file does not parse");
+    check(ParseKeyText("bound=" + abc + "\nkey=" + hex + "\n", seed, &bound) ==
+              identity_key_file::ReadResult::Loaded && bound == abc,
+          "a bound line before the key is not found");
+    check(ParseKeyText("key=" + hex + "\n", seed, &bound) == identity_key_file::ReadResult::Loaded &&
+              bound.empty(),
+          "a file with no bound line does not read as empty");
+    check(ParseKeyText("key=" + hex.substr(2) + "\nbound=" + abc + "\n", seed, &bound) ==
+              identity_key_file::ReadResult::Malformed,
+          "a short key is not malformed");
+    check(ParseKeyText("bound=" + abc + "\n", seed, &bound) == identity_key_file::ReadResult::Malformed,
+          "a file with no key line is not malformed");
+
+    if (pass == total) {
+        UE_LOGI("identity binding selftest: ALL PASS (%d checks)", total);
+        return true;
+    }
+    UE_LOGE("identity binding selftest: %d/%d checks passed", pass, total);
+    return false;
+}
+
+// Pure and fast, run once at boot beside the key's load: what decides whether a key file is this
+// machine's must not wait for a session.
+bool RunBindingSelftest() {
+    static std::once_flag ran;
+    static bool verdict = false;
+    std::call_once(ran, [] { verdict = RunBindingSelftestBody(); });
+    return verdict;
+}
+
 }  // namespace coop::net::peer_identity

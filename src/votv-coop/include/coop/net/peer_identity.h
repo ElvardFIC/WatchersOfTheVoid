@@ -102,4 +102,10 @@ bool VerifyBlob(const PubKey& pub, const uint8_t* data, size_t len, const Sig& s
 // both read as working from outside.
 bool RunSelftest();
 
+// The key file's binding checks, pure: the machine fingerprint against a fixed vector, the verdict
+// for every state of file and machine, and the file text's parse. Run once at boot, beside Load()
+// (the harness), since the answer to "is this key file this machine's" is needed before a session
+// exists; a later call returns the first run's verdict silently.
+bool RunBindingSelftest();
+
 }  // namespace coop::net::peer_identity

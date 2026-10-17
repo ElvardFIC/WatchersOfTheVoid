@@ -144,6 +144,9 @@ DWORD WINAPI TimelineThread(LPVOID param) {
         // had not worked.
         coop::session_manager::SetNickname(coop::text::ToUtf8(cfg::ReadNickname()));
     }
+    // The binding that decides whether a key file is this machine's, checked on pinned vectors before
+    // the key is read (coop/net/peer_identity.h): pure, microseconds, impossible to switch off.
+    coop::net::peer_identity::RunBindingSelftest();
     // The durable player identity: an Ed25519 keypair whose public key is the network identity and
     // whose 32-character guid (the key of the host-side inventory) is derived from it, replacing an
     // ini value the peer chose for itself and every host believed (coop/net/peer_identity.h).
