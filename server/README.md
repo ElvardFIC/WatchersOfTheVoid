@@ -16,11 +16,14 @@ them.
 `*` required: the process refuses to start (exit 1) without it. All secrets are env-only;
 nothing is hardcoded, and it stays that way.
 
-The master's names: `COOP_DOMAIN` is the name its clients dial, and a lobby proof is signed for
-it. `COOP_MASTER_NAME_ALIASES` is an optional comma list of other names it answers to (an IP
-literal, a dev host); names are trimmed, lower-cased and compared without a port, and a loopback
-alias is dropped with a warning. `COOP_MIN_LISTED_PROTO` (default 0) refuses a create from a
-build below it.
+The master's names: `COOP_DOMAIN` is required and is the name its clients dial, written as a
+bare host (`master.example.org`: no scheme, path, login or port; the master refuses to start on
+anything else). A lobby proof is signed for that name, so the `net.masters` entry a player adds
+must dial the same host. `COOP_MASTER_NAME_ALIASES` is an optional comma list of other names it
+answers to (an IP literal, a dev host); names are trimmed, lower-cased and compared without a
+port, and a loopback alias is dropped with a warning. `COOP_MIN_LISTED_PROTO` (default 0) is the
+floor: a create from a build below it is refused, and a value that is not a decimal number
+stops the master at start.
 
 ## Build
 
@@ -48,13 +51,20 @@ limits and per-IP caps are the wrong fixture for many synthetic rows from one ad
 - **The lobby proof**: a create is two calls. `POST /v1/host/challenge` (body `{}`) answers a
   `nonce`; `POST /v1/host` then carries `nonce` and `proof`, the host's Ed25519 signature over
   `"multivoid-lobby-announce-v1" || identity || nonce || master_name` (`src/lobby_proof.rs`, the
-  shared vector in `tests/vectors/lobby_proof.json`). A build at or above `MIN_PROVED_PROTO`
-  (`src/version_gate.rs`) without a valid proof is `409 proof-required`; a proof that is present
-  must verify (`400 bad-proof`); a nonce that is spent, expired, or issued to another address is
-  `410 nonce-expired`; a build below `COOP_MIN_LISTED_PROTO` is `403 build-too-old`. A valid proof
-  marks the row `proved`, and a proved create for a key already listed replaces that key's row
-  (new session and token). When the table is full a create evicts the stalest unproved row, then
-  the stalest proved one. `/v1/lobbies` rows carry `identity` and `proved`.
+  shared vector in `tests/vectors/lobby_proof.json`). The nonce is stateless: its expiry, random
+  bytes and an HMAC (a secret drawn when the master starts) over the caller's address bucket, so
+  issuing stores nothing and no flood of challenges can fill the master; only a spent nonce is
+  kept, until it expires (single use; a full set, 65536, answers `503 busy`). A restart voids
+  outstanding nonces and the host asks again. The challenge has its own rate class. A build at or
+  above `MIN_PROVED_PROTO` (`src/version_gate.rs`) without a valid proof is `409 proof-required`;
+  a proof that is present must verify (`400 bad-proof`); a nonce that is not this master's for
+  this address, or is spent or expired, is `410 nonce-expired`; a build below
+  `COOP_MIN_LISTED_PROTO` is `403 build-too-old`. A valid proof marks the row `proved`, and a
+  proved create for a key already listed replaces that key's row (new session and token). When
+  the table is full a create evicts the stalest unproved row, then the stalest proved one; an
+  unproved create is refused (`429`) when every row is proved. `/v1/lobbies` rows carry
+  `identity` and `proved`. The host name a client signs is the host of its master URL, by the
+  rules of `canon_host_name` (`src/common.rs`; cases in `tests/vectors/master_names.json`).
 - **The thanks list**: `/v1/thanks` answers `{"text": ...}` with the file `COOP_THANKS_FILE`
   names (default `/etc/coop-thanks.txt`), a copy of `src/votv-coop/assets/thanks/thanks.txt`.
   Re-read at most every thirty seconds, capped at 64 KiB, 404 when it cannot be served whole.
