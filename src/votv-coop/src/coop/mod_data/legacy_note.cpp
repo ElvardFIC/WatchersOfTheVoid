@@ -41,16 +41,14 @@ bool Claim(LegacyFile file, uint32_t h) {
 
 void Once(LegacyFile file, const wchar_t* name) {
     if (!name || !*name || static_cast<size_t>(file) >= kEntries) return;
-    const std::wstring exe = ue_wrap::paths::ExeDir();
-    const std::wstring data = ue_wrap::paths::ModDataDir();
-    if (exe.empty() || exe == data) return;
     if (!ue_wrap::paths::ExistsBesideExe(name)) return;
     if (!Claim(file, HashOf(name))) return;
     if (file == LegacyFile::IdentityKey) {
-        UE_LOGW("identity: legacy identity beside the exe (%ls\\%ls) -- ignoring; a new identity is in "
-                "the mod's folder", exe.c_str(), name);
+        UE_LOGW("identity: legacy identity beside the exe (%ls) -- ignoring; a new identity is in "
+                "the mod's folder", name);
         return;
     }
+    const std::wstring data = ue_wrap::paths::ModDataDir();
     UE_LOGI("legacy %ls beside the exe -- ignoring; this data now lives in %ls", name,
             data.empty() ? L"(no data folder)" : data.c_str());
 }

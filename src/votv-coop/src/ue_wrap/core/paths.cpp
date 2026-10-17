@@ -22,6 +22,8 @@ bool ExistsBesideExe(const wchar_t* name) {
     if (!name || !*name) return false;
     const std::wstring exe = ExeDir();
     if (exe.empty()) return false;
+    // Where the data folder is the exe folder, a file of that name is the mod's own, not a leftover.
+    if (_wcsicmp(exe.c_str(), ModDataDir().c_str()) == 0) return false;
     return ::GetFileAttributesW((exe + L"\\" + name).c_str()) != INVALID_FILE_ATTRIBUTES;
 }
 
