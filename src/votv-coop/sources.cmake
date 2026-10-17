@@ -416,6 +416,7 @@ set(VOTVCOOP_SOURCES
     src/coop/net/ice_policy.cpp
     src/coop/net/signaling_client.cpp
     src/coop/net/signaling_proof.cpp
+    src/coop/net/lobby_proof.cpp
     src/coop/net/http_client.cpp
     src/coop/net/lobby_client.cpp
     src/coop/net/lobby_announcer.cpp

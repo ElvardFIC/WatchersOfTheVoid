@@ -41,6 +41,7 @@
 #include "coop/net/intent_queue.h"
 #include "coop/net/latest_wins.h"
 #include "coop/net/lobby_password.h"
+#include "coop/net/lobby_proof.h"
 #include "coop/net/peer_admission.h"
 #include "coop/net/peer_identity.h"
 #include "coop/net/stream_slot.h"
@@ -217,6 +218,10 @@ bool StartCoopSession(const coop::net::Config& netCfg, coop::net::Refusal* why) 
     // with a tamper arm, plus the decision this module exports (a signature verifies against its
     // own identity and no other). Un-gated: a verifier that accepts everything reads as working.
     coop::net::peer_identity::RunSelftest();
+    // And the lobby announce proof built on its signatures: the blob and the signature against the vector the
+    // master's tests share, a flipped bit and a proof for another master refused, then a round trip through
+    // our own loaded key. Un-gated: a proof the master rejects does not crash, it unlists the host.
+    coop::net::lobby_proof::RunSelftest();
     // And the admission decision built on it; its arms are the ones no LAN drill can stage: a proof
     // replayed in the wrong direction, aimed at a third party, or for a stale nonce.
     coop::net::peer_admission::RunSelftest();
