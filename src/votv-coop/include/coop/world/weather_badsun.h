@@ -4,17 +4,23 @@
 // poll inside 07:00..18:00, shows its widget and damages its own player (ue_wrap/world/bad_sun), so the sky and the
 // harm are peer-local by the game's own design. What the host owns is WHETHER a copy exists. A fresh one comes from
 // the gamemode's `Spawn Bad Sun` (the day cycle's midnight roll, which no ProcessEvent hook sees, and the cheat
-// menu) and the end from the copy's own remove(); the script gate sees both on every route. The HOST sends its state
-// at the call that changes it, as MTA's server sends a weather change at SetWeather
-// (reference/mtasa-blue/Server/mods/deathmatch/logic/CStaticFunctionDefinitions.cpp), and a joiner is seeded at its
-// world-ready (coop/world/weather_sync), as MTA's join packet carries the weather
-// (reference/mtasa-blue/Server/mods/deathmatch/logic/packets/CMapInfoPacket.cpp). A CLIENT refuses its own
+// menu) and the end from the copy's own remove(); the script gate sees both on every route. A CLIENT refuses its own
 // `Spawn Bad Sun` at the gate and applies the host's through the same verb, or destroys an inactive copy; an active
 // copy ends by its own clock. The red sky's lane is the template (coop/world/weather_redsky).
 
 #pragma once
 
 namespace coop::net { class Session; struct BadSunPayload; }
+
+// MTA's shape, which this follows. The HOST sends its state at the call that changes it, as MTA's server stores a
+// weather change and broadcasts it at SetWeather
+// (reference/mtasa-blue/Server/mods/deathmatch/logic/CStaticFunctionDefinitions.cpp:11118-11134) to joined players
+// only (reference/mtasa-blue/Server/mods/deathmatch/logic/CPlayerManager.cpp:159-172); a joiner is seeded at its
+// world-ready (coop/world/weather_sync), as MTA's join packet carries the current weather
+// (reference/mtasa-blue/Server/mods/deathmatch/logic/CMapManager.cpp:537). Where it leaves it: the seed and the
+// edge carry existence and no phase, so a joiner's widget ramp restarts, up to 60 s of grace, accepted because the
+// effect is peer-local (MTA's join packet carries the blend phase,
+// reference/mtasa-blue/Client/mods/deathmatch/logic/CPacketHandler.cpp:2249-2260).
 
 namespace coop::weather_badsun {
 

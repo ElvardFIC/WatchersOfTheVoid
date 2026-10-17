@@ -3,14 +3,14 @@
 // phase waits on a state its peer can read, never on a clock; a phase that does not come ends FAIL after a bound.
 // Each verdict is one line: the tag, the arm, the role, PASS, FAIL or INCONCLUSIVE, then the reason; every other
 // line starts with the drill key and a colon, so a run's done marker meets the verdict alone.
-//   clock: that a client's own loaded copy goes active at 07:00 by its own clock, with no wire built. The host
-//     reads the save's clock and copy at its first tick and sets the clock to 05:00, so the join runs before the
-//     copy's own test; once a join is over it sets 06:30. Each peer samples from its first clock reading of hour 6
-//     or later after its own join (a client's after the host's first sample): the count of live copies (1 at the
-//     first sample), the copy's two tests (widget set; in activeEvents_senders) and the clock. Inactive until
-//     07:00, active by both within 15 s after it, else FAIL, as for a reader that does not resolve. INCONCLUSIVE:
-//     the save's copy was active at hosting (the save must read before 07:00), or a peer's first sample came at
-//     07:00 or later, so it did not see its clock cross it.
+//   clock: that a client's own loaded copy goes active at 07:00 by its own clock; the arm reads the copy alone, and
+//     the lane's own arms come with sheet C. The host reads the save's clock and copy at its first tick and sets the
+//     clock to 05:00, so the join runs before the copy's own test; once a join is over it sets 06:30. Each peer
+//     samples from its first clock reading of hour 6 or later after its own join (a client's after the host's first
+//     sample): the count of live copies (1 at the first sample), the copy's two tests (widget set; in
+//     activeEvents_senders) and the clock. Inactive until 07:00, active by both within 15 s after it, else FAIL, as
+//     for a reader that does not resolve. INCONCLUSIVE: the save's copy was active at hosting (the save must read
+//     before 07:00), or a peer's first sample came at 07:00 or later, so it did not see its clock cross it.
 // Run: the rig's smoke with badsun_drill=clock on both peers, the client's verdict line as its done marker, on the
 // rig's save and not a fresh host world: the save's record is the copy measured.
 #pragma once

@@ -81,7 +81,9 @@ bool IsHost(coop::net::Session* s) { return s && s->connected() && s->role() == 
 
 // CLIENT, before the gamemode's `Spawn Bad Sun`: the host's state owns whether a copy exists, and only the lane's
 // apply runs. No world's load calls this verb (a saved copy comes back with the world), so no clause for a world
-// this client has not announced ready.
+// this client has not announced ready. Leaves MTA's shape: its client runs its own setWeather, local only
+// (reference/mtasa-blue/Client/mods/deathmatch/logic/CStaticFunctionDefinitions.cpp:6954-6965); here the verb is
+// cancelled, since a copy a client made would act on its own poll with the host unaware.
 sg::Verdict OnSpawnPre(const sg::Call& /*call*/) {
     auto* s = g_session.load(std::memory_order_acquire);
     if (!s || !s->connected() || s->role() == coop::net::Role::Host) return sg::Verdict::Run;
@@ -276,6 +278,9 @@ void Apply(const coop::net::BadSunPayload& payload) {
         if (!BS::ReadActive(copies[i], active)) {
             FailedApply("a copy's widget did not read", want);
         } else if (active) {
+            // MTA's client blends to the new weather
+            // (reference/mtasa-blue/Client/mods/deathmatch/logic/CPacketHandler.cpp:2249-2260); here the copy's
+            // own fade is the blend, due within the clock's sync lag.
             ++g_leftActive;
             UE_LOGI("weather: the host's Bad Sun 0 -- copy %d at %p is active, left to end by its own clock", i,
                     copies[i]);
