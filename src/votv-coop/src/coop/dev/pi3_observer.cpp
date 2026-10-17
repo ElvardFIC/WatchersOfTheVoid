@@ -3,7 +3,6 @@
 #include "coop/dev/pi3_observer.h"
 
 #include "coop/player/players_registry.h"
-#include "ue_wrap/core/game_thread.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/object_index.h"
 #include "ue_wrap/core/reflection.h"
@@ -24,7 +23,6 @@ namespace {
 
 namespace R  = ue_wrap::reflection;
 namespace sg = ue_wrap::script_gate;
-namespace GT = ue_wrap::game_thread;
 namespace UH = ue_wrap::ufunction_hook;
 namespace OI = ue_wrap::object_index;
 namespace P  = ue_wrap::profile;
@@ -143,6 +141,9 @@ int      g_nClasses = 0;
 // listing no longer stands.
 std::wstring g_classNames[2];
 uint64_t g_classIds[2] = {};
+// The same names as FNames, read at Arm: the engine never frees a name, so a caller's class chain is matched against
+// them whether or not the armed class pointer still stands. {-1, 0} matches nothing.
+R::FName g_classFNames[2] = {{-1, 0}, {-1, 0}};
 void*    g_site = nullptr;
 bool     g_contactArmed[kContactCount] = {};
 uint64_t g_armAt = 0;
@@ -152,19 +153,16 @@ int      g_ownContacts = 0;
 int      g_hookTries = 0;
 uint64_t g_hookTryAt = 0;
 
-// The last class-set number Tick saw, and the tick count (the watch sweep runs at most once a tick while pending).
-uint64_t g_setVer = 0;
+// The tick count (the watch sweep runs at most once a tick while pending).
 uint64_t g_tickNo = 0;
 
 // The name watches' state, swept once and kept: every watch settled, and the live ones, in the Live sense (a
-// contact watch only for the armed classes once armed) and in the ContactWatchLive sense. A settled sweep is
-// asked again only when the class set moved (a contact watch is judged when its class gets its first listed
-// instance) or Arm/Disarm changed which watches are required.
+// contact watch only for the armed classes once armed). A settled sweep is asked again only when the class set
+// moved or Arm/Disarm changed which watches are required. ContactWatchLive does not read it.
 struct Watches {
     bool     valid;
     bool     pending;
     bool     live;
-    bool     contactLive;
     uint64_t ver;
     uint64_t tick;
 };
@@ -189,7 +187,7 @@ void Note(int verb, bool cancelled) {
 void Refresh() {
     const uint64_t ver = OI::ClassSetVersion();
     if (g_ws.valid && g_ws.ver == ver && (!g_ws.pending || g_ws.tick == g_tickNo)) return;
-    bool pending = false, live = true, contactLive = true;
+    bool pending = false, live = true;
     for (int i = 0; i < kScriptVerbs; ++i) {
         if (!sg::NameWatchSettled(*kScripts[i], kTagVerb + i)) {
             pending = true;
@@ -201,36 +199,53 @@ void Refresh() {
     for (int i = 0; i < kContactCount; ++i) {
         const bool settled = sg::NameWatchSettled(*kContacts[i], kTagContact + i);
         if (!settled) pending = true;
-        const bool armedHere = g_armed && g_contactArmed[i];
-        if (g_armed && !armedHere) continue;
-        if (!settled || !sg::NameWatchLive(*kContacts[i], kTagContact + i)) {
-            live = false;
-            if (armedHere) contactLive = false;
-        }
+        if (g_armed && !g_contactArmed[i]) continue;
+        if (!settled || !sg::NameWatchLive(*kContacts[i], kTagContact + i)) live = false;
     }
-    g_ws = Watches{true, pending, live, contactLive, ver, g_tickNo};
+    g_ws = Watches{true, pending, live, ver, g_tickNo};
 }
 
-// A small memo of the class -> attributed answers, so the descent walk runs once per class and not per call. A
-// move of the class set, a re-resolved armed class and Arm clear it.
+// A small memo of the class -> attributed answers, so the chain walks run once per class and not per call. It holds
+// the class-set number it was filled at: a callback that finds the set moved clears it. A re-resolved armed class
+// and Arm clear it too.
 struct Memo {
     void* cls;
     bool  yes;
 };
 constexpr int kMemo = 16;
-Memo g_memo[kMemo] = {};
-int  g_memoN = 0;
-int  g_memoNext = 0;
+Memo     g_memo[kMemo] = {};
+int      g_memoN = 0;
+int      g_memoNext = 0;
+uint64_t g_memoVer = 0;
 
 void ClearMemo() { g_memoN = g_memoNext = 0; }
 
+// Does the chain from `cls` up hold a class named like an armed one. The names are FNames (an index compare, no
+// string), so an armed class pointer that went stale, or was never listed, does not blind the arm.
+bool ChainHasArmedName(void* cls) {
+    constexpr int kHops = 16;
+    for (int hop = 0; cls && hop < kHops; ++hop, cls = R::SuperStructOf(cls)) {
+        const R::FName& name = R::NameOf(cls);
+        for (int k = 0; k < g_nClasses; ++k)
+            if (name.ComparisonIndex == g_classFNames[k].ComparisonIndex && name.Number == g_classFNames[k].Number)
+                return true;
+    }
+    return false;
+}
+
 bool ByClass(void* cls) {
     if (!cls) return false;
+    const uint64_t ver = OI::ClassSetVersion();
+    if (ver != g_memoVer) {
+        g_memoVer = ver;
+        ClearMemo();
+    }
     for (int i = 0; i < g_memoN; ++i)
         if (g_memo[i].cls == cls) return g_memo[i].yes;
     bool yes = false;
     for (int k = 0; k < g_nClasses && !yes; ++k)
         yes = g_classes[k] && R::IsDescendantOfAny(cls, &g_classes[k], 1);
+    yes = yes || ChainHasArmedName(cls);
     g_memo[g_memoNext] = Memo{cls, yes};
     g_memoNext = (g_memoNext + 1) % kMemo;
     if (g_memoN < kMemo) ++g_memoN;
@@ -238,14 +253,16 @@ bool ByClass(void* cls) {
 }
 
 // Each armed class whose listing no longer stands is looked up by its name again, and its pointer and identity
-// replaced (null while no class of the name is loaded). O(1) per class while they stand.
+// replaced. A name no loaded class answers to keeps the held pointer: the chain's name match attributes meanwhile.
+// O(1) per class while they stand.
 void RefreshClasses() {
     for (int i = 0; i < g_nClasses; ++i) {
         void* const held = g_classes[i];
         const uint64_t id = held ? OI::ClassListingId(held) : 0;
         if (id != 0 && id == g_classIds[i]) continue;
         void* const now = OI::ClassByName(g_classNames[i].c_str());
-        const uint64_t nowId = now ? OI::ClassListingId(now) : 0;
+        if (!now) continue;
+        const uint64_t nowId = OI::ClassListingId(now);
         if (now == held && nowId == g_classIds[i]) continue;
         g_classes[i] = now;
         g_classIds[i] = nowId;
@@ -304,28 +321,30 @@ sg::Verdict OnContactPre(const sg::Call& call) {
     return g_mode == Mode::Still ? sg::Verdict::Cancel : sg::Verdict::Run;
 }
 
-// The native hooks attribute by FFrame::Object, the Blueprint whose bytecode made the call.
+// The native hooks attribute by FFrame::Object, the Blueprint whose bytecode made the call. A pre hook and a name
+// watch forward an off-thread call untouched (ufunction_hook.h: "Off the game thread it forwards untouched"); a post
+// hook is game-thread code by that facility's contract.
 sg::Verdict OnQuitPre(void*, void* source, const uint8_t*) {
-    if (!GT::IsGameThread() || !Attributed(source)) return sg::Verdict::Run;
+    if (!Attributed(source)) return sg::Verdict::Run;
     Note(kQuit, true);
     return sg::Verdict::Cancel;
 }
 
 void OnSetRotationPost(void* context, void* source, void*) {
-    if (GT::IsGameThread() && Attributed(source) && IsPlayerController(context)) Note(kSetRot, false);
+    if (Attributed(source) && IsPlayerController(context)) Note(kSetRot, false);
 }
 
 void OnPlaySoundPost(void*, void* source, void*) {
-    if (GT::IsGameThread() && Attributed(source)) Note(kPlaySound, false);
+    if (Attributed(source)) Note(kPlaySound, false);
 }
 
 void OnAddViewportPost(void*, void* source, void*) {
-    if (GT::IsGameThread() && Attributed(source)) Note(kAddViewport, false);
+    if (Attributed(source)) Note(kAddViewport, false);
 }
 
 // A gib: a deferred spawn whose result is a prop.
 void OnSpawnPost(void*, void* source, void* result) {
-    if (!result || !GT::IsGameThread() || !Attributed(source)) return;
+    if (!result || !Attributed(source)) return;
     void* prop = OI::ClassByName(P::name::PropClass);
     if (prop && R::IsDescendantOfAny(R::ClassOf(result), &prop, 1)) Note(kGib, false);
 }
@@ -380,11 +399,6 @@ void Install() {
 void Tick() {
     if (!g_installed) return;
     ++g_tickNo;
-    const uint64_t ver = OI::ClassSetVersion();
-    if (ver != g_setVer) {
-        g_setVer = ver;
-        ClearMemo();
-    }
     if (g_armed) RefreshClasses();
     bool hooksPending = false;
     for (const Hook& h : g_hooks) hooksPending = hooksPending || (!h.done && !h.failed);
@@ -410,8 +424,10 @@ bool Live() {
 }
 
 bool ContactWatchLive() {
-    Refresh();
-    return g_ws.contactLive;
+    if (!g_armed) return true;
+    for (int i = 0; i < kContactCount; ++i)
+        if (g_contactArmed[i] && !sg::NameWatchLive(*kContacts[i], kTagContact + i)) return false;
+    return true;
 }
 
 bool FirstPending(char* out, size_t cap) {
@@ -441,6 +457,7 @@ void Arm(void* const* classes, int n, Mode mode) {
         g_classes[i] = i < g_nClasses ? classes[i] : nullptr;
         g_classNames[i] = g_classes[i] ? R::ToString(R::NameOf(g_classes[i])) : std::wstring();
         g_classIds[i] = g_classes[i] ? OI::ClassListingId(g_classes[i]) : 0;
+        g_classFNames[i] = g_classes[i] ? R::NameOf(g_classes[i]) : R::FName{-1, 0};
     }
     ClearMemo();
     for (int i = 0; i < kContactCount; ++i) {

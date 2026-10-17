@@ -122,7 +122,14 @@ void DestroySite() {
     g_site.Reset();
 }
 
+// A still peer's last change, coalesced and not yet said, is said before its records are let go.
 void Disarm() {
+    if (!g_spawner && g_stillArmed && g_stillDirty) {
+        g_stillDirty = false;
+        int n = 0;
+        const Seen* seen = OB::Report(n);
+        LogStill(ArmName(ArmOf()), seen, n, OB::OwnContacts());
+    }
     OB::Disarm();
     g_obsArmed = false;
 }
