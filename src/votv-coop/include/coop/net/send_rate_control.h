@@ -79,9 +79,11 @@ public:
     // retry outranks the lane-0 pose datagram, so it is the probe margin BBR uses and no more.
     static constexpr int kOverdriveNum = 5, kOverdriveDen = 4;
 
-    // THE BRAKE and its dead band, in milliseconds of delivery standing on the wire. The climb
-    // stops where health stopped and the brake fires an order of magnitude under the collapse;
-    // between them the rate is left alone, because a controller with no dead band hunts.
+    // THE BRAKE and its dead band, in milliseconds of QUEUE: delivery standing on the wire above the
+    // link's base round trip (Steer_). They were measured on 5-17 ms links, where all in-flight time
+    // above 150 was queue; above a base they mean the same thing on a slow path. The climb stops
+    // where health stopped and the brake fires an order of magnitude under the collapse; between
+    // them the rate is left alone, because a controller with no dead band hunts.
     static constexpr int64_t kQueueClimbMs = 150;
     static constexpr int64_t kQueueBrakeMs = 400;
 

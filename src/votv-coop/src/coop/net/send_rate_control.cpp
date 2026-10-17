@@ -144,9 +144,12 @@ int64_t SendRateControl::ServedPeak_(const Measured& m) {
 }
 
 SendRateControl::LawKind SendRateControl::Steer_(Measured& m) {
-    // THE LAW. Every term below is a byte count or a ratio of two byte counts; nothing here is
-    // compared against a reference derived from its own past, which is the single property both
-    // refuted laws lacked (docs/send-path.md carries the measurement that refutes them).
+    // THE LAW. Every term below is a byte count or a ratio of two byte counts, and one reference: the
+    // link's base round trip, the minimum over per-minute minima of probes sent while this slot had
+    // nothing in flight (BaseMs_). That is not the refuted family (docs/send-path.md): those laws
+    // compared against their own LOADED past, so a standing queue became the baseline; a queue of
+    // ours cannot enter this one, because a probe sent under load is not admitted. RFC 6817 section
+    // 2.5 (LEDBAT) keeps the same per-minute history; libutp keeps 13 minutes, we keep 10.
 
     // An idle link decides nothing. A rate is a CEILING, so with nothing queued it costs nothing to
     // leave where it is -- and a rate raised on an empty link is the rate the next burst opens at,
@@ -180,20 +183,27 @@ SendRateControl::LawKind SendRateControl::Steer_(Measured& m) {
     m.inflightMs = unacked <= 0 ? 0
                  : m.relBps > 0 ? unacked * 1000 / m.relBps
                                 : kQueueBrakeMs * 2;
-    // The queue is what the in-flight bytes cost beyond the link's own base round trip. Printed, not
-    // yet steered on: the branches below still compare inflightMs.
+    // The queue is what the in-flight bytes cost beyond the link's own base round trip. In-flight
+    // time CONTAINS the round trip, so at a relay's 190-420 ms the raw number reads as queue where
+    // there is none (NET_SEND_RATE_ARC F-A); the thresholds compare the part above the base.
+    // Before a base exists the queue is the raw in-flight time, which is the law as it shipped.
     const int baseMs = BaseMs_(m);
     m.queueMs = baseMs >= 0 ? (m.inflightMs > baseMs ? m.inflightMs - baseMs : 0) : m.inflightMs;
 
+    // A STALL -- bytes in flight and nothing acknowledged -- brakes on its own, before any base
+    // arithmetic: subtracting a base from the sentinel would let a slow path's base cancel the
+    // brake on a dead link.
+    const bool stalled = unacked > 0 && m.relBps <= 0;
+
     LawKind kind;
-    if (m.inflightMs > kQueueBrakeMs) {
+    if (stalled || m.queueMs > kQueueBrakeMs) {
         kind = LawKind::Brake;
         // Braking goes straight to the measurement rather than to a fraction of the current rate:
         // a multiplicative back-off from a rate that is already hundreds of times too high takes
         // hundreds of decisions to arrive, and the link has been telling us its capacity all along.
         m.rateBps = m.servedBps;
         ++m.brakeCount;
-    } else if (m.inflightMs <= kQueueClimbMs) {
+    } else if (m.queueMs <= kQueueClimbMs) {
         kind = LawKind::Climb;
         m.rateBps = m.rateBps * kClimbNum / kClimbDen + kClimbStepBps;
         ++m.climbCount;
