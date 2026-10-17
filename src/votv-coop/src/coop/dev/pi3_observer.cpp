@@ -16,7 +16,6 @@
 
 #include <cstdint>
 #include <cstdio>
-#include <string>
 
 namespace coop::dev::pi3_observer {
 namespace {
@@ -134,18 +133,14 @@ bool     g_installed = false;
 bool     g_liveSaid = false;
 bool     g_armed = false;
 Mode     g_mode = Mode::Spawner;
-void*    g_classes[2] = {};
 int      g_nClasses = 0;
-// What each armed class was armed as: its name, and the identity of the listing the pointer came from. A class
-// object is perishable (unloaded, loaded again at a new address), so Tick looks the name up again when the
-// listing no longer stands.
-std::wstring g_classNames[2];
-uint64_t g_classIds[2] = {};
-// The same names as FNames, read at Arm: the engine never frees a name, so a caller's class chain is matched against
-// them whether or not the armed class pointer still stands. {-1, 0} matches nothing.
+// The armed classes by name, read at Arm. A class object is perishable (unloaded, loaded again at a new address) and
+// the engine never frees a name, so a caller's class chain is matched against these and no class pointer is held.
+// {-1, 0} matches nothing.
 R::FName g_classFNames[2] = {{-1, 0}, {-1, 0}};
 void*    g_site = nullptr;
 bool     g_contactArmed[kContactCount] = {};
+bool     g_changed = false;  // a record moved since TakeChanged
 uint64_t g_armAt = 0;
 uint64_t g_anchorAt = 0;  // the first contact, once there is one
 int      g_puppetContacts = 0;
@@ -179,6 +174,7 @@ int32_t g_actorOff[kContactCount] = {kUnread, kUnread, kUnread, kUnread, kUnread
 uint64_t Now() { return ::GetTickCount64(); }
 
 void Note(int verb, bool cancelled) {
+    g_changed = true;
     Rec& r = g_rec[verb];
     if (r.count++ == 0) r.firstAt = Now();
     if (cancelled) ++r.cancelled;
@@ -205,23 +201,8 @@ void Refresh() {
     g_ws = Watches{true, pending, live, ver, g_tickNo};
 }
 
-// A small memo of the class -> attributed answers, so the chain walks run once per class and not per call. It holds
-// the class-set number it was filled at: a callback that finds the set moved clears it. A re-resolved armed class
-// and Arm clear it too.
-struct Memo {
-    void* cls;
-    bool  yes;
-};
-constexpr int kMemo = 16;
-Memo     g_memo[kMemo] = {};
-int      g_memoN = 0;
-int      g_memoNext = 0;
-uint64_t g_memoVer = 0;
-
-void ClearMemo() { g_memoN = g_memoNext = 0; }
-
 // Does the chain from `cls` up hold a class named like an armed one. The names are FNames (an index compare, no
-// string), so an armed class pointer that went stale, or was never listed, does not blind the arm.
+// string), so a class unloaded and loaded again at a new address is still the armed one.
 bool ChainHasArmedName(void* cls) {
     constexpr int kHops = 16;
     for (int hop = 0; cls && hop < kHops; ++hop, cls = R::SuperStructOf(cls)) {
@@ -233,49 +214,12 @@ bool ChainHasArmedName(void* cls) {
     return false;
 }
 
-bool ByClass(void* cls) {
-    if (!cls) return false;
-    const uint64_t ver = OI::ClassSetVersion();
-    if (ver != g_memoVer) {
-        g_memoVer = ver;
-        ClearMemo();
-    }
-    for (int i = 0; i < g_memoN; ++i)
-        if (g_memo[i].cls == cls) return g_memo[i].yes;
-    bool yes = false;
-    for (int k = 0; k < g_nClasses && !yes; ++k)
-        yes = g_classes[k] && R::IsDescendantOfAny(cls, &g_classes[k], 1);
-    yes = yes || ChainHasArmedName(cls);
-    g_memo[g_memoNext] = Memo{cls, yes};
-    g_memoNext = (g_memoNext + 1) % kMemo;
-    if (g_memoN < kMemo) ++g_memoN;
-    return yes;
-}
-
-// Each armed class whose listing no longer stands is looked up by its name again, and its pointer and identity
-// replaced. A name no loaded class answers to keeps the held pointer: the chain's name match attributes meanwhile.
-// O(1) per class while they stand.
-void RefreshClasses() {
-    for (int i = 0; i < g_nClasses; ++i) {
-        void* const held = g_classes[i];
-        const uint64_t id = held ? OI::ClassListingId(held) : 0;
-        if (id != 0 && id == g_classIds[i]) continue;
-        void* const now = OI::ClassByName(g_classNames[i].c_str());
-        if (!now) continue;
-        const uint64_t nowId = OI::ClassListingId(now);
-        if (now == held && nowId == g_classIds[i]) continue;
-        g_classes[i] = now;
-        g_classIds[i] = nowId;
-        ClearMemo();
-    }
-}
-
 // Does a call whose caller is `obj` belong to the arm: armed, and the site itself once it is named, else any
 // creature of an armed class.
 bool Attributed(void* obj) {
     if (!g_armed || !obj) return false;
     if (g_site) return obj == g_site;
-    return ByClass(R::ClassOf(obj));
+    return ChainHasArmedName(R::ClassOf(obj));
 }
 
 bool IsPlayerController(void* obj) {
@@ -313,6 +257,7 @@ sg::Verdict OnContactPre(const sg::Call& call) {
     const bool own = !puppet && PL::Registry::Get().IsLocal(other);
     if (!puppet && !own) return sg::Verdict::Run;
     if (g_mode != Mode::Still && !g_anchorAt) g_anchorAt = Now();
+    g_changed = true;
     if (puppet) {
         ++g_puppetContacts;
         return sg::Verdict::Run;
@@ -399,7 +344,6 @@ void Install() {
 void Tick() {
     if (!g_installed) return;
     ++g_tickNo;
-    if (g_armed) RefreshClasses();
     bool hooksPending = false;
     for (const Hook& h : g_hooks) hooksPending = hooksPending || (!h.done && !h.failed);
     if (hooksPending && Now() - g_hookTryAt >= kHookRetryMs) {
@@ -453,19 +397,15 @@ bool FirstPending(char* out, size_t cap) {
 
 void Arm(void* const* classes, int n, Mode mode) {
     g_nClasses = n < 1 ? 0 : (n > 2 ? 2 : n);
-    for (int i = 0; i < 2; ++i) {
-        g_classes[i] = i < g_nClasses ? classes[i] : nullptr;
-        g_classNames[i] = g_classes[i] ? R::ToString(R::NameOf(g_classes[i])) : std::wstring();
-        g_classIds[i] = g_classes[i] ? OI::ClassListingId(g_classes[i]) : 0;
-        g_classFNames[i] = g_classes[i] ? R::NameOf(g_classes[i]) : R::FName{-1, 0};
-    }
-    ClearMemo();
+    for (int i = 0; i < 2; ++i)
+        g_classFNames[i] = i < g_nClasses && classes[i] ? R::NameOf(classes[i]) : R::FName{-1, 0};
     for (int i = 0; i < kContactCount; ++i) {
         g_contactArmed[i] = false;
         for (int k = 0; k < g_nClasses; ++k)
-            g_contactArmed[i] = g_contactArmed[i] || R::NameEquals(R::NameOf(g_classes[k]), kContacts[i]->Class());
+            g_contactArmed[i] = g_contactArmed[i] || R::NameEquals(g_classFNames[k], kContacts[i]->Class());
     }
     for (Rec& r : g_rec) r = Rec{};
+    g_changed = false;
     g_mode = mode;
     g_site = nullptr;
     g_puppetContacts = g_ownContacts = 0;
@@ -496,6 +436,12 @@ const Seen* Report(int& n) {
                              static_cast<int>(static_cast<int64_t>(r.firstAt) - static_cast<int64_t>(anchor))};
     }
     return g_report;
+}
+
+bool TakeChanged() {
+    const bool changed = g_changed;
+    g_changed = false;
+    return changed;
 }
 
 int PuppetContacts() { return g_puppetContacts; }

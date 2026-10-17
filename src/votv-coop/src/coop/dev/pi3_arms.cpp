@@ -187,11 +187,4 @@ void LogStill(const char* arm, const Seen* seen, int n, int own) {
     UE_LOGI("[PI-3] STILL %s %s contacts=%d", arm, verbs, own);
 }
 
-uint64_t Signature(const Seen* seen, int n, int puppet, int own) {
-    uint64_t sig = static_cast<uint64_t>(puppet) * 1000003u + static_cast<uint64_t>(own) * 7919u;
-    for (int i = 0; i < n; ++i)
-        sig = sig * 1099511628211ull + static_cast<uint64_t>(seen[i].count * 31 + seen[i].cancelled * 17 + i + 1);
-    return sig;
-}
-
 }  // namespace coop::dev::pi3_drill::detail

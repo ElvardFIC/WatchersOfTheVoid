@@ -80,7 +80,4 @@ void FormatVerbs(char* out, size_t cap, const Seen* seen, int n);
 void LogSeen(const char* label, bool complete, const Seen* seen, int n, int puppet, int own);
 void LogStill(const char* arm, const Seen* seen, int n, int own);
 
-// A fold of the report and the contacts, to say a still peer's records on each change.
-uint64_t Signature(const Seen* seen, int n, int puppet, int own);
-
 }  // namespace coop::dev::pi3_drill::detail

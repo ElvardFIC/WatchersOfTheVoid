@@ -62,6 +62,7 @@ constexpr float    kRestMoveCm = 5.f;       // the body moved less than this in 
 constexpr uint64_t kRestStillMs = 1000;
 constexpr int      kPiWatches = 19;         // PI-2b's table: its module has settled when this many are live
 constexpr uint64_t kStillLineMs = 500;      // a still peer's STILL lines: at most one in this long
+constexpr uint32_t kContactEvery = 30;      // the contact watches are read once in this many ticks
 
 ArmId ArmOf() {
     static const ArmId arm = [] {
@@ -89,8 +90,8 @@ bool     g_legsOk = true;    // the client arm: every leg so far passed
 bool     g_stamped = true;   // the spawn's stamp took (false: the spawn is abandoned)
 uint32_t g_baseline = 0;
 uint64_t g_restRefAt = 0;
-uint64_t g_stillSig = 0;
 uint64_t g_stillSaidAt = 0;
+uint32_t g_contactTicks = 0;  // CheckContacts' call count, for its one-in-kContactEvery read
 bool     g_stillDirty = false;  // the records changed since the last STILL line
 bool     g_stillArmed = false;
 bool     g_uncancelledSaid = false;
@@ -122,12 +123,27 @@ void DestroySite() {
     g_site.Reset();
 }
 
+// A contact watch the engine killed for its class (the class lacks the stub): the instrument is broken, said once.
+// The watches are read once per kContactEvery ticks, and at once (`now`) before a verdict or seen line is said.
+void CheckContacts(ArmId arm, bool now = false) {
+    if (!g_obsArmed || g_brokenSaid) return;
+    if (!now && g_contactTicks++ % kContactEvery != 0) return;
+    if (OB::ContactWatchLive()) return;
+    g_brokenSaid = true;
+    const Spec& first = SpecOf(SpecIdOf(arm, 1));
+    if (arm == ArmId::Client)
+        UE_LOGI("[PI-3] BROKEN %s unwatched %ls,%ls", ArmName(arm), first.cls, SpecOf(kSpecClientWispP).cls);
+    else
+        UE_LOGI("[PI-3] BROKEN %s unwatched %ls", ArmName(arm), first.cls);
+}
+
 // A still peer's last change, coalesced and not yet said, is said before its records are let go.
 void Disarm() {
-    if (!g_spawner && g_stillArmed && g_stillDirty) {
+    if (!g_spawner && g_stillArmed && (OB::TakeChanged() || g_stillDirty)) {
         g_stillDirty = false;
         int n = 0;
         const Seen* seen = OB::Report(n);
+        CheckContacts(ArmOf(), /*now=*/true);
         LogStill(ArmName(ArmOf()), seen, n, OB::OwnContacts());
     }
     OB::Disarm();
@@ -185,17 +201,6 @@ void* ClassOfSpec(int specId) {
     return cls;
 }
 
-// A contact watch the engine killed for its class (the class lacks the stub): the instrument is broken, said once.
-void CheckContacts(ArmId arm) {
-    if (!g_obsArmed || g_brokenSaid || OB::ContactWatchLive()) return;
-    g_brokenSaid = true;
-    const Spec& first = SpecOf(SpecIdOf(arm, 1));
-    if (arm == ArmId::Client)
-        UE_LOGI("[PI-3] BROKEN %s unwatched %ls,%ls", ArmName(arm), first.cls, SpecOf(kSpecClientWispP).cls);
-    else
-        UE_LOGI("[PI-3] BROKEN %s unwatched %ls", ArmName(arm), first.cls);
-}
-
 void StillTick(coop::net::Session* session, ArmId arm) {
     if (!g_stillArmed) {
         const bool late = Now() - g_worldUpAt >= kWaitBoundMs;
@@ -231,18 +236,16 @@ void StillTick(coop::net::Session* session, ArmId arm) {
     if (!g_uncancelledSaid)
         if (const char* verb = FirstUncancelled(seen, n)) {
             g_uncancelledSaid = true;
+            CheckContacts(arm, /*now=*/true);
             UE_LOGI("[PI-3] FAIL %s still-uncancelled %s", ArmName(arm), verb);
         }
-    const uint64_t sig = Signature(seen, n, OB::PuppetContacts(), OB::OwnContacts());
-    if (sig != g_stillSig) {
-        g_stillSig = sig;
-        g_stillDirty = true;
-    }
+    if (OB::TakeChanged()) g_stillDirty = true;
     // A verb that repeats at tick rate changes the records every tick: the lines are coalesced, and the last state
     // is said once the interval has passed.
     if (!g_stillDirty || Now() - g_stillSaidAt < kStillLineMs) return;
     g_stillDirty = false;
     g_stillSaidAt = Now();
+    CheckContacts(arm, /*now=*/true);
     LogStill(ArmName(arm), seen, n, OB::OwnContacts());
 }
 
@@ -325,6 +328,7 @@ void EndLeg(ArmId arm) {
 
 void FinishLeg(ArmId arm, const Spec& spec, const char* label, const Seen* seen, int n) {
     const bool reading = arm == ArmId::Client && g_leg == 3;
+    CheckContacts(arm, /*now=*/true);
     LogSeen(label, Complete(spec, seen, n), seen, n, OB::PuppetContacts(), OB::OwnContacts());
     if (reading) {
         char verbs[512];
@@ -361,6 +365,7 @@ void ObserveTick(ArmId arm) {
     }
     if (judged && !g_failSaid) {
         g_failSaid = true;
+        CheckContacts(arm, /*now=*/true);
         UE_LOGI("[PI-3] FAIL %s %s %d", label, judged, Find(seen, n, judged)->firstMs);
     }
     const bool anchored = puppetArm ? OB::PuppetContacts() > 0 : OB::OwnContacts() > 0;
@@ -368,6 +373,7 @@ void ObserveTick(ArmId arm) {
     if (!g_anchorAt) {
         if (Now() - g_spawnAt < kNoContactMs) return;
         if (reading) {
+            CheckContacts(arm, /*now=*/true);
             UE_LOGI("[PI-3] MP-1 reading own-touch wisp_p none");
             EndLeg(arm);
         } else {

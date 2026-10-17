@@ -49,17 +49,16 @@ bool Live();
 
 // Every armed class' contact watch is still live. A class is judged for the function it watches when it gets its
 // first listed instance, so this can turn false after Live was true; true while unarmed. Read from the watches on
-// each call (at most two), never from Live's kept answer.
+// each call (at most two name-table scans), never from Live's kept answer: a caller asks it rarely.
 bool ContactWatchLive();
 
 // The first thing Live is waiting on, as "hook <verb>" or "<class>::<function>" into `out`; false when there is none.
 bool FirstPending(char* out, size_t cap);
 
-// Attribute the calls whose caller descends from one of `classes[0..n)` (n is 1 or 2), reset the records, arm the
-// hooks. Before the spawn: an overlap fires as the collider registers, inside the spawn. The classes are held by
-// name and listing identity: Tick looks one up again when its listing no longer stands (a name nothing answers to
-// keeps the held pointer), and a caller whose class chain holds a class of an armed name counts whatever the
-// pointers say. A class not yet listed may be armed.
+// Attribute the calls whose caller's class chain holds a class named like one of `classes[0..n)` (n is 1 or 2),
+// reset the records, arm the hooks. Before the spawn: an overlap fires as the collider registers, inside the spawn.
+// The class pointers are read for their names only and not kept: the match is by name, so a class unloaded and
+// loaded again is the armed one still. A class not yet listed may be armed (a non-null pointer).
 void Arm(void* const* classes, int n, Mode mode);
 
 // The spawned site: from here a call counts only when its caller IS the site.
@@ -69,6 +68,10 @@ void Disarm();
 
 // The verbs seen since Arm, in the list's order; `n` is how many.
 const Seen* Report(int& n);
+
+// True once for each change of the records (a verb counted, a contact counted) since the last call or Arm; a still
+// peer's drill reads it to say its STILL line.
+bool TakeChanged();
 
 // Contacts of the armed classes' stubs since Arm, by toucher.
 int PuppetContacts();
