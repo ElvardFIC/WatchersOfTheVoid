@@ -96,7 +96,9 @@ bool FreezeKnob() {
 }
 
 // The slot's bracket is enqueued: say so, with the link's delivered KiB, until a fresh sample finds
-// the queue drained. Runs every host pass, outside DrainChunk's world gate.
+// the queue drained. Runs every host pass, outside DrainChunk's world gate. Divergence from MTA
+// (CGame::InitialDataStream sends a joiner's data as one stream and marks it joined at its start):
+// our lanes stay, and the joiner's watchdog reads delivery progress instead.
 void NoteDraining(coop::net::Session& s, int slot) {
     DrainState& d = g_drain[slot];
     if (d.closedAtMs <= 0) return;

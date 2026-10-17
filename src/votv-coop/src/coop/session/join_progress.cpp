@@ -117,7 +117,8 @@ PhaseWatch WatchFor(Phase ph, Stage st) {
                 "this machine never finished settling into the world it loaded"};
     case Phase::AwaitingWorldStream:
     case Phase::Receiving:
-        return {30'000, EndReason::HostWorldNotSent, "the host never sent the world it owed"};
+        return {30'000, EndReason::HostWorldNotSent,
+                "the host stopped sending the world it owed, or the connection stopped delivering it"};
     default:
         return {0, EndReason::None, ""};
     }
@@ -131,6 +132,7 @@ const char* HostPhaseName(uint8_t p) {
     case coop::net::HostJoinPhase::StreamingWorld:    return "streaming its world";
     case coop::net::HostJoinPhase::SnapshotDeferred:  return "holding the bracket until its world settles";
     case coop::net::HostJoinPhase::StreamingSnapshot: return "streaming the bracket";
+    case coop::net::HostJoinPhase::Draining:          return "Draining";
     }
     return "in a phase this build does not know";
 }
@@ -378,7 +380,7 @@ void NoteHostBeacon(uint8_t phase, uint32_t done, uint32_t total) {
     g_hostTotal.store(total, std::memory_order_relaxed);
     g_hostBeacons.fetch_add(1, std::memory_order_relaxed);
     g_hostBeaconMs.store(NowMs(), std::memory_order_relaxed);
-    // One line per CHANGE, never per beacon: four lines in a whole join, and they are the only
+    // One line per CHANGE, never per beacon: one per phase of the host, and they are the only
     // record anywhere of what the host was doing while this joiner waited.
     if (was != phase)
         UE_LOGI("join_progress: the host is %s (%u/%u)", HostPhaseName(phase), done, total);

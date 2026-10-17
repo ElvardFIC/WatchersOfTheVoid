@@ -310,8 +310,8 @@ void Update(net::Session& session, void* localPlayer) {
         }
         case net::ReliableKind::JoinPhaseNote: {
             // The host's once-a-second word on the phase of this join it is working. Host-only: a
-            // client must not be able to hold another client's join open. The value is renewed by
-            // the ARRIVAL, so a note whose phase byte this build does not know still counts.
+            // client must not be able to hold another client's join open. A phase change or a rise
+            // of `done` renews the wait; a phase byte this build does not know is a change.
             if (msg.payloadLen < sizeof(net::JoinPhaseNotePayload)) {
                 UE_LOGW("event_feed: JoinPhaseNote payload too short (%zu < %zu)",
                         static_cast<size_t>(msg.payloadLen), sizeof(net::JoinPhaseNotePayload));

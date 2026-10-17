@@ -1043,9 +1043,6 @@ msgstr "[[The host kicked you.]]"
 msgid "The host never finished preparing its world for you."
 msgstr "[[The host never finished preparing its world for you.]]"
 
-msgid "The host never sent you the world it owed."
-msgstr "[[The host never sent you the world it owed.]]"
-
 msgid "The host never sent your inventory."
 msgstr "[[The host never sent your inventory.]]"
 
@@ -1063,6 +1060,9 @@ msgstr "[[The host runs an older build of the mod. They need to update.]]"
 
 msgid "The host sent an identity challenge this build cannot read."
 msgstr "[[The host sent an identity challenge this build cannot read.]]"
+
+msgid "The host stopped sending the world it owed, or the connection stopped delivering it."
+msgstr "[[The host stopped sending the world it owed, or the connection stopped delivering it.]]"
 
 msgid "The host was busy, and this connection was the slowest to prove itself."
 msgstr "[[The host was busy, and this connection was the slowest to prove itself.]]"

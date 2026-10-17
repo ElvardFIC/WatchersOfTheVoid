@@ -1295,10 +1295,6 @@ msgid "The host never finished preparing its world for you."
 msgstr ""
 
 #: src/coop/net/end_reason.cpp
-msgid "The host never sent you the world it owed."
-msgstr ""
-
-#: src/coop/net/end_reason.cpp
 msgid "The host never sent your inventory."
 msgstr ""
 
@@ -1320,6 +1316,10 @@ msgstr ""
 
 #: src/coop/net/end_reason.cpp
 msgid "The host sent an identity challenge this build cannot read."
+msgstr ""
+
+#: src/coop/net/end_reason.cpp
+msgid "The host stopped sending the world it owed, or the connection stopped delivering it."
 msgstr ""
 
 #: src/coop/net/end_reason.cpp

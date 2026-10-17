@@ -965,7 +965,7 @@ msgstr ""
 msgid "The host never finished preparing its world for you."
 msgstr ""
 
-msgid "The host never sent you the world it owed."
+msgid "The host stopped sending the world it owed, or the connection stopped delivering it."
 msgstr ""
 
 msgid "The host never sent your inventory."
