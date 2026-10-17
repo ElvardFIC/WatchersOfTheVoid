@@ -112,6 +112,7 @@ set(VOTVCOOP_SOURCES
     src/ue_wrap/devices/portable_pc.cpp
     src/ue_wrap/devices/floppybox.cpp
     src/ue_wrap/devices/serverbox.cpp
+    src/ue_wrap/devices/security_camera.cpp
     src/ue_wrap/desk/desk_audio.cpp
     src/ue_wrap/desk/phys_mods.cpp
     src/ue_wrap/desk/desk_press.cpp
