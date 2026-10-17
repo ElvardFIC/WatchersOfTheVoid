@@ -1,6 +1,6 @@
 // coop/atomic_file/atomic_file_selftest.cpp -- the un-gated boot selftest of the one file writer,
 // run once per process on both peers (shape: coop/moderation/ban_list_selftest.cpp). It
-// writes real files in a scratch folder beside the executable: a writer that leaves a cut file or
+// writes real files in a scratch folder in the mod's folder: a writer that leaves a cut file or
 // a stray temporary loses an ini, a ban or a key, and nothing else would notice.
 //
 // Red arm: with the dev row selftest_break_atomic_file the first case expects the wrong bytes, so

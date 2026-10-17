@@ -145,15 +145,22 @@ from the folder that contains `VotV-Win64-Shipping.exe`, then install normally.
 - Manual: delete the `Mods\Multivoid` folder. The game boots completely stock
   without it (UE4SS may remain; it does nothing on its own).
 
-For a full clean sweep, also delete the mod's runtime files next to the
-executable unless noted (all optional — they only store mod settings and logs):
-`multivoid.ini`, `multivoid.ini.example`, `multivoid.log`, `multivoid.prev.log`,
-`multivoid-loaded.txt`, `multivoid-compat-report.txt`, `multivoid-players.txt`,
-`multivoid-banlist.txt` (from builds before this one; this build does not read it), the folder
-`multivoid_servers` (it holds your hosted server's folder), the folder `multivoid_reports`
-(your saved bug reports), the skin-pak folder
+The `Mods\Multivoid` folder also holds everything the mod keeps for itself: your settings
+(`multivoid.ini` and `multivoid.ini.example`), your hosted server's folder `multivoid_servers`, the
+players' saved inventories in `coop_players`, `multivoid-players.txt` and `multivoid_thanks.txt`.
+Deleting it removes them with the mod (under a mod manager, the same folder inside the manager's
+profile).
+
+For a full clean sweep, also delete the mod's diagnostics next to the
+executable unless noted (all optional — they only store logs and reports):
+`multivoid.log`, `multivoid.prev.log`, `multivoid-loaded.txt`, `multivoid-compat-report.txt`, the
+folder `multivoid_reports` (your saved bug reports), the folder `multivoid_locale` if you made
+one (your translations), the skin-pak folder
 `VotV\Content\Paks\LogicMods\multivoid` if you created one, and, from builds before this
-one, a folder `%LOCALAPPDATA%\Multivoid` (this build does not read it). Your identity is a separate
+one, the files `multivoid.ini`, `multivoid.ini.example`, `multivoid-players.txt`,
+`multivoid_thanks.txt`, `multivoid-banlist.txt` and the folders `multivoid_servers` and
+`coop_players` (this build does not read them; the log names each once), and a folder
+`%LOCALAPPDATA%\Multivoid` (this build does not read it). Your identity is a separate
 file in the mod's own folder, `Mods\Multivoid\multivoid_identity.key` (under a mod manager, the
 same folder inside the manager's profile), which only your Windows account can
 read (another account on the same PC that cannot read it keeps its own key beside it

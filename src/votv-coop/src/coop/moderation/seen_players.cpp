@@ -9,7 +9,7 @@
 #include "coop/player/players_registry.h"  // kMaxPeers
 #include "coop/text/utf8_codec.h"
 #include "coop/session/player_handshake.h"
-#include "ue_wrap/core/paths.h"                // ExeDir -- the file lives beside the game exe
+#include "ue_wrap/core/paths.h"                // ModDataDir -- the file lives in the mod's folder
 #include "ue_wrap/core/log.h"
 
 #include <windows.h>

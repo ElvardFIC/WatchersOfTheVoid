@@ -130,7 +130,7 @@ DWORD WINAPI TimelineThread(LPVOID param) {
     coop::legacy_note::WarnIfNoDataFolder();
     coop::legacy_note::Once(coop::legacy_note::LegacyFile::Ini, L"multivoid.ini");
     coop::legacy_note::Once(coop::legacy_note::LegacyFile::IniExample, L"multivoid.ini.example");
-    // multivoid.ini.example regenerates beside the DLL, every key with its description, default and
+    // multivoid.ini.example regenerates in the mod's folder, every key with its description, default and
     // env twin; deterministic, compare-first, fail-soft, and never read back.
     cfg::GenerateExampleCatalog();
     // Stored values a shipped bug wrote are retired (config.h): exact-match, one-shot, and before

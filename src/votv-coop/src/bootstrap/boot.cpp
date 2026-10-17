@@ -71,7 +71,7 @@ unsigned long long MsSinceProcessStart() {
 
 void WriteMarker(const char* entryTag) {
     // The marker lands beside the game exe (the install-dir anchor,
-    // ue_wrap/core/paths) -- same home as multivoid.log / multivoid.ini.
+    // ue_wrap/core/paths) -- same home as multivoid.log, a diagnostic and not the mod's data.
     const std::wstring dir = ue_wrap::paths::ExeDir();
     if (dir.empty()) return;
     wchar_t markerPath[MAX_PATH] = {};

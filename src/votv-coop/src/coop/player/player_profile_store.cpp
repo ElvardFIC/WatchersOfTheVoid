@@ -61,7 +61,7 @@ void DropHeldOfAnotherWorld() {
     g_heldForSerial = serial;
 }
 
-// <gameDir>/coop_players/<slot>, empty if a piece is missing. The slot name is the game's and
+// <mod data dir>/coop_players/<slot>, empty if a piece is missing. The slot name is the game's and
 // becomes ONE path component, so a name that could be more than one is refused.
 fs::path SlotDir(const std::wstring& slot) {
     if (slot.empty() || slot == L"." || slot == L".." ||
@@ -72,7 +72,7 @@ fs::path SlotDir(const std::wstring& slot) {
     return fs::path(base) / L"coop_players" / slot;
 }
 
-// <gameDir>/coop_players/<the set's slot>/<guid>.json, empty if any piece is missing.
+// <mod data dir>/coop_players/<the set's slot>/<guid>.json, empty if any piece is missing.
 fs::path PlayerFilePath(const std::string& guid) {
     // Defence in depth (the wire boundary already validates): a GUID that is not exactly 32 hex
     // characters never becomes a path component; an empty path makes every write no-op, so a
@@ -250,7 +250,7 @@ bool FollowWrittenSlot(const std::wstring& written) {
     if (to.empty() || ec) {
         UE_LOGW("player_profile: the profile directory of the slot '%ls' could not be made (%s) -- "
                 "nothing cut, everything stays for the next save", written.c_str(),
-                to.empty() ? "not a name for one directory, or no game directory" : ec.message().c_str());
+                to.empty() ? "not a name for one directory, or no data folder" : ec.message().c_str());
         return false;
     }
     if (g_setSlot.empty()) {
@@ -427,7 +427,7 @@ size_t CutToDisk(const std::wstring& writtenSlot) {
                 if (dir.empty() || ec) {
                     UE_LOGW("player_profile: the profile directory could not be made (%s) -- "
                             "nothing cut, everything stays for the next save",
-                            dir.empty() ? "no game directory" : ec.message().c_str());
+                            dir.empty() ? "no data folder" : ec.message().c_str());
                     return 0;
                 }
                 dirReady = true;

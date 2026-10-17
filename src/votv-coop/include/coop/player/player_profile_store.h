@@ -9,7 +9,7 @@
 // and the profiles revert with it. docs/players.md has the whole account.
 // MTA saves an account when it changed and 15 s have passed, and at quit (CAccountManager.cpp):
 // its world is not persisted, so its accounts have nothing to stay consistent WITH; ours has.
-// The file is <game dir>/coop_players/<save slot>/<guid>.json, keyed per save slot. The blob is
+// The file is <mod data dir>/coop_players/<save slot>/<guid>.json, keyed per save slot. The blob is
 // opaque here (coop/items/inventory_wire owns its layout); the file wraps it in a magic, an FNV
 // hash, a nick and a last-seen time. A GUID that is not exactly 32 hex characters never becomes a
 // path component. Game thread: the memory half has no lock.

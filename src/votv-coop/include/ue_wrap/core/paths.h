@@ -1,15 +1,15 @@
-// ue_wrap/core/paths.h -- the ONE owner of the install's directory anchor.
+// ue_wrap/core/paths.h -- the ONE owner of the install's directory anchors: data in ModDataDir(),
+// diagnostics beside the exe.
 //
-// Every per-install runtime artifact (multivoid.log, multivoid.ini + .example,
-// multivoid-loaded.txt, multivoid-players.txt, multivoid-compat-report.txt, coop-screenshots/,
-// coop_players/, multivoid_servers/, multivoid_reports/) anchors on the GAME EXE's directory
-// (...\VotV\Binaries\Win64), NOT on the mod DLL's own directory.
-// The module's location is loader-dependent: UE4SS maps us at Mods\Multivoid\dlls\, and
-// unreal_shimloader additionally virtualizes Mods\ into the r2modman profile, where
-// module-dir writes were measured landing. The exe dir is the one real, loader-independent
-// home of the install, so every artifact above resolves its directory through this one
-// helper rather than computing it per file. The identity key is the exception: it lives in the
-// mod's own data folder (ModDataDir), so a copied game folder carries no identity.
+// The mod's data (multivoid.ini + .example, multivoid_servers/, coop_players/, multivoid-players.txt,
+// multivoid_thanks.txt, the identity key) lives in the mod's own data folder, ModDataDir(), so a
+// copied game folder carries none of it and a manager's reinstall starts it clean. What stays
+// beside the GAME EXE (ExeDir(), ...\VotV\Binaries\Win64) is a diagnostic or a file a player
+// authors: multivoid.log, multivoid-loaded.txt, multivoid-compat-report.txt, coop-screenshots/,
+// multivoid_reports/, multivoid_locale/. .github/ci/data_paths_gate.py holds the split.
+// The module's location is loader-dependent (unreal_shimloader virtualizes Mods\ into the r2modman
+// profile, where module-dir writes were measured landing): ModDataDir() resolves the real folder,
+// and the exe dir is the one loader-independent home of the install for the rest.
 //
 // UE4SS's own log is the one artifact beside the loaded UE4SS module instead: Ue4ssModulePath and
 // Ue4ssDir find that module.
