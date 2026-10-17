@@ -131,6 +131,12 @@ struct Parity {
 };
 Parity DebugCompareWithWalk();
 
+// A boot check of the class listing identity (ClassListingId) on fake class objects and a fake name driven
+// through the listing functions, so it needs no engine: listed, unlisted, listed again at the same address, a
+// second class unlisting, and an address listed under two slots. Run before Install; it leaves no entry
+// behind. Logs "object_index selftest ALL PASS (<n> checks)" or one FAIL line per check.
+bool RunSelftest();
+
 // Test hooks: coop/dev/recycled_slot_drill stages a recycled slot through them. Game thread.
 // Unlink whatever the slot lists; nothing when it lists nothing.
 void DebugUnlinkSlot(int32_t index);

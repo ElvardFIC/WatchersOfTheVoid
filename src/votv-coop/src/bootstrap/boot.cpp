@@ -183,6 +183,8 @@ DWORD WINAPI BootThread(LPVOID rawTag) {
     ue_wrap::game_build::RunSelftest();
     // A caller's local edited in place (an actor array, a hit result), on buffers of its own.
     ue_wrap::caller_locals::RunSelftest();
+    // A class's listing identity (a class unloaded, or loaded again at its address, answers another), on fakes.
+    ue_wrap::object_index::RunSelftest();
     ui::game_build_dialog::RunSelftest();  // every variant of the popup's text formats
 
     // THE VERDICT IS A DECISION, NOT A LOG LINE.
