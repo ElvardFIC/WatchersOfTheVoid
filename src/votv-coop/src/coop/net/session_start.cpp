@@ -190,10 +190,12 @@ bool Session::Start(const Config& cfg, Refusal* why) {
     fake_link_steps::Arm();
     // The step parser's selftest sits beside Arm, its only caller and the first reader of
     // net.fakelink_steps, once per process: a red parser logs its line next to the "armed" line of
-    // the text it parsed, and the config is read by now. The result is logged, not acted on, like
-    // the harness's net selftests.
+    // the text it parsed, and the config is read by now. The send-rate base history's pure cases
+    // run in the same latch. Results are logged, not acted on, like the harness's net selftests.
     static const bool kFakeLinkStepsOk = fake_link_steps::RunSelftest();
+    static const bool kBaseHistoryOk = SendRateControl::RunSelftest();
     (void)kFakeLinkStepsOk;
+    (void)kBaseHistoryOk;
 
     // This install's durable identity goes into GNS before any socket exists: the public key is the
     // identity (GNS's 32-byte GenericBytes form), so every connection this process makes or

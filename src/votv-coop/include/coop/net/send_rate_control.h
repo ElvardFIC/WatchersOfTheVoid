@@ -50,7 +50,9 @@ public:
     // The BASE delay: the smallest round trip a probe measured while the wire held at most one
     // packet of ours, kept as the minimum of the last kBaseHistMinutes one-minute minima (RFC 6817
     // section 2.5 keeps ten; libutp's base-delay history keeps thirteen). A minute is the unit so a
-    // route change ages out in ten minutes, and an hour-long queue cannot become the baseline.
+    // route change ages out after ten minutes that each had an admitted probe (a saturated link
+    // pushes none, so it ages nothing), and a queue cannot become the baseline: a probe under load
+    // is not admitted.
     static constexpr int kBaseHistMinutes = 10;
     static constexpr uint64_t kBaseMinuteMs = 60'000;
     // A probe is ADMITTED to the base when the reliable bytes on the wire and unacknowledged at the
@@ -190,6 +192,9 @@ public:
     // passes and link samples as two numbers -- on a three-client host they differ by 3x.
     void NoteSampleCost(uint64_t us, int links, uint64_t nowMs);
 
+    // The base history's pure cases, run once per process at the first Session::Start.
+    static bool RunSelftest();
+
 private:
     static constexpr int kSlots = static_cast<int>(coop::players::kMaxPeers);
 
@@ -199,8 +204,20 @@ private:
         bool     admitted = false;  // minted with <= kBaseAdmitUnackedBytes on the wire: base material
     };
 
-    // What one run of the law decided; the per-slot change of it is printed as a transition.
+    // What one run of the law decided; an edge into or out of Brake or Hold is logged, the rest counted.
     enum class LawKind : uint8_t { Hold = 0, Brake, Climb, Dead };
+
+    // The base delay's history, a pure value so its cases run without a link: the finished
+    // minutes' minima (a ring, the oldest overwritten), the minute being filled, and when it began.
+    struct BaseHistory {
+        int      hist[kBaseHistMinutes]{};
+        int      count = 0, next = 0;
+        int      curMin = -1;
+        uint64_t minuteStartMs = 0;
+        void Note(int rttMs);       // an admitted round trip: the minute keeps its smallest
+        int Min() const;            // over the finished minutes and this one; -1 with none
+        void Roll(uint64_t nowMs);  // closes a minute that ran 60 s; one with no sample pushes nothing
+    };
 
     // Everything the net thread alone owns, in one struct so an armed teardown is one assignment
     // (the two counters beside it are atomics, written from any thread, and cannot be copied over).
@@ -235,12 +252,7 @@ private:
         int         echoesRefused = 0;  // OUR answers the send buffer would not take
         int         rttBucketMin[kRttMinBuckets]{};
         uint64_t    rttBucketSec[kRttMinBuckets]{};
-        // The base delay's history: the finished minutes' minima (a ring, oldest overwritten), the
-        // minute being filled, and when it began. A minute with no admitted reply pushes nothing.
-        int         baseHist[kBaseHistMinutes]{};
-        int         baseCount = 0, baseNext = 0;
-        int         baseCurMin = -1;
-        uint64_t    baseMinuteStartMs = 0;
+        BaseHistory base;
 
         // ---- The law's state: two smoothed byte rates and what they decided ----
         // Acknowledged delivery, smoothed. The term `inflight` is divided by, so RELIABLE-ONLY:
@@ -258,11 +270,13 @@ private:
         // The last decision's inputs, kept for the reported line: a field log that cannot show why
         // the rate moved is the state this whole arc started in.
         int64_t  inflightMs = 0;
-        // inflight less the base delay (the whole inflight while no base exists), computed beside it
-        // and printed; the law does not read it yet.
+        // inflight less the base delay (the whole inflight while no base exists), computed beside it:
+        // the number both thresholds of the law read, and printed.
         int64_t  queueMs = 0;
+        bool     stalled = false;      // the last measuring decision was a stall; held through Hold
         // The kind of the previous decision, so a change of it is one log line.
         LawKind  lastKind = LawKind::Hold;
+        int      flipCount = 0;        // Climb <-> Dead changes this window: counted, not logged
         // What the law wants, and what the connection was last told, so a write costs one per move.
         // Both open at the rate `TuneConnection` already wrote, NOT at zero: a link whose demand
         // never reaches kIdleDemandBytes decides nothing, and zeroes here would report a rate of 0
@@ -291,11 +305,6 @@ private:
 
     // The smallest round trip in the rttMin window, or -1 with nothing measured yet.
     static int RttMinFor_(const Measured& m, uint64_t nowMs);
-    // The base delay: the minimum over the minute history and the minute being filled, or -1 with
-    // no admitted probe measured yet.
-    static int BaseMs_(const Measured& m);
-    // Close the base minute that has run its 60 s: push its minimum if it has one, start the next.
-    static void RollBaseMinute_(Measured& m, uint64_t nowMs);
     static const char* LawName_(LawKind kind);
     // "<n> ms", or "-" while there is no base: the text both log lines print after `base=`.
     static void FormatBase_(const Measured& m, char* buf, size_t cap);
