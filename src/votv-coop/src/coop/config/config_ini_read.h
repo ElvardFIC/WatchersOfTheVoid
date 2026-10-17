@@ -82,6 +82,10 @@ IniScan ScanLineSource(LineSource src, Fn&& cb, IniFault* faultOut = nullptr) {
 template <typename Fn>
 IniScan ScanIniFileAt(const std::wstring& path, Fn&& cb, IniFault* faultOut = nullptr) {
     if (faultOut) *faultOut = IniFault::None;
+    // No path is no file: the mod has no data folder (the boot warning said so), and the settings
+    // come from the environment twins and the row defaults. Absent by rule, never an errno's guess:
+    // Unreadable refuses sessions.
+    if (path.empty()) return IniScan::Absent;
     FILE* f = nullptr;
     const errno_t rc = _wfopen_s(&f, path.c_str(), L"rb");
     if (rc != 0 || !f) {

@@ -156,8 +156,9 @@ DWORD WINAPI TimelineThread(LPVOID param) {
     // the key is read (coop/net/peer_identity.h): pure, microseconds, impossible to switch off.
     coop::net::peer_identity::RunBindingSelftest();
     // Which data layout these bytes keep and where the mod's data folder is: the line a rig run reads
-    // to know the bytes it is measuring (dl1: the identity key in the mod folder, the rest beside the exe).
-    UE_LOGI("data: layout dl1, folder %ls", ue_wrap::paths::ModDataDir().empty()
+    // to know the bytes it is measuring (dl2: everything the mod keeps for itself is in the mod folder;
+    // beside the exe stay the logs, the reports and what a player authors).
+    UE_LOGI("data: layout dl2, folder %ls", ue_wrap::paths::ModDataDir().empty()
                                               ? L"(none)" : ue_wrap::paths::ModDataDir().c_str());
     // The durable player identity: an Ed25519 keypair whose public key is the network identity and
     // whose 32-character guid (the key of the host-side inventory) is derived from it, replacing an

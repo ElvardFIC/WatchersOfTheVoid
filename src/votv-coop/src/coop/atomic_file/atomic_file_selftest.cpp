@@ -88,10 +88,10 @@ bool AllDigits(const std::wstring& s) {
 }
 
 // Scratch folders of runs that are gone (a kill inside a selftest) are removed whole.
-void SweepDeadScratch(const std::wstring& exeDir) {
+void SweepDeadScratch(const std::wstring& dir) {
     const std::wstring prefix = kScratchPrefix;
     WIN32_FIND_DATAW fd{};
-    HANDLE h = ::FindFirstFileW((exeDir + L"\\" + prefix + L"*").c_str(), &fd);
+    HANDLE h = ::FindFirstFileW((dir + L"\\" + prefix + L"*").c_str(), &fd);
     if (h == INVALID_HANDLE_VALUE) return;
     do {
         if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) continue;
@@ -103,7 +103,7 @@ void SweepDeadScratch(const std::wstring& exeDir) {
         if (id > 0xFFFFFFFFull) continue;
         if (ProcessRunning(static_cast<unsigned long>(id))) continue;
         std::error_code ec;
-        fs::remove_all(fs::path(exeDir) / name, ec);
+        fs::remove_all(fs::path(dir) / name, ec);
     } while (::FindNextFileW(h, &fd));
     ::FindClose(h);
 }
@@ -204,15 +204,18 @@ static bool RunSelftestBody() {
         check(!r.ok() && r.failedAt == Step::Open, "case 0: an empty target is refused");
     }
 
-    const std::wstring exeDir = ue_wrap::paths::ExeDir();
-    if (exeDir.empty()) {
-        check(false, "the executable folder resolves");
-        UE_LOGE("atomic_file selftest: %d/%d checks passed", pass, total);
-        return false;
+    const std::wstring dataDir = ue_wrap::paths::ModDataDir();
+    if (dataDir.empty()) {
+        if (pass != total) {
+            UE_LOGE("atomic_file selftest: %d/%d checks passed", pass, total);
+            return false;
+        }
+        UE_LOGI("atomic_file selftest: disk cases skipped -- no data folder (%d checks passed)", total);
+        return true;
     }
-    SweepDeadScratch(exeDir);
+    SweepDeadScratch(dataDir);
     const DWORD pid = ::GetCurrentProcessId();
-    const fs::path scratch = fs::path(exeDir) / (std::wstring(kScratchPrefix) + std::to_wstring(pid));
+    const fs::path scratch = fs::path(dataDir) / (std::wstring(kScratchPrefix) + std::to_wstring(pid));
     std::error_code ec;
     fs::remove_all(scratch, ec);
     fs::create_directories(scratch, ec);

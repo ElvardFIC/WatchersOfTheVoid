@@ -98,7 +98,7 @@ static std::atomic<bool> g_identityNotDurable{false};
 using IniScan = internal::IniScan;
 
 static std::wstring IniPath() {
-    const std::wstring dir = ue_wrap::paths::ExeDir();
+    const std::wstring dir = ue_wrap::paths::ModDataDir();
     return dir.empty() ? std::wstring{} : dir + L"\\multivoid.ini";
 }
 
