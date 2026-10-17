@@ -43,17 +43,18 @@ coop::RemotePlayer& Puppet(int slot) {
 
 bool DestroySlot(int slot) {
     UE_ASSERT_GAME_THREAD("g_puppets (puppet_drive::DestroySlot)");
-    // UnregisterPuppet drops the Player Element from players::Registry. If the puppet was never
-    // spawned -- the peer disconnected after Join but before any PoseSnapshot -- then
-    // g_puppets[slot].valid() is false while playerBySlot_[slot] may still hold a mirror Element
-    // installed by EstablishMirrorForSlot. Calling UnregisterPuppet unconditionally is safe:
-    // DropPlayerElement_ is a no-op when playerBySlot_ is null.
+    // The destroy comes first, so the puppet is still registered through its end of play and the
+    // end-overlaps it reports as it dies, where the host's contact refusals must still know the dying
+    // body. MTA unlinks a player before its ped (CClientPlayer.cpp:105); the order here is the reverse
+    // on purpose.
+    const bool had = g_puppets[slot].valid();
+    if (had) g_puppets[slot].Destroy();
+    // UnregisterPuppet drops the Player Element from players::Registry, on every path: a puppet never
+    // spawned -- the peer disconnected after Join but before any PoseSnapshot -- leaves
+    // g_puppets[slot].valid() false while playerBySlot_[slot] may still hold a mirror Element
+    // installed by EstablishMirrorForSlot. DropPlayerElement_ is a no-op when playerBySlot_ is null.
     coop::players::Registry::Get().UnregisterPuppet(static_cast<uint8_t>(slot));
-    if (g_puppets[slot].valid()) {
-        g_puppets[slot].Destroy();
-        return true;
-    }
-    return false;
+    return had;
 }
 
 void DriveTick(coop::net::Session& session, bool worldReadyAnnounced) {

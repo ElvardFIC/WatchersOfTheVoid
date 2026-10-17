@@ -273,7 +273,7 @@ void TearDownSession(coop::net::Session& session, const char* why) {
     g_wasConnectedBySlot.fill(false);
     ForgetWorldReadyAnnounce();
     for (int slot = 0; slot < coop::players::kMaxPeers; ++slot) {
-        // DestroySlot is UnregisterPuppet plus destroy-if-live; its interleave with DisconnectSlot
+        // DestroySlot is destroy-if-live plus UnregisterPuppet; its interleave with DisconnectSlot
         // is composed here only.
         coop::puppet_drive::DestroySlot(slot);
         coop::subsystems::DisconnectSlot(session, slot);

@@ -51,6 +51,7 @@ are peer-gated. `[V]`
 | the kerfur | conversion verbs inside the Blueprint | the script-body gate on the verbs: refused on a client, converged at the return on the host; whom it serves, its player-0 reads answered on the host with the puppet of the client whose command it runs (`kerfur_command`, `served_player`) | one host kerfur id across both forms |
 | the plain kerfur (the Kerfus) | a keyed prop with a brain; on and off are a field, not a second form | the prop lanes for identity and the record at birth; while on, the host's prop drive for its pose; KerfusState for on, charging and energy; whom it follows, its player-0 reads answered on the host with the puppet of the client that turned it on (`kerfus_follow`, `served_player`) | its prop key and host eid |
 | a deployed hook or rope | the fire input, inside the Blueprint | the thrower polls its own `activeHook` field | `(owner slot, sequence)` while the thrower holds it, a host-minted save key once anchored |
+| a remote player's puppet (`mainPlayer_C`, unpossessed) | `RemotePlayer::Spawn` -> `engine::SpawnActor` | registered inside its `FinishSpawning` by the before-finish callback; unregistered after its destroy (`DestroySlot`) | the peer's slot in `players::Registry` |
 | status effects (effect_C) | each peer's own, from its gamemode's addEffect; never sent | -- | none: a per-process actor; at a join the host's effect records are reset out of the joiner's save at the join |
 
 ## Keyed props
