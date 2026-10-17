@@ -438,6 +438,8 @@ void QueueConnectBroadcastForSlot(int peerSlot) {
     // The Bad Sun's seed comes first, ahead of the cycle early return below, and goes only from a state the host
     // could read: a state that did not read, or a world with no day cycle, sends nothing rather than "absent".
     // Every state is absolute, so it and a live edge on one lane cannot disorder (coop/world/weather_badsun).
+    // Leaves MTA's shape: its join packet reads a held weather model and always sends it
+    // (reference/mtasa-blue/Server/mods/deathmatch/logic/CMapManager.cpp:483-485,537); an unread state is not "none".
     {
         coop::net::BadSunPayload bp{};
         bool present = false;
@@ -608,7 +610,8 @@ void ApplyFromHost(const coop::net::WeatherStatePayload& payload) {
                 g_installed ? 1 : 0, cycle);
         return;
     }
-    // A payload that applies at once is newer than a stashed one: TickConnect's drain never re-applies the older over it.
+    // A payload that applies at once is newer than a stashed one: TickConnect's drain never re-applies the older
+    // over it.
     g_pendingApply = false;
 
     // The current state, for the delta: causeRain and intComs_triggerSnow fan out to BP listeners

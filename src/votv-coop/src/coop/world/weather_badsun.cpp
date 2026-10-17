@@ -200,7 +200,10 @@ void SayWatch(Watch& w, bool classMoved) {
         UE_LOGE("weather: the %s watch is dead -- %s", w.what, w.consequence);
 }
 
-// The host's payload that waited: the lane's own apply, now that this world can take it.
+// The host's payload that waited: the lane's own apply, now that this world can take it. MTA's client holds the
+// received weather in one model that every packet overwrites
+// (reference/mtasa-blue/Client/mods/deathmatch/logic/CPacketHandler.cpp:2259-2265); the kept slot is that model,
+// drained from Tick and not read continuously.
 void Keep(const coop::net::BadSunPayload& payload, Until until) {
     g_pending = payload;
     g_hasPending = true;
@@ -314,9 +317,10 @@ void Apply(const coop::net::BadSunPayload& payload) {
         if (!BS::ReadActive(copies[i], active)) {
             FailedApply("a copy's widget did not read", want);
         } else if (active) {
-            // MTA's client blends to the new weather
-            // (reference/mtasa-blue/Client/mods/deathmatch/logic/CPacketHandler.cpp:2249-2260); here the copy's
-            // own fade is the blend, due within the clock's sync lag.
+            // MTA's client applies a host's "none" at once
+            // (reference/mtasa-blue/Client/mods/deathmatch/logic/CPacketHandler.cpp:2262-2265). Leaves it here: a
+            // forced remove() would cut the copy's fade and skip the widget's sky reset, while the copy's own fade
+            // is due within the clock's sync lag.
             ++g_leftActive;
             UE_LOGI("weather: the host's Bad Sun 0 -- copy %d at %p is active, left to end by its own clock", i,
                     copies[i]);
