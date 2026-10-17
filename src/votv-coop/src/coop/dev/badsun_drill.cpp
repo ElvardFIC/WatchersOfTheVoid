@@ -173,8 +173,8 @@ void Sample(bool host) {
     }
     if (!first) return Fail(host, "the Bad Sun copy is gone (%d live, clock %02d:%02d)", n, g_lastHour, g_lastMin);
 
-    g_lastWidget = BS::IsActive(first);
-    g_lastSender = BS::IsActiveEventSender(first);
+    if (!BS::IsActive(first, g_lastWidget) || !BS::IsActiveEventSender(first, g_lastSender))
+        return Fail(host, "the Bad Sun reader did not resolve (clock %02d:%02d)", g_lastHour, g_lastMin);
     UE_LOGI("badsun_drill: [%s] clock %02d:%02d, %d live, widget %d, sender %d", RoleName(host), g_lastHour, g_lastMin,
             n, g_lastWidget ? 1 : 0, g_lastSender ? 1 : 0);
     if (!g_t07Seen) {
