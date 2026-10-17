@@ -310,12 +310,15 @@ bool LegDistance(float& out) {
 
 // One leg, walked by the director: a NavMesh route taken as movement input at the human seam, bounded
 // by the director's own deadline. The run reads the leg's end from the walk's state, 1 on arrival.
+// A carrying walk: the planter's hand may hold the hook tool its planted hook is tied to, and the
+// plain walk set's ClearHand would throw it at the first tick and kill the hook.
 void StartLeg(const ue_wrap::FVector& to) {
     g_legTo = to;
     float len = 0.f;
     LegDistance(len);
     g_walk = coop::director::StartBackgroundWalk(to, kArriveCm,
-                                                 kWalkDeadlineS + static_cast<int>(len / kWalkFloorCmS));
+                                                 kWalkDeadlineS + static_cast<int>(len / kWalkFloorCmS),
+                                                 /*carry=*/true);
 }
 
 // How the current leg stands: 0 still walking, 1 arrived, 2 ended without arriving (the director's
