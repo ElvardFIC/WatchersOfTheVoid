@@ -64,6 +64,11 @@ void OnSnapshotComplete();
 // new world. Game thread.
 void OnClientWorldReady();
 
+// The one-shot ghost sweep of Tick() has run in this world (re-armed by OnClientWorldReady and
+// OnSessionEnd; never set on a host, which has no snapshot to wait for). A client that spawns an
+// allowlisted creature of its own waits for this, or the sweep destroys it. Game thread.
+bool GhostSweepDone();
+
 // Net disconnect (all peers gone): wipe all per-session state.
 void OnSessionEnd();
 

@@ -244,6 +244,11 @@ void Tick() {
     }
 }
 
+bool GhostSweepDone() {
+    UE_ASSERT_GAME_THREAD("npc_adoption::GhostSweepDone");
+    return g_ghostSwept;
+}
+
 void OnSnapshotComplete() {
     UE_ASSERT_GAME_THREAD("npc_adoption::OnSnapshotComplete");
     // Marks the connect snapshot fully delivered. The one-shot ghost sweep (Tick) then fires only
