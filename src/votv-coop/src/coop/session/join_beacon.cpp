@@ -101,7 +101,8 @@ bool FreezeKnob() {
 // our lanes stay, and the joiner's watchdog reads delivery progress instead.
 void NoteDraining(coop::net::Session& s, int slot) {
     DrainState& d = g_drain[slot];
-    if (d.closedAtMs <= 0) return;
+    // Open, or already delivered: nothing to read (the decision would say Silent anyway).
+    if (d.closedAtMs <= 0 || d.latched) return;
     const auto pub = s.LinkDeliveryOf(slot);
     switch (DrainingDecision(d.closedAtMs, d.latched, pub.sampleMs, pub.queueBytes)) {
     case DrainStep::Silent: return;

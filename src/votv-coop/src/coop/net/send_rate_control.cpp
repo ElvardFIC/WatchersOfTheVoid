@@ -390,10 +390,12 @@ void SendRateControl::Sample(int slot, const LinkSample& in, uint64_t nowMs) {
                static_cast<int64_t>(in.backlogBytes);
     m.last = in;
     // Published before any return below, so the game thread's view is never older than this pass.
-    // The delivered count is clamped monotone: the header bias and the read order can make one
-    // sample read low, and a reader comparing two of them must never see delivery go backwards.
-    // The stamp is `nowMs` as handed in, taken before the status read, so a sample stamped after
-    // an event was read after it. Values first (relaxed), the stamp last (release).
+    // The delivered count is clamped monotone: the header bias makes a sample read low, and the read
+    // order (the status before `queued`, which a send between them raises) can make one read high,
+    // after which the clamp holds it flat until the true count passes; a reader comparing two must
+    // never see delivery go backwards, and a plateau only delays a renewal. The stamp is `nowMs` as
+    // the CALLER handed it, taken before its status read (Session's sampler; keep that order), so a
+    // sample stamped after an event was read after it. Values first (relaxed), the stamp last (release).
     {
         const int64_t last = s.pubDelivered.load(std::memory_order_relaxed);
         s.pubDelivered.store(delivered > last ? delivered : last, std::memory_order_relaxed);

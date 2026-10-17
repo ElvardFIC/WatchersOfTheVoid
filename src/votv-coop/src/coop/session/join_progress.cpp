@@ -586,7 +586,8 @@ void MaybeTimeout() {
                           PhaseName(ph), HostPhaseName(hp),
                           static_cast<long long>((now - beaconMs) / 1000));
         } else {
-            std::snprintf(detail, sizeof(detail), "%s: the host never answered at all", PhaseName(ph));
+            std::snprintf(detail, sizeof(detail), "%s: %s (no beacon from the host at all)",
+                          PhaseName(ph), w.detail);
         }
         Fail(w.code, detail);
         return;

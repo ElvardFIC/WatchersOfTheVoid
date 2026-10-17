@@ -78,10 +78,6 @@ uint64_t g_drainSeedGen = 0;  // SeedGeneration captured when the current drain 
 // every path that opens a new bracket or abandons one (the trigger, a defer, a cancel, the session
 // end). Read by IsBracketClosed. Game thread.
 std::array<bool, coop::players::kMaxPeers> g_bracketClosed{};
-// When each slot's bracket closed (steady-clock ms, stamped after the SnapshotComplete send
-// returned); 0 while open. Pushed into join_beacon, whose Draining owner accepts only link samples
-// taken after it. Cleared exactly where g_bracketClosed is.
-int64_t g_bracketClosedAtMs[coop::players::kMaxPeers]{};
 
 // WHEN EACH DEFERRED SLOT IS TRIED AGAIN. The retry used to be a seed-generation bump, i.e. a
 // WORLD TRANSITION -- and so did the other two paths that could reach a deferred slot. With the
@@ -108,14 +104,14 @@ int64_t NowMsSteady_() {
 void CloseBracket_(int peerSlot) {
     const int64_t now = NowMsSteady_();
     g_bracketClosed[peerSlot] = true;
-    g_bracketClosedAtMs[peerSlot] = now;
+    // The close time is join_beacon's to keep (its Draining owner accepts only link samples taken
+    // after it); nothing here reads it, so it is pushed, not stored.
     coop::join_beacon::NoteBracketClosed(peerSlot, now);
 }
 
 // The bracket of `peerSlot` is open, abandoned or never was: the one clear of the closed state.
 void OpenBracket_(int peerSlot) {
     g_bracketClosed[peerSlot] = false;
-    g_bracketClosedAtMs[peerSlot] = 0;
     coop::join_beacon::NoteBracketReset(peerSlot);
 }
 
