@@ -246,6 +246,9 @@ HostInfo LobbyAnnouncer::Host(const std::string& masterUrl, const std::string& n
                               const std::string& world,
                               bool locked, int playersMax, int timeoutMs, int directPort) {
     HostInfo info;
+    // The generation is read BEFORE our own Stop(), so a Stop() that finishes while that one is
+    // still joining and leaving is counted (see `gen` below).
+    const uint64_t entryGen = gen_.load();
     Stop();  // retire any prior lobby first (sends /leave, joins) -- on a worker, safe
 
     const AnnounceRequest req{masterUrl, name, world, locked, playersMax, timeoutMs, directPort};
@@ -254,8 +257,11 @@ HostInfo LobbyAnnouncer::Host(const std::string& masterUrl, const std::string& n
         UE_LOGI("lobby: announcing the build claim key=%u sha=%.8s", claim.key, claim.sha.c_str());
     // Stop() above left stop_ set (it ends the old heartbeat), so the flag cannot be read here: a
     // Stop() that begins from now on is told by the generation it moves, and the process shutdown
-    // ends this create too. The generation is read after our own Stop(), never before.
-    const uint64_t gen = gen_.load();
+    // ends this create too. Our own Stop() adds exactly one to the generation, so entry + 1 is the
+    // value of a session nobody has stopped since; any other value (a second Stop() before, during
+    // or after ours, including one that completed inside the lead-in) is a bump we did not make and
+    // cancels the create.
+    const uint64_t gen = entryGen + 1;
     const http::Response resp = CreateLobby(req, true, claim, CreateStop{nullptr, &gen_, gen});
     // No master address in these lines: they reach the console, and which master was asked is the
     // caller's to name (master_slots::DisplayName).
@@ -503,7 +509,8 @@ void LobbyAnnouncer::StopHeartbeatLocked() {
 
 void LobbyAnnouncer::Stop() {
     // First, before anything can block: a Host() in flight on another thread reads this to know the
-    // session it announces for has ended (its own leading Stop() runs this too, before it reads).
+    // session it announces for has ended (its own leading Stop() adds one, which it counts for;
+    // any further bump cancels it).
     gen_.fetch_add(1);
     bool was;
     std::string url, sid, tok;

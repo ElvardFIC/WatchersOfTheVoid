@@ -147,7 +147,7 @@ private:
 
     std::atomic<bool> active_{false};
     std::atomic<bool> stop_{false};
-    std::atomic<uint64_t> gen_{0};   // bumped first by every Stop(): a Host() that sees it move was cancelled
+    std::atomic<uint64_t> gen_{0};   // bumped first by every Stop(): a Host() that sees it move beyond its own Stop() was cancelled
     std::thread hbThread_;
     std::atomic<int (*)()> playerCountFn_{nullptr};
     std::atomic<LobbyLinks (*)()> linksFn_{nullptr};
