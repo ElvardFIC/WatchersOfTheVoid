@@ -74,6 +74,15 @@ bool SplitHostPort(const std::string& in, std::string& host, uint16_t& port, boo
 
 }  // namespace
 
+std::string HostName(const std::string& hostPort) {
+    std::string host;
+    uint16_t port = 0;
+    bool secure = true;
+    if (!SplitHostPort(hostPort, host, port, secure)) return std::string();
+    for (char& c : host) if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
+    return host;
+}
+
 Response Request(const std::string& hostPort, const std::string& path,
                  const char* method, const std::string& body, int timeoutMs, size_t bodyCap) {
     Response out;

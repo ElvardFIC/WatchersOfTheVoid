@@ -5,6 +5,7 @@
 
 #include "coop/build_trust/build_trust.h"
 #include "coop/net/http_client.h"
+#include "coop/net/lobby_proof.h"
 #include "coop/net/peer_identity.h"  // LocalIdentityString -- the identity joiners dial
 #include "coop/net/protocol.h"  // kProtocolVersion -- announced for the browser's join gate
 #include "coop/session/shutdown.h"
@@ -14,6 +15,7 @@
 #include "ue_wrap/core/log.h"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <thread>
 #include <utility>
@@ -50,7 +52,9 @@ BuildClaim ReadBuildClaim() {
 
 // The POST /v1/host body of a request: the first announce and every re-announce build it here, so
 // a re-announced lobby carries the same identity, claim and (current) listing as the first.
-std::string HostBody(const AnnounceRequest& r, bool listed, const BuildClaim& claim) {
+// `nonce` and `proof` ride along when the create is proved (both empty: the old master's create).
+std::string HostBody(const AnnounceRequest& r, bool listed, const BuildClaim& claim,
+                     const std::string& nonce, const std::string& proof) {
     // nlohmann builds + escapes the body (name/world are user-supplied -> may contain
     // quotes/backslashes; never string-concat them into JSON). J::Dump uses the
     // replace error handler so invalid-UTF-8 input can't throw out of a worker.
@@ -81,7 +85,95 @@ std::string HostBody(const AnnounceRequest& r, bool listed, const BuildClaim& cl
         b["build_sig"] = claim.sig;
     }
     b["listed"] = listed;
+    if (!proof.empty()) {
+        b["nonce"] = nonce;
+        b["proof"] = proof;
+    }
     return J::Dump(b);
+}
+
+// What the challenge came to: a nonce to sign, a master that has no such route (an old master),
+// or a failure to hand back as the create's own.
+enum class Challenge { Nonce, OldMaster, Failed };
+
+// An unknown route on today's master answers exactly this (server/src/bin/master.rs's 404), so a
+// proxy's or a captive portal's 404 is not mistaken for an old master.
+bool IsOldMasterNotFound(const http::Response& resp) {
+    J::Json j;
+    if (resp.status != 404 || !J::ParseObject(resp.body, j) || j.size() != 1) return false;
+    auto it = j.find("error");
+    return it != j.end() && it->is_string() && it->get<std::string>() == "not found";
+}
+
+bool Is64LowerHex(const std::string& s) {
+    if (s.size() != 64) return false;
+    for (char c : s)
+        if (!(('0' <= c && c <= '9') || ('a' <= c && c <= 'f'))) return false;
+    return true;
+}
+
+// POST /v1/host/challenge, whose answer is the nonce one create signs. `failure` is the response to
+// return as the create's when this is Failed (unreachable, another status, another 404). A 200
+// whose nonce is not 64 hex is a master that does not speak this exchange: the old-master case.
+Challenge FetchChallenge(const AnnounceRequest& r, std::string& nonce, http::Response& failure) {
+    const http::Response resp = http::Post(r.masterUrl, "/v1/host/challenge", "{}", r.timeoutMs);
+    if (resp.ok && IsOldMasterNotFound(resp)) return Challenge::OldMaster;
+    if (!resp.ok || resp.status != 200) { failure = resp; return Challenge::Failed; }
+    J::Json j;
+    if (!J::ParseObject(resp.body, j) || !Is64LowerHex(J::Str(j, "nonce"))) return Challenge::OldMaster;
+    nonce = J::Str(j, "nonce");
+    return Challenge::Nonce;
+}
+
+// The master's own error word of a refusal ("proof-required"), empty when the body has none.
+std::string ErrorWord(const http::Response& resp) {
+    J::Json j;
+    return J::ParseObject(resp.body, j) ? J::Str(j, "error") : std::string();
+}
+
+// One create, proved. The first announce and every re-announce come through here, so both sign the
+// same way. A create is a challenge then a POST that carries the signed nonce; the signature is
+// made fresh on every try, since a nonce is single-use. A refused nonce (410) or a missing proof
+// (409) is retried ONCE with a new challenge, so a create takes at most two POSTs; a bad proof
+// (400) is a bug or a misconfigured master and is not retried. A master with no challenge route is
+// an old master and gets the create it understands, unproved: a P2P host's signaling and TURN
+// come only from that answer, so an unlisted host would fall back to a direct listen.
+http::Response CreateLobby(const AnnounceRequest& r, bool listed, const BuildClaim& claim) {
+    http::Response resp;
+    for (int attempt = 0; attempt < 2; ++attempt) {
+        std::string nonce;
+        http::Response failure;
+        const Challenge ch = FetchChallenge(r, nonce, failure);
+        if (ch == Challenge::Failed) return failure;
+        if (ch == Challenge::OldMaster) {
+            static std::atomic<bool> said{false};
+            if (!said.exchange(true))
+                UE_LOGW("lobby: this master predates the lobby proof -- announcing unproved");
+            return http::Post(r.masterUrl, "/v1/host", HostBody(r, listed, claim, {}, {}), r.timeoutMs);
+        }
+        // The name signed is the host part of the URL that was dialled, taken by the same code that
+        // dials it, so a proof made for a master that was not asked verifies nowhere else.
+        const std::string proof = coop::net::lobby_proof::ProofHex(
+            coop::net::peer_identity::LocalIdentityString(), nonce, http::HostName(r.masterUrl));
+        if (proof.empty()) {
+            UE_LOGW("lobby: host announce -- no proof could be made");
+            return http::Response{};
+        }
+        resp = http::Post(r.masterUrl, "/v1/host", HostBody(r, listed, claim, nonce, proof),
+                          r.timeoutMs);
+        if (!resp.ok) return resp;
+        const std::string why = ErrorWord(resp);
+        if (resp.status == 400 && why == "bad-proof") {
+            UE_LOGW("lobby: host announce -- the master refused the proof (bad-proof)");
+            return resp;
+        }
+        const bool retryable = (resp.status == 410 && why == "nonce-expired") ||
+                               (resp.status == 409 && why == "proof-required");
+        if (!retryable) return resp;
+        if (attempt == 1 && resp.status == 409)
+            UE_LOGW("lobby: host announce -- the master still wants a proof (proof-required)");
+    }
+    return resp;
 }
 
 }  // namespace
@@ -98,8 +190,7 @@ HostInfo LobbyAnnouncer::Host(const std::string& masterUrl, const std::string& n
     const BuildClaim claim = ReadBuildClaim();
     if (claim.present)
         UE_LOGI("lobby: announcing the build claim key=%u sha=%.8s", claim.key, claim.sha.c_str());
-    const http::Response resp =
-        http::Post(req.masterUrl, "/v1/host", HostBody(req, true, claim), req.timeoutMs);
+    const http::Response resp = CreateLobby(req, true, claim);
     // No master address in these lines: they reach the console, and which master was asked is the
     // caller's to name (master_slots::DisplayName).
     if (!resp.ok) { UE_LOGW("lobby: host announce -- master unreachable"); return info; }
@@ -166,8 +257,7 @@ ReannounceResult LobbyAnnouncer::Reannounce() {
     out.listed = listed;
     // Outside mu_: a POST never runs under it. The claim is read again, so the re-announced lobby
     // carries the same one.
-    const http::Response resp =
-        http::Post(req.masterUrl, "/v1/host", HostBody(req, listed, ReadBuildClaim()), req.timeoutMs);
+    const http::Response resp = CreateLobby(req, listed, ReadBuildClaim());
     out.reached = resp.ok;
     out.status = resp.status;
     if (!resp.ok || resp.status != 200) return out;

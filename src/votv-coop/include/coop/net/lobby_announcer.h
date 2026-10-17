@@ -5,7 +5,7 @@
 // a 30 s heartbeat -- three to the master's 90 s lobby expiry --, an explicit leave on stop, and a
 // re-announce when the master answers that it forgot the session (the announcer owns the lifecycle).
 //
-//   POST /v1/host        sessionId, an opaque lobbyId, the host token, identities and ICE
+//   POST /v1/host        (after /v1/host/challenge) sessionId, an opaque lobbyId, the host token, identities, ICE
 //   POST /v1/heartbeat   every 30 s: the lobby kept alive, its player count and their links, the host's
 //                        TURN credential reported and its renewal taken from the answer
 //   POST /v1/visibility  the "hide from the browser" toggle; POST /v1/leave on stop
@@ -73,9 +73,10 @@ class LobbyAnnouncer {
 public:
     ~LobbyAnnouncer();
 
-    // Blocking POST /v1/host. CALL ON A WORKER THREAD. On success it stashes the credentials and
-    // STARTS the 30 s heartbeat thread that keeps the lobby alive; a prior lobby is Stop()ped
-    // first. Returns the HostInfo, with ok=false on failure, in which case nothing was started.
+    // Blocking POST /v1/host (after its challenge, see lobby_proof.h). CALL ON A WORKER THREAD. On
+    // success it stashes the credentials and STARTS the 30 s heartbeat thread that keeps the lobby
+    // alive; a prior lobby is Stop()ped first. Returns the HostInfo, with ok=false on failure, in
+    // which case nothing was started.
     //
     // A POSITIVE `directPort` announces a DIRECT lobby: the master records conn="direct" with this
     // LISTEN port and advertises the announce's source ip, so /v1/join returns {conn, addr} for a

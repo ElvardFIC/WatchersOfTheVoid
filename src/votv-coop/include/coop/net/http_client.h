@@ -41,6 +41,11 @@ Response Request(const std::string& hostPort, const std::string& path,
                  const char* method, const std::string& body, int timeoutMs,
                  size_t bodyCap = kDefaultBodyCap);
 
+// The host part of `hostPort` exactly as Request dials it (the same extractor, so what is dialled
+// and what a caller signs for it cannot differ), ASCII lower-cased, port and scheme stripped, IPv6
+// brackets kept. Empty when Request would refuse the string.
+std::string HostName(const std::string& hostPort);
+
 // Convenience wrappers.
 inline Response Get(const std::string& hostPort, const std::string& path, int timeoutMs,
                     size_t bodyCap = kDefaultBodyCap) {
