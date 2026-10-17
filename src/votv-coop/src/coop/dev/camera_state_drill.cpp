@@ -430,7 +430,8 @@ void ClientTick() {
         UE_LOGI("camera_state_drill: client sees camera key=%ls active=%d isLight=%d (%d camera(s))",
                 sc::KeyOf(cam).c_str(), active ? 1 : 0, light ? 1 : 0, count);
         if (!IsLightArm()) { Go(presses ? CStep::Act : CStep::Watch); return; }
-        // The light button is the laptop's: the host judges the sender's reach of the base laptop.
+        // The light button is the laptop's: the host judges the sender's reach of a device showing its interface; this
+        // client walks to the base laptop, one of them.
         ue_wrap::laptop::EnsureResolved();
         void* laptop = ue_wrap::laptop::Instance();
         FVector lap{};

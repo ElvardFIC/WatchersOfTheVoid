@@ -160,6 +160,27 @@ coop::element::IntentSubject Judge(coop::net::Session& s, uint8_t slot, uint8_t 
     return best;
 }
 
+// The host's per-request INFO lines are said for a key once a minute, with the number that followed it, so a client
+// pressing at its bucket's rate writes one line a minute for a camera and not four a second. `kind` tells the
+// lines of one key apart. Cameras the lane indexes are the only keys that reach it, so the map is as small as they are.
+struct HostSaid { uint64_t nextMs = 0; uint64_t since = 0; };
+std::unordered_map<std::wstring, HostSaid> g_hostSaid;
+
+bool MaySay(const std::wstring& key, wchar_t kind, uint64_t& since) {
+    HostSaid& sd = g_hostSaid[key + L'#' + kind];
+    const uint64_t now = NowMs();
+    if (now < sd.nextMs) { ++sd.since; return false; }
+    since = sd.since;
+    sd.nextMs = now + kClientSayMs;
+    sd.since = 0;
+    return true;
+}
+
+// The tail a line carries when lines of its key were held back since the last one.
+std::string More(uint64_t since) {
+    return since ? " (" + std::to_string(since) + " more since the last line)" : std::string();
+}
+
 // False keeps the request at its sender's queue head: the host has no body for the sender yet (its first pose
 // has not arrived), so its reach cannot be measured, and the request waits for the body rather than being lost.
 // Everything else is run or refused, and consumed.
@@ -206,9 +227,11 @@ bool Execute(coop::net::Session& s, const coop::net::CameraToggleIntentPayload& 
     if (before == desired) {
         ++g_converged;
         SendStateTo(s, slot, p.key, p.bit, before);
-        UE_LOGI("[CAMERA-INTENT] slot %u's %s on key='%ls' changed nothing: %s is already %d; its state is sent to "
-                "that slot alone", static_cast<unsigned>(slot), WhatOf(p.bit), key.c_str(), BitName(p.bit),
-                before ? 1 : 0);
+        uint64_t since = 0;
+        if (MaySay(key, L'n', since))
+            UE_LOGI("[CAMERA-INTENT] slot %u's %s on key='%ls' changed nothing: %s is already %d; its state is sent "
+                    "to that slot alone%s", static_cast<unsigned>(slot), WhatOf(p.bit),
+                    key.c_str(), BitName(p.bit), before ? 1 : 0, More(since).c_str());
         return true;
     }
     // The body Authorize just measured is the sender's puppet, passed as the player of the use. The camera's
@@ -225,9 +248,13 @@ bool Execute(coop::net::Session& s, const coop::net::CameraToggleIntentPayload& 
     bool after = false;
     const bool readAfter = ReadBit(cam, p.bit, after);
     if (dispatched) ++g_ran; else ++g_denied;
-    UE_LOGI("[CAMERA-INTENT] host ran slot %u's %s on key='%ls': dispatched=%d, %s %d -> %s",
-            static_cast<unsigned>(slot), WhatOf(p.bit), key.c_str(), dispatched ? 1 : 0, BitName(p.bit),
-            before ? 1 : 0, readAfter ? (after ? "1" : "0") : "(unread)");
+    // The host's own open laptop panel shows the camera's bits too, and the verbs above never reach its updCam.
+    if (dispatched) sc::RefreshLaptopsShowing(cam);
+    uint64_t since = 0;
+    if (MaySay(key, L'r', since))
+        UE_LOGI("[CAMERA-INTENT] host ran slot %u's %s on key='%ls': dispatched=%d, %s %d -> %s%s",
+                static_cast<unsigned>(slot), WhatOf(p.bit), key.c_str(), dispatched ? 1 : 0, BitName(p.bit),
+                before ? 1 : 0, readAfter ? (after ? "1" : "0") : "(unread)", More(since).c_str());
     return true;
 }
 
@@ -287,8 +314,10 @@ sg::Verdict OnPre(const sg::Call& call) {
     if (call.tag == kTagTick) {
         // The cursed camera rolls its night flicker with a per-process RNG: the host rolls it, and the result
         // crosses as CameraActiveState. A call on an object of a world this client has not announced ready is
-        // that world's load and runs natively.
+        // that world's load and runs natively. A cursed camera the lane does not index (a key it never took of
+        // its own) is no instance of either camera channel, and stays this peer's own.
         if (!coop::net_pump::IsInAnnouncedWorld(call.object)) { ++g_loadNative; return sg::Verdict::Run; }
+        if (coop::interactable_sync::CameraKey(call.object).empty()) return sg::Verdict::Run;
         ++g_tickRefused;
         if (!g_tickSaid) {
             g_tickSaid = true;
@@ -392,6 +421,7 @@ void OnDisconnect() {
     g_unknownSaid = false;
     g_nextUnindexedSayMs = 0;
     g_said.clear();
+    g_hostSaid.clear();
 }
 
 }  // namespace coop::camera_toggle_intent

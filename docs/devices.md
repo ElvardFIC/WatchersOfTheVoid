@@ -3,7 +3,8 @@
 ## Purpose
 
 The keyed things around the base that are not the workstation: doors and their keypads, the
-light switches and the light groups, the garage, the appliances, the lockers, the power panel,
+light switches and the light groups, the garage, the appliances, the lockers, the security cameras,
+the power panel,
 the wind turbine, the windows and the grime, the delivery drone, and the economy the drone
 serves: the shared balance, the shop orders, and the coin gun. Who owns each, how a peer's press
 reaches the others, and where the group's money can still be lost.
@@ -17,7 +18,8 @@ Every open-or-closed, on-or-off device rides one replication engine
 a key-to-actor index that heals itself, per-key dedup, a deferred apply with a throttled retry for
 an instance that has not streamed in yet, echo suppression, and the connect snapshot. A device
 family is an adapter over its engine wrapper (`ue_wrap/devices/`), a few lines each: doors, light
-switches, light groups, container lids, the garage, the appliances, the lockers, the oven's repair.
+switches, light groups, container lids, the garage, the appliances, the lockers, the oven's repair,
+the security cameras.
 
 Each channel is sent at the verbs that write its state, which the script-body gate watches: every
 live writer of a door's open state goes through `doorOpen` or `doorClose`, and of a light group's
@@ -76,24 +78,29 @@ symmetric: any peer's edge is the state.
 
 ### Security cameras
 
-A camera has two saved bits, each its own lane keyed by the camera's prop key: `active` (the LED, the
-click, the laptop's camera list and capture gate) and `isLight` (the spotlight, flipped from the
-laptop's camera panel). Both are the host's. Besides a player's use, a wisp, the gray events, the
-cursed camera's night roll and a save's load write `active`, and most of those are host-owned world
-systems, so the host's lanes read both bits after a camera's `actionOptionIndex`, `upd` and
-`updState` and after the cursed camera's tick, and send a change to every peer. A client renders what
-it is sent: the apply writes the bit and runs `updState` when the write turns the camera on, which
-plays the click, else `upd`, then repaints a laptop camera panel that has the camera selected.
+A camera has two saved bits, each its own lane keyed by the lane's key for the camera (its portable
+identity where it has one, else its prop key): `active` (the LED, the click, the laptop's camera
+list and capture gate) and `isLight` (the spotlight, flipped from the laptop's camera panel). Both
+are the host's. Besides a player's use, a wisp, the gray events, the cursed camera's night roll and
+a save's load write `active`, and most of those are host-owned world systems, so the host's lanes
+read both bits after a camera's `actionOptionIndex`, `upd` and `updState` and after the cursed
+camera's tick, and send a change to every peer. A client renders what it is sent: the apply writes
+the bit, then runs `updState` when the write turns a camera other than the cursed one on, which
+plays the click, else `upd`, then repaints a laptop camera panel that has the camera selected. A
+joiner hears one click for a camera the host has on that its save had off, and none for one that is
+already on.
 
 A client's own use of a camera and its press of the laptop's camera-light button are refused at
 their bodies and sent to the host (`coop/interactables/camera_toggle_intent`). The host checks the
 sender's reach, of the camera for the use and of any device showing the laptop interface (the base
 laptop or a portable PC) for the light, and sets the bit to the value the sender wanted, so two
-presses that race collapse to one change. A bit already at that value changes nothing and is sent again
-to that sender alone, so a client whose copy diverged converges and its button is never dead. The cursed camera's tick is refused on a client: the host
-rolls it. A camera whose key is empty, or the key its class carries by default, is addressed by no
-lane; a client's press on it is refused and sends nothing. A client's copy of a wisp still switches
-that client's own cameras off until the creature mirror stops running the wisp's world writes `[?]`.
+presses that race collapse to one change. A bit already at that value changes nothing and is sent
+again to that sender alone, so a client whose copy diverged converges and its button is never dead.
+The host's own open laptop panel is repainted after it performs a request. The cursed camera's tick
+is refused on a client: the host rolls it. A camera whose key is empty, or the key its class carries
+by default, is addressed by no lane: a client's press on it is refused and sends nothing, and a
+cursed one's tick stays that peer's own. A client's copy of a wisp still switches that client's own
+cameras off until the creature mirror stops running the wisp's world writes `[?]`.
 
 ### What is inside a container
 

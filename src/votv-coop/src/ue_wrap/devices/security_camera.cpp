@@ -60,8 +60,16 @@ std::wstring DefaultKeyOf(void* cam) {
     void* cls = R::ClassOf(cam);
     for (int i = 0; i < g_defaultCount; ++i)
         if (g_defaults[i].cls.Is(cls)) return g_defaults[i].key;
-    void* cdo = R::FindClassDefaultObject(R::ClassNameOf(cam).c_str());
-    std::wstring key = cdo ? prop::GetKeyString(cdo) : std::wstring();
+    // The class's default object is among its listed instances: found there, with no walk of the object array.
+    void* cdo = nullptr;
+    object_index::ForEachInstance(cls,
+        [](void* ctx, void* obj, int32_t) {
+            auto* out = static_cast<void**>(ctx);
+            if (!*out && R::NameStartsWith(R::NameOf(obj), L"Default__")) *out = obj;
+        },
+        &cdo);
+    if (!cdo) return std::wstring();  // not listed (yet): asked again, never cached as an empty default
+    std::wstring key = prop::GetKeyString(cdo);
     // Four camera classes are the most a cook holds; a full table, or an entry a world reload killed, is
     // overwritten round-robin.
     DefaultKey& slot = g_defaults[g_defaultNext];

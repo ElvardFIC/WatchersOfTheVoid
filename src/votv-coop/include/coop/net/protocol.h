@@ -1005,8 +1005,8 @@ enum class ReliableKind : uint8_t {
     // absolute. BadSunPayload.
     BadSun = 176,
 
-    // Host to all: a security camera's `active` bit (the LED, the click, the laptop's camera list), by the camera's
-    // prop key, absolute, whoever wrote it -- a player's use, a wisp, the gray events, the cursed camera's night roll.
+    // Host to all: a security camera's `active` bit (the LED, the click, the laptop's camera list), by the camera
+    // lane's key, absolute, whoever wrote it -- a player's use, a wisp, the gray events, the cursed camera's night roll.
     // A client renders it and never authors it; a client's own copy is refused at the host's receive edge. Never
     // relayed. Late join: the host's state for every indexed camera at the joiner's world-ready. KeyedTogglePayload.
     CameraActiveState = 181,
@@ -1688,12 +1688,12 @@ static_assert(sizeof(DoorVerbIntentPayload) == 40, "DoorVerbIntentPayload must b
 static_assert(sizeof(DoorVerbIntentPayload) <= 256 - 20 - 8,
               "DoorVerbIntentPayload must fit one datagram");
 
-// A camera toggle intent (CameraToggleIntent): the camera by its prop key, which of its two bits, and the value
+// A camera toggle intent (CameraToggleIntent): the camera by the lane's key, which of its two bits, and the value
 // the sender's press wants it to have (the sender's own copy negated). The use of the camera is the active bit; the
 // laptop's camera-light button is the light bit.
 namespace camera_toggle { constexpr uint8_t kActive = 0; constexpr uint8_t kLight = 1; }
 struct CameraToggleIntentPayload {
-    WireKey  key;        // 32 -- the camera's prop key, as the camera lane indexes it
+    WireKey  key;        // 32 -- the camera lane's key for the camera
     uint8_t  bit;        // 1  -- camera_toggle::kActive or kLight
     uint8_t  desired;    // 1  -- 0 = off, 1 = on
 };

@@ -24,8 +24,8 @@ struct CameraToggleIntentPayload;
 
 namespace coop::camera_toggle_intent {
 
-// Registers the three refusals' name watches. The per-tick retry pump (coop/interactables/verb_lanes), so a
-// watch the gate refused is registered again on a later tick. Game thread.
+// Registers the three refusals' name watches. Called every pump tick (coop/interactables/verb_lanes) and latched:
+// a watch registers once, and one the gate refused stays refused for the process, said once. Game thread.
 void Install(coop::net::Session* session);
 
 // Both roles: settles the watches and says once when all are live. Host: runs the queued requests in order,

@@ -183,11 +183,16 @@ const Adapter g_doorBoxAdapter = {
 // A security camera's two saved bits, one adapter each because the channel carries a bool. Host-authoritative:
 // four writers beside the player's use move `active` (a wisp, the gray events, the cursed camera's night roll,
 // a save's load) and most are host-owned world systems, so a symmetric lane would let a client's copy of one
-// author the host's camera. The client renders the host's bit and asks for a change as a CameraToggleIntent
-// (coop/interactables/camera_toggle_intent). Keyed by the camera's prop key, which ue_wrap::security_camera
-// withholds from a camera that carries its class's default. The `active` apply writes the bit, then updState()
-// when the write turns the camera on (the click the toggling peer heard), else upd(); a cursed camera's tick
-// never clicks. Either apply ends by repainting a laptop camera panel that has the camera selected.
+// author the host's camera. MTA takes an unoccupied vehicle's engine bit from its client sync owner, which is
+// not taken here (reference/mtasa-blue/Server/mods/deathmatch/logic/CUnoccupiedVehicleSync.cpp:442-447); the
+// shape taken is a server-held bit carried to joiners in the add packet
+// (reference/mtasa-blue/Server/mods/deathmatch/logic/CStaticFunctionDefinitions.cpp:7260-7274 and
+// reference/mtasa-blue/Server/mods/deathmatch/logic/packets/CEntityAddPacket.cpp:571). The client renders the
+// host's bit and asks for a change as a CameraToggleIntent (coop/interactables/camera_toggle_intent). Keyed by the
+// lane's key for the camera (its portable identity, else its prop key), which ue_wrap::security_camera withholds
+// from a camera that carries its class's default. The `active` apply writes the bit, then updState() when the
+// write turns the camera on (the click the toggling peer heard), else upd(); a cursed camera's tick never clicks.
+// Either apply ends by repainting a laptop camera panel that has the camera selected.
 bool ApplyCameraActive(void* cam, bool on) {
     namespace sc = ue_wrap::security_camera;
     bool cur = false;
