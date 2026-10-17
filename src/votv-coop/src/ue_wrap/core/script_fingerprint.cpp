@@ -504,7 +504,7 @@ bool CallHasLocal(const CallSite& site, const wchar_t* localName) {
     if (HasLocalSEH(&site, localName, &found)) {
         static std::atomic<bool> faulted{false};
         if (!faulted.exchange(true, std::memory_order_relaxed))
-            UE_LOGE("script_calls: CallHasLocal faulted reading a stored local; the CallSite outlived its class?");
+            UE_LOGW("script_calls: CallHasLocal faulted reading a stored local (logged once); the CallSite outlived its class?");
         return false;
     }
     if (!found && site.localsTruncated) {
