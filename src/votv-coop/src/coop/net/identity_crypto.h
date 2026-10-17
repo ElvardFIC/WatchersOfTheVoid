@@ -45,7 +45,7 @@ const PrivateAcl& KeyFileAcl();
 // The access list of `path` as read back: protected, and its entry count. False when unreadable.
 bool ReadKeyDacl(const std::wstring& path, bool& isProtected, unsigned long& aceCount);
 
-// The selftest's scratch keys: `<kScratchKeyPrefix><pid>.key` beside the executable. A run killed
+// The selftest's scratch keys: `<kScratchKeyPrefix><pid>.key` in the mod's data folder. A run killed
 // inside the selftest leaves its file (and a temporary of it); the sweep removes every one whose
 // process is gone.
 inline constexpr const wchar_t* kScratchKeyPrefix = L"multivoid.selftest-identity.";
