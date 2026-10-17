@@ -30,7 +30,8 @@ struct HitLayout {
 };
 
 // Fill `layout` from the engine's HitResult struct; false, and the fields as they resolved, when the struct
-// or a member is not found or a member does not fit the size. Game thread.
+// or a member is not found or a member does not fit the size. Walks the object array for the struct:
+// resolve once at install, not per dispatch. Game thread.
 bool ResolveHitLayout(HitLayout& layout);
 
 // Write kNullWeakObjectPtr over the hit actor and component of the FHitResult at `hit`, and nothing else.

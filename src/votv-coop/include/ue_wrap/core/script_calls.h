@@ -31,8 +31,11 @@ struct CallSite {
 // flow order, an ubergraph by its event stubs' entries (name order) each in flow order with a statement
 // already listed under an earlier entry skipped, so each call is listed once. A call nested in another's
 // operands (an EX_Context's inner call, an argument that is itself a call) comes right after the call it
-// is nested in. `out` is cleared first; false, and `out` empty, when the function does not decode. Game
-// thread.
+// is nested in. `out` is cleared first; false, and `out` empty, when the function does not decode. A
+// native function, or one with no script, returns true with `out` empty, as the fingerprint treats it.
+// Not cached: a call decodes the whole function, and for an ubergraph the whole class's script, so a
+// consumer enumerates once per function, while that function's fingerprint hash holds, and keeps the
+// result. Game thread.
 bool EnumerateCalls(void* ufunction, std::vector<CallSite>& out);
 
 // Does `site` call `ufunction`: the pointer for the opcodes that carry one, the FName's {comparison

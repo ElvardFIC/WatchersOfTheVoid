@@ -61,7 +61,7 @@ struct Slot {
 // whole roster rather than a handful: peers install asymmetrically, so a table that fits one
 // role can be full on the other, and a hook that cannot install makes a fix work on one peer
 // and not the other. The count here covers the standing installs, a dev build's probes (the driver
-// natives and QuitGame among them) and the natives the puppet-identity rows patch, with headroom.
+// natives and QuitGame among them) and the dev selftest's hooks, with headroom.
 constexpr int kMaxNativeHooks = 56;
 Slot g_slots[kMaxNativeHooks];
 int  g_slotCount = 0;
@@ -128,7 +128,16 @@ int32_t CodeOffsetOf(void* stack) {
     if (!code || !fn) return -1;
     const uint8_t* script = static_cast<const uint8_t*>(ReadPtr(fn, P::off::UStruct_Script));
     const int32_t num = *reinterpret_cast<const int32_t*>(static_cast<const uint8_t*>(fn) + P::off::UStruct_ScriptNum);
-    if (!script || code < script || code > script + num) return -1;
+    if (!script || code < script || code > script + num) {
+        static bool s_said = false;
+        if (!s_said) {
+            s_said = true;
+            UE_LOGE("ufunction_hook: a frame's code pointer lies outside its function's script (script %p, "
+                    "%d bytes, code %p) -- reported as no bytecode caller", static_cast<const void*>(script), num,
+                    static_cast<const void*>(code));
+        }
+        return -1;
+    }
     return static_cast<int32_t>(code - script);
 }
 

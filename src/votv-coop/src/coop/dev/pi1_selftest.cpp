@@ -16,6 +16,7 @@
 #include "ue_wrap/core/script_gate.h"
 #include "ue_wrap/core/types.h"
 #include "ue_wrap/core/ufunction_hook.h"
+#include "ue_wrap/engine/engine_mainplayer.h"
 #include "ue_wrap/engine/engine_pawn.h"
 #include "ue_wrap/facts/function_row.h"
 
@@ -100,10 +101,23 @@ void Fail(const char* check, const char* fmt, ...) {
 
 unsigned long long Ull(uintptr_t v) { return static_cast<unsigned long long>(v); }
 
-bool SameRot(const ue_wrap::FRotator& a, const ue_wrap::FRotator& b) {
-    return std::fabs(a.Pitch - b.Pitch) < 1e-3f && std::fabs(a.Yaw - b.Yaw) < 1e-3f &&
-           std::fabs(a.Roll - b.Roll) < 1e-3f;
+// One axis' difference, a full turn apart counting as equal.
+float AngleDiff(float a, float b) {
+    float d = std::fmod(a - b, 360.f);
+    if (d > 180.f) d -= 360.f;
+    if (d < -180.f) d += 360.f;
+    return std::fabs(d);
 }
+
+bool SameRot(const ue_wrap::FRotator& a, const ue_wrap::FRotator& b, float tol = 1e-3f) {
+    return AngleDiff(a.Pitch, b.Pitch) < tol && AngleDiff(a.Yaw, b.Yaw) < tol && AngleDiff(a.Roll, b.Roll) < tol;
+}
+
+// The tolerance the value the pre hook read is judged by.
+constexpr float kReadTol = 0.01f;
+
+// A value no rotation passed in has, so a hook that read nothing cannot match.
+void ClearSeen() { g_lastSeen.Pitch = g_lastSeen.Yaw = g_lastSeen.Roll = -9999.f; }
 
 // A library function of lib_C that takes the world context and writes an out value: called on the library's
 // default object with this peer's local player as the context.
@@ -185,9 +199,6 @@ bool Settled() {
 
 // ---- the checks ----
 
-PostRead g_markedPosts[kMaxReads];   // phase 1's post reads, which call-sites judges the offsets of
-int      g_nMarkedPosts = 0;
-
 bool PhaseOk(int phase, uintptr_t wantBody) {
     if (g_nPres != 2 || g_nPosts != 2) {
         Fail("scope-mark", "phase %d saw %d PRE reads and %d post reads, want 2 and 2", phase, g_nPres, g_nPosts);
@@ -240,6 +251,10 @@ void CheckScopeMark() {
         Fail("scope-mark", "a watch settled dead");
         return;
     }
+    if (!g_inst.post) {
+        Fail("scope-mark", "the post hook install on GetGameMode was refused");
+        return;
+    }
     if (!g_fnPoints || !g_fnGmg || !g_libCdo) {
         Fail("scope-mark", "lib_C's getPoints or getMainGamemode did not resolve");
         return;
@@ -265,8 +280,6 @@ void CheckScopeMark() {
         Fail("scope-mark", "phase 1: the getPoints call failed");
         return;
     }
-    g_nMarkedPosts = g_nPosts;
-    std::memcpy(g_markedPosts, g_posts, sizeof(g_posts));
     ok = PhaseOk(1, g_bit) && ok;
     if (!RunPhase(/*mark=*/false)) {
         Fail("scope-mark", "phase 2: the getPoints call failed");
@@ -329,16 +342,25 @@ void CheckCallSites() {
         }
     }
     if (gameModeCall) {
-        if (g_nMarkedPosts == 0) {
-            Fail("call-sites", "position: no post hook read was recorded");
+        // The position arm makes and records its own getPoints call.
+        if (!g_inst.post) {
+            Fail("call-sites", "position: the post hook install on GetGameMode was refused");
             ok = false;
-        }
-        for (int i = 0; i < g_nMarkedPosts; ++i)
-            if (g_markedPosts[i].offset != gameModeCall->end) {
-                Fail("call-sites", "position: the post hook stood at %d, the call ends at %d",
-                     g_markedPosts[i].offset, gameModeCall->end);
+        } else if (!g_libCdo || !RunPhase(/*mark=*/false)) {
+            Fail("call-sites", "position: the getPoints call failed");
+            ok = false;
+        } else {
+            if (g_nPosts == 0) {
+                Fail("call-sites", "position: no post hook read was recorded");
                 ok = false;
             }
+            for (int i = 0; i < g_nPosts; ++i)
+                if (g_posts[i].offset != gameModeCall->end) {
+                    Fail("call-sites", "position: the post hook stood at %d, the call ends at %d", g_posts[i].offset,
+                         gameModeCall->end);
+                    ok = false;
+                }
+        }
     }
 
     void* playerClass = ue_wrap::object_index::ClassByName(L"mainPlayer_C");
@@ -380,6 +402,20 @@ bool LagLocation(ue_wrap::FVector& out) {
     return true;
 }
 
+// What makeLookAt's non-seated branch and its interpolation step need of the local player: the name of the one
+// that does not hold, else null.
+const char* LookAtPrecondition() {
+    void* sitting = nullptr;
+    if (!E::ReadMainPlayerSittingOn(g_local, sitting)) return "sittingOn unreadable";
+    if (sitting) return "the player is sitting";
+    const int32_t off = R::FindPropertyOffset(R::ClassOf(g_local), L"worldDeltaSeconds");
+    if (off < 0) return "worldDeltaSeconds unresolved";
+    float dt = 0.f;
+    std::memcpy(&dt, static_cast<const uint8_t*>(g_local) + off, sizeof dt);
+    if (!(dt > 0.f)) return "worldDeltaSeconds is not positive";
+    return nullptr;
+}
+
 // The pre hook on SetControlRotation, on both routes: a reflected call (the engine_pawn call, parameters read
 // from the frame) and the bytecode route (makeLookAt calls it from its own script). The player's control
 // rotation is read before and after each, and put back at the end.
@@ -401,6 +437,7 @@ void CheckConstRef(const ue_wrap::FRotator& rot0, void* controller) {
     bool preOk = true;
     g_refuse = true;
     g_preSeen = 0;
+    ClearSeen();
     E::SetControlRotation(controller, off);
     const ue_wrap::FRotator refused = E::GetControlRotation(controller);
     UE_LOGI("[PI-1] const-ref-pre: the hook saw %d call(s), NewRotation read (%.1f, %.1f, %.1f)", g_preSeen,
@@ -408,6 +445,11 @@ void CheckConstRef(const ue_wrap::FRotator& rot0, void* controller) {
     if (!SameRot(refused, rot0)) {
         Fail("const-ref-pre", "not refused: (%.1f, %.1f, %.1f) became (%.1f, %.1f, %.1f)", rot0.Pitch, rot0.Yaw,
              rot0.Roll, refused.Pitch, refused.Yaw, refused.Roll);
+        preOk = false;
+    }
+    if (!SameRot(g_lastSeen, off, kReadTol)) {
+        Fail("const-ref-pre", "value (%.2f, %.2f, %.2f) want (%.2f, %.2f, %.2f)", g_lastSeen.Pitch, g_lastSeen.Yaw,
+             g_lastSeen.Roll, off.Pitch, off.Yaw, off.Roll);
         preOk = false;
     }
     g_refuse = false;
@@ -435,7 +477,22 @@ void CheckConstRef(const ue_wrap::FRotator& rot0, void* controller) {
         Fail("const-ref-bytecode", "makeLookAt's parameters did not set");
         return;
     }
+    if (const char* why = LookAtPrecondition()) {
+        Fail("const-ref-bytecode", "precondition %s", why);
+        return;
+    }
+    // The rotation an unrefused call produces from rot0, which is what the refused call's hook must read.
+    g_refuse = false;
+    ClearSeen();
+    const bool calledFree = ue_wrap::Call(g_local, f);
+    const ue_wrap::FRotator expected = E::GetControlRotation(controller);
+    E::SetControlRotation(controller, rot0);
+    if (!calledFree) {
+        Fail("const-ref-bytecode", "unseen: the unrefused makeLookAt call failed");
+        return;
+    }
     g_refuse = true;
+    ClearSeen();
     const int before = g_preSeen;
     const bool called = ue_wrap::Call(g_local, f);
     g_refuse = false;
@@ -446,6 +503,9 @@ void CheckConstRef(const ue_wrap::FRotator& rot0, void* controller) {
         Fail("const-ref-bytecode", "changed: (%.1f, %.1f, %.1f) became (%.1f, %.1f, %.1f), the hook saw %d", rot0.Pitch,
              rot0.Yaw, rot0.Roll, after.Pitch, after.Yaw, after.Roll, seen);
     else if (seen < 1) Fail("const-ref-bytecode", "unseen: makeLookAt reached SetControlRotation %d time(s) through the hook", seen);
+    else if (!SameRot(g_lastSeen, expected, kReadTol))
+        Fail("const-ref-bytecode", "value (%.2f, %.2f, %.2f) want (%.2f, %.2f, %.2f)", g_lastSeen.Pitch, g_lastSeen.Yaw,
+             g_lastSeen.Roll, expected.Pitch, expected.Yaw, expected.Roll);
     else {
         UE_LOGI("[PI-1] const-ref-bytecode: the hook saw %d call(s), NewRotation read (%.1f, %.1f, %.1f)", seen,
                 g_lastSeen.Pitch, g_lastSeen.Yaw, g_lastSeen.Roll);
@@ -509,6 +569,7 @@ void Tick(coop::net::Session* session) {
         g_stage = Stage::Settle;
         return;
     }
+    sg::ResolvePendingNames();
     if (!Settled()) return;
     g_stage = Stage::Done;
     RunChecks();

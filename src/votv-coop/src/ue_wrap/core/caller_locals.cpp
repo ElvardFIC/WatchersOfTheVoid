@@ -53,7 +53,7 @@ bool FitsHit(const HitLayout& l) {
            l.component + kWeakBytes <= l.size;
 }
 
-bool g_selftestPassed = false;
+std::atomic<bool> g_selftestPassed{false};
 
 }  // namespace
 
@@ -175,10 +175,10 @@ bool RunSelftest() {
 
     if (failed == 0) UE_LOGI("caller-locals selftest: ALL PASS (%d checks)", checks);
     else             UE_LOGE("caller-locals selftest: %d/%d FAILED", failed, checks);
-    g_selftestPassed = failed == 0;
-    return g_selftestPassed;
+    g_selftestPassed.store(failed == 0);
+    return g_selftestPassed.load();
 }
 
-bool SelftestPassed() { return g_selftestPassed; }
+bool SelftestPassed() { return g_selftestPassed.load(); }
 
 }  // namespace ue_wrap::caller_locals

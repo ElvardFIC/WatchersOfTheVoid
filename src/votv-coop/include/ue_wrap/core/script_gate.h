@@ -183,7 +183,9 @@ bool IsBodyActive(void* function, void* callerFunction = nullptr);
 // stack of the dispatch and is zero at its start, so every PRE of one call adds to the same word and
 // nothing outlives the call: a nested dispatch inside a PRE has a word of its own, a Cancel never builds a
 // scope, and a fault the firewall absorbs unwinds the word with its frame. The body's scope takes the word
-// once no PRE cancelled. A mark from a post, from a body, or with no Call is a no-op. Game thread.
+// once no PRE cancelled. A mark from a post, from a body, or with no Call is a no-op. The Call a PRE
+// receives, and its scopeMark with it, is valid only inside that PRE: a copy kept past its return points
+// into a dispatch frame that is gone. Game thread.
 void MarkScope(const Call& call, uintptr_t bits);
 
 // The bits of the innermost scope on this thread's chain whose body is `function`, else 0. Readable from any
@@ -193,7 +195,8 @@ uintptr_t ScopeBits(void* function);
 
 // The bit `owner` (any stable address the consumer owns) holds: the same bit on every call for one owner, a
 // new one for a new owner, at most 64 owners in a process. 0 past that, logged once: a consumer that gets 0
-// treats its install as failed. Game thread.
+// treats its install as failed. Scans the owners taken so far: resolve once at install, not per dispatch.
+// Game thread.
 uintptr_t ScopeBitFor(const void* owner);
 
 // The caller's storage for the out parameter at `paramOffset` (an Offset_Internal), or null when
