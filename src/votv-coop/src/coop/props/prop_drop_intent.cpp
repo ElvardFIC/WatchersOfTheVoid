@@ -25,6 +25,7 @@
 #include "ue_wrap/core/hot_path_guard.h"         // UE_ASSERT_GAME_THREAD
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/actors/floppy_disc.h"
+#include "ue_wrap/actors/notebook.h"
 #include "ue_wrap/actors/prop.h"                   // the prop lineage, key, name and parity-identity accessors
 #include "ue_wrap/core/object_index.h"  // ClassByName -- the host's O(1) class resolve for a client's intent
 #include "ue_wrap/core/reflection.h"
@@ -57,14 +58,6 @@ namespace GT = ue_wrap::game_thread;
 namespace PT = coop::prop_element_tracker;
 
 UE_FACT_FN(kRowFinishSpawningActor, "prop_drop_intent", L"GameplayStatics", L"FinishSpawningActor", Declared);
-
-bool IsNotebookSheet(void* actor) {
-    if (!actor || !R::IsLive(actor)) return false;
-    static void* s_sheetClass = nullptr;
-    if (!s_sheetClass) s_sheetClass = R::FindClass(L"prop_notebook_paper_C");
-    void* cls = R::ClassOf(actor);
-    return s_sheetClass && cls && R::IsDescendantOfAny(cls, &s_sheetClass, 1);
-}
 
 std::atomic<coop::net::Session*> g_session{nullptr};
 inline coop::net::Session* LoadSession() { return g_session.load(std::memory_order_acquire); }
@@ -436,7 +429,7 @@ void Tick(coop::net::Session* session) {
         // A torn notebook page is spawned by ui_notebook's graph, not by a player drop verb.
         // It still needs the host-authoritative keyed-prop birth route or it exists only for
         // the client that tore it out.
-        const bool isNotebookSheet = IsNotebookSheet(e.actor);
+        const bool isNotebookSheet = ue_wrap::notebook::IsNotebookSheet(e.actor);
         const bool freshBirth = !parked &&
             (isDiscBirth ||
              (ue_wrap::tape_caddy::EnsureResolved() &&

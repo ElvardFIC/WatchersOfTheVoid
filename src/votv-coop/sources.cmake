@@ -57,6 +57,7 @@ set(VOTVCOOP_SOURCES
     src/ue_wrap/actors/container_view.cpp
     src/ue_wrap/actors/floppy_disc.cpp
     src/ue_wrap/actors/sleepingbag.cpp
+    src/ue_wrap/actors/notebook.cpp
     src/ue_wrap/actors/hook.cpp
     src/ue_wrap/world/keyed_objects.cpp
     src/coop/items/hook_sync.cpp

@@ -11,6 +11,7 @@
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/sdk_profile.h"
 #include "ue_wrap/core/types.h"
+#include "ue_wrap/actors/notebook.h"
 #include "ue_wrap/actors/prop.h"
 
 #include <chrono>
@@ -247,11 +248,8 @@ std::wstring ClassifyWidgetClaimKey(void* widget) {
     void* cls = R::ClassOf(widget);
     if (!cls) return {};
     // These editors claim their backing prop, not a shared widget class, so two props stay independent.
-    if (R::ToString(R::NameOf(cls)) == L"ui_notebook_C") {
-        const int32_t off = R::FindPropertyOffset(cls, L"clipboard");
-        if (off < 0) return {};
-        void* prop = *reinterpret_cast<void**>(reinterpret_cast<uint8_t*>(widget) + off);
-        const std::wstring propKey = ue_wrap::prop::GetKeyString(prop);
+    if (ue_wrap::notebook::IsEditorWidget(widget)) {
+        const std::wstring propKey = ue_wrap::prop::GetKeyString(ue_wrap::notebook::NotebookOf(widget));
         if (propKey.empty()) return {};
         uint64_t h = 1469598103934665603ull;
         for (wchar_t ch : propKey) { h ^= static_cast<uint16_t>(ch); h *= 1099511628211ull; }
@@ -259,11 +257,8 @@ std::wstring ClassifyWidgetClaimKey(void* widget) {
         swprintf_s(key, L"note_%016llx", static_cast<unsigned long long>(h));
         return key;
     }
-    if (R::ToString(R::NameOf(cls)) == L"ui_paperDraw_C") {
-        const int32_t off = R::FindPropertyOffset(cls, L"paperDraw");
-        if (off < 0) return {};
-        void* paper = *reinterpret_cast<void**>(reinterpret_cast<uint8_t*>(widget) + off);
-        const std::wstring propKey = ue_wrap::prop::GetKeyString(paper);
+    if (ue_wrap::notebook::IsPaperDrawWidget(widget)) {
+        const std::wstring propKey = ue_wrap::prop::GetKeyString(ue_wrap::notebook::PaperOf(widget));
         if (propKey.empty()) return {};
         uint64_t h = 1469598103934665603ull;
         for (wchar_t ch : propKey) { h ^= static_cast<uint16_t>(ch); h *= 1099511628211ull; }
@@ -297,9 +292,7 @@ std::wstring ClassifyDeviceActorClaimKey(void* actor) {
     if (!actor) return {};
     void* cls = R::ClassOf(actor);
     if (!cls) return {};
-    static void* notebookBase = nullptr;
-    if (!notebookBase) notebookBase = R::FindClass(L"prop_notebook_C");
-    if (notebookBase && R::IsDescendantOfAny(cls, &notebookBase, 1)) {
+    if (ue_wrap::notebook::IsNotebook(actor)) {
         const std::wstring propKey = ue_wrap::prop::GetKeyString(actor);
         if (propKey.empty()) return {};
         uint64_t h = 1469598103934665603ull;
@@ -308,9 +301,7 @@ std::wstring ClassifyDeviceActorClaimKey(void* actor) {
         swprintf_s(key, L"note_%016llx", static_cast<unsigned long long>(h));
         return key;
     }
-    static void* paperBase = nullptr;
-    if (!paperBase) paperBase = R::FindClass(L"prop_paper_drawable_C");
-    if (paperBase && R::IsDescendantOfAny(cls, &paperBase, 1)) {
+    if (ue_wrap::notebook::IsDrawablePaper(actor)) {
         const std::wstring propKey = ue_wrap::prop::GetKeyString(actor);
         if (propKey.empty()) return {};
         uint64_t h = 1469598103934665603ull;

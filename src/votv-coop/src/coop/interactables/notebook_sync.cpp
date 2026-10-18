@@ -5,10 +5,8 @@
 #include "coop/props/prop_save_data.h"
 #include "coop/net/session.h"
 #include "coop/props/prop_key_index.h"
+#include "ue_wrap/actors/notebook.h"
 #include "ue_wrap/actors/prop.h"
-#include "ue_wrap/core/field_io.h"
-#include "ue_wrap/core/call.h"
-#include "ue_wrap/core/ftext_utils.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/script_gate.h"
 #include "ue_wrap/facts/function_row.h"
@@ -29,6 +27,7 @@ namespace coop::notebook_sync {
 namespace {
 namespace R = ue_wrap::reflection;
 namespace sg = ue_wrap::script_gate;
+namespace N = ue_wrap::notebook;
 using coop::net::Role;
 
 UE_FACT_FN(kNotebookGraph, "notebook_sync", L"ui_notebook_C", L"ExecuteUbergraph_ui_notebook", Declared);
@@ -36,11 +35,6 @@ UE_FACT_FN(kNotebookQuit, "notebook_sync", L"ui_notebook_C", L"quit", Declared);
 std::atomic<coop::net::Session*> g_session{nullptr};
 coop::blob_chunks::Assembler g_assembler;
 uint32_t g_nextSeq = 1;
-void* g_notebookBase = nullptr;
-int32_t g_widgetClipboardOff = -1;
-int32_t g_widgetMletTextOff = -1;
-int32_t g_propPageOff = -1;
-int32_t g_propTextOff = -1;
 constexpr size_t kMaxTextBlob = 256 * 1024;
 constexpr auto kAssemblyTTL = std::chrono::seconds(20);
 std::chrono::steady_clock::time_point g_nextSweep{};
@@ -98,21 +92,10 @@ bool Decode(const std::vector<uint8_t>& b, std::wstring& key, std::vector<std::w
     return p == b.size();
 }
 
-bool IsNotebook(void* actor) {
-    if (!actor || !R::IsLive(actor)) return false;
-    void* cls = R::ClassOf(actor);
-    if (!cls) return false;
-    if (!g_notebookBase) g_notebookBase = R::FindClass(L"prop_notebook_C");
-    return g_notebookBase && R::IsDescendantOfAny(cls, &g_notebookBase, 1);
-}
-
 bool Apply(const std::vector<uint8_t>& blob) {
     std::wstring key; std::vector<std::wstring> pages;
     if (!Decode(blob, key, pages)) return false;
-    void* actor = coop::prop_key_index::Find(key);
-    if (!IsNotebook(actor)) return false;
-    if (g_propTextOff < 0) g_propTextOff = R::FindPropertyOffset(R::ClassOf(actor), L"Text");
-    return g_propTextOff >= 0 && ue_wrap::field_io::WriteFStringArrayField(actor, g_propTextOff, pages);
+    return N::WritePages(coop::prop_key_index::Find(key), pages);
 }
 
 void Publish(coop::net::Session* s, const std::vector<uint8_t>& blob) {
@@ -126,34 +109,14 @@ void OnNotebookGraphPost(const sg::Call& c) {
     auto* s = Session(); if (!s || !c.object || !R::IsLive(c.object)) return;
     const std::wstring claim = ue_wrap::device_screen::ClassifyWidgetClaimKey(c.object);
     if (claim.empty()) return;
-    if (g_widgetClipboardOff < 0) g_widgetClipboardOff = R::FindPropertyOffset(R::ClassOf(c.object), L"clipboard");
-    if (g_widgetClipboardOff < 0) return;
-    void* prop = *reinterpret_cast<void**>(reinterpret_cast<uint8_t*>(c.object) + g_widgetClipboardOff);
-    if (!IsNotebook(prop)) return;
+    void* prop = N::NotebookOf(c.object);
+    if (!prop) return;
     const std::wstring key = ue_wrap::prop::GetKeyString(prop);
     if (key.empty()) return;
-    if (g_widgetMletTextOff < 0) g_widgetMletTextOff = R::FindPropertyOffset(R::ClassOf(c.object), L"MLET_text");
-    if (g_widgetMletTextOff < 0) return;
-    void* editor = *reinterpret_cast<void**>(reinterpret_cast<uint8_t*>(c.object) + g_widgetMletTextOff);
-    if (!editor || !R::IsLive(editor)) return;
-    void* getText = R::FindDispatchFunctionCached(R::ClassOf(editor), L"GetText");
-    if (!getText) return;
-    ue_wrap::ParamFrame textFrame(getText);
-    if (!textFrame.valid() || !ue_wrap::Call(editor, textFrame)) return;
-    uint8_t ftext[ue_wrap::ftext_utils::kFTextSize]{};
-    if (!textFrame.GetRaw(L"ReturnValue", ftext, sizeof(ftext))) return;
-    const std::wstring currentPage = ue_wrap::ftext_utils::FTextToString(ftext);
-    if (g_propTextOff < 0) g_propTextOff = R::FindPropertyOffset(R::ClassOf(prop), L"Text");
-    if (g_propPageOff < 0) g_propPageOff = R::FindPropertyOffset(R::ClassOf(prop), L"page");
-    if (g_propTextOff < 0 || g_propPageOff < 0) return;
-    auto pages = ue_wrap::field_io::ReadFStringArrayField(prop, g_propTextOff);
-    const int32_t page = *reinterpret_cast<int32_t*>(reinterpret_cast<uint8_t*>(prop) + g_propPageOff);
-    if (page < 0 || static_cast<size_t>(page) >= pages.size()) return;
     // The widget text is newer than clipboard.Text until quit(), so fold the open page into the
     // backing array before publishing the full canonical snapshot.
-    pages[static_cast<size_t>(page)] = currentPage;
-    if (g_propTextOff < 0) g_propTextOff = R::FindPropertyOffset(R::ClassOf(prop), L"Text");
-    if (g_propTextOff < 0 || !ue_wrap::field_io::WriteFStringArrayField(prop, g_propTextOff, pages)) return;
+    std::vector<std::wstring> pages;
+    if (!N::CommitEditorPage(c.object, pages)) return;
     std::vector<uint8_t> blob;
     if (!Encode(key, pages, blob)) return;
     Publish(s, blob);
@@ -162,18 +125,14 @@ void OnNotebookGraphPost(const sg::Call& c) {
 void OnNotebookQuitPost(const sg::Call& c) {
     auto* s = Session();
     if (!s || !c.object || !R::IsLive(c.object)) return;
-    if (g_widgetClipboardOff < 0)
-        g_widgetClipboardOff = R::FindPropertyOffset(R::ClassOf(c.object), L"clipboard");
-    if (g_widgetClipboardOff < 0) return;
-    void* prop = *reinterpret_cast<void**>(reinterpret_cast<uint8_t*>(c.object) + g_widgetClipboardOff);
-    if (!IsNotebook(prop)) return;
+    void* prop = N::NotebookOf(c.object);
+    if (!prop) return;
     const std::wstring key = ue_wrap::prop::GetKeyString(prop);
     if (key.empty() || key == L"None") return;
     // quit() committed the current editor contents to clipboard.Text. Send the complete page
     // array on the dedicated lane; PropSaveDataIntent is holder-gated and is not sufficient here.
-    if (g_propTextOff < 0) g_propTextOff = R::FindPropertyOffset(R::ClassOf(prop), L"Text");
-    if (g_propTextOff >= 0) {
-        const auto pages = ue_wrap::field_io::ReadFStringArrayField(prop, g_propTextOff);
+    std::vector<std::wstring> pages;
+    if (N::ReadPages(prop, pages)) {
         std::vector<uint8_t> blob;
         if (Encode(key, pages, blob)) Publish(s, blob);
     }
