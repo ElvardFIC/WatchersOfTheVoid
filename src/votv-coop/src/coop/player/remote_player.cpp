@@ -469,7 +469,14 @@ void RemotePlayer::ShowBurning(bool burning) {
     burningShown_ = burning;
 }
 
+void RemotePlayer::ReleaseHurtFlash() {
+    hurtFlashEndMs_ = 0;
+    hurtFlashActive_ = false;
+    hurtSavedMaterials_.clear();  // the destructors release the pins
+}
+
 void RemotePlayer::Destroy() {
+    ReleaseHurtFlash();  // first: a puppet whose body already went still holds the flash's pins
     if (!actor_) return;
     ResetBurning();
     // The AnimInstance dies with the actor, so no field cleanup. The ragdoll display body is a
@@ -486,9 +493,6 @@ void RemotePlayer::Destroy() {
     window_.Close();
     dirty_ = false;
     bodyYaw_.Reset(0.f);    // clears the latch + dt clock; re-seeded at the next Spawn
-    hurtFlashEndMs_ = 0;         // clear the hurt flash (the nameplate is already unregistered)
-    hurtFlashActive_ = false;
-    hurtSavedMaterials_.clear(); // the mesh died with the actor -- no restore needed, drop stale ptrs
     appliedSkin_.clear();        // the next Spawn re-applies from SkinForSlot
     UE_LOGI("RemotePlayer::Destroy: puppet + nameplate gone");
 }

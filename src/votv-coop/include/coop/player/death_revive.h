@@ -15,6 +15,8 @@
 
 #pragma once
 
+#include <cstdint>
+
 namespace coop::net { class Session; }
 
 namespace coop::death_revive {
@@ -69,6 +71,9 @@ bool ArmedForThisDeath();
 // Did the last revive complete its conjunction? The travel counters live with the seam that
 // sees them (`coop/player/run_end_travel`).
 bool LastReviveSucceeded();
+
+// How many revives' screen cleanups have ended, cleared or given up. A drill waits on it rather than a clock. Any thread.
+uint32_t ScreenCleanupsEnded();
 
 // How long after the local pawn first ticked the arm became answerable, or -1 while it still is
 // not. The arm's terms are all readiness terms, and a client reaches its own pawn later than a

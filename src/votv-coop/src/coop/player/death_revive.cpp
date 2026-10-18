@@ -52,6 +52,7 @@ std::atomic<int32_t>  g_deadByte{-1};
 std::atomic<uint8_t>  g_deadMask{0};
 std::atomic<bool>     g_armed{false};          // this death is ours to answer
 std::atomic<bool>     g_revivePending{false};  // the seam cancelled a travel; the pump owes a revive
+std::atomic<uint32_t> g_screenCleanupsEnded{0};  // revives whose screen cleanup ended, cleared or given up
 std::atomic<uint64_t> g_cancelAtMsAtomic{0};   // when it cancelled -- stamped AT the cancel (see Watchdog)
 std::atomic<bool>     g_verbsResolved{false};  // ResolveVerbs succeeded (read off the game thread)
 std::atomic<bool>     g_seamReady{false};      // run_end_travel can cancel a run-ending travel
@@ -445,8 +446,8 @@ bool RunRevive(coop::net::Session& session, void* pawn) {
 // How many pump ticks after a revive the screen cleanup is re-attempted, and how many ticks
 // apart. The measured case needs ONE attempt; each is a no-op once the artifact is gone, and the
 // run stops the moment all three read clear. The stride is not cosmetic: an attempt is two full
-// GUObjectArray walks (a FindObjectByClass miss walks every slot, and FindObjectsByClass always
-// does), so the stuck case -- an effect actor whose own tick never destroys it -- used to spend
+// GUObjectArray walks (the black screens' FindObjectsByClass and the bloodLoss actors' each walk
+// every slot), so the stuck case -- an effect actor whose own tick never destroys it -- used to spend
 // 120 consecutive pump ticks doing ~240 walks of a ~293k array. Same wall-clock window, an
 // eighth of the walks.
 constexpr int kScreenCleanupTicks = 120;
@@ -662,7 +663,9 @@ void Tick(coop::net::Session& session, void* localPawn) {
             UE_LOGI("death_revive: screen cleanup complete (black screen, damage indicator and "
                     "bloodLoss all clear) after %d of %d retry ticks", tick + 1, kScreenCleanupTicks);
             g_screenCleanupLeft = 0;
+            g_screenCleanupsEnded.fetch_add(1, std::memory_order_relaxed);
         } else if (g_screenCleanupLeft == 0) {
+            g_screenCleanupsEnded.fetch_add(1, std::memory_order_relaxed);
             UE_LOGW("death_revive: screen cleanup did NOT finish in %d ticks -- the player is "
                     "alive and playable but something red or black may still be on screen. "
                     "This is deliberately NOT a reason to leave the world.",
@@ -707,6 +710,8 @@ void Watchdog() {
 
 bool ArmedForThisDeath() { return g_armed.load(std::memory_order_acquire); }
 bool LastReviveSucceeded() { return g_lastReviveOk; }
+
+uint32_t ScreenCleanupsEnded() { return g_screenCleanupsEnded.load(std::memory_order_relaxed); }
 
 bool ReconcileDisabled() {
     static const bool s = (coop::config::ReadEnv("VOTVCOOP_DEATH_NO_RECONCILE") == "1");

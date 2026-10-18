@@ -290,9 +290,9 @@ bool InvokeAddPlayerDamage(void* mainPlayer, float damage, bool blood = false);
 // pelvis-attaches the puppet (RagdollDisplay in coop/player/remote_player_ragdoll).
 
 // ---- Damage body pulse (material swap) ----
-// SavedMaterial (types.h) is (component, slot, original); the puppet renders two body meshes, the
-// native ACharacter slot and mesh_playerVisible, so the saved set spans both. The caller owns the
-// vector.
+// SavedMaterial (types.h) is (component, slot, original, and a pin on a run-time original); the
+// puppet renders two body meshes, the native ACharacter slot and mesh_playerVisible, so the saved
+// set spans both. The caller owns the vector, and clearing it releases the pins.
 using ue_wrap::SavedMaterial;
 
 // Swap both body meshes' materials to the hurt-flash material (a skeletal gore skin, so it renders

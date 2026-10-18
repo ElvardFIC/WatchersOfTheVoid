@@ -16,6 +16,7 @@
 #include "ue_wrap/core/sdk_profile.h"
 #include "ue_wrap/core/reflected_offset.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <cstring>
 #include <utility>
@@ -141,7 +142,10 @@ void SwapComponentMaterials(void* comp, void* mat, std::vector<SavedMaterial>& s
         sm.component.Set(comp);  // comp validated at entry; orig fresh from GetMaterial
         sm.index = i;
         sm.original.Set(orig);
-        if (IsRuntimeMaterial(orig)) sm.pin.Pin(orig);  // held until the entry goes (types.h)
+        // Held until the entry goes (types.h); a material both meshes share (a skin's face instance) is pinned once.
+        if (IsRuntimeMaterial(orig) &&
+            std::none_of(saved.begin(), saved.end(), [orig](const SavedMaterial& e) { return e.pin.Raw() == orig; }))
+            sm.pin.Pin(orig);
         saved.push_back(std::move(sm));
         { ParamFrame f(g_setMatFn); f.Set<int32_t>(L"ElementIndex", i); f.Set<void*>(L"Material", mat); Call(comp, f); }
     }

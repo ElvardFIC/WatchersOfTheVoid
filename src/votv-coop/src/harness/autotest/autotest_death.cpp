@@ -120,6 +120,63 @@ constexpr int kDeadWindowMs  = 22000;
 constexpr int kNoiseFloorWindowMs = 26000;
 constexpr int kSampleMs      = 250;
 
+// VOTVCOOP_DEATH_PRIOR, clamped to 0..5; a value outside that is said once.
+int PriorDeaths() {
+    const std::string v = coop::config::ReadEnv("VOTVCOOP_DEATH_PRIOR");
+    if (v.empty()) return 0;
+    const int asked = std::atoi(v.c_str());
+    const int n = std::clamp(asked, 0, 5);
+    if (n != asked) UE_LOGW("death_test: VOTVCOOP_DEATH_PRIOR=%s clamped to %d", v.c_str(), n);
+    return n;
+}
+
+// One prior death: the lethal hit, the wait for the revive's screen cleanup to end, and the black-screen census.
+void RunPriorDeath(int k, int prior) {
+    const uint32_t ended0 = coop::death_revive::ScreenCleanupsEnded();
+    auto pd = std::make_shared<std::atomic<int>>(0);
+    auto hitOk = std::make_shared<int>(0);
+    GT::Post([pd, hitOk] {
+        float mh = 100.f;
+        if (!V::Read(V::Field::MaxHealth, &mh) || mh <= 0.f) mh = 100.f;
+        void* mp = coop::players::Registry::Get().Local();
+        if (mp && R::IsLive(mp) && E::InvokeAddPlayerDamage(mp, mh * 2.f, /*blood=*/true)) *hitOk = 1;
+        pd->store(1);
+    });
+    WaitDone(pd, 8000);
+    const uint64_t t0 = ::GetTickCount64();
+    bool sawDead = false, ended = false;
+    while (!ended && ::GetTickCount64() - t0 < 2ull * kDeadWindowMs) {
+        const DeathSnapshot p = Probe();
+        if (p.haveState && p.dead) sawDead = true;
+        ended = coop::death_revive::ScreenCleanupsEnded() != ended0;
+        ::Sleep(kSampleMs);
+    }
+    auto cd = std::make_shared<std::atomic<int>>(0);
+    auto live = std::make_shared<int>(0);
+    auto onScreen = std::make_shared<int>(0);
+    auto readable = std::make_shared<int>(1);
+    GT::Post([cd, live, onScreen, readable] {
+        void* uw = R::FindClass(P::name::UserWidgetClass);
+        void* fnInView = uw ? R::FindFunction(uw, L"IsInViewport") : nullptr;
+        if (!fnInView) *readable = 0;
+        for (void* bs : R::FindObjectsByClass(L"blackScreen_C")) {
+            if (!bs || !R::IsLive(bs)) continue;
+            ++*live;
+            if (!fnInView) continue;
+            ue_wrap::ParamFrame f(fnInView);
+            if (f.valid() && ue_wrap::Call(bs, f) && f.Get<bool>(L"ReturnValue")) ++*onScreen;
+        }
+        cd->store(1);
+    });
+    WaitDone(cd, 8000);
+    const bool clean = *hitOk && sawDead && ended && *readable && *onScreen == 0;
+    ::ue_wrap::log::Write(clean ? ::ue_wrap::log::Level::Info : ::ue_wrap::log::Level::Warn,
+                          "death_test: prior death %d of %d -- hit=%d dead=%d cleanup ended=%d after %llu ms; "
+                          "blackScreen_C live=%d on viewport=%d (readable=%d)",
+                          k + 1, prior, *hitOk, sawDead ? 1 : 0, ended ? 1 : 0,
+                          static_cast<unsigned long long>(::GetTickCount64() - t0), *live, *onScreen, *readable);
+}
+
 }  // namespace
 
 DWORD WINAPI DeathTestThread(LPVOID) {
@@ -166,6 +223,17 @@ DWORD WINAPI DeathTestThread(LPVOID) {
                 "each swallow the run)");
         UE_LOGI("death_test: DONE");
         return 0;
+    }
+
+    // Deaths before the measured one (VOTVCOOP_DEATH_PRIOR=n, 0 to 5, default none), run before the alive control and
+    // the write-diff's snapshot so everything below grades the measured death alone. A field client died six times in a
+    // row and kept a black screen after one of them, which the single measured death never reaches. Each prior is the
+    // same lethal hit, waited out until the revive's screen cleanup has ended (death_revive's own counter, not a clock),
+    // and then the black screens are counted -- live ones, and the ones still on the viewport -- a warning when any is
+    // on screen, or when the death or the revive did not happen.
+    if (const int prior = PriorDeaths(); prior > 0) {
+        for (int k = 0; k < prior; ++k) RunPriorDeath(k, prior);
+        s = Probe();
     }
 
     // The alive control window: the same cadence, reads and frame load with the player standing
@@ -262,52 +330,6 @@ DWORD WINAPI DeathTestThread(LPVOID) {
       maxHp = *mh; }
     const float lethal = (maxHp > 0.f ? maxHp : 100.f) * 2.f;
     const float hpBefore = s.health;
-
-    // Deaths before the measured one (VOTVCOOP_DEATH_PRIOR=n, default none): each is the same lethal hit, waited out
-    // until the revive has the player standing again, and then the black screens are counted -- live ones, and the
-    // ones still on the viewport. A field client died six times in a row and kept a black screen after one of them,
-    // which the single measured death never reaches; the measured death below is then the (n+1)th.
-    int prior = 0;
-    { const std::string v = coop::config::ReadEnv("VOTVCOOP_DEATH_PRIOR");
-      if (!v.empty()) prior = std::clamp(std::atoi(v.c_str()), 0, 5); }
-    for (int k = 0; k < prior; ++k) {
-        auto pd = std::make_shared<std::atomic<int>>(0);
-        GT::Post([pd, lethal] {
-            void* mp = coop::players::Registry::Get().Local();
-            if (mp && R::IsLive(mp)) E::InvokeAddPlayerDamage(mp, lethal, /*blood=*/true);
-            pd->store(1);
-        });
-        WaitDone(pd, 8000);
-        const uint64_t t0 = ::GetTickCount64();
-        bool sawDead = false, up = false;
-        while (!up && ::GetTickCount64() - t0 < static_cast<uint64_t>(kDeadWindowMs)) {
-            const DeathSnapshot p = Probe();
-            if (p.haveState && p.dead) sawDead = true;
-            up = sawDead && p.haveState && !p.dead && !p.isRagdoll && p.health > 0.f;
-            ::Sleep(kSampleMs);
-        }
-        ::Sleep(2000);  // the revive's screen cleanup retries for a few ticks after the player stands
-        auto cd = std::make_shared<std::atomic<int>>(0);
-        auto live = std::make_shared<int>(0);
-        auto onScreen = std::make_shared<int>(0);
-        GT::Post([cd, live, onScreen] {
-            void* uw = R::FindClass(ue_wrap::profile::name::UserWidgetClass);
-            void* fnInView = uw ? R::FindFunction(uw, L"IsInViewport") : nullptr;
-            for (void* bs : R::FindObjectsByClass(L"blackScreen_C")) {
-                if (!bs || !R::IsLive(bs)) continue;
-                ++*live;
-                if (!fnInView) continue;
-                ue_wrap::ParamFrame f(fnInView);
-                if (f.valid() && ue_wrap::Call(bs, f) && f.Get<bool>(L"ReturnValue")) ++*onScreen;
-            }
-            cd->store(1);
-        });
-        WaitDone(cd, 8000);
-        ::ue_wrap::log::Write(*onScreen == 0 ? ::ue_wrap::log::Level::Info : ::ue_wrap::log::Level::Warn,
-               "death_test: prior death %d of %d -- dead=%d revived=%d after %llu ms; blackScreen_C live=%d on viewport=%d",
-               k + 1, prior, sawDead ? 1 : 0, up ? 1 : 0,
-               static_cast<unsigned long long>(::GetTickCount64() - t0), *live, *onScreen);
-    }
 
     auto hitDone = std::make_shared<std::atomic<int>>(0);
     auto hitOk = std::make_shared<int>(0);

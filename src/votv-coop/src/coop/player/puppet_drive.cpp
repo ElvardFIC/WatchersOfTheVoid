@@ -183,6 +183,7 @@ void DriveTick(coop::net::Session& session, bool worldReadyAnnounced) {
     // when no fresh pose arrived).
     for (int slot = 0; slot < coop::players::kMaxPeers; ++slot) {
         if (g_puppets[slot].valid()) g_puppets[slot].Tick();
+        else g_puppets[slot].ReleaseHurtFlash();  // a body gone mid-flash: its pins go with it
     }
 
     // Killer-wisp grab-window body placement. MUST run AFTER the puppet Tick loop above: a held
