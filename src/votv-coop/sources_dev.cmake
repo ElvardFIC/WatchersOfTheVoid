@@ -84,6 +84,7 @@ set(VOTVCOOP_DEV_SOURCES
     src/coop/dev/camera_drill.cpp
     src/coop/dev/camera_state_drill.cpp
     src/coop/dev/laptop_tab_drill.cpp
+    src/coop/dev/laptop_tab_drill_steps.cpp
     src/coop/dev/sat_console_drill.cpp
     src/coop/dev/calib_drill.cpp
     src/coop/dev/drive_drill.cpp

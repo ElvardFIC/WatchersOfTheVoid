@@ -1,11 +1,9 @@
 // coop/dev/laptop_tab_drill.cpp -- see coop/dev/laptop_tab_drill.h.
 
-#include "coop/dev/laptop_tab_drill.h"
+#include "laptop_tab_drill_steps.h"  // co-located private header (src tree, not include/)
 
 #include "coop/config/config.h"
 #include "coop/config/config_registry.h"
-#include "coop/dev/director/director.h"
-#include "coop/dev/director/routes.h"
 #include "coop/interactables/device_occupancy.h"
 #include "coop/interactables/laptop_tab.h"
 #include "coop/net/protocol.h"
@@ -14,73 +12,66 @@
 #include "coop/session/join_progress.h"
 #include "coop/session/net_pump.h"  // HasAnnouncedWorldReady
 
-#include "ue_wrap/core/call.h"
-#include "ue_wrap/core/component_calls.h"
 #include "ue_wrap/core/log.h"
-#include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/script_gate.h"
 #include "ue_wrap/desk/device_screen.h"
-#include "ue_wrap/devices/appliance.h"  // CallAction: the player's use, dispatched
-#include "ue_wrap/devices/laptop.h"
-#include "ue_wrap/devices/laptop_widget.h"
-#include "ue_wrap/engine/engine.h"  // TryGetActorLocation, GetActorVelocity
-#include "ue_wrap/engine/engine_component.h"  // GetComponentLocation
-#include "ue_wrap/engine/umg_build.h"  // IndexOfChild: where the sub-game page sits in the switcher
 #include "ue_wrap/facts/function_row.h"
 
-#include <windows.h>
-
-#include <cmath>
 #include <cstdint>
 #include <cstdio>
-#include <memory>
 #include <string>
-#include <vector>
 
 namespace coop::dev::laptop_tab_drill {
 namespace {
 
-namespace R  = ue_wrap::reflection;
-namespace D  = coop::director;
 namespace DO = coop::device_occupancy;
 namespace DS = ue_wrap::device_screen;
-namespace L  = ue_wrap::laptop;
 namespace LT = coop::laptop_tab;
-namespace UL = ue_wrap::laptop_widget;
 namespace sg = ue_wrap::script_gate;
-using ue_wrap::FVector;
+using coop::dev::laptop_tab_drill_steps::Abandon;
+using coop::dev::laptop_tab_drill_steps::ArmBegin;
+using coop::dev::laptop_tab_drill_steps::ArmReset;
+using coop::dev::laptop_tab_drill_steps::ArmStarted;
+using coop::dev::laptop_tab_drill_steps::ClearEndWhy;
+using coop::dev::laptop_tab_drill_steps::Done;
+using coop::dev::laptop_tab_drill_steps::Fail;
+using coop::dev::laptop_tab_drill_steps::HeldReceived;
+using coop::dev::laptop_tab_drill_steps::HolderCancelWalk;
+using coop::dev::laptop_tab_drill_steps::HolderDone;
+using coop::dev::laptop_tab_drill_steps::HolderIdle;
+using coop::dev::laptop_tab_drill_steps::HolderReset;
+using coop::dev::laptop_tab_drill_steps::HolderStart;
+using coop::dev::laptop_tab_drill_steps::HolderTick;
+using coop::dev::laptop_tab_drill_steps::LocalSlot;
+using coop::dev::laptop_tab_drill_steps::MarkDone;
+using coop::dev::laptop_tab_drill_steps::NowMs;
+using coop::dev::laptop_tab_drill_steps::Pass;
+using coop::dev::laptop_tab_drill_steps::ReadOwnTab;
+using coop::dev::laptop_tab_drill_steps::ReaderActive;
+using coop::dev::laptop_tab_drill_steps::ReaderReset;
+using coop::dev::laptop_tab_drill_steps::ReaderStart;
+using coop::dev::laptop_tab_drill_steps::ReaderStep;
+using coop::dev::laptop_tab_drill_steps::ReaderVerdict;
+using coop::dev::laptop_tab_drill_steps::ReadState;
+using coop::dev::laptop_tab_drill_steps::ReceivedSince;
+using coop::dev::laptop_tab_drill_steps::RefusedSince;
+using coop::dev::laptop_tab_drill_steps::SetEndWhy;
+using coop::dev::laptop_tab_drill_steps::VerdictOnDisconnect;
+using coop::dev::laptop_tab_drill_steps::VerdictReset;
+using coop::dev::laptop_tab_drill_steps::kCamerasTab;
+using coop::dev::laptop_tab_drill_steps::kClaim;
+using coop::dev::laptop_tab_drill_steps::kFindBoundMs;
+using coop::dev::laptop_tab_drill_steps::kFloppyTab;
+using coop::dev::laptop_tab_drill_steps::kRangeMark;
+using coop::dev::laptop_tab_drill_steps::kRangeTab;
+using coop::dev::laptop_tab_drill_steps::kSubgameMark;
 
 // The viewer's createRC counter (tab-norc): a Declared POST watch, so a body our drill or the game runs is counted.
 UE_FACT_FN(kRowCreateRc, "dev.laptop_tab_drill", L"ui_laptop_C", L"createRC", Declared);
 constexpr int kTagCreateRc = 0x4C544352;  // 'LTCR'
 
-// The two tab buttons that write the switcher without switcherSwitched.
-constexpr const wchar_t* kFloppyClick =
-    L"BndEvt__ui_laptop_button_tab_floppy_K2Node_ComponentBoundEvent_54_OnButtonClickedEvent__DelegateSignature";
-constexpr const wchar_t* kSubgameClick =
-    L"BndEvt__ui_laptop_Button_305_K2Node_ComponentBoundEvent_57_OnButtonClickedEvent__DelegateSignature";
-constexpr int kFloppyTab = 10;
-constexpr int kCamerasTab = 5;
-// In a sequence, a step that is not a plain tab number: the sub-game button, whose tab is where canvas_subgame sits in
-// the switcher, and a raw report past the switcher's last tab, which the drill sends itself.
-constexpr int kSubgameMark = 100;
-constexpr int kRangeMark   = 101;
-constexpr int kRangeTab    = 255;
-
-constexpr const wchar_t* kClaim = L"laptop";
-constexpr uint8_t kEnterAction = 4;
-
-constexpr uint64_t kFindBoundMs   = 120000;
-constexpr uint64_t kHeldBoundMs   = 20000;  // enter to a confirmed claim
-constexpr float    kRingCm        = 60.f;
-constexpr float    kReachCm       = 60.f;
-constexpr int      kStandpoints   = 6;
-constexpr int      kFirstWalkDeadlineS = 400;
-constexpr int      kNextWalkDeadlineS  = 120;
-constexpr int      kMaxSeq        = 3;
 constexpr int      kForgedTab     = 4;
 constexpr int      kJoinTab       = 4;
-constexpr uint64_t kStatesBound   = 20;  // states received without the final tab: the viewer's failure, by count
 
 enum class Arm : uint8_t {
     Off, Tab, TabHost, TabHandover, TabNorc, TabForged, TabSlot, TabJoin, TabSubgame, TabRange, TabRelay
@@ -111,70 +102,16 @@ const char* ArmName() {
     }
 }
 
-uint64_t NowMs() { return ::GetTickCount64(); }
-
-// What the arm judges against, taken at its start: the module's counts only grow, and a seed or a refusal that came
-// before the judging peer got to its first step must still count as before the arm.
-constexpr LT::Cause kCauses[] = {LT::Cause::NotHolder, LT::Cause::BadIndex, LT::Cause::BadSlot, LT::Cause::NoWidget};
-bool     g_armStarted = false;
-uint64_t g_baseReceived = 0;
-uint64_t g_baseRefused[4] = {};
-void ArmBegin() {
-    g_baseReceived = LT::ReceivedCount();
-    for (LT::Cause c : kCauses) g_baseRefused[static_cast<int>(c)] = LT::RefusedCount(c);
-    g_armStarted = true;
-}
-uint64_t ReceivedSince() { return LT::ReceivedCount() - g_baseReceived; }
-uint64_t RefusedSince(LT::Cause c) { return LT::RefusedCount(c) - g_baseRefused[static_cast<int>(c)]; }
-
 // tab-join (client): the tab of the FIRST state this process received, which is the connect snapshot when it joined after
 // the host set its tab. -1 until a state arrives; kFirstUnknown when several arrived before the drill looked.
 constexpr int kFirstUnknown = -2;
 int  g_firstIdx = -1;
 bool g_liveSaid = false;
 
-bool g_done = false;  // this peer's part of the arm has ended, its verdict said
-// What the judging peer says if the session ends before its verdict; empty on a peer that judges nothing.
-std::string g_endWhy;
-void Pass(const char* what) {
-    UE_LOGI("[LAPTOP-TAB-DRILL] %s PASS %s", ArmName(), what);
-    g_done = true;
-}
-void Fail(const char* what) {
-    UE_LOGW("[LAPTOP-TAB-DRILL] %s FAIL %s", ArmName(), what);
-    g_done = true;
-}
-void Abandon(const char* why) {
-    UE_LOGW("[LAPTOP-TAB-DRILL] ABANDONED %s: %s", ArmName(), why);
-    g_done = true;
-}
-
-uint8_t LocalSlot() { return coop::players::Registry::Get().LocalPeerId(); }
-
 bool OwnJoinOver() {
     return coop::net_pump::HasAnnouncedWorldReady() &&
            coop::join_progress::CurrentPhase() == coop::join_progress::Phase::Idle;
 }
-
-bool ReadOwnTab(int& idx) { return UL::ReadTab(UL::Widget(), idx); }
-
-// The tab the sub-game button shows: where the switcher holds canvas_subgame, asked of the switcher. -1 when the widget,
-// its switcher, the page or the page's place in the switcher does not resolve.
-int SubgameTab() {
-    void* const widget = UL::Widget();
-    if (!widget) return -1;
-    void* const cls = R::ClassOf(widget);
-    const int32_t swOff = R::FindPropertyOffset(cls, L"switcher");
-    const int32_t pgOff = R::FindPropertyOffset(cls, L"canvas_subgame");
-    if (swOff < 0 || pgOff < 0) return -1;
-    void* const sw = *reinterpret_cast<void**>(reinterpret_cast<uint8_t*>(widget) + swOff);
-    void* const pg = *reinterpret_cast<void**>(reinterpret_cast<uint8_t*>(widget) + pgOff);
-    if (!sw || !pg || !R::IsLive(sw) || !R::IsLive(pg)) return -1;
-    return ue_wrap::umg::IndexOfChild(sw, pg);
-}
-
-// A sequence entry as the tab number it leaves the widget on; -1 when it does not resolve.
-int ResolveTab(int mark) { return mark == kSubgameMark ? SubgameTab() : mark; }
 
 // ---- the createRC counter (tab-norc) ---------------------------------------------------------------------
 
@@ -193,297 +130,6 @@ bool CreateRcWatchLive() {
     return false;
 }
 
-// ---- the reader: a viewer that judges the FINAL tab of a holder's run -------------------------------------
-// The tabs between may coalesce under the lane's pace, so only the last is demanded: it passes when a state carrying it
-// has arrived and the widget shows it, and fails after kStatesBound states without it, or when the session ends.
-
-struct Reader {
-    bool     active = false;
-    int      finalTab = -1;
-    uint64_t seen = 0;
-};
-Reader g_reader;
-
-enum class ReadState : uint8_t { Waiting, Reached, Failed };
-
-// False, the arm abandoned, when the final tab does not resolve on this peer.
-bool ReaderStart(int finalMark) {
-    const int tab = ResolveTab(finalMark);
-    if (tab < 0) { Abandon("the final tab does not resolve on this peer's widget"); return false; }
-    g_reader = Reader{};
-    g_reader.active = true;
-    g_reader.finalTab = tab;
-    char end[128];
-    std::snprintf(end, sizeof end, "the session ended before a state carrying tab %d reached the widget", tab);
-    g_endWhy = end;
-    return true;
-}
-
-// One look at the arrivals since the arm began. `why` says what failed.
-ReadState ReaderStep(char* why, size_t whySize) {
-    const uint64_t got = ReceivedSince();
-    if (got == 0) return ReadState::Waiting;
-    if (got != g_reader.seen) {
-        g_reader.seen = got;
-        UE_LOGI("laptop_tab_drill: %u state(s) received, the last carries tab %d", static_cast<unsigned>(got),
-                LT::LastReceivedIndex());
-    }
-    if (LT::LastReceivedIndex() == g_reader.finalTab) {
-        int idx = -1;
-        if (ReadOwnTab(idx) && idx == g_reader.finalTab) {
-            UE_LOGI("laptop_tab_drill: this peer's widget reads tab %d", idx);
-            return ReadState::Reached;
-        }
-        const unsigned refused = static_cast<unsigned>(RefusedSince(LT::Cause::NoWidget) +
-                                                       RefusedSince(LT::Cause::BadIndex));
-        if (refused > 0) {
-            std::snprintf(why, whySize, "the state carrying tab %d arrived and was refused (%u refusal(s) for no "
-                          "widget or a bad index)", g_reader.finalTab, refused);
-            return ReadState::Failed;
-        }
-        return ReadState::Waiting;  // an owed report is written when its token pays
-    }
-    if (got >= kStatesBound) {
-        std::snprintf(why, whySize, "%u states arrived and none carried tab %d (the last carried %d)",
-                      static_cast<unsigned>(got), g_reader.finalTab, LT::LastReceivedIndex());
-        return ReadState::Failed;
-    }
-    return ReadState::Waiting;
-}
-
-// ---- the holder: walks to the PC, enters it, and switches tabs ---------------------------------------------
-
-enum class HStep : uint8_t { Off, Find, Walk, Enter, Held, Act, Done };
-struct Holder {
-    HStep    step = HStep::Off;
-    int      seq[kMaxSeq] = {};
-    size_t   n = 0;
-    size_t   next = 0;
-    int      entryTab = -1;   // a tab the widget must read on at the confirmed claim (the shared tab), or -1
-    uint64_t stepMs = 0;
-    void*    laptop = nullptr;
-    void*    box = nullptr;
-    std::vector<FVector> ring;
-    size_t   stand = 0;
-    std::shared_ptr<D::BackgroundWalk> walk;
-};
-Holder g_h;
-uint64_t g_heldReceived = 0;  // the arrivals at the confirmed claim: what came after was sent while this peer held it
-
-void HGo(HStep s) { g_h.step = s; g_h.stepMs = NowMs(); }
-bool HExpired(uint64_t bound) { return NowMs() - g_h.stepMs > bound; }
-
-void HolderStart(const int* seq, size_t n, int entryTab) {
-    g_h = Holder{};
-    for (size_t i = 0; i < n && i < kMaxSeq; ++i) g_h.seq[g_h.n++] = seq[i];
-    g_h.entryTab = entryTab;
-    HGo(HStep::Find);
-}
-
-void HolderCancelWalk() {
-    if (g_h.walk && g_h.walk->state.load() == 0) D::CancelBackgroundWalk(*g_h.walk);
-    g_h.walk.reset();
-}
-
-void* BoxOf(void* laptop) {
-    const int32_t off = R::FindPropertyOffset(R::ClassOf(laptop), L"Box");
-    if (off < 0) return nullptr;
-    void* box = *reinterpret_cast<void**>(reinterpret_cast<uint8_t*>(laptop) + off);
-    return (box && R::IsLive(box)) ? box : nullptr;
-}
-
-// The laptop's Box holds the player: the volume a use of the laptop's screen is judged against.
-bool InBox(void* box, void* me) {
-    void* const fn = R::FindDispatchFunctionCached(R::ClassOf(box), L"IsOverlappingActor");
-    if (!fn) return false;
-    ue_wrap::ParamFrame f(fn);
-    if (!f.valid()) return false;
-    f.Set<void*>(L"Other", me);
-    return ue_wrap::Call(box, f) && f.Get<bool>(L"ReturnValue");
-}
-
-// A pc part's actor: the laptop's child-actor component `prop` (pcpart_keyboard, pcpart_mouse) and what it spawned.
-void* PartActor(void* laptop, const wchar_t* prop) {
-    const int32_t off = R::FindPropertyOffset(R::ClassOf(laptop), prop);
-    if (off < 0) return nullptr;
-    void* const comp = *reinterpret_cast<void**>(reinterpret_cast<uint8_t*>(laptop) + off);
-    if (!comp || !R::IsLive(comp)) return nullptr;
-    const int32_t childOff = R::FindPropertyOffset(R::ClassOf(comp), L"ChildActor");
-    if (childOff < 0) return nullptr;
-    void* const actor = *reinterpret_cast<void**>(reinterpret_cast<uint8_t*>(comp) + childOff);
-    return (actor && R::IsLive(actor)) ? actor : nullptr;
-}
-
-constexpr float kUnread = -9.f;  // a value the drill could not read: outside every up-vector and distance it logs
-
-// The actor's up-vector Z, which the game's enter wants above 0.5 for the keyboard and the mouse.
-float UpZ(void* actor) {
-    if (!actor) return kUnread;
-    void* const fn = R::FindDispatchFunctionCached(R::ClassOf(actor), L"GetActorUpVector");
-    if (!fn) return kUnread;
-    ue_wrap::ParamFrame f(fn);
-    if (!f.valid() || !ue_wrap::Call(actor, f)) return kUnread;
-    return f.Get<FVector>(L"ReturnValue").Z;
-}
-
-float SpeedOf(void* actor) {
-    if (!actor) return kUnread;
-    const FVector v = ue_wrap::engine::GetActorVelocity(actor);
-    return std::sqrt(v.X * v.X + v.Y * v.Y + v.Z * v.Z);
-}
-
-float DistanceBetween(void* a, void* b) {
-    FVector pa, pb;
-    if (!a || !b || !ue_wrap::engine::TryGetActorLocation(a, pa) || !ue_wrap::engine::TryGetActorLocation(b, pb))
-        return kUnread;
-    const float dx = pa.X - pb.X, dy = pa.Y - pb.Y, dz = pa.Z - pb.Z;
-    return std::sqrt(dx * dx + dy * dy + dz * dz);
-}
-
-// The game's enter conditions as this peer reads them (the laptop's action 4: the keyboard and the mouse upright, still
-// and within 150 uu of the laptop, the player inside its Box), for the claim that was never confirmed. The player's own
-// distance and speed fill the named fields; the parts' follow, because the game judges the parts', not the player's.
-void LogEnterRefused(void* me) {
-    void* const keyboard = PartActor(g_h.laptop, L"pcpart_keyboard");
-    void* const mouse = PartActor(g_h.laptop, L"pcpart_mouse");
-    L::PowerState power;
-    const bool read = L::ReadPower(power);
-    UE_LOGW("laptop_tab_drill: enter refused because keyboardUp=%.2f mouseUp=%.2f dist=%.0f inBox=%d speed=%.1f "
-            "isOpened=%d holder=%u partDist=%.0f/%.0f partSpeed=%.1f/%.1f",
-            UpZ(keyboard), UpZ(mouse), DistanceBetween(me, g_h.laptop), InBox(g_h.box, me) ? 1 : 0, SpeedOf(me),
-            read && power.isOpened ? 1 : 0, static_cast<unsigned>(DO::HolderOf(kClaim)),
-            DistanceBetween(keyboard, g_h.laptop), DistanceBetween(mouse, g_h.laptop), SpeedOf(keyboard),
-            SpeedOf(mouse));
-}
-
-// One tab, through the body a player's click runs: the game's own tab call, or a tab button's click handler.
-bool DoTab(void* widget, int mark, int tab) {
-    if (mark == kSubgameMark) return ue_wrap::component_calls::CallParamlessNamed(widget, kSubgameClick);
-    if (tab == kFloppyTab) return ue_wrap::component_calls::CallParamlessNamed(widget, kFloppyClick);
-    void* const fn = R::FindDispatchFunctionCached(R::ClassOf(widget), L"switcherSwitched");
-    if (!fn) return false;
-    ue_wrap::ParamFrame f(fn);
-    if (!f.valid()) return false;
-    f.Set<int32_t>(L"Index", tab);
-    return ue_wrap::Call(widget, f);
-}
-
-bool NextStandpoint() {
-    HolderCancelWalk();
-    while (++g_h.stand < g_h.ring.size()) {
-        g_h.walk = D::StartBackgroundWalk(g_h.ring[g_h.stand], kReachCm, kNextWalkDeadlineS);
-        if (g_h.walk) return true;
-    }
-    Abandon("no standpoint about the laptop's Box was reached and inside it");
-    return false;
-}
-
-void HolderTick(coop::net::Session* s) {
-    void* me = coop::players::Registry::Get().Local();
-    if (!me) return;
-    switch (g_h.step) {
-    case HStep::Find: {
-        L::EnsureResolved();
-        void* laptop = L::Instance();
-        void* box = laptop ? BoxOf(laptop) : nullptr;
-        if (!box) {
-            if (HExpired(kFindBoundMs)) Abandon("this world holds no base laptop with a Box");
-            return;
-        }
-        g_h.laptop = laptop;
-        g_h.box = box;
-        if (InBox(box, me)) { HGo(HStep::Enter); return; }
-        const FVector at = ue_wrap::engine::GetComponentLocation(box);
-        g_h.ring = D::ReachableStandpoints(me, at, kRingCm, kStandpoints, kReachCm);
-        UE_LOGI("laptop_tab_drill: a route reaches %zu of the %d standpoints about the laptop's Box", g_h.ring.size(),
-                kStandpoints);
-        if (g_h.ring.empty()) { Abandon("no NavMesh route reaches a point about the laptop's Box"); return; }
-        g_h.stand = 0;
-        g_h.walk = D::StartBackgroundWalk(g_h.ring[0], kReachCm, kFirstWalkDeadlineS);
-        HGo(HStep::Walk);
-        return;
-    }
-    case HStep::Walk: {
-        const int state = g_h.walk ? g_h.walk->state.load() : 2;
-        if (state == 0) return;
-        if (state == 1 && InBox(g_h.box, me)) {
-            UE_LOGI("laptop_tab_drill: walked to standpoint %zu, inside the laptop's Box", g_h.stand + 1);
-            g_h.walk.reset();
-            HGo(HStep::Enter);
-            return;
-        }
-        NextStandpoint();
-        return;
-    }
-    case HStep::Enter:
-        if (!ue_wrap::appliance::CallAction(g_h.laptop, me, kEnterAction)) {
-            Abandon("the laptop's enter (action 4) did not dispatch");
-            return;
-        }
-        HGo(HStep::Held);
-        return;
-    case HStep::Held: {
-        if (!DO::LocalHolds(kClaim) || DO::HolderOf(kClaim) != LocalSlot()) {
-            if (HExpired(kHeldBoundMs)) {
-                LogEnterRefused(me);
-                Abandon("the PC's claim was not confirmed after the enter (unpowered, a part unusable, or held by "
-                        "another peer)");
-            }
-            return;
-        }
-        UE_LOGI("laptop_tab_drill: holder READY: the claim on the PC is confirmed for slot %u",
-                static_cast<unsigned>(LocalSlot()));
-        if (g_h.entryTab >= 0) {
-            int idx = -1;
-            if (!ReadOwnTab(idx) || idx != g_h.entryTab) {
-                char what[128];
-                std::snprintf(what, sizeof what, "this peer entered the PC on tab %d, not the shared tab %d", idx,
-                              g_h.entryTab);
-                Fail(what);
-                return;
-            }
-            UE_LOGI("laptop_tab_drill: holder entered on the shared tab %d", idx);
-        }
-        g_heldReceived = LT::ReceivedCount();
-        HGo(HStep::Act);
-        return;
-    }
-    case HStep::Act: {
-        // One step a tick: the holder runs at its own pace, and the viewer judges the last tab, not each.
-        const int mark = g_h.seq[g_h.next];
-        if (mark == kRangeMark) {
-            coop::net::LaptopTabPayload p{};
-            p.index = static_cast<uint8_t>(kRangeTab);
-            if (!s->SendReliableToSlot(0, coop::net::ReliableKind::LaptopTabReport, &p, sizeof(p))) {
-                Abandon("the raw out-of-range report could not be sent");
-                return;
-            }
-            UE_LOGI("laptop_tab_drill: holder sent a raw report for tab %d, past the switcher's last", kRangeTab);
-            if (++g_h.next >= g_h.n) HGo(HStep::Done);
-            return;
-        }
-        const int tab = ResolveTab(mark);
-        void* widget = UL::Widget();
-        int got = -1;
-        if (tab < 0) { Abandon("the sub-game page's tab does not resolve on this peer's widget"); return; }
-        if (!widget || !DoTab(widget, mark, tab)) { Abandon("the tab call did not dispatch"); return; }
-        if (!UL::ReadTab(widget, got) || got != tab) {
-            char what[128];
-            std::snprintf(what, sizeof what, "the holder's own widget did not take tab %d (it reads %d)", tab, got);
-            Abandon(what);
-            return;
-        }
-        UE_LOGI("laptop_tab_drill: holder switched to tab %d", tab);
-        if (++g_h.next >= g_h.n) HGo(HStep::Done);
-        return;
-    }
-    default:
-        return;
-    }
-}
-
-bool HolderDone() { return g_h.step == HStep::Done; }
-
 // ---- the arms ----------------------------------------------------------------------------------------------
 
 constexpr int kTab3[]    = {3, kFloppyTab};
@@ -500,15 +146,6 @@ Phase g_phase = Phase::Start;
 
 int g_baseIdx = -1;
 
-void ReaderVerdict(const char* passWhat) {
-    char why[160] = {};
-    switch (ReaderStep(why, sizeof why)) {
-    case ReadState::Reached: Pass(passWhat); return;
-    case ReadState::Failed:  Fail(why); return;
-    default:                 return;
-    }
-}
-
 // The refusal arms (tab-forged, tab-range, tab-slot): the message carrying `marker` is to be refused for `want`, and
 // this peer's own tab is to stay where it was. Judged on arrival of the message, not on a clock.
 void JudgeRefusal(const char* who, LT::Cause want, int marker, const char* passWhat) {
@@ -516,7 +153,7 @@ void JudgeRefusal(const char* who, LT::Cause want, int marker, const char* passW
         int idx = -1;
         if (!ReadOwnTab(idx)) return;
         g_baseIdx = idx;
-        g_endWhy = "the session ended before the refused message arrived and was counted";
+        SetEndWhy("the session ended before the refused message arrived and was counted");
         UE_LOGI("laptop_tab_drill: %s READY on tab %d", who, idx);
     }
     if (ReceivedSince() == 0 || LT::LastReceivedIndex() != marker) return;
@@ -536,7 +173,7 @@ void JudgeRefusal(const char* who, LT::Cause want, int marker, const char* passW
 // A holder that ran its whole sequence says so: the viewer's line is the verdict.
 void HolderDoneLine() {
     UE_LOGI("[LAPTOP-TAB-DRILL] %s DONE holder: switched through its tabs", ArmName());
-    g_done = true;
+    MarkDone();
 }
 
 void HostTick(coop::net::Session* s) {
@@ -549,7 +186,7 @@ void HostTick(coop::net::Session* s) {
     case Arm::TabNorc:
     case Arm::TabSubgame: {
         if (arm == Arm::TabNorc && !CreateRcWatchLive()) return;
-        if (!g_reader.active) {
+        if (!ReaderActive()) {
             if (!s->AnyWorldReadyPeer()) return;
             if (!ReaderStart(arm == Arm::TabNorc ? kCamerasTab : arm == Arm::TabSubgame ? kSubgameMark : kFloppyTab))
                 return;
@@ -577,7 +214,7 @@ void HostTick(coop::net::Session* s) {
     }
     case Arm::TabHost:
     case Arm::TabJoin:
-        if (g_h.step == HStep::Off) {
+        if (HolderIdle()) {
             if (arm == Arm::TabHost && !s->AnyWorldReadyPeer()) return;
             if (arm == Arm::TabHost) HolderStart(kTab3, 2, -1); else HolderStart(kTab4, 1, -1);
             return;
@@ -601,7 +238,7 @@ void HostTick(coop::net::Session* s) {
             const ReadState r = ReaderStep(why, sizeof why);
             if (r == ReadState::Failed) { Fail(why); return; }
             if (r == ReadState::Reached) {
-                g_endWhy.clear();  // the host's reading is judged; what follows is the holder's leg
+                ClearEndWhy();  // the host's reading is judged; what follows is the holder's leg
                 g_phase = Phase::Leaving;
             }
             return;
@@ -641,7 +278,7 @@ void HostTick(coop::net::Session* s) {
             UE_LOGI("[LAPTOP-TAB-DRILL] tab-slot DONE host: sent a LaptopTabState for tab %d stamped slot 2 to slot %d",
                     kForgedTab, slot);
             g_phase = Phase::Watching;
-            g_done = true;
+            MarkDone();
             return;
         }
         return;
@@ -685,7 +322,7 @@ void ClientTick(coop::net::Session* s) {
     case Arm::TabNorc:
     case Arm::TabSubgame:
     case Arm::TabRange:
-        if (g_h.step == HStep::Off) {
+        if (HolderIdle()) {
             if (arm == Arm::TabNorc) HolderStart(kTab5, 1, -1);
             else if (arm == Arm::TabSubgame) HolderStart(kSubSeq, 2, -1);
             else if (arm == Arm::TabRange) HolderStart(kRangeSeq, 1, -1);
@@ -705,7 +342,7 @@ void ClientTick(coop::net::Session* s) {
     case Arm::TabHost:
     case Arm::TabJoin:
         if (arm == Arm::TabJoin && g_firstIdx != kJoinTab) return;  // only a snapshot of tab 4 proves a join
-        if (!g_reader.active) {
+        if (!ReaderActive()) {
             if (!ReaderStart(arm == Arm::TabHost ? kFloppyTab : kJoinTab)) return;
             UE_LOGI("laptop_tab_drill: client READY to read the host's tab");
             return;
@@ -715,7 +352,7 @@ void ClientTick(coop::net::Session* s) {
         return;
     case Arm::TabHandover:
         if (g_phase == Phase::Start) {
-            if (g_h.step == HStep::Off) { HolderStart(kTab3o, 1, -1); return; }
+            if (HolderIdle()) { HolderStart(kTab3o, 1, -1); return; }
             HolderTick(s);
             if (!HolderDone()) return;
             // Leave at once: the host reads tab 3 from the report, which the lane carries ahead of the claim's release.
@@ -742,14 +379,14 @@ void ClientTick(coop::net::Session* s) {
         }
         UE_LOGI("[LAPTOP-TAB-DRILL] tab-forged DONE client: sent a LaptopTabReport for tab %d holding nothing",
                 kForgedTab);
-        g_done = true;
+        MarkDone();
         return;
     }
     case Arm::TabRelay:
         // Three peers (the rig's --observer): the first client holds, the second reads, and the host relays between
         // them. The holder's own count of states is the proof that the relay left the source out.
         if (LocalSlot() != 1) {
-            if (!g_reader.active) {
+            if (!ReaderActive()) {
                 if (!ReaderStart(kFloppyTab)) return;
                 UE_LOGI("laptop_tab_drill: client READY to read the other client's tabs");
                 return;
@@ -758,7 +395,7 @@ void ClientTick(coop::net::Session* s) {
             return;
         }
         if (g_phase == Phase::Start) {
-            if (g_h.step == HStep::Off) {
+            if (HolderIdle()) {
                 // The other client is here once the host relays its pose to this one: the session's own word that
                 // it is in the world. A relay with no one to relay to would prove nothing.
                 if (!coop::players::Registry::Get().Puppet(2)) return;
@@ -773,10 +410,10 @@ void ClientTick(coop::net::Session* s) {
             return;
         }
         if (DO::LocalHolds(kClaim) || DO::HolderOf(kClaim) != 0xFF) return;
-        if (LT::ReceivedCount() != g_heldReceived) {
+        if (LT::ReceivedCount() != HeldReceived()) {
             char what[128];
             std::snprintf(what, sizeof what, "the relay sent the source %u state(s) for its own reports",
-                          static_cast<unsigned>(LT::ReceivedCount() - g_heldReceived));
+                          static_cast<unsigned>(LT::ReceivedCount() - HeldReceived()));
             Fail(what);
             return;
         }
@@ -790,8 +427,8 @@ void ClientTick(coop::net::Session* s) {
 }  // namespace
 
 void Tick(coop::net::Session* s) {
-    if (ArmOf() == Arm::Off || !s || g_done) return;
-    if (!g_armStarted) ArmBegin();
+    if (ArmOf() == Arm::Off || !s || Done()) return;
+    if (!ArmStarted()) ArmBegin(ArmName());
     if (s->role() == coop::net::Role::Host) {
         HostTick(s);
         return;
@@ -802,17 +439,16 @@ void Tick(coop::net::Session* s) {
 
 void OnDisconnect() {
     if (ArmOf() == Arm::Off) return;
-    if (!g_done && !g_endWhy.empty()) Fail(g_endWhy.c_str());
+    VerdictOnDisconnect();
     HolderCancelWalk();
-    g_h = Holder{};
-    g_reader = Reader{};
+    HolderReset();
+    ReaderReset();
     g_phase = Phase::Start;
-    g_armStarted = false;
+    ArmReset();
     g_baseIdx = -1;
     g_firstIdx = -1;
     g_liveSaid = false;
-    g_endWhy.clear();
-    g_done = false;
+    VerdictReset();
 }
 
 }  // namespace coop::dev::laptop_tab_drill
