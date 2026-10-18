@@ -7,8 +7,8 @@
 // papers between B and the puppet (two copies fly over 100 cm, all four rest, none still driven), spawn_malformed
 // sends one valid ExplosionSpawn and four with one broken field (each dropped).
 // source_host, source_client (the named role acts, the other only reads; a count, no verdict): which peer's game
-// reaches the birth of a grenade, pipe bomb, rocket, sticky bomb and salt rocket; the first four go through the game's
-// hand verbs, the salt rocket is spawned in the world and lit by its attemptIgnite; a refused verb ends its leg alone.
+// reaches the birth of a grenade, pipe bomb, rocket, sticky bomb, salt rocket, a sticky bomb on a moved and destroyed
+// physics prop, and the pilled acting player (through the game's own verbs; a refused one ends its leg alone).
 // Every wait is a counter's rise, a rest or a registry state, with a failure bound (60 s per phase, the client's join
 // and verdicts 120 s, a source leg's steps 5 to 20 s). Markers: "[EXPLOSION-DRILL] FAIL" (--fail-marker), "ABANDONED"
 // (--dead-marker), "client DONE PASS arm=dissolve" and the same per arm (--done-marker). With ini explosion_birth_log

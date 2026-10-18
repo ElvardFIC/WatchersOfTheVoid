@@ -16,12 +16,14 @@ CFG_ENUM(explosion_drill, "explosion_drill", "dev", "off", "off|dissolve|apply|c
     "sends one valid explosion and four with a broken field; the client must drop each by its reason. source_host "
     "and source_client (a measurement, no verdict): the named role walks the legs grenade, pipebomb, rocket and "
     "sticky through the game's hand verbs, then saltrocket (spawned in the world and lit by its attemptIgnite, "
-    "attached to a simulating parent, then free); the other role only "
-    "reads and reports; each leg prints one line and the run ends on a source DONE line. Run it on a fresh host "
-    "world.")
+    "attached to a simulating parent, then free), then sticky_parent (a sticky bomb stuck to a physics prop that is "
+    "moved, then destroyed) and selfpill (the acting player lit while gasoline-pilled); the other role only "
+    "reads and reports; each leg prints one measurement line (a leg may add note lines) and the run ends on a source "
+    "DONE line. Run it on a fresh host world.")
 CFG_FLAG(explosion_birth_log, "explosion_birth_log", "dev", false, "VOTVCOOP_EXPLOSION_BIRTH_LOG",
     "Off by default. When on, a host or single-player game logs one line per explosion born, naming the class of "
-    "the Blueprint that spawned it (the client already logs this when it dissolves one). It reads the class of "
+    "the Blueprint that spawned it (the client already logs this when it dissolves one, and adds where the "
+    "dissolved actor stands). It reads the class of "
     "every Blueprint deferred spawn on the host, so leave it off outside a measurement run.")
 CFG_FLAG(selftest_break_hand_history, "selftest_break_hand_history", "dev", false, "VOTVCOOP_SELFTEST_BREAK_HAND_HISTORY",
     "Red arm of the hand history selftest: its first Note is skipped, so every check that reads that hold must fail.")

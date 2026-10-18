@@ -1,6 +1,7 @@
 // coop/dev/explosion_drill_internal.h -- what the explosion drill's files share: the arm, the fixture and rest helpers
 // (coop/dev/explosion_drill_fixture.cpp), the host's half (coop/dev/explosion_drill_host.cpp) and the client's half
-// (coop/dev/explosion_drill_client.cpp), and the source arms' legs both roles run (coop/dev/explosion_drill_source.cpp).
+// (coop/dev/explosion_drill_client.cpp), and the source arms' legs both roles run (coop/dev/explosion_drill_source.cpp,
+// its measure legs in coop/dev/explosion_drill_source_measure.cpp).
 // Dev only; game thread.
 
 #pragma once

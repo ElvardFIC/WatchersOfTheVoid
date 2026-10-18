@@ -2,13 +2,16 @@
 //
 // The source arms (source_host, source_client): a measurement of which peer's game reaches each request-eligible
 // explosion source's birth, whether a client's rocket or sticky bomb exists on the host, and the salt rocket's
-// fuse. The role the arm names walks six legs: four through the game's hand verbs (grenade, pipe bomb, rocket,
-// sticky launcher) and two that spawn a salt rocket in the world and call its attemptIgnite; the other role only
-// reads its counts and reports. A leg ends on a readiness edge (the birth, the attach, the rest) or on its own
-// failure bound and prints one line; a verb the Blueprint refuses ends that leg alone ("abandoned", never the run's
-// dead marker). The run ends on a DONE line that carries a count, never a verdict.
+// fuse. The role the arm names walks eight legs: four through the game's hand verbs (grenade, pipe bomb, rocket,
+// sticky launcher), two that spawn a salt rocket in the world and call its attemptIgnite, and the two measure legs
+// (sticky_parent, selfpill: explosion_drill_source_measure.cpp); the other role only reads its counts and reports.
+// A leg ends on a readiness edge (the birth, the attach, the rest) or on its own failure bound and prints one
+// measurement line (a note line may come before it); a verb the Blueprint refuses ends that leg alone ("abandoned",
+// never the run's dead marker). The run ends on a DONE line that carries a count, never a verdict.
 
 #include "coop/dev/explosion_drill_internal.h"
+
+#include "explosion_drill_source.h"  // the source arms' shared types (co-located private header)
 
 #include "drive_drill_verbs.h"  // Throw: the player's own throw (co-located private header)
 
@@ -19,7 +22,6 @@
 #include "coop/world/explosion_sync.h"
 
 #include "ue_wrap/actors/vitals.h"
-#include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/call.h"
 #include "ue_wrap/core/object_index.h"
 #include "ue_wrap/core/reflection.h"
@@ -45,28 +47,14 @@ namespace E  = ue_wrap::engine;
 namespace ES = coop::explosion_sync;
 namespace OI = ue_wrap::object_index;
 
+Src                                g_src;
+std::vector<ue_wrap::CachedObjRef> g_pre;
+std::vector<void*>                 g_scan;
+
 namespace {
 
-constexpr auto  kStepBound = std::chrono::seconds(10);    // a step that waits on the game
-constexpr auto  kBirthBound = std::chrono::seconds(10);   // from the verb that starts the fuse
-constexpr auto  kAttachBound = std::chrono::seconds(5);   // a sticky bomb that never attaches is detonated anyway
-constexpr auto  kSaltBound = std::chrono::seconds(20);    // from the ignite: the fuse is about ten seconds
-constexpr float kAimTolDeg = 5.f;
-constexpr float kLift = 50.f;
-// A refused spawn is the answer after a few tries at this gap, not a thing to hammer every frame.
-constexpr int  kSpawnTries = 3;
-constexpr auto kSpawnGap = std::chrono::milliseconds(500);
-
-// The game's row names (the list_props table), class leaves and asset paths of the five sources; the held ones are
+// The game's row names (the list_props table), class leaves and asset paths of the sources; the held ones are
 // loaded by path like the salt rocket, so a class nobody loaded yet is no reason to abandon a leg.
-enum class Kind : uint8_t { Grenade, Pipebomb, Rocket, Sticky, SaltAttached, SaltFree };
-struct LegDef {
-    const char*    name;
-    Kind           kind;
-    const wchar_t* row;
-    const wchar_t* cls;
-    const wchar_t* path;
-};
 constexpr LegDef kLegs[] = {
     {"grenade", Kind::Grenade, L"grenade", L"prop_grenade_C", L"/Game/objects/prop_grenade.prop_grenade_C"},
     {"pipebomb", Kind::Pipebomb, L"pipebomb", L"prop_pipebomb_C", L"/Game/objects/prop_pipebomb.prop_pipebomb_C"},
@@ -76,6 +64,9 @@ constexpr LegDef kLegs[] = {
     {"saltrocket", Kind::SaltAttached, nullptr, L"prop_saltrocket_C",
      L"/Game/objects/prop_saltrocket.prop_saltrocket_C"},
     {"saltrocket", Kind::SaltFree, nullptr, L"prop_saltrocket_C", L"/Game/objects/prop_saltrocket.prop_saltrocket_C"},
+    {"sticky_parent", Kind::StickyParent, L"fungun_sticky", L"prop_funGun_stickyLauncher_C",
+     L"/Game/objects/prop_funGun_stickyLauncher.prop_funGun_stickyLauncher_C"},
+    {"selfpill", Kind::SelfPill, nullptr, nullptr, nullptr},
 };
 constexpr int kLegCount = static_cast<int>(sizeof(kLegs) / sizeof(kLegs[0]));
 
@@ -84,61 +75,9 @@ constexpr const wchar_t* kBombCls = L"prop_stickybomb_C";
 // Every projectile a leg can leave in the world, swept at its end (only what the drill's start did not find).
 constexpr const wchar_t* kSwept[] = {L"prop_grenade_C", L"prop_pipebomb_C", L"prop_rocket_C", L"prop_stickybomb_C"};
 
-bool IsSalt(Kind k) { return k == Kind::SaltAttached || k == Kind::SaltFree; }
+constexpr float kAimTolDeg = 5.f;
 
-enum class SP : uint8_t { Fixture, Legs, Done };
-enum class LStep : uint8_t { Begin, Held, Aim, Act, Act2, AwaitBomb, AwaitAttach, Detonate, Birth, SaltRest, SaltIgnite,
-                             SaltWait, End, Settle };
-
-// What one leg read. -1 is unread.
-struct Reading {
-    float       timer = -1.f, reload = -1.f;
-    int         ammo = -1, active = -1, attached = -1, rain0 = -1, rain1 = -1, parentSim = -1;
-    bool        thrown = false, fired = false, detonated = false, ignited = false, birth = false;
-    int         rocketMax = 0, bombMax = 0;
-    long long   ms = -1, explodeMs = -1;
-    const char* skip = nullptr;
-    char        skipText[200] = "";  // a reason that names what the leg found (skip points at it)
-    // The weather before the leg's first spawn (restored at its end), and the salt legs' spawn tries.
-    int               rainBefore = -1;
-    int               spawnTries = 0;
-    Clock::time_point spawnAt{};
-};
-
-struct Src {
-    SP                    phase = SP::Fixture;
-    int                   leg = 0, measured = 0;
-    LStep                 step = LStep::Begin;
-    Clock::time_point     stepAt{}, verbAt{}, fixAt{};
-    Vec                   B{};
-    ES::Counters          base{};
-    Reading               r;
-    Rest                  rest;
-    ue_wrap::CachedObjRef rocket, parent;  // the salt legs' own actors
-    bool                  said = false;
-    int                   lastRocket = -1, lastBomb = -1, sample = 0;
-    bool                  host = false;  // this process's role, set each Tick
-    // The acting game's switches the arm holds, each with the value it found (-1 = not held): the player's
-    // startInvinc and the gamemode's unlockFungunsInStory.
-    int                   invincBefore = -1, unlockBefore = -1;
-};
-Src g_src;
-std::vector<ue_wrap::CachedObjRef> g_pre;  // the projectiles the world held when the drill began
-std::vector<void*>                 g_scan;
-
-const char* RoleName(bool host) { return host ? "host" : "client"; }
 const char* ArmName(Arm a) { return a == Arm::SourceHost ? "source_host" : "source_client"; }
-
-void Enter(LStep s) {
-    g_src.step = s;
-    g_src.stepAt = Clock::now();
-}
-bool Late(std::chrono::seconds bound) { return Past(g_src.stepAt, bound); }
-long long Since(Clock::time_point t) {
-    return static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - t).count());
-}
-
-// ---- reading the game ----
 
 float AngDiff(float a, float b) {
     float d = std::fmod(a - b, 360.f);
@@ -147,24 +86,10 @@ float AngDiff(float a, float b) {
     return std::fabs(d);
 }
 
-bool ReadFloat(void* obj, const wchar_t* name, float& out) {
-    const int32_t off = obj ? R::FindPropertyOffset(R::ClassOf(obj), name) : -1;
-    if (off < 0) return false;
-    out = *reinterpret_cast<const float*>(static_cast<const uint8_t*>(obj) + off);
-    return true;
-}
 bool ReadInt(void* obj, const wchar_t* name, int& out) {
     const int32_t off = obj ? R::FindPropertyOffset(R::ClassOf(obj), name) : -1;
     if (off < 0) return false;
     out = *reinterpret_cast<const int32_t*>(static_cast<const uint8_t*>(obj) + off);
-    return true;
-}
-// A Blueprint bool is one bit of a shared byte: the offset and the mask are the property's own.
-bool ReadBool(void* obj, const wchar_t* name, bool& out) {
-    int32_t off = -1;
-    uint8_t mask = 0;
-    if (!obj || !R::FindBoolProperty(R::ClassOf(obj), name, off, mask)) return false;
-    out = (*(static_cast<const uint8_t*>(obj) + off) & mask) != 0;
     return true;
 }
 
@@ -176,6 +101,35 @@ bool WriteInt(void* obj, const wchar_t* name, int value) {
     return true;
 }
 
+}  // namespace
+
+// ---- reading the game ----
+
+const char* RoleName(bool host) { return host ? "host" : "client"; }
+
+void Enter(LStep s) {
+    g_src.step = s;
+    g_src.stepAt = Clock::now();
+}
+bool Late(std::chrono::seconds bound) { return Past(g_src.stepAt, bound); }
+long long Since(Clock::time_point t) {
+    return static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - t).count());
+}
+
+bool ReadFloat(void* obj, const wchar_t* name, float& out) {
+    const int32_t off = obj ? R::FindPropertyOffset(R::ClassOf(obj), name) : -1;
+    if (off < 0) return false;
+    out = *reinterpret_cast<const float*>(static_cast<const uint8_t*>(obj) + off);
+    return true;
+}
+// A Blueprint bool is one bit of a shared byte: the offset and the mask are the property's own.
+bool ReadBool(void* obj, const wchar_t* name, bool& out) {
+    int32_t off = -1;
+    uint8_t mask = 0;
+    if (!obj || !R::FindBoolProperty(R::ClassOf(obj), name, off, mask)) return false;
+    out = (*(static_cast<const uint8_t*>(obj) + off) & mask) != 0;
+    return true;
+}
 // A reflected bool written in place.
 bool WriteBool(void* obj, const wchar_t* name, bool value) {
     int32_t off = -1;
@@ -185,6 +139,8 @@ bool WriteBool(void* obj, const wchar_t* name, bool value) {
     *b = value ? static_cast<uint8_t>(*b | mask) : static_cast<uint8_t>(*b & ~mask);
     return true;
 }
+
+namespace {
 
 // The day cycle's isRaining byte: its address and bit, or null when the cycle or the member is unreadable.
 uint8_t* RainByte(uint8_t& mask) {
@@ -217,6 +173,12 @@ bool WriteRain(int raining) {
     return true;
 }
 
+// The weather the leg found, put back when the leg flipped it; the value written, or -1 when nothing was.
+int PutBackRain() {
+    const int before = g_src.r.rainBefore;
+    return before >= 0 && ReadRain() != before && WriteRain(before) ? before : -1;
+}
+
 // The acting player is live and not dead: the pawn's own dead flag and its health (an unreadable row reads as
 // neither dead nor out of health).
 bool ActorAlive(void* player) {
@@ -247,30 +209,45 @@ std::string HeldClassName(void* player) {
 //
 // Blueprint mainPlayer: Add Player Damage and kill() return while startInvinc holds (Add Player Damage also on
 // immortal, dreaming and dead). startInvinc starts true; its one writer is a Delay(5) after begin-play that clears it,
-// once. The arm sets it on the acting player, so a pipe bomb's own blast (radius 1500) leaves the legs after it a live
-// player, and puts back the value it found.
+// once, so false is its steady value and the arm puts back false, never a true it found inside that window. The arm
+// sets it on the acting player, so a pipe bomb's own blast (radius 1500) leaves the legs after it a live player.
 // Blueprint prop_funGun, playerHoldPost: in the story game modes a gun that the date and
 // gamemode.unlockFungunsInStory do not allow calls the player's forceDrop() with the hint "the g*ns are prohibited!",
 // so the gun is dropped as a world prop in the tick it was taken. The arm sets the gamemode's unlockFungunsInStory (the
-// cheat menu's own switch) for the same span. Each leg's start re-asserts both, so the Delay(5) landing inside the arm
-// costs no leg.
+// cheat menu's own switch) for the same span and puts back the value it found. Each leg's start re-asserts both, so
+// the Delay(5) landing inside the arm costs no leg.
 
-// Sets `name` on `obj` and keeps what it found in `held`; says so when it changed a value.
-void Hold(void* obj, const wchar_t* name, int& held) {
+constexpr int kInvincBit = 1, kUnlockBit = 2;
+
+// Sets `name` on `obj` and keeps the value to put back in `held` (`restoreTo`, or what it found when that is -1); says
+// so when it changed a value. False when the object or the member is unreadable.
+bool Hold(void* obj, const wchar_t* name, int& held, int restoreTo) {
     bool now = false;
-    if (!R::IsLive(obj) || !ReadBool(obj, name, now)) return;
-    if (now) {
-        if (held < 0) held = 1;
-        return;
-    }
+    if (!R::IsLive(obj) || !ReadBool(obj, name, now)) return false;
+    if (held < 0) held = restoreTo >= 0 ? restoreTo : (now ? 1 : 0);
+    if (now) return true;
     WriteBool(obj, name, true);
-    if (held < 0) held = 0;
     Info("source role=%s guard %ls set to 1", RoleName(g_src.host), name);
+    return true;
 }
 
-void Guard() {
-    Hold(coop::players::Registry::Get().Local(), L"startInvinc", g_src.invincBefore);
-    Hold(ue_wrap::world_singleton::Gamemode(), L"unlockFungunsInStory", g_src.unlockBefore);
+// Holds both switches; the name of the first member that cannot be read (said once per member), else null.
+const wchar_t* Guard() {
+    const wchar_t* bad = nullptr;
+    const struct { int bit; const wchar_t* name; bool ok; } rows[] = {
+        {kInvincBit, L"startInvinc", Hold(coop::players::Registry::Get().Local(), L"startInvinc", g_src.invincBefore, 0)},
+        {kUnlockBit, L"unlockFungunsInStory",
+         Hold(ue_wrap::world_singleton::Gamemode(), L"unlockFungunsInStory", g_src.unlockBefore, -1)},
+    };
+    for (const auto& row : rows) {
+        if (row.ok) continue;
+        if (!bad) bad = row.name;
+        if (g_src.unreadableSaid & row.bit) continue;
+        g_src.unreadableSaid |= row.bit;
+        Warn("source role=%s guard %ls is unreadable: its object or member did not resolve", RoleName(g_src.host),
+             row.name);
+    }
+    return bad;
 }
 
 void Put(void* obj, const wchar_t* name, int& held) {
@@ -280,7 +257,7 @@ void Put(void* obj, const wchar_t* name, int& held) {
     held = -1;
 }
 
-// The values the arm found, put back; a second call does nothing.
+// The values the arm put back; a second call does nothing.
 void Unguard() {
     Put(coop::players::Registry::Get().Local(), L"startInvinc", g_src.invincBefore);
     Put(ue_wrap::world_singleton::Gamemode(), L"unlockFungunsInStory", g_src.unlockBefore);
@@ -307,16 +284,6 @@ void ScanFn(void* ctx, void* obj, int32_t) {
     ++s->n;
     if (s->out) s->out->push_back(obj);
 }
-// The live instances of `cls` (its default object left out); with `newOnly`, those the drill's start did not find.
-int Count(const wchar_t* cls, bool newOnly, std::vector<void*>* out = nullptr) {
-    void* c = OI::ClassByName(cls);
-    if (!c) return 0;
-    Scan s;
-    s.out = out;
-    s.newOnly = newOnly;
-    OI::ForEachInstance(c, &ScanFn, &s);
-    return s.n;
-}
 
 void SnapshotPre() {
     g_pre.clear();
@@ -335,6 +302,18 @@ void SnapshotPre() {
     }
 }
 
+}  // namespace
+
+int Count(const wchar_t* cls, bool newOnly, std::vector<void*>* out) {
+    void* c = OI::ClassByName(cls);
+    if (!c) return 0;
+    Scan s;
+    s.out = out;
+    s.newOnly = newOnly;
+    OI::ForEachInstance(c, &ScanFn, &s);
+    return s.n;
+}
+
 // The drill's own destroy. The acting host's is the game's, so the client's copy goes too; a client's is local to its
 // game (DestroyLocalProp marks it as incoming, so the destroy seam sends no PropDestroy), and the host's mirror of
 // what crossed is swept by the host's passive role.
@@ -344,6 +323,13 @@ void Remove(void* actor, bool broadcast) {
     else coop::prop_lifecycle::DestroyLocalProp(actor, false);
 }
 
+bool BirthSeen(bool host) {
+    const ES::Counters c = ES::GetCounters();
+    return host ? c.captured > g_src.base.captured : c.dissolved > g_src.base.dissolved;
+}
+
+namespace {
+
 void SweepNew(bool broadcast) {
     for (const wchar_t* cls : kSwept) {
         g_scan.clear();
@@ -352,11 +338,31 @@ void SweepNew(bool broadcast) {
     }
 }
 
-// The explosion's birth on the acting peer: the host's capture at begin-play, the client's dissolve at the spawn.
-bool BirthSeen(bool host) {
-    const ES::Counters c = ES::GetCounters();
-    return host ? c.captured > g_src.base.captured : c.dissolved > g_src.base.dissolved;
+// The watched projectile's location, read on every tick it is live; the last one read stays when it is gone.
+void NoteLast() {
+    Reading& r = g_src.r;
+    void* a = r.track.Get();
+    Vec   at{};
+    if (a && E::TryGetActorLocation(a, at)) {
+        r.last = at;
+        r.haveLast = true;
+    }
 }
+
+}  // namespace
+
+void LastText(char* out, size_t cap) {
+    const Reading& r = g_src.r;
+    if (r.haveLast) std::snprintf(out, cap, "(%.0f,%.0f,%.0f)", r.last.X, r.last.Y, r.last.Z);
+    else std::snprintf(out, cap, "none");
+}
+
+void Track(void* actor) {
+    g_src.r.track.Set(actor);
+    NoteLast();
+}
+
+namespace {
 
 // ---- one leg's line ----
 
@@ -366,11 +372,14 @@ void Emit(const LegDef& d, bool host) {
     char var[64] = "";
     if (d.kind == Kind::SaltAttached) std::snprintf(var, sizeof(var), "variant=attached parent_sim=%d ", r.parentSim);
     else if (d.kind == Kind::SaltFree) std::snprintf(var, sizeof(var), "variant=free ");
+    else if (d.kind == Kind::StickyParent) std::snprintf(var, sizeof(var), "parent_sim=%d ", r.parentSim);
     if (r.skip) {
         Info("source leg=%s role=%s %sabandoned reason=%s", d.name, role, var, r.skip);
         return;
     }
     ++g_src.measured;
+    char last[48];
+    LastText(last, sizeof(last));
     switch (d.kind) {
     case Kind::Grenade:
         Info("source leg=%s role=%s timer=%.1f thrown=%d birth=%d ms=%lld", d.name, role, r.timer, r.thrown ? 1 : 0,
@@ -382,12 +391,13 @@ void Emit(const LegDef& d, bool host) {
         break;
     case Kind::Rocket:
         Info("source leg=%s role=%s reload_primary=%.1f ammo_primary=%d fired=%d live_prop_rocket_C_max=%d birth=%d "
-             "ms=%lld", d.name, role, r.reload, r.ammo, r.fired ? 1 : 0, r.rocketMax, r.birth ? 1 : 0, r.ms);
+             "ms=%lld last=%s", d.name, role, r.reload, r.ammo, r.fired ? 1 : 0, r.rocketMax, r.birth ? 1 : 0, r.ms,
+             last);
         break;
     case Kind::Sticky:
         Info("source leg=%s role=%s reload_primary=%.1f ammo_primary=%d fired=%d live_prop_stickybomb_C_max=%d "
-             "attached=%d detonated=%d birth=%d ms=%lld", d.name, role, r.reload, r.ammo, r.fired ? 1 : 0, r.bombMax,
-             r.attached, r.detonated ? 1 : 0, r.birth ? 1 : 0, r.ms);
+             "attached=%d detonated=%d birth=%d ms=%lld last=%s", d.name, role, r.reload, r.ammo, r.fired ? 1 : 0,
+             r.bombMax, r.attached, r.detonated ? 1 : 0, r.birth ? 1 : 0, r.ms, last);
         break;
     case Kind::SaltAttached:
     case Kind::SaltFree: {
@@ -397,22 +407,13 @@ void Emit(const LegDef& d, bool host) {
         if (r.birth) std::snprintf(boom, sizeof(boom), "explosion_ms=%lld", r.ms);
         else std::snprintf(boom, sizeof(boom), "no explosion in %lld s",
                            static_cast<long long>(std::chrono::duration_cast<std::chrono::seconds>(kSaltBound).count()));
-        Info("source leg=%s role=%s %signited=%d raining=%d->%d explode_entry_ms=%s %s", d.name, role, var,
-             r.ignited ? 1 : 0, r.rain0, r.rain1, entry, boom);
+        Info("source leg=%s role=%s %signited=%d raining=%d->%d explode_entry_ms=%s %s last=%s", d.name, role, var,
+             r.ignited ? 1 : 0, r.rain0, r.rain1, entry, boom, last);
         break;
     }
+    case Kind::StickyParent:
+    case Kind::SelfPill: EmitMeasure(d, host); break;
     }
-}
-
-void Skip(const char* why) {
-    g_src.r.skip = why;
-    Enter(LStep::End);
-}
-
-// A refused spawn is counted and tried again after a gap; the third refusal ends the leg (the refusal is the answer).
-void Refused(const char* why) {
-    g_src.r.spawnAt = Clock::now();
-    if (++g_src.r.spawnTries >= kSpawnTries) Skip(why);
 }
 
 // ---- the held legs ----
@@ -460,7 +461,7 @@ void Act(const LegDef& d, void* player) {
     g_src.verbAt = Clock::now();
     if (!CallHandVerb(held, player, L"playerHandUse_LMB")) return Skip("playerHandUse_LMB did not run");
     r.fired = true;
-    Enter(d.kind == Kind::Sticky ? LStep::AwaitBomb : LStep::Birth);
+    Enter(IsSticky(d.kind) ? LStep::AwaitBomb : LStep::Birth);
 }
 
 // The throw after the arming: the grenade's is the player's own throwHoldingProp, the pipe bomb's its own LMB.
@@ -478,8 +479,12 @@ void Act2(const LegDef& d, void* player) {
 
 void AwaitBomb() {
     Reading& r = g_src.r;
-    r.bombMax = (std::max)(r.bombMax, Count(kBombCls, true));
-    if (r.bombMax > 0) return Enter(LStep::AwaitAttach);
+    g_scan.clear();
+    r.bombMax = (std::max)(r.bombMax, Count(kBombCls, true, &g_scan));
+    if (r.bombMax > 0) {
+        if (!g_scan.empty()) Track(g_scan[0]);
+        return Enter(LStep::AwaitAttach);
+    }
     if (Late(kStepBound)) Enter(LStep::End);  // fired, and no bomb stands: measured as it is
 }
 
@@ -512,8 +517,12 @@ void Detonate(void* player) {
 
 void Birth(const LegDef& d, bool host) {
     Reading& r = g_src.r;
-    if (d.kind == Kind::Rocket) r.rocketMax = (std::max)(r.rocketMax, Count(kRocketCls, true));
-    if (d.kind == Kind::Sticky) r.bombMax = (std::max)(r.bombMax, Count(kBombCls, true));
+    if (d.kind == Kind::Rocket) {
+        g_scan.clear();
+        r.rocketMax = (std::max)(r.rocketMax, Count(kRocketCls, true, &g_scan));
+        if (!r.track.Raw() && !g_scan.empty()) Track(g_scan[0]);
+    }
+    if (IsSticky(d.kind)) r.bombMax = (std::max)(r.bombMax, Count(kBombCls, true));
     if (BirthSeen(host)) {
         r.birth = true;
         r.ms = Since(g_src.verbAt);
@@ -582,6 +591,7 @@ void SaltIgnite(const LegDef& d) {
     ue_wrap::ParamFrame f(fn);
     r.ignited = fn && f.valid() && ue_wrap::Call(rk, f);
     if (!r.ignited) return Skip("attemptIgnite did not run");
+    Track(rk);
     Enter(LStep::SaltWait);
 }
 
@@ -604,29 +614,31 @@ void SaltWait(bool host) {
 
 void StartLeg() {
     g_src.r = Reading{};
-    Guard();
+    g_src.aim = g_src.B;
+    if (const wchar_t* bad = Guard()) {
+        std::snprintf(g_src.r.skipText, sizeof(g_src.r.skipText), "the guard %ls is unreadable", bad);
+        return Skip(g_src.r.skipText);
+    }
     Enter(LStep::Begin);
 }
 
 void Cleanup(const LegDef& d, bool host) {
-    if (IsSalt(d.kind)) {
-        Remove(g_src.rocket.Get(), host);
-        Remove(g_src.parent.Get(), host);
-        g_src.rocket.Reset();
-        g_src.parent.Reset();
-        // The salt rocket's explode() sets isRaining when it is false; the next leg starts from the weather this one
-        // found.
-        const int before = g_src.r.rainBefore;
-        if (before >= 0 && ReadRain() != before && WriteRain(before))
-            Info("source leg=%s role=%s raining restored to %d", d.name, RoleName(host), before);
-    }
+    Remove(g_src.rocket.Get(), host);
+    Remove(g_src.parent.Get(), host);
+    g_src.rocket.Reset();
+    g_src.parent.Reset();
+    // The salt rocket's explode() sets isRaining when it is false; the next leg starts from the weather this one
+    // found.
+    const int rain = PutBackRain();
+    if (rain >= 0) Info("source leg=%s role=%s raining restored to %d", d.name, RoleName(host), rain);
+    CleanupMeasure(d, host);
     // The bombs first: a launcher that leaves the hand blows the bombs it still holds.
     SweepNew(host);
-    if (!IsSalt(d.kind)) coop::dev::drill_hand::TakeIntoHandNow(L"None", nullptr);
+    if (IsHeld(d.kind)) coop::dev::drill_hand::TakeIntoHandNow(L"None", nullptr);
 }
 
 void Aim(void* player) {
-    const ue_wrap::FRotator want = coop::director::LookAt(E::GetCameraLocation(), g_src.B);
+    const ue_wrap::FRotator want = coop::director::LookAt(E::GetCameraLocation(), g_src.aim);
     E::SetControlRotation(E::GetController(player), want);
     const ue_wrap::FRotator got = E::GetCameraRotation();
     if (AngDiff(got.Yaw, want.Yaw) < kAimTolDeg && AngDiff(got.Pitch, want.Pitch) < kAimTolDeg)
@@ -642,13 +654,14 @@ void LegTick(Arm arm, bool host) {
         if (g_src.step == LStep::Settle) return StartLeg();
         return Skip("the local player is gone");
     }
+    NoteLast();
     switch (g_src.step) {
     case LStep::Begin:
         if (g_src.r.spawnTries == 0 && !ActorAlive(player)) return Skip("the acting player is dead");
         if (IsSalt(d.kind)) return SaltBegin(d);
-        if (!ResolveClass(d.cls, d.path)) return Skip("the item's class is neither loaded nor loadable by path");
-        if (!coop::dev::drill_hand::TakeIntoHandNow(d.row, d.cls)) return Skip("the hand could not take the item");
-        return Enter(LStep::Held);
+        if (d.kind == Kind::StickyParent) return CrateBegin();
+        if (d.kind == Kind::SelfPill) return PillIgnite(player);
+        return BeginItem(d);
     case LStep::Held:
         if (HeldOf(player, d.cls)) return Enter(LStep::Aim);
         if (Late(kStepBound)) {
@@ -662,12 +675,17 @@ void LegTick(Arm arm, bool host) {
     case LStep::Act: return Act(d, player);
     case LStep::Act2: return Act2(d, player);
     case LStep::AwaitBomb: return AwaitBomb();
-    case LStep::AwaitAttach: return AwaitAttach();
+    case LStep::AwaitAttach: return d.kind == Kind::StickyParent ? AwaitAttachCrate() : AwaitAttach();
     case LStep::Detonate: return Detonate(player);
     case LStep::Birth: return Birth(d, host);
     case LStep::SaltRest: return SaltRest(d);
     case LStep::SaltIgnite: return SaltIgnite(d);
     case LStep::SaltWait: return SaltWait(host);
+    case LStep::CrateRest: return CrateRest(d);
+    case LStep::Follow: return Follow();
+    case LStep::Followed: return Followed(host);
+    case LStep::CrateGone: return CrateGone(host);
+    case LStep::PillWait: return PillWait(host, player);
     case LStep::End:
         Emit(d, host);
         Cleanup(d, host);
@@ -718,7 +736,8 @@ void ActTick(Arm arm, bool host) {
 // The role the arm does not name: its count of the two projectile classes, said on every change. The acting peer's
 // leg is not shared across peers, so each line carries this peer's own sample number (a count of the changes it has
 // seen, rising) and the blasts its own game has seen so far (the host's captures, the client's applied copies): the
-// crossing evidence is read against the acting peer's leg lines by those two, never by a leg name.
+// crossing evidence is read against the acting peer's leg lines by those two, never by a leg name. The host also
+// watches the grenades and pipe bombs a client threw (PassiveThrown).
 void Passive(Arm arm, bool host) {
     if (!g_src.said) {
         g_src.said = true;
@@ -726,6 +745,7 @@ void Passive(Arm arm, bool host) {
         Info("source passive role=%s arm=%s reads only (the acting peer's leg is not shared: leg=unshared, sample is "
              "this peer's own change count)", RoleName(host), ArmName(arm));
     }
+    if (host) PassiveThrown();
     const int rockets = Count(kRocketCls, false), bombs = Count(kBombCls, false);
     if (rockets == g_src.lastRocket && bombs == g_src.lastBomb) return;
     g_src.lastRocket = rockets;
@@ -738,6 +758,25 @@ void Passive(Arm arm, bool host) {
 
 }  // namespace
 
+// ---- the entries the legs share (declared in explosion_drill_source.h) ----
+
+void Skip(const char* why) {
+    g_src.r.skip = why;
+    Enter(LStep::End);
+}
+
+// A refused spawn is counted and tried again after a gap; the third refusal ends the leg (the refusal is the answer).
+void Refused(const char* why) {
+    g_src.r.spawnAt = Clock::now();
+    if (++g_src.r.spawnTries >= kSpawnTries) Skip(why);
+}
+
+void BeginItem(const LegDef& d) {
+    if (!ResolveClass(d.cls, d.path)) return Skip("the item's class is neither loaded nor loadable by path");
+    if (!coop::dev::drill_hand::TakeIntoHandNow(d.row, d.cls)) return Skip("the hand could not take the item");
+    Enter(LStep::Held);
+}
+
 void SourceTick(Arm arm, bool isHost) {
     g_src.host = isHost;
     if ((arm == Arm::SourceHost) == isHost) ActTick(arm, isHost);
@@ -746,10 +785,12 @@ void SourceTick(Arm arm, bool isHost) {
 
 void SourceReset() {
     Unguard();
+    PutBackRain();
     Remove(g_src.rocket.Get(), g_src.host);
     Remove(g_src.parent.Get(), g_src.host);
     // The host that only read holds a mirror of whatever of the client's crossed; none of it is the host's own.
     if (g_src.said && g_src.host) SweepNew(false);
+    MeasureReset();
     g_src = Src{};
     g_pre.clear();
 }
