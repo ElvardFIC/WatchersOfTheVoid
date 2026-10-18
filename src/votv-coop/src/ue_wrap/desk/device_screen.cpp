@@ -212,7 +212,7 @@ std::wstring PosKey(const wchar_t* prefix, void* actor) {
 // because the Key is. Empty for a prop with no Key, as PosKey is for an actor with no place.
 std::wstring PropKey(const wchar_t* prefix, void* prop) {
     const std::wstring propKey = ue_wrap::prop::GetKeyString(prop);
-    if (propKey.empty()) return {};
+    if (propKey.empty() || propKey == L"None") return {};   // None is the FName of a prop with no Key
     uint64_t h = 1469598103934665603ull;
     for (wchar_t ch : propKey) { h ^= static_cast<uint16_t>(ch); h *= 1099511628211ull; }
     wchar_t key[32]{};

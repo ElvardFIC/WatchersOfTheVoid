@@ -62,11 +62,12 @@ bool LocalHolds(const wchar_t* key);
 // is authoritative; on a client it is the broadcast mirror. Game thread.
 uint8_t HolderOf(const wchar_t* key);
 
-// HOST: the slot the host last granted `key`, still answered after that slot released it, or 0xFF if
-// it never granted it (a client's mirror never does). The state a message that outran its sender's
-// release is judged against: the holder's last word can reach the host after the release did.
-// Dropped with the slot on its disconnect. Game thread.
-uint8_t LastHolderOf(const wchar_t* key);
+// A lane that must finish something before this peer lets go of a claim registers here, from its Install
+// (idempotent). Asked every tick a release of the LOCAL claim `key` is due, before it is sent: true holds
+// the release, and the interface edge is read again on the next tick, so the claim stays with this peer
+// until the lane answers false. The lane owns its bound. Game thread.
+using ReleaseHoldFn = bool (*)(const wchar_t* key);
+void RegisterReleaseHold(ReleaseHoldFn fn);
 
 // HOST: send the current claim table to a joining peer (world-ready replay).
 void QueueConnectBroadcastForSlot(int peerSlot);

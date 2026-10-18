@@ -235,12 +235,20 @@ text is the prop's save record and crosses on the record lane above with no mess
   editor, and while it holds the claim once every 2 s when the page text differs from its last
   publish. The open page is folded into `text` first: the widget writes `text` only on commit and
   on quit. The host's own edit publishes the canonical the same way.
-- **Who the host believes.** The host takes a client's record for a notebook only from the slot
-  that holds its claim, or held it last when nobody holds it now (the record rides the Bulk lane
-  and the release the Normal one, so the close's record can arrive after the release). Any other
-  sender is refused and logged. The republish to every peer is the editor's acknowledgement.
-- **No echo onto the editor.** A peer that holds the claim applies no canonical record for that
-  notebook: its own edit is the newer state.
+- **Who the host believes.** The host takes a client's record for a notebook from the slot that
+  holds its claim, or from any slot while nobody holds it: a free notebook is anyone's to change,
+  which a torn page added to it is. A record from another slot while a peer holds it is refused
+  and logged. The rule is judged where the record lands, so a record that parked first (the
+  host did not index the notebook yet) is judged by it too. It is registered with
+  `coop/props/prop_record_gates`; the record lane names no class.
+- **The close reaches the host while its sender holds.** The record rides the Bulk lane and the
+  release the Normal one, so a client keeps the claim after it closes the editor until the host's
+  republish of its last publish comes back (the lane's acknowledgement), and lets go anyway after
+  10 s, logged. A host's own close needs no wait: it is the canonical.
+- **No echo onto the editor.** A peer that holds the claim applies no record for that notebook,
+  whether it arrives live or from the park: its own edit is the newer state.
+- **Forced exits.** Ragdoll, a faint and death leave the interface without `quit`, as in the
+  single-player game, so the box's uncommitted text is lost there and nothing is published.
 - **Late join.** A joiner is handed every prop's record in the snapshot, the notebook's last
   published text included, and the claim table, so it reads the text as last published and is
   denied the editor while another peer holds it; the close then reaches it as an ordinary record.
@@ -317,7 +325,7 @@ is built; concrete and food are designed and not built.
 | a stuck prop, and its unstick | the peer that sticks or frees it; every peer runs the component's own verb | one reliable message |
 | a self-changing prop's progression | the host | park, corrector or anchor, per prop |
 | notebook editor occupancy | the host arbitrates | a claim keyed by the owning prop |
-| notebook page text | the editing peer; the host takes it from the claim's holder only | the notebook's own save record on the record lane, at the close and every 2 s while the text changes |
+| notebook page text | the editing peer; the host takes it from the claim's holder, or from anyone while it is free | the notebook's own save record on the record lane, at the close and every 2 s while the text changes |
 | a client's shared-world spawners | the host | refused on a client at the script-body gate; shared-world content arrives only from the host |
 
 ## Wire messages

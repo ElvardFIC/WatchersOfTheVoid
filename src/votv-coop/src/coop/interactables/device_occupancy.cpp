@@ -48,11 +48,6 @@ std::atomic<coop::net::Session*> g_session{nullptr};
 // defensive.
 std::mutex g_mutex;
 std::unordered_map<std::wstring, uint8_t> g_busy;
-// HOST: claim key to the slot the host last granted it, kept after the release. A state the host
-// can read when a message from the holder arrives after the holder's release (the claim rides the
-// reliable Normal lane, a record the Bulk lane). A leaver's rows go with it, so a recycled slot
-// inherits none.
-std::unordered_map<std::wstring, uint8_t> g_lastHolder;
 
 // The local claim edge state (game thread only). The widget is the active interface pointer
 // last seen (the edge detector); the key is the claim we currently hold or requested (empty:
@@ -103,6 +98,14 @@ void PushBusyLine(const std::wstring& key, const std::wstring& deviceName, uint8
 }
 
 bool g_observersInstalled = false;
+
+// The lanes that ask a release of the local claim to wait (RegisterReleaseHold).
+std::vector<ReleaseHoldFn> g_releaseHolds;
+bool ReleaseHeld(const std::wstring& key) {
+    bool held = false;
+    for (ReleaseHoldFn fn : g_releaseHolds) held = fn(key.c_str()) || held;
+    return held;
+}
 
 // The desk FSM-hold (host-authored). While a peer's ping state machine runs, the desk is
 // functionally that peer's even after it physically dismounts (the machine keeps consuming
@@ -348,8 +351,10 @@ void Tick() {
     void* w = DS::ReadActiveInterface(local);
     if (w == g_localWidget) return;  // no edge -- the per-tick steady state
 
-    // The falling edge (or a direct widget switch): release what we held.
+    // The falling edge (or a direct widget switch): release what we held, unless a lane asks the release to
+    // wait. g_localWidget stays, so the edge is read again on the next tick; the claim stays ours meanwhile.
     if (!g_localKey.empty()) {
+        if (ReleaseHeld(g_localKey)) return;
         UE_LOGI("device_occupancy: local EXIT '%ls' -- releasing", g_localKey.c_str());
         if (s->role() == coop::net::Role::Host) {
             {
@@ -386,7 +391,6 @@ void Tick() {
                 {
                     std::lock_guard<std::mutex> lk(g_mutex);
                     g_busy[key] = mySlot;
-                    g_lastHolder[key] = mySlot;
                 }
                 if (s->connected()) SendClaim(s, key, mySlot, true);
                 UE_LOGI("device_occupancy: HOST claimed '%ls'", key.c_str());
@@ -424,10 +428,7 @@ void OnReliable(const coop::net::DeviceClaimPayload& p, uint8_t senderSlot) {
                 std::lock_guard<std::mutex> lk(g_mutex);
                 auto it = g_busy.find(key);
                 if (it != g_busy.end()) { cur = it->second; free = false; }
-                if (free || cur == senderSlot) {
-                    g_busy[key] = senderSlot;
-                    g_lastHolder[key] = senderSlot;
-                }
+                if (free || cur == senderSlot) g_busy[key] = senderSlot;
             }
             if (free || cur == senderSlot) {
                 // A physical grant of the desk supersedes an FSM-hold entry (the pinger sat back
@@ -502,6 +503,13 @@ void OnReliable(const coop::net::DeviceClaimPayload& p, uint8_t senderSlot) {
     }
 }
 
+void RegisterReleaseHold(ReleaseHoldFn fn) {
+    if (!fn) return;
+    for (ReleaseHoldFn f : g_releaseHolds)
+        if (f == fn) return;
+    g_releaseHolds.push_back(fn);
+}
+
 bool LocalHolds(const wchar_t* key) {
     return !g_localKey.empty() && g_localKey == key;
 }
@@ -510,12 +518,6 @@ uint8_t HolderOf(const wchar_t* key) {
     std::lock_guard<std::mutex> lk(g_mutex);
     auto it = g_busy.find(key);
     return it == g_busy.end() ? 0xFF : it->second;
-}
-
-uint8_t LastHolderOf(const wchar_t* key) {
-    std::lock_guard<std::mutex> lk(g_mutex);
-    auto it = g_lastHolder.find(key);
-    return it == g_lastHolder.end() ? 0xFF : it->second;
 }
 
 void QueueConnectBroadcastForSlot(int peerSlot) {
@@ -544,8 +546,6 @@ void OnDisconnectForSlot(int slot) {
     std::vector<std::wstring> dropped;
     {
         std::lock_guard<std::mutex> lk(g_mutex);
-        for (auto it = g_lastHolder.begin(); it != g_lastHolder.end();)
-            it = (it->second == static_cast<uint8_t>(slot)) ? g_lastHolder.erase(it) : std::next(it);
         for (auto it = g_busy.begin(); it != g_busy.end();) {
             if (it->second == static_cast<uint8_t>(slot)) {
                 dropped.push_back(it->first);
@@ -566,7 +566,6 @@ void OnDisconnect() {
     {
         std::lock_guard<std::mutex> lk(g_mutex);
         g_busy.clear();
-        g_lastHolder.clear();
     }
     g_localKey.clear();
     g_localWidget = nullptr;

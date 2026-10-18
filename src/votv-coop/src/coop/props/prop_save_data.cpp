@@ -3,7 +3,7 @@
 #include "coop/props/prop_save_data.h"
 
 #include "coop/dev/food_clock_probe.h"   // [dev] the food catch-up's two clocks, read at these seams
-#include "coop/interactables/notebook_sync.h"   // whose a notebook's record is: the editor holding its claim
+#include "coop/props/prop_record_gates.h"          // a class's say over who writes its record and when it lands
 #include "coop/items/save_record_wire.h"
 #include "coop/net/blob_chunks.h"
 #include "coop/net/session.h"
@@ -81,6 +81,7 @@ constexpr size_t kParkScanPerFrame = 64;
 struct Parked {
     SR::SaveRecord rec;
     uint8_t        senderSlot = 0;
+    bool           intent     = false;   // a client's claim the host took, so the class gates judge its sender
     uint64_t       seq        = 0;   // arrival order, for the oldest-first eviction
     size_t         bytes      = 0;   // the body this came from, for the per-sender byte ceiling
     int            failures   = 0;   // applies that reached a dispatch and did not take
@@ -242,7 +243,26 @@ void UnparkIfSame(const std::wstring& key, uint64_t seq) {
     if (it != g_parked.end() && it->second.seq == seq) Unpark(it);
 }
 
-void Park(const std::wstring& key, SR::SaveRecord&& rec, uint8_t senderSlot, size_t bytes) {
+// A parked row meets its class's gates when it would land, since its prop may not have existed when it
+// arrived: a client's claim is judged by sender, any record by whether its class lets it apply. The row
+// goes (not waits) when a gate refuses it. True when it went.
+bool DropRowForGates(const std::wstring& key, void* actor) {
+    const auto it = g_parked.find(key);
+    if (it == g_parked.end()) return false;
+    if (it->second.intent && !coop::prop_record_gates::IntentAllows(actor, it->second.senderSlot)) {
+        Unpark(it);
+        return true;
+    }
+    if (!coop::prop_record_gates::ApplyAllows(actor)) {
+        UE_LOGI("prop_save_data: parked record for key '%ls' is dropped -- a gate on its class refuses it here",
+                key.c_str());
+        Unpark(it);
+        return true;
+    }
+    return false;
+}
+
+void Park(const std::wstring& key, SR::SaveRecord&& rec, uint8_t senderSlot, size_t bytes, bool intent) {
     DropParked(key);
     SenderUse& use = g_parkUse[senderSlot];
     while (use.count >= kMaxParkedPerSender || use.bytes + bytes > kMaxParkBytesPerSender) {
@@ -261,6 +281,7 @@ void Park(const std::wstring& key, SR::SaveRecord&& rec, uint8_t senderSlot, siz
     Parked p;
     p.rec = std::move(rec);
     p.senderSlot = senderSlot;
+    p.intent = intent;
     p.seq = g_parkSeq++;
     p.bytes = bytes;
     use.count += 1;
@@ -325,7 +346,7 @@ bool TryApply(void* actor, const std::wstring& key, const SR::SaveRecord& rec) {
 // `budgeted` spends the per-frame apply budget; the host's take of a client intent does not, its
 // rate being bounded per sender at the door.
 bool LandRecord(const std::wstring& key, SR::SaveRecord&& rec, uint8_t senderSlot, size_t bytes,
-                bool budgeted) {
+                bool budgeted, bool intent) {
     // The predecessor goes BEFORE the apply, so a record parked under this Key while loadData runs
     // can only be a newer one, and nothing below removes it.
     DropParked(key);
@@ -340,10 +361,11 @@ bool LandRecord(const std::wstring& key, SR::SaveRecord&& rec, uint8_t senderSlo
         UE_LOGI("prop_save_data: record for key '%ls' waits -- the prop is held here", key.c_str());
         actor = nullptr;
     }
-    // A notebook this peer is editing is the newer state: the editor's own close publishes it, and the
-    // record that comes back is that publish's acknowledgement or an older one. Dropped, not parked.
-    if (actor && coop::notebook_sync::LocalEditorHolds(actor)) {
-        UE_LOGI("prop_save_data: record for key '%ls' is not applied -- this peer is editing the notebook",
+    // A class with a gate on the apply (an editor open on the prop here: its edit is the newer state and
+    // its own close publishes it) drops the record. Dropped, not parked: a parked row would land on top
+    // of the close once the class lets go.
+    if (actor && !coop::prop_record_gates::ApplyAllows(actor)) {
+        UE_LOGI("prop_save_data: record for key '%ls' is not applied -- a gate on its class refuses it here",
                 key.c_str());
         return false;
     }
@@ -352,7 +374,7 @@ bool LandRecord(const std::wstring& key, SR::SaveRecord&& rec, uint8_t senderSlo
         return true;
     }
     if (g_parked.count(key)) return false;   // a newer record arrived during the apply; it stays
-    Park(key, std::move(rec), senderSlot, bytes);
+    Park(key, std::move(rec), senderSlot, bytes, intent);
     return false;
 }
 
@@ -554,7 +576,7 @@ void OnChunk(coop::net::Session& s, const coop::net::BlobChunkPayload& p, uint8_
         return;
     }
     if (!intent) {
-        LandRecord(key, std::move(rec), senderSlot, body.size(), /*budgeted=*/true);
+        LandRecord(key, std::move(rec), senderSlot, body.size(), /*budgeted=*/true, /*intent=*/false);
         return;
     }
     // The host takes a client's claim: apply or park it locally, then re-publish it as the canonical
@@ -573,11 +595,10 @@ void OnChunk(coop::net::Session& s, const coop::net::BlobChunkPayload& p, uint8_
         return;
     }
     const bool birth = g_awaiting.count(key) != 0;
-    // A notebook's text is its editor's: the host takes it from the slot that holds the notebook's claim,
-    // or held it last (notebook_sync says why). A birth's record is the exception, since nobody holds
-    // the claim of a prop that did not exist a moment ago.
-    if (!birth && actor && !coop::notebook_sync::AcceptsClientRecord(actor, senderSlot)) return;
-    if (LandRecord(key, SR::SaveRecord(rec), senderSlot, body.size(), /*budgeted=*/false)) {
+    // A class that has a rule about who writes its record judges the sender here (the gate logs its
+    // refusals). A record for a prop this host does not index yet is judged where it lands, from the park.
+    if (actor && !coop::prop_record_gates::IntentAllows(actor, senderSlot)) return;
+    if (LandRecord(key, SR::SaveRecord(rec), senderSlot, body.size(), /*budgeted=*/false, /*intent=*/true)) {
         UE_LOGI("prop_save_data: HOST took a client record (key '%ls', slot %u) -- %s",
                 key.c_str(), static_cast<unsigned>(senderSlot),
                 birth ? "published from its land" : "republishing");
@@ -596,6 +617,7 @@ bool ApplyParked(void* actor, const std::wstring& key) {
     // ApplyRecord's bool is the DISPATCH's, not the Blueprint's: Aprop_C::loadData never assigns
     // its `return` out-param at all, so there is no refusal to read. A failure here is a codec or
     // reflection failure, and the record stays parked for the next frame to retry.
+    if (DropRowForGates(key, actor)) return false;
     const uint64_t seq = it->second.seq;
     if (!TryApply(actor, key, SR::SaveRecord(it->second.rec))) return false;
     UE_LOGI("prop_save_data: parked record applied at birth (key '%ls')", key.c_str());
@@ -665,6 +687,7 @@ void Drive() {
         // A held prop's record waits for its release (LandRecord's reason). It is skipped before the
         // budget is spent and is no failure: the row stays, and a later frame's scan applies it.
         if (actor && coop::remote_prop::IsOwnedHere(actor)) actor = nullptr;
+        if (actor && DropRowForGates(key, actor)) actor = nullptr;
         if (actor) {
             // The budget buys a DISPATCH, not a success: a row whose apply fails past the base
             // capture has already paid for one, and counting only successes let a handful of
