@@ -1,6 +1,6 @@
 // coop/dispatch/event_feed.cpp -- the per-tick reliable-message drain: the per-slot Join edge, then the
 // ReliableKind dispatch switch. The kind-to-handler table lives here; the case bodies for the
-// five families (entity, state, signal, intent, world) live in event_dispatch_<family>.cpp.
+// six families (entity, state, signal, intent, economy, world) live in event_dispatch_<family>.cpp.
 // Session, handshake, snapshot and dev-key cases stay inline.
 
 #include "coop/dispatch/event_feed.h"
@@ -467,7 +467,8 @@ void Update(net::Session& session, void* localPlayer) {
             if (HandleEntityEvent(session, msg, localPlayer)) break;
             if (HandleStateEvent(session, msg, localPlayer)) break;
             if (HandleSignalEvent(msg)) break;
-            if (HandleIntentEvent(session, msg, localPlayer)) break;
+            if (HandleIntentEvent(session, msg)) break;
+            if (HandleEconomyEvent(session, msg, localPlayer)) break;
             if (HandleWorldEvent(msg)) break;
             // An unknown kind (a newer protocol) is logged, not silently discarded.
             UE_LOGW("event_feed: unknown ReliableKind %u -- dropping",

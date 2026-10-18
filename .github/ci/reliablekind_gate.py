@@ -27,7 +27,7 @@ WHAT IT HOLDS -- these FAIL the build:
      `return;` changed nothing the gate read. An exception is a claim about a BRANCH, so
      the check has to be about the branch.
 
-  3. A family dispatcher that is no longer CHAINED. The 100 case labels in the five
+  3. A family dispatcher that is no longer CHAINED. The 100 case labels in the six
      family files are reachable only because event_feed's `default:` calls each
      Handle*Event in turn; delete one call and ~25 kinds die while every case label is
      still present and the coverage arithmetic still adds up.
@@ -82,11 +82,12 @@ ROW_VALUES = ("Client", "Host")
 EDGE_SHAPE = re.compile(r"if\s*\(\s*cfg_\.role\s*==\s*Role::Host\s*\)\s*\{\s*const\s+ClientAuthorship\s+(\w+)\s*=\s*"
                         r"AuthorshipOf\(\s*static_cast<ReliableKind>\(\s*rh\.kind\s*\)\s*\)\s*;\s*if\s*\(")
 
-# The five family dispatchers. Each Handle*Event returns true iff msg.kind is in its
+# The six family dispatchers. Each Handle*Event returns true iff msg.kind is in its
 # family, so its own switch IS the membership declaration (SyncRouter consolidation,
 # 2026-06-28) -- which is exactly why parsing these case labels is parsing the truth
 # and not a parallel list that can drift from it.
 FAMILY_FILES = [
+    "src/coop/dispatch/event_dispatch_economy.cpp",
     "src/coop/dispatch/event_dispatch_entity.cpp",
     "src/coop/dispatch/event_dispatch_intent.cpp",
     "src/coop/dispatch/event_dispatch_signal.cpp",
@@ -677,10 +678,10 @@ def main() -> int:
         for got in fam.values():
             famall |= got
         feed = set(CASE.findall(strip_comments(tree[FEED_FILE])))
-        print("reliablekind_gate: PASS -- %d kinds; %d routed by a family (all 5 chained), %d "
+        print("reliablekind_gate: PASS -- %d kinds; %d routed by a family (all %d chained), %d "
               "by event_feed's own switch, %d net-thread-terminal with their interceptions "
               "verified; 0 claimed twice."
-              % (len(enums), len(famall), len(feed - famall), len(NET_THREAD_TERMINAL)))
+              % (len(enums), len(famall), len(FAMILY_FILES), len(feed - famall), len(NET_THREAD_TERMINAL)))
         if "--table" in argv:
             print_table(tree, enums, fam)
     else:

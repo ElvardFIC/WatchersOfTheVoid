@@ -1,6 +1,6 @@
 // coop/dispatch/event_dispatch.h -- INTERNAL per-domain reliable-message handlers for
 // coop::event_feed::Update's dispatch switch. event_feed.cpp handles the session and handshake
-// kinds inline and chains these five families from its default case; each family's own switch is
+// kinds inline and chains these six families from its default case; each family's own switch is
 // where its kinds are declared.
 //
 // Sibling-internal header, the coop/net/session_lanes.h shape: not part of the public coop/ include
@@ -53,14 +53,20 @@ bool HandleSignalEvent(const net::Session::ReliableMessage& msg);
 // authoritative for. Read the case for its gate rather than assuming one. GrabIntent, ThrowIntent,
 // PropDropIntent, ReelEjectIntent, DoorVerbIntent, CameraToggleIntent, LaptopTabReport and KeypadIntent check role()==Host AND a client
 // sender slot; KerfurConvertRequest and KerfurCommand check the role only, mapping an out-of-range
-// slot to the 0xFF sentinel and handing it on; OrderRequest, CoinGunSell and CoinCollect check the
-// slot here and leave the role gate to the module they call; CoinGunResult and OrderRefused are
-// HOST->CLIENT answers that drop on the host; OrderQueue, the host's delivery queue mirrored to
-// clients, leaves both checks to order_queue_sync; RoachConsumed defers both gates to
+// slot to the 0xFF sentinel and handing it on; RoachConsumed defers both gates to
 // roach_sync::OnConsumedIntent.
 bool HandleIntentEvent(net::Session& session,
-                       const net::Session::ReliableMessage& msg,
-                       void* localPlayer);
+                       const net::Session::ReliableMessage& msg);
+
+// Economy family: the delivery order with its queue, the coin gun's sale and collect, the laptop
+// upgrade purchase and the point sack. OrderRequest, CoinGunSell and CoinCollect check the slot here
+// and leave the role gate to the module they call; UpgradeIntent and PointSackRedeem check role()==Host
+// AND a client sender slot; CoinGunResult and OrderRefused are HOST->CLIENT answers that drop on the
+// host; OrderQueue, the host's delivery queue mirrored to clients, leaves both checks to
+// order_queue_sync. `localPlayer` is the host's own player, passed into a collected coin.
+bool HandleEconomyEvent(net::Session& session,
+                        const net::Session::ReliableMessage& msg,
+                        void* localPlayer);
 
 // Ambient and world-event family: fireflies, scheduled events with their cues and snapshots,
 // alarms, the server box, roaches, inventory pickups, chat, and the time, sky and weather stream.
