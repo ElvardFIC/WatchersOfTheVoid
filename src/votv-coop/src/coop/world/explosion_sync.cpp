@@ -115,17 +115,14 @@ uint64_t NowMs() {
         std::chrono::steady_clock::now().time_since_epoch()).count());
 }
 
-// The host's birth line (dev, ini explosion_birth_log), read once: a measurement of which Blueprint spawned each
-// explosion on the host, where the capture only knows the class id.
-bool BirthLogOn() {
-    static const bool on = coop::config::ResolveFlag(::coop::config_registry::rows::explosion_birth_log);
-    return on;
-}
+// The host's birth line (dev, ini explosion_birth_log): a measurement of which Blueprint spawned each explosion on
+// the host, where the capture only knows the class id. Read once, in Install, before the birth hook can run.
+bool g_birthLog = false;
 
-// Every Blueprint deferred spawn passes here: a null test and one client-session test (a host or single player
-// stops there, after one latched flag when the host's birth line is on and up to three pointer or name tests and a
-// two-step super walk for it), then, on a client, the projectile note's class compare, then up to three pointer or
-// name tests and a two-step super walk on a miss.
+// Every Blueprint deferred spawn passes here: a null test and one client-session test. A host or single player
+// stops there, or, when the host's birth line is on (one plain flag), tests the class (up to three pointer or name
+// tests and a two-step super walk) and logs a match. A client runs the projectile note's class compare, then the same
+// class test and super walk on a miss.
 //
 // A match is dissolved: the Blueprint's result is nulled, so what it does with the spawn reads nothing, and the
 // unfinished actor is destroyed by a posted task, never inside the callback (the native call is still on the
@@ -137,7 +134,7 @@ bool BirthLogOn() {
 void OnBirth(void* /*context*/, void* sourceObject, void* result) {
     if (!result) return;
     if (!coop::spawn_authority::IsActiveClientSession()) {
-        if (BirthLogOn()) {
+        if (g_birthLog) {
             bool hostByName = false;
             const int classId = X::ClassIdOf(R::ClassOf(result), hostByName);
             if (classId >= 0)
@@ -237,6 +234,7 @@ void Install(coop::net::Session* s) {
     if (!birthSettled) {
         const ue_wrap::facts::Resolved fn = ue_wrap::facts::Resolve(kRowBeginDeferred);
         if (fn && UH::InstallPostHook(fn, &OnBirth)) {
+            g_birthLog = coop::config::ResolveFlag(::coop::config_registry::rows::explosion_birth_log);
             g_hookInstalled = true;
             UE_LOGI("[EXPLOSION] birth seam installed on BeginDeferredActorSpawnFromClass");
         } else if (++g_tries >= kMaxResolveTries) {
