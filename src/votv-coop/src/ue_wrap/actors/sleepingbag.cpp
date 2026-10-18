@@ -3,6 +3,7 @@
 #include "ue_wrap/actors/sleepingbag.h"
 
 #include "ue_wrap/core/call.h"
+#include "ue_wrap/core/object_index.h"
 #include "ue_wrap/core/reflection.h"
 
 namespace ue_wrap::sleepingbag {
@@ -10,13 +11,11 @@ namespace {
 
 namespace R = ue_wrap::reflection;
 
-void* FindClass(const wchar_t* name) {
-    return R::FindClass(name);
-}
-
+// The class index answers a class that is not loaded in one lookup; FindClass would walk the whole
+// object array on every miss, and these tests run per spawned prop and per interaction.
 bool IsChild(void* actor, const wchar_t* baseName) {
     if (!actor || !R::IsLive(actor)) return false;
-    void* base = FindClass(baseName);
+    void* base = object_index::ClassByName(baseName);
     void* cls = R::ClassOf(actor);
     if (!base || !cls) return false;
     void* bases[] = {base};
