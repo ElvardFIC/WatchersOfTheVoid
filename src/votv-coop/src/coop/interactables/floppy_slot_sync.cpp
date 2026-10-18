@@ -2,10 +2,10 @@
 
 #include "coop/interactables/floppy_slot_sync.h"
 
-#include "coop/comms/chat_feed.h"  // ToUtf8
 #include "coop/interactables/laptop_buffer_sync.h"  // the quad's shadow primes after a laptop apply
 #include "coop/net/blob_chunks.h"
 #include "coop/net/session.h"
+#include "coop/text/utf8_codec.h"
 
 #include "ue_wrap/core/game_thread.h"
 #include "ue_wrap/core/log.h"
@@ -55,28 +55,6 @@ constexpr int      kMaxClaimsPerWindow = 12;
 
 uint64_t NowMs() { return static_cast<uint64_t>(::GetTickCount64()); }
 
-std::wstring FromUtf8(const std::string& s) {
-    if (s.empty()) return std::wstring();
-    const int n = ::MultiByteToWideChar(CP_UTF8, 0, s.data(),
-                                        static_cast<int>(s.size()), nullptr, 0);
-    if (n <= 0) return std::wstring();
-    std::wstring w(static_cast<size_t>(n), L'\0');
-    ::MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), w.data(), n);
-    return w;
-}
-
-// The wire's string encoder: UTF-8 of every code unit, control characters included. coop::chat_feed::ToUtf8 is a chat
-// sanitiser and drops CR and LF, which a disc's rows are made of ("$t", "Server data: ...", "/n kilo", "/d " are
-// separate lines). A row sent through it arrived with its line breaks gone, so the laptop could not parse it.
-std::string ToUtf8Exact(const std::wstring& w) {
-    if (w.empty()) return std::string();
-    const int n = ::WideCharToMultiByte(CP_UTF8, 0, w.data(), static_cast<int>(w.size()), nullptr, 0, nullptr, nullptr);
-    if (n <= 0) return std::string();
-    std::string s(static_cast<size_t>(n), '\0');
-    ::WideCharToMultiByte(CP_UTF8, 0, w.data(), static_cast<int>(w.size()), s.data(), n, nullptr, nullptr);
-    return s;
-}
-
 // ---- wire ----
 // head [u8 op][u8 deviceKind]; op 0=claim{[u8 index][slot]}, 1=canonical{[u32 generation][u16 n]{[u8 index][slot]}}
 // The generation counts the host's changes of the laptop's occupancy (0 for the boxes): the laptop's file quad carries
@@ -99,7 +77,7 @@ void PutU32(std::vector<uint8_t>& b, uint32_t v) {
 // A row or a JSON can be long, so both take a 32-bit length; the reader bounds them against the
 // blob it is reading out of.
 void PutStr32(std::vector<uint8_t>& b, const std::wstring& w) {
-    const std::string u = ToUtf8Exact(w);
+    const std::string u = coop::text::ToUtf8Exact(w);
     PutU32(b, static_cast<uint32_t>(u.size()));
     b.insert(b.end(), u.begin(), u.end());
 }
@@ -113,9 +91,11 @@ struct Reader {
     std::wstring Str32() {
         const uint32_t len = U32();
         if (!ok || len > n - off) { ok = false; return std::wstring(); }
-        std::string u(reinterpret_cast<const char*>(p + off), len);
+        std::wstring w;
+        const bool wellFormed = coop::text::FromUtf8Strict(reinterpret_cast<const char*>(p + off), len, &w);
         off += len;
-        return FromUtf8(u);
+        if (!wellFormed) { ok = false; return std::wstring(); }
+        return w;
     }
 };
 
@@ -703,11 +683,24 @@ void OnChunk(const coop::net::BlobChunkPayload& p, uint8_t senderSlot) {
                 "dropped", static_cast<unsigned>(count), kMaxDevices);
         return;
     }
-    int applied = 0, skipped = 0, unchanged = 0;
+    // Read the whole message before applying any of it: a device that does not parse refuses the canonical.
+    std::vector<std::pair<uint8_t, Slot>> entries;
+    entries.reserve(count);
     for (uint16_t k = 0; k < count && r.ok; ++k) {
         const uint8_t index = r.U8();
         Slot in;
         if (!ParseSlot(r, in)) break;
+        entries.emplace_back(index, std::move(in));
+    }
+    if (!r.ok) {
+        UE_LOGW("floppy_slot_sync: canonical did not read at device %zu of %u -- dropped whole",
+                entries.size(), static_cast<unsigned>(count));
+        return;
+    }
+    int applied = 0, skipped = 0, unchanged = 0;
+    for (const auto& entry : entries) {
+        const uint8_t index = entry.first;
+        const Slot& in = entry.second;
         if (index >= n || !devices[index] || !R::IsLive(devices[index])) { ++skipped; continue; }
         if (!FS::IsSlotType(in.st.floppyType)) { ++skipped; continue; }
         g_awaiting.erase(ShadowKey(kind, index));
@@ -730,11 +723,8 @@ void OnChunk(const coop::net::BlobChunkPayload& p, uint8_t senderSlot) {
                 prevKey == inKey ? "OVERWROTE AN OCCUPIED SLOT (same key)"
                                  : "OVERWROTE AN OCCUPIED SLOT HOLDING ANOTHER DISC");
     }
-    if (!r.ok)
-        UE_LOGW("floppy_slot_sync: canonical truncated after %d of %u device(s)",
-                applied + unchanged + skipped, count);
     g_haveCanonical[kindB] = true;
-    if (kind == FS::DeviceKind::Laptop && r.ok) g_laptopGen = gen;
+    if (kind == FS::DeviceKind::Laptop) g_laptopGen = gen;
     if (applied || skipped)
         UE_LOGI("floppy_slot_sync: CLIENT applied canonical -- %d device(s) written, %d already "
                 "matched, %d skipped (of %zu local)", applied, unchanged, skipped, n);

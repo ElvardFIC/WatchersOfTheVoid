@@ -26,8 +26,12 @@ inline constexpr size_t kNickMaxBytes = 20 * 4;
 inline constexpr size_t kNickBufBytes = kNickMaxBytes + 1;
 
 // UTF-16 (Windows wchar_t) -> UTF-8. Surrogate-pair aware, so astral codepoints survive; C0
-// control codepoints are dropped.
+// control codepoints are dropped. For chat lines and names; game data uses ToUtf8Exact.
 std::string ToUtf8(const std::wstring& w);
+
+// UTF-16 -> UTF-8 of every character, C0 controls included: game data that must cross byte-equal (a floppy row, a
+// laptop buffer). Surrogate-pair aware; an unpaired surrogate is not a character and is dropped, as ToUtf8 drops it.
+std::string ToUtf8Exact(const std::wstring& w);
 
 // UTF-8 -> UTF-16, STRICT. Returns false and leaves `out` untouched when the
 // input is not well-formed UTF-8 (MB_ERR_INVALID_CHARS): the caller then shows a

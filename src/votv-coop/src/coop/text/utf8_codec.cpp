@@ -11,11 +11,14 @@
 
 namespace coop::text {
 
-std::string ToUtf8(const std::wstring& w) {
-    // Hand-rolled rather than WideCharToMultiByte because it must be defined on
-    // the two inputs the API is coy about: an UNPAIRED surrogate (dropped) and a
-    // C0 control (dropped). Promoted unchanged out of the chat nick sanitiser, which has
-    // carried every chat line since it was written.
+namespace {
+
+// The one loop both encoders share; keepControls is their only difference.
+// Hand-rolled rather than WideCharToMultiByte because it must be defined on the two
+// inputs the API is coy about: an UNPAIRED surrogate (dropped by both encoders) and a
+// C0 control (dropped by ToUtf8 alone). Promoted out of the chat nick sanitiser, which
+// has carried every chat line since it was written.
+std::string Encode(const std::wstring& w, bool keepControls) {
     std::string s;
     s.reserve(w.size() * 2);
     for (size_t i = 0; i < w.size(); ) {
@@ -27,7 +30,7 @@ std::string ToUtf8(const std::wstring& w) {
         // the two, and the feed's behaviour is the right one: a nickname cannot contain a
         // TAB (SanitizeNickname denies everything below 0x20), so keeping it
         // costs the name path nothing and preserves the chat path exactly.
-        if (cp < 0x20 && cp != 0x09) continue;
+        if (!keepControls && cp < 0x20 && cp != 0x09) continue;
         if (cp < 0x80) {
             s.push_back(static_cast<char>(cp));
         } else if (cp < 0x800) {
@@ -46,6 +49,12 @@ std::string ToUtf8(const std::wstring& w) {
     }
     return s;
 }
+
+}  // namespace
+
+std::string ToUtf8(const std::wstring& w) { return Encode(w, false); }
+
+std::string ToUtf8Exact(const std::wstring& w) { return Encode(w, true); }
 
 bool FromUtf8Strict(const char* p, size_t n, std::wstring* out) {
     if (!out) return false;
@@ -182,6 +191,19 @@ bool RunUtf8CodecSelftest() {
     roundTrip(L"あかカナ", "kana round trip");
     // Astral: an emoji survives ONLY as a surrogate pair through wchar_t.
     roundTrip(L"\xD83D\xDE00", "astral (emoji) round trip");
+
+    // The game-data encoder keeps what the chat encoder drops, and nothing else differs.
+    ok(ToUtf8Exact(L"a\nb\r\nc\td") == "a\nb\r\nc\td", "exact keeps controls");
+    ok(ToUtf8(L"a\nb\r\nc\td") == "abc\td", "chat drops controls but TAB");
+    ok(ToUtf8Exact(L"x\xD800y") == "xy", "exact drops an unpaired surrogate");
+    ok(ToUtf8Exact(L"\x041F\x0435 \xD83D\xDE00") == ToUtf8(L"\x041F\x0435 \xD83D\xDE00"),
+       "the encoders agree without controls");
+    {
+        const std::wstring w = L"\x0438\n\xD83D\xDE00";
+        const std::string u = ToUtf8Exact(w);
+        std::wstring back;
+        ok(FromUtf8Strict(u.data(), u.size(), &back) && back == w, "exact round trip keeps a line break");
+    }
 
     // The strict decoder REFUSES what the lossy one would silently repair.
     {
