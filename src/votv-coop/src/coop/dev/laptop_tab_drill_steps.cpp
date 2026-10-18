@@ -60,7 +60,7 @@ constexpr uint64_t kStatesBound   = 20;  // states received without the final ta
 // The aim before the enter: a fan of headings about the laptop's boxScreen, each held kAimTicksPerPose ticks so the
 // player's own trace and the laptop's lookAt run on it before it is judged.
 constexpr float    kAimYaw[]      = {0.f, -6.f, 6.f, -12.f, 12.f};
-constexpr float    kAimPitch[]    = {0.f, -8.f, 8.f};
+constexpr float    kAimPitch[]    = {0.f, -8.f, 8.f, -16.f, 16.f};
 constexpr int      kAimYawN       = static_cast<int>(sizeof kAimYaw / sizeof kAimYaw[0]);
 constexpr int      kAimPoses      = kAimYawN * static_cast<int>(sizeof kAimPitch / sizeof kAimPitch[0]);
 constexpr int      kAimTicksPerPose = 6;
