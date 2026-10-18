@@ -111,6 +111,11 @@ bool Execute(coop::net::Session& s, const coop::net::DroneFlyIntentPayload& p, u
                     static_cast<unsigned>(slot));
             return true;
         }
+        // The face's press is the toggle and then the console's click; the host's own copy of the
+        // console plays it, and the presser's machine plays its own (OnActionPre).
+        if (!D::PlayChangeCue(console))
+            UE_LOGW("[DRONE-CALL] slot=%u -- the console's change cue did not play on the host",
+                    static_cast<unsigned>(slot));
         ++g_flown;
         UE_LOGI("[DRONE-CALL] leave timer set by slot=%u to %s",
                 static_cast<unsigned>(slot), leaveAfter5min ? "indefinitely" : "five minutes");
@@ -164,8 +169,12 @@ sg::Verdict OnActionPre(const sg::Call& call) {
     }
     ++g_sent;
     if (g_sent <= 3 || g_sent % 20 == 0)
-        UE_LOGI("[DRONE-CALL] CLIENT SENT a keyboard press (#%llu)",
+        UE_LOGI("[DRONE-CALL] CLIENT SENT a %s press (#%llu)", keyboard ? "keyboard" : "leave-timer",
                 static_cast<unsigned long long>(g_sent));
+    // The timer face's own body would have clicked here, and the body it cancels is the only thing
+    // that plays it on this machine, so the presser hears its press from this copy of the console.
+    if (!keyboard && !D::PlayChangeCue(call.object))
+        UE_LOGW("[DRONE-CALL] the console's change cue did not play on this client");
     return sg::Verdict::Cancel;
 }
 

@@ -90,4 +90,14 @@ bool TriggerFly(void* console) {
     return ue_wrap::Call(drone, f);
 }
 
+bool PlayChangeCue(void* console) {
+    void* audio = PartOf(console, L"audio_change");
+    if (!audio) return false;
+    // The same Play(StartTime) dispatch the tree's other audio-component call sites make
+    // (ue_wrap/desk/coord_tower.cpp Play, ue_wrap/desk/drive_eraser.cpp Play).
+    void* fn = R::FindDispatchFunctionCached(R::ClassOf(audio), L"Play");
+    ue_wrap::ParamFrame f(fn);
+    return fn && f.valid() && f.Set<float>(L"StartTime", 0.f) && ue_wrap::Call(audio, f);
+}
+
 }  // namespace ue_wrap::drone_console

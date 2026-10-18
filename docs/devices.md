@@ -289,7 +289,7 @@ group correctly.
 
 The garage console calls and sends it. Its one action option dispatches on what the presser is
 looking at -- the keyboard runs the drone's own call-or-send verb, the other face toggles the
-drone's leave timer -- and the console holds its drone as a level reference, so every peer's
+drone's leave timer and clicks -- and the console holds its drone as a level reference, so every peer's
 console points at that peer's own drone. A client's press therefore reached a mirror whose flight
 tick is suppressed: nothing moved and nobody heard about it, which is why only the host could work
 the button. The client now refuses its own body at the script-body gate and sends the press. The
@@ -298,7 +298,9 @@ stands at, re-tests its own copy of the lid, then runs the same verb, so the fli
 machine that owns it and arrives on the stream that already carries it
 (`coop/interactables/drone_call_intent`). A press that reaches the host before it holds the sender's
 body, from a joiner who presses at once, waits for the body rather than being refused, as the
-door-verb, keypad and container lanes wait. The leave-timer face has no lane and stays local.
+door-verb, keypad and container lanes wait. The leave-timer face rides the same lane: the host flips
+its own drone's setting, which every peer's copy takes from the drone's state stream, and the console's
+click plays on the presser's machine and on the host.
 
 ### The computer and the economy
 
@@ -371,8 +373,8 @@ removed from its author's hand -- and a joiner gets every box's count at its wor
 | `PowerGridState` | the host to all; a client to the host | every generator's row and each slot's last op taken; a repair, a service, an upgrade install or a hit |
 | `CoordTowerState` | the host to all; a client to the host | every tower's row (broken, fuses, puzzle, panel, lever), each slot's last op taken and last claim refused; a press of a puzzle button, the lever or the retract, a fuse pulled or inserted |
 | `TurbineState`, `WindowCleanState`, `GrimeState` | each peer or the host | the driver floats; a decrease |
-| `DroneState` | the host to all | the drone's transform and flags |
-| `DroneFlyIntent` | a client to the host | the face pressed, the keyboard; the host finds the console by the sender's reach |
+| `DroneState` | the host to all | the drone's transform and flags, among them its leave timer |
+| `DroneFlyIntent` | a client to the host | the face pressed, the keyboard or the leave timer; the host finds the console by the sender's reach |
 
 ## Late join
 

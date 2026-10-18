@@ -30,7 +30,7 @@ inline constexpr uint32_t kMagic = 0x564D5450u;
 // This file is past the 1500-line hard cap and stays there: it is the single-feature exception the
 // rule names. One wire format, whose enum, payload structs and static_asserts are read together;
 // splitting it would put a kind's number in one file and its bytes in another.
-inline constexpr uint16_t kProtocolVersion = 237;
+inline constexpr uint16_t kProtocolVersion = 238;
 
 // Default LAN port (overridable via multivoid.ini "net.port=").
 inline constexpr uint16_t kDefaultPort = 47621;
@@ -766,17 +766,19 @@ enum class ReliableKind : uint8_t {
     // PackTrashIntentPayload.
     PackTrashIntent = 144,
 
-    // Client to host: press the garage console's keyboard (call/send) or set its leave timer mode.
-    // Every peer's console holds its own drone as a level reference, so a
+    // Client to host: press one of the garage console's two faces -- the keyboard (call/send) or the
+    // leave timer (toggle). Every peer's console holds its own drone as a level reference, so a
     // client's press reached only its own suppressed mirror and the drone never moved; the client
     // refuses its own body at the script-body gate and asks here instead. The console is NOT named
     // here: it is baked into the level and no lane keys it, so it has neither a save key nor an
     // element id, and the host resolves the console the sender stands at from its own world
     // instead. Trust: that resolve IS the sender's own reach token, the console's lid must be open
     // on the host, and a sender's presses run no faster than a bounded rate from a bounded queue.
-    // The host runs the button's own verb, drone.triggerFly, whose body owns every condition, and
-    // the flight reaches the peers on the pose stream that already carries it. Late join: nothing
-    // to replay, since a press the host has not run changed nothing.
+    // The host runs the keyboard's own verb, drone.triggerFly, whose body owns every condition, and
+    // the flight reaches the peers on the pose stream that already carries it; the timer face flips
+    // the host drone's leaveAfter5min, which reaches the peers as DroneState bit 3, and its click
+    // plays on the presser's machine and on the host. Late join: nothing to replay, since a press
+    // the host has not run changed nothing, and the timer's value rides every DroneState.
     // DroneFlyIntentPayload.
     DroneFlyIntent = 145,
 
@@ -3113,7 +3115,7 @@ static_assert(sizeof(GrabRefusedPayload) == 8, "GrabRefusedPayload must be 8 byt
 // console carries no identity to name (see the kind's comment), so the host resolves the console
 // the sender stands at and re-tests the lid there.
 struct DroneFlyIntentPayload {
-    uint8_t verb;        // 0 = keyboard call/send, 1 = set the leave timer mode
+    uint8_t verb;        // 0 = the keyboard's call/send, 1 = the leave timer face (a toggle on the host)
     uint8_t _pad[7];     // 8-byte alignment; zero
 };
 static_assert(sizeof(DroneFlyIntentPayload) == 8, "DroneFlyIntentPayload must be 8 bytes");

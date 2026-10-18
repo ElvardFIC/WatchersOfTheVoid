@@ -81,7 +81,7 @@ struct HostRead {
     FVector  loc{};
     FRotator rot{};
     bool     active = false;
-    uint8_t  bits = 0;  // bit0 rotor dust, bit1 canTakeOff (arrived), bit2 hasSack
+    uint8_t  bits = 0;  // bit0 rotor dust, bit1 arrived, bit2 hasSack, bit3 leaveAfter5min
 };
 
 bool ReadHost(void* drone, HostRead& r) {

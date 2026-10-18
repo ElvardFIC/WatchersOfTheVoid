@@ -6,7 +6,7 @@
 //
 // The console's one action option dispatches on what the presser is looking at: its keyboard runs
 // drone.triggerFly(console), the call-or-send verb behind the "drone is active" line, while its
-// other face toggles the drone's leaveAfter5min. It holds its drone as a LEVEL REFERENCE, so every
+// other face toggles the drone's leaveAfter5min and plays its `audio_change` click. It holds its drone as a LEVEL REFERENCE, so every
 // peer's console points at that peer's own drone -- which is why a client's press reached only its
 // own suppressed mirror. The lane that carries a client's press to the host is
 // coop/interactables/drone_call_intent.
@@ -44,14 +44,20 @@ bool IsCursorOnLeaveTimer(void* console);
 bool IsCursorOnLid(void* console);
 
 // A part of the console by the name its graph gives the component: `button_call` (the keyboard),
-// `button_door` (the lid's latch) or `button_changeLeave` (the leave-timer face). Null on null, an
-// unresolved name or a dead component. For a dev drill's aim only: each call walks the class's
-// properties by name. Game thread.
+// `button_door` (the lid's latch), `button_changeLeave` (the leave-timer face) or `audio_change` (the
+// timer's click). Null on null, an unresolved name or a dead component. Each call walks the class's
+// properties by name, so it is for a drill's aim and a once-per-press call, never a tick. Game thread.
 void* PartOf(void* console, const wchar_t* name);
 
 // Run the keyboard's own verb: drone.triggerFly(console) on the drone this console references.
 // The drone's body owns every condition (a sack aboard, the radiotower, a sack on the pad), so
 // this asks nothing and answers only whether the call was dispatched. Game thread.
 bool TriggerFly(void* console);
+
+// The click the leave-timer face makes: the console's `audio_change` component, played from its start
+// (UAudioComponent::Play(0)), which is the second thing the face's press does after the toggle. The
+// toggle itself is the host drone's leaveAfter5min (ue_wrap/devices/drone). False when the component
+// does not resolve or the call fails. Game thread.
+bool PlayChangeCue(void* console);
 
 }  // namespace ue_wrap::drone_console
