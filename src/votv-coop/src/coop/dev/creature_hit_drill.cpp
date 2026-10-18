@@ -2,8 +2,7 @@
 
 // The steps, each ending on a line the peer prints; every wait is bounded to 60 s from when it can hold:
 //   1. HOST, once slot 1 is world-ready and its bracket closed: spawns the arm's creature 300 cm along the puppet's
-//      yaw. While the drill runs it refills its vitals each second and as a hit is delivered and, on the zombie arm,
-//      clears the stuck-count timer every second.
+//      yaw, then refills its vitals each second and per delivered hit and, on the zombie arm, clears the stuck timer.
 //   2. INBOUND. The client passes once three hits were applied and none came from the mirror's own copy (the
 //      fossilhound arm also passes its perception); the host once three were delivered. The client posts
 //      "inbound done".
@@ -14,6 +13,8 @@
 //      sees it face the creature. The host passes when its creature died of judged hits and posts "host done"; the
 //      client passes on the destroy.
 //   4. DONE: the client's after its outbound PASS and the host's line (the hound's FACING judged first), the host's.
+
+// The field mode (VOTVCOOP_CHD_NO_REFILL=1) stops after step 2: no refill, no swing, both peers hold.
 
 #include "coop/dev/creature_hit_drill.h"
 
@@ -223,9 +224,6 @@ void HostSpawn(const Arm& arm, void* puppet) {
     HostTo(HostStep::Inbound);
 }
 
-// While the drill runs: the host refills its vitals (and so the client's) each time a hit is delivered and once a
-// second besides, since the creature also bites the host, which stands 25 cm from the client's puppet, and the hits on
-// the host are not deliveries. The zombie's stuck count, which kills one that stands still to attack, is held off.
 // VOTVCOOP_CHD_NO_REFILL=1, the field mode: the shape of the field run whose client kept a black screen. No vitals
 // refill, and after the inbound step neither peer goes on: the client never swings, the host holds its creature (its
 // stuck timer still cleared), so the creature kills the client again and again and each revive logs death_revive's
@@ -235,11 +233,12 @@ bool FieldMode() {
     return on;
 }
 
+// While the drill runs: the host refills its vitals (and so the client's) each time a hit is delivered and once a
+// second besides, since the creature also bites the host, which stands 25 cm from the client's puppet, and the hits on
+// the host are not deliveries. The zombie's stuck count, which kills one that stands still to attack, is held off.
 void HostKeepAlive(const Arm& arm, long long now) {
-    // The field mode (FieldMode()) leaves the vitals alone, so the creature kills the client again and again.
-    static const bool noRefill = FieldMode();
     const uint32_t d = coop::player_damage::DeliveredCount();
-    if (!noRefill && (d > g_h.deliveredSeen || now - g_h.restoreMs >= kRestoreGapMs)) {
+    if (!FieldMode() && (d > g_h.deliveredSeen || now - g_h.restoreMs >= kRestoreGapMs)) {
         g_h.restoreMs = now;
         coop::dev::restore_vitals::Restore();
     }
@@ -278,8 +277,14 @@ void HostTick(coop::net::Session* s, const Arm& arm) {
         }
         return;
     }
-    case HostStep::Hold:
+    case HostStep::Hold: {
+        static bool logged = false;
+        if (!logged) {
+            logged = true;
+            UE_LOGI("[CHD] field mode role=host: holding the creature, no refill");
+        }
         return;
+    }
     case HostStep::AwaitClient: {
         const bool line = HasRow(kInboundDone);
         const std::wstring held = coop::hand_item::HeldItem(1);
@@ -339,7 +344,7 @@ void HostTick(coop::net::Session* s, const Arm& arm) {
 
 // ---- the client ---------------------------------------------------------------------------------
 enum class ClientStep { WaitJoin, FindMirror, Inbound, AwaitHandEmpty, AwaitNegative, AwaitAxe, Swing, PerceptionEnd,
-                        AwaitHostDone, Done };
+                        AwaitHostDone, Hold, Done };
 
 struct ClientState {
     ClientStep            step = ClientStep::WaitJoin;
@@ -431,7 +436,10 @@ void ClientInbound(const Arm& arm) {
         g_c.inboundPassed = true;
         Verdict(true, "inbound", false, "applied=%u mirror_hits=%u", a, m);
     }
-    if (g_c.inboundPassed && FieldMode()) return;  // the field mode: no swing, the creature keeps its kills
+    if (g_c.inboundPassed && FieldMode()) {  // the field mode: no swing, the creature keeps its kills; nothing is judged
+        ClientTo(ClientStep::Hold);
+        return;
+    }
     if (g_c.inboundPassed && (!arm.perViewer || g_c.perceived)) {
         Say(kInboundDone);
         if (!coop::dev::drill_hand::TakeIntoHandNow(L"None", nullptr)) {
@@ -558,6 +566,14 @@ void ClientTick(const Arm& arm) {
             ClientStop();
         }
         return;
+    case ClientStep::Hold: {
+        static bool logged = false;
+        if (!logged) {
+            logged = true;
+            UE_LOGI("[CHD] field mode role=client: no swing, the creature keeps its kills");
+        }
+        return;
+    }
     case ClientStep::Done:
         return;
     }
