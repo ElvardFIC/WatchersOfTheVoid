@@ -38,6 +38,7 @@ from `git shortlog -sne` and fold each person's identity variants together.
 | [**Shinobu2**](https://github.com/Shinobu2) | code | About twenty lanes in one request ([#45](https://github.com/VOTV-MP/Multivoid/pull/45)), adopted lane by lane: a newer save record replacing a parked one, a thrown container that kept its contents, damage and fire refused on a peer's puppet with its flame shown, the story-event creatures mirrored, an event fire crossing at the verb it ran in, a client's point sack paid by the host, the server repair's reward, the runtime ATV spawn, a joiner's daily task and nine more | 23 commits · unreleased |
 | [**Slintchen**](https://github.com/Slintchen) | code | The request that the mod's UI speak the player's language ([#41](https://github.com/VOTV-MP/Multivoid/pull/41)): its Chinese pack, in as authored, and its translator's guide and system-face merge for CJK, carried into the translation layer with Slintchen as co-author | 1 commit, 2 co-authored · unreleased |
 | [**archhn0madd**](https://github.com/archhn0madd) | code | Rejoin without a relaunch — the boot poll answered from the dying world | 1 commit |
+| [**AwazonDotCom**](https://github.com/AwazonDotCom) | code | A floppy row lost its line breaks on the way to a client, so the server-data row a host's dish writes, hash code included, did not parse there ([#53](https://github.com/VOTV-MP/Multivoid/pull/53)) | 1 commit · unreleased |
 | **Moddy** | review · design | The architecture and documentation review that became the UE4SS move; the public UE-Modding-Tools pointer that became the blueprint-CFG rung and the migration scanner (patternsleuth); and design published for [Relay](https://github.com/modestimpala/Relay), Moddy's Blueprint networking API for VOTV ([Thunderstore](https://thunderstore.io/c/voices-of-the-void/p/Moddy/Relay/)), in its README and the [README Blueprint](https://blueprintue.com/blueprint/g3s09x9c/) that README links: the watch surface on a Blueprint function, a watch that reads the parameters before the call and can cancel it, and one that only observes after it, which became the script-body gate; the readable join reason and stable diagnostic codes, which became the join screen's named steps and the end-reason codes; the list of cheap edge protections, of which two were missing here: a per-source limit on connections and a private access list on the identity key file; the rule columns that make an actor's own save record its spawn payload, the general form of what this project's prop save-data work was building case by case; the client-only `Quiesce` column, which made this project state its parking rule once and read every park against it; the one paragraph on container handling, which made it write down and measure its own container invariants; the note that a watch on a parent class misses a child's override, which sent us to audit every hook we install, which found three seams that had never installed and two verbs called on the wrong class; and the list of what a returning player's profile covers, which is the list this project's per-player profile now carries | b122 · b143 · 2026-09-02 · b153 · b157 · b160 · b161 · b167 |
 | **SentientYeet** | review | The substrate critique that re-opened the loader decision | b143 |
 | **Violet** | report | ~9 FPS for a friend joining on Linux — five separate defects behind it | b134 |
@@ -208,6 +209,13 @@ Community commits are adopted with their **original authorship preserved**
   un-strands a host trying to re-host after a death-flee.
   Contributed on the fork [Multifoid](https://github.com/archhn0madd/Multifoid);
   adopted as `engine_save.cpp`'s `SurveyBootWorld` with authorship preserved.
+
+### AwazonDotCom
+- **A floppy row's line breaks** ([#53](https://github.com/VOTV-MP/Multivoid/pull/53)): the floppy slot,
+  floppy box and laptop buffer lanes encoded their strings with the chat encoder, which drops control
+  characters, so the host's several-line server-data row reached a client on one line and the game could
+  not find its type. The commit, authored as DexxInTime, is kept as written; the text codec now owns the
+  three lanes' strings both ways, and the laptop and floppy drills carry rows with line breaks to prove it.
 
 ---
 
