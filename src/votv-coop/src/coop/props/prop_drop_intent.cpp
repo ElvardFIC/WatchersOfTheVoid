@@ -426,9 +426,10 @@ void Tick(coop::net::Session* session) {
         // An upgrade's birth that reaches here is a world birth too: one the take-out hands over dies inside the
         // pickup, so what comes is the one a full hand left at the player, and it falls where it is.
         const bool isUpgradeBirth = ue_wrap::serverbox::IsUpgradeClass(R::ClassOf(e.actor));
-        // A torn notebook page is spawned by ui_notebook's graph, not by a player drop verb.
-        // It still needs the host-authoritative keyed-prop birth route or it exists only for
-        // the client that tore it out.
+        // A torn notebook page is spawned by ui_notebook's graph, not by a player drop verb. It still
+        // needs the host-authoritative keyed-prop birth route or it exists only for the client that
+        // tore it out. Like a menu prop and unlike a freshBirth it is not born into a hand: it falls
+        // where it was torn, so it goes as an ordinary drop intent and its host copy is not put to sleep.
         const bool isNotebookSheet = ue_wrap::notebook::IsNotebookSheet(e.actor);
         const bool freshBirth = !parked &&
             (isDiscBirth ||
@@ -516,11 +517,13 @@ void Tick(coop::net::Session* session) {
         probe::NoteDrainExit(e.actor,
                              freshBirth     ? "authored-fresh-birth"
                              : e.playerSpawn ? "authored-player-spawn"
+                             : isNotebookSheet ? "authored-notebook-sheet"
                                              : "authored-drop-intent",
                              e.tries, key);
         UE_LOGI("[PROP-DROP] CLIENT authored %s key='%ls' cls='%ls' name='%ls' loc=(%.1f,%.1f,%.1f)%s",
                 freshBirth     ? "FRESH-BIRTH intent"
                 : e.playerSpawn ? "PLAYER-SPAWN intent"
+                : isNotebookSheet ? "NOTEBOOK-SHEET intent"
                                 : "drop intent",
                 key.c_str(), cls.c_str(),
                 WireToWide(p.propName.len, p.propName.data, sizeof(p.propName.data)).c_str(),
