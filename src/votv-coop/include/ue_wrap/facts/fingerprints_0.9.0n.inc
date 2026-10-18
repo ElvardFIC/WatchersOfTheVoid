@@ -216,6 +216,7 @@ inline constexpr RefFn kRefFns[] = {
     {L"maingamemode_c", L"spawnpropthroughgamemode", L"maingamemode_c.spawnpropthroughgamemode", 0x81c7f044842fbf06ull, 0x7259b28b02fc0c32ull},
     {L"maingamemode_c", L"spawnredsky", L"maingamemode_c.spawnredsky", 0x6a2d5d90ab51fa2dull, 0xde7d3630ddc779f8ull},
     {L"mainplayer_c", L"adddamage", L"mainplayer_c.adddamage", 0xe50b54b843ee9d53ull, 0x907fde98864c031aull},
+    {L"mainplayer_c", L"attack", L"mainplayer_c.attack", 0xfca17530188fe47eull, 0x85f1a4e9464951c2ull},
     {L"mainplayer_c", L"dropgrabobject", L"mainplayer_c.dropgrabobject", 0x6a2d5d90ab51fa2dull, 0x36febe04e6e99a34ull},
     {L"mainplayer_c", L"flashlight update", L"mainplayer_c.flashlight update", 0x6a2d5d90ab51fa2dull, 0xb67c0b6fc7b17bbbull},
     {L"mainplayer_c", L"grab__finishedfunc", L"mainplayer_c.grab__finishedfunc", 0x6a2d5d90ab51fa2dull, 0x2f530358e234041aull},
