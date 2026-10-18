@@ -1,6 +1,6 @@
 // coop/dev/laptop_tab_drill_steps.h -- how a laptop_tab_drill peer holds the PC or reads the tab: the holder walks to
-// the laptop's Box, enters, and switches tabs a tick; the reader judges the last tab a holder reached. The arms
-// (laptop_tab_drill.cpp) choose who does which and when. Private to coop/dev; game thread only.
+// the laptop's Box, aims at its boxScreen, enters, and switches tabs a tick; the reader judges the last tab a holder
+// reached. The arms (laptop_tab_drill.cpp) choose who does which and when. Private to coop/dev; game thread only.
 
 #pragma once
 
@@ -58,7 +58,7 @@ ReadState ReaderStep(char* why, size_t whySize);
 void ReaderVerdict(const char* passWhat);
 void ReaderReset();
 
-// ---- the holder: walks to the PC, enters it, and switches tabs ----------------------------------------------
+// ---- the holder: walks to the PC, aims at boxScreen, enters it, and switches tabs -----------------------------------
 void HolderStart(const int* seq, size_t n, int entryTab);
 bool HolderIdle();
 bool HolderDone();

@@ -2,6 +2,7 @@
 
 #include "laptop_tab_drill_steps.h"  // co-located private header (src tree, not include/)
 
+#include "coop/dev/director/aim_fan.h"
 #include "coop/dev/director/director.h"
 #include "coop/dev/director/routes.h"
 #include "coop/interactables/device_occupancy.h"
@@ -20,7 +21,6 @@
 #include "ue_wrap/engine/engine.h"  // TryGetActorLocation, GetActorVelocity
 #include "ue_wrap/engine/engine_component.h"  // GetComponentLocation
 #include "ue_wrap/engine/engine_mainplayer.h"  // ReadMainPlayerHitActor
-#include "ue_wrap/engine/engine_pawn.h"  // GetController, SetControlRotation, GetCameraLocation
 #include "ue_wrap/engine/umg_build.h"  // IndexOfChild: where the sub-game page sits in the switcher
 
 #include <windows.h>
@@ -57,13 +57,6 @@ constexpr int      kFirstWalkDeadlineS = 400;
 constexpr int      kNextWalkDeadlineS  = 120;
 constexpr int      kMaxSeq        = 3;
 constexpr uint64_t kStatesBound   = 20;  // states received without the final tab: the viewer's failure, by count
-// The aim before the enter: a fan of headings about the laptop's boxScreen, each held kAimTicksPerPose ticks so the
-// player's own trace and the laptop's lookAt run on it before it is judged.
-constexpr float    kAimYaw[]      = {0.f, -6.f, 6.f, -12.f, 12.f};
-constexpr float    kAimPitch[]    = {0.f, -8.f, 8.f, -16.f, 16.f};
-constexpr int      kAimYawN       = static_cast<int>(sizeof kAimYaw / sizeof kAimYaw[0]);
-constexpr int      kAimPoses      = kAimYawN * static_cast<int>(sizeof kAimPitch / sizeof kAimPitch[0]);
-constexpr int      kAimTicksPerPose = 6;
 
 // What the arm judges against, taken at its start: the module's counts only grow, and a seed or a refusal that came
 // before the judging peer got to its first step must still count as before the arm.
@@ -100,16 +93,21 @@ struct Holder {
     std::vector<FVector> ring;
     size_t   stand = 0;
     std::shared_ptr<D::BackgroundWalk> walk;
-    int      aimPose = 0;
-    int      aimTick = 0;
+    // The aim before the enter, turned by the director's fan onto boxScreen; the box and the two flag offsets are
+    // resolved once, at StartAim.
+    D::AimFan aim;
+    void*    boxScreen = nullptr;
+    int32_t  offFloppy = -1, offZip = -1;
 };
 Holder g_h;
 uint64_t g_heldReceived = 0;  // the arrivals at the confirmed claim: what came after was sent while this peer held it
 
 void HGo(HStep s) { g_h.step = s; g_h.stepMs = NowMs(); }
 bool HExpired(uint64_t bound) { return NowMs() - g_h.stepMs > bound; }
+void ResolveAimTargets();  // below, beside the readers it shares
 void StartAim() {
-    g_h.aimPose = g_h.aimTick = 0;
+    g_h.aim = D::AimFan{};
+    ResolveAimTargets();
     HGo(HStep::Aim);
 }
 
@@ -189,17 +187,15 @@ float DistanceBetween(void* a, void* b) {
 // The laptop's own aim flags as its lookAt last left them. lookAt sets use_floppybox and use_zipBox from the component
 // the player's trace hit, and action 4 checks them first: either one set ejects the floppy and returns without a hint,
 // so a player's enter is pressed while the aim is on the laptop off both hitboxes.
+// The offsets are the holder's, resolved at StartAim.
 struct AimFlags { bool read = false, floppy = false, zip = false; };
 AimFlags ReadAimFlags(void* laptop) {
     AimFlags a;
-    void* const cls = R::ClassOf(laptop);
-    const int32_t fOff = R::FindPropertyOffset(cls, L"use_floppybox");
-    const int32_t zOff = R::FindPropertyOffset(cls, L"use_zipBox");
-    if (fOff < 0 || zOff < 0) return a;
+    if (!laptop || g_h.offFloppy < 0 || g_h.offZip < 0) return a;
     auto* const base = reinterpret_cast<uint8_t*>(laptop);
     a.read = true;
-    a.floppy = *reinterpret_cast<bool*>(base + fOff);
-    a.zip = *reinterpret_cast<bool*>(base + zOff);
+    a.floppy = *reinterpret_cast<bool*>(base + g_h.offFloppy);
+    a.zip = *reinterpret_cast<bool*>(base + g_h.offZip);
     return a;
 }
 
@@ -210,6 +206,13 @@ void* BoxScreenOf(void* laptop) {
     if (off < 0) return nullptr;
     void* screen = *reinterpret_cast<void**>(reinterpret_cast<uint8_t*>(laptop) + off);
     return (screen && R::IsLive(screen)) ? screen : nullptr;
+}
+
+void ResolveAimTargets() {
+    void* const cls = R::ClassOf(g_h.laptop);
+    g_h.offFloppy = R::FindPropertyOffset(cls, L"use_floppybox");
+    g_h.offZip = R::FindPropertyOffset(cls, L"use_zipBox");
+    g_h.boxScreen = BoxScreenOf(g_h.laptop);
 }
 
 // The game's enter conditions as this peer reads them, for the claim that was never confirmed. actionOptionIndex returns
@@ -410,39 +413,30 @@ void HolderTick(coop::net::Session* s) {
         return;
     }
     case HStep::Aim: {
-        // Judged from the second tick of a pose: the first is the one the camera turned on. Ready is the game's own offer
-        // of the enter: the trace on the laptop's boxScreen, and lookAt left neither hitbox flag set.
-        const AimFlags fl = ReadAimFlags(g_h.laptop);
-        void* const boxScreen = BoxScreenOf(g_h.laptop);
-        void* const hitActor = ue_wrap::engine::ReadMainPlayerHitActor(me);
-        void* const hitComp = hitActor ? ue_wrap::engine::ReadMainPlayerHitComponent(me) : nullptr;
-        if (g_h.aimTick > 0 && fl.read && boxScreen && hitActor == g_h.laptop && hitComp == boxScreen && !fl.floppy &&
-            !fl.zip) {
-            UE_LOGI("laptop_tab_drill: aim on the laptop's boxScreen, neither hitbox flag set, at heading %d",
-                    g_h.aimPose);
-            HGo(HStep::Enter);
+        if (!R::IsLive(g_h.laptop) || !g_h.boxScreen || !R::IsLive(g_h.boxScreen)) {
+            Abandon("the laptop or its boxScreen went away, or never resolved, while the holder aimed");
             return;
         }
-        if (g_h.aimTick == 0 || g_h.aimTick >= kAimTicksPerPose) {
-            if (g_h.aimPose >= kAimPoses) {
-                UE_LOGW("laptop_tab_drill: the last heading's trace hit '%ls' component '%ls' (floppybox=%d zipBox=%d)",
-                        hitActor && R::IsLive(hitActor) ? R::ClassNameOf(hitActor).c_str() : L"none",
-                        hitComp && R::IsLive(hitComp) ? R::ToString(R::NameOf(hitComp)).c_str() : L"none",
-                        fl.floppy ? 1 : 0, fl.zip ? 1 : 0);
-                Abandon("no heading put the aim on the laptop's boxScreen with neither hitbox flag set");
-                return;
-            }
-            void* const c = ue_wrap::engine::GetController(me);
-            if (!c || !boxScreen) { Abandon("the laptop's boxScreen or the player's controller did not resolve"); return; }
-            ue_wrap::FRotator r = D::LookAt(ue_wrap::engine::GetCameraLocation(),
-                                            ue_wrap::engine::GetComponentLocation(boxScreen));
-            r.Pitch += kAimPitch[g_h.aimPose / kAimYawN];
-            r.Yaw += kAimYaw[g_h.aimPose % kAimYawN];
-            ue_wrap::engine::SetControlRotation(c, r);
-            ++g_h.aimPose;
-            g_h.aimTick = 0;
+        // Ready is the game's own offer of the enter: the trace on the laptop's boxScreen, and lookAt left neither
+        // hitbox flag set.
+        const AimFlags fl = ReadAimFlags(g_h.laptop);
+        void* const hitActor = ue_wrap::engine::ReadMainPlayerHitActor(me);
+        void* const hitComp = hitActor ? ue_wrap::engine::ReadMainPlayerHitComponent(me) : nullptr;
+        const bool offered = fl.read && hitActor == g_h.laptop && hitComp == g_h.boxScreen && !fl.floppy && !fl.zip;
+        switch (g_h.aim.Tick(me, ue_wrap::engine::GetComponentLocation(g_h.boxScreen), offered)) {
+        case D::AimFan::State::Working: return;
+        case D::AimFan::State::Failed:
+            UE_LOGW("laptop_tab_drill: the last pose's trace hit '%ls' component '%ls' (floppybox=%d zipBox=%d)",
+                    hitActor && R::IsLive(hitActor) ? R::ClassNameOf(hitActor).c_str() : L"none",
+                    hitComp && R::IsLive(hitComp) ? R::ToString(R::NameOf(hitComp)).c_str() : L"none",
+                    fl.floppy ? 1 : 0, fl.zip ? 1 : 0);
+            Abandon("no pose of the fan put the aim on the laptop's boxScreen with neither hitbox flag set");
+            return;
+        case D::AimFan::State::Aimed: break;
         }
-        ++g_h.aimTick;
+        UE_LOGI("laptop_tab_drill: aim on the laptop's boxScreen, neither hitbox flag set, at fan pose %d",
+                g_h.aim.Poses());
+        HGo(HStep::Enter);
         return;
     }
     case HStep::Enter:
