@@ -470,6 +470,7 @@ void TakeProgress(const coop::net::DeskPingVerdictPayload& p, bool active) {
     g_mirrorSlot = active ? static_cast<int>(p.pinger) : -1;
     g_mirrorSeq = p.seq;
     g_mirrorActive = active;
+    if (!active) ++g_counts.mirrorEnded;
     DP::WriteProgress(CD::Instance(),
                       active ? DP::Progress{p.progressStage, p.progressOuter, p.progressInner, p.progressPing}
                              : DP::Progress{});

@@ -45,6 +45,7 @@ struct Counts {
     uint32_t caught;      // HOST: client verdicts that caught
     uint32_t busy;        // HOST: intents refused while its desk was pinging or held another's verdict
     uint32_t overBudget;  // HOST: intents dropped unanswered past their sender's budget
+    uint32_t mirrorEnded; // EVERY PEER: scan endings taken from another peer's ping (the pinger's own, or its leaving)
 };
 Counts CountsNow();
 

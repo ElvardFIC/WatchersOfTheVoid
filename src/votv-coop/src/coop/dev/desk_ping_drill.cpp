@@ -213,56 +213,92 @@ uint64_t g_hostAttributed = 0;
 int32_t  g_hostFound = 0;
 CP::DishAim g_missAim;
 
-// What the host's own desk shows during a client's ping: the per-ping maxima of the machine's fields and of the two
-// line materials' alpha, and a sample line while a value changes. A measurement, not a verdict.
+// ---- the observer: what a peer that does not run the ping sees of it -------------------------------------------------
+// The host reads its own desk while a client pings, and so does a second client. The scan is seen when the first
+// edge line's alpha passes kAlphaSeen while the stage is 0, and the first inner line's while the stage is 1, with
+// coord_isPing clear (the mirror's values, not a machine's own: the host's primed verdict sets the flag). It ends when
+// the scan's ending was taken from the pinger and all four values read 0.
+constexpr float kAlphaSeen = 0.5f;
+constexpr uint64_t kObserverLogMs = 500;
+constexpr uint64_t kObserverEndBoundMs = 15000;   // the ending after the host's verdict
+constexpr uint64_t kObserverIdleBoundMs = 120000;  // a held desk, and no scan reaching the second client
+
 struct ObserverMax {
     float outer = 0.f, inner = 0.f, ping = 0.f, alphaEdges = 0.f, alphaInner = 0.f;
     bool isPingEver = false;
+    bool edgesSeen = false;  // alphaEdges >= kAlphaSeen at stage 0, isPing clear
+    bool innerSeen = false;  // alphaInner >= kAlphaSeen at stage 1, isPing clear
 };
 ObserverMax g_obsMax;
-DG::ObserverView g_obsLast;
+DG::ObserverView g_obsLast;   // the last view that was logged
+DG::ObserverView g_obsView;   // the latest view read
+bool     g_obsViewValid = false;
 bool     g_obsLastValid = false;
 bool     g_obsReadFailLogged = false;
 uint64_t g_obsLogMs = 0;
-constexpr uint64_t kObserverLogMs = 500;
+uint64_t g_obsWaitMs = 0;  // the host waits for the scan's ending since this
 
 void ObserverReset() {
     g_obsMax = ObserverMax{};
     g_obsLastValid = false;
     g_obsLogMs = 0;
+    g_obsWaitMs = 0;
 }
 
-void ObserverSample(uint64_t now) {
+void ObserverSample(uint64_t now, const char* who) {
     DG::ObserverView v;
-    if (!DG::ReadObserverView(CD::Instance(), v)) {
-        if (!g_obsReadFailLogged) UE_LOGW("[DESK-PING-DRILL] host observer view does not read");
+    g_obsViewValid = DG::ReadObserverView(CD::Instance(), v);
+    if (!g_obsViewValid) {
+        if (!g_obsReadFailLogged) UE_LOGW("[DESK-PING-DRILL] %s observer view does not read", who);
         g_obsReadFailLogged = true;
         return;
     }
+    g_obsView = v;
     g_obsMax.outer = std::fmax(g_obsMax.outer, v.outer);
     g_obsMax.inner = std::fmax(g_obsMax.inner, v.inner);
     g_obsMax.ping = std::fmax(g_obsMax.ping, v.ping);
     g_obsMax.alphaEdges = std::fmax(g_obsMax.alphaEdges, v.alphaEdges);
     g_obsMax.alphaInner = std::fmax(g_obsMax.alphaInner, v.alphaInner);
     g_obsMax.isPingEver = g_obsMax.isPingEver || v.isPing;
+    if (!v.isPing && v.stage == 0 && v.alphaEdges >= kAlphaSeen) g_obsMax.edgesSeen = true;
+    if (!v.isPing && v.stage == 1 && v.alphaInner >= kAlphaSeen) g_obsMax.innerSeen = true;
     const bool changed = !g_obsLastValid || v.isPing != g_obsLast.isPing || v.stage != g_obsLast.stage ||
                          v.outer != g_obsLast.outer || v.inner != g_obsLast.inner || v.ping != g_obsLast.ping ||
                          v.alphaEdges != g_obsLast.alphaEdges || v.alphaInner != g_obsLast.alphaInner;
     if (!changed || (g_obsLastValid && now - g_obsLogMs < kObserverLogMs)) return;
-    UE_LOGI("[DESK-PING-DRILL] host observer sample: isPing %d stage %d outer %.2f inner %.2f ping %.2f alphaEdges "
+    UE_LOGI("[DESK-PING-DRILL] %s observer sample: isPing %d stage %d outer %.2f inner %.2f ping %.2f alphaEdges "
             "%.2f alphaInner %.2f",
-            v.isPing ? 1 : 0, v.stage, v.outer, v.inner, v.ping, v.alphaEdges, v.alphaInner);
+            who, v.isPing ? 1 : 0, v.stage, v.outer, v.inner, v.ping, v.alphaEdges, v.alphaInner);
     g_obsLast = v;
     g_obsLastValid = true;
     g_obsLogMs = now;
 }
 
-std::string ObserverMaxText() {
-    char buf[160];
+// The scan's ending was taken since `endedBefore` and the desk reads idle.
+bool ObserverEnded(uint32_t endedBefore) {
+    const DG::ObserverView& v = g_obsView;
+    return PS::CountsNow().mirrorEnded > endedBefore && g_obsViewValid && !v.isPing && v.stage == 0 &&
+           v.outer == 0.f && v.inner == 0.f && v.ping == 0.f;
+}
+
+bool ObserverPassed(uint32_t endedBefore) {
+    return g_obsMax.edgesSeen && g_obsMax.innerSeen && ObserverEnded(endedBefore);
+}
+
+// The host's verdict rolled: its line waits for the scan's ending, to a bound.
+bool ObserverSettled(uint64_t now, uint32_t endedBefore) {
+    if (!g_obsWaitMs) g_obsWaitMs = now;
+    return ObserverEnded(endedBefore) || now - g_obsWaitMs > kObserverEndBoundMs;
+}
+
+std::string ObserverMaxText(uint32_t endedBefore) {
+    char buf[240];
     std::snprintf(buf, sizeof(buf),
-                  "observer max: outer %.2f inner %.2f ping %.2f alphaEdges %.2f alphaInner %.2f isPing-ever %d",
+                  "observer max: outer %.2f inner %.2f ping %.2f alphaEdges %.2f alphaInner %.2f isPing-ever %d; "
+                  "observer %s (edges at stage 0 %d, inner at stage 1 %d, ended %d)",
                   g_obsMax.outer, g_obsMax.inner, g_obsMax.ping, g_obsMax.alphaEdges, g_obsMax.alphaInner,
-                  g_obsMax.isPingEver ? 1 : 0);
+                  g_obsMax.isPingEver ? 1 : 0, ObserverPassed(endedBefore) ? "PASS" : "FAIL",
+                  g_obsMax.edgesSeen ? 1 : 0, g_obsMax.innerSeen ? 1 : 0, ObserverEnded(endedBefore) ? 1 : 0);
     return buf;
 }
 
@@ -282,7 +318,7 @@ void HostAbandon(const char* why) {
 void HostTick(coop::net::Session* s) {
     const uint64_t now = ::GetTickCount64();
     const PS::Counts c = PS::CountsNow();
-    if (g_host == HStep::Miss || g_host == HStep::Catch) ObserverSample(now);
+    if (g_host == HStep::Miss || g_host == HStep::Catch) ObserverSample(now, "host");
     switch (g_host) {
     case HStep::WaitClient:
         if (!s->AnyWorldReadyPeer() || !CensusLive()) {
@@ -296,13 +332,16 @@ void HostTick(coop::net::Session* s) {
         return;
     case HStep::Miss: {
         if (c.rolled == g_hostCounts.rolled) return;  // the client's legs carry their own bounds
+        // The aim stays the miss's until the client's next commit, which follows this ping's ending.
+        if (!g_obsWaitMs) CP::ReadDishAim(g_missAim);
+        if (!ObserverSettled(now, g_hostCounts.mirrorEnded)) return;
         const bool ok = c.primed == g_hostCounts.primed + 1 && c.caught == g_hostCounts.caught &&
-                        g_census.ran == g_hostBefore.ran + 1;
+                        g_census.ran == g_hostBefore.ran + 1 && ObserverPassed(g_hostCounts.mirrorEnded);
         g_hostPass = g_hostPass && ok;
         UE_LOGI("[DESK-PING-DRILL] host miss %s: primed %u, rolled %u, caught %u; its gatherSignal ran %u; %s",
                 ok ? "PASS" : "FAIL", c.primed - g_hostCounts.primed, c.rolled - g_hostCounts.rolled,
-                c.caught - g_hostCounts.caught, g_census.ran - g_hostBefore.ran, ObserverMaxText().c_str());
-        CP::ReadDishAim(g_missAim);
+                c.caught - g_hostCounts.caught, g_census.ran - g_hostBefore.ran,
+                ObserverMaxText(g_hostCounts.mirrorEnded).c_str());
         HostGo(HStep::Fixture);
         return;
     }
@@ -341,19 +380,21 @@ void HostTick(coop::net::Session* s) {
         if (!g_rolledMs) g_rolledMs = now;
         const uint64_t attributed = coop::signal_catch_sync::AttributedCatchesRelayed() - g_hostAttributed;
         if ((c.busy == g_hostCounts.busy || attributed == 0) && now - g_rolledMs <= kRelayBoundMs) return;
+        if (!ObserverSettled(now, g_hostCounts.mirrorEnded)) return;
         int32_t found = 0;
         const bool foundRead = ue_wrap::profile::ReadSignalsFound(found);
         const uint64_t own = coop::signal_catch_sync::LocalCatchesRelayed() - g_hostCatches;
         const bool ok = c.primed == g_hostCounts.primed + 1 && c.caught == g_hostCounts.caught + 1 &&
                         g_census.ran == g_hostBefore.ran + 1 && foundRead && found == g_hostFound &&
-                        attributed == 1 && own == 0 && c.busy == g_hostCounts.busy + 1;
+                        attributed == 1 && own == 0 && c.busy == g_hostCounts.busy + 1 &&
+                        ObserverPassed(g_hostCounts.mirrorEnded);
         g_hostPass = g_hostPass && ok;
         UE_LOGI("[DESK-PING-DRILL] host catch %s: primed %u, rolled %u, caught %u; its gatherSignal ran %u; its own "
                 "finds %d -> %d; catches relayed as the client's %llu, as its own %llu; busy refusals %u; %s",
                 ok ? "PASS" : "FAIL", c.primed - g_hostCounts.primed, c.rolled - g_hostCounts.rolled,
                 c.caught - g_hostCounts.caught, g_census.ran - g_hostBefore.ran, g_hostFound, found,
                 static_cast<unsigned long long>(attributed), static_cast<unsigned long long>(own),
-                c.busy - g_hostCounts.busy, ObserverMaxText().c_str());
+                c.busy - g_hostCounts.busy, ObserverMaxText(g_hostCounts.mirrorEnded).c_str());
         UE_LOGI("[DESK-PING-DRILL] host DONE %s", g_hostPass ? "PASS" : "FAIL");
         g_host = HStep::Done;
         return;
@@ -584,6 +625,74 @@ void ClientTick(coop::net::Session* s) {
     }
 }
 
+// ---- the second client ----------------------------------------------------------------------------------------------
+// It pings nothing. It reads the first client's two scans on its own desk, which reach it only through the host's relay
+// (the pinger named in each packet), and says whether each one was seen and ended.
+
+constexpr int kObservedScans = 2;  // the miss and the catch
+int      g_ocScans = 0;
+bool     g_ocSaid = false;
+bool     g_ocOpen = false;
+bool     g_ocDone = false;
+bool     g_ocPass = true;
+uint64_t g_ocOpenMs = 0;
+uint64_t g_ocIdleMs = 0;
+uint32_t g_ocEnded = 0;  // scan endings taken when the last scan closed
+
+void ObserverClientClose(const char* why) {
+    const bool ok = ObserverPassed(g_ocEnded);
+    g_ocPass = g_ocPass && ok;
+    UE_LOGI("[DESK-PING-DRILL] observer %s: scan %d%s%s; %s", ok ? "PASS" : "FAIL", g_ocScans + 1, *why ? ", " : "", why,
+            ObserverMaxText(g_ocEnded).c_str());
+    ++g_ocScans;
+    g_ocOpen = false;
+    g_ocEnded = PS::CountsNow().mirrorEnded;
+    ObserverReset();
+    if (g_ocScans >= kObservedScans) {
+        UE_LOGI("[DESK-PING-DRILL] observer DONE %s", g_ocPass ? "PASS" : "FAIL");
+        g_ocDone = true;
+    }
+}
+
+// True for a client that is not the first: the observer, which this tick served.
+bool ObserverClientTick() {
+    const uint8_t mine = coop::players::Registry::Get().LocalPeerId();
+    if (mine <= 1) return false;
+    if (g_ocDone || !coop::net_pump::HasAnnouncedWorldReady()) return true;
+    const uint64_t now = ::GetTickCount64();
+    if (!g_ocSaid) {
+        g_ocSaid = true;
+        g_ocEnded = PS::CountsNow().mirrorEnded;
+        g_ocIdleMs = now;
+        UE_LOGI("[DESK-PING-DRILL] client in slot %u: an observer, it pings nothing and reads the first client's scans",
+                mine);
+    }
+    ObserverSample(now, "client");
+    if (!g_ocOpen) {
+        const DG::ObserverView& v = g_obsView;
+        if (g_obsViewValid && !v.isPing && (v.stage > 0 || v.outer > 0.f)) {
+            g_ocOpen = true;
+            g_ocOpenMs = now;
+            return true;
+        }
+        // The idle bound runs while another peer holds the desk and no scan has reached this one.
+        const uint8_t holder = coop::device_occupancy::HolderOf(L"desk");
+        if (holder == 0xFF || holder == mine) {
+            g_ocIdleMs = now;
+        } else if (now - g_ocIdleMs > kObserverIdleBoundMs) {
+            UE_LOGI("[DESK-PING-DRILL] observer FAIL: slot %u holds the desk and no scan reached this client", holder);
+            g_ocPass = false;
+            g_ocDone = true;
+            UE_LOGI("[DESK-PING-DRILL] observer DONE FAIL");
+        }
+        return true;
+    }
+    if (ObserverEnded(g_ocEnded))
+        ObserverClientClose("");
+    else if (now - g_ocOpenMs > kVerdictBoundMs)
+        ObserverClientClose("its ending never came");
+    return true;
+}
 }  // namespace
 
 void Tick(coop::net::Session* session) {
@@ -592,7 +701,7 @@ void Tick(coop::net::Session* session) {
         HostTick(session);
         return;
     }
-    if (session->connected()) ClientTick(session);
+    if (session->connected() && !ObserverClientTick()) ClientTick(session);
 }
 
 void OnDisconnect() {
@@ -609,6 +718,13 @@ void OnDisconnect() {
     g_ring.clear();
     g_stand = 0;
     g_ringBuilt = false;
+    g_ocScans = 0;
+    g_ocSaid = false;
+    g_ocOpen = false;
+    g_ocDone = false;
+    g_ocPass = true;
+    g_ocIdleMs = 0;
+    ObserverReset();
 }
 
 }  // namespace coop::dev::desk_ping_drill

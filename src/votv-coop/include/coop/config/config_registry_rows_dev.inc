@@ -640,7 +640,10 @@ CFG_STRING(desk_ping_drill, "desk_ping_drill", "dev", "", "VOTVCOOP_DESK_PING_DR
     "sky), catch (the host's fixture signal under the triangle), busy (a second verdict right behind the catch's). "
     "The client says its gatherSignal was entered and never ran, the host's failure line reached its log once, the "
     "catch is on its profile and desk, and the busy verdict came back refused; the host that it rolled two, caught "
-    "the second without counting it as its own, relayed it as the client's, and refused the third. Lines tagged "
+    "the second without counting it as its own, relayed it as the client's, and refused the third. Every peer that "
+    "does not ping (the host, and a second client under --observer) also reads its own desk: the first edge line's "
+    "alpha must pass 0.5 at stage 0 and the first inner line's at stage 1 with coord_isPing clear, and all four "
+    "values must read 0 after the scan's ending; a second client says observer PASS|FAIL and observer DONE. Lines tagged "
     "[DESK-PING-DRILL]; 'client DONE PASS|FAIL' ends it; ABANDONED is a step that could not run.")
 CFG_STRING(download_drill, "download_drill", "dev", "", "VOTVCOOP_DOWNLOAD_DRILL", false,
     "Drill (BOTH peers): the host arms and resets its download five times; the client must replay each once with the "
