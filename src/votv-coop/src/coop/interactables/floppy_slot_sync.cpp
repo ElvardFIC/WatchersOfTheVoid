@@ -684,6 +684,8 @@ void OnChunk(const coop::net::BlobChunkPayload& p, uint8_t senderSlot) {
         return;
     }
     // Read the whole message before applying any of it: a device that does not parse refuses the canonical.
+    // MTA's server does the same with a packet whose Read fails
+    // (reference/mtasa-blue/Server/mods/deathmatch/logic/CPacketTranslator.cpp).
     std::vector<std::pair<uint8_t, Slot>> entries;
     entries.reserve(count);
     for (uint16_t k = 0; k < count && r.ok; ++k) {
