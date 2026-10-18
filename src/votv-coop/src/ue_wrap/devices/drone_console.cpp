@@ -95,4 +95,8 @@ bool PlayChangeCue(void* console) {
     return ue_wrap::engine::PlayAudioComponent(PartOf(console, L"audio_change"));
 }
 
+bool IsChangeCuePlaying(void* console) {
+    return ue_wrap::engine::IsAudioComponentPlaying(PartOf(console, L"audio_change"));
+}
+
 }  // namespace ue_wrap::drone_console

@@ -53,6 +53,7 @@ struct DroneMirror {
     uint8_t lastStateBits = 0;    // last applied FX bits (dust / canTakeOff) -- edge detection
     bool    haveStateBits = false;
     int8_t  hostActive = -1;      // the host's last word on Active: 1, 0, or -1 before any
+    bool    leaveWriteWarned = false;  // the leave timer's failed write, said once a session
     // The newest word that arrived before this peer's drone resolved, waiting whole -- the pose and the
     // gate fields with it -- for the first tick that finds the drone.
     bool    hasPending = false;
@@ -185,7 +186,10 @@ void ApplyState(void* drone, const coop::net::DroneStatePayload& payload) {
     // Interaction gate: write canTakeOff (THE gate) + hasSack (option prerequisite) onto the mirror so
     // a parked drone is interactable instead of "in motion" (the suppressed tick never sets them).
     D::WriteGateFields(drone, canTakeOff, hasSack);
-    D::WriteLeaveAfter5min(drone, leaveAfter5min);
+    if (!D::WriteLeaveAfter5min(drone, leaveAfter5min) && !g_m.leaveWriteWarned) {
+        g_m.leaveWriteWarned = true;
+        UE_LOGW("drone_sync: the host's leave timer could not be written onto this copy's drone");
+    }
     if (hasSack)
         D::RepointContainer(drone);  // cargo aboard -> point the mirror at the prop-mirrored container.
                                      // EVERY hasSack packet (not just the rising edge): the container

@@ -99,4 +99,8 @@ bool DestroyComponent(void* component, void* contextObject);
 // live or the call does not dispatch. Game thread.
 bool PlayAudioComponent(void* audio);
 
+// UAudioComponent::IsPlaying: whether the component's sound is playing now. False when `audio` is not
+// live, the call does not dispatch, or nothing plays. Game thread.
+bool IsAudioComponentPlaying(void* audio);
+
 }  // namespace ue_wrap::engine

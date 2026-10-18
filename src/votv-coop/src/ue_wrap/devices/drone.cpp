@@ -167,6 +167,8 @@ bool EnsureResolved() {
     g_cls = cls;
     g_activeOff = activeOff;
     g_leaveAfter5minOff = R::FindPropertyOffset(cls, L"leaveAfter5min");
+    if (g_leaveAfter5minOff < 0)
+        UE_LOGW("drone: reflected leaveAfter5min offset not found -- the leave timer does not sync");
     g_resolved.store(true, std::memory_order_release);
     UE_LOGI("drone: resolved drone_C=%p Active@0x%04X", cls, activeOff);
     return true;

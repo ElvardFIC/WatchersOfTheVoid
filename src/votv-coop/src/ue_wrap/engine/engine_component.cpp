@@ -387,4 +387,11 @@ bool PlayAudioComponent(void* audio) {
     return fn && f.valid() && f.Set<float>(L"StartTime", 0.f) && Call(audio, f);
 }
 
+bool IsAudioComponentPlaying(void* audio) {
+    if (!audio || !R::IsLive(audio)) return false;
+    void* fn = R::FindDispatchFunctionCached(R::ClassOf(audio), L"IsPlaying");
+    ParamFrame f(fn);
+    return fn && f.valid() && Call(audio, f) && f.Get<bool>(L"ReturnValue");
+}
+
 }  // namespace ue_wrap::engine

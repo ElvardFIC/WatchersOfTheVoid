@@ -59,6 +59,7 @@ constexpr uint64_t kParkBoundMs     = 240000;  // a delivery in flight at the lo
 constexpr uint64_t kSettleBoundMs   = 30000;
 constexpr uint64_t kLidBoundMs      = 10000;
 constexpr uint64_t kTimerBoundMs    = 10000;  // the host's stream carries a flipped timer within a send interval
+constexpr uint64_t kClickBoundMs    = 2000;   // the click is posted a task after the press and must read playing by then
 constexpr uint64_t kOutcomeBoundMs  = 30000;
 
 // ---- the client's legs -----------------------------------------------------------------------
@@ -73,6 +74,7 @@ int      g_presses = 0;          // keyboard presses that went to the host
 int      g_timerPress = 0;       // timer-face presses that went to the host: 1 = the flip, 2 = the flip back
 bool     g_timerBase = false;    // the mirror's leaveAfter5min before the first timer press
 bool     g_timerWant = false;    // the value the host's stream must bring after the press in flight
+bool     g_timerClick = false;   // the timer's click read as playing on this copy since the press in flight
 bool     g_sackAtPress = false;  // a sack lay in this world when the last press went
 bool     g_saidInFlight = false;
 uint64_t g_armMs = 0;            // when the legs first could start: the park wait's bound runs from here
@@ -277,6 +279,7 @@ void ClientTick(void* player) {
             ++g_timerPress;
             UE_LOGI("[DRONE-CALL-DRILL] client timer press #%d went to the host (this copy reads %s, the host's "
                     "stream must bring %s)", g_timerPress, LeaveName(cur), LeaveName(g_timerWant));
+            g_timerClick = false;
             Go(Step::TimerWait);
             return;
         }
@@ -313,10 +316,25 @@ void ClientTick(void* player) {
         return;
     }
     case Step::TimerWait: {
+        // The click is the console's own audio_change on this copy: the lane cancels the body that would
+        // have played it and plays it from a task of its own, so it is read every tick until it sounds.
+        if (!g_timerClick) {
+            void* c = g_console.Get();
+            if (c && D::IsChangeCuePlaying(c)) {
+                g_timerClick = true;
+                UE_LOGI("[DRONE-CALL-DRILL] client: the timer's click is playing on this copy (press #%d)",
+                        g_timerPress);
+            } else if (now - g_stepMs > kClickBoundMs) {
+                UE_LOGW("[DRONE-CALL-DRILL] FAIL on the client: the timer's click did not play on this copy "
+                        "after timer press #%d", g_timerPress);
+                g_step = Step::Done;
+                return;
+            }
+        }
         void* drone = DR::Find();
         bool value = false;
         if (!drone || !DR::ReadLeaveAfter5min(drone, value)) { Abandon("this copy's leave timer is unread"); return; }
-        if (value == g_timerWant) {
+        if (value == g_timerWant && g_timerClick) {
             UE_LOGI("[DRONE-CALL-DRILL] client: the host's leave timer flipped to %s (the load's was %s)", LeaveName(value),
                     LeaveName(g_timerBase));
             g_aimPose = 0;
@@ -451,7 +469,7 @@ void OnDisconnect() {
     g_aimPose = 0;
     g_face = Face::Keyboard;
     g_timerPress = 0;
-    g_timerBase = g_timerWant = false;
+    g_timerBase = g_timerWant = g_timerClick = false;
     g_presses = 0;
     g_sackAtPress = false;
     g_saidInFlight = false;

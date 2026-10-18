@@ -3114,8 +3114,13 @@ static_assert(sizeof(GrabRefusedPayload) == 8, "GrabRefusedPayload must be 8 byt
 // was. Which face is the sender's reading of its own cursor, the only machine that has one, and the
 // console carries no identity to name (see the kind's comment), so the host resolves the console
 // the sender stands at and re-tests the lid there.
+namespace drone_verb {
+constexpr uint8_t kCall = 0;        // the keyboard's call/send
+constexpr uint8_t kLeaveTimer = 1;  // the leave timer face, a toggle on the host
+constexpr uint8_t kMax = kLeaveTimer;
+}  // namespace drone_verb
 struct DroneFlyIntentPayload {
-    uint8_t verb;        // 0 = the keyboard's call/send, 1 = the leave timer face (a toggle on the host)
+    uint8_t verb;        // 1 -- drone_verb::k*
     uint8_t _pad[7];     // 8-byte alignment; zero
 };
 static_assert(sizeof(DroneFlyIntentPayload) == 8, "DroneFlyIntentPayload must be 8 bytes");

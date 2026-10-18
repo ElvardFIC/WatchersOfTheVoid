@@ -60,4 +60,8 @@ bool TriggerFly(void* console);
 // does not resolve or the call fails. Game thread.
 bool PlayChangeCue(void* console);
 
+// Whether that click is playing on this copy of the console now (UAudioComponent::IsPlaying), for a drill's
+// proof that the cue sounded. Walks the class's properties by name, so never a tick. Game thread.
+bool IsChangeCuePlaying(void* console);
+
 }  // namespace ue_wrap::drone_console

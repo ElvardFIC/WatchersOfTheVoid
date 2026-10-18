@@ -603,7 +603,7 @@ bool HandleIntentEvent(net::Session& session,
         }
         net::DroneFlyIntentPayload p{};
         std::memcpy(&p, msg.payload, sizeof(p));
-        if (p.verb > 1) {
+        if (p.verb > net::drone_verb::kMax) {
             UE_LOGW("event_feed: DroneFlyIntent verb=%u has no lane -- dropping",
                     static_cast<unsigned>(p.verb));
             break;

@@ -539,10 +539,12 @@ CFG_STRING(sack_drill, "sack_drill", "dev", "", "VOTVCOOP_SACK_DRILL", false,
 CFG_FLAG(point_sack_client_runs, "point_sack_client_runs", "dev", false, "VOTVCOOP_POINT_SACK_CLIENT_RUNS",
     "Developer: a client's point sack runs the game's own body there instead of asking the host (the sack drill's red).")
 CFG_FLAG(drone_call_drill, "drone_call_drill", "dev", false, "VOTVCOOP_DRONE_CALL_DRILL",
-    "Drill (BOTH peers): the client walks to the garage's drone console, opens its lid if it is shut, aims "
-    "at its keyboard and presses it through the player's own E dispatch; the press goes to the host, which "
-    "presses its console for the client. A sack the first press brought is followed by a second press, and "
-    "the client's DONE line says whether the drone flew on its copy; the host logs its drone's changes. "
+    "Drill (BOTH peers): the client walks to the garage's drone console, opens its lid if it is shut, presses "
+    "the leave-timer face twice (the click sounds on its copy and the host's stream flips the timer, then flips "
+    "it back), then aims at the keyboard and presses it through the player's own E dispatch; each press goes to "
+    "the host, which presses its console for the client. A sack the first press brought is followed by a "
+    "second press, and the client's DONE line says whether the drone flew on its copy; the host logs its "
+    "drone's changes. "
     "Lines tagged [DRONE-CALL-DRILL].")
 CFG_STRING(sat_console_drill, "sat_console_drill", "dev", "", "VOTVCOOP_SAT_CONSOLE_DRILL", false,
     "Drill (BOTH peers): run -- a client types sd.cal, sauce.get and sv.hash at its SAT console; the host runs "

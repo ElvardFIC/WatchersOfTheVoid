@@ -104,7 +104,7 @@ bool Execute(coop::net::Session& s, const coop::net::DroneFlyIntentPayload& p, u
                 static_cast<unsigned>(slot));
         return true;
     }
-    if (p.verb == 1) {
+    if (p.verb == coop::net::drone_verb::kLeaveTimer) {
         void* drone = ue_wrap::drone::Find();
         bool leaveAfter5min = false;
         if (!drone || !ue_wrap::drone::ReadLeaveAfter5min(drone, leaveAfter5min) ||
@@ -160,11 +160,7 @@ sg::Verdict OnActionPre(const sg::Call& call) {
     if (!keyboard && !leaveTimer) return sg::Verdict::Run;
 
     coop::net::DroneFlyIntentPayload p{};
-    if (keyboard) {
-        p.verb = 0;
-    } else {
-        p.verb = 1;
-    }
+    p.verb = keyboard ? coop::net::drone_verb::kCall : coop::net::drone_verb::kLeaveTimer;
     if (!s->SendReliable(coop::net::ReliableKind::DroneFlyIntent, &p, sizeof(p))) {
         UE_LOGW("[DRONE-CALL] the console press was not sent (the session refused it); the drone stays "
                 "as the host has it");
