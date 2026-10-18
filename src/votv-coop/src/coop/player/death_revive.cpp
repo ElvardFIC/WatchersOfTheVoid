@@ -474,7 +474,8 @@ std::atomic<bool> g_puppetResidue{false};
 int g_puppetBlackLeft = 0;
 
 // Re-attempt the three screen artifacts until they are provably gone; true when nothing is
-// left. Idempotent, one class lookup per artifact once clear.
+// left. Idempotent; each attempt drains the object index once (the black screens) and looks a
+// class up per artifact.
 bool TickScreenCleanup() {
     const bool black = ClearBlackScreen();
     const float red = ClearDamageIndicator();
