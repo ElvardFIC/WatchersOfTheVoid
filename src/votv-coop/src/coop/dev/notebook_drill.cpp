@@ -12,6 +12,7 @@
 #include "coop/element/element.h"
 #include "coop/element/registry.h"
 #include "coop/interactables/device_occupancy.h"
+#include "coop/interactables/notebook_sync.h"
 #include "coop/net/session.h"
 #include "coop/player/players_registry.h"
 #include "coop/player/puppet_drive.h"
@@ -60,11 +61,14 @@ constexpr const wchar_t* kBookClass = L"prop_notebook_C";
 // prop_notebook_C::actionOptionIndex runs the editor's open for this action, the only one getActionOptions lists.
 constexpr uint8_t kActOpen = 4;
 constexpr int     kClientSlot = 1;
+constexpr uint8_t kOtherSlot = 6;   // a slot that holds nothing: the rule is asked about it directly
 constexpr const wchar_t* kSeedPage   = L"notebook drill: the page the host wrote";
+constexpr const wchar_t* kPeriodicPage = L"notebook drill: the page the client typed and left open";
 constexpr const wchar_t* kEditedPage = L"notebook drill: the page the client wrote";
 
 constexpr char kLineJudged[]  = "[NOTE-DRILL] host judged the claim";
 constexpr char kLineHasText[] = "[NOTE-DRILL] host read the client's page";
+constexpr char kLinePeriodic[] = "[NOTE-DRILL] host read the periodic page";
 
 constexpr float kAheadCm[]   = {200.f, 250.f, 500.f, 700.f, 900.f};
 constexpr float kFanDeg[]    = {0.f, 45.f, -45.f, 90.f, -90.f, 135.f, -135.f, 180.f};
@@ -140,12 +144,13 @@ std::wstring FirstPage(void* book) {
 
 // ---- HOST ---------------------------------------------------------------------------------------
 
-enum class HStep : uint8_t { Arm, Settle, AwaitClaim, ClaimWait, AwaitText, Done };
+enum class HStep : uint8_t { Arm, Settle, AwaitClaim, ClaimWait, AwaitPeriodic, AwaitText, AwaitFree, Done };
 HStep    g_h = HStep::Arm;
 uint64_t g_hStepMs = 0, g_hNextMs = 0, g_armedMs = 0;
 int      g_spawnTries = 0;
 ue_wrap::CachedObjRef g_book;
 std::wstring g_claim;
+coop::notebook_sync::Stats g_statsBefore;
 
 void HEnter(HStep s) {
     g_h = s;
@@ -275,6 +280,38 @@ void HostTick(coop::net::Session& s) {
         UE_LOGI("[NOTE-DRILL] host claim-refused PASS -- the host's editor was sent out and slot %d still holds '%ls'",
                 kClientSlot, g_claim.c_str());
         Say(kLineJudged);
+        HEnter(HStep::AwaitPeriodic);
+        return;
+    }
+    case HStep::AwaitPeriodic: {
+        // The client has changed the page through the editor's commit and left the editor open: the lane's 2 s
+        // publish must carry it, with the client still holding the claim.
+        if (!Due(g_hNextMs, kCheckEveryMs)) return;
+        void* book = g_book.Get();
+        if (!book) { HostFail("periodic", "the notebook died before the client's page arrived"); return; }
+        const std::wstring first = FirstPage(book);
+        if (first != kPeriodicPage) {
+            if (HExpired(kLegBoundMs)) {
+                UE_LOGW("[NOTE-DRILL] FAIL host periodic: the host's copy still reads '%ls'", first.c_str());
+                g_h = HStep::Done;
+            }
+            return;
+        }
+        if (coop::device_occupancy::HolderOf(g_claim.c_str()) != kClientSlot) {
+            HostFail("periodic", "the page arrived after the client let go of the claim");
+            return;
+        }
+        UE_LOGI("[NOTE-DRILL] host periodic PASS -- the host's copy reads '%ls' while slot %d holds the editor open",
+                first.c_str(), kClientSlot);
+        // The rule, asked directly: a slot that is not the holder is refused while the client holds.
+        if (coop::notebook_sync::AcceptsClientRecord(book, kOtherSlot)) {
+            HostFail("refusal", "the host's rule took a record from a slot that does not hold the claim");
+            return;
+        }
+        UE_LOGI("[NOTE-DRILL] host refusal PASS -- slot %d's record is refused while slot %d holds the claim",
+                kOtherSlot, kClientSlot);
+        g_statsBefore = coop::notebook_sync::StatsNow();
+        Say(kLinePeriodic);
         HEnter(HStep::AwaitText);
         return;
     }
@@ -284,14 +321,43 @@ void HostTick(coop::net::Session& s) {
         if (!book) { HostFail("text", "the notebook died before the client's page arrived"); return; }
         const std::wstring first = FirstPage(book);
         if (first == kEditedPage) {
-            UE_LOGI("[NOTE-DRILL] host text PASS -- the host's copy reads '%ls'", first.c_str());
+            // The close's record was taken from the slot that still held the claim: the client keeps it until
+            // the host has answered, so the release cannot have come first.
+            const coop::notebook_sync::Stats st = coop::notebook_sync::StatsNow();
+            if (st.acceptedHeld <= g_statsBefore.acceptedHeld || st.acceptedFree != g_statsBefore.acceptedFree ||
+                st.refused != g_statsBefore.refused) {
+                UE_LOGW("[NOTE-DRILL] FAIL host closing-order: held %u->%u free %u->%u refused %u->%u across the close",
+                        g_statsBefore.acceptedHeld, st.acceptedHeld, g_statsBefore.acceptedFree, st.acceptedFree,
+                        g_statsBefore.refused, st.refused);
+                g_h = HStep::Done;
+                return;
+            }
+            UE_LOGI("[NOTE-DRILL] host text PASS -- the host's copy reads '%ls', taken from the slot that held the claim",
+                    first.c_str());
             Say(kLineHasText);
-            UE_LOGI("[NOTE-DRILL] host DONE");
-            g_h = HStep::Done;
+            HEnter(HStep::AwaitFree);
         } else if (HExpired(kLegBoundMs)) {
             UE_LOGW("[NOTE-DRILL] FAIL host text: the host's copy still reads '%ls'", first.c_str());
             g_h = HStep::Done;
         }
+        return;
+    }
+    case HStep::AwaitFree: {
+        // The client lets go once the host has answered; then the notebook is free, and any slot's record is taken.
+        if (!Due(g_hNextMs, kCheckEveryMs)) return;
+        void* book = g_book.Get();
+        if (!book) { HostFail("free", "the notebook died before its claim was released"); return; }
+        if (coop::device_occupancy::HolderOf(g_claim.c_str()) != 0xFF) {
+            if (HExpired(kLegBoundMs)) HostFail("free", "the client never released the notebook's claim");
+            return;
+        }
+        if (!coop::notebook_sync::AcceptsClientRecord(book, kOtherSlot)) {
+            HostFail("free", "the host's rule refused a record for a notebook nobody holds");
+            return;
+        }
+        UE_LOGI("[NOTE-DRILL] host free-accept PASS -- the claim is released and any slot's record is taken");
+        UE_LOGI("[NOTE-DRILL] host DONE");
+        g_h = HStep::Done;
         return;
     }
     default: return;
@@ -300,7 +366,7 @@ void HostTick(coop::net::Session& s) {
 
 // ---- CLIENT and OBSERVER ------------------------------------------------------------------------
 
-enum class CStep : uint8_t { Arm, Find, Walk, Open, AwaitClaim, AwaitJudged, Edit, AwaitText, Done };
+enum class CStep : uint8_t { Arm, Find, Walk, Open, AwaitClaim, AwaitJudged, ArmLook, Type, AwaitPeriodic, Edit, AwaitText, Done };
 CStep    g_c = CStep::Arm;
 const char* g_role = "client";
 uint64_t g_cStepMs = 0, g_cNextMs = 0;
@@ -409,11 +475,54 @@ void ClientTick() {
         if (!coop::device_occupancy::LocalHolds(g_cClaim.c_str())) {
             ClientFail("hold", "the claim left this peer while the host judged it");
         } else if (HeardFromHost(kLineJudged)) {
-            CEnter(CStep::Edit);
+            CEnter(CStep::ArmLook);
         } else if (CExpired(kLegBoundMs)) {
             ClientFail("judged", "the host never said it judged the claim");
         }
         return;
+    case CStep::ArmLook: {
+        // The lane measures an edit from the text it first saw on the open notebook, so the page is left alone
+        // (the editor's own commit of the box's text, unchanged) until the lane says it has looked.
+        if (!Due(g_cNextMs, kCheckEveryMs)) return;
+        void* const widget = DS::ReadActiveInterface(player);
+        std::wstring boxNow;
+        if (N::NotebookOf(widget) != g_cBook.Get() || !N::ReadEditorText(widget, boxNow)) {
+            ClientFail("look", "the editor is no longer open on the notebook");
+        } else if (coop::notebook_sync::BaselineTaken(g_cBook.Get())) {
+            CEnter(CStep::Type);
+        } else if (CExpired(kLegBoundMs)) {
+            ClientFail("look", "the notebook sync never looked at the open notebook");
+        } else if (!N::CommitKeystroke(widget, boxNow)) {
+            ClientFail("look", "the editor's commit handler did not dispatch");
+        }
+        return;
+    }
+    case CStep::Type: {
+        // A page typed and left open: the box takes the text and the editor's commit handler writes it into the
+        // notebook, as the box does when a typed page is committed. The commit repeats until the host has read
+        // the page, since the lane publishes on the first graph event after its 2 s gate.
+        void* const widget = DS::ReadActiveInterface(player);
+        if (N::NotebookOf(widget) != g_cBook.Get() || !N::SetEditorText(widget, kPeriodicPage)) {
+            ClientFail("type", "the editor's box did not take the page");
+            return;
+        }
+        UE_LOGI("[NOTE-DRILL] client typed a page and left the editor open");
+        CEnter(CStep::AwaitPeriodic);
+        return;
+    }
+    case CStep::AwaitPeriodic: {
+        if (!Due(g_cNextMs, kCheckEveryMs)) return;
+        if (HeardFromHost(kLinePeriodic)) {
+            UE_LOGI("[NOTE-DRILL] client periodic PASS -- the host read the page before the editor closed");
+            CEnter(CStep::Edit);
+            return;
+        }
+        if (CExpired(kLegBoundMs)) { ClientFail("periodic", "the host never said it read the typed page"); return; }
+        void* const widget = DS::ReadActiveInterface(player);
+        if (N::NotebookOf(widget) != g_cBook.Get() || !N::CommitKeystroke(widget, kPeriodicPage))
+            ClientFail("periodic", "the editor's commit handler did not dispatch");
+        return;
+    }
     case CStep::Edit: {
         // What a player does, through the editor's own verbs: the box takes the page, quit closes the editor (the
         // red arm closes it with the discard), and the player leaves the interface as the tear and crumple flows do.
@@ -467,6 +576,7 @@ void OnDisconnect() {
     g_cBook.Reset();
     g_book.Reset();
     g_claim.clear();
+    g_statsBefore = coop::notebook_sync::Stats{};
     g_cClaim.clear();
 }
 

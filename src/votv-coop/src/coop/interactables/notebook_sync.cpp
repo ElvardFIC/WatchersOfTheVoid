@@ -65,6 +65,7 @@ struct Flight {
     Clock::time_point deadline{};
 };
 Flight g_flight;
+Stats g_stats;
 
 coop::net::Session* Session() {
     auto* s = g_session.load(std::memory_order_acquire);
@@ -217,14 +218,22 @@ bool AcceptsClientRecord(void* actor, uint8_t senderSlot) {
     const std::wstring claim = DS::ClassifyDeviceActorClaimKey(actor);
     if (claim.empty()) return true;   // no identity to hold: nothing for the claim to say
     const uint8_t holder = coop::device_occupancy::HolderOf(claim.c_str());
-    if (holder == 0xFF) return true;   // a free notebook is anyone's to change
-    if (holder == senderSlot) return true;
+    if (holder == 0xFF) { ++g_stats.acceptedFree; return true; }   // a free notebook is anyone's to change
+    if (holder == senderSlot) { ++g_stats.acceptedHeld; return true; }
+    ++g_stats.refused;
     UE_LOGW("notebook_sync: record for notebook '%ls' from slot %u refused -- slot %u holds its claim",
             ue_wrap::prop::GetKeyString(actor).c_str(), static_cast<unsigned>(senderSlot),
             static_cast<unsigned>(holder));
     return false;
 }
 
+
+bool BaselineTaken(void* notebook) {
+    const std::wstring key = ue_wrap::prop::GetKeyString(notebook);
+    return !key.empty() && g_base.key == key;
+}
+
+Stats StatsNow() { return g_stats; }
 
 void OnDisconnect() {
     g_session.store(nullptr, std::memory_order_release);
@@ -233,6 +242,7 @@ void OnDisconnect() {
     g_flight = Flight{};
     g_closing.Reset();
     g_used.Reset();
+    g_stats = Stats{};
 }
 
 }  // namespace coop::notebook_sync

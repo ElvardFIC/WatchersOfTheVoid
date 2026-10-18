@@ -592,8 +592,10 @@ CFG_STRING(notebook_drill, "notebook_drill", "dev", "", "VOTVCOOP_NOTEBOOK_DRILL
     "Drill (EVERY peer): a notebook's page is written at one peer's editor and read on the others. run -- once a "
     "client is in its world the host drops a notebook on a floor a route reaches and writes a seed page; the client "
     "walks to it, opens it with the notebook's own action and holds its claim; the host presses the open on its own "
-    "copy, and the claim sends its editor out again; the client then writes a known page into the open editor and "
-    "closes it with the editor's own quit, and the host's copy must read that page. A second client (the rig's "
+    "copy, and the claim sends its editor out again; the client types a page and leaves the editor open, and the "
+    "host reads it (the 2 s publish) and checks that its rule refuses a slot that is not the holder; the client then "
+    "writes a last page and closes with the editor's own quit, and the host's copy must read it, taken from the slot "
+    "that still held the claim. A second client (the rig's "
     "--observer) reads the page too. rejoin -- the same, and the client's first life ends on \"client LIFE DONE\"; its "
     "second life reads the page from the snapshot. red -- the editor is closed with the game's discard (skipEdit), "
     "so no page is carried and the host's read must fail. Lines tagged [NOTE-DRILL]; each peer's DONE line ends it.")

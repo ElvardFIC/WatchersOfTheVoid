@@ -48,6 +48,12 @@ bool IsReadOnly(void* editorWidget);
 // outside `text`, or a field that does not resolve (`pagesOut` is then untouched).
 bool CommitEditorPage(void* editorWidget, std::vector<std::wstring>& pagesOut);
 
+// The editor's own commit handler, the event the box ends a typed page in (MLET_text's OnTextCommitted,
+// bound in the widget's graph): it writes `text` into the open page of the notebook, reloads the box and
+// runs the graph, so the graph's watchers see it. A keystroke itself only fires OnTextChanged, whose
+// handler scrolls. The handler's name carries cooked numbers; false when it does not resolve.
+bool CommitKeystroke(void* editorWidget, const std::wstring& text);
+
 // ui_notebook_C::quit(skipEdit), the editor's own close. Its body writes the box into the open page
 // unless skipEdit, hides the widget and clears `clipboard`.
 bool CallQuit(void* editorWidget, bool skipEdit);

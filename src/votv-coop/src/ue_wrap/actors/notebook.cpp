@@ -155,6 +155,20 @@ bool CommitEditorPage(void* editorWidget, std::vector<std::wstring>& pagesOut) {
     return true;
 }
 
+bool CommitKeystroke(void* editorWidget, const std::wstring& text) {
+    if (!IsEditorWidget(editorWidget)) return false;
+    void* fn = R::FindDispatchFunctionCached(
+        R::ClassOf(editorWidget),
+        L"BndEvt__MultiLineEditableText_86_K2Node_ComponentBoundEvent_5_OnMultiLineEditableTextCommittedEvent__"
+        L"DelegateSignature");
+    if (!fn) return false;
+    uint8_t ftext[ftext_utils::kFTextSize]{};
+    if (!ftext_utils::MintFText(text.c_str(), ftext)) return false;
+    ParamFrame frame(fn);
+    return frame.valid() && frame.SetRaw(L"Text", ftext, sizeof(ftext)) && frame.Set<uint8_t>(L"CommitMethod", 0) &&
+           Call(editorWidget, frame);
+}
+
 bool CallQuit(void* editorWidget, bool skipEdit) {
     if (!IsEditorWidget(editorWidget)) return false;
     void* fn = R::FindDispatchFunctionCached(R::ClassOf(editorWidget), L"quit");
