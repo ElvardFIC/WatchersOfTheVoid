@@ -268,11 +268,11 @@ void TearDownSession(coop::net::Session& session, const char* why) {
     // start begins over it). Marking a FAULTED pass done, never re-run over half-cleared state, is ours;
     // MTA has no fault policy.
     g_tornDownBegun.store(stops, std::memory_order_relaxed);
-    coop::revive_protection::End(coop::revive_protection::EndWhy::Session);
     struct FinishGuard {
         uint64_t stops;
         ~FinishGuard() { g_tornDownFinished.store(stops, std::memory_order_release); }
     } finish{stops};
+    coop::revive_protection::End(coop::revive_protection::EndWhy::Session);
     g_wasConnected = false;
     g_wasConnectedBySlot.fill(false);
     ForgetWorldReadyAnnounce();

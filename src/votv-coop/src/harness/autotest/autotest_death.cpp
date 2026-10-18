@@ -743,14 +743,16 @@ DWORD WINAPI DeathTestThread(LPVOID) {
             const uint32_t cleanups0 = coop::death_revive::ScreenCleanupsEnded();
             auto hd = std::make_shared<std::atomic<int>>(0);
             auto ok = std::make_shared<int>(0);
-            GT::Post([hd, ok, lethal] {
-                void* mp = coop::players::Registry::Get().Local();
-                if (mp && R::IsLive(mp) && E::InvokeAddPlayerDamage(mp, lethal, /*blood=*/true)) *ok = 1;
-                hd->store(1);
-            });
-            WaitDone(hd, 8000);
+            if (timedOut) {  // a window that never ended has no death to measure after it
+                GT::Post([hd, ok, lethal] {
+                    void* mp = coop::players::Registry::Get().Local();
+                    if (mp && R::IsLive(mp) && E::InvokeAddPlayerDamage(mp, lethal, /*blood=*/true)) *ok = 1;
+                    hd->store(1);
+                });
+                WaitDone(hd, 8000);
+            }
             bool diedAfter = false;
-            for (uint64_t t1 = ::GetTickCount64(); !diedAfter && ::GetTickCount64() - t1 < 5000;) {
+            for (uint64_t t1 = ::GetTickCount64(); *ok && !diedAfter && ::GetTickCount64() - t1 < 5000;) {
                 const DeathSnapshot q = Probe();
                 diedAfter = q.haveState && q.dead;
                 if (!diedAfter) ::Sleep(kSampleMs);
@@ -763,10 +765,10 @@ DWORD WINAPI DeathTestThread(LPVOID) {
                         *ok ? "delivered" : "NOT delivered", diedAfter ? 1 : 0);
             Verdict("D17 protection-ends", timedOut && *ok && diedAfter, pr);
             // That death's revive finishes before the verdict, so the run does not end on a dead player.
-            for (uint64_t t2 = ::GetTickCount64();
+            for (uint64_t t2 = ::GetTickCount64(); diedAfter &&
                  coop::death_revive::ScreenCleanupsEnded() == cleanups0 && ::GetTickCount64() - t2 < 30000;)
                 ::Sleep(kSampleMs);
-            if (coop::death_revive::ScreenCleanupsEnded() == cleanups0)
+            if (diedAfter && coop::death_revive::ScreenCleanupsEnded() == cleanups0)
                 UE_LOGW("death_test: D17's death was not revived within 30 s");
         }
     }

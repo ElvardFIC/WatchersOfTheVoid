@@ -75,13 +75,13 @@ void Install() {
 
 void Begin(void* player) {
     if (g_active.load(std::memory_order_relaxed)) End(EndWhy::Revive);
-    if (!g_watchLive && !g_warnedNoWatch) {
-        g_warnedNoWatch = true;
-        UE_LOGW("revive_protection: a window began before the attack watch was live -- a swing will not end it");
-    }
     if (!E::WriteMainPlayerStartInvinc(player, true)) {
         UE_LOGW("revive_protection: the flag could not be written -- no window");
         return;
+    }
+    if (!g_watchLive && !g_warnedNoWatch) {  // not live yet, or settled dead
+        g_warnedNoWatch = true;
+        UE_LOGW("revive_protection: a window began with no live attack watch -- a swing will not end it");
     }
     g_pawn.Set(player);
     g_beganMs = ::GetTickCount64();
