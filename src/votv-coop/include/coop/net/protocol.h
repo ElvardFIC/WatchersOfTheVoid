@@ -2209,6 +2209,8 @@ inline constexpr uint8_t kOpRefused = 1;  // host to the pinger: the verdict is 
 inline constexpr uint8_t kOpFound = 2;    // host to the pinger: the verdict caught a signal; the find is its own
 inline constexpr uint8_t kOpInsta = 3;    // client to host: roll the verdict of this cheat-menu insta-catch
 inline constexpr uint8_t kOpProgress = 4; // ping owner -> host -> clients: visual scan progress snapshot
+inline constexpr uint8_t kProgressEnded = 0;   // op 4, reason: the scan ended (the pinger's, or the host's word it left)
+inline constexpr uint8_t kProgressActive = 1;  // op 4, reason: a snapshot of a scan that runs
 inline constexpr uint8_t kRefusedBusy = 0;  // the host's desk was pinging, or held another verdict
 inline constexpr uint8_t kRefusedLost = 1;  // any other: no claim, no ping running, an aim not finite or not pingable,
                                             // cheats the host's game does not allow, or a desk that did not roll it
@@ -2217,7 +2219,7 @@ inline constexpr uint8_t kRefusedLost = 1;  // any other: no claim, no ping runn
 // A ping's verdict and its answers (DeskPingVerdict). Each answer echoes the intent's seq.
 struct DeskPingVerdictPayload {
     uint8_t  op;         // desk_ping::kOp*
-    uint8_t  reason;     // op 1: desk_ping::kRefused*
+    uint8_t  reason;     // op 1: desk_ping::kRefused*; op 4: desk_ping::kProgress*
     uint8_t  pinger;     // op 4: the slot whose ping the progress shows (0 = the host); the host stamps a client's
     uint8_t  _pad;       // zeroed
     uint32_t seq;        // ops 0 and 3: the pinger's verdict count; echoed by ops 1-2; op 4: the ping's count

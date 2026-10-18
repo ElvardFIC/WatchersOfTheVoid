@@ -487,7 +487,7 @@ void DisconnectSlot(coop::net::Session& session, int slot) {
     coop::item_activate::OnDisconnectForSlot(slot);
     coop::device_occupancy::OnDisconnectForSlot(slot);  // release a leaver's device claims
     coop::desk_input_sync::OnPeerLeft(slot);  // clear a leaver's dangling coordIsPing (its ping would swallow every peer's desk keys)
-    coop::desk_ping_sync::OnPeerLeft(static_cast<uint8_t>(slot));  // and the verdict it sent, if the desk has not run it
+    coop::desk_ping_sync::OnPeerLeft(static_cast<uint8_t>(slot));  // and its unrun verdict and the scan it pinged
     coop::signal_catch_sync::OnPeerLeft(static_cast<uint8_t>(slot));  // and the catch marked as its
     coop::desk_snd_fx::OnPeerLeft(slot);  // host-owned teardown of the leaver's loop sounds (broadcast OFF)
     coop::comp_sync::OnPeerLeft(static_cast<uint8_t>(slot));  // and the refiner's decode it began is the host's

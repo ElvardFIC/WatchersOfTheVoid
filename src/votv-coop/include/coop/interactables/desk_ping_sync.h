@@ -23,11 +23,13 @@ void Install(coop::net::Session* session);
 // Per pump tick: registers the watches until they are live or refused.
 void Tick();
 
-// DeskPingVerdict from `senderSlot`: a HOST takes a client's verdict, a CLIENT a refusal or its find.
+// DeskPingVerdict from `senderSlot`: a HOST takes a client's verdict and relays its scan's progress; a CLIENT takes a
+// refusal, its find, or the progress of the scan the host names a pinger for.
 void OnMessage(coop::net::Session& session, const coop::net::DeskPingVerdictPayload& p, int senderSlot);
 
-// HOST: a peer left: its budget resets, and a verdict of its that waits for the desk is dropped. One the machine has
-// rolled finishes as the host machine's run (desk_input_sync::OnPeerLeft).
+// HOST: a peer left: its budget resets, a verdict of its that waits for the desk is dropped, and the scan it was pinging
+// ends on every client. A verdict the machine has rolled finishes as the host machine's run
+// (desk_input_sync::OnPeerLeft).
 void OnPeerLeft(uint8_t slot);
 
 void OnDisconnect();
@@ -46,6 +48,7 @@ struct Counts {
     uint32_t busy;        // HOST: intents refused while its desk was pinging or held another's verdict
     uint32_t overBudget;  // HOST: intents dropped unanswered past their sender's budget
     uint32_t mirrorEnded; // EVERY PEER: scan endings taken from another peer's ping (the pinger's own, or its leaving)
+    uint32_t mirrorRefused; // HOST: a second pinger's progress refused while another pinger's scan is mirrored
 };
 Counts CountsNow();
 

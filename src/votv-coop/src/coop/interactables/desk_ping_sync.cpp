@@ -418,6 +418,49 @@ void Register() {
             g_live[kWatchSound], g_live[kWatchInsta]);
 }
 
+// ---- the mirrored scan --------------------------------------------------------------------------------------------
+
+// The four fields go into the desk only while its own machine is idle: a scan of this peer's own, or the verdict the
+// host primed for a client, owns them while coord_isPing is set, and the Blueprint's reset ends it.
+void WriteProgressIdle(const DP::Progress& value) {
+    void* desk = CD::Instance();
+    bool pinging = false;
+    if (desk && DP::ReadPinging(desk, pinging) && !pinging) DP::WriteProgress(desk, value);
+}
+
+// The scan this peer's desk shows is `p`'s (active), or none (its ending). The Blueprint writes none of the four fields
+// while coord_isPing is clear, so one write per packet holds until the next. A write refused for a running machine
+// leaves the state taken, and the next packet after that run writes.
+void TakeProgress(const coop::net::DeskPingVerdictPayload& p, bool active) {
+    g_mirrorSlot = active ? static_cast<int>(p.pinger) : -1;
+    g_mirrorSeq = p.seq;
+    g_mirrorActive = active;
+    if (!active) ++g_counts.mirrorEnded;
+    WriteProgressIdle(active ? DP::Progress{p.progressStage, p.progressOuter, p.progressInner, p.progressPing}
+                             : DP::Progress{});
+}
+
+// A client's progress on the host: stamped with its slot, taken when that slot holds the desk and no other pinger's
+// scan is mirrored, and relayed to the other clients.
+void HostTakeProgress(coop::net::Session& session, const coop::net::DeskPingVerdictPayload& sent, int slot) {
+    coop::net::DeskPingVerdictPayload p = sent;
+    p.pinger = static_cast<uint8_t>(slot);  // whoever sent it, never what the sender's byte says
+    const bool active = p.reason == PV::kProgressActive;
+    // The desk's holder is the authority for whose scan the desk shows.
+    const bool holds = coop::device_occupancy::HolderOf(L"desk") == p.pinger;
+    const bool valid = !active || (holds && p.progressStage >= 0 && p.progressStage <= 3 &&
+        std::isfinite(p.progressOuter) && std::isfinite(p.progressInner) && std::isfinite(p.progressPing) &&
+        p.progressOuter >= 0.f && p.progressOuter <= 1.f && p.progressInner >= 0.f && p.progressInner <= 1.f &&
+        p.progressPing >= 0.f && p.progressPing <= 1.f);
+    if (!valid || !(active ? holds : (g_mirrorSlot == slot && g_mirrorSeq == p.seq))) return;
+    if (active && g_mirrorSlot != -1 && g_mirrorSlot != slot) {
+        ++g_counts.mirrorRefused;  // the clients' own test: one scan at a time
+        return;
+    }
+    TakeProgress(p, active);
+    BroadcastProgress(&session, p, slot);
+}
+
 }  // namespace
 
 void Install(coop::net::Session* session) { g_session.store(session, std::memory_order_release); }
@@ -429,8 +472,11 @@ void Tick() {
 
     void* desk = CD::Instance();
     bool pinging = false;
-    // When mirroring someone else's ping, do not treat the desk state as a locally-initiated ping.
-    const bool reading = desk && !g_mirrorActive && DP::ReadPinging(desk, pinging);
+    // Only this peer's own scan is published. A mirrored one is someone else's, and on the host so is the machine it
+    // primed for a client's verdict, which desk_input_sync attributes to that client from its rising edge to its
+    // falling one.
+    const bool own = s->role() != Role::Host || coop::desk_input_sync::PingActiveSlot() == 0;
+    const bool reading = desk && own && !g_mirrorActive && DP::ReadPinging(desk, pinging);
     const uint64_t now = NowMs();
     if (reading && pinging) {
         if (!g_publishingProgress) {
@@ -443,7 +489,7 @@ void Tick() {
             if (DP::ReadProgress(desk, state)) {
                 coop::net::DeskPingVerdictPayload p{};
                 p.op = PV::kOpProgress;
-                p.reason = 1;
+                p.reason = PV::kProgressActive;
                 p.seq = g_progressSeq;
                 p.progressStage = state.stage;
                 p.progressOuter = state.outer;
@@ -457,40 +503,12 @@ void Tick() {
         // A reliable terminal edge prevents the last progress bar from remaining frozen on observers.
         coop::net::DeskPingVerdictPayload p{};
         p.op = PV::kOpProgress;
+        p.reason = PV::kProgressEnded;
         p.seq = g_progressSeq;
         BroadcastProgress(s, p);
         g_publishingProgress = false;
         g_nextProgressMs = 0;
     }
-}
-
-// The scan this peer's desk shows is `p`'s (active), or none (its ending). The Blueprint writes none of the four fields
-// while coord_isPing is clear, so one write per packet holds until the next.
-void TakeProgress(const coop::net::DeskPingVerdictPayload& p, bool active) {
-    g_mirrorSlot = active ? static_cast<int>(p.pinger) : -1;
-    g_mirrorSeq = p.seq;
-    g_mirrorActive = active;
-    if (!active) ++g_counts.mirrorEnded;
-    DP::WriteProgress(CD::Instance(),
-                      active ? DP::Progress{p.progressStage, p.progressOuter, p.progressInner, p.progressPing}
-                             : DP::Progress{});
-}
-
-// A client's progress on the host: stamped with its slot, taken when that slot holds the desk, and relayed to the
-// other clients.
-void HostTakeProgress(coop::net::Session& session, const coop::net::DeskPingVerdictPayload& sent, int slot) {
-    coop::net::DeskPingVerdictPayload p = sent;
-    p.pinger = static_cast<uint8_t>(slot);  // whoever sent it, never what the sender's byte says
-    const bool active = p.reason == 1;
-    // The desk's holder is the authority for whose scan the desk shows.
-    const bool holds = coop::device_occupancy::HolderOf(L"desk") == p.pinger;
-    const bool valid = !active || (holds && p.progressStage >= 0 && p.progressStage <= 3 &&
-        std::isfinite(p.progressOuter) && std::isfinite(p.progressInner) && std::isfinite(p.progressPing) &&
-        p.progressOuter >= 0.f && p.progressOuter <= 1.f && p.progressInner >= 0.f && p.progressInner <= 1.f &&
-        p.progressPing >= 0.f && p.progressPing <= 1.f);
-    if (!valid || !(active ? holds : (g_mirrorSlot == slot && g_mirrorSeq == p.seq))) return;
-    TakeProgress(p, active);
-    BroadcastProgress(&session, p, slot);
 }
 
 void OnMessage(coop::net::Session& session, const coop::net::DeskPingVerdictPayload& p, int senderSlot) {
@@ -506,7 +524,7 @@ void OnMessage(coop::net::Session& session, const coop::net::DeskPingVerdictPayl
     // A client takes the host's progress, its own or a relayed pinger's; the sender is always the host, the pinger is
     // named in the packet.
     if (p.op == PV::kOpProgress && senderSlot == 0 && p.pinger < coop::net::kMaxPeers) {
-        const bool active = p.reason == 1;
+        const bool active = p.reason == PV::kProgressActive;
         if (active && (p.progressStage < 0 || p.progressStage > 3 || !std::isfinite(p.progressOuter) ||
             !std::isfinite(p.progressInner) || !std::isfinite(p.progressPing))) return;
         if (!active && (g_mirrorSlot != p.pinger || g_mirrorSeq != p.seq)) return;
@@ -546,6 +564,7 @@ void OnPeerLeft(uint8_t slot) {
         // The ending the pinger would have sent, to every client, so none keeps a scan that no one runs.
         coop::net::DeskPingVerdictPayload p{};
         p.op = PV::kOpProgress;
+        p.reason = PV::kProgressEnded;
         p.pinger = slot;
         p.seq = g_mirrorSeq;
         TakeProgress(p, false);
@@ -561,8 +580,8 @@ void OnDisconnect() {
     g_nextProgressMs = 0;
     g_mirrorSlot = -1;
     g_mirrorSeq = 0;
+    if (g_mirrorActive) WriteProgressIdle(DP::Progress{});
     g_mirrorActive = false;
-    DP::WriteProgress(CD::Instance(), DP::Progress{});
     for (uint8_t slot = 0; slot < coop::net::kMaxPeers; ++slot) {
         g_budget[slot].Reset();
         g_instaBudget[slot].Reset();

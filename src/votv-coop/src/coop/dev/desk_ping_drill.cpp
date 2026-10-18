@@ -222,6 +222,7 @@ constexpr float kAlphaSeen = 0.5f;
 constexpr uint64_t kObserverLogMs = 500;
 constexpr uint64_t kObserverEndBoundMs = 15000;   // the ending after the host's verdict
 constexpr uint64_t kObserverIdleBoundMs = 120000;  // a held desk, and no scan reaching the second client
+constexpr uint64_t kObserverNoPingerBoundMs = kStartBoundMs + kWalkDeadlineS * 1000ull + kEnterBoundMs;  // no peer held the desk
 
 struct ObserverMax {
     float outer = 0.f, inner = 0.f, ping = 0.f, alphaEdges = 0.f, alphaInner = 0.f;
@@ -638,20 +639,39 @@ bool     g_ocPass = true;
 uint64_t g_ocOpenMs = 0;
 uint64_t g_ocIdleMs = 0;
 uint32_t g_ocEnded = 0;  // scan endings taken when the last scan closed
+uint64_t g_ocWaitMs = 0;  // since this peer was ready, or the last scan closed
+bool     g_ocLate = false;  // the open scan was first seen past its start
+int32_t  g_ocOpenStage = 0;
 
-void ObserverClientClose(const char* why) {
-    const bool ok = ObserverPassed(g_ocEnded);
-    g_ocPass = g_ocPass && ok;
-    UE_LOGI("[DESK-PING-DRILL] observer %s: scan %d%s%s; %s", ok ? "PASS" : "FAIL", g_ocScans + 1, *why ? ", " : "", why,
-            ObserverMaxText(g_ocEnded).c_str());
-    ++g_ocScans;
+void ObserverClientDone() {
+    UE_LOGI("[DESK-PING-DRILL] observer DONE %s", g_ocPass ? "PASS" : "FAIL");
+    g_ocDone = true;
+}
+
+// A scan this client first saw past its start (it joined mid-scan, principle 8's own row) is said and not judged: its
+// first stages were never on this desk, so it counts only from a stage-0 start.
+void ObserverClientClose(uint64_t now, const char* why) {
+    if (g_ocLate) {
+        UE_LOGI("[DESK-PING-DRILL] observer late join: a scan first seen at stage %d is not judged%s%s; %s",
+                g_ocOpenStage, *why ? ", " : "", why, ObserverMaxText(g_ocEnded).c_str());
+    } else {
+        const bool ok = ObserverPassed(g_ocEnded);
+        g_ocPass = g_ocPass && ok;
+        UE_LOGI("[DESK-PING-DRILL] observer %s: scan %d%s%s; %s", ok ? "PASS" : "FAIL", g_ocScans + 1,
+                *why ? ", " : "", why, ObserverMaxText(g_ocEnded).c_str());
+        ++g_ocScans;
+    }
     g_ocOpen = false;
     g_ocEnded = PS::CountsNow().mirrorEnded;
+    g_ocIdleMs = g_ocWaitMs = now;
     ObserverReset();
-    if (g_ocScans >= kObservedScans) {
-        UE_LOGI("[DESK-PING-DRILL] observer DONE %s", g_ocPass ? "PASS" : "FAIL");
-        g_ocDone = true;
-    }
+    if (g_ocScans >= kObservedScans) ObserverClientDone();
+}
+
+void ObserverClientFail(const char* why, unsigned holder) {
+    UE_LOGI("[DESK-PING-DRILL] observer FAIL: %s (holder %u)", why, holder);
+    g_ocPass = false;
+    ObserverClientDone();
 }
 
 // True for a client that is not the first: the observer, which this tick served.
@@ -663,7 +683,7 @@ bool ObserverClientTick() {
     if (!g_ocSaid) {
         g_ocSaid = true;
         g_ocEnded = PS::CountsNow().mirrorEnded;
-        g_ocIdleMs = now;
+        g_ocIdleMs = g_ocWaitMs = now;
         UE_LOGI("[DESK-PING-DRILL] client in slot %u: an observer, it pings nothing and reads the first client's scans",
                 mine);
     }
@@ -673,26 +693,27 @@ bool ObserverClientTick() {
         if (g_obsViewValid && !v.isPing && (v.stage > 0 || v.outer > 0.f)) {
             g_ocOpen = true;
             g_ocOpenMs = now;
+            g_ocOpenStage = v.stage;
+            g_ocLate = v.stage > 0;
             return true;
         }
-        // The idle bound runs while another peer holds the desk and no scan has reached this one.
+        // Another peer holds the desk and no scan has reached this one, or no peer held it at all, to a bound each.
         const uint8_t holder = coop::device_occupancy::HolderOf(L"desk");
         if (holder == 0xFF || holder == mine) {
             g_ocIdleMs = now;
+            if (now - g_ocWaitMs > kObserverNoPingerBoundMs) ObserverClientFail("no peer held the desk", holder);
         } else if (now - g_ocIdleMs > kObserverIdleBoundMs) {
-            UE_LOGI("[DESK-PING-DRILL] observer FAIL: slot %u holds the desk and no scan reached this client", holder);
-            g_ocPass = false;
-            g_ocDone = true;
-            UE_LOGI("[DESK-PING-DRILL] observer DONE FAIL");
+            ObserverClientFail("a peer holds the desk and no scan reached this client", holder);
         }
         return true;
     }
     if (ObserverEnded(g_ocEnded))
-        ObserverClientClose("");
+        ObserverClientClose(now, "");
     else if (now - g_ocOpenMs > kVerdictBoundMs)
-        ObserverClientClose("its ending never came");
+        ObserverClientClose(now, "its ending never came");
     return true;
 }
+
 }  // namespace
 
 void Tick(coop::net::Session* session) {
@@ -724,6 +745,8 @@ void OnDisconnect() {
     g_ocDone = false;
     g_ocPass = true;
     g_ocIdleMs = 0;
+    g_ocWaitMs = 0;
+    g_ocLate = false;
     ObserverReset();
 }
 
