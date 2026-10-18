@@ -28,12 +28,14 @@
 #include "ue_wrap/engine/engine_mainplayer.h"
 #include "ue_wrap/engine/engine_pawn.h"
 #include "ue_wrap/world/daynightcycle.h"
+#include "ue_wrap/world/world_singleton.h"
 
 #include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <string>
 #include <vector>
 
 namespace coop::dev::explosion_drill::detail {
@@ -96,6 +98,7 @@ struct Reading {
     int         rocketMax = 0, bombMax = 0;
     long long   ms = -1, explodeMs = -1;
     const char* skip = nullptr;
+    char        skipText[200] = "";  // a reason that names what the leg found (skip points at it)
     // The weather before the leg's first spawn (restored at its end), and the salt legs' spawn tries.
     int               rainBefore = -1;
     int               spawnTries = 0;
@@ -115,6 +118,9 @@ struct Src {
     bool                  said = false;
     int                   lastRocket = -1, lastBomb = -1, sample = 0;
     bool                  host = false;  // this process's role, set each Tick
+    // The acting game's switches the arm holds, each with the value it found (-1 = not held): the player's
+    // startInvinc and the gamemode's unlockFungunsInStory.
+    int                   invincBefore = -1, unlockBefore = -1;
 };
 Src g_src;
 std::vector<ue_wrap::CachedObjRef> g_pre;  // the projectiles the world held when the drill began
@@ -170,6 +176,16 @@ bool WriteInt(void* obj, const wchar_t* name, int value) {
     return true;
 }
 
+// A reflected bool written in place.
+bool WriteBool(void* obj, const wchar_t* name, bool value) {
+    int32_t off = -1;
+    uint8_t mask = 0;
+    if (!obj || !R::FindBoolProperty(R::ClassOf(obj), name, off, mask)) return false;
+    uint8_t* b = static_cast<uint8_t*>(obj) + off;
+    *b = value ? static_cast<uint8_t>(*b | mask) : static_cast<uint8_t>(*b & ~mask);
+    return true;
+}
+
 // The day cycle's isRaining byte: its address and bit, or null when the cycle or the member is unreadable.
 uint8_t* RainByte(uint8_t& mask) {
     void* cycle = ue_wrap::daynightcycle::Cycle();
@@ -217,6 +233,57 @@ void* HeldOf(void* player, const wchar_t* cls) {
     if (!E::ReadMainPlayerGrabState(player, gs)) return nullptr;
     void* h = gs.holdingActor;
     return h && R::IsLive(h) && R::NameEquals(R::NameOf(R::ClassOf(h)), cls) ? h : nullptr;
+}
+
+// The class name of what the hand holds, or "none"; ASCII, for a log line.
+std::string HeldClassName(void* player) {
+    E::MainPlayerGrabState gs{};
+    if (!E::ReadMainPlayerGrabState(player, gs) || !gs.holdingActor || !R::IsLive(gs.holdingActor)) return "none";
+    const std::wstring w = R::ClassNameOf(gs.holdingActor);
+    return std::string(w.begin(), w.end());
+}
+
+// ---- what keeps the acting player and its guns whole ----
+//
+// Blueprint mainPlayer: Add Player Damage and kill() return while startInvinc holds (Add Player Damage also on
+// immortal, dreaming and dead). startInvinc starts true; its one writer is a Delay(5) after begin-play that clears it,
+// once. The arm sets it on the acting player, so a pipe bomb's own blast (radius 1500) leaves the legs after it a live
+// player, and puts back the value it found.
+// Blueprint prop_funGun, playerHoldPost: in the story game modes a gun that the date and
+// gamemode.unlockFungunsInStory do not allow calls the player's forceDrop() with the hint "the g*ns are prohibited!",
+// so the gun is dropped as a world prop in the tick it was taken. The arm sets the gamemode's unlockFungunsInStory (the
+// cheat menu's own switch) for the same span. Each leg's start re-asserts both, so the Delay(5) landing inside the arm
+// costs no leg.
+
+// Sets `name` on `obj` and keeps what it found in `held`; says so when it changed a value.
+void Hold(void* obj, const wchar_t* name, int& held) {
+    bool now = false;
+    if (!R::IsLive(obj) || !ReadBool(obj, name, now)) return;
+    if (now) {
+        if (held < 0) held = 1;
+        return;
+    }
+    WriteBool(obj, name, true);
+    if (held < 0) held = 0;
+    Info("source role=%s guard %ls set to 1", RoleName(g_src.host), name);
+}
+
+void Guard() {
+    Hold(coop::players::Registry::Get().Local(), L"startInvinc", g_src.invincBefore);
+    Hold(ue_wrap::world_singleton::Gamemode(), L"unlockFungunsInStory", g_src.unlockBefore);
+}
+
+void Put(void* obj, const wchar_t* name, int& held) {
+    if (held < 0) return;
+    const bool ok = R::IsLive(obj) && WriteBool(obj, name, held != 0);
+    Info("source role=%s guard %ls restored to %d%s", RoleName(g_src.host), name, held, ok ? "" : " (object gone)");
+    held = -1;
+}
+
+// The values the arm found, put back; a second call does nothing.
+void Unguard() {
+    Put(coop::players::Registry::Get().Local(), L"startInvinc", g_src.invincBefore);
+    Put(ue_wrap::world_singleton::Gamemode(), L"unlockFungunsInStory", g_src.unlockBefore);
 }
 
 // mainPlayer's own call of a held prop's hand verb: the Blueprint function of that name, with the player.
@@ -537,6 +604,7 @@ void SaltWait(bool host) {
 
 void StartLeg() {
     g_src.r = Reading{};
+    Guard();
     Enter(LStep::Begin);
 }
 
@@ -583,7 +651,12 @@ void LegTick(Arm arm, bool host) {
         return Enter(LStep::Held);
     case LStep::Held:
         if (HeldOf(player, d.cls)) return Enter(LStep::Aim);
-        if (Late(kStepBound)) Skip("the hand never held the item");
+        if (Late(kStepBound)) {
+            std::snprintf(g_src.r.skipText, sizeof(g_src.r.skipText),
+                          "the hand never held the item: holding_actor is %s, the row builds %ls",
+                          HeldClassName(player).c_str(), d.cls);
+            Skip(g_src.r.skipText);
+        }
         return;
     case LStep::Aim: return Aim(player);
     case LStep::Act: return Act(d, player);
@@ -599,6 +672,7 @@ void LegTick(Arm arm, bool host) {
         Emit(d, host);
         Cleanup(d, host);
         if (++g_src.leg >= kLegCount) {
+            Unguard();
             Info("source DONE arm=%s legs=%d measured=%d", ArmName(arm), kLegCount, g_src.measured);
             g_src.phase = SP::Done;
             return;
@@ -614,6 +688,7 @@ void LegTick(Arm arm, bool host) {
 
 void Abandon(const char* what) {
     Warn("ABANDONED %s", what);
+    Unguard();
     g_src.phase = SP::Done;
 }
 
@@ -670,6 +745,7 @@ void SourceTick(Arm arm, bool isHost) {
 }
 
 void SourceReset() {
+    Unguard();
     Remove(g_src.rocket.Get(), g_src.host);
     Remove(g_src.parent.Get(), g_src.host);
     // The host that only read holds a mirror of whatever of the client's crossed; none of it is the host's own.
