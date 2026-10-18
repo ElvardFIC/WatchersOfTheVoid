@@ -28,6 +28,7 @@ inline constexpr RefFn kRefFns[] = {
     {L"rufus_skeleton_animblueprint_c", L"blueprintupdateanimation", L"rufus_skeleton_animblueprint_c.blueprintupdateanimation", 0x86ca63c8a831a98full, 0xf4ab9b5d37adac21ull},
     {L"shitduende_rigged_skeleton_animblueprint_c", L"blueprintupdateanimation", L"shitduende_rigged_skeleton_animblueprint_c.blueprintupdateanimation", 0x86ca63c8a831a98full, 0x13309a9ea9590d69ull},
     {L"tentacleball_prot_skeleton_animblueprint1_c", L"blueprintupdateanimation", L"tentacleball_prot_skeleton_animblueprint1_c.blueprintupdateanimation", 0x86ca63c8a831a98full, 0xf253073b0390594dull},
+    {L"ticker_serverbreaker_c", L"receivetick", L"ticker_serverbreaker_c.receivetick", 0x6082ffdfa2cda429ull, 0xdbb5e6be90dd157dull},
     {L"tomtenisse1_skeleton_animblueprint_c", L"blueprintupdateanimation", L"tomtenisse1_skeleton_animblueprint_c.blueprintupdateanimation", 0x86ca63c8a831a98full, 0x092f0f854cd6a61cull},
     {L"wallpcunit_tapes_anim_skeleton_animblueprint_c", L"blueprintupdateanimation", L"wallpcunit_tapes_anim_skeleton_animblueprint_c.blueprintupdateanimation", 0x86ca63c8a831a98full, 0x6f8572ea8b9ec959ull},
     {L"wendussy_dream_skeleton_animblueprint_c", L"blueprintupdateanimation", L"wendussy_dream_skeleton_animblueprint_c.blueprintupdateanimation", 0x86ca63c8a831a98full, 0x2418befa93d17b56ull},
