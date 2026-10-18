@@ -118,9 +118,10 @@ void OnEntitySpawn(const coop::net::EntitySpawnPayload& payload) {
                 payload.locX, payload.locY, payload.locZ, payload.elementId);
         return;
     }
-    // The duplicate-eid guard: the host allocates each id once and the reliable channel does not
-    // redeliver, but a late duplicate would duplicate the actor. An unlocked early exit; a race
-    // past it is caught by the install failure path below, which destroys the orphan.
+    // The duplicate-eid guard: a re-announce re-sends the whole NPC set through the connect
+    // broadcast by design, so an eid already mirrored is that re-send, and a second install would
+    // duplicate the actor. An unlocked early exit; a race past it is caught by the install failure
+    // path below, which destroys the orphan.
     if (NpcMirrors().Get(payload.elementId) != nullptr) {
         UE_LOGW("npc-sync[client OnSpawn]: eid=%u already mirrored locally -- dropping duplicate",
                 payload.elementId);

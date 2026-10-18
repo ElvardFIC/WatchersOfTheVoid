@@ -380,7 +380,7 @@ void ConnectReplayForSlot(int slot) {
     coop::window_sync::QueueConnectBroadcastForSlot(slot);  // base-window clean (adopt=1)
     coop::grime_sync::QueueConnectBroadcastForSlot(slot);  // surface grime process (adopt=1)
     coop::trash_pile_sync::QueueConnectBroadcastForSlot(slot);  // pile counters (adopt=1) + depleted-key replay
-    coop::npc_world_enum::RegisterExistingWorldNpcs(coop::npc_world_enum::NpcEnumOrigin::ConnectEdge);  // pre-existing/level-load NPCs (the save's kerfur) -> joiner adopts its twin
+    coop::npc_world_enum::RegisterExistingWorldNpcs(slot);  // pre-existing/level-load NPCs (the save's kerfur) -> the peers already in; the joiner (slot) is skipped, its connect broadcast below sends it and it adopts its twin
     coop::npc_sync::QueueConnectBroadcastForSlot(slot);  // existing NPCs -> joiner
     coop::world_actor_sync::QueueConnectBroadcastForSlot(slot);  // existing event WorldActors -> joiner
     coop::balance_sync::SendCurrentToSlot(slot);  // host's current balance

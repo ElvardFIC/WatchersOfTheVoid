@@ -294,8 +294,9 @@ bool NpcSuppress_Interceptor(void* self, void* params) {
         UE_LOGI("npc-sync[host]: tracked EntitySpawn class='%ls' elementId=%u loc=(%.0f, %.0f, %.0f) rot=(p=%.1f y=%.1f r=%.1f)",
                 cls.c_str(), p.elementId, p.locX, p.locY, p.locZ,
                 p.rotPitch, p.rotYaw, p.rotRoll);
-        // An alone host's spawns are delivered by the join snapshot instead.
-        if (s->connected() && !s->SendEntitySpawn(p)) {
+        // An alone host's spawns, and those made while every client is still loading, are
+        // delivered by the join snapshot (the connect broadcast) instead.
+        if (s->connected() && s->AnyWorldReadyPeer() && !s->SendEntitySpawn(p)) {
             UE_LOGW("npc-sync[host]: SendEntitySpawn failed (reliable channel busy?) -- NPC elementId=%u not broadcast",
                     p.elementId);
         }
