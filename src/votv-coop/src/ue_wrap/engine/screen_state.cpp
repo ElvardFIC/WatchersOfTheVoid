@@ -29,8 +29,9 @@ struct Counts {
 // The live instances of the class named `name`, counted from the object index (the caller has drained it). A slot
 // that is dying or not yet readable and a class default are left out; the list is taken before any call, since a
 // call runs engine code the index's callback must not. An instance is UNREADABLE when the question could not be asked
-// (the function did not resolve, its frame is not valid, the call did not run); a call that ran and answered false
-// is off the viewport and counts nowhere.
+// (the function did not resolve, its frame is not valid, the call did not run, its answer could not be read); a call
+// that ran and answered false is off the viewport and counts nowhere. Every instance is of the one class, so the
+// function is resolved once.
 Counts CountOnScreen(const wchar_t* name) {
     Counts out;
     void* cls = OI::ClassByName(name);
@@ -41,16 +42,18 @@ Counts CountOnScreen(const wchar_t* name) {
         if (R::NameStartsWith(R::NameOf(obj), L"Default__")) return;
         static_cast<std::vector<void*>*>(ctx)->push_back(obj);
     }, &widgets);
+    void* inViewportFn = R::FindDispatchFunctionCached(cls, L"IsInViewport");
     for (void* w : widgets) {
         if (!R::IsLive(w)) continue;
         ++out.live;
-        void* inViewportFn = R::FindDispatchFunctionCached(R::ClassOf(w), L"IsInViewport");
         ParamFrame f(inViewportFn);
-        if (!inViewportFn || !f.valid() || !Call(w, f)) {
+        bool onScreen = false;
+        if (!inViewportFn || !f.valid() || !Call(w, f) ||
+            !f.GetRaw(L"ReturnValue", &onScreen, static_cast<int32_t>(sizeof(onScreen)))) {
             ++out.unreadable;
             continue;
         }
-        if (f.Get<bool>(L"ReturnValue")) ++out.onScreen;
+        if (onScreen) ++out.onScreen;
     }
     return out;
 }
