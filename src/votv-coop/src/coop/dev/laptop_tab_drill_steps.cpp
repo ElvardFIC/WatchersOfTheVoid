@@ -171,18 +171,21 @@ float DistanceBetween(void* a, void* b) {
     return std::sqrt(dx * dx + dy * dy + dz * dz);
 }
 
-// The game's enter conditions as this peer reads them (the laptop's action 4: the keyboard and the mouse upright, still
-// and within 150 uu of the laptop, the player inside its Box), for the claim that was never confirmed. The player's own
-// distance and speed fill the named fields; the parts' follow, because the game judges the parts', not the player's.
+// The game's enter conditions as this peer reads them, for the claim that was never confirmed. actionOptionIndex returns
+// without a word while the boot or shutdown latent runs (anim) or the wall power is off (powered); past those, action 4
+// wants the keyboard and the mouse upright, still and within 150 uu of the laptop and the player inside its Box, and
+// says a hint when one fails. The player's own distance and speed fill the named fields; the parts' follow, because the
+// game judges the parts', not the player's. power=? is a power state that did not read.
 void LogEnterRefused(void* me) {
     void* const keyboard = PartActor(g_h.laptop, L"pcpart_keyboard");
     void* const mouse = PartActor(g_h.laptop, L"pcpart_mouse");
     L::PowerState power;
     const bool read = L::ReadPower(power);
     UE_LOGW("laptop_tab_drill: enter refused because keyboardUp=%.2f mouseUp=%.2f dist=%.0f inBox=%d speed=%.1f "
-            "isOpened=%d holder=%u partDist=%.0f/%.0f partSpeed=%.1f/%.1f",
+            "power=%hs powered=%d anim=%d isOpened=%d holder=%u partDist=%.0f/%.0f partSpeed=%.1f/%.1f",
             UpZ(keyboard), UpZ(mouse), DistanceBetween(me, g_h.laptop), InBox(g_h.box, me) ? 1 : 0, SpeedOf(me),
-            read && power.isOpened ? 1 : 0, static_cast<unsigned>(DO::HolderOf(kClaim)),
+            read ? "read" : "?", power.powered ? 1 : 0, power.anim ? 1 : 0, power.isOpened ? 1 : 0,
+            static_cast<unsigned>(DO::HolderOf(kClaim)),
             DistanceBetween(keyboard, g_h.laptop), DistanceBetween(mouse, g_h.laptop), SpeedOf(keyboard),
             SpeedOf(mouse));
 }
