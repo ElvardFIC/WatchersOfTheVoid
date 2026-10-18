@@ -72,7 +72,8 @@ bool ArmedForThisDeath();
 // sees them (`coop/player/run_end_travel`).
 bool LastReviveSucceeded();
 
-// How many revives' screen cleanups have ended, cleared or given up. A drill waits on it rather than a clock. Any thread.
+// How many revives' screen cleanups have ended, cleared or given up; a cleanup cut short by another revive or a session
+// start is not counted. A drill waits on it rather than a clock. Any thread.
 uint32_t ScreenCleanupsEnded();
 
 // How long after the local pawn first ticked the arm became answerable, or -1 while it still is

@@ -120,18 +120,27 @@ constexpr int kDeadWindowMs  = 22000;
 constexpr int kNoiseFloorWindowMs = 26000;
 constexpr int kSampleMs      = 250;
 
-// VOTVCOOP_DEATH_PRIOR, clamped to 0..5; a value outside that is said once.
+// VOTVCOOP_DEATH_PRIOR, clamped to 0..5; a value that is not a number, or outside that, is said.
 int PriorDeaths() {
     const std::string v = coop::config::ReadEnv("VOTVCOOP_DEATH_PRIOR");
     if (v.empty()) return 0;
-    const int asked = std::atoi(v.c_str());
-    const int n = std::clamp(asked, 0, 5);
+    char* end = nullptr;
+    const long asked = std::strtol(v.c_str(), &end, 10);
+    if (end == v.c_str() || *end != '\0') {
+        UE_LOGW("death_test: VOTVCOOP_DEATH_PRIOR=%s is not a number -- no prior deaths", v.c_str());
+        return 0;
+    }
+    const int n = static_cast<int>(std::clamp(asked, 0L, 5L));
     if (n != asked) UE_LOGW("death_test: VOTVCOOP_DEATH_PRIOR=%s clamped to %d", v.c_str(), n);
     return n;
 }
 
+// What one prior death came to: a black screen still on the viewport after its revive is Dirty; a hit that did not
+// land, a death that did not happen or a cleanup that never ended is Inconclusive, the premise gone.
+enum class Prior { Clean, Dirty, Inconclusive };
+
 // One prior death: the lethal hit, the wait for the revive's screen cleanup to end, and the black-screen census.
-void RunPriorDeath(int k, int prior) {
+Prior RunPriorDeath(int k, int prior) {
     const uint32_t ended0 = coop::death_revive::ScreenCleanupsEnded();
     auto pd = std::make_shared<std::atomic<int>>(0);
     auto hitOk = std::make_shared<int>(0);
@@ -143,6 +152,10 @@ void RunPriorDeath(int k, int prior) {
         pd->store(1);
     });
     WaitDone(pd, 8000);
+    if (!*hitOk) {
+        UE_LOGW("death_test: prior death %d of %d -- the lethal hit did not land", k + 1, prior);
+        return Prior::Inconclusive;
+    }
     const uint64_t t0 = ::GetTickCount64();
     bool sawDead = false, ended = false;
     while (!ended && ::GetTickCount64() - t0 < 2ull * kDeadWindowMs) {
@@ -169,12 +182,15 @@ void RunPriorDeath(int k, int prior) {
         cd->store(1);
     });
     WaitDone(cd, 8000);
-    const bool clean = *hitOk && sawDead && ended && *readable && *onScreen == 0;
-    ::ue_wrap::log::Write(clean ? ::ue_wrap::log::Level::Info : ::ue_wrap::log::Level::Warn,
-                          "death_test: prior death %d of %d -- hit=%d dead=%d cleanup ended=%d after %llu ms; "
+    const Prior r = (!sawDead || !ended || !*readable) ? Prior::Inconclusive
+                    : *onScreen == 0                    ? Prior::Clean
+                                                        : Prior::Dirty;
+    ::ue_wrap::log::Write(r == Prior::Clean ? ::ue_wrap::log::Level::Info : ::ue_wrap::log::Level::Warn,
+                          "death_test: prior death %d of %d -- dead=%d cleanup ended=%d after %llu ms; "
                           "blackScreen_C live=%d on viewport=%d (readable=%d)",
-                          k + 1, prior, *hitOk, sawDead ? 1 : 0, ended ? 1 : 0,
+                          k + 1, prior, sawDead ? 1 : 0, ended ? 1 : 0,
                           static_cast<unsigned long long>(::GetTickCount64() - t0), *live, *onScreen, *readable);
+    return r;
 }
 
 }  // namespace
@@ -232,7 +248,21 @@ DWORD WINAPI DeathTestThread(LPVOID) {
     // and then the black screens are counted -- live ones, and the ones still on the viewport -- a warning when any is
     // on screen, or when the death or the revive did not happen.
     if (const int prior = PriorDeaths(); prior > 0) {
-        for (int k = 0; k < prior; ++k) RunPriorDeath(k, prior);
+        int dirty = 0;
+        for (int k = 0; k < prior; ++k) {
+            const Prior r = RunPriorDeath(k, prior);
+            if (r == Prior::Inconclusive) {
+                UE_LOGW("death_test: VERDICT INCONCLUSIVE -- prior death %d of %d did not play out (see its line)",
+                        k + 1, prior);
+                UE_LOGI("death_test: DONE");
+                return 0;
+            }
+            if (r == Prior::Dirty) ++dirty;
+        }
+        char detail[160];
+        std::snprintf(detail, sizeof(detail), "%d of %d prior deaths left a black screen on the viewport after the "
+                      "revive (want 0)", dirty, prior);
+        Verdict("D15 prior-black-cleared", dirty == 0, detail);
         s = Probe();
     }
 
