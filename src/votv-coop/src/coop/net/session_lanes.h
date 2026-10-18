@@ -87,7 +87,8 @@ inline Lane LaneForKind(ReliableKind k) {
     // ReelEjectIntent, the same order-paired family: the ejecting client may pocket the reel a pass
     // later (a keyed destroy on Bulk), and in-lane ordering makes the host author the spawn first.
     case ReliableKind::ReelEjectIntent: return Lane::Bulk;
-    // Keep the intent with the host-authored prop birth and source destroy it produces.
+    // A client's press, on the lane of its other prop intents: ordered against that client's own bulk
+    // sends only; the host's birth and destroy it causes travel the other way and are not ordered by it.
     case ReliableKind::SleepingbagIntent: return Lane::Bulk;
     case ReliableKind::EntitySpawn:    return Lane::Bulk;
     case ReliableKind::EntityDestroy:  return Lane::Bulk;

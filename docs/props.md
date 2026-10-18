@@ -237,12 +237,17 @@ it a random prop key (the persisted kind) and retries the ordinary lifecycle exp
 7, whose graph calls `fold()`); it watches the press and not `fold()` itself, which the deployed
 bag's own `BeginPlay` also runs when its foundation traces fail and which no player pressed. It
 sends the source prop's host element id and the action byte, and cancels its local Blueprint
-verb. The host checks that the sender is in reach and that the named prop is still in the expected
-form, then invokes that same Blueprint verb on its copy. The Blueprint owns the replacement birth
-and source destruction; the host spawn watcher and prop lifecycle carry those edges to every peer.
-The joiner's host save and ordinary prop snapshot seed whichever form is live. The client does not
-choose the replacement class or transform. `[V]` `coop/interactables/sleepingbag_sync`,
-`ue_wrap/actors/sleepingbag`, `coop/props/host_spawn_watcher`, `coop/props/prop_lifecycle`.
+verb once the host was asked; a press the client cannot send (the source has no host prop id, or the
+send fails) runs on its own copy as it would with no lane. The host checks that the sender is in
+reach, that no other peer holds the prop, and that the named prop is still in the expected form
+with the action byte of that form, then invokes that same Blueprint verb on its copy. The Blueprint
+owns the replacement birth and source destruction; the host spawn watcher and prop lifecycle carry
+those edges to every peer. The joiner's host save and ordinary prop snapshot seed whichever form is
+live. The client does not choose the replacement class or transform. `[RD]`
+`coop/interactables/sleepingbag_sync`, `ue_wrap/actors/sleepingbag`, `coop/props/host_spawn_watcher`,
+`coop/props/prop_lifecycle`. Whether a deployed bag already in the host's world before the session
+(loaded from a save) carries a key is not measured; one without a key gets no host prop id and its
+press takes the local path above. `[?]`
 
 Unfolding is relayed as the interaction action byte so the Blueprint retains its own placement and
 mattress branches. The host runs it with the sender's remote-player puppet, preserving the game's
