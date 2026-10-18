@@ -26,9 +26,33 @@ bool IsInstanceOf(void* obj, const wchar_t* baseName) {
     return R::IsDescendantOfAny(cls, bases, 1);
 }
 
+// A property's place in its class, resolved once: a lookup walks the class's property chain, and these
+// run on a path a keystroke reaches. Keyed by the class and its listing id, so a class unloaded and
+// loaded again is resolved again. Game thread.
+struct Slot {
+    void* cls = nullptr;
+    uint64_t listing = 0;
+    int32_t off = -1;
+    uint8_t mask = 0;   // a bool property's bit
+};
+
+bool Resolved(const Slot& s, void* cls) {
+    return s.off >= 0 && s.cls == cls && s.listing == object_index::ClassListingId(cls);
+}
+
+int32_t OffsetOf(Slot& s, void* cls, const wchar_t* name) {
+    if (!cls) return -1;
+    if (Resolved(s, cls)) return s.off;
+    const int32_t off = R::FindPropertyOffset(cls, name);
+    if (off >= 0) s = Slot{cls, object_index::ClassListingId(cls), off, 0};
+    return off;
+}
+
+Slot g_text, g_page, g_clipboard, g_box, g_paperDraw, g_uneditable;
+
 // The object a pointer field of `owner` names, null while it is null, dead or the field is unknown.
-void* ReadObjectField(void* owner, const wchar_t* field) {
-    const int32_t off = R::FindPropertyOffset(R::ClassOf(owner), field);
+void* ReadObjectField(void* owner, Slot& slot, const wchar_t* field) {
+    const int32_t off = OffsetOf(slot, R::ClassOf(owner), field);
     if (off < 0) return nullptr;
     void* obj = *reinterpret_cast<void**>(reinterpret_cast<uint8_t*>(owner) + off);
     return obj && R::IsLive(obj) ? obj : nullptr;
@@ -44,19 +68,19 @@ bool IsPaperDrawWidget(void* widget) { return IsInstanceOf(widget, L"ui_paperDra
 
 void* NotebookOf(void* editorWidget) {
     if (!IsEditorWidget(editorWidget)) return nullptr;
-    void* prop = ReadObjectField(editorWidget, L"clipboard");
+    void* prop = ReadObjectField(editorWidget, g_clipboard, L"clipboard");
     return IsNotebook(prop) ? prop : nullptr;
 }
 
 void* PaperOf(void* drawWidget) {
     if (!IsPaperDrawWidget(drawWidget)) return nullptr;
-    void* paper = ReadObjectField(drawWidget, L"paperDraw");
+    void* paper = ReadObjectField(drawWidget, g_paperDraw, L"paperDraw");
     return IsDrawablePaper(paper) ? paper : nullptr;
 }
 
 bool ReadPages(void* notebook, std::vector<std::wstring>& out) {
     if (!IsNotebook(notebook)) return false;
-    const int32_t off = R::FindPropertyOffset(R::ClassOf(notebook), L"text");
+    const int32_t off = OffsetOf(g_text, R::ClassOf(notebook), L"text");
     if (off < 0) return false;
     out = field_io::ReadFStringArrayField(notebook, off);
     return true;
@@ -64,13 +88,13 @@ bool ReadPages(void* notebook, std::vector<std::wstring>& out) {
 
 bool WritePages(void* notebook, const std::vector<std::wstring>& pages) {
     if (!IsNotebook(notebook)) return false;
-    const int32_t off = R::FindPropertyOffset(R::ClassOf(notebook), L"text");
+    const int32_t off = OffsetOf(g_text, R::ClassOf(notebook), L"text");
     return off >= 0 && field_io::WriteFStringArrayField(notebook, off, pages);
 }
 
 bool ReadPage(void* notebook, int32_t& page) {
     if (!IsNotebook(notebook)) return false;
-    const int32_t off = R::FindPropertyOffset(R::ClassOf(notebook), L"page");
+    const int32_t off = OffsetOf(g_page, R::ClassOf(notebook), L"page");
     if (off < 0) return false;
     page = *reinterpret_cast<const int32_t*>(reinterpret_cast<const uint8_t*>(notebook) + off);
     return true;
@@ -78,20 +102,22 @@ bool ReadPage(void* notebook, int32_t& page) {
 
 bool ReadEditorText(void* editorWidget, std::wstring& out) {
     if (!IsEditorWidget(editorWidget)) return false;
-    void* box = ReadObjectField(editorWidget, L"MLET_text");
+    void* box = ReadObjectField(editorWidget, g_box, L"MLET_text");
     void* fn = box ? R::FindDispatchFunctionCached(R::ClassOf(box), L"GetText") : nullptr;
     if (!fn) return false;
     ParamFrame frame(fn);
     if (!frame.valid() || !Call(box, frame)) return false;
     uint8_t ftext[ftext_utils::kFTextSize]{};
     if (!frame.GetRaw(L"ReturnValue", ftext, sizeof(ftext))) return false;
-    out = ftext_utils::FTextToString(ftext);
+    // The FString the conversion makes goes back to the engine heap. The FText keeps the reference its
+    // call took (ftext_utils.h): it shares the box's own text data, which EngineFree must not free.
+    out = ftext_utils::FTextToStringFreeing(ftext);
     return true;
 }
 
 bool SetEditorText(void* editorWidget, const std::wstring& text) {
     if (!IsEditorWidget(editorWidget)) return false;
-    void* box = ReadObjectField(editorWidget, L"MLET_text");
+    void* box = ReadObjectField(editorWidget, g_box, L"MLET_text");
     void* fn = box ? R::FindDispatchFunctionCached(R::ClassOf(box), L"SetText") : nullptr;
     if (!fn) return false;
     uint8_t ftext[ftext_utils::kFTextSize]{};
@@ -102,10 +128,14 @@ bool SetEditorText(void* editorWidget, const std::wstring& text) {
 
 bool IsReadOnly(void* editorWidget) {
     if (!IsEditorWidget(editorWidget)) return false;
-    int32_t off = -1;
-    uint8_t mask = 0;
-    if (!R::FindBoolProperty(R::ClassOf(editorWidget), L"uneditable", off, mask)) return false;
-    return (*(reinterpret_cast<const uint8_t*>(editorWidget) + off) & mask) != 0;
+    void* cls = R::ClassOf(editorWidget);
+    if (!Resolved(g_uneditable, cls)) {
+        int32_t off = -1;
+        uint8_t mask = 0;
+        if (!R::FindBoolProperty(cls, L"uneditable", off, mask)) return false;
+        g_uneditable = Slot{cls, object_index::ClassListingId(cls), off, mask};
+    }
+    return (*(reinterpret_cast<const uint8_t*>(editorWidget) + g_uneditable.off) & g_uneditable.mask) != 0;
 }
 
 bool CommitEditorPage(void* editorWidget, std::vector<std::wstring>& pagesOut) {
