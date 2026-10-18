@@ -43,7 +43,7 @@ constexpr float kNearCm = 500.f;
 // The marker a seeded disc carries in its own data array, so a disc this instrument prepared can
 // be told from one it did not. The read-writes value is this plus the disc index; the class
 // default is a round 32.
-constexpr const wchar_t* kMarker = L"MULTIVOID-FLOPPY-SELFTEST";
+constexpr const wchar_t* kMarker = L"MULTIVOID-FLOPPY\nSELFTEST";
 constexpr int32_t kMarkerReadWrites = 900;
 
 // One slot reading for a log line: the scalars plus the two sizes that say whether the box took
