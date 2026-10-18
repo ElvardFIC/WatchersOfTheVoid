@@ -30,6 +30,7 @@
 #include "ue_wrap/core/sdk_profile.h"
 #include "ue_wrap/core/sdk_profile_names.h"
 #include "ue_wrap/engine/engine.h"
+#include "ue_wrap/engine/engine_player_verbs.h"
 
 #define PSAPI_VERSION 2   // K32GetProcessMemoryInfo from kernel32 -- no psapi.lib link
 #include <psapi.h>
@@ -384,8 +385,27 @@ DWORD WINAPI DeathTestThread(LPVOID) {
     long long tRedGone = -1, tBloodGone = -1, tBlurGone = -1;
     bool sawZeroHealth = false;
     DeathSnapshot last = s;
+    // VOTVCOOP_DEATH_HITS_WHILE_DEAD=1: the creature keeps hitting a dead player, as a zombie did to a field client --
+    // its addDamage (the verb a delivered PlayerHit runs) of about a zombie's 10.5, every 1.5 s through the dead window.
+    // The drill's one death never had a hit land on a dead body; the grading below is the same.
+    const bool hitsWhileDead = coop::config::ReadEnv("VOTVCOOP_DEATH_HITS_WHILE_DEAD") == "1";
+    uint64_t nextDeadHit = tHit + 500;
+    int deadHits = 0;
     for (uint64_t now = tHit; now - tHit < static_cast<uint64_t>(kDeadWindowMs);
          now = ::GetTickCount64()) {
+        if (hitsWhileDead && now >= nextDeadHit) {
+            nextDeadHit = now + 1500;
+            auto dh = std::make_shared<std::atomic<int>>(0);
+            auto ok = std::make_shared<int>(0);
+            GT::Post([dh, ok] {
+                void* mp = coop::players::Registry::Get().Local();
+                if (mp && R::IsLive(mp) && ue_wrap::engine::InvokeAddDamage(mp, nullptr, 10.5f, ue_wrap::FVector{}))
+                    *ok = 1;
+                dh->store(1);
+            });
+            WaitDone(dh, 8000);
+            if (*ok) ++deadHits;
+        }
         DeathSnapshot p = Probe();
         const long long dt = static_cast<long long>(::GetTickCount64() - tHit);
         if (p.haveState && p.dead && tDead < 0) tDead = dt;
@@ -407,6 +427,7 @@ DWORD WINAPI DeathTestThread(LPVOID) {
         ::Sleep(kSampleMs);
     }
     dead.ms = (tTravel > 0 ? static_cast<uint64_t>(tTravel) : static_cast<uint64_t>(kDeadWindowMs));
+    if (hitsWhileDead) UE_LOGI("death_test: hits while dead -- %d addDamage(10.5) landed through the dead window", deadHits);
 
     UE_LOGI("death_test: TIMELINE (ms after the hit) -- dead=%lld ragdoll=%lld blackScreen=%lld "
             "blackGone=%lld travel=%lld grabCleared=%lld  [RE predicts dead~0, "
