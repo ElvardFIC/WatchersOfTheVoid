@@ -154,6 +154,7 @@
 #include "coop/items/hook_anchor.h"
 #include "coop/items/hook_sync.h"  // the hook lane: owner-phase stream, mirrors, the tick park
 #include "coop/world/event_active_sync.h"  // the native activeEvents registry probe
+#include "coop/world/creature_event_relay.h"  // the host's creature events, carried to every client's count
 #include "coop/world/weather_sync.h"
 
 #include "ue_wrap/core/log.h"
@@ -217,6 +218,7 @@ void Install(coop::net::Session& session) {
     coop::event_cue_sync::Install(&session);  // cosmetic emitter cues: the host's runEvent watch sends them, the client replays
     coop::event_fire_sync::Install(&session);  // scheduled events: the host's runEvent/runSpecialEvent watches -> EventFire; client hold + policy replay
     coop::event_active_sync::Install(&session);  // the host's setEvent watch: begin/end edges; the join snapshot reads the game's registry
+    coop::creature_event_relay::Install(&session);  // a creature's setEvent: the host's count per creature, applied to its mirror on a client
     coop::alarm_sync::Install(&session);  // base radar alarm shared-world toggle (a 1 Hz active poll on both roles)
     coop::serverbox_sync::Install(&session);  // the server boxes' break state: the verbs run on the host, a client's repair sent there
     coop::server_upgrade_sync::Install(&session);  // the servers' upgrades: ops at the box's two verbs + host canonical
@@ -397,6 +399,8 @@ void ConnectReplayForSlot(int slot) {
     // One EventSnapshot per in-flight registry entry; the joiner replays the replay-safe rows with
     // the active override.
     coop::event_active_sync::SendJoinSnapshotForSlot(slot);
+    // Each creature's count, after its NPC spawn (the queue above, same lane): the joiner applies a count at the bind.
+    coop::creature_event_relay::SendJoinSnapshotForSlot(slot);
     // The alarm lane's late-join answer: the current alarm state, unconditionally, so a mid-alarm
     // joiner starts its klaxon on arrival.
     coop::alarm_sync::QueueConnectBroadcastForSlot(slot);
@@ -534,6 +538,7 @@ DisconnectStats DisconnectAll() {
     coop::event_cue_sync::OnDisconnect();  // drop the session the cue watch sends on
     coop::event_fire_sync::OnDisconnect();  // restore the client scheduler (allEvents.Num) + drop the queued fires
     coop::event_active_sync::OnDisconnect();  // drop the begun-events map and its world stamp
+    coop::creature_event_relay::OnDisconnect();  // a client's applied creature events back out; both halves' state; the session
     coop::alarm_sync::OnDisconnect();  // drop the cached trigger + poll baseline
     coop::serverbox_sync::OnDisconnect();  // the poll baseline and the session
     coop::server_upgrade_sync::OnDisconnect();  // verb snapshots + parked canonical + deny records

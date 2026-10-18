@@ -10,6 +10,7 @@
 #include "coop/net/session.h"
 #include "coop/creatures/npc_mirror.h"
 #include "coop/creatures/npc_sync.h"
+#include "coop/world/creature_event_relay.h"  // OnMirrorBound: the host's event count for a new mirror
 #include "coop/props/remote_prop_spawn.h"  // HasLoadTailQuiesced -- shared save-load-tail quiescence signal
 #include "coop/props/join_membership_sweep.h"  // anti-smear: claim+sweep
 #include "coop/dev/kerfur_census.h"  // DIAGNOSTIC: re-arm the kerfur census on world-ready / session-end
@@ -77,6 +78,9 @@ bool BindAsMirror(uint32_t eid, void* obj, const std::wstring& classW) {
                 eid, obj);
         return false;
     }
+    // The twin's BeginPlay ran as the client's own creature, so its setEvent(true) is registered: the relay
+    // retracts it and applies the host's count.
+    coop::creature_event_relay::OnMirrorBound(static_cast<coop::element::ElementId>(eid), obj);
     // THOROUGH PARK: stop actor + CMC ticks AND neutralize the kerfur's looping AI timers
     // (timer_face/timer_kerf/checkDoor survive a tick-disable). Now host-driven, zero local AI.
     ue_wrap::puppet::DisableCharacterTicks(obj);

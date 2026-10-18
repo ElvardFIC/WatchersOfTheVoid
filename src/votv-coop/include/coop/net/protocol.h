@@ -30,7 +30,7 @@ inline constexpr uint32_t kMagic = 0x564D5450u;
 // This file is past the 1500-line hard cap and stays there: it is the single-feature exception the
 // rule names. One wire format, whose enum, payload structs and static_asserts are read together;
 // splitting it would put a kind's number in one file and its bytes in another.
-inline constexpr uint16_t kProtocolVersion = 232;
+inline constexpr uint16_t kProtocolVersion = 233;
 
 // Default LAN port (overridable via multivoid.ini "net.port=").
 inline constexpr uint16_t kDefaultPort = 47621;
@@ -1022,6 +1022,13 @@ enum class ReliableKind : uint8_t {
     // sender must be within reach of the camera (the use) or of a device showing the laptop interface (the light),
     // and its intents run from a bounded queue at a bounded rate. CameraToggleIntentPayload.
     CameraToggleIntent = 183,
+
+    // Host to all: a creature's whole count of running events -- the host's net count of the `setEvent(true)` calls
+    // that creature made, by its element id, absolute. A client applies it to its mirror's registration in the
+    // gamemode's event count and never authors it; a client's own copy is refused at the host's receive edge. Never
+    // relayed. Late join: the host's count for every creature that holds one, at the joiner's world-ready. Trust:
+    // the id must be host-allocated and the count at most 8. CreatureEventActivePayload.
+    CreatureEventActive = 184,
 };
 
 #pragma pack(push, 1)
@@ -3404,6 +3411,17 @@ struct BadSunPayload {
 static_assert(sizeof(BadSunPayload) == 8, "BadSunPayload must be 8 bytes");
 static_assert(sizeof(BadSunPayload) <= 256 - 20 - 8,
               "BadSunPayload must fit in one reliable datagram");
+
+// A creature's running events (CreatureEventActive): the host's count of that creature's `setEvent(true)` calls not
+// yet undone. `elementId` is the creature's, a host-allocated id, not a sender's. The receiver applies the difference
+// to its mirror's registration in the gamemode's event count.
+struct CreatureEventActivePayload {
+    uint32_t elementId;
+    uint8_t  count;          // 0..8
+};
+static_assert(sizeof(CreatureEventActivePayload) == 5, "CreatureEventActivePayload must be 5 bytes");
+static_assert(sizeof(CreatureEventActivePayload) <= 256 - 20 - 8,
+              "CreatureEventActivePayload must fit in one reliable datagram");
 
 // A lightning strike (LightningStrike): the strike's world location; the receiver spawns the
 // strike actor there, and it destroys itself.

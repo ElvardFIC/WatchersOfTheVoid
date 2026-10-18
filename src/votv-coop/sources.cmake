@@ -257,6 +257,9 @@ set(VOTVCOOP_SOURCES
     src/coop/world/event_fire_policy.cpp
     src/coop/world/event_fire_sync.cpp
     src/coop/world/event_active_sync.cpp
+    src/coop/world/creature_event_relay.cpp
+    src/coop/world/creature_event_relay_host.cpp
+    src/coop/world/creature_event_relay_client.cpp
     src/coop/world/alarm_sync.cpp
     src/coop/interactables/serverbox_sync.cpp
     src/coop/interactables/server_upgrade_sync.cpp

@@ -123,7 +123,10 @@ The game keeps a registry of in-flight events: a reference count and the live ev
 maintained by the actors themselves. The host sees each event begin and end at `lib_C::setEvent`
 (a script-body watch) and, at a joiner's ready edge, reads the game's own registry and sends one
 snapshot entry per in-flight event so the joiner replays it from the start with the in-flight
-override (`coop/world/event_active_sync`). Events whose only trace is a one-shot particle emitter
+override (`coop/world/event_active_sync`). A creature's events are not replayed: the host sends the
+creature's count of running events whole, by element id, and a client applies it to its mirror's
+registration in the event count (`coop/world/creature_event_relay`) [?]; the creatures whose event
+is what the local camera sees (the killer wisp, the fossilhound, the antibreather, the egg) keep their own per viewer. Events whose only trace is a one-shot particle emitter
 (the meteor shower) are mirrored as cues: the host sees the row's `runEvent` return and broadcasts
 the emitter's identity and position, a joiner's snapshot reads the live emitters from the object
 index, and a client spawns the same emitter (`coop/world/event_cue_sync`).
@@ -236,7 +239,7 @@ edge. A one-shot cue a joiner was not present for is missed, by definition.
 | the clock and the sky | `coop/world/time_sync`, `coop/world/day_edge`, `coop/world/sky_sync`, `ue_wrap/world/daynightcycle`, `ue_wrap/world/profile`, `ue_wrap/world/event_list`, `ue_wrap/world/skysphere` |
 | weather | `coop/world/weather_sync`, `coop/world/weather_rain`, `coop/world/weather_fog`, `coop/world/weather_lightning`, `coop/world/weather_redsky`, `coop/world/weather_badsun`, `coop/world/weather_event_births`, `ue_wrap/world/directionalwind`, `ue_wrap/world/bad_sun` |
 | fireflies and the spawners | `coop/world/firefly_sync`, `coop/world/spawn_authority` |
-| events | `coop/world/event_fire_sync`, `coop/world/event_active_sync`, `coop/world/event_cue_sync`, `coop/dev/event_trigger` |
+| events | `coop/world/event_fire_sync`, `coop/world/event_active_sync`, `coop/world/creature_event_relay`, `coop/world/event_cue_sync`, `coop/dev/event_trigger` |
 | event actors and the pyramid | `coop/world/world_actor_sync`, `coop/world/world_actor_mirror`, `coop/creatures/piramid_sync` |
 | the alarm, emails, the task | `coop/world/alarm_sync`, `coop/world/email_sync`, `coop/world/daily_task_sync`, `ue_wrap/world/email` |
 | tests | `harness/autotest/autotest_weather.cpp`, `autotest_fog_probe.cpp`, `autotest_eventforce.cpp`, `autotest_alarmforce.cpp`, `autotest_piramidforce.cpp`; the event drill, `coop/dev/event_drill`; the world roll drill, `coop/dev/world_roll_drill` |

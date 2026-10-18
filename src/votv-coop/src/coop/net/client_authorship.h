@@ -141,6 +141,7 @@ constexpr ClientAuthorship AuthorshipOf(ReliableKind k) {
     case ReliableKind::WeatherState:
     case ReliableKind::RedSky:
     case ReliableKind::BadSun:
+    case ReliableKind::CreatureEventActive:
     case ReliableKind::LightningStrike:
     case ReliableKind::AssignPeerSlot:
     case ReliableKind::RosterRow:
