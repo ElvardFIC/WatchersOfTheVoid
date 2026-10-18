@@ -819,29 +819,10 @@ CFG_FLAG(selftest_break_permissions, "selftest_break_permissions", "dev", false,
 CFG_FLAG(selftest_break_action_log, "selftest_break_action_log", "dev", false, "VOTVCOOP_SELFTEST_BREAK_ACTION_LOG",
     "Red arm of the commands selftest's action-log cases: the first acting case of each cases file expects "
     "no record, so it must fail.")
-CFG_ENUM(explosion_drill, "explosion_drill", "dev", "off", "off|dissolve|apply|coast|spawn_malformed|source_host|source_client",
-    "VOTVCOOP_EXPLOSION_DRILL",
-    "Drill, the explosion lane's arms; each runs the roles it names. dissolve (the CLIENT acts, the host only "
-    "hosts): a bomb barrel is spawned and broken once while the client's world loads and once in the loaded world; "
-    "its explosion must be dissolved at its birth (matched by class name while the class table is unresolved in "
-    "the load, by class in the world), must never run its begin-play, and its unfinished actor must be gone. apply "
-    "(HOST and CLIENT): the host blasts the three explosion classes ahead of the client; the client must apply "
-    "each once, narrow its force, refuse its rune check and drop nothing. coast (HOST and CLIENT): four papers lie "
-    "between the blast and the client's puppet; at least two client copies must fly, all four must rest again "
-    "and none may still be driven. spawn_malformed (HOST and CLIENT): the host "
-    "sends one valid explosion and four with a broken field; the client must drop each by its reason. source_host "
-    "and source_client (a measurement, no verdict): the named role walks the legs grenade, pipebomb, rocket, sticky "
-    "and saltrocket (attached to a simulating parent, then free) through the game's own verbs, the other role only "
-    "reads and reports; each leg prints one line and the run ends on a source DONE line. Run it on a fresh host "
-    "world.")
-CFG_FLAG(explosion_birth_log, "explosion_birth_log", "dev", false, "VOTVCOOP_EXPLOSION_BIRTH_LOG",
-    "Off by default. When on, a host or single-player game logs one line per explosion born, naming the class of "
-    "the Blueprint that spawned it (the client already logs this when it dissolves one). It reads the class of "
-    "every Blueprint deferred spawn on the host, so leave it off outside a measurement run.")
+// The explosion lane's drill and birth line: their own file, one concept, included as _dev_port.inc is above.
+#include "coop/config/config_registry_rows_dev_explosion.inc"
 // The puppet-identity arc's selftests and drill (PI-1, PI-2, PI-3): their own file, one concept, included as
 // _dev_port.inc is above.
 #include "coop/config/config_registry_rows_dev_pi.inc"
 // The NPC-spawner arc's native-spawn probe (NB): the same shape, the last rows of the list.
 #include "coop/config/config_registry_rows_dev_nb.inc"
-// The explosion lane's selftest red arms: the same shape.
-#include "coop/config/config_registry_rows_dev_explosion.inc"
