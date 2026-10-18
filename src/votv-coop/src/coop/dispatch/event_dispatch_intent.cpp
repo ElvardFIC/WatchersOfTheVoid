@@ -20,6 +20,7 @@
 #include "coop/interactables/camera_toggle_intent.h"  // CLIENT->HOST use of a security camera, or its laptop light button
 #include "coop/interactables/door_verb_intent.h"  // CLIENT->HOST press, hit or pry of a base door
 #include "coop/interactables/keypad_verbs.h"  // CLIENT->HOST digit, submit, cancel, keycard, reset
+#include "coop/interactables/laptop_tab.h"  // CLIENT->HOST the PC user's tab
 #include "coop/interactables/drone_call_intent.h"  // CLIENT->HOST press of the drone console
 #include "coop/interactables/eraser_press_intent.h"  // CLIENT->HOST press of the drive eraser; HOST->CLIENT its show
 #include "coop/creatures/kerfus_intent.h"  // CLIENT->HOST a Kerfus verb (on/off, fix the servers, pat)
@@ -198,6 +199,29 @@ bool HandleIntentEvent(net::Session& session,
         }
         coop::camera_toggle_intent::OnCameraToggleIntent(session, p,
                                                          static_cast<uint8_t>(msg.senderPeerSlot));
+        break;
+    }
+    case net::ReliableKind::LaptopTabReport: {
+        // CLIENT->HOST: the peer holding the PC's claim switched the laptop widget's tab. Whether the sender holds
+        // the claim, the index against the host's own switcher and the pace live in the module; the format lives
+        // here. coop::laptop_tab::OnReport.
+        if (session.role() != net::Role::Host) {
+            UE_LOGW("event_feed: LaptopTabReport received on a client -- dropping");
+            break;
+        }
+        if (msg.senderPeerSlot < 1 || msg.senderPeerSlot >= net::kMaxPeers) {
+            UE_LOGW("event_feed: LaptopTabReport from invalid senderPeerSlot=%d -- dropping",
+                    msg.senderPeerSlot);
+            break;
+        }
+        if (msg.payloadLen < sizeof(net::LaptopTabPayload)) {
+            UE_LOGW("event_feed: LaptopTabReport payload too short (%zu < %zu)",
+                    static_cast<size_t>(msg.payloadLen), sizeof(net::LaptopTabPayload));
+            break;
+        }
+        net::LaptopTabPayload p{};
+        std::memcpy(&p, msg.payload, sizeof(p));
+        coop::laptop_tab::OnReport(session, p, static_cast<uint8_t>(msg.senderPeerSlot));
         break;
     }
     case net::ReliableKind::KeypadIntent: {

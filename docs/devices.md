@@ -323,6 +323,14 @@ holding the laptop claim is the sender's reach, and the index must be one of the
 buy a level. The host asks exactly what the button asks, including the game's own asymmetry: the
 balance is tested against the row's unaccumulated price and charged the accumulated one.
 
+### The laptop's tab
+
+The base laptop and every portable PC show one widget whose tabs are a switcher. The peer holding the
+laptop claim reports its index after each tab change (`coop/interactables/laptop_tab`); the host checks
+that the sender holds the claim and the index is one of its own tabs, writes it to its widget and sends
+it on. A peer that does not hold the claim writes the switcher's index and nothing else: the game's own
+tab call also binds that peer's keys to a remote drone. A joiner gets the host's index at its world-ready.
+
 ### The laptop's inbox
 
 The laptop's messages -- the hash-collection task mails, the scientist and alien replies, the
@@ -520,6 +528,7 @@ removed from its author's hand -- and a joiner gets every box's count at its wor
 | `DoorVerbIntent` | a client to the host | a door's key, the verb, a hit's damage |
 | `CameraActiveState`, `CameraLightState` | the host to all | a camera's key and one bit |
 | `CameraToggleIntent` | a client to the host | a camera's key, which bit, the value wanted |
+| `LaptopTabReport`, `LaptopTabState` | the claim holder to the host; the host to the other clients | the switcher's index |
 | `KeypadState` | the host to all | a verb the host's keypad ran, or the state a chain settled on: the buffer, the verdict, the set-new-code mode, the password, and whether the chain handed the verdict on |
 | `KeypadIntent` | a client to the host | a keypad's key and the entry: a digit, a submit, a cancel, a keycard's verdict, a reset |
 | `PowerControlState` | a client to the host; the host to all | the breakers a press flipped; the breakers, the lockout, a lever's click and each slot's last press taken |

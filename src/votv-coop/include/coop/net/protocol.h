@@ -30,7 +30,7 @@ inline constexpr uint32_t kMagic = 0x564D5450u;
 // This file is past the 1500-line hard cap and stays there: it is the single-feature exception the
 // rule names. One wire format, whose enum, payload structs and static_asserts are read together;
 // splitting it would put a kind's number in one file and its bytes in another.
-inline constexpr uint16_t kProtocolVersion = 233;
+inline constexpr uint16_t kProtocolVersion = 234;
 
 // Default LAN port (overridable via multivoid.ini "net.port=").
 inline constexpr uint16_t kDefaultPort = 47621;
@@ -1029,6 +1029,23 @@ enum class ReliableKind : uint8_t {
     // relayed. Late join: the host's count for every creature that holds one, at the joiner's world-ready. Trust:
     // the id must be host-allocated and the count at most 8. CreatureEventActivePayload.
     CreatureEventActive = 184,
+
+    // Client to host: the PC's user switched the laptop widget's tab. Sent only by the peer that holds the "laptop"
+    // device claim, at the POST of the widget's switcherSwitched and of its floppy and sub-game tab clicks, when the
+    // index differs from the last one this peer reported. The host drops a report from a peer that is not the holder
+    // and an index past its own switcher's tab count, applies the rest to its own widget's switcher and sends
+    // LaptopTabState to every client but the sender. Not relayed (the host validates first). Rides the lane of
+    // DeviceClaim (Normal), so a claim, its tabs and its release arrive in the order they were made; a leaving
+    // holder's last tab is sent before its release. Late join: LaptopTabState. LaptopTabPayload.
+    LaptopTabReport = 185,
+
+    // Host to client: the tab the PC's user is on, absolute. A client shows it by writing the switcher's index and
+    // nothing else, unless the host's claim table (HolderOf, not the client's own optimistic entry) names this client
+    // the PC's user, or the state comes from a slot other than the host's: those it drops. An entrant the host has not
+    // yet confirmed shows it like a viewer, one index. The host's own widget is the canonical, and the host sends this
+    // when it is the holder or after it applied a report. Never relayed; a client's own copy is refused at the host's
+    // receive edge. Late join: the host's widget index to the joiner, after its world-ready. LaptopTabPayload.
+    LaptopTabState = 186,
 };
 
 #pragma pack(push, 1)
@@ -1707,6 +1724,14 @@ struct CameraToggleIntentPayload {
 static_assert(sizeof(CameraToggleIntentPayload) == 34, "CameraToggleIntentPayload must be 34 bytes");
 static_assert(sizeof(CameraToggleIntentPayload) <= 256 - 20 - 8,
               "CameraToggleIntentPayload must fit one datagram");
+
+// The laptop widget's tab (LaptopTabReport, LaptopTabState): the switcher's active index. One layout for both kinds.
+struct LaptopTabPayload {
+    uint8_t index;  // 1 -- the switcher's ActiveWidgetIndex
+    uint8_t pad;    // 1 -- zero
+};
+static_assert(sizeof(LaptopTabPayload) == 2, "LaptopTabPayload must be 2 bytes");
+static_assert(sizeof(LaptopTabPayload) <= 256 - 20 - 8, "LaptopTabPayload must fit one datagram");
 
 // A keypad intent (KeypadIntent): the keypad by its Key and what the client's player did to it. A
 // submit carries no verdict, since the host judges the code on its own copy; a keycard's verdict is

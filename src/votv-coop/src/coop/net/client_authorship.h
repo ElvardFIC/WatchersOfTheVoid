@@ -132,6 +132,7 @@ constexpr ClientAuthorship AuthorshipOf(ReliableKind k) {
     case ReliableKind::PointSackRedeem:
     case ReliableKind::RemoverRequest:
     case ReliableKind::CameraToggleIntent:
+    case ReliableKind::LaptopTabReport:
         return ClientAuthorship::Client;
     // The Host row matches MTA's protected element data, which a client may not write: opt-in there
     // (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:2743-2755), the only mode here.
@@ -206,6 +207,7 @@ constexpr ClientAuthorship AuthorshipOf(ReliableKind k) {
     case ReliableKind::RemoverResult:
     case ReliableKind::CameraActiveState:
     case ReliableKind::CameraLightState:
+    case ReliableKind::LaptopTabState:
         return ClientAuthorship::Host;
     }
     return ClientAuthorship::NotAKind;  // a byte value that names no kind: refused like Host

@@ -225,6 +225,10 @@ inline Lane LaneForKind(ReliableKind k) {
     case ReliableKind::CameraActiveState:  return Lane::Normal;
     case ReliableKind::CameraLightState:   return Lane::Normal;
     case ReliableKind::CameraToggleIntent: return Lane::Normal;
+    // DeviceClaim's lane (Normal, the default) by an explicit case: a tab never overtakes its claim, nor the release
+    // a leaving holder's last tab.
+    case ReliableKind::LaptopTabReport: return Lane::Normal;
+    case ReliableKind::LaptopTabState:  return Lane::Normal;
     default:                           return Lane::Normal;
     }
 }

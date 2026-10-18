@@ -31,6 +31,7 @@
 #include "coop/interactables/device_occupancy.h"
 #include "coop/world/email_sync.h"
 #include "coop/interactables/laptop_sync.h"  // the stationary PC lane
+#include "coop/interactables/laptop_tab.h"  // the tab the PC's user is on
 #include "coop/interactables/laptop_buffer_sync.h"  // the PC buffer quad lane
 #include "coop/interactables/portable_pc_lid.h"  // the portable PC's lid lane
 #include "coop/interactables/floppy_slot_entry.h"
@@ -243,6 +244,7 @@ void Install(coop::net::Session& session) {
     coop::console_state_sync::Install(&session);  // signal-catcher state mirror (sky signals + desk + dish aim)
     coop::signal_catch_sync::Install(&session);  // the signal-catch consume replay (dish slew + downloader arm on every peer)
     coop::laptop_sync::Install(&session);  // the stationary PC's power and the portable PC lid's wire
+    coop::laptop_tab::Install(&session);  // the PC user's tab: the three tab watches, and the receive paths' session
     coop::portable_pc_lid::Install(&session);  // the portable PC's lid, on its own verb
     coop::laptop_buffer_sync::Install(&session);  // the PC buffer quad
     coop::floppybox_sync::Install(&session);  // the disc crate stack
@@ -368,6 +370,7 @@ void ConnectReplayForSlot(int slot) {
     coop::email_sync::QueueConnectBroadcastForSlot(slot);  // the join-window email seed, both signs
     coop::signal_catch_sync::QueueConnectBroadcastForSlot(slot);  // the in-flight catch replay (the identity half) and the kind-2 state seed
     coop::laptop_sync::QueueConnectBroadcastForSlot(slot);  // the PC's power (its disc slot is floppy_slot_sync's)
+    coop::laptop_tab::QueueConnectBroadcastForSlot(slot);  // the tab the PC's user is on
     coop::portable_pc_lid::QueueConnectBroadcastForSlot(slot);  // every open portable PC lid
     coop::floppybox_sync::QueueConnectBroadcastForSlot(slot);  // one canonical per live box
     coop::props::container_contents_sync::QueueConnectBroadcastForSlot(slot);  // one slice per live world container (principle 8 anchor over the join snapshot)
@@ -561,6 +564,7 @@ DisconnectStats DisconnectAll() {
     coop::signal_catch_sync::OnDisconnect();
     coop::prop_save_data::OnDisconnect();
     coop::laptop_sync::OnDisconnect();
+    coop::laptop_tab::OnDisconnect();
     coop::portable_pc_lid::OnDisconnect();
     coop::laptop_buffer_sync::OnDisconnect();  // quad shadow + assembler
     coop::floppybox_sync::OnDisconnect();  // box shadows + taken-ring + pendings
@@ -672,6 +676,7 @@ void TickGameplay(coop::net::Session& session, bool isConnected, bool isHost,
     coop::player_damage::Tick();  // impact-entry PRE cancels lazy install (non-local bodies)
     coop::player_handshake::TickSkinConverge();  // heal a join-window deferred skin apply (~2 s throttle)
     coop::skin_preview::Tick();  // F1-skins live mannequin preview (spawn/apply/position/hide)
+    { PP::Scope _s{PP::Bucket::Interactable}; ue_wrap::ScopedWalkTimer _w{"sync:laptop_tab"}; coop::laptop_tab::Tick(session); }  // the tab watches until live, the refusal window, and a tab report owed by its pace; BEFORE the occupancy poll, so a leaving user's last tab goes ahead of the claim's release
     { PP::Scope _s{PP::Bucket::Interactable}; ue_wrap::ScopedWalkTimer _w{"sync:device_occupancy"}; coop::device_occupancy::Tick(); }  // device occupancy: activeInterface edge poll + pending claim retry
     { PP::Scope _s{PP::Bucket::Interactable}; ue_wrap::ScopedWalkTimer _w{"sync:console_state"}; coop::console_state_sync::Tick(); }  // signal-catcher: host sky poll / client mirror sweep / desk + dish owner streams
     { PP::Scope _s{PP::Bucket::Interactable}; ue_wrap::ScopedWalkTimer _w{"sync:signal_catch"}; coop::signal_catch_sync::Tick(); }  // the catch and cleared detectors, 1 Hz
