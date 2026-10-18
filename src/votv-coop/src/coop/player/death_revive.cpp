@@ -42,7 +42,7 @@ namespace V = ue_wrap::vitals;
 // travel is what disposes of it, so a cancelled travel keeps a permanent black screen unless it
 // is removed. RemoveFromParent detaches rather than destroys, so the completion test is
 // IsInViewport, never findability.
-constexpr const wchar_t* kBlackScreenClass = L"blackScreen_C";
+constexpr const wchar_t* kBlackScreenClass = ue_wrap::profile::name::BlackScreenWidgetClass;
 
 // ESlateVisibility::Collapsed: ui_damageIndicator_C authors dmg_full Collapsed and only the
 // death branch of its Tick ever writes Visible, so the restore value is a constant off the asset.
@@ -58,7 +58,7 @@ std::atomic<uint8_t>  g_deadMask{0};
 std::atomic<bool>     g_armed{false};          // this death is ours to answer
 std::atomic<bool>     g_revivePending{false};  // the seam cancelled a travel; the pump owes a revive
 std::atomic<uint32_t> g_screenCleanupsEnded{0};  // revives whose screen cleanup ended, cleared or given up
-uint64_t g_screenCensusAtMs = 0;  // when the second census after a revive's cleanup is due, or 0
+std::atomic<uint64_t> g_screenCensusAtMs{0};  // when the second census after a revive's cleanup is due, or 0
 std::atomic<uint64_t> g_cancelAtMsAtomic{0};   // when it cancelled -- stamped AT the cancel (see Watchdog)
 std::atomic<bool>     g_verbsResolved{false};  // ResolveVerbs succeeded (read off the game thread)
 std::atomic<bool>     g_seamReady{false};      // run_end_travel can cancel a run-ending travel
@@ -477,17 +477,21 @@ std::atomic<bool> g_puppetResidue{false};
 int g_puppetBlackLeft = 0;
 
 // What covers the view after a revive, logged at the screen cleanup's end and again 5 s later: a field client's
-// screen stayed black after repeated deaths while every cleanup read clear, and the drill never reproduced it. A
-// black screen on the viewport is a warning. The first reading arms the second.
+// screen stayed black after repeated deaths while every cleanup read clear, and the drill never reproduced it. It
+// reads the object index and says what it could not read: "unreadable" counts the widgets of each class whose
+// IsInViewport could not be asked, and listed=0 means the index was not seeded or could not be brought to this
+// instant. A black screen on the viewport, an unread black screen, or a view that could not be listed is a warning
+// (not known clear); a blur read gap is not. The first reading arms the second.
 void LogScreenCensus(const char* when, bool armSecond) {
     const ue_wrap::engine::ScreenState s = ue_wrap::engine::ReadScreenState();
-    const bool covered = s.blackOnScreen > 0;
+    const bool covered = s.blackOnScreen > 0 || s.blackUnreadable > 0 || !s.listed;
     ::ue_wrap::log::Write(covered ? ::ue_wrap::log::Level::Warn : ::ue_wrap::log::Level::Info,
-                          "death_revive: screen census %s -- blackScreen_C live=%d on viewport=%d | bloodLoss blur "
-                          "on viewport=%d | view target=%ls",
-                          when, s.blackLive, s.blackOnScreen, s.blurOnScreen,
-                          s.viewTarget.empty() ? L"?" : s.viewTarget.c_str());
-    g_screenCensusAtMs = armSecond ? ::GetTickCount64() + 5000 : 0;
+                          "death_revive: screen census %s -- blackScreen_C live=%d on viewport=%d unreadable=%d | "
+                          "bloodLoss blur on viewport=%d "
+                          "unreadable=%d | listed=%d | view target=%ls",
+                          when, s.blackLive, s.blackOnScreen, s.blackUnreadable, s.blurOnScreen, s.blurUnreadable,
+                          s.listed ? 1 : 0, s.viewTarget.empty() ? L"?" : s.viewTarget.c_str());
+    g_screenCensusAtMs.store(armSecond ? ::GetTickCount64() + 5000 : 0, std::memory_order_relaxed);
 }
 
 // Re-attempt the three screen artifacts until they are provably gone; true when nothing is
@@ -557,6 +561,7 @@ void OnSessionStart() {
     g_lastReviveOk = false;
     g_cancelAtMs = 0;
     g_screenCleanupLeft = 0;
+    g_screenCensusAtMs.store(0, std::memory_order_relaxed);
     g_pendingAuthorClass.clear();
     g_pendingAuthorIsLocalPawn = false;
 }
@@ -687,12 +692,13 @@ void Tick(coop::net::Session& session, void* localPawn) {
         return;
     }
 
+    const uint64_t censusDue = g_screenCensusAtMs.load(std::memory_order_relaxed);
+    if (censusDue != 0 && ::GetTickCount64() >= censusDue)
+        LogScreenCensus("5 s after the cleanup", false);
     // The screen artifacts, retried until gone; after the pending-revive block and outside every
     // gate above it, since it must keep running once the death is over. The window counts every
     // tick and an attempt runs on each stride-th one, so a failed attempt is followed by the next a
     // stride later, and the window closes on its last tick.
-    if (g_screenCensusAtMs != 0 && ::GetTickCount64() >= g_screenCensusAtMs)
-        LogScreenCensus("5 s after the cleanup", false);
     if (g_screenCleanupLeft > 0) {
         const int tick = kScreenCleanupTicks - g_screenCleanupLeft--;  // 0 on the revive's first tick
         if (tick % kScreenCleanupStride == 0 && TickScreenCleanup()) {

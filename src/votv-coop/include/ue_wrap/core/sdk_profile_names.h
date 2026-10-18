@@ -342,6 +342,9 @@ inline constexpr const wchar_t* MaterialInstanceConstantClass = L"MaterialInstan
 inline constexpr const wchar_t* SpawnObjectFn = L"SpawnObject";        // on GameplayStatics: (objectClass, Outer)->UObject*
 inline constexpr const wchar_t* UserWidgetClass = L"UserWidget";
 inline constexpr const wchar_t* WidgetTreeClass = L"WidgetTree";
+// The game's full-screen widgets a revive leaves to be read: the death chain's black screen and the blood-loss blur.
+inline constexpr const wchar_t* BlackScreenWidgetClass = L"blackScreen_C";
+inline constexpr const wchar_t* BloodLossBlurWidgetClass = L"ui_bloodLossBlur_C";
 // The two-line nameplate (the nick and a separately coloured health bar): a UVerticalBox root
 // stacks two UTextBlocks so each carries its own ColorAndOpacity; AddChildToVerticalBox returns
 // the slot, and the default Fill slot plus centre justification needs no slot writes.
