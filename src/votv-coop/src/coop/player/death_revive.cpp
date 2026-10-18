@@ -192,10 +192,10 @@ bool ReadInViewport(void* widget, bool& out) {
 
 // Detach every black screen on the viewport. Each death makes a new blackScreen_C and
 // RemoveFromParent only detaches one, so an earlier death's widget (or a departed world's) stays in
-// the object index, and the first by index is not the one on screen: detaching it left the new one
-// up for good while this reported clear. True once no live one is on the viewport, including when
-// there is none yet (a revive before +5 s); false while one cannot be read or the index cannot be
-// brought to this instant.
+// the object index, and the first by index need not be the one on screen: detaching it could leave
+// the new one up while this reported clear (not reproduced on the rig). True once no live one is on
+// the viewport, including when there is none yet (a revive before +5 s); false while one cannot be
+// read or the index cannot be brought to this instant.
 bool ClearBlackScreen() {
     // The object index's instances of the class, not a walk of the whole object array on every attempt. "None on
     // screen" must be true now, so the index is drained to this instant first (a screen born in its backlog would be a
