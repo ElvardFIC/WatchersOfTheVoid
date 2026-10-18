@@ -89,6 +89,17 @@ bool ReadEditorText(void* editorWidget, std::wstring& out) {
     return true;
 }
 
+bool SetEditorText(void* editorWidget, const std::wstring& text) {
+    if (!IsEditorWidget(editorWidget)) return false;
+    void* box = ReadObjectField(editorWidget, L"MLET_text");
+    void* fn = box ? R::FindDispatchFunctionCached(R::ClassOf(box), L"SetText") : nullptr;
+    if (!fn) return false;
+    uint8_t ftext[ftext_utils::kFTextSize]{};
+    if (!ftext_utils::MintFText(text.c_str(), ftext)) return false;
+    ParamFrame frame(fn);
+    return frame.valid() && frame.SetRaw(L"InText", ftext, sizeof(ftext)) && Call(box, frame);
+}
+
 bool IsReadOnly(void* editorWidget) {
     if (!IsEditorWidget(editorWidget)) return false;
     int32_t off = -1;
@@ -112,6 +123,14 @@ bool CommitEditorPage(void* editorWidget, std::vector<std::wstring>& pagesOut) {
     }
     pagesOut = std::move(pages);
     return true;
+}
+
+bool CallQuit(void* editorWidget, bool skipEdit) {
+    if (!IsEditorWidget(editorWidget)) return false;
+    void* fn = R::FindDispatchFunctionCached(R::ClassOf(editorWidget), L"quit");
+    if (!fn) return false;
+    ParamFrame frame(fn);
+    return frame.valid() && frame.Set<bool>(L"skipEdit", skipEdit) && Call(editorWidget, frame);
 }
 
 }  // namespace ue_wrap::notebook

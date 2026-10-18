@@ -588,6 +588,15 @@ CFG_STRING(sleepingbag_drill, "sleepingbag_drill", "dev", "", "VOTVCOOP_SLEEPING
     "itself and the client reads each change; last, the host drops a bunk mattress on another empty floor and the "
     "client takes it off. Each peer judges its own copy: the old form gone, exactly one new form with an element id. "
     "Lines tagged [BAG-DRILL]; the client's DONE line ends it.")
+CFG_STRING(notebook_drill, "notebook_drill", "dev", "", "VOTVCOOP_NOTEBOOK_DRILL", false,
+    "Drill (EVERY peer): a notebook's page is written at one peer's editor and read on the others. run -- once a "
+    "client is in its world the host drops a notebook on a floor a route reaches and writes a seed page; the client "
+    "walks to it, opens it with the notebook's own action and holds its claim; the host presses the open on its own "
+    "copy, and the claim sends its editor out again; the client then writes a known page into the open editor and "
+    "closes it with the editor's own quit, and the host's copy must read that page. A second client (the rig's "
+    "--observer) reads the page too. rejoin -- the same, and the client's first life ends on \"client LIFE DONE\"; its "
+    "second life reads the page from the snapshot. red -- the editor is closed with the game's discard (skipEdit), "
+    "so no page is carried and the host's read must fail. Lines tagged [NOTE-DRILL]; each peer's DONE line ends it.")
 CFG_STRING(laptop_tab_drill, "laptop_tab_drill", "dev", "", "VOTVCOOP_LAPTOP_TAB_DRILL", false,
     "Drill (BOTH peers): everyone sees the tab the base computer's user is on. The user walks to the PC with the "
     "director, enters it and switches tabs; the other peer judges the LAST tab on arrival of a state carrying it. tab "

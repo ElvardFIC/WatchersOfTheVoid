@@ -40,11 +40,16 @@ bool ReadPage(void* notebook, int32_t& page);
 
 // The editor's own state: the text in its box, and whether it opened the notebook read-only.
 bool ReadEditorText(void* editorWidget, std::wstring& out);
+bool SetEditorText(void* editorWidget, const std::wstring& text);
 bool IsReadOnly(void* editorWidget);
 
 // What the widget's own commit does: the box's text becomes the open page of the notebook's `text`.
 // `pagesOut` receives the pages as they stand afterwards. False for a read-only editor, an open page
 // outside `text`, or a field that does not resolve (`pagesOut` is then untouched).
 bool CommitEditorPage(void* editorWidget, std::vector<std::wstring>& pagesOut);
+
+// ui_notebook_C::quit(skipEdit), the editor's own close. Its body writes the box into the open page
+// unless skipEdit, hides the widget and clears `clipboard`.
+bool CallQuit(void* editorWidget, bool skipEdit);
 
 }  // namespace ue_wrap::notebook
