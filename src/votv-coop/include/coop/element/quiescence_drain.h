@@ -21,6 +21,8 @@
 #include "coop/net/protocol.h"     // PropDestroyPayload, PropSpawnPayload
 #include "ue_wrap/core/types.h"         // ue_wrap::FVector / FRotator
 
+#include <cstddef>
+
 namespace coop::element::quiescence_drain {
 
 // The ordered reconcile sequence (the header's steps). Called at the join-window quiescence
@@ -109,6 +111,15 @@ void ArmPendingDestroy(const coop::net::PropDestroyPayload& payload);
 // (key-only identity) by a spawn of the same non-empty, non-"None" key. Returns at once on an empty
 // table. Game thread only.
 void RetirePendingDestroyFor(const coop::net::PropSpawnPayload& spawn);
+
+// The retire rule on stated inputs, once per session start: which pending destroys a spawn retires.
+// Never touches the live table beyond one call on an empty table. Pure checks, no engine call.
+void RunDestroyDeferSelftest();
+
+namespace internal {  // for quiescence_drain_selftest
+// Whether `spawn` retires `pending`: the rule RetirePendingDestroyFor applies per entry. Pure.
+bool RetireMatches(const coop::net::PropDestroyPayload& pending, const coop::net::PropSpawnPayload& spawn);
+}  // namespace internal
 
 // True iff there is armed but unconsumed reconcile work (a pending save-time twin, position
 // correction, destroy or kerfur retire). The tick polls this so it only walks when there is

@@ -401,6 +401,7 @@ set(VOTVCOOP_SOURCES
     src/coop/element/intent_authority.cpp
     src/coop/element/world_actor.cpp
     src/coop/element/quiescence_drain.cpp
+    src/coop/element/quiescence_drain_selftest.cpp
     src/coop/element/identity_create.cpp
     src/coop/element/identity_destroy.cpp
     src/coop/element/portable_identity.cpp

@@ -538,17 +538,20 @@ bool WireKeySame(const coop::net::WireKey& a, const coop::net::WireKey& b) {
 }
 }  // namespace
 
+namespace internal {
+bool RetireMatches(const coop::net::PropDestroyPayload& pending, const coop::net::PropSpawnPayload& spawn) {
+    // A destroy that names an element is the death of that element: only a spawn of the same
+    // element is a re-creation of it. A key-only destroy (no element named) is retired by the
+    // same key.
+    if (pending.elementId != 0) return spawn.elementId == pending.elementId;
+    return WireKeyKeyed(spawn.key) && WireKeyKeyed(pending.key) && WireKeySame(pending.key, spawn.key);
+}
+}  // namespace internal
+
 void RetirePendingDestroyFor(const coop::net::PropSpawnPayload& spawn) {
     if (g_pendingDestroy.empty()) return;
-    const bool keyed = WireKeyKeyed(spawn.key);
     for (auto it = g_pendingDestroy.begin(); it != g_pendingDestroy.end(); ) {
-        // A destroy that names an element is the death of that element: only a spawn of the same
-        // element is a re-creation of it. A key-only destroy (no element named) is retired by the
-        // same key.
-        const bool match = (it->payload.elementId != 0)
-            ? (spawn.elementId == it->payload.elementId)
-            : (keyed && WireKeyKeyed(it->payload.key) && WireKeySame(it->payload.key, spawn.key));
-        if (!match) {
+        if (!internal::RetireMatches(it->payload, spawn)) {
             ++it;
             continue;
         }
