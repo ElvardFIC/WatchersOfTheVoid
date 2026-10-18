@@ -245,8 +245,8 @@ DWORD WINAPI DeathTestThread(LPVOID) {
     // the write-diff's snapshot so everything below grades the measured death alone. A field client died six times in a
     // row and kept a black screen after one of them, which the single measured death never reaches. Each prior is the
     // same lethal hit, waited out until the revive's screen cleanup has ended (death_revive's own counter, not a clock),
-    // and then the black screens are counted -- live ones, and the ones still on the viewport -- a warning when any is
-    // on screen, or when the death or the revive did not happen.
+    // and then the black screens are counted -- live ones, and the ones still on the viewport. One on screen fails D15;
+    // a hit that did not land, a death or a cleanup that did not happen ends the run INCONCLUSIVE.
     if (const int prior = PriorDeaths(); prior > 0) {
         int dirty = 0;
         for (int k = 0; k < prior; ++k) {

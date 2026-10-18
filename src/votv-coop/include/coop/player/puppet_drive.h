@@ -29,8 +29,8 @@ coop::RemotePlayer& Puppet(int slot);
 // on the game thread in the same Tick. Game thread.
 void DriveTick(coop::net::Session& session, bool worldReadyAnnounced);
 
-// Destroy the puppet actor if one is live, then drop `slot`'s registration and Player Element from
-// the registry -- the destroy first, so the puppet is registered through its end of play, and the
+// Destroy the puppet (its actor if one is live; a hurt flash and a stale body's effect actors either way), then drop
+// `slot`'s registration and Player Element from the registry -- the destroy first, so the puppet is registered through its end of play, and the
 // drop unconditional because it is right either way: a slot that never spawned a puppet may still
 // hold the mirror Element EstablishMirrorForSlot installed, which this releases, and the drop
 // early-returns when the slot is empty. Returns true iff a live puppet was destroyed: the
