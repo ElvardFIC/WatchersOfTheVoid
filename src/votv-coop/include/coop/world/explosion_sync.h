@@ -17,14 +17,16 @@ namespace coop::explosion_sync {
 // Store the session and install the spawn seam (the client's dissolve) and the capture watch on explosion_C's
 // begin-play (the host's send). Idempotent, any number of times; called from the load watchers, before the world is
 // ready. An install that cannot complete is retried on a one-second throttle, at most 30 tries, then said once and
-// left inert for the process; so is a capture watch the gate settles dead, said when it settles. Game thread.
+// left inert for the process; so is a capture watch the gate settles dead, said when it settles. It also installs the
+// request lane (coop/world/explosion_request.h) with the same session, each call. Game thread.
 void Install(coop::net::Session* s);
 
-// Game thread, from TickGameplay: when the current world differs from the one last seen, the class table is
-// reset; then the classes are resolved while any is unresolved (a lookup per unresolved class).
+// Game thread, from TickGameplay: when the current world differs from the one last seen, the class tables (the
+// explosion classes and the source classes) are reset; then the classes are resolved while any is unresolved (a
+// lookup per unresolved class), and the request lane ticks.
 void Tick();
 
-// The class table and the counters are cleared.
+// The class table and the counters are cleared, and the request lane's state with them.
 void OnDisconnect();
 
 // While one is open on this thread, a spawn of an explosion class is the lane's own and is not dissolved.

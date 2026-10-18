@@ -34,6 +34,7 @@
 #include "coop/props/prop_drop_intent.h"  // CLIENT->HOST client-placed keyed prop
 #include "coop/props/remover_request.h"  // CLIENT->HOST the tool gun's remover; HOST->CLIENT its answer
 #include "coop/items/broom_stroke.h"
+#include "coop/world/explosion_request.h"  // CLIENT->HOST a shot and an explosion request, strictly checked and queued
 #include "coop/props/trash_channel.h"
 
 #include "ue_wrap/core/log.h"
@@ -385,6 +386,34 @@ bool HandleIntentEvent(net::Session& session,
             break;
         }
         coop::creature_hit_intent::OnIntent(static_cast<int>(msg.senderPeerSlot), p);
+        break;
+    }
+    case net::ReliableKind::ProjectileFired: {
+        // CLIENT->HOST: a shot this client's launcher fired. The host keeps it for the blast that names it
+        // (coop::explosion_request); the format lives there, counted. Never relayed.
+        if (session.role() != net::Role::Host) {
+            UE_LOGW("event_feed: ProjectileFired received on a client -- dropping");
+            break;
+        }
+        if (msg.senderPeerSlot < 1 || msg.senderPeerSlot >= net::kMaxPeers) {
+            UE_LOGW("event_feed: ProjectileFired from invalid senderPeerSlot=%d -- dropping", msg.senderPeerSlot);
+            break;
+        }
+        coop::explosion_request::OnFiredReceived(static_cast<int>(msg.senderPeerSlot), msg.payload, msg.payloadLen);
+        break;
+    }
+    case net::ReliableKind::ExplosionRequest: {
+        // CLIENT->HOST: an explosion this client's player caused was dissolved here. The host judges it and
+        // performs it natively (coop::explosion_request); the format lives there, counted. Never relayed.
+        if (session.role() != net::Role::Host) {
+            UE_LOGW("event_feed: ExplosionRequest received on a client -- dropping");
+            break;
+        }
+        if (msg.senderPeerSlot < 1 || msg.senderPeerSlot >= net::kMaxPeers) {
+            UE_LOGW("event_feed: ExplosionRequest from invalid senderPeerSlot=%d -- dropping", msg.senderPeerSlot);
+            break;
+        }
+        coop::explosion_request::OnRequestReceived(static_cast<int>(msg.senderPeerSlot), msg.payload, msg.payloadLen);
         break;
     }
     case net::ReliableKind::PropActRequest: {

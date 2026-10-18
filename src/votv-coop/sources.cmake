@@ -275,6 +275,7 @@ set(VOTVCOOP_SOURCES
     src/coop/world/firefly_sync.cpp
     src/coop/world/spawn_authority.cpp
     src/coop/world/explosion_sync.cpp
+    src/coop/world/explosion_request.cpp
     src/coop/world/explosion_recipe.cpp
     src/coop/world/explosion_recipe_selftest.cpp
     src/coop/world/explosion_parking.cpp

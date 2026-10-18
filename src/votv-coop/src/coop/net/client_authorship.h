@@ -133,6 +133,8 @@ constexpr ClientAuthorship AuthorshipOf(ReliableKind k) {
     case ReliableKind::PointSackRedeem:
     case ReliableKind::RemoverRequest:
     case ReliableKind::CreatureHitIntent:
+    case ReliableKind::ProjectileFired:
+    case ReliableKind::ExplosionRequest:
     case ReliableKind::PropActRequest:
     case ReliableKind::PropActCommit:
     case ReliableKind::CameraToggleIntent:

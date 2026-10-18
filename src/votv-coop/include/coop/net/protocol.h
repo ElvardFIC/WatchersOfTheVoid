@@ -30,7 +30,7 @@ inline constexpr uint32_t kMagic = 0x564D5450u;
 // This file is past the 1500-line hard cap and stays there: it is the single-feature exception the
 // rule names. One wire format, whose enum, payload structs and static_asserts are read together;
 // splitting it would put a kind's number in one file and its bytes in another.
-inline constexpr uint16_t kProtocolVersion = 242;
+inline constexpr uint16_t kProtocolVersion = 243;
 
 // Default LAN port (overridable via multivoid.ini "net.port=").
 inline constexpr uint16_t kDefaultPort = 47621;
@@ -1079,6 +1079,12 @@ enum class ReliableKind : uint8_t {
     // relayed. Late join: none -- a one-shot cue. Trust: host-authored only (a client's copy is refused at the
     // host's receive edge); the receiver drops a malformed one and counts it. ExplosionSpawnPayload.
     ExplosionSpawn = 177,
+    // CLIENT->HOST: this client's own launcher fired. Never relayed; not pre-world; the host judges the shot
+    // and keeps it until its blast's request consumes it.
+    ProjectileFired = 188,
+    // CLIENT->HOST: an explosion this client's own player caused was dissolved here; the host performs it
+    // natively and ExplosionSpawn carries it to every peer. Never relayed; not pre-world.
+    ExplosionRequest = 189,
 
     // Client to host: unfold a packed sleepingbag, take a mattress off a bunk bed, or fold a
     // deployed bed. The host runs the source actor's own Blueprint; host_spawn_watcher and
@@ -3613,6 +3619,26 @@ struct ExplosionSpawnPayload {
 static_assert(sizeof(ExplosionSpawnPayload) == 72, "ExplosionSpawnPayload must be 72 bytes");
 static_assert(sizeof(ExplosionSpawnPayload) <= 256 - 20 - 8,
               "ExplosionSpawnPayload must fit in one reliable datagram");
+
+// A client's own launcher fired (ProjectileFired); the host keeps the shot for the blast that names it.
+struct ProjectileFiredPayload {
+    uint8_t  projClass;   // 1 rocket, 2 sticky bomb
+    uint8_t  launcher;    // 1 prop_funGun_rpg_C, 2 prop_funGun_stickyLauncher_C, 3 car1_witch_C
+    uint32_t shotId;      // nonzero, unique per slot per session
+    float    origin[3];
+};
+static_assert(sizeof(ProjectileFiredPayload) == 18, "ProjectileFiredPayload must be 18 bytes");
+static_assert(sizeof(ProjectileFiredPayload) <= 256 - 20 - 8, "ProjectileFiredPayload must fit in one reliable datagram");
+// An explosion a client's own player caused (ExplosionRequest), which the host performs.
+struct ExplosionRequestPayload {
+    uint8_t  kind;        // 1 projectile, 2 hand, 3 self
+    uint8_t  srcClass;    // 1 rocket, 2 sticky bomb, 3 grenade, 4 pipe bomb, 5 the player, 6 poop grenade, 7 soap grenade
+    uint32_t shotId;      // projectile; 0 otherwise
+    float    pillLevel;   // self; 0 otherwise
+    float    loc[3];      // projectile, hand; 0 for self
+};
+static_assert(sizeof(ExplosionRequestPayload) == 22, "ExplosionRequestPayload must be 22 bytes");
+static_assert(sizeof(ExplosionRequestPayload) <= 256 - 20 - 8, "ExplosionRequestPayload must fit in one reliable datagram");
 
 // The loading-screen brackets: SnapshotBegin carries the candidate count (the denominator),
 // SnapshotComplete the count actually sent.
