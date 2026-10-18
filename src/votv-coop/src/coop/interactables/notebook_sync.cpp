@@ -30,10 +30,12 @@ using Clock = std::chrono::steady_clock;
 
 UE_FACT_FN(kNotebookGraph, "notebook_sync", L"ui_notebook_C", L"ExecuteUbergraph_ui_notebook", Declared);
 UE_FACT_FN(kNotebookQuit, "notebook_sync", L"ui_notebook_C", L"quit", Declared);
+UE_FACT_FN(kNotebookUsedOn, "notebook_sync", L"prop_notebook_C", L"playerUsedOn", Declared);
 
 std::atomic<coop::net::Session*> g_session{nullptr};
 bool g_graphWatched = false;
 bool g_quitWatched = false;
+bool g_usedWatched = false;
 bool g_registered = false;
 
 // The graph's POST fires on every event of the widget, a keystroke included, so the work behind it is
@@ -148,6 +150,35 @@ void OnQuitPost(const sg::Call& c) {
     g_base = Baseline{};
 }
 
+// A page added to a notebook outside the editor: playerUsedOn with a torn sheet in the hand appends the
+// sheet's text to the notebook's and destroys the sheet. The text changed with no editor open and no
+// claim held, so the verb's POST publishes the record when the page count grew; the host's rule takes
+// it from whoever ran the verb while nobody holds the notebook.
+ue_wrap::CachedObjRef g_used;
+size_t g_usedPagesBefore = 0;
+
+sg::Verdict OnUsedPre(const sg::Call& c) {
+    std::vector<std::wstring> pages;
+    if (N::ReadPages(c.object, pages)) {
+        g_used.Set(c.object);
+        g_usedPagesBefore = pages.size();
+    } else {
+        g_used.Reset();
+    }
+    return sg::Verdict::Run;
+}
+
+void OnUsedPost(const sg::Call&) {
+    void* notebook = g_used.Get();
+    g_used.Reset();
+    auto* s = Session();
+    std::vector<std::wstring> pages;
+    if (!notebook || !s || !N::ReadPages(notebook, pages) || pages.size() <= g_usedPagesBefore) return;
+    const std::wstring key = ue_wrap::prop::GetKeyString(notebook);
+    if (key.empty() || key == L"None") return;
+    coop::prop_save_data::Publish(s, notebook, key);
+}
+
 // device_occupancy asks this each tick the local claim's release is due.
 bool ReleaseHold(const wchar_t* key) {
     if (!g_flight.closing || g_flight.claim != key) return false;
@@ -173,6 +204,7 @@ void Install(coop::net::Session* session) {
     g_session.store(session, std::memory_order_release);
     if (!g_graphWatched) g_graphWatched = sg::WatchName(kNotebookGraph, 0, nullptr, &OnGraphPost);
     if (!g_quitWatched) g_quitWatched = sg::WatchName(kNotebookQuit, 0, &OnQuitPre, &OnQuitPost);
+    if (!g_usedWatched) g_usedWatched = sg::WatchName(kNotebookUsedOn, 1, &OnUsedPre, &OnUsedPost);
     if (!g_registered) {
         g_registered = true;
         coop::prop_record_gates::RegisterIntentGate(L"prop_notebook_C", &AcceptsClientRecord);
@@ -200,6 +232,7 @@ void OnDisconnect() {
     g_base = Baseline{};
     g_flight = Flight{};
     g_closing.Reset();
+    g_used.Reset();
 }
 
 }  // namespace coop::notebook_sync

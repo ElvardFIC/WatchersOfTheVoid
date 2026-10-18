@@ -247,6 +247,10 @@ text is the prop's save record and crosses on the record lane above with no mess
   10 s, logged. A host's own close needs no wait: it is the canonical.
 - **No echo onto the editor.** A peer that holds the claim applies no record for that notebook,
   whether it arrives live or from the park: its own edit is the newer state.
+- **A page added outside the editor.** Using a torn sheet on a notebook (`playerUsedOn`) appends the
+  sheet's text to the notebook's and destroys the sheet, with no editor open and no claim. The
+  verb's end publishes the notebook's record when its page count grew, from whichever peer ran it;
+  the host's rule takes it while nobody holds the notebook.
 - **Forced exits.** Ragdoll, a faint and death leave the interface without `quit`, as in the
   single-player game, so the box's uncommitted text is lost there and nothing is published.
 - **Late join.** A joiner is handed every prop's record in the snapshot, the notebook's last
