@@ -2,6 +2,8 @@
 
 #include "coop/world/explosion_sync.h"
 
+#include "coop/config/config.h"
+#include "coop/config/config_registry.h"
 #include "coop/element/element.h"
 #include "coop/element/registry.h"
 #include "coop/net/protocol.h"
@@ -113,9 +115,17 @@ uint64_t NowMs() {
         std::chrono::steady_clock::now().time_since_epoch()).count());
 }
 
+// The host's birth line (dev, ini explosion_birth_log), read once: a measurement of which Blueprint spawned each
+// explosion on the host, where the capture only knows the class id.
+bool BirthLogOn() {
+    static const bool on = coop::config::ResolveFlag(::coop::config_registry::rows::explosion_birth_log);
+    return on;
+}
+
 // Every Blueprint deferred spawn passes here: a null test and one client-session test (a host or single player
-// stops there), the projectile note's class compare, then up to three pointer or name tests and a two-step super
-// walk on a miss.
+// stops there, after one latched flag when the host's birth line is on and up to three pointer or name tests and a
+// two-step super walk for it), then, on a client, the projectile note's class compare, then up to three pointer or
+// name tests and a two-step super walk on a miss.
 //
 // A match is dissolved: the Blueprint's result is nulled, so what it does with the spawn reads nothing, and the
 // unfinished actor is destroyed by a posted task, never inside the callback (the native call is still on the
@@ -125,7 +135,17 @@ uint64_t NowMs() {
 // here a rocket or sticky bomb born inside its launcher's fire body is noted before the filter, and an explosion's
 // birth sends its request (coop/world/explosion_request_client.cpp) before the dissolve nulls the result.
 void OnBirth(void* /*context*/, void* sourceObject, void* result) {
-    if (!result || !coop::spawn_authority::IsActiveClientSession()) return;
+    if (!result) return;
+    if (!coop::spawn_authority::IsActiveClientSession()) {
+        if (BirthLogOn()) {
+            bool hostByName = false;
+            const int classId = X::ClassIdOf(R::ClassOf(result), hostByName);
+            if (classId >= 0)
+                UE_LOGI("[EXPLOSION] host birth src=%ls class=%d",
+                        sourceObject ? R::ClassNameOf(sourceObject).c_str() : L"?", classId);
+        }
+        return;
+    }
     coop::explosion_request::OnClientProjectileBirth(result);
     bool byName = false;
     const int classId = X::ClassIdOf(R::ClassOf(result), byName);

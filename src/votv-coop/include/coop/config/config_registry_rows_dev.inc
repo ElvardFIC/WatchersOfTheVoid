@@ -831,6 +831,10 @@ CFG_ENUM(explosion_drill, "explosion_drill", "dev", "off", "off|dissolve|apply|c
     "and none may still be driven. spawn_malformed (HOST and CLIENT): the host "
     "sends one valid explosion and four with a broken field; the client must drop each by its reason. Run it on a "
     "fresh host world.")
+CFG_FLAG(explosion_birth_log, "explosion_birth_log", "dev", false, "VOTVCOOP_EXPLOSION_BIRTH_LOG",
+    "Off by default. When on, a host or single-player game logs one line per explosion born, naming the class of "
+    "the Blueprint that spawned it (the client already logs this when it dissolves one). It reads the class of "
+    "every Blueprint deferred spawn on the host, so leave it off outside a measurement run.")
 // The puppet-identity arc's selftests and drill (PI-1, PI-2, PI-3): their own file, one concept, included as
 // _dev_port.inc is above.
 #include "coop/config/config_registry_rows_dev_pi.inc"
