@@ -1,7 +1,9 @@
 # Watchers of the Void
 
-Authored and maintained by **ElvardFIC**. A community fork of **Multivoid by Pelmentor**.
-Based on the **MultiVoidKindaPlus** codebase, with help from **AquariumFishTeam**.
+Authored and maintained by **ElvardFIC**. A community fork of
+[**Multivoid by Pelmentor**](https://github.com/VOTV-MP/Multivoid).
+Based on the [**MultiVoidKindaPlus** codebase](https://github.com/AquaFishhh/MultivoidKindaPlus),
+with help from **AquariumFishTeam**.
 Thanks to **Zoomard** and **Бритый 2-D <3** for testing and bug reports.
 Source: [ElvardFIC/WatchersOfTheVoid](https://github.com/ElvardFIC/WatchersOfTheVoid).
 See [the package page text](package/README.md). Original attribution and licenses are retained.
