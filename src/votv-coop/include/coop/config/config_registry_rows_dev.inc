@@ -582,8 +582,9 @@ CFG_STRING(sleepingbag_drill, "sleepingbag_drill", "dev", "", "VOTVCOOP_SLEEPING
     "Drill (BOTH peers): a sleeping bag unrolls and folds once on each peer, one for one. run -- once a client is "
     "in its world the host drops a packed bag on a floor a route reaches; the client walks to it, unrolls it, "
     "waits 5 s of world time to see its deployed form stand, and folds it; then the host unrolls and folds it "
-    "itself and the client reads each change. Each peer judges its own copy: the old form gone, exactly one new "
-    "form with an element id. Lines tagged [BAG-DRILL]; the client's DONE line ends it.")
+    "itself and the client reads each change; last, the host drops a bunk mattress on another empty floor and the "
+    "client takes it off. Each peer judges its own copy: the old form gone, exactly one new form with an element id. "
+    "Lines tagged [BAG-DRILL]; the client's DONE line ends it.")
 CFG_STRING(laptop_tab_drill, "laptop_tab_drill", "dev", "", "VOTVCOOP_LAPTOP_TAB_DRILL", false,
     "Drill (BOTH peers): everyone sees the tab the base computer's user is on. The user walks to the PC with the "
     "director, enters it and switches tabs; the other peer judges the LAST tab on arrival of a state carrying it. tab "
