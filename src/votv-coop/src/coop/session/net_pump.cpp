@@ -54,6 +54,7 @@
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/sdk_profile.h"
 #include "coop/player/death_revive.h"
+#include "coop/player/revive_protection.h"
 #include "coop/player/run_end_travel.h"
 #include "coop/items/broom_stroke.h"
 #include "coop/props/trash_morph_gate.h"
@@ -267,6 +268,7 @@ void TearDownSession(coop::net::Session& session, const char* why) {
     // start begins over it). Marking a FAULTED pass done, never re-run over half-cleared state, is ours;
     // MTA has no fault policy.
     g_tornDownBegun.store(stops, std::memory_order_relaxed);
+    coop::revive_protection::End(coop::revive_protection::EndWhy::Session);
     struct FinishGuard {
         uint64_t stops;
         ~FinishGuard() { g_tornDownFinished.store(stops, std::memory_order_release); }
@@ -701,6 +703,7 @@ void Tick(coop::net::Session& session) {
         // run-ending seam asked for. Here, not in the seam's own callback, because that runs inside
         // the VM's body loop, where a UFunction dispatch re-enters the interpreter.
         coop::death_revive::Tick(session, g_netLocal.Raw());
+        coop::revive_protection::Tick();
         // A revive that gave up has torn the session down and fled, as the local-death branch below
         // does; nothing after it may run for this session, the lanes' Install least of all.
         if (g_fleeing) return;

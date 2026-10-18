@@ -6,6 +6,7 @@
 
 #include "coop/config/config.h"
 #include "coop/net/session.h"
+#include "coop/player/revive_protection.h"
 #include "coop/session/net_pump.h"
 #include "coop/session/teleport_client.h"
 #include "ue_wrap/actors/vitals.h"
@@ -658,6 +659,7 @@ void Tick(coop::net::Session& session, void* localPawn) {
         g_revivePending.store(false, std::memory_order_release);
         g_reviveRanThisDeath = true;
         g_lastReviveOk = RunRevive(session, localPawn);
+        if (g_lastReviveOk) coop::revive_protection::Begin(localPawn);
         if (g_lastReviveOk) {
             g_armed.store(false, std::memory_order_release);
             g_cancelAtMs = 0;
