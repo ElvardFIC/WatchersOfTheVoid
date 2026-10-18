@@ -249,6 +249,12 @@ or has already changed form. `[RD]` the packed Blueprint graph uses two sphere t
 target bed, spawns the wrapped actor and destroys its source; the wrapped graph's `fold()` spawns a
 packed actor and destroys its source. `[V]` sleepingbag CFG and generated SDK parameters.
 
+A mattress lying on a bunk bed (`bed_bunkMattress_C`) is taken off by its action 7, which spawns the
+packed mattress and destroys the source the same way; that press rides the same intent with the
+mattress's host element id and the action byte, and the host accepts only that class and action. The
+packed mattress is a `prop_sleepingbag_C` and keys itself like any prop, so the ordinary prop
+lifecycle carries it. `[V]` `bed_bunkMattress` and `prop_sleepingbag_mattress` Blueprint decompiles.
+
 ### Props that change on their own
 
 A joiner loads the host's save, so every keyed world prop is a real save-loaded actor with its

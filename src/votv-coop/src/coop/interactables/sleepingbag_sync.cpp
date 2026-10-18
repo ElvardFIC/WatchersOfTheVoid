@@ -32,6 +32,8 @@ namespace SB = ue_wrap::sleepingbag;
 constexpr float kReachUU = 450.0f;
 constexpr coop::net::IntentBudget kBudget{4.0f, 4.0f};
 constexpr size_t kMaxPending = 8;
+// enum_interactionActions value of bed_bunkMattress_C's "take the mattress off" press.
+constexpr uint8_t kActionTakeMattress = 7;
 
 UE_FACT_FN(kRowAction, "sleepingbag_sync", nullptr, L"actionOptionIndex", AnyClass);
 UE_FACT_FN(kRowFold, "sleepingbag_sync", L"sleepingbagWrap_C", L"fold", Declared);
@@ -85,7 +87,9 @@ bool SendIntent(coop::net::Session* s, void* actor, uint8_t verb, uint8_t action
 
 SG::Verdict OnActionPre(const SG::Call& call) {
     auto* s = g_session.load(std::memory_order_acquire);
-    if (!IsClient(s) || !SB::IsPacked(call.object)) return SG::Verdict::Run;
+    if (!IsClient(s)) return SG::Verdict::Run;
+    const bool packed = SB::IsPacked(call.object);
+    if (!packed && !SB::IsBunkMattress(call.object)) return SG::Verdict::Run;
 
     const int32_t playerOff = R::FindParamOffset(call.function, L"Player");
     const int32_t actionOff = R::FindParamOffset(call.function, L"Action");
@@ -93,6 +97,7 @@ SG::Verdict OnActionPre(const SG::Call& call) {
     void* player = *reinterpret_cast<void* const*>(call.locals + playerOff);
     if (!coop::players::Registry::Get().IsLocal(player)) return SG::Verdict::Run;
     const uint8_t action = call.locals[actionOff];
+    if (!packed && action != kActionTakeMattress) return SG::Verdict::Run;
     SendIntent(s, call.object, coop::net::sleepingbag_intent::kUnwrap, action);
     return SG::Verdict::Cancel;
 }
@@ -121,7 +126,8 @@ bool Execute(coop::net::Session& session, const coop::net::SleepingbagIntentPayl
 
     bool ran = false;
     const bool expected = p.verb == coop::net::sleepingbag_intent::kUnwrap
-                             ? SB::IsPacked(subject.actor)
+                             ? SB::IsPacked(subject.actor) ||
+                                   (SB::IsBunkMattress(subject.actor) && p.action == kActionTakeMattress)
                              : p.verb == coop::net::sleepingbag_intent::kFold && SB::IsDeployed(subject.actor);
     if (expected) {
         if (p.verb == coop::net::sleepingbag_intent::kUnwrap) {

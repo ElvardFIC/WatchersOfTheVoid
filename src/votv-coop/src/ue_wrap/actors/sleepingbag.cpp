@@ -33,8 +33,12 @@ bool IsDeployed(void* actor) {
     return IsChild(actor, L"sleepingbagWrap_C");
 }
 
+bool IsBunkMattress(void* actor) {
+    return IsChild(actor, L"bed_bunkMattress_C");
+}
+
 bool CallUnwrap(void* actor, void* player, uint8_t action) {
-    if (!IsPacked(actor)) return false;
+    if (!IsPacked(actor) && !IsBunkMattress(actor)) return false;
     void* fn = R::FindDispatchFunctionCached(R::ClassOf(actor), L"actionOptionIndex");
     if (!fn) return false;
     ParamFrame frame(fn);

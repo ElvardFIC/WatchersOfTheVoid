@@ -1080,9 +1080,10 @@ enum class ReliableKind : uint8_t {
     // host's receive edge); the receiver drops a malformed one and counts it. ExplosionSpawnPayload.
     ExplosionSpawn = 177,
 
-    // Client to host: unfold a packed sleepingbag or fold its deployed bed. The host runs the
-    // source actor's own Blueprint; host_spawn_watcher and prop_lifecycle carry the replacement
-    // birth and source death. Late join: host save plus the ordinary prop snapshot. Never relayed.
+    // Client to host: unfold a packed sleepingbag, take a mattress off a bunk bed, or fold a
+    // deployed bed. The host runs the source actor's own Blueprint; host_spawn_watcher and
+    // prop_lifecycle carry the replacement birth and source death. Late join: host save plus the
+    // ordinary prop snapshot. Never relayed.
     SleepingbagIntent = 188,
 };
 
