@@ -241,10 +241,6 @@ and source destruction; the host spawn watcher and prop lifecycle carry those ed
 The joiner's host save and ordinary prop snapshot seed whichever form is live. The client does not
 choose the replacement class or transform. `[V]` `coop/interactables/sleepingbag_sync`,
 `ue_wrap/actors/sleepingbag`, `coop/props/host_spawn_watcher`, `coop/props/prop_lifecycle`.
-The receiver also handles a host replacement that reuses a save key with a different actor class:
-it retires the old local rendering before materialising the successor and consumes the source's
-following destroy, so that edge cannot remove the new form. `[V]` `coop/props/remote_prop_spawn`,
-`coop/props/remote_prop_destroy`.
 
 Unfolding is relayed as the interaction action byte so the Blueprint retains its own placement and
 mattress branches. The host runs it with the sender's remote-player puppet, preserving the game's

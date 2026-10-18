@@ -100,8 +100,10 @@ SG::Verdict OnActionPre(const SG::Call& call) {
 SG::Verdict OnFoldPre(const SG::Call& call) {
     auto* s = g_session.load(std::memory_order_acquire);
     if (!IsClient(s) || !SB::IsDeployed(call.object)) return SG::Verdict::Run;
-    SendIntent(s, call.object, coop::net::sleepingbag_intent::kFold, 0);
-    return SG::Verdict::Cancel;
+    // The body is cancelled only when the host was asked: a refused send runs it as a press would
+    // with no lane.
+    return SendIntent(s, call.object, coop::net::sleepingbag_intent::kFold, 0) ? SG::Verdict::Cancel
+                                                                               : SG::Verdict::Run;
 }
 
 // A missing prop or first puppet pose is a bounded wait. All other judgments consume the queued
