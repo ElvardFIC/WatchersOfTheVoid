@@ -46,4 +46,12 @@ bool InvokePunch(void* player, const FVector& fullBody, const FVector& boneImp, 
     return Call(player, f);
 }
 
+bool InvokeMainPlayerAttack(void* player) {
+    void* fn = VerbOf(player, L"attack");
+    if (!fn) return false;
+    ParamFrame f(fn);  // the out parameters stay zeroed and unread
+    if (!f.valid()) return false;
+    return Call(player, f);
+}
+
 }  // namespace ue_wrap::engine

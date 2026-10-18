@@ -254,6 +254,10 @@ bool ReadMainPlayerSittingOn(void* mainPlayer, void*& sittingOn);
 // masked write and its offset live here, beside the read, instead of once per caller.
 bool WriteMainPlayerDead(void* mainPlayer, bool dead);
 
+// The game's own spawn invulnerability: Add Player Damage and kill refuse while it is set. Masked write, read back.
+// Game thread.
+bool WriteMainPlayerStartInvinc(void* mainPlayer, bool on);
+
 // AmainPlayer_C::ragdollMode(ragdoll, passOut, death); (true, true, false) is the faint pose. On a peer's
 // puppet this verb is cancelled, whoever calls (coop/player/player_damage), so a puppet's faint is shown by
 // its playerRagdoll actor and not through here.

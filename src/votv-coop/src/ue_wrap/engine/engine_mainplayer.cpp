@@ -550,23 +550,37 @@ bool ReadMainPlayerSittingOn(void* mainPlayer, void*& sittingOn) {
     return true;
 }
 
-bool WriteMainPlayerDead(void* mainPlayer, bool dead) {
+namespace {
+
+// One bool property's resolved place on a class: the byte and the bit mask, kept per class.
+struct CachedBool { void* cls = nullptr; int32_t byte = -1; uint8_t mask = 0; };
+
+// FindBoolProperty, not the plain-byte offset the READ above uses: a UE bool property can be a
+// bitfield sharing its byte with its neighbours, and a byte-wide store would clear them. The
+// read can afford the shortcut; a write cannot. Resolved once per class, then a masked store.
+bool WriteMainPlayerBool(void* mainPlayer, const wchar_t* prop, bool on, CachedBool& cache) {
     if (!mainPlayer || !R::IsLive(mainPlayer)) return false;
-    // FindBoolProperty, not the plain-byte offset the READ above uses: a UE bool property can be a
-    // bitfield sharing its byte with its neighbours, and a byte-wide store would clear them. The
-    // read can afford the shortcut; a write cannot. Resolved once per class, then a masked store.
-    static void* sCls = nullptr;
-    static int32_t sByte = -1;
-    static uint8_t sMask = 0;
     void* cls = R::ClassOf(mainPlayer);
-    if (cls != sCls || sMask == 0) {
+    if (cls != cache.cls || cache.mask == 0) {
         int32_t b = -1; uint8_t m = 0;
-        if (!R::FindBoolProperty(cls, L"dead", b, m)) return false;
-        sCls = cls; sByte = b; sMask = m;
+        if (!R::FindBoolProperty(cls, prop, b, m)) return false;
+        cache.cls = cls; cache.byte = b; cache.mask = m;
     }
-    uint8_t* p = reinterpret_cast<uint8_t*>(mainPlayer) + sByte;
-    if (dead) *p |= sMask; else *p &= static_cast<uint8_t>(~sMask);
-    return ((*p & sMask) != 0) == dead;   // read BACK: wrote is not holds
+    uint8_t* p = reinterpret_cast<uint8_t*>(mainPlayer) + cache.byte;
+    if (on) *p |= cache.mask; else *p &= static_cast<uint8_t>(~cache.mask);
+    return ((*p & cache.mask) != 0) == on;   // read BACK: wrote is not holds
+}
+
+}  // namespace
+
+bool WriteMainPlayerDead(void* mainPlayer, bool dead) {
+    static CachedBool s_dead;
+    return WriteMainPlayerBool(mainPlayer, L"dead", dead, s_dead);
+}
+
+bool WriteMainPlayerStartInvinc(void* mainPlayer, bool on) {
+    static CachedBool s_startInvinc;
+    return WriteMainPlayerBool(mainPlayer, L"startInvinc", on, s_startInvinc);
 }
 
 bool SetMainPlayerRagdollMode(void* mainPlayer, bool ragdoll, bool passOut, bool death) {
