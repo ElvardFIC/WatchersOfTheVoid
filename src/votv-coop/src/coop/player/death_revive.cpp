@@ -23,6 +23,7 @@
 
 #include <atomic>
 #include <cmath>
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -193,15 +194,18 @@ bool ReadInViewport(void* widget, bool& out) {
 // RemoveFromParent only detaches one, so an earlier death's widget (or a departed world's) stays in
 // the object index, and the first by index is not the one on screen: detaching it left the new one
 // up for good while this reported clear. True once no live one is on the viewport, including when
-// there is none yet (a revive before +5 s); false while one cannot be read.
+// there is none yet (a revive before +5 s); false while one cannot be read or the index cannot be
+// brought to this instant.
 bool ClearBlackScreen() {
-    // The object index's instances of the class, not a walk of the whole object array on every attempt; the list is
-    // taken first because RemoveFromParent runs engine code the index's callback must not.
-    if (!OI::IsSeeded()) return false;  // cannot list them yet -> not known clear
+    // The object index's instances of the class, not a walk of the whole object array on every attempt. "None on
+    // screen" must be true now, so the index is drained to this instant first (a screen born in its backlog would be a
+    // false clear); a drain that cannot run, or an index not seeded, is not known clear. The list is taken before any
+    // detach, since RemoveFromParent runs engine code the index's callback must not, and leaves out the class default.
+    if (!OI::IsSeeded() || OI::DrainAll() == SIZE_MAX) return false;
     std::vector<void*> screens;
     if (void* cls = OI::ClassByName(kBlackScreenClass)) {
         OI::ForEachInstance(cls, [](void* ctx, void* obj, int32_t) {
-            static_cast<std::vector<void*>*>(ctx)->push_back(obj);
+            if (!R::NameStartsWith(R::NameOf(obj), L"Default__")) static_cast<std::vector<void*>*>(ctx)->push_back(obj);
         }, &screens);
     }
     bool allOff = true;
