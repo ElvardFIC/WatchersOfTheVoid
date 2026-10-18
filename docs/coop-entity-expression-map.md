@@ -185,6 +185,14 @@ cancelled on clients and their colour variants allowlisted. A wisp mirror keeps 
 since the class's tick is per-viewer cosmetic, and its landing edge is replayed from the stream;
 its self-destroy is retired by the pose walk. `[V]`
 
+**A creature's event count.** A creature that calls `lib_C::setEvent` (the krampus, the orb, the ariral, the
+kerfur Omega among them) moves the gamemode's event count, which drives a peer's threat music, its sleep refusal and its
+save gate. Its mirror's own calls are refused once the relay binds it; the host's count for that creature crosses whole
+by its element id and is applied to the mirror's registration, after the mirror's own registrations from before its
+install are taken back, and taken back again at its end (`coop/world/creature_event_relay`). The killer wisp, the
+fossilhound, the antibreather and the egg compute their event from the local camera, render state or player 0 and keep
+their own per peer. `[RD]`
+
 ## Event actors
 
 A second interceptor on the same deferred-spawn call carries a disjoint, name-matched allowlist
