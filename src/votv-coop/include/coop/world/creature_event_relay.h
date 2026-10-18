@@ -10,7 +10,7 @@
 //     mirror as the context until its applied count equals the target, retracts the registrations the mirror made
 //     before it was installed, and refuses the mirror's own setEvent once the bind made an entry (a bind the relay
 //     cannot take makes none, and that mirror counts its own). The client's count is the sum of these keyed
-//     registrations and its peer-local events; a mirror's end, a world change and the session's end retract them.
+//     registrations and its own events; a mirror's end and the session's end retract them; a world change drops them.
 //   - PER VIEWER: killerwisp_C, fossilhound_C, antibreather_C and eg_C compute their event from the local camera or
 //     player 0; their mirror's own call is allowed and the host's relay skips them.
 

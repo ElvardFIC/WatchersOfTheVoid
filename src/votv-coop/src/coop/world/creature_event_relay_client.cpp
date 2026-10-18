@@ -115,7 +115,7 @@ void Reconcile(EL::ElementId eid) {
         EndEntry(eid);
         return;
     }
-    if (!Ready()) return;  // setEvent is not resolved yet; the next count or bind reconciles
+    if (!Ready()) return;  // setEvent, the event registry or lib_C's default object unresolved; the next count reconciles
     while (e.applied < e.target && Step(e, true)) {}
     while (e.applied > e.target && Step(e, false)) {}
 }
