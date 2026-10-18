@@ -50,6 +50,7 @@ set(VOTVCOOP_DEV_SOURCES
     src/coop/dev/kerfus_throw_drill.cpp
     src/coop/dev/desk_crossing_drill.cpp
     src/coop/dev/desk_ping_drill.cpp
+    src/coop/dev/desk_ping_drill_observer.cpp
     src/coop/dev/command_drill.cpp
     src/coop/dev/mv_drill.cpp
     src/coop/dev/stats_probe.cpp
