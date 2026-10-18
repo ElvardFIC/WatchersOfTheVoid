@@ -19,6 +19,7 @@
 #include "ue_wrap/core/sdk_profile.h"
 #include "ue_wrap/core/sdk_profile_names.h"
 #include "ue_wrap/engine/engine.h"
+#include "ue_wrap/engine/screen_state.h"
 
 #include <windows.h>
 
@@ -57,6 +58,7 @@ std::atomic<uint8_t>  g_deadMask{0};
 std::atomic<bool>     g_armed{false};          // this death is ours to answer
 std::atomic<bool>     g_revivePending{false};  // the seam cancelled a travel; the pump owes a revive
 std::atomic<uint32_t> g_screenCleanupsEnded{0};  // revives whose screen cleanup ended, cleared or given up
+uint64_t g_screenCensusAtMs = 0;  // when the second census after a revive's cleanup is due, or 0
 std::atomic<uint64_t> g_cancelAtMsAtomic{0};   // when it cancelled -- stamped AT the cancel (see Watchdog)
 std::atomic<bool>     g_verbsResolved{false};  // ResolveVerbs succeeded (read off the game thread)
 std::atomic<bool>     g_seamReady{false};      // run_end_travel can cancel a run-ending travel
@@ -474,6 +476,20 @@ int g_screenCleanupLeft = 0;
 std::atomic<bool> g_puppetResidue{false};
 int g_puppetBlackLeft = 0;
 
+// What covers the view after a revive, logged at the screen cleanup's end and again 5 s later: a field client's
+// screen stayed black after repeated deaths while every cleanup read clear, and the drill never reproduced it. A
+// black screen on the viewport is a warning. The first reading arms the second.
+void LogScreenCensus(const char* when, bool armSecond) {
+    const ue_wrap::engine::ScreenState s = ue_wrap::engine::ReadScreenState();
+    const bool covered = s.blackOnScreen > 0;
+    ::ue_wrap::log::Write(covered ? ::ue_wrap::log::Level::Warn : ::ue_wrap::log::Level::Info,
+                          "death_revive: screen census %s -- blackScreen_C live=%d on viewport=%d | bloodLoss blur "
+                          "on viewport=%d | view target=%ls",
+                          when, s.blackLive, s.blackOnScreen, s.blurOnScreen,
+                          s.viewTarget.empty() ? L"?" : s.viewTarget.c_str());
+    g_screenCensusAtMs = armSecond ? ::GetTickCount64() + 5000 : 0;
+}
+
 // Re-attempt the three screen artifacts until they are provably gone; true when nothing is
 // left. Idempotent; each attempt drains the object index once (the black screens) and looks a
 // class up per artifact.
@@ -675,6 +691,8 @@ void Tick(coop::net::Session& session, void* localPawn) {
     // gate above it, since it must keep running once the death is over. The window counts every
     // tick and an attempt runs on each stride-th one, so a failed attempt is followed by the next a
     // stride later, and the window closes on its last tick.
+    if (g_screenCensusAtMs != 0 && ::GetTickCount64() >= g_screenCensusAtMs)
+        LogScreenCensus("5 s after the cleanup", false);
     if (g_screenCleanupLeft > 0) {
         const int tick = kScreenCleanupTicks - g_screenCleanupLeft--;  // 0 on the revive's first tick
         if (tick % kScreenCleanupStride == 0 && TickScreenCleanup()) {
@@ -682,8 +700,10 @@ void Tick(coop::net::Session& session, void* localPawn) {
                     "bloodLoss all clear) after %d of %d retry ticks", tick + 1, kScreenCleanupTicks);
             g_screenCleanupLeft = 0;
             g_screenCleanupsEnded.fetch_add(1, std::memory_order_relaxed);
+            LogScreenCensus("at the cleanup's end", true);
         } else if (g_screenCleanupLeft == 0) {
             g_screenCleanupsEnded.fetch_add(1, std::memory_order_relaxed);
+            LogScreenCensus("at the cleanup's end", true);
             UE_LOGW("death_revive: screen cleanup did NOT finish in %d ticks -- the player is "
                     "alive and playable but something red or black may still be on screen. "
                     "This is deliberately NOT a reason to leave the world.",

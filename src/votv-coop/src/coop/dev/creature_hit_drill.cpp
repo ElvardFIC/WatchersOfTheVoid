@@ -227,8 +227,11 @@ void HostSpawn(const Arm& arm, void* puppet) {
 // second besides, since the creature also bites the host, which stands 25 cm from the client's puppet, and the hits on
 // the host are not deliveries. The zombie's stuck count, which kills one that stands still to attack, is held off.
 void HostKeepAlive(const Arm& arm, long long now) {
+    // VOTVCOOP_CHD_NO_REFILL=1 leaves the vitals alone, so the creature kills the client again and again, the shape of
+    // the field run whose client kept a black screen; each revive then logs death_revive's screen census.
+    static const bool noRefill = coop::config::ReadEnv("VOTVCOOP_CHD_NO_REFILL") == "1";
     const uint32_t d = coop::player_damage::DeliveredCount();
-    if (d > g_h.deliveredSeen || now - g_h.restoreMs >= kRestoreGapMs) {
+    if (!noRefill && (d > g_h.deliveredSeen || now - g_h.restoreMs >= kRestoreGapMs)) {
         g_h.restoreMs = now;
         coop::dev::restore_vitals::Restore();
     }

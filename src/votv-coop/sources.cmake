@@ -135,6 +135,7 @@ set(VOTVCOOP_SOURCES
     src/ue_wrap/actors/fire_extinguisher.cpp
     src/ue_wrap/actors/chip_pile.cpp
     src/ue_wrap/engine/engine_pawn.cpp
+    src/ue_wrap/engine/screen_state.cpp
     src/ue_wrap/engine/engine_physics.cpp
     src/ue_wrap/engine/world_identity.cpp
     src/ue_wrap/engine/engine_nav.cpp
