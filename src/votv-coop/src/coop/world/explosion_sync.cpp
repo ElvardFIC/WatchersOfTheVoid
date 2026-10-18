@@ -18,6 +18,9 @@
 #include "ue_wrap/core/script_gate.h"
 #include "ue_wrap/core/ufunction_hook.h"
 #include "ue_wrap/devices/serverbox.h"
+#include "ue_wrap/engine/engine.h"
+#include "ue_wrap/engine/engine_attach.h"
+#include "ue_wrap/engine/engine_component.h"
 #include "ue_wrap/engine/engine_pawn.h"
 #include "ue_wrap/engine/world_identity.h"
 #include "ue_wrap/facts/function_row.h"
@@ -28,6 +31,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <vector>
 
@@ -115,9 +119,23 @@ uint64_t NowMs() {
         std::chrono::steady_clock::now().time_since_epoch()).count());
 }
 
-// The host's birth line (dev, ini explosion_birth_log): a measurement of which Blueprint spawned each explosion on
-// the host, where the capture only knows the class id. Read once, in Install, before the birth hook can run.
+// The dev birth lines (ini explosion_birth_log): a measurement of which Blueprint spawned each explosion on the host,
+// where the capture only knows the class id, and of where a client's dissolved birth reads. Read once, in Install, on
+// the game thread, before any spawn can reach the hook.
 bool g_birthLog = false;
+
+// Where the dissolved actor stands when the post hook sees it, for the dev line: its root component's world location
+// and the actor's scale, or "noroot" while the unfinished actor has no root yet. Only with the birth line on.
+void DescribeRoot(void* actor, char* out, size_t cap) {
+    void* root = E::RootComponentOf(actor);
+    if (!root) {
+        std::snprintf(out, cap, " at=noroot");
+        return;
+    }
+    const ue_wrap::FVector at = E::GetComponentLocation(root);
+    const ue_wrap::FVector scale = E::GetActorScale3D(actor);
+    std::snprintf(out, cap, " at=(%.1f,%.1f,%.1f) scale=(%.3f,%.3f,%.3f)", at.X, at.Y, at.Z, scale.X, scale.Y, scale.Z);
+}
 
 // Every Blueprint deferred spawn passes here: a null test and one client-session test. A host or single player
 // stops there, or, when the host's birth line is on (one plain flag), tests the class (up to three pointer or name
@@ -159,8 +177,10 @@ void OnBirth(void* /*context*/, void* sourceObject, void* result) {
     if (byName) ++g_counters.dissolvedByName;
     g_counters.lastDissolved      = result;
     g_counters.lastDissolvedIndex = index;
-    UE_LOGI("[EXPLOSION] dissolved role=client src=%ls by=%s",
-            sourceObject ? R::ClassNameOf(sourceObject).c_str() : L"?", byName ? "name" : "class");
+    char where[160] = "";
+    if (g_birthLog) DescribeRoot(result, where, sizeof(where));
+    UE_LOGI("[EXPLOSION] dissolved role=client src=%ls by=%s%s",
+            sourceObject ? R::ClassNameOf(sourceObject).c_str() : L"?", byName ? "name" : "class", where);
 }
 
 // The host's capture: at an explosion's begin-play, where the Blueprint's own writes are done, its class, transform

@@ -3,7 +3,7 @@
 // client's own game spawns, after it asks the host for the one its own player caused (coop/world/explosion_request.h).
 // The host captures each explosion its game runs and sends it as an ExplosionSpawn; a
 // client checks what it receives and spawns the copy in the lane's scope.
-// Single player is untouched unless the dev birth line (ini explosion_birth_log) is on.
+// A host or single player is untouched unless the dev birth line (ini explosion_birth_log) is on.
 #pragma once
 
 #include <cstddef>
