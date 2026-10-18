@@ -5,11 +5,13 @@
 #include "ue_wrap/core/call.h"
 #include "ue_wrap/core/component_calls.h"
 #include "ue_wrap/core/reflection.h"
+#include "ue_wrap/engine/engine_component.h"
 #include "ue_wrap/world/world_singleton.h"
 
 namespace ue_wrap::drive_eraser {
 namespace {
 
+namespace E = ue_wrap::engine;
 namespace R = ue_wrap::reflection;
 
 // Offsets on the eraser's class, resolved once the class is seen (a level singleton: one class a process).
@@ -35,13 +37,6 @@ void* Component(void* eraser, int32_t off) {
     if (off < 0) return nullptr;
     void* comp = *reinterpret_cast<void* const*>(static_cast<const uint8_t*>(eraser) + off);
     return comp && R::IsLive(comp) ? comp : nullptr;
-}
-
-// UAudioComponent::Play(StartTime), from its start.
-bool Play(void* audio) {
-    void* fn = audio ? R::FindDispatchFunctionCached(R::ClassOf(audio), L"Play") : nullptr;
-    ue_wrap::ParamFrame f(fn);
-    return fn && f.valid() && f.Set<float>(L"StartTime", 0.f) && ue_wrap::Call(audio, f);
 }
 
 // USkeletalMeshComponent::SetPlayRate(Rate): the wiper's animation speed.
@@ -72,21 +67,21 @@ bool Present(void* eraser, Show what) {
     if (!Resolve(eraser)) return false;
     switch (what) {
     case Show::Click:
-        return Play(Component(eraser, g_offButton));
+        return E::PlayAudioComponent(Component(eraser, g_offButton));
     case Show::Start: {
-        const bool button = Play(Component(eraser, g_offButton));
+        const bool button = E::PlayAudioComponent(Component(eraser, g_offButton));
         const bool wiper = SetPlayRate(Component(eraser, g_offWiper), 2.f);
-        return Play(Component(eraser, g_offBegin)) && button && wiper;
+        return E::PlayAudioComponent(Component(eraser, g_offBegin)) && button && wiper;
     }
     case Show::Done: {
         const bool done = ue_wrap::component_calls::Activate(Component(eraser, g_offDone));
         return SetPlayRate(Component(eraser, g_offWiper), 0.1f) && done;
     }
     case Show::Deny:
-        return Play(Component(eraser, g_offDeny));
+        return E::PlayAudioComponent(Component(eraser, g_offDeny));
     case Show::Refused: {
-        const bool button = Play(Component(eraser, g_offButton));
-        return Play(Component(eraser, g_offDeny)) && button;
+        const bool button = E::PlayAudioComponent(Component(eraser, g_offButton));
+        return E::PlayAudioComponent(Component(eraser, g_offDeny)) && button;
     }
     }
     return false;

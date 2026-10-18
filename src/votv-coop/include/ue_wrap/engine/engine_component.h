@@ -95,4 +95,8 @@ bool SetComponentMaterial(void* primitiveComponent, int32_t elementIndex, void* 
 // check). Game thread.
 bool DestroyComponent(void* component, void* contextObject);
 
+// UAudioComponent::Play(StartTime = 0): the component's sound from its start. False when `audio` is not
+// live or the call does not dispatch. Game thread.
+bool PlayAudioComponent(void* audio);
+
 }  // namespace ue_wrap::engine

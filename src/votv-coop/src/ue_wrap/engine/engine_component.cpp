@@ -380,4 +380,11 @@ bool IsComponentTickEnabled(void* component) {
     return Call(component, f) && f.Get<bool>(L"ReturnValue");
 }
 
+bool PlayAudioComponent(void* audio) {
+    if (!audio || !R::IsLive(audio)) return false;
+    void* fn = R::FindDispatchFunctionCached(R::ClassOf(audio), L"Play");
+    ParamFrame f(fn);
+    return fn && f.valid() && f.Set<float>(L"StartTime", 0.f) && Call(audio, f);
+}
+
 }  // namespace ue_wrap::engine

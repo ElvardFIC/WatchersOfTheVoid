@@ -5,6 +5,7 @@
 #include "ue_wrap/core/call.h"
 #include "ue_wrap/core/object_index.h"
 #include "ue_wrap/core/reflection.h"
+#include "ue_wrap/engine/engine_component.h"
 #include "ue_wrap/world/world_instances.h"
 
 #include <cstdint>
@@ -91,13 +92,7 @@ bool TriggerFly(void* console) {
 }
 
 bool PlayChangeCue(void* console) {
-    void* audio = PartOf(console, L"audio_change");
-    if (!audio) return false;
-    // The same Play(StartTime) dispatch the tree's other audio-component call sites make
-    // (ue_wrap/desk/coord_tower.cpp Play, ue_wrap/desk/drive_eraser.cpp Play).
-    void* fn = R::FindDispatchFunctionCached(R::ClassOf(audio), L"Play");
-    ue_wrap::ParamFrame f(fn);
-    return fn && f.valid() && f.Set<float>(L"StartTime", 0.f) && ue_wrap::Call(audio, f);
+    return ue_wrap::engine::PlayAudioComponent(PartOf(console, L"audio_change"));
 }
 
 }  // namespace ue_wrap::drone_console
