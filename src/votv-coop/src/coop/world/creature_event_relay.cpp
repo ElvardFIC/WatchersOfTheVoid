@@ -150,13 +150,12 @@ bool IsPerViewer(void* actor) {
     return false;
 }
 
-bool Ready() { return ResolveSetEvent() && AE::EnsureResolved(); }
+bool Ready() { return ResolveSetEvent() && AE::EnsureResolved() && g_libCdo.Get() != nullptr; }
 
 bool Call(bool active, void* ctx) {
     if (!ctx || !Ready()) return false;
-    // The default object was resolved by Install; this never walks the object array.
+    // The default object was resolved by Install (Ready holds it); this never walks the object array.
     void* const cdo = g_libCdo.Get();
-    if (!cdo) return false;
     int32_t n = 0;
     if (!active) {
         if (!AE::ReadCount(n)) return false;  // no gamemode: nothing to retract from

@@ -133,8 +133,8 @@ constexpr ClientAuthorship AuthorshipOf(ReliableKind k) {
     case ReliableKind::RemoverRequest:
     case ReliableKind::CameraToggleIntent:
         return ClientAuthorship::Client;
-    // The Host row matches MTA's server-only element data, which a client may not write
-    // (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:2743-2755).
+    // The Host row matches MTA's protected element data, which a client may not write: opt-in there
+    // (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:2743-2755), the only mode here.
     case ReliableKind::EntitySpawn:
     case ReliableKind::EntityDestroy:
     case ReliableKind::RestoreVitals:

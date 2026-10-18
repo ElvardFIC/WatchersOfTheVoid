@@ -36,7 +36,7 @@ bool IsPerViewer(void* actor);
 // when it could not be made. Game thread.
 bool Call(bool active, void* ctx);
 
-// True once setEvent and the event registry resolve.
+// True once setEvent, the event registry and the library's default object resolve: everything Call needs.
 bool Ready();
 
 // ---- creature_event_relay_host.cpp -----------------------------------------------------------

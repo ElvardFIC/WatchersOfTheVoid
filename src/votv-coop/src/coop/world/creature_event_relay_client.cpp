@@ -58,6 +58,7 @@ void SweepOtherWorlds() {
         if (it->second.generation != gen) it = g_entries.erase(it);
         else ++it;
     }
+    g_refusalLogged.clear();  // every mirror it named went with its world
 }
 
 // `n` registrations taken off the gamemode's count, with `ctx` as the context.
@@ -81,6 +82,7 @@ void EndEntry(EL::ElementId eid) {
     if (it == g_entries.end()) return;
     const Entry e = it->second;
     g_entries.erase(it);
+    g_refusalLogged.erase(eid);  // a reused eid says its refusal again
     if (e.applied <= 0) return;
     // The generation and the world kind are memoised and can lag a change by 100 ms, so the gamemode itself is the
     // guard: it must answer and belong to the world the entry was bound in.
@@ -121,7 +123,9 @@ void Reconcile(EL::ElementId eid) {
 }  // namespace
 
 // A call is cancelled only when the relay holds a bound entry for this very actor: a mirror the relay never bound
-// (no event registry yet, a full table, a per-viewer class) counts its own, and runs natively.
+// (no event registry yet, a full table, a per-viewer class) counts its own, and runs natively. The PRE is the
+// suppression at the source, as MTA disables a local writer where it writes
+// (reference/mtasa-blue/Client/multiplayer_sa/CMultiplayerSA.cpp:854-858).
 bool ClientPre(void* ctx, bool active) {
     if (!ctx || ctx == g_applyingCtx || g_entries.empty()) return false;
     const EL::ElementId eid = NpcEidOf(ctx, /*mirror=*/true);
@@ -167,11 +171,13 @@ void ClientOnMirrorBound(EL::ElementId eid, void* actor) {
     if (it != g_entries.end() && it->second.actor == actor && it->second.actorIndex == index &&
         it->second.actorSerial == serial)
         return;
-    // No entry is made when the bind cannot apply: the PRE then leaves this mirror native, so its own true has its
-    // own false and the mirror counts for itself.
+    // No entry is made when the bind cannot apply (each WARN says so): the PRE then leaves this mirror native, so its
+    // own true keeps its own false, the mirror's count stays paired by its Blueprint, and the host's count for it is
+    // not applied. MTA has no such fallback, its server always authors element data
+    // (reference/mtasa-blue/Server/mods/deathmatch/logic/CStaticFunctionDefinitions.cpp:1005, SetElementData).
     if (!Ready()) {
-        UE_LOGW("creature_event_relay: eid=%u bind before the event registry resolved -- nothing applied, the mirror "
-                "counts its own", eid);
+        UE_LOGW("creature_event_relay: eid=%u bind before setEvent, the event registry and lib_C's default object "
+                "resolved -- nothing applied, the mirror counts its own", eid);
         return;
     }
     if (it == g_entries.end() && g_entries.size() >= kMaxEntries) {
@@ -194,9 +200,8 @@ void ClientOnMirrorBound(EL::ElementId eid, void* actor) {
         if (Bound(it->second)) EndEntry(eid);
         else g_entries.erase(it);
     }
-    // MTA suppresses a local writer at its source
-    // (reference/mtasa-blue/Client/multiplayer_sa/CMultiplayerSA.cpp:854-858); an adopted save twin registered before
-    // it was ours, so its registrations are undone after the fact.
+    // An adopted twin registered before it was ours, so its registrations are undone after the fact, which MTA's
+    // client never needs: it runs no server element's logic before receiving it.
     Retract(actor, copies);
     Entry& e = g_entries[eid];
     e.target = target;
@@ -221,8 +226,9 @@ void ClientOnNpcEnd(const EL::death_seam::Death& death) {
 void ClientOnDisconnect() {
     // The retraction runs only while the entries' world is the running one (EndEntry's own test); on a
     // quit-to-menu the world is going and nothing is called into it. Only the relay's own registrations are retracted:
-    // diverges from MTA's wholesale reset (reference/mtasa-blue/Client/mods/deathmatch/logic/CClientGame.cpp:3491),
-    // for the client keeps its own world and its peer-local events.
+    // diverges from MTA's wholesale teardown, ~CClientGame (reference/mtasa-blue/Client/mods/deathmatch/logic/
+    // CClientGame.cpp:417), which deletes the client manager at :559 and the element managers under it
+    // (CClientManager.cpp:66), for the client keeps its own world and its peer-local events.
     std::vector<EL::ElementId> ids;
     ids.reserve(g_entries.size());
     for (const auto& kv : g_entries) ids.push_back(kv.first);

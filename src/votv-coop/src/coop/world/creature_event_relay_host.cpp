@@ -1,6 +1,6 @@
 // coop/world/creature_event_relay_host.cpp -- the host's half of coop/world/creature_event_relay.h: each enrolled
 // creature's net count of setEvent(true) calls, sent whole to every client on every change, at the creature's
-// enrolment after its own `true`, and at a joiner's world-ready.
+// enrolment after its own `true`, and at a joiner's world-ready; a creature that ends still holding a count sends 0.
 
 #include "coop/world/creature_event_relay.h"
 #include "creature_event_relay_internal.h"  // co-located private header (src tree, not include/)
@@ -72,8 +72,9 @@ coop::net::CreatureEventActivePayload PayloadFor(EL::ElementId eid, int count) {
 
 // To every client that is world-ready; a client still joining gets the count in its snapshot. Every call is sent, even
 // one that repeats the last value: diverges from MTA's unchanged-value skip
-// (reference/mtasa-blue/Server/mods/deathmatch/logic/CStaticFunctionDefinitions.cpp:1019), because a repeated value is
-// the heal of a stale client target; the whole value is MTA's push too (:1034).
+// (reference/mtasa-blue/Server/mods/deathmatch/logic/CStaticFunctionDefinitions.cpp:1019), because a repeated value
+// re-sends what a client may hold stale (a snapshot's target, a missed edge). The whole value is written at :1031 and
+// broadcast at :1034, as here.
 void Broadcast(coop::net::Session* s, EL::ElementId eid, int count) {
     const coop::net::CreatureEventActivePayload p = PayloadFor(eid, count);
     if (s->SendReliable(coop::net::ReliableKind::CreatureEventActive, &p, sizeof(p)))
@@ -149,7 +150,10 @@ void HostOnNpcEnd(const EL::death_seam::Death& death) {
     g_host.erase(it);
     if (held <= 0) return;
     UE_LOGW("creature_event_relay: host eid=%u ended at count %d -- entry dropped", death.eid, held);
-    // After the creature's EntityDestroy on the same Bulk lane: a client entry that never bound is erased by it.
+    // After the creature's EntityDestroy on the same Bulk lane. MTA drops an element's custom data with the element
+    // (reference/mtasa-blue/Client/mods/deathmatch/logic/CClientEntity.cpp:86-90, the destructor frees it); our count
+    // lives in the client's relay table keyed by eid, not on the element, so the end sends the zero that clears it: a
+    // client entry that never bound has no mirror to end it.
     if (coop::net::Session* s = ActiveSession(coop::net::Role::Host)) Broadcast(s, death.eid, 0);
 }
 
@@ -187,7 +191,10 @@ void HostSendJoinSnapshot(coop::net::Session* session, int slot) {
         const auto kv = *it;  // a copy, so the erase and the advance leave it valid
         const EL::Element* el = reg.Get(kv.first);
         if (!el || el->GetType() != EL::ElementType::Npc) {  // its creature is gone from the registry
+            // The seam's end may not have drained yet and then finds no entry, so the zero is sent here: a client
+            // entry that never bound keeps its target otherwise.
             it = g_host.erase(it);
+            Broadcast(session, kv.first, 0);
             continue;
         }
         ++it;

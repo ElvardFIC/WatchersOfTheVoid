@@ -5,12 +5,12 @@
 // so the host's count is the source.
 //   - HOST: a watch on setEvent keeps each enrolled creature's net count of `true` calls and sends its whole count,
 //     by element id, as ReliableKind::CreatureEventActive on every change, at the creature's enrolment after its own
-//     `true`, and at a joiner's world-ready.
+//     `true`, and at a joiner's world-ready; a creature that ends still holding a count sends 0.
 //   - CLIENT: a count is the target of the creature's mirror. The relay applies setEvent by reflection with the
 //     mirror as the context until its applied count equals the target, retracts the registrations the mirror made
-//     before it was installed, and refuses the mirror's own setEvent from then on. The client's count stays the sum
-//     of these keyed registrations and its peer-local events. A mirror's end, a world change and the session's end
-//     retract what is still applied.
+//     before it was installed, and refuses the mirror's own setEvent once the bind made an entry (a bind the relay
+//     cannot take makes none, and that mirror counts its own). The client's count is the sum of these keyed
+//     registrations and its peer-local events; a mirror's end, a world change and the session's end retract them.
 //   - PER VIEWER: killerwisp_C, fossilhound_C, antibreather_C and eg_C compute their event from the local camera or
 //     player 0; their mirror's own call is allowed and the host's relay skips them.
 
@@ -37,7 +37,8 @@ void SendJoinSnapshotForSlot(int slot);
 void OnNpcEnrolled(coop::element::ElementId eid, void* actor);
 
 // CLIENT, game thread: a mirror was installed for `eid` and its BeginPlay has run. Retracts its own
-// registrations, then applies the host's count.
+// registrations, then applies the host's count; refused with a WARN, and no entry made, when setEvent, the event
+// registry or the library's default object is not resolved yet.
 void OnMirrorBound(coop::element::ElementId eid, void* actor);
 
 // CLIENT, game thread (event_feed drain): a creature's count from the host.
