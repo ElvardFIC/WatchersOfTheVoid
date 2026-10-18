@@ -6,10 +6,10 @@
 // save-denied fail sound. Mirroring what is ON those screens is a separate concern, owned by the
 // state lanes.
 //
-// Claim keys are SHARED-WIDGET identities: "desk", "sat", "radar", "reactor", "laptop", plus a
-// per-instance "tfm_<posKey>" and "arc_<posKey>". Five device families literally render ONE shared
-// widget instance each, so a per-widget claim is correctness rather than simplification -- two
-// peers in "different" laptops would be typing into the same screen. See ue_wrap/device_screen.
+// Claim keys are SHARED-WIDGET identities ("desk", "sat", "radar", "reactor", "laptop"), a per-instance
+// "tfm_<posKey>" / "arc_<posKey>", and a per-prop "note_<hash>" / "draw_<hash>". Five device families
+// render ONE shared widget instance each, so a per-widget claim is correctness rather than
+// simplification: two peers in "different" laptops would type into one screen (ue_wrap/device_screen).
 //
 // Game thread throughout: the poll from the net-pump tick, OnReliable from the event_feed drain,
 // the observers from the ProcessEvent detour.
@@ -61,6 +61,12 @@ bool LocalHolds(const wchar_t* key);
 // The slot currently holding `key`, or 0xFF if unclaimed. On the host this
 // is authoritative; on a client it is the broadcast mirror. Game thread.
 uint8_t HolderOf(const wchar_t* key);
+
+// HOST: the slot the host last granted `key`, still answered after that slot released it, or 0xFF if
+// it never granted it (a client's mirror never does). The state a message that outran its sender's
+// release is judged against: the holder's last word can reach the host after the release did.
+// Dropped with the slot on its disconnect. Game thread.
+uint8_t LastHolderOf(const wchar_t* key);
 
 // HOST: send the current claim table to a joining peer (world-ready replay).
 void QueueConnectBroadcastForSlot(int peerSlot);

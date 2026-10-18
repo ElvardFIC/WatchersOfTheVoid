@@ -254,7 +254,7 @@ void Install(coop::net::Session& session) {
     coop::turbine_sync::Install(&session);  // wind-turbine facing/spin mirror (host-auth ~1 Hz)
     coop::upgrade_sync::Install(&session);  // a client's upgrade purchase is charged and written by the host
     coop::device_occupancy::Install(&session);  // enterable-device occupancy (busy claim + E deny gate)
-    coop::notebook_sync::Install(&session);
+    coop::notebook_sync::Install(&session);  // a notebook editor's page text rides the prop record lane: the close and the 2 s publish
     coop::console_state_sync::Install(&session);  // signal-catcher state mirror (sky signals + desk + dish aim)
     coop::signal_catch_sync::Install(&session);  // the signal-catch consume replay (dish slew + downloader arm on every peer)
     coop::laptop_sync::Install(&session);  // the stationary PC's power and the portable PC lid's wire
@@ -490,7 +490,6 @@ void DisconnectSlot(coop::net::Session& session, int slot) {
     coop::remote_prop::OnDisconnectForSlot(slot);
     coop::item_activate::OnDisconnectForSlot(slot);
     coop::device_occupancy::OnDisconnectForSlot(slot);  // release a leaver's device claims
-    coop::notebook_sync::OnDisconnectForSlot(slot);
     coop::desk_input_sync::OnPeerLeft(slot);  // clear a leaver's dangling coordIsPing (its ping would swallow every peer's desk keys)
     coop::desk_ping_sync::OnPeerLeft(static_cast<uint8_t>(slot));  // and its unrun verdict and the scan it pinged
     coop::signal_catch_sync::OnPeerLeft(static_cast<uint8_t>(slot));  // and the catch marked as its
@@ -587,7 +586,7 @@ DisconnectStats DisconnectAll() {
     coop::turbine_sync::OnDisconnect();
     coop::upgrade_sync::OnDisconnect();  // and its own upgrade panel buys locally again
     coop::device_occupancy::OnDisconnect();
-    coop::notebook_sync::OnDisconnect();
+    coop::notebook_sync::OnDisconnect();  // and its last-published text
     coop::console_state_sync::OnDisconnect();
     coop::signal_catch_sync::OnDisconnect();
     coop::prop_save_data::OnDisconnect();
@@ -708,7 +707,6 @@ void TickGameplay(coop::net::Session& session, bool isConnected, bool isHost,
     coop::skin_preview::Tick();  // F1-skins live mannequin preview (spawn/apply/position/hide)
     { PP::Scope _s{PP::Bucket::Interactable}; ue_wrap::ScopedWalkTimer _w{"sync:laptop_tab"}; coop::laptop_tab::Tick(session); }  // the tab watches until live, the refusal window, and a tab report owed by its pace; BEFORE the occupancy poll, so a leaving user's last tab goes ahead of the claim's release
     { PP::Scope _s{PP::Bucket::Interactable}; ue_wrap::ScopedWalkTimer _w{"sync:device_occupancy"}; coop::device_occupancy::Tick(); }  // device occupancy: activeInterface edge poll + pending claim retry
-    coop::notebook_sync::Tick();
     { PP::Scope _s{PP::Bucket::Interactable}; ue_wrap::ScopedWalkTimer _w{"sync:console_state"}; coop::console_state_sync::Tick(); }  // signal-catcher: host sky poll / client mirror sweep / desk + dish owner streams
     { PP::Scope _s{PP::Bucket::Interactable}; ue_wrap::ScopedWalkTimer _w{"sync:signal_catch"}; coop::signal_catch_sync::Tick(); }  // the catch and cleared detectors, 1 Hz
     { PP::Scope _s{PP::Bucket::Interactable}; ue_wrap::ScopedWalkTimer _w{"sync:propsave"}; coop::prop_save_data::Drive(); }  // budgeted park applies + the 1 Hz assembler sweep

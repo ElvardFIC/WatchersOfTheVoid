@@ -3,6 +3,7 @@
 #include "coop/props/prop_save_data.h"
 
 #include "coop/dev/food_clock_probe.h"   // [dev] the food catch-up's two clocks, read at these seams
+#include "coop/interactables/notebook_sync.h"   // whose a notebook's record is: the editor holding its claim
 #include "coop/items/save_record_wire.h"
 #include "coop/net/blob_chunks.h"
 #include "coop/net/session.h"
@@ -339,6 +340,13 @@ bool LandRecord(const std::wstring& key, SR::SaveRecord&& rec, uint8_t senderSlo
         UE_LOGI("prop_save_data: record for key '%ls' waits -- the prop is held here", key.c_str());
         actor = nullptr;
     }
+    // A notebook this peer is editing is the newer state: the editor's own close publishes it, and the
+    // record that comes back is that publish's acknowledgement or an older one. Dropped, not parked.
+    if (actor && coop::notebook_sync::LocalEditorHolds(actor)) {
+        UE_LOGI("prop_save_data: record for key '%ls' is not applied -- this peer is editing the notebook",
+                key.c_str());
+        return false;
+    }
     if (actor && TryApply(actor, key, rec)) {
         if (budgeted) --g_applyBudget;
         return true;
@@ -565,6 +573,10 @@ void OnChunk(coop::net::Session& s, const coop::net::BlobChunkPayload& p, uint8_
         return;
     }
     const bool birth = g_awaiting.count(key) != 0;
+    // A notebook's text is its editor's: the host takes it from the slot that holds the notebook's claim,
+    // or held it last (notebook_sync says why). A birth's record is the exception, since nobody holds
+    // the claim of a prop that did not exist a moment ago.
+    if (!birth && actor && !coop::notebook_sync::AcceptsClientRecord(actor, senderSlot)) return;
     if (LandRecord(key, SR::SaveRecord(rec), senderSlot, body.size(), /*budgeted=*/false)) {
         UE_LOGI("prop_save_data: HOST took a client record (key '%ls', slot %u) -- %s",
                 key.c_str(), static_cast<unsigned>(senderSlot),

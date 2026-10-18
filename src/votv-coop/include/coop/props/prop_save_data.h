@@ -78,7 +78,9 @@ void ExpectRecordFor(void* actor, const std::wstring& key, uint8_t senderSlot);
 
 // A chunk of either kind off the wire. `intent` distinguishes PropSaveDataIntent (a client's
 // claim, which only the host acts on) from PropSaveData (the canonical). The session is the one
-// the host re-publishes a taken claim on.
+// the host re-publishes a taken claim on. A notebook's record is judged by coop/interactables/notebook_sync
+// on top: the host takes it only from the slot holding that notebook's claim, and a peer holding the claim
+// applies no canonical for it.
 void OnChunk(coop::net::Session& s, const coop::net::BlobChunkPayload& p, uint8_t senderSlot,
              bool intent);
 

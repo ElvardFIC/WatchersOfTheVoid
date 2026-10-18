@@ -225,12 +225,32 @@ receiver re-derives it from `opened` (`coop/props/prop_record_refresh`).
 
 ### Notebook
 
-The notebook editor claims the prop while open: the host arbitrates the claim so only the
-current holder can edit it. The editor streams its page array in chunked `NotebookText`
-snapshots; the host accepts and broadcasts text only from that holder. Closing the editor
-publishes the notebook's updated prop save record (`coop/interactables/notebook_sync`,
-`coop/props/prop_save_data`). A joiner receives the notebook state from the loaded save; later
-in-session edits have no notebook-specific join replay. `[?]`
+A notebook's pages are `text` on the prop, which its own `getData` and `loadData` save, so the
+text is the prop's save record and crosses on the record lane above with no message of its own.
+`coop/interactables/notebook_sync` adds what that lane cannot know, the editor.
+
+- **One editor at a time.** The open editor claims the notebook, a claim keyed by the prop
+  (`coop/interactables/device_occupancy`); a second peer pressing E on it is denied.
+- **What the editor wrote.** The editing peer publishes the notebook's record when it closes the
+  editor, and while it holds the claim once every 2 s when the page text differs from its last
+  publish. The open page is folded into `text` first: the widget writes `text` only on commit and
+  on quit. The host's own edit publishes the canonical the same way.
+- **Who the host believes.** The host takes a client's record for a notebook only from the slot
+  that holds its claim, or held it last when nobody holds it now (the record rides the Bulk lane
+  and the release the Normal one, so the close's record can arrive after the release). Any other
+  sender is refused and logged. The republish to every peer is the editor's acknowledgement.
+- **No echo onto the editor.** A peer that holds the claim applies no canonical record for that
+  notebook: its own edit is the newer state.
+- **Late join.** A joiner is handed every prop's record in the snapshot, the notebook's last
+  published text included, and the claim table, so it reads the text as last published and is
+  denied the editor while another peer holds it; the close then reaches it as an ordinary record.
+- **The ceiling.** A record over 32 KiB is refused with a log line and stays on the editing peer.
+
+A page torn out of a notebook is `prop_notebook_paper_C`, born by a client's prop birth route
+(`coop/props/prop_drop_intent`). The drawn pixels of `prop_paper_drawable_C` are in no save
+record and do not cross; that paper has a claim only. `[RD]` for the Blueprints, `[?]` until the
+notebook drill has run.
+
 ### Sleeping bags and mattresses
 
 `prop_sleepingbag_C` exposes `actionOptionIndex` and has an `unwrapOnBed` field. Its generated
@@ -297,7 +317,7 @@ is built; concrete and food are designed and not built.
 | a stuck prop, and its unstick | the peer that sticks or frees it; every peer runs the component's own verb | one reliable message |
 | a self-changing prop's progression | the host | park, corrector or anchor, per prop |
 | notebook editor occupancy | the host arbitrates | a claim keyed by the owning prop |
-| notebook page text | the current notebook holder; the host relays it | chunked `NotebookText` snapshots; closing publishes the prop save record |
+| notebook page text | the editing peer; the host takes it from the claim's holder only | the notebook's own save record on the record lane, at the close and every 2 s while the text changes |
 | a client's shared-world spawners | the host | refused on a client at the script-body gate; shared-world content arrives only from the host |
 
 ## Wire messages
@@ -363,7 +383,7 @@ prop resolves.
 | a prop under a hook's drive or a broom's push | `coop/props/prop_drive_host` (the host's set and stream), `coop/props/prop_drive_stream` (the receiver), `coop/items/hook_prop_claim` (the hook lane feeding it), `coop/items/hook_constraint` (the tie itself, host-only), `coop/items/broom_push` (the broom's push feeding it) |
 | containers | `coop/props/container_contents_sync`, `coop/items/save_record_wire`, `coop/interactables/interactable_sync` |
 | a record that changes in place | `coop/props/prop_record_refresh` (the drive box, the reel case) |
-| notebook sync | `coop/interactables/notebook_sync`, `coop/props/prop_save_data` |
+| notebook sync | `coop/interactables/notebook_sync`, `coop/props/prop_save_data`, `ue_wrap/actors/notebook` |
 | the pocket blip | `coop/items/inventory_pickup_sync` |
 | the join | `coop/props/prop_snapshot`, `coop/props/snapshot_census`, `coop/props/join_membership_sweep`, `coop/props/unresolved_pose_ledger` |
 | the spawners a client must not run | `coop/world/spawn_authority` |

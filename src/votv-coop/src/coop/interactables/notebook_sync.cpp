@@ -1,190 +1,142 @@
+// coop/interactables/notebook_sync.cpp -- see coop/interactables/notebook_sync.h.
+
 #include "coop/interactables/notebook_sync.h"
 
-#include "coop/net/blob_chunks.h"
 #include "coop/interactables/device_occupancy.h"
-#include "coop/props/prop_save_data.h"
 #include "coop/net/session.h"
-#include "coop/props/prop_key_index.h"
+#include "coop/props/prop_save_data.h"
 #include "ue_wrap/actors/notebook.h"
 #include "ue_wrap/actors/prop.h"
-#include "ue_wrap/core/reflection.h"
-#include "ue_wrap/core/script_gate.h"
-#include "ue_wrap/facts/function_row.h"
-#include "ue_wrap/desk/device_screen.h"
+#include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/log.h"
+#include "ue_wrap/core/script_gate.h"
+#include "ue_wrap/desk/device_screen.h"
+#include "ue_wrap/facts/function_row.h"
 
-#include <algorithm>
 #include <atomic>
 #include <chrono>
-#include <cwchar>
-#include <cstring>
 #include <string>
-#include <utility>
-#include <unordered_map>
 #include <vector>
 
 namespace coop::notebook_sync {
 namespace {
-namespace R = ue_wrap::reflection;
+
 namespace sg = ue_wrap::script_gate;
-namespace N = ue_wrap::notebook;
-using coop::net::Role;
+namespace N  = ue_wrap::notebook;
+namespace DS = ue_wrap::device_screen;
 
 UE_FACT_FN(kNotebookGraph, "notebook_sync", L"ui_notebook_C", L"ExecuteUbergraph_ui_notebook", Declared);
 UE_FACT_FN(kNotebookQuit, "notebook_sync", L"ui_notebook_C", L"quit", Declared);
+
 std::atomic<coop::net::Session*> g_session{nullptr};
-coop::blob_chunks::Assembler g_assembler;
-uint32_t g_nextSeq = 1;
-constexpr size_t kMaxTextBlob = 256 * 1024;
-constexpr auto kAssemblyTTL = std::chrono::seconds(20);
-std::chrono::steady_clock::time_point g_nextSweep{};
-std::unordered_map<std::wstring, std::pair<uint8_t, std::chrono::steady_clock::time_point>> g_recentNotebookOwner;
-constexpr auto kNotebookClaimGrace = std::chrono::seconds(3);
+bool g_graphWatched = false;
+bool g_quitWatched = false;
+
+// The graph's POST fires on every event of the widget, a keystroke included, so the work behind it is
+// gated by time first: the page text is read and compared at most once per kPublishEvery.
+constexpr auto kPublishEvery = std::chrono::seconds(2);
+std::chrono::steady_clock::time_point g_nextExamine{};
+// What the editing peer last published, or read when it began: the text a later examine compares to.
+struct Baseline {
+    std::wstring key;
+    std::vector<std::wstring> pages;
+};
+Baseline g_base;
+// The notebook the editor was open on when quit began; quit clears the widget's `clipboard` in its own
+// body, so only a watch before the body can name it.
+ue_wrap::CachedObjRef g_closing;
 
 coop::net::Session* Session() {
     auto* s = g_session.load(std::memory_order_acquire);
     return s && s->running() ? s : nullptr;
 }
 
-void Put16(std::vector<uint8_t>& b, uint16_t v) {
-    b.push_back(static_cast<uint8_t>(v)); b.push_back(static_cast<uint8_t>(v >> 8));
-}
-void Put32(std::vector<uint8_t>& b, uint32_t v) {
-    for (int i = 0; i < 4; ++i) b.push_back(static_cast<uint8_t>(v >> (i * 8)));
-}
-bool Get16(const std::vector<uint8_t>& b, size_t& p, uint16_t& v) {
-    if (p + 2 > b.size()) return false;
-    v = static_cast<uint16_t>(b[p] | (uint16_t(b[p + 1]) << 8)); p += 2; return true;
-}
-bool Get32(const std::vector<uint8_t>& b, size_t& p, uint32_t& v) {
-    if (p + 4 > b.size()) return false;
-    v = uint32_t(b[p]) | (uint32_t(b[p + 1]) << 8) | (uint32_t(b[p + 2]) << 16) |
-        (uint32_t(b[p + 3]) << 24); p += 4; return true;
+// The notebook's occupancy claim, held by this peer.
+bool HoldsClaim(void* notebook) {
+    const std::wstring claim = DS::ClassifyDeviceActorClaimKey(notebook);
+    return !claim.empty() && coop::device_occupancy::LocalHolds(claim.c_str());
 }
 
-// The blob is a prop key followed by a UTF-16LE page count and length-prefixed UTF-16LE pages.
-bool Encode(const std::wstring& key, const std::vector<std::wstring>& pages, std::vector<uint8_t>& out) {
-    if (key.empty() || key.size() > 128 || pages.size() > 256) return false;
-    out.clear(); Put16(out, static_cast<uint16_t>(key.size()));
-    for (wchar_t c : key) Put16(out, static_cast<uint16_t>(c));
-    Put16(out, static_cast<uint16_t>(pages.size()));
-    for (const auto& page : pages) {
-        if (page.size() > 32768 || out.size() + page.size() * 2 + 4 > kMaxTextBlob) return false;
-        Put32(out, static_cast<uint32_t>(page.size()));
-        for (wchar_t c : page) Put16(out, static_cast<uint16_t>(c));
-    }
-    return out.size() <= std::min(kMaxTextBlob, coop::blob_chunks::MaxBlobBytes());
+// Publish the notebook's record through the prop record lane: the canonical on the host, an intent
+// on a client. The pages are remembered as the last published whatever the lane did with them: a
+// refusal is the lane's to log and retry, and only a changed text publishes again.
+void PublishRecord(coop::net::Session* s, void* notebook, const std::wstring& key,
+                   const std::vector<std::wstring>& pages) {
+    coop::prop_save_data::Publish(s, notebook, key);
+    g_base.key = key;
+    g_base.pages = pages;
 }
 
-bool Decode(const std::vector<uint8_t>& b, std::wstring& key, std::vector<std::wstring>& pages) {
-    if (b.size() > kMaxTextBlob) return false;
-    size_t p = 0; uint16_t keyLen = 0, count = 0;
-    if (!Get16(b, p, keyLen) || keyLen == 0 || keyLen > 128 || p + size_t(keyLen) * 2 > b.size()) return false;
-    key.clear(); for (uint16_t i = 0; i < keyLen; ++i) { uint16_t c; if (!Get16(b, p, c)) return false; key.push_back(static_cast<wchar_t>(c)); }
-    if (!Get16(b, p, count) || count > 256) return false;
-    pages.clear(); pages.reserve(count);
-    for (uint16_t i = 0; i < count; ++i) {
-        uint32_t len = 0; if (!Get32(b, p, len) || len > 32768 || p + size_t(len) * 2 > b.size()) return false;
-        std::wstring page; page.reserve(len);
-        for (uint32_t j = 0; j < len; ++j) { uint16_t c; if (!Get16(b, p, c)) return false; page.push_back(static_cast<wchar_t>(c)); }
-        pages.push_back(std::move(page));
-    }
-    return p == b.size();
-}
-
-bool Apply(const std::vector<uint8_t>& blob) {
-    std::wstring key; std::vector<std::wstring> pages;
-    if (!Decode(blob, key, pages)) return false;
-    return N::WritePages(coop::prop_key_index::Find(key), pages);
-}
-
-void Publish(coop::net::Session* s, const std::vector<uint8_t>& blob) {
-    if (s->role() == Role::Host)
-        coop::blob_chunks::SendBlob(s, coop::net::ReliableKind::NotebookText, g_nextSeq++, blob);
-    else
-        coop::blob_chunks::SendBlobToSlot(s, 0, coop::net::ReliableKind::NotebookText, g_nextSeq++, blob);
-}
-
-void OnNotebookGraphPost(const sg::Call& c) {
-    auto* s = Session(); if (!s || !c.object || !R::IsLive(c.object)) return;
-    const std::wstring claim = ue_wrap::device_screen::ClassifyWidgetClaimKey(c.object);
-    if (claim.empty()) return;
-    void* prop = N::NotebookOf(c.object);
-    if (!prop) return;
-    const std::wstring key = ue_wrap::prop::GetKeyString(prop);
-    if (key.empty()) return;
-    // The widget text is newer than clipboard.Text until quit(), so fold the open page into the
-    // backing array before publishing the full canonical snapshot.
-    std::vector<std::wstring> pages;
-    if (!N::CommitEditorPage(c.object, pages)) return;
-    std::vector<uint8_t> blob;
-    if (!Encode(key, pages, blob)) return;
-    Publish(s, blob);
-}
-
-void OnNotebookQuitPost(const sg::Call& c) {
+void OnGraphPost(const sg::Call& c) {
+    const auto now = std::chrono::steady_clock::now();
+    if (now < g_nextExamine) return;
+    g_nextExamine = now + kPublishEvery;
     auto* s = Session();
-    if (!s || !c.object || !R::IsLive(c.object)) return;
-    void* prop = N::NotebookOf(c.object);
-    if (!prop) return;
-    const std::wstring key = ue_wrap::prop::GetKeyString(prop);
+    if (!s) return;
+    void* notebook = N::NotebookOf(c.object);
+    if (!notebook || N::IsReadOnly(c.object) || !HoldsClaim(notebook)) return;
+    const std::wstring key = ue_wrap::prop::GetKeyString(notebook);
     if (key.empty() || key == L"None") return;
-    // quit() committed the current editor contents to clipboard.Text. Send the complete page
-    // array on the dedicated lane; PropSaveDataIntent is holder-gated and is not sufficient here.
-    std::vector<std::wstring> pages;
-    if (N::ReadPages(prop, pages)) {
-        std::vector<uint8_t> blob;
-        if (Encode(key, pages, blob)) Publish(s, blob);
+    if (g_base.key != key) {
+        // The first look at this notebook: the text it opened with is what the edits are measured from.
+        g_base.key = key;
+        N::ReadPages(notebook, g_base.pages);
+        return;
     }
-    coop::prop_save_data::Publish(s, prop, key);
+    std::vector<std::wstring> pages;
+    if (!N::CommitEditorPage(c.object, pages) || pages == g_base.pages) return;
+    PublishRecord(s, notebook, key, pages);
 }
 
-} // namespace
+sg::Verdict OnQuitPre(const sg::Call& c) {
+    g_closing.Set(N::NotebookOf(c.object));
+    return sg::Verdict::Run;
+}
+
+void OnQuitPost(const sg::Call& c) {
+    void* notebook = g_closing.Get();
+    g_closing.Reset();
+    g_nextExamine = {};
+    g_base = Baseline{};
+    auto* s = Session();
+    if (!notebook || !s || N::IsReadOnly(c.object) || !HoldsClaim(notebook)) return;
+    const std::wstring key = ue_wrap::prop::GetKeyString(notebook);
+    std::vector<std::wstring> pages;
+    if (key.empty() || key == L"None" || !N::ReadPages(notebook, pages)) return;
+    // The body has written the box into the open page; this is the text the editor closed with, sent
+    // before the pump tick that sees the interface leave and releases the claim.
+    PublishRecord(s, notebook, key, pages);
+}
+
+}  // namespace
 
 void Install(coop::net::Session* session) {
     g_session.store(session, std::memory_order_release);
-    sg::WatchName(kNotebookGraph, 0, nullptr, &OnNotebookGraphPost);
-    sg::WatchName(kNotebookQuit, 0, nullptr, &OnNotebookQuitPost);
+    if (!g_graphWatched) g_graphWatched = sg::WatchName(kNotebookGraph, 0, nullptr, &OnGraphPost);
+    if (!g_quitWatched) g_quitWatched = sg::WatchName(kNotebookQuit, 0, &OnQuitPre, &OnQuitPost);
 }
 
-void Tick() {
-    const auto now = std::chrono::steady_clock::now();
-    if (g_assembler.Idle() || now < g_nextSweep) return;
-    g_nextSweep = now + std::chrono::seconds(1);
-    g_assembler.Sweep(now, kAssemblyTTL);
+bool AcceptsClientRecord(void* actor, uint8_t senderSlot) {
+    if (!N::IsNotebook(actor)) return true;
+    const std::wstring claim = DS::ClassifyDeviceActorClaimKey(actor);
+    const uint8_t holder = claim.empty() ? uint8_t{0xFF} : coop::device_occupancy::HolderOf(claim.c_str());
+    const uint8_t last = claim.empty() ? uint8_t{0xFF} : coop::device_occupancy::LastHolderOf(claim.c_str());
+    if (holder == senderSlot || (holder == 0xFF && last == senderSlot)) return true;
+    UE_LOGW("notebook_sync: record for notebook '%ls' from slot %u refused -- the claim is held by "
+            "slot %u, last held by slot %u", ue_wrap::prop::GetKeyString(actor).c_str(),
+            static_cast<unsigned>(senderSlot), static_cast<unsigned>(holder), static_cast<unsigned>(last));
+    return false;
 }
 
-void OnReliable(const coop::net::BlobChunkPayload& chunk, uint8_t senderSlot) {
-    auto* s = Session(); if (!s) return;
-    std::vector<uint8_t> blob;
-    if (!g_assembler.OnChunk(chunk, senderSlot, blob)) return;
-    if (s->role() == Role::Host) {
-        std::wstring key; std::vector<std::wstring> pages;
-        if (!Decode(blob, key, pages)) return;
-        // The source must still own this notebook's live claim.
-        uint64_t h = 1469598103934665603ull;
-        for (wchar_t c : key) { h ^= static_cast<uint16_t>(c); h *= 1099511628211ull; }
-        wchar_t claimBuf[22]{}; swprintf_s(claimBuf, L"note_%016llx", static_cast<unsigned long long>(h));
-        const auto now = std::chrono::steady_clock::now();
-        const auto prior = g_recentNotebookOwner.find(claimBuf);
-        const bool holder = coop::device_occupancy::HolderOf(claimBuf) == senderSlot;
-        const bool grace = prior != g_recentNotebookOwner.end() && prior->second.first == senderSlot &&
-                           now - prior->second.second <= kNotebookClaimGrace;
-        if (!holder && !grace) return;
-        if (!Apply(blob)) return;
-        g_recentNotebookOwner[claimBuf] = {senderSlot, now};
-        Publish(s, blob);
-    } else {
-        if (senderSlot != 0) return;
-        if (!Apply(blob)) UE_LOGW("notebook_sync: host notebook text could not be applied");
-    }
+bool LocalEditorHolds(void* actor) {
+    return N::IsNotebook(actor) && HoldsClaim(actor);
 }
 
-void OnDisconnectForSlot(int slot) {
-    if (slot >= 0 && slot < coop::net::kMaxPeers)
-        g_assembler.ClearSlot(static_cast<uint8_t>(slot));
+void OnDisconnect() {
+    g_session.store(nullptr, std::memory_order_release);
+    g_nextExamine = {};
+    g_base = Baseline{};
+    g_closing.Reset();
 }
 
-void OnDisconnect() { g_session.store(nullptr, std::memory_order_release); g_assembler.Clear(); g_recentNotebookOwner.clear(); }
-
-} // namespace coop::notebook_sync
+}  // namespace coop::notebook_sync
