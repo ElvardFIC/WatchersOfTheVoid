@@ -643,7 +643,8 @@ CFG_STRING(desk_ping_drill, "desk_ping_drill", "dev", "", "VOTVCOOP_DESK_PING_DR
     "the second without counting it as its own, relayed it as the client's, and refused the third. Every peer that "
     "does not ping (the host, and a second client under --observer) also reads its own desk: the first edge line's "
     "alpha must pass 0.5 at stage 0 and the first inner line's at stage 1 with coord_isPing clear, and all four "
-    "values must read 0 after the scan's ending; a second client says observer PASS|FAIL and observer DONE. Lines tagged "
+    "values must read 0 after the scan's ending; a second client says observer PASS|FAIL per scan and observer DONE "
+    "once the first client, which leaves the desk at its DONE, has left it. Lines tagged "
     "[DESK-PING-DRILL]; 'client DONE PASS|FAIL' ends it; ABANDONED is a step that could not run.")
 CFG_STRING(download_drill, "download_drill", "dev", "", "VOTVCOOP_DOWNLOAD_DRILL", false,
     "Drill (BOTH peers): the host arms and resets its download five times; the client must replay each once with the "

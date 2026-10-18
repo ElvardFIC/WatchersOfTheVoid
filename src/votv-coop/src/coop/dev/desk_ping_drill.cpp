@@ -24,6 +24,7 @@
 #include "ue_wrap/desk/coords_panel.h"
 #include "ue_wrap/desk/desk_ping.h"
 #include "ue_wrap/desk/desk_press.h"
+#include "ue_wrap/desk/device_screen.h"
 #include "ue_wrap/desk/space_renderer.h"
 #include "ue_wrap/engine/engine_component.h"  // GetComponentLocation
 #include "ue_wrap/facts/function_row.h"
@@ -45,6 +46,7 @@ namespace CD = ue_wrap::console_desk;
 namespace CP = ue_wrap::coords_panel;
 namespace DG = ue_wrap::desk_ping;
 namespace DPR = ue_wrap::desk_press;
+namespace DS = ue_wrap::device_screen;
 namespace E = ue_wrap::engine;
 namespace GW = coop::dev::game_window;
 namespace PS = coop::desk_ping_sync;
@@ -407,7 +409,7 @@ void HostTick(coop::net::Session* s) {
 
 // ---- the client ---------------------------------------------------------------------------------------------------
 
-enum class CStep : uint8_t { Ready, Walk, Enter, Place, Settle, Pinging, Verdict, Done };
+enum class CStep : uint8_t { Ready, Walk, Enter, Place, Settle, Pinging, Verdict, Leave, Done };
 CStep    g_client = CStep::Ready;
 int      g_leg = 0;  // 0 the miss, 1 the catch
 uint64_t g_stepMs = 0;
@@ -425,6 +427,7 @@ Census   g_before;
 PS::Counts g_counts;
 int32_t  g_found = 0;
 std::shared_ptr<coop::director::BackgroundWalk> g_walk;
+bool     g_left = false;  // the Leave step has made its exit
 
 void Go(CStep s) {
     g_client = s;
@@ -618,6 +621,29 @@ void ClientTick(coop::net::Session* s) {
                 c.answered - g_counts.answered, g_census.busy - g_before.busy);
         g_pass = g_pass && ok && busyOk;
         UE_LOGI("[DESK-PING-DRILL] client DONE %s", g_pass ? "PASS" : "FAIL");
+        g_left = false;
+        Go(CStep::Leave);
+        return;
+    }
+    case CStep::Leave: {
+        // The pinger gives the desk back by the game's own forced exit from an interface, as the other drills leave a
+        // screen, so a second client can tell the scans are over.
+        if (!g_left) {
+            g_left = true;
+            if (!DS::ForceExitInterface(player)) {
+                UE_LOGW("[DESK-PING-DRILL] client could not leave the coordinates screen");
+                g_client = CStep::Done;
+            }
+            return;
+        }
+        if (coop::device_occupancy::LocalHolds(L"desk") || coop::device_occupancy::HolderOf(L"desk") != 0xFF) {
+            if (now - g_stepMs > kEnterBoundMs) {
+                UE_LOGW("[DESK-PING-DRILL] client still holds the desk after leaving the coordinates screen");
+                g_client = CStep::Done;
+            }
+            return;
+        }
+        UE_LOGI("[DESK-PING-DRILL] client left the desk");
         g_client = CStep::Done;
         return;
     }
@@ -627,10 +653,10 @@ void ClientTick(coop::net::Session* s) {
 }
 
 // ---- the second client ----------------------------------------------------------------------------------------------
-// It pings nothing. It reads the first client's two scans on its own desk, which reach it only through the host's relay
-// (the pinger named in each packet), and says whether each one was seen and ended.
+// It pings nothing. It reads the first client's scans on its own desk, which reach it only through the host's relay
+// (the pinger named in each packet), and says whether each one it saw from the start was seen and ended. It is done
+// when the pinger gives the desk back.
 
-constexpr int kObservedScans = 2;  // the miss and the catch
 int      g_ocScans = 0;
 bool     g_ocSaid = false;
 bool     g_ocOpen = false;
@@ -641,6 +667,7 @@ uint64_t g_ocIdleMs = 0;
 uint32_t g_ocEnded = 0;  // scan endings taken when the last scan closed
 uint64_t g_ocWaitMs = 0;  // since this peer was ready, or the last scan closed
 bool     g_ocLate = false;  // the open scan was first seen past its start
+bool     g_ocSawHolder = false;  // another peer held the desk after this one was ready
 int32_t  g_ocOpenStage = 0;
 
 void ObserverClientDone() {
@@ -665,7 +692,6 @@ void ObserverClientClose(uint64_t now, const char* why) {
     g_ocEnded = PS::CountsNow().mirrorEnded;
     g_ocIdleMs = g_ocWaitMs = now;
     ObserverReset();
-    if (g_ocScans >= kObservedScans) ObserverClientDone();
 }
 
 void ObserverClientFail(const char* why, unsigned holder) {
@@ -697,13 +723,25 @@ bool ObserverClientTick() {
             g_ocLate = v.stage > 0;
             return true;
         }
-        // Another peer holds the desk and no scan has reached this one, or no peer held it at all, to a bound each.
+        // The run ends when the pinger gives the desk back. Another peer holding it with no scan reaching this one, and
+        // no peer ever holding it, each have a bound.
         const uint8_t holder = coop::device_occupancy::HolderOf(L"desk");
-        if (holder == 0xFF || holder == mine) {
-            g_ocIdleMs = now;
-            if (now - g_ocWaitMs > kObserverNoPingerBoundMs) ObserverClientFail("no peer held the desk", holder);
-        } else if (now - g_ocIdleMs > kObserverIdleBoundMs) {
-            ObserverClientFail("a peer holds the desk and no scan reached this client", holder);
+        if (holder != 0xFF && holder != mine) {
+            g_ocSawHolder = true;
+            if (now - g_ocIdleMs > kObserverIdleBoundMs)
+                ObserverClientFail("a peer holds the desk and no scan reached this client", holder);
+            return true;
+        }
+        g_ocIdleMs = now;
+        if (g_ocSawHolder && holder == 0xFF) {
+            if (g_ocScans == 0)
+                ObserverClientFail("the pinger left the desk and no scan was judged from a stage-0 start", holder);
+            else if (!g_ocPass)
+                ObserverClientFail("the pinger left the desk after a judged scan failed", holder);
+            else
+                ObserverClientDone();
+        } else if (!g_ocSawHolder && now - g_ocWaitMs > kObserverNoPingerBoundMs) {
+            ObserverClientFail("no peer held the desk", holder);
         }
         return true;
     }
@@ -747,6 +785,8 @@ void OnDisconnect() {
     g_ocIdleMs = 0;
     g_ocWaitMs = 0;
     g_ocLate = false;
+    g_ocSawHolder = false;
+    g_left = false;
     ObserverReset();
 }
 
