@@ -24,12 +24,14 @@
 #include <atomic>
 #include <cmath>
 #include <string>
+#include <vector>
 
 namespace coop::death_revive {
 namespace {
 
 namespace E = ue_wrap::engine;
 namespace R = ue_wrap::reflection;
+namespace OI = ue_wrap::object_index;
 namespace P = ue_wrap::profile;
 namespace V = ue_wrap::vitals;
 
@@ -193,8 +195,17 @@ bool ReadInViewport(void* widget, bool& out) {
 // up for good while this reported clear. True once no live one is on the viewport, including when
 // there is none yet (a revive before +5 s); false while one cannot be read.
 bool ClearBlackScreen() {
+    // The object index's instances of the class, not a walk of the whole object array on every attempt; the list is
+    // taken first because RemoveFromParent runs engine code the index's callback must not.
+    if (!OI::IsSeeded()) return false;  // cannot list them yet -> not known clear
+    std::vector<void*> screens;
+    if (void* cls = OI::ClassByName(kBlackScreenClass)) {
+        OI::ForEachInstance(cls, [](void* ctx, void* obj, int32_t) {
+            static_cast<std::vector<void*>*>(ctx)->push_back(obj);
+        }, &screens);
+    }
     bool allOff = true;
-    for (void* w : R::FindObjectsByClass(kBlackScreenClass)) {
+    for (void* w : screens) {
         bool inViewport = false;
         if (!ReadInViewport(w, inViewport)) {  // a dead one is not on screen; a live unreadable one is not known off
             if (w && R::IsLive(w)) allOff = false;
@@ -445,11 +456,11 @@ bool RunRevive(coop::net::Session& session, void* pawn) {
 
 // How many pump ticks after a revive the screen cleanup is re-attempted, and how many ticks
 // apart. The measured case needs ONE attempt; each is a no-op once the artifact is gone, and the
-// run stops the moment all three read clear. The stride is not cosmetic: an attempt is two full
-// GUObjectArray walks (the black screens' FindObjectsByClass and the bloodLoss actors' each walk
-// every slot), so the stuck case -- an effect actor whose own tick never destroys it -- used to spend
-// 120 consecutive pump ticks doing ~240 walks of a ~293k array. Same wall-clock window, an
-// eighth of the walks.
+// run stops the moment all three read clear. The stride is not cosmetic: an attempt walks the
+// whole GUObjectArray once, for the bloodLoss actors (the black screens come from the object
+// index), so the stuck case -- an effect actor whose own tick never destroys it -- would spend
+// 120 consecutive pump ticks walking a ~293k array. Same wall-clock window, an eighth of the
+// walks.
 constexpr int kScreenCleanupTicks = 120;
 constexpr int kScreenCleanupStride = 8;
 int g_screenCleanupLeft = 0;
