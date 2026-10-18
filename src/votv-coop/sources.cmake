@@ -211,6 +211,8 @@ set(VOTVCOOP_SOURCES
     src/coop/player/nick_color.cpp
     src/coop/player/nickname_arbiter.cpp
     src/coop/player/hand_item.cpp
+    src/coop/player/hand_history.cpp
+    src/coop/player/hand_history_selftest.cpp
     src/coop/player/hand_item_pose.cpp
     src/coop/comms/chat_feed.cpp
     src/coop/comms/chat_log.cpp

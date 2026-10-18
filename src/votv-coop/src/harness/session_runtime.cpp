@@ -49,6 +49,7 @@
 #include "coop/net/apply_pause.h"
 #include "coop/permissions/permission_host.h"
 #include "coop/permissions/permissions_selftest.h"
+#include "coop/player/hand_history.h"
 #include "coop/player/movement_ledger.h"
 #include "coop/player/player_profile_store.h"
 #include "coop/player/players_registry.h"
@@ -264,6 +265,9 @@ bool StartCoopSession(const coop::net::Config& netCfg, coop::net::Refusal* why) 
     // And the build's own type: a parser that accepts a bent line, or a verifier that trusts an
     // unknown key, makes a fork read as official.
     coop::build_trust::RunSelftest();
+    // And the per-slot hand history: a ring that forgets a held class early, or keeps one forever,
+    // answers "held it within N ms" wrongly in both directions, and no honest run notices.
+    coop::hand_history::RunSelftest();
     // And the newest-wins latch every received stream keeps: no LAN run reorders a datagram, so the
     // batch that arrives behind one already taken is refused here, on pinned sequences.
     coop::net::stream_slot::RunSelftest();

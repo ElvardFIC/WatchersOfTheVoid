@@ -836,3 +836,5 @@ CFG_ENUM(explosion_drill, "explosion_drill", "dev", "off", "off|dissolve|apply|c
 #include "coop/config/config_registry_rows_dev_pi.inc"
 // The NPC-spawner arc's native-spawn probe (NB): the same shape, the last rows of the list.
 #include "coop/config/config_registry_rows_dev_nb.inc"
+// The explosion lane's selftest red arms: the same shape.
+#include "coop/config/config_registry_rows_dev_explosion.inc"

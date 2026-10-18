@@ -5,6 +5,7 @@
 #include "coop/net/latest_wins.h"
 #include "coop/net/net_clock.h"
 #include "coop/net/protocol.h"
+#include "coop/player/hand_history.h"
 #include "coop/player/hand_item_pose.h"  // where the mirror sits: the owner's measure, the per-tick drive
 #include "coop/player/players_registry.h"
 #include "coop/player/remote_player.h"
@@ -233,6 +234,7 @@ void ApplyHandState(coop::net::Session& session, uint8_t slot, const SlotHand& i
     std::memcpy(h.relPos, in.relPos, sizeof(h.relPos));
     std::memcpy(h.relRot, in.relRot, sizeof(h.relRot));
     h.haveRel = in.has;
+    coop::hand_history::Note(slot, in.has, in.cls, coop::net::NowMs());
     SendState(session, slot, h);
     ++g_statesApplied[slot];
 }
@@ -719,6 +721,7 @@ void Reset() {
         g_droppedBySender[s] = 0;
         g_unresolvedWarned[s].clear();
         g_unresolvedBySlot[s] = 0;
+        coop::hand_history::Clear(s);
     }
     g_ownHas = false;
     g_ownCls.clear();
@@ -775,6 +778,7 @@ void OnSlotDisconnected(uint8_t slot) {
     g_droppedBySender[slot] = 0;
     g_unresolvedWarned[slot].clear();
     g_unresolvedBySlot[slot] = 0;
+    coop::hand_history::Clear(slot);
 }
 
 }  // namespace coop::hand_item
