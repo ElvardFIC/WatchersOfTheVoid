@@ -148,6 +148,10 @@ CFG_FLAG(puppet_reg_probe, "puppet_reg_probe", "dev", false, "VOTVCOOP_PUPPET_RE
 CFG_FLAG(pi0_selftest, "pi0_selftest", "dev", false, "VOTVCOOP_PI0_SELFTEST",
     "Autonomous selftest (HOST): a Player Element whose puppet was cleared keeps its id when the retry's "
     "puppet is registered -- one [PI-0-SELFTEST] line, on a spare peer slot, the registry left as found.")
+CFG_FLAG(hurt_flash_gc_probe, "hurt_flash_gc_probe", "dev", false, "VOTVCOOP_HURT_FLASH_GC_PROBE",
+    "Probe (the peer that draws a puppet): a garbage collection is forced as each hurt flash starts, and "
+    "the class of slot 0's material on both body meshes is logged before the flash and after its restore "
+    "-- one [HFG] line each -- so a skin material collected during the flash shows as a changed class.")
 CFG_FLAG(death_seam_census, "death_seam_census", "dev", false, "VOTVCOOP_DEATH_SEAM_CENSUS",
     "Probe: every element end the death seam announces, one [DEATH] line each -- the element's type "
     "and id, mirror or local, destroyed or streamed out, and its class -- to pair with the lanes' own "

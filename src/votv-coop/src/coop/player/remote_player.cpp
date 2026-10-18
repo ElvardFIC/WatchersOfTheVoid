@@ -4,6 +4,8 @@
 // the footsteps, the hurt flash and the ragdoll display.
 
 #include "coop/player/remote_player.h"
+#include "coop/config/config.h"
+#include "coop/config/config_registry.h"
 
 #include "coop/dev/puppet_head_probe.h"
 #include "coop/player/client_model.h"
@@ -414,8 +416,23 @@ void RemotePlayer::Tick() {
         // The nameplate reads IsHurtFlashing() and flashes red; the body swaps to the hurt material
         // on the rising edge and restores on the falling one. The kel mesh stays visible while
         // ragdolled (pelvis-attached to the invisible ragdoll body), so the flash composes with it.
-        if (wantFlash) E::ApplyHurtFlashMaterial(actor_, hurtSavedMaterials_);
-        else           E::RestoreHurtFlashMaterial(actor_, hurtSavedMaterials_);
+        // PROBE (hurt_flash_gc_probe): slot 0's material class before the flash, a collection forced inside
+        // it, and the class after the restore -- a skin material the collection took shows as a changed class.
+        static const bool sHfg = coop::config::ResolveFlag(::coop::config_registry::rows::hurt_flash_gc_probe);
+        auto hfgClasses = [this](const char* when) {
+            void* a = E::PuppetBodyMaterial(actor_, false, 0);
+            void* b = E::PuppetBodyMaterial(actor_, true, 0);
+            UE_LOGI("[HFG] %s native=%ls visible=%ls", when, a ? R::ClassNameOf(a).c_str() : L"null",
+                    b ? R::ClassNameOf(b).c_str() : L"null");
+        };
+        if (wantFlash) {
+            if (sHfg) hfgClasses("before flash");
+            E::ApplyHurtFlashMaterial(actor_, hurtSavedMaterials_);
+            if (sHfg) UE_LOGI("[HFG] flash on, collection forced ran=%d", E::ForceGarbageCollection() ? 1 : 0);
+        } else {
+            E::RestoreHurtFlashMaterial(actor_, hurtSavedMaterials_);
+            if (sHfg) hfgClasses("after restore");
+        }
         if (!wantFlash) hurtFlashEndMs_ = 0;
     }
 }

@@ -170,6 +170,18 @@ bool ApplyHurtFlashMaterial(void* puppet, std::vector<SavedMaterial>& saved) {
     return !saved.empty();
 }
 
+void* PuppetBodyMaterial(void* puppet, bool playerVisible, int32_t slot) {
+    void* comp = PuppetVisibleMesh(puppet, playerVisible ? P::off::AmainPlayer_mesh_playerVisible
+                                                         : P::off::ACharacter_Mesh);
+    ResolveMatFns();
+    if (!comp || !g_getMatFn) return nullptr;
+    ParamFrame f(g_getMatFn);
+    f.Set<int32_t>(L"ElementIndex", slot);
+    if (!Call(comp, f)) return nullptr;
+    void* m = f.Get<void*>(L"ReturnValue");
+    return (m && R::IsLive(m)) ? m : nullptr;
+}
+
 bool RestoreHurtFlashMaterial(void* /*puppet*/, std::vector<SavedMaterial>& saved) {
     ResolveMatFns();
     if (g_setMatFn) {

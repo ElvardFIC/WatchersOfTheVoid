@@ -302,6 +302,11 @@ bool ApplyHurtFlashMaterial(void* puppet, std::vector<SavedMaterial>& saved);
 
 bool RestoreHurtFlashMaterial(void* puppet, std::vector<SavedMaterial>& saved);
 
+// The material in `slot` of one of the puppet's two visible body meshes (the native character mesh when
+// `playerVisible` is false, mesh_playerVisible when true) -- the override when one is set, else the mesh's own --
+// or null. Game thread.
+void* PuppetBodyMaterial(void* puppet, bool playerVisible, int32_t slot);
+
 // Eager-resolve the hurt material and the material UFunctions once per puppet spawn. Game thread.
 void WarmupHurtFlashCache();
 
