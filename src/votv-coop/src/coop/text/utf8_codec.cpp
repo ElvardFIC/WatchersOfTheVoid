@@ -26,7 +26,7 @@ std::string Encode(const std::wstring& w, bool keepControls) {
         i += DecodeCodepoint(w, i, &cp);
         if (cp >= 0xD800 && cp <= 0xDFFF) continue;  // unpaired surrogate -- not a character
         // SanitizeUtf8 draws the same C0 line and also drops DEL and the line separators.
-        // C0 goes, TAB stays: absorbing chat_feed's encoder made this the difference between
+        // In ToUtf8, C0 goes and TAB stays: absorbing chat_feed's encoder made this the difference between
         // the two, and the feed's behaviour is the right one: a nickname cannot contain a
         // TAB (SanitizeNickname denies everything below 0x20), so keeping it
         // costs the name path nothing and preserves the chat path exactly.
