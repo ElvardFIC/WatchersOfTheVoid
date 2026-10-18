@@ -228,6 +228,7 @@ bool Session::SendReliable(ReliableKind kind, const void* payload, int len, int 
 
     bool anySuccess = false;
     for (int i = 0; i < kMaxPeers; ++i) {
+        // The skipped slot, MTA's pSkip (reference/mtasa-blue/Server/mods/deathmatch/logic/CPlayerManager.cpp:159-175).
         if (i == skipSlot) continue;
         const uint32_t hConn = peerConns_[i].load();
         if (hConn == 0) continue;

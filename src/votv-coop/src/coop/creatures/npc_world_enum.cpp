@@ -99,7 +99,13 @@ coop::element::ElementId EnrollUntrackedNpcActor(void* obj, const std::wstring& 
     }
     // Make the registration visible now: broadcast the spawn for the newly registered NPC to the
     // peers already connected. A joiner (skipSlot) gets it in its connect broadcast, which sends
-    // every tracked NPC. Nothing is sent, and nothing logged, when no other peer is world-ready.
+    // every tracked NPC: MTA's join, the joiner announced to the joined players with it skipped,
+    // then the others' elements to the joiner alone
+    // (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:1426, :1459).
+    // Nothing is sent, and nothing logged, when no other peer is world-ready: the sender asks the
+    // fan-out's own gate first, where MTA filters inside its fan-out (CPlayerManager.cpp:162-170).
+    // MTA registers an element at its creation (reference/mtasa-blue/Server/mods/deathmatch/logic/CElement.cpp:39);
+    // a creature that loaded with the level, or that no watched spawn source made, is enrolled here.
     if (s->connected() && s->AnyWorldReadyPeer(skipSlot)) {
         coop::net::EntitySpawnPayload p{};
         const std::string& tn = el->GetTypeName();

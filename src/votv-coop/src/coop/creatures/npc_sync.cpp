@@ -295,7 +295,8 @@ bool NpcSuppress_Interceptor(void* self, void* params) {
                 cls.c_str(), p.elementId, p.locX, p.locY, p.locZ,
                 p.rotPitch, p.rotYaw, p.rotRoll);
         // An alone host's spawns, and those made while every client is still loading, are
-        // delivered by the join snapshot (the connect broadcast) instead.
+        // delivered by the join snapshot (the connect broadcast) instead: MTA's broadcast skips a
+        // player not yet joined (reference/mtasa-blue/Server/mods/deathmatch/logic/CPlayerManager.cpp:167).
         if (s->connected() && s->AnyWorldReadyPeer() && !s->SendEntitySpawn(p)) {
             UE_LOGW("npc-sync[host]: SendEntitySpawn failed (reliable channel busy?) -- NPC elementId=%u not broadcast",
                     p.elementId);
