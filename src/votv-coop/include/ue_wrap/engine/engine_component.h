@@ -72,6 +72,11 @@ bool SetTextureParameterValue(void* materialInstanceDynamic, const wchar_t* para
 bool SetScalarParameterValue(void* materialInstanceDynamic, const wchar_t* paramName, float value);
 bool SetScalarParameterValue(void* materialInstanceDynamic, const reflection::FName& param, float value);
 
+// UMaterialInstanceDynamic::K2_GetScalarParameterValue: the scalar the material holds now. False when the material
+// is null, the name is NAME_None, or the call does not dispatch (the engine answers 0 for an unknown name, so a
+// caller that must tell the two apart passes a name it knows the material has). Game thread.
+bool GetScalarParameterValue(void* materialInstanceDynamic, const reflection::FName& param, float& out);
+
 // UStaticMeshComponent::SetStaticMesh, resolved on the owning class; recomputes bounds and
 // collision. Rejects null: a caller that has failed to resolve a mesh and one that means "no mesh"
 // pass the same argument, and blanking a component is the wrong answer to the first. Game thread.

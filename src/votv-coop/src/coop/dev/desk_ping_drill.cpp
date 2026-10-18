@@ -33,6 +33,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <memory>
 #include <string>
 #include <vector>
@@ -212,11 +213,65 @@ uint64_t g_hostAttributed = 0;
 int32_t  g_hostFound = 0;
 CP::DishAim g_missAim;
 
+// What the host's own desk shows during a client's ping: the per-ping maxima of the machine's fields and of the two
+// line materials' alpha, and a sample line while a value changes. A measurement, not a verdict.
+struct ObserverMax {
+    float outer = 0.f, inner = 0.f, ping = 0.f, alphaEdges = 0.f, alphaInner = 0.f;
+    bool isPingEver = false;
+};
+ObserverMax g_obsMax;
+DG::ObserverView g_obsLast;
+bool     g_obsLastValid = false;
+bool     g_obsReadFailLogged = false;
+uint64_t g_obsLogMs = 0;
+constexpr uint64_t kObserverLogMs = 500;
+
+void ObserverReset() {
+    g_obsMax = ObserverMax{};
+    g_obsLastValid = false;
+    g_obsLogMs = 0;
+}
+
+void ObserverSample(uint64_t now) {
+    DG::ObserverView v;
+    if (!DG::ReadObserverView(CD::Instance(), v)) {
+        if (!g_obsReadFailLogged) UE_LOGW("[DESK-PING-DRILL] host observer view does not read");
+        g_obsReadFailLogged = true;
+        return;
+    }
+    g_obsMax.outer = std::fmax(g_obsMax.outer, v.outer);
+    g_obsMax.inner = std::fmax(g_obsMax.inner, v.inner);
+    g_obsMax.ping = std::fmax(g_obsMax.ping, v.ping);
+    g_obsMax.alphaEdges = std::fmax(g_obsMax.alphaEdges, v.alphaEdges);
+    g_obsMax.alphaInner = std::fmax(g_obsMax.alphaInner, v.alphaInner);
+    g_obsMax.isPingEver = g_obsMax.isPingEver || v.isPing;
+    const bool changed = !g_obsLastValid || v.isPing != g_obsLast.isPing || v.stage != g_obsLast.stage ||
+                         v.outer != g_obsLast.outer || v.inner != g_obsLast.inner || v.ping != g_obsLast.ping ||
+                         v.alphaEdges != g_obsLast.alphaEdges || v.alphaInner != g_obsLast.alphaInner;
+    if (!changed || (g_obsLastValid && now - g_obsLogMs < kObserverLogMs)) return;
+    UE_LOGI("[DESK-PING-DRILL] host observer sample: isPing %d stage %d outer %.2f inner %.2f ping %.2f alphaEdges "
+            "%.2f alphaInner %.2f",
+            v.isPing ? 1 : 0, v.stage, v.outer, v.inner, v.ping, v.alphaEdges, v.alphaInner);
+    g_obsLast = v;
+    g_obsLastValid = true;
+    g_obsLogMs = now;
+}
+
+std::string ObserverMaxText() {
+    char buf[160];
+    std::snprintf(buf, sizeof(buf),
+                  "observer max: outer %.2f inner %.2f ping %.2f alphaEdges %.2f alphaInner %.2f isPing-ever %d",
+                  g_obsMax.outer, g_obsMax.inner, g_obsMax.ping, g_obsMax.alphaEdges, g_obsMax.alphaInner,
+                  g_obsMax.isPingEver ? 1 : 0);
+    return buf;
+}
+
 void HostGo(HStep s) {
     g_host = s;
     g_hostMs = ::GetTickCount64();
     g_hostBefore = g_census;
     g_hostCounts = PS::CountsNow();
+    if (s == HStep::Miss || s == HStep::Catch) ObserverReset();
 }
 
 void HostAbandon(const char* why) {
@@ -227,6 +282,7 @@ void HostAbandon(const char* why) {
 void HostTick(coop::net::Session* s) {
     const uint64_t now = ::GetTickCount64();
     const PS::Counts c = PS::CountsNow();
+    if (g_host == HStep::Miss || g_host == HStep::Catch) ObserverSample(now);
     switch (g_host) {
     case HStep::WaitClient:
         if (!s->AnyWorldReadyPeer() || !CensusLive()) {
@@ -243,9 +299,9 @@ void HostTick(coop::net::Session* s) {
         const bool ok = c.primed == g_hostCounts.primed + 1 && c.caught == g_hostCounts.caught &&
                         g_census.ran == g_hostBefore.ran + 1;
         g_hostPass = g_hostPass && ok;
-        UE_LOGI("[DESK-PING-DRILL] host miss %s: primed %u, rolled %u, caught %u; its gatherSignal ran %u",
+        UE_LOGI("[DESK-PING-DRILL] host miss %s: primed %u, rolled %u, caught %u; its gatherSignal ran %u; %s",
                 ok ? "PASS" : "FAIL", c.primed - g_hostCounts.primed, c.rolled - g_hostCounts.rolled,
-                c.caught - g_hostCounts.caught, g_census.ran - g_hostBefore.ran);
+                c.caught - g_hostCounts.caught, g_census.ran - g_hostBefore.ran, ObserverMaxText().c_str());
         CP::ReadDishAim(g_missAim);
         HostGo(HStep::Fixture);
         return;
@@ -293,11 +349,11 @@ void HostTick(coop::net::Session* s) {
                         attributed == 1 && own == 0 && c.busy == g_hostCounts.busy + 1;
         g_hostPass = g_hostPass && ok;
         UE_LOGI("[DESK-PING-DRILL] host catch %s: primed %u, rolled %u, caught %u; its gatherSignal ran %u; its own "
-                "finds %d -> %d; catches relayed as the client's %llu, as its own %llu; busy refusals %u",
+                "finds %d -> %d; catches relayed as the client's %llu, as its own %llu; busy refusals %u; %s",
                 ok ? "PASS" : "FAIL", c.primed - g_hostCounts.primed, c.rolled - g_hostCounts.rolled,
                 c.caught - g_hostCounts.caught, g_census.ran - g_hostBefore.ran, g_hostFound, found,
                 static_cast<unsigned long long>(attributed), static_cast<unsigned long long>(own),
-                c.busy - g_hostCounts.busy);
+                c.busy - g_hostCounts.busy, ObserverMaxText().c_str());
         UE_LOGI("[DESK-PING-DRILL] host DONE %s", g_hostPass ? "PASS" : "FAIL");
         g_host = HStep::Done;
         return;

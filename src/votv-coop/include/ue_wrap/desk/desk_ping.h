@@ -33,6 +33,22 @@ struct Progress { int32_t stage = 0; float outer = 0.f, inner = 0.f, ping = 0.f;
 bool ReadProgress(void* desk, Progress& out);
 bool WriteProgress(void* desk, const Progress& value);
 
+// What the desk's ping progress shows on this peer: the machine's own fields, and the `alpha` scalar of the first
+// edge-line material and the first inner-line material of the coordinates panel (dynmat_linesEdges[0],
+// dynmat_linesInner[0]), which the desk's reset loops drive from coord_ping_outer and coord_ping_inner
+// (analogDScreenTest.cpp:1189,1210).
+struct ObserverView {
+    bool isPing = false;
+    int32_t stage = 0;
+    float outer = 0.f, inner = 0.f, ping = 0.f;
+    float alphaEdges = 0.f, alphaInner = 0.f;
+};
+
+// Read-only. `desk` is the main desk; the panel is reached through the desk's atlas chain (coords_panel::Instance).
+// False when any link of the chain does not read: a field, the panel, an empty line array, a dead material, or the
+// scalar call.
+bool ReadObserverView(void* desk, ObserverView& out);
+
 // The machine at stage 2 complete -- coord_isPing set, coord_pingStage 2, the three accumulators at 1 -- so the
 // process_coords body that reads it next takes it to stage 3 and rolls the verdict (@80250, @79979, @79837, @79809).
 bool PrimeVerdict(void* desk);

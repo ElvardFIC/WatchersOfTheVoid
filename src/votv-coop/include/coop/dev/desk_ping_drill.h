@@ -10,7 +10,8 @@
 // run. The client says its own verdict was entered and never ran, that the host's failure line reached its log once,
 // that the catch is on its own profile and its desk, and that the busy verdict came back refused; the host that it
 // rolled the first two, caught the second without counting the find as its own, relayed that catch as the client's,
-// and refused the third.
+// and refused the third. The host also reads what its own desk shows while the client pings (the progress fields and
+// the line materials' alpha) and appends the per-ping maxima to the miss and catch lines; that reading judges nothing.
 // Lines tagged [DESK-PING-DRILL]; 'client DONE PASS|FAIL' ends it; ABANDONED is a step that could not run.
 
 #pragma once
