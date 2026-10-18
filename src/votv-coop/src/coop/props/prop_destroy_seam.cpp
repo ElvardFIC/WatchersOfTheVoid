@@ -1,6 +1,10 @@
 // coop/props/prop_destroy_seam.cpp -- the actor-destroy half of the prop lifecycle: the
 // K2_DestroyActor patch seam and the echo-suppressed local destroy. The shared session cache
-// rides prop_lifecycle_detail.h.
+// rides prop_lifecycle_detail.h. The local player's hand-view actor dies here too but is not a
+// world prop, so its death is never broadcast. The hand-view test is taken at the destroy's
+// ENTRY (a pre hook on the same function): the actor's OnDestroyed runs updateHold, which nulls
+// holding_actor and destroys the same actor again, nested, before the outer call returns, so a
+// test taken at the post hook would miss the outer call.
 
 #include "coop/props/prop_lifecycle.h"
 
@@ -12,6 +16,7 @@
 #include "coop/element/prop.h"
 #include "coop/net/protocol.h"
 #include "coop/net/session.h"
+#include "coop/player/hand_item.h"  // IsLocalHandViewActor
 #include "coop/props/prop_drop_intent.h"
 #include "coop/items/coingun_sync.h"
 #include "coop/props/prop_act_request.h"
@@ -23,6 +28,7 @@
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/actors/prop.h"
 #include "ue_wrap/core/reflection.h"
+#include "ue_wrap/core/script_gate.h"  // Verdict
 #include "ue_wrap/core/sdk_profile.h"
 
 #include <string>
@@ -36,7 +42,56 @@ namespace GT = ue_wrap::game_thread;
 namespace PT = coop::prop_element_tracker;
 }  // namespace
 
-void DestroySeamBody(void* self) {
+namespace {
+// The hand-view actors whose destroy is in flight, with the nesting depth of their K2_DestroyActor
+// calls. Game thread only; four slots cover a hotbar swap's worth of in-flight destroys.
+struct HandViewDestroy {
+    void* actor;
+    uint32_t depth;
+};
+HandViewDestroy g_handViewDestroy[4] = {};
+bool g_handViewFullWarned = false;
+
+// One post per pre: a recorded actor leaves one level of its depth, and the entry is erased at the outermost.
+HandView NoteHandViewPost(void* actor) {
+    if (!actor) return HandView::No;
+    for (HandViewDestroy& r : g_handViewDestroy) {
+        if (r.actor != actor) continue;
+        if (--r.depth > 0) return HandView::Nested;
+        r.actor = nullptr;
+        return HandView::Outermost;
+    }
+    return HandView::No;
+}
+}  // namespace
+
+ue_wrap::script_gate::Verdict OnK2DestroyPre(void* context, void* /*srcObj*/, const uint8_t* /*parms*/) {
+    using ue_wrap::script_gate::Verdict;
+    if (!context) return Verdict::Run;
+    HandViewDestroy* freeSlot = nullptr;
+    for (HandViewDestroy& r : g_handViewDestroy) {
+        if (r.actor == context) {
+            ++r.depth;
+            return Verdict::Run;
+        }
+        if (!r.actor && !freeSlot) freeSlot = &r;
+    }
+    // At the call's entry holding_actor still names the actor: the Blueprint nulls it only after the destroy.
+    if (!coop::hand_item::IsLocalHandViewActor(context)) return Verdict::Run;
+    if (!freeSlot) {
+        if (!g_handViewFullWarned) {
+            g_handViewFullWarned = true;
+            UE_LOGW("grab_hook[destroy-seam]: hand-view destroy record is full -- actor %p is not recorded",
+                    context);
+        }
+        return Verdict::Run;
+    }
+    freeSlot->actor = context;
+    freeSlot->depth = 1;
+    return Verdict::Run;
+}
+
+void DestroySeamBody(void* self, HandView handView) {
     auto* s = LoadSession();
     if (!self || !s) return;
     // The destroy seam fires for every actor destroy in the world, so the keyed-interactable test
@@ -123,6 +178,20 @@ void DestroySeamBody(void* self) {
     // teardowns and load churn are not conversions; the kerfur layer owns the wire when it returns
     // true. A cheap class-pointer gate inside.
     if (coop::kerfur_convert::TryCaptureKerfurPropDestroy(self, destroyEid)) return;
+    // The local player's hand-view actor is not a world prop: updateHold destroys it on every drop,
+    // throw, stow and switch, and its world counterpart died at the pickup. It carries the item's
+    // key, so broadcasting its death would name the world prop the drop is about to re-create.
+    // The pre hook recorded it at the call's entry. A client still parks the key, once, at the
+    // outermost call: the drop that follows authors its intent from that park.
+    if (handView != HandView::No) {
+        UE_LOGI("grab_hook[destroy-seam]: %s hand-view actor %p (key '%ls') destroyed -- not a world "
+                "prop, not broadcast",
+                s->role() == coop::net::Role::Host ? "HOST" : "CLIENT", self,
+                keyless ? L"None" : keyStr.c_str());
+        if (handView == HandView::Outermost && !keyless && s->role() == coop::net::Role::Client)
+            coop::prop_drop_intent::NoteClientKeyedDestroy(keyStr);
+        return;
+    }
     coop::net::WireKey wk{};
     wk.len = 0;
     if (!keyless) {
@@ -174,8 +243,10 @@ void DestroySeamBody(void* self) {
 // call runs on the actor), and the frame's object is merely the caller -- which the birth probe
 // names. Game thread only, the same contract the observer had.
 void OnK2DestroyFunc(void* context, void* srcObj, void* /*result*/) {
+    // The record is consulted before any early return in the body, so every post balances its pre.
+    const HandView handView = NoteHandViewPost(context);
     coop::dev::prop_birth_key_probe::NoteDestroy(context, srcObj, LoadSession());
-    DestroySeamBody(context);
+    DestroySeamBody(context, handView);
 }
 
 

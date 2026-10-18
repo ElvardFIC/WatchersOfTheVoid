@@ -65,6 +65,12 @@ void ReplayPeerStatesToSlot(int slot);
 // tick than TickOwner, and updateHold can have respawned the actor in between.
 void* LocalHandActor();
 
+// Whether `actor` is the local player's hotbar hand actor (mainPlayer.holding_actor, Aprop_C-gated,
+// the predicate LocalHandActor routes by). Pointer identity only, with no liveness check on `actor`:
+// the destroy seam's pre hook asks it at the call's entry, while holding_actor still names the actor
+// (the Blueprint nulls it only after the destroy). Game thread only.
+bool IsLocalHandViewActor(void* actor);
+
 // The FULL hand-axis boundary, ONE owner: true for the local hand actor AND for every live
 // remote mirror. LocalHandActor above answers only for the local half, and a census that asks
 // it alone adopts the mirrors. Callers: prop_drop_intent on both enqueue AND drain -- the

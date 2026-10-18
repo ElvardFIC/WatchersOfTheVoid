@@ -401,6 +401,16 @@ void Install(coop::net::Session* session) {
                 UE_LOGI("grab_hook: Func-patched %ls.%ls @ %p (destroy seam -- catches "
                         "EX_CallMath destroys the old PE observer missed)",
                         P::name::ActorClassName, P::name::DestroyActorFn, fn.Fn());
+                // The pre half takes the hand-view test at the call's entry (the post alone misses
+                // the outer call of a nested pair); same function, same settle.
+                if (ue_wrap::ufunction_hook::InstallPreHook(fn, &OnK2DestroyPre, /*armed=*/true)) {
+                    UE_LOGI("grab_hook: pre-patched %ls.%ls @ %p (destroy seam entry -- hand-view record)",
+                            P::name::ActorClassName, P::name::DestroyActorFn, fn.Fn());
+                } else {
+                    UE_LOGE("grab_hook: the pre patch on %ls.%ls failed -- the hand-view destroy is "
+                            "broadcast as a world prop's",
+                            P::name::ActorClassName, P::name::DestroyActorFn);
+                }
             } else {
                 UE_LOGE("grab_hook: the Func patch on %ls.%ls failed -- destroy broadcast disabled",
                         P::name::ActorClassName, P::name::DestroyActorFn);

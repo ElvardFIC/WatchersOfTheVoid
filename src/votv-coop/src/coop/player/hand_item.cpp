@@ -471,6 +471,15 @@ void* LocalHandActor() {
     return ha;
 }
 
+bool IsLocalHandViewActor(void* actor) {
+    if (!actor || !g_localPlayer || !R::IsLiveByIndex(g_localPlayer, g_localPlayerIdx)) return false;
+    ue_wrap::engine::MainPlayerGrabState gs{};
+    if (!ue_wrap::engine::ReadMainPlayerGrabState(g_localPlayer, gs)) return false;
+    // Pointer identity with no liveness check on the actor: it is asked at the entry of the
+    // actor's own destroy, and R::IsLive would refuse an actor already pending kill.
+    return gs.holdingActor == actor && ue_wrap::prop::IsDescendantOfProp(actor);
+}
+
 void* MirrorActorForSlot(uint8_t slot) {
     if (slot >= coop::players::kMaxPeers) return nullptr;
     const Mirror& m = g_mirrors[slot];
