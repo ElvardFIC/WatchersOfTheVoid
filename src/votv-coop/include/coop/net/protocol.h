@@ -1079,6 +1079,11 @@ enum class ReliableKind : uint8_t {
     // relayed. Late join: none -- a one-shot cue. Trust: host-authored only (a client's copy is refused at the
     // host's receive edge); the receiver drops a malformed one and counts it. ExplosionSpawnPayload.
     ExplosionSpawn = 177,
+
+    // Client to host: unfold a packed sleepingbag or fold its deployed bed. The host runs the
+    // source actor's own Blueprint; host_spawn_watcher and prop_lifecycle carry the replacement
+    // birth and source death. Late join: host save plus the ordinary prop snapshot. Never relayed.
+    SleepingbagIntent = 188,
 };
 
 #pragma pack(push, 1)
@@ -1749,6 +1754,23 @@ struct DoorVerbIntentPayload {
 static_assert(sizeof(DoorVerbIntentPayload) == 40, "DoorVerbIntentPayload must be 40 bytes");
 static_assert(sizeof(DoorVerbIntentPayload) <= 256 - 20 - 8,
               "DoorVerbIntentPayload must fit one datagram");
+
+namespace sleepingbag_intent {
+constexpr uint8_t kUnwrap = 1;
+constexpr uint8_t kFold = 2;
+}  // namespace sleepingbag_intent
+
+// The folded or deployed source prop by host eid, the verb, and the selected action byte for
+// actionOptionIndex (zero for fold). No transform or spawned class comes from the client.
+struct SleepingbagIntentPayload {
+    uint32_t elementId;
+    uint8_t  verb;
+    uint8_t  action;
+    uint8_t  reserved[2];
+};
+static_assert(sizeof(SleepingbagIntentPayload) == 8, "SleepingbagIntentPayload must be 8 bytes");
+static_assert(sizeof(SleepingbagIntentPayload) <= 256 - 20 - 8,
+              "SleepingbagIntentPayload must fit one datagram");
 
 // A camera toggle intent (CameraToggleIntent): the camera by the lane's key, which of its two bits, and the value
 // the sender's press wants it to have (the sender's own copy negated). The use of the camera is the active bit; the
