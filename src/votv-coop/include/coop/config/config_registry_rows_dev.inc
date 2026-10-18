@@ -819,7 +819,7 @@ CFG_FLAG(selftest_break_permissions, "selftest_break_permissions", "dev", false,
 CFG_FLAG(selftest_break_action_log, "selftest_break_action_log", "dev", false, "VOTVCOOP_SELFTEST_BREAK_ACTION_LOG",
     "Red arm of the commands selftest's action-log cases: the first acting case of each cases file expects "
     "no record, so it must fail.")
-CFG_ENUM(explosion_drill, "explosion_drill", "dev", "off", "off|dissolve|apply|coast|spawn_malformed",
+CFG_ENUM(explosion_drill, "explosion_drill", "dev", "off", "off|dissolve|apply|coast|spawn_malformed|source_host|source_client",
     "VOTVCOOP_EXPLOSION_DRILL",
     "Drill, the explosion lane's arms; each runs the roles it names. dissolve (the CLIENT acts, the host only "
     "hosts): a bomb barrel is spawned and broken once while the client's world loads and once in the loaded world; "
@@ -829,8 +829,11 @@ CFG_ENUM(explosion_drill, "explosion_drill", "dev", "off", "off|dissolve|apply|c
     "each once, narrow its force, refuse its rune check and drop nothing. coast (HOST and CLIENT): four papers lie "
     "between the blast and the client's puppet; at least two client copies must fly, all four must rest again "
     "and none may still be driven. spawn_malformed (HOST and CLIENT): the host "
-    "sends one valid explosion and four with a broken field; the client must drop each by its reason. Run it on a "
-    "fresh host world.")
+    "sends one valid explosion and four with a broken field; the client must drop each by its reason. source_host "
+    "and source_client (a measurement, no verdict): the named role walks the legs grenade, pipebomb, rocket, sticky "
+    "and saltrocket (attached to a simulating parent, then free) through the game's own verbs, the other role only "
+    "reads and reports; each leg prints one line and the run ends on a source DONE line. Run it on a fresh host "
+    "world.")
 CFG_FLAG(explosion_birth_log, "explosion_birth_log", "dev", false, "VOTVCOOP_EXPLOSION_BIRTH_LOG",
     "Off by default. When on, a host or single-player game logs one line per explosion born, naming the class of "
     "the Blueprint that spawned it (the client already logs this when it dissolves one). It reads the class of "

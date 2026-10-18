@@ -1,18 +1,18 @@
 // coop/dev/explosion_drill.h -- [dev] the explosion lane's drill (ini explosion_drill=off|dissolve|apply|coast|
-// spawn_malformed / env VOTVCOOP_EXPLOSION_DRILL). Each arm runs the roles named here, and only those.
+// spawn_malformed|source_host|source_client / env VOTVCOOP_EXPLOSION_DRILL). Each arm runs only the roles named here.
 // dissolve (CLIENT acts): a bomb barrel is spawned and broken in the world load (the dissolve comes by class name)
 // and in the loaded world (by class); its explosion must never reach begin-play, and the world half also that the
-// dissolved actor is gone. apply, coast, spawn_malformed (HOST and CLIENT; nobody walks or is teleported): at a blast
-// point B near the client, apply blasts the three classes (each applied once, narrowed, rune check refused,
-// nothing dropped), coast blasts papers lying between B and the puppet (at least two client copies fly over 100 cm,
-// all four rest again and none is still driven) and
-// spawn_malformed sends one valid ExplosionSpawn and four with one broken field (each dropped by its reason).
-// Every wait is a counter's rise, a rest (under 5 cm/s for 10 Ticks) or a registry state, and has a failure bound:
-// 60 s per phase on either role, the client's join and its verdicts 120 s from its own world-ready edge (the wait
-// for that edge is the rig's).
+// dissolved actor is gone. apply, coast, spawn_malformed (HOST and CLIENT; nobody walks or is teleported): a blast
+// point B near the client; apply blasts the three classes (each applied once, narrowed, rune check refused, nothing
+// dropped), coast blasts papers between B and the puppet (two client copies fly over 100 cm, all four rest, none is
+// still driven), spawn_malformed sends one valid ExplosionSpawn and four with one broken field (each dropped).
+// source_host, source_client (the named role acts, the other only reads; a count, no verdict): which peer's game
+// reaches the birth of a grenade, a pipe bomb, a rocket, a sticky bomb and a salt rocket, through the game's own hand
+// verbs; a refused verb ends its leg alone. Every wait is a counter's rise, a rest (under 5 cm/s for 10 Ticks) or a
+// registry state, with a failure bound: 60 s per phase, the client's join and verdicts 120 s from its world-ready edge.
 // "[EXPLOSION-DRILL] FAIL" is a step failing (--fail-marker), "[EXPLOSION-DRILL] ABANDONED" the drill unable to do
-// its part (--dead-marker), "[EXPLOSION-DRILL] client load PASS by=name" the dissolve's load half and
-// "[EXPLOSION-DRILL] client DONE PASS arm=dissolve", and the same for each arm, the run's end (--done-marker).
+// its part (--dead-marker), "[EXPLOSION-DRILL] client DONE PASS arm=dissolve" the run's end (--done-marker), and the
+// same for each arm. With ini explosion_birth_log on, the host also logs "[EXPLOSION] host birth src=" per blast.
 
 #pragma once
 

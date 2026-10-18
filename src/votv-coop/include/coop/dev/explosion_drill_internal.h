@@ -1,6 +1,7 @@
 // coop/dev/explosion_drill_internal.h -- what the explosion drill's files share: the arm, the fixture and rest helpers
 // (coop/dev/explosion_drill_fixture.cpp), the host's half (coop/dev/explosion_drill_host.cpp) and the client's half
-// (coop/dev/explosion_drill_client.cpp). Dev only; game thread.
+// (coop/dev/explosion_drill_client.cpp), and the source arms' legs both roles run (coop/dev/explosion_drill_source.cpp).
+// Dev only; game thread.
 
 #pragma once
 
@@ -24,7 +25,8 @@ constexpr float kFlyDistance = 100.f;
 constexpr int kMinFlown = 2;
 constexpr int   kPapers = 4;
 
-enum class Arm : uint8_t { Off, Dissolve, Apply, Coast, SpawnMalformed };
+enum class Arm : uint8_t { Off, Dissolve, Apply, Coast, SpawnMalformed, SourceHost, SourceClient };
+inline bool IsSource(Arm a) { return a == Arm::SourceHost || a == Arm::SourceClient; }
 
 // ---- the fixture and the rest helpers (explosion_drill_fixture.cpp) ----
 
@@ -71,5 +73,13 @@ void HostReset();
 // The client's half: one Tick of its phases, and back to the start.
 void ClientTick(Arm arm);
 void ClientReset();
+
+// ---- the source arms (explosion_drill_source.cpp) ----
+
+// One Tick of a source arm on this role, once its bodies rest: the role the arm names walks its legs (blast point,
+// then each source through the game's own verbs), the other only reads and reports. Back to the start destroys what
+// the legs left in the world.
+void SourceTick(Arm arm, bool isHost);
+void SourceReset();
 
 }  // namespace coop::dev::explosion_drill::detail

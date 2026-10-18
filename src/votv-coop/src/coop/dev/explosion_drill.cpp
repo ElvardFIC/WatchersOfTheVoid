@@ -70,6 +70,8 @@ Arm ArmOf() {
         if (v == "apply") return Arm::Apply;
         if (v == "coast") return Arm::Coast;
         if (v == "spawn_malformed") return Arm::SpawnMalformed;
+        if (v == "source_host") return Arm::SourceHost;
+        if (v == "source_client") return Arm::SourceClient;
         return Arm::Off;
     }();
     return a;
@@ -294,6 +296,7 @@ void OnDisconnect() {
     g_world = Run{};
     detail::HostReset();
     detail::ClientReset();
+    detail::SourceReset();
 }
 
 }  // namespace coop::dev::explosion_drill

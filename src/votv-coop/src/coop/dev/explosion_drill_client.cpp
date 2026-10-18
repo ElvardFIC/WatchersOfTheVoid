@@ -32,7 +32,7 @@ namespace {
 
 constexpr auto  kClientBound = std::chrono::seconds(120);  // from the client's world-ready edge
 
-enum class CPhase : uint8_t { Edge, Join, Rest, Fixture, Apply, Malformed, Find, Settle, Blast, Fly, Done };
+enum class CPhase : uint8_t { Edge, Join, Rest, Fixture, Apply, Malformed, Source, Find, Settle, Blast, Fly, Done };
 
 struct Client {
     CPhase            phase = CPhase::Edge;
@@ -288,7 +288,7 @@ void ClientTick(Arm arm) {
         void* pawn = coop::players::Registry::Get().Local();
         if (pawn) NoteSpeed(c.pawn, Len(E::GetActorVelocity(pawn)));
         else c.pawn = Rest{};
-        if (AtRest(c.pawn)) return ClientEnter(CPhase::Fixture);
+        if (AtRest(c.pawn)) return ClientEnter(IsSource(arm) ? CPhase::Source : CPhase::Fixture);
         if (Past(c.at, kBound)) ClientAbandon("the client's pawn never rested");
         return;
     }
@@ -307,6 +307,7 @@ void ClientTick(Arm arm) {
     }
     case CPhase::Apply: return ClientApply();
     case CPhase::Malformed: return ClientMalformed();
+    case CPhase::Source: return SourceTick(arm, false);
     case CPhase::Find:
     case CPhase::Settle:
     case CPhase::Blast:

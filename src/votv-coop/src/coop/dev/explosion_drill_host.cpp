@@ -31,7 +31,7 @@ namespace {
 constexpr float kPaperAt[] = {0.25f, 0.4f, 0.55f, 0.7f};
 constexpr float kPaperLift = 50.f;
 
-enum class HPhase : uint8_t { WaitSlot, Rest, Fixture, Apply, Malformed, PapersSpawn, PapersEnrol, PapersRest,
+enum class HPhase : uint8_t { WaitSlot, Rest, Fixture, Apply, Malformed, Source, PapersSpawn, PapersEnrol, PapersRest,
                               PapersFly, Done };
 
 struct Host {
@@ -283,7 +283,7 @@ void HostTick(coop::net::Session& s, Arm arm) {
             NoteSpeed(h.body, Len(E::GetActorVelocity(me)));
             NoteMoved(h.puppet, at);
         }
-        if (AtRest(h.body) && AtRest(h.puppet)) return HostEnter(HPhase::Fixture);
+        if (AtRest(h.body) && AtRest(h.puppet)) return HostEnter(IsSource(arm) ? HPhase::Source : HPhase::Fixture);
         if (HostLate()) HostAbandon("bodies never rested");
         return;
     }
@@ -304,6 +304,7 @@ void HostTick(coop::net::Session& s, Arm arm) {
     }
     case HPhase::Apply: return HostApply();
     case HPhase::Malformed: return HostMalformed(s);
+    case HPhase::Source: return SourceTick(arm, true);
     case HPhase::PapersSpawn: return HostPapersSpawn();
     case HPhase::PapersEnrol: return HostPapersEnrol();
     case HPhase::PapersRest: return HostPapersRest();
