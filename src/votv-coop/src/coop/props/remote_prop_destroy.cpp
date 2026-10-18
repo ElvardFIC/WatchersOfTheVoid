@@ -13,6 +13,7 @@
 #include "remote_prop_internal.h"  // impl-private (src-local), NOT under include/
 
 #include "coop/element/mirror_manager.h"
+#include "coop/element/registry.h"             // Registry::EidForActor (the key fallback refuses another incarnation)
 #include "coop/element/mirror_managers.h"     // PropMirrors() (UnregisterPropMirror)
 #include "coop/element/quiescence_drain.h"    // ArmPendingDestroy (destroy-before-load capture)
 #include "coop/props/join_membership_sweep.h" // HasLoadTailQuiesced (steady-state vs load-tail gate for the defer)
@@ -203,6 +204,20 @@ DestroyApply OnDestroyImpl_(const coop::net::PropDestroyPayload& payload, void* 
             actor = coop::prop_key_index::Find(keyW);
         } else if (coop::prop_key_index::Resolve(keyW, &actor) == coop::prop_key_index::Read::Pending) {
             return DestroyApply::NotYet;
+        }
+        // The destroy names an element and the key resolved an actor that is bound to a different
+        // one: that actor is another incarnation carrying the same key (a re-creation), not the
+        // doomed element. Refuse it and take the miss path below, so the destroy waits for its own
+        // target instead of killing the newer one. An actor with no element of its own (a native
+        // not yet bound) is the key fallback's intended target.
+        if (actor && payload.elementId != 0 && payload.elementId != coop::element::kInvalidId) {
+            const coop::element::ElementId ownEid = coop::element::Registry::Get().EidForActor(actor);
+            if (ownEid != 0 && ownEid != coop::element::kInvalidId && ownEid != payload.elementId) {
+                UE_LOGI("remote_prop::OnDestroy: key '%ls' resolves to an actor bound to eid=%u, not the "
+                        "destroy's eid=%u -- another incarnation of the key, not destroyed",
+                        keyW.c_str(), static_cast<unsigned>(ownEid), payload.elementId);
+                actor = nullptr;
+            }
         }
     }
     // Now drain the wire-received mirror element. It must vacate the registry whether or not the

@@ -36,7 +36,8 @@ void Install(coop::net::Session* session);
 void Tick(coop::net::Session* session);
 
 // Called from prop_lifecycle::DestroySeamBody right AFTER a CLIENT's own keyed-prop DESTROY broadcast, or after the
-// destroy of a granted take's replay (which broadcasts nothing; its commit follows on the Bulk lane): park the key
+// destroy of a granted take's replay (which broadcasts nothing; its commit follows on the Bulk lane), or after the
+// destroy of the local hand-view actor (also not broadcast; the drop that follows authors from it): park the key
 // so a later same-key place authors a host-authoritative drop intent, and only then.
 // The park is the SAFETY INVARIANT -- the host destroys its copy before the drop intent can arrive, so the
 // later re-spawn authors exactly ONE host prop and there is no dup. Game thread. Bounded FIFO set.
