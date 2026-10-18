@@ -23,12 +23,14 @@
 #include "ue_wrap/devices/appliance.h"  // CallAction: the player's use, dispatched
 #include "ue_wrap/devices/laptop.h"
 #include "ue_wrap/devices/laptop_widget.h"
+#include "ue_wrap/engine/engine.h"  // TryGetActorLocation, GetActorVelocity
 #include "ue_wrap/engine/engine_component.h"  // GetComponentLocation
 #include "ue_wrap/engine/umg_build.h"  // IndexOfChild: where the sub-game page sits in the switcher
 #include "ue_wrap/facts/function_row.h"
 
 #include <windows.h>
 
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <memory>
@@ -124,6 +126,12 @@ void ArmBegin() {
 }
 uint64_t ReceivedSince() { return LT::ReceivedCount() - g_baseReceived; }
 uint64_t RefusedSince(LT::Cause c) { return LT::RefusedCount(c) - g_baseRefused[static_cast<int>(c)]; }
+
+// tab-join (client): the tab of the FIRST state this process received, which is the connect snapshot when it joined after
+// the host set its tab. -1 until a state arrives; kFirstUnknown when several arrived before the drill looked.
+constexpr int kFirstUnknown = -2;
+int  g_firstIdx = -1;
+bool g_liveSaid = false;
 
 bool g_done = false;  // this peer's part of the arm has ended, its verdict said
 // What the judging peer says if the session ends before its verdict; empty on a peer that judges nothing.
@@ -294,6 +302,60 @@ bool InBox(void* box, void* me) {
     return ue_wrap::Call(box, f) && f.Get<bool>(L"ReturnValue");
 }
 
+// A pc part's actor: the laptop's child-actor component `prop` (pcpart_keyboard, pcpart_mouse) and what it spawned.
+void* PartActor(void* laptop, const wchar_t* prop) {
+    const int32_t off = R::FindPropertyOffset(R::ClassOf(laptop), prop);
+    if (off < 0) return nullptr;
+    void* const comp = *reinterpret_cast<void**>(reinterpret_cast<uint8_t*>(laptop) + off);
+    if (!comp || !R::IsLive(comp)) return nullptr;
+    const int32_t childOff = R::FindPropertyOffset(R::ClassOf(comp), L"ChildActor");
+    if (childOff < 0) return nullptr;
+    void* const actor = *reinterpret_cast<void**>(reinterpret_cast<uint8_t*>(comp) + childOff);
+    return (actor && R::IsLive(actor)) ? actor : nullptr;
+}
+
+constexpr float kUnread = -9.f;  // a value the drill could not read: outside every up-vector and distance it logs
+
+// The actor's up-vector Z, which the game's enter wants above 0.5 for the keyboard and the mouse.
+float UpZ(void* actor) {
+    if (!actor) return kUnread;
+    void* const fn = R::FindDispatchFunctionCached(R::ClassOf(actor), L"GetActorUpVector");
+    if (!fn) return kUnread;
+    ue_wrap::ParamFrame f(fn);
+    if (!f.valid() || !ue_wrap::Call(actor, f)) return kUnread;
+    return f.Get<FVector>(L"ReturnValue").Z;
+}
+
+float SpeedOf(void* actor) {
+    if (!actor) return kUnread;
+    const FVector v = ue_wrap::engine::GetActorVelocity(actor);
+    return std::sqrt(v.X * v.X + v.Y * v.Y + v.Z * v.Z);
+}
+
+float DistanceBetween(void* a, void* b) {
+    FVector pa, pb;
+    if (!a || !b || !ue_wrap::engine::TryGetActorLocation(a, pa) || !ue_wrap::engine::TryGetActorLocation(b, pb))
+        return kUnread;
+    const float dx = pa.X - pb.X, dy = pa.Y - pb.Y, dz = pa.Z - pb.Z;
+    return std::sqrt(dx * dx + dy * dy + dz * dz);
+}
+
+// The game's enter conditions as this peer reads them (the laptop's action 4: the keyboard and the mouse upright, still
+// and within 150 uu of the laptop, the player inside its Box), for the claim that was never confirmed. The player's own
+// distance and speed fill the named fields; the parts' follow, because the game judges the parts', not the player's.
+void LogEnterRefused(void* me) {
+    void* const keyboard = PartActor(g_h.laptop, L"pcpart_keyboard");
+    void* const mouse = PartActor(g_h.laptop, L"pcpart_mouse");
+    L::PowerState power;
+    const bool read = L::ReadPower(power);
+    UE_LOGW("laptop_tab_drill: enter refused because keyboardUp=%.2f mouseUp=%.2f dist=%.0f inBox=%d speed=%.1f "
+            "isOpened=%d holder=%u partDist=%.0f/%.0f partSpeed=%.1f/%.1f",
+            UpZ(keyboard), UpZ(mouse), DistanceBetween(me, g_h.laptop), InBox(g_h.box, me) ? 1 : 0, SpeedOf(me),
+            read && power.isOpened ? 1 : 0, static_cast<unsigned>(DO::HolderOf(kClaim)),
+            DistanceBetween(keyboard, g_h.laptop), DistanceBetween(mouse, g_h.laptop), SpeedOf(keyboard),
+            SpeedOf(mouse));
+}
+
 // One tab, through the body a player's click runs: the game's own tab call, or a tab button's click handler.
 bool DoTab(void* widget, int mark, int tab) {
     if (mark == kSubgameMark) return ue_wrap::component_calls::CallParamlessNamed(widget, kSubgameClick);
@@ -362,9 +424,11 @@ void HolderTick(coop::net::Session* s) {
         return;
     case HStep::Held: {
         if (!DO::LocalHolds(kClaim) || DO::HolderOf(kClaim) != LocalSlot()) {
-            if (HExpired(kHeldBoundMs))
+            if (HExpired(kHeldBoundMs)) {
+                LogEnterRefused(me);
                 Abandon("the PC's claim was not confirmed after the enter (unpowered, a part unusable, or held by "
                         "another peer)");
+            }
             return;
         }
         UE_LOGI("laptop_tab_drill: holder READY: the claim on the PC is confirmed for slot %u",
@@ -587,7 +651,24 @@ void HostTick(coop::net::Session* s) {
     }
 }
 
+// The tab-join client's look at what it receives, from the first tick: the snapshot reaches a joiner when its world is
+// ready, which is before its own join is over. A host tab that arrives after another first state was seen live, not at
+// the join: the rig's rejoin marker, and the next life's first state is the snapshot.
+void JoinWatch() {
+    const uint64_t got = ReceivedSince();
+    if (got == 0) return;
+    if (g_firstIdx == -1) {
+        g_firstIdx = got == 1 ? LT::LastReceivedIndex() : kFirstUnknown;
+        UE_LOGI("laptop_tab_drill: the first state this process received carries tab %d", g_firstIdx);
+    }
+    if (g_firstIdx != kJoinTab && !g_liveSaid && LT::LastReceivedIndex() == kJoinTab) {
+        g_liveSaid = true;
+        UE_LOGI("[LAPTOP-TAB-DRILL] tab-join saw the host's tab live; rejoin");
+    }
+}
+
 void ClientTick(coop::net::Session* s) {
+    if (ArmOf() == Arm::TabJoin) JoinWatch();
     if (ArmOf() == Arm::TabNorc && !CreateRcWatchLive()) return;
     void* me = coop::players::Registry::Get().Local();
     if (!me) return;
@@ -623,6 +704,7 @@ void ClientTick(coop::net::Session* s) {
         return;
     case Arm::TabHost:
     case Arm::TabJoin:
+        if (arm == Arm::TabJoin && g_firstIdx != kJoinTab) return;  // only a snapshot of tab 4 proves a join
         if (!g_reader.active) {
             if (!ReaderStart(arm == Arm::TabHost ? kFloppyTab : kJoinTab)) return;
             UE_LOGI("laptop_tab_drill: client READY to read the host's tab");
@@ -727,6 +809,8 @@ void OnDisconnect() {
     g_phase = Phase::Start;
     g_armStarted = false;
     g_baseIdx = -1;
+    g_firstIdx = -1;
+    g_liveSaid = false;
     g_endWhy.clear();
     g_done = false;
 }
