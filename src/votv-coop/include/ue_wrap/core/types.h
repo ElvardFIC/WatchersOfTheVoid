@@ -7,6 +7,7 @@
 #pragma once
 
 #include "ue_wrap/core/cached_obj_ref.h"
+#include "ue_wrap/core/gc_pin.h"
 
 #include <cmath>
 #include <cstdint>
@@ -57,8 +58,17 @@ static_assert(sizeof(FLinearColor) == 16, "FLinearColor layout");
 // (not engine.h) so the gameplay layer (RemotePlayer) can cache a std::vector of them WITHOUT
 // pulling the full engine.h wrapper API into the widely-included remote_player.h.
 // component/original are CachedObjRef, not raw pointers: the vector is held ACROSS the ~0.5 s
-// flash window and both objects can be GC'd inside it.
-struct SavedMaterial { CachedObjRef component; int32_t index = 0; CachedObjRef original; };
+// flash window and the component can be collected inside it. The original cannot be let go: a
+// skin's material instance made at run time (a MaterialInstanceDynamic) is held only by the
+// override the flash replaces, so a collection inside the window took it and the restore put the
+// mesh's own material back -- the skin lost. `pin` holds such an original until the entry is
+// destroyed (the restore, or the puppet's teardown); an asset's material is not pinned.
+struct SavedMaterial {
+    CachedObjRef component;
+    int32_t index = 0;
+    CachedObjRef original;
+    GcPin pin;
+};
 
 inline FTransform MakeTransform(const FVector& location) {
     FTransform t;

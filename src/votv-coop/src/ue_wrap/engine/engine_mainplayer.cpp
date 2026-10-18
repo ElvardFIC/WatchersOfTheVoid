@@ -18,6 +18,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <utility>
 #include <vector>
 
 namespace ue_wrap::engine {
@@ -116,6 +117,15 @@ void ResolveMatFns() {
     if (!g_setMatFn)    g_setMatFn    = R::FindFunction(c, L"SetMaterial");
 }
 
+// A material instance made at run time (MaterialInstanceDynamic): nothing but the override that
+// holds it keeps it alive, unlike an asset's material, which its package holds.
+bool IsRuntimeMaterial(void* m) {
+    static void* sMid = nullptr;
+    if (!sMid) sMid = R::FindClass(L"MaterialInstanceDynamic");
+    void* cls = m ? R::ClassOf(m) : nullptr;
+    return sMid && cls && R::IsDescendantOfAny(cls, &sMid, 1);
+}
+
 // Swap every material slot on one component to `mat`, appending each (component, index,
 // original) into `saved`, caller-owned, for the restore.
 void SwapComponentMaterials(void* comp, void* mat, std::vector<SavedMaterial>& saved) {
@@ -131,7 +141,8 @@ void SwapComponentMaterials(void* comp, void* mat, std::vector<SavedMaterial>& s
         sm.component.Set(comp);  // comp validated at entry; orig fresh from GetMaterial
         sm.index = i;
         sm.original.Set(orig);
-        saved.push_back(sm);
+        if (IsRuntimeMaterial(orig)) sm.pin.Pin(orig);  // held until the entry goes (types.h)
+        saved.push_back(std::move(sm));
         { ParamFrame f(g_setMatFn); f.Set<int32_t>(L"ElementIndex", i); f.Set<void*>(L"Material", mat); Call(comp, f); }
     }
 }
@@ -188,10 +199,9 @@ bool RestoreHurtFlashMaterial(void* /*puppet*/, std::vector<SavedMaterial>& save
         for (const auto& s : saved) {
             void* comp = s.component.Get();  // slot-validated
             if (!comp) continue;  // component GC'd
-            // If the cached original material was collected during the flash window, restore null:
-            // a null material reverts the slot to the mesh asset's default, the skin, the correct
-            // outcome.
-            void* orig = s.original.Get();  // null -> revert to the asset default (correct)
+            // A run-time original is pinned for the window (SavedMaterial::pin), so it is here; an
+            // asset's material, if gone, reverts the slot to the mesh's own with null.
+            void* orig = s.original.Get();
             ParamFrame f(g_setMatFn);
             f.Set<int32_t>(L"ElementIndex", s.index);
             f.Set<void*>(L"Material", orig);
