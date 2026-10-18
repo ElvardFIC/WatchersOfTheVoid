@@ -42,7 +42,8 @@ std::wstring EnsureKeyForBroadcast(void* self, const std::wstring& currentKey,
 // setKey by climbing from the actual class to the nearest ancestor that declares it, since
 // FindFunction matches the exact owner: actorChipPile and prop_garbageClump declare their own,
 // trashBitsPile takes actor_save's, the prop lineage Aprop_C's. Returns the CONFIRMED re-read key,
-// or an empty string on any failure, where the caller keeps the old key and logs. Game thread
+// or an empty string on any failure, where the caller keeps the old key and logs. The host also mints the
+// keyless sleepingbag successor through it (prop_lifecycle): its key persists into the save. Game thread
 // only.
 std::wstring MintFreshKeyForDuplicate(void* self);
 

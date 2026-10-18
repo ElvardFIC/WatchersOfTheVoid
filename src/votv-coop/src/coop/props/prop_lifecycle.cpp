@@ -302,15 +302,16 @@ void ExpressSpawnedProp(void* actor) {
     // The sleepingbag Blueprint creates sleepingbagWrap_* with Key=None. Its Init POST is seen
     // before the deferred spawn finishes, marks ProcessedInit, and exits at the normal None-key
     // guard. The host_spawn_watcher calls this only after FinishSpawningActor and the Blueprint
-    // verb have returned, when this actor is mature. Give that host-owned successor a stable wire
-    // key and reopen the Init dedupe so the ordinary lifecycle express can assign its eid and send
-    // PropSpawn; otherwise the source's later destroy reaches clients with no replacement birth.
+    // verb have returned, when this actor is mature. Give that host-owned successor a key and reopen
+    // the Init dedupe so the ordinary lifecycle express can assign its eid and send PropSpawn;
+    // otherwise the source's later destroy reaches clients with no replacement birth. The key
+    // persists into the host's save, so it is the random persisted-key kind (the one the host's
+    // duplicate-key census mints), never the per-boot counter's.
     if (actor && PT::SessionIsHost() &&
         (ue_wrap::sleepingbag::IsPacked(actor) || ue_wrap::sleepingbag::IsDeployed(actor))) {
         const std::wstring currentKey = ue_wrap::prop::GetInteractableKeyString(actor);
         if (currentKey.empty() || currentKey == L"None") {
-            const std::wstring key = coop::prop_synth_key::EnsureKeyForBroadcast(
-                actor, currentKey, /*mintForAprop=*/true);
+            const std::wstring key = coop::prop_synth_key::MintFreshKeyForDuplicate(actor);
             if (key.empty() || key == L"None") {
                 UE_LOGW("grab_hook[spawn seam]: sleepingbag successor %p class='%ls' still has no Key "
                         "after FinishSpawningActor -- replacement birth cannot be expressed",

@@ -232,7 +232,7 @@ form derives from `bed_C`, which derives from `Aprop_C`; it exposes `fold()`, wh
 forms are subclasses of these two base classes. `[RD]`
 
 The deployed Blueprint form finishes with `Key=None`; after `FinishSpawningActor` the host assigns
-it a synthetic prop key and retries the ordinary lifecycle express. The client gates the
+it a random prop key (the persisted kind) and retries the ordinary lifecycle express. The client gates the
 `actionOptionIndex` press of the packed bag (action 4, the unroll) and of the deployed bag (action
 7, whose graph calls `fold()`); it watches the press and not `fold()` itself, which the deployed
 bag's own `BeginPlay` also runs when its foundation traces fail and which no player pressed. It
