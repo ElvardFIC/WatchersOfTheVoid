@@ -11,6 +11,7 @@
 #include "coop/net/session.h"
 #include "coop/player/players_registry.h"
 
+#include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/call.h"
 #include "ue_wrap/core/component_calls.h"
 #include "ue_wrap/core/log.h"
@@ -88,15 +89,17 @@ struct Holder {
     size_t   next = 0;
     int      entryTab = -1;   // a tab the widget must read on at the confirmed claim (the shared tab), or -1
     uint64_t stepMs = 0;
-    void*    laptop = nullptr;
-    void*    box = nullptr;
+    // Held across ticks from Find on, so slot-validated: HolderTick reads them once a tick and ends the arm if either
+    // goes.
+    ue_wrap::CachedObjRef laptop;
+    ue_wrap::CachedObjRef box;
     std::vector<FVector> ring;
     size_t   stand = 0;
     std::shared_ptr<D::BackgroundWalk> walk;
     // The aim before the enter, turned by the director's fan onto boxScreen; the box and the two flag offsets are
     // resolved once, at StartAim.
     D::AimFan aim;
-    void*    boxScreen = nullptr;
+    ue_wrap::CachedObjRef boxScreen;
     int32_t  offFloppy = -1, offZip = -1;
 };
 Holder g_h;
@@ -104,10 +107,10 @@ uint64_t g_heldReceived = 0;  // the arrivals at the confirmed claim: what came 
 
 void HGo(HStep s) { g_h.step = s; g_h.stepMs = NowMs(); }
 bool HExpired(uint64_t bound) { return NowMs() - g_h.stepMs > bound; }
-void ResolveAimTargets();  // below, beside the readers it shares
-void StartAim() {
+void ResolveAimTargets(void* laptop);  // below, beside the readers it shares
+void StartAim(void* laptop) {
     g_h.aim = D::AimFan{};
-    ResolveAimTargets();
+    ResolveAimTargets(laptop);
     HGo(HStep::Aim);
 }
 
@@ -208,11 +211,11 @@ void* BoxScreenOf(void* laptop) {
     return (screen && R::IsLive(screen)) ? screen : nullptr;
 }
 
-void ResolveAimTargets() {
-    void* const cls = R::ClassOf(g_h.laptop);
+void ResolveAimTargets(void* laptop) {
+    void* const cls = R::ClassOf(laptop);
     g_h.offFloppy = R::FindPropertyOffset(cls, L"use_floppybox");
     g_h.offZip = R::FindPropertyOffset(cls, L"use_zipBox");
-    g_h.boxScreen = BoxScreenOf(g_h.laptop);
+    g_h.boxScreen.Set(BoxScreenOf(laptop));
 }
 
 // The game's enter conditions as this peer reads them, for the claim that was never confirmed. actionOptionIndex returns
@@ -220,19 +223,19 @@ void ResolveAimTargets() {
 // wants the keyboard and the mouse upright, still and within 150 uu of the laptop and the player inside its Box, and
 // says a hint when one fails. The player's own distance and speed fill the named fields; the parts' follow, because the
 // game judges the parts', not the player's. power=? is a power state that did not read; aim=? are flags that did not.
-void LogEnterRefused(void* me) {
-    void* const keyboard = PartActor(g_h.laptop, L"pcpart_keyboard");
-    void* const mouse = PartActor(g_h.laptop, L"pcpart_mouse");
+void LogEnterRefused(void* me, void* laptop, void* box) {
+    void* const keyboard = PartActor(laptop, L"pcpart_keyboard");
+    void* const mouse = PartActor(laptop, L"pcpart_mouse");
     L::PowerState power;
     const bool read = L::ReadPower(power);
-    const AimFlags aim = ReadAimFlags(g_h.laptop);
+    const AimFlags aim = ReadAimFlags(laptop);
     UE_LOGW("laptop_tab_drill: enter refused because keyboardUp=%.2f mouseUp=%.2f dist=%.0f inBox=%d speed=%.1f "
             "power=%hs powered=%d anim=%d isOpened=%d aim=%hs floppybox=%d zipBox=%d holder=%u partDist=%.0f/%.0f "
             "partSpeed=%.1f/%.1f",
-            UpZ(keyboard), UpZ(mouse), DistanceBetween(me, g_h.laptop), InBox(g_h.box, me) ? 1 : 0, SpeedOf(me),
+            UpZ(keyboard), UpZ(mouse), DistanceBetween(me, laptop), InBox(box, me) ? 1 : 0, SpeedOf(me),
             read ? "read" : "?", power.powered ? 1 : 0, power.anim ? 1 : 0, power.isOpened ? 1 : 0,
             aim.read ? "read" : "?", aim.floppy ? 1 : 0, aim.zip ? 1 : 0, static_cast<unsigned>(DO::HolderOf(kClaim)),
-            DistanceBetween(keyboard, g_h.laptop), DistanceBetween(mouse, g_h.laptop), SpeedOf(keyboard),
+            DistanceBetween(keyboard, laptop), DistanceBetween(mouse, laptop), SpeedOf(keyboard),
             SpeedOf(mouse));
 }
 
@@ -378,18 +381,25 @@ uint64_t HeldReceived() { return g_heldReceived; }
 void HolderTick(coop::net::Session* s) {
     void* me = coop::players::Registry::Get().Local();
     if (!me) return;
+    void* laptop = nullptr;
+    void* box = nullptr;
+    if (g_h.step != HStep::Off && g_h.step != HStep::Find) {
+        laptop = g_h.laptop.Get();
+        box = g_h.box.Get();
+        if (!laptop || !box) { Abandon("the laptop or its Box went away while the holder used it"); return; }
+    }
     switch (g_h.step) {
     case HStep::Find: {
         L::EnsureResolved();
-        void* laptop = L::Instance();
-        void* box = laptop ? BoxOf(laptop) : nullptr;
+        laptop = L::Instance();
+        box = laptop ? BoxOf(laptop) : nullptr;
         if (!box) {
             if (HExpired(kFindBoundMs)) Abandon("this world holds no base laptop with a Box");
             return;
         }
-        g_h.laptop = laptop;
-        g_h.box = box;
-        if (InBox(box, me)) { StartAim(); return; }
+        g_h.laptop.Set(laptop);
+        g_h.box.Set(box);
+        if (InBox(box, me)) { StartAim(laptop); return; }
         const FVector at = ue_wrap::engine::GetComponentLocation(box);
         g_h.ring = D::ReachableStandpoints(me, at, kRingCm, kStandpoints, kReachCm);
         UE_LOGI("laptop_tab_drill: a route reaches %zu of the %d standpoints about the laptop's Box", g_h.ring.size(),
@@ -403,27 +413,28 @@ void HolderTick(coop::net::Session* s) {
     case HStep::Walk: {
         const int state = g_h.walk ? g_h.walk->state.load() : 2;
         if (state == 0) return;
-        if (state == 1 && InBox(g_h.box, me)) {
+        if (state == 1 && InBox(box, me)) {
             UE_LOGI("laptop_tab_drill: walked to standpoint %zu, inside the laptop's Box", g_h.stand + 1);
             g_h.walk.reset();
-            StartAim();
+            StartAim(laptop);
             return;
         }
         NextStandpoint();
         return;
     }
     case HStep::Aim: {
-        if (!R::IsLive(g_h.laptop) || !g_h.boxScreen || !R::IsLive(g_h.boxScreen)) {
-            Abandon("the laptop or its boxScreen went away, or never resolved, while the holder aimed");
+        void* const boxScreen = g_h.boxScreen.Get();
+        if (!boxScreen || g_h.offFloppy < 0 || g_h.offZip < 0) {
+            Abandon("the laptop's boxScreen or its hitbox flags did not resolve, or the box went away, while aiming");
             return;
         }
         // Ready is the game's own offer of the enter: the trace on the laptop's boxScreen, and lookAt left neither
         // hitbox flag set.
-        const AimFlags fl = ReadAimFlags(g_h.laptop);
+        const AimFlags fl = ReadAimFlags(laptop);
         void* const hitActor = ue_wrap::engine::ReadMainPlayerHitActor(me);
         void* const hitComp = hitActor ? ue_wrap::engine::ReadMainPlayerHitComponent(me) : nullptr;
-        const bool offered = fl.read && hitActor == g_h.laptop && hitComp == g_h.boxScreen && !fl.floppy && !fl.zip;
-        switch (g_h.aim.Tick(me, ue_wrap::engine::GetComponentLocation(g_h.boxScreen), offered)) {
+        const bool offered = fl.read && hitActor == laptop && hitComp == boxScreen && !fl.floppy && !fl.zip;
+        switch (g_h.aim.Tick(me, ue_wrap::engine::GetComponentLocation(boxScreen), offered)) {
         case D::AimFan::State::Working: return;
         case D::AimFan::State::Failed:
             UE_LOGW("laptop_tab_drill: the last pose's trace hit '%ls' component '%ls' (floppybox=%d zipBox=%d)",
@@ -440,7 +451,7 @@ void HolderTick(coop::net::Session* s) {
         return;
     }
     case HStep::Enter:
-        if (!ue_wrap::appliance::CallAction(g_h.laptop, me, kEnterAction)) {
+        if (!ue_wrap::appliance::CallAction(laptop, me, kEnterAction)) {
             Abandon("the laptop's enter (action 4) did not dispatch");
             return;
         }
@@ -449,7 +460,7 @@ void HolderTick(coop::net::Session* s) {
     case HStep::Held: {
         if (!DO::LocalHolds(kClaim) || DO::HolderOf(kClaim) != LocalSlot()) {
             if (HExpired(kHeldBoundMs)) {
-                LogEnterRefused(me);
+                LogEnterRefused(me, laptop, box);
                 Abandon("the PC's claim was not confirmed after the enter (unpowered, a part unusable, or held by "
                         "another peer)");
             }
