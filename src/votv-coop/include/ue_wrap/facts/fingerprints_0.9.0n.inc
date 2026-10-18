@@ -332,7 +332,6 @@ inline constexpr RefFn kRefFns[] = {
     {L"signaldriveeraser_c", L"actionoptionindex", L"signaldriveeraser_c.actionoptionindex", 0x5a7351a33bbf62a6ull, 0x590848b099105d60ull},
     {L"signaldriveeraser_c", L"executeubergraph_signaldriveeraser", L"signaldriveeraser_c.executeubergraph_signaldriveeraser", 0xd3c93c9d2749b427ull, 0xc7eb035bc4ae311aull},
     {L"skullzone_c", L"bndevt__dest_k2node_componentboundevent_2_componentbeginoverlapsignature__delegatesignature", L"skullzone_c.bndevt__dest_k2node_componentboundevent_2_componentbeginoverlapsignature__delegatesignature", 0x068571522f5f0453ull, 0x760bf29cb7944c7eull},
-    {L"sleepingbagwrap_c", L"fold", L"sleepingbagwrap_c.fold", 0x6a2d5d90ab51fa2dull, 0xec0c2cee10d76124ull},
     {L"spacerenderer_c", L"gathersignal", L"spacerenderer_c.gathersignal", 0xef19444a7f78cf06ull, 0x4a7b333d77f897ffull},
     {L"superegger_c", L"receivebeginplay", L"superegger_c.receivebeginplay", 0x6a2d5d90ab51fa2dull, 0xa2f6d3d5a763508eull},
     {L"superegger_c", L"spwn", L"superegger_c.spwn", 0x6a2d5d90ab51fa2dull, 0x5455ec9ee9c8d371ull},

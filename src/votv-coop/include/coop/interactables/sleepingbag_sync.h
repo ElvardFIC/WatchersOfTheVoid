@@ -1,6 +1,6 @@
 // coop/interactables/sleepingbag_sync.h -- client intent for the sleepingbag family's actor transitions.
-// The host executes the packed prop's actionOptionIndex, a bunk mattress's take-off action, or the
-// deployed prop's fold(); ordinary prop birth/death and the host save carry the resulting forms.
+// The host executes the packed prop's actionOptionIndex, a bunk mattress's take-off action, or the deployed
+// prop's fold; ordinary prop birth/death and the host save carry the resulting forms.
 
 #pragma once
 

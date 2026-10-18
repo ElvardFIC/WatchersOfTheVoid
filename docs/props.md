@@ -232,9 +232,11 @@ form derives from `bed_C`, which derives from `Aprop_C`; it exposes `fold()`, wh
 forms are subclasses of these two base classes. `[RD]`
 
 The deployed Blueprint form finishes with `Key=None`; after `FinishSpawningActor` the host assigns
-it a synthetic prop key and retries the ordinary lifecycle express. The client gates the packed
-bag's `actionOptionIndex` and the deployed bag's `fold()` call, sends the
-source prop's host element id and the action byte when unfolding, and cancels its local Blueprint
+it a synthetic prop key and retries the ordinary lifecycle express. The client gates the
+`actionOptionIndex` press of the packed bag (action 4, the unroll) and of the deployed bag (action
+7, whose graph calls `fold()`); it watches the press and not `fold()` itself, which the deployed
+bag's own `BeginPlay` also runs when its foundation traces fail and which no player pressed. It
+sends the source prop's host element id and the action byte, and cancels its local Blueprint
 verb. The host checks that the sender is in reach and that the named prop is still in the expected
 form, then invokes that same Blueprint verb on its copy. The Blueprint owns the replacement birth
 and source destruction; the host spawn watcher and prop lifecycle carry those edges to every peer.

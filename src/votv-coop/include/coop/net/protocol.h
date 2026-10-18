@@ -1761,8 +1761,9 @@ constexpr uint8_t kUnwrap = 1;
 constexpr uint8_t kFold = 2;
 }  // namespace sleepingbag_intent
 
-// The folded or deployed source prop by host eid, the verb, and the selected action byte for
-// actionOptionIndex (zero for fold). No transform or spawned class comes from the client.
+// The folded or deployed source prop by host eid, the verb, and the action byte of the press: 4 for a packed
+// bag's unroll, 7 for a deployed bag's fold or a bunk mattress's take-off. No transform or spawned class comes from
+// the client.
 struct SleepingbagIntentPayload {
     uint32_t elementId;
     uint8_t  verb;

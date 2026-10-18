@@ -10,6 +10,7 @@
 #include "coop/player/roster_ledger.h"
 #include "coop/player/players_registry.h"
 #include "coop/player/remote_player.h"
+#include "coop/props/prop_hold.h"
 
 #include "ue_wrap/actors/sleepingbag.h"
 #include "ue_wrap/core/log.h"
@@ -32,17 +33,18 @@ namespace SB = ue_wrap::sleepingbag;
 constexpr float kReachUU = 450.0f;
 constexpr coop::net::IntentBudget kBudget{4.0f, 4.0f};
 constexpr size_t kMaxPending = 8;
-// enum_interactionActions value of bed_bunkMattress_C's "take the mattress off" press.
+// The enum_interactionActions value each form's transition press carries: the packed bag's only
+// action (unroll), the deployed bag's second (fold, which its graph calls fold() for) and the bunk
+// mattress's second (take it off).
+constexpr uint8_t kActionUnroll = 4;
+constexpr uint8_t kActionFold = 7;
 constexpr uint8_t kActionTakeMattress = 7;
 
 UE_FACT_FN(kRowAction, "sleepingbag_sync", nullptr, L"actionOptionIndex", AnyClass);
-UE_FACT_FN(kRowFold, "sleepingbag_sync", L"sleepingbagWrap_C", L"fold", Declared);
 constexpr int kTagAction = 0x53424143;  // 'SBAC'
-constexpr int kTagFold = 0x5342464C;    // 'SBFL'
 
 std::atomic<coop::net::Session*> g_session{nullptr};
 bool g_actionWatch = false;
-bool g_foldWatch = false;
 bool g_saidLive = false;
 uint64_t g_sent = 0;
 uint64_t g_ran = 0;
@@ -66,7 +68,8 @@ bool IsClient(coop::net::Session* s) {
 bool SendIntent(coop::net::Session* s, void* actor, uint8_t verb, uint8_t action) {
     const EL::ElementId eid = EL::Registry::Get().EidForActor(actor);
     if (eid == EL::kInvalidId) {
-        UE_LOGW("sleepingbag_sync: client transition refused -- the sleepingbag source has no host prop id");
+        UE_LOGW("sleepingbag_sync: client transition not sent -- the sleepingbag source has no host prop id; "
+                "the local Blueprint verb runs");
         return false;
     }
     coop::net::SleepingbagIntentPayload p{};
@@ -74,7 +77,7 @@ bool SendIntent(coop::net::Session* s, void* actor, uint8_t verb, uint8_t action
     p.verb = verb;
     p.action = action;
     if (!s->SendReliableToSlot(0, coop::net::ReliableKind::SleepingbagIntent, &p, sizeof(p))) {
-        UE_LOGW("sleepingbag_sync: transition for eid=%u was not sent -- refusing the local Blueprint verb",
+        UE_LOGW("sleepingbag_sync: transition for eid=%u was not sent -- the local Blueprint verb runs",
                 p.elementId);
         return false;
     }
@@ -85,31 +88,32 @@ bool SendIntent(coop::net::Session* s, void* actor, uint8_t verb, uint8_t action
     return true;
 }
 
+// Which verb a press of `action` on `actor` is, or 0 when it is none of the three transitions: the packed bag's
+// unroll (4), the deployed bag's fold (7) and the bunk mattress's take-off (7). Every other action is the form's
+// own native business (the deployed bag's 4 is sleeping).
+uint8_t VerbOf(void* actor, uint8_t action) {
+    if (action == kActionUnroll && SB::IsPacked(actor)) return coop::net::sleepingbag_intent::kUnwrap;
+    if (action == kActionFold && SB::IsDeployed(actor)) return coop::net::sleepingbag_intent::kFold;
+    if (action == kActionTakeMattress && SB::IsBunkMattress(actor)) return coop::net::sleepingbag_intent::kUnwrap;
+    return 0;
+}
+
+// The press, not the function behind it: the deployed bag's fold() also runs from its own BeginPlay when its
+// foundation traces fail, and that run is no player's. The body is cancelled only when the host was asked; a refused
+// send runs it as a press would with no lane.
 SG::Verdict OnActionPre(const SG::Call& call) {
     auto* s = g_session.load(std::memory_order_acquire);
     if (!IsClient(s)) return SG::Verdict::Run;
-    const bool packed = SB::IsPacked(call.object);
-    if (!packed && !SB::IsBunkMattress(call.object)) return SG::Verdict::Run;
 
     const int32_t playerOff = R::FindParamOffset(call.function, L"Player");
     const int32_t actionOff = R::FindParamOffset(call.function, L"Action");
     if (playerOff < 0 || actionOff < 0 || !call.locals) return SG::Verdict::Run;
+    const uint8_t action = call.locals[actionOff];
+    const uint8_t verb = VerbOf(call.object, action);
+    if (verb == 0) return SG::Verdict::Run;
     void* player = *reinterpret_cast<void* const*>(call.locals + playerOff);
     if (!coop::players::Registry::Get().IsLocal(player)) return SG::Verdict::Run;
-    const uint8_t action = call.locals[actionOff];
-    if (!packed && action != kActionTakeMattress) return SG::Verdict::Run;
-    // As the fold's: the body is cancelled only when the host was asked.
-    return SendIntent(s, call.object, coop::net::sleepingbag_intent::kUnwrap, action) ? SG::Verdict::Cancel
-                                                                                      : SG::Verdict::Run;
-}
-
-SG::Verdict OnFoldPre(const SG::Call& call) {
-    auto* s = g_session.load(std::memory_order_acquire);
-    if (!IsClient(s) || !SB::IsDeployed(call.object)) return SG::Verdict::Run;
-    // The body is cancelled only when the host was asked: a refused send runs it as a press would
-    // with no lane.
-    return SendIntent(s, call.object, coop::net::sleepingbag_intent::kFold, 0) ? SG::Verdict::Cancel
-                                                                               : SG::Verdict::Run;
+    return SendIntent(s, call.object, verb, action) ? SG::Verdict::Cancel : SG::Verdict::Run;
 }
 
 // A missing prop or first puppet pose is a bounded wait. All other judgments consume the queued
@@ -125,12 +129,18 @@ bool Execute(coop::net::Session& session, const coop::net::SleepingbagIntentPayl
         return true;
     }
 
+    // Another peer's hand on the source: the verb would destroy a prop under its holder.
+    if (const coop::prop_hold::Holder h = coop::prop_hold::WhoHolds(subject.actor, slot);
+        h != coop::prop_hold::Holder::None) {
+        ++g_denied;
+        UE_LOGI("sleepingbag_sync: DENY slot=%u verb=%u eid=%u -- %s", static_cast<unsigned>(slot),
+                static_cast<unsigned>(p.verb), p.elementId, coop::prop_hold::HolderWhy(h));
+        return true;
+    }
+
     bool ran = false;
-    const bool expected = p.verb == coop::net::sleepingbag_intent::kUnwrap
-                             ? SB::IsPacked(subject.actor) ||
-                                   (SB::IsBunkMattress(subject.actor) && p.action == kActionTakeMattress)
-                             : p.verb == coop::net::sleepingbag_intent::kFold && SB::IsDeployed(subject.actor);
-    if (expected) {
+    // The form and the action byte must be the pair a press of that form carries.
+    if (VerbOf(subject.actor, p.action) == p.verb) {
         if (p.verb == coop::net::sleepingbag_intent::kUnwrap) {
             auto* puppet = coop::players::Registry::Get().Puppet(slot);
             void* player = (puppet && puppet->valid()) ? puppet->GetActor() : nullptr;
@@ -155,8 +165,6 @@ bool Execute(coop::net::Session& session, const coop::net::SleepingbagIntentPayl
 void RegisterWatches() {
     if (!g_actionWatch)
         g_actionWatch = SG::WatchName(kRowAction, kTagAction, &OnActionPre, nullptr);
-    if (!g_foldWatch)
-        g_foldWatch = SG::WatchName(kRowFold, kTagFold, &OnFoldPre, nullptr);
 }
 
 }  // namespace
@@ -170,10 +178,9 @@ void Tick(coop::net::Session& session) {
     RegisterWatches();
     if (!g_saidLive) {
         SG::ResolvePendingNames();
-        if (g_actionWatch && g_foldWatch && SG::NameWatchLive(kRowAction, kTagAction) &&
-            SG::NameWatchLive(kRowFold, kTagFold)) {
+        if (g_actionWatch && SG::NameWatchLive(kRowAction, kTagAction)) {
             g_saidLive = true;
-            UE_LOGI("sleepingbag_sync: packed and deployed Blueprint verbs are watched");
+            UE_LOGI("sleepingbag_sync: the bag's and the bunk mattress's action presses are watched");
         }
     }
     if (!session.running() || session.role() != coop::net::Role::Host) return;
