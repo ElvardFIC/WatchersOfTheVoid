@@ -11,6 +11,8 @@
 #include "coop/player/roster_ledger.h"  // PerSlotState
 #include "coop/props/active_drive.h"
 
+#include "ue_wrap/core/cached_obj_ref.h"
+#include "ue_wrap/core/game_thread.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/script_gate.h"
@@ -26,6 +28,7 @@ namespace coop::drone_call_intent {
 namespace {
 
 namespace D  = ue_wrap::drone_console;
+namespace GT = ue_wrap::game_thread;
 namespace R  = ue_wrap::reflection;
 namespace sg = ue_wrap::script_gate;
 
@@ -173,8 +176,16 @@ sg::Verdict OnActionPre(const sg::Call& call) {
                 static_cast<unsigned long long>(g_sent));
     // The timer face's own body would have clicked here, and the body it cancels is the only thing
     // that plays it on this machine, so the presser hears its press from this copy of the console.
-    if (!keyboard && !D::PlayChangeCue(call.object))
-        UE_LOGW("[DRONE-CALL] the console's change cue did not play on this client");
+    // The gate is inside the script VM's loop, so the cue is posted and plays after it returns.
+    if (!keyboard) {
+        ue_wrap::CachedObjRef console;
+        console.Set(call.object);
+        GT::Post([console]() {
+            void* c = console.Get();
+            if (!c || !D::PlayChangeCue(c))
+                UE_LOGW("[DRONE-CALL] the console's change cue did not play on this client");
+        });
+    }
     return sg::Verdict::Cancel;
 }
 
