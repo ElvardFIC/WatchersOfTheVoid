@@ -564,6 +564,18 @@ CFG_STRING(camera_drill, "camera_drill", "dev", "", "VOTVCOOP_CAMERA_DRILL", fal
     "is refused here and performed by the host; light -- the same for the laptop's camera-light button, after a walk "
     "to the laptop; host-event -- the host fires the gray event beside a switched-on camera, the client reads it on "
     "and then off; join -- the host switches both bits on before any client joins, every session reads both.")
+CFG_STRING(laptop_tab_drill, "laptop_tab_drill", "dev", "", "VOTVCOOP_LAPTOP_TAB_DRILL", false,
+    "Drill (BOTH peers): everyone sees the tab the base computer's user is on. The user walks to the PC with the "
+    "director, enters it and switches tabs; the other peer judges the LAST tab on arrival of a state carrying it. tab "
+    "-- the client holds, the host reads tab 10; tab-host -- the host holds, the client reads; tab-handover -- the "
+    "client holds and leaves, the host enters on the shared tab and switches, the client reads it; tab-norc -- a "
+    "viewer reads the cameras tab with its createRC run 0 times; tab-subgame -- the sub-game button's tab reaches the "
+    "host; tab-range -- a holding client sends a raw index past the switcher's last, the host drops and counts it as "
+    "a bad index; tab-forged -- a client holding nothing sends a report, the host drops and counts it as not the "
+    "holder's; tab-slot -- the host hands the client a state stamped with another sender's slot, which it drops and "
+    "counts as a bad slot; tab-join -- the host switches to tab 4 before any client connects, and every joiner reads "
+    "it; tab-relay (needs --observer) -- the first client holds, the second reads, and the first is sent no state. "
+    "Lines tagged [LAPTOP-TAB-DRILL]; the judging peer's PASS or FAIL line ends the arm.")
 CFG_STRING(server_upgrade_drill, "server_upgrade_drill", "dev", "", "VOTVCOOP_SERVER_UPGRADE_DRILL", false,
     "Drill (BOTH peers): a client installs an upgrade into a server box and takes one out. apply: the host "
     "applies both; refuse: the host refuses both, as if each had lost its race, and the client sees its install "

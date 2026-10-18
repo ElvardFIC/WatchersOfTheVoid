@@ -349,6 +349,7 @@ inline constexpr RefFn kRefFns[] = {
     {L"ui_laptop_c", L"bndevt__ui_laptop_button_305_k2node_componentboundevent_57_onbuttonclickedevent__delegatesignature", L"ui_laptop_c.bndevt__ui_laptop_button_305_k2node_componentboundevent_57_onbuttonclickedevent__delegatesignature", 0x6a2d5d90ab51fa2dull, 0x2ef097a3b14ad636ull},
     {L"ui_laptop_c", L"bndevt__ui_laptop_button_tab_floppy_k2node_componentboundevent_54_onbuttonclickedevent__delegatesignature", L"ui_laptop_c.bndevt__ui_laptop_button_tab_floppy_k2node_componentboundevent_54_onbuttonclickedevent__delegatesignature", 0x6a2d5d90ab51fa2dull, 0xc117650f2eb63bfdull},
     {L"ui_laptop_c", L"bndevt__umg_laptop_button_camfl_k2node_componentboundevent_31_onbuttonclickedevent__delegatesignature", L"ui_laptop_c.bndevt__umg_laptop_button_camfl_k2node_componentboundevent_31_onbuttonclickedevent__delegatesignature", 0x6a2d5d90ab51fa2dull, 0xf2e6b7aa242eaba3ull},
+    {L"ui_laptop_c", L"createrc", L"ui_laptop_c.createrc", 0x6a2d5d90ab51fa2dull, 0x929cc98698d91258ull},
     {L"ui_laptop_c", L"makeanorder", L"ui_laptop_c.makeanorder", 0xa60d59361fb93ab1ull, 0x4529cc3e8b58ab96ull},
     {L"ui_laptop_c", L"removeordercart", L"ui_laptop_c.removeordercart", 0x6a2d5d90ab51fa2dull, 0x15456c6fb4260eb0ull},
     {L"ui_laptop_c", L"removesignal", L"ui_laptop_c.removesignal", 0x908b31bda2b142b5ull, 0x6d6a879c86e95f23ull},
