@@ -21,6 +21,7 @@
 #include "coop/player/run_end_travel.h"
 #include "ue_wrap/core/script_gate.h"
 #include "coop/player/players_registry.h"
+#include "coop/player/revive_protection.h"
 #include "harness/session_runtime.h"
 #include "ue_wrap/actors/vitals.h"
 #include "ue_wrap/core/call.h"
@@ -143,6 +144,7 @@ enum class Prior { Clean, Dirty, Inconclusive };
 // One prior death: the lethal hit, the wait for the revive's screen cleanup to end, and the black-screen census.
 Prior RunPriorDeath(int k, int prior) {
     const uint32_t ended0 = coop::death_revive::ScreenCleanupsEnded();
+    const uint32_t protEnded0 = coop::revive_protection::EndedCount();
     auto pd = std::make_shared<std::atomic<int>>(0);
     auto hitOk = std::make_shared<int>(0);
     GT::Post([pd, hitOk] {
@@ -191,6 +193,14 @@ Prior RunPriorDeath(int k, int prior) {
                           "blackScreen_C live=%d on viewport=%d (readable=%d)",
                           k + 1, prior, sawDead ? 1 : 0, ended ? 1 : 0,
                           static_cast<unsigned long long>(::GetTickCount64() - t0), *live, *onScreen, *readable);
+    // The revive's protection refuses the next lethal hit; the next death waits for the window to end.
+    const uint64_t tProt = ::GetTickCount64();
+    while (coop::revive_protection::EndedCount() == protEnded0 && ::GetTickCount64() - tProt < 15000)
+        ::Sleep(kSampleMs);
+    if (coop::revive_protection::EndedCount() == protEnded0) {
+        UE_LOGW("death_test: prior death %d of %d -- the revive protection never ended", k + 1, prior);
+        return Prior::Inconclusive;
+    }
     return r;
 }
 
@@ -200,6 +210,14 @@ DWORD WINAPI DeathTestThread(LPVOID) {
     UE_LOGI("death_test: armed -- a LETHAL Add Player Damage runs VOTV's native death "
             "chain to completion; the timeline + memory are OBSERVED, and the "
             "death contract is the ACCEPTANCE half");
+
+    // The run's own variables, said once, so a stale export cannot pass for the green. The hits-while-dead arm is an
+    // experiment whose post-window hits land; the attack arm swaps D16 and D17 for D18.
+    const int priorDeaths = PriorDeaths();
+    const bool hitsWhileDead = coop::config::ReadEnv("VOTVCOOP_DEATH_HITS_WHILE_DEAD") == "1";
+    const bool attackArm = coop::config::ReadEnv("VOTVCOOP_DEATH_PROTECT_ATTACK") == "1";
+    UE_LOGI("death_test: arm -- prior=%d hits-while-dead=%d protect-attack=%d", priorDeaths, hitsWhileDead ? 1 : 0,
+            attackArm ? 1 : 0);
 
     // A pawn that can be killed: canRagdoll true, no invincibility term set, in the gameplay
     // world. Inside a session the arm's readiness is a precondition too, and on a client the link
@@ -248,7 +266,7 @@ DWORD WINAPI DeathTestThread(LPVOID) {
     // same lethal hit, waited out until the revive's screen cleanup has ended (death_revive's own counter, not a clock),
     // and then the black screens are counted -- live ones, and the ones still on the viewport. One on screen fails D15;
     // a hit that did not land, a death or a cleanup that did not happen ends the run INCONCLUSIVE.
-    if (const int prior = PriorDeaths(); prior > 0) {
+    if (const int prior = priorDeaths; prior > 0) {
         int dirty = 0;
         for (int k = 0; k < prior; ++k) {
             const Prior r = RunPriorDeath(k, prior);
@@ -362,6 +380,9 @@ DWORD WINAPI DeathTestThread(LPVOID) {
     const float lethal = (maxHp > 0.f ? maxHp : 100.f) * 2.f;
     const float hpBefore = s.health;
 
+    // The coop-session arm revives, so only it has a protection window to grade (the sessionless control has no revive).
+    const bool coopArm = s.sessionRunning;
+    const uint32_t protEnded0 = coop::revive_protection::EndedCount();
     auto hitDone = std::make_shared<std::atomic<int>>(0);
     auto hitOk = std::make_shared<int>(0);
     GT::Post([hitDone, hitOk, lethal] {
@@ -388,9 +409,11 @@ DWORD WINAPI DeathTestThread(LPVOID) {
     // VOTVCOOP_DEATH_HITS_WHILE_DEAD=1: the creature keeps hitting a dead player, as a zombie did to a field client --
     // its addDamage (the verb a delivered PlayerHit runs) of about a zombie's 10.5, every 1.5 s through the dead window.
     // The drill's one death never had a hit land on a dead body; the grading below is the same.
-    const bool hitsWhileDead = coop::config::ReadEnv("VOTVCOOP_DEATH_HITS_WHILE_DEAD") == "1";
     uint64_t nextDeadHit = tHit + 500;
     int deadHits = 0;
+    // D16/D18: at the first sample with the window open, one hit (a lethal one, or the swing); the next sample is read.
+    bool d16Fired = false, d16Judged = false, d16HitOk = false, d16Pass = false;
+    DeathSnapshot d16Read;
     for (uint64_t now = tHit; now - tHit < static_cast<uint64_t>(kDeadWindowMs);
          now = ::GetTickCount64()) {
         if (hitsWhileDead && now >= nextDeadHit) {
@@ -407,6 +430,24 @@ DWORD WINAPI DeathTestThread(LPVOID) {
             if (*ok) ++deadHits;
         }
         DeathSnapshot p = Probe();
+        if (coopArm && d16Fired && !d16Judged) {
+            d16Judged = true;
+            d16Read = p;
+            d16Pass = d16HitOk && p.haveState && !p.dead && p.health > 0.f && p.haveStartInvinc && p.startInvinc;
+        } else if (coopArm && !d16Fired && coop::revive_protection::Active()) {
+            d16Fired = true;
+            auto hd = std::make_shared<std::atomic<int>>(0);
+            auto ok = std::make_shared<int>(0);
+            GT::Post([hd, ok, lethal, attackArm] {
+                void* mp = coop::players::Registry::Get().Local();
+                if (mp && R::IsLive(mp) &&
+                    (attackArm ? E::InvokeMainPlayerAttack(mp) : E::InvokeAddPlayerDamage(mp, lethal, /*blood=*/true)))
+                    *ok = 1;
+                hd->store(1);
+            });
+            WaitDone(hd, 8000);
+            d16HitOk = *ok != 0;
+        }
         const long long dt = static_cast<long long>(::GetTickCount64() - tHit);
         if (p.haveState && p.dead && tDead < 0) tDead = dt;
         if (p.haveState && p.isRagdoll && tRagdoll < 0) tRagdoll = dt;
@@ -670,6 +711,65 @@ DWORD WINAPI DeathTestThread(LPVOID) {
                   "'~165 MB/s possessed-ragdoll leak' is NOT reproduced here"
                 : "the dead window ballooned well past the alive control -- staying in the "
                   "world after death costs memory, and the arc must answer that");
+
+    // The revive protection, graded after the dead window by its readers. The end is waited on, not slept: the window
+    // is 5 s from the revive, and the revive lands inside the 22 s the loop above watched.
+    if (coopArm) {
+        const uint64_t tEnd = ::GetTickCount64();
+        while (coop::revive_protection::EndedCount() <= protEnded0 && ::GetTickCount64() - tEnd < 10000)
+            ::Sleep(kSampleMs);
+        const bool windowEnded = coop::revive_protection::EndedCount() > protEnded0;
+        const coop::revive_protection::EndWhy why = coop::revive_protection::LastEndWhy();
+        const unsigned long long windowMs = coop::revive_protection::LastWindowMs();
+        char pr[320];
+        if (attackArm) {
+            _snprintf_s(pr, sizeof(pr), _TRUNCATE,
+                        "window ended=%d why=%d (want %d = attack) after %llu ms (want < 5000); the swing was %s at the "
+                        "first sample with the window open (fired=%d); the verb is called, not the swing's input path",
+                        windowEnded ? 1 : 0, static_cast<int>(why),
+                        static_cast<int>(coop::revive_protection::EndWhy::Attack), windowMs,
+                        d16HitOk ? "delivered" : "NOT delivered", d16Fired ? 1 : 0);
+            Verdict("D18 attack-watch-ends",
+                    windowEnded && why == coop::revive_protection::EndWhy::Attack && windowMs < 5000, pr);
+        } else {
+            _snprintf_s(pr, sizeof(pr), _TRUNCATE,
+                        "a lethal hit with the window open (fired=%d, delivered=%d) left dead=%d health=%.2f "
+                        "startInvinc=%d (read=%d) on the next sample (want alive, health above 0, flag set)",
+                        d16Fired ? 1 : 0, d16HitOk ? 1 : 0, d16Read.dead ? 1 : 0, d16Read.health,
+                        d16Read.startInvinc ? 1 : 0, d16Read.haveStartInvinc ? 1 : 0);
+            Verdict("D16 revive-protected", d16Pass, pr);
+
+            const bool timedOut = windowEnded && why == coop::revive_protection::EndWhy::Timeout;
+            const uint32_t cleanups0 = coop::death_revive::ScreenCleanupsEnded();
+            auto hd = std::make_shared<std::atomic<int>>(0);
+            auto ok = std::make_shared<int>(0);
+            GT::Post([hd, ok, lethal] {
+                void* mp = coop::players::Registry::Get().Local();
+                if (mp && R::IsLive(mp) && E::InvokeAddPlayerDamage(mp, lethal, /*blood=*/true)) *ok = 1;
+                hd->store(1);
+            });
+            WaitDone(hd, 8000);
+            bool diedAfter = false;
+            for (uint64_t t1 = ::GetTickCount64(); !diedAfter && ::GetTickCount64() - t1 < 5000;) {
+                const DeathSnapshot q = Probe();
+                diedAfter = q.haveState && q.dead;
+                if (!diedAfter) ::Sleep(kSampleMs);
+            }
+            _snprintf_s(pr, sizeof(pr), _TRUNCATE,
+                        "window ended=%d why=%d (want %d = timeout) after %llu ms; the lethal hit after it was %s and "
+                        "the player died=%d (want 1)",
+                        windowEnded ? 1 : 0, static_cast<int>(why),
+                        static_cast<int>(coop::revive_protection::EndWhy::Timeout), windowMs,
+                        *ok ? "delivered" : "NOT delivered", diedAfter ? 1 : 0);
+            Verdict("D17 protection-ends", timedOut && *ok && diedAfter, pr);
+            // That death's revive finishes before the verdict, so the run does not end on a dead player.
+            for (uint64_t t2 = ::GetTickCount64();
+                 coop::death_revive::ScreenCleanupsEnded() == cleanups0 && ::GetTickCount64() - t2 < 30000;)
+                ::Sleep(kSampleMs);
+            if (coop::death_revive::ScreenCleanupsEnded() == cleanups0)
+                UE_LOGW("death_test: D17's death was not revived within 30 s");
+        }
+    }
 
     UE_LOGI("death_test: VERDICT %s (%d pass / %d fail) -- health %.2f -> %.2f",
             g_fail == 0 ? "PASS" : "FAIL", g_pass, g_fail, hpBefore, last.health);
