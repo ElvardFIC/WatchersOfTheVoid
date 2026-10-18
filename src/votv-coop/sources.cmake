@@ -89,6 +89,7 @@ set(VOTVCOOP_SOURCES
     src/ue_wrap/world/bad_sun.cpp
     src/ue_wrap/world/red_sky.cpp
     src/ue_wrap/world/explosion.cpp
+    src/ue_wrap/world/explosion_source.cpp
     src/ue_wrap/world/skysphere.cpp
     src/ue_wrap/world/directionalwind.cpp
     src/ue_wrap/devices/lightswitch.cpp
@@ -274,6 +275,8 @@ set(VOTVCOOP_SOURCES
     src/coop/world/firefly_sync.cpp
     src/coop/world/spawn_authority.cpp
     src/coop/world/explosion_sync.cpp
+    src/coop/world/explosion_recipe.cpp
+    src/coop/world/explosion_recipe_selftest.cpp
     src/coop/world/explosion_parking.cpp
     src/coop/world/event_cue_sync.cpp
     src/coop/world/event_fire_policy.cpp

@@ -78,6 +78,7 @@
 #include "coop/server_profile/server_profile.h"
 #include "coop/session/subsystems.h"
 #include "coop/session/teleport_client.h"
+#include "coop/world/explosion_recipe.h"
 #include "coop/world/spawn_authority.h"
 #include "ui/server_browser.h"
 #include "coop/net/end_reason.h"  // the named reason a join that reached the world load ends on
@@ -268,6 +269,9 @@ bool StartCoopSession(const coop::net::Config& netCfg, coop::net::Refusal* why) 
     // And the per-slot hand history: a ring that forgets a held class early, or keeps one forever,
     // answers "held it within N ms" wrongly in both directions, and no honest run notices.
     coop::hand_history::RunSelftest();
+    // And the explosion recipes: a source whose numbers are off, or a pill level left unclamped, blasts
+    // with parameters its Blueprint never uses, and no honest run notices.
+    coop::explosion_recipe::RunSelftest();
     // And the newest-wins latch every received stream keeps: no LAN run reorders a datagram, so the
     // batch that arrives behind one already taken is refused here, on pinned sequences.
     coop::net::stream_slot::RunSelftest();

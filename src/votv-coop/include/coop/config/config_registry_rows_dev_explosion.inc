@@ -4,3 +4,5 @@
 
 CFG_FLAG(selftest_break_hand_history, "selftest_break_hand_history", "dev", false, "VOTVCOOP_SELFTEST_BREAK_HAND_HISTORY",
     "Red arm of the hand history selftest: its first Note is skipped, so every check that reads that hold must fail.")
+CFG_FLAG(selftest_break_explosion_recipe, "selftest_break_explosion_recipe", "dev", false, "VOTVCOOP_SELFTEST_BREAK_EXPLOSION_RECIPE",
+    "Red arm of the explosion recipe selftest: the player's row reads the unclamped level, so the clamp checks must fail.")
