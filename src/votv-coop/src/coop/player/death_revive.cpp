@@ -186,15 +186,24 @@ bool ReadInViewport(void* widget, bool& out) {
     return true;
 }
 
-// Detach the black screen. True once it is provably off the viewport, including when there is
-// none yet (a revive before +5 s).
+// Detach every black screen on the viewport. Each death makes a new blackScreen_C and
+// RemoveFromParent only detaches one, so an earlier death's widget (or a departed world's) stays in
+// the object index, and the first by index is not the one on screen: detaching it left the new one
+// up for good while this reported clear. True once no live one is on the viewport, including when
+// there is none yet (a revive before +5 s); false while one cannot be read.
 bool ClearBlackScreen() {
-    void* w = R::FindObjectByClass(kBlackScreenClass);
-    if (!w || !R::IsLive(w)) return true;  // nothing on screen
-    CallNoArgs(w, g_verbs.removeFromParent);
-    bool inViewport = true;
-    if (!ReadInViewport(w, inViewport)) return false;  // cannot verify -> not done
-    return !inViewport;
+    bool allOff = true;
+    for (void* w : R::FindObjectsByClass(kBlackScreenClass)) {
+        bool inViewport = false;
+        if (!ReadInViewport(w, inViewport)) {  // a dead one is not on screen; a live unreadable one is not known off
+            if (w && R::IsLive(w)) allOff = false;
+            continue;
+        }
+        if (!inViewport) continue;
+        CallNoArgs(w, g_verbs.removeFromParent);
+        if (!ReadInViewport(w, inViewport) || inViewport) allOff = false;
+    }
+    return allOff;
 }
 
 // The one-way writes a cancelled run-ending leaves behind. In the August build the cut was at
