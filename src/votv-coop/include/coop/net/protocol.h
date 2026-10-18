@@ -1084,7 +1084,7 @@ enum class ReliableKind : uint8_t {
     // deployed bed. The host runs the source actor's own Blueprint; host_spawn_watcher and
     // prop_lifecycle carry the replacement birth and source death. Late join: host save plus the
     // ordinary prop snapshot. Never relayed.
-    SleepingbagIntent = 188,
+    SleepingbagIntent = 190,
 };
 
 #pragma pack(push, 1)
