@@ -15,6 +15,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <cmath>
 #include <string>
 
 namespace ue_wrap::engine {
@@ -246,8 +247,8 @@ void DriveRagdollBodyPelvisVelocity(void* body, const FVector& linVel, const FVe
     if (!EnsurePelvisFName(mesh)) return;
     // Overwrite (bAddToCurrent=false) the pelvis body's velocity with the sender's --
     // the body slaves its gross motion to the real ragdoll. The constrained limb bodies
-    // sim freely (invisible); only the pelvis trajectory feeds the visible pelvis-
-    // attached kel. Same SetPhysics{Linear,Angular}Velocity pair as PropRelease.
+    // simulate freely on the visible selected-model body. Same
+    // SetPhysics{Linear,Angular}Velocity pair as PropRelease.
     { ParamFrame f(g_setLinVelFn);
       f.Set<FVector>(L"NewVel", linVel);
       f.Set<bool>(L"bAddToCurrent", false);
@@ -258,6 +259,19 @@ void DriveRagdollBodyPelvisVelocity(void* body, const FVector& linVel, const FVe
       f.Set<bool>(L"bAddToCurrent", false);
       f.SetRaw(L"BoneName", g_pelvisFName, sizeof(g_pelvisFName));
       Call(mesh, f); }
+}
+
+bool TranslateRagdollBody(void* body, const FVector& delta) {
+    if (!std::isfinite(delta.X) || !std::isfinite(delta.Y) || !std::isfinite(delta.Z)) return false;
+    void* mesh = RagdollMeshOf(body);
+    if (!mesh) return false;
+    CachedObjRef ref; ref.Set(mesh);
+    ParamFrame frame(R::FindDispatchFunctionCached(R::ClassOf(mesh), L"K2_AddWorldOffset"));
+    // Teleport physics together rather than deriving artificial velocities from
+    // the correction. No sweep: a blocked mirror must converge on the sender.
+    return frame.valid() && frame.Set<FVector>(L"DeltaLocation", delta) &&
+        frame.Set<bool>(L"bSweep", false) && frame.Set<bool>(L"bTeleport", true) &&
+        Call(mesh, frame) && ref.Get();
 }
 
 }  // namespace ue_wrap::engine

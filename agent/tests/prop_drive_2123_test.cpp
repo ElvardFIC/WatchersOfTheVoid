@@ -6,6 +6,12 @@
 #include <cstdio>
 #include <cstdlib>
 
+// Collision enrollment is covered separately; this harness drives its own actors.
+namespace coop::prop_knock {
+void Tick(coop::net::Session&) {}
+void OnDisconnect() {}
+}
+
 // Negative controls must exit with a clear failure, without invoking Windows crash UI.
 #undef assert
 #define assert(expr) do { if (!(expr)) { std::fprintf(stderr, "FAIL line %d: %s\n", __LINE__, #expr); std::exit(1); } } while (0)

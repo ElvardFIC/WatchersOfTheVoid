@@ -7,11 +7,14 @@
 #include "coop/player/remote_player.h"
 #include "coop/props/prop_echo_suppress.h"
 #include "coop/props/prop_fire_sync.h"
+#include "coop/props/prop_element_tracker.h"
+#include "coop/props/remote_prop.h"
 #include "coop/props/trash_collect_sync.h"  // EnsureHeldItemBroadcast (hand-edge world release)
 #include "ue_wrap/engine/engine.h"
 #include "ue_wrap/actors/prop.h"
 #include "ue_wrap/actors/canned_food.h"
 #include "ue_wrap/actors/prop_fire.h"
+#include "ue_wrap/actors/physics_gun.h"
 #include "ue_wrap/actors/puppet.h"  // GetSkeletalMeshComponent (owner head-bone anchor for the hold measure)
 #include "ue_wrap/core/fname_utils.h"
 #include "ue_wrap/core/game_thread.h"
@@ -70,6 +73,9 @@ struct SlotHand {
     float relRot[3] = {0.f, 0.f, 0.f};  // item rotator {pitch,yaw,roll} in the view frame
     bool  haveRel = false;              // owner measured (vs the fallback defaults)
     bool hasCan = false;
+    ue_wrap::physics_gun::Visuals toolFx{};
+    uint64_t toolFxAt=0;
+    uint32_t toolTargetElement=0;
     ue_wrap::canned_food::State can;
 };
 SlotHand g_hands[coop::players::kMaxPeers];  // GT-only
@@ -482,6 +488,14 @@ void TickOwner(coop::net::Session& session, void* local, void* holdingProp) {
                 coop::net::HandPoseSnapshot hp{};
                 std::memcpy(hp.relPos, sp, sizeof(sp));
                 std::memcpy(hp.relRot, sr, sizeof(sr));
+                const auto fx=ue_wrap::physics_gun::ReadVisuals(holdingProp);
+                hp.toolKind=fx.kind; hp.toolFlags=fx.flags;
+                hp.toolTarget[0]=fx.target.X; hp.toolTarget[1]=fx.target.Y; hp.toolTarget[2]=fx.target.Z;
+                if (fx.object) {
+                    auto id=coop::prop_element_tracker::GetPropElementIdForActor(fx.object);
+                    if (id==coop::element::kInvalidId) id=coop::remote_prop::ResolveMirrorEidByActor(fx.object);
+                    if (id!=coop::element::kInvalidId) hp.toolTargetElement=id;
+                }
                 session.SetLocalHandPose(true, hp);
             }
         }
@@ -663,13 +677,20 @@ void TickMirrors() {
                 std::memcpy(wh.relPos, hp.relPos, sizeof(hp.relPos));
                 std::memcpy(wh.relRot, hp.relRot, sizeof(hp.relRot));
                 wh.haveRel = true;
+                wh.toolFx={hp.toolKind,hp.toolFlags,{hp.toolTarget[0],hp.toolTarget[1],hp.toolTarget[2]}};
+                wh.toolFxAt=Now();
+                wh.toolTargetElement=hp.toolTargetElement;
             }
         }
         const int32_t pupIdx = R::InternalIndexOf(puppetActor);
+        auto fx=Now()-want.toolFxAt<350 ? want.toolFx : ue_wrap::physics_gun::Visuals{};
+        if (fx.kind==2 && want.toolTargetElement)
+            fx.object=coop::remote_prop::ResolveLiveActorByEid(want.toolTargetElement);
         const bool sameWant = m.generation == want.generation && m.cls == want.cls && m.name == want.name && m.puppetIdx == pupIdx &&
                               R::SlotSerial(pupIdx) == m.puppetSerial;
         if (mirrorLive && sameWant) {
             if (DriveMirror(m.actor, pup, want)) m.placed = true;
+            if (m.identity.Get()) ue_wrap::physics_gun::ApplyVisuals(m.actor,fx);
             continue;
         }
         if (m.failed && sameWant) continue;  // this item failed to spawn on this puppet (see Mirror)
@@ -677,6 +698,7 @@ void TickMirrors() {
         SpawnMirror(slot, puppetActor);
         Mirror& nm = g_mirrors[slot];
         if (nm.identity.Get() && DriveMirror(nm.actor, pup, want)) nm.placed = true;
+        if (nm.identity.Get()) ue_wrap::physics_gun::ApplyVisuals(nm.actor,fx);
     }
 }
 

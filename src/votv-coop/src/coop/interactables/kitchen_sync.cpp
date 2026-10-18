@@ -1,6 +1,7 @@
 #include "coop/interactables/kitchen_sync.h"
 #include "coop/interactables/kitchen_wire.h"
 #include "coop/element/intent_authority.h"
+#include "coop/element/portable_identity.h"
 #include "coop/element/object_scan_hub.h"
 #include "coop/net/protocol.h"
 #include "coop/net/session.h"
@@ -20,6 +21,7 @@
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/script_gate.h"
 #include "ue_wrap/devices/kitchen_machine.h"
+#include "ue_wrap/devices/cremator.h"
 #include "ue_wrap/engine/world_identity.h"
 #include <atomic>
 #include <chrono>
@@ -38,6 +40,7 @@ std::atomic<net::Session*> g_session{nullptr};
 bool g_installed=false;
 uint32_t g_world=0;
 uint64_t g_next=0, g_animationAt=0;
+uint64_t g_recoveryAt=0;
 std::vector<ue_wrap::CachedObjRef> g_actors, g_scratch;
 struct Last { ue_wrap::CachedObjRef actor; net::KitchenStatePayload state{}; uint64_t at=0; };
 std::unordered_map<std::wstring,Last> g_sent;
@@ -70,7 +73,7 @@ void ResetWorld() {
     if (gen==g_world) return;
     g_world=gen; g_actors.clear(); g_scratch.clear(); g_sent.clear(); g_pending.clear();
     g_applied.clear(); g_retryAt.clear();
-    g_next=0; g_animationAt=0;
+    g_next=0; g_animationAt=0; g_recoveryAt=0;
     g_motion.clear(); g_doorOwners.clear();
     g_grillOps.clear();g_grillLast.clear();g_grillSaves.clear();++g_grillSerial;
     for (int slot=0;slot<net::kMaxPeers;++slot) g_intentAt[slot]=0;
@@ -92,6 +95,10 @@ bool Ready() { return true; }
 uint64_t ClassCount() { return ue_wrap::object_index::ClassSetVersion(); }
 void Identity(void* a,net::WireKey& key,uint32_t& eid) {
     key={}; eid=0;
+    if (K::Type(a)==K::Kind::Cremator) {
+        net::WireKeyFromString(element::PortableWireKey(a),key);
+        return;
+    }
     const auto k=ue_wrap::prop::GetInteractableKeyString(a);
     if (!k.empty() && k!=L"None" && k.size()<=sizeof(key.data)) net::WireKeyFromString(k,key);
     const auto id=prop_element_tracker::GetPropElementIdForActor(a);
@@ -106,15 +113,21 @@ std::wstring Token(const net::WireKey& key,uint32_t eid) {
 }
 void* Resolve(const net::WireKey& key,uint32_t eid) {
     void* a=nullptr;
-    if (key.len) a=prop_element_tracker::FindLiveActorByKey(net::StringFromWireKey(key));
+    if (key.len) {
+        const auto identity=net::StringFromWireKey(key);
+        for (void* machine : ue_wrap::cremator::Instances())
+            if (element::PortableWireKey(machine)==identity) { a=machine; break; }
+    }
+    if (!a && key.len) a=prop_element_tracker::FindLiveActorByKey(net::StringFromWireKey(key));
     if (!a && eid) a=remote_prop::ResolveLiveActorByEid(eid);
     if (!a || !IsMachine(a) || ue_wrap::world_identity::WorldOf(a)!=ue_wrap::world_identity::CurrentWorld()) return nullptr;
     return a;
 }
 bool Valid(const net::KitchenStatePayload& p) {
+    if (p.kind==6 && ((p.flags&~K::Opened)||!p.hasDoorPose)) return false;
     if(p.kind==5 && ((p.flags&~K::Active)||p.coals<0||p.coals>16||
         !std::isfinite(p.burn)||p.burn<0||p.burn>=1.01f))return false;
-    return kitchen_wire::ValidPose(p) && p.key.len<=sizeof(p.key.data) && (p.key.len || p.elementId) && p.kind>=1 && p.kind<=5 &&
+    return kitchen_wire::ValidPose(p) && p.key.len<=sizeof(p.key.data) && (p.key.len || p.elementId) && p.kind>=1 && p.kind<=6 &&
         !(p.flags&128) && p.mode>=0 && p.mode<=4 && std::isfinite(p.remaining) &&
         std::isfinite(p.timer) && std::isfinite(p.power) && p.remaining>=0 && p.remaining<=60 &&
         p.timer>=0 && p.timer<=60 && p.power>=0 && p.power<=1.01f;
@@ -265,6 +278,7 @@ void AfterGrillChange(const sg::Call& c) {
 }
 sg::Verdict OnAction(const sg::Call& c) {
     if (!Client() || c.fromOurCode || !IsMachine(c.object)) return sg::Verdict::Run;
+    if (K::Type(c.object)==K::Kind::Cremator) return sg::Verdict::Run;
     if (!net_pump::IsInAnnouncedWorld(c.object)) return sg::Verdict::Run;
     static R::ParamOffset actionOff{L"action"};
     const int32_t off=actionOff.Of(c.function);
@@ -374,14 +388,20 @@ void Tick() {
         if (now<g_next) return;
         // State-changing actions publish immediately. This pass is a recovery heartbeat,
         // so avoid polling every appliance and door several times a second.
-        g_next=now+1000;
+        g_next=now+50;
         for (auto it=g_sent.begin();it!=g_sent.end();) {
             if (!it->second.actor.Alive()) it=g_sent.erase(it); else ++it;
         }
         for (auto it=g_doorOwners.begin();it!=g_doorOwners.end();) {
             if (!it->second.actor.Alive() || now>=it->second.until) it=g_doorOwners.erase(it); else ++it;
         }
-        for (auto& r:g_actors) if (void* a=r.Get()) Publish(a,-1);
+        const bool recovery=now>=g_recoveryAt;
+        if (recovery) g_recoveryAt=now+1000;
+        for (auto& r:g_actors) if (void* a=r.Get()) {
+            // Cremator hinges move continuously; other appliances keep the
+            // previous recovery polling cadence.
+            if (K::Type(a)==K::Kind::Cremator || recovery) Publish(a,-1);
+        }
     }
 }
 void Apply(const net::KitchenStatePayload& p) {
@@ -399,6 +419,7 @@ void OnIntent(const net::KitchenIntentPayload& p,uint8_t senderSlot) {
     ResetWorld();
     void* a=Resolve(p.key,p.elementId);
     if (!a) return;
+    if (K::Type(a)==K::Kind::Cremator && p.op==1) return; // lever uses DoorVerbIntent
     auto target=element::IntentTarget::ForClientIntent(*s,senderSlot,500.f);
     if (!target.Authorize(a)) return;
     if(p.op>=5) {
@@ -441,7 +462,7 @@ void SendAllToSlot(int slot) {
 void OnDisconnect() {
     g_session.store(nullptr); g_actors.clear(); g_scratch.clear(); g_sent.clear(); g_pending.clear();
     g_applied.clear(); g_retryAt.clear();
-    g_next=g_animationAt=0; g_world=0;
+    g_next=g_animationAt=g_recoveryAt=0; g_world=0;
     g_motion.clear(); g_doorOwners.clear();
     g_grillOps.clear();g_grillLast.clear();g_grillSaves.clear();++g_grillSerial;
     for (int slot=0;slot<net::kMaxPeers;++slot) g_intentAt[slot]=0;

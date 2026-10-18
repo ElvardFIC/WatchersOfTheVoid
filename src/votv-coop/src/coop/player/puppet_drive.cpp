@@ -158,8 +158,8 @@ void DriveTick(coop::net::Session& session, bool worldReadyAnnounced) {
     }
     // Per-slot ragdoll PELVIS-physics drive. Decoupled from the pose stream above, so a momentary
     // pose-packet gap cannot stall the ragdoll velocity feed. Only FRESH packets apply -- the
-    // puppet's mirror body integrates between them. SetRagdollPose applies the velocity to the
-    // body and stamps the streamed pelvis rotation for the next Tick's ApplyToEngine. Runs BEFORE
+    // puppet's mirror body integrates between them. SetRagdollPose applies velocities and
+    // corrects pelvis positional drift without imposing a joint rotation. Runs BEFORE
     // the Tick loop so the velocity is set before the same-frame ApplyToEngine reads the body.
     for (int slot = 0; slot < coop::players::kMaxPeers; ++slot) {
         if (!g_puppets[slot].valid()) continue;

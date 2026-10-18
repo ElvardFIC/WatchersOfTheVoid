@@ -154,6 +154,7 @@
 #include "coop/creatures/npc_mirror.h"
 #include "coop/creatures/npc_sync.h"
 #include "coop/creatures/npc_world_enum.h"  // RegisterExistingWorldNpcs
+#include "coop/creatures/grayboar_sync.h"
 #include "coop/world/world_actor_sync.h"  // non-Character event-actor transform mirror (sibling of npc_sync)
 #include "coop/creatures/piramid_sync.h"  // piramid event choreography lane (mirror brain suppression + PyramidGather)
 #include "coop/player/players_registry.h"
@@ -214,6 +215,7 @@ void Install(coop::net::Session& session) {
     coop::npc_sync::Install(&session);
     coop::world_actor_sync::Install(&session);  // non-Character event-actor mirror (2nd BeginDeferred interceptor, disjoint allowlist)
     coop::piramid_sync::Install(&session);  // piramid event choreography lane (hooks arm lazily on the first piramid element)
+    coop::grayboar_sync::Install(&session);
     coop::item_activate::Install(&session);  // flashlight
     coop::player_damage::Install(&session);  // vitals damage relay (send + owner-apply)
     coop::weather_sync::Install(&session);  // weather
@@ -565,6 +567,7 @@ DisconnectStats DisconnectAll() {
     coop::npc_sync::OnDisconnect();
     coop::world_actor_sync::OnDisconnect();  // drain WorldActor mirrors (K2 client ones) + clear host reverse-map
     coop::piramid_sync::OnDisconnect();  // drop pending gather + gather-edge map + restored-tick set (hooks stay latched)
+    coop::grayboar_sync::OnDisconnect();
     coop::npc_adoption::OnSessionEnd();  // drop pending deferred adoptions + reset latches
     coop::kerfur_prop_adoption::OnSessionEnd();  // drop pending prop-form kerfur adoptions
     coop::dev::dev_lanes::EndSession();  // [dev] the probes' verdicts, before the prop seams reset below, then each drill back to its first step

@@ -19,6 +19,7 @@
 #include "coop/net/protocol.h"
 
 #include <cstdint>
+#include <chrono>
 
 namespace coop {
 
@@ -26,27 +27,25 @@ class RagdollDisplay {
 public:
     // Wire-bit edge detector (called on every pose packet with the streamed
     // kStateBitRagdoll). Spawns the body on the rising edge / recovers on the
-    // falling edge -- exactly once per transition (the bit is continuous, so a
+    // falling edge. A failed spawn is retried with a backoff while the bit stays
+    // set, including recovery after a body dies (the bit is continuous, so a
     // dropped edge self-heals on the next pose; TeardownForDestroy resets the
     // latch so a recycled puppet re-converges). Returns true when a STOP ran
     // this call: the owner re-bases its presentation yaw on the wire truth
     // (the get-up is a visual discontinuity anyway).
     bool OnWireBit(bool ragdollBit, void* puppetActor, int32_t puppetIdx);
 
-    // Ragdoll PHYSICS sync (RemotePlayer::SetRagdollPose): slave the live body's
-    // pelvis velocity to the sender's streamed state so the body tumbles to TRACK
-    // the sender's real ragdoll. The snapshot's pelvis ROTATION is not read -- it
-    // tumbled an earlier, kel-attached display -- and stays on the wire untouched.
+    // Ragdoll physics sync: apply pelvis velocities and correct position by
+    // translating all bodies together. First sample/teleport aligns immediately;
+    // ordinary drift converges gradually. Limbs still simulate locally; pelvis
+    // rotation remains unused because applying it alone would fight the joints.
     // Returns true when applied to a live body; a packet racing ahead of the spawn
     // edge is dropped harmless, and the next one applies.
     bool SetPose(const coop::net::RagdollPoseSnapshot& snap);
 
     // ApplyToEngine head. While ragdolled the VISIBLE player-model body is the whole
-    // display and the attachment owns the puppet transform -- pose-driving would fight
-    // it; there is nothing to drive per frame. Keeping the kel meshes visible and
-    // slaving them to the body with a master pose is not an option either: name-based
-    // master-pose couples only four of the six bones, because the visible skin's
-    // skeleton has no thighs or lowlegs, so the legs would not follow.
+    // display and the attachment owns the puppet transform -- ordinary standing
+    // pose-driving would fight it. Fresh ragdoll packets correct the body's pelvis.
     enum class Drive {
         Inactive,   // not ragdolling -- the owner pose-drives as normal
         Attached,   // attachment owns the transform this tick -- owner returns
@@ -71,12 +70,13 @@ private:
     void Start(void* puppetActor, int32_t puppetIdx);
     void Stop(void* puppetActor, int32_t puppetIdx);
 
-    // Last WIRE-bit value acted on (edge detector: the spawn/recover dispatch
-    // fires once per transition, no retry).
+    // Last wire state; unsuccessful starts retry no faster than twice a second.
     bool wireState_ = false;
+    std::chrono::steady_clock::time_point retryAfter_{};
     // The puppet is currently pelvis-attached to a body -> the attachment
     // drives the transform instead of the pose drive.
     bool active_ = false;
+    bool pelvisAligned_ = false;
     // The spawned (visible) playerRagdoll_C body + its GUObjectArray index
     // (IsLiveByIndex safety across ticks). null/-1 when not ragdolled.
     ue_wrap::CachedObjRef bodyRef_;

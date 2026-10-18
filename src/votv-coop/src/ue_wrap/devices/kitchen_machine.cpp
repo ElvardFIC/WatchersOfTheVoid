@@ -17,8 +17,8 @@ namespace ue_wrap::kitchen_machine {
 namespace {
 namespace R = reflection;
 const wchar_t* const kClasses[] = {L"prop_microwave_C", L"prop_coffeeMaker_C",
-    L"prop_coffeevending_C", L"prop_minioven_C", L"prop_bbq_C"};
-CachedObjRef g_classes[5];
+    L"prop_coffeevending_C", L"prop_minioven_C", L"prop_bbq_C", L"cremator_C"};
+CachedObjRef g_classes[6];
 
 // These small layouts are measured on the LIVE class by name. Keep them with the class's
 // slot and serial: a Blueprint reloaded by travel must never inherit stale field offsets.
@@ -78,7 +78,7 @@ struct Layout {
         light{L"PointLight"}, loop{L"microwave_loop"}, spin{L"spin"}, buzz{L"audio_buzz"},
         coals{L"coals"}, burn{L"a"};
 };
-Layout g_layouts[5];
+Layout g_layouts[6];
 Layout& Fields(Kind k) { return g_layouts[static_cast<int>(k)-1]; }
 void* Object(Field& f, void* a) {
     void* p = nullptr;
@@ -95,7 +95,7 @@ bool ReadFlag(Bit& f, void* a, uint8_t bit, uint8_t& flags) {
 Kind Type(void* actor) {
     void* cls = actor ? R::ClassOf(actor) : nullptr;
     if (!cls) return Kind::None;
-    for (int i=0;i<5;++i) {
+    for (int i=0;i<6;++i) {
         void* base = g_classes[i].Get();
         if (!base) {
             base = object_index::ClassByName(kClasses[i]);
@@ -107,7 +107,7 @@ Kind Type(void* actor) {
 }
 void* Door(void* actor) {
     const Kind k = Type(actor);
-    if (k != Kind::Microwave && k != Kind::MiniOven) return nullptr;
+    if (k != Kind::Microwave && k != Kind::MiniOven && k != Kind::Cremator) return nullptr;
     auto& l = Fields(k);
     void* comp = Object(l.door,actor);
     return comp ? Object(l.child,comp) : nullptr;
@@ -194,6 +194,15 @@ bool Read(void* actor, State& out) {
     s.kind = Type(actor);
     if (s.kind==Kind::None) return false;
     auto& l = Fields(s.kind);
+    if (s.kind==Kind::Cremator) {
+        void* d=Door(actor);
+        bool opened=false;
+        if (!d || !swinger::EnsureResolved() || !swinger::TryReadOpen(d,opened)) return false;
+        if (opened) s.flags|=Opened;
+        s.hasDoorPose=ReadDoorPose(actor,s.doorPose);
+        if (!s.hasDoorPose) return false;
+        out=s; return true;
+    }
     bool ok = true;
     if (s.kind==Kind::Microwave || s.kind==Kind::MiniOven) {
         ok &= ReadFlag(l.active,actor,Active,s.flags);
@@ -228,6 +237,10 @@ bool Read(void* actor, State& out) {
 }
 bool Apply(void* actor, const State& s) {
     if (Type(actor)!=s.kind || s.kind==Kind::None) return false;
+    if (s.kind==Kind::Cremator) {
+        // Door paint only; lever/burning state has its own authoritative lane.
+        return SetDoor(actor,(s.flags&Opened)!=0) && s.hasDoorPose && ApplyDoorPose(actor,s.doorPose);
+    }
     auto& l = Fields(s.kind);
     State before{};
     if (!Read(actor,before)) return false;

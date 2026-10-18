@@ -70,8 +70,12 @@ void RegisterPerSlotClear(PerSlotClearFn,void*) {}
 const Row& Get(int i) { static Row r; r.playerNo=i==1?test::occupancy:uint16_t(i+1); return r; }
 }
 namespace coop::element {
+std::wstring PortableWireKey(void*) { return L"oven"; }
 IntentTarget IntentTarget::ForClientIntent(net::Session&,uint8_t,float) { return {}; }
 IntentSubject IntentTarget::Authorize(void*) const { return {test::reach ? IntentOutcome::Ok : IntentOutcome::OutOfReach}; }
+}
+namespace ue_wrap::cremator {
+const std::vector<void*>& Instances() { static const std::vector<void*> rows; return rows; }
 }
 using namespace coop;
 using namespace coop::kitchen_sync;
@@ -134,6 +138,15 @@ int main() {
     test::recordOK=false;AfterGrillChange(call);CHECK(test::records==2&&!g_grillSaves.empty());
     test::recordOK=true;for(auto& row:g_grillSaves)row.second.retryAt=0;Tick();CHECK(test::records==3&&g_grillSaves.empty());
     OnGrillIgnite(call);OnDisconnect();CHECK(g_grillOps.empty()&&g_grillSaves.empty());
-    std::puts("PASS: production kitchen mouse batching/release, no close echo, pose validation, ownership, reach and travel");
+    Reset(s,net::Role::Host);test::state.kind=ue_wrap::kitchen_machine::Kind::Cremator;
+    test::state.hasDoorPose=true;test::state.doorPose.TX=42;
+    auto crematorIntent=motion;OnIntent(crematorIntent,1);CHECK(test::moves==1);
+    Publish(&test::oven,-1);CHECK(!s.kitchens.empty()&&s.kitchens.back().kind==6);
+    auto crematorState=s.kitchens.back();CHECK(crematorState.doorPose[4]==42);
+    crematorIntent.op=1;const auto before= test::moves;OnIntent(crematorIntent,1);CHECK(test::moves==before);
+    Reset(s,net::Role::Client);test::state.kind=ue_wrap::kitchen_machine::Kind::Cremator;
+    Apply(crematorState);CHECK(test::applies==1&&test::state.doorPose.TX==42);
+    crematorState.flags=ue_wrap::kitchen_machine::Active;CHECK(!Valid(crematorState));
+    std::puts("PASS: production kitchen/cremator mouse batching, pose validation, parent identity, ownership, reach and travel");
     std::puts("PASS: grill ignition/extinguish, admission retries, delayed fuel, passive client, canonical paint, supersession, occupancy/reach/serial/world/teardown");
 }

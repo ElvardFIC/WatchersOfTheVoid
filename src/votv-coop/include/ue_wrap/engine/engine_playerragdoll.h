@@ -14,9 +14,10 @@ namespace ue_wrap::engine {
 // No plushie substitute on failure. Death-free (never calls ragdollMode).
 void* SpawnPlayerRagdollBody(void* ownerPlayer, const FVector& location, const FRotator& rotation);
 
-// Copy the selected model/materials and install the full compatible physical
-// skeleton, replacing playerRagdoll_C's plushie physics override. No simulation
-// starts until this succeeds. Unsupported rigs return false without a substitute.
+// Copy the selected model/materials and install its own articulated physics asset,
+// or the full Kerfur asset for a compatible common skeleton. Replaces the plushie
+// physics override; requires valid bodies, pelvis and joints. Unsupported rigs
+// return false without a substitute. No simulation starts until this succeeds.
 bool ConfigurePlayerRagdollMesh(void* sourceMesh, void* targetMesh);
 
 // Attach `actor` to `body`'s mesh at the pelvis bone (KeepWorld), so it follows the flop; Detach
@@ -33,6 +34,10 @@ bool ReadLocalRagdollPelvisPhysics(void* mainPlayer, FVector& outLoc, FRotator& 
 // The receiver's ragdoll stream: set the mirror body's pelvis linear and angular velocity so it
 // tracks the sender's flop. Game thread.
 void DriveRagdollBodyPelvisVelocity(void* body, const FVector& linVel, const FVector& angVel);
+
+// Translate all simulated bodies together, preserving velocities and joint pose.
+// The caller computes the pelvis correction; no simulation or network policy here.
+bool TranslateRagdollBody(void* body, const FVector& delta);
 
 // A ragdoll actor's simulating SkeletalMesh; null if dead. Game thread.
 void* GetRagdollBodyMesh(void* ragdollActor);

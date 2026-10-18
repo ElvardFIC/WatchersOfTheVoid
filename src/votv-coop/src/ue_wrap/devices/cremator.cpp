@@ -2,19 +2,25 @@
 
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/call.h"
+#include "ue_wrap/core/object_index.h"
+#include "ue_wrap/core/cached_obj_ref.h"
+#include "ue_wrap/core/component_calls.h"
 #include "ue_wrap/engine/world_identity.h"
 #include "coop/element/portable_identity.h"
 #include "ue_wrap/engine/engine.h"
 
 #include <cstdint>
 #include <cstring>
+#include <chrono>
+#include <cmath>
 
 namespace ue_wrap::cremator {
 namespace {
 namespace R = reflection;
-void* g_machineClass = nullptr;
-void* g_doorClass = nullptr;
+CachedObjRef g_machineClass;
+CachedObjRef g_doorClass;
 uint32_t g_generation = 0;
+std::chrono::steady_clock::time_point g_nextScan{};
 std::vector<void*> g_machines;
 std::vector<int32_t> g_machineIndices;
 
@@ -27,37 +33,39 @@ bool IsOf(void* actor, void* base) {
 }
 
 bool EnsureResolved() {
-    if (g_machineClass && g_doorClass) return true;
-    g_machineClass = R::FindClass(L"cremator_C");
-    g_doorClass = R::FindClass(L"prop_swinger_crematorDoor_C");
-    return g_machineClass && g_doorClass;
+    if (g_machineClass.Get() && g_doorClass.Get()) return true;
+    if (!g_machineClass.Get()) g_machineClass.Set(object_index::ClassByName(L"cremator_C"));
+    if (!g_doorClass.Get()) g_doorClass.Set(object_index::ClassByName(L"prop_swinger_crematorDoor_C"));
+    return g_machineClass.Get() && g_doorClass.Get();
 }
 
-bool IsCrematorDoor(void* actor) { return EnsureResolved() && IsOf(actor, g_doorClass); }
-bool IsCremator(void* actor) { return EnsureResolved() && IsOf(actor, g_machineClass); }
+bool IsCrematorDoor(void* actor) { EnsureResolved(); return IsOf(actor, g_doorClass.Get()); }
+bool IsCremator(void* actor) { EnsureResolved(); return IsOf(actor, g_machineClass.Get()); }
 
 const std::vector<void*>& Instances() {
     EnsureResolved();
     const uint32_t gen = world_identity::Generation();
+    const auto now=std::chrono::steady_clock::now();
     if (g_generation == gen) {
         bool live = true;
         for (size_t i = 0; i < g_machines.size(); ++i)
             if (!R::IsLiveByIndex(g_machines[i], g_machineIndices[i])) { live = false; break; }
-        if (live && !g_machines.empty()) return g_machines;
+        if (live && (!g_machines.empty() || now<g_nextScan)) return g_machines;
     }
     g_machines.clear();
     g_machineIndices.clear();
-    if (g_machineClass) {
+    if (void* machineClass=g_machineClass.Get()) {
         const int32_t n = R::NumObjects();
         for (int32_t i = 0; i < n; ++i) {
             void* a = R::ObjectAt(i);
-            if (a && IsCremator(a) && R::IsLive(a) && !R::NameStartsWith(R::NameOf(a), L"Default__")) {
+            if (a && IsOf(a, machineClass) && R::IsLive(a) && !R::NameStartsWith(R::NameOf(a), L"Default__")) {
                 g_machines.push_back(a);
                 g_machineIndices.push_back(R::InternalIndexOf(a));
             }
         }
     }
     g_generation = gen;
+    g_nextScan=now+std::chrono::seconds(1);
     return g_machines;
 }
 
@@ -100,6 +108,33 @@ bool CallUseLever(void* actor) {
     if (!fn) return false;
     ue_wrap::ParamFrame frame(fn);
     return frame.valid() && ue_wrap::Call(actor, frame);
+}
+
+bool ApplyLeverState(void* actor,bool active) {
+    if (!IsCremator(actor)) return false;
+    CachedObjRef ref; ref.Set(actor);
+    void* cls=R::ClassOf(actor);
+    const int off=R::FindPropertyOffset(cls,L"handleLimeline");
+    int activeOff=-1,animOff=-1; uint8_t activeMask=0,animMask=0;
+    if (off<0 || !R::FindBoolProperty(cls,L"isActive",activeOff,activeMask) ||
+        !R::FindBoolProperty(cls,L"anim",animOff,animMask)) return false;
+    void* timeline=nullptr;
+    std::memcpy(&timeline,static_cast<uint8_t*>(actor)+off,sizeof(timeline));
+    if (!timeline || !R::IsLive(timeline)) return false;
+    CachedObjRef timelineRef; timelineRef.Set(timeline);
+    ParamFrame length(R::FindDispatchFunctionCached(R::ClassOf(timeline),L"GetTimelineLength"));
+    float seconds=0;
+    if (!length.valid() || !Call(timeline,length) || !length.GetRaw(L"ReturnValue",&seconds,sizeof(seconds)) ||
+        !std::isfinite(seconds) || seconds<=0 || !ref.Get() || !timelineRef.Get()) return false;
+    if (!component_calls::CallParamlessNamed(timeline,L"Stop") || !ref.Get() || !timelineRef.Get()) return false;
+    ParamFrame position(R::FindDispatchFunctionCached(R::ClassOf(timeline),L"SetPlaybackPosition"));
+    if (!position.valid() || !position.Set<float>(L"NewPosition",active ? seconds : 0.f) ||
+        !position.Set<bool>(L"bFireEvents",false) || !position.Set<bool>(L"bFireUpdate",true) ||
+        !Call(timeline,position) || !ref.Get()) return false;
+    auto* bytes=static_cast<uint8_t*>(actor);
+    bytes[activeOff]=active ? bytes[activeOff]|activeMask : bytes[activeOff]&~activeMask;
+    bytes[animOff]&=~animMask;
+    return true;
 }
 
 std::wstring LeverWireKey(void* actor) {

@@ -93,7 +93,7 @@ struct CrematorRow { coop::net::KeyedTogglePayload payload{}; uint8_t mask = 0; 
 std::vector<CrematorRow> g_crematorRows;
 std::vector<coop::net::KeyedTogglePayload> g_pendingCrematorApply;
 bool g_replayingCremator = false;
-struct CrematorObservedState { std::wstring key; bool active = false; };
+struct CrematorObservedState { std::wstring key; bool active = false; uint64_t nextAt=0; };
 std::vector<CrematorObservedState> g_crematorObserved;
 uint64_t g_lastCrematorPollMs = 0;
 
@@ -138,11 +138,9 @@ bool ApplyCrematorState(const coop::net::KeyedTogglePayload& p) {
     bool active = false;
     if (!ue_wrap::cremator::TryReadLeverActive(machine, active)) return false;
     const bool wanted = p.action != 0;
-    if (active == wanted) return true;
-    if (!ue_wrap::cremator::CanReplayLever(machine)) return false;
+    if (active == wanted && ue_wrap::cremator::CanReplayLever(machine)) return true;
     CrematorReplayGuard replay;
-    const bool called = ue_wrap::cremator::CallUseLever(machine);
-    return called;
+    return ue_wrap::cremator::ApplyLeverState(machine,wanted);
 }
 
 bool TakeToken(uint8_t slot) {
@@ -438,9 +436,12 @@ void Tick(coop::net::Session& session) {
                 if (key.empty() || !ue_wrap::cremator::TryReadLeverActive(machine, active)) continue;
                 auto it = std::find_if(g_crematorObserved.begin(), g_crematorObserved.end(),
                     [&](const CrematorObservedState& row) { return row.key == key; });
-                if (it == g_crematorObserved.end()) g_crematorObserved.push_back({key, active});
-                else if (it->active != active) {
+                if (it == g_crematorObserved.end()) {
+                    g_crematorObserved.push_back({key,active,now+2000});
+                    PublishCrematorLever(machine,active);
+                } else if (it->active != active || now>=it->nextAt) {
                     it->active = active;
+                    it->nextAt=now+2000;
                     PublishCrematorLever(machine, active);
                 }
             }

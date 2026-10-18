@@ -289,6 +289,9 @@ void Session::StoreStreamPacket(MsgType type, int routeSlot, int peerSlot,
         if (len < static_cast<int>(sizeof(HandPosePacket))) return;
         HandPosePacket pkt;
         std::memcpy(&pkt, data, sizeof(pkt));
+        if (pkt.pose.toolKind>2 || (pkt.pose.toolFlags&~31)) return;
+        for (float value : pkt.pose.toolTarget)
+            if (!std::isfinite(value) || std::fabs(value)>kMaxCoord) return;
         // Trust-boundary sanitize (RagdollPose shape): finite + arm's-reach pos +
         // canonical rotator range; a poisoned value would go onto SetActorLocation/
         // Rotation of the display mirror.

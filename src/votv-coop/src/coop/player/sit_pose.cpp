@@ -80,15 +80,15 @@ void Tick() {
         g_localSitting = false;
         return;
     }
-    g_localSitting = ue_wrap::sit_pose::IsSittingOnSomething(local) ||
-                     coop::atv_sync::LocalIsDriving();
-    ue_wrap::sit_pose::DriveSitting(local, g_localSitting);
-
     void* seat = nullptr;
     const bool hasSeat = ue_wrap::engine::ReadMainPlayerSittingOn(local, seat) && seat &&
                          ue_wrap::reflection::IsLive(seat);
     const bool onAtv = hasSeat && ue_wrap::atv::EnsureResolved() && ue_wrap::atv::IsAtv(seat);
-    const bool chair = hasSeat && !onAtv;
+    // Capture/attachment actors can also occupy sittingOn (e.g. killer wisps).
+    // Only actual seats may replace the native capture pose with our sit clip.
+    const bool chair = hasSeat && IsChair(seat);
+    g_localSitting = chair || onAtv || coop::atv_sync::LocalIsDriving();
+    ue_wrap::sit_pose::DriveSitting(local, g_localSitting);
     // The clip's hips are not on the capsule. Shift the mesh only: the actor stays, so standing
     // up still leaves the ground where the game put the feet. Chair mesh: half the body length,
     // plus two heads down and two heads forward, plus another half head down and two heads

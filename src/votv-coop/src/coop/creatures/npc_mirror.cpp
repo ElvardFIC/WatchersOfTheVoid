@@ -514,7 +514,8 @@ void TickClientNpcs() {
     if (s->TakeRemoteNpcBatch(batch)) {
         for (const auto& snap : batch) {
             if (!std::isfinite(snap.x) || !std::isfinite(snap.y) || !std::isfinite(snap.z) ||
-                !std::isfinite(snap.yaw) || !std::isfinite(snap.speed)) continue;
+                !std::isfinite(snap.yaw) || !std::isfinite(snap.pitch) ||
+                !std::isfinite(snap.roll) || !std::isfinite(snap.speed)) continue;
             if (std::fabs(snap.x) > 1.0e6f || std::fabs(snap.y) > 1.0e6f || std::fabs(snap.z) > 1.0e6f) continue;
             // The look target is validated only when its bit is set (other NPCs leave it zero with
             // the bit clear); a corrupt one with the bit set drops the snapshot.

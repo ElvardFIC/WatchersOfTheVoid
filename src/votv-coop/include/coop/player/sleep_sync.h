@@ -27,12 +27,11 @@ void Install(coop::net::Session* session);
 // dilation undo, clamp the client need during the phase, and manage the dreamProbability policy.
 // Cheap when idle -- a couple of cached field reads.
 //
-// The authority rules it enforces. CLIENTS clamp their need at 99 for the phase, so only the HOST
-// can end the night naturally and a first-to-fill race becomes one authority; and they run
-// dreamProbability=0 all session, nightmares being host-only by design. The host's own roll is
-// restored to the -1 sentinel, which is the blueprint's "use the default", only DURING the
-// accelerate phase. A host nightmare wakes the house structurally, because the roll that picks
-// it calls wakeup() immediately before createDream, so the falling edge IS the End.
+// CLIENTS clamp their need at 98 for the phase, so only the HOST can end the night
+// naturally. Each peer restores dreamProbability=-1 during acceleration and uses
+// its own native nightmaresEnabled/bed probability/roll. Outside that phase the
+// sleep roll is suppressed. A nightmare interrupts the shared night via the
+// sleeper's falling edge, but its scene is personal and is never broadcast.
 void Tick();
 
 // Wire ingest (both roles; see SleepStatePayload op semantics). The gate has four phases.
@@ -52,7 +51,7 @@ void Tick();
 //   them all: the host broadcasts End{natural} and receivers reflect wakeup().
 void OnReliable(const coop::net::SleepStatePayload& p, uint8_t senderSlot);
 
-// Host-selected nightmare replay, ordered after the SleepState End edge.
+// Reserved legacy packet; ignored because replay bypasses personal conditions.
 void OnDreamScene(const coop::net::DreamScenePayload& p, uint8_t senderSlot);
 
 // HOST: a joiner arrived (world-ready) -- ends a running accelerate phase

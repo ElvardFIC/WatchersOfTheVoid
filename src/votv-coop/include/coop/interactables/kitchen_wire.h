@@ -13,7 +13,7 @@ inline void EncodePose(const ue_wrap::kitchen_machine::State& s,net::KitchenStat
 inline bool ValidPose(const net::KitchenStatePayload& p) {
     if (p.hasDoorPose>1) return false;
     if (!p.hasDoorPose) return true;
-    if (p.kind!=1 && p.kind!=4) return false;
+    if (p.kind!=1 && p.kind!=4 && p.kind!=6) return false;
     for (float n:p.doorPose) if (!std::isfinite(n)) return false;
     float length=0;
     for (int i=0;i<4;++i) length+=p.doorPose[i]*p.doorPose[i];

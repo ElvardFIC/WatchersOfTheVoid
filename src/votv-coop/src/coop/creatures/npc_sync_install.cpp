@@ -62,8 +62,8 @@ std::atomic<bool> g_npcSyncDisabledThisProcess{false};
 
 bool IsInstalled() {
     // True once Install's attempt completed, so it stops retrying. On the happy path the latch is
-    // set only after every allowlisted class resolves (a partial resolve early-returns without
-    // latching), so a latched install resolved all of it and the allowlist test is fully usable.
+    // set after the lifecycle seams are armed. Classes may still load later;
+    // ancestry-name matching makes their first spawn eligible immediately.
     // On a broken build (the deferred-spawn UFunction or its params unresolvable) it latches with
     // a null allowlist to stop retrying, and the reconcile sweep safely no-ops. Deliberately
     // ignores the disabled flag (the interceptor disabled but the allowlist resolved): callers
@@ -72,7 +72,7 @@ bool IsInstalled() {
 }
 
 void RefreshLateAllowlist() {
-    for (size_t i = P::name::kNpcAllowlistRequiredSize; i < P::name::kNpcAllowlistSize; ++i) {
+    for (size_t i = 0; i < P::name::kNpcAllowlistSize; ++i) {
         if (g_npcAllowlist[i]) continue;
         void* cls = ue_wrap::object_index::ClassByName(P::name::kNpcAllowlist[i]);
         if (!cls) continue;
@@ -182,21 +182,17 @@ void Install(coop::net::Session* session) {
     // Already-resolved entries skip the lookup, and the unresolved walks are bounded by the
     // throttle gate at the top.
     size_t resolved = 0;
-    for (size_t i = 0; i < P::name::kNpcAllowlistRequiredSize; ++i) {
+    for (size_t i = 0; i < P::name::kNpcAllowlistEagerSize; ++i) {
         if (!g_npcAllowlist[i]) {
             g_npcAllowlist[i] = R::FindClass(P::name::kNpcAllowlist[i]);
         }
         if (g_npcAllowlist[i]) ++resolved;
     }
-    if (resolved < P::name::kNpcAllowlistRequiredSize) {
-        // Not installed yet: every required class must be cached before going live, or some NPCs
-        // would be suppressed and others not, depending on resolve timing. A late entry has no
-        // instance to suppress before its class loads, so it never holds the lane back. Throttle
-        // the next attempt.
-        s_installRetryCountdown = 60;
-        UE_LOGI("npc-suppress: NPC class load partial (%zu/%zu) -- throttled retry in ~0.5s",
-                resolved, P::name::kNpcAllowlistRequiredSize);
-        return;
+    if (resolved < P::name::kNpcAllowlistEagerSize) {
+        // One unloaded optional creature must not disable every NPC's lifecycle
+        // and spawn catch. Ancestry-name matching admits its very first spawn.
+        UE_LOGI("npc-suppress: NPC class load partial (%zu/%zu) -- installing lifecycle now; unresolved classes match by name",
+                resolved, P::name::kNpcAllowlistEagerSize);
     }
     RefreshLateAllowlist();
 

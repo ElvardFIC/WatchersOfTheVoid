@@ -1,6 +1,6 @@
 // coop/creatures/npc_pose_drive.cpp -- the CLIENT-mirror pose interpolator + engine drive for
-// coop::element::Npc. See coop/element/npc.h. A SUBSET of remote_player.cpp (pos + yaw +
-// speed + stateBits; no pitch/headYawDelta/vitals/ragdoll/mesh-offset).
+// coop::element::Npc. See coop/element/npc.h. A SUBSET of remote_player.cpp (pos + full rotation +
+// speed + stateBits; no headYawDelta/vitals/ragdoll/mesh-offset).
 //
 // The interp is the proven advance-before-rebase shape (the interp-starvation fix,
 // the mirror starved of interpolation): SetTargetNpcPose advances the open window FIRST,
@@ -92,12 +92,15 @@ void Npc::SetTargetNpcPose(const coop::net::EntityPoseSnapshot& snap) {
     if (!hasPose_ || distErr > snapThresh) {
         curPos_ = tgtPos;
         curYaw_ = snap.yaw;
+        curPitch_ = snap.pitch; curRoll_ = snap.roll;
         curSpeed_ = snap.speed;
         curStateBits_ = snap.stateBits;
         targetPos_ = tgtPos;
         targetYaw_ = snap.yaw;
+        targetPitch_ = snap.pitch; targetRoll_ = snap.roll;
         errorPos_ = ue_wrap::FVector{};
         errorYaw_ = 0.f;
+        errorPitch_ = errorRoll_ = 0.f;
         if (hasBodyYaw_) { curBodyYaw_ = snap.bodyYaw; targetBodyYaw_ = snap.bodyYaw; errorBodyYaw_ = 0.f; }
         window_.Close();  // frozen at target (snapped)
         hasPose_ = true;
@@ -111,12 +114,15 @@ void Npc::SetTargetNpcPose(const coop::net::EntityPoseSnapshot& snap) {
 
     targetPos_ = tgtPos;
     targetYaw_ = snap.yaw;
+    targetPitch_ = snap.pitch; targetRoll_ = snap.roll;
     curSpeed_ = snap.speed;          // not interpolated -- the AnimBP blends locomotion
     curStateBits_ = snap.stateBits;  // snapped
     errorPos_.X = tgtPos.X - curPos_.X;
     errorPos_.Y = tgtPos.Y - curPos_.Y;
     errorPos_.Z = tgtPos.Z - curPos_.Z;
     errorYaw_ = OffsetDegrees(curYaw_, snap.yaw);
+    errorPitch_ = OffsetDegrees(curPitch_, snap.pitch);
+    errorRoll_ = OffsetDegrees(curRoll_, snap.roll);
     if (hasBodyYaw_) { targetBodyYaw_ = snap.bodyYaw; errorBodyYaw_ = OffsetDegrees(curBodyYaw_, snap.bodyYaw); }
     window_.Open(NowMs(), kInterpWindowMs);
     dirty_ = true;
@@ -130,11 +136,14 @@ void Npc::AdvanceInterp() {
     curPos_.Y += errorPos_.Y * dAlpha;
     curPos_.Z += errorPos_.Z * dAlpha;
     curYaw_     += errorYaw_     * dAlpha;
+    curPitch_ += errorPitch_ * dAlpha;
+    curRoll_ += errorRoll_ * dAlpha;
     curBodyYaw_ += errorBodyYaw_ * dAlpha;  // no-op when errorBodyYaw_ == 0, i.e. not tracking
     dirty_ = true;
     if (arrived) {
         curPos_ = targetPos_;  // exact arrival (kills float drift over the window)
         curYaw_ = targetYaw_;
+        curPitch_ = targetPitch_; curRoll_ = targetRoll_;
         curBodyYaw_ = targetBodyYaw_;
     }
 }
@@ -161,7 +170,7 @@ void Npc::ApplyToEngine() {
     // NPC capsule centre IS the actor pivot (the host streams the actor's location, the mirror is the
     // same class spawned at the same place) -- no mesh-offset reconstruction (unlike RemotePlayer).
     E::SetActorLocation(actor, curPos_);
-    E::SetActorRotation(actor, ue_wrap::FRotator{0.f, curYaw_, 0.f});
+    E::SetActorRotation(actor, ue_wrap::FRotator{curPitch_, curYaw_, curRoll_});
     // Drive the mirror's OWN CMC so its AnimBP reads the right Velocity + MovementMode (the native
     // locomotion path -- the same fields the host NPC's possessed CMC carries). Reconstruct planar
     // velocity from the streamed body-yaw + speed magnitude.

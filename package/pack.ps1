@@ -1,17 +1,17 @@
-# Builds WatchersOfTheVoid-<version>.zip for r2modman / Thunderstore "Import local mod", in the layout of
+﻿# Builds WatchersOfTheVoid-<version>.zip for r2modman / Thunderstore "Import local mod", in the layout of
 # the upstream package (manifest at the root, mod\ for the UE4SS mod folder, pak\ for LogicMods).
 $ErrorActionPreference = 'Stop'
 $root    = Split-Path -Parent $PSScriptRoot
 $src     = $root
-$dll     = Join-Path $src 'build\votv-coop-2150\main.dll'
+$dll     = Join-Path $src 'build\votv-coop-2152\main.dll'
 $dist    = Join-Path $root 'dist'
 $stage   = Join-Path $dist 'stage'
-$version = '0.9.2150'
+$version = '0.9.2152'
 $zip     = Join-Path $dist "WatchersOfTheVoid-$version.zip"
 
 if (-not (Test-Path -LiteralPath $dll)) { throw "build main.dll first: $dll" }
 $pv = [Diagnostics.FileVersionInfo]::GetVersionInfo($dll).ProductVersion
-if ($pv -ne '0.9.0n b2150') { throw "main.dll identifies as '$pv', not '0.9.0n b2150'" }
+if ($pv -ne '0.9.0n b2152') { throw "main.dll identifies as '$pv', not '0.9.0n b2152'" }
 
 $resolvedDist = [IO.Path]::GetFullPath($dist).TrimEnd('\')
 $resolvedStage = [IO.Path]::GetFullPath($stage)
@@ -40,7 +40,7 @@ Copy-Item (Join-Path $PSScriptRoot 'README.md') (Join-Path $stage 'README.md')
 # This package's changelog is only the Plus notes. The upstream history stays in the
 # Pelmentor tree and is not appended, so the r2modman page is not that whole log.
 Copy-Item (Join-Path $PSScriptRoot 'CHANGELOG_PLUS.md') (Join-Path $stage 'CHANGELOG.md')
-Copy-Item (Join-Path $PSScriptRoot 'RELEASE_2150.md') (Join-Path $stage 'RELEASE_2150.md')
+Copy-Item (Join-Path $PSScriptRoot 'RELEASE_2152.md') (Join-Path $stage 'RELEASE_2152.md')
 Copy-Item (Join-Path $src 'LICENSE') (Join-Path $stage 'LICENSE')
 Copy-Item (Join-Path $src 'THIRD-PARTY-NOTICES.md') (Join-Path $stage 'THIRD-PARTY-NOTICES.md')
 
@@ -58,7 +58,7 @@ $z = [IO.Compression.ZipFile]::OpenRead($zip)
 try {
     $names = @($z.Entries | ForEach-Object { $_.FullName -replace '\\', '/' })
     foreach ($need in 'manifest.json', 'icon.png', 'README.md', 'CHANGELOG.md', 'LICENSE',
-                      'THIRD-PARTY-NOTICES.md', 'RELEASE_2150.md', 'mod/enabled.txt', 'mod/dlls/main.dll', 'pak/scientists.pak') {
+                      'THIRD-PARTY-NOTICES.md', 'RELEASE_2152.md', 'mod/enabled.txt', 'mod/dlls/main.dll', 'pak/scientists.pak') {
         if ($names -notcontains $need) { throw "zip lacks $need" }
     }
     $reader = New-Object IO.StreamReader(($z.GetEntry('manifest.json')).Open())

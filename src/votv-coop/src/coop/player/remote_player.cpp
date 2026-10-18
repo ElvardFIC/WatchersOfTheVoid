@@ -235,6 +235,14 @@ void RemotePlayer::SetTargetPose(const coop::net::PoseSnapshot& snap) {
     // the flop.
     if (ragdoll_.OnWireBit((snap.stateBits & coop::net::kStateBitRagdoll) != 0,
                            actor_, internalIdx_)) {
+        // Stop detached the puppet at its visible pelvis anchor. Rebase the
+        // standing interpolation there, not at the pre-fall capsule position;
+        // otherwise getting up jumps back before approaching the new wire pose.
+        ue_wrap::FVector recovered{};
+        if (hasPose_ && E::TryGetActorLocation(actor_,recovered) &&
+            std::isfinite(recovered.X) && std::isfinite(recovered.Y) && std::isfinite(recovered.Z))
+            curPos_=recovered;
+        window_.Close();
         bodyYaw_.Reset(curYaw_);
     }
 
@@ -379,7 +387,7 @@ void RemotePlayer::Tick() {
 }
 
 void RemotePlayer::SetRagdollPose(const coop::net::RagdollPoseSnapshot& snap) {
-    // The ragdoll physics stream (remote_player_ragdoll.h slaves the velocity onto the visible
+    // The ragdoll physics stream (remote_player_ragdoll.h corrects pelvis position/velocity on the visible
     // body); applied to a live body it marks dirty, so ApplyToEngine keeps running its ragdoll
     // head.
     if (ragdoll_.SetPose(snap)) dirty_ = true;

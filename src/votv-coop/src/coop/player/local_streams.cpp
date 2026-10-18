@@ -118,8 +118,8 @@ bool ReadLocalPose(void* local, void* controller, coop::net::PoseSnapshot& out) 
     // death is excluded by `dead`. One wrapper read.
     {
         bool isRagdoll = false, dead = false;
-        if (ue_wrap::engine::ReadMainPlayerRagdollState(local, isRagdoll, dead) &&
-            isRagdoll && !dead) {
+        if (ue_wrap::engine::ReadMainPlayerRagdollState(local, isRagdoll, dead) && !dead &&
+            (isRagdoll || ue_wrap::engine::GetLocalRagdollBodyMesh(local))) {
             out.stateBits |= coop::net::kStateBitRagdoll;
         }
     }

@@ -275,6 +275,8 @@ docs/**
 reference/agency-agents/
 
 # Local Plus development and packaging artifacts
+__pycache__/
+*.py[cod]
 /dist/
 /_toolchain/
 /_research/

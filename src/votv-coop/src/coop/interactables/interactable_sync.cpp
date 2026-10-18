@@ -123,22 +123,6 @@ const Adapter g_containerAdapter = {
     &ue_wrap::swinger::EnsureResolved,
     &ue_wrap::swinger::IsSwinger, // scan-hub predicates MUST depend only on class
     [](void* a) -> std::wstring {
-        if (ue_wrap::cremator::EnsureResolved() && ue_wrap::cremator::IsCrematorDoor(a)) {
-            ue_wrap::FVector at{};
-            if (!ue_wrap::engine::TryGetActorLocation(a, at)) return {};
-            void* best = nullptr;
-            float bestD2 = 0.f;
-            for (void* machine : ue_wrap::cremator::Instances()) {
-                ue_wrap::FVector m{};
-                if (!ue_wrap::engine::TryGetActorLocation(machine, m)) continue;
-                const float dx = m.X - at.X, dy = m.Y - at.Y, dz = m.Z - at.Z;
-                const float d2 = dx * dx + dy * dy + dz * dz;
-                if (!best || d2 < bestD2) { best = machine; bestD2 = d2; }
-            }
-            if (!best) return {};
-            const std::wstring identity = coop::element::PortableWireKey(best);
-            return identity.empty() ? std::wstring{} : identity + L"/cd";
-        }
         return ue_wrap::kitchen_machine::DoorParent(a) ? std::wstring{} : ue_wrap::prop::GetKeyString(a);
     },
     &ue_wrap::swinger::TryReadOpen,

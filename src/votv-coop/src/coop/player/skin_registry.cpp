@@ -183,11 +183,13 @@ std::vector<std::wstring> PakDirs() {
     std::vector<std::wstring> dirs;
     fs::path multivoid = logic / L"multivoid";
     if (fs::is_directory(multivoid, ec)) dirs.push_back(multivoid.wstring());
-    for (const auto& de : fs::directory_iterator(logic, ec)) {
+    for (const auto& de : fs::recursive_directory_iterator(logic, fs::directory_options::skip_permission_denied, ec)) {
         if (!de.is_directory(ec)) continue;
         if (de.path() == multivoid) continue;
         dirs.push_back(de.path().wstring());
     }
+    // Stable duplicate precedence across machines and rescans.
+    std::sort(dirs.begin() + (fs::is_directory(multivoid, ec) ? 1 : 0), dirs.end());
     return dirs;
 }
 

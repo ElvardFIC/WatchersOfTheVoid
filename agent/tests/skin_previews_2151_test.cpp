@@ -28,5 +28,9 @@ int main(int argc,char** argv){CHECK(argc==2);namespace fs=std::filesystem;names
  CHECK(find("kerfur_alien").previewPath.empty());touch(native/"kerfur_alien.png");
  CHECK(find("kerfur_alien").previewPath.empty());S::Entries(true);
  CHECK(!find("kerfur_alien").previewPath.empty());
+ const auto nested=custom/"nested"/"characters";
+ fs::create_directories(nested);touch(nested/"deep_model.pak");touch(nested/"deep_model.png");
+ S::Entries(true);CHECK(fs::path(find("deep_model").previewPath)==nested/"deep_model.png");
+ CHECK(fs::path(find("deep_model").pakPath)==nested/"deep_model.pak");
  puts("PASS actual skin registry native/builtin/custom previews, pak dedupe, bundle and refresh");
 }

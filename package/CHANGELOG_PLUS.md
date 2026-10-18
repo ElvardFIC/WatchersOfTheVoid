@@ -1,3 +1,27 @@
+## 0.9.2152
+
+- Retry wisp capture animation when the replicated actor, AnimInstance or montage is not ready. Both host and clients use bounded retries without extending the original capture window.
+- Check the native montage playback result so a refused animation can retry. Protect subsequent animation calls against actor/AnimInstance recycling, and avoid restarting successful playback when the optional section jump is unavailable.
+- Cancel the pending wisp death if release callbacks disconnect the session or replace the victim pawn. Clear hold state before native cleanup to make nested release safe.
+
+Includes the 2151 synchronization fixes. Every player needs this exact 0.9.2152 package and Voices of the Void 0.9.0n; older builds are incompatible.
+Release build and offline checks are documented in RELEASE_2152.md. Two-player gameplay verification remains pending.
+
+## 0.9.2151
+
+- Keep the insomnia demon and sleep nightmares personal to the player who meets the native game conditions. Shared sleep acceleration no longer broadcasts another player's nightmare.
+- Retry remote ragdoll creation, align the physical body to the transmitted pelvis and improve get-up continuity. Use a selected model's valid native physics rig where available.
+- Allow supported NPC synchronization to start before every NPC class has loaded; recognize late-loaded subclasses on their first spawn.
+- Retry wisp capture presentation when its replicated actor arrives late. Wisp capture no longer selects the chair sitting pose.
+- Synchronize Cremator door poses and lever presentation through the host. Cache actor searches and keep replica lever updates from consuming or burning contents.
+- Replicate held physics-gun beam endpoints and gravity-gun cosmetic effects, with stale-effect cleanup.
+- Discover custom skins in nested directories. Hide failed model previews and retry loading instead of showing the previous model under a different name.
+
+All players need this exact 0.9.2151 package and Voices of the Void 0.9.0n.
+Release build and focused offline checks are documented in RELEASE_2151.md.
+Two-player gameplay and the reported door FPS symptom still need in-game confirmation.
+Missing model assets and static preview mismatches remain unverified without model names.
+
 ## 0.9.2150
 
 - Renamed the fork to Watchers of the Void, authored and maintained by ElvardFIC, with a new supplied cover. Original Multivoid credit remains with Pelmentor.

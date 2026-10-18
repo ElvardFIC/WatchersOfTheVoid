@@ -34,5 +34,7 @@ int main(){using namespace test;coop::net::Session session;S::Install(&session);
  chair=false;S::OnAnchor(1,p);CHECK(rotations==1);chair=true;
  seat=&actor;S::OnAnchor(1,p);CHECK(rotations==1);seat=nullptr;
  p.chairYaw=std::numeric_limits<float>::quiet_NaN();S::OnAnchor(1,p);CHECK(rotations==1);
- puts("PASS chair pose and final stand-up rotation, host reach, non-chair, local occupant and malformed payload guards");
+ chair=false;seat=&actor;S::Tick();CHECK(!S::LocalIsSitting()); // A capture actor is not a chair.
+ chair=true;seat=&actor;S::Tick();CHECK(S::LocalIsSitting());
+ puts("PASS chair pose/recovery, non-seat capture exclusion, reach, local occupant and malformed payload guards");
 }

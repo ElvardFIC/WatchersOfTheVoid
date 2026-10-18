@@ -6,6 +6,7 @@
 // npc_pose_host.cpp, the install in npc_sync_install.cpp, the world walk in npc_world_enum.cpp.
 
 #include "coop/creatures/npc_sync.h"
+#include "coop/creatures/npc_class_policy.h"
 #include "npc_sync_internal.h"  // install/state seam (impl-private, src-local): shared globals + callback decls
 
 #include "coop/dev/rng_roll_census.h"       // channel (a): BeginDeferred pass-through census
@@ -84,7 +85,11 @@ thread_local PendingNpcSpawn t_pendingNpc{coop::element::kInvalidId, nullptr};
 // ue_wrap::reflection::IsDescendantOfAny so the SuperStruct offset stays in the wrapper; one
 // chain walk checking every base per hop.
 bool IsClassOrDerivedFromAnyAllowlisted(void* cls) {
-    return R::IsDescendantOfAny(cls, g_npcAllowlist, P::name::kNpcAllowlistSize);
+    if (R::IsDescendantOfAny(cls, g_npcAllowlist, P::name::kNpcAllowlistSize)) return true;
+    // Event classes load on demand. A cached pointer may still be null on the
+    // very spawn that loads it; match its actual ancestry without waiting for
+    // the periodic resolver (or mutating the shared cache on a worker thread).
+    return coop::npc_class_policy::MatchesAncestryName(cls);
 }
 
 }  // namespace; the callbacks below are named, registered by npc_sync_install.cpp

@@ -278,6 +278,8 @@ void TickPoseStream() {
         const auto vel = ue_wrap::engine::GetActorVelocity(actor);
         snap.x = loc.X; snap.y = loc.Y; snap.z = loc.Z;
         snap.yaw = ue_wrap::NormalizeAxis(rot.Yaw);
+        snap.pitch = ue_wrap::NormalizeAxis(rot.Pitch);
+        snap.roll = ue_wrap::NormalizeAxis(rot.Roll);
         snap.speed = std::sqrt(vel.X * vel.X + vel.Y * vel.Y);  // horizontal velocity magnitude
         snap.stateBits = ue_wrap::puppet::ReadCharacterIsFalling(actor) ? coop::net::kStateBitInAir : uint8_t{0};
         // Head-look: read the kerfur AnimBP's resolved `lookAt` WORLD target (the head/neck

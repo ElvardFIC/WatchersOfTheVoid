@@ -8,6 +8,7 @@
 #include "ue_wrap/actors/puppet.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/types.h"
+#include <cmath>
 
 namespace coop {
 
@@ -33,21 +34,47 @@ void SetPuppetKelMeshesVisible(void* puppetActor, bool visible) {
 }  // namespace
 
 bool RagdollDisplay::OnWireBit(bool ragdollBit, void* puppetActor, int32_t puppetIdx) {
-    if (ragdollBit == wireState_) return false;
+    const bool changed = ragdollBit != wireState_;
     wireState_ = ragdollBit;
     if (ragdollBit) {
+        if (active_) return false;
+        const auto now = std::chrono::steady_clock::now();
+        if (!changed && now < retryAfter_) return false;
+        retryAfter_ = now + std::chrono::milliseconds(500);
         Start(puppetActor, puppetIdx);
         return false;
     }
+    if (!changed) return false;
+    retryAfter_ = {};
     Stop(puppetActor, puppetIdx);
     return true;
 }
 
 bool RagdollDisplay::SetPose(const coop::net::RagdollPoseSnapshot& snap) {
-    // Velocity half of the pose stream only: slave the body's pelvis rigid body to the sender so
-    // the visible flop TRACKS the real ragdoll. The streamed pelvis ROTATION is unused and stays
-    // on the wire untouched, for protocol stability.
+    // Velocity alone never corrects positional drift after local collisions.
+    // Translate the whole articulated body together so joints keep their pose.
     if (active_ && bodyRef_.Get()) {
+        const float values[] = {snap.x, snap.y, snap.z, snap.linVelX, snap.linVelY,
+                                snap.linVelZ, snap.angVelX, snap.angVelY, snap.angVelZ};
+        for (float value : values) if (!std::isfinite(value)) return false;
+        if (std::fabs(snap.x) > net::kMaxCoord || std::fabs(snap.y) > net::kMaxCoord ||
+            std::fabs(snap.z) > net::kMaxCoord) return false;
+        ue_wrap::FVector current{};
+        void* mesh = E::GetRagdollBodyMesh(body_);
+        if (mesh && E::GetBoneWorldLocationByName(mesh, L"pelvis", current) && bodyRef_.Get() &&
+            std::isfinite(current.X) && std::isfinite(current.Y) && std::isfinite(current.Z)) {
+            ue_wrap::FVector delta{snap.x - current.X, snap.y - current.Y, snap.z - current.Z};
+            const float distanceSq = delta.X * delta.X + delta.Y * delta.Y + delta.Z * delta.Z;
+            // First sample/teleport: align immediately. Normal drift converges
+            // gradually, with a 2cm dead zone to avoid constant resting jitter.
+            const bool snapNow = !pelvisAligned_ || distanceSq > 1000.f * 1000.f;
+            if (snapNow || distanceSq > 2.f * 2.f) {
+                const float alpha = snapNow ? 1.f : 0.25f;
+                delta.X *= alpha; delta.Y *= alpha; delta.Z *= alpha;
+                if (E::TranslateRagdollBody(body_, delta) && bodyRef_.Get()) pelvisAligned_ = true;
+            }
+        }
+        if (!bodyRef_.Get()) return false;
         const ue_wrap::FVector linVel(snap.linVelX, snap.linVelY, snap.linVelZ);
         const ue_wrap::FVector angVel(snap.angVelX, snap.angVelY, snap.angVelZ);
         E::DriveRagdollBodyPelvisVelocity(body_, linVel, angVel);
@@ -80,7 +107,9 @@ void RagdollDisplay::TeardownForDestroy() {
     bodyIdx_ = -1;
     bodyRef_.Reset();
     wireState_ = false;  // a recycled puppet starts un-ragdolled + re-converges
+    retryAfter_ = {};
     active_ = false;
+    pelvisAligned_ = false;
 }
 
 void RagdollDisplay::Start(void* puppetActor, int32_t puppetIdx) {
@@ -120,6 +149,7 @@ void RagdollDisplay::Start(void* puppetActor, int32_t puppetIdx) {
     SetPuppetKelMeshesVisible(puppetActor, false);
     coop::skin_effects::SetRigVisible(puppetActor, false);
     active_ = true;
+    pelvisAligned_ = false;
     UE_LOGI("RagdollDisplay::Start: VISIBLE player-model body=%p spawned, puppet pelvis-attached + meshes hidden", body);
 }
 
@@ -139,6 +169,7 @@ void RagdollDisplay::Stop(void* puppetActor, int32_t puppetIdx) {
     bodyIdx_ = -1;
     bodyRef_.Reset();
     active_ = false;
+    pelvisAligned_ = false;
     UE_LOGI("RagdollDisplay::Stop: player meshes restored, puppet detached, ragdoll body destroyed");
 }
 

@@ -30,7 +30,7 @@ inline constexpr uint32_t kMagic = 0x564D5450u;
 // This file is past the 1500-line hard cap and stays there: it is the single-feature exception the
 // rule names. One wire format, whose enum, payload structs and static_asserts are read together;
 // splitting it would put a kind's number in one file and its bytes in another.
-inline constexpr uint16_t kProtocolVersion = 2150;  // consolidated release 2150 (includes development work through 2192)
+inline constexpr uint16_t kProtocolVersion = 2153;  // full NPC orientation (52-byte EntityPose)
 
 // Default LAN port (overridable via multivoid.ini "net.port=").
 inline constexpr uint16_t kDefaultPort = 47621;
@@ -1015,7 +1015,7 @@ enum class ReliableKind : uint8_t {
     Explosion = 191, // gascan break request / host blast; never blindly relayed or replayed at join
     ExplosionEvent = 188, // native gameplay blasts, source identity and canonical host event
     CargoLift = 184, // client button request / host physical platform; never relayed
-    DreamScene = 189, // host-selected dream actor class; clients replay createDream natively
+    DreamScene = 189, // reserved legacy dream broadcast; personal dreams ignore this packet
     PropActionIntent = 190, // client prop/wall damage, saw, MRE, safe completion; host-authoritative outcomes
     DeskShortCircuit = 192, // client water impact request / host transient spark sequence; no blind relay
     HookRetrieve = 193, // client anchored-hook request / host keyed retirement; no blind relay
@@ -1299,6 +1299,7 @@ struct EntityPoseSnapshot {
     uint32_t elementId;   // 4  -- Npc Element id (host range)
     float    x, y, z;     // 12 -- world cm (actor location = ACharacter capsule centre = pivot)
     float    yaw;         // 4  -- actor yaw deg (NormalizeAxis'd)
+    float    pitch, roll; // 8  -- full actor orientation, including wall-crawling creatures
     float    speed;       // 4  -- horizontal velocity magnitude cm/s (drives the locomotion blend)
     float    lookAtX, lookAtY, lookAtZ;  // 12 -- the kerfur's head look target in world space, valid iff
                                          // stateBits has kEntityPoseBitHasLookAt. Only kerfur-family
@@ -1309,7 +1310,7 @@ struct EntityPoseSnapshot {
     uint8_t  kerfFace;    // 1  -- the kerfur's face material index; valid iff bit 3.
     uint8_t  floppyType;  // 1  -- the reports disc's type (0..6) iff bit 6; otherwise 0. Same width the pad was.
 };
-static_assert(sizeof(EntityPoseSnapshot) == 44, "EntityPoseSnapshot must be 44 bytes");
+static_assert(sizeof(EntityPoseSnapshot) == 52, "EntityPoseSnapshot must be 52 bytes");
 
 // EntityPoseSnapshot.stateBits: bit 0 reuses kStateBitInAir; the rest are entity-specific.
 inline constexpr uint8_t kEntityPoseBitHasLookAt = 0x02;  // lookAt{X,Y,Z} carries a valid head-look world target
@@ -1326,14 +1327,14 @@ struct EntityPoseBatchHeader {
 };
 static_assert(sizeof(EntityPoseBatchHeader) == 4, "EntityPoseBatchHeader must be 4 bytes");
 
-// Max NPCs per EntityPose datagram, MTU-capped: (1400 - PacketHeader(20) - BatchHeader(4)) / 44 = 31.
+// Max NPCs per EntityPose datagram, MTU-capped: (1400 - PacketHeader(20) - BatchHeader(4)) / 52 = 26.
 // More NPCs than this in one tick truncate (logged); the realistic coop NPC count fits.
-inline constexpr int kMaxNpcBatchEntries = 31;
+inline constexpr int kMaxNpcBatchEntries = 26;
 
 // Worst-case EntityPose datagram size (full batch). Sizes both the send-loop
 // stack buffer (session.cpp) and Session::SerializeLocalNpcBatch's output
 // contract (session_npc.cpp). PacketHeader(20) + EntityPoseBatchHeader(4) +
-// 31 * EntityPoseSnapshot(44) = 1388 bytes (< 1400 MTU).
+// 26 * EntityPoseSnapshot(52) = 1376 bytes (< 1400 MTU).
 inline constexpr int kNpcPoseDatagramMax =
     static_cast<int>(sizeof(PacketHeader) + sizeof(EntityPoseBatchHeader)) +
     kMaxNpcBatchEntries * static_cast<int>(sizeof(EntityPoseSnapshot));
@@ -1394,7 +1395,8 @@ inline constexpr int kPropDrivePoseDatagramMax =
 
 // A ragdolling player's pelvis: world location and rotation, linear and angular velocity, read off
 // the sender's own ragdoll actor and sent unreliably while ragdolled. The receiver writes the
-// velocities onto its mirror body's pelvis each packet and drives the puppet's rotation from it.
+// velocities onto its mirror body's pelvis and corrects positional drift each packet.
+// Pelvis rotation remains reserved; limbs simulate locally.
 struct RagdollPoseSnapshot {
     float x, y, z;                    // pelvis world location (cm)
     float pitch, yaw, roll;           // pelvis world rotation (deg)
@@ -1415,14 +1417,18 @@ static_assert(sizeof(RagdollPosePacket) == 68, "RagdollPosePacket must be 68 byt
 struct HandPoseSnapshot {
     float relPos[3];  // cm in the owner's view basis (fwd/right/up)
     float relRot[3];  // item rotator {pitch,yaw,roll} in the view frame (deg)
+    float toolTarget[3]; // physgun beam endpoint in world cm
+    uint32_t toolTargetElement; // gravgun's cosmetic beams wrap this replicated prop
+    uint8_t toolKind, toolFlags; // 0=none, 1=physgun, 2=gravgun; hold/grab/throw/release/attract
+    uint8_t _pad[2];
 };
-static_assert(sizeof(HandPoseSnapshot) == 24, "HandPoseSnapshot must be 24 bytes");
+static_assert(sizeof(HandPoseSnapshot) == 44, "HandPoseSnapshot must be 44 bytes");
 
 struct HandPosePacket {
     PacketHeader     header;  // 20
-    HandPoseSnapshot pose;    // 24
+    HandPoseSnapshot pose;    // 44
 };
-static_assert(sizeof(HandPosePacket) == 44, "HandPosePacket must be 44 bytes");
+static_assert(sizeof(HandPosePacket) == 64, "HandPosePacket must be 64 bytes");
 
 // The desk's live cursor (MsgType::DeskCursorPose): ui_coordinates.viewCoordinate in screen space,
 // streamed while the desk is claimed and the cursor moves; the mirror interpolates it.
@@ -1989,6 +1995,7 @@ struct SleepStatePayload {
 };
 static_assert(sizeof(SleepStatePayload) == 4, "SleepStatePayload must be 4 bytes");
 
+// Legacy shape retained for packet compatibility; personal dreams are not replayed.
 struct DreamScenePayload { WireKey dreamClass; };
 static_assert(sizeof(DreamScenePayload) == 32, "DreamScenePayload must be 32 bytes");
 

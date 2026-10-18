@@ -3,7 +3,7 @@
 #include "ue_wrap/core/types.h"
 
 namespace ue_wrap::kitchen_machine {
-enum class Kind : uint8_t { None, Microwave, CoffeeMaker, CoffeeVending, MiniOven, Grill };
+enum class Kind : uint8_t { None, Microwave, CoffeeMaker, CoffeeVending, MiniOven, Grill, Cremator };
 enum Flag : uint8_t { Active=1, Powered=2, Opened=4, HasCup=8, HasCoffee=16, CoffeeReady=32, Processing=64 };
 struct State {
     Kind kind = Kind::None;

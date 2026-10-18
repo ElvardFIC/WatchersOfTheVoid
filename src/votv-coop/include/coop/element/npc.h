@@ -7,8 +7,8 @@
 // a POST observer on the same UFunction (binds the AActor* and records actor->eid), and a PRE
 // observer on K2_DestroyActor (destroys the Npc, broadcasts EntityDestroy).
 
-// The CLIENT mirror interpolates a SUBSET of RemotePlayer's pose (pos + yaw + speed + stateBits; no
-// pitch/headYawDelta/vitals/ragdoll/mesh-offset): each EntityPose entry calls SetTargetNpcPose
+// The CLIENT mirror interpolates a SUBSET of RemotePlayer's pose (pos + full rotation + speed + stateBits; no
+// headYawDelta/vitals/ragdoll/mesh-offset): each EntityPose entry calls SetTargetNpcPose
 // (advance-before-rebase, which keeps the interp from starving) and npc_mirror::TickClientNpcs
 // calls Tick() every frame to drive the transform + CMC.Velocity so the NPC's own AnimBP animates.
 // The HOST Npc never interpolates -- it reads the live actor (npc_sync::TickPoseStream). Drive in
@@ -53,12 +53,15 @@ private:
     // Receiver-side interpolation state (game thread only; the engine path is single-threaded).
     ue_wrap::FVector curPos_{};
     float            curYaw_       = 0.f;
+    float            curPitch_ = 0.f, curRoll_ = 0.f;
     float            curSpeed_     = 0.f;   // not interpolated -- the AnimBP blends locomotion
     uint8_t          curStateBits_ = 0;     // not interpolated -- snapped (bit 0 = in air)
     ue_wrap::FVector targetPos_{};
     float            targetYaw_      = 0.f;
+    float            targetPitch_ = 0.f, targetRoll_ = 0.f;
     ue_wrap::FVector errorPos_{};            // cached (target - cur) at packet arrival; applied dAlpha/frame
     float            errorYaw_       = 0.f;
+    float            errorPitch_ = 0.f, errorRoll_ = 0.f;
     float            curBodyYaw_     = 0.f;   // interpolated VISIBLE-body (ACharacter::Mesh) world yaw
     float            targetBodyYaw_  = 0.f;   //   (driven onto the mirror mesh each frame after SetActorRotation)
     float            errorBodyYaw_   = 0.f;   //   cached (target-cur) at packet; applied dAlpha/frame (shortest-arc)

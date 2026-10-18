@@ -16,6 +16,8 @@ bool CanReplayLever(void* actor);
 bool TryReadLeverActive(void* actor, bool& active);
 bool IsLeverActive(void* actor);
 bool CallUseLever(void* actor);
+// Receiver paint without collecting/burning props.
+bool ApplyLeverState(void* actor, bool active);
 std::wstring LeverWireKey(void* actor);
 void* FindByLeverWireKey(const std::wstring& key);
 }

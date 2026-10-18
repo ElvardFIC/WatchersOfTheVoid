@@ -7,8 +7,8 @@
 // spawner; the sky-wisp ticker spawns the sky wisps at absolute map coordinates, so the host rolls
 // and clients mirror through the source-gated catch and the variant allowlist; the roach master's
 // summon and its three looping timer entries fire independently of its tick. The tick rows: the
-// insomniac and fossilhound tickers roll inside their tick with no delay chains or reap duties, so
-// refusing the tick stops the roll and the product, and the products are host-mirrored; the roach
+// fossilhound ticker rolls inside its tick with no delay chains or reap duties, so
+// refusing the tick stops the roll and the product, and the product is host-mirrored; the roach
 // master's tick drives roach movement, the food-eat mutation and crush traces, which a client running
 // it would diverge, so it and its summoner are refused while the roach sync drives the client
 // population. The jellyfish path's spawn makes seven fish inside its graph, and the host's are
@@ -63,7 +63,9 @@ constexpr Row kRows[] = {
     {L"cockroachMaster_C",           L"spawnNestTimer", "cockroachMaster.spawnNestTimer"},
     {L"cockroachMaster_C",           L"CustomEvent",    "cockroachMaster.CustomEvent"},
     // The ticks.
-    {L"ticker_insomniacSpawner_C",   L"ReceiveTick",    "insomniacSpawner.ReceiveTick"},
+    // Insomniac is personal to the sleep-deprived player. Its spawn location,
+    // pursuit, camera grab and dream entry all use the local player, so its
+    // ticker must run on clients too (and its products stay off the NPC lane).
     {L"ticker_fossilhoundSpawner_C", L"ReceiveTick",    "fossilhoundSpawner.ReceiveTick"},
     {L"cockroachMaster_C",           L"ReceiveTick",    "cockroachMaster.ReceiveTick"},
     {L"ticker_roachSummoner_C",      L"ReceiveTick",    "roachSummoner.ReceiveTick"},
@@ -86,6 +88,11 @@ constexpr Row kRows[] = {
     // A mirror must survive the client's view; host PropDestroy ends its lifetime.
     // Keep BeginPlay/init intact: they install the disguise and flesh material.
     {L"prop_impostor_C",             L"ReceiveTick",      "prop_impostor.ReceiveTick"},
+    // Replicas paint lever/door state but never consume or ignite contents.
+    {L"cremator_C", L"collectObjects", "cremator.collectObjects"},
+    {L"cremator_C", L"igniteInside", "cremator.igniteInside"},
+    {L"cremator_C", L"removeTrash", "cremator.removeTrash"},
+    {L"cremator_C", L"spitFireballs_timer", "cremator.spitFireballs_timer"},
 };
 constexpr int kRowCount = static_cast<int>(std::size(kRows));
 constexpr int kTagBase = 0x53410000;   // 'SA', then the row

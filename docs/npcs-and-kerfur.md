@@ -18,9 +18,9 @@ call; on the host the same interceptor allocates the element, binds the actor on
 finishes, and broadcasts it (`coop/creatures/npc_sync`). Two births that interceptor cannot see
 are enrolled by other means (`coop/creatures/npc_world_enum`): characters that loaded with the
 level, by a walk at world start, and characters a Blueprint spawns from inside its own graph (the
-wisp swarm, the ambient sky wisps, the pyramid's spawner), caught at the native function seam and
+wisp swarm, the ambient sky wisps, the yellow-wisp/fossilhound tickers, the pyramid's spawner), caught at the native function seam and
 gated by the spawning class; the eventer and its event controllers are such spawning classes, and
-the event creatures (the boars, the grays, the eggs, the tentacle balls) are late allowlist entries,
+the event characters (the grays, the eggs, the tentacle balls) are late allowlist entries,
 resolved once their classes load so they never hold the lane back. A save-persisted character, the kerfur above all, is materialised on
 a joiner by the game's own save load at an unpredictable moment, so the joiner adopts its own
 local twin by class after a deferred poll instead of spawning a second one
@@ -57,7 +57,8 @@ leaving one leaves nothing to restore.
 
 | Spawner | On a client | Why |
 |---|---|---|
-| insomniac, fossilhound | tick refused | the host mirrors the product |
+| fossilhound | tick refused | native EX_CallMath output is caught and host-mirrored |
+| insomniac (including Child) | left running | personal sleep conditions and local native pursuit/grab/dream; not a shared NPC mirror |
 | cockroach master and summoner | tick, summon and timers refused | its tick also drains and destroys shared food props; `coop/creatures/roach_sync` drives the client's population |
 | mushroom master and spawner | spawn refused | they spawn at their own world transform |
 | yellow wisp spawner | tick refused | anchors on a random navmesh point; the product is host-mirrored |
@@ -184,3 +185,9 @@ wisp in flight is transient and owes nothing.
 | the kerfur | `coop/creatures/kerfur_entity`, `coop/creatures/kerfur_convert` with its host and client halves, `coop/creatures/kerfur_form_assembler`, `coop/creatures/kerfur_command`, `coop/creatures/kerfur_menu_input`, `coop/creatures/kerfur_prop_adoption`, `coop/creatures/kerfur_reconcile`, `coop/creatures/served_player` |
 | the kerfus | `coop/creatures/kerfus_lanes` with `kerfus_brain`, `kerfus_state`, `kerfus_intent` and `kerfus_follow`; `ue_wrap/actors/kerfus` |
 | tests | `harness/autotest/autotest_kwisp_probe.cpp`, `harness/autotest/autotest_wisplane.cpp`, `coop/dev/kerfur_convert_drill` (a client turns a kerfur off and on beside a disc of its own), `coop/dev/kerfur_serve_drill` (a client's commands to the Omega run for that client), `coop/dev/kerfus_drill` (a kerfus a client turns on follows it) |
+
+Development following 2152 (wire protocol 2153) streams full NPC pitch/yaw/roll with shortest-arc interpolation.
+The EntityPose row is 52 bytes, with 26 rows per MTU-bounded datagram.
+Both peers need the same new build. This changes orientation, not attack/FX replay.
+The grayboar body derives from prop_C and is excluded from the Character NPC lane;
+its helper grayboarPawn and body/AI association still need dedicated synchronization.

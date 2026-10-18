@@ -9,6 +9,7 @@
 #include "ue_wrap/actors/wisp.h"
 
 #include "ue_wrap/core/call.h"
+#include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/engine/engine.h"       // SetAnimTickAlways (force-mesh-tick)
 #include "ue_wrap/core/fname_utils.h"  // StringToFName (the 'fatality' montage section)
 #include "ue_wrap/core/log.h"
@@ -428,6 +429,9 @@ bool DriveWispLanding(void* wispActor) {
 bool PlayFatalityMontage(void* wisp) {
     void* anim = BodyAnimInstance(wisp);
     if (!anim) { UE_LOGW("wisp: PlayFatalityMontage -- no live body AnimInstance"); return false; }
+    CachedObjRef animRef, wispRef;
+    animRef.Set(anim);
+    wispRef.Set(wisp);
     // Resolve the montage asset + the two AnimInstance UFunctions once.
     if (!g_fatalityMontage)
         g_fatalityMontage = R::FindObject(L"killerWispAnim1_Skeleton_Montage", L"AnimMontage");
@@ -448,25 +452,31 @@ bool PlayFatalityMontage(void* wisp) {
     {
         ue_wrap::ParamFrame f(g_montagePlayFn);
         if (!f.valid()) return false;
-        f.Set<void*>(L"MontageToPlay", g_fatalityMontage);
-        f.Set<float>(L"InPlayRate", 1.0f);
+        if (!f.Set<void*>(L"MontageToPlay", g_fatalityMontage) ||
+            !f.Set<float>(L"InPlayRate", 1.0f)) return false;
         if (!ue_wrap::Call(anim, f)) { UE_LOGW("wisp: Montage_Play call failed"); return false; }
+        // Dispatch success only means ProcessEvent ran. Montage_Play returns zero
+        // when playback was refused, so leave the bounded receiver retry armed.
+        float duration = 0.f;
+        if (!f.GetRaw(L"ReturnValue", &duration, sizeof(duration)) ||
+            !std::isfinite(duration) || duration <= 0.f) return false;
+        if (!animRef.Get() || !wispRef.Get()) return false;
     }
     // Montage_JumpToSection('fatality', MontageToJumpTo). Skip-tolerant: if the jump fn is
     // missing the montage still plays from the start (which begins with grab/d1.. anyway).
     if (g_montageJumpFn) {
         R::FName section = ue_wrap::fname_utils::StringToFName(L"fatality");
         ue_wrap::ParamFrame f(g_montageJumpFn);
+        if (!animRef.Get() || !wispRef.Get()) return false;
         if (f.valid()) {
-            f.SetRaw(L"SectionName", &section, sizeof(section));
             // UAnimInstance::Montage_JumpToSection names its montage parameter `Montage`.
-            f.Set<void*>(R::FindParamOffset(g_montageJumpFn, L"Montage") >= 0 ? L"Montage"
+            if (f.SetRaw(L"SectionName", &section, sizeof(section)) &&
+                f.Set<void*>(R::FindParamOffset(g_montageJumpFn, L"Montage") >= 0 ? L"Montage"
                                                                               : L"MontageToJumpTo",
-                         g_fatalityMontage);
-            ue_wrap::Call(anim, f);
+                         g_fatalityMontage)) ue_wrap::Call(anim, f);
         }
     }
-    return true;
+    return animRef.Get() && wispRef.Get();
 }
 
 }  // namespace ue_wrap::wisp

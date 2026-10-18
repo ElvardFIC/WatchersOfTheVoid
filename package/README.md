@@ -3,7 +3,7 @@
 **By ElvardFIC** — a community fork of **Multivoid**, originally created by **Pelmentor**.
 
 Play Voices of the Void together, with accumulated co-op synchronization fixes and improvements.
-Version **0.9.2150** targets **Voices of the Void Alpha 0.9.0n** on Windows.
+Version **0.9.2152** targets **Voices of the Void Alpha 0.9.0n** on Windows.
 
 Source: [ElvardFIC/WatchersOfTheVoid](https://github.com/ElvardFIC/WatchersOfTheVoid).
 
@@ -19,16 +19,21 @@ See CHANGELOG.md for the full change list. Some systems are only partially imple
 
 Install with r2modman or Thunderstore Mod Manager; the Unreal shimloader dependency is included in the manifest.
 Use a profile with this fork as the only Multivoid implementation: disable the original Multivoid or an earlier fork copy.
-Every player must use this exact **0.9.2150** package and the same game version.
+Every player must use this exact **0.9.2152** package and the same game version.
 
 ## Current status
 
-This is an experimental co-op build. The Release build and 41 offline regression runners passed;
-the complete package still needs two-player gameplay testing.
+This is an experimental co-op build. The x64 Release build and focused offline checks
+are recorded in RELEASE_2152.md; two-player gameplay verification is still required.
 
-Open reports include the insomnia demon, ragdoll appearance, token display, shared computer screen,
-ZIP-disk ejection and items disappearing on workbenches. Appliance connections, light flicker,
-computer power and canned food have related fixes but still need in-game confirmation.
+Build 2152 adds capture-animation retries and safer wisp release/death handling.
+Includes the 2151 updates to personal insomnia/nightmare behavior, remote ragdolls, late-loaded
+NPCs and wisp capture, Cremator door/lever replication, held-tool effects and model
+preview retries. Every player must update: older builds, including 2151, are incompatible.
+
+Missing model assets and static preview mismatches still need the model names to
+investigate. Token display, shared computer screen, ZIP-disk ejection and disappearing
+workbench items remain open reports. See CHANGELOG.md for the scope of this release.
 
 ## Credits
 
