@@ -57,7 +57,7 @@ constexpr int      kFirstWalkDeadlineS = 400;
 constexpr int      kNextWalkDeadlineS  = 120;
 constexpr int      kMaxSeq        = 3;
 constexpr uint64_t kStatesBound   = 20;  // states received without the final tab: the viewer's failure, by count
-// The aim before the enter: a fan of headings about the laptop's screen, each held kAimTicksPerPose ticks so the
+// The aim before the enter: a fan of headings about the laptop's boxScreen, each held kAimTicksPerPose ticks so the
 // player's own trace and the laptop's lookAt run on it before it is judged.
 constexpr float    kAimYaw[]      = {0.f, -6.f, 6.f, -12.f, 12.f};
 constexpr float    kAimPitch[]    = {0.f, -8.f, 8.f};
@@ -203,8 +203,10 @@ AimFlags ReadAimFlags(void* laptop) {
     return a;
 }
 
-void* ScreenOf(void* laptop) {
-    const int32_t off = R::FindPropertyOffset(R::ClassOf(laptop), L"screen");
+// The box a player aims at to enter: getActionOptions offers action 4 as the enter only while the aimed component is
+// boxScreen (on the floppy or zip hitbox the same action ejects).
+void* BoxScreenOf(void* laptop) {
+    const int32_t off = R::FindPropertyOffset(R::ClassOf(laptop), L"boxScreen");
     if (off < 0) return nullptr;
     void* screen = *reinterpret_cast<void**>(reinterpret_cast<uint8_t*>(laptop) + off);
     return (screen && R::IsLive(screen)) ? screen : nullptr;
@@ -408,24 +410,32 @@ void HolderTick(coop::net::Session* s) {
         return;
     }
     case HStep::Aim: {
-        // Judged from the second tick of a pose: the first is the one the camera turned on.
+        // Judged from the second tick of a pose: the first is the one the camera turned on. Ready is the game's own offer
+        // of the enter: the trace on the laptop's boxScreen, and lookAt left neither hitbox flag set.
         const AimFlags fl = ReadAimFlags(g_h.laptop);
-        if (g_h.aimTick > 0 && fl.read && ue_wrap::engine::ReadMainPlayerHitActor(me) == g_h.laptop && !fl.floppy &&
+        void* const boxScreen = BoxScreenOf(g_h.laptop);
+        void* const hitActor = ue_wrap::engine::ReadMainPlayerHitActor(me);
+        void* const hitComp = hitActor ? ue_wrap::engine::ReadMainPlayerHitComponent(me) : nullptr;
+        if (g_h.aimTick > 0 && fl.read && boxScreen && hitActor == g_h.laptop && hitComp == boxScreen && !fl.floppy &&
             !fl.zip) {
-            UE_LOGI("laptop_tab_drill: aim on the laptop off its floppy and zip hitboxes at heading %d", g_h.aimPose);
+            UE_LOGI("laptop_tab_drill: aim on the laptop's boxScreen, neither hitbox flag set, at heading %d",
+                    g_h.aimPose);
             HGo(HStep::Enter);
             return;
         }
         if (g_h.aimTick == 0 || g_h.aimTick >= kAimTicksPerPose) {
             if (g_h.aimPose >= kAimPoses) {
-                Abandon("no heading put the aim on the laptop off its floppy and zip hitboxes");
+                UE_LOGW("laptop_tab_drill: the last heading's trace hit '%ls' component '%ls' (floppybox=%d zipBox=%d)",
+                        hitActor && R::IsLive(hitActor) ? R::ClassNameOf(hitActor).c_str() : L"none",
+                        hitComp && R::IsLive(hitComp) ? R::ToString(R::NameOf(hitComp)).c_str() : L"none",
+                        fl.floppy ? 1 : 0, fl.zip ? 1 : 0);
+                Abandon("no heading put the aim on the laptop's boxScreen with neither hitbox flag set");
                 return;
             }
             void* const c = ue_wrap::engine::GetController(me);
-            void* const screen = ScreenOf(g_h.laptop);
-            if (!c || !screen) { Abandon("the laptop's screen or the player's controller did not resolve"); return; }
+            if (!c || !boxScreen) { Abandon("the laptop's boxScreen or the player's controller did not resolve"); return; }
             ue_wrap::FRotator r = D::LookAt(ue_wrap::engine::GetCameraLocation(),
-                                            ue_wrap::engine::GetComponentLocation(screen));
+                                            ue_wrap::engine::GetComponentLocation(boxScreen));
             r.Pitch += kAimPitch[g_h.aimPose / kAimYawN];
             r.Yaw += kAimYaw[g_h.aimPose % kAimYawN];
             ue_wrap::engine::SetControlRotation(c, r);
