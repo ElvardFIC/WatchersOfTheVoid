@@ -19,6 +19,8 @@
 #include "ue_wrap/devices/laptop_widget.h"
 #include "ue_wrap/engine/engine.h"  // TryGetActorLocation, GetActorVelocity
 #include "ue_wrap/engine/engine_component.h"  // GetComponentLocation
+#include "ue_wrap/engine/engine_mainplayer.h"  // ReadMainPlayerHitActor
+#include "ue_wrap/engine/engine_pawn.h"  // GetController, SetControlRotation, GetCameraLocation
 #include "ue_wrap/engine/umg_build.h"  // IndexOfChild: where the sub-game page sits in the switcher
 
 #include <windows.h>
@@ -55,6 +57,13 @@ constexpr int      kFirstWalkDeadlineS = 400;
 constexpr int      kNextWalkDeadlineS  = 120;
 constexpr int      kMaxSeq        = 3;
 constexpr uint64_t kStatesBound   = 20;  // states received without the final tab: the viewer's failure, by count
+// The aim before the enter: a fan of headings about the laptop's screen, each held kAimTicksPerPose ticks so the
+// player's own trace and the laptop's lookAt run on it before it is judged.
+constexpr float    kAimYaw[]      = {0.f, -6.f, 6.f, -12.f, 12.f};
+constexpr float    kAimPitch[]    = {0.f, -8.f, 8.f};
+constexpr int      kAimYawN       = static_cast<int>(sizeof kAimYaw / sizeof kAimYaw[0]);
+constexpr int      kAimPoses      = kAimYawN * static_cast<int>(sizeof kAimPitch / sizeof kAimPitch[0]);
+constexpr int      kAimTicksPerPose = 6;
 
 // What the arm judges against, taken at its start: the module's counts only grow, and a seed or a refusal that came
 // before the judging peer got to its first step must still count as before the arm.
@@ -78,7 +87,7 @@ struct Reader {
 };
 Reader g_reader;
 
-enum class HStep : uint8_t { Off, Find, Walk, Enter, Held, Act, Done };
+enum class HStep : uint8_t { Off, Find, Walk, Aim, Enter, Held, Act, Done };
 struct Holder {
     HStep    step = HStep::Off;
     int      seq[kMaxSeq] = {};
@@ -91,12 +100,18 @@ struct Holder {
     std::vector<FVector> ring;
     size_t   stand = 0;
     std::shared_ptr<D::BackgroundWalk> walk;
+    int      aimPose = 0;
+    int      aimTick = 0;
 };
 Holder g_h;
 uint64_t g_heldReceived = 0;  // the arrivals at the confirmed claim: what came after was sent while this peer held it
 
 void HGo(HStep s) { g_h.step = s; g_h.stepMs = NowMs(); }
 bool HExpired(uint64_t bound) { return NowMs() - g_h.stepMs > bound; }
+void StartAim() {
+    g_h.aimPose = g_h.aimTick = 0;
+    HGo(HStep::Aim);
+}
 
 // The tab the sub-game button shows: where the switcher holds canvas_subgame, asked of the switcher. -1 when the widget,
 // its switcher, the page or the page's place in the switcher does not resolve.
@@ -171,21 +186,47 @@ float DistanceBetween(void* a, void* b) {
     return std::sqrt(dx * dx + dy * dy + dz * dz);
 }
 
+// The laptop's own aim flags as its lookAt last left them. lookAt sets use_floppybox and use_zipBox from the component
+// the player's trace hit, and action 4 checks them first: either one set ejects the floppy and returns without a hint,
+// so a player's enter is pressed while the aim is on the laptop off both hitboxes.
+struct AimFlags { bool read = false, floppy = false, zip = false; };
+AimFlags ReadAimFlags(void* laptop) {
+    AimFlags a;
+    void* const cls = R::ClassOf(laptop);
+    const int32_t fOff = R::FindPropertyOffset(cls, L"use_floppybox");
+    const int32_t zOff = R::FindPropertyOffset(cls, L"use_zipBox");
+    if (fOff < 0 || zOff < 0) return a;
+    auto* const base = reinterpret_cast<uint8_t*>(laptop);
+    a.read = true;
+    a.floppy = *reinterpret_cast<bool*>(base + fOff);
+    a.zip = *reinterpret_cast<bool*>(base + zOff);
+    return a;
+}
+
+void* ScreenOf(void* laptop) {
+    const int32_t off = R::FindPropertyOffset(R::ClassOf(laptop), L"screen");
+    if (off < 0) return nullptr;
+    void* screen = *reinterpret_cast<void**>(reinterpret_cast<uint8_t*>(laptop) + off);
+    return (screen && R::IsLive(screen)) ? screen : nullptr;
+}
+
 // The game's enter conditions as this peer reads them, for the claim that was never confirmed. actionOptionIndex returns
 // without a word while the boot or shutdown latent runs (anim) or the wall power is off (powered); past those, action 4
 // wants the keyboard and the mouse upright, still and within 150 uu of the laptop and the player inside its Box, and
 // says a hint when one fails. The player's own distance and speed fill the named fields; the parts' follow, because the
-// game judges the parts', not the player's. power=? is a power state that did not read.
+// game judges the parts', not the player's. power=? is a power state that did not read; aim=? are flags that did not.
 void LogEnterRefused(void* me) {
     void* const keyboard = PartActor(g_h.laptop, L"pcpart_keyboard");
     void* const mouse = PartActor(g_h.laptop, L"pcpart_mouse");
     L::PowerState power;
     const bool read = L::ReadPower(power);
+    const AimFlags aim = ReadAimFlags(g_h.laptop);
     UE_LOGW("laptop_tab_drill: enter refused because keyboardUp=%.2f mouseUp=%.2f dist=%.0f inBox=%d speed=%.1f "
-            "power=%hs powered=%d anim=%d isOpened=%d holder=%u partDist=%.0f/%.0f partSpeed=%.1f/%.1f",
+            "power=%hs powered=%d anim=%d isOpened=%d aim=%hs floppybox=%d zipBox=%d holder=%u partDist=%.0f/%.0f "
+            "partSpeed=%.1f/%.1f",
             UpZ(keyboard), UpZ(mouse), DistanceBetween(me, g_h.laptop), InBox(g_h.box, me) ? 1 : 0, SpeedOf(me),
             read ? "read" : "?", power.powered ? 1 : 0, power.anim ? 1 : 0, power.isOpened ? 1 : 0,
-            static_cast<unsigned>(DO::HolderOf(kClaim)),
+            aim.read ? "read" : "?", aim.floppy ? 1 : 0, aim.zip ? 1 : 0, static_cast<unsigned>(DO::HolderOf(kClaim)),
             DistanceBetween(keyboard, g_h.laptop), DistanceBetween(mouse, g_h.laptop), SpeedOf(keyboard),
             SpeedOf(mouse));
 }
@@ -343,7 +384,7 @@ void HolderTick(coop::net::Session* s) {
         }
         g_h.laptop = laptop;
         g_h.box = box;
-        if (InBox(box, me)) { HGo(HStep::Enter); return; }
+        if (InBox(box, me)) { StartAim(); return; }
         const FVector at = ue_wrap::engine::GetComponentLocation(box);
         g_h.ring = D::ReachableStandpoints(me, at, kRingCm, kStandpoints, kReachCm);
         UE_LOGI("laptop_tab_drill: a route reaches %zu of the %d standpoints about the laptop's Box", g_h.ring.size(),
@@ -360,10 +401,38 @@ void HolderTick(coop::net::Session* s) {
         if (state == 1 && InBox(g_h.box, me)) {
             UE_LOGI("laptop_tab_drill: walked to standpoint %zu, inside the laptop's Box", g_h.stand + 1);
             g_h.walk.reset();
-            HGo(HStep::Enter);
+            StartAim();
             return;
         }
         NextStandpoint();
+        return;
+    }
+    case HStep::Aim: {
+        // Judged from the second tick of a pose: the first is the one the camera turned on.
+        const AimFlags fl = ReadAimFlags(g_h.laptop);
+        if (g_h.aimTick > 0 && fl.read && ue_wrap::engine::ReadMainPlayerHitActor(me) == g_h.laptop && !fl.floppy &&
+            !fl.zip) {
+            UE_LOGI("laptop_tab_drill: aim on the laptop off its floppy and zip hitboxes at heading %d", g_h.aimPose);
+            HGo(HStep::Enter);
+            return;
+        }
+        if (g_h.aimTick == 0 || g_h.aimTick >= kAimTicksPerPose) {
+            if (g_h.aimPose >= kAimPoses) {
+                Abandon("no heading put the aim on the laptop off its floppy and zip hitboxes");
+                return;
+            }
+            void* const c = ue_wrap::engine::GetController(me);
+            void* const screen = ScreenOf(g_h.laptop);
+            if (!c || !screen) { Abandon("the laptop's screen or the player's controller did not resolve"); return; }
+            ue_wrap::FRotator r = D::LookAt(ue_wrap::engine::GetCameraLocation(),
+                                            ue_wrap::engine::GetComponentLocation(screen));
+            r.Pitch += kAimPitch[g_h.aimPose / kAimYawN];
+            r.Yaw += kAimYaw[g_h.aimPose % kAimYawN];
+            ue_wrap::engine::SetControlRotation(c, r);
+            ++g_h.aimPose;
+            g_h.aimTick = 0;
+        }
+        ++g_h.aimTick;
         return;
     }
     case HStep::Enter:
