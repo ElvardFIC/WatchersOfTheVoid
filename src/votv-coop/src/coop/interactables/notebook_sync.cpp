@@ -65,6 +65,8 @@ struct Flight {
     Clock::time_point deadline{};
 };
 Flight g_flight;
+// The claim this peer has published a notebook under since it took it; cleared when the release goes on.
+std::wstring g_pubClaim;
 Stats g_stats;
 
 coop::net::Session* Session() {
@@ -84,16 +86,13 @@ std::wstring ClaimOf(void* notebook) {
     return claim;
 }
 
-bool HoldsClaim(void* notebook) {
-    const std::wstring claim = ClaimOf(notebook);
-    return !claim.empty() && coop::device_occupancy::LocalHolds(claim.c_str());
-}
-
 // Publish the notebook's record through the prop record lane: the canonical on the host, an intent on a
 // client, which then waits for the host's answer before it lets the claim go.
 void PublishRecord(coop::net::Session* s, void* notebook, const std::wstring& key,
                    const std::wstring& claim) {
-    if (!coop::prop_save_data::Publish(s, notebook, key) || s->role() == coop::net::Role::Host) return;
+    if (!coop::prop_save_data::Publish(s, notebook, key)) return;
+    g_pubClaim = claim;
+    if (s->role() == coop::net::Role::Host) return;
     g_flight.key = key;
     g_flight.claim = claim;
     ++g_flight.unacked;
@@ -116,6 +115,7 @@ void OnGraphPost(const sg::Call& c) {
         g_base.key = key;
         N::ReadPages(notebook, g_base.pages);
         g_flight = Flight{};
+        g_pubClaim.clear();
         return;
     }
     std::vector<std::wstring> pages;
@@ -182,19 +182,25 @@ void OnUsedPost(const sg::Call&) {
 
 // device_occupancy asks this each tick the local claim's release is due.
 bool ReleaseHold(const wchar_t* key) {
-    if (!g_flight.closing || g_flight.claim != key) return false;
-    if (g_flight.unacked > 0 && Clock::now() < g_flight.deadline) return true;
-    if (g_flight.unacked > 0)
-        UE_LOGW("notebook_sync: the host did not answer the close of '%ls' in %lld s -- releasing its claim anyway",
-                key, static_cast<long long>(std::chrono::duration_cast<std::chrono::seconds>(kAckBound).count()));
-    g_flight = Flight{};
+    if (g_flight.closing && g_flight.claim == key) {
+        if (g_flight.unacked > 0 && Clock::now() < g_flight.deadline) return true;
+        if (g_flight.unacked > 0)
+            UE_LOGW("notebook_sync: the host did not answer the close of '%ls' in %lld s -- releasing its claim anyway",
+                    key, static_cast<long long>(std::chrono::duration_cast<std::chrono::seconds>(kAckBound).count()));
+        g_flight = Flight{};
+    }
+    // The release goes on from here: the next claim of this notebook has published nothing yet.
+    if (g_pubClaim == key) g_pubClaim.clear();
     return false;
 }
 
-// The apply gate: a peer that holds the notebook's claim applies no record for it. Its own edit is the
-// newer state; a record that comes back is the host's answer to one of its publishes, or older.
+// The apply gate: a peer that holds the notebook's claim and has published it in this claim applies no
+// record for it. Its own edit is the newer state; a record that comes back is the host's answer to one
+// of its publishes, or older. Before its first publish it has nothing newer to protect, and a record
+// the host sent before the grant (the previous editor's close, overtaken by the grant) applies.
 bool ApplyGate(void* actor) {
-    if (!HoldsClaim(actor)) return true;
+    const std::wstring claim = ClaimOf(actor);
+    if (claim.empty() || g_pubClaim != claim || !coop::device_occupancy::LocalHolds(claim.c_str())) return true;
     if (g_flight.unacked > 0 && g_flight.key == ue_wrap::prop::GetKeyString(actor)) --g_flight.unacked;
     return false;
 }
@@ -240,6 +246,7 @@ void OnDisconnect() {
     g_nextExamine = {};
     g_base = Baseline{};
     g_flight = Flight{};
+    g_pubClaim.clear();
     g_closing.Reset();
     g_used.Reset();
     g_stats = Stats{};

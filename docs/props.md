@@ -245,8 +245,11 @@ text is the prop's save record and crosses on the record lane above with no mess
   release the Normal one, so a client keeps the claim after it closes the editor until the host's
   republish of its last publish comes back (the lane's acknowledgement), and lets go anyway after
   10 s, logged. A host's own close needs no wait: it is the canonical.
-- **No echo onto the editor.** A peer that holds the claim applies no record for that notebook,
-  whether it arrives live or from the park: its own edit is the newer state.
+- **No echo onto the editor.** A peer that holds the claim and has published the notebook in this
+  claim applies no record for it, whether it arrives live or from the park: its own edit is the
+  newer state. Before its first publish it has nothing newer to protect, so the previous editor's
+  close, which the host sent before the grant and the grant overtook, is applied. The mark resets
+  when the claim is released.
 - **A page added outside the editor.** Using a torn sheet on a notebook (`playerUsedOn`) appends the
   sheet's text to the notebook's and destroys the sheet, with no editor open and no claim. The
   verb's end publishes the notebook's record when its page count grew, from whichever peer ran it;
