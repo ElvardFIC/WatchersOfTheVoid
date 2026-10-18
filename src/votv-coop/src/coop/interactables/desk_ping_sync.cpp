@@ -52,10 +52,9 @@ constexpr uint64_t kProgressIntervalMs = 100;
 bool g_publishingProgress = false;
 uint32_t g_progressSeq = 0;
 uint64_t g_nextProgressMs = 0;
-int g_mirrorSlot = -1;
+int g_mirrorSlot = -1;  // the pinger whose scan this desk shows: p.pinger of the packet that began it
 uint32_t g_mirrorSeq = 0;
 bool g_mirrorActive = false;
-DP::Progress g_mirrorProgress{};
 
 uint64_t NowMs() {
     using namespace std::chrono;
@@ -80,10 +79,7 @@ void BroadcastProgress(coop::net::Session* s, const coop::net::DeskPingVerdictPa
     if (s->role() == Role::Client) {
         s->SendReliableToSlot(0, coop::net::ReliableKind::DeskPingVerdict, &p, static_cast<int>(sizeof(p)));
     } else if (s->role() == Role::Host) {
-        for (int slot = 1; slot < static_cast<int>(coop::net::kMaxPeers); ++slot) {
-            if (slot == excludeSlot) continue;
-            s->SendReliableToSlot(slot, coop::net::ReliableKind::DeskPingVerdict, &p, static_cast<int>(sizeof(p)));
-        }
+        s->SendReliable(coop::net::ReliableKind::DeskPingVerdict, &p, static_cast<int>(sizeof(p)), excludeSlot);
     }
 }
 
@@ -236,12 +232,6 @@ void HostProcessPre(const sg::Call& c) {
             static_cast<unsigned>(g_run.slot), g_run.seq);
 }
 
-void OnProcessPost(const sg::Call& c) {
-    // Reapply only the renderer-facing values after this peer's idle local machine tick. The run flag stays clear;
-    // otherwise every observer would start an independent Blueprint scan.
-    if (g_mirrorActive && c.object == CD::Instance()) DP::WriteProgress(c.object, g_mirrorProgress);
-}
-
 sg::Verdict OnProcessPre(const sg::Call& c) {
     g_processFn = c.function;
     g_verdictRefused = false;
@@ -386,7 +376,7 @@ struct PingWatch {
 PingWatch g_watches[kWatchCount] = {
     {&kRowGatherSignal, 0x44504730, &OnVerdictPre, &OnVerdictPost,
      "a client's pings roll on its own desk, and a host refuses clients' verdicts", false, false},  // 'DPG0'
-    {&kRowProcessCoords, 0x44504731, &OnProcessPre, &OnProcessPost,
+    {&kRowProcessCoords, 0x44504731, &OnProcessPre, nullptr,
      "a host refuses clients' pings, and a client's shows its own failure beside the host's", false, false},  // 'DPG1'
     {&kRowWriteToCoordLog2, 0x44504732, &OnLogLinePre, nullptr,
      "a client's refused verdict shows its own failure line", false, false},  // 'DPG2'
@@ -474,49 +464,53 @@ void Tick() {
     }
 }
 
+// The scan this peer's desk shows is `p`'s (active), or none (its ending). The Blueprint writes none of the four fields
+// while coord_isPing is clear, so one write per packet holds until the next.
+void TakeProgress(const coop::net::DeskPingVerdictPayload& p, bool active) {
+    g_mirrorSlot = active ? static_cast<int>(p.pinger) : -1;
+    g_mirrorSeq = p.seq;
+    g_mirrorActive = active;
+    DP::WriteProgress(CD::Instance(),
+                      active ? DP::Progress{p.progressStage, p.progressOuter, p.progressInner, p.progressPing}
+                             : DP::Progress{});
+}
+
+// A client's progress on the host: stamped with its slot, taken when that slot holds the desk, and relayed to the
+// other clients.
+void HostTakeProgress(coop::net::Session& session, const coop::net::DeskPingVerdictPayload& sent, int slot) {
+    coop::net::DeskPingVerdictPayload p = sent;
+    p.pinger = static_cast<uint8_t>(slot);  // whoever sent it, never what the sender's byte says
+    const bool active = p.reason == 1;
+    // The desk's holder is the authority for whose scan the desk shows.
+    const bool holds = coop::device_occupancy::HolderOf(L"desk") == p.pinger;
+    const bool valid = !active || (holds && p.progressStage >= 0 && p.progressStage <= 3 &&
+        std::isfinite(p.progressOuter) && std::isfinite(p.progressInner) && std::isfinite(p.progressPing) &&
+        p.progressOuter >= 0.f && p.progressOuter <= 1.f && p.progressInner >= 0.f && p.progressInner <= 1.f &&
+        p.progressPing >= 0.f && p.progressPing <= 1.f);
+    if (!valid || !(active ? holds : (g_mirrorSlot == slot && g_mirrorSeq == p.seq))) return;
+    TakeProgress(p, active);
+    BroadcastProgress(&session, p, slot);
+}
+
 void OnMessage(coop::net::Session& session, const coop::net::DeskPingVerdictPayload& p, int senderSlot) {
     if (session.role() == Role::Host) {
         if (senderSlot > 0 && senderSlot < static_cast<int>(coop::net::kMaxPeers) && p.op == PV::kOpProgress) {
-            const uint8_t slot = static_cast<uint8_t>(senderSlot);
-            const bool active = p.reason == 1;
-            const bool ownsRun = coop::device_occupancy::HolderOf(L"desk") == slot &&
-                                 coop::desk_input_sync::PingActiveSlot() == slot;
-            const bool valid = !active || (ownsRun && p.progressStage >= 0 && p.progressStage <= 3 &&
-                std::isfinite(p.progressOuter) && std::isfinite(p.progressInner) && std::isfinite(p.progressPing) &&
-                p.progressOuter >= 0.f && p.progressOuter <= 1.f && p.progressInner >= 0.f && p.progressInner <= 1.f &&
-                p.progressPing >= 0.f && p.progressPing <= 1.f);
-            if (valid && (active ? ownsRun : (g_mirrorSlot == senderSlot && g_mirrorSeq == p.seq))) {
-                g_mirrorSlot = active ? senderSlot : -1;
-                g_mirrorSeq = p.seq;
-                g_mirrorActive = active;
-                if (active) g_mirrorProgress = {p.progressStage, p.progressOuter, p.progressInner, p.progressPing};
-                else DP::WriteProgress(CD::Instance(), DP::Progress{});
-
-                // Relay the visual scan progress to all other clients.
-                for (int otherSlot = 1; otherSlot < static_cast<int>(coop::net::kMaxPeers); ++otherSlot) {
-                    if (otherSlot == senderSlot) continue;
-                    session.SendReliableToSlot(otherSlot, coop::net::ReliableKind::DeskPingVerdict, &p,
-                                               static_cast<int>(sizeof(p)));
-                }
-            }
+            HostTakeProgress(session, p, senderSlot);
         } else if ((p.op == PV::kOpIntent || p.op == PV::kOpInsta) && senderSlot > 0 &&
                    senderSlot < static_cast<int>(coop::net::kMaxPeers)) {
             OnIntent(session, p, static_cast<uint8_t>(senderSlot));
         }
         return;
     }
-    // Clients accept progress updates from the host (slot 0) or relayed from other peers.
-    if (p.op == PV::kOpProgress && senderSlot >= 0 && senderSlot < static_cast<int>(coop::net::kMaxPeers)) {
+    // A client takes the host's progress, its own or a relayed pinger's; the sender is always the host, the pinger is
+    // named in the packet.
+    if (p.op == PV::kOpProgress && senderSlot == 0 && p.pinger < coop::net::kMaxPeers) {
         const bool active = p.reason == 1;
         if (active && (p.progressStage < 0 || p.progressStage > 3 || !std::isfinite(p.progressOuter) ||
             !std::isfinite(p.progressInner) || !std::isfinite(p.progressPing))) return;
-        if (!active && (g_mirrorSlot != senderSlot || g_mirrorSeq != p.seq)) return;
-        if (active && g_mirrorSlot != -1 && g_mirrorSlot != senderSlot) return;
-        g_mirrorSlot = active ? senderSlot : -1;
-        g_mirrorSeq = p.seq;
-        g_mirrorActive = active;
-        if (active) g_mirrorProgress = {p.progressStage, p.progressOuter, p.progressInner, p.progressPing};
-        else DP::WriteProgress(CD::Instance(), DP::Progress{});
+        if (!active && (g_mirrorSlot != p.pinger || g_mirrorSeq != p.seq)) return;
+        if (active && g_mirrorSlot != -1 && g_mirrorSlot != p.pinger) return;
+        TakeProgress(p, active);
         return;
     }
     if (senderSlot != 0) return;
@@ -548,9 +542,13 @@ void OnPeerLeft(uint8_t slot) {
         g_run = HostRun{};
     }
     if (g_mirrorSlot == slot) {
-        g_mirrorSlot = -1;
-        g_mirrorActive = false;
-        DP::WriteProgress(CD::Instance(), DP::Progress{});
+        // The ending the pinger would have sent, to every client, so none keeps a scan that no one runs.
+        coop::net::DeskPingVerdictPayload p{};
+        p.op = PV::kOpProgress;
+        p.pinger = slot;
+        p.seq = g_mirrorSeq;
+        TakeProgress(p, false);
+        if (auto* s = SessionAs(Role::Host)) BroadcastProgress(s, p);
     }
 }
 

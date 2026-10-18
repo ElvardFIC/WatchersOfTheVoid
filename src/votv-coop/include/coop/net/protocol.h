@@ -928,7 +928,10 @@ enum class ReliableKind : uint8_t {
     // reached its verdict, which its gate refused, with the view and the aim the verdict's circle and the dishes'
     // target come from; the host rolls the verdict on its own desk from them, an insta-catch's only where its own game
     // lets a player cheat. Host to that client alone: a refusal with its reason, and after a catch the find for the
-    // pinger's own profile. Never relayed. Late join: nothing to replay. DeskPingVerdictPayload.
+    // pinger's own profile. Op 4, the scan's progress: the pinger streams it to the host every 100 ms and once more
+    // when the scan ends; the host stamps `pinger` with the sender's slot and relays it to the other clients, and sends
+    // the ending itself when the pinger leaves. A receiver writes the values into its desk and keeps coord_isPing
+    // clear. Late join: the next progress snapshot or the ending. DeskPingVerdictPayload.
     DeskPingVerdict = 163,
 
     // Client to host: my player finished the repair minigame on this server box, by its servers[] index; the
@@ -2215,8 +2218,9 @@ inline constexpr uint8_t kRefusedLost = 1;  // any other: no claim, no ping runn
 struct DeskPingVerdictPayload {
     uint8_t  op;         // desk_ping::kOp*
     uint8_t  reason;     // op 1: desk_ping::kRefused*
-    uint8_t  _pad[2];    // zeroed
-    uint32_t seq;        // ops 0 and 3: the pinger's verdict count; echoed by ops 1-2
+    uint8_t  pinger;     // op 4: the slot whose ping the progress shows (0 = the host); the host stamps a client's
+    uint8_t  _pad;       // zeroed
+    uint32_t seq;        // ops 0 and 3: the pinger's verdict count; echoed by ops 1-2; op 4: the ping's count
     float    viewX;      // ops 0 and 3: the coords panel's viewCoordinate, the dishes' target
     float    viewY;
     DishAimStatePayload aim;  // ops 0 and 3: the committed triangle the verdict's circle comes from

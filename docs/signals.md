@@ -71,8 +71,8 @@ the client interpolates it and overwrites its own accrual, whose garbage the ove
 triangulation ping is a latent state machine gated on a flag; it runs on one machine, the
 presser's. Receivers keep the flag clear (setting it woke a phantom parallel machine), while the
 presser streams the stage and three accumulator values at 10 Hz. The host validates the desk
-holder and ping owner, then relays these visual-only values; mirrors reapply them after their idle
-local process tick. A desk hold covers the pinger's run so nobody else can claim the desk mid-ping.
+holder and names the pinger in each packet it relays; a mirror writes the values once per packet, and
+the host ends the scan on every client when its pinger leaves. A desk hold covers the pinger's run so nobody else can claim the desk mid-ping.
 The run is the pinger's presentation, and its verdict is the
 host's (`coop/interactables/desk_ping_sync`): at stage 3 a client's gate refuses the verdict and
 sends its view and triangle, the host checks the claim, the running ping and the triangle and
