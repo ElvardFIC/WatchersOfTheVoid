@@ -430,7 +430,7 @@ void WriteProgressIdle(const DP::Progress& value) {
 
 // The scan this peer's desk shows is `p`'s (active), or none (its ending). The Blueprint writes none of the four fields
 // while coord_isPing is clear, so one write per packet holds until the next. A write refused for a running machine
-// leaves the state taken, and the next packet after that run writes.
+// leaves the state taken: a later active packet writes, and an ending leaves the zero to the Blueprint's own reset.
 void TakeProgress(const coop::net::DeskPingVerdictPayload& p, bool active) {
     g_mirrorSlot = active ? static_cast<int>(p.pinger) : -1;
     g_mirrorSeq = p.seq;

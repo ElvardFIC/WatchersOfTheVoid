@@ -7,7 +7,13 @@
 #include <cstdint>
 #include <string>
 
-namespace coop::dev::desk_ping_drill::observer {
+namespace coop::dev::desk_ping_drill {
+
+// The run is `desk_ping_drill=observed`: the first client starts when the second is ready, and the second must judge both
+// scans. Defined by the drill's other half.
+bool Observed();
+
+namespace observer {
 
 // Failure bounds both halves of the drill share: each step ends on the state it waits for.
 inline constexpr int      kWalkDeadlineS = 240;
@@ -40,4 +46,5 @@ bool ClientTick();
 // The session ended: the second client's state and the scan being watched are forgotten.
 void OnDisconnect();
 
-}  // namespace coop::dev::desk_ping_drill::observer
+}  // namespace observer
+}  // namespace coop::dev::desk_ping_drill

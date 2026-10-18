@@ -128,6 +128,7 @@ namespace {
 // (the pinger named in each packet), and says whether each one it saw from the start was seen and ended. It is done
 // when the pinger gives the desk back.
 
+constexpr int kScansObserved = 2;  // an observed run's pinger makes the miss and the catch
 int      g_ocScans = 0;
 bool     g_ocSaid = false;
 bool     g_ocOpen = false;
@@ -188,6 +189,10 @@ bool ClientTick() {
                 mine);
     }
     Sample(now, "client");
+    // The holder is read every tick, a scan open or not: the pinger's hold is what ends the run.
+    const uint8_t holder = coop::device_occupancy::HolderOf(L"desk");
+    const bool otherHolds = holder != 0xFF && holder != mine;
+    if (otherHolds) g_ocSawHolder = true;
     if (!g_ocOpen) {
         const DG::ObserverView& v = g_obsView;
         if (g_obsViewValid && !v.isPing && (v.stage > 0 || v.outer > 0.f)) {
@@ -199,19 +204,21 @@ bool ClientTick() {
         }
         // The run ends when the pinger gives the desk back. Another peer holding it with no scan reaching this one, and
         // no peer ever holding it, each have a bound.
-        const uint8_t holder = coop::device_occupancy::HolderOf(L"desk");
-        if (holder != 0xFF && holder != mine) {
-            g_ocSawHolder = true;
+        if (otherHolds) {
             if (now - g_ocIdleMs > kObserverIdleBoundMs)
                 ObserverClientFail("a peer holds the desk and no scan reached this client", holder);
             return true;
         }
         g_ocIdleMs = now;
         if (g_ocSawHolder && holder == 0xFF) {
+            // An observed run makes the miss and the catch, and the observer was ready for both: it judges both.
+            const int needed = Observed() ? kScansObserved : 1;
             if (g_ocScans == 0)
                 ObserverClientFail("the pinger left the desk and no scan was judged from a stage-0 start", holder);
             else if (!g_ocPass)
                 ObserverClientFail("the pinger left the desk after a judged scan failed", holder);
+            else if (g_ocScans < needed)
+                ObserverClientFail("the pinger left the desk before the observer judged the miss and the catch", holder);
             else
                 ObserverClientDone();
         } else if (!g_ocSawHolder && now - g_ocWaitMs > kObserverNoPingerBoundMs) {
