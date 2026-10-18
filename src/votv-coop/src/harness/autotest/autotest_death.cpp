@@ -743,7 +743,7 @@ DWORD WINAPI DeathTestThread(LPVOID) {
             const uint32_t cleanups0 = coop::death_revive::ScreenCleanupsEnded();
             auto hd = std::make_shared<std::atomic<int>>(0);
             auto ok = std::make_shared<int>(0);
-            if (timedOut) {  // a window that never ended has no death to measure after it
+            if (timedOut) {  // a window that did not time out has no protection-end to measure after it
                 GT::Post([hd, ok, lethal] {
                     void* mp = coop::players::Registry::Get().Local();
                     if (mp && R::IsLive(mp) && E::InvokeAddPlayerDamage(mp, lethal, /*blood=*/true)) *ok = 1;
@@ -762,7 +762,7 @@ DWORD WINAPI DeathTestThread(LPVOID) {
                         "the player died=%d (want 1)",
                         windowEnded ? 1 : 0, static_cast<int>(why),
                         static_cast<int>(coop::revive_protection::EndWhy::Timeout), windowMs,
-                        *ok ? "delivered" : "NOT delivered", diedAfter ? 1 : 0);
+                        !timedOut ? "not fired" : *ok ? "delivered" : "NOT delivered", diedAfter ? 1 : 0);
             Verdict("D17 protection-ends", timedOut && *ok && diedAfter, pr);
             // That death's revive finishes before the verdict, so the run does not end on a dead player.
             for (uint64_t t2 = ::GetTickCount64(); diedAfter &&
