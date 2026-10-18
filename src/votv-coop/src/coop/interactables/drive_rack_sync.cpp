@@ -15,6 +15,7 @@
 #include "coop/props/prop_save_data.h"        // DeclareClassOwnedElsewhere (the rack's rows are this lane's)
 #include "coop/session/join_progress.h"       // a joiner's pending canonicals wait out its join
 
+#include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/desk/drive_chain.h"
@@ -43,6 +44,7 @@ std::atomic<bool> g_rackDirty{false};
 // ---- baselines ----
 std::map<uint32_t, uint64_t> g_rackBase;    // rack eid -> arrays blob hash
 std::map<uint32_t, std::vector<uint8_t>> g_rackShadow;  // rack eid -> last canonical-form blob (client op derivation)
+std::map<uint32_t, ue_wrap::CachedObjRef> g_rackActor;  // rack eid -> the actor its shadow was taken from
 
 bool g_primed = false;
 bool g_wasConnected = false;
@@ -165,6 +167,7 @@ void HostBroadcastRackCanonical(uint32_t rackEid, void* rack, int toSlot /* -1 =
         coop::blob_chunks::SendBlobToSlot(s, toSlot, coop::net::ReliableKind::RackState, seq, blob);
     g_rackBase[rackEid] = coop::blob_chunks::Fnv64(blob);
     g_rackShadow[rackEid] = std::move(blob);
+    g_rackActor[rackEid].Set(rack);
     ++g_cRackCanon;
 }
 
@@ -197,10 +200,18 @@ void SweepRacks(bool announce) {
         std::vector<uint8_t> blob = RackCanonicalBlob(eid, rows);
         const uint64_t h = coop::blob_chunks::Fnv64(blob);
         auto it = g_rackBase.find(eid);
-        if (it != g_rackBase.end() && it->second == h) continue;
-        if (!announce || it == g_rackBase.end()) {  // first sight: prime silently
+        const auto act = g_rackActor.find(eid);
+        const bool sameActor = act != g_rackActor.end() && act->second.Is(rack);
+        if (it != g_rackBase.end() && sameActor && it->second == h) continue;
+        if (!announce || it == g_rackBase.end() || !sameActor) {  // first sight of this actor
             g_rackBase[eid] = h;
             g_rackShadow[eid] = std::move(blob);
+            g_rackActor[eid].Set(rack);
+            if (announce && host) {
+                // A rack born holding rows reaches the clients here, not through a record.
+                HostBroadcastRackCanonical(eid, rack, -1);
+                UE_LOGI("drive_rack: host rack eid=%u first seen mid-session -- canonical broadcast", eid);
+            }
             continue;
         }
         if (host) {
@@ -221,6 +232,7 @@ void SweepRacks(bool announce) {
             }
             g_rackBase[eid] = h;
             g_rackShadow[eid] = blob;
+            g_rackActor[eid].Set(rack);
             HostBroadcastRackCanonical(eid, rack, -1);
             UE_LOGI("drive_rack: host rack eid=%u organic change -- canonical broadcast", eid);
         } else {
@@ -250,6 +262,7 @@ void SweepRacks(bool announce) {
             }
             g_rackBase[eid] = h;
             g_rackShadow[eid] = std::move(blob);
+            g_rackActor[eid].Set(rack);
         }
     }
 }
@@ -415,6 +428,7 @@ void ClientApplyRackBlob(const coop::net::RackStateHead& h, const std::vector<ui
         std::vector<uint8_t> nb = RackCanonicalBlob(h.rackEid, now);
         g_rackBase[h.rackEid] = coop::blob_chunks::Fnv64(nb);
         g_rackShadow[h.rackEid] = std::move(nb);
+        g_rackActor[h.rackEid].Set(rack);
     }
     ++g_cCanonApplied;
     UE_LOGI("drive_rack: rack canonical adopted eid=%u", h.rackEid);
@@ -447,6 +461,7 @@ void RetryPendingTick() {
 void PrimeRacks() {
     g_rackBase.clear();
     g_rackShadow.clear();
+    g_rackActor.clear();
     SweepRacks(/*announce*/false);
 }
 
@@ -549,6 +564,7 @@ void OnDisconnect() {
     g_rackDirty.store(false, std::memory_order_relaxed);
     g_rackBase.clear();
     g_rackShadow.clear();
+    g_rackActor.clear();
     g_pending.clear();
     g_rackAsm.Clear();
     for (auto& d : g_denies) d = DenyRec{};
