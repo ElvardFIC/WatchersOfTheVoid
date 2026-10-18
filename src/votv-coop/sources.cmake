@@ -70,6 +70,7 @@ set(VOTVCOOP_SOURCES
     src/ue_wrap/engine/engine_bones.cpp
     src/ue_wrap/engine/engine_component.cpp
     src/ue_wrap/engine/hit_result.cpp
+    src/ue_wrap/engine/engine_hurt_flash.cpp
     src/ue_wrap/engine/engine_mainplayer.cpp
     src/ue_wrap/engine/engine_player_verbs.cpp
     src/ue_wrap/engine/scs_rig.cpp

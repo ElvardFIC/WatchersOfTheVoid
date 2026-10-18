@@ -14,6 +14,7 @@
 #include "coop/player/players_registry.h"
 #include "ue_wrap/core/call.h"
 #include "ue_wrap/engine/engine.h"
+#include "ue_wrap/engine/engine_hurt_flash.h"
 #include "ue_wrap/engine/world_identity.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/actors/puppet.h"
