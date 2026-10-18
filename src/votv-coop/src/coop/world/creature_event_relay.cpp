@@ -46,6 +46,9 @@ bool g_watchLive = false;
 bool g_subscribed = false;
 bool g_announced = false;
 int  g_subscribeRetry = 0;
+bool g_subscribeWarned = false;
+int  g_libCdoRetry = 0;
+bool g_libCdoWarned = false;
 
 void*   g_setEventFn = nullptr;   // lib_C::setEvent, resolved from its class once it has loaded
 int32_t g_offActive = -1;         // isEventActive
@@ -75,7 +78,9 @@ bool ResolveSetEvent() {
 }
 
 // The four classes whose event is computed from the local camera, render state or player 0 (each peer's own
-// perception), compared by FName; resolved on the game thread on first use.
+// perception), compared by FName; resolved on the game thread on first use. MTA marks sync per datum
+// (reference/mtasa-blue/Server/mods/deathmatch/logic/CStaticFunctionDefinitions.cpp:1024-1035); here the class
+// decides, from its bytecode.
 struct PerViewerClass {
     const wchar_t* name;
     R::FName       fname;
@@ -101,9 +106,11 @@ bool ResolvePerViewerNames() {
 
 void* ReadContext(const sg::Call& call) { return *reinterpret_cast<void* const*>(call.locals + g_offContext); }
 
-// Before the body runs: a client refuses its mirror's own call.
+// Before the body runs: a client refuses its bound mirror's own call. There is no session test here: the disconnect
+// drain destroys the mirrors after the session stopped and before this gate is released (subsystems.cpp
+// DisconnectAll runs the NPC drain first), so a mirror's own false must still be refused while the relay retracts its
+// entry once. ClientPre cancels only a call the relay holds a bound entry for; every other call runs natively.
 sg::Verdict OnSetEventPre(const sg::Call& call) {
-    if (!detail::ActiveSession(coop::net::Role::Client)) return sg::Verdict::Run;
     if (!ResolveSetEvent() || call.function != g_setEventFn) return sg::Verdict::Run;
     return detail::ClientPre(ReadContext(call), call.locals[g_offActive] != 0) ? sg::Verdict::Cancel : sg::Verdict::Run;
 }
@@ -147,14 +154,9 @@ bool Ready() { return ResolveSetEvent() && AE::EnsureResolved(); }
 
 bool Call(bool active, void* ctx) {
     if (!ctx || !Ready()) return false;
-    // The default object is found by name once, then held by slot and serial.
-    if (!g_libCdo.Alive() && ue_wrap::object_index::ClassByName(L"lib_C"))
-        g_libCdo.Set(R::FindClassDefaultObject(L"lib_C"));
-    void* cdo = g_libCdo.Get();
-    if (!cdo) {
-        UE_LOGW("creature_event_relay: lib_C's default object is not found -- setEvent cannot be applied");
-        return false;
-    }
+    // The default object was resolved by Install; this never walks the object array.
+    void* const cdo = g_libCdo.Get();
+    if (!cdo) return false;
     int32_t n = 0;
     if (!active) {
         if (!AE::ReadCount(n)) return false;  // no gamemode: nothing to retract from
@@ -194,15 +196,33 @@ void Install(coop::net::Session* session) {
         sg::ResolvePendingNames();
         g_watchLive = sg::NameWatchLive(kRowSetEvent, kTagCevr);
     }
-    ResolveSetEvent();
-    // The death seam's Subscribe warns itself when its table is full, so a refused one is retried every 120th call.
+    // The library's default object, once setEvent has resolved: finding it walks the whole object array, so it is
+    // made once and a failed find is retried on every 120th call.
+    if (ResolveSetEvent() && !g_libCdo.Alive()) {
+        if (g_libCdoRetry > 0) {
+            --g_libCdoRetry;
+        } else {
+            g_libCdo.Set(R::FindClassDefaultObject(L"lib_C"));
+            if (!g_libCdo.Alive()) {
+                if (!g_libCdoWarned) {
+                    g_libCdoWarned = true;
+                    UE_LOGW("creature_event_relay: lib_C's default object is not found -- setEvent cannot be applied");
+                }
+                g_libCdoRetry = 120;
+            }
+        }
+    }
+    // A refused Subscribe is said once, then retried quietly on every 120th call.
     if (!g_subscribed) {
         if (g_subscribeRetry > 0) {
             --g_subscribeRetry;
         } else if (EL::death_seam::Install()) {
             g_subscribed = EL::death_seam::Subscribe(EL::ElementType::Npc, &OnNpcEnd);
             if (!g_subscribed) {
-                UE_LOGW("creature_event_relay: the death seam took no subscription for creatures -- retried");
+                if (!g_subscribeWarned) {
+                    g_subscribeWarned = true;
+                    UE_LOGW("creature_event_relay: the death seam took no subscription for creatures -- retried");
+                }
                 g_subscribeRetry = 120;
             }
         }

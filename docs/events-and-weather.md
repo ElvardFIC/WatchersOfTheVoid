@@ -123,10 +123,10 @@ The game keeps a registry of in-flight events: a reference count and the live ev
 maintained by the actors themselves. The host sees each event begin and end at `lib_C::setEvent`
 (a script-body watch) and, at a joiner's ready edge, reads the game's own registry and sends one
 snapshot entry per in-flight event so the joiner replays it from the start with the in-flight
-override (`coop/world/event_active_sync`). A creature's events are not replayed: the host sends the
+override (`coop/world/event_active_sync`). A creature with no event row is not replayed: the host sends the
 creature's count of running events whole, by element id, and a client applies it to its mirror's
 registration in the event count (`coop/world/creature_event_relay`) [?]; the creatures whose event
-is what the local camera sees (the killer wisp, the fossilhound, the antibreather, the egg) keep their own per viewer. Events whose only trace is a one-shot particle emitter
+is computed from the local camera, render state or player 0 (the killer wisp, the fossilhound, the antibreather, the egg) keep their own per viewer. Events whose only trace is a one-shot particle emitter
 (the meteor shower) are mirrored as cues: the host sees the row's `runEvent` return and broadcasts
 the emitter's identity and position, a joiner's snapshot reads the live emitters from the object
 index, and a client spawns the same emitter (`coop/world/event_cue_sync`).

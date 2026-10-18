@@ -70,13 +70,17 @@ coop::net::CreatureEventActivePayload PayloadFor(EL::ElementId eid, int count) {
     return p;
 }
 
-// To every client that is world-ready; a client still joining gets the count in its snapshot.
+// To every client that is world-ready; a client still joining gets the count in its snapshot. Every call is sent, even
+// one that repeats the last value: diverges from MTA's unchanged-value skip
+// (reference/mtasa-blue/Server/mods/deathmatch/logic/CStaticFunctionDefinitions.cpp:1019), because a repeated value is
+// the heal of a stale client target; the whole value is MTA's push too (:1034).
 void Broadcast(coop::net::Session* s, EL::ElementId eid, int count) {
     const coop::net::CreatureEventActivePayload p = PayloadFor(eid, count);
     if (s->SendReliable(coop::net::ReliableKind::CreatureEventActive, &p, sizeof(p)))
         UE_LOGI("creature_event_relay: host eid=%u count=%d sent", eid, count);
     else
-        UE_LOGI("creature_event_relay: host eid=%u count=%d held -- no client is world-ready", eid, count);
+        UE_LOGI("creature_event_relay: host eid=%u count=%d not sent (no world-ready client, or the send failed)", eid,
+                count);
 }
 
 // A creature's copies in the registry, held at the cap.
@@ -141,9 +145,12 @@ void HostOnNpcEnrolled(EL::ElementId eid, void* actor) {
 void HostOnNpcEnd(const EL::death_seam::Death& death) {
     const auto it = g_host.find(death.eid);
     if (it == g_host.end()) return;
-    if (it->second.count > 0)
-        UE_LOGW("creature_event_relay: host eid=%u ended at count %d -- entry dropped", death.eid, it->second.count);
+    const int held = it->second.count;
     g_host.erase(it);
+    if (held <= 0) return;
+    UE_LOGW("creature_event_relay: host eid=%u ended at count %d -- entry dropped", death.eid, held);
+    // After the creature's EntityDestroy on the same Bulk lane: a client entry that never bound is erased by it.
+    if (coop::net::Session* s = ActiveSession(coop::net::Role::Host)) Broadcast(s, death.eid, 0);
 }
 
 void HostSendJoinSnapshot(coop::net::Session* session, int slot) {
@@ -171,8 +178,19 @@ void HostSendJoinSnapshot(coop::net::Session* session, int slot) {
             Record(eid, Capped(d.second));
         }
     }
+    // A separate message after the NPC queue: diverges from MTA carrying element data inside the add packet
+    // (reference/mtasa-blue/Server/mods/deathmatch/logic/packets/CEntityAddPacket.cpp:177-190), because the NPC spawn
+    // kind carries no event state.
     int sent = 0;
-    for (const auto& kv : g_host) {
+    EL::Registry& reg = EL::Registry::Get();
+    for (auto it = g_host.begin(); it != g_host.end();) {
+        const auto kv = *it;  // a copy, so the erase and the advance leave it valid
+        const EL::Element* el = reg.Get(kv.first);
+        if (!el || el->GetType() != EL::ElementType::Npc) {  // its creature is gone from the registry
+            it = g_host.erase(it);
+            continue;
+        }
+        ++it;
         if (kv.second.gen != ue_wrap::world_identity::Generation()) continue;
         const coop::net::CreatureEventActivePayload p = PayloadFor(kv.first, kv.second.count);
         if (session->SendReliableToSlot(slot, coop::net::ReliableKind::CreatureEventActive, &p, sizeof(p))) {

@@ -18,6 +18,7 @@
 
 #include <cstdint>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace coop::creature_event_relay::detail {
@@ -37,9 +38,9 @@ struct Entry {
     int32_t  actorSerial = 0;
     uint32_t generation = 0;     // WI::Generation() when the entry was made
     void*    world = nullptr;    // WI::WorldOf(actor) at the bind: an address to compare, never dereferenced
-    bool     refusalLogged = false;
 };
 std::unordered_map<EL::ElementId, Entry> g_entries;
+std::unordered_set<EL::ElementId> g_refusalLogged;  // creatures whose refused call was said once; at most kMaxEntries
 uint32_t g_sweptGeneration = 0;
 
 bool Bound(const Entry& e) { return e.actor != nullptr; }
@@ -119,16 +120,19 @@ void Reconcile(EL::ElementId eid) {
 
 }  // namespace
 
+// A call is cancelled only when the relay holds a bound entry for this very actor: a mirror the relay never bound
+// (no event registry yet, a full table, a per-viewer class) counts its own, and runs natively.
 bool ClientPre(void* ctx, bool active) {
-    if (!ctx || ctx == g_applyingCtx) return false;
+    if (!ctx || ctx == g_applyingCtx || g_entries.empty()) return false;
     const EL::ElementId eid = NpcEidOf(ctx, /*mirror=*/true);
-    if (eid == EL::kInvalidId || IsPerViewer(ctx)) return false;
+    if (eid == EL::kInvalidId) return false;
     const auto it = g_entries.find(eid);
-    if (it == g_entries.end() || !it->second.refusalLogged) {
-        if (it != g_entries.end()) it->second.refusalLogged = true;
+    if (it == g_entries.end() || !Bound(it->second) || it->second.actor != ctx ||
+        it->second.generation != WI::Generation() || IsPerViewer(ctx))
+        return false;
+    if (g_refusalLogged.size() < kMaxEntries && g_refusalLogged.insert(eid).second)
         UE_LOGI("creature_event_relay: mirror eid=%u's own setEvent(%d) refused (the host's count is relayed)", eid,
                 active ? 1 : 0);
-    }
     return true;
 }
 
@@ -139,6 +143,9 @@ void ClientOnReliable(const coop::net::CreatureEventActivePayload& payload) {
     auto it = g_entries.find(eid);
     if (it == g_entries.end()) {
         if (payload.count == 0) return;  // the zero a destroy sends after its EntityDestroy
+        // Diverges from MTA dropping data for an unknown element
+        // (reference/mtasa-blue/Client/mods/deathmatch/logic/rpc/CRPCFunctions.cpp:156-167): here a count may precede
+        // its creature's spawn, so the target is kept.
         if (g_entries.size() >= kMaxEntries) {
             UE_LOGW("creature_event_relay: eid=%u count=%u refused -- %zu creatures already hold a target", eid,
                     static_cast<unsigned>(payload.count), kMaxEntries);
@@ -160,6 +167,18 @@ void ClientOnMirrorBound(EL::ElementId eid, void* actor) {
     if (it != g_entries.end() && it->second.actor == actor && it->second.actorIndex == index &&
         it->second.actorSerial == serial)
         return;
+    // No entry is made when the bind cannot apply: the PRE then leaves this mirror native, so its own true has its
+    // own false and the mirror counts for itself.
+    if (!Ready()) {
+        UE_LOGW("creature_event_relay: eid=%u bind before the event registry resolved -- nothing applied, the mirror "
+                "counts its own", eid);
+        return;
+    }
+    if (it == g_entries.end() && g_entries.size() >= kMaxEntries) {
+        UE_LOGW("creature_event_relay: eid=%u bind refused -- %zu creatures already hold an entry, the mirror counts "
+                "its own", eid, kMaxEntries);
+        return;
+    }
     // The registrations the actor made as its own creature before it was installed: a born mirror's BeginPlay
     // `true`, an adopted twin's. The game's own array is the only record of them.
     int copies = 0;
@@ -175,6 +194,9 @@ void ClientOnMirrorBound(EL::ElementId eid, void* actor) {
         if (Bound(it->second)) EndEntry(eid);
         else g_entries.erase(it);
     }
+    // MTA suppresses a local writer at its source
+    // (reference/mtasa-blue/Client/multiplayer_sa/CMultiplayerSA.cpp:854-858); an adopted save twin registered before
+    // it was ours, so its registrations are undone after the fact.
     Retract(actor, copies);
     Entry& e = g_entries[eid];
     e.target = target;
@@ -198,12 +220,15 @@ void ClientOnNpcEnd(const EL::death_seam::Death& death) {
 
 void ClientOnDisconnect() {
     // The retraction runs only while the entries' world is the running one (EndEntry's own test); on a
-    // quit-to-menu the world is going and nothing is called into it.
+    // quit-to-menu the world is going and nothing is called into it. Only the relay's own registrations are retracted:
+    // diverges from MTA's wholesale reset (reference/mtasa-blue/Client/mods/deathmatch/logic/CClientGame.cpp:3491),
+    // for the client keeps its own world and its peer-local events.
     std::vector<EL::ElementId> ids;
     ids.reserve(g_entries.size());
     for (const auto& kv : g_entries) ids.push_back(kv.first);
     for (const EL::ElementId id : ids) EndEntry(id);
     g_entries.clear();
+    g_refusalLogged.clear();
     g_sweptGeneration = 0;
 }
 

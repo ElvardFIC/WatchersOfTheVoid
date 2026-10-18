@@ -90,6 +90,7 @@ inline Lane LaneForKind(ReliableKind k) {
     case ReliableKind::EntityDestroy:  return Lane::Bulk;
     // A creature's event count rides its lifecycle lane, so a count is ordered after its spawn and before its
     // destroy. Host-authoritative: not relayable, not pre-world (the snapshot at world-ready carries it).
+    // Matches MTA's one ordered channel (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:2743-2755).
     case ReliableKind::CreatureEventActive: return Lane::Bulk;
     // The world-actor pair shares the spawn lane for the same reason. Host-authoritative: not
     // relayable, not pre-world.
