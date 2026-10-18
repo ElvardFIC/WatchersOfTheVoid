@@ -374,6 +374,13 @@ CFG_ENUM(badsun_drill, "badsun_drill", "dev", "off", "off|clock|midnight|spawn|c
     "each peer's own copies through the lane (the day edge's in-graph spawn, the host's call, a client's own refused "
     "call, a joiner's seed, the end by the host's clock, a stale copy in a joiner's blob); each arm's set-up "
     "and verdicts are in src/coop/dev/badsun_drill_shared.h, and each ends on its verdict line.")
+CFG_ENUM(event_relay_drill, "event_relay_drill", "dev", "off", "off|on", "VOTVCOOP_EVENT_RELAY_DRILL",
+    "Drill (BOTH peers, one run, one rejoin), the host's creature events in a client's event count: the host "
+    "spawns an inert krampus 15 m above itself once the client's join is over; the client reads its mirror's "
+    "copies in the gamemode's event senders (it must be 1, the relay's one), its count and the game's getEvent, "
+    "tells the host by chat, and rejoins and reads the same; the host then destroys the krampus and the client's "
+    "count must fall by one while the host's returns to where it began. Each step ends on a [EVR] PASS or "
+    "[EVR] FAIL line (src/coop/dev/event_relay_drill.cpp); a step that does not come is a FAIL after 60 s.")
 CFG_ENUM(world_roll_drill, "world_roll_drill", "dev", "off",
     "off|eye_host|eye_client|eye_join|jelly_host|jelly_client|jelly_join|redsky_host|redsky_client|redsky_join",
     "VOTVCOOP_WORLD_ROLL_DRILL",

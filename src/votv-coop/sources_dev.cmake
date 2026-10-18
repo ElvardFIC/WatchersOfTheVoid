@@ -29,6 +29,7 @@ set(VOTVCOOP_DEV_SOURCES
     src/coop/dev/badsun_drill.cpp
     src/coop/dev/badsun_drill_clock.cpp
     src/coop/dev/badsun_drill_lane.cpp
+    src/coop/dev/event_relay_drill.cpp
     src/coop/dev/hostile_drill.cpp
     src/coop/dev/hostile_drill_chat.cpp
     src/coop/dev/hostile_drill_hand.cpp
