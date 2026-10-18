@@ -86,7 +86,6 @@ Clock::time_point g_nextStats{};
 // ---- counters (60 s line -- dead matchers visible) ----
 std::atomic<uint64_t> g_cMarksRack{0};
 uint64_t g_cRackOps = 0, g_cRackCanon = 0, g_cDenies = 0, g_cCanonApplied = 0;
-uint64_t g_cMassRebased = 0;  // CLIENT: sweeps where several rows vanished at once (a reset, not a take), rebased
 
 // --------------------------------------------------------------------------
 // helpers
@@ -231,25 +230,6 @@ void SweepRacks(bool announce) {
             bool havePrev = false;
             auto sh = g_rackShadow.find(eid);
             if (sh != g_rackShadow.end()) havePrev = ParseRackCanonical(sh->second, prev);
-
-            // Safety net: a player takes ONE drive at a time. Several rows vanishing in a single
-            // sweep is a reset or a restore (a loadData re-running the rack's init, a world
-            // change), not a player -- sending takes for it would make the host clear the rack
-            // and broadcast it empty. Rebase on what is there and send nothing; the host's next
-            // canonical corrects any real divergence.
-            if (havePrev) {
-                int removed = 0;
-                for (int i = 0; i < DC::kRackSlots; ++i)
-                    if (prev[i].has && !rows[i].has) ++removed;
-                if (removed > 1) {
-                    ++g_cMassRebased;
-                    UE_LOGW("drive_rack: rack eid=%u lost %d rows at once -- not a player take, rebased "
-                            "(no ops sent)", eid, removed);
-                    g_rackBase[eid] = h;
-                    g_rackShadow[eid] = std::move(blob);
-                    continue;
-                }
-            }
 
             for (int i = 0; i < DC::kRackSlots; ++i) {
                 const bool was = havePrev && prev[i].has;
@@ -515,11 +495,11 @@ void Tick() {
     if (now >= g_nextStats) {
         g_nextStats = now + std::chrono::seconds(60);
         UE_LOGI("drive_rack: 60s marks=%llu | ops=%llu canon=%llu applied=%llu | denies=%llu "
-                "massRebased=%llu pending=%zu",
+                "pending=%zu",
                 (unsigned long long)g_cMarksRack.load(std::memory_order_relaxed),
                 (unsigned long long)g_cRackOps, (unsigned long long)g_cRackCanon,
                 (unsigned long long)g_cCanonApplied, (unsigned long long)g_cDenies,
-                (unsigned long long)g_cMassRebased, g_pending.size());
+                g_pending.size());
     }
 }
 
@@ -574,7 +554,6 @@ void OnDisconnect() {
     for (auto& d : g_denies) d = DenyRec{};
     for (auto& t : g_takenRing) t = TakenRow{};
     g_takenNext = 0;
-    g_cMassRebased = 0;
     g_primed = false;
     g_wasConnected = false;
     g_session.store(nullptr, std::memory_order_release);
