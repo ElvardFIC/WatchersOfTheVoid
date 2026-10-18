@@ -98,8 +98,9 @@ SG::Verdict OnActionPre(const SG::Call& call) {
     if (!coop::players::Registry::Get().IsLocal(player)) return SG::Verdict::Run;
     const uint8_t action = call.locals[actionOff];
     if (!packed && action != kActionTakeMattress) return SG::Verdict::Run;
-    SendIntent(s, call.object, coop::net::sleepingbag_intent::kUnwrap, action);
-    return SG::Verdict::Cancel;
+    // As the fold's: the body is cancelled only when the host was asked.
+    return SendIntent(s, call.object, coop::net::sleepingbag_intent::kUnwrap, action) ? SG::Verdict::Cancel
+                                                                                      : SG::Verdict::Run;
 }
 
 SG::Verdict OnFoldPre(const SG::Call& call) {
