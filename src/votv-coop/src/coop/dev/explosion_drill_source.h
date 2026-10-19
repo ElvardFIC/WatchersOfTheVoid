@@ -1,10 +1,11 @@
-// coop/dev/explosion_drill_source.h -- what the source arms' two files share: the leg table's types, the run's one
+// coop/dev/explosion_drill_source.h -- what the source arms' three files share: the leg table's types, the run's one
 // state, and the helpers the legs call. explosion_drill_source.cpp walks the legs and owns the salt ones;
 // explosion_drill_source_verbs.cpp owns the held legs' verbs and the guard;
 // explosion_drill_source_measure.cpp owns the measure legs (sticky_parent, selfpill) and the host's thrown-prop watch.
 // The request arms' client half (explosion_drill_request.cpp) acts through the same verbs and the host's half
-// (explosion_drill_request_host.cpp) holds the same guard.
-// Private to coop/dev: only those five files include it. Dev only; game thread.
+// (explosion_drill_request_host.cpp) holds the same guard; the drill's host half (explosion_drill_host.cpp) puts it
+// back when it abandons.
+// Private to coop/dev: only those six files include it. Dev only; game thread.
 
 #pragma once
 
@@ -119,11 +120,14 @@ long long Since(Clock::time_point t);
 
 bool ReadFloat(void* obj, const wchar_t* name, float& out);
 bool ReadBool(void* obj, const wchar_t* name, bool& out);
-bool WriteBool(void* obj, const wchar_t* name, bool value);
 
 // The leg ends: with the reason (it points at storage that outlives the End step), or after a refused spawn is counted.
 void Skip(const char* why);
 void Refused(const char* why);
+
+// The projectiles the world holds now become the ones the drill's start found (g_pre); `Count` with `newOnly` leaves
+// them out.
+void SnapshotPre();
 
 // The live instances of `cls` (its default object left out); with `newOnly`, those the drill's start did not find.
 int Count(const wchar_t* cls, bool newOnly, std::vector<void*>* out = nullptr);
@@ -139,10 +143,13 @@ void Track(void* actor);
 // The watched projectile's last location as "(x,y,z)", or "none" when it was never seen.
 void LastText(char* out, size_t cap);
 
+// ---- explosion_drill_source_verbs.cpp ----
+
+// A reflected bool written in place.
+bool WriteBool(void* obj, const wchar_t* name, bool value);
+
 // The held leg's start: its class loaded, the item taken into the hand.
 void BeginItem(const LegDef& d);
-
-// ---- explosion_drill_source_verbs.cpp ----
 
 // Holds the acting player's startInvinc and the gamemode's unlockFungunsInStory (the host's role: the gamemode's
 // alone); the name of the first member that cannot be read, else null. Unguard puts back what Guard held.

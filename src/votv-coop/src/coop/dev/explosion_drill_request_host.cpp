@@ -21,10 +21,6 @@ namespace ER = coop::explosion_request;
 
 namespace {
 
-// From the host's first judging tick: the client's own legs come first, and request_expiry waits a rocket's whole
-// life (30 s) and the table's slack (2 s) on top of them.
-constexpr auto kHostBound = std::chrono::seconds(120);
-
 constexpr const char* kAcceptedNames[3] = {"requestsAccepted[projectile]", "requestsAccepted[hand]",
                                            "requestsAccepted[self]"};
 
@@ -46,6 +42,7 @@ bool RequestHostBegin() {
         h.began = true;
         h.sync0 = ES::GetCounters();
         h.req0 = ER::GetCounters();
+        SnapshotPre();  // the projectiles the arm's PASS waits out are the ones born after this
     }
     if (h.guarded) return true;
     g_src.host = true;
@@ -73,8 +70,14 @@ bool RequestHostTick(Arm arm) {
     Compare(m, "evicted", c.evicted - h.req0.evicted, 0);
     for (int r = 0; r < static_cast<int>(ER::Refusal::Count); ++r)
         Compare(m, ER::RefusalName(static_cast<ER::Refusal>(r)), c.refused[r] - h.req0.refused[r], 0);
+    // Equal counters are not the end: the arm's rockets and sticky bombs must be gone too, so a second blast after the
+    // first is still read.
+    if (!m.name) {
+        const int standing = Count(kRocketCls, true) + Count(kBombCls, true);
+        if (standing > 0) m = Miss{"projectiles standing", static_cast<uint64_t>(standing), 0, false};
+    }
     const char* name = RequestArmName(arm);
-    if (m.over || (m.name && Past(h.at, kHostBound))) {
+    if (m.over || (m.name && Past(h.at, kVerdictBound))) {
         Warn("FAIL host arm=%s %s got=%llu want=%llu", name, m.name, U(m.got), U(m.want));
         Unguard();
         return true;

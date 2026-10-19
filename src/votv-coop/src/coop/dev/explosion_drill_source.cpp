@@ -176,6 +176,8 @@ void ScanFn(void* ctx, void* obj, int32_t) {
     if (s->out) s->out->push_back(obj);
 }
 
+}  // namespace
+
 void SnapshotPre() {
     g_pre.clear();
     for (const wchar_t* cls : kSwept) {
@@ -192,8 +194,6 @@ void SnapshotPre() {
             nullptr);
     }
 }
-
-}  // namespace
 
 int Count(const wchar_t* cls, bool newOnly, std::vector<void*>* out) {
     void* c = OI::ClassByName(cls);

@@ -70,8 +70,8 @@ bool WriteInt(void* obj, const wchar_t* name, int value) {
 // Blueprint prop_funGun, playerHoldPost: in the story game modes a gun that the date and
 // gamemode.unlockFungunsInStory do not allow calls the player's forceDrop() with the hint "the g*ns are prohibited!",
 // so the gun is dropped as a world prop in the tick it was taken. The arm sets the gamemode's unlockFungunsInStory (the
-// cheat menu's own switch) for the same span and puts back the value it found. Each leg's start re-asserts both, so
-// the Delay(5) landing inside the arm costs no leg.
+// cheat menu's own switch) for the same span and puts back the value it found. Each source leg's start and each
+// request arm's first verb re-assert both, so a Delay(5) that landed before them costs no leg.
 
 constexpr int kInvincBit = 1, kUnlockBit = 2;
 
@@ -154,6 +154,7 @@ const wchar_t* Guard(bool hostRole) {
 // What the last Guard held is put back, each member to the value it found; a member Guard did not hold is left alone,
 // and a second call does nothing.
 void Unguard() {
+    if (g_src.invincBefore < 0 && g_src.unlockBefore < 0) return;  // nothing held: no player or gamemode lookup
     Put(coop::players::Registry::Get().Local(), L"startInvinc", g_src.invincBefore);
     Put(ue_wrap::world_singleton::Gamemode(), L"unlockFungunsInStory", g_src.unlockBefore);
 }

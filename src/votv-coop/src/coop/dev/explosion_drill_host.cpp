@@ -2,6 +2,8 @@
 
 #include "coop/dev/explosion_drill_internal.h"
 
+#include "explosion_drill_source.h"  // Unguard (co-located private header)
+
 #include "coop/element/element.h"
 #include "coop/element/registry.h"
 #include "coop/net/protocol.h"
@@ -69,6 +71,7 @@ void HostEnter(HPhase p) {
 bool HostLate() { return Past(g_hostRun.at, kBound); }
 void HostAbandon(const char* what) {
     Warn("ABANDONED %s", what);
+    Unguard();  // a request arm's host holds the fungun rule from its first judging tick
     DestroyPapers();
     HostEnter(HPhase::Done);
 }

@@ -41,7 +41,8 @@ const char* RefusalName(Refusal r);
 // request's kind less one: 0 projectile, 1 hand, 2 self.
 struct Counters {
     // The host: refusals by reason, shots and requests accepted, shots evicted from the table by the cap, shots that
-    // aged out unrequested, and the ticks a judge returned Wait (a head that waits again counts again).
+    // aged out unrequested, and the ticks a judge returned Wait for a hand state still owed (a head that waits again
+    // counts again; the wait on a shot still queued is not counted).
     uint64_t refused[static_cast<int>(Refusal::Count)];
     uint64_t shotsAccepted, requestsAccepted[3], evicted, expired, waited;
     // The client: shots and requests sent, pending births pushed out by the cap, pending births whose projectile

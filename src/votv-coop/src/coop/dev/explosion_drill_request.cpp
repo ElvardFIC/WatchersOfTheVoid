@@ -15,6 +15,7 @@
 #include "coop/player/hand_item.h"
 #include "coop/player/players_registry.h"
 
+#include "ue_wrap/core/reflection_props.h"
 #include "ue_wrap/engine/engine_attach.h"
 
 #include <algorithm>
@@ -25,6 +26,7 @@
 namespace coop::dev::explosion_drill::detail {
 
 namespace E  = ue_wrap::engine;
+namespace R  = ue_wrap::reflection;
 namespace ES = coop::explosion_sync;
 namespace ER = coop::explosion_request;
 
@@ -56,7 +58,7 @@ constexpr Spec kSpecs[] = {
     {"request_hand_soap", Arm::RequestHandSoap, Flow::Hand, {0, {0, 1, 0}, 1, 1, 0, 0}},
     {"request_pipe", Arm::RequestPipe, Flow::Hand, {0, {0, 1, 0}, 1, 1, 0, 0}},
     {"request_self", Arm::RequestSelf, Flow::Self, {0, {0, 0, 1}, 1, 1, 0, 0}},
-    // The control: a thrown grenade is the host's own prop, so EX-2 changes nothing on that path.
+    // The control: a thrown grenade is the host's own prop, so the request lane changes nothing on that path.
     {"request_thrown", Arm::RequestThrown, Flow::Thrown, {0, {0, 0, 0}, 1, -1, 0, 0}},
     // The shot waits on the hand state the hand lane still owes (waited >= 1; none = INCONCLUSIVE).
     {"request_switch", Arm::RequestSwitch, Flow::Switch, {1, {1, 0, 0}, 1, 1, 0, 1}},
@@ -110,6 +112,10 @@ struct Req {
     Clock::time_point startAt{}, actAt{}, dissAt{}, appliedAt{};
     int               fired = 0, swaps = 0;
     bool              began = false;  // the leg changed the game (the hand, the pill): its put-back is owed
+    bool              reGuarded = false;
+    // The sticky bombs seen attached, so each is asked once.
+    ue_wrap::CachedObjRef attached[kFires];
+    int                   attachedN = 0;
 };
 Req g_req;
 
@@ -144,19 +150,45 @@ bool Fail(const Spec& sp, const Miss& m) {
 
 // ---- the legs ----
 
-// Every bomb standing is stuck to something, or the attach bound is up.
+// The arm's first verb (the held item's, or the pill's ignite) re-asserts the guard: the player's one Delay(5) may
+// have cleared startInvinc since Setup held it. False once the arm is abandoned for a member that no longer resolves.
+bool ReGuard() {
+    Req& q = g_req;
+    if (q.reGuarded) return true;
+    q.reGuarded = true;
+    if (!Guard(false)) return true;
+    Abandon("the guard could not be re-asserted at the arm's first verb");
+    return false;
+}
+
+// Every bomb standing is stuck to something, or the attach bound is up. A bomb seen attached is not asked again.
 bool BombsSettled() {
+    Req& q = g_req;
     g_scan.clear();
     Count(kBombCls, true, &g_scan);
     for (void* b : g_scan) {
+        bool seen = false;
+        for (int i = 0; i < q.attachedN && !seen; ++i) seen = q.attached[i].Is(b);
+        if (seen) continue;
         void* parent = nullptr;
         if (!(E::GetAttachParentActor(b, parent) && parent)) return Past(g_src.stepAt, kAttachBound);
+        if (q.attachedN < kFires) q.attached[q.attachedN++].Set(b);
     }
+    return true;
+}
+
+// The held gun's reload timer, through the offset the reflection keeps per class.
+bool ReloadOf(void* gun, float& out) {
+    static R::InstanceOffset sReload{L"reload_primary"};
+    const int32_t off = gun ? sReload.Of(gun) : -1;
+    if (off < 0) return false;
+    out = *reinterpret_cast<const float*>(static_cast<const uint8_t*>(gun) + off);
     return true;
 }
 
 // The held item's verb: the game's own, and the edge the arm's timing starts from.
 void Shoot(const LegDef& d, void* player) {
+    if (!ReGuard()) return;
     Act(d, player);
     if (!g_src.r.skip) Edge(g_req.actAt);
 }
@@ -184,7 +216,7 @@ void ActStep(const Spec& sp, const LegDef& d, void* player) {
     case Flow::StickiesSwitch: {
         if (q.fired == kFires) return Enter(LStep::AwaitAttach);
         float reload = 0.f;
-        if (ReadFloat(HeldOf(player, d.cls), L"reload_primary", reload) && reload > 0.f) {
+        if (ReloadOf(HeldOf(player, d.cls), reload) && reload > 0.f) {
             if (Late(kStepBound)) Abandon("reload_primary never fell to 0 between two shots");
             return;
         }
@@ -215,7 +247,10 @@ void LegTick(const Spec& sp) {
     if (g_src.r.skip) return Abandon(g_src.r.skip);
     switch (g_src.step) {
     case LStep::Begin:
-        if (sp.flow == Flow::Self) return PillIgnite(player);
+        if (sp.flow == Flow::Self) {
+            if (ReGuard()) PillIgnite(player);
+            return;
+        }
         return BeginItem(d);
     case LStep::Held: return Held(sp, d, player);
     case LStep::Aim: return Aim(player);
@@ -253,7 +288,10 @@ bool Setup(const Spec& sp) {
         const Fix f = ComputeB(me, me, g_src.B);
         if (f == Fix::Blocked) Abandon("request fixture blocked");
         else if (f == Fix::NoTrace) Abandon("request fixture trace unresolvable");
-        else if (f == Fix::Ok) q.phase = RP::Guard;
+        else if (f == Fix::Ok) {
+            SnapshotPre();  // the arm's projectiles are the ones born after this
+            q.phase = RP::Guard;
+        }
         return false;
     }
     g_src.host = false;
@@ -297,11 +335,18 @@ bool Judge(const Spec& sp, const ES::Counters& s0, const ER::Counters& q0) {
     Compare(m, "pendingOrphaned", c.pendingOrphaned - q0.pendingOrphaned, 0);
     Compare(m, "clientDropped", c.clientDropped - q0.clientDropped, 0);
     Compare(m, "unmappedProjectile", c.unmappedProjectile - q0.unmappedProjectile, 0);
+    Compare(m, "shotNotAnnounced", c.shotNotAnnounced - q0.shotNotAnnounced, 0);
     if (m.over) return Fail(sp, m);
     // request_expiry ends on the rocket's own end, the client's readiness edge.
     const bool ended = sp.flow != Flow::Expiry || (g_src.r.track.Raw() && !g_src.r.track.Alive());
     if (!m.name && !ended) m = Miss{"the rocket's end", 0, 1, false};
-    if (m.name) return Past(q.startAt, kBound) ? Fail(sp, m) : false;
+    // Equal counters are not the end: the arm's rockets and sticky bombs must be gone too, so a second blast after the
+    // first is still read.
+    if (!m.name) {
+        const int standing = Count(kRocketCls, true) + Count(kBombCls, true);
+        if (standing > 0) m = Miss{"projectiles standing", static_cast<uint64_t>(standing), 0, false};
+    }
+    if (m.name) return Past(q.startAt, kVerdictBound) ? Fail(sp, m) : false;
     const Clock::time_point from = q.dissAt != Clock::time_point{} ? q.dissAt : q.actAt;
     const Clock::time_point to = q.appliedAt != Clock::time_point{} ? q.appliedAt : now;
     const long long ms = (std::max)(0LL, static_cast<long long>(

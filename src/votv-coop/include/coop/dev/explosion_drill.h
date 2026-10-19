@@ -9,10 +9,10 @@
 // source_host, source_client (the named role acts, the other reads; a count, no verdict): which peer's game reaches
 // the birth of each explosion source, through the game's own verbs (a refused one ends its leg alone).
 // request_* (HOST and CLIENT, a verdict): the client's game causes ONE explosion of its own (a rocket, sticky bombs,
-// a held grenade or pipe bomb, the pilled player ...); each half counts its own request lane and the host's blast
-// reaches the client once. Every wait is a counter's rise, a rest or a registry state, with a failure bound (60 s per
-// phase, the client's join and verdicts 120 s). Markers: "[EXPLOSION-DRILL] FAIL" (--fail-marker), "ABANDONED"
-// (--dead-marker), "host DONE PASS arm=request_rocket" and the same per arm (--done-marker).
+// a held grenade or pipe bomb, the pilled player ...); each half counts its own request lane, the host's blast reaches
+// the client once, and PASS prints only after the arm's projectiles are gone. Every wait is a counter's rise, a rest or
+// a registry state, bounded (60 s per phase, 120 s for the client's join and each request half's verdict). Markers:
+// "[EXPLOSION-DRILL] FAIL" (--fail-marker), "ABANDONED" (--dead-marker), "host DONE PASS arm=<arm>" (--done-marker).
 
 #pragma once
 

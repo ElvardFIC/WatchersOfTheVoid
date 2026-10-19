@@ -126,7 +126,8 @@ const char* KindName(RC::RequestKind kind) {
     return "unknown";
 }
 
-// A judge's Wait, counted: a head that waits again on the next tick counts again.
+// A judge's Wait for a hand state it is owed, counted: a head that waits again on the next tick counts again. The
+// wait on a shot still queued is not counted.
 Served Wait() {
     ++MutCounters().waited;
     return Served::Wait;
@@ -240,7 +241,7 @@ Served JudgeShotBlast(uint8_t slot, Slot& s, const RequestItem& it) {
         }
     if (at == s.count) {
         // Its shot may still be queued behind the shots paced before it, but only while the slot's Fired queue holds any.
-        if (!s.fired.empty()) return Wait();
+        if (!s.fired.empty()) return Served::Wait;
         Refuse(slot, Refusal::UnknownShot);
         return Served::Done;
     }

@@ -24,6 +24,9 @@ using Clock = std::chrono::steady_clock;
 using Vec = ue_wrap::FVector;
 
 constexpr auto kBound = std::chrono::seconds(60);  // a failure bound, never a wait
+// The request arms' verdict, each half: the client's legs come first, and request_expiry waits a rocket's whole life
+// (30 s) and the table's slack (2 s) on top of them. One bound for both halves.
+constexpr auto kVerdictBound = std::chrono::seconds(120);
 constexpr float kFlyDistance = 100.f;
 // One of the four papers can barely move, and its host copy barely moves too, so the stream is not the cause; the cause
 // is not yet named (the host's fixture and papers lines log the spots). The coast is therefore shown by at least this
@@ -95,11 +98,13 @@ void SourceReset();
 // ---- the request arms (explosion_drill_request.cpp, explosion_drill_request_host.cpp) ----
 //
 // A client's own explosion becomes the host's once, end to end. The client acts with the source verbs and judges its
-// counters, the host judges its own, each as deltas against a baseline it took before the first send.
+// counters, the host judges its own, each as deltas against a baseline it took before the first send. A half prints
+// its PASS only once its counters equal their wants and the arm's own rockets and sticky bombs are gone, so a second
+// blast after the first is read; a counter past its want fails at once.
 
 // What an arm's half must count. Client: shots and requests SENT, blasts APPLIED, own births dissolved (-1 = not
 // asserted). Host: shots and requests ACCEPTED, blasts CAPTURED, shots expired unrequested, and the least ticks a
-// judge waited (0 = no floor).
+// judge waited on a hand state it was owed (0 = no floor).
 struct RequestWant {
     uint32_t shots;
     uint32_t kind[3];  // by the request's kind less one: projectile, hand, self

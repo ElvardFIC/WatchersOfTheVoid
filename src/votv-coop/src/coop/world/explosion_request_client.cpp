@@ -155,6 +155,7 @@ struct OutItem {
     bool                               shot;
     coop::net::ProjectileFiredPayload  fired;
     coop::net::ExplosionRequestPayload request;
+    RC::RequestKind                    kind;  // of `request`, so the counter slot never comes from the wire byte
 };
 constexpr size_t kOutboxCap = 16;
 OutItem g_outbox[kOutboxCap];
@@ -320,10 +321,10 @@ bool AllSettled() {
     return true;
 }
 
-void Send(coop::net::Session& s, const coop::net::ExplosionRequestPayload& p) {
+void Send(coop::net::Session& s, const coop::net::ExplosionRequestPayload& p, RC::RequestKind kind) {
     if (!s.SendReliable(coop::net::ReliableKind::ExplosionRequest, &p, sizeof(p)))
         return NoteDropped(Msg::Request, "the session took no reliable message");
-    ++detail::MutCounters().requestsSent[detail::KindSlot(static_cast<RC::RequestKind>(p.kind))];
+    ++detail::MutCounters().requestsSent[detail::KindSlot(kind)];
     UE_LOGI("[EXPLOSION] request sent kind=%u class=%u shot=%u", static_cast<unsigned>(p.kind),
             static_cast<unsigned>(p.srcClass), p.shotId);
 }
@@ -384,7 +385,7 @@ void TickClient() {
     while (g_outboxCount > 0) {
         const OutItem head = g_outbox[0];
         if (!head.shot) {
-            Send(*s, head.request);
+            Send(*s, head.request, head.kind);
             PopHead();
             continue;
         }
@@ -452,6 +453,7 @@ void OnClientBirth(void* sourceObject, void* /*explosionActor*/) {
     p.srcClass = RC::SrcClassOf(kind);
     bool atSource = true;  // the blast's place is the source's; a pilled burn sends none
     int  shotAt   = -1;    // the projectile's entry in the shot map, spent once its location has read
+    RC::RequestKind rk{};  // set by every case that goes on; the wire byte is made from it below
     switch (kind) {
         case XS::Kind::Rocket:
         case XS::Kind::Sticky: {
@@ -467,7 +469,7 @@ void OnClientBirth(void* sourceObject, void* /*explosionActor*/) {
                 return;
             }
             p.shotId = g_shots[shotAt].shotId;
-            p.kind = static_cast<uint8_t>(RC::RequestKind::Projectile);
+            rk = RC::RequestKind::Projectile;
             break;
         }
         case XS::Kind::Grenade:
@@ -475,7 +477,7 @@ void OnClientBirth(void* sourceObject, void* /*explosionActor*/) {
         case XS::Kind::PoopGrenade:
         case XS::Kind::SoapGrenade:
             if (!coop::hand_item::IsLocalHandViewActor(sourceObject)) return;
-            p.kind = static_cast<uint8_t>(RC::RequestKind::Hand);
+            rk = RC::RequestKind::Hand;
             break;
         case XS::Kind::Player: {
             if (!coop::players::Registry::Get().IsLocal(sourceObject)) return;
@@ -484,13 +486,14 @@ void OnClientBirth(void* sourceObject, void* /*explosionActor*/) {
             if (!ue_wrap::vitals::Read(ue_wrap::vitals::Field::GasolinePilled, &level))
                 return NoteDropped(Msg::Request, "the pill level did not read");
             p.pillLevel = level;
-            p.kind   = static_cast<uint8_t>(RC::RequestKind::Self);
+            rk       = RC::RequestKind::Self;
             atSource = false;
             break;
         }
         case XS::Kind::None:
             return;
     }
+    p.kind = static_cast<uint8_t>(rk);
     if (atSource) {
         FVector loc{};
         if (!E::TryGetActorLocation(sourceObject, loc))
@@ -505,9 +508,10 @@ void OnClientBirth(void* sourceObject, void* /*explosionActor*/) {
         OutItem item{};
         item.shot    = false;
         item.request = p;
+        item.kind    = rk;
         return Enqueue(item);
     }
-    Send(*s, p);
+    Send(*s, p, rk);
 }
 
 }  // namespace coop::explosion_request
