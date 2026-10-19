@@ -80,7 +80,7 @@ Mirror g_mirrors[coop::players::kMaxPeers];  // GT-only
 coop::net::Session* g_session = nullptr;
 
 // Owner-side change detection.
-uint32_t     g_ownAnnounceSeq = 0;  // own announces made, items and the empty hand alike
+uint32_t     g_ownLookSeq = 0;  // owner ticks that read the hand, so the latch below is the hand's state at the last one
 bool         g_ownHas = false;
 std::wstring g_ownCls;
 std::wstring g_ownName;
@@ -364,6 +364,7 @@ void TickOwner(coop::net::Session& session, void* local, void* holdingProp) {
     if (!session.connected()) return;
     const uint8_t self = coop::players::Registry::Get().LocalPeerId();
     if (self >= coop::players::kMaxPeers) return;
+    ++g_ownLookSeq;  // every path below leaves the latch saying what the hand holds now
 
     if (holdingProp) {
         // The live view-relative hold transform is measured and latched every tick while holding;
@@ -422,7 +423,6 @@ void TickOwner(coop::net::Session& session, void* local, void* holdingProp) {
                 h.haveRel = false;
             }
             SendState(session, self, h);
-            ++g_ownAnnounceSeq;
             UE_LOGI("hand_item: local hand -> cls='%ls' name='%ls' item='%ls' (announced, rel %s)",
                     cls.c_str(), name.c_str(), item.c_str(), h.haveRel ? "measured" : "fallback");
             // No reconcile request here: the pickup's ground-actor death is caught at the destroy
@@ -448,7 +448,6 @@ void TickOwner(coop::net::Session& session, void* local, void* holdingProp) {
         h = SlotHand{};
         h.lastCls = last;
         SendState(session, self, h);
-        ++g_ownAnnounceSeq;
         UE_LOGI("hand_item: local hand -> EMPTY (announced)");
         // No reconcile request: the released actor was expressed above, and inventory spawns ride
         // the finish-spawn seam.
@@ -739,7 +738,7 @@ bool OwnAnnounced(const wchar_t* cls) {
     return cls && g_ownHas && ::_wcsicmp(g_ownCls.c_str(), cls) == 0;
 }
 
-uint32_t OwnAnnounceSeq() { return g_ownAnnounceSeq; }
+uint32_t OwnHandLookSeq() { return g_ownLookSeq; }
 
 bool LastHeldClassIs(uint8_t slot, const wchar_t* cls) {
     if (slot >= coop::players::kMaxPeers || !cls) return false;

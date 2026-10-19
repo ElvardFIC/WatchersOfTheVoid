@@ -158,7 +158,7 @@ struct OutItem {
     coop::net::ProjectileFiredPayload  fired;
     coop::net::ExplosionRequestPayload request;
     RC::RequestKind                    kind;  // of `request`, so the counter slot never comes from the wire byte
-    uint32_t                           announceSeq;  // a shot's: the hand lane's own-announce count at the shot
+    uint32_t                           lookSeq;  // a shot's: the hand lane's look count at the shot
 };
 constexpr size_t kOutboxCap = 16;
 OutItem g_outbox[kOutboxCap];
@@ -258,7 +258,7 @@ void SendShot(coop::net::Session& s, const Pending& e) {
     OutItem item{};
     item.shot        = true;
     item.fired       = p;
-    item.announceSeq = coop::hand_item::OwnAnnounceSeq();
+    item.lookSeq     = coop::hand_item::OwnHandLookSeq();
     static bool s_said = false;   // the first held shot names the hand state it waits on
     if (!s_said) {
         s_said = true;
@@ -266,8 +266,8 @@ void SendShot(coop::net::Session& s, const Pending& e) {
         ue_wrap::engine::MainPlayerGrabState gs{};
         const bool read = player && ue_wrap::engine::ReadMainPlayerGrabState(player, gs);
         void* ha = read ? gs.holdingActor : nullptr;
-        UE_LOGI("[EXPLOSION] shot held for the announce: seq=%u holding=%ls live=%d keyed=%d prop=%d grabbing=%ls",
-                item.announceSeq, ha ? R::ClassNameOf(ha).c_str() : L"none", ha && R::IsLive(ha) ? 1 : 0,
+        UE_LOGI("[EXPLOSION] shot held for the announce: look=%u holding=%ls live=%d keyed=%d prop=%d grabbing=%ls",
+                item.lookSeq, ha ? R::ClassNameOf(ha).c_str() : L"none", ha && R::IsLive(ha) ? 1 : 0,
                 ha && ue_wrap::prop::IsKeyedInteractable(ha) ? 1 : 0, ha && ue_wrap::prop::IsDescendantOfProp(ha) ? 1 : 0,
                 read && gs.grabbingActor ? R::ClassNameOf(gs.grabbingActor).c_str() : L"none");
     }
@@ -399,11 +399,11 @@ void TickClient() {
             continue;
         }
         const wchar_t* cls = RC::LauncherClassName(head.fired.launcher);
-        // The launcher's announce sends it. Any other own announce since the shot (another item, or the empty hand)
-        // means the launcher will not be announced: dropped. No announce yet -- the hand lane may not have started,
-        // a client's streams wait for its load tail -- the shot waits. At most one announce a tick, so this is exact.
+        // The launcher's announce sends it. A look at the hand since the shot that left it unannounced (another item,
+        // the empty hand, the launcher gone) means it never will be: dropped. No look yet -- the hand lane may not
+        // have started, a client's streams wait for its load tail -- the shot waits. A look announces what it sees.
         if (!coop::hand_item::OwnAnnounced(cls)) {
-            if (coop::hand_item::OwnAnnounceSeq() == head.announceSeq) return;
+            if (coop::hand_item::OwnHandLookSeq() == head.lookSeq) return;
             DropNotAnnounced(head.fired.shotId);
             continue;
         }

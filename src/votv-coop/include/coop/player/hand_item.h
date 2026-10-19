@@ -95,9 +95,9 @@ bool HeldClassIs(uint8_t slot, const wchar_t* cls);
 // thread only.
 bool OwnAnnounced(const wchar_t* cls);
 
-// How many own announces (an item or the empty hand) this peer has made: one per change, at most one a tick.
-// Game thread only.
-uint32_t OwnAnnounceSeq();
+// How many owner ticks have read this peer's hand: after each, OwnAnnounced says what the hand held at it. A held
+// launcher shot that sees this move without its launcher announced will never see it. Game thread only.
+uint32_t OwnHandLookSeq();
 
 // Whether the class `slot`'s hand held last is the one named `cls`: the one it holds now or, since
 // the hand emptied, the one it held before. A host asks it of a verb that takes the held item as it
