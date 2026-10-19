@@ -24,8 +24,9 @@
 namespace coop::hand_item {
 
 // Owner side, per tick (from local_streams::Tick). `local` is the local mainPlayer; `holdingProp` is
-// the local player's holding_actor IF it is a live Aprop_C descendant, else nullptr. Announces EDGE-INSTANT on change -- a quick-slot switch
-// is one synchronous updateHold call, bytecode-proven, so a null IS the stow.
+// the local player's holding_actor IF it is a live Aprop_C descendant, else nullptr. Announces
+// EDGE-INSTANT on change -- a quick-slot switch is one synchronous updateHold call, bytecode-proven,
+// so a null IS the stow.
 //
 // At the hand edge, an ex-hand actor that SURVIVED the edge was RELEASED into the world (an
 // R-drop or quick-slot place is not a spawn; the game re-uses the view actor), so it is expressed

@@ -24,8 +24,8 @@ using Clock = std::chrono::steady_clock;
 using Vec = ue_wrap::FVector;
 
 constexpr auto kBound = std::chrono::seconds(60);  // a failure bound, never a wait
-// The request arms' verdict, each half: the client's legs come first, and request_expiry waits a rocket's whole life
-// (30 s) and the table's slack (2 s) on top of them. One bound for both halves.
+// The request arms' verdict, each half: the client's legs come first, and request_expiry's host half waits the shot
+// table's life of a shot (30 s) and its slack (2 s) on top of them. One bound for both halves.
 constexpr auto kVerdictBound = std::chrono::seconds(120);
 constexpr float kFlyDistance = 100.f;
 // One of the four papers can barely move, and its host copy barely moves too, so the stream is not the cause; the cause

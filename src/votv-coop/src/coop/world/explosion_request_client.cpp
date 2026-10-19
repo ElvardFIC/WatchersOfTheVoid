@@ -209,13 +209,13 @@ void Enqueue(const OutItem& item) {
     g_outbox[g_outboxCount++] = item;
 }
 
-// A shot dropped because a look at the hand since it left its launcher unannounced: it and its queued requests,
-// counted.
+// A shot dropped because the hand lane looked at the hand after it and did not announce its launcher: it and its
+// queued requests, counted.
 void DropNotAnnounced(uint32_t shotId) {
     detail::MutCounters().shotNotAnnounced += DropQueued(shotId);
     if (g_notAnnouncedLogged) return;
     g_notAnnouncedLogged = true;
-    UE_LOGW("[EXPLOSION] shot dropped: a look at the hand since the shot left its launcher unannounced");
+    UE_LOGW("[EXPLOSION] shot dropped: the hand lane looked after the shot and did not announce its launcher");
 }
 
 // One shot on the wire; false, counted, when the session took none.

@@ -100,7 +100,7 @@ void RecordClaimIfTracking(void* actor) {
 }
 
 void RecordSelfAuthored(void* actor) {
-    // A DIFFERENT fact from a claim, and it is why this is a second set rather than a flag on the
+    // A DIFFERENT fact from a claim, and it is why this is a second record rather than a flag on the
     // first. A claim says "the host accounted for this actor in the bracket now open", so it is
     // scoped to that bracket and cleared when the next one opens. This says "this peer's own
     // player deliberately made this actor", which is true from the birth and owes nothing to any

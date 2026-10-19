@@ -48,8 +48,8 @@ struct Counters {
     // The client: shots and requests sent, pending births pushed out by the cap, pending births whose projectile
     // died inside the fire body, pending births left by a body that ended without its post, messages dropped unsent
     // (a location that did not read, a send that failed, the outbox's cap), projectiles other than a host's copy that
-    // exploded with no shot sent, and messages dropped because a look at the hand since their shot left its launcher
-    // unannounced.
+    // exploded with no shot sent, and messages dropped because the hand lane looked at the hand after their shot and
+    // did not announce its launcher.
     uint64_t shotsSent, requestsSent[3], pendingDropped, pendingDead, pendingOrphaned, clientDropped,
         unmappedProjectile, shotNotAnnounced;
 };
