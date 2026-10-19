@@ -11,7 +11,7 @@
 //     the receive. Every refusal is counted by reason and said through a per-lane tally. The slot's state clears
 //     with its occupant.
 //   - The explosion source classes (ue_wrap/world/explosion_source.h) are resolved on a client, the only role that
-//     reads them: by pointer once held, by class name until then.
+//     reads them: by pointer once held, by class name until then. The counters are public (GetCounters), by kind.
 // Game thread throughout.
 
 #pragma once
@@ -23,6 +23,35 @@ class Session;
 }  // namespace coop::net
 
 namespace coop::explosion_request {
+
+// Why a message was refused, one counter each.
+enum class Refusal : uint8_t {
+    Malformed, DuplicateShot, QueueFull, NotWorldReady,
+    NoLauncher, FungunRule, NotSeated, OriginBound, UnknownShot, Reach, NoExplosive, HandBound, NoPuppet, PuppetDead,
+    Unresolved, SpawnFailed,
+    Count
+};
+
+// Snake case: "malformed", "duplicate_shot", "queue_full", "not_world_ready", "no_launcher", "fungun_rule",
+// "not_seated", "origin_bound", "unknown_shot", "reach", "no_explosive", "hand_bound", "no_puppet", "puppet_dead",
+// "unresolved", "spawn_failed".
+const char* RefusalName(Refusal r);
+
+// What this process's half of the lane has counted since the session began. The per-kind arrays are indexed by the
+// request's kind less one: 0 projectile, 1 hand, 2 self.
+struct Counters {
+    // The host: refusals by reason, shots and requests accepted, shots evicted from the table by the cap, shots that
+    // aged out unrequested, and the ticks a judge returned Wait (a head that waits again counts again).
+    uint64_t refused[static_cast<int>(Refusal::Count)];
+    uint64_t shotsAccepted, requestsAccepted[3], evicted, expired, waited;
+    // The client: shots and requests sent, pending births pushed out by the cap, pending births whose projectile
+    // died inside the fire body, pending births left by a body that ended without its post, messages dropped unsent
+    // (a location that did not read, a send that failed), and projectiles other than a host's copy that exploded
+    // with no shot sent.
+    uint64_t shotsSent, requestsSent[3], pendingDropped, pendingDead, pendingOrphaned, clientDropped,
+        unmappedProjectile;
+};
+Counters GetCounters();
 
 // Store the session and take the client half's watches; idempotent, called every load tick.
 void Install(coop::net::Session* s);

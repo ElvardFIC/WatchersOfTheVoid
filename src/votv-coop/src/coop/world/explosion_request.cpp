@@ -30,7 +30,7 @@ namespace XS = ue_wrap::explosion_source;
 
 std::atomic<coop::net::Session*> g_session{nullptr};
 
-detail::Counters g_counters{};
+Counters g_counters{};
 coop::roster_ledger::PerSlotState<detail::Slot> g_slots;
 
 // The first refusal after a quiet spell is said at once and a burst is summed into one line per window
@@ -101,8 +101,6 @@ void ExpireRockets(detail::Slot& sl) {
 
 }  // namespace
 
-namespace detail {
-
 const char* RefusalName(Refusal r) {
     switch (r) {
         case Refusal::Malformed:     return "malformed";
@@ -125,6 +123,10 @@ const char* RefusalName(Refusal r) {
     }
     return "unknown";
 }
+
+Counters GetCounters() { return g_counters; }
+
+namespace detail {
 
 void Refuse(uint8_t slot, Refusal r) {
     ++g_counters.refused[static_cast<int>(r)];
@@ -174,30 +176,31 @@ void OnDisconnect() {
     char line[512];
     size_t n = 0;
     line[0] = '\0';
-    for (int r = 0; r < static_cast<int>(detail::Refusal::Count); ++r) {
+    for (int r = 0; r < static_cast<int>(Refusal::Count); ++r) {
         if (g_counters.refused[r] == 0 || n >= sizeof(line)) continue;
         const int w = std::snprintf(line + n, sizeof(line) - n, " %s=%llu",
-                                    detail::RefusalName(static_cast<detail::Refusal>(r)),
+                                    RefusalName(static_cast<Refusal>(r)),
                                     static_cast<unsigned long long>(g_counters.refused[r]));
         if (w > 0) n += static_cast<size_t>(w);
     }
-    const detail::Counters& c = g_counters;
-    if (n > 0 || c.shotsAccepted || c.requestsAccepted || c.evicted || c.expired)
-        UE_LOGI("[EXPLOSION] request lane at disconnect: shots=%llu requests=%llu evicted=%llu expired=%llu refused%s",
-                static_cast<unsigned long long>(c.shotsAccepted), static_cast<unsigned long long>(c.requestsAccepted),
-                static_cast<unsigned long long>(c.evicted), static_cast<unsigned long long>(c.expired), line);
-    if (c.shotsSent || c.requestsSent || c.pendingDropped || c.pendingDead || c.pendingOrphaned || c.clientDropped ||
-        c.unmappedProjectile)
-        UE_LOGI("[EXPLOSION] request lane at disconnect (client): shotsSent=%llu requestsSent=%llu "
+    const Counters& c = g_counters;
+    const auto u = [](uint64_t v) { return static_cast<unsigned long long>(v); };
+    const bool hostSaw = n > 0 || c.shotsAccepted || c.evicted || c.expired || c.waited || c.requestsAccepted[0] ||
+                         c.requestsAccepted[1] || c.requestsAccepted[2];
+    if (hostSaw)
+        UE_LOGI("[EXPLOSION] request lane at disconnect: shots=%llu requests=%llu/%llu/%llu evicted=%llu "
+                "expired=%llu waited=%llu refused%s", u(c.shotsAccepted), u(c.requestsAccepted[0]),
+                u(c.requestsAccepted[1]), u(c.requestsAccepted[2]), u(c.evicted), u(c.expired), u(c.waited), line);
+    if (c.shotsSent || c.requestsSent[0] || c.requestsSent[1] || c.requestsSent[2] || c.pendingDropped ||
+        c.pendingDead || c.pendingOrphaned || c.clientDropped || c.unmappedProjectile)
+        UE_LOGI("[EXPLOSION] request lane at disconnect (client): shotsSent=%llu requestsSent=%llu/%llu/%llu "
                 "pendingDropped=%llu pendingDead=%llu pendingOrphaned=%llu clientDropped=%llu "
-                "unmappedProjectile=%llu", static_cast<unsigned long long>(c.shotsSent),
-                static_cast<unsigned long long>(c.requestsSent), static_cast<unsigned long long>(c.pendingDropped),
-                static_cast<unsigned long long>(c.pendingDead), static_cast<unsigned long long>(c.pendingOrphaned),
-                static_cast<unsigned long long>(c.clientDropped),
-                static_cast<unsigned long long>(c.unmappedProjectile));
+                "unmappedProjectile=%llu", u(c.shotsSent), u(c.requestsSent[0]), u(c.requestsSent[1]),
+                u(c.requestsSent[2]), u(c.pendingDropped), u(c.pendingDead), u(c.pendingOrphaned),
+                u(c.clientDropped), u(c.unmappedProjectile));
     for (int i = 0; i < g_slots.size(); ++i) g_slots[i] = detail::Slot{};
     detail::ClearClient();
-    g_counters = detail::Counters{};
+    g_counters = Counters{};
     g_refusals.Clear();
 }
 
@@ -205,27 +208,27 @@ void OnFiredReceived(int senderSlot, const uint8_t* bytes, uint16_t len) {
     if (!ValidSenderSlot(senderSlot)) return;  // the dispatch's own guard, kept at this lane's edge
     const auto slot = static_cast<uint8_t>(senderSlot);
     coop::net::ProjectileFiredPayload p{};
-    if (!SenderWorldReady(slot)) return detail::Refuse(slot, detail::Refusal::NotWorldReady);
-    if (!bytes || len != sizeof(p)) return detail::Refuse(slot, detail::Refusal::Malformed);
+    if (!SenderWorldReady(slot)) return detail::Refuse(slot, Refusal::NotWorldReady);
+    if (!bytes || len != sizeof(p)) return detail::Refuse(slot, Refusal::Malformed);
     std::memcpy(&p, bytes, sizeof(p));
-    if (!FiredWellFormed(p)) return detail::Refuse(slot, detail::Refusal::Malformed);
+    if (!FiredWellFormed(p)) return detail::Refuse(slot, Refusal::Malformed);
     if (!detail::SlotOf(slot).fired.Push(detail::FiredItem{p, coop::net::NowMs()}, detail::kFiredCap))
-        detail::Refuse(slot, detail::Refusal::QueueFull);
+        detail::Refuse(slot, Refusal::QueueFull);
 }
 
 void OnRequestReceived(int senderSlot, const uint8_t* bytes, uint16_t len) {
     if (!ValidSenderSlot(senderSlot)) return;  // the dispatch's own guard, kept at this lane's edge
     const auto slot = static_cast<uint8_t>(senderSlot);
     coop::net::ExplosionRequestPayload p{};
-    if (!SenderWorldReady(slot)) return detail::Refuse(slot, detail::Refusal::NotWorldReady);
-    if (!bytes || len != sizeof(p)) return detail::Refuse(slot, detail::Refusal::Malformed);
+    if (!SenderWorldReady(slot)) return detail::Refuse(slot, Refusal::NotWorldReady);
+    if (!bytes || len != sizeof(p)) return detail::Refuse(slot, Refusal::Malformed);
     std::memcpy(&p, bytes, sizeof(p));
-    if (!RequestWellFormed(p)) return detail::Refuse(slot, detail::Refusal::Malformed);
+    if (!RequestWellFormed(p)) return detail::Refuse(slot, Refusal::Malformed);
     detail::Slot& sl = detail::SlotOf(slot);
     const bool projectile = p.kind == static_cast<uint8_t>(RC::RequestKind::Projectile);
     auto& queue = projectile ? sl.shotBlast : sl.bodyBlast;
     const size_t cap = projectile ? detail::kShotBlastCap : detail::kBodyBlastCap;
-    if (!queue.Push(detail::RequestItem{p, coop::net::NowMs()}, cap)) detail::Refuse(slot, detail::Refusal::QueueFull);
+    if (!queue.Push(detail::RequestItem{p, coop::net::NowMs()}, cap)) detail::Refuse(slot, Refusal::QueueFull);
 }
 
 }  // namespace coop::explosion_request

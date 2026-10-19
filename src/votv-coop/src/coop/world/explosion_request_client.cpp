@@ -231,7 +231,7 @@ bool AllSettled() {
 void Send(coop::net::Session& s, const coop::net::ExplosionRequestPayload& p) {
     if (!s.SendReliable(coop::net::ReliableKind::ExplosionRequest, &p, sizeof(p)))
         return NoteDropped(Msg::Request, "the session took no reliable message");
-    ++detail::MutCounters().requestsSent;
+    ++detail::MutCounters().requestsSent[detail::KindSlot(static_cast<RC::RequestKind>(p.kind))];
     UE_LOGI("[EXPLOSION] request sent kind=%u class=%u shot=%u", static_cast<unsigned>(p.kind),
             static_cast<unsigned>(p.srcClass), p.shotId);
 }

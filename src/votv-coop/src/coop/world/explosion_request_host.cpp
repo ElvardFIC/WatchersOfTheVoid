@@ -117,9 +117,24 @@ size_t EvictionVictim(const Slot& s) {
     return 0;
 }
 
+const char* KindName(RC::RequestKind kind) {
+    switch (kind) {
+        case RC::RequestKind::Projectile: return "projectile";
+        case RC::RequestKind::Hand:       return "hand";
+        case RC::RequestKind::Self:       return "self";
+    }
+    return "unknown";
+}
+
+// A judge's Wait, counted: a head that waits again on the next tick counts again.
+Served Wait() {
+    ++MutCounters().waited;
+    return Served::Wait;
+}
+
 // The blast itself: the host's own parameters for the source, spawned natively inside the lane's scope so the birth
 // seam leaves it alone; the host's capture of its begin-play carries it to every peer.
-void SpawnBlast(uint8_t slot, const char* kind, XS::Kind src, const float loc[3], float level) {
+void SpawnBlast(uint8_t slot, RC::RequestKind kind, XS::Kind src, const float loc[3], float level) {
     if (!X::ResolveNow(X::Cls::Explosion)) return Refuse(slot, Refusal::Unresolved);
     X::Params params{};
     float scale[3];
@@ -131,8 +146,8 @@ void SpawnBlast(uint8_t slot, const char* kind, XS::Kind src, const float loc[3]
         actor = X::SpawnDeferred(X::Cls::Explosion, loc, rot, scale, params, nullptr);
     }
     if (!actor) return Refuse(slot, Refusal::SpawnFailed);
-    ++MutCounters().requestsAccepted;
-    UE_LOGI("[EXPLOSION] request accepted kind=%s class=%ls slot=%u", kind, XS::ClassName(src),
+    ++MutCounters().requestsAccepted[KindSlot(kind)];
+    UE_LOGI("[EXPLOSION] request accepted kind=%s class=%ls slot=%u", KindName(kind), XS::ClassName(src),
             static_cast<unsigned>(slot));
 }
 
@@ -160,7 +175,7 @@ Served JudgeShot(uint8_t slot, Slot& s, const FiredItem& it) {
         }
     } else {
         if (!coop::hand_history::HeldWithin(slot, RC::LauncherClassName(p.launcher), kLauncherWindowMs, it.recvMs)) {
-            if (coop::hand_item::HandStateOwed(slot)) return Served::Wait;
+            if (coop::hand_item::HandStateOwed(slot)) return Wait();
             Refuse(slot, Refusal::NoLauncher);
             return Served::Done;
         }
@@ -218,7 +233,7 @@ Served JudgeShotBlast(uint8_t slot, Slot& s, const RequestItem& it) {
         }
     if (at == s.count) {
         // Its shot may still be queued behind the shots paced before it, but only while the slot's Fired queue holds any.
-        if (!s.fired.empty()) return Served::Wait;
+        if (!s.fired.empty()) return Wait();
         Refuse(slot, Refusal::UnknownShot);
         return Served::Done;
     }
@@ -241,7 +256,7 @@ Served JudgeShotBlast(uint8_t slot, Slot& s, const RequestItem& it) {
         Refuse(slot, Refusal::Reach);
         return Served::Done;
     }
-    SpawnBlast(slot, "projectile", src, p.loc, 0.0f);
+    SpawnBlast(slot, RC::RequestKind::Projectile, src, p.loc, 0.0f);
     return Served::Done;
 }
 
@@ -256,7 +271,7 @@ Served JudgeBody(uint8_t slot, Slot&, const RequestItem& it) {
     if (p.kind == static_cast<uint8_t>(RC::RequestKind::Hand)) {
         const uint64_t fuse = src == XS::Kind::Pipebomb ? kPipebombFuseMs : kGrenadeFuseMs;
         if (!coop::hand_history::HeldWithin(slot, XS::ClassName(src), fuse + kFuseSlackMs, it.recvMs)) {
-            if (coop::hand_item::HandStateOwed(slot)) return Served::Wait;
+            if (coop::hand_item::HandStateOwed(slot)) return Wait();
             Refuse(slot, Refusal::NoExplosive);
             return Served::Done;
         }
@@ -269,7 +284,7 @@ Served JudgeBody(uint8_t slot, Slot&, const RequestItem& it) {
             Refuse(slot, Refusal::HandBound);
             return Served::Done;
         }
-        SpawnBlast(slot, "hand", src, p.loc, 0.0f);
+        SpawnBlast(slot, RC::RequestKind::Hand, src, p.loc, 0.0f);
         return Served::Done;
     }
     if (p.kind == static_cast<uint8_t>(RC::RequestKind::Self)) {
@@ -284,7 +299,7 @@ Served JudgeBody(uint8_t slot, Slot&, const RequestItem& it) {
             return Served::Done;
         }
         const float loc[3] = {at.X, at.Y, at.Z};
-        SpawnBlast(slot, "self", src, loc, RC::ClampLevel(p.pillLevel));
+        SpawnBlast(slot, RC::RequestKind::Self, src, loc, RC::ClampLevel(p.pillLevel));
         return Served::Done;
     }
     Refuse(slot, Refusal::Malformed);  // the receive edge queues only these two kinds here

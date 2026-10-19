@@ -1,6 +1,6 @@
 // coop/world/explosion_request_internal.h -- what the explosion request lane's files share: the host's per-slot
-// queues and shot table, the budgets, the refusal reasons with their counters, the judges, the client half's
-// install and clear, and the session.
+// queues and shot table, the budgets, the refusal note and the writable counters (their types are public), the
+// judges, the client half's install and clear, and the session.
 // Declarations only; the queue and counter definitions sit in explosion_request.cpp, the judges in
 // explosion_request_host.cpp and the client half in explosion_request_client.cpp. Impl-private: nothing outside
 // coop/world includes this.
@@ -10,6 +10,8 @@
 #include "coop/net/intent_bucket.h"
 #include "coop/net/intent_queue.h"
 #include "coop/net/protocol.h"
+#include "coop/world/explosion_recipe.h"
+#include "coop/world/explosion_request.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -34,18 +36,8 @@ inline constexpr coop::net::IntentBudget kBodyBlast = {2.0f, 1.0f / 3.0f};
 // The judged shots kept per slot: a 65th evicts the oldest sticky entry, else the oldest.
 inline constexpr size_t kShotsMax = 64;
 
-// Why a message was refused, one counter each.
-enum class Refusal : uint8_t {
-    Malformed, DuplicateShot, QueueFull, NotWorldReady,
-    NoLauncher, FungunRule, NotSeated, OriginBound, UnknownShot, Reach, NoExplosive, HandBound, NoPuppet, PuppetDead,
-    Unresolved, SpawnFailed,
-    Count
-};
-
-// Snake case: "malformed", "duplicate_shot", "queue_full", "not_world_ready", "no_launcher", "fungun_rule",
-// "not_seated", "origin_bound", "unknown_shot", "reach", "no_explosive", "hand_bound", "no_puppet", "puppet_dead",
-// "unresolved", "spawn_failed".
-const char* RefusalName(Refusal r);
+// The slot of a request kind in the counters' per-kind arrays.
+constexpr size_t KindSlot(coop::explosion_recipe::RequestKind k) { return static_cast<size_t>(k) - 1; }
 
 // One refusal from `slot`: the tally's note (steady clock) and the counter.
 void Refuse(uint8_t slot, Refusal r);
@@ -85,15 +77,7 @@ struct Slot {
 // The slot's state; the one PerSlotState<Slot>.
 Slot& SlotOf(uint8_t slot);
 
-struct Counters {
-    uint64_t refused[static_cast<int>(Refusal::Count)];
-    uint64_t shotsAccepted, requestsAccepted, evicted, expired;
-    // The client half: shots and requests sent, pending births pushed out by the cap, pending births whose
-    // projectile died inside the fire body, pending births left by a body that ended without its post, messages
-    // dropped unsent (a location that did not read, a send that failed), and projectiles other than a host's copy
-    // that exploded with no shot sent.
-    uint64_t shotsSent, requestsSent, pendingDropped, pendingDead, pendingOrphaned, clientDropped, unmappedProjectile;
-};
+// The counters (coop/world/explosion_request.h), writable by the lane's own files.
 Counters& MutCounters();
 
 // The client half, in explosion_request_client.cpp. InstallClient takes the fire watches (retried on a throttle
