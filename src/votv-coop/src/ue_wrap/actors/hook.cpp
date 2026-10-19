@@ -4,6 +4,7 @@
 
 #include "ue_wrap/actors/prop.h"        // GetStaticMesh: the O(1) answer to a component name
 #include "ue_wrap/core/call.h"
+#include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/fname_utils.h"    // StringToFName: the Kinds' names, and the component lookup's
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/object_index.h"
@@ -336,6 +337,55 @@ bool ReadState(void* hookActor, State& out) {
 bool WriteSkipSave(void* hookActor, bool on) {
     if (!g_resolved) return false;
     return WriteBool(hookActor, g_skipSave, on);
+}
+
+bool EnableAnchorQueries(void* actor) {
+    if (!actor || KindOf(actor) == Kind::Count) return false;
+    CachedObjRef live; live.Set(actor);
+    E::SetActorEnableCollision(actor, false);
+    if (!live.Get()) return false;
+    E::SetActorTickEnabled(actor, false);
+    for (const wchar_t* name : {L"Sphere", L"Sphere1"}) {
+        if (!live.Get()) return false;
+        const int off = R::FindPropertyOffset(R::ClassOf(actor), name);
+        if (off < 0) return false;
+        void* component = *reinterpret_cast<void**>(static_cast<uint8_t*>(actor) + off);
+        if (!component) return false;
+        CachedObjRef part; part.Set(component);
+        ParamFrame overlap(R::FindDispatchFunctionCached(R::ClassOf(component), L"SetGenerateOverlapEvents"));
+        if (!overlap.valid() || !overlap.Set<bool>(L"bInGenerateOverlapEvents", false) ||
+            !Call(component, overlap) || !live.Get() || !part.Get()) return false;
+        ParamFrame collision(R::FindDispatchFunctionCached(R::ClassOf(component), L"SetCollisionEnabled"));
+        if (!collision.valid() || !collision.Set<uint8_t>(L"NewType", 1) ||
+            !Call(component, collision) || !live.Get()) return false; // QueryOnly
+    }
+    return E::SetActorEnableCollision(actor, true);
+}
+
+bool ReadAnchorEnds(void* actor, FVector& head, FVector& tail) {
+    if(!actor || !g_resolved)return false;
+    CachedObjRef live;live.Set(actor);
+    void* a=ReadObj(actor,g_offCompA);void* b=ReadObj(actor,g_offCompB);
+    if(!a || !b)return false;
+    CachedObjRef end;end.Set(b);
+    head=E::GetComponentLocation(a);
+    if(!live.Get() || !end.Get())return false;
+    tail=E::GetComponentLocation(b);
+    return live.Get()!=nullptr && std::isfinite(head.X) && std::isfinite(head.Y) &&
+        std::isfinite(head.Z) && std::isfinite(tail.X) && std::isfinite(tail.Y) && std::isfinite(tail.Z);
+}
+
+bool RecoverToWorld(void* actor, void* atActor) {
+    if (!actor || !atActor || KindOf(actor) == Kind::Count) return false;
+    CachedObjRef live; live.Set(actor);
+    ParamFrame drop(R::FindDispatchFunctionCached(R::ClassOf(actor), L"drophook"));
+    if (!drop.valid() || !drop.Set<void*>(L"self2", atActor) || !Call(actor, drop)) return false;
+    void* item = drop.Get<void*>(L"ReturnValue");
+    if (!item || !R::IsLive(item)) return false; // dontDrop/spawn failure: keep the anchor
+    if (!live.Get()) return true;
+    if (E::DestroyActor(actor)) return true;
+    E::DestroyActor(item); // failed retirement must not grant another item on retry
+    return false;
 }
 
 void* ReceiveTickFunction() { return g_resolved ? g_fnReceiveTick : nullptr; }

@@ -26,7 +26,7 @@ struct DishAim {
     uint8_t direction = 0;        // Direction -- the catch-gate toggle
 };
 
-// The live validated ui_coordinates_C instance (cached + index-revalidated;
+// The live validated ui_coordinates_C instance (current desk chain, class serial checked;
 // resolved via console_desk::AtlasUiCoordsSlot). Null when the desk/atlas/
 // widget chain is not live yet. Self-resolving (throttled 2s lazy retry) for
 // the WIDGET half only -- the desk half of the chain (desk.Widget/atlas
@@ -57,5 +57,13 @@ bool ReadAreaSize(float& width, float& height);
 // the duplicate-writer shape.
 bool WriteCursorOnly(float viewX, float viewY);
 bool WriteDishCommitted(const DishAim& in);
+
+// Progress is display data. No writer sets coord_isPing, stage or runs a verdict.
+struct PingVisual { float outer = 0, inner = 0, ping = 0; bool active = false; };
+bool ReadPingVisual(PingVisual& out);
+bool WritePingVisual(const PingVisual& in);
+// Current constructed widget's triangle material; null until all painters exist.
+// Use with the widget's own identity to detect a reconstructed display.
+void* PresentationTarget();
 
 }  // namespace ue_wrap::coords_panel

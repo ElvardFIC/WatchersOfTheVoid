@@ -7,6 +7,7 @@
 
 #pragma once
 
+#include "coop/net/protocol.h"  // AtvConditionEditPayload, an unsent service
 #include "ue_wrap/core/types.h"
 #include "ue_wrap/devices/atv_condition.h"
 
@@ -38,6 +39,12 @@ struct AtvEntry {
     float    lastErrCm    = -1.f;  // the previous packet's position error -- the stall detector
     int      stallPackets = 0;     // consecutive packets in which the error refused to shrink
     bool     haveLastSync = false;
+    bool     honkPulse = false;    // the local driver honked; the next pose packet carries the edge
+    uint8_t  lastCockpit = 0;      // idle gate: lights/turbo/radio, honk excluded
+    uint8_t  lastModules = 0;
+    bool     lastBrake = false;
+    bool     haveFace = false;
+    uint8_t  presenceEjectFailed = 0;  // wheel bits whose host eject already failed once
     uint64_t lastRestPlaceMs = 0;  // when the last one happened -- the episode's clock, not the
                                    // send's. Counting CONSECUTIVE re-places does not bound
                                    // anything: a teleport lands the rig exactly on the author's
@@ -56,6 +63,24 @@ struct AtvEntry {
     // ACTUAL send. Pose-only gating would make a parked host eject wait out the 2 s keepalive.
     uint8_t lastSentCond[64] = {};
     bool    haveLastSentCond = false;
+    // ---- a non-author's own service (atv_condition_sync.cpp mutates these on ONE entry) ----
+    // What this peer's copy holds as of the author's last write, the reference a local refuel,
+    // repair or wash is measured against; re-seeded whenever this peer stops authoring it.
+    ue_wrap::atv_condition::Snapshot condLocalRef{};
+    bool     condLocalRefValid = false;
+    void*    condLocalRefActor = nullptr;
+    uint64_t lastServiceScanMs = 0;
+    // The floor a reported service holds this copy at until the author's stream carries it (or the
+    // window ends), so the serviced values do not flicker back to the author's older ones. Which
+    // fields it holds is atv_condition_sync's bit set.
+    ue_wrap::atv_condition::Snapshot condFloor{};
+    uint32_t condFloorFields = 0;
+    uint64_t condFloorUntilMs = 0;
+    // A taken service not yet sent: the scans between two sends merge into it, so a long pour
+    // travels as a few edits within the host's budget instead of one per scan.
+    coop::net::AtvConditionEditPayload pendingService{};
+    bool     hasPendingService = false;
+    uint64_t lastServiceSentMs = 0;
     int      restReplaces = 0;     // re-places of a mirror whose author is at rest, WITHIN one
                                    // episode (see lastRestPlaceMs).
                                    // A corrector owes a convergence check on EVERY arm it

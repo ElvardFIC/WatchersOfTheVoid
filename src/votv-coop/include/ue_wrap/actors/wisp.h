@@ -123,6 +123,8 @@ bool ForceMeshTick(void* wisp);
 // once), then jump to its fatality section. Best-effort: false, logged, if the asset, the
 // AnimInstance or the UFunctions are unresolved (the caller still has the mesh tick and the
 // gibs as the degraded tear). Call ForceMeshTick first, so the montage advances. Game thread.
+// A refused/invalid Montage_Play result also returns false so the receiver can retry.
+// The optional section jump never turns successful playback into a retry loop.
 bool PlayFatalityMontage(void* wisp);
 
 // The plain wisp landing drive. The swarm wisp (wisp_C, a different class from the killer

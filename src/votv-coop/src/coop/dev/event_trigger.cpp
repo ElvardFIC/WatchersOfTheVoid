@@ -159,8 +159,8 @@ const std::vector<EventInfo>& Events() {
         { "vent",       D::RunEvent, C::Scare, -1, "trigger", "per-player vent scare",                 Risk::Caution },
         { "fakeGrays",  D::RunEvent, C::Scare, -1, "trigger", "per-player gray hallucination",         Risk::Caution },
 
-        // ---- Teleport (relocates the triggering player) ----
-        { "earthTp", D::RunEvent, C::Teleport, 26, "11:27", "teleports the triggering player",          Risk::Dangerous },
+        // ---- Black-hole sky (the native name earthTp does not move a player) ----
+        { "earthTp", D::RunEvent, C::Cosmetic, 26, "11:27", "black-hole sky sequence (no player teleport)", Risk::Caution },
 
         // ---- Physics ----
         { "agrav", D::RunEvent, C::Physics, 16, "01:00", "anti-gravity (gated isPhysicalEvents)",       Risk::Caution },

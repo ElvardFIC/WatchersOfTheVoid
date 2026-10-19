@@ -302,9 +302,168 @@ door-verb, keypad and container lanes wait. The leave-timer face has no lane and
 
 ### The computer and the economy
 
-The base laptop (its tab and inbox), the shared balance, the upgrade levels, the shop orders, the
-coin gun and the floppy slot are in [base-computer.md](base-computer.md). They ride the engine
-above and the drone's host-only sale.
+The host owns the balance. It polls the points field every tick, which catches every writer, and
+broadcasts the absolute value on change and to a joiner; a client writes the host's value directly.
+The wire is one-way. A client-to-host balance delta once existed with no bound, so any peer could
+set the group's money to anything; it was retired whole rather than clamped
+(`coop/world/balance_sync`). A client's own earnings are therefore not shared unless a lane
+carries them as an intent.
+
+### The upgrades
+
+The eighteen upgrade levels are one struct on the save, so they used to ride only the transferred
+save and diverged in silence from the moment a level was bought. The host now polls the struct and
+broadcasts it whole on any change, which catches every writer: the panel, the physical racks, the
+transformer prop. A client applies what it is sent and repaints the rows it has open.
+
+A purchase is an intent. A client's button is refused at the script-body gate, so it never debits
+itself, and the host re-derives the price and the bounds from its own table and its own level,
+charges the shared balance and republishes. The rows have no identity of their own to name, so
+holding the laptop claim is the sender's reach, and the index must be one of the fifteen rows that
+buy a level. The host asks exactly what the button asks, including the game's own asymmetry: the
+balance is tested against the row's unaccumulated price and charged the accumulated one.
+
+### The laptop's inbox
+
+The laptop's messages -- the hash-collection task mails, the scientist and alien replies, the
+mails an event or a caught signal produces -- are the same on every machine, and deleting one
+deletes it for everyone. Every producer in the game funnels through one Blueprint-internal
+function into the save's email array, and calling that same function on a receiver reproduces the
+whole arrival at once: the stored row, the list entry, the ding at the physical laptop and the
+tab highlight, with the date re-stamped from the synced clock.
+
+Each peer keeps a shadow of the array and diffs it once a second. The array only ever grows at
+the tail, so the diff is positional. A new row is broadcast by the host -- see below -- and a
+removed row is broadcast by whoever deleted it, as the row's content HASH and never its index,
+because a producer writes its own row before that row reaches anyone and two peers therefore hold
+the same messages in different orders.
+
+Writing a mail is the host's alone: nothing in the game authors a mail from a player action, so a
+client that started producing them could only be a diverged simulation writing into everyone's
+permanent inbox, and a client's append is dropped at the host rather than relayed. Deleting is
+symmetric, because the only thing in the game that removes a mail is a player pressing the row's
+delete button (`coop/world/email_sync`).
+
+### Shared PC and laptop pages and cart
+
+The base computer and portable terminals use the same `ui_laptop` widget. Its
+main page, media page, media-viewer page and unpurchased cart now follow the
+exclusive laptop operator. The host validates the holder and a grant/release
+serial before accepting a snapshot, then distributes its canonical state.
+A new operator and a late joiner start from that state; loading widgets and
+temporarily full send queues retain their pending work. The final local edit
+is sent before releasing the device on the same reliable lane.
+
+The cart carries ordered catalog row names, including duplicates. Each peer
+rebuilds the changed suffix through native add/remove calls and reindexes the
+cart widgets. Prices and capacity come from its own catalog. No purchase or
+camera-possession verb is replayed: selecting the camera tab only changes the
+displayed page. Restoring a refused order now also stamps the native catalog
+key, so restored items can be ordered again.
+
+`[V]` Offline production-controller, wire and reflection-wrapper tests plus
+installed 0.9.0n asset contracts. `[?]` Two-player operation and handover remain
+unverified. Search/category state, open message/item details, media playback,
+cursor and the visible operator are still separate work. Purchases continue
+through the existing order economy below.
+
+### Shop orders
+
+A client's laptop order is entirely local to its machine: the game's order function queues it in
+the client's own save and hands it to the client's own mirror drone. So on a client the order function's
+queueing (`addOrderCart`) and its send to the drone (`sendShop`) are refused at the script-body gate, and
+the order goes to the host as an intent naming each item's shop row and nothing else, read from the
+function's own parameter at its entry; the host prices the row from its own
+store table, checks its own balance, rolls its own delivery time, commits through the game's own
+order function and charges (`coop/items/order_sync`). An order a world event makes on a client (the
+daily delivery, a gift) is not sent: the host's copy of the event makes it. A refused order comes back with a reason, and the refused items
+are put back in the client's cart, because the game's own affordability gate runs before the cart
+is cleared while the refusal arrives after. This is the reference intent lane: the intent used to
+carry a client-chosen price, and every client shopped free.
+
+The intent names a shop ROW, not an object class, because a class cannot name an item: the game's
+473 shop rows map onto 368 distinct classes, and `prop_C` alone is shared by 50 of them, so 112
+rows have no unique class. The row name is the shop's real identity, and the game stamps it into
+each generated store entry, so a forwarded order already carries it.
+
+The host's price comes from the game's own `list_store` table, read two independent ways -- a walk
+over the row map, and a fully reflected column read that needs no layout knowledge. They are
+compared, and a single disagreement invalidates the whole catalog: the host then refuses client
+orders outright rather than charge a number it cannot vouch for. Setting
+`VOTVCOOP_STORE_CATALOG_BREAK=1` makes the walk read the wrong field on purpose, so that refusal
+can be seen firing before it is trusted (`ue_wrap/world/store_catalog`).
+
+The delivery queue is the host's. Each change to it -- an order queued, the delivered one taken off --
+goes to every client as the laptop's own queue functions run, and a client's queue follows through
+the same functions (`coop/items/order_queue_sync`). A shop item travels by its row; an item a world
+event built outside the shop has no row and travels by its class, and by the list_props name a generic
+prop carries in its asProp (the daily delivery's reel case), rebuilt in the one shape every such builder
+makes. A change waits, in its place, while the client's laptop, its shop catalog or the engine's name
+conversion is not ready yet; an item the client can never build is left out, down to an order of no
+items that still keeps its place, so the host's next delivery takes the same order off both queues; and
+a change counts as applied only when the queue moved by exactly one.
+
+### The coin gun
+
+Shooting a prop with the coin gun sells it: the game destroys the prop and mints coins whose
+material is their denomination. A client's shot is uncancellable, so the lane captures the
+client's own coins at their birth and releases or destroys them at the next barrier, sends a sale
+intent naming the prop by key ahead of the client's ordinary destroy on the same lane, and the
+host resolves the prop in its own world, prices it from its own copy, mints through the gun's own
+sell function and destroys the sold prop itself; the coins are host-owned world actors that the
+event-actor mirror carries, and whoever's body trips one on the host credits the host, a client's
+puppet included (`coop/items/coingun_sync`). The client is told the result.
+
+### The floppy slot
+
+A laptop and a signal server hold a disc the same way: inserting one moves its type, its remaining
+writes, its data rows and the JSON of its whole save struct into four fields of the device and
+destroys the actor, and ejecting one spawns the disc back from those fields. The four are one
+concept with one owner, and they are state, not an event: the host holds every device's slot, each
+peer polls its own devices once a second behind a digest that reads the raw field bytes, and a peer
+whose own game changed a slot sends the host the outcome as a claim. The host applies it and answers
+with the canonical, which is also the acknowledgement (`coop/interactables/floppy_slot_sync`).
+
+The laptop also edits the files of the disc it holds, which its file quad carries as edit scripts
+(`coop/interactables/laptop_buffer_sync`). So the laptop's slot is watched for which disc it holds
+alone: the rows and the writes travel with a change of that and are the quad's between two. A
+canonical naming the disc a laptop already holds leaves its files alone, and the slot lane primes
+the quad at each change it takes -- a claim sent, a publish, a canonical written -- so an edit made
+after it is the quad's to send, even one made before the host answered the claim. The host counts
+each change of the laptop's disc; the quad's batches and canonicals carry that count on the slot's
+lane, a batch made on another disc is answered with the canonical instead of applied, a canonical of
+another disc is dropped, and neither end applies or sends one while its own change of the disc waits
+for the other.
+
+Emptying a slot writes only what the device's own eject writes -- the type and the rows. The eject
+runs in two phases: it clears those two, and about a second later, when the carrier's timeline
+finishes, the deferred spawn reads the remaining writes and the save JSON to rebuild the disc.
+Anything that zeroes those in between hands the player back a blank disc under a new identity.
+
+A disc a peer ejects reaches the others through the ordinary birth channel: a client's own fresh
+prop spawn is not broadcast, so its device's eject is reported to the host, which authors the disc
+and broadcasts it like any other world prop. Three other lineages travel that way, and all three
+are born into a hand and spawn inert on the host until the holder's pose stream drives them; a
+disc is not held by anyone, so it falls on the host instead.
+
+A device takes a disc by two entries, and only one of them is a player. Pressing E with a disc in
+hand is deliberate, happens on one machine, and the slot carries its outcome. The other is the
+hitbox reporting whatever touches the slot -- and an eject spawns the disc INSIDE the box it came
+out of, which the Blueprint handles by turning that device's own hitbox off for a moment. In single player
+the only birth that can land in a slot is that eject, so guarding the one box is enough; in coop
+the disc is also born on the other machine, in a box whose hitbox nobody turned off and where
+nobody ejected anything. So the rule sits on the disc rather than the box: a disc is in transit for
+a moment after it materialises, and no device swallows one in transit, on any peer. The window is
+anchored at the disc's own appearance on each machine, so both peers run one rule against one local
+event and neither waits on a message; when it lapses, the native rule simply resumes.
+
+The window is one number for every device, because the mark is on the disc and a disc does not know
+which slot it came out of. It has to clear the frame or two the hitbox entry needs to fire, and it
+has to end before the device that ejected re-enables its own hitbox -- re-enabling a collider
+re-reports every body already inside it, which is how the game re-takes a disc still sitting in the
+slot, and that report comes once. The two devices disagree on the pause: a signal server waits a
+second, a laptop half of one. The window is set under the shorter of the two, so neither device's
+own re-take is touched and an ejecting peer behaves exactly as it does in single player.
 
 ### The signal servers
 
@@ -390,6 +549,9 @@ state it shows, and the first rows a world takes play no sound.
 
 | Limit | Evidence |
 |---|---|
+| A refused coin-gun sale has already destroyed the prop on the client, and no heal re-asserts it: a client authors that destruction before the arbiter answers, as its generator install does, whose refusal refunds the upgrade. The host rebuilds its key index periodically, so a refusal is rare | `[V]` `coop/items/coingun_sync` |
+| The coin collect has two entries; the interceptor sits on the overlap entry, and the E-press entry dispatches inside the Blueprint where it cannot fire, so a coin a client collects by pressing is credited on the client only and the host's next balance broadcast erases it | `[V]` `coop/items/coingun_sync` |
+| A point sack, a treasure chest and an achievement completion name the artifact; the host credits it and a replay does not pay twice. The coin gun's E-press is still the client's own credit until the next balance broadcast | `[V]` `coop/world/credit_intent`; the coin press remains `coop/items/coingun_sync` |
 | A client's light-group index has been reported dropping to zero after a join; not reproduced | `[?]` [issue 11](https://github.com/VOTV-MP/Multivoid/issues/11) |
 
 ## Code map

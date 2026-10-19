@@ -18,8 +18,10 @@ call; on the host the same interceptor allocates the element, binds the actor on
 finishes, and broadcasts it (`coop/creatures/npc_sync`). Two births that interceptor cannot see
 are enrolled by other means (`coop/creatures/npc_world_enum`): characters that loaded with the
 level, by a walk at world start, and characters a Blueprint spawns from inside its own graph (the
-wisp swarm, the ambient sky wisps, the pyramid's spawner), caught at the native function seam and
-gated by the spawning class. A save-persisted character, the kerfur above all, is materialised on
+wisp swarm, the ambient sky wisps, the yellow-wisp/fossilhound tickers, the pyramid's spawner), caught at the native function seam and
+gated by the spawning class; the eventer and its event controllers are such spawning classes, and
+the event characters (the grays, the eggs, the tentacle balls) are late allowlist entries,
+resolved once their classes load so they never hold the lane back. A save-persisted character, the kerfur above all, is materialised on
 a joiner by the game's own save load at an unpredictable moment, so the joiner adopts its own
 local twin by class after a deferred poll instead of spawning a second one
 (`coop/creatures/npc_adoption`).
@@ -55,7 +57,8 @@ leaving one leaves nothing to restore.
 
 | Spawner | On a client | Why |
 |---|---|---|
-| insomniac, fossilhound | tick refused | the host mirrors the product |
+| fossilhound | tick refused | native EX_CallMath output is caught and host-mirrored |
+| insomniac (including Child) | left running | personal sleep conditions and local native pursuit/grab/dream; not a shared NPC mirror |
 | cockroach master and summoner | tick, summon and timers refused | its tick also drains and destroys shared food props; `coop/creatures/roach_sync` drives the client's population |
 | mushroom master and spawner | spawn refused | they spawn at their own world transform |
 | yellow wisp spawner | tick refused | anchors on a random navmesh point; the product is host-mirrored |
@@ -109,13 +112,18 @@ never converts a kerfur itself; the host's verb converges at its return on the s
 captured deterministically at its spawn through the gate's window
 (`coop/creatures/kerfur_form_assembler`), and every client takes the new form from the broadcast.
 
-The radial menu (follow, idle, patrol, fix the servers, get the reports, fix the transformers) is
+The radial menu (follow, idle, patrol, fix the servers, get the reports, fix the transformers,
+take an object, pat, equipment) is
 relayed host-authoritatively (`coop/creatures/kerfur_command`): the host cancels the local
 dispatch on both roles and re-runs the game's own verb with the kerfur serving the peer who asked
 (`coop/creatures/served_player`), so its reads of the player answer that peer: follow follows it,
 patrol circles it. A request waits while the host has no body for its sender, and a verb the game
-refuses changes nobody's service. Nothing writes a puppet's hand yet, so a client's get the reports
-gets the game's refusal hint, shown on the host. On a client the chosen verb is read at the E-input seam, the
+refuses changes nobody's service. For take-object, equipment and get-reports the host stages the
+asking player's held item onto the puppet for that verb, and never the host's own hand. A disc the robot is already holding rides the pose
+(`kEntityPoseBitKerfurHasFloppy` and the type byte) and the mirror sets `floppyMesh` from
+`lib_C::floppyFromType`, because the mirror's tick is off and will not swap the mesh itself. A world
+prop the robot is holding is claimed on the prop-drive channel, so it follows the host's copy until
+the robot lets go. On a client the chosen verb is read at the E-input seam, the
 one dispatched through the engine, before the local dispatch runs
 (`coop/creatures/kerfur_menu_input`). At a join a save-loaded kerfur prop is adopted by class and
 nearest pose once the load tail settles (`coop/creatures/kerfur_prop_adoption`), and a kerfur
@@ -140,7 +148,7 @@ on [players.md](players.md).
 | Kind | Direction | Carries |
 |---|---|---|
 | `EntitySpawn`, `EntityDestroy` | the host to all | class, id, transform, scale, whether save-persisted; the id |
-| `EntityPose` (stream) | the host to all | a pose batch, fair-share rotated |
+| `EntityPose` (stream) | the host to all | a pose batch, fair-share rotated; a kerfur's reports disc and its type |
 | `OwnerEntitySpawn`, `OwnerEntityPose`, `OwnerEntityDestroy` | the owner to all | a stalker's birth, pose and death |
 | `WispGrab`, `WispTear` | the host to the victim; the host to all | the grab and its delay; the tear to play on the mirror |
 | `RoachState`, `RoachConsumed` | the host to all; a client to the host | a page of the infestation; a stomped or eaten roach |
@@ -160,8 +168,10 @@ wisp in flight is transient and owes nothing.
 
 | Limit | Evidence |
 |---|---|
-| The Omega's take-object, pat, equipment, kill and sit-on-the-ATV verbs are not synced | `[V]` `coop/creatures/kerfur_command`, the verb table |
-| The Omega's floppy state is not synced, so a relayed get-reports diverges on its result; its accessories and carried object likewise | `[V]` no lane under `coop/creatures` carries them |
+| The Omega's kill verb is not a menu command: murder mode ends whoever the robot was serving | `[V]` `coop/creatures/kerfur_command`, the startKill watch |
+| A client's take-object or equipment still cannot see an item that is only in that player's pocket, not in the hand | `[V]` `coop/creatures/kerfur_command` stages the hand mirror or the driven world prop, not the pocket |
+| The Omega sitting on an ATV is streamed as `isOnAtv` on the pose (`kEntityPoseBitKerfurOnAtv`); the verb that puts it there still runs on the host | `[V]` `coop/creatures/npc_pose_host.cpp`, `ue_wrap/actors/sit_pose` |
+| A client's get-reports sees the disc that client is holding. It does not take a disc out of the host's hand. The disc the robot already holds does travel, and so does a world prop it is carrying. An item the game turns into a private attachment, with no world prop and no hand actor left, does not | `[V]` `kerfur_command` stages the puppet hand; `npc_pose_host` streams `hasFloppy` and claims `holdObject` |
 | Only one stalker class is owned per peer so far | `[V]` `coop/creatures/owner_entity_sync`, the member table |
 | The conversion is detected by a poll, five times a second, not at the verb | `[V]` `coop/creatures/kerfur_convert`; the lane reads the result rather than the call, because a peer's own conversion has already happened by the time any watch of ours runs |
 | Nine ambient spawner families are neither mirrored nor refused, so each peer grows its own deer, hexahives, walking trees and the rest | `[V]` they appear in no lane under `coop/creatures` and in no row of `coop/world/spawn_authority` |
@@ -178,3 +188,27 @@ wisp in flight is transient and owes nothing.
 | the kerfur | `coop/creatures/kerfur_entity`, `coop/creatures/kerfur_convert` with its host and client halves, `coop/creatures/kerfur_form_assembler`, `coop/creatures/kerfur_command`, `coop/creatures/kerfur_menu_input`, `coop/creatures/kerfur_prop_adoption`, `coop/creatures/kerfur_reconcile`, `coop/creatures/served_player` |
 | the kerfus | `coop/creatures/kerfus_lanes` with `kerfus_brain`, `kerfus_state`, `kerfus_intent` and `kerfus_follow`; `ue_wrap/actors/kerfus` |
 | tests | `harness/autotest/autotest_kwisp_probe.cpp`, `harness/autotest/autotest_wisplane.cpp`, `coop/dev/kerfur_convert_drill` (a client turns a kerfur off and on beside a disc of its own), `coop/dev/kerfur_serve_drill` (a client's commands to the Omega run for that client), `coop/dev/kerfus_drill` (a kerfus a client turns on follows it) |
+
+Development following 2152 (wire protocol 2153) streams full NPC pitch/yaw/roll with shortest-arc interpolation.
+The EntityPose row is 52 bytes, with 26 rows per MTU-bounded datagram.
+Both peers need the same new build. This changes orientation, not attack/FX replay.
+The grayboar body derives from prop_C and is excluded from the Character NPC lane;
+its helper grayboarPawn and body/AI association still need dedicated synchronization.
+Its live attack, roar and death cues require both a native flag transition and
+the matching active montage section; their rate comes from the playing montage
+(`coop/creatures/grayboar_actions`). Stopped or mismatched playback sends no cue.
+`[V]` production-source regressions verify these checks and preserve mid-action
+join playback. `[?]` Two-player animation/audio timing remains unverified.
+`[V]` Production-source regressions verify per-recipient ordered retries and
+32-cue capacities, so a failed/full recipient cannot block the others. Client
+retries rotate entity heads with at most four attempts per tick and one action
+per entity; a missing replica cannot block a ready one. Queued events retain
+weak actor identities and retire on replacement; join sampling rechecks ownership
+and recipient departure before publication. These are offline queue checks.
+`[V]` Action playback retains verification and cleanup progress after a successful
+start. Getter/stop retries cannot replay the accepted montage; audio requires a
+verified active section. Snapshot playback seeks directly without JumpToSection.
+Replaced mesh/animation/actor identities end pending playback, and turn samples
+reset to neutral on replica replacement. Tests cover these lifecycle paths.
+`[?]` A permanently refused native stop can outlast the bounded cleanup attempt;
+actual engine cleanup and audiovisual timing still require gameplay validation.

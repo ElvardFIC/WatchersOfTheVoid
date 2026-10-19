@@ -25,6 +25,7 @@ struct Row {
     bool    cyc = false;
     int32_t cycle = 0;
     int32_t upgradeLevel = 0;
+    uint8_t door = 0; // 0 unavailable, 1 closed/closing, 2 open/opening
 };
 
 // Resolve generator_C's fields and verbs and the game mode's list, by name. Idempotent; false until the class
@@ -40,6 +41,7 @@ size_t ReadGenerators(std::vector<void*>& out);
 int32_t IndexOf(void* gen);
 
 bool ReadRow(void* gen, Row& out);
+bool SetDoor(void* gen,bool open); // false while an opposite animation must finish
 
 // Raw writes of the row's plain fields: nothing repaints. Game thread.
 bool WriteBroken(void* gen, bool broken);

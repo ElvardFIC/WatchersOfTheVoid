@@ -57,6 +57,8 @@ struct MainPlayerGrabState {
     bool   grabsHeavy;     // AmainPlayer_C::grabsHeavy     (PCC heavy-grab BP flag)
     bool   heavy;          // AmainPlayer_C::Heavy          (BP-side heavy state mirror)
     float  grabLen;        // AmainPlayer_C::grabLen        (Timeline current grab length)
+    void*  gravityActor;   // comp_gravitygun_C::obj (beam-held world actor, or null)
+    void*  physicsActor;   // selected prop_physgun_C::objectPickup while hold is true
 };
 
 bool ReadMainPlayerGrabState(void* mainPlayer, MainPlayerGrabState& out);
@@ -256,6 +258,11 @@ bool ForceMainPlayerGetUp(void* mainPlayer);
 // movement, capsule collision, the camera and input, reading no gate); the KO recovery's verb.
 // Possessed players only.
 bool ForceMainPlayerWakeup(void* mainPlayer);
+
+// Native extinguishFire clears fuel, isBurning and the gamemode burning-object
+// list. The two latent fire loops then finish naturally. Verifies fuel/flag after
+// dispatch; false if the verb or its reflected state is unavailable. Game thread.
+bool ExtinguishMainPlayerFire(void* mainPlayer);
 
 // AmainPlayer_C::canRagdoll, ragdollMode()'s precondition: false early-outs every ragdoll cause.
 // The Killer Wisp false-grab window forces it false on the host, since an HP pin cannot stop a

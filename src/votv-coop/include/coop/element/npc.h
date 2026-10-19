@@ -7,8 +7,8 @@
 // a POST observer on the same UFunction (binds the AActor* and records actor->eid), and a PRE
 // observer on K2_DestroyActor (destroys the Npc, broadcasts EntityDestroy).
 
-// The CLIENT mirror interpolates a SUBSET of RemotePlayer's pose (pos + yaw + speed + stateBits; no
-// pitch/headYawDelta/vitals/ragdoll/mesh-offset): each EntityPose entry calls SetTargetNpcPose
+// The CLIENT mirror interpolates a SUBSET of RemotePlayer's pose (pos + full rotation + speed + stateBits; no
+// headYawDelta/vitals/ragdoll/mesh-offset): each EntityPose entry calls SetTargetNpcPose
 // (advance-before-rebase, which keeps the interp from starving) and npc_mirror::TickClientNpcs
 // calls Tick() every frame to drive the transform + CMC.Velocity so the NPC's own AnimBP animates.
 // The HOST Npc never interpolates -- it reads the live actor (npc_sync::TickPoseStream). Drive in
@@ -53,12 +53,15 @@ private:
     // Receiver-side interpolation state (game thread only; the engine path is single-threaded).
     ue_wrap::FVector curPos_{};
     float            curYaw_       = 0.f;
+    float            curPitch_ = 0.f, curRoll_ = 0.f;
     float            curSpeed_     = 0.f;   // not interpolated -- the AnimBP blends locomotion
     uint8_t          curStateBits_ = 0;     // not interpolated -- snapped (bit 0 = in air)
     ue_wrap::FVector targetPos_{};
     float            targetYaw_      = 0.f;
+    float            targetPitch_ = 0.f, targetRoll_ = 0.f;
     ue_wrap::FVector errorPos_{};            // cached (target - cur) at packet arrival; applied dAlpha/frame
     float            errorYaw_       = 0.f;
+    float            errorPitch_ = 0.f, errorRoll_ = 0.f;
     float            curBodyYaw_     = 0.f;   // interpolated VISIBLE-body (ACharacter::Mesh) world yaw
     float            targetBodyYaw_  = 0.f;   //   (driven onto the mirror mesh each frame after SetActorRotation)
     float            errorBodyYaw_   = 0.f;   //   cached (target-cur) at packet; applied dAlpha/frame (shortest-arc)
@@ -69,6 +72,8 @@ private:
     uint8_t          kerfState_      = 0;     // streamed kerfur command (enum_kerfurCommand) -- snapped, drives the
     bool             kerfSpooky_     = false; //   AnimBP state machine on the parked mirror; spooky = the kill/spooky flag
     bool             hasKerfState_   = false; //   valid iff the host sent it (kerfur-family only)
+    int8_t           wantFloppy_     = -2;    // reports disc the host says this mirror shows: -1 empty, 0..6 a type,
+    int8_t           shownFloppy_    = -2;    //   -2 not yet driven. The mesh is swapped only when the two differ.
     bool             hasPose_        = false;  // first packet snaps
     bool             dirty_          = true;   // unapplied change to push to the engine
     bool             isWispMirror_   = false;  // wisp_C mirror: replay the landing edge (fade-in)

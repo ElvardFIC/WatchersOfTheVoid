@@ -81,29 +81,18 @@ UE_FACT_FN(kRowDeskMod11Overlap, "mirror_slot_entry", L"analogDScreenTest_C",
 UE_FACT_FN(kRowDeskMod12Overlap, "mirror_slot_entry", L"analogDScreenTest_C",
            L"BndEvt__analogDScreenTest_mod12_K2Node_ComponentBoundEvent_20_ComponentBeginOverlapSignature__DelegateSignature",
            Declared);
+UE_FACT_FN(kRowDeskOverlap, "mirror_slot_entry", L"analogDScreenTest_C", L"ReceiveActorBeginOverlap", Declared);
 
 struct Entry {
     const ue_wrap::facts::Function* row;
 };
 const Entry kEntries[] = {
-    {&kRowDriveSlotPortOverlap},
-    {&kRowDriveRackOverlap},
-    {&kRowBoxOverlap},
-    {&kRowReelboxTriggerOverlap},
-    {&kRowTapesReelboxSmallOverlap},
-    {&kRowTapesReelboxBigOverlap},
-    {&kRowDeskMod1Overlap},
-    {&kRowDeskMod2Overlap},
-    {&kRowDeskMod3Overlap},
-    {&kRowDeskMod4Overlap},
-    {&kRowDeskMod5Overlap},
-    {&kRowDeskMod6Overlap},
-    {&kRowDeskMod7Overlap},
-    {&kRowDeskMod8Overlap},
-    {&kRowDeskMod9Overlap},
-    {&kRowDeskMod10Overlap},
-    {&kRowDeskMod11Overlap},
-    {&kRowDeskMod12Overlap},
+    {&kRowDeskOverlap}, // returned rear covers
+    {&kRowDriveSlotPortOverlap}, {&kRowDriveRackOverlap}, {&kRowBoxOverlap},
+    {&kRowReelboxTriggerOverlap}, {&kRowTapesReelboxSmallOverlap}, {&kRowTapesReelboxBigOverlap},
+    {&kRowDeskMod1Overlap}, {&kRowDeskMod2Overlap}, {&kRowDeskMod3Overlap}, {&kRowDeskMod4Overlap},
+    {&kRowDeskMod5Overlap}, {&kRowDeskMod6Overlap}, {&kRowDeskMod7Overlap}, {&kRowDeskMod8Overlap},
+    {&kRowDeskMod9Overlap}, {&kRowDeskMod10Overlap}, {&kRowDeskMod11Overlap}, {&kRowDeskMod12Overlap},
 };
 constexpr int kEntryCount = static_cast<int>(sizeof(kEntries) / sizeof(kEntries[0]));
 constexpr int kTagBase = 0x4D534C00;  // 'MSL' and the entry's index

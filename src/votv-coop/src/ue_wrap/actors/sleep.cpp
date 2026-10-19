@@ -62,6 +62,9 @@ void ResolvePass() {
     if (now < g_nextResolve) return;
     g_nextResolve = now + (g_coreResolved ? std::chrono::seconds(30) : std::chrono::seconds(2));
 
+    // Called throughout the session, including load and worlds without a base
+    // bed. An unresolved optional class must not cause a full UObject scan every
+    // two seconds; the maintained index also notices a class loaded later.
     if (!g_gmCls) g_gmCls = object_index::ClassByName(L"mainGamemode_C");
     if (!g_gmCls) return;
     if (g_offIsSleep < 0) g_offIsSleep = R::FindPropertyOffset(g_gmCls, L"isSleep");
@@ -70,7 +73,7 @@ void ResolvePass() {
     if (g_offOrigPawn < 0) g_offOrigPawn = R::FindPropertyOffset(g_gmCls, L"origPawn");
     if (!g_sleepFn) g_sleepFn = R::FindFunction(g_gmCls, L"sleep");
 
-    if (!g_gsCdo) g_gsCdo = FindStaticsCdo();
+    if (!g_gsCdo) g_gsCdo = R::FindClassDefaultObject(P::name::GameplayStaticsClass);
     if (g_gsCdo) {
         void* gsCls = R::ClassOf(g_gsCdo);
         if (gsCls && !g_setDilationFn)
@@ -78,8 +81,7 @@ void ResolvePass() {
         if (gsCls && !g_getDilationFn)
             g_getDilationFn = R::FindFunction(gsCls, L"GetGlobalTimeDilation");
     }
-    const bool core = g_offIsSleep >= 0 && g_offDreamProb >= 0 && g_offBed >= 0 &&
-                      g_setDilationFn;
+    const bool core = g_offIsSleep >= 0 && g_offDreamProb >= 0 && g_setDilationFn;
     if (core && !g_coreResolved) {
         g_coreResolved = true;
         UE_LOGI("sleep: resolved (isSleep=0x%X dreamProb=0x%X bed=0x%X origPawn=0x%X sleep=%s "

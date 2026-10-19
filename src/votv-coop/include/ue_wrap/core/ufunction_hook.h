@@ -26,7 +26,8 @@ namespace ue_wrap::ufunction_hook {
 // the world-context-ish caller. `sourceObject` is FFrame::Object, the actor whose BYTECODE is
 // executing, so the caller: the re-piling clump that issued a spawn. `spawnedResult` is *Result,
 // the native function's RESULT_PARAM -- for BeginDeferred the new actor, and possibly null on a
-// failed spawn. Fires AFTER the original Func returns, so `spawnedResult` is populated. Raw
+// failed spawn. This argument is null for non-pointer-sized results (use CurrentResult
+// with the function's actual return type). Fires AFTER the original Func returns. Raw
 // UObject*s.
 //
 // THREADING: native UFunction dispatch, UWorld::SpawnActor among it, is GAME-THREAD only, so this

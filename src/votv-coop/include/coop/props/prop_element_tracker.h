@@ -45,6 +45,8 @@ size_t ClearProcessedInit();
 
 // The KnownKeyedProps set.
 void MarkKnownKeyedProp(void* actor);
+void* FindLiveActorByKey(const std::wstring& key);
+void* ResolveLiveActorByKey(const std::wstring& key, void* context);
 
 // Drains the known set and the Prop element shadow together: the element is extracted under the
 // lock and its destructor runs after the release, so the Registry mutex is never taken inside this

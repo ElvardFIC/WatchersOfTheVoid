@@ -16,6 +16,18 @@
 
 namespace ue_wrap::trace {
 
+struct Hit {
+    bool blocked = false;
+    void* actor = nullptr;
+    void* component = nullptr;
+    FVector point{};
+    FVector normal{};
+};
+
+bool LineHitForObjects(void* worldCtx, const FVector& start, const FVector& end, const uint8_t* objectTypes,
+                       int32_t nTypes, void* const* ignore, int32_t nIgnore, Hit* out);
+bool LineHitStatDyn(void* worldCtx, const FVector& start, const FVector& end, Hit* out);
+
 // Line trace start->end against the {WorldStatic, WorldDynamic} object set (the
 // native canReach's own set: EObjectTypeQuery1/2 -- level geometry, doors, props;
 // NOT pawns, so player bodies never self-block). bTraceComplex=false,
@@ -28,29 +40,10 @@ namespace ue_wrap::trace {
 // Game thread only (dispatches a UFunction).
 int LineBlockedStatDyn(void* worldCtx, const FVector& start, const FVector& end);
 
-// What a trace hits first: the hit's actor and component (live, or null), and its
-// impact point and normal, read from the call's FHitResult by the struct's reflected member
-// offsets (ue_wrap/engine/hit_result). `blocked` false on a clear line.
-struct Hit {
-    bool    blocked = false;
-    void*   actor = nullptr;
-    void*   component = nullptr;
-    FVector point{};
-    FVector normal{};
-};
-
-// The same trace as LineBlockedStatDyn, over the object types `objectTypes[0..nTypes)` (EObjectTypeQuery
-// values, one byte each: 0 WorldStatic, 1 WorldDynamic, 2 Pawn, 3 PhysicsBody) and ignoring the actors
-// `ignore[0..nIgnore)` (null when nIgnore is 0). The arrays are only read, for the length of the call.
-// bTraceComplex=false, bIgnoreSelf=true: `worldCtx`'s own actor is ignored too. False when
-// unresolvable (as -1 above), on a null `out`, or when FHitResult's layout does not resolve: a
-// hit that cannot be read is "could not trace", never a clear line.
-// Game thread only.
-bool LineHitForObjects(void* worldCtx, const FVector& start, const FVector& end, const uint8_t* objectTypes,
-                       int32_t nTypes, void* const* ignore, int32_t nIgnore, Hit* out);
-
-// What the {WorldStatic, WorldDynamic} trace hits first (a pawn and a physics body are not in the set).
-// False when unresolvable (as -1 above); `out->blocked` false on a clear line. Game thread only.
-bool LineHitStatDyn(void* worldCtx, const FVector& start, const FVector& end, Hit* out);
+// Placement queries. Ignore worldCtx (the source actor). Box sweep also includes
+// pawns/physics bodies/vehicles. Return -1 on missing metadata or failed calls.
+int BoxBlocked(void* worldCtx, const FVector& start, const FVector& end, const FVector& halfSize);
+// Static/dynamic floor with an upward normal; false includes unresolved/no hit.
+bool FindFloor(void* worldCtx, const FVector& start, const FVector& end, FVector& point);
 
 }  // namespace ue_wrap::trace

@@ -13,14 +13,14 @@ the commit that ships the change.
 | Chat and the event feed | text chat; join, leave and error lines | the host relays chat; each machine surfaces its own transport errors |
 | Voice | 3D positional voice | each peer |
 | Master server and browser | an opt-in listing of the host's game, the update check, signaling for NAT traversal | the host opts in per session; the master is external infrastructure |
-| Physics props | pickup, drag, throw and drop; per-grab authority; an identity that survives saves and rejoins; world-to-inventory and inventory-to-world transitions | the holder while held; the host owns everything at rest |
+| Physics props | pickup, drag, throw and drop; per-grab authority; an identity that survives saves and rejoins; world-to-inventory and inventory-to-world transitions; a world food's temperature, ripeness and use count | the holder while held; the host owns everything at rest, and a world food's condition |
 | Piles and trash | the whole collection loop: piles, clumps, carrying, depositing | the host |
 | NPCs and creatures | pose, spawn and despawn, the kerfur prop-to-NPC cycle; enemies target every peer and a pursuit can switch targets between peers; creatures whose AI reads the local player are owned per peer and visible to all | the host, except the per-peer owned creatures |
 | Doors, lights and devices | doors, light switches and light groups, keypads, power panels, the garage, appliances, locker lids, windows, grime, the wind turbine, containers and their contents, the delivery drone, shop orders, the coin gun and the shared balance | the host holds the state; a client sends an intent that the host performs |
 | The signal workstation | the dish, pinging, signal catch, downloads, decoding, the playback deck, drives and racks, tapes, the physical modules, the laptop and its floppies, the meadow signal database, the signal-server simulation and the notices it produces | one authority per axis: the pressing peer authors inputs, the host runs every simulation |
 | World state | the clock, the sky, weather and lightning, fireflies, ambient spawners, the story and scheduled events, the base alarm, emails, the daily task, world props that change over time | the host; clients mirror and never roll their own randomness |
 | Saves | the joiner boots from the host's world; the host is the only peer that saves | the host |
-| Vehicles | the ATV: a peer that is not driving runs the vehicle's physics natively and is corrected toward the driver's pose; its condition travels; vitals, configuration and the act-as-host intents are in scope and not all built | the driver authors the pose; the host the rest |
+| Vehicles | the ATV: a peer that is not driving runs the vehicle's physics natively and is corrected toward the driver's pose; its condition travels; a second ATV is minted for two drivers; headlights, brake, turbo, honk, radio and the frame modules travel with the pose; vitals and the act-as-host intents are in scope and not all built | the driver authors the pose; the host the rest |
 | Sleep, damage and hazards | sleep state, hazard damage, the resulting vitals | the host for shared effects; each peer for its own vitals |
 | Local dev grants | which local dev features (the free camera, the position readout, the overlays, one's own stamina) each client may use | the host decides per player; the client's own dev switch shows them |
 | An admin's orders on a player | one stat of one player set, an effect given or taken, a player's whole table and effects read | the owner applies and answers; the host's stored profile follows the owner's own |
@@ -35,7 +35,7 @@ the commit that ships the change.
 | Custom content paks and asset replication | a peer without a skin pak sees the default body, by design; nothing is downloaded from another peer |
 | Anti-cheat | the host is trusted and is the admin; every bound and sanity check applies to clients only |
 | Hint toasts, tutorial tips, the per-viewer HUD | local to the machine; the HUD reads shared state, it is not itself replicated |
-| A food's live condition on a world actor: its temperature, ripeness and use count | every peer simulates its own, and the prop's save record cannot carry them: it is taken at one birth while all three move continuously, and its timestamp is the capturing peer's world clock, which the receiver reads as elapsed time. A lane that gives them one author is designed and not built. A food inside a pocket or a container is a stored record and travels with it |
+| A food's condition while it is only a stored record inside a pocket or a container | that record already travels with the pocket or the container; it is not a second live simulation |
 
 ## Rules for classifying a new item
 

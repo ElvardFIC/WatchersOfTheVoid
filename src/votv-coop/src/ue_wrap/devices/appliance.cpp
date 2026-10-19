@@ -27,6 +27,8 @@ namespace R = reflection;
 struct Desc {
     const wchar_t* className;
     const wchar_t* boolName;
+    const wchar_t* boolAlt;        // tried when boolName is absent on this class
+    const wchar_t* boolAlt2;
     const wchar_t* applyFn;
     const wchar_t* applyFn2;       // optional 2nd refresh verb (sink: upd() AFTER updIsOn()); nullptr if none
     const wchar_t* applyParam;     // the setter's bool parameter; nullptr for a no-arg refresh verb
@@ -53,12 +55,14 @@ struct Desc {
 // The faucet's is `active`, which its use action toggles before calling upd() and its getData saves;
 // its `turnOn` is the look-at flag lookAt sets while a player aims at the tap (faucet_C's bytecode).
 Desc g_descs[] = {
-    { L"faucet_C",         L"active",       L"upd",       nullptr, nullptr   },
-    { L"sink_C",           L"isOn",         L"updIsOn",   L"upd",  nullptr   },
-    { L"prop_shower_C",    L"running_cold", L"updWater",  nullptr, nullptr   },
-    { L"kitchen_C",        L"Active",       L"upd",       nullptr, nullptr   },
-    { L"serverBox_C",      L"active",       L"visual",    nullptr, L"active" },
-    { L"wallunit_tapes_C", L"Active",       L"upd",       nullptr, nullptr   },
+    { L"faucet_C",         L"active",       nullptr, nullptr, L"upd",       nullptr, nullptr   },
+    { L"sink_C",           L"isOn",         nullptr, nullptr, L"updIsOn",   L"upd",  nullptr   },
+    { L"prop_shower_C",    L"running_cold", nullptr, nullptr, L"updWater",  nullptr, nullptr   },
+    { L"kitchen_C",        L"Active",       nullptr, nullptr, L"upd",       nullptr, nullptr   },
+    { L"serverBox_C",      L"active",       nullptr, nullptr, L"visual",    nullptr, L"active" },
+    { L"wallunit_tapes_C", L"Active",       nullptr, nullptr, L"upd",       nullptr, nullptr   },
+    // Kitchen machines have timers, cooking or consumable state and live on kitchen_sync,
+    // not this symmetric one-bool lane. Their verbs must never be replayed on every peer.
 };
 constexpr int kNumDescs = sizeof(g_descs) / sizeof(g_descs[0]);
 
@@ -109,11 +113,18 @@ bool EnsureResolved() {
         void* cls = ClassFor(d);
         if (!cls) continue;
         const int32_t keyOff = R::FindPropertyOffset(cls, L"Key");
-        const int32_t off = R::FindPropertyOffset(cls, d.boolName);
+        const wchar_t* boolTried[] = { d.boolName, d.boolAlt, d.boolAlt2 };
+        int32_t off = -1;
+        const wchar_t* boolUsed = nullptr;
+        for (const wchar_t* n : boolTried) {
+            if (!n) continue;
+            const int32_t found = R::FindPropertyOffset(cls, n);
+            if (found >= 0) { off = found; boolUsed = n; break; }
+        }
         if (keyOff < 0 || off < 0) {
             d.unusable = true;
             UE_LOGE("appliance: %ls.%ls did not resolve by name -- this class is left out of the sync",
-                    d.className, keyOff < 0 ? L"Key" : d.boolName);
+                    d.className, keyOff < 0 ? L"Key" : L"isOn/on/Active");
             continue;
         }
         // The verbs are asked here only so a build without them says so; each call resolves its own.
@@ -131,7 +142,8 @@ bool EnsureResolved() {
         d.boolOff = off;
         d.resolved = true;
         ++resolved;
-        UE_LOGI("appliance: resolved %ls Key@0x%04X bool@0x%04X fn=%p fn2=%p", d.className, keyOff, off, fn, fn2);
+        UE_LOGI("appliance: resolved %ls Key@0x%04X bool %ls@0x%04X fn=%p fn2=%p",
+                d.className, keyOff, boolUsed, off, fn, fn2);
     }
     return resolved > 0;
 }

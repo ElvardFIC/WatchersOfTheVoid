@@ -64,6 +64,7 @@ bool HandleIntentEvent(net::Session& session,
 
 // Ambient and world-event family: fireflies, scheduled events with their cues and snapshots,
 // alarms, the server box, roaches, inventory pickups, chat, and the time, sky and weather stream.
-bool HandleWorldEvent(const net::Session::ReliableMessage& msg);
+bool HandleWorldEvent(net::Session& session,
+                      const net::Session::ReliableMessage& msg);
 
 }  // namespace coop::event_feed

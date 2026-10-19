@@ -1,6 +1,7 @@
 // coop/items/player_inventory_sync.cpp -- see coop/items/player_inventory_sync.h.
 
 #include "coop/items/player_inventory_sync.h"
+#include "coop/items/held_record_capture.h"
 
 #include "coop/net/blob_chunks.h"
 #include "coop/config/config.h"
@@ -8,16 +9,22 @@
 #include "coop/items/player_profile.h"
 #include "coop/player/player_profile_store.h"
 #include "coop/player/players_registry.h"
+#include "coop/player/hand_item.h"
+#include "ue_wrap/actors/canned_food.h"
 #include "coop/net/protocol.h"
 #include "coop/net/session.h"
+#include "coop/net/stream_slot.h"
 #include "coop/props/prop_synth_key.h"  // RandomKeyString, the fresh key of a copied record
 #include "coop/session/player_handshake.h"
 #include "ue_wrap/actors/begin_equipment.h"  // GiveFromClass, the starter-kit probe
 #include "ue_wrap/actors/effects.h"  // ResetOnSaveObject, the host's effects out of the joiner's save
 #include "ue_wrap/engine/engine.h"      // SetSaveObjectReadyHook, the pre-materialise apply point
+#include "ue_wrap/engine/world_identity.h"
 #include "ue_wrap/actors/inventory.h"
+#include "ue_wrap/actors/building_material.h"
 #include "ue_wrap/actors/puppet.h"  // ReadCharacterIsFalling
 #include "ue_wrap/actors/vitals.h"
+#include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/sdk_profile_names.h"  // the start point
 #include "ue_wrap/engine/save_capture.h"  // the moment the world is gathered into the save object
@@ -39,10 +46,13 @@ namespace {
 using Clock = std::chrono::steady_clock;
 
 std::atomic<coop::net::Session*> g_session{nullptr};
+uint64_t g_streamEpoch = 0;
 
 // Host: the reassembler of the clients' streams. What it completes goes to
 // coop/player/player_profile_store, which holds it by GUID.
 coop::blob_chunks::Assembler g_assembler;
+std::array<coop::net::SeqLatch, coop::net::kMaxPeers> g_receivedSeq{};
+std::array<std::string, coop::net::kMaxPeers> g_receivedGuid{};
 
 // Client: the send-dedup state.
 uint64_t          g_lastItemsHash = 0;  // the items half of the last profile sent
@@ -69,6 +79,7 @@ constexpr auto kAsmTtl      = std::chrono::seconds(30);
 // Client: the host's on-join apply blob, reassembled here (a separate assembler from the
 // host's receive path, since host-to-client is a distinct stream direction).
 coop::blob_chunks::Assembler g_clientAssembler;
+coop::net::SeqLatch g_applySeq;
 coop::player_profile::Profile g_pendingApply;
 // Client: where the join's world appearance puts this player, and the pose for a ProfilePose; the
 // placement reads both once (TakeJoinPlacement).
@@ -106,26 +117,72 @@ coop::player_profile::Pose g_standingPose;
 void SampleStandingPose() {
     void* pawn = coop::players::Registry::Get().Local();
     if (!pawn) return;
+    ue_wrap::CachedObjRef live; live.Set(pawn);
+    const auto epoch = g_streamEpoch;
+    const auto world = ue_wrap::world_identity::Generation();
+    auto current = [&] { return epoch == g_streamEpoch && world == ue_wrap::world_identity::Generation() && live.Get(); };
     bool ragdoll = false, dead = false;
     void* seat = nullptr;
-    if (!ue_wrap::engine::ReadMainPlayerRagdollState(pawn, ragdoll, dead) || ragdoll || dead) return;
-    if (!ue_wrap::engine::ReadMainPlayerSittingOn(pawn, seat) || seat) return;
-    if (ue_wrap::puppet::ReadCharacterIsFalling(pawn)) return;
+    if (!ue_wrap::engine::ReadMainPlayerRagdollState(pawn, ragdoll, dead) || !current() || ragdoll || dead) return;
+    if (!ue_wrap::engine::ReadMainPlayerSittingOn(pawn, seat) || !current() || seat) return;
+    if (ue_wrap::puppet::ReadCharacterIsFalling(pawn) || !current()) return;
     ue_wrap::FVector at{};
     ue_wrap::FRotator rot{};   // unread: the last standing pose stays
-    if (!ue_wrap::engine::TryGetActorLocation(pawn, at) || !ue_wrap::engine::TryGetActorRotation(pawn, rot)) return;
+    if (!ue_wrap::engine::TryGetActorLocation(pawn, at) || !current() ||
+        !ue_wrap::engine::TryGetActorRotation(pawn, rot) || !current()) return;
     g_standingPose = {at.X, at.Y, at.Z, rot.Yaw, true};
 }
 
-// Client: send one built profile -- the items blob plus the vitals and the pose -- to the host.
-// True when the transport took it. The caller owns the poll and the dedup; this owns the vitals
-// read, the size ceiling, the send and the dedup state a send leaves behind.
-static bool SendProfile(coop::net::Session* s, std::vector<uint8_t> blob, uint64_t itemsHash,
-                        size_t carried, Clock::time_point now) {
+bool SendProfile(coop::net::Session* s, std::vector<uint8_t>&& blob, uint64_t itemsHash,
+                 size_t carried, Clock::time_point now) {
+    if (blob.size() > coop::blob_chunks::MaxBlobBytes()) return false;
+    if (!coop::blob_chunks::SendBlob(s, coop::net::ReliableKind::PlayerInventoryBlob, ++g_sendSeq, blob))
+        return false;
+    g_lastItemsHash = itemsHash;
+    g_lastSend = now;
+    UE_LOGI("player_inventory[client]: streamed profile (%zu bytes, %zu carried) to host",
+            blob.size(), carried);
+    return true;
+}
+
+// Client: poll the carried, worn and held items at 1 Hz and stream the profile to the host. A
+// change of the items goes at once; the vitals and the pose alone go at kVitalsCadence, and are
+// not even read on a poll that will not send.
+void ClientStreamTick(coop::net::Session* s) {
+    const Clock::time_point now = Clock::now();
+    if (now - g_lastPoll < kClientPoll) return;
+    g_lastPoll = now;
+    g_clientAssembler.Sweep(now, kAsmTtl);
+    if (!g_profileApplied) return;  // this world holds no profile of ours to report
+    const auto epoch = g_streamEpoch;
+    const auto world = ue_wrap::world_identity::Generation();
+    auto current = [&] {
+        return g_session.load(std::memory_order_acquire) == s && epoch == g_streamEpoch &&
+            world == ue_wrap::world_identity::Generation() && g_profileApplied &&
+            s->running() && s->connected() && s->role() == coop::net::Role::Client;
+    };
+    ue_wrap::inventory::PlayerInventory items;
+    if (!ue_wrap::inventory::ReadAll(items)) return;  // world not up yet
+    // Charge, food and other held state can change before native stow captures it.
+    // Capture the live item into the copy before hashing, then refresh fields whose
+    // native getter is incomplete. An identity mismatch defers the profile.
+    if (!items.hold.empty()) {
+        void* held = coop::hand_item::LocalHandActor();
+        if (!coop::items::CaptureHeldRecord(held, items.hold[0].data) ||
+            !ue_wrap::building_material::RefreshHeldMaterialRecord(held, items.hold[0].data) ||
+            !ue_wrap::canned_food::RefreshHeldRecord(held, items.hold[0].data)) return;
+    }
+    SampleStandingPose();
+    if (!current()) return; // pose/vitals wrappers can reenter the session or travel
+    std::vector<uint8_t> blob = coop::inventory_wire::SerializeItems(items);
+    const uint64_t itemsHash = coop::blob_chunks::Fnv64(blob);
+    if (itemsHash == g_lastItemsHash && now - g_lastSend < kVitalsCadence) return;
+
     // The vitals not reading (a field the game renamed) must not stop the ITEMS from being stored:
     // the profile then goes without them and is applied with the game's defaults.
     ue_wrap::vitals::Snapshot vitals;
     const bool haveVitals = ue_wrap::vitals::ReadSnapshot(vitals);
+    if (!current()) return;
     if (!haveVitals) {
         static bool s_said = false;
         if (!s_said) {
@@ -142,37 +199,15 @@ static bool SendProfile(coop::net::Session* s, std::vector<uint8_t> blob, uint64
             g_oversizeHash = itemsHash;
             UE_LOGE("player_inventory[client]: the profile is %zu bytes (%zu carried), past the "
                     "%zu-byte transport ceiling -- NOT sent; the host keeps the last one that fitted",
-                    blob.size(), carried, coop::blob_chunks::MaxBlobBytes());
+                    blob.size(), items.inventory.size(), coop::blob_chunks::MaxBlobBytes());
         }
-        return false;
+        return;
     }
-    if (coop::blob_chunks::SendBlob(s, coop::net::ReliableKind::PlayerInventoryBlob, ++g_sendSeq, blob)) {
-        // Logged for a change of the items only: the vitals cadence is steady state, not an event.
-        if (itemsHash != g_lastItemsHash)
-            UE_LOGI("player_inventory[client]: streamed profile (%zu bytes, %zu carried) to host",
-                    blob.size(), carried);
-        g_lastItemsHash = itemsHash;
-        g_lastSend = now;
-        return true;
+    if (SendProfile(s, std::move(blob), itemsHash, items.inventory.size(), now)) {
+        if (!current()) return;
+        return;
     }
-    return false;  // refused -> retry next poll under a fresh seq
-}
-
-// Client: poll the carried, worn and held items at 1 Hz and stream the profile to the host. A
-// change of the items goes at once; the vitals and the pose alone go at kVitalsCadence, and are
-// not even read on a poll that will not send.
-void ClientStreamTick(coop::net::Session* s) {
-    const Clock::time_point now = Clock::now();
-    if (now - g_lastPoll < kClientPoll) return;
-    g_lastPoll = now;
-    if (!g_profileApplied) return;  // this world holds no profile of ours to report
-    ue_wrap::inventory::PlayerInventory items;
-    if (!ue_wrap::inventory::ReadAll(items)) return;  // world not up yet
-    SampleStandingPose();
-    std::vector<uint8_t> blob = coop::inventory_wire::SerializeItems(items);
-    const uint64_t itemsHash = coop::blob_chunks::Fnv64(blob);
-    if (itemsHash == g_lastItemsHash && now - g_lastSend < kVitalsCadence) return;
-    SendProfile(s, std::move(blob), itemsHash, items.inventory.size(), now);
+    // Refused by the transport: retry the complete profile on the next poll.
 }
 
 // Host: sweep stale half-assemblies and push each newly connected joiner its per-player apply
@@ -281,7 +316,17 @@ void OnSaveObjectReady(void* saveSlotObject) {
     else if (g_joinPlacement == JoinPlacement::StartPoint)
         placed = ue_wrap::vitals::WritePlayerTransform(saveSlotObject, N::kKPPSpawnX, N::kKPPSpawnY,
                                                        N::kKPPSpawnZ, 0.f);
-    g_profileApplied = true;
+    // Do not open the client->host profile stream after a partial restore.  In
+    // particular, a failed vitals/transform write leaves host-save values in
+    // this player's world; streaming those values back would corrupt the
+    // player's GUID-keyed profile on the next save.  Keep the stream closed
+    // until every required save-object field was applied successfully.
+    g_profileApplied = vitalsOk && placed;
+    if (!g_profileApplied) {
+        UE_LOGE("player_inventory[client]: per-player profile was only partially applied "
+                "(vitals=%s transform=%s); client profile reporting remains disabled",
+                vitalsOk ? "ok" : "failed", placed ? "ok" : "failed");
+    }
     UE_LOGI("player_inventory[client]: applied per-player profile to save object %p (carried=%zu "
             "equip=%zu hold=%zu | vitals %s: hp=%.0f/%.0f food=%.0f sleep=%.0f | pose %s%s)",
             saveSlotObject, g_pendingApply.items.inventory.size(),
@@ -342,6 +387,7 @@ void OnWorldSaveWritten(void* saveObject, const wchar_t* slotName) {
 }  // namespace
 
 void Install(coop::net::Session* session) {
+    if (g_session.load(std::memory_order_acquire) != session) OnDisconnect();
     g_session.store(session, std::memory_order_release);
     ue_wrap::save_to_slot_hook::SetWritten(&OnWorldSaveWritten);
     ue_wrap::save_capture::SetWorldGatherHook(&OnWorldGather);
@@ -447,11 +493,13 @@ bool SendProfileNow(coop::net::Session* s) {
 
 void OnReliable(const coop::net::BlobChunkPayload& p, uint8_t senderPeerSlot) {
     auto* s = g_session.load(std::memory_order_acquire);
-    if (!s) return;
+    if (!s || !s->running() || !s->connected()) return;
 
     // The client direction: the host pushed this client its per-player apply blob.
     if (s->role() == coop::net::Role::Client) {
-        if (senderPeerSlot != 0) return;  // only the host pushes the apply blob
+        if (senderPeerSlot != 0 || g_profileApplied) return;  // join apply only, from host
+        auto next = g_applySeq;
+        if (!next.Advance(p.blobSeq)) return;
         std::vector<uint8_t> blob;
         if (!g_clientAssembler.OnChunk(p, senderPeerSlot, blob)) return;  // not complete yet
         coop::player_profile::Profile inv;
@@ -460,6 +508,8 @@ void OnReliable(const coop::net::BlobChunkPayload& p, uint8_t senderPeerSlot) {
                     "-- ignoring (will keep waiting / fall back)", blob.size());
             return;
         }
+        g_applySeq = next; // invalid/partial profiles never advance the accepted sequence
+        g_clientAssembler.DiscardThrough(senderPeerSlot, p.blobSeq);
         g_pendingApply = std::move(inv);
         g_hasPendingApply.store(true, std::memory_order_release);
         UE_LOGI("player_inventory[client]: received per-player apply blob from host (%zu bytes, "
@@ -472,14 +522,27 @@ void OnReliable(const coop::net::BlobChunkPayload& p, uint8_t senderPeerSlot) {
     // The host direction: a client slot streamed its live inventory to persist.
     if (s->role() != coop::net::Role::Host) return;
     if (senderPeerSlot < 1 || senderPeerSlot >= coop::net::kMaxPeers) return;  // a CLIENT slot
-    std::vector<uint8_t> blob;
-    if (!g_assembler.OnChunk(p, senderPeerSlot, blob)) return;  // not complete yet
+    if (!s->IsSlotConnected(senderPeerSlot)) return;
     const std::string& guid = coop::player_handshake::GuidForSlot(senderPeerSlot);
-    if (guid.empty()) {
-        UE_LOGW("player_inventory: inventory blob from slot %u but no GUID -- dropping",
+    if (g_receivedGuid[senderPeerSlot] != guid) {
+        g_assembler.ClearSlot(senderPeerSlot);
+        g_receivedSeq[senderPeerSlot] = {};
+        g_receivedGuid[senderPeerSlot] = guid;
+    }
+    if (guid.empty()) return; // never buffer anonymous chunks for a later occupant
+    auto next = g_receivedSeq[senderPeerSlot];
+    if (!next.Advance(p.blobSeq)) return;
+    std::vector<uint8_t> blob;
+    if (!g_assembler.OnChunk(p, senderPeerSlot, blob)) return;
+    coop::player_profile::Profile decoded;
+    if (!coop::inventory_wire::Deserialize(blob, decoded)) {
+        UE_LOGW("player_inventory[host]: malformed profile from slot %u -- keeping the previous profile",
                 senderPeerSlot);
         return;
     }
+    g_receivedSeq[senderPeerSlot] = next;
+    // Supersede partial older snapshots, preserving newer ones and other players' assemblies.
+    g_assembler.DiscardThrough(senderPeerSlot, p.blobSeq);
     // Held in memory, by GUID; the disk copy is cut with the host's world save (the store's header
     // says why no other moment will do).
     coop::player_profile_store::Put(guid, std::move(blob),
@@ -622,14 +685,23 @@ void OnDisconnectForSlot(int peerSlot) {
     if (!s || s->role() != coop::net::Role::Host) return;
     // The leaver's profile stays held by GUID: a rejoin gets it back, and the next save of the
     // host's world cuts it to disk with everyone else's.
-    if (peerSlot >= 0 && peerSlot < coop::net::kMaxPeers)
+    if (peerSlot >= 0 && peerSlot < coop::net::kMaxPeers) {
         g_applySentToSlot[peerSlot] = false;  // a rejoin re-pushes the apply blob
+        g_assembler.ClearSlot(static_cast<uint8_t>(peerSlot));
+        g_receivedSeq[peerSlot] = {};
+        g_receivedGuid[peerSlot].clear();
+    }
 }
 
 void OnDisconnect() {
-    // Host: nothing to do. This edge is "the last client left", not "the hosted world ended": what
-    // is held stays for a rejoin and for the next save (the store drops it when another world is
-    // loaded to host).
+    ++g_streamEpoch;
+    // Drop connection-owned receive state, including incomplete host assemblies. GUID-keyed
+    // stored profiles stay for a rejoin and the next world save.
+    g_assembler.Clear();
+    g_receivedSeq = {};
+    g_receivedGuid = {};
+    g_applySentToSlot = {};
+    g_applySeq = {};
     // Client: reset the send dedup so a reconnect re-streams, and drop any pending apply blob and
     // its assembler, so a rejoin waits for a fresh host push and never applies a stale inventory
     // to a new world.

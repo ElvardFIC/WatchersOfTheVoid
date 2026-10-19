@@ -68,6 +68,8 @@ constexpr ClientAuthorship AuthorshipOf(ReliableKind k) {
     case ReliableKind::PlayerInventoryBlob:
     case ReliableKind::KerfurCommand:
     case ReliableKind::AtvRelease:
+    case ReliableKind::SitAnchor:
+    case ReliableKind::AtvRadio:
     case ReliableKind::GrabIntent:
     case ReliableKind::ThrowIntent:
     case ReliableKind::SkinChange:

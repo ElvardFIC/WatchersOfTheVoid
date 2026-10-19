@@ -1,6 +1,6 @@
 // coop/creatures/npc_pose_drive.cpp -- the CLIENT-mirror pose interpolator + engine drive for
-// coop::element::Npc. See coop/element/npc.h. A SUBSET of remote_player.cpp (pos + yaw +
-// speed + stateBits; no pitch/headYawDelta/vitals/ragdoll/mesh-offset).
+// coop::element::Npc. See coop/element/npc.h. A SUBSET of remote_player.cpp (pos + full rotation +
+// speed + stateBits; no headYawDelta/vitals/ragdoll/mesh-offset).
 //
 // The interp is the proven advance-before-rebase shape (the interp-starvation fix,
 // the mirror starved of interpolation): SetTargetNpcPose advances the open window FIRST,
@@ -14,7 +14,9 @@
 #include "coop/net/protocol.h"
 #include "ue_wrap/engine/engine.h"
 #include "ue_wrap/actors/kerfur.h"   // DriveKerfurState -- host-authoritative command and spooky flag
+#include "ue_wrap/devices/floppy_slot.h"  // kSlotTypeCount -- the seven disc types floppyFromType indexes
 #include "ue_wrap/actors/puppet.h"
+#include "ue_wrap/actors/sit_pose.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/actors/wisp.h"     // DriveWispLanding -- the fade-in edge on a wisp_C mirror
 
@@ -73,6 +75,15 @@ void Npc::SetTargetNpcPose(const coop::net::EntityPoseSnapshot& snap) {
         kerfState_  = snap.kerfState;
         kerfSpooky_ = (snap.stateBits & coop::net::kEntityPoseBitKerfurSpooky) != 0;
     }
+    // The reports disc. Bit clear, or a type outside the seven the game indexes, is an empty slot.
+    // Applied in Tick, not here: the mesh swap can fail while the library is still loading, and a
+    // failed apply has to be asked again on a later frame even when the pose itself has settled.
+    {
+        const bool hasDisc = (snap.stateBits & coop::net::kEntityPoseBitKerfurHasFloppy) != 0;
+        const int t = hasDisc ? static_cast<int>(snap.floppyType) : -1;
+        wantFloppy_ = (t >= 0 && t < ue_wrap::floppy_slot::kSlotTypeCount)
+                          ? static_cast<int8_t>(t) : int8_t{-1};
+    }
 
     // First packet OR a teleport (error beyond the snap threshold) -> SNAP, no LERP across.
     const float dx = tgtPos.X - curPos_.X, dy = tgtPos.Y - curPos_.Y, dz = tgtPos.Z - curPos_.Z;
@@ -81,12 +92,15 @@ void Npc::SetTargetNpcPose(const coop::net::EntityPoseSnapshot& snap) {
     if (!hasPose_ || distErr > snapThresh) {
         curPos_ = tgtPos;
         curYaw_ = snap.yaw;
+        curPitch_ = snap.pitch; curRoll_ = snap.roll;
         curSpeed_ = snap.speed;
         curStateBits_ = snap.stateBits;
         targetPos_ = tgtPos;
         targetYaw_ = snap.yaw;
+        targetPitch_ = snap.pitch; targetRoll_ = snap.roll;
         errorPos_ = ue_wrap::FVector{};
         errorYaw_ = 0.f;
+        errorPitch_ = errorRoll_ = 0.f;
         if (hasBodyYaw_) { curBodyYaw_ = snap.bodyYaw; targetBodyYaw_ = snap.bodyYaw; errorBodyYaw_ = 0.f; }
         window_.Close();  // frozen at target (snapped)
         hasPose_ = true;
@@ -100,12 +114,15 @@ void Npc::SetTargetNpcPose(const coop::net::EntityPoseSnapshot& snap) {
 
     targetPos_ = tgtPos;
     targetYaw_ = snap.yaw;
+    targetPitch_ = snap.pitch; targetRoll_ = snap.roll;
     curSpeed_ = snap.speed;          // not interpolated -- the AnimBP blends locomotion
     curStateBits_ = snap.stateBits;  // snapped
     errorPos_.X = tgtPos.X - curPos_.X;
     errorPos_.Y = tgtPos.Y - curPos_.Y;
     errorPos_.Z = tgtPos.Z - curPos_.Z;
     errorYaw_ = OffsetDegrees(curYaw_, snap.yaw);
+    errorPitch_ = OffsetDegrees(curPitch_, snap.pitch);
+    errorRoll_ = OffsetDegrees(curRoll_, snap.roll);
     if (hasBodyYaw_) { targetBodyYaw_ = snap.bodyYaw; errorBodyYaw_ = OffsetDegrees(curBodyYaw_, snap.bodyYaw); }
     window_.Open(NowMs(), kInterpWindowMs);
     dirty_ = true;
@@ -119,11 +136,14 @@ void Npc::AdvanceInterp() {
     curPos_.Y += errorPos_.Y * dAlpha;
     curPos_.Z += errorPos_.Z * dAlpha;
     curYaw_     += errorYaw_     * dAlpha;
+    curPitch_ += errorPitch_ * dAlpha;
+    curRoll_ += errorRoll_ * dAlpha;
     curBodyYaw_ += errorBodyYaw_ * dAlpha;  // no-op when errorBodyYaw_ == 0, i.e. not tracking
     dirty_ = true;
     if (arrived) {
         curPos_ = targetPos_;  // exact arrival (kills float drift over the window)
         curYaw_ = targetYaw_;
+        curPitch_ = targetPitch_; curRoll_ = targetRoll_;
         curBodyYaw_ = targetBodyYaw_;
     }
 }
@@ -133,17 +153,15 @@ void Npc::Tick() {
     if (!actor || !R::IsLiveByIndex(actor, GetInternalIdx())) return;  // unbound / GC'd mirror
     if (!hasPose_) return;  // no pose yet -- leave the mirror at its spawn transform
     AdvanceInterp();
-    if (dirty_) {
-        dirty_ = false;
-        // Remembered only when the transform write took, so a failed write is tried again.
-        if (!SameAsApplied(actor) && ApplyToEngine()) RememberApplied(actor);
+    if (dirty_) { ApplyToEngine(); dirty_ = false; }
+    // The disc is not part of the pose dirty bit: a swap that failed (the mesh component or the
+    // disc library not ready yet) retries on the next frame, including while the body is still.
+    if (hasKerfState_ && shownFloppy_ != wantFloppy_) {
+        const bool has = wantFloppy_ >= 0;
+        const auto type = static_cast<uint8_t>(has ? wantFloppy_ : 0);
+        if (ue_wrap::kerfur::DriveKerfurFloppy(actor, has, type))
+            shownFloppy_ = wantFloppy_;
     }
-    // Wisp mirror: replay the native landing edge (landed=true + dir(true) -> the fade-in the wisp
-    // gates behind a CMC-tick-computed CurrentFloor read its parked CMC can never produce).
-    // Grounded-per-host = drive; retried each frame until wisp_C resolves, whether or not the pose
-    // moved (also covers a joiner mirroring an already-landed wisp: its first pose reads grounded).
-    if (isWispMirror_ && !wispLanded_ && !(curStateBits_ & coop::net::kStateBitInAir))
-        wispLanded_ = ue_wrap::wisp::DriveWispLanding(actor);
 }
 
 bool Npc::SameAsApplied(void* actor) const {
@@ -170,8 +188,8 @@ bool Npc::ApplyToEngine() {
     if (!actor) return false;
     // NPC capsule centre IS the actor pivot (the host streams the actor's location, the mirror is the
     // same class spawned at the same place) -- no mesh-offset reconstruction (unlike RemotePlayer).
-    const bool moved = E::SetActorLocation(actor, curPos_);
-    const bool turned = E::SetActorRotation(actor, ue_wrap::FRotator{0.f, curYaw_, 0.f});
+    E::SetActorLocation(actor, curPos_);
+    E::SetActorRotation(actor, ue_wrap::FRotator{curPitch_, curYaw_, curRoll_});
     // Drive the mirror's OWN CMC so its AnimBP reads the right Velocity + MovementMode (the native
     // locomotion path -- the same fields the host NPC's possessed CMC carries). Reconstruct planar
     // velocity from the streamed body-yaw + speed magnitude.
@@ -193,7 +211,7 @@ bool Npc::ApplyToEngine() {
     // state machine matches the host (the mirror runs no AI -> it can't pick its own). Class-gated
     // inside -> safe no-op on non-kerfur NPCs.
     if (hasKerfState_) ue_wrap::kerfur::DriveKerfurState(actor, kerfState_, kerfSpooky_);
-    return moved && turned;
+    ue_wrap::sit_pose::DriveSitting(actor, (curStateBits_ & coop::net::kEntityPoseBitKerfurOnAtv) != 0);
 }
 
 }  // namespace coop::element

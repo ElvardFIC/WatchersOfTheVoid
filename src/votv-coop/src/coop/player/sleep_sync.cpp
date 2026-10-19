@@ -36,7 +36,6 @@ SleepPeerState g_localState = SleepPeerState::Awake;
 WireKey        g_localBed{};              // the bed's class name while not awake, else empty
 bool           g_localSleeping = false;   // isSleep
 bool           g_dreamProbSuppressed = false;  // a client holds gamemode.dreamProbability at 0
-void*          g_gmInst = nullptr;        // the gamemode the polled state belongs to
 
 // ---- what is known of every peer ------------------------------------------------------------------
 // The host: each slot's state as it applied it (slot 0 the host's own, published). A client: as the host
@@ -55,22 +54,10 @@ bool SameBed(const WireKey& a, const WireKey& b) {
     return a.len == b.len && a.len <= sizeof(a.data) && std::memcmp(a.data, b.data, a.len) == 0;
 }
 
-// A bed name is a class name: identifier characters inside `len` and zero past it. WireKey's contract says so
-// and nothing on the wire enforces it (coop/items/coingun_arbiter.cpp:145-155 clamps the length and stops at
-// the first NUL, where this refuses); a name with a line break would forge a line in every peer's log, and a
-// tail byte would pass for a change. True with the first fault found.
-bool BedFaulty(const WireKey& k, BedRefusal* why) {
-    if (k.len > sizeof(k.data)) { *why = BedRefusal::Length; return true; }
-    for (size_t i = 0; i < sizeof(k.data); ++i) {
-        const unsigned char c = static_cast<unsigned char>(k.data[i]);
-        if (i >= k.len) {
-            if (c != 0) { *why = BedRefusal::Tail; return true; }
-        } else if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_')) {
-            *why = BedRefusal::Charset;
-            return true;
-        }
-    }
-    return false;
+void ApplyDreamProbPolicy() {
+    auto* s = g_session.load(std::memory_order_acquire);
+    if (!s || IsHost(s)) return; // the host keeps the game's native nightmare roll
+    if (SLP::SetDreamProbability(0.f)) g_dreamProbSuppressed = true;
 }
 
 // One warning per refused field, at most one every five seconds each: a hostile sender cannot fill the log, and
@@ -100,6 +87,22 @@ void RefuseBed(BedRefusal why, int senderSlot) {
     if (senderSlot > 0 && senderSlot < static_cast<int>(coop::net::kMaxPeers))
         ++g_bedRefused[senderSlot].n[static_cast<int>(why)];
     Refuse("bed", senderSlot);
+}
+
+bool BedFaulty(const WireKey& bed, BedRefusal* why) {
+    if (bed.len > sizeof(bed.data)) { if (why) *why = BedRefusal::Length; return true; }
+    for (size_t i = 0; i < bed.len; ++i) {
+        const unsigned char c = static_cast<unsigned char>(bed.data[i]);
+        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+              (c >= '0' && c <= '9') || c == '_')) {
+            if (why) *why = BedRefusal::Charset;
+            return true;
+        }
+    }
+    for (size_t i = bed.len; i < sizeof(bed.data); ++i) {
+        if (bed.data[i] != 0) { if (why) *why = BedRefusal::Tail; return true; }
+    }
+    return false;
 }
 
 // The host's name for the chat line; the ledger owns the fallback when the host's row has no nick.
@@ -204,18 +207,7 @@ void Tick() {
     auto* s = g_session.load(std::memory_order_acquire);
     if (!s || !s->running()) return;
     if (!SLP::EnsureResolved()) return;
-    void* gm = ue_wrap::world_singleton::Gamemode();
-    if (!gm) return;
-
-    // A fresh gamemode (boot, level reload) starts awake with its own dreamProbability; what was
-    // published stays until the poll below compares it with the new one.
-    if (gm != g_gmInst) {
-        g_gmInst = gm;
-        g_localState = SleepPeerState::Awake;
-        std::memset(&g_localBed, 0, sizeof(g_localBed));
-        g_localSleeping = false;
-        g_dreamProbSuppressed = false;
-    }
+    if (s->connected() && !IsHost(s) && !g_dreamProbSuppressed) ApplyDreamProbPolicy();
 
     SleepPeerState state = SleepPeerState::Awake;
     bool sleeping = false;
@@ -250,9 +242,6 @@ void Tick() {
     }
 
     if (!s->connected()) return;
-
-    // A client holds its nightmare rolls off for the session: a nightmare is the host's machine's roll alone.
-    if (!g_dreamProbSuppressed && SLP::SetDreamProbability(0.f)) g_dreamProbSuppressed = true;
 
     if (g_localState != g_sentState || !SameBed(g_localBed, g_sentBed)) SendClientRest(s);
 }
@@ -325,6 +314,12 @@ void OnReliable(const uint8_t* payload, size_t len, uint8_t senderSlot) {
     }
 }
 
+void OnDreamScene(const coop::net::DreamScenePayload& /*p*/, uint8_t /*senderSlot*/) {
+    // Reserved legacy packet: replaying another player's dream bypasses the
+    // recipient's nightmaresEnabled, bed probability and native roll. Personal
+    // dreams now enter through their own native graph, including Insomniac grab.
+}
+
 void QueueConnectBroadcastForSlot(int peerSlot) {
     auto* s = g_session.load(std::memory_order_acquire);
     if (!s || !IsHost(s)) return;
@@ -389,7 +384,6 @@ void OnDisconnect() {
     g_localState = SleepPeerState::Awake;
     std::memset(&g_localBed, 0, sizeof(g_localBed));
     g_localSleeping = false;
-    g_gmInst = nullptr;
     for (auto& st : g_state) st = SleepPeerState::Awake;
     std::memset(g_bed, 0, sizeof(g_bed));
     g_hostSleeping = false;

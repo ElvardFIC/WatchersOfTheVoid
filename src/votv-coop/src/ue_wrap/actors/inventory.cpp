@@ -88,7 +88,13 @@ void ReadEquipRecord(const void* base, EquipRecord& rec) {
 void WriteEquipRecord(uint8_t* base, const EquipRecord& r) {
     SR::WriteFNameField(base + kEquip_propName, r.propName);
     SR::WriteFNameField(base + kEquip_propKey, r.propKey);
-    SR::WriteSaveRecord(base + kEquip_data, r.data);  // embedded Fstruct_save (0x100 slot)
+    // Repair empty slots in profiles saved by older builds, too. Occupied records (and their
+    // transforms) must survive unchanged; only the old all-zero empty-slot transform is wrong.
+    auto data = r.data;
+    if (r.propName.empty() && r.propKey.empty() && r.tag.empty() && data.className.empty() &&
+        data.key.empty() && data.xform == std::array<float, 10>{})
+        data.xform = SR::SaveRecord{}.xform;
+    SR::WriteSaveRecord(base + kEquip_data, data);  // embedded Fstruct_save (0x100 slot)
     SR::WriteFNameField(base + kEquip_tag, r.tag);
 }
 

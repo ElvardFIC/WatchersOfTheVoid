@@ -7,6 +7,8 @@
 #include "ue_wrap/core/object_index.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/sdk_profile.h"
+#include "ue_wrap/devices/floppy_slot.h"       // MeshForSlotType -- the disc the reports slot shows
+#include "ue_wrap/engine/engine_component.h"  // SetStaticMesh / ClearStaticMesh / SetComponentVisible
 
 #include <cstring>
 #include <cwchar>
@@ -192,6 +194,81 @@ bool ReadHasFloppy(void* actor, bool& has) {
     if (sOff < 0) return false;
     has = (static_cast<const uint8_t*>(actor)[sOff] & sMask) != 0;
     return true;
+}
+
+// hasFloppy and floppyType, resolved once. -1 offset means the field is absent on this class.
+struct FloppyFields { int32_t hasOff = -2; uint8_t hasMask = 0; int32_t typeOff = -2; int32_t meshOff = -2; };
+static FloppyFields g_floppy;
+
+static void ResolveFloppyFields() {
+    void* kc = ResolveKerfurClass();
+    if (!kc) return;
+    if (g_floppy.hasOff == -2 && !R::FindBoolProperty(kc, L"hasFloppy", g_floppy.hasOff, g_floppy.hasMask))
+        g_floppy.hasOff = -1;
+    if (g_floppy.typeOff == -2) g_floppy.typeOff = R::FindPropertyOffset(kc, L"floppyType");
+    if (g_floppy.meshOff == -2) g_floppy.meshOff = R::FindPropertyOffset(kc, L"floppyMesh");
+}
+
+bool ReadKerfurFloppy(void* actor, bool& has, uint8_t& type) {
+    if (!IsKerfurActor(actor)) return false;
+    ResolveFloppyFields();
+    if (g_floppy.hasOff < 0 || g_floppy.typeOff < 0) return false;
+    const auto* base = static_cast<const uint8_t*>(actor);
+    has = (base[g_floppy.hasOff] & g_floppy.hasMask) != 0;
+    const int32_t raw = *reinterpret_cast<const int32_t*>(base + g_floppy.typeOff);
+    // lib_C::floppyFromType indexes seven meshes and nothing else. A type outside that, or a flag
+    // with no type, is a robot that is not showing a disc.
+    if (!has || raw < 0 || raw >= ue_wrap::floppy_slot::kSlotTypeCount) {
+        has = false;
+        type = 0;
+        return true;
+    }
+    type = static_cast<uint8_t>(raw);
+    return true;
+}
+
+bool DriveKerfurFloppy(void* actor, bool has, uint8_t type) {
+    if (!IsKerfurActor(actor)) return true;
+    ResolveFloppyFields();
+    // Absent fields are a fact about this class, not a delay. Stop asking.
+    if (g_floppy.hasOff < 0 || g_floppy.typeOff < 0 || g_floppy.meshOff < 0) return true;
+    void* comp = *reinterpret_cast<void**>(static_cast<uint8_t*>(actor) + g_floppy.meshOff);
+    if (!comp || !R::IsLive(comp)) return false;
+    const int32_t written = (has && type < ue_wrap::floppy_slot::kSlotTypeCount)
+                                ? static_cast<int32_t>(type) : -1;
+    if (written >= 0) {
+        void* mesh = nullptr;
+        if (!ue_wrap::floppy_slot::MeshForSlotType(actor, written, mesh)) return false;
+        // A Static component ignores SetStaticMesh. The disc rides the skeleton, so it is Movable;
+        // saying so again is what makes a mirror that spawned Static actually show the mesh.
+        // A successful ask that names no mesh is an empty answer, not a delay: retrying it would
+        // call the library every frame.
+        if (mesh) {
+            ue_wrap::engine::SetComponentMobility(comp, 2);
+            if (!ue_wrap::engine::SetStaticMesh(comp, mesh)) return false;
+            ue_wrap::engine::SetComponentVisible(comp, true, false);
+        } else {
+            ue_wrap::engine::ClearStaticMesh(comp);
+            ue_wrap::engine::SetComponentVisible(comp, false, false);
+        }
+    } else {
+        ue_wrap::engine::ClearStaticMesh(comp);
+        ue_wrap::engine::SetComponentVisible(comp, false, false);
+    }
+    auto* base = static_cast<uint8_t*>(actor);
+    if (written >= 0) base[g_floppy.hasOff] = static_cast<uint8_t>(base[g_floppy.hasOff] | g_floppy.hasMask);
+    else              base[g_floppy.hasOff] = static_cast<uint8_t>(base[g_floppy.hasOff] & ~g_floppy.hasMask);
+    *reinterpret_cast<int32_t*>(base + g_floppy.typeOff) = written;
+    return true;
+}
+
+void* ReadHoldObject(void* actor) {
+    if (!IsKerfurActor(actor)) return nullptr;
+    static int32_t sOff = -2;
+    if (sOff == -2) sOff = R::FindPropertyOffset(ResolveKerfurClass(), L"holdObject");
+    if (sOff < 0) return nullptr;
+    void* t = *reinterpret_cast<void* const*>(static_cast<const uint8_t*>(actor) + sOff);
+    return (t && R::IsLive(t)) ? t : nullptr;
 }
 
 void* ReadTargetActor(void* actor) {

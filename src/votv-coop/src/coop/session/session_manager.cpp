@@ -200,10 +200,8 @@ std::string DisplayVersion() {
     // The running game build is decided at boot, before the menu's first call: a game this Multivoid was not
     // made for carries the mark wherever the label is shown.
     static const std::string kLabel =
-        std::string("Multivoid ") + coop::version::kGameTarget +
-        " b" + std::to_string(static_cast<int>(net::kProtocolVersion)) +
-        coop::build_trust::StatusSuffix() +
-        (coop::game_build::Running().kind == coop::game_build::Kind::Target ? "" : " (untested game version)");
+        std::string("Watchers of the Void ") + coop::version::kGameTarget +
+        " b" + std::to_string(static_cast<int>(net::kProtocolVersion));
     return kLabel;
 }
 

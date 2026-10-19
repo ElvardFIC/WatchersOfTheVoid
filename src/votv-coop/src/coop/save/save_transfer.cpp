@@ -27,6 +27,9 @@
 #include "coop/save/save_guard.h"
 #include "coop/save/save_indicator_suppress.h"  // detect the SAVED HUD across the join scratch save
 #include "coop/save/slot_file_read.h"  // the torn-read guard and the stream's CRC
+#include "coop/save/save_blob_codec.h"
+#include <algorithm>
+#include <fstream>
 #include "ue_wrap/engine/engine.h"      // the host's current prop position
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/actors/prop.h"        // IsChipPile: a grabbed clump belongs to the convert stream
@@ -45,6 +48,7 @@
 #include <cstring>
 #include <filesystem>
 #include <mutex>
+#include <new>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -130,6 +134,10 @@ void BeginStreamFromBlob_(int slot, HostStream& hs, std::vector<uint8_t>&& bytes
                           uint32_t sidecarBytes = 0) {
     hs.active = true;
     hs.blob = std::move(bytes);  // already framed (identity sidecar prepended) by the caller
+    const auto rawBytes = static_cast<uint32_t>(hs.blob.size());
+    const bool compressed = coop::save_blob_codec::CompressIfSmaller(hs.blob);
+    UE_LOGI("save_transfer: slot %d packing %u -> %zu bytes (%s)", slot, rawBytes,
+            hs.blob.size(), compressed ? "XPRESS_HUFF" : "raw");
     hs.blobReady = true;
     g_worldTaken[slot] = true;
     hs.nextChunk = 0;
@@ -145,6 +153,7 @@ void BeginStreamFromBlob_(int slot, HostStream& hs, std::vector<uint8_t>&& bytes
     // The host's own mode, which the joiner's load forces: the slot's zcoop_ prefix names no mode.
     hs.beginPayload.gameMode = HostModeByte_(slot);
     hs.beginPayload.sidecarBytes = sidecarBytes;  // the framed identity map leads the stream
+    hs.beginPayload.decodedBytes = compressed ? rawBytes : 0;
 }
 
 // One stable-read attempt for a slot still capturing; true once the blob is captured.
@@ -176,6 +185,7 @@ ClientState g_cliState = ClientState::Idle;
 bool     g_cliArmed = false;
 bool     g_cliRequested = false;
 uint32_t g_cliTotal = 0;
+uint32_t g_cliDecodedBytes = 0;
 uint32_t g_cliChunkCount = 0;
 uint32_t g_cliCrc = 0;
 uint8_t  g_cliGameMode = 0;
@@ -201,10 +211,9 @@ void MaybeFinishLocked_() {
         g_cliState = ClientState::Failed;
         return;
     }
-    const uint32_t crc = coop::slot_file_read::Crc32(g_cliBuf.data(), g_cliBuf.size());  // over the WHOLE framed stream (sidecar+blob)
-    if (crc != g_cliCrc) {
-        UE_LOGE("save_transfer: blob CRC mismatch (got 0x%08X want 0x%08X) -- failing",
-                crc, g_cliCrc);
+    if (!coop::save_blob_codec::DecodeAndVerify(g_cliBuf, g_cliDecodedBytes, g_cliCrc)) {
+        UE_LOGE("save_transfer: decode/CRC verification failed (wire=%u decoded=%u crc=0x%08X)",
+                g_cliTotal, g_cliDecodedBytes, g_cliCrc);
         g_cliState = ClientState::Failed;
         return;
     }
@@ -237,22 +246,44 @@ void MaybeFinishLocked_() {
         blobLen = g_cliBuf.size() - g_cliSidecarBytes;
     }
     const fs::path dir = coop::save_guard::SaveGamesDir();
+    if (dir.empty()) {
+        UE_LOGE("save_transfer: save directory is unavailable -- failing");
+        g_cliState = ClientState::Failed;
+        return;
+    }
+    const fs::path tmp = dir / (CoopSlotFileNameNoExt_() + L".sav.part");
     const fs::path dst = dir / (CoopSlotFileNameNoExt_() + L".sav");
-    // Cached: the net thread, and the host sends the save again when it is lost.
-    const atomic_file::Result wr = atomic_file::Write(
-        dst, std::string_view(reinterpret_cast<const char*>(blobStart), blobLen),
-        atomic_file::Mode::Replace, atomic_file::Sync::Cached);
-    if (!wr.ok()) {
-        UE_LOGE("save_transfer: slot write of '%ls' failed (%s)", dst.c_str(),
-                atomic_file::Describe(wr).c_str());
+    {
+        std::ofstream f(tmp, std::ios::binary | std::ios::trunc);
+        if (!f || !f.write(reinterpret_cast<const char*>(blobStart),
+                           static_cast<std::streamsize>(blobLen))) {
+            UE_LOGE("save_transfer: slot write failed ('%ls')", tmp.c_str());
+            g_cliState = ClientState::Failed;
+            return;
+        }
+        // write() may only have filled the C++ stream buffer. Its final flush
+        // can fail on close (disk full, write lock, device error). A destructor
+        // hides that failure; do not replace the last complete slot with it.
+        f.close();
+        if (!f) {
+            UE_LOGE("save_transfer: slot close failed ('%ls')", tmp.c_str());
+            g_cliState = ClientState::Failed;
+            return;
+        }
+    }
+    std::error_code ec;
+    fs::rename(tmp, dst, ec);
+    if (ec) {
+        UE_LOGE("save_transfer: slot rename failed ('%ls' -> '%ls')", tmp.c_str(), dst.c_str());
         g_cliState = ClientState::Failed;
         return;
     }
     g_cliBuf.clear();
     g_cliBuf.shrink_to_fit();
     g_cliState = ClientState::ReadySlotWritten;
-    UE_LOGI("save_transfer: host save written as '%ls' (%zu blob bytes [%u stream - %u sidecar], crc ok) "
-            "-- ready to load", dst.c_str(), blobLen, g_cliTotal, g_cliSidecarBytes);
+    UE_LOGI("save_transfer: host save written as '%ls' (%zu save bytes; wire=%u decoded=%u sidecar=%u; crc ok) "
+            "-- ready to load", dst.c_str(), blobLen, g_cliTotal,
+            g_cliDecodedBytes ? g_cliDecodedBytes : g_cliTotal, g_cliSidecarBytes);
 }
 
 // Net thread, the session's bulk sink. A chunk is a u32 index plus raw bytes; one stream's chunks
@@ -284,9 +315,24 @@ void BulkSink_(const uint8_t* data, int len) {
         g_cliState = ClientState::Failed;
         return;
     }
-    ++g_cliChunksSeen;
-    g_cliBuf.insert(g_cliBuf.end(), data + 4, data + len);
-    MaybeFinishLocked_();
+    const size_t remaining = g_cliTotal - g_cliBuf.size();
+    const size_t expected = (std::min)(remaining, static_cast<size_t>(coop::net::kSaveChunkBytes));
+    if (g_cliChunksSeen >= g_cliChunkCount || static_cast<size_t>(len - 4) != expected) {
+        UE_LOGE("save_transfer: invalid chunk size/count -- failing");
+        g_cliState = ClientState::Failed;
+        return;
+    }
+    try {
+        g_cliBuf.insert(g_cliBuf.end(), data + 4, data + len);
+        ++g_cliChunksSeen;
+        MaybeFinishLocked_();
+    } catch (const std::bad_alloc&) {
+        // This sink runs directly on the network thread. Letting an allocation
+        // failure escape would terminate the whole game, not just this join.
+        g_cliState = ClientState::Failed;
+        std::vector<uint8_t>().swap(g_cliBuf);
+        UE_LOGE("save_transfer: allocation failed while receiving the host save -- failing");
+    }
 }
 
 // Net thread, the session's SaveTransferBegin sink: the same thread as the bulk sink by design.
@@ -615,6 +661,7 @@ void ClientArm() {
     g_cliHaveBegin = false;
     g_cliChunksSeen = 0;
     g_cliTotal = g_cliChunkCount = g_cliCrc = 0;
+    g_cliDecodedBytes = 0;
     g_cliGameMode = 0;
     g_cliSidecarBytes = 0;
     g_cliBuf.clear();
@@ -632,6 +679,12 @@ void ClientNoteConnected() {
 void OnBegin(const coop::net::SaveTransferBeginPayload& p) {
     std::lock_guard<std::mutex> lk(g_cliMu);
     if (!g_cliArmed) return;
+    if (g_cliState != ClientState::WaitingBegin || g_cliHaveBegin ||
+        !coop::save_blob_codec::ValidHeader(p)) {
+        UE_LOGE("save_transfer: unexpected or malformed Begin -- failing");
+        g_cliState = ClientState::Failed;
+        return;
+    }
     // An ordinal past the enum is no mode, and the load would write it raw into the GameInstance.
     // Compatible peers share one enum (the join gate is byte-equality on the version pair), so
     // this is a corrupt or hostile header, not a mode to substitute for: read before the no-save
@@ -649,23 +702,16 @@ void OnBegin(const coop::net::SaveTransferBeginPayload& p) {
                 "in the host's mode %u", static_cast<unsigned>(p.gameMode));
         return;
     }
-    // Begin is once per arm: the flag clears only in ClientArm and the teardown, so a second Begin
-    // is a protocol violation, and it used to reassign the scalars mid-transfer, moving the
-    // completion denominator and the CRC out from under a stream in flight.
-    if (g_cliHaveBegin) {
-        UE_LOGE("save_transfer: second Begin during an active transfer (have total=%u, got %u) "
-                "-- protocol violation, failing", g_cliTotal, p.totalBytes);
-        g_cliState = ClientState::Failed;
-        return;
-    }
+    // The entry guard permits Begin exactly once per arm, including no-save.
     g_cliHaveBegin = true;
     g_cliTotal = p.totalBytes;
+    g_cliDecodedBytes = p.decodedBytes;
     g_cliChunkCount = p.chunkCount;
     g_cliCrc = p.crc32;
     g_cliSidecarBytes = p.sidecarBytes;  // 0 = no sidecar
     if (g_cliState == ClientState::WaitingBegin) g_cliState = ClientState::Receiving;
-    // No reserve here: totalBytes is an unvalidated wire u32, and reserving it let a hostile host
-    // announce 4 GiB and kill the process with one packet. The reserve was only a hint; dropping it
+    // No reserve here even after header validation: a large announce alone should
+    // not allocate its whole limit. The reserve was only a hint; dropping it
     // costs a few vector doublings across a 17 MB download that takes seconds on the wire, and a
     // cap would have been a policy limit that could reject a legitimately grown world.
     UE_LOGI("save_transfer: Begin -- %u bytes in %u chunks (crc=0x%08X mode=%u sidecar=%u B)",
@@ -687,7 +733,7 @@ void GetProgress(uint32_t& doneBytes, uint32_t& totalBytes) {
     // load. Answered at the producer, where the state and the counter are under one lock.
     doneBytes = (g_cliState == ClientState::ReadySlotWritten)
                     ? g_cliTotal
-                    : static_cast<uint32_t>(g_cliBuf.size());
+                    : static_cast<uint32_t>((std::min)(g_cliBuf.size(), static_cast<size_t>(g_cliTotal)));
 }
 
 uint8_t ReceivedGameMode() {
@@ -723,6 +769,7 @@ void OnDisconnect() {
         // The denominator dies with the buffer: a stale total left by a disconnect is a wrong
         // number for the first path that reads the progress before arming.
         g_cliTotal = 0;
+        g_cliDecodedBytes = 0;
         // The rest of the Begin's scalars go with it, so no field of a finished transfer outlives
         // its session; ClientArm re-zeroes the same set on the next join.
         g_cliChunkCount = 0;

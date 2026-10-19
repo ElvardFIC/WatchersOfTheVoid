@@ -47,6 +47,7 @@ struct Slot {
     int     paramCount = 0;
     int16_t paramOffsets[kMaxPreParams] = {};
     bool    streamMismatchLogged = false;
+    int     resultBytes = 0;
 };
 
 // This facility is the STANDARD seam for every dispatch our ProcessEvent detour cannot see
@@ -60,9 +61,9 @@ struct Slot {
 // is GENERATED from this constant, so growing it means editing this one line. Size it for the
 // whole roster rather than a handful: peers install asymmetrically, so a table that fits one
 // role can be full on the other, and a hook that cannot install makes a fix work on one peer
-// and not the other. The count here covers the standing installs, a dev build's probes (the driver
-// natives and QuitGame among them) and the dev selftest's hooks, with headroom.
-constexpr int kMaxNativeHooks = 56;
+// and not the other. The count here covers the standing installs plus the driver natives and
+// QuitGame that a probe patches on top.
+constexpr int kMaxNativeHooks = 64;
 Slot g_slots[kMaxNativeHooks];
 int  g_slotCount = 0;
 // The VM's exec-handler table, taken from script_gate by the first pre hook's install.
@@ -147,7 +148,7 @@ void __fastcall NativeThunk(void* context, void* stack, void* result) {
     // Transparent forward: steps the params, runs the impl, writes *result.
     s.original(context, stack, result);
     // Disarmed, or a re-entrant cb -> skip (no double-convert from a nested spawn).
-    if (!s.armed.load(std::memory_order_relaxed) || !s.cb || t_inCb) return;
+    if (!s.armed.load(std::memory_order_relaxed) || !s.cb || t_inCb || !ue_wrap::game_thread::IsGameThread()) return;
     // FFrame::Object is the actor whose bytecode is executing -- the SOURCE entity for a spawn
     // issued from its ubergraph -- and Node and Locals are the function and storage of that
     // frame. Read after the forward: stepping the parameters moves the frame's code pointer and
@@ -161,10 +162,13 @@ void __fastcall NativeThunk(void* context, void* stack, void* result) {
     }
     // *Result = the native fn's RESULT_PARAM (the spawned actor for BeginDeferred). NULL-safe:
     // a failed spawn leaves it null -> the cb gets null + logs it (never derefs blind).
-    void* spawned = result ? *reinterpret_cast<void**>(result) : nullptr;
+    // Only pointer-sized returns populate this legacy callback argument. A bool
+    // query supplies one byte, and void functions may supply no storage at all.
+    void* spawned = nullptr;
+    if (result && s.resultBytes==sizeof(void*)) std::memcpy(&spawned,result,sizeof(spawned));
     t_inCb = true;
     t_frame = frame;
-    t_result = result;
+    t_result = s.resultBytes>0 ? result : nullptr;
     const int rc = RunCbSEH(s.cb, context, srcObj, spawned);
     t_result = nullptr;
     t_frame = CallerFrame{nullptr, nullptr};
@@ -351,6 +355,8 @@ bool InstallPostHookFn(void* ufunction, PostNativeCallback cb, bool armed) {
     g_slots[n].ufunction = ufunction;
     g_slots[n].original  = original;
     g_slots[n].cb        = cb;
+    for (const auto& p : R::FunctionParams(ufunction))
+        if (p.flags & P::cpf::ReturnParm) g_slots[n].resultBytes=p.size;
     g_slots[n].armed.store(armed, std::memory_order_relaxed);
     g_slotCount = n + 1;     // slot fully populated before the thunk can be reached
     // An 8-byte aligned pointer swap: the Func slot is 8-aligned and the UFunction lives in the

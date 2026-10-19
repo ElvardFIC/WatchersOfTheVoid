@@ -1,4 +1,4 @@
-// coop/world/event_fire_sync.cpp -- see coop/world/event_fire_sync.h. The bytecode facts this
+﻿// coop/world/event_fire_sync.cpp -- see coop/world/event_fire_sync.h. The bytecode facts this
 // module stands on: the save slot's settime iterates allEvents, skips rows in passEvents, and
 // on a clock-cross fire calls the eventer's runEvent for the row and appends it to passEvents,
 // so a runEvent whose caller is settime is exactly a scheduler fire, and an empty allEvents
@@ -12,13 +12,18 @@
 // rolled case, not the prank verb).
 
 #include "coop/world/event_fire_sync.h"
+#include "coop/world/event_location_sync.h"
+#include "coop/world/event_schedule_authority.h"
 
 #include "event_fire_policy.h"  // ReplayVerdict (co-located private header)
 
 #include "coop/net/protocol.h"
 #include "coop/net/session.h"
 #include "coop/net/session_serial.h"
-#include "coop/world/time_sync.h"
+#include "coop/player/players_registry.h"
+#include "coop/player/puppet_drive.h"
+#include "coop/player/remote_player.h"
+#include "coop/session/teleport_client.h"
 
 #include "ue_wrap/core/call.h"
 #include "ue_wrap/core/fname_utils.h"
@@ -27,17 +32,16 @@
 #include "ue_wrap/core/object_index.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/script_gate.h"
-#include "ue_wrap/engine/world_identity.h"
-#include "ue_wrap/facts/function_row.h"
+#include "ue_wrap/engine/engine.h"
 #include "ue_wrap/world/world_singleton.h"
-#include "ue_wrap/world/daynightcycle.h"
 
 #include <atomic>
 #include <chrono>
-#include <cstdint>
+#include <cmath>
 #include <cstring>
 #include <deque>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 
 namespace coop::event_fire_sync {
@@ -55,7 +59,6 @@ std::atomic<coop::net::Session*> g_session{nullptr};
 int32_t g_offSaveSlot = -1;           // mainGamemode.saveSlot (UsaveSlot_C*)
 int32_t g_offEventer = -1;            // mainGamemode.eventer  (Atrigger_eventer_C*)
 int32_t g_offPassEvents = -1;         // saveSlot.passEvents (TArray<FName>)
-int32_t g_offAllEvents = -1;          // saveSlot.allEvents  (TArray<FName>)
 void* g_runEventFn = nullptr;         // runEvent(FName event, FName special)
 void* g_runSpecialEventFn = nullptr;  // runSpecialEvent(FName eventName1) -> bool
 void* g_summonArirPrankFn = nullptr;  // summonArirPrank(), runSpecialEvent's prank-roll caller
@@ -83,9 +86,6 @@ bool g_specialWatchDead = false;
 unsigned g_hostFireSeq = 0;  // committed host fires across both verbs (game thread)
 
 // Client suppression and replay state, game thread.
-int g_zeroedAllEventsNum = 0;         // what we zeroed (restore on disconnect); 0 = nothing zeroed
-void* g_zeroedSaveSlot = nullptr;
-int32_t g_zeroedSaveSlotIdx = -1;
 struct PendingFire {
     FireKind kind;
     std::string name;
@@ -105,12 +105,78 @@ constexpr size_t kMaxPending = 128;
 // install pump drives the drain, so a waiting row never waits for the next fire.
 constexpr auto kReplayRetrySpacing = std::chrono::seconds(1);
 std::unordered_set<std::string> g_replayed;  // rows replayed this session (dedupe)
+uint32_t g_boundGen = 0;
 std::atomic<unsigned> g_replays{0};          // fires replayed natively (ReplayCount)
-// The queue and the replayed set belong to one world: unbound while a join window's fires wait
-// for the first Gameplay eventer to exist (a fire for the world being loaded must not die with
-// the one being left), bound to that world's generation once a replay can run, and dropped when
-// the world leaves it -- a connected travel, a load, a quit to menu.
-uint32_t g_boundGen = 0;  // ue_wrap::world_identity::Generation() stamp; 0 = unbound join window
+std::unordered_map<std::string, uint64_t> g_gatherMs;  // last time this location row gathered people
+
+// A scare that stays on the player who walked into it. The vent break is not one of these:
+// it changes the room, so every machine runs it, and the others are brought to the control room.
+bool PersonalOnly(const std::string& name) {
+    return name == "toeStab" || name == "mann" || name == "fakeGrays" || name == "susArir";
+}
+
+// Volume events whose scene only makes sense where the player is standing. falseEnter is the
+// passlock: the doors lock and the garage is the way that is left. vent breaks the ventilation,
+// and it only starts for someone standing in the control room, so the others are brought there
+// and the break is run on every machine.
+bool IsGatherEvent(const std::string& name) {
+    // These rows only ARM a box/poll. Gather when that location actually fires,
+    // including remote players whose puppets do not generate native overlaps.
+    if(event_location_sync::IsLocationRow(name.c_str()))return false;
+    static const char* const kRows[] = {
+        "falseEnter", "vent", "obelisk", "arirShip", "piramid", "wisps", "call0", "crys", "cookier", "arirEgg",
+    };
+    for (const char* r : kRows) if (name == r) return true;
+    return false;
+}
+uint64_t GatherNowMs() {
+    using namespace std::chrono;
+    return static_cast<uint64_t>(duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count());
+}
+bool GatherRecently(const std::string& name) {
+    const auto it = g_gatherMs.find(name);
+    return it != g_gatherMs.end() && GatherNowMs() - it->second < 15000;
+}
+void MarkGather(const std::string& name) { g_gatherMs[name] = GatherNowMs(); }
+
+bool SendGather(coop::net::Session* s, const std::string& name) {
+    void* local = coop::players::Registry::Get().Local();
+    ue_wrap::FVector loc{};
+    ue_wrap::FRotator rot{};
+    if (!local || !ue_wrap::engine::TryGetActorLocation(local, loc) ||
+        !ue_wrap::engine::TryGetActorRotation(local, rot)) return false;
+    coop::net::EventGatherPayload p{};
+    const size_t n = name.size() < sizeof(p.name) - 1 ? name.size() : sizeof(p.name) - 1;
+    std::memcpy(p.name, name.c_str(), n);
+    p.x = loc.X; p.y = loc.Y; p.z = loc.Z; p.yaw = rot.Yaw;
+    if (!s->SendReliable(coop::net::ReliableKind::EventGather, &p, sizeof(p))) return false;
+    UE_LOGI("event_fire: location event '%s' -- asking the host to bring the others here", name.c_str());
+    return true;
+}
+
+// The host gathers to where this peer's body actually is. A claimed point near that body is
+// newer than the puppet; a point far from it is refused, so a packet cannot move the session.
+bool GatherPoint(uint8_t slot, float claimX, float claimY, float claimZ, float claimYaw,
+                 float& x, float& y, float& z, float& yaw) {
+    coop::RemotePlayer& pup = coop::puppet_drive::Puppet(static_cast<int>(slot));
+    void* actor = pup.GetActor();
+    ue_wrap::FVector loc{};
+    ue_wrap::FRotator rot{};
+    if (!actor || !pup.valid() || !ue_wrap::engine::TryGetActorLocation(actor, loc) ||
+        !ue_wrap::engine::TryGetActorRotation(actor, rot))
+        return false;
+    const float dx = claimX - loc.X, dy = claimY - loc.Y, dz = claimZ - loc.Z;
+    const bool near = std::isfinite(claimX) && std::isfinite(claimY) && std::isfinite(claimZ) &&
+                      std::isfinite(claimYaw) && (dx * dx + dy * dy + dz * dz) < 3000.f * 3000.f;
+    x = near ? claimX : loc.X;
+    y = near ? claimY : loc.Y;
+    z = near ? claimZ : loc.Z;
+    yaw = near ? claimYaw : rot.Yaw;
+    if (!near)
+        UE_LOGW("event_fire: slot %u claimed a gather (%.0f, %.0f, %.0f) far from their body -- "
+                "using the body", static_cast<unsigned>(slot), claimX, claimY, claimZ);
+    return true;
+}
 
 // The UE4 array header; 8-byte FName elements for the two arrays touched.
 struct RawArray {
@@ -119,10 +185,108 @@ struct RawArray {
     int32_t Max;
 };
 
+// The replay policy, the dupe matrix: every row's concrete output and which lane already
+// carries it. The default is no replay. Replay only rows whose effect is a deterministic
+// level, save or cosmetic flip that no existing lane delivers; replaying a lane-covered row
+// would double-deliver. Keyed by name only: the few names living in both dispatchers have
+// the same verdict either way, and the replay call still uses the received dispatch kind.
+const char* const kReplayRows[] = {
+    // Story and save flips (level-placed triggers; no lane):
+    "treehouse_0", "treehouse_1", "treehouse_2", "treehouse_3", "treehouse_4", "treehouse_5",
+    "break_RomeoSierra", "break_Victor", "break_Victor2",
+    "obelisk",
+    // Force-object appends (a save array the client's own dish scan reads; no lane):
+    "looker_0-1", "looker_1-1", "looker_2-1", "looker_3-1", "looker_4-1",
+    "arirSignal", "arirSpk", "picSignal", "peace",
+    "arirSat_0", "arirSat_1", "arirSat_2", "piramid_sig",
+    // Cosmetic or sound with no lane (the solar row's lights-dark converges with the light lane,
+    // the same resulting state, echo-suppressed by its last-known prime):
+    "solar", "call0",
+    // Trigger-box scare arms, per-viewer scares by design; arming both sides is the correct coop
+    // semantics (each player gets the scare on their own overlap):
+    "toeStab", "falseEnter", "mann", "vent", "crys", "fakeGrays", "susArir",
+    // Graffiti decal specials (a grime decal spawn; no lane):
+    "arirGraff_0", "arirGraff_1", "arirGraff_2", "arirGraff_3",
+    "arirGraff_4", "arirGraff_5", "arirGraff_6",
+};
+
+struct NoReplayRow { const char* name; const char* lane; };
+const NoReplayRow kNoReplayRows[] = {
+    // Outputs already ride a lane (a replay is a double delivery):
+    { "starRain", "event_cue lane (cue 0)" },
+    { "arirFollower", "npc lane" },
+    // The swarm's wisps ride the npc lane (the source-gated catch in npc_world_enum); a replay
+    // would arm the client's own swarm trigger and double-spawn client-local creatures on top of
+    // the mirrors:
+    { "wisps", "npc lane (EX-catch; event-swarm wisp_C mirrored)" },
+    // The pyramid's path is host-random (wander and chase timers), so a replay armed the client's
+    // own trigger box and a client walk-in spawned a divergent client-local pyramid with
+    // unmirrored wisps. The arrival comes by mirror: the world-actor pose stream, npc-lane wisps
+    // and the pyramid sync's brain suppression and gather relay.
+    { "piramid", "piramid mirror lane (WA pose + piramid_sync brain/gather)" },
+    // The ship: the trigger-box arm's overlap spawns the ship and the alarm lamp (and possibly
+    // NPC leaves); replaying the arm would spawn them client-local. Host-only until the ship gets
+    // a lane:
+    { "arirShip", "actor spawn on armed overlap (no lane)" },
+    { "earthTp", "sky lane (black-hole material/light; not a player teleport)" },
+    { "vehtp", "atv lane" },
+    { "bedEvent", "sleep lane" },
+    { "picnic", "prop lane" }, { "destroyPicnic", "prop lane" },
+    { "enasus", "prop lane" }, { "enacros", "prop lane" },
+    { "cookier", "prop lane (armed prop)" }, { "paperGray", "prop lane (armed prop)" },
+    { "arirEgg", "prop lane (armed prop)" },
+    { "console", "device lanes" }, { "lightswitch", "device lanes" },
+    { "keypadGuess", "device lanes" }, { "atvExplode", "atv lane (trap flag)" },
+    // Host-local by design:
+    { "agrav", "physics divergence (by-design host-local)" },
+    { "treehouseSleep", "per-player teleport" },
+    // Creature and save-actor spawns. The eventer and the event controllers are sources of the
+    // native-seam spawn catch (coop/creatures/npc_world_enum), so the creatures and ships these rows
+    // spawn reach the npc and world-actor lanes, and a replay would double them:
+    { "ventCrawler", "npc lane (allowlisted)" }, { "ventKnocker", "world-actor lane (kocker_C)" },
+    { "tentacleBalls", "world-actor + npc lanes (the follower and its balls)" },
+    { "morningGay", "world-actor lane (morningUfo_C)" },
+    { "borgRozital", "world-actor lane (rozitBorg_C)" }, { "graysforest", "npc lane (grayTest_C)" },
+    { "graystank", "npc lane (grayTest_C)" }, { "arirBuster", "creature spawn (no lane yet)" },
+    { "eggvasion", "world-actor + npc lanes (superEgger_C and eg_C)" },
+    { "boarwar", "npc + world-actor lanes (the boars, the shooters, the fire tank)" },
+    { "soltoClean", "world-actor lane (soltomiaCleaning_C)" },
+    { "salt", "save-actor spawn (no lane)" }, { "rozitalHole", "save-actor spawn (no lane)" },
+    { "dreambase", "dreamer_dreambase_C world-actor lane (host EX-catch + transform snapshot)" },
+    { "fallbody_0", "world-actor lane (ufoDropper_body_C)" },
+    { "fallbody_1", "world-actor lane (ufoDropper_body_C)" },
+    { "fallcar_0", "world-actor lane (ufoDropper_car_C)" },
+    // The prank layer (host-local RNG; thrown-prop outputs ride the prop lane):
+    { "food", "prank special (prop lane)" }, { "drive", "prank special (prop lane)" },
+    { "atvFuel", "prank special (prop lane)" }, { "atvFix", "prank special (prop lane)" },
+    { "poisonFood", "prank special (prop lane)" }, { "expDrive", "prank special (prop lane)" },
+    { "cookiebox", "prank special (prop lane)" }, { "trashPiles", "prank special (prop lane)" },
+    { "vaccine", "prank special (prop lane)" }, { "oil", "prank special (prop lane)" },
+    { "begos", "prank special (prop lane)" }, { "gascans", "prank special (prop lane)" },
+    { "bombBox", "prank special (prop lane)" },
+    { "rockThrow", "prank spawner (no lane)" }, { "hillRoller", "prank spawner (no lane)" },
+    { "alienJump", "prank spawner (no lane)" }, { "trashBase", "prank spawner (no lane)" },
+    { "alienSounds", "world_sound_sync (native noiser audio; movement/footsteps remain separate)" },
+};
+
+// The interaction rows: the row's entire effect is the prank special, host-local RNG.
+bool IsPrankRow(const std::string& n) {
+    return n.rfind("arirInteraction_", 0) == 0;
+}
+
+// The verdict: 1 replay, 0 known no-replay (the lane says why), -1 unknown (default no-replay).
+int ReplayPolicy(const std::string& name, const char** laneOut) {
+    for (const char* r : kReplayRows)
+        if (name == r) return 1;
+    for (const auto& nr : kNoReplayRows)
+        if (name == nr.name) { *laneOut = nr.lane; return 0; }
+    if (IsPrankRow(name)) { *laneOut = "prank special (host-local RNG)"; return 0; }
+    return -1;
+}
+
 bool MembersMissing() {
-    return g_offSaveSlot < 0 || g_offEventer < 0 || g_offPassEvents < 0 || g_offAllEvents < 0 ||
-           !g_runEventFn || !g_runSpecialEventFn || !g_settimeFn || g_offEventParam < 0 ||
-           g_offSpecialParam < 0;
+    return g_offSaveSlot < 0 || g_offEventer < 0 || g_offPassEvents < 0 ||
+           !g_runEventFn || !g_runSpecialEventFn || !g_settimeFn || g_offEventParam < 0;
 }
 
 bool ResolvePass() {
@@ -136,7 +300,6 @@ bool ResolvePass() {
     g_offSaveSlot = R::FindPropertyOffset(gmCls, L"saveSlot");
     g_offEventer = R::FindPropertyOffset(gmCls, L"eventer");
     g_offPassEvents = R::FindPropertyOffset(ssCls, L"passEvents");
-    if (g_offAllEvents < 0) g_offAllEvents = R::FindPropertyOffset(ssCls, L"allEvents");
     g_runEventFn = R::FindFunction(evCls, L"runEvent");
     g_runSpecialEventFn = R::FindFunction(evCls, L"runSpecialEvent");
     // The prank roll's frame is an origin label, not a requirement: its absence costs only
@@ -148,19 +311,16 @@ bool ResolvePass() {
     if (MembersMissing()) {
         g_resolveFailed = true;
         UE_LOGW("event_fire: resolution INCOMPLETE on loaded classes (saveSlot=0x%X eventer=0x%X "
-                "passEvents=0x%X allEvents=0x%X runEvent=%s(event=0x%X) "
-                "runSpecialEvent=%s(eventName1=0x%X) settime=%s) -- "
+                "passEvents=0x%X runEvent=%s(event=0x%X) runSpecialEvent=%s settime=%s) -- "
                 "latched OFF; game version mismatch?",
-                g_offSaveSlot, g_offEventer, g_offPassEvents, g_offAllEvents, g_runEventFn ? "yes" : "NO",
-                g_offEventParam, g_runSpecialEventFn ? "yes" : "NO", g_offSpecialParam,
-                g_settimeFn ? "yes" : "NO");
+                g_offSaveSlot, g_offEventer, g_offPassEvents, g_runEventFn ? "yes" : "NO",
+                g_offEventParam, g_runSpecialEventFn ? "yes" : "NO", g_settimeFn ? "yes" : "NO");
         return false;
     }
     g_resolved = true;
-    UE_LOGI("event_fire: resolved (saveSlot=0x%X passEvents=0x%X allEvents=0x%X eventer=0x%X "
-            "runEvent=yes runSpecialEvent=yes summonArirPrank=%s settime=yes)",
-            g_offSaveSlot, g_offPassEvents, g_offAllEvents, g_offEventer,
-            g_summonArirPrankFn ? "yes" : "NO");
+    UE_LOGI("event_fire: resolved (saveSlot=0x%X passEvents=0x%X eventer=0x%X "
+            "runEvent=yes runSpecialEvent=yes settime=yes)",
+            g_offSaveSlot, g_offPassEvents, g_offEventer);
     return true;
 }
 
@@ -313,39 +473,69 @@ void Broadcast(FireKind kind, const std::string& name) {
 // and any other caller is the game's own menus -- every one reached clients before only if the
 // host broadcast it, which is now this watch's job alone. POST so a cancelled body can never
 // announce a fire that did not run; a client replay's own call early-outs on the role gate.
+void OnRunSpecialEventPost(const sg::Call& call) { (void)call; }
 void OnRunEventPost(const sg::Call& call) {
     auto* s = g_session.load(std::memory_order_acquire);
-    if (!s || !s->connected() || s->role() != coop::net::Role::Host) return;
-    if (!ResolvePass()) return;
-    if (call.function != g_runEventFn) { SayUnlatched("runEvent", call.function); return; }
+    if (!s || !s->connected()) return;
+    if (!ResolvePass() || call.function != g_runEventFn) return;
+    if (!call.locals || g_offEventParam < 0) return;
     const std::string name = NarrowName(*reinterpret_cast<const R::FName*>(call.locals + g_offEventParam));
-    const char* origin = call.callerFunction == g_settimeFn ? "scheduler" :
-                         call.fromOurCode ? "dev-call" : "native";
-    ++g_hostFireSeq;
-    UE_LOGI("event_fire: host fire #%u runEvent('%s') origin=%s -- broadcasting",
-            g_hostFireSeq, name.c_str(), origin);
-    Broadcast(FireKind::RunEvent, name);
-}
-
-// HOST: a runSpecialEvent body just completed. The natural entry is a scheduled ariralPrank
-// row: runEvent -> summonArirPrank (a rep-tier Array_Random pick, removed from the pool on the
-// way out) -> runSpecialEvent, so THIS call is where the rolled outcome becomes known -- the
-// row's own broadcast carries only the arirInteraction name. Dev fires (reflected, no caller)
-// and the game's cheat menu reach it the same way and emit through here exactly once.
-void OnRunSpecialEventPost(const sg::Call& call) {
-    auto* s = g_session.load(std::memory_order_acquire);
-    if (!s || !s->connected() || s->role() != coop::net::Role::Host) return;
-    if (!ResolvePass()) return;
-    if (call.function != g_runSpecialEventFn) { SayUnlatched("runSpecialEvent", call.function); return; }
-    const std::string name =
-        NarrowName(*reinterpret_cast<const R::FName*>(call.locals + g_offSpecialParam));
-    const char* origin =
-        (g_summonArirPrankFn && call.callerFunction == g_summonArirPrankFn) ? "prank-roll" :
-        call.fromOurCode ? "dev-call" : "native";
-    ++g_hostFireSeq;
-    UE_LOGI("event_fire: host fire #%u runSpecialEvent('%s') origin=%s -- broadcasting",
-            g_hostFireSeq, name.c_str(), origin);
-    Broadcast(FireKind::SpecialEvent, name);
+    if (call.callerFunction == g_settimeFn) {
+        if (s->role() != coop::net::Role::Host) return;
+        UE_LOGI("event_fire: host OBSERVED scheduler fire '%s' (settime -> runEvent)", name.c_str());
+        Broadcast(FireKind::RunEvent, name);
+        return;
+    }
+    // A reflected clock update may contain a genuine host scheduler fire. Observe
+    // that above, but do not echo our direct network/dev replay below.
+    if (call.fromOurCode) return;
+    // The host's broadcast already ran this row here. A volume the teleport then walks into must
+    // not start it a second time.
+    if (s->role() != coop::net::Role::Host && g_replayed.count(name)) return;
+    // A player walked into it. A personal scare stays on that machine. A row the replay
+    // policy runs on every machine is a world change (the vent break). A location event still
+    // brings the others even when its creatures already ride another lane and must not be replayed.
+    const char* lane = nullptr;
+    const bool replay = ReplayPolicy(name, &lane) == 1;
+    const bool gather = IsGatherEvent(name);
+    if (PersonalOnly(name) || (!replay && !gather)) return;
+    if (event_location_sync::IsLocationRow(name.c_str())) {
+        if (s->role()==coop::net::Role::Host && replay)Broadcast(FireKind::RunEvent,name);
+        return; // arm now; event_location_sync gathers at the real activation
+    }
+    if (GatherRecently(name)) {
+        // The teleport can walk someone back into the same volume. The event already ran.
+        return;
+    }
+    if (s->role() == coop::net::Role::Host) {
+        MarkGather(name);
+        // Move first. The vent break only starts for someone standing in the control room, so the
+        // others have to be there before their machine runs the row. Teleport packets go out
+        // before the event broadcast, and a reliable stream keeps that order.
+        if (gather) {
+            void* local = coop::players::Registry::Get().Local();
+            ue_wrap::FVector loc{};
+            ue_wrap::FRotator rot{};
+            if (local && ue_wrap::engine::TryGetActorLocation(local, loc) &&
+                ue_wrap::engine::TryGetActorRotation(local, rot)) {
+                UE_LOGI("event_fire: location event '%s' on the host -- bringing the others here",
+                        name.c_str());
+                coop::teleport_client::GatherOthersTo(coop::players::Registry::Get().LocalPeerId(),
+                                                       loc.X, loc.Y, loc.Z, rot.Yaw);
+            }
+        }
+        if (replay) {
+            Broadcast(FireKind::RunEvent, name);
+            if (!gather)
+                UE_LOGI("event_fire: shared event '%s' on the host -- every machine runs it",
+                        name.c_str());
+        }
+    } else if (SendGather(s, name)) {
+        // This machine already runs the row. The host's copy of the fire must not run it again here.
+        if (replay) g_replayed.insert(name);
+        MarkGather(name);
+    }
+    return;
 }
 
 // True iff the client's own passEvents already contains the row (the transferred save
@@ -464,48 +654,12 @@ void DrainPending() {
     }
 }
 
-// CLIENT: the cycle is about to tick, and its settime walks the save's list of events on any clock
-// change: hold the list empty before the tick's body runs, so no row is ever due on a client -- the
-// first tick of a new world included, where the clock lane's pre-observer writes the host's newest
-// sample into the same tick. Held on exactly the cycles the clock lane parks, by its own predicate.
-bool g_tickObserved = false;  // the pre-observer is registered (once per process)
-bool g_holdUnresolvable = false;  // the save slot's class has no allEvents; said once
-
-void OnCycleTickPre(void* self, void* /*function*/, void* /*params*/) {
-    if (!GT::IsGameThread() || !coop::time_sync::HoldsCycle(self)) return;
-    void* ss = ue_wrap::daynightcycle::SaveSlotOfCycle(self);
-    if (!ss) return;
-    // The list's offset from the live slot's own class, a property lookup with no object-array walk,
-    // so the first tick of a world is held even before the other members have resolved.
-    if (g_offAllEvents < 0) {
-        if (g_holdUnresolvable) return;
-        g_offAllEvents = R::FindPropertyOffset(R::ClassOf(ss), L"allEvents");
-        if (g_offAllEvents < 0) {
-            g_holdUnresolvable = true;
-            UE_LOGW("event_fire: the save slot has no allEvents -- a client's event walk cannot be held");
-            return;
-        }
-    }
-    RawArray* all = ArrayAt(ss, g_offAllEvents);
-    if (!all || all->Num <= 0 || all->Num > 100000) return;  // 0 = already suppressed
-    // A legal array state (empty with slack): data and capacity untouched, and the engine frees
-    // the same allocation later. The gamemode's boot rebuilds allEvents from the table on every
-    // world load, so this re-asserts after any reload and can never poison a save.
-    g_zeroedAllEventsNum = all->Num;
-    g_zeroedSaveSlot = ss;
-    g_zeroedSaveSlotIdx = R::InternalIndexOf(ss);
-    all->Num = 0;
-    UE_LOGI("event_fire: client scheduler SUPPRESSED at the cycle's tick (allEvents %d -> 0; host is the only "
-            "firer; restored on disconnect)", g_zeroedAllEventsNum);
-}
-
 }  // namespace
 
 void Install(coop::net::Session* session) {
     g_session.store(session, std::memory_order_release);
-    // Called every pump tick by the install fanout, which is also the retry until the cycle class
-    // loads and until the gate has resolved the watch's name.
-    // The PRE is the client's refusal (OnEventerVerbPre), the POST the host's emit.
+    coop::event_schedule_authority::Install(session);
+    // Called every pump tick; retry registration and name resolution as classes load.
     if (!g_watchInstalled)
         g_watchInstalled = sg::WatchName(kRowRunEvent, kTagEventFire, &OnEventerVerbPre, &OnRunEventPost);
     if (!g_specialWatchInstalled)
@@ -524,35 +678,6 @@ void Install(coop::net::Session* session) {
                     "a client's own are not refused, this session");
         }
     }
-    if (specialPending) {
-        if (sg::NameWatchLive(kRowRunSpecialEvent, kTagEventFire)) {
-            g_specialWatchLive = true;
-            UE_LOGI("event_fire: the host's special picks are seen at runSpecialEvent (a script-gate watch)");
-        } else if (sg::NameWatchSettled(kRowRunSpecialEvent, kTagEventFire)) {
-            g_specialWatchDead = true;
-            UE_LOGE("event_fire: the runSpecialEvent watch settled dead -- a host's specials do not cross, "
-                    "and a client's own are not refused, this session");
-        }
-    }
-    // The client replay queue's lasting retry: a fire whose world or eventer was not up no longer
-    // waits for the next fire to arrive -- this pump paces it instead.
-    if (!g_pending.empty()) DrainPending();
-    namespace DNC = ue_wrap::daynightcycle;
-    if (g_tickObserved || !DNC::EnsureResolved()) return;
-    const ue_wrap::facts::Resolved fn = ue_wrap::facts::Resolve(kRowCycleTick);
-    if (!fn) {
-        UE_LOGW("event_fire: daynightCycle_C::ReceiveTick not found -- a client's event walk cannot be held");
-        g_tickObserved = true;
-        return;
-    }
-    if (!GT::RegisterPreObserver(fn, &OnCycleTickPre)) {
-        static bool s_said = false;  // retried every pump tick; said once
-        if (!s_said) UE_LOGW("event_fire: the cycle tick's pre-observer did not register (table full?) -- retrying");
-        s_said = true;
-        return;
-    }
-    g_tickObserved = true;
-    UE_LOGI("event_fire: a client's event walk is held at the cycle's own tick (pre-observer on ReceiveTick)");
 }
 
 bool HostFire(FireKind kind, const std::wstring& eventName, const std::wstring& specialName) {
@@ -624,7 +749,7 @@ void OnReliable(const coop::net::EventFirePayload& payload) {
     }
     const FireKind kind = static_cast<FireKind>(payload.dispatch);
     const char* lane = nullptr;
-    const int verdict = ReplayVerdict(name, &lane);
+    const int verdict = ReplayPolicy(name, &lane);
     if (verdict == 0) {
         UE_LOGI("event_fire: '%s' NOT replayed (%s)", name.c_str(), lane);
         return;
@@ -663,7 +788,7 @@ void ReplayInFlightRow(const std::string& rowName) {
     if (!GT::IsGameThread()) { UE_LOGW("event_fire: ReplayInFlightRow off-game-thread -- dropping"); return; }
     if (rowName.empty()) return;
     const char* lane = nullptr;
-    const int verdict = ReplayVerdict(rowName, &lane);
+    const int verdict = ReplayPolicy(rowName, &lane);
     if (verdict == 0) {
         UE_LOGI("event_fire: in-flight '%s' NOT replayed (%s)", rowName.c_str(), lane);
         return;
@@ -714,43 +839,56 @@ void OnClientWorldReady() {
 }
 
 void OnDisconnect() {
-    // Restore the client's scheduler only if we zeroed this exact live save slot and nothing
-    // repopulated it since (a boot rebuild leaves the count positive, and then the restore must
-    // not run).
-    if (g_zeroedAllEventsNum > 0 && g_zeroedSaveSlot &&
-        R::IsLiveByIndex(g_zeroedSaveSlot, g_zeroedSaveSlotIdx)) {
-        RawArray* all = ArrayAt(g_zeroedSaveSlot, g_offAllEvents);
-        if (all && all->Num == 0 && all->Max >= g_zeroedAllEventsNum) {
-            all->Num = g_zeroedAllEventsNum;
-            UE_LOGI("event_fire: allEvents restored (0 -> %d) -- local scheduler resumes",
-                    g_zeroedAllEventsNum);
-        }
-    }
-    g_zeroedAllEventsNum = 0;
-    g_zeroedSaveSlot = nullptr;
-    g_zeroedSaveSlotIdx = -1;
+    coop::event_schedule_authority::OnDisconnect();
     g_pending.clear();
     g_replayed.clear();
-    g_boundGen = 0;
+    g_gatherMs.clear();
     g_session.store(nullptr, std::memory_order_release);
 }
 
-bool DevProbeClientRefusal() {
-    if (!GT::IsGameThread() || !IsClientSession() || !ResolvePass()) return false;
-    void* eventer = EventerOf(ue_wrap::world_singleton::Gamemode());
-    // Through a live gate only: with the watch dead the call would run solar on this client.
-    if (!eventer || !g_runEventFn || !WatchLive(FireKind::RunEvent)) return false;
-    ue_wrap::ParamFrame f(g_runEventFn);
-    if (!f.valid() || !f.Set<R::FName>(L"event", ue_wrap::fname_utils::StringToFName(L"solar")) ||
-        !f.Set<R::FName>(L"special", ue_wrap::fname_utils::StringToFName(L"None")))
-        return false;
-    // A reflected call holding no admission, as any client-native caller holds none: the gate must
-    // refuse it.
-    const uint64_t before = g_clientRefused;
-    ue_wrap::Call(eventer, f);
-    return g_clientRefused == before + 1;
+void OnLocationGather(const coop::net::EventGatherPayload& payload, uint8_t senderSlot) {
+    auto* s = g_session.load(std::memory_order_acquire);
+    if (!s || s->role() != coop::net::Role::Host) return;
+    if (senderSlot == 0 || senderSlot >= coop::players::kMaxPeers) return;
+    char buf[sizeof(payload.name)];
+    std::memcpy(buf, payload.name, sizeof(buf));
+    buf[sizeof(buf) - 1] = 0;
+    const std::string name(buf);
+    const char* lane = nullptr;
+    const bool replay = ReplayPolicy(name, &lane) == 1;
+    const bool gather = IsGatherEvent(name);
+    if (PersonalOnly(name) || event_location_sync::IsLocationRow(name.c_str()) || (!replay && !gather) || GatherRecently(name)) return;
+    float x = 0, y = 0, z = 0, yaw = 0;
+    if (!GatherPoint(senderSlot, payload.x, payload.y, payload.z, payload.yaw, x, y, z, yaw)) {
+        UE_LOGW("event_fire: shared event '%s' from slot %u ignored -- their body is not here yet",
+                name.c_str(), static_cast<unsigned>(senderSlot));
+        return;
+    }
+    MarkGather(name);
+    // The host's own body moves before NativeFire, and the other clients' teleport packets are
+    // queued before the event, so a row that checks "standing in the control room" sees them there.
+    if (gather) {
+        UE_LOGI("event_fire: location event '%s' from slot %u -- bringing everyone there",
+                name.c_str(), static_cast<unsigned>(senderSlot));
+        coop::teleport_client::GatherOthersTo(senderSlot, x, y, z, yaw);
+    }
+    if (!replay) return;
+    const std::wstring w(name.begin(), name.end());
+    // The sender's machine already ran it. This machine and the other clients still have to.
+    NativeFire(FireKind::RunEvent, w, L"None");
+    Broadcast(FireKind::RunEvent, name);
+    if (!gather)
+        UE_LOGI("event_fire: shared event '%s' from slot %u -- every machine runs it",
+                name.c_str(), static_cast<unsigned>(senderSlot));
 }
 
 unsigned ReplayCount() { return g_replays.load(std::memory_order_relaxed); }
+
+bool DevProbeClientRefusal() {
+    if (!IsClientSession() || !WatchLive(FireKind::RunEvent)) return false;
+    const uint64_t before = g_clientRefused;
+    const bool ran = NativeFire(FireKind::RunEvent, L"solar", L"None");
+    return !ran && g_clientRefused > before;
+}
 
 }  // namespace coop::event_fire_sync

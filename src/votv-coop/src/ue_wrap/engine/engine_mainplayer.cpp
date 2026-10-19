@@ -7,6 +7,7 @@
 // dereferences. The caches here are file-private plain pointers, resolved once per process.
 
 #include "ue_wrap/engine/engine.h"
+#include "ue_wrap/actors/physics_gun.h"
 #include "ue_wrap/engine/engine_component.h"   // GetComponentLocation (the hold frame's camera)
 #include "ue_wrap/engine/hit_result.h"         // WriteField (the hitResult a drill aims)
 
@@ -328,12 +329,29 @@ bool ReadMainPlayerGrabState(void* mainPlayer, MainPlayerGrabState& out) {
     if (holdingOff >= 0) {
         out.holdingActor = *reinterpret_cast<void**>(base + holdingOff);
     }
+    out.physicsActor = ue_wrap::physics_gun::HeldActor(out.holdingActor);
     const int32_t grabsHeavyOff = ue_wrap::reflected_offset::MainPlayer_grabsHeavy();
     const int32_t heavyOff       = ue_wrap::reflected_offset::MainPlayer_Heavy();
     const int32_t grabLenOff     = ue_wrap::reflected_offset::MainPlayer_grabLen();
     if (grabsHeavyOff >= 0) out.grabsHeavy = *reinterpret_cast<bool*>(base + grabsHeavyOff);
     if (heavyOff >= 0)      out.heavy      = *reinterpret_cast<bool*>(base + heavyOff);
     if (grabLenOff >= 0)    out.grabLen    = *reinterpret_cast<float*>(base + grabLenOff);
+    // The gun's own hold() writes obj and clears it on release/destruction. grabbing_actor
+    // in this Blueprint names the PLAYER's hand grab, not a property of the gun component.
+    // InstanceOffset follows a reloaded class and retries instead of caching an early miss forever.
+    static R::InstanceOffset gunOffset{L"weaponComp_gravityGun"};
+    static R::InstanceOffset objectOffset{L"obj"};
+    const int32_t gunOff = gunOffset.Of(mainPlayer);
+    if (gunOff >= 0) {
+        void* gun = *reinterpret_cast<void**>(base + gunOff);
+        if (gun && R::IsLive(gun)) {
+            const int32_t objOff = objectOffset.Of(gun);
+            if (objOff >= 0) {
+                void* actor = *reinterpret_cast<void**>(reinterpret_cast<uint8_t*>(gun) + objOff);
+                if (actor && R::IsLive(actor)) out.gravityActor = actor;
+            }
+        }
+    }
     return true;
 }
 
@@ -676,13 +694,30 @@ bool ForceMainPlayerWakeup(void* mainPlayer) {
     return Call(mainPlayer, f);
 }
 
+bool ExtinguishMainPlayerFire(void* mainPlayer) {
+    if (!mainPlayer || !R::IsLive(mainPlayer)) return false;
+    void* cls = R::ClassOf(mainPlayer);
+    void* fn = R::FindDispatchFunctionCached(cls, L"extinguishFire");
+    const int32_t fuelOffset = R::FindPropertyOffset(cls, L"burningTime");
+    int32_t byteOffset = -1; uint8_t mask = 0;
+    if (!fn || fuelOffset < 0 || !R::FindBoolProperty(cls, L"isBurning", byteOffset, mask) ||
+        byteOffset < 0 || mask == 0) return false;
+    ParamFrame frame(fn);
+    if (!frame.valid() || !Call(mainPlayer, frame) || !R::IsLive(mainPlayer)) return false;
+    const auto* bytes = static_cast<const uint8_t*>(mainPlayer);
+    float fuel = -1.f;
+    std::memcpy(&fuel, bytes + fuelOffset, sizeof(fuel));
+    return fuel == 0.f && (bytes[byteOffset] & mask) == 0;
+}
+
 namespace {
 // The can-ragdoll flag: the ragdoll verb's own pre-condition early-out, and the single choke
 // point for every ragdoll cause on a pawn, death included, since the dead flag is set only
 // through the fallen path, reachable only from the ragdoll verb, whose first instruction
-// checks this flag. Two lanes hold it shut: the killer-wisp false-grab belt (the drop notify
+// checks this flag. Local gates hold it shut: the killer-wisp false-grab belt (the drop notify
 // fires an unconditional ragdoll death from bytecode we cannot intercept, and a health pin
-// cannot stop a ragdoll death while this flag can) and the knockout-respawn death gate. A
+// cannot stop a ragdoll death while this flag can) and the knockout-respawn death gate.
+// Spawned puppets keep it shut permanently; their wire ragdoll uses a separate actor. A
 // plain blueprint bool with no setter and no write sites in the player's own bytecode, so
 // nothing in the game fights our value. The byte and mask are cached once: property layout
 // is stable for a game build (only class pointers go stale across level travel, and none is

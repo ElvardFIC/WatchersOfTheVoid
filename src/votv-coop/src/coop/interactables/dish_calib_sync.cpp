@@ -19,6 +19,7 @@
 #include <atomic>
 #include <cmath>
 #include <cstring>
+#include <deque>
 #include <vector>
 
 namespace coop::dish_calib_sync {
@@ -48,6 +49,8 @@ bool  g_haveSent = false;
 float g_host[kMaxDishes] = {};
 bool  g_held[kMaxDishes] = {};
 Counts g_counts;
+std::deque<coop::net::DishCalibPayload> g_pendingClientIntents;
+constexpr size_t kMaxPendingClientIntents = 32;
 
 struct Bucket {
     coop::net::IntentBucket rate;
@@ -192,10 +195,15 @@ void OnVerbPost(const sg::Call& call) {
         for (InFlight& outer : g_inFlight) outer.before[idx] = rows[i].value;
     }
     if (p.count == 0) return;
-    if (!s->SendReliableToSlot(0, coop::net::ReliableKind::DishCalibIntent, &p, sizeof(p))) {
-        UE_LOGW("dish_calib_sync: CLIENT %u dish precision(s) this player set were not sent (the session refused "
-                "them); the host's values stand", static_cast<unsigned>(p.count));
-        return;
+    if (!g_pendingClientIntents.empty() ||
+        !s->SendReliableToSlot(0, coop::net::ReliableKind::DishCalibIntent, &p, sizeof(p))) {
+        if (g_pendingClientIntents.size() >= kMaxPendingClientIntents) {
+            UE_LOGE("dish_calib_sync: CLIENT precision-intent retry queue is full; %u dish change(s) were not sent",
+                    static_cast<unsigned>(p.count));
+            return;
+        }
+        g_pendingClientIntents.push_back(p);
+        UE_LOGW("dish_calib_sync: CLIENT queued %u dish precision(s) for retry", static_cast<unsigned>(p.count));
     }
     // Held once sent: the host performs it and answers with it, or answers with its own value in its place.
     for (uint8_t i = 0; i < p.count; ++i) {
@@ -243,6 +251,13 @@ void Install(coop::net::Session* session) {
 }
 
 void Tick() {
+    if (auto* s = g_session.load(std::memory_order_acquire); IsClient(s)) {
+        while (!g_pendingClientIntents.empty()) {
+            const auto& p = g_pendingClientIntents.front();
+            if (!s->SendReliableToSlot(0, coop::net::ReliableKind::DishCalibIntent, &p, sizeof(p))) break;
+            g_pendingClientIntents.pop_front();
+        }
+    }
     bool pending = false;
     for (Watch& w : g_watches) pending |= !w.settled && w.reg != Reg::Pending;
     if (!pending) return;
@@ -401,6 +416,7 @@ void OnDeskReplaced() {
 }
 
 void OnSessionEnd() {
+    g_pendingClientIntents.clear();
     g_haveSent = false;
     for (bool& h : g_held) h = false;
     g_inFlight.clear();

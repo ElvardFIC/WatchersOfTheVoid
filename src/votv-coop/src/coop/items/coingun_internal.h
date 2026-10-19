@@ -92,6 +92,7 @@ void SweepSoldSet();
 // are one public surface (`coop/items/coingun_sync.h`) and one concept, and the collect lane's
 // resolve depends on the sale lane's class resolution having run. Both are idempotent + retrying.
 void InstallCollect();
+void TickCollect();
 void OnDisconnectCollect();
 
 // True once BOTH collect entries are live. The sale lane's Install reads it so its own success latch

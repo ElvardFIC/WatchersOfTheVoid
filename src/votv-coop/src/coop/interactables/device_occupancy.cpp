@@ -1,9 +1,10 @@
 // coop/interactables/device_occupancy.cpp -- see coop/interactables/device_occupancy.h.
 
 #include "coop/interactables/device_occupancy.h"
+#include "coop/interactables/laptop_ui_sync.h"
 
 #include "coop/comms/peer_action_feed.h"  // the busy-notice chat line (AnnounceDirect)
-#include "coop/interactables/atv_sync.h"  // IsOccupiedByOther -> ATV seating deny gate
+#include "coop/interactables/atv_sync.h"  // IsOccupiedByOther -> ATV driver-seat deny gate
 #include "coop/interactables/desk_input_sync.h"  // PingActiveSlot, the desk FSM-hold
 #include "coop/net/session.h"
 #include "coop/net/wire_key_util.h"
@@ -48,6 +49,7 @@ std::atomic<coop::net::Session*> g_session{nullptr};
 // defensive.
 std::mutex g_mutex;
 std::unordered_map<std::wstring, uint8_t> g_busy;
+uint64_t g_laptopClaimRevision = 0;
 
 // The local claim edge state (game thread only). The widget is the active interface pointer
 // last seen (the edge detector); the key is the claim we currently hold or requested (empty:
@@ -171,6 +173,7 @@ bool BusyByOther(const std::wstring& key, uint8_t mySlot, uint8_t* holder) {
 }
 
 void SendClaim(coop::net::Session* s, const std::wstring& key, uint8_t slot, bool busy) {
+    if (s->role() == coop::net::Role::Host && key == L"laptop") ++g_laptopClaimRevision;
     coop::net::DeviceClaimPayload p{};
     WireKeyFromString(key, p.key);
     p.slot = slot;
@@ -221,10 +224,12 @@ void OnUseInputPre(void* self, void*, void*) {
     void* aimed = ue_wrap::engine::ReadMainPlayerLookAtActor(self);
     if (!aimed) return;
 
-    // The ATV occupancy gate: if another peer is already seated on this ATV, deny seating.
+    // An occupied or carried ATV cannot enter the E menu. A carrier's physics
+    // handle must be released before a rider takes control of the rig.
     if (ue_wrap::atv::EnsureResolved() && ue_wrap::atv::IsAtv(aimed)) {
         uint8_t holder = 0xFF;
-        if (coop::atv_sync::IsOccupiedByOther(aimed, &holder)) {
+        if (coop::atv_sync::IsHeldForMount(aimed, &holder) ||
+            coop::atv_sync::IsOccupiedByOther(aimed, &holder)) {
             g_memoName = L"the ATV";
             g_memoKey = L"atv";
             g_memoLastTick = coop::net_pump::TickSerial() + kMemoFreshTicks;
@@ -345,6 +350,7 @@ void Tick() {
 
     // The falling edge (or a direct widget switch): release what we held.
     if (!g_localKey.empty()) {
+        if (g_localKey == L"laptop" && !coop::laptop_ui_sync::BeforeLocalRelease()) return;
         UE_LOGI("device_occupancy: local EXIT '%ls' -- releasing", g_localKey.c_str());
         if (s->role() == coop::net::Role::Host) {
             {
@@ -496,6 +502,7 @@ void OnReliable(const coop::net::DeviceClaimPayload& p, uint8_t senderSlot) {
 bool LocalHolds(const wchar_t* key) {
     return !g_localKey.empty() && g_localKey == key;
 }
+uint64_t LaptopClaimRevision() { return g_laptopClaimRevision; }
 
 uint8_t HolderOf(const wchar_t* key) {
     std::lock_guard<std::mutex> lk(g_mutex);

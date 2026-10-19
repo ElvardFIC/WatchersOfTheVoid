@@ -13,6 +13,7 @@
 #include "coop/build_trust/build_trust.h"  // ComputeSelf -- this DLL's hash and type
 #include "coop/game_build/game_build.h"    // which game build runs, and what it means for us
 #include "coop/net/protocol.h"  // kProtocolVersion -- the b<N> build rev in the banner
+#include "coop/player/model_folder.h"  // the players' models folder, prepared at boot
 #include "coop/version.h"
 #include "harness/compat_boot.h"  // the compat report's boot sections
 #include "harness/harness.h"
@@ -155,7 +156,7 @@ DWORD WINAPI BootThread(LPVOID rawTag) {
     WriteMarker(entryTag);
     UE_LOGI("==== %s ====", coop::version::kDisplayLabel);
     // The Paper-pair identity line: game target + build number (= kProtocolVersion).
-    UE_LOGI("boot: Multivoid %s b%u", coop::version::kGameTarget,
+    UE_LOGI("boot: Watchers of the Void by ElvardFIC %s b%u (Multivoid fork; original by Pelmentor)", coop::version::kGameTarget,
             static_cast<unsigned>(coop::net::kProtocolVersion));
     // Build triage lines: the compile time below, then build_trust's line with this DLL's own hash
     // and its type (official, signed by the test key, or unofficial and why). The exe identity
@@ -179,13 +180,9 @@ DWORD WINAPI BootThread(LPVOID rawTag) {
     // session ever existing, and a check gated on a session start would never run at all.
     // Un-gated, pure logic, microseconds.
     ui::native_text_field::RunSelftest();
-    // The build reader's pure halves (the pak footer, the key, the rows), un-gated for the same reason.
-    ue_wrap::game_build::RunSelftest();
-    // A caller's local edited in place (an actor array, a hit result), on buffers of its own.
-    ue_wrap::caller_locals::RunSelftest();
-    // A class's listing identity (a class unloaded, or loaded again at its address, answers another), on fakes.
-    ue_wrap::object_index::RunSelftest();
-    ui::game_build_dialog::RunSelftest();  // every variant of the popup's text formats
+    // The players' models folder and its import, before the skins panel or the starter roll scans
+    // LogicMods. Filesystem only.
+    coop::model_folder::PrepareAtBoot();
 
     // THE VERDICT IS A DECISION, NOT A LOG LINE.
     //

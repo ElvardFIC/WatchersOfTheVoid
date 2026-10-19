@@ -1,6 +1,10 @@
 // coop/props/prop_save_data.cpp -- see coop/props/prop_save_data.h.
 
 #include "coop/props/prop_save_data.h"
+#include "ue_wrap/actors/safe.h"
+#include "coop/props/prop_food_sync.h"
+#include "ue_wrap/actors/food.h"
+#include "ue_wrap/actors/prop.h"
 
 #include "coop/dev/food_clock_probe.h"   // [dev] the food catch-up's two clocks, read at these seams
 #include "coop/items/save_record_wire.h"
@@ -11,13 +15,15 @@
 #include "coop/props/remote_prop.h"       // IsOwnedHere: a held prop takes no record
 #include "ue_wrap/actors/prop.h"          // GetInteractableKeyString (the host birth path)
 #include "ue_wrap/actors/save_record.h"
+#include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/object_index.h"    // ClassByName -- the host's O(1) class resolve for a client's record
 #include "ue_wrap/core/reflection.h"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
-#include <cstdio>
+#include <cwchar>
 #include <map>
 #include <set>
 #include <utility>
@@ -89,10 +95,27 @@ struct Parked {
 constexpr int kMaxApplyFailures = 4;
 std::map<std::wstring, Parked> g_parked;
 uint64_t g_parkSeq = 1;
+uint64_t g_worldEpoch = 0;
+// Native getData/loadData can re-enter the birth and receive seams. These scopes belong to
+// the C++ call stack, not the world: OnDisconnect must not clear them while a call is active.
+std::set<std::wstring> g_applying;
+std::set<std::wstring> g_publishing;
+struct KeyScope {
+    KeyScope(std::set<std::wstring>& active, const std::wstring& key)
+        : active(active), key(key) { active.insert(key); }
+    ~KeyScope() { active.erase(key); }
+    std::set<std::wstring>& active;
+    const std::wstring key;
+};
+bool g_driving = false;
+struct DriveScope {
+    DriveScope() { g_driving = true; }
+    ~DriveScope() { g_driving = false; }
+};
 struct SenderUse { size_t count = 0; size_t bytes = 0; };
 std::map<uint8_t, SenderUse> g_parkUse;   // per-sender occupancy, so one peer cannot evict another's
 
-// Keys whose publish was refused by the transport. A refused record is a permanent divergence
+// Keys whose capture or transport publish failed. A lost record is a permanent divergence
 // unless it is re-sent, and it can be: the record is derivable from the live actor at any time.
 // Bounded, and retried a few per frame from Drive().
 constexpr size_t kMaxRetry        = 512;
@@ -100,11 +123,35 @@ constexpr int    kRetriesPerFrame = 4;
 constexpr int    kMaxRetryTries   = 8;
 constexpr uint64_t kRetryBackoffMs = 250;   // doubled per attempt; the refusal is usually a full queue
 struct Refused {
+    ue_wrap::CachedObjRef source; // newborns may not be in the key index yet
     int      peerSlot = -1;    // -1 = it was a broadcast
     int      tries    = 0;
     uint64_t nextTryMs = 0;
+    uint64_t seq = 0;          // replacement identity across native capture callbacks
 };
-std::map<std::wstring, Refused> g_retry;
+using RetryKey = std::pair<std::wstring, int>; // each recipient owns its retry and backoff
+std::map<RetryKey, Refused> g_retry;
+uint64_t g_retrySeq = 1;
+void QueuePublishRetry(const std::wstring& key, int peerSlot,
+                       const ue_wrap::CachedObjRef* source = nullptr) {
+    const RetryKey target{key, peerSlot};
+    auto it = g_retry.find(target);
+    if (it != g_retry.end()) {
+        it->second.peerSlot = peerSlot;
+        it->second.seq = g_retrySeq++;
+        it->second.source = source ? *source : ue_wrap::CachedObjRef{};
+    } else if (g_retry.size() < kMaxRetry) {
+        Refused r;
+        r.peerSlot = peerSlot;
+        r.seq = g_retrySeq++;
+        if (source) r.source = *source;
+        g_retry[target] = r;
+    } else {
+        UE_LOGW("prop_save_data: retry register full (%zu), cannot retain key '%ls'",
+                kMaxRetry, key.c_str());
+    }
+}
+std::array<uint64_t, 256> g_peerEpoch{};
 coop::net::Session* g_session = nullptr;          // for the retry, which has no caller of its own
 
 // Keys the host spawned from a client's intent and whose record is still in flight behind it. Each
@@ -120,7 +167,8 @@ std::map<std::wstring, Await> g_awaiting;
 // without minting a std::wstring for it -- every claimed name is past the small-string buffer, so
 // the plain set allocated one per lane per net_pump tick to answer a question it already knew.
 std::set<std::wstring, std::less<>> g_ownedElsewhere;
-std::map<void*, bool>  g_ownedCache;
+struct OwnedClass { ue_wrap::CachedObjRef identity; bool owned = false; };
+std::map<void*, OwnedClass> g_ownedCache;
 
 std::wstring g_parkCursor;      // where the next frame's park scan resumes
 int g_applyBudget = kAppliesPerFrame;
@@ -223,6 +271,7 @@ void Unpark(std::map<std::wstring, Parked>::iterator it) {
     SenderUse& u = g_parkUse[it->second.senderSlot];
     if (u.count) --u.count;
     u.bytes = (u.bytes > it->second.bytes) ? (u.bytes - it->second.bytes) : 0;
+    UE_LOGI("prop_save_data: Unpark key '%ls' (slot %u)", it->first.c_str(), it->second.senderSlot);
     g_parked.erase(it);
 }
 
@@ -265,6 +314,7 @@ void Park(const std::wstring& key, SR::SaveRecord&& rec, uint8_t senderSlot, siz
     use.count += 1;
     use.bytes += bytes;
     g_parked[key] = std::move(p);
+    UE_LOGI("prop_save_data: Parked record for key '%ls' (slot %u, seq %llu)", key.c_str(), senderSlot, g_parkSeq - 1);
 }
 
 // A client's intent is a write into the host's world, so its RATE is bounded per sender the way
@@ -298,60 +348,92 @@ bool AllowIntent(uint8_t senderSlot) {
 // class gate belongs with the write and not with the send: `Covers` answers both "does this class
 // carry save state of its own" and "has another lane claimed it", and a record that reaches a
 // claimed class would write the field that lane arbitrates with a compare-and-swap.
-bool TryApply(void* actor, const std::wstring& key, const SR::SaveRecord& rec) {
-    if (!actor) return false;
-    if (!Covers(actor)) { coop::dev::food_clock_probe::NoteRefused(actor); return false; }
-    // The HOST applies only a CLIENT's record here (its receive edge refuses a canonical from a
-    // client), with its world up and the object index current: it resolves the record's class names
-    // through object_index so an unknown name is an O(1) miss, not a whole-array walk. A CLIENT
-    // applies only the host's own record, possibly mid-load with the index trailing, so it keeps the
-    // authoritative FindClass walk.
-    const SR::ClassResolver resolve =
-        PT::SessionIsHost() ? &ue_wrap::object_index::ClassByName : nullptr;
-    if (!SR::ApplyRecord(actor, rec, resolve)) return false;
+bool SendBody(coop::net::Session* s,int peerSlot,const std::wstring& key,const SR::SaveRecord& rec,
+              const ue_wrap::CachedObjRef* source = nullptr);
+bool TryApply(void* actor, const std::wstring& key, const SR::SaveRecord& rec, uint64_t epoch) {
+    if (!actor) {
+        UE_LOGW("prop_save_data: TryApply failed -- actor is null for key '%ls'", key.c_str());
+        return false;
+    }
+    if (!Covers(actor)) {
+        UE_LOGW("prop_save_data: TryApply failed -- actor %p does not cover save state for key '%ls'", actor, key.c_str());
+        coop::dev::food_clock_probe::NoteRefused(actor);
+        return false;
+    }
+    ue_wrap::CachedObjRef identity;
+    identity.Set(actor);
+    // Client inventory records can arrive after the host has unlocked this safe.
+    // Preserve the irreversible lock transition, including parked-before-birth records.
+    SR::SaveRecord adjusted;
+    const SR::SaveRecord* applied=&rec;
+    if(PT::SessionIsHost()&&ue_wrap::safe::IsSafe(actor)) {
+        adjusted=rec;
+        if(ue_wrap::safe::PreserveUnlocked(actor,adjusted)&&g_session) {
+            // A claim parked before the safe existed may already have been
+            // relayed. Correct that earlier canonical as soon as it can resolve.
+            SendBody(g_session,-1,key,adjusted);
+            if(epoch!=g_worldEpoch||identity.Get()!=actor) {
+                UE_LOGW("prop_save_data: TryApply failed -- identity changed after PreserveUnlocked for key '%ls'", key.c_str());
+                return false;
+            }
+        }
+        applied=&adjusted;
+    }
+    if (!SR::ApplyRecord(actor, *applied)) {
+        UE_LOGW("prop_save_data: TryApply failed -- SR::ApplyRecord returned false for key '%ls'", key.c_str());
+        return false;
+    }
+    if (epoch != g_worldEpoch || identity.Get() != actor) {
+        UE_LOGW("prop_save_data: TryApply failed -- identity changed after ApplyRecord for key '%ls'", key.c_str());
+        return false;
+    }
     ++g_appliedTotal;
-    coop::dev::food_clock_probe::NoteApply(actor, key, rec);
-    // The author's record has LANDED, so the host may publish this key again, and does so here, from
-    // what it now holds: a peer that became ready while the key was awaited was declined by its join
-    // seed then. Not at its arrival: a record that arrives before the host's actor is indexed is
-    // parked, and the spawn drain runs in that gap and would publish the class default it spawned.
-    if (g_awaiting.erase(key) && g_session) Publish(g_session, actor, key);
-    return true;
+    UE_LOGI("prop_save_data: TryApply success for key '%ls' on actor %p", key.c_str(), actor);
+    coop::dev::food_clock_probe::NoteApply(actor, key, *applied);
+    return epoch == g_worldEpoch;
 }
 
-// Apply to the live actor if there is one, park by Key if there is not. Both arrival paths land
-// here, so the predecessor rule is kept in one place. True when the record was applied.
-// `budgeted` spends the per-frame apply budget; the host's take of a client intent does not, its
-// rate being bounded per sender at the door.
-bool LandRecord(const std::wstring& key, SR::SaveRecord&& rec, uint8_t senderSlot, size_t bytes,
-                bool budgeted) {
-    // The predecessor goes BEFORE the apply, so a record parked under this Key while loadData runs
-    // can only be a newer one, and nothing below removes it.
-    DropParked(key);
-    // A join hands this lane hundreds of arrivals at once: a prop the index does not know yet is
-    // parked and retried at O(1) on the next frame, never searched for.
-    void* actor = (!budgeted || g_applyBudget > 0) ? coop::prop_key_index::Find(key) : nullptr;
-    // A prop in this player's hands (or under a drive) takes no record: loadData restores a wall
-    // attachable's stuck state, and a held camera re-stuck ~0.45 s after the grab that way (measured,
-    // join tail). The holder is the authority while it holds, so the record waits in the park and
-    // the drain applies it once the prop is let go.
-    if (actor && coop::remote_prop::IsOwnedHere(actor)) {
-        UE_LOGI("prop_save_data: record for key '%ls' waits -- the prop is held here", key.c_str());
-        actor = nullptr;
+// Own both values across native dispatch. The queue can be cleared or this key replaced by a
+// callback; only the exact row we started with may be retired or charged a failure afterward.
+bool ApplyQueued(void* actor, const std::wstring& key, bool budgeted) {
+    if (!actor || key.empty() || g_applying.count(key)) return false;
+    if (budgeted && g_applyBudget <= 0) return false;
+    const auto it = g_parked.find(key);
+    if (it == g_parked.end()) return false;
+    if (budgeted && it->second.failures >= kMaxApplyFailures) return false;
+    const std::wstring applyKey = key;
+    const Parked snapshot = it->second;
+    const uint64_t epoch = g_worldEpoch;
+    KeyScope scope(g_applying, applyKey);
+    if (budgeted) --g_applyBudget; // failed dispatches cost a slot too; nested skips do not
+    const bool ok = TryApply(actor, applyKey, snapshot.rec, epoch);
+    if (epoch != g_worldEpoch) return false;
+    const auto current = g_parked.find(applyKey);
+    if (current != g_parked.end() && current->second.seq == snapshot.seq) {
+        if (ok) Unpark(current);
+        else if (++current->second.failures == kMaxApplyFailures) {
+            UE_LOGW("prop_save_data: the record for key '%ls' failed to apply %d times -- it "
+                    "stays parked but is no longer retried; that prop keeps its own state",
+                    applyKey.c_str(), kMaxApplyFailures);
+        }
     }
-    if (actor && TryApply(actor, key, rec)) {
-        if (budgeted) --g_applyBudget;
-        return true;
-    }
-    if (g_parked.count(key)) return false;   // a newer record arrived during the apply; it stays
+    return ok;
+}
+
+// Queue first so a newer arrival during native dispatch cannot be overwritten by this caller.
+void LandRecord(const std::wstring& key, SR::SaveRecord&& rec, uint8_t senderSlot, size_t bytes,
+                bool budgeted = true) {
     Park(key, std::move(rec), senderSlot, bytes);
-    return false;
+    // The index only, never ResolveLiveActorByKey: that one falls back to a cold GUObjectArray
+    // scan on a miss, and a join hands this lane hundreds of arrivals at once. A prop the index
+    // does not know yet is parked and retried at O(1) on the next frame instead.
+    void* actor = (!budgeted || g_applyBudget > 0) ? PT::FindLiveActorByKey(key) : nullptr;
+    ApplyQueued(actor, key, budgeted);
 }
 
 bool SendBody(coop::net::Session* s, int peerSlot, const std::wstring& key,
-              const SR::SaveRecord& rec, size_t* bytesOut = nullptr) {
+              const SR::SaveRecord& rec, const ue_wrap::CachedObjRef* source) {
     const std::vector<uint8_t> body = BuildBody(key, rec);
-    if (bytesOut) *bytesOut = body.size();
     if (body.size() > MaxRecordBytes()) {
         UE_LOGW("prop_save_data: record for key '%ls' is %zu B, over the %zu cap -- REFUSED, not "
                 "truncated; that prop's state stays where it is. If this fires on a legitimate "
@@ -369,18 +451,7 @@ bool SendBody(coop::net::Session* s, int peerSlot, const std::wstring& key,
         // blob_chunks' own contract: a refused blob is retried whole under a fresh seq. Doing that
         // is what makes the header's "a dropped record is a permanent divergence" false, so the
         // key goes on the retry register rather than into a warning nobody can act on.
-        auto it = g_retry.find(key);
-        if (it != g_retry.end()) {
-            it->second.peerSlot = peerSlot;   // the same key refused again: keep its attempt count
-        } else if (g_retry.size() < kMaxRetry) {
-            Refused r;
-            r.peerSlot = peerSlot;
-            g_retry[key] = r;
-        } else {
-            UE_LOGW("prop_save_data: the retry register is full (%zu) -- the record for key "
-                    "'%ls' is dropped and that peer's copy of this prop stays divergent",
-                    kMaxRetry, key.c_str());
-        }
+        QueuePublishRetry(key, peerSlot, source);
     }
     return ok;
 }
@@ -422,11 +493,7 @@ bool StillAwaited(const std::wstring& key) {
 
 void DeclareClassOwnedElsewhere(const wchar_t* className) {
     if (!className || !*className) return;
-    // Only a claim that is actually NEW invalidates the cache. Every caller declares from its
-    // lane's Install, and subsystems::Install is a retry pump re-entered every net_pump tick, so
-    // clearing unconditionally emptied this cache ~60 times a second: Covers then re-resolved every
-    // claimed name with FindClass per UClass forever, and a name whose class this world never loads
-    // is a miss, which walks the whole object array and is never cached.
+    // Install re-declares every tick. Only a new claim invalidates the per-class answer.
     if (g_ownedElsewhere.find(className) != g_ownedElsewhere.end()) return;
     g_ownedElsewhere.insert(className);
     g_ownedCache.clear();
@@ -437,78 +504,88 @@ bool Covers(void* actor) {
     void* cls = R::ClassOf(actor);
     if (!SR::OverridesGetData(cls)) return false;
     if (g_ownedElsewhere.empty()) return true;
-    // The claim is by NAME because a lane declares its class before that class is loaded; the
-    // resolved answer is cached per UClass, so the name compare happens once per class.
+    // Inspect this actor's short ancestry, never look up every claimed class: an unloaded
+    // claim made FindClass scan the entire object array on each cold class/pocket edge.
+    // Ancestry also works before the object index has drained a newly loaded class.
     const auto it = g_ownedCache.find(cls);
-    if (it != g_ownedCache.end()) return !it->second;
+    if (it != g_ownedCache.end() && it->second.identity.Is(cls)) return !it->second.owned;
     bool owned = false;
-    for (const std::wstring& n : g_ownedElsewhere) {
-        void* oc = R::FindClass(n.c_str());
-        if (oc && (cls == oc || R::IsDescendantOfAny(cls, &oc, 1))) { owned = true; break; }
+    void* ancestor = cls;
+    for (int hop = 0; ancestor && hop < 64; ++hop, ancestor = R::SuperStructOf(ancestor)) {
+        if (!R::IsLive(ancestor)) return false;
+        const std::wstring name = R::ToString(R::NameOf(ancestor));
+        if (name.empty()) return false;
+        for (const std::wstring& claim : g_ownedElsewhere)
+            if (_wcsicmp(name.c_str(), claim.c_str()) == 0) { owned = true; break; }
+        if (owned) break;
     }
-    g_ownedCache[cls] = owned;
+    if (ancestor && !owned) return false; // malformed/cyclic ancestry: do not claim its state
+    OwnedClass result; result.identity.Set(cls); result.owned = owned;
+    g_ownedCache[cls] = result;
     return !owned;
 }
 
-bool Publish(coop::net::Session* s, void* actor, const std::wstring& key, size_t* bytesOut) {
-    if (!s || !actor || key.empty() || key.size() > kMaxKeyChars) return false;
+namespace {
+bool PublishToTarget(coop::net::Session* s, int peerSlot, void* actor, const std::wstring& key) {
+    if (!s || !actor || key.empty() || key.size() > kMaxKeyChars ||
+        peerSlot >= static_cast<int>(g_peerEpoch.size())) return false;
+    // A capture/apply callback must not publish a partially loaded record or recurse into getData.
+    if (g_applying.count(key) || g_publishing.count(key)) return false;
     // Nobody to publish to: return before the capture, not at the send. A host loading its own
     // world births every keyed prop it owns, and paying getData plus a serialize per prop for a
     // send that cannot land is the whole cost of the lane spent on nothing.
-    if (!s->connected() || !s->AnyWorldReadyPeer()) return false;
+    if (!s->connected() || (peerSlot < 0 ? !s->AnyWorldReadyPeer() : !s->IsSlotWorldReady(peerSlot)))
+        return false;
     if (StillAwaited(key)) return false;       // the author's own record is still in flight
     g_session = s;
     if (!Covers(actor)) { coop::dev::food_clock_probe::NoteRefused(actor); return false; }
+    KeyScope scope(g_publishing, key); // owns the key even if a callback clears its source queue
+    const RetryKey retryTarget{key, peerSlot};
+    const auto previousRetry = g_retry.find(retryTarget);
+    const uint64_t retrySequence = previousRetry == g_retry.end() ? 0 : previousRetry->second.seq;
+    const uint64_t epoch = g_worldEpoch;
+    const uint64_t peerEpoch = peerSlot < 0 ? 0 : g_peerEpoch[peerSlot];
+    const auto stillCurrent = [&] {
+        return epoch == g_worldEpoch && (peerSlot < 0 || peerEpoch == g_peerEpoch[peerSlot]);
+    };
     SR::SaveRecord rec;
+    ue_wrap::CachedObjRef identity;
+    identity.Set(actor);
     if (!SR::CaptureRecord(actor, rec)) {
+        if (stillCurrent() && identity.Get() == actor && s->connected())
+            QueuePublishRetry(scope.key, peerSlot, &identity);
         UE_LOGW("prop_save_data: getData failed on the prop keyed '%ls' -- no record published",
-                key.c_str());
+                scope.key.c_str());
         return false;
     }
-    coop::dev::food_clock_probe::NotePublish(actor, key, rec);
-    return SendBody(s, -1, key, rec, bytesOut);
+    if (!stillCurrent() || identity.Get() != actor) return false;
+    coop::dev::food_clock_probe::NotePublish(actor, scope.key, rec);
+    if (!stillCurrent()) return false;
+    const bool sent = SendBody(s, peerSlot, scope.key, rec, &identity);
+    if (sent && retrySequence && stillCurrent()) {
+        // A normal publication can satisfy an older failed publication too.
+        // Do not erase replacement work queued by capture/transport callbacks.
+        const auto current = g_retry.find(retryTarget);
+        if (current != g_retry.end() && current->second.seq == retrySequence) g_retry.erase(current);
+    }
+    return sent;
 }
+} // namespace
 
-bool PublishHostBirth(coop::net::Session* s, void* actor) {
-    if (!s || !actor || !PT::SessionIsHost()) return false;
-    if (!Covers(actor)) {
-        ++g_birthWindow.uncovered;
-        ++g_birthSession.uncovered;
-        return false;
-    }
-    size_t bytes = 0;
-    if (!Publish(s, actor, ue_wrap::prop::GetInteractableKeyString(actor), &bytes)) {
-        // Declined, not lost: the author's own record is still owed (a birth from a client's
-        // intent), no peer is in the world yet, or the transport refused and the retry holds it.
-        ++g_birthWindow.declined;
-        ++g_birthSession.declined;
-        return false;
-    }
-    const std::wstring cls = R::ClassNameOf(actor);
-    for (BirthLedger* l : {&g_birthWindow, &g_birthSession}) {
-        l->total.records += 1;
-        l->total.bytes += bytes;
-        BirthTally& t = l->byClass[cls];
-        t.records += 1;
-        t.bytes += bytes;
-    }
-    return true;
+bool Publish(coop::net::Session* s, void* actor, const std::wstring& key) {
+    return PublishToTarget(s, -1, actor, key);
 }
 
 bool PublishToSlot(coop::net::Session* s, int peerSlot, void* actor, const std::wstring& key) {
-    if (!s || !actor || peerSlot < 0 || key.empty() || key.size() > kMaxKeyChars) return false;
-    if (!s->IsSlotWorldReady(peerSlot)) return false;
-    if (StillAwaited(key)) return false;       // the author's own record is still in flight
-    g_session = s;
-    if (!Covers(actor)) { coop::dev::food_clock_probe::NoteRefused(actor); return false; }
-    SR::SaveRecord rec;
-    if (!SR::CaptureRecord(actor, rec)) return false;
-    coop::dev::food_clock_probe::NotePublish(actor, key, rec);
-    return SendBody(s, peerSlot, key, rec);
+    return peerSlot >= 0 && PublishToTarget(s, peerSlot, actor, key);
 }
 
 bool PublishWithSpawn(coop::net::Session* s, void* actor, const coop::net::WireKey& key,
                       int peerSlot) {
+    // Food's native loadData interprets a foreign clock stamp as elapsed time. Its live
+    // condition follows the birth through FoodState instead, including same-key rebirths.
+    if (s && actor && ue_wrap::food::IsFood(actor))
+        return coop::props::prop_food_sync::PublishSpawnState(*s, actor, peerSlot);
     if (key.len == 0 || key.len > kMaxKeyChars) return false;   // a keyless prop has no identity to address
     std::wstring w;
     w.reserve(key.len);
@@ -549,12 +626,15 @@ void OnChunk(coop::net::Session& s, const coop::net::BlobChunkPayload& p, uint8_
         LandRecord(key, std::move(rec), senderSlot, body.size(), /*budgeted=*/true);
         return;
     }
-    // The host takes a client's claim: apply or park it locally, then re-publish it as the canonical
-    // so every peer -- the author included, as the acknowledgement -- takes the same bytes from the
-    // same authority. A birth's record (a prop the host spawned from this author's intent) is
-    // published by its land instead (TryApply), from what the host then holds.
-    g_session = &s;
-    void* actor = coop::prop_key_index::Find(key);
+    // The claim has landed, so the key is no longer awaited and the host may publish it again.
+    const auto awaiting=g_awaiting.find(key);
+    const bool initialRecord=awaiting!=g_awaiting.end()&&awaiting->second.senderSlot==senderSlot;
+    g_awaiting.erase(key);
+    // The host takes a client's claim: queue the canonical before entering native code so a
+    // newer claim received re-entrantly cannot be sent before this older one. As before, the
+    // claim is canonical even when the actor has not arrived or native apply must be retried.
+    // Every peer, including the author as acknowledgement, takes the same canonical bytes.
+    void* actor = PT::FindLiveActorByKey(key);
     if (actor && !Covers(actor)) {
         // The claim names a class another lane owns, or one that carries no save state of its own.
         // Neither applying nor re-publishing it is this lane's business, and re-publishing would
@@ -564,116 +644,118 @@ void OnChunk(coop::net::Session& s, const coop::net::BlobChunkPayload& p, uint8_
                 key.c_str(), static_cast<unsigned>(senderSlot));
         return;
     }
-    const bool birth = g_awaiting.count(key) != 0;
-    if (LandRecord(key, SR::SaveRecord(rec), senderSlot, body.size(), /*budgeted=*/false)) {
-        UE_LOGI("prop_save_data: HOST took a client record (key '%ls', slot %u) -- %s",
-                key.c_str(), static_cast<unsigned>(senderSlot),
-                birth ? "published from its land" : "republishing");
-    } else {
-        UE_LOGI("prop_save_data: HOST parked a client record (key '%ls', slot %u) -- %s",
-                key.c_str(), static_cast<unsigned>(senderSlot),
-                birth ? "published when it lands" : "republishing");
+    g_session = &s;
+    // Ordinary records cannot bypass native host unlock/loot or re-lock a safe.
+    // The initial record for a new client-authored birth may restore its saved
+    // unlocked state; no new loot belongs to that inventory/drop transition.
+    if(actor) {
+        if(initialRecord)ue_wrap::safe::PreserveUnlocked(actor,rec);
+        else ue_wrap::safe::PreserveHostLock(actor,rec);
     }
-    if (!birth) SendBody(&s, -1, key, rec);
+    SendBody(&s, -1, key, rec);
+    // Preserve immediate host acceptance (bounded by AllowIntent); client join catch-up uses
+    // the frame budget. Deferring host acceptance would expose default state to other publishers.
+    LandRecord(key, std::move(rec), senderSlot, body.size(), false);
 }
 
 bool ApplyParked(void* actor, const std::wstring& key) {
-    if (!actor || key.empty()) return false;
-    auto it = g_parked.find(key);
-    if (it == g_parked.end()) return false;
     // ApplyRecord's bool is the DISPATCH's, not the Blueprint's: Aprop_C::loadData never assigns
     // its `return` out-param at all, so there is no refusal to read. A failure here is a codec or
     // reflection failure, and the record stays parked for the next frame to retry.
-    const uint64_t seq = it->second.seq;
-    if (!TryApply(actor, key, SR::SaveRecord(it->second.rec))) return false;
-    UE_LOGI("prop_save_data: parked record applied at birth (key '%ls')", key.c_str());
-    UnparkIfSame(key, seq);
-    return true;
+    return ApplyQueued(actor, key, false);
+}
+
+bool PrepareForCapture(void* actor, const std::wstring& key) {
+    if (!actor || key.empty() || g_applying.count(key) || g_publishing.count(key)) return false;
+    if (!g_parked.count(key)) return true;
+    ue_wrap::CachedObjRef identity;
+    identity.Set(actor);
+    const uint64_t epoch = g_worldEpoch;
+    ApplyQueued(actor, key, false);
+    // Native loadData can destroy the actor, change worlds or queue a newer row.
+    // None of those outcomes permits the caller to capture the old actor's state.
+    return epoch == g_worldEpoch && identity.Get() == actor && !g_parked.count(key);
 }
 
 // Re-send a few refused records per frame, re-captured from the live actor so what goes out is
 // current rather than a stale copy of what was refused.
 void DriveRetries() {
-    if (g_retry.empty() || !g_session) return;
+    if (g_retry.empty() || !g_session || !g_session->connected()) return;
     const uint64_t now = NowMs();
+    const uint64_t epoch = g_worldEpoch;
     int sent = 0;
     for (auto it = g_retry.begin(); it != g_retry.end() && sent < kRetriesPerFrame;) {
         if (now < it->second.nextTryMs) { ++it; continue; }
-        void* actor = nullptr;
-        const auto read = coop::prop_key_index::Resolve(it->first, &actor);
-        if (read == coop::prop_key_index::Read::Pending) {  // cannot tell yet: ask again after the base wait
-            it->second.nextTryMs = now + kRetryBackoffMs;
+        const int recipient = it->second.peerSlot;
+        const auto& recordKey = it->first.first;
+        // Loading and ownership waits are not failed capture/transport attempts.
+        // Leave their retry budget intact and continue to other ready recipients.
+        if (!(recipient < 0 ? g_session->AnyWorldReadyPeer() : g_session->IsSlotWorldReady(recipient)) ||
+            StillAwaited(recordKey) || g_applying.count(recordKey) || g_publishing.count(recordKey)) {
             ++it;
             continue;
         }
-        if (read == coop::prop_key_index::Read::Miss) { it = g_retry.erase(it); continue; }  // gone: nothing to re-send
+        void* actor = PT::FindLiveActorByKey(it->first.first);
+        if (!actor) {
+            actor = it->second.source.Get();
+            // A valid address alone is insufficient: this actor may have been rekeyed.
+            if (actor && ue_wrap::prop::GetInteractableKeyString(actor) != it->first.first) actor = nullptr;
+        }
+        if (!actor) { it = g_retry.erase(it); continue; }   // the prop is gone; nothing to re-send
         if (it->second.tries >= kMaxRetryTries) {
             UE_LOGW("prop_save_data: gave up re-sending the record for key '%ls' after %d "
                     "attempts -- that peer's copy of this prop stays divergent",
-                    it->first.c_str(), kMaxRetryTries);
+                    it->first.first.c_str(), kMaxRetryTries);
             it = g_retry.erase(it);
             continue;
         }
         // Charge the attempt and back off BEFORE publishing. A refusal re-enters this row through
         // SendBody and keeps the count, so a full queue -- which is what refuses in the first
         // place -- is retried on a widening interval instead of four times a frame forever. The
-        // row is left in place when Publish declines for a transient reason (no world-ready peer
-        // during a joiner's load window, the author's own record still owed), which is exactly the
-        // state that produced the refusal.
+        // Readiness/ownership waits above do not charge attempts; actual capture or transport
+        // failures below remain bounded and use the existing backoff.
         ++it->second.tries;
         it->second.nextTryMs = now + (kRetryBackoffMs << (it->second.tries - 1));
         const int slot = it->second.peerSlot;
-        const std::wstring key = it->first;
+        const RetryKey target = it->first;
+        const std::wstring& key = target.first;
+        const uint64_t seq = it->second.seq;
         ++sent;
         const bool ok = (slot < 0) ? Publish(g_session, actor, key)
                                    : PublishToSlot(g_session, slot, actor, key);
-        if (ok) it = g_retry.erase(it);
-        else    ++it;
+        if (epoch != g_worldEpoch) return;
+        const auto current = g_retry.find(target);
+        if (ok && current != g_retry.end() && current->second.seq == seq) g_retry.erase(current);
+        it = g_retry.upper_bound(target); // no iterator or row reference survives native getData
     }
 }
 
 void Drive() {
+    if (g_driving) return; // a native callback must not replenish this frame's apply budget
+    DriveScope scope;
+    const uint64_t epoch = g_worldEpoch;
+    g_applyBudget = kAppliesPerFrame;
     DriveRetries();
+    if (epoch != g_worldEpoch) return;
     // A fresh apply budget per frame, then spend what is left of it on the park. The scan resumes
     // at the cursor and wraps, so a record whose prop appears late is reached in bounded time
     // however large the park is.
-    g_applyBudget = kAppliesPerFrame;
     size_t looked = 0;
+    // Do not repeatedly revisit a single failing row in one frame. The outer bound also limits
+    // work if callbacks replace or insert rows while this pass runs.
+    const size_t scanLimit = (std::min)(kParkScanPerFrame, g_parked.size());
     int    applied = 0;
-    auto it = g_parked.lower_bound(g_parkCursor);
-    while (looked < kParkScanPerFrame && g_applyBudget > 0 && !g_parked.empty()) {
-        if (it == g_parked.end()) { it = g_parked.begin(); g_parkCursor.clear(); }
+    while (looked < scanLimit && g_applyBudget > 0 && !g_parked.empty()) {
+        auto it = g_parked.upper_bound(g_parkCursor);
+        if (it == g_parked.end()) it = g_parked.begin();
         ++looked;
-        // The Key by VALUE, and the walk resumes by it rather than by `it`: loadData re-runs the
-        // prop's init(), from which a re-entrant apply or land for this same Key can erase or
-        // replace the node this iterator names.
         const std::wstring key = it->first;
-        void* actor = (it->second.failures < kMaxApplyFailures)
-                          ? coop::prop_key_index::Find(key) : nullptr;
-        // A held prop's record waits for its release (LandRecord's reason). It is skipped before the
-        // budget is spent and is no failure: the row stays, and a later frame's scan applies it.
-        if (actor && coop::remote_prop::IsOwnedHere(actor)) actor = nullptr;
-        if (actor) {
-            // The budget buys a DISPATCH, not a success: a row whose apply fails past the base
-            // capture has already paid for one, and counting only successes let a handful of
-            // failing rows pay a dispatch each, every frame, forever.
-            --g_applyBudget;
-            const uint64_t seq = it->second.seq;
-            if (TryApply(actor, key, SR::SaveRecord(it->second.rec))) {
-                ++applied;
-                UnparkIfSame(key, seq);
-            } else {
-                auto row = g_parked.find(key);
-                if (row != g_parked.end() && row->second.seq == seq &&
-                    ++row->second.failures == kMaxApplyFailures) {
-                    UE_LOGW("prop_save_data: the record for key '%ls' failed to apply %d times -- "
-                            "it stays parked but is no longer retried; that prop keeps its own "
-                            "state", key.c_str(), kMaxApplyFailures);
-                }
-            }
-        }
         g_parkCursor = key;
-        it = g_parked.upper_bound(key);
+        void* actor = (it->second.failures < kMaxApplyFailures)
+                          ? PT::FindLiveActorByKey(key) : nullptr;
+        if (ApplyQueued(actor, key, true)) ++applied;
+        if (epoch != g_worldEpoch) return;
+        // Never use it after ApplyQueued: native callbacks may invalidate ANY queue node.
     }
     if (applied && !g_parked.empty()) {
         UE_LOGI("prop_save_data: applied %d parked record(s) this frame (%zu still parked)",
@@ -695,17 +777,13 @@ void Drive() {
 }
 
 void OnDisconnect() {
-    if (g_birthSessionStartMs &&
-        (g_birthSession.total.records || g_birthSession.declined || g_birthSession.uncovered))
-        ReportBirthLedger("SESSION", g_birthSession, NowMs() - g_birthSessionStartMs);
-    g_birthWindow = BirthLedger{};
-    g_birthSession = BirthLedger{};
-    g_birthWindowStartMs = g_birthSessionStartMs = 0;
+    ++g_worldEpoch;
     g_parkCursor.clear();
     g_applyBudget = kAppliesPerFrame;
     g_nextSweepMs = 0;
     g_appliedTotal = 0;
     g_retry.clear();
+    g_retrySeq = 1;
     g_intentRate.clear();
     g_parkUse.clear();
     g_session = nullptr;
@@ -725,6 +803,11 @@ void OnDisconnect() {
 }
 
 void OnPeerGone(uint8_t senderSlot) {
+    ++g_peerEpoch[senderSlot];
+    for (auto it = g_retry.begin(); it != g_retry.end();) {
+        if (it->second.peerSlot == senderSlot) it = g_retry.erase(it);
+        else ++it;
+    }
     g_asmCanonical.ClearSlot(senderSlot);
     g_asmIntent.ClearSlot(senderSlot);
     for (auto it = g_parked.begin(); it != g_parked.end();) {

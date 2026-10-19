@@ -47,6 +47,14 @@ void TuneConnection(uint32_t hConn, bool rateControlled, long pinnedRateKbs) {
                                              kDefaultSendBufBytes);
     }
 
+    // GNS holds a small reliable for 5ms so several can share a packet. Pose and voice already
+    // send UnreliableNoDelay, so that wait sat on verbs, damage and the join's short reliables.
+    // 0 flushes each one with the send. The nameplate ping is GNS's own round trip and does not
+    // include this wait; the wait was on our packets.
+    if (!utils->SetConnectionConfigValueInt32(h, k_ESteamNetworkingConfig_NagleTime, 0))
+        UE_LOGW("net: NagleTime=0 refused for h=0x%08x -- small reliables keep the 5ms coalesce",
+                static_cast<unsigned>(hConn));
+
     // The rate the connection opens at. SendRateMin and Max are written to one value, which is the
     // GNS header's own way of saying the application owns this rate. The drill's pin wins outright;
     // otherwise the measured-rate controller's opening rate, written HERE rather than at its first

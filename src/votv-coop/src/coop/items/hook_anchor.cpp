@@ -1,6 +1,7 @@
 // coop/items/hook_anchor.cpp -- see the header for the transaction and what the arbiter takes.
 
 #include "coop/items/hook_anchor.h"
+#include "coop/items/hook_retrieve.h"
 
 #include "coop/element/intent_authority.h"
 #include "coop/items/save_record_wire.h"
@@ -230,6 +231,7 @@ void RegisterAdopted(void* actor, uint8_t ownerSlot, uint16_t seq) {
     a.ownerSlot = ownerSlot;
     a.seq       = seq;
     g_adopted.push_back(a);
+    coop::hook_retrieve::Note(actor, true);
 }
 
 }  // namespace
@@ -407,6 +409,7 @@ void OnAnchoredChunk(const coop::net::BlobChunkPayload& p, uint8_t senderSlot) {
     // see ue_wrap/actors/hook.h.
     H::AdoptRecord(m, rec);
     E::SetActorEnableCollision(m, false);  // loadData re-enables both of the hook's spheres
+    coop::hook_retrieve::Note(m, true);
 }
 
 void TickHost(uint64_t nowMs) {
@@ -431,6 +434,7 @@ void TickHost(uint64_t nowMs) {
 
 void QueueConnectBroadcastForSlot(int peerSlot) {
     if (!GT::IsGameThread() || !IsHost() || peerSlot <= 0) return;
+    coop::hook_retrieve::SendAllToSlot(peerSlot);
     auto* s = Session();
     if (!s) return;
     size_t sent = 0;

@@ -360,6 +360,9 @@ void Session::NetThread() {
         cfg_.sendHz > 0 ? 1000 / cfg_.sendHz : 33);
     auto nextSend = std::chrono::steady_clock::now();
     auto nextRttSample = std::chrono::steady_clock::now();
+    // The nameplate reads rttMsBySlot_. The diagnostic sample below is 1 Hz because of the log;
+    // the number the player sees is refreshed here, four times a second, from the same GNS ping.
+    auto nextNameplatePing = std::chrono::steady_clock::now();
     // The link measurement's own cadence, ten times the diagnostics sample's: a control input has
     // to see a queue build, which a 1 Hz reading cannot.
     auto nextLinkSample = std::chrono::steady_clock::now();
@@ -541,6 +544,21 @@ void Session::NetThread() {
                                        SendRateControl::kProbeIntervalMs);
         }
 
+        // The nameplate's ping. Same reading as the diagnostic sample, without the log, so a spike
+        // and a recovery show up within a quarter second instead of the next one-second line.
+        if (state_.load() == ConnState::Connected && now >= nextNameplatePing) {
+            for (int i = 0; i < kMaxPeers; ++i) {
+                const uint32_t hConn = peerConns_[i].load();
+                if (hConn == 0) { rttMsBySlot_[i].store(-1, std::memory_order_relaxed); continue; }
+                SteamNetConnectionRealTimeStatus_t st{};
+                if (sockets->GetConnectionRealTimeStatus(hConn, &st, 0, nullptr) != k_EResultOK)
+                    continue;
+                rttMsBySlot_[i].store((st.m_nPing >= 0 && st.m_nPing < 60000) ? st.m_nPing : -1,
+                                      std::memory_order_relaxed);
+            }
+            nextNameplatePing = now + std::chrono::milliseconds(250);
+        }
+
         // 4) Per-peer diagnostics every ~1 s from GetConnectionRealTimeStatus: queue time, pending
         // bytes and the allowed send rate, the send-side state that explains a laggy peer (an
         // outbound burst over the allowed rate piles up in the send queue and the pose stream
@@ -634,7 +652,10 @@ void Session::NetThread() {
             nextRttSample = now + std::chrono::milliseconds(1000);
         }
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        // Idle poll. Inbound packets, ICE signals and callbacks wait out whatever is left of this
+        // sleep; 1ms is the receive side of the same latency the nagle wait was on the send side.
+        // The drain above already emptied the inbox, so a busy link does not sleep between batches.
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 }
 

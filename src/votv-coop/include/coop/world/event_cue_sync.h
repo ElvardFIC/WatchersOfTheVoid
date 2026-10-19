@@ -24,14 +24,15 @@ namespace coop::event_cue_sync {
 // tick from subsystems::Install, which is also the retry until the gate resolves the watch's name.
 //
 // The cue REGISTRY, in the .cpp, maps a runEvent row to a cueId, its emitter template and the
-// location its body spawns it at. starRain is cue 0 and the ONLY cue registered so far; the eye
-// moon, pink beam, TriFO, blinking lights and green fire are candidates, one registry line each once
+// location its body spawns it at. starRain is emitter cue 0; world_sound_sync
+// reserves IDs 1..5 for black-hole, alien, harvest and faucet audio. New cue IDs must not
+// collide with those. The eye moon, pink beam and TriFO remain candidates once
 // their rows are read. cueId is on the wire, so the registry is APPEND-ONLY. A cue whose body
 // computes its position, or spawns it after a delay, needs the spawned component captured inside
 // the body instead of a row match.
 void Install(coop::net::Session* session);
 
-// CLIENT: replay a cue's emitter at the host's broadcast position. Game thread.
+// CLIENT: route audio to world_sound_sync, or replay an emitter. Game thread.
 void OnReliable(const coop::net::EventCuePayload& payload);
 
 // HOST, the answer to joining mid-event: at a joiner's world-ready edge, send every live cue

@@ -39,6 +39,8 @@ namespace P = ue_wrap::profile;
 
 UE_FACT_FN(kRowBeginDeferredSpawn, "npc_world_enum", L"GameplayStatics", L"BeginDeferredActorSpawnFromClass",
            Declared);
+struct ExSpawnSource { const wchar_t* cls; const wchar_t* const* outputs; };
+ue_wrap::facts::Resolved g_beginDeferredFn;
 
 // The single host and mirror NPC set, the same singleton the other NPC files wrap.
 using coop::element::NpcMirrors;   // canonical accessor (coop/element/mirror_managers.h)
@@ -131,21 +133,39 @@ coop::element::ElementId EnrollUntrackedNpcActor(void* obj, const std::wstring& 
     return eid;
 }
 
-// The EX_CallMath spawn catch: the spawners whose deferred-spawn output is host-authoritative and
-// mirrored, each because its BeginDeferred is bytecode-internal (a CallFunc in its ubergraph, never
-// ProcessEvent-dispatched) and no interceptor sees it: the wisps event swarm (up to 32), the piramid
-// chain (four killer wisps and a pyramid on the world-actor lane), the ambient sky wisps and night
-// eggs (world-anchored, so the host rolls them and a client's ticker is refused in the spawn
-// authority), the sell gun's coin mint (the host's own sale and the re-commit of a client's alike;
-// without its row the coin allowlist entry is inert), the jellyfish path's seven, and the story-event
-// spawners' creatures. Outputs still pass the allowlist gates in the queue branch below (NPC, else
-// world-actor), so no arbitrary EX spawn enrolls. `outputs` narrows a source to the outputs whose
-// client copies the spawn authority makes inert: the eventer also mints world actors whose BeginPlay
-// plays gameplay on a mirror (soltomiaCleaning_C writes the client's ATV and mints a sponge), so they
-// stay unmirrored, as before this source, until they have refusal rows.
-struct ExSpawnSource {
-    const wchar_t* cls;
-    const wchar_t* const* outputs;   // null-terminated; null: any allowlisted output
+// The EX_CallMath spawn catch. The source spawner classes whose deferred-spawn output is
+// host-authoritative and mirrored: the wisps event swarm (up to 32 wisps); the piramid event
+// chain (four killer wisps on the NPC lane and one pyramid on the world-actor lane, a spawn
+// the interceptor never sees); the ambient sky-wisp ticker and its colour variants (it
+// anchors at absolute map coordinates, not around a player, so the host rolls them and the
+// client's ticker is cancelled in the spawn authority); and the sell gun's coin mint, whose
+// deferred spawn inside the sell verb is bytecode-internal on the host's own sale and on the
+// re-commit of a client's sale alike, so the world-actor lane's interceptor never sees it and
+// without this row the coin allowlist entry is inert; and the jellyfish path, whose spawn makes
+// its seven fish inside its own graph. A future creature event adds its trigger class here once
+// its target class joins the NPC allowlist.
+//
+// The eventer and the event controllers below are that step for the scheduled and story events:
+// the eventer's runEvent spawns its creatures and ships inside its own graph (the vent crawler,
+// the Rozital mothership, the morning UFO, the droppers, the follower, the egger, the cleaner), and
+// each controller spawns its own creatures in turn. Each row's output reaches only the lanes whose
+// allowlists name it; everything else it spawns stays the host's.
+constexpr const wchar_t* kExSpawnSourceClasses[] = {
+    L"trigger_wispSwarm_C",   // the wisps event swarm
+    L"piramidSpawner_C",      // the piramid event chain
+    L"ticker_wispSpawner_C",  // the ambient sky wisps
+    L"ticker_yellowWispSpawner_C", // native EX_CallMath killerwisp spawn
+    L"ticker_fossilhoundSpawner_C", // native EX_CallMath fossilhound spawn
+    L"prop_coingun_C",        // the sell gun's coin mint
+    L"jellyfishPath_C",       // the space jellyfish's seven, on the world-actor lane
+    L"trigger_eventer_C",       // every list_events row's own spawns
+    L"boarInvasion_C",          // the boar war: grayboar_C, npc_ariral_shooter_C, firetank_C
+    L"ufoDropper_pig_C",        // the pig drop: grayboar_C
+    L"ufoDropper_tank_C",       // the tank drop: firetankDeploy_C
+    L"firetankDeploy_C",        // the deployed tank: firetank_C
+    L"grayEventController_C",   // the grays: grayTest_C
+    L"superEgger_C",            // the eggvasion: eg_C
+    L"tentacleBallsFollower_C", // the tentacle balls: tentacleBall_C
 };
 constexpr const wchar_t* kEventerOutputs[] = {L"ventCrawler_C", L"superEgger_C", nullptr};
 constexpr ExSpawnSource kExSpawnSources[] = {
@@ -218,8 +238,7 @@ void OnBeginDeferredExSpawn(void* /*context*/, void* srcObj, void* spawned) {
     if (!source) return;
     void* cls = R::ClassOf(spawned);
     if (!cls) return;
-    // A scoped source's outputs first: one render, before the world-actor list's per-entry renders.
-    if (source->outputs && !NamesOneOf(cls, source->outputs)) return;
+    coop::npc_sync::RefreshLateAllowlist();  // an event creature's class may have just loaded
     if (!coop::npc_sync::IsAllowlistedClass(cls) && !IsWaAllowlistedClass(cls)) return;
     const int32_t idx = R::InternalIndexOf(spawned);
     std::lock_guard<std::mutex> lk(g_pendingMx);
@@ -243,13 +262,14 @@ void OnBeginDeferredExSpawn(void* /*context*/, void* srcObj, void* spawned) {
 void InstallExSpawnCatch() {
     // Idempotent per UFunction and callback inside the hook install; it chains after any other
     // Func thunk on the same UFunction (the trash collect's ambient-prop observer), and both fire.
-    if (ue_wrap::ufunction_hook::InstallPostHook(ue_wrap::facts::Resolve(kRowBeginDeferredSpawn),
-                                                 &OnBeginDeferredExSpawn)) {
-        UE_LOGI("npc-sync[ex-spawn]: Func-thunk catch installed on BeginDeferred (source-gated: "
-                "trigger_wispSwarm_C -> wisp_C, piramidSpawner_C -> killerwisp_C + piramid2_C, "
-                "jellyfishPath_C -> jellyfish_C, trigger_eventer_C -> ventCrawler_C + superEgger_C, "
-                "grayEventController_C -> grayTest_C, superEgger_C + ticker_egSpawner_C -> eg_C, "
-                "tentacleBallsFollower_C -> tentacleBall_C; EX_CallMath spawns now enroll)");
+    if (!g_beginDeferredFn) g_beginDeferredFn = ue_wrap::facts::Resolve(kRowBeginDeferredSpawn);
+    if (g_beginDeferredFn &&
+        ue_wrap::ufunction_hook::InstallPostHook(g_beginDeferredFn, &OnBeginDeferredExSpawn)) {
+        UE_LOGI("npc-sync[ex-spawn]: Func-thunk catch installed on BeginDeferred (source-gated, %zu "
+                "source classes: the wisp swarm, the pyramid, the sky wisps, the coin gun, the "
+                "jellyfish path, the eventer and its event controllers; "
+                "EX_CallMath spawns now enroll)",
+                std::size(kExSpawnSourceClasses));
     } else {
         UE_LOGW("npc-sync[ex-spawn]: InstallPostHook FAILED -- EX_CallMath creature spawns will "
                 "NOT mirror this session (event-swarm wisps host-only)");

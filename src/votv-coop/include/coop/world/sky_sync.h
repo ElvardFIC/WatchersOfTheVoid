@@ -1,10 +1,12 @@
 // coop/world/sky_sync.h -- host-authoritative NIGHT-SKY sync (star-dome orientation, moon phase, the
-// sky eye). A tiny host->client push (1 Hz + a joiner's world-ready); the client writes the dome and the
+// sky eye and black-hole presentation). A tiny host->client push (1 Hz + a joiner's world-ready); the client writes the dome and the
 // moon directly, the BP's own per-tick code rendering them, and runs the sky's setEye for the eye. Fixes the
 // per-peer-random star orientation + save-derived moon
 // phase that the clock (coop/world/time_sync) does NOT cover: the clock converges the sun/moon
 // orbit + brightness, not the random dome yaw / save moonPhase. The eye is the noon roll's, which
 // runs on every peer: the host's crosses, and a client's own setEye is refused at the gate.
+// earthTp uses the actual skyHidden/light state; a client's own tp sequence is
+// refused. Sounds, emails and event bookkeeping are not replayed by this lane.
 
 #pragma once
 
@@ -16,7 +18,7 @@ struct SkyStatePayload;
 namespace coop::sky_sync {
 
 // Store the session, resolve newsky_C (retried via Tick until it loads) and, once per process, ask the
-// script gate to watch newsky_C.setEye for a client's own. Game thread.
+// script gate to watch newsky_C.setEye/tp/skyVisibility. Game thread.
 void Install(coop::net::Session* session);
 
 // CLIENT receiver: apply the host's sky orientation, moon phase and eye (from the host alone:

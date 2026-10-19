@@ -28,7 +28,7 @@
 #include "coop/world/event_fire_sync.h"  // OnClientWorldReady: the fires queued in the join window
 #include "coop/world/daily_task_sync.h"  // OnClientWorldReady: a task kept from the world left behind
 #include "coop/player/puppet_drive.h"      // the puppet array and its drive
-#include "coop/props/prop_key_index.h"     // Tick before the inbox; CanAnswer at the world-ready gate
+#include "coop/player/sit_pose.h"
 #include "coop/props/registry_reaper.h"    // the reaper and the re-seed engine
 #include "coop/props/remote_prop_spawn.h"  // OnClientWorldReadyResetSweep (deferred prop sweep per-world reset)
 #include "coop/props/join_membership_sweep.h"  // the join claim and the divergence sweep
@@ -37,6 +37,7 @@
 #include "coop/player/players_registry.h"
 #include "coop/player/roster_ledger.h"
 #include "coop/props/prop_element_tracker.h"
+#include "coop/props/prop_key_index.h"  // the release edge and net-side key answer
 #include "coop/props/prop_snapshot.h"
 #include "coop/player/remote_player.h"
 #include "coop/props/remote_prop.h"
@@ -760,6 +761,8 @@ void Tick(coop::net::Session& session) {
     if (worldUp) {
         coop::puppet_drive::DriveTick(session,
                                       g_worldReadyAnnounced.load(std::memory_order_relaxed));
+        coop::sit_pose::DriveRemotes();
+        coop::sit_pose::DriveAtvDrivers();
 
         // The receiver-side held-prop driver: the latest PropPose applied (a Key lookup on first
         // arrival, transform writes after); a stream stop over 500 ms is an implicit release.

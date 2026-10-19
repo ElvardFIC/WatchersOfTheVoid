@@ -86,6 +86,13 @@ void AnnounceLocalNameplate(coop::net::Session& session, bool visible);
 bool HandleNameplateChange(coop::net::Session& session,
                            const coop::net::Session::ReliableMessage& msg);
 
+// Announce the local PVP pref mid-session. The at-join state is bit 1 of the prefs flags byte.
+void AnnounceLocalPvp(coop::net::Session& session, bool on);
+
+// Handle a delivered PvpChange ([u8 slot][u8 on]). Same trust shape as the nameplate.
+bool HandlePvpChange(coop::net::Session& session,
+                     const coop::net::Session::ReliableMessage& msg);
+
 // Announce the local nick colour mid-session, the same shape; packed 0 resets to the default.
 // The at-join state rides the [has][r][g][b] field of the Join. Game thread only.
 void AnnounceLocalNickColor(coop::net::Session& session, uint32_t packed);

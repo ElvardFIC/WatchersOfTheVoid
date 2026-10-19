@@ -96,6 +96,11 @@ bool Unwatch(const facts::Resolved& fn, int tag, PreFn pre, PostFn post);
 // is matched by its short name, where UE4SS matches a hooked function's whole outer path: two loaded
 // classes of one name would both match. Another mode is refused, logged. Any thread.
 bool WatchName(const facts::Function& row, int tag, PreFn pre, PostFn post);
+bool WatchName(const wchar_t* name, int tag, PreFn pre, PostFn post);
+
+// Watch one named function only on the named class, including that class's incarnation loaded
+// later in a world. The matching readiness query shares the literals and tag used at registration.
+bool WatchClassName(const wchar_t* className, const wchar_t* name, int tag, PreFn pre, PostFn post);
 
 // The names resolve on the game thread (the string-to-name conversion dispatches ProcessEvent), so a name
 // watch is inert until ResolvePendingNames has run; registration posts one attempt and a game-thread tick
@@ -114,6 +119,9 @@ bool UnwatchName(const facts::Function& row, int tag, PreFn pre, PostFn post);
 // WatchName returns true the moment it registers, so a consumer that publishes its own readiness asks
 // this instead. Any thread.
 bool NameWatchLive(const facts::Function& row, int tag);
+bool NameWatchLive(const wchar_t* name, int tag);
+bool ClassNameWatchLive(const wchar_t* className, const wchar_t* name, int tag);
+bool ClassNameWatchSettled(const wchar_t* className, const wchar_t* name, int tag);
 
 // Has it SETTLED: live, or dead for good because its name resolved into a full table or its class
 // declares no such function (logged by the gate)? A consumer waiting on a watch asks this, so a dead watch
@@ -177,6 +185,9 @@ Active CurrentThreadCall();
 // pre would stay raised for the life of the process and answer "my verb is running" forever.
 // Game thread in practice (the gate never fires callbacks off it); any thread reads its own chain.
 bool IsBodyActive(void* function, void* callerFunction = nullptr);
+// Same stack-lifetime check, narrowed to one receiver. Never retain a pre/post
+// counter to authorize births: cancellation and faults can skip the post phase.
+bool IsObjectBodyActive(void* function, void* object);
 
 // A scope mark: bits a PRE puts on the scope of the body it is about to let run, readable by any seam on
 // this thread while that body runs. MarkScope ORs `bits` into the dispatch's own word, which lives on the

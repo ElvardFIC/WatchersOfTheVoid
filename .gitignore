@@ -277,3 +277,11 @@ docs/**
 !docs/versioning.md
 !docs/voice-and-chat.md
 reference/agency-agents/
+
+# Local Plus development and packaging artifacts
+__pycache__/
+*.py[cod]
+/dist/
+/_toolchain/
+/_research/
+!docs/plus-fork.md

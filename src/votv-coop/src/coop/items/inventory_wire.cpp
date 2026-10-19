@@ -95,10 +95,10 @@ bool Deserialize(const std::vector<uint8_t>& b, Profile& p, uint8_t* outVersion)
     if (!W::RdU32(b, o, n) || n > W::kMaxRecords || !W::Feasible(n, b, o)) return false;
     out.hold.resize(n);
     for (auto& r : out.hold) if (!DeEquip(b, o, r)) return false;
-    if (ver == kVersionProjection) return true;  // three arrays and nothing after them
+    if (ver == kVersionProjection) return o == b.size();  // three arrays and nothing after them
 
     uint8_t hasVitals = 0;
-    if (!W::RdU8(b, o, hasVitals)) return false;
+    if (!W::RdU8(b, o, hasVitals) || hasVitals > 1) return false;
     p.hasVitals = hasVitals != 0;
     if (p.hasVitals) {
         for (auto m : kVitalScalars) if (!W::RdF32(b, o, p.vitals.*m)) return false;
@@ -112,7 +112,7 @@ bool Deserialize(const std::vector<uint8_t>& b, Profile& p, uint8_t* outVersion)
         }
     }
     uint8_t valid = 0;
-    if (!W::RdU8(b, o, valid)) return false;
+    if (!W::RdU8(b, o, valid) || valid > 1) return false;
     p.pose.valid = valid != 0;
     return W::RdF32(b, o, p.pose.x) && W::RdF32(b, o, p.pose.y) && W::RdF32(b, o, p.pose.z) &&
            W::RdF32(b, o, p.pose.yaw) && o == b.size();  // nothing may follow the pose

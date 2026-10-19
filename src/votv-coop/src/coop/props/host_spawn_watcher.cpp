@@ -11,17 +11,19 @@
 #include "coop/player/hand_item.h"          // LocalHandActor (drain: hotbar view-actor exclusion)
 #include "coop/props/prop_echo_suppress.h"  // IsMirrorSpawn (mirror-spawn exclusion)
 #include "coop/props/prop_element_tracker.h"
+#include "coop/props/prop_wire_parity.h"
+#include "coop/props/prop_drive_host.h"
 #include "coop/props/prop_lifecycle.h"      // ExpressSpawnedProp (reuse the keyed broadcast)
-#include "coop/props/prop_save_data.h"      // PublishHostBirth (the record behind the express)
-#include "coop/props/container_birth.h"  // NoteHostBirth (a container's contents behind it)
-#include "coop/props/prop_drive_host.h"          // Coast (a falling birth's pose until it rests)
-#include "coop/props/prop_wire_parity.h"         // PhysFlagsOf (frozen, static and sleep)
+#include "coop/props/prop_save_data.h"       // Publish the record after the spawn Blueprint fills it
+#include "coop/props/prop_spawn_authoring.h"
+#include "ue_wrap/actors/floor_bed.h"
+#include "ue_wrap/core/cached_obj_ref.h"
 #include "coop/props/remote_prop_spawn.h"
 #include "coop/props/join_membership_sweep.h"  // the join claim and sweep
 #include "ue_wrap/core/game_thread.h"
 #include "ue_wrap/core/hot_path_guard.h"  // UE_ASSERT_GAME_THREAD
 #include "ue_wrap/core/log.h"
-#include "ue_wrap/actors/container_inventory.h"  // IsContainer (a tracked container still owes its contents)
+#include "ue_wrap/core/object_index.h"
 #include "ue_wrap/actors/prop.h"            // IsDescendantOfProp (the keyed-prop gate for the Q-menu seam)
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/sdk_profile.h"
@@ -63,6 +65,7 @@ int32_t g_xformParamOff      = -1;   // the SpawnTransform param, the spawn pose
 ue_wrap::facts::Resolved g_finishSpawnFn;  // FinishSpawningActor, the keyed sandbox-menu seam
 int32_t g_finishReturnOff    = -1;       // FinishSpawningActor ReturnValue (the finished actor)
 bool    g_observerRegistered = false;  // also the permanent give-up latch
+bool    g_finishHookSettled  = false;  // independent of the optional ambient-prop observer
 bool    g_classesResolved    = false;
 
 // The ambient-prop class set (the pinecone spawner's outputs), resolved from the profile's
@@ -221,15 +224,25 @@ void OnSpawnPost(void* /*self*/, void* /*function*/, void* params) {
 // inside the take verb the key is still the placeholder (the load restores the saved key
 // after the finish; the take bracket exists for exactly this), and the hand's view actor has
 // not yet been written to the held slot, which the hand exclusion below needs. The drain, next
-// pump tick, adopts once the whole blueprint call has completed. One express attempt per
-// entry (the express latches the processed-init mark on first touch); a still-unkeyed actor
-// falls to the safety census.
+// pump tick, adopts once the whole blueprint call has completed. Unkeyed entries wait for
+// at most eight further passes; an early Init mark is retired only for an untracked, now
+// keyed host birth. Proven player-authored floor beds also initialize their missing native
+// key; other props keep the native key, without inventing an identity for their contents.
 struct PendingFinishedSpawn {
-    void*   actor = nullptr;
-    int32_t idx   = -1;
+    ue_wrap::CachedObjRef actor;
+    bool initializeFloorKey = false;
+    int tries = 0;
+    bool coastBirth = false;
+    PendingFinishedSpawn(void* a, bool floorKey, bool coast) : initializeFloorKey(floorKey), coastBirth(coast) { actor.Set(a); }
 };
 std::vector<PendingFinishedSpawn> g_pendingFinished;  // GT-only
 constexpr size_t kMaxPendingFinished = 128;           // runaway backstop (level-load bursts)
+uint64_t g_pendingEpoch = 0;
+bool g_draining = false;
+struct DrainScope {
+    DrainScope() { g_draining = true; }
+    ~DrainScope() { g_draining = false; }
+};
 
 void OnFinishSpawnFunc(void* /*context*/, void* /*srcObj*/, void* result) {
     if (!GT::IsGameThread()) return;
@@ -242,22 +255,49 @@ void OnFinishSpawnFunc(void* /*context*/, void* /*srcObj*/, void* result) {
     // expressing a mirror as a fresh world prop is the dupe.
     if (coop::prop_echo_suppress::IsMirrorSpawn(actor)) return;
     if (!ue_wrap::prop::IsDescendantOfProp(actor)) return;  // KEYED Aprop_C lineage only
-    // An actor the init seam already tracked has its row out; only a fall and a container's contents
-    // are left to give it, so it is queued when it can fall (a spawn-menu barrel takes that route) or
-    // is a container (a thrown one is rebound to its slot by its own loadData, and no verb marks it),
-    // and dropped here otherwise, which keeps every other tracked birth out of the queue and its cap.
-    const bool tracked = PT::GetPropElementIdForActor(actor) != coop::element::kInvalidId;
-    if (tracked &&
-        !(coop::prop_wire_parity::PhysFlagsOf(actor) & coop::net::propspawn_flags::kSimulatePhysics) &&
-        !ue_wrap::container_inventory::IsContainer(actor))
-        return;
+    const bool tracked = coop::element::Registry::Get().EidForActor(actor) != coop::element::kInvalidId;
+    // Init may already have enrolled this actor, but it deliberately publishes NO save data:
+    // the caller restores charge/uses only after FinishSpawningActor returns. Queue tracked
+    // actors as well so the next-tick drain can publish that final state without a second spawn.
     if (g_pendingFinished.size() >= kMaxPendingFinished) {
         UE_LOGW("host_spawn_watcher: pending-finished cap %zu hit -- dropping %p (%s)", kMaxPendingFinished,
                 actor, tracked ? "tracked: its fall and its contents are not given"
                                : "the safety census expresses it");
         return;
     }
-    g_pendingFinished.push_back(PendingFinishedSpawn{actor, R::InternalIndexOf(actor)});
+    const bool floorBirth = ue_wrap::floor_bed::IsFloorBed(actor) &&
+                           coop::prop_spawn_authoring::BirthIsPlayerAuthored();
+    // Breakable prop gibs use this common gameplay factory. Save loading has its
+    // own direct spawn path: never stream thousands of resting load-time props.
+    // Capture provenance now; the caller frame no longer exists at the drain.
+    const auto caller = ue_wrap::ufunction_hook::CurrentCallerFrame();
+    void* owner = caller.function ? R::OuterOf(caller.function) : nullptr;
+    const bool gameplayBirth = owner && R::NameEquals(R::NameOf(owner), P::name::GamemodeClass) &&
+        R::NameEquals(R::NameOf(caller.function), L"spawnPropThroughGamemode");
+    g_pendingFinished.emplace_back(actor, floorBirth, gameplayBirth);
+}
+
+void InstallKeyedFinish() {
+    if (g_finishHookSettled) return;
+    void* cls = ue_wrap::object_index::ClassByName(P::name::GameplayStaticsClass);
+    if (!cls) return; // boot/index backlog; cheap retry, never scan for unloaded content
+    g_finishHookSettled = true;
+    g_finishSpawnFn = ue_wrap::facts::ResolveOn(kRowFinishSpawningActor, cls);
+    if (!g_finishSpawnFn) {
+        UE_LOGE("host_spawn_watcher: FinishSpawningActor missing -- keyed births cannot be observed");
+        return;
+    }
+    g_finishReturnOff = R::FindParamOffset(g_finishSpawnFn.Fn(), L"ReturnValue");
+    const int frame = R::FunctionFrameSize(g_finishSpawnFn.Fn());
+    if (g_finishReturnOff < 0 || g_finishReturnOff > frame || sizeof(void*) > frame - g_finishReturnOff) {
+        UE_LOGE("host_spawn_watcher: FinishSpawningActor return layout invalid -- keyed birth hook disabled");
+        g_finishSpawnFn = {};
+        return;
+    }
+    if (ue_wrap::ufunction_hook::InstallPostHook(g_finishSpawnFn, &OnFinishSpawnFunc))
+        UE_LOGI("host_spawn_watcher: keyed FinishSpawningActor hook installed (independent of ambient props)");
+    else
+        UE_LOGE("host_spawn_watcher: keyed FinishSpawningActor hook FAILED -- check hook capacity");
 }
 
 }  // namespace
@@ -268,15 +308,17 @@ void SetSession(coop::net::Session* session) {
 
 void Install(coop::net::Session* session) {
     g_session.store(session, std::memory_order_release);
+    // Every keyed prop uses the finish hook. Missing pinecone/crystal assets, a
+    // missing ambient signature or a full POST observer table cannot disable it.
+    InstallKeyedFinish();
     if (g_observerRegistered) return;
 
-    // Throttle a retry to about once a second of the pump while GameplayStatics, or an ambient-prop
-    // class the lane mirrors, does not resolve: a class miss walks the whole array.
+    // Retry optional ambient binding about once a second; lookups use the live index.
     static int s_retry = 0;
     if (s_retry > 0) { --s_retry; return; }
 
     if (!g_beginDeferredFn) {
-        void* gsCls = R::FindClass(P::name::GameplayStaticsClass);
+        void* gsCls = ue_wrap::object_index::ClassByName(P::name::GameplayStaticsClass);
         if (!gsCls) { s_retry = 60; return; }
         g_beginDeferredFn = ue_wrap::facts::Resolve(kRowBeginDeferredSpawn);
         if (!g_beginDeferredFn) {
@@ -294,19 +336,6 @@ void Install(coop::net::Session* session) {
             g_observerRegistered = true;
             return;
         }
-        // The finish, the keyed sandbox-spawn seam on the same GameplayStatics class. Non-fatal if
-        // missing: the keyless pinecone detector on the deferred spawn is independent and still
-        // installs.
-        g_finishSpawnFn = ue_wrap::facts::Resolve(kRowFinishSpawningActor);
-        if (g_finishSpawnFn) {
-            g_finishReturnOff = R::FindParamOffset(g_finishSpawnFn.Fn(), L"ReturnValue");
-            if (g_finishReturnOff < 0) {
-                UE_LOGW("host_spawn_watcher: FinishSpawningActor ReturnValue param not found -- Q-menu keyed sync disabled");
-                g_finishSpawnFn = {};
-            }
-        } else {
-            UE_LOGW("host_spawn_watcher: FinishSpawningActor UFunction not found -- Q-menu keyed sync disabled");
-        }
     }
 
     // Resolve the ambient-prop classes. A partial result is fine (unresolved slots stay null and
@@ -315,7 +344,7 @@ void Install(coop::net::Session* session) {
         size_t resolved = 0;
         for (size_t i = 0; i < P::name::kAmbientPropSpawnMirrorClassesSize; ++i) {
             if (!g_propClasses[i])
-                g_propClasses[i] = R::FindClass(P::name::kAmbientPropSpawnMirrorClasses[i]);
+                g_propClasses[i] = ue_wrap::object_index::ClassByName(P::name::kAmbientPropSpawnMirrorClasses[i]);
             if (g_propClasses[i]) ++resolved;
         }
         if (resolved < P::name::kAmbientPropSpawnMirrorClassesSize) {
@@ -329,19 +358,6 @@ void Install(coop::net::Session* session) {
         UE_LOGE("host_spawn_watcher: RegisterPostObserver FAILED (observer table full?) -- disabled");
         g_observerRegistered = true;  // give up (don't retry a full table forever)
         return;
-    }
-    // The keyed spawn seam, the finish Func patch, non-fatal: the keyless pinecone detector above
-    // is independent, so a failure here leaves it working. It catches every dispatch route: the
-    // menu and toolgun route the old observer covered, and the EX_CallMath take route (the drop,
-    // the quick-slot place, the inventory drop) it could never see.
-    if (g_finishSpawnFn) {
-        if (ue_wrap::ufunction_hook::InstallPostHook(g_finishSpawnFn, &OnFinishSpawnFunc)) {
-            UE_LOGI("host_spawn_watcher: FinishSpawningActor Func-patched "
-                    "(keyed spawn seam, all dispatch routes -- drop/place spawns adopt next tick)");
-        } else {
-            UE_LOGW("host_spawn_watcher: FinishSpawningActor Func patch FAILED (table full?) "
-                    "-- keyed spawn seam off (pinecone keyless detector still active)");
-        }
     }
     g_observerRegistered = true;
     UE_LOGI("host_spawn_watcher: POST observer registered on %ls @ %p "
@@ -405,58 +421,112 @@ void CoastIfFalling(void* actor) {
 
 void DrainPendingSpawns(coop::net::Session* s) {
     UE_ASSERT_GAME_THREAD("host_spawn_watcher::DrainPendingSpawns");
-    if (g_pendingFinished.empty()) return;
+    if (g_pendingFinished.empty() || g_draining) return;
     if (!s || !s->connected() || s->role() != coop::net::Role::Host) {
         g_pendingFinished.clear();
         return;
     }
-    // A burst -- a spawn-menu pile, a container's loot -- is drained a few births a tick: each adopted
-    // birth captures and sends its save record, one Blueprint dispatch and a serialise, and every client
-    // lands those records on its own 8-a-frame apply budget. The rest wait in the queue, which each tick
-    // re-checks for liveness at its top; a straggler not keyed yet gets those ticks to key.
-    constexpr size_t kDrainPerTick = 8;
-    const size_t take = g_pendingFinished.size() < kDrainPerTick ? g_pendingFinished.size() : kDrainPerTick;
-    for (size_t i = 0; i < take; ++i) {
-        const PendingFinishedSpawn& e = g_pendingFinished[i];
-        if (!e.actor || !R::IsLiveByIndex(e.actor, e.idx)) continue;   // died before adopt
+    DrainScope scope;
+    std::vector<PendingFinishedSpawn> batch, keep;
+    batch.swap(g_pendingFinished);
+    const uint64_t epoch = g_pendingEpoch;
+    for (auto& e : batch) {
+        if (epoch != g_pendingEpoch) return;
+        void* actor = e.actor.Get();
+        if (!actor) continue;
+        const auto current = [&] {
+            return epoch == g_pendingEpoch && s->connected() &&
+                   s->role() == coop::net::Role::Host && e.actor.Get() == actor;
+        };
+        if (!current()) continue;
         // Marked as a mirror after our enqueue check: not ours.
-        if (coop::prop_echo_suppress::IsMirrorSpawn(e.actor)) continue;
+        if (coop::prop_echo_suppress::IsMirrorSpawn(actor)) continue;
         // The local hotbar hand actor, the hold update's view spawn: display-only while held, and
         // the hand edge in the hand-item module expresses it if and when it is released into the
         // world. Never adopted here.
-        if (e.actor == coop::hand_item::LocalHandActor()) continue;
-        // Tracked since the enqueue (the init seam expressed it first): someone owns its row, and
-        // only its fall and a container's contents are left to give it.
-        if (coop::element::Registry::Get().EidForActor(e.actor) != coop::element::kInvalidId) {
-            coop::props::container_birth::NoteHostBirth(e.actor);
-            CoastIfFalling(e.actor);
+        if (actor == coop::hand_item::LocalHandActor()) continue;
+        const auto publishFinalRecord = [&] {
+            const std::wstring key = ue_wrap::prop::GetInteractableKeyString(actor);
+            if (!current() || key.empty() || key == L"None" ||
+                coop::prop_echo_suppress::IsMirrorSpawn(actor) ||
+                actor == coop::hand_item::LocalHandActor()) return;
+            const auto id = coop::element::Registry::Get().EidForActor(actor);
+            const auto* owner = coop::element::Registry::Get().Get(id);
+            if (owner && !owner->IsMirror() && !owner->IsBeingDeleted())
+                coop::prop_save_data::Publish(s, actor, key);
+        };
+        const auto coastFinishedBirth = [&] {
+            // The factory/physicsImpact assigns velocities AFTER Finish returns.
+            // Enroll first, then stream debris until it settles at the host pose.
+            if (!e.coastBirth || !current() || coop::prop_echo_suppress::IsMirrorSpawn(actor) ||
+                coop::hand_item::IsHandAxisActor(actor) || ue_wrap::prop::IsStatic(actor) ||
+                ue_wrap::prop::IsFrozen(actor)) return;
+            const auto id = coop::element::Registry::Get().EidForActor(actor);
+            const auto* owner = coop::element::Registry::Get().Get(id);
+            if (owner && !owner->IsMirror() && !owner->IsBeingDeleted())
+                coop::prop_drive_host::Coast(actor, "gameplay birth");
+        };
+        const auto prior = coop::element::Registry::Get().EidForActor(actor);
+        if (prior != coop::element::kInvalidId) {
+            publishFinalRecord();
+            coastFinishedBirth();
             continue;
         }
-        // The one-shot canonical express (the filters, the key gate, the payload, the self-claim).
-        // It latches the processed-init mark on first touch, so this entry is spent regardless of
-        // outcome; a still-unkeyed straggler falls to the periodic safety census.
-        coop::prop_lifecycle::ExpressSpawnedProp(e.actor);
-        if (PT::GetPropElementIdForActor(e.actor) != coop::element::kInvalidId) {
+        if (e.initializeFloorKey) {
+            const bool ready = ue_wrap::floor_bed::EnsureKey(actor);
+            if (!current()) continue;
+            if (!ready) {
+                if (++e.tries <= 8) keep.push_back(e);
+                else UE_LOGW("host_spawn_watcher: floor bed key initialization failed after retries actor=%p", actor);
+                continue;
+            }
+        }
+        if (!current()) continue;
+        // Native getKey may re-enter another binder/hand/mirror seam.
+        if (coop::element::Registry::Get().EidForActor(actor) != coop::element::kInvalidId ||
+            coop::prop_echo_suppress::IsMirrorSpawn(actor) || actor == coop::hand_item::LocalHandActor())
+            continue;
+        // Container break drops restore loadData AFTER FinishSpawningActor. An earlier
+        // Init observer may have spent its dedupe mark before the final key existed,
+        // without enrolling anything. The finished-spawn queue is explicit provenance:
+        // retry only this live, host-owned, still-untracked actor after its key is ready.
+        const std::wstring finalKey = ue_wrap::prop::GetInteractableKeyString(actor);
+        if (!current()) continue;
+        if (finalKey.empty() || finalKey == L"None") {
+            if (++e.tries <= 8) keep.push_back(e);
+            continue;
+        }
+        // Key lookup can re-enter a binder; never clear a successfully enrolled actor's
+        // latch, nor publish a hand view or a mirror that appeared during that call.
+        if (coop::element::Registry::Get().EidForActor(actor) != coop::element::kInvalidId ||
+            coop::prop_echo_suppress::IsMirrorSpawn(actor) || actor == coop::hand_item::LocalHandActor())
+            continue;
+        PT::UnmarkProcessedInit(actor);
+        coop::prop_lifecycle::ExpressSpawnedProp(actor);
+        if (!current()) continue;
+        if (PT::GetPropElementIdForActor(actor) != coop::element::kInvalidId) {
+            // A spawn's saved fields are often filled after FinishSpawningActor returns. The
+            // deferred drain runs after that Blueprint call, so publish the actual record beside
+            // the identity express (not class defaults). This matters for a host-ejected disc
+            // whose data is loaded from its slot JSON after spawn.
+            publishFinalRecord();
+            coastFinishedBirth();
+            if (!current()) continue;
             UE_LOGI("host_spawn_watcher: spawn-seam adopted %p eid=%u (FinishSpawningActor "
-                    "Func seam -- drop/place visible to peers this tick)",
-                    e.actor,
-                    static_cast<unsigned>(PT::GetPropElementIdForActor(e.actor)));
-            // The record behind the row. The express above carries identity only, and a birth
-            // sets its state AFTER FinishSpawningActor, in the same Blueprint call: a device's
-            // eject loadDatas the disc from its slot JSON and writes its rows and read-writes
-            // there. That call has returned by this drain, so the record is the real one. Without
-            // it every client got the class default -- #39's report, run 1: nine of nine discs the
-            // host ejected read EMPTIED on the client and INTACT on the host.
-            coop::prop_save_data::PublishHostBirth(s, e.actor);
-            // A container's contents are not in that record: its own lane publishes them.
-            coop::props::container_birth::NoteHostBirth(e.actor);
-            CoastIfFalling(e.actor);
+                    "Func seam -- drop/place and saved state visible to peers this tick)",
+                    actor,
+                    static_cast<unsigned>(PT::GetPropElementIdForActor(actor)));
         }
     }
-    g_pendingFinished.erase(g_pendingFinished.begin(), g_pendingFinished.begin() + static_cast<std::ptrdiff_t>(take));
+    if (epoch != g_pendingEpoch) return;
+    for (auto& e : keep) {
+        if (g_pendingFinished.size() < kMaxPendingFinished) g_pendingFinished.push_back(e);
+        else UE_LOGW("host_spawn_watcher: pending finished-spawn retry cap reached actor=%p", e.actor.Raw());
+    }
 }
 
 void OnDisconnect() {
+    ++g_pendingEpoch;
     g_watched.clear();
     g_pendingFinished.clear();
     g_session.store(nullptr, std::memory_order_release);

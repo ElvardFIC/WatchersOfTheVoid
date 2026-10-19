@@ -136,6 +136,14 @@ bool WatchName(const facts::Function& row, int tag, PreFn pre, PostFn post) {
     return ok;
 }
 
+bool WatchName(const wchar_t* name, int tag, PreFn pre, PostFn post) {
+    return WatchNameScoped(nullptr, name, tag, pre, post);
+}
+
+bool WatchClassName(const wchar_t* className, const wchar_t* name, int tag, PreFn pre, PostFn post) {
+    return WatchNameScoped(className, name, tag, pre, post);
+}
+
 bool UnwatchName(const facts::Function& row, int tag, PreFn pre, PostFn post) {
     const wchar_t* cls = nullptr;
     return ScopeOf(row, cls) && UnwatchNameScoped(cls, row.Name(), tag, pre, post);
@@ -144,6 +152,18 @@ bool UnwatchName(const facts::Function& row, int tag, PreFn pre, PostFn post) {
 bool NameWatchLive(const facts::Function& row, int tag) {
     const wchar_t* cls = nullptr;
     return ScopeOf(row, cls) && ScopedWatchLive(cls, row.Name(), tag);
+}
+
+bool NameWatchLive(const wchar_t* name, int tag) {
+    return ScopedWatchLive(nullptr, name, tag);
+}
+
+bool ClassNameWatchLive(const wchar_t* className, const wchar_t* name, int tag) {
+    return ScopedWatchLive(className, name, tag);
+}
+
+bool ClassNameWatchSettled(const wchar_t* className, const wchar_t* name, int tag) {
+    return ScopedWatchSettled(className, name, tag);
 }
 
 bool NameWatchSettled(const facts::Function& row, int tag) {

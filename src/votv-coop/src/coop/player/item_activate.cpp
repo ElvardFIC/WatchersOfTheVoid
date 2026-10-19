@@ -14,6 +14,7 @@
 #include "coop/player/remote_player.h"
 #include "coop/config/config.h"
 #include "ue_wrap/engine/engine.h"
+#include "ue_wrap/engine/world_identity.h"
 #include "ue_wrap/core/game_thread.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
@@ -51,6 +52,8 @@ UE_FACT_FN(kRowFlashlightInput14, "item_activate", L"mainPlayer_C",
 UE_FACT_FN(kRowTimerHoldFlashlight, "item_activate", L"mainPlayer_C", L"timerHoldFlashlight", Declared);
 
 bool g_installed = false;
+uint64_t g_nextStatePoll = 0;
+uint32_t g_pollWorld = 0;
 
 // The candidate UFunctions of the flashlight chain, resolved once. updateFlashlight is
 // BP-inlined into Flashlight Update and never reaches ProcessEvent, so every candidate gets an
@@ -136,7 +139,7 @@ bool BuildPayloadFromLocal(void* mp, coop::net::ItemActivatePayload& out, coop::
         out.senderElementId =
             (selfEid == coop::element::kInvalidId) ? 0u : selfEid;
     }
-    out.state           = fl.flashlight ? 1 : 0;
+    out.state           = fl.flashlight && fl.hasFlashlight && !fl.crankFlashlight && snap.visible ? 1 : 0;
     out.flags           = 0;  // no actor key
     out.mode            = fl.mode;
     out.actorKeyHash    = 0;
@@ -200,23 +203,8 @@ void OnUpdateFlashlightPost(void* self, void* function, void* /*params*/) {
                 snapOk ? snap.intensity : -1.f);
     }
 
-    // The crank lantern (_c) toggles its own light components, not the player's light_R; it is not
-    // sent.
-    if (crankFlashlight) {
-        if (ProbeLogEnabled()) {
-            UE_LOGI("flashlight: crank lantern (_c) -- nothing sent");
-        }
-        return;
-    }
-
-    // No send when the BP guard early-returned for no equipped flashlight, or a recook that always
-    // sets the bool on F would ship spurious activations.
-    if (!hasFlashlight) {
-        if (ProbeLogEnabled()) {
-            UE_LOGI("flashlight: hasFlashlight=false -- BP early-returned, no wire send");
-        }
-        return;
-    }
+    // Missing/replaced equipment must publish OFF to clear a previously lit puppet.
+    // BuildPayloadFromLocal leaves the crank lantern's separate light out of this lane.
 
     // The "on" intensity latches the first time it reads clearly above the off sentinel (about 0.2
     // Unitless); above 1.0 filters the sentinel.
@@ -567,6 +555,21 @@ void ReplayPeerStatesToSlot(int newSlot) {
 }
 
 void TickConnect() {
+    // Battery exhaustion clears flashlight/light_R directly inside the native Tick,
+    // bypassing the input UFunctions observed above. Four small reads per second;
+    // the existing signature sends only changes and retries a refused send.
+    auto* session = g_session.load(std::memory_order_acquire);
+    const uint64_t now = GetTickCount64();
+    const uint32_t world = ue_wrap::world_identity::Generation();
+    if (world != g_pollWorld) {
+        g_pollWorld = world; g_nextStatePoll = 0;
+        g_lastSentSig.store(kNoSendYet, std::memory_order_release);
+        g_latchedOnIntensity.store(0.f, std::memory_order_release);
+    }
+    if (session && session->connected() && g_flashlightClassHash && now >= g_nextStatePoll) {
+        g_nextStatePoll = now + 250;
+        OnUpdateFlashlightPost(coop::players::Registry::Get().Local(), nullptr, nullptr);
+    }
 
     // The pending applies drain once the registry has a live puppet for the slot.
     for (uint8_t peer = 0; peer < coop::players::kMaxPeers; ++peer) {
@@ -586,6 +589,10 @@ void TickConnect() {
 }
 
 void OnDisconnect() {
+    g_session.store(nullptr, std::memory_order_release);
+    g_nextStatePoll = 0; g_pollWorld = 0;
+    g_lastSentSig.store(kNoSendYet, std::memory_order_release);
+    g_latchedOnIntensity.store(0.f, std::memory_order_release);
     int clearedApplies = 0;
     for (uint8_t i = 0; i < coop::players::kMaxPeers; ++i) {
         if (g_pendingApplyValid[i]) ++clearedApplies;

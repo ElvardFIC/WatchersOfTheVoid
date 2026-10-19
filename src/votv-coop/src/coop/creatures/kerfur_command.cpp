@@ -3,7 +3,7 @@
 
 #include "coop/creatures/kerfur_command.h"
 
-#include "coop/creatures/npc_sync.h"          // GetNpcIdForActor (host eid for the host's own menu use)
+#include "coop/creatures/npc_sync.h"          // GetNpcIdForActor; NoteKerfurHolding so a take is not a throw
 #include "coop/creatures/served_player.h"
 #include "coop/element/mirror_manager.h"
 #include "coop/element/npc.h"
@@ -11,22 +11,36 @@
 #include "coop/net/intent_queue.h"
 #include "coop/net/net_clock.h"
 #include "coop/net/protocol.h"
-#include "coop/net/refusal_tally.h"
+#include "coop/net/wire_key_util.h"
+#include "coop/props/prop_drive_host.h"
+#include "coop/props/prop_element_tracker.h"
+#include "coop/props/prop_wire_parity.h"
 #include "coop/net/session.h"
+#include "coop/player/hand_item.h"
+#include "coop/player/local_streams.h"
 #include "coop/player/players_registry.h"  // Local() / kPeerIdHost
 #include "coop/player/remote_player.h"
-#include "coop/player/roster_ledger.h"     // PerSlotState
+#include "coop/player/roster_ledger.h"
+#include "coop/props/remote_prop.h"
+#include "ue_wrap/actors/inventory.h"
 #include "ue_wrap/actors/kerfur.h"
+#include "ue_wrap/actors/prop.h"
+#include "ue_wrap/engine/engine.h"
+#include "ue_wrap/core/fname_utils.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
+#include "ue_wrap/core/reflected_offset.h"
 #include "ue_wrap/core/script_gate.h"
 #include "ue_wrap/core/sdk_profile.h"
-#include "ue_wrap/facts/function_row.h"
+#include "ue_wrap/engine/engine_attach.h"
+#include "ue_wrap/engine/engine_mainplayer.h"
+#include "ue_wrap/engine/engine_pawn.h"
 
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <mutex>
+#include <string>
 #include <vector>
 
 namespace coop::kerfur_command {
@@ -101,6 +115,9 @@ const wchar_t* VerbName(Command c) {
         case Command::FixServers:      return L"fix_servers";
         case Command::GetReports:      return L"get_reports";
         case Command::FixTransformers: return L"fix_transformers";
+        case Command::TakeObject:      return L"take_object";
+        case Command::Pat:             return L"pat";
+        case Command::Equipment:       return L"equipment";
         default:                       return nullptr;
     }
 }
@@ -153,14 +170,163 @@ bool OnAJob(void* actor) {
     return K::ReadKerfurState(actor, state, spooky, face) && state >= 3 && state <= 5;
 }
 
+void* PlayerBody(uint8_t slot);
+
+// kerfurOmega_C::viewer, the object equipment assigns. Null when the field is absent or empty.
+void* KerfurViewer(void* actor) {
+    static int32_t off = -2;
+    if (off == -2) {
+        void* cls = R::FindClass(L"kerfurOmega_C");
+        off = cls ? R::FindPropertyOffset(cls, L"viewer") : -1;
+    }
+    if (!actor || off < 0 || !R::IsLive(actor)) return nullptr;
+    void* v = *reinterpret_cast<void**>(static_cast<uint8_t*>(actor) + off);
+    return (v && R::IsLive(v)) ? v : nullptr;
+}
+
+// The hand the verb can see, staged onto the puppet and put back afterwards. The host player's hand
+// is never the source: a client's get_reports must not take the disc the host is holding.
+struct StagedHand {
+    void* pawn = nullptr;
+    void* prevHold = nullptr;
+    void* prevGrab = nullptr;
+    R::FName prevName{};
+    bool wrote = false;
+    void* mirror = nullptr;
+    int32_t mirrorIdx = -1;
+    char cls[64]{};
+};
+
+int32_t HoldingNameOff() {
+    static int32_t off = -2;
+    if (off != -2) return off;
+    void* cls = R::FindClass(L"mainPlayer_C");
+    off = cls ? R::FindPropertyOffset(cls, L"holding_name") : -1;
+    return off;
+}
+
+void WritePtr(void* pawn, int32_t off, void* value) {
+    if (!pawn || off < 0) return;
+    *reinterpret_cast<void**>(static_cast<uint8_t*>(pawn) + off) = value;
+}
+
+void* ReadPtr(void* pawn, int32_t off) {
+    if (!pawn || off < 0) return nullptr;
+    return *reinterpret_cast<void**>(static_cast<uint8_t*>(pawn) + off);
+}
+
+void RememberClass(StagedHand& s, void* actor);
+
+void StageHand(uint8_t slot, StagedHand& s, bool preferWorld) {
+    if (slot == coop::players::kPeerIdHost) return;
+    void* pawn = PlayerBody(slot);
+    if (!pawn || !R::IsLive(pawn)) return;
+    s.pawn = pawn;
+    const int32_t holdOff = ue_wrap::reflected_offset::MainPlayer_holding_actor();
+    const int32_t grabOff = ue_wrap::reflected_offset::MainPlayer_grabbing_actor();
+    s.prevHold = ReadPtr(pawn, holdOff);
+    s.prevGrab = ReadPtr(pawn, grabOff);
+    if (HoldingNameOff() >= 0)
+        s.prevName = *reinterpret_cast<R::FName*>(static_cast<uint8_t*>(pawn) + HoldingNameOff());
+    void* mirror = coop::hand_item::MirrorActorForSlot(slot);
+    void* world = coop::remote_prop::DrivenActor(static_cast<int>(slot));
+    if (world == coop::local_streams::LastHeldActor()) world = nullptr;
+    if (preferWorld && world && R::IsLive(world)) {
+        WritePtr(pawn, holdOff, world);
+        RememberClass(s, world);
+    } else if (mirror && R::IsLive(mirror)) {
+        WritePtr(pawn, holdOff, mirror);
+        const std::wstring item = coop::hand_item::HeldItem(slot);
+        if (!item.empty() && HoldingNameOff() >= 0) {
+            const R::FName n = ue_wrap::fname_utils::StringToFName(item);
+            *reinterpret_cast<R::FName*>(static_cast<uint8_t*>(pawn) + HoldingNameOff()) = n;
+        }
+        s.mirror = mirror;
+        s.mirrorIdx = R::InternalIndexOf(mirror);
+        RememberClass(s, mirror);
+    } else if (world) {
+        WritePtr(pawn, holdOff, world);
+        RememberClass(s, world);
+    }
+    if (world && world != mirror) WritePtr(pawn, grabOff, world);
+    s.wrote = true;
+}
+
+void RestoreHand(StagedHand& s) {
+    if (!s.wrote || !s.pawn || !R::IsLive(s.pawn)) return;
+    const int32_t holdOff = ue_wrap::reflected_offset::MainPlayer_holding_actor();
+    const int32_t grabOff = ue_wrap::reflected_offset::MainPlayer_grabbing_actor();
+    WritePtr(s.pawn, holdOff, (s.prevHold && R::IsLive(s.prevHold)) ? s.prevHold : nullptr);
+    WritePtr(s.pawn, grabOff, (s.prevGrab && R::IsLive(s.prevGrab)) ? s.prevGrab : nullptr);
+    if (HoldingNameOff() >= 0)
+        *reinterpret_cast<R::FName*>(static_cast<uint8_t*>(s.pawn) + HoldingNameOff()) = s.prevName;
+}
+
+void RememberClass(StagedHand& s, void* actor) {
+    if (!actor || s.cls[0]) return;
+    const std::wstring cn = R::ClassNameOf(actor);
+    size_t i = 0;
+    for (wchar_t ch : cn) {
+        if (i + 1 >= sizeof(s.cls) || ch <= 0 || ch >= 128) break;
+        s.cls[i++] = static_cast<char>(ch);
+    }
+}
+
+// The host telling every peer that the robot took `actor`. The holder's own let-go may still
+// be in flight with a zero pad; receivers that have seen this one leave physics off either way.
+// Velocities stay zero: this is the take, not a throw. holdGen 0 does not close the host's own
+// hold counter -- the receiver ends whichever drive still has this prop.
+void PublishKerfurTake(void* actor) {
+    auto* session = LoadSession();
+    if (!session || !actor || !R::IsLive(actor)) return;
+    coop::net::PropReleasePayload rel{};
+    const std::wstring key = ue_wrap::prop::GetInteractableKeyString(actor);
+    if (!key.empty() && key != L"None") coop::net::WireKeyFromString(key, rel.key);
+    const auto eid = coop::prop_element_tracker::GetPropElementIdForActor(actor);
+    if (eid != coop::element::kInvalidId) rel.elementId = static_cast<uint32_t>(eid);
+    if (rel.key.len == 0 && rel.elementId == 0) return;
+    rel.physFlags = coop::prop_wire_parity::PhysFlagsOf(actor);
+    ue_wrap::FVector loc{};
+    ue_wrap::FRotator rot{};
+    if (ue_wrap::engine::TryGetActorLocation(actor, loc) &&
+        ue_wrap::engine::TryGetActorRotation(actor, rot)) {
+        rel.locX = loc.X; rel.locY = loc.Y; rel.locZ = loc.Z;
+        rel.rotPitch = rot.Pitch; rel.rotYaw = rot.Yaw; rel.rotRoll = rot.Roll;
+        rel.hasPose = 1;
+    }
+    rel._pad = 1;
+    session->SendPropRelease(rel);
+}
+
+void NotifyHandTaken(uint8_t slot, const StagedHand& s) {
+    if (!s.cls[0]) return;
+    auto* session = LoadSession();
+    if (!session) return;
+    coop::net::HandTakenPayload p{};
+    for (size_t i = 0; s.cls[i] && i < sizeof(p.cls.data); ++i) {
+        p.cls.data[i] = s.cls[i];
+        p.cls.len = static_cast<uint8_t>(i + 1);
+    }
+    session->SendReliableToSlot(static_cast<int>(slot), coop::net::ReliableKind::HandTaken, &p, sizeof(p));
+}
+
+// The body the verb's Player argument should name. The host is its own pawn. A client is the puppet
+// the host already has for that slot: take_object and equipment read that argument, not player 0.
+void* PlayerBody(uint8_t slot) {
+    if (slot == coop::players::kPeerIdHost) return coop::players::Registry::Get().Local();
+    coop::RemotePlayer* rp = coop::players::Registry::Get().Puppet(slot);
+    return (rp && rp->valid()) ? rp->actor() : nullptr;
+}
+
 // Apply a command to the host's real kerfur (eid already resolved + validated): the game's own verb, with
 // the kerfur serving its requester -- its player-0 reads answered with that player's puppet by
-// served_player, the host's own command handing it back to player 0. The verbs read no Player parameter
-// (only take_object and equipment do, which are not relayed), so the host's player stands in.
+// served_player, the host's own command handing it back to player 0. take_object, pat and equipment
+// are also handed that body as Player.
 void ExecuteHostCommand(ElementId eid, void* actor, Command c, uint8_t requesterSlot) {
     const wchar_t* verb = VerbName(c);
     if (!verb) return;
-    if (OnAJob(actor)) {
+    // Equipment is the one verb the busy menu still offers. The job guard would refuse it.
+    if (c != Command::Equipment && OnAJob(actor)) {
         UE_LOGI("kerfur_command: verb '%ls' eid=%u from slot %u refused -- the kerfur is on a job (SP parity)",
                 verb, eid, requesterSlot);
         return;
@@ -178,13 +344,62 @@ void ExecuteHostCommand(ElementId eid, void* actor, Command c, uint8_t requester
         serves = coop::players::kPeerIdHost;  // a refused seam is said by served_player
         SP::Unserve(actor);
     }
-    if (!HostRunVerb(actor, coop::players::Registry::Get().Local(), verb)) {
+    void* player = coop::players::Registry::Get().Local();
+    if (c == Command::TakeObject || c == Command::Pat || c == Command::Equipment) {
+        if (void* who = PlayerBody(requesterSlot)) player = who;
+    }
+    const bool needsHand = c == Command::TakeObject || c == Command::Equipment || c == Command::GetReports;
+    bool hadFloppy = false;
+    if (c == Command::GetReports) K::ReadHasFloppy(actor, hadFloppy);
+    void* heldBefore = (c == Command::TakeObject) ? K::ReadHoldObject(actor) : nullptr;
+    void* viewerBefore = (c == Command::Equipment) ? KerfurViewer(actor) : nullptr;
+    StagedHand staged;
+    if (needsHand) StageHand(requesterSlot, staged, c == Command::TakeObject);
+    if (!HostRunVerb(actor, player, verb)) {
+        RestoreHand(staged);
         const bool restored = before != coop::players::kPeerIdHost && SP::Serve(actor, before, kOmegaSeams);
         if (!restored) SP::Unserve(actor);
         UE_LOGW("kerfur_command: verb '%ls' eid=%u did not run -- the kerfur serves slot %u", verb, eid,
                 static_cast<unsigned>(restored ? before : coop::players::kPeerIdHost));
         return;
     }
+    // The function running is not the game accepting the item. Clear the client's hand only when
+    // the robot actually took it: the display copy died, a reports disc appeared, take-object now
+    // points at something, or equipment assigned a viewer.
+    // Only when this command really served the asker. If the serve fell back to the host, the
+    // verb read the host's own hand, and clearing the client's item would spend the wrong disc.
+    bool took = false;
+    if (c == Command::TakeObject) {
+        void* heldNow = K::ReadHoldObject(actor);
+        if (heldNow && heldNow != heldBefore) {
+            // The host's own give never stages a hand, so the note must not sit inside that gate.
+            // The let-go otherwise coasts the prop as a throw. Freeze it on the robot first.
+            ue_wrap::engine::SetActorSimulatePhysics(heldNow, false);
+            coop::npc_sync::NoteKerfurHolding(heldNow);
+            // A client's pose stream still owns the prop, so Claim refuses until that drive ends.
+            // Close it here, and tell every peer the take already happened, before the holder's
+            // own let-go can arrive as a throw. The host's give has no staged hand: its release
+            // edge already carries the pad, because the note above is set first.
+            if (staged.wrote && serves == requesterSlot) {
+                coop::remote_prop::EndAnyHoldOn(heldNow);
+                PublishKerfurTake(heldNow);
+                took = true;
+            }
+            coop::prop_drive_host::Claim(heldNow, "kerfur-take");
+        }
+    }
+    if (staged.wrote && serves == requesterSlot) {
+        if (staged.mirror && !R::IsLiveByIndex(staged.mirror, staged.mirrorIdx)) took = true;
+        bool hasFloppy = false;
+        if (c == Command::GetReports && K::ReadHasFloppy(actor, hasFloppy) && hasFloppy && !hadFloppy)
+            took = true;
+        if (c == Command::Equipment) {
+            void* viewerNow = KerfurViewer(actor);
+            if (viewerNow && viewerNow != viewerBefore) took = true;
+        }
+    }
+    if (took) NotifyHandTaken(requesterSlot, staged);
+    RestoreHand(staged);
     UE_LOGI("kerfur_command: HOST ran verb '%ls' eid=%u (requester slot %u, serving slot %u)", verb, eid,
             requesterSlot, static_cast<unsigned>(serves));
 }
@@ -236,7 +451,11 @@ void RunRequest(const coop::net::KerfurCommandPayload& payload, uint8_t senderPe
         return;
     }
     if (K::ReadKill(actor)) {  // the BP's own actionName guard (a murderfur refuses the menu)
-        RefuseAtServe(senderPeerSlot, "kill mode (SP parity)");
+        UE_LOGI("kerfur_command: command eid=%u denied -- kerfur is in kill mode (SP parity)", payload.elementId);
+        return;
+    }
+    if (payload.command > static_cast<uint8_t>(Command::Equipment)) {
+        UE_LOGW("kerfur_command: unknown command=%u eid=%u -- dropped", payload.command, payload.elementId);
         return;
     }
     ExecuteHostCommand(eid, actor, static_cast<Command>(payload.command), senderPeerSlot);
@@ -271,7 +490,10 @@ Command CommandFromActionName(const std::wstring& name) {
     if (name == L"fix_servers")      return Command::FixServers;
     if (name == L"get_reports")      return Command::GetReports;
     if (name == L"fix_transformers") return Command::FixTransformers;
-    return Command::Invalid;  // turn_off (kerfur_convert) / take_object / equipment / pat
+    if (name == L"take_object")      return Command::TakeObject;
+    if (name == L"pat")              return Command::Pat;
+    if (name == L"equipment")        return Command::Equipment;
+    return Command::Invalid;  // turn_off (kerfur_convert)
 }
 
 bool TryRecordMenuCommand(void* self, const std::wstring& name, bool isClient) {
@@ -284,7 +506,17 @@ bool TryRecordMenuCommand(void* self, const std::wstring& name, bool isClient) {
     pc.internalIdx = R::InternalIndexOf(self);
     pc.command = CommandFromActionName(name);
     pc.isClient = isClient;
-    { std::lock_guard<std::mutex> lk(g_qMutex); g_queue.push_back(pc); }
+    {
+        std::lock_guard<std::mutex> lk(g_qMutex);
+        // The radial confirm records the verb, then actionName's interceptor records it again
+        // in the same press. One entry: the host would otherwise pat or take the object twice.
+        if (!g_queue.empty()) {
+            const PendingCmd& last = g_queue.back();
+            if (last.actor == pc.actor && last.command == pc.command && last.isClient == pc.isClient)
+                return true;
+        }
+        g_queue.push_back(pc);
+    }
     return true;  // cancel the local dispatch on BOTH roles -- the host runs it authoritatively
 }
 
@@ -380,6 +612,53 @@ uint32_t RefusedFor(int slot) { return slot >= 1 && slot < coop::players::kMaxPe
 void OnDisconnect() {
     { std::lock_guard<std::mutex> lk(g_qMutex); g_queue.clear(); }
     g_tally.Clear();
+}
+
+void OnHandTaken(const coop::net::HandTakenPayload& payload) {
+    if (payload.cls.len == 0) return;
+    std::wstring want;
+    const uint8_t n = payload.cls.len < sizeof(payload.cls.data)
+                          ? payload.cls.len
+                          : static_cast<uint8_t>(sizeof(payload.cls.data));
+    for (uint8_t i = 0; i < n; ++i)
+        want.push_back(static_cast<wchar_t>(static_cast<unsigned char>(payload.cls.data[i])));
+    void* me = coop::players::Registry::Get().Local();
+    if (!me) return;
+    ue_wrap::engine::MainPlayerGrabState gs{};
+    if (!ue_wrap::engine::ReadMainPlayerGrabState(me, gs)) return;
+    // Both slots can be set, and either one can be the class the host staged. A miss on the
+    // hotbar used to return while a physics grab of that class kept streaming.
+    const bool holdMatch = gs.holdingActor && ue_wrap::reflection::IsLive(gs.holdingActor) &&
+                           ue_wrap::reflection::ClassNameOf(gs.holdingActor) == want;
+    const bool grabMatch = gs.grabbingActor && ue_wrap::reflection::IsLive(gs.grabbingActor) &&
+                           ue_wrap::reflection::ClassNameOf(gs.grabbingActor) == want;
+    if (!holdMatch && !grabMatch) return;
+    // The release edge is the next stream tick. Arm only the physics grab: that is the actor
+    // the held-prop stream lets go of. A hotbar mirror is destroyed below, and arming it would
+    // keep the dead address. A later prop allocated there would let go as a kerfur take.
+    if (grabMatch) coop::local_streams::ArmKerfurTakeRelease(gs.grabbingActor);
+    if (holdMatch && gs.holdingActor != gs.grabbingActor) {
+        // The hotbar actor is a local hand mirror. updateHold rebuilds it from the slot, and
+        // anything that survives that is destroyed, the same as before.
+        ue_wrap::inventory::WriteHeldItem(L"None", nullptr);
+        ue_wrap::engine::CallMainPlayerUpdateHold(me);
+        if (ue_wrap::reflection::IsLive(gs.holdingActor))
+            ue_wrap::engine::DestroyActor(gs.holdingActor);
+    } else if (holdMatch) {
+        // The same world prop is in both slots. Destroying it would delete the copy the host's
+        // kerfur is now carrying. Clear the slot so the stream does not fall back onto it.
+        WritePtr(me, ue_wrap::reflected_offset::MainPlayer_holding_actor(), nullptr);
+    }
+    if (grabMatch) {
+        // dropGrabObject also applies the throw impulse. The handle release is the let-go
+        // without that impulse: grabbing_actor clears, and the next tick stops the stream.
+        // The body was simulating under the handle, so freeze it or this machine watches
+        // the copy fall until the host's kerfur drive arrives.
+        void* grabbed = gs.grabbingActor;
+        ue_wrap::engine::ReleaseMainPlayerGrabIfHolding(me, grabbed);
+        if (ue_wrap::reflection::IsLive(grabbed))
+            ue_wrap::engine::SetActorSimulatePhysics(grabbed, false);
+    }
 }
 
 }  // namespace coop::kerfur_command

@@ -1,6 +1,6 @@
 // coop/world/world_actor_sync.h -- the host-authoritative mirror of the non-character event
 // actors (saucers, ships, the sky UFO, the space jellyfish) that fly in on events. The
-// character-only NPC mirror cannot replicate them: it drives position, yaw-only rotation and
+// character-only NPC mirror cannot replicate them: it drives position, rotation and
 // the character movement component. So this is a self-contained sibling of the NPC sync: its
 // own world-actor element (transform only, full rotation), its own mirror manager, its own
 // wire (a reliable spawn and destroy, an unreliable pose batch), and its own second

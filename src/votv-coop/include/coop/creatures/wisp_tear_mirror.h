@@ -8,7 +8,7 @@
 // Native ragdoll death, then the menu, then rejoin.
 //
 // OnWispTear reaches every peer, and the host calls it locally because it never receives its own
-// broadcast: play the fatality tear on the LOCAL wisp mirror by forcing its parked mesh to tick
+// broadcast: play the fatality tear on the LOCAL wisp by forcing its parked mesh to tick
 // and playing the montage, which the mirror never runs itself. PlayTearOnWisp is that core.
 //
 // Body placement across the grab window belongs to coop::wisp_grab_hold. The limb gibs and the
@@ -28,17 +28,18 @@ namespace coop::wisp_tear_mirror {
 // VICTIM receiver (host to the victim's slot). Verifies the packet addresses our own Player
 // Element id, engages the local grab hold for the window, and arms the ragdoll death at the
 // host's delay, clamped to a sane range. Game thread.
-void OnWispGrab(const coop::net::WispGrabPayload& p);
+void OnWispGrab(const coop::net::WispGrabPayload& p, uint8_t senderPeerSlot);
 
 // ALL-peers receiver (host to all). Resolves the local wisp mirror by wispElementId, plays the
 // tear on it, and holds the victim's puppet at its socket on every peer but the victim's own.
 // Game thread.
-void OnWispTear(const coop::net::WispTearPayload& p);
+void OnWispTear(const coop::net::WispTearPayload& p, uint8_t senderPeerSlot);
 
 // Shared tear core: force the wisp mesh to tick, then play the fatality montage on it. Used by
-// OnWispTear on the resolved mirror AND by the host's wisp_attack_sync directly on its own wisp.
+// OnWispTear on the resolved actor, including the host's local delivery.
 // `victimSlot` is logged, not acted on -- the hold is wisp_grab_hold's. Game thread.
-void PlayTearOnWisp(void* wispActor, uint32_t victimSlot);
+// Returns false if the actor or animation is not ready; receivers retry within the grab window.
+bool PlayTearOnWisp(void* wispActor, uint32_t victimSlot);
 
 // Per-tick: release the grab ride and discharge the armed victim ragdoll death once its deadline
 // elapses. No-op until armed. Game thread (ragdollMode is a UFunction call).

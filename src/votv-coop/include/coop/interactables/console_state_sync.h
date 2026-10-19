@@ -11,7 +11,7 @@
 // diff of the coord log text, complete lines only, the self-regenerating cooldown lines
 // filtered; receivers append through writeToCoordLog_2 and advance their own baseline past
 // the applied text. Dish aim (DishAimState): the committed coordinate locks and the direction
-// toggle, sent by the desk-claim holder on change; receivers raw-write and repaint. Game
+// toggle plus visual progress, delegated to desk_visual_sync (host canonical). Game
 // thread throughout: Tick from the gameplay tick, the wire ingest from the event feed drain.
 
 #pragma once
@@ -35,7 +35,7 @@ void Tick();
 // Wire ingest. The catch message ingests in coop/interactables/signal_catch_sync.
 void OnSkySignalState(const coop::net::SkySignalStatePayload& p);
 void OnDeskState(const coop::net::DeskStatePayload& p);
-void OnDishAim(const coop::net::DishAimStatePayload& p, uint8_t senderSlot);
+void OnDishAim(const coop::net::DeskVisualPayload& p, uint8_t senderSlot);
 void OnDeskLogLine(const coop::net::DeskLogLinePayload& p, uint8_t senderSlot);
 
 // Host: send the current sky snapshot, the desk scalars as an adopt and the committed dish

@@ -10,8 +10,8 @@
 // unconditionally at every world load, so the zeroed count self-heals and can never poison a
 // save; and the client REPLAYS the same native verb for allowlisted rows only, which is our own
 // per-row policy -- it and its reasoning are in docs/events-and-weather.md.
-// One owner: this module owns the whole scheduled-event authority axis -- suppression,
-// observation, the native-fire primitive and replay. The F1 dev menu (coop/dev/event_trigger)
+// This module owns observation, the native-fire primitive and replay; it installs
+// event_schedule_authority for the common client schedule hold. The F1 dev menu (coop/dev/event_trigger)
 // dispatches THROUGH HostFire, so dev depends on coop/world and never the reverse.
 
 #pragma once
@@ -22,6 +22,7 @@
 namespace coop::net {
 class Session;
 struct EventFirePayload;
+struct EventGatherPayload;
 }  // namespace coop::net
 
 namespace coop::event_fire_sync {
@@ -32,11 +33,19 @@ enum class FireKind : uint8_t {
     SpecialEvent = 1,  // trigger_eventer.runSpecialEvent(name)
 };
 
-// Game-thread pump: cache the session, register both host watches, drain pending replays and
-// hold the client's allEvents.Num at zero before the cycle tick. This prevents settime from
-// firing local scheduled events on a received clock sample. Disconnect restores the list.
-// Trigger-volume scares remain per viewer; host menu, scheduler and prank fires emit through
-// the same watches. A repeated scheduled row still meets the client's replayed-set dedupe.
+// Register the host's runEvent watch and the client's class-qualified saveSlot.settime
+// hold. Every route into settime holds allEvents empty before the scheduler walk:
+// clock ticks, Blueprint-internal boot calls and reflected updates alike. Time still
+// updates normally. Restored on disconnect while the same object/array survives.
+// Called every pump tick by the install fanout. Game thread.
+//
+// Three classes of fire the watch leaves alone, all deliberate. A trigger-volume fire (bedEvent,
+// a scare armed by TBoxActivator) executes per-peer natively when THAT peer overlaps, which is
+// per-viewer by the game's own design. The game's internal runSpecialEvent picks have no settime
+// caller, so their outputs ride the prop lane. And a dev fire reaches runEvent from our own
+// ProcessEvent, not from settime -- the native ui_eventRun likewise -- which is why HostFire
+// broadcasts at dispatch, and why the scheduler may still re-fire that row at its scheduled time
+// with the client's replayed-set deduping its side.
 void Install(coop::net::Session* session);
 
 // The ONE native-fire primitive. Posts the reflected runEvent/runSpecialEvent to the game thread
@@ -69,6 +78,10 @@ void OnClientWorldReady();
 // Teardown: restore the client's allEvents.Num (SP scheduler resumes), clear the pending queue +
 // replayed-set, drop the session pointer. Game thread.
 void OnDisconnect();
+
+// A peer walked into a location event. Host: run the door-lock on this machine when the row is
+// the passlock, and bring every other peer to the pose. Game thread.
+void OnLocationGather(const coop::net::EventGatherPayload& payload, uint8_t senderSlot);
 
 // [dev] How many fires this client has replayed natively, for the event drill. Any thread.
 unsigned ReplayCount();

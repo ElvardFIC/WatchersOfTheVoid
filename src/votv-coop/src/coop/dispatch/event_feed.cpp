@@ -28,7 +28,7 @@
 #include "coop/creatures/npc_adoption.h"
 #include "coop/creatures/kerfur_prop_adoption.h"  // OnSnapshotComplete
 #include "coop/player/hand_item.h"  // the hand-item handler
-#include "coop/interactables/laptop_sync.h"  // PayOwed: a client's laptop power at its pace
+#include "coop/interactables/laptop_sync.h"
 #include "coop/player/sleep_sync.h"          // PayOwed: a client's rest state at its pace
 #include "coop/world/alarm_sync.h"           // PayOwed: a client's alarm request at its pace
 #include "coop/player/player_damage.h"
@@ -36,6 +36,7 @@
 #include "coop/player/local_body.h"     // the host's own skin belongs in its own roster row
 #include "coop/player/nick_color.h"  // ResetSlots() at bringup -- a colour lands before its row
 #include "coop/player/nameplate.h"   // ResetSlots() at bringup -- so does a hidden-plate pref
+#include "coop/player/pvp.h"
 #include "coop/session/player_handshake.h"
 #include "coop/session/world_ready_answer.h"  // the host's answer to ClientWorldReady
 #include "coop/session/grants_sync.h"  // HostTick: the local dev grants to a proved slot
@@ -141,7 +142,6 @@ void Update(net::Session& session, void* localPlayer) {
     coop::chat_sync::Tick();  // the chat receipt's refusal window
     coop::alarm_sync::PayOwed(session);   // a client's world levels owed by their pace
     coop::sleep_sync::PayOwed(session);
-    coop::laptop_sync::PayOwed(session);
 
     // The per-slot Join send. The payload is built on first need: in steady state the vector is
     // never constructed, so the pump tick does not pay the UTF-8 conversion and allocation.
@@ -231,7 +231,7 @@ void Update(net::Session& session, void* localPlayer) {
             }
             net::WispGrabPayload p{};
             std::memcpy(&p, msg.payload, sizeof(p));
-            ue_wrap::game_thread::Post([p] { coop::wisp_tear_mirror::OnWispGrab(p); });
+            ue_wrap::game_thread::Post([p] { coop::wisp_tear_mirror::OnWispGrab(p, 0); });
             break;
         }
         case net::ReliableKind::WispTear: {
@@ -244,7 +244,7 @@ void Update(net::Session& session, void* localPlayer) {
             }
             net::WispTearPayload p{};
             std::memcpy(&p, msg.payload, sizeof(p));
-            ue_wrap::game_thread::Post([p] { coop::wisp_tear_mirror::OnWispTear(p); });
+            ue_wrap::game_thread::Post([p] { coop::wisp_tear_mirror::OnWispTear(p, 0); });
             break;
         }
         case net::ReliableKind::UpgradeLevels: {
@@ -455,6 +455,17 @@ void Update(net::Session& session, void* localPlayer) {
             coop::player_handshake::HandleNameplateChange(session, msg);
             break;
         }
+        case net::ReliableKind::PvpChange: {
+            coop::player_handshake::HandlePvpChange(session, msg);
+            break;
+        }
+        case net::ReliableKind::PvpHit: {
+            if (msg.payloadLen < sizeof(net::PvpHitPayload)) break;
+            net::PvpHitPayload hit{};
+            std::memcpy(&hit, msg.payload, sizeof(hit));
+            coop::pvp::OnHit(hit, static_cast<uint8_t>(msg.senderPeerSlot));
+            break;
+        }
         case net::ReliableKind::NickColorChange: {
             // The per-peer nick colour; paced on the host as the skin.
             coop::player_handshake::HandleNickColorChange(session, msg);
@@ -475,7 +486,7 @@ void Update(net::Session& session, void* localPlayer) {
             if (HandleStateEvent(session, msg, localPlayer)) break;
             if (HandleSignalEvent(msg)) break;
             if (HandleIntentEvent(session, msg, localPlayer)) break;
-            if (HandleWorldEvent(msg)) break;
+            if (HandleWorldEvent(session, msg)) break;
             // An unknown kind (a newer protocol) is logged, not silently discarded.
             UE_LOGW("event_feed: unknown ReliableKind %u -- dropping",
                     static_cast<unsigned>(msg.kind));

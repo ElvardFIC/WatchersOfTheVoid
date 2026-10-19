@@ -57,11 +57,10 @@ void CloseHold(int slot, uint16_t holdGen);
 // frame, a visible pop.
 bool IsActorUnderAnyDrive(void* actor);
 
-// True while this peer, not the wire, moves `actor`: a peer's drive targets it, the host's driven-prop
-// channel holds it parked, or the LOCAL player has it in its hands. The holder is the authority while
-// it holds, so a write that comes from elsewhere (an unstick's pose, a saved record's state) waits.
-// Game thread.
-bool IsOwnedHere(void* actor);
+// The actor `slot`'s hold is driving on this machine, or nullptr. The host uses it as the world prop
+// a client's hand is carrying. Game thread.
+void* DrivenActor(int slot);
+uint16_t DrivenHoldGeneration(int slot);
 
 // Register a wire-received prop mirror Element at `eid` bound to `actor`. Idempotent for
 // duplicate eids (a silent no-op); skips an eid of 0 (an unminted sender) and the invalid id.

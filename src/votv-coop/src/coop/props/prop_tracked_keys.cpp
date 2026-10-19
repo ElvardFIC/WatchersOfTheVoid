@@ -87,6 +87,26 @@ void TrackActorKey(void* actor, const std::wstring& key) {
     TrackKeyForActor_(actor, key, R::InternalIndexOf(actor));
 }
 
+void* FindLiveActorByKey(const std::wstring& key) {
+    if (key.empty() || key == L"None") return nullptr;
+    void* actor = nullptr;
+    int32_t index = -1;
+    {
+        std::lock_guard<std::mutex> lk(g_trackedKeysMutex);
+        const auto it = g_keyToActor.find(key);
+        if (it == g_keyToActor.end()) return nullptr;
+        actor = it->second.actor;
+        index = it->second.internalIdx;
+    }
+    if (actor && R::IsLiveByIndex(actor, index)) return actor;
+    EvictTrackedKeyIfStale(actor, key);
+    return nullptr;
+}
+
+void* ResolveLiveActorByKey(const std::wstring& key, void*) {
+    return FindLiveActorByKey(key);
+}
+
 void CollectTrackedKeyEntries(std::vector<TrackedKeyEntry>& out) {
     // The sweep's keyed universe. A leaf-mutex copy; liveness and ownership validation is the
     // caller's (by-index liveness, current-key re-validation before any doom). No engine calls

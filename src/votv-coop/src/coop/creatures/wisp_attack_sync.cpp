@@ -200,10 +200,9 @@ void RelayGrab(coop::net::Session* s, void* wispActor, uint32_t wispEid, void* v
     t.victimSlot    = victimSlot;
     s->SendReliable(coop::net::ReliableKind::WispTear, &t, sizeof(t));
 
-    // The host does not receive its own broadcast: run the tear on its own wisp directly, and hold
-    // the victim's puppet at the socket (third peers do the same on the tear message).
-    coop::wisp_tear_mirror::PlayTearOnWisp(wispActor, victimSlot);
-    coop::wisp_grab_hold::EngagePuppet(wispEid, victimSlot);
+    // The host does not receive its own broadcast. Use the same animation-readiness
+    // retry path as clients; the receiver also holds the victim's puppet at the socket.
+    coop::wisp_tear_mirror::OnWispTear(t, 0);
 
     const uint64_t now = NowMs();
     g_pendingDestroy.push_back({wispEid, now + kKillDelayMs, now});

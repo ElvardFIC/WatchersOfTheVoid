@@ -10,6 +10,7 @@
 #include "coop/session/player_handshake.h"  // GuidForSlot: a typist's durable identity
 
 #include "ue_wrap/core/game_thread.h"
+#include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/gc_pin.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/script_gate.h"
@@ -22,6 +23,7 @@
 #include <atomic>
 #include <chrono>
 #include <deque>
+#include <cwctype>
 #include <string>
 #include <utility>
 #include <vector>
@@ -43,6 +45,7 @@ using coop::net::ReliableKind;
 constexpr uint8_t kOpLine = 0;  // typist -> host: [i32 dish][str name][str used panel][str line]
 constexpr uint8_t kOpLog  = 1;  // host -> typist: [u8 bracketsType][str text]
 constexpr uint8_t kOpBusy = 2;  // host -> typist: [u8 busy], the level, on each change and as a seed
+constexpr uint8_t kOpLocalLog = 3; // client -> host: text from a command that runs locally, never execute it
 
 constexpr int32_t kNoDish = -1;  // init with no dish: the ROOT console
 
@@ -112,6 +115,24 @@ bool g_saidNoContext[kMaxPeers] = {};
 // the flag: the mirror sets it while the host's terminal is busy and clears only what it set.
 bool g_mirrorBusy = false;
 bool g_localHolds = false;
+// Only actual local commands publish output; startup/periodic widget alerts do
+// not become an echo storm. A native delayed command keeps this scope while busy.
+unsigned g_localCommandDepth = 0;
+bool g_commandBusy = false, g_replayingLog = false;
+bool g_clearCommand = false;
+ue_wrap::CachedObjRef g_commandTerm;
+struct DisplayLine { std::wstring text; uint8_t type = 0; };
+std::deque<DisplayLine> g_display;
+constexpr size_t kDisplayCap = 128;
+// Recent submitted-command output, including errors. Replayed as text only;
+// reconnecting never executes a previous command or starts its event again.
+std::deque<DisplayLine> g_history;
+size_t g_historyChars=0;
+bool g_haveHistory=false;
+struct LogRate { Clock::time_point start{}; size_t chars=0, lines=0; };
+LogRate g_logRate[kMaxPeers]{};
+uint32_t g_world = 0;
+uint64_t g_epoch = 0;
 
 coop::net::Session* SessionIf(coop::net::Role role) {
     auto* s = g_session.load(std::memory_order_acquire);
@@ -167,6 +188,47 @@ void SendLog(uint8_t slot, const std::wstring& text, uint8_t bracketsType) {
     Enqueue(slot, std::move(b));
 }
 
+void QueueDisplay(const std::wstring& text, uint8_t type) {
+    if(type==3)g_display.clear(); // everything queued before clr is superseded
+    if (g_display.size() >= kDisplayCap) {
+        // Keep the pending clear when the atlas opens after a burst of replies.
+        if(g_display.front().type==3)g_display.erase(g_display.begin()+1);
+        else g_display.pop_front();
+    }
+    g_display.push_back({text,type});
+}
+
+void ShareLog(const std::wstring& text, uint8_t type, int excludeSlot, bool showHere) {
+    auto* s = SessionIf(coop::net::Role::Host);
+    if (!s || !s->connected()) return;
+    g_haveHistory=true;
+    if(type==3){g_history.clear();g_historyChars=0;}
+    else {
+        g_history.push_back({text,type});g_historyChars+=text.size();
+        while(g_history.size()>64 || (g_historyChars>kMaxLogChars && g_history.size()>1)) {
+            g_historyChars-=g_history.front().text.size();g_history.pop_front();
+        }
+    }
+    if (showHere) QueueDisplay(text,type);
+    for (int slot=1; slot<kMaxPeers; ++slot)
+        if (slot!=excludeSlot && s->IsSlotWorldReady(slot)) SendLog(uint8_t(slot),text,type);
+}
+
+void DrainDisplay() {
+    if (g_replayingLog) return;
+    struct Guard { Guard(){g_replayingLog=true;} ~Guard(){g_replayingLog=false;} } guard;
+    // Wait for the atlas widget to exist instead of silently losing join-time
+    // replies. Pop before dispatch: a native call may tear the session down.
+    const auto epoch=g_epoch;
+    for (int budget=8; budget && !g_display.empty(); --budget) {
+        void* term=SC::LocalTerminal(); if(!term)return;
+        auto line=std::move(g_display.front()); g_display.pop_front();
+        const bool ok=line.type==3 ? SC::ClearLog(term) : SC::CallWriteToLog(term,line.text,line.type);
+        if(epoch!=g_epoch || !g_session.load())return;
+        if(!ok){g_display.push_front(std::move(line));return;}
+    }
+}
+
 void SendBusy(uint8_t slot, bool busy) {
     std::vector<uint8_t> b;
     W::AppU8(b, kOpBusy);
@@ -177,8 +239,8 @@ void SendBusy(uint8_t slot, bool busy) {
 // A line the host will not run is answered as the game answers one it cannot take or run: its echo,
 // then the reason's line. The typist already consumed it.
 void AnswerRefused(uint8_t slot, const std::wstring& line, const wchar_t* why) {
-    SendLog(slot, line, 1);
-    SendLog(slot, why, 0);
+    ShareLog(line,1,-1,true);
+    ShareLog(why,0,-1,true);
 }
 
 // ---- the typist ----
@@ -190,14 +252,22 @@ void AnswerRefused(uint8_t slot, const std::wstring& line, const wchar_t* why) {
 // (ui_console.enterCommand: `command = ""`, the text box emptied); the echo and every answer come back
 // from the host.
 sg::Verdict OnEnterPre(const sg::Call& c) {
-    if (!SessionIf(coop::net::Role::Client)) return sg::Verdict::Run;
+    auto* s=g_session.load();
+    if (!s || !s->connected() || c.fromOurCode || g_replayingLog) return sg::Verdict::Run;
     void* term = c.object;
     if (term != SC::LocalTerminal()) return sg::Verdict::Run;
     bool busy = false;
     std::wstring line;
-    if (!SC::ReadProcessing(term, busy) || busy || !SC::ReadEnterCommandLine(c.locals, line) ||
-        T::Classify(line) != T::Runs::OnHost)
+    const bool readLine=SC::ReadEnterCommandLine(c.locals,line);
+    if (s->role()!=coop::net::Role::Client || !SC::ReadProcessing(term, busy) || busy ||
+        !readLine || T::Classify(line) != T::Runs::OnHost) {
+        g_commandTerm.Set(term); ++g_localCommandDepth;
+        const auto end=line.find(L' ');
+        const auto word=line.substr(0,end);
+        g_clearCommand=word.size()==3 && std::towlower(word[0])==L'c' &&
+            std::towlower(word[1])==L'l' && std::towlower(word[2])==L'r';
         return sg::Verdict::Run;
+    }
     std::wstring name;
     if (!SC::ReadName(term, name)) return sg::Verdict::Run;
     if (name.size() > kMaxNameChars) name.resize(kMaxNameChars);
@@ -243,17 +313,17 @@ void ClientOnBlob(const std::vector<uint8_t>& blob) {
     if (op == kOpLog) {
         uint8_t type = 0;
         std::wstring text;
-        if (!W::RdU8(blob, o, type) || !W::RdWStr(blob, o, text) || text.size() > kMaxLogChars) {
+        if (!W::RdU8(blob, o, type) || type>3 || !W::RdWStr(blob, o, text) ||
+            text.size() > kMaxLogChars || (type==3 && !text.empty()) || o!=blob.size()) {
             UE_LOGW("sat_console: a malformed line from the host -- dropped");
             return;
         }
-        if (!term || !SC::CallWriteToLog(term, text, type))
-            UE_LOGW("sat_console: a line from the host found no terminal here -- dropped");
+        QueueDisplay(text,type);
         return;
     }
     if (op == kOpBusy) {
         uint8_t busy = 0;
-        if (!W::RdU8(blob, o, busy)) return;
+        if (!W::RdU8(blob, o, busy) || busy>1 || o!=blob.size()) return;
         g_mirrorBusy = busy != 0;
         if (term && (g_mirrorBusy || !g_localHolds)) SC::WriteProcessing(term, g_mirrorBusy);
         return;
@@ -364,9 +434,20 @@ void HostOnBlob(uint8_t slot, const std::vector<uint8_t>& blob) {
     uint8_t op = 0;
     int32_t dish = kNoDish;
     std::wstring name, used, line;
+    if (!blob.empty() && blob[0]==kOpLocalLog) {
+        o=1; uint8_t type=0;
+        if(!W::RdU8(blob,o,type) || type>3 || !W::RdWStr(blob,o,line) ||
+           line.size()>kMaxLogChars || (type==3 && !line.empty()) || o!=blob.size())return;
+        auto& rate=g_logRate[slot]; const auto now=Clock::now();
+        if(now-rate.start>=kWindow)rate={now,0,0};
+        if(rate.lines>=64 || rate.chars+line.size()>32768)return;
+        ++rate.lines; rate.chars+=line.size();
+        ShareLog(line,type,slot,true); // sender already printed it; never RunCommand
+        return;
+    }
     if (!W::RdU8(blob, o, op) || op != kOpLine || !W::RdI32(blob, o, dish) || !W::RdWStr(blob, o, name) ||
         !W::RdWStr(blob, o, used) || !W::RdWStr(blob, o, line) || name.size() > kMaxNameChars ||
-        used.size() > kMaxNameChars || line.size() > kMaxLineChars) {
+        used.size() > kMaxNameChars || line.size() > kMaxLineChars || o!=blob.size()) {
         if (!g_saidMalformed[slot]) {
             g_saidMalformed[slot] = true;
             UE_LOGW("sat_console: HOST a malformed blob from slot %u -- dropped", static_cast<unsigned>(slot));
@@ -457,19 +538,33 @@ void HostAfterBody(Terminal& t) {
 }
 
 sg::Verdict OnWritePre(const sg::Call& c) {
-    if (!SessionIf(coop::net::Role::Host)) return sg::Verdict::Run;
+    auto* s=g_session.load();
+    if (!s || !s->connected() || g_replayingLog) return sg::Verdict::Run;
     Terminal* t = ByObject(c.object);
-    if (!t || t->slot < 0) return sg::Verdict::Run;  // the host's own terminal, or no typist to show it to
+    const bool local=g_commandTerm.Is(c.object) && (g_localCommandDepth || g_commandBusy);
+    if (!t && !local) return sg::Verdict::Run;
     std::wstring text;
     uint8_t type = 0;
     if (!SC::ReadWriteToLogArgs(c.locals, text, type)) return sg::Verdict::Run;
-    if (text.size() > kMaxLogChars) text.resize(kMaxLogChars);
-    SendLog(static_cast<uint8_t>(t->slot), text, type);
+    if (type>2 || text.size()>kMaxLogChars) return sg::Verdict::Run;
+    // clr clears fields directly before its final empty writeToLog. Carry this
+    // display operation in order with the command echo, without re-running clr.
+    if(local && g_clearCommand && type==0 && text.empty())type=3;
+    if(s->role()==coop::net::Role::Host) ShareLog(text,type,-1,t!=nullptr);
+    else {
+        std::vector<uint8_t> b;
+        W::AppU8(b,kOpLocalLog);W::AppU8(b,type);W::AppWStr(b,text);Enqueue(0,std::move(b));
+    }
     ++g_counts.linesReturned;
     return sg::Verdict::Run;
 }
 
 void OnBodyPost(const sg::Call& c) {
+    if (!g_replayingLog && g_commandTerm.Is(c.object)) {
+        if(c.tag==kTagEnter && !c.fromOurCode && g_localCommandDepth) {--g_localCommandDepth;g_clearCommand=false;}
+        bool busy=false;
+        if(SC::ReadProcessing(c.object,busy)) g_commandBusy=busy && !g_mirrorBusy;
+    }
     if (SessionIf(coop::net::Role::Host)) {
         if (Terminal* t = ByObject(c.object)) HostAfterBody(*t);
     } else if (SessionIf(coop::net::Role::Client)) {
@@ -495,6 +590,9 @@ void EnsureWatched() {
 }  // namespace
 
 void Install(coop::net::Session* s) {
+    const auto world=WI::Generation();
+    if(g_session.load()!=s || (g_world && world!=g_world)) OnDisconnect();
+    g_world=world;
     g_session.store(s, std::memory_order_release);
     EnsureWatched();
 }
@@ -504,6 +602,7 @@ void Tick() {
     auto* s = g_session.load(std::memory_order_acquire);
     if (!s || !s->running()) return;
     SC::EnsureResolved();
+    DrainDisplay();
     const auto now = Clock::now();
     for (int i = 0; i < kMaxPeers; ++i)
         if (!g_out[i].q.empty() && now >= g_out[i].nextTry) Flush(static_cast<uint8_t>(i));
@@ -534,6 +633,9 @@ void OnChunk(const coop::net::BlobChunkPayload& p, uint8_t senderSlot) {
         return;
     }
     if (senderSlot >= kMaxPeers) return;
+    auto* s=g_session.load();
+    if(!s || !s->connected() || (s->role()==coop::net::Role::Host ?
+       (senderSlot==0 || !s->IsSlotWorldReady(senderSlot)) : senderSlot!=0))return;
     std::vector<uint8_t> blob;
     if (!g_asm.OnChunk(p, senderSlot, blob)) return;
     if (SessionIf(coop::net::Role::Host)) {
@@ -545,6 +647,10 @@ void OnChunk(const coop::net::BlobChunkPayload& p, uint8_t senderSlot) {
 
 void OnPeerWorldReady(int slot) {
     if (!SessionIf(coop::net::Role::Host) || slot < 1 || slot >= kMaxPeers) return;
+    if(g_haveHistory) {
+        SendLog(static_cast<uint8_t>(slot),L"",3);
+        for(const auto& line:g_history)SendLog(static_cast<uint8_t>(slot),line.text,line.type);
+    }
     const std::string& guid = coop::player_handshake::GuidForSlot(slot);
     if (guid.empty()) return;
     if (Terminal* t = ByGuid(guid))
@@ -555,7 +661,8 @@ void OnPeerGone(uint8_t slot) {
     if (slot >= kMaxPeers) return;
     g_asm.ClearSlot(slot);
     g_out[slot] = Outbox{};
-    g_saidRefused[slot] = g_saidMalformed[slot] = g_saidNoTerminal[slot] = g_saidNoContext[slot] = false;
+    g_saidRefused[slot] = g_saidMalformed[slot] = g_saidNoTerminal[slot] = false;
+    g_logRate[slot]={};
     for (Terminal& t : g_terms) {
         if (t.slot != slot) continue;
         t.slot = -1;  // its command, if any, runs to its end; the terminal waits for its typist
@@ -564,6 +671,11 @@ void OnPeerGone(uint8_t slot) {
 }
 
 void OnDisconnect() {
+    ++g_epoch;
+    g_session.store(nullptr,std::memory_order_release);
+    g_world=0; g_display.clear(); g_localCommandDepth=0; g_commandBusy=false; g_clearCommand=false; g_commandTerm={};
+    g_history.clear();g_historyChars=0;g_haveHistory=false;
+    for(auto& rate:g_logRate)rate={};
     // A busy flag this terminal holds only as the host's mirror goes with the session.
     if (g_mirrorBusy && !g_localHolds)
         if (void* term = SC::LocalTerminal()) SC::WriteProcessing(term, false);

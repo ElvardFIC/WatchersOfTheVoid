@@ -1,31 +1,33 @@
-// coop/interactables/door_verb_intent.cpp -- see coop/interactables/door_verb_intent.h.
+﻿// coop/interactables/door_verb_intent.cpp -- see coop/interactables/door_verb_intent.h.
 
 #include "coop/interactables/door_verb_intent.h"
 
 #include "coop/element/intent_authority.h"
 #include "coop/interactables/interactable_sync.h"  // the door lane's key for a door, and its resolve
-#include "coop/net/intent_bucket.h"
-#include "coop/net/intent_queue.h"
 #include "coop/net/protocol.h"
 #include "coop/net/session.h"
 #include "coop/net/wire_key_util.h"
 #include "coop/player/hand_item.h"         // what the sender's hand holds, and held last
 #include "coop/player/players_registry.h"
 #include "coop/player/remote_player.h"
-#include "coop/player/roster_ledger.h"  // PerSlotState
 #include "coop/session/net_pump.h"  // IsInAnnouncedWorld: a client's own world load runs natively
 
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/script_gate.h"
 #include "ue_wrap/devices/door.h"
-#include "ue_wrap/facts/function_row.h"
+#include "ue_wrap/devices/cremator.h"
 #include "ue_wrap/world/weapon_catalog.h"    // what one swing of the held item can deal
 
 #include <atomic>
+#include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
+#include <cstring>
+#include <deque>
 #include <string>
+#include <vector>
 
 namespace coop::door_verb_intent {
 namespace {
@@ -37,15 +39,11 @@ namespace V  = coop::net::door_verb;
 
 // The entry verbs, watched by name: every class's function of that name fires, so the callback
 // gates on the door class before anything else. The tag says which verb fired.
-UE_FACT_FN(kRowActionOptionIndex, "door_verb_intent", nullptr, L"actionOptionIndex", AnyClass);
-UE_FACT_FN(kRowAddDamage, "door_verb_intent", nullptr, L"addDamage", AnyClass);
-UE_FACT_FN(kRowCrowbarOpen, "door_verb_intent", nullptr, L"crowbarOpen", AnyClass);
-
-struct VerbWatch { const ue_wrap::facts::Function* row; int tag; uint8_t verb; const char* what; };
-const VerbWatch kWatches[] = {
-    { &kRowActionOptionIndex, 0x44565052 /*'DVPR'*/, V::kPress, "press" },
-    { &kRowAddDamage,         0x44564854 /*'DVHT'*/, V::kHit,   "hit" },
-    { &kRowCrowbarOpen,       0x44565059 /*'DVPY'*/, V::kPry,   "pry" },
+struct VerbWatch { const wchar_t* name; int tag; uint8_t verb; const char* what; };
+constexpr VerbWatch kWatches[] = {
+    { L"actionOptionIndex", 0x44565052 /*'DVPR'*/, V::kPress, "press" },
+    { L"addDamage",         0x44564854 /*'DVHT'*/, V::kHit,   "hit" },
+    { L"crowbarOpen",       0x44565059 /*'DVPY'*/, V::kPry,   "pry" },
 };
 constexpr int kWatchCount = static_cast<int>(sizeof(kWatches) / sizeof(kWatches[0]));
 
@@ -59,7 +57,8 @@ constexpr float kDoorReachUU = 400.0f;
 
 // A sender's verbs run from a bounded queue at a bounded rate: a melee swing is a few hits a
 // second and a press is rarer, so the bound is only felt by a stalled or flooding client.
-constexpr coop::net::IntentBudget kVerbBudget{4.0f, 4.0f};
+constexpr float    kVerbBurst     = 4.0f;
+constexpr float    kVerbPerSecond = 4.0f;
 constexpr size_t   kMaxPending    = 8;
 constexpr uint64_t kRefusalSayMs  = 10000;
 
@@ -80,15 +79,84 @@ uint64_t NowMs() {
         std::chrono::steady_clock::now().time_since_epoch()).count());
 }
 
-// One sender: its queued verbs with their bucket, and the latches that clear with its occupant.
-struct Slot {
-    coop::net::IntentQueue<coop::net::DoorVerbIntentPayload> queue;
-    uint64_t nextSayMs = 0;      // the full queue's refusal, said once in kRefusalSayMs
-    bool     waitSaid  = false;  // a wait for the body, said once a streak
-    bool     cutSaid   = false;  // a hit cut to its item's swing, said once
+struct Bucket {
+    float    tokens = kVerbBurst;
+    uint64_t lastMs = 0;
+    uint64_t nextSayMs = 0;
 };
-coop::roster_ledger::PerSlotState<Slot> g_slots;
+Bucket g_rate[coop::net::kMaxPeers];
+std::deque<coop::net::DoorVerbIntentPayload> g_pending[coop::net::kMaxPeers];
+bool g_waitSaid[coop::net::kMaxPeers] = {};  // a sender's wait for its body, said once a streak
+bool g_cutSaid[coop::net::kMaxPeers]  = {};  // a sender's hit cut to its item's swing, said once
 uint64_t g_hitRefusals = 0;                  // hits refused as no swing: said for three, then every twentieth
+struct CrematorRow { coop::net::KeyedTogglePayload payload{}; uint8_t mask = 0; };
+std::vector<CrematorRow> g_crematorRows;
+std::vector<coop::net::KeyedTogglePayload> g_pendingCrematorApply;
+bool g_replayingCremator = false;
+struct CrematorObservedState { std::wstring key; bool active = false; };
+std::vector<CrematorObservedState> g_crematorObserved;
+uint64_t g_lastCrematorPollMs = 0;
+
+struct CrematorReplayGuard {
+    bool previous = g_replayingCremator;
+    CrematorReplayGuard() { g_replayingCremator = true; }
+    ~CrematorReplayGuard() { g_replayingCremator = previous; }
+};
+
+void PublishCrematorLever(void* machine, bool desiredActive, int toSlot = -1) {
+    auto* s = g_session.load(std::memory_order_acquire);
+    if (!s || s->role() != coop::net::Role::Host || !machine) return;
+    const std::wstring key = ue_wrap::cremator::LeverWireKey(machine);
+    if (key.empty()) return;
+    coop::net::KeyedTogglePayload p{};
+    coop::net::WireKeyFromString(key, p.key);
+    p.action = desiredActive ? 1 : 0;
+    if (toSlot >= 0) {
+        if (!s->SendReliableToSlot(toSlot, coop::net::ReliableKind::ContainerState, &p, sizeof(p)) &&
+            toSlot < coop::net::kMaxPeers && g_crematorRows.size() < 32)
+            g_crematorRows.push_back({p, static_cast<uint8_t>(1u << toSlot)});
+        return;
+    }
+    if (s->SendReliable(coop::net::ReliableKind::ContainerState, &p, sizeof(p))) return;
+    for (auto& row : g_crematorRows) {
+        if (row.payload.key.len == p.key.len && std::memcmp(row.payload.key.data, p.key.data, p.key.len) == 0) {
+            row.payload = p;
+            row.mask = static_cast<uint8_t>(((1u << coop::net::kMaxPeers) - 1u) & ~1u);
+            return;
+        }
+    }
+    if (g_crematorRows.size() < 32)
+        g_crematorRows.push_back({p, static_cast<uint8_t>(((1u << coop::net::kMaxPeers) - 1u) & ~1u)});
+    else
+        UE_LOGE("[DOOR-VERB] cremator lever state queue full -- one lever state may not reach clients");
+}
+
+bool ApplyCrematorState(const coop::net::KeyedTogglePayload& p) {
+    const std::wstring key = coop::net::StringFromWireKey(p.key);
+    void* machine = ue_wrap::cremator::FindByLeverWireKey(key);
+    if (!machine) return false;
+    bool active = false;
+    if (!ue_wrap::cremator::TryReadLeverActive(machine, active)) return false;
+    const bool wanted = p.action != 0;
+    if (active == wanted) return true;
+    if (!ue_wrap::cremator::CanReplayLever(machine)) return false;
+    CrematorReplayGuard replay;
+    const bool called = ue_wrap::cremator::CallUseLever(machine);
+    return called;
+}
+
+bool TakeToken(uint8_t slot) {
+    Bucket& b = g_rate[slot];
+    const uint64_t now = NowMs();
+    if (b.lastMs != 0 && now > b.lastMs) {
+        b.tokens += kVerbPerSecond * static_cast<float>(now - b.lastMs) / 1000.0f;
+        if (b.tokens > kVerbBurst) b.tokens = kVerbBurst;
+    }
+    b.lastMs = now;
+    if (b.tokens < 1.0f) return false;
+    b.tokens -= 1.0f;
+    return true;
+}
 
 const char* VerbName(uint8_t verb) {
     for (const VerbWatch& w : kWatches)
@@ -102,6 +170,36 @@ const char* VerbName(uint8_t verb) {
 // being lost. Everything else is run or refused, and consumed.
 bool Execute(coop::net::Session& s, const coop::net::DoorVerbIntentPayload& p, uint8_t slot) {
     const std::wstring key = coop::net::StringFromWireKey(p.key);
+    if (p.verb == V::kPress) {
+        void* cremator = ue_wrap::cremator::FindByLeverWireKey(key);
+        if (cremator) {
+            const auto subject = coop::element::IntentTarget::ForClientIntent(s, slot, kDoorReachUU).Authorize(cremator);
+            if (subject.outcome == coop::element::IntentOutcome::NoBody) return false;
+            if (!subject || p.action != 4 || !ue_wrap::cremator::CanReplayLever(cremator)) {
+                ++g_denied;
+                return true;
+            }
+            bool active = false;
+            if (!ue_wrap::cremator::TryReadLeverActive(cremator, active)) { ++g_denied; return true; }
+            bool called = false;
+            {
+                CrematorReplayGuard replay;
+                called = ue_wrap::cremator::CallUseLever(cremator);
+            }
+            if (!called) {
+                ++g_denied;
+                return true;
+            }
+            bool activeAfter = false;
+            if (ue_wrap::cremator::TryReadLeverActive(cremator, activeAfter))
+                PublishCrematorLever(cremator, activeAfter);
+            ++g_ran;
+            UE_LOGI("[DOOR-VERB] host ran slot %u's cremator lever at '%ls' (active %u -> %u)",
+                    static_cast<unsigned>(slot), key.c_str(), active ? 1u : 0u,
+                    activeAfter ? 1u : 0u);
+            return true;
+        }
+    }
     void* door = key.empty() ? nullptr : coop::interactable_sync::ResolveDoor(key);
     if (!door) {
         ++g_denied;
@@ -112,8 +210,8 @@ bool Execute(coop::net::Session& s, const coop::net::DoorVerbIntentPayload& p, u
     const coop::element::IntentSubject subject =
         coop::element::IntentTarget::ForClientIntent(s, slot, kDoorReachUU).Authorize(door);
     if (subject.outcome == coop::element::IntentOutcome::NoBody) {
-        if (!g_slots[slot].waitSaid) {
-            g_slots[slot].waitSaid = true;
+        if (!g_waitSaid[slot]) {
+            g_waitSaid[slot] = true;
             UE_LOGI("[DOOR-VERB] slot %u's door verbs wait: the host has no body for it yet", static_cast<unsigned>(slot));
         }
         return false;
@@ -151,8 +249,8 @@ bool Execute(coop::net::Session& s, const coop::net::DoorVerbIntentPayload& p, u
             return true;
         }
         const float bounded = (damage >= 0.f) ? (damage < swing.maxDamage ? damage : swing.maxDamage) : 0.f;
-        if (bounded != damage && !g_slots[slot].cutSaid) {
-            g_slots[slot].cutSaid = true;
+        if (bounded != damage && !g_cutSaid[slot]) {
+            g_cutSaid[slot] = true;
             UE_LOGW("[DOOR-VERB] slot %u's hit of %.1f with '%ls' is cut to %.1f, the most its swing deals "
                     "(said once a session)", static_cast<unsigned>(slot), damage, item.c_str(), bounded);
         }
@@ -211,6 +309,28 @@ const ParamOffsets& OffsetsOf(const sg::Call& call, int watchIndex, uint8_t verb
 sg::Verdict OnVerbPre(const sg::Call& call) {
     auto* s = g_session.load(std::memory_order_acquire);
     if (!s || !s->connected() || s->role() != coop::net::Role::Client) return sg::Verdict::Run;
+    if (call.object && ue_wrap::cremator::IsCremator(call.object)) {
+        if (call.tag != 0x44565052) return sg::Verdict::Run;
+        if (!coop::net_pump::IsInAnnouncedWorld(call.object)) { ++g_loadNative; return sg::Verdict::Run; }
+        const ParamOffsets& offsets = OffsetsOf(call, 0, V::kPress);
+        if (offsets.first < 0 || !call.locals ||
+            *reinterpret_cast<const uint8_t*>(call.locals + offsets.first) != 4 ||
+            !ue_wrap::cremator::CanUseLever(call.object)) return sg::Verdict::Run;
+        const std::wstring key = ue_wrap::cremator::LeverWireKey(call.object);
+        if (key.empty()) return sg::Verdict::Cancel;
+        coop::net::DoorVerbIntentPayload p{};
+        coop::net::WireKeyFromString(key, p.key);
+        p.verb = V::kPress;
+        p.action = 4;
+        if (!s->SendReliable(coop::net::ReliableKind::DoorVerbIntent, &p, sizeof(p))) {
+            UE_LOGW("[DOOR-VERB] cremator lever press was not queued; the host remains authoritative");
+        } else {
+            ++g_sent;
+            ++g_sentPress;
+            UE_LOGI("[DOOR-VERB] CLIENT SENT cremator lever press key='%ls'", key.c_str());
+        }
+        return sg::Verdict::Cancel;
+    }
     if (!call.object || !D::IsDoor(call.object)) return sg::Verdict::Run;
     // A call on an object of a world this client has not announced ready is that world's load, the
     // host's save: it runs natively, and the host's own states for what the lane owns follow the
@@ -274,13 +394,13 @@ sg::Verdict OnVerbPre(const sg::Call& call) {
 void RegisterWatches() {
     for (int i = 0; i < kWatchCount; ++i) {
         if (g_reg[i] != Reg::Pending) continue;
-        if (sg::WatchName(*kWatches[i].row, kWatches[i].tag, &OnVerbPre, nullptr)) {
+        if (sg::WatchName(kWatches[i].name, kWatches[i].tag, &OnVerbPre, nullptr)) {
             g_reg[i] = Reg::Registered;
             continue;
         }
         g_reg[i] = Reg::Refused;
         UE_LOGE("[DOOR-VERB] the script-body gate refused the watch on '%ls' -- for the rest of this process "
-                "that door verb runs only where it is used", kWatches[i].row->Name());
+                "that door verb runs only where it is used", kWatches[i].name);
     }
 }
 
@@ -297,7 +417,7 @@ void Tick(coop::net::Session& session) {
         int live = 0, pending = 0;
         for (int i = 0; i < kWatchCount; ++i) {
             if (g_reg[i] == Reg::Pending) ++pending;
-            else if (g_reg[i] == Reg::Registered && sg::NameWatchLive(*kWatches[i].row, kWatches[i].tag)) ++live;
+            else if (g_reg[i] == Reg::Registered && sg::NameWatchLive(kWatches[i].name, kWatches[i].tag)) ++live;
         }
         if (live == kWatchCount) {
             g_settled = true;
@@ -308,18 +428,52 @@ void Tick(coop::net::Session& session) {
                     "those verbs run only where they are used", kWatchCount - live, kWatchCount);
         }
     }
+    if (session.running() && session.role() == coop::net::Role::Host) {
+        const uint64_t now = NowMs();
+        if (now - g_lastCrematorPollMs >= 200) {
+            g_lastCrematorPollMs = now;
+            for (void* machine : ue_wrap::cremator::Instances()) {
+                bool active = false;
+                const std::wstring key = ue_wrap::cremator::LeverWireKey(machine);
+                if (key.empty() || !ue_wrap::cremator::TryReadLeverActive(machine, active)) continue;
+                auto it = std::find_if(g_crematorObserved.begin(), g_crematorObserved.end(),
+                    [&](const CrematorObservedState& row) { return row.key == key; });
+                if (it == g_crematorObserved.end()) g_crematorObserved.push_back({key, active});
+                else if (it->active != active) {
+                    it->active = active;
+                    PublishCrematorLever(machine, active);
+                }
+            }
+        }
+    }
+    if (session.running() && session.role() == coop::net::Role::Client) {
+        for (auto it = g_pendingCrematorApply.begin(); it != g_pendingCrematorApply.end();) {
+            if (ApplyCrematorState(*it)) it = g_pendingCrematorApply.erase(it); else ++it;
+        }
+    }
     if (!session.running() || session.role() != coop::net::Role::Host) return;
     // The weapon table is built once the host's session runs, not on a client's first hit: its build
     // finds the table by walking every object. Ready() throttles a retry while the table is not loaded.
     static bool s_weaponsReady = false;
     if (!s_weaponsReady) s_weaponsReady = ue_wrap::weapon_catalog::Ready();
     for (uint8_t slot = 1; slot < coop::net::kMaxPeers; ++slot) {
-        Slot& sl = g_slots[slot];
-        sl.queue.Serve(kVerbBudget, NowMs, [&](const coop::net::DoorVerbIntentPayload& p) {
-            if (!Execute(session, p, slot)) return coop::net::Served::Wait;  // a wait runs nothing: no token spent
-            sl.waitSaid = false;  // a consumed verb ends the wait's streak
-            return coop::net::Served::Done;
-        });
+        if (g_pending[slot].empty() || !TakeToken(slot)) continue;
+        const coop::net::DoorVerbIntentPayload p = g_pending[slot].front();
+        if (Execute(session, p, slot)) {
+            g_pending[slot].pop_front();
+            g_waitSaid[slot] = false;        // a consumed verb ends the wait's streak
+        } else {
+            g_rate[slot].tokens += 1.0f;     // a wait runs nothing, so it spends no token
+        }
+    }
+    for (auto it = g_crematorRows.begin(); it != g_crematorRows.end();) {
+        for (uint8_t slot = 1; slot < coop::net::kMaxPeers; ++slot) {
+            if (!(it->mask & (1u << slot))) continue;
+            if (session.SendReliableToSlot(slot, coop::net::ReliableKind::ContainerState,
+                                           &it->payload, sizeof(it->payload)))
+                it->mask &= static_cast<uint8_t>(~(1u << slot));
+        }
+        if (!it->mask) it = g_crematorRows.erase(it); else ++it;
     }
 }
 
@@ -327,17 +481,65 @@ void OnDoorVerbIntent(coop::net::Session& session, const coop::net::DoorVerbInte
                       uint8_t senderSlot) {
     if (session.role() != coop::net::Role::Host) return;
     if (senderSlot < 1 || senderSlot >= coop::net::kMaxPeers) return;
-    Slot& sl = g_slots[senderSlot];
-    auto payloadCopy = payload;
-    if (!sl.queue.Push(std::move(payloadCopy), kMaxPending)) {
+    if (!payload.key.len || payload.key.len > sizeof(payload.key.data) || payload.verb > V::kPry ||
+        payload._pad[0] || payload._pad[1] || !std::isfinite(payload.damage)) return;
+    auto& q = g_pending[senderSlot];
+    if (q.size() >= kMaxPending) {
+        Bucket& b = g_rate[senderSlot];
         const uint64_t now = NowMs();
-        if (now >= sl.nextSayMs) {
-            sl.nextSayMs = now + kRefusalSayMs;
+        if (now >= b.nextSayMs) {
+            b.nextSayMs = now + kRefusalSayMs;
             UE_LOGW("[DOOR-VERB] slot %u queue full (%zu) -- refusing its door verbs until it drains",
-                    static_cast<unsigned>(senderSlot), sl.queue.size());
+                    static_cast<unsigned>(senderSlot), q.size());
         }
         ++g_denied;
+        return;
     }
+    q.push_back(payload);
+}
+
+void OnCrematorState(const coop::net::KeyedTogglePayload& payload, uint8_t senderSlot) {
+    auto* s = g_session.load(std::memory_order_acquire);
+    if (!s || s->role() != coop::net::Role::Client || senderSlot != 0 ||
+        payload.key.len == 0 || payload.key.len > sizeof(payload.key.data) || payload.action > 1) return;
+    for (uint8_t b : payload._pad) if (b) return;
+    const std::wstring key = coop::net::StringFromWireKey(payload.key);
+    if (ue_wrap::cremator::FindByLeverWireKey(key) && ApplyCrematorState(payload)) {
+        return;
+    }
+    for (auto& row : g_pendingCrematorApply) {
+        if (row.key.len == payload.key.len && std::memcmp(row.key.data, payload.key.data, payload.key.len) == 0) {
+            row = payload;
+            return;
+        }
+    }
+    if (g_pendingCrematorApply.size() < 32) g_pendingCrematorApply.push_back(payload);
+}
+
+void QueueCrematorSnapshot(int peerSlot) {
+    auto* s = g_session.load(std::memory_order_acquire);
+    if (!s || s->role() != coop::net::Role::Host || peerSlot < 1 || peerSlot >= coop::net::kMaxPeers) return;
+    for (void* machine : ue_wrap::cremator::Instances()) {
+        bool active = false;
+        const std::wstring key = ue_wrap::cremator::LeverWireKey(machine);
+        if (key.empty() || !ue_wrap::cremator::TryReadLeverActive(machine, active)) continue;
+        coop::net::KeyedTogglePayload p{};
+        coop::net::WireKeyFromString(key, p.key);
+        p.action = active ? 1 : 0;
+        if (!s->SendReliableToSlot(peerSlot, coop::net::ReliableKind::ContainerState, &p, sizeof(p)) &&
+            g_crematorRows.size() < 32)
+            g_crematorRows.push_back({p, static_cast<uint8_t>(1u << peerSlot)});
+    }
+}
+
+void OnPeerLeft(uint8_t slot) {
+    if (slot >= coop::net::kMaxPeers) return;
+    g_pending[slot].clear();
+    g_rate[slot] = Bucket{};
+    g_waitSaid[slot] = false;
+    g_cutSaid[slot] = false;
+    for (auto& row : g_crematorRows) row.mask &= static_cast<uint8_t>(~(1u << slot));
+    std::erase_if(g_crematorRows, [](const CrematorRow& row) { return row.mask == 0; });
 }
 
 uint64_t SentPressCount() { return g_sentPress; }
@@ -349,10 +551,20 @@ void OnDisconnect() {
                 static_cast<unsigned long long>(g_sent), static_cast<unsigned long long>(g_ran),
                 static_cast<unsigned long long>(g_denied), static_cast<unsigned long long>(g_worldRefused),
                 static_cast<unsigned long long>(g_loadNative));
+    for (uint8_t slot = 0; slot < coop::net::kMaxPeers; ++slot) {
+        g_pending[slot].clear();
+        g_rate[slot] = Bucket{};
+        g_waitSaid[slot] = false;
+        g_cutSaid[slot] = false;
+    }
     g_sent = g_ran = g_denied = g_worldRefused = g_loadNative = 0;
     g_sentPress = 0;
     g_quietHits = 0;
     g_hitRefusals = 0;
+    g_crematorRows.clear();
+    g_pendingCrematorApply.clear();
+    g_crematorObserved.clear();
+    g_lastCrematorPollMs = 0;
 }
 
 }  // namespace coop::door_verb_intent
