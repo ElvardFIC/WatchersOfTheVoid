@@ -1,4 +1,4 @@
-﻿# Watchers of the Void
+# Watchers of the Void
 
 A community multiplayer fork for **Voices of the Void Alpha 0.9.0n**, maintained by **ElvardFIC**.
 Based on [Multivoid by Pelmentor](https://github.com/VOTV-MP/Multivoid) and
@@ -10,12 +10,12 @@ This is experimental software; multiplayer verification is still in progress.
 
 ## Fork status - 19 October 2026
 
-The latest locally prepared package is **0.9.2152**, for game **0.9.0n**.
-It contains DLL **b2153** and network protocol **2153**, preserving the expanded
+The latest locally prepared package is **0.9.2154**, for game **0.9.0n**.
+It contains DLL **b2156** and network protocol **2156**, preserving the expanded
 NPC pose format while using the requested package release number. It includes full
 NPC orientation, possessed-boar body/damage replication and native locomotion input,
 plus the earlier wisp capture/release and personal-nightmare fixes.
-See [release notes](package/RELEASE_2152.md) and [changelog](package/CHANGELOG_PLUS.md).
+See [release notes](package/RELEASE_2154.md) and [changelog](package/CHANGELOG_PLUS.md).
 Local packaging does not publish a binary release online.
 
 Recent local work also covers personal nightmares, ragdoll recovery, late-loaded NPCs,
@@ -29,7 +29,7 @@ the shared computer display, token UI, ZIP-disk ejection and disappearing workbe
 Use a package explicitly published for this fork when available on this repository's
 [Releases page](https://github.com/ElvardFIC/WatchersOfTheVoid/releases).
 All players must install the same build and game version. Disable other Multivoid implementations
-in the same profile. Protocols 2151, 2152 and 2153 are incompatible.
+in the same profile. Protocols 2151 through 2155 are incompatible with this release.
 
 The [upstream installation guide](https://github.com/VOTV-MP/Multivoid/blob/main/docs/install.md)
 explains the loader and standard mod layout. Upstream downloads are releases of the original

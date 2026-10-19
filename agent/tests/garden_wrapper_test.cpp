@@ -99,7 +99,7 @@ namespace ue_wrap::save_record {
 bool CaptureRecordVia(void*,void*,SaveRecord& r){r=test::captured;return test::captureOK;}
 std::wstring ReadFNameAt(const void* a,int32_t){return static_cast<const test::Obj*>(a)->key;}
 void WriteFNameField(void* field,const std::wstring& name){*static_cast<std::wstring*>(field)=name;if(test::nameCallback)test::nameCallback();}
-bool ApplyRecordVia(void* actor,void* fn,const SaveRecord& r){
+bool ApplyRecordVia(void* actor,void* fn,const SaveRecord& r,ClassResolver){
     CHECK(fn==&test::objs[3]&&static_cast<test::Obj*>(actor)->amount==0);++test::loads;
     if(!test::loadOK)return false;
     if(r.floats[1][3]>=1.f)static_cast<test::Obj*>(actor)->amount=1;

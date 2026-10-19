@@ -48,7 +48,7 @@ unsigned long CurrentThreadId() { return 1; }
 namespace ue_wrap::log { void Write(Level, const char*, ...) {} }
 namespace ue_wrap::prop {
 std::wstring GetInteractableKeyString(void*) { return L"prop1"; }
-VelocityState GetPhysicsVelocity(void*) { return {}; }
+VelocityState GetPhysicsVelocity(void*, bool) { return {}; }
 bool IsGarbageClump(void*) { return false; }
 bool IsTrashActor(void*) { return false; }
 bool IsTrashBitsPile(void*) { return false; }
@@ -76,6 +76,14 @@ namespace coop::prop_element_tracker {
 void* FindLiveActorByKey(const std::wstring&) { return nullptr; }
 element::ElementId GetPropElementIdForActor(void*) { return 1; }
 }
+namespace coop::element {
+Registry::Registry() = default;
+Registry::~Registry() = default;
+Registry& Registry::Get() { static Registry registry; return registry; }
+Element* Registry::Get(ElementId) const { return nullptr; }
+}
+namespace coop::prop_key_index { void* Find(const std::wstring&) { return nullptr; } }
+namespace coop::local_streams { void* LastHeldActor() { return test::grab.gravityActor; } }
 namespace coop::npc_sync { bool KerfurIsHolding(void*) { return false; } }
 namespace coop::gravity_motion { void* Target() { return nullptr; } }
 namespace coop::hand_item { bool IsHandAxisActor(void*) { return false; } }

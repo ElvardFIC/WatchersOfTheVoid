@@ -21,8 +21,10 @@ the AquariumFishTeam note following the full change history.
 
 - Run `powershell -NoProfile -ExecutionPolicy Bypass -File package/build_2153.ps1`
   for the x64 Release DLL in `build/votv-coop-2153`.
-- Run `package/check_2153.ps1` for garden/hose, laptop UI, world sound, entity and
-  extracted native asset checks. Results/logs are written to
+- Run `package/check_2153.ps1` for garden/hose, laptop UI, world sound, and entity
+  checks. Extracted native asset checks run only when
+  `_research/current-assets` is present; otherwise the report marks them skipped.
+  Results/logs are written to
   `build/release-2153-logs`.
 - Run `package/pack_2153.ps1` to create and inspect the Thunderstore ZIP.
 - Targeted offline checks do not replace a two-player gameplay session. Test garden
@@ -40,3 +42,12 @@ the AquariumFishTeam note following the full change history.
   `ElvardFIC-WatchersOfTheVoid-0.9.2153`.
 - Two-player gameplay remains unverified; no release upload is performed by these
   preparation scripts.
+
+## Verification recorded for this preparation
+
+- Windows x64 Release build: passed, DLL product/file version `0.9.0n b2156`.
+- Focused garden/hose, laptop UI, world sound and entity regression groups: run by
+  `package/check_2153.ps1`; see `build/release-2153-logs/tests.json` for results.
+- Native asset contract audit: skipped because extracted game assets are unavailable
+  in this workspace.
+- Two-player gameplay: not verified.

@@ -72,9 +72,22 @@ void* WorldOf(void* a) { return a && static_cast<test::Obj*>(a)->actor ? Current
 }
 namespace ue_wrap::log { void Write(Level,const char*,...) {} }
 namespace ue_wrap::object_index { void* ClassByName(const wchar_t*) { return &test::objs[5]; } }
+namespace ue_wrap::facts {
+Function::Function(detail::MacroToken, const char* ident, const char* feature, const wchar_t* cls,
+                   const wchar_t* fn, Mode mode)
+    : ident_(ident), feature_(feature), cls_(cls), fn_(fn), mode_(mode), next_(nullptr) {}
+void Function::NoteUse(Use, bool) const {}
+Resolved Resolve(const Function& row) {
+    void* fn = std::strcmp(row.Ident(), "kRowPlaySound2D") == 0 ? static_cast<void*>(&test::objs[6]) :
+               std::strcmp(row.Ident(), "kRowSpawnSoundAttached") == 0 ? static_cast<void*>(&test::objs[7]) :
+               static_cast<void*>(&test::objs[13]);
+    return Resolved(fn, &row);
+}
+Resolved ResolveOn(const Function&, void*) { return {}; }
+}
 namespace ue_wrap::ufunction_hook {
 CallerFrame CurrentCallerFrame() { return test::caller; }
-bool InstallPostHook(void*,PostNativeCallback,bool) { ++test::hooks; return true; }
+bool InstallPostHook(const facts::Resolved&,PostNativeCallback,bool) { ++test::hooks; return true; }
 }
 namespace ue_wrap::engine {
 bool TryGetActorLocation(void*,FVector& out) { out={12,34,56};auto cb=std::move(test::locationCallback);test::locationCallback={};if(cb)cb();return test::locationOK; }

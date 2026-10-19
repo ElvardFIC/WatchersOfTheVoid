@@ -3,7 +3,7 @@
 **By ElvardFIC** — a community fork of **Multivoid**, originally created by **Pelmentor**.
 
 Play Voices of the Void together, with accumulated co-op synchronization fixes and improvements.
-Version **0.9.2153** targets **Voices of the Void Alpha 0.9.0n** on Windows.
+Version **0.9.2154** targets **Voices of the Void Alpha 0.9.0n** on Windows.
 
 Source: [ElvardFIC/WatchersOfTheVoid](https://github.com/ElvardFIC/WatchersOfTheVoid).
 
@@ -19,14 +19,14 @@ See CHANGELOG.md for the full change list. Some systems are only partially imple
 
 Install with r2modman or Thunderstore Mod Manager; the Unreal shimloader dependency is included in the manifest.
 Use a profile with this fork as the only Multivoid implementation: disable the original Multivoid or an earlier fork copy.
-Every player must use this exact **0.9.2153** package and the same game version.
+Every player must use this exact **0.9.2154** package and the same game version.
 
 ## Current status
 
 This is an experimental co-op build. The x64 Release build and focused offline checks
-are recorded in RELEASE_2153.md; two-player gameplay verification is still required.
+are recorded in RELEASE_2154.md; two-player gameplay verification is still required.
 
-Build 2153 adds shared laptop UI actions, gardening and hose synchronization, supported
+Build 2154 adds shared laptop UI actions, gardening and hose synchronization, supported
 world/event sounds, placed-object/building updates, and further Grayboar action handling.
 The package contains DLL **b2156 / network protocol 2156**. Entity synchronization is
 still partial and gameplay verification is pending. Includes accumulated 2152 and

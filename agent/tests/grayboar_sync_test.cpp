@@ -54,11 +54,20 @@ namespace coop::prop_drive_stream {
 bool IsParked(void*){return test::parked;}
 bool TryGetPresentationVelocity(void*,ue_wrap::FVector& out){out=test::visualVelocity;return test::presentation;}
 }
-namespace ue_wrap::ufunction_hook {
+namespace ue_wrap::facts {
+Function::Function(detail::MacroToken, const char* ident, const char* feature, const wchar_t* cls,
+                   const wchar_t* fn, Mode mode)
+    : ident_(ident), feature_(feature), cls_(cls), fn_(fn), mode_(mode), next_(nullptr) {}
+void Function::NoteUse(Use, bool) const {}
+Resolved Resolve(const Function&) { return {}; }
+Resolved ResolveOn(const Function& row, void* cls) {
+    void* fn = reflection::FindDispatchFunctionCached(cls, row.Name());
+    return fn ? Resolved(fn, &row) : Resolved{};
+}
 }
 namespace coop::prop_echo_suppress {bool IsMirrorSpawn(void*){return test::mirror;}}
 namespace ue_wrap::ufunction_hook {
-bool InstallPostHook(void*,PostNativeCallback callback,bool){++test::hookAttempts;test::velocityPost=callback;return test::installVelocity;}
+bool InstallPostHook(const facts::Resolved&,PostNativeCallback callback,bool){++test::hookAttempts;test::velocityPost=callback;return test::installVelocity;}
 void* CurrentResult(){return test::result;}
 }
 namespace coop::player_damage {void SendPlayerDamage(int slot,float damage){++test::relays;test::lastSlot=slot;test::lastDamage=damage;}}
