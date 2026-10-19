@@ -200,6 +200,12 @@ CFG_IDENTITY(player_skin, "player_skin", "player",
     "in-game (F1 menu > skins).")
 CFG_FLAG(nameplate, "nameplate", "player", true, nullptr,
     "Show nameplates over other players (also toggleable in the F1 menu).")
+CFG_FLAG(pvp, "pvp", "player", false, nullptr,
+    "Let other players who also turned this on hit you with a swing or a throw. "
+    "Explosions still hit everyone. Toggle it in the F1 menu.")
+CFG_FLAG(always_see_playermodel, "player.always_see_playermodel", "player", true, nullptr,
+    "Keep your own body visible when you look down or use spectator, including while an "
+    "event would hide it. Only your screen. Toggle it in the F1 menu.")
 CFG_STRING(nick_color, "nick_color", "player", "unset", nullptr, false,
     "Your nickname color as RRGGBB hex, or unset. Pick it in-game (F1 menu color picker).")
 

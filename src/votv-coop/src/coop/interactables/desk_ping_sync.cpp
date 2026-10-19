@@ -22,6 +22,7 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <deque>
 
 namespace coop::desk_ping_sync {
 namespace {
@@ -35,6 +36,16 @@ using coop::net::Role;
 
 std::atomic<coop::net::Session*> g_session{nullptr};
 Counts g_counts;
+struct PendingClientIntent {
+    coop::net::DeskPingVerdictPayload payload{};
+    uint64_t queuedAt = 0;
+};
+struct PendingReply {
+    coop::net::DeskPingVerdictPayload payload{};
+    uint64_t queuedAt = 0;
+};
+std::deque<PendingClientIntent> g_pendingClient;
+std::deque<PendingReply> g_pendingReplies[coop::net::kMaxPeers];
 
 // A client sends one verdict a ping, and a ping runs for seconds; past this a sender's intents are dropped unanswered
 // and said at most every kSayEveryMs. An insta-catch is a click in the cheat menu, and has a budget of its own, so
@@ -64,7 +75,12 @@ void Send(coop::net::Session* s, int slot, uint8_t op, uint32_t seq, uint8_t rea
     p.op = op;
     p.reason = reason;
     p.seq = seq;
-    s->SendReliableToSlot(slot, coop::net::ReliableKind::DeskPingVerdict, &p, static_cast<int>(sizeof(p)));
+    if (!s->SendReliableToSlot(slot, coop::net::ReliableKind::DeskPingVerdict, &p, static_cast<int>(sizeof(p)))) {
+        if (slot >= 0 && slot < coop::net::kMaxPeers && g_pendingReplies[slot].size() < 16)
+            g_pendingReplies[slot].push_back({p, NowMs()});
+        else
+            UE_LOGE("desk_ping: HOST could not queue reply op=%u seq=%u to slot=%d", op, seq, slot);
+    }
 }
 
 // The watches, by what each serves (Register): the verdict's is the gate itself and the host's roll, the coordinate
@@ -117,7 +133,14 @@ sg::Verdict OnVerdictPre(const sg::Call& c) {
     p.aim.c2Y = aim.c2Y;
     p.aim.selected = aim.selected;
     p.aim.direction = aim.direction;
-    s->SendReliableToSlot(0, coop::net::ReliableKind::DeskPingVerdict, &p, static_cast<int>(sizeof(p)));
+    if (!s->SendReliableToSlot(0, coop::net::ReliableKind::DeskPingVerdict, &p, static_cast<int>(sizeof(p)))) {
+        if (g_pendingClient.size() < 8) {
+            g_pendingClient.push_back({p, NowMs()});
+            UE_LOGW("desk_ping: CLIENT queued verdict #%u for retry because the reliable send queue was full", p.seq);
+        } else {
+            UE_LOGE("desk_ping: CLIENT could not queue verdict #%u (retry queue full)", p.seq);
+        }
+    }
     g_verdictRefused = true;
     g_refusedFn = insta ? g_instaFn : g_processFn;
     ++g_counts.refused;
@@ -309,8 +332,12 @@ void OnIntent(coop::net::Session& s, const coop::net::DeskPingVerdictPayload& p,
         return;
     }
     if (holds) {
-        CP::WriteCursorOnly(aim.viewX, aim.viewY);
-        CP::WriteDishCommitted(aim);
+        if (!CP::WriteCursorOnly(aim.viewX, aim.viewY) || !CP::WriteDishCommitted(aim)) {
+            // Do not roll a client's verdict against stale/default coordinates
+            // while its current widget or native repaint is not ready.
+            Send(&s, slot, PV::kOpRefused, p.seq, PV::kRefusedLost);
+            return;
+        }
     }
     g_run = HostRun{};
     g_run.slot = slot;
@@ -406,7 +433,47 @@ void Register() {
 
 void Install(coop::net::Session* session) { g_session.store(session, std::memory_order_release); }
 
-void Tick() { Register(); }
+void Tick() {
+    Register();
+    auto* s = g_session.load(std::memory_order_acquire);
+    if (!s || !s->running() || !s->connected()) {
+        g_pendingClient.clear();
+        for (auto& q : g_pendingReplies) q.clear();
+        return;
+    }
+    const uint64_t now = NowMs();
+    if (s->role() == Role::Host) {
+        for (uint8_t slot = 1; slot < coop::net::kMaxPeers; ++slot) {
+            auto& q = g_pendingReplies[slot];
+            while (!q.empty()) {
+                const auto& reply = q.front();
+                if (now < reply.queuedAt || now - reply.queuedAt > 10000) {
+                    q.pop_front();
+                    continue;
+                }
+                if (!s->IsSlotReady(slot) || !s->SendReliableToSlot(
+                        slot, coop::net::ReliableKind::DeskPingVerdict, &reply.payload,
+                        static_cast<int>(sizeof(reply.payload)))) break;
+                q.pop_front();
+            }
+        }
+        g_pendingClient.clear();
+        return;
+    }
+    if (s->role() != Role::Client) return;
+    while (!g_pendingClient.empty()) {
+        const auto& pending = g_pendingClient.front();
+        if (now < pending.queuedAt || now - pending.queuedAt > 10000) {
+            UE_LOGW("desk_ping: expired unsent client verdict #%u", pending.payload.seq);
+            g_pendingClient.pop_front();
+            continue;
+        }
+        if (!s->SendReliableToSlot(0, coop::net::ReliableKind::DeskPingVerdict,
+                                   &pending.payload, static_cast<int>(sizeof(pending.payload)))) break;
+        UE_LOGI("desk_ping: CLIENT retried and sent verdict #%u", pending.payload.seq);
+        g_pendingClient.pop_front();
+    }
+}
 
 void OnMessage(coop::net::Session& session, const coop::net::DeskPingVerdictPayload& p, int senderSlot) {
     if (session.role() == Role::Host) {
@@ -431,6 +498,7 @@ void OnMessage(coop::net::Session& session, const coop::net::DeskPingVerdictPayl
 
 void OnPeerLeft(uint8_t slot) {
     if (slot >= coop::net::kMaxPeers) return;
+    g_pendingReplies[slot].clear();
     g_budget[slot].Reset();
     g_instaBudget[slot].Reset();
     g_nextSayMs[slot] = 0;
@@ -446,10 +514,12 @@ void OnPeerLeft(uint8_t slot) {
 }
 
 void OnDisconnect() {
+    g_pendingClient.clear();
     g_verdictRefused = false;
     g_refusedFn = nullptr;
     g_run = HostRun{};
     for (uint8_t slot = 0; slot < coop::net::kMaxPeers; ++slot) {
+        g_pendingReplies[slot].clear();
         g_budget[slot].Reset();
         g_instaBudget[slot].Reset();
         g_nextSayMs[slot] = 0;

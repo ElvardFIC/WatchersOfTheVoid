@@ -1,5 +1,5 @@
 // coop/world/sky_sync.cpp -- see coop/world/sky_sync.h. Host-authoritative night-sky sync
-// (star-dome world rotation, moon phase, the sky eye), built on the same shape as coop/world/time_sync.cpp.
+// (star-dome world rotation, moon phase, sky eye and black hole).
 
 #include "coop/world/sky_sync.h"
 
@@ -12,6 +12,7 @@
 #include "ue_wrap/core/script_gate.h"
 #include "ue_wrap/facts/function_row.h"
 #include "ue_wrap/world/skysphere.h"
+#include "ue_wrap/engine/world_identity.h"
 #include "ue_wrap/core/types.h"  // FRotator
 
 #include <atomic>
@@ -36,8 +37,12 @@ constexpr auto kPushInterval = std::chrono::milliseconds(1000);
 // The eye: the day's noon roll runs on every peer and calls the sky's setEye, so a client refuses its own
 // and shows the host's, which the lane carries. Game thread.
 constexpr int kSetEyeTag = 0x534b4559;  // 'SKEY'
+constexpr int kBlackHoleTag = 0x534b4248; // 'SKBH'
+constexpr int kBlackHoleVisibilityTag = 0x534b4256;
 bool     g_gateAsked = false;            // the refusal gate was registered (or refused, said)
 bool     g_applyingEye = false;          // the lane's own apply of the host's eye runs
+bool     g_applyingBlackHole = false;
+uint64_t g_blackHoleApplyFailed = 0;
 uint64_t g_eyeRefused = 0;               // a client's own setEye calls refused this session
 bool     g_saidEyeRefused = false;
 uint64_t g_eyeApplyFailed = 0;           // the host's eye samples whose setEye did not run this session
@@ -49,6 +54,18 @@ struct ApplyingEye {
     ApplyingEye(const ApplyingEye&) = delete;
     ApplyingEye& operator=(const ApplyingEye&) = delete;
 };
+
+// newsky.tp starts the earthTp black-hole sequence (sound, latent delays,
+// emails, skyVisibility), not a pawn teleport. Refuse local client starts even
+// during loading; a late join receives the host's CURRENT presentation.
+sg::Verdict OnBlackHolePre(const sg::Call&) {
+    auto* s = g_session.load(std::memory_order_acquire);
+    return s && s->running() && s->role() == coop::net::Role::Client ?
+        sg::Verdict::Cancel : sg::Verdict::Run;
+}
+sg::Verdict OnBlackHoleVisibilityPre(const sg::Call& call) {
+    return g_applyingBlackHole ? sg::Verdict::Run : OnBlackHolePre(call);
+}
 
 // CLIENT, before newsky's setEye: the host's sky owns the eye. The lane's apply runs, and so does a call
 // in a world this client has not announced ready, its own load of the host's save.
@@ -67,11 +84,15 @@ sg::Verdict OnSetEyePre(const sg::Call& call) {
 }
 
 bool Finite(const coop::net::SkyStatePayload& p) {
+    using namespace coop::net::sky_flags;
     return std::isfinite(p.skyPitch) && std::isfinite(p.skyYaw) &&
-           std::isfinite(p.skyRoll) && std::isfinite(p.moonPhase);
+           std::isfinite(p.skyRoll) && std::isfinite(p.moonPhase) && p.eye <= 1 &&
+           !(p.blackHoleFlags & ~kKnown) &&
+           (!p.blackHoleFlags || (p.blackHoleFlags & kBlackHoleValid)) && !p.pad[0] && !p.pad[1];
 }
 
 bool MakePayload(coop::net::SkyStatePayload& out) {
+    out = {};
     ue_wrap::FRotator rot{};
     float moon = 0.f;
     if (!SKY::ReadSky(rot, moon)) return false;  // sky not streamed in yet
@@ -82,6 +103,11 @@ bool MakePayload(coop::net::SkyStatePayload& out) {
     bool eye = false;
     SKY::ReadEye(eye);  // unread, the sky shows no eye
     out.eye = eye ? 1 : 0;
+    bool hidden = false, light = false;
+    if (SKY::ReadBlackHole(hidden, light)) {
+        using namespace coop::net::sky_flags;
+        out.blackHoleFlags = kBlackHoleValid | (hidden ? kHidden : 0) | (light ? kLightVisible : 0);
+    }
     return Finite(out);  // never push NaN/inf onto the wire
 }
 
@@ -95,13 +121,35 @@ void Install(coop::net::Session* session) {
         if (!sg::WatchName(kRowSetEye, kSetEyeTag, &OnSetEyePre, nullptr))
             UE_LOGE("sky_sync: the script gate refused the watch on newsky_C.setEye -- a client's own noon roll "
                     "can still set its eye");
+        const bool startWatch = sg::WatchClassName(L"newsky_C", L"tp", kBlackHoleTag, &OnBlackHolePre, nullptr);
+        const bool visualWatch = sg::WatchClassName(L"newsky_C", L"skyVisibility", kBlackHoleVisibilityTag,
+                                                   &OnBlackHoleVisibilityPre, nullptr);
+        if (!startWatch || !visualWatch)
+            UE_LOGE("sky_sync: black-hole authority watch registration failed");
     }
 }
 
 void OnReliable(const coop::net::SkyStatePayload& payload) {
-    // From the host alone: the host's receive edge refuses a client's copy (client_authorship.h).
+    auto* s = g_session.load(std::memory_order_acquire);
+    if (!s || !s->connected() || s->role() != coop::net::Role::Client) return;
     if (!Finite(payload)) { UE_LOGW("sky_sync: dropping non-finite payload"); return; }
+    const auto world = ue_wrap::world_identity::Generation();
     SKY::ApplySky(ue_wrap::FRotator{payload.skyPitch, payload.skyYaw, payload.skyRoll}, payload.moonPhase);
+    if (s != g_session.load(std::memory_order_acquire) || !s->connected() ||
+        s->role() != coop::net::Role::Client || world != ue_wrap::world_identity::Generation()) return;
+    if (payload.blackHoleFlags & coop::net::sky_flags::kBlackHoleValid) {
+        struct Applying {
+            bool previous = g_applyingBlackHole;
+            Applying() { g_applyingBlackHole = true; }
+            ~Applying() { g_applyingBlackHole = previous; }
+        } scope;
+        if (!SKY::ApplyBlackHole((payload.blackHoleFlags & coop::net::sky_flags::kHidden) != 0,
+                                (payload.blackHoleFlags & coop::net::sky_flags::kLightVisible) != 0) &&
+            g_blackHoleApplyFailed++ == 0)
+            UE_LOGW("sky_sync: black-hole presentation not ready; next host sample retries");
+    }
+    if (s != g_session.load(std::memory_order_acquire) || !s->connected() ||
+        s->role() != coop::net::Role::Client || world != ue_wrap::world_identity::Generation()) return;
     // The eye through the sky's own setEye, which swaps the moon's texture; the gate lets this call run.
     // A call that did not run is said once and counted; each next sample tries again.
     const bool want = payload.eye != 0;
@@ -160,6 +208,7 @@ void Tick() {
 }
 
 void OnDisconnect() {
+    g_session.store(nullptr, std::memory_order_release);
     g_lastBroadcast = {};
     if (g_eyeRefused)
         UE_LOGI("sky_sync: session end -- a client refused %llu setEye call(s) of its own",
@@ -170,6 +219,7 @@ void OnDisconnect() {
     g_eyeRefused = 0;
     g_saidEyeRefused = false;
     g_eyeApplyFailed = 0;
+    g_blackHoleApplyFailed = 0;
 }
 
 }  // namespace coop::sky_sync

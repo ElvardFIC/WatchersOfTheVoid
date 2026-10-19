@@ -13,7 +13,9 @@
 #include "coop/element/player.h"
 #include "coop/net/protocol.h"
 #include "coop/net/session.h"
+#include "coop/player/hand_item.h"
 #include "coop/player/players_registry.h"
+#include "coop/player/pvp.h"
 #include "ue_wrap/engine/engine.h"
 #include "ue_wrap/core/game_thread.h"
 #include "ue_wrap/core/log.h"
@@ -55,6 +57,7 @@ const ue_wrap::facts::Function* const kImpactEntryRows[3] = {
     &kRowImpactDamage, &kRowImpactDamageCpp, &kRowImpactSquishCpp,
 };
 void*    g_impactFns[3] = {};
+void*    g_addDamageFn = nullptr;
 bool     g_impactInterceptorsDone = false;
 uint32_t g_canceled = 0;   // rate-latched log counter
 
@@ -72,13 +75,15 @@ std::atomic<void*> g_localPawn{nullptr};
 // own machine computes the same contact on its own possessed player (self==local -> pass-through),
 // so nothing is lost: MTA's victim-authoritative shape, no relay. Coop-session gated, because solo
 // play has only the local body anyway and an unset registry must never eat solo damage.
-bool OnImpactEntryPre(void* self, void* /*params*/) {
+bool OnImpactEntryPre(void* self, void* params, int which) {
     auto* s = g_session.load(std::memory_order_acquire);
     if (!s || !s->connected()) return false;
     if (!self) return false;
     void* localPawn = g_localPawn.load(std::memory_order_acquire);
     if (!localPawn) return false;           // pre-resolve boot window: native behavior
-    if (self == localPawn) return false;    // own body: native path
+    void* fn = (which >= 0 && which < 3) ? g_impactFns[which] : nullptr;
+    if (self == localPawn) return coop::pvp::CancelLocalImpact(params, fn);
+    coop::pvp::OnPuppetImpact(self, params, fn);
     const uint32_t n = ++g_canceled;
     if (n <= 5 || (n % 50) == 0) {
         UE_LOGI("player_damage: canceled impact entry on NON-LOCAL body %p (#%u) -- "
@@ -87,58 +92,50 @@ bool OnImpactEntryPre(void* self, void* /*params*/) {
     return true;  // cancel: the singleton saveSlot write must not run for a foreign body
 }
 
-// The same rule for the damage verb itself. Fire, burning and the other status effects do not come
-// through an impact entry: the body's own ubergraph calls Add Player Damage on itself once a second
-// for as long as it burns. A peer's puppet that walked through fire only this machine shows caught
-// it here and burned for the rest of the session, and every tick ran the damage body against this
-// machine's player: its camera shook once a second (the burn loop's own once-a-second Delay; the
-// [DMG] probe, coop/dev/damage_probe, logs each call). The puppet's owner sees no such fire and takes nothing,
-// which is the victim-authoritative answer the impact cancel already gives. Watched at the
-// script-body gate because the verb is Blueprint-internal on every route. The mod's own calls get no
-// pass: the origin flag spans every Blueprint call nested inside one of ours, so it proves nothing
-// about which body a nested damage or ignite was aimed at. A puppet is refused whoever asks.
-constexpr int kDamageVerbTag = 0x504C4447;  // 'PLDG'
-bool g_damageWatchDone = false;
-std::atomic<uint32_t> g_verbCanceled{0};
+bool OnImpact0(void* self, void* params) { return OnImpactEntryPre(self, params, 0); }
+bool OnImpact1(void* self, void* params) { return OnImpactEntryPre(self, params, 1); }
+bool OnImpact2(void* self, void* params) { return OnImpactEntryPre(self, params, 2); }
 
-ue_wrap::script_gate::Verdict OnDamageVerbPre(const ue_wrap::script_gate::Call& c) {
-    // IsPuppet alone: no session or local-pawn early-out in front of it, since the local pawn reads
-    // null for a whole death or travel window, and one call let through then burns for the session.
-    if (!c.object || !coop::players::Registry::Get().IsPuppet(c.object))
-        return ue_wrap::script_gate::Verdict::Run;
-    const uint32_t n = ++g_verbCanceled;
-    if (n <= 5 || (n % 100) == 0)
-        UE_LOGI("player_damage: canceled the damage verb on a peer's puppet %p (#%u) -- its owner "
-                "computes its own damage", c.object, n);
-    return ue_wrap::script_gate::Verdict::Cancel;
+// A shovel or crowbar calls addDamage on whoever the trace hit. On a puppet that write does not
+// reach the victim's health, and the impact-entry cancel never sees it. Treat it as the swing or
+// the throw, and do not let it touch this machine's health.
+bool OnAddDamage(void* self, void* params) {
+    auto* s = g_session.load(std::memory_order_acquire);
+    if (!s || !s->connected() || !self) return false;
+    void* localPawn = g_localPawn.load(std::memory_order_acquire);
+    if (!localPawn) return false;
+    if (self == localPawn) return coop::pvp::CancelLocalImpact(params, g_addDamageFn);
+    coop::pvp::OnPuppetImpact(self, params, g_addDamageFn);
+    return true;
 }
 
-// The body never catches fire either. mainPlayer_C burns on its own: ignite(fuel) sets burningTime and
-// starts a once-a-second loop that runs the damage verb, plays a 2D pain sound and turns
-// GetPlayerController(0) -- this machine's camera -- by a random ten degrees; burningTime only runs out
-// on the burning body's own tick, which a puppet does not run, so a puppet set alight burned for the
-// rest of the session and shook this machine's view every second. The damage cancel above stops the
-// health write and nothing else, so ignite is refused on a peer's puppet: the owner computes its own
-// fire as it computes its own damage. It is the one way in. attemptIgnite, the verb a spreading fire
-// calls, is an empty stub on the player (its ubergraph entry is a bare pop), and startBurning is
-// private and reached from ignite alone (mainPlayer_C's control-flow graph and its offset
-// listing). Both refusals ask IsPuppet rather than "not the local pawn", the
-// impact cancel's test, because a stale local pawn across a respawn must never make this machine's
-// own player immune.
-constexpr int kIgniteTag = 0x49474E54;  // 'IGNT'
-bool g_igniteWatchDone = false;
-std::atomic<uint32_t> g_igniteCanceled{0};
+// These BP bodies also run through internal Blueprint calls, bypassing the
+// ProcessEvent impact interceptors above. An orphan's ignite starts latent loops
+// that read player 0's controller and shared health; ragdollMode/fallen hide its
+// meshes and enter the single-player death chain. Remote presentation belongs to
+// RagdollDisplay instead. The script gate is GT-only, so resolve the current local
+// pawn here rather than trusting yesterday's atomic pointer during world travel.
+ue_wrap::script_gate::Verdict OnNativePlayerState(const ue_wrap::script_gate::Call& c) {
+    using ue_wrap::script_gate::Verdict;
+    auto* s = g_session.load(std::memory_order_acquire);
+    if (!s || !s->connected() || !c.object) return Verdict::Run;
+    void* local = coop::players::Registry::Get().Local();
+    if (!local || c.object == local) return Verdict::Run;
+    static uint32_t canceled = 0; // script-gate callbacks are game-thread-only
+    const uint32_t n = ++canceled;
+    if (n <= 8 || n % 100 == 0)
+        UE_LOGI("player_damage: blocked foreign native state tag=0x%x body=%p local=%p (#%u)",
+                c.tag, c.object, local, n);
+    return Verdict::Cancel;
+}
 
-ue_wrap::script_gate::Verdict OnIgnitePre(const ue_wrap::script_gate::Call& c) {
-    // IsPuppet alone: no session or local-pawn early-out in front of it, since the local pawn reads
-    // null for a whole death or travel window, and one call let through then burns for the session.
-    if (!c.object || !coop::players::Registry::Get().IsPuppet(c.object))
-        return ue_wrap::script_gate::Verdict::Run;
-    const uint32_t n = ++g_igniteCanceled;
-    if (n <= 5 || (n % 100) == 0)
-        UE_LOGI("player_damage: refused setting a peer's puppet %p alight (#%u) -- its fire is its owner's",
-                c.object, n);
-    return ue_wrap::script_gate::Verdict::Cancel;
+void InstallNativeStateGuards() {
+    static const wchar_t* const names[] = {L"ragdollMode", L"fallen", L"ignite", L"startBurning"};
+    static bool registered[4]{};
+    for (int i = 0; i < 4; ++i) {
+        if (!registered[i]) registered[i] = ue_wrap::script_gate::WatchClassName(
+            L"mainPlayer_C", names[i], 0x50530000 + i, &OnNativePlayerState, nullptr);
+    }
 }
 
 }  // namespace
@@ -151,28 +148,13 @@ uint32_t RefusedDamage() { return g_verbCanceled.load(std::memory_order_relaxed)
 uint32_t RefusedIgnites() { return g_igniteCanceled.load(std::memory_order_relaxed); }
 
 void Tick() {
+    InstallNativeStateGuards();
     // Publish the local pawn for the interceptor's any-thread compare (GT here;
     // Registry::Local() is GT-only and cached).
-    g_localPawn.store(coop::players::Registry::Get().Local(), std::memory_order_release);
-    // The dmghazard probe's red: neither refusal is watched, so a puppet takes damage and fire here.
-    static const bool s_noRefusal =
-        coop::config::ResolveFlag(coop::config_registry::rows::player_damage_no_refusal);
-    if (s_noRefusal && (!g_damageWatchDone || !g_igniteWatchDone)) {
-        g_damageWatchDone = g_igniteWatchDone = true;
-        UE_LOGW("player_damage: DRILL -- the damage and ignite refusals on a peer's puppet are OFF "
-                "(dev.player_damage_no_refusal); a puppet takes them here");
-    }
-    if (!g_damageWatchDone) {
-        g_damageWatchDone = true;
-        if (!ue_wrap::script_gate::WatchName(kRowAddPlayerDamage, kDamageVerbTag, &OnDamageVerbPre, nullptr))
-            UE_LOGE("player_damage: the damage verb watch did not register -- a burning puppet damages "
-                    "this machine's player");
-    }
-    if (!g_igniteWatchDone) {
-        g_igniteWatchDone = true;
-        if (!ue_wrap::script_gate::WatchName(kRowIgnite, kIgniteTag, &OnIgnitePre, nullptr))
-            UE_LOGE("player_damage: the ignite watch did not register -- a peer's puppet can burn here");
-    }
+    void* local = coop::players::Registry::Get().Local();
+    g_localPawn.store(local, std::memory_order_release);
+    coop::pvp::NoteBodies(local, coop::hand_item::LocalHandActor());
+    coop::pvp::Tick();
     if (g_impactInterceptorsDone) return;
     void* cls = ue_wrap::object_index::ClassByName(L"mainPlayer_C");
     if (!cls) return;
@@ -181,20 +163,26 @@ void Tick() {
     // to fix, not a slot to wait for.
     g_impactInterceptorsDone = true;
     bool all = true;
+    GT::UFunctionInterceptor cbs[3] = { &OnImpact0, &OnImpact1, &OnImpact2 };
     for (int i = 0; i < 3; ++i) {
-        const ue_wrap::facts::Resolved impact = ue_wrap::facts::ResolveOn(*kImpactEntryRows[i], cls);
-        g_impactFns[i] = impact.Fn();
-        if (impact && GT::RegisterInterceptor(impact, &OnImpactEntryPre)) continue;
+        g_impactFns[i] = R::FindFunction(cls, kImpactEntryNames[i]);
+        if (g_impactFns[i] && GT::RegisterInterceptor(g_impactFns[i], cbs[i])) continue;
         all = false;
         UE_LOGE("player_damage: impact entry %ls %s -- a non-local body runs its damage body", kImpactEntryRows[i]->Name(),
                 g_impactFns[i] ? "did not register (the interceptor table is full)"
                                : "is not declared on mainPlayer_C (a recooked Blueprint)");
     }
+    g_addDamageFn = R::FindFunction(cls, L"addDamage");
+    if (!g_addDamageFn || !GT::RegisterInterceptor(g_addDamageFn, &OnAddDamage)) {
+        UE_LOGE("player_damage: addDamage %s -- a shovel swing on a puppet never reaches that player",
+                g_addDamageFn ? "did not register (the interceptor table is full)"
+                              : "is not declared on mainPlayer_C");
+    }
     if (all) {
         UE_LOGI("player_damage: impact-entry PRE cancels installed (impactDamage=%p "
-                "impactDamageCPP=%p impactSquishCPP=%p) -- non-local bodies never run "
+                "impactDamageCPP=%p impactSquishCPP=%p addDamage=%p) -- non-local bodies never run "
                 "the saveSlot damage body",
-                g_impactFns[0], g_impactFns[1], g_impactFns[2]);
+                g_impactFns[0], g_impactFns[1], g_impactFns[2], g_addDamageFn);
     }
 }
 

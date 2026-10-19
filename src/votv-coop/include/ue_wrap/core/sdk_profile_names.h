@@ -57,7 +57,9 @@ inline constexpr const wchar_t* NpcClass_KerfurOmega  = L"kerfurOmega_C";
 inline constexpr const wchar_t* NpcClass_Krampus      = L"npc_krampus_C";
 inline constexpr const wchar_t* NpcClass_Funguy       = L"npc_funguy_C";
 inline constexpr const wchar_t* NpcClass_GoreSlither  = L"npc_goreSlither_C";
-inline constexpr const wchar_t* NpcClass_Insomniac    = L"insomniac_C";
+// insomniac_C (including insomniac_Child_C) stays peer-local: its native graph
+// hardcodes player/camera 0 for pursuit, grab, sleep checks and dream entry.
+// A pose-only mirror cannot attack its viewer; the local ticker must spawn it.
 inline constexpr const wchar_t* NpcClass_Fossilhound  = L"fossilhound_C";
 inline constexpr const wchar_t* NpcClass_Antibreather = L"antibreather_C";
 inline constexpr const wchar_t* NpcClass_Orborb       = L"npc_orborb_C";
@@ -69,7 +71,7 @@ inline constexpr const wchar_t* NpcClass_AriralPigBeater = L"npc_ariral_pigBeate
 // swarm nor the coloured per-player wisps; AIPerception plus a Target APawn; spawned by
 // ticker_yellowWispSpawner_C late in the game) and ventCrawler_C (AventCrawler_C : ACharacter, the
 // ventCrawler event). Both ride the BeginDeferred interceptor and the pose stream; the vent
-// crawler's wall crawl is a known yaw-only gap.
+// crawler's wall crawl uses the full actor orientation in the pose stream.
 inline constexpr const wchar_t* NpcClass_KillerWisp   = L"killerwisp_C";
 inline constexpr const wchar_t* NpcClass_VentCrawler  = L"ventCrawler_C";
 // The other story-event creatures. Their packages are hard imports of the eventer and of the
@@ -95,17 +97,27 @@ inline constexpr const wchar_t* NpcClass_WispG        = L"wisp_g_C";
 inline constexpr const wchar_t* NpcClass_WispO        = L"wisp_o_C";
 inline constexpr const wchar_t* NpcClass_WispP        = L"wisp_p_C";
 inline constexpr const wchar_t* NpcClass_WispBlu      = L"wisp_blu_C";
+// The event creatures, born inside their event controllers' graphs, so they reach the lane through
+// the source-gated catch (coop/creatures/npc_world_enum): the boar war's and the pig drop's boars,
+// the gray event's grays, the eggvasion's eggs, and the tentacle-balls follower's balls.
+// grayboar_C derives from prop_C, not Character. Its visible body belongs to
+// the prop lane; never feed it ACharacter movement/mesh offsets through this list.
+inline constexpr const wchar_t* NpcClass_GrayTest     = L"grayTest_C";
+inline constexpr const wchar_t* NpcClass_Egg          = L"eg_C";
+inline constexpr const wchar_t* NpcClass_TentacleBall = L"tentacleBall_C";
 
 // The allowlist array: resolved once at install through R::FindClass and cached. The classes load
 // on the first gameplay-level transition, not at the menu, so the install retries until every
-// entry resolves. sizeof-derived, so a new entry binds everywhere.
+// eager entries are probed (the first kNpcAllowlistEagerSize). No missing creature
+// blocks installation: ancestry-name matching covers its first spawn. Later entries load with
+// their events and are resolved late, after the lane is live (npc_sync::RefreshLateAllowlist).
+// sizeof-derived, so a new entry binds everywhere.
 inline constexpr const wchar_t* kNpcAllowlist[] = {
     NpcClass_Zombie,
     NpcClass_KerfurOmega,
     NpcClass_Krampus,
     NpcClass_Funguy,
     NpcClass_GoreSlither,
-    NpcClass_Insomniac,
     NpcClass_Fossilhound,
     NpcClass_Antibreather,
     NpcClass_Orborb,
@@ -113,10 +125,7 @@ inline constexpr const wchar_t* kNpcAllowlist[] = {
     NpcClass_AriralShooter,
     NpcClass_AriralPigBeater,
     NpcClass_KillerWisp,   // yellow Killer Wisp (late-game; AIPerception like the 12)
-    NpcClass_VentCrawler,  // the ventCrawler event (its wall crawl is a yaw-only gap)
-    NpcClass_GrayTest,
-    NpcClass_Eg,
-    NpcClass_TentacleBall,
+    NpcClass_VentCrawler,  // the ventCrawler event (full actor orientation)
     NpcClass_Wisp,         // wispSwarm-event and ambient sky wisp (both host-authoritative)
     NpcClass_WispB,        // sky-wisp color variants (ticker_wispSpawner map; direct ACharacter
     NpcClass_WispRed,      //   subclasses, NOT wisp_C children -- each needs its own row)
@@ -126,11 +135,19 @@ inline constexpr const wchar_t* kNpcAllowlist[] = {
     NpcClass_WispO,
     NpcClass_WispP,
     NpcClass_WispBlu,
+    // Late entries: not required for the lane to go live.
+    NpcClass_GrayTest,
+    NpcClass_Egg,
+    NpcClass_TentacleBall,
 };
 inline constexpr size_t kNpcAllowlistSize = sizeof(kNpcAllowlist) / sizeof(kNpcAllowlist[0]);
+inline constexpr size_t kNpcAllowlistEagerSize = kNpcAllowlistSize - 3;
+static_assert(kNpcAllowlist[kNpcAllowlistEagerSize - 1] == NpcClass_WispBlu &&
+                  kNpcAllowlist[kNpcAllowlistEagerSize] == NpcClass_GrayTest,
+              "kNpcAllowlistEagerSize must end the eager entries at the late ones");
 
 // The non-Character event actors the Character-only NPC mirror cannot replicate: npc_pose_drive
-// drives position, yaw and the CMC, so these AActor/APawn ships and saucers get a transform-only
+// drives position, rotation and the CMC, so these AActor/APawn ships and saucers get a transform-only
 // full-rotation mirror (coop::element::WorldActor, coop/world_actor_sync). A second BeginDeferred
 // interceptor consumes this list, disjoint from kNpcAllowlist. Verified AActor/APawn in the CXX
 // header dump; matched by name and kept curated.
@@ -138,6 +155,8 @@ inline constexpr const wchar_t* kWorldActorAllowlist[] = {
     L"ufoDropper_body_C",          // ufoDropper delivery saucer body (the gray "drop pod")
     L"ufoDropper_car_C",           // ufoDropper car variant
     L"ufoDropper_tank_C",          // ufoDropper tank variant
+    L"ufoDropper_pig_C",           // ufoDropper pig variant (drops the boars)
+    L"firetankDeploy_C",           // the tank drop's deploying tank, which becomes firetank_C
     L"rozitBorg_C",                // Rozital mothership (borgRozital event)
     L"arirShip_C",                 // ariral ship
     L"skyUfo_C",                   // high-altitude sky UFO
@@ -158,6 +177,7 @@ inline constexpr const wchar_t* kWorldActorAllowlist[] = {
                                    // EX_CallMath, so this entry alone does nothing: prop_coingun_C in
                                    // kExSpawnSourceClasses lets the Func-thunk drain reach
                                    // world_actor_sync::HostEnrollExSpawn, which allocates the eid.
+    L"dreamer_dreambase_C",         // the sleep-horror dreambase event actor (host spawn + transform lane)
 };
 inline constexpr size_t kWorldActorAllowlistSize =
     sizeof(kWorldActorAllowlist) / sizeof(kWorldActorAllowlist[0]);

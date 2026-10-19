@@ -38,13 +38,15 @@ namespace coop::prop_stick_sync {
 // other working: the stick
 // (the component class, ExecuteUbergraph_comp_wallAttachable, the component's `prop` field and
 // forceStick, then the POST observer) and the unstick (unstick and its script-gate watch). Caches
-// `session`.
+// `session`. Also observes overriding crowbarOpen bodies for pryable props with no
+// wall-attach component; only a successful native freeing becomes an unstick.
 void Install(coop::net::Session* session);
 
 // Drain the stick commits and unsticks recorded since the last pass: verify (still live; still
 // stuck for a stick, freed for an unstick) and broadcast as PropStickState. MUST run before
 // local_streams::Tick within the pump pass (stick-before-release ordering). Cheap no-op when
-// empty. Game thread (net pump).
+// empty. A temporary send refusal retries for at most two seconds while the
+// original actor and outcome stay current. Game thread (net pump).
 void Tick();
 
 // Receiver for PropStickState (wired in event_dispatch_entity): a stick, or an unstick when the
@@ -55,8 +57,9 @@ void OnStickState(const coop::net::PropStickStatePayload& payload, uint8_t sende
 // A join's snapshot row or window correction makes this copy's stuck state the host's
 // (`physFlags`, read off the host's live prop): a copy stuck here that is free on the host gets the
 // component's unstick, with the tool, and a free copy the host's is stuck on gets the component's
-// forceStick at the pose the caller has already put it at. Only for a wall-attach component's owner
-// and only on a difference; the caller converges frozen and sleep after it. Game thread.
+// forceStick at the pose the caller has already put it at. Non-component props
+// converge their static bit through prop_C's base setter. Only on a difference;
+// the caller converges frozen and sleep after it. Game thread.
 void ConvergeStuck(void* actor, uint8_t physFlags);
 
 // True iff `actor` carries the wall-attach component in its comp_wallAttachable variable: the
@@ -69,7 +72,9 @@ bool IsWallAttachable(void* actor);
 // it off the wall, by hand or by a pry, so the copy takes that outcome. The tool skips the check that
 // fails a hand grab of a pried-on prop and shows its "Tool required" hint, and on that branch clears
 // the component's `holding`, which nobody here has set on the copy. Not mirrored back. False when the
-// unstick half is not installed or the component does not resolve. Game thread.
+// unstick half is not installed or a declared component does not resolve. Ordinary
+// props without that member use the base state setter to clear static/frozen.
+// Game thread.
 bool ReplayUnstick(void* actor);
 
 // Clear per-session state (the pending stick and unstick records). Net disconnect.

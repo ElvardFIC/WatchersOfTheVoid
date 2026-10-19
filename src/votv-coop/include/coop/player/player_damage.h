@@ -5,8 +5,8 @@
 // puppet in the host's world drained the host; a PRE interceptor cancels those three entries
 // whenever `self` is not the local possessed player (a puppet, or the skin-preview mannequin),
 // while the victim's own machine computes the same contact natively. The reliable host-to-owner
-// PlayerDamage relay below is the send-and-apply half for host-detected enemy hits; no enemy
-// detection hook drives it yet, and the test entry does.
+// PlayerDamage relay below is the send-and-apply half for host-detected enemy hits;
+// grayboar_sync routes native bites on a puppet through it, as does the test entry.
 
 #pragma once
 
@@ -20,8 +20,9 @@ namespace coop::player_damage {
 void Install(coop::net::Session* session);
 
 // Per tick, game thread: once mainPlayer_C is loaded, resolve its three impact entries and register
-// the non-local-body PRE cancel, settled on that first attempt; one latched read after. Called from
-// subsystems::TickGameplay.
+// the non-local-body PRE cancel, settled on that first attempt. Also installs
+// class-scoped script guards for foreign ragdoll/death/fire bodies, covering
+// internal Blueprint calls as well. Called from subsystems::TickGameplay.
 void Tick();
 
 // The refusals so far on this machine: the damage verb and ignite refused on a peer's puppet. What

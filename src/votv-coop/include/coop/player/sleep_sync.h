@@ -27,9 +27,15 @@ namespace coop::sleep_sync {
 
 void Install(coop::net::Session* session);
 
-// Per-tick: poll this peer's own rest state (the gamemode's isSleep, dreaming and bed), and on a
-// change send it (a client to the host) or broadcast it (the host); hold a client's dreamProbability.
-// Cheap when idle: three cached field reads.
+// Per-tick: resolve (throttled), poll the local isSleep edge and report it, enforce the WAITING
+// dilation undo, clamp the client need during the phase, and manage the dreamProbability policy.
+// Cheap when idle -- a couple of cached field reads.
+//
+// CLIENTS clamp their need at 98 for the phase, so only the HOST can end the night
+// naturally. Each peer restores dreamProbability=-1 during acceleration and uses
+// its own native nightmaresEnabled/bed probability/roll. Outside that phase the
+// sleep roll is suppressed. A nightmare interrupts the shared night via the
+// sleeper's falling edge, but its scene is personal and is never broadcast.
 void Tick();
 
 // Wire ingest (both roles; see SleepStatePayload). Every field is checked against the sender's role
@@ -37,13 +43,11 @@ void Tick();
 // payload length, which must be exactly the payload's size.
 void OnReliable(const uint8_t* payload, size_t len, uint8_t senderSlot);
 
-// HOST, game thread, each event_feed update after the reconcile: a client's rest state owed by its pace
-// (the host keeps each client's newest and applies a changed one at a pace) is applied once a token
-// refills, unless already held.
-void PayOwed(coop::net::Session& session);
+// Reserved legacy packet; ignored because replay bypasses personal conditions.
+void OnDreamScene(const coop::net::DreamScenePayload& p, uint8_t senderSlot);
 
-// HOST: a joiner arrived (world-ready) or re-announced: send it the host's sleeping flag and one rest
-// state per slot that is not awake, the host's included. Idempotent.
+// HOST: a joiner arrived (world-ready) -- ends a running accelerate phase
+// (someone is now awake in the world) and re-tallies.
 void QueueConnectBroadcastForSlot(int peerSlot);
 
 // HOST: a leaver's state goes back to awake and every client is told.

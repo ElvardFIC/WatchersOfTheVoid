@@ -86,5 +86,13 @@ int32_t AnimBP_kerfur_isFace();
 // so a streamed lookAt sticks.
 int32_t AnimBP_kerfur_lookAt();
 int32_t AnimBP_kerfur_customLookAt();
+// Sitting: the AnimBP plays kerfurOmegaV1_sitOnAtv while isOnAtv is true, which is the same
+// skeleton the player skins use, so a seated player or Omega must set it or they stand through
+// the chair. useLegIK must go off with it, or the foot trace plants standing legs over the pose.
+int32_t AnimBP_kerfur_isOnAtv();
+// What the local player is sitting on (a sitBox, a chair, the ATV). Null when standing.
+int32_t MainPlayer_sittingOn();
+// The driver's sit arrow on the ATV. Negative if the class has no such property.
+int32_t Atv_sitarrow();
 
 }  // namespace ue_wrap::reflected_offset

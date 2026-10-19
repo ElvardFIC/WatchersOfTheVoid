@@ -7,6 +7,9 @@
 #include "coop/net/protocol.h"
 #include "coop/net/session.h"
 #include "coop/player/local_streams.h"  // CurrentHoldGen, the hold a stick ends
+#include "coop/player/local_prop_hold.h"
+#include "coop/player/hand_item.h"
+#include "coop/props/prop_drive_stream.h"  // IsParked: the host's channel moves an unstuck copy
 #include "coop/props/prop_element_tracker.h"
 #include "coop/props/prop_key_index.h"  // a key on the wire to a live actor
 #include "coop/props/remote_prop.h"
@@ -24,6 +27,7 @@
 #include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <mutex>
 #include <string>
@@ -82,6 +86,8 @@ int32_t g_compPropOff    = -1;       // comp_wallAttachable_C::prop (Aprop_C*) f
 constexpr int32_t kStickCommitEntry = 45;
 
 constexpr int kTagUnstick = 0x554E5354;  // 'UNST'
+constexpr int kTagPry = 0x50525953;  // 'PRYS'
+bool g_pryWatchInstalled = false;
 
 // Inside ReplayUnstick: the copy's own unstick is this peer taking another's outcome, and is not
 // mirrored back. Game thread, as the gate's callbacks are.
@@ -122,6 +128,13 @@ void* WallAttachCompOf(void* actor) {
     return R::IsDescendantOfAny(compCls, &g_compClass, 1) ? comp : nullptr;
 }
 
+// Ask only after WallAttachCompOf populated the class cache. A declared but
+// temporarily missing/unresolved component is not an ordinary non-component prop.
+bool HasWallAttachMember(void* actor) {
+    const auto it = g_compOffsets.find(R::ClassOf(actor));
+    return it != g_compOffsets.end() && it->second.off >= 0;
+}
+
 // ---- pending list ----------------------------------------------------------------
 // The observers only RECORD; Tick() (game thread) verifies + broadcasts on the NEXT net-pump pass.
 // Same record-then-act shape as kerfur_convert.
@@ -136,25 +149,32 @@ void* WallAttachCompOf(void* actor) {
 // coop/net/session_lanes.h). Draining next pass makes the order structural as well: TickGameplay
 // runs before local_streams' release edge.
 struct Pending {
-    void*   prop = nullptr;
-    int32_t internalIdx = -1;
+    ue_wrap::CachedObjRef prop;
     bool    unstick = false;
+    uint64_t queuedAt = 0;
+    uint32_t worldGeneration = 0;
 };
 constexpr int kMaxPending = 8;
 std::mutex g_pendingMutex;
 Pending g_pending[kMaxPending];
 int g_pendingCount = 0;
 
+uint64_t NowMs() {
+    return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count());
+}
+
 void Record(void* prop, bool unstick) {
     Pending p{};
-    p.prop = prop;
-    p.internalIdx = R::InternalIndexOf(prop);  // live: it is the comp's owner mid-dispatch
+    p.prop.Set(prop);
     p.unstick = unstick;
+    p.queuedAt = NowMs();
+    p.worldGeneration = ue_wrap::world_identity::Generation();
     std::lock_guard<std::mutex> lk(g_pendingMutex);
     // Dedupe a re-fired record for the same prop and edge still settling (the trace can re-enter
     // 45 after a failed first pass) -- keep the earliest.
     for (int i = 0; i < g_pendingCount; ++i) {
-        if (g_pending[i].prop == prop && g_pending[i].unstick == unstick) return;
+        if (g_pending[i].prop.Is(prop) && g_pending[i].unstick == unstick) return;
     }
     if (g_pendingCount >= kMaxPending) {
         static std::atomic<uint32_t> sDropped{0};
@@ -171,6 +191,9 @@ void Record(void* prop, bool unstick) {
 // EntryPoint gate first; memory reads + the leaf mutex only (observer
 // thread contract).
 void OnCompUbergraphPost(void* self, void* /*function*/, void* params) {
+    // Capturing actor world/serial belongs to the game thread, like the latent
+    // commit itself. Do not walk an actor's Outer chain from a worker callback.
+    if (GT::IsDefinitelyOffGameThread()) return;
     if (!self || !params || g_entryParamOff < 0 || g_compPropOff < 0) return;
     const int32_t entry =
         *reinterpret_cast<const int32_t*>(reinterpret_cast<uint8_t*>(params) + g_entryParamOff);
@@ -195,6 +218,19 @@ sg::Verdict OnUnstickPre(const sg::Call& c) {
     auto* s = LoadSession();
     if (!s || !s->running() || !s->connected()) return sg::Verdict::Run;
     Record(prop, /*unstick=*/true);
+    return sg::Verdict::Run;
+}
+
+// Some pryable props implement crowbarOpen without comp_wallAttachable. Observe the
+// actual overriding body too; Tick only publishes if the body really freed the prop.
+// A pryable that does use the component is deduplicated with OnUnstickPre.
+sg::Verdict OnPryPre(const sg::Call& c) {
+    if (g_replayDepth || !c.object ||
+        !ue_wrap::prop::IsDescendantOfProp(c.object) ||
+        !(ue_wrap::prop::IsStatic(c.object) || ue_wrap::prop::IsFrozen(c.object)))
+        return sg::Verdict::Run;
+    auto* s = LoadSession();
+    if (s && s->running() && s->connected()) Record(c.object, true);
     return sg::Verdict::Run;
 }
 
@@ -349,31 +385,28 @@ bool ReplayStick(void* prop, void* comp, uint8_t flags, const std::wstring& keyW
     return false;
 }
 
-void BroadcastStick(coop::net::Session* s, void* prop, bool frozen, bool statiq) {
+bool BroadcastStick(coop::net::Session* s, void* prop, bool frozen, bool statiq) {
     coop::net::PropStickStatePayload p{};
     std::wstring keyW;
     if (const Fill f = FillIdentityAndPose(p, prop, keyW); f != Fill::Ok) {
-        UE_LOGW("prop_stick_sync: stuck prop %p %s -- not broadcast", prop,
-                f == Fill::NoIdentity ? "has neither key nor eid" : "has no readable location or rotation");
-        return;
+        return false;
     }
     p.flags = (frozen ? 1u : 0u) | (statiq ? 2u : 0u);
     // The hold this stick ends, when the stuck prop is the one this peer holds (the release edge
     // runs after this pass); 0 closes nothing.
     p.holdGen = (coop::local_streams::LastHeldActor() == prop) ? coop::local_streams::CurrentHoldGen()
                                                                 : uint16_t{0};
-    s->SendReliable(coop::net::ReliableKind::PropStickState, &p, sizeof(p));
+    if (!s->SendReliable(coop::net::ReliableKind::PropStickState, &p, sizeof(p))) return false;
     UE_LOGI("prop_stick_sync: broadcast STICK key='%ls' eid=%u flags=%u pose=(%.0f,%.0f,%.0f)",
             keyW.c_str(), p.elementId, p.flags, p.locX, p.locY, p.locZ);
+    return true;
 }
 
-void BroadcastUnstick(coop::net::Session* s, void* prop) {
+bool BroadcastUnstick(coop::net::Session* s, void* prop) {
     coop::net::PropStickStatePayload p{};
     std::wstring keyW;
     if (const Fill f = FillIdentityAndPose(p, prop, keyW); f != Fill::Ok) {
-        UE_LOGW("prop_stick_sync: unstuck prop %p %s -- not broadcast", prop,
-                f == Fill::NoIdentity ? "has neither key nor eid" : "has no readable location or rotation");
-        return;
+        return false;
     }
     p.flags = 0;
     p.holdGen = 0;  // an unstick ends no hold; a grab's starts one, which its poses carry
@@ -382,9 +415,10 @@ void BroadcastUnstick(coop::net::Session* s, void* prop) {
         p.linVelX = v.linearCmS.X;   p.linVelY = v.linearCmS.Y;   p.linVelZ = v.linearCmS.Z;
         p.angVelX = v.angularDegS.X; p.angVelY = v.angularDegS.Y; p.angVelZ = v.angularDegS.Z;
     }
-    s->SendReliable(coop::net::ReliableKind::PropStickState, &p, sizeof(p));
+    if (!s->SendReliable(coop::net::ReliableKind::PropStickState, &p, sizeof(p))) return false;
     UE_LOGI("prop_stick_sync: broadcast UNSTICK key='%ls' eid=%u pose=(%.0f,%.0f,%.0f) angVel=(%.0f,%.0f,%.0f) deg/s",
             keyW.c_str(), p.elementId, p.locX, p.locY, p.locZ, p.angVelX, p.angVelY, p.angVelZ);
+    return true;
 }
 
 // The copy is freed by the component's own unstick. Unless another owner moves it -- a peer's
@@ -395,12 +429,22 @@ void ApplyUnstick(void* prop, const coop::net::PropStickStatePayload& p, const s
     // A copy already free -- the hold's first pose ran the unstick before this message came -- gets no
     // second one: its init() would switch the copy's simulation on under the drive that owns it.
     const bool wasStuck = ue_wrap::prop::IsFrozen(prop) || ue_wrap::prop::IsStatic(prop);
+    const bool driven = coop::remote_prop::IsActorUnderAnyDrive(prop) || coop::prop_drive_stream::IsParked(prop);
+    ue_wrap::CachedObjRef ref;
+    ref.Set(prop);
     if (wasStuck && !ReplayUnstick(prop)) {
-        UE_LOGW("prop_stick_sync: UNSTICK key='%ls' eid=%u -- the component's unstick did not run here; the copy "
+        UE_LOGW("prop_stick_sync: UNSTICK key='%ls' eid=%u -- the native freeing verb did not run here; the copy "
                 "stays as it is", keyW.c_str(), p.elementId);
         return;
     }
-    const bool owned = coop::remote_prop::IsOwnedHere(prop);
+    // Native init() is virtual and can tear down/replace a subclass's actor.
+    if (!ref.Get()) return;
+    if (wasStuck && (ue_wrap::prop::IsFrozen(prop) || ue_wrap::prop::IsStatic(prop))) return;
+    // init() recomputes simulation. A late unstick under a network drive must
+    // restore its kinematic body; a real local physics-handle grab stays simulating.
+    const bool localHeld = coop::local_prop_hold::IsHeld(prop);
+    if (wasStuck && driven && !localHeld) E::SetActorSimulatePhysics(prop, false);
+    const bool owned = driven || localHeld;
     if (!owned) {
         E::SetActorLocation(prop, ue_wrap::FVector{p.locX, p.locY, p.locZ});
         E::SetActorRotation(prop, ue_wrap::FRotator{p.rotPitch, p.rotYaw, p.rotRoll});
@@ -418,6 +462,8 @@ void ApplyUnstick(void* prop, const coop::net::PropStickStatePayload& p, const s
 
 void Install(coop::net::Session* session) {
     g_session.store(session, std::memory_order_release);
+    if (!g_pryWatchInstalled)
+        g_pryWatchInstalled = sg::WatchName(L"crowbarOpen", kTagPry, &OnPryPre, nullptr);
     if (g_stickInstalled.load(std::memory_order_acquire) && g_unstickInstalled.load(std::memory_order_acquire))
         return;
     // One index lookup a call until the class is found; it is loaded at the main menu, before any
@@ -442,18 +488,35 @@ void Tick() {
     auto* s = LoadSession();
     if (!s || !s->connected()) return;
     for (int i = 0; i < nReady; ++i) {
-        void* prop = ready[i].prop;
-        if (!prop || !R::IsLiveByIndex(prop, ready[i].internalIdx)) continue;  // died since the record
+        if (ready[i].worldGeneration != ue_wrap::world_identity::Generation()) continue;
+        void* prop = ready[i].prop.Get();
+        if (!prop) continue;  // destroyed, recycled slot or another world since the record
         const bool frozen = ue_wrap::prop::IsFrozen(prop);
         const bool statiq = ue_wrap::prop::IsStatic(prop);
+        bool sent = false;
         if (ready[i].unstick) {
             // Still stuck: the body refused, as a hand grab of a pried-on prop does (the "Tool
             // required" hint), and there is nothing to mirror.
             if (frozen || statiq) continue;
-            BroadcastUnstick(s, prop);
+            sent = BroadcastUnstick(s, prop);
         } else {
             if (!frozen && !statiq) continue;  // commit bailed (the 45 body re-traces and can exit before the flag write)
-            BroadcastStick(s, prop, frozen, statiq);
+            sent = BroadcastStick(s, prop, frozen, statiq);
+        }
+        if (!sent) {
+            const uint64_t now = NowMs();
+            if (now < ready[i].queuedAt || now - ready[i].queuedAt >= 2000) {
+                UE_LOGW("prop_stick_sync: could not publish %s of %p within 2s; outcome dropped",
+                        ready[i].unstick ? "unstick" : "stick", prop);
+                continue;
+            }
+            // Send failure is backpressure. Retain the original lifetime/deadline
+            // and rebuild from live state on retry; never replay an obsolete edge.
+            std::lock_guard<std::mutex> lk(g_pendingMutex);
+            bool duplicate = false;
+            for (int j = 0; j < g_pendingCount; ++j)
+                duplicate |= g_pending[j].prop.Is(prop) && g_pending[j].unstick == ready[i].unstick;
+            if (!duplicate && g_pendingCount < kMaxPending) g_pending[g_pendingCount++] = ready[i];
         }
     }
 }
@@ -465,6 +528,7 @@ void OnStickState(const coop::net::PropStickStatePayload& payload, uint8_t sende
     // first, and a pose of it still in flight starts nothing here. An unstick carries 0 and closes
     // nothing.
     UE_ASSERT_GAME_THREAD("prop_stick_sync::OnStickState");
+    if ((payload.flags & ~3u) || (payload.flags == 0 && payload.holdGen != 0)) return;
     coop::remote_prop::CloseHold(senderPeerSlot, payload.holdGen);
     const bool unstick = payload.flags == 0;
     const std::wstring keyW = coop::remote_prop::KeyToWString(payload.key);
@@ -484,8 +548,13 @@ void OnStickState(const coop::net::PropStickStatePayload& payload, uint8_t sende
                 unstick ? "UNSTICK" : "STICK", keyW.c_str(), payload.elementId, senderPeerSlot);
         return;
     }
+    if (!ue_wrap::prop::IsDescendantOfProp(prop) || coop::hand_item::IsHandAxisActor(prop)) return;
     void* comp = WallAttachCompOf(prop);  // the component, checked against the index's class
     if (!comp) {
+        if (unstick && !HasWallAttachMember(prop)) {
+            ApplyUnstick(prop, payload, keyW, senderPeerSlot, localPlayer);
+            return;
+        }
         UE_LOGW("prop_stick_sync: %s target %p carries no wall-attach component -- dropped",
                 unstick ? "UNSTICK" : "STICK", prop);
         return;
@@ -540,9 +609,19 @@ void ConvergeStuck(void* actor, uint8_t physFlags) {
     if (!(physFlags & pf::kLiveState) || !actor || !ue_wrap::prop::IsDescendantOfProp(actor)) return;
     const bool hostStuck = (physFlags & (pf::kFrozen | pf::kStatic)) != 0;
     const bool copyStuck = ue_wrap::prop::IsFrozen(actor) || ue_wrap::prop::IsStatic(actor);
-    if (hostStuck == copyStuck) return;  // nearly every row: two field reads and out
+    const bool wantStatic = (physFlags & pf::kStatic) != 0;
+    const bool staticDiffers = wantStatic != ue_wrap::prop::IsStatic(actor);
+    if (hostStuck == copyStuck && !staticDiffers) return;
     void* comp = WallAttachCompOf(actor);
-    if (!comp) return;
+    if (!comp) {
+        // Ordinary pryable props have no component verb. A join/converge still
+        // needs their live static bit; frozen and sleep converge in the caller.
+        if (!HasWallAttachMember(actor) && staticDiffers && !ue_wrap::prop::CallBaseSetPropProps(actor, wantStatic,
+                ue_wrap::prop::IsFrozen(actor), ue_wrap::prop::IsSleeping(actor)))
+            UE_LOGW("prop_stick_sync: static converge did not dispatch on %p", actor);
+        return;
+    }
+    if (hostStuck == copyStuck) return;
     InstallOnDemand();  // a join's snapshot can arrive before Install has run
     const std::wstring keyW = ue_wrap::prop::GetInteractableKeyString(actor);
     if (!hostStuck) {
@@ -568,11 +647,15 @@ bool IsWallAttachable(void* actor) {
 }
 
 bool ReplayUnstick(void* actor) {
-    if (!actor || !g_unstickInstalled.load(std::memory_order_acquire) ||
-        g_unstickDisabled.load(std::memory_order_acquire))
-        return false;
+    if (!actor || !ue_wrap::prop::IsDescendantOfProp(actor)) return false;
     void* comp = WallAttachCompOf(actor);
-    if (!comp) return false;
+    if (!comp && HasWallAttachMember(actor)) return false;
+    if (!comp)
+        return ue_wrap::prop::CallBaseSetPropProps(actor, false, false,
+                                                  ue_wrap::prop::IsSleeping(actor));
+    if (!g_unstickInstalled.load(std::memory_order_acquire)) InstallOnDemand();
+    if (!g_unstickInstalled.load(std::memory_order_acquire) ||
+        g_unstickDisabled.load(std::memory_order_acquire)) return false;
     unsigned char frame[16] = {};
     frame[g_withToolOff] = 1;
     ++g_replayDepth;

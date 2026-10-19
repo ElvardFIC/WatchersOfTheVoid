@@ -137,7 +137,8 @@ void OnEntitySpawn(const coop::net::EntitySpawnPayload& payload) {
         return;
     }
     // The allowlist gate: a peer could send any className, so only subclasses of the NPC bases
-    // materialise.
+    // materialise. An event creature's class may have loaded after the last late resolve.
+    coop::npc_sync::RefreshLateAllowlist();
     if (!coop::npc_sync::IsAllowlistedClass(actorClass)) {
         UE_LOGW("npc-sync[client OnSpawn]: class '%ls' is NOT on NPC allowlist -- "
                 "rejecting (eid=%u; peer is broadcasting non-NPC EntitySpawn?)",
@@ -542,7 +543,8 @@ void TickClientNpcs() {
     if (s->TakeRemoteNpcBatch(batch)) {
         for (const auto& snap : batch) {
             if (!std::isfinite(snap.x) || !std::isfinite(snap.y) || !std::isfinite(snap.z) ||
-                !std::isfinite(snap.yaw) || !std::isfinite(snap.speed)) continue;
+                !std::isfinite(snap.yaw) || !std::isfinite(snap.pitch) ||
+                !std::isfinite(snap.roll) || !std::isfinite(snap.speed)) continue;
             if (std::fabs(snap.x) > 1.0e6f || std::fabs(snap.y) > 1.0e6f || std::fabs(snap.z) > 1.0e6f) continue;
             // The look target is validated only when its bit is set (other NPCs leave it zero with
             // the bit clear); a corrupt one with the bit set drops the snapshot.

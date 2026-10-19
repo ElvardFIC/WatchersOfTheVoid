@@ -37,6 +37,8 @@ namespace CM  = coop::client_model;
 void*       g_mannequin    = nullptr;
 int32_t     g_mannequinIdx = -1;
 std::string g_appliedSkin;   // the skin currently on the mannequin
+std::string g_attemptSkin;
+uint64_t g_retryAt=0;
 
 // Render-thread -> game-thread handoff.
 std::atomic<uint64_t> g_lastActiveMs{0};  // last Activate() call -- the keep-alive stamp
@@ -67,6 +69,8 @@ void SpawnMannequin() {
     g_mannequin    = m;
     g_mannequinIdx = R::InternalIndexOf(m);
     g_appliedSkin.clear();  // force a fresh apply on the next Tick
+    g_attemptSkin.clear(); g_retryAt=0;
+    E::SetActorHiddenInGame(m,true);
     UE_LOGI("skin_preview: mannequin spawned %p (display-only)", m);
 }
 
@@ -76,6 +80,7 @@ void HideMannequin() {
     g_mannequin    = nullptr;
     g_mannequinIdx = -1;
     g_appliedSkin.clear();
+    g_attemptSkin.clear(); g_retryAt=0;
     UE_LOGI("skin_preview: mannequin hidden");
 }
 
@@ -108,15 +113,19 @@ void Tick() {
         std::lock_guard<std::mutex> lk(g_pendingMu);
         if (g_hasPending.exchange(false, std::memory_order_relaxed)) want = g_pendingSkin;
     }
-    if (!want.empty() && want != g_appliedSkin) {
+    if (!want.empty() && want==g_appliedSkin) E::SetActorHiddenInGame(g_mannequin,false);
+    if (!want.empty() && want != g_appliedSkin && (want!=g_attemptSkin || now>=g_retryAt)) {
+        E::SetActorHiddenInGame(g_mannequin,true);
+        g_attemptSkin=want; g_retryAt=now+1000;
         void* nativeMesh = coop::local_body::NativeBodyMesh();
         if (CM::ApplySkinToBody(g_mannequin, want, nativeMesh)) {
+            g_appliedSkin=want;
+            E::SetActorHiddenInGame(g_mannequin,false);
             UE_LOGI("skin_preview: applied '%s' to mannequin", want.c_str());
         } else {
-            UE_LOGW("skin_preview: apply '%s' failed (mesh missing?) -- mannequin keeps previous",
+            UE_LOGW("skin_preview: apply '%s' failed -- hidden until the requested model resolves",
                     want.c_str());
         }
-        g_appliedSkin = want;
     }
 
     // Reposition in front of the camera, offset to one side so the F1 window does

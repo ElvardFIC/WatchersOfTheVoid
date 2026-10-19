@@ -1,6 +1,7 @@
 // coop/interactables/console_state_sync.cpp -- see coop/interactables/console_state_sync.h.
 
 #include "coop/interactables/console_state_sync.h"
+#include "coop/interactables/desk_visual_sync.h"
 
 #include "coop/interactables/desk_input_sync.h"
 #include "coop/interactables/device_occupancy.h"
@@ -34,9 +35,7 @@ std::atomic<coop::net::Session*> g_session{nullptr};
 
 constexpr auto kSkyPoll       = std::chrono::milliseconds(1000);  // host set poll + client sweep
 constexpr auto kDeskPoll      = std::chrono::milliseconds(1000);  // the desk log producer's cadence
-constexpr auto kDishInterval  = std::chrono::milliseconds(330);   // ~3 Hz claimed stream
 constexpr int  kMaxSkyRows    = 15;                               // 5 parts, above the native set's size
-const wchar_t* const kDeskClaim = L"desk";
 
 // Sky-signal state. g_skyMirror: on the host the last broadcast set; on the client the last
 // wire-applied set, the mirror the sweep and the catch detector compare against.
@@ -72,9 +71,6 @@ bool g_logPrimed = false;
 // The blueprint cap is 1000 chars; read a little over so the window never truncates.
 constexpr size_t kLogReadMax = 1100;
 
-// Dish aim.
-CP::DishAim g_dishLastSent;
-Clock::time_point g_nextDish{};
 
 bool RowIdentityEq(const SR::SignalRow& a, const SR::SignalRow& b) {
     // Exact float equality is right here: every non-host copy of a row was byte-copied off the wire
@@ -314,10 +310,12 @@ void ProduceLogLines(coop::net::Session* s) {
 }  // namespace
 
 void Install(coop::net::Session* session) {
+    coop::desk_visual_sync::Install(session);
     g_session.store(session, std::memory_order_release);
 }
 
 void Tick() {
+    coop::desk_visual_sync::Tick();
     auto* s = g_session.load(std::memory_order_acquire);
     if (!s || !s->running()) return;
     const bool srUp = SR::EnsureResolved() && SR::Instance();
@@ -375,32 +373,7 @@ void Tick() {
         g_nextDeskPoll = now + kDeskPoll;
         ProduceLogLines(s);
     }
-    if (cdUp && coop::device_occupancy::LocalHolds(kDeskClaim) && now >= g_nextDish) {
-        g_nextDish = now + kDishInterval;
-        // A field-compare dedupe, not memcmp: DishAim has tail padding after the direction byte,
-        // and indeterminate stack padding would defeat the dedupe and turn the poll into an
-        // unconditional stream. The live cursor is not on this lane (it streams on the unreliable
-        // DeskCursorPose lane and is interpolated on the mirror); this lane carries only the
-        // discrete committed locks, so a cursor sweep never triggers a reliable re-send, only a
-        // commit does.
-        auto aimEq = [](const CP::DishAim& a, const CP::DishAim& b) {
-            return a.c0X == b.c0X && a.c0Y == b.c0Y &&
-                   a.c1X == b.c1X && a.c1Y == b.c1Y &&
-                   a.c2X == b.c2X && a.c2Y == b.c2Y &&
-                   a.selected == b.selected && a.direction == b.direction;
-        };
-        CP::DishAim aim;
-        if (CP::ReadDishAim(aim) && !aimEq(aim, g_dishLastSent)) {
-            coop::net::DishAimStatePayload p{};
-            p.c0X = aim.c0X; p.c0Y = aim.c0Y;
-            p.c1X = aim.c1X; p.c1Y = aim.c1Y;
-            p.c2X = aim.c2X; p.c2Y = aim.c2Y;
-            p.selected = aim.selected;
-            p.direction = aim.direction;
-            s->SendReliable(coop::net::ReliableKind::DishAimState, &p, sizeof(p));
-            g_dishLastSent = aim;
-        }
-    }
+
 }
 
 void OnSkySignalState(const coop::net::SkySignalStatePayload& p) {
@@ -475,25 +448,8 @@ void OnDeskState(const coop::net::DeskStatePayload& p) {
     }
 }
 
-void OnDishAim(const coop::net::DishAimStatePayload& p, uint8_t senderSlot) {
-    auto* s = g_session.load(std::memory_order_acquire);
-    if (!s) return;
-    // Committed coords only; the live cursor lives on the DeskCursorPose lane.
-    const float vals[] = { p.c0X, p.c0Y, p.c1X, p.c1Y, p.c2X, p.c2Y };
-    for (float v : vals)
-        if (!std::isfinite(v)) return;
-    // Only the desk-claim holder streams aim; drop anything else.
-    const uint8_t holder = coop::device_occupancy::HolderOf(kDeskClaim);
-    if (holder == 0xFF || senderSlot != holder) return;
-    if (coop::device_occupancy::LocalHolds(kDeskClaim)) return;  // we are the streamer
-    if (!CD::EnsureResolved()) return;
-    CP::DishAim aim;  // viewX/viewY stay 0; the committed write ignores them
-    aim.c0X = p.c0X; aim.c0Y = p.c0Y;
-    aim.c1X = p.c1X; aim.c1Y = p.c1Y;
-    aim.c2X = p.c2X; aim.c2Y = p.c2Y;
-    aim.selected = p.selected;
-    aim.direction = p.direction;
-    CP::WriteDishCommitted(aim);
+void OnDishAim(const coop::net::DeskVisualPayload& p, uint8_t senderSlot) {
+    coop::desk_visual_sync::OnState(p, senderSlot);
 }
 
 void OnDeskLogLine(const coop::net::DeskLogLinePayload& p, uint8_t senderSlot) {
@@ -515,6 +471,7 @@ void OnDeskLogLine(const coop::net::DeskLogLinePayload& p, uint8_t senderSlot) {
 }
 
 void QueueConnectBroadcastForSlot(int peerSlot) {
+    coop::desk_visual_sync::QueueConnect(peerSlot);
     auto* s = g_session.load(std::memory_order_acquire);
     if (!s || s->role() != coop::net::Role::Host) return;
     // Sky set: the joiner starts from the authoritative snapshot; its own save-loaded world rolled
@@ -537,23 +494,12 @@ void QueueConnectBroadcastForSlot(int peerSlot) {
         if (CD::ReadScalars(cur)) {
             SendDeskState(s, cur, 1, peerSlot);
         }
-        // The committed locks are change-gated, so an idle occupant sends nothing and a joiner
-        // would see stale locks; snapshot the committed coords on connect. The live cursor needs
-        // none, since its stream re-primes it within one send interval.
-        CP::DishAim aim;
-        if (CP::ReadDishAim(aim)) {
-            coop::net::DishAimStatePayload p{};
-            p.c0X = aim.c0X; p.c0Y = aim.c0Y;
-            p.c1X = aim.c1X; p.c1Y = aim.c1Y;
-            p.c2X = aim.c2X; p.c2Y = aim.c2Y;
-            p.selected = aim.selected;
-            p.direction = aim.direction;
-            s->SendReliableToSlot(peerSlot, coop::net::ReliableKind::DishAimState, &p, sizeof(p));
-        }
+
     }
 }
 
 void OnDisconnect() {
+    coop::desk_visual_sync::OnDisconnect();
     // Client: restore the native sky roller (one reflected spawnSignal re-arms the blueprint's own
     // loop), so the world returns to single-player behaviour.
     auto* s = g_session.load(std::memory_order_acquire);
@@ -565,7 +511,6 @@ void OnDisconnect() {
     g_skyMirror.clear();
     g_haveWireSet = false;
     g_assembly = {};
-    g_dishLastSent = {};
     g_logBaseline.clear();
     g_logPrimed = false;
 }

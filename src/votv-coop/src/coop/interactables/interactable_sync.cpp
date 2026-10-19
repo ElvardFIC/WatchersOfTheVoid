@@ -7,8 +7,13 @@
 
 #include "coop/interactables/interactable_sync.h"
 #include "coop/interactables/interactable_channel.h"  // the generic engine: Adapter and Channel
+#include "coop/interactables/door_verb_intent.h"
+#include "coop/element/portable_identity.h"
+#include "coop/net/wire_key_util.h"
 
 #include "ue_wrap/devices/appliance.h"     // the six-class save-actor toggle family
+#include "ue_wrap/devices/cremator.h"
+#include "ue_wrap/devices/kitchen_machine.h"
 #include "ue_wrap/devices/door.h"
 #include "ue_wrap/devices/door_box.h"      // lockers and the drone-console box
 #include "ue_wrap/devices/garage.h"
@@ -18,6 +23,7 @@
 #include "ue_wrap/actors/prop.h"          // GetKeyString for swinger (it is an Aprop_C)
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/actors/swinger.h"
+#include "ue_wrap/engine/engine.h"
 
 #include <chrono>
 #include <string>
@@ -116,8 +122,10 @@ const Adapter g_lightGroupAdapter = {
 const Adapter g_containerAdapter = {
     "container", coop::net::ReliableKind::ContainerState,
     &ue_wrap::swinger::EnsureResolved,
-    &ue_wrap::swinger::IsSwinger,
-    &ue_wrap::prop::GetKeyString,  // a swinger is an Aprop_C
+    &ue_wrap::swinger::IsSwinger, // scan-hub predicates MUST depend only on class
+    [](void* a) -> std::wstring {
+        return ue_wrap::kitchen_machine::DoorParent(a) ? std::wstring{} : ue_wrap::prop::GetKeyString(a);
+    },
     &ue_wrap::swinger::TryReadOpen,
     [](void* a, bool on) -> bool { return on ? ue_wrap::swinger::CallOpen(a, false) : ue_wrap::swinger::CallClose(a); },
 };
@@ -180,52 +188,26 @@ const Adapter g_doorBoxAdapter = {
     nullptr,
     &ue_wrap::door_box::ResolvedFamilyCount,
 };
-// A security camera's two saved bits, one adapter each because the channel carries a bool. Host-authoritative:
-// four writers beside the player's use move `active` (a wisp, the gray events, the cursed camera's night roll,
-// a save's load) and most are host-owned world systems, so a symmetric lane would let a client's copy of one
-// author the host's camera. MTA takes an unoccupied vehicle's engine bit from its client sync owner, which is
-// not taken here (reference/mtasa-blue/Server/mods/deathmatch/logic/CUnoccupiedVehicleSync.cpp:442-447); the
-// shape taken is a server-held bit carried to joiners in the add packet
-// (reference/mtasa-blue/Server/mods/deathmatch/logic/CStaticFunctionDefinitions.cpp:7260-7274 and
-// reference/mtasa-blue/Server/mods/deathmatch/logic/packets/CEntityAddPacket.cpp:571). The client renders the
-// host's bit and asks for a change as a CameraToggleIntent (coop/interactables/camera_toggle_intent). Keyed by the
-// lane's key for the camera (its portable identity, else its prop key), which ue_wrap::security_camera withholds
-// from a camera that carries its class's default. The `active` apply writes the bit, then updState() when the
-// write turns the camera on (the click the toggling peer heard), else upd(); a cursed camera's tick never clicks.
-// Either apply ends by repainting a laptop camera panel that has the camera selected.
-bool ApplyCameraActive(void* cam, bool on) {
-    namespace sc = ue_wrap::security_camera;
-    bool cur = false;
-    if (!sc::ReadActive(cam, cur) || !sc::WriteActive(cam, on)) return false;
-    const bool ok = (!cur && on && !sc::IsCursed(cam)) ? sc::CallUpdState(cam) : sc::CallUpd(cam);
-    sc::RefreshLaptopsShowing(cam);
-    return ok;
-}
-
-bool ApplyCameraLight(void* cam, bool on) {
-    namespace sc = ue_wrap::security_camera;
-    if (!sc::WriteLight(cam, on)) return false;
-    const bool ok = sc::CallUpd(cam);
-    sc::RefreshLaptopsShowing(cam);
-    return ok;
-}
-
-const Adapter g_cameraActiveAdapter = {
-    "camera_active", coop::net::ReliableKind::CameraActiveState,
-    &ue_wrap::security_camera::EnsureResolved,
-    &ue_wrap::security_camera::IsCameraClass,
-    &ue_wrap::security_camera::KeyOf,
-    &ue_wrap::security_camera::ReadActive,
-    &ApplyCameraActive,
+const Adapter g_ceilingLampAdapter = {
+    "ceilinglamp", coop::net::ReliableKind::CeilingLampState,
+    &ue_wrap::lightswitch::EnsureLampResolved,
+    &ue_wrap::lightswitch::IsCeilingLamp,
+    &coop::element::PortableWireKey,
+    &ue_wrap::lightswitch::TryReadLampActive,
+    &ue_wrap::lightswitch::ApplyLampActive,
+    nullptr, nullptr, nullptr, true,  // retry missing reflection/component readiness
 };
-const Adapter g_cameraLightAdapter = {
-    "camera_light", coop::net::ReliableKind::CameraLightState,
-    &ue_wrap::security_camera::EnsureResolved,
-    &ue_wrap::security_camera::IsCameraClass,
-    &ue_wrap::security_camera::KeyOf,
-    &ue_wrap::security_camera::ReadLight,
-    &ApplyCameraLight,
+Channel g_ceilingLamp{g_ceilingLampAdapter, Channel::Mode::HostAuth};
+const Adapter g_ambientLightAdapter = {
+    "ambientlight", coop::net::ReliableKind::AmbientLightState,
+    &ue_wrap::lightswitch::EnsureAmbientResolved,
+    &ue_wrap::lightswitch::IsAmbientLight,
+    &coop::element::PortableWireKey,
+    &ue_wrap::lightswitch::TryReadAmbientActive,
+    &ue_wrap::lightswitch::ApplyAmbientActive,
+    nullptr, nullptr, nullptr, true,
 };
+Channel g_ambientLight{g_ambientLightAdapter, Channel::Mode::HostAuth};
 Channel g_door{g_doorAdapter, Channel::Mode::HostAuth};  // doors auto-revert: host-authoritative
 Channel g_light{g_lightAdapter};
 // Host-authoritative: the client neither polls nor requests on this kind.
@@ -243,7 +225,7 @@ Channel g_cameraLight{g_cameraLightAdapter, Channel::Mode::HostAuth};
 
 // Every channel, once: each list below walks this one, in this order.
 Channel* const kChannels[] = {&g_door, &g_light, &g_lightGroup, &g_container, &g_garage, &g_appliance, &g_doorBox,
-                              &g_oven, &g_cameraActive, &g_cameraLight};
+                              &g_oven, &g_ceilingLamp, &g_ambientLight};
 
 Channel* ChannelForKind(coop::net::ReliableKind k) {
     for (Channel* ch : kChannels)
@@ -269,6 +251,14 @@ void Install(coop::net::Session* session) {
 }
 
 void OnReliable(uint8_t kind, const coop::net::KeyedTogglePayload& payload, uint8_t senderPeerSlot) {
+    if (kind == static_cast<uint8_t>(coop::net::ReliableKind::ContainerState)) {
+        if (!payload.key.len || payload.key.len > sizeof(payload.key.data)) return;
+        const std::wstring key = coop::net::StringFromWireKey(payload.key);
+        if (key.size() > 6 && key.compare(key.size() - 6, 6, L"/lever") == 0) {
+            coop::door_verb_intent::OnCrematorState(payload, senderPeerSlot);
+            return;
+        }
+    }
     if (Channel* ch = ChannelForKind(static_cast<coop::net::ReliableKind>(kind)))
         ch->OnReliable(payload, senderPeerSlot);
 }
@@ -283,6 +273,10 @@ void* ResolveDoor(const std::wstring& key) {
 void OnDoorStateVerb(void* door) { g_door.OnLocalEdge(door); }
 
 std::wstring LightGroupKey(void* root) { return g_lightGroup.KeyForActor(root); }
+std::wstring CeilingLampKey(void* lamp) { return g_ceilingLamp.KeyForActor(lamp); }
+std::wstring AmbientLightKey(void* lamp) { return g_ambientLight.KeyForActor(lamp); }
+void OnAmbientLightVerb(void* lamp) { g_ambientLight.OnLocalEdge(lamp); }
+void OnCeilingLampVerb(void* lamp) { g_ceilingLamp.OnLocalEdge(lamp); }
 
 void OnLightGroupVerb(void* root) { g_lightGroup.OnLocalEdge(root); }
 
@@ -294,7 +288,9 @@ void OnApplianceVerb(void* appliance) { g_appliance.OnLocalEdge(appliance); }
 
 void OnDoorBoxVerb(void* box) { g_doorBox.OnLocalEdge(box); }
 
-void OnContainerVerb(void* swinger) { g_container.OnLocalEdge(swinger); }
+void OnContainerVerb(void* swinger) {
+    if (!ue_wrap::kitchen_machine::DoorParent(swinger)) g_container.OnLocalEdge(swinger);
+}
 
 void OnOvenVerb(void* oven) { g_oven.OnLocalEdge(oven); }
 
@@ -324,11 +320,16 @@ std::wstring LightSwitchKey(void* sw) { return g_light.KeyForActor(sw); }
 
 void QueueConnectBroadcastForSlot(int peerSlot) {
     for (Channel* ch : kChannels) ch->QueueConnectBroadcastForSlot(peerSlot);
+    coop::door_verb_intent::QueueCrematorSnapshot(peerSlot);
 }
 
 void Tick() {
     for (Channel* ch : kChannels) ch->Tick();
     ue_wrap::door_box::TickVerify();  // force-snap far-frozen locker/console swings
+}
+
+void OnPeerLeft(int peerSlot) {
+    for (Channel* ch : kChannels) ch->OnPeerLeft(peerSlot);
 }
 
 void OnDisconnect() {

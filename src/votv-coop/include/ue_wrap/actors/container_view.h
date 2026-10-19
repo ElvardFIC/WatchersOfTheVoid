@@ -24,6 +24,10 @@ bool CanClose();
 // the actor that opens it does. False when the gamemode or the verb cannot be reached.
 bool Open(void* container);
 
+// Rebuild the visible item rows after remote contents change. Does nothing for another/closed
+// container; the game's gen() also rebuilds the selection and action buttons.
+bool Refresh(void* container);
+
 // Close the screen as its close key does. False, and nothing done, when it is not open or its exit()
 // does not resolve.
 bool Close();

@@ -76,6 +76,22 @@ bool IsInsertPlayerRead(void* callerFunction, const uint8_t* callerLocals, const
 // the field did not resolve. Game thread.
 bool ReadHasFloppy(void* actor, bool& has);
 
+// The reports disc for the pose stream: `hasFloppy` and `floppyType` (0..6). `has` is false when the
+// robot holds none, including a type outside the seven the game indexes. False when it is not an Omega
+// or the fields did not resolve. Game thread.
+bool ReadKerfurFloppy(void* actor, bool& has, uint8_t& type);
+
+// Write that disc onto a parked mirror and show it: the fields, then `floppyMesh` from
+// lib_C::floppyFromType (the mirror's tick is off, so the Blueprint never swaps the mesh itself).
+// An empty disc clears the mesh and hides the component. True when the look matches, including a
+// robot whose floppy fields do not exist. False when the mesh or the library is not ready yet, so
+// the caller retries. Game thread.
+bool DriveKerfurFloppy(void* actor, bool has, uint8_t type);
+
+// The world actor `holdObject` points at, while it is live. Null when it is not an Omega, the field
+// did not resolve, or the robot holds nothing. Game thread.
+void* ReadHoldObject(void* actor);
+
 // The Omega's `targetActor`, what its last move() went for: its follow sets the player it reads, fix_servers
 // the server, a reports task the dish console; patrol and fix_transformers clear it, idle leaves it. Null
 // when it is not an Omega, the field did not resolve, or it is unset. Game thread.

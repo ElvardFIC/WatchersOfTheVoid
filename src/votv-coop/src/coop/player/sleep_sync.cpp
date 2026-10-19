@@ -55,19 +55,90 @@ bool SameBed(const WireKey& a, const WireKey& b) {
     return a.len == b.len && a.len <= sizeof(a.data) && std::memcmp(a.data, b.data, a.len) == 0;
 }
 
-// A bed name is a class name: identifier characters inside `len` and zero past it. WireKey's contract says so
-// and nothing on the wire enforces it (coop/items/coingun_arbiter.cpp:145-155 clamps the length and stops at
-// the first NUL, where this refuses); a name with a line break would forge a line in every peer's log, and a
-// tail byte would pass for a change. True with the first fault found.
-bool BedFaulty(const WireKey& k, BedRefusal* why) {
-    if (k.len > sizeof(k.data)) { *why = BedRefusal::Length; return true; }
-    for (size_t i = 0; i < sizeof(k.data); ++i) {
-        const unsigned char c = static_cast<unsigned char>(k.data[i]);
-        if (i >= k.len) {
-            if (c != 0) { *why = BedRefusal::Tail; return true; }
-        } else if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_')) {
-            *why = BedRefusal::Charset;
-            return true;
+void ApplyDreamProbPolicy() {
+    // Each sleeper uses their own nightmaresEnabled and bed.dreamProb through
+    // the native roll. Only the shared timelapse phase is synchronized; a
+    // nightmare belongs to the player whose native conditions/roll succeeded.
+    // Waiting for the other players keeps the roll suppressed, as before.
+    const bool wantSuppressed = !g_accelerate;
+    if (SLP::SetDreamProbability(wantSuppressed ? 0.f : -1.f))
+        g_dreamProbSuppressed = wantSuppressed;
+}
+
+// HOST: recount + broadcast the tally; fire phase transitions.
+void HostRetally(coop::net::Session* s);
+
+// Apply the accelerate phase locally (both roles). The dilation only applies
+// to a peer that is actually in bed -- a peer that raced its exit stays at
+// 1.0 (its inBed=false report is in flight; the host will End).
+void ApplyAccelerateLocal(coop::net::Session* s, bool on) {
+    if (g_accelerate == on) return;
+    g_accelerate = on;
+    if (on) {
+        if (SLP::IsSleeping()) {
+            SLP::SetGlobalTimeDilation(20.f);
+            // The cinematic base view belongs to THIS phase: the WAITING hold
+            // parked the camera at the bed; hand it to the gamemode's own
+            // sleepCam now.
+            if (SLP::SetSleepViewTarget(SLP::SleepCam()))
+                UE_LOGI("sleep_sync: camera -> sleepCam (the timelapse view)");
+        }
+        coop::chat_feed::Push(L"Everyone is asleep -- the night passes...",
+                              coop::chat_feed::Keep::Transient);
+        UE_LOGI("sleep_sync: ACCELERATE (local dilation -> %s)",
+                SLP::IsSleeping() ? "20" : "1 (not in bed)");
+    }
+    ApplyDreamProbPolicy();
+}
+
+// Apply the END locally (both roles). `natural` grants the full night's rest.
+// ORDER MATTERS: wakeup() first (the 10% gearer gift rolls iff need >= 99 at
+// call time -- the native waker keeps its own native roll; mirrors must not
+// add one), the need write after.
+void ApplyEndLocal(coop::net::Session* s, bool natural) {
+    if (SLP::IsSleeping()) {
+        SLP::CallWakeup();
+    }
+    ApplyAccelerateLocal(s, false);
+    if (natural) SLP::WriteSleepNeed(100.f);
+    coop::chat_feed::Push(natural ? L"Good morning -- everyone is rested."
+                                  : L"Sleep interrupted -- everyone wakes up.",
+                          coop::chat_feed::Keep::Transient);
+    UE_LOGI("sleep_sync: END (natural=%d)", natural ? 1 : 0);
+}
+
+void HostBroadcast(coop::net::Session* s, uint8_t op, uint8_t flag,
+                   uint8_t count, uint8_t total) {
+    coop::net::SleepStatePayload p{};
+    p.op = op;
+    p.flag = flag;
+    p.count = count;
+    p.total = total;
+    s->SendReliable(coop::net::ReliableKind::SleepState, &p, sizeof(p));
+}
+
+void HostRetally(coop::net::Session* s) {
+    // total = the host + every world-ready client (a mid-join peer is not in
+    // the world yet and must not block the gate; once world-ready it counts
+    // -- and being awake, it holds the gate open until it sleeps too).
+    uint8_t total = 1, count = g_inBed[0] ? 1 : 0;
+    for (int slot = 1; slot < static_cast<int>(coop::net::kMaxPeers); ++slot) {
+        if (!s->IsSlotWorldReady(slot)) continue;
+        ++total;
+        if (g_inBed[slot]) ++count;
+    }
+    if (count != g_lastCount || total != g_lastTotal) {
+        g_lastCount = count;
+        g_lastTotal = total;
+        // The counter is waiting-room UI only: during the accelerate phase a
+        // count drop is the END transition, and "1/2 players sleeping"
+        // flashing right before "Sleep interrupted" reads as nonsense (the
+        // 00:28 probe smoke).
+        if (!g_accelerate && count > 0 && count < total) {
+            HostBroadcast(s, 1 /*Tally*/, 0, count, total);
+            PushCounterLine(count, total);
+            UE_LOGI("sleep_sync: tally %u/%u in bed", static_cast<unsigned>(count),
+                    static_cast<unsigned>(total));
         }
     }
     return false;
@@ -211,10 +282,12 @@ void Tick() {
     // published stays until the poll below compares it with the new one.
     if (gm != g_gmInst) {
         g_gmInst = gm;
-        g_localState = SleepPeerState::Awake;
-        std::memset(&g_localBed, 0, sizeof(g_localBed));
-        g_localSleeping = false;
-        g_dreamProbSuppressed = false;
+        g_lastInBed = SLP::IsSleeping();
+        g_waitUndone = false;
+        g_accelerate = false;
+        for (bool& b : g_inBed) b = false;
+        g_lastCount = g_lastTotal = 0;
+        if (s->connected()) ApplyDreamProbPolicy();
     }
 
     SleepPeerState state = SleepPeerState::Awake;
@@ -251,8 +324,9 @@ void Tick() {
 
     if (!s->connected()) return;
 
-    // A client holds its nightmare rolls off for the session: a nightmare is the host's machine's roll alone.
-    if (!g_dreamProbSuppressed && SLP::SetDreamProbability(0.f)) g_dreamProbSuppressed = true;
+    // Apply on connect and retry either transition if the native setter was
+    // temporarily unavailable (including enabling a client's native rolls).
+    if (g_dreamProbSuppressed == g_accelerate) ApplyDreamProbPolicy();
 
     if (g_localState != g_sentState || !SameBed(g_localBed, g_sentBed)) SendClientRest(s);
 }
@@ -323,6 +397,12 @@ void OnReliable(const uint8_t* payload, size_t len, uint8_t senderSlot) {
         Refuse("op for a client", senderSlot);
         break;
     }
+}
+
+void OnDreamScene(const coop::net::DreamScenePayload& /*p*/, uint8_t /*senderSlot*/) {
+    // Reserved legacy packet: replaying another player's dream bypasses the
+    // recipient's nightmaresEnabled, bed probability and native roll. Personal
+    // dreams now enter through their own native graph, including Insomniac grab.
 }
 
 void QueueConnectBroadcastForSlot(int peerSlot) {

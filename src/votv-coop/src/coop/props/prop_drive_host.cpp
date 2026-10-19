@@ -1,12 +1,15 @@
 // coop/props/prop_drive_host.cpp -- see coop/props/prop_drive_host.h.
 
 #include "coop/props/prop_drive_host.h"
+#include "coop/props/prop_knock.h"
 
+#include "coop/creatures/npc_sync.h"  // KerfurIsHolding: a take is not a throw
 #include "coop/net/protocol.h"
 #include "coop/net/session.h"
 #include "coop/player/hand_item.h"            // IsHandAxisActor: the hotbar hand and its mirrors
-#include "coop/player/local_streams.h"        // LastHeldActor: this player's grab slot
+#include "coop/player/local_prop_hold.h"      // live pawn state, before this frame's stream tick
 #include "coop/props/active_drive.h"          // NowMs
+#include "coop/props/drive_generation.h"
 #include "coop/props/prop_element_tracker.h"  // GetPropElementIdForActor
 #include "coop/props/prop_lifecycle.h"        // IsWireSuppressedPropClass: a class no peer holds
 #include "coop/props/prop_wire_parity.h"      // PhysFlagsOf: the flags the end edge carries
@@ -16,6 +19,7 @@
 #include "ue_wrap/core/hot_path_guard.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
+#include "ue_wrap/core/script_gate.h"
 #include "ue_wrap/core/types.h"
 #include "ue_wrap/engine/engine.h"
 
@@ -61,6 +65,7 @@ struct Driven {
     ue_wrap::FRotator     sentRot{};
     uint64_t              lastMoveMs  = 0;
     uint64_t              nextProbeMs = 0;   // 0 = every tick; set while resting
+    uint64_t              lastSendMs = 0;    // repair a lost stationary pose / late-join baseline
 };
 
 std::vector<Driven> g_driven;   // game thread only
@@ -72,8 +77,16 @@ std::unordered_map<uint32_t, uint8_t> g_genByEid;
 
 Driven* Find(void* actor) {
     for (Driven& d : g_driven)
-        if (!d.dead && d.ref.Raw() == actor) return &d;
+        if (!d.dead && d.ref.Get() == actor) return &d;
     return nullptr;
+}
+
+// A prop in a hand: this player's grab slot, a peer's held-prop stream, or the hotbar hand axis
+// (the local hand actor and every peer's display mirror), which the hand lane owns outright.
+bool HeldBySomeone(void* actor) {
+    return coop::local_prop_hold::IsHeld(actor) ||
+           coop::remote_prop::IsActorUnderAnyDrive(actor) ||
+           coop::hand_item::IsHandAxisActor(actor);
 }
 
 bool Moved(const Driven& d, const ue_wrap::FVector& loc, const ue_wrap::FRotator& rot) {
@@ -87,7 +100,7 @@ bool Moved(const Driven& d, const ue_wrap::FVector& loc, const ue_wrap::FRotator
     return false;
 }
 
-void SendEnd(coop::net::Session& s, const Driven& d, void* actor, const ue_wrap::FVector& loc,
+bool SendEnd(coop::net::Session& s, const Driven& d, void* actor, const ue_wrap::FVector& loc,
              const ue_wrap::FRotator& rot, const char* why) {
     coop::net::PropDriveEndPayload p{};
     p.eid = d.eid;
@@ -111,10 +124,11 @@ void SendEnd(coop::net::Session& s, const Driven& d, void* actor, const ue_wrap:
         p.linVelX = v.linearCmS.X;   p.linVelY = v.linearCmS.Y;   p.linVelZ = v.linearCmS.Z;
         p.angVelX = v.angularDegS.X; p.angVelY = v.angularDegS.Y; p.angVelZ = v.angularDegS.Z;
     }
-    s.SendReliable(coop::net::ReliableKind::PropDriveEnd, &p, sizeof(p));
+    if (!s.SendReliable(coop::net::ReliableKind::PropDriveEnd, &p, sizeof(p))) return false;
     UE_LOGI("[PROP-DRIVE] HOST END eid=%u gen=%u %s -> (%.1f,%.1f,%.1f) |v|=%.1f cm/s flags=0x%02x",
             d.eid, static_cast<unsigned>(d.gen), why, loc.X, loc.Y, loc.Z, v.ok ? lin : 0.f,
             static_cast<unsigned>(p.physFlags));
+    return true;
 }
 
 // A new row for `actor` when the channel can carry it: a keyed prop with a host element id, in no
@@ -145,7 +159,7 @@ Driven* Open(void* actor, bool claimed, const char* why) {
     for (size_t i = 0; i < keyW.size() && i < sizeof(d.key.data); ++i)
         d.key.data[d.key.len++] = static_cast<char>(keyW[i]);
     uint8_t& gen = g_genByEid[d.eid];
-    if (++gen == 0) ++gen;   // 0 is the stream's "no generation"
+    gen = drive_generation::Next(gen);   // 0 is the stream's "no generation"
     d.gen = gen;
     d.lastMoveMs = coop::active_drive::NowMs();
     g_driven.push_back(std::move(d));
@@ -179,10 +193,18 @@ void Claim(void* actor, const char* reason) {
     Open(actor, /*claimed=*/true, why);
 }
 
-void Coast(void* actor, const char* reason) {
+void Coast(void* actor, const char* reason, bool afterHandRelease) {
     UE_ASSERT_GAME_THREAD("prop_drive_host::Coast");
     if (!actor) return;
+    if (coop::npc_sync::KerfurIsHolding(actor)) return;
     if (Driven* d = Find(actor)) {
+        if (afterHandRelease) {
+            // The receiver may already have yielded to the hand while this host's
+            // next Tick has not seen that brief grab. Never reuse its closed stream.
+            auto& gen = g_genByEid[d->eid];
+            d->gen = gen = drive_generation::Next(gen);
+            d->resend = true;
+        }
         // A claimed prop stays its verb's; either way the push starts its rest clock again and it is
         // read every tick.
         d->nextProbeMs = 0;
@@ -226,8 +248,8 @@ void OnPeerWorldReady() {
     // (reference/mtasa-blue/Server/mods/deathmatch/logic/CUnoccupiedVehicleSync.cpp) sends its
     // unoccupied vehicles, resting ones included, reliably and to that player alone, when it enters
     // a dimension; ours rides the unreliable broadcast stream once per join, so the others receive a
-    // pose they already hold, and a joiner that loses the datagram of a prop at rest does not park it
-    // until the prop moves again (docs/props.md, Known limits).
+    // pose they already hold. The one-second stationary heartbeat now repairs a lost baseline
+    // even if the prop never moves again.
     for (Driven& d : g_driven) {
         d.resend      = true;
         d.nextProbeMs = 0;
@@ -235,8 +257,11 @@ void OnPeerWorldReady() {
     UE_LOGI("[PROP-DRIVE] HOST world-ready re-send armed for %zu driven prop(s)", g_driven.size());
 }
 
+bool IsDriven(void* actor) {return actor && Find(actor)!=nullptr;}
+
 void Tick(coop::net::Session& s) {
     UE_ASSERT_GAME_THREAD("prop_drive_host::Tick");
+    prop_knock::Tick(s); // drain contacts before retaining references into g_driven
     if (g_driven.empty()) return;
     const uint64_t now = coop::active_drive::NowMs();
     static uint32_t sPublished = 0;
@@ -261,10 +286,10 @@ void Tick(coop::net::Session& s) {
             ue_wrap::FVector endLoc{};
             ue_wrap::FRotator endRot{};
             if (E::TryGetActorLocation(actor, endLoc) && E::TryGetActorRotation(actor, endRot))
-                SendEnd(s, d, actor, endLoc, endRot, "taken by a hand");
+                d.dead = SendEnd(s, d, actor, endLoc, endRot, "taken by a hand");
             else if (d.everSent)
-                SendEnd(s, d, actor, d.sentLoc, d.sentRot, "taken by a hand");
-            d.dead = true;
+                d.dead = SendEnd(s, d, actor, d.sentLoc, d.sentRot, "taken by a hand");
+            else d.dead = true;
             continue;
         }
         if (now < d.nextProbeMs) continue;   // resting: read at the slow cadence
@@ -283,7 +308,8 @@ void Tick(coop::net::Session& s) {
             UE_LOGW("[PROP-DRIVE] HOST eid=%u -- its location or rotation could not be read; it streams nothing and "
                     "rests", d.eid);
         }
-        if (poseRead && Moved(d, loc, rot)) {
+        const bool moved = poseRead && Moved(d, loc, rot);
+        if (poseRead && (moved || now - d.lastSendMs >= 1000)) {
             coop::net::PropPoseSnapshot pp{};
             pp.key       = d.key;
             pp.elementId = d.eid;
@@ -298,19 +324,22 @@ void Tick(coop::net::Session& s) {
             d.resend      = false;
             d.sentLoc     = loc;
             d.sentRot     = rot;
-            d.lastMoveMs  = now;
+            d.lastSendMs  = now;
+            if (moved) d.lastMoveMs = now;
             d.nextProbeMs = 0;
             if ((++sPublished % 120) == 1)
                 UE_LOGI("[PROP-DRIVE] HOST publish eid=%u gen=%u %s -> (%.1f,%.1f,%.1f)",
                         d.eid, static_cast<unsigned>(d.gen), d.claimed ? "claimed" : "coasting",
                         loc.X, loc.Y, loc.Z);
-            continue;
+            // A heartbeat did not move the body. At <=1 FPS every probe can send
+            // one; it must not postpone the rest/end edge indefinitely.
+            if (moved) continue;
         }
         if (now - d.lastMoveMs >= kRestMs) {
             if (!d.claimed) {
-                if (poseRead)        SendEnd(s, d, actor, loc, rot, "rested");
-                else if (d.everSent) SendEnd(s, d, actor, d.sentLoc, d.sentRot, "rested");
-                d.dead = true;
+                if (poseRead)        d.dead = SendEnd(s, d, actor, loc, rot, "rested");
+                else if (d.everSent) d.dead = SendEnd(s, d, actor, d.sentLoc, d.sentRot, "rested");
+                else d.dead = true;
                 continue;
             }
             d.nextProbeMs = now + kRestProbeMs;   // claimed and resting: the slow cadence
@@ -323,6 +352,7 @@ void Tick(coop::net::Session& s) {
 }
 
 void OnDisconnect() {
+    prop_knock::OnDisconnect();
     g_driven.clear();
     g_turn = 0;
     g_genByEid.clear();

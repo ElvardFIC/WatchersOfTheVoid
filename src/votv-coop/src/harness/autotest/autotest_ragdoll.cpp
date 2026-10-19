@@ -49,10 +49,9 @@ bool WaitDone(const std::shared_ptr<std::atomic<int>>& d, int timeoutMs) {
     return d->load() != 0;
 }
 
-// Whether the slot-1 puppet has a live ragdoll display body whose mesh is physically
-// simulating (the visible flop is a separate ragdoll body, not the puppet's own mesh). The
-// rigid-body-awake query on the body's mesh confirms it is actually flopping: true while
-// falling, false once settled. False on a missing or dead body.
+// Whether the slot-1 puppet has a live ragdoll body with the same active skeletal mesh as its
+// visible player model, and that mesh is physically simulating. False on a mismatch, missing
+// body, or dead body.
 bool PuppetHasFloppingRagdollBody() {
     auto done = std::make_shared<std::atomic<int>>(0);
     auto ok = std::make_shared<int>(0);
@@ -60,14 +59,20 @@ bool PuppetHasFloppingRagdollBody() {
         coop::RemotePlayer& rp = coop::puppet_drive::Puppet(1);
         void* body = rp.RagdollBody();
         if (body && R::IsLiveByIndex(body, rp.RagdollBodyIdx())) {  // recycle-proof
-            // The ragdoll body's mesh component.
-            void* mesh = *reinterpret_cast<void**>(reinterpret_cast<uint8_t*>(body) + 0x0230);
+            void* mesh = E::GetRagdollBodyMesh(body);
+            void* puppet = rp.GetActor();
+            void* playerMesh = puppet ? ue_wrap::puppet::GetMeshPlayerVisibleComponent(puppet) : nullptr;
+            const bool sameModel = mesh && R::IsLive(mesh) && playerMesh && R::IsLive(playerMesh) &&
+                ue_wrap::puppet::GetComponentSkeletalMeshAsset(mesh) ==
+                    ue_wrap::puppet::GetComponentSkeletalMeshAsset(playerMesh);
             if (mesh && R::IsLive(mesh)) {
                 if (void* awakeFn = R::FindFunction(R::FindClass(L"PrimitiveComponent"), L"IsAnyRigidBodyAwake")) {
                     ue_wrap::ParamFrame f(awakeFn);
-                    if (ue_wrap::Call(mesh, f) && f.Get<bool>(L"ReturnValue")) *ok = 1;
+                    if (sameModel && ue_wrap::Call(mesh, f) && f.Get<bool>(L"ReturnValue")) *ok = 1;
                 }
             }
+            if (!sameModel)
+                UE_LOGW("ragdoll_test[host]: ragdoll mesh does not match the puppet's active player model");
         }
         done->store(1);
     });

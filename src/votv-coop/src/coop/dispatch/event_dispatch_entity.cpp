@@ -4,6 +4,7 @@
 // ItemActivate. Each case validates at the trust boundary and hands off to its module. See
 // coop/dispatch/event_dispatch.h.
 
+#include "coop/interactables/cord_sync.h"
 #include "event_dispatch.h"  // co-located private header (src tree, not include/)
 
 #include "coop/element/player.h"
@@ -22,7 +23,10 @@
 #include "coop/creatures/piramid_sync.h"      // the PyramidGather receiver
 #include "coop/props/prop_save_data.h"    // the per-prop save record lane
 #include "coop/props/prop_stick_sync.h"
+#include "coop/props/prop_scale_sync.h"
+#include "coop/props/prop_drive_host.h"    // a hand's let-go coasts until the body rests
 #include "coop/props/prop_drive_stream.h"  // the driven-prop end edge
+#include "coop/props/prop_element_tracker.h"
 #include "coop/player/remote_player.h"
 #include "coop/props/remote_prop.h"
 #include "coop/props/remote_prop_spawn.h"
@@ -44,6 +48,12 @@ bool HandleEntityEvent(net::Session& session,
                        void* localPlayer) {
     (void)session;
     switch (msg.kind) {
+    case net::ReliableKind::PropScaleState: {
+        if(msg.payloadLen!=sizeof(net::PropScaleStatePayload))return true;
+        net::PropScaleStatePayload p{};std::memcpy(&p,msg.payload,sizeof(p));
+        prop_scale_sync::Receive(session,p,msg.senderPeerSlot);
+        return true;
+    }
     case net::ReliableKind::PropStickState: {
         // A peer stuck a wall-attach component's prop (the camera) to a surface, or it came unstuck.
         // Symmetric prop state, relayed by the host; prop_stick_sync replays the component's own
@@ -135,7 +145,19 @@ bool HandleEntityEvent(net::Session& session,
                     p.angVelX, p.angVelY, p.angVelZ);
             break;
         }
+        if (coop::cord_sync::ApplyDragRelease(p, static_cast<uint8_t>(msg.senderPeerSlot))) break;
         remote_prop::OnRelease(msg.senderPeerSlot, p, localPlayer);
+        // The host's copy is the landing. Coasting streams it until it rests; the receivers park
+        // on that stream instead of each simulating the throw to a different floor.
+        if (session.role() == net::Role::Host) {
+            void* actor = p.elementId != 0 ? remote_prop::ResolveLiveActorByEid(p.elementId) : nullptr;
+            if (!actor) {
+                const std::wstring key = remote_prop::KeyToWString(p.key);
+                if (!key.empty() && key != L"None")
+                    actor = coop::prop_element_tracker::FindLiveActorByKey(key);
+            }
+            if (actor) coop::prop_drive_host::Coast(actor, "drop", /*afterHandRelease=*/true);
+        }
         break;
     }
     case net::ReliableKind::PropSpawn: {

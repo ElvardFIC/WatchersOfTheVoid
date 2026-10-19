@@ -9,6 +9,7 @@
 // Game thread, host only.
 
 #include "hook_sync_detail.h"
+#include "coop/items/hook_retrieve.h"
 
 #include "coop/element/object_scan_hub.h"   // the world's own hooks, found by the shared pass
 #include "coop/props/prop_drive_host.h"
@@ -63,6 +64,7 @@ void HubMatch(void*, void* obj) {
     if (R::NameStartsWith(R::NameOf(obj), L"Default__")) return;
     if (!R::IsLive(obj)) return;
     g_worldScratch.push_back(WorldHook{obj, R::InternalIndexOf(obj)});
+    coop::hook_retrieve::Note(obj);
 }
 size_t HubPassComplete(void*, bool isFull, uint32_t worldGen) {
     if (isFull) {

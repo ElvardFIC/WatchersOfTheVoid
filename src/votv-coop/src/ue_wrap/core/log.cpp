@@ -12,10 +12,11 @@
 #include <cstring>
 #include <string>
 #include <ctime>
+#include <fcntl.h>
+#include <io.h>
 #include <locale.h>
 #include <memory>
 #include <mutex>
-#include <new>
 
 namespace ue_wrap::log {
 namespace {
@@ -93,6 +94,38 @@ void LogPath(wchar_t (&out)[MAX_PATH]) {
     wcscat_s(out, name);
 }
 
+// `path` with `suffix` put before its .log extension, or appended when it has none.
+void WithSuffix(const wchar_t* path, const wchar_t* suffix, wchar_t (&out)[MAX_PATH]) {
+    wcscpy_s(out, path);
+    const size_t len = wcslen(out);
+    if (len > 4 && _wcsicmp(out + len - 4, L".log") == 0) {
+        out[len - 4] = L'\0';
+        wcscat_s(out, suffix);
+        wcscat_s(out, L".log");
+    } else {
+        wcscat_s(out, suffix);
+    }
+}
+
+// Truncating open that lets others read the file and rename or delete it. Read sharing is for
+// tailing the log while the game runs; delete sharing is what lets the next launch rotate this
+// file to .prev while this process is still alive, which happens whenever a relaunch starts before
+// its predecessor has finished exiting. A handle without it left that next process unable to open
+// the log at all, so its whole session went unlogged.
+FILE* OpenShared(const wchar_t* path) {
+    HANDLE h = ::CreateFileW(path, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_DELETE, nullptr,
+                             CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (h == INVALID_HANDLE_VALUE) return nullptr;
+    const int fd = ::_open_osfhandle(reinterpret_cast<intptr_t>(h), _O_WRONLY | _O_TEXT);
+    if (fd == -1) {
+        ::CloseHandle(h);
+        return nullptr;
+    }
+    FILE* f = ::_fdopen(fd, "w");
+    if (!f) ::_close(fd);  // closes the handle with it
+    return f;
+}
+
 void EnsureOpen() {
     // Initialise the lock exactly once, even if Write is called from several threads before
     // Init; a plain-bool double check would let two threads initialise the critical section
@@ -102,40 +135,29 @@ void EnsureOpen() {
     if (!g_opened) {
         wchar_t path[MAX_PATH] = {};
         LogPath(path);
-        // Preserve a closed run's log. A live writer denies rename and forces the PID fallback.
+        // Preserve the previous session's log before the open below truncates it: players hit a
+        // problem, then often relaunch before sending the log, and one level of history means the
+        // bug session survives that relaunch. A predecessor that is still exiting holds the file
+        // open with delete sharing, so the rename goes through and it finishes into .prev.
         {
             wchar_t prev[MAX_PATH] = {};
-            wcscpy_s(prev, path);
-            const size_t plen = wcslen(prev);
-            if (plen > 4 && _wcsicmp(prev + plen - 4, L".log") == 0) {
-                prev[plen - 4] = L'\0';
-                wcscat_s(prev, L".prev.log");
-            } else {
-                wcscat_s(prev, L".prev");
-            }
-            if (::MoveFileExW(path, prev, MOVEFILE_REPLACE_EXISTING)) wcscpy_s(g_prevPath, prev);
-            g_file = OpenShared(path);
-            if (g_file) wcscpy_s(g_livePath, path);
+            WithSuffix(path, L".prev", prev);
+            ::MoveFileExW(path, prev, MOVEFILE_REPLACE_EXISTING);  // best-effort; ignore failure
         }
-        // This also covers an overlapping older build that does not share delete access.
-        if (!g_file) {
-            g_prevPath[0] = L'\0';
-            wchar_t alt[MAX_PATH];
-            wcscpy_s(alt, path);
-            const size_t alen = wcslen(alt);
-            if (alen > 4 && _wcsicmp(alt + alen - 4, L".log") == 0) alt[alen - 4] = L'\0';
-            wchar_t suffix[32];
-            swprintf_s(suffix, L".%lu.log", static_cast<unsigned long>(::GetCurrentProcessId()));
-            wcscat_s(alt, suffix);
-            g_file = OpenShared(alt);
-            if (g_file) {
-                wcscpy_s(g_livePath, alt);
-            }
-        }
+        g_file = OpenShared(path);
         if (g_file) {
             std::fprintf(g_file, "==== Multivoid log ====\n");
-            std::fprintf(g_file, "%s\n", kLogFormatLine);
-            std::fprintf(g_file, "process %lu\n", static_cast<unsigned long>(::GetCurrentProcessId()));
+        } else {
+            // Still held without delete sharing (a running copy of an older build): this session
+            // logs to a file of its own rather than nowhere.
+            wchar_t own[MAX_PATH] = {};
+            wchar_t suffix[24] = {};
+            swprintf_s(suffix, L".%lu", ::GetCurrentProcessId());
+            WithSuffix(path, suffix, own);
+            g_file = OpenShared(own);
+            if (g_file)
+                std::fprintf(g_file, "==== Multivoid log ==== (the main log file is held by another "
+                                     "game process, so this one logs here)\n");
         }
         g_opened = true;
     }

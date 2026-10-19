@@ -6,13 +6,30 @@
 #pragma once
 
 #include "ue_wrap/core/types.h"
+#include <vector>
 
 namespace ue_wrap::engine {
 
-// Spawn the game's playerRagdoll_C for `ownerPlayer` as the visible flop body: its Player field is
-// stamped before Finish, so BeginPlay configures the mesh from the owner, and then the simulation
-// starts. Death-free, since ragdollMode would kill the host. The AActor*, or nullptr. Game thread.
+// Spawn playerRagdoll_C as an actor shell, then install the owner's selected mesh,
+// materials and a compatible articulated physics asset, staged without simulation.
+// No plushie substitute on failure. Death-free (never calls ragdollMode).
 void* SpawnPlayerRagdollBody(void* ownerPlayer, const FVector& location, const FRotator& rotation);
+// Activate after the selected AnimBP has evaluated once; immediate simulation
+// initializes collision bodies from the reference/T pose on a mesh-swap frame.
+bool StartPlayerRagdollSimulation(void* body);
+
+// Copy the selected model/materials and install its own articulated physics asset,
+// or the full Kerfur asset for a compatible common skeleton. Replaces the plushie
+// physics override; requires valid bodies, pelvis and joints. Unsupported rigs
+// return false without a substitute. Physics blend stays zero for one animation
+// warmup; StartPlayerRagdollSimulation hands the posed bones to physics.
+bool ConfigurePlayerRagdollMesh(void* sourceMesh, void* targetMesh);
+// Upgrade the native local body once per component/model generation, retaining
+// native ownership, recovery and interaction callbacks.
+bool RefreshLocalRagdollModel(void* mainPlayer);
+struct ArticulatedBone { uint16_t index = 0; FTransform world{}; };
+bool ReadArticulatedPose(void* skeletalMesh, std::vector<ArticulatedBone>& bones);
+uint32_t BoneLayoutSignature(void* skeletalMesh);
 
 // Attach `actor` to `body`'s mesh at the pelvis bone (KeepWorld), so it follows the flop; Detach
 // reverses it. Game thread.
@@ -28,6 +45,10 @@ bool ReadLocalRagdollPelvisPhysics(void* mainPlayer, FVector& outLoc, FRotator& 
 // The receiver's ragdoll stream: set the mirror body's pelvis linear and angular velocity so it
 // tracks the sender's flop. Game thread.
 void DriveRagdollBodyPelvisVelocity(void* body, const FVector& linVel, const FVector& angVel);
+
+// Translate all simulated bodies together, preserving velocities and joint pose.
+// The caller computes the pelvis correction; no simulation or network policy here.
+bool TranslateRagdollBody(void* body, const FVector& delta);
 
 // A ragdoll actor's simulating SkeletalMesh; null if dead. Game thread.
 void* GetRagdollBodyMesh(void* ragdollActor);

@@ -29,8 +29,8 @@ death.
 **Remaining.** Play-testing breadth (much of the synced world has been exercised by scripted
 runs and not yet by people playing), the tail of game systems still unsynced
 ([scope.md](scope.md) says which), and the subsystems shipped in a shape the project
-does not accept as final: the ATV mirror still neutralises the engine's own actor instead of
-driving it, and is queued for a proper rebuild. The trash piles have had theirs: both forms are
+does not accept as final. The ATV mirror now runs the rig and is corrected toward the driver;
+what it still does not carry is on [vehicles.md](vehicles.md). The trash piles have had theirs: both forms are
 now the game's own actor with the verbs that would author a transition refused, and at a join the
 client binds the piles it loaded itself rather than standing copies beside them
 ([piles.md](piles.md)). The per-system status is [status.md](status.md).

@@ -10,9 +10,13 @@
 // The model is MTA's: a ped's current weapon is PLAYER STATE attached to the ped locally on
 // every machine, so the hand item is part of the player's EXPRESSION like skin and nick colour.
 // The owner polls mainPlayer.holding_actor (Aprop_C only -- the trash clump/pile carry keeps its
-// own lane) and broadcasts a small reliable HandItem{class, name, item} on change; every peer keeps a
-// display-only mirror. Nothing goes per-tick on the wire, switch latency is one reliable
-// message, and late join replays per-slot state. All functions game-thread only.
+// own lane) and broadcasts HandItem{class, name, item, generation} on change, with a
+// heartbeat and send retry. A same-type replacement advances generation too. Peers
+// keep a display mirror; hand_fire_sync owns its generation-matched native flame.
+// Late join replays per-slot state. All functions game-thread only.
+// Canned food also carries opened/type/foods in a two-byte trailer (presence bit,
+// opened bit, two type bits, twelve portion bits). Changes advance the hand generation;
+// a display mirror applies these fields and rebuilds its mesh without replaying eat().
 
 #pragma once
 
@@ -78,6 +82,11 @@ bool IsHandAxisActor(void* actor);
 // player's hand item that this peer performs on that player's behalf -- the host running a
 // client's broom stroke -- runs on it. Game thread only.
 void* MirrorActorForSlot(uint8_t slot);
+
+// Zero means no current hand. A same-class replacement still gets a new generation.
+uint32_t Generation(uint8_t slot);
+uint32_t MirrorGeneration(uint8_t slot);
+bool IsMirrorActor(void* actor);
 
 // Whether `slot`'s hand holds an item of the class named `cls`, as its owner last announced. A host
 // asks it of a client's intent that only a held item can author (a keycard's swipe). Game thread

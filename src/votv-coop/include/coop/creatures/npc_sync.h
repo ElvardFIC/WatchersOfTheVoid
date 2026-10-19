@@ -99,10 +99,30 @@ void ReleaseNpcElementSilent(coop::element::ElementId eid);
 // NPC bases, by a SuperStruct walk. False while the allowlist is not fully resolved.
 bool IsAllowlistedClass(void* cls);
 
+// Resolve the late allowlist entries (the event creatures) that have loaded since the last call,
+// through the object index: a lookup each, no object-array walk. Called before a check that may
+// meet a class the lane has not seen yet (a host event spawn, a client's receive of one). Game
+// thread.
+void RefreshLateAllowlist();
+
 // Clear the per-session state: the tracked-NPC map, the counter, the bypass slot. The
 // interceptor stays installed; the cached classes and the function pointer remain valid across
 // a disconnect.
 void OnDisconnect();
+
+// The host's table of what each Omega is carrying. Cleared on disconnect without releasing those
+// props: the prop-drive disconnect drops the claims. Game thread.
+void DropKerfurHolds();
+
+// True while an Omega's holdObject is this actor, including the moment take-object just
+// succeeded and before the next pose tick. A hand-release coast must not throw that prop.
+bool KerfurIsHolding(void* actor);
+void NoteKerfurHolding(void* actor);
+
+// A client noted a take from the host's release. A new grab of that prop means the robot has
+// let go; leaving the note would make the next throw look like another take. No-op on the host,
+// whose table the pose sweep owns. Game thread.
+void ForgetKerfurHolding(void* actor);
 
 // Host only, the connect snapshot: re-send an entity spawn (class and current transform) for
 // every already-spawned Npc Element to the freshly connected client, so a joiner materialises

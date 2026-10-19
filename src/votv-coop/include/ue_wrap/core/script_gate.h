@@ -177,6 +177,9 @@ Active CurrentThreadCall();
 // pre would stay raised for the life of the process and answer "my verb is running" forever.
 // Game thread in practice (the gate never fires callbacks off it); any thread reads its own chain.
 bool IsBodyActive(void* function, void* callerFunction = nullptr);
+// Same stack-lifetime check, narrowed to one receiver. Never retain a pre/post
+// counter to authorize births: cancellation and faults can skip the post phase.
+bool IsObjectBodyActive(void* function, void* object);
 
 // A scope mark: bits a PRE puts on the scope of the body it is about to let run, readable by any seam on
 // this thread while that body runs. MarkScope ORs `bits` into the dispatch's own word, which lives on the

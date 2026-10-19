@@ -2,14 +2,14 @@
 //
 // A food does not hold still: its own tick lerps `temperature` toward a value it re-rolls every
 // frame, rolls `ripeness` down against a random spoilage rate, and at the ends of that range
-// decides on its own to burn or freeze the actor. Every peer running that tick is a separate
-// author of the same food.
+// decides on its own to burn or freeze the actor. A client's copy of that tick is refused;
+// the host's tick is the author (prop_food_sync).
 //
 // The live-prop save record cannot be that state's carrier, and this is where the family says so.
 // A record is captured at one birth and applied at another, while these three fields move
 // continuously; worse, the record is stamped with the CAPTURING peer's world clock and the
 // receiver's loadData reads the difference as elapsed time, which it is not. The lane that gives
-// the state one author is not built yet.
+// the state one author is prop_food_sync: the host's tick, written onto every other copy.
 //
 // The claim binds the live-prop record lane only. A food inside a container or a pocket is a
 // stored record on its own lane and still crosses whole, stamp included -- docs/scope.md.

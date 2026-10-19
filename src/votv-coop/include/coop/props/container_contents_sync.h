@@ -30,10 +30,14 @@ void Install(coop::net::Session* session);
 // drain. Near-free when the dirty set is empty, the steady state.
 void Tick();
 
-// Read and clear the takeObj-in-flight latch, armed at the dispatch edge.
-// prop_drop_intent::OnClientFinishSpawn consumes it to mark the extracted item's spawn as a
-// container extraction. Game thread.
-bool TakeObjInFlight();
+// True while a world/personal inventory's takeObj Blueprint body is executing. The direct proof
+// handles synchronous spawns; TakeObjWindowOpen is the fallback for UI paths that spawn just
+// after takeObj returns. Game thread.
+bool TakeObjInCall();
+
+// True for a short window after the takeObj dispatch edge. Not consumed, so a hand-view actor
+// cannot steal the world actor's admission. Thread-safe; used by prop_drop_intent.
+bool TakeObjWindowOpen();
 
 // ContainerContents chunks: a BlobChunkPayload whose blob is
 // `[u8 op=0][u32 eid][u64 baseHash][u16 n]` then n records in the coop/items/save_record_wire

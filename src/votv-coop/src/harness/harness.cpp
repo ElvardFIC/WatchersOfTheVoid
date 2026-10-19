@@ -39,6 +39,7 @@
 #include "coop/text/utf8_codec.h"
 #include "coop/session/session_manager.h"
 #include "coop/player/nameplate.h"
+#include "coop/player/pvp.h"
 #include "coop/player/nick_color.h"
 #include "coop/comms/peer_action_feed.h"
 #include "coop/player/roster.h"
@@ -170,6 +171,11 @@ DWORD WINAPI TimelineThread(LPVOID param) {
     }
     // The persisted body skin; local_body owns it and the Join reads it from there.
     coop::local_body::SetInitialSkin(cfg::ReadPlayerSkin());
+    // The persisted nameplate pref (absent = visible), read by the Join's prefs byte.
+    coop::nameplate::SetInitialLocalVisible(cfg::ResolveFlag(coop::config_registry::rows::nameplate));
+    coop::pvp::SetInitialLocal(cfg::ResolveFlag(coop::config_registry::rows::pvp));
+    // The persisted nick colour (ini nick_color=RRGGBB); nick_color owns the parse.
+    coop::nick_color::SetInitialLocalFromIniHex(cfg::ResolveString(coop::config_registry::rows::nick_color));
     // The boot file-versus-schema sweep, after the mints above so the post-mint file is what is
     // reviewed; it arms the settings-check panel at the main menu and never rewrites.
     coop::config_review::RunBootSweep();

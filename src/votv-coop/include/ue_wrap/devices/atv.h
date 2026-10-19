@@ -33,6 +33,43 @@ bool IsAtv(void* obj);
 // The ATV's save-persistent Key as a wide string ("" on failure, L"None" if unkeyed).
 std::wstring GetKeyString(void* atv);
 
+// How many live ATV_C actors the object index lists, the class default excluded.
+// -1 while that index still owes births from a load: a count taken then is short, and a
+// companion minted from it becomes a third scooter once the missing one appears.
+int CountLiveSettled();
+
+// A runtime ATV the host minted has to be its own save object. When its Key is still None,
+// this writes `coopatv1` through the ATV's own setKey, unless another scooter already owns
+// that key: a live one, one the game's key map holds before it is live, or one the loaded
+// world save names. The next free key is `coopatv2`. An actor that already carries a
+// colliding key is moved there, or this returns empty when it cannot, so the caller removes
+// the companion instead of folding both scooters into one record. Clears skipSave/ignoreSave
+// so the game's save walk records THIS scooter.
+// Returns the key now on the actor, or empty when a colliding key could not be left.
+std::wstring EnsureOwnSaveKey(void* atv);
+
+// Write `key` through setKey. False when the function is missing or the call fails.
+bool WriteSaveKey(void* atv, const std::wstring& key);
+
+// A live ATV in the current world whose save Key is `key`, or null.
+void* FindLiveByKey(const std::wstring& key);
+
+// A live ATV in the current world other than `self` whose save Key is `key`, or null.
+void* FindOtherLiveByKey(const std::wstring& key, void* self);
+
+// True when the loaded world save's object records name `key`. The scooter may not be a
+// live actor yet. False when the save slot cannot be read; that miss is not cached, so a
+// slot that appears later is asked again.
+bool LoadedSaveNamesKey(const wchar_t* key);
+
+// How many of those records are ATV_C or a subclass. -1 when the save slot cannot be read.
+// A record counted here may not have a live actor yet.
+int LoadedSaveAtvCount();
+
+// skipSave / ignoreSave. A client mirror is excluded so it cannot become a third saved scooter.
+// The host's companion is included, which is what EnsureOwnSaveKey does.
+void SetIncludedInSave(void* atv, bool included);
+
 // Root body world transform (loc + FULL rotation -- the ATV tips/flips). The pose-stream read.
 // False on null/unresolved or an unreadable location or rotation.
 bool GetRootTransform(void* atv, FVector& loc, FRotator& rot);
@@ -44,10 +81,43 @@ void* GetOccupantPlayer(void* atv);
 // isDriven -- TRUE while a player is seated (the master "occupied" flag).
 bool IsDriven(void* atv);
 
+// Native dismount restores possession, camera and the local player's body.
+// False if it cannot run or leaves the vehicle driven; callers retry safely.
+bool Dismount(void* atv);
+
+// Nearby supported, unobstructed position for a second identical rig. Never
+// searches through a wall or more than 3.5 m from the source. False -> retry later.
+bool FindCompanionLocation(void* atv, FVector& location);
+
 // Display state (cheap field reads, resolved by name). 0 or false on failure.
 float GetFuel(void* atv);    // fuel, 0..100
 float GetHealth(void* atv);  // health, 0..100
 bool  GetBrake(void* atv);   // the handbrake
+bool  GetLights(void* atv);
+bool  GetTurbo(void* atv);
+// Whether the scooter's own radio MediaPlayer is playing. `radio` is the radio actor and
+// `hasRadio` is the upgrade; neither is this.
+bool  GetRadio(void* atv);
+// The radio MediaPlayer's current url, or empty when it has none.
+std::wstring RadioUrl(void* atv);
+// The map upgrade (`hasMap`). False when the field did not resolve.
+bool  GetHasMap(void* atv);
+void  SetBrake(void* atv, bool on);
+void  SetLights(void* atv, bool on);
+void  SetTurbo(void* atv, bool on);
+// Play or pause the scooter's own radio. No url change; that is Drive on the media player.
+void  SetRadio(void* atv, bool on);
+// Open `url` on this scooter's radio (empty leaves the source) and play or pause it.
+void  DriveRadio(void* atv, const wchar_t* url, bool playing);
+// Write `hasMap` and show or hide the digital-map child actor.
+void  SetHasMap(void* atv, bool on);
+// Bit i is one frame module (air control, belt, big lights, container, floaties, front, radio, solar).
+uint8_t ReadModuleMask(void* atv);
+void ApplyModuleMask(void* atv, uint8_t mask);
+// The ATV's own honk input, so a mirror makes the same sound. No-op if that function is absent.
+void PlayHonk(void* atv);
+// The native tyre eject: getTire then damageWheel, so the wheel prop is born on this machine.
+bool EjectWheel(void* atv, int index);
 
 // The game's OWN rig-consistent teleport: ATV_C::teleportVehicle(NewLocation, NewRotation) --
 // K2_SetActorLocation(bTeleport=true) + K2_SetActorRotation(bTeleportPhysics=true), and THEN it

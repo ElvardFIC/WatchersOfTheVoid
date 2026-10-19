@@ -50,6 +50,8 @@ int32_t  g_offPanelObj = -1;      // panelObj, the drill's puzzle shortcut
 int32_t  g_offTurnOn = -1;        // turnon, the drill's read of the last cue
 
 constexpr const wchar_t* kVerbs[] = { L"break", L"fullFix", L"damage", L"update", L"updUpgrades" };
+int32_t g_offOpened=-1,g_offMoving=-1,g_offDoorTimeline=-1;
+uint8_t g_maskOpened=0,g_maskMoving=0;
 
 uint64_t NowMs() {
     return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -130,6 +132,9 @@ bool EnsureResolved() {
     g_offUpgradeButtons = R::FindPropertyOffset(cls, L"upgradeButtons");
     g_offPanelObj = R::FindPropertyOffset(cls, L"panelObj");
     g_offTurnOn = R::FindPropertyOffset(cls, L"turnon");
+    R::FindBoolProperty(cls,L"opened",g_offOpened,g_maskOpened);
+    R::FindBoolProperty(cls,L"moving",g_offMoving,g_maskMoving);
+    g_offDoorTimeline=R::FindPropertyOffset(cls,L"doorAnim_TL");
 
     g_offList = offList;
     g_offBroken = offBroken;  g_maskBroken = maskBroken;
@@ -186,7 +191,29 @@ bool ReadRow(void* gen, Row& out) {
     out.cyc = ReadBit(gen, g_offCyc, g_maskCyc);
     out.cycle = IntAt(gen, g_offCycle);
     out.upgradeLevel = IntAt(gen, g_offUpgrade);
+    out.door=0;
+    if (g_offOpened>=0 && g_offMoving>=0 && g_offDoorTimeline>=0) {
+        const bool moving=ReadBit(gen,g_offMoving,g_maskMoving);
+        bool open=ReadBit(gen,g_offOpened,g_maskOpened);
+        if (moving) {
+            void* timeline=ObjectAt(gen,g_offDoorTimeline);
+            if (!timeline || !R::IsLive(timeline)) return true;
+            ParamFrame f(R::FindDispatchFunctionCached(R::ClassOf(timeline),L"IsReversing"));
+            if (!f.valid() || !Call(timeline,f)) return true;
+            open=!f.Get<bool>(L"ReturnValue");
+        }
+        out.door=open ? 2 : 1;
+    }
     return true;
+}
+
+bool SetDoor(void* gen,bool open) {
+    Row row{};
+    if (!ReadRow(gen,row) || !row.door) return false;
+    if (row.door==(open ? 2 : 1)) return true;
+    if (ReadBit(gen,g_offMoving,g_maskMoving)) return false;
+    ParamFrame f(R::FindDispatchFunctionCached(R::ClassOf(gen),L"openDoor"));
+    return f.valid() && f.Set<bool>(L"open",open) && Call(gen,f);
 }
 
 bool WriteBroken(void* gen, bool broken) {

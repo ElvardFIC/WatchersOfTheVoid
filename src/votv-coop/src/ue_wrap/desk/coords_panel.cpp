@@ -5,6 +5,7 @@
 #include "ue_wrap/desk/coords_panel.h"
 
 #include "ue_wrap/core/call.h"
+#include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/desk/console_desk.h"
@@ -21,8 +22,8 @@ namespace R = ue_wrap::reflection;
 // ui_coordinates (the coords-panel widget; SINGLETON child of the atlas) --
 // the REAL dish-aim state + its repaint verb.
 void* g_uiCoordsCls = nullptr;
+CachedObjRef g_uiCoordsClassIdentity;
 void* g_uiCoordsInst = nullptr;
-int32_t g_uiCoordsIdx = -1;
 int32_t g_offViewCoordinate = -1;  // FVector2D
 int32_t g_offCoordinate0 = -1;     // FVector2D
 int32_t g_offCoordinate1 = -1;     // FVector2D
@@ -77,10 +78,8 @@ void ResolvePass() {
 }  // namespace
 
 void* Instance() {
-    if (g_uiCoordsInst && R::IsLiveByIndex(g_uiCoordsInst, g_uiCoordsIdx)) return g_uiCoordsInst;
-    g_uiCoordsInst = nullptr;
-    if (!g_required) ResolvePass();
-    if (!g_uiCoordsCls) return nullptr;
+    // A live old widget may survive reconstruction. Follow the desk's current
+    // chain on every lookup instead of treating a live cache as authoritative.
     // Resolve via the desk's OWN field chain (desk.Widget -> atlas.ui_coordinates), which is the
     // game's own access path -- getCoordWidget does exactly this. Resolving instead by
     // FindObjectsByClass(ui_coordinates_C) and taking the first hit grabs the cooked widget-tree
@@ -91,19 +90,27 @@ void* Instance() {
     void* coords = ue_wrap::console_desk::AtlasUiCoordsSlot();
     if (!coords || !R::IsLive(coords)) return nullptr;
     void* cls = R::ClassOf(coords);
-    if (!cls || !R::IsDescendantOfAny(cls, &g_uiCoordsCls, 1)) {
-        UE_LOGW("coords_panel: desk.Widget.ui_coordinates is not a ui_coordinates_C (cls=%p) -- not caching",
-                cls);
-        return nullptr;
+    void* base = cls;
+    for (int depth=0; base && depth<16; ++depth) {
+        if (R::NameEquals(R::NameOf(base), L"ui_coordinates_C")) break;
+        base = R::SuperStructOf(base);
     }
+    if (!base || !R::NameEquals(R::NameOf(base), L"ui_coordinates_C")) return nullptr;
+    if (!g_uiCoordsClassIdentity.Is(base)) {
+        g_uiCoordsClassIdentity.Set(base); g_uiCoordsCls=base;
+        g_offViewCoordinate=g_offCoordinate0=g_offCoordinate1=g_offCoordinate2=g_offSelected=-1;
+        g_offDirection=g_offCanPing=-1; g_maskCanPing=0;
+        g_updCursorLocationsFn=nullptr; g_required=false; g_nextResolve={};
+        ResolvePass();
+    }
+    if (!g_required) ResolvePass();
+    const bool changed = coords != g_uiCoordsInst;
     g_uiCoordsInst = coords;
-    g_uiCoordsIdx = R::InternalIndexOf(coords);
-    UE_LOGI("coords_panel: ui_coordinates LIVE instance resolved via desk.Widget chain (%p)", coords);
+    if (changed) UE_LOGI("coords_panel: ui_coordinates LIVE instance resolved via desk.Widget chain (%p)", coords);
     return g_uiCoordsInst;
 }
 
 bool ReadDishAim(DishAim& out) {
-    if (!g_required) ResolvePass();
     void* w = Instance();
     if (!w || g_offViewCoordinate < 0 || g_offCoordinate0 < 0 ||
         g_offCoordinate1 < 0 || g_offCoordinate2 < 0 || g_offSelected < 0)
@@ -123,7 +130,6 @@ bool ReadDishAim(DishAim& out) {
 }
 
 bool ReadCanPing(bool& out) {
-    if (!g_required) ResolvePass();
     void* w = Instance();
     if (!w || g_offCanPing < 0) return false;
     out = (*(reinterpret_cast<const uint8_t*>(w) + g_offCanPing) & g_maskCanPing) != 0;
@@ -142,7 +148,6 @@ bool AimCanPing(const DishAim& aim) {
 }
 
 bool ReadAreaSize(float& width, float& height) {
-    if (!g_required) ResolvePass();
     void* w = Instance();
     void* fn = (w && g_uiCoordsCls) ? R::FindDispatchFunctionCached(g_uiCoordsCls, L"getAreaSize") : nullptr;
     if (!fn) return false;
@@ -163,7 +168,6 @@ bool ReadAreaSize(float& width, float& height) {
 // IS the whole job here; the triangle and dish repaint is WriteDishCommitted, at commit rate.
 // The name is the guard: WriteCursorOnly does cursor, only.
 bool WriteCursorOnly(float viewX, float viewY) {
-    if (!g_required) ResolvePass();
     void* w = Instance();
     if (!w || g_offViewCoordinate < 0) return false;
     auto* p = reinterpret_cast<uint8_t*>(w);
@@ -179,11 +183,15 @@ bool WriteCursorOnly(float viewX, float viewY) {
 // WriteCursorOnly. This runs at COMMIT rate, change-gated, so the per-call dish setRot loop
 // is affordable here in a way it is not per frame.
 bool WriteDishCommitted(const DishAim& in) {
-    if (!g_required) ResolvePass();
     void* w = Instance();
     if (!w || g_offCoordinate0 < 0 || g_offCoordinate1 < 0 ||
         g_offCoordinate2 < 0 || g_offSelected < 0)
         return false;
+    if (!PresentationTarget()) return false;
+    CachedObjRef identity;
+    identity.Set(w);
+    const uint32_t generation=world_identity::Generation();
+    const auto current = [&] { return generation==world_identity::Generation() && identity.Get() == w && Instance() == w; };
     auto* p = reinterpret_cast<uint8_t*>(w);
     auto wr = [&](int32_t off, float x, float y) {
         std::memcpy(p + off + 0, &x, sizeof(float));
@@ -194,14 +202,12 @@ bool WriteDishCommitted(const DishAim& in) {
     wr(g_offCoordinate2, in.c2X, in.c2Y);
     std::memcpy(p + g_offSelected, &in.selected, sizeof(int32_t));
     if (g_offDirection >= 0) *(p + g_offDirection) = in.direction ? 1 : 0;
-    if (g_updCursorLocationsFn) {
-        ue_wrap::ParamFrame f(g_updCursorLocationsFn);
-        if (f.valid()) ue_wrap::Call(w, f);
-    }
+    if (!g_updCursorLocationsFn) return false;
+    ue_wrap::ParamFrame f(g_updCursorLocationsFn);
+    if (!f.valid() || !ue_wrap::Call(w, f) || !current()) return false;
     // The desk's az/alt text repaint (updateCoordCoords) -- the desk owns its
     // verb table; declines silently on an unresolved desk, as pre-split.
-    ue_wrap::console_desk::CallUpdateCoordCoords();
-    return true;
+    return ue_wrap::console_desk::CallUpdateCoordCoords() && current();
 }
 
 }  // namespace ue_wrap::coords_panel

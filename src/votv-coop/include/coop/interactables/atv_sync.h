@@ -18,8 +18,10 @@ namespace coop::net {
 class Session;
 struct AtvStatePayload;
 struct AtvReleasePayload;
+struct AtvRadioPayload;
 struct AtvSpawnPayload;
 struct AtvDestroyPayload;
+struct AtvConditionEditPayload;
 }  // namespace coop::net
 
 namespace coop::atv_sync {
@@ -39,6 +41,7 @@ void Install(coop::net::Session* session);
 // game's own teleportVehicle only past a speed-scaled threshold. Ignored if this peer is itself the
 // pose author of that ATV. Called from event_feed.
 void OnReliable(const coop::net::AtvStatePayload& payload, uint8_t senderPeerSlot);
+void OnRadio(const coop::net::AtvRadioPayload& payload, uint8_t senderPeerSlot);
 
 // Receiver entry: an AtvRelease packet arrived -- "the sender is no longer this ATV's author".
 // Clears the seat and the author, and NOTHING else: nothing was frozen, the velocity already rode
@@ -58,6 +61,13 @@ void OnAtvSpawn(const coop::net::AtvSpawnPayload& payload);
 // gone -> K2_DestroyActor the fresh-spawned mirror + drop the index entry. From event_feed.
 void OnAtvDestroy(const coop::net::AtvDestroyPayload& payload);
 
+// Receiver entry: an AtvConditionEdit arrived -- a peer that does not author the ATV serviced it.
+// On the host, from a client: applied to the host's copy when the host authors the ATV or nobody
+// does, forwarded to the author when another client does; a tyre put on is applied on the host's
+// copy whoever authors. On a client, from the host: applied when this client authors the ATV. A
+// sender's edits run at a bounded rate. From event_feed. Game thread.
+void OnConditionEdit(const coop::net::AtvConditionEditPayload& payload, uint8_t senderPeerSlot);
+
 // HOST-only: snapshot every indexed ATV's pose, VELOCITY and holder to a freshly connected client
 // `peerSlot` (adopt=1 -> the joiner warps to it). Carrying the velocity is what lets an ATV that is
 // airborne or rolling at the join arrive moving and land, instead of hanging where it was
@@ -74,8 +84,8 @@ void QueueConnectBroadcastForSlot(int peerSlot);
 // STREAMS. TICK OWNERSHIP (that, or "I am the host and nobody authors it") decides whose machine
 // runs the brain: the accumulators, the wheel torque, and the collision-authored damage. On the
 // host they are different sets, and fusing them breaks the idle syncer. On the wire they are
-// `authorSlot`; `occupantSlot` stays SEPARATE because it is the SEAT that device_occupancy's
-// E-press deny reads, and a peer merely grabbing an ATV must not deny a seat nobody is in.
+// `authorSlot`; `occupantSlot` stays SEPARATE because it is the DRIVER SEAT that
+// device_occupancy's E-press deny reads. A carry claim separately blocks mounting.
 void Tick();
 
 // Session teardown: disarm the collision guard, give EVERY surviving ATV its brain back
@@ -86,6 +96,16 @@ void OnDisconnect();
 // Interaction query: true iff `actor` is indexed as an ATV currently occupied by another network
 // peer (occupantSlot != 0xFF && occupantSlot != LocalSlot()). Populates `outOccupantSlot` if non-null.
 bool IsOccupiedByOther(void* actor, uint8_t* outOccupantSlot = nullptr);
+
+// True while a player physically carries this ATV. Mounting a carried rig would
+// leave its physics handle pulling against the driver and snap it back on exit.
+// Local holds use the fresh pawn; remote holds use the current ATV authority row.
+bool IsHeldForMount(void* actor, uint8_t* outHolderSlot = nullptr);
+
+// True iff this peer currently occupies some indexed ATV's driver seat.
+bool LocalIsDriving();
+// Copy up to `max` indexed ATVs and their driver slots (0xFF if empty). Returns the count.
+int CopyIndexed(void** atvs, uint8_t* driverSlots, int max);
 
 // Diagnostic read: does THIS peer own `actor`'s tick (run its brain) right now? False for an
 // unindexed actor, and false whenever the lane is not running. Exposed for coop/dev/atv_probe, so

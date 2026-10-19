@@ -78,6 +78,9 @@ struct Adapter {
     uint64_t (*ResolvedCount)();               // classes resolved one at a time; null = together (scan_hub)
     // The dev probe's view of the device's raw state for a SHADOW MISS line; null = the state bit only.
     void (*Describe)(void* actor, char* out, size_t n) = nullptr;
+    // Opt in only for absolute setters whose failure means temporary unreadiness,
+    // not a deliberate gameplay refusal (e.g. locked containers).
+    bool retryFailedApply = false;
 };
 
 // The engine.
@@ -199,11 +202,14 @@ public:
         if (key.empty()) { UE_LOGW("%s: OnReliable empty key -- dropping", a_.name); return; }
         const bool want = (p.action != 0);
         void* actor = a_.EnsureResolved() ? ResolveFast(key) : nullptr;
-        if (actor) { ApplyResolved(actor, key, want, senderSlot); return; }
-        // Not streamed in yet: deferred, retried on the throttled tick.
+        if (actor && ApplyResolved(actor, key, want, senderSlot)) {
+            pending_.erase(key);  // a newer applied state supersedes any older deferred one
+            return;
+        }
+        // Missing actor or a temporarily unavailable absolute setter: retain latest state.
         pending_[key] = Pending{ want, std::chrono::steady_clock::now() + kPendingTTL, passes_ };
         if (ProbeLog())
-            UE_LOGI("%s: '%ls' not present yet -- deferring %s (slot %u)",
+            UE_LOGI("%s: '%ls' not ready -- deferring %s (slot %u)",
                     a_.name, key.c_str(), want ? "ON" : "OFF", senderSlot);
     }
 
@@ -230,38 +236,58 @@ public:
 
     void QueueConnectBroadcastForSlot(int peerSlot) {
         auto* s = session_.load(std::memory_order_acquire);
-        if (!s) return;
+        if (!s || !s->connected()) return;
         if (s->role() != coop::net::Role::Host) return;  // host-only snapshot
         if (peerSlot < 0 || peerSlot >= static_cast<int>(coop::players::kMaxPeers)) return;
-        // No forced rebuild: the hub's 2 s pass keeps the index fresh, and a swinger spawned inside
-        // that window reaches the joiner on its next state change.
-        std::vector<std::pair<std::wstring, Ref>> items;
-        {
-            std::lock_guard<std::mutex> lk(indexMutex_);
-            items.reserve(byKey_.size());
-            for (auto& kv : byKey_) items.emplace_back(kv.first, kv.second);
+        snapshots_[peerSlot] = Snapshot{ue_wrap::world_identity::Generation()};
+        FlushConnectSnapshots();
+    }
+
+    void OnPeerLeft(int peerSlot) { snapshots_.erase(peerSlot); }
+
+    void FlushConnectSnapshots() {
+        if (snapshots_.empty()) return;
+        auto* s = GetSession();
+        if (!s || !s->connected() || s->role() != coop::net::Role::Host) {
+            snapshots_.clear();
+            return;
         }
-        // The host's current state for every indexed instance, OFF included: the save the joiner
-        // loaded, the host's captured at its join, holds neither a state the game does not save nor
-        // one changed while the joiner loaded. A symmetric receiver skips instances already
-        // matching, so an agreeing OFF costs one small packet.
-        int sent = 0;
-        for (auto& d : items) {
-            if (!R::IsLiveByIndex(d.second.actor, d.second.idx)) continue;
-            bool on = false;
-            if (!a_.ReadState(d.second.actor, on)) continue;
-            coop::net::KeyedTogglePayload p{};
-            WireKeyFromString(d.first, p.key);
-            p.action = on ? 1 : 0;
-            s->SendReliableToSlot(peerSlot, a_.kind, &p, sizeof(p));
-            { std::lock_guard<std::mutex> lk(stateMutex_); lastKnown_[d.first] = on; }
-            ++sent;
+        for (auto it = snapshots_.begin(); it != snapshots_.end();) {
+            auto& snap = it->second;
+            if (snap.generation != ue_wrap::world_identity::Generation()) {
+                it = snapshots_.erase(it);
+                continue;
+            }
+            if (!IndexCurrent() || !a_.EnsureResolved() || !s->IsSlotWorldReady(it->first)) {
+                ++it;
+                continue;
+            }
+            if (!snap.seeded) {
+                std::lock_guard<std::mutex> lk(indexMutex_);
+                for (const auto& kv : byKey_) snap.keys.insert(kv.first);
+                snap.seeded = true;
+            }
+            for (auto key = snap.keys.begin(); key != snap.keys.end();) {
+                void* actor = ResolveFast(*key);
+                if (!actor) { key = snap.keys.erase(key); continue; }
+                bool on = false;
+                if (!a_.ReadState(actor, on)) { ++key; continue; }
+                coop::net::KeyedTogglePayload p{};
+                WireKeyFromString(*key, p.key);
+                p.action = on ? 1 : 0;
+                if (s->SendReliableToSlot(it->first, a_.kind, &p, sizeof(p)))
+                    key = snap.keys.erase(key);
+                else ++key;
+                // A unicast does not acknowledge this state for the other peers.
+                // Retry by key, reading the current value rather than a stale packet.
+            }
+            if (snap.keys.empty()) it = snapshots_.erase(it);
+            else ++it;
         }
-        UE_LOGI("%s: connect-snapshot -- sent %d full state(s) to slot %d (of %zu indexed)",
-                a_.name, sent, peerSlot, items.size());
     }
 
     void Tick() {
+        FlushConnectSnapshots();
         if (!a_.EnsureResolved()) return;
         RegisterWithScanHub();  // safety net for any order where Tick precedes Install
         if (a_.TickApply) a_.TickApply();  // finish an async apply (doors)
@@ -275,11 +301,10 @@ public:
                 int applied = 0, expired = 0, still = 0, backstopped = 0;
                 for (auto it = pending_.begin(); it != pending_.end();) {
                     void* actor = ResolveFast(it->first);
-                    if (actor) {
-                        ApplyResolved(actor, it->first, it->second.want, 0xFF);
+                    if (actor && ApplyResolved(actor, it->first, it->second.want, 0xFF)) {
                         it = pending_.erase(it);
                         ++applied;
-                    } else if (stablePasses_ >= kSettlePassesForExpiry && passes_ - it->second.queuedAt >= 2) {
+                    } else if (!actor && stablePasses_ >= kSettlePassesForExpiry && passes_ - it->second.queuedAt >= 2) {
                         // The world settled and it is still not here: the count that grades this
                         // lane.
                         if (ProbeLog())
@@ -288,12 +313,9 @@ public:
                         it = pending_.erase(it);
                         ++expired;
                     } else if (now >= it->second.deadline) {
-                        // The backstop: the index never settled in ten minutes, a hub or world
-                        // signal rather than a missing instance, counted apart from the settled
-                        // expiry.
-                        UE_LOGW("%s: deferred '%ls' hit the %lld-minute BACKSTOP -- the index "
-                                "never settled (stablePasses=%d); this is a hub/world signal, "
-                                "not a missing instance",
+                        // Bound missing targets and persistently unavailable setters alike.
+                        UE_LOGW("%s: deferred '%ls' hit the %lld-minute BACKSTOP -- target absent "
+                                "or setter unavailable (stablePasses=%d)",
                                 a_.name, it->first.c_str(),
                                 static_cast<long long>(std::chrono::duration_cast<std::chrono::minutes>(kPendingTTL).count()),
                                 stablePasses_);
@@ -343,6 +365,7 @@ public:
     }
 
     void OnDisconnect() {
+        snapshots_.clear();
         size_t nP = pending_.size();
         pending_.clear();
         if (unindexedEdges_)
@@ -496,9 +519,15 @@ public:
     }
 
 private:
+    struct Snapshot {
+        uint32_t generation;
+        bool seeded = false;
+        std::unordered_set<std::wstring> keys;
+    };
+    std::unordered_map<int, Snapshot> snapshots_;
     struct Ref { void* actor; int32_t idx; };
-    // A state whose device this peer's index does not hold yet. It may expire only once the hub has
-    // passed over the world twice since it came: a device that spawned just before stays until then.
+    // Latest state for a missing device or retryable setter. Settled-index expiry applies only
+    // to missing devices; present but unready devices retain the state until the TTL backstop.
     struct Pending { bool want; std::chrono::steady_clock::time_point deadline; uint64_t queuedAt; };
 
     void* ResolveFast(const std::wstring& key) {
@@ -510,7 +539,7 @@ private:
         return nullptr;
     }
 
-    void ApplyResolved(void* actor, const std::wstring& key, bool want, unsigned fromSlot) {
+    bool ApplyResolved(void* actor, const std::wstring& key, bool want, unsigned fromSlot) {
         // The idempotent skip is symmetric-only, where the local field is moved only by us or by
         // the peer being echoed. On a HostAuth channel the apply always runs, and each HostAuth
         // adapter's apply is idempotent itself: a door already at or swinging toward the state is
@@ -520,12 +549,13 @@ private:
             if (a_.ReadState(actor, cur) && cur == want) {
                 { std::lock_guard<std::mutex> lk(stateMutex_); lastKnown_[key] = want; }
                 if (ProbeLog()) UE_LOGI("%s: apply key='%ls' already %s -- idempotent skip", a_.name, key.c_str(), want ? "ON" : "OFF");
-                return;
+                return true;
             }
         }
         echo_.store(true, std::memory_order_release);
         const bool ok = a_.ApplyState(actor, want);
         echo_.store(false, std::memory_order_release);
+        if (!ok && a_.retryFailedApply) return false;  // do not acknowledge an unapplied state
         // The baseline is what the device reads now: one that refused the state (a locked lid) is no
         // delta for the poll to send back over the author's change.
         bool now = want;
@@ -537,6 +567,7 @@ private:
         else
             UE_LOGW("%s: applied %s key='%ls' ok=%d (from slot %u), but the device reads %s: it refused",
                     a_.name, want ? "ON" : "OFF", key.c_str(), ok ? 1 : 0, fromSlot, now ? "ON" : "OFF");
+        return true;
     }
 
     // Sends the key's state when it differs from what the peers last got, and primes lastKnown_ to

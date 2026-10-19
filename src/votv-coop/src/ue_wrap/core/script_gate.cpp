@@ -96,13 +96,14 @@ struct ActiveScope {
     ActiveScope* prev;
     int prevTag; void* prevObject; void* prevFunction; const wchar_t* prevName;
     void* self;     // the body THIS node published, so a walk reads each node without re-deriving
+    void* receiver;
     void* caller;   // PreviousFrame->Node: WHO called this body, which a verb shared by several
                     // callers needs to tell a player's route from the world's own
     uintptr_t bits; // the scope mark the PREs of this call put on it (MarkScope)
     ActiveScope(int tag, void* object, void* function, const wchar_t* name, void* callerFunction,
                 uintptr_t markBits)
         : prev(t_activeHead), prevTag(t_tag), prevObject(t_object), prevFunction(t_function),
-          prevName(t_name), self(function), caller(callerFunction), bits(markBits) {
+          prevName(t_name), self(function), receiver(object), caller(callerFunction) {
         ++t_depth; t_tag = tag; t_object = object; t_function = function; t_name = name;
         t_activeHead = this;
     }
@@ -466,35 +467,11 @@ bool IsBodyActive(void* function, void* callerFunction) {
     return false;
 }
 
-void MarkScope(const Call& call, uintptr_t bits) {
-    if (call.scopeMark) *call.scopeMark |= bits;
-}
-
-uintptr_t ScopeBits(void* function) {
-    if (!function) return 0;
+bool IsObjectBodyActive(void* function, void* object) {
+    if (!function || !object) return false;
     for (const ActiveScope* s = t_activeHead; s; s = s->prev)
-        if (s->self == function) return s->bits;
-    return 0;
-}
-
-uintptr_t ScopeBitFor(const void* owner) {
-    UE_ASSERT_GAME_THREAD("script_gate::ScopeBitFor");
-    constexpr int kBits = 64;
-    static const void* s_owners[kBits] = {};
-    static int s_count = 0;
-    if (!owner) return 0;
-    for (int i = 0; i < s_count; ++i)
-        if (s_owners[i] == owner) return static_cast<uintptr_t>(1) << i;
-    if (s_count >= kBits) {
-        static bool s_said = false;
-        if (!s_said) {
-            s_said = true;
-            UE_LOGE("script_gate: scope bits exhausted (%d owners) -- a consumer asking for another gets 0", kBits);
-        }
-        return 0;
-    }
-    s_owners[s_count] = owner;
-    return static_cast<uintptr_t>(1) << s_count++;
+        if (s->self == function && s->receiver == object) return true;
+    return false;
 }
 
 std::uint8_t* OutParamPtr(const Call& call, int32_t paramOffset) {

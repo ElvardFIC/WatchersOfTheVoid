@@ -15,6 +15,8 @@
 #include "event_dispatch.h"  // co-located private header (src tree, not include/)
 
 #include "coop/creatures/kerfur_command.h"
+#include "coop/props/prop_food_sync.h"
+#include "coop/world/credit_intent.h"
 #include "coop/creatures/kerfur_convert_host.h"
 #include "coop/creatures/roach_sync.h"    // CLIENT->HOST local roach consumption intent
 #include "coop/interactables/camera_toggle_intent.h"  // CLIENT->HOST use of a security camera, or its laptop light button
@@ -505,7 +507,7 @@ bool HandleIntentEvent(net::Session& session,
         }
         net::DroneFlyIntentPayload p{};
         std::memcpy(&p, msg.payload, sizeof(p));
-        if (p.verb != 0) {
+        if (p.verb > 1 || (p.verb == 1 && p.leaveAfter5min > 1)) {
             UE_LOGW("event_feed: DroneFlyIntent verb=%u has no lane -- dropping",
                     static_cast<unsigned>(p.verb));
             break;
@@ -554,8 +556,8 @@ bool HandleIntentEvent(net::Session& session,
     case net::ReliableKind::DeskPingVerdict: {
         // CLIENT->HOST the verdict of a ping its gate refused; HOST->that CLIENT a refusal or the find. The
         // priming, the refusals and the answers live in the module, the format here. coop::desk_ping_sync.
-        if (msg.payloadLen < sizeof(net::DeskPingVerdictPayload)) {
-            UE_LOGW("event_feed: DeskPingVerdict payload too short (%zu < %zu)",
+        if (msg.payloadLen != sizeof(net::DeskPingVerdictPayload)) {
+            UE_LOGW("event_feed: DeskPingVerdict payload has wrong size (%zu != %zu)",
                     static_cast<size_t>(msg.payloadLen), sizeof(net::DeskPingVerdictPayload));
             break;
         }
@@ -684,6 +686,55 @@ bool HandleIntentEvent(net::Session& session,
         net::RoachConsumedPayload p{};
         std::memcpy(&p, msg.payload, sizeof(p));
         coop::roach_sync::OnConsumedIntent(p, msg.senderPeerSlot);
+        break;
+    }
+    case net::ReliableKind::CreditIntent: {
+        if (msg.senderPeerSlot < 1 || msg.senderPeerSlot >= net::kMaxPeers) {
+            UE_LOGW("event_feed: CreditIntent from invalid senderPeerSlot=%d -- dropping",
+                    msg.senderPeerSlot);
+            break;
+        }
+        if (msg.payloadLen < sizeof(net::CreditIntentPayload)) {
+            UE_LOGW("event_feed: CreditIntent payload too short (%zu < %zu)",
+                    static_cast<size_t>(msg.payloadLen), sizeof(net::CreditIntentPayload));
+            break;
+        }
+        net::CreditIntentPayload p{};
+        std::memcpy(&p, msg.payload, sizeof(p));
+        p.name[sizeof(p.name) - 1] = 0;
+        coop::credit_intent::OnIntent(p, static_cast<uint8_t>(msg.senderPeerSlot));
+        break;
+    }
+    case net::ReliableKind::FoodBite: {
+        if (msg.senderPeerSlot < 1 || msg.senderPeerSlot >= net::kMaxPeers) {
+            UE_LOGW("event_feed: FoodBite from invalid senderPeerSlot=%d -- dropping",
+                    msg.senderPeerSlot);
+            break;
+        }
+        if (msg.payloadLen < sizeof(net::FoodBitePayload)) {
+            UE_LOGW("event_feed: FoodBite payload too short (%zu < %zu)",
+                    static_cast<size_t>(msg.payloadLen), sizeof(net::FoodBitePayload));
+            break;
+        }
+        net::FoodBitePayload p{};
+        std::memcpy(&p, msg.payload, sizeof(p));
+        coop::props::prop_food_sync::OnBite(p, static_cast<uint8_t>(msg.senderPeerSlot));
+        break;
+    }
+    case net::ReliableKind::HandTaken: {
+        if (session.role() != net::Role::Client || msg.senderPeerSlot != 0) {
+            UE_LOGW("event_feed: HandTaken from senderPeerSlot=%d on role %d -- dropping",
+                    msg.senderPeerSlot, static_cast<int>(session.role()));
+            break;
+        }
+        if (msg.payloadLen < sizeof(net::HandTakenPayload)) {
+            UE_LOGW("event_feed: HandTaken payload too short (%zu < %zu)",
+                    static_cast<size_t>(msg.payloadLen), sizeof(net::HandTakenPayload));
+            break;
+        }
+        net::HandTakenPayload p{};
+        std::memcpy(&p, msg.payload, sizeof(p));
+        coop::kerfur_command::OnHandTaken(p);
         break;
     }
     default:

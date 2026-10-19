@@ -34,6 +34,7 @@ bool IsLidOpen(void* console);
 // The presser's cursor is on the keyboard rather than the console's other face: the discriminator
 // the game itself uses to pick the verb, and it is LOCAL to whoever is looking.
 bool IsCursorOnKeyboard(void* console);
+bool IsCursorOnDeparture(void* console);
 
 // The presser's cursor is on the lid's latch, whose press toggles the lid. Local, like the keyboard's.
 // Both flags are written when the console builds a presser's action options, not cleared when the

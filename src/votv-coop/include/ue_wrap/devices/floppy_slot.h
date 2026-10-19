@@ -5,8 +5,8 @@
 // lib_C::floppyFromType reads a class and a mesh out of), floppyReadwrites, floppyData, and
 // floppyObjectData, the JSON of the disc's save struct that the insert captures and the eject
 // spawns the disc back from. The laptop adds the two its second hitbox needs. AkerfurOmega_C has
-// three of the four and rebuilds a disc by property name instead; it is not a row here, because
-// the robot has no lane and a slot row would have no identity to travel under.
+// three of the four and rebuilds a disc by property name instead; it is not a row here. The pose
+// stream carries hasFloppy and the type, and the mirror sets floppyMesh through MeshForSlotType.
 //
 // Applying a slot is more than the fields: the laptop's widget refreshes through updFloppy, and
 // the box, whose mesh swap is inline in two EX_LocalVirtualFunction verbs, gets its mesh set
@@ -97,5 +97,9 @@ std::wstring ObjectDataKey(const std::wstring& json);
 
 // Level change: the classes, offsets and functions are world-scoped.
 void ResetCache();
+
+// The static mesh lib_C::floppyFromType shows for `type`. `outMesh` is null when the type is empty.
+// False when the library could not be asked, which is not the same as an empty slot. Game thread.
+bool MeshForSlotType(void* worldContext, int32_t type, void*& outMesh);
 
 }  // namespace ue_wrap::floppy_slot

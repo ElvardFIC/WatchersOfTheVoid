@@ -16,6 +16,8 @@
 
 #include <cstdint>
 
+namespace coop::net { struct KeyedTogglePayload; }
+
 namespace coop::net {
 class Session;
 struct DoorVerbIntentPayload;
@@ -44,5 +46,10 @@ void OnDisconnect();
 // CLIENT: how many presses this client has sent the host this session, for a drill that reads
 // whether a press went. Game thread.
 uint64_t SentPressCount();
+
+// Cremator lever state reuses the keyed ContainerState shape under a reserved
+// `/lever` identity suffix; it is separate from the hatch's opened bit.
+void OnCrematorState(const coop::net::KeyedTogglePayload& payload, uint8_t senderSlot);
+void QueueCrematorSnapshot(int peerSlot);
 
 }  // namespace coop::door_verb_intent

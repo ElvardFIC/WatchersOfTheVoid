@@ -85,25 +85,26 @@ UE_FACT_FN(kRowDeskMod12Overlap, "mirror_slot_entry", L"analogDScreenTest_C",
 struct Entry {
     const ue_wrap::facts::Function* row;
 };
-const Entry kEntries[] = {
-    {&kRowDriveSlotPortOverlap},
-    {&kRowDriveRackOverlap},
-    {&kRowBoxOverlap},
-    {&kRowReelboxTriggerOverlap},
-    {&kRowTapesReelboxSmallOverlap},
-    {&kRowTapesReelboxBigOverlap},
-    {&kRowDeskMod1Overlap},
-    {&kRowDeskMod2Overlap},
-    {&kRowDeskMod3Overlap},
-    {&kRowDeskMod4Overlap},
-    {&kRowDeskMod5Overlap},
-    {&kRowDeskMod6Overlap},
-    {&kRowDeskMod7Overlap},
-    {&kRowDeskMod8Overlap},
-    {&kRowDeskMod9Overlap},
-    {&kRowDeskMod10Overlap},
-    {&kRowDeskMod11Overlap},
-    {&kRowDeskMod12Overlap},
+constexpr Entry kEntries[] = {
+    {L"analogDScreenTest_C", L"ReceiveActorBeginOverlap"}, // returned rear covers
+    {L"driveSlot_C", L"BndEvt__driveSlot_drivePort_play_K2Node_ComponentBoundEvent_0_ComponentBeginOverlapSignature__DelegateSignature"},
+    {L"prop_driveRack_C", L"ReceiveActorBeginOverlap"},
+    {L"prop_box_C", L"ReceiveActorBeginOverlap"},
+    {L"prop_reelbox_C", L"BndEvt__prop_reelbox_trigger_K2Node_ComponentBoundEvent_0_ComponentBeginOverlapSignature__DelegateSignature"},
+    {L"wallunit_tapes_C", L"BndEvt__wallunit_tapes_reelbox_small_K2Node_ComponentBoundEvent_1_ComponentBeginOverlapSignature__DelegateSignature"},
+    {L"wallunit_tapes_C", L"BndEvt__wallunit_tapes_reelbox_big_K2Node_ComponentBoundEvent_0_ComponentBeginOverlapSignature__DelegateSignature"},
+    {L"analogDScreenTest_C", L"BndEvt__analogDScreenTest_mod1_K2Node_ComponentBoundEvent_9_ComponentBeginOverlapSignature__DelegateSignature"},
+    {L"analogDScreenTest_C", L"BndEvt__analogDScreenTest_mod2_K2Node_ComponentBoundEvent_10_ComponentBeginOverlapSignature__DelegateSignature"},
+    {L"analogDScreenTest_C", L"BndEvt__analogDScreenTest_mod3_K2Node_ComponentBoundEvent_11_ComponentBeginOverlapSignature__DelegateSignature"},
+    {L"analogDScreenTest_C", L"BndEvt__analogDScreenTest_mod4_K2Node_ComponentBoundEvent_12_ComponentBeginOverlapSignature__DelegateSignature"},
+    {L"analogDScreenTest_C", L"BndEvt__analogDScreenTest_mod5_K2Node_ComponentBoundEvent_13_ComponentBeginOverlapSignature__DelegateSignature"},
+    {L"analogDScreenTest_C", L"BndEvt__analogDScreenTest_mod6_K2Node_ComponentBoundEvent_14_ComponentBeginOverlapSignature__DelegateSignature"},
+    {L"analogDScreenTest_C", L"BndEvt__analogDScreenTest_mod7_K2Node_ComponentBoundEvent_15_ComponentBeginOverlapSignature__DelegateSignature"},
+    {L"analogDScreenTest_C", L"BndEvt__analogDScreenTest_mod8_K2Node_ComponentBoundEvent_16_ComponentBeginOverlapSignature__DelegateSignature"},
+    {L"analogDScreenTest_C", L"BndEvt__analogDScreenTest_mod9_K2Node_ComponentBoundEvent_17_ComponentBeginOverlapSignature__DelegateSignature"},
+    {L"analogDScreenTest_C", L"BndEvt__analogDScreenTest_mod10_K2Node_ComponentBoundEvent_18_ComponentBeginOverlapSignature__DelegateSignature"},
+    {L"analogDScreenTest_C", L"BndEvt__analogDScreenTest_mod11_K2Node_ComponentBoundEvent_19_ComponentBeginOverlapSignature__DelegateSignature"},
+    {L"analogDScreenTest_C", L"BndEvt__analogDScreenTest_mod12_K2Node_ComponentBoundEvent_20_ComponentBeginOverlapSignature__DelegateSignature"},
 };
 constexpr int kEntryCount = static_cast<int>(sizeof(kEntries) / sizeof(kEntries[0]));
 constexpr int kTagBase = 0x4D534C00;  // 'MSL' and the entry's index

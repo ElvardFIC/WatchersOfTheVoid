@@ -8,6 +8,7 @@
 
 #include "ue_wrap/core/call.h"
 #include "ue_wrap/engine/engine.h"
+#include "ue_wrap/engine/engine_attach.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/world/world_singleton.h"
@@ -136,6 +137,24 @@ static void* SpawnPuppetMainPlayer(const FVector& loc,
     // The orphan's cached GameMode pointer nulled, so its ReceiveTick graphs (which null-check it
     // and return) neither re-overwrite gamemode.mainPlayer nor invoke gamemode methods.
     E::WriteObjectField(actor, P::off::AmainPlayer_GameMode, nullptr);
+    // Native explosions can call ragdollMode directly on this QueryOnly body.
+    // Its first BP instruction checks canRagdoll; the coop display uses a separate
+    // ragdoll actor and never needs the orphan's single-player death machinery.
+    if (!E::SetMainPlayerCanRagdoll(actor, false))
+        UE_LOGE("puppet[MainPlayer]: could not disable native ragdoll/death on orphan");
+    // The remote capsule is moved from delayed snapshots. Physical contacts would push
+    // the box the real player is already standing on. Keep traces (including PVP),
+    // but remove simulation contacts from the capsule and the puppet's body meshes.
+    E::SetActorRootCollisionEnabled(actor, 1); // QueryOnly
+    for (const auto off : {P::off::ACharacter_Mesh, P::off::AmainPlayer_mesh_playerVisible,
+                       P::off::AmainPlayer_arms, P::off::AmainPlayer_playermodel}) {
+        void* component = ReadPtr(actor, off);
+        if (!component || !R::IsLive(component)) continue;
+        void* fn = R::FindDispatchFunctionCached(R::ClassOf(component), L"SetCollisionEnabled");
+        if (!fn) continue;
+        ParamFrame frame(fn);
+        if (frame.valid() && frame.Set<uint8_t>(L"NewType", 1)) Call(component, frame);
+    }
     UE_LOGI("puppet[MainPlayer]: nulled orphan.GameMode @0x0C80 (disconnected from gamemode)");
 
     // mesh_playerVisible by direct offset: mainPlayer_C has several SkeletalMeshComponents
@@ -162,6 +181,13 @@ static void* SpawnPuppetMainPlayer(const FVector& loc,
     // (SetAnimTickAlways below).
     E::SetActorTickEnabled(actor, false);
     UE_LOGI("puppet[MainPlayer]: disabled orphan actor tick (ReceiveTick BP graph suppressed; AnimBP still ticks on mesh)");
+    // Disabling the actor does not disable its weapon component. Its Blueprint
+    // looks up player 0, so leaving it ticking steals the real player's gun input.
+    static R::InstanceOffset gravityOff{L"weaponComp_gravityGun"};
+    if (void* gun=ReadPtr(actor,gravityOff.Of(actor)); gun && R::IsLive(gun)) {
+        const bool stopped=E::SetComponentTickEnabled(gun,false);
+        UE_LOGI("puppet[MainPlayer]: gravity component tick disabled=%d",stopped);
+    }
 
     // Both PostProcessComponents destroyed: they drive the local camera's colour, exposure and
     // gamma, and alive on a puppet they corrupt whichever screen renders it.

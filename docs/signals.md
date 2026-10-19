@@ -1,5 +1,11 @@
 # The signal workstation
 
+> Fork b2133: `DishAimState` now carries `DeskVisualPayload` (52 bytes): geometry
+> and outer/inner/circle display progress. Client samples terminate at the host;
+> validated canonicals and late-join seeds come from the host. `desk_visual_sync`
+> retries widget readiness/reconstruction without starting the native ping FSM.
+> The older upstream descriptions below are superseded for this lane.
+
 ## Purpose
 
 The game's core loop: catch a signal from space on a dish, tune it, download it, watch the

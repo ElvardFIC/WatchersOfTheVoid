@@ -21,6 +21,7 @@
 #include "coop/net/refusal_tally.h"
 #include "coop/net/session.h"
 #include "coop/player/nameplate.h"
+#include "coop/player/pvp.h"
 #include "coop/player/nick_color.h"
 #include "coop/player/players_registry.h"
 #include "coop/player/roster_ledger.h"
@@ -289,6 +290,43 @@ bool HandleNameplateChange(net::Session& session,
     }
     if (describedSlot == coop::players::Registry::Get().LocalPeerId()) return true;  // our own echo
     coop::nameplate::StoreVisibleForSlot(describedSlot, visible);
+    return true;
+}
+
+void AnnounceLocalPvp(net::Session& session, bool on) {
+    UE_ASSERT_GAME_THREAD("AnnounceLocalPvp");
+    const uint8_t selfSlot = coop::players::Registry::Get().LocalPeerId();
+    if (selfSlot >= net::kMaxPeers) return;
+    const uint8_t p[2] = { selfSlot, static_cast<uint8_t>(on ? 1 : 0) };
+    if (session.role() == net::Role::Host) {
+        for (int x = 1; x < net::kMaxPeers; ++x) {
+            if (!session.IsSlotReady(x)) continue;
+            session.SendReliableToSlot(x, net::ReliableKind::PvpChange, p, 2);
+        }
+    } else {
+        session.SendReliableToSlot(0, net::ReliableKind::PvpChange, p, 2);
+    }
+}
+
+bool HandlePvpChange(net::Session& session, const net::Session::ReliableMessage& msg) {
+    UE_ASSERT_GAME_THREAD("HandlePvpChange");
+    if (msg.payloadLen < 2) return true;
+    const uint8_t describedSlot = msg.payload[0];
+    const bool on = msg.payload[1] != 0;
+    if (describedSlot >= net::kMaxPeers) return true;
+    if (session.role() == net::Role::Host) {
+        if (msg.senderPeerSlot != describedSlot || describedSlot == 0) return true;
+        coop::pvp::StoreForSlot(describedSlot, on);
+        const uint8_t p[2] = { describedSlot, static_cast<uint8_t>(on ? 1 : 0) };
+        for (int x = 1; x < net::kMaxPeers; ++x) {
+            if (x == describedSlot || !session.IsSlotReady(x)) continue;
+            session.SendReliableToSlot(x, net::ReliableKind::PvpChange, p, 2);
+        }
+        return true;
+    }
+    if (msg.senderPeerSlot != 0) return true;
+    if (describedSlot == coop::players::Registry::Get().LocalPeerId()) return true;
+    coop::pvp::StoreForSlot(describedSlot, on);
     return true;
 }
 

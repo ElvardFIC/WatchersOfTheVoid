@@ -16,6 +16,7 @@
 
 #include "coop/player/movement_ledger.h"
 #include "coop/net/session.h"
+#include "coop/net/ragdoll_pose_validation.h"
 #include "ue_wrap/core/log.h"
 
 #pragma warning(push)
@@ -258,6 +259,7 @@ void Session::StoreStreamPacket(MsgType type, int routeSlot, int peerSlot,
         // would corrupt the receiver's PhysX state. Velocities are unbounded in
         // principle but a finite + sane-magnitude check rejects garbage; the
         // rotation goes onto SetActorRotation so it must be a finite FRotator.
+        if (!ValidateRagdollBones(pkt.pose)) return;
         const float vals[12] = {pkt.pose.x, pkt.pose.y, pkt.pose.z,
                                 pkt.pose.pitch, pkt.pose.yaw, pkt.pose.roll,
                                 pkt.pose.linVelX, pkt.pose.linVelY, pkt.pose.linVelZ,
@@ -289,6 +291,9 @@ void Session::StoreStreamPacket(MsgType type, int routeSlot, int peerSlot,
         if (len < static_cast<int>(sizeof(HandPosePacket))) return;
         HandPosePacket pkt;
         std::memcpy(&pkt, data, sizeof(pkt));
+        if (pkt.pose.toolKind>2 || (pkt.pose.toolFlags&~31)) return;
+        for (float value : pkt.pose.toolTarget)
+            if (!std::isfinite(value) || std::fabs(value)>kMaxCoord) return;
         // Trust-boundary sanitize (RagdollPose shape): finite + arm's-reach pos +
         // canonical rotator range; a poisoned value would go onto SetActorLocation/
         // Rotation of the display mirror.

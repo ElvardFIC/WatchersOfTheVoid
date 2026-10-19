@@ -20,6 +20,15 @@
 #include <cstring>
 
 namespace ue_wrap::console_desk {
+bool ReadShortCircuit(void* desk, bool& active) {
+    int32_t off = -1;
+    uint8_t mask = 0;
+    if (!desk || desk != Instance() ||
+        !reflection::FindBoolProperty(reflection::ClassOf(desk), L"shortCircuiting", off, mask) ||
+        off < 0 || !mask) return false;
+    active = (static_cast<uint8_t*>(desk)[off] & mask) != 0;
+    return true;
+}
 namespace {
 
 namespace R = ue_wrap::reflection;

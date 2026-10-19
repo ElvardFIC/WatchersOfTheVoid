@@ -18,6 +18,7 @@
 #include "coop/interactables/download_arm_sync.h"
 #include "coop/interactables/laptop_sync.h"      // LaptopState
 #include "coop/interactables/laptop_buffer_sync.h"  // LaptopQuad
+#include "coop/interactables/laptop_ui_sync.h"
 #include "coop/interactables/floppy_slot_sync.h"
 #include "coop/interactables/floppybox_sync.h"   // FloppyBoxState
 #include "coop/interactables/meadow_db_sync.h"   // MeadowAppend/MeadowDelete
@@ -218,6 +219,13 @@ bool HandleSignalEvent(const net::Session::ReliableMessage& msg) {
                 ? static_cast<uint8_t>(msg.senderPeerSlot)
                 : static_cast<uint8_t>(0xFF);
         coop::meadow_db_sync::OnOrderChunk(oc, oslot);
+        break;
+    }
+    case net::ReliableKind::LaptopUI: {
+        if (msg.payloadLen != sizeof(net::BlobChunkPayload)) break;
+        net::BlobChunkPayload chunk{};
+        std::memcpy(&chunk, msg.payload, sizeof(chunk));
+        coop::laptop_ui_sync::OnChunk(chunk, msg.senderPeerSlot);
         break;
     }
     case net::ReliableKind::LaptopQuad: {
@@ -465,14 +473,13 @@ bool HandleSignalEvent(const net::Session::ReliableMessage& msg) {
         break;
     }
     case net::ReliableKind::DishAimState: {
-        // The claim owner's dish-aim stream (host-relayed). The holder gate lives in
-        // OnDishAim.
-        if (msg.payloadLen < sizeof(net::DishAimStatePayload)) {
+        // Client samples terminate at the host; only its canonical reaches observers.
+        if (msg.payloadLen < sizeof(net::DeskVisualPayload)) {
             UE_LOGW("event_feed: DishAimState payload too short (%zu < %zu)",
-                    static_cast<size_t>(msg.payloadLen), sizeof(net::DishAimStatePayload));
+                    static_cast<size_t>(msg.payloadLen), sizeof(net::DeskVisualPayload));
             break;
         }
-        net::DishAimStatePayload ap{};
+        net::DeskVisualPayload ap{};
         std::memcpy(&ap, msg.payload, sizeof(ap));
         const uint8_t aslot =
             (msg.senderPeerSlot >= 0 && msg.senderPeerSlot < net::kMaxPeers)

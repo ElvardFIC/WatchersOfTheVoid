@@ -147,17 +147,36 @@ inline void BeginLerpToPose(ActiveDrive& d, const ue_wrap::FVector& nloc,
     d.haveTwoSnaps = true;
 }
 
-// Advance an in-progress lerp one tick (called EVERY tick, not only on a new pose, so the follow is
-// smooth and a stream gap FREEZES at the target rather than dropping). No-op when no lerp is active
-// (frozen) or the actor died. Game thread.
+// Shared render delay for position and its presentation-only velocity.
+inline uint64_t LerpDelayMs(const ActiveDrive& d) {
+    uint64_t span = d.lastPoseMs > d.prevPoseMs ? d.lastPoseMs - d.prevPoseMs : kLerpMinMs;
+    if (span < kLerpMinMs) span = kLerpMinMs;
+    if (span > kLerpMaxMs) span = kLerpMaxMs;
+    return span;
+}
+
+// Velocity of the rendered segment, for cosmetics on a kinematic replica. No
+// extrapolation: first pose, teleport, pre-roll and arrival all read stationary.
+inline ue_wrap::FVector PresentationVelocity(const ActiveDrive& d, uint64_t nowMs) {
+    if (!d.isTrashMirror || !d.lerpSeeded || !d.haveTwoSnaps || d.lastPoseMs <= d.prevPoseMs) return {};
+    const auto delay = LerpDelayMs(d);
+    const auto renderTime = nowMs > delay ? nowMs - delay : 0;
+    if (renderTime < d.prevPoseMs || renderTime >= d.lastPoseMs) return {};
+    const float scale = 1000.f / static_cast<float>(d.lastPoseMs - d.prevPoseMs);
+    const ue_wrap::FVector velocity{(d.lastLoc.X-d.prevLoc.X)*scale,
+                                  (d.lastLoc.Y-d.prevLoc.Y)*scale,
+                                  (d.lastLoc.Z-d.prevLoc.Z)*scale};
+    return std::isfinite(velocity.X) && std::isfinite(velocity.Y) && std::isfinite(velocity.Z)
+        ? velocity : ue_wrap::FVector{};
+}
+
+// Advance every tick, including packet gaps; freeze on arrival, never extrapolate.
 inline void AdvanceLerp(ActiveDrive& d, uint64_t nowMs) {
     if (!d.actor) return;
     if (!d.LiveActor()) { d.haveTwoSnaps = false; return; }
     if (!d.isTrashMirror || !d.haveTwoSnaps) return;   // others snapped in BeginLerp; <2 samples -> sit at the pose
     // Render `span` BEHIND the newest pose. span = the REAL interval between the two buffered poses (clamped).
-    uint64_t span = (d.lastPoseMs > d.prevPoseMs) ? (d.lastPoseMs - d.prevPoseMs) : kLerpMinMs;
-    if (span < kLerpMinMs) span = kLerpMinMs;
-    if (span > kLerpMaxMs) span = kLerpMaxMs;
+    const auto span = LerpDelayMs(d);
     const uint64_t renderTime = (nowMs > span) ? (nowMs - span) : 0;
     // alpha by REAL timestamps. renderTime >= last (stream STOP / caught up) clamps to 1 -> reach `last` and
     // FREEZE (no extrapolation -- there is no velocity term; control is released at the reliable edge).

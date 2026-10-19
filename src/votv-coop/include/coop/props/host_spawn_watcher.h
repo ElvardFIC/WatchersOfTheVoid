@@ -42,14 +42,11 @@ void Install(coop::net::Session* session);
 
 // Drain the FinishSpawningActor pending queue: express (prop_lifecycle::ExpressSpawnedProp)
 // every finished keyed Aprop_C spawn that is live, still untracked, and NOT the local hotbar
-// hand actor (the hand edge in coop/player/hand_item owns that actor's eventual world release),
-// and publish the save record of each one it adopted (prop_save_data::PublishHostBirth). A birth
-// that simulates and is awake, adopted here or tracked by the init seam before its finish, coasts
-// on the driven-prop stream until it rests (prop_drive_host::Coast), at most 32 at once.
-// ONE express attempt per entry, eight entries a tick -- an entry is spent when drained, so a
-// still-unkeyed actor falls to the periodic safety census rather than being retried here, and a
-// burst waits its turn in the queue rather than costing one frame. Host-side express; game thread
-// (net-pump tick).
+// hand actor (the hand edge in coop/player/hand_item owns that actor's eventual world release).
+// ONE express attempt per entry. A proven fresh floor-bed birth first initializes
+// its native key, with bounded retries on failure. Owned batches and captured
+// serial/world identity protect native callbacks and disconnect. Host-side express;
+// game thread (net-pump tick).
 void DrainPendingSpawns(coop::net::Session* session);
 
 // Per-tick death-watch. PEER-SYMMETRIC, like the broadcaster: each peer watches the ambient

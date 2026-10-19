@@ -6,6 +6,7 @@
 
 #include "coop/props/prop_save_data.h"
 #include "coop/props/trash_collect_sync.h"
+#include "coop/props/prop_drop_intent.h"
 
 #include "coop/dev/spawn_order_probe.h"  // the client load-spawn coverage probe
 #include "coop/props/save_identity_bind.h"     // the client eid bind
@@ -219,6 +220,10 @@ void OnBeginDeferredSpawnObserve(void* /*context*/, void* srcObj, void* newActor
 bool EnsureHeldItemBroadcast(void* heldActor, coop::net::Session* s) {
     if (!heldActor || !s || !s->connected()) return false;
     if (!R::IsLive(heldActor)) return false;
+    // R+LMB can release an actor after its drop request but before the host
+    // echoes PropSpawn. Minting a peer eid here creates a second author for it.
+    if (s->role() == coop::net::Role::Client &&
+        coop::prop_drop_intent::IsAwaitingHost(heldActor)) return false;
     // The kerfur gate: a kerfur prop is a host-owned entity, and a client must never mint a
     // peer-range eid for it (the host's conversion gate dropped such a mint and re-mirrored it as a
     // fresh entity: the dupe-and-drop loop). The held-pose stream carries the kerfur prop mirror by
@@ -282,15 +287,17 @@ bool EnsureHeldItemBroadcast(void* heldActor, coop::net::Session* s) {
     // locals-only accessor. Read as untracked, a mirror went out as a spawn with no eid, which its
     // owner refuses, followed by this peer's copy of its save record, which the owner applied.
     std::wstring keyStr = ue_wrap::prop::GetInteractableKeyString(heldActor);
-    const coop::element::ElementId trackedEid = coop::element::Registry::Get().EidForActor(heldActor);
-    if (!keyStr.empty() && keyStr != L"None" && trackedEid != coop::element::kInvalidId) {
-        // Logged with key and eid: "the pose stream suffices" holds only while the prop is actively
-        // held and streamed, so a repro can tell a tracker-known decline from a never-received
-        // spawn.
-        UE_LOGI("[ROCK-DROP] EnsureHeldItemBroadcast DECLINE (tracker-known): cls='%ls' key='%ls' eid=%u "
-                "-- 'pose stream suffices' assumes an active stream; false if the prop is no longer held",
-                R::ClassNameOf(heldActor).c_str(), keyStr.c_str(), static_cast<unsigned>(trackedEid));
-        return false;  // keyed AND tracker-known: the peer has it; pose stream suffices
+    if (!keyStr.empty() && keyStr != L"None" &&
+        PT::GetPropElementIdForActor(heldActor) != coop::element::kInvalidId) {
+        // Its identity and pose are already shared, but mutable save fields can have changed while
+        // held (food uses are one example). Send the actor's current save record at the hand edge;
+        // no second PropSpawn is needed.
+        const bool statePublished = coop::prop_save_data::Publish(s, heldActor, keyStr);
+        UE_LOGI("trash_collect: tracker-known held item cls='%ls' key='%ls' eid=%u -- save state %s",
+                R::ClassNameOf(heldActor).c_str(), keyStr.c_str(),
+                static_cast<unsigned>(PT::GetPropElementIdForActor(heldActor)),
+                statePublished ? "published" : "not covered/refused");
+        return statePublished;
     }
 
     const std::wstring cls = R::ClassNameOf(heldActor);

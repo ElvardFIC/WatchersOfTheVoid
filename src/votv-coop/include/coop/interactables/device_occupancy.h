@@ -61,6 +61,8 @@ bool LocalHolds(const wchar_t* key);
 // The slot currently holding `key`, or 0xFF if unclaimed. On the host this
 // is authoritative; on a client it is the broadcast mirror. Game thread.
 uint8_t HolderOf(const wchar_t* key);
+// Host-side grant/release serial, including a release/reclaim between UI polls.
+uint64_t LaptopClaimRevision();
 
 // HOST: send the current claim table to a joining peer (world-ready replay).
 void QueueConnectBroadcastForSlot(int peerSlot);

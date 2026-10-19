@@ -1,20 +1,12 @@
 // ue_wrap/engine/engine_playerragdoll.cpp -- AplayerRagdoll_C engine substrate (principle 7).
 //
-// VOTV's `playerRagdoll_C` is the plushie ragdoll body ragdollMode spawns when a player faints: the
-// visible flopping kel body, whose SkeletalMesh self-configures to `kel_lmao` / `inst_kel_body` and
-// is natively rigged to the six-bone chain lowlegs-thighs-pelvis-chest-head-head_end. We spawn it
-// OURSELVES on a puppet (coop/remote_player) as the visible flop display, and the caller hides the
-// puppet's own kel meshes for it. We never call ragdollMode: it is globally scoped and kills the
-// host, firing the death event whatever its params say.
-//
-// The recipe, from an SP-solo probe (harness/autotest/autotest_ragdoll_spawn_probe.cpp):
-// BeginDeferredSpawn(playerRagdoll_C); write Player, an Expose-On-Spawn field that must land
-// BEFORE Finish for ReceiveBeginPlay to self-configure the visible kel mesh; FinishDeferredSpawn;
-// then StartBodySim for collision and the two simulate-physics calls, since BeginPlay builds the
-// rigid bodies and leaves them FROZEN, as ragdollMode also does. The spawn is DEATH-FREE: it
-// never touches the owner's dead or isRagdoll fields. coop/remote_player owns the lifecycle.
+// playerRagdoll_C supplies the actor and native interaction shell. The selected
+// player mesh/materials and full compatible physics asset replace its plushie
+// defaults after construction, before any simulation. Native ragdollMode is never
+// invoked on a puppet because it can affect the local player's death state.
 
 #include "ue_wrap/engine/engine.h"
+#include "ue_wrap/actors/puppet.h"
 
 #include "ue_wrap/core/call.h"
 #include "ue_wrap/core/log.h"
@@ -23,7 +15,10 @@
 
 #include <cstdint>
 #include <cstring>
+#include <cmath>
 #include <string>
+#include <chrono>
+#include <map>
 
 namespace ue_wrap::engine {
 namespace {
@@ -43,9 +38,6 @@ constexpr size_t kMainPlayer_ragdollActor = 0x0C40;
 // caches -- no atomics/mutex (the incremental-link DLL-corruption rule does not
 // structurally trigger), consistent with the engine_mainplayer.cpp precedent.
 ue_wrap::CachedObjRef g_ragdollClass;
-void* g_setAllBodiesSimFn = nullptr;
-void* g_setSimPhysFn      = nullptr;
-void* g_setCollisionFn    = nullptr;
 // Pelvis reads: the sender samples its native ragdoll's pelvis location, rotation and velocity for
 // the wire (ReadLocalRagdollPelvisPhysics). The "pelvis" FName is one GNames entry, stable across
 // every ragdoll body, so the eight bytes are cached once alongside the functions.
@@ -71,26 +63,21 @@ void* ResolveRagdollClass() {
 // does NOT (the bare body stays frozen at the spawn transform). Proven by the SP
 // probe: with this the body falls to the floor + settles; without it, rigid.
 // Game thread only.
-void StartBodySim(void* comp) {
-    if (!comp || !R::IsLive(comp)) return;
-    if (!g_setCollisionFn) {
-        if (void* c = R::FindClass(L"PrimitiveComponent")) g_setCollisionFn = R::FindFunction(c, L"SetCollisionEnabled");
-    }
-    if (g_setCollisionFn) {  // QueryAndPhysics(3) so the bodies have a floor to rest on
-        ParamFrame f(g_setCollisionFn); f.Set<uint8_t>(L"NewType", uint8_t{3}); Call(comp, f);
-    }
-    if (!g_setAllBodiesSimFn) {
-        if (void* c = R::FindClass(L"SkeletalMeshComponent")) g_setAllBodiesSimFn = R::FindFunction(c, L"SetAllBodiesSimulatePhysics");
-    }
-    if (g_setAllBodiesSimFn) {
-        ParamFrame f(g_setAllBodiesSimFn); f.Set<bool>(L"bNewSimulate", true); Call(comp, f);
-    }
-    if (!g_setSimPhysFn) {
-        if (void* c = R::FindClass(L"PrimitiveComponent")) g_setSimPhysFn = R::FindFunction(c, L"SetSimulatePhysics");
-    }
-    if (g_setSimPhysFn) {
-        ParamFrame f(g_setSimPhysFn); f.Set<bool>(L"bSimulate", true); Call(comp, f);
-    }
+bool StartBodySim(void* comp) {
+    CachedObjRef ref; ref.Set(comp);
+    if (!ref.Get()) return false;
+    void* cls = R::ClassOf(comp);
+    ParamFrame collision(R::FindDispatchFunctionCached(cls, L"SetCollisionEnabled"));
+    if (!collision.Set<uint8_t>(L"NewType", 3) || !Call(comp, collision) || !ref.Get()) return false;
+    ParamFrame bodies(R::FindDispatchFunctionCached(cls, L"SetAllBodiesSimulatePhysics"));
+    if (!bodies.Set<bool>(L"bNewSimulate", true) || !Call(comp, bodies) || !ref.Get()) return false;
+    ParamFrame simulation(R::FindDispatchFunctionCached(cls, L"SetSimulatePhysics"));
+    if (!simulation.Set<bool>(L"bSimulate", true) || !Call(comp, simulation) || !ref.Get()) return false;
+    ParamFrame blend(R::FindDispatchFunctionCached(cls, L"SetAllBodiesPhysicsBlendWeight"));
+    if (!blend.Set<float>(L"PhysicsBlendWeight", 1.f) || !blend.Set<bool>(L"bSkipCustomPhysicsType", false) ||
+        !Call(comp, blend) || !ref.Get()) return false;
+    ParamFrame check(R::FindDispatchFunctionCached(cls, L"IsAnySimulatingPhysics"));
+    return check.valid() && Call(comp, check) && ref.Get() && check.Get<bool>(L"ReturnValue");
 }
 
 // Find the 8-byte FName of the bone named `wantName` on a skeletal-mesh component
@@ -166,26 +153,30 @@ void* RagdollMeshOf(void* ragdollActor) {
 }  // namespace
 
 void* SpawnPlayerRagdollBody(void* ownerPlayer, const FVector& location, const FRotator& rotation) {
-    if (!ownerPlayer || !R::IsLive(ownerPlayer)) return nullptr;
+    CachedObjRef owner; owner.Set(ownerPlayer);
+    if (!owner.Get()) return nullptr;
     void* cls = ResolveRagdollClass();
-    if (!cls) { UE_LOGW("ragdoll_body: playerRagdoll_C class unresolved -- cannot spawn"); return nullptr; }
+    if (!cls) return nullptr;
     void* body = BeginDeferredSpawn(cls, location, rotation);
-    if (!body) { UE_LOGW("ragdoll_body: BeginDeferredSpawn returned null"); return nullptr; }
-    // Expose-On-Spawn: stamp Player (kPlayerRagdoll_Player) BEFORE FinishDeferredSpawn runs
-    // BeginPlay, so the BP's construction sees the owner it expects.
+    CachedObjRef bodyRef; bodyRef.Set(body);
+    if (!bodyRef.Get()) return nullptr;
     *reinterpret_cast<void**>(reinterpret_cast<uint8_t*>(body) + kPlayerRagdoll_Player) = ownerPlayer;
-    FinishDeferredSpawn(body, location, rotation);
-    if (!R::IsLive(body)) { UE_LOGW("ragdoll_body: body died during FinishDeferredSpawn"); return nullptr; }
-    // BeginPlay built the rigid bodies but left them frozen -- start the sim so it actually flops
-    // (the probe proved this necessary). The body's own mesh stays VISIBLE: it IS the display, the
-    // game's own plushie ragdoll with its six-bone chain natively rigged to the physics, exactly
-    // what single-player shows in mirrors. The caller hides the puppet's kel meshes for the flop
-    // instead of coupling them, so there is no double image and no skeleton mapping at all.
-    void* comp = *reinterpret_cast<void**>(reinterpret_cast<uint8_t*>(body) + kAragdoll_SkeletalMesh);
-    if (comp && R::IsLive(comp)) StartBodySim(comp);
-    UE_LOGI("ragdoll_body: spawned VISIBLE playerRagdoll_C flop body @%p (owner=%p) at (%.0f,%.0f,%.0f), sim started",
-            body, ownerPlayer, location.X, location.Y, location.Z);
+    const bool finished = FinishDeferredSpawn(body, location, rotation);
+    if (!bodyRef.Get()) return nullptr;
+    void* comp = RagdollMeshOf(body);
+    if (!finished || !owner.Get() || !comp ||
+        !ConfigurePlayerRagdollMesh(puppet::GetMeshPlayerVisibleComponent(ownerPlayer), comp) ||
+        !bodyRef.Get() || !owner.Get()) {
+        UE_LOGW("ragdoll_body: selected model/physics could not initialize; no substitute body shown");
+        if (bodyRef.Get()) DestroyActor(body);
+        return nullptr;
+    }
+    UE_LOGI("ragdoll_body: selected player model with articulated physics ready (%p)", body);
     return body;
+}
+
+bool StartPlayerRagdollSimulation(void* body) {
+    return StartBodySim(RagdollMeshOf(body));
 }
 
 // Attach `actor` (its RootComponent) to the ragdoll `body`'s mesh (kAragdoll_SkeletalMesh) at the
@@ -206,7 +197,7 @@ bool AttachActorToRagdollBody(void* actor, void* body) {
     f.Set<uint8_t>(L"RotationRule", uint8_t{1});       // KeepWorld
     f.Set<uint8_t>(L"ScaleRule",    uint8_t{1});       // KeepWorld
     f.Set<bool>(L"bWeldSimulatedBodies", false);
-    return Call(actor, f);
+    return Call(actor, f) && f.Get<bool>(L"ReturnValue");
 }
 
 // Detach `actor` from its parent (the ragdoll body), KeepWorld so it stays where the
@@ -231,6 +222,115 @@ void* GetLocalRagdollBodyMesh(void* mainPlayer) {
     void* ragdollActor =
         *reinterpret_cast<void**>(reinterpret_cast<uint8_t*>(mainPlayer) + kMainPlayer_ragdollActor);
     return RagdollMeshOf(ragdollActor);
+}
+
+bool RefreshLocalRagdollModel(void* mainPlayer) {
+    static CachedObjRef configured, selected;
+    static std::chrono::steady_clock::time_point readyAfter{};
+    static bool started = false;
+    static FVector initialLinear{}, initialAngular{};
+    void* target = GetLocalRagdollBodyMesh(mainPlayer);
+    void* source = puppet::GetMeshPlayerVisibleComponent(mainPlayer);
+    void* asset = puppet::GetComponentSkeletalMeshAsset(source);
+    if (!target || !source || !asset) { configured.Reset(); selected.Reset(); return false; }
+    if (configured.Get() == target && selected.Get() == asset) {
+        if (started) return true;
+        if (std::chrono::steady_clock::now() < readyAfter || !StartBodySim(target)) return false;
+        void* body = *reinterpret_cast<void**>(static_cast<uint8_t*>(mainPlayer) + kMainPlayer_ragdollActor);
+        DriveRagdollBodyPelvisVelocity(body, initialLinear, initialAngular);
+        started = true;
+        return true;
+    }
+    // Native entry has already placed the plushie's pelvis. Keep that anchor
+    // when replacing its mesh, instead of jumping back to the standing capsule.
+    FVector before{};
+    if (!GetBoneWorldLocationByName(target, L"pelvis", before)) return false;
+    FRotator previousRotation{}; FVector previousPosition{};
+    ReadLocalRagdollPelvisPhysics(mainPlayer, previousPosition, previousRotation, initialLinear, initialAngular);
+    CachedObjRef targetRef; targetRef.Set(target);
+    if (!ConfigurePlayerRagdollMesh(source, target) || !targetRef.Get()) return false;
+    FVector after{};
+    if (GetBoneWorldLocationByName(target, L"pelvis", after)) {
+        const FVector origin = GetComponentLocation(target);
+        ParamFrame position(R::FindDispatchFunctionCached(R::ClassOf(target), L"K2_SetWorldLocation"));
+        if (!position.Set<FVector>(L"NewLocation", {origin.X + before.X - after.X,
+            origin.Y + before.Y - after.Y, origin.Z + before.Z - after.Z}) ||
+            !position.Set<bool>(L"bTeleport", true) || !Call(target, position) || !targetRef.Get()) return false;
+    }
+    configured.Set(target); selected.Set(asset);
+    started = false;
+    readyAfter = std::chrono::steady_clock::now() + std::chrono::milliseconds(30);
+    return false;
+}
+
+bool ReadArticulatedPose(void* mesh, std::vector<ArticulatedBone>& bones) {
+    bones.clear();
+    CachedObjRef meshRef; meshRef.Set(mesh);
+    if (!meshRef.Get()) return false;
+    auto field = [](void* object, const wchar_t* name) -> void* {
+        if (!object || !R::IsLive(object)) return nullptr;
+        const int off = R::FindPropertyOffset(R::ClassOf(object), name);
+        if (off < 0) return nullptr;
+        void* value = nullptr; std::memcpy(&value, static_cast<uint8_t*>(object) + off, sizeof(value));
+        return value && R::IsLive(value) ? value : nullptr;
+    };
+    void* physics = field(mesh, L"PhysicsAssetOverride");
+    if (!physics) physics = field(puppet::GetComponentSkeletalMeshAsset(mesh), L"PhysicsAsset");
+    if (!physics) return false;
+    const int off = R::FindPropertyOffset(R::ClassOf(physics), L"SkeletalBodySetups");
+    if (off < 0) return false;
+    struct Array { void** data; int32_t num, max; } setups{};
+    std::memcpy(&setups, static_cast<uint8_t*>(physics) + off, sizeof(setups));
+    if (!setups.data || setups.num < 1 || setups.num > 64 || setups.max < setups.num) return false;
+    for (int32_t i = 0; i < setups.num; ++i) {
+        void* setup = setups.data[i];
+        if (!setup || !R::IsLive(setup) || !meshRef.Get()) return false;
+        const int boneOff = R::FindPropertyOffset(R::ClassOf(setup), L"BoneName");
+        if (boneOff < 0) return false;
+        R::FName name{}; std::memcpy(&name, static_cast<uint8_t*>(setup) + boneOff, sizeof(name));
+        ParamFrame index(R::FindDispatchFunctionCached(R::ClassOf(mesh), L"GetBoneIndex"));
+        int32_t boneIndex = -1;
+        if (!index.Set<R::FName>(L"BoneName", name) || !Call(mesh, index) ||
+            !index.GetRaw(L"ReturnValue", &boneIndex, sizeof(boneIndex)) || boneIndex < 0 || boneIndex >= 1024) return false;
+        ParamFrame transform(R::FindDispatchFunctionCached(R::ClassOf(mesh), L"GetSocketTransform"));
+        ArticulatedBone bone; bone.index = static_cast<uint16_t>(boneIndex);
+        if (!transform.Set<R::FName>(L"InSocketName", name) || !transform.Set<uint8_t>(L"TransformSpace", 0) ||
+            !Call(mesh, transform) || !transform.GetRaw(L"ReturnValue", &bone.world, sizeof(bone.world))) return false;
+        bones.push_back(bone);
+    }
+    return meshRef.Get() != nullptr;
+}
+
+uint32_t BoneLayoutSignature(void* mesh) {
+    struct Entry { CachedObjRef asset; uint32_t hash = 0; };
+    static std::map<void*, Entry> cache;
+    void* asset = puppet::GetComponentSkeletalMeshAsset(mesh);
+    if (!asset) return 0;
+    auto it = cache.find(asset);
+    if (it != cache.end() && it->second.asset.Get() == asset) return it->second.hash;
+    CachedObjRef meshRef; meshRef.Set(mesh);
+    if (!meshRef.Get()) return 0;
+    int32_t count = 0;
+    ParamFrame num(R::FindDispatchFunctionCached(R::ClassOf(mesh), L"GetNumBones"));
+    if (!Call(mesh, num) || !num.GetRaw(L"ReturnValue", &count, sizeof(count)) || count < 1 || count > 1024) return 0;
+    uint32_t hash = 2166136261u;
+    for (int32_t i = 0; i < count; ++i) {
+        if (!meshRef.Get()) return 0;
+        ParamFrame frame(R::FindDispatchFunctionCached(R::ClassOf(mesh), L"GetBoneName")); R::FName name{};
+        if (!frame.Set<int32_t>(L"BoneIndex", i) || !Call(mesh, frame) ||
+            !frame.GetRaw(L"ReturnValue", &name, sizeof(name))) return 0;
+        for (wchar_t ch : R::ToString(name)) {
+            hash ^= static_cast<uint16_t>(ch); hash *= 16777619u;
+        }
+        hash ^= 0; hash *= 16777619u;
+    }
+    if (!meshRef.Get()) return 0;
+    for (auto stale = cache.begin(); stale != cache.end();) {
+        if (!stale->second.asset.Get()) stale = cache.erase(stale); else ++stale;
+    }
+    Entry entry; entry.asset.Set(asset); entry.hash = hash;
+    cache[asset] = entry;
+    return hash;
 }
 
 bool ReadLocalRagdollPelvisPhysics(void* mainPlayer, FVector& outLoc, FRotator& outRot,
@@ -265,8 +365,8 @@ void DriveRagdollBodyPelvisVelocity(void* body, const FVector& linVel, const FVe
     if (!EnsurePelvisFName(mesh)) return;
     // Overwrite (bAddToCurrent=false) the pelvis body's velocity with the sender's --
     // the body slaves its gross motion to the real ragdoll. The constrained limb bodies
-    // sim freely (invisible); only the pelvis trajectory feeds the visible pelvis-
-    // attached kel. Same SetPhysics{Linear,Angular}Velocity pair as PropRelease.
+    // simulate freely on the visible selected-model body. Same
+    // SetPhysics{Linear,Angular}Velocity pair as PropRelease.
     { ParamFrame f(g_setLinVelFn);
       f.Set<FVector>(L"NewVel", linVel);
       f.Set<bool>(L"bAddToCurrent", false);
@@ -277,6 +377,19 @@ void DriveRagdollBodyPelvisVelocity(void* body, const FVector& linVel, const FVe
       f.Set<bool>(L"bAddToCurrent", false);
       f.SetRaw(L"BoneName", g_pelvisFName, sizeof(g_pelvisFName));
       Call(mesh, f); }
+}
+
+bool TranslateRagdollBody(void* body, const FVector& delta) {
+    if (!std::isfinite(delta.X) || !std::isfinite(delta.Y) || !std::isfinite(delta.Z)) return false;
+    void* mesh = RagdollMeshOf(body);
+    if (!mesh) return false;
+    CachedObjRef ref; ref.Set(mesh);
+    ParamFrame frame(R::FindDispatchFunctionCached(R::ClassOf(mesh), L"K2_AddWorldOffset"));
+    // Teleport physics together rather than deriving artificial velocities from
+    // the correction. No sweep: a blocked mirror must converge on the sender.
+    return frame.valid() && frame.Set<FVector>(L"DeltaLocation", delta) &&
+        frame.Set<bool>(L"bSweep", false) && frame.Set<bool>(L"bTeleport", true) &&
+        Call(mesh, frame) && ref.Get();
 }
 
 }  // namespace ue_wrap::engine

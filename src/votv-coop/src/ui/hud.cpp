@@ -95,6 +95,9 @@ void DrawNameplate(ImDrawList* dl, const coop::nameplate::Plate& p) {
     // Measured separately because they carry one colour each and are drawn as two calls, not
     // because the anchor centres the nick alone; it does not.
     const ImVec2 sz     = font->CalcTextSizeA(px, FLT_MAX, 0.f, nickTxt);
+    const char* pvpTxt = p.pvp ? " PVP" : "";
+    const ImVec2 pvpSz = pvpTxt[0] ? font->CalcTextSizeA(px, FLT_MAX, 0.f, pvpTxt)
+                                   : ImVec2(0.f, 0.f);
     const ImVec2 pingSz = pingTxt[0] ? font->CalcTextSizeA(px, FLT_MAX, 0.f, pingTxt)
                                      : ImVec2(0.f, 0.f);
 
@@ -128,7 +131,7 @@ void DrawNameplate(ImDrawList* dl, const coop::nameplate::Plate& p) {
     // symmetric about the anchor. The known cost is accepted: the nick shifts a few pixels when
     // the ping gains or loses a digit; do not change it back to nick-only centring. MTA's
     // nametags do the same, drawing the whole string centred on the health bar's X.
-    const float labelW = sz.x + pingSz.x;
+    const float labelW = sz.x + pvpSz.x + pingSz.x;
     const float ext = std::max(labelW, barW) * 0.5f;
     const float loX = m + ext, hiX = io.DisplaySize.x - m - ext;
     const float ax = (loX <= hiX) ? std::clamp(p.x, loX, hiX) : p.x;
@@ -140,14 +143,19 @@ void DrawNameplate(ImDrawList* dl, const coop::nameplate::Plate& p) {
     // backing box is drawn: readability rides the text outline and the health bar's own outline.
     const float padX = S(6.f) * s, padY = S(3.f) * s;
     const ImVec2 boxMin(std::min(textPos.x, bp.x) - padX, textPos.y - padY);
-    const ImVec2 boxMax(std::max(textPos.x + sz.x + pingSz.x, bp.x + barW) + padX,
+    const ImVec2 boxMax(std::max(textPos.x + sz.x + pvpSz.x + pingSz.x, bp.x + barW) + padX,
                         bp.y + barH + padY);
 
     TextOutlined(dl, font, px, textPos, textCol, outline, nickTxt);
+    if (pvpTxt[0]) {
+        const ImU32 pvpCol = IM_COL32(255, 176, 48, static_cast<int>(a * 245.f));
+        TextOutlined(dl, font, px, ImVec2(textPos.x + sz.x, textPos.y),
+                     pvpCol, outline, pvpTxt);
+    }
     // The annotation hangs off the nick's right edge, but the pair is centred as one unit (the
     // anchor above), so this is a layout continuation, not an exemption from the centring.
     if (pingTxt[0]) {
-        TextOutlined(dl, font, px, ImVec2(textPos.x + sz.x, textPos.y),
+        TextOutlined(dl, font, px, ImVec2(textPos.x + sz.x + pvpSz.x, textPos.y),
                      textCol, outline, pingTxt);
     }
 

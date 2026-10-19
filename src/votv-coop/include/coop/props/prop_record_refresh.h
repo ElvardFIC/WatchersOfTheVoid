@@ -1,6 +1,6 @@
 // coop/props/prop_record_refresh.h -- a prop whose save record changes while it sits in place
-// republishes that record. Two classes today: the drive box (Aprop_box_C, the "data case") and the
-// tape reel case (Aprop_reelbox_C). Overview: docs/props.md.
+// republishes that record. Covers the drive box (Aprop_box_C, the "data case"), tape reel
+// case (Aprop_reelbox_C), and world canned food (prop_cannedFood_C). Overview: docs/props.md.
 //
 // prop_save_data carries a prop's record on every BIRTH path -- a spawn, a drop intent, the join
 // snapshot -- and on none other, so a prop whose save state changes while it sits there never
@@ -13,6 +13,8 @@
 // The verb watched is each class's own upd(): every mutation ends there and no tick or look-at
 // path calls it. The watch is a script_gate one, not a ProcessEvent observer -- the prop calls its
 // own upd() from inside its Blueprint, a route ProcessEvent never sees. The .cpp carries the rest.
+// Cans instead publish after open()/eat(), preserving every change to opened/foods;
+// their native loadData -> init rebuilds the mesh. Held cans remain on the hand lifecycle.
 
 #pragma once
 

@@ -68,11 +68,11 @@ void BeginJoinApply();
 enum class JoinPlacement : uint8_t { StartPoint, ProfilePose, AtHost };
 JoinPlacement TakeJoinPlacement(float& x, float& y, float& z, float& yaw);
 
-// Per-slot disconnect (host): re-arm the on-join push for that slot. The leaver's profile stays
+// Per-slot disconnect (host): drop partial receive/order state and re-arm that slot's join push. The leaver's profile stays
 // held by GUID. Client: no-op. Game thread.
 void OnDisconnectForSlot(int peerSlot);
 
-// Aggregate disconnect: the client clears its send-dedup and any pending apply. The host keeps
+// Aggregate disconnect: clear connection-owned assemblies/order, send-dedup and pending apply. The host keeps
 // what the store holds -- on a host this edge is the last client leaving. Game thread.
 void OnDisconnect();
 

@@ -17,7 +17,7 @@ host validates and commits contested writes), `local` (never shared).
 |---|---|---|---|---|
 | Session, join, roster | admission with a mutual key challenge and an optional password, slot assignment, the version gate, the roster and nicknames | host | the join itself, behind a world-ready barrier | works |
 | Save transfer | the host's live world streamed to the joiner, then the connect snapshot of every synced element | host | this is the join | works |
-| Remote player body | pose stream, ragdoll and faint display, the held item, footsteps | peer | the spawn is the seed | works |
+| Remote player body | pose stream, ragdoll and faint display, the seated pose, the held item, footsteps | peer | the spawn is the seed | works |
 | Nameplates, colours, skins | nickname, ping, health bar, visibility preference, colour, the body skin | peer, arbitrated by the host for uniqueness | at join | works |
 | Chat and the event feed | text lines, join and leave lines, a retained history shown to late joiners | presser; host relays | seeded from the host's retained log | works |
 | Voice | Opus frames, 3D positional | peer | state replay | works |
@@ -34,7 +34,7 @@ host validates and commits contested writes), `local` (never shared).
 | Trash-bits piles | the counter pair | presser and host | snapshot | built |
 | Containers | open and close, contents (a slice of the host's object stack) | presser; host for contents | snapshot | works, two known breaks |
 | NPCs | spawn, despawn, pose, state for the generic creatures | host | snapshot | works |
-| Kerfur | the prop-to-NPC conversion cycle, per-kerfur skins | host | snapshot plus adoption | works |
+| Kerfur | the prop-to-NPC conversion cycle, per-kerfur skins, Omega sit-on-ATV pose, the reports disc on the pose, a carried world prop on the drive channel | host | snapshot plus adoption | works |
 | Owner-entity creatures | a creature whose AI reads the local player is owned per peer and mirrored to the rest | peer | keepalive | built |
 | Roaches | the paged infestation state | host | snapshot | built |
 | Wisp | the killer wisp's hunt, grab, tear | host | none (transient) | works |
@@ -46,7 +46,7 @@ host validates and commits contested writes), `local` (never shared).
 | Fireflies, ambient spawners | cosmetic spawns and the flora and forage spawners (host only) | peer for cosmetics, host for spawners | none; a client's spawners are refused from its session's start | built |
 | Story and scheduled events | host-observed fires replayed on clients by a per-event policy; the active-events registry mirrored for late joiners | host | replay and snapshot | built |
 | Alarm | the base klaxon | presser | snapshot | built |
-| Balance | the shared points total | host | replay at connect | built |
+| Balance | the shared points total, including a client's point sack, treasure chest and completed achievement | host | replay at connect | built |
 | Email, daily task | host-appended emails, peer-symmetric delete; the host's task state | host | save transfer plus a prime | built |
 | Deployed hook and rope | existence, flight, the head pose and the reel while the thrower holds it; the handover to the host when both ends anchor, and the anchor itself; the tie, which exists on the host alone, so a prop any peer's hook drags streams to everyone and two hooks on one prop are two host constraints | peer while held, arbiter at the anchor, host after; the host for every constraint | keepalive while held; the save plus a ready-edge replay once anchored; a mirror re-bites from the state it is rebuilt from | built |
 | Lamp posts | not synced: lockstep from the shared day and night cycle | local | none, by design | built |
@@ -72,8 +72,8 @@ host validates and commits contested writes), `local` (never shared).
 | Server boxes | the signal-server simulation state and its notices; a client's repair run on the host | host | snapshot | built |
 | Disc slots | the slot a laptop or a signal server holds a disc in, and the disc that comes back out of one | host owns the slot; the peer whose game changed it reports the outcome | every device's slot at the barrier | tested |
 | Shop orders | the client names a row, the host performs and prices it; the delivery queue is the host's, mirrored | arbiter | a reset and every queued order | built |
-| ATV | the driver authors the pose; a non-driving peer runs the rig natively and is corrected; condition (tyres, fuel, health) travels | driver, host for the rest | snapshot | tested; eject and configuration intents not built |
-| Sleep | each peer's rest state and the host's sleeping flag | each peer for its own state; the host relays | the host's flag and every peer not awake | built |
+| ATV | the driver authors the pose, brake, lights, turbo and the frame modules; a second ATV is minted only while the world has one, capped at two, and saved under its own key; a tyre pulled off is ejected on the host; mounting a tyre while driving, the map and whether the radio is playing do not travel | driver, host for the rest | snapshot | tested; a non-author's refuel is built and not yet played |
+| Sleep | the sleep tally | arbiter | joins awake | built |
 | Player inventory | per-peer, persisted by the host per player identity; the contents never cross the wire | local; host stores | seeded before the world | tested |
 
 ## Enforced without a packet

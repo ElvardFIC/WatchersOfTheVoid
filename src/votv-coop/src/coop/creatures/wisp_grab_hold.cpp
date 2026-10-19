@@ -7,12 +7,14 @@
 #include "coop/player/players_registry.h"
 #include "coop/player/remote_player.h"
 #include "ue_wrap/engine/engine.h"
+#include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/types.h"
 #include "ue_wrap/actors/wisp.h"
 
 #include <chrono>
+#include <algorithm>
 #include <cstdint>
 #include <vector>
 
@@ -33,11 +35,14 @@ uint64_t NowMs() {
 uint32_t g_selfWispEid     = 0;
 bool     g_selfAttached    = false;
 uint64_t g_selfRetryUntil  = 0;
+ue_wrap::CachedObjRef g_selfVictim;
+uint64_t g_selfGeneration = 0;
 
 // Cross-peer puppet holds (host: the real wisp; third peers: the mirror). Tiny set
 // (at most one victim per wisp, at most kMaxPeers-1 victims).
 struct Hold { uint8_t slot; uint32_t wispEid; };
 std::vector<Hold> g_holds;
+uint64_t g_holdRevision = 0;
 
 // Resolve the LOCAL actor for a wisp Element id (the real wisp on the host, the
 // npc mirror on a client -- both live in the unified element Registry). Null if
@@ -53,11 +58,17 @@ void* ResolveWispActor(uint32_t wispEid) {
 
 // One victim-side attach attempt. True once attached (latched by the caller).
 bool TryAttachSelf() {
+    const auto generation = g_selfGeneration;
     void* wisp = ResolveWispActor(g_selfWispEid);
     if (!wisp) return false;
-    void* local = coop::players::Registry::Get().Local();
-    if (!local || !R::IsLive(local)) return false;
+    const auto victim = g_selfVictim;
+    void* local = victim.Get();
+    if (!local || local != coop::players::Registry::Get().Local()) return false;
     if (!ue_wrap::wisp::ApplyGrabToLocalPlayer(wisp, local)) return false;
+    // Native attachment can run teardown or install another hold. Only the
+    // attempt that still owns this generation may publish its attached state.
+    if (generation != g_selfGeneration || !victim.Get() ||
+        local != coop::players::Registry::Get().Local()) return false;
     UE_LOGI("wisp_hold[self]: grabbed by wispEid=%u -- riding the mirror's 'playerGrab' "
             "socket until the scheduled death", g_selfWispEid);
     return true;
@@ -67,6 +78,10 @@ bool TryAttachSelf() {
 
 void EngageSelf(uint32_t wispEid, uint32_t killDelayMs) {
     if (wispEid == 0) return;
+    void* local = coop::players::Registry::Get().Local();
+    if (!local || !R::IsLive(local)) return;
+    ++g_selfGeneration;
+    g_selfVictim.Set(local);
     g_selfWispEid    = wispEid;
     g_selfAttached   = false;
     g_selfRetryUntil = NowMs() + killDelayMs;
@@ -76,24 +91,35 @@ void EngageSelf(uint32_t wispEid, uint32_t killDelayMs) {
 }
 
 void EngagePuppet(uint32_t wispEid, uint8_t victimSlot) {
-    if (wispEid == 0 || victimSlot == coop::players::kPeerIdUnknown) return;
+    if (wispEid == 0 || victimSlot >= coop::players::kMaxPeers) return;
     for (auto& h : g_holds) {
-        if (h.slot == victimSlot) { h.wispEid = wispEid; return; }  // idempotent re-engage
+        if (h.slot == victimSlot) {
+            if (h.wispEid != wispEid) { h.wispEid = wispEid; ++g_holdRevision; }
+            return;
+        }
     }
     g_holds.push_back(Hold{victimSlot, wispEid});
+    ++g_holdRevision;
     UE_LOGI("wisp_hold: holding puppet slot=%u at wispEid=%u 'playerGrab' socket "
             "(releases when the wisp despawns)", victimSlot, wispEid);
 }
 
 void ReleaseSelf() {
     if (g_selfWispEid == 0) return;
-    if (g_selfAttached) {
-        void* local = coop::players::Registry::Get().Local();
-        if (local && R::IsLive(local)) ue_wrap::wisp::ReleaseGrabOnLocalPlayer(local);
-    }
+    const bool attached = g_selfAttached;
+    const auto victim = g_selfVictim;
+    // Detach/movement calls may reenter teardown. Consume this hold first so a
+    // nested release is a no-op and new state is not erased after the callback.
     g_selfWispEid = 0;
     g_selfAttached = false;
     g_selfRetryUntil = 0;
+    ++g_selfGeneration;
+    g_selfVictim.Reset();
+    if (attached) {
+        // Release the pawn that was attached, even if Local now names its
+        // replacement. A recycled slot must never receive native cleanup.
+        if (void* local = victim.Get()) ue_wrap::wisp::ReleaseGrabOnLocalPlayer(local);
+    }
 }
 
 void Tick() {
@@ -104,6 +130,7 @@ void Tick() {
                     "window -- the flat death stands (no ride)", g_selfWispEid);
             g_selfWispEid = 0;
             g_selfRetryUntil = 0;
+            g_selfVictim.Reset();
         } else if (TryAttachSelf()) {
             g_selfAttached = true;
         }
@@ -111,31 +138,45 @@ void Tick() {
     // Puppet holds: snap each held puppet to its wisp's socket. Runs AFTER the puppet
     // pose apply (puppet_drive::DriveTick ordering), so this write is the one the frame renders.
     if (g_holds.empty()) return;
-    for (auto it = g_holds.begin(); it != g_holds.end();) {
-        void* wisp = ResolveWispActor(it->wispEid);
+    // Socket/location calls dispatch engine callbacks. Iterate a copy so teardown,
+    // peer removal or vector growth cannot invalidate the active iterator.
+    const auto holds = g_holds;
+    const auto revision = g_holdRevision;
+    for (const auto& hold : holds) {
+        if (revision != g_holdRevision) return;
+        const auto drop = [&] {
+            std::erase_if(g_holds, [&](const Hold& h) { return h.slot == hold.slot; });
+        };
+        void* wisp = ResolveWispActor(hold.wispEid);
         if (!wisp) {
             UE_LOGI("wisp_hold: wispEid=%u gone -- released puppet slot=%u (pose stream "
-                    "resumes)", it->wispEid, it->slot);
-            it = g_holds.erase(it);
+                    "resumes)", hold.wispEid, hold.slot);
+            drop();
             continue;
         }
-        coop::RemotePlayer* rp = coop::players::Registry::Get().Puppet(it->slot);
+        coop::RemotePlayer* rp = coop::players::Registry::Get().Puppet(hold.slot);
         void* puppet = (rp && rp->valid()) ? rp->GetActor() : nullptr;
         if (!puppet || !R::IsLive(puppet)) {
-            UE_LOGI("wisp_hold: puppet slot=%u gone -- dropping its hold", it->slot);
-            it = g_holds.erase(it);
+            UE_LOGI("wisp_hold: puppet slot=%u gone -- dropping its hold", hold.slot);
+            drop();
             continue;
         }
         ue_wrap::FVector sock{};
-        if (ue_wrap::wisp::GrabSocketWorldLocation(wisp, sock))
-            E::SetActorLocation(puppet, sock);
-        ++it;
+        ue_wrap::CachedObjRef wispRef; wispRef.Set(wisp);
+        ue_wrap::CachedObjRef puppetRef; puppetRef.Set(puppet);
+        if (!ue_wrap::wisp::GrabSocketWorldLocation(wisp, sock)) continue;
+        if (revision != g_holdRevision) return;
+        if (!wispRef.Get() || !puppetRef.Get()) continue;
+        rp = coop::players::Registry::Get().Puppet(hold.slot);
+        if (!rp || !rp->valid() || rp->GetActor() != puppet) continue;
+        E::SetActorLocation(puppet, sock);
     }
 }
 
 void OnPeerLeft(uint8_t slot) {
     for (auto it = g_holds.begin(); it != g_holds.end();) {
         if (it->slot == slot) {
+            ++g_holdRevision;
             UE_LOGI("wisp_hold: peer slot=%u left -- dropping its hold", slot);
             it = g_holds.erase(it);
         } else {
@@ -145,8 +186,9 @@ void OnPeerLeft(uint8_t slot) {
 }
 
 void OnDisconnect() {
-    ReleaseSelf();  // a mid-grab teardown must not strand the local player in MOVE_None
+    ++g_holdRevision;
     g_holds.clear();
+    ReleaseSelf();  // a mid-grab teardown must not strand the local player in MOVE_None
 }
 
 }  // namespace coop::wisp_grab_hold

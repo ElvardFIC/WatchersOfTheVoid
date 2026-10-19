@@ -11,6 +11,7 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <deque>
 
 namespace coop::desk_input_sync {
 namespace {
@@ -24,6 +25,14 @@ std::atomic<coop::net::Session*> g_session{nullptr};
 
 constexpr auto kPoll = std::chrono::milliseconds(250);
 Clock::time_point g_nextPoll{};
+struct Outbound {
+    coop::net::ReliableKind kind{};
+    coop::net::DeskInputPayload input{};
+    coop::net::DeskScanEventPayload scan{};
+    bool isScan = false;
+};
+std::deque<Outbound> g_outbound;
+constexpr size_t kMaxOutbound = 128;
 
 // The per-field poll baseline. Primed on first sight / adopt / every wire
 // apply (field-granular) -- a wire-caused change never reads as a local edge.
@@ -53,19 +62,52 @@ void SendDelta(coop::net::Session* s, DeskInputField field,
     p.boolVal = bv ? 1 : 0;
     p.floatVal = fv;
     p.intVal = iv;
-    if (s->role() == coop::net::Role::Host)
-        s->SendReliable(coop::net::ReliableKind::DeskInput, &p, sizeof(p));
-    else
-        s->SendReliableToSlot(0, coop::net::ReliableKind::DeskInput, &p, sizeof(p));
+    Outbound item{};
+    item.kind = coop::net::ReliableKind::DeskInput;
+    item.input = p;
+    if (!g_outbound.empty()) {
+        if (g_outbound.size() < kMaxOutbound) g_outbound.push_back(item);
+        else UE_LOGE("desk_input: outbound queue full; input field %u could not be retained", p.field);
+        return;
+    }
+    const bool sent = s->role() == coop::net::Role::Host
+        ? s->SendReliable(item.kind, &item.input, sizeof(item.input))
+        : s->SendReliableToSlot(0, item.kind, &item.input, sizeof(item.input));
+    if (!sent && g_outbound.size() < kMaxOutbound) g_outbound.push_back(item);
+    else if (!sent) UE_LOGE("desk_input: outbound queue full; input field %u could not be retained", p.field);
 }
 
 void SendScan(coop::net::Session* s, float observed) {
     coop::net::DeskScanEventPayload p{};
     p.observedCooldown = observed;
-    if (s->role() == coop::net::Role::Host)
-        s->SendReliable(coop::net::ReliableKind::DeskScanEvent, &p, sizeof(p));
-    else
-        s->SendReliableToSlot(0, coop::net::ReliableKind::DeskScanEvent, &p, sizeof(p));
+    Outbound item{};
+    item.kind = coop::net::ReliableKind::DeskScanEvent;
+    item.scan = p;
+    item.isScan = true;
+    if (!g_outbound.empty()) {
+        if (g_outbound.size() < kMaxOutbound) g_outbound.push_back(item);
+        else UE_LOGE("desk_input: outbound queue full; scan event could not be retained");
+        return;
+    }
+    const bool sent = s->role() == coop::net::Role::Host
+        ? s->SendReliable(item.kind, &item.scan, sizeof(item.scan))
+        : s->SendReliableToSlot(0, item.kind, &item.scan, sizeof(item.scan));
+    if (!sent && g_outbound.size() < kMaxOutbound) g_outbound.push_back(item);
+    else if (!sent) UE_LOGE("desk_input: outbound queue full; scan event could not be retained");
+}
+
+void FlushOutbound(coop::net::Session& s) {
+    while (!g_outbound.empty()) {
+        const Outbound& item = g_outbound.front();
+        const void* data = item.isScan ? static_cast<const void*>(&item.scan)
+                                       : static_cast<const void*>(&item.input);
+        const size_t size = item.isScan ? sizeof(item.scan) : sizeof(item.input);
+        const bool sent = s.role() == coop::net::Role::Host
+            ? s.SendReliable(item.kind, data, static_cast<int>(size))
+            : s.SendReliableToSlot(0, item.kind, data, static_cast<int>(size));
+        if (!sent) break;
+        g_outbound.pop_front();
+    }
 }
 
 // Patch ONE field's value into a Scalars struct (pure; no engine access).
@@ -198,6 +240,11 @@ void Install(coop::net::Session* session) {
 void Tick() {
     auto* s = g_session.load(std::memory_order_acquire);
     if (!s || !s->running()) return;
+    if (!s->connected()) {
+        g_outbound.clear();
+    } else {
+        FlushOutbound(*s);
+    }
     const auto now = Clock::now();
     if (now < g_nextPoll) return;
     g_nextPoll = now + kPoll;
@@ -316,6 +363,7 @@ void OnDisconnect() {
     g_primedRunSlot = 0xFF;
     g_scanWidgetWarned = false;
     g_nextPoll = {};
+    g_outbound.clear();
 }
 
 }  // namespace coop::desk_input_sync

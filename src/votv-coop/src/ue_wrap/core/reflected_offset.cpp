@@ -129,6 +129,9 @@ VC_DEFINE_OFFSET(AnimBP_kerfur_removeArms,          P::name::AnimBPKerfurRegular
 VC_DEFINE_OFFSET(AnimBP_kerfur_isFace,              P::name::AnimBPKerfurRegularClass, L"isFace")
 VC_DEFINE_OFFSET(AnimBP_kerfur_lookAt,              P::name::AnimBPKerfurRegularClass, L"lookAt")
 VC_DEFINE_OFFSET(AnimBP_kerfur_customLookAt,        P::name::AnimBPKerfurRegularClass, L"customLookAt")
+VC_DEFINE_OFFSET(AnimBP_kerfur_isOnAtv,             P::name::AnimBPKerfurRegularClass, L"isOnAtv")
+VC_DEFINE_OFFSET(MainPlayer_sittingOn,              L"mainPlayer_C", L"sittingOn")
+VC_DEFINE_OFFSET(Atv_sitarrow,                      L"ATV_C", L"sitarrow")
 
 #undef VC_DEFINE_OFFSET
 
