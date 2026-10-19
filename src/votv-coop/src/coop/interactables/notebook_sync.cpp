@@ -15,6 +15,7 @@
 #include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/game_thread.h"
 #include "ue_wrap/core/log.h"
+#include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/script_gate.h"
 #include "ue_wrap/desk/device_screen.h"
 #include "ue_wrap/facts/function_row.h"
@@ -22,6 +23,7 @@
 #include <atomic>
 #include <chrono>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -178,21 +180,39 @@ void OnQuitPost(const sg::Call& c) {
 ue_wrap::CachedObjRef g_used;
 size_t g_usedPagesBefore = 0;
 
+// The notice's cooldown, per notebook Key (a handful of notebooks at most; cleared with the session).
+std::unordered_map<std::wstring, Clock::time_point> g_noticeAt;
+
+// Is the object in the player's hand (the verb's holdObject parameter) a torn sheet?
+bool HeldObjectIsSheet(const sg::Call& c) {
+    static void* fn = nullptr;
+    static int32_t off = -1;
+    if (fn != c.function) {
+        fn = c.function;
+        off = ue_wrap::reflection::FindParamOffset(c.function, L"holdObject");
+    }
+    if (off < 0 || !c.locals) return false;
+    return N::IsNotebookSheet(*reinterpret_cast<void* const*>(c.locals + off));
+}
+
 sg::Verdict OnUsedPre(const sg::Call& c) {
     g_used.Reset();
     std::vector<std::wstring> pages;
     if (!Session() || !N::ReadPages(c.object, pages)) return sg::Verdict::Run;
     const std::wstring claim = DS::ClassifyDeviceActorClaimKey(c.object);
     const uint8_t holder = claim.empty() ? uint8_t{0xFF} : coop::device_occupancy::HolderOf(claim.c_str());
-    if (holder != 0xFF && holder != coop::players::Registry::Get().LocalPeerId()) {
-        // The player keeps the sheet; the notice is the busy line the devices use, and the deny click.
-        static Clock::time_point nextNotice{};
+    if (holder != 0xFF && holder != coop::players::Registry::Get().LocalPeerId() && HeldObjectIsSheet(c)) {
+        // Only a torn sheet in the hand is a page add. The player keeps it; the notice is the busy line the
+        // devices use, and the deny click, at most once per 3 s for each notebook. Any other use of a held
+        // notebook (an empty hand, another item) runs natively.
+        const std::wstring key = ue_wrap::prop::GetKeyString(c.object);
+        Clock::time_point& nextNotice = g_noticeAt[key];
         if (Clock::now() >= nextNotice) {
             nextNotice = Clock::now() + std::chrono::seconds(3);
             coop::peer_action_feed::AnnounceDirect(holder, coop::peer_action_feed::Action::UsingDevice, L"the notebook");
             if (void* local = coop::players::Registry::Get().Local()) coop::prop_sound::PlayDenyClick(local);
             UE_LOGI("notebook_sync: a page was not added to notebook '%ls': slot %u has it open",
-                    ue_wrap::prop::GetKeyString(c.object).c_str(), static_cast<unsigned>(holder));
+                    key.c_str(), static_cast<unsigned>(holder));
         }
         return sg::Verdict::Cancel;
     }
@@ -333,6 +353,7 @@ void OnDisconnect() {
     g_pubClaim.clear();
     g_closing.Reset();
     g_used.Reset();
+    g_noticeAt.clear();
     g_stats = dev::Stats{};
 }
 

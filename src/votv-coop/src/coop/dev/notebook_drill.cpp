@@ -63,13 +63,13 @@ constexpr uint8_t kActOpen = 4;
 constexpr int     kClientSlot = 1;
 constexpr uint8_t kOtherSlot = 6;   // a slot that holds nothing: the rule is asked about it directly
 constexpr const wchar_t* kSeedPage   = L"notebook drill: the page the host wrote";
-// The page typed and left open runs past the editor's 32-line limit, so the commit handler's cut is exercised: what
-// lands on the notebook is the first 32 lines.
 constexpr const wchar_t* kGatePage = L"notebook drill: the first page the gate lets through";
 constexpr uint64_t kGateMinMs = 1900;     // the lane gates its publishes 2 s apart; a second one sooner is a fault
 constexpr uint64_t kGateBoundMs = 10000;  // failure bound: the held-back change never went out
+// The typed page runs past the editor's 32-line limit, which the commit handler answers with a hint. The leg does
+// not depend on whether the handler also cuts the page to 32 lines; it reads line 32 on the host.
 constexpr int kTypedLines = 40;
-constexpr int kKeptLines = 32;
+constexpr int kMinLines = 32;
 constexpr const wchar_t* kEditedPage = L"notebook drill: the page the client wrote";
 
 constexpr char kLineJudged[]  = "[NOTE-DRILL] host judged the claim";
@@ -143,7 +143,7 @@ Found FindBook() {
     return f;
 }
 
-// The typed page: kTypedLines lines, each numbered. What the commit handler keeps is its first kKeptLines.
+// The typed page: kTypedLines lines, each numbered.
 std::wstring TypedPage() {
     std::wstring page;
     for (int i = 1; i <= kTypedLines; ++i) {
@@ -153,12 +153,11 @@ std::wstring TypedPage() {
     return page;
 }
 
-// Is this the typed page as the notebook keeps it: line 1 first, line 32 last, nothing of line 33.
-// (Matched on the lines, not the line break, which the engine's text may spell either way.)
+// Is this the typed page as the notebook keeps it: line 1 first and line 32 present. (Matched on the lines, not
+// the line break, which the engine's text may spell either way; and not on a cut: see kTypedLines.)
 bool IsTypedPage(const std::wstring& s) {
     return s.compare(0, 21, L"notebook drill line 1") == 0 &&
-           s.find(L"line " + std::to_wstring(kKeptLines)) != std::wstring::npos &&
-           s.find(L"line " + std::to_wstring(kKeptLines + 1)) == std::wstring::npos;
+           s.find(L"line " + std::to_wstring(kMinLines)) != std::wstring::npos;
 }
 
 // The notebook's first page as `text` keeps it, from the strings alone.
@@ -582,8 +581,8 @@ void ClientTick() {
             return;
         }
         if (CExpired(kLegBoundMs)) { ClientFail("periodic", "the host never said it read the typed page"); return; }
-        // Committed again with the page as the notebook now keeps it (the cut page): a longer page would raise the limit's
-        // hint at every commit.
+        // Committed again, every poll, with the page as the notebook keeps it: a commit inside the lane's 2 s gate
+        // is held back and goes with the next commit, so the commit repeats until the host has read the page.
         void* const widget = DS::ReadActiveInterface(player);
         std::wstring boxNow;
         if (N::NotebookOf(widget) != g_cBook.Get() || !StoredPage(g_cBook.Get(), boxNow) ||

@@ -264,9 +264,13 @@ text is the prop's save record and crosses on the record lane above with no mess
   sheet's text to the notebook's and destroys the sheet, with no editor open and no claim. The
   verb's end publishes the notebook's record when its page count grew, from whichever peer ran it;
   the host's rule takes it while nobody holds the notebook. While another peer has the notebook open
-  the verb is cancelled at its start on the peer that ran it: the sheet stays in the player's hand and
-  a notice names the holder, because the game cannot merge two writers and the open editor's close
-  would overwrite the page on every peer.
+  the verb is cancelled at its start on the peer that ran it, when the hand holds a torn sheet: the
+  sheet stays in the player's hand and a notice names the holder, because the game cannot merge two
+  writers and the open editor's close would overwrite the page on every peer. Any other use of a
+  held notebook runs as the game has it. One window remains: a page added before this peer has heard
+  the other peer's claim (about one round trip after that peer opened the editor) stays on this peer
+  and is overwritten at that holder's close. The root fix, the host running the page add on behalf of
+  the peer that pressed it, is a recorded follow-up and not built.
 - **Forced exits.** Ragdoll, a faint and death leave the interface without `quit`, as in the
   single-player game, so the box's uncommitted text is lost there and nothing is published.
 - **Late join.** A joiner is handed every prop's record in the snapshot, the notebook's last
