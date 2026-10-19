@@ -156,6 +156,11 @@
 #include "coop/creatures/npc_world_enum.h"  // RegisterExistingWorldNpcs
 #include "coop/creatures/grayboar_sync.h"
 #include "coop/creatures/grayboar_actions.h"
+#include "coop/creatures/grayboar_turn.h"
+#include "coop/creatures/ariral_sync.h"
+#include "coop/creatures/deer_sync.h"
+#include "coop/creatures/centipede_sync.h"
+#include "coop/creatures/mannequin_sync.h"
 #include "coop/world/world_actor_sync.h"  // non-Character event-actor transform mirror (sibling of npc_sync)
 #include "coop/creatures/piramid_sync.h"  // piramid event choreography lane (mirror brain suppression + PyramidGather)
 #include "coop/player/players_registry.h"
@@ -217,6 +222,7 @@ void Install(coop::net::Session& session) {
     coop::world_actor_sync::Install(&session);  // non-Character event-actor mirror (2nd BeginDeferred interceptor, disjoint allowlist)
     coop::piramid_sync::Install(&session);  // piramid event choreography lane (hooks arm lazily on the first piramid element)
     coop::grayboar_sync::Install(&session);
+    coop::grayboar_turn::Install(&session);
     coop::ariral_sync::Install(&session);
     coop::deer_sync::Install(&session);
     coop::centipede_sync::Install(&session);
@@ -575,6 +581,7 @@ DisconnectStats DisconnectAll() {
     coop::world_actor_sync::OnDisconnect();  // drain WorldActor mirrors (K2 client ones) + clear host reverse-map
     coop::piramid_sync::OnDisconnect();  // drop pending gather + gather-edge map + restored-tick set (hooks stay latched)
     coop::grayboar_sync::OnDisconnect();
+    coop::grayboar_turn::OnDisconnect();
     coop::npc_adoption::OnSessionEnd();  // drop pending deferred adoptions + reset latches
     coop::kerfur_prop_adoption::OnSessionEnd();  // drop pending prop-form kerfur adoptions
     coop::dev::dev_lanes::EndSession();  // [dev] the probes' verdicts, before the prop seams reset below, then each drill back to its first step
@@ -759,6 +766,7 @@ void TickGameplay(coop::net::Session& session, bool isConnected, bool isHost,
     coop::madness_sync::Tick();
     coop::dingus_music_sync::Tick();
     coop::grayboar_actions::Tick();
+    coop::grayboar_turn::Tick();
     { PP::Scope _s{PP::Bucket::Interactable}; ue_wrap::ScopedWalkTimer _w{"sync:cord_sync"}; coop::cord_sync::Tick(); }
     { PP::Scope _s{PP::Bucket::Interactable}; ue_wrap::ScopedWalkTimer _w{"sync:prop_support_sync"}; coop::prop_support_sync::Tick(session); }
     { PP::Scope _s{PP::Bucket::Interactable}; ue_wrap::ScopedWalkTimer _w{"sync:gravity_motion"}; coop::gravity_motion::Tick(session); }

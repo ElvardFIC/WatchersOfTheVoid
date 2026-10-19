@@ -9,11 +9,15 @@ struct Session {
     bool linked=true;
     uint32_t readyMask=2;bool sendOk=true;
     int sends=0;GrayboarActionPayload sent{};
+    int turnSends=0;GrayboarTurnPayload turnSent{};
     Role role()const{return mode;}
     bool running()const{return active;}
     bool connected()const{return linked;}
     bool IsSlotWorldReady(int slot)const{return (readyMask&(1u<<slot))!=0;}
     bool SendReliableToSlot(int,ReliableKind kind,const void* data,int size) {
+        if(kind==ReliableKind::GrayboarTurn && size==sizeof(turnSent)) {
+            ++turnSends;turnSent=*static_cast<const GrayboarTurnPayload*>(data);return sendOk;
+        }
         if(kind!=ReliableKind::GrayboarAction || size!=sizeof(sent))return false;
         ++sends;sent=*static_cast<const GrayboarActionPayload*>(data);return sendOk;
     }

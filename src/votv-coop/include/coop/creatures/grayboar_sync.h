@@ -9,6 +9,7 @@ namespace coop::grayboar_sync {
 // Its native AnimBP reads the rendered drive velocity for locomotion and motor audio.
 // Client host replicas cannot independently select targets or start roars/bites;
 // host action presentation must use cosmetic playback rather than native AI verbs.
+// Abort an already-active path only on the replica's owned grayboarPawn AI controller.
 void Install(coop::net::Session* session);
 void OnDisconnect();
 }

@@ -23,6 +23,8 @@ struct Observation {
     void* stack=nullptr;
     uint8_t action=0;
     bool wasActive=false,valid=false;
+    bool hitEligible=false;
+    float health=0;
     uint64_t epoch=0;
 };
 struct Cue {Packet packet{};uint64_t expires=0;uint32_t peers=0;uint64_t sampled=0;};
@@ -50,7 +52,25 @@ bool Flag(void* actor,uint8_t action,bool& value) {
     if(!R::FindBoolProperty(R::ClassOf(actor),action==1?L"biting":action==2?L"roaring":L"dying",off,mask) || off<0 || !mask)return false;
     value=(static_cast<uint8_t*>(actor)[off]&mask)!=0;return true;
 }
-const wchar_t* Section(uint8_t action){return action==1?L"atttack":action==2?L"roar":L"death";}
+const wchar_t* Section(uint8_t action){
+    switch(action) {
+    case 1:return L"atttack";case 2:return L"roar";case 3:return L"death";
+    case 4:return L"damage1";case 5:return L"damage2";case 6:return L"damage3";case 7:return L"damage4";
+    default:return L"";
+    }
+}
+bool ReadHealth(void* actor,float& health) {
+    const int off=R::FindPropertyOffset(R::ClassOf(actor),L"health");
+    if(off<0)return false;
+    std::memcpy(&health,static_cast<uint8_t*>(actor)+off,sizeof(health));
+    return std::isfinite(health);
+}
+bool WantsHitAnimation(const ue_wrap::script_gate::Call& call) {
+    if(!call.function || !call.locals)return false;
+    const int off=R::FindParamOffset(call.function,L"skipAnim");
+    const int size=R::FunctionFrameSize(call.function);
+    return off>=0 && off<size && call.locals[off]==0;
+}
 bool ValidRate(float rate,uint8_t action){return std::isfinite(rate) && rate>=(action==3?0.025f:0.05f) && rate<=10.f;}
 void* Component(void* actor,const wchar_t* name) {
     const auto off=R::FindPropertyOffset(R::ClassOf(actor),name);
@@ -96,9 +116,10 @@ bool ReadCurrent(void* actor,Packet& packet) {
     uint8_t playing=0;R::FName section{};
     if(!MontageValue(anim,montage,L"Montage_IsPlaying",playing) || !valid() || !playing)return false;
     if(!MontageValue(anim,montage,L"Montage_GetCurrentSection",section) || !valid())return false;
-    packet.action=R::NameEquals(section,L"atttack")?1:R::NameEquals(section,L"roar")?2:R::NameEquals(section,L"death")?3:0;
+    packet.action=0;
+    for(uint8_t action=1;action<=7;++action)if(R::NameEquals(section,Section(action))){packet.action=action;break;}
     bool active=false;
-    if(!packet.action || !Flag(actor,packet.action,active) || !active)return false;
+    if(!packet.action || (packet.action<=3 && (!Flag(actor,packet.action,active) || !active)))return false;
     if(packet.action!=3 && (static_cast<uint8_t*>(actor)[dyingOff]&dyingMask))return false;
     if(!MontageValue(anim,montage,L"Montage_GetPosition",packet.position) || !valid())return false;
     if(!MontageValue(anim,montage,L"Montage_GetPlayRate",packet.rate) || !valid())return false;
@@ -164,6 +185,27 @@ bool Play(void* actor,const Packet& packet,float waited=0.f) {
         }
         return true;
     }
+    if(packet.action>=4) {
+        // Native damaged chooses one of damage1..4, sets the idle component's
+        // damage cue, plays it and stops attack audio. No health/gameplay call.
+        void* audio=Component(actor,L"audio_idle");
+        void* sound=R::FindObject(L"grayboar_damage_Cue",L"SoundCue");
+        if(audio && sound) {
+            ue_wrap::CachedObjRef voice;voice.Set(audio);
+            ue_wrap::ParamFrame set(R::FindDispatchFunctionCached(R::ClassOf(audio),L"SetSound"));
+            if(set.valid() && set.Set<void*>(L"NewSound",sound) && ue_wrap::Call(audio,set) &&
+               owner.Get() && voice.Get() && epoch==g_epoch && Current()) {
+                ue_wrap::ParamFrame startSound(R::FindDispatchFunctionCached(R::ClassOf(audio),L"Play"));
+                if(startSound.valid() && startSound.Set<float>(L"StartTime",0.f))ue_wrap::Call(audio,startSound);
+            }
+        }
+        if(!owner.Get() || epoch!=g_epoch || !Current())return true;
+        if(void* attack=Component(actor,L"audio_attack")) {
+            ue_wrap::ParamFrame stopSound(R::FindDispatchFunctionCached(R::ClassOf(attack),L"Stop"));
+            if(stopSound.valid())ue_wrap::Call(attack,stopSound);
+        }
+        return true;
+    }
     // Audio failure must not restart a montage that has already played.
     if(void* audio=Component(actor,packet.action==1?L"audio_attack":L"audio_roar")) {
         if(void* fn=R::FindDispatchFunctionCached(R::ClassOf(audio),L"Play")) {
@@ -172,6 +214,18 @@ bool Play(void* actor,const Packet& packet,float waited=0.f) {
         }
     }
     return true;
+}
+void Queue(void* actor,Packet packet) {
+    auto& registry=element::Registry::Get();const auto eid=registry.EidForActor(actor);
+    auto* element=registry.Get(eid);
+    if(!eid || eid>=element::kHostRangeSize || !element || element->IsMirror() || element->LiveActor()!=actor ||
+       !ValidRate(packet.rate,packet.action) || g_out.size()>=32)return;
+    uint32_t peers=0;
+    for(int slot=1;slot<net::kMaxPeers;++slot)if(g_session->IsSlotWorldReady(slot))peers|=1u<<slot;
+    if(!peers)return;
+    if(!++g_sequence)++g_sequence;
+    packet.eid=eid;packet.sequence=g_sequence;
+    g_out.push_back({packet,Now()+1500,peers});
 }
 }
 void Install(net::Session* session) {
@@ -188,7 +242,9 @@ void Before(const ue_wrap::script_gate::Call& call,uint8_t action) {
     }
     if(g_observations.size()>=32)g_observations.erase(g_observations.begin());
     Observation row{};row.actor.Set(call.object);row.stack=call.stack;row.action=action;row.epoch=g_epoch;
-    row.valid=Flag(call.object,action,row.wasActive);g_observations.push_back(row);
+    row.valid=Flag(call.object,action,row.wasActive);
+    if(action==3)row.hitEligible=WantsHitAnimation(call) && ReadHealth(call.object,row.health);
+    g_observations.push_back(row);
 }
 void After(const ue_wrap::script_gate::Call& call,uint8_t action) {
     size_t index=g_observations.size();
@@ -200,7 +256,18 @@ void After(const ue_wrap::script_gate::Call& call,uint8_t action) {
     const auto row=g_observations[index];g_observations.erase(g_observations.begin()+index);
     if(!Current() || g_session->role()!=net::Role::Host || row.epoch!=g_epoch || !row.valid || row.wasActive || !row.actor.Get())return;
     bool active=false;
-    if(!Flag(call.object,action,active) || !active)return;
+    if(!Flag(call.object,action,active))return;
+    if(!active) {
+        float health=0;
+        if(action!=3 || !row.hitEligible || !ReadHealth(call.object,health) || health<=0 || health>=row.health)return;
+        Packet hit{};
+        // Read the section actually selected by native RNG, never roll again on
+        // clients. Health must have fallen and skipAnim must have been false:
+        // an old damage montage alone is not evidence of a new hit reaction.
+        if(!ReadCurrent(call.object,hit) || hit.action<4 || hit.action>7 ||
+           !Current() || g_session->role()!=net::Role::Host || row.epoch!=g_epoch || !row.actor.Get())return;
+        hit.position=-1.f;Queue(call.object,hit);return;
+    }
     int32_t dyingOff=-1;uint8_t dyingMask=0;
     if(!R::FindBoolProperty(R::ClassOf(call.object),L"dying",dyingOff,dyingMask) || dyingOff<0 || !dyingMask ||
        (action!=3 && (static_cast<uint8_t*>(call.object)[dyingOff]&dyingMask)))return;
@@ -209,24 +276,16 @@ void After(const ue_wrap::script_gate::Call& call,uint8_t action) {
         if(!R::FindBoolProperty(R::ClassOf(call.object),L"skipDeathAnimation",off,mask) || off<0 || !mask ||
            (static_cast<uint8_t*>(call.object)[off]&mask))return;
     }
-    auto& registry=element::Registry::Get();const auto eid=registry.EidForActor(call.object);
-    auto* element=registry.Get(eid);
-    if(!eid || eid>=element::kHostRangeSize || !element || element->IsMirror() || element->LiveActor()!=call.object)return;
     const auto rateOff=R::FindPropertyOffset(R::ClassOf(call.object),L"animationSpeed");float rate=0;
     if(rateOff<0)return;
     std::memcpy(&rate,static_cast<uint8_t*>(call.object)+rateOff,sizeof(rate));
     if(action==3)rate*=0.5f;
-    if(!ValidRate(rate,action) || g_out.size()>=32)return;
-    uint32_t peers=0;
-    for(int slot=1;slot<net::kMaxPeers;++slot)if(g_session->IsSlotWorldReady(slot))peers|=1u<<slot;
-    if(!peers)return;
-    if(!++g_sequence)++g_sequence;
-    g_out.push_back({Packet{eid,g_sequence,rate,action},Now()+1500,peers});
+    Queue(call.object,Packet{0,0,rate,action});
 }
 void Receive(const Packet& packet,int sender) {
     if(!Current() || g_session->role()!=net::Role::Client || sender!=0 ||
        !packet.eid || packet.eid>=element::kHostRangeSize || !packet.sequence ||
-       packet.action<1 || packet.action>3 || !ValidRate(packet.rate,packet.action) ||
+       packet.action<1 || packet.action>7 || !ValidRate(packet.rate,packet.action) ||
        !std::isfinite(packet.position) || (packet.position<0 && packet.position!=-1.f) || packet.position>3600.f ||
        (g_seen && int32_t(packet.sequence-g_seen)<=0) || g_in.size()>=32)return;
     const auto now=Now();g_seen=packet.sequence;g_in.push_back({packet,now+1500,0,now});

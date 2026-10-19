@@ -5,7 +5,10 @@
 #include <cstddef>
 #include <limits>
 namespace test {
-struct Actor {uint8_t biting=0,roaring=0,dying=0,skipDeath=0;float rate=1;void* mesh=nullptr;void* attack=nullptr;void* roar=nullptr;} actor;
+struct Actor {uint8_t biting=0,roaring=0,dying=0,skipDeath=0;float rate=1,health=100;void* mesh=nullptr;void* attack=nullptr;void* roar=nullptr;} actor;
+struct DamageArgs {float sub=10;uint8_t skip=0;} damageArgs;
+int skipOffset=offsetof(DamageArgs,skip),damageFrameSize=sizeof(DamageArgs),damageSets=0;
+bool disconnectOnSet=false,recycleOnSet=false;
 int mesh=1,anim=2,montage=3,audio=4,cls=5,stack=6;
 void* objects[]={&actor,&mesh,&anim,&montage,&audio,&cls};int serials[]={1,1,1,1,1,1};
 uint32_t world=1;bool live=true,boar=true,ready=true,refuseParam=false,refusePlay=false,recycle=false,disconnect=false;
@@ -31,6 +34,7 @@ bool NameEquals(const FName& name,const wchar_t* s){
  if(!wcscmp(s,L"atttack"))return name.ComparisonIndex==11;
  if(!wcscmp(s,L"roar"))return name.ComparisonIndex==12;
  if(!wcscmp(s,L"death"))return name.ComparisonIndex==13;
+ for(int i=4;i<=7;++i)if(!wcscmp(s,coop::grayboar_actions::Section(uint8_t(i))))return name.ComparisonIndex==10+i;
  return test::boar&&!wcscmp(s,L"grayboar_C");
 }
 bool FindBoolProperty(void*,const wchar_t* s,int32_t& off,uint8_t& mask){
@@ -42,6 +46,7 @@ bool FindBoolProperty(void*,const wchar_t* s,int32_t& off,uint8_t& mask){
  return true;
 }
 int32_t FindPropertyOffset(void*,const wchar_t* s){
+ if(!wcscmp(s,L"health"))return offsetof(test::Actor,health);
  if(!wcscmp(s,L"animationSpeed"))return offsetof(test::Actor,rate);
  if(!wcscmp(s,L"SkeletalMesh"))return offsetof(test::Actor,mesh);
  if(!wcscmp(s,L"StaticMesh"))return offsetof(test::Actor,mesh);
@@ -49,8 +54,11 @@ int32_t FindPropertyOffset(void*,const wchar_t* s){
  if(!wcscmp(s,L"audio_attack"))return offsetof(test::Actor,attack);
  assert(!wcscmp(s,L"audio_roar"));return offsetof(test::Actor,roar);
 }
+int32_t FindParamOffset(void*,const wchar_t* name){assert(!wcscmp(name,L"skipAnim"));return test::skipOffset;}
+int32_t FunctionFrameSize(void*){return test::damageFrameSize;}
 void* FindDispatchFunctionCached(void*,const wchar_t* name){return test::ready?const_cast<wchar_t*>(name):nullptr;}
 void* FindObject(const wchar_t* name,const wchar_t* type){
+ if(!wcscmp(name,L"grayboar_damage_Cue")){assert(!wcscmp(type,L"SoundCue"));return &test::audio;}
  if(!wcscmp(name,L"grayboar_idle4")){assert(!wcscmp(type,L"SoundWave"));return &test::audio;}
  if(!wcscmp(name,L"att_default")){assert(!wcscmp(type,L"SoundAttenuation"));return &test::audio;}
  assert(!wcscmp(name,L"grayboar_Skeleton_Montage")&&!wcscmp(type,L"AnimMontage"));return &test::montage;
@@ -58,7 +66,10 @@ void* FindObject(const wchar_t* name,const wchar_t* type){
 void* FindClassDefaultObject(const wchar_t* name){assert(!wcscmp(name,L"GameplayStatics"));return &test::cls;}
 }
 namespace ue_wrap::fname_utils {
-reflection::FName StringToFName(const std::wstring& name){test::section=name==L"atttack"?1:name==L"roar"?2:name==L"death"?3:0;assert(test::section);return {test::section,0};}
+reflection::FName StringToFName(const std::wstring& name){
+ test::section=0;for(int i=1;i<=7;++i)if(name==coop::grayboar_actions::Section(uint8_t(i)))test::section=i;
+ assert(test::section);return {test::section,0};
+}
 }
 namespace ue_wrap {
 ParamFrame::ParamFrame(void* fn):fn_(fn),buf_(64){}
@@ -86,6 +97,10 @@ bool Call(void*,ParamFrame& f){
     !wcscmp(name,L"Montage_GetPosition") || !wcscmp(name,L"Montage_GetPlayRate"))return true;
  if(!wcscmp(name,L"Montage_Stop")){++test::stops;return true;}
  if(!wcscmp(name,L"Stop")){++test::silences;return true;}
+ if(!wcscmp(name,L"SetSound")){
+  ++test::damageSets;if(test::recycleOnSet)++test::serials[0];
+  if(test::disconnectOnSet)coop::grayboar_actions::OnDisconnect();return true;
+ }
  if(!wcscmp(name,L"SpawnSoundAttached")){++test::deathSounds;return true;}
  if(!wcscmp(name,L"Montage_Play")){
   ++test::plays;if(test::recycle)++test::serials[0];
@@ -134,7 +149,7 @@ int main(){
  A::Receive(p,1);A::Tick();assert(!plays);
  auto invalid=p;invalid.eid=coop::element::kHostRangeSize;A::Receive(invalid,0);
  invalid=p;invalid.rate=std::numeric_limits<float>::infinity();A::Receive(invalid,0);
- invalid=p;invalid.action=4;A::Receive(invalid,0);assert(A::g_in.empty());
+ invalid=p;invalid.action=8;A::Receive(invalid,0);assert(A::g_in.empty());
  ready=false;A::Receive(p,0);A::Tick();assert(!plays&&A::g_in.size()==1);
  ready=true;A::Tick();assert(plays==1&&jumps==1&&sounds==1&&section==1);
  A::Receive(p,0);A::Tick();assert(plays==1); // Duplicate sequence.
@@ -180,4 +195,46 @@ int main(){
  p={42,1,.5f,3};A::Receive(p,0);A::Tick();assert(section==3&&deathSounds==1&&silences==3);
  ++p.sequence;p.position=.4f;A::Receive(p,0);A::Tick();assert(deathSounds==1&&silences==6);
  puts("PASS death cosmetics: half native rate, no repeated/skip-animation cue, mid-death join, direct audio and loop silence without gameplay delegates");
+ A::OnDisconnect();session.mode=coop::net::Role::Host;A::Install(&session);registry.row.mirror=false;
+ actor.dying=0;actor.health=100;actor.biting=actor.roaring=0;hostRate=1.25f;
+ call.function=&cls;call.locals=reinterpret_cast<uint8_t*>(&damageArgs);
+ auto hit=[&](float amount){A::Before(call,3);actor.health-=amount;A::After(call,3);};
+ for(int variant=4;variant<=7;++variant){
+  hostSection=variant;hit(1);assert(A::g_out.size()==1);A::Tick();
+  assert(session.sent.action==variant&&session.sent.rate==hostRate&&session.sent.position==-1);
+ }
+ hostSection=4;hit(1);A::Tick();const auto firstHit=session.sent.sequence;
+ hit(1);A::Tick();assert(session.sent.action==4&&session.sent.sequence>firstHit); // Repeated same-section hits are distinct.
+ hit(0);assert(A::g_out.empty());hit(-5);assert(A::g_out.empty()); // Refused hit / healing with an old damage montage.
+ damageArgs.skip=1;hit(1);assert(A::g_out.empty());damageArgs.skip=0;
+ skipOffset=-1;hit(1);assert(A::g_out.empty());skipOffset=damageFrameSize;hit(1);assert(A::g_out.empty());skipOffset=offsetof(DamageArgs,skip);
+ call.locals=nullptr;hit(1);assert(A::g_out.empty());call.locals=reinterpret_cast<uint8_t*>(&damageArgs);
+ hostPlaying=false;hit(1);assert(A::g_out.empty());hostPlaying=true;
+ hostSection=1;hit(1);assert(A::g_out.empty());hostSection=4;
+ registry.row.mirror=true;hit(1);assert(A::g_out.empty());registry.row.mirror=false;
+ A::Before(call,3);++serials[0];actor.health-=1;A::After(call,3);assert(A::g_out.empty());
+ hostRate=std::numeric_limits<float>::quiet_NaN();hit(1);assert(A::g_out.empty());hostRate=1.25f;
+ actor.health=std::numeric_limits<float>::quiet_NaN();hit(1);assert(A::g_out.empty());actor.health=100;
+ A::Before(call,3);actor.health=0;actor.dying=1;A::After(call,3);A::Tick();assert(session.sent.action==3);
+ actor.dying=0;actor.health=100;
+ for(int variant=4;variant<=7;++variant){hostSection=variant;A::QueueConnect(1);A::Tick();assert(session.sent.action==variant&&session.sent.position>=0);}
+ puts("PASS nonlethal host reactions: native damage1..4 choice/rate, repeated hits, health decrease, skip/malformed refusal, live montage, identity, lethal precedence and joined reactions");
+
+ A::OnDisconnect();session.mode=coop::net::Role::Client;A::Install(&session);registry.row.mirror=true;
+ p={42,1,1.25f,4};const float healthBefore=actor.health;
+ for(uint8_t variant=4;variant<=7;++variant){
+  p.action=variant;++p.sequence;const int oldSounds=sounds,oldStops=silences;
+  A::Receive(p,0);A::Tick();assert(section==variant&&sounds==oldSounds+1&&silences==oldStops+1&&A::g_in.empty());
+ }
+ assert(damageSets==4&&actor.health==healthBefore);
+ const int snapshotSounds=sounds,snapshotSets=damageSets,snapshotJumps=jumps;
+ for(uint8_t variant=4;variant<=7;++variant){
+  p.action=variant;p.position=.4f;hostSection=variant;++p.sequence;
+  A::Receive(p,0);A::Tick();assert(sounds==snapshotSounds&&damageSets==snapshotSets&&jumps==snapshotJumps);
+ }
+ ++p.sequence;p.position=-1;const int beforeBadSound=sounds;
+ recycleOnSet=true;A::Receive(p,0);A::Tick();assert(sounds==beforeBadSound&&A::g_in.empty());recycleOnSet=false;
+ disconnectOnSet=true;++p.sequence;A::Receive(p,0);A::Tick();assert(sounds==beforeBadSound&&A::g_in.empty());disconnectOnSet=false;
+ assert(actor.health==healthBefore);
+ puts("PASS nonlethal client cosmetics: selected four sections, damage cue and attack-audio stop, no health writes, silent join seek and audio teardown");
 }

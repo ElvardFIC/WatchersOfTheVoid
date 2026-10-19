@@ -20,18 +20,39 @@ Host native sensePawn scans Pawn candidates; actual multiplayer target detection
 still needs testing. No generic client AI or gameplay-verb replay was added.
 Client host-replica bite-overlap and attack-notify bodies are now refused, covering
 the local attack impulse and arbitrary-object damage as well as player health.
-Death playback, exact time alignment and helper/turning coordination remain open;
-live attack/roar cosmetic relay is implemented and awaits two-player verification.
+Live attack/roar/death and four nonlethal hit reactions are implemented and await two-player
+verification. Host AnimBP turn now drives client bone steering and turn-loop pitch
+with a 100 ms interpolation. Exact time alignment and helper coordination remain open.
 Mid-action join now samples the native active montage position/rate and resumes
 that animation with local queue-age compensation. It does not restart one-shot
 audio, or compensate the unsynchronized host/client clocks/network transit.
+Hit reactions use the host's active damage1..4 section after a verified health
+decrease with skipAnim=false; clients play the native damage cue without health
+writes. Mid-hit joins resume the selected section silently.
 Host replicas also refuse native sensePawn target assignment and detected roar/
-target-delegate binding on clients. Already-running helper tasks and delegates
-from before save adoption remain follow-ups; this does not establish shared AI.
+target-delegate binding on clients. Active helper paths from before save adoption
+are now stopped on the verified owned AI controller. The old target-destroyed
+delegate was audited: it only unbinds/clears the target and remains native.
+Two-player task lifecycle verification remains open; this does not establish shared AI.
+Client host replicas now also refuse native damaged, death loot-notify and death
+completion bodies. Host death cues use the native half animation rate and attached
+death sound; mid-death join resumes only the currently playing death animation.
+Corpse/loot counts and native host retirement still need two-player verification.
+Client host replicas now also refuse the separate collision impulse/10-damage
+body, lightning replacement and charged-form explosion/death timer/punch/spin
+bodies. Charged overrides are watched on their actual declaring class. Native
+host outcomes, replacement propagation and charged effects still need gameplay checks.
 
 Next implementation:
-1. Grayboar death montage/sound cues, remaining join/audio/timing work, and client
-   helper/turning coordination. Live attack/roar cosmetic cues are implemented;
+Client boar navigation now refuses move/updMov/path-check/retry/finish bodies and
+the verified AI continuations 15/543/558/966/1016/1381. senseUpdate/saw/setWalking
+cannot restart client helper decisions or mode changes. Each client body tick checks
+the owned helper's current path and aborts Waiting/Paused/Moving navigation,
+including late possession and adopted/held copies. Cosmetic turning now follows
+the host AnimBP scalar; its visible result and native task/delegate lifecycle
+still need two-player validation. This is not full helper synchronization.
+1. Grayboar remaining join/audio/timing work and client helper/turning coordination.
+   Live attack/roar/death/hit cosmetic cues are implemented;
    two-player playback and timing still need verification. Preserve native host targeting,
    damage ownership and corpse/loot authority; do not replay loot/damage as cosmetics.
 2. Host/client tests for spawn, target, movement, action, damage, death, reconnect
@@ -58,7 +79,8 @@ build/release-2152-logs/verification.json and entity-validation.json.
 Release scripts explicitly distinguish package 2152 from DLL/protocol 2153;
 workspace dist/ contains the 2152 ZIP and SHA256SUMS-2152.txt.
 Offline regressions do not establish two-player gameplay correctness.
-Live grayboar cues use host-only reliable kind 200 within development 2153. Install
+Live grayboar cues use host-only reliable kind 200, cosmetic turn state uses 201
+within development 2153. Install
 matching current DLLs on both peers; the existing delivery ZIP predates this work.
 
 All 21 merge conflicts are resolved; the merge still awaits its commit. Current

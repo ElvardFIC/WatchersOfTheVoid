@@ -1,5 +1,101 @@
 # TestLog — current status and source reports
 
+## Continued 2153: nonlethal hit animation/audio (19 October 2026)
+
+Expanded grayboar_actions_test.cpp verifies four native-selected damage sections,
+same-section repeat hits, finite health decrease, skipped/malformed arguments,
+stopped/wrong montage, mirror/recycled identity, invalid rate and lethal precedence.
+Client checks cover direct damage cue plus attack-audio stop, unchanged health,
+four silent join snapshots and disconnect/recycle during sound setup. Native
+asset tests pin damage1..4 RNG, skipAnim and the SoundCue/idle/attack audio chain.
+Targeted C++/native tests PASS. New action values 4..7 reuse the existing 17-byte
+payload; version stays 2153. Gameplay, simultaneous hits, native montage failure
+and exact audio/network timing still require validation on matching peer DLLs.
+PASS all nine focused runners and full MSVC Release b2153 build. git diff --check
+is clean. Current DLL hash/scope: build/release-2152-logs/entity-validation.json.
+Existing delivery ZIP untouched; no new version/package created.
+
+## Continued 2153: AI continuations, collision and charged form (19 October 2026)
+
+Expanded actual grayboar authority regressions to 24 owner/name registrations,
+including separately declared charged overrides and their failed-watch retry.
+All six AI latent destinations refuse client replicas; target/delegate cleanup,
+construction, cosmetics and teardown retain native entry behavior. Existing
+host/personal/offline, adopted/held identity and malformed-frame checks pass.
+
+Native evidence pins collision impulse plus addDamage(10), lightning replacement,
+charged explosion and death timer, player punch, random spin, senseUpdate/unhook,
+setWalking mode changes and old dest delegate cleanup. Every watched function
+must be exported by its declared base/charged package. Targeted C++ and native
+tests PASS. Live replacement/effects, helper task retirement and two-player
+results remain unverified. DLL/protocol stay 2153; no new package/version.
+PASS all nine focused runners (five entity executables, twelve production units)
+and full MSVC Release b2153 build. git diff --check is clean. Current hash and
+scope: build/release-2152-logs/entity-validation.json. Existing ZIP untouched.
+
+## Continued 2153: cosmetic boar turn and motor pitch (19 October 2026)
+
+New grayboar_turn_test.cpp compiles the actual production module and verifies
+host native sampling, 10 Hz limit, latest-state retries, constant-state join
+heartbeat, world readiness, live host identity, malformed/range refusal,
+host-only client acceptance, ordered/wrapping sequences, signed interpolation,
+native turn overwrite, pitch=0.5+1.5*abs(turn), stale neutral fallback, queue cap,
+missing audio metadata, recycled objects and reentrant/world/disconnect cleanup.
+The entity runner now has five executables and twelve production-unit compiles.
+Native asset tests pin BlueprintUpdateAnimation entry 3948, body/AI vector inputs,
+ModifyBone consumers and the audio_loop_turn pitch formula. Targeted tests PASS.
+Gameplay-visible steering and sound remain unverified on two peers; host/client
+clock alignment and old helper delegates remain open. Development stays 2153.
+PASS all nine runners in package/check_2152.ps1 and the full MSVC Release build
+(454 rebuilt targets, b2153). git diff --check is clean. Current hash/evidence:
+build/release-2152-logs/entity-validation.json. Existing delivery ZIP untouched.
+
+## Continued 2153: adopted boar helper path abort (19 October 2026)
+
+Added an active-path StopMovement call on a client replica's verified owned
+grayboarPawn AIController. Idle paths and host/personal/unrelated controllers
+are untouched. Actual production-source regressions cover late possession,
+bad ownership, metadata/call retries, active/idle/invalid statuses, recycled
+objects, world/session/authority changes, reentrant task completion and held
+handoffs. Native bytecode confirms owner=self and the helper's AIController use.
+Targeted boar executables and --boar-only native evidence PASS. Native engine
+task/delegate lifecycle and visible turning still need two-player validation.
+PASS all nine runners in package/check_2152.ps1 and full MSVC Release b2153 build
+in the existing build directory. git diff --check is clean. Current DLL hash and
+scope are recorded in build/release-2152-logs/entity-validation.json. No new ZIP.
+
+## Continued 2153: boar navigation guards and build integration (19 October 2026)
+
+Added client host-replica refusal for move/updMov/path checks, navigation retries
+and completion, plus the native delayed move continuation at ubergraph entry 15.
+Other graph entries remain native. Expanded actual-production tests and bytecode
+evidence cover this bypass, identity/role gates and malformed EntryPoint frames.
+Active pre-existing AI tasks and visible turning still require follow-up.
+
+Fixed duplicate test/source/runner fragments and namespace closures found during
+validation. Added missing includes/source-list entries for four already-called
+creature modules so the existing full build links. Their gameplay is not verified
+by this integration repair. Release DLL remains b2153; no new version/ZIP.
+PASS all nine focused runners and full MSVC Release DLL build. Current evidence
+and hash: build/release-2152-logs/entity-validation.json. No two-player validation.
+
+## Continued 2153: death animation/audio and loot protection (19 October 2026)
+
+Death is cosmetic action 3 on the existing 17-byte channel. A new host dying edge
+plays the native death section at animationSpeed / 2; already-dying/skip-animation
+paths do not emit another cue. Client playback silences idle/attack/roar, spawns
+the native attached death sound, and never binds the native death delegates.
+Joined death resumes the current montage position/rate without restarting sound.
+Client host-replica damaged, death loot-notify and completion bodies are refused;
+host/personal behavior remains native. This does not prove corpse/loot gameplay.
+
+PASS all nine focused runners (four entity executables, eleven production-unit
+compilations), expanded targeted boar tests and native asset evidence. Full MSVC
+Release b2153 linked successfully in the existing build directory. Current hash
+and scope: build/release-2152-logs/entity-validation.json. No ZIP/new version.
+Still OPEN: two-player lethal client/host hits, death timing, single loot outcome,
+retirement/reconnect, helper/turning, exact time alignment and joined audio.
+
 ## Continued 2153: joining during a boar action (19 October 2026)
 
 Added a world-ready native montage snapshot for current attack/roar animation.
@@ -85,124 +181,6 @@ SHA256SUMS-2152.txt accompanies the ZIP. No gameplay verification, game installa
 commit, push or online publication performed; all existing open reports remain open.
 
 ## Development 2152 - entity category synchronization (19 October 2026)
-
-### Grayboar native locomotion and movement audio (19 October 2026)
-
-Native AnimBP reads grayBoar.GetVelocity, projects it onto the actor's forward axis,
-normalizes/smooths speed, and uses it both for locomotion and audio_loop_velocity
-pitch. A kinematically parked prop can report zero native velocity while its replica
-moves through the host's transform stream, leaving these cosmetics idle.
-
-Added a native GetVelocity post hook scoped to the stock grayboar AnimBP reading a
-live grayboar on an active connected client. The prop-drive receiver supplies the
-velocity of its current delayed interpolation segment. The same delay helper now
-serves position interpolation and the presentation derivative. It returns zero for
-first sample, teleport, pre-roll, stopped/arrived segments and malformed timestamps
-or non-finite values. Ended/dead drives leave the native getter untouched. No physics
-velocity is assigned, no damage/gameplay verb replayed, no new packet or protocol.
-Other getter callers, other AnimBPs, host, disconnected sessions and props outside
-this stream retain their native result. Hook resolution/installation retries at
-1-second intervals until ready; native animation continues to own smoothing/audio.
-
-Validation: production sender/receiver regression compares rendered positions with
-the cosmetic derivative and covers short/long intervals, first pose, teleport,
-freeze on loss, invalid samples, ended/recycled actors. Actual grayboar hook tests
-cover caller/class/role scope, native fallthrough, zero result, null output, retry
-and teardown. Native bytecode confirms GetVelocity -> speed -> movement-loop pitch.
-run_entity_sync.ps1 passes three executables and nine production-unit compilations;
-package/check_2152.ps1 passes all 9 runners. Full MSVC Release b2153 builds. Current
-hash/scope: build/release-2152-logs/entity-validation.json. No two-player validation.
-
-This addresses locomotion input and movement-loop pitch, not shared attack/roar/
-death montage cues or independent client turning/AI. Those, corpse/loot, hand-held
-presentation and mid-action join remain OPEN. No ZIP, installation or publication.
-
-### Grayboar adopted-replica authority across drive handoffs (19 October 2026)
-
-A save-adopted host boar is not marked as a fresh mirror spawn. When a hand wins
-its physical drive, prop_drive_stream removes its parked row. The bite guard's
-old fresh-spawn/active-drive checks could then permit native client damage while
-the host still relayed the real bite. This was a duplicate-authority gap.
-
-The client damage guard now also checks the Registry's O(1) actor-to-eid binding:
-a valid host-range id, a mirror Element, and that Element's live actor matching
-the attacker. That identity survives save adoption and drive/hand transitions.
-An absent/stale/other actor binding, local Element or peer-range id does not classify
-a personal boar as a host replica. No world scan, new packet or protocol bump.
-
-Native sensePawn evidence confirms overlap scanning for Pawn, removal of the boar's
-own helper, Pawn cast and assignment as target; it does not hardcode player 0.
-This supports host targeting of peer puppets without replacing the native selector.
-Actual detection, collision channels and behavior still need two-player testing.
-
-Validation: run_entity_sync.ps1 passes NPC orientation, the actual boar feeder/damage
-regression, existing prop-drive sender/receiver tests and eight production-unit
-compilations. entity_sync_native_test.py passes the native class/spawn checks;
-expanded --boar-only evidence and -GrayboarOnly regression also pass. Added cases
-cover adopted replicas, parked-to-hand transition, stale/missing/mismatched binding,
-local/peer-range identity and preservation of native local damage. Full MSVC Release
-b2153 build passes. Current DLL hash and focused validation scope are recorded in
-build/release-2152-logs/entity-validation.json. The preceding all-nine-runner result
-is historical; the full suite was not repeated for this focused change.
-
-Shared montage/audio, client helper/AI coordination beyond existing physical park,
-corpse/loot behavior and gameplay remain OPEN. No ZIP or installation performed.
-
-### Merge conflict resolution and current validation (19 October 2026)
-
-At the owner's explicit request, resolved all 21 conflicted files. Inspected both
-sides: incoming 2150 alternatives would undo current protocol 2153, full NPC rotation,
-personal nightmares, ragdoll retries/drift correction, tool effects, recursive skin
-discovery and grayboar subsystem registration. Preserved the current implementations
-and the latest uncommitted boar damage routing. Conflict choices were applied within
-each hunk; candidate results matched the current-side file contents. Original BOM
-and line endings were retained where applicable. Before resolution, copied working
-files and all three index stages into build/merge-resolution-20261019-fa5592fa/.
-Ten pre-existing modified files were verified byte-for-byte after resolution.
-
-Git has zero unmerged index entries and no active conflict markers. Resolutions are
-marked in the index. The merge still awaits its commit; no commit/push was performed.
-The latest entity/boar code and test changes remain uncommitted in the working tree.
-
-Current validation: package/check_2152.ps1 passes all 9 runners using the ordinary
-working tree, including the expanded boar damage/native tests. Full MSVC Release
-build passes; main.dll resources identify 0.9.0n b2153. Updated hash and results are
-in build/release-2152-logs/entity-validation.json. This supersedes the isolated-header
-and blocked-build status in the preceding bite follow-up. No ZIP, installation,
-publication or host/client gameplay verification. Creature AI/target selection,
-montage/audio and corpse/loot follow-ups remain open.
-
-### Grayboar bite ownership follow-up (19 October 2026)
-
-Native bite checks overlap and line of sight, then calls mainPlayer.addDamage with
-the boar as attacker. The player's own graph forwards the amount and source into
-Add Player Damage, which writes the per-machine saveSlot.health. The script-body
-route can bypass the existing ProcessEvent-only addDamage interceptor.
-
-grayboar_sync now watches that final player damage body, filtered by the source's
-native grayboar ancestry. A host bite on a registered puppet relays validated damage
-to its owner through existing PlayerDamage and cancels the foreign singleton write.
-A host bite on the host's own pawn remains native. Other foreign bodies are refused
-without a send. On clients a mirror-spawned or host-drive-parked boar cannot deal a
-duplicate local hit, and no boar can damage this machine via a foreign player body.
-Unbound/local boar encounters retain native local damage. Source-less wire replay
-is unaffected. No generic AI, animation or tick cancellation was added.
-
-Validation: run_entity_sync.ps1 -GrayboarOnly passes the production feeder/damage
-harness for owner routing, local host damage, foreign/unknown bodies, subclasses,
-cyclic ancestry, invalid amounts/frames, mirror/parked duplicates and disconnect.
-entity_sync_native_test.py --boar-only confirms the actual overlap/LOS -> bite ->
-player source/amount -> health-write path. Production grayboar_sync.cpp compiles
-against isolated pre-merge headers in build/grayboar-merge-check; live merge files
-were not edited. The full entity runner is blocked by conflict markers from an
-unfinished external Git merge in protocol.h and other shared files. No updated
-Release DLL or all-nine-runner success is claimed for this follow-up. Existing DLL
-and entity-validation.json describe the preceding body-movement pass only.
-
-Remaining: shared target/AI coordination, montage/audio replay, corpse/loot behavior
-and host/client gameplay. A native hit uses the existing send-and-owner-apply channel;
-this does not verify transport saturation, directional hit presentation or every
-possible independently spawned client twin.
 
 ### Grayboar body movement follow-up (19 October 2026)
 

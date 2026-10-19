@@ -1026,9 +1026,16 @@ enum class ReliableKind : uint8_t {
     CeilingLampState = 198, // KeyedTogglePayload, actual lamp presentation including flicker; host only
     AmbientLightState = 199, // KeyedTogglePayload, ambient bottom-light visibility; host only
     GrayboarAction = 200, // host attack/roar cosmetics; never gameplay-verb replay or blind relay
+    GrayboarTurn = 201, // host AnimBP steering scalar and turn-loop pitch; no AI replay
 };
 
 #pragma pack(push, 1)
+
+struct GrayboarTurnPayload {
+    uint32_t eid, sequence;
+    float turn;
+};
+static_assert(sizeof(GrayboarTurnPayload)==12,"GrayboarTurnPayload wire size");
 
 struct GrayboarActionPayload {
     uint32_t eid, sequence;
