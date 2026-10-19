@@ -17,6 +17,7 @@
 #include "coop/world/explosion_recipe.h"
 #include "coop/world/spawn_authority.h"
 
+#include "ue_wrap/actors/prop.h"
 #include "ue_wrap/actors/vitals.h"
 #include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/log.h"
@@ -25,6 +26,7 @@
 #include "ue_wrap/core/script_gate.h"
 #include "ue_wrap/core/types.h"
 #include "ue_wrap/engine/engine.h"
+#include "ue_wrap/engine/engine_mainplayer.h"
 #include "ue_wrap/facts/function_row.h"
 #include "ue_wrap/world/explosion_source.h"
 
@@ -207,10 +209,17 @@ void Enqueue(const OutItem& item) {
 }
 
 // Whether the player's hand holds, this instant, an item of the class named `cls`: the live read, since the
-// announce state only moves once the announce goes out. Asked only while the outbox holds a waiting shot.
+// announce state only moves once the announce goes out. Asked only while the outbox holds a waiting shot. It reads
+// the registry's local player, not the hand lane's own latch: a client's streams start only once its load tail has
+// settled, and until then that latch is unset while the hand already holds the launcher.
 bool LiveHandHolds(const wchar_t* cls) {
-    void* hand = coop::hand_item::LocalHandActor();
-    return hand && ::_wcsicmp(R::ClassNameOf(hand).c_str(), cls) == 0;
+    void* player = coop::players::Registry::Get().Local();
+    if (!player || !R::IsLive(player)) return false;
+    ue_wrap::engine::MainPlayerGrabState gs{};
+    if (!ue_wrap::engine::ReadMainPlayerGrabState(player, gs)) return false;
+    void* hand = gs.holdingActor;
+    if (!hand || !R::IsLive(hand) || !ue_wrap::prop::IsDescendantOfProp(hand)) return false;
+    return ::_wcsicmp(R::ClassNameOf(hand).c_str(), cls) == 0;
 }
 
 // A shot dropped because the hand left its launcher before the announce: it and its queued requests, counted.
