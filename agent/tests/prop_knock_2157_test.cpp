@@ -6,7 +6,9 @@ void* held=nullptr;void* remote=nullptr;void* hand=nullptr;void* fixed=nullptr;v
 int frameSize=sizeof(void*);int paramOff=0;
 std::vector<void*> driven,coasted;
 Obj component{4};void* componentOwner=&actor;
-bool prop(void* a){return a && a!=&component && static_cast<Obj*>(a)->live;}
+Obj nested[8];
+bool Nested(void* a){for(auto& o:nested)if(a==&o)return true;return false;}
+bool prop(void* a){return a && a!=&component && !Nested(a) && static_cast<Obj*>(a)->live;}
 }
 namespace coop::gravity_motion {void* Target(){return nullptr;}}
 namespace ue_wrap::engine {bool ReadMainPlayerGrabState(void*,MainPlayerGrabState& state){state={};state.grabbingActor=test::held;return true;}}
@@ -27,7 +29,10 @@ bool IsTrashBitsPile(void*){return false;}
 namespace ue_wrap::reflection {
 int32_t FindParamOffset(void*,const wchar_t*){return test::paramOff;}
 int32_t FunctionFrameSize(void*){return test::frameSize;}
-void* OuterOf(void* a){return a==&test::component?test::componentOwner:nullptr;}
+void* OuterOf(void* a){
+ for(int i=0;i<8;++i)if(a==&test::nested[i])return i==7?&test::actor:&test::nested[i+1];
+ return a==&test::component?test::componentOwner:nullptr;
+}
 }
 int main(){using namespace test;namespace S=coop::prop_knock;
  coop::net::Session session;S::Tick(session);
@@ -36,6 +41,8 @@ int main(){using namespace test;namespace S=coop::prop_knock;
  call.object=&component;call.function=&actor;call.locals=reinterpret_cast<uint8_t*>(&other);
  S::OnKnock(call);CHECK(!S::g_count); // ordinary idle contacts are not all streamed
  held=&actor;S::OnKnock(call);S::OnKnock(call);CHECK(S::g_count==1&&coasted.empty());
+ S::g_count=0;call.object=&nested[0];S::OnKnock(call);CHECK(S::g_count==1);
+ call.object=&component;
  // A queued victim can transfer the same chain before the next network tick.
  call.object=&ui;other=&third;S::OnKnock(call);CHECK(S::g_count==2);
  S::Tick(session);CHECK(coasted.size()==2&&coasted[0]==&ui&&coasted[1]==&third&&!S::g_count);

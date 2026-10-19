@@ -242,6 +242,7 @@ is built; food's temperature, ripeness and use count are the host's (`coop/props
 | `PropDriveEnd` | the host to all | the final pose and velocity of a driven prop that rested or that a hand took; closes its generation |
 | `PropDropIntent`, `ReelEjectIntent` | a client to the host | a place, or an unavoidable birth, for the host to author |
 | `PropStickState` | the peer that sticks or frees it, to all | frozen or static, the commit pose and the hold the stick ended; or an unstick, with the pose and velocity |
+| `PropScaleState` (202) | holder to host; validated host state to all | key, id, hold generation and root scale; never blindly relayed |
 | `PropSnapPos` | the host to one joiner | a position correction for a save-authoritative prop moved in the join window, with a keyed prop's frozen and sleep |
 | `ContainerState`, `ContainerContents` | the presser; the host | open or closed; one slice of the host's object array |
 | `InventoryPickup` | each peer, relayed | the pocket blip, so others hear a pickup |
@@ -266,19 +267,40 @@ prop resolves.
 
 ## Known limits
 
+Simultaneous holds use the same lowest-slot priority on every receiver, including the local
+holder. The losing local physics handle or weapon releases through its native cleanup before
+the winning drive parks the body. Rejected holds retain their identity so a delayed release
+cannot throw the prop after the winner lets go. This resolves conflicting writers after their
+poses arrive; it is not a host grant before the initial local grab.
+
+Root scale changes travel reliably at up to 20 updates per second, with a one-second heartbeat
+and a final sample before release. The host accepts a client sample only for its current driven
+actor and hold generation, and binds pending requests to the slot occupant. A client waits for
+an unresolved actor, preserves its own live local hold and applies the latest host scale without
+teleporting the body. Existing snapshot copies also converge scale. Skeletal bone scaling and
+arbitrary non-prop creature physics are outside this root-prop lane; ATV and appliance targets
+are read by their dedicated channels.
+
+The personal inventory profile captures the live held record before hashing, preserving its
+stored transform and requiring matching class/key and actor lifetime. Pocket pickup of a
+supported mutable world item waits until its record enters the reliable queue. A client's final
+food bite is submitted before generic destruction, with a durable retry if transport refuses;
+the host retains its source long enough to create the verified food-box wrapper. Poison and
+other eater effects remain native on the consuming player's machine.
+
 | Limit | Evidence |
 |---|---|
-| Two peers grabbing the same prop both stream it; nothing assigns the prop to one holder, so a receiver's two drives both write it each tick, the higher slot last. For the same reason a release only knows its own holder's holds: one delayed past another peer's whole hold of the prop puts it back where the first holder let go. And a join's snapshot row read before a live stick, unstick or release can reach the joiner after it and undo it there, until the window's late re-flush corrects the prop | `[V]` `coop/props/remote_prop` has no claim and orders holds per holder, where MTA's server keeps one syncer per unoccupied vehicle and relays only that syncer's packets; `[RD]` the rows ride the bulk lane behind the stick and the release, and carry no version |
+| Hold arbitration begins after remote poses arrive, so the initial local grab can briefly disagree; join snapshots carry no shared revision for a later live stick/release | `coop/props/remote_prop` orders holders by slot and generations; join late re-flush repairs snapshot races |
 | A prop let go from the hand follows the host's copy until that copy rests, then the end edge places everyone there. A prop hit by one of those moving props follows too, until it rests. A knock that never raises the prop's physics-impact hit still moves on the host only | `[V]` `coop/props/prop_drive_host` coasts a hand release and a hit from a driven prop |
 | A prop whose own grab prelude adds to the base one gets only the base one on a receiver: the sprinkler's also detaches its hose, so the hose stays tied to a sprinkler another peer carries away. The glowstick's replaces the base one with its own release, and a receiver runs the base one | `[V]` the sprinkler and glowstick Blueprints: `prop_sprinkler_C`'s prelude calls `prop_C::playerGrabbed_pre` and `hose->detachSprinkler`, `prop_glowstick_C`'s calls `releaseGlowstick` alone; `coop/props/remote_prop` runs the base prelude |
 | A prop the toolgun freezes, unfreezes or makes static changes on the tool user's machine only; the next hold of it converges frozen and sleep, never static, and a copy static on one peer, without a wall-attach component's unstick, is not driven there while another peer holds the prop -- a refusal that lasts until a lane carries static | `[V]` no lane under `src/coop` catches `setPropProps`; `coop/props/remote_prop` refuses a stream for a copy static here |
 | Another peer's hold can carry away the chair this peer sits in at the laptop, which single player never allows: the laptop freezes the seat only on the machine whose player sits | `[V]` the laptop Blueprint: `stabilizeSeat` sets the seat frozen, and the exit's `setPropProps` clears it; `coop/props/remote_prop` unfreezes a held copy at the hold's first pose |
 | A keyed prop a client creates outside the intent door (a place after a pickup, the whitelisted births, a container extract, a player's own spawn verb) never reaches the host. It is logged now: the drain names its exit, and `[dev] prop_birth_key_probe` tallies every exit by name | `[V]` `coop/props/prop_drop_intent` drops it at the drain; `coop/dev/prop_birth_key_probe` |
-| Concrete, food and every other local-accumulator prop drift between peers; only the tape reel has its corrector | `[V]` `coop/interactables/tape_caddy_sync` is the only corrector |
+| Food condition uses its dedicated host lane; simultaneous material transactions and some other accumulators still require individual ownership rules | `coop/props/prop_food_sync`, `coop/props/bucket_sync` |
 | A prop tied by any hook -- a player's, an anchored one, the level's own -- is parked on every client for as long as the tie holds, since the host streams it, so it cannot be grabbed there until the hook lets go. A joiner parks one at rest on the host's ready-edge re-send, a single unreliable datagram: lost, it leaves that prop unparked there until it moves | `[V]` `coop/items/hook_prop_claim` claims every tied prop on the host every pass; `coop/props/prop_drive_stream` parks it; `coop/props/prop_drive_host` re-sends at the ready edge |
 | A wall-attachable whose stick replay finds no surface here is frozen in place without the attach, so when the thing it stuck to is destroyed it stays in the air here while every other copy falls | `[V]` `coop/props/prop_stick_sync`'s fallback writes the flag without the component's attach or its destroy binding; `[RD]` the stick carries no parent |
 | A prop the driven-prop channel set coasting can come to rest a few centimetres from the host's copy: the host ends a coasting stream half a second after the prop stops moving, before its body sleeps, and the end edge sets the client's copy to the host's pose and hands it back its physics, so each copy settles on its own. The broom drill measured 0 to 6.4 cm, and 12.1 cm for a prop whose support another prop knocked away on the host | `[V]` `coop/props/prop_drive_host` (`kRestMs`), `coop/props/prop_drive_stream` (the end edge restores simulation per `coop/props/prop_wire_parity`); the broom drill's push and dispense phases |
-| A knock that never raises the prop's physics-impact hit still moves on the host only. A hit from a prop the host is already driving is coasted with that prop | `[V]` `coop/props/prop_drive_host` watches `comp_physicsImpact_C::hit` |
+| A knock that never raises the native physics-impact hit has no collision feeder; host-driven contacts are coasted when the verified hit fires | `coop/props/prop_knock` watches `comp_physicsImpact_C::hitCpp` |
 | A prop parked under the host's drive cannot be grabbed on a client while the drag lasts: the park turns the body kinematic and the game's grab needs a simulating one. It is grabbable again after the end edge | `[V]` `coop/props/prop_drive_stream` parks by switching the mesh's simulation off (`ue_wrap/engine/engine_physics`); `coop/props/prop_wire_parity` records why a kinematic mirror is ungrabbable |
 | A pose can arrive milliseconds before the spawn that names its prop; that is a race, not a defect, and a ledger tells the two apart instead of warning per packet | `[V]` `coop/props/unresolved_pose_ledger` |
 

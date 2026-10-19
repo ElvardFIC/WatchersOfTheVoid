@@ -11,6 +11,14 @@ int spawns = 0, destroys = 0, detaches = 0;
 ue_wrap::FVector pelvis{}, lastLinear{}, lastAngular{};
 int translations = 0, velocityWrites = 0;
 bool translateOk = true, boneReadable = true;
+int articulatedDrives = 0, displayRemovals = 0;
+std::vector<ue_wrap::engine::ArticulatedBone> displayedBones;
+}
+namespace ue_wrap::sleep_display {
+void Remove(void*) { ++test::displayRemovals; test::displayedBones.clear(); }
+bool DriveArticulated(void*, const std::vector<engine::ArticulatedBone>& bones) {
+    ++test::articulatedDrives; test::displayedBones = bones; return true;
+}
 }
 namespace ue_wrap::reflection {
 bool IsLive(void* p) { return p && static_cast<test::Obj*>(p)->live; }
@@ -32,7 +40,7 @@ void* GetMeshPlayerVisibleComponent(void*) { return &test::puppet; }
 }
 namespace coop::skin_effects { void SetRigVisible(void*, bool) {} }
 namespace ue_wrap::engine {
-bool SetSceneComponentVisibility(void*, bool v, bool) { test::visible = v; return true; }
+bool SetSceneComponentVisibility(void* object, bool v, bool) { if(object==&test::puppet)test::visible = v; return true; }
 bool TryGetActorLocation(void*, FVector& v) { v = {}; return true; }
 bool TryGetActorRotation(void*, FRotator& v) { v = {}; return true; }
 void* SpawnPlayerRagdollBody(void*, const FVector&, const FRotator&) {
@@ -42,6 +50,8 @@ void* SpawnPlayerRagdollBody(void*, const FVector&, const FRotator&) {
     return &test::body;
 }
 bool AttachActorToRagdollBody(void*, void*) { return test::attachOk; }
+bool StartPlayerRagdollSimulation(void*) { return true; }
+uint32_t BoneLayoutSignature(void*) { return 1; }
 bool DetachActorFromRagdollBody(void*) { ++test::detaches; return true; }
 bool DestroyActor(void*) { ++test::destroys; test::body.live = false; return true; }
 void* GetRagdollBodyMesh(void*) { return &test::body; }
@@ -68,7 +78,10 @@ int main() {
     assert(spawns == 1); // Repeated pose packets must not hammer asset loading.
     std::this_thread::sleep_for(std::chrono::milliseconds(550));
     display.OnWireBit(true, &puppet, 0);
-    assert(spawns == 2 && display.Active() && !visible);
+    assert(spawns == 2 && display.Active() && visible);
+    std::this_thread::sleep_for(std::chrono::milliseconds(35));
+    display.DriveAttached(&puppet, 0);
+    assert(!visible); // Animation warmup precedes simulation and standing-body hide.
     coop::net::RagdollPoseSnapshot pose{};
     pose.x = 100; pose.y = 200; pose.z = 300;
     pose.linVelX = 7; pose.angVelY = 9;
@@ -91,6 +104,26 @@ int main() {
     pose.z = coop::net::kMaxCoord + 100;
     assert(!display.SetPose(pose) && velocityWrites == beforeInvalid);
     pose.z = 300;
+    pose.rigTag = 1; pose.rigSignature = 1; pose.rigBones = 2; pose.boneCount = 1;
+    pose.bones[0] = {8, pose.x, pose.y, pose.z, 0, 0, 0, 32767};
+    assert(display.SetPose(pose));
+    display.DriveAttached(&puppet, 0);
+    assert(articulatedDrives == 0); // Wait for a complete authored body set.
+    pose.bones[0].index = 2;
+    pose.bones[0].x = pose.x + 30;
+    assert(display.SetPose(pose));
+    display.DriveAttached(&puppet, 0);
+    assert(articulatedDrives == 1 && displayedBones.size() == 2);
+    assert(displayedBones[0].index == 2 && displayedBones[0].world.TX == pose.x + 30);
+    assert(displayedBones[1].index == 8 && displayedBones[1].world.RotW == 1);
+    pose.bones[0].qx = 32767; // Invalid, non-unit quaternion must never reach a renderer.
+    assert(!display.SetPose(pose));
+    pose.bones[0].qx = 0;
+    pose.rigTag = 2;
+    assert(display.SetPose(pose));
+    display.DriveAttached(&puppet, 0);
+    assert(articulatedDrives == 1); // New body/model generation cannot reuse old limbs.
+    pose.boneCount = 0; pose.rigBones = 0;
     display.OnWireBit(true, &puppet, 0);
     assert(spawns == 2); // A healthy body is never duplicated.
     body.live = false;
@@ -98,7 +131,10 @@ int main() {
     assert(visible && !display.Active());
     std::this_thread::sleep_for(std::chrono::milliseconds(550));
     display.OnWireBit(true, &puppet, 0);
-    assert(spawns == 3 && display.Active() && !visible);
+    assert(spawns == 3 && display.Active() && visible);
+    std::this_thread::sleep_for(std::chrono::milliseconds(35));
+    display.DriveAttached(&puppet, 0);
+    assert(!visible);
     pelvis = {};
     translateOk = false;
     display.SetPose(pose);
@@ -123,5 +159,5 @@ int main() {
     assert(display.Active());
     display.OnWireBit(false, &puppet, 0);
     assert(visible && !display.Active());
-    puts("PASS ragdoll retry/lifecycle, pelvis alignment, drift/dead zone, teleport and invalid poses");
+    puts("PASS ragdoll lifecycle/drift, articulated batches, parent order, rig replacement and invalid poses");
 }

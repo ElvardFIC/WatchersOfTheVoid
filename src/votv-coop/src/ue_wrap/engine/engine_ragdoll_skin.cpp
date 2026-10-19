@@ -134,14 +134,24 @@ bool ConfigurePlayerRagdollMesh(void* source, void* target) {
     ParamFrame asset(function(target, L"SetPhysicsAsset"));
     if (!asset.Set<void*>(L"NewPhysicsAsset", physics) || !asset.Set<bool>(L"bForceReInit", true) ||
         !Call(target, asset) || !targetRef.Get()) return false;
+    ParamFrame kinematic(function(target, L"SetAllBodiesSimulatePhysics"));
+    if (!kinematic.Set<bool>(L"bNewSimulate", false) || !Call(target, kinematic) || !targetRef.Get()) return false;
     ParamFrame pose(function(target, L"K2_SetWorldTransform"));
     if (!pose.Set<FTransform>(L"NewTransform", transform) || !pose.Set<bool>(L"bSweep", false) ||
         !pose.Set<bool>(L"bTeleport", true) || !Call(target, pose) || !targetRef.Get()) return false;
     for (int32_t i = 0; i < count; ++i) {
         if (!targetRef.Get() || !SetComponentMaterial(target, i, materials[i].Get())) return false;
     }
+    // Keep the selected rig's animation graph for bones without physics bodies
+    // (hands, toes, face). SingleNode with no animation leaves those in reference
+    // pose even when pelvis/limbs have valid physics.
+    if (void* animClass = ObjectField(source, L"AnimClass")) {
+        if (!SetAnimClass(target, animClass) || !targetRef.Get()) return false;
+        SetAnimTickAlways(target);
+    }
     ParamFrame blend(function(target, L"SetAllBodiesPhysicsBlendWeight"));
-    return targetRef.Get() && blend.Set<float>(L"PhysicsBlendWeight", 1.f) &&
+    // Let the new AnimBP supply a real pose before physics takes ownership.
+    return targetRef.Get() && blend.Set<float>(L"PhysicsBlendWeight", 0.f) &&
         blend.Set<bool>(L"bSkipCustomPhysicsType", false) && Call(target, blend) && targetRef.Get();
 }
 }

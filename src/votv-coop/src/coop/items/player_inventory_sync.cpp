@@ -1,6 +1,7 @@
 // coop/items/player_inventory_sync.cpp -- see coop/items/player_inventory_sync.h.
 
 #include "coop/items/player_inventory_sync.h"
+#include "coop/items/held_record_capture.h"
 
 #include "coop/net/blob_chunks.h"
 #include "coop/config/config.h"
@@ -148,12 +149,13 @@ void ClientStreamTick(coop::net::Session* s) {
     };
     ue_wrap::inventory::PlayerInventory items;
     if (!ue_wrap::inventory::ReadAll(items)) return;  // world not up yet
-    // Held material stock and can portions/open state can change before native stow captures them. Refresh
-    // the copied record before hashing, so a reconnect cannot refill it from that stale
-    // snapshot. Defer a transient identity mismatch; never copy a remote mirror's stock.
+    // Charge, food and other held state can change before native stow captures it.
+    // Capture the live item into the copy before hashing, then refresh fields whose
+    // native getter is incomplete. An identity mismatch defers the profile.
     if (!items.hold.empty()) {
         void* held = coop::hand_item::LocalHandActor();
-        if (!ue_wrap::building_material::RefreshHeldMaterialRecord(held, items.hold[0].data) ||
+        if (!coop::items::CaptureHeldRecord(held, items.hold[0].data) ||
+            !ue_wrap::building_material::RefreshHeldMaterialRecord(held, items.hold[0].data) ||
             !ue_wrap::canned_food::RefreshHeldRecord(held, items.hold[0].data)) return;
     }
     SampleStandingPose();

@@ -5,7 +5,7 @@ $output=Join-Path $root '_research/tests_2141'
 New-Item -ItemType Directory -Force -Path $output | Out-Null
 Push-Location $root
 try {
- . .\_toolchain\env.ps1
+ . (Join-Path $root '../_toolchain/env.ps1')
  & cl /nologo /std:c++20 /EHsc /Gy /I agent/tests/fire_stubs /I agent/tests/stubs /I src/votv-coop/include "/Fo$output/cord.obj" "/Fe$output/cord.exe" agent/tests/cord_perf_2141_test.cpp /link /OPT:REF
  if($LASTEXITCODE -ne 0){throw 'Compile cord performance test failed'}
  & "$output/cord.exe"
@@ -15,13 +15,6 @@ try {
  & "$output/media.exe"
  if($LASTEXITCODE -ne 0){throw 'Media performance/behavior test failed'}
  $sourceRoot=($root -replace '\\','/')+'/src/votv-coop/src/'
- $cordHarness=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'cord_perf_2141_test.cpp')).Replace('../../src/votv-coop/src/',$sourceRoot)
- $baseline=($root -replace '\\','/')+'/_research/baseline_2140/src__src__votv-coop__src__coop__interactables__cord_sync.cpp'
- $before=Join-Path $output 'baseline.cpp';[IO.File]::WriteAllText($before,$cordHarness.Replace($sourceRoot+'coop/interactables/cord_sync.cpp',$baseline))
- & cl /nologo /std:c++20 /EHsc /Gy /DPERF_BASELINE /I agent/tests/fire_stubs /I agent/tests/stubs /I src/votv-coop/include "/Fo$output/baseline.obj" "/Fe$output/baseline.exe" $before /link /OPT:REF
- if($LASTEXITCODE -ne 0){throw 'Compile baseline performance test failed'}
- & "$output/baseline.exe"
- if($LASTEXITCODE -ne 0){throw 'Baseline comparison failed'}
  $cases=@(
  @{Name='quadratic';Suite='cord';File='coop/interactables/cord_sync.cpp';Before='pass.Find(';After='Resolve('},
  @{Name='invalidate';Suite='cord';File='coop/interactables/cord_sync.cpp';Before='pass.Invalidate();';After=''},

@@ -58,6 +58,7 @@ set(VOTVCOOP_SOURCES
     src/ue_wrap/actors/physics_gun.cpp
     src/coop/props/dingus_music_sync.cpp
     src/coop/props/prop_knock.cpp
+    src/coop/props/prop_scale_sync.cpp
     src/coop/items/hook_prop_claim.cpp
     src/coop/items/hook_constraint.cpp
     src/coop/items/broom_stroke.cpp
@@ -322,7 +323,12 @@ set(VOTVCOOP_SOURCES
     src/coop/creatures/npc_sync_install.cpp
     src/coop/creatures/npc_world_enum.cpp
     src/coop/creatures/grayboar_sync.cpp
+    src/coop/creatures/ariral_sync.cpp
+    src/coop/creatures/deer_sync.cpp
+    src/coop/creatures/centipede_sync.cpp
+    src/coop/creatures/mannequin_sync.cpp
     src/coop/creatures/grayboar_actions.cpp
+    src/coop/creatures/grayboar_turn.cpp
     src/coop/creatures/piramid_sync.cpp
     src/coop/creatures/roach_sync.cpp
     src/coop/creatures/owner_entity_sync.cpp
@@ -490,6 +496,9 @@ set(VOTVCOOP_SOURCES
     src/coop/interactables/floppy_slot_sync.cpp
     src/coop/interactables/floppybox_sync.cpp
     src/coop/interactables/signal_catch_sync.cpp
+    src/ue_wrap/actors/sleep_display.cpp
+    src/ue_wrap/desk/shared_screen.cpp
+    src/coop/interactables/shared_screen_sync.cpp
     src/coop/player/sleep_sync.cpp
     src/coop/creatures/wisp_attack_sync.cpp
     src/coop/creatures/wisp_grab_hold.cpp

@@ -20,7 +20,8 @@ bool Resolve(void* gun) {
     if (g_class.Is(cls)) return g_supported;
     g_class.Set(cls); g_supported = false;
     g_hold = g_target = g_component = -1; g_mask = 0;
-    for (void* c = cls; c; c = R::SuperStructOf(c)) {
+    int depth = 0;
+    for (void* c = cls; c && depth++ < 64; c = R::SuperStructOf(c)) {
         if (!R::NameEquals(R::NameOf(c), L"prop_physgun_C")) continue;
         g_target = R::FindPropertyOffset(cls, L"objectPickup");
         g_component = R::FindPropertyOffset(cls, L"component");
@@ -31,7 +32,7 @@ bool Resolve(void* gun) {
     return g_supported;
 }
 }
-void* HeldProp(void* gun) {
+void* HeldActor(void* gun) {
     void* world = world_identity::CurrentWorld();
     if (!world || !gun || !R::IsLive(gun) || world_identity::WorldOf(gun) != world || !Resolve(gun))
         return nullptr;
@@ -43,8 +44,23 @@ void* HeldProp(void* gun) {
     std::memcpy(&target, bytes + g_target, sizeof(target));
     std::memcpy(&component, bytes + g_component, sizeof(component));
     if (!target || target == gun || !R::IsLive(target) || !component || !R::IsLive(component) ||
-        world_identity::WorldOf(target) != world || !prop::IsDescendantOfProp(target)) return nullptr;
+        R::OuterOf(component) != target || world_identity::WorldOf(target) != world) return nullptr;
     return target;
+}
+void* HeldProp(void* gun) {
+    void* actor = HeldActor(gun);
+    return actor && prop::IsDescendantOfProp(actor) ? actor : nullptr;
+}
+
+bool ReleaseHeldProp(void* gun, void* target, void* player) {
+    if (!target || HeldProp(gun) != target) return false;
+    CachedObjRef identity;
+    identity.Set(gun);
+    // release() is an empty extension event in 0.9.0n. The real input-release
+    // graph clears hold, breaks the soft constraint and restores compBodyInst.
+    ParamFrame frame(R::FindDispatchFunctionCached(R::ClassOf(gun), L"playerHandRelease_LMB"));
+    return frame.valid() && frame.Set<void*>(L"player", player) && Call(gun, frame) &&
+        (!identity.Is(gun) || HeldProp(gun) != target);
 }
 
 namespace {

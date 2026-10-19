@@ -14,6 +14,7 @@
 #include "coop/player/remote_player.h"
 
 #include "ue_wrap/actors/sit_pose.h"
+#include "ue_wrap/actors/sleep.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/devices/atv.h"
 #include "ue_wrap/engine/engine.h"
@@ -87,7 +88,10 @@ void Tick() {
     // Capture/attachment actors can also occupy sittingOn (e.g. killer wisps).
     // Only actual seats may replace the native capture pose with our sit clip.
     const bool chair = hasSeat && IsChair(seat);
-    g_localSitting = chair || onAtv || coop::atv_sync::LocalIsDriving();
+    bool ragdoll = false, dead = false;
+    ue_wrap::engine::ReadMainPlayerRagdollState(local, ragdoll, dead);
+    g_localSitting = !ue_wrap::sleep::IsSleeping() && !ragdoll && !dead &&
+        (chair || onAtv || coop::atv_sync::LocalIsDriving());
     ue_wrap::sit_pose::DriveSitting(local, g_localSitting);
     // The clip's hips are not on the capsule. Shift the mesh only: the actor stays, so standing
     // up still leaves the ground where the game put the feet. Chair mesh: half the body length,
@@ -104,7 +108,7 @@ void Tick() {
     } else {
         ue_wrap::sit_pose::ClearMeshShift(local);
     }
-    if (chair) {
+    if (chair && g_localSitting) {
         // The pawn, not the seat actor: the game has already moved the body onto the sit point,
         // and the seat's own pivot is often the mesh origin. A seat that moves (the ATV rack)
         // sends again when the body has travelled, so the other machine does not leave them behind.
@@ -171,7 +175,7 @@ void DriveRemotes() {
         coop::RemotePlayer& pup = coop::puppet_drive::Puppet(static_cast<int>(slot));
         void* actor = pup.GetActor();
         if (!actor || !pup.valid()) continue;
-        if (!g_anchor[slot].on) {
+        if (!g_anchor[slot].on || !pup.IsSitting()) {
             ue_wrap::sit_pose::ClearMeshShift(actor);
             continue;
         }
@@ -206,6 +210,7 @@ void DriveAtvDrivers() {
         coop::RemotePlayer& pup = coop::puppet_drive::Puppet(static_cast<int>(slot));
         void* actor = pup.GetActor();
         if (!actor || !pup.valid()) continue;
+        if (!pup.IsSitting()) continue;
         ue_wrap::FVector loc{};
         ue_wrap::FRotator rot{};
         if (void* comp = ue_wrap::sit_pose::AtvDriverSeat(atvs[i])) {

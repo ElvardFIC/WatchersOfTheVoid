@@ -103,6 +103,10 @@ public:
 
     // True while a ragdoll display body is spawned: the peer is ragdolled (fainted, fell, died).
     bool IsRagdollDisplayed() const { return ragdoll_.Active(); }
+    bool IsSitting() const {
+        return (curStateBits_ & net::kStateBitSitting) != 0 &&
+            (curStateBits_ & (net::kStateBitSleeping | net::kStateBitRagdoll)) == 0;
+    }
     // The spawned playerRagdoll_C body and its GUObjectArray index, for a liveness-guarded deref in
     // tests.
     void* RagdollBody() const { return ragdoll_.Body(); }

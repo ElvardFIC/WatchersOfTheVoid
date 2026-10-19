@@ -11,6 +11,7 @@
 #include "coop/props/prop_action_sync.h"
 #include "coop/world/credit_intent.h"
 #include "coop/player/sleep_sync.h"
+#include "coop/interactables/shared_screen_sync.h"
 #include "coop/interactables/device_occupancy.h"
 #include "coop/world/email_sync.h"
 #include "coop/items/player_inventory_sync.h"  // the inventory blob receiver
@@ -39,6 +40,13 @@ bool HandleStateEvent(net::Session& session,
                       const net::Session::ReliableMessage& msg,
                       void* localPlayer) {
     switch (msg.kind) {
+    case net::ReliableKind::SharedScreen: {
+        if (msg.payloadLen != sizeof(net::BlobChunkPayload) || msg.senderPeerSlot < 0) break;
+        net::BlobChunkPayload chunk{};
+        std::memcpy(&chunk, msg.payload, sizeof(chunk));
+        coop::shared_screen_sync::OnChunk(chunk, static_cast<uint8_t>(msg.senderPeerSlot));
+        break;
+    }
     case net::ReliableKind::DoorState:
     case net::ReliableKind::LightState:
     case net::ReliableKind::ContainerState:

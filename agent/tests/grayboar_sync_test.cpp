@@ -5,13 +5,18 @@
 #include <limits>
 #include <cstddef>
 namespace test {int body=1,claims=0,watches=0;uint32_t eid=0;bool watchOk=true;
-int victim=2,local=3,source=4,relays=0;float lastDamage=0;int lastSlot=-1;
+int victim=2,local=3,relays=0;float lastDamage=0;int lastSlot=-1;
+struct Object {void* pawn=nullptr;void* owner=nullptr;void* controller=nullptr;} source,helper,controller;
+bool navigationReady=true,statusOk=true,readStatus=true,stopOk=true;
+uint8_t moveStatus=3;int statusReads=0,stops=0,reenter=0;uint32_t world=1;
+int serials[]={1,1,1};
 int anim=5,lookups=0,hookAttempts=0;bool resolveVelocity=false,installVelocity=false,presentation=false;
 ue_wrap::FVector visualVelocity{100,25,0};void* result=nullptr;
 ue_wrap::ufunction_hook::PostNativeCallback velocityPost=nullptr;
 bool sourceLive=true,mirror=false,parked=false;
 struct Class {ue_wrap::reflection::FName name{};Class* parent=nullptr;};
 Class boar{{1,0}},child{{2,0},&boar},other{{3,0}},animation{{4,0}};Class* sourceClass=&boar;
+Class helperClass{{5,0}},controllerClass{{6,0}};
 struct Args {void* source=nullptr;float damage=25;};
 int sourceOffset=offsetof(Args,source),damageOffset=offsetof(Args,damage),frameSize=sizeof(Args);
 ue_wrap::script_gate::PreFn pre=nullptr,damagePre=nullptr,authorityPre[coop::grayboar_sync::kAuthorityEntryCount]{};
@@ -24,9 +29,13 @@ void After(const ue_wrap::script_gate::Call&,uint8_t){}
 }
 namespace ue_wrap::script_gate {
 bool WatchClassName(const wchar_t* cls,const wchar_t* fn,int,PreFn pre,PostFn post){
- for(int i=0;i<coop::grayboar_sync::kAuthorityEntryCount;++i) if(!wcscmp(fn,coop::grayboar_sync::kAuthorityEntries[i])) {
-  assert(post==&coop::grayboar_sync::AfterNativeAuthority);
-  assert(!wcscmp(cls,L"grayboar_C"));test::authorityPre[i]=pre;++test::authorityWatches;
+ if(!wcscmp(fn,L"ExecuteUbergraph_grayboar")){
+  assert(!wcscmp(cls,L"grayboar_C")&&pre==&coop::grayboar_sync::OnNavigationResume&&!post);return test::watchOk;
+ }
+ for(int i=0;i<coop::grayboar_sync::kAuthorityEntryCount;++i) if(!wcscmp(fn,coop::grayboar_sync::kAuthorityEntries[i].name)&&
+     !wcscmp(cls,coop::grayboar_sync::kAuthorityEntries[i].owner)) {
+  assert(post!=nullptr);
+  test::authorityPre[i]=pre;++test::authorityWatches;
   return test::watchOk && test::failAuthority!=i;
  }
  assert(!post);
@@ -36,7 +45,7 @@ bool WatchClassName(const wchar_t* cls,const wchar_t* fn,int,PreFn pre,PostFn po
 }
 }
 namespace coop::prop_element_tracker {
-coop::element::ElementId GetPropElementIdForActor(void* p){assert(p==&test::body);return test::eid;}
+uint32_t GetPropElementIdForActor(void* p){assert(p==&test::body);return test::eid;}
 }
 namespace coop::prop_drive_host {
 void Claim(void* p,const char*){assert(p==&test::body);++test::claims;}
@@ -46,21 +55,71 @@ bool IsParked(void*){return test::parked;}
 bool TryGetPresentationVelocity(void*,ue_wrap::FVector& out){out=test::visualVelocity;return test::presentation;}
 }
 namespace ue_wrap::ufunction_hook {
+}
+namespace coop::prop_echo_suppress {bool IsMirrorSpawn(void*){return test::mirror;}}
+namespace ue_wrap::ufunction_hook {
 bool InstallPostHook(void*,PostNativeCallback callback,bool){++test::hookAttempts;test::velocityPost=callback;return test::installVelocity;}
 void* CurrentResult(){return test::result;}
 }
-namespace coop::prop_echo_suppress {bool IsMirrorSpawn(void*){return test::mirror;}}
 namespace coop::player_damage {void SendPlayerDamage(int slot,float damage){++test::relays;test::lastSlot=slot;test::lastDamage=damage;}}
 namespace ue_wrap::reflection {
-bool IsLive(void* p){return test::sourceLive&&p==&test::source;}
-void* ClassOf(void* p){return p==&test::anim?&test::animation:test::sourceClass;}
+int32_t InternalIndexOf(void* p){return p==&test::source?0:p==&test::helper?1:p==&test::controller?2:-1;}
+bool IsLive(void* p){return test::sourceLive&&InternalIndexOf(p)>=0;}
+bool IsLiveByIndex(void* p,int32_t i){return i>=0&&InternalIndexOf(p)==i&&IsLive(p);}
+int32_t SlotSerial(int32_t i){return i>=0&&i<3?test::serials[i]:0;}
+int32_t AllocateSlotSerial(int32_t i){return SlotSerial(i);}
+void* ClassOf(void* p){return p==&test::anim?&test::animation:p==&test::helper?&test::helperClass:
+ p==&test::controller?&test::controllerClass:test::sourceClass;}
 void* SuperStructOf(void* cls){return static_cast<test::Class*>(cls)->parent;}
 const FName& NameOf(void* cls){return static_cast<test::Class*>(cls)->name;}
 bool NameEquals(const FName& name,const wchar_t* text){return (name.ComparisonIndex==1&&!wcscmp(text,L"grayboar_C"))||
- (name.ComparisonIndex==4&&!wcscmp(text,L"grayboar_Skeleton_AnimBlueprint_C"));}
-void* FindDispatchFunctionCached(void*,const wchar_t* name){assert(!wcscmp(name,L"GetVelocity"));++test::lookups;return test::resolveVelocity?&test::body:nullptr;}
-int32_t FindParamOffset(void*,const wchar_t* name){return !wcscmp(name,L"source")?test::sourceOffset:test::damageOffset;}
+ (name.ComparisonIndex==4&&!wcscmp(text,L"grayboar_Skeleton_AnimBlueprint_C"))||
+ (name.ComparisonIndex==5&&!wcscmp(text,L"grayboarPawn_C"))||
+ (name.ComparisonIndex==6&&!wcscmp(text,L"AIController"));}
+int32_t FindPropertyOffset(void*,const wchar_t* name){
+ if(!wcscmp(name,L"pawn")||!wcscmp(name,L"Pawn"))return offsetof(test::Object,pawn);
+ if(!wcscmp(name,L"Owner"))return offsetof(test::Object,owner);
+ assert(!wcscmp(name,L"Controller"));return offsetof(test::Object,controller);
+}
+void* FindDispatchFunctionCached(void*,const wchar_t* name){
+ if(wcscmp(name,L"GetVelocity")){assert(!wcscmp(name,L"GetMoveStatus")||!wcscmp(name,L"StopMovement"));
+  return test::navigationReady?const_cast<wchar_t*>(name):nullptr;}
+ ++test::lookups;return test::resolveVelocity?&test::body:nullptr;}
+int32_t FindParamOffset(void*,const wchar_t* name){return !wcscmp(name,L"EntryPoint")?0:!wcscmp(name,L"source")?test::sourceOffset:test::damageOffset;}
 int32_t FunctionFrameSize(void*){return test::frameSize;}
+}
+namespace ue_wrap::world_identity {
+uint32_t Generation(){return test::world;}
+void* CurrentWorld(){return &test::world;}
+void* WorldOf(void*){return &test::world;}
+}
+namespace ue_wrap {
+ParamFrame::ParamFrame(void* fn):fn_(fn),buf_(1){}
+bool ParamFrame::GetRaw(const wchar_t* name,void* out,int32_t size)const {
+ assert(!wcscmp(name,L"ReturnValue")&&size==1);*static_cast<uint8_t*>(out)=test::moveStatus;return test::readStatus;
+}
+bool Call(void* object,ParamFrame& frame){
+ assert(object==&test::controller);
+ if(!wcscmp(static_cast<const wchar_t*>(frame.function()),L"GetMoveStatus")){
+  ++test::statusReads;
+  switch(test::reenter){
+   case 1: ++test::serials[0];break;
+   case 2: ++test::world;break;
+   case 3: coop::grayboar_sync::OnDisconnect();break;
+   case 4: test::controller.pawn=nullptr;break;
+   case 5: coop::grayboar_sync::StopReplicaNavigation(&test::source);break;
+   case 6: coop::element::Registry::Get().row.mirror=false;break;
+  }
+  return test::statusOk;
+ }
+ assert(!wcscmp(static_cast<const wchar_t*>(frame.function()),L"StopMovement"));++test::stops;
+ // Aborting the task may synchronously dispatch its completion and retry.
+ script_gate::Call call{};call.object=&test::source;
+ assert(coop::grayboar_sync::OnNativeAuthority(call)==script_gate::Verdict::Cancel);
+ coop::grayboar_sync::StopReplicaNavigation(&test::source);
+ if(test::stopOk)test::moveStatus=0;
+ return test::stopOk;
+}
 }
 int main(){
  using namespace test;namespace B=coop::grayboar_sync;
@@ -141,6 +200,14 @@ int main(){
  assert(authorityWatches==beforeWatches+1&&!B::g_authorityWatched[2]);
  failAuthority=-1;B::Install(&session);B::Install(&session);
  assert(authorityWatches==beforeWatches+2&&B::g_authorityWatched[2]);
+ // A child override has a separate declaring-class registration and retry.
+ const int chargedIndex=B::kAuthorityEntryCount-1,chargedBefore=authorityWatches;
+ assert(!wcscmp(B::kAuthorityEntries[chargedIndex].owner,L"grayboar_overcharged_C"));
+ B::g_authorityWatched[chargedIndex]=false;failAuthority=chargedIndex;B::Install(&session);
+ assert(authorityWatches==chargedBefore+1&&!B::g_authorityWatched[chargedIndex]);
+ failAuthority=-1;B::Install(&session);B::Install(&session);
+ assert(authorityWatches==chargedBefore+2&&B::g_authorityWatched[chargedIndex]);
+ puts("PASS collision/lightning/charged authority: declaring-class watches, adopted/held mirrors, personal/host fallthrough and child-watch retry");
  B::Install(&session);c.object=&body;lookups=hookAttempts=0;B::g_velocityRetryAt=0;
  tick();tick();assert(lookups==1&&hookAttempts==0); // Resolver retry is throttled.
  resolveVelocity=true;B::g_velocityRetryAt=0;tick();assert(hookAttempts==1&&!B::g_velocityHook);
@@ -160,4 +227,54 @@ int main(){
  session.active=false;read();assert(output.X==9);session.active=true;
  B::OnDisconnect();read();assert(output.X==9);
  puts("PASS native animation velocity override: scoped boar AnimBP, native fallthrough, stopped segment, hook retry and teardown");
+ B::Install(&session);entities.id=42;entities.row.actor=&source;entities.row.mirror=true;
+ int32_t entry=15;c.object=&source;c.function=&body;c.locals=reinterpret_cast<uint8_t*>(&entry);frameSize=sizeof(entry);
+ auto resume=[&](SG::Verdict expected){assert(B::OnNavigationResume(c)==expected);};
+ for(int32_t aiEntry:{15,543,558,966,1016,1381}){entry=aiEntry;resume(SG::Verdict::Cancel);}
+ // Target expiry and dest only clear/unbind state; teardown still retires the helper.
+ for(int32_t otherEntry:{0,531,563,891,896,981,1004,16409,17479,21194,23477,23553,23558,2921,-1}){
+  entry=otherEntry;resume(SG::Verdict::Run);
+ }
+ entry=15;frameSize=3;resume(SG::Verdict::Run);frameSize=sizeof(entry);
+ entities.row.mirror=false;resume(SG::Verdict::Run);entities.row.mirror=true;
+ session.mode=coop::net::Role::Host;resume(SG::Verdict::Run);session.mode=coop::net::Role::Client;
+ session.linked=false;resume(SG::Verdict::Run);session.linked=true;
+ B::OnDisconnect();resume(SG::Verdict::Run);
+ puts("PASS AI continuations: move/retry/detected/stuck/path resumes refused; target/delegate cleanup, cosmetics, construction and teardown stay native");
+ B::Install(&session);source.pawn=&helper;helper.owner=&source;helper.controller=&controller;controller.pawn=&helper;
+ c.object=&source;
+ auto stop=[&]{assert(B::OnBodyTick(c)==SG::Verdict::Run);};
+ for(uint8_t state:{1,2,3}){moveStatus=state;const int before=stops;stop();assert(stops==before+1&&moveStatus==0);
+  stop();assert(stops==before+1);}
+ int before=stops;moveStatus=255;stop();assert(stops==before);moveStatus=3;
+ navigationReady=false;stop();assert(stops==before);navigationReady=true;
+ statusOk=false;stop();assert(stops==before);statusOk=true;
+ readStatus=false;stop();assert(stops==before);readStatus=true;
+ stopOk=false;stop();assert(stops==++before&&moveStatus==3);stopOk=true;
+ stop();assert(stops==++before&&moveStatus==0);moveStatus=3;
+ const int beforeReads=statusReads;
+ source.pawn=nullptr;stop();source.pawn=&helper;
+ helper.owner=nullptr;stop();helper.owner=&source;
+ helper.controller=nullptr;stop();helper.controller=&controller;
+ controller.pawn=&source;stop();controller.pawn=&helper;
+ helperClass.name.ComparisonIndex=3;stop();helperClass.name.ComparisonIndex=5;
+ controllerClass.name.ComparisonIndex=3;stop();controllerClass.name.ComparisonIndex=6;
+ entities.row.mirror=false;stop();entities.row.mirror=true;
+ entities.id=coop::element::kHostRangeSize;stop();entities.id=42;
+ sourceLive=false;stop();sourceLive=true;
+ session.linked=false;stop();session.linked=true;
+ session.active=false;stop();session.active=true;
+ session.mode=coop::net::Role::Host;B::StopReplicaNavigation(&source);session.mode=coop::net::Role::Client;
+ B::OnDisconnect();stop();B::Install(&session);
+ assert(stops==before&&statusReads==beforeReads);
+ for(int edge:{1,2,3,4,6}){
+  reenter=edge;stop();assert(stops==before);
+  B::Install(&session);controller.pawn=&helper;entities.row.mirror=true;
+ }
+ reenter=5;stop();assert(stops==++before&&moveStatus==0);reenter=0;
+ moveStatus=3;sourceClass=&child;stop();assert(stops==++before);sourceClass=&boar;
+ // Authority persists while the body hands off from the drive lane to a hand.
+ moveStatus=3;parked=true;stop();assert(stops==++before);parked=false;
+ moveStatus=3;stop();assert(stops==++before);
+ puts("PASS adopted boar navigation: active path abort, idle no-op, late/replaced possession, role/identity guards, retry and reentrant teardown");
 }

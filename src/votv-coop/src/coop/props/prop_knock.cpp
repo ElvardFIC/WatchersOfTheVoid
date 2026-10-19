@@ -40,7 +40,11 @@ SG::Verdict OnKnock(const SG::Call& c) {
     if(off<0 || off>size || sizeof(void*)>size-off)return SG::Verdict::Run;
     void* other=nullptr;std::memcpy(&other,c.locals+off,sizeof(other));
     void* owner=c.object;
-    for(int i=0;i<4 && owner && R::IsLive(owner) && !P::IsDescendantOfProp(owner);++i)owner=R::OuterOf(owner);
+    for(int i=0;i<64 && owner && R::IsLive(owner) && !P::IsDescendantOfProp(owner);++i) {
+        void* parent=R::OuterOf(owner);
+        if(parent==owner)return SG::Verdict::Run;
+        owner=parent;
+    }
     if(!WorldProp(owner) || !WorldProp(other) || owner==other)return SG::Verdict::Run;
     const bool fromOwner=Source(owner),fromOther=Source(other);
     if(fromOwner==fromOther)return SG::Verdict::Run;

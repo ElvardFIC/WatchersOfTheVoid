@@ -11,6 +11,8 @@
 #include "coop/interactables/signal_wire.h"
 #include "coop/net/blob_chunks.h"
 #include "coop/net/session.h"
+#include "coop/props/prop_save_data.h"
+#include "coop/session/join_progress.h"
 #include "coop/props/prop_lifecycle.h"        // DestroyLocalProp (deny-ghost teardown)
 
 #include "ue_wrap/core/log.h"
@@ -420,8 +422,11 @@ void ClientApplyRackBlob(const coop::net::RackStateHead& h, const std::vector<ui
 void RetryPendingTick() {
     if (g_pending.empty()) return;
     const auto now = Clock::now();
+    const bool joining = coop::join_progress::CurrentPhase() != coop::join_progress::Phase::Idle;
     std::vector<Pending> keep;
     for (auto& pd : g_pending) {
+        // Rack actors can arrive after their state while the world snapshot drains.
+        if (joining) pd.until = now + kPendingTtl;
         if (now >= pd.until) {
             UE_LOGW("drive_rack: pending canonical expired (rack never resolved)");
             continue;
@@ -448,6 +453,8 @@ void PrimeRacks() {
 // --------------------------------------------------------------------------
 
 void Install(coop::net::Session* session) {
+    // Rack rows have one authority: this canonical lane, never generic save replay.
+    coop::prop_save_data::DeclareClassOwnedElsewhere(L"prop_driveRack_C");
     g_session.store(session, std::memory_order_release);
     // Verb matchers live in drive_sync (one-callback-per-verb-name; putDriveIn
     // is shared slot/rack ctx) -- it forwards rack marks via MarkDirtyFromVerb.

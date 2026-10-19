@@ -16,6 +16,7 @@
 #include "coop/props/prop_echo_suppress.h"
 #include "coop/props/explosion_sync.h"
 #include "coop/props/explosion_events.h"
+#include "coop/props/prop_food_sync.h"
 #include "coop/props/prop_element_tracker.h"
 #include "coop/session/world_load_episode.h"
 #include "ue_wrap/engine/engine.h"  // IsChildActor
@@ -124,6 +125,7 @@ void DestroySeamBody(void* self) {
     // destroy first could remove the host's source before it can run the blast.
     if (coop::explosion_sync::ConsumesClientDestroy(self)) return;
     if (coop::explosion_events::ConsumesClientDestroy(self)) return;
+    if (coop::props::prop_food_sync::ConsumesClientDestroy(self)) return;
     coop::net::WireKey wk{};
     wk.len = 0;
     if (!keyless) {

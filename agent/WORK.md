@@ -22,6 +22,192 @@ commit, push or online publication performed; all existing open reports remain o
 
 ## Development 2152 - entity category synchronization (19 October 2026)
 
+### Grayboar nonlethal hit reactions (19 October 2026, continued 2153)
+
+The client damaged-body authority guard also suppressed native damage1..4
+animation and damage audio. Extended the existing paired host damaged observer:
+capture finite pre-hit health and the bounds-checked skipAnim argument, then
+require a nonlethal health decrease and sample the actual active native damage
+section/rate after the body. No new cue for unchanged health, healing, skipped
+animation, malformed arguments, a stopped/unrecognized montage or stale identity.
+Lethal hits continue through the existing death edge. Repeated nonlethal hits can
+send the same section again; clients do not roll another random variant.
+
+Wire actions 4..7 map to damage1..4 inside the existing 17-byte GrayboarAction
+payload. The receiver plays the stock montage section, sets audio_idle to the
+native grayboar_damage_Cue, plays it and stops attack audio. It does not call
+damaged/addDamage or modify health/AI flags. Sound setup failure does not restart
+the already-playing montage; weak identities/session checks cover audio teardown.
+Mid-hit joins sample the actual native montage and resume its position/rate with
+the existing queue-age compensation, without restarting one-shot damage audio.
+
+Production-source tests cover all four choices, repeat hits, health/skip/frame
+gates, active montage/rate, mirrors/recycled actors, lethal precedence, live
+damage audio, unchanged client health, audio teardown and silent joined hits.
+Native asset assertions pin the random section selection, skipAnim branch,
+damage cue class and idle-play/attack-stop chain. Two-player visible reactions,
+simultaneous hits, native playback-failure behavior and exact audio/transit timing
+remain OPEN. Source/DLL/protocol stay 2153; matching current DLLs are required.
+PASS all nine focused runners and the full MSVC Release b2153 build in the
+existing directory. Current DLL hash/scope: build/release-2152-logs/entity-validation.json.
+git diff --check is clean; no new version or ZIP created.
+
+### Grayboar remaining AI continuations and charged authority (19 October 2026, 2153)
+
+Audited native dest, the callback previously bound to target.OnDestroyed. It
+only removes its own binding and clears target, so it remains native along with
+target expiry, construction and ReceiveDestroyed helper cleanup. Added guards
+for senseUpdate (sensePawn plus unhook), saw (target timeout scheduler), and
+setWalking (repeated helper SetMovementMode). Already-scheduled navigation can
+resume directly in the ubergraph: entry 15 was covered; 543/558 retries, 966 roar,
+1016 stuck check and 1381 delayed path check now also refuse client replicas.
+Cleanup entries 531/896/981/1004 and the local idle-audio chain remain native.
+
+The collision event has an independent AddImpulse and int_objects.addDamage(10)
+path outside bite guards. reachedByLightning independently rolls a replacement
+grayboar_overcharged spawn and destroys the original. Both bodies now refuse
+connected clients' live host replicas. Base explosion and charged explosion,
+killed/deathplosion, objectDamaged and zapSfx are also guarded: charged death
+starts a repeating explosion timer; successful damage can punch a player, and
+zapSfx periodically sets random angular velocity. A timer already started before
+adoption cannot execute its guarded callback's side effects.
+
+The script gate matches the class declaring the function body, not the actor's
+ancestry. Authority registrations now carry explicit owner/name pairs so charged
+overrides are watched on grayboar_overcharged_C. Inherited bodies remain scoped
+to grayboar_C. Expanded the internal tag range to keep registrations distinct
+from the existing body/damage/navigation tags. Host/personal/offline behavior
+and existing damage-intent observation remain native. No packet/version change.
+
+Production-source regressions cover all 24 authority registrations, role and
+identity boundaries, inherited instances, separate charged-watch retries and all
+six AI continuation entries while preserving cleanup. Native asset tests verify
+the latent destinations, collision damage, replacement spawn, charged timers/
+explosions/punch/spin and that each watch names a function actually exported by
+its declaring package. Native engine task retirement, replacement propagation,
+charged audiovisual/owner-punch behavior and two-player gameplay remain OPEN.
+PASS all nine focused runners and full MSVC Release b2153 build in the existing
+directory. Current hash/scope: build/release-2152-logs/entity-validation.json.
+git diff --check is clean; no new version or ZIP was created.
+
+### Grayboar cosmetic turn and motor pitch (19 October 2026, continued 2153)
+
+Native evidence shows BlueprintUpdateAnimation entry 3948 computes turn from
+the body's StaticMesh forward vector and its AI-authored forward component's
+right vector. The signed, smoothed scalar drives several ModifyBone rotations
+and audio_loop_turn pitch via Lerp(0.5, 2, abs(turn)). Body pose replication alone
+therefore leaves client bone steering and motor pitch dependent on local AI.
+
+grayboar_turn observes the host's native animation-update result and publishes
+the actual finite [-1,1] turn scalar in the 12-byte host-only GrayboarTurn kind
+201. Publication is capped at 10 Hz per body with four bodies per session tick,
+fair rotation, latest-state retry, a small-change threshold and a 500 ms heartbeat.
+Only world-ready slots receive it; the heartbeat also supplies stationary joins.
+Rows are bounded to 128 and stale/dead host samples expire. No new protocol or
+version directory; matching current 2153 DLLs are required on both peers.
+
+Clients validate host sender, host-range eid, finite value and wrapping sequence.
+After native BlueprintUpdateAnimation, live mirrored bodies replace only the
+cosmetic turn scalar and its native pitch formula. Successive states interpolate
+over 100 ms; missing/stale state uses neutral steering after 1.5 seconds. The
+native speed path and montages continue. No helper transform, AI target, gameplay
+verb or physical rotation is authored here. Host/personal copies stay native.
+World/session reset clears state; weak identities guard reflected sound calls
+and a recursion guard covers reentrant animation updates.
+
+Actual production-source tests cover native sampling, send throttling/retry,
+stationary heartbeat/readiness, host identity, invalid values, client ordering
+and sequence wrap, signed interpolation, native-turn overwrite, exact pitch,
+stale fallback, bounded queues and world/disconnect/reentrant teardown. Native
+asset assertions pin the animation entry, turn inputs, bone consumers and pitch.
+In-game visible steering, audio timing, network transit alignment and helper
+task/delegate lifecycle remain OPEN; this is not two-player gameplay validation.
+PASS all nine runners, including five entity executables and twelve production
+unit compilations; full MSVC Release DLL identifies 0.9.0n b2153. Current hash and
+scope: build/release-2152-logs/entity-validation.json. No new version or ZIP.
+
+### Grayboar adopted helper path abort (19 October 2026, 2153)
+
+The client body tick now queries GetMoveStatus on the live AIController of its
+grayboarPawn helper and invokes StopMovement for Waiting/Paused/Moving paths.
+This covers navigation started before save adoption; the existing body/latent
+entry guards prevent the completion callback from issuing another native move.
+The helper must be the body's pawn, have the body as Owner (confirmed in native
+spawn bytecode), and be possessed by that AIController in both directions. Host,
+personal boars, unpossessed helpers and unrelated/player controllers are excluded.
+
+No permanent stopped flag or controller configuration is written. Missing
+metadata, late/replaced possession and failed calls retry on a later body tick;
+idle paths issue no stop. Weak identities, world generation, session epoch,
+ownership and role are revalidated after reflected calls. A scoped recursion
+guard prevents task completion from recursively issuing another abort.
+
+Production-source tests cover active/idle/invalid statuses, ownership and class
+refusal, missing metadata, failed calls, object recycling, world/session teardown,
+authority loss, recursive callbacks and held-drive handoffs. Native evidence
+confirms the helper's owner and its use in GetAIController -> AIMoveTo. In-game
+native task completion, old target delegates, visible turning and two-player
+behavior remain OPEN. No full helper synchronization claim or new protocol/version.
+All nine focused runners and the full Release b2153 build PASS; current hash and
+evidence are in build/release-2152-logs/entity-validation.json. Existing ZIP untouched.
+
+### Grayboar navigation entry authority and build repair (19 October 2026, 2153)
+
+Client host-replica guards now cover move, updMov, checkIfOnPath, nomoveMove and
+the AI request-failed/move-finished callbacks. Native move schedules a delay whose
+continuation goes directly to ExecuteUbergraph_grayboar entry 15; that continuation
+creates AIMoveTo and binds OnCharacterMovementUpdated, bypassing move's body gate.
+Added a separately scoped graph guard that reads the validated EntryPoint frame
+and refuses only 15 for connected clients' live authoritative replicas. Host,
+personal boars, malformed frames and other graph entries retain native behavior.
+No new gameplay replay, packet or version. Already-running AI tasks and host-driven
+visible turning remain OPEN; existing physical park is still the body authority.
+
+Validation also exposed duplicated source/test/runner fragments and missing
+namespace closures in the current checkout. Removed those duplicate fragments,
+restored the test's actual velocity-hook doubles and fixed the runner's duplicated
+param/branch. The session already called ariral/deer/centipede/mannequin Install,
+but their includes and production source-list entries were missing; connected
+those existing modules so the full DLL links. This is build integration, not a
+claim of verified behavior for those families.
+
+Targeted regressions cover all navigation body guards plus entry-15-only refusal,
+native graph fallthrough, malformed frames, personal/host/disconnect behavior and
+native bytecode evidence for delay -> AIMoveTo -> movement-update binding.
+Full Release b2153 builds in the existing directory. Evidence and current hash:
+build/release-2152-logs/entity-validation.json. No new version or ZIP.
+
+### Grayboar death cosmetics and native death authority (19 October 2026, continued 2153)
+
+Native damaged subtracts health, calls killed on lethal damage and sets dying;
+the stock death montage plays at animationSpeed / 2. Its death-name notify enters
+loot spawning and its completion destroys the body. Extended class-scoped client
+host-replica refusal to damaged, that death notify and completion. This also blocks
+callbacks from a native proxy started before adoption. Host and personal boars
+retain those native bodies. Existing client weapon intents are observed earlier
+at addDamage; host processing still reaches the native damaged body.
+
+The existing action channel now accepts death action 3 without growing its 17-byte
+payload or changing version 2153. Paired damaged observation emits only the first
+dying transition; skipDeathAnimation paths produce no cosmetic montage cue. The
+sender halves the native animation rate (including the valid 0.025 lower bound).
+Client playback uses only the death section, silences idle/attack/roar components
+and directly spawns the native grayboar_idle4 SoundWave on StaticMesh with native
+volume 1.5, pitch 1.35 and att_default attenuation. It never creates the native
+callback proxy, subtracts health, calls killed, spawns loot or destroys the actor.
+Sound failure does not restart successful montage playback. Mid-death join samples
+the actual playing death section/rate/position and resumes it without a new scream.
+
+Validation: all nine focused runners pass; the entity runner covers four executable
+regressions and eleven production-unit compilations. Full MSVC Release DLL builds
+as 0.9.0n b2153 in the existing directory. Additional targeted/native evidence tests
+confirm half-rate death/skip/duplicate behavior, joined death, loop silence, direct
+audio, actual SoundWave/attenuation types and the native health/loot/destroy seams.
+Current hash/scope: build/release-2152-logs/entity-validation.json. No new version,
+delivery ZIP, installation, commit or publication. Matching-peer gameplay remains
+OPEN for death timing, corpse/loot counts, client weapon damage and retirement;
+helper/turning, exact clocks and joined audio remain follow-ups.
+
 ### Grayboar mid-action join animation (19 October 2026, continued 2153)
 
 World-ready replay now snapshots registered host prop candidates, filters boars,
@@ -189,8 +375,8 @@ expanded --boar-only evidence and -GrayboarOnly regression also pass. Added case
 cover adopted replicas, parked-to-hand transition, stale/missing/mismatched binding,
 local/peer-range identity and preservation of native local damage. Full MSVC Release
 b2153 build passes. Current DLL hash and focused validation scope are recorded in
-build/release-2152-logs/entity-validation.json. The preceding all-nine-runner result
-is historical; the full suite was not repeated for this focused change.
+build/release-2152-logs/entity-validation.json. The later merge-conflict
+resolution pass then repeated the full suite (see below).
 
 Shared montage/audio, client helper/AI coordination beyond existing physical park,
 corpse/loot behavior and gameplay remain OPEN. No ZIP or installation performed.
@@ -214,8 +400,7 @@ The latest entity/boar code and test changes remain uncommitted in the working t
 Current validation: package/check_2152.ps1 passes all 9 runners using the ordinary
 working tree, including the expanded boar damage/native tests. Full MSVC Release
 build passes; main.dll resources identify 0.9.0n b2153. Updated hash and results are
-in build/release-2152-logs/entity-validation.json. This supersedes the isolated-header
-and blocked-build status in the preceding bite follow-up. No ZIP, installation,
+in build/release-2152-logs/entity-validation.json. No ZIP, installation,
 publication or host/client gameplay verification. Creature AI/target selection,
 montage/audio and corpse/loot follow-ups remain open.
 
@@ -239,12 +424,11 @@ Validation: run_entity_sync.ps1 -GrayboarOnly passes the production feeder/damag
 harness for owner routing, local host damage, foreign/unknown bodies, subclasses,
 cyclic ancestry, invalid amounts/frames, mirror/parked duplicates and disconnect.
 entity_sync_native_test.py --boar-only confirms the actual overlap/LOS -> bite ->
-player source/amount -> health-write path. Production grayboar_sync.cpp compiles
-against isolated pre-merge headers in build/grayboar-merge-check; live merge files
-were not edited. The full entity runner is blocked by conflict markers from an
-unfinished external Git merge in protocol.h and other shared files. No updated
-Release DLL or all-nine-runner success is claimed for this follow-up. Existing DLL
-and entity-validation.json describe the preceding body-movement pass only.
+player source/amount -> health-write path. This pass was initially compiled against
+isolated pre-merge headers because shared files carried conflict markers; those
+markers were subsequently resolved (see "Merge conflict resolution and current
+validation"), and the production code and all 9 runners now pass against the
+ordinary working tree.
 
 Remaining: shared target/AI coordination, montage/audio replay, corpse/loot behavior
 and host/client gameplay. A native hit uses the existing send-and-owner-apply channel;
@@ -609,51 +793,41 @@ working; issue 41 (old basement wall) remains explicitly excluded by the owner.
 
 | ID | Problem | Remaining work / evidence |
 |---|---|---|
-|1|Client cannot break props|Код готов2143, дополнительная защита2159: FIFO повторов ударов и полная проверка границ параметров; needs new-build gameplay result|
-|2|Prop jitter/rollback|Частично2151: one receiver drive per prop and late losing-release guard; native local grip contention/general jitter remain|
-|3|Pushing one prop with another|Частично2157/2159: local/remote grips and deferred collision chains;2159 corrected empty legacy hit watch to actual hitCpp and checked component owner integration. Client-grab host contacts/convergence need two-player testing|
-|4|Client R+LMB duplication|Код готов2143; needs gameplay result|
+|1|Client cannot break props|Needs new-build gameplay result|
+|2|Prop jitter/rollback|2153 item batch: lowest-slot hold arbitration includes the local handle/physgun/gravity target; refused holds cannot apply a late release, and cached drives validate actor slot serials. Native yield and motion regressions pass. Initial grab remains optimistic until peer poses arrive; multiplayer jitter verification remains open.|
+|3|Pushing one prop with another|2153 item batch: verified hitCpp feeder resolves nested component owners (bounded 64 hops), preserves deferred chained push/coast and excludes static/frozen/held/trash targets. Contact and host/receiver regressions pass; real PhysX contacts and two-player convergence remain unverified.|
+|4|Client R+LMB duplication|Needs gameplay result|
 |5|Selected-model ragdoll|Reopened: owner still reports incorrect ragdoll on2168 (report50). Preserve2144 code, but do not treat this behavior as fixed.|
-|7|Extinguisher foam|Код готов2145|
-|8|Loose power outlet floating|Код готов2145|
-|9|Physics gun / both gun effects|Частично2158: native physical-gun target now feeds ordinary prop movement/release and local ownership, including soft/super descendants. Both guns' beam effects, scale/freeze outcomes, non-prop targets and multiplayer contention remain; gameplay needed|
+|7|Extinguisher foam|Needs gameplay result|
+|8|Loose power outlet floating|Needs gameplay result|
+|9|Physics gun / both gun effects|2153 item batch: physgun target/component identity checked; dedicated ATV/hinge channels can see non-prop targets without casting them as props. Native weapon-release cleanup, remote beam/audio effects and host-validated live root scaling implemented/tested. New kind 202 requires matching current DLLs. Skeletal bone scaling/arbitrary creature physics are not implemented by the prop lane; actual freeze/scale/contested-control gameplay remains open.|
 |10|Nightmares|Previously reported working. 2151 requested personal enabled/bed/chance behavior implemented; shared night interrupt retained. Native checks, state regressions and compile pass; new behavior needs multiplayer gameplay.|
-|11|Rotating chair|Код готов2144|
+|11|Rotating chair|Needs gameplay result|
 |12|Console commands|Частично2154/2155: общий ввод/ответы/ошибки/clr и недавняя история при позднем входе; полные события, местные эффекты и единый порядок одновременного ввода остаются|
 |13|Funny rule music|Частично2154/2155/2157: Madness music/HUD и музыка семейства Maxwell в мире/выбранной руке; точная фаза трека и прочие события остаются|
 |14|Funny rule display|Частично2154: Madness HUD; прочие события остаются|
 |15|Toy sounds|Частично2156/2157: Maxwell squeak/pitch world and selected hand; abplush Alt-use world/hand; ordered retries. Other toys and squeeze gameplay remain; needs gameplay test|
 |16|Stutters when stowing items|Частично2157: removed full object-array lookups of unloaded claimed classes from save-coverage/pocket path, serial-safe cache. No frame profile or in-game confirmation; residual stutters remain unconfirmed.2165 follow-up removes recurring unresolved-class full walks in sleep resolver; production compile passed, no runtime profiling|
-|17|Pressure-washer stream|Код готов2149; visual/audio only, impacts remain with water work|
-|18|Computer sparks/damage presentation|Код готов2150 for native water shortCircuit; needs gameplay result|
-|19|Computer shutdown from client damage|Код готов2150 for native water shortCircuit; ordinary addDamage is empty in this cooked class|
-|20|Bucket water disappearing|Частично2153/2159/2169: world changed-state publication/empty repair/passive simulation;2159 adds remote selected-hand level/soap-presence/alcohol display, preserving owner's actual contents.2169 adds current held water/actual soap count/alcohol to the personal profile, with validated ordered receipt. Simultaneous writers/in-flight record arbitration and pouring gameplay remain; gameplay needed|
-|21|Cement / trowel|Частично2153/2160/2166/2168/2169: trowel hand display; world units/dry and two-bag transfer publication, passive tick, exhausted-bucket guard;2166 adds concrete-bucket hand fill/dry/empty display and no-spend client wall-repair refusal. 2168 refreshes outgoing held-trowel profile concrete from the matching local hand, including zero; identity mismatches defer the poll. 2169 adds live held concrete-bucket/cement-bag profile amounts/dry and validated ordered profile receipt. Concurrent host transactions, dryTimer handoff and actual client wall repair remain; gameplay needed|
+|20|Bucket water disappearing|Частично2153/2159/2169: world changed-state publication/empty repair/passive simulation;2159 adds remote selected-hand level/soap-presence/alcohol display, preserving owner's actual contents.2169 adds current held water/actual soap count/alcohol to the personal profile, with validated ordered receipt. Simultaneous writers/in-flight record arbitration and pouring gameplay remain|
+|21|Cement / trowel|Частично2153/2160/2166/2168/2169: trowel hand display; world units/dry and two-bag transfer publication, passive tick, exhausted-bucket guard;2166 adds concrete-bucket hand fill/dry/empty display and no-spend client wall-repair refusal. 2168 refreshes outgoing held-trowel profile concrete from the matching local hand, including zero; identity mismatches defer the poll. 2169 adds live held concrete-bucket/cement-bag profile amounts/dry and validated ordered profile receipt. Concurrent host transactions, dryTimer handoff and actual client wall repair remain|
 |22|Brick-wall outline and build|Partial2166/2167/2168: placement/progress, existing-wall enrollment, solo-host tracking and native-key save twins;2168 adds host-validated client melee damage to completed walls. Five focused2168 tests/four production compilations pass. Client repair, atomic material transactions, creative build and effects remain; no multiplayer test.|
-|23|Depleted flashlight still lit remotely|Код готов2145; compared with archive2151, retained and regression passed|
-|24|Client cannot pick up anchored hook|Код готов2152: host retires keyed anchor, creates one ordinary pickup near requesting client; client then picks it up normally (not an automatic inventory grant). Includes saved wall anchors, retries and late-join retirement. Gameplay pending|
-|25|Battery levels|Частично2146/2147/2151; pending received record applied before pocket capture; direct hand/in-transit state still needs review|
+|25|Battery levels|2153 item batch: personal profiles capture the live held record before hashing (including zero charge) with class/key/serial/world validation. Supported mutable world pickup waits for reliable record acceptance before destroying its source. Capture/transition regressions and Release compile pass; battery hand/stow/drop/rejoin gameplay remains open.|
 |26|Airy event|Осталось|
-|27|Main-room computer walls becoming physics props|Код общего пути2158/2159: независимая регистрация новых деталей и движение до остановки; подтверждены7 cubicleP-частей через обычную фабрику, проверены независимые появления. Нужна игра вдвоём на точных панелях. Снятие УДАРОМ, исчезновение У КЛИЕНТА; кто бьёт, не установлено. Пользователь предполагает все снимаемые ударами предметы; custom-пути пока не доказаны. Это не исключённые стены подвала|
-|28|Drone sound difference|Код готов2143|
-|29|Crowbar static state / dragging|Частично2148; unusual wall/parent/replacement classes unconfirmed|
-|30|Second ATV in corridor|Код готов2149 for new companion creation; old saved positions unchanged|
+|27|Main-room computer walls becoming physics props|2153 item batch: seven factory-born cubicle parts and their post-finish state/coast are covered by the production birth harness; source registration remains independent of optional ambient assets. Actual struck-panel disappearance on host/client remains a gameplay check, not a closed report.|
+|29|Crowbar static state / dragging|2153 item batch: unstick preserves live local handle/gravity/hotbar ownership even without a localPlayer argument. Native refusal, non-component static flags, retry, recycle/world and callback tests pass. Unknown parent/replacement subclasses still require individual native/gameplay evidence.|
 |31|Sleeping body pose|Осталось; native sleepingPawn is camera/input, not a ready-made body. Anchor/ragdoll/selected-model integration needs implementation.|
-|32|Not enough space on equipment|Код готов2146 for ALL equippable items|
-|33|Open container retains removed row|Код готов2146|
-|34|Client crate/package loot invisible|Частично2148/2150/2158: MRE floor/hand, host finished-birth retry; keyed spawn hook no longer waits for all optional ambient assets/observer registration. Other packages/client-local routes remain, gameplay pending|
+|34|Client crate/package loot invisible|2153 item batch: inherited MRE/AB route audited; exact personal foodBox final-bite wrapper birth admitted, while world wrapper output is host-owned. Final food destruction cannot overtake its bite request; post-finish host birth/state tests pass. Other unexamined package families and two-player loot appearance remain open.|
 |35|Centipede / other living creatures invisible|Осталось|
 |36|Computer chair rotation (duplicate report)|Same as11,2144|
-|37|Riding a carried ATV / flight|Код готов2148/2149; actual menu and race convergence included|
 |38|Skin model list / previews|Частично2151/2152: original sixteen preview tiles plus supplied Mynet/skeleton images; both requested meshes were already builtins. Catalog regression passed; runtime appearance/animation/ragdoll still needs gameplay, other preview gaps remain|
-|39|Consumables refill on pickup/drop|Частично2146/2147/2151; food earlier fix retained, pending canonical record drained before pocket capture; other transitions remain|
+|39|Consumables refill on pickup/drop|2153 item batch: current held native record is captured for profiles, supported world pickup waits for record enqueue, and host food samples survive a missing world actor. Final-bite identity is captured before destruction with durable send retry; verified box output is host-owned and eater effects stay native/local. Food/consumable transition regressions pass; gameplay remains open.|
 |40|Flesh Eerie summon / visibility / aggro|Осталось|
-|42|Event teleport to the triggering/base-entering player|Код2161: actual agrav occupancy and runtime-verified shared armed boxes; client pose fallback, initiator gather, repeat/reentry guards and send retries. Two focused checks/five TUs passed; multiplayer pending. Other custom paths and full event effects remain separate|
-|43|Safe cracking|Код2162: both dial success and hacked converge on opened; client completion to host, single loot, saved lock publication/retries and host-lock protection against early/stale records. Initial unlocked drop record preserved. Gameplay pending; dial UI and generic child hinge identity unchanged|
+|42|Event teleport to the triggering/base-entering player|Код2161: actual agrav occupancy and runtime-verified shared armed boxes; client pose fallback, initiator gather, repeat/reentry guards and send retries. Two focused checks/five TUs passed; Other custom paths and full event effects remain separate|
+|43|Safe cracking|Код2162: both dial success and hacked converge on opened; client completion to host, single loot, saved lock publication/retries and host-lock protection against early/stale records. Initial unlocked drop record preserved. dial UI and generic child hinge identity unchanged|
 |44|Sponge wetting|Частично2160/2169: native saved power/wetness now publishes after enterWater/wash/clamp/LMB; load no echo and final-use tail checked. 2169 adds current held wetness to outgoing profiles. Soap stock/foam/surface effects and personal-hand transitions remain unverified; two-player test needed|
-|45|Grill ignition|Код2162: host ignition/off, active/coals/burn snapshot and late join, passive client heating/fuel tick, immediate coal record and request retries. Gameplay pending. Concurrent coal transactions/stale records, lid and personal item transitions remain.|
+|45|Grill ignition|Код2162: host ignition/off, active/coals/burn snapshot and late join, passive client heating/fuel tick, immediate coal record and request retries. Concurrent coal transactions/stale records, lid and personal item transitions remain.|
 |46|Client-placed crops/faucets/hoses disappear after save reload|Частично2163: exact native placement -> host save actors, completed hose points/links, plant/pot identity, retry/dedup/retirement/late join. Two tests/five TUs passed; game save/reload not tested. Later gardening, accepted hose rerouting, concurrency and pre-session loaded-actor enrollment remain.|
-|47|Black disk/yellow-ring sky event starts on client independently|Visual code2164; common schedule-entry authority2165 covers all scheduled rows, boot/reflected calls and passEvents protection. Local checks pass; gameplay pending. Audio/emails/pre-session latent effects remain separate. This is NOT Bad Sun or black fog|
+|47|Black disk/yellow-ring sky event starts on client independently|Visual code2164; common schedule-entry authority2165 covers all scheduled rows, boot/reflected calls and passEvents protection. Local checks pass. Audio/emails/pre-session latent effects remain separate. This is NOT Bad Sun or black fog|
 |48|Mimic (user identified; trees/white pillars/radar report)|Code2165: prop_impostor_C and impostorPropsMaster_C identified; client random generation and local-camera culling disabled. Reuses keyed prop class/disguise/birth/death/join; host controls lifetime. Focused checks/compilation pass; multiplayer/rendering/damage verification pending. Related to35; other creatures remain open|
 |49|Insomnia demon neither appears for nor attacks the client|2151 code ready: restored native peer-local ticker and excluded insomniac_C and its subclasses from the NPC mirror lane. Native spawn/target/grab paths verified; focused compile passed. Host/client gameplay remains pending.|
 |50|Ragdoll display is still incorrect|2151 partial: spawn/lost-body retry, pelvis correction and model-authored physics selection added. Valid own rigs may use a different skeleton; common fallback retained, bone/pelvis/joint and stale-asset guards tested. Focused regressions and compile pass. T-pose in gameplay, local native body and exact limbs remain open; revisit5/38.|
@@ -715,7 +889,140 @@ Keep these investigation details after removing mirror-backups:
   late join/rejoin, disconnect, save/reload, partial/empty consumables, full inventory,
   equipped items, container rows, loose cables, flashlight crank/low battery and model previews.
 
-Exact prior TODO text is preserved in [archive/pre-release-2150](archive/pre-release-2150/).
+Historical TODO snapshots were removed during the owner-approved cleanup.
 Tests, native evidence and the issue tracker remain available. Completed per-change
 WORK reports have been removed from the active folders; their remaining follow-ups
 are captured above. Update this file rather than creating another parallel work list.
+
+## Fork and upstream review ? 19 October 2026
+
+Inspected the GitHub forks API (36 entries), fetched upstream main at
+`93dd26cc2` and the main branches of 34 other accessible forks. Own repository
+excluded; Marlore/temp-mail-generator returned Repository not found. Complete
+per-fork tip SHAs and divergent commit inventory are in the workspace research
+file `fork-audit-2026-10-19.txt`. A divergent historical commit is not necessarily
+a new fork contribution; many old forks retain history rewritten upstream.
+
+Applied to development 2153, retaining existing wire layouts:
+
+- AwazonDotCom/Multivoid `10383e817` (DexxInTime): exact UTF-8 in floppy-slot,
+  floppy-box and laptop-buffer serialization and content hashes. Chat conversion
+  strips CR/LF; disk rows must preserve them. Original patch adapted directly.
+- AwazonDotCom/Multivoid `aa3588ad2` (DexxInTime), selected parts: rack rows are
+  owned by their canonical lane, excluding generic save-record replay; pending
+  rack canonical TTL waits for join completion, as drive payloads already do.
+  The mass-removal suppression was omitted: more than one removal is not proof
+  of a reset and can hide valid actions. Ownership fixes the competing writer.
+- VOTV-MP/Multivoid `8901caf18` (pelmentor): adapted definitive-only caching
+  in ResolveTrashClassKind to this older wrapper. A loaded class queried before
+  its trash bases now gets classified again once those bases become available.
+  The upstream class-index/threading refactor was not copied partially.
+
+Selected follow-ups requiring separate adaptation and verification:
+
+- Shinobu2 `9863f6ba0`, `291476241`, `56d7ec566`, `9eec3cf37`: parked save-record
+  ordering/reentrancy, host destroy deferral, held-mirror identity and post-birth
+  record publication. These touch existing fork-specific adoption/save fixes;
+  review as one lifecycle change with negative controls for rollback and duplicates.
+- Upstream `eb55ae97d`: exclude the joining slot from connect-edge NPC fan-out;
+  requires coordinated Session APIs and NPC enrollment changes, preserving the
+  fork's late-class, personal-creature and boar paths.
+- Upstream `3a138d025` and `c930d6aa5`: shared PC active tab; relevant to the open
+  computer report, but tab propagation alone does not establish screen parity.
+- Upstream `53b851c50`, `625187aaa`, `82ad7ef1d`: host-authoritative camera bits
+  and laptop intent reach. Needs the complete wrapper/network change and tests.
+- Upstream explosion series `001193570` through `93dd26cc2`: host explosion
+  capture, client damage ownership and driven prop coast. Large dependent lane;
+  requires wire-kind collision review against custom 2153 kinds and blast tests.
+- Upstream `d248fc88d`: lobby announce cancellation race; current fork predates
+  the generation/proof API, so it is not a standalone patch here.
+
+Not selected: tarasenkoroman9090-sketch `c0662b152` periodically sends full dish
+hashcode sets every five seconds without fixing the loss; the exact-text fix
+addresses a demonstrated corruption instead. RiceMCUT's eight-player change
+alters capacities/protocol and exceeds the current four-player scope. Cairn
+packaging/branding, fork CI registration and old release/documentation commits
+provide no targeted fix for this build. Existing AquaFishhh foundation remains.
+
+Validation: Release main.dll built as 0.9.0n b2153; all nine check_2152 runners
+pass; disk_utf8_test.py compiles the three production encoders/decoders and wire
+writers and verifies CR/LF, tabs, Cyrillic/CJK, surrogate pairs, embedded NUL and
+empty strings. git diff --check passes. Current distribution ZIP is unchanged.
+Gameplay remains unverified: test sv.request on client, floppy/ZIP transfers,
+filled rack save/rejoin and a slow joining peer before calling these resolved.
+
+## Owner-approved artifact cleanup - 19 October 2026
+
+Removed 10,030 files (885,751,603 bytes) from the approved inventory in
+package/cleanup-inventory.json: incoming source/ZIP copies, document archives,
+WORK.md.bak, research baseline/handoff snapshots, generated test results, old
+2150/2151 build trees and logs, merge-resolution copies, duplicate distribution
+staging/ZIPs, previous 2151 package and completed archive-producing scripts.
+Current workspace dist/2152 ZIP was verified SHA-256-identical to its removed
+copy; every staging file was also verified present byte-identically in that ZIP.
+Current 2153 DLL/build, shared vcpkg dependencies, third-party build sources,
+research inputs required by native tests and active regression sources remain.
+run_2141 no longer compiles the historical baseline copy; its current-source
+checks and mutation controls remain, and its toolchain path uses the workspace.
+
+## Item synchronization batch - continued 2153
+
+Eight requested areas were audited together; production changes are in the existing
+2153 development build. No installation, ZIP replacement, commit or publication.
+
+- Motion/control: all receivers use lowest-slot hold priority, including the local
+  holder. A losing handle/physgun/gravity target runs its native release first.
+  Rejected local conflicts retain release fences; drive identity uses slot serials
+  for pose, ownership, release and disconnect. Recycled local actors start a new hold.
+- Collision push: hitCpp resolves deeply nested component owners before selecting
+  the victim; host chain/coast, static/frozen exclusions and callback tests pass.
+- Physguns: validated component ownership; raw non-prop target is visible to dedicated
+  ATV/hinge channels and excluded from generic prop movement. Existing remote beam/
+  audio regression passes. Root scale uses host-validated reliable kind 202, ordered
+  with release, limited to 20 Hz plus 1 s heartbeat/final flush. The host checks the
+  current actor, hold generation and peer occupancy; pending native callbacks are
+  sequence/epoch guarded. Snapshot copies also receive their correct root scale.
+- Panels and crowbar: verified seven-part factory birth/state/coast path; unstick
+  respects local ownership even when its caller has no localPlayer pointer.
+  Ordinary and component outcomes, refusal, retry and replacement lifetime tested.
+- Loot: audited inherited MRE/AB and foodBox wrapper output; exact local-hand box
+  graph is admitted, world box output comes from the host. Unknown package classes
+  are not broadly admitted through replaceProp.
+- Food: final native action can destroy before POST, so capture identity/request
+  in PRE and submit the final bite before generic destroy. Transport refusals keep
+  the request after the actor dies; POST does not duplicate it. Native foodBox eaten
+  is the only audited wrapper-output replay; hunger/poison remain on the eater.
+- Charge/portions: copied personal profiles capture the live held native record,
+  preserving stored transform and matching class/key/serial/world. Pocket pickup
+  of supported mutable records waits for enqueue, preventing a dead-source retry.
+
+Verification: run_item_batch.ps1 PASS (four focused production harnesses, seven
+existing runners and cooked native evidence); check_2152.ps1 PASS (9 runners);
+Release main.dll 0.9.0n b2153 PASS; ABI and reliable-kind routing gates PASS.
+Build hash and individual checks: build/item-batch-check/verification.json.
+
+Still requires two-player gameplay for all eight reports: actual collision jitter,
+contested guns, freeze/unfreeze/scale, struck panels, atypical crowbar parents and
+replacements, package loot, food final portions/poison and battery stow/drop/rejoin.
+Root prop scale does not implement skeletal bone scaling or arbitrary creature
+physics. New message 202 evolves development 2153 in place; both peers need the
+same current DLL. Existing dist/2152 ZIP predates this batch and remains unchanged.
+
+## Shared computer, ragdoll and sleeping body - continued 2153
+
+The laptop holder now publishes a bounded, validated snapshot of safe UMG state:
+widget visibility, selected switcher tab, scroll position and text. The host accepts
+it only from the current `laptop` claimant, retains the canonical snapshot for ready
+joiners, and observers retry application while native UI bindings build. Computer use
+also keeps the operator's body visible and suppresses its walking visuals.
+
+Ragdolls stage the selected mesh/AnimBP before physics begins, preserving authored
+limbs instead of exposing a T-pose. The local native body is reconfigured; remotes use
+seven-bone rotating, rig-signature-checked batches for the complete pose and retain
+local simulation as a fallback. The wire packet is 230 bytes, below the 256-byte relay
+limit.
+
+Sleeping now draws the selected model as a collision-free articulated display at the
+active bed's mattress (or a grounded exhaustion fallback), and refreshes through bed
+motion. Sleep removes competing sit/ragdoll states and walking/effect paths. Runtime
+verification remains required for real bed, faint/ragdoll, chair and laptop flows.

@@ -17,6 +17,7 @@
 #include "ue_wrap/core/cached_obj_ref.h"
 
 #include "coop/net/protocol.h"
+#include "ue_wrap/engine/engine_playerragdoll.h"
 
 #include <cstdint>
 #include <chrono>
@@ -37,8 +38,9 @@ public:
 
     // Ragdoll physics sync: apply pelvis velocities and correct position by
     // translating all bodies together. First sample/teleport aligns immediately;
-    // ordinary drift converges gradually. Limbs still simulate locally; pelvis
-    // rotation remains unused because applying it alone would fight the joints.
+    // ordinary drift converges gradually. Validated authored-bone batches drive
+    // a poseable selected-model display once complete; local physics bridges
+    // entry and missing/unsupported pose data.
     // Returns true when applied to a live body; a packet racing ahead of the spawn
     // edge is dropped harmless, and the next one applies.
     bool SetPose(const coop::net::RagdollPoseSnapshot& snap);
@@ -77,6 +79,13 @@ private:
     // drives the transform instead of the pose drive.
     bool active_ = false;
     bool pelvisAligned_ = false;
+    bool simulationStarted_ = false;
+    std::chrono::steady_clock::time_point simulationAfter_{};
+    ue_wrap::CachedObjRef puppetRef_;
+    uint8_t rigTag_ = 0;
+    uint16_t rigBones_ = 0;
+    uint32_t rigSignature_ = 0;
+    std::vector<ue_wrap::engine::ArticulatedBone> bones_;
     // The spawned (visible) playerRagdoll_C body + its GUObjectArray index
     // (IsLiveByIndex safety across ticks). null/-1 when not ragdolled.
     ue_wrap::CachedObjRef bodyRef_;

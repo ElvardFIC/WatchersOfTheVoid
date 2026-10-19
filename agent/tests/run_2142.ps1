@@ -4,7 +4,7 @@ $output=Join-Path $root '_research/tests_2142'
 New-Item -ItemType Directory -Force -Path $output | Out-Null
 Push-Location $root
 try {
- if (Test-Path ./_toolchain/env.ps1) { . ./_toolchain/env.ps1 }
+ if (Test-Path ../_toolchain/env.ps1) { . ../_toolchain/env.ps1 }
  elseif (-not (Get-Command cl -ErrorAction SilentlyContinue)) {
   throw 'Run in an x64 MSVC developer shell, or provide _toolchain/env.ps1.'
  }

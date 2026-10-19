@@ -33,6 +33,11 @@ void Reset(){P::OnDisconnect();session={};P::g_session=&session;guids={"host","a
  localItems={};materialReady=true;liveUnits=0;world=1;onPose={};onVitals={};coop::players::local=nullptr;pawnSerial=1;rotationReads=0;}
 }
 namespace ue_wrap::log {void Write(Level,const char*,...){}}
+namespace ue_wrap::save_record {
+bool CaptureRecord(void*,SaveRecord& out){
+ if(test::localItems.hold.empty())return false;out=test::localItems.hold[0].data;return true;
+}
+}
 namespace ue_wrap::inventory {
 void* ResolveSaveSlot(){std::abort();} bool ReadAll(PlayerInventory& out){out=test::localItems;return true;}
 bool ApplyToSaveObject(void*,const PlayerInventory&){std::abort();}
@@ -48,8 +53,8 @@ void SetSaveObjectReadyHook(void(*)(void*)){}
 }
 namespace ue_wrap::world_identity {uint32_t Generation(){return test::world;}void* WorldOf(void*){return nullptr;}void* CurrentWorld(){return nullptr;}}
 namespace ue_wrap::reflection {
-int32_t InternalIndexOf(void*){return 1;}int32_t AllocateSlotSerial(int32_t){return test::pawnSerial;}
-int32_t SlotSerial(int32_t){return test::pawnSerial;}bool IsLiveByIndex(void* p,int32_t i){return p==coop::players::local&&i==1;}
+int32_t InternalIndexOf(void* p){return p==&test::liveUnits?2:1;}int32_t AllocateSlotSerial(int32_t){return test::pawnSerial;}
+int32_t SlotSerial(int32_t){return test::pawnSerial;}bool IsLiveByIndex(void* p,int32_t i){return (p==coop::players::local&&i==1)||(p==&test::liveUnits&&i==2);}
 }
 namespace ue_wrap::puppet {bool ReadCharacterIsFalling(void*){return false;}}
 #ifndef CANNED_PROFILE_TEST

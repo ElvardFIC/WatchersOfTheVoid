@@ -316,7 +316,7 @@ bool ReadMainPlayerGrabState(void* mainPlayer, MainPlayerGrabState& out) {
     if (holdingOff >= 0) {
         out.holdingActor = *reinterpret_cast<void**>(base + holdingOff);
     }
-    out.physicsActor = ue_wrap::physics_gun::HeldProp(out.holdingActor);
+    out.physicsActor = ue_wrap::physics_gun::HeldActor(out.holdingActor);
     const int32_t grabsHeavyOff = ue_wrap::reflected_offset::MainPlayer_grabsHeavy();
     const int32_t heavyOff       = ue_wrap::reflected_offset::MainPlayer_Heavy();
     const int32_t grabLenOff     = ue_wrap::reflected_offset::MainPlayer_grabLen();

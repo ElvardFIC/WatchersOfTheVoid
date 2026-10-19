@@ -213,6 +213,8 @@ inline Lane LaneForKind(ReliableKind k) {
     case ReliableKind::MadnessState:      return Lane::Normal; // host-owned event audio/HUD snapshot
     case ReliableKind::DingusMusic:       return Lane::Normal; // authorized here, never blindly relayed
     case ReliableKind::GrayboarAction:    return Lane::Normal; // host-only cosmetic cues; no blind relay
+    case ReliableKind::GrayboarTurn:      return Lane::Normal; // host-only animation state; no blind relay
+    case ReliableKind::PropScaleState:   return Lane::Normal; // host validates holder; no blind relay
     case ReliableKind::HandToyAudio:      return Lane::Normal; // validated hand generation, no blind relay
     // PropDriveEnd is host-to-all and ordered against nothing: its stream is unreliable on its own
     // datagram kind, and a receiver that never parked the prop treats the end as a closed

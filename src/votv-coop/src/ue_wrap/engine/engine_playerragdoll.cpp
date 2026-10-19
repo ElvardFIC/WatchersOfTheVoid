@@ -17,6 +17,8 @@
 #include <cstring>
 #include <cmath>
 #include <string>
+#include <chrono>
+#include <map>
 
 namespace ue_wrap::engine {
 namespace {
@@ -71,6 +73,9 @@ bool StartBodySim(void* comp) {
     if (!bodies.Set<bool>(L"bNewSimulate", true) || !Call(comp, bodies) || !ref.Get()) return false;
     ParamFrame simulation(R::FindDispatchFunctionCached(cls, L"SetSimulatePhysics"));
     if (!simulation.Set<bool>(L"bSimulate", true) || !Call(comp, simulation) || !ref.Get()) return false;
+    ParamFrame blend(R::FindDispatchFunctionCached(cls, L"SetAllBodiesPhysicsBlendWeight"));
+    if (!blend.Set<float>(L"PhysicsBlendWeight", 1.f) || !blend.Set<bool>(L"bSkipCustomPhysicsType", false) ||
+        !Call(comp, blend) || !ref.Get()) return false;
     ParamFrame check(R::FindDispatchFunctionCached(cls, L"IsAnySimulatingPhysics"));
     return check.valid() && Call(comp, check) && ref.Get() && check.Get<bool>(L"ReturnValue");
 }
@@ -161,13 +166,17 @@ void* SpawnPlayerRagdollBody(void* ownerPlayer, const FVector& location, const F
     void* comp = RagdollMeshOf(body);
     if (!finished || !owner.Get() || !comp ||
         !ConfigurePlayerRagdollMesh(puppet::GetMeshPlayerVisibleComponent(ownerPlayer), comp) ||
-        !bodyRef.Get() || !owner.Get() || !StartBodySim(comp)) {
+        !bodyRef.Get() || !owner.Get()) {
         UE_LOGW("ragdoll_body: selected model/physics could not initialize; no substitute body shown");
         if (bodyRef.Get()) DestroyActor(body);
         return nullptr;
     }
     UE_LOGI("ragdoll_body: selected player model with articulated physics ready (%p)", body);
     return body;
+}
+
+bool StartPlayerRagdollSimulation(void* body) {
+    return StartBodySim(RagdollMeshOf(body));
 }
 
 // Attach `actor` (its RootComponent) to the ragdoll `body`'s mesh (kAragdoll_SkeletalMesh) at the
@@ -213,6 +222,115 @@ void* GetLocalRagdollBodyMesh(void* mainPlayer) {
     void* ragdollActor =
         *reinterpret_cast<void**>(reinterpret_cast<uint8_t*>(mainPlayer) + kMainPlayer_ragdollActor);
     return RagdollMeshOf(ragdollActor);
+}
+
+bool RefreshLocalRagdollModel(void* mainPlayer) {
+    static CachedObjRef configured, selected;
+    static std::chrono::steady_clock::time_point readyAfter{};
+    static bool started = false;
+    static FVector initialLinear{}, initialAngular{};
+    void* target = GetLocalRagdollBodyMesh(mainPlayer);
+    void* source = puppet::GetMeshPlayerVisibleComponent(mainPlayer);
+    void* asset = puppet::GetComponentSkeletalMeshAsset(source);
+    if (!target || !source || !asset) { configured.Reset(); selected.Reset(); return false; }
+    if (configured.Get() == target && selected.Get() == asset) {
+        if (started) return true;
+        if (std::chrono::steady_clock::now() < readyAfter || !StartBodySim(target)) return false;
+        void* body = *reinterpret_cast<void**>(static_cast<uint8_t*>(mainPlayer) + kMainPlayer_ragdollActor);
+        DriveRagdollBodyPelvisVelocity(body, initialLinear, initialAngular);
+        started = true;
+        return true;
+    }
+    // Native entry has already placed the plushie's pelvis. Keep that anchor
+    // when replacing its mesh, instead of jumping back to the standing capsule.
+    FVector before{};
+    if (!GetBoneWorldLocationByName(target, L"pelvis", before)) return false;
+    FRotator previousRotation{}; FVector previousPosition{};
+    ReadLocalRagdollPelvisPhysics(mainPlayer, previousPosition, previousRotation, initialLinear, initialAngular);
+    CachedObjRef targetRef; targetRef.Set(target);
+    if (!ConfigurePlayerRagdollMesh(source, target) || !targetRef.Get()) return false;
+    FVector after{};
+    if (GetBoneWorldLocationByName(target, L"pelvis", after)) {
+        const FVector origin = GetComponentLocation(target);
+        ParamFrame position(R::FindDispatchFunctionCached(R::ClassOf(target), L"K2_SetWorldLocation"));
+        if (!position.Set<FVector>(L"NewLocation", {origin.X + before.X - after.X,
+            origin.Y + before.Y - after.Y, origin.Z + before.Z - after.Z}) ||
+            !position.Set<bool>(L"bTeleport", true) || !Call(target, position) || !targetRef.Get()) return false;
+    }
+    configured.Set(target); selected.Set(asset);
+    started = false;
+    readyAfter = std::chrono::steady_clock::now() + std::chrono::milliseconds(30);
+    return false;
+}
+
+bool ReadArticulatedPose(void* mesh, std::vector<ArticulatedBone>& bones) {
+    bones.clear();
+    CachedObjRef meshRef; meshRef.Set(mesh);
+    if (!meshRef.Get()) return false;
+    auto field = [](void* object, const wchar_t* name) -> void* {
+        if (!object || !R::IsLive(object)) return nullptr;
+        const int off = R::FindPropertyOffset(R::ClassOf(object), name);
+        if (off < 0) return nullptr;
+        void* value = nullptr; std::memcpy(&value, static_cast<uint8_t*>(object) + off, sizeof(value));
+        return value && R::IsLive(value) ? value : nullptr;
+    };
+    void* physics = field(mesh, L"PhysicsAssetOverride");
+    if (!physics) physics = field(puppet::GetComponentSkeletalMeshAsset(mesh), L"PhysicsAsset");
+    if (!physics) return false;
+    const int off = R::FindPropertyOffset(R::ClassOf(physics), L"SkeletalBodySetups");
+    if (off < 0) return false;
+    struct Array { void** data; int32_t num, max; } setups{};
+    std::memcpy(&setups, static_cast<uint8_t*>(physics) + off, sizeof(setups));
+    if (!setups.data || setups.num < 1 || setups.num > 64 || setups.max < setups.num) return false;
+    for (int32_t i = 0; i < setups.num; ++i) {
+        void* setup = setups.data[i];
+        if (!setup || !R::IsLive(setup) || !meshRef.Get()) return false;
+        const int boneOff = R::FindPropertyOffset(R::ClassOf(setup), L"BoneName");
+        if (boneOff < 0) return false;
+        R::FName name{}; std::memcpy(&name, static_cast<uint8_t*>(setup) + boneOff, sizeof(name));
+        ParamFrame index(R::FindDispatchFunctionCached(R::ClassOf(mesh), L"GetBoneIndex"));
+        int32_t boneIndex = -1;
+        if (!index.Set<R::FName>(L"BoneName", name) || !Call(mesh, index) ||
+            !index.GetRaw(L"ReturnValue", &boneIndex, sizeof(boneIndex)) || boneIndex < 0 || boneIndex >= 1024) return false;
+        ParamFrame transform(R::FindDispatchFunctionCached(R::ClassOf(mesh), L"GetSocketTransform"));
+        ArticulatedBone bone; bone.index = static_cast<uint16_t>(boneIndex);
+        if (!transform.Set<R::FName>(L"InSocketName", name) || !transform.Set<uint8_t>(L"TransformSpace", 0) ||
+            !Call(mesh, transform) || !transform.GetRaw(L"ReturnValue", &bone.world, sizeof(bone.world))) return false;
+        bones.push_back(bone);
+    }
+    return meshRef.Get() != nullptr;
+}
+
+uint32_t BoneLayoutSignature(void* mesh) {
+    struct Entry { CachedObjRef asset; uint32_t hash = 0; };
+    static std::map<void*, Entry> cache;
+    void* asset = puppet::GetComponentSkeletalMeshAsset(mesh);
+    if (!asset) return 0;
+    auto it = cache.find(asset);
+    if (it != cache.end() && it->second.asset.Get() == asset) return it->second.hash;
+    CachedObjRef meshRef; meshRef.Set(mesh);
+    if (!meshRef.Get()) return 0;
+    int32_t count = 0;
+    ParamFrame num(R::FindDispatchFunctionCached(R::ClassOf(mesh), L"GetNumBones"));
+    if (!Call(mesh, num) || !num.GetRaw(L"ReturnValue", &count, sizeof(count)) || count < 1 || count > 1024) return 0;
+    uint32_t hash = 2166136261u;
+    for (int32_t i = 0; i < count; ++i) {
+        if (!meshRef.Get()) return 0;
+        ParamFrame frame(R::FindDispatchFunctionCached(R::ClassOf(mesh), L"GetBoneName")); R::FName name{};
+        if (!frame.Set<int32_t>(L"BoneIndex", i) || !Call(mesh, frame) ||
+            !frame.GetRaw(L"ReturnValue", &name, sizeof(name))) return 0;
+        for (wchar_t ch : R::ToString(name)) {
+            hash ^= static_cast<uint16_t>(ch); hash *= 16777619u;
+        }
+        hash ^= 0; hash *= 16777619u;
+    }
+    if (!meshRef.Get()) return 0;
+    for (auto stale = cache.begin(); stale != cache.end();) {
+        if (!stale->second.asset.Get()) stale = cache.erase(stale); else ++stale;
+    }
+    Entry entry; entry.asset.Set(asset); entry.hash = hash;
+    cache[asset] = entry;
+    return hash;
 }
 
 bool ReadLocalRagdollPelvisPhysics(void* mainPlayer, FVector& outLoc, FRotator& outRot,

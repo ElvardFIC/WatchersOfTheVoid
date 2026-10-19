@@ -10,6 +10,7 @@ struct Obj { int index=0,serial=1; bool live=true,active=false,ownerOnly=true;
  void* object=nullptr; void* parts[10]{}; ue_wrap::FVector at{}; } objects[30];
 Obj& gun=objects[0];Obj& mirror=objects[1];Obj& phys=objects[2];Obj& grav=objects[3];
 ue_wrap::FVector beamEnd{}; bool destroyOnRead=false; int nativeSets=0;
+int nativeReleases=0;
 }
 namespace ue_wrap::reflection {
 bool IsLive(void* p){return p&&static_cast<test::Obj*>(p)->live;}
@@ -19,6 +20,7 @@ int32_t SlotSerial(int32_t i){return i>=0&&i<30?test::objects[i].serial:0;}
 int32_t AllocateSlotSerial(int32_t i){return SlotSerial(i);}
 void* ClassOf(void* p){return static_cast<test::Obj*>(p)->cls;}
 void* SuperStructOf(void* p){return static_cast<test::Obj*>(p)->parent;}
+void* OuterOf(void* p){return static_cast<test::Obj*>(p)->parent;}
 const FName& NameOf(void* p){return static_cast<test::Obj*>(p)->name;}
 bool NameEquals(const FName& n,const wchar_t* s){return (n.ComparisonIndex==10&&!wcscmp(s,L"prop_physgun_C"))||
  (n.ComparisonIndex==11&&!wcscmp(s,L"prop_gravgun_C"));}
@@ -34,7 +36,7 @@ int32_t InstanceOffset::Of(void*) {
 }
 void* FindDispatchFunctionCached(void*,const wchar_t* n){return const_cast<wchar_t*>(n);}
 }
-namespace ue_wrap::world_identity {void* CurrentWorld(){return nullptr;}void* WorldOf(void*){return nullptr;}}
+namespace ue_wrap::world_identity {void* CurrentWorld(){return reinterpret_cast<void*>(1);}void* WorldOf(void*){return reinterpret_cast<void*>(1);}}
 namespace ue_wrap::prop {bool IsDescendantOfProp(void*){return true;}}
 namespace ue_wrap {
 ParamFrame::ParamFrame(void* fn):fn_(fn),buf_(128){}
@@ -56,6 +58,7 @@ bool Call(void* p,ParamFrame& f){
  if(!wcscmp(name,L"set")){std::memcpy(&o.object,f.data(),sizeof(void*));++test::nativeSets;}
  if(!wcscmp(name,L"attract")){bool on=false;std::memcpy(&on,f.data(),sizeof(bool));static_cast<test::Obj*>(o.parts[9])->active=on;}
  if(!wcscmp(name,L"SetOnlyOwnerSee"))o.ownerOnly=false;
+ if(!wcscmp(name,L"playerHandRelease_LMB")){o.held=0;++test::nativeReleases;}
  return true;
 }
 }
@@ -74,6 +77,9 @@ int main(){
  assert(!objects[14].ownerOnly&&objects[17].at.X==100&&objects[16].at.Z==300);
  assert(beamEnd.X==10&&beamEnd.Y==20); // Beam's native endpoint is the muzzle.
  G::ApplyVisuals(&mirror,{});assert(!objects[14].active&&!objects[16].active);
+ gun.target=&objects[24];gun.component=&objects[25];objects[25].parent=gun.target;
+ assert(G::ReleaseHeldProp(&gun,gun.target,&objects[26])&&nativeReleases==1&&!gun.held);
+ assert(!G::ReleaseHeldProp(&gun,gun.target,&objects[26])&&nativeReleases==1);
  gun.cls=mirror.cls=&grav;objects[8].active=true;objects[9].active=true;objects[10].active=true;
  gun.object=&objects[24];objects[13].active=true;
  auto gravity=G::ReadVisuals(&gun);assert(gravity.kind==2&&gravity.flags==23);
@@ -81,7 +87,7 @@ int main(){
  assert(mirror.object==gun.object&&nativeSets==1);G::ApplyVisuals(&mirror,gravity);assert(nativeSets==1);
  G::ApplyVisuals(&mirror,fx);assert(!objects[18].active&&!objects[20].active&&!mirror.object&&nativeSets==2); // Wrong tool kind cannot enable effects.
  destroyOnRead=true;assert(G::ReadVisuals(&gun).kind==0); // Callback destroys the owner safely.
- gun.live=true;destroyOnRead=false;gun.cls=&phys;objects[7].at.X=std::numeric_limits<float>::quiet_NaN();
+ gun.live=true;destroyOnRead=false;gun.cls=&phys;gun.held=1;objects[7].at.X=std::numeric_limits<float>::quiet_NaN();
  assert(G::ReadVisuals(&gun).kind==0);
  puts("PASS physgun endpoint/third-person visibility, gravgun FX, off/type guards and callback lifetime");
 }

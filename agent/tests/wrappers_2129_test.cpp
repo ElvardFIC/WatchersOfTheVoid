@@ -14,7 +14,8 @@ Obj objs[]={{{1,0},L"prop_workbench_C"},{{2,0},L"ExecuteUbergraph_prop_workbench
     {{14,0},L"ExecuteUbergraph_prop_sleepingbag"},{{15,0},L"sleepingbagWrap_C"},
     {{16,0},L"fold"},{{17,0},L"gen"},{{18,0},L"prop_bunkbedSleepable_C"},
     {{19,0},L"putMattressOn"},{{20,0},L"bed_bunkMattress_C"},{{21,0},L"ExecuteUbergraph_bed_bunkMattress"},
-    {{22,0},L"prop_food_mre_C"},{{23,0},L"spawn"}};
+    {{22,0},L"prop_food_mre_C"},{{23,0},L"spawn"},
+    {{24,0},L"prop_foodBox_C"},{{25,0},L"ExecuteUbergraph_prop_foodBox"}};
 Obj sw{{11,0},L"switch"}, other{{12,0},L"other"};
 void* caller=nullptr;bool body=false, locationOk=true, callOk=true, nested=false, attenuationOk=false;
 int clicks=0,uses=0;float vol=0,pitch=0;
@@ -108,6 +109,10 @@ int main() {
     CHECK(!BirthIsPlayerAuthored());CHECK(!BirthIsPlayerAuthored(&other)); // world/loader source excluded
     objs[20].owner=&objs[0];CHECK(!BirthIsPlayerAuthored(&sw)); // foreign spawn body excluded
     objs[14].owner=&objs[19];caller=&objs[14];CHECK(!BirthIsPlayerAuthored(&sw)); // MRE class, other verb
+    objs[22].owner=&objs[21];caller=&objs[22];
+    CHECK(BirthIsPlayerAuthored(&sw)); // hand box's verified empty-wrapper spawn
+    CHECK(!BirthIsPlayerAuthored(&other)&&!BirthIsPlayerAuthored());
+    objs[22].owner=&objs[19];CHECK(!BirthIsPlayerAuthored(&sw)); // wrong class
     caller=nullptr;CHECK(!BirthIsPlayerAuthored());
     coop::prop_spawn_authoring::g_toolUberName=objs[6].name;
     caller=&objs[6];CHECK(BirthIsPlayerAuthored());

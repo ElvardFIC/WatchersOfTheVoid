@@ -4,6 +4,7 @@
 // binds it as the mirror; with no match a fresh mirror is materialised (prop_fresh_spawn.cpp).
 
 #include "coop/props/remote_prop_spawn.h"
+#include "coop/props/prop_scale_converge.h"
 
 #include "coop/props/trash_pile_sync.h"  // the sweep's death-watch unwatch
 
@@ -296,6 +297,12 @@ void OnSpawn(const coop::net::PropSpawnPayload& payload, int senderSlot,
             coop::remote_prop::RegisterPropMirror(payload.elementId, existing, keyW, classW, senderSlot);
             return;
         }
+        // An existing identity still needs its authored scale. This is independent
+        // of the position stream and does not teleport a body held by another peer.
+        ue_wrap::CachedObjRef scaleIdentity;
+        scaleIdentity.Set(existing);
+        coop::props::ConvergePropScale(existing, {payload.scaleX, payload.scaleY, payload.scaleZ});
+        if (!scaleIdentity.Is(existing)) return;
         // A prop under active kinematic drive (the host holds it) is not converged: the write would
         // stomp the drive for one frame, a visible pop until the next PropPose. The stream owns a
         // held prop's position.

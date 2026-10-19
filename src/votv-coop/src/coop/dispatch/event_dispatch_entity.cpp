@@ -23,6 +23,7 @@
 #include "coop/creatures/piramid_sync.h"      // the PyramidGather receiver
 #include "coop/props/prop_save_data.h"    // the per-prop save record lane
 #include "coop/props/prop_stick_sync.h"
+#include "coop/props/prop_scale_sync.h"
 #include "coop/props/prop_drive_host.h"    // a hand's let-go coasts until the body rests
 #include "coop/props/prop_drive_stream.h"  // the driven-prop end edge
 #include "coop/props/prop_element_tracker.h"
@@ -47,6 +48,12 @@ bool HandleEntityEvent(net::Session& session,
                        void* localPlayer) {
     (void)session;
     switch (msg.kind) {
+    case net::ReliableKind::PropScaleState: {
+        if(msg.payloadLen!=sizeof(net::PropScaleStatePayload))return true;
+        net::PropScaleStatePayload p{};std::memcpy(&p,msg.payload,sizeof(p));
+        prop_scale_sync::Receive(session,p,msg.senderPeerSlot);
+        return true;
+    }
     case net::ReliableKind::PropStickState: {
         // A peer stuck a wall-attach component's prop (the camera) to a surface, or it came unstuck.
         // Symmetric prop state, relayed by the host; prop_stick_sync replays the component's own

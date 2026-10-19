@@ -9,6 +9,8 @@
 #include "coop/player/player_damage.h"
 #include "coop/player/players_registry.h"
 #include "ue_wrap/core/log.h"
+#include "ue_wrap/core/cached_obj_ref.h"
+#include "ue_wrap/core/call.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/script_gate.h"
 #include "ue_wrap/core/ufunction_hook.h"
@@ -24,20 +26,46 @@ std::atomic<coop::net::Session*> g_session{nullptr};
 std::atomic<bool> g_watched{false}, g_damageWatched{false};
 constexpr int kBodyTickTag = 0x474254;
 constexpr int kDamageTag = 0x474244;
-constexpr int kAuthorityTag = 0x474242;
-constexpr const wchar_t* kAuthorityEntries[] = {
-    L"BndEvt__grayboar_biteZone_K2Node_ComponentBoundEvent_0_ComponentBeginOverlapSignature__DelegateSignature",
-    L"OnNotifyBegin_FEF3E3834EA127D483B3218D367A2A58",
-    L"sensePawn",
-    L"detected",
-    L"damaged",
-    L"OnNotifyBegin_F2D44BFA4340ED84016CA19643B74736",
-    L"OnCompleted_F2D44BFA4340ED84016CA19643B74736",
+constexpr int kNavigationTag = 0x47424E;
+bool g_navigationWatched=false;
+constexpr int kAuthorityTag = 0x47420000;
+constexpr const wchar_t* kBoarClass = L"grayboar_C";
+constexpr const wchar_t* kChargedClass = L"grayboar_overcharged_C";
+struct AuthorityEntry { const wchar_t* owner; const wchar_t* name; };
+// A scoped script watch matches the class DECLARING the function body, not the
+// actor's ancestry. Inherited bodies use the base owner; overrides need their own.
+constexpr AuthorityEntry kAuthorityEntries[] = {
+    {kBoarClass, L"BndEvt__grayboar_biteZone_K2Node_ComponentBoundEvent_0_ComponentBeginOverlapSignature__DelegateSignature"},
+    {kBoarClass, L"OnNotifyBegin_FEF3E3834EA127D483B3218D367A2A58"},
+    {kBoarClass, L"sensePawn"},
+    {kBoarClass, L"detected"},
+    {kBoarClass, L"damaged"},
+    {kBoarClass, L"OnNotifyBegin_F2D44BFA4340ED84016CA19643B74736"},
+    {kBoarClass, L"OnCompleted_F2D44BFA4340ED84016CA19643B74736"},
+    {kBoarClass, L"move"},
+    {kBoarClass, L"updMov"},
+    {kBoarClass, L"checkIfOnPath"},
+    {kBoarClass, L"nomoveMove"},
+    {kBoarClass, L"OnRequestFailed_EAF218CB4B42F6CCCF73E9B452B5AF9D"},
+    {kBoarClass, L"OnMoveFinished_EAF218CB4B42F6CCCF73E9B452B5AF9D"},
+    {kBoarClass, L"senseUpdate"},
+    {kBoarClass, L"saw"},
+    {kBoarClass, L"setWalking"},
+    {kBoarClass, L"BndEvt__grayboar_StaticMesh_K2Node_ComponentBoundEvent_1_ComponentHitSignature__DelegateSignature"},
+    {kBoarClass, L"reachedByLightning"},
+    {kBoarClass, L"explosion"},
+    {kChargedClass, L"explosion"},
+    {kChargedClass, L"killed"},
+    {kChargedClass, L"deathplosion"},
+    {kChargedClass, L"objectDamaged"},
+    {kChargedClass, L"zapSfx"},
 };
 constexpr int kAuthorityEntryCount = sizeof(kAuthorityEntries) / sizeof(kAuthorityEntries[0]);
 bool g_authorityWatched[kAuthorityEntryCount]{};
 bool g_velocityHook = false;
 uint64_t g_velocityRetryAt = 0;
+uint64_t g_epoch = 0;
+bool g_stoppingNavigation = false;
 
 template<class T> bool ReadArg(const SG::Call& call, const wchar_t* name, T& value) {
     if (!call.function || !call.locals) return false;
@@ -71,6 +99,60 @@ bool IsAuthoritativeReplica(void* actor) {
            coop::prop_drive_stream::IsParked(actor) || IsHostReplica(actor);
 }
 
+bool HasClass(void* object, const wchar_t* name) {
+    namespace R = ue_wrap::reflection;
+    if (!object || !R::IsLive(object)) return false;
+    void* cls = R::ClassOf(object);
+    for (int depth = 0; cls && depth < 64; ++depth, cls = R::SuperStructOf(cls))
+        if (R::NameEquals(R::NameOf(cls), name)) return true;
+    return false;
+}
+
+void* ObjectProperty(void* object, const wchar_t* name) {
+    namespace R = ue_wrap::reflection;
+    const int offset = R::FindPropertyOffset(R::ClassOf(object), name);
+    void* value = nullptr;
+    if (offset >= 0) std::memcpy(&value, static_cast<uint8_t*>(object) + offset, sizeof(value));
+    return value && R::IsLive(value) ? value : nullptr;
+}
+
+void StopReplicaNavigation(void* actor) {
+    namespace R = ue_wrap::reflection;
+    auto* session = g_session.load(std::memory_order_acquire);
+    if (g_stoppingNavigation || !session || !session->running() || !session->connected() ||
+        session->role() != coop::net::Role::Client || !IsBoar(actor) || !IsAuthoritativeReplica(actor)) return;
+    void* pawn = ObjectProperty(actor, L"pawn");
+    // Native construction spawns grayboarPawn with self as Owner. Require both
+    // directions of possession before touching an AI controller (never a player).
+    if (!HasClass(pawn, L"grayboarPawn_C") || ObjectProperty(pawn, L"Owner") != actor) return;
+    void* controller = ObjectProperty(pawn, L"Controller");
+    if (!HasClass(controller, L"AIController") || ObjectProperty(controller, L"Pawn") != pawn) return;
+    ue_wrap::CachedObjRef bodyRef, pawnRef, controllerRef;
+    bodyRef.Set(actor); pawnRef.Set(pawn); controllerRef.Set(controller);
+    const auto epoch = g_epoch;
+    const auto world = ue_wrap::world_identity::Generation();
+    auto current = [&] {
+        return epoch == g_epoch && world == ue_wrap::world_identity::Generation() &&
+            g_session.load(std::memory_order_acquire) == session && session->running() && session->connected() &&
+            session->role() == coop::net::Role::Client && bodyRef.Get() == actor &&
+            pawnRef.Get() == pawn && controllerRef.Get() == controller && IsAuthoritativeReplica(actor) &&
+            ObjectProperty(actor, L"pawn") == pawn && ObjectProperty(pawn, L"Owner") == actor &&
+            ObjectProperty(pawn, L"Controller") == controller && ObjectProperty(controller, L"Pawn") == pawn;
+    };
+    struct Guard { Guard(){g_stoppingNavigation=true;} ~Guard(){g_stoppingNavigation=false;} } guard;
+    ue_wrap::ParamFrame status(R::FindDispatchFunctionCached(R::ClassOf(controller), L"GetMoveStatus"));
+    uint8_t state = 0;
+    if (!status.valid() || !ue_wrap::Call(controller, status) || !current() ||
+        !status.GetRaw(L"ReturnValue", &state, sizeof(state)) || state == 0 || state > 3) return;
+    // EPathFollowingStatus: Idle=0, Waiting/Paused/Moving=1..3. StopMovement
+    // aborts an existing path, including one started before save adoption. Its
+    // task completion can reenter Blueprint; authority gates refuse that retry.
+    ue_wrap::ParamFrame stop(R::FindDispatchFunctionCached(R::ClassOf(controller), L"StopMovement"));
+    if (stop.valid() && current()) ue_wrap::Call(controller, stop);
+    // No cached "stopped" bit: late possession, failed metadata resolution or a
+    // later task gets checked again. No persistent controller settings changed.
+}
+
 SG::Verdict OnNativeAuthority(const SG::Call& call) {
     if(call.tag==kAuthorityTag) coop::grayboar_actions::Before(call,1);
     if(call.tag==kAuthorityTag+3) coop::grayboar_actions::Before(call,2);
@@ -88,6 +170,8 @@ SG::Verdict OnNativeAuthority(const SG::Call& call) {
     // damaged authors health/death; the death notify creates loot, and its
     // completion destroys the actor. Those remain native host decisions.
     // Cosmetic replication must play assets directly, without these delegates.
+    // A body hit has its own 10-damage/impulse path; lightning replaces the boar.
+    // Charged overrides also author explosions, death timers, punches and spins.
     return IsAuthoritativeReplica(call.object) ? SG::Verdict::Cancel : SG::Verdict::Run;
 }
 
@@ -95,6 +179,29 @@ void AfterNativeAuthority(const SG::Call& call) {
     if(call.tag==kAuthorityTag) coop::grayboar_actions::After(call,1);
     if(call.tag==kAuthorityTag+3) coop::grayboar_actions::After(call,2);
     if(call.tag==kAuthorityTag+4) coop::grayboar_actions::After(call,3);
+}
+
+SG::Verdict OnNavigationResume(const SG::Call& call) {
+    auto* session=g_session.load(std::memory_order_acquire);
+    if(!session || !session->running() || !session->connected() ||
+       session->role()!=coop::net::Role::Client || !IsBoar(call.object) ||
+       !IsAuthoritativeReplica(call.object))return SG::Verdict::Run;
+    int32_t entry=-1;
+    // Pre-adoption delays resume directly in the ubergraph, bypassing their
+    // gated scheduling bodies. Keep target/delegate cleanup, construction and
+    // cosmetic bookkeeping native; cancel only verified AI continuations.
+    if (!ReadArg(call,L"EntryPoint",entry)) return SG::Verdict::Run;
+    switch (entry) {
+    case 15:   // move -> AIMoveTo and movement-update delegate binding
+    case 543:  // successful request -> move
+    case 558:  // failed request -> move
+    case 966:  // delayed detected roar
+    case 1016: // stuck check -> stop helper and move
+    case 1381: // delayed path check -> stop helper and move
+        return SG::Verdict::Cancel;
+    default:
+        return SG::Verdict::Run;
+    }
 }
 
 void OnAnimationVelocity(void* actor, void* source, void*) {
@@ -152,6 +259,7 @@ SG::Verdict OnBodyTick(const SG::Call& call) {
     if (!session || !session->running() || !call.object) return SG::Verdict::Run;
     if (session->role() == coop::net::Role::Client) {
         TryVelocityHook(call.object);
+        StopReplicaNavigation(call.object);
         return SG::Verdict::Run;
     }
     // Init/record authoring may finish after the first tick. Retry naturally at
@@ -164,14 +272,18 @@ SG::Verdict OnBodyTick(const SG::Call& call) {
     coop::prop_drive_host::Claim(call.object, "grayboar body");
     return SG::Verdict::Run;
 }
-}
+
+} // namespace
 
 void Install(coop::net::Session* session) {
+    ++g_epoch;
     g_session.store(session, std::memory_order_release);
     coop::grayboar_actions::Install(session);
+    if(!g_navigationWatched)g_navigationWatched=SG::WatchClassName(L"grayboar_C",
+        L"ExecuteUbergraph_grayboar",kNavigationTag,&OnNavigationResume,nullptr);
     for (int i = 0; i < kAuthorityEntryCount; ++i) {
         if (!g_authorityWatched[i]) {
-            g_authorityWatched[i] = SG::WatchClassName(L"grayboar_C", kAuthorityEntries[i],
+            g_authorityWatched[i] = SG::WatchClassName(kAuthorityEntries[i].owner, kAuthorityEntries[i].name,
                                                 kAuthorityTag + i, &OnNativeAuthority, &AfterNativeAuthority);
             if (!g_authorityWatched[i]) UE_LOGW("grayboar: native authority watch %d unavailable", i);
         }
@@ -191,8 +303,10 @@ void Install(coop::net::Session* session) {
 }
 
 void OnDisconnect() {
+    ++g_epoch;
     g_session.store(nullptr, std::memory_order_release);
     coop::grayboar_actions::OnDisconnect();
     // prop_drive_host owns and clears the claims at the session disconnect edge.
 }
-}
+
+} // namespace coop::grayboar_sync

@@ -58,6 +58,7 @@
 #include "coop/player/pvp.h"
 #include "coop/player/nick_color.h"  // nick-color session wiring (Install)
 #include "coop/player/sleep_sync.h"
+#include "coop/interactables/shared_screen_sync.h"
 #include "coop/creatures/wisp_attack_sync.h"  // Killer Wisp coop: host detect + neutralize + relay
 #include "coop/creatures/wisp_grab_hold.h"  // Killer Wisp: grab-window body placement (per-slot/full teardown)
 #include "coop/creatures/wisp_tear_mirror.h"  // Killer Wisp coop: victim kill + tear mirror
@@ -156,6 +157,11 @@
 #include "coop/creatures/npc_world_enum.h"  // RegisterExistingWorldNpcs
 #include "coop/creatures/grayboar_sync.h"
 #include "coop/creatures/grayboar_actions.h"
+#include "coop/creatures/grayboar_turn.h"
+#include "coop/creatures/ariral_sync.h"
+#include "coop/creatures/deer_sync.h"
+#include "coop/creatures/centipede_sync.h"
+#include "coop/creatures/mannequin_sync.h"
 #include "coop/world/world_actor_sync.h"  // non-Character event-actor transform mirror (sibling of npc_sync)
 #include "coop/creatures/piramid_sync.h"  // piramid event choreography lane (mirror brain suppression + PyramidGather)
 #include "coop/player/players_registry.h"
@@ -217,6 +223,7 @@ void Install(coop::net::Session& session) {
     coop::world_actor_sync::Install(&session);  // non-Character event-actor mirror (2nd BeginDeferred interceptor, disjoint allowlist)
     coop::piramid_sync::Install(&session);  // piramid event choreography lane (hooks arm lazily on the first piramid element)
     coop::grayboar_sync::Install(&session);
+    coop::grayboar_turn::Install(&session);
     coop::ariral_sync::Install(&session);
     coop::deer_sync::Install(&session);
     coop::centipede_sync::Install(&session);
@@ -336,6 +343,7 @@ void Install(coop::net::Session& session) {
     coop::kerfur_menu_input::Install(&session);  // client radial-menu verb detect (InpActEvt_use PRE -- the actionName dispatch is PE-invisible) -> kerfur_command relay
     coop::kerfur_form_assembler::Install(&session);  // script-body gate consumer: watch the two conversion verbs
     coop::prop_stick_sync::Install(&session);  // wall-attachable stick mirror (camera-on-wall -- commit observer -> PropStickState; receiver replays forceStick)
+    coop::shared_screen_sync::Install(&session);
     coop::sleep_sync::Install(&session);  // the Minecraft sleep gate (isSleep edge poll -> host tally -> accelerate/end phases)
     coop::wisp_attack_sync::Install(&session);  // Killer Wisp coop -- AddPlayerDamage PRE-cancel (host neutralize) + host detect/relay
     // The per-player inventory installs at session start, pre-world: this install runs at
@@ -416,6 +424,7 @@ void ConnectReplayForSlot(int slot) {
     coop::dish_sync::QueueConnectBroadcastForSlot(slot);  // the dish snapshot -- AFTER the desk rows + the catch seed (same ordered lane)
     coop::download_arm_sync::QueueConnectArmForSlot(slot);  // an armed machine's ARM row, after the catch's seed and the dish snapshot
     coop::dish_calib_sync::QueueConnectBroadcastForSlot(slot);  // every dish's precision, the joiner's seed
+    coop::shared_screen_sync::QueueConnectBroadcastForSlot(slot);
     coop::sleep_sync::QueueConnectBroadcastForSlot(slot);  // a joiner arrives awake -- end a running accelerate + re-tally
     coop::comp_sync::QueueConnectBroadcastForSlot(slot);  // the refiner's seed (CompState + CompData)
     coop::voice_chat::ReplayPeerStatesToSlot(slot);  // voice mute/disabled states -> joiner
@@ -548,6 +557,7 @@ void DisconnectSlot(coop::net::Session& session, int slot) {
     coop::power_grid::OnPeerLeft(static_cast<uint8_t>(slot));  // and its generator ops
     coop::coord_tower_ops::OnPeerLeft(static_cast<uint8_t>(slot));  // and its tower ops
     coop::voice_chat::OnDisconnectSlot(slot);  // drop the leaver's voice channel + icon state
+    coop::shared_screen_sync::OnDisconnectForSlot(slot);
     coop::sleep_sync::OnDisconnectForSlot(slot);  // drop the leaver from the sleep tally (re-gate)
     coop::owner_entity_sync::OnPeerLeftSlot(slot);  // destroy the leaver's owner-entity mirrors (its eyer dies with it)
     coop::hook_sync::OnPeerLeftSlot(slot);  // the leaver's OWNER-PHASE hook mirrors; anchored ones are the host's and stay
@@ -575,6 +585,7 @@ DisconnectStats DisconnectAll() {
     coop::world_actor_sync::OnDisconnect();  // drain WorldActor mirrors (K2 client ones) + clear host reverse-map
     coop::piramid_sync::OnDisconnect();  // drop pending gather + gather-edge map + restored-tick set (hooks stay latched)
     coop::grayboar_sync::OnDisconnect();
+    coop::grayboar_turn::OnDisconnect();
     coop::npc_adoption::OnSessionEnd();  // drop pending deferred adoptions + reset latches
     coop::kerfur_prop_adoption::OnSessionEnd();  // drop pending prop-form kerfur adoptions
     coop::dev::dev_lanes::EndSession();  // [dev] the probes' verdicts, before the prop seams reset below, then each drill back to its first step
@@ -673,6 +684,7 @@ DisconnectStats DisconnectAll() {
     coop::drive_sync::OnDisconnect();  // slot baselines + latch/dirty state + pending
     coop::drive_payload_sync::OnDisconnect();  // held and sent rows, parked rows, notes
     coop::drive_rack_sync::OnDisconnect();  // rack baselines/shadow + pending + deny/taken rings
+    coop::shared_screen_sync::OnDisconnect();
     coop::sleep_sync::OnDisconnect();
     coop::wisp_attack_sync::OnDisconnect();  // clear damage-cancel latch + handled-wisp edges + pending despawns
     coop::wisp_tear_mirror::OnDisconnect();  // clear any armed victim-death deadline
@@ -759,6 +771,7 @@ void TickGameplay(coop::net::Session& session, bool isConnected, bool isHost,
     coop::madness_sync::Tick();
     coop::dingus_music_sync::Tick();
     coop::grayboar_actions::Tick();
+    coop::grayboar_turn::Tick();
     { PP::Scope _s{PP::Bucket::Interactable}; ue_wrap::ScopedWalkTimer _w{"sync:cord_sync"}; coop::cord_sync::Tick(); }
     { PP::Scope _s{PP::Bucket::Interactable}; ue_wrap::ScopedWalkTimer _w{"sync:prop_support_sync"}; coop::prop_support_sync::Tick(session); }
     { PP::Scope _s{PP::Bucket::Interactable}; ue_wrap::ScopedWalkTimer _w{"sync:gravity_motion"}; coop::gravity_motion::Tick(session); }
@@ -864,6 +877,7 @@ void TickGameplay(coop::net::Session& session, bool isConnected, bool isHost,
     { PP::Scope _s{PP::Bucket::Interactable};  coop::props::prop_food_sync::Tick(); }  // host publishes a world food's temperature, ripeness and uses when they move
     { PP::Scope _s{PP::Bucket::Balance};       ue_wrap::ScopedWalkTimer _w{"sync:upgrades"}; coop::upgrade_sync::Tick(session); }  // host polls the upgrade struct + broadcasts on change, and runs one queued purchase a tick a client; client retries the pending mirror
     coop::dev::dev_lanes::TickProbes(session, isConnected, isHost);  // [dev] the RE probes, each self-installing when its knob is set
+    coop::shared_screen_sync::Tick();
     coop::local_body::KeepPlayermodelVisible();  // after the game's event hide, if the F1 switch is on
 }
 

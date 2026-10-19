@@ -8,6 +8,9 @@
 #include "ue_wrap/actors/puppet.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/types.h"
+#include "ue_wrap/actors/sleep_display.h"
+#include "coop/net/ragdoll_pose_validation.h"
+#include <algorithm>
 #include <cmath>
 
 namespace coop {
@@ -57,6 +60,38 @@ bool RagdollDisplay::SetPose(const coop::net::RagdollPoseSnapshot& snap) {
         const float values[] = {snap.x, snap.y, snap.z, snap.linVelX, snap.linVelY,
                                 snap.linVelZ, snap.angVelX, snap.angVelY, snap.angVelZ};
         for (float value : values) if (!std::isfinite(value)) return false;
+        if (!net::ValidateRagdollBones(snap)) return false;
+        if (snap.rigTag != rigTag_ || snap.rigBones != rigBones_ || snap.rigSignature != rigSignature_) {
+            bones_.clear(); rigTag_ = snap.rigTag; rigBones_ = snap.rigBones;
+            rigSignature_ = snap.rigSignature;
+            if (void* puppet = puppetRef_.Get()) ue_wrap::sleep_display::Remove(puppet);
+            E::SetSceneComponentVisibility(E::GetRagdollBodyMesh(body_), simulationStarted_, false);
+            // Removing a pose display restores the standing source meshes;
+            // this player is still ragdolled, so keep those sources hidden.
+            if (void* puppet = puppetRef_.Get()) SetPuppetKelMeshesVisible(puppet, !simulationStarted_);
+        }
+        void* source = puppetRef_.Get() ? ue_wrap::puppet::GetMeshPlayerVisibleComponent(puppetRef_.Get()) : nullptr;
+        const bool compatible = source && snap.rigSignature == E::BoneLayoutSignature(source);
+        if (!compatible && !bones_.empty()) {
+            bones_.clear();
+            if (void* puppet = puppetRef_.Get()) {
+                ue_wrap::sleep_display::Remove(puppet);
+                SetPuppetKelMeshesVisible(puppet, !simulationStarted_);
+            }
+            E::SetSceneComponentVisibility(E::GetRagdollBodyMesh(body_), simulationStarted_, false);
+        }
+        for (uint8_t i = 0; compatible && i < snap.boneCount; ++i) {
+            const auto& b = snap.bones[i];
+            auto it = std::find_if(bones_.begin(), bones_.end(), [&](const auto& x) { return x.index == b.index; });
+            ue_wrap::engine::ArticulatedBone bone; bone.index = b.index;
+            bone.world.TX = b.x; bone.world.TY = b.y; bone.world.TZ = b.z;
+            const float norm = std::sqrt(float(b.qx)*b.qx + float(b.qy)*b.qy + float(b.qz)*b.qz + float(b.qw)*b.qw);
+            bone.world.RotX = b.qx/norm; bone.world.RotY = b.qy/norm;
+            bone.world.RotZ = b.qz/norm; bone.world.RotW = b.qw/norm;
+            if (it == bones_.end()) bones_.push_back(bone); else *it = bone;
+        }
+        std::sort(bones_.begin(), bones_.end(), [](const auto& a, const auto& b) { return a.index < b.index; });
+        if (bones_.size() > rigBones_) { bones_.clear(); return false; }
         if (std::fabs(snap.x) > net::kMaxCoord || std::fabs(snap.y) > net::kMaxCoord ||
             std::fabs(snap.z) > net::kMaxCoord) return false;
         ue_wrap::FVector current{};
@@ -86,6 +121,22 @@ bool RagdollDisplay::SetPose(const coop::net::RagdollPoseSnapshot& snap) {
 RagdollDisplay::Drive RagdollDisplay::DriveAttached(void* puppetActor, int32_t puppetIdx) {
     if (!active_) return Drive::Inactive;
     if (bodyRef_.Get()) {
+        if (!simulationStarted_ && std::chrono::steady_clock::now() >= simulationAfter_) {
+            simulationStarted_ = E::StartPlayerRagdollSimulation(body_);
+            if (simulationStarted_) {
+                SetPuppetKelMeshesVisible(puppetActor, false);
+                E::SetSceneComponentVisibility(E::GetRagdollBodyMesh(body_), true, false);
+            }
+        }
+        if (rigBones_ && bones_.size() == rigBones_ && puppetRef_.Get()) {
+            if (ue_wrap::sleep_display::DriveArticulated(puppetActor, bones_))
+                E::SetSceneComponentVisibility(E::GetRagdollBodyMesh(body_), false, false);
+            else {
+                ue_wrap::sleep_display::Remove(puppetActor);
+                SetPuppetKelMeshesVisible(puppetActor, false);
+                E::SetSceneComponentVisibility(E::GetRagdollBodyMesh(body_), true, false);
+            }
+        }
         // The VISIBLE player-model body is the whole display; the puppet actor
         // just rides the pelvis attach. Nothing to drive per frame.
         return Drive::Attached;
@@ -98,6 +149,8 @@ RagdollDisplay::Drive RagdollDisplay::DriveAttached(void* puppetActor, int32_t p
 }
 
 void RagdollDisplay::TeardownForDestroy() {
+    if (void* puppet = puppetRef_.Get()) ue_wrap::sleep_display::Remove(puppet);
+    puppetRef_.Reset(); bones_.clear(); rigBones_ = 0;
     // The body is a SEPARATE actor that would otherwise outlive the puppet as
     // an orphan. IsLiveByIndex-guarded so a GC-recycled address isn't mistaken
     // for our body. No detach + no kel un-hide: the puppet actor (and its
@@ -134,6 +187,10 @@ void RagdollDisplay::Start(void* puppetActor, int32_t puppetIdx) {
     body_ = body;
     bodyIdx_ = R::InternalIndexOf(body);
     bodyRef_.Set(body);
+    simulationStarted_ = false;
+    simulationAfter_ = std::chrono::steady_clock::now() + std::chrono::milliseconds(30);
+    puppetRef_.Set(puppetActor);
+    bones_.clear(); rigBones_ = 0;
 
     // PELVIS-attach the puppet actor to the body: the position anchor (nameplate +
     // recover hand-off follow the flop). The puppet itself goes INVISIBLE next -- the
@@ -146,7 +203,8 @@ void RagdollDisplay::Start(void* puppetActor, int32_t puppetIdx) {
     }
     // Hide the standing player model for the flop so it does not double-image with the
     // ragdoll. The skin effect rig (belly light / joint sparks) hides with it as well.
-    SetPuppetKelMeshesVisible(puppetActor, false);
+    E::SetSceneComponentVisibility(E::GetRagdollBodyMesh(body_), false, false);
+    SetPuppetKelMeshesVisible(puppetActor, true); // standing pose bridges the animation warmup
     coop::skin_effects::SetRigVisible(puppetActor, false);
     active_ = true;
     pelvisAligned_ = false;
@@ -154,6 +212,8 @@ void RagdollDisplay::Start(void* puppetActor, int32_t puppetIdx) {
 }
 
 void RagdollDisplay::Stop(void* puppetActor, int32_t puppetIdx) {
+    ue_wrap::sleep_display::Remove(puppetActor);
+    puppetRef_.Reset(); bones_.clear(); rigBones_ = 0;
     if (puppetActor && R::IsLiveByIndex(puppetActor, puppetIdx)) {
         // Un-hide the kel meshes FIRST (their normal state -- safe no-op if Start
         // never hid them), then detach (KeepWorld -- the puppet stays where the flop

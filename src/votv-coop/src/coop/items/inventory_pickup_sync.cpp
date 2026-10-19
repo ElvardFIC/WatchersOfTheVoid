@@ -100,7 +100,13 @@ ue_wrap::script_gate::Verdict OnPocketPre(const ue_wrap::script_gate::Call& call
     if (!coop::prop_save_data::PrepareForCapture(actor, key))
         return cancelPickup();
     const std::wstring className = R::ClassNameOf(actor);
-    if (coop::prop_save_data::Publish(s, actor, key))
+    const bool carriesRecord = coop::prop_save_data::Covers(actor);
+    const bool published = coop::prop_save_data::Publish(s, actor, key);
+    // The native pickup destroys this actor. A retry that only retains its live
+    // pointer cannot recover the charge/contents afterward; retain the world item
+    // until its supported mutable record has entered the reliable queue.
+    if (carriesRecord && !published) return cancelPickup();
+    if (published)
         UE_LOGI("inventory_pickup: published mutable state before pocketing key='%ls' cls='%ls'",
                 key.c_str(), className.c_str());
     return carrier.Get() == actor ? ue_wrap::script_gate::Verdict::Run

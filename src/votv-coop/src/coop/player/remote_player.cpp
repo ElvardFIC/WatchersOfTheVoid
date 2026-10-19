@@ -11,6 +11,7 @@
 #include "coop/player/skin_effects.h"
 #include "coop/player/players_registry.h"
 #include "ue_wrap/actors/sit_pose.h"
+#include "ue_wrap/actors/sleep_display.h"
 #include "ue_wrap/core/call.h"
 #include "ue_wrap/engine/engine.h"
 #include "ue_wrap/engine/world_identity.h"
@@ -233,7 +234,13 @@ void RemotePlayer::SetTargetPose(const coop::net::PoseSnapshot& snap) {
     // The ragdoll display, edge-detected off the streamed bit (RagdollDisplay owns the lifecycle);
     // a stop re-bases the presentation yaw on the wire truth, since its Update was skipped during
     // the flop.
-    if (ragdoll_.OnWireBit((snap.stateBits & coop::net::kStateBitRagdoll) != 0,
+    if ((curStateBits_ & coop::net::kStateBitSleeping) != 0 &&
+        (snap.stateBits & coop::net::kStateBitSleeping) == 0) {
+        ue_wrap::sleep_display::Remove(actor_);
+        coop::skin_effects::SetRigVisible(actor_, true);
+    }
+    if (ragdoll_.OnWireBit((snap.stateBits & coop::net::kStateBitRagdoll) != 0 &&
+                         (snap.stateBits & coop::net::kStateBitSleeping) == 0,
                            actor_, internalIdx_)) {
         // Stop detached the puppet at its visible pelvis anchor. Rebase the
         // standing interpolation there, not at the pre-fall capsule position;
@@ -367,7 +374,7 @@ void RemotePlayer::Tick() {
     // Skip the engine write when nothing changed since the last push: the puppet runs no physics
     // integration (its movement and actor ticks are parked), so a frozen pose stays where it is,
     // and re-writing the same transform dozens of times a second is wasted dispatch.
-    if (dirty_) {
+    if (dirty_ || ragdoll_.Active() || (curStateBits_ & net::kStateBitSleeping) != 0) {
         ApplyToEngine();
         dirty_ = false;
     }
@@ -399,6 +406,7 @@ void RemotePlayer::Destroy() {
     // separate actor that would outlive the puppet as an orphan: torn down first, with its latches.
     ragdoll_.TeardownForDestroy();
     // The skin effect rig's face actor is a separate world actor too.
+    ue_wrap::sleep_display::Remove(actor_);
     coop::skin_effects::OnBodyDestroyed(actor_);
     // IsLiveByIndex: if the puppet was GC-freed and its address recycled, plain IsLive would pass
     // and DestroyActor would destroy the foreign object at that address.
@@ -452,7 +460,23 @@ void RemotePlayer::ApplyToEngine() {
     // The wire carries the source's actor Z (the capsule centre, MTA's vPos shape, unaffected by BP
     // init transients), and the puppet's actor is the wire pose unchanged: both ends are
     // mainPlayer_C, so no actor-level Z or yaw offset exists.
+    const bool sleeping = (curStateBits_ & coop::net::kStateBitSleeping) != 0;
+    if (sleeping) {
+        footsteps_.Reset();
+        E::SetActorLocation(actor_, curPos_);
+        E::SetActorRotation(actor_, ue_wrap::FRotator{0.f, curYaw_, 0.f});
+        Pup::DriveCharacterMovement(actor_, ue_wrap::FVector{}, false);
+        ue_wrap::sit_pose::DriveSitting(actor_, false);
+        ue_wrap::sit_pose::ClearMeshShift(actor_);
+        ue_wrap::sleep_display::Drive(actor_, true, curPos_, curYaw_);
+        coop::skin_effects::SetRigVisible(actor_, false);
+        return;
+    }
     E::SetActorLocation(actor_, curPos_);
+    if ((curStateBits_ & net::kStateBitComputer) != 0) {
+        E::SetComponentVisible(Pup::GetNativeBodyMeshComponent(actor_), true, false);
+        E::SetComponentVisible(Pup::GetMeshPlayerVisibleComponent(actor_), true, false);
+    }
     // bodyYaw_ (the presentation), not curYaw_ (the wire truth): standing, the body holds so the
     // head can lead.
     E::SetActorRotation(actor_, ue_wrap::FRotator{0.f, bodyYaw_.Yaw(), 0.f});
@@ -525,7 +549,9 @@ void RemotePlayer::ApplyToEngine() {
         // step and the skin step effects (two accumulators drift apart into doubled steps). The
         // default step's volume is the skin layer's call: a replace-mode variant mutes it to 0, and
         // lib step still runs its trace, water and friction side effects.
-        if (!sitting && footsteps_.StepDue(curPos_, curSpeed_, !inAir)) {
+        const bool computer = (curStateBits_ & coop::net::kStateBitComputer) != 0;
+        if (sitting || computer) footsteps_.Reset();
+        if (!sitting && !computer && footsteps_.StepDue(curPos_, curSpeed_, !inAir)) {
             ue_wrap::votv_lib::CharacterStep(
                 actor_, coop::skin_effects::DefaultStepVolume(
                             actor_, coop::puppet_footsteps::Stride::kStepVolume));
@@ -594,7 +620,9 @@ bool RemotePlayer::TryGetHeadPosition(ue_wrap::FVector& out) const {
     constexpr float kPlateLiftCm = 33.f;  // float the plate above the skull
     ue_wrap::FVector raw{};
     bool haveBone = false;
-    if (ragdoll_.Active()) {
+    if (void* displayed = ue_wrap::sleep_display::Mesh(actor_)) {
+        haveBone = E::GetBoneWorldLocationByName(displayed, L"head", raw);
+    } else if (ragdoll_.Active()) {
         void* body = ragdoll_.Body();
         if (body && R::IsLiveByIndex(body, ragdoll_.BodyIdx())) {
             if (void* mesh = E::GetRagdollBodyMesh(body))

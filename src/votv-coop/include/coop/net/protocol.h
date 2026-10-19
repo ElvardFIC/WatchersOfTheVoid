@@ -1026,9 +1026,18 @@ enum class ReliableKind : uint8_t {
     CeilingLampState = 198, // KeyedTogglePayload, actual lamp presentation including flicker; host only
     AmbientLightState = 199, // KeyedTogglePayload, ambient bottom-light visibility; host only
     GrayboarAction = 200, // host attack/roar cosmetics; never gameplay-verb replay or blind relay
+    GrayboarTurn = 201, // host AnimBP steering scalar and turn-loop pitch; no AI replay
+    SharedScreen = 203, // validated operator UI snapshot; host canonical replay at join
+    PropScaleState = 202, // holder scale intent to host; validated canonical from host
 };
 
 #pragma pack(push, 1)
+
+struct GrayboarTurnPayload {
+    uint32_t eid, sequence;
+    float turn;
+};
+static_assert(sizeof(GrayboarTurnPayload)==12,"GrayboarTurnPayload wire size");
 
 struct GrayboarActionPayload {
     uint32_t eid, sequence;
@@ -1159,6 +1168,8 @@ namespace match_form { constexpr uint8_t kNone = 0; constexpr uint8_t kPile = 1;
 // PoseSnapshot.stateBits flags. Single-byte field; flags assigned bit-by-bit.
 inline constexpr uint8_t kStateBitInAir   = 0x01;
 inline constexpr uint8_t kStateBitRagdoll = 0x02;  // the source is ragdolled (faint, manual, knock-out), not dead
+inline constexpr uint8_t kStateBitSleeping = 0x08; // pelvis at the bed surface
+inline constexpr uint8_t kStateBitComputer = 0x10; // physically using the shared PC
 inline constexpr uint8_t kStateBitSitting = 0x04;  // seated: a chair, the ATV driver seat, or the ATV passenger seat
 
 // The game's vital scalars (food, sleep, the default max health) top out at 100. health is
@@ -1198,6 +1209,14 @@ struct WireKey {
     char    data[31];  // UTF-8 (Aprop_C Keys are ASCII)
 };
 static_assert(sizeof(WireKey) == 32, "WireKey must be 32 bytes");
+
+struct PropScaleStatePayload {
+    WireKey key;
+    uint32_t elementId;
+    uint16_t holdGen;
+    float x, y, z;
+};
+static_assert(sizeof(PropScaleStatePayload)==50,"PropScaleStatePayload wire size");
 
 struct DingusMusicPayload {
     WireKey key;
@@ -1405,20 +1424,31 @@ inline constexpr int kPropDrivePoseDatagramMax =
 // A ragdolling player's pelvis: world location and rotation, linear and angular velocity, read off
 // the sender's own ragdoll actor and sent unreliably while ragdolled. The receiver writes the
 // velocities onto its mirror body's pelvis and corrects positional drift each packet.
-// Pelvis rotation remains reserved; limbs simulate locally.
+// Rotating batches carry the authored physical bones for the visible pose; a
+// receiver's local physics remains the fallback until the whole rig has arrived.
+struct RagdollBonePose {
+    uint16_t index;
+    float x, y, z;
+    int16_t qx, qy, qz, qw; // normalized quaternion * 32767
+};
+static_assert(sizeof(RagdollBonePose) == 22, "packed ragdoll bone");
 struct RagdollPoseSnapshot {
     float x, y, z;                    // pelvis world location (cm)
     float pitch, yaw, roll;           // pelvis world rotation (deg)
     float linVelX, linVelY, linVelZ;  // pelvis linear velocity (cm/s)
     float angVelX, angVelY, angVelZ;  // pelvis angular velocity (deg/s)
+    uint8_t boneCount = 0, rigTag = 0;
+    uint16_t rigBones = 0;
+    uint32_t rigSignature = 0; // bone-index/name layout, independent of process FName indices
+    RagdollBonePose bones[7]{}; // rotating batches; seven keep the datagram below the relay MTU
 };
-static_assert(sizeof(RagdollPoseSnapshot) == 48, "RagdollPoseSnapshot must be 48 bytes");
+static_assert(sizeof(RagdollPoseSnapshot) == 210, "RagdollPoseSnapshot must be 210 bytes");
 
 struct RagdollPosePacket {
     PacketHeader        header;  // 20
-    RagdollPoseSnapshot pose;    // 48
+    RagdollPoseSnapshot pose;    // 210
 };
-static_assert(sizeof(RagdollPosePacket) == 68, "RagdollPosePacket must be 68 bytes");
+static_assert(sizeof(RagdollPosePacket) == 230, "RagdollPosePacket fits the 256-byte relay");
 
 // The held hand item's view-relative transform (MsgType::HandPose): relPos in cm along the owner's
 // roll-free view basis from the head anchor, relRot the item's rotator in that frame. Streamed

@@ -13,6 +13,8 @@ public:
  std::function<bool(int,ReliableKind,const void*,int)> allowSend;
  struct Sent{int slot;ReliableKind kind;std::vector<uint8_t> data;};std::vector<Sent> sent;
  bool poseActive=false; PropPoseSnapshot pose{};
+ uint32_t peerEpoch=1;
+ uint32_t peerGenerationForSlot(int)const{return peerEpoch;}
  void SetLocalPropPose(bool active,const PropPoseSnapshot& p){poseActive=active;pose=p;}
  bool IsSlotReady(int)const{return ready;}
  bool connected()const{return linked;}bool running()const{return linked;}Role role()const{return mode;}

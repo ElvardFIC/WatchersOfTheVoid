@@ -84,7 +84,7 @@ int main(){using namespace test;
  owned=true;statiq=true;S::ApplyUnstick(&actor,p,L"pried",1,nullptr);
  CHECK(!statiq&&moves==1&&parks==1); // keep a network-owned body parked, without teleporting
  for(int mode:{1,2,3}){
-  localHold=mode;statiq=true;S::ApplyUnstick(&actor,p,L"pried",1,&ui);
+  localHold=mode;statiq=true;S::ApplyUnstick(&actor,p,L"pried",1,nullptr);
   CHECK(!statiq&&moves==1&&parks==1); // a fresh local hold wins over a stale drive row
  }localHold=0;
  handAxis=true;statiq=true;S::OnStickState(p,1,&ui);CHECK(statiq);handAxis=false;

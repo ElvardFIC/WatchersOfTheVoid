@@ -5,6 +5,7 @@ namespace coop::gravity_motion {
 // Keep that local physics author on the ordinary held/release stream.
 void Tick(net::Session& session);
 void* Target();
+void YieldTarget(void* actor);
 void NoteStreamed(void* actor);
 void OnDisconnect();
 }

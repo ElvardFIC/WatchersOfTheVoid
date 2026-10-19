@@ -6,6 +6,7 @@
 #include "coop/props/remote_prop.h"
 #include "ue_wrap/actors/prop.h"
 #include "ue_wrap/core/cached_obj_ref.h"
+#include "ue_wrap/core/call.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/ufunction_hook.h"
@@ -110,5 +111,20 @@ void* Target() {
         (active_drive::NowMs()<g_until || (g_unstreamed && active_drive::NowMs()<g_until+2000)) ? g_target.Get() : nullptr;
 }
 void NoteStreamed(void* actor) { if (actor && g_target.Get()==actor) g_unstreamed=false; }
+void YieldTarget(void* actor) {
+    if (!actor) return;
+    if (g_target.Get()==actor) {g_target.Reset();g_until=0;g_unstreamed=false;}
+    void* player=g_player.Get();
+    if(!player)return;
+    static R::InstanceOffset weapon{L"weaponComp_gravityGun"}, object{L"obj"};
+    const int off=weapon.Of(player);void* component=nullptr;
+    if(off>=0)std::memcpy(&component,static_cast<uint8_t*>(player)+off,sizeof(component));
+    if(!component || !R::IsLive(component))return;
+    const int objOff=object.Of(component);void* target=nullptr;
+    if(objOff>=0)std::memcpy(&target,static_cast<uint8_t*>(component)+objOff,sizeof(target));
+    if(target!=actor)return;
+    ue_wrap::ParamFrame frame(R::FindDispatchFunctionCached(R::ClassOf(component),L"hold"));
+    if(frame.valid() && frame.Set<void*>(L"obj",nullptr))ue_wrap::Call(component,frame);
+}
 void OnDisconnect() { g_session=nullptr; g_target.Reset(); g_player.Reset(); g_until=0; g_world=0; g_unstreamed=false; }
 }

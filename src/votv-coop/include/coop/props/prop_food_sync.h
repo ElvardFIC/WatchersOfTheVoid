@@ -28,6 +28,8 @@ void Tick();
 void Apply(const coop::net::FoodStatePayload& payload);
 void OnHandState(const coop::net::FoodStatePayload& payload, uint8_t senderSlot);
 void OnBite(const coop::net::FoodBitePayload& payload, uint8_t senderSlot);
+// The final native bite is authored before its generic destruction can cross.
+bool ConsumesClientDestroy(void* actor);
 void SendAllToSlot(int slot);
 void OnDisconnect();
 

@@ -1,6 +1,9 @@
 // coop/player/local_body.cpp -- see coop/player/local_body.h.
 
 #include "coop/player/local_body.h"
+#include "ue_wrap/actors/sleep_display.h"
+#include "ue_wrap/desk/device_screen.h"
+#include "coop/player/skin_effects.h"
 
 #include "coop/comms/chat_feed.h"
 #include "coop/player/client_model.h"
@@ -168,14 +171,33 @@ void SetAlwaysSeePlayermodel(bool on) {
 }
 
 void KeepPlayermodelVisible() {
-    if (!AlwaysSeePlayermodel()) return;
+
     void* local = coop::players::Registry::Get().Local();
     if (!local || !R::IsLive(local)) return;
+    ue_wrap::FVector anchor{}; float yaw = 0.f;
+    const bool sleeping = ue_wrap::sleep_display::LocalAnchor(anchor, yaw);
+    const bool hadSleepDisplay = ue_wrap::sleep_display::Mesh(local) != nullptr;
+    ue_wrap::sleep_display::Drive(local, sleeping, anchor, yaw);
     // A faint and a death hide the standing body on purpose and put the ragdoll in its place.
     // Showing the standing mesh there draws a second body on top of the flop.
     bool ragdoll = false, dead = false;
-    if (ue_wrap::engine::ReadMainPlayerRagdollState(local, ragdoll, dead) && (ragdoll || dead))
-        return;
+    ue_wrap::engine::ReadMainPlayerRagdollState(local, ragdoll, dead);
+    coop::skin_effects::SetRigVisible(local, !sleeping && !ragdoll && !dead);
+    if (hadSleepDisplay && !sleeping && (ragdoll || dead)) {
+        ue_wrap::engine::SetSceneComponentVisibility(Pup::GetNativeBodyMeshComponent(local), false, false);
+        ue_wrap::engine::SetSceneComponentVisibility(Pup::GetMeshPlayerVisibleComponent(local), false, false);
+    }
+    if (void* nativeRagdoll = ue_wrap::engine::GetLocalRagdollBodyMesh(local)) {
+        const bool ready = !sleeping && ue_wrap::engine::RefreshLocalRagdollModel(local);
+        ue_wrap::engine::SetSceneComponentVisibility(nativeRagdoll, ready, false);
+        if (!sleeping) {
+            ue_wrap::engine::SetSceneComponentVisibility(Pup::GetNativeBodyMeshComponent(local), !ready, false);
+            ue_wrap::engine::SetSceneComponentVisibility(Pup::GetMeshPlayerVisibleComponent(local), !ready, false);
+        }
+    }
+    const bool computer = ue_wrap::device_screen::ClassifyWidgetClaimKey(
+        ue_wrap::device_screen::ReadActiveInterface(local)) == L"laptop";
+    if (sleeping || ragdoll || dead || (!computer && !AlwaysSeePlayermodel())) return;
     namespace P = ue_wrap::profile;
     // The body you see looking down, and in spectator, is mesh_playerVisible. It is a
     // child of the inherited mesh: a hide on that parent blanks the child even when the

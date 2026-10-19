@@ -27,12 +27,21 @@ bool IsLiveByIndex(void* p,int32_t i){return p&&i>=0&&i<7&&test::objects[i]==p&&
 bool IsLive(void* p){return p&&static_cast<test::Obj*>(p)->live;}
 void* ClassOf(void* p){return static_cast<test::Obj*>(p)->cls;}
 void* SuperStructOf(void* p){return static_cast<test::Obj*>(p)->parent;}
+void* OuterOf(void* p){return p==&test::component?test::component.parent:nullptr;}
 const FName& NameOf(void* p){++test::nameReads;return static_cast<test::Obj*>(p)->name;}
 bool NameEquals(const FName& n,const wchar_t* s){return n.ComparisonIndex==10&&!wcscmp(s,L"prop_physgun_C");}
 int32_t FindPropertyOffset(void*,const wchar_t* n){return test::missing?-1:!wcscmp(n,L"objectPickup")?offsetof(test::Obj,target):offsetof(test::Obj,component);}
 bool FindBoolProperty(void*,const wchar_t*,int32_t& off,uint8_t& mask){off=offsetof(test::Obj,flags);mask=4;return !test::missing;}
 int32_t InstanceOffset::Of(void*){return -1;} // no gravity component in this pawn
+void* FindDispatchFunctionCached(void*,const wchar_t*){std::abort();}
 }
+namespace ue_wrap {
+ParamFrame::ParamFrame(void*){std::abort();}
+bool ParamFrame::SetRaw(const wchar_t*,const void*,int32_t){std::abort();}
+bool ParamFrame::GetRaw(const wchar_t*,void*,int32_t)const{std::abort();}
+bool Call(void*,ParamFrame&){std::abort();}
+}
+namespace ue_wrap::component_calls {bool SetActive(void*,bool,bool){std::abort();}}
 namespace ue_wrap::world_identity {
 void* CurrentWorld(){return test::world;}
 void* WorldOf(void* p){return static_cast<test::Obj*>(p)->world;}
@@ -50,15 +59,21 @@ int main(){
  using namespace test;namespace G=ue_wrap::physics_gun;namespace E=ue_wrap::engine;
  base.name.ComparisonIndex=10;base.world=derived.world=foreign.world=nullptr;
  derived.parent=&base;gun.cls=&derived;gun.target=&target;gun.component=&component;gun.flags=4;
+ component.parent=&target;
  player.held=&gun;coop::players::Registry::Get().local=&player;
  CHECK(G::HeldProp(&gun)==&target);int n=nameReads;CHECK(G::HeldProp(&gun)==&target&&nameReads==n);
  E::MainPlayerGrabState state{};CHECK(E::ReadMainPlayerGrabState(&player,state));
  CHECK(state.holdingActor==&gun&&state.physicsActor==&target&&!state.gravityActor);
  CHECK(coop::local_prop_hold::IsHeld(&target));
+ gun.target=&foreign;component.parent=&foreign;foreign.world=world;
+ CHECK(G::HeldActor(&gun)==&foreign&&!G::HeldProp(&gun));
+ CHECK(E::ReadMainPlayerGrabState(&player,state)&&state.physicsActor==&foreign);
+ gun.target=&target;component.parent=&target;foreign.world=nullptr;
  gun.flags=0;CHECK(!G::HeldProp(&gun));CHECK(!coop::local_prop_hold::IsHeld(&target)); // native release keeps pointer until tick
  gun.flags=4;player.held=nullptr;CHECK(!coop::local_prop_hold::IsHeld(&target));player.held=&gun;
  target.live=false;CHECK(!G::HeldProp(&gun));target.live=true;
  component.live=false;CHECK(!G::HeldProp(&gun));component.live=true;
+ component.parent=&foreign;CHECK(!G::HeldProp(&gun));component.parent=&target;
  target.world=reinterpret_cast<void*>(2);CHECK(!G::HeldProp(&gun));target.world=world;
  gun.target=&gun;CHECK(!G::HeldProp(&gun));gun.target=&target;
  gun.cls=&foreign;CHECK(!G::HeldProp(&gun));gun.cls=&derived;

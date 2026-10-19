@@ -29,6 +29,8 @@ boar_tick = dict(body(boar, next(e for e in boar.exports if e['name'] == 'Receiv
 assert 'ExecuteUbergraph_grayboar(17479)' in boar_tick[18]
 assert 'Inst(StaticMesh)->AddForce(Inst(movementForce)' in boar_graph[18287]
 assert 'grayboarPawn.grayboarPawn_C' in boar_graph[16486]
+assert boar_graph[16486].endswith('byte:1, self))'), 'helper ownership must remain the body for scoped path abort'
+assert 'GetAIController(Inst(pawn))' in boar_graph[173]
 assert 'Inst(pawn)->Actor.K2_AttachToActor(self' in boar_graph[16652]
 boar_sense = dict(body(boar, next(e for e in boar.exports if e['name'] == 'sensePawn')))
 assert 'GetOverlappingActors' in boar_sense[31] and 'obj:/Script/Engine.Pawn' in boar_sense[31]
@@ -58,6 +60,16 @@ anim_graph = dict(body(anim, next(e for e in anim.exports if e['name'] == 'Execu
 assert 'Inst(grayBoar)->GetVelocity()' in anim_graph[4551]
 assert 'Inst(speed)' in anim_graph[4949]
 assert 'Inst(audio_loop_velocity)->AudioComponent.SetPitchMultiplier' in anim_graph[5060]
+anim_update = dict(body(anim, next(e for e in anim.exports if e['name'] == 'BlueprintUpdateAnimation')))
+assert 'ExecuteUbergraph_grayboar_Skeleton_AnimBlueprint(3948)' in anim_update[18]
+assert 'Inst(grayBoar)->Inst(StaticMesh)->SceneComponent.GetForwardVector()' in anim_graph[3991]
+assert 'Inst(grayBoar)->Inst(forward)->SceneComponent.GetRightVector()' in anim_graph[4063]
+assert 'Dot_VectorVector' in anim_graph[4135]
+assert 'Inst(turn) = Local(CallFunc_FInterpTo_ReturnValue)' in anim_graph[4474]
+assert 'Multiply_FloatFloat(Inst(turn), -30)' in anim_graph[1138]
+assert 'Multiply_FloatFloat(Inst(turn), 30)' in anim_graph[1268]
+assert 'Lerp(0.5, 2, Local(CallFunc_Abs_ReturnValue_2))' in anim_graph[5160]
+assert 'Inst(audio_loop_turn)->AudioComponent.SetPitchMultiplier' in anim_graph[5207]
 for name, entry in [
     ('BndEvt__grayboar_biteZone_K2Node_ComponentBoundEvent_0_ComponentBeginOverlapSignature__DelegateSignature', 21883),
     ('OnNotifyBegin_FEF3E3834EA127D483B3218D367A2A58', 14897),
@@ -81,6 +93,16 @@ assert 'Inst(dying) = true' in boar_graph[23558]
 assert 'Divide_FloatFloat(Inst(animationSpeed), 2)' in boar_graph[23593]
 assert 'name:death' in boar_graph[23635]
 assert 'grayboar_idle4' in boar_graph[24063] and '1.5, 1.35' in boar_graph[24063]
+assert any(i[1] == 'SoundWave' and i[3] == 'grayboar_idle4' for i in boar.imports)
+assert any(i[1] == 'SoundAttenuation' and i[3] == 'att_default' for i in boar.imports)
+assert 'Local(K2Node_CustomEvent_skipAnim)' in boar_graph[24749]
+for offset,section in [(24764,'damage1'),(24795,'damage2'),(24826,'damage3'),(24857,'damage4')]:
+    assert f'name:{section}' in boar_graph[offset]
+assert 'RandomIntegerInRange(0, 3)' in boar_graph[24888]
+assert 'CreateProxyObjectForPlayMontage' in boar_graph[24953] and 'Inst(animationSpeed)' in boar_graph[24953]
+assert 'audio_idle)->AudioComponent.SetSound' in boar_graph[23431] and 'grayboar_damage_Cue' in boar_graph[23431]
+assert 'Inst(audio_idle)->Play(0)' in boar_graph[23342] and 'Inst(audio_attack)->Stop()' in boar_graph[23394]
+assert any(i[1]=='SoundCue' and i[3]=='grayboar_damage_Cue' for i in boar.imports)
 for name, entry in [('OnNotifyBegin_F2D44BFA4340ED84016CA19643B74736', 2921),
                     ('OnCompleted_F2D44BFA4340ED84016CA19643B74736', 13600)]:
     rows = dict(body(boar, next(e for e in boar.exports if e['name'] == name)))
@@ -88,6 +110,67 @@ for name, entry in [('OnNotifyBegin_F2D44BFA4340ED84016CA19643B74736', 2921),
 assert 'name:death' in boar_graph[2948]
 assert 'GameplayStatics.BeginDeferredActorSpawnFromClass' in boar_graph[4306]
 assert 'K2_DestroyActor()' in boar_graph[13627]
+move = dict(body(boar, next(e for e in boar.exports if e['name'] == 'move')))
+assert 'ExecuteUbergraph_grayboar(21139)' in move[0]
+assert 'name:ExecuteUbergraph_grayboar' in boar_graph[21139] and 'skipconst:15' in boar_graph[21139]
+assert 'Inst(speedMultiplier)' in boar_graph[91]
+assert 'AITask_MoveTo.AIMoveTo' in boar_graph[202]
+assert 'OnCharacterMovementUpdated' in boar_graph[489]
+for name, entry in [('updMov',21330),('checkIfOnPath',26533),('nomoveMove',26197),
+                    ('OnRequestFailed_EAF218CB4B42F6CCCF73E9B452B5AF9D',13852),
+                    ('OnMoveFinished_EAF218CB4B42F6CCCF73E9B452B5AF9D',13786)]:
+    rows=dict(body(boar,next(e for e in boar.exports if e['name']==name)))
+    assert any(f'ExecuteUbergraph_grayboar({entry})' in row for row in rows.values())
+
+# Delays scheduled before adoption bypass the public function gates on resume.
+for schedule, resume in [(13797,543),(13924,558),(24526,966),(26478,1016),(26670,1381)]:
+    assert 'Delay(' in boar_graph[schedule] and f'skipconst:{resume},' in boar_graph[schedule]
+    assert 'name:ExecuteUbergraph_grayboar' in boar_graph[schedule]
+assert 'move()' in boar_graph[543] and 'jump @543' in boar_graph[558]
+assert 'detected()' in boar_graph[966]
+assert 'StopMovementImmediately()' in boar_graph[1308] and 'move()' in boar_graph[1366]
+assert 'StopMovementImmediately()' in boar_graph[1518] and 'move()' in boar_graph[1576]
+for name, entry in [('senseUpdate',21799),('saw',21828),('setWalking',26118),
+    ('BndEvt__grayboar_StaticMesh_K2Node_ComponentBoundEvent_1_ComponentHitSignature__DelegateSignature',25637),
+    ('reachedByLightning',26734)]:
+    rows=dict(body(boar,next(e for e in boar.exports if e['name']==name)))
+    assert any(f'ExecuteUbergraph_grayboar({entry})' in row for row in rows.values())
+assert 'unhook()' in boar_graph[21813]
+assert 'SetMovementMode(byte:1, byte:0)' in boar_graph[26055]
+assert 'jump @16399' in boar_graph[25637] and 'push_flow @14985' in boar_graph[16399]
+assert 'AddImpulse' in boar_graph[15555]
+assert '->addDamage(self, 10,' in boar_graph[16237]
+assert 'grayboar_overcharged.grayboar_overcharged_C' in boar_graph[27181]
+assert 'K2_DestroyActor()' in boar_graph[27289]
+
+# Old OnDestroyed bindings only unbind and clear their target; preserve cleanup.
+dest=dict(body(boar,next(e for e in boar.exports if e['name']=='dest')))
+assert 'ExecuteUbergraph_grayboar(23553)' in dest[18]
+assert 'jump @23477' in boar_graph[23553]
+assert 'op62(Inst(target)->Inst(OnDestroyed)' in boar_graph[23500]
+assert 'op5F(Inst(target), noobj)' in boar_graph[23541]
+
+charged=package('objects__misc__grayboar_overcharged')
+charged_graph=dict(body(charged,next(e for e in charged.exports if e['name']=='ExecuteUbergraph_grayboar_overcharged')))
+for name, entry in [('killed',933),('deathplosion',928),('objectDamaged',938),('zapSfx',923)]:
+    rows=dict(body(charged,next(e for e in charged.exports if e['name']==name)))
+    assert any(f'ExecuteUbergraph_grayboar_overcharged({entry})' in row for row in rows.values())
+assert 'bind_delegate(deathplosion' in charged_graph[10] and ', 0.25, true,' in charged_graph[33]
+assert 'explosion.explosion_C' in charged_graph[199] and 'name:damage, 1)' in charged_graph[315]
+assert '->punch(' in charged_graph[1049]
+assert 'SetPhysicsAngularVelocityInDegrees' in charged_graph[863]
+for p in (boar,charged):
+    explosion=dict(body(p,next(e for e in p.exports if e['name']=='explosion')))
+    assert 'explosion.explosion_C' in explosion[113]
+    assert any('name:damage, 25)' in row for row in explosion.values())
+
+# Script-gate class scopes match the declaring body, not the actor's ancestry.
+# Every registered owner/name pair must actually be exported by that package.
+sync_source=(checkout/'src/votv-coop/src/coop/creatures/grayboar_sync.cpp').read_text()
+authority_table=sync_source.split('kAuthorityEntries[] = {',1)[1].split('};',1)[0]
+for owner,name in re.findall(r'\{(kBoarClass|kChargedClass),\s*L"([^"]+)"\}',authority_table):
+    p=boar if owner=='kBoarClass' else charged
+    assert any(e['name']==name and p.class_of_export(e)=='Function' for e in p.exports), (owner,name)
 assert not any(e['name'] == 'GetVelocity' and boar.class_of_export(e) == 'Function' for e in boar.exports)
 
 if '--boar-only' in sys.argv:

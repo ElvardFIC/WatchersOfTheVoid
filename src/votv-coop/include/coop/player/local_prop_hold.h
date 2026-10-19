@@ -2,6 +2,7 @@
 #include "coop/player/players_registry.h"
 #include "coop/items/gravity_motion.h"
 #include "ue_wrap/engine/engine_mainplayer.h"
+#include "ue_wrap/actors/physics_gun.h"
 
 namespace coop::local_prop_hold {
 inline bool Matches(const ue_wrap::engine::MainPlayerGrabState& state, void* actor) {
@@ -15,5 +16,15 @@ inline bool IsHeld(void* actor) {
     ue_wrap::engine::MainPlayerGrabState state{};
     return actor && ue_wrap::engine::ReadMainPlayerGrabState(players::Registry::Get().Local(), state) &&
         Matches(state, actor);
+}
+inline bool Yield(void* actor) {
+    if (!actor) return false;
+    void* player=players::Registry::Get().Local();
+    ue_wrap::engine::MainPlayerGrabState state{};
+    if(!ue_wrap::engine::ReadMainPlayerGrabState(player,state))return false;
+    if(state.grabbingActor==actor)ue_wrap::engine::ReleaseMainPlayerGrabIfHolding(player,actor);
+    if(state.physicsActor==actor)ue_wrap::physics_gun::ReleaseHeldProp(state.holdingActor,actor,player);
+    gravity_motion::YieldTarget(actor);
+    return !IsHeld(actor);
 }
 }

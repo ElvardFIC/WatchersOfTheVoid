@@ -159,6 +159,12 @@ bool BirthIsPlayerAuthored(void* sourceObject) {
         R::NameEquals(R::NameOf(const_cast<void*>(caller)), L"spawn") &&
         sourceObject == coop::hand_item::LocalHandActor())
         return true;
+    // A hand food box's final bite creates its empty g_foodbox wrapper in this
+    // exact graph. A world copy or a load-time spawn is not a personal birth.
+    if (sourceObject && owner && sourceObject == coop::hand_item::LocalHandActor() &&
+        R::NameEquals(R::NameOf(owner), L"prop_foodBox_C") &&
+        R::NameEquals(R::NameOf(const_cast<void*>(caller)), L"ExecuteUbergraph_prop_foodBox"))
+        return true;
     if (owner && R::NameEquals(R::NameOf(owner), L"prop_workbench_C") &&
         R::NameEquals(R::NameOf(const_cast<void*>(caller)), L"ExecuteUbergraph_prop_workbench"))
         return true;

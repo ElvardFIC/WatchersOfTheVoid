@@ -3,7 +3,10 @@
 // coop/player/local_streams.h.
 
 #include "coop/player/local_streams.h"
+#include "ue_wrap/actors/sleep_display.h"
+#include "ue_wrap/desk/device_screen.h"
 #include "coop/items/gravity_motion.h"
+#include "coop/props/prop_scale_sync.h"
 #include "ue_wrap/devices/kitchen_machine.h"
 
 #include "coop/dev/perf_probe.h"
@@ -37,6 +40,8 @@
 #include "ue_wrap/actors/vitals.h"
 
 #include <cmath>
+#include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <string>
 
@@ -127,6 +132,15 @@ bool ReadLocalPose(void* local, void* controller, coop::net::PoseSnapshot& out) 
         coop::sit_pose::LocalIsSitting()) {
         out.stateBits |= coop::net::kStateBitSitting;
     }
+    ue_wrap::FVector sleepAnchor{}; float sleepYaw = 0.f;
+    if (ue_wrap::sleep_display::LocalAnchor(sleepAnchor, sleepYaw)) {
+        out.stateBits = coop::net::kStateBitSleeping;
+        out.x = sleepAnchor.X; out.y = sleepAnchor.Y; out.z = sleepAnchor.Z;
+        out.yaw = sleepYaw; out.pitch = out.headYawDelta = out.speed = 0.f;
+    }
+    if (ue_wrap::device_screen::ClassifyWidgetClaimKey(
+        ue_wrap::device_screen::ReadActiveInterface(local)) == L"laptop")
+        out.stateBits |= coop::net::kStateBitComputer;
     // The vitals (health fraction, food, sleep) in three bytes: ue_wrap::vitals reads this
     // machine's UsaveSlot_C, so each peer packs its own. Full (255) until the save resolves, so a
     // booting peer does not flash an empty bar; the receiver treats them as display only. O(1)
@@ -204,6 +218,7 @@ void* LastHeldActor() {
 }
 
 void OnSessionStart() {
+    coop::prop_scale_sync::Reset();
     g_lastHeldProp.Reset();
     g_lastHeldKey = {};
     g_lastHeldEid = coop::element::kInvalidId;
@@ -218,7 +233,7 @@ void OnSessionStart() {
 
 void Tick(coop::net::Session& session, void* local, void* controller) {
     namespace PP = coop::dev::perf_probe;
-    coop::net::PoseSnapshot mine;
+    coop::net::PoseSnapshot mine{};
     { PP::Scope _s{PP::Bucket::LocalSend};
       if (ReadLocalPose(local, controller, mine)) {
           session.SetLocalPose(mine);
@@ -227,7 +242,8 @@ void Tick(coop::net::Session& session, void* local, void* controller) {
           // sample it just read.
           coop::skin_effects::TickStride(
               local, ue_wrap::FVector{mine.x, mine.y, mine.z}, mine.speed,
-              (mine.stateBits & coop::net::kStateBitInAir) == 0);
+              (mine.stateBits & (coop::net::kStateBitInAir | coop::net::kStateBitSleeping |
+                  coop::net::kStateBitSitting | coop::net::kStateBitRagdoll | coop::net::kStateBitComputer)) == 0);
       }
     }
 
@@ -266,6 +282,10 @@ void Tick(coop::net::Session& session, void* local, void* controller) {
     // KitchenState carries their relative pose; the loose-prop lane would adopt
     // an unrelated child identity and fight the same hinge's physics.
     if (heldActor && ue_wrap::kitchen_machine::DoorParent(heldActor)) heldActor=nullptr;
+    // A physgun can select actors outside prop_C. Dedicated ATV/hinge channels
+    // read that target themselves; never feed a Character or arbitrary actor to
+    // the prop/clump movement path merely because the weapon points at it.
+    if (heldActor && !ue_wrap::prop::IsKeyedInteractable(heldActor)) heldActor=nullptr;
     // The garbage-pickup probe (ini garbage_pickup_probe=1): which of grabbing_actor and
     // holding_actor a clump pickup sets, plus the held class, key and keyed verdict; while
     // something is held, about 4 Hz; one bool load when off.
@@ -307,11 +327,14 @@ void Tick(coop::net::Session& session, void* local, void* controller) {
     // reliable release before opening B's stream on the following frame.
     if (heldActor && g_lastHeldProp.Raw() && heldActor!=g_lastHeldProp.Raw() &&
         !coop::trash_channel::IsCarrying(g_lastHeldEid)) heldActor=nullptr;
+    const uint16_t shapeGen = heldActor && heldActor != g_lastHeldProp.Get()
+        ? (g_holdGen == 65535 ? uint16_t{1} : static_cast<uint16_t>(g_holdGen+1)) : g_holdGen;
+    coop::prop_scale_sync::Tick(session, heldActor, shapeGen);
     if (heldActor && R::IsLive(heldActor)) {
         // The held item: an Aprop_C carries a force-minted key; the non-keyable trash clump rides
         // the same pipeline identified by eid (key None), renders as the bare dirtball, floats in
         // front of the puppet through this stream and gets physics on release.
-        if (heldActor != g_lastHeldProp.Raw()) {
+        if (heldActor != g_lastHeldProp.Get()) {
             // A new grab of a prop an Omega took is the robot having let go. On a client the note
             // would otherwise make this hold's let-go look like another take. The host's table
             // is the pose sweep's, and the call is a no-op there.
@@ -634,7 +657,10 @@ void Tick(coop::net::Session& session, void* local, void* controller) {
     {
         ue_wrap::FVector rdLoc{}, rdLin{}, rdAng{};
         ue_wrap::FRotator rdRot{};
-        if (ue_wrap::engine::ReadLocalRagdollPelvisPhysics(local, rdLoc, rdRot, rdLin, rdAng)) {
+        const bool bodyReady = (mine.stateBits & coop::net::kStateBitSleeping) == 0 &&
+            ue_wrap::engine::RefreshLocalRagdollModel(local);
+        if (bodyReady &&
+            ue_wrap::engine::ReadLocalRagdollPelvisPhysics(local, rdLoc, rdRot, rdLin, rdAng)) {
             coop::net::RagdollPoseSnapshot rp{};
             rp.x = rdLoc.X; rp.y = rdLoc.Y; rp.z = rdLoc.Z;
             // The rotation normalised at the wire boundary; the velocities go raw.
@@ -643,6 +669,36 @@ void Tick(coop::net::Session& session, void* local, void* controller) {
             rp.roll  = ue_wrap::NormalizeAxis(rdRot.Roll);
             rp.linVelX = rdLin.X; rp.linVelY = rdLin.Y; rp.linVelZ = rdLin.Z;
             rp.angVelX = rdAng.X; rp.angVelY = rdAng.Y; rp.angVelZ = rdAng.Z;
+            static ue_wrap::CachedObjRef lastRig, lastAsset;
+            static uint8_t rigTag = 0;
+            void* mesh = ue_wrap::engine::GetLocalRagdollBodyMesh(local);
+            void* asset = ue_wrap::puppet::GetComponentSkeletalMeshAsset(mesh);
+            if (!g_wasRagdolling || lastRig.Get() != mesh || lastAsset.Get() != asset) {
+                ++rigTag; lastRig.Set(mesh); lastAsset.Set(asset);
+            }
+            std::vector<ue_wrap::engine::ArticulatedBone> bones;
+            const uint32_t signature = ue_wrap::engine::BoneLayoutSignature(mesh);
+            if (signature && ue_wrap::engine::ReadArticulatedPose(mesh, bones) && !bones.empty()) {
+                rp.rigSignature = signature;
+                rp.rigTag = rigTag; rp.rigBones = static_cast<uint16_t>(bones.size());
+                // Hold a batch beyond a send interval: the game pump can run
+                // faster than transport, so advancing on every poll loses limbs.
+                const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now().time_since_epoch()).count();
+                constexpr size_t kBonesPerPacket = 7;
+                const size_t start = (static_cast<size_t>(ms / 25) % ((bones.size()+kBonesPerPacket-1)/kBonesPerPacket)) * kBonesPerPacket;
+                rp.boneCount = static_cast<uint8_t>(std::min(kBonesPerPacket, bones.size()-start));
+                auto quantize = [](float v) -> int16_t {
+                    return static_cast<int16_t>(std::lround(std::clamp(v, -1.f, 1.f)*32767.f));
+                };
+                for (uint8_t i = 0; i < rp.boneCount; ++i) {
+                    const auto& bone = bones[start+i]; auto& wire = rp.bones[i];
+                    wire.index = bone.index;
+                    wire.x = bone.world.TX; wire.y = bone.world.TY; wire.z = bone.world.TZ;
+                    wire.qx = quantize(bone.world.RotX); wire.qy = quantize(bone.world.RotY);
+                    wire.qz = quantize(bone.world.RotZ); wire.qw = quantize(bone.world.RotW);
+                }
+            }
             session.SetLocalRagdollPose(true, rp);
             g_wasRagdolling = true;
             const uint64_t n = ++g_ragdollEmitCount;

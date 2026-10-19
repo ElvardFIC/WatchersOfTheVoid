@@ -135,7 +135,9 @@ TrashClassKind ResolveTrashClassKind(const std::wstring& className) {
     TrashClassKind k;
     k.isClump = WalksToBase(cls, GarbageClumpCls());
     k.isTrash = k.isClump || WalksToBase(cls, ActorChipPileCls());
-    g_trashClassKind[className] = k;
+    // A missing base can load later; cache only a definitive classification.
+    if (k.isClump || (GarbageClumpCls() && ActorChipPileCls()))
+        g_trashClassKind[className] = k;
     return k;
 }
 

@@ -434,7 +434,7 @@ void ApplyUnstick(void* prop, const coop::net::PropStickStatePayload& p, const s
     if (wasStuck && (ue_wrap::prop::IsFrozen(prop) || ue_wrap::prop::IsStatic(prop))) return;
     // init() recomputes simulation. A late unstick under a network drive must
     // restore its kinematic body; a real local physics-handle grab stays simulating.
-    const bool localHeld = localPlayer && coop::local_prop_hold::IsHeld(prop);
+    const bool localHeld = coop::local_prop_hold::IsHeld(prop);
     if (wasStuck && driven && !localHeld) E::SetActorSimulatePhysics(prop, false);
     const bool owned = driven || localHeld;
     if (!owned) {

@@ -76,6 +76,7 @@ std::array<coop::active_drive::ActiveDrive, coop::players::kMaxPeers> g_drives{}
 // syncer's packets (CUnoccupiedVehicleSync.cpp). Receivers keep only the lowest-slot remote
 // drive on a body. Local grabs still take precedence; this is not a host grant protocol.
 struct HoldGate {
+    ue_wrap::CachedObjRef actorIdentity;
     uint16_t closedGen   = 0;
     bool     haveClosed  = false;
     uint16_t driveGen    = 0;      // the hold the slot's drive belongs to, while there is one
@@ -109,17 +110,31 @@ bool CanTakeRemoteDrive(int slot, uint16_t generation, void* target) {
     // Inspect all competitors before displacing any: a losing claim must not
     // clear a third slot's drive on its way to discovering the winner.
     for (int other = 0; other < slot; ++other) {
-        if (g_drives[other].LiveActor() != target) continue;
+        if (g_drives[other].LiveActor() != target || !g_holds[other].actorIdentity.Is(target)) continue;
         NoteConflict(slot, generation, target, other);
         return false;
     }
     return true;
 }
 
+bool CanTakeLocalHold(int slot, uint16_t generation, void* target) {
+    if (!coop::local_prop_hold::IsHeld(target)) return true;
+    const int local = coop::players::Registry::Get().LocalPeerId();
+    if (local < 0 || local >= int(g_holds.size())) return false;
+    // Use the same slot order on every receiver, including the holder itself.
+    // A local native handle/weapon must let go before the winning drive parks it.
+    if (slot < local && coop::local_prop_hold::Yield(target)) {
+        NoteConflict(local, coop::local_streams::CurrentHoldGen(), target, slot);
+        return true;
+    }
+    NoteConflict(slot, generation, target, local);
+    return false;
+}
+
 bool TakeRemoteDrive(int slot, uint16_t generation, void* target) {
     if (!CanTakeRemoteDrive(slot, generation, target)) return false;
     for (int other = slot + 1; other < int(g_drives.size()); ++other) {
-        if (g_drives[other].LiveActor() != target) continue;
+        if (g_drives[other].LiveActor() != target || !g_holds[other].actorIdentity.Is(target)) continue;
         NoteConflict(other, g_holds[other].driveGen, target, slot);
         // Preserve the body's park across the transfer; no one-frame physics kick.
         ResetDriveState(g_drives[other]);
@@ -147,7 +162,7 @@ namespace {  // [drive helpers part 2]
 bool IsActorDrivenByOtherThan(void* actor, int slot) {
     if (!actor) return false;
     for (int s = 0; s < static_cast<int>(coop::players::kMaxPeers); ++s)
-        if (s != slot && g_drives[s].actor == actor) return true;
+        if (s != slot && g_drives[s].actor == actor && g_holds[s].actorIdentity.Is(actor)) return true;
     return false;
 }
 
@@ -159,8 +174,8 @@ bool IsActorUnderAnyDrive(void* actor) {
     // g_drives is game-thread only, by assertion rather than a mutex.
     UE_ASSERT_GAME_THREAD("g_drives (IsActorUnderAnyDrive)");
     if (!actor) return false;
-    for (const auto& d : g_drives) {
-        if (d.actor == actor) return true;
+    for (size_t slot = 0; slot < g_drives.size(); ++slot) {
+        if (g_drives[slot].actor == actor && g_holds[slot].actorIdentity.Is(actor)) return true;
     }
     return false;
 }
@@ -169,8 +184,11 @@ void* DrivenActor(int slot) {
     UE_ASSERT_GAME_THREAD("g_drives (DrivenActor)");
     if (slot < 0 || slot >= static_cast<int>(coop::players::kMaxPeers)) return nullptr;
     const auto& d = g_drives[static_cast<size_t>(slot)];
-    if (!d.actor || !R::IsLiveByIndex(d.actor, d.actorIdx)) return nullptr;
+    if (!d.actor || !g_holds[slot].actorIdentity.Is(d.actor)) return nullptr;
     return d.actor;
+}
+uint16_t DrivenHoldGeneration(int slot) {
+    return DrivenActor(slot) ? g_holds[slot].driveGen : 0;
 }
 
 // The WireKey as a wstring, for the key index.
@@ -269,10 +287,10 @@ void ResolveAndStartDrive(int slot, const coop::net::PropPoseSnapshot& pose) {
     coop::unresolved_pose_ledger::Clear(slot, keyW, pose.elementId);
     // The live pawn may have grabbed between network ticks. Never park a local
     // hand/gun target merely because an older peer pose arrived afterwards.
-    if (coop::local_prop_hold::IsHeld(prop)) return;
-    if (!CanTakeRemoteDrive(slot, pose.holdGen, prop)) return;
     ue_wrap::CachedObjRef candidate;
     candidate.Set(prop);
+    if (!CanTakeLocalHold(slot, pose.holdGen, prop) || !candidate.Get()) return;
+    if (!CanTakeRemoteDrive(slot, pose.holdGen, prop)) return;
     // The half of the grab this peer never ran. A grab runs its prelude on the grabbing machine only:
     // prop_C's playerGrabbed_pre clears the prop's lifespan, broadcasts `touched` and runs
     // awakeUnfreeze on a frozen or sleeping prop, and a prop carrying the wall-attach component (the
@@ -316,7 +334,7 @@ void ResolveAndStartDrive(int slot, const coop::net::PropPoseSnapshot& pose) {
     }
     // The native prelude can invoke Blueprint callbacks; revalidate before using
     // the object again, and only transfer the previous drive after setup succeeds.
-    if (!candidate.Get() || coop::local_prop_hold::IsHeld(prop)) return;
+    if (!candidate.Get() || !CanTakeLocalHold(slot, pose.holdGen, prop) || !candidate.Get()) return;
     // GetStaticMesh is null for the clump by design (it is driven through the root physics); only
     // an Aprop_C without a mesh is an error.
     void* mesh = ue_wrap::prop::GetStaticMesh(prop);
@@ -340,6 +358,7 @@ void ResolveAndStartDrive(int slot, const coop::net::PropPoseSnapshot& pose) {
     // the robot's take would treat the let-go as another take. The host's table is untouched.
     coop::npc_sync::ForgetKerfurHolding(prop);
     g_drives[slot].actor = prop;
+    hold.actorIdentity.Set(prop);
     g_drives[slot].actorIdx = R::InternalIndexOf(prop);  // live here; cache for LiveActor()
     g_drives[slot].mesh  = mesh;
     g_drives[slot].lastKey.assign(pose.key.data, pose.key.len);
@@ -381,7 +400,10 @@ void Tick(coop::net::Session& session) {
     for (int slot = firstSlot; slot < lastSlot; ++slot) {
         if (!isHost && static_cast<uint8_t>(slot) == localSlot) continue;
         ActiveDrive& drive = g_drives[slot];
-        if (void* a=drive.LiveActor(); a && coop::local_prop_hold::IsHeld(a)) {
+        // A UObject can reuse both address and array index after destruction. The
+        // slot serial must still match before interpolation or physics touches it.
+        if (drive.actor && !g_holds[slot].actorIdentity.Is(drive.actor)) ResetDriveState(drive);
+        if (void* a=drive.LiveActor(); a && !CanTakeLocalHold(slot, g_holds[slot].driveGen, a)) {
             coop::prop_park::Unpark(a,drive.mesh,!StickHoldsPhysicsOff(a));
             ResetDriveState(drive);
         }
@@ -524,7 +546,7 @@ void OnRelease(int senderSlot, const coop::net::PropReleasePayload& payload, voi
         // The slot's drive must carry this key and, for a clump (key None matches any clump), this
         // eid; otherwise the cache is stale and the fresh resolve below applies. Without the eid
         // check a late throw of one clump would land on the next clump the slot grabbed.
-        const bool driveHasIt = d.actor && KeyMatchesCache(senderSlot, payload.key) &&
+        const bool driveHasIt = d.actor && g_holds[senderSlot].actorIdentity.Is(d.actor) && KeyMatchesCache(senderSlot, payload.key) &&
                                 (payload.elementId == 0 || d.lastEid == payload.elementId);
         if (driveHasIt && payload.holdGen != 0 && GenAfter(g_holds[senderSlot].driveGen, payload.holdGen)) {
             // The holder took the prop again before this release arrived: its new hold owns it.
@@ -790,10 +812,13 @@ void ForceRelease() {
     // goes through OnDisconnectForSlot.
     UE_ASSERT_GAME_THREAD("g_drives (remote_prop::ForceRelease)");
     // A slot's generations are its holder's; the next session's holder counts its own.
+    const auto identities = g_holds;
     g_holds.fill({});
     int released = 0;
     for (auto& d : g_drives) {
         if (!d.actor) continue;
+        const auto slot = static_cast<size_t>(&d - g_drives.data());
+        if (!identities[slot].actorIdentity.Is(d.actor)) { ResetDriveState(d); continue; }
         // A trash mirror retires whole (drives evicted, destroyed if we made it, unbound, the pin
         // released after the destroy), never through ConsumeLocalActor, which would leave a rooted
         // PendingKill actor anchoring its world. Retire clears this drive.
@@ -829,6 +854,7 @@ void OnDisconnectForSlot(int peerSlot) {
     if (peerSlot < 0 || peerSlot >= static_cast<int>(coop::players::kMaxPeers)) return;
     // The leaver's generations must not gate the slot's next occupant, whose counter need not start
     // above them.
+    const auto identity = g_holds[peerSlot].actorIdentity;
     g_holds[peerSlot] = {};
     // Ledger rows are keyed by slot and slots recycle lowest-free, so the leaver's counts must not
     // reach the next occupant; cleared before the early return, since a slot can have rows without
@@ -846,6 +872,7 @@ void OnDisconnectForSlot(int peerSlot) {
     }
     ActiveDrive& d = g_drives[peerSlot];
     if (!d.actor) return;
+    if (!identity.Is(d.actor)) { ResetDriveState(d); return; }
     // A held trash mirror retires whole, as in ForceRelease. Normally
     // trash_mirror::OnDisconnectForSlot already retired it (it runs first in DisconnectSlot) and
     // the drive is empty; Retire is idempotent.
