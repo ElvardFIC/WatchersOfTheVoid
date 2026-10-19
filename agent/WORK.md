@@ -2,6 +2,62 @@
 
 ## Development 2152 - entity category synchronization (19 October 2026)
 
+### Merge conflict resolution and current validation (19 October 2026)
+
+At the owner's explicit request, resolved all 21 conflicted files. Inspected both
+sides: incoming 2150 alternatives would undo current protocol 2153, full NPC rotation,
+personal nightmares, ragdoll retries/drift correction, tool effects, recursive skin
+discovery and grayboar subsystem registration. Preserved the current implementations
+and the latest uncommitted boar damage routing. Conflict choices were applied within
+each hunk; candidate results matched the current-side file contents. Original BOM
+and line endings were retained where applicable. Before resolution, copied working
+files and all three index stages into build/merge-resolution-20261019-fa5592fa/.
+Ten pre-existing modified files were verified byte-for-byte after resolution.
+
+Git has zero unmerged index entries and no active conflict markers. Resolutions are
+marked in the index. The merge still awaits its commit; no commit/push was performed.
+The latest entity/boar code and test changes remain uncommitted in the working tree.
+
+Current validation: package/check_2152.ps1 passes all 9 runners using the ordinary
+working tree, including the expanded boar damage/native tests. Full MSVC Release
+build passes; main.dll resources identify 0.9.0n b2153. Updated hash and results are
+in build/release-2152-logs/entity-validation.json. This supersedes the isolated-header
+and blocked-build status in the preceding bite follow-up. No ZIP, installation,
+publication or host/client gameplay verification. Creature AI/target selection,
+montage/audio and corpse/loot follow-ups remain open.
+
+### Grayboar bite ownership follow-up (19 October 2026)
+
+Native bite checks overlap and line of sight, then calls mainPlayer.addDamage with
+the boar as attacker. The player's own graph forwards the amount and source into
+Add Player Damage, which writes the per-machine saveSlot.health. The script-body
+route can bypass the existing ProcessEvent-only addDamage interceptor.
+
+grayboar_sync now watches that final player damage body, filtered by the source's
+native grayboar ancestry. A host bite on a registered puppet relays validated damage
+to its owner through existing PlayerDamage and cancels the foreign singleton write.
+A host bite on the host's own pawn remains native. Other foreign bodies are refused
+without a send. On clients a mirror-spawned or host-drive-parked boar cannot deal a
+duplicate local hit, and no boar can damage this machine via a foreign player body.
+Unbound/local boar encounters retain native local damage. Source-less wire replay
+is unaffected. No generic AI, animation or tick cancellation was added.
+
+Validation: run_entity_sync.ps1 -GrayboarOnly passes the production feeder/damage
+harness for owner routing, local host damage, foreign/unknown bodies, subclasses,
+cyclic ancestry, invalid amounts/frames, mirror/parked duplicates and disconnect.
+entity_sync_native_test.py --boar-only confirms the actual overlap/LOS -> bite ->
+player source/amount -> health-write path. Production grayboar_sync.cpp compiles
+against isolated pre-merge headers in build/grayboar-merge-check; live merge files
+were not edited. The full entity runner is blocked by conflict markers from an
+unfinished external Git merge in protocol.h and other shared files. No updated
+Release DLL or all-nine-runner success is claimed for this follow-up. Existing DLL
+and entity-validation.json describe the preceding body-movement pass only.
+
+Remaining: shared target/AI coordination, montage/audio replay, corpse/loot behavior
+and host/client gameplay. A native hit uses the existing send-and-owner-apply channel;
+this does not verify transport saturation, directional hit presentation or every
+possible independently spawned client twin.
+
 ### Grayboar body movement follow-up (19 October 2026)
 
 Native grayboar_C is a prop whose ReceiveTick applies force to StaticMesh; its

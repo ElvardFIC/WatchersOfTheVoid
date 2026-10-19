@@ -1,18 +1,22 @@
+param([switch]$GrayboarOnly)
 $ErrorActionPreference='Stop'
 $checkout=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 . (Join-Path $checkout '../_toolchain/env.ps1')
 $output=Join-Path $checkout 'build/entity-sync-check'
 New-Item -ItemType Directory -Force -Path $output | Out-Null
+if(-not $GrayboarOnly) {
 & cl /nologo /std:c++20 /EHsc /Gy /utf-8 "/I$PSScriptRoot/npc_pose_stubs" "/I$checkout/src/votv-coop/include" `
     "/Fo$output/npc_orientation.obj" "/Fe$output/npc_orientation.exe" "$PSScriptRoot/npc_orientation_test.cpp" /link /OPT:REF
 if($LASTEXITCODE -ne 0){throw 'NPC orientation regression compile failed'}
 & "$output/npc_orientation.exe"
 if($LASTEXITCODE -ne 0){throw 'NPC orientation regression failed'}
+}
 & cl /nologo /std:c++20 /EHsc /Gy /utf-8 "/I$PSScriptRoot/grayboar_stubs" "/I$checkout/src/votv-coop/include" `
     "/Fo$output/grayboar_sync.obj" "/Fe$output/grayboar_sync.exe" "$PSScriptRoot/grayboar_sync_test.cpp" /link /OPT:REF
 if($LASTEXITCODE -ne 0){throw 'Grayboar regression compile failed'}
 & "$output/grayboar_sync.exe"
 if($LASTEXITCODE -ne 0){throw 'Grayboar regression failed'}
+if($GrayboarOnly){exit 0}
 & cl /nologo /std:c++20 /EHsc /utf-8 "/I$PSScriptRoot/stubs" "/I$checkout/src/votv-coop/include" "/I$checkout/src/votv-coop/src" `
     "/Fo$output/prop_drive.obj" "/Fe$output/prop_drive.exe" "$PSScriptRoot/prop_drive_2123_test.cpp"
 if($LASTEXITCODE -ne 0){throw 'Prop drive regression compile failed'}

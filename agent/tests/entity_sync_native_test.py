@@ -23,6 +23,27 @@ def parent(asset, cls):
     return p.obj(e['sup'])
 
 
+boar = package('objects__misc__grayboar')
+boar_graph = dict(body(boar, next(e for e in boar.exports if e['name'] == 'ExecuteUbergraph_grayboar')))
+boar_tick = dict(body(boar, next(e for e in boar.exports if e['name'] == 'ReceiveTick')))
+assert 'ExecuteUbergraph_grayboar(17479)' in boar_tick[18]
+assert 'Inst(StaticMesh)->AddForce(Inst(movementForce)' in boar_graph[18287]
+assert 'grayboarPawn.grayboarPawn_C' in boar_graph[16486]
+assert 'Inst(pawn)->Actor.K2_AttachToActor(self' in boar_graph[16652]
+assert 'IsOverlappingActor(Inst(biteActor))' in boar_graph[1758]
+assert 'LineTraceSingleForObjects' in boar_graph[1963]
+assert '->addDamage(self, Inst(damage)' in boar_graph[2200]
+player = package('main__mainPlayer')
+player_graph = dict(body(player, next(e for e in player.exports if e['name'] == 'ExecuteUbergraph_mainPlayer')))
+assert 'Add Player Damage(Local(K2Node_Event_damage_7)' in player_graph[15102]
+assert 'Local(K2Node_Event_actor_2))' in player_graph[15102]
+damage_graph = dict(body(player, next(e for e in player.exports if e['name'] == 'Add Player Damage')))
+assert 'saveSlot)->Inst(health)' in damage_graph[972]
+
+if '--boar-only' in sys.argv:
+    print('PASS native boar movement/helper attachment and overlap/LOS bite -> player health path')
+    raise SystemExit(0)
+
 source = (checkout / 'src/votv-coop/src/coop/creatures/npc_world_enum.cpp').read_text()
 table = source.split('kExSpawnSourceClasses[] = {', 1)[1].split('};', 1)[0]
 sources = set(re.findall(r'L"([^"]+)"', table))
@@ -38,13 +59,6 @@ for ticker, creature in [('ticker_fossilhoundSpawner', 'fossilhound'),
 
 assert parent('objects__misc__grayboar', 'grayboar_C').endswith('/prop.prop_C')
 assert parent('objects__misc__grayboarPawn', 'grayboarPawn_C') == '/Script/Engine.Character'
-boar = package('objects__misc__grayboar')
-boar_graph = dict(body(boar, next(e for e in boar.exports if e['name'] == 'ExecuteUbergraph_grayboar')))
-boar_tick = dict(body(boar, next(e for e in boar.exports if e['name'] == 'ReceiveTick')))
-assert 'ExecuteUbergraph_grayboar(17479)' in boar_tick[18]
-assert 'Inst(StaticMesh)->AddForce(Inst(movementForce)' in boar_graph[18287]
-assert 'grayboarPawn.grayboarPawn_C' in boar_graph[16486]
-assert 'Inst(pawn)->Actor.K2_AttachToActor(self' in boar_graph[16652]
 profile = (checkout / 'src/votv-coop/include/ue_wrap/core/sdk_profile_names.h').read_text()
 npc_section = profile.split('inline constexpr const wchar_t* kWorldActorAllowlist', 1)[0]
 assert 'L"grayboar_C"' not in npc_section, 'prop body must not use ACharacter offsets'
