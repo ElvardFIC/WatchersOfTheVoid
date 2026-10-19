@@ -258,6 +258,10 @@ bool WriteMainPlayerDead(void* mainPlayer, bool dead);
 // Game thread.
 bool WriteMainPlayerStartInvinc(void* mainPlayer, bool on);
 
+// The same flag, read: `on` is set only when the property resolved (false, `on` untouched, while unresolved or the
+// player is not live). Game thread.
+bool ReadMainPlayerStartInvinc(void* mainPlayer, bool& on);
+
 // AmainPlayer_C::ragdollMode(ragdoll, passOut, death); (true, true, false) is the faint pose. On a peer's
 // puppet this verb is cancelled, whoever calls (coop/player/player_damage), so a puppet's faint is shown by
 // its playerRagdoll actor and not through here.
@@ -281,8 +285,8 @@ bool SetMainPlayerCanRagdoll(void* mainPlayer, bool allowed);
 bool ReadMainPlayerCanRagdoll(void* mainPlayer, bool& allowed);
 
 // AmainPlayer_C::"Add Player Damage" on a possessed pawn: it runs through that pawn's armour BP and
-// drops saveSlot.health; early-outs on a puppet. Its caller is the death test; the delivery of a
-// creature's hit is coop/player/player_hit. `blood` is not cosmetic: it gates the bloodLoss effect
+// drops saveSlot.health; early-outs on a puppet. Its callers are the death test and the burn drill; the
+// delivery of a creature's hit is coop/player/player_hit. `blood` is not cosmetic: it gates the bloodLoss effect
 // (@2784), so a hit without it produces a death the game never produces. Game thread.
 bool InvokeAddPlayerDamage(void* mainPlayer, float damage, bool blood = false);
 

@@ -583,6 +583,19 @@ bool WriteMainPlayerStartInvinc(void* mainPlayer, bool on) {
     return WriteMainPlayerBool(mainPlayer, L"startInvinc", on, s_startInvinc);
 }
 
+bool ReadMainPlayerStartInvinc(void* mainPlayer, bool& on) {
+    if (!mainPlayer || !R::IsLive(mainPlayer)) return false;
+    static CachedBool s_startInvinc;
+    void* cls = R::ClassOf(mainPlayer);
+    if (cls != s_startInvinc.cls || s_startInvinc.mask == 0) {
+        int32_t b = -1; uint8_t m = 0;
+        if (!R::FindBoolProperty(cls, L"startInvinc", b, m)) return false;
+        s_startInvinc.cls = cls; s_startInvinc.byte = b; s_startInvinc.mask = m;
+    }
+    on = (reinterpret_cast<const uint8_t*>(mainPlayer)[s_startInvinc.byte] & s_startInvinc.mask) != 0;
+    return true;
+}
+
 bool SetMainPlayerRagdollMode(void* mainPlayer, bool ragdoll, bool passOut, bool death) {
     if (!mainPlayer || !R::IsLive(mainPlayer)) return false;
     ResolveRagdollFns();

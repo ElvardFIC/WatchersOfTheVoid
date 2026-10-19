@@ -16,6 +16,7 @@
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/reflection_props.h"
+#include "ue_wrap/engine/engine_player_verbs.h"
 #include "ue_wrap/actors/vitals.h"
 
 #include <atomic>
@@ -119,18 +120,6 @@ void RestoreHostHealth(float v) {
     WaitDone(done, 8000);
 }
 
-// Invoke AmainPlayer_C::ignite(fuel) on `target`. Game-thread only.
-bool InvokeIgnite(void* target, float fuel) {
-    if (!target || !R::IsLive(target)) return false;
-    void* cls = R::FindClass(L"mainPlayer_C");
-    void* fn = cls ? R::FindFunction(cls, L"ignite") : nullptr;
-    if (!fn) { UE_LOGW("dmghazard: 'ignite' UFunction did not resolve"); return false; }
-    ue_wrap::ParamFrame f(fn);
-    if (!f.valid()) return false;
-    f.Set<float>(L"fuel", fuel);
-    return ue_wrap::Call(target, f);
-}
-
 // The puppet's own isBurning, by its reflected bool storage, read in a game-thread task. -1 unread.
 int ReadBurningGT(const ue_wrap::CachedObjRef& ref) {
     auto done = std::make_shared<std::atomic<int>>(0);
@@ -223,7 +212,11 @@ void ProbeDamageHazardOnHost() {
     {
         auto d = std::make_shared<std::atomic<int>>(0);
         const ue_wrap::CachedObjRef target = *puppet;
-        GT::Post([target, d] { InvokeIgnite(target.Get(), 10.f); d->store(1); });
+        GT::Post([target, d] {
+            if (!ue_wrap::engine::InvokeMainPlayerIgnite(target.Get(), 10.f))
+                UE_LOGW("dmghazard: 'ignite' did not run");
+            d->store(1);
+        });
         WaitDone(d, 8000);
     }
     const ue_wrap::CachedObjRef pup = *puppet;

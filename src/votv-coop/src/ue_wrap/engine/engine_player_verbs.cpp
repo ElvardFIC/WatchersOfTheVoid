@@ -54,4 +54,21 @@ bool InvokeMainPlayerAttack(void* player) {
     return Call(player, f);
 }
 
+bool InvokeMainPlayerIgnite(void* player, float fuel) {
+    void* fn = VerbOf(player, L"ignite");
+    if (!fn) return false;
+    ParamFrame f(fn);
+    if (!f.valid()) return false;
+    f.Set<float>(L"fuel", fuel);
+    return Call(player, f);
+}
+
+bool InvokeMainPlayerExtinguishFire(void* player) {
+    void* fn = VerbOf(player, L"extinguishFire");
+    if (!fn) return false;
+    ParamFrame f(fn);  // no params
+    if (!f.valid()) return false;
+    return Call(player, f);
+}
+
 }  // namespace ue_wrap::engine
