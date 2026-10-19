@@ -137,9 +137,9 @@ void BeginItem(const LegDef& d);
 
 // ---- explosion_drill_source_verbs.cpp ----
 
-// Holds the acting player's startInvinc and the gamemode's unlockFungunsInStory; the name of the first member that
-// cannot be read, else null. Unguard puts back what Guard held.
-const wchar_t* Guard();
+// Holds the acting player's startInvinc and the gamemode's unlockFungunsInStory (the host's role: the gamemode's
+// alone); the name of the first member that cannot be read, else null. Unguard puts back what Guard held.
+const wchar_t* Guard(bool hostRole);
 void Unguard();
 
 // The local hand's actor when it is live and of class `cls`; the class name of what the hand holds, or "none".

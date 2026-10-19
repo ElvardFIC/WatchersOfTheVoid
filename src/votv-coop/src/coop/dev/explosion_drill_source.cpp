@@ -381,7 +381,7 @@ void SaltWait(bool host) {
 void StartLeg() {
     g_src.r = Reading{};
     g_src.aim = g_src.B;
-    if (const wchar_t* bad = Guard()) {
+    if (const wchar_t* bad = Guard(false)) {
         std::snprintf(g_src.r.skipText, sizeof(g_src.r.skipText), "the guard %ls is unreadable", bad);
         return Skip(g_src.r.skipText);
     }

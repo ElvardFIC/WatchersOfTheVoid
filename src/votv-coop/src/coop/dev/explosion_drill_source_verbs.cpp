@@ -129,11 +129,14 @@ std::string HeldClassName(void* player) {
     return std::string(w.begin(), w.end());
 }
 
-// Holds both switches; the name of the first member that cannot be read (said once per member), else null.
-const wchar_t* Guard() {
+// Holds the switches; the name of the first member that cannot be read (said once per member), else null. The acting
+// client holds both. A host that only hosts holds the gamemode's unlockFungunsInStory alone: a client's gun in hand
+// runs on the host's world rule, and its own player is not the one acting.
+const wchar_t* Guard(bool hostRole) {
     const wchar_t* bad = nullptr;
     const struct { int bit; const wchar_t* name; bool ok; } rows[] = {
-        {kInvincBit, L"startInvinc", Hold(coop::players::Registry::Get().Local(), L"startInvinc", g_src.invincBefore, 0)},
+        {kInvincBit, L"startInvinc",
+         hostRole || Hold(coop::players::Registry::Get().Local(), L"startInvinc", g_src.invincBefore, 0)},
         {kUnlockBit, L"unlockFungunsInStory",
          Hold(ue_wrap::world_singleton::Gamemode(), L"unlockFungunsInStory", g_src.unlockBefore, -1)},
     };
@@ -148,7 +151,8 @@ const wchar_t* Guard() {
     return bad;
 }
 
-// The values the arm put back; a second call does nothing.
+// What the last Guard held is put back, each member to the value it found; a member Guard did not hold is left alone,
+// and a second call does nothing.
 void Unguard() {
     Put(coop::players::Registry::Get().Local(), L"startInvinc", g_src.invincBefore);
     Put(ue_wrap::world_singleton::Gamemode(), L"unlockFungunsInStory", g_src.unlockBefore);
