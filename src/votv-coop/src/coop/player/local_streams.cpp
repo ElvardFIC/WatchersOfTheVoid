@@ -13,6 +13,7 @@
 #include "coop/net/protocol.h"
 #include "coop/net/session.h"
 #include "coop/player/hand_item.h"     // the hotbar hand-item axis
+#include "coop/player/players_registry.h"
 #include "coop/player/skin_effects.h"  // own-body step FX at the wire-pose stride
 #include "coop/props/trash_channel.h"   // CtxForEid, the trash sync-time context
 #include "coop/props/prop_element_tracker.h"
@@ -243,6 +244,15 @@ void Tick(coop::net::Session& session, void* local, void* controller) {
     }
     // The hand-item axis: the owner announces a change, the peers maintain their mirrors; both idle
     // cheaply.
+    if (hotbarProp) {   // once per process: the first hand item given to the hand lane, and its two gates
+        static bool s_said = false;
+        if (!s_said) {
+            s_said = true;
+            UE_LOGI("local_streams: first hand item to the hand lane cls=%ls connected=%d self=%u",
+                    R::ClassNameOf(hotbarProp).c_str(), session.connected() ? 1 : 0,
+                    static_cast<unsigned>(coop::players::Registry::Get().LocalPeerId()));
+        }
+    }
     coop::hand_item::TickOwner(session, local, hotbarProp);
     coop::hand_item::TickMirrors();
     // The ATV belongs to coop::atv_sync: a grabbed ATV is not a keyed interactable and would emit
