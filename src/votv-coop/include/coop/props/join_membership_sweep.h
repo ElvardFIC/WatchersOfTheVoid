@@ -37,8 +37,8 @@ void RecordClaimIfTracking(void* actor);
 // A different fact from a claim, and unconditional where a claim is bracket-scoped: a claim says
 // the host accounted for the actor in the bracket now open, and BeginClaimTracking clears it, while
 // this says the actor is not divergence at all -- a player-authored birth can precede the bracket
-// and still be waiting on the host's answer when the sweep runs. Consulted by
-// IsInDivergenceUniverseUnclaimed; emptied when a sweep has adjudicated the world, and at teardown.
+// and still be waiting on the host's answer when the sweep runs. Spared by the sweep's two walks and
+// by IsInDivergenceUniverseUnclaimed; emptied when a sweep has adjudicated the world, and at teardown.
 // Game thread.
 void RecordSelfAuthored(void* actor);
 
@@ -59,7 +59,8 @@ void TickClientReconcile();
 void OnClientWorldReadyResetSweep();
 
 // The membership predicate: true iff `actor` is a live, non-mirror, in-universe LOCAL Prop Element the host's
-// snapshot did NOT claim (a divergence-sweep candidate). Shared with trash_collect_sync. Game thread.
+// snapshot did NOT claim (a divergence-sweep candidate), and the sweep does not spare (per-player state, the
+// player's own births, the hand axis). Shared with trash_collect_sync. Game thread.
 bool IsInDivergenceUniverseUnclaimed(void* actor);
 
 // IsInDivergenceUniverseUnclaimed gated on an actually-pending sweep (g_sweepPending). Game thread.

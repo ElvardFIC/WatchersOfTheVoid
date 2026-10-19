@@ -80,7 +80,7 @@ Mirror g_mirrors[coop::players::kMaxPeers];  // GT-only
 coop::net::Session* g_session = nullptr;
 
 // Owner-side change detection.
-uint32_t     g_ownLookSeq = 0;  // owner ticks that read the hand, so the latch below is the hand's state at the last one
+uint32_t     g_ownLookSeq = 0;  // owner ticks that read the hand; the latch below is its class at the last one
 bool         g_ownHas = false;
 std::wstring g_ownCls;
 std::wstring g_ownName;
@@ -364,7 +364,7 @@ void TickOwner(coop::net::Session& session, void* local, void* holdingProp) {
     if (!session.connected()) return;
     const uint8_t self = coop::players::Registry::Get().LocalPeerId();
     if (self >= coop::players::kMaxPeers) return;
-    ++g_ownLookSeq;  // every path below leaves the latch saying what the hand holds now
+    ++g_ownLookSeq;  // every path below leaves the latch naming the class the hand holds now
 
     if (holdingProp) {
         // The live view-relative hold transform is measured and latched every tick while holding;

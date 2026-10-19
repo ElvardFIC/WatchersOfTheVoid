@@ -19,6 +19,7 @@
 #include "coop/element/registry.h"
 #include "coop/net/protocol.h"
 #include "coop/player/hand_item.h"  // CollectHandAxisActors / IsHandAxisActor: what the sweep spares
+#include "coop/player/players_registry.h"  // Registry::Local: the player whose grab the sweep releases
 #include "coop/props/pile_spawn_bind.h"
 #include "coop/props/prop_element_tracker.h"
 #include "coop/props/prop_lifecycle.h"
@@ -55,7 +56,8 @@ std::unordered_set<void*> g_claimedActors;
 // it owes nothing to a bracket and survives BeginClaimTracking. Emptied wherever a sweep has
 // adjudicated the world, and at teardown, so it holds at most what one player made between two
 // joins. See RecordSelfAuthored.
-std::unordered_set<void*> g_selfAuthored;
+// Keyed by the actor with its slot's serial at the record, so a successor at the same address is not spared.
+std::unordered_map<void*, int32_t> g_selfAuthored;
 bool g_claimTrackingActive = false;
 
 // The deferred sweep: SnapshotComplete arms it, TickClientReconcile fires it once the load tail
@@ -82,7 +84,10 @@ void RecordClaim(void* actor) {
 // (RecordSelfAuthored). The hand axis -- the local hotbar hand item and every remote hand mirror -- is player
 // expression no snapshot names: a hand item taken before the load tail settled was destroyed here.
 bool Spared(void* actor, const std::wstring& cls, bool onHandAxis) {
-    return onHandAxis || g_selfAuthored.count(actor) != 0 || coop::prop_lifecycle::IsPerPlayerPropClass(cls);
+    if (onHandAxis) return true;
+    const auto it = g_selfAuthored.find(actor);
+    if (it != g_selfAuthored.end() && R::SlotSerial(R::InternalIndexOf(actor)) == it->second) return true;
+    return coop::prop_lifecycle::IsPerPlayerPropClass(cls);
 }
 }  // namespace (file-local claim/sweep state)
 
@@ -107,7 +112,7 @@ void RecordSelfAuthored(void* actor) {
     // its seam was a no-op and BeginClaimTracking would have cleared it anyway. What saved it that
     // run was the host's echo landing first; a slower round trip would not have.
     if (!actor) return;
-    g_selfAuthored.insert(actor);
+    g_selfAuthored[actor] = R::AllocateSlotSerial(R::InternalIndexOf(actor));
 }
 
 void BeginClaimTracking() {
@@ -523,8 +528,8 @@ void TickClientReconcile() {
     if (!quiesced) return;
 
     // The local player is re-resolved here (a pointer stashed at arm time could go stale); the
-    // sweep releases its grab if a doomed actor is held. One FindObjectByClass, cold.
-    void* localPlayer = R::FindObjectByClass(P::name::MainPlayerClass);
+    // sweep releases its grab if a doomed actor is held. The registry's, which is never a puppet.
+    void* localPlayer = coop::players::Registry::Get().Local();
     const auto msSinceArm = std::chrono::duration_cast<std::chrono::milliseconds>(
                                 std::chrono::steady_clock::now() - g_sweepArmedAt).count();
     UE_LOGI("join_membership_sweep: divergence sweep FIRING (probe latched; %lldms after arm)",

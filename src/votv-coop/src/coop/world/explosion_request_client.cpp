@@ -209,12 +209,13 @@ void Enqueue(const OutItem& item) {
     g_outbox[g_outboxCount++] = item;
 }
 
-// A shot dropped because the hand left its launcher before the announce: it and its queued requests, counted.
+// A shot dropped because a look at the hand since it left its launcher unannounced: it and its queued requests,
+// counted.
 void DropNotAnnounced(uint32_t shotId) {
     detail::MutCounters().shotNotAnnounced += DropQueued(shotId);
     if (g_notAnnouncedLogged) return;
     g_notAnnouncedLogged = true;
-    UE_LOGW("[EXPLOSION] shot dropped: the hand moved before its launcher was announced");
+    UE_LOGW("[EXPLOSION] shot dropped: a look at the hand since the shot left its launcher unannounced");
 }
 
 // One shot on the wire; false, counted, when the session took none.
@@ -386,8 +387,8 @@ void InstallClient() {
 }
 
 // The outbox's head first: a shot goes once the player's announce of its launcher has, and is dropped, with its
-// queued requests, when the live hand no longer holds that launcher's class and the announce never came; a request
-// goes when its shot has. The first head that must wait holds everything behind it.
+// queued requests, when a look of the hand lane since the shot left that launcher unannounced; a request goes when
+// its shot has. The first head that must wait holds everything behind it.
 void TickClient() {
     coop::net::Session* s = SessionPtr();
     if (!s) return;
