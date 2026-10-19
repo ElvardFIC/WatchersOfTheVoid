@@ -7,6 +7,8 @@
 // of it is only not yet, until the failure bound. The host's half is explosion_drill_request_host.cpp. The table
 // below is the arms and what each half must count.
 
+#include "coop/props/join_membership_sweep.h"
+#include "coop/session/net_pump.h"
 #include "coop/dev/explosion_drill_internal.h"
 
 #include "explosion_drill_source.h"  // the source arms' shared types and verbs (co-located private header)
@@ -45,6 +47,7 @@ struct Spec {
     Arm         arm;
     Flow        flow;
     RequestWant want;  // {shots, {projectile, hand, self}, blasts, born, expired, waitedMin}
+    bool        early = false;  // acts at the world-ready edge, before the client's streams start
 };
 
 constexpr Spec kSpecs[] = {
@@ -64,6 +67,8 @@ constexpr Spec kSpecs[] = {
     {"request_switch", Arm::RequestSwitch, Flow::Switch, {1, {1, 0, 0}, 1, 1, 0, 1}},
     // No birth: the rocket ends by its own life and the host's table lets the shot go.
     {"request_expiry", Arm::RequestExpiry, Flow::Expiry, {1, {0, 0, 0}, 0, 0, 1, 0}},
+    // Fired before the client's streams start: the shot waits in the outbox for the hand announce, so no timing bound.
+    {"request_rocket_early", Arm::RequestRocketEarly, Flow::Rocket, {1, {1, 0, 0}, 1, 1, 0, 0}, true},
 };
 
 const Spec* SpecOf(Arm arm) {
@@ -80,7 +85,8 @@ LegDef LegFor(Arm arm) {
     switch (arm) {
     case Arm::RequestRocket:
     case Arm::RequestSwitch:
-    case Arm::RequestExpiry: return *LegOf(Kind::Rocket);
+    case Arm::RequestExpiry:
+    case Arm::RequestRocketEarly: return *LegOf(Kind::Rocket);
     case Arm::RequestSticky:
     case Arm::RequestDetonate:
     case Arm::RequestDetonateSwitch: return *LegOf(Kind::Sticky);
@@ -351,7 +357,7 @@ bool Judge(const Spec& sp, const ES::Counters& s0, const ER::Counters& q0) {
     const Clock::time_point to = q.appliedAt != Clock::time_point{} ? q.appliedAt : now;
     const long long ms = (std::max)(0LL, static_cast<long long>(
         std::chrono::duration_cast<std::chrono::milliseconds>(to - from).count()));
-    if ((sp.flow == Flow::Rocket || sp.flow == Flow::Sticky) && ms > kMaxMs)
+    if ((sp.flow == Flow::Rocket || sp.flow == Flow::Sticky) && !sp.early && ms > kMaxMs)
         return Fail(sp, Miss{"ms from the birth to the blast applied", static_cast<uint64_t>(ms), kMaxMs, true});
     Info("client DONE PASS arm=%s sent=%llu applied=%llu ms=%lld", sp.name, static_cast<unsigned long long>(sent),
          static_cast<unsigned long long>(applied), ms);
@@ -367,6 +373,14 @@ bool RequestClientTick(Arm arm, const ES::Counters& sync0, const ER::Counters& r
     if (!sp) return true;
     if (q.phase == RP::Done) return true;
     Edge(q.startAt);
+    // An arm acts once the client's own streams run (the pose gate's two terms, net_pump), as a player in a settled
+    // world does; the early arm acts at the world-ready edge on purpose.
+    if (q.phase != RP::Leg && !sp->early &&
+        !(coop::net_pump::IsWorldSettled() && coop::join_membership_sweep::HasLoadTailQuiesced())) {
+        if (!Past(q.startAt, kVerdictBound)) return false;
+        Abandon("the client's own streams never started (the load tail did not settle)");
+        return true;
+    }
     if (q.phase != RP::Leg) {
         const bool ready = Setup(*sp);
         if (q.phase == RP::Done) return true;

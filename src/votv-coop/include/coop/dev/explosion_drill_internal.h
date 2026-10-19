@@ -37,7 +37,7 @@ constexpr int   kPapers = 4;
 enum class Arm : uint8_t { Off, Dissolve, Apply, Coast, SpawnMalformed, SourceHost, SourceClient,
                            RequestRocket, RequestSticky, RequestDetonate, RequestDetonateSwitch, RequestHand,
                            RequestHandPoop, RequestHandSoap, RequestPipe, RequestSelf, RequestThrown, RequestSwitch,
-                           RequestExpiry };
+                           RequestExpiry, RequestRocketEarly };
 inline bool IsSource(Arm a) { return a == Arm::SourceHost || a == Arm::SourceClient; }
 inline bool IsRequest(Arm a) { return a >= Arm::RequestRocket; }
 

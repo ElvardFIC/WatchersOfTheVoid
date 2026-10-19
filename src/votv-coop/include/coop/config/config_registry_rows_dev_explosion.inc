@@ -5,7 +5,7 @@
 
 CFG_ENUM(explosion_drill, "explosion_drill", "dev", "off", "off|dissolve|apply|coast|spawn_malformed|source_host|source_client"
     "|request_rocket|request_sticky|request_detonate|request_detonate_switch|request_hand|request_hand_poop"
-    "|request_hand_soap|request_pipe|request_self|request_thrown|request_switch|request_expiry",
+    "|request_hand_soap|request_pipe|request_self|request_thrown|request_switch|request_expiry|request_rocket_early",
     "VOTVCOOP_EXPLOSION_DRILL",
     "Drill, the explosion lane's arms; each runs the roles it names. dissolve (the CLIENT acts, the host only "
     "hosts): a bomb barrel is spawned and broken once while the client's world loads and once in the loaded world; "
