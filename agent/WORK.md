@@ -1,4 +1,31 @@
-# Unified Work — development protocol 2154 (continued 2153); packaged release 2152
+# Unified Work — development protocol 2157; prepared package 2154 uses older DLL b2156
+
+## Entity continuation and executable merge audit (20 October 2026)
+
+Kavotia is the second consumer of the extracted Grayboar action queue. Its native
+AnimBP aim/laying inputs and charge-loop/pitch/windup state travel on host-only
+kind 223, with bounded coalescing, per-peer retries, heartbeat join repair and
+stale cosmetic cleanup. Native actor ticks sample culled meshes too. The client
+keeps native mesh setup while refusing subsequent latent AI/shot graph entries.
+Fire/laying montage, speech and canonical beam/impact/damage still need adapters;
+active flags do not establish exact playback-time alignment.
+
+The broader router gate exposed a real merge integration gap: 38 existing local
+kinds had no authorship row, so the host refused legitimate local intents before
+their handlers. Reviewed actual send/receive paths and restored 27 Client plus
+11 Host rows. Corrected the CI false-return parser and its stale dispatcher-call
+mutation; all 212 kinds and all 18 failure controls pass.
+
+Wisp grabs now require the host sender. Delayed death/self-hold/tear state cancels
+on pawn loss/recycling/replacement, native death and world changes; a new grab
+armed during release cannot inherit an old kill. Removed blanket client nightmare
+probability suppression so native personal conditions remain local. Updated the
+sleep regression to current 36-byte rest reports and the preview spawn stub to
+the current callback API.
+
+Release b2157 and 13 validation groups pass; detailed evidence is under
+`build/entity-sync-check/validation-2157`. No two-peer gameplay acceptance or new
+delivery package. The full entity checklist remains open in ENTITY_COVERAGE.md.
 
 ## Merge update - local branch with multivoid-sync-2153 (19 October 2026)
 
@@ -402,9 +429,9 @@ and line endings were retained where applicable. Before resolution, copied worki
 files and all three index stages into build/merge-resolution-20261019-fa5592fa/.
 Ten pre-existing modified files were verified byte-for-byte after resolution.
 
-Git has zero unmerged index entries and no active conflict markers. Resolutions are
-marked in the index. The merge still awaits its commit; no commit/push was performed.
-The latest entity/boar code and test changes remain uncommitted in the working tree.
+Git has zero unmerged index entries and no active conflict markers. The historical
+merge was committed as `7fced281e`; both parents are ancestors of current `main`.
+The latest entity code and test changes remain uncommitted in the working tree.
 
 Current validation: package/check_2152.ps1 passes all 9 runners using the ordinary
 working tree, including the expanded boar damage/native tests. Full MSVC Release
@@ -514,7 +541,7 @@ and all entity-specific effects remain unverified.
 |---|---|
 | Розітали: Велика Піраміда; Кавотія; Пагоніопьло-Ігетіс; Скаути; Солтомія | piramid2 + piramid_sync, igetis and soltomiaCleaning have existing routes. Exact localized-name associations, phase/actions, destruction and late join need native and multiplayer verification; Kavotia/scouts not mapped in this pass. |
 | Творіння Розіталів: Антибризер; Викопна Гончача | antibreather/fossilhound are Character families. Fossilhound ticker catch fixed. Antibreather's player/cave-dependent spawner and cross-peer attack routing remain open. |
-| Арірали | arirFollower/ariral_shooter/ariral_pigBeater existing NPC routes. arirGunStealer implemented via ariral_sync; stealing/held-item ownership and event phases verified. |
+| Арірали | arirFollower/ariral_shooter/ariral_pigBeater existing NPC routes. Native `npc_arirGunStealer_C` is now a late NPC route and its real client-mirror `punching` timer is refused. The prior `StealGun`/`TakeWeapon` watches named nonexistent exports. Stealing/attachment, held-item ownership and event phases remain open. |
 | Сірі; Вогнеметний танк; Одержимий кабан | grayTest NPC and firetank world-actor routes exist. Firetank is Pawn; turret/fire/fuel/damage are not established by its transform stream. grayboar prop vs grayboarPawn Character split confirmed; wrong body NPC registration removed; host body motion now feeds prop drive. Helper AI, attacks and animation remain open. |
 | Геоми: Раміїл; Яйцеподібний геом | eg and superEgger routes exist; mapping these to user-visible names and their special actions is not yet verified. Ramiel remains unmapped. |
 | НЛО: Бумеранг; Джоїл; Корабель Сірих; Мідас; Пілюля; Трифо; Кулі | Existing routes include ufoDropper variants, arirShip, skyUfo, morningUfo, rozitBorg, kocker and tentacleBallsFollower. Exact seven-name mapping, child spawns, beam/material/audio phases and late join remain open. |

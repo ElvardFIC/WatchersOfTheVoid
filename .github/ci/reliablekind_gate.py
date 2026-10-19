@@ -499,6 +499,8 @@ def parse_lane_switches(text: str):
             if re.search(r"return\s+true", line):
                 out[key] |= set(pending)
                 pending = []
+            elif re.search(r"return\s+false", line):
+                pending = []
             elif re.search(r"\bdefault\s*:", line):
                 pending = []
     return out
@@ -576,7 +578,7 @@ def drill() -> int:
 
     # 3. a family stops being chained: every case label survives, the call does not.
     t = dict(base)
-    t[FEED_FILE] = t[FEED_FILE].replace("if (HandleWorldEvent(msg)) break;", "", 1)
+    t[FEED_FILE] = re.sub(r"if\s*\(HandleWorldEvent\([^)]*\)\)\s*break;", "", t[FEED_FILE], count=1)
     controls.append(("a family dispatcher no longer chained", t,
                      "HandleWorldEvent is defined in"))
 

@@ -1,9 +1,6 @@
 #pragma once
-#include <cstdint>
+#include "../../../../../src/votv-coop/include/coop/net/protocol.h"
 namespace coop::net {
 inline constexpr int kMaxPeers = 4;
 enum class Role { Host, Client };
-enum class ReliableKind { SleepState, DreamScene };
-struct SleepStatePayload { uint8_t op{}, flag{}, count{}, total{}; };
-struct DreamScenePayload { char dreamClass[32]{}; };
 }

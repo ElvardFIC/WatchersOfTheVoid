@@ -1,4 +1,5 @@
 #include "coop/creatures/grayboar_actions.h"
+#include "coop/creatures/reliable_action_queue.h"
 #include "coop/element/registry.h"
 #include "coop/net/session.h"
 #include "ue_wrap/core/cached_obj_ref.h"
@@ -19,6 +20,7 @@ using Packet=net::GrayboarActionPayload;
 net::Session* g_session=nullptr;
 uint32_t g_world=0,g_sequence=0,g_seen=0;
 uint64_t g_epoch=0;
+uint64_t g_deliveryEpoch=0;
 std::array<uint64_t,net::kMaxPeers> g_peerEpoch{};
 bool g_ticking=false;
 struct Observation {
@@ -54,15 +56,8 @@ uint64_t Now() {return static_cast<uint64_t>(std::chrono::duration_cast<std::chr
 bool Current() {return g_session && g_session->running() && g_session->connected() &&
     g_world==ue_wrap::world_identity::Generation();}
 uint32_t QueueablePeers() {
-    const auto now=Now();
-    std::erase_if(g_out,[=](const Cue& cue){return !cue.peers || now>cue.expires;});
-    std::array<size_t,net::kMaxPeers> pending{};
-    for(const auto& cue:g_out)
-        for(int slot=1;slot<net::kMaxPeers;++slot)if(cue.peers&(1u<<slot))++pending[slot];
-    uint32_t peers=0;
-    for(int slot=1;slot<net::kMaxPeers;++slot)
-        if(pending[slot]<32 && g_session->IsSlotWorldReady(slot))peers|=1u<<slot;
-    return peers;
+    return creature_actions::QueueablePeers<net::kMaxPeers>(
+        g_out,Now(),32,[](int slot){return g_session->IsSlotWorldReady(slot);});
 }
 bool Boar(void* actor) {
     if(!actor || !R::IsLive(actor))return false;
@@ -277,8 +272,7 @@ void Queue(void* actor,Packet packet) {
        !ValidRate(packet.rate,packet.action))return;
     const uint32_t peers=QueueablePeers();
     if(!peers)return;
-    if(!++g_sequence)++g_sequence;
-    packet.eid=eid;packet.sequence=g_sequence;
+    packet.eid=eid;packet.sequence=creature_actions::NextSequence(g_sequence);
     Cue cue{packet,Now()+1500,peers};cue.actor.Set(actor);
     g_out.push_back(cue);
 }
@@ -343,7 +337,7 @@ void Receive(const Packet& packet,int sender) {
        !packet.eid || packet.eid>=element::kHostRangeSize || !packet.sequence ||
        packet.action<1 || packet.action>7 || !ValidRate(packet.rate,packet.action) ||
        !std::isfinite(packet.position) || (packet.position<0 && packet.position!=-1.f) || packet.position>3600.f ||
-       (g_seen && int32_t(packet.sequence-g_seen)<=0) || g_in.size()>=32)return;
+       !creature_actions::IsNewerSequence(packet.sequence,g_seen) || g_in.size()>=32)return;
     const auto now=Now();g_seen=packet.sequence;
     Cue cue{packet,now+1500,0,now};
     auto* element=element::Registry::Get().Get(packet.eid);
@@ -380,35 +374,29 @@ void Tick() {
             if(peerEpoch!=g_peerEpoch[slot] || !(QueueablePeers()&(1u<<slot)) || !live.Get() ||
                !element || element->IsMirror() || element->LiveActor()!=pair.actor)continue;
             if(current) {
-                if(!++g_sequence)++g_sequence;packet.sequence=g_sequence;
+                packet.sequence=creature_actions::NextSequence(g_sequence);
                 Cue cue{packet,Now()+1500,1u<<slot,Now()};cue.actor=live;
                 g_out.push_back(cue);
             }
         }
-        // Preserve FIFO separately for each peer. A failed recipient must not
-        // hold up later cues for peers that already accepted the earlier one.
-        uint32_t blocked=0;
-        size_t remaining=g_out.size();
-        for(size_t i=0;remaining && i<g_out.size();--remaining) {
-            const auto cue=g_out[i];
+        const auto deliveryEpoch=g_deliveryEpoch;
+        const bool flushed=creature_actions::FlushPerPeerFifo<net::kMaxPeers>(g_out,now,
+          [](const Cue& cue) {
             auto* element=element::Registry::Get().Get(cue.packet.eid);
-            if(now>cue.expires || !cue.actor.Get() || !element || element->IsMirror() ||
-               element->LiveActor()!=cue.actor.Raw()) {g_out.erase(g_out.begin()+i);continue;}
-            for(int slot=1;slot<net::kMaxPeers;++slot) {
-                const uint32_t bit=1u<<slot;
-                if(!(g_out[i].peers&bit))continue;
-                if(!g_session->IsSlotWorldReady(slot)){g_out[i].peers&=~bit;continue;}
-                if(blocked&bit)continue;
-                auto packet=cue.packet;
-                if(packet.position>=0)packet.position+=float(Now()-cue.sampled)*0.001f*packet.rate;
-                const bool sent=g_session->SendReliableToSlot(slot,net::ReliableKind::GrayboarAction,&packet,sizeof(packet));
-                if(epoch!=g_epoch || !Current() || g_session->role()!=net::Role::Host)return;
-                if(sent)g_out[i].peers&=~bit;
-                else blocked|=bit;
-            }
-            if(!g_out[i].peers)g_out.erase(g_out.begin()+i);
-            else ++i;
-        }
+            return cue.actor.Get() && element && !element->IsMirror() &&
+                element->LiveActor()==cue.actor.Raw();
+          },
+          [](int slot) {return g_session->IsSlotWorldReady(slot);},
+          [epoch,deliveryEpoch](const Cue& cue,int slot) {
+            auto packet=cue.packet;
+            if(packet.position>=0)packet.position+=float(Now()-cue.sampled)*0.001f*packet.rate;
+            const bool sent=g_session->SendReliableToSlot(
+                slot,net::ReliableKind::GrayboarAction,&packet,sizeof(packet));
+            if(epoch!=g_epoch || deliveryEpoch!=g_deliveryEpoch || !Current() || g_session->role()!=net::Role::Host)
+                return creature_actions::SendResult::Abort;
+            return sent?creature_actions::SendResult::Sent:creature_actions::SendResult::Retry;
+          });
+        if(!flushed)return;
         return;
     }
     std::erase_if(g_in,[=](const Cue& cue){return now>cue.expires && cue.playback.phase==PlaybackPhase::Start;});
@@ -463,7 +451,8 @@ void QueueConnect(int slot) {
 void OnPeerLeft(int slot) {
     if(slot<=0 || slot>=net::kMaxPeers)return;
     ++g_peerEpoch[slot];
-    for(auto& cue:g_out)cue.peers&=~(1u<<slot);
+    ++g_deliveryEpoch;
+    creature_actions::DropPeer(g_out,slot);
     for(size_t i=0;i<g_joins.size();) {
         if(g_joins[i].slot==slot)g_joins.erase(g_joins.begin()+i);else ++i;
     }

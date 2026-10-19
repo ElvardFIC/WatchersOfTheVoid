@@ -30,7 +30,7 @@ inline constexpr uint32_t kMagic = 0x564D5450u;
 // This file is past the 1500-line hard cap and stays there: it is the single-feature exception the
 // rule names. One wire format, whose enum, payload structs and static_asserts are read together;
 // splitting it would put a kind's number in one file and its bytes in another.
-inline constexpr uint16_t kProtocolVersion = 2156;  // restore missing dispatcher and camera kinds with fresh wire IDs
+inline constexpr uint16_t kProtocolVersion = 2158;  // explicit keyed-placement outcomes
 
 // Default LAN port (overridable via multivoid.ini "net.port=").
 inline constexpr uint16_t kDefaultPort = 47621;
@@ -1056,9 +1056,21 @@ enum class ReliableKind : uint8_t {
     StatQueryReply = 220,
     CameraActiveState = 221, // host-authoritative keyed camera active bit
     CameraLightState = 222, // host-authoritative keyed camera light bit
+    KavotiaState = 223, // host aim/stance/charge presentation; no native attack replay; heartbeat supplies join state
+    PropPlacementResult = 224, // host reply to a requestId-bearing drop/eject; no relay or join replay
 };
 
 #pragma pack(push, 1)
+
+inline constexpr uint8_t kKavotiaLaying = 1, kKavotiaAiming = 2,
+    kKavotiaCharging = 4, kKavotiaWindup = 8;
+struct KavotiaStatePayload {
+    uint32_t eid, sequence;
+    float targetX, targetY, targetZ;
+    float chargePitch;
+    uint8_t flags;
+};
+static_assert(sizeof(KavotiaStatePayload) == 25, "KavotiaStatePayload wire size");
 
 struct GrayboarTurnPayload {
     uint32_t eid, sequence;
@@ -1815,9 +1827,18 @@ struct PropDropIntentPayload {
     uint8_t       _pad[2];                      // 2 -- zero on the wire
     float         foodTemperature, foodRipeness;
     int32_t       foodUses;                     // excludes the sender's save clock stamp
+    uint32_t      requestId;                    // non-zero, scoped to this client's session
 };
-static_assert(sizeof(PropDropIntentPayload) == 180, "PropDropIntentPayload must be 180 bytes");
+static_assert(sizeof(PropDropIntentPayload) == 184, "PropDropIntentPayload must be 184 bytes");
 static_assert(sizeof(PropDropIntentPayload) <= 256 - 20 - 8, "PropDropIntentPayload must fit one datagram");
+
+enum class PropPlacementCode : uint8_t {Accepted, Invalid, Conflict, Forbidden, SpawnFailed};
+struct PropPlacementResultPayload {
+    uint32_t requestId;
+    uint8_t code;  // Accepted still waits for the canonical PropSpawn binding
+    uint8_t reserved[3];
+};
+static_assert(sizeof(PropPlacementResultPayload) == 8, "PropPlacementResultPayload wire size");
 
 // --- The save transfer ---
 // Data bytes per SaveTransferChunk message (plus a 4-byte index prefix). Far above

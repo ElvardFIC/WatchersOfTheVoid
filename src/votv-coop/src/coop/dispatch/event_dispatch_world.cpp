@@ -8,6 +8,7 @@
 #include "coop/element/registry.h"
 #include "coop/creatures/grayboar_actions.h"
 #include "coop/creatures/grayboar_turn.h"
+#include "coop/creatures/kavotia_sync.h"
 
 #include "coop/comms/chat_sync.h"
 #include "coop/commands/command_sync.h"
@@ -92,6 +93,11 @@ bool VerifySenderEidRange(int senderPeerSlot,
 bool HandleWorldEvent(net::Session& session,
                       const net::Session::ReliableMessage& msg) {
     switch (msg.kind) {
+    case net::ReliableKind::KavotiaState: {
+        if(msg.senderPeerSlot!=0 || msg.payloadLen!=sizeof(net::KavotiaStatePayload))break;
+        net::KavotiaStatePayload packet{};std::memcpy(&packet,msg.payload,sizeof(packet));
+        coop::kavotia_sync::Receive(packet,msg.senderPeerSlot);break;
+    }
     case net::ReliableKind::GrayboarTurn: {
         if(msg.senderPeerSlot!=0 || msg.payloadLen!=sizeof(net::GrayboarTurnPayload))break;
         net::GrayboarTurnPayload packet{};std::memcpy(&packet,msg.payload,sizeof(packet));

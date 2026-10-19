@@ -4,6 +4,7 @@
 namespace test {
 int wisp=1,successor=2;int forces=0,plays=0,holds=0,deaths=0,releases=0,serial=1,releaseAction=0;
 bool disconnectOnPlay=false,animationReady=true,live=true;
+uint32_t world=1;bool dead=false;
 }
 namespace ue_wrap::reflection {
 bool IsLive(void* p){return test::live&&(p==&test::wisp||p==&test::successor);}
@@ -12,7 +13,8 @@ bool IsLiveByIndex(void* p,int32_t i){return i==1&&IsLive(p);}
 int32_t SlotSerial(int32_t){return test::serial;}
 int32_t AllocateSlotSerial(int32_t){return test::serial;}
 }
-namespace ue_wrap::world_identity {void* CurrentWorld(){return nullptr;}void* WorldOf(void*){return nullptr;}}
+namespace ue_wrap::world_identity {uint32_t Generation(){return test::world;}void* CurrentWorld(){return nullptr;}void* WorldOf(void*){return nullptr;}}
+namespace ue_wrap::vitals {bool Read(Field field,float* out){assert(field==Field::Dead);*out=test::dead?1.f:0.f;return true;}}
 namespace ue_wrap::log {void Write(Level,const char*,...) {}}
 namespace ue_wrap::wisp {
 bool IsKillerWisp(void* p){return p==&test::wisp;}
@@ -32,6 +34,7 @@ void ReleaseSelf(){
  if(action==1)coop::wisp_tear_mirror::OnDisconnect();
  if(action==2)coop::players::Registry::Get().local=&test::successor;
  if(action==3)++test::serial;
+ if(action==4)coop::wisp_tear_mirror::OnWispGrab({17,100,3500},0);
 }
 }
 int main(){namespace T=coop::wisp_tear_mirror;using namespace test;
@@ -75,7 +78,20 @@ int main(){namespace T=coop::wisp_tear_mirror;using namespace test;
  T::OnWispGrab({17,100,3500},1);assert(!T::g_killAtMs);
  T::OnWispGrab({18,100,3500},0);assert(!T::g_killAtMs);
  arm();T::OnDisconnect();assert(!T::g_killAtMs&&!T::g_killVictim.Raw());
+ // Cancellation also occurs before the deadline, including a same-address
+ // pawn and a world transition whose object-array serial has not changed yet.
+ T::OnWispGrab({17,100,3500},0);players.local=&successor;T::Tick();assert(!T::g_killAtMs);players.local=&wisp;
+ T::OnWispGrab({17,100,3500},0);++serial;T::Tick();assert(!T::g_killAtMs);
+ T::OnWispGrab({17,100,3500},0);dead=true;T::Tick();assert(!T::g_killAtMs&&deaths==1);dead=false;
+ T::OnWispGrab({17,100,3500},0);++world;T::Tick();assert(!T::g_killAtMs&&deaths==1);
+ arm();releaseAction=4;T::Tick();assert(T::g_killAtMs&&deaths==1);T::OnDisconnect();
+ animationReady=false;T::OnWispTear(p,0);assert(!T::g_pendingTears.empty());++world;
+ T::Tick();assert(T::g_pendingTears.empty());animationReady=true;
+ animationReady=false;T::OnWispTear(p,0);++world;T::OnWispTear(p,0);
+ assert(T::g_pendingTears.size()==1&&T::g_pendingTears[0].world==world);
+ T::OnDisconnect();animationReady=true;
  puts("PASS wisp spawn/animation readiness retries, backoff, deadline, duplicate queue, sender guards and teardown");
  puts("PASS wisp death cancellation on release-time disconnect/pawn replacement/recycling, one-shot kill and absent victim cleanup");
  puts("PASS wisp death binds victim at receipt: pre-deadline replacement/recycling, absent pawn and invalid grab rejection");
+ puts("PASS wisp immediate cancellation: native death/world change, pending tear world expiry and new grab during release");
 }

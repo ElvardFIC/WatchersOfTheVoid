@@ -1,12 +1,16 @@
 #pragma once
+#include <string>
 namespace ue_wrap::sleep {
 inline bool sleeping = false;
+inline bool dreaming = false;
+inline std::wstring bed = L"bed_C";
 inline bool policyAvailable = true;
 inline float probability = -1.f, need = 10.f, dilation = 1.f;
 inline int wakeCalls = 0;
 inline float needAtWake = 0.f;
 inline bool EnsureResolved() { return true; }
 inline bool IsSleeping() { return sleeping; }
+inline std::wstring BedClassName() { return bed; }
 inline bool SetDreamProbability(float value) {
     if (!policyAvailable) return false;
     probability = value;

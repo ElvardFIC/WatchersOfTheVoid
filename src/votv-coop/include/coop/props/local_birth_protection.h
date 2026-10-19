@@ -31,7 +31,7 @@ inline bool ProtectedLocalBirth(void* actor, const LocalBirths& authored) {
     if (!actor) return false;
     const auto it = authored.find(actor);
     if (it != authored.end() && it->second.Get() == actor) return true;
-    return coop::prop_drop_intent::IsAwaitingHost(actor) ||
+    return coop::prop_drop_intent::IsLocalPlacement(actor) ||
            coop::prop_drop_intent::IsPendingHostPlacement(actor);
 }
 

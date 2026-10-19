@@ -178,7 +178,8 @@ if '--boar-only' in sys.argv:
     raise SystemExit(0)
 
 source = (checkout / 'src/votv-coop/src/coop/creatures/npc_world_enum.cpp').read_text()
-table = source.split('kExSpawnSourceClasses[] = {', 1)[1].split('};', 1)[0]
+assert 'kExSpawnSourceClasses' not in source, 'dead/log-only source table can diverge from the executed gate'
+table = source.split('kExSpawnSources[] = {', 1)[1].split('};', 1)[0]
 sources = set(re.findall(r'L"([^"]+)"', table))
 for ticker, creature in [('ticker_fossilhoundSpawner', 'fossilhound'),
                          ('ticker_yellowWispSpawner', 'killerwisp')]:
@@ -189,6 +190,50 @@ for ticker, creature in [('ticker_fossilhoundSpawner', 'fossilhound'),
     assert any('GameplayStatics.BeginDeferredActorSpawnFromClass' in row and
                f'/objects/{creature}.{creature}_C' in row for _, row in rows)
     assert ticker + '_C' in sources, f'{ticker}: native spawn missing from catch source table'
+
+kavotia_controller = package('objects__kavotiaPatrolController')
+kavotia_controller_graph = next(e for e in kavotia_controller.exports
+                                if e['name'] == 'ExecuteUbergraph_kavotiaPatrolController')
+kavotia_controller_rows = [row for _, row in body(kavotia_controller, kavotia_controller_graph)]
+assert any('BeginDeferredActorSpawnFromClass' in row and '/objects/kavotia.kavotia_C' in row
+           for row in kavotia_controller_rows)
+assert any('BeginDeferredActorSpawnFromClass' in row and '/objects/igetis.igetis_C' in row
+           for row in kavotia_controller_rows)
+assert 'kavotiaPatrolController_C' in sources
+authority = (checkout / 'src/votv-coop/src/coop/world/spawn_authority.cpp').read_text()
+assert 'kavotiaPatrolController.ReceiveBeginPlay' in authority
+
+kavotia = package('objects__kavotia')
+kavotia_functions = {e['name']: e for e in kavotia.exports if kavotia.class_of_export(e) == 'Function'}
+kavotia_graph = dict(body(kavotia, kavotia_functions['ExecuteUbergraph_kavotia']))
+assert 'ExecuteUbergraph_kavotia(3961)' in dict(body(kavotia, kavotia_functions['ReceiveBeginPlay']))[0]
+assert 'Inst(Mesh)->SceneComponent.K2_AttachToComponent(Inst(SpringArm)' in kavotia_graph[4001]
+assert 'Inst(anim), Local(K2Node_DynamicCast_AsKavotia_Skeleton_Anim_Blueprint)' in kavotia_graph[4322]
+for fn in ('alert', 'updateTarget', 'sensePawns'):
+    assert fn in kavotia_functions, f'Kavotia authority watch names a missing native function: {fn}'
+kavotia_target = dict(body(kavotia, kavotia_functions['updateTarget']))
+assert 'Inst(anim)->Inst(isShooting)' in kavotia_target[48]
+assert 'SelectFloat(450, 200' in kavotia_target[89]
+assert 'Inst(CharacterMovement)->Inst(MaxWalkSpeed)' in kavotia_target[158]
+assert 'Inst(anim)->Inst(shootTarget)' in kavotia_graph[5039]
+assert 'Inst(anim)->Inst(isLaying)' in kavotia_graph[4688]
+assert 'Inst(eff_tentacleBallShootWindup)->Activate(true)' in kavotia_graph[5753]
+assert 'Inst(charging)->Activate(true)' in kavotia_graph[5790]
+assert 'Inst(charging)->Deactivate()' in kavotia_graph[5860]
+assert 'Lerp(0.5, 2' in kavotia_graph[5954]
+assert 'Inst(charging)->AudioComponent.SetPitchMultiplier' in kavotia_graph[6001]
+assert 'BeginDeferredActorSpawnFromClass' in kavotia_graph[894] and 'kavotiaShot_C' in kavotia_graph[894]
+assert 'MakeLiteralInt(7)' in kavotia_graph[418] and 'Delay(self, 0.3' in kavotia_graph[1907]
+assert 'name:fire' in kavotia_graph[1366] and 'kavotia_Skeleton_Montage' in kavotia_graph[1366]
+assert 'kavotia_Skeleton_laying_Montage' in kavotia_graph[6300]
+kavotia_anim = package('meshes__kavotia__kavotia_Skeleton_AnimBlueprint')
+kavotia_anim_graph = dict(body(kavotia_anim, next(e for e in kavotia_anim.exports
+                            if e['name'] == 'ExecuteUbergraph_kavotia_Skeleton_AnimBlueprint')))
+assert 'Inst(kavotia), Local(K2Node_DynamicCast_AsKavotia)' in kavotia_anim_graph[89]
+assert 'Inst(mesh), Inst(kavotia)->Inst(Mesh)' in kavotia_anim_graph[108]
+assert 'Inst(kavotia)->GetVelocity()' in kavotia_anim_graph[537]
+assert not any(e['name'].startswith('AnimNotify_') for e in kavotia_anim.exports)
+print('PASS native Kavotia setup/authority entries, aim/stance, charge/pitch, seven-shot burst and exact montage assets')
 
 assert parent('objects__misc__grayboar', 'grayboar_C').endswith('/prop.prop_C')
 assert parent('objects__misc__grayboarPawn', 'grayboarPawn_C') == '/Script/Engine.Character'
@@ -222,4 +267,10 @@ for name in ['npc_zombie_deer', 'npc_zombie_erie', 'npc_zombie_skerfuro', 'npc_z
     assert parent('objects__npc__' + name, name + '_C').endswith('/npc_zombie.npc_zombie_C')
 assert parent('objects__npc__npc_zombie_skeleBloody', 'npc_zombie_skeleBloody_C').endswith('/npc_zombie_skele.npc_zombie_skele_C')
 assert parent('objects__npc__npc_goreSlither_cheese', 'npc_goreSlither_cheese_C').endswith('/npc_goreSlither.npc_goreSlither_C')
+gun_stealer = package('objects__npc__npc_arirGunStealer')
+gun_functions = {e['name'] for e in gun_stealer.exports if gun_stealer.class_of_export(e) == 'Function'}
+assert 'punching' in gun_functions
+assert 'StealGun' not in gun_functions and 'TakeWeapon' not in gun_functions
+ariral_sync = (checkout / 'src/votv-coop/src/coop/creatures/ariral_sync.cpp').read_text()
+assert 'L"punching"' in ariral_sync and 'L"StealGun"' not in ariral_sync and 'L"TakeWeapon"' not in ariral_sync
 print(f'PASS native spawn catches, {len(classes)} Character-compatible NPC roots, boar separation and zombie/cheese descendant coverage')

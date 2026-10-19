@@ -135,6 +135,36 @@ constexpr ClientAuthorship AuthorshipOf(ReliableKind k) {
     case ReliableKind::RemoverRequest:
     case ReliableKind::CameraToggleIntent:
     case ReliableKind::LaptopTabReport:
+    // Local lanes retained by the sync-2153 merge. These carry validated
+    // client intents/owner samples; their handlers author the canonical result.
+    // Admission does not make them blindly relayable (session_lanes.h).
+    case ReliableKind::AtvConditionEdit:
+    case ReliableKind::EventGather:
+    case ReliableKind::PvpChange:
+    case ReliableKind::PvpHit:
+    case ReliableKind::CreditIntent:
+    case ReliableKind::FoodState:
+    case ReliableKind::FoodBite:
+    case ReliableKind::KitchenIntent:
+    case ReliableKind::CordIntent:
+    case ReliableKind::PropSupport:
+    case ReliableKind::ServicePanel:
+    case ReliableKind::RadioState:
+    case ReliableKind::CargoLift:
+    case ReliableKind::PropFire:
+    case ReliableKind::HandFire:
+    case ReliableKind::HandExtinguisher:
+    case ReliableKind::ExplosionEvent:
+    case ReliableKind::PropActionIntent:
+    case ReliableKind::Explosion:
+    case ReliableKind::DeskShortCircuit:
+    case ReliableKind::HookRetrieve:
+    case ReliableKind::DingusMusic:
+    case ReliableKind::HandToyAudio:
+    case ReliableKind::PlacedSave:
+    case ReliableKind::PropScaleState:
+    case ReliableKind::SharedScreen:
+    case ReliableKind::LaptopUI:
         return ClientAuthorship::Client;
     // The Host row matches MTA's protected element data, which a client may not write: opt-in there
     // (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:2743-2755), the only mode here.
@@ -209,6 +239,19 @@ constexpr ClientAuthorship AuthorshipOf(ReliableKind k) {
     case ReliableKind::RemoverResult:
     case ReliableKind::CameraActiveState:
     case ReliableKind::CameraLightState:
+    case ReliableKind::KavotiaState:
+    case ReliableKind::PropPlacementResult:
+    case ReliableKind::MediaState:
+    case ReliableKind::ChestFlags:
+    case ReliableKind::HandTaken:
+    case ReliableKind::KitchenState:
+    case ReliableKind::CordState:
+    case ReliableKind::DreamScene:
+    case ReliableKind::MadnessState:
+    case ReliableKind::CeilingLampState:
+    case ReliableKind::AmbientLightState:
+    case ReliableKind::GrayboarAction:
+    case ReliableKind::GrayboarTurn:
     case ReliableKind::LaptopTabState:
         return ClientAuthorship::Host;
     }

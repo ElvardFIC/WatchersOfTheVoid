@@ -38,6 +38,13 @@ void Tick(coop::net::Session* session);
 // An accepted drop request is waiting for the host's identity echo. The hand
 // release/carry fallback must not independently publish this actor as PropSpawn.
 bool IsAwaitingHost(void* actor);
+// Terminal refusal/timeout preserves the original actor for local recovery, but
+// must not let the held-item fallback bypass the host with a new PropSpawn.
+bool IsLocalPlacement(void* actor);
+enum class PlacementState : uint8_t {None, Waiting, Accepted, Refused, TimedOut};
+PlacementState StateFor(void* actor);
+void OnPlacementResult(coop::net::Session& session, const coop::net::PropPlacementResultPayload& p, int senderSlot);
+void OnPeerLeft(int slot);
 // A birth passed placement admission but is still retrying capture/send. This is
 // sweep protection only; it must not be mistaken for an accepted wire request.
 bool IsPendingHostPlacement(void* actor);

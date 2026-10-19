@@ -150,44 +150,25 @@ coop::element::ElementId EnrollUntrackedNpcActor(void* obj, const std::wstring& 
 // the Rozital mothership, the morning UFO, the droppers, the follower, the egger, the cleaner), and
 // each controller spawns its own creatures in turn. Each row's output reaches only the lanes whose
 // allowlists name it; everything else it spawns stays the host's.
-constexpr const wchar_t* kExSpawnSourceClasses[] = {
-    L"trigger_wispSwarm_C",   // the wisps event swarm
-    L"piramidSpawner_C",      // the piramid event chain
-    L"ticker_wispSpawner_C",  // the ambient sky wisps
-    L"ticker_yellowWispSpawner_C", // native EX_CallMath killerwisp spawn
-    L"ticker_fossilhoundSpawner_C", // native EX_CallMath fossilhound spawn
-    L"prop_coingun_C",        // the sell gun's coin mint
-    L"jellyfishPath_C",       // the space jellyfish's seven, on the world-actor lane
-    L"trigger_eventer_C",       // every list_events row's own spawns
-    L"boarInvasion_C",          // the boar war: grayboar_C, npc_ariral_shooter_C, firetank_C
-    L"ufoDropper_pig_C",        // the pig drop: grayboar_C
-    L"ufoDropper_tank_C",       // the tank drop: firetankDeploy_C
-    L"firetankDeploy_C",        // the deployed tank: firetank_C
-    L"grayEventController_C",   // the grays: grayTest_C
-    L"superEgger_C",            // the eggvasion: eg_C
-    L"tentacleBallsFollower_C", // the tentacle balls: tentacleBall_C
-};
-constexpr const wchar_t* kEventerOutputs[] = {L"ventCrawler_C", L"superEgger_C", nullptr};
 constexpr ExSpawnSource kExSpawnSources[] = {
     {L"trigger_wispSwarm_C",     nullptr},          // the wisps event swarm
     {L"piramidSpawner_C",        nullptr},          // the piramid event chain
     {L"ticker_wispSpawner_C",    nullptr},          // the ambient sky wisps
+    {L"ticker_yellowWispSpawner_C", nullptr},       // native EX_CallMath killerwisp spawn
+    {L"ticker_fossilhoundSpawner_C", nullptr},      // native EX_CallMath fossilhound spawn
     {L"ticker_egSpawner_C",      nullptr},          // the ambient night eggs, one eg_C per roll
     {L"prop_coingun_C",          nullptr},          // the sell gun's coin mint
     {L"jellyfishPath_C",         nullptr},          // the space jellyfish's seven (world-actor lane)
-    {L"trigger_eventer_C",       kEventerOutputs},  // the scheduler's dispatcher
+    {L"trigger_eventer_C",       nullptr},          // the scheduler's dispatcher
+    {L"boarInvasion_C",          nullptr},          // boar war shooter and firetank
+    {L"ufoDropper_pig_C",        nullptr},          // pig drop's grayboar body (prop lane ignores it here)
+    {L"ufoDropper_tank_C",       nullptr},          // tank drop's firetankDeploy_C
+    {L"firetankDeploy_C",        nullptr},          // deployed firetank_C
+    {L"kavotiaPatrolController_C", nullptr},        // patrol set: kavotia_C and igetis_C
     {L"grayEventController_C",   nullptr},          // graysforest: spawn() mints the grayTest_C pack
     {L"superEgger_C",            nullptr},          // eggvasion: spwn() mints the eg_C children
     {L"tentacleBallsFollower_C", nullptr},          // tentacleBalls: runTrigger() mints the pack
 };
-
-// Whether `cls`'s own name is one of `names` (null-terminated). One render, then plain compares.
-bool NamesOneOf(void* cls, const wchar_t* const* names) {
-    const std::wstring n = R::ToString(R::NameOf(cls));
-    for (const wchar_t* const* o = names; *o; ++o)
-        if (_wcsicmp(n.c_str(), *o) == 0) return true;
-    return false;
-}
 
 // A source's output may be a world-actor-lane class (the pyramid): the same catch seam,
 // drained to the world-actor sync's own enrol instead of the NPC one. The same name-equality
@@ -269,7 +250,7 @@ void InstallExSpawnCatch() {
                 "source classes: the wisp swarm, the pyramid, the sky wisps, the coin gun, the "
                 "jellyfish path, the eventer and its event controllers; "
                 "EX_CallMath spawns now enroll)",
-                std::size(kExSpawnSourceClasses));
+                std::size(kExSpawnSources));
     } else {
         UE_LOGW("npc-sync[ex-spawn]: InstallPostHook FAILED -- EX_CallMath creature spawns will "
                 "NOT mirror this session (event-swarm wisps host-only)");

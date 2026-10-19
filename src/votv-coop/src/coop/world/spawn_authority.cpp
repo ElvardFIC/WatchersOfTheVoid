@@ -96,6 +96,8 @@ UE_FACT_FN(kRowReceiveTickTentacleBallsFollower, "spawn_authority", L"tentacleBa
            Declared);
 UE_FACT_FN(kRowReceiveBeginPlaySuperEgger, "spawn_authority", L"superEgger_C", L"ReceiveBeginPlay", Declared);
 UE_FACT_FN(kRowSpwnSuperEgger, "spawn_authority", L"superEgger_C", L"spwn", Declared);
+UE_FACT_FN(kRowReceiveBeginPlayKavotiaPatrolController, "spawn_authority", L"kavotiaPatrolController_C",
+           L"ReceiveBeginPlay", Declared);
 
 // One row: the facts row a client must not run, and the tag its refusal log carries.
 struct Row {
@@ -144,6 +146,10 @@ constexpr Row kRows[] = {
     {nullptr, L"ufoDropper_pig_C", L"ReceiveBeginPlay", "ufoDropper_pig.ReceiveBeginPlay"},
     {nullptr, L"ufoDropper_tank_C", L"ReceiveBeginPlay", "ufoDropper_tank.ReceiveBeginPlay"},
     {nullptr, L"firetankDeploy_C", L"ReceiveBeginPlay", "firetankDeploy.ReceiveBeginPlay"},
+    // This placed controller creates both kavotia_C and igetis_C in its BeginPlay graph. The
+    // host's EX-spawn catch above owns both products; a client run would mint an uncaught pair.
+    {&kRowReceiveBeginPlayKavotiaPatrolController, nullptr, nullptr,
+     "kavotiaPatrolController.ReceiveBeginPlay"},
     // Mimics are prop_impostor, with a props-table disguise chosen BEFORE finish.
     // The ordinary keyed prop lane preserves both the real class and that row.
     {nullptr, L"impostorPropsMaster_C", L"gen", "impostorPropsMaster.gen"},

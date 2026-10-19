@@ -1,5 +1,73 @@
 # TestLog — current status and source reports
 
+## Continued 2157: Kavotia state, authorship merge repair and personal effects (20 October 2026)
+
+Implemented Kavotia's native aim/stance and charge-loop/pitch/windup snapshot on
+host-only reliable kind 223 (25 bytes), sharing Grayboar's bounded queue helpers.
+The adapter preserves native mesh initialization, refuses client latent AI/shot
+entries, samples host actor ticks even for culled meshes, repairs a join through
+heartbeat and stops stale loops independently of particle/pitch availability.
+Actual-source tests cover authority/pre-bind/malformed frames, bounds, sequence
+wrap, delayed binding, metadata/parameter retries, completed-operation retention,
+component/actor replacement, reentrant callbacks/receive/teardown, four rows/tick,
+32 pending per peer and full-pack join repair. Native bytecode assertions pin the
+setup entry, native movement rates, charge graph and exact burst/montage names.
+The shared fanout also has a Grayboar regression for peer departure erasing a cue
+inside its send callback; a delivery revision aborts that pass before indexing the
+changed queue, and remaining peers resume in FIFO order on the next tick.
+
+CI exposed 38 pre-existing authorship omissions after the merge. Repaired 27
+client-intent/owner-sample rows and 11 host-only rows by their real paths. The
+reliable-kind gate passes all 212 kinds and 18 injected failure controls after
+fixing its false-return parsing and stale family-dispatch mutation.
+
+Wisp tests found an actual missing sender check on WispGrab; fixed it and added
+immediate death/hold/tear cancellation on original-pawn loss/recycling/replacement,
+native death and world changes. A grab rearmed during release survives without
+receiving the old kill. Removed blanket client nightmare suppression; the updated
+sleep test checks preserved native probability/entry, unchanged wake/rest state,
+real rest-report layout and sender authority. Updated the stale preview-spawn stub.
+
+Release `0.9.0n b2157` builds. All 13 groups pass: player reports, wisp animation/
+release, ragdoll retry/skins, personal sleep, entity sync, garden, laptop UI, world
+sound, three native asset audits and reliable-kind CI/drill. Evidence and DLL hash:
+`build/entity-sync-check/validation-2157/verification.json`. Existing C4715 in
+`npc_pose_drive.cpp` and MSVC EH-option warnings remain. No two-player gameplay or
+new package; Kavotia fire/laying montage, voice and beam/impact/damage remain open.
+
+## Sync-2153 ancestry audit and entity-route repair (20 October 2026)
+
+Verified `multivoid-sync-2153` tip `bf276d14c4d30dc1ba95ea9ea184f7d9e89dedef`
+is parent 2 of merge `7fced281e92c4cb2df0e37797bb533041022b087` and an ancestor
+of current `main`. The merge's ten manually resolved paths retain local reliable
+kinds 202/203, assign Laptop UI 204 and combine both Grayboar implementations.
+The sync branch's laptop, garden, world-sound and placed-hose source files remain
+connected to the build/session. Current source is protocol 2156.
+
+The entity audit found that `npc_world_enum.cpp` logged and the native test read a
+dead EX-spawn source table, while the executed table omitted the Fossilhound and
+yellow-wisp tickers plus boar-war/tank controllers. There is now one executed table;
+the runner asserts its required sources and rejects a second table. The existing
+`ariral_sync` watched nonexistent `StealGun`/`TakeWeapon` exports. Native 0.9.0n
+shows a timer export named `punching`; the gun stealer is now a late NPC class and
+only a confirmed client host-mirror refuses that timer, preventing duplicate player,
+prop and door effects. Gun attachment/held-item state remains open rather than being
+claimed from pose replication.
+
+The reusable part of the Grayboar action path now lives in
+`coop/creatures/reliable_action_queue.h`: non-zero wrapping sequences, ordered
+receive admission, bounded per-peer fanout, expiry, independent FIFO retry and
+departed-peer cleanup. `grayboar_actions.cpp` consumes that layer without a wire
+change. Its existing saturation, wrap, retry, expiry, reconnect, late-join and
+reentrant playback tests all pass. Entity-specific native sampling and cosmetic
+playback remain in adapters; gameplay verbs are not replayed by the shared queue.
+
+`agent/tests/run_entity_sync.ps1` passes all entity/Grayboar/prop-drive regressions
+and production compilation, including `npc_world_enum.cpp` and `ariral_sync.cpp`.
+The existing `npc_pose_drive.cpp` C4715 warning remains. Native Python evidence was
+updated but could not run in this environment because only the Windows Store Python
+alias is installed. No two-player gameplay claim, DLL rebuild or package was made.
+
 ## Merge resolution - local branch with multivoid-sync-2153 (19 October 2026)
 
 Resolved the Grayboar source/test conflicts by retaining local authority and

@@ -35,7 +35,6 @@ std::atomic<coop::net::Session*> g_session{nullptr};
 SleepPeerState g_localState = SleepPeerState::Awake;
 WireKey        g_localBed{};              // the bed's class name while not awake, else empty
 bool           g_localSleeping = false;   // isSleep
-bool           g_dreamProbSuppressed = false;  // a client holds gamemode.dreamProbability at 0
 
 // ---- what is known of every peer ------------------------------------------------------------------
 // The host: each slot's state as it applied it (slot 0 the host's own, published). A client: as the host
@@ -52,12 +51,6 @@ bool IsHost(coop::net::Session* s) { return s->role() == coop::net::Role::Host; 
 // Two beds are the same name: the length and the bytes inside it, whatever sits past them.
 bool SameBed(const WireKey& a, const WireKey& b) {
     return a.len == b.len && a.len <= sizeof(a.data) && std::memcmp(a.data, b.data, a.len) == 0;
-}
-
-void ApplyDreamProbPolicy() {
-    auto* s = g_session.load(std::memory_order_acquire);
-    if (!s || IsHost(s)) return; // the host keeps the game's native nightmare roll
-    if (SLP::SetDreamProbability(0.f)) g_dreamProbSuppressed = true;
 }
 
 // One warning per refused field, at most one every five seconds each: a hostile sender cannot fill the log, and
@@ -207,7 +200,6 @@ void Tick() {
     auto* s = g_session.load(std::memory_order_acquire);
     if (!s || !s->running()) return;
     if (!SLP::EnsureResolved()) return;
-    if (s->connected() && !IsHost(s) && !g_dreamProbSuppressed) ApplyDreamProbPolicy();
 
     SleepPeerState state = SleepPeerState::Awake;
     bool sleeping = false;
@@ -375,12 +367,8 @@ uint32_t BedRefusalsFrom(int slot, BedRefusal why) {
 bool LocalInBed() { return g_localState != SleepPeerState::Awake; }
 
 void OnDisconnect() {
-    // Restore the SP nightmare sentinel. A host still asleep keeps sleeping: its timelapse was the game's own
-    // all along. A client that loses its session leaves to the menu; its world stays at 1, which is what it ran.
-    if (g_dreamProbSuppressed) {
-        SLP::SetDreamProbability(-1.f);
-        g_dreamProbSuppressed = false;
-    }
+    // Nightmare probability and sleep entry stay native on every peer. The
+    // reports below carry presentation state, never another player's dream roll.
     g_localState = SleepPeerState::Awake;
     std::memset(&g_localBed, 0, sizeof(g_localBed));
     g_localSleeping = false;

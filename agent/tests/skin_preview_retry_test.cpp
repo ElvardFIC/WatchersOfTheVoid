@@ -12,7 +12,9 @@ namespace ue_wrap::log {void Write(Level,const char*,...) {}}
 namespace ue_wrap::puppet {
 void* GetMeshPlayerVisibleAsset(void*){return &test::pawn;}
 void* GetMeshPlayerVisibleAnimClass(void*){return &test::pawn;}
-void* SpawnPuppet(const FVector&,void*,void*){return &test::mannequin;}
+void* SpawnPuppet(const FVector&,void*,void*,engine::BeforeFinishFn beforeFinish,void* ctx){
+ if(beforeFinish)beforeFinish(&test::mannequin,ctx);return &test::mannequin;
+}
 }
 namespace ue_wrap::engine {
 bool SetActorEnableCollision(void*,bool){return true;}

@@ -12,6 +12,7 @@
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/actors/wisp.h"
+#include "ue_wrap/actors/vitals.h"
 
 #include <chrono>
 #include <cstdint>
@@ -33,15 +34,17 @@ uint64_t NowMs() {
 uint64_t g_killAtMs = 0;
 uint32_t g_killWispEid = 0;  // for logging only
 ue_wrap::CachedObjRef g_killVictim;
+uint32_t g_killWorld = 0;
+uint64_t g_killRevision = 0;
 constexpr uint64_t kTearRetryMs = 100;
-struct PendingTear { coop::net::WispTearPayload payload{}; uint64_t until=0; uint64_t nextTry=0; };
+struct PendingTear { coop::net::WispTearPayload payload{}; uint64_t until=0; uint64_t nextTry=0; uint32_t world=0; };
 std::vector<PendingTear> g_pendingTears;
 uint64_t g_tearEpoch=0;
 
 }  // namespace
 
 void OnWispGrab(const coop::net::WispGrabPayload& p, uint8_t senderPeerSlot) {
-    if (!p.wispElementId || !p.victimElementId) return;
+    if (senderPeerSlot != 0 || !p.wispElementId || !p.victimElementId) return;
     // Host-only origin (the host detected its wisp false-grabbing OUR puppet). Belt-and-
     // suspenders self-verify: the host directs this to our slot, but also confirm the
     // addressed Player Element id is OURS before we schedule our own death.
@@ -56,6 +59,8 @@ void OnWispGrab(const coop::net::WispGrabPayload& p, uint8_t senderPeerSlot) {
     // Bind the delayed action now, before attachment can dispatch native callbacks.
     // Looking up Local only at the deadline would select a replacement pawn.
     g_killVictim.Set(local);
+    g_killWorld = ue_wrap::world_identity::Generation();
+    ++g_killRevision;
     // Sanitize the host-decided delay (clamp to a sane window so a corrupt packet can't park
     // the death forever or fire it instantly).
     uint32_t delay = p.killDelayMs;
@@ -75,16 +80,17 @@ void OnWispGrab(const coop::net::WispGrabPayload& p, uint8_t senderPeerSlot) {
 bool PlayTearOnWisp(void* wispActor, uint32_t victimSlot) {
     if (!wispActor || !ue_wrap::wisp::IsKillerWisp(wispActor)) return false;
     ue_wrap::CachedObjRef ref; ref.Set(wispActor);
+    const auto world = ue_wrap::world_identity::Generation();
     // Force the parked mirror mesh to tick so a played montage advances, then play the fatality
     // tear. Both best-effort: the force-tick alone shows the mirror, the montage is the gore. The
     // limb gibs are still a follow-on; the victim's body placement belongs to wisp_grab_hold, which
     // both receivers engage.
     ue_wrap::wisp::ForceMeshTick(wispActor);
-    if (!ref.Get()) return false;
+    if (!ref.Get() || world != ue_wrap::world_identity::Generation()) return false;
     const bool montage = ue_wrap::wisp::PlayFatalityMontage(wispActor);
     UE_LOGI("wisp_tear: tear on wisp actor=%p (victimSlot=%u) -- force-tick + montage=%d",
             wispActor, victimSlot, montage ? 1 : 0);
-    return montage && ref.Get();
+    return montage && ref.Get() && world == ue_wrap::world_identity::Generation();
 }
 
 namespace {
@@ -93,10 +99,12 @@ bool TryTear(const coop::net::WispTearPayload& p) {
     void* actor=el ? el->LiveActor() : nullptr;
     if (!actor || !ue_wrap::wisp::IsKillerWisp(actor)) return false;
     const auto epoch=g_tearEpoch;
+    const auto world=ue_wrap::world_identity::Generation();
     ue_wrap::CachedObjRef ref; ref.Set(actor);
     const bool played = PlayTearOnWisp(actor,p.victimSlot);
-    if (epoch!=g_tearEpoch) return true;
-    if (!ref.Get()) return false;
+    if (epoch!=g_tearEpoch || world!=ue_wrap::world_identity::Generation()) return true;
+    el=coop::element::Registry::Get().Get(static_cast<coop::element::ElementId>(p.wispElementId));
+    if (!ref.Get() || !el || el->LiveActor()!=actor) return false;
     if (p.victimSlot!=coop::players::Registry::Get().LocalPeerId())
         coop::wisp_grab_hold::EngagePuppet(p.wispElementId,static_cast<uint8_t>(p.victimSlot));
     return played;
@@ -112,16 +120,18 @@ void OnWispTear(const coop::net::WispTearPayload& p, uint8_t senderPeerSlot) {
     // Resolve the LOCAL wisp actor by its cross-peer Element id (a client mirror in
     // NpcMirrors, registered into the unified element Registry). null if the wisp already
     // despawned (race) -- then the tear is a no-op, which is fine.
+    const auto world = ue_wrap::world_identity::Generation();
+    std::erase_if(g_pendingTears, [=](const PendingTear& row){return row.world != world;});
     for (auto& row:g_pendingTears) if (row.payload.wispElementId==p.wispElementId) {
         row.payload=p; return;  // Do not bypass backoff or extend the original deadline.
     }
     const auto epoch = g_tearEpoch;
-    if (TryTear(p) || epoch != g_tearEpoch) return;
+    if (TryTear(p) || epoch != g_tearEpoch || world != ue_wrap::world_identity::Generation()) return;
     // The reliable attack can beat mirror materialization. Retain that one-shot
     // animation for the same 3.5s window as the host's native grab/death sequence.
     const auto now = NowMs();
     if (g_pendingTears.size()<coop::players::kMaxPeers)
-        g_pendingTears.push_back({p,now+3500,now+kTearRetryMs});
+        g_pendingTears.push_back({p,now+3500,now+kTearRetryMs,world});
 }
 
 void Tick() {
@@ -130,7 +140,7 @@ void Tick() {
     auto pending=std::move(g_pendingTears); g_pendingTears.clear();
     for (auto row:pending) {
         if (epoch!=g_tearEpoch) return;
-        if (now >= row.until) continue;
+        if (now >= row.until || row.world != ue_wrap::world_identity::Generation()) continue;
         if (now < row.nextTry) { g_pendingTears.push_back(row); continue; }
         if (!TryTear(row.payload) && epoch==g_tearEpoch) {
             row.nextTry = now + kTearRetryMs;
@@ -138,6 +148,19 @@ void Tick() {
         }
     }
     if (g_killAtMs == 0) return;
+    float dead = 0;
+    const bool sameVictim = g_killVictim.Get() &&
+        g_killVictim.Raw() == coop::players::Registry::Get().Local();
+    const auto revision = g_killRevision;
+    const bool alreadyDead = sameVictim && ue_wrap::vitals::Read(ue_wrap::vitals::Field::Dead, &dead) && dead != 0;
+    if (epoch != g_tearEpoch || revision != g_killRevision) return;
+    if (!sameVictim || !g_killVictim.Get() || g_killVictim.Raw() != coop::players::Registry::Get().Local() ||
+        alreadyDead || g_killWorld != ue_wrap::world_identity::Generation()) {
+        g_killAtMs = 0; g_killWispEid = 0; g_killWorld = 0;
+        g_killVictim.Reset(); ++g_killRevision;
+        coop::wisp_grab_hold::ReleaseSelf();
+        return;
+    }
     if (NowMs() < g_killAtMs) return;
     const auto wispEid = g_killWispEid;
     const auto victimRef = g_killVictim;
@@ -145,6 +168,8 @@ void Tick() {
     g_killAtMs = 0;
     g_killWispEid = 0;
     g_killVictim.Reset();
+    g_killWorld = 0;
+    const auto consumed = ++g_killRevision;
     // The release can dispatch engine callbacks, including disconnect or pawn replacement.
     // Revalidate the original victim after it; never kill a successor pawn.
     // Undo the grab FIRST (detach + restore movement/camera) -- the native releasePlayer shape is
@@ -153,7 +178,7 @@ void Tick() {
     // it in-session and the hold's own retry is gated on not-yet-attached. Safe no-op if the ride
     // never engaged, and it re-checks the local player itself.
     coop::wisp_grab_hold::ReleaseSelf();
-    if (epoch != g_tearEpoch) return;
+    if (epoch != g_tearEpoch || consumed != g_killRevision) return;
     if (!victimRef.Get() || local != coop::players::Registry::Get().Local()) {
         UE_LOGW("wisp_tear[victim]: kill deadline elapsed but local player not live -- skipping");
         return;
@@ -175,6 +200,8 @@ void OnDisconnect() {
     g_killAtMs = 0;
     g_killWispEid = 0;
     g_killVictim.Reset();
+    g_killWorld = 0;
+    ++g_killRevision;
     coop::wisp_grab_hold::ReleaseSelf();
 }
 

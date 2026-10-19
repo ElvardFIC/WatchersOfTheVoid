@@ -81,6 +81,8 @@ inline constexpr const wchar_t* NpcClass_VentCrawler  = L"ventCrawler_C";
 inline constexpr const wchar_t* NpcClass_GrayTest     = L"grayTest_C";      // graysforest pack
 inline constexpr const wchar_t* NpcClass_Eg           = L"eg_C";            // eggvasion and night eggs
 inline constexpr const wchar_t* NpcClass_TentacleBall = L"tentacleBall_C";  // tentacleBalls pack
+inline constexpr const wchar_t* NpcClass_ArirGunStealer = L"npc_arirGunStealer_C";
+inline constexpr const wchar_t* NpcClass_Kavotia      = L"kavotia_C";
 inline constexpr const wchar_t* NpcClass_Egg          = L"eg_C";
 // wisp_C (Awisp_C : ACharacter): the wispSwarm-event wisp and the ambient sky wisp
 // (ticker_wispSpawner_C spawns at absolute map coordinates, world-anchored, so host-authoritative
@@ -132,9 +134,11 @@ inline constexpr const wchar_t* kNpcAllowlist[] = {
     NpcClass_GrayTest,
     NpcClass_Egg,
     NpcClass_TentacleBall,
+    NpcClass_ArirGunStealer,
+    NpcClass_Kavotia,
 };
 inline constexpr size_t kNpcAllowlistSize = sizeof(kNpcAllowlist) / sizeof(kNpcAllowlist[0]);
-inline constexpr size_t kNpcAllowlistEagerSize = kNpcAllowlistSize - 3;
+inline constexpr size_t kNpcAllowlistEagerSize = kNpcAllowlistSize - 5;
 static_assert(kNpcAllowlist[kNpcAllowlistEagerSize - 1] == NpcClass_WispBlu &&
                   kNpcAllowlist[kNpcAllowlistEagerSize] == NpcClass_GrayTest,
               "kNpcAllowlistEagerSize must end the eager entries at the late ones");

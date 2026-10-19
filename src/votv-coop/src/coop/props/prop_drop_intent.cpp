@@ -45,6 +45,9 @@
 #include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
+#include <array>
+#include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <deque>
 #include <string>
@@ -85,6 +88,7 @@ struct PendingPlace {
     // the calling frame.
     bool    playerSpawn = false;
     bool    admitted = false;
+    uint32_t requestId = 0;
     PendingPlace(void* value, bool extracted, bool authored)
         : containerExtract(extracted), playerSpawn(authored) { actor.Set(value); }
 };
@@ -92,8 +96,22 @@ std::vector<PendingPlace> g_pending;         // GT-only
 struct AwaitingHost {
     ue_wrap::CachedObjRef actor;
     std::wstring key, className;
+    uint32_t requestId = 0;
+    uint64_t until = 0;
+    PlacementState state = PlacementState::Waiting;
+    bool parked = false;
 };
 std::vector<AwaitingHost> g_awaitingHost;
+uint32_t g_requestSequence = 0; // keep advancing across Reset; old replies cannot match new tickets
+constexpr uint64_t kPlacementWaitMs = 10000;
+uint64_t NowMs() {return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+    std::chrono::steady_clock::now().time_since_epoch()).count());}
+struct HostReply {
+    coop::net::PropPlacementResultPayload packet{};
+    bool complete = false, pending = false;
+};
+std::array<std::deque<HostReply>, coop::net::kMaxPeers> g_replies;
+std::array<uint64_t, coop::net::kMaxPeers> g_peerEpoch{};
 uint64_t g_pendingEpoch = 0;
 bool g_draining = false;
 const std::vector<PendingPlace>* g_activePending = nullptr;
@@ -111,6 +129,26 @@ struct DrainScope {
 };
 constexpr size_t kMaxPending  = 32;          // runaway backstop (a settled client rarely has >1 in flight)
 constexpr int    kMaxKeyTries = 8;           // ~8 net-pump ticks (~64 ms) for the Key to restore, then give up
+
+void FlushReplies(coop::net::Session& session) {
+    const auto epoch = g_pendingEpoch;
+    int budget = 8;
+    for (int slot = 1; slot < coop::net::kMaxPeers && budget; ++slot) {
+        const auto peerEpoch = g_peerEpoch[slot];
+        if (!session.IsSlotWorldReady(slot)) continue;
+        for (size_t i = 0; i < g_replies[slot].size() && budget; ++i) {
+            const auto row = g_replies[slot][i];
+            if (!row.complete || !row.pending) continue;
+            --budget;
+            const bool sent = session.SendReliableToSlot(slot, coop::net::ReliableKind::PropPlacementResult,
+                &row.packet, sizeof(row.packet));
+            if (epoch != g_pendingEpoch || peerEpoch != g_peerEpoch[slot] || !session.connected() ||
+                session.role() != coop::net::Role::Host) return;
+            if (!sent) break;
+            g_replies[slot][i].pending = false;
+        }
+    }
+}
 
 // The park set: keys the client locally destroyed (a pickup) and may re-place. A bounded FIFO
 // set: the keyed-destroy note inserts, a matching place consumes, overflow evicts the oldest.
@@ -407,10 +445,23 @@ void Install(coop::net::Session* session) {
 }
 
 void Tick(coop::net::Session* session) {
+    if (session && session->connected() && session->role() == coop::net::Role::Host) {
+        FlushReplies(*session);
+        return;
+    }
     std::erase_if(g_awaitingHost, [](const AwaitingHost& row) {
         void* a = row.actor.Get();
         return !a || PT::GetPropElementIdForActor(a) != coop::element::kInvalidId;
     });
+    const auto now = NowMs();
+    for (auto& row : g_awaitingHost) {
+        if ((row.state == PlacementState::Waiting || row.state == PlacementState::Accepted) && now >= row.until) {
+            row.state = PlacementState::TimedOut;
+            if (row.parked) NoteClientKeyedDestroy(row.key);
+            UE_LOGW("[PROP-DROP] request=%u key='%ls' timed out; local actor retained for recovery, no fallback author",
+                row.requestId, row.key.c_str());
+        }
+    }
     UE_ASSERT_GAME_THREAD("prop_drop_intent::Tick");
     if (g_pending.empty() || g_draining) return;
     DrainScope scope;
@@ -445,7 +496,7 @@ void Tick(coop::net::Session* session) {
             return epoch == g_pendingEpoch && session->connected() &&
                    session->role() == coop::net::Role::Client && e.actor.Get() == actor;
         };
-        if (IsAwaitingHost(actor)) {
+        if (IsLocalPlacement(actor)) {
             probe::NoteDrainExit(actor, "already-requested", e.tries, std::wstring());
             continue;
         }
@@ -605,15 +656,25 @@ void Tick(coop::net::Session* session) {
             p.foodRipeness = food.ripeness;
             p.foodUses = food.uses;
         }
-        if (g_awaitingHost.size() >= 256 ||
-            !session->SendReliable(freshBirth ? coop::net::ReliableKind::ReelEjectIntent
-                                         : coop::net::ReliableKind::PropDropIntent,
-                              &p, sizeof(p))) {
+        if (g_awaitingHost.size() >= 256) {
+            retryTransform("placement-cap-expired");
+            continue;
+        }
+        if (!e.requestId) {if (!++g_requestSequence) ++g_requestSequence; e.requestId = g_requestSequence;}
+        p.requestId = e.requestId;
+        // Publish the ticket before sending: a synchronous inbox callback must
+        // be able to match a reply, and the actor is always identity-stamped.
+        g_awaitingHost.push_back({e.actor, key, cls, p.requestId, now + kPlacementWaitMs, PlacementState::Waiting, parked});
+        const bool sent = session->SendReliable(freshBirth ? coop::net::ReliableKind::ReelEjectIntent
+                                         : coop::net::ReliableKind::PropDropIntent, &p, sizeof(p));
+        if (!stillCurrent()) continue;
+        if (!sent) {
+            std::erase_if(g_awaitingHost, [&](const AwaitingHost& row){return row.requestId == p.requestId;});
             if (++e.tries <= kMaxKeyTries) keep.push_back(e);
             else UE_LOGW("[PROP-DROP] send refused for key='%ls' after retries", key.c_str());
             continue; // do not consume the parked key or publish a record without its birth
         }
-        g_awaitingHost.push_back({e.actor, key, cls});
+        if (StateFor(actor) == PlacementState::Refused) continue;
         if (parked) UnparkKey(key);   // the spawn intent has crossed; consume before native capture
         coop::join_membership_sweep::RecordClaimIfTracking(actor);
         // The prop's own save record behind the intent, same lane, same FIFO: the host respawns
@@ -650,9 +711,28 @@ void Tick(coop::net::Session* session) {
 }
 
 bool IsAwaitingHost(void* actor) {
-    if (!actor) return false;
-    for (const auto& row : g_awaitingHost) if (row.actor.Get() == actor) return true;
-    return false;
+    const auto state = StateFor(actor);
+    return state == PlacementState::Waiting || state == PlacementState::Accepted;
+}
+PlacementState StateFor(void* actor) {
+    if (actor) for (const auto& row : g_awaitingHost) if (row.actor.Get() == actor) return row.state;
+    return PlacementState::None;
+}
+bool IsLocalPlacement(void* actor) {return StateFor(actor) != PlacementState::None;}
+void OnPlacementResult(coop::net::Session& session, const coop::net::PropPlacementResultPayload& p, int senderSlot) {
+    if (!session.connected() || session.role() != coop::net::Role::Client || senderSlot != 0 || !p.requestId ||
+        p.code > static_cast<uint8_t>(coop::net::PropPlacementCode::SpawnFailed) ||
+        p.reserved[0] || p.reserved[1] || p.reserved[2]) return;
+    for (auto& row : g_awaitingHost) if (row.requestId == p.requestId && row.actor.Get()) {
+        if (PT::GetPropElementIdForActor(row.actor.Get()) != coop::element::kInvalidId) return;
+        if (row.state != PlacementState::Waiting) return; // duplicate replies cannot extend the deadline
+        row.state = p.code == static_cast<uint8_t>(coop::net::PropPlacementCode::Accepted)
+            ? PlacementState::Accepted : PlacementState::Refused;
+        if (row.state == PlacementState::Accepted) row.until = NowMs() + kPlacementWaitMs;
+        else if (row.parked) NoteClientKeyedDestroy(row.key);
+        UE_LOGI("[PROP-DROP] request=%u host result=%u key='%ls'", p.requestId, p.code, row.key.c_str());
+        return;
+    }
 }
 
 bool IsPendingHostPlacement(void* actor) {
@@ -755,6 +835,8 @@ void Reset() {
     g_awaitingHost.clear();
     UE_ASSERT_GAME_THREAD("prop_drop_intent::Reset");
     ++g_pendingEpoch;
+    for (auto& replies : g_replies) replies.clear();
+    for (auto& epoch : g_peerEpoch) ++epoch;
     // The drain's session gate normally empties this first; anything still here reached teardown
     // unresolved, and the tally says so rather than losing it.
     for (const PendingPlace& e : g_pending)
@@ -763,6 +845,12 @@ void Reset() {
     g_pending.clear();
     g_parkedKeys.clear();
     g_parkFifo.clear();
+}
+
+void OnPeerLeft(int slot) {
+    if (slot <= 0 || slot >= coop::net::kMaxPeers) return;
+    ++g_peerEpoch[slot];
+    g_replies[slot].clear();
 }
 
 }  // namespace coop::prop_drop_intent

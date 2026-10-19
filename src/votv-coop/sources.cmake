@@ -359,6 +359,7 @@ set(VOTVCOOP_SOURCES
     src/coop/creatures/centipede_sync.cpp
     src/coop/creatures/mannequin_sync.cpp
     src/coop/creatures/grayboar_actions.cpp
+    src/coop/creatures/kavotia_sync.cpp
     src/coop/creatures/grayboar_turn.cpp
     src/coop/creatures/piramid_sync.cpp
     src/coop/creatures/roach_sync.cpp

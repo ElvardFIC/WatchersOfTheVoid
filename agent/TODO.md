@@ -1,11 +1,12 @@
 # TODO - current priorities
 
-Current source/wire protocol: **2154** (merged 2153 synchronization work), game **0.9.0n**.
-Delivery package: **0.9.2152**, containing DLL **b2153 / protocol 2153**.
-The packaged DLL predates the current source; peers need matching b2154 builds.
+Current source/wire protocol: **2157**, game **0.9.0n**.
+Prepared package metadata targets **0.9.2154 / DLL b2156**; this entity pass did
+not repack it. Current local Release DLL is **b2157**. Peers need matching current DLLs.
 
-The prior in-place development target was 2153. The merge added a wire kind, so
-the protocol is now 2154; no new build or delivery package has been produced.
+The `multivoid-sync-2153` tip is present as parent 2 of merge `7fced281e` and is an
+ancestor of current `main`. See `agent/ENTITY_COVERAGE.md` and TESTLOG for the
+conflict/content audit and current entity mapping.
 
 ## Entity category request - OPEN
 
@@ -57,6 +58,14 @@ still need two-player validation. This is not full helper synchronization.
    damage ownership and corpse/loot authority; do not replay loot/damage as cosmetics.
 2. Host/client tests for spawn, target, movement, action, damage, death, reconnect
    and mid-event join. Personal Insomniac/nightmare conditions remain peer-local.
+3. Kavotia now reuses `reliable_action_queue.h` for native aim/stance/charge-loop,
+   pitch and windup state, including heartbeat/join, bounded coalescing and stale
+   cleanup. Its controller birth is host-owned and client latent shot/AI entries
+   are refused. Continue with fire/laying montage, voice and canonical beam/impact
+   outcomes; exact network phase-time alignment remains open.
+4. Wisp code/tests now reject non-host grab senders and cancel pending self-grab,
+   death and tear state through pawn replacement/recycling, native death, world
+   changes and reentrant release. Verify those cases with two actual peers.
 
 
 ## Other open priorities
@@ -76,9 +85,13 @@ still need two-player validation. This is not full helper synchronization.
 
 ## Current verification and boundaries
 
-The results below are historical **b2153** evidence, not validation of the merged
-**2154** source. Rebuild and rerun checks for 2154 before using those results to
-describe the current tree.
+Current **b2157**: Release build and 13 validation groups pass, including entity,
+wisp readiness/release, native Insomniac, personal sleep, ragdoll, garden, laptop
+UI, world sound and the reliable-kind gate with 18 injected failure controls.
+Evidence: `build/entity-sync-check/validation-2157/verification.json`.
+The merge's 38 missing authorship rows are restored (27 client intents/samples,
+11 host-only kinds). Native nightmare probability remains local on both roles.
+The older **b2153** results below are retained as historical evidence.
 
 package/check_2152.ps1 passes all 9 runners, including expanded entity/boar tests.
 Full MSVC Release DLL resources identify **0.9.0n b2153**. Hash and evidence:
@@ -90,8 +103,8 @@ Live grayboar cues use host-only reliable kind 200, cosmetic turn state uses 201
 within development 2153. Install
 matching current DLLs on both peers; the existing delivery ZIP predates this work.
 
-All 21 merge conflicts are resolved; the merge still awaits its commit. Current
-source/test changes remain uncommitted. Preserve all work. Commit, push, game
+The sync merge is committed and present in current history. Current entity source/test
+changes remain uncommitted. Preserve all work. Commit, push, game
 installation and publication require an explicit request. No other-agent workflow.
 Update TODO/WORK/TESTLOG in place; detailed prior evidence remains in WORK/TESTLOG.
 

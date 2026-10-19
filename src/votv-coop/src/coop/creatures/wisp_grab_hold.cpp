@@ -12,6 +12,7 @@
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/types.h"
 #include "ue_wrap/actors/wisp.h"
+#include "ue_wrap/actors/vitals.h"
 
 #include <chrono>
 #include <algorithm>
@@ -37,6 +38,7 @@ bool     g_selfAttached    = false;
 uint64_t g_selfRetryUntil  = 0;
 ue_wrap::CachedObjRef g_selfVictim;
 uint64_t g_selfGeneration = 0;
+uint32_t g_selfWorld = 0;
 
 // Cross-peer puppet holds (host: the real wisp; third peers: the mirror). Tiny set
 // (at most one victim per wisp, at most kMaxPeers-1 victims).
@@ -82,6 +84,7 @@ void EngageSelf(uint32_t wispEid, uint32_t killDelayMs) {
     if (!local || !R::IsLive(local)) return;
     ++g_selfGeneration;
     g_selfVictim.Set(local);
+    g_selfWorld = ue_wrap::world_identity::Generation();
     g_selfWispEid    = wispEid;
     g_selfAttached   = false;
     g_selfRetryUntil = NowMs() + killDelayMs;
@@ -108,6 +111,7 @@ void ReleaseSelf() {
     if (g_selfWispEid == 0) return;
     const bool attached = g_selfAttached;
     const auto victim = g_selfVictim;
+    const auto world = g_selfWorld;
     // Detach/movement calls may reenter teardown. Consume this hold first so a
     // nested release is a no-op and new state is not erased after the callback.
     g_selfWispEid = 0;
@@ -115,14 +119,29 @@ void ReleaseSelf() {
     g_selfRetryUntil = 0;
     ++g_selfGeneration;
     g_selfVictim.Reset();
+    g_selfWorld = 0;
     if (attached) {
         // Release the pawn that was attached, even if Local now names its
         // replacement. A recycled slot must never receive native cleanup.
-        if (void* local = victim.Get()) ue_wrap::wisp::ReleaseGrabOnLocalPlayer(local);
+        if (world == ue_wrap::world_identity::Generation())
+            if (void* local = victim.Get()) ue_wrap::wisp::ReleaseGrabOnLocalPlayer(local);
     }
 }
 
 void Tick() {
+    if (g_selfWispEid) {
+        const auto generation = g_selfGeneration;
+        const bool sameVictim = g_selfVictim.Get() &&
+            g_selfVictim.Raw() == coop::players::Registry::Get().Local();
+        float dead = 0;
+        const bool alreadyDead = sameVictim && ue_wrap::vitals::Read(ue_wrap::vitals::Field::Dead, &dead) && dead != 0;
+        if (generation != g_selfGeneration) return;
+        if (!sameVictim || !g_selfVictim.Get() || g_selfVictim.Raw() != coop::players::Registry::Get().Local() ||
+            alreadyDead || g_selfWorld != ue_wrap::world_identity::Generation()) {
+            ReleaseSelf();
+            return;
+        }
+    }
     // Victim-side attach retry (mirror spawn race), bounded by the kill deadline.
     if (g_selfWispEid != 0 && !g_selfAttached) {
         if (NowMs() > g_selfRetryUntil) {
@@ -131,6 +150,7 @@ void Tick() {
             g_selfWispEid = 0;
             g_selfRetryUntil = 0;
             g_selfVictim.Reset();
+            g_selfWorld = 0;
         } else if (TryAttachSelf()) {
             g_selfAttached = true;
         }

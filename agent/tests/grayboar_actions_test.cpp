@@ -371,6 +371,15 @@ void test::QueueRegressions() {
  assert(sequences(2)==std::vector<uint32_t>{3});
  puts("PASS per-peer delivery: failed recipient isolation, FIFO across sequence wrap, no duplicates, expiry, readiness loss and recycled slots");
 
+ reset(Role::Host);edge(1);session.sendHook=[] {A::OnPeerLeft(1);};
+ A::Tick();assert(A::g_out.empty()&&session.delivered.size()==1);
+ reset(Role::Host);session.readyMask=6;edge(1);edge(2);
+ session.sendHook=[] {A::OnPeerLeft(1);};A::Tick();
+ assert(sequences(2).empty()&&A::g_out.size()==2);
+ session.sendHook=nullptr;A::Tick();assert(A::g_out.empty()&&sequences(2)==std::vector<uint32_t>({1,2}));
+ reset(Role::Host);edge(1);session.sendHook=[] {A::OnDisconnect();};A::Tick();assert(A::g_out.empty());
+ puts("PASS shared fanout reentrancy: recipient departure/queue erasure during send, other-peer FIFO and disconnect");
+
  reset(Role::Host);session.readyMask=6;session.failMask=4;
  for(int i=0;i<42;++i){edge(1);A::Tick();}
  assert(A::g_out.size()==32&&sequences(1).size()==42&&sequences(2).empty());

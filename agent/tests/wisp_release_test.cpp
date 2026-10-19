@@ -3,6 +3,7 @@
 #include <cstdio>
 namespace test {int player=1,successor=2,wisp=3,releases=0,serial=1,attachAction=0,attaches=0;
 int socketAction=0,moveAction=0,moves=0,wispSerial=1;bool reenter=false,rearm=false;}
+namespace test {uint32_t world=1;bool dead=false;}
 namespace ue_wrap::reflection {
 bool IsLive(void* p){return p==&test::player||p==&test::successor||p==&test::wisp;}
 int32_t InternalIndexOf(void* p){return p==&test::player?1:p==&test::wisp?3:2;}
@@ -10,7 +11,8 @@ bool IsLiveByIndex(void* p,int32_t i){return (i==1&&p==&test::player)||(i==2&&p=
 int32_t SlotSerial(int32_t i){return i==1?test::serial:i==3?test::wispSerial:1;}
 int32_t AllocateSlotSerial(int32_t i){return SlotSerial(i);}
 }
-namespace ue_wrap::world_identity {void* CurrentWorld(){return nullptr;}void* WorldOf(void*){return nullptr;}}
+namespace ue_wrap::world_identity {uint32_t Generation(){return test::world;}void* CurrentWorld(){return nullptr;}void* WorldOf(void*){return nullptr;}}
+namespace ue_wrap::vitals {bool Read(Field field,float* out){assert(field==Field::Dead);*out=test::dead?1.f:0.f;return true;}}
 namespace ue_wrap::log {void Write(Level,const char*,...) {}}
 namespace ue_wrap::wisp {
 bool IsKillerWisp(void*){return true;}
@@ -99,4 +101,9 @@ int main(){namespace H=coop::wisp_grab_hold;using namespace test;
  registry.ready=false;H::EngagePuppet(100,2);H::Tick();assert(H::g_holds.empty());registry.ready=true;
  players.puppets[2]=nullptr;H::EngagePuppet(100,2);H::Tick();assert(H::g_holds.empty());
  puts("PASS puppet holds: socket callback disconnect/leave/re-engage, actor recycling/replacement, move callback teardown/growth and stale hold cleanup");
+ players.local=&player;H::EngageSelf(100,3500);const auto beforeCancel=releases;
+ players.local=&successor;H::Tick();assert(!H::g_selfWispEid&&releases==beforeCancel+1);
+ players.local=&player;H::EngageSelf(100,3500);dead=true;H::Tick();assert(!H::g_selfWispEid&&releases==beforeCancel+2);dead=false;
+ H::EngageSelf(100,3500);++world;H::Tick();assert(!H::g_selfWispEid&&releases==beforeCancel+2);
+ puts("PASS self hold cancels on pre-deadline pawn replacement/death/world change without touching a retired world's actor");
 }

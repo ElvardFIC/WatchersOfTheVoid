@@ -1,84 +1,51 @@
 #include <cassert>
 #include <cstdio>
+#include <cstdarg>
 #include "../../src/votv-coop/src/coop/player/sleep_sync.cpp"
 
-namespace SS = coop::sleep_sync;
-namespace SLP = ue_wrap::sleep;
-using namespace coop::net;
-
-void Reset(Session& session, Role role) {
-    SS::OnDisconnect();
-    session = {};
-    session.mode = role;
-    SLP::sleeping = false;
-    SLP::policyAvailable = true;
-    SLP::need = 10.f;
-    SLP::probability = -1.f;
-    SLP::dilation = 1.f;
-    SLP::wakeCalls = 0;
-    SS::Install(&session);
-    SS::Tick();
+namespace coop::text {std::string ToUtf8(const std::wstring&){return "Host";}}
+namespace l10n {
+const char* T(const char* text){return text;}
+int Fmt(char* out,size_t size,const char*,...){return sprintf_s(out,size,"Host is asleep");}
 }
 
-int main() {
-    Session s;
-    // Both roles keep waiting sleepers at normal speed, with no nightmare roll.
-    for (Role role : {Role::Client, Role::Host}) {
-        Reset(s, role);
-        s.ready[1] = true;
-        SLP::sleeping = true;
-        SS::Tick();
-        assert(!SS::InAcceleratePhase());
-        assert(SLP::probability == 0.f && SLP::dilation == 1.f);
+int main(){
+    namespace S=coop::sleep_sync;namespace L=ue_wrap::sleep;using namespace coop::net;
+    Session session;
+    auto reset=[&](Role role){S::OnDisconnect();session={};session.mode=role;
+        L::sleeping=L::dreaming=false;L::probability=.37f;L::dilation=1;L::need=10;L::wakeCalls=0;
+        L::bed=L"bed_C";S::Install(&session);S::Tick();};
+    auto receive=[&](SleepStatePayload p,uint8_t sender){S::OnReliable(reinterpret_cast<const uint8_t*>(&p),sizeof(p),sender);};
+    for(auto role:{Role::Host,Role::Client}){
+        reset(role);L::sleeping=true;L::dilation=role==Role::Host?20.f:1.f;S::Tick();
+        assert(L::probability==.37f && L::need==10 && !L::wakeCalls);
+        assert(S::LocalInBed());
+        // Native nightmare entry changes only this peer's reported state.
+        // No dream scene, wake or probability override is replayed.
+        L::sleeping=false;L::dreaming=true;S::Tick();
+        assert(S::g_localState==SleepPeerState::Dreaming && L::probability==.37f);
+        S::OnDreamScene({},0);S::OnDreamScene({},2);S::Tick();
+        assert(L::dreaming && !L::wakeCalls && L::need==10 && L::probability==.37f);
+        L::dreaming=false;S::Tick();assert(!S::LocalInBed());
+        S::OnDisconnect();assert(L::probability==.37f);
     }
-    // Client may use its own bed's chance during the shared phase.
-    Reset(s, Role::Client);
-    SLP::sleeping = true;
-    SS::Tick();
-    SS::OnReliable({2, 0, 2, 2}, 1); // A peer cannot start the phase.
-    assert(!SS::InAcceleratePhase());
-    SLP::policyAvailable = false;
-    SS::OnReliable({2, 0, 2, 2}, 0);
-    assert(SS::InAcceleratePhase());
-    assert(SLP::probability == 0.f); // Failed policy update must retry.
-    SLP::policyAvailable = true;
-    SS::Tick();
-    assert(SLP::probability == -1.f && SLP::dilation == 20.f);
-    SLP::need = 100.f;
-    SS::Tick();
-    assert(SLP::need == 98.f); // Preserve sole natural-end authority.
-    // Native personal nightmare wakes this player; report only the falling edge.
-    s.sent.clear();
-    SLP::sleeping = false;
-    SS::Tick();
-    assert(s.sent.size() == 1 && s.sent[0].op == 0 && s.sent[0].flag == 0);
-    SS::OnReliable({3, 0, 0, 2}, 0);
-    assert(!SS::InAcceleratePhase() && SLP::probability == 0.f);
-    // Legacy broadcasts never enter a dream or wake a rested/awake recipient.
-    const int wakes = SLP::wakeCalls;
-    SS::OnDreamScene({}, 0);
-    SS::Tick();
-    assert(SLP::wakeCalls == wakes && !SLP::sleeping);
-    // A client nightmare ends the host's timelapse without granting full rest.
-    Reset(s, Role::Host);
-    s.ready[1] = true;
-    SLP::sleeping = true;
-    SS::Tick();
-    SS::OnReliable({0, 1, 0, 0}, 1);
-    assert(SS::InAcceleratePhase() && SLP::probability == -1.f);
-    s.sent.clear();
-    SS::OnReliable({0, 0, 0, 0}, 1);
-    assert(!SS::InAcceleratePhase() && !SLP::sleeping && SLP::need == 10.f);
-    assert(s.sent.size() == 1 && s.sent[0].op == 3 && s.sent[0].flag == 0);
-    // Natural end retains wake-before-refill ordering (native gift threshold).
-    Reset(s, Role::Client);
-    SLP::sleeping = true;
-    SS::Tick();
-    SS::OnReliable({2, 0, 2, 2}, 0);
-    SLP::need = 98.f;
-    SS::OnReliable({3, 1, 0, 2}, 0);
-    assert(SLP::needAtWake == 98.f && SLP::need == 100.f);
-    SS::OnDisconnect();
-    assert(SLP::probability == -1.f && !SS::InAcceleratePhase());
-    puts("PASS personal nightmare policy, client interruption, legacy rejection and natural rest");
+    reset(Role::Client);L::sleeping=true;S::Tick();
+    assert(session.sent.size()==1 && session.sent[0].op==uint8_t(SleepOp::ClientRest) &&
+        session.sent[0].state==uint8_t(SleepPeerState::Resting) && StringFromWireKey(session.sent[0].bed)==L"bed_C");
+    L::dreaming=true;L::sleeping=false;L::bed.clear();S::Tick();
+    assert(session.sent.back().state==uint8_t(SleepPeerState::Dreaming) &&
+        StringFromWireKey(session.sent.back().bed)==L"bed_C");
+    receive({uint8_t(SleepOp::HostAsleep),1,0,0,{}},2);assert(!S::HostAsleepNow());
+    receive({uint8_t(SleepOp::HostAsleep),1,0,0,{}},0);assert(S::HostAsleepNow() && L::probability==.37f);
+    assert(!L::wakeCalls && L::dilation==1);
+    receive({uint8_t(SleepOp::PeerRest),uint8_t(SleepPeerState::Dreaming),2,0,{}},0);
+    assert(S::PeerState(2)==SleepPeerState::Dreaming);
+    receive({uint8_t(SleepOp::PeerRest),uint8_t(SleepPeerState::Awake),2,0,{}},2);
+    assert(S::PeerState(2)==SleepPeerState::Dreaming);
+    reset(Role::Host);session.ready[1]=true;
+    receive({uint8_t(SleepOp::ClientRest),uint8_t(SleepPeerState::Resting),0,0,{}},1);
+    assert(S::PeerState(1)==SleepPeerState::Resting);
+    receive({uint8_t(SleepOp::HostAsleep),1,0,0,{}},1);assert(!S::g_hostSleeping);
+    S::OnDisconnectForSlot(1);assert(S::PeerState(1)==SleepPeerState::Awake);
+    puts("PASS personal native nightmare probability/entry, unchanged wake/rest state, real 36-byte rest reports, sender authority and peer cleanup");
 }

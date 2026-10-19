@@ -168,6 +168,7 @@
 #include "coop/creatures/grayboar_sync.h"
 #include "coop/creatures/grayboar_actions.h"
 #include "coop/creatures/grayboar_turn.h"
+#include "coop/creatures/kavotia_sync.h"
 #include "coop/creatures/ariral_sync.h"
 #include "coop/creatures/deer_sync.h"
 #include "coop/creatures/centipede_sync.h"
@@ -240,6 +241,7 @@ void Install(coop::net::Session& session) {
     coop::piramid_sync::Install(&session);  // piramid event choreography lane (hooks arm lazily on the first piramid element)
     coop::grayboar_sync::Install(&session);
     coop::grayboar_turn::Install(&session);
+    coop::kavotia_sync::Install(&session);
     coop::ariral_sync::Install(&session);
     coop::deer_sync::Install(&session);
     coop::centipede_sync::Install(&session);
@@ -505,6 +507,7 @@ void ConnectReplayForSlot(int slot) {
     coop::madness_sync::QueueConnect(slot);
     coop::dingus_music_sync::QueueConnect(slot);
     coop::grayboar_actions::QueueConnect(slot);
+    coop::kavotia_sync::QueueConnect(slot);
     // The chat lane's late-join answer: the lobby's chat record, oldest first, one message per
     // line. It lands retained on the joiner: arriving in a lobby must not replay a conversation
     // you were not in across your screen; it is there when you open the chat.
@@ -533,6 +536,8 @@ void DisconnectSlot(coop::net::Session& session, int slot) {
     coop::madness_sync::OnPeerLeft(slot);
     coop::dingus_music_sync::OnPeerLeft(slot);
     coop::grayboar_actions::OnPeerLeft(slot);
+    coop::prop_drop_intent::OnPeerLeft(slot);
+    coop::kavotia_sync::OnPeerLeft(slot);
     coop::cord_sync::OnPeerLeft(slot);
     // Abort any snapshot drain to this slot, so it does not iterate every candidate into a dead
     // connection.
@@ -616,6 +621,7 @@ DisconnectStats DisconnectAll() {
     coop::piramid_sync::OnDisconnect();  // drop pending gather + gather-edge map + restored-tick set (hooks stay latched)
     coop::grayboar_sync::OnDisconnect();
     coop::grayboar_turn::OnDisconnect();
+    coop::kavotia_sync::OnDisconnect();
     coop::npc_adoption::OnSessionEnd();  // drop pending deferred adoptions + reset latches
     coop::kerfur_prop_adoption::OnSessionEnd();  // drop pending prop-form kerfur adoptions
     coop::dev::dev_lanes::EndSession();  // [dev] the probes' verdicts, before the prop seams reset below, then each drill back to its first step
@@ -810,6 +816,7 @@ void TickGameplay(coop::net::Session& session, bool isConnected, bool isHost,
     coop::dingus_music_sync::Tick();
     coop::grayboar_actions::Tick();
     coop::grayboar_turn::Tick();
+    coop::kavotia_sync::Tick();
     { PP::Scope _s{PP::Bucket::Interactable}; ue_wrap::ScopedWalkTimer _w{"sync:cord_sync"}; coop::cord_sync::Tick(); }
     { PP::Scope _s{PP::Bucket::Interactable}; ue_wrap::ScopedWalkTimer _w{"sync:prop_support_sync"}; coop::prop_support_sync::Tick(session); }
     { PP::Scope _s{PP::Bucket::Interactable}; ue_wrap::ScopedWalkTimer _w{"sync:gravity_motion"}; coop::gravity_motion::Tick(session); }

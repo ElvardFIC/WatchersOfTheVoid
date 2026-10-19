@@ -24,6 +24,7 @@
 #include "coop/props/prop_save_data.h"    // the per-prop save record lane
 #include "coop/props/prop_stick_sync.h"
 #include "coop/props/prop_scale_sync.h"
+#include "coop/props/prop_drop_intent.h"
 #include "coop/props/prop_drive_host.h"    // a hand's let-go coasts until the body rests
 #include "coop/props/prop_drive_stream.h"  // the driven-prop end edge
 #include "coop/props/prop_element_tracker.h"
@@ -48,6 +49,11 @@ bool HandleEntityEvent(net::Session& session,
                        void* localPlayer) {
     (void)session;
     switch (msg.kind) {
+    case net::ReliableKind::PropPlacementResult: {
+        if(msg.senderPeerSlot!=0 || msg.payloadLen!=sizeof(net::PropPlacementResultPayload))return true;
+        net::PropPlacementResultPayload p{};std::memcpy(&p,msg.payload,sizeof(p));
+        prop_drop_intent::OnPlacementResult(session,p,msg.senderPeerSlot);return true;
+    }
     case net::ReliableKind::PropScaleState: {
         if(msg.payloadLen!=sizeof(net::PropScaleStatePayload))return true;
         net::PropScaleStatePayload p{};std::memcpy(&p,msg.payload,sizeof(p));

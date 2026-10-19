@@ -642,7 +642,7 @@ bool HandleIntentEvent(net::Session& session,
             UE_LOGW("event_feed: PropDropIntent from invalid senderPeerSlot=%d -- dropping", msg.senderPeerSlot);
             break;
         }
-        if (msg.payloadLen < sizeof(net::PropDropIntentPayload)) {
+        if (msg.payloadLen != sizeof(net::PropDropIntentPayload)) {
             UE_LOGW("event_feed: PropDropIntent payload too short (%zu < %zu)",
                     static_cast<size_t>(msg.payloadLen), sizeof(net::PropDropIntentPayload));
             break;
@@ -663,7 +663,7 @@ bool HandleIntentEvent(net::Session& session,
             UE_LOGW("event_feed: ReelEjectIntent from invalid senderPeerSlot=%d -- dropping", msg.senderPeerSlot);
             break;
         }
-        if (msg.payloadLen < sizeof(net::PropDropIntentPayload)) {
+        if (msg.payloadLen != sizeof(net::PropDropIntentPayload)) {
             UE_LOGW("event_feed: ReelEjectIntent payload too short (%zu < %zu)",
                     static_cast<size_t>(msg.payloadLen), sizeof(net::PropDropIntentPayload));
             break;
