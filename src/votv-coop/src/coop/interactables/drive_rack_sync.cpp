@@ -153,22 +153,25 @@ void RecordDeny(uint8_t slot, uint64_t rowHash) {
 // --------------------------------------------------------------------------
 // the rack lane
 
-void HostBroadcastRackCanonical(uint32_t rackEid, void* rack, int toSlot /* -1 = all */) {
+bool HostBroadcastRackCanonical(uint32_t rackEid, void* rack, int toSlot /* -1 = all */) {
     auto* s = g_session.load(std::memory_order_acquire);
-    if (!s || !s->connected()) return;
+    if (!s || !s->connected()) return false;
     DC::RackRow rows[DC::kRackSlots];
     int n = 0;
-    if (!DC::ReadRack(rack, rows, n)) return;
+    if (!DC::ReadRack(rack, rows, n)) return false;
     std::vector<uint8_t> blob = RackCanonicalBlob(rackEid, rows);
     const uint32_t seq = g_nextSeq++;
-    if (toSlot < 0)
-        coop::blob_chunks::SendBlob(s, coop::net::ReliableKind::RackState, seq, blob);
-    else
-        coop::blob_chunks::SendBlobToSlot(s, toSlot, coop::net::ReliableKind::RackState, seq, blob);
-    g_rackBase[rackEid] = coop::blob_chunks::Fnv64(blob);
-    g_rackShadow[rackEid] = std::move(blob);
-    g_rackActor[rackEid].Set(rack);
+    const bool sent = toSlot < 0
+        ? coop::blob_chunks::SendBlob(s, coop::net::ReliableKind::RackState, seq, blob)
+        : coop::blob_chunks::SendBlobToSlot(s, toSlot, coop::net::ReliableKind::RackState, seq, blob);
+    // Only a send to every peer moves the shared view; a joiner's seed answers one.
+    if (toSlot < 0) {
+        g_rackBase[rackEid] = coop::blob_chunks::Fnv64(blob);
+        g_rackShadow[rackEid] = std::move(blob);
+        g_rackActor[rackEid].Set(rack);
+    }
     ++g_cRackCanon;
+    return sent;
 }
 
 void ClientSendRackOp(uint32_t rackEid, uint8_t op, uint8_t idx, const SD::Row* row) {
@@ -206,12 +209,13 @@ void SweepRacks(bool announce) {
         if (!announce || it == g_rackBase.end() || !sameActor) {  // first sight of this actor
             g_rackBase[eid] = h;
             g_rackShadow[eid] = std::move(blob);
-            g_rackActor[eid].Set(rack);
             if (announce && host) {
                 // A rack born holding rows reaches the clients here, not through a record.
-                HostBroadcastRackCanonical(eid, rack, -1);
-                UE_LOGI("drive_rack: host rack eid=%u first seen mid-session -- canonical broadcast", eid);
+                const bool sent = HostBroadcastRackCanonical(eid, rack, -1);
+                UE_LOGI("drive_rack: host rack eid=%u first seen mid-session -- canonical %s", eid,
+                        sent ? "sent" : "held (no peer took it; a joiner gets it in its connect seed)");
             }
+            g_rackActor[eid].Set(rack);
             continue;
         }
         if (host) {
@@ -242,7 +246,6 @@ void SweepRacks(bool announce) {
             bool havePrev = false;
             auto sh = g_rackShadow.find(eid);
             if (sh != g_rackShadow.end()) havePrev = ParseRackCanonical(sh->second, prev);
-
             for (int i = 0; i < DC::kRackSlots; ++i) {
                 const bool was = havePrev && prev[i].has;
                 if (was && !rows[i].has) {

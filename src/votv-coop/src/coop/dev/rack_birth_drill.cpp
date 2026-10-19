@@ -12,6 +12,7 @@
 
 #include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/log.h"
+#include "ue_wrap/core/object_index.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/desk/drive_chain.h"
 #include "ue_wrap/engine/engine.h"  // SpawnActor + TryGetActorLocation (the host's rack spawn)
@@ -82,12 +83,10 @@ void HostFail(const char* why) {
     g_judged = true;
 }
 
-// The rack's eid, found in the registry as the pair whose actor is the spawned one.
+// The spawned rack's eid, once the registry has bound it (0 until then).
 void FindHostRackEid() {
-    std::vector<coop::element::Registry::ActorIdPair> pairs;
-    coop::element::Registry::Get().SnapshotActorsByType(coop::element::ElementType::Prop, pairs);
-    for (const auto& p : pairs)
-        if (p.actor && g_rack.Is(p.actor)) { g_rackEid = static_cast<uint32_t>(p.id); return; }
+    const coop::element::ElementId eid = coop::element::Registry::Get().EidForActor(g_rack.Get());
+    if (eid != 0 && eid != coop::element::kInvalidId) g_rackEid = eid;
 }
 
 // Spawn at the desk play slot (+100, 0, +60), fill rows 0-3 and read the digest, all in this tick.
@@ -133,26 +132,35 @@ void HostTick(coop::net::Session& s) {
     g_judged = true;
 }
 
-// The one live drive rack in the registry (a fresh save holds none).
+// The one live drive rack, found through the object index (a fresh save holds none).
 bool ResolveRack() {
     if (g_rack.Alive()) return true;
-    std::vector<coop::element::Registry::ActorIdPair> pairs;
-    coop::element::Registry::Get().SnapshotActorsByType(coop::element::ElementType::Prop, pairs);
-    for (const auto& p : pairs) {
-        if (!p.actor || !R::IsLiveByIndex(p.actor, p.internalIdx)) continue;
-        if (!DC::IsRackClass(R::ClassOf(p.actor))) continue;
-        g_rack.Set(p.actor);
-        g_rackEid = static_cast<uint32_t>(p.id);
-        return true;
-    }
-    return false;
+    if (!ue_wrap::object_index::IsSeeded()) return false;
+    void* cls = ue_wrap::object_index::ClassByName(L"prop_driveRack_C");
+    if (!cls) return false;
+    void* found = nullptr;
+    ue_wrap::object_index::ForEachInstance(cls,
+        [](void* ctx, void* obj, int32_t) {
+            auto* out = static_cast<void**>(ctx);
+            if (!*out && !R::NameStartsWith(R::NameOf(obj), L"Default__")) *out = obj;
+        },
+        &found);
+    if (!found) return false;
+    g_rack.Set(found);
+    return true;
 }
 
 void ClientTick() {
     if (g_done || !coop::net_pump::IsWorldSettled() || !ResolveRack()) return;
-    uint64_t digest = 0;
+    DC::RackRow rows[DC::kRackSlots];
+    int n = 0;
+    if (!DC::ReadRack(g_rack.Get(), rows, n)) return;
     int filled = 0;
-    if (!RackDigest(g_rack.Get(), digest, filled) || filled != kFilledRows) return;
+    for (int i = 0; i < DC::kRackSlots; ++i)
+        if (rows[i].has) ++filled;
+    if (filled != kFilledRows) return;
+    uint64_t digest = 0;
+    if (!RackDigest(g_rack.Get(), digest, filled)) return;
     UE_LOGI("[RACK-BIRTH] client DONE filled=%d digest=%016llx -- PASS", filled,
             static_cast<unsigned long long>(digest));
     g_done = true;
