@@ -41,6 +41,8 @@ are peer-gated. `[V]`
 |---|---|---|---|
 | keyed props | the save; a spawner; the spawn menu; a container extract | the object scan at world start; the initialisation post observer; the finish-spawning seam | the save key, plus a host id |
 | chip piles | the save; a re-pile | the object scan's keyless lane; the native seam on the re-pile spawn | a host id only, keyless |
+| the unrolled sleeping bag (`sleepingbagWrap_C`) | the packed bag's unroll, inside its Blueprint (host-run for a client's press, `sleepingbag_sync`) | the finish-spawning seam on the host | a portable random key minted at its host birth (the game never keys it: its construction runs `gen(false)`, never `init()`), plus a host id; a wrap already in the host's world before a client connects: unmeasured |
+| a notebook's page text | the editor's commit and close (`ui_notebook`), a torn page added (`playerUsedOn`) | the prop record lane (`prop_save_data`): the editing peer publishes the notebook's own record | the notebook's save key; one editor at a time through a `device_occupancy` claim keyed by that key (`note_<hash>`); the host takes a record from the claim's holder or, while free, from anyone |
 | the trash clump | the grab, inside the Blueprint; a broom stroke; a few creatures' graphs | the native seam on the clump's deferred spawn -- a broom's reads the swept pile out of the broom's frame, and a creature's has no pile to name (piles.md, Known limits) | the same host id, rebound at birth |
 | a held physics prop | the grab | the new-held edge of the local stream | the key it already had; a keyless one is minted a key at the edge |
 | the hotbar hand item | the hotbar switch | not a world entity: polled as player state | none; display only |
