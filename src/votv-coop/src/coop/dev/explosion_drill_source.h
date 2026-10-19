@@ -151,7 +151,7 @@ std::string HeldClassName(void* player);
 void Aim(void* player);
 void Act(const LegDef& d, void* player);
 void Act2(const LegDef& d, void* player);
-void AwaitBomb();
+void AwaitBomb(const LegDef& d);
 void AwaitAttach();
 void Detonate(void* player);
 void Birth(const LegDef& d, bool host);

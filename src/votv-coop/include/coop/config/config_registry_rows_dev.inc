@@ -819,7 +819,8 @@ CFG_FLAG(selftest_break_permissions, "selftest_break_permissions", "dev", false,
 CFG_FLAG(selftest_break_action_log, "selftest_break_action_log", "dev", false, "VOTVCOOP_SELFTEST_BREAK_ACTION_LOG",
     "Red arm of the commands selftest's action-log cases: the first acting case of each cases file expects "
     "no record, so it must fail.")
-// The explosion lane's drill and birth line: their own file, one concept, included as _dev_port.inc is above.
+// The explosion lane's drill, birth line and selftest red arms: their own file, one concept, included as
+// _dev_port.inc is above.
 #include "coop/config/config_registry_rows_dev_explosion.inc"
 // The puppet-identity arc's selftests and drill (PI-1, PI-2, PI-3): their own file, one concept, included as
 // _dev_port.inc is above.

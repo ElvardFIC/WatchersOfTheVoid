@@ -431,7 +431,7 @@ void LegTick(Arm arm, bool host) {
     case LStep::Aim: return Aim(player);
     case LStep::Act: return Act(d, player);
     case LStep::Act2: return Act2(d, player);
-    case LStep::AwaitBomb: return AwaitBomb();
+    case LStep::AwaitBomb: return AwaitBomb(d);
     case LStep::AwaitAttach: return d.kind == Kind::StickyParent ? AwaitAttachCrate() : AwaitAttach();
     case LStep::Detonate: return Detonate(player);
     case LStep::Birth: return Birth(d, host);
@@ -537,6 +537,9 @@ void SourceTick(Arm arm, bool isHost) {
 void SourceReset() {
     Unguard();
     PutBackRain();
+    // A disconnect inside the selfpill leg leaves the player lit and the pill written: the leg's own put-back.
+    if (g_src.phase == SP::Legs && kLegs[g_src.leg].kind == Kind::SelfPill)
+        CleanupMeasure(kLegs[g_src.leg], g_src.host);
     Remove(g_src.rocket.Get(), g_src.host);
     Remove(g_src.parent.Get(), g_src.host);
     // The host that only read holds a mirror of whatever of the client's crossed; none of it is the host's own.

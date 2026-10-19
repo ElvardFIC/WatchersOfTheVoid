@@ -220,7 +220,7 @@ void Act2(const LegDef& d, void* player) {
     Enter(LStep::Birth);
 }
 
-void AwaitBomb() {
+void AwaitBomb(const LegDef& d) {
     Reading& r = g_src.r;
     g_scan.clear();
     r.bombMax = (std::max)(r.bombMax, Count(kBombCls, true, &g_scan));
@@ -228,7 +228,11 @@ void AwaitBomb() {
         if (!g_scan.empty()) Track(g_scan[0]);
         return Enter(LStep::AwaitAttach);
     }
-    if (Late(kStepBound)) Enter(LStep::End);  // fired, and no bomb stands: measured as it is
+    if (!Late(kStepBound)) return;
+    // The held sticky leg measures a shot that made no bomb as it is; the leg that moves the bomb's parent has
+    // nothing to measure without one.
+    if (d.kind == Kind::StickyParent) return Skip("no bomb stood after the shot");
+    Enter(LStep::End);
 }
 
 // A sticky bomb attaches on its hit (Blueprint prop_stickybomb, the hit event attaches it to what it struck).

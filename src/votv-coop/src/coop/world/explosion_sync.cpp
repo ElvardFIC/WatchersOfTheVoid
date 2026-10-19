@@ -134,7 +134,17 @@ void DescribeRoot(void* actor, char* out, size_t cap) {
     }
     const ue_wrap::FVector at = E::GetComponentLocation(root);
     const ue_wrap::FVector scale = E::GetActorScale3D(actor);
-    std::snprintf(out, cap, " at=(%.1f,%.1f,%.1f) scale=(%.3f,%.3f,%.3f)", at.X, at.Y, at.Z, scale.X, scale.Y, scale.Z);
+    // The wrappers answer (0,0,0) and (1,1,1) when their call fails, so those exact answers are marked '?': they may
+    // be a failed read. A zero location also carries the relative location, which is settled mid-init.
+    const bool atFailed = at.X == 0.f && at.Y == 0.f && at.Z == 0.f;
+    const bool scaleFailed = scale.X == 1.f && scale.Y == 1.f && scale.Z == 1.f;
+    char rel[64] = "";
+    if (atFailed) {
+        const ue_wrap::FVector r = E::GetComponentRelativeLocation(root);
+        std::snprintf(rel, sizeof(rel), " rel=(%.1f,%.1f,%.1f)", r.X, r.Y, r.Z);
+    }
+    std::snprintf(out, cap, " at=(%.1f,%.1f,%.1f)%s%s scale=(%.3f,%.3f,%.3f)%s", at.X, at.Y, at.Z, atFailed ? "?" : "",
+                  rel, scale.X, scale.Y, scale.Z, scaleFailed ? "?" : "");
 }
 
 // Every Blueprint deferred spawn passes here: a null test and one client-session test. A host or single player

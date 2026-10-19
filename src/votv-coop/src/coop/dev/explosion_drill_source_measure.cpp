@@ -285,7 +285,8 @@ void EmitMeasure(const LegDef& d, bool host) {
          r.burnMax, r.birth ? 1 : 0, r.ms, scale);
 }
 
-// The pill leg puts back what it changed: the burn ended and the pill as it was found.
+// The pill leg puts back what it changed: the burn ended and the pill as it was found. Run at the leg's end and, for
+// a disconnect inside the leg, from SourceReset (pillBefore is only read once the leg began).
 void CleanupMeasure(const LegDef& d, bool /*host*/) {
     if (d.kind != Kind::SelfPill) return;
     CallNoParam(coop::players::Registry::Get().Local(), L"extinguishFire");
@@ -293,8 +294,9 @@ void CleanupMeasure(const LegDef& d, bool /*host*/) {
 }
 
 // A grenade or pipe bomb on the host that no run of the host's own made: the client's, thrown at it. Each is followed
-// to its end; one that ends with no capture since it first stood is named by its key. Captures are the host's only
-// count, so the line is exact for the serial legs the client walks.
+// to its end; one that ends with no capture since it first stood is named by its key (<unresolved> when the prop
+// never showed one). Captures are the host's only count, so the line is exact for the serial legs the client walks
+// and a capture from anywhere else, while the prop stands, hides it.
 void PassiveThrown() {
     const uint32_t captured = ES::GetCounters().captured;
     for (const wchar_t* cls : kThrownCls) {
@@ -319,7 +321,7 @@ void PassiveThrown() {
         }
         if (captured == t.capturedAt)
             Info("source passive role=host leg=unshared cls=%ls destroyed key=%ls before birth", t.cls.c_str(),
-                 t.key.c_str());
+                 t.key.empty() || t.key == L"None" ? L"<unresolved>" : t.key.c_str());
         g_thrown.erase(g_thrown.begin() + static_cast<std::ptrdiff_t>(i));
     }
 }
