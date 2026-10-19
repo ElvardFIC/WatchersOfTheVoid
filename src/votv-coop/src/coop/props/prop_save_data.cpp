@@ -598,16 +598,20 @@ void OnChunk(coop::net::Session& s, const coop::net::BlobChunkPayload& p, uint8_
     // A class that has a rule about who writes its record judges the sender here (the gate logs its
     // refusals). A record for a prop this host does not index yet is judged where it lands, from the park.
     if (actor && !coop::prop_record_gates::IntentAllows(actor, senderSlot)) return;
-    if (LandRecord(key, SR::SaveRecord(rec), senderSlot, body.size(), /*budgeted=*/false, /*intent=*/true)) {
+    // A claim is published to every peer only once it has landed here and passed its class's gates; one
+    // that parked is published by its land (Drive, ApplyParked), never at arrival unjudged.
+    const bool landed = LandRecord(key, SR::SaveRecord(rec), senderSlot, body.size(), /*budgeted=*/false,
+                                   /*intent=*/true);
+    if (landed) {
         UE_LOGI("prop_save_data: HOST took a client record (key '%ls', slot %u) -- %s",
                 key.c_str(), static_cast<unsigned>(senderSlot),
                 birth ? "published from its land" : "republishing");
     } else {
-        UE_LOGI("prop_save_data: HOST parked a client record (key '%ls', slot %u) -- %s",
+        UE_LOGI("prop_save_data: HOST did not land a client record yet (key '%ls', slot %u) -- %s",
                 key.c_str(), static_cast<unsigned>(senderSlot),
-                birth ? "published when it lands" : "republishing");
+                birth ? "published when it lands" : "published if it lands");
     }
-    if (!birth) SendBody(&s, -1, key, rec);
+    if (landed && !birth) SendBody(&s, -1, key, rec);
 }
 
 bool ApplyParked(void* actor, const std::wstring& key) {
@@ -619,9 +623,12 @@ bool ApplyParked(void* actor, const std::wstring& key) {
     // reflection failure, and the record stays parked for the next frame to retry.
     if (DropRowForGates(key, actor)) return false;
     const uint64_t seq = it->second.seq;
-    if (!TryApply(actor, key, SR::SaveRecord(it->second.rec))) return false;
+    const SR::SaveRecord rec(it->second.rec);
+    const bool republish = it->second.intent && g_awaiting.count(key) == 0;
+    if (!TryApply(actor, key, rec)) return false;
     UE_LOGI("prop_save_data: parked record applied at birth (key '%ls')", key.c_str());
     UnparkIfSame(key, seq);
+    if (republish && g_session) SendBody(g_session, -1, key, rec);
     return true;
 }
 
@@ -694,9 +701,13 @@ void Drive() {
             // failing rows pay a dispatch each, every frame, forever.
             --g_applyBudget;
             const uint64_t seq = it->second.seq;
-            if (TryApply(actor, key, SR::SaveRecord(it->second.rec))) {
+            const SR::SaveRecord rec(it->second.rec);
+            const bool republish = it->second.intent && g_awaiting.count(key) == 0;
+            if (TryApply(actor, key, rec)) {
                 ++applied;
                 UnparkIfSame(key, seq);
+                // A client's claim that waited in the park is published as the canonical now that it landed.
+                if (republish && g_session) SendBody(g_session, -1, key, rec);
             } else {
                 auto row = g_parked.find(key);
                 if (row != g_parked.end() && row->second.seq == seq &&
