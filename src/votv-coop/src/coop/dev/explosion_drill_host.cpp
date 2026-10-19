@@ -31,8 +31,8 @@ namespace {
 constexpr float kPaperAt[] = {0.25f, 0.4f, 0.55f, 0.7f};
 constexpr float kPaperLift = 50.f;
 
-enum class HPhase : uint8_t { WaitSlot, Rest, Fixture, Apply, Malformed, Source, PapersSpawn, PapersEnrol, PapersRest,
-                              PapersFly, Done };
+enum class HPhase : uint8_t { WaitSlot, Rest, Fixture, Apply, Malformed, Source, Request, PapersSpawn, PapersEnrol,
+                              PapersRest, PapersFly, Done };
 
 struct Host {
     HPhase            phase = HPhase::WaitSlot;
@@ -268,7 +268,12 @@ void HostTick(coop::net::Session& s, Arm arm) {
     switch (h.phase) {
     case HPhase::WaitSlot:
         if (h.at == Clock::time_point{}) h.at = Clock::now();
-        if (s.IsSlotWorldReady(1)) return HostEnter(HPhase::Rest);
+        // A request arm's host does not walk: it holds the fungun rule from here and judges what the client sends.
+        if (IsRequest(arm) && !RequestHostBegin()) {
+            if (HostLate()) HostAbandon("the gamemode's fungun rule could not be held");
+            return;
+        }
+        if (s.IsSlotWorldReady(1)) return HostEnter(IsRequest(arm) ? HPhase::Request : HPhase::Rest);
         if (HostLate()) HostAbandon("the client never became world-ready");
         return;
     case HPhase::Rest: {
@@ -305,6 +310,9 @@ void HostTick(coop::net::Session& s, Arm arm) {
     case HPhase::Apply: return HostApply();
     case HPhase::Malformed: return HostMalformed(s);
     case HPhase::Source: return SourceTick(arm, true);
+    case HPhase::Request:
+        if (RequestHostTick(arm)) HostEnter(HPhase::Done);
+        return;
     case HPhase::PapersSpawn: return HostPapersSpawn();
     case HPhase::PapersEnrol: return HostPapersEnrol();
     case HPhase::PapersRest: return HostPapersRest();
@@ -314,6 +322,7 @@ void HostTick(coop::net::Session& s, Arm arm) {
 }
 
 void HostReset() {
+    RequestHostReset();
     DestroyPapers();
     g_hostRun = Host{};
 }

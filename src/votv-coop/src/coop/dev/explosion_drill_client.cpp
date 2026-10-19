@@ -8,6 +8,7 @@
 #include "coop/session/join_progress.h"
 #include "coop/session/net_pump.h"  // HasAnnouncedWorldReady
 #include "coop/world/explosion_parking.h"
+#include "coop/world/explosion_request.h"
 #include "coop/props/prop_drive_stream.h"  // IsParked: a copy the host's coast stream still drives
 #include "coop/world/explosion_sync.h"
 
@@ -32,13 +33,15 @@ namespace {
 
 constexpr auto  kClientBound = std::chrono::seconds(120);  // from the client's world-ready edge
 
-enum class CPhase : uint8_t { Edge, Join, Rest, Fixture, Apply, Malformed, Source, Find, Settle, Blast, Fly, Done };
+enum class CPhase : uint8_t { Edge, Join, Rest, Fixture, Apply, Malformed, Source, Request, Find, Settle, Blast, Fly,
+                              Done };
 
 struct Client {
     CPhase            phase = CPhase::Edge;
     Clock::time_point edgeAt{}, at{}, foundAt{};
     ES::Counters      sync{};
     coop::explosion_parking::Counters park{};
+    coop::explosion_request::Counters req{};
     Rest              pawn;
     Vec               B{};
     ue_wrap::CachedObjRef copy[kPapers];
@@ -276,6 +279,7 @@ void ClientTick(Arm arm) {
         if (!coop::net_pump::HasAnnouncedWorldReady()) return;
         c.sync = ES::GetCounters();  // before the host's fixture can blast
         c.park = coop::explosion_parking::GetCounters();
+        c.req = coop::explosion_request::GetCounters();
         PaperActors(c.prePapers);
         c.edgeAt = Clock::now();
         ClientEnter(CPhase::Join);
@@ -288,7 +292,8 @@ void ClientTick(Arm arm) {
         void* pawn = coop::players::Registry::Get().Local();
         if (pawn) NoteSpeed(c.pawn, Len(E::GetActorVelocity(pawn)));
         else c.pawn = Rest{};
-        if (AtRest(c.pawn)) return ClientEnter(IsSource(arm) ? CPhase::Source : CPhase::Fixture);
+        if (AtRest(c.pawn))
+            return ClientEnter(IsSource(arm) ? CPhase::Source : IsRequest(arm) ? CPhase::Request : CPhase::Fixture);
         if (Past(c.at, kBound)) ClientAbandon("the client's pawn never rested");
         return;
     }
@@ -308,6 +313,9 @@ void ClientTick(Arm arm) {
     case CPhase::Apply: return ClientApply();
     case CPhase::Malformed: return ClientMalformed();
     case CPhase::Source: return SourceTick(arm, false);
+    case CPhase::Request:
+        if (RequestClientTick(arm, c.sync, c.req)) c.phase = CPhase::Done;
+        return;
     case CPhase::Find:
     case CPhase::Settle:
     case CPhase::Blast:
@@ -316,6 +324,9 @@ void ClientTick(Arm arm) {
     }
 }
 
-void ClientReset() { g_clientRun = Client{}; }
+void ClientReset() {
+    RequestClientReset();
+    g_clientRun = Client{};
+}
 
 }  // namespace coop::dev::explosion_drill::detail

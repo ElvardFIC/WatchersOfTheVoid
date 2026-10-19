@@ -2,7 +2,9 @@
 // state, and the helpers the legs call. explosion_drill_source.cpp walks the legs and owns the salt ones;
 // explosion_drill_source_verbs.cpp owns the held legs' verbs and the guard;
 // explosion_drill_source_measure.cpp owns the measure legs (sticky_parent, selfpill) and the host's thrown-prop watch.
-// Private to coop/dev: only those three files include it. Dev only; game thread.
+// The request arms' client half (explosion_drill_request.cpp) acts through the same verbs and the host's half
+// (explosion_drill_request_host.cpp) holds the same guard.
+// Private to coop/dev: only those five files include it. Dev only; game thread.
 
 #pragma once
 
@@ -76,9 +78,11 @@ struct Reading {
     int                   bombAlive = -1, fateBirth = 0;
     long long             goneMs = -1;
     Clock::time_point     destroyAt{};
-    // selfpill: the pill before and after, the attempt (0 = guard on, 1 = guard off), the burn the game showed.
+    // selfpill: the pill before and after, the attempt (0 = guard on, 1 = guard off), the burn the game showed, and
+    // the client's self requests sent when the player was lit (its birth is the request that follows).
     float                 pillBefore = -1.f, pill0 = -1.f, pill1 = -1.f, burnMax = 0.f, scale = -1.f;
     int                   attempt = 0, burning = 0;
+    uint64_t              selfSent = 0;
 };
 
 struct Src {
@@ -106,6 +110,9 @@ extern std::vector<void*>                 g_scan;
 // ---- the helpers of explosion_drill_source.cpp ----
 
 const char* RoleName(bool host);
+
+// The held or selfpill leg of that kind in the walk's table (the request arms act through the same definitions).
+const LegDef* LegOf(Kind k);
 void Enter(LStep s);
 bool Late(std::chrono::seconds bound);
 long long Since(Clock::time_point t);

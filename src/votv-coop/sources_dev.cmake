@@ -117,6 +117,8 @@ set(VOTVCOOP_DEV_SOURCES
     src/coop/dev/explosion_drill_client.cpp
     src/coop/dev/explosion_drill_fixture.cpp
     src/coop/dev/explosion_drill_host.cpp
+    src/coop/dev/explosion_drill_request.cpp
+    src/coop/dev/explosion_drill_request_host.cpp
     src/coop/dev/explosion_drill_source.cpp
     src/coop/dev/explosion_drill_source_verbs.cpp
     src/coop/dev/explosion_drill_source_measure.cpp

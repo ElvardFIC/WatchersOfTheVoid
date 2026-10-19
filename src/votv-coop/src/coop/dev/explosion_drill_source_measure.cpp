@@ -14,6 +14,7 @@
 #include "explosion_drill_source.h"  // the source arms' shared types (co-located private header)
 
 #include "coop/player/players_registry.h"
+#include "coop/world/explosion_request.h"
 #include "coop/world/explosion_sync.h"
 
 #include "ue_wrap/actors/prop.h"
@@ -222,6 +223,7 @@ void PillIgnite(void* player) {
          r.pill0, r.attempt, r.attempt == 0 ? "on" : "off");
     SnapshotExplosions();
     g_src.base = ES::GetCounters();
+    r.selfSent = coop::explosion_request::GetCounters().requestsSent[2];
     g_src.verbAt = Clock::now();
     void* fn = R::FindDispatchFunctionCached(R::ClassOf(player), L"ignite");
     ue_wrap::ParamFrame f(fn);
@@ -235,7 +237,10 @@ void PillWait(bool host, void* player) {
     float v = 0.f;
     if (V::Read(V::Field::Burning, &v) && v > 0.5f) r.burning = 1;
     if (V::Read(V::Field::BurningTime, &v)) r.burnMax = (std::max)(r.burnMax, v);
-    if (BirthSeen(host)) {
+    // The client's birth is the self request it sent: a self request is only ever a birth whose source is the local
+    // player, where the first explosion seen may be any other.
+    const bool born = host ? BirthSeen(true) : coop::explosion_request::GetCounters().requestsSent[2] > r.selfSent;
+    if (born) {
         r.birth = true;
         r.ms = Since(g_src.verbAt);
         V::Read(V::Field::GasolinePilled, &r.pill1);

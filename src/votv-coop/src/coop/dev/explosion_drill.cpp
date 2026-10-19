@@ -72,6 +72,8 @@ Arm ArmOf() {
         if (v == "spawn_malformed") return Arm::SpawnMalformed;
         if (v == "source_host") return Arm::SourceHost;
         if (v == "source_client") return Arm::SourceClient;
+        Arm request{};
+        if (detail::RequestArmFromName(v, request)) return request;
         return Arm::Off;
     }();
     return a;

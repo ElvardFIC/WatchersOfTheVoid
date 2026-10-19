@@ -1,15 +1,20 @@
 // coop/dev/explosion_drill_internal.h -- what the explosion drill's files share: the arm, the fixture and rest helpers
 // (coop/dev/explosion_drill_fixture.cpp), the host's half (coop/dev/explosion_drill_host.cpp) and the client's half
-// (coop/dev/explosion_drill_client.cpp), and the source arms' legs both roles run (coop/dev/explosion_drill_source.cpp,
-// its measure legs in coop/dev/explosion_drill_source_measure.cpp).
+// (coop/dev/explosion_drill_client.cpp), the source arms' legs both roles run (coop/dev/explosion_drill_source.cpp,
+// its measure legs in coop/dev/explosion_drill_source_measure.cpp), and the request arms' two halves
+// (coop/dev/explosion_drill_request.cpp, coop/dev/explosion_drill_request_host.cpp).
 // Dev only; game thread.
 
 #pragma once
+
+#include "coop/world/explosion_request.h"
+#include "coop/world/explosion_sync.h"
 
 #include "ue_wrap/core/types.h"
 
 #include <chrono>
 #include <cstdint>
+#include <string>
 
 namespace coop::net { class Session; }
 
@@ -26,8 +31,12 @@ constexpr float kFlyDistance = 100.f;
 constexpr int kMinFlown = 2;
 constexpr int   kPapers = 4;
 
-enum class Arm : uint8_t { Off, Dissolve, Apply, Coast, SpawnMalformed, SourceHost, SourceClient };
+enum class Arm : uint8_t { Off, Dissolve, Apply, Coast, SpawnMalformed, SourceHost, SourceClient,
+                           RequestRocket, RequestSticky, RequestDetonate, RequestDetonateSwitch, RequestHand,
+                           RequestHandPoop, RequestHandSoap, RequestPipe, RequestSelf, RequestThrown, RequestSwitch,
+                           RequestExpiry };
 inline bool IsSource(Arm a) { return a == Arm::SourceHost || a == Arm::SourceClient; }
+inline bool IsRequest(Arm a) { return a >= Arm::RequestRocket; }
 
 // ---- the fixture and the rest helpers (explosion_drill_fixture.cpp) ----
 
@@ -82,5 +91,52 @@ void ClientReset();
 // reads and reports. Back to the start destroys what the legs left in the world.
 void SourceTick(Arm arm, bool isHost);
 void SourceReset();
+
+// ---- the request arms (explosion_drill_request.cpp, explosion_drill_request_host.cpp) ----
+//
+// A client's own explosion becomes the host's once, end to end. The client acts with the source verbs and judges its
+// counters, the host judges its own, each as deltas against a baseline it took before the first send.
+
+// What an arm's half must count. Client: shots and requests SENT, blasts APPLIED, own births dissolved (-1 = not
+// asserted). Host: shots and requests ACCEPTED, blasts CAPTURED, shots expired unrequested, and the least ticks a
+// judge waited (0 = no floor).
+struct RequestWant {
+    uint32_t shots;
+    uint32_t kind[3];  // by the request's kind less one: projectile, hand, self
+    uint32_t blasts;
+    int      born;
+    uint32_t expired;
+    uint32_t waitedMin;
+};
+const RequestWant& RequestWantOf(Arm a);
+
+// The ini value of a request arm and back; false for a value that names none.
+bool        RequestArmFromName(const std::string& value, Arm& out);
+const char* RequestArmName(Arm a);
+
+// One counted reading against its want: past it fails at once, short of it is only not yet. `first` keeps the
+// worst reading seen (an overshoot over a shortfall, the first of each).
+struct Miss {
+    const char* name = nullptr;
+    uint64_t    got = 0, want = 0;
+    bool        over = false;
+};
+inline void Compare(Miss& first, const char* name, uint64_t got, uint64_t want) {
+    if (first.over) return;
+    if (got > want) first = Miss{name, got, want, true};
+    else if (got < want && !first.name) first = Miss{name, got, want, false};
+}
+
+// The client's half: one Tick, true once it has printed its final line. `sync0` and `req0` are the counters at the
+// world-ready edge. Back to the start puts back what the arm changed (the guard, the hand, the pill).
+bool RequestClientTick(Arm arm, const coop::explosion_sync::Counters& sync0,
+                       const coop::explosion_request::Counters& req0);
+void RequestClientReset();
+
+// The host's half. Begin takes the baseline once and holds the gamemode's fungun rule (the client's launcher runs
+// on the host's world rule); true once held. Tick judges, true once it has printed its final line.
+bool RequestHostBegin();
+bool RequestHostTick(Arm arm);
+void RequestHostReset();
 
 }  // namespace coop::dev::explosion_drill::detail

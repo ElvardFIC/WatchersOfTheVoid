@@ -74,6 +74,12 @@ const char* ArmName(Arm a) { return a == Arm::SourceHost ? "source_host" : "sour
 
 const char* RoleName(bool host) { return host ? "host" : "client"; }
 
+const LegDef* LegOf(Kind k) {
+    for (const LegDef& d : kLegs)
+        if (d.kind == k) return &d;
+    return nullptr;
+}
+
 void Enter(LStep s) {
     g_src.step = s;
     g_src.stepAt = Clock::now();
