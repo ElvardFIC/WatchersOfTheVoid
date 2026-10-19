@@ -814,11 +814,9 @@ CFG_FLAG(key_index_forget_one, "key_index_forget_one", "dev", false, "VOTVCOOP_K
     "Red arm of the prop key index's parity pass: once a session, after the seed, one filed prop of the "
     "current world is dropped from the index. The pass must name it as a filing the feeds missed and file "
     "it again within a full pass (about 20 s).")
-CFG_FLAG(selftest_break_permissions, "selftest_break_permissions", "dev", false, "VOTVCOOP_SELFTEST_BREAK_PERMISSIONS",
-    "Red arm of the permissions selftest: its first case expects the opposite answer, so it must fail.")
-CFG_FLAG(selftest_break_action_log, "selftest_break_action_log", "dev", false, "VOTVCOOP_SELFTEST_BREAK_ACTION_LOG",
-    "Red arm of the commands selftest's action-log cases: the first acting case of each cases file expects "
-    "no record, so it must fail.")
+// The permissions and action-log selftests' red arms: their own file, one concept, included as
+// _dev_port.inc is above.
+#include "coop/config/config_registry_rows_dev_selftest.inc"
 // The explosion lane's drill, birth line and selftest red arms: their own file, one concept, included as
 // _dev_port.inc is above.
 #include "coop/config/config_registry_rows_dev_explosion.inc"
