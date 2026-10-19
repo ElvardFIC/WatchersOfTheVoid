@@ -172,12 +172,10 @@ void SendShot(coop::net::Session& s, const Pending& e) {
     UE_LOGI("[EXPLOSION] shot sent id=%u class=%s launcher=%d", p.shotId, ProjName(e.projClass), e.launcher);
 }
 
-// Launcher `l`'s fire body has ended: its pending births are sent, or counted dead, and dropped. With no session
-// nothing is judged: the entries stay, to be dropped at the launcher's next pre or cleared at a disconnect or a
-// world change.
+// Launcher `l`'s fire body has ended: its pending births are sent, or counted dead, and dropped. The session is set
+// at Install and never cleared, so it is here whenever a client fires.
 void FlushLauncher(int l) {
     coop::net::Session* s = detail::SessionPtr();
-    if (!s) return;
     size_t kept = 0;
     for (size_t i = 0; i < g_pendingCount; ++i) {
         const Pending e = g_pending[i];

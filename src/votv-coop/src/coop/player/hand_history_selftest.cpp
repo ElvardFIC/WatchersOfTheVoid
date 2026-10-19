@@ -55,6 +55,8 @@ void RunOpenedAfter(Tally& check) {
     Clear(kSlot);
     Note(kSlot, true, L"prop_a_C", 1250);
     check(HeldWithin(kSlot, L"prop_a_C", 500, 1000), "opened after: an entry opened after the time is not found");
+    Note(kSlot, false, L"", 1400);
+    check(HeldWithin(kSlot, L"prop_a_C", 500, 1000), "opened after: an entry opened and closed after the time is not found");
     Clear(kSlot);
 }
 

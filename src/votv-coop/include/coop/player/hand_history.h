@@ -22,10 +22,10 @@ inline constexpr int kRing = 4;
 // held changes nothing; a different class or an empty hand closes the open entry first.
 void Note(uint8_t slot, bool has, const std::wstring& cls, uint64_t nowMs);
 
-// True when `slot` held `cls` (a case-insensitive class name) at any moment in [nowMs - windowMs, +inf): for an open
-// entry the window has no upper end. There is no `fromMs <= nowMs` bound, deliberately: a hold that began after
-// `nowMs` also counts, so a launcher taken and fired at once is judged at the shot's arrival time, before the hand
-// lane applied the take.
+// True when `slot` has an entry for `cls` (a case-insensitive class name) that is open or ended at or after
+// nowMs - windowMs. There is no `fromMs <= nowMs` bound, deliberately: a hold that began after `nowMs`, open or
+// already closed, also counts, so a launcher taken and fired at once is judged at the shot's arrival time, before the
+// hand lane applied the take.
 bool HeldWithin(uint8_t slot, const wchar_t* cls, uint64_t windowMs, uint64_t nowMs);
 
 // Forgets `slot`'s entries (its leave, a session reset).

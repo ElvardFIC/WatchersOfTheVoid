@@ -67,10 +67,10 @@ constexpr float kUnmeasuredRttMs = 500.0f;
 constexpr float kMaxRttMs        = 1000.0f;
 
 // The fastest a player and the witch car move, cm/s: a bound is widened by this times the round trip, never by the
-// speed the host last read (a puppet's pose is set each frame and carries none). Source's bound is 1.5 x the
-// player's own max speed x the 1 s lag cap (reference/source-sdk-2013/src/game/server/player.cpp:765); ours uses
-// named maximums with that factor folded in. The player's value is the engine's default terminal speed, so a falling
-// shooter is covered. Both values are provisional, for the drill to measure.
+// speed the host last read (a puppet's pose is set each frame and carries none). Source sizes its lag-compensation
+// radius the same way, a max speed times the 1 s lag cap (reference/source-sdk-2013/src/game/server/player.cpp:765).
+// The player's value is the engine's default terminal speed, so a falling shooter is covered, not a sprint times a
+// factor. Both values are provisional, for the drill to measure.
 constexpr float kMaxPlayerSpeedCmS = 4000.0f;
 constexpr float kMaxCarSpeedCmS    = 3000.0f;
 
