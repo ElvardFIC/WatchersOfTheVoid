@@ -8,6 +8,9 @@ Current focused suite: `../../package/check_2152.ps1`. It invokes the player-rep
 wisp animation, ragdoll retry, ragdoll skin and personal-sleep runners, entity orientation, plus the three
 native-evidence Python checks. Native checks require the local research corpus.
 The C++ runners require the local MSVC toolchain; inspect each runner for its setup.
+The entity runner includes grayboar_actions_test.cpp, exercising the production
+host transition observer, packet receiver and direct montage/audio path. Its test
+double refuses unexpected reflected calls so gameplay-verb replay fails the test.
 
 Keep the numbered runners, C++/Python sources and stub directories together: older
 runners contain distinct regression and negative-control cases. Generated binaries

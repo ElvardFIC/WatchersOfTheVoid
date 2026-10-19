@@ -5,6 +5,7 @@
 #include <cassert>
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
 
 // Collision enrollment is covered separately; this harness drives its own actors.
 namespace coop::prop_knock {
@@ -110,6 +111,43 @@ int main() {
         coop::net::PropDriveEndPayload p{}; p.eid = 1; p.gen = gen; p.x = x;
         D::OnEnd(p);
     };
+    // Cosmetic velocity is the derivative of the same delayed render segment,
+    // not a velocity written into the parked body's physics.
+    namespace AD = coop::active_drive;
+    AD::ActiveDrive visual;
+    visual.isTrashMirror=visual.lerpSeeded=visual.haveTwoSnaps=true;
+    visual.prevPoseMs=100;visual.lastPoseMs=200;visual.lastLoc={100,0,-20};
+    auto v=AD::PresentationVelocity(visual,199);assert(v.X==0&&v.Z==0);
+    v=AD::PresentationVelocity(visual,200);assert(v.X==1000&&v.Z==-200);
+    v=AD::PresentationVelocity(visual,250);assert(v.X==1000);
+    visual.actor=&test::actor;visual.actorIdx=1;
+    AD::AdvanceLerp(visual,250);assert(test::x==50);
+    AD::AdvanceLerp(visual,260);assert(std::fabs(test::x-60)<0.001f);
+    AD::AdvanceLerp(visual,300);assert(test::x==100);
+    v=AD::PresentationVelocity(visual,300);assert(v.X==0);
+    visual.lastPoseMs=104;visual.lastLoc={4,0,0};
+    assert(AD::PresentationVelocity(visual,115).X==0);
+    assert(AD::PresentationVelocity(visual,116).X==1000);
+    assert(AD::PresentationVelocity(visual,120).X==0);
+    visual.lastPoseMs=1100;visual.lastLoc={100,0,0};
+    assert(AD::PresentationVelocity(visual,1000).X==100);
+    assert(AD::PresentationVelocity(visual,1300).X==0);
+    visual.lastLoc.X=std::numeric_limits<float>::quiet_NaN();
+    assert(AD::PresentationVelocity(visual,1000).X==0);
+    visual.lastLoc={};visual.lastPoseMs=visual.prevPoseMs;
+    assert(AD::PresentationVelocity(visual,1000).X==0);
+    AD::BeginLerpToPose(visual,{1000,0,0},{},2000);
+    assert(!visual.haveTwoSnaps&&AD::PresentationVelocity(visual,2000).X==0);
+    reset();pose(40,40);
+    assert(D::TryGetPresentationVelocity(&test::actor,v)&&v.X==0);
+    auto& moving=D::g_drives.at(1).d;const auto now=AD::NowMs();
+    moving.haveTwoSnaps=true;moving.prevPoseMs=now-100;moving.lastPoseMs=now;
+    moving.prevLoc={};moving.lastLoc={100,0,0};
+    assert(D::TryGetPresentationVelocity(&test::actor,v)&&v.X==1000);
+    assert(!D::TryGetPresentationVelocity(&test::mesh,v));
+    ++test::serial;assert(!D::TryGetPresentationVelocity(&test::actor,v));
+    reset();pose(40,40);end(40,40);assert(!D::TryGetPresentationVelocity(&test::actor,v));
+    std::puts("PASS presentation velocity: delayed motion, interval clamps, stop/teleport, invalid samples, ended and recycled drives");
     // Duplicate/old reliable ends must neither teleport nor regress the watermark.
     reset(); end(9, 90); const auto writes = test::writes;
     end(9, 99); end(8, 80); pose(9, 900);

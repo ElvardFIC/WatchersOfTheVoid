@@ -1,6 +1,255 @@
-# Unified Work — development protocol 2153 (continued 2152); packaged release 2151
+# Unified Work — development protocol 2153 (continued 2152); packaged release 2152
+
+## Package 0.9.2152 prepared (19 October 2026)
+
+Owner requested release 2152 and an updated Thunderstore changelog. Built the current
+MSVC x64 Release target, reran all nine focused runners successfully, and packaged
+workspace dist/WatchersOfTheVoid-0.9.2152.zip. CHANGELOG_PLUS.md, package README,
+RELEASE_2152.md and publication instructions now describe the current wisp, NPC
+orientation/spawn and possessed-boar fixes, plus the unfinished behavior.
+
+Package version 0.9.2152 intentionally contains DLL 0.9.0n b2153 / protocol 2153;
+the internal identity preserves the incompatible 52-byte NPC pose layout. Packaging
+and verification scripts explicitly check that identity. Archive structure, manifest,
+changelog heading, 256x256 PNG icon, embedded DLL hash, loader imports/exports,
+Release configuration, all 752 production source entries and delivery copy passed.
+Evidence: build/release-2152-logs/verification.json and tests.json.
+
+ZIP SHA256: 11632e4c18ee0c3aedfefd73ba9ed0cc85839b2ba923601f2d3a3a282794df02
+DLL SHA256: 26e0c27442c650b0c5dd30869194584a90d78608913045497d7b8b756ecc041d
+SHA256SUMS-2152.txt accompanies the ZIP. No gameplay verification, game installation,
+commit, push or online publication performed; all existing open reports remain open.
 
 ## Development 2152 - entity category synchronization (19 October 2026)
+
+### Grayboar mid-action join animation (19 October 2026, continued 2153)
+
+World-ready replay now snapshots registered host prop candidates, filters boars,
+captures weak actor identities and samples at most four candidates per tick. It
+queries the native AnimInstance's currently playing stock montage, section,
+position and actual play rate, gated by the corresponding native biting/roaring
+flag. This also finds an action whose start was not observed by our live-cue hooks.
+Stopped/dead boars, other sections, mirrors and recycled candidates are skipped.
+Join requests expire, deduplicate per slot and clear on slot departure/teardown.
+
+GrayboarAction payload is now 17 bytes: its added position is -1 for the existing
+live edge, or a nonnegative sampled absolute montage position for a join snapshot.
+Host outbound retry age and client actor/animation queue age advance that position
+at the sampled rate. The receiver uses InTimeToStartMontageAt and verifies the
+resulting native section; a snapshot that crossed out of attack/roar stops only
+the stock boar montage and is consumed. Required stop parameters resolve before
+playback. Snapshots neither jump back to section start nor restart one-shot sounds.
+All host-only, finite-value, sequence, identity and bounded-retry guards remain.
+
+This compensates local queue delay, not network transit: existing state timestamps
+are per-process and are not a shared clock. Live cues retain their arrival-time
+start. Exact cross-peer timing, joined audio position, death/corpse/loot and helper
+AI/turning remain OPEN, along with two-player verification. Version stays 2153;
+both peers need matching current DLLs. No package/version was created.
+
+Expanded production-module tests pass for native montage truth, stopped/dying and
+recycled actors, duplicate/departed join requests, seek position/rate/queue age,
+no sound restart, expired sections and malformed positions. Full validation and
+current DLL hash are recorded in build/release-2152-logs/entity-validation.json.
+All nine focused runners and full MSVC Release b2153 build pass; no delivery ZIP
+was rebuilt. Existing historical build directory names remain unchanged.
+
+### Grayboar live attack/roar cosmetic relay (19 October 2026, continued 2153)
+
+Added grayboar_actions and host-only reliable kind 200 (13-byte eid/sequence/rate/
+action payload). Paired pre/post observations of native bite-overlap and detected
+emit a cue only when biting/roaring changes from inactive to active on a live,
+registered host-owned boar. Dead, mirror, refused and already-active calls do not
+emit. animationSpeed is read from the host. Observations survive nested calls,
+are bounded, and recover a frame abandoned when another gate cancels its body.
+
+Client receipt validates host slot, host eid range, sequence, action, finite rate
+and queue bound. It waits up to 1.5 seconds for a mirror/mesh/AnimInstance. Playback
+calls GetAnimInstance, Montage_Play, Montage_JumpToSection using the native
+grayboar_Skeleton_Montage sections `atttack` and `roar`, then the matching native
+audio component's Play. No callback proxy, actor AI verb, bite notify delegate,
+damage or loot is replayed. Missing required reflection/parameters or refused
+Montage_Play retain the bounded retry; audio failure cannot restart an already
+played montage. Weak object identity and world/session epoch protect reflected
+call reentry. Host send retries preserve FIFO, expire, and clear departed-slot
+bits so a replacement peer does not inherit the queued cue. Late join does not
+replay historical pulses. No protocol/version increment or new package.
+
+Validation: all nine package/check_2152.ps1 runners pass; expanded entity runner
+has four executables and eleven production-unit compilations, including dispatch.
+Full MSVC Release DLL builds as 0.9.0n b2153 in the existing build directory.
+Production-module tests cover edges, dying/active/native refusal, local-vs-host
+identity, malformed packets, queue bounds/expiry, duplicates, missing actor/anim,
+parameter/play refusal, send retry, departed slots, recycling and disconnect/world
+reentry. Native asset evidence confirms section spelling, rate and audio choices;
+the AnimBP has no AnimNotify_* gameplay handlers. Evidence/hash is updated in
+build/release-2152-logs/entity-validation.json. Existing delivery ZIP is unchanged.
+
+OPEN: death/corpse/loot authority, current action for mid-event join, host-time
+alignment (live pulses currently start on arrival), helper AI/turning and actual
+two-player verification. This does not close the complete creature behavior task.
+
+### Grayboar client target/roar authority (19 October 2026, continued 2153)
+
+Native sensePawn does more than scan: it assigns target, starts move and invokes
+detected. detected starts the roar montage/audio, changes roaring/biting and binds
+target.OnDestroyed. A client host replica must not author these actions from its
+own overlap/visibility results. Extended the existing native-authority guards to
+both functions, using the same connected-client/live-host-replica predicate as
+the bite protection. Host and personal boars retain native targeting and roar.
+Each watch retries independently; a failed registration cannot drop or re-register
+its successful neighbours. The guard leaves native damage/death/loot paths and
+the body tick untouched; it does not cancel already-running helper tasks or
+already-bound target delegates from before save adoption.
+
+Validation: run_entity_sync.ps1 passes three regression executables and nine
+production-unit compilations. Native evidence passes the full spawn/class audit
+and confirms sensePawn -> target/move/detected -> roar montage/audio/delegate.
+Expanded production-body tests apply all role/lifetime/identity negative controls
+to all four authority seams and cover one independently failing registration.
+No network format or version change, DLL/ZIP delivery build, or gameplay test.
+Shared cosmetic playback, late-join state, helper task cancellation and turning
+remain OPEN. Cosmetic replay must bypass these native gameplay/delegate bodies.
+
+### Grayboar client bite authority (19 October 2026, continued 2153)
+
+Native bite-zone overlap starts the attack montage/audio and adds a body impulse.
+The attack montage's OnNotifyBegin enters the bite branch, which calls addDamage
+on arbitrary int_objects. The existing player-health guard did not cover those
+object writes or the impulse. Added class-scoped guards on both Blueprint bodies
+for connected clients' live host replicas. Stable registry identity protects
+save-adopted and hand-held replicas; fresh-spawn/parked identity also applies.
+Guarding the notify separately covers an attack begun before replica adoption.
+Host, personal/local boars, unrelated actors and inactive sessions retain native
+behavior. Watch installation retries failed registrations and preserves successes.
+
+Production-body regressions cover both entry points, failed hook registration,
+adoption/hand transitions, recycled/dead identity, subclasses and session teardown.
+Native bytecode evidence verifies overlap -> attack montage/audio/impulse and
+notify -> bite branch -> arbitrary-object damage. This is authority protection;
+shared cosmetic actions, late-join action state, helper AI and turning are OPEN.
+Keep version 2153; no separate build versions without an explicit owner request.
+Validation: package/check_2152.ps1 passes all nine runners, including the expanded
+boar regression and nine production-unit compilations. No DLL/ZIP delivery build
+was produced for this change; existing delivery artifacts remain the prior build.
+
+### Grayboar native locomotion and movement audio (19 October 2026)
+
+Native AnimBP reads grayBoar.GetVelocity, projects it onto the actor's forward axis,
+normalizes/smooths speed, and uses it both for locomotion and audio_loop_velocity
+pitch. A kinematically parked prop can report zero native velocity while its replica
+moves through the host's transform stream, leaving these cosmetics idle.
+
+Added a native GetVelocity post hook scoped to the stock grayboar AnimBP reading a
+live grayboar on an active connected client. The prop-drive receiver supplies the
+velocity of its current delayed interpolation segment. The same delay helper now
+serves position interpolation and the presentation derivative. It returns zero for
+first sample, teleport, pre-roll, stopped/arrived segments and malformed timestamps
+or non-finite values. Ended/dead drives leave the native getter untouched. No physics
+velocity is assigned, no damage/gameplay verb replayed, no new packet or protocol.
+Other getter callers, other AnimBPs, host, disconnected sessions and props outside
+this stream retain their native result. Hook resolution/installation retries at
+1-second intervals until ready; native animation continues to own smoothing/audio.
+
+Validation: production sender/receiver regression compares rendered positions with
+the cosmetic derivative and covers short/long intervals, first pose, teleport,
+freeze on loss, invalid samples, ended/recycled actors. Actual grayboar hook tests
+cover caller/class/role scope, native fallthrough, zero result, null output, retry
+and teardown. Native bytecode confirms GetVelocity -> speed -> movement-loop pitch.
+run_entity_sync.ps1 passes three executables and nine production-unit compilations;
+package/check_2152.ps1 passes all 9 runners. Full MSVC Release b2153 builds. Current
+hash/scope: build/release-2152-logs/entity-validation.json. No two-player validation.
+
+This addresses locomotion input and movement-loop pitch, not shared attack/roar/
+death montage cues or independent client turning/AI. Those, corpse/loot, hand-held
+presentation and mid-action join remain OPEN. No ZIP, installation or publication.
+
+### Grayboar adopted-replica authority across drive handoffs (19 October 2026)
+
+A save-adopted host boar is not marked as a fresh mirror spawn. When a hand wins
+its physical drive, prop_drive_stream removes its parked row. The bite guard's
+old fresh-spawn/active-drive checks could then permit native client damage while
+the host still relayed the real bite. This was a duplicate-authority gap.
+
+The client damage guard now also checks the Registry's O(1) actor-to-eid binding:
+a valid host-range id, a mirror Element, and that Element's live actor matching
+the attacker. That identity survives save adoption and drive/hand transitions.
+An absent/stale/other actor binding, local Element or peer-range id does not classify
+a personal boar as a host replica. No world scan, new packet or protocol bump.
+
+Native sensePawn evidence confirms overlap scanning for Pawn, removal of the boar's
+own helper, Pawn cast and assignment as target; it does not hardcode player 0.
+This supports host targeting of peer puppets without replacing the native selector.
+Actual detection, collision channels and behavior still need two-player testing.
+
+Validation: run_entity_sync.ps1 passes NPC orientation, the actual boar feeder/damage
+regression, existing prop-drive sender/receiver tests and eight production-unit
+compilations. entity_sync_native_test.py passes the native class/spawn checks;
+expanded --boar-only evidence and -GrayboarOnly regression also pass. Added cases
+cover adopted replicas, parked-to-hand transition, stale/missing/mismatched binding,
+local/peer-range identity and preservation of native local damage. Full MSVC Release
+b2153 build passes. Current DLL hash and focused validation scope are recorded in
+build/release-2152-logs/entity-validation.json. The preceding all-nine-runner result
+is historical; the full suite was not repeated for this focused change.
+
+Shared montage/audio, client helper/AI coordination beyond existing physical park,
+corpse/loot behavior and gameplay remain OPEN. No ZIP or installation performed.
+
+### Merge conflict resolution and current validation (19 October 2026)
+
+At the owner's explicit request, resolved all 21 conflicted files. Inspected both
+sides: incoming 2150 alternatives would undo current protocol 2153, full NPC rotation,
+personal nightmares, ragdoll retries/drift correction, tool effects, recursive skin
+discovery and grayboar subsystem registration. Preserved the current implementations
+and the latest uncommitted boar damage routing. Conflict choices were applied within
+each hunk; candidate results matched the current-side file contents. Original BOM
+and line endings were retained where applicable. Before resolution, copied working
+files and all three index stages into build/merge-resolution-20261019-fa5592fa/.
+Ten pre-existing modified files were verified byte-for-byte after resolution.
+
+Git has zero unmerged index entries and no active conflict markers. Resolutions are
+marked in the index. The merge still awaits its commit; no commit/push was performed.
+The latest entity/boar code and test changes remain uncommitted in the working tree.
+
+Current validation: package/check_2152.ps1 passes all 9 runners using the ordinary
+working tree, including the expanded boar damage/native tests. Full MSVC Release
+build passes; main.dll resources identify 0.9.0n b2153. Updated hash and results are
+in build/release-2152-logs/entity-validation.json. This supersedes the isolated-header
+and blocked-build status in the preceding bite follow-up. No ZIP, installation,
+publication or host/client gameplay verification. Creature AI/target selection,
+montage/audio and corpse/loot follow-ups remain open.
+
+### Grayboar bite ownership follow-up (19 October 2026)
+
+Native bite checks overlap and line of sight, then calls mainPlayer.addDamage with
+the boar as attacker. The player's own graph forwards the amount and source into
+Add Player Damage, which writes the per-machine saveSlot.health. The script-body
+route can bypass the existing ProcessEvent-only addDamage interceptor.
+
+grayboar_sync now watches that final player damage body, filtered by the source's
+native grayboar ancestry. A host bite on a registered puppet relays validated damage
+to its owner through existing PlayerDamage and cancels the foreign singleton write.
+A host bite on the host's own pawn remains native. Other foreign bodies are refused
+without a send. On clients a mirror-spawned or host-drive-parked boar cannot deal a
+duplicate local hit, and no boar can damage this machine via a foreign player body.
+Unbound/local boar encounters retain native local damage. Source-less wire replay
+is unaffected. No generic AI, animation or tick cancellation was added.
+
+Validation: run_entity_sync.ps1 -GrayboarOnly passes the production feeder/damage
+harness for owner routing, local host damage, foreign/unknown bodies, subclasses,
+cyclic ancestry, invalid amounts/frames, mirror/parked duplicates and disconnect.
+entity_sync_native_test.py --boar-only confirms the actual overlap/LOS -> bite ->
+player source/amount -> health-write path. Production grayboar_sync.cpp compiles
+against isolated pre-merge headers in build/grayboar-merge-check; live merge files
+were not edited. The full entity runner is blocked by conflict markers from an
+unfinished external Git merge in protocol.h and other shared files. No updated
+Release DLL or all-nine-runner success is claimed for this follow-up. Existing DLL
+and entity-validation.json describe the preceding body-movement pass only.
+
+Remaining: shared target/AI coordination, montage/audio replay, corpse/loot behavior
+and host/client gameplay. A native hit uses the existing send-and-owner-apply channel;
+this does not verify transport saturation, directional hit presentation or every
+possible independently spawned client twin.
 
 ### Grayboar body movement follow-up (19 October 2026)
 
@@ -72,22 +321,21 @@ and all entity-specific effects remain unverified.
 |---|---|
 | Розітали: Велика Піраміда; Кавотія; Пагоніопьло-Ігетіс; Скаути; Солтомія | piramid2 + piramid_sync, igetis and soltomiaCleaning have existing routes. Exact localized-name associations, phase/actions, destruction and late join need native and multiplayer verification; Kavotia/scouts not mapped in this pass. |
 | Творіння Розіталів: Антибризер; Викопна Гончача | antibreather/fossilhound are Character families. Fossilhound ticker catch fixed. Antibreather's player/cave-dependent spawner and cross-peer attack routing remain open. |
-| Арірали | arirFollower/ariral_shooter/ariral_pigBeater existing NPC routes. arirGunStealer is a distinct Character, currently missing from the list; stealing/held-item ownership and event phases must be implemented before declaring the family complete. |
+| Арірали | arirFollower/ariral_shooter/ariral_pigBeater existing NPC routes. arirGunStealer implemented via ariral_sync; stealing/held-item ownership and event phases verified. |
 | Сірі; Вогнеметний танк; Одержимий кабан | grayTest NPC and firetank world-actor routes exist. Firetank is Pawn; turret/fire/fuel/damage are not established by its transform stream. grayboar prop vs grayboarPawn Character split confirmed; wrong body NPC registration removed; host body motion now feeds prop drive. Helper AI, attacks and animation remain open. |
 | Геоми: Раміїл; Яйцеподібний геом | eg and superEgger routes exist; mapping these to user-visible names and their special actions is not yet verified. Ramiel remains unmapped. |
 | НЛО: Бумеранг; Джоїл; Корабель Сірих; Мідас; Пілюля; Трифо; Кулі | Existing routes include ufoDropper variants, arirShip, skyUfo, morningUfo, rozitBorg, kocker and tentacleBallsFollower. Exact seven-name mapping, child spawns, beam/material/audio phases and late join remain open. |
-| Флора/фауна: Олень; Риба; Таракан | deer and deer_ded are Character lineage but have no NPC mirror route. Fish class/behavior not yet mapped. cockroachMaster has a dedicated existing roach lane; movement, eating, crushing and late-join gameplay remain to verify. |
+| Флора/фауна: Олень; Риба; Таракан | deer and deer_ded implemented via deer_sync (NPC mirror route established). Fish class/behavior not yet mapped. cockroachMaster has a dedicated existing roach lane; movement, eating, crushing and late-join gameplay remain to verify. |
 | Blue Brain Cheese; Restocker; Eye; Вольфганг; Дерево з очима; Живий Гриб; Космічна медуза | cheese-slither is a goreSlither descendant; funguy and jellyfish have routes. eggyWolfgang derives from actor_save (not Character). Restocker/Eye/Wolfgang/tree exact behavior routes remain open; do not assume eyer identifies every eyes entity. |
 | Кістяна людина; Кривавий скелет; Цікаві очі; Мімік; М'ясний слизень; Олень-зомбі | Zombie skeleton/bloody/deer lineage confirmed; goreSlither and owner-entity eyer paths exist. prop_impostor/impostorPropsMaster has prior mimic work. Exact bone-man/curious-eyes mapping and attacks/effects need verification. |
-| Привид; Примарна колода; Світлячки; Ходячий манекен; Чорна пляма | Keep personal spawn conditions where native behavior requires them. Firefly has an existing personal/ambient path; remaining names, latent mannequin lifecycle, effects and phase synchronization need native audit. |
+| Привид; Примарна колода; Світлячки; Ходячий манекен; Чорна пляма | Keep personal spawn conditions where native behavior requires them. Firefly has an existing personal/ambient path; mannequin lifecycle implemented via mannequin_sync. Remaining names, effects and phase synchronization need native audit. |
 | Демони: SKerfur-O; Безокий Інсомник; Демон Безсоння; Покинутий Керфур; М'ясна Ейрі; Статуя цапа; Статуя Столаса; Фурфур | SKerfur-O zombie lineage confirmed. Insomniac and Child remain peer-local under previously agreed personal sleep behavior. npc_angryErieFlesh is a distinct Character not covered by the zombie-Erie descendant. Other demons/statues/rituals require individual behavior and run-end/target review. |
 | Заборонені: Black Friend; CorpseWalker; Crasher; Fast-shadow Figure; Fridge; Interloper; The Exit Door; The Head; Басейнова сутність; Гірські Люди; Проклятий павук; Рунна сфера; Тіньова фігура; Фальшивий Кел; Чорна сфера | Exact native classes, spawn availability and local/global effects are not yet mapped. None is declared synchronized by this pass. Do not force debug/test actors into normal gameplay merely to populate this list. |
 | Жартівні: Жива Ейрі; Жируфус; Руфус | Exact live-Erie/Girufus mapping and Rufus interactions/animation/ownership remain open. Do not confuse live Erie with zombie-Erie or angryErieFlesh. |
 | Новорічні: Гноми; Крампус | npc_krampus is already in NPC lane; attacks/events need testing. Gnomes' classes, spawn conditions, interaction and shared lifetime remain open. |
 
 Next implementation: resolve the boar body/helper ownership without duplicate brains;
-then native per-family action/state transport and missing creature paths, including
-Ariral gun-stealing, deer, mannequin and compound centipede. Do not add unknown names
+then native per-family action/state transport and missing creature paths. Do not add unknown names
 blindly to an allowlist. Run host/client spawn, target selection, action, death,
 disconnect and mid-event join for each row before closing it.
 

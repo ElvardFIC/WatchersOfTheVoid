@@ -26,7 +26,11 @@ Every player must use this exact **0.9.2152** package and the same game version.
 This is an experimental co-op build. The x64 Release build and focused offline checks
 are recorded in RELEASE_2152.md; two-player gameplay verification is still required.
 
-Build 2152 adds capture-animation retries and safer wisp release/death handling.
+Build 2152 adds safer wisp capture/release, full NPC orientation, additional spawn
+handling, and possessed-boar movement, bite-damage routing and locomotion input.
+Entity synchronization remains partial; boar action cues and other creature-specific
+behavior still need work. The package contains DLL **b2153 / network protocol 2153**
+for the expanded NPC pose format.
 Includes the 2151 updates to personal insomnia/nightmare behavior, remote ragdolls, late-loaded
 NPCs and wisp capture, Cremator door/lever replication, held-tool effects and model
 preview retries. Every player must update: older builds, including 2151, are incompatible.

@@ -8,13 +8,15 @@ Play co-op on Windows with up to four players, LAN and Internet sessions, remote
 text and positional voice chat, and host-authoritative world synchronization.
 This is experimental software; multiplayer verification is still in progress.
 
-## Fork status — 18 October 2026
+## Fork status - 19 October 2026
 
-The latest package present in the maintainer's workspace is **0.9.2151**.
-Development targets **2152**, including wisp capture-animation retries, accepted montage-playback
-checks, and safer release/death handling during disconnects or pawn replacement.
-A 2152 delivery ZIP has not been verified as present. Local development changes are not necessarily
-published in this repository; this page update does not publish a new binary release.
+The latest locally prepared package is **0.9.2152**, for game **0.9.0n**.
+It contains DLL **b2153** and network protocol **2153**, preserving the expanded
+NPC pose format while using the requested package release number. It includes full
+NPC orientation, possessed-boar body/damage replication and native locomotion input,
+plus the earlier wisp capture/release and personal-nightmare fixes.
+See [release notes](package/RELEASE_2152.md) and [changelog](package/CHANGELOG_PLUS.md).
+Local packaging does not publish a binary release online.
 
 Recent local work also covers personal nightmares, ragdoll recovery, late-loaded NPCs,
 Cremator interactions, held-tool effects and model-preview retries.
@@ -27,7 +29,7 @@ the shared computer display, token UI, ZIP-disk ejection and disappearing workbe
 Use a package explicitly published for this fork when available on this repository's
 [Releases page](https://github.com/ElvardFIC/WatchersOfTheVoid/releases).
 All players must install the same build and game version. Disable other Multivoid implementations
-in the same profile. Builds 2151 and 2152 use different protocol identities.
+in the same profile. Protocols 2151, 2152 and 2153 are incompatible.
 
 The [upstream installation guide](https://github.com/VOTV-MP/Multivoid/blob/main/docs/install.md)
 explains the loader and standard mod layout. Upstream downloads are releases of the original

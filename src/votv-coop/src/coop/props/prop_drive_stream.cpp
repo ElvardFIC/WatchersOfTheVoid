@@ -315,6 +315,17 @@ bool IsParked(void* actor) {
     return false;
 }
 
+bool TryGetPresentationVelocity(void* actor, ue_wrap::FVector& velocity) {
+    UE_ASSERT_GAME_THREAD("prop_drive_stream::TryGetPresentationVelocity");
+    if (!actor) return false;
+    for (const auto& [eid, drive] : g_drives) {
+        if (drive.LiveActor() != actor) continue;
+        velocity = AD::PresentationVelocity(drive.d, AD::NowMs());
+        return true;
+    }
+    return false;
+}
+
 void OnDisconnect() {
     for (auto& kv : g_drives) GiveBackPhysics(kv.second, kv.second.LiveActor());
     g_drives.clear();

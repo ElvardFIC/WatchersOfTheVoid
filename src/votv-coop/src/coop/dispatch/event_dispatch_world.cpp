@@ -6,6 +6,7 @@
 #include "event_dispatch.h"  // co-located private header (src tree, not include/)
 
 #include "coop/element/registry.h"
+#include "coop/creatures/grayboar_actions.h"
 
 #include "coop/comms/chat_sync.h"
 #include "coop/world/alarm_sync.h"
@@ -87,6 +88,11 @@ bool VerifySenderEidRange(int senderPeerSlot,
 bool HandleWorldEvent(net::Session& session,
                       const net::Session::ReliableMessage& msg) {
     switch (msg.kind) {
+    case net::ReliableKind::GrayboarAction: {
+        if(msg.senderPeerSlot!=0 || msg.payloadLen!=sizeof(net::GrayboarActionPayload))break;
+        net::GrayboarActionPayload packet{};std::memcpy(&packet,msg.payload,sizeof(packet));
+        coop::grayboar_actions::Receive(packet,msg.senderPeerSlot);break;
+    }
     case net::ReliableKind::PlacedSave: {
         if (msg.payloadLen != sizeof(net::BlobChunkPayload) || msg.senderPeerSlot < 0 ||
             msg.senderPeerSlot >= net::kMaxPeers) break;

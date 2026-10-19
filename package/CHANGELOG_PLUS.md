@@ -1,11 +1,15 @@
 ## 0.9.2152
 
-- Retry wisp capture animation when the replicated actor, AnimInstance or montage is not ready. Both host and clients use bounded retries without extending the original capture window.
-- Check the native montage playback result so a refused animation can retry. Protect subsequent animation calls against actor/AnimInstance recycling, and avoid restarting successful playback when the optional section jump is unavailable.
-- Cancel the pending wisp death if release callbacks disconnect the session or replace the victim pawn. Clear hold state before native cleanup to make nested release safe.
+- Improve wisp capture animation readiness on host and clients with bounded retries. Check native montage playback before treating the animation as started, and guard against recycled actors or animation instances.
+- Bind wisp capture and death to the original victim. Protect hold movement and release against disconnects, pawn replacement and nested cleanup.
+- Synchronize full NPC orientation (pitch, yaw and roll), with shortest-arc interpolation and immediate placement on first samples or teleports.
+- Extend spawn detection to the Fossil Hound and yellow-wisp spawners. Correct the possessed boar's classification so its physical body uses prop synchronization instead of the Character path.
+- Replicate host-driven possessed-boar body movement and route bites against remote players to the correct player. Protect other players' health from duplicate replica damage, including adopted save replicas after movement handoffs.
+- Feed replicated boar movement into the native client animation blueprint's velocity input for locomotion and movement-loop audio. Preserve native physics and host behavior.
 
-Includes the 2151 synchronization fixes. Every player needs this exact 0.9.2152 package and Voices of the Void 0.9.0n; older builds are incompatible.
-Release build and offline checks are documented in RELEASE_2152.md. Two-player gameplay verification remains pending.
+Includes the 2151 synchronization fixes. Every player needs this exact **0.9.2152** package and **Voices of the Void 0.9.0n**. This package contains **DLL b2153 / network protocol 2153** for the expanded NPC pose format; older protocols are incompatible.
+
+The Windows x64 Release build and nine offline regression runners are documented in RELEASE_2152.md. Two-player gameplay verification remains pending. Entity synchronization is still partial: boar attack/roar/death presentation, late-join action state and other entity-specific behavior remain unfinished.
 
 ## 0.9.2151
 

@@ -322,6 +322,7 @@ set(VOTVCOOP_SOURCES
     src/coop/creatures/npc_sync_install.cpp
     src/coop/creatures/npc_world_enum.cpp
     src/coop/creatures/grayboar_sync.cpp
+    src/coop/creatures/grayboar_actions.cpp
     src/coop/creatures/piramid_sync.cpp
     src/coop/creatures/roach_sync.cpp
     src/coop/creatures/owner_entity_sync.cpp

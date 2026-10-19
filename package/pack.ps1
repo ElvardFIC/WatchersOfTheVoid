@@ -7,11 +7,13 @@ $dll     = Join-Path $src 'build\votv-coop-2152\main.dll'
 $dist    = Join-Path $root 'dist'
 $stage   = Join-Path $dist 'stage'
 $version = '0.9.2152'
+# Package 2152 includes the newer NPC wire layout; DLL resources follow the protocol.
+$dllVersion = '0.9.0n b2153'
 $zip     = Join-Path $dist "WatchersOfTheVoid-$version.zip"
 
 if (-not (Test-Path -LiteralPath $dll)) { throw "build main.dll first: $dll" }
 $pv = [Diagnostics.FileVersionInfo]::GetVersionInfo($dll).ProductVersion
-if ($pv -ne '0.9.0n b2152') { throw "main.dll identifies as '$pv', not '0.9.0n b2152'" }
+if ($pv -ne $dllVersion) { throw "main.dll identifies as '$pv', not '$dllVersion'" }
 
 $resolvedDist = [IO.Path]::GetFullPath($dist).TrimEnd('\')
 $resolvedStage = [IO.Path]::GetFullPath($stage)

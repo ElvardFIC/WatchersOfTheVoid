@@ -208,6 +208,7 @@ void Unpark(std::map<std::wstring, Parked>::iterator it) {
     SenderUse& u = g_parkUse[it->second.senderSlot];
     if (u.count) --u.count;
     u.bytes = (u.bytes > it->second.bytes) ? (u.bytes - it->second.bytes) : 0;
+    UE_LOGI("prop_save_data: Unpark key '%ls' (slot %u)", it->first.c_str(), it->second.senderSlot);
     g_parked.erase(it);
 }
 
@@ -236,6 +237,7 @@ void Park(const std::wstring& key, SR::SaveRecord&& rec, uint8_t senderSlot, siz
     use.count += 1;
     use.bytes += bytes;
     g_parked[key] = std::move(p);
+    UE_LOGI("prop_save_data: Parked record for key '%ls' (slot %u, seq %llu)", key.c_str(), senderSlot, g_parkSeq - 1);
 }
 
 // A client's intent is a write into the host's world, so its RATE is bounded per sender the way
@@ -272,8 +274,15 @@ bool AllowIntent(uint8_t senderSlot) {
 bool SendBody(coop::net::Session* s,int peerSlot,const std::wstring& key,const SR::SaveRecord& rec,
               const ue_wrap::CachedObjRef* source = nullptr);
 bool TryApply(void* actor, const std::wstring& key, const SR::SaveRecord& rec, uint64_t epoch) {
-    if (!actor) return false;
-    if (!Covers(actor)) { coop::dev::food_clock_probe::NoteRefused(actor); return false; }
+    if (!actor) {
+        UE_LOGW("prop_save_data: TryApply failed -- actor is null for key '%ls'", key.c_str());
+        return false;
+    }
+    if (!Covers(actor)) {
+        UE_LOGW("prop_save_data: TryApply failed -- actor %p does not cover save state for key '%ls'", actor, key.c_str());
+        coop::dev::food_clock_probe::NoteRefused(actor);
+        return false;
+    }
     ue_wrap::CachedObjRef identity;
     identity.Set(actor);
     // Client inventory records can arrive after the host has unlocked this safe.
@@ -286,13 +295,23 @@ bool TryApply(void* actor, const std::wstring& key, const SR::SaveRecord& rec, u
             // A claim parked before the safe existed may already have been
             // relayed. Correct that earlier canonical as soon as it can resolve.
             SendBody(g_session,-1,key,adjusted);
-            if(epoch!=g_worldEpoch||identity.Get()!=actor)return false;
+            if(epoch!=g_worldEpoch||identity.Get()!=actor) {
+                UE_LOGW("prop_save_data: TryApply failed -- identity changed after PreserveUnlocked for key '%ls'", key.c_str());
+                return false;
+            }
         }
         applied=&adjusted;
     }
-    if (!SR::ApplyRecord(actor, *applied)) return false;
-    if (epoch != g_worldEpoch || identity.Get() != actor) return false;
+    if (!SR::ApplyRecord(actor, *applied)) {
+        UE_LOGW("prop_save_data: TryApply failed -- SR::ApplyRecord returned false for key '%ls'", key.c_str());
+        return false;
+    }
+    if (epoch != g_worldEpoch || identity.Get() != actor) {
+        UE_LOGW("prop_save_data: TryApply failed -- identity changed after ApplyRecord for key '%ls'", key.c_str());
+        return false;
+    }
     ++g_appliedTotal;
+    UE_LOGI("prop_save_data: TryApply success for key '%ls' on actor %p", key.c_str(), actor);
     coop::dev::food_clock_probe::NoteApply(actor, key, *applied);
     return epoch == g_worldEpoch;
 }

@@ -5,8 +5,8 @@
 // puppet in the host's world drained the host; a PRE interceptor cancels those three entries
 // whenever `self` is not the local possessed player (a puppet, or the skin-preview mannequin),
 // while the victim's own machine computes the same contact natively. The reliable host-to-owner
-// PlayerDamage relay below is the send-and-apply half for host-detected enemy hits; no enemy
-// detection hook drives it yet, and the test entry does.
+// PlayerDamage relay below is the send-and-apply half for host-detected enemy hits;
+// grayboar_sync routes native bites on a puppet through it, as does the test entry.
 
 #pragma once
 

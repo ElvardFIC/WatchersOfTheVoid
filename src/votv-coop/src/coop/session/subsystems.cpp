@@ -155,6 +155,7 @@
 #include "coop/creatures/npc_sync.h"
 #include "coop/creatures/npc_world_enum.h"  // RegisterExistingWorldNpcs
 #include "coop/creatures/grayboar_sync.h"
+#include "coop/creatures/grayboar_actions.h"
 #include "coop/world/world_actor_sync.h"  // non-Character event-actor transform mirror (sibling of npc_sync)
 #include "coop/creatures/piramid_sync.h"  // piramid event choreography lane (mirror brain suppression + PyramidGather)
 #include "coop/player/players_registry.h"
@@ -216,6 +217,10 @@ void Install(coop::net::Session& session) {
     coop::world_actor_sync::Install(&session);  // non-Character event-actor mirror (2nd BeginDeferred interceptor, disjoint allowlist)
     coop::piramid_sync::Install(&session);  // piramid event choreography lane (hooks arm lazily on the first piramid element)
     coop::grayboar_sync::Install(&session);
+    coop::ariral_sync::Install(&session);
+    coop::deer_sync::Install(&session);
+    coop::centipede_sync::Install(&session);
+    coop::mannequin_sync::Install(&session);
     coop::item_activate::Install(&session);  // flashlight
     coop::player_damage::Install(&session);  // vitals damage relay (send + owner-apply)
     coop::weather_sync::Install(&session);  // weather
@@ -463,6 +468,7 @@ void ConnectReplayForSlot(int slot) {
     coop::event_cue_sync::QueueConnectBroadcastForSlot(slot);
     coop::madness_sync::QueueConnect(slot);
     coop::dingus_music_sync::QueueConnect(slot);
+    coop::grayboar_actions::QueueConnect(slot);
     // The chat lane's late-join answer: the lobby's chat record, oldest first, one message per
     // line. It lands retained on the joiner: arriving in a lobby must not replay a conversation
     // you were not in across your screen; it is there when you open the chat.
@@ -490,6 +496,7 @@ void DisconnectSlot(coop::net::Session& session, int slot) {
     coop::desk_short_circuit_sync::OnPeerLeft(slot);
     coop::madness_sync::OnPeerLeft(slot);
     coop::dingus_music_sync::OnPeerLeft(slot);
+    coop::grayboar_actions::OnPeerLeft(slot);
     coop::cord_sync::OnPeerLeft(slot);
     // Abort any snapshot drain to this slot, so it does not iterate every candidate into a dead
     // connection.
@@ -751,6 +758,7 @@ void TickGameplay(coop::net::Session& session, bool isConnected, bool isHost,
     coop::desk_short_circuit_sync::Tick();
     coop::madness_sync::Tick();
     coop::dingus_music_sync::Tick();
+    coop::grayboar_actions::Tick();
     { PP::Scope _s{PP::Bucket::Interactable}; ue_wrap::ScopedWalkTimer _w{"sync:cord_sync"}; coop::cord_sync::Tick(); }
     { PP::Scope _s{PP::Bucket::Interactable}; ue_wrap::ScopedWalkTimer _w{"sync:prop_support_sync"}; coop::prop_support_sync::Tick(session); }
     { PP::Scope _s{PP::Bucket::Interactable}; ue_wrap::ScopedWalkTimer _w{"sync:gravity_motion"}; coop::gravity_motion::Tick(session); }

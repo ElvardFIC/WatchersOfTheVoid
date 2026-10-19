@@ -12,6 +12,7 @@
 // prop here is in nobody's hand, and when a hand takes it that stream wins.
 
 #pragma once
+#include "ue_wrap/core/types.h"
 
 namespace coop::net {
 class Session;
@@ -30,6 +31,10 @@ void OnEnd(const coop::net::PropDriveEndPayload& p);
 // True while this stream has `actor` parked: its pose is the host's stream's, so a converge that
 // would move it or re-run its init() leaves it alone, as it leaves a held prop. Game thread.
 bool IsParked(void* actor);
+
+// Presentation-only velocity for an actively driven replica. A stopped segment
+// returns true with zero velocity; false leaves a native getter untouched.
+bool TryGetPresentationVelocity(void* actor, ue_wrap::FVector& velocity);
 
 // Session end: every driven prop gets its physics back. Game thread.
 void OnDisconnect();

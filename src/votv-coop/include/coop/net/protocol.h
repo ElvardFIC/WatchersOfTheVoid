@@ -1025,9 +1025,18 @@ enum class ReliableKind : uint8_t {
     PlacedSave = 197, // validated placement commits / host save actors and retirement; chunked, never relayed
     CeilingLampState = 198, // KeyedTogglePayload, actual lamp presentation including flicker; host only
     AmbientLightState = 199, // KeyedTogglePayload, ambient bottom-light visibility; host only
+    GrayboarAction = 200, // host attack/roar cosmetics; never gameplay-verb replay or blind relay
 };
 
 #pragma pack(push, 1)
+
+struct GrayboarActionPayload {
+    uint32_t eid, sequence;
+    float rate;
+    uint8_t action; // 1 attack, 2 roar, 3 death (cosmetic; never death/loot delegates)
+    float position=-1.f; // -1 live edge; >=0 current montage position for a joiner
+};
+static_assert(sizeof(GrayboarActionPayload)==17,"GrayboarActionPayload wire size");
 
 struct MadnessStatePayload {
     uint32_t sequence,eventId;
