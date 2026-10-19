@@ -161,6 +161,7 @@ void* g_setRotFn = nullptr;
 void* g_setTickFn = nullptr;
 void* g_getScaleFn = nullptr;
 void* g_setScaleFn = nullptr;
+void* g_setLifeFn = nullptr;
 void* g_setHiddenFn = nullptr;     // SetActorHiddenInGame (visual-only; instant-world deferred-hide)
 void* g_setCollisionFn = nullptr;  // SetActorEnableCollision (paired with hide so a hidden mirror is not grabbable)
 
@@ -190,6 +191,7 @@ bool ResolveActorFns() {
         if (!g_setTickFn) g_setTickFn = R::FindFunction(g_actorClass, P::name::SetActorTickEnabledFn);
         if (!g_getScaleFn) g_getScaleFn = R::FindFunction(g_actorClass, P::name::GetActorScale3DFn);
         if (!g_setScaleFn) g_setScaleFn = R::FindFunction(g_actorClass, P::name::SetActorScale3DFn);
+        if (!g_setLifeFn) g_setLifeFn = R::FindFunction(g_actorClass, P::name::SetLifeSpanFn);
         if (!g_setHiddenFn) g_setHiddenFn = R::FindFunction(g_actorClass, P::name::SetActorHiddenInGameFn);
         if (!g_setCollisionFn) g_setCollisionFn = R::FindFunction(g_actorClass, P::name::SetActorEnableCollisionFn);
     }
@@ -510,6 +512,12 @@ bool SetActorScale3D(void* actor, const FVector& scale) {
     ParamFrame f(g_setScaleFn);
     f.SetRaw(L"NewScale3D", &scale, sizeof(scale));
     return Call(actor, f);
+}
+
+bool SetActorLifeSpan(void* actor, float seconds) {
+    if (!actor || !ResolveActorFns() || !g_setLifeFn) return false;
+    ParamFrame f(g_setLifeFn);
+    return f.Set<float>(L"InLifespan", seconds) && Call(actor, f);
 }
 
 FRotator GetComponentWorldRotation(void* component) {

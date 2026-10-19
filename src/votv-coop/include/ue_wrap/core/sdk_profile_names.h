@@ -202,6 +202,7 @@ inline constexpr const wchar_t* GetActorForwardVectorFn = L"GetActorForwardVecto
 inline constexpr const wchar_t* GetActorUpVectorFn = L"GetActorUpVector";
 inline constexpr const wchar_t* SetActorRotationFn = L"K2_SetActorRotation";
 inline constexpr const wchar_t* SetActorScale3DFn = L"SetActorScale3D";  // AActor::SetActorScale3D(FVector) -> void
+inline constexpr const wchar_t* SetLifeSpanFn = L"SetLifeSpan";  // AActor::SetLifeSpan(float InLifespan) -> void
 inline constexpr const wchar_t* SetActorTickEnabledFn = L"SetActorTickEnabled";
 inline constexpr const wchar_t* SetActorHiddenInGameFn = L"SetActorHiddenInGame";        // AActor::SetActorHiddenInGame(bool bNewHidden) -- visual-only (instant-world deferred-hide)
 inline constexpr const wchar_t* SetActorEnableCollisionFn = L"SetActorEnableCollision";  // AActor::SetActorEnableCollision(bool bNewActorEnableCollision) -- paired with hide so a hidden mirror is not grabbable

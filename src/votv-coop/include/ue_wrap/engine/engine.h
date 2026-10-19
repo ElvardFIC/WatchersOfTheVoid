@@ -98,6 +98,10 @@ void* ParentActorOf(void* actor, std::wstring* outComponentName = nullptr);
 // on every convert and spawn. Game thread.
 bool SetActorScale3D(void* actor, const FVector& scale);
 
+// AActor::SetLifeSpan: the actor destroys itself `seconds` from now, by the engine's own lifespan expiry (the end an
+// InitialLifeSpan default gives). False on a resolution miss or a failed call. Game thread.
+bool SetActorLifeSpan(void* actor, float seconds);
+
 // UKismetSystemLibrary::CollectGarbage: a full purge at the end of the frame, paired with the
 // adoption sweep's destruction burst so pending-kill garbage does not wait for UE's 61 s periodic
 // purge. Game thread.
