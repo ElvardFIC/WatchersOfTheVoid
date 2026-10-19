@@ -50,7 +50,8 @@ void MarkDirtyFromVerb();
 bool TryConsumeDenyReap(uint8_t senderSlot, uint64_t rowHash);
 
 // Game thread, HOST, read by a drill: whether this lane has taken the rack with this eid into its view, and
-// every canonical it has sent since the process began, a joiner's seed included (never reset; a drill reads a delta).
+// every canonical send it has attempted since the process began, a joiner's seed included (never reset; a drill
+// reads a delta).
 bool HostSeesRack(uint32_t rackEid);
 uint64_t HostCanonicalsSent();
 

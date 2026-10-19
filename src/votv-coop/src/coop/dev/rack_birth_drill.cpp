@@ -142,9 +142,8 @@ bool ResolveRack() {
     ue_wrap::object_index::ForEachInstance(cls,
         [](void* ctx, void* obj, int32_t idx) {
             auto* out = static_cast<void**>(ctx);
-            if (*out || R::NameStartsWith(R::NameOf(obj), L"Default__")) return;
-            if (R::SlotFlags(idx) & (R::slot_flags::Dying | R::slot_flags::NotYetReadable)) return;
-            // The rack the lane mirrors: one the element registry has bound, not one still being built.
+            if (*out || (R::SlotFlags(idx) & (R::slot_flags::Dying | R::slot_flags::NotYetReadable))) return;
+            // The rack the lane mirrors: one the element registry has bound (never the class default object).
             const auto eid = coop::element::Registry::Get().EidForActor(obj);
             if (eid != 0 && eid != coop::element::kInvalidId) *out = obj;
         },
