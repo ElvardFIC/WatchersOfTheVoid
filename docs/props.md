@@ -232,9 +232,11 @@ text is the prop's save record and crosses on the record lane above with no mess
 - **One editor at a time.** The open editor claims the notebook, a claim keyed by the prop
   (`coop/interactables/device_occupancy`); a second peer pressing E on it is denied.
 - **What the editor wrote.** The editing peer publishes the notebook's record when it closes the
-  editor, and while it holds the claim once every 2 s when the page text differs from its last
-  publish. The open page is folded into `text` first: the widget writes `text` only on commit and
-  on quit. The host's own edit publishes the canonical the same way.
+  editor and, while it holds the claim, at the editor's own commit (focus leaving the box, or the
+  game's commit) when `text` differs from the last text published or applied, at most once every
+  2 s; a change the gate held back goes with the next commit or the close. Live text crosses at a
+  commit and at the close, not per keystroke: the widget writes `text` only then, and the lane reads
+  that array, never the box. The host's own edit publishes the canonical the same way.
 - **Who the host believes.** The host takes a client's record for a notebook from the slot that
   holds its claim, or from any slot while nobody holds it: a free notebook is anyone's to change,
   which a torn page added to it is. A record from another slot while a peer holds it is refused
@@ -267,9 +269,6 @@ text is the prop's save record and crosses on the record lane above with no mess
   published text included, and the claim table, so it reads the text as last published and is
   denied the editor while another peer holds it; the close then reaches it as an ordinary record.
 - **The ceiling.** A record over 32 KiB is refused with a log line and stays on the editing peer.
-- **A leak that remains.** Each 2 s read of the box returns an engine text object whose reference the
-  tree has no helper to release; the string made from it is freed. About one page of text data is
-  retained per read of a page that changed, of the order of a few KiB `[?]`.
 
 A page torn out of a notebook is `prop_notebook_paper_C`, born by a client's prop birth route
 (`coop/props/prop_drop_intent`). The drawn pixels of `prop_paper_drawable_C` are in no save
@@ -342,7 +341,7 @@ is built; concrete and food are designed and not built.
 | a stuck prop, and its unstick | the peer that sticks or frees it; every peer runs the component's own verb | one reliable message |
 | a self-changing prop's progression | the host | park, corrector or anchor, per prop |
 | notebook editor occupancy | the host arbitrates | a claim keyed by the owning prop |
-| notebook page text | the editing peer; the host takes it from the claim's holder, or from anyone while it is free | the notebook's own save record on the record lane, at the close and every 2 s while the text changes |
+| notebook page text | the editing peer; the host takes it from the claim's holder, or from anyone while it is free | the notebook's own save record on the record lane, at the editor's commit and at the close |
 | a client's shared-world spawners | the host | refused on a client at the script-body gate; shared-world content arrives only from the host |
 
 ## Wire messages

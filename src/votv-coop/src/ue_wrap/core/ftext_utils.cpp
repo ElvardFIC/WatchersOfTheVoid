@@ -111,11 +111,7 @@ bool MintFText(const wchar_t* s, void* out) {
 
 bool Resolved() { return Resolve(); }
 
-namespace {
-
-// The conversion both public readers share. `freeBuffer` hands the result FString's engine-allocated
-// buffer back to the engine heap once it is copied out.
-std::wstring ConvertToString(const void* ftext, bool freeBuffer) {
+std::wstring FTextToString(const void* ftext) {
     if (!ftext || !Resolve()) return {};
     static void* sConvTextToStrFn = nullptr;
     static const wchar_t* sInParam = nullptr;
@@ -130,21 +126,12 @@ std::wstring ConvertToString(const void* ftext, bool freeBuffer) {
     if (!f.valid() || !f.SetRaw(sInParam, ftext, kFTextSize)) return {};
     if (!ue_wrap::Call(g_ktlCdo, f)) return {};
     // The ReturnValue FString's buffer is engine-allocated inside the frame; copy
-    // before ~ParamFrame raw-frees the frame. (Unless freeBuffer, the FString heap buffer leaks
+    // before ~ParamFrame raw-frees the frame. (The FString heap buffer itself leaks
     // by the same deliberate mechanism -- bounded by human email rates.)
     R::FString ret{};
     if (!f.GetRaw(L"ReturnValue", &ret, sizeof(ret))) return {};
-    if (!ret.Data) return {};
-    std::wstring out;
-    if (ret.Num > 1) out.assign(ret.Data, static_cast<size_t>(ret.Num - 1));
-    if (freeBuffer) R::EngineFree(ret.Data);
-    return out;
+    if (!ret.Data || ret.Num <= 1) return {};
+    return std::wstring(ret.Data, static_cast<size_t>(ret.Num - 1));
 }
-
-}  // namespace
-
-std::wstring FTextToString(const void* ftext) { return ConvertToString(ftext, false); }
-
-std::wstring FTextToStringFreeing(const void* ftext) { return ConvertToString(ftext, true); }
 
 }  // namespace ue_wrap::ftext_utils

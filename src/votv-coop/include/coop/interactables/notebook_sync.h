@@ -4,7 +4,7 @@
 // already crosses on the prop record lane (coop/props/prop_save_data). This module adds the editor:
 //   - one editor at a time: ui_notebook_C open on a notebook holds the notebook's occupancy claim;
 //   - what the editor wrote reaches the record: the editing peer publishes at the editor's close and, while it
-//     holds the claim, once per kPublishEvery when the page changed (the open page is folded into `text`);
+//     holds the claim, at the editor's own commit, at most once per kPublishEvery when `text` changed;
 //   - the host takes a client's record from the slot holding the claim, or from any slot while nobody
 //     does (a free notebook is anyone's to change);
 //   - a client lets the claim go only after the host has answered its last publish, so the close reaches
@@ -47,8 +47,8 @@ struct Stats {
 };
 Stats StatsNow();
 
-// Has the 2 s examine taken its first look at this notebook, the text a later edit is measured from? An edit
-// made before that is not a change to publish.
+// Has the lane taken its first look at this notebook (at the editor's first commit), the text a later edit is
+// measured from? An edit made before that is not a change to publish.
 bool BaselineTaken(void* notebook);
 
 }  // namespace dev

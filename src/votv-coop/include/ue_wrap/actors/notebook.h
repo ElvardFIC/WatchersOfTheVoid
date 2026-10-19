@@ -33,26 +33,20 @@ void* NotebookOf(void* editorWidget);
 // The live drawable paper a draw widget is open on, else null.
 void* PaperOf(void* drawWidget);
 
-// The notebook's pages and its open page index. False when the class or the field does not resolve.
+// The notebook's pages (`text`, a TArray of FString: no FText is read). False when the class or the field
+// does not resolve.
 bool ReadPages(void* notebook, std::vector<std::wstring>& out);
 bool WritePages(void* notebook, const std::vector<std::wstring>& pages);
-bool ReadPage(void* notebook, int32_t& page);
 
-// The editor's own state: the text in its box, and whether it opened the notebook read-only.
-bool ReadEditorText(void* editorWidget, std::wstring& out);
+// The editor's own state: what it opened the notebook as (read-only or not), and a new text for its box.
 bool SetEditorText(void* editorWidget, const std::wstring& text);
 bool IsReadOnly(void* editorWidget);
 
-// What the widget's own commit does: the box's text becomes the open page of the notebook's `text`.
-// `pagesOut` receives the pages as they stand afterwards. False for a read-only editor, an open page
-// outside `text`, or a field that does not resolve (`pagesOut` is then untouched).
-bool CommitEditorPage(void* editorWidget, std::vector<std::wstring>& pagesOut);
-
 // The widget's own committed-text handler: the bound event of MLET_text's OnTextCommitted, which the box
-// raises when a typed page is committed. It cuts the text to 32 lines, writes it into the box and into the
-// open page of the notebook's `text`, and runs the graph, so the graph's watchers see it. A keystroke itself
-// raises only OnTextChanged, whose handler scrolls. The handler's name carries cooked numbers; false when it
-// does not resolve.
+// raises when a typed page is committed (focus leaving the box, or the game's commit). It cuts the text to 32
+// lines, writes it into the box and into the open page of the notebook's `text`, and runs the graph. A keystroke
+// itself raises only OnTextChanged, whose handler scrolls. The handler's name carries cooked numbers; false
+// when it does not resolve.
 bool CommitKeystroke(void* editorWidget, const std::wstring& text);
 
 // ui_notebook_C::init(clipboard, uneditable) again on the notebook the editor is open on: the widget's own

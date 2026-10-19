@@ -31,24 +31,23 @@ namespace N  = ue_wrap::notebook;
 namespace DS = ue_wrap::device_screen;
 using Clock = std::chrono::steady_clock;
 
-UE_FACT_FN(kNotebookGraph, "notebook_sync", L"ui_notebook_C", L"ExecuteUbergraph_ui_notebook", Declared);
+UE_FACT_FN(kNotebookCommit, "notebook_sync", L"ui_notebook_C", L"BndEvt__MultiLineEditableText_86_K2Node_ComponentBoundEvent_5_OnMultiLineEditableTextCommittedEvent__DelegateSignature", Declared);
 UE_FACT_FN(kNotebookQuit, "notebook_sync", L"ui_notebook_C", L"quit", Declared);
 UE_FACT_FN(kNotebookUsedOn, "notebook_sync", L"prop_notebook_C", L"playerUsedOn", Declared);
 
 std::atomic<coop::net::Session*> g_session{nullptr};
-bool g_graphWatched = false;
+bool g_commitWatched = false;
 bool g_quitWatched = false;
 bool g_usedWatched = false;
 bool g_registered = false;
 
-// The graph's POST fires on every event of the widget, a keystroke included, so the work behind it is
-// gated by time first: the page text is read and compared at most once per kPublishEvery.
+// A live publish is at most one per kPublishEvery; the close is never held by it.
 constexpr auto kPublishEvery = std::chrono::seconds(2);
 // A client lets go of the notebook's claim only after the host has answered its last publish; if the answer
 // does not come in this long it lets go anyway.
 constexpr auto kAckBound = std::chrono::seconds(10);
-Clock::time_point g_nextExamine{};
-// What the editing peer last published, or read when it began: the text a later examine compares to.
+Clock::time_point g_nextPublish{};
+// What the editing peer last published or applied, or read when it began: the text a commit compares to.
 struct Baseline {
     std::wstring key;
     std::wstring claim;
@@ -103,31 +102,42 @@ void PublishRecord(coop::net::Session* s, void* notebook, const std::wstring& ke
     ++g_flight.unacked;
 }
 
-void OnGraphPost(const sg::Call& c) {
+// The editor's own commit (the bound handler of the box's OnTextCommitted: focus leaving the box, or the
+// game's commit) writes the box into the open page of `text` and reloads the widget. It is the one event
+// in which the live text changes, so the lane reads the notebook's `text` array (strings only) around it and
+// no box is read. The PRE takes the first look at a notebook: the text it held before this commit is what
+// edits are measured from. The POST publishes when `text` now differs from the last text published or
+// applied, at most once per kPublishEvery; a change the gate held back goes with the next commit or the close.
+sg::Verdict OnCommitPre(const sg::Call& c) {
+    if (!Session()) return sg::Verdict::Run;
+    void* notebook = N::NotebookOf(c.object);
+    if (!notebook || N::IsReadOnly(c.object)) return sg::Verdict::Run;
+    const std::wstring claim = ClaimOf(notebook);
+    if (claim.empty() || !coop::device_occupancy::LocalHolds(claim.c_str())) return sg::Verdict::Run;
+    const std::wstring key = ue_wrap::prop::GetKeyString(notebook);
+    if (key.empty() || key == L"None" || g_base.key == key) return sg::Verdict::Run;
+    g_base.key = key;
+    g_base.claim = claim;
+    N::ReadPages(notebook, g_base.pages);
+    g_flight = Flight{};
+    g_pubClaim.clear();
+    return sg::Verdict::Run;
+}
+
+void OnCommitPost(const sg::Call& c) {
     const auto now = Clock::now();
-    if (now < g_nextExamine) return;
-    g_nextExamine = now + kPublishEvery;
     auto* s = Session();
-    if (!s) return;
+    if (!s || now < g_nextPublish) return;
     void* notebook = N::NotebookOf(c.object);
     if (!notebook || N::IsReadOnly(c.object)) return;
     const std::wstring claim = ClaimOf(notebook);
-    if (claim.empty() || !coop::device_occupancy::LocalHolds(claim.c_str())) return;
     const std::wstring key = ue_wrap::prop::GetKeyString(notebook);
-    if (key.empty() || key == L"None") return;
-    if (g_base.key != key) {
-        // The first look at this notebook: the text it opened with is what the edits are measured from.
-        g_base.key = key;
-        g_base.claim = claim;
-        N::ReadPages(notebook, g_base.pages);
-        g_flight = Flight{};
-        g_pubClaim.clear();
-        return;
-    }
+    if (claim.empty() || g_base.key != key || !coop::device_occupancy::LocalHolds(claim.c_str())) return;
     std::vector<std::wstring> pages;
-    if (!N::CommitEditorPage(c.object, pages) || pages == g_base.pages) return;
+    if (!N::ReadPages(notebook, pages) || pages == g_base.pages) return;
     PublishRecord(s, notebook, key, claim);
     g_base.pages = std::move(pages);
+    g_nextPublish = now + kPublishEvery;
 }
 
 sg::Verdict OnQuitPre(const sg::Call& c) {
@@ -153,7 +163,7 @@ void OnQuitPost(const sg::Call& c) {
         }
     }
     // The next open of any notebook takes its first look afresh.
-    g_nextExamine = {};
+    g_nextPublish = {};
     g_base = Baseline{};
 }
 
@@ -220,7 +230,7 @@ void ClaimEnded(const wchar_t* key) {
     if (g_flight.claim == key) g_flight = Flight{};
     if (g_base.claim == key) {
         g_base = Baseline{};
-        g_nextExamine = {};
+        g_nextPublish = {};
     }
 }
 
@@ -260,7 +270,7 @@ bool ApplyGate(void* actor) {
 
 void Install(coop::net::Session* session) {
     g_session.store(session, std::memory_order_release);
-    if (!g_graphWatched) g_graphWatched = sg::WatchName(kNotebookGraph, 0, nullptr, &OnGraphPost);
+    if (!g_commitWatched) g_commitWatched = sg::WatchName(kNotebookCommit, 0, &OnCommitPre, &OnCommitPost);
     if (!g_quitWatched) g_quitWatched = sg::WatchName(kNotebookQuit, 0, &OnQuitPre, &OnQuitPost);
     if (!g_usedWatched) g_usedWatched = sg::WatchName(kNotebookUsedOn, 1, &OnUsedPre, &OnUsedPost);
     if (!g_registered) {
@@ -299,7 +309,7 @@ Stats StatsNow() { return g_stats; }
 
 void OnDisconnect() {
     g_session.store(nullptr, std::memory_order_release);
-    g_nextExamine = {};
+    g_nextPublish = {};
     g_base = Baseline{};
     g_flight = Flight{};
     g_pubClaim.clear();

@@ -158,6 +158,14 @@ bool IsTypedPage(const std::wstring& s) {
            s.find(L"line " + std::to_wstring(kKeptLines + 1)) == std::wstring::npos;
 }
 
+// The notebook's first page as `text` keeps it, from the strings alone.
+bool StoredPage(void* book, std::wstring& out) {
+    std::vector<std::wstring> pages;
+    if (!N::ReadPages(book, pages) || pages.empty()) return false;
+    out = pages[0];
+    return true;
+}
+
 std::wstring FirstPage(void* book) {
     std::vector<std::wstring> pages;
     return N::ReadPages(book, pages) && !pages.empty() ? pages[0] : std::wstring(L"(no page read)");
@@ -305,8 +313,8 @@ void HostTick(coop::net::Session& s) {
         return;
     }
     case HStep::AwaitPeriodic: {
-        // The client has changed the page through the editor's commit and left the editor open: the lane's 2 s
-        // publish must carry it, with the client still holding the claim.
+        // The client has changed the page through the editor's commit and left the editor open: the lane's publish
+        // at that commit must carry it, with the client still holding the claim.
         if (!Due(g_hNextMs, kCheckEveryMs)) return;
         void* book = g_book.Get();
         if (!book) { HostFail("periodic", "the notebook died before the client's page arrived"); return; }
@@ -503,11 +511,11 @@ void ClientTick() {
         return;
     case CStep::ArmLook: {
         // The lane measures an edit from the text it first saw on the open notebook, so the page is left alone
-        // (the editor's own commit of the box's text, unchanged) until the lane says it has looked.
+        // (the editor's own commit of the notebook's first page, unchanged) until the lane says it has looked.
         if (!Due(g_cNextMs, kCheckEveryMs)) return;
         void* const widget = DS::ReadActiveInterface(player);
         std::wstring boxNow;
-        if (N::NotebookOf(widget) != g_cBook.Get() || !N::ReadEditorText(widget, boxNow)) {
+        if (N::NotebookOf(widget) != g_cBook.Get() || !StoredPage(g_cBook.Get(), boxNow)) {
             ClientFail("look", "the editor is no longer open on the notebook");
         } else if (coop::notebook_sync::dev::BaselineTaken(g_cBook.Get())) {
             CEnter(CStep::Type);
@@ -521,7 +529,7 @@ void ClientTick() {
     case CStep::Type: {
         // A page typed and left open: the box takes the text and the editor's commit handler writes it into the
         // notebook, as the box does when a typed page is committed. The commit repeats until the host has read
-        // the page, since the lane publishes on the first graph event after its 2 s gate.
+        // the page, so a publish the lane's 2 s gate held back goes with the next commit.
         void* const widget = DS::ReadActiveInterface(player);
         if (N::NotebookOf(widget) != g_cBook.Get() || !N::SetEditorText(widget, TypedPage()) ||
             !N::CommitKeystroke(widget, TypedPage())) {
@@ -540,11 +548,11 @@ void ClientTick() {
             return;
         }
         if (CExpired(kLegBoundMs)) { ClientFail("periodic", "the host never said it read the typed page"); return; }
-        // Committed again with what the box now holds (the cut page): a longer page would raise the limit's
+        // Committed again with the page as the notebook now keeps it (the cut page): a longer page would raise the limit's
         // hint at every commit.
         void* const widget = DS::ReadActiveInterface(player);
         std::wstring boxNow;
-        if (N::NotebookOf(widget) != g_cBook.Get() || !N::ReadEditorText(widget, boxNow) ||
+        if (N::NotebookOf(widget) != g_cBook.Get() || !StoredPage(g_cBook.Get(), boxNow) ||
             !N::CommitKeystroke(widget, boxNow))
             ClientFail("periodic", "the editor's commit handler did not dispatch");
         return;

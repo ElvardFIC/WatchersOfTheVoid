@@ -593,7 +593,7 @@ CFG_STRING(notebook_drill, "notebook_drill", "dev", "", "VOTVCOOP_NOTEBOOK_DRILL
     "client is in its world the host drops a notebook on a floor a route reaches and writes a seed page; the client "
     "walks to it, opens it with the notebook's own action and holds its claim; the host presses the open on its own "
     "copy, and the claim sends its editor out again; the client types a page and leaves the editor open, and the "
-    "host reads it (the 2 s publish) and checks that its rule refuses a slot that is not the holder; the client then "
+    "host reads it (the publish at the editor's commit) and checks that its rule refuses a slot that is not the holder; the client then "
     "writes a last page and closes with the editor's own quit, and the host's copy must read it, taken from the slot "
     "that still held the claim. A second client (the rig's "
     "--observer) reads the page too. rejoin -- the same, and the client's first life ends on \"client LIFE DONE\"; its "

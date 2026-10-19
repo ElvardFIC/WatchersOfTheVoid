@@ -48,7 +48,7 @@ int32_t OffsetOf(Slot& s, void* cls, const wchar_t* name) {
     return off;
 }
 
-Slot g_text, g_page, g_clipboard, g_box, g_paperDraw, g_uneditable;
+Slot g_text, g_clipboard, g_box, g_paperDraw, g_uneditable;
 
 // The object a pointer field of `owner` names, null while it is null, dead or the field is unknown.
 void* ReadObjectField(void* owner, Slot& slot, const wchar_t* field) {
@@ -92,30 +92,6 @@ bool WritePages(void* notebook, const std::vector<std::wstring>& pages) {
     return off >= 0 && field_io::WriteFStringArrayField(notebook, off, pages);
 }
 
-bool ReadPage(void* notebook, int32_t& page) {
-    if (!IsNotebook(notebook)) return false;
-    const int32_t off = OffsetOf(g_page, R::ClassOf(notebook), L"page");
-    if (off < 0) return false;
-    page = *reinterpret_cast<const int32_t*>(reinterpret_cast<const uint8_t*>(notebook) + off);
-    return true;
-}
-
-bool ReadEditorText(void* editorWidget, std::wstring& out) {
-    if (!IsEditorWidget(editorWidget)) return false;
-    void* box = ReadObjectField(editorWidget, g_box, L"MLET_text");
-    void* fn = box ? R::FindDispatchFunctionCached(R::ClassOf(box), L"GetText") : nullptr;
-    if (!fn) return false;
-    ParamFrame frame(fn);
-    if (!frame.valid() || !Call(box, frame)) return false;
-    uint8_t ftext[ftext_utils::kFTextSize]{};
-    if (!frame.GetRaw(L"ReturnValue", ftext, sizeof(ftext))) return false;
-    // The FString the conversion makes goes back to the engine heap. The FText keeps the reference its
-    // call took (ftext_utils.h): the tree has no helper that releases an FText, and EngineFree is for flat
-    // buffers, not for text data the engine may share. About one page of text data stays per read.
-    out = ftext_utils::FTextToStringFreeing(ftext);
-    return true;
-}
-
 bool SetEditorText(void* editorWidget, const std::wstring& text) {
     if (!IsEditorWidget(editorWidget)) return false;
     void* box = ReadObjectField(editorWidget, g_box, L"MLET_text");
@@ -137,23 +113,6 @@ bool IsReadOnly(void* editorWidget) {
         g_uneditable = Slot{cls, object_index::ClassListingId(cls), off, mask};
     }
     return (*(reinterpret_cast<const uint8_t*>(editorWidget) + g_uneditable.off) & g_uneditable.mask) != 0;
-}
-
-bool CommitEditorPage(void* editorWidget, std::vector<std::wstring>& pagesOut) {
-    void* notebook = NotebookOf(editorWidget);
-    if (!notebook || IsReadOnly(editorWidget)) return false;
-    std::wstring boxText;
-    std::vector<std::wstring> pages;
-    int32_t page = -1;
-    if (!ReadEditorText(editorWidget, boxText) || !ReadPages(notebook, pages) || !ReadPage(notebook, page))
-        return false;
-    if (page < 0 || static_cast<size_t>(page) >= pages.size()) return false;
-    if (pages[static_cast<size_t>(page)] != boxText) {
-        pages[static_cast<size_t>(page)] = boxText;
-        if (!WritePages(notebook, pages)) return false;
-    }
-    pagesOut = std::move(pages);
-    return true;
 }
 
 bool CommitKeystroke(void* editorWidget, const std::wstring& text) {

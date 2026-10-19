@@ -1,7 +1,7 @@
 // coop/dev/notebook_drill.h -- [dev] a notebook's page is written at one peer's editor and read on the others.
 //   HOST     -- drops a prop_notebook_C beside the client and seeds its first page. While the client holds the
 //               claim it presses the open on its own copy (the claim sends its editor out), then reads the page
-//               the client typed and left open (the 2 s publish), asks its rule about a slot that is not the
+//               the client typed and left open (the publish at the editor's commit), asks its rule about a slot that is not the
 //               holder (refused), reads the page the client closed with (taken from the slot still holding),
 //               and, once the claim is released, asks the rule again (any slot's record is taken).
 //   CLIENT   -- walks to the notebook, opens it, types a page through the editor's commit handler and waits for

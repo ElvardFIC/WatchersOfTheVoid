@@ -47,9 +47,4 @@ bool Resolved();
 // struct member on a live object). Empty on failure / unresolved. Game thread.
 std::wstring FTextToString(const void* ftext);
 
-// The same read for a caller that runs it repeatedly: the result FString's buffer, which the engine
-// allocated into the call's frame, goes back to the engine heap (reflection::EngineFree) once copied.
-// The FText argument is untouched and its reference, if the caller made it, stays the caller's.
-std::wstring FTextToStringFreeing(const void* ftext);
-
 }  // namespace ue_wrap::ftext_utils
