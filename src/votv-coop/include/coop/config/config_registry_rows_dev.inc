@@ -110,6 +110,9 @@ CFG_FLAG(drive_selftest, "drive_selftest", "dev", false, "VOTVCOOP_DRIVE_SELFTES
 CFG_FLAG(rack_birth_drill, "rack_birth_drill", "dev", false, "VOTVCOOP_RACK_BIRTH_DRILL",
     "Drill (BOTH peers): once a client's world is ready the host spawns a drive rack holding four rows; the client "
     "must hold them and send the host no op. Lines tagged [RACK-BIRTH]; the client's DONE line ends it.")
+CFG_FLAG(burn_revive_drill, "burn_revive_drill", "dev", false, "VOTVCOOP_BURN_REVIVE_DRILL",
+    "Drill (the CLIENT): the player is set on fire, dies, and must be revived not burning. Lines tagged "
+    "[BURN-REVIVE]; the client's DONE line ends it.")
 CFG_FLAG(desk_snd_selftest, "desk_snd_selftest", "dev", false, nullptr,
     "Autonomous selftest: desk sound mirror.")
 CFG_FLAG(container_selftest, "container_selftest", "dev", false, "VOTVCOOP_CONTAINER_SELFTEST",

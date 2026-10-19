@@ -17,6 +17,7 @@
 #include "coop/dev/door_drill.h"  // [dev] whether a remote player counts in a door's own sensor
 #include "coop/dev/drive_selftest.h"  // [dev] rack-lane e2e circles
 #include "coop/dev/rack_birth_drill.h"  // [dev] a rack born holding rows reaches the client, which sends no op
+#include "coop/dev/burn_revive_drill.h"  // [dev] a client who dies burning is revived with no fire
 #include "coop/dev/drone_call_drill.h"  // [dev] a client's console press flies the host's drone
 #include "coop/dev/atv_spawn_drill.h"  // [dev] a runtime ATV reaches each client once
 #include "coop/dev/throw_drill.h"  // [dev] a thrown container keeps its contents on the host
@@ -142,6 +143,7 @@ void Install(coop::net::Session& session) {
     coop::dev::container_selftest::Install(&session);  // [dev] the container-lane e2e circle (no-op unless container_selftest=1)
     coop::dev::drive_selftest::Install(&session);  // [dev] rack-lane e2e circles (no-op unless drive_selftest=1)
     coop::dev::rack_birth_drill::Install(&session);  // [dev] the rack birth drill (no-op unless rack_birth_drill=1)
+    coop::dev::burn_revive_drill::Install(&session);  // [dev] the burn revive drill (no-op unless burn_revive_drill=1)
     coop::dev::hand_drop_selftest::Install(&session);  // [dev] hand pickup+drop episodes (no-op unless hand_drop_selftest=1)
     coop::dev::floppy_selftest::Install(&session);  // [dev] disc/server insert+eject episodes (no-op unless floppy_selftest=1)
     coop::dev::hookdrag_selftest::Install(&session);  // [dev] a hook-dragged prop, both peers logging its position (no-op unless hookdrag_selftest=1)
@@ -196,6 +198,7 @@ void EndSession() {
     coop::dev::drive_drill::OnDisconnect();  // [dev] the same for the drive drill
     coop::dev::download_drill::OnDisconnect();  // [dev] the same for the download drill
     coop::dev::rack_birth_drill::OnDisconnect();  // [dev] a rejoin's peers run the drill again
+    coop::dev::burn_revive_drill::OnDisconnect();  // [dev] a rejoin's client runs the drill again
     coop::dev::settings_drill::OnDisconnect();  // [dev] the steps start over
     coop::dev::mannequin_drill::OnDisconnect();  // [dev] the client's samples belong to one session
     coop::dev::laptop_drill::OnDisconnect();  // [dev] a rejoin's peers run their legs again
@@ -322,6 +325,7 @@ void TickDrills(coop::net::Session& session) {
     coop::dev::pause_quit_drill::Tick(&session);  // [dev] the pause-quit drill (a latched read when off)
     coop::dev::drive_selftest::Tick();  // [dev] rack-lane e2e circles (single bool read when off; 5 s self-throttle)
     coop::dev::rack_birth_drill::Tick();  // [dev] the rack birth drill (a latched read when off)
+    coop::dev::burn_revive_drill::Tick();  // [dev] the burn revive drill (a latched read when off)
     coop::dev::floppy_selftest::Tick();  // [dev] disc/server episodes (single bool read when off; 6 s census period)
     coop::dev::hookdrag_selftest::Tick();  // [dev] the hook drag and its 4 Hz position log (single bool read when off)
     coop::dev::hand_drop_selftest::Tick();  // [dev] hand pickup+drop episodes (single bool read when off)
