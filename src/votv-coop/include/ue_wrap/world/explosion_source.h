@@ -13,6 +13,11 @@ enum class Kind : uint8_t { None, Rocket, Sticky, Grenade, Pipebomb, Player, Poo
 // prop_grenade_soap_C; null for None.
 const wchar_t* ClassName(Kind k);
 
+// The kind whose class is exactly `cls`, never a subclass (prop_moabRocket_C derives from prop_rocket_C and is not
+// a source): a class held by Resolve is compared by pointer, one not held yet by the class's own name. None for
+// any other class, and for null. Game thread.
+Kind KindOfClass(void* cls);
+
 // Each class by object_index::ClassByName once the index backlog is empty, re-resolved when the index's listing
 // changes (a class unlisted since the last call is looked up again); never a walk. Cheap once all are held.
 // Game thread.

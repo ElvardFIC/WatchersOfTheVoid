@@ -341,6 +341,7 @@ Every place two seams can express one actor, and what deduplicates it:
 | a conversion's fresh prop and the generic spawn seams | the captured form is tracked and its broadcast suppressed `[V]` |
 | a joiner's save-loaded Bad Sun copy and the seed's present, or the host's live present | the apply counts the live copies first: one copy is left alone, none is spawned, two are logged and not repaired `[V]` (the drill's rejoin) |
 | a client's menu-spawned prop and the host's copy of it, spawned from the intent | the client's own actor IS the mirror: the host sets the client's key, and the echo resolves it back to that actor and converges its pose instead of minting a second `[V]` |
+| a client's own rocket, sticky bomb, held grenade or pipe bomb, or pilled burn: the client's dissolved birth and the host's blast its request makes | one blast: the client's birth is dissolved and never spawns; the host's blast reaches every peer as `ExplosionSpawn`, the requester included `[?]` until the drill's arms |
 
 ## Needs a probe
 

@@ -130,7 +130,10 @@ Counters& MutCounters() { return g_counters; }
 
 }  // namespace detail
 
-void Install(coop::net::Session* s) { g_session.store(s, std::memory_order_release); }
+void Install(coop::net::Session* s) {
+    g_session.store(s, std::memory_order_release);
+    detail::InstallClient();
+}
 
 void Tick() {
     XS::Resolve();
@@ -169,7 +172,13 @@ void OnDisconnect() {
         UE_LOGI("[EXPLOSION] request lane at disconnect: shots=%llu requests=%llu evicted=%llu expired=%llu refused%s",
                 static_cast<unsigned long long>(c.shotsAccepted), static_cast<unsigned long long>(c.requestsAccepted),
                 static_cast<unsigned long long>(c.evicted), static_cast<unsigned long long>(c.expired), line);
+    if (c.shotsSent || c.requestsSent || c.pendingDropped || c.pendingDead)
+        UE_LOGI("[EXPLOSION] request lane at disconnect (client): shotsSent=%llu requestsSent=%llu "
+                "pendingDropped=%llu pendingDead=%llu", static_cast<unsigned long long>(c.shotsSent),
+                static_cast<unsigned long long>(c.requestsSent), static_cast<unsigned long long>(c.pendingDropped),
+                static_cast<unsigned long long>(c.pendingDead));
     for (int i = 0; i < g_slots.size(); ++i) g_slots[i] = detail::Slot{};
+    detail::ClearClient();
     g_counters = detail::Counters{};
     g_refusals.Clear();
 }

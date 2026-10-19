@@ -5,6 +5,7 @@
 #include "ue_wrap/core/hot_path_guard.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/object_index.h"
+#include "ue_wrap/core/reflection.h"
 
 namespace ue_wrap::explosion_source {
 namespace {
@@ -47,6 +48,20 @@ const wchar_t* ClassName(Kind k) {
         case Kind::None:        break;
     }
     return nullptr;
+}
+
+Kind KindOfClass(void* cls) {
+    UE_ASSERT_GAME_THREAD("explosion_source::KindOfClass");
+    if (!cls) return Kind::None;
+    Sync();
+    for (int i = 0; i < kCount; ++i) {
+        if (void* known = g_cls[i]) {
+            if (known == cls) return At(i);
+        } else if (reflection::NameEquals(reflection::NameOf(cls), ClassName(At(i)))) {
+            return At(i);
+        }
+    }
+    return Kind::None;
 }
 
 void Resolve() {

@@ -114,19 +114,24 @@ uint64_t NowMs() {
 }
 
 // Every Blueprint deferred spawn passes here: a null test and one client-session test (a host or single player
-// stops there), then up to three pointer or name tests and a two-step super walk on a miss.
+// stops there), the projectile note's class compare, then up to three pointer or name tests and a two-step super
+// walk on a miss.
 //
 // A match is dissolved: the Blueprint's result is nulled, so what it does with the spawn reads nothing, and the
 // unfinished actor is destroyed by a posted task, never inside the callback (the native call is still on the
 // stack). The task validates by the slot, since an unfinished deferred actor can fail a serial test.
 //
-// MTA cancels the same way and then requests the explosion its own player owns (CClientExplosionManager.cpp:148,188);
-// that request half is EX-2's, and until it lands a client's own explosion exists on no peer.
+// MTA cancels the same way and then requests the explosion its own player owns (CClientExplosionManager.cpp:148,188):
+// here a rocket or sticky bomb born inside its launcher's fire body is noted before the filter, and an explosion's
+// birth sends its request (coop/world/explosion_request_client.cpp) before the dissolve nulls the result.
 void OnBirth(void* /*context*/, void* sourceObject, void* result) {
     if (!result || !coop::spawn_authority::IsActiveClientSession()) return;
+    coop::explosion_request::OnClientProjectileBirth(result);
     bool byName = false;
-    if (X::ClassIdOf(R::ClassOf(result), byName) < 0) return;
+    const int classId = X::ClassIdOf(R::ClassOf(result), byName);
+    if (classId < 0) return;
     if (InLaneSpawnScope()) return;
+    if (classId == static_cast<int>(X::Cls::Explosion)) coop::explosion_request::OnClientBirth(sourceObject, result);
     const int32_t index = R::InternalIndexOf(result);
     if (void** r = static_cast<void**>(UH::CurrentResult())) *r = nullptr;
     GT::Post([result, index] {

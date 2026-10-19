@@ -1,6 +1,7 @@
 // coop/world/explosion_sync.h -- the explosions of the game, as a co-op peer sees them: a client's own game makes
 // none (the host's are the shared world's), so the seam on every Blueprint deferred spawn dissolves the explosion a
-// client's own game spawns. The host captures each explosion its game runs and sends it as an ExplosionSpawn; a
+// client's own game spawns, after it asks the host for the one its own player caused (coop/world/explosion_request.h).
+// The host captures each explosion its game runs and sends it as an ExplosionSpawn; a
 // client checks what it receives and spawns the copy in the lane's scope. Single player is untouched.
 #pragma once
 

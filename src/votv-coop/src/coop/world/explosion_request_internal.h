@@ -1,7 +1,9 @@
 // coop/world/explosion_request_internal.h -- what the explosion request lane's files share: the host's per-slot
-// queues and shot table, the budgets, the refusal reasons with their counters, the judges, and the session.
-// Declarations only; the queue and counter definitions sit in explosion_request.cpp and the judges in
-// explosion_request_host.cpp. Impl-private: nothing outside coop/world includes this.
+// queues and shot table, the budgets, the refusal reasons with their counters, the judges, the client half's
+// install and clear, and the session.
+// Declarations only; the queue and counter definitions sit in explosion_request.cpp, the judges in
+// explosion_request_host.cpp and the client half in explosion_request_client.cpp. Impl-private: nothing outside
+// coop/world includes this.
 
 #pragma once
 
@@ -86,8 +88,17 @@ Slot& SlotOf(uint8_t slot);
 struct Counters {
     uint64_t refused[static_cast<int>(Refusal::Count)];
     uint64_t shotsAccepted, requestsAccepted, evicted, expired;
+    // The client half: shots and requests sent, pending births pushed out by the cap, and pending births whose
+    // projectile died inside the fire body.
+    uint64_t shotsSent, requestsSent, pendingDropped, pendingDead;
 };
 Counters& MutCounters();
+
+// The client half, in explosion_request_client.cpp. InstallClient takes the fire watches (retried on a throttle
+// until each is live or given up, both roles) and the object index's death listener; ClearClient forgets the
+// session's pending births, sent shots, shot counter and one-shot logs.
+void InstallClient();
+void ClearClient();
 
 // The three judges, one per queue, in explosion_request_host.cpp. Each returns Done (accepted or refused) except
 // at its Waits, each bounded for an honest sender: the hand lane's refill, or the slot's own Fired queue draining.
