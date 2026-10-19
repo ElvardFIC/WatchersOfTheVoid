@@ -2,11 +2,13 @@
 
 #include "coop/interactables/notebook_sync.h"
 
+#include "coop/comms/peer_action_feed.h"
 #include "coop/interactables/device_occupancy.h"
 #include "coop/net/session.h"
 #include "coop/player/players_registry.h"
 #include "coop/props/prop_key_index.h"
 #include "coop/props/prop_record_gates.h"
+#include "coop/props/prop_sound.h"
 #include "coop/props/prop_save_data.h"
 #include "ue_wrap/actors/notebook.h"
 #include "ue_wrap/actors/prop.h"
@@ -95,6 +97,7 @@ std::wstring ClaimOf(void* notebook) {
 void PublishRecord(coop::net::Session* s, void* notebook, const std::wstring& key,
                    const std::wstring& claim) {
     if (!coop::prop_save_data::Publish(s, notebook, key)) return;
+    ++g_stats.published;
     g_pubClaim = claim;
     if (s->role() == coop::net::Role::Host) return;
     g_flight.key = key;
@@ -168,20 +171,33 @@ void OnQuitPost(const sg::Call& c) {
 }
 
 // A page added to a notebook outside the editor: playerUsedOn with a torn sheet in the hand appends the
-// sheet's text to the notebook's and destroys the sheet. The text changed with no editor open and no
-// claim held, so the verb's POST publishes the record when the page count grew; the host's rule takes
-// it from whoever ran the verb while nobody holds the notebook.
+// sheet's text to the notebook's and destroys the sheet. The text changes with no editor open, so the
+// verb's POST publishes the record when the page count grew; the host's rule takes it from whoever ran the
+// verb while nobody holds the notebook. While another peer holds it the verb is cancelled at its PRE on the
+// peer that ran it: the open editor's close would overwrite the page on every peer, so it is never applied.
 ue_wrap::CachedObjRef g_used;
 size_t g_usedPagesBefore = 0;
 
 sg::Verdict OnUsedPre(const sg::Call& c) {
+    g_used.Reset();
     std::vector<std::wstring> pages;
-    if (N::ReadPages(c.object, pages)) {
-        g_used.Set(c.object);
-        g_usedPagesBefore = pages.size();
-    } else {
-        g_used.Reset();
+    if (!Session() || !N::ReadPages(c.object, pages)) return sg::Verdict::Run;
+    const std::wstring claim = DS::ClassifyDeviceActorClaimKey(c.object);
+    const uint8_t holder = claim.empty() ? uint8_t{0xFF} : coop::device_occupancy::HolderOf(claim.c_str());
+    if (holder != 0xFF && holder != coop::players::Registry::Get().LocalPeerId()) {
+        // The player keeps the sheet; the notice is the busy line the devices use, and the deny click.
+        static Clock::time_point nextNotice{};
+        if (Clock::now() >= nextNotice) {
+            nextNotice = Clock::now() + std::chrono::seconds(3);
+            coop::peer_action_feed::AnnounceDirect(holder, coop::peer_action_feed::Action::UsingDevice, L"the notebook");
+            if (void* local = coop::players::Registry::Get().Local()) coop::prop_sound::PlayDenyClick(local);
+            UE_LOGI("notebook_sync: a page was not added to notebook '%ls': slot %u has it open",
+                    ue_wrap::prop::GetKeyString(c.object).c_str(), static_cast<unsigned>(holder));
+        }
+        return sg::Verdict::Cancel;
     }
+    g_used.Set(c.object);
+    g_usedPagesBefore = pages.size();
     return sg::Verdict::Run;
 }
 
@@ -193,19 +209,6 @@ void OnUsedPost(const sg::Call&) {
     if (!notebook || !s || !N::ReadPages(notebook, pages) || pages.size() <= g_usedPagesBefore) return;
     const std::wstring key = ue_wrap::prop::GetKeyString(notebook);
     if (key.empty() || key == L"None") return;
-    // A notebook another peer has open is that editor's: the host would refuse this record, and the open
-    // editor's close would overwrite the page. The game cannot merge two writers, so the page stays here.
-    const std::wstring claim = DS::ClassifyDeviceActorClaimKey(notebook);
-    const uint8_t holder = claim.empty() ? uint8_t{0xFF} : coop::device_occupancy::HolderOf(claim.c_str());
-    if (holder != 0xFF && holder != coop::players::Registry::Get().LocalPeerId()) {
-        static bool said = false;
-        if (!said) {
-            said = true;
-            UE_LOGW("notebook_sync: a page was added to notebook '%ls' while slot %u has it open -- the page "
-                    "stays on this peer (said once)", key.c_str(), static_cast<unsigned>(holder));
-        }
-        return;
-    }
     coop::prop_save_data::Publish(s, notebook, key);
 }
 
@@ -217,9 +220,11 @@ bool ReleaseHold(const wchar_t* key) {
         ++g_stats.releaseWaits;
         return true;
     }
-    if (g_flight.unacked > 0)
+    if (g_flight.unacked > 0) {
+        ++g_stats.releasedByBound;
         UE_LOGW("notebook_sync: the host did not answer the close of '%ls' in %lld s -- releasing its claim anyway",
                 key, static_cast<long long>(std::chrono::duration_cast<std::chrono::seconds>(kAckBound).count()));
+    }
     return false;
 }
 
@@ -236,7 +241,9 @@ void ClaimEnded(const wchar_t* key) {
 
 // The editor shows a page loaded when it opened. A record applied to the notebook under it leaves the box
 // stale, and the box would write that page back at the next commit or quit, so the widget's own page load
-// (init) runs again once the apply is done, and the lane measures later edits from what was applied.
+// (init) runs again once the apply is done, and the lane measures later edits from what was applied. It runs
+// only before this peer's first publish of the claim, so nothing this peer typed has left it yet; what the
+// box holds uncommitted at that instant is dropped, and the window is the round trip after the grant.
 void ReloadAfterApply(const std::wstring& key) {
     ue_wrap::game_thread::Post([key] {
         void* notebook = coop::prop_key_index::Find(key);
@@ -245,7 +252,17 @@ void ReloadAfterApply(const std::wstring& key) {
         if (!notebook || N::NotebookOf(widget) != notebook) return;
         const std::wstring claim = DS::ClassifyDeviceActorClaimKey(notebook);
         if (claim.empty() || g_pubClaim == claim) return;   // its own publish stands, not the applied page
-        if (!N::ReloadEditor(widget)) return;
+        if (!N::ReloadEditor(widget)) {
+            // The record is on `text` and the box still shows the old page: the next commit would write it
+            // back. Said once so a run shows it.
+            static bool said = false;
+            if (!said) {
+                said = true;
+                UE_LOGW("notebook_sync: the editor's box could not be reloaded after a record for '%ls' applied "
+                        "(said once)", key.c_str());
+            }
+            return;
+        }
         if (g_base.key == key) N::ReadPages(notebook, g_base.pages);
     });
 }
@@ -254,7 +271,8 @@ void ReloadAfterApply(const std::wstring& key) {
 // record for it. Its own edit is the newer state; a record that comes back is the host's answer to one
 // of its publishes, or older. Before its first publish it has nothing newer to protect, and a record
 // the host sent before the grant (the previous editor's close, overtaken by the grant) applies, with
-// the editor's box reloaded from it.
+// the editor's box reloaded from it. Asked more than once for a record that fails to apply, it is safe: the
+// count moves only on the branch that drops the record, and a repeated reload is a repeated page load.
 bool ApplyGate(void* actor) {
     const std::wstring claim = DS::ClassifyDeviceActorClaimKey(actor);
     if (claim.empty() || !coop::device_occupancy::LocalHolds(claim.c_str())) return true;

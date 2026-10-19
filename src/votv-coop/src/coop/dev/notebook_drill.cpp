@@ -65,6 +65,9 @@ constexpr uint8_t kOtherSlot = 6;   // a slot that holds nothing: the rule is as
 constexpr const wchar_t* kSeedPage   = L"notebook drill: the page the host wrote";
 // The page typed and left open runs past the editor's 32-line limit, so the commit handler's cut is exercised: what
 // lands on the notebook is the first 32 lines.
+constexpr const wchar_t* kGatePage = L"notebook drill: the first page the gate lets through";
+constexpr uint64_t kGateMinMs = 1900;     // the lane gates its publishes 2 s apart; a second one sooner is a fault
+constexpr uint64_t kGateBoundMs = 10000;  // failure bound: the held-back change never went out
 constexpr int kTypedLines = 40;
 constexpr int kKeptLines = 32;
 constexpr const wchar_t* kEditedPage = L"notebook drill: the page the client wrote";
@@ -395,12 +398,16 @@ void HostTick(coop::net::Session& s) {
 
 // ---- CLIENT and OBSERVER ------------------------------------------------------------------------
 
-enum class CStep : uint8_t { Arm, Find, Walk, Open, AwaitClaim, AwaitJudged, ArmLook, Type, AwaitPeriodic, Edit, AwaitText, Done };
+enum class CStep : uint8_t { Arm, Find, Walk, Open, AwaitClaim, AwaitJudged, ArmLook, Gate, AwaitPeriodic, Edit, AwaitText, Done };
 CStep    g_c = CStep::Arm;
 const char* g_role = "client";
 uint64_t g_cStepMs = 0, g_cNextMs = 0;
 ue_wrap::CachedObjRef g_cBook;
 std::wstring g_cClaim;
+int      g_gatePhase = 0;            // 0 first change, 1 the typed page not yet committed, 2 repeating
+uint32_t g_gateBefore = 0;           // the lane's publish count when the gate leg began
+uint64_t g_gateFirstMs = 0;          // when the first change published
+bool     g_heardText = false;        // the host has said it read the client's last page
 std::shared_ptr<D::BackgroundWalk> g_walk;
 
 void CEnter(CStep s) {
@@ -518,7 +525,8 @@ void ClientTick() {
         if (N::NotebookOf(widget) != g_cBook.Get() || !StoredPage(g_cBook.Get(), boxNow)) {
             ClientFail("look", "the editor is no longer open on the notebook");
         } else if (coop::notebook_sync::dev::BaselineTaken(g_cBook.Get())) {
-            CEnter(CStep::Type);
+            g_gatePhase = 0;
+            CEnter(CStep::Gate);
         } else if (CExpired(kLegBoundMs)) {
             ClientFail("look", "the notebook sync never looked at the open notebook");
         } else if (!N::CommitKeystroke(widget, boxNow)) {
@@ -526,18 +534,44 @@ void ClientTick() {
         }
         return;
     }
-    case CStep::Type: {
-        // A page typed and left open: the box takes the text and the editor's commit handler writes it into the
-        // notebook, as the box does when a typed page is committed. The commit repeats until the host has read
-        // the page, so a publish the lane's 2 s gate held back goes with the next commit.
+    case CStep::Gate: {
+        // The lane's gate: a page typed and left open is committed through the editor's commit handler.
+        // A first change publishes at once; a second, different one within 2 s must not (exactly one
+        // publish), and goes out at the first commit after the gate. The commit repeats until then, since a
+        // publish the gate held back goes with the next commit.
         void* const widget = DS::ReadActiveInterface(player);
-        if (N::NotebookOf(widget) != g_cBook.Get() || !N::SetEditorText(widget, TypedPage()) ||
-            !N::CommitKeystroke(widget, TypedPage())) {
-            ClientFail("type", "the editor's box did not take the page");
+        if (N::NotebookOf(widget) != g_cBook.Get()) { ClientFail("gate", "the editor is no longer open on the notebook"); return; }
+        if (g_gatePhase == 0) {
+            g_gateBefore = coop::notebook_sync::dev::StatsNow().published;
+            if (!N::CommitKeystroke(widget, kGatePage)) { ClientFail("gate", "the editor's commit handler did not dispatch"); return; }
+            if (coop::notebook_sync::dev::StatsNow().published != g_gateBefore + 1) {
+                ClientFail("gate", "a first change at a commit did not publish");
+                return;
+            }
+            g_gateFirstMs = NowMs();
+            g_gatePhase = 1;
             return;
         }
-        UE_LOGI("[NOTE-DRILL] client typed a page and left the editor open");
-        CEnter(CStep::AwaitPeriodic);
+        if (!Due(g_cNextMs, kCheckEveryMs)) return;
+        std::wstring page;
+        if (!(g_gatePhase == 1 ? (page = TypedPage(), true) : StoredPage(g_cBook.Get(), page)) ||
+            !N::CommitKeystroke(widget, page)) {
+            ClientFail("gate", "the editor's commit handler did not dispatch");
+            return;
+        }
+        g_gatePhase = 2;   // the typed page is committed once; later commits repeat what the notebook keeps
+        const uint32_t published = coop::notebook_sync::dev::StatsNow().published;
+        const uint64_t since = NowMs() - g_gateFirstMs;
+        if (published == g_gateBefore + 1) {
+            if (since > kGateBoundMs) ClientFail("gate", "the change the gate held back was not published at a later commit");
+        } else if (published == g_gateBefore + 2 && since >= kGateMinMs) {
+            UE_LOGI("[NOTE-DRILL] client gate PASS -- one publish inside the 2 s gate, the next at the first commit "
+                    "after it (%llu ms)", static_cast<unsigned long long>(since));
+            CEnter(CStep::AwaitPeriodic);
+        } else {
+            ClientFail("gate", "publishes " + std::to_string(published - g_gateBefore) + " after " +
+                               std::to_string(since) + " ms: expected one inside 2 s and the next after it");
+        }
         return;
     }
     case CStep::AwaitPeriodic: {
@@ -569,17 +603,29 @@ void ClientTick() {
         }
         DS::ForceExitInterface(player);
         UE_LOGI("[NOTE-DRILL] client wrote its page and closed the editor (quit skipEdit=%d)", discard ? 1 : 0);
+        g_heardText = false;
         CEnter(CStep::AwaitText);
         return;
     }
     case CStep::AwaitText:
         if (!Due(g_cNextMs, kCheckEveryMs)) return;
-        if (HeardFromHost(kLineHasText)) {
-            // The release of the claim waited for the host's answer: it was read as due at least once before
-            // the answer came, which is what keeps the close ahead of the release.
-            const uint32_t waits = coop::notebook_sync::dev::StatsNow().releaseWaits;
-            if (waits == 0) { ClientFail("hold", "the claim's release did not wait for the host's answer"); return; }
-            UE_LOGI("[NOTE-DRILL] client hold PASS -- the release waited %u tick(s) for the host's answer", waits);
+        if (HeardFromHost(kLineHasText)) g_heardText = true;
+        if (g_heardText && coop::device_occupancy::LocalHolds(g_cClaim.c_str())) {
+            if (CExpired(kLegBoundMs)) ClientFail("hold", "the claim was never released after the close");
+            return;
+        }
+        if (g_heardText) {
+            // The release of the claim waited for the host's answer and ended on it: it was read as due at
+            // least once before the answer came, and not at the 10 s bound. That is what keeps the close
+            // ahead of the release, by the answer and not by a clock.
+            const coop::notebook_sync::dev::Stats st = coop::notebook_sync::dev::StatsNow();
+            if (st.releaseWaits == 0) { ClientFail("hold", "the claim's release did not wait for the host's answer"); return; }
+            if (st.releasedByBound != 0) {
+                ClientFail("hold", "the claim's release ended at the bound, not on the host's answer");
+                return;
+            }
+            UE_LOGI("[NOTE-DRILL] client hold PASS -- the release waited %u tick(s) and ended on the host's answer",
+                    st.releaseWaits);
             UE_LOGI("[NOTE-DRILL] client text PASS -- the host read the page");
             if (ModeOf() == Mode::Rejoin) UE_LOGI("[NOTE-DRILL] client LIFE DONE");
             else UE_LOGI("[NOTE-DRILL] client DONE");
@@ -617,6 +663,8 @@ void OnDisconnect() {
     g_claim.clear();
     g_statsBefore = coop::notebook_sync::dev::Stats{};
     g_cClaim.clear();
+    g_gatePhase = 0;
+    g_heardText = false;
 }
 
 }  // namespace coop::dev::notebook_drill

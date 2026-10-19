@@ -255,14 +255,18 @@ text is the prop's save record and crosses on the record lane above with no mess
   newer state. Before its first publish it has nothing newer to protect, so the previous editor's
   close, which the host sent before the grant and the grant overtook, is applied, and the open
   editor's page is reloaded from the notebook's `text` through the widget's own page load
-  (`init`), so the box shows what was applied and the lane measures later edits from it. The
+  (`init`), so the box shows what was applied and the lane measures later edits from it. Text
+  typed in the box and not yet committed at that instant is dropped by the reload; the window is
+  the round trip after the grant. If the reload does not dispatch, a warning says so once. The
   mark, the wait and the baseline reset when the claim ends, by whatever route: a release, a lost
   race, the world going down, the session ending.
 - **A page added outside the editor.** Using a torn sheet on a notebook (`playerUsedOn`) appends the
   sheet's text to the notebook's and destroys the sheet, with no editor open and no claim. The
   verb's end publishes the notebook's record when its page count grew, from whichever peer ran it;
-  the host's rule takes it while nobody holds the notebook. If another peer has the notebook open,
-  the page stays on the peer that added it, logged once: the game cannot merge two writers.
+  the host's rule takes it while nobody holds the notebook. While another peer has the notebook open
+  the verb is cancelled at its start on the peer that ran it: the sheet stays in the player's hand and
+  a notice names the holder, because the game cannot merge two writers and the open editor's close
+  would overwrite the page on every peer.
 - **Forced exits.** Ragdoll, a faint and death leave the interface without `quit`, as in the
   single-player game, so the box's uncommitted text is lost there and nothing is published.
 - **Late join.** A joiner is handed every prop's record in the snapshot, the notebook's last

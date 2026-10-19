@@ -254,7 +254,7 @@ void Install(coop::net::Session& session) {
     coop::turbine_sync::Install(&session);  // wind-turbine facing/spin mirror (host-auth ~1 Hz)
     coop::upgrade_sync::Install(&session);  // a client's upgrade purchase is charged and written by the host
     coop::device_occupancy::Install(&session);  // enterable-device occupancy (busy claim + E deny gate)
-    coop::notebook_sync::Install(&session);  // a notebook editor's page text rides the prop record lane: the close and the 2 s publish
+    coop::notebook_sync::Install(&session);  // a notebook editor's page text rides the prop record lane: the editor's commit and the close
     coop::console_state_sync::Install(&session);  // signal-catcher state mirror (sky signals + desk + dish aim)
     coop::signal_catch_sync::Install(&session);  // the signal-catch consume replay (dish slew + downloader arm on every peer)
     coop::laptop_sync::Install(&session);  // the stationary PC's power and the portable PC lid's wire

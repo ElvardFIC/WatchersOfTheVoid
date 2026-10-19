@@ -8,7 +8,8 @@
 //     slot that sent it;
 //   - an APPLY gate: asked before any record is written onto an actor of the class, on any peer; false
 //     drops the record (it is not parked: a gate that wants a record to wait has no use for this one).
-// A gate is asked for an actor of the class or below. Game thread.
+// A gate is asked for an actor of the class or below, and may be asked more than once for one record (a
+// record that fails to apply is asked again): a gate must be idempotent. Game thread.
 
 #pragma once
 
