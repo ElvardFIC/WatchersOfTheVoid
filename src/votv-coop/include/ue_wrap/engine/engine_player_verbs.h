@@ -1,4 +1,4 @@
-// ue_wrap/engine/engine_player_verbs.h -- the verbs a player pawn is hurt, swings or burns by, called as the game's own
+// ue_wrap/engine/engine_player_verbs.h -- the verbs that hurt, swing for or burn a player pawn, called as the game's own
 // Blueprints call them: `addDamage` (the int_objects interface's hit, which the pawn answers with its damage, and
 // with a punch when the hit is hard and has a source), `punch` (a knock-down: ragdoll, then the damage) and
 // `attack` (the melee swing), and the verbs of the player's fire, `ignite` and `extinguishFire`.
