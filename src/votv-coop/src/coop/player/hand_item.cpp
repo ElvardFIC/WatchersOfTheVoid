@@ -80,6 +80,7 @@ Mirror g_mirrors[coop::players::kMaxPeers];  // GT-only
 coop::net::Session* g_session = nullptr;
 
 // Owner-side change detection.
+uint32_t     g_ownAnnounceSeq = 0;  // own announces made, items and the empty hand alike
 bool         g_ownHas = false;
 std::wstring g_ownCls;
 std::wstring g_ownName;
@@ -429,6 +430,7 @@ void TickOwner(coop::net::Session& session, void* local, void* holdingProp) {
                 h.haveRel = false;
             }
             SendState(session, self, h);
+            ++g_ownAnnounceSeq;
             UE_LOGI("hand_item: local hand -> cls='%ls' name='%ls' item='%ls' (announced, rel %s)",
                     cls.c_str(), name.c_str(), item.c_str(), h.haveRel ? "measured" : "fallback");
             // No reconcile request here: the pickup's ground-actor death is caught at the destroy
@@ -454,6 +456,7 @@ void TickOwner(coop::net::Session& session, void* local, void* holdingProp) {
         h = SlotHand{};
         h.lastCls = last;
         SendState(session, self, h);
+        ++g_ownAnnounceSeq;
         UE_LOGI("hand_item: local hand -> EMPTY (announced)");
         // No reconcile request: the released actor was expressed above, and inventory spawns ride
         // the finish-spawn seam.
@@ -745,6 +748,8 @@ bool HeldClassIs(uint8_t slot, const wchar_t* cls) {
 bool OwnAnnounced(const wchar_t* cls) {
     return cls && g_ownHas && ::_wcsicmp(g_ownCls.c_str(), cls) == 0;
 }
+
+uint32_t OwnAnnounceSeq() { return g_ownAnnounceSeq; }
 
 bool LastHeldClassIs(uint8_t slot, const wchar_t* cls) {
     if (slot >= coop::players::kMaxPeers || !cls) return false;

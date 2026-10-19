@@ -96,6 +96,10 @@ bool HeldClassIs(uint8_t slot, const wchar_t* cls);
 // thread only.
 bool OwnAnnounced(const wchar_t* cls);
 
+// How many own announces (an item or the empty hand) this peer has made: one per change, at most one a tick.
+// Game thread only.
+uint32_t OwnAnnounceSeq();
+
 // Whether the class `slot`'s hand held last is the one named `cls`: the one it holds now or, since
 // the hand emptied, the one it held before. A host asks it of a verb that takes the held item as it
 // starts: a crowbar's pry, whose prying crowbar destroys the held one when it goes into the door, so

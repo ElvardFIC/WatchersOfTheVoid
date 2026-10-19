@@ -17,7 +17,6 @@
 #include "coop/world/explosion_recipe.h"
 #include "coop/world/spawn_authority.h"
 
-#include "ue_wrap/actors/prop.h"
 #include "ue_wrap/actors/vitals.h"
 #include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/log.h"
@@ -26,7 +25,6 @@
 #include "ue_wrap/core/script_gate.h"
 #include "ue_wrap/core/types.h"
 #include "ue_wrap/engine/engine.h"
-#include "ue_wrap/engine/engine_mainplayer.h"
 #include "ue_wrap/facts/function_row.h"
 #include "ue_wrap/world/explosion_source.h"
 
@@ -158,6 +156,7 @@ struct OutItem {
     coop::net::ProjectileFiredPayload  fired;
     coop::net::ExplosionRequestPayload request;
     RC::RequestKind                    kind;  // of `request`, so the counter slot never comes from the wire byte
+    uint32_t                           announceSeq;  // a shot's: the hand lane's own-announce count at the shot
 };
 constexpr size_t kOutboxCap = 16;
 OutItem g_outbox[kOutboxCap];
@@ -208,20 +207,6 @@ void Enqueue(const OutItem& item) {
     g_outbox[g_outboxCount++] = item;
 }
 
-// Whether the player's hand holds, this instant, an item of the class named `cls`: the live read, since the
-// announce state only moves once the announce goes out. Asked only while the outbox holds a waiting shot. It reads
-// the registry's local player, not the hand lane's own latch: a client's streams start only once its load tail has
-// settled, and until then that latch is unset while the hand already holds the launcher.
-bool LiveHandHolds(const wchar_t* cls) {
-    void* player = coop::players::Registry::Get().Local();
-    if (!player || !R::IsLive(player)) return false;
-    ue_wrap::engine::MainPlayerGrabState gs{};
-    if (!ue_wrap::engine::ReadMainPlayerGrabState(player, gs)) return false;
-    void* hand = gs.holdingActor;
-    if (!hand || !R::IsLive(hand) || !ue_wrap::prop::IsDescendantOfProp(hand)) return false;
-    return ::_wcsicmp(R::ClassNameOf(hand).c_str(), cls) == 0;
-}
-
 // A shot dropped because the hand left its launcher before the announce: it and its queued requests, counted.
 void DropNotAnnounced(uint32_t shotId) {
     detail::MutCounters().shotNotAnnounced += DropQueued(shotId);
@@ -269,8 +254,9 @@ void SendShot(coop::net::Session& s, const Pending& e) {
     AddShot(SentShot{e.actor, e.index, R::AllocateSlotSerial(e.index), p.shotId, e.projClass});
     if (!held) return;
     OutItem item{};
-    item.shot  = true;
-    item.fired = p;
+    item.shot        = true;
+    item.fired       = p;
+    item.announceSeq = coop::hand_item::OwnAnnounceSeq();
     Enqueue(item);
 }
 
@@ -399,8 +385,11 @@ void TickClient() {
             continue;
         }
         const wchar_t* cls = RC::LauncherClassName(head.fired.launcher);
+        // The launcher's announce sends it. Any other own announce since the shot (another item, or the empty hand)
+        // means the launcher will not be announced: dropped. No announce yet -- the hand lane may not have started,
+        // a client's streams wait for its load tail -- the shot waits. At most one announce a tick, so this is exact.
         if (!coop::hand_item::OwnAnnounced(cls)) {
-            if (LiveHandHolds(cls)) return;
+            if (coop::hand_item::OwnAnnounceSeq() == head.announceSeq) return;
             DropNotAnnounced(head.fired.shotId);
             continue;
         }
