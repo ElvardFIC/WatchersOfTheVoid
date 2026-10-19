@@ -19,6 +19,7 @@
 #include "ue_wrap/core/sdk_profile.h"
 #include "ue_wrap/core/sdk_profile_names.h"
 #include "ue_wrap/engine/engine.h"
+#include "ue_wrap/engine/engine_player_verbs.h"
 #include "ue_wrap/engine/screen_state.h"
 
 #include <windows.h>
@@ -90,7 +91,7 @@ bool  g_lastReviveOk = false;
 bool  g_reviveRanThisDeath = false;
 uint64_t g_cancelAtMs = 0;
 
-// The revive is six synchronous writes on one tick, so past a few ticks it is failure, not
+// The revive is ten synchronous engine calls on one tick, so past a few ticks it is failure, not
 // slowness. While dead the player can neither pause nor quit, so this window has no manual
 // exit; the deadline is the exit.
 constexpr uint64_t kReviveDeadlineMs = 3000;
@@ -381,8 +382,8 @@ bool DistanceToKpp(void* pawn, float& out) {
     return true;
 }
 
-// The revive: six writes, then the conjunction, each verified by reading the world back rather
-// than by the return of the call meant to cause it. A six-write sequence cannot be pre-proven;
+// The revive: ten engine calls, then the conjunction, each verified by reading the world back rather
+// than by the return of the call meant to cause it. A ten-call sequence cannot be pre-proven;
 // what is cheaply resolvable is pre-flighted, the rest is read back, and the player leaves for
 // the menu if the world disagrees.
 bool RunRevive(coop::net::Session& session, void* pawn) {
@@ -404,9 +405,10 @@ bool RunRevive(coop::net::Session& session, void* pawn) {
     float bloodTimeBefore = 0.f;
     const float bloodActors = ExpireBloodLoss(&bloodTimeBefore);
 
-    // The native reload used to reset the pawn's fire. This revive keeps the same pawn alive,
-    // so clear its burn timer explicitly; mainPlayer's tick turns off the flame when it reaches 0.
-    const bool fireCleared = V::Write(V::Field::BurningTime, 0.f);
+    // The native reload used to reset the pawn's fire. This revive keeps the same pawn alive, so
+    // the game's own end of a fire runs: the timer, the burning list and isBurning; the burn loop
+    // then turns the flame off.
+    const bool fireCleared = ue_wrap::engine::InvokeMainPlayerExtinguishFire(pawn);
 
     // 2. Health, before dead is cleared: while dead the player takes no damage, so the restore
     //    cannot race a hit. Full maxHealth, since a native death would have reloaded the save and
@@ -449,20 +451,23 @@ bool RunRevive(coop::net::Session& session, void* pawn) {
     // artifacts are retried on the following pump ticks instead.
     float burnTime = -1.f;
     const bool haveBurnTime = V::Read(V::Field::BurningTime, &burnTime);
-    const bool ok = vitalsOk && fireCleared && haveBurnTime && burnTime <= 0.f &&
+    float burning = 1.f;  // a Bool row reads 0 or 1; logged, not a term: the game does not show the flag
+    const bool haveBurning = V::Read(V::Field::Burning, &burning);
+    const bool ok = vitalsOk && haveBurnTime && burnTime <= 0.f &&
                     wokeUp && teleReported &&
                     deadCleared && haveState && !isRagdoll && !deadNow && haveHp && hp > 0.f &&
                     atKpp;
 
     UE_LOGI("death_revive: REVIVE %s after a run-ending authored by %ls -- vitals=%d wake=%d "
-            "tele=%d deadClr=%d fireClr=%d burn=%.1f "
+            "tele=%d deadClr=%d fireClr=%d burn=%.1f burning=%d "
             "| screen (retried, NOT a gate): black=%d dmgRed=%.2f bloodLoss=%.0f actor(s) @%.1fs "
             "| readback: ragdoll=%d dead=%d hp=%.1f distKPP=%.0f cm (tol %.0f)",
             ok ? "OK" : "FAILED",
             g_pendingAuthorClass.empty() ? L"(unrecorded)" : g_pendingAuthorClass.c_str(),
             vitalsOk ? 1 : 0, wokeUp ? 1 : 0,
             teleReported ? 1 : 0, deadCleared ? 1 : 0, fireCleared ? 1 : 0,
-            haveBurnTime ? burnTime : -1.f, blackCleared ? 1 : 0, redBefore, bloodActors, bloodTimeBefore,
+            haveBurnTime ? burnTime : -1.f, haveBurning ? static_cast<int>(burning) : -1,
+            blackCleared ? 1 : 0, redBefore, bloodActors, bloodTimeBefore,
             haveState ? (isRagdoll ? 1 : 0) : -1, haveState ? (deadNow ? 1 : 0) : -1,
             haveHp ? hp : -1.f, dist, kAtKppToleranceCm);
     (void)session;
