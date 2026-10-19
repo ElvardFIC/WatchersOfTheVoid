@@ -1,7 +1,8 @@
 // coop/dev/explosion_drill_source.h -- what the source arms' two files share: the leg table's types, the run's one
-// state, and the helpers the legs call. explosion_drill_source.cpp walks the legs and owns the held and salt ones;
+// state, and the helpers the legs call. explosion_drill_source.cpp walks the legs and owns the salt ones;
+// explosion_drill_source_verbs.cpp owns the held legs' verbs and the guard;
 // explosion_drill_source_measure.cpp owns the measure legs (sticky_parent, selfpill) and the host's thrown-prop watch.
-// Private to coop/dev: only those two files include it. Dev only; game thread.
+// Private to coop/dev: only those three files include it. Dev only; game thread.
 
 #pragma once
 
@@ -13,6 +14,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include <vector>
 
 namespace coop::dev::explosion_drill::detail {
@@ -28,6 +30,9 @@ constexpr float kMoveCm = 500.f;                          // how far the crate i
 // A refused spawn is the answer after a few tries at this gap, not a thing to hammer every frame.
 constexpr int  kSpawnTries = 3;
 constexpr auto kSpawnGap = std::chrono::milliseconds(500);
+
+constexpr const wchar_t* kRocketCls = L"prop_rocket_C";
+constexpr const wchar_t* kBombCls = L"prop_stickybomb_C";
 
 enum class Kind : uint8_t { Grenade, Pipebomb, Rocket, Sticky, SaltAttached, SaltFree, StickyParent, SelfPill };
 struct LegDef {
@@ -129,6 +134,27 @@ void LastText(char* out, size_t cap);
 
 // The held leg's start: its class loaded, the item taken into the hand.
 void BeginItem(const LegDef& d);
+
+// ---- explosion_drill_source_verbs.cpp ----
+
+// Holds the acting player's startInvinc and the gamemode's unlockFungunsInStory; the name of the first member that
+// cannot be read, else null. Unguard puts back what Guard held.
+const wchar_t* Guard();
+void Unguard();
+
+// The local hand's actor when it is live and of class `cls`; the class name of what the hand holds, or "none".
+void*       HeldOf(void* player, const wchar_t* cls);
+std::string HeldClassName(void* player);
+
+// The held legs' steps, walked by LegTick: the aim, the first verb and the throw after it, the sticky bomb's waits,
+// the launcher's detonate, and the wait on the explosion's birth.
+void Aim(void* player);
+void Act(const LegDef& d, void* player);
+void Act2(const LegDef& d, void* player);
+void AwaitBomb();
+void AwaitAttach();
+void Detonate(void* player);
+void Birth(const LegDef& d, bool host);
 
 // ---- explosion_drill_source_measure.cpp ----
 
