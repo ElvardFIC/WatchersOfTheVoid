@@ -1,5 +1,197 @@
 # TestLog — current status and source reports
 
+## Continued 2153: PC/laptop pages/cart and garden controls (19 October 2026)
+
+PASS run_laptop_ui.ps1 -CompileSources: two executables, five production units.
+The actual controller/chunker/parser tests cover holder/lease authorization,
+same-slot reclaims, stale/malformed input, authoritative join seeds, local echo
+protection, full-size multipart retry, independent recipient backpressure,
+final-exit ordering/retry, unready widget, reentrant receipt and world cleanup.
+The reflection/ParamFrame wrapper tests cover duplicate/order-sensitive cart
+rows, prefix retention, live catalog key stamping, validation before mutation,
+native slot reindexing, unnamed legacy cart recovery, effect readback, world
+changes and refusal to invoke purchase/camera-possession functions.
+
+PASS run_garden_sync.ps1 -CompileSources: seven executables/four production units.
+New action tests execute actual faucet/detach parser and script hooks: duplicate
+and rejected sequences, wrong peer/family/reach/endpoint, far-end reach, native
+host detach cleanup, queue retention/shared blob sequence and session/world/slot
+reset. Wrapper tests cover native action 5 and saved-key clearing before detach.
+PASS run_world_sound.ps1 -CompileSources: one executable/three production units,
+including the native faucet sound and zero-coordinate checks for 2D audio.
+
+Installed cooked-asset contracts now include the faucet's action/sound and
+PC/laptop cart mutators, native reindexing and camera side effects. PASS source
+router gate with seven injected controls, now 191 ReliableKinds. Full Release
+DLL builds at build/release-2153/main.dll (b2153), using restored local pinned
+build inputs. Current logs: build/laptop-ui-validation.log,
+build/garden-final-validation.log, build/sound-final-validation.log,
+build/build-2153-final.log, build/reliablekind-ui.log and
+build/sync-native-contract.json. No two-player gameplay or game installation.
+
+Final artifact PASS: complete AMD64 PE sections, start_mod/uninstall_mod exports,
+file/product version 0.9.0n b2153, Release (not Debug), ABI gate with injected
+violator and no UE4SS imports. Completed link: build/build-2153-incremental.log;
+Ninja dry-run has no pending work. DLL SHA-256:
+f32c974fdd2ec0ea9e2c9f6f9648134b49d8600b547ccc816865f97fc513d615.
+Manifest: build/sync-verification.json (14 executable checks plus asset/router/
+ABI gates). The installed game was not modified.
+
+Manual checks still needed on matching DLLs: base PC/portable-laptop handover,
+duplicate cart rows and purchase refusal restore, exit immediately after a cart
+edit, late join into a changed page/cart, faucet clicks and long-hose sprinkler
+detachment followed by shared pickup/save/reload. The rest of TODO stays open.
+
+## Continued 2153: guest hose routes and endpoint links (19 October 2026)
+
+PASS run_garden_sync.ps1 -CompileSources: six executables (garden_sync,
+garden_record, garden_wrapper, hose_route, hose_link, wall_enrollment_2167) and
+three production units. The new route test uses production controller and
+record/chunk transport: gesture deferral, explicit targeted acknowledgement,
+canonical-root retention across quaternion noise, stale State/Reply completion,
+conflicting edits, immutable retries, failed endpoint reach/ownership, two hoses
+reserving one sprinkler, blocked host gesture/link, partial sends, unknown and
+wrong-family identities, retirement, cancelled resume, slot/world callbacks.
+The native wrapper test exercises actual reflection/ParamFrame code: pointer
+and saved-key directions, nullable endpoints, former-owner cleanup, occupied
+endpoint refusal, repeated geometry dispatch, missing dependencies/metadata,
+world/serial guards and stale optional-key capture.
+
+Native contracts verify installed 0.9.0n resume/finish moving/tick flags,
+loadData versus processKeys/finish/gen, old component destruction and spline
+clear, stale sprinkler_key on detach, and faucet/sprinkler saved-key fields.
+PASS existing run_2166.ps1 -CompileSources. Logs: build/garden-hose-validation.log,
+build/wall-hose-regression.log; asset hashes: build/sync-native-contract.json.
+No DLL/package or two-player gameplay check. Completed routes are covered;
+placement motion, standalone sprinkler manipulation and watering remain open.
+
+## Continued 2153: gardening and native event sounds (19 October 2026)
+
+Follow-up PASS in the same garden suite: client bucket LMB/fertilizer result
+reserved before native spend, no result after native refusal, ordered transport
+retry without expiry for completed care, cancelled-body reservation cleanup,
+exact fertilizer weak identity, duplicate sequence and consumed source-key
+refusal, reach/tool/amount bounds and canonical host updates. Wrapper tests check
+native bucket ratio/minimum/capacity, empty proof, fertilizer stock=600 and stale
+no-reset. Native contract JSON now includes bucket/fertilizer asset hashes.
+This is owner-paid result publication, not durable acceptance/refunds across
+host rejection, disconnect or rapid tool switches; those remain OPEN.
+
+PASS run_garden_sync.ps1 -CompileSources: garden_sync, garden_record,
+garden_wrapper and existing wall_enrollment_2167; three production units.
+Coverage: native-key saved plants/taps/hoses, pre-session/solo host state,
+growth/water/fertilizer/ripeness/death, initial creator ack and later updates,
+missing-twin Refresh, malformed/foreign schemas, no identity mint on unkeyed
+vegetation, fair capture budget, send retry, travel/disconnect. Guest harvest
+checks reach/identity/generation/nonce/rate and retries requests without local
+loot. Production ParamFrame checks verify the collector argument, packed discard
+flag and ripe-to-harvested amount reset. Pocket refusal reports false while the
+native harvest runs, including a disconnect inside it.
+
+PASS run_world_sound.ps1 -CompileSources: one production-source executable and
+world_sound_sync/event_cue_sync/subsystems compiles. Covers actual black-hole
+continuation IDs, native audio parameters, alien/harvest positions, independent
+peer FIFO/backpressure, missing assets/dispatch retry, accepted-send dedup,
+recipient readiness, unknown/malformed cues, expiry/world/disconnect cleanup.
+
+PASS sync_native_contract_test.py against extracted installed 0.9.0n assets;
+native metadata/bytecode and SHA-256 evidence in build/sync-native-contract.json.
+PASS existing run_2166, run_2168 and run_2164 suites/production compiles.
+Evidence: build/garden-validation.log, build/world-sound-validation.log,
+build/wall-placement-garden-regression.log, build/wall-garden-regression.log and
+build/sky-sound-regression.log. MSVC 14.50.35717 / SDK 10.0.26100.0.
+These are offline checks, not two-player proof. No full DLL/package was built.
+Remaining synchronization scope and gameplay limitations are in TODO/WORK.
+
+## Continued 2153: host wall material replay (19 October 2026)
+
+wall_authority_2166_test.cpp exercises actual controller code: duplicate active
+and unprocessed pairs, recursive drains, failed-feed dedup, exact material replay
+permission, callback additions deferred to another tick and the eight-feed limit.
+Collision callbacks stop/reinstall the session, change role/running state or
+travel: no stale native feed/mutation resumes, no stale state is published, and
+repair refusal writes isFine=true to both local/caller storage. Offline and
+last-peer-departure host behavior remain native.
+
+wall_wrapper_2166_test.cpp uses production ParamFrame/reflection calls to verify
+post-query wall/material/world/class changes and overlap-component recycling or
+replacement. Obsolete collision results do not consume material; restored live
+components retry normally. FName conversion during travel prevents material lookup.
+
+PASS run_2168.ps1 -CompileSources: five executables, five production units,
+including newly covered wall_build_sync. PASS run_2166.ps1 -CompileSources:
+four executables and five production units covering placement/save records.
+Logs: build/wall-validation.log and build/wall-placement-validation.log.
+MSVC 14.50.35717 / SDK 10.0.26100.0. No full DLL or gameplay validation.
+Atomic client wall repair/material persistence is not implemented by these
+queue fixes and remains OPEN.
+
+## Continued 2153: playback progress and turn replacement (19 October 2026)
+
+grayboar_actions_test.cpp verifies actual production Start/Verify/Stop behavior:
+live/join playing and section getter failures resume verification without another
+play/seek; stopped montages emit no sound; failed/no-op seeks and crossed snapshots
+stop the stock montage; failed stops retry without replay and expire boundedly.
+Snapshot playback succeeds without JumpToSection; live playback waits for it.
+Missing stop/query/return metadata prevents start; native zero/refused playback
+retries; unreadable/nonfinite/negative post-call results enter cleanup.
+
+The callback matrix changes actor, AnimInstance, montage, world, session, registry
+authority/mapping and mesh during start/seek/queries and death/damage sound setup.
+No later audio/gameplay call escapes those changes. Replacement animation/mesh
+instances do not inherit pending progress. A reentrant Receive plus nested Tick
+preserves the in-flight phase and the following cue's order.
+
+grayboar_turn_test.cpp verifies neutral steering and pitch after same-address actor
+recycling or remapping, interpolation reset before another animation callback,
+late-replica binding, authority/retirement cleanup and expired-capacity reuse at
+receipt. Existing action/queue/turn tests still pass.
+
+PASS run_entity_sync.ps1: five executables and twelve production-unit compiles,
+MSVC 14.50.35717 / SDK 10.0.26100.0. Evidence:
+build/entity-sync-check/validation.log and verification.json. No full DLL/package
+or two-player run. A permanently refused engine stop remains a gameplay risk;
+expiry prevents an indefinite queue/replay loop but cannot force engine cleanup.
+
+## Continued 2153: queue isolation, fairness and identity (19 October 2026)
+
+Expanded grayboar_actions_test.cpp runs the actual production module with multiple
+recipients and actors. PASS: independent recipient FIFO across sequence wrap;
+failed-send retry without duplicate delivery; 32 cues per peer / 96 total; healthy
+peer delivery past another's capacity; expired/readiness/departed-slot cleanup;
+join snapshots behind a saturated peer and retry-age advancement.
+
+PASS: per-entity client FIFO with missing/late meshes; one action per entity and
+four attempts per tick, including refused engine playback; round-robin progress
+under continuous new arrivals; full queues/one-entity floods/expiry; weak identity
+at receipt or late binding; recycled/remapped/retired mirrors; disconnect during
+playback and reconnect. Join getters also exercise actor, session, world,
+authority and recipient departure changes before publication.
+
+PASS run_entity_sync.ps1: all five executables and twelve production-unit compiles
+with MSVC 14.50.35717 / SDK 10.0.26100.0. Current log:
+build/entity-sync-check/validation.log. Protocol and payload size are unchanged.
+Full DLL/native-asset/gameplay validation remains unavailable in this checkout;
+these results do not establish timing or creature behavior in a two-player game.
+
+## Continued 2153: verified host montage before live cues (19 October 2026)
+
+Current checkout is based on 0dce3afed (watchers-of-the-void-2150). New action
+regressions exercise the actual grayboar_actions production code: attack/roar/
+death require the expected active montage section and use its native rate.
+Stopped/wrong sections, missing mesh/metadata, all four failed montage queries,
+nonfinite/out-of-range values and actor/session/world/authority teardown refuse
+publication. Existing mid-action join, damage/death/audio and retry tests pass.
+
+PASS run_entity_sync.ps1: five regression executables, twelve production-unit
+compilations, MSVC 14.50.35717 and Windows SDK 10.0.26100.0. Evidence:
+build/entity-sync-check/validation.log. Run from the checkout after initializing
+the local environment with `. ./build/local-msvc.ps1`. The runner now accepts
+an initialized MSVC shell when the sibling private toolchain is unavailable.
+PASS git diff --check. No full DLL build, native asset tests, two-player test or
+package in this checkout; vcpkg and _research assets are absent. Earlier full
+build/package results below are retained historical evidence, not current checks.
+
 ## Continued 2153: nonlethal hit animation/audio (19 October 2026)
 
 Expanded grayboar_actions_test.cpp verifies four native-selected damage sections,

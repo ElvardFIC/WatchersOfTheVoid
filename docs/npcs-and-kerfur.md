@@ -191,3 +191,21 @@ The EntityPose row is 52 bytes, with 26 rows per MTU-bounded datagram.
 Both peers need the same new build. This changes orientation, not attack/FX replay.
 The grayboar body derives from prop_C and is excluded from the Character NPC lane;
 its helper grayboarPawn and body/AI association still need dedicated synchronization.
+Its live attack, roar and death cues require both a native flag transition and
+the matching active montage section; their rate comes from the playing montage
+(`coop/creatures/grayboar_actions`). Stopped or mismatched playback sends no cue.
+`[V]` production-source regressions verify these checks and preserve mid-action
+join playback. `[?]` Two-player animation/audio timing remains unverified.
+`[V]` Production-source regressions verify per-recipient ordered retries and
+32-cue capacities, so a failed/full recipient cannot block the others. Client
+retries rotate entity heads with at most four attempts per tick and one action
+per entity; a missing replica cannot block a ready one. Queued events retain
+weak actor identities and retire on replacement; join sampling rechecks ownership
+and recipient departure before publication. These are offline queue checks.
+`[V]` Action playback retains verification and cleanup progress after a successful
+start. Getter/stop retries cannot replay the accepted montage; audio requires a
+verified active section. Snapshot playback seeks directly without JumpToSection.
+Replaced mesh/animation/actor identities end pending playback, and turn samples
+reset to neutral on replica replacement. Tests cover these lifecycle paths.
+`[?]` A permanently refused native stop can outlast the bounded cleanup attempt;
+actual engine cleanup and audiovisual timing still require gameplay validation.

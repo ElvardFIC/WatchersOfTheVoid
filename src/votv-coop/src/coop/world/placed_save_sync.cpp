@@ -1,4 +1,5 @@
 #include "coop/world/placed_save_sync.h"
+#include "coop/world/garden_actions.h"
 #include "coop/world/wall_build_sync.h"
 #include "coop/element/intent_authority.h"
 #include "coop/element/object_scan_hub.h"
@@ -6,7 +7,9 @@
 #include "coop/net/blob_chunks.h"
 #include "coop/net/session.h"
 #include "coop/player/players_registry.h"
+#include "coop/player/remote_player.h"
 #include "coop/player/roster_ledger.h"
+#include "coop/player/hand_item.h"
 #include "ue_wrap/actors/placed_save.h"
 #include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/game_thread.h"
@@ -19,10 +22,13 @@
 #include "ue_wrap/engine/world_identity.h"
 #include "ue_wrap/world/keyed_objects.h"
 #include <chrono>
+#include <cmath>
 #include <algorithm>
+#include <array>
 #include <deque>
 #include <map>
 #include <random>
+#include <set>
 #include <vector>
 
 namespace coop::placed_save_sync {
@@ -32,7 +38,7 @@ namespace R = ue_wrap::reflection;
 namespace SG = ue_wrap::script_gate;
 namespace W = coop::save_record_wire;
 using Record = ue_wrap::save_record::SaveRecord;
-enum Op : uint8_t { Create, Remove, State, Retired };
+enum Op : uint8_t { Create, Remove, State, Retired, Refresh, Harvest, Care, HoseRoute, HoseReply };
 constexpr int kTag = 0x504C5341;
 constexpr size_t kMaxRows = 1024;
 constexpr uint64_t kRetryMs = 1000;
@@ -43,8 +49,13 @@ struct Row {
     bool dead = false, remove = false, dirty = false, link = false, retireLookup = false;
     uint8_t owner = 0;
     uint32_t playerNo = 0;
-    uint64_t next = 0, linkAt = 0, manualUntil = 0;
+    uint32_t hoseStateSeq = 0;
+    bool hoseStateSeen = false;
+    uint64_t next = 0, linkAt = 0, manualUntil = 0, pollAt = 0;
 };
+void ResetHoseState();
+bool Reach(uint8_t slot, const Record& record);
+void Dead(Row& row);
 std::map<std::wstring, Row> g_rows;
 net::Session* g_session = nullptr;
 blob_chunks::Assembler g_assembler;
@@ -54,9 +65,31 @@ uint64_t g_epoch = 0, g_sweep = 0, g_tickAt = 0;
 int g_applying = 0;
 bool g_busy = false, g_watched = false;
 bool g_scanRegistered = false;
-std::map<int32_t, ue_wrap::CachedObjRef> g_discoveredWalls;
-std::deque<ue_wrap::CachedObjRef> g_enrollWalls;
+std::map<int32_t, ue_wrap::CachedObjRef> g_discoveredPlaced;
+std::deque<ue_wrap::CachedObjRef> g_enrollPlaced;
+std::wstring g_pollCursor;
+struct Use {
+    std::wstring key; ue_wrap::CachedObjRef ref; uint32_t seq = 0; uint64_t expires = 0;
+    Op op=Harvest; P::CareUse care{};
+};
+struct Used { uint32_t seq = 0, playerNo = 0; uint64_t at = 0; };
+std::deque<Use> g_uses;
+std::array<Used, players::kMaxPeers> g_used{};
+uint32_t g_useSeq = 0;
+struct CareFrame {
+    ue_wrap::CachedObjRef tool, plant;
+    void* function=nullptr; // identity token for IsObjectBodyActive; never dereferenced
+    P::CareUse care; std::wstring key; uint64_t epoch=0;
+};
+std::vector<CareFrame> g_careFrames;
+std::set<std::pair<uint32_t,std::wstring>> g_spentFertilizers;
+ue_wrap::CachedObjRef g_harvestCollector;
 struct Applying { Applying() { ++g_applying; } ~Applying() { --g_applying; } };
+struct HarvestCollector {
+    ue_wrap::CachedObjRef previous = g_harvestCollector;
+    explicit HarvestCollector(void* actor) { g_harvestCollector.Set(actor); }
+    ~HarvestCollector() { g_harvestCollector = previous; }
+};
 uint64_t Now() {
     return uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now().time_since_epoch()).count());
@@ -66,7 +99,10 @@ bool Active() { return g_session && g_session->connected() && ue_wrap::game_thre
 bool Tracking() { return g_session && g_session->running() && ue_wrap::game_thread::IsGameThread() && (Host() || g_session->connected()); }
 void ResetWorld() {
     g_rows.clear(); g_assembler.Clear(); g_sweep = g_tickAt = 0; ++g_epoch;
-    g_discoveredWalls.clear(); g_enrollWalls.clear();
+    g_discoveredPlaced.clear(); g_enrollPlaced.clear(); g_pollCursor.clear();
+    g_uses.clear(); g_used = {};
+    g_careFrames.clear(); g_spentFertilizers.clear();
+    ResetHoseState();
     g_world = ue_wrap::world_identity::Generation();
 }
 void World() { if (g_world != ue_wrap::world_identity::Generation()) ResetWorld(); }
@@ -84,11 +120,13 @@ std::wstring Mint() {
     swprintf(key, 32, L"mvpl_%08x_%08x", g_nonce, ++g_keySeq);
     return key;
 }
-bool Send(Op op, const Record& record) {
+bool Send(Op op, const Record& record, uint32_t useSeq = 0, const P::CareUse* care=nullptr) {
     std::vector<uint8_t> bytes;
     W::AppU8(bytes, op);
-    if (op == Remove || op == Retired) W::AppWStr(bytes, record.key);
+    if (op == Remove || op == Retired || op == Refresh || op == Harvest || op == Care) W::AppWStr(bytes, record.key);
     else W::SerSave(bytes, record);
+    if (op == Harvest || op == Care) W::AppU32(bytes, useSeq);
+    if (op == Care && care) { W::AppU8(bytes,uint8_t(care->kind));W::AppWStr(bytes,care->sourceKey);W::AppF32(bytes,care->amount); }
     return blob_chunks::SendBlob(g_session, net::ReliableKind::PlacedSave, ++g_blobSeq, bytes);
 }
 bool ValidKey(const std::wstring& key) {
@@ -98,33 +136,47 @@ bool ValidKey(const std::wstring& key) {
 }
 // Discovery rides the shared sliced index pass. Never run getData/getKey from
 // its callback: those can reenter the engine or allocate objects.
-bool WallClass(void* actor) { return P::IsWall(P::ClassKind(R::ClassNameOf(actor))); }
+bool LegacyClass(const std::wstring& name) {
+    const auto kind = P::ClassKind(name);
+    return kind != P::Kind::None;
+}
+bool PlacedClass(void* actor) { return LegacyClass(R::ClassNameOf(actor)); }
 bool ScanReady() { return true; }
 void ScanBegin(void*, bool) {
     if (!Tracking() || !Host()) return;
     World();
-    std::erase_if(g_discoveredWalls, [](const auto& p) { return !p.second.Get(); });
+    std::erase_if(g_discoveredPlaced, [](const auto& p) { return !p.second.Get(); });
 }
-void ScanWall(void*, void* actor) {
+void ScanPlaced(void*, void* actor) {
     if (!Tracking() || !Host() || !actor || !R::IsLive(actor)) return;
     const auto world = ue_wrap::world_identity::CurrentWorld();
     if (!world || ue_wrap::world_identity::WorldOf(actor) != world) return;
     World();
     ue_wrap::CachedObjRef ref; ref.Set(actor);
-    auto it = g_discoveredWalls.find(ref.Idx());
-    if (it != g_discoveredWalls.end() && it->second.Is(actor)) return;
-    if (g_discoveredWalls.size() >= kMaxRows || g_enrollWalls.size() >= kMaxRows) return;
-    g_discoveredWalls[ref.Idx()] = ref; g_enrollWalls.push_back(ref);
+    if (!PlacedClass(actor)) return;
+    if (P::Type(actor) == P::Kind::Plant && !ValidKey(P::ExistingKey(actor))) return;
+    auto it = g_discoveredPlaced.find(ref.Idx());
+    if (it != g_discoveredPlaced.end() && it->second.Is(actor)) return;
+    if (g_discoveredPlaced.size() >= kMaxRows || g_enrollPlaced.size() >= kMaxRows) return;
+    g_discoveredPlaced[ref.Idx()] = ref; g_enrollPlaced.push_back(ref);
 }
-size_t ScanComplete(void*, bool, uint32_t) { return g_discoveredWalls.size(); }
+size_t ScanComplete(void*, bool, uint32_t) { return g_discoveredPlaced.size(); }
 // Preserve native save keys so a joiner's save-loaded twin is reused. Only the
-// host may enroll legacy keys; client Create/Remove still require minted keys.
-bool EnrollWall(const ue_wrap::CachedObjRef& ref) {
+// host may enroll legacy keys; client creation still requires minted keys.
+bool EnrollPlaced(const ue_wrap::CachedObjRef& ref) {
     void* actor = ref.Get();
-    if (!actor || !P::IsWall(P::Type(actor))) return true;
+    if (!actor || !PlacedClass(actor)) return true;
     if (!ue_wrap::keyed_objects::Available() || !P::Ready(actor)) return false;
     const auto epoch = g_epoch;
     Applying applying;
+    // getData can call native getKey. Do not give unkeyed generated vegetation
+    // a new persistent identity just because the census saw it. Saved plants of
+    // every measured subclass already have their key restored by loadData.
+    if (P::Type(actor) == P::Kind::Plant) {
+        const auto key = P::ExistingKey(actor);
+        if (epoch != g_epoch || !ref.Get() || !Tracking() || !Host()) return false;
+        if (!ValidKey(key)) return false;
+    }
     Record raw, record;
     if (!P::Capture(actor, raw) || !ref.Get() || epoch != g_epoch) return false;
     // A census cannot rename an actor: a join snapshot may already contain its
@@ -146,15 +198,76 @@ bool EnrollWall(const ue_wrap::CachedObjRef& ref) {
     g_rows.insert_or_assign(row.record.key, row);
     return true;
 }
-void EnrollWalls() {
+void EnrollPlacedActors() {
     const auto epoch = g_epoch;
-    const auto count = (std::min)(size_t(4), g_enrollWalls.size());
+    const auto count = (std::min)(size_t(4), g_enrollPlaced.size());
     for (size_t i = 0; i < count; ++i) {
-        const auto ref = g_enrollWalls.front(); g_enrollWalls.pop_front();
-        const bool done = EnrollWall(ref);
+        const auto ref = g_enrollPlaced.front(); g_enrollPlaced.pop_front();
+        const bool done = EnrollPlaced(ref);
         if (epoch != g_epoch || !Tracking() || !Host()) return;
-        if (!done && ref.Get()) g_enrollWalls.push_back(ref);
+        if (!done && ref.Get()) g_enrollPlaced.push_back(ref);
     }
+}
+bool Garden(P::Kind kind) { return kind == P::Kind::Plant || kind == P::Kind::Faucet || kind == P::Kind::Hose; }
+bool SameState(const Record& a, const Record& b) {
+    // Normalize leaves only these groups in the garden schemas.
+    return a.key == b.key && a.className == b.className && a.xform == b.xform &&
+        a.bools == b.bools && a.names == b.names && a.floats == b.floats && a.vectors == b.vectors;
+}
+void PollGarden(uint64_t now) {
+    const auto epoch = g_epoch;
+    // A persistent cursor prevents low-sorted plants from monopolizing captures.
+    // Four candidates per tick, at most two native captures, including failures.
+    for (int visited = 0, captures = 0; visited < 4 && captures < 2 && !g_rows.empty(); ++visited) {
+        auto it = g_rows.upper_bound(g_pollCursor);
+        if (it == g_rows.end()) it = g_rows.begin();
+        const auto key = it->first; g_pollCursor = key;
+        const auto& row = it->second;
+        if (!row.accepted || row.dead || row.incoming || row.link || !Garden(P::ClassKind(row.record.className)) || now < row.pollAt) continue;
+        const auto ref = row.ref;
+        void* actor = ref.Get();
+        if (!actor) continue;
+        it->second.pollAt = now + 2000;
+        ++captures;
+        Applying applying;
+        Record raw, record;
+        const bool captured = P::Ready(actor) && P::Capture(actor, raw) && P::Normalize(raw, record);
+        if (epoch != g_epoch || !Tracking() || !Host()) return;
+        if (!captured || !ref.Get() || record.key != key) continue;
+        it = g_rows.find(key);
+        if (it == g_rows.end() || !it->second.ref.Is(actor) || it->second.dead || it->second.incoming ||
+            record.className != it->second.record.className) continue;
+        if (!SameState(record, it->second.record)) {
+            it->second.record = std::move(record); it->second.dirty = true; it->second.next = 0;
+        }
+    }
+}
+void GardenChanged(const SG::Call& c) {
+    if (!Tracking() || !Host() || g_applying || c.fromOurCode) return;
+    World();
+    for (auto& [key, row] : g_rows) if (row.ref.Is(c.object)) { row.pollAt = 0; break; }
+}
+SG::Verdict BeforePlantSimulation(const SG::Call& c) {
+    if (!Tracking() || Host() || P::Type(c.object) != P::Kind::Plant) return SG::Verdict::Run;
+    World();
+    // loadData calls processGrown, whose Stolas override creates lightning and
+    // destroys the plant. Restoring a mirror must not author that outcome.
+    if (g_applying) return SG::Verdict::Cancel;
+    for (const auto& [key, row] : g_rows) if (row.accepted && row.ref.Is(c.object)) return SG::Verdict::Cancel;
+    return SG::Verdict::Run;
+}
+SG::Verdict BeforeHarvestPocket(const SG::Call& c) {
+    // Keep this scoped refusal alive even if native harvest callbacks stop the
+    // session or travel. An in-flight puppet must never touch personal stores.
+    if (!c.object || g_harvestCollector.Raw() != c.object) return SG::Verdict::Run;
+    if (c.function && c.locals) {
+        const int off = R::FindParamOffset(c.function, L"return"), size = R::FunctionFrameSize(c.function);
+        if (off >= 0 && off < size) {
+            c.locals[off] = 0;
+            if (auto* out = SG::OutParamPtr(c, off)) *out = 0;
+        }
+    }
+    return SG::Verdict::Cancel;
 }
 void Finished(void*, void*, void* result) {
     if (!Tracking() || g_applying || !result) return;
@@ -170,24 +283,95 @@ void Finished(void*, void*, void* result) {
     row.settled = kind != P::Kind::Hose;
     g_rows.emplace(key, std::move(row));
 }
-void HoseFinished(const SG::Call& c) {
-    if (!Active() || g_applying || c.fromOurCode) return;
-    World();
-    for (auto& [key, row] : g_rows)
-        if (row.local && row.ref.Is(c.object)) { row.settled = true; row.next = 0; break; }
-}
+#include "placed_save_hose.inc"
 SG::Verdict BeforeAction(const SG::Call& c) {
-    if (!Active() || Host() || g_applying || c.fromOurCode) return SG::Verdict::Run;
+    if (!Active() || g_applying || c.fromOurCode) return SG::Verdict::Run;
     World();
-    for (auto& [key, row] : g_rows)
-        if (row.ref.Is(c.object)) { row.manualUntil = Now() + 2000; break; }
+    for (auto& [key, row] : g_rows) if (row.ref.Is(c.object)) {
+        if (Host()) {
+            if (row.link && P::ClassKind(row.record.className) == P::Kind::Hose && c.locals && c.function) {
+                const int off = R::FindParamOffset(c.function, L"action"), size = R::FunctionFrameSize(c.function);
+                if (off >= 0 && off < size && c.locals[off] == 4) return SG::Verdict::Cancel;
+            }
+            return SG::Verdict::Run;
+        }
+        // Refuse before native action 4 creates the temporary held hose. A
+        // refusal only inside resume would leave that temporary item behind.
+        if (row.accepted && P::ClassKind(row.record.className) == P::Kind::Hose && c.locals && c.function) {
+            const int off = R::FindParamOffset(c.function, L"action"), size = R::FunctionFrameSize(c.function);
+            if (off >= 0 && off < size && c.locals[off] == 4) {
+                const auto edit = g_hoseEdits.find(key);
+                if (row.incoming || row.link || g_hoseEdits.size() >= 32 ||
+                    (edit != g_hoseEdits.end() && edit->second.finished) ||
+                    !SG::ClassNameWatchLive(L"groundHose_C", L"resume", kTag) ||
+                    !SG::ClassNameWatchLive(L"groundHose_C", L"finish", kTag)) return SG::Verdict::Cancel;
+            }
+        }
+        if (row.accepted && P::CanHarvest(c.object) && c.locals && c.function) {
+            const int off = R::FindParamOffset(c.function, L"action"), size = R::FunctionFrameSize(c.function);
+            if (off >= 0 && off < size && c.locals[off] == 4) {
+                for (const auto& use : g_uses) if (use.ref.Is(c.object)) return SG::Verdict::Cancel;
+                if (g_uses.size() + g_careFrames.size() < 32) {
+                    Use use{key, row.ref, ++g_useSeq, Now() + 10000};
+                    if (!use.seq) use.seq = ++g_useSeq;
+                    g_uses.push_back(std::move(use));
+                }
+                return SG::Verdict::Cancel;
+            }
+        }
+        row.manualUntil = Now() + 2000; break;
+    }
     return SG::Verdict::Run;
 }
-// Save-loaded actors keep their persistent identity. Never announce the world's
-// naturally generated trees: only keys minted by the placement lane are enrolled.
+void FlushUses(uint64_t now) {
+    const auto epoch = g_epoch;
+    for (int work = 0; !g_uses.empty() && work < 4; ++work) {
+        const Use use = g_uses.front();
+        // A completed owner-paid care use still belongs to this world if its
+        // local crop copy vanished before transport; the host validates the key.
+        if (use.op==Harvest && (!use.ref.Get() || now >= use.expires)) { g_uses.pop_front(); continue; }
+        Record record; record.key = use.key;
+        const bool sent = Send(use.op, record, use.seq, &use.care);
+        if (epoch != g_epoch || !Tracking() || Host()) return;
+        if (!sent) break;
+        g_uses.pop_front();
+    }
+}
+SG::Verdict BeforeCare(const SG::Call& c) {
+    if (!Active()||Host()||c.fromOurCode||g_applying||!c.function||!c.locals||c.object!=hand_item::LocalHandActor()) return SG::Verdict::Run;
+    World();
+    const int off=R::FindParamOffset(c.function,L"player"),size=R::FunctionFrameSize(c.function);
+    if(off<0||off>size||size-off<int(sizeof(void*)))return SG::Verdict::Run;
+    void* player=nullptr;std::memcpy(&player,c.locals+off,sizeof(player));
+    if(player!=players::Registry::Get().Local())return SG::Verdict::Run;
+    const auto kind=R::ClassNameOf(c.object)==L"prop_fertilizer_C"?P::CareKind::Fertilizer:P::CareKind::Water;
+    const auto epoch=g_epoch;P::CareUse care;
+    if(!P::ReadCareUse(c.object,player,kind,care)||epoch!=g_epoch||!Tracking()||Host())return SG::Verdict::Run;
+    for(const auto& [key,row]:g_rows)if(row.accepted&&!row.dead&&row.ref.Is(care.plant)) {
+        // Reserve storage before native gameplay spends anything. Refuse a
+        // tracked crop use only if there is nowhere to retain its result.
+        if(g_uses.size()+g_careFrames.size()>=32)return SG::Verdict::Cancel;
+        CareFrame frame;frame.tool.Set(c.object);frame.function=c.function;frame.plant=row.ref;frame.care=std::move(care);frame.key=key;frame.epoch=epoch;
+        g_careFrames.push_back(std::move(frame));break;
+    }
+    return SG::Verdict::Run;
+}
+void AfterCare(const SG::Call& c) {
+    if(g_careFrames.empty()||g_careFrames.back().tool.Raw()!=c.object)return;
+    const auto frame=g_careFrames.back();g_careFrames.pop_back();
+    if(frame.epoch!=g_epoch||!Tracking()||Host()||!frame.plant.Get())return;
+    const bool spent=frame.care.kind==P::CareKind::Fertilizer?!frame.tool.Get():
+        frame.tool.Get()&&P::CareWasSpent(c.object,frame.care.kind);
+    if(!spent)return;
+    Use use{frame.key,frame.plant,++g_useSeq,0,Care,frame.care};
+    if(!use.seq)use.seq=++g_useSeq;
+    g_uses.push_back(std::move(use));
+}
+// Save-loaded placements keep their persistent identity, including specialized
+// plants selected by list_farmPlants.plantObject in either placement factory.
 void Loaded(const SG::Call& c) {
     if (!Tracking() || g_applying || c.fromOurCode || P::Type(c.object) == P::Kind::None) return;
-    if (Host() && P::IsWall(P::Type(c.object))) { ScanWall(nullptr, c.object); return; }
+    if (Host() && PlacedClass(c.object)) { ScanPlaced(nullptr, c.object); return; }
     World();
     Record record; const auto epoch = g_epoch;
     ue_wrap::CachedObjRef ref; ref.Set(c.object);
@@ -215,14 +399,15 @@ void Dead(Row& row) {
     row.dead = true; row.remove = false; row.incoming = false; row.link = false;
     row.accepted = true; row.dirty = Host(); row.next = 0;
 }
+
 }
 
 void Install(net::Session* session) {
     if (g_session != session) { g_session = session; ResetWorld(); }
     wall_build_sync::Install(session);
     if (!g_scanRegistered) {
-        element::scan_hub::Register({"placed_walls", nullptr, &ScanReady, &WallClass,
-            &ScanBegin, &ScanWall, &ScanComplete, 0});
+        element::scan_hub::Register({"placed_save", nullptr, &ScanReady, &PlacedClass,
+            &ScanBegin, &ScanPlaced, &ScanComplete, 0});
         g_scanRegistered = true;
     }
     if (!g_watched) {
@@ -232,6 +417,15 @@ void Install(net::Session* session) {
             SG::WatchClassName(L"customWall_C", L"loadData", kTag, nullptr, &Loaded) &&
             SG::WatchClassName(L"customWall_unfinished_C", L"loadData", kTag, nullptr, &Loaded) &&
             SG::WatchClassName(L"groundHose_C", L"finish", kTag, nullptr, &HoseFinished) &&
+            SG::WatchClassName(L"groundHose_C", L"resume", kTag, &BeforeHoseResume, &HoseResumed) &&
+            SG::WatchClassName(L"growingPlant_C", L"ReceiveTick", kTag, &BeforePlantSimulation, &GardenChanged) &&
+            SG::WatchClassName(L"growingPlant_C", L"turnDead", kTag, nullptr, &GardenChanged) &&
+            SG::WatchClassName(L"growingPlant_C", L"addFruit", kTag, &BeforePlantSimulation, &GardenChanged) &&
+            SG::WatchClassName(L"growingPlant_stolasHerb_C", L"grown", kTag, &BeforePlantSimulation, nullptr) &&
+            SG::WatchClassName(L"faucet_C", L"upd", kTag, nullptr, &GardenChanged) &&
+            SG::WatchClassName(L"mainPlayer_C", L"putObjectInventory2", kTag, &BeforeHarvestPocket, nullptr) &&
+            SG::WatchClassName(L"prop_bucket_C", L"playerHandUse_LMB", kTag, &BeforeCare, &AfterCare) &&
+            SG::WatchClassName(L"prop_fertilizer_C", L"playerHandUse_LMB", kTag, &BeforeCare, &AfterCare) &&
             SG::WatchClassName(L"faucet_C", L"actionOptionIndex", kTag, &BeforeAction, nullptr) &&
             SG::WatchClassName(L"groundHose_C", L"actionOptionIndex", kTag, &BeforeAction, nullptr) &&
             SG::WatchClassName(L"growingPlant_C", L"actionOptionIndex", kTag, &BeforeAction, nullptr);
@@ -250,20 +444,93 @@ void Receive(const net::BlobChunkPayload& chunk, uint8_t slot) {
     World();
     std::vector<uint8_t> bytes;
     if (chunk.chunks > 300 || !g_assembler.OnChunk(chunk, slot, bytes) || bytes.size() > 64 * 1024) return;
-    size_t offset = 0; uint8_t op = 0; Record record;
-    if (!W::RdU8(bytes, offset, op) || op > Retired || (Host() ? op > Remove : op < State)) return;
-    if (op == Remove || op == Retired) {
+    if (garden_actions::Receive(bytes, slot)) return;
+    size_t offset = 0; uint8_t op = 0; uint32_t useSeq = 0; Record record;P::CareUse care;
+    if (!W::RdU8(bytes, offset, op) || op > HoseReply ||
+        (Host() ? (op != Create && op != Remove && op != Refresh && op != Harvest && op != Care && op != HoseRoute) :
+            (op != State && op != Retired && op != HoseReply))) return;
+    if (op == HoseReply) { AcceptHoseAnswer(bytes, offset, chunk.blobSeq); return; }
+    if (op == Remove || op == Retired || op == Refresh || op == Harvest || op == Care) {
         if (!W::RdWStr(bytes, offset, record.key)) return;
     } else {
         Record input;
         if (!W::DeSave(bytes, offset, input) || !P::Normalize(input, record)) return;
     }
+    if ((op == Harvest || op == Care || op == HoseRoute) && (!W::RdU32(bytes, offset, useSeq) || !useSeq)) return;
+    uint32_t baselineLo = 0, baselineHi = 0;
+    if (op == HoseRoute && (!W::RdU32(bytes, offset, baselineLo) || !W::RdU32(bytes, offset, baselineHi))) return;
+    if(op==Care) {
+        uint8_t kind=0;
+        if(!W::RdU8(bytes,offset,kind)||kind>uint8_t(P::CareKind::Fertilizer)||!W::RdWStr(bytes,offset,care.sourceKey)||
+           !ValidKey(care.sourceKey)||!W::RdF32(bytes,offset,care.amount)||!std::isfinite(care.amount)||care.amount<=0||care.amount>600)return;
+        care.kind=P::CareKind(kind);
+        if(care.kind==P::CareKind::Fertilizer&&care.amount!=600.f)return;
+    }
     if (offset != bytes.size() || !ValidKey(record.key)) return;
-    // Legacy identity is host-authored and wall-only. Unknown legacy tombstones
+    // Legacy identity is host-authored and schema-limited. Unknown tombstones
     // carry no schema, so their lookup below must enforce that same class gate.
-    if (!Ours(record.key) && (Host() || (op == State && !P::IsWall(P::ClassKind(record.className))))) return;
     auto it = g_rows.find(record.key);
+    if (!Ours(record.key)) {
+        if (Host()) {
+            const bool knownGardenRemoval = op == Remove && it != g_rows.end() && it->second.accepted &&
+                Garden(P::ClassKind(it->second.record.className));
+            if (op != Refresh && op != Harvest && op != Care && op != HoseRoute && !knownGardenRemoval) return;
+        } else if (op == State && !LegacyClass(record.className)) return;
+    }
     if (Host()) {
+        if (op == HoseRoute) { ReceiveHoseRoute(record, useSeq, uint64_t(baselineLo) | (uint64_t(baselineHi) << 32), slot); return; }
+        if(op==Care) {
+            if(it==g_rows.end()||!it->second.accepted||it->second.dead)return;
+            const auto ref=it->second.ref;void* actor=ref.Get();const auto epoch=g_epoch;
+            const auto playerNo=roster_ledger::Get(slot).playerNo;const auto prior=g_used[slot];
+            const auto stock=std::make_pair(uint32_t(playerNo),care.sourceKey);
+            if(!actor||P::Type(actor)!=P::Kind::Plant||!playerNo||
+               (prior.playerNo==playerNo&&int32_t(useSeq-prior.seq)<=0)||
+               !hand_item::LastHeldClassIs(slot,care.kind==P::CareKind::Water?L"prop_bucket_C":L"prop_fertilizer_C")||
+               (care.kind==P::CareKind::Fertilizer&&(g_spentFertilizers.count(stock)||g_spentFertilizers.size()>=4096))||
+               !element::IntentTarget::ForClientIntent(*g_session,slot,450.f).Authorize(actor))return;
+            if(epoch!=g_epoch||!Tracking()||!Host()||!ref.Get()||roster_ledger::Get(slot).playerNo!=playerNo)return;
+            if(!P::ApplyCare(actor,care.kind,care.amount))return;
+            g_used[slot]={useSeq,playerNo,Now()};
+            if(care.kind==P::CareKind::Fertilizer)g_spentFertilizers.insert(stock);
+            it=g_rows.find(record.key);if(it!=g_rows.end()){it->second.pollAt=it->second.next=0;it->second.dirty=true;}
+            return;
+        }
+        if (op == Harvest) {
+            if (it == g_rows.end() || !it->second.accepted || it->second.dead) return;
+            const auto ref = it->second.ref; const auto epoch = g_epoch;
+            void* actor = ref.Get();
+            const auto playerNo = roster_ledger::Get(slot).playerNo;
+            const auto prior = g_used[slot]; const auto now = Now();
+            auto* remote = players::Registry::Get().Puppet(slot);
+            void* collector = remote && remote->valid() ? remote->GetActor() : nullptr;
+            ue_wrap::CachedObjRef collectorRef; if (collector) collectorRef.Set(collector);
+            if (!actor || !playerNo || !P::CanHarvest(actor) ||
+                !collectorRef.Get() || !SG::ClassNameWatchLive(L"mainPlayer_C", L"putObjectInventory2", kTag) ||
+                (prior.playerNo == playerNo && (int32_t(useSeq - prior.seq) <= 0 || now < prior.at + 250)) ||
+                !element::IntentTarget::ForClientIntent(*g_session, slot, 450.f).Authorize(actor)) return;
+            if (epoch != g_epoch || !Tracking() || !Host() || !ref.Get() || !collectorRef.Get() || roster_ledger::Get(slot).playerNo != playerNo) return;
+            g_used[slot] = {useSeq, playerNo, now};
+            Applying applying;
+            HarvestCollector collecting(collector);
+            P::Harvest(actor, collector);
+            if (epoch != g_epoch || !Tracking() || !Host()) return;
+            if (g_world != ue_wrap::world_identity::Generation()) { World(); return; }
+            it = g_rows.find(record.key);
+            if (it != g_rows.end()) {
+                void* current = it->second.ref.Get();
+                if (ref.Is(current)) {
+                    it->second.pollAt = it->second.next = 0; it->second.dirty = true;
+                } else if (!current && it->second.ref.Raw() == ref.Raw()) Dead(it->second);
+            }
+            return;
+        }
+        // A missing legacy mirror requests the canonical snapshot by key. It
+        // cannot create, overwrite or enroll anything on the host.
+        if (op == Refresh) {
+            if (it != g_rows.end() && it->second.accepted) { it->second.dirty = true; it->second.next = 0; }
+            return;
+        }
         if (it != g_rows.end()) {
             // Repeated creation never reapplies stale planting/fuel/geometry state.
             if (op == Create) { if (it->second.accepted) it->second.dirty = true; return; }
@@ -305,15 +572,22 @@ void Receive(const net::BlobChunkPayload& chunk, uint8_t slot) {
             Row row; row.record = record; row.ready = true;
             row.incoming = op == State; row.dead = op == Retired; row.accepted = row.dead;
             row.retireLookup = row.dead;
+            row.hoseStateSeen = op == State && P::ClassKind(record.className) == P::Kind::Hose;
+            row.hoseStateSeq = chunk.blobSeq;
             g_rows.emplace(record.key, std::move(row)); return;
         }
         if (op == Retired) {
+            g_hoseEdits.erase(record.key);
             const auto epoch = g_epoch; const auto ref = it->second.ref;
             Dead(it->second);
             Applying applying;
             if (void* a = ref.Get()) ue_wrap::engine::DestroyActor(a);
             if (epoch != g_epoch) return;
         } else if (!it->second.dead) {
+            if (P::ClassKind(record.className) == P::Kind::Hose) {
+                if (it->second.hoseStateSeen && int32_t(chunk.blobSeq - it->second.hoseStateSeq) <= 0) return;
+                it->second.hoseStateSeq = chunk.blobSeq; it->second.hoseStateSeen = true;
+            }
             // The creator already owns the correctly initialized native actor.
             // Acknowledgement must neither respawn it nor overwrite a newer local use.
             const bool wasAccepted = it->second.accepted;
@@ -322,9 +596,9 @@ void Receive(const net::BlobChunkPayload& chunk, uint8_t slot) {
                 if (it->second.manualUntil >= Now() || !wasAccepted) it->second.remove = true;
                 else { it->second.ref.Reset(); it->second.local = false; }
             }
-            // Walls are host-driven after placement: the creator must receive
-            // progress/health too, rather than keeping its original empty outline.
-            if ((!it->second.local || P::IsWall(P::ClassKind(record.className))) && !it->second.remove) {
+            // Preserve the initial garden acknowledgement, then the host drives
+            // growth/watering/ripeness even on the original placing peer.
+            if ((!it->second.local || wasAccepted || P::IsWall(P::ClassKind(record.className))) && !it->second.remove) {
                 it->second.record = record; it->second.incoming = true;
                 it->second.next = 0;
             }
@@ -344,8 +618,16 @@ void Tick() {
     const auto epoch = g_epoch;
     wall_build_sync::Tick();
     if (epoch != g_epoch) return;
-    if (Host()) EnrollWalls();
+    if (Host()) EnrollPlacedActors();
     if (epoch != g_epoch) return;
+    if (Host()) PollGarden(now);
+    else { FlushUses(now); if (epoch != g_epoch) return; FlushHoseEdits(now); }
+    if (epoch != g_epoch) return;
+    // Another script-gate consumer can cancel after our pre watch; that call
+    // has no post callback. Reclaim its reservation once the body is inactive.
+    std::erase_if(g_careFrames, [](const CareFrame& frame) {
+        return !SG::IsObjectBodyActive(frame.function, frame.tool.Raw());
+    });
     if (now >= g_sweep) {
         g_sweep = now + 1000;
         g_assembler.Sweep(std::chrono::steady_clock::now(), std::chrono::seconds(20));
@@ -363,6 +645,9 @@ void Tick() {
             !it->second.remove && !it->second.dirty && !it->second.link && it->second.ref.Get()) {
             it->second.next = now + 500; continue;
         }
+        // An incoming canonical record can contain thousands of spline points.
+        // Retain it in place while editing instead of copying it every tick.
+        if (!Host() && !it->second.dead && g_hoseEdits.count(key) && it->second.ref.Get()) continue;
         Row row = it->second;
         void* a = row.ref.Get();
         if (row.dead && (a || row.retireLookup)) {
@@ -373,7 +658,7 @@ void Tick() {
                 if (!ue_wrap::keyed_objects::Available()) continue;
                 a = ue_wrap::keyed_objects::Resolve(key.c_str());
                 if (epoch != g_epoch) return;
-                if (a && (P::Type(a) == P::Kind::None || (!Ours(key) && !P::IsWall(P::Type(a))))) continue;
+                if (a && (P::Type(a) == P::Kind::None || (!Ours(key) && !PlacedClass(a)))) continue;
                 it = g_rows.find(key); if (it == g_rows.end()) continue;
                 it->second.ref.Set(a); it->second.retireLookup = false;
             }
@@ -440,12 +725,15 @@ void Tick() {
             if (epoch != g_epoch) return;
             it = g_rows.find(key); if (it == g_rows.end()) continue;
             if (linked && row.ref.Get()) it->second.link = false;
+            row = it->second;
         }
-        if (Active() && ((Host() && row.dirty) || (!Host() && (row.remove || (row.ready && !row.accepted))))) {
+        if (Active() && ((Host() && row.dirty && !(row.link && P::ClassKind(row.record.className) == P::Kind::Hose)) ||
+            (!Host() && (row.remove || (row.ready && !row.accepted))))) {
             if (++work > 4) break;
             it = g_rows.find(key); if (it == g_rows.end()) continue;
             it->second.next = now + kRetryMs;
-            const Op op = Host() ? (row.dead ? Retired : State) : (row.remove ? Remove : Create);
+            const Op op = Host() ? (row.dead ? Retired : State) :
+                (row.remove ? Remove : Ours(key) ? Create : Refresh);
             if (Host() && !row.dead && a) {
                 Applying applying;
                 Record raw, normalized;
@@ -462,6 +750,7 @@ void Tick() {
             if (Host() && sent && it != g_rows.end()) it->second.dirty = false;
         }
     }
+    if (epoch == g_epoch && Active() && Host()) FlushHoseAnswers();
 }
 void QueueConnectBroadcastForSlot(int) {
     if (!Active() || !Host()) return;
@@ -473,6 +762,9 @@ void QueueConnectBroadcastForSlot(int) {
 void OnPeerLeftSlot(int slot) {
     if (slot < 0 || slot >= players::kMaxPeers) return;
     g_assembler.ClearSlot(uint8_t(slot));
+    g_used[slot] = {};
+    g_hoseSeen[slot] = {}; g_hoseAnswers[slot].clear();
+    ++g_hosePeerEpoch[slot];
     // Accepted objects belong to the host save, not to the departing connection.
     std::erase_if(g_rows, [slot](const auto& pair) { return pair.second.incoming &&
         Host() && pair.second.owner == slot && !pair.second.accepted; });
@@ -489,7 +781,11 @@ void TrackWall(void* actor) {
     World();
     for (const auto& [key, row] : g_rows) if (row.ref.Is(actor)) return;
     ue_wrap::CachedObjRef ref; ref.Set(actor);
-    EnrollWall(ref);
+    EnrollPlaced(ref);
 }
 void OnDisconnect() { wall_build_sync::OnDisconnect(); g_session = nullptr; ResetWorld(); }
+bool SendGardenAction(const std::vector<uint8_t>& bytes) {
+    return Active() && !Host() && bytes.size() <= 64 * 1024 &&
+        blob_chunks::SendBlob(g_session, net::ReliableKind::PlacedSave, ++g_blobSeq, bytes);
+}
 }

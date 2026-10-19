@@ -243,7 +243,7 @@ const NoReplayRow kNoReplayRows[] = {
     { "bombBox", "prank special (prop lane)" },
     { "rockThrow", "prank spawner (no lane)" }, { "hillRoller", "prank spawner (no lane)" },
     { "alienJump", "prank spawner (no lane)" }, { "trashBase", "prank spawner (no lane)" },
-    { "alienSounds", "sound gap (future WorldSoundCue)" },
+    { "alienSounds", "world_sound_sync (native noiser audio; movement/footsteps remain separate)" },
 };
 
 // The interaction rows: the row's entire effect is the prank special, host-local RNG.

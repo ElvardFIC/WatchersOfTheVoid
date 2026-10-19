@@ -1,5 +1,309 @@
 # Unified Work — development protocol 2153 (continued 2152); packaged release 2152
 
+Current owner priority: expand synchronized events/interactions; bug fixes are
+secondary unless required for the chosen synchronization path. Grayboar work is
+deferred. The current candidate list and tracker IDs are in TODO.md. The coverage
+table below preserves unmapped entities and partial behaviors as open work.
+
+## Continued 2153: shared PC/laptop pages and cart, faucet and detached sprinkler (19 October 2026)
+
+Owner clarification: Airy means the Live Erie resurrection ritual; Meat Erie is
+the separate npc_angryErieFlesh boss encounter. Both remain behavior work, with
+their actual cooked classes located. Screen 54 means the base PC and portable
+laptop interface, including tabs and the shop cart. Token 52 remains unmapped.
+
+New laptop_ui_sync and engine-only laptop_ui wrapper share the main/media/viewer
+page indices and ordered cart row names. Only the exclusive laptop holder may
+submit. Host grant/release serials become lease tokens, including same-slot
+release/reclaim between UI polls. Host validates the live catalog, item count
+and native capacity; prices never travel. New operators seed from the canonical
+state. Echoes for an existing owner lease cannot erase newer local changes.
+Per-peer latest-state queues retry independently; the final local edit enters
+Normal before DeviceClaim release (release waits through queue backpressure).
+Loading widget applies remain pending without blocking delivery to other peers.
+The reliable channel is kind 202, no blind relay, protocol still 2153.
+
+Native application changes only UWidgetSwitcher pages. It never invokes the
+camera-possession createRC/leaveRC path or makeAnOrder. Cart changes remove/add
+only the differing suffix, prevalidate all dependencies and row frames before
+mutation, stamp catalog keys and rebuild native indices. State readback confirms
+the dispatch had its effect. An older unnamed refused-order cart can be replaced;
+future refused-order restores now stamp their catalog keys as well. Search,
+category, detail windows, cursor, media playback and visible operator remain open.
+
+New garden_actions adds ordered PlacedSave opcode 9: faucet action 5 and native
+hose detachSprinkler. Host validates source/peer/sequence, family, live identity,
+reach and expected endpoint. Detach uses the far end of the native path for
+reach, so long hoses do not require standing at their root. Pointer directions
+and saved keys clear together. A stale request cannot detach a newer sprinkler.
+Client native faucet body is suppressed; host sound publishes EventCue ID 5
+(door0_open, volume .25, pitch 1), observed from the actual completed native
+call. Native host detach also uses the saved-key cleanup wrapper. Moving-hose
+detach remains part of the completed-route gesture. Actual sprinkler pickup,
+poured watering, pot transitions and durable care/refunds remain separate work.
+
+The private hose-edit implementation moved to placed_save_hose.inc, keeping
+placed_save_sync.cpp under 800 lines. No grayboar changes were added in this step.
+
+Build environment restored locally from the owner's existing E:/MyMods/MultiVoid+.zip:
+CMake/Ninja, vcpkg scripts and pinned installed packages, with native MSVC/SDK.
+build/restore_build_inputs.py reproduces extraction without touching source or
+the installed game. Full Release target votv-coop builds to
+build/release-2153/main.dll, file/product version 0.9.0n b2153. CMake configuration
+uses Release try-compile and /Z7 for Debug checks to avoid the installed PDB
+manager mismatch. Configuration: build/configure-2153.log; final build log:
+build/build-2153-final.log; completed link: build/build-2153-incremental.log.
+The sandboxed link stalled with the output open; final linking outside the
+sandbox completed successfully. Ninja dry-run reports no remaining work.
+The current AMD64 PE is complete, exports start_mod/uninstall_mod and passes
+abi_gate --drill with no UE4SS imports. DLL SHA-256:
+f32c974fdd2ec0ea9e2c9f6f9648134b49d8600b547ccc816865f97fc513d615.
+build/sync-verification.json records source/log hashes, 14 executable checks,
+native contracts and the DLL. Two-player gameplay remains untested.
+
+PASS run_laptop_ui.ps1 -CompileSources (two executables, five production units),
+run_garden_sync.ps1 -CompileSources (seven/four), run_world_sound.ps1 -CompileSources
+(one/three), native cooked-asset contracts and reliablekind_gate --drill (191
+kinds, all seven injected controls fire). Logs: build/laptop-ui-validation.log,
+build/garden-final-validation.log, build/sound-final-validation.log,
+build/sync-native-contract.json, build/reliablekind-ui.log. Source regression
+coverage is not proof of the remaining candidate table or live gameplay.
+
+## Continued 2153: completed guest hose rerouting (19 October 2026)
+
+An accepted guest hose now keeps an edit reservation from native resume until
+finish and explicit host acknowledgement. Canonical State received during the
+gesture is retained without interrupting native placement. The completed route
+and its original canonical fingerprint use PlacedSave HoseRoute; the nonce and
+proposal remain unchanged across partial sends and transport backpressure.
+Only world points and the sprinkler endpoint are editable; the canonical root,
+faucet key and first point are retained. Pinning the root also avoids rejecting
+native quaternion round-trip noise as an attempted actor move.
+
+The host requires a known live hose, matching baseline/root, a completed native
+state, the current peer, endpoint reach and available native endpoint owners.
+Pending route endpoints are reserved before native linkage, so two hoses cannot
+claim the same sprinkler between ticks. Rejected operation IDs stay rejected;
+duplicates receive the actual canonical state without replaying loadData.
+HoseReply is targeted to its requester and waits for native geometry/link work.
+Each peer has an independent bounded reply queue; blocked heads rotate. Mid-edit
+host changes win a conflict. Host action/resume cannot interrupt a pending link.
+
+Native processKeys/finish rebuild the spline by destroying old components.
+The wrapper restores both pointer directions and saved endpoint keys, clears a
+former sprinkler only if this hose still owns it, handles a nullable sprinkler,
+and refreshes its effects. Capture clears stale optional hose/faucet saved keys
+when their actual pointer is absent. Out-of-order State/Reply completion cannot
+roll back a newer canonical hose snapshot. Retirements, cancelled resume bodies,
+peer departure, recycled identities and world changes clear pending work.
+
+PASS: six garden executables and three production compiles, native asset
+contracts, existing wall placement/authority/wrapper regression. Evidence:
+build/garden-hose-validation.log, build/wall-hose-regression.log and
+build/sync-native-contract.json. Protocol remains 2153. No full DLL or two-player
+test was produced. This lane publishes completed routes; motion during placement,
+standalone sprinkler pickup/detach, poured/held-hose watering, pot transitions and
+durable resource transactions remain OPEN. Missing native dependencies keep a
+route/link queued until they become available or the world/session ends.
+
+## Continued 2153: garden state, guest harvest and shared event audio (19 October 2026)
+
+The owner supplied D:/Games/Voices of the Void/Gamee/WindowsNoEditor. Native
+assets were extracted read-only into the ignored _research/current-assets.
+sync_native_contract_test.py verifies the actual cooked plant fields, negative
+water/fertilizer depletion, dead dryness=-1, Stolas grown lightning/destruction,
+table-selected plant subclasses, hose geometry rebuild and sound entry points.
+Asset hashes and results: build/sync-native-contract.json.
+
+The placed-save census now enrolls saved plants of all measured subclasses,
+faucets and completed hoses while preserving their native keys. Unkeyed
+vegetation is rejected before getData, so scanning cannot assign it keys or fill
+the enrollment queue. Host state is polled with a persistent cursor: at most two
+captures and four candidates per tick, normally no more than once per two seconds
+per actor. Changed normalized state publishes through the existing reliable
+record lane, including the planting peer after its initial acknowledgement.
+Guest copies refuse native growth/automatic fruit production. Reapplying a
+Stolas plant cannot create another lightning strike. Plant loading clears the
+cached ripe amount before native upd, which otherwise preserves stale berries.
+
+Client harvest action 4 now queues an ordered request. The host checks known
+identity, current peer generation, a 450-unit reach, sequence deduplication,
+250-ms rate and a live pocket-refusal watch before running native harvest once.
+The caller's valid puppet is passed as collector; its putObjectInventory2 is
+refused only during that call, explicitly returning false even through session
+teardown. Native random yield stays on the ground for normal shared pickup;
+neither the host's inventory nor the puppet's personal store receives it.
+Discard-only plants keep native Alt confirmation and host-validated retirement.
+Legacy Refresh requests recover a missing save twin without authoring host data.
+
+world_sound_sync observes completed native sound calls. newsky's actual 5062 and
+437 continuations publish earthTP_in/out with native volume/pitch. noiser's sole
+SpawnSoundAttached publishes outsideAlien_Cue at its actual host position.
+growingPlant.harvestSound publishes plantGather_Cue with the native +25 Z offset.
+EventCue IDs 1..4 supplement unchanged meteor ID 0. FIFO/retry is independent per
+recipient; asset/dispatch failures retry locally, and expiry/world/disconnect
+discard stale audio. One-shot audio is not restarted on a mid-event join.
+Alien audio currently uses its starting position rather than following the
+moving noiser; SoundCue-internal variant randomness remains local.
+
+PASS: four garden executables/three production compiles; one sound executable/
+three production compiles; native contracts. Existing wall and sky regressions
+also pass. Logs: build/garden-validation.log, build/world-sound-validation.log,
+build/wall-placement-garden-regression.log, build/wall-garden-regression.log,
+build/sky-sound-regression.log. No full DLL or multiplayer validation.
+
+OPEN: durable guest care consumption/acceptance, pot changes, standalone sprinkler
+pickup/detach, hose placement motion and gameplay verification, keyless pre-session crops; exact audio timing/mid-event
+join, noiser movement/footsteps, delayed sky mail/bookkeeping and latent state.
+Airy native candidates are prop_eriePlush (prop_food) and eriePlushLive (Character);
+Flesh Eerie is npc_angryErieFlesh (Character). Their native resources are available,
+but adding names to an allowlist would not synchronize their behavior. All other
+candidate areas remain open. Source/protocol stay 2153; peers need the same DLL.
+
+### Follow-up: guest bucket LMB and fertilizer care
+
+The exact native paths are now mapped from the installed assets: bucket LMB
+requires height>5, writes water=height/maxHeight*600 and empties height; fertilizer
+LMB requires nonpositive crop fertilizer, writes 600 and destroys its hand actor.
+The client reserves a bounded result slot before native use, measures the source
+key/amount/target, then queues Care only after the bucket is empty or the exact
+fertilizer weak identity is gone. Native refusals produce no Care. A cancelled
+script body with no post callback releases its reservation on the next tick.
+Completed care results do not expire while waiting for transport queue space.
+
+The host accepts only known live crop identities within 450 units, with a valid
+peer, ordered sequence, last-announced bucket/fertilizer class and finite native
+amount. A fertilizer source key cannot be spent twice by that player during the
+world; existing host fertilizer is not reset by a stale guest view. Only the
+canonical plant field is written, then its record is published through the usual
+lane. Personal consumables remain owner-authored and persist through the existing
+profile stream; this is not an atomic transaction between profile and world.
+A request rejected by the host or interrupted by disconnect/world travel has no
+durable acceptance/refund. Rapid tool switches can invalidate the announced-tool
+check. Keep these limitations OPEN; do not claim complete gardening transactions.
+Bucket getFromWater/poured water and moving hoses use separate paths and remain
+open. Expanded controller/wrapper and native contract checks pass.
+
+## Continued 2153: wall material replay and teardown safety (19 October 2026)
+
+Host wall construction keeps unprocessed pairs visible during the drain and
+also deduplicates the currently executing wall/material pair. Native callbacks
+cannot schedule a second consumption of that pair or recursively drain it.
+Each tick attempts at most eight feeds; failed attempts retain one retry and
+new callback additions wait for the next tick. The one-use native replay permit
+is scoped to the exact wall and weak material identity.
+
+Deferred feeds stamp session/epoch/world context. Stopping or replacing the
+session, changing host role or travelling during collision/enrollment callbacks
+cancels the replay and nested build/damage/repair mutations. Refused repairs
+still set isFine in both the frame and caller output, preserving cement.
+Ordinary offline use and a host remaining after the last peer leaves stay native.
+
+The engine wrapper rechecks world generation, wall/material identities and wall
+class after IsOverlappingActor. A replaced/recycled overlap component retries
+against its successor instead of spending from an obsolete collision result.
+Material lookup also refuses travel during FName conversion/native restoration.
+
+Expanded production-source regressions cover duplicate active/unprocessed pairs,
+recursive Tick, exact replay permits, retry count/budget, callback additions,
+disconnect/reconnect/role/world teardown, no-spend repair outputs and wrapper
+identity/component changes. run_2168.ps1 passes five executables/five production
+compiles, including the controller added to that runner. run_2166.ps1 passes
+four placement/record/authority/wrapper executables and five production compiles.
+Logs: build/wall-validation.log and build/wall-placement-validation.log.
+No new protocol or package; two-player construction and atomic client repair
+across personal inventories remain OPEN.
+
+## Continued 2153: staged cosmetic playback and turn identity (19 October 2026)
+
+Client action cues now retain Start/Verify/Stop progress and weak mesh, animation
+and montage references. A successful Montage_Play is not repeated after a failed
+section/playing query or failed stop. Missing prerequisites and native zero-result
+refusals still retry before acceptance. Return metadata is checked before starting;
+an unreadable, negative or nonfinite result after the call enters cleanup.
+
+Live JumpToSection is followed by actual playing/section queries before sound.
+A failed/no-op jump or crossed joined section stops the stock montage, with
+stop-only retries. Joined playback needs no jump function and never restarts
+one-shot audio. Expiry gives pending playback a cleanup attempt on its scheduled
+turn and retires it even if the engine refuses; permanent native cleanup failure
+cannot be proven safe by these offline checks. Playback ownership is revalidated
+after reflected calls, including death-loop silence and damage-audio setup.
+Actor/mesh/AnimInstance/montage/world/session/registry replacement ends further
+calls. Queue progress is stored by sequence after callbacks, avoiding stale
+iterators when reflection appends another packet or recursively ticks.
+
+Turn samples now capture a weak replica identity at receipt or first animation
+application. Replacement/retirement/authority changes discard old steering and
+pitch; subsequent samples interpolate from neutral. Missing replicas may still
+bind later. Stale turn rows are removed before admitting packets, so expired
+capacity cannot reject the next valid state before the next tick.
+
+Expanded production-source regressions cover live/join query recovery without
+replay, stop failure/expiry, no-op seek, missing metadata, malformed results,
+mid-call identity changes, audio guards, reentrant receipt and turn replacement,
+late binding and capacity reuse. All five entity executables and twelve production
+units PASS; evidence: build/entity-sync-check/validation.log and verification.json.
+Protocol remains 2153; no full DLL/package/gameplay validation in this checkout.
+Cross-peer timing, joined audio and native cleanup behavior remain OPEN.
+
+## Continued 2153: independent action queues and stale identity cleanup (19 October 2026)
+
+Grayboar outgoing retries preserve sequence order separately for each recipient.
+A failed send blocks only that peer's later cues; successful peers receive later
+events without duplicates. Capacity is 32 cues per peer (at most 96 shared rows),
+so one saturated recipient cannot exhaust other peers' capacity. Full join queues
+rotate past blocked slots while preserving their pending snapshot candidates.
+Expiry/readiness/slot departure remove obsolete delivery obligations.
+
+Clients retain FIFO per entity, rotating a bounded list of entity heads. Each
+tick attempts at most four entities and one action per entity. New arrivals join
+the tail; missing/late meshes and continuous traffic cannot starve older retries.
+The scheduler reserves its 32-entry storage on installation. Expired packets and
+empty entity entries are retired together, and disconnect clears both queues.
+
+Host cues capture the originating actor's weak identity. Clients bind an existing
+replica at receipt, or a missing replica on its first available attempt. Recycled,
+remapped or retired bound entities discard stale events. Join sampling rechecks
+actor/registry authority and a per-slot departure generation after reflected calls,
+preventing a callback from resurrecting a departed peer's snapshot.
+
+Production-source regressions cover independent recipients, sequence wrap, retries,
+duplicates, saturation, expiry/readiness changes, full-queue join fairness, snapshot
+queue-age compensation, stale actors, late binding, callback teardown, four-attempt
+limits and fairness under ongoing arrivals. All five entity regression executables
+and twelve production units PASS; log: build/entity-sync-check/validation.log.
+Protocol/payload remain 2153/17 bytes. No full DLL/package build or two-player test;
+network transit alignment, joined audio and engine task lifecycle remain OPEN.
+
+## Continued 2153: live montage validation in restored checkout (19 October 2026)
+
+Restored the source from origin/watchers-of-the-void-2150 at 0dce3afed and all
+recursive build submodules into E:/MyMods/MultiVoid+. Development branch:
+codex/continue-2153. The previous .git history is preserved; no merge is pending.
+Historical DLL/ZIP/test evidence below belongs to the previous workspace.
+
+Attack, roar and death flag transitions alone no longer emit cosmetic cues.
+After the native body, grayboar_actions samples the active stock montage and
+requires its section to match the observed action. The cue uses the actual
+montage rate, including native death slowdown, rather than deriving it from
+animationSpeed. Missing/stopped/wrong-section playback, invalid sampled values
+and failed reflected getters produce no cue. Actor/world/session/host authority
+is checked again after the queries. Live audio and join snapshot formats stay
+unchanged; source/DLL/protocol remain 2153.
+
+Expanded production-source tests cover all three actions, native-rate mismatch,
+metadata/mesh/getter refusal, malformed position/rate, recycled actors, disconnect,
+world replacement and authority loss. run_entity_sync.ps1 accepts an initialized
+MSVC shell without the unavailable sibling _toolchain script. All five regression
+executables and twelve production-unit compilations PASS with MSVC 14.50.35717
+and Windows SDK 10.0.26100.0. Log: build/entity-sync-check/validation.log;
+environment: build/local-msvc.ps1. git diff --check passes.
+
+Full DLL/package builds and native asset tests were not run: vcpkg and the private
+_research extraction are absent here. No gameplay test, installation, commit,
+push or publication. Exact clocks, joined audio and two-player behavior stay OPEN.
+
 ## Package 0.9.2152 prepared (19 October 2026)
 
 Owner requested release 2152 and an updated Thunderstore changelog. Built the current
@@ -518,8 +822,9 @@ and all entity-specific effects remain unverified.
 | Жартівні: Жива Ейрі; Жируфус; Руфус | Exact live-Erie/Girufus mapping and Rufus interactions/animation/ownership remain open. Do not confuse live Erie with zombie-Erie or angryErieFlesh. |
 | Новорічні: Гноми; Крампус | npc_krampus is already in NPC lane; attacks/events need testing. Gnomes' classes, spawn conditions, interaction and shared lifetime remain open. |
 
-Next implementation: resolve the boar body/helper ownership without duplicate brains;
-then native per-family action/state transport and missing creature paths. Do not add unknown names
+Next implementation follows the synchronization candidates in TODO.md; grayboar
+body/helper follow-ups are deferred. Add native per-family action/state transport
+and missing creature paths. Do not add unknown names
 blindly to an allowlist. Run host/client spawn, target selection, action, death,
 disconnect and mid-event join for each row before closing it.
 
@@ -826,8 +1131,8 @@ working; issue 41 (old basement wall) remains explicitly excluded by the owner.
 |43|Safe cracking|Код2162: both dial success and hacked converge on opened; client completion to host, single loot, saved lock publication/retries and host-lock protection against early/stale records. Initial unlocked drop record preserved. dial UI and generic child hinge identity unchanged|
 |44|Sponge wetting|Частично2160/2169: native saved power/wetness now publishes after enterWater/wash/clamp/LMB; load no echo and final-use tail checked. 2169 adds current held wetness to outgoing profiles. Soap stock/foam/surface effects and personal-hand transitions remain unverified; two-player test needed|
 |45|Grill ignition|Код2162: host ignition/off, active/coals/burn snapshot and late join, passive client heating/fuel tick, immediate coal record and request retries. Concurrent coal transactions/stale records, lid and personal item transitions remain.|
-|46|Client-placed crops/faucets/hoses disappear after save reload|Частично2163: exact native placement -> host save actors, completed hose points/links, plant/pot identity, retry/dedup/retirement/late join. Two tests/five TUs passed; game save/reload not tested. Later gardening, accepted hose rerouting, concurrency and pre-session loaded-actor enrollment remain.|
-|47|Black disk/yellow-ring sky event starts on client independently|Visual code2164; common schedule-entry authority2165 covers all scheduled rows, boot/reflected calls and passEvents protection. Local checks pass. Audio/emails/pre-session latent effects remain separate. This is NOT Bad Sun or black fog|
+|46|Client-placed crops/faucets/hoses disappear after save reload|Continued2153: saved-actor enrollment, host growth/water/fertilizer/ripeness/death, creator updates, guest harvest to world loot, owner-paid LMB water/fertilizer results, harvest audio and missing-save-twin refresh added. Four focused executables/three production compiles pass; native contracts verified. Durable care acceptance/refunds, other watering paths, hose rerouting, pot changes and two-player save/reload remain open.|
+|47|Black disk/yellow-ring sky event starts on client independently|Visual2164 and schedule authority2165 retained. Continued2153 adds native black-hole in/out sounds from actual start/latent continuations; alienSounds audio also added. Offline/native checks pass. Delayed mail/bookkeeping, other latent phases and two-player timing remain open. This is NOT Bad Sun or black fog|
 |48|Mimic (user identified; trees/white pillars/radar report)|Code2165: prop_impostor_C and impostorPropsMaster_C identified; client random generation and local-camera culling disabled. Reuses keyed prop class/disguise/birth/death/join; host controls lifetime. Focused checks/compilation pass; multiplayer/rendering/damage verification pending. Related to35; other creatures remain open|
 |49|Insomnia demon neither appears for nor attacks the client|2151 code ready: restored native peer-local ticker and excluded insomniac_C and its subclasses from the NPC mirror lane. Native spawn/target/grab paths verified; focused compile passed. Host/client gameplay remains pending.|
 |50|Ragdoll display is still incorrect|2151 partial: spawn/lost-body retry, pelvis correction and model-authored physics selection added. Valid own rigs may use a different skeleton; common fallback retained, bone/pelvis/joint and stale-asset guards tested. Focused regressions and compile pass. T-pose in gameplay, local native body and exact limbs remain open; revisit5/38.|

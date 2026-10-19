@@ -1,7 +1,12 @@
 param([switch]$GrayboarOnly)
 $ErrorActionPreference='Stop'
 $checkout=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
-. (Join-Path $checkout '../_toolchain/env.ps1')
+$toolchain=Join-Path $checkout '../_toolchain/env.ps1'
+if(Test-Path -LiteralPath $toolchain) {
+    . $toolchain
+} elseif(-not (Get-Command cl -ErrorAction SilentlyContinue)) {
+    throw 'MSVC is unavailable. Run this script from an x64 Developer PowerShell or initialize the MSVC environment first.'
+}
 $output=Join-Path $checkout 'build/entity-sync-check'
 New-Item -ItemType Directory -Force -Path $output | Out-Null
 if(-not $GrayboarOnly) {

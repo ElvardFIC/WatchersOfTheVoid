@@ -129,6 +129,7 @@ set(VOTVCOOP_SOURCES
     src/ue_wrap/desk/tape_caddy.cpp
     src/ue_wrap/devices/floppy_slot.cpp
     src/ue_wrap/devices/laptop.cpp
+    src/ue_wrap/devices/laptop_ui.cpp
     src/ue_wrap/devices/portable_pc.cpp
     src/ue_wrap/devices/floppybox.cpp
     src/ue_wrap/devices/serverbox.cpp
@@ -275,6 +276,7 @@ set(VOTVCOOP_SOURCES
     src/coop/world/firefly_sync.cpp
     src/coop/world/spawn_authority.cpp
     src/coop/world/event_cue_sync.cpp
+    src/coop/world/world_sound_sync.cpp
     src/coop/world/event_fire_sync.cpp
     src/coop/world/event_schedule_authority.cpp
     src/coop/world/event_location_sync.cpp
@@ -283,6 +285,7 @@ set(VOTVCOOP_SOURCES
     src/ue_wrap/actors/placed_save.cpp
     src/ue_wrap/actors/placed_save_record.cpp
     src/coop/world/placed_save_sync.cpp
+    src/coop/world/garden_actions.cpp
     src/coop/world/wall_build_sync.cpp
     src/ue_wrap/actors/wall_build.cpp
     src/coop/world/media_sync.cpp
@@ -488,6 +491,7 @@ set(VOTVCOOP_SOURCES
     src/coop/interactables/download_arm_sync.cpp
     src/coop/interactables/tape_caddy_sync.cpp
     src/coop/interactables/laptop_sync.cpp
+    src/coop/interactables/laptop_ui_sync.cpp
     src/coop/interactables/portable_pc_lid.cpp
     src/coop/interactables/laptop_buffer_sync.cpp
     src/coop/interactables/floppy_slot_entry.cpp

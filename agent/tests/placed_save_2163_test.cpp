@@ -1,4 +1,5 @@
 #include "../../src/votv-coop/src/coop/world/placed_save_sync.cpp"
+#include "../../src/votv-coop/src/coop/world/garden_actions.cpp"
 #include "../../src/votv-coop/src/coop/items/save_record_wire.cpp"
 #include "../../src/votv-coop/src/coop/net/blob_chunks.cpp"
 #include <cstdio>
@@ -6,12 +7,20 @@
 #define CHECK(x) do { if (!(x)) { std::fprintf(stderr,"FAIL %d: %s\n",__LINE__,#x); std::exit(1); } } while (0)
 namespace test {
 using Rec = ue_wrap::save_record::SaveRecord;
-struct Actor { int id; bool live = true; int serial = 1; Rec record; } actors[20];
+struct Actor { int id; bool live = true; int serial = 1; Rec record; bool discard = false; } actors[20];
 uint32_t world = 1; uint16_t playerNo = 2;
-int spawned = 0, destroyed = 0, applied = 0, linked = 0, nextActor = 1;
+int spawned = 0, destroyed = 0, applied = 0, linked = 0, captures = 0, harvested = 0, nextActor = 1;
+int toggles = 0, detaches = 0;
+int paramPlayerOff = 0;
 bool ready = true, reach = true, registry = true, spawnOK = true, linkOK = true, captureOK = true;
 bool travelOnSpawn = false, failDestroy = false;
+bool applyOK = true;
 void (*captureCallback)() = nullptr;
+void (*harvestCallback)() = nullptr;
+void (*applyCallback)() = nullptr;
+ue_wrap::placed_save::CareUse careUse{};
+bool careReadable=false,careSpent=false;void* hand=nullptr;
+std::wstring lastHeld=L"prop_bucket_C";
 std::map<std::wstring, void*> keys;
 void* caller = reinterpret_cast<void*>(1);
 Rec Make(const wchar_t* key=L"mvpl_12345678_00000001",const wchar_t* cls=L"faucet_C") {
@@ -27,7 +36,7 @@ bool IsLiveByIndex(void* a, int32_t i) { return i >= 0 && i < 20 && a == &test::
 bool IsLive(void* a) { return a && static_cast<test::Actor*>(a)->live; }
 std::wstring ClassNameOf(void* a) { return static_cast<test::Actor*>(a)->record.className; }
 void* FindFunction(void*,const wchar_t*) { return nullptr; }
-int32_t FindParamOffset(void*,const wchar_t*) { return 0; }
+int32_t FindParamOffset(void*,const wchar_t* name) { return !wcscmp(name,L"player")?test::paramPlayerOff:0; }
 int32_t FunctionFrameSize(void*) { return 16; }
 }
 namespace ue_wrap::game_thread { bool IsGameThread() { return true; } }
@@ -38,7 +47,12 @@ uint32_t Generation() { return test::world; }
 }
 namespace ue_wrap::object_index { void* ClassByName(const wchar_t*) { return nullptr; } }
 namespace coop::element::scan_hub { void Register(const Consumer&) {} }
-namespace ue_wrap::script_gate { bool WatchClassName(const wchar_t*,const wchar_t*,int,PreFn,PostFn) { return true; } }
+namespace ue_wrap::script_gate {
+bool WatchClassName(const wchar_t*,const wchar_t*,int,PreFn,PostFn) { return true; }
+bool ClassNameWatchLive(const wchar_t*,const wchar_t*,int) { return true; }
+bool IsObjectBodyActive(void*,void*) { return false; }
+uint8_t* OutParamPtr(const Call& c,int32_t off) { return c.locals+off; }
+}
 namespace ue_wrap::ufunction_hook {
 CallerFrame CurrentCallerFrame() { return {test::caller, nullptr}; }
 bool InstallPostHook(void*,PostNativeCallback,bool) { return true; }
@@ -46,6 +60,10 @@ bool InstallPostHook(void*,PostNativeCallback,bool) { return true; }
 namespace ue_wrap::log { void Write(Level,const char*,...) {} }
 namespace coop::wall_build_sync {
 void Install(net::Session*) {} void Tick() {} void OnDisconnect() {}
+}
+namespace coop::hand_item {
+void* LocalHandActor(){return test::hand;}
+bool LastHeldClassIs(uint8_t,const wchar_t* cls){return test::lastHeld==cls;}
 }
 namespace ue_wrap::keyed_objects {
 bool Available() { return test::registry; }
@@ -55,16 +73,25 @@ namespace ue_wrap::engine {
 bool DestroyActor(void* p) { ++test::destroyed; if(!test::failDestroy)static_cast<test::Actor*>(p)->live=false;return !test::failDestroy; }
 }
 namespace ue_wrap::placed_save {
-Kind ClassKind(const std::wstring& s) { return s==L"faucet_C" ? Kind::Faucet : s==L"groundHose_C" ? Kind::Hose : s==L"growingPlant_C" ? Kind::Plant : s==L"customWall_unfinished_C" ? Kind::WallOutline : s==L"customWall_C" ? Kind::Wall : Kind::None; }
+Kind ClassKind(const std::wstring& s) { return s==L"faucet_C" ? Kind::Faucet : s==L"groundHose_C" ? Kind::Hose : (s==L"growingPlant_C"||s==L"growingPlant_pine_C"||s==L"growingPlant_stolasHerb_C") ? Kind::Plant : s==L"customWall_unfinished_C" ? Kind::WallOutline : s==L"customWall_C" ? Kind::Wall : Kind::None; }
 Kind Type(void* a) { return a ? ClassKind(static_cast<test::Actor*>(a)->record.className) : Kind::None; }
 bool PlacementCaller(Kind k,void* f) { return k!=Kind::None && f==reinterpret_cast<void*>(1); }
 bool Ready(void*) { return test::ready; }
-bool Capture(void* a,test::Rec& r) { r=static_cast<test::Actor*>(a)->record;if(test::captureCallback)test::captureCallback();return test::captureOK; }
+bool Capture(void* a,test::Rec& r) { ++test::captures;r=static_cast<test::Actor*>(a)->record;if(test::captureCallback)test::captureCallback();return test::captureOK; }
+std::wstring ExistingKey(void* a) { return static_cast<test::Actor*>(a)->record.key; }
+bool CanHarvest(void* a) { return Type(a)==Kind::Plant && !static_cast<test::Actor*>(a)->discard; }
+bool Harvest(void* a,void* collector) { CHECK(collector==&test::actors[19]);++test::harvested;static_cast<test::Actor*>(a)->record.floats[1][3]=0;if(test::harvestCallback)test::harvestCallback();return true; }
+bool ReadCareUse(void*,void*,CareKind,CareUse& use){use=test::careUse;return test::careReadable;}
+bool CareWasSpent(void*,CareKind){return test::careSpent;}
+bool ApplyCare(void* a,CareKind kind,float amount){auto& state=static_cast<test::Actor*>(a)->record.floats[1];if(kind==CareKind::Water)state[2]=amount;else if(state[1]<=0)state[1]=amount;return true;}
 bool Normalize(const test::Rec& a,test::Rec& b) { b=a;return ClassKind(a.className)!=Kind::None; }
 bool SetKey(void* a,const std::wstring& key) { static_cast<test::Actor*>(a)->record.key=key;test::keys[key]=a;return true; }
 void* Spawn(const test::Rec& r) { if(!test::spawnOK)return nullptr;++test::spawned;auto* a=test::New(r);if(test::travelOnSpawn){++test::world;coop::placed_save_sync::World();}return a; }
-bool Apply(void* a,const test::Rec& r) { ++test::applied;static_cast<test::Actor*>(a)->record=r;return true; }
+bool Apply(void* a,const test::Rec& r) { ++test::applied;static_cast<test::Actor*>(a)->record=r;if(test::applyCallback)test::applyCallback();return test::applyOK; }
 bool Link(void*,const test::Rec&) { ++test::linked;return test::linkOK; }
+bool HoseLinksAvailable(void*,const test::Rec&) { return test::linkOK; }
+bool ToggleFaucet(void* a){++test::toggles;auto& flag=static_cast<test::Actor*>(a)->record.bools[0][0];flag=!flag;return true;}
+bool DetachSprinkler(void* a,const std::wstring& expected){auto& key=static_cast<test::Actor*>(a)->record.names[0][1];if(key!=expected)return false;key=L"None";++test::detaches;return true;}
 }
 namespace coop::signal_wire {
 std::vector<uint8_t> Serialize(const ue_wrap::signal_dynamic::Row&) { return {}; }
@@ -79,17 +106,26 @@ IntentSubject IntentTarget::AuthorizeSegment(const ue_wrap::FVector&,const ue_wr
 using namespace coop;
 using namespace coop::placed_save_sync;
 void Reset(net::Session& s, net::Role role) {
-    OnDisconnect();s.mode=role;s.sent.clear();s.sendBudget=-1;s.linked=true;
-    test::keys.clear();test::nextActor=1;test::spawned=test::destroyed=test::applied=test::linked=0;
+    coop::garden_actions::OnDisconnect();
+    OnDisconnect();s.mode=role;s.sent.clear();s.recipients.clear();s.sendBudget=-1;s.linked=true;
+    test::keys.clear();test::nextActor=1;test::spawned=test::destroyed=test::applied=test::linked=test::captures=test::harvested=0;
     test::ready=test::reach=test::registry=test::spawnOK=test::linkOK=test::captureOK=true;
     test::travelOnSpawn=test::failDestroy=false;test::playerNo=2;test::caller=reinterpret_cast<void*>(1);
-    test::captureCallback=nullptr;
+    test::captureCallback=test::harvestCallback=nullptr;
+    test::applyCallback=nullptr;test::applyOK=true;
+    test::toggles=test::detaches=0;
+    test::paramPlayerOff=0;
+    test::actors[19]={19};players::Registry::Get().remote.actor=&test::actors[19];
+    players::Registry::Get().local=&test::actors[19];test::hand=nullptr;
+    test::careReadable=test::careSpent=false;test::lastHeld=L"prop_bucket_C";
     Install(&s);
+    coop::garden_actions::Install(&s);
 }
 void Pump(int n=3) { for(int i=0;i<n;++i){g_tickAt=0;for(auto& [k,r]:g_rows){r.next=0;r.linkAt=0;}Tick();} }
-std::vector<net::BlobChunkPayload> Packet(Op op,const test::Rec& r,bool junk=false) {
+std::vector<net::BlobChunkPayload> Packet(Op op,const test::Rec& r,bool junk=false,uint32_t useSeq=1) {
     net::Session s;std::vector<uint8_t> b;W::AppU8(b,op);
-    if(op==Remove||op==Retired)W::AppWStr(b,r.key);else W::SerSave(b,r);
+    if(op==Remove||op==Retired||op==Refresh||op==Harvest)W::AppWStr(b,r.key);else W::SerSave(b,r);
+    if(op==Harvest)W::AppU32(b,useSeq);
     if(junk)b.push_back(1);
     static uint32_t seq=100;CHECK(blob_chunks::SendBlob(&s,net::ReliableKind::PlacedSave,++seq,b));return s.sent;
 }

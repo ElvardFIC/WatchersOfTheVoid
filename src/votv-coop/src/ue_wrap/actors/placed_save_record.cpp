@@ -69,7 +69,13 @@ bool Normalize(const SR::SaveRecord& in, SR::SaveRecord& out) {
         r.vectors = {in.vectors[0]};
     } else {
         if (in.floats.size() < 2 || in.floats[1].size() != 6 || Empty(in.names[1][0])) return false;
-        for (float f : in.floats[1]) if (!std::isfinite(f) || f < 0 || f > 1'000'000.f) return false;
+        for (size_t i = 0; i < 6; ++i) {
+            const float f = in.floats[1][i];
+            // Native Tick subtracts a whole delta from positive water/fertilizer,
+            // so either can cross zero. turnDead writes the dryness sentinel -1.
+            const float minimum = (i == 1 || i == 2) ? -1'000'000.f : i == 5 ? -1.f : 0.f;
+            if (!std::isfinite(f) || f < minimum || f > 1'000'000.f) return false;
+        }
         r.floats.resize(2); r.floats[1] = in.floats[1];
     }
     out = std::move(r); return true;

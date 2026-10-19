@@ -1022,11 +1022,12 @@ enum class ReliableKind : uint8_t {
     MadnessState = 194, // host event audio/HUD state, never a second event simulation
     DingusMusic = 195, // world Maxwell-family music state / authorized switch request
     HandToyAudio = 196, // generation-matched hand music / transient squeaks; no blind relay
-    PlacedSave = 197, // validated placement commits / host save actors and retirement; chunked, never relayed
+    PlacedSave = 197, // placement/care/hose-route intents and canonical save actors/replies; chunked, never relayed
     CeilingLampState = 198, // KeyedTogglePayload, actual lamp presentation including flicker; host only
     AmbientLightState = 199, // KeyedTogglePayload, ambient bottom-light visibility; host only
     GrayboarAction = 200, // host attack/roar cosmetics; never gameplay-verb replay or blind relay
     GrayboarTurn = 201, // host AnimBP steering scalar and turn-loop pitch; no AI replay
+    LaptopUI = 202, // bounded BlobChunk: exclusive holder's tabs/cart, host canonical + lease
 };
 
 #pragma pack(push, 1)
@@ -3102,10 +3103,10 @@ struct FireflySpawnPayload {
 };
 static_assert(sizeof(FireflySpawnPayload) == 12, "FireflySpawnPayload must be 12 bytes");
 
-// One cosmetic emitter cue (EventCue): the registry index and the world position. cueId is on the
-// wire and the registry is append-only.
+// One cosmetic event cue: 0 meteor emitter; 1/2 black-hole in/out audio;
+// 3 alien noise; 4 plant harvest; 5 faucet click. IDs are append-only across both cue modules.
 struct EventCuePayload {
-    uint32_t cueId;  // index into event_cue_sync's cue registry (append-only)
+    uint32_t cueId;  // append-only ID shared by event_cue_sync and world_sound_sync
     float x;         // world spawn location of the cue emitter
     float y;
     float z;

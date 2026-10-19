@@ -45,6 +45,17 @@ the host once a second (`coop/world/sky_sync`) `[V]`.
 
 ### Weather
 
+Black-hole entry/exit sounds now follow the host's actual native sound calls,
+including the delayed exit phase. Alien-noise and crop-harvest cues also publish
+their host position. The saved faucet's native click is shared as well, including
+host-approved guest toggles. `world_sound_sync` uses reliable EventCue IDs 1..5, keeps
+ordered retries separately for each recipient and discards expired cues on
+travel/disconnect. `[V]` Native asset checks and offline source regressions pass.
+`[?]` Timing and audibility still need two-player testing. Mid-event join does
+not restart old sounds; the alien cue currently stays at its starting point,
+and its internal random variant remains local. Delayed sky emails/bookkeeping
+and other event effects are still separate work.
+
 One actor owns the weather: its scheduler timers for rain, lightning, fog, super fog and
 permanent rain, a dozen state fields, and the mutator functions everything else calls. On the
 host, observers on the five scheduler functions read the state after each fires, dedupe it by

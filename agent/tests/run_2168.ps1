@@ -18,7 +18,7 @@ try {
   if($LASTEXITCODE -ne 0){throw "Test failed: $testName"}
  }
  if($CompileSources){
-  foreach($file in @('coop/props/prop_action_sync','ue_wrap/actors/wall_build','ue_wrap/actors/building_material','coop/items/player_inventory_sync')) {
+  foreach($file in @('coop/props/prop_action_sync','ue_wrap/actors/wall_build','ue_wrap/actors/building_material','coop/items/player_inventory_sync','coop/world/wall_build_sync')) {
    $name=$file -replace '/','_'
    & cl /nologo /std:c++20 /EHsc /utf-8 /c /I src/votv-coop/include "/Fo$output/$name.obj" "src/votv-coop/src/$file.cpp"
    if($LASTEXITCODE -ne 0){throw "Source compile failed: $file"}

@@ -33,6 +33,7 @@
 #include "coop/interactables/device_occupancy.h"
 #include "coop/world/email_sync.h"
 #include "coop/interactables/laptop_sync.h"  // the stationary PC lane
+#include "coop/interactables/laptop_ui_sync.h"
 #include "coop/interactables/laptop_buffer_sync.h"  // the PC buffer quad lane
 #include "coop/interactables/portable_pc_lid.h"  // the portable PC's lid lane
 #include "coop/interactables/floppy_slot_entry.h"
@@ -89,6 +90,7 @@
 #include "coop/items/coingun_sync.h"
 #include "coop/items/order_sync.h"
 #include "coop/world/event_cue_sync.h"
+#include "coop/world/world_sound_sync.h"
 #include "coop/world/event_fire_sync.h"
 #include "coop/world/event_location_sync.h"
 #include "coop/world/media_sync.h"
@@ -180,6 +182,7 @@
 #include "coop/items/hook_anchor.h"
 #include "coop/items/hook_sync.h"  // the hook lane: owner-phase stream, mirrors, the tick park
 #include "coop/world/placed_save_sync.h"
+#include "coop/world/garden_actions.h"
 #include "coop/world/event_active_sync.h"  // the native activeEvents registry probe
 #include "coop/world/weather_sync.h"
 
@@ -273,6 +276,7 @@ void Install(coop::net::Session& session) {
     coop::owner_entity_sync::Install(&session);  // owner-entity lane: eyer per-peer owned + cross-peer display mirrors
     coop::hook_sync::Install(&session);  // hook lane: owner-phase stream + mirrors, and the ReceiveTick park they depend on
     coop::placed_save_sync::Install(&session);
+    coop::garden_actions::Install(&session);
     coop::inventory_pickup_sync::Install(&session);  // inventory-collect blip (PlaySound2D observer)
     coop::chat_sync::Install(&session);  // T-chat (the ui/chat_input send path)
     coop::local_body::Install(&session);  // skins: local first-person body + SkinChange announce
@@ -286,6 +290,7 @@ void Install(coop::net::Session& session) {
     coop::console_state_sync::Install(&session);  // signal-catcher state mirror (sky signals + desk + dish aim)
     coop::signal_catch_sync::Install(&session);  // the signal-catch consume replay (dish slew + downloader arm on every peer)
     coop::laptop_sync::Install(&session);  // the stationary PC's power and the portable PC lid's wire
+    coop::laptop_ui_sync::Install(&session);
     coop::portable_pc_lid::Install(&session);  // the portable PC's lid, on its own verb
     coop::laptop_buffer_sync::Install(&session);  // the PC buffer quad
     coop::floppybox_sync::Install(&session);  // the disc crate stack
@@ -416,6 +421,7 @@ void ConnectReplayForSlot(int slot) {
     coop::email_sync::QueueConnectBroadcastForSlot(slot);  // the join-window email seed, both signs
     coop::signal_catch_sync::QueueConnectBroadcastForSlot(slot);  // the in-flight catch replay (the identity half) and the kind-2 state seed
     coop::laptop_sync::QueueConnectBroadcastForSlot(slot);  // the PC's power (its disc slot is floppy_slot_sync's)
+    coop::laptop_ui_sync::QueueConnectBroadcastForSlot(slot);
     coop::portable_pc_lid::QueueConnectBroadcastForSlot(slot);  // every open portable PC lid
     coop::floppybox_sync::QueueConnectBroadcastForSlot(slot);  // one canonical per live box
     coop::props::container_contents_sync::QueueConnectBroadcastForSlot(slot);  // one slice per live world container (principle 8 anchor over the join snapshot)
@@ -542,6 +548,7 @@ void DisconnectSlot(coop::net::Session& session, int slot) {
     coop::sit_pose::OnPeerLeft(static_cast<uint8_t>(slot));
     coop::desk_input_sync::OnPeerLeft(slot);  // clear a leaver's dangling coordIsPing (its ping would swallow every peer's desk keys)
     coop::laptop_sync::OnPeerLeft(slot);  // discard unsent PC power/late-join state for a reused slot
+    coop::laptop_ui_sync::OnPeerLeft(slot);
     coop::interactable_sync::OnPeerLeft(slot);
     coop::desk_ping_sync::OnPeerLeft(static_cast<uint8_t>(slot));  // and the verdict it sent, if the desk has not run it
     coop::signal_catch_sync::OnPeerLeft(static_cast<uint8_t>(slot));  // and the catch marked as its
@@ -558,6 +565,8 @@ void DisconnectSlot(coop::net::Session& session, int slot) {
     coop::owner_entity_sync::OnPeerLeftSlot(slot);  // destroy the leaver's owner-entity mirrors (its eyer dies with it)
     coop::hook_sync::OnPeerLeftSlot(slot);  // the leaver's OWNER-PHASE hook mirrors; anchored ones are the host's and stay
     coop::placed_save_sync::OnPeerLeftSlot(slot);
+    coop::garden_actions::OnPeerLeftSlot(slot);
+    coop::world_sound_sync::OnPeerLeftSlot(slot);
     coop::player_inventory_sync::OnDisconnectForSlot(slot);  // re-arm the on-join push; the leaver's profile stays held
 }
 
@@ -646,6 +655,7 @@ DisconnectStats DisconnectAll() {
     coop::owner_entity_sync::OnDisconnect();  // destroy ALL owner-entity mirrors (our spawned actors must not linger into SP)
     coop::hook_sync::OnDisconnect();  // same, for every hook mirror, anchored included
     coop::placed_save_sync::OnDisconnect();
+    coop::garden_actions::OnDisconnect();
     coop::skin_preview::OnDisconnect();  // despawn the F1-skins mannequin
     coop::inventory_pickup_sync::OnDisconnect();
     coop::chat_sync::OnDisconnect();
@@ -656,6 +666,7 @@ DisconnectStats DisconnectAll() {
     coop::signal_catch_sync::OnDisconnect();
     coop::prop_save_data::OnDisconnect();
     coop::laptop_sync::OnDisconnect();
+    coop::laptop_ui_sync::OnDisconnect();
     coop::portable_pc_lid::OnDisconnect();
     coop::laptop_buffer_sync::OnDisconnect();  // quad shadow + assembler
     coop::floppybox_sync::OnDisconnect();  // box shadows + taken-ring + pendings
@@ -785,6 +796,7 @@ void TickGameplay(coop::net::Session& session, bool isConnected, bool isHost,
     { PP::Scope _s{PP::Bucket::Interactable}; ue_wrap::ScopedWalkTimer _w{"sync:owner_entity"}; coop::owner_entity_sync::Tick(); }  // owner-entity: 4 Hz own-pose stream + keepalive + death-watch + mirror prune
     { PP::Scope _s{PP::Bucket::Interactable}; ue_wrap::ScopedWalkTimer _w{"sync:hook"}; coop::hook_sync::Tick(); }  // hook: one activeHook read, then a gated 4/20 Hz head poll only while a hook exists
     { PP::Scope _s{PP::Bucket::Interactable}; coop::placed_save_sync::Tick(); }
+    { PP::Scope _s{PP::Bucket::Interactable}; coop::garden_actions::Tick(); }
     if (isHost) { PP::Scope _s{PP::Bucket::Interactable}; ue_wrap::ScopedWalkTimer _w{"sync:prop_drive_host"}; coop::prop_drive_host::Tick(session); }  // HOST: publish the driven props that moved, close the streams that rested (after the hook poll that feeds it; an empty set costs one size check)
     coop::dev::dev_lanes::TickDrills(session);  // [dev] the drills' and censuses' legs (a single read each when off)
     coop::player_damage::Tick();  // impact-entry PRE cancels lazy install (non-local bodies)
@@ -796,6 +808,7 @@ void TickGameplay(coop::net::Session& session, bool isConnected, bool isHost,
     { PP::Scope _s{PP::Bucket::Interactable}; ue_wrap::ScopedWalkTimer _w{"sync:signal_catch"}; coop::signal_catch_sync::Tick(); }  // the catch and cleared detectors, 1 Hz
     { PP::Scope _s{PP::Bucket::Interactable}; ue_wrap::ScopedWalkTimer _w{"sync:propsave"}; coop::prop_save_data::Drive(); }  // budgeted park applies + the 1 Hz assembler sweep
     { PP::Scope _s{PP::Bucket::Interactable}; ue_wrap::ScopedWalkTimer _w{"sync:laptop"}; coop::laptop_sync::Tick(); }  // PC power edge poll (4 Hz)
+    { PP::Scope _s{PP::Bucket::Interactable}; coop::laptop_ui_sync::Tick(); }
     { PP::Scope _s{PP::Bucket::Interactable}; ue_wrap::ScopedWalkTimer _w{"sync:pc_lid"}; coop::portable_pc_lid::Tick(); }  // the lid's watch until live, then waiting lines and held edges (1 Hz while any)
     { PP::Scope _s{PP::Bucket::Interactable}; ue_wrap::ScopedWalkTimer _w{"sync:laptop_quad"}; coop::laptop_buffer_sync::Tick(); }  // quad int pre-filter poll (4 Hz)
     { PP::Scope _s{PP::Bucket::Interactable}; ue_wrap::ScopedWalkTimer _w{"sync:floppybox"}; coop::floppybox_sync::Tick(); }  // box sweep (1 Hz)

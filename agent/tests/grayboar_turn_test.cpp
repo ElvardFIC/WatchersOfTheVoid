@@ -6,10 +6,10 @@
 #include <limits>
 
 namespace test {
-struct Actor {void* audio=nullptr;} actor;
+struct Actor {void* audio=nullptr;} actor,replacement;
 struct Animation {void* boar=&actor;float turn=0;} anim;
 int audio=0;
-void* objects[]={&actor,&anim,&audio};int serials[]={1,1,1};
+void* objects[]={&actor,&anim,&audio,&replacement};int serials[]={1,1,1,1};
 uint32_t world=1;int watches=0,pitches=0,reenter=0;float pitch=0;
 bool watchOk=false,ready=true,paramOk=true,live=true,boar=true,animation=true;
 ue_wrap::script_gate::PostFn after=nullptr;
@@ -20,14 +20,14 @@ void* CurrentWorld(){return &test::world;}
 void* WorldOf(void*){return &test::world;}
 }
 namespace ue_wrap::reflection {
-int32_t InternalIndexOf(void* p){for(int i=0;i<3;++i)if(p==test::objects[i])return i;return -1;}
+int32_t InternalIndexOf(void* p){for(int i=0;i<4;++i)if(p==test::objects[i])return i;return -1;}
 bool IsLive(void* p){return test::live&&InternalIndexOf(p)>=0;}
-bool IsLiveByIndex(void* p,int32_t i){return i>=0&&i<3&&test::objects[i]==p&&test::live;}
-int32_t SlotSerial(int32_t i){return i>=0&&i<3?test::serials[i]:0;}
+bool IsLiveByIndex(void* p,int32_t i){return i>=0&&i<4&&test::objects[i]==p&&test::live;}
+int32_t SlotSerial(int32_t i){return i>=0&&i<4?test::serials[i]:0;}
 int32_t AllocateSlotSerial(int32_t i){return SlotSerial(i);}
 void* ClassOf(void* p){return p;}
 void* SuperStructOf(void*){return nullptr;}
-const FName& NameOf(void* cls){static FName n;n.ComparisonIndex=cls==&test::actor?1:cls==&test::anim?2:3;return n;}
+const FName& NameOf(void* cls){static FName n;n.ComparisonIndex=(cls==&test::actor||cls==&test::replacement)?1:cls==&test::anim?2:3;return n;}
 bool NameEquals(const FName& n,const wchar_t* name){return
  (n.ComparisonIndex==1&&test::boar&&!wcscmp(name,L"grayboar_C"))||
  (n.ComparisonIndex==2&&test::animation&&!wcscmp(name,L"grayboar_Skeleton_AnimBlueprint_C"));}
@@ -137,4 +137,41 @@ int main(){
  assert(!N::IsClientRelayableReliableKind(N::ReliableKind::GrayboarTurn));
  assert(!N::IsPreWorldSendableKind(N::ReliableKind::GrayboarTurn));
  puts("PASS turn lifecycle: missing audio metadata, recycled objects, recursive update, disconnect/world reset, bounded backlog and host-only lane");
+
+ auto resetClient=[&] {
+  T::OnDisconnect();session.mode=N::Role::Client;session.active=session.linked=true;
+  entities.id=42;entities.present=true;entities.row={&actor,true,true};entities.extra.clear();
+  actor.audio=replacement.audio=&audio;anim.boar=&actor;anim.turn=0;reenter=0;
+  boar=animation=live=ready=paramOk=true;packet={42,1,.8f};T::Install(&session);
+ };
+ resetClient();receive();T::g_client[0].received=T::Now()-100;update();assert(anim.turn==.8f);
+ ++serials[0];update();assert(anim.turn==0&&pitch==.5f&&T::g_client.empty());
+ ++packet.sequence;packet.turn=-.6f;receive();assert(T::g_client[0].from==0&&T::g_client[0].actor.Is(&actor));
+ T::g_client[0].received=T::Now()-100;update();assert(anim.turn==-.6f);
+ entities.row.actor=&replacement;anim.boar=&replacement;update();
+ assert(anim.turn==0&&pitch==.5f&&T::g_client.empty());
+ ++packet.sequence;receive();assert(T::g_client[0].from==0&&T::g_client[0].actor.Is(&replacement));
+ puts("PASS turn replacement: recycled and remapped bodies get neutral steering/pitch, and fresh packets interpolate from neutral");
+
+ resetClient();receive();T::g_client[0].received=T::Now()-100;++serials[0];
+ ++packet.sequence;packet.turn=-1;receive();assert(T::g_client.size()==1&&T::g_client[0].from==0);
+ resetClient();entities.present=false;receive();assert(!T::g_client[0].actor.Raw());
+ T::g_client[0].received=T::Now()-100;entities.present=true;update();
+ assert(anim.turn==.8f&&T::g_client[0].actor.Is(&actor));
+ ++serials[0];T::Tick();assert(T::g_client.empty());
+ for(int change=0;change<3;++change) {
+  resetClient();receive();
+  if(change==0)entities.row.mirror=false;
+  if(change==1)entities.row.live=false;
+  if(change==2)entities.present=false;
+  T::Tick();assert(T::g_client.empty());
+ }
+ resetClient();
+ for(uint32_t i=1;i<=T::kLimit;++i){packet.eid=i;packet.sequence=i;receive();}
+ assert(T::g_client.size()==T::kLimit);
+ for(auto& row:T::g_client)row.received=T::Now()-1501;
+ packet={200,200,.2f};receive();
+ assert(T::g_client.size()==1&&T::g_client[0].eid==200&&T::g_seen==200);
+ puts("PASS turn admission and lifecycle: stale interpolation reset before animation, late replica binding, authority/retirement cleanup and expired capacity reuse at receipt");
+ T::OnDisconnect();
 }
