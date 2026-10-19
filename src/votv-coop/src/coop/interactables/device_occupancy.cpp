@@ -106,6 +106,15 @@ bool ReleaseHeld(const std::wstring& key) {
     for (ReleaseHoldFn fn : g_releaseHolds) held = fn(key.c_str()) || held;
     return held;
 }
+// True while a release waits on a hold: the old claim is still ours and the edge is read again next tick.
+bool g_holdPending = false;
+
+// The lanes told that the local claim `key` is over, whichever way it ended (RegisterClaimEnded).
+std::vector<ClaimEndedFn> g_claimEnded;
+void ClaimEnded(const std::wstring& key) {
+    g_holdPending = false;
+    for (ClaimEndedFn fn : g_claimEnded) fn(key.c_str());
+}
 
 // The desk FSM-hold (host-authored). While a peer's ping state machine runs, the desk is
 // functionally that peer's even after it physically dismounts (the machine keeps consuming
@@ -196,6 +205,7 @@ void SendClaim(coop::net::Session* s, const std::wstring& key, uint8_t slot, boo
 void ForceExitLocal(void* local, const std::wstring& key, uint8_t holder) {
     g_localKey.clear();
     g_pendingSend = false;
+    ClaimEnded(key);
     if (DS::ForceExitInterface(local)) {
         UE_LOGI("device_occupancy: FORCE-EXIT local from '%ls' (held by slot %u)",
                 key.c_str(), static_cast<unsigned>(holder));
@@ -329,10 +339,12 @@ void Tick() {
                 g_busy.erase(g_localKey);
             }
             if (s->connected()) SendClaim(s, g_localKey, LocalSlot(), false);
+            ClaimEnded(g_localKey);
         }
         g_localKey.clear();
         g_localWidget = nullptr;
         g_pendingSend = false;
+        g_holdPending = false;
         return;
     }
 
@@ -349,12 +361,17 @@ void Tick() {
     }
 
     void* w = DS::ReadActiveInterface(local);
-    if (w == g_localWidget) return;  // no edge -- the per-tick steady state
+    if (w == g_localWidget && !g_holdPending) return;  // no edge -- the per-tick steady state
 
     // The falling edge (or a direct widget switch): release what we held, unless a lane asks the release to
     // wait. g_localWidget stays, so the edge is read again on the next tick; the claim stays ours meanwhile.
+    // An interface that is up again while a release waits (one widget serves every notebook, so it is the
+    // same pointer) finishes the hold first: the old claim goes, and the open is handled as a rising edge.
     if (!g_localKey.empty()) {
-        if (ReleaseHeld(g_localKey)) return;
+        if (!(g_holdPending && w) && ReleaseHeld(g_localKey)) {
+            g_holdPending = true;
+            return;
+        }
         UE_LOGI("device_occupancy: local EXIT '%ls' -- releasing", g_localKey.c_str());
         if (s->role() == coop::net::Role::Host) {
             {
@@ -365,9 +382,11 @@ void Tick() {
         } else if (s->connected()) {
             SendClaim(s, g_localKey, mySlot, false);
         }
+        ClaimEnded(g_localKey);
         g_localKey.clear();
         g_pendingSend = false;
     }
+    g_holdPending = false;
 
     // The rising edge: classify and claim.
     if (w) {
@@ -492,6 +511,7 @@ void OnReliable(const coop::net::DeviceClaimPayload& p, uint8_t senderSlot) {
                 ForceExitLocal(local, key, p.slot);
                 g_localWidget = DS::ReadActiveInterface(local);
             } else {
+                ClaimEnded(g_localKey);
                 g_localKey.clear();  // world down -- nothing to exit
                 g_pendingSend = false;
             }
@@ -508,6 +528,13 @@ void RegisterReleaseHold(ReleaseHoldFn fn) {
     for (ReleaseHoldFn f : g_releaseHolds)
         if (f == fn) return;
     g_releaseHolds.push_back(fn);
+}
+
+void RegisterClaimEnded(ClaimEndedFn fn) {
+    if (!fn) return;
+    for (ClaimEndedFn f : g_claimEnded)
+        if (f == fn) return;
+    g_claimEnded.push_back(fn);
 }
 
 bool LocalHolds(const wchar_t* key) {
@@ -567,6 +594,8 @@ void OnDisconnect() {
         std::lock_guard<std::mutex> lk(g_mutex);
         g_busy.clear();
     }
+    if (!g_localKey.empty()) ClaimEnded(g_localKey);
+    g_holdPending = false;
     g_localKey.clear();
     g_localWidget = nullptr;
     g_pendingSend = false;

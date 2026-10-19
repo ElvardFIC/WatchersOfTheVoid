@@ -48,11 +48,17 @@ bool IsReadOnly(void* editorWidget);
 // outside `text`, or a field that does not resolve (`pagesOut` is then untouched).
 bool CommitEditorPage(void* editorWidget, std::vector<std::wstring>& pagesOut);
 
-// The editor's own commit handler, the event the box ends a typed page in (MLET_text's OnTextCommitted,
-// bound in the widget's graph): it writes `text` into the open page of the notebook, reloads the box and
-// runs the graph, so the graph's watchers see it. A keystroke itself only fires OnTextChanged, whose
-// handler scrolls. The handler's name carries cooked numbers; false when it does not resolve.
+// The widget's own committed-text handler: the bound event of MLET_text's OnTextCommitted, which the box
+// raises when a typed page is committed. It cuts the text to 32 lines, writes it into the box and into the
+// open page of the notebook's `text`, and runs the graph, so the graph's watchers see it. A keystroke itself
+// raises only OnTextChanged, whose handler scrolls. The handler's name carries cooked numbers; false when it
+// does not resolve.
 bool CommitKeystroke(void* editorWidget, const std::wstring& text);
+
+// ui_notebook_C::init(clipboard, uneditable) again on the notebook the editor is open on: the widget's own
+// page load. It reloads `notebookText` from the notebook's `text` and runs clampPages, which sets the box
+// from the open page. For an editor whose notebook's `text` was written under it.
+bool ReloadEditor(void* editorWidget);
 
 // ui_notebook_C::quit(skipEdit), the editor's own close. Its body writes the box into the open page
 // unless skipEdit, hides the widget and clears `clipboard`.

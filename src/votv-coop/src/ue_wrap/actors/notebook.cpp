@@ -110,7 +110,8 @@ bool ReadEditorText(void* editorWidget, std::wstring& out) {
     uint8_t ftext[ftext_utils::kFTextSize]{};
     if (!frame.GetRaw(L"ReturnValue", ftext, sizeof(ftext))) return false;
     // The FString the conversion makes goes back to the engine heap. The FText keeps the reference its
-    // call took (ftext_utils.h): it shares the box's own text data, which EngineFree must not free.
+    // call took (ftext_utils.h): the tree has no helper that releases an FText, and EngineFree is for flat
+    // buffers, not for text data the engine may share. About one page of text data stays per read.
     out = ftext_utils::FTextToStringFreeing(ftext);
     return true;
 }
@@ -167,6 +168,16 @@ bool CommitKeystroke(void* editorWidget, const std::wstring& text) {
     ParamFrame frame(fn);
     return frame.valid() && frame.SetRaw(L"Text", ftext, sizeof(ftext)) && frame.Set<uint8_t>(L"CommitMethod", 0) &&
            Call(editorWidget, frame);
+}
+
+bool ReloadEditor(void* editorWidget) {
+    void* notebook = NotebookOf(editorWidget);
+    if (!notebook) return false;
+    void* fn = R::FindDispatchFunctionCached(R::ClassOf(editorWidget), L"init");
+    if (!fn) return false;
+    ParamFrame frame(fn);
+    return frame.valid() && frame.Set<void*>(L"clipboard", notebook) &&
+           frame.Set<bool>(L"uneditable", IsReadOnly(editorWidget)) && Call(editorWidget, frame);
 }
 
 bool CallQuit(void* editorWidget, bool skipEdit) {

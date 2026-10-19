@@ -4,11 +4,14 @@
 
 #include "coop/interactables/device_occupancy.h"
 #include "coop/net/session.h"
+#include "coop/player/players_registry.h"
+#include "coop/props/prop_key_index.h"
 #include "coop/props/prop_record_gates.h"
 #include "coop/props/prop_save_data.h"
 #include "ue_wrap/actors/notebook.h"
 #include "ue_wrap/actors/prop.h"
 #include "ue_wrap/core/cached_obj_ref.h"
+#include "ue_wrap/core/game_thread.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/script_gate.h"
 #include "ue_wrap/desk/device_screen.h"
@@ -48,6 +51,7 @@ Clock::time_point g_nextExamine{};
 // What the editing peer last published, or read when it began: the text a later examine compares to.
 struct Baseline {
     std::wstring key;
+    std::wstring claim;
     std::vector<std::wstring> pages;
 };
 Baseline g_base;
@@ -56,7 +60,8 @@ Baseline g_base;
 ue_wrap::CachedObjRef g_closing;
 
 // CLIENT: the publishes the host has not answered yet. The lane republishes every intent it takes to
-// every peer, the author included, so one canonical record for the notebook comes back per publish.
+// every peer, the author included, so a canonical record for the notebook's Key comes back after each
+// publish; one that arrives after a publish answers the oldest still unanswered.
 struct Flight {
     std::wstring key;
     std::wstring claim;
@@ -65,9 +70,9 @@ struct Flight {
     Clock::time_point deadline{};
 };
 Flight g_flight;
-// The claim this peer has published a notebook under since it took it; cleared when the release goes on.
+// The claim this peer has published a notebook under since it took it; cleared when the claim ends.
 std::wstring g_pubClaim;
-Stats g_stats;
+dev::Stats g_stats;
 
 coop::net::Session* Session() {
     auto* s = g_session.load(std::memory_order_acquire);
@@ -113,6 +118,7 @@ void OnGraphPost(const sg::Call& c) {
     if (g_base.key != key) {
         // The first look at this notebook: the text it opened with is what the edits are measured from.
         g_base.key = key;
+        g_base.claim = claim;
         N::ReadPages(notebook, g_base.pages);
         g_flight = Flight{};
         g_pubClaim.clear();
@@ -177,30 +183,75 @@ void OnUsedPost(const sg::Call&) {
     if (!notebook || !s || !N::ReadPages(notebook, pages) || pages.size() <= g_usedPagesBefore) return;
     const std::wstring key = ue_wrap::prop::GetKeyString(notebook);
     if (key.empty() || key == L"None") return;
+    // A notebook another peer has open is that editor's: the host would refuse this record, and the open
+    // editor's close would overwrite the page. The game cannot merge two writers, so the page stays here.
+    const std::wstring claim = DS::ClassifyDeviceActorClaimKey(notebook);
+    const uint8_t holder = claim.empty() ? uint8_t{0xFF} : coop::device_occupancy::HolderOf(claim.c_str());
+    if (holder != 0xFF && holder != coop::players::Registry::Get().LocalPeerId()) {
+        static bool said = false;
+        if (!said) {
+            said = true;
+            UE_LOGW("notebook_sync: a page was added to notebook '%ls' while slot %u has it open -- the page "
+                    "stays on this peer (said once)", key.c_str(), static_cast<unsigned>(holder));
+        }
+        return;
+    }
     coop::prop_save_data::Publish(s, notebook, key);
 }
 
-// device_occupancy asks this each tick the local claim's release is due.
+// device_occupancy asks this each tick the local claim's release is due. The state of the claim is not
+// reset here: ClaimEnded is told when the claim is over, by whatever route.
 bool ReleaseHold(const wchar_t* key) {
-    if (g_flight.closing && g_flight.claim == key) {
-        if (g_flight.unacked > 0 && Clock::now() < g_flight.deadline) return true;
-        if (g_flight.unacked > 0)
-            UE_LOGW("notebook_sync: the host did not answer the close of '%ls' in %lld s -- releasing its claim anyway",
-                    key, static_cast<long long>(std::chrono::duration_cast<std::chrono::seconds>(kAckBound).count()));
-        g_flight = Flight{};
+    if (!g_flight.closing || g_flight.claim != key) return false;
+    if (g_flight.unacked > 0 && Clock::now() < g_flight.deadline) {
+        ++g_stats.releaseWaits;
+        return true;
     }
-    // The release goes on from here: the next claim of this notebook has published nothing yet.
-    if (g_pubClaim == key) g_pubClaim.clear();
+    if (g_flight.unacked > 0)
+        UE_LOGW("notebook_sync: the host did not answer the close of '%ls' in %lld s -- releasing its claim anyway",
+                key, static_cast<long long>(std::chrono::duration_cast<std::chrono::seconds>(kAckBound).count()));
     return false;
+}
+
+// device_occupancy tells this when the local claim `key` is over: released, lost, the world gone, the
+// session ended. Everything kept for that claim goes, so the next claim of the notebook starts fresh.
+void ClaimEnded(const wchar_t* key) {
+    if (g_pubClaim == key) g_pubClaim.clear();
+    if (g_flight.claim == key) g_flight = Flight{};
+    if (g_base.claim == key) {
+        g_base = Baseline{};
+        g_nextExamine = {};
+    }
+}
+
+// The editor shows a page loaded when it opened. A record applied to the notebook under it leaves the box
+// stale, and the box would write that page back at the next commit or quit, so the widget's own page load
+// (init) runs again once the apply is done, and the lane measures later edits from what was applied.
+void ReloadAfterApply(const std::wstring& key) {
+    ue_wrap::game_thread::Post([key] {
+        void* notebook = coop::prop_key_index::Find(key);
+        void* local = coop::players::Registry::Get().Local();
+        void* widget = local ? DS::ReadActiveInterface(local) : nullptr;
+        if (!notebook || N::NotebookOf(widget) != notebook) return;
+        const std::wstring claim = DS::ClassifyDeviceActorClaimKey(notebook);
+        if (claim.empty() || g_pubClaim == claim) return;   // its own publish stands, not the applied page
+        if (!N::ReloadEditor(widget)) return;
+        if (g_base.key == key) N::ReadPages(notebook, g_base.pages);
+    });
 }
 
 // The apply gate: a peer that holds the notebook's claim and has published it in this claim applies no
 // record for it. Its own edit is the newer state; a record that comes back is the host's answer to one
 // of its publishes, or older. Before its first publish it has nothing newer to protect, and a record
-// the host sent before the grant (the previous editor's close, overtaken by the grant) applies.
+// the host sent before the grant (the previous editor's close, overtaken by the grant) applies, with
+// the editor's box reloaded from it.
 bool ApplyGate(void* actor) {
-    const std::wstring claim = ClaimOf(actor);
-    if (claim.empty() || g_pubClaim != claim || !coop::device_occupancy::LocalHolds(claim.c_str())) return true;
+    const std::wstring claim = DS::ClassifyDeviceActorClaimKey(actor);
+    if (claim.empty() || !coop::device_occupancy::LocalHolds(claim.c_str())) return true;
+    if (g_pubClaim != claim) {
+        ReloadAfterApply(ue_wrap::prop::GetKeyString(actor));
+        return true;
+    }
     if (g_flight.unacked > 0 && g_flight.key == ue_wrap::prop::GetKeyString(actor)) --g_flight.unacked;
     return false;
 }
@@ -217,6 +268,7 @@ void Install(coop::net::Session* session) {
         coop::prop_record_gates::RegisterIntentGate(L"prop_notebook_C", &AcceptsClientRecord);
         coop::prop_record_gates::RegisterApplyGate(L"prop_notebook_C", &ApplyGate);
         coop::device_occupancy::RegisterReleaseHold(&ReleaseHold);
+        coop::device_occupancy::RegisterClaimEnded(&ClaimEnded);
     }
 }
 
@@ -234,12 +286,16 @@ bool AcceptsClientRecord(void* actor, uint8_t senderSlot) {
 }
 
 
+namespace dev {
+
 bool BaselineTaken(void* notebook) {
     const std::wstring key = ue_wrap::prop::GetKeyString(notebook);
     return !key.empty() && g_base.key == key;
 }
 
 Stats StatsNow() { return g_stats; }
+
+}  // namespace dev
 
 void OnDisconnect() {
     g_session.store(nullptr, std::memory_order_release);
@@ -249,7 +305,7 @@ void OnDisconnect() {
     g_pubClaim.clear();
     g_closing.Reset();
     g_used.Reset();
-    g_stats = Stats{};
+    g_stats = dev::Stats{};
 }
 
 }  // namespace coop::notebook_sync

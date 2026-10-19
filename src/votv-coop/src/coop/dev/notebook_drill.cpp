@@ -63,7 +63,10 @@ constexpr uint8_t kActOpen = 4;
 constexpr int     kClientSlot = 1;
 constexpr uint8_t kOtherSlot = 6;   // a slot that holds nothing: the rule is asked about it directly
 constexpr const wchar_t* kSeedPage   = L"notebook drill: the page the host wrote";
-constexpr const wchar_t* kPeriodicPage = L"notebook drill: the page the client typed and left open";
+// The page typed and left open runs past the editor's 32-line limit, so the commit handler's cut is exercised: what
+// lands on the notebook is the first 32 lines.
+constexpr int kTypedLines = 40;
+constexpr int kKeptLines = 32;
 constexpr const wchar_t* kEditedPage = L"notebook drill: the page the client wrote";
 
 constexpr char kLineJudged[]  = "[NOTE-DRILL] host judged the claim";
@@ -137,6 +140,24 @@ Found FindBook() {
     return f;
 }
 
+// The typed page: kTypedLines lines, each numbered. What the commit handler keeps is its first kKeptLines.
+std::wstring TypedPage() {
+    std::wstring page;
+    for (int i = 1; i <= kTypedLines; ++i) {
+        if (i > 1) page += L'\n';
+        page += L"notebook drill line " + std::to_wstring(i);
+    }
+    return page;
+}
+
+// Is this the typed page as the notebook keeps it: line 1 first, line 32 last, nothing of line 33.
+// (Matched on the lines, not the line break, which the engine's text may spell either way.)
+bool IsTypedPage(const std::wstring& s) {
+    return s.compare(0, 21, L"notebook drill line 1") == 0 &&
+           s.find(L"line " + std::to_wstring(kKeptLines)) != std::wstring::npos &&
+           s.find(L"line " + std::to_wstring(kKeptLines + 1)) == std::wstring::npos;
+}
+
 std::wstring FirstPage(void* book) {
     std::vector<std::wstring> pages;
     return N::ReadPages(book, pages) && !pages.empty() ? pages[0] : std::wstring(L"(no page read)");
@@ -150,7 +171,7 @@ uint64_t g_hStepMs = 0, g_hNextMs = 0, g_armedMs = 0;
 int      g_spawnTries = 0;
 ue_wrap::CachedObjRef g_book;
 std::wstring g_claim;
-coop::notebook_sync::Stats g_statsBefore;
+coop::notebook_sync::dev::Stats g_statsBefore;
 
 void HEnter(HStep s) {
     g_h = s;
@@ -290,7 +311,7 @@ void HostTick(coop::net::Session& s) {
         void* book = g_book.Get();
         if (!book) { HostFail("periodic", "the notebook died before the client's page arrived"); return; }
         const std::wstring first = FirstPage(book);
-        if (first != kPeriodicPage) {
+        if (!IsTypedPage(first)) {
             if (HExpired(kLegBoundMs)) {
                 UE_LOGW("[NOTE-DRILL] FAIL host periodic: the host's copy still reads '%ls'", first.c_str());
                 g_h = HStep::Done;
@@ -310,7 +331,7 @@ void HostTick(coop::net::Session& s) {
         }
         UE_LOGI("[NOTE-DRILL] host refusal PASS -- slot %d's record is refused while slot %d holds the claim",
                 kOtherSlot, kClientSlot);
-        g_statsBefore = coop::notebook_sync::StatsNow();
+        g_statsBefore = coop::notebook_sync::dev::StatsNow();
         Say(kLinePeriodic);
         HEnter(HStep::AwaitText);
         return;
@@ -323,7 +344,7 @@ void HostTick(coop::net::Session& s) {
         if (first == kEditedPage) {
             // The close's record was taken from the slot that still held the claim: the client keeps it until
             // the host has answered, so the release cannot have come first.
-            const coop::notebook_sync::Stats st = coop::notebook_sync::StatsNow();
+            const coop::notebook_sync::dev::Stats st = coop::notebook_sync::dev::StatsNow();
             if (st.acceptedHeld <= g_statsBefore.acceptedHeld || st.acceptedFree != g_statsBefore.acceptedFree ||
                 st.refused != g_statsBefore.refused) {
                 UE_LOGW("[NOTE-DRILL] FAIL host closing-order: held %u->%u free %u->%u refused %u->%u across the close",
@@ -488,7 +509,7 @@ void ClientTick() {
         std::wstring boxNow;
         if (N::NotebookOf(widget) != g_cBook.Get() || !N::ReadEditorText(widget, boxNow)) {
             ClientFail("look", "the editor is no longer open on the notebook");
-        } else if (coop::notebook_sync::BaselineTaken(g_cBook.Get())) {
+        } else if (coop::notebook_sync::dev::BaselineTaken(g_cBook.Get())) {
             CEnter(CStep::Type);
         } else if (CExpired(kLegBoundMs)) {
             ClientFail("look", "the notebook sync never looked at the open notebook");
@@ -502,7 +523,8 @@ void ClientTick() {
         // notebook, as the box does when a typed page is committed. The commit repeats until the host has read
         // the page, since the lane publishes on the first graph event after its 2 s gate.
         void* const widget = DS::ReadActiveInterface(player);
-        if (N::NotebookOf(widget) != g_cBook.Get() || !N::SetEditorText(widget, kPeriodicPage)) {
+        if (N::NotebookOf(widget) != g_cBook.Get() || !N::SetEditorText(widget, TypedPage()) ||
+            !N::CommitKeystroke(widget, TypedPage())) {
             ClientFail("type", "the editor's box did not take the page");
             return;
         }
@@ -518,8 +540,12 @@ void ClientTick() {
             return;
         }
         if (CExpired(kLegBoundMs)) { ClientFail("periodic", "the host never said it read the typed page"); return; }
+        // Committed again with what the box now holds (the cut page): a longer page would raise the limit's
+        // hint at every commit.
         void* const widget = DS::ReadActiveInterface(player);
-        if (N::NotebookOf(widget) != g_cBook.Get() || !N::CommitKeystroke(widget, kPeriodicPage))
+        std::wstring boxNow;
+        if (N::NotebookOf(widget) != g_cBook.Get() || !N::ReadEditorText(widget, boxNow) ||
+            !N::CommitKeystroke(widget, boxNow))
             ClientFail("periodic", "the editor's commit handler did not dispatch");
         return;
     }
@@ -541,6 +567,11 @@ void ClientTick() {
     case CStep::AwaitText:
         if (!Due(g_cNextMs, kCheckEveryMs)) return;
         if (HeardFromHost(kLineHasText)) {
+            // The release of the claim waited for the host's answer: it was read as due at least once before
+            // the answer came, which is what keeps the close ahead of the release.
+            const uint32_t waits = coop::notebook_sync::dev::StatsNow().releaseWaits;
+            if (waits == 0) { ClientFail("hold", "the claim's release did not wait for the host's answer"); return; }
+            UE_LOGI("[NOTE-DRILL] client hold PASS -- the release waited %u tick(s) for the host's answer", waits);
             UE_LOGI("[NOTE-DRILL] client text PASS -- the host read the page");
             if (ModeOf() == Mode::Rejoin) UE_LOGI("[NOTE-DRILL] client LIFE DONE");
             else UE_LOGI("[NOTE-DRILL] client DONE");
@@ -576,7 +607,7 @@ void OnDisconnect() {
     g_cBook.Reset();
     g_book.Reset();
     g_claim.clear();
-    g_statsBefore = coop::notebook_sync::Stats{};
+    g_statsBefore = coop::notebook_sync::dev::Stats{};
     g_cClaim.clear();
 }
 

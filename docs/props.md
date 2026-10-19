@@ -239,27 +239,37 @@ text is the prop's save record and crosses on the record lane above with no mess
   holds its claim, or from any slot while nobody holds it: a free notebook is anyone's to change,
   which a torn page added to it is. A record from another slot while a peer holds it is refused
   and logged. The rule is judged where the record lands, so a record that parked first (the
-  host did not index the notebook yet) is judged by it too. It is registered with
+  host did not index the notebook yet) is judged by it too, and is republished to the other
+  peers only when it lands, never at arrival. It is registered with
   `coop/props/prop_record_gates`; the record lane names no class.
 - **The close reaches the host while its sender holds.** The record rides the Bulk lane and the
   release the Normal one, so a client keeps the claim after it closes the editor until the host's
-  republish of its last publish comes back (the lane's acknowledgement), and lets go anyway after
-  10 s, logged. A host's own close needs no wait: it is the canonical.
+  republish of its last publish comes back (the lane's acknowledgement: the canonical record for
+  that notebook's Key arriving after its publish), and lets go anyway after 10 s, logged. Opening
+  an editor while that wait is pending ends it: the old claim goes, then the new open is handled.
+  A host's own close needs no wait: it is the canonical.
 - **No echo onto the editor.** A peer that holds the claim and has published the notebook in this
   claim applies no record for it, whether it arrives live or from the park: its own edit is the
   newer state. Before its first publish it has nothing newer to protect, so the previous editor's
-  close, which the host sent before the grant and the grant overtook, is applied. The mark resets
-  when the claim is released.
+  close, which the host sent before the grant and the grant overtook, is applied, and the open
+  editor's page is reloaded from the notebook's `text` through the widget's own page load
+  (`init`), so the box shows what was applied and the lane measures later edits from it. The
+  mark, the wait and the baseline reset when the claim ends, by whatever route: a release, a lost
+  race, the world going down, the session ending.
 - **A page added outside the editor.** Using a torn sheet on a notebook (`playerUsedOn`) appends the
   sheet's text to the notebook's and destroys the sheet, with no editor open and no claim. The
   verb's end publishes the notebook's record when its page count grew, from whichever peer ran it;
-  the host's rule takes it while nobody holds the notebook.
+  the host's rule takes it while nobody holds the notebook. If another peer has the notebook open,
+  the page stays on the peer that added it, logged once: the game cannot merge two writers.
 - **Forced exits.** Ragdoll, a faint and death leave the interface without `quit`, as in the
   single-player game, so the box's uncommitted text is lost there and nothing is published.
 - **Late join.** A joiner is handed every prop's record in the snapshot, the notebook's last
   published text included, and the claim table, so it reads the text as last published and is
   denied the editor while another peer holds it; the close then reaches it as an ordinary record.
 - **The ceiling.** A record over 32 KiB is refused with a log line and stays on the editing peer.
+- **A leak that remains.** Each 2 s read of the box returns an engine text object whose reference the
+  tree has no helper to release; the string made from it is freed. About one page of text data is
+  retained per read of a page that changed, of the order of a few KiB `[?]`.
 
 A page torn out of a notebook is `prop_notebook_paper_C`, born by a client's prop birth route
 (`coop/props/prop_drop_intent`). The drawn pixels of `prop_paper_drawable_C` are in no save

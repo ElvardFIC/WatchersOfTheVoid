@@ -69,6 +69,13 @@ uint8_t HolderOf(const wchar_t* key);
 using ReleaseHoldFn = bool (*)(const wchar_t* key);
 void RegisterReleaseHold(ReleaseHoldFn fn);
 
+// A lane that keeps state per claim registers here to be told when the LOCAL claim `key` is over, however it
+// ended: released after a hold, a lost race, the world going down, the session ending. The release of a claim
+// that was never ours (an immediate deny) names its key too; a lane ignores a key it does not hold. Also
+// ends a pending hold. Game thread.
+using ClaimEndedFn = void (*)(const wchar_t* key);
+void RegisterClaimEnded(ClaimEndedFn fn);
+
 // HOST: send the current claim table to a joining peer (world-ready replay).
 void QueueConnectBroadcastForSlot(int peerSlot);
 

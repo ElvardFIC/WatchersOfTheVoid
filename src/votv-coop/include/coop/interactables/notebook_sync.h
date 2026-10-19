@@ -30,20 +30,27 @@ void Install(coop::net::Session* session);
 // from any slot when none holds it; a record from another slot is refused, logged.
 bool AcceptsClientRecord(void* actor, uint8_t senderSlot);
 
-// What the host's rule has judged since the session began: records taken from the slot holding the claim,
-// from any slot while nobody held it, and refused. For the notebook drill, which reads what the lane did.
+// Session teardown: the session, the last-published text, the close in flight, the unanswered publishes.
+void OnDisconnect();
+
+// What only the notebook drill reads (coop/dev/notebook_drill); nothing else in the mod may.
+namespace dev {
+
+// What the lane has done since the session began: records the host's rule took from the slot holding the claim,
+// from any slot while nobody held it, and refused; and the ticks a release of the local claim waited for the
+// host's answer.
 struct Stats {
     uint32_t acceptedHeld = 0;
     uint32_t acceptedFree = 0;
     uint32_t refused = 0;
+    uint32_t releaseWaits = 0;
 };
 Stats StatsNow();
 
-// Has the 2 s examine taken its first look at this notebook, the text a later edit is measured from?
-// An edit made before that is not a change to publish. For the notebook drill, which waits on it.
+// Has the 2 s examine taken its first look at this notebook, the text a later edit is measured from? An edit
+// made before that is not a change to publish.
 bool BaselineTaken(void* notebook);
 
-// Session teardown: the session, the last-published text, the close in flight, the unanswered publishes.
-void OnDisconnect();
+}  // namespace dev
 
 }  // namespace coop::notebook_sync
