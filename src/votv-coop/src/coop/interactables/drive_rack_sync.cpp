@@ -44,6 +44,8 @@ std::atomic<bool> g_rackDirty{false};
 // ---- baselines ----
 std::map<uint32_t, uint64_t> g_rackBase;    // rack eid -> arrays blob hash
 std::map<uint32_t, std::vector<uint8_t>> g_rackShadow;  // rack eid -> last canonical-form blob (client op derivation)
+// MTA keeps an element's state on the element (reference/mtasa-blue/Client/mods/deathmatch/logic/CClientObject.cpp);
+// ours is the engine's actor, so the lane tags each shadow with the actor it was read from.
 std::map<uint32_t, ue_wrap::CachedObjRef> g_rackActor;  // rack eid -> the actor its shadow was taken from
 
 bool g_primed = false;
@@ -56,6 +58,9 @@ coop::blob_chunks::Assembler g_rackAsm;
 // ---- pending applies (rack actor not resolvable yet -- spawn in flight).
 // Replay predicate = resolve-only (canonicals are absolute states; two queued
 // blobs replay in insertion order, newest wins).
+// MTA drops an RPC whose element is not there yet (reference/mtasa-blue/Client/mods/deathmatch/logic/rpc/
+// CRPCFunctions.cpp); its one ordered stream makes that safe. A canonical here rides another lane than its rack's
+// spawn, so it parks.
 struct Pending {
     std::vector<uint8_t> blob;
     Clock::time_point until{};
@@ -210,10 +215,12 @@ void SweepRacks(bool announce) {
             g_rackBase[eid] = h;
             g_rackShadow[eid] = std::move(blob);
             if (announce && host) {
-                // A rack born holding rows reaches the clients here, not through a record.
+                // A rack born holding rows reaches the clients here, not through a record. MTA pushes an element's
+                // state at its creation (reference/mtasa-blue/Server/mods/deathmatch/logic/
+                // CStaticFunctionDefinitions.cpp); a rack's birth is the game's own, so the sweep finds it.
                 const bool sent = HostBroadcastRackCanonical(eid, rack, -1);
                 UE_LOGI("drive_rack: host rack eid=%u first seen mid-session -- canonical %s", eid,
-                        sent ? "sent" : "held (no peer took it; a joiner gets it in its connect seed)");
+                        sent ? "sent" : "not sent (no peer accepted it; a joiner gets it in its connect seed)");
             }
             g_rackActor[eid].Set(rack);
             continue;
