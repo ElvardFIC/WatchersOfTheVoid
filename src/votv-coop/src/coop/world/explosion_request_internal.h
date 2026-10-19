@@ -36,15 +36,15 @@ inline constexpr size_t kShotsMax = 64;
 
 // Why a message was refused, one counter each.
 enum class Refusal : uint8_t {
-    Malformed, DuplicateShot, QueueFull,
+    Malformed, DuplicateShot, QueueFull, NotWorldReady,
     NoLauncher, FungunRule, NotSeated, OriginBound, UnknownShot, Reach, NoExplosive, HandBound, NoPuppet, PuppetDead,
     Unresolved, SpawnFailed,
     Count
 };
 
-// Snake case: "malformed", "duplicate_shot", "queue_full", "no_launcher", "fungun_rule", "not_seated",
-// "origin_bound", "unknown_shot", "reach", "no_explosive", "hand_bound", "no_puppet", "puppet_dead", "unresolved",
-// "spawn_failed".
+// Snake case: "malformed", "duplicate_shot", "queue_full", "not_world_ready", "no_launcher", "fungun_rule",
+// "not_seated", "origin_bound", "unknown_shot", "reach", "no_explosive", "hand_bound", "no_puppet", "puppet_dead",
+// "unresolved", "spawn_failed".
 const char* RefusalName(Refusal r);
 
 // One refusal from `slot`: the tally's note (steady clock) and the counter.
@@ -90,8 +90,8 @@ struct Counters {
     uint64_t shotsAccepted, requestsAccepted, evicted, expired;
     // The client half: shots and requests sent, pending births pushed out by the cap, pending births whose
     // projectile died inside the fire body, pending births left by a body that ended without its post, messages
-    // dropped unsent (a location that did not read, a send that failed), and projectiles that exploded with no shot
-    // sent.
+    // dropped unsent (a location that did not read, a send that failed), and projectiles other than a host's copy
+    // that exploded with no shot sent.
     uint64_t shotsSent, requestsSent, pendingDropped, pendingDead, pendingOrphaned, clientDropped, unmappedProjectile;
 };
 Counters& MutCounters();
@@ -106,9 +106,9 @@ void ClearClientWorld();
 
 // The three judges, one per queue, in explosion_request_host.cpp. Each returns Done (accepted or refused) except
 // at its Waits, each bounded for an honest sender: the hand lane's refill, or the slot's own Fired queue draining.
-// `now` is the net clock's milliseconds; a judge that measures from its item's arrival leaves it unused.
-coop::net::Served JudgeShot(uint8_t slot, Slot& s, const FiredItem& it, uint64_t now);
-coop::net::Served JudgeShotBlast(uint8_t slot, Slot& s, const RequestItem& it, uint64_t now);
-coop::net::Served JudgeBody(uint8_t slot, Slot& s, const RequestItem& it, uint64_t now);
+// Each measures its windows from its item's arrival, never from the tick that serves it.
+coop::net::Served JudgeShot(uint8_t slot, Slot& s, const FiredItem& it);
+coop::net::Served JudgeShotBlast(uint8_t slot, Slot& s, const RequestItem& it);
+coop::net::Served JudgeBody(uint8_t slot, Slot& s, const RequestItem& it);
 
 }  // namespace coop::explosion_request::detail

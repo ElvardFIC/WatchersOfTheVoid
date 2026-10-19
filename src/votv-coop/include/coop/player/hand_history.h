@@ -4,9 +4,9 @@
 // at any moment in the last N ms. The hand lane stamps it where it APPLIES a slot's state, never at
 // receive: that lane paces its applies, so the history follows the hand the host shows. The shape is
 // Source's: a per-player history the server judges an act against
-// (reference/source-sdk-2013/src/game/server/player_lagcompensation.cpp). Its window there is the
-// player's latency; the windows asked of this one are flat, because the hand lane's applies are paced and
-// the window covers that pacing, not the round trip. Engine-free and wire-free; game thread only.
+// (reference/source-sdk-2013/src/game/server/player_lagcompensation.cpp). Its window there is latency plus
+// interpolation, capped at 1 s (:258, :381-399); the windows asked of this one are flat: they cover the hand
+// lane's pacing and, for the hand kinds, the fuse. Engine-free and wire-free; game thread only.
 
 #pragma once
 
@@ -22,7 +22,10 @@ inline constexpr int kRing = 4;
 // held changes nothing; a different class or an empty hand closes the open entry first.
 void Note(uint8_t slot, bool has, const std::wstring& cls, uint64_t nowMs);
 
-// True when `slot` held `cls` (a case-insensitive class name) at any moment in [nowMs - windowMs, nowMs].
+// True when `slot` held `cls` (a case-insensitive class name) at any moment in [nowMs - windowMs, +inf): for an open
+// entry the window has no upper end. There is no `fromMs <= nowMs` bound, deliberately: a hold that began after
+// `nowMs` also counts, so a launcher taken and fired at once is judged at the shot's arrival time, before the hand
+// lane applied the take.
 bool HeldWithin(uint8_t slot, const wchar_t* cls, uint64_t windowMs, uint64_t nowMs);
 
 // Forgets `slot`'s entries (its leave, a session reset).

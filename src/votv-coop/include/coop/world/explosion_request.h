@@ -7,10 +7,11 @@
 //     player owns (a shot's projectile, a held grenade or pipe bomb, the pilled body) is sent as its request.
 //   - HOST: each is checked strictly -- length, the class pairs the game's Blueprints produce, finite floats, a
 //     field the kind does not use zero -- and queued on its sender's slot, then judged one per token of its queue's
-//     own bucket (explosion_request_host.cpp) and spawned natively. Every refusal is counted by reason and said
-//     through a per-lane tally. The slot's state clears with its occupant.
-//   - The explosion source classes (ue_wrap/world/explosion_source.h) resolve by name each tick until held, on a
-//     client, the only role that reads them.
+//     own bucket (explosion_request_host.cpp) and spawned natively. A sender whose world is not ready is refused at
+//     the receive. Every refusal is counted by reason and said through a per-lane tally. The slot's state clears
+//     with its occupant.
+//   - The explosion source classes (ue_wrap/world/explosion_source.h) are resolved on a client, the only role that
+//     reads them: by pointer once held, by class name until then.
 // Game thread throughout.
 
 #pragma once

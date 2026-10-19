@@ -50,6 +50,14 @@ void RunHeldNow(Tally& check, bool breakIt) {
     Clear(kSlot);
 }
 
+// A hold that began after the reference time still counts: an act judged at its arrival, before the take applied.
+void RunOpenedAfter(Tally& check) {
+    Clear(kSlot);
+    Note(kSlot, true, L"prop_a_C", 1250);
+    check(HeldWithin(kSlot, L"prop_a_C", 500, 1000), "opened after: an entry opened after the time is not found");
+    Clear(kSlot);
+}
+
 void RunDropWindow(Tally& check) {
     Clear(kSlot);
     Note(kSlot, true, L"prop_a_C", 1000);
@@ -123,6 +131,7 @@ bool RunSelftestBody() {
     Tally check;
     const bool breakIt = coop::config::ResolveFlag(coop::config_registry::rows::selftest_break_hand_history);
     RunHeldNow(check, breakIt);
+    RunOpenedAfter(check);
     RunDropWindow(check);
     RunSwitch(check);
     RunReNote(check);

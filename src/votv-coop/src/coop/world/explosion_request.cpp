@@ -73,6 +73,13 @@ bool RequestWellFormed(const coop::net::ExplosionRequestPayload& p) {
 
 bool ValidSenderSlot(int senderSlot) { return senderSlot >= 1 && senderSlot < coop::net::kMaxPeers; }
 
+// A sender still in its load window has no puppet and no hand state to judge against; MTA drops a packet from a
+// player that has not finished joining (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:2835, :2957).
+bool SenderWorldReady(uint8_t slot) {
+    const coop::net::Session* s = detail::SessionPtr();
+    return s && s->IsSlotWorldReady(slot);
+}
+
 // A rocket's life is 30 s and 2 s more are allowed; an entry past that can no longer be asked for. A sticky waits
 // for its launcher's RMB or destruction, so it has no age.
 constexpr uint64_t kRocketLifeMs = 32000;
@@ -101,6 +108,7 @@ const char* RefusalName(Refusal r) {
         case Refusal::Malformed:     return "malformed";
         case Refusal::DuplicateShot: return "duplicate_shot";
         case Refusal::QueueFull:     return "queue_full";
+        case Refusal::NotWorldReady: return "not_world_ready";
         case Refusal::NoLauncher:    return "no_launcher";
         case Refusal::FungunRule:    return "fungun_rule";
         case Refusal::NotSeated:     return "not_seated";
@@ -145,13 +153,13 @@ void Tick() {
     for (uint8_t slot = 1; slot < coop::net::kMaxPeers; ++slot) {
         detail::Slot& sl = g_slots[slot];
         sl.fired.Serve(detail::kFired, coop::net::NowMs, [&](const detail::FiredItem& it) {
-            return detail::JudgeShot(slot, sl, it, coop::net::NowMs());
+            return detail::JudgeShot(slot, sl, it);
         });
         sl.shotBlast.Serve(detail::kShotBlast, coop::net::NowMs, [&](const detail::RequestItem& it) {
-            return detail::JudgeShotBlast(slot, sl, it, coop::net::NowMs());
+            return detail::JudgeShotBlast(slot, sl, it);
         });
         sl.bodyBlast.Serve(detail::kBodyBlast, coop::net::NowMs, [&](const detail::RequestItem& it) {
-            return detail::JudgeBody(slot, sl, it, coop::net::NowMs());
+            return detail::JudgeBody(slot, sl, it);
         });
         ExpireRockets(sl);
     }
@@ -197,6 +205,7 @@ void OnFiredReceived(int senderSlot, const uint8_t* bytes, uint16_t len) {
     if (!ValidSenderSlot(senderSlot)) return;  // the dispatch's own guard, kept at this lane's edge
     const auto slot = static_cast<uint8_t>(senderSlot);
     coop::net::ProjectileFiredPayload p{};
+    if (!SenderWorldReady(slot)) return detail::Refuse(slot, detail::Refusal::NotWorldReady);
     if (!bytes || len != sizeof(p)) return detail::Refuse(slot, detail::Refusal::Malformed);
     std::memcpy(&p, bytes, sizeof(p));
     if (!FiredWellFormed(p)) return detail::Refuse(slot, detail::Refusal::Malformed);
@@ -208,6 +217,7 @@ void OnRequestReceived(int senderSlot, const uint8_t* bytes, uint16_t len) {
     if (!ValidSenderSlot(senderSlot)) return;  // the dispatch's own guard, kept at this lane's edge
     const auto slot = static_cast<uint8_t>(senderSlot);
     coop::net::ExplosionRequestPayload p{};
+    if (!SenderWorldReady(slot)) return detail::Refuse(slot, detail::Refusal::NotWorldReady);
     if (!bytes || len != sizeof(p)) return detail::Refuse(slot, detail::Refusal::Malformed);
     std::memcpy(&p, bytes, sizeof(p));
     if (!RequestWellFormed(p)) return detail::Refuse(slot, detail::Refusal::Malformed);

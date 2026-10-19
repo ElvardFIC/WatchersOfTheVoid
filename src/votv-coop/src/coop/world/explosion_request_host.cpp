@@ -60,16 +60,18 @@ constexpr float kRetransmitSlackMs = 1000.0f;
 // A sticky bomb rides whatever it struck, so its point is unbounded but by the world.
 constexpr float kStickyReachCm = 20000.0f;
 
-// The round trip when the session has not measured one yet, and the most of it a bound is widened by (Source clamps
-// its lag correction the same way, sv_maxunlag = 1 s:
-// reference/source-sdk-2013/src/game/server/player_lagcompensation.cpp).
+// The round trip when the session has not measured one yet, and the most of it a bound is widened by. Source caps
+// one-way latency plus interpolation at sv_maxunlag, 1 s (reference/source-sdk-2013/src/game/server/
+// player_lagcompensation.cpp:34, :399); here the round trip is capped at the same second.
 constexpr float kUnmeasuredRttMs = 500.0f;
 constexpr float kMaxRttMs        = 1000.0f;
 
 // The fastest a player and the witch car move, cm/s: a bound is widened by this times the round trip, never by the
-// speed the host last read (a puppet's pose is set each frame and carries none). Source bounds the same question by
-// a class constant, 1.5 x max speed x lag (reference/source-sdk-2013/src/game/server/player.cpp).
-constexpr float kMaxPlayerSpeedCmS = 1500.0f;
+// speed the host last read (a puppet's pose is set each frame and carries none). Source's bound is 1.5 x the
+// player's own max speed x the 1 s lag cap (reference/source-sdk-2013/src/game/server/player.cpp:765); ours uses
+// named maximums with that factor folded in. The player's value is the engine's default terminal speed, so a falling
+// shooter is covered. Both values are provisional, for the drill to measure.
+constexpr float kMaxPlayerSpeedCmS = 4000.0f;
 constexpr float kMaxCarSpeedCmS    = 3000.0f;
 
 constexpr const wchar_t* kWitchCarClass = L"car1_witch_C";
@@ -136,7 +138,7 @@ void SpawnBlast(uint8_t slot, const char* kind, XS::Kind src, const float loc[3]
 
 }  // namespace
 
-Served JudgeShot(uint8_t slot, Slot& s, const FiredItem& it, uint64_t) {
+Served JudgeShot(uint8_t slot, Slot& s, const FiredItem& it) {
     const coop::net::ProjectileFiredPayload& p = it.p;
     for (size_t i = 0; i < s.count; ++i)
         if (s.shots[i].shotId == p.shotId) {
@@ -144,9 +146,10 @@ Served JudgeShot(uint8_t slot, Slot& s, const FiredItem& it, uint64_t) {
             return Served::Done;
         }
 
-    // Not built: MTA relays the projectile to every peer (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp,
-    // the projectile packet), with its velocity, rotation and target. The shot here carries the origin only, so a relay
-    // needs those on the wire first; until then the other peers see only the blast.
+    // Not built: MTA relays the projectile to the other players whose camera is in range
+    // (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:2953-3016). This lane does not relay: a relay
+    // needs the projectile's velocity, rotation and target on the wire, and the shot carries the origin only, so the
+    // other peers see only the blast.
     // MTA checks no weapon on its server (CGame.cpp:2831-2932); here the launcher must be in the shooter's hand or seat.
     void* car = nullptr;
     if (p.launcher == static_cast<uint8_t>(RC::Launcher::WitchCar)) {
@@ -170,8 +173,8 @@ Served JudgeShot(uint8_t slot, Slot& s, const FiredItem& it, uint64_t) {
     // The origin: a launcher fires from the player's hand or the car's mount.
     FVector anchor{};
     if (car) {
-        if (!E::TryGetActorLocation(car, anchor)) {
-            Refuse(slot, Refusal::NotSeated);
+        if (!E::TryGetActorLocation(car, anchor)) {  // the anchor has no place to measure from
+            Refuse(slot, Refusal::NoPuppet);
             return Served::Done;
         }
     } else if (!PuppetOf(slot, anchor)) {
@@ -203,7 +206,7 @@ Served JudgeShot(uint8_t slot, Slot& s, const FiredItem& it, uint64_t) {
     return Served::Done;
 }
 
-Served JudgeShotBlast(uint8_t slot, Slot& s, const RequestItem& it, uint64_t) {
+Served JudgeShotBlast(uint8_t slot, Slot& s, const RequestItem& it) {
     const coop::net::ExplosionRequestPayload& p = it.p;
     const XS::Kind src = RC::KindOfSrcClass(p.srcClass);
     const uint8_t wanted = static_cast<uint8_t>(src == XS::Kind::Rocket ? RC::ProjClass::Rocket : RC::ProjClass::Sticky);
@@ -242,7 +245,7 @@ Served JudgeShotBlast(uint8_t slot, Slot& s, const RequestItem& it, uint64_t) {
     return Served::Done;
 }
 
-Served JudgeBody(uint8_t slot, Slot&, const RequestItem& it, uint64_t now) {
+Served JudgeBody(uint8_t slot, Slot&, const RequestItem& it) {
     const coop::net::ExplosionRequestPayload& p = it.p;
     const XS::Kind src = RC::KindOfSrcClass(p.srcClass);
     FVector at{};
@@ -252,7 +255,7 @@ Served JudgeBody(uint8_t slot, Slot&, const RequestItem& it, uint64_t now) {
     // explosive in the hand within its fuse, and a self blast needs a living puppet and the bucket's pace.
     if (p.kind == static_cast<uint8_t>(RC::RequestKind::Hand)) {
         const uint64_t fuse = src == XS::Kind::Pipebomb ? kPipebombFuseMs : kGrenadeFuseMs;
-        if (!coop::hand_history::HeldWithin(slot, XS::ClassName(src), fuse + kFuseSlackMs, now)) {
+        if (!coop::hand_history::HeldWithin(slot, XS::ClassName(src), fuse + kFuseSlackMs, it.recvMs)) {
             if (coop::hand_item::HandStateOwed(slot)) return Served::Wait;
             Refuse(slot, Refusal::NoExplosive);
             return Served::Done;

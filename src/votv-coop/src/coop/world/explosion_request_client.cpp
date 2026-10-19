@@ -12,6 +12,7 @@
 #include "coop/net/session.h"
 #include "coop/player/hand_item.h"
 #include "coop/player/players_registry.h"
+#include "coop/props/prop_echo_suppress.h"
 #include "coop/world/explosion_recipe.h"
 #include "coop/world/spawn_authority.h"
 
@@ -68,7 +69,8 @@ bool      g_listenerTried = false;
 ue_wrap::CachedObjRef g_body[kLaunchers];
 
 // A rocket or sticky bomb born inside a launcher's fire body, kept by its object index: an actor still inside its
-// own spawn may not yet read as alive. It lives until that body's post, so it carries no serial.
+// own spawn may not yet read as alive. It lives until that body's post sends it or the same launcher's next pre
+// drops it (a world change or a disconnect clears it too), so it carries no serial.
 struct Pending {
     void*   actor;
     int32_t index;
@@ -94,7 +96,8 @@ size_t   g_shotCount = 0;
 uint32_t g_nextShotId = 1;
 
 // The one-shot logs of a session: a pending shot whose projectile died, one left by a body that ended without its
-// post, a projectile that exploded with no shot sent, and (per message type) a message dropped unsent.
+// post, a projectile of this client's own that exploded with no shot sent, and (per message type) a message dropped
+// unsent.
 enum class Msg : int { Shot, Request };
 bool g_deadLogged     = false;
 bool g_orphanLogged   = false;
@@ -169,17 +172,19 @@ void SendShot(coop::net::Session& s, const Pending& e) {
     UE_LOGI("[EXPLOSION] shot sent id=%u class=%s launcher=%d", p.shotId, ProjName(e.projClass), e.launcher);
 }
 
-// Launcher `l`'s fire body has ended: its pending births are sent, or counted dead, and dropped.
+// Launcher `l`'s fire body has ended: its pending births are sent, or counted dead, and dropped. With no session
+// nothing is judged: the entries stay, to be dropped at the launcher's next pre or cleared at a disconnect or a
+// world change.
 void FlushLauncher(int l) {
     coop::net::Session* s = detail::SessionPtr();
+    if (!s) return;
     size_t kept = 0;
     for (size_t i = 0; i < g_pendingCount; ++i) {
         const Pending e = g_pending[i];
-        if (e.launcher != l) {
+        if (e.launcher != l)
             g_pending[kept++] = e;
-        } else if (s) {
+        else
             SendShot(*s, e);
-        }
     }
     g_pendingCount = kept;
 }
@@ -334,10 +339,12 @@ void OnClientBirth(void* sourceObject, void* /*explosionActor*/) {
         case XS::Kind::Sticky: {
             shotAt = FindShot(sourceObject);
             if (shotAt < 0) {
+                // A host's projectile copied to this client is the normal case: its blast is the host's.
+                if (coop::prop_echo_suppress::IsMirrorSpawn(sourceObject)) return;
                 ++detail::MutCounters().unmappedProjectile;
                 if (!g_unmappedLogged) {
                     g_unmappedLogged = true;
-                    UE_LOGW("[EXPLOSION] a projectile exploded with no shot sent: its blast is not requested");
+                    UE_LOGI("[EXPLOSION] a projectile exploded with no shot sent: its blast is not requested");
                 }
                 return;
             }
