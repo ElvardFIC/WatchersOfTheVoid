@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include <vector>
 namespace coop::net { class Session; struct BlobChunkPayload; }
 namespace coop::placed_save_sync {
 void Install(net::Session* session);
@@ -12,4 +13,6 @@ void OnDisconnect();
 void TrackWall(void* actor);
 // Native host mutation completed; publish its current save record on the next tick.
 void MarkChanged(void* actor);
+// Share the PlacedSave chunk sequence with the garden action producer.
+bool SendGardenAction(const std::vector<uint8_t>& bytes);
 }

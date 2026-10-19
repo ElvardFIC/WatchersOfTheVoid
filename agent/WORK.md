@@ -1,4 +1,13 @@
-# Unified Work — development protocol 2153 (continued 2152); packaged release 2152
+# Unified Work — development protocol 2154 (continued 2153); packaged release 2152
+
+## Merge update - local branch with multivoid-sync-2153 (19 October 2026)
+
+Merged the requested synchronization branch into the newer local tree, preserving
+the local prop-scale/shared-screen kinds and local Grayboar lifecycle guards while
+bringing in laptop UI, garden care, hose routing and world-sound synchronization.
+The local reliable-kind assignments 202 and 203 remain intact; LaptopUI uses 204.
+Because this adds a wire kind, source protocol is 2154. No build or package was
+produced here; all peers need the same rebuilt DLL before connecting.
 
 ## Package 0.9.2152 prepared (19 October 2026)
 

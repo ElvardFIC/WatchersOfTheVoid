@@ -8,6 +8,8 @@ struct Obj {int id=0,serial=1;bool live=true;void* overlap=nullptr;} objs[7];
 bool touches=true,callOk=true,kill=false,fields=true,materialOK=true;int feeds=0,restores=0;
 bool solid=false,locationOK=true,damageFields=true;int damages=0;uint32_t world=1;
 void (*locCallback)()=nullptr;
+void (*overlapCallback)()=nullptr;
+void (*nameCallback)()=nullptr;
 }
 namespace ue_wrap::reflection {
 bool IsLive(void* a){return a&&static_cast<test::Obj*>(a)->live;}
@@ -29,7 +31,11 @@ std::vector<ParamInfo> FunctionParams(void* f){
 bool CallFunction(void* a,void* f,void* raw){
  if(!test::callOk)return false;
  auto* p=static_cast<uint8_t*>(raw);
- if(f==&test::objs[3]){CHECK(a==&test::objs[2]&&*reinterpret_cast<void**>(p)==&test::objs[1]);p[8]=test::touches;if(test::kill)test::objs[1].live=false;}
+ if(f==&test::objs[3]){
+  CHECK(a==&test::objs[2]&&*reinterpret_cast<void**>(p)==&test::objs[1]);p[8]=test::touches;
+  if(test::kill)test::objs[1].live=false;
+  if(test::overlapCallback)test::overlapCallback();
+ }
  else if(f==&test::objs[4]){CHECK(a==&test::objs[0]&&*reinterpret_cast<void**>(p)==&test::objs[1]);++test::feeds;}
  else if(f==&test::objs[6]){CHECK(*reinterpret_cast<float*>(p)==20.f);auto* location=reinterpret_cast<FVector*>(p+4);CHECK(location->X==1&&location->Y==2&&location->Z==3);++test::damages;if(test::kill)test::objs[0].live=false;}
  else {CHECK(a==&test::objs[0]&&reinterpret_cast<FName*>(p)->ComparisonIndex==9);p[8]=test::materialOK;++test::restores;}
@@ -40,7 +46,7 @@ namespace ue_wrap::world_identity {void* CurrentWorld(){return nullptr;}void* Wo
 namespace ue_wrap::engine {bool TryGetActorLocation(void*,FVector& p){p={1,2,3};if(test::locCallback)test::locCallback();return test::locationOK;}}
 namespace ue_wrap::save_record {std::wstring ReadFNameAt(const void*,int32_t){return L"native_wall_17";}}
 namespace ue_wrap::log {void Write(Level,const char*,...) {}}
-namespace ue_wrap::fname_utils {reflection::FName StringToFName(const std::wstring&){return {9,0};}}
+namespace ue_wrap::fname_utils {reflection::FName StringToFName(const std::wstring&){if(test::nameCallback)test::nameCallback();return {9,0};}}
 namespace ue_wrap::placed_save {Kind Type(void* a){return a==&test::objs[0]&&reflection::IsLive(a)?(test::solid?Kind::Wall:Kind::WallOutline):Kind::None;}}
 int main(){using namespace test;namespace W=ue_wrap::wall_build;
  for(int i=0;i<7;++i)objs[i].id=i;objs[0].overlap=&objs[2];
@@ -60,5 +66,17 @@ int main(){using namespace test;namespace W=ue_wrap::wall_build;
  locationOK=false;CHECK(!W::Damage(&objs[0],20.f));locationOK=true;
  locCallback=[]{++world;};CHECK(!W::Damage(&objs[0],20.f)&&damages==1);locCallback=nullptr;
  kill=true;CHECK(W::Damage(&objs[0],20.f)&&damages==2&&!objs[0].live);
+ kill=false;objs[0].live=true;solid=false;
+ const int previous=feeds;
+ overlapCallback=[]{++world;};CHECK(W::Feed(&objs[0],&objs[1])&&feeds==previous);
+ overlapCallback=[]{++objs[0].serial;};CHECK(W::Feed(&objs[0],&objs[1])&&feeds==previous);
+ overlapCallback=[]{++objs[1].serial;};CHECK(W::Feed(&objs[0],&objs[1])&&feeds==previous);
+ overlapCallback=[]{solid=true;};CHECK(W::Feed(&objs[0],&objs[1])&&feeds==previous);solid=false;
+ overlapCallback=[]{++objs[2].serial;};CHECK(!W::Feed(&objs[0],&objs[1])&&feeds==previous);
+ overlapCallback=[]{objs[0].overlap=&objs[6];};CHECK(!W::Feed(&objs[0],&objs[1])&&feeds==previous);
+ objs[0].overlap=&objs[2];overlapCallback=nullptr;CHECK(W::Feed(&objs[0],&objs[1])&&feeds==previous+1);
+ const int oldRestores=restores;materialOK=true;
+ nameCallback=[]{++world;};CHECK(!W::RestoreMaterial(&objs[0],L"brick")&&restores==oldRestores);nameCallback=nullptr;
+ puts("PASS wall feed context: post-query world/actor/material/completed-wall refusal, component identity retry and material-lookup travel guard");
  puts("PASS real wall wrapper/ParamFrame: live overlap, native arguments, dead source, failures and restored material lookup");
 }

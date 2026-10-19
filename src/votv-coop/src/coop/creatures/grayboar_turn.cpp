@@ -31,6 +31,7 @@ struct Client {
     uint32_t eid = 0;
     float from = 0, to = 0;
     uint64_t received = 0;
+    ue_wrap::CachedObjRef actor;
 };
 std::vector<Host> g_host;
 std::vector<Client> g_client;
@@ -49,6 +50,14 @@ bool IsType(void* object, const wchar_t* name) {
     for (int depth = 0; cls && depth < 64; ++depth, cls = R::SuperStructOf(cls))
         if (R::NameEquals(R::NameOf(cls), name)) return true;
     return false;
+}
+void* MirrorActor(uint32_t eid) {
+    auto* element = element::Registry::Get().Get(eid);
+    return element && element->IsMirror() ? element->LiveActor() : nullptr;
+}
+bool Stale(const Client& row, uint64_t now) {
+    return now - row.received > kLifetime || (row.actor.Raw() &&
+        (!row.actor.Get() || MirrorActor(row.eid) != row.actor.Raw()));
 }
 void* Object(void* owner, const wchar_t* name) {
     const int off = R::FindPropertyOffset(R::ClassOf(owner), name);
@@ -89,8 +98,15 @@ void AfterAnimation(const SG::Call& call) {
         return;
     }
     if (!element->IsMirror()) return;
-    const auto it = std::find_if(g_client.begin(), g_client.end(), [=](const Client& r){return r.eid == eid;});
-    const float turn = it == g_client.end() ? 0.f : Value(*it, now);
+    auto it = std::find_if(g_client.begin(), g_client.end(), [=](const Client& r){return r.eid == eid;});
+    float turn = 0;
+    if (it != g_client.end()) {
+        if (Stale(*it, now))g_client.erase(it);
+        else {
+            if (!it->actor.Raw())it->actor.Set(actor);
+            turn = Value(*it, now);
+        }
+    }
     // Native BlueprintUpdateAnimation has computed local steering and its pitch.
     // Replace only this cosmetic scalar before bone evaluation, plus the pitch
     // derived from it. Speed, montage state, AI and physical heading stay native
@@ -123,6 +139,9 @@ void Receive(const net::GrayboarTurnPayload& packet, int sender) {
         !std::isfinite(packet.turn) || std::abs(packet.turn) > 1.f ||
         (g_seen && static_cast<int32_t>(packet.sequence - g_seen) <= 0)) return;
     const auto now = Now();
+    // Retire stale samples before admitting another body; they must neither
+    // consume capacity nor seed a replacement body's interpolation.
+    std::erase_if(g_client, [=](const Client& row){return Stale(row, now);});
     auto it = std::find_if(g_client.begin(), g_client.end(), [&](const Client& r){return r.eid == packet.eid;});
     if (it == g_client.end()) {
         if (g_client.size() >= kLimit) return;
@@ -130,13 +149,15 @@ void Receive(const net::GrayboarTurnPayload& packet, int sender) {
         it->received = now;
     }
     const float from = Value(*it, now);
-    *it = {packet.eid, from, packet.turn, now}; g_seen = packet.sequence;
+    *it = {packet.eid, from, packet.turn, now};
+    void* actor = MirrorActor(packet.eid);
+    it->actor.Set(IsType(actor, L"grayboar_C") ? actor : nullptr);g_seen = packet.sequence;
 }
 void Tick() {
     if (!Current()) return;
     const auto now = Now();
     if (g_session->role() == net::Role::Client) {
-        std::erase_if(g_client, [=](const Client& r){return now - r.received > kLifetime;});
+        std::erase_if(g_client, [=](const Client& r){return Stale(r, now);});
         return;
     }
     std::erase_if(g_host, [=](const Host& r){return !r.actor.Get() || now - r.sampled > kLifetime;});

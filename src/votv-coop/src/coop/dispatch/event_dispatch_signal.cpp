@@ -18,6 +18,7 @@
 #include "coop/interactables/download_arm_sync.h"
 #include "coop/interactables/laptop_sync.h"      // LaptopState
 #include "coop/interactables/laptop_buffer_sync.h"  // LaptopQuad
+#include "coop/interactables/laptop_ui_sync.h"
 #include "coop/interactables/floppy_slot_sync.h"
 #include "coop/interactables/floppybox_sync.h"   // FloppyBoxState
 #include "coop/interactables/meadow_db_sync.h"   // MeadowAppend/MeadowDelete
@@ -224,6 +225,13 @@ bool HandleSignalEvent(net::Session& /*session*/,
                 ? static_cast<uint8_t>(msg.senderPeerSlot)
                 : static_cast<uint8_t>(0xFF);
         coop::meadow_db_sync::OnOrderChunk(oc, oslot);
+        break;
+    }
+    case net::ReliableKind::LaptopUI: {
+        if (msg.payloadLen != sizeof(net::BlobChunkPayload)) break;
+        net::BlobChunkPayload chunk{};
+        std::memcpy(&chunk, msg.payload, sizeof(chunk));
+        coop::laptop_ui_sync::OnChunk(chunk, msg.senderPeerSlot);
         break;
     }
     case net::ReliableKind::LaptopQuad: {

@@ -4,7 +4,8 @@
 
 The tools that leave a persistent actor behind (the grappling hook and rope, the nail gun, the wall
 builder), timed explosives, the fishing rod and the physgun, each reverse-engineered with a design.
-The hook and the rope are built; the rest are not. A prop a hook drags is the props page's
+The hook and the rope are built. Brick walls have a host placement/material path;
+the remaining deployables are not implemented. A prop a hook drags is the props page's
 driven-prop channel ([props.md](props.md)).
 
 ## How it works
@@ -47,6 +48,16 @@ the hook lane did not have in front of it:
 
 ## Who owns what
 
+Brick-wall construction runs on the host through `coop/world/wall_build_sync`.
+Material overlap events are deferred past outline initialization, then recheck
+contact before invoking the native graph. `[V]` Production-source tests verify that queued
+and active wall/material pairs are deduplicated, recursive drains are refused and
+at most eight feeds run per tick. Session/role/world changes refuse stale replay;
+replaced collision components are checked again before spending material.
+`[?]` Client repair requires an atomic personal-cement transaction and currently
+refuses without spending. Two-player construction and material accounting remain
+unverified. Wall save-state publication uses `coop/world/placed_save_sync`.
+
 | State | Owner | Shape |
 |---|---|---|
 | a deployed hook, while its thrower still holds it | that peer | keyed by (slot, sequence); the others render a parked mirror |
@@ -64,6 +75,41 @@ the hook lane did not have in front of it:
 
 ## Late join
 
+Saved crops, faucets and completed hoses now also use `placed_save_sync`'s
+host census and canonical records. Existing native keys reuse the joiner's
+save-loaded actors. Host growth, water/fertilizer levels, ripeness and plant
+death publish on change, including to the planting peer. Unkeyed vegetation
+is not assigned a new save identity by scanning. `[V]` Offline garden checks.
+
+Guest crop harvest requests run once on the host after identity/reach/sequence
+checks. The native yield appears beside the crop for shared pickup; the puppet's
+pocket call is refused, so it cannot write the host's personal inventory.
+Harvest sound is shared. `[?]` Multiplayer yield/pickup and save/reload need
+gameplay verification. Guest LMB bucket watering and fertilizer now publish the
+measured result only after native owner-side resource spending. Host checks the
+known crop, reach, announced tool, sequence and amount; duplicate fertilizer
+source keys cannot refill it. This has no durable acceptance/refund on host
+rejection or disconnect. Poured/hose watering, pot transitions, the rest of
+sprinkler pickup and unkeyed pre-session crops remain incomplete.
+
+Saved faucet toggles and standalone hose/sprinkler detachment now run through
+host-validated ordered requests. Detachment checks reach at the hose's far end,
+the expected sprinkler and its current owner, and clears both saved keys as well
+as native pointers. An older grab cannot detach a newly attached sprinkler.
+Faucet clicks follow the native host sound call. `[V]` Offline action, link and
+native sound contracts; `[?]` two-player pickup and save/reload verification.
+
+Guest rerouting of an accepted hose now commits its completed native path to
+the host. The original canonical route must still match; otherwise the host's
+actual route is restored. An explicit reply finishes the pending edit, including
+under transport backpressure. Canonical updates wait during the gesture, and
+older chunks cannot undo a newer hose snapshot. Native linkage replaces spline
+geometry, clears the former sprinkler's owned pointer/key, establishes both new
+directions and refuses occupied endpoints. Two pending routes cannot reserve
+one sprinkler. Completed routes join through the usual host save record; motion
+during placement is local. `[V]` Offline controller/wrapper/native-asset tests.
+`[?]` Two-player rerouting, dependency arrival and save/reload still need testing.
+
 A hook its thrower still owns reaches a joiner on its keepalive. An anchored hook is a save actor
 of the host's and arrives with the save, and the game's own load re-resolves both of its attach
 keys in the joiner's world. The deployables that are not built reach a joiner only through the save.
@@ -72,7 +118,8 @@ keys in the joiner's world. The deployables that are not built reach a joiner on
 
 | Limit | Evidence |
 |---|---|
-| The deployables other than the hook and the rope (nail gun, wall builder, explosives, fishing rod, physgun) are not synced; a nail or a wall placed by one peer reaches the others only through the save at their next join | `[V]` no lane under `coop/props` catches them |
+| Nail gun, explosives, fishing rod and physgun lack a deployable synchronization lane | `[?]` multiplayer behavior remains unverified |
+| Brick-wall placement/material handling has a host path; client repair, creative construction, curing-time persistence and exact effects remain incomplete | `[V]` offline wall tests; `[?]` two-player building/accounting |
 | A client's hook into the ATV ties the host's ATV against the client's puppet; whether the ATV lane's corrector carries that pull back to the client's copy is not measured | `[?]` `coop/items/hook_constraint` ties any keyed actor the bite resolves; `coop/interactables/atv_sync` corrects rather than parks |
 
 ## Code map
@@ -83,3 +130,5 @@ keys in the joiner's world. The deployables that are not built reach a joiner on
 | the anchor handoff | `coop/items/hook_anchor` |
 | the tie, host-only | `coop/items/hook_constraint` |
 | the props a tie claims for the driven-prop channel | `coop/items/hook_prop_claim` |
+| host brick-wall construction and collision recheck | `coop/world/wall_build_sync`, `ue_wrap/actors/wall_build` |
+| wall placement/save records and publication | `coop/world/placed_save_sync`, `ue_wrap/actors/placed_save` |

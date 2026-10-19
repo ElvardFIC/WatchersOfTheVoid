@@ -298,6 +298,29 @@ permanent inbox, and a client's append is dropped at the host rather than relaye
 symmetric, because the only thing in the game that removes a mail is a player pressing the row's
 delete button (`coop/world/email_sync`).
 
+### Shared PC and laptop pages and cart
+
+The base computer and portable terminals use the same `ui_laptop` widget. Its
+main page, media page, media-viewer page and unpurchased cart now follow the
+exclusive laptop operator. The host validates the holder and a grant/release
+serial before accepting a snapshot, then distributes its canonical state.
+A new operator and a late joiner start from that state; loading widgets and
+temporarily full send queues retain their pending work. The final local edit
+is sent before releasing the device on the same reliable lane.
+
+The cart carries ordered catalog row names, including duplicates. Each peer
+rebuilds the changed suffix through native add/remove calls and reindexes the
+cart widgets. Prices and capacity come from its own catalog. No purchase or
+camera-possession verb is replayed: selecting the camera tab only changes the
+displayed page. Restoring a refused order now also stamps the native catalog
+key, so restored items can be ordered again.
+
+`[V]` Offline production-controller, wire and reflection-wrapper tests plus
+installed 0.9.0n asset contracts. `[?]` Two-player operation and handover remain
+unverified. Search/category state, open message/item details, media playback,
+cursor and the visible operator are still separate work. Purchases continue
+through the existing order economy below.
+
 ### Shop orders
 
 A client's laptop order is entirely local to its machine: the game's order function queues it in

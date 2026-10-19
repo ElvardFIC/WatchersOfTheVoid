@@ -1,5 +1,13 @@
 # TestLog — current status and source reports
 
+## Merge resolution - local branch with multivoid-sync-2153 (19 October 2026)
+
+Resolved the Grayboar source/test conflicts by retaining local authority and
+identity checks and adding the remote stale-replica and per-peer retry coverage.
+Kept local wire kinds 202/203 and assigned LaptopUI kind 204. Source protocol is
+2154. Merge whitespace check passed; no build or gameplay tests were run for the
+combined tree, and no delivery artifact was created.
+
 ## Continued 2153: nonlethal hit animation/audio (19 October 2026)
 
 Expanded grayboar_actions_test.cpp verifies four native-selected damage sections,

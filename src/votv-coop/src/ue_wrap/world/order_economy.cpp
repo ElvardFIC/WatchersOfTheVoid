@@ -464,7 +464,9 @@ int32_t RestoreCartItems(const std::vector<std::wstring>& rowNames) {
     // TArray element STRIDE (0x50). Ask the UFunction rather than assuming which of the two it is --
     // writing 0x50 bytes into a 0x4D parameter slot would scribble on whatever follows it.
     const int32_t paramSize = R::FindParamSize(fn, L"struct_store");
-    if (paramSize <= 0 || paramSize > kItemStride) {
+    const int32_t nameOffset = SC::NameOffset();
+    if (paramSize <= 0 || paramSize > kItemStride || nameOffset < 0 ||
+        nameOffset + sizeof(R::FName) > paramSize) {
         UE_LOGW("order_economy: RestoreCartItems -- addStoreCart param size %d is not plausible "
                 "(stride %d) -- skipping", paramSize, kItemStride);
         return 0;
@@ -484,6 +486,10 @@ int32_t RestoreCartItems(const std::vector<std::wstring>& rowNames) {
         // no reason to stamp over `subcategory` -- the real FText is what the cart row would have
         // held, and the native copies it out of our frame the same way the game's own path does.
         if (!f.SetRaw(L"struct_store", row->data, paramSize)) break;
+        // generateStore stamps this key at runtime; the table row itself holds
+        // None. Preserve it when restoring a refused purchase as well.
+        std::memcpy(static_cast<uint8_t*>(f.data()) + f.ParamOffset(L"struct_store") + nameOffset,
+                    &row->key, sizeof(row->key));
         if (!ue_wrap::Call(laptop, f)) break;
         ++added;
     }

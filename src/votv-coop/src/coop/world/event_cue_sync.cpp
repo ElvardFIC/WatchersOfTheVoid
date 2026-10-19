@@ -8,6 +8,7 @@
 // reflected SpawnEmitterAtLocation.
 
 #include "coop/world/event_cue_sync.h"
+#include "coop/world/world_sound_sync.h"
 
 #include "coop/net/protocol.h"
 #include "coop/net/session.h"
@@ -133,6 +134,7 @@ void OnRunEventPost(const sg::Call& call) {
 
 void Install(coop::net::Session* session) {
     g_session.store(session, std::memory_order_release);
+    world_sound_sync::Install(session);
     // Called every pump tick by the install fanout, which is also the retry until the gate has
     // resolved the watch's name.
     if (!g_watchInstalled)
@@ -147,6 +149,7 @@ void Install(coop::net::Session* session) {
 }
 
 void OnReliable(const coop::net::EventCuePayload& payload) {
+    if (world_sound_sync::OnReliable(payload)) return;
     if (!GT::IsGameThread()) { UE_LOGW("event_cue: OnReliable off-game-thread -- dropping"); return; }
     if (payload.cueId >= static_cast<uint32_t>(kCueCount)) {
         UE_LOGW("event_cue: OnReliable unknown cueId=%u (have %d cues) -- dropping (newer host?)",
@@ -219,6 +222,7 @@ void QueueConnectBroadcastForSlot(int peerSlot) {
 
 void OnDisconnect() {
     g_session.store(nullptr, std::memory_order_release);
+    world_sound_sync::OnDisconnect();
 }
 
 unsigned ReplayCount() { return g_replays.load(std::memory_order_relaxed); }

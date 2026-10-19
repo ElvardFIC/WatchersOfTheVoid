@@ -1,11 +1,11 @@
 # TODO - current priorities
 
-Current source/wire protocol: **2153** (continued 2152 entity work), game **0.9.0n**.
+Current source/wire protocol: **2154** (merged 2153 synchronization work), game **0.9.0n**.
 Delivery package: **0.9.2152**, containing DLL **b2153 / protocol 2153**.
-All peers must install the same package; older protocols are incompatible.
+The packaged DLL predates the current source; peers need matching b2154 builds.
 
-Owner instruction (19 October): continue source/DLL/protocol **2153** in place.
-Do not create separate versions during builds without the owner's explicit order.
+The prior in-place development target was 2153. The merge added a wire kind, so
+the protocol is now 2154; no new build or delivery package has been produced.
 
 ## Entity category request - OPEN
 
