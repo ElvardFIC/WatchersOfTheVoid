@@ -560,6 +560,14 @@ bool TryConsumeDenyReap(uint8_t senderSlot, uint64_t rowHash) {
     return false;
 }
 
+bool HostSeesRack(uint32_t rackEid) {
+    return g_rackBase.count(rackEid) != 0;
+}
+
+uint64_t HostCanonicalsSent() {
+    return g_cRackCanon;
+}
+
 void OnDisconnect() {
     g_rackDirty.store(false, std::memory_order_relaxed);
     g_rackBase.clear();

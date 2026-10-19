@@ -48,6 +48,11 @@ void MarkDirtyFromVerb();
 // of applying. Mirrors the correlation this was extracted from, 1:1.
 bool TryConsumeDenyReap(uint8_t senderSlot, uint64_t rowHash);
 
+// Game thread, HOST, read by a drill: whether this lane has taken the rack with this eid into its view, and
+// the canonicals it has broadcast since the process began (never reset; a drill reads a delta).
+bool HostSeesRack(uint32_t rackEid);
+uint64_t HostCanonicalsSent();
+
 // Full teardown (the OnDisconnect fanout) -- baselines, shadow, dirty mark,
 // pending applies, deny + taken rings, assembler.
 void OnDisconnect();

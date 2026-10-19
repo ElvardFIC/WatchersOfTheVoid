@@ -107,6 +107,9 @@ CFG_FLAG(deck_selftest, "deck_selftest", "dev", false, nullptr,
     "Autonomous selftest: tape deck playback sync.")
 CFG_FLAG(drive_selftest, "drive_selftest", "dev", false, "VOTVCOOP_DRIVE_SELFTEST",
     "Autonomous selftest: drive rack digest instrument.")
+CFG_FLAG(rack_birth_drill, "rack_birth_drill", "dev", false, "VOTVCOOP_RACK_BIRTH_DRILL",
+    "Drill (BOTH peers): once a client's world is ready the host spawns a drive rack holding four rows; the client "
+    "must hold them and send the host no op. Lines tagged [RACK-BIRTH]; the client's DONE line ends it.")
 CFG_FLAG(desk_snd_selftest, "desk_snd_selftest", "dev", false, nullptr,
     "Autonomous selftest: desk sound mirror.")
 CFG_FLAG(container_selftest, "container_selftest", "dev", false, "VOTVCOOP_CONTAINER_SELFTEST",
