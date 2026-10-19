@@ -4,6 +4,7 @@
 
 #include "coop/player/players_registry.h"
 
+#include <cstdio>
 #include <cwchar>
 
 namespace coop::hand_history {
@@ -52,6 +53,20 @@ bool HeldWithin(uint8_t slot, const wchar_t* cls, uint64_t windowMs, uint64_t no
         if (h.toMs == 0 || h.toMs + windowMs >= nowMs) return true;
     }
     return false;
+}
+
+std::string Describe(uint8_t slot) {
+    if (slot >= coop::players::kMaxPeers) return "slot out of range";
+    const Ring& r = g_rings[slot];
+    std::string out;
+    for (int k = 0; k < r.count; ++k) {
+        const Held& h = r.entry[(r.newest - r.count + 1 + k + kRing) % kRing];
+        char buf[48];
+        std::snprintf(buf, sizeof(buf), "[%llu..%llu] ", static_cast<unsigned long long>(h.fromMs),
+                      static_cast<unsigned long long>(h.toMs));
+        out += std::string(h.cls.begin(), h.cls.end()) + buf;
+    }
+    return out.empty() ? "empty" : out;
 }
 
 void Clear(uint8_t slot) {

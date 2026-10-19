@@ -176,6 +176,13 @@ Served JudgeShot(uint8_t slot, Slot& s, const FiredItem& it) {
     } else {
         if (!coop::hand_history::HeldWithin(slot, RC::LauncherClassName(p.launcher), kLauncherWindowMs, it.recvMs)) {
             if (coop::hand_item::HandStateOwed(slot)) return Wait();
+            static bool s_said = false;   // the first refusal names what the host knew of the hand
+            if (!s_said) {
+                s_said = true;
+                UE_LOGW("[EXPLOSION] no_launcher slot=%u recv=%llu now=%llu held=%d history=%s", slot,
+                        static_cast<unsigned long long>(it.recvMs), static_cast<unsigned long long>(coop::net::NowMs()),
+                        coop::hand_item::HoldsItem(slot) ? 1 : 0, coop::hand_history::Describe(slot).c_str());
+            }
             Refuse(slot, Refusal::NoLauncher);
             return Served::Done;
         }

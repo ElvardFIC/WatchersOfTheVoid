@@ -31,6 +31,9 @@ bool HeldWithin(uint8_t slot, const wchar_t* cls, uint64_t windowMs, uint64_t no
 // Forgets `slot`'s entries (its leave, a session reset).
 void Clear(uint8_t slot);
 
+// The slot's entries as `cls[from..to]` items, newest last, for a refusal's diagnostic line. Game thread only.
+std::string Describe(uint8_t slot);
+
 // Once per process; logs ALL PASS / n/m checks passed, and later calls return the first verdict silently.
 bool RunSelftest();
 
