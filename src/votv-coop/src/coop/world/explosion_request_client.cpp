@@ -17,6 +17,7 @@
 #include "coop/world/explosion_recipe.h"
 #include "coop/world/spawn_authority.h"
 
+#include "ue_wrap/actors/prop.h"
 #include "ue_wrap/actors/vitals.h"
 #include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/log.h"
@@ -25,6 +26,7 @@
 #include "ue_wrap/core/script_gate.h"
 #include "ue_wrap/core/types.h"
 #include "ue_wrap/engine/engine.h"
+#include "ue_wrap/engine/engine_mainplayer.h"
 #include "ue_wrap/facts/function_row.h"
 #include "ue_wrap/world/explosion_source.h"
 
@@ -257,6 +259,18 @@ void SendShot(coop::net::Session& s, const Pending& e) {
     item.shot        = true;
     item.fired       = p;
     item.announceSeq = coop::hand_item::OwnAnnounceSeq();
+    static bool s_said = false;   // the first held shot names the hand state it waits on
+    if (!s_said) {
+        s_said = true;
+        void* player = coop::players::Registry::Get().Local();
+        ue_wrap::engine::MainPlayerGrabState gs{};
+        const bool read = player && ue_wrap::engine::ReadMainPlayerGrabState(player, gs);
+        void* ha = read ? gs.holdingActor : nullptr;
+        UE_LOGI("[EXPLOSION] shot held for the announce: seq=%u holding=%ls live=%d keyed=%d prop=%d grabbing=%ls",
+                item.announceSeq, ha ? R::ClassNameOf(ha).c_str() : L"none", ha && R::IsLive(ha) ? 1 : 0,
+                ha && ue_wrap::prop::IsKeyedInteractable(ha) ? 1 : 0, ha && ue_wrap::prop::IsDescendantOfProp(ha) ? 1 : 0,
+                read && gs.grabbingActor ? R::ClassNameOf(gs.grabbingActor).c_str() : L"none");
+    }
     Enqueue(item);
 }
 
