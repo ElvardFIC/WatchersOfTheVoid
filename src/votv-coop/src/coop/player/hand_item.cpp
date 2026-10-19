@@ -91,10 +91,6 @@ std::wstring g_ownItem;
 void*        g_ownHeldPtr = nullptr;
 int32_t      g_ownHeldIdx = -1;
 
-// The local player, cached by TickOwner for the fresh holding-actor read. Game thread only.
-void*        g_localPlayer    = nullptr;
-int32_t      g_localPlayerIdx = -1;
-
 // The hand-edge world release. A drop or quick-slot place is not a spawn: the game releases
 // the ex-hand actor into the world (the same actor, with physics and collision re-enabled),
 // so no spawn seam fires and the census guard is blind. But the previous hand actor's identity
@@ -365,10 +361,6 @@ void SpawnMirror(uint8_t slot, void* puppetActor) {
 
 void TickOwner(coop::net::Session& session, void* local, void* holdingProp) {
     g_session = &session;
-    if (local && local != g_localPlayer) {
-        g_localPlayer    = local;
-        g_localPlayerIdx = R::InternalIndexOf(local);
-    }
     if (!session.connected()) return;
     const uint8_t self = coop::players::Registry::Get().LocalPeerId();
     if (self >= coop::players::kMaxPeers) return;
@@ -464,10 +456,11 @@ void TickOwner(coop::net::Session& session, void* local, void* holdingProp) {
 }
 
 void* LocalHandActor() {
-    if (!g_localPlayer || !R::IsLiveByIndex(g_localPlayer, g_localPlayerIdx))
-        return nullptr;
+    // The registry's player, not one TickOwner cached: a client's streams wait for its load tail, and the hand is
+    // asked about before that (the join sweep spares it).
+    void* player = coop::players::Registry::Get().Local();
     ue_wrap::engine::MainPlayerGrabState gs{};
-    if (!ue_wrap::engine::ReadMainPlayerGrabState(g_localPlayer, gs)) return nullptr;
+    if (!player || !ue_wrap::engine::ReadMainPlayerGrabState(player, gs)) return nullptr;
     void* ha = gs.holdingActor;
     if (!ha || !R::IsLive(ha)) return nullptr;
     // The same routing predicate as local_streams: only a prop descendant in the holding actor is
@@ -477,9 +470,10 @@ void* LocalHandActor() {
 }
 
 bool IsLocalHandViewActor(void* actor) {
-    if (!actor || !g_localPlayer || !R::IsLiveByIndex(g_localPlayer, g_localPlayerIdx)) return false;
+    if (!actor) return false;
+    void* player = coop::players::Registry::Get().Local();
     ue_wrap::engine::MainPlayerGrabState gs{};
-    if (!ue_wrap::engine::ReadMainPlayerGrabState(g_localPlayer, gs)) return false;
+    if (!player || !ue_wrap::engine::ReadMainPlayerGrabState(player, gs)) return false;
     // Pointer identity with no liveness check on the actor: it is asked at the entry of the
     // actor's own destroy, and R::IsLive would refuse an actor already pending kill.
     return gs.holdingActor == actor && ue_wrap::prop::IsDescendantOfProp(actor);
@@ -732,10 +726,6 @@ void Reset() {
     g_ownItem.clear();
     g_ownHeldPtr = nullptr;
     g_ownHeldIdx = -1;
-    // Cached engine pointers die with the session too: a stale local player would satisfy the
-    // index check across a world reload only by luck; TickOwner re-caches.
-    g_localPlayer    = nullptr;
-    g_localPlayerIdx = -1;
     g_session        = nullptr;
 }
 

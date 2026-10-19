@@ -23,8 +23,7 @@
 
 namespace coop::hand_item {
 
-// Owner side, per tick (from local_streams::Tick). `local` is the local mainPlayer (cached for
-// LocalHandActor's fresh read); `holdingProp` is the local player's holding_actor IF it is a
+// Owner side, per tick (from local_streams::Tick). `local` is the local mainPlayer; `holdingProp` is the local player's holding_actor IF it is a
 // live Aprop_C descendant, else nullptr. Announces EDGE-INSTANT on change -- a quick-slot switch
 // is one synchronous updateHold call, bytecode-proven, so a null IS the stow.
 //

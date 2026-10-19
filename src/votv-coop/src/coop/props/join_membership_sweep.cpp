@@ -18,6 +18,7 @@
 #include "coop/element/quiescence_drain.h"
 #include "coop/element/registry.h"
 #include "coop/net/protocol.h"
+#include "coop/player/hand_item.h"  // CollectHandAxisActors / IsHandAxisActor: what the sweep spares
 #include "coop/props/pile_spawn_bind.h"
 #include "coop/props/prop_element_tracker.h"
 #include "coop/props/prop_lifecycle.h"
@@ -73,6 +74,15 @@ constexpr int kBracketFlakeMs = 30000;
 void RecordClaim(void* actor) {
     if (!g_claimTrackingActive || !actor) return;
     g_claimedActors.insert(actor);
+}
+
+// What the sweep spares however the bracket went, the one definition its two walks and the grab guard share. A
+// per-player state actor (the inventory container) is this player's own save state, never host expressed: the sweep
+// once destroyed the client's, which fataled at the next GC purge. A thing this peer's player made is not divergence
+// (RecordSelfAuthored). The hand axis -- the local hotbar hand item and every remote hand mirror -- is player
+// expression no snapshot names: a hand item taken before the load tail settled was destroyed here.
+bool Spared(void* actor, const std::wstring& cls, bool onHandAxis) {
+    return onHandAxis || g_selfAuthored.count(actor) != 0 || coop::prop_lifecycle::IsPerPlayerPropClass(cls);
 }
 }  // namespace (file-local claim/sweep state)
 
@@ -168,6 +178,14 @@ static void RunDivergenceSweep_(void* localPlayer) {
     };
     int inClass = 0;        // live, non-mirror, LOCAL Prop Elements (the membership universe)
     int claimedCount = 0;
+    int sparedCount = 0;    // see Spared
+    void* handAxis[1 + coop::players::kMaxPeers];
+    const size_t handAxisN = coop::hand_item::CollectHandAxisActors(handAxis, 1 + coop::players::kMaxPeers);
+    const auto onHandAxis = [&](void* obj) {
+        for (size_t h = 0; h < handAxisN; ++h)
+            if (handAxis[h] == obj) return true;
+        return false;
+    };
     std::vector<void*> doomed;
     doomed.reserve(propPairs.size());
     std::vector<std::wstring> doomedClass;  // Phase 0: class per doomed actor, parallel to `doomed`
@@ -185,10 +203,7 @@ static void RunDivergenceSweep_(void* localPlayer) {
         // class.
         const std::wstring acls = R::ClassNameOf(a);
         if (g_claimedActors.count(a)) { ++claimedCount; ++claimedByClass[acls]; continue; }  // host-expressed / self-claimed -> converged, keep
-        // A per-player state actor (the inventory container) is this player's own save state, never
-        // host expressed and never swept; membership alone would doom it, and the sweep once
-        // destroyed the client's inventory container, which fataled at the next GC purge.
-        if (coop::prop_lifecycle::IsPerPlayerPropClass(acls)) continue;
+        if (Spared(a, acls, onHandAxis(a))) { ++sparedCount; continue; }
         if (ue_wrap::prop::IsTrashActor(a)) {          // a pile or a clump at rest: expressible on the eid lane
             doomed.push_back(a);
             doomedClass.push_back(acls);
@@ -237,7 +252,7 @@ static void RunDivergenceSweep_(void* localPlayer) {
     }
     // The index half: a client's save-loaded keyed props have no element row (the tracked keys are
     // their membership), so the row walk cannot see them. They are adjudicated here under
-    // the same rules: claimed survive, per-player skipped, keyed-churn re-binds spared, the rest
+    // the same rules: claimed survive, the spared skipped, keyed-churn re-binds spared, the rest
     // doomed under the same per-class accounting. An actor with an element row belongs to the row
     // walk, so the two halves partition and nothing is counted twice.
     {
@@ -261,7 +276,7 @@ static void RunDivergenceSweep_(void* localPlayer) {
                 ++claimedCount; ++claimedByClass[acls]; ++idxClaimed;   // floor numerator keeps its semantics
                 continue;
             }
-            if (coop::prop_lifecycle::IsPerPlayerPropClass(acls)) continue;
+            if (Spared(ke.actor, acls, onHandAxis(ke.actor))) { ++sparedCount; continue; }
             // A cached (actor, idx) pair can survive a slot recycle; only the live actor's current
             // key proves the entry still names it. A mismatch (an impostor or an un-reindexed
             // rekey) evicts the entry, never dooms; the live actor re-enters at the next census
@@ -411,9 +426,9 @@ static void RunDivergenceSweep_(void* localPlayer) {
         coop::prop_lifecycle::DestroyLocalProp(a, /*deferred=*/false);
     }
     UE_LOGI("join_membership_sweep: claim sweep -- %d in-universe actors live, "
-            "%d claimed (expressed on the wire this bracket), %d unclaimed locals destroyed "
-            "(client adopts host world)",
-            inClass, claimedCount, static_cast<int>(doomed.size()));
+            "%d claimed (expressed on the wire this bracket), %d spared (the hand axis, the player's own, "
+            "per-player state), %d unclaimed locals destroyed (client adopts host world)",
+            inClass, claimedCount, sparedCount, static_cast<int>(doomed.size()));
     // The doomed-class histogram: a wrongly-universed class shows up here, not as a delayed crash.
     {
         std::vector<std::pair<std::wstring, int>> hist(doomedByClass.begin(), doomedByClass.end());
@@ -545,16 +560,11 @@ bool IsInDivergenceUniverseUnclaimed(void* actor) {
     // grab guard in trash_collect_sync, so there is one definition of the lineage.
     if (!actor) return false;
     if (g_claimedActors.count(actor)) return false;  // host-expressed / self-claimed legit drop -> not a ghost
-    // A thing this peer's player just made is not divergence, whatever the bracket is doing. The
-    // claim above cannot carry that fact: it is bracket-scoped and cleared when one opens, while a
-    // player-authored birth can precede the bracket by a second and still be waiting on the host's
-    // answer when the sweep runs.
-    if (g_selfAuthored.count(actor)) return false;
     void* cls = R::ClassOf(actor);
     if (!ue_wrap::prop::IsClassKeyedInteractable(cls)) return false;  // out of the divergence universe
     if (!R::IsLive(actor)) return false;
     if (ue_wrap::prop::IsChipPile(actor)) return false;  // pile has its own collect/share + grab-hook destroy path
-    if (coop::prop_lifecycle::IsPerPlayerPropClass(R::ClassNameOf(actor))) return false;  // per-player: never swept
+    if (Spared(actor, R::ClassNameOf(actor), coop::hand_item::IsHandAxisActor(actor))) return false;
     // A kerfur prop mirror is host-driven state (its host-range eid is bound when the convert or
     // adoption materialises it), never a save-loaded local: exempt, like the chipPile and the
     // per-player classes. The sweep itself never sees a mirror; this serves the grab guard, which
