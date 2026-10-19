@@ -91,7 +91,7 @@ bool  g_lastReviveOk = false;
 bool  g_reviveRanThisDeath = false;
 uint64_t g_cancelAtMs = 0;
 
-// The revive is ten synchronous engine calls on one tick, so past a few ticks it is failure, not
+// The revive is ten synchronous steps on one tick, so past a few ticks it is failure, not
 // slowness. While dead the player can neither pause nor quit, so this window has no manual
 // exit; the deadline is the exit.
 constexpr uint64_t kReviveDeadlineMs = 3000;
@@ -382,8 +382,8 @@ bool DistanceToKpp(void* pawn, float& out) {
     return true;
 }
 
-// The revive: ten engine calls, then the conjunction, each verified by reading the world back rather
-// than by the return of the call meant to cause it. A ten-call sequence cannot be pre-proven;
+// The revive: ten steps, then the conjunction, each verified by reading the world back rather
+// than by the return of the call meant to cause it. A ten-step sequence cannot be pre-proven;
 // what is cheaply resolvable is pre-flighted, the rest is read back, and the player leaves for
 // the menu if the world disagrees.
 bool RunRevive(coop::net::Session& session, void* pawn) {
