@@ -18,6 +18,7 @@
 #include "coop/player/players_registry.h"
 
 #include "ue_wrap/core/reflection_props.h"
+#include "ue_wrap/engine/engine.h"  // SetActorLifeSpan: request_expiry's end
 #include "ue_wrap/engine/engine_attach.h"
 
 #include <algorithm>
@@ -38,6 +39,7 @@ constexpr int       kFires = 12;      // the sticky bombs of the detonate arms
 constexpr int       kSwaps = 13;      // the hand swaps of request_switch: one past the hand lane's burst of twelve
 constexpr long long kMaxMs = 500;     // a rocket's or sticky bomb's birth to its blast applied, on the rig's loopback
 constexpr float     kUp = 100000.f;   // request_expiry's aim: straight up
+constexpr float     kExpiryLifeS = 1.f;  // request_expiry: the rocket's lifespan from its tracking
 
 // How the arm causes its explosion.
 enum class Flow : uint8_t { Rocket, Sticky, Stickies, StickiesSwitch, Hand, Thrown, Self, Switch, Expiry };
@@ -279,7 +281,13 @@ void LegTick(const Spec& sp) {
         if (sp.flow == Flow::Expiry && !g_src.r.track.Raw()) {
             g_scan.clear();
             Count(kRocketCls, true, &g_scan);
-            if (!g_scan.empty()) Track(g_scan[0]);
+            // The game ends a rocket that met nothing by its lifespan (InitialLifeSpan 30 s), with no blast; the arm
+            // starts that same expiry now rather than trust half a minute of empty sky (a rocket sent straight up
+            // once met something on the way).
+            if (!g_scan.empty()) {
+                Track(g_scan[0]);
+                if (!ue_wrap::engine::SetActorLifeSpan(g_scan[0], kExpiryLifeS)) return Abandon("the rocket's lifespan did not set");
+            }
         }
         return;
     default: return;  // the pill is lit, or the walk has ended: the counters are the verdict
