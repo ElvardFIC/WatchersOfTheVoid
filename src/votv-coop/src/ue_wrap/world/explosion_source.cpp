@@ -64,6 +64,20 @@ Kind KindOfClass(void* cls) {
     return Kind::None;
 }
 
+Kind KindOfProjectileClass(void* cls) {
+    UE_ASSERT_GAME_THREAD("explosion_source::KindOfProjectileClass");
+    if (!cls) return Kind::None;
+    Sync();
+    for (const Kind k : {Kind::Rocket, Kind::Sticky}) {
+        if (void* known = g_cls[static_cast<int>(k) - 1]) {
+            if (known == cls) return k;
+        } else if (reflection::NameEquals(reflection::NameOf(cls), ClassName(k))) {
+            return k;
+        }
+    }
+    return Kind::None;
+}
+
 void Resolve() {
     UE_ASSERT_GAME_THREAD("explosion_source::Resolve");
     Sync();

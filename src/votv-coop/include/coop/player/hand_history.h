@@ -2,8 +2,11 @@
 //
 // A short per-slot ring of (class, from, to) entries, so the host can ask whether a slot held a class
 // at any moment in the last N ms. The hand lane stamps it where it APPLIES a slot's state, never at
-// receive: that lane paces its applies, so the history follows the hand the host shows. Engine-free
-// and wire-free; game thread only.
+// receive: that lane paces its applies, so the history follows the hand the host shows. The shape is
+// Source's: a per-player history the server judges an act against
+// (reference/source-sdk-2013/src/game/server/player_lagcompensation.cpp). Its window there is the
+// player's latency; the windows asked of this one are flat, because the hand lane's applies are paced and
+// the window covers that pacing, not the round trip. Engine-free and wire-free; game thread only.
 
 #pragma once
 

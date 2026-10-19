@@ -9,7 +9,8 @@
 //     field the kind does not use zero -- and queued on its sender's slot, then judged one per token of its queue's
 //     own bucket (explosion_request_host.cpp) and spawned natively. Every refusal is counted by reason and said
 //     through a per-lane tally. The slot's state clears with its occupant.
-//   - The explosion source classes (ue_wrap/world/explosion_source.h) resolve by name each tick until held.
+//   - The explosion source classes (ue_wrap/world/explosion_source.h) resolve by name each tick until held, on a
+//     client, the only role that reads them.
 // Game thread throughout.
 
 #pragma once
@@ -25,8 +26,12 @@ namespace coop::explosion_request {
 // Store the session and take the client half's watches; idempotent, called every load tick.
 void Install(coop::net::Session* s);
 
-// Resolve the source classes, flush the refusal tally and, on the host, serve each slot's three queues.
+// On a client resolve the source classes; flush the refusal tally and, on the host, serve each slot's three queues.
 void Tick();
+
+// A new world: every slot's queues and judged shots, and the client half's pending births and sent shots, are
+// forgotten (they name projectiles of the world that ended). The counters and one-shot logs stay.
+void OnWorldChange();
 
 // Log the accepted, sent and refusal counts, then clear every per-slot state, the client half's state and the
 // counters.

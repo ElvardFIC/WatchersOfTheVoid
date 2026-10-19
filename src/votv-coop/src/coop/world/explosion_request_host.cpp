@@ -54,13 +54,23 @@ constexpr float kHandBlastCm  = 300.0f;
 constexpr float kRpgRocketSpeed  = 5000.0f;
 constexpr float kWitchRocketSpeed = 10000.0f;
 constexpr float kRocketReachSlackCm = 500.0f;
-// The retransmit slack: a shot's packet may be resent after its blast's.
+// The slack on a rocket's flight time: the shot's and the blast's receive times can drift apart (a stalled drain,
+// the queue's pacing) though the lane delivers them in order.
 constexpr float kRetransmitSlackMs = 1000.0f;
 // A sticky bomb rides whatever it struck, so its point is unbounded but by the world.
 constexpr float kStickyReachCm = 20000.0f;
 
-// The round trip when the session has not measured one yet.
+// The round trip when the session has not measured one yet, and the most of it a bound is widened by (Source clamps
+// its lag correction the same way, sv_maxunlag = 1 s:
+// reference/source-sdk-2013/src/game/server/player_lagcompensation.cpp).
 constexpr float kUnmeasuredRttMs = 500.0f;
+constexpr float kMaxRttMs        = 1000.0f;
+
+// The fastest a player and the witch car move, cm/s: a bound is widened by this times the round trip, never by the
+// speed the host last read (a puppet's pose is set each frame and carries none). Source bounds the same question by
+// a class constant, 1.5 x max speed x lag (reference/source-sdk-2013/src/game/server/player.cpp).
+constexpr float kMaxPlayerSpeedCmS = 1500.0f;
+constexpr float kMaxCarSpeedCmS    = 3000.0f;
 
 constexpr const wchar_t* kWitchCarClass = L"car1_witch_C";
 
@@ -69,12 +79,11 @@ float Dist(const FVector& a, const float b[3]) {
     return std::sqrt(dx * dx + dy * dy + dz * dz);
 }
 
-float Magnitude(const FVector& v) { return std::sqrt(v.X * v.X + v.Y * v.Y + v.Z * v.Z); }
-
 float RttMs(uint8_t slot) {
     coop::net::Session* s = SessionPtr();
     const int rtt = s ? s->rttMsForSlot(slot) : -1;
-    return rtt < 0 ? kUnmeasuredRttMs : static_cast<float>(rtt);
+    const float ms = rtt < 0 ? kUnmeasuredRttMs : static_cast<float>(rtt);
+    return ms > kMaxRttMs ? kMaxRttMs : ms;
 }
 
 // The slot's puppet and its location, or null.
@@ -84,9 +93,9 @@ coop::RemotePlayer* PuppetOf(uint8_t slot, FVector& loc) {
     return rp;
 }
 
-// The reach a body may travel in one round trip from where the host last saw it: its base, widened by its velocity.
-float Slack(void* actor, uint8_t slot, float base) {
-    return base + Magnitude(E::GetActorVelocity(actor)) * RttMs(slot) / 1000.0f;
+// The reach a body may travel in one round trip from where the host last saw it: its base, widened by its top speed.
+float Slack(float maxSpeedCmS, uint8_t slot, float base) {
+    return base + maxSpeedCmS * RttMs(slot) / 1000.0f;
 }
 
 const char* ProjName(uint8_t projClass) {
@@ -127,7 +136,7 @@ void SpawnBlast(uint8_t slot, const char* kind, XS::Kind src, const float loc[3]
 
 }  // namespace
 
-Served JudgeShot(uint8_t slot, Slot& s, const FiredItem& it, uint64_t now) {
+Served JudgeShot(uint8_t slot, Slot& s, const FiredItem& it, uint64_t) {
     const coop::net::ProjectileFiredPayload& p = it.p;
     for (size_t i = 0; i < s.count; ++i)
         if (s.shots[i].shotId == p.shotId) {
@@ -135,7 +144,9 @@ Served JudgeShot(uint8_t slot, Slot& s, const FiredItem& it, uint64_t now) {
             return Served::Done;
         }
 
-    // MTA relays the projectile to every peer (CGame.cpp:2953); here it is not relayed, the blast reaches every peer.
+    // Not built: MTA relays the projectile to every peer (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp,
+    // the projectile packet), with its velocity, rotation and target. The shot here carries the origin only, so a relay
+    // needs those on the wire first; until then the other peers see only the blast.
     // MTA checks no weapon on its server (CGame.cpp:2831-2932); here the launcher must be in the shooter's hand or seat.
     void* car = nullptr;
     if (p.launcher == static_cast<uint8_t>(RC::Launcher::WitchCar)) {
@@ -145,7 +156,7 @@ Served JudgeShot(uint8_t slot, Slot& s, const FiredItem& it, uint64_t now) {
             return Served::Done;
         }
     } else {
-        if (!coop::hand_history::HeldWithin(slot, RC::LauncherClassName(p.launcher), kLauncherWindowMs, now)) {
+        if (!coop::hand_history::HeldWithin(slot, RC::LauncherClassName(p.launcher), kLauncherWindowMs, it.recvMs)) {
             if (coop::hand_item::HandStateOwed(slot)) return Served::Wait;
             Refuse(slot, Refusal::NoLauncher);
             return Served::Done;
@@ -158,22 +169,18 @@ Served JudgeShot(uint8_t slot, Slot& s, const FiredItem& it, uint64_t now) {
 
     // The origin: a launcher fires from the player's hand or the car's mount.
     FVector anchor{};
-    void* anchorActor = car;
     if (car) {
         if (!E::TryGetActorLocation(car, anchor)) {
             Refuse(slot, Refusal::NotSeated);
             return Served::Done;
         }
-    } else {
-        coop::RemotePlayer* rp = PuppetOf(slot, anchor);
-        if (!rp) {
-            Refuse(slot, Refusal::NoPuppet);
-            return Served::Done;
-        }
-        anchorActor = rp->GetActor();
+    } else if (!PuppetOf(slot, anchor)) {
+        Refuse(slot, Refusal::NoPuppet);
+        return Served::Done;
     }
     // Written so that a NaN fails.
-    if (!(Dist(anchor, p.origin) <= Slack(anchorActor, slot, kShotOriginCm))) {
+    const float anchorSpeed = car ? kMaxCarSpeedCmS : kMaxPlayerSpeedCmS;
+    if (!(Dist(anchor, p.origin) <= Slack(anchorSpeed, slot, kShotOriginCm))) {
         Refuse(slot, Refusal::OriginBound);
         return Served::Done;
     }
@@ -213,8 +220,10 @@ Served JudgeShotBlast(uint8_t slot, Slot& s, const RequestItem& it, uint64_t) {
         return Served::Done;
     }
 
-    // MTA re-bases a position sent relative to an origin element on the element's server position
-    // (CGame.cpp:2841-2870); a projectile has no host element, so the absolute point is bounded against the shot's origin.
+    // MTA sends a rocket's blast relative to the closest remote player and the server re-bases it on that player's
+    // server position, which compensates lag. This lane compensates nothing: the point is absolute, and the host
+    // bounds it by the shot's origin. reference/mtasa-blue/Client/mods/deathmatch/logic/CClientExplosionManager.cpp:159-185
+    // (the origin choice), reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:2843-2867 (the re-base).
     const Shot sh = s.shots[at];
     EraseShot(s, at);  // the shot's one blast is spent, accepted or not
     float reach = kStickyReachCm;
@@ -253,7 +262,7 @@ Served JudgeBody(uint8_t slot, Slot&, const RequestItem& it, uint64_t now) {
             Refuse(slot, Refusal::NoPuppet);
             return Served::Done;
         }
-        if (!(Dist(at, p.loc) <= Slack(rp->GetActor(), slot, kHandBlastCm))) {
+        if (!(Dist(at, p.loc) <= Slack(kMaxPlayerSpeedCmS, slot, kHandBlastCm))) {
             Refuse(slot, Refusal::HandBound);
             return Served::Done;
         }

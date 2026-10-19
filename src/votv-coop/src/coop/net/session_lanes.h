@@ -226,9 +226,9 @@ inline Lane LaneForKind(ReliableKind k) {
     case ReliableKind::RemoverRequest:    return Lane::Normal;
     case ReliableKind::RemoverResult:     return Lane::Normal;
     case ReliableKind::CreatureHitIntent: return Lane::Normal;
-    // Order-paired: a blast's request is judged after its own shot, so the two share one lane.
-    // The judges also read the hand and seat states their lanes apply: the hand's pacing is waited on, a seat announced
-    // late is refused.
+    // Order-paired: a blast's request is judged after its own shot, so the two share one lane. The judges also read the
+    // hand and seat states their lanes apply (the hand's pacing is waited on, a seat announced late is refused): Normal
+    // keeps them ordered with those, where MTA sends both at high priority (reference/mtasa-blue/Client/mods/deathmatch/logic/CClientGame.cpp).
     case ReliableKind::ProjectileFired:   return Lane::Normal;
     case ReliableKind::ExplosionRequest:  return Lane::Normal;
     // A take or use: the request and its reply ride Normal; the commit rides PropDestroy's lane (Bulk), where PropDropIntent

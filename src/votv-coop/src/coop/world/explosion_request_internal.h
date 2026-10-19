@@ -88,21 +88,25 @@ Slot& SlotOf(uint8_t slot);
 struct Counters {
     uint64_t refused[static_cast<int>(Refusal::Count)];
     uint64_t shotsAccepted, requestsAccepted, evicted, expired;
-    // The client half: shots and requests sent, pending births pushed out by the cap, and pending births whose
-    // projectile died inside the fire body.
-    uint64_t shotsSent, requestsSent, pendingDropped, pendingDead;
+    // The client half: shots and requests sent, pending births pushed out by the cap, pending births whose
+    // projectile died inside the fire body, pending births left by a body that ended without its post, messages
+    // dropped unsent (a location that did not read, a send that failed), and projectiles that exploded with no shot
+    // sent.
+    uint64_t shotsSent, requestsSent, pendingDropped, pendingDead, pendingOrphaned, clientDropped, unmappedProjectile;
 };
 Counters& MutCounters();
 
 // The client half, in explosion_request_client.cpp. InstallClient takes the fire watches (retried on a throttle
 // until each is live or given up, both roles) and the object index's death listener; ClearClient forgets the
-// session's pending births, sent shots, shot counter and one-shot logs.
+// session's pending births, sent shots, shot counter and one-shot logs; ClearClientWorld forgets only the pending
+// births and the sent shots, for a world change.
 void InstallClient();
 void ClearClient();
+void ClearClientWorld();
 
 // The three judges, one per queue, in explosion_request_host.cpp. Each returns Done (accepted or refused) except
 // at its Waits, each bounded for an honest sender: the hand lane's refill, or the slot's own Fired queue draining.
-// `now` is the net clock's milliseconds.
+// `now` is the net clock's milliseconds; a judge that measures from its item's arrival leaves it unused.
 coop::net::Served JudgeShot(uint8_t slot, Slot& s, const FiredItem& it, uint64_t now);
 coop::net::Served JudgeShotBlast(uint8_t slot, Slot& s, const RequestItem& it, uint64_t now);
 coop::net::Served JudgeBody(uint8_t slot, Slot& s, const RequestItem& it, uint64_t now);

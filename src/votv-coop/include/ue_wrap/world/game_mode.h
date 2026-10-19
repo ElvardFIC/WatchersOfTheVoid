@@ -51,8 +51,8 @@ bool CheatsAllowed(bool& allowed);
 // Whether the running world lets a player hold the rocket or sticky launcher, as the guns' own hold gate answers for
 // a gun that does not ignore story mode (neither launcher does): true when the GameInstance's mode reads as a valid
 // mode that is neither story nor infinite, or when any of the gamemode's isChristmas, isHalloween or
-// unlockFungunsInStory reads true. A member that does not read grants nothing. Read, never the gate called: it
-// force-drops the gun. Game thread.
+// unlockFungunsInStory reads true. A member that does not read grants nothing, and a mode that does not read
+// leaves the three flags still read. Read, never the gate called: it force-drops the gun. Game thread.
 bool FungunHoldAllowed();
 
 }  // namespace ue_wrap::game_mode

@@ -23,8 +23,8 @@ namespace coop::explosion_sync {
 void Install(coop::net::Session* s);
 
 // Game thread, from TickGameplay: when the current world differs from the one last seen, the class tables (the
-// explosion classes and the source classes) are reset; then the classes are resolved while any is unresolved (a
-// lookup per unresolved class), and the request lane ticks.
+// explosion classes and the source classes) are reset and the request lane forgets its shots and queues; then the
+// classes are resolved while any is unresolved (a lookup per unresolved class), and the request lane ticks.
 void Tick();
 
 // The class table and the counters are cleared, and the request lane's state with them.

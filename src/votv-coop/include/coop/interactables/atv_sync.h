@@ -88,7 +88,8 @@ void OnDisconnect();
 bool IsOccupiedByOther(void* actor, uint8_t* outOccupantSlot = nullptr);
 
 // The indexed ATV (any ATV_C, the witch car included) whose seat `slot` occupies (occupantSlot == slot), or nullptr.
-// A grabber is not seated. The same index guard as IsOccupiedByOther. Game thread.
+// A grabber is not seated. The same index guard as IsOccupiedByOther; an entry whose actor is no longer live by its
+// index is skipped. Game thread.
 void* ActorSeatedBy(uint8_t slot);
 
 // Diagnostic read: does THIS peer own `actor`'s tick (run its brain) right now? False for an

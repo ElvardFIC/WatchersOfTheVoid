@@ -20,11 +20,10 @@ const wchar_t* const kNames[kCount] = {
 };
 
 // The byte's offset on the GameInstance class, resolved by name rather than pinned: the property
-// is reflected, and a recook that moves it then moves the read and the write together.
+// is reflected, and a recook that moves it then moves the read and the write together. Kept per class object.
 int32_t ModeOffset(void* gameInstance) {
-    void* cls = gameInstance ? R::ClassOf(gameInstance) : nullptr;
-    if (!cls) return -1;
-    return R::FindPropertyOffset(cls, L"GameMode");
+    static R::InstanceOffset s_mode{L"GameMode"};
+    return s_mode.Of(gameInstance);
 }
 
 // A bool member of the gamemode, read as the byte a Blueprint bool is.
@@ -52,8 +51,7 @@ bool FungunHoldAllowed() {
     static R::InstanceOffset s_halloween{L"isHalloween"};
     static R::InstanceOffset s_unlock{L"unlockFungunsInStory"};
     const int mode = ReadLocal();
-    if (!IsValid(mode)) return false;
-    if (mode != kStory && mode != kInfinite) return true;
+    if (IsValid(mode) && mode != kStory && mode != kInfinite) return true;
     void* gm = world_singleton::Gamemode();
     if (!gm) return false;
     bool v = false;

@@ -256,6 +256,7 @@ void Tick() {
         g_lastWorld = world;
         X::Reset();
         ue_wrap::explosion_source::Reset();
+        coop::explosion_request::OnWorldChange();
     }
     X::Resolve();
     coop::explosion_request::Tick();

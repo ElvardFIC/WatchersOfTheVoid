@@ -390,7 +390,8 @@ bool HandleIntentEvent(net::Session& session,
     }
     case net::ReliableKind::ProjectileFired: {
         // CLIENT->HOST: a shot this client's launcher fired. The host keeps it for the blast that names it
-        // (coop::explosion_request); the format lives there, counted. Never relayed.
+        // (coop::explosion_request); the format lives there, counted. Never relayed. The sender is a joined peer
+        // by the dispatcher's own gates, as MTA checks IsJoined (CGame.cpp:2833).
         if (session.role() != net::Role::Host) {
             UE_LOGW("event_feed: ProjectileFired received on a client -- dropping");
             break;
@@ -404,7 +405,8 @@ bool HandleIntentEvent(net::Session& session,
     }
     case net::ReliableKind::ExplosionRequest: {
         // CLIENT->HOST: an explosion this client's player caused was dissolved here. The host judges it and
-        // performs it natively (coop::explosion_request); the format lives there, counted. Never relayed.
+        // performs it natively (coop::explosion_request); the format lives there, counted. Never relayed. The sender
+        // is a joined peer by the dispatcher's own gates, as MTA checks IsJoined (CGame.cpp:2833).
         if (session.role() != net::Role::Host) {
             UE_LOGW("event_feed: ExplosionRequest received on a client -- dropping");
             break;

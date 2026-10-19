@@ -5,6 +5,7 @@
 #include "explosion_request_internal.h"  // co-located private header (src tree, not include/)
 
 #include "coop/world/explosion_recipe.h"
+#include "coop/world/spawn_authority.h"
 
 #include "coop/net/net_clock.h"
 #include "coop/net/protocol.h"
@@ -136,7 +137,7 @@ void Install(coop::net::Session* s) {
 }
 
 void Tick() {
-    XS::Resolve();
+    if (coop::spawn_authority::IsActiveClientSession()) XS::Resolve();  // only a client reads a source class
     g_refusals.Flush(coop::net::RefusalTally::Clock::now());
     coop::net::Session* s = detail::SessionPtr();
     if (!s || !s->running() || s->role() != coop::net::Role::Host) return;
@@ -156,6 +157,11 @@ void Tick() {
     }
 }
 
+void OnWorldChange() {
+    for (int i = 0; i < g_slots.size(); ++i) g_slots[i] = detail::Slot{};
+    detail::ClearClientWorld();
+}
+
 void OnDisconnect() {
     char line[512];
     size_t n = 0;
@@ -172,11 +178,15 @@ void OnDisconnect() {
         UE_LOGI("[EXPLOSION] request lane at disconnect: shots=%llu requests=%llu evicted=%llu expired=%llu refused%s",
                 static_cast<unsigned long long>(c.shotsAccepted), static_cast<unsigned long long>(c.requestsAccepted),
                 static_cast<unsigned long long>(c.evicted), static_cast<unsigned long long>(c.expired), line);
-    if (c.shotsSent || c.requestsSent || c.pendingDropped || c.pendingDead)
+    if (c.shotsSent || c.requestsSent || c.pendingDropped || c.pendingDead || c.pendingOrphaned || c.clientDropped ||
+        c.unmappedProjectile)
         UE_LOGI("[EXPLOSION] request lane at disconnect (client): shotsSent=%llu requestsSent=%llu "
-                "pendingDropped=%llu pendingDead=%llu", static_cast<unsigned long long>(c.shotsSent),
+                "pendingDropped=%llu pendingDead=%llu pendingOrphaned=%llu clientDropped=%llu "
+                "unmappedProjectile=%llu", static_cast<unsigned long long>(c.shotsSent),
                 static_cast<unsigned long long>(c.requestsSent), static_cast<unsigned long long>(c.pendingDropped),
-                static_cast<unsigned long long>(c.pendingDead));
+                static_cast<unsigned long long>(c.pendingDead), static_cast<unsigned long long>(c.pendingOrphaned),
+                static_cast<unsigned long long>(c.clientDropped),
+                static_cast<unsigned long long>(c.unmappedProjectile));
     for (int i = 0; i < g_slots.size(); ++i) g_slots[i] = detail::Slot{};
     detail::ClearClient();
     g_counters = detail::Counters{};

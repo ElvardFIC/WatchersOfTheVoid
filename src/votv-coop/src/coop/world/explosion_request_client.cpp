@@ -68,11 +68,12 @@ bool      g_listenerTried = false;
 ue_wrap::CachedObjRef g_body[kLaunchers];
 
 // A rocket or sticky bomb born inside a launcher's fire body, kept by its object index: an actor still inside its
-// own spawn may not yet read as alive.
+// own spawn may not yet read as alive. It lives until that body's post, so it carries no serial.
 struct Pending {
     void*   actor;
     int32_t index;
     int     launcher;
+    uint8_t projClass;
 };
 constexpr size_t kPendingCap = 16;
 Pending g_pending[kPendingCap];
@@ -92,9 +93,13 @@ size_t   g_shotCount = 0;
 
 uint32_t g_nextShotId = 1;
 
-bool g_deadLogged   = false;
-bool g_sendLogged   = false;
-bool g_unreadLogged = false;
+// The one-shot logs of a session: a pending shot whose projectile died, one left by a body that ended without its
+// post, a projectile that exploded with no shot sent, and (per message type) a message dropped unsent.
+enum class Msg : int { Shot, Request };
+bool g_deadLogged     = false;
+bool g_orphanLogged   = false;
+bool g_unmappedLogged = false;
+bool g_dropLogged[2]  = {false, false};
 
 void EraseShot(size_t i) {
     for (size_t j = i + 1; j < g_shotCount; ++j) g_shots[j - 1] = g_shots[j];
@@ -124,17 +129,13 @@ int FindShot(void* actor) {
     return -1;
 }
 
-// A message that could not leave: said once a session, never retried.
-void NoteSendFailed(const char* what) {
-    if (g_sendLogged) return;
-    g_sendLogged = true;
-    UE_LOGW("[EXPLOSION] %s was not sent: the session took no reliable message", what);
-}
-
-void NoteUnread(const char* what) {
-    if (g_unreadLogged) return;
-    g_unreadLogged = true;
-    UE_LOGW("[EXPLOSION] a message was not sent: %s did not read", what);
+// A message that could not leave, never retried: counted every time, said once a session per message type.
+void NoteDropped(Msg m, const char* why) {
+    ++detail::MutCounters().clientDropped;
+    bool& logged = g_dropLogged[static_cast<int>(m)];
+    if (logged) return;
+    logged = true;
+    UE_LOGW("[EXPLOSION] %s was dropped unsent: %s", m == Msg::Shot ? "a shot" : "a request", why);
 }
 
 const char* ProjName(uint8_t projClass) {
@@ -152,22 +153,20 @@ void SendShot(coop::net::Session& s, const Pending& e) {
         return;
     }
     FVector loc{};
-    if (!E::TryGetActorLocation(e.actor, loc)) return NoteUnread("the projectile's location");
-    const XS::Kind kind = XS::KindOfClass(R::ClassOf(e.actor));
-    const uint8_t projClass = static_cast<uint8_t>(kind == XS::Kind::Rocket ? RC::ProjClass::Rocket
-                                                                            : RC::ProjClass::Sticky);
+    if (!E::TryGetActorLocation(e.actor, loc)) return NoteDropped(Msg::Shot, "the projectile's location did not read");
     coop::net::ProjectileFiredPayload p{};
-    p.projClass = projClass;
+    p.projClass = e.projClass;
     p.launcher  = static_cast<uint8_t>(e.launcher);
     p.shotId    = g_nextShotId;
     p.origin[0] = loc.X;
     p.origin[1] = loc.Y;
     p.origin[2] = loc.Z;
-    if (!s.SendReliable(coop::net::ReliableKind::ProjectileFired, &p, sizeof(p))) return NoteSendFailed("a shot");
+    if (!s.SendReliable(coop::net::ReliableKind::ProjectileFired, &p, sizeof(p)))
+        return NoteDropped(Msg::Shot, "the session took no reliable message");
     ++g_nextShotId;
-    AddShot(SentShot{e.actor, e.index, R::AllocateSlotSerial(e.index), p.shotId, projClass});
+    AddShot(SentShot{e.actor, e.index, R::AllocateSlotSerial(e.index), p.shotId, e.projClass});
     ++detail::MutCounters().shotsSent;
-    UE_LOGI("[EXPLOSION] shot sent id=%u class=%s launcher=%d", p.shotId, ProjName(projClass), e.launcher);
+    UE_LOGI("[EXPLOSION] shot sent id=%u class=%s launcher=%d", p.shotId, ProjName(e.projClass), e.launcher);
 }
 
 // Launcher `l`'s fire body has ended: its pending births are sent, or counted dead, and dropped.
@@ -185,11 +184,29 @@ void FlushLauncher(int l) {
     g_pendingCount = kept;
 }
 
+// A body of launcher `l` is starting, so any pending birth of `l` belongs to a body that ended without its post. Its
+// projectile's location would be read late, long after the shot, and the host would refuse it: it is dropped, counted.
+void DropOrphans(int l) {
+    size_t kept = 0;
+    for (size_t i = 0; i < g_pendingCount; ++i) {
+        const Pending e = g_pending[i];
+        if (e.launcher != l) {
+            g_pending[kept++] = e;
+            continue;
+        }
+        ++detail::MutCounters().pendingOrphaned;
+        if (!g_orphanLogged) {
+            g_orphanLogged = true;
+            UE_LOGW("[EXPLOSION] shot dropped: its fire body ended without its post");
+        }
+    }
+    g_pendingCount = kept;
+}
+
 template <int L>
 SG::Verdict OnFirePre(const SG::Call& call) {
     if (!g_body[L - 1].Is(call.function)) g_body[L - 1].Set(call.function);
-    // A body that ended without its POST left real shots pending: they go now, before this shot's birth.
-    if (coop::spawn_authority::IsActiveClientSession()) FlushLauncher(L);
+    DropOrphans(L);
     return SG::Verdict::Run;
 }
 
@@ -209,7 +226,8 @@ bool AllSettled() {
 }
 
 void Send(coop::net::Session& s, const coop::net::ExplosionRequestPayload& p) {
-    if (!s.SendReliable(coop::net::ReliableKind::ExplosionRequest, &p, sizeof(p))) return NoteSendFailed("a request");
+    if (!s.SendReliable(coop::net::ReliableKind::ExplosionRequest, &p, sizeof(p)))
+        return NoteDropped(Msg::Request, "the session took no reliable message");
     ++detail::MutCounters().requestsSent;
     UE_LOGI("[EXPLOSION] request sent kind=%u class=%u shot=%u", static_cast<unsigned>(p.kind),
             static_cast<unsigned>(p.srcClass), p.shotId);
@@ -262,21 +280,29 @@ void InstallClient() {
     }
 }
 
-void ClearClient() {
+void ClearClientWorld() {
     g_pendingCount = 0;
     g_shotCount    = 0;
-    g_nextShotId   = 1;
-    g_deadLogged   = false;
-    g_sendLogged   = false;
-    g_unreadLogged = false;
+}
+
+void ClearClient() {
+    ClearClientWorld();
+    g_nextShotId     = 1;
+    g_deadLogged     = false;
+    g_orphanLogged   = false;
+    g_unmappedLogged = false;
+    g_dropLogged[0]  = false;
+    g_dropLogged[1]  = false;
 }
 
 }  // namespace detail
 
 void OnClientProjectileBirth(void* actor) {
     if (!actor || !coop::spawn_authority::IsActiveClientSession()) return;
-    const XS::Kind kind = XS::KindOfClass(R::ClassOf(actor));
-    if (kind != XS::Kind::Rocket && kind != XS::Kind::Sticky) return;
+    const XS::Kind kind = XS::KindOfProjectileClass(R::ClassOf(actor));
+    if (kind == XS::Kind::None) return;
+    const uint8_t projClass = static_cast<uint8_t>(kind == XS::Kind::Rocket ? RC::ProjClass::Rocket
+                                                                            : RC::ProjClass::Sticky);
     // A mirror's projectile is born outside every fire body, so it finds no launcher.
     int launcher = 0;
     for (int i = 0; i < kLaunchers; ++i) {
@@ -292,7 +318,7 @@ void OnClientProjectileBirth(void* actor) {
         --g_pendingCount;
         ++detail::MutCounters().pendingDropped;
     }
-    g_pending[g_pendingCount++] = Pending{actor, R::InternalIndexOf(actor), launcher};
+    g_pending[g_pendingCount++] = Pending{actor, R::InternalIndexOf(actor), launcher, projClass};
 }
 
 void OnClientBirth(void* sourceObject, void* /*explosionActor*/) {
@@ -302,13 +328,20 @@ void OnClientBirth(void* sourceObject, void* /*explosionActor*/) {
     coop::net::ExplosionRequestPayload p{};
     p.srcClass = RC::SrcClassOf(kind);
     bool atSource = true;  // the blast's place is the source's; a pilled burn sends none
+    int  shotAt   = -1;    // the projectile's entry in the shot map, spent once its location has read
     switch (kind) {
         case XS::Kind::Rocket:
         case XS::Kind::Sticky: {
-            const int at = FindShot(sourceObject);
-            if (at < 0) return;
-            p.shotId = g_shots[at].shotId;
-            EraseShot(static_cast<size_t>(at));
+            shotAt = FindShot(sourceObject);
+            if (shotAt < 0) {
+                ++detail::MutCounters().unmappedProjectile;
+                if (!g_unmappedLogged) {
+                    g_unmappedLogged = true;
+                    UE_LOGW("[EXPLOSION] a projectile exploded with no shot sent: its blast is not requested");
+                }
+                return;
+            }
+            p.shotId = g_shots[shotAt].shotId;
             p.kind = static_cast<uint8_t>(RC::RequestKind::Projectile);
             break;
         }
@@ -324,7 +357,7 @@ void OnClientBirth(void* sourceObject, void* /*explosionActor*/) {
             // The Blueprint zeroes the level after the spawn, so it is read here, at the birth.
             float level = 0.0f;
             if (!ue_wrap::vitals::Read(ue_wrap::vitals::Field::GasolinePilled, &level))
-                return NoteUnread("the pill level");
+                return NoteDropped(Msg::Request, "the pill level did not read");
             p.pillLevel = level;
             p.kind   = static_cast<uint8_t>(RC::RequestKind::Self);
             atSource = false;
@@ -335,11 +368,13 @@ void OnClientBirth(void* sourceObject, void* /*explosionActor*/) {
     }
     if (atSource) {
         FVector loc{};
-        if (!E::TryGetActorLocation(sourceObject, loc)) return NoteUnread("the source's location");
+        if (!E::TryGetActorLocation(sourceObject, loc))
+            return NoteDropped(Msg::Request, "the source's location did not read");
         p.loc[0] = loc.X;
         p.loc[1] = loc.Y;
         p.loc[2] = loc.Z;
     }
+    if (shotAt >= 0) EraseShot(static_cast<size_t>(shotAt));
     Send(*s, p);
 }
 

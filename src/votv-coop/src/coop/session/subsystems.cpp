@@ -201,7 +201,7 @@ void ReleaseSessionGateHold() {
 void InstallLoadWatchers(coop::net::Session& session) {
     coop::comp_sync::Install(&session);  // the refiner's decode: the host's machine alone, a joiner's restore refused
     coop::player_hit::Install(&session);  // the session the host's hit deliveries send through
-    coop::explosion_sync::Install(&session);  // the birth seam on every Blueprint deferred spawn: a client's own explosions dissolve, from the load window on
+    coop::explosion_sync::Install(&session);  // the birth seam on every Blueprint deferred spawn: a client's own explosions dissolve, from the load window on; also the request lane's session and client watches
     coop::explosion_parking::Install(&session);  // the explosion copy's parking watches: the four verbs, the rune check, the force narrowing (client session only)
 }
 
@@ -548,7 +548,7 @@ DisconnectStats DisconnectAll() {
     coop::sleepingbag_sync::OnDisconnect();
     coop::item_activate::OnDisconnect();
     coop::weather_sync::OnDisconnect();
-    coop::explosion_sync::OnDisconnect();  // the class table and the counters
+    coop::explosion_sync::OnDisconnect();  // the class table and the counters, and the request lane's queues, shot tables and client state
     coop::explosion_parking::OnDisconnect();  // the counters, after a summary
     coop::interactable_sync::OnDisconnect();
     coop::keypad_sync::OnDisconnect();
@@ -666,7 +666,7 @@ void TickGameplay(coop::net::Session& session, bool isConnected, bool isHost,
     // A cheap early return when nothing is pending.
     { PP::Scope _s{PP::Bucket::ItemConnect};   coop::item_activate::TickConnect(); }
     { PP::Scope _s{PP::Bucket::WeatherConnect}; coop::weather_sync::TickConnect(); }
-    { PP::Scope _s{PP::Bucket::Interactable}; ue_wrap::ScopedWalkTimer _w{"sync:explosion"}; coop::explosion_sync::Tick(); }  // the explosion classes: reset at a world change, resolved until all three are
+    { PP::Scope _s{PP::Bucket::Interactable}; ue_wrap::ScopedWalkTimer _w{"sync:explosion"}; coop::explosion_sync::Tick(); }  // the explosion classes: reset at a world change, resolved until all three are; the request lane's source classes (client) and its host queues
     // The ends of play the engine announced since the last tick, handed to the lanes that subscribed
     // before the hub's pass can complete: a pass prunes what has died from its consumers' indexes, and a
     // lane names an ended actor by its index (grime's position key).
