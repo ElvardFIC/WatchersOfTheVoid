@@ -378,6 +378,7 @@ inline constexpr RefFn kRefFns[] = {
     {L"ui_laptop_c", L"sortsignal", L"ui_laptop_c.sortsignal", 0xfca6e6749b3d1afeull, 0x68e3524b07922267ull},
     {L"ui_laptop_c", L"switcherswitched", L"ui_laptop_c.switcherswitched", 0x908b31bda2b142b5ull, 0xd9bb44deae8bfb85ull},
     {L"ui_menu_c", L"tick", L"ui_menu_c.tick", 0xc5b14e95b814ffecull, 0xb8af03a343ee127full},
+    {L"ui_notebook_c", L"bndevt__multilineeditabletext_86_k2node_componentboundevent_5_onmultilineeditabletextcommittedevent__delegatesignature", L"ui_notebook_c.bndevt__multilineeditabletext_86_k2node_componentboundevent_5_onmultilineeditabletextcommittedevent__delegatesignature", 0x085466727950fc0aull, 0x67794fc62bfd94fcull},
     {L"ui_notebook_c", L"executeubergraph_ui_notebook", L"ui_notebook_c.executeubergraph_ui_notebook", 0xd3c93c9d2749b427ull, 0xa04d11cba8537d1cull},
     {L"ui_notebook_c", L"quit", L"ui_notebook_c.quit", 0x0b25e8d1090ed6ddull, 0xa1d644433971a9d1ull},
     {L"ui_signalname_c", L"executeubergraph_ui_signalname", L"ui_signalname_c.executeubergraph_ui_signalname", 0xd3c93c9d2749b427ull, 0xd56f30313cc94b71ull},
