@@ -742,6 +742,10 @@ bool HeldClassIs(uint8_t slot, const wchar_t* cls) {
     return h.has && ::_wcsicmp(h.cls.c_str(), cls) == 0;
 }
 
+bool OwnAnnounced(const wchar_t* cls) {
+    return cls && g_ownHas && ::_wcsicmp(g_ownCls.c_str(), cls) == 0;
+}
+
 bool LastHeldClassIs(uint8_t slot, const wchar_t* cls) {
     if (slot >= coop::players::kMaxPeers || !cls) return false;
     const SlotHand& h = g_hands[slot];

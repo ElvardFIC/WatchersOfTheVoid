@@ -1,7 +1,8 @@
 // coop/world/explosion_request_client.cpp -- the client's half of the explosion request lane: see
 // coop/world/explosion_request.h. A client's launcher fire bodies are watched to tell a rocket or sticky bomb born
-// inside one (the player's shot) from one the world made; each such shot is sent when its body ends, and the
-// dissolved birth of an explosion its own player caused is sent as a request that names it. Game thread.
+// inside one (the player's shot) from one the world made; each such shot is taken when its body ends and sent then,
+// or after the player's own hand announce of its launcher (the outbox), and the dissolved birth of an explosion its
+// own player caused is sent as a request that names it, behind its shot if that still waits. Game thread.
 
 #include "coop/world/explosion_request.h"
 
@@ -28,6 +29,7 @@
 #include "ue_wrap/world/explosion_source.h"
 
 #include <cstdint>
+#include <cwchar>
 
 namespace coop::explosion_request {
 namespace {
@@ -103,6 +105,7 @@ bool g_deadLogged     = false;
 bool g_orphanLogged   = false;
 bool g_unmappedLogged = false;
 bool g_dropLogged[2]  = {false, false};
+bool g_notAnnouncedLogged = false;
 
 void EraseShot(size_t i) {
     for (size_t j = i + 1; j < g_shotCount; ++j) g_shots[j - 1] = g_shots[j];
@@ -145,7 +148,92 @@ const char* ProjName(uint8_t projClass) {
     return projClass == static_cast<uint8_t>(RC::ProjClass::Rocket) ? "rocket" : "sticky";
 }
 
-// The launcher's shot, sent once its body has finished the projectile's spawn.
+// The outbox, the client's messages in the order they go on the one ordered lane. A shot of a held launcher waits
+// here until the player's own hand announce of that launcher has gone out, so the host has the hand before the
+// shot; a request that names a waiting shot queues behind it, any other request goes at once. Head first.
+struct OutItem {
+    bool                               shot;
+    coop::net::ProjectileFiredPayload  fired;
+    coop::net::ExplosionRequestPayload request;
+};
+constexpr size_t kOutboxCap = 16;
+OutItem g_outbox[kOutboxCap];
+size_t  g_outboxCount = 0;
+
+uint32_t OutShotId(const OutItem& o) { return o.shot ? o.fired.shotId : o.request.shotId; }
+
+bool ShotQueued(uint32_t shotId) {
+    for (size_t i = 0; i < g_outboxCount; ++i)
+        if (g_outbox[i].shot && g_outbox[i].fired.shotId == shotId) return true;
+    return false;
+}
+
+// Every outbox entry that names `shotId` (the shot and its queued requests) goes, and the shot's map entry with
+// them; returns how many outbox entries went.
+size_t DropQueued(uint32_t shotId) {
+    size_t kept = 0;
+    size_t gone = 0;
+    for (size_t i = 0; i < g_outboxCount; ++i) {
+        if (OutShotId(g_outbox[i]) == shotId)
+            ++gone;
+        else
+            g_outbox[kept++] = g_outbox[i];
+    }
+    g_outboxCount = kept;
+    for (size_t i = 0; i < g_shotCount; ++i) {
+        if (g_shots[i].shotId == shotId) {
+            EraseShot(i);
+            break;
+        }
+    }
+    return gone;
+}
+
+void PopHead() {
+    for (size_t j = 1; j < g_outboxCount; ++j) g_outbox[j - 1] = g_outbox[j];
+    --g_outboxCount;
+}
+
+// At the cap the oldest shot goes with its requests, counted as dropped unsent; a request whose shot went is dropped.
+void Enqueue(const OutItem& item) {
+    if (g_outboxCount == kOutboxCap) {
+        const size_t gone = DropQueued(OutShotId(g_outbox[0]));
+        for (size_t i = 0; i < gone; ++i) NoteDropped(Msg::Shot, "the outbox was full");
+    }
+    if (!item.shot && !ShotQueued(item.request.shotId))
+        return NoteDropped(Msg::Request, "its shot left the full outbox");
+    g_outbox[g_outboxCount++] = item;
+}
+
+// Whether the player's hand holds, this instant, an item of the class named `cls`: the live read, since the
+// announce state only moves once the announce goes out. Asked only while the outbox holds a waiting shot.
+bool LiveHandHolds(const wchar_t* cls) {
+    void* hand = coop::hand_item::LocalHandActor();
+    return hand && ::_wcsicmp(R::ClassNameOf(hand).c_str(), cls) == 0;
+}
+
+// A shot dropped because the hand left its launcher before the announce: it and its queued requests, counted.
+void DropNotAnnounced(uint32_t shotId) {
+    detail::MutCounters().shotNotAnnounced += DropQueued(shotId);
+    if (g_notAnnouncedLogged) return;
+    g_notAnnouncedLogged = true;
+    UE_LOGW("[EXPLOSION] shot dropped: the hand moved before its launcher was announced");
+}
+
+// One shot on the wire; false, counted, when the session took none.
+bool TransmitShot(coop::net::Session& s, const coop::net::ProjectileFiredPayload& p) {
+    if (!s.SendReliable(coop::net::ReliableKind::ProjectileFired, &p, sizeof(p))) {
+        NoteDropped(Msg::Shot, "the session took no reliable message");
+        return false;
+    }
+    ++detail::MutCounters().shotsSent;
+    UE_LOGI("[EXPLOSION] shot sent id=%u class=%s launcher=%d", p.shotId, ProjName(p.projClass), p.launcher);
+    return true;
+}
+
+// The launcher's shot, taken once its body has finished the projectile's spawn: its place is read here, while the
+// projectile is live, and its shot-map entry and id are made here. The rpg's and the sticky launcher's shot goes
+// out at once if the player's announce of that launcher has, else it waits in the outbox; the witch car has no hand.
 void SendShot(coop::net::Session& s, const Pending& e) {
     if (!R::IsLiveByIndex(e.actor, e.index)) {
         ++detail::MutCounters().pendingDead;
@@ -164,12 +252,16 @@ void SendShot(coop::net::Session& s, const Pending& e) {
     p.origin[0] = loc.X;
     p.origin[1] = loc.Y;
     p.origin[2] = loc.Z;
-    if (!s.SendReliable(coop::net::ReliableKind::ProjectileFired, &p, sizeof(p)))
-        return NoteDropped(Msg::Shot, "the session took no reliable message");
+    const bool held = e.launcher != static_cast<int>(RC::Launcher::WitchCar) &&
+                      !coop::hand_item::OwnAnnounced(RC::LauncherClassName(p.launcher));
+    if (!held && !TransmitShot(s, p)) return;
     ++g_nextShotId;
     AddShot(SentShot{e.actor, e.index, R::AllocateSlotSerial(e.index), p.shotId, e.projClass});
-    ++detail::MutCounters().shotsSent;
-    UE_LOGI("[EXPLOSION] shot sent id=%u class=%s launcher=%d", p.shotId, ProjName(e.projClass), e.launcher);
+    if (!held) return;
+    OutItem item{};
+    item.shot  = true;
+    item.fired = p;
+    Enqueue(item);
 }
 
 // Launcher `l`'s fire body has ended: its pending births are sent, or counted dead, and dropped. The session is set
@@ -283,9 +375,36 @@ void InstallClient() {
     }
 }
 
+// The outbox's head first: a shot goes once the player's announce of its launcher has, and is dropped, with its
+// queued requests, when the live hand no longer holds that launcher's class and the announce never came; a request
+// goes when its shot has. The first head that must wait holds everything behind it.
+void TickClient() {
+    coop::net::Session* s = SessionPtr();
+    if (!s) return;
+    while (g_outboxCount > 0) {
+        const OutItem head = g_outbox[0];
+        if (!head.shot) {
+            Send(*s, head.request);
+            PopHead();
+            continue;
+        }
+        const wchar_t* cls = RC::LauncherClassName(head.fired.launcher);
+        if (!coop::hand_item::OwnAnnounced(cls)) {
+            if (LiveHandHolds(cls)) return;
+            DropNotAnnounced(head.fired.shotId);
+            continue;
+        }
+        if (TransmitShot(*s, head.fired))
+            PopHead();
+        else
+            DropQueued(head.fired.shotId);
+    }
+}
+
 void ClearClientWorld() {
     g_pendingCount = 0;
     g_shotCount    = 0;
+    g_outboxCount  = 0;
 }
 
 void ClearClient() {
@@ -296,6 +415,7 @@ void ClearClient() {
     g_unmappedLogged = false;
     g_dropLogged[0]  = false;
     g_dropLogged[1]  = false;
+    g_notAnnouncedLogged = false;
 }
 
 }  // namespace detail
@@ -380,6 +500,13 @@ void OnClientBirth(void* sourceObject, void* /*explosionActor*/) {
         p.loc[2] = loc.Z;
     }
     if (shotAt >= 0) EraseShot(static_cast<size_t>(shotAt));
+    // A blast whose shot still waits for the hand announce queues behind it, so the host has the shot first.
+    if (shotAt >= 0 && ShotQueued(p.shotId)) {
+        OutItem item{};
+        item.shot    = false;
+        item.request = p;
+        return Enqueue(item);
+    }
     Send(*s, p);
 }
 

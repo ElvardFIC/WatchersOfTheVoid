@@ -90,6 +90,12 @@ void* MirrorActorForSlot(uint8_t slot);
 // only.
 bool HeldClassIs(uint8_t slot, const wchar_t* cls);
 
+// Whether this peer's own announce of a hand item of the class named `cls` has been queued, and the
+// hand has not emptied or changed class since: true from the TickOwner statement that announces it. A
+// client's launcher shot waits for it, so the host has the hand first on the one ordered lane. Game
+// thread only.
+bool OwnAnnounced(const wchar_t* cls);
+
 // Whether the class `slot`'s hand held last is the one named `cls`: the one it holds now or, since
 // the hand emptied, the one it held before. A host asks it of a verb that takes the held item as it
 // starts: a crowbar's pry, whose prying crowbar destroys the held one when it goes into the door, so

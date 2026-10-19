@@ -82,9 +82,11 @@ Counters& MutCounters();
 
 // The client half, in explosion_request_client.cpp. InstallClient takes the fire watches (retried on a throttle
 // until each is live or given up, both roles) and the object index's death listener; ClearClient forgets the
-// session's pending births, sent shots, shot counter and one-shot logs; ClearClientWorld forgets only the pending
-// births and the sent shots, for a world change.
+// session's pending births, sent shots, outbox, shot counter and one-shot logs; ClearClientWorld forgets only the
+// pending births, the sent shots and the outbox, for a world change. TickClient sends the outbox head first as the
+// player's hand announce allows, each tick of an active client session.
 void InstallClient();
+void TickClient();
 void ClearClient();
 void ClearClientWorld();
 

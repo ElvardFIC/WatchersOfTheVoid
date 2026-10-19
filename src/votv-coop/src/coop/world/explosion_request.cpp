@@ -147,7 +147,10 @@ void Install(coop::net::Session* s) {
 }
 
 void Tick() {
-    if (coop::spawn_authority::IsActiveClientSession()) XS::Resolve();  // only a client reads a source class
+    if (coop::spawn_authority::IsActiveClientSession()) {  // only a client reads a source class
+        XS::Resolve();
+        detail::TickClient();
+    }
     g_refusals.Flush(coop::net::RefusalTally::Clock::now());
     coop::net::Session* s = detail::SessionPtr();
     if (!s || !s->running() || s->role() != coop::net::Role::Host) return;
@@ -192,12 +195,12 @@ void OnDisconnect() {
                 "expired=%llu waited=%llu refused%s", u(c.shotsAccepted), u(c.requestsAccepted[0]),
                 u(c.requestsAccepted[1]), u(c.requestsAccepted[2]), u(c.evicted), u(c.expired), u(c.waited), line);
     if (c.shotsSent || c.requestsSent[0] || c.requestsSent[1] || c.requestsSent[2] || c.pendingDropped ||
-        c.pendingDead || c.pendingOrphaned || c.clientDropped || c.unmappedProjectile)
+        c.pendingDead || c.pendingOrphaned || c.clientDropped || c.unmappedProjectile || c.shotNotAnnounced)
         UE_LOGI("[EXPLOSION] request lane at disconnect (client): shotsSent=%llu requestsSent=%llu/%llu/%llu "
                 "pendingDropped=%llu pendingDead=%llu pendingOrphaned=%llu clientDropped=%llu "
-                "unmappedProjectile=%llu", u(c.shotsSent), u(c.requestsSent[0]), u(c.requestsSent[1]),
-                u(c.requestsSent[2]), u(c.pendingDropped), u(c.pendingDead), u(c.pendingOrphaned),
-                u(c.clientDropped), u(c.unmappedProjectile));
+                "unmappedProjectile=%llu shotNotAnnounced=%llu", u(c.shotsSent), u(c.requestsSent[0]),
+                u(c.requestsSent[1]), u(c.requestsSent[2]), u(c.pendingDropped), u(c.pendingDead),
+                u(c.pendingOrphaned), u(c.clientDropped), u(c.unmappedProjectile), u(c.shotNotAnnounced));
     for (int i = 0; i < g_slots.size(); ++i) g_slots[i] = detail::Slot{};
     detail::ClearClient();
     g_counters = Counters{};
