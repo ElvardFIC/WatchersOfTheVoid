@@ -761,6 +761,10 @@ bool HoldsItem(uint8_t slot) {
     return slot < coop::players::kMaxPeers && g_hands[slot].has;
 }
 
+bool HandStateOwed(uint8_t slot) {
+    return slot < coop::players::kMaxPeers && g_pendingHand[slot].pace.Owed();
+}
+
 uint32_t StatesApplied(int slot) {
     return (slot >= 0 && slot < static_cast<int>(coop::players::kMaxPeers)) ? g_statesApplied[slot] : 0;
 }

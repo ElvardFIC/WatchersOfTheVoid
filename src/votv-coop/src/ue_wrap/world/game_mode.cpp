@@ -47,6 +47,21 @@ bool CheatsAllowed(bool& allowed) {
     return true;
 }
 
+bool FungunHoldAllowed() {
+    static R::InstanceOffset s_christmas{L"isChristmas"};
+    static R::InstanceOffset s_halloween{L"isHalloween"};
+    static R::InstanceOffset s_unlock{L"unlockFungunsInStory"};
+    const int mode = ReadLocal();
+    if (!IsValid(mode)) return false;
+    if (mode != kStory && mode != kInfinite) return true;
+    void* gm = world_singleton::Gamemode();
+    if (!gm) return false;
+    bool v = false;
+    if (GamemodeBool(gm, s_christmas, v) && v) return true;
+    if (GamemodeBool(gm, s_halloween, v) && v) return true;
+    return GamemodeBool(gm, s_unlock, v) && v;
+}
+
 const wchar_t* Name(int ord) { return IsValid(ord) ? kNames[ord] : nullptr; }
 
 std::string NameOrOrdinal(int ord) {

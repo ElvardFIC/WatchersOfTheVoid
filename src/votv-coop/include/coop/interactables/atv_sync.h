@@ -87,6 +87,10 @@ void OnDisconnect();
 // peer (occupantSlot != 0xFF && occupantSlot != LocalSlot()). Populates `outOccupantSlot` if non-null.
 bool IsOccupiedByOther(void* actor, uint8_t* outOccupantSlot = nullptr);
 
+// The indexed ATV (any ATV_C, the witch car included) whose seat `slot` occupies (occupantSlot == slot), or nullptr.
+// A grabber is not seated. The same index guard as IsOccupiedByOther. Game thread.
+void* ActorSeatedBy(uint8_t slot);
+
 // Diagnostic read: does THIS peer own `actor`'s tick (run its brain) right now? False for an
 // unindexed actor, and false whenever the lane is not running. Exposed for coop/dev/atv_probe, so
 // an instrumented run can state which side of the mirror each sample came from. Game thread.

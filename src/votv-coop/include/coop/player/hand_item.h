@@ -108,6 +108,9 @@ void PayOwed(coop::net::Session& session);
 // Whether `slot`'s hand holds anything, as the lane holds it. Game thread only.
 bool HoldsItem(uint8_t slot);
 
+// True while a received hand state of `slot` waits for its pacing token, not yet applied. Host, game thread.
+bool HandStateOwed(uint8_t slot);
+
 // Host: the hand states applied for `slot`'s occupant (kept and re-sent); cleared with the occupant.
 // The hostile drill's keep_latest arm reads it. Game thread only.
 uint32_t StatesApplied(int slot);

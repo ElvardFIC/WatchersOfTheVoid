@@ -743,4 +743,12 @@ bool IsOccupiedByOther(void* actor, uint8_t* outOccupantSlot) {
     return false;
 }
 
+void* ActorSeatedBy(uint8_t slot) {
+    if (slot == 0xFF) return nullptr;       // 0xFF is the empty seat, never a slot
+    if (!IndexCurrent()) return nullptr;    // a stale-generation index holds another world's ATVs
+    for (const auto& kv : g_atvs)
+        if (kv.second.occupantSlot == slot) return kv.second.actor;
+    return nullptr;
+}
+
 }  // namespace coop::atv_sync
