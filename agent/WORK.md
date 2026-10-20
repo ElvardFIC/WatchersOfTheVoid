@@ -1,4 +1,185 @@
-# Unified Work — development protocol 2157; prepared package 2154 uses older DLL b2156
+# Unified Work — development protocol 2159; prepared package 2154 uses older DLL b2156
+
+## Requested event synchronization and frequency (21 October 2026)
+
+The request covers Dreams, Ariral Reputation, Player-Activated, Time-Related,
+Endings, Story Mode, Random and Signal events. This is broader than the native
+list_events schedule and remains OPEN as a whole. The owner explicitly deferred
+the fresh game-pak/Blueprint audit on 21 October; the old D: installation is
+unavailable. Do not infer a native event mapping from a wiki name or mark an
+event complete because its actor has a transform lane.
+
+Implemented in b2159:
+
+- Fixed the empty runSpecialEvent post observer. The host now publishes its
+  chosen case, including nested summonArirPrank calls and repeated same-name
+  specials. Clients replay only the common allowlisted policy and never reroll
+  the host's prank. Existing prop/NPC/device output lanes avoid duplicate births.
+- Fixed the direct F1 HostFire path, which previously skipped its own reflected
+  runEvent in the observer. Location-request execution uses that same observer;
+  removed its separate send so an accepted fire is announced once.
+- Added bounded recipient FIFOs for fires refused before reliable acceptance.
+  An accepted send is never retried. Peer generation, session serial and world
+  generation retire stale queued work; reentrant teardown cannot invalidate the
+  drain. The transport's existing backlog still owns accepted reliable bytes.
+- The install pump now retries client fires waiting for their world/eventer.
+  Special-watch readiness/terminal failure is tracked alongside the story watch.
+  Cached class identities invalidate stale reflection offsets/functions after
+  class recycling. Receivers enforce the client role; the refusal probe now
+  actually calls outside the native-replay admission scope.
+- Replaced the stale unused replay-policy copy with the policy that production
+  was actually using. There is one live verdict table in event_fire_policy.cpp.
+- Added `world.event_rate`, a persisted, live, replicated host setting, default
+  **2x**, range **0.5..5x**. Its slider is at **F1 > Administration > Server
+  settings > Repeatable event frequency**. The audited routes currently cover
+  ticker_fossilhoundSpawner, ticker_yellowWispSpawner, ticker_wispSpawner and
+  ticker_egSpawner. The native interval setter is observed after each re-arm;
+  late/pre-session tickers enroll through the object index. A live setting edit
+  rescales the stored native interval rather than compounding the previous edit.
+  Disconnect restores the surviving ticker's native interval. This does NOT yet
+  change every repeatable event in the owner's taxonomy.
+
+Frequency changes affect the wait between eligible native rolls, not creature
+animation/AI, story days, effect durations, sleep needs or personal dream rolls.
+Native eligibility and spawn probabilities remain in force. Insomniac and
+nightmares retain their existing personal routes on both roles.
+
+| Requested category | Existing/changed route | Remaining implementation or acceptance |
+|---|---|---|
+| Dreams | Personal sleep/Insomniac routes retained; independent nightmare settings covered by existing tests | Verify all named dream variants and wake/reward consequences with real peers; no forced session-wide dream broadcast |
+| Ariral Reputation | Host-chosen special delivery repaired; safe decal/arm replay and existing output lanes | Audit every reputation tier/case, shared reputation, randomized effects, bed/player relocation and late join |
+| Player-Activated | Existing location/gather and device/prop intents | Map and verify every listed interaction, simultaneous activation and canonical side effects |
+| Time-Related | Existing host clock and weather/schedule channels | Audit real-calendar/holiday and 3AM branches; local calendar rolls and uncovered effects are not established synchronized |
+| Endings | Existing local-player identity guards retained | Establish/verify each ending's intended per-player versus session consequence; do not replay quit/travel on remote puppets |
+| Story Mode | Native schedule authority, row policy, host direct fire and existing active snapshots | Complete remaining actor/phase/audio/bookkeeping adapters; current-state late join is not proved by start-of-event replay |
+| Random | Four known host-owned spawners gain the rate control | Audit the complete named random-event list and additional timer/probability sites; black-fog client suppression alone does not mirror black fog |
+| Signals | Existing signal/device/prop/NPC lanes | Audit each signal's processing/playback trigger, funny-rule requirement, chosen outcome, phases and late join |
+
+Focused checks: `agent/tests/run_events.ps1 -CompileSources` passes both native
+dispatch/retry and frequency lifecycle harnesses plus the four production TUs.
+Location/gather, schedule/spawn authority, personal sleep and world-sound
+regressions also pass. The stable b2159 snapshot now passes all **40/40** groups
+in `package/check_current.ps1`, including final Release compilation, source hashes
+before/after the run and DLL identity/imports/exports (762 source entries).
+Evidence: `build/event-sync-check/validation-2159/verification.json`.
+DLL SHA256: `87a0ba2a4190fd383eb8abb31a13f1982e958f1964a87283fd8eefa80902f49c`.
+This supersedes the pending validation status in the earlier parallel-work notes
+below. No two-peer gameplay, installation or release package is implied.
+
+## Parallel-work boundary after the audit (21 October 2026)
+
+The owner confirms another task is still editing event delivery/rate and protocol
+2159. The last complete matching audit snapshot is b2158 with39 passing groups;
+its hash below is historical. A later Release b2159 compilation succeeded, but the
+subsequent full validation encountered the protocol change during its run. Do not
+close the current-tree validation from its39 individual passing runners.
+
+Preserved those parallel edits. Fixed their compile compatibility only: typed
+ResolveFloat(rows::world_event_rate), Resolved::Fn(), explicit Session include and
+the missing world config section. No gameplay acceptance of that feature is claimed.
+package/check_current.ps1 now hashes production inputs before/after its tests and
+final incremental Release build, so it cannot certify a changing source snapshot.
+PowerShell parsing and source-stamp generation pass. Current metadata is separate
+from LastFullyVerifiedSnapshot in build/todo-audit/verification.json. Run the full
+checker after the parallel task is finished; no package/commit/publication was made.
+
+## Full TODO audit and merge regression recovery (21 October 2026)
+
+Reviewed the complete active TODO, WORK follow-ups, entity mapping and each listed
+fork commit against current source. Split implemented source work from real-peer
+acceptance. Corrected stale open claims for sleeping bodies, shared computer UI,
+garden enrollment/care/rerouting, placement replies, coin arbitration and already
+merged upstream changes. Remaining cement/resource transactions, console/sky and
+creature adapters are still implementation work, not merely gameplay checks.
+
+Fixed two production defects found by the audit:
+
+- EnsureHeldItemBroadcast still used the locals-only prop tracker despite its
+  merged comment describing the unified registry. Keyed mirrors could be expressed
+  again and publish stale state to their owner. It now recognizes both keyed and
+  keyless mirrors via the registry reverse and refuses that birth/publication.
+  Locally owned mutable state still publishes. Native key lookup cannot continue
+  after actor recycling, world change or disconnect. A harness extracts the actual
+  production seam and checks mirror/owned/new identity and callback boundaries.
+- Laptop ON/OFF targets were retained while an animation, loading or absent wall
+  power blocked them, but Tick no longer called ApplyPowerTarget. Restored that
+  retry after the poll baseline and reset replay fields at disconnect. The existing
+  animation and delivery regressions exposed the missing call and now pass.
+
+The broader runners had drifted with the merged APIs. Updated their typed fact-row
+hooks, save-codec ClassResolver parameters, pry/key/velocity APIs, placement admission,
+peer-generation interface and local toolchain/native-corpus paths. Existing assertions
+were retained; the gascan expectation now explicitly checks current fail-closed client
+ownership while effect hooks resolve. The placement overflow failure control was
+retargeted to the current requeue path and now exercises old-work priority at the cap.
+Cord performance and all five mutation controls run again. No backup source trees
+or parallel tracker documents were created.
+
+Fork review: eb55ae97d, both tab commits, all three camera commits and d248fc88d are
+already ancestors with coordinated source integration. Shinobu's parked-record,
+host-destroy and post-finish publication changes have current equivalents; fixed its
+remaining held-mirror gap as above. Upstream ExplosionSpawn=177 conflicts with local
+KitchenState=177. Retained local explosion lanes188/191 after running both controller/
+wrapper/native/failure-control suites. Upstream affected-prop coasting was assessed
+but not ported; it remains an explicit implementation follow-up.
+
+Owner clarification: Bench58 involved an old rifle and components in an isolated
+simple-placement case; role and exact component are still unknown. The package's
+rifle candidate is prop_rifle_C. Added its refusal/sweep-protection scenario to the
+production placement harness; this is not an in-game reproduction. Existing sweep
+logs already identify class/key/location. Token52's counter remains unidentified by
+the owner, so no guessed balance change was made.
+
+Rebuilt MSVC x64 Release b2158 and passed all **39 current validation groups** via
+package/check_current.ps1. That runner includes the original focused/native checks,
+item and shared-screen suites, garden/laptop/sound, placement/coins, record and
+explosion failure controls, construction/resources, electrical/lights, disk UTF-8,
+and the reliable-kind gate with18 injected failures. Current source count760,
+retained wire kinds202/203/204 and current DLL imports/exports/identity pass.
+DLL SHA256: d8cd0c113cc0429160a70ec4e3fa042908e2c6b447e7208ae3a5e7a806300d23.
+Evidence: build/todo-audit/verification.json and per-runner logs. Source wire remains
+2158; no packet layout changed. No real-peer gameplay, game installation, release
+package, commit, push or publication is claimed.
+
+## Placement outcomes and shared coin collection (21 October 2026)
+
+Completed the previously started protocol-2158 placement lane. Host-only kind 224
+returns Accepted/Invalid/Conflict/Forbidden/SpawnFailed for nonzero client request
+IDs. Both placement intents and outcomes use Bulk, ordered with keyed births and
+destroys. A bounded per-peer outcome cache retries refused sends and prevents
+reentrant or replayed construction, including after a cached result is evicted.
+Peer departure/reset invalidates in-flight work. Host construction refuses a key
+that was not assigned or was changed by construction instead of accepting an
+unrelated auto-minted actor.
+
+Clients stop waiting after a ten-second response/binding deadline, keep the local
+actor protected on refusal/timeout and allow a later canonical spawn to adopt it.
+Saved state is sent only after explicit acceptance: sending it behind a refused
+birth could overwrite the existing host object with the same key. ACK-before-bind,
+bind-before-ACK and acceptance after timeout all retain the original state; duplicate
+ACKs do not recapture it or extend the deadline. Existing save capture/send retries
+remain owned by prop_save_data.
+
+Coin collection now reserves the actor's world/serial identity before any native
+dispatch. Host E, host overlap and reached client requests share that reservation,
+including overlap before eid enrollment. Only the one owned native verb entry
+passes; nested attempts and two senders cannot execute it again. The executor
+requires a readable pre-balance, compares the native coin's exact points, permits
+proven live no-ops to retry and retains the guard for unknown/partial outcomes.
+Client mirror credit/destroy stays cancelled until normal host balance/destroy
+delivery; client-local map coins remain native. Pending forwards drain an owned
+batch, so transport callbacks cannot invalidate an iterator or restore work after
+disconnect/reset. Native 0.9.0n evidence confirms both entries reach graph 441:
+addPoints(points), hint, then K2_DestroyActor, with no dependency on player arguments.
+
+All 16 validation groups pass, including the original nine focused groups, merged
+ABI/retained IDs 202/203/204, placement lifecycle, coin concurrency/native evidence
+and the 213-kind router gate with 18 failure controls. Full Release DLL is
+0.9.0n b2158; current identity/import/export/source-list verification is available
+through package/verify_current_build.ps1 and validation-2158 evidence. No gameplay
+acceptance, installation, package, commit or publication is claimed. Remaining
+console, construction/resource, garden, sky, package, performance and model work
+stays open in TODO; creature behavior adapters remain open in ENTITY_COVERAGE.
 
 ## Entity continuation and executable merge audit (20 October 2026)
 
@@ -851,7 +1032,7 @@ working; issue 41 (old basement wall) remains explicitly excluded by the owner.
 |26|Airy event|Осталось|
 |27|Main-room computer walls becoming physics props|2153 item batch: seven factory-born cubicle parts and their post-finish state/coast are covered by the production birth harness; source registration remains independent of optional ambient assets. Actual struck-panel disappearance on host/client remains a gameplay check, not a closed report.|
 |29|Crowbar static state / dragging|2153 item batch: unstick preserves live local handle/gravity/hotbar ownership even without a localPlayer argument. Native refusal, non-component static flags, retry, recycle/world and callback tests pass. Unknown parent/replacement subclasses still require individual native/gameplay evidence.|
-|31|Sleeping body pose|Осталось; native sleepingPawn is camera/input, not a ready-made body. Anchor/ragdoll/selected-model integration needs implementation.|
+|31|Sleeping body pose|Source implemented in continued 2153: selected-model poseable body, mattress/moving-anchor and sleep/ragdoll/sit precedence; regression checks pass. Verify both peers, effects suppression and each rig in game.|
 |34|Client crate/package loot invisible|2153 item batch: inherited MRE/AB route audited; exact personal foodBox final-bite wrapper birth admitted, while world wrapper output is host-owned. Final food destruction cannot overtake its bite request; post-finish host birth/state tests pass. Other unexamined package families and two-player loot appearance remain open.|
 |35|Centipede / other living creatures invisible|Осталось|
 |36|Computer chair rotation (duplicate report)|Same as11,2144|
@@ -862,19 +1043,19 @@ working; issue 41 (old basement wall) remains explicitly excluded by the owner.
 |43|Safe cracking|Код2162: both dial success and hacked converge on opened; client completion to host, single loot, saved lock publication/retries and host-lock protection against early/stale records. Initial unlocked drop record preserved. dial UI and generic child hinge identity unchanged|
 |44|Sponge wetting|Частично2160/2169: native saved power/wetness now publishes after enterWater/wash/clamp/LMB; load no echo and final-use tail checked. 2169 adds current held wetness to outgoing profiles. Soap stock/foam/surface effects and personal-hand transitions remain unverified; two-player test needed|
 |45|Grill ignition|Код2162: host ignition/off, active/coals/burn snapshot and late join, passive client heating/fuel tick, immediate coal record and request retries. Concurrent coal transactions/stale records, lid and personal item transitions remain.|
-|46|Client-placed crops/faucets/hoses disappear after save reload|Частично2163: exact native placement -> host save actors, completed hose points/links, plant/pot identity, retry/dedup/retirement/late join. Two tests/five TUs passed; game save/reload not tested. Later gardening, accepted hose rerouting, concurrency and pre-session loaded-actor enrollment remain.|
+|46|Client-placed crops/faucets/hoses disappear after save reload|Merged source now includes pre-session saved-actor enrollment, care/harvest/pot state, accepted hose rerouting and canonical updates; garden/hose regressions pass. Verify actual save/reload, late join and simultaneous use. Missing historical actors are not migrated.|
 |47|Black disk/yellow-ring sky event starts on client independently|Visual code2164; common schedule-entry authority2165 covers all scheduled rows, boot/reflected calls and passEvents protection. Local checks pass. Audio/emails/pre-session latent effects remain separate. This is NOT Bad Sun or black fog|
 |48|Mimic (user identified; trees/white pillars/radar report)|Code2165: prop_impostor_C and impostorPropsMaster_C identified; client random generation and local-camera culling disabled. Reuses keyed prop class/disguise/birth/death/join; host controls lifetime. Focused checks/compilation pass; multiplayer/rendering/damage verification pending. Related to35; other creatures remain open|
 |49|Insomnia demon neither appears for nor attacks the client|2151 code ready: restored native peer-local ticker and excluded insomniac_C and its subclasses from the NPC mirror lane. Native spawn/target/grab paths verified; focused compile passed. Host/client gameplay remains pending.|
 |50|Ragdoll display is still incorrect|2151 partial: spawn/lost-body retry, pelvis correction and model-authored physics selection added. Valid own rigs may use a different skeleton; common fallback retained, bone/pelvis/joint and stale-asset guards tested. Focused regressions and compile pass. T-pose in gameplay, local native body and exact limbs remain open; revisit5/38.|
 |51|Client cannot plug electrical appliances into outlets|Partial2170: socket-endpoint authority fixes refusal at the far end of long cables; native length/occupancy and callback lifetime guarded. Client connect/graph parameter-frame bounds now fail closed. Two focused executables, native-bytecode check and two TUs pass. Report remains open for actual2168 symptom/gameplay verification; nearby failures may have another cause. Distinct from loose-outlet floating8.|
-|52|Client token display remains desynchronized|Open. Identify the token counter/UI and its authoritative value; do not assume credits or a particular token class without evidence.|
+|52|Client token display remains desynchronized|Open: owner still cannot identify the token counter/UI (21 October). Do not assume credits or a specific token class.|
 |53|Base light flickering is not synchronized|Partial2177–2180: host-authored ceiling/ambient phases; indexed clients suppress native writes; local ambient settings remain local. Failed applies retain latest state;2180 retries failed/unreadable join snapshots without advancing the all-peer baseline, with peer/world cleanup. Channel/wrapper regressions, prior native checks and five production TUs pass. Actual keys, loading/late join and two-player timing need gameplay verification.|
-|54|Computer display does not show the same activity to host/client|Open. Other players cannot see who is using the computer or what they do. Trace shared screen/UI state, cursor/input and operator visibility; console text12 alone is insufficient.|
+|54|Computer display does not show the same activity to host/client|SharedScreen and merged LaptopUI/operator code is present; wire/lifecycle/holder/widget regressions pass. Verify actual laptop/portable-PC tabs, text, scrolling, cursor, activity and operator visibility in game. Console text12 alone is insufficient.|
 |55|Computer power-on and power-off are not synchronized|Partial2173: targets survive actor loading and native animation; failed sends and deferred join snapshots retry with latest state. Pending sends clear on peer departure/disconnect; 2171 echo suppression is preserved. Existing animation regression, new delivery/lifecycle regression and two production TUs pass. Still requires two-player checks, power loss/restoration and late join; no release built. Separate from water short-circuit/damage18/19.|
 |56|ZIP disk model sometimes becomes a huge owo when ejected|Partial2172: laptop `zip` is now resolved as a masked Unreal bool bitfield, written without disturbing neighboring flags, and hashed as its logical value. Focused wrapper regression and production TU compile pass. This is a concrete wrapper defect but is not proven to cause the reported model/eject symptom; still needs in-game ZIP eject and multiplayer checks.|
 |57|Opening canned food and eating it are not synchronized|Partial2176: world open/eat publish records (2174), held can state travels with HandItem (2175), and client profiles refresh live opened/type/foods before hashing (2176). Identity-checked copied records preserve unrelated data. Three profile/record regressions, native evidence and two production TUs pass. Protocol2175. World/held use, reconnect, final portion, stow/re-equip, drop/pickup and simultaneous consumption still need multiplayer verification.|
-|58|Some items disappear when placed on the workbench|Open symptom; partial code2181–2186. Owner clarified17 October: simple placement, visible disappearance after1–2 seconds or later; no crafting reported. Items and host/client unknown. Transform retries, local-birth protection and deletion identity rechecks implemented;2186 invalidates old sweep passes on bracket/world/reset changes and blocks recursive reconcile ticks. Focused tests/production compilation pass. Full sweep/gameplay symptom remains unverified.|
+|58|Some items disappear when placed on the workbench|Open symptom; partial code2181–2186. Owner clarified17 October: simple placement, visible disappearance after1–2 seconds or later; no crafting reported. Owner identified an old rifle and components in an isolated case on21 October; exact component and authoring role remain unknown. Native rifle candidate is prop_rifle_C. Transform retries, local-birth protection and deletion identity rechecks implemented;2186 invalidates old sweep passes on bracket/world/reset changes and blocks recursive reconcile ticks. Focused tests/production compilation pass. Full sweep/gameplay symptom remains unverified.|
 
 ## Additional unfinished details retained from earlier TODOs
 
@@ -888,10 +1069,10 @@ production compilation. These checks do not close the workbench gameplay report.
 
 Keep these investigation details after removing mirror-backups:
 
-- Sleeping body31: native playerSleepingPawn_C supplies camera/input, not a visible
-  sleeping body or a verified mattress anchor. Use the selected player model with
-  a verified bed/body anchor and sleep/ragdoll/sitting entry/exit precedence; suppress
-  footsteps and inappropriate hand/head effects. Native evidence remains in the
+- Sleeping body31: selected-model visible body, mattress/moving anchor and sleep/
+  ragdoll/sit precedence now have code and regressions. Verify sleeping footsteps
+  and inappropriate hand/head effects stay suppressed in game. Native
+  playerSleepingPawn_C itself remains the camera/input pawn. Native evidence remains in the
   workspace _research/sleep_2166.txt, wakeup_2166.txt, sleep_graph_2166.txt,
   sleep_full_2166.txt and objects__misc__playerSleepingPawn_2164.txt.
 - Cement21/22: verify native held-trowel key continuity in game. A mismatch defers
@@ -903,10 +1084,10 @@ Keep these investigation details after removing mirror-backups:
   about a missing apply retry; separate reliable messages do not ensure frame-exact
   flicker alignment.
 
-- [ ] Food/package final-bite destruction and subclass eaten() output; preserve local poison/player effects.
-  Other package families and client-local loot need explicit provenance, not global replaceProp admission.
-- [ ] Rejected client placement may remain awaiting binding: establish acknowledgement/refusal behavior.
-- [ ] Coin pickup by E/overlap: one host credit, disappearance only after acceptance; map-placed coins remain local.
+- [x] Food final-bite destruction/retry and measured foodBox wrapper output, preserving local poison/player effects.
+- [ ] Other package subclasses and client-local loot need exact native provenance, not global replaceProp admission.
+- [x] Rejected client placement now has explicit acknowledgement/refusal, timeout and late binding (2158); live acceptance remains open.
+- [x] Coin E/overlap/client requests share a host reservation and canonical credit/removal (2158); map coins remain local. Gameplay acceptance remains open.
 - [ ] Console event bodies/AI/damage for Rufus/thiccfus, llama, Madness grunts and variants;
   simultaneous typists' canonical order, periodic/local output and exact music phase remain.
 - [ ] Wall repair requires an atomic request/result and exact personal cement stock across
@@ -914,8 +1095,9 @@ Keep these investigation details after removing mirror-backups:
   Creative construction, wet-wall timer persistence and exact impact/effects remain.
 - [ ] Water/cement/coal concurrent writers and stale in-flight records; dryTimer ownership;
   sponge soapAmount/foam/surfaces, grill lid/final cooked food and personal-hand transitions.
-- [ ] Enroll pre-session plants/faucets/hoses; later watering/fertilizing/harvest, pot transitions,
-  accepted hose rerouting and concurrent use. Missing historical save objects are not migrated.
+- [x] Pre-session saved plants/faucets/hoses, care/harvest/pot state and accepted hose rerouting
+  are implemented in the merged garden lane; seven garden regression harnesses pass.
+- [ ] Verify real garden save/reload, later care and simultaneous use. Missing historical save objects are not migrated.
 - [ ] Sky-event audio, delayed email/bookkeeping and pre-session latent chains; other custom
   event effects/creatures need host phase/cues rather than replaying whole commands on every peer.
 - [ ] Stow frame-time capture if residual stutters remain; preserve pending item-state restoration.

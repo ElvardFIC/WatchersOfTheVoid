@@ -46,6 +46,7 @@ struct RowState {
     bool focused = false;       // the box was being typed in when last drawn
     int lastFrame = -1;         // the ImGui frame this row was last drawn on
     bool primed = false;        // `seen` and `edit` hold the row's value at least once
+    float slider = 2.f;
 };
 std::unordered_map<const CR::Row*, RowState> g_state;
 
@@ -104,6 +105,18 @@ void DrawTyped(const CR::Row& row, RowState& st, const std::string& now) {
     ImGui::TextUnformatted(nowLine);
 }
 
+void DrawEventRate(const CR::Row& row, RowState& st) {
+    if (!st.focused) st.slider = CFG::ResolveFloat(coop::config_registry::rows::world_event_rate);
+    ImGui::SetNextItemWidth(S(260.f));
+    ImGui::SliderFloat("##value", &st.slider, float(row.lo), float(row.hi), "%.2fx");
+    st.focused = ImGui::IsItemActive();
+    // One command when the drag/key edit ends; every change uses host arbitration.
+    if (ImGui::IsItemDeactivatedAfterEdit()) {
+        char text[24]; std::snprintf(text, sizeof(text), "%.2f", st.slider);
+        SubmitLine(std::string("set ") + row.key + " " + text);
+    }
+}
+
 // An enum: a combo of the row's tokens, the one equal to the cooked current value selected.
 void DrawEnum(const CR::Row& row, const std::string& now) {
     const std::string cooked = CFG::CookValue(now);
@@ -148,7 +161,11 @@ void DrawRow(const CR::Row& row, const char* label) {
     switch (row.kind) {
         case CR::Kind::Flag: DrawFlag(row, now); break;
         case CR::Kind::Int:
+            DrawTyped(row, st, now); break;
         case CR::Kind::Float:
+            if (&row == coop::config_registry::rows::world_event_rate.row) DrawEventRate(row, st);
+            else DrawTyped(row, st, now);
+            break;
         case CR::Kind::String: DrawTyped(row, st, now); break;
         case CR::Kind::Enum: DrawEnum(row, now); break;
         // A labelled row is never Identity: config_registry.cpp static_asserts it.

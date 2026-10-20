@@ -92,6 +92,15 @@ so every peer keeps its own and shares each spawn, and the union is fireflies ne
 
 ### Who rolls
 
+The host can adjust the audited repeatable spawn waits at **F1 > Administration >
+Server settings > Repeatable event frequency** (`world.event_rate`, default2x,
+range0.5..5x). Currently this covers Fossilhounds, killer wisps, sky wisps and
+night eggs. `coop/world/event_rate` observes each native tick-interval re-arm and
+scales that new wait, enrolls already loaded and late tickers, and restores their
+native intervals on disconnect. Live edits keep the original interval as their
+baseline. This does not alter story dates, creature simulation or personal dreams;
+the remaining repeatable event timers still require individual native audits.
+
 For the audited shared-world generators, `coop/world/spawn_authority` uses one table
 of the bodies a client must not run, a spawner's
 tick or its entry function, each refused at the script gate by a watch on its class and function

@@ -1,6 +1,7 @@
 #include "../../src/votv-coop/src/ue_wrap/devices/lightswitch.cpp"
 #include "../../src/votv-coop/src/coop/props/prop_spawn_authoring.cpp"
 #include "../../src/votv-coop/src/ue_wrap/core/call.cpp"
+#include "facts_test_support.h"
 #include <cstdio>
 #include <cstdlib>
 #include <cwchar>
@@ -70,17 +71,24 @@ void PlaySoundAtLocation(void* obj,void* cue,const FVector& p,void* att,float vo
 }
 }
 namespace ue_wrap::ufunction_hook {
-bool InstallPreHook(void*,PreNativeCallback cb,bool armed) { CHECK(armed);test::hook=cb;return true; }
+bool InstallPreHook(const facts::Resolved& row,PreNativeCallback cb,bool armed) { CHECK(row&&armed);test::hook=cb;return true; }
 CallerFrame CurrentCallerFrame() { return {test::caller,nullptr}; }
 }
 namespace ue_wrap::script_gate {
-bool Watch(void*,int,PreFn,PostFn) { return true; }
+bool Watch(const facts::Resolved&,int,PreFn,PostFn) { return true; }
 bool IsBodyActive(void*,void*) { return test::body; }
 }
 namespace ue_wrap::fname_utils {
 reflection::FName StringToFName(const std::wstring& s) { for(auto& o:test::objs)if(s==o.text)return o.name;return {}; }
 }
 namespace ue_wrap::world_identity { void* CurrentWorld(){return nullptr;} void* WorldOf(void*){return nullptr;} }
+namespace ue_wrap::facts {
+Resolved Resolve(const Function& row){
+    void* cls=reflection::FindClass(row.Class());
+    void* fn=cls?reflection::FindFunction(cls,row.Name()):nullptr;
+    return fn?Resolved(fn,&row):Resolved{};
+}
+}
 namespace ue_wrap::object_index { void* ClassByName(const wchar_t*){return nullptr;} }
 namespace ue_wrap::game_thread { bool IsDefinitelyOffGameThread() { return false; } }
 namespace ue_wrap::hot_path { unsigned long CurrentThreadId(){return 0;} unsigned long long CallerRva(const void*){return 0;} }

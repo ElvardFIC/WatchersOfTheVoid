@@ -33,6 +33,8 @@
 #include "ue_wrap/actors/broom.h"         // SweptChipPile, the pile a stroke's clump is born of
 #include "ue_wrap/engine/engine.h"
 #include "ue_wrap/core/game_thread.h"     // RegisterPreObserver (the InpActEvt_use pile-grab observer)
+#include "ue_wrap/core/cached_obj_ref.h"
+#include "ue_wrap/engine/world_identity.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/actors/prop.h"
 #include "ue_wrap/core/reflection.h"
@@ -286,16 +288,25 @@ bool EnsureHeldItemBroadcast(void* heldActor, coop::net::Session* s) {
     // prop another peer expressed, so the registry reverse is asked rather than the tracker's
     // locals-only accessor. Read as untracked, a mirror went out as a spawn with no eid, which its
     // owner refuses, followed by this peer's copy of its save record, which the owner applied.
+    ue_wrap::CachedObjRef heldRef; heldRef.Set(heldActor);
+    const auto world = ue_wrap::world_identity::Generation();
     std::wstring keyStr = ue_wrap::prop::GetInteractableKeyString(heldActor);
-    if (!keyStr.empty() && keyStr != L"None" &&
-        PT::GetPropElementIdForActor(heldActor) != coop::element::kInvalidId) {
+    if (!heldRef.Get() || world != ue_wrap::world_identity::Generation() || !s->connected()) return false;
+    const auto trackedEid = coop::element::Registry::Get().EidForActor(heldActor);
+    if (trackedEid != coop::element::kInvalidId) {
+        const auto* tracked = coop::element::Registry::Get().Get(trackedEid);
+        // The reverse map covers both locals and mirrors. A mirror's record is
+        // the owner's state; publishing our older copy on a grab can roll it back.
+        // Keyless mirrors are shared too and must not be expressed a second time.
+        if (!tracked || tracked->IsMirror() || tracked->LiveActor() != heldActor) return false;
+        if (keyStr.empty() || keyStr == L"None") return false;
         // Its identity and pose are already shared, but mutable save fields can have changed while
         // held (food uses are one example). Send the actor's current save record at the hand edge;
         // no second PropSpawn is needed.
         const bool statePublished = coop::prop_save_data::Publish(s, heldActor, keyStr);
         UE_LOGI("trash_collect: tracker-known held item cls='%ls' key='%ls' eid=%u -- save state %s",
                 R::ClassNameOf(heldActor).c_str(), keyStr.c_str(),
-                static_cast<unsigned>(PT::GetPropElementIdForActor(heldActor)),
+                static_cast<unsigned>(trackedEid),
                 statePublished ? "published" : "not covered/refused");
         return statePublished;
     }

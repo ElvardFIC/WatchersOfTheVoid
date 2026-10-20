@@ -10,6 +10,7 @@ class Session {public:
  struct Sent{int slot;ReliableKind kind;std::vector<uint8_t> bytes;};std::vector<Sent> sent;
  std::function<void()> onSend;
  bool connected()const{return linked;}Role role()const{return mode;}
+ uint32_t peerGenerationForSlot(int)const{return 1;}
  bool IsSlotWorldReady(int i)const{return ready[i];}bool HasPeerConn(int i)const{return ready[i];}
  bool AnyWorldReadyPeer()const{return ready[1]||ready[2]||ready[3];}
  bool SendReliableToSlot(int slot,ReliableKind kind,const void* data,int size) {

@@ -31,8 +31,9 @@ void Install(coop::net::Session* session);
 
 // Per-net-pump-tick drain (CLIENT): for each pending place spawn whose Key is now restored AND
 // parked, author a PropDropIntent{className,key,propName,transform,scale,physFlags} to the host and
-// unpark. The Key only becomes readable a tick after the spawn, once loadData has restored it. Game
-// thread. No-op on the host, or on empty pending.
+// track its outcome. Unpark/publish the saved state only after host acceptance.
+// The Key becomes readable after loadData restoration. Host Tick retries replies;
+// client Tick also expires unresolved binding deadlines. Game thread.
 void Tick(coop::net::Session* session);
 
 // An accepted drop request is waiting for the host's identity echo. The hand
@@ -62,17 +63,18 @@ void NoteClientKeyedDestroy(const std::wstring& key);
 // transform, NOT echo-suppressed, so the host's own FinishSpawn watcher expresses it and broadcasts
 // PropSpawn to every peer. The placing client adopts its own untracked local rock by Key, through the
 // prop key index, which holds every live keyed prop, tracked or not. Dup-guarded: skipped if the host
-// already has the Key live.
+// already has the Key live. Every admitted request receives an explicit outcome;
+// duplicates reuse the cached result and cannot reconstruct a consumed actor.
 // Game thread.
 void OnPropDropIntent(coop::net::Session& session, const coop::net::PropDropIntentPayload& p,
                       uint8_t senderSlot);
 
 // HOST handler for ReliableKind::ReelEjectIntent -- a CLIENT's device eject birthed a prop that a
 // client Aprop_C spawn never broadcasts, so the host authors it through the SAME HostSpawnPlacedProp
-// path. CLASS-WHITELISTED to FOUR lineages, not a general client-spawn door: the reel (caddy and
-// reelbox), the desk module, the drive and the floppy disc. The kind's name predates the other
-// three and now understates it; the receiver gate and the client's own fresh-birth gate name the
-// same four. The kSleep flag makes the host copy spawn inert until the client's held-prop pose
+// path. CLASS-WHITELISTED: reels (caddy/reelbox), desk modules, drives, floppy discs,
+// server upgrades and sleeping bags. The kind's name predates the other lineages;
+// the receiver gate and the client's fresh-birth gate name the same families.
+// The kSleep flag makes the host copy spawn inert until the client's held-prop pose
 // stream drives it, and the birth adds it for the three born INTO A HAND. A disc is dropped at its
 // device's mouth with nobody holding it, so the birth does not add it and the disc falls on the
 // host -- unless the prop's own physics already reads asleep, which the transform block above

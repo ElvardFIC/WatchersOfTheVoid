@@ -302,6 +302,8 @@ set(VOTVCOOP_SOURCES
     src/coop/world/world_sound_sync.cpp
     src/coop/world/event_fire_sync.cpp
     src/coop/world/event_fire_policy.cpp
+    src/coop/world/event_fire_delivery.cpp
+    src/coop/world/event_rate.cpp
     src/coop/world/event_schedule_authority.cpp
     src/coop/world/event_location_sync.cpp
     src/ue_wrap/world/event_location.cpp

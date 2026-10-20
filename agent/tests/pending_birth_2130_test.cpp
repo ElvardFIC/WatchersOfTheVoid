@@ -19,6 +19,10 @@ bool locationOk=true,rotationOk=true;
 int mints=0;
 bool foodActor=false,foodReadable=true,foodWritable=true,finished=false;
 int destroys=0,foodWrites=0,invalidates=0;
+int spawns=0,brought=0;
+void* existing=nullptr;
+bool spawnOK=true;
+std::wstring className=L"prop_test_C";
 ue_wrap::food::Condition condition{300.f,0.75f,2};
 std::function<void()> duringFinish;
 std::function<void()> duringKey;
@@ -26,6 +30,9 @@ std::function<void()> duringRead,duringPublish;
 coop::net::Session session;
 void Enqueue(){D::OnClientFinishSpawn(nullptr,nullptr,&actor);}
 void Reset(){D::Reset();session.drops.clear();session.linked=true;D::g_session=&session;
+    session.results.clear();session.duringSend={};session.ready=true;session.blockedSlot=-1;
+    session.onDrop=[](const auto& p){D::OnPlacementResult(session,{p.requestId,0,{}},0);};
+    existing=nullptr;spawnOK=true;spawns=brought=0;className=L"prop_test_C";
     locationOk=rotationOk=true;
     live=authored=readable=true;extract=hand=mirror=tracked=false;serial=1;currentWorld=&world;
     foodActor=false;foodReadable=foodWritable=true;finished=false;destroys=foodWrites=invalidates=0;condition={300.f,0.75f,2};duringFinish={};session.sendOK=true;session.mode=coop::net::Role::Client;
@@ -34,6 +41,12 @@ void Reset(){D::Reset();session.drops.clear();session.linked=true;D::g_session=&
 void Callback(std::function<void()>& slot){auto fn=std::move(slot);slot={};if(fn)fn();}
 }
 namespace ue_wrap::log {void Write(Level,const char*,...) {}}
+namespace ue_wrap::facts {
+Function::Function(detail::MacroToken,const char* ident,const char* feature,const wchar_t* cls,const wchar_t* fn,Mode mode)
+    : ident_(ident),feature_(feature),cls_(cls),fn_(fn),mode_(mode),next_(nullptr){}
+Resolved Resolve(const Function&){return {};}
+}
+namespace ue_wrap::ufunction_hook {bool InstallPostHook(const facts::Resolved&,PostNativeCallback,bool){return false;}}
 namespace ue_wrap::hot_path {unsigned long CurrentThreadId(){return 0;} unsigned long long CallerRva(const void*){return 0;}}
 namespace ue_wrap::game_thread {bool IsGameThread(){return true;}bool IsDefinitelyOffGameThread(){return false;}}
 namespace ue_wrap::reflection {
@@ -43,9 +56,11 @@ bool IsLiveByIndex(void*,int32_t){return test::live;}
 int32_t AllocateSlotSerial(int32_t){return test::serial;}
 int32_t SlotSerial(int32_t){return test::serial;}
 void* ClassOf(void*){return &test::actor;}
-std::wstring ClassNameOf(void*){return L"prop_test_C";}
+std::wstring ClassNameOf(void*){return test::className;}
 }
 namespace ue_wrap::world_identity {void* WorldOf(void*){return &test::world;}void* CurrentWorld(){return test::currentWorld;}}
+namespace ue_wrap::object_index {void* ClassByName(const wchar_t*){return &test::actor;}}
+namespace coop::prop_key_index {void* Find(const std::wstring&){return test::existing;}}
 namespace ue_wrap::engine {
 bool TryGetActorLocation(void*,FVector& out){test::Callback(test::duringRead);out={1,2,3};return test::locationOk;}
 bool TryGetActorRotation(void*,FRotator& out){out={};return test::rotationOk;}
@@ -82,6 +97,7 @@ namespace coop::join_membership_sweep {void RecordSelfAuthored(void*){}void Reco
 namespace coop::drive_payload_sync {void NoteOwnDrive(void*){}}
 namespace coop::prop_save_data {bool Covers(void*){return true;}bool Publish(net::Session*,void*,const std::wstring&){++test::publishes;test::Callback(test::duringPublish);return true;}}
 namespace coop::dev::prop_birth_key_probe {
+void NoteBirth(void*){}
 bool IsEnabled(){return false;}
 void NoteEnqueue(void*,const std::wstring&,const std::wstring&,bool){}
 void NotePendingCapHit(void*){}
@@ -97,14 +113,14 @@ bool Write(void*,const Condition& in) {CHECK(test::finished);if(!test::foodWrita
 namespace coop::props::prop_food_sync {void ForgetPublished(const std::wstring& key){CHECK(key==L"item");++test::invalidates;}}
 // Unused host/installation boundaries must never accidentally run in this client-side test.
 namespace coop::prop_lifecycle {bool IsWireSuppressedPropClass(const std::wstring&){return false;}bool IsPerPlayerPropClass(const std::wstring&){return false;}}
-namespace coop::prop_save_data {void ExpectRecordFor(const std::wstring&,uint8_t){}bool ApplyParked(void*,const std::wstring&){return false;}}
+namespace coop::prop_save_data {void ExpectRecordFor(void*,const std::wstring&,uint8_t){}bool ApplyParked(void*,const std::wstring&){return false;}}
 namespace coop::prop_element_tracker {void* ResolveLiveActorByKey(const std::wstring&,bool*){std::abort();}}
 namespace coop::physmods_sync {bool HostShouldReapModuleBirth(uint8_t,void*){std::abort();}}
 namespace coop::server_upgrade_sync {bool HostShouldReapUpgradeBirth(uint8_t){std::abort();}}
-namespace coop::drive_payload_sync {void NoteClientBrought(void*,uint8_t){std::abort();}}
+namespace coop::drive_payload_sync {void NoteClientBrought(void*,uint8_t){++test::brought;}}
 namespace ue_wrap::reflection {void* FindClass(const wchar_t*){return &test::actor;}void* FindFunction(void*,const wchar_t*){return nullptr;}}
 namespace ue_wrap::engine {
-void* BeginDeferredSpawn(void*,const FVector&,const FRotator&){return &test::actor;}
+void* BeginDeferredSpawn(void*,const FVector&,const FRotator&){++test::spawns;return test::spawnOK?&test::actor:nullptr;}
 bool FinishDeferredSpawn(void*,const FVector&,const FRotator&){test::condition={290.f,1.f,5};test::finished=true;test::Callback(test::duringFinish);return true;}
 bool DestroyActor(void*){++test::destroys;return true;}
 bool SetActorScale3D(void*,const FVector&){return true;}
@@ -114,6 +130,22 @@ namespace ue_wrap::fname_utils {reflection::FName StringToFName(const std::wstri
 namespace ue_wrap::prop {bool IsClassDescendantOfProp(void*){return true;}bool WriteSpParityIdentity(void*,reflection::FName,bool,bool,bool,bool){return true;}}
 namespace ue_wrap::ufunction_hook {bool InstallPostHook(void*,void(*)(void*,void*,void*),bool){std::abort();}}
 int main(){using namespace test;
+    // Bench58's reported rifle uses the ordinary placement lifecycle too.
+    // Refusal must retain its actor while reconciliation is running.
+    Reset();className=L"prop_rifle_C";Enqueue();session.onDrop={};D::Tick(&session);
+    CHECK(session.drops.size()==1&&D::IsAwaitingHost(&actor));
+    CHECK(D::FindAwaitingHost(L"item",className)==&actor);
+    D::OnPlacementResult(session,{session.drops[0].requestId,
+        static_cast<uint8_t>(coop::net::PropPlacementCode::Forbidden),{}},0);
+    CHECK(D::IsLocalPlacement(&actor));
+    coop::join_membership_sweep::LocalBirths rifleBirths;
+    CHECK(coop::join_membership_sweep::ProtectedLocalBirth(&actor,rifleBirths));
+    // Older accepted work retains its place when native capture enqueues a
+    // full new batch. The combined retry queue must still respect its bound.
+    Reset();Enqueue();const auto queued=D::g_pending.front();
+    D::g_pending.assign(D::kMaxPending,queued);locationOk=false;
+    duringRead=[&]{D::g_pending.assign(D::kMaxPending,queued);};D::Tick(&session);
+    CHECK(D::g_pending.size()==D::kMaxPending&&D::g_pending.front().tries==1);
     Reset();Enqueue();CHECK(D::g_pending.size()==1);D::Tick(&session);
     CHECK(session.drops.size()==1);CHECK(publishes==1);CHECK(D::g_pending.empty());
     Reset();Enqueue();++serial;D::Tick(&session);CHECK(session.drops.empty());CHECK(publishes==0);
@@ -242,6 +274,73 @@ int main(){using namespace test;
     duringRead=[]{CHECK(D::IsPendingHostPlacement(&actor));};D::Tick(&session);
     CHECK(!D::g_activePending&&D::IsPendingHostPlacement(&actor));
     locationOk=true;D::Tick(&session);CHECK(session.drops.size()==1&&!D::g_activePending);
+    // Explicit refusal is terminal but keeps the original throw protected from
+    // reconciliation and the held-item fallback. An eventual host spawn adopts it.
+    Reset();session.onDrop={};D::NoteClientKeyedDestroy(L"item");Enqueue();D::Tick(&session);
+    CHECK(publishes==0&&claims==0&&D::g_parkedKeys.count(L"item"));
+    auto request=session.drops.back();CHECK(request.requestId!=0);
+    coop::net::PropPlacementResultPayload reply{request.requestId,static_cast<uint8_t>(coop::net::PropPlacementCode::Forbidden),{}};
+    D::OnPlacementResult(session,reply,1);CHECK(D::IsAwaitingHost(&actor)); // only host may answer
+    D::OnPlacementResult(session,reply,0);
+    CHECK(D::StateFor(&actor)==D::PlacementState::Refused&&!D::IsAwaitingHost(&actor));
+    CHECK(publishes==0); // refusal cannot overwrite the host's existing same-key record
+    CHECK(D::IsLocalPlacement(&actor)&&D::g_parkedKeys.count(L"item"));
+    CHECK(coop::join_membership_sweep::ProtectedLocalBirth(&actor,noAuthorship));
+    CHECK(D::FindAwaitingHost(L"item",L"prop_test_C")==&actor);
+    Enqueue();D::Tick(&session);CHECK(session.drops.size()==1); // cannot bypass refusal
+    Reset();session.onDrop={};Enqueue();D::Tick(&session);request=session.drops.back();reply={request.requestId,0,{}};
+    CHECK(publishes==0);
+    D::OnPlacementResult(session,reply,0);CHECK(D::StateFor(&actor)==D::PlacementState::Accepted);
+    CHECK(publishes==1);
+    auto deadline=D::g_awaitingHost.front().until;
+    D::OnPlacementResult(session,reply,0);CHECK(D::g_awaitingHost.front().until==deadline);
+    D::g_awaitingHost.front().until=0;D::Tick(&session);
+    CHECK(D::StateFor(&actor)==D::PlacementState::TimedOut&&!D::IsAwaitingHost(&actor));
+    CHECK(D::FindAwaitingHost(L"item",L"prop_test_C")==&actor);
+    tracked=true;D::Tick(&session);CHECK(!D::IsLocalPlacement(&actor));
+    Reset();session.onDrop={};Enqueue();D::Tick(&session);request=session.drops.back();reply={request.requestId,0,{}};
+    tracked=true;D::Tick(&session);CHECK(D::IsLocalPlacement(&actor)&&publishes==0);
+    D::OnPlacementResult(session,reply,0);CHECK(publishes==1);D::Tick(&session);CHECK(!D::IsLocalPlacement(&actor));
+    Reset();session.onDrop={};Enqueue();D::Tick(&session);request=session.drops.back();reply={request.requestId,0,{}};
+    D::g_awaitingHost.front().until=0;D::Tick(&session);CHECK(D::StateFor(&actor)==D::PlacementState::TimedOut);
+    D::OnPlacementResult(session,reply,0);CHECK(D::StateFor(&actor)==D::PlacementState::Accepted&&publishes==1);
+    // Host outcomes, retries and reentrant duplicates execute native construction once.
+    const auto hostRequest=request;
+    Reset();session.mode=coop::net::Role::Host;
+    D::OnPropDropIntent(session,hostRequest,1);CHECK(spawns==1&&brought==1);
+    D::OnPropDropIntent(session,hostRequest,1);CHECK(spawns==1);
+    session.sendOK=false;D::Tick(&session);CHECK(session.results.empty());
+    session.sendOK=true;D::Tick(&session);CHECK(session.results.size()==1&&session.results[0].second.code==0);
+    D::OnPropDropIntent(session,hostRequest,1);D::Tick(&session);CHECK(session.results.size()==2&&spawns==1);
+    for(int failure=0;failure<5;++failure){
+        Reset();session.mode=coop::net::Role::Host;auto p=hostRequest;
+        if(failure==0)p.className.len=255;
+        if(failure==1)p.locX=std::nanf("");
+        if(failure==2)existing=&actor;
+        if(failure==3)spawnOK=false;
+        if(failure==4){D::OnReelEjectIntent(session,p,1);}else D::OnPropDropIntent(session,p,1);
+        D::Tick(&session);CHECK(session.results.size()==1&&session.results[0].second.code!=0&&brought==0);
+        CHECK(spawns==(failure==3?1:0));
+    }
+    Reset();session.mode=coop::net::Role::Host;
+    duringFinish=[&]{D::OnPropDropIntent(session,hostRequest,1);};
+    D::OnPropDropIntent(session,hostRequest,1);D::Tick(&session);
+    CHECK(spawns==1&&session.results.size()==1);
+    Reset();session.mode=coop::net::Role::Host;
+    duringFinish=[&]{auto next=hostRequest;++next.requestId;D::OnPropDropIntent(session,next,2);};
+    D::OnPropDropIntent(session,hostRequest,1);D::Tick(&session);CHECK(spawns==1&&session.results.size()==2);
+    Reset();session.mode=coop::net::Role::Host;
+    duringFinish=[]{D::OnPeerLeft(1);};D::OnPropDropIntent(session,hostRequest,1);D::Tick(&session);
+    CHECK(session.results.empty()&&brought==0);
+    D::OnPropDropIntent(session,hostRequest,1); // a new slot occupant starts its own request stream
+    session.duringSend=[]{D::Reset();};D::Tick(&session);CHECK(D::g_replies[1].empty());
+    Reset();session.mode=coop::net::Role::Host;
+    // Evicted successes cannot be replayed as new births, even after the old actor disappeared.
+    for(uint32_t id=1;id<=260;++id){auto p=hostRequest;p.requestId=id;D::OnPropDropIntent(session,p,1);D::Tick(&session);}
+    CHECK(spawns==260&&D::g_replies[1].size()==256);
+    auto replay=hostRequest;replay.requestId=1;D::OnPropDropIntent(session,replay,1);D::Tick(&session);
+    CHECK(spawns==260&&session.results.back().second.code!=0);
+    puts("PASS: placement refusal/timeout/late binding, host outcomes, duplicate/reentrant/replayed requests, send retry and disconnect");
     puts("PASS: admitted protection across active drain, callback reset/reentry and queue handoff");
     puts("PASS: admitted placement sweep protection during capture/send retry and expiry");
     puts("PASS: transform-read recovery, bounded refusal and stale/reset birth exclusion");

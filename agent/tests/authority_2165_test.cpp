@@ -1,5 +1,11 @@
 #include "../../src/votv-coop/src/coop/world/event_schedule_authority.cpp"
 #include "../../src/votv-coop/src/coop/world/spawn_authority.cpp"
+#include "facts_test_support.h"
+namespace ue_wrap::script_gate {
+bool WatchName(const facts::Function& row,int tag,PreFn pre,PostFn post){
+    return WatchClassName(row.Class(),row.Name(),tag,pre,post);
+}
+}
 #include <cstdio>
 #include <cstdlib>
 #include <string>

@@ -221,7 +221,7 @@ inline Lane LaneForKind(ReliableKind k) {
     case ReliableKind::GrayboarAction:    return Lane::Normal; // host-only cosmetic cues; no blind relay
     case ReliableKind::GrayboarTurn:      return Lane::Normal; // host-only animation state; no blind relay
     case ReliableKind::KavotiaState:      return Lane::Normal; // host phase snapshot; no gameplay-verb replay
-    case ReliableKind::PropPlacementResult: return Lane::Normal; // ordered with the keyed spawn it acknowledges
+    case ReliableKind::PropPlacementResult: return Lane::Bulk; // ordered with the keyed spawn it acknowledges
     case ReliableKind::PropScaleState:   return Lane::Normal; // host validates holder; no blind relay
     case ReliableKind::HandToyAudio:      return Lane::Normal; // validated hand generation, no blind relay
     // PropDriveEnd is host-to-all and ordered against nothing: its stream is unreliable on its own

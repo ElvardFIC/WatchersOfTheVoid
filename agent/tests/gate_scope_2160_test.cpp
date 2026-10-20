@@ -1,4 +1,6 @@
 #include "../../src/votv-coop/src/ue_wrap/core/script_gate.cpp"
+namespace ue_wrap::facts {void Function::NoteUse(Use,bool)const{}}
+namespace ue_wrap::scan_ledger {void Record(Scan,bool){}}
 #include <cstdio>
 #include <cstdlib>
 #define CHECK(x) do{if(!(x)){std::fprintf(stderr,"FAIL %d: %s\n",__LINE__,#x);std::exit(1);}}while(0)
@@ -23,9 +25,9 @@ int main() {
  int fn=0,innerFn=0,actor=0,other=0;
  CHECK(!IsObjectBodyActive(&fn,&actor));
  try {
-  ActiveScope outer(1,&actor,&fn,nullptr,nullptr);
+  ActiveScope outer(1,&actor,&fn,nullptr,nullptr,0);
   CHECK(IsObjectBodyActive(&fn,&actor)&&!IsObjectBodyActive(&fn,&other));
-  {ActiveScope inner(2,&other,&innerFn,nullptr,&fn);
+  {ActiveScope inner(2,&other,&innerFn,nullptr,&fn,0);
    CHECK(IsObjectBodyActive(&fn,&actor)&&IsObjectBodyActive(&innerFn,&other));
    CHECK(IsBodyActive(&innerFn,&fn)&&!IsBodyActive(&innerFn,&innerFn));}
   CHECK(IsObjectBodyActive(&fn,&actor)&&!IsObjectBodyActive(&innerFn,&other));

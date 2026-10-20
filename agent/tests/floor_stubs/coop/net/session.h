@@ -2,6 +2,7 @@
 #include "coop/net/protocol.h"
 #include <cstdlib>
 namespace coop::net {
+struct Config;
 enum class Role : uint8_t { Host, Client };
 class Session {
 public:

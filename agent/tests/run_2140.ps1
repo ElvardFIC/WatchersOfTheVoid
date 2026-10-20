@@ -1,11 +1,11 @@
-param([string]$Python='python')
+param([string]$Python=(Join-Path $env:USERPROFILE '.local/bin/python3.15.exe'))
 $ErrorActionPreference='Stop'
 $root=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 $output=Join-Path $root '_research/tests_2140'
 New-Item -ItemType Directory -Force -Path $output | Out-Null
 Push-Location $root
 try {
- . .\_toolchain\env.ps1
+ . (Join-Path $root '../_toolchain/env.ps1')
  & cl /nologo /std:c++20 /EHsc /Gy /I agent/tests/events_stubs /I agent/tests/fire_stubs /I agent/tests/stubs /I src/votv-coop/include "/Fo$output/controller.obj" "/Fe$output/controller.exe" agent/tests/explosion_events_2140_test.cpp /link /OPT:REF
  if($LASTEXITCODE -ne 0){throw 'Compile general explosion controller failed'}
  & "$output/controller.exe"
@@ -33,7 +33,7 @@ try {
   $harness=$harness.Replace('../../src/votv-coop/src/'+$case.File,($mutant -replace '\\','/'))
   $harness=$harness.Replace('../../src/votv-coop/src/',(($root -replace '\\','/')+'/src/votv-coop/src/'))
   $copy=Join-Path $output ($case.Name+'_test.cpp');[IO.File]::WriteAllText($copy,$harness)
-  & cl /nologo /std:c++20 /EHsc /Gy /I agent/tests/events_stubs /I agent/tests/fire_stubs /I agent/tests/stubs /I src/votv-coop/include "/Fo$output/$($case.Name).obj" "/Fe$output/$($case.Name).exe" $copy /link /OPT:REF
+  & cl /nologo /std:c++20 /EHsc /Gy /I agent/tests /I agent/tests/events_stubs /I agent/tests/fire_stubs /I agent/tests/stubs /I src/votv-coop/include "/Fo$output/$($case.Name).obj" "/Fe$output/$($case.Name).exe" $copy /link /OPT:REF
   if($LASTEXITCODE -ne 0){throw "Compile mutation failed: $($case.Name)"}
   & "$output/$($case.Name).exe"
   if($LASTEXITCODE -ne 1){throw "Expected assertion failure1: $($case.Name), got $LASTEXITCODE"}

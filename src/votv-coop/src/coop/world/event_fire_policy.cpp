@@ -1,9 +1,4 @@
-// coop/world/event_fire_policy.cpp -- see coop/world/event_fire_sync.h. The replay policy alone
-// lives here so the dupe matrix can grow a row at a time free of the sync logic's size budget.
-
 #include "event_fire_policy.h"
-
-#include <string>
 
 namespace coop::event_fire_sync {
 
@@ -16,6 +11,7 @@ const char* const kReplayRows[] = {
     // Story and save flips (level-placed triggers; no lane):
     "treehouse_0", "treehouse_1", "treehouse_2", "treehouse_3", "treehouse_4", "treehouse_5",
     "break_RomeoSierra", "break_Victor", "break_Victor2",
+    "obelisk",
     // Force-object appends (a save array the client's own dish scan reads; no lane):
     "looker_0-1", "looker_1-1", "looker_2-1", "looker_3-1", "looker_4-1",
     "arirSignal", "arirSpk", "picSignal", "peace",
@@ -49,47 +45,34 @@ const NoReplayRow kNoReplayRows[] = {
     // NPC leaves); replaying the arm would spawn them client-local. Host-only until the ship gets
     // a lane:
     { "arirShip", "actor spawn on armed overlap (no lane)" },
-    // The obelisk's graph is not a bare flag flip: obelisk_C spawns prop_C/prop_obelisk_C actors
-    // and punches getMainPlayer -- a replay would double-spawn the props client-local and hit the
-    // client's own player. Host-only until the scene gets a lane:
-    { "obelisk", "obelisk_C prop spawns + getMainPlayer punch (no lane)" },
-    // earthTp fires newsky_C.tp: the black hole, sky and ambience flip plus a 2D sound and
-    // emails -- the emails already ride the host's append feed, and no lane carries the rest:
-    { "earthTp", "newsky_C.tp sky/blackhole flip + 2D cue (emails ride the host append feed)" },
+    { "earthTp", "sky lane (black-hole material/light; not a player teleport)" },
     { "vehtp", "atv lane" },
-    // bedEvent runs trigger_bedEvent -> bedEvent_C, which moves the bed and teleports
-    // getMainPlayer on wake; the sleep lane only gates client dreams, it does not carry this:
-    { "bedEvent", "bedEvent_C bed/player transform + wake teleport (no lane)" },
+    { "bedEvent", "sleep lane" },
     { "picnic", "prop lane" }, { "destroyPicnic", "prop lane" },
     { "enasus", "prop lane" }, { "enacros", "prop lane" },
     { "cookier", "prop lane (armed prop)" }, { "paperGray", "prop lane (armed prop)" },
     { "arirEgg", "prop lane (armed prop)" },
     { "console", "device lanes" }, { "lightswitch", "device lanes" },
-    { "keypadGuess", "device lanes" },
-    // atvExplode writes car.trap -- a host-owned flag no lane carries (atv_condition_sync
-    // transfers neither trap nor zapped):
-    { "atvExplode", "car.trap is host-owned (no lane carries trap/zapped)" },
+    { "keypadGuess", "device lanes" }, { "atvExplode", "atv lane (trap flag)" },
     // Host-local by design:
     { "agrav", "physics divergence (by-design host-local)" },
     { "treehouseSleep", "per-player teleport" },
-    // Creature and save-actor spawns, host-only until mirrored. The crawler, the egger's eggs, the
-    // grays and the tentacle balls are mirrored; the eventer's other outputs are not (its catch
-    // enrols only what a client's copy is kept inert for, npc_world_enum), so they stay host-only:
-    { "ventCrawler", "npc lane (allowlisted; eventer EX-catch)" },
-    { "ventKnocker", "world-actor spawn (no lane yet: the eventer's catch leaves kocker_C out)" },
-    { "tentacleBalls", "npc lane (follower EX-catch)" },
-    { "morningGay", "world-actor spawn (no lane yet: the eventer's catch leaves morningUfo_C out)" },
-    { "borgRozital", "world-actor spawn (no lane yet: the eventer's catch leaves rozitBorg_C out)" },
-    { "graysforest", "npc lane (controller EX-catch)" },
-    { "graystank", "creature spawn (no lane yet)" }, { "arirBuster", "creature spawn (no lane yet)" },
-    { "eggvasion", "npc and world-actor lanes (eventer and egger EX-catch)" },
-    { "boarwar", "creature spawn (no lane yet)" },
-    { "soltoClean", "world-actor spawn (no lane yet: soltomiaCleaning_C plays gameplay on a mirror)" },
+    // Creature and save-actor spawns. The eventer and the event controllers are sources of the
+    // native-seam spawn catch (coop/creatures/npc_world_enum), so the creatures and ships these rows
+    // spawn reach the npc and world-actor lanes, and a replay would double them:
+    { "ventCrawler", "npc lane (allowlisted)" }, { "ventKnocker", "world-actor lane (kocker_C)" },
+    { "tentacleBalls", "world-actor + npc lanes (the follower and its balls)" },
+    { "morningGay", "world-actor lane (morningUfo_C)" },
+    { "borgRozital", "world-actor lane (rozitBorg_C)" }, { "graysforest", "npc lane (grayTest_C)" },
+    { "graystank", "npc lane (grayTest_C)" }, { "arirBuster", "creature spawn (no lane yet)" },
+    { "eggvasion", "world-actor + npc lanes (superEgger_C and eg_C)" },
+    { "boarwar", "npc + world-actor lanes (the boars, the shooters, the fire tank)" },
+    { "soltoClean", "world-actor lane (soltomiaCleaning_C)" },
     { "salt", "save-actor spawn (no lane)" }, { "rozitalHole", "save-actor spawn (no lane)" },
-    { "dreambase", "save-actor spawn (no lane)" },
-    { "fallbody_0", "dropper spawn (no lane yet: the eventer's catch leaves the droppers out)" },
-    { "fallbody_1", "dropper spawn (no lane yet: the eventer's catch leaves the droppers out)" },
-    { "fallcar_0", "dropper spawn (no lane yet: the eventer's catch leaves the droppers out)" },
+    { "dreambase", "dreamer_dreambase_C world-actor lane (host EX-catch + transform snapshot)" },
+    { "fallbody_0", "world-actor lane (ufoDropper_body_C)" },
+    { "fallbody_1", "world-actor lane (ufoDropper_body_C)" },
+    { "fallcar_0", "world-actor lane (ufoDropper_car_C)" },
     // The prank layer (host-local RNG; thrown-prop outputs ride the prop lane):
     { "food", "prank special (prop lane)" }, { "drive", "prank special (prop lane)" },
     { "atvFuel", "prank special (prop lane)" }, { "atvFix", "prank special (prop lane)" },
@@ -100,14 +83,15 @@ const NoReplayRow kNoReplayRows[] = {
     { "bombBox", "prank special (prop lane)" },
     { "rockThrow", "prank spawner (no lane)" }, { "hillRoller", "prank spawner (no lane)" },
     { "alienJump", "prank spawner (no lane)" }, { "trashBase", "prank spawner (no lane)" },
-    { "alienSounds", "sound gap (future WorldSoundCue)" },
+    { "alienSounds", "world_sound_sync (native noiser audio; movement/footsteps remain separate)" },
 };
 
 // The interaction rows: the row's entire effect is the prank special, host-local RNG.
-static bool IsPrankRow(const std::string& n) {
+bool IsPrankRow(const std::string& n) {
     return n.rfind("arirInteraction_", 0) == 0;
 }
 
+// The verdict: 1 replay, 0 known no-replay (the lane says why), -1 unknown (default no-replay).
 int ReplayVerdict(const std::string& name, const char** laneOut) {
     for (const char* r : kReplayRows)
         if (name == r) return 1;

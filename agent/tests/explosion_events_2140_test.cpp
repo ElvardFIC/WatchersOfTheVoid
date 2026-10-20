@@ -1,4 +1,11 @@
 #include "../../src/votv-coop/src/coop/props/explosion_events.cpp"
+#include "facts_test_support.h"
+namespace ue_wrap::facts {
+Resolved ResolveOn(const Function& row,void* cls){
+    void* fn=reflection::FindDispatchFunctionCached(cls,row.Name());
+    return fn?Resolved(fn,&row):Resolved{};
+}
+}
 #include <cstdio>
 #include <cstdlib>
 #include <functional>
@@ -28,7 +35,7 @@ namespace ue_wrap::log{void Write(Level,const char*,...) {}}
 namespace ue_wrap::script_gate{
 bool WatchName(const wchar_t*,int,PreFn,PostFn){return true;}bool WatchClassName(const wchar_t*,const wchar_t*,int,PreFn,PostFn){return true;}
 void ResolvePendingNames(){}bool NameWatchLive(const wchar_t*,int){return test::hooks;}bool ClassNameWatchLive(const wchar_t*,const wchar_t*,int){return test::hooks;}}
-namespace ue_wrap::ufunction_hook {bool InstallPostHook(void*,PostNativeCallback,bool){return test::hooks;}}
+namespace ue_wrap::ufunction_hook {bool InstallPostHook(const facts::Resolved&,PostNativeCallback,bool){return test::hooks;}}
 namespace ue_wrap::prop {std::wstring GetInteractableKeyString(void*){return test::key;}bool IsDescendantOfProp(void*){return test::sourceClass.rfind(L"prop_",0)==0;}}
 namespace ue_wrap::prop_explosion {
 bool IsGameplayBlast(void* a){return a==&test::blast&&test::blast.live;}

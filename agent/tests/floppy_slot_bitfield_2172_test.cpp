@@ -1,4 +1,6 @@
 #include "../../src/votv-coop/src/ue_wrap/devices/floppy_slot.cpp"
+#include "facts_test_support.h"
+namespace ue_wrap::facts {Resolved Resolve(const Function&){return {};}}
 
 #include <cstddef>
 #include <cstdio>

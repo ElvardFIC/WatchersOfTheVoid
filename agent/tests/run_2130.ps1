@@ -4,7 +4,7 @@ $output=Join-Path $root '_research\tests_2130'
 New-Item -ItemType Directory -Force -Path $output | Out-Null
 Push-Location $root
 try {
-    . .\_toolchain\env.ps1
+    . (Join-Path $root '../_toolchain/env.ps1')
     function Compile-AndRun([string]$name,[string]$source,[bool]$negative) {
         & cl /nologo /std:c++20 /EHsc /Gy /I agent\tests\item_record_stubs /I src\votv-coop\include "/Fo$output\$name.obj" "/Fe$output\$name.exe" $source /link /OPT:REF
         if ($LASTEXITCODE -ne 0) { throw "Compilation failed: $name" }
@@ -45,7 +45,7 @@ try {
         @{Name='birth_identity';Before='e.actor.Get()';After='e.actor.Raw()'},
         @{Name='birth_reset';Before='++g_pendingEpoch;';After='/* unchanged world */'},
         @{Name='birth_reentry';Before='g_pending.empty() || g_draining';After='g_pending.empty()'},
-        @{Name='birth_callback_loss';Before='for (auto& e : keep) {';After='g_pending.clear(); for (auto& e : keep) {'},
+        @{Name='birth_callback_loss';Before='for (auto& e : arrivals) requeue(e);';After='/* discard callback arrivals */'},
         @{Name='birth_stale_dispatch';Before='if (!stillCurrent()) continue;';After='/* skip identity revalidation */'},
         @{Name='birth_merge_cap';Before='if (g_pending.size() < kMaxPending)';After='if (true)'}
     )

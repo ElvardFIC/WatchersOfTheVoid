@@ -1,11 +1,11 @@
-param([string]$Python='python')
+param([string]$Python=(Join-Path $env:USERPROFILE '.local/bin/python3.15.exe'))
 $ErrorActionPreference='Stop'
 $root=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 $output=Join-Path $root '_research/tests_2139'
 New-Item -ItemType Directory -Force -Path $output | Out-Null
 Push-Location $root
 try {
- . .\_toolchain\env.ps1
+ . (Join-Path $root '../_toolchain/env.ps1')
  & cl /nologo /std:c++20 /EHsc /Gy /I agent/tests/explosion_stubs /I agent/tests/fire_stubs /I agent/tests/stubs /I src/votv-coop/include "/Fo$output/controller.obj" "/Fe$output/controller.exe" agent/tests/explosion_2139_test.cpp /link /OPT:REF
  if($LASTEXITCODE -ne 0){throw 'Compile explosion controller failed'}
  & "$output/controller.exe"

@@ -100,6 +100,7 @@
 #include "coop/world/event_cue_sync.h"
 #include "coop/world/world_sound_sync.h"
 #include "coop/world/event_fire_sync.h"
+#include "coop/world/event_rate.h"
 #include "coop/world/event_location_sync.h"
 #include "coop/world/media_sync.h"
 #include "coop/interactables/kitchen_sync.h"
@@ -265,6 +266,7 @@ void Install(coop::net::Session& session) {
     coop::firefly_sync::Install(&session);  // peer-symmetric ambient firefly mirror (each peer captures+shares its own)
     coop::event_cue_sync::Install(&session);  // cosmetic emitter cues: the host's runEvent watch sends them, the client replays
     coop::event_fire_sync::Install(&session);  // scheduled events: the host's runEvent watch (settime caller) -> EventFire; client hold + policy replay
+    coop::event_rate::Install(&session);
     coop::event_location_sync::Tick(session);
     coop::media_sync::Install(&session);  // TVs and file players: the host's MediaPlayer, sought on the others
     coop::kitchen_sync::Install(&session);
@@ -658,6 +660,7 @@ DisconnectStats DisconnectAll() {
     coop::firefly_sync::OnDisconnect();
     coop::event_cue_sync::OnDisconnect();  // drop the session the cue watch sends on
     coop::event_fire_sync::OnDisconnect();  // restore the client scheduler (allEvents.Num) + drop the queued fires
+    coop::event_rate::OnDisconnect();
     coop::event_location_sync::OnDisconnect();
     coop::media_sync::OnDisconnect();
     coop::kitchen_sync::OnDisconnect();
@@ -893,7 +896,7 @@ void TickGameplay(coop::net::Session& session, bool isConnected, bool isHost,
     { PP::Scope _s{PP::Bucket::TrashWatch};    coop::host_spawn_watcher::TickWatchedProps(&session); }  // ambient-prop (pinecone) SetLifeSpan-expiry / consumption despawn -> PropDestroy(eid)
     { PP::Scope _s{PP::Bucket::TrashWatch};    coop::host_spawn_watcher::DrainPendingSpawns(&session); }  // adopt+express FinishSpawningActor Func-seam spawns (R-drop/place/Q-menu) one tick after Finish (key restored, hand actor excluded)
     if (isHost) { PP::Scope _s{PP::Bucket::Interactable}; coop::broom_push::Tick(); }  // HOST: stream the props and clumps a broom stroke pushed (AFTER the drain above, which names the trash that same stroke dispensed)
-    { PP::Scope _s{PP::Bucket::TrashWatch};    coop::prop_drop_intent::Tick(&session); }  // CLIENT: author a PropDropIntent for a detected place whose Key is parked (cheap no-op when empty / on host)
+    { PP::Scope _s{PP::Bucket::TrashWatch};    coop::prop_drop_intent::Tick(&session); }  // CLIENT: placement intents/deadlines; HOST: retry explicit outcomes after the spawn drain
     { PP::Scope _s{PP::Bucket::TrashWatch};    coop::kerfur_form_assembler::Tick(); }  // GT FName-resolve the 2 verbs + bind the containment seams (latches once; no-op after)
     { PP::Scope _s{PP::Bucket::TrashWatch};    coop::kerfur_command::Tick(); }  // menu commands; HOST: each sender's queued request, paced
     { PP::Scope _s{PP::Bucket::TrashWatch};    coop::remover_request::Tick(); }  // the init watch's settle; HOST: each sender's queued remover press, judged and paced

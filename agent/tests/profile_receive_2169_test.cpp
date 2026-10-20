@@ -2,6 +2,7 @@
 #include "../../src/votv-coop/src/coop/items/inventory_wire.cpp"
 #include "../../src/votv-coop/src/coop/items/save_record_wire.cpp"
 #include "../../src/votv-coop/src/coop/net/blob_chunks.cpp"
+namespace ue_wrap::effects {int ResetOnSaveObject(void*,bool*){return 0;}}
 #include <cstdio>
 #include <cstdlib>
 #include <map>

@@ -1,5 +1,5 @@
 """Cooked gascan/explosion control flow and release integration, not a game test."""
-from blueprint_fire_2137_test import body, root, Package
+from blueprint_fire_2137_test import body, root, research, Package
 from kismet_dis import Reader
 from props_dump import read_tag
 
@@ -30,7 +30,7 @@ assert 'GetPlayerCharacter(self, 0)' in deaf[576] and 'GetPlayerCameraManager(se
 water=body('objects__misc__explosion_underwater','ExecuteUbergraph_explosion_underwater')
 assert 'K2_SetWorldLocation(' in water[299] and len(water)==10 # splash only, no second damage pass
 
-p=Package(str(root/'_research/assets/VotV__Content__objects__misc__explosion.uasset'))
+p=Package(str(research/'assets/VotV__Content__objects__misc__explosion.uasset'))
 data=p.export_data(next(x for x in p.exports if x['name']=='Default__explosion_C'))
 r=Reader(data);tags={}
 while True:

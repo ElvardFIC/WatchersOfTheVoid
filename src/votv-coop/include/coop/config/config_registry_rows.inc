@@ -194,6 +194,14 @@ CFG_INT(net_reliable_rate, "net.reliable_rate", "net", 8000, 0, 1000000, nullptr
     "Host: messages a second one client may send over time (0 = no bound). A client past both is "
     "disconnected with code MV-H32.")
 
+// The [world] section.
+CFG_FLOAT(world_event_rate, "world.event_rate", "world", 2.f, 0.5, 5, nullptr,
+    L10N_MARK("Frequency of the repeatable world spawners: Fossilhounds, killer wisps, sky wisps "
+    "and night eggs. 2x halves their native waiting intervals; eligibility and spawn chances stay native. "
+    "Story dates, dreams and creature animation speed stay unchanged."))
+CFG_ROWFLAGS(world_event_rate, kRowServer | kRowReplicated | kRowLive | kRowNotify)
+CFG_LABEL(world_event_rate, L10N_MARK("Repeatable event frequency"))
+
 // The [player] section.
 CFG_IDENTITY(player_skin, "player_skin", "player",
     "Persisted body-skin choice, rolled from the starter list on first launch. Change it "

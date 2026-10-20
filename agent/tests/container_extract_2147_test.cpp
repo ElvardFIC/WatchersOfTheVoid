@@ -28,7 +28,7 @@ void* FindDispatchFunctionCached(void*,const wchar_t*){return &test::fn;}
 namespace ue_wrap::world_identity {void* WorldOf(void*){return nullptr;}void* CurrentWorld(){return nullptr;}}
 namespace ue_wrap::save_record {
 void ReadSaveRecord(const void* p,SaveRecord& r){CHECK(p==test::locals);r=test::source;}
-bool ApplyRecordVia(void* a,void*,const SaveRecord& r){CHECK(a==&test::actor);++test::calls;if(test::apply)test::live=r;return test::apply;}
+bool ApplyRecordVia(void* a,void*,const SaveRecord& r,ClassResolver){CHECK(a==&test::actor);++test::calls;if(test::apply)test::live=r;return test::apply;}
 }
 int main(){using namespace test;namespace D=coop::inventory_pickup_sync::detail;
  ue_wrap::script_gate::Call c{};c.callerObject=&owner;c.callerFunction=&fn;c.callerLocals=locals;

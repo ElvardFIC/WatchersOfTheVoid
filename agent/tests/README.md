@@ -1,5 +1,14 @@
 # Regression tests
 
+Current full audit: run `powershell -NoProfile -ExecutionPolicy Bypass -File
+package/check_current.ps1` from the checkout after parallel source edits finish.
+It runs 39 groups, completes the incremental Release build and verifies that the
+production inputs stayed unchanged, without repackaging. Results and
+logs are in `build/todo-audit/`. `run_held_identity.ps1` compiles the actual held
+broadcast seam; the older item/resource/lamp/laptop runners use the current typed
+fact-row and save-codec APIs. The expected assertion failures in mutation logs
+must produce the failure code required by their runner. Gameplay remains separate.
+
 Run scripts from the canonical checkout. Numbered filenames identify the development
 batch that introduced a regression, not the currently packaged build; do not remove
 tests solely because their number is older.

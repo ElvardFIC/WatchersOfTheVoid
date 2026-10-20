@@ -68,7 +68,7 @@ namespace coop::hand_item {
 std::wstring HeldItem(uint8_t){return L"hammer";}bool LastHeldClassIs(uint8_t,const wchar_t*){return false;}
 bool IsHandAxisActor(void*){return test::handAxis;}
 }
-namespace coop::prop_element_tracker {void* ResolveLiveActorByKey(const std::wstring& key,bool*){return key==L"box"?&test::actor:nullptr;}}
+namespace coop::prop_element_tracker {void* ResolveLiveActorByKey(const std::wstring& key,void*){return key==L"box"?&test::actor:nullptr;}}
 namespace ue_wrap::placed_save {Kind Type(void* a){return a==&test::actor?test::wallKind:Kind::None;}}
 namespace ue_wrap::wall_build {
 std::wstring Key(void*){return test::wallKey;}

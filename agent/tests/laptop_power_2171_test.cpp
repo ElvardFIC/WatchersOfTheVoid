@@ -1,4 +1,6 @@
 #include "../../src/votv-coop/src/coop/interactables/laptop_sync.cpp"
+namespace coop::net {void RefusalTally::Clear(){}}
+namespace coop::roster_ledger {void RegisterPerSlotClear(PerSlotClearFn,void*){}}
 
 #include "coop/interactables/portable_pc_lid.h"
 #include "coop/net/session.h"

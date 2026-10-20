@@ -47,6 +47,7 @@ inline std::wstring MyNameDefaultW() {
 // the file and for the writer's section placement in a headered file.
 inline constexpr const char* kSectionOrder[] = {
     "net",     // multiplayer: nick, master, signaling, topology...
+    "world",   // shared world-event policy
     "player",  // durable identity: player_guid, player_skin, nameplate, nick_color
     "ui",      // fonts, scale, panels
     "voice",   // devices, gates, volumes

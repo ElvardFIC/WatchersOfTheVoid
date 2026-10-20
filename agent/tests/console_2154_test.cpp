@@ -1,4 +1,5 @@
 #include "support_2135.h"
+#include "facts_test_support.h"
 #include "../../src/votv-coop/src/coop/interactables/sat_console_sync.cpp"
 #include "../../src/votv-coop/src/coop/interactables/sat_console_table.cpp"
 #include "../../src/votv-coop/src/coop/items/save_record_wire.cpp"
@@ -13,9 +14,12 @@ std::vector<std::pair<int,std::vector<uint8_t>>> sent;
 namespace ue_wrap {
 bool GcPin::Pin(void* a){obj_=a;return a!=nullptr;} void GcPin::Release(){obj_=nullptr;}
 namespace game_thread {bool IsGameThread(){return true;}}
-namespace script_gate {bool UnwatchClassName(const wchar_t*,const wchar_t*,int,PreFn,PostFn){return true;}}
+namespace script_gate {
+bool WatchName(const facts::Function&,int,PreFn,PostFn){return true;}
+bool UnwatchName(const facts::Function&,int,PreFn,PostFn){return true;}
+}
 namespace console_desk {void* Instance(){return &test::actor;}}
-namespace dish {int IndexOf(void*){return -1;} void* DishByIndex(int){return nullptr;}}
+namespace dish {int Count(){return 0;} int IndexOf(void*){return -1;} void* DishByIndex(int){return nullptr;}}
 namespace sat_console {
 bool EnsureResolved(){return true;}
 void* LocalTerminal(){return test::available?&test::actor:nullptr;}

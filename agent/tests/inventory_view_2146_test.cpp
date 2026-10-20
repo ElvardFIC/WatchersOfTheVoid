@@ -11,7 +11,7 @@ int fn=0,calls=0;bool haveFn=true;
 }
 namespace ue_wrap::save_record {
 void WriteFNameField(void*,const std::wstring&){}
-void WriteSaveRecord(uint8_t*,const SaveRecord& r){test::written=r;}
+void WriteSaveRecord(uint8_t*,const SaveRecord& r,ClassResolver){test::written=r;}
 Arr ReadArr(const void*,int32_t){std::abort();}
 void WriteArrHeader(void*,int32_t,void*,int32_t){std::abort();}
 void* AllocZeroed(size_t,size_t){std::abort();}

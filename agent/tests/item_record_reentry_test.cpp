@@ -86,7 +86,7 @@ bool CaptureRecord(void*,SaveRecord& rec) {
     ++test::captures;auto callback=std::move(test::duringCapture);test::duringCapture={};
     if (callback) callback();rec=test::Make();return test::captureOK;
 }
-bool ApplyRecord(void*,const SaveRecord& rec) {
+bool ApplyRecord(void*,const SaveRecord& rec,ClassResolver) {
     ++test::calls;
     // Reject borrowed queue storage before callbacks invalidate it (a safe mutation oracle).
     auto row=S::g_parked.find(rec.key);
@@ -139,7 +139,7 @@ int main() {
     Reset();safe=true;auto early=stale;early.bools[1][0]=0;incoming=S::BuildBody(L"item",early);
     duringApply=[](const Record& r){CHECK(r.bools[1][0]==1);};S::OnChunk(session,{},1,true);
     CHECK(sentLock==1&&calls==1); // a record cannot bypass the native host unlock/loot
-    Reset();safe=true;S::ExpectRecordFor(L"item",1);incoming=S::BuildBody(L"item",early);
+    Reset();safe=true;S::ExpectRecordFor(&actor,L"item",1);incoming=S::BuildBody(L"item",early);
     duringApply=[](const Record& r){CHECK(r.bools[1][0]==0);};S::OnChunk(session,{},1,true);
     CHECK(sentLock==0&&calls==1); // a newly dropped, already unlocked safe keeps its saved state
     Reset();safe=unlocked=true;S::g_session=&session;S::Park(L"item",Record(stale),1,100);
@@ -315,7 +315,7 @@ int main() {
     CHECK(!S::PublishToSlot(&session,2,&actor,L"item"));
     session.blockedSlot=1;sent.clear();sendOK=true;S::DriveRetries();
     CHECK(S::g_retry.size()==1&&S::g_retry.at({L"item",1}).tries==0&&sent.size()==1);
-    session.blockedSlot=-1;S::ExpectRecordFor(L"item",1);
+    session.blockedSlot=-1;S::ExpectRecordFor(&actor,L"item",1);
     for(int i=0;i<S::kMaxRetryTries+3;++i)S::DriveRetries();
     CHECK(S::g_retry.at({L"item",1}).tries==0&&sent.size()==1);
     S::g_awaiting.erase(L"item");S::DriveRetries();CHECK(S::g_retry.empty()&&sent.size()==2);

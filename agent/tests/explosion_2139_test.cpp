@@ -55,7 +55,10 @@ void NativeHost(){X::BreakGascan(&can,false);}
 int main(){using coop::net::Role;using sg::Verdict;
  Reset(Role::Client);CHECK(Break()==Verdict::Cancel&&S::g_requests.size()==1);can.live=false;CHECK(S::ConsumesClientDestroy(&can));++can.serial;CHECK(!S::ConsumesClientDestroy(&can));
  session.sendOk[0]=false;S::Tick();CHECK(S::g_requests.size()==1);session.sendOk[0]=true;S::Tick();CHECK(S::g_requests.empty()&&session.sent.size()==1);
- Reset(Role::Client);announced=false;CHECK(Break()==Verdict::Run);announced=true;episode=true;CHECK(Break()==Verdict::Run);episode=false;hand=true;CHECK(Break()==Verdict::Run);hand=false;hooks=false;CHECK(Break()==Verdict::Run);
+ Reset(Role::Client);announced=false;CHECK(Break()==Verdict::Run);announced=true;episode=true;CHECK(Break()==Verdict::Run);episode=false;hand=true;CHECK(Break()==Verdict::Run);
+ // An indexed world gascan remains host-owned while effect watches resolve.
+ // The client can enqueue its intent without authoring an unobserved blast.
+ hand=false;hooks=false;CHECK(Break()==Verdict::Cancel&&S::g_requests.size()==1);
  Reset();S::Receive(Packet(),1);S::Tick();CHECK(breaks==1&&destroys==1&&session.sent.size()==3);S::Receive(Packet(),1);S::Tick();CHECK(breaks==1);
  Reset();NativeHost();CHECK(S::g_blasts.size()==1);NativeHost();CHECK(S::g_blasts.size()==1);S::Receive(Packet(),1);S::Tick();CHECK(destroys==0&&session.sent.size()==3); // already consumed by native break
  Reset();S::Receive(Packet(),1);exists=false;S::Tick();CHECK(!breaks&&S::g_requests.size()==1);exists=true;S::Tick();CHECK(breaks==1);

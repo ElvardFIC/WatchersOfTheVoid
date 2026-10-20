@@ -1,4 +1,4 @@
-param([switch]$InventoryOnly)
+param([switch]$InventoryOnly,[switch]$CollectOnly)
 $ErrorActionPreference='Stop'
 $root=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 $output=Join-Path $root '_research/tests_2151'
@@ -17,7 +17,7 @@ try {
   if(-not $body){throw "Production function missing: $($entry[1])"}
   [IO.File]::WriteAllText((Join-Path $output $entry[2]),$body,[Text.UTF8Encoding]::new($false))
  }
- $tests=if($InventoryOnly){@('pocket_state_2151')}else{@('handoff_2151','skin_previews_2151','flashlight_2145','pocket_state_2151')}
+ $tests=if($CollectOnly){@('handoff_2151')}elseif($InventoryOnly){@('pocket_state_2151')}else{@('handoff_2151','skin_previews_2151','flashlight_2145','pocket_state_2151')}
  foreach($name in $tests) {
   & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I agent/tests/handoff_stubs /I agent/tests/state_2145_stubs /I agent/tests/text_drone_stubs /I agent/tests/stubs /I src/votv-coop/include "/Fo$output/$name.obj" "/Fe$output/$name.exe" "agent/tests/${name}_test.cpp" /link /OPT:REF
   if($LASTEXITCODE -ne 0){throw "Test compile failed: $name"}
@@ -26,7 +26,8 @@ try {
   if($LASTEXITCODE -ne 0){throw "Test failed: $name"}
  }
  $files=@('coop/items/inventory_pickup_sync','coop/props/prop_save_data')
- if(-not $InventoryOnly){$files+=@('coop/items/coingun_collect','coop/items/coingun_sync','coop/player/skin_registry','coop/props/remote_prop','ui/skins_panel')}
+ if($CollectOnly){$files=@('coop/items/coingun_collect')}
+ elseif(-not $InventoryOnly){$files+=@('coop/items/coingun_collect','coop/items/coingun_sync','coop/player/skin_registry','coop/props/remote_prop','ui/skins_panel')}
  foreach($file in $files) {
   $name=$file -replace '/','_'
   & cl /nologo /std:c++20 /EHsc /utf-8 /c /I src/votv-coop/include /I src/votv-coop/third_party/imgui "/Fo$output/$name.obj" "src/votv-coop/src/$file.cpp"

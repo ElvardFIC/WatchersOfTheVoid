@@ -1,5 +1,7 @@
 #include "../../src/votv-coop/src/coop/session/teleport_client.cpp"
 #include "../../src/votv-coop/src/ue_wrap/core/call.cpp"
+namespace ue_wrap::game_thread {bool IsDefinitelyOffGameThread(){return false;}}
+namespace ue_wrap::hot_path {unsigned long CurrentThreadId(){return 0;}unsigned long long CallerRva(const void*){return 0;}}
 #include <cstdio>
 #include <cstdlib>
 #include <limits>

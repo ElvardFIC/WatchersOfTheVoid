@@ -1,116 +1,88 @@
 # TODO - current priorities
 
-Current source/wire protocol: **2157**, game **0.9.0n**.
-Prepared package metadata targets **0.9.2154 / DLL b2156**; this entity pass did
-not repack it. Current local Release DLL is **b2157**. Peers need matching current DLLs.
+Current source/wire protocol: **2159**, game **0.9.0n**. Matching local Release
+**b2159** and **40/40 validation groups** pass on the stable source snapshot.
+Evidence: `build/event-sync-check/validation-2159/verification.json`.
+Peers require identical current DLLs. Prepared package metadata still describes
+**0.9.2154 / DLL b2156**; no release package was created by this continuation.
 
-The `multivoid-sync-2153` tip is present as parent 2 of merge `7fced281e` and is an
-ancestor of current `main`. See `agent/ENTITY_COVERAGE.md` and TESTLOG for the
-conflict/content audit and current entity mapping.
+## Event synchronization request - OPEN
 
-## Entity category request - OPEN
+- [x] Host-chosen/repeated runSpecialEvent delivery; direct F1 HostFire emission
+  without duplicate location sends; one shared replay-policy table.
+- [x] Per-recipient refused-send retry, client load-window replay retry and
+  peer/world/session cleanup. Focused dispatch and lifecycle regressions pass.
+- [x] F1 > Administration > Server settings: `world.event_rate` slider,
+  0.5..5x, default2x, live/persisted/replicated. Currently covers Fossilhound,
+  killer-wisp, sky-wisp and night-egg spawn intervals; restores on disconnect.
+- [ ] Extend verified native routes to the complete eight-category event request.
+  Every event needs its real trigger, chosen outcome, effects and join/lifetime
+  checks. The four rate-controlled generators do not close the full random list.
+- [ ] Fresh game-pak/Blueprint audit deferred by the owner for now. Preserve
+  personal dreams/Insomniac and story dates. See WORK's event coverage table.
+- [ ] Real-peer event, frequency, late-join, reconnect and simultaneous-trigger
+  acceptance on identical current DLLs.
 
-The owner's complete taxonomy, native class mappings and unresolved behaviors are
-in [WORK.md](WORK.md), "Complete requested entity coverage and remaining work".
-Do not close a creature from allowlist membership or transform replication alone.
+## Full TODO audit - 21 October 2026
 
-Current grayboar work: host physical-body movement feed, owner-directed bite damage,
-foreign-health protection, stable adopted-replica authority across drive handoffs,
-and native AnimBP locomotion/movement-loop audio input from interpolated velocity.
-Host native sensePawn scans Pawn candidates; actual multiplayer target detection
-still needs testing. No generic client AI or gameplay-verb replay was added.
-Client host-replica bite-overlap and attack-notify bodies are now refused, covering
-the local attack impulse and arbitrary-object damage as well as player health.
-Live attack/roar/death and four nonlethal hit reactions are implemented and await two-player
-verification. Host AnimBP turn now drives client bone steering and turn-loop pitch
-with a 100 ms interpolation. Exact time alignment and helper coordination remain open.
-Mid-action join now samples the native active montage position/rate and resumes
-that animation with local queue-age compensation. It does not restart one-shot
-audio, or compensate the unsynchronized host/client clocks/network transit.
-Hit reactions use the host's active damage1..4 section after a verified health
-decrease with skipAnim=false; clients play the native damage cue without health
-writes. Mid-hit joins resume the selected section silently.
-Host replicas also refuse native sensePawn target assignment and detected roar/
-target-delegate binding on clients. Active helper paths from before save adoption
-are now stopped on the verified owned AI controller. The old target-destroyed
-delegate was audited: it only unbinds/clears the target and remains native.
-Two-player task lifecycle verification remains open; this does not establish shared AI.
-Client host replicas now also refuse native damaged, death loot-notify and death
-completion bodies. Host death cues use the native half animation rate and attached
-death sound; mid-death join resumes only the currently playing death animation.
-Corpse/loot counts and native host retirement still need two-player verification.
-Client host replicas now also refuse the separate collision impulse/10-damage
-body, lightning replacement and charged-form explosion/death timer/punch/spin
-bodies. Charged overrides are watched on their actual declaring class. Native
-host outcomes, replacement propagation and charged effects still need gameplay checks.
+A checked implementation means source review plus the named offline checks. It
+never closes a separate gameplay acceptance item. All sections below were reviewed;
+remaining behavior adapters and transactions are still implementation work.
+Evidence and repeatable runner: `package/check_current.ps1`,
+`build/todo-audit/verification.json` retains the earlier changing-tree audit.
+The current matching **b2159 / 40-group** result is in the event-sync evidence
+above. Detailed notes remain in WORK/TESTLOG.
 
-Next implementation:
-Client boar navigation now refuses move/updMov/path-check/retry/finish bodies and
-the verified AI continuations 15/543/558/966/1016/1381. senseUpdate/saw/setWalking
-cannot restart client helper decisions or mode changes. Each client body tick checks
-the owned helper's current path and aborts Waiting/Paused/Moving navigation,
-including late possession and adopted/held copies. Cosmetic turning now follows
-the host AnimBP scalar; its visible result and native task/delegate lifecycle
-still need two-player validation. This is not full helper synchronization.
-1. Grayboar remaining join/audio/timing work and client helper/turning coordination.
-   Live attack/roar/death/hit cosmetic cues are implemented;
-   two-player playback and timing still need verification. Preserve native host targeting,
-   damage ownership and corpse/loot authority; do not replay loot/damage as cosmetics.
-2. Host/client tests for spawn, target, movement, action, damage, death, reconnect
-   and mid-event join. Personal Insomniac/nightmare conditions remain peer-local.
-3. Kavotia now reuses `reliable_action_queue.h` for native aim/stance/charge-loop,
-   pitch and windup state, including heartbeat/join, bounded coalescing and stale
-   cleanup. Its controller birth is host-owned and client latent shot/AI entries
-   are refused. Continue with fire/laying montage, voice and canonical beam/impact
-   outcomes; exact network phase-time alignment remains open.
-4. Wisp code/tests now reject non-host grab senders and cancel pending self-grab,
-   death and tear state through pawn replacement/recycling, native death, world
-   changes and reentrant release. Verify those cases with two actual peers.
+- [x] Run `package/check_current.ps1` on the stable current tree: 40/40 groups,
+  production-source hashes across tests and final Release build, DLL identity,
+  imports/exports and 762 source entries pass for b2159. Gameplay remains open.
+- [x] Placement request/result lifecycle and coin E/overlap/client arbitration.
+  Source fixes from the previous continuation are retained; gameplay remains below.
+- [x] Held identity: use the registry reverse for both locals and mirrors. A keyed
+  or keyless mirror cannot be expressed again or publish its stale record back to
+  the owner. Owned held records still publish; key lookup reentry checks actor
+  serial, world and connection. `run_held_identity.ps1` exercises production code.
+- [x] Laptop power recovery: retry the retained ON/OFF target after native animation,
+  loading and wall-power recovery. Reset replay state at disconnect. The broad
+  audit found the missing retry call; `run_2173.ps1` now passes both regressions.
+- [x] Item batch source fixes: hold arbitration/push, gun effects/root scale, panel
+  births, pry, MRE/AB/foodBox output, final bite/local poison and live held records.
+  `run_item_batch.ps1` passes. Skeletal bone scaling and creature physics are separate.
+- [x] Shared screen/operator state and laptop/portable-PC UI transport are present.
+  Shared screen and laptop UI regressions pass; two-peer input/power acceptance stays open.
+- [x] Selected-model sleeping bodies and articulated ragdoll source work are present.
+  Sleep/ragdoll regressions pass; do not restore the plushie fallback or close rigs
+  without actual entry/recovery and limb checks in game.
+- [x] Garden source audit: pre-session saved plant/faucet/hose enrollment, care and
+  harvest intents, canonical state and accepted hose rerouting are implemented.
+  Garden/hose regressions pass. Missing historical save actors are not migrated.
+- [x] Grayboar movement, locomotion, turn, hit/attack/roar/death cosmetics and client
+  helper/gameplay authority guards are implemented. Kavotia aim/stance/charge state
+  uses the common bounded action queue. The remaining adapters are listed below.
+- [x] Wisp host-only grab and delayed-action cancellation through pawn replacement,
+  death, travel and reentrant release; native personal Insomniac conditions retained.
+- [x] Fork candidates reviewed against the actual merged tree; decisions below.
+- [x] Restored old regression runners after API drift: typed fact rows/hooks,
+  save-codec resolver parameters, placement admission, pry signatures and toolchain/
+  native-evidence paths. The cord performance check and its five failure controls
+  now run. Placement queue overflow has a current failure control.
 
+## Investigations requiring runtime evidence
 
-## Other open priorities
+- [ ] Bench58: owner now identifies **an old rifle and components**, in an isolated
+  simple-placement case (21 October); authoring role and exact component remain
+  unknown. The native rifle candidate is `prop_rifle_C`. Its placement refusal and
+  sweep protection pass the production harness; this does not reproduce disappearance.
+  Capture role, class/key and `[PROP-DROP]` / `join_membership_sweep` logs in game.
+- [ ] Token52: owner cannot identify the counter/UI yet (21 October). Keep open;
+  do not change money or any token balance based on an assumed identity.
+- [ ] Trowel key continuity and stock across reconstruction/unequip/drop: identity
+  mismatch still defers the profile. Native mainPlayer.updateHold rebuilds from
+  saveSlot.hold[0]; an atomic repair transaction must coordinate that lifecycle.
 
-- Run the ten priority gameplay checks in WORK.md on matching peer builds.
-- Ragdoll selection, entry/recovery, local body and limb streaming now have code and
-  focused regressions. Verify every selected rig in a two-peer game.
-- Shared computer UI state, operator visibility and selected-model sleeping bodies
-  are implemented. Verify laptop/portable-PC, bed, faint/ragdoll and chair changes
-  between two matching peers.
-- Bench58: record exact item/authoring peer and logs for simple-placement loss;
-  birth/save retry code does not prove the original symptom resolved.
-- Token52: identify the exact counter/UI before changing balance code.
-- Wall21/22: atomic cement request/result accounting across hand/slot/drop/retry/
-  disconnect; preserve the existing no-spend refusal. Wall41 remains excluded.
-- Full backlog and report status: [WORK.md](WORK.md), [TESTLOG.md](TESTLOG.md).
-
-## Current verification and boundaries
-
-Current **b2157**: Release build and 13 validation groups pass, including entity,
-wisp readiness/release, native Insomniac, personal sleep, ragdoll, garden, laptop
-UI, world sound and the reliable-kind gate with 18 injected failure controls.
-Evidence: `build/entity-sync-check/validation-2157/verification.json`.
-The merge's 38 missing authorship rows are restored (27 client intents/samples,
-11 host-only kinds). Native nightmare probability remains local on both roles.
-The older **b2153** results below are retained as historical evidence.
-
-package/check_2152.ps1 passes all 9 runners, including expanded entity/boar tests.
-Full MSVC Release DLL resources identify **0.9.0n b2153**. Hash and evidence:
-build/release-2152-logs/verification.json and entity-validation.json.
-Release scripts explicitly distinguish package 2152 from DLL/protocol 2153;
-workspace dist/ contains the 2152 ZIP and SHA256SUMS-2152.txt.
-Offline regressions do not establish two-player gameplay correctness.
-Live grayboar cues use host-only reliable kind 200, cosmetic turn state uses 201
-within development 2153. Install
-matching current DLLs on both peers; the existing delivery ZIP predates this work.
-
-The sync merge is committed and present in current history. Current entity source/test
-changes remain uncommitted. Preserve all work. Commit, push, game
-installation and publication require an explicit request. No other-agent workflow.
-Update TODO/WORK/TESTLOG in place; detailed prior evidence remains in WORK/TESTLOG.
-
-Fork review: see WORK.md, "Fork and upstream review". Development 2153 now includes exact disk text, rack canonical ownership/join wait and retryable trash classification. Rebuild is local; delivery ZIP predates these fixes. Test client hashcodes and filled racks after save/rejoin.
-
-Cleanup follow-up: historical run_2141 needs Session::SetLocalPropPose stub maintenance before its performance/mutation checks can run against current cord_sync. Main check_2152 suite passes after cleanup.
+The sync branch is merged; current continuation changes remain uncommitted.
+Preserve existing work. Commit, push, game installation and publication require an
+explicit request. No other-agent workflow. Update TODO/WORK/TESTLOG in place.
 
 ## Current item batch follow-up
 
@@ -124,19 +96,30 @@ development 2153; existing delivery ZIP does not contain this work.
 
 ## Remaining implementation and investigations from WORK
 
-Reviewed again against all sections of WORK.md on 20 October 2026. Newer implementation reports supersede
+Full TODO/source/fork review: 21 October 2026. See the current audit above.
+Newer implementation reports supersede
 older "needs implementation" notes for sleeping bodies, shared UI, ragdolls and
 food final-bite delivery. Those features still require gameplay verification.
 Original report IDs below preserve links to the complete tracker.
 
-- [ ] Rebuild merged protocol 2154 and rerun the nine focused runners, production
-  compilation, ABI/reliable-kind routing checks and Release identity verification.
-  Check retained kinds 202/203 and LaptopUI 204; record current hashes/evidence.
-  Update packaging identity checks before any separately requested new release.
-- [ ] Placement: define acceptance/refusal acknowledgement so rejected client
-  placements cannot remain waiting indefinitely for host binding.
-- [ ] Coins: E/overlap pickup must credit the host exactly once and remove the coin
-  only after acceptance; preserve local map-placed coins.
+- [x] Rebuilt and verified the audit snapshot at protocol 2158; original nine focused groups,
+  garden/laptop/sound, placement/coins/native coin evidence and reliable routing
+  pass (16 groups in the prior continuation; expanded current audit above). Full Release compilation, retained IDs 202/203/204, ABI and
+  DLL identity/imports/exports checked; current hashes are in TESTLOG/evidence.
+- [ ] Before a separately requested release, update that release's package identity
+  checks. `verify_current_build.ps1` validates current source/DLL; archived 2154
+  package scripts still correctly describe its older b2156 artifact.
+- [x] Placement acceptance/refusal: nonzero request IDs, host outcome/retry/cache,
+  replay protection and bounded binding wait. Retain the local actor on refusal;
+  prevent fallback authoring and publish saved state only after acceptance.
+- [ ] Placement gameplay: verify refusal/recovery and late PropSpawn adoption with
+  two peers, device ejects, containers and live food/drive state.
+- [x] Coins: host E, overlap and client requests share one identity reservation
+  before native credit, including pre-eid overlap. Unknown outcomes do not credit
+  again; native no-ops may retry. Client mirrors await canonical destroy/balance;
+  client-local map coins remain native. Retry callbacks survive disconnect/reset.
+- [ ] Coins gameplay: contest one coin via E/overlap on both peers; verify one host
+  credit, accepted mirror removal, refusal retention and local map-coin behavior.
 - [ ] Console/events (12–15, 26, 42): complete Rufus/thiccfus, llama, Madness grunts
   and variant AI/damage/effects; canonicalize simultaneous typing, periodic/local
   output, other funny-rule HUD/events and music phase. Cover other toy/squeeze sounds.
@@ -147,9 +130,10 @@ Original report IDs below preserve links to the complete tracker.
 - [ ] Water/cement/coal (20/21/44/45): arbitrate concurrent writers and stale
   in-flight records, dryTimer ownership and personal-hand transitions. Complete
   sponge soap stock/foam/surface effects and grill lid/final cooked-food behavior.
-- [ ] Garden (46): audit merged care/hose routing against pre-session plant/faucet/
-  hose enrollment, watering/fertilizing/harvesting, pot changes, accepted rerouting
-  and simultaneous use. Do not assume missing historical save actors are migrated.
+- [x] Garden (46) source audit: merged pre-session enrollment, care/harvest/pot
+  state and accepted rerouting are covered by the garden/hose regression suite.
+- [ ] Garden (46) runtime: pre-session save/reload, care and simultaneous use on
+  real peers. Missing historical save actors are not migrated.
 - [ ] Sky event (47): synchronize audio, delayed email/bookkeeping and pre-session
   latent chains; transport host phases/cues for other custom event effects/creatures.
 - [ ] Packages/food (34/39): audit remaining package subclasses and eaten() output;
@@ -175,17 +159,21 @@ Keep personal Insomniac/nightmare and other native personal spawn conditions loc
   single corpse/loot and host retirement. Verify collision damage, lightning
   replacement propagation and charged explosion/timer/punch/spin effects.
 - [ ] Rozitals: Great Pyramid, Kavotia, Pagonioplo-Igetis, Scouts, Soltomia —
-  resolve Kavotia/scouts and localized names; verify phases/actions/destruction/join.
+  Kavotia and scouts are mapped in ENTITY_COVERAGE; finish their action/effect
+  adapters and verify phases/actions/destruction/join.
 - [ ] Antibreather / Fossilhound: player/cave-dependent Antibreather spawning
   and cross-peer attacks; verify the corrected Fossilhound ticker spawn in game.
 - [ ] Arirals: verify follower/shooter/pigBeater and implemented gun-stealer paths
   in multiplayer, including stolen/held-item ownership and event phases.
 - [ ] Greys / Flamethrower Tank: verify grayTest behavior and firetank turret, fire,
   fuel and damage independently of its Pawn transform feed.
-- [ ] Geoms: map Ramiel and Egg-shaped Geom to native classes; verify special actions.
-- [ ] UFOs: map Boomerang, Joil, Grey Ship, Midas, Pill, Trifo, Orbs;
-  implement/verify child spawns, beam/material/audio phases and late join.
-- [ ] Deer / Fish / Cockroach: verify deer/deer_ded; map fish; test roach movement,
+- [ ] Geoms: Ramiel is `geomOcta_C`, Egg-shaped Geom is `eg_C`; implement missing
+  action/effect routes and verify special actions.
+- [ ] UFOs: package mappings are in ENTITY_COVERAGE; Grey Ship display-name split
+  still needs a live probe. Implement/verify child spawns, beam/material/audio phases
+  and late join for Boomerang, Joil, Grey Ship, Midas, Pill, Trifo and Orbs.
+- [ ] Deer / Fish / Cockroach: verify deer/deer_ded and caught `prop_fish_0..21_C`;
+  no free-swimming Character is present in the native corpus. Test roach movement,
   eating, crushing and late join.
 - [ ] Blue Brain Cheese, Restocker, Eye, Wolfgang, Tree with Eyes, Living Mushroom,
   Space Jellyfish: establish exact behavior routes, especially actor_save-derived
@@ -212,7 +200,7 @@ Keep personal Insomniac/nightmare and other native personal spawn conditions loc
 
 ## Gameplay acceptance checklist
 
-Use matching current 2154 builds. Record role, item/model, reproduction and logs;
+Use matching current **b2158** DLLs (including this continuation). Record role, item/model, reproduction and logs;
 offline tests do not close these reports. Existing item-batch and entity checks
 above also apply. Issues 6 and the previously working nightmare behavior are not
 reopened; verify the newer personal-sleep changes. Wall41 stays excluded.
@@ -248,22 +236,34 @@ reopened; verify the newer personal-sleep changes. Wall41 stays excluded.
   late join/rejoin/disconnect/save/reload; partial/empty consumables, full inventory,
   equipped items/container rows, loose cables, flashlight crank/low battery/previews.
 
-## Fork adaptations still requiring review
+## Fork review and remaining adaptation
 
-Audit these candidates against the merged 2154 source before adapting them;
-existing shared-screen and garden implementations may already cover parts.
+Reviewed against current 2158 source and local commit contents on 21 October.
+Checked rows close the review/adaptation decision, not multiplayer acceptance.
 
-- [ ] Shinobu2 `9863f6ba0`, `291476241`, `56d7ec566`, `9eec3cf37`: review parked
-  save ordering/reentrancy, deferred host destruction, held-mirror identity and
-  post-birth publication together; retain rollback/duplicate negative controls.
-- [ ] Upstream `eb55ae97d`: exclude joining slot from connect-edge NPC fan-out
-  with coordinated Session/enrollment changes; preserve late-class/personal/boar paths.
-- [ ] Upstream `3a138d025`, `c930d6aa5`: compare active-tab handling with current
-  shared UI; tab propagation alone does not establish screen parity.
-- [ ] Upstream `53b851c50`, `625187aaa`, `82ad7ef1d`: assess complete camera-bit
-  authority/laptop-intent wrapper/network changes and tests against merged code.
-- [ ] Upstream `001193570` through `93dd26cc2`: assess the dependent explosion
-  capture/client damage/driven-prop coast series; review current wire-kind
-  collisions and validate blast ownership before adoption.
-- [ ] Upstream `d248fc88d`: assess lobby announce cancellation together with its
-  required generation/proof API; do not copy as an isolated patch.
+- [x] Shinobu2 `9863f6ba0`, `291476241`, `56d7ec566`, `9eec3cf37`: parked
+  records already use replacement sequences, copied dispatch and callback-safe
+  retirement; hosts already refuse destroy deferral; finished births already
+  publish final records after native return. Fixed the remaining locals-only held
+  lookup and stale mirror publication. Record/placement failure controls and the
+  held-identity regression pass; owned held-state restoration is retained.
+- [x] Upstream `eb55ae97d`: already an ancestor. Session fan-out, world-ready gate,
+  enrollment and connect replay consistently exclude the joining slot. Existing
+  late-class/personal-creature/boar guards remain; live join is still unverified.
+- [x] Upstream `3a138d025`, `c930d6aa5`: already ancestors. Typed laptop widget/tab
+  transport is built alongside SharedScreen/LaptopUI; active-tab support does not
+  replace the wider shared UI acceptance checks.
+- [x] Upstream `53b851c50`, `625187aaa`, `82ad7ef1d`: all ancestors. The camera
+  wrapper, intent validation/reach and host-bit authority are present and build;
+  reliable routing includes their kind 206. No partial patch needed.
+- [x] Upstream `001193570` through `93dd26cc2`: assessed as a dependent series.
+  Its ExplosionSpawn=177 conflicts with local KitchenState=177. Retain the existing
+  ExplosionEvent=188 / Explosion=191 lanes, local-player damage guards and canonical
+  native blast capture; both explosion regression/failure-control/native suites pass.
+  Do not describe this decision as implementation of upstream affected-prop coasting.
+- [ ] Explosion follow-up: assess and implement host tracking/coasting of affected
+  props through native delayed impulses; validate held/frozen/static exclusions,
+  blast ownership/range and settled poses on two peers before adopting that behavior.
+- [x] Upstream `d248fc88d`: already an ancestor, including the generation/proof API.
+  Host reads entry generation before its leading Stop and expects exactly one bump;
+  an additional Stop cancels the create. No isolated backport needed.

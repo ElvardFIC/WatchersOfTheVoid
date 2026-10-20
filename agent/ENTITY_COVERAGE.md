@@ -19,7 +19,10 @@ work. The sync branch's laptop, garden, world-sound and placed-hose modules rema
 session integration. The continued executable audit found 38 missing authorship rows: the
 receiving host rejected 27 kinds of legitimate client intents/owner samples as unknown. All 38
 rows now follow their actual send/receive paths (27 Client, 11 Host). The router gate and its 18
-injected failure controls pass for all 212 kinds. Current source is protocol 2157.
+injected failure controls pass for all 213 kinds. Current source is protocol 2159 under parallel work; the last complete audit was
+2158 with39 passing groups. The 21 October audit is
+recorded in TODO/WORK/TESTLOG and build/todo-audit/verification.json. The mapping
+review does not close the class-specific behavior adapters below.
 
 ## Confirmed native mapping and route state
 

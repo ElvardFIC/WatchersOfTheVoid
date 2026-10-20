@@ -1,6 +1,14 @@
 #define NDEBUG
 #include <intrin.h>
 #include "../../src/votv-coop/src/coop/props/host_spawn_watcher.cpp"
+#include "facts_test_support.h"
+namespace ue_wrap::facts {
+Resolved ResolveOn(const Function& row,void* cls){
+    void* fn=cls?reflection::FindFunction(cls,row.Name()):nullptr;
+    return fn?Resolved(fn,&row):Resolved{};
+}
+Resolved Resolve(const Function& row){return ResolveOn(row,object_index::ClassByName(row.Class()));}
+}
 #include <cstdio>
 #include <cstdlib>
 #include <functional>
@@ -35,7 +43,7 @@ namespace ue_wrap::log {void Write(Level,const char*,...) {}}
 namespace ue_wrap::hot_path {unsigned long CurrentThreadId(){return 0;}unsigned long long CallerRva(const void*){return 0;}}
 namespace ue_wrap::game_thread {
 bool IsGameThread(){return true;}bool IsDefinitelyOffGameThread(){return false;}
-bool RegisterPostObserver(void*,void(*)(void*,void*,void*)){++test::ambientHooks;return test::observerOK;}
+bool RegisterPostObserver(const facts::Resolved&,void(*)(void*,void*,void*)){++test::ambientHooks;return test::observerOK;}
 }
 namespace ue_wrap::reflection {
 bool IsLive(void* a){return a && static_cast<test::Actor*>(a)->live;}
@@ -69,7 +77,7 @@ bool EnsureKey(void* a){auto& actor=*static_cast<test::Actor*>(a);++actor.mints;
 }
 namespace ue_wrap::ufunction_hook {
 CallerFrame CurrentCallerFrame(){return {test::gameplayCaller?&test::actors[254]:nullptr,nullptr};}
-bool InstallPostHook(void*,PostNativeCallback cb,bool){++test::keyedHooks;test::finishCallback=cb;return test::finishHookOK;}}
+bool InstallPostHook(const facts::Resolved&,PostNativeCallback cb,bool){++test::keyedHooks;test::finishCallback=cb;return test::finishHookOK;}}
 namespace coop::element {
 Element::Element(ElementType type):m_type(type){} Element::~Element()=default;
 Element* Registry::Get(ElementId id)const {static Element e(ElementType::Prop);e.SetMirror_(test::elementMirror);return id==kInvalidId?nullptr:&e;}

@@ -39,13 +39,11 @@ enum class FireKind : uint8_t {
 // updates normally. Restored on disconnect while the same object/array survives.
 // Called every pump tick by the install fanout. Game thread.
 //
-// Three classes of fire the watch leaves alone, all deliberate. A trigger-volume fire (bedEvent,
-// a scare armed by TBoxActivator) executes per-peer natively when THAT peer overlaps, which is
-// per-viewer by the game's own design. The game's internal runSpecialEvent picks have no settime
-// caller, so their outputs ride the prop lane. And a dev fire reaches runEvent from our own
-// ProcessEvent, not from settime -- the native ui_eventRun likewise -- which is why HostFire
-// broadcasts at dispatch, and why the scheduler may still re-fire that row at its scheduled time
-// with the client's replayed-set deduping its side.
+// Host specials publish their chosen case after the native body, including
+// summonArirPrank's nested calls. Policy skips effects already carried by another
+// lane. Personal volume scares stay native to their viewer. The install pump
+// retries host sends per recipient and client replays waiting for their world.
+// Send queues are discarded on travel, session replacement and peer-slot reuse.
 void Install(coop::net::Session* session);
 
 // The ONE native-fire primitive. Posts the reflected runEvent/runSpecialEvent to the game thread

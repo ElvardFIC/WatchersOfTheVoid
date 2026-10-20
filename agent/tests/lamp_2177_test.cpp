@@ -2,6 +2,8 @@
 #include "../../src/votv-coop/src/ue_wrap/devices/lightswitch.cpp"
 #include "../../src/votv-coop/src/coop/interactables/lightgroup_verbs.cpp"
 #include "../../src/votv-coop/src/coop/net/session_lanes.h"
+#include "facts_test_support.h"
+namespace ue_wrap::facts {Resolved Resolve(const Function&){return {};}}
 #include <cstdio>
 #include <cstdlib>
 #include <cstddef>
@@ -55,7 +57,7 @@ namespace ue_wrap::object_index {void* ClassByName(const wchar_t* n) {
     return test::loaded?&test::objects[std::wcscmp(n,L"ambientLight_C")==0?3:0]:nullptr;
 }}
 namespace ue_wrap::ufunction_hook {
-bool InstallPreHook(void*,PreNativeCallback,bool) { std::abort(); }
+bool InstallPreHook(const facts::Resolved&,PreNativeCallback,bool) { std::abort(); }
 }
 namespace ue_wrap::engine {
 void* SpawnSoundAttenuation(const SoundAttenuationConfig&) { std::abort(); }
@@ -99,8 +101,10 @@ bool WatchClassName(const wchar_t* c,const wchar_t* n,int,PreFn pre,PostFn post)
     CHECK(std::wcscmp(c,L"ceilingLamp_C")==0 && std::wcscmp(n,L"setActive")==0);
     test::pre=pre;test::post=post;return true;
 }
-bool WatchName(const wchar_t*,int,PreFn,PostFn) {return true;}
-void ResolvePendingNames(){} bool NameWatchLive(const wchar_t*,int){return true;}
+bool WatchName(const facts::Function& row,int tag,PreFn pre,PostFn post) {
+    return row.Class()?WatchClassName(row.Class(),row.Name(),tag,pre,post):true;
+}
+void ResolvePendingNames(){} bool NameWatchLive(const facts::Function&,int){return true;}
 int PendingNameCount(){return 0;}
 }
 int main() {

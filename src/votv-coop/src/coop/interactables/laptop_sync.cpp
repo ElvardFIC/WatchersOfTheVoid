@@ -201,6 +201,9 @@ void Tick() {
     if (g_replayInFlight && !ps.anim) g_replayInFlight = false;
     g_prevOpened = ps.isOpened;
     g_havePrev = true;
+    // Receive may find the actor unloaded, an animation running or wall power
+    // absent. Keep converging the retained target after those conditions clear.
+    ApplyPowerTarget();
     SampleJoinStates(s);
     FlushOutgoing(s);
 }
@@ -276,6 +279,9 @@ void OnDisconnect() {
     g_prevOpened = false;
     g_nextPoll = 0;
     g_wantValid = false;
+    g_replayInFlight = false;
+    g_replayTo = false;
+    g_noChainSaid = false;
     g_pending = {};
     g_announced = false;
     g_refusals.Clear();

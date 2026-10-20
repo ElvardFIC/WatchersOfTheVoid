@@ -1,6 +1,8 @@
 #include "../../src/votv-coop/src/ue_wrap/world/event_location.cpp"
 #include "../../src/votv-coop/src/coop/world/event_location_sync.cpp"
 #include "../../src/votv-coop/src/ue_wrap/core/call.cpp"
+#include "facts_test_support.h"
+namespace ue_wrap::facts {Resolved Resolve(const Function&){return {};}}
 #include <cstdio>
 #include <cstdlib>
 #include <limits>
@@ -59,7 +61,7 @@ namespace ue_wrap::script_gate {
 bool WatchClassName(const wchar_t* c,const wchar_t* f,int,PreFn,PostFn){test::watches.emplace_back(c,f);return true;}
 void ResolvePendingNames(){}
 }
-namespace ue_wrap::ufunction_hook {bool InstallPostHook(void*,PostNativeCallback,bool){return true;}CallerFrame CurrentCallerFrame(){return test::caller;}void* CurrentResult(){return &test::result;}}
+namespace ue_wrap::ufunction_hook {bool InstallPostHook(const facts::Resolved&,PostNativeCallback,bool){return true;}CallerFrame CurrentCallerFrame(){return test::caller;}void* CurrentResult(){return &test::result;}}
 namespace coop::active_drive {uint64_t NowMs(){return test::now;}}
 namespace coop::teleport_client {
 void TickGather(){}void ClearGather(){}
