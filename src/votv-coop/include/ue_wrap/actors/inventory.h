@@ -20,6 +20,7 @@
 
 #include <cstdint>
 #include <string>
+#include <functional>
 #include <vector>
 
 namespace ue_wrap::inventory {
@@ -51,6 +52,9 @@ void* ResolveSaveSlot();
 // saveSlot.inventoryData is deliberately not read: it is a projection mainGamemode::saveObjects
 // writes and only the save-slot menu's repair routine reads, and on a client it never refreshes.
 bool ReadAll(PlayerInventory& out);
+// Persist only the matching live trowel's concrete scalar in hold[0]. Refuse
+// mismatched keys/classes or a changed hand/slot; preserve all array ownership.
+bool PersistHeldTrowelStock(void* actor, const std::function<bool()>& current = {});
 
 // ---- THE LIVE PERSONAL STORE (read-only) ------------------------------------------------------
 //

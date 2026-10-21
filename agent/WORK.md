@@ -1,10 +1,15 @@
 # Unified Work - unresolved backlog
 
-Current source/wire protocol: **2176**, game **0.9.0n**. Last verified Release:
-**b2176**, **63/63 offline validation groups**; evidence:
-`build/fish-integration-check/verification.json`.
+Current source/wire protocol: **2178**, game **0.9.0n**. Last verified Release:
+**b2178**, **65/65 offline validation groups**; evidence:
+`build/continuation-check/verification.json`.
 Gameplay acceptance requires identical current DLLs on all peers.
-Prepared package **0.9.2154 / DLL b2156** predates the current source.
+Prepared package **0.9.2155 / DLL b2178**; package evidence:
+`build/release-2155-logs/release-verification.json`.
+Development b2178 qualification passed in `build/continuation-check/`: 65/65 groups,
+unchanged full production snapshot, Release identity/ABI and 781 source entries.
+The final package includes the qualified b2178 DLL and supersedes the earlier local
+b2177 preparation at the owner's explicit release-build request.
 Use identical current DLLs for multiplayer acceptance.
 
 This file retains unresolved implementation, investigation and gameplay work.
@@ -53,6 +58,20 @@ Offline checks do not close gameplay reports.
 
 ## Requested event synchronization and frequency
 
+Package 2155 improves the shared infrastructure without closing any complete
+category: replay owns queued work across native callbacks, limits recursive work,
+retries preparation failures and consumes ambiguous attempted native calls. Active
+join snapshots retain readiness/send debt, copy native membership, validate sender
+serials and cancel on session/world/recipient replacement. Offline lifetime and
+reentrant tests pass; native effects and phase parity remain category-specific work.
+
+Development b2178 additionally binds location-event state to the session-start
+serial, including reuse of the same Session pointer/world. It validates actor
+identity between native location/rotation reads and cancels gathering after native
+callbacks tear down or replace the world/session. The location tick refuses
+recursive entry. Production tests first failed on the old session-reuse behavior,
+then passed with native pose/query teardown and real-overlap cancellation cases.
+
 The eight-category request remains open. The owner deferred the fresh
 game-pak/Blueprint audit on 21 October; the old D: installation is unavailable.
 Keep that audit deferred. Do not infer native mapping from a wiki name or close
@@ -69,9 +88,17 @@ an event from its actor's transform route.
 | Random | Audit the complete named list and remaining timer/probability sites. Black-fog client suppression alone does not mirror black fog. |
 | Signals | Audit each processing/playback trigger, funny-rule requirement, chosen outcome, phases and late join. |
 
-Frequency coverage still needs extension beyond the four audited
+Frequency coverage still needs extension beyond the five verified
 `ticker_fossilhoundSpawner`, `ticker_yellowWispSpawner`, `ticker_wispSpawner`
-and `ticker_egSpawner` routes. Preserve native eligibility, probabilities,
+and `ticker_egSpawner`, plus owner-local `ticker_eyers` routes.
+The existing night-eyes Blueprint confirms a native 1800–2700s re-arm, 5% roll
+and day/night gates. Only the wait is scaled; the existing owner-entity route
+remains responsible for its creature. Host owns the first four generators.
+`treeSpawner` (600–900s walking-tree output), `bp7Spawner` (camera-dependent rare
+integer roll) and `flickerer` (power/generator effects) were inspected in the
+existing corpus but not admitted without complete authority/effect routes.
+This is not the complete random-event list or a fresh pak audit.
+Preserve native eligibility, probabilities,
 personal dream rolls and story dates; adjust eligible-roll intervals without
 changing AI/animation, effect durations or sleep needs.
 
@@ -99,6 +126,12 @@ live/persisted frequency changes, load windows, late join, reconnect and teardow
   Native `mainPlayer.updateHold` rebuilds the hand from `saveSlot.hold[0]`;
   `checkEquip` reads the live actor without updating that array. Coordinate
   reconstruction, unequip/drop and persistent stock in the repair transaction.
+  Package 2155 persists exact-key/class local held concrete updates into the
+  existing `hold[0]` integer scalar immediately after native `updConcrete`.
+  It validates actor/save/world/slot identity, original slot bytes and live stock
+  across native callbacks, never allocates/replaces a record and includes zero.
+  Malformed schemas and identity changes refuse the write; no key repair or paid
+  transaction is enabled. Production helper and reentrant boundary tests pass.
 - Verify imported creative construction and wet-wall timer persistence, exact
   impact/effects and client damage to completed walls.
 - Arbitrate concurrent water/cement/coal writers and stale in-flight records;
@@ -139,11 +172,44 @@ KitchenState uses 177. Retain local explosion lanes 188/191.
 
 Bench58 is simple placement followed by disappearance after 1–2 seconds or
 later; crafting is not part of the report. On 21 October the owner identified
-an old rifle and components in an isolated case. Authoring role and the exact
-component remain unknown. Native rifle candidate: `prop_rifle_C`.
-Capture the item/class/key, authoring peer, timing, `[PROP-DROP]` and
-`join_membership_sweep` logs. Offline refusal/sweep checks do not reproduce
-the disappearance.
+an old rifle and components in an isolated case. The latest owner clarification
+confirms **the host's old rifle**; exact components remain unknown. Native rifle
+candidate: `prop_rifle_C`. Existing leaf bytecode contains `playerHandUse_LMB`
+spawning an explosion and applying impact damage; no placement entry point is
+present in that leaf. This does not exclude inherited behavior or establish cause.
+Host placement follows Finish/Init and deferred host adoption; client intermediate
+suppression and join reconciliation are client paths. The receiver destroy path
+can also remove a host actor on a peer's keyed/eid destroy; capture both logs.
+Enable `VOTVCOOP_PROP_BIRTH_KEY_PROBE=1` before launching a reproduction to record
+birth class/key, destroying class and session state. Retain timing, `[PROP-DROP]`,
+`remote_prop::OnDestroy` and `join_membership_sweep` logs.
+Package 2155 separately retains admitted client placements after exhausted transform,
+food-readiness or send retries. Their identity-stamped local recovery survives sweep
+and blocks fallback shared admission, allowing pickup; a full recovery pool retains
+the pending item. Offline checks pass, including a rifle-class fixture, but this
+does not reproduce or resolve the host's disappearance.
+
+Development b2178 fixes a separate receiver defect reproduced in the production
+`remote_prop_destroy.cpp` harness: a listener/native release could recycle the
+selected actor's slot and the receiver still issued K2_DestroyActor to its replacement.
+One scoped object/world/session-start identity now covers listener delivery, drive
+cleanup, grab release and unpin. Recursive destruction of the same incarnation is
+suppressed, listener registration uses an owned snapshot, and local-consume/convert
+cleanup shares the guard. Cancellation consumes the old request rather than
+retrying its key against a replacement. Existing key/eid fallback policy is retained.
+The incoming-destroy mark is written only after the final cancellation check, so
+an aborted attempt cannot hide the actor's next genuine destroy.
+New `[PROP-DROP] destroy-received` logs include role/sender/class/key/eid/world.
+Normal destruction, deferred load-tail behavior and listener/spend delivery pass
+the focused production harness. This does not identify the owner's runtime cause.
+
+Further existing-corpus inspection: `prop.getData/loadData` stores/restores native
+lifespan, but the network save codec replaces incoming base fields with the local
+base record; no lifespan clearing was introduced. `npc_arirGunStealer` resolves
+the literal key `arirGun` and later destroys that object, not any rifle by class.
+`walkingTree` has viewer-dependent visibility/movement/despawn and native latent
+timers, so simple host pose/rate admission would not complete its route. Decoded
+evidence is in `build/placement-check/*-native.txt`; no fresh pak audit was run.
 
 Token52's counter/UI remains unidentified by the owner (21 October).
 Identify the actual display and token before changing money or any balance.
@@ -202,7 +268,7 @@ old behavior. Old basement wall (41) remains excluded by the owner.
 | 55 | Computer ON/OFF | During animation/loading, power loss/restoration, failed delivery, late join and reconnect; separate from water short-circuit/damage. |
 | 56 | Ejected ZIP becomes a huge owo | Actual inserted/ejected class, model and scale on both peers. The bool-wrapper defect is not a proven cause of the symptom. |
 | 57 | Opening/eating cans | World/held open/eat/final portion, stow/re-equip, drop/pickup, simultaneous consumption and reconnect. |
-| 58 | Items disappear on workbench | Reproduce simple-placement disappearance with old rifle/components; capture role, exact class/key and sweep/drop logs. |
+| 58 | Items disappear on workbench | Host's old rifle confirmed; reproduce simple placement with birth/destroy caller, class/key and peer logs. Components unidentified; client recovery is separate. |
 
 ## Entity behavior and gameplay follow-ups
 
@@ -265,10 +331,12 @@ Sleeping-body native evidence remains in the workspace `_research/`:
 `sleep_2166.txt`, `wakeup_2166.txt`, `sleep_graph_2166.txt`,
 `sleep_full_2166.txt` and `objects__misc__playerSleepingPawn_2164.txt`.
 
-## Before a separately requested release
+## Release preparation
 
-Update that release's package identity checks. `package/verify_current_build.ps1`
-validates current source/DLL; archived 2154 package scripts describe b2156.
+Package 2155 build/pack/verify scripts require b2178, all 65 current groups and
+unchanged production inputs. Packaging verifies archive documents/DLL, manifest,
+icon, paks and outer delivery hashes. Requalify after source edits; archived 2154
+scripts describe b2156. Complete package history is in CHANGELOG_PLUS.md.
 Commit, push, game installation and publication require an explicit request.
 No other-agent workflow. Update active documents in place; do not create
 numbered trackers, backup source trees or historical test-output copies.

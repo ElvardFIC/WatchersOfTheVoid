@@ -1,10 +1,14 @@
 # TODO - current priorities
 
-Current source/wire protocol: **2176**, game **0.9.0n**. Last verified Release:
-**b2176**, **63/63 offline validation groups**; evidence:
-`build/fish-integration-check/verification.json`.
+Current source/wire protocol: **2178**, game **0.9.0n**. Last verified Release:
+**b2178**, **65/65 offline validation groups**; evidence:
+`build/continuation-check/verification.json`.
 Gameplay acceptance requires identical current DLLs on all peers.
-Prepared package **0.9.2154 / DLL b2156** predates this source.
+Prepared package **0.9.2155 / DLL b2178**; package/delivery verification:
+`build/release-2155-logs/release-verification.json`.
+b2178 adds prop-destroy and location-event lifetime guards. Focused
+regressions and full stable-source qualification pass in `build/continuation-check/`.
+The final 2155 archive includes these changes and supersedes the earlier local b2177 package.
 
 Unresolved implementation, investigations and gameplay checks remain here.
 The fish integration and its concrete behavior changes are recorded in WORK.md.
@@ -18,24 +22,34 @@ Details and original report IDs: [WORK.md](WORK.md); verification history:
   Player-Activated, Time-Related, Endings, Story Mode, Random and Signal events.
   Every event needs its real trigger, chosen outcome, effects and join/lifetime
   checks. See WORK's event coverage table.
-- [ ] Extend frequency coverage beyond the four audited Fossilhound, killer-wisp,
-  sky-wisp and night-egg generators to the complete repeatable random-event list.
-  Preserve personal dreams/Insomniac, story dates and native eligibility.
+- [ ] Extend frequency coverage beyond the five verified Fossilhound, killer-wisp,
+  sky-wisp, night-egg and owner-local night-eyes generators to the complete
+  repeatable random-event list. Night eyes now preserve native night/day and
+  5% chance checks; preserve personal dreams/Insomniac and story dates.
 - [ ] Fresh game-pak/Blueprint audit remains deferred by the owner.
 - [ ] Real-peer event, frequency, late-join, reconnect and simultaneous-trigger
   acceptance on identical current DLLs.
 
 ## Investigations requiring runtime evidence
 
-- [ ] Bench58: an old rifle and components disappeared after simple placement
-  (owner clarification, 21 October); authoring role and exact component are unknown.
-  Native rifle candidate: `prop_rifle_C`. Reproduce the disappearance and capture
-  role, class/key and `[PROP-DROP]` / `join_membership_sweep` logs.
+- [ ] Bench58: the owner confirms **the host's old rifle** disappeared after
+  simple placement (21 October). Earlier components remain unidentified.
+  Native candidate: `prop_rifle_C`; its leaf Blueprint has destructive LMB use,
+  without a placement entry point. Inherited behavior/cause remains unverified.
+  Reproduce with `VOTVCOOP_PROP_BIRTH_KEY_PROBE=1` and capture class/key, destroy
+  caller/timing, `[PROP-DROP]`, `remote_prop::OnDestroy` and sweep logs.
+  Client placement exhaustion recovery is implemented separately; it does not
+  establish a fix for the host report.
+  Development b2178 also prevents a received destroy from using an actor replaced
+  during listeners/native grab release and adds role/sender/class/key diagnostics.
+  This reproduces a code defect offline; the owner's disappearance still needs runtime evidence.
 - [ ] Token52: the owner cannot identify the counter/UI yet (21 October).
   Identify it before changing money or any token balance.
 - [ ] Trowel key continuity and stock across reconstruction/unequip/drop:
   identity mismatch defers the profile. Coordinate the repair transaction with
   native `mainPlayer.updateHold` reconstruction from `saveSlot.hold[0]`.
+  Exact-identity concrete changes now persist into the existing `hold[0]` scalar
+  before reconstruction, including zero; mismatch repair and runtime acceptance remain.
 
 ## Remaining implementation
 
@@ -122,7 +136,8 @@ Keep personal Insomniac/nightmare and native personal spawn conditions local.
 
 ## Gameplay acceptance checklist
 
-Use matching current **b2176** DLLs. Record role, item/model, reproduction and logs.
+Use matching current **b2178** DLLs from the final package 2155 for acceptance.
+Record role, item/model, reproduction and logs.
 Offline tests do not close gameplay reports. Mining (6) stays closed; previously
 working nightmares (10) only need acceptance of the newer personal-sleep behavior.
 Wall41 remains excluded.
@@ -167,10 +182,11 @@ Wall41 remains excluded.
   late join/rejoin/disconnect/save/reload; partial/empty consumables, full inventory,
   equipped items/container rows, loose cables, flashlight crank/low battery/previews.
 
-## Before a separately requested release
+## Release preparation
 
-- [ ] Update that release's package identity checks. `verify_current_build.ps1`
-  validates source/DLL; archived 2154 scripts describe the older b2156 artifact.
+Package 2155 build/pack/verify scripts validate b2178, 65 passing groups, the
+unchanged production snapshot and embedded/delivery hashes. Requalify after source
+changes; archived 2154 scripts describe the older b2156 artifact.
 
 Commit, push, game installation and publication require an explicit request.
 No other-agent workflow. Update the active tracking documents in place.

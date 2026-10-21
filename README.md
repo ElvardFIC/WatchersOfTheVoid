@@ -8,28 +8,33 @@ Play co-op on Windows with up to four players, LAN and Internet sessions, remote
 text and positional voice chat, and host-authoritative world synchronization.
 This is experimental software; multiplayer verification is still in progress.
 
-## Fork status - 19 October 2026
+## Fork status - 21 October 2026
 
-The latest locally prepared package is **0.9.2154**, for game **0.9.0n**.
-It contains DLL **b2156** and network protocol **2156**, preserving the expanded
-NPC pose format while using the requested package release number. It includes full
-NPC orientation, possessed-boar body/damage replication and native locomotion input,
-plus the earlier wisp capture/release and personal-nightmare fixes.
-See [release notes](package/RELEASE_2154.md) and [changelog](package/CHANGELOG_PLUS.md).
+The latest locally prepared package is **0.9.2155**, for game **0.9.0n**.
+It contains DLL **b2178 / network protocol 2178** and integrates the fish branch
+with main's Entity, Kavotia, event and personal-sleep work. It adds event replay
+and join recovery, five supported frequency generators, placement/coin protection,
+water/cleaning/grill state, console/toy recovery and trowel stock persistence.
+The Release build and **65/65 offline validation groups** pass on a stable source tree.
+See [release notes](package/RELEASE_2155.md) and [changelog](package/CHANGELOG_PLUS.md).
 Local packaging does not publish a binary release online.
 
-Recent local work also covers personal nightmares, ragdoll recovery, late-loaded NPCs,
-Cremator interactions, held-tool effects and model-preview retries.
-Offline checks do not establish that reported gameplay issues are resolved.
-Two-player testing remains required. Open reports include missing models/preview mismatches,
-the shared computer display, token UI, ZIP-disk ejection and disappearing workbench items.
+The final 2155 package also includes prop-destroy identity guards and location-event
+session/reentry protection from b2178. Its Release and 65/65 offline groups pass on
+unchanged production inputs; real-peer acceptance remains required.
+
+Complete event/creature coverage, paid repairs and resource accounting remain open.
+The fresh native-asset audit remains deferred; full public-prose and fact-row CI
+have known failures. Offline checks do not establish that reported gameplay issues
+are resolved. Two-player testing remains required, including the host's disappearing
+old rifle, trowel continuity, late join and reconnect. Token52's UI is unidentified.
 
 ## Installation
 
 Use a package explicitly published for this fork when available on this repository's
 [Releases page](https://github.com/ElvardFIC/WatchersOfTheVoid/releases).
 All players must install the same build and game version. Disable other Multivoid implementations
-in the same profile. Protocols 2151 through 2155 are incompatible with this release.
+in the same profile. Earlier protocol builds are incompatible with this release.
 
 The [upstream installation guide](https://github.com/VOTV-MP/Multivoid/blob/main/docs/install.md)
 explains the loader and standard mod layout. Upstream downloads are releases of the original

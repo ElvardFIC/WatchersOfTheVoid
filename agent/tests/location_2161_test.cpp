@@ -12,8 +12,8 @@ struct Obj {int id=0,serial=1;bool live=true;void* cls=nullptr,*outer=nullptr;co
  void* eventer=nullptr,*controller=nullptr,*box=nullptr,*component=nullptr,*anti=nullptr;
  struct Arr{void** data=nullptr;int32_t num=0,max=0;}filter;
  uint8_t active=0;ue_wrap::FTransform transform{};ue_wrap::FVector extent{100,100,100};}o[16];
-uint32_t world=1;uint64_t now=1000;int fires=0,gathers=0;uint8_t anchor=255;bool result=false,callOk=true,fireOk=true;
-ue_wrap::FVector localPos{500,500,0},gatherPos{};std::function<void()> onGather;
+uint32_t world=1,sessionId=1;uint64_t now=1000;int fires=0,gathers=0,rotations=0,gatherTicks=0;uint8_t anchor=255;bool result=false,callOk=true,fireOk=true;
+ue_wrap::FVector localPos{500,500,0},gatherPos{};std::function<void()> onGather,onPose,onReadBox,onTickGather;
 struct Frame{ue_wrap::FVector center{},extent{100,100,100};void* entrant=nullptr;}frame;
 ue_wrap::ufunction_hook::CallerFrame caller{};
 std::vector<std::pair<std::wstring,std::wstring>> watches;
@@ -47,14 +47,15 @@ std::vector<ParamInfo> FunctionParams(void* fn){ParamInfo p{};p.name=fn==&test::
 void* FindDispatchFunctionCached(void*,const wchar_t* name){return !wcscmp(name,L"K2_GetComponentToWorld")?&test::o[8]:&test::o[9];}
 void* FindFunction(void*,const wchar_t*){return &test::o[8];}
 bool CallFunction(void* actor,void* fn,void* data){if(!test::callOk)return false;
- if(fn==&test::o[8])std::memcpy(data,&static_cast<test::Obj*>(actor)->transform,sizeof(FTransform));
+ if(fn==&test::o[8]){std::memcpy(data,&static_cast<test::Obj*>(actor)->transform,sizeof(FTransform));auto cb=std::move(test::onReadBox);test::onReadBox={};if(cb)cb();}
  else {if(!test::fireOk)return false;CHECK(*static_cast<int32_t*>(data)==-1);++test::fires;}return true;}
 }
 namespace ue_wrap::world_singleton {void* Gamemode(){return &test::o[0];}}
 namespace ue_wrap::world_identity {uint32_t Generation(){return test::world;}void* CurrentWorld(){return nullptr;}void* WorldOf(void*){return nullptr;}}
+namespace coop::net::session_serial {uint32_t Current(){return test::sessionId;}}
 namespace ue_wrap::engine {
-bool TryGetActorLocation(void*,FVector& p){p=test::localPos;return true;}
-bool TryGetActorRotation(void*,FRotator& r){r={0,25,0};return true;}
+bool TryGetActorLocation(void*,FVector& p){p=test::localPos;auto cb=std::move(test::onPose);test::onPose={};if(cb)cb();return true;}
+bool TryGetActorRotation(void*,FRotator& r){++test::rotations;r={0,25,0};return true;}
 }
 namespace ue_wrap::object_index {void* ClassByName(const wchar_t*){return &test::o[8];}}
 namespace ue_wrap::script_gate {
@@ -64,7 +65,7 @@ void ResolvePendingNames(){}
 namespace ue_wrap::ufunction_hook {bool InstallPostHook(const facts::Resolved&,PostNativeCallback,bool){return true;}CallerFrame CurrentCallerFrame(){return test::caller;}void* CurrentResult(){return &test::result;}}
 namespace coop::active_drive {uint64_t NowMs(){return test::now;}}
 namespace coop::teleport_client {
-void TickGather(){}void ClearGather(){}
+void TickGather(){++test::gatherTicks;auto cb=std::move(test::onTickGather);test::onTickGather={};if(cb)cb();}void ClearGather(){}
 void GatherOthersTo(uint8_t slot,float x,float y,float z,float){++test::gathers;test::anchor=slot;test::gatherPos={x,y,z};auto cb=std::move(test::onGather);test::onGather={};if(cb)cb();}
 }
 namespace ue_wrap::log {void Write(Level,const char*,...) {}}
@@ -107,6 +108,17 @@ int main(){using namespace test;namespace S=coop::event_location_sync;namespace 
  fireOk=false;count=gathers;now+=250;S::Tick(s);CHECK(gathers==count+1);
  now+=250;S::Tick(s);CHECK(gathers==count+1);fireOk=true;auto firedBefore=fires;
  now+=250;S::Tick(s);CHECK(gathers==count+1&&fires==firedBefore+1);
+ // Reusing the same session/world must not retain old fired/queued state.
+ ++sessionId;CHECK(!S::Current());S::Tick(s);CHECK(S::Current());
+ auto prepare=[&]{S::OnDisconnect();S::Tick(s);o[3].active=1;localPos={0,0,0};reg.puppets[1].pos={500,500,0};now+=250;};
+ prepare();count=gathers;firedBefore=fires;auto rotated=rotations;
+ onPose=[] {S::OnDisconnect();};S::Tick(s);CHECK(gathers==count&&fires==firedBefore&&rotations==rotated);
+ prepare();count=gathers;rotated=rotations;onPose=[] {++o[5].serial;};S::Tick(s);
+ CHECK(gathers==count&&rotations==rotated);
+ prepare();count=gathers;firedBefore=fires;onReadBox=[] {++world;};S::Tick(s);CHECK(gathers==count&&fires==firedBefore);
+ S::OnDisconnect();S::Tick(s);count=gatherTicks;onTickGather=[&] {S::Tick(s);};S::Tick(s);CHECK(gatherTicks==count+1);
+ // Actual overlap must cancel a stale gather after native pose reentry as well.
+ prepare();count=gathers;onPose=[] {S::OnDisconnect();};S::OnRunBox(hit);CHECK(gathers==count);
  S::OnDisconnect();CHECK(!S::Current());
  puts("PASS location events: native query identity, remote occupancy, arm/fire separation, host/client roles, exact initiator, dedupe/reentry, readiness/world and rotated bounds");
 }

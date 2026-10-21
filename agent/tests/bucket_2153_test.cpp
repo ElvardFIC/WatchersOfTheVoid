@@ -6,17 +6,22 @@ bool hand=false,mirror=false,driven=false,quiesced=true,sendOk=true;
 int publishes=0,paints=0,repairs=0;std::wstring key=L"bucket";
 ue_wrap::building_material::Stock stock{};
 bool coopDispatch=false;Obj outDry{};
+int persisted=0;
 std::vector<std::pair<void*,void*>> active;
 std::function<void()> onRead,onRepair,onPaint,onContents;bool contentsOk=true;
 std::vector<void*> published;
 void Run(std::function<void()>& callback){auto f=std::move(callback);callback={};if(f)f();}
 }
 namespace ue_wrap::building_material {
+bool IsTrowel(void*){return test::stock.kind==StockKind::Trowel;}
 bool ReadWater(void* a,Water& s){if(!reflection::IsLive(a)||test::stock.kind!=StockKind::None)return false;s=test::water;test::Run(test::onRead);return true;}
 bool ReadStock(void* a,Stock& s){if(!reflection::IsLive(a)||test::stock.kind==StockKind::None)return false;s=test::stock;test::Run(test::onRead);return true;}
 bool RepairBucketEmpty(void*){++test::repairs;test::Run(test::onRepair);return true;}
 bool RepaintBucket(void*,const std::function<bool()>& current){if(current && !current())return false;++test::paints;test::Run(test::onPaint);return !current || current();}
 bool TickBucketContents(void*,float seconds){CHECK(seconds==.016f);test::Run(test::onContents);return test::contentsOk;}
+}
+namespace ue_wrap::inventory {
+bool PersistHeldTrowelStock(void*,const std::function<bool()>& current){if(!current())return false;++test::persisted;return true;}
 }
 namespace coop::hand_item {
 void* LocalHandActor(){return test::hand?&test::actor:nullptr;}
@@ -125,6 +130,10 @@ int main(){using namespace test;namespace S=coop::bucket_sync;using V=ue_wrap::s
   now+=1000;S::Tick();}
  CHECK(std::find(published.begin(),published.end(),&late)!=published.end());
  S::OnDisconnect();CHECK(S::BeforeTick(c)==V::Run);
+ S::Install(&session);stock.kind=ue_wrap::building_material::StockKind::Trowel;hand=true;mirror=false;c.fromOurCode=false;
+ S::AfterStockChange(c);CHECK(persisted==1);
+ hand=false;S::AfterStockChange(c);CHECK(persisted==1);
+ hand=true;c.fromOurCode=true;S::AfterStockChange(c);CHECK(persisted==1);hand=false;
  CHECK(!S::IsMaterialBirth());
  puts("PASS cement/sponge: real callback registration, amount/dry/wet publications, passive tick, empty out params, two transfer endpoints, exact local use/pour provenance, load no echo");
  puts("PASS actual bucket controller: load/no echo, changed/final state, authority/hand/load gates, retry, reentry, identity/world/teardown");

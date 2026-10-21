@@ -1,5 +1,6 @@
 #include "coop/world/event_location_sync.h"
 #include "coop/net/session.h"
+#include "coop/net/session_serial.h"
 #include "coop/player/players_registry.h"
 #include "coop/player/remote_player.h"
 #include "coop/props/active_drive.h"
@@ -34,18 +35,23 @@ constexpr Rule rules[]={
     {"cookier",L"event_cookier"},{"arirEgg",L"event_arirEgg"}};
 struct Row{ue_wrap::CachedObjRef controller,box;bool fired=false,gathered=false;};
 std::array<Row,std::size(rules)> rows{};
-net::Session* session=nullptr;uint32_t world=0;uint64_t nextPoll=0,epoch=0,nextHook=0;
+net::Session* session=nullptr;uint32_t world=0,sessionId=0;uint64_t nextPoll=0,epoch=0,nextHook=0;
+bool ticking=false;
 ue_wrap::CachedObjRef agrav;bool agravFired=false,hooked=false;
 struct Gather{bool pending=false;uint8_t slot=0;ue_wrap::FVector pos{};float yaw=0;};
 Gather gather{};
 bool Host(){return session&&session->connected()&&session->role()==net::Role::Host;}
-bool Current(){return session&&session->connected()&&world==ue_wrap::world_identity::Generation();}
+bool Current(){return session&&session->connected()&&world==ue_wrap::world_identity::Generation()&&sessionId==net::session_serial::Current();}
 bool Pose(int slot,ue_wrap::FVector& p,float& yaw) {
-    if(slot<0||slot>=net::kMaxPeers)return false;
+    if(slot<0||slot>=net::kMaxPeers||!Current())return false;
+    const auto stamp=epoch;
     auto& registry=players::Registry::Get();
     if(slot==registry.LocalPeerId()) {
         void* actor=registry.Local();ue_wrap::FRotator rot{};
-        if(!actor||!ue_wrap::engine::TryGetActorLocation(actor,p)||!ue_wrap::engine::TryGetActorRotation(actor,rot))return false;
+        if(!actor)return false;
+        ue_wrap::CachedObjRef ref;ref.Set(actor);
+        if(!ue_wrap::engine::TryGetActorLocation(actor,p)||stamp!=epoch||!Current()||!ref.Is(actor)||
+           !ue_wrap::engine::TryGetActorRotation(actor,rot)||stamp!=epoch||!Current()||!ref.Is(actor))return false;
         yaw=rot.Yaw;return std::isfinite(p.X)&&std::isfinite(p.Y)&&std::isfinite(p.Z)&&std::isfinite(yaw);
     }
     if(!session->IsSlotWorldReady(slot))return false;
@@ -54,10 +60,13 @@ bool Pose(int slot,ue_wrap::FVector& p,float& yaw) {
     yaw=puppet->GetSyncedAimRotation().Yaw;return std::isfinite(p.X)&&std::isfinite(p.Y)&&std::isfinite(p.Z)&&std::isfinite(yaw);
 }
 bool FindInside(const L::Box& box,int preferred,Gather& out) {
+    const auto stamp=epoch;
     for(int i=-1;i<net::kMaxPeers;++i) {
         const int slot=i<0?preferred:i;if(slot<0||slot>=net::kMaxPeers||(i>=0&&slot==preferred))continue;
         ue_wrap::FVector pos{};float yaw=0;
-        if(Pose(slot,pos,yaw)&&L::Contains(box,pos)) {out={true,static_cast<uint8_t>(slot),pos,yaw};return true;}
+        const bool posed=Pose(slot,pos,yaw);
+        if(stamp!=epoch||!Current())return false;
+        if(posed&&L::Contains(box,pos)) {out={true,static_cast<uint8_t>(slot),pos,yaw};return true;}
     }
     return false;
 }
@@ -82,6 +91,7 @@ SG::Verdict OnArm(const SG::Call& c) {
 }
 SG::Verdict OnRunBox(const SG::Call& c) {
     if(!Current()||!Host()||c.fromOurCode||!c.object)return SG::Verdict::Run;
+    const auto stamp=epoch;
     // Only the actual overlap path; runAll is also a generic trigger utility.
     if(!c.callerFunction||!c.callerLocals||
        !R::NameEquals(R::NameOf(c.callerFunction),L"ExecuteUbergraph_trigger_box"))return SG::Verdict::Run;
@@ -98,7 +108,7 @@ SG::Verdict OnRunBox(const SG::Call& c) {
         if(!row.box.Is(c.object)||!L::Armed(c.object))continue;
         if(row.fired)return SG::Verdict::Cancel; // a gather itself can produce another overlap
         Gather g{};g.slot=slot;g.pending=Pose(slot,g.pos,g.yaw);
-        if(!g.pending)return SG::Verdict::Run;
+        if(!g.pending||stamp!=epoch||!Current()||!Host()||!row.box.Is(c.object))return SG::Verdict::Run;
         row.fired=true; // before teleport: its overlaps can re-enter this callback
         if(!row.gathered){row.gathered=true;GatherNow(g);}break;
     }
@@ -106,6 +116,8 @@ SG::Verdict OnRunBox(const SG::Call& c) {
 }
 void OnAgravOverlap(void*,void* source,void*) {
     if(!Current()||!Host()||!source)return;
+    const auto stamp=epoch;
+    ue_wrap::CachedObjRef ref;ref.Set(source);
     const auto caller=ue_wrap::ufunction_hook::CurrentCallerFrame();
     L::Box box{};if(!L::ReadAgravQuery(caller.function,caller.locals,box))return;
     if(source!=L::Controller(L"event_agrav"))return;
@@ -113,6 +125,7 @@ void OnAgravOverlap(void*,void* source,void*) {
     if(agravFired)return;
     Gather found{};
     if(!FindInside(box,players::Registry::Get().LocalPeerId(),found))return;
+    if(stamp!=epoch||!Current()||!Host()||!ref.Is(source)||!agrav.Is(source))return;
     // Puppets deliberately have collision disabled. The native Pawn overlap may
     // miss a client standing inside the box: include its registered world pose.
     // This graph only branches on ReturnValue; it never reads OutActors afterward.
@@ -129,9 +142,14 @@ bool IsLocationRow(const char* name) {
     return false;
 }
 void Tick(net::Session& s) {
+    if(ticking)return;
+    ticking=true;
+    struct TickScope{~TickScope(){ticking=false;}}tickScope;
     const auto generation=ue_wrap::world_identity::Generation();
-    if(session!=&s||world!=generation){OnDisconnect();session=&s;world=generation;}
+    const auto serial=net::session_serial::Current();
+    if(session!=&s||world!=generation||sessionId!=serial){OnDisconnect();session=&s;world=generation;sessionId=serial;}
     if(!Current())return;
+    const auto stamp=epoch;
     SG::WatchClassName(L"triggerBase_C",L"runAll",kTag,&OnRunBox,nullptr);
     SG::WatchClassName(L"trigger_TBoxActivator_C",L"runTrigger",kTag,&OnArm,nullptr);
     SG::WatchClassName(L"trigger_agrav_C",L"runTrigger",kTag,&OnArm,nullptr);
@@ -143,8 +161,7 @@ void Tick(net::Session& s) {
         if(fn)hooked=ue_wrap::ufunction_hook::InstallPostHook(fn,&OnAgravOverlap);
     }
     teleport_client::TickGather();
-    if(!Host()||!s.AnyWorldReadyPeer())return;
-    const auto stamp=epoch;
+    if(epoch!=stamp||!Current()||!Host()||!s.AnyWorldReadyPeer())return;
     if(gather.pending){const auto pending=gather;gather={};GatherNow(pending);if(epoch!=stamp||!Current())return;}
     if(now<nextPoll)return;nextPoll=now+200;
     // Bounded to ten explicitly associated event boxes and the ready peers. No
@@ -155,8 +172,9 @@ void Tick(net::Session& s) {
         if(!L::Armed(box)){row.fired=row.gathered=false;continue;}
         if(row.fired)continue;
         L::Box bounds{};if(!L::ReadBox(box,bounds))continue;
-        if(epoch!=stamp||!row.box.Is(box))return;
+        if(epoch!=stamp||!Current()||!Host()||!row.box.Is(box))return;
         Gather found{};if(!FindInside(bounds,players::Registry::Get().LocalPeerId(),found))continue;
+        if(epoch!=stamp||!Current()||!Host()||!row.box.Is(box))return;
         row.fired=true;
         // Failed native dispatch may retry, but must not keep pulling the other
         // players back every poll while metadata/the actor is unavailable.
@@ -166,5 +184,5 @@ void Tick(net::Session& s) {
         if(epoch!=stamp||!Current())return;
     }
 }
-void OnDisconnect(){++epoch;session=nullptr;world=0;nextPoll=0;rows={};agrav.Reset();agravFired=false;gather={};teleport_client::ClearGather();}
+void OnDisconnect(){++epoch;session=nullptr;world=sessionId=0;nextPoll=0;rows={};agrav.Reset();agravFired=false;gather={};teleport_client::ClearGather();}
 }

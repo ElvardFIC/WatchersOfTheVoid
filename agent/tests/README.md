@@ -2,7 +2,7 @@
 
 Current full audit: run `powershell -NoProfile -ExecutionPolicy Bypass -File
 package/check_current.ps1` from the checkout after source edits finish.
-It runs 63 groups, completes the incremental Release build and verifies that the
+It runs 65 groups, completes the incremental Release build and verifies that the
 production inputs stayed unchanged, without repackaging. Results and
 logs are in `build/todo-audit/`. `run_held_identity.ps1` compiles the actual held
 broadcast seam; the older item/resource/lamp/laptop runners use the current typed
@@ -47,7 +47,23 @@ These are offline checks; no PhysX or two-peer runtime is simulated.
 `package/check_current.ps1 -EvidenceDirectory build/fish-integration-check` runs
 both main and fish regression groups, then verifies a stable production snapshot,
 Release identity and loader ABI. The native physics fingerprint controls and
-public-prose include-context tests are included. Matching b2176 peers are required.
+public-prose include-context tests are included. All peers need identical DLLs:
+the final package 2155 contains current b2178, superseding the earlier local b2177 preparation.
+
+Package 2155 qualification: `package/build_2155.ps1`, evidence in
+`build/release-2155-logs/`. `run_events.ps1 -CompileSources` also compiles the five
+event production TUs and runs replay/rate/active-lifetime harnesses. The new
+`event_rate_native_test.py` decodes existing night-eyes bytecode; it does not extract
+fresh game assets. `run_trowel.ps1` checks the production persistence wrapper and
+the actual production integer-array helper/schema. `run_placement.ps1` includes
+exhausted-retry recovery, sweep protection and bounded-pool cases.
+It also runs `remote_destroy_lifetime_test.cpp` against the actual receiver and
+local consume/convert cleanup, covering native replacement, recursive callbacks,
+listener registration and unchanged load-tail behavior. `run_2161.ps1` now checks
+session-serial reuse, native pose/bounds teardown and recursive location ticks.
+b2178 qualification evidence is in `build/continuation-check/`; the owner's final
+2155 release request promotes this qualified DLL into the package. Delivery hashes
+are in `build/release-2155-logs/release-verification.json`.
 
 | Runner | Production behavior exercised |
 |---|---|

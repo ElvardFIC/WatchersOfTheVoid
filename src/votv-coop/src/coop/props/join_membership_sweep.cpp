@@ -420,8 +420,9 @@ static void RunDivergenceSweep_(void* localPlayer, const ReconcilePass& pass) {
             ue_wrap::FVector dl{};
             const bool dlRead = ue_wrap::engine::TryGetActorLocation(a, dl);
             if (!resolve()) continue;
-            UE_LOGI("join_membership_sweep:   dooming '%ls' key='%ls' loc=(%.1f,%.1f,%.1f)%s",
-                    R::ClassNameOf(a).c_str(), dk.c_str(), dl.X, dl.Y, dl.Z, dlRead ? "" : " (unread)");
+            UE_LOGI("join_membership_sweep:   dooming '%ls' key='%ls' loc=(%.1f,%.1f,%.1f)%s role=client actor=%p world=%u",
+                    R::ClassNameOf(a).c_str(), dk.c_str(), dl.X, dl.Y, dl.Z, dlRead ? "" : " (unread)",
+                    a, ue_wrap::world_identity::Generation());
         }
         coop::remote_prop::ClearAnyDriveFor(a);
         if (!resolve()) continue;

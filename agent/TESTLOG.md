@@ -1,5 +1,123 @@
 # TestLog — current status and source reports
 
+## Final package 0.9.2155 / DLL b2178 (21 October 2026)
+
+At the owner's explicit request, promoted the qualified b2178 continuation into
+the final **0.9.2155** package. This supersedes the earlier local b2177 package
+described below. The 2155 changelog and GitHub notes now include all continuation
+fixes; README, release instructions, checks and delivery metadata agree on b2178.
+
+PASS final incremental Release build (`build/release-2155-logs/final-build.log`):
+no work needed. Rechecked identity/imports/exports and the unchanged production
+snapshot against `build/continuation-check/verification.json`, retaining its
+**65/65 passing groups**, 781 source entries and b2178 qualification. No production
+code changed during final packaging, so the full suite was not repeated.
+
+PASS `package/pack_2155.ps1` and `package/verify_2155.ps1`: manifest version 0.9.2155,
+256x256 PNG icon, 32 archive members, current embedded documents/paks, qualified
+DLL, enabled loader layout and matching outer delivery copy.
+Evidence: `build/release-2155-logs/release-verification.json`.
+Delivery: outer `dist/WatchersOfTheVoid-0.9.2155.zip`, `GITHUB_RELEASE_2155.md`
+and `SHA256SUMS-2155.txt`.
+
+DLL SHA256: `9e5f4fd23b272efa6fd807df45cba466664acfe8639c5d4d639a9f23c9c4d5f8`.
+ZIP SHA256: `ce2688393150abb294f3c3edb4acc489439042fc661fd09eefa80afb029764b1`.
+All peers need this final b2178 package; the earlier local b2177 preparation is
+incompatible. No online publication, commit, push or game installation performed.
+Real-peer acceptance, host-rifle runtime evidence, Token52, full event coverage,
+paid material transactions and the deferred native audit remain open as recorded below.
+
+## Development b2178 continuation (21 October 2026)
+
+Focused PASS `run_placement.ps1` and `run_2161.ps1 -CompileSources`.
+New `remote_destroy_lifetime_test.cpp` includes the actual production receiver with
+native/reflection boundaries doubled. Before the fix it failed when a destroy
+listener recycled the selected object's slot; after the fix it covers listener,
+metadata lookup, drive/grab release and unpin replacement, death, world/session
+changes, recursive destroy, listener registration, ordinary success, local consume,
+conversion cleanup, deferred application and preserved load-tail behavior.
+
+The location harness first failed because a new session serial at the same pointer
+and world still counted as current. After the fix, session reuse, pose teardown,
+pawn serial replacement, native bounds-query world changes, recursive ticks and
+actual-overlap cancellation pass along with existing geometry/authority cases.
+All five location-related production TUs compile separately.
+
+Full qualification **PASS, 65/65 groups**, via
+`package/check_current.ps1 -EvidenceDirectory build/continuation-check`:
+unchanged full production snapshot, 781 build entries, final incremental Release
+build up to date, loader ABI/imports/exports and 224 reliable kinds/18 routing
+fault controls. Evidence: `build/continuation-check/{verification.json,identity.json,results.json,build.log,logs/}`;
+initial Release compilation: `build/continuation-build.log`.
+DLL SHA256: `9e5f4fd23b272efa6fd807df45cba466664acfe8639c5d4d639a9f23c9c4d5f8`.
+Production snapshot: `5abdd52bf142d0a452b16f904163a7496622fe11be0bcc382975f0f965eeb1e7`.
+An earlier changing-tree attempt was refused by the source-stamp check after the
+final echo-mark ordering fix; this stable-tree result supersedes it. The final
+regression also verifies no incoming-destroy mark survives a cancelled attempt.
+The source protocol is b2178; the previously prepared package 0.9.2155 remains
+b2177. Its outer ZIP SHA256 remains
+`37430bd3701e56d72de7960d9f6b4afaf87311ef57e63d70d225eb7ac982048f`.
+These later changes are recorded under Unreleased in the changelog.
+No new ZIP, commit, push, game installation or publication was performed.
+
+Bench58 remains open: no host old-rifle disappearance was reproduced in the game.
+Existing-corpus inspection also checked inherited prop lifespan serialization,
+native inventory cleanup and the gun-stealer's literal `arirGun` target; no broad
+rifle-destruction or lifespan behavior was disabled. Walking-tree bytecode has
+viewer-dependent behavior and latent timers, so its rate/authority route remains
+deferred rather than being admitted solely by class. Token52 is unidentified;
+fresh pak audit and real-peer acceptance remain deferred/unverified as before.
+
+## Package 0.9.2155, stable Release b2177 (21 October 2026)
+
+PASS `package/build_2155.ps1`: Windows x64 Release, **65/65 offline validation
+groups**, unchanged full production snapshot across tests and final incremental
+build, 781 build source entries, identity/imports/exports, 224 reliable message
+kinds and 18 rejected routing fault controls.
+DLL SHA256: `4ab599f644354070a272f79037c023dd65bcadc5ac55a16ab38f7017e02fa304`.
+Evidence: `build/release-2155-logs/{verification.json,identity.json,results.json,initial-build.log,build.log,logs/}`.
+The historical build directory remains `build/votv-coop-2154`; its DLL is b2177.
+
+New production regressions cover:
+
+- Owned/bounded event replay across recursive native callbacks, queued replacement,
+  world/disconnect/session changes, metadata-readiness retries and consumed ambiguous
+  native attempts. Preparation failures remain retryable; actual attempted native
+  calls are not repeated after uncertain completion.
+- Active-event begin/end sender serials, null/bounded frames, copied registry
+  membership, failed/readiness join debt, recipient replacement and teardown.
+- Owner-local night-eyes frequency, native interval restoration and context changes
+  during getters. `event_rate_native_test.py` checks the existing cooked ticker's
+  1800–2700s wait, 5% roll, day/night gates and owner-entity route. The complete
+  random-event list is not covered; no fresh pak audit was performed.
+- Exact-identity native held-trowel stock persistence, zero/refill, malformed schemas,
+  changed slot bytes/actor/save/world/stock and callback rejection. `run_trowel.ps1`
+  uses the production inventory function and extracts the actual saved-int helper
+  and canonical offset from production for its array-schema harness.
+- Admitted client placement recovery after exhausted send/transform/food-capture
+  retries, bounded/full recovery pools, sweep immunity and no fallback shared birth.
+  These checks include `prop_rifle_C` as a fixture, not a host disappearance repro.
+
+Latest Bench58 owner answer: **host**, item **old rifle**. Components remain
+unidentified. Existing `prop_rifle` leaf Blueprint has destructive LMB use without
+a placement entry point; inherited behavior and actual disappearance cause remain
+unverified. Decoding evidence: `build/release-2155-logs/prop_rifle-existing-corpus.txt`.
+Use the existing `VOTVCOOP_PROP_BIRTH_KEY_PROBE=1` diagnostic before a reproduction;
+capture both peers' birth/destroy caller/class/key and cleanup/drop logs.
+Token52's counter/UI is still unidentified; no balances were changed for it.
+
+Full native-contract audit remains unavailable against the incomplete corpus and
+fresh extraction remains deferred. Full public-prose/fact-row CI retains the known
+failures documented below. No real-peer event/frequency/join/reconnect, native
+physics, trowel reconstruction or host-rifle acceptance is claimed.
+
+Package/delivery validation is recorded separately in
+`build/release-2155-logs/release-verification.json`: PASS, 32 archive members,
+qualified embedded DLL and current documents/manifest/paks, matching outer copy.
+All changes since package 2154,
+including the fish integration, are listed in `package/CHANGELOG_PLUS.md`.
+No commit, push, game installation or online publication is performed.
+
 ## Fish integration into main, protocol b2176 (21 October 2026)
 
 Source: `watchers-of-the-void-fish` at

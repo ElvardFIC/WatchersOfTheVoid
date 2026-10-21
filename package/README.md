@@ -3,15 +3,17 @@
 **By ElvardFIC** — a community fork of **Multivoid**, originally created by **Pelmentor**.
 
 Play Voices of the Void together, with accumulated co-op synchronization fixes and improvements.
-Version **0.9.2154** targets **Voices of the Void Alpha 0.9.0n** on Windows.
+Version **0.9.2155** targets **Voices of the Void Alpha 0.9.0n** on Windows.
 
 Source: [ElvardFIC/WatchersOfTheVoid](https://github.com/ElvardFIC/WatchersOfTheVoid).
 
 ## What's included
 
-- Improvements to item state, inventory/container transfers and replicated object lifetimes.
-- Work on appliance connections, computer power, base lighting and canned-food synchronization.
-- Improvements to props, construction, selected player models, supported events and shared interactions.
+- Host event delivery/recovery, active-event join retries, location-event lifetime guards and adjustable frequency for five supported generators.
+- Placement replies/recovery, prop-destroy identity guards, coin pickup protection and food/cooking state through inventory and placement.
+- Host water/spill effects, grime/window cleaning, grill edits, cement drying and held-trowel stock persistence.
+- Ordered console output, toy/music recovery, garden/hose actions and current held-item profile capture.
+- Accumulated creature, personal-sleep, laptop, selected-model and shared-interaction improvements.
 
 See CHANGELOG.md for the full change list. Some systems are only partially implemented.
 
@@ -19,22 +21,24 @@ See CHANGELOG.md for the full change list. Some systems are only partially imple
 
 Install with r2modman or Thunderstore Mod Manager; the Unreal shimloader dependency is included in the manifest.
 Use a profile with this fork as the only Multivoid implementation: disable the original Multivoid or an earlier fork copy.
-Every player must use this exact **0.9.2154** package and the same game version.
+Every player must use this exact **0.9.2155** package and the same game version.
 
 ## Current status
 
-This is an experimental co-op build. The x64 Release build and focused offline checks
-are recorded in RELEASE_2154.md; two-player gameplay verification is still required.
+This is an experimental co-op build. The x64 Release build and **65/65 passing
+offline validation groups** are recorded in RELEASE_2155.md. The package contains
+**DLL b2178 / network protocol 2178**, including the fish-branch integration and
+the accumulated changes since package 2154. Every player must update together.
 
-Build 2154 adds shared laptop UI actions, gardening and hose synchronization, supported
-world/event sounds, placed-object/building updates, and further Grayboar action handling.
-The package contains DLL **b2156 / network protocol 2156**. Entity synchronization is
-still partial and gameplay verification is pending. Includes accumulated 2152 and
-earlier changes; every player must update because older protocols are incompatible.
+Event and creature coverage remains partial. The frequency setting preserves native
+conditions and personal dreams; it currently covers four host generators and each
+owner's night eyes. Complete event coverage and real-peer acceptance remain open.
+The fresh native-asset audit remains deferred; known full-repository CI failures
+are documented in the release notes.
 
-Missing model assets and static preview mismatches still need the model names to
-investigate. Token display, shared computer screen, ZIP-disk ejection and disappearing
-workbench items remain open reports. See CHANGELOG.md for the scope of this release.
+The host's disappearing old rifle, unidentified token UI, trowel identity continuity,
+paid cement repair and resource accounting still require investigation or completion.
+See CHANGELOG.md for the full change list and remaining limits.
 
 ## Credits
 

@@ -10,6 +10,7 @@ struct Obj {bool live=true;void* screen=nullptr;void* player=nullptr;void* activ
 int fn=0,calls=0;bool haveFn=true;
 }
 namespace ue_wrap::save_record {
+bool WriteSingleIntGroup(void*,size_t,int32_t){std::abort();}
 void WriteFNameField(void*,const std::wstring&){}
 void WriteSaveRecord(uint8_t*,const SaveRecord& r,ClassResolver){test::written=r;}
 Arr ReadArr(const void*,int32_t){std::abort();}
@@ -21,6 +22,8 @@ void ReadSaveRecord(const void*,SaveRecord&){std::abort();}
 namespace ue_wrap::log {void Write(Level,const char*,...){}}
 namespace ue_wrap::object_index {void* ClassByName(const wchar_t*){std::abort();}}
 namespace ue_wrap::reflection {
+int32_t InternalIndexOf(void*){std::abort();}int32_t SlotSerial(int32_t){std::abort();}
+int32_t AllocateSlotSerial(int32_t){std::abort();}bool IsLiveByIndex(void*,int32_t){std::abort();}
 void* FindClass(const wchar_t*){std::abort();}void* FindFunction(void*,const wchar_t*){std::abort();}
 bool IsDescendantOfAny(void*,void* const*,size_t,int){std::abort();}
 void EngineFree(void*){std::abort();}void* EngineAlloc(size_t,uint32_t){std::abort();}
@@ -34,6 +37,11 @@ int32_t FindPropertyOffset(void*,const wchar_t* n){const std::wstring name=n;
 void* FindDispatchFunctionCached(void*,const wchar_t* n){CHECK(std::wstring(n)==L"gen");return test::haveFn?&test::fn:nullptr;}
 }
 namespace ue_wrap::world_singleton {void* Gamemode(){return &test::gm;}}
+namespace ue_wrap::world_identity {uint32_t Generation(){std::abort();}void* CurrentWorld(){std::abort();}void* WorldOf(void*){std::abort();}}
+namespace ue_wrap::building_material {
+bool IsTrowel(void*){std::abort();}bool ReadConcrete(void*,int32_t&){std::abort();}
+bool RefreshTrowelRecord(void*,save_record::SaveRecord&){std::abort();}
+}
 namespace ue_wrap {
 ParamFrame::ParamFrame(void* f):fn_(f){}
 bool ParamFrame::SetRaw(const wchar_t*,const void*,int32_t){std::abort();}

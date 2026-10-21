@@ -419,6 +419,20 @@ bool ReadFloatGroup(const void* record, size_t group, std::vector<float>& out) {
     return true;
 }
 
+bool WriteSingleIntGroup(void* record, size_t group, int32_t value) {
+    if (!record || group >= 64) return false;
+    const auto* header = reinterpret_cast<const field_io::TArrayView*>(static_cast<const uint8_t*>(record) + kSave_ints);
+    if (header->num < 0 || header->num > 64 || header->max < header->num || header->max > kMaxArr) return false;
+    const Arr outer = ReadArr(record, kSave_ints);
+    if (!outer.data || outer.num > 64 || group >= static_cast<size_t>(outer.num)) return false;
+    const auto* field = reinterpret_cast<const field_io::TArrayView*>(outer.data + group * kMxStride);
+    if (field->max < field->num || field->max > kMaxArr) return false;
+    const Arr inner = ReadArr(outer.data + group * kMxStride, 0);
+    if (!inner.data || inner.num != 1) return false;
+    std::memcpy(const_cast<uint8_t*>(inner.data), &value, sizeof(value));
+    return true;
+}
+
 bool ReplaceFloatGroup(void* record, size_t group, const std::vector<float>& values) {
     if (!record || group >= 64 || values.size() > 4096) return false;
     auto* outer = reinterpret_cast<field_io::TArrayView*>(static_cast<uint8_t*>(record) + kSave_floats);

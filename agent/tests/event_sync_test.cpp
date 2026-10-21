@@ -17,6 +17,8 @@ struct Obj {
 struct Frame { ue_wrap::reflection::FName event{}, special{}; };
 uint32_t world = 1, session = 1;
 bool gameplay = true, callsOk = true;
+bool frameReady = true;
+std::function<void()> insideNative, insideIntern;
 int nativeRuns = 0, specialRuns = 0;
 std::vector<std::function<void()>> tasks;
 struct Watch { ue_wrap::script_gate::PreFn pre; ue_wrap::script_gate::PostFn post; } run{}, special{};
@@ -30,6 +32,7 @@ bool Dispatch(void* fn, Frame& frame, void* caller = nullptr, bool ours = false)
     auto& watch = fn == &obj[3] ? run : special;
     if (watch.pre && watch.pre(call) == ue_wrap::script_gate::Verdict::Cancel) return true;
     if (fn == &obj[3]) ++nativeRuns; else ++specialRuns;
+    auto cb = std::move(insideNative);insideNative={};if(cb)cb();
     if (watch.post) watch.post(call); return true;
 }
 void Drain() { auto pending = std::move(tasks); tasks.clear(); for (auto& task : pending) task(); }
@@ -47,7 +50,7 @@ std::wstring ToString(const FName& n) { return n.ComparisonIndex == 1 ? L"arirGr
 int32_t FindPropertyOffset(void*, const wchar_t*) { return -1; }
 void* FindFunction(void*, const wchar_t*) { return nullptr; }
 int32_t FindParamOffset(void*, const wchar_t*) { return 0; }
-int32_t FunctionFrameSize(void*) { return sizeof(test::Frame); }
+int32_t FunctionFrameSize(void*) { return test::frameReady ? sizeof(test::Frame) : 0; }
 std::vector<ParamInfo> FunctionParams(void* fn) {
     ParamInfo a{}, b{}; a.name = fn == &test::obj[3] ? L"event" : L"eventName1";
     a.offset = 0; b.name = L"special"; b.offset = sizeof(FName); return {a,b};
@@ -56,7 +59,7 @@ bool CallFunction(void*, void* fn, void* data) {
     return test::callsOk && test::Dispatch(fn, *static_cast<test::Frame*>(data), nullptr, true);
 }
 }
-namespace ue_wrap::fname_utils { reflection::FName StringToFName(const std::wstring& n) { return {n == L"arirGraff_0" ? 1 : 2,0}; } }
+namespace ue_wrap::fname_utils { reflection::FName StringToFName(const std::wstring& n) { auto cb=std::move(test::insideIntern);test::insideIntern={};if(cb)cb();return {n == L"arirGraff_0" ? 1 : 2,0}; } }
 namespace ue_wrap::object_index { void* ClassByName(const wchar_t*) { return nullptr; } }
 namespace ue_wrap::world_singleton { void* Gamemode() { return &test::obj[0]; } }
 namespace ue_wrap::world_identity {
@@ -139,5 +142,28 @@ int main() {
     CHECK(E::g_pending.empty() && specialRuns==before+3);
     payload.dispatch=9; E::OnReliable(payload); CHECK(specialRuns==before+3);
     const char* lane=nullptr; CHECK(E::ReplayVerdict("earthTp",&lane)==0 && E::ReplayVerdict("unknown",&lane)==-1);
+    payload.dispatch=1;
+    frameReady=false;++obj[4].serial;E::OnReliable(payload);CHECK(E::g_pending.size()==1);
+    frameReady=true;++obj[4].serial;E::g_pending.front().lastAttempt={};E::Install(&s);CHECK(E::g_pending.empty());
+    int seen=specialRuns;insideNative=[&]{E::OnReliable(payload);CHECK(specialRuns==seen+1);};
+    E::OnReliable(payload);CHECK(specialRuns==seen+2&&E::g_pending.empty());
+    seen=specialRuns;std::function<void()> again;
+    again=[&]{insideNative=again;E::OnReliable(payload);};insideNative=again;
+    E::OnReliable(payload);CHECK(specialRuns==seen+8&&E::g_pending.size()==1);
+    insideNative={};E::Install(&s);CHECK(specialRuns==seen+9&&E::g_pending.empty());
+    seen=specialRuns;insideNative=[]{E::OnDisconnect();};E::OnReliable(payload);
+    CHECK(specialRuns==seen+1&&E::g_pending.empty()&&E::g_replayed.empty());
+    E::Install(&s);insideNative=[&]{E::OnDisconnect();E::Install(&s);E::OnReliable(payload);};
+    E::OnReliable(payload);CHECK(E::g_pending.size()==1);
+    seen=specialRuns;E::Install(&s);CHECK(specialRuns==seen+1&&E::g_pending.empty());
+    seen=specialRuns;insideIntern=[]{E::OnDisconnect();};E::OnReliable(payload);
+    CHECK(specialRuns==seen&&E::g_pending.empty());
+    E::Install(&s);payload.dispatch=0;std::strcpy(payload.name,"solar");
+    const auto prior=nativeRuns;insideNative=[&]{E::OnReliable(payload);};E::OnReliable(payload);
+    CHECK(nativeRuns==prior+1&&E::g_pending.empty());
+    E::OnDisconnect();E::Install(&s);callsOk=false;E::OnReliable(payload);callsOk=true;
+    E::OnReliable(payload);CHECK(nativeRuns==prior+1); // ambiguous dispatch is consumed once
+    E::OnDisconnect();E::Install(&s);gameplay=false;E::OnReliable(payload);CHECK(!E::g_pending.empty());
+    ++session;gameplay=true;E::Install(&s);CHECK(E::g_pending.empty()&&nativeRuns==prior+1);
     E::OnDisconnect(); std::puts("PASS event dispatch, chosen/repeated specials, ordered retries, peer/world/session cleanup and client replay gates");
 }

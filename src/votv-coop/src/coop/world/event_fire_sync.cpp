@@ -82,6 +82,7 @@ struct PendingFire {
     bool activeOverride = false;
     bool attempted = false;    // one replay try ran (paces the next)
     std::chrono::steady_clock::time_point lastAttempt{};
+    uint64_t id = 0;
 };
 std::deque<PendingFire> g_pending;    // replays waiting for the eventer (join window)
 // EventFire is pre-world-sendable, so a joiner can queue fires for its whole load window. The
@@ -93,6 +94,9 @@ constexpr size_t kMaxPending = 128;
 constexpr auto kReplayRetrySpacing = std::chrono::seconds(1);
 std::unordered_set<std::string> g_replayed;  // rows replayed this session (dedupe)
 uint32_t g_boundGen = 0;
+uint64_t g_replayEpoch = 0, g_replayId = 0;
+uint32_t g_replaySerial = 0;
+bool g_drainingReplay = false;
 std::atomic<unsigned> g_replays{0};          // fires replayed natively (ReplayCount)
 std::unordered_map<std::string, uint64_t> g_gatherMs;  // last time this location row gathered people
 
@@ -283,12 +287,27 @@ sg::Verdict OnEventerVerbPre(const sg::Call& call) {
 }
 
 // The native fire, game thread. A dispatch that faults is said and not re-run.
-bool NativeFire(FireKind kind, const std::wstring& eventName, const std::wstring& specialName) {
+bool NativeFire(FireKind kind, const std::wstring& eventName, const std::wstring& specialName,
+                bool* attempted = nullptr) {
+    if (attempted) *attempted = false;
+    auto* session = g_session.load(std::memory_order_acquire);
+    const auto role = session ? session->role() : net::Role::Host;
+    const bool running = session && session->running(), connected = session && session->connected();
+    const auto epoch = g_replayEpoch;
+    const auto world = ue_wrap::world_identity::Generation();
+    const auto serial = net::session_serial::Current();
     void* eventer = EventerOf(ue_wrap::world_singleton::Gamemode());
     if (!eventer) {
         UE_LOGW("event_fire: no live trigger_eventer -- native fire dropped ('%ls')", eventName.c_str());
         return false;
     }
+    ue_wrap::CachedObjRef identity; identity.Set(eventer);
+    const auto current = [&] {
+        return epoch == g_replayEpoch && g_session.load(std::memory_order_acquire) == session &&
+            world == ue_wrap::world_identity::Generation() && serial == net::session_serial::Current() &&
+            identity.Get() == eventer && (!session || (session->role() == role &&
+                session->running() == running && (!connected || session->connected())));
+    };
     const char* verb = kind == FireKind::SpecialEvent ? "runSpecialEvent" : "runEvent";
     void* fn = kind == FireKind::SpecialEvent ? g_runSpecialEventFn : g_runEventFn;
     if (!fn) { UE_LOGW("event_fire: %s unresolved", verb); return false; }
@@ -303,7 +322,7 @@ bool NativeFire(FireKind kind, const std::wstring& eventName, const std::wstring
         filled = f.Set<R::FName>(L"event", ev) &&
                  f.Set<R::FName>(L"special", ue_wrap::fname_utils::StringToFName(specialName));
     }
-    if (!filled) {
+    if (!filled || !current()) {
         UE_LOGW("event_fire: %s('%ls') param frame would not fill -- dispatch dropped",
                 verb, eventName.c_str());
         return false;
@@ -314,10 +333,12 @@ bool NativeFire(FireKind kind, const std::wstring& eventName, const std::wstring
         explicit Scope(Admission* a) : prev(g_admission) { g_admission = a; }
         ~Scope() { g_admission = prev; }
     } scope(&adm);
+    if (attempted) *attempted = true;
     if (!ue_wrap::Call(eventer, f)) {
         UE_LOGW("event_fire: %s('%ls') dispatch FAILED", verb, eventName.c_str());
         return false;
     }
+    if (!current()) return false;
     // On a client the gate admits this call and nothing else; a live watch that did not admit it
     // refused it, so the body did not run.
     if (IsClientSession() && WatchLive(kind) && !adm.spent) {
@@ -454,6 +475,14 @@ bool DropIfTerminal(ReplayStep step, const PendingFire& pf) {
 
 // The client replay executor, game thread.
 ReplayStep TryReplay(const PendingFire& pf) {
+    if (!IsClientSession()) return ReplayStep::NotReady;
+    auto* session = g_session.load(std::memory_order_acquire);
+    const auto epoch = g_replayEpoch, serial = uint64_t(net::session_serial::Current());
+    const auto world = ue_wrap::world_identity::Generation();
+    const auto current = [&] {
+        return epoch == g_replayEpoch && session == g_session.load(std::memory_order_acquire) &&
+            world == ue_wrap::world_identity::Generation() && serial == net::session_serial::Current() && IsClientSession();
+    };
     if (!ResolvePass() || !EventerOf(ue_wrap::world_singleton::Gamemode()))
         return g_resolveFailed ? ReplayStep::PermFailed : ReplayStep::NotReady;
     // A replay dispatches only into the CURRENT gameplay world: while it is Unknown or
@@ -485,12 +514,18 @@ ReplayStep TryReplay(const PendingFire& pf) {
             pf.activeOverride ? " (in-flight active-override)" : "");
     // The special is always None: the only native special is the prank roll, whose chosen case
     // the host's runSpecialEvent watch sends on its own. Marked consumed only on a successful
-    // dispatch (a frame or call failure is loud and must not eat the row).
-    if (NativeFire(pf.kind, w, L"None")) {
+    // preparation. A call that was actually attempted may have partial effects
+    // after a fault, so its one-shot row is consumed even when completion is unknown.
+    if (!current()) return ReplayStep::Done;
+    bool attempted = false;
+    const bool completed = NativeFire(pf.kind, w, L"None", &attempted);
+    if (current() && attempted && pf.kind == FireKind::RunEvent) g_replayed.insert(pf.name);
+    if (completed && current()) {
         g_replays.fetch_add(1, std::memory_order_relaxed);
-        if (pf.kind == FireKind::RunEvent) g_replayed.insert(pf.name);
     }
-    return ReplayStep::Done;
+    // Preparation failure is retryable. Once native dispatch was attempted its
+    // side effects may already exist, even if Call faulted; never repeat it.
+    return attempted || !current() ? ReplayStep::Done : ReplayStep::NotReady;
 }
 
 // A queued row that could not run yet: stamp the pacing of its next try.
@@ -511,6 +546,7 @@ void DropStaleWorldQueue() {
             "the replayed set (%zu entr(ies)); the new join queue stays unbound",
             g_boundGen, gen, g_pending.size(), g_replayed.size());
     g_pending.clear();
+    ++g_replayEpoch;
     g_replayed.clear();
     g_boundGen = 0;
 }
@@ -519,16 +555,25 @@ void DropStaleWorldQueue() {
 // yet; a front row that already tried waits out its spacing first. Run before a new fire is
 // handled, at the client's world-ready announce, and every install tick (the lasting retry).
 void DrainPending() {
+    if (g_drainingReplay || !IsClientSession()) return;
+    g_drainingReplay = true;
+    struct Drain { ~Drain() { g_drainingReplay = false; } } drain;
     DropStaleWorldQueue();
+    const auto epoch = g_replayEpoch;
+    const auto world = ue_wrap::world_identity::Generation();
+    const auto serial = net::session_serial::Current();
     const auto now = std::chrono::steady_clock::now();
-    while (!g_pending.empty()) {
-        PendingFire& front = g_pending.front();
+    for (int budget = 0; !g_pending.empty() && budget < 8; ++budget) {
+        const PendingFire front = g_pending.front();
         // A latched resolve failure is permanent -- no dispatch is possible on this build, so
         // the row drops outright instead of wedging the FIFO behind a forever NotReady, with no
         // spacing to wait out first.
         if (front.attempted && !g_resolveFailed && now - front.lastAttempt < kReplayRetrySpacing)
             return;
         const ReplayStep step = TryReplay(front);
+        if (epoch != g_replayEpoch || world != ue_wrap::world_identity::Generation() ||
+            serial != net::session_serial::Current() || !IsClientSession()) return;
+        if (g_pending.empty() || g_pending.front().id != front.id) return;
         if (step == ReplayStep::Done) {
             g_pending.pop_front();
             continue;
@@ -537,7 +582,7 @@ void DrainPending() {
             g_pending.pop_front();
             continue;
         }
-        NoteAttempt(front);
+        NoteAttempt(g_pending.front());
         return;
     }
 }
@@ -545,6 +590,12 @@ void DrainPending() {
 }  // namespace
 
 void Install(coop::net::Session* session) {
+    const auto serial = net::session_serial::Current();
+    if (g_session.load(std::memory_order_acquire) != session || g_replaySerial != serial) {
+        ++g_replayEpoch;
+        g_pending.clear(); g_replayed.clear(); g_boundGen = 0;
+    }
+    g_replaySerial = serial;
     g_session.store(session, std::memory_order_release);
     delivery::Install(session);
     coop::event_schedule_authority::Install(session);
@@ -657,14 +708,7 @@ void OnReliable(const coop::net::EventFirePayload& payload) {
                 "add the row's verdict)", name.c_str());
         return;
     }
-    DrainPending();
-    PendingFire pf{ kind, name };
-    if (g_pending.empty()) {  // a non-empty queue tries it in FIFO order later
-        const ReplayStep step = TryReplay(pf);
-        if (step == ReplayStep::Done) return;
-        if (DropIfTerminal(step, pf)) return;
-        NoteAttempt(pf);  // the queue must remember the try: it paces the retry
-    }
+    PendingFire pf{ kind, name }; pf.id = ++g_replayId;
     // One-shot rows dedupe at queue time too (a scheduler re-fire of a dev-fired row during the
     // same load window would otherwise queue twice; the replay would catch it later, but a
     // duplicate-free queue keeps the cap honest).
@@ -680,6 +724,7 @@ void OnReliable(const coop::net::EventFirePayload& payload) {
     UE_LOGI("event_fire: queued '%s' (%zu pending; the world or eventer is not up yet)",
             name.c_str(), g_pending.size() + 1);
     g_pending.push_back(std::move(pf));
+    DrainPending();
 }
 
 void ReplayInFlightRow(const std::string& rowName) {
@@ -697,14 +742,7 @@ void ReplayInFlightRow(const std::string& rowName) {
                 "(add the row's verdict)", rowName.c_str());
         return;
     }
-    DrainPending();
-    PendingFire pf{ FireKind::RunEvent, rowName, /*activeOverride=*/true };
-    if (g_pending.empty()) {
-        const ReplayStep step = TryReplay(pf);
-        if (step == ReplayStep::Done) return;
-        if (DropIfTerminal(step, pf)) return;
-        NoteAttempt(pf);  // the queue must remember the try: it paces the retry
-    }
+    PendingFire pf{ FireKind::RunEvent, rowName, /*activeOverride=*/true }; pf.id = ++g_replayId;
     // The world or eventer is not up yet. If the row is already queued (a fire copy
     // landed in the pre-world window), upgrade it in place: two entries would double-dispatch,
     // and the plain copy alone could history-skip the in-flight replay.
@@ -724,6 +762,7 @@ void ReplayInFlightRow(const std::string& rowName) {
     UE_LOGI("event_fire: queued in-flight '%s' (%zu pending)",
             rowName.c_str(), g_pending.size() + 1);
     g_pending.push_back(std::move(pf));
+    DrainPending();
 }
 
 void OnClientWorldReady() {
@@ -738,6 +777,7 @@ void OnClientWorldReady() {
 }
 
 void OnDisconnect() {
+    ++g_replayEpoch;
     delivery::Clear();
     coop::event_schedule_authority::OnDisconnect();
     g_pending.clear();

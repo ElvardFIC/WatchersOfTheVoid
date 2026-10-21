@@ -21,13 +21,14 @@ namespace R = ue_wrap::reflection;
 namespace W = ue_wrap::world_identity;
 UE_FACT_FN(kInterval, "event_rate", L"Actor", L"SetActorTickInterval", Declared);
 
-// These tick bodies re-arm their own spawn wait. Their products already have
-// host-owned NPC/world-actor routes (npc_world_enum + spawn_authority).
+// These tick bodies re-arm their own spawn wait. The first four products have
+// host-owned NPC/world-actor routes; night eyes use the existing owner-entity lane.
 // Fossilhound UG @1829 and yellow-wisp UG @1322 are native interval writes.
 // Never include ticker_base, creature AI ticks or the personal Insomniac ticker.
 constexpr const wchar_t* kSpawners[] = {
     L"ticker_fossilhoundSpawner_C", L"ticker_yellowWispSpawner_C",
     L"ticker_wispSpawner_C", L"ticker_egSpawner_C",
+    L"ticker_eyers_C",
 };
 struct Wait {
     ue_wrap::CachedObjRef actor;
@@ -44,6 +45,13 @@ std::chrono::steady_clock::time_point g_scan{};
 
 bool Host() {
     return g_session && g_session->running() && g_session->role() == net::Role::Host;
+}
+bool Active() { return g_session && g_session->running(); }
+bool CanApply(void* actor) {
+    // Night eyes already use the owner-entity lane. Each owner keeps their own
+    // native night/day/chance roll; the shared setting scales only its wait.
+    return Host() || (Active() && g_session->role() == net::Role::Client &&
+        R::ClassNameOf(actor) == L"ticker_eyers_C");
 }
 bool InWorld(void* actor) {
     return actor && R::IsLive(actor) && W::CurrentWorld() &&
@@ -71,11 +79,17 @@ bool Write(void* actor, float interval) {
     return ue_wrap::Call(actor, f);
 }
 void Apply(void* actor, bool nativeWrite) {
-    if (g_writing || !Host() || !InWorld(actor) || !Spawner(actor)) return;
+    if (g_writing || !InWorld(actor) || !Spawner(actor) || !CanApply(actor)) return;
     const auto epoch = g_epoch;
+    const auto world = W::Generation(), serial = net::session_serial::Current();
+    auto* session = g_session;
     ue_wrap::CachedObjRef ref; ref.Set(actor);
+    const auto valid = [&] {
+        return epoch == g_epoch && g_session == session && world == W::Generation() &&
+            serial == net::session_serial::Current() && ref.Get() == actor && InWorld(actor) && CanApply(actor);
+    };
     float current = 0.f;
-    if (!Read(actor, current) || epoch != g_epoch || !Host() || !ref.Get()) return;
+    if (!Read(actor, current) || !valid()) return;
     auto& wait = g_waits[actor];
     // Each native re-arm supplies a fresh baseline, even if it happens to pick
     // exactly the last applied interval. A settings edit instead keeps baseline.
@@ -85,7 +99,7 @@ void Apply(void* actor, bool nativeWrite) {
         wait.applied = current;
     }
     const float desired = wait.native / Rate();
-    if (current != desired && Write(actor, desired) && epoch == g_epoch && Host() && ref.Get()) {
+    if (current != desired && Write(actor, desired) && valid()) {
         const auto found = g_waits.find(actor);
         if (found != g_waits.end() && found->second.actor.Is(actor)) found->second.applied = desired;
     }
@@ -104,7 +118,7 @@ void Install(net::Session* session) {
     g_session = session;
     g_serial = net::session_serial::Current();
     g_world = W::Generation();
-    if (!Host()) return;
+    if (!Active()) return;
     if (!g_hook.Alive()) {
         const auto fn = ue_wrap::facts::Resolve(kInterval);
         if (!fn || !ue_wrap::ufunction_hook::InstallPostHook(fn, &IntervalPost)) return;

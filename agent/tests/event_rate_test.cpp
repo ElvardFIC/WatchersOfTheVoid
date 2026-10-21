@@ -36,9 +36,9 @@ bool CallFunction(void* p,void* fn,void* data) {
 }
 namespace ue_wrap::facts { Resolved Resolve(const Function& row) { return Resolved(&test::obj[17],&row); } }
 namespace ue_wrap::object_index {
-void* ClassByName(const wchar_t* n) { for(int i=10;i<14;++i)if(!wcscmp(test::obj[i].name,n))return &test::obj[i];return nullptr; }
+void* ClassByName(const wchar_t* n) { if(!wcscmp(n,L"ticker_eyers_C"))return &test::obj[18];for(int i=10;i<14;++i)if(!wcscmp(test::obj[i].name,n))return &test::obj[i];return nullptr; }
 size_t ForEachInstance(void* cls,InstanceFn cb,void* ctx) {
-    size_t count=0;for(int i=0;i<8;++i)if(test::obj[i].live&&test::obj[i].cls==cls){cb(ctx,&test::obj[i],i);++count;}return count;
+    size_t count=0;for(int i=0;i<9;++i)if(test::obj[i].live&&test::obj[i].cls==cls){cb(ctx,&test::obj[i],i);++count;}return count;
 }
 }
 namespace ue_wrap::ufunction_hook { bool InstallPostHook(const facts::Resolved&,PostNativeCallback cb,bool) {test::hook=cb;return true;} }
@@ -57,6 +57,7 @@ int main(){
     using namespace test;namespace E=coop::event_rate;
     for(int i=0;i<20;++i){obj[i].id=i;obj[i].cls=&obj[i];}
     for(int i=0;i<4;++i){obj[10+i].name=E::kSpawners[i];obj[i].cls=&obj[10+i];obj[i].world=world;}
+    obj[18].name=L"ticker_eyers_C";obj[8].cls=&obj[18];obj[8].world=world;
     coop::net::Session s;E::Install(&s);
     for(int i=0;i<4;++i)CHECK(obj[i].interval==300.f);
     const int initial=writes;Tick();E::Install(&s);CHECK(writes==initial); // no compounding
@@ -74,6 +75,10 @@ int main(){
     obj[6].cls=&obj[10];obj[6].world=reinterpret_cast<void*>(2);Native(obj[6],600.f);CHECK(obj[6].interval==600.f);
     E::OnDisconnect();CHECK(obj[0].interval==600.f&&obj[1].interval==600.f);
     s.mode=coop::net::Role::Client;E::Install(&s);Native(obj[0],500.f);CHECK(obj[0].interval==500.f);
+    CHECK(obj[8].interval==300.f);Native(obj[8],2400.f);CHECK(obj[8].interval==1200.f);
+    rate=4.f;Tick();E::Install(&s);CHECK(obj[8].interval==600.f&&obj[0].interval==500.f);
+    Native(obj[4],600.f);CHECK(obj[4].interval==600.f); // personal Insomniac never scales
+    E::OnDisconnect();CHECK(obj[8].interval==2400.f);rate=2.f;
     s.mode=coop::net::Role::Host;Tick();E::Install(&s);CHECK(obj[0].interval==250.f);
     // Recycled identities never receive a prior tenant's restoration.
     ++obj[0].serial;obj[0].interval=900.f;E::OnDisconnect();CHECK(obj[0].interval==900.f);
@@ -85,5 +90,9 @@ int main(){
     onRead=[] {E::OnDisconnect();};Native(obj[0],700.f);CHECK(E::g_waits.empty());
     Tick();E::Install(&s);onWrite=[] {E::OnDisconnect();};Native(obj[0],1000.f);CHECK(E::g_waits.empty());
     s.active=false;E::Install(&s);Native(obj[0],1200.f);CHECK(obj[0].interval==1200.f);
+    s.active=true;Tick();E::Install(&s);const auto prior=writes;
+    onRead=[]{++gen;};Native(obj[0],1000.f);CHECK(writes==prior&&obj[0].interval==1000.f);
+    Tick();E::Install(&s);const auto next=writes;
+    onRead=[]{++serial;};Native(obj[0],800.f);CHECK(writes==next&&obj[0].interval==800.f);
     std::puts("PASS event rate: host ownership, 2x/default/live edits, native rearm, no compounding, restore/recycle, late actors and reentrant teardown");
 }

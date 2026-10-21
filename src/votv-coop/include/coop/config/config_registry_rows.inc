@@ -197,7 +197,7 @@ CFG_INT(net_reliable_rate, "net.reliable_rate", "net", 8000, 0, 1000000, nullptr
 // The [world] section.
 CFG_FLOAT(world_event_rate, "world.event_rate", "world", 2.f, 0.5, 5, nullptr,
     L10N_MARK("Frequency of the repeatable world spawners: Fossilhounds, killer wisps, sky wisps "
-    "and night eggs. 2x halves their native waiting intervals; eligibility and spawn chances stay native. "
+    "and night eggs, plus each owner's night eyes. 2x halves their native waiting intervals; eligibility and spawn chances stay native. "
     "Story dates, dreams and creature animation speed stay unchanged."))
 CFG_ROWFLAGS(world_event_rate, kRowServer | kRowReplicated | kRowLive | kRowNotify)
 CFG_LABEL(world_event_rate, L10N_MARK("Repeatable event frequency"))

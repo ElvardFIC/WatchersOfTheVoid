@@ -94,8 +94,8 @@ so every peer keeps its own and shares each spawn, and the union is fireflies ne
 
 The host can adjust the audited repeatable spawn waits at **F1 > Administration >
 Server settings > Repeatable event frequency** (`world.event_rate`, default2x,
-range0.5..5x). Currently this covers Fossilhounds, killer wisps, sky wisps and
-night eggs. `coop/world/event_rate` observes each native tick-interval re-arm and
+range0.5..5x). Currently this covers host Fossilhounds, killer wisps, sky wisps and
+night eggs, plus each owner's local night eyes. `coop/world/event_rate` observes each native tick-interval re-arm and
 scales that new wait, enrolls already loaded and late tickers, and restores their
 native intervals on disconnect. Live edits keep the original interval as their
 baseline. This does not alter story dates, creature simulation or personal dreams;
@@ -254,12 +254,39 @@ task's state and pay no reward. The rewards land in the shared balance, on
 | `AlarmState` | either role | the alarm's active flag |
 | `EmailAppend`, `EmailDelete`, `TaskNewState` | the host to all; either role; the host to all | an email; a deletion; the task |
 
+## Replay and frequency recovery
+
+Location-event arm/fire and pending-gather state is bound to the session-start
+serial as well as the Session pointer and world. Native player pose and box-query
+callbacks are revalidated before gathering or firing; recursive location ticks
+do not run another gather pass. This prevents old callbacks acting after teardown
+or reuse of a session in the same world.
+
+Client replay keeps an owned queue entry while invoking native code. A recursive
+callback cannot drain or erase a borrowed entry; at most eight ready replays run
+per pump. Metadata/eventer preparation failures retry, while an attempted native
+call is consumed even if its completion is unknown. Session, world and recipient
+changes cancel stale work. This is infrastructure protection, not evidence that
+every event's effects or active phase are synchronized.
+
+The replicated frequency setting defaults to 2x and supports 0.5x–5x. It scales
+the native eligible-roll wait for the host's Fossilhound, killer-wisp, sky-wisp and
+night-egg generators, plus each owner's local `ticker_eyers` night-eyes generator.
+Night eyes keep their native 1800–2700s baseline, 5% roll and day/night gates; the
+setting divides the wait by the multiplier. Native conditions, personal dream and
+Insomniac rolls, story dates, AI ticks and effect durations remain authoritative.
+The complete repeatable random-event list is still outside this coverage.
+
 ## Late join
 
 The clock streams from the connect, so a joiner's first sample once its world exists sets its time
 and day number; the sky (its eye included), the weather state, the red sky's state, red or
 clear, and whether a Bad Sun exists are seeded at the joiner's world-ready; the join blob already
 carries a saved Bad Sun copy, and the seed settles it against the host's state.
+Active-event snapshots retain join debt if the registry or send queue is not ready,
+and retry on the install pump. Registry membership is copied and sender identities
+are validated before sending; slot reuse and session/world teardown cancel stale
+delivery. This transports mapped start rows; it does not establish phase parity.
 The in-flight events arrive as snapshot entries and replay with the override; the live cues are
 re-sent; every tracked event actor is re-spawned on the joiner; the pyramid's gather in flight
 is re-sent after its mirrors exist; the alarm's current flag is sent unconditionally, and the

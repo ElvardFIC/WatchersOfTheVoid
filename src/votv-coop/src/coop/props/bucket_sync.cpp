@@ -10,6 +10,7 @@
 #include "coop/props/remote_prop.h"
 #include "coop/session/net_pump.h"
 #include "ue_wrap/actors/building_material.h"
+#include "ue_wrap/actors/inventory.h"
 #include "ue_wrap/actors/prop.h"
 #include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/script_gate.h"
@@ -145,7 +146,17 @@ void AfterStockLoad(const SG::Call& c) {
     if(Current() && c.object)Observe(c.object,true);
 }
 void AfterStockChange(const SG::Call& c) {
-    if(Current() && !c.fromOurCode && c.object)Observe(c.object,false,true);
+    if(!Current() || c.fromOurCode || !c.object)return;
+    if(c.object == hand_item::LocalHandActor() && B::IsTrowel(c.object)) {
+        const auto epoch=g_epoch;auto* session=g_session;
+        const auto current=[&]{return Current() && g_epoch==epoch && g_session==session &&
+            c.object==hand_item::LocalHandActor();};
+        // updConcrete runs after refill/spending and before any next updateHold
+        // rebuild. Store the scalar now, while both native keys still match.
+        ue_wrap::inventory::PersistHeldTrowelStock(c.object,current);
+        if(!current())return;
+    }
+    Observe(c.object,false,true);
 }
 template<class T> bool ReadArg(const SG::Call& c,const wchar_t* name,T& value) {
     if(!c.function || !c.locals)return false;

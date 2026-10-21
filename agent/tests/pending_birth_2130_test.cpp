@@ -19,6 +19,7 @@ void* currentWorld=&world;
 bool live=true,authored=true,extract=false,hand=false,mirror=false,tracked=false,readable=true;
 bool floorActor=false,mintOk=true;
 bool locationOk=true,rotationOk=true;
+std::wstring className=L"prop_test_C";
 int mints=0;
 int begins=0,expresses=0,notices=0;
 int expectedRecords=0;
@@ -39,6 +40,7 @@ coop::net::Session session;
 void Enqueue(){D::OnClientFinishSpawn(nullptr,nullptr,&actor);}
 void Reset(){currentWorld=&world;D::Reset();session.drops.clear();session.linked=true;D::g_session=&session;
     locationOk=rotationOk=true;
+    className=L"prop_test_C";
     live=authored=readable=true;extract=hand=mirror=tracked=false;serial=1;currentWorld=&world;
     foodActor=false;foodReadable=foodWritable=true;finished=false;destroys=foodWrites=invalidates=0;condition={300.f,0.75f,2};duringFinish={};session.sendOK=true;session.mode=coop::net::Role::Client;
     publishes=claims=keyReads=mints=begins=expresses=notices=0;floorActor=false;mintOk=keySetOK=finishOK=parityOK=scaleOK=true;duringKey={};
@@ -60,9 +62,9 @@ bool IsLiveByIndex(void*,int32_t){return test::live;}
 int32_t AllocateSlotSerial(int32_t){return test::serial;}
 int32_t SlotSerial(int32_t){return test::serial;}
 void* ClassOf(void*){return &test::actor;}
-std::wstring ClassNameOf(void*){return L"prop_test_C";}
+std::wstring ClassNameOf(void*){return test::className;}
 }
-namespace ue_wrap::world_identity {void* WorldOf(void*){return &test::world;}void* CurrentWorld(){return test::currentWorld;}}
+namespace ue_wrap::world_identity {uint32_t Generation(){return test::currentWorld==&test::world?1:2;}void* WorldOf(void*){return &test::world;}void* CurrentWorld(){return test::currentWorld;}}
 namespace ue_wrap::engine {
 bool TryGetActorLocation(void*,FVector& out){test::Callback(test::duringRead);out={1,2,3};return test::locationOk;}
 bool TryGetActorRotation(void*,FRotator& out){out={};return test::rotationOk;}

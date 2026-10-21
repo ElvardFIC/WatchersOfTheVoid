@@ -365,7 +365,11 @@ void Tick(coop::net::Session* session) {
         if (key.empty() || key == L"None") {
             // The key is not restored yet (the load runs after the finish). Re-defer a few ticks.
             if (++e.tries <= kMaxKeyTries) keep.push_back(e);
-            else probe::NoteDrainExit(actor, "key-wait-expired", e.tries, std::wstring());
+            else {
+                probe::NoteDrainExit(actor, "key-wait-expired", e.tries, std::wstring());
+                UE_LOGW("[PROP-DROP] role=client actor=%p cls='%ls' key-wait-expired tries=%d world=%u; no shared birth authored",
+                    actor, R::ClassNameOf(actor).c_str(), e.tries, ue_wrap::world_identity::Generation());
+            }
             continue;
         }
         probe::NoteKeyReadable(actor, e.tries);
@@ -424,7 +428,8 @@ void Tick(coop::net::Session* session) {
         const auto retryTransform = [&](const char* reason) {
             if (!stillCurrent()) return;
             if (++e.tries <= kMaxKeyTries) keep.push_back(e);
-            else probe::NoteDrainExit(actor, reason, e.tries, key);
+            else if (RetainForRecovery(e,key,reason)) probe::NoteDrainExit(actor, reason, e.tries, key);
+            else keep.push_back(e); // a full recovery pool still cannot surrender this birth to the sweep
         };
         ue_wrap::FVector loc{};
         if (!ue_wrap::engine::TryGetActorLocation(actor, loc)) {
@@ -476,8 +481,7 @@ void Tick(coop::net::Session* session) {
             ue_wrap::food::Condition food{};
             if (!ue_wrap::food::Read(actor, food) ||
                 !coop::props::prop_food_sync::ValidCondition(food.temperature, food.ripeness, food.uses,food.cookProgress)) {
-                if (++e.tries <= kMaxKeyTries) keep.push_back(e);
-                else UE_LOGW("[PROP-DROP] cannot read valid food state for key='%ls' after retries", key.c_str());
+                retryTransform("food-state-wait-expired");
                 continue;
             }
             p.hasFoodCondition = 1;
@@ -499,12 +503,14 @@ void Tick(coop::net::Session* session) {
         if (!stillCurrent()) continue;
         if (!sent) {
             std::erase_if(g_awaitingHost,[&](const auto& row){return row.request.requestId == p.requestId;});
-            if (++e.tries <= kMaxKeyTries) keep.push_back(e);
-            else UE_LOGW("[PROP-DROP] send refused for key='%ls' after retries", key.c_str());
+            retryTransform("send-wait-expired");
             continue; // do not consume the parked key or publish a record without its birth
         }
         if (!stillCurrent()) continue;
         // State publication waits for an explicit host acceptance.
+        UE_LOGI("[PROP-DROP] role=client request=%u actor=%p key='%ls' cls='%ls' world=%u source=%s",
+            p.requestId, actor, key.c_str(), cls.c_str(), ue_wrap::world_identity::Generation(),
+            parked ? "parked-pickup" : e.containerExtract ? "container" : e.playerSpawn ? "player-spawn" : "device-eject");
         if (!stillCurrent()) continue;
         probe::NoteDrainExit(actor,
                              freshBirth     ? "authored-fresh-birth"
@@ -556,6 +562,8 @@ void OnPlacementResult(const net::PropPlacementResultPayload& p, int senderSlot)
     const auto cls = WireToWide(p.className.len,p.className.data,sizeof(p.className.data));
     for (auto it = g_awaitingHost.begin(); it != g_awaitingHost.end(); ++it) {
         if (it->request.requestId != p.requestId || it->key != key || it->className != cls) continue;
+        UE_LOGI("[PROP-DROP] role=client result=%u request=%u actor=%p key='%ls' cls='%ls' world=%u",
+            p.code, p.requestId, it->actor.Get(), key.c_str(), cls.c_str(), ue_wrap::world_identity::Generation());
         if (p.code != static_cast<uint8_t>(net::PropPlacementCode::Refused)) {
             it->next = PlacementNow() + 1000;
             if (p.code == static_cast<uint8_t>(net::PropPlacementCode::Accepted)) {

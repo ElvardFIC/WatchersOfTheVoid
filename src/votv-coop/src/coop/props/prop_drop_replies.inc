@@ -2,6 +2,17 @@
 uint32_t g_nextPlacementRequest = 0; // survives Reset: late replies cannot match a new request
 void* g_placementWorld = nullptr;
 std::vector<ue_wrap::CachedObjRef> g_refusedPlacements;
+bool RetainForRecovery(const PendingPlace& entry, const std::wstring& key, const char* reason) {
+    void* actor = entry.actor.Get();
+    if (!actor) return true;
+    if (!entry.admitted) return false;
+    for (const auto& ref : g_refusedPlacements) if (ref.Get() == actor) return true;
+    if (g_refusedPlacements.size() >= 256) return false;
+    g_refusedPlacements.push_back(entry.actor);
+    UE_LOGW("[PROP-DROP] role=client actor=%p cls='%ls' key='%ls' reason=%s world=%u; retained locally for pickup, no fallback author",
+        actor, R::ClassNameOf(actor).c_str(), key.c_str(), reason, ue_wrap::world_identity::Generation());
+    return true;
+}
 struct PlacementRecord {
     net::PropDropIntentPayload request{};
     net::ReliableKind kind = net::ReliableKind::PropDropIntent;

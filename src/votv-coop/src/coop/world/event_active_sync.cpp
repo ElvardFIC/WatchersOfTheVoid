@@ -18,9 +18,11 @@
 #include "coop/element/registry.h"
 #include "coop/net/protocol.h"
 #include "coop/net/session.h"
+#include "coop/net/session_serial.h"
 #include "coop/world/event_fire_sync.h"
 
 #include "ue_wrap/core/game_thread.h"
+#include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/object_index.h"
 #include "ue_wrap/core/reflection.h"
@@ -30,6 +32,7 @@
 #include "ue_wrap/world/active_events.h"
 
 #include <atomic>
+#include <array>
 #include <chrono>
 #include <cstdint>
 #include <cstring>
@@ -58,12 +61,18 @@ int32_t g_offContext = -1;         // __WorldContext, the sender
 
 // When each event the watch saw begin began, for the snapshot's elapsed time and the END line.
 struct Began {
-    int32_t objIdx;         // the sender's slot (recycled-slot-safe liveness)
+    ue_wrap::CachedObjRef sender;
     std::string className;  // ClassOf(sender), narrowed: the event's implementation class
     long long ms;           // steady-clock ms at its setEvent(true)
 };
 std::unordered_map<void*, Began> g_began;
 uint32_t g_beganGen = 0;           // the world the begin times belong to
+struct JoinDebt { bool pending = false; uint32_t generation = 0; };
+std::array<JoinDebt, coop::net::kMaxPeers> g_joinDebt{};
+std::chrono::steady_clock::time_point g_joinRetry{};
+uint64_t g_joinEpoch = 0;
+uint32_t g_joinWorld = 0, g_joinSerial = 0;
+bool g_sendingJoin = false;
 
 long long NowMs() {
     using namespace std::chrono;
@@ -180,14 +189,20 @@ void ForgetOtherWorlds() {
 void OnSetEventPost(const sg::Call& call) {
     auto* s = g_session.load(std::memory_order_acquire);
     if (!s || !s->connected() || s->role() != coop::net::Role::Host) return;
-    if (!ResolveSetEvent() || call.function != g_setEventFn) return;
+    if (!call.locals || !ResolveSetEvent() || call.function != g_setEventFn) return;
+    const auto size = R::FunctionFrameSize(call.function);
+    if (g_offActive < 0 || g_offActive >= size || g_offContext < 0 ||
+        size < int(sizeof(void*)) || g_offContext > size - int(sizeof(void*))) return;
     void* sender = *reinterpret_cast<void* const*>(call.locals + g_offContext);
     if (!sender || !R::IsLive(sender)) return;
     const bool active = call.locals[g_offActive] != 0;
     ForgetOtherWorlds();
     const long long now = NowMs();
+    if (const auto old = g_began.find(sender); old != g_began.end() && old->second.sender.Get() != sender)
+        g_began.erase(old);
     if (active) {
-        const auto [it, fresh] = g_began.emplace(sender, Began{R::InternalIndexOf(sender), Narrow(R::ClassNameOf(sender)), now});
+        ue_wrap::CachedObjRef identity; identity.Set(sender);
+        const auto [it, fresh] = g_began.emplace(sender, Began{identity, Narrow(R::ClassNameOf(sender)), now});
         if (fresh) UE_LOGI("event_active: BEGIN class=%s n=%d", it->second.className.c_str(), ReadRefcount());
         return;
     }
@@ -205,6 +220,11 @@ void OnSetEventPost(const sg::Call& call) {
 }  // namespace
 
 void Install(coop::net::Session* session) {
+    const auto world = ue_wrap::world_identity::Generation(), serial = coop::net::session_serial::Current();
+    if (g_session.load(std::memory_order_acquire) != session || g_joinWorld != world || g_joinSerial != serial) {
+        ++g_joinEpoch; g_joinDebt = {}; g_joinRetry = {};
+        g_joinWorld = world; g_joinSerial = serial;
+    }
     g_session.store(session, std::memory_order_release);
     // Called every pump tick by the install fanout, which is also the retry until the gate has
     // resolved the watch's name.
@@ -217,11 +237,37 @@ void Install(coop::net::Session* session) {
             UE_LOGI("event_active: every event's begin and end is seen at lib_C::setEvent (a script-gate watch)");
         }
     }
+    const auto now = std::chrono::steady_clock::now();
+    if (!g_sendingJoin && session && session->connected() && session->role() == coop::net::Role::Host && now >= g_joinRetry) {
+        g_joinRetry = now + std::chrono::seconds(1);
+        const auto epoch = g_joinEpoch;
+        for (int slot = 1; slot < coop::net::kMaxPeers; ++slot) if (g_joinDebt[slot].pending) {
+            if (epoch != g_joinEpoch || g_session.load(std::memory_order_acquire) != session) return;
+            if (!session->HasPeerConn(slot) || g_joinDebt[slot].generation != session->peerGenerationForSlot(slot))
+                g_joinDebt[slot] = {};
+            else SendJoinSnapshotForSlot(slot);
+        }
+    }
 }
 
 void SendJoinSnapshotForSlot(int slot) {
     auto* s = g_session.load(std::memory_order_acquire);
-    if (!s || !s->connected() || s->role() != coop::net::Role::Host) return;
+    if (!s || !s->connected() || s->role() != coop::net::Role::Host ||
+        slot <= 0 || slot >= coop::net::kMaxPeers || !s->HasPeerConn(slot)) return;
+    const auto generation = s->peerGenerationForSlot(slot);
+    g_joinDebt[slot] = {true, generation};
+    if (g_sendingJoin) return;
+    g_sendingJoin = true;
+    struct Sending { ~Sending() { g_sendingJoin = false; } } sending;
+    const auto epoch = g_joinEpoch;
+    const auto serial = coop::net::session_serial::Current();
+    const auto world = ue_wrap::world_identity::Generation();
+    const auto current = [&] {
+        return epoch == g_joinEpoch && g_session.load(std::memory_order_acquire) == s && s->connected() &&
+            s->role() == coop::net::Role::Host && world == ue_wrap::world_identity::Generation() &&
+            serial == coop::net::session_serial::Current() && s->HasPeerConn(slot) &&
+            generation == s->peerGenerationForSlot(slot);
+    };
     // The game's own registry is the membership: read at the edge, it holds exactly the events in
     // flight now, the ones that began before this host watched included.
     AE::Senders arr{};
@@ -229,11 +275,20 @@ void SendJoinSnapshotForSlot(int slot) {
         UE_LOGI("event_active: join-edge slot=%d -- no event registry to read (no world yet)", slot);
         return;
     }
+    if (!current()) return;
     ForgetOtherWorlds();
     const long long now = NowMs();
-    std::vector<void*> sent;
+    std::vector<ue_wrap::CachedObjRef> members;
+    if (arr.num && !arr.data) return;
     for (int32_t i = 0; i < arr.num; ++i) {
-        void* obj = arr.data ? arr.data[i] : nullptr;
+        void* obj = arr.data[i];
+        if (obj && R::IsLive(obj)) { ue_wrap::CachedObjRef ref; ref.Set(obj); members.push_back(ref); }
+    }
+    std::vector<void*> sent;
+    bool complete = true;
+    for (const auto& member : members) {
+        if (!current()) return;
+        void* obj = member.Get();
         // The array is a property, so the collector nulls a destroyed sender's entry; one marked
         // for death and not yet collected is skipped here.
         if (!obj || !R::IsLive(obj)) continue;
@@ -257,23 +312,27 @@ void SendJoinSnapshotForSlot(int slot) {
             continue;
         }
         const auto b = g_began.find(obj);
-        const bool known = b != g_began.end() && R::IsLiveByIndex(obj, b->second.objIdx);
+        const bool known = b != g_began.end() && b->second.sender.Get() == obj;
         const long long elapsed = known ? (now - b->second.ms) / 1000 : 0;
         coop::net::EventSnapshotPayload p{};  // zero-init -> both name[]s pre-NUL-bound
         std::strncpy(p.className, className.c_str(), sizeof(p.className) - 1);
         if (row) std::strncpy(p.rowName, row, sizeof(p.rowName) - 1);
         p.elapsedSec = static_cast<uint16_t>(elapsed < 0 ? 0 : (elapsed > 65535 ? 65535 : elapsed));
+        if (!current()) return;
+        if (member.Get() != obj) continue;
         if (s->SendReliableToSlot(slot, coop::net::ReliableKind::EventSnapshot, &p, sizeof(p))) {
             UE_LOGI("event_active: join-edge slot=%d SNAPSHOT class=%s row=%s elapsed=%s", slot,
                     className.c_str(), row ? row : "<unmapped>",
                     known ? (std::to_string(elapsed) + "s").c_str() : "unknown (began before this host watched)");
         } else {
+            complete = false;
             UE_LOGW("event_active: join-edge slot=%d EventSnapshot send FAILED (class=%s)",
                     slot, className.c_str());
         }
     }
     if (sent.empty())
         UE_LOGI("event_active: join-edge slot=%d -- 0 in flight (no EventSnapshot needed)", slot);
+    if (complete && current()) g_joinDebt[slot] = {};
 }
 
 void OnReliable(const coop::net::EventSnapshotPayload& payload) {
@@ -300,6 +359,7 @@ void OnReliable(const coop::net::EventSnapshotPayload& payload) {
 }
 
 void OnDisconnect() {
+    ++g_joinEpoch; g_joinDebt = {}; g_joinRetry = {};
     g_began.clear();
     g_beganGen = 0;
     g_session.store(nullptr, std::memory_order_release);

@@ -7,6 +7,9 @@
 #include "ue_wrap/actors/inventory.h"
 
 #include "ue_wrap/actors/save_record.h"
+#include "ue_wrap/actors/building_material.h"
+#include "ue_wrap/core/cached_obj_ref.h"
+#include "ue_wrap/engine/world_identity.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/world/world_singleton.h"
@@ -239,6 +242,40 @@ bool ReadAll(PlayerInventory& out) {
         out.hold.push_back(std::move(r));
     }
     return true;
+}
+
+bool PersistHeldTrowelStock(void* actor, const std::function<bool()>& current) {
+    if (!actor || (current && !current()) || !building_material::IsTrowel(actor)) return false;
+    CachedObjRef hand; hand.Set(actor);
+    void* save = ResolveSaveSlot();
+    if (!save) return false;
+    CachedObjRef slot; slot.Set(save);
+    const auto world = world_identity::Generation();
+    const auto valid = [&] {
+        return hand.Get() == actor && slot.Get() == save && world == world_identity::Generation() &&
+            (!current || current()) && ResolveSaveSlot() == save;
+    };
+    const SR::Arr held = SR::ReadArr(save, kOff_hold);
+    if (!held.data || held.num < 1) return false;
+    std::array<uint8_t, kEquipStride> slotImage{};
+    std::memcpy(slotImage.data(), held.data, slotImage.size());
+    EquipRecord original; ReadEquipRecord(held.data, original);
+    auto refreshed = original.data;
+    if (original.propKey.empty() || original.propKey != refreshed.key ||
+        !building_material::RefreshTrowelRecord(actor, refreshed) || !valid()) return false;
+    // The refresh has validated the actor's native key and bounded stock.
+    if (refreshed.ints.size() != 1 || refreshed.ints[0].size() != 1) return false;
+    const auto stillHeld = SR::ReadArr(save, kOff_hold);
+    if (stillHeld.data != held.data || stillHeld.num != held.num) return false;
+    EquipRecord latest; ReadEquipRecord(stillHeld.data, latest);
+    if (latest.propKey != original.propKey || latest.propName != original.propName || latest.tag != original.tag ||
+        latest.data.key != original.data.key || latest.data.className != original.data.className || !valid()) return false;
+    int32_t units = 0;
+    if (!building_material::ReadConcrete(actor, units) || units != refreshed.ints[0][0] || !valid()) return false;
+    const auto finalHeld = SR::ReadArr(save, kOff_hold);
+    if (finalHeld.data != held.data || finalHeld.num != held.num ||
+        std::memcmp(held.data, slotImage.data(), slotImage.size()) != 0) return false;
+    return SR::WriteSingleIntGroup(const_cast<uint8_t*>(held.data) + kEquip_data, 0, units);
 }
 
 int32_t LivePersonalStoreCount() {

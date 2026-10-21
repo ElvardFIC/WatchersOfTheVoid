@@ -20,6 +20,7 @@
 #include "coop/player/players_registry.h"     // players::Registry::Get().Local() (TryApplyDestroy)
 #include "coop/props/prop_echo_suppress.h"    // MarkIncomingDestroy
 #include "coop/props/prop_element_tracker.h"
+#include "coop/net/session_serial.h"
 #include "coop/props/prop_key_index.h"  // the key branch
 #include "coop/props/trash_channel.h"         // ClearClientCarry (a destroyed carried clump)
 #include "coop/props/trash_mirror.h"          // Retire (the trash teardown path)
@@ -53,6 +54,30 @@ bool IsTrashMirrorEid_(uint32_t eid) {
 // The lanes that hear a peer's destroy applied here; registered at their install, read on the game thread.
 std::vector<DestroyHeardFn> g_destroyHeard;
 
+// Native release and destroy listeners may re-enter this receiver or replace the
+// actor. Keep the selected incarnation for the whole operation, including teardown.
+std::vector<ue_wrap::CachedObjRef> g_destroying;
+struct DestroyAttempt {
+    ue_wrap::CachedObjRef actor;
+    uint32_t world = ue_wrap::world_identity::Generation();
+    uint32_t session = coop::net::session_serial::Current();
+    bool entered = false;
+    explicit DestroyAttempt(void* target) {
+        if (!target) return;
+        actor.Set(target);
+        for (const auto& active : g_destroying) if (active.Is(target)) return;
+        g_destroying.push_back(actor);
+        entered = true;
+    }
+    DestroyAttempt(const DestroyAttempt&) = delete;
+    DestroyAttempt& operator=(const DestroyAttempt&) = delete;
+    ~DestroyAttempt() { if (entered) g_destroying.pop_back(); }
+    bool Current() const {
+        return entered && world == ue_wrap::world_identity::Generation() &&
+            session == coop::net::session_serial::Current() && actor.Alive();
+    }
+};
+
 // The cached destroy UFunction for receiver-side destroys.
 void* g_destroyActorFn = nullptr;
 ue_wrap::CachedObjRef g_actorCls;  // a slot-validated, self-healing cache
@@ -83,12 +108,15 @@ void UnregisterPropMirror(coop::element::ElementId eid) {
 // The terminal local teardown of a resolved doomed actor, shared by the in-time destroy and
 // the deferred re-apply: clear any drive, release a local grab, echo-suppress, then destroy.
 // Game thread.
-void DestroyResolvedLocalActor_(void* actor, const std::wstring& keyW,
+void DestroyResolvedLocalActor_(const DestroyAttempt& attempt, const std::wstring& keyW,
                                 const coop::net::PropDestroyPayload& payload, void* localPlayer) {
+    if (!attempt.Current()) return;
+    void* actor = attempt.actor.Raw();
     if (!ResolveDestroyFn()) {
         UE_LOGW("remote_prop::OnDestroy: K2_DestroyActor UFunction unresolved -- dropping");
         return;
     }
+    if (!attempt.Current()) return;
     UE_LOGI("remote_prop::OnDestroy: key '%ls' eid=%u -> destroying local actor %p",
             keyW.c_str(), payload.elementId, actor);
     if (ue_wrap::prop::IsChipPile(actor) || ue_wrap::prop::IsGarbageClump(actor)) {
@@ -98,16 +126,19 @@ void DestroyResolvedLocalActor_(void* actor, const std::wstring& keyW,
     // Clear any slot's drive on this prop, so nothing drives a destroyed actor next tick (the
     // drive table lives in remote_prop.cpp).
     ClearAnyDriveFor(actor);
+    if (!attempt.Current()) return;
     // If this peer's local player is grabbing the doomed actor, tear the grab down cleanly first
     // (a no-op when not grabbed).
     ue_wrap::engine::ReleaseMainPlayerGrabIfHolding(localPlayer, actor);
-    // Mark before the engine call, so our destroy observer sees it and skips the broadcast (an
-    // echo).
-    coop::prop_echo_suppress::MarkIncomingDestroy(actor);
+    if (!attempt.Current()) return;
     // Unpin first: a nativized runtime pile mirror is GC-pinned (no save or world reference stops
     // GC), and a rooted pending-kill actor would leak its object-array slot forever. A harmless
     // no-op on a save-loaded native or a keyed prop.
     coop::trash_mirror::Unpin(actor);
+    if (!attempt.Current()) return;
+    // Mark only after the final cancellation check, so an aborted attempt does
+    // not suppress a later genuine destroy of the still-live actor.
+    coop::prop_echo_suppress::MarkIncomingDestroy(actor);
     R::CallFunction(actor, g_destroyActorFn, nullptr);
 }
 
@@ -169,6 +200,10 @@ DestroyApply OnDestroyImpl_(const coop::net::PropDestroyPayload& payload, void* 
             return DestroyApply::NotYet;
         }
     }
+    DestroyAttempt attempt(actor);
+    // An outer application owns this incarnation. Do not repeat listener/spend
+    // side effects or recursively release the same grab.
+    if (actor && !attempt.entered) return DestroyApply::Applied;
     // Now drain the wire-received mirror element. It must vacate the registry whether or not the
     // local actor still exists (an echo bounce where we initiated the destroy and the actor is
     // already gone); after the eid resolution above, so that lookup could still see it. A silent
@@ -210,9 +245,20 @@ DestroyApply OnDestroyImpl_(const coop::net::PropDestroyPayload& payload, void* 
         }
         return DestroyApply::NotFound;
     }
-    if (senderSlot >= 0)
-        for (DestroyHeardFn fn : g_destroyHeard) fn(senderSlot, actor);
-    DestroyResolvedLocalActor_(actor, keyW, payload, localPlayer);
+    if (!attempt.Current()) return DestroyApply::Applied;
+    UE_LOGI("[PROP-DROP] destroy-received role=%s sender=%d actor=%p cls='%ls' key='%ls' eid=%u world=%u",
+        coop::prop_element_tracker::SessionIsHost() ? "host" : "client", senderSlot, actor,
+        R::ClassNameOf(actor).c_str(), keyW.c_str(), payload.elementId, attempt.world);
+    // A listener may register another listener while authorizing a spend. Own the
+    // list being walked and defer new registrations to the next destroy.
+    const auto listeners = g_destroyHeard;
+    if (senderSlot >= 0) for (DestroyHeardFn fn : listeners) {
+        if (!attempt.Current()) return DestroyApply::Applied;
+        fn(senderSlot, actor);
+    }
+    // Cancellation is terminal for this request: retrying a key after replacement
+    // could select the new item instead of the incarnation originally resolved.
+    DestroyResolvedLocalActor_(attempt, keyW, payload, localPlayer);
     return DestroyApply::Applied;
 }
 
@@ -243,16 +289,20 @@ void ConsumeLocalActor(void* actor) {
     // destroy observer skip re-broadcasting it: a local consume, not a new authoritative destroy.
     UE_ASSERT_GAME_THREAD("ConsumeLocalActor (K2_DestroyActor)");
     if (!actor || !R::IsLive(actor)) return;
+    DestroyAttempt attempt(actor);
+    if (!attempt.Current()) return;
     if (!ResolveDestroyFn()) {
         UE_LOGW("remote_prop::ConsumeLocalActor: K2_DestroyActor unresolved -- cannot consume %p", actor);
         return;
     }
-    coop::prop_echo_suppress::MarkIncomingDestroy(actor);
+    if (!attempt.Current()) return;
     // A pinned materialised native reaching here (a redundant convert-landed pile the save load
     // consumes) must be unpinned first: destroying a rooted actor only sets pending kill while
     // the root keeps it alive, a live orphan. The same release the authoritative destroy path
     // does; a no-op on an unpinned game native.
     coop::trash_mirror::Unpin(actor);
+    if (!attempt.Current()) return;
+    coop::prop_echo_suppress::MarkIncomingDestroy(actor);
     R::CallFunction(actor, g_destroyActorFn, nullptr);
 }
 
@@ -260,9 +310,13 @@ void ConsumeLocalActor(void* actor) {
 // remote_prop_internal.h, so the convert TU calls it without touching the destroy function):
 // clear any drive, then the echo-suppressed destroy.
 void DestroyEchoSuppressed(void* actor) {
-    if (!actor) return;
+    if (!actor || !R::IsLive(actor)) return;
+    DestroyAttempt attempt(actor);
+    if (!attempt.Current()) return;
     ClearAnyDriveFor(actor);
+    if (!attempt.Current()) return;
     if (ResolveDestroyFn()) {
+        if (!attempt.Current()) return;
         coop::prop_echo_suppress::MarkIncomingDestroy(actor);
         R::CallFunction(actor, g_destroyActorFn, nullptr);
     } else {
