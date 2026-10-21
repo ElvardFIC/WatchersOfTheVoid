@@ -10,7 +10,7 @@ try {
         if (-not (Test-Path -LiteralPath $environment)) { $environment = Join-Path $root '../_toolchain/env.ps1' }
         . $environment
     }
-    foreach ($testName in @('garden_sync', 'garden_record', 'garden_wrapper', 'garden_actions', 'hose_route', 'hose_link', 'wall_enrollment_2167')) {
+    foreach ($testName in @('garden_sync', 'garden_record', 'garden_wrapper', 'garden_actions', 'hose_route', 'hose_link', 'wall_enrollment_2167', 'care_invocation', 'garden_owner')) {
         & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I agent/tests/placed_save_stubs /I src/votv-coop/include "/Fo$output/$testName.obj" "/Fe$output/$testName.exe" "agent/tests/${testName}_test.cpp" /link /OPT:REF
         if ($LASTEXITCODE -ne 0) { throw "Test compile failed: $testName" }
         & "$output/$testName.exe"

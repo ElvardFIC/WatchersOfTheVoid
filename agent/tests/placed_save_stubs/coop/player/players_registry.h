@@ -10,5 +10,7 @@ public:
     static Registry& Get(){static Registry r;return r;}
     coop::RemotePlayer* Puppet(int){return &remote;}
     void* Local(){return local;}
+    uint8_t peer=1;
+    uint8_t LocalPeerId(){return peer;}
 };
 }

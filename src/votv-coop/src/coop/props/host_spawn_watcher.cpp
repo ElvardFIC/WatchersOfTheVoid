@@ -29,6 +29,8 @@
 #include "ue_wrap/core/sdk_profile.h"
 #include "ue_wrap/core/types.h"       // FTransform (the reflected SpawnTransform param layout)
 #include "ue_wrap/core/ufunction_hook.h"  // the FinishSpawningActor Func patch, the keyed spawn seam
+#include "ue_wrap/actors/water_pour.h"
+#include "coop/props/water_pour_sync.h"
 #include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
@@ -244,7 +246,7 @@ struct DrainScope {
     ~DrainScope() { g_draining = false; }
 };
 
-void OnFinishSpawnFunc(void* /*context*/, void* /*srcObj*/, void* result) {
+void OnFinishSpawnFunc(void* /*context*/, void* srcObj, void* result) {
     if (!GT::IsGameThread()) return;
     auto* s = LoadSession();
     if (!s || !s->connected()) return;
@@ -254,6 +256,7 @@ void OnFinishSpawnFunc(void* /*context*/, void* /*srcObj*/, void* result) {
     // Wire and display mirror spawns are marked before the finish and never enqueued, since
     // expressing a mirror as a fresh world prop is the dupe.
     if (coop::prop_echo_suppress::IsMirrorSpawn(actor)) return;
+    coop::water_pour_sync::ObserveHostBirth(srcObj,actor);
     if (!ue_wrap::prop::IsDescendantOfProp(actor)) return;  // KEYED Aprop_C lineage only
     const bool tracked = coop::element::Registry::Get().EidForActor(actor) != coop::element::kInvalidId;
     // Init may already have enrolled this actor, but it deliberately publishes NO save data:
@@ -274,7 +277,7 @@ void OnFinishSpawnFunc(void* /*context*/, void* /*srcObj*/, void* result) {
     void* owner = caller.function ? R::OuterOf(caller.function) : nullptr;
     const bool gameplayBirth = owner && R::NameEquals(R::NameOf(owner), P::name::GamemodeClass) &&
         R::NameEquals(R::NameOf(caller.function), L"spawnPropThroughGamemode");
-    g_pendingFinished.emplace_back(actor, floorBirth, gameplayBirth);
+    g_pendingFinished.emplace_back(actor, floorBirth, gameplayBirth || ue_wrap::water_pour::IsProjectile(actor));
 }
 
 void InstallKeyedFinish() {

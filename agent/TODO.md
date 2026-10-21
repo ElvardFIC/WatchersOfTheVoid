@@ -1,11 +1,114 @@
 # TODO - current priorities
 
-Current source/wire protocol: **2154** (merged 2153 synchronization work), game **0.9.0n**.
-Delivery package: **0.9.2152**, containing DLL **b2153 / protocol 2153**.
-The packaged DLL predates the current source; peers need matching b2154 builds.
+Source of truth: **ElvardFIC/WatchersOfTheVoid main**, fetched baseline
+`b6651cb91d4a7ee5ddc9c92fc558d3e3913b3b00`. Historical version numbers below
+do not establish which implementation is newest. Game target remains 0.9.0n.
 
-The prior in-place development target was 2153. The merge added a wire kind, so
-the protocol is now 2154; no new build or delivery package has been produced.
+Owner's scope, 20 October 2026: work through the **non-entity** backlog;
+the other owner handles entities. No entity implementation is assigned here.
+Current source handoff is on `watchers-of-the-void-fish`; the new placement wire
+layout, material/cooking extensions, host-ordered console display, Watoy and sponge
+effects use protocol 2175, including grill world/hand presentation, persistent burn
+state and instant wall completion requests. Older implementations cannot silently interoperate.
+Existing delivery packages are historical; current peers must use matching DLLs.
+
+Continuation point for the same non-entity scope: the instant-wall, grill presentation,
+hand-tool lifetime and kitchen queue work is implemented and qualified offline in2162.
+Previous2163 adds grill hand/stock/effect replication, saved burning state and host
+burn protection from ordinary client records. It also carries full forced personal
+profiles (current vitals and held state), guarded chunk cancellation and nested
+capture/send ordering. Focused tests pass; final Release qualification is recorded below.
+Hand toy packets also carry playerNo, retire stale/disappeared mirrors and keep
+current deliveries across replacement/teardown. Sponge foam and Madness HUD/audio
+now fence native callbacks, queue sends and recipient/source changes. All remain
+subject to two-peer gameplay verification.
+Current2164 implements the audited bucket-pour route: exact owned-bucket birth
+admission, post-native velocity/soap capture, host collision/latent authority and
+separate splash/sound delivery. The host also streams native water motion. Three
+actual production harnesses and native contracts pass; two-peer timing is unverified.
+Faucet/detach requests now retain the originating person, wait for host readiness,
+preserve per-key order and cancel interrupted chunk sends. Garden regressions pass.
+Grime joins and final cleaning updates now retain failed sends. Partial material
+paints retry with current floors; the native wrapper follows class reloads and
+guards component/native callbacks. General prop records also cancel obsolete
+same-key capture/normalization/apply/send work and interrupted chunk transfers.
+Current2165 adds host-ordered coal/lid field edits, terminal replies and host stock
+preservation against ordinary/parked full records. Focused tests pass; complete
+Release/hash qualification is now2167; see the current verification below.
+Current2166 adds actual pressure-washer projectile birth/flight, host collision and
+retirement, launch sound and initial/impact presentation. It also closes the parent's
+independent client cleaning path for both exact water projectiles and preserves
+the final spawn transform. Focused water and hand-tool checks pass. Two-peer play,
+shared dynamic grime/spill births remain open.
+Current2167 adds exact bucket drip/whole-throw launch cues, host validation, owner
+exclusion and short retained delivery. Mixed bucket/impact cues preserve recipient
+and local presentation order. Nested grime clean/fix calls have independent,
+invocation-bound snapshots, newer-minimum repaint and Cancel/native-fault cleanup.
+Grill observations and window wipes now use the same invocation lifetime; window
+disconnect drops the session pointer. Failed live window updates now retry with
+the current minimum and protect newer queued wipes during send. Retained window
+join delivery and native wrapper reload/paint guards still require work. New audio/
+emitter hooks also need live fingerprint references and two-peer installation checks.
+Current2168 adds retained window joins, serial/index/native-metadata reload guards
+and retryable partial paints. Exact beer/wine spills now have host-validated births,
+independent cleaning identities, owner prediction replacement, quiet saved-actor
+adoption/join and retained retirement. Host break/fire deposits are observed too.
+Other grime factories, projectile/electrical authority and atomic liquid stock stay
+open. Food world/hand publication, native writes, join retries and final-bite
+invocation/retry lifetimes now fence superseding callbacks and changed occupants.
+World toy delivery also protects same-person rejoin/role changes and nested music
+captures; exact music phase remains open. Offline evidence is in WORK/TESTLOG;
+two-peer gameplay remains required.
+Current2169 moves exact beer/wine launches to host-native flight and collision,
+including native electrical outcomes. Client temporary spheres freeze immediately;
+final-use source proofs survive hand consumption. Canonical impact sound now also
+reaches the owner. Other grime factories, pour audio and atomic stock accounting
+remain open. Paid garden reservations bind unique invocations and retain their
+original player/slot/connection through read and transport. Resource rejection/
+refund and two-peer timing are still open. Offline Release and regression
+qualification is recorded below; no gameplay acceptance row is closed by it.
+Current2170 adds exact coffee-cup launch/decal handling, preserving inventory-owner
+and host-world food authority. Native source pour sound has a separate validated
+channel with exact caller-point capture, independent FIFO tracks and no join replay.
+Canonical spatial cues retain the original person's replay history after departure;
+optional audio metadata does not block flight. Other grime, accounting and gameplay
+remain open.
+Current2171 carries the captured player number in care/harvest request bytes.
+The host rejects obsolete occupants, zero/out-of-range people and legacy layouts;
+native authority probes also retain session/world/role/readiness and peer epoch.
+This does not implement stock rejection/refund or close the garden gameplay row.
+Current2172 adds host-native gasoline-bottle break spills, canonical gasoline
+decal identities, cleaning/join/retirement and native flame presentation. Client
+copies cannot burn down the decal, spread world fire or decide native expiry;
+player-local flame traces remain native. Fire intents now carry the originating
+player and fence connection/role/readiness, newer desired states and interrupted
+native fields/sends. Full Release and offline regression qualification passes;
+two-peer fire/save/cleaning timing remains open.
+Current2173 positions observed looping toy playback on late join/recovery, using
+native duration/pitch, queue age and half-RTT. Unknown pre-observation/cue phase
+stays unknown; heartbeats do not restart the same episode. Toy requests and native
+actions bind their original person/invocation/connection. Offline qualification
+passes; two-peer timing and hand/world phase continuity stay open.
+Current2174 adds exact selected-hand gasoline launch capture, current/retired class
+proof and host flight, while refusing mirror factories and unbound client projectiles.
+Native fire attempts cannot replay partial additive fuel; final extinguishing state
+retries blocked recipients. Plush Alt input binds the pre-activation snapshot.
+Toy sampling, cached playback, action/touch captures and queued squeaks retain the
+canonical actor key across native callbacks and refuse a renamed source.
+Client music commands retain their queue until the host is world-ready.
+Current2175 adds canonical host explosion/salt-rocket surface scorch births,
+independent cleaning identities, quiet late join/adoption and retained retirement.
+Client surface traces are refused. The inherited private-PC explosion stays local;
+observed private decals are excluded. Known provenance survives same-world reconnect,
+but full save/world reload loses it; unknown host scorches retain static cleaning.
+Other grime factories and two-peer checks remain open.
+Grill accepted replies now survive transport backpressure past their retention
+deadline, and publication retains the original actor key through native callbacks.
+Those regressions pass; personal inventory debit/output/refund is still open.
+Next address personal coal/lid spending/output acceptance and refund, and ordinary
+wall repair with an exact personal cement request/result.
+The current no-spend refusal stays until that accounting is complete. Garden care
+rejection/refund and two-peer hand/drop/save/rejoin checks remain open as well.
 
 ## Entity category request - OPEN
 
@@ -76,9 +179,22 @@ still need two-player validation. This is not full helper synchronization.
 
 ## Current verification and boundaries
 
-The results below are historical **b2153** evidence, not validation of the merged
-**2154** source. Rebuild and rerun checks for 2154 before using those results to
-describe the current tree.
+Current non-entity development **2174** has a fresh MSVC Release build and25
+focused runners with86 positive executable invocations and112 standalone source
+compiles. Native asset contracts,223-kind routing/all18 rejection controls,201
+compiled mutation controls and DLL ABI/forbidden-import checks pass. Control
+manifests verify that the compiled generated sources/fixtures match their recorded
+hashes. All1902 production/config hashes are stable through the final build.
+Current DLL and source hashes are in build/final-nonentity-verification.json.
+Two-peer gameplay remains unverified. The101-file selected prose sweep passes with
+zero findings after correcting include context. Four include tests and the329-arm
+existing prose drill pass. Repository prose and fact-row gates retain findings,
+including missing captured native-hook references. No baseline was relaxed.
+Forty-six corpus files match the installed-pak extracts exactly.
+These checks do not qualify the unmodified entity implementation.
+
+The package results below are historical **b2153** evidence, not validation of
+the current development source or DLL.
 
 package/check_2152.ps1 passes all 9 runners, including expanded entity/boar tests.
 Full MSVC Release DLL resources identify **0.9.0n b2153**. Hash and evidence:
@@ -90,14 +206,16 @@ Live grayboar cues use host-only reliable kind 200, cosmetic turn state uses 201
 within development 2153. Install
 matching current DLLs on both peers; the existing delivery ZIP predates this work.
 
-All 21 merge conflicts are resolved; the merge still awaits its commit. Current
-source/test changes remain uncommitted. Preserve all work. Commit, push, game
+The historical merge is already in main. Current non-entity source/test changes
+remain uncommitted. Preserve all work. Commit, push, game
 installation and publication require an explicit request. No other-agent workflow.
 Update TODO/WORK/TESTLOG in place; detailed prior evidence remains in WORK/TESTLOG.
 
 Fork review: see WORK.md, "Fork and upstream review". Development 2153 now includes exact disk text, rack canonical ownership/join wait and retryable trash classification. Rebuild is local; delivery ZIP predates these fixes. Test client hashcodes and filled racks after save/rejoin.
 
-Cleanup follow-up: historical run_2141 needs Session::SetLocalPropPose stub maintenance before its performance/mutation checks can run against current cord_sync. Main check_2152 suite passes after cleanup.
+Cleanup completed: run_2141 uses the current local toolchain and current cord/session
+fixture declarations. Both performance tests and all five deliberate regression
+controls pass against the current sources; no archived implementation is required.
 
 ## Current item batch follow-up
 
@@ -116,37 +234,113 @@ older "needs implementation" notes for sleeping bodies, shared UI, ragdolls and
 food final-bite delivery. Those features still require gameplay verification.
 Original report IDs below preserve links to the complete tracker.
 
-- [ ] Rebuild merged protocol 2154 and rerun the nine focused runners, production
-  compilation, ABI/reliable-kind routing checks and Release identity verification.
-  Check retained kinds 202/203 and LaptopUI 204; record current hashes/evidence.
-  Update packaging identity checks before any separately requested new release.
-- [ ] Placement: define acceptance/refusal acknowledgement so rejected client
-  placements cannot remain waiting indefinitely for host binding.
-- [ ] Coins: E/overlap pickup must credit the host exactly once and remove the coin
-  only after acceptance; preserve local map-placed coins.
-- [ ] Console/events (12–15, 26, 42): complete Rufus/thiccfus, llama, Madness grunts
-  and variant AI/damage/effects; canonicalize simultaneous typing, periodic/local
-  output, other funny-rule HUD/events and music phase. Cover other toy/squeeze sounds.
-- [ ] Cement/walls (21/22): extend the atomic transaction task above to creative
-  construction, wet-wall timer persistence and exact impact/effects. Verify held
+- [x] Rebuild current main and the non-entity batch; compile production sources,
+  verify ABI, reliable-kind routing and Release identity. New non-entity and
+  seven garden/hose suites pass. Historical nine-runner release qualification
+  and gameplay smoke remain open; existing packages have not been replaced.
+- [x] Restore the merged network admission table: 27 existing client request
+  kinds now reach their validating handlers; canonical host-only kinds stay
+  refused at the client edge. All 214 current kinds are covered; 18 negative controls pass.
+- [x] Placement: numbered request, host acceptance/refusal/retry, retained
+  backpressure replies and replay protection. A refused local item stays
+  recoverable by pickup and cannot enter a shared fallback birth. Test in game.
+- [x] Coins: E/overlap/request share a host reservation before native execution;
+  failed completion cannot double-credit and accepted cleanup is retried.
+  No client mirror is removed early; map-placed coins stay native. Test in game.
+- [x] Material save/sync: wet walls retain dryTime/timeToDry; concrete buckets retain
+  dryTimer; sponges retain soapAmount. Native getData/loadData, hand-profile copies
+  and existing network carriers preserve the added fields. Wet walls are polled
+  by the host; timer-only and soap-only changes publish. Test handoff/save/rejoin in game.
+- [x] Black-hole event: a client refuses tp and all six native Delay continuations,
+  including chains started before joining. Audio, delayed emails and event state
+  run on the host; normal sky/moon/initialization paths remain native. Test in game.
+- [ ] Console/events (12–15, 26, 42), non-entity scope: simultaneous submitted
+  output, periodic alerts and clr now use one host-ordered display stream, including
+  the origin and late-join history. Focused offline checks pass; verify in game.
+  Madness now compensates host queue age plus estimated half-RTT for new playback,
+  and retries stopped/destroyed audio and HUD components. Exact music alignment
+  remains unverified. Remaining: other funny-rule HUD/audio. Audit other
+  toy/squeeze sounds. Watoy world activation, host motion and sound/particle state,
+  plus owner hand presentation and late join, now have code and focused offline
+  checks; gameplay, active pickup/stow/drop and native save behavior remain checks.
+  Rufus/thiccfus, llama and creature variants/AI/damage belong
+  to the other owner's entity work.
+- [ ] Cement/walls (21/22): complete atomic material accounting, creative
+  construction and exact impact/effects. Wet-wall timer persistence is implemented.
+  The native wallbuilder instant-completion path now has host validation and
+  request/reply retry in 2162. Only a new contour spawned for that client/person
+  qualifies; the host checks Custom Content, source hand and reach. Repeated requests
+  cannot create a second successor. Offline controller/wrapper/placement checks pass;
+  two-peer completion/effects still need verification. Atomic paid repairs remain open.
+  Verify held
   trowel key continuity: a mismatch currently defers the entire profile poll;
   coordinate native hand reconstruction, unequip/drop and persistent cement stock.
 - [ ] Water/cement/coal (20/21/44/45): arbitrate concurrent writers and stale
   in-flight records, dryTimer ownership and personal-hand transitions. Complete
-  sponge soap stock/foam/surface effects and grill lid/final cooked-food behavior.
+  sponge foam/surface effects and grill lid/final cooked-food behavior.
+  Cement timer and sponge soap stock now survive native records and held profiles;
+  this does not establish atomic authority handoff or concurrent-use correctness.
+  Sponge surface foam and attached bursts now have a host-validated cosmetic
+  channel, with no cleaning or soap replay on recipients. Offline checks pass;
+  real appearance/timing, other shared spill sources and atomic stock remain open.
+  Current2170 covers exact beer/wine/coffee launch, host-native flight/electrical
+  outcomes, static decals, saved-actor adoption and native pour audio. Coffee in
+  the inventory follows its owner; world coffee remains host-owned even in a
+  remote physical hold. Other grime factories, atomic stock and gameplay stay open.
+  Bucket pouring now has its own exact owned-bucket birth route in2164, with
+  post-native velocity/soap capture, host collision/latent gameplay and separate
+  native wade/splash presentation. Offline controller/wrapper/coasting/native
+  checks pass. Two-peer delay/impact appearance and launch cues remain unverified;
+  washer projectile authority/presentation is implemented in2166; atomic water
+  accounting/refund and gameplay acceptance remain open.
+  Held tool display packets now include player identity. Lost extinguisher stop
+  commands expire visually, old-tool effects retire at replacement/stow/departure,
+  missing reflection fields retry and actual stopped audio can restart. Focused
+  offline checks pass in development 2161; two-peer foam and stock durability remain.
+  Grill lid and actual cooking-loop state/volume now have a canonical presentation
+  path and retained join delivery in development 2161. The native lid-output graph
+  has exact local-action provenance. Current2163 also has held grill presentation
+  and burn persistence; ordinary client records preserve host burn/active. Concurrent
+  coal/lid transactions, full stock-record conflicts and personal item durability remain open.
 - [ ] Garden (46): audit merged care/hose routing against pre-session plant/faucet/
   hose enrollment, watering/fertilizing/harvesting, pot changes, accepted rerouting
-  and simultaneous use. Do not assume missing historical save actors are migrated.
-- [ ] Sky event (47): synchronize audio, delayed email/bookkeeping and pre-session
-  latent chains; transport host phases/cues for other custom event effects/creatures.
+  and simultaneous use. Current main already enrolls saved plants/faucets/hoses;
+  seven offline suites passed on 20 October. Care acceptance/refund, personal
+  stock durability and real save/rejoin/concurrent use still need work.
+  Do not assume missing historical save actors are migrated.
+  Faucet/detach requests now wait for host readiness and carry player identity,
+  preserving per-key order and cancelling stale/reentrant work. Offline tests pass.
+  Paid care now binds unique invocations and original player/slot/connection through
+  native read, final cost and queued send; untracked inner calls and skipped POST
+  cannot steal reservations. Host rejection/refund is still open.
+- [ ] Sky event (47): verify the full host phase/audio/email/bookkeeping sequence,
+  permanent-black-hole initialization and mid-chain join/rejoin. Source now refuses
+  a client's pre-session latent continuations too. Other non-entity event effects
+  need host phases/cues; creature behavior belongs to the other owner.
 - [ ] Packages/food (34/39): audit remaining package subclasses and eaten() output;
   require explicit client-local loot provenance. Preserve implemented final-bite
   delivery and eater-local hunger/poison; avoid global replaceProp admission.
+  Cooking progress now crosses world/hand/placement/profile/native-save carriers;
+  client world and remote-hand cooking factories are refused, personal hand cookItem
+  births are narrowly admitted. Late actor/field readiness retains the latest state.
+  Six cooking suites, profile regressions and native contracts pass; game checks remain.
+  The full ancestry census now covers 78 cooking members and 14 cookItem declarations,
+  including eggs/pizzas/potatoes/steak omitted by the earlier filename-prefix audit.
+  Early hand conditions now wait for the matching person/generation; failed join
+  snapshots and hand sends retry. Banana husks and empty coffee cups use canonical
+  host world output and exact personal-hand factory admission. Personal effects
+  remain local; conditioned French recipes and other unexamined outputs stay open.
 - [ ] Stow performance (16): capture frame times if stutters persist, including
   unresolved-class lookup paths; preserve pending item-state restoration.
 - [ ] Models (38): fill remaining preview gaps and verify custom skin compatibility
   without removing rig exclusions. Root prop scaling does not implement skeletal
   bone scaling or arbitrary creature physics; assess those separately if required.
+
+One-time progress audit,21 October: **6/31 non-Entity checkboxes closed (19.35%)**,
+including gameplay acceptance and remaining fork reviews. Within the main
+implementation/investigation section: **6/14 (42.86%)**. Exclude the15 Entity rows
+below and the NPC-only eb55ae97d fork candidate. Partially implemented composite
+rows remain open. Inventory/method: build/current-todo-progress.json.
 
 ## Entity coverage checklist
 
@@ -199,7 +393,7 @@ Keep personal Insomniac/nightmare and other native personal spawn conditions loc
 
 ## Gameplay acceptance checklist
 
-Use matching current 2154 builds. Record role, item/model, reproduction and logs;
+Use matching current 2175 builds. Record role, item/model, reproduction and logs;
 offline tests do not close these reports. Existing item-batch and entity checks
 above also apply. Issues 6 and the previously working nightmare behavior are not
 reopened; verify the newer personal-sleep changes. Wall41 stays excluded.

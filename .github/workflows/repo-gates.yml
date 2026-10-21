@@ -88,6 +88,9 @@ jobs:
       - name: Public-prose gate drill
         run: python3 .github/ci/public_prose_gate_drill.py
 
+      - name: Public-prose include context
+        run: python3 .github/ci/public_prose_include_test.py
+
       - name: Public-prose gate
         run: python3 .github/ci/public_prose_gate.py
 

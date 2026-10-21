@@ -28,21 +28,26 @@ bool Verb(void* actor,const wchar_t* name) {
 bool IsBucket(void* actor){return Family(actor,L"prop_bucket_C");}
 bool IsTrowel(void* actor){return Family(actor,L"prop_wallfixer_C");}
 bool IsConcreteBucket(void* actor){return Family(actor,L"prop_concreteBucket_C");}
-bool SetRemoteConcreteBucketDisplay(void* actor,int32_t units,bool dry) {
-    if(units<0 || units>20 || !IsConcreteBucket(actor))return false;
+bool SetRemoteConcreteBucketDisplay(void* actor,int32_t units,bool dry,const std::function<bool()>& current) {
+    if((current && !current()) || units<0 || units>20 || !IsConcreteBucket(actor))return false;
+    const auto world=world_identity::Generation();
     void* cls=R::ClassOf(actor);void* contents=nullptr;
     const int amount=R::FindPropertyOffset(cls,L"units");
     int32_t dryOff=-1;uint8_t dryMask=0;
     if(amount<0 || !R::FindBoolProperty(cls,L"dry",dryOff,dryMask) || dryOff<0 || !dryMask ||
        !Read(actor,L"StaticMesh1",contents) || !R::IsLive(contents))return false;
     CachedObjRef live,mesh;live.Set(actor);mesh.Set(contents);
+    const auto valid=[&]{
+        if(!live.Get() || !mesh.Get() || world!=world_identity::Generation() || (current && !current()))return false;
+        void* assigned=nullptr;return Read(actor,L"StaticMesh1",assigned) && assigned==contents;
+    };
+    if(!valid())return false;
     auto* data=static_cast<uint8_t*>(actor);
     std::memcpy(data+amount,&units,sizeof(units));
     data[dryOff]=dry?uint8_t(data[dryOff]|dryMask):uint8_t(data[dryOff]&~dryMask);
     // updStage also calls updDry. Native stock replacement can briefly leave an
     // empty selected-hand mirror; hide its fill instead of displaying stage one.
-    return Verb(actor,L"updStage") && live.Get() && mesh.Get() &&
-        engine::SetComponentVisible(contents,units>0,false);
+    return Verb(actor,L"updStage") && valid() && engine::SetComponentVisible(contents,units>0,false) && valid();
 }
 bool ReadStock(void* actor,Stock& state) {
     state={};
@@ -51,7 +56,9 @@ bool ReadStock(void* actor,Stock& state) {
     else if(IsTrowel(actor))state.kind=StockKind::Trowel;
     else if(Family(actor,L"prop_sponge_C")) {
         state.kind=StockKind::Sponge;
-        return Read(actor,L"power",state.wetness) && std::isfinite(state.wetness) && state.wetness>=0;
+        return Read(actor,L"power",state.wetness) && std::isfinite(state.wetness) && state.wetness>=0 &&
+            Read(actor,L"soapAmount",state.soapAmount) && std::isfinite(state.soapAmount) &&
+            state.soapAmount>=-5.f && state.soapAmount<=1'000'000.f;
     }
     else return false;
     if(!Read(actor,state.kind==StockKind::Trowel?L"concrete":L"units",state.units))return false;
@@ -59,6 +66,8 @@ bool ReadStock(void* actor,Stock& state) {
         int32_t off=-1;uint8_t mask=0;
         if(!R::FindBoolProperty(R::ClassOf(actor),L"dry",off,mask) || off<0 || !mask)return false;
         state.dry=(static_cast<uint8_t*>(actor)[off]&mask)!=0;
+        if (!Read(actor,L"dryTimer",state.dryTimer) || !std::isfinite(state.dryTimer) ||
+            state.dryTimer<0 || state.dryTimer>1'000'000.f) return false;
     }
     // Native pouring can briefly leave units below zero before replacing the
     // bucket. Keep that observable; do not turn an exhausted bucket into a full one.
@@ -103,12 +112,14 @@ bool RefreshHeldMaterialRecord(void* actor,save_record::SaveRecord& record) {
         if(sponge) {
             if(record.floats.empty())return false;
             if(record.floats.size()<2)record.floats.resize(2);
-            record.floats[1]={state.wetness}; // native does not save soapAmount
+            record.floats[1]={state.wetness,state.soapAmount};
         } else {
             int32_t maximum=20;
             if(bag && (!Read(actor,L"maxUnits",maximum) || maximum<0))return false;
             if(state.units<0 || state.units>maximum || (concrete && record.bools.empty()))return false;
             if(concrete) {
+                if(record.floats.size()<2)record.floats.resize(2);
+                record.floats[1]={state.dryTimer};
                 if(record.bools.size()<2)record.bools.resize(2);
                 record.bools[1]={uint8_t(state.dry)};
                 if(record.ints.empty())record.ints.resize(1);
@@ -118,12 +129,14 @@ bool RefreshHeldMaterialRecord(void* actor,save_record::SaveRecord& record) {
     }
     return true;
 }
-bool SetRemoteConcrete(void* actor,int32_t units) {
-    if(units<0 || units>5 || !IsTrowel(actor))return false;
+bool SetRemoteConcrete(void* actor,int32_t units,const std::function<bool()>& current) {
+    if((current && !current()) || units<0 || units>5 || !IsTrowel(actor))return false;
+    CachedObjRef live;live.Set(actor);const auto world=world_identity::Generation();
+    const auto valid=[&]{return live.Get() && world==world_identity::Generation() && (!current || current());};
     const int off=R::FindPropertyOffset(R::ClassOf(actor),L"concrete");
-    if(off<0)return false;
+    if(off<0 || !valid())return false;
     std::memcpy(static_cast<uint8_t*>(actor)+off,&units,sizeof(units));
-    return Verb(actor,L"updConcrete"); // visibility only; no native use/repair/spending
+    return Verb(actor,L"updConcrete") && valid(); // visibility only; no native use/repair/spending
 }
 bool ReadWater(void* actor,Water& state) {
     if(!IsBucket(actor) || !Read(actor,L"height",state.height) ||
@@ -140,18 +153,20 @@ bool RepairBucketEmpty(void* actor) {
     flags=state.height<=0 ? uint8_t(flags|mask) : uint8_t(flags&~mask);
     return true;
 }
-bool RepaintBucket(void* actor) {
-    Water state{};if(!ReadWater(actor,state))return false;
+bool RepaintBucket(void* actor,const std::function<bool()>& current) {
+    if((current && !current()) || !actor || !R::IsLive(actor))return false;
+    CachedObjRef live;live.Set(actor);const auto world=world_identity::Generation();
+    const auto valid=[&]{return live.Get() && world==world_identity::Generation() && (!current || current());};
+    Water state{};if(!ReadWater(actor,state) || !valid())return false;
     const int off=R::FindPropertyOffset(R::ClassOf(actor),L"height_interp");
-    if(off<0)return false;
+    if(off<0 || !valid())return false;
     std::memcpy(static_cast<uint8_t*>(actor)+off,&state.height,sizeof(state.height));
-    CachedObjRef live;live.Set(actor);
-    return Verb(actor,L"calcPoints") && live.Get() && Verb(actor,L"upd");
+    return Verb(actor,L"calcPoints") && valid() && Verb(actor,L"upd") && valid();
 }
-bool SetRemoteBucketDisplay(void* actor,float height,bool soap,bool alcohol) {
+bool SetRemoteBucketDisplay(void* actor,float height,bool soap,bool alcohol,const std::function<bool()>& current) {
     // The native bucket's maxHeight is38; world/inventory amounts remain on the
     // owner's save lane. Only the disposable hand mirror receives these fields.
-    if(!std::isfinite(height) || height<0 || height>38 || !IsBucket(actor))return false;
+    if((current && !current()) || !std::isfinite(height) || height<0 || height>38 || !IsBucket(actor))return false;
     void* cls=R::ClassOf(actor);
     const int level=R::FindPropertyOffset(cls,L"height"), suds=R::FindPropertyOffset(cls,L"soap");
     int32_t alcoholOff=-1,emptyOff=-1;uint8_t alcoholMask=0,emptyMask=0;
@@ -163,7 +178,7 @@ bool SetRemoteBucketDisplay(void* actor,float height,bool soap,bool alcohol) {
     std::memcpy(data+suds,&soapDisplay,sizeof(soapDisplay));
     data[alcoholOff]=alcohol && height>0 ? uint8_t(data[alcoholOff]|alcoholMask) : uint8_t(data[alcoholOff]&~alcoholMask);
     data[emptyOff]=height<=0 ? uint8_t(data[emptyOff]|emptyMask) : uint8_t(data[emptyOff]&~emptyMask);
-    return RepaintBucket(actor);
+    return RepaintBucket(actor,current);
 }
 bool TickBucketContents(void* actor,float seconds) {
     if(!IsBucket(actor) || !std::isfinite(seconds) || seconds<0)return false;

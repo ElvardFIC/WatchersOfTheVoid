@@ -23,11 +23,16 @@ int main() {
     Deliver(Packet(State,host),0);Pump();CHECK(test::spawned==1&&!a->live);
     Reset(s,net::Role::Host);Deliver(Packet(Create,outline),1);Pump();
     a=static_cast<test::Actor*>(g_rows.at(outline.key).ref.Get());
+    CHECK(OwnsClientWall(outline.key,a,1,test::playerNo));
+    CHECK(!OwnsClientWall(outline.key,a,2,test::playerNo));CHECK(!OwnsClientWall(outline.key,a,1,test::playerNo+1));
+    g_rows.at(outline.key).spawnedForClient=false;CHECK(!OwnsClientWall(outline.key,a,1,test::playerNo));g_rows.at(outline.key).spawnedForClient=true;
     a->record.ints[0][1]=7;MarkChanged(a);s.sendBudget=0;Pump();
     CHECK(g_rows.at(outline.key).dirty&&g_rows.at(outline.key).record.ints[0][1]==7);
     s.sendBudget=-1;Pump();CHECK(!g_rows.at(outline.key).dirty);
     Deliver(Packet(Create,outline),1);Pump();CHECK(a->record.ints[0][1]==7&&test::spawned==1);
     QueueConnectBroadcastForSlot(2);Pump();CHECK(g_rows.at(outline.key).record.ints[0][1]==7);
     a->live=false;Pump();CHECK(g_rows.at(outline.key).dead);
+    Reset(s,net::Role::Host);a=test::New(outline);Deliver(Packet(Create,outline),1);Pump();
+    CHECK(!OwnsClientWall(outline.key,a,1,test::playerNo)); // a colliding existing host actor was never created for this client
     puts("PASS wall placement: author receives progress, conversion/tombstone, late join, stale create and send retry");
 }

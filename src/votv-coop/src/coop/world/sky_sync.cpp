@@ -9,6 +9,7 @@
 #include "coop/session/net_pump.h"          // IsInAnnouncedWorld: a client's own world load runs natively
 
 #include "ue_wrap/core/log.h"
+#include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/script_gate.h"
 #include "ue_wrap/facts/function_row.h"
 #include "ue_wrap/world/skysphere.h"
@@ -18,6 +19,7 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <cstring>
 
 namespace coop::sky_sync {
 namespace {
@@ -39,7 +41,7 @@ constexpr auto kPushInterval = std::chrono::milliseconds(1000);
 constexpr int kSetEyeTag = 0x534b4559;  // 'SKEY'
 constexpr int kBlackHoleTag = 0x534b4248; // 'SKBH'
 constexpr int kBlackHoleVisibilityTag = 0x534b4256;
-bool     g_gateAsked = false;            // the refusal gate was registered (or refused, said)
+bool g_eyeWatch = false, g_startWatch = false, g_visualWatch = false, g_graphWatch = false;
 bool     g_applyingEye = false;          // the lane's own apply of the host's eye runs
 bool     g_applyingBlackHole = false;
 uint64_t g_blackHoleApplyFailed = 0;
@@ -65,6 +67,22 @@ sg::Verdict OnBlackHolePre(const sg::Call&) {
 }
 sg::Verdict OnBlackHoleVisibilityPre(const sg::Call& call) {
     return g_applyingBlackHole ? sg::Verdict::Run : OnBlackHolePre(call);
+}
+
+sg::Verdict OnBlackHoleGraphPre(const sg::Call& call) {
+    if (OnBlackHolePre(call) == sg::Verdict::Run || !call.function || !call.locals) return sg::Verdict::Run;
+    const int off = ue_wrap::reflection::FindParamOffset(call.function,L"EntryPoint");
+    const int size = ue_wrap::reflection::FunctionFrameSize(call.function);
+    if (off < 0 || off > size || size-off < int(sizeof(int32_t))) return sg::Verdict::Run;
+    int32_t entry = 0; std::memcpy(&entry,call.locals+off,sizeof(entry));
+    // 0.9.0n tp and its six Delay continuations. A chain begun before this peer
+    // joined must not later emit its own sound/mail or change world event state.
+    // BeginPlay/init, permanent-hole setup, sky tick and moon timers stay native.
+    switch (entry) {
+    case 5062: case 3222: case 70: case 437: case 552: case 759: case 1023:
+        return sg::Verdict::Cancel;
+    default: return sg::Verdict::Run;
+    }
 }
 
 // CLIENT, before newsky's setEye: the host's sky owns the eye. The lane's apply runs, and so does a call
@@ -116,16 +134,14 @@ bool MakePayload(coop::net::SkyStatePayload& out) {
 void Install(coop::net::Session* session) {
     g_session.store(session, std::memory_order_release);
     SKY::EnsureResolved();  // retried via Tick until newsky_C loads
-    if (!g_gateAsked) {
-        g_gateAsked = true;
-        if (!sg::WatchName(kRowSetEye, kSetEyeTag, &OnSetEyePre, nullptr))
-            UE_LOGE("sky_sync: the script gate refused the watch on newsky_C.setEye -- a client's own noon roll "
-                    "can still set its eye");
-        const bool startWatch = sg::WatchClassName(L"newsky_C", L"tp", kBlackHoleTag, &OnBlackHolePre, nullptr);
-        const bool visualWatch = sg::WatchClassName(L"newsky_C", L"skyVisibility", kBlackHoleVisibilityTag,
-                                                   &OnBlackHoleVisibilityPre, nullptr);
-        if (!startWatch || !visualWatch)
-            UE_LOGE("sky_sync: black-hole authority watch registration failed");
+    if (!g_eyeWatch) g_eyeWatch = sg::WatchName(kRowSetEye,kSetEyeTag,&OnSetEyePre,nullptr);
+    if (!g_startWatch) g_startWatch = sg::WatchClassName(L"newsky_C",L"tp",kBlackHoleTag,&OnBlackHolePre,nullptr);
+    if (!g_visualWatch) g_visualWatch = sg::WatchClassName(L"newsky_C",L"skyVisibility",kBlackHoleVisibilityTag,&OnBlackHoleVisibilityPre,nullptr);
+    if (!g_graphWatch) g_graphWatch = sg::WatchClassName(L"newsky_C",L"ExecuteUbergraph_newsky",kBlackHoleTag,&OnBlackHoleGraphPre,nullptr);
+    static bool warned = false;
+    if ((!g_eyeWatch || !g_startWatch || !g_visualWatch || !g_graphWatch) && !warned) {
+        warned = true;
+        UE_LOGE("sky_sync: authority watch registration failed; retrying");
     }
 }
 
@@ -183,6 +199,8 @@ void QueueConnectBroadcastForSlot(int peerSlot) {
 }
 
 void Tick() {
+    if ((!g_eyeWatch || !g_startWatch || !g_visualWatch || !g_graphWatch) && g_session.load(std::memory_order_acquire))
+        Install(g_session.load(std::memory_order_acquire));
     sg::ResolvePendingNames();  // the eye gate's name, on the game thread
     if (!SKY::EnsureResolved()) return;
     auto* s = g_session.load(std::memory_order_acquire);

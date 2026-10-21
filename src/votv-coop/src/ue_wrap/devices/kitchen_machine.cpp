@@ -1,4 +1,5 @@
 #include "ue_wrap/devices/kitchen_machine.h"
+#include "ue_wrap/devices/grill.h"
 #include "ue_wrap/actors/swinger.h"
 #include "ue_wrap/actors/prop.h"
 #include "ue_wrap/core/cached_obj_ref.h"
@@ -46,14 +47,16 @@ struct Bit {
     CachedObjRef cls;
     int32_t off = -1;
     uint8_t mask = 0;
+    bool warned=false;
     explicit Bit(const wchar_t* n) : name(n) {}
     bool Resolve(void* a) {
         void* c = R::ClassOf(a);
-        if (c != cls.Get()) {
+        if (c != cls.Get() || off<0 || !mask) {
+            if(c!=cls.Get())warned=false;
             cls.Set(c);
             off = -1; mask = 0;
             R::FindBoolProperty(c, name, off, mask);
-            if (off<0 || !mask) UE_LOGW("kitchen: %ls bool %ls did not resolve",R::ClassNameOf(a).c_str(),name);
+            if ((off<0 || !mask) && !warned) {warned=true;UE_LOGW("kitchen: %ls bool %ls did not resolve",R::ClassNameOf(a).c_str(),name);}
         }
         return off >= 0 && mask != 0;
     }
@@ -93,7 +96,7 @@ bool ReadFlag(Bit& f, void* a, uint8_t bit, uint8_t& flags) {
 }
 
 Kind Type(void* actor) {
-    void* cls = actor ? R::ClassOf(actor) : nullptr;
+    void* cls = actor && R::IsLive(actor) ? R::ClassOf(actor) : nullptr;
     if (!cls) return Kind::None;
     for (int i=0;i<6;++i) {
         void* base = g_classes[i].Get();
@@ -226,29 +229,34 @@ bool Read(void* actor, State& out) {
         ok &= ReadFlag(l.ready,actor,CoffeeReady,s.flags);
         ok &= ReadFlag(l.hasPower,actor,Powered,s.flags);
     } else if(s.kind==Kind::Grill) {
-        ok &= ReadFlag(l.active,actor,Active,s.flags);
-        ok &= l.coals.Get(actor,s.coals);
-        ok &= l.burn.Get(actor,s.burn);
+        grill::State state{};ok=grill::Read(actor,state);
+        if(state.active)s.flags|=Active;
+        if(state.lid)s.flags|=HasLid;
+        s.coals=state.coals;s.burn=state.burn;s.cooking=state.cooking;s.cookVolume=state.volume;
     } else {
         ok &= ReadFlag(l.processing,actor,Processing,s.flags);
     }
     if (ok) out=s;
     return ok;
 }
-bool Apply(void* actor, const State& s) {
+bool Apply(void* actor, const State& s,const std::function<bool()>& current) {
+    if(current && !current())return false;
     if (Type(actor)!=s.kind || s.kind==Kind::None) return false;
+    CachedObjRef live;live.Set(actor);const auto world=world_identity::Generation();
+    const auto valid=[&]{return live.Get() && world==world_identity::Generation() && (!current || current());};
+    if(s.kind==Kind::Grill)return grill::Apply(actor,{bool(s.flags&Active),bool(s.flags&HasLid),s.cooking,s.coals,s.burn,s.cookVolume},current);
     if (s.kind==Kind::Cremator) {
         // Door paint only; lever/burning state has its own authoritative lane.
-        return SetDoor(actor,(s.flags&Opened)!=0) && s.hasDoorPose && ApplyDoorPose(actor,s.doorPose);
+        return SetDoor(actor,(s.flags&Opened)!=0) && valid() && s.hasDoorPose && ApplyDoorPose(actor,s.doorPose) && valid();
     }
     auto& l = Fields(s.kind);
     State before{};
-    if (!Read(actor,before)) return false;
+    if (!Read(actor,before) || !valid()) return false;
     // Doors retain their own native swing animation and callbacks. Write the canonical fields
     // AFTER that call: a microwave's door callback can turn its running bit off.
     if (s.kind==Kind::Microwave || s.kind==Kind::MiniOven) {
-        if (OwnsDoor(actor)) SetDoor(actor,(s.flags&Opened)!=0);
-        if (s.hasDoorPose) ApplyDoorPose(actor,s.doorPose);
+        if (OwnsDoor(actor) && (!SetDoor(actor,(s.flags&Opened)!=0) || !valid()))return false;
+        if (s.hasDoorPose && (!ApplyDoorPose(actor,s.doorPose) || !valid()))return false;
         l.active.Put(actor,(s.flags&Active)!=0);
         l.powered.Put(actor,(s.flags&Powered)!=0);
     }
@@ -256,30 +264,23 @@ bool Apply(void* actor, const State& s) {
         l.opened.Put(actor,(s.flags&Opened)!=0);
         l.timeMode.Put(actor,s.mode); l.time.Put(actor,s.remaining); l.timer.Put(actor,s.timer);
         engine::SetComponentVisible(Object(l.light,actor),(s.flags&Powered) && (s.flags&(Active|Opened)),false);
+        if(!valid())return false;
         void* loop = Object(l.loop,actor);
         const bool running=(s.flags&(Active|Powered))==(Active|Powered);
-        const bool wasRunning=(before.flags&(Active|Powered))==(Active|Powered);
-        if (running!=wasRunning) component_calls::SetActive(loop,running,false);
+        if(!valid() || !component_calls::SetAudioPlaying(loop,running,valid))return false;
     } else if (s.kind==Kind::MiniOven) {
         l.mode.Put(actor,s.mode); l.power.Put(actor,s.power);
-        if ((before.flags^s.flags)&(Active|Powered)) component_calls::CallParamlessNamed(actor,L"upd");
+        if (((before.flags^s.flags)&(Active|Powered)) && !component_calls::CallParamlessNamed(actor,L"upd"))return false;
     } else if (s.kind==Kind::CoffeeMaker) {
         l.cup.Put(actor,(s.flags&HasCup)!=0); l.coffee.Put(actor,(s.flags&HasCoffee)!=0);
         l.ready.Put(actor,(s.flags&CoffeeReady)!=0); l.hasPower.Put(actor,(s.flags&Powered)!=0);
-        if (before.flags!=s.flags) component_calls::CallParamlessNamed(actor,L"upd");
-    } else if(s.kind==Kind::Grill) {
-        // upd paints the coals, fire and burning loop. It does not spend fuel or
-        // heat food; replica ReceiveTick is suppressed by the kitchen controller.
-        if(!l.active.Put(actor,(s.flags&Active)!=0)||!l.coals.Put(actor,s.coals)||!l.burn.Put(actor,s.burn))return false;
-        return component_calls::CallParamlessNamed(actor,L"upd");
+        if (before.flags!=s.flags && !component_calls::CallParamlessNamed(actor,L"upd"))return false;
     } else {
         l.processing.Put(actor,(s.flags&Processing)!=0);
-        if ((before.flags^s.flags)&Processing) {
-            void* buzz=Object(l.buzz,actor);
-            component_calls::SetActive(buzz,(s.flags&Processing)!=0,false);
-        }
+        void* buzz=Object(l.buzz,actor);
+        if(!component_calls::SetAudioPlaying(buzz,(s.flags&Processing)!=0,valid))return false;
     }
-    return true;
+    return valid();
 }
 uint8_t ReadControl(void* actor) {
     if (Type(actor)!=Kind::MiniOven) return 0;

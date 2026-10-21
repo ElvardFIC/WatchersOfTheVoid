@@ -90,6 +90,8 @@ bool ApplyParked(void* actor, const std::wstring& key);
 // False means the pending apply failed/re-entered or the actor/world disappeared;
 // the caller must defer capture rather than save stale class-default values.
 bool PrepareForCapture(void* actor, const std::wstring& key);
+// World edits wait for a new birth's initial record, then apply any queued record first.
+bool PrepareForMutation(void* actor, const std::wstring& key);
 
 // Per frame: spends a bounded apply budget on the park (an apply is a ProcessEvent into the prop's
 // own loadData, so a join's worth of them in one frame is a stall), and sweeps the chunk

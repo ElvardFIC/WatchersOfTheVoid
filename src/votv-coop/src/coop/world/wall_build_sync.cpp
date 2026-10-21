@@ -1,5 +1,6 @@
 #include "coop/world/wall_build_sync.h"
 #include "coop/world/placed_save_sync.h"
+#include "coop/world/wall_creative_sync.h"
 #include "coop/net/session.h"
 #include "ue_wrap/actors/wall_build.h"
 #include "ue_wrap/core/cached_obj_ref.h"
@@ -87,9 +88,11 @@ SG::Verdict BeforeMutation(const SG::Call& c) {
     // Mirrors cannot consume material, construct a second successor or refund
     // native break debris. loadData/init/visual updates remain enabled.
     World();
+    if(!wall_creative_sync::NativeCurrent(c.object))return SG::Verdict::Cancel;
     if (g_feeding && !FeedCurrent()) return SG::Verdict::Cancel;
     if (Active() && Host() && !PrepareHostWall(c.object)) return SG::Verdict::Cancel;
-    return Active() && !Host() ? SG::Verdict::Cancel : SG::Verdict::Run;
+    if(!wall_creative_sync::NativeCurrent(c.object))return SG::Verdict::Cancel;
+    return Active() && !Host() ? wall_creative_sync::BeforeBuild(c) : SG::Verdict::Run;
 }
 SG::Verdict BeforeMirrorOnly(const SG::Call&) {
     // Destruction notifications can arrive after the actor is kill-flagged.
@@ -119,6 +122,7 @@ void Changed(const SG::Call& c) {
 }
 }
 void Install(net::Session* session) {
+    wall_creative_sync::Install(session);
     if (g_session != session) { g_session = session; g_pending.clear(); ++g_epoch; }
     if (g_watched) return;
     constexpr int tag = 0x57414C4C;
@@ -130,6 +134,7 @@ void Install(net::Session* session) {
         SG::WatchClassName(L"customWall_C", L"ReceiveDestroyed", tag, &BeforeMirrorOnly, nullptr);
 }
 void Tick() {
+    wall_creative_sync::Tick();
     World();
     if (!Active() || !Host() || g_draining || g_pending.empty()) return;
     struct Draining {Draining(){g_draining=true;}~Draining(){g_draining=false;}} draining;
@@ -155,5 +160,5 @@ void Tick() {
         if (!handled && p.wall.Get() && p.material.Get() && g_pending.size() < 256) g_pending.push_back(p);
     }
 }
-void OnDisconnect() { g_session = nullptr; g_pending.clear(); ++g_epoch; }
+void OnDisconnect() { g_session = nullptr; g_pending.clear(); ++g_epoch;wall_creative_sync::OnDisconnect(); }
 }

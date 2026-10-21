@@ -49,6 +49,9 @@
 #include "coop/props/notebook_refresh.h"
 #include "coop/props/bucket_sync.h"
 #include "coop/props/dingus_music_sync.h"
+#include "coop/props/watoy_sync.h"
+#include "coop/props/sponge_effects_sync.h"
+#include "coop/props/water_pour_sync.h"
 #include "coop/props/prop_record_refresh.h"  // a drive box or reel case republishes its record in place
 #include "coop/interactables/signal_catch_sync.h"
 #include "coop/interactables/signal_sync.h"
@@ -92,6 +95,7 @@
 #include "coop/save/save_transfer.h"
 #include "coop/session/join_beacon.h"
 #include "coop/interactables/grime_sync.h"
+#include "coop/props/drink_spill_sync.h"
 #include "coop/interactables/interactable_sync.h"
 #include "coop/interactables/atv_sync.h"
 #include "coop/interactables/drone_sync.h"
@@ -270,6 +274,9 @@ void Install(coop::net::Session& session) {
     coop::desk_short_circuit_sync::Install(&session);
     coop::madness_sync::Install(&session);
     coop::dingus_music_sync::Install(&session);
+    coop::watoy_sync::Install(&session);
+    coop::sponge_effects_sync::Install(&session);
+    coop::water_pour_sync::Install(&session);
     coop::radio_sync::Install(&session);
     coop::cargo_lift_sync::Install(&session);
     coop::prop_fire_sync::Install(&session);
@@ -344,6 +351,7 @@ void Install(coop::net::Session& session) {
     coop::window_sync::Install(&session);  // base-window dirt scalar (the "main huge window")
     coop::window_stroke_sync::Install(&session);  // the bay window's render-target dabs
     coop::grime_sync::Install(&session);  // surface grime (walls/ceiling/floor dirt decals)
+    coop::drink_spill_sync::Install(&session);
     coop::trash_pile_sync::Install(&session);  // trash pile collect counters
     coop::broom_stroke::Install(&session);  // a client's broom stroke is run by the host, with what the client's stroke read
     coop::pack_trash_intent::Install(&session);  // a client's bagging of a pile is run by the host
@@ -453,6 +461,7 @@ void ConnectReplayForSlot(int slot) {
     coop::comp_sync::QueueConnectBroadcastForSlot(slot);  // the refiner's seed (CompState + CompData)
     coop::voice_chat::ReplayPeerStatesToSlot(slot);  // voice mute/disabled states -> joiner
     coop::window_sync::QueueConnectBroadcastForSlot(slot);  // base-window clean (adopt=1)
+    coop::drink_spill_sync::SendAllToSlot(slot);
     coop::grime_sync::QueueConnectBroadcastForSlot(slot);  // surface grime process (adopt=1)
     coop::trash_pile_sync::QueueConnectBroadcastForSlot(slot);  // pile counters (adopt=1) + depleted-key replay
     coop::npc_world_enum::RegisterExistingWorldNpcs(slot);  // pre-existing/level-load NPCs (the save's kerfur) -> the peers already in; the joiner (slot) is skipped, its connect broadcast below sends it and it adopts its twin
@@ -504,6 +513,7 @@ void ConnectReplayForSlot(int slot) {
     coop::event_cue_sync::QueueConnectBroadcastForSlot(slot);
     coop::madness_sync::QueueConnect(slot);
     coop::dingus_music_sync::QueueConnect(slot);
+    coop::watoy_sync::QueueConnect(slot);
     coop::grayboar_actions::QueueConnect(slot);
     // The chat lane's late-join answer: the lobby's chat record, oldest first, one message per
     // line. It lands retained on the joiner: arriving in a lobby must not replay a conversation
@@ -524,14 +534,22 @@ void DisconnectSlot(coop::net::Session& session, int slot) {
     coop::desk_visual_sync::OnPeerLeft(slot);
     coop::cargo_lift_sync::OnPeerLeft(slot);
     coop::prop_fire_sync::OnPeerLeft(slot);
+    coop::props::prop_food_sync::OnPeerLeft(slot);
     coop::explosion_sync::OnPeerLeft(slot);
     coop::explosion_events::OnPeerLeft(slot);
     coop::hand_fire_sync::OnPeerLeft(slot);
     coop::hand_extinguisher_sync::OnPeerLeft(slot);
+    coop::kitchen_sync::OnPeerLeft(slot);
     coop::hand_toy_audio::OnPeerLeft(slot);
     coop::desk_short_circuit_sync::OnPeerLeft(slot);
     coop::madness_sync::OnPeerLeft(slot);
     coop::dingus_music_sync::OnPeerLeft(slot);
+    coop::watoy_sync::OnPeerLeft(slot);
+    coop::sponge_effects_sync::OnPeerLeft(slot);
+    coop::water_pour_sync::OnPeerLeft(slot);
+    coop::grime_sync::OnPeerLeftSlot(slot);
+    coop::drink_spill_sync::OnPeerLeft(slot);
+    coop::window_sync::OnPeerLeftSlot(slot);
     coop::grayboar_actions::OnPeerLeft(slot);
     coop::cord_sync::OnPeerLeft(slot);
     // Abort any snapshot drain to this slot, so it does not iterate every candidate into a dead
@@ -590,6 +608,7 @@ void DisconnectSlot(coop::net::Session& session, int slot) {
     coop::owner_entity_sync::OnPeerLeftSlot(slot);  // destroy the leaver's owner-entity mirrors (its eyer dies with it)
     coop::hook_sync::OnPeerLeftSlot(slot);  // the leaver's OWNER-PHASE hook mirrors; anchored ones are the host's and stay
     coop::placed_save_sync::OnPeerLeftSlot(slot);
+    coop::prop_drop_intent::OnPeerLeft(slot);
     coop::garden_actions::OnPeerLeftSlot(slot);
     coop::world_sound_sync::OnPeerLeftSlot(slot);
     coop::player_inventory_sync::OnDisconnectForSlot(slot);  // re-arm the on-join push; the leaver's profile stays held
@@ -659,6 +678,10 @@ DisconnectStats DisconnectAll() {
     coop::desk_short_circuit_sync::OnDisconnect();
     coop::madness_sync::OnDisconnect();
     coop::dingus_music_sync::OnDisconnect();
+    coop::watoy_sync::OnDisconnect();
+    coop::sponge_effects_sync::OnDisconnect();
+    coop::water_pour_sync::OnDisconnect();
+    coop::grime_sync::OnDisconnect();
     coop::radio_sync::OnDisconnect();
     coop::cargo_lift_sync::OnDisconnect();
     coop::prop_fire_sync::OnDisconnect();
@@ -734,6 +757,7 @@ DisconnectStats DisconnectAll() {
     coop::comp_sync::OnDisconnect();
     coop::voice_chat::OnDisconnect();
     coop::window_sync::OnDisconnect();
+    coop::drink_spill_sync::OnDisconnect();
     coop::window_stroke_sync::OnDisconnect();
     coop::trash_pile_sync::OnDisconnect();
     coop::broom_stroke::OnDisconnect();  // with no session the game's broom sweeps as written
@@ -808,6 +832,9 @@ void TickGameplay(coop::net::Session& session, bool isConnected, bool isHost,
     coop::desk_short_circuit_sync::Tick();
     coop::madness_sync::Tick();
     coop::dingus_music_sync::Tick();
+    coop::watoy_sync::Tick();
+    coop::sponge_effects_sync::Tick();
+    coop::water_pour_sync::Tick();
     coop::grayboar_actions::Tick();
     coop::grayboar_turn::Tick();
     { PP::Scope _s{PP::Bucket::Interactable}; ue_wrap::ScopedWalkTimer _w{"sync:cord_sync"}; coop::cord_sync::Tick(); }
@@ -874,6 +901,7 @@ void TickGameplay(coop::net::Session& session, bool isConnected, bool isHost,
     { PP::Scope _s{PP::Bucket::Interactable}; ue_wrap::ScopedWalkTimer _w{"sync:coingun"}; coop::coingun_sync::Tick(); }
     { PP::Scope _s{PP::Bucket::Interactable}; ue_wrap::ScopedWalkTimer _w{"sync:window"}; coop::window_sync::Tick(); }  // base-window clean: deferred-apply retry (wipes go at the verb)
     { PP::Scope _s{PP::Bucket::Interactable}; ue_wrap::ScopedWalkTimer _w{"sync:window_stroke"}; coop::window_stroke_sync::Tick(); }  // bay-window dabs: send observed, replay received
+    coop::drink_spill_sync::Tick();
     { PP::Scope _s{PP::Bucket::Interactable}; ue_wrap::ScopedWalkTimer _w{"sync:grime"}; coop::grime_sync::Tick(); }  // surface grime: the lowering verbs' watches + the end-of-play subscription, until they take
     { PP::Scope _s{PP::Bucket::Interactable}; ue_wrap::ScopedWalkTimer _w{"sync:movement_ledger"}; coop::movement_ledger::Tick(session); }  // HOST: throttled per-slot summary + the wire-vs-actor divergence sample (an ENGINE read, hence game thread)
     { PP::Scope _s{PP::Bucket::Interactable}; ue_wrap::ScopedWalkTimer _w{"sync:npc_host"}; coop::npc_sync::TickPoseStream(); }  // HOST: read NPCs -> publish EntityPose batch (host-only, no-op on client)

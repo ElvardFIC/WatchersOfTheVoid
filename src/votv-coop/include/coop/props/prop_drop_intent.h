@@ -35,7 +35,7 @@ void Install(coop::net::Session* session);
 // thread. No-op on the host, or on empty pending.
 void Tick(coop::net::Session* session);
 
-// An accepted drop request is waiting for the host's identity echo. The hand
+// A sent drop request is waiting for the host's identity echo. The hand
 // release/carry fallback must not independently publish this actor as PropSpawn.
 bool IsAwaitingHost(void* actor);
 // A birth passed placement admission but is still retrying capture/send. This is
@@ -44,6 +44,11 @@ bool IsPendingHostPlacement(void* actor);
 // Resolve the original local throw before consulting the world-key index. Its
 // freshly restored key may not be indexed yet, or may still name the old husk.
 void* FindAwaitingHost(const std::wstring& key, const std::wstring& className);
+// Explicit host refusal ends waiting. The local actor is retained for pickup;
+// it must not become a shared trash/carry birth through a fallback path.
+bool IsRefusedPlacement(void* actor);
+void OnPlacementResult(const net::PropPlacementResultPayload& result, int senderSlot);
+void OnPeerLeft(int slot);
 
 // Called from prop_lifecycle::DestroySeamBody right AFTER a CLIENT broadcasts a keyed-prop DESTROY:
 // park the key so a later same-key place authors a host-authoritative drop intent, and only then.
@@ -55,7 +60,8 @@ void NoteClientKeyedDestroy(const std::wstring& key);
 // transform, NOT echo-suppressed, so the host's own FinishSpawn watcher expresses it and broadcasts
 // PropSpawn to every peer. The placing client adopts its own untracked local rock by Key, through the
 // prop key index, which holds every live keyed prop, tracked or not. Dup-guarded: skipped if the host
-// already has the Key live.
+// already has the Key live. Numbered outcomes are cached per occupant; refused
+// requests cannot silently leave the placing client waiting for a spawn.
 // Game thread.
 void OnPropDropIntent(coop::net::Session& session, const coop::net::PropDropIntentPayload& p,
                       uint8_t senderSlot);

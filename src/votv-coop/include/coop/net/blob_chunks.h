@@ -19,6 +19,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <utility>
 #include <vector>
@@ -55,6 +56,9 @@ inline constexpr size_t MaxBlobBytes() {
 // every chunk was accepted.
 bool SendBlob(coop::net::Session* s, coop::net::ReliableKind kind, uint32_t seq,
               const std::vector<uint8_t>& blob);
+// Cancel before/after each chunk when the caller's source or session changes.
+bool SendBlobWhile(coop::net::Session* s, coop::net::ReliableKind kind, uint32_t seq,
+                   const std::vector<uint8_t>& blob,const std::function<bool()>& current);
 
 // Slot-targeted variant: ship the blob's chunks to ONE peer (peerSlot) via
 // Session::SendReliableToSlot instead of the default route. Used by the HOST to send a specific
@@ -62,6 +66,8 @@ bool SendBlob(coop::net::Session* s, coop::net::ReliableKind kind, uint32_t seq,
 // chunk was accepted by that slot.
 bool SendBlobToSlot(coop::net::Session* s, int peerSlot, coop::net::ReliableKind kind,
                     uint32_t seq, const std::vector<uint8_t>& blob);
+bool SendBlobToSlotWhile(coop::net::Session* s,int peerSlot,coop::net::ReliableKind kind,
+                         uint32_t seq,const std::vector<uint8_t>& blob,const std::function<bool()>& current);
 
 // Per-kind reassembler; each sync module owns one (keys are per-sender, and
 // kinds ride separate Assembler instances, so seq spaces never collide).

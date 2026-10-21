@@ -1,4 +1,5 @@
 #include "../../src/votv-coop/src/ue_wrap/actors/placed_save.cpp"
+#include "../../src/votv-coop/src/ue_wrap/actors/wall_drying.cpp"
 #include "../../src/votv-coop/src/ue_wrap/core/call.cpp"
 #include <cstdio>
 #include <cstdlib>
@@ -96,6 +97,8 @@ namespace ue_wrap::object_index {void* ClassByName(const wchar_t*){return nullpt
 namespace ue_wrap::keyed_objects {void* Resolve(const wchar_t* key){auto it=test::keys.find(key);return it==test::keys.end()?nullptr:it->second;}}
 namespace ue_wrap::wall_build {bool RestoreMaterial(void*,const wchar_t*){return true;}}
 namespace ue_wrap::save_record {
+bool ReadFloatGroup(const void*,size_t,std::vector<float>&){std::abort();}
+bool ReplaceFloatGroup(void*,size_t,const std::vector<float>&){std::abort();}
 bool CaptureRecordVia(void*,void*,SaveRecord& r){r=test::captured;return test::captureOK;}
 std::wstring ReadFNameAt(const void* a,int32_t){return static_cast<const test::Obj*>(a)->key;}
 void WriteFNameField(void* field,const std::wstring& name){*static_cast<std::wstring*>(field)=name;if(test::nameCallback)test::nameCallback();}

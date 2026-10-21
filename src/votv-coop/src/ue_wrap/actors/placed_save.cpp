@@ -1,5 +1,6 @@
 #include "ue_wrap/actors/placed_save.h"
 #include "ue_wrap/actors/wall_build.h"
+#include "ue_wrap/actors/wall_drying.h"
 #include "ue_wrap/core/call.h"
 #include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/object_index.h"
@@ -98,6 +99,7 @@ bool Capture(void* actor, SR::SaveRecord& record) {
     if (!SR::CaptureRecordVia(actor,
         R::FindDispatchFunctionCached(R::ClassOf(actor), L"getData"), record) || !ref.Get() || world != world_identity::Generation()) return false;
     const auto kind = Type(actor);
+    if (wall_drying::IsWetWall(actor) && !wall_drying::Capture(actor,record)) return false;
     if (kind == Kind::Hose || kind == Kind::Faucet) {
         // Native getData preserves the old saved key when the optional pointer
         // is null. A detached endpoint must not reattach on the next load.
@@ -215,6 +217,7 @@ bool Apply(void* actor, const SR::SaveRecord& record) {
     }
     if (!SR::ApplyRecordVia(actor, R::FindDispatchFunctionCached(R::ClassOf(actor), L"loadData"), record)) return false;
     if (!ref.Get()) return false;
+    if (wall_drying::IsWetWall(actor) && !wall_drying::Restore(actor,record)) return false;
     if (ClassKind(record.className) == Kind::WallOutline &&
         !wall_build::RestoreMaterial(actor, record.strings[0][0].c_str())) return false;
     return ref.Get() && SetKey(actor, record.key);

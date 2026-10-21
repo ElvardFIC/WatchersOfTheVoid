@@ -5,6 +5,11 @@
 #include <functional>
 
 #define CHECK(x) do { if (!(x)) { std::fprintf(stderr,"FAIL %d: %s\n",__LINE__,#x); std::exit(1); } } while (0)
+namespace ue_wrap::cooking_food {
+bool IsCookingFood(void*){std::abort();}
+bool ReadProgress(void*,float&){std::abort();}
+bool WriteProgress(void*,float){std::abort();}
+}
 namespace test {
 struct Object { int id; int serial = 1; bool live = true; uint8_t flags = 0xA0; int type = 2; int foods = 5; };
 Object objects[3]{{0}, {1}, {2}};
@@ -48,6 +53,7 @@ void* ClassByName(const wchar_t* name) {
 namespace ue_wrap::prop { std::wstring GetInteractableKeyString(void*) { return L"can1"; } }
 #endif
 namespace ue_wrap::world_identity {
+uint32_t Generation() { return 1; }
 void* CurrentWorld() { return nullptr; }
 void* WorldOf(void*) { return nullptr; }
 }

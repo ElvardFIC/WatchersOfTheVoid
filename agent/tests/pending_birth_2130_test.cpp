@@ -4,11 +4,14 @@
 #include "../../src/votv-coop/src/coop/props/prop_drop_intent.cpp"
 #include "ue_wrap/core/cached_obj_ref.h"
 #include "coop/props/local_birth_protection.h"
+#include "coop/element/player.h"
+#include "nonentity_facts_support.h"
 #include <cstdio>
 #include <cstdlib>
 #include <functional>
 #define CHECK(x) do {if(!(x)){std::fprintf(stderr,"FAIL %d: %s\n",__LINE__,#x);std::exit(1);}}while(0)
 namespace D=coop::prop_drop_intent;
+namespace coop::water_pour_sync {bool ObserveBirth(void*,void*){return false;}}
 namespace test {
 int actor=0,world=0,nextWorld=0,serial=1,publishes=0,claims=0;
 int keyReads=0,readableAfter=100000;
@@ -17,19 +20,32 @@ bool live=true,authored=true,extract=false,hand=false,mirror=false,tracked=false
 bool floorActor=false,mintOk=true;
 bool locationOk=true,rotationOk=true;
 int mints=0;
+int begins=0,expresses=0,notices=0;
+int expectedRecords=0;
+bool keySetOK=true,finishOK=true;
+bool parityOK=true,scaleOK=true;
+void* indexed=nullptr;
+coop::prop_key_index::Read indexRead=coop::prop_key_index::Read::Miss;
+coop::roster_ledger::Row roster[4];
 bool foodActor=false,foodReadable=true,foodWritable=true,finished=false;
 int destroys=0,foodWrites=0,invalidates=0;
 ue_wrap::food::Condition condition{300.f,0.75f,2};
 std::function<void()> duringFinish;
+std::function<void()> duringBegin;
+std::function<void()> duringFoodWrite,duringApplyParked;
 std::function<void()> duringKey;
 std::function<void()> duringRead,duringPublish;
 coop::net::Session session;
 void Enqueue(){D::OnClientFinishSpawn(nullptr,nullptr,&actor);}
-void Reset(){D::Reset();session.drops.clear();session.linked=true;D::g_session=&session;
+void Reset(){currentWorld=&world;D::Reset();session.drops.clear();session.linked=true;D::g_session=&session;
     locationOk=rotationOk=true;
     live=authored=readable=true;extract=hand=mirror=tracked=false;serial=1;currentWorld=&world;
     foodActor=false;foodReadable=foodWritable=true;finished=false;destroys=foodWrites=invalidates=0;condition={300.f,0.75f,2};duringFinish={};session.sendOK=true;session.mode=coop::net::Role::Client;
-    publishes=claims=keyReads=mints=0;floorActor=false;mintOk=true;duringKey={};
+    publishes=claims=keyReads=mints=begins=expresses=notices=0;floorActor=false;mintOk=keySetOK=finishOK=parityOK=scaleOK=true;duringKey={};
+    indexed=nullptr;indexRead=coop::prop_key_index::Read::Miss;
+    session.replies.clear();session.blockedSlot=-1;session.duringSend={};
+    duringBegin={};duringFoodWrite={};duringApplyParked={};expectedRecords=0;
+    roster[1].playerNo=2;roster[1].bornGeneration=1;
     readableAfter=100000;duringRead={};duringPublish={};}
 void Callback(std::function<void()>& slot){auto fn=std::move(slot);slot={};if(fn)fn();}
 }
@@ -82,6 +98,7 @@ namespace coop::join_membership_sweep {void RecordSelfAuthored(void*){}void Reco
 namespace coop::drive_payload_sync {void NoteOwnDrive(void*){}}
 namespace coop::prop_save_data {bool Covers(void*){return true;}bool Publish(net::Session*,void*,const std::wstring&){++test::publishes;test::Callback(test::duringPublish);return true;}}
 namespace coop::dev::prop_birth_key_probe {
+void NoteBirth(void*){}
 bool IsEnabled(){return false;}
 void NoteEnqueue(void*,const std::wstring&,const std::wstring&,bool){}
 void NotePendingCapHit(void*){}
@@ -92,27 +109,36 @@ void NoteDrainExit(void*,const char*,int,const std::wstring&){}
 namespace ue_wrap::food {
 bool IsFood(void*) {return test::foodActor;}
 bool Read(void*,Condition& out) {out=test::condition;return test::foodActor&&test::foodReadable;}
-bool Write(void*,const Condition& in) {CHECK(test::finished);if(!test::foodWritable)return false;test::condition=in;++test::foodWrites;return true;}
+bool Write(void*,const Condition& in,const std::function<bool()>& current) {CHECK(test::finished);test::Callback(test::duringFoodWrite);if(!test::foodWritable || (current && !current()))return false;test::condition=in;++test::foodWrites;return true;}
 }
 namespace coop::props::prop_food_sync {void ForgetPublished(const std::wstring& key){CHECK(key==L"item");++test::invalidates;}}
 // Unused host/installation boundaries must never accidentally run in this client-side test.
 namespace coop::prop_lifecycle {bool IsWireSuppressedPropClass(const std::wstring&){return false;}bool IsPerPlayerPropClass(const std::wstring&){return false;}}
-namespace coop::prop_save_data {void ExpectRecordFor(const std::wstring&,uint8_t){}bool ApplyParked(void*,const std::wstring&){return false;}}
+namespace coop::prop_save_data {void ExpectRecordFor(void*,const std::wstring&,uint8_t){++test::expectedRecords;}bool ApplyParked(void*,const std::wstring&){test::Callback(test::duringApplyParked);return false;}}
+namespace coop::prop_key_index {Read Resolve(const std::wstring&,void** out){*out=test::indexed;return test::indexRead;}}
+namespace coop::prop_snapshot {void ExpressIncrementalSpawn(void*){++test::expresses;}}
+namespace coop::peer_action_feed {void AnnounceDirect(uint8_t,Action,const std::wstring&){++test::notices;}}
+namespace coop::players {
+Registry& Registry::Get(){static auto* r=new Registry;return *r;}
+uint8_t Registry::LocalPeerId()const{return 1;}
+}
+namespace coop::roster_ledger {const Row& Get(int slot){return test::roster[slot>=0&&slot<4?slot:0];}}
 namespace coop::prop_element_tracker {void* ResolveLiveActorByKey(const std::wstring&,bool*){std::abort();}}
 namespace coop::physmods_sync {bool HostShouldReapModuleBirth(uint8_t,void*){std::abort();}}
 namespace coop::server_upgrade_sync {bool HostShouldReapUpgradeBirth(uint8_t){std::abort();}}
-namespace coop::drive_payload_sync {void NoteClientBrought(void*,uint8_t){std::abort();}}
-namespace ue_wrap::reflection {void* FindClass(const wchar_t*){return &test::actor;}void* FindFunction(void*,const wchar_t*){return nullptr;}}
+namespace coop::drive_payload_sync {void NoteClientBrought(void*,uint8_t){}}
+namespace ue_wrap::reflection {void* FindClass(const wchar_t*){return &test::actor;}void* FindFunction(void*,const wchar_t*){return &test::actor;}}
+namespace ue_wrap::object_index {void* ClassByName(const wchar_t*){return &test::actor;}}
 namespace ue_wrap::engine {
-void* BeginDeferredSpawn(void*,const FVector&,const FRotator&){return &test::actor;}
-bool FinishDeferredSpawn(void*,const FVector&,const FRotator&){test::condition={290.f,1.f,5};test::finished=true;test::Callback(test::duringFinish);return true;}
+void* BeginDeferredSpawn(void*,const FVector&,const FRotator&){++test::begins;test::Callback(test::duringBegin);return &test::actor;}
+bool FinishDeferredSpawn(void*,const FVector&,const FRotator&){test::condition={290.f,1.f,5};test::finished=true;test::Callback(test::duringFinish);return test::finishOK;}
 bool DestroyActor(void*){++test::destroys;return true;}
-bool SetActorScale3D(void*,const FVector&){return true;}
+bool SetActorScale3D(void*,const FVector&){return test::scaleOK;}
 }
-namespace ue_wrap {ParamFrame::ParamFrame(void*){std::abort();}bool ParamFrame::SetRaw(const wchar_t*,const void*,int32_t){std::abort();}bool Call(void*,ParamFrame&){std::abort();}}
+namespace ue_wrap {ParamFrame::ParamFrame(void* fn):fn_(fn){}bool ParamFrame::SetRaw(const wchar_t*,const void*,int32_t){return test::keySetOK;}bool Call(void*,ParamFrame&){return test::keySetOK;}}
 namespace ue_wrap::fname_utils {reflection::FName StringToFName(const std::wstring&){return {1,0};}}
-namespace ue_wrap::prop {bool IsClassDescendantOfProp(void*){return true;}bool WriteSpParityIdentity(void*,reflection::FName,bool,bool,bool,bool){return true;}}
-namespace ue_wrap::ufunction_hook {bool InstallPostHook(void*,void(*)(void*,void*,void*),bool){std::abort();}}
+namespace ue_wrap::prop {bool IsClassDescendantOfProp(void*){return true;}bool WriteSpParityIdentity(void*,reflection::FName,bool,bool,bool,bool){return test::parityOK;}}
+namespace ue_wrap::ufunction_hook {bool InstallPostHook(const facts::Resolved&,void(*)(void*,void*,void*),bool){std::abort();}}
 int main(){using namespace test;
     Reset();Enqueue();CHECK(D::g_pending.size()==1);D::Tick(&session);
     CHECK(session.drops.size()==1);CHECK(publishes==1);CHECK(D::g_pending.empty());
@@ -166,12 +192,12 @@ int main(){using namespace test;
     Reset();D::NoteClientKeyedDestroy(L"item");Enqueue();duringPublish=[]{++serial;};D::Tick(&session);
     CHECK(session.drops.size()==1);CHECK(D::g_parkedKeys.empty());CHECK(D::g_parkFifo.empty());
     // b2142: a bitten meal is captured AFTER local restoration and survives host construction.
-    Reset();foodActor=true;authored=false;D::NoteClientKeyedDestroy(L"item");Enqueue();D::Tick(&session);
+    Reset();foodActor=true;condition.cookProgress=12.5f;authored=false;D::NoteClientKeyedDestroy(L"item");Enqueue();D::Tick(&session);
     CHECK(session.drops.size()==1);auto meal=session.drops[0];
-    CHECK(meal.hasFoodCondition==1&&meal.foodUses==2&&meal.foodTemperature==300.f&&meal.foodRipeness==0.75f);
+    CHECK(meal.hasFoodCondition==1&&meal.foodUses==2&&meal.foodTemperature==300.f&&meal.foodRipeness==0.75f&&meal.foodCookProgress==12.5f);
     session.mode=coop::net::Role::Host;
     CHECK(D::HostSpawnPlacedProp(meal,L"prop_test_C",L"item",1)==&actor);
-    CHECK(foodWrites==1&&invalidates==1&&condition.uses==2&&condition.temperature==300.f&&condition.ripeness==0.75f);
+    CHECK(foodWrites==1&&invalidates==1&&condition.uses==2&&condition.temperature==300.f&&condition.ripeness==0.75f&&condition.cookProgress==12.5f);
     for(int failure=0;failure<6;++failure){
         Reset();foodActor=true;auto bad=meal;
         if(failure==0)bad.hasFoodCondition=0;

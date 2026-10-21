@@ -4,6 +4,8 @@
 #include "coop/net/eid_pose_lane.h"
 #include <cstring>
 #include <vector>
+#include <functional>
+#include <utility>
 namespace coop::net {
 struct Config;
 inline constexpr uint8_t kMaxPeers=4;
@@ -23,20 +25,28 @@ public:
     std::vector<PropPoseSnapshot> published;
     std::vector<PropDriveEndPayload> ends;
     bool sendOk = true;
+    std::function<void()> beforeSend;
     bool linked=true;
+    bool ready=true;
     Role mode=Role::Host;
     bool connected() const { return linked; }
     bool running() const { return linked; }
+    bool IsSlotWorldReady(int)const{return ready;}
     Role role() const { return mode; }
     std::vector<ServicePanelPayload> panels;
     std::vector<PowerGridPayload> grids;
     std::vector<RadioStatePayload> radios;
     std::vector<KitchenStatePayload> kitchens;
     std::vector<KitchenIntentPayload> kitchenIntents;
+    std::vector<GrillEditPayload> grillEdits;
     PoseTurn PropDrivePoseTurn(uint32_t) { return PoseTurn::Join; }
     void PublishPropDrivePose(const PropPoseSnapshot& p) { published.push_back(p); }
     bool SendReliable(ReliableKind kind, const void* data, size_t size) {
+        auto callback=std::move(beforeSend);beforeSend={};if(callback)callback();
         if (!sendOk) return false;
+        if(kind==ReliableKind::GrillEdit && size==sizeof(GrillEditPayload)){
+            GrillEditPayload p{};std::memcpy(&p,data,size);grillEdits.push_back(p);return true;
+        }
         if (kind==ReliableKind::PowerGridState && size==sizeof(PowerGridPayload)) {
             PowerGridPayload p{};std::memcpy(&p,data,size);grids.push_back(p);return true;
         }

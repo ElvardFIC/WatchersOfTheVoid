@@ -36,12 +36,13 @@ void Install(coop::net::Session* session);
 void OnReliable(const coop::net::KeyedScalarPayload& payload, uint8_t senderPeerSlot);
 
 // HOST-only: snapshot the current `clean` of every indexed window to the client `peerSlot` whose
-// world is ready, with adopt=1 (the joiner adopts the host's world). Called from the world-ready
-// replay. Game thread.
+// world is ready, with adopt=1. Retains person-bound keys until a current read and
+// successful send; waits for the index and missing native fields. Game thread.
 void QueueConnectBroadcastForSlot(int peerSlot);
+void OnPeerLeftSlot(int peerSlot);
 
-// Per-tick: retry deferred applies (throttled), and the dev synthetic wipe when armed. Call every
-// net-pump tick on the game thread.
+// Per-tick bounded join/send/paint retries and the dev synthetic wipe when armed.
+// Work is cancelled by world/session changes; departure cancels that recipient.
 void Tick();
 
 // Session teardown: clear the pending applies.

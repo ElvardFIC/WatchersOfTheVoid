@@ -12,6 +12,8 @@ namespace ue_wrap::fname_utils {reflection::FName StringToFName(const std::wstri
 namespace ue_wrap::game_thread {void Post(std::function<void()>){std::abort();}bool IsGameThread(){return true;}}
 namespace ue_wrap::hook {bool Init(){std::abort();}bool Install(void*,void*,void**,bool){std::abort();}bool VerifyEntries(const char*){return true;}}
 namespace ue_wrap::log {void Write(Level,const char*,...) {}}
+namespace ue_wrap::facts {void Function::NoteUse(Use,bool)const{}}
+namespace ue_wrap::scan_ledger {void Record(Scan,bool){}}
 namespace ue_wrap::object_index {uint64_t ClassSetVersion(){return 0;}void* ClassByName(const wchar_t*){return nullptr;}}
 namespace ue_wrap::script_loop {
 std::uintptr_t* ResolveGNatives(){return nullptr;}bool TableFilled(const std::uintptr_t*){return false;}
@@ -23,9 +25,9 @@ int main() {
  int fn=0,innerFn=0,actor=0,other=0;
  CHECK(!IsObjectBodyActive(&fn,&actor));
  try {
-  ActiveScope outer(1,&actor,&fn,nullptr,nullptr);
+  ActiveScope outer(1,&actor,&fn,nullptr,nullptr,0);
   CHECK(IsObjectBodyActive(&fn,&actor)&&!IsObjectBodyActive(&fn,&other));
-  {ActiveScope inner(2,&other,&innerFn,nullptr,&fn);
+  {ActiveScope inner(2,&other,&innerFn,nullptr,&fn,0);
    CHECK(IsObjectBodyActive(&fn,&actor)&&IsObjectBodyActive(&innerFn,&other));
    CHECK(IsBodyActive(&innerFn,&fn)&&!IsBodyActive(&innerFn,&innerFn));}
   CHECK(IsObjectBodyActive(&fn,&actor)&&!IsObjectBodyActive(&innerFn,&other));
@@ -34,4 +36,5 @@ int main() {
  CHECK(!IsObjectBodyActive(&fn,&actor)&&!IsBodyActive(&fn)&&!CurrentThreadCall().active);
  CHECK(!IsObjectBodyActive(nullptr,&actor)&&!IsObjectBodyActive(&fn,nullptr));
  puts("PASS real script-gate body scopes: exact receiver, nested bodies, caller match and exception cleanup");
+ return 0;
 }

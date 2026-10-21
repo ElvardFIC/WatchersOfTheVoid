@@ -1,4 +1,1049 @@
-# Unified Work — development protocol 2154 (continued 2153); packaged release 2152
+# Unified Work — current main and non-entity synchronization
+
+## Resume from the2175 continuation
+
+Current source/protocol is2175. The2174 checkpoint remains preserved in
+build/nonentity-2174-verification.json and build/checkpoints/main-b2174.dll.
+Scorch and retained grill replies pass offline qualification. Gasoline, owned-hand break admission and observed
+toy music starts pass offline qualification. Mirror factories are refused and
+world bottles remain host-owned. Use
+build/final-nonentity-verification.json for
+qualified DLL/source hashes; existing delivery ZIPs
+predate this work. Continue non-Entity synchronization. Personal coal/lid inventory
+acceptance/refund, ordinary paid wall repairs and garden care accounting remain
+open. Preserve the no-spend cement refusal until an accepted transaction binds the
+exact inventory item, debit, output and refund across slot/hand/drop/disconnect.
+Other dynamic grime sources and drink resource debit/refund are
+also open. Two-peer tests must cover timings, save/rejoin,
+simultaneous cleaning and role reversal before closing their gameplay reports.
+
+## Canonical explosion scorch — continuation2175, 21 October
+
+Exact explosion_C and explosion_saltrocket_C scorchMark invocations now capture
+the host's native surface decals, retaining their transforms, material/cleaning
+state and independent dynamic identity. Clients refuse their own surface traces
+and receive quiet canonical birth, late-join and retirement records. Blocked
+delivery retries; delayed native metadata retains the real host actor and its
+pending capture. Scorch kind4 cannot enter liquid projectile or pour requests.
+
+The private explosion_pc_C inherits the same method through its parent BeginPlay.
+It remains native on either role; observed private decals are excluded from shared
+births and cleaning. Source provenance uses actor serials, active native invocation
+and world generation. It survives reconnect in the same world. Unknown existing
+host scorch actors retain the old static cleaning lane and are not newly published
+as dynamic births. Provenance is not persisted across a complete native save/world
+reload; that migration and two-peer visibility/timing still need work.
+
+Native evidence checks all six static traces,65-unit directions, hit transforms,
+inherited scale, the exact decal factory and private-PC parent call. The separate
+underwater explosion is Actor-derived and is outside this method. The focused
+runner covers the actual controller, decal wrapper/ParamFrame and blast wrapper.
+All26 runners/89 positive executable invocations/115 production compiles and214
+compiled fault controls pass. Release b2175 contains1903 stable production/config
+inputs. Native evidence includes58 files compared to fresh installed-pak extracts.
+The104-file selected prose sweep is clear; the repository's13 prose counters and
+524 fact rows/156 files remain reported. No gameplay acceptance is inferred.
+
+Grill terminal replies now remain owed until transport accepts them, even after
+the retention deadline and after state publication has completed. Retries receive
+the original accepted result without another additive coal edit. Presentation
+callbacks that rename the actor cannot publish the old full record; the next pass
+retires that stale publication while retaining the edit result. Both regressions
+failed against the prior code and pass after the fixes. These fixes do not yet
+implement personal inventory acceptance/refunds.
+
+## Owned gasoline and retained fire state — continuation2174, 21 October
+
+Selected local-hand gasoline broken/broken_fire calls now frame their exact native
+projectile birth. The client freezes that temporary sphere immediately and submits
+an empty-world-key kind3 launch with native scale1/size5. The host proves the current
+or recently consumed hand generation's exact gas class, retains immutable replies
+and runs the existing flight/impact/decal lane. World bottles stay host-owned;
+mirrors cannot create a second spill and unbound client gas projectiles are removed.
+
+Native ignite/extinguish now reports whether dispatch was attempted. Preparation
+can retry; a partially completed native call cannot replay additive fuel. Missing
+flame metadata defers presentation instead of masquerading as an extinguished
+component. Canonical fire publication retains dirty state until every ready
+recipient accepts its queue, including the final off state. A blocked recipient
+does not stop the other peers. Plush Alt-use is captured before native activation,
+so input changes inside that callback cannot alter the accepted action. Toy music
+sampling, cached playback, native action/touch captures and queued squeaks also
+retain their original actor key. A renamed actor cannot inherit old state or cues;
+native key changes abort state publication and cue preparation. Once Activate is
+dispatched, a transient cue is consumed even if native code invalidates its source.
+Client music requests also wait for host-world readiness before transport. The added
+key/readiness regressions failed against the previous implementation before the fix.
+
+The gasoline runner now has six executable invocations/two production compiles.
+All25 runners/86 positive invocations/112 production compiles,201 compiled fault
+controls and Release b2174 pass. Forty-six native corpus files match installed-pak
+extracts, including the plush Alt branch. Local/relative include resolution and
+fragment declaration context fix the selected public-prose false positive without
+leaking declarations between units sharing a fragment. Four include tests and the
+329-arm existing prose drill pass; CI runs both. The101-file selected sweep has zero
+findings. Repository prose/fact rows still have findings; their baselines are unchanged.
+See build/final-nonentity-verification.json for current hashes and remaining work.
+
+## Observed toy music position — continuation2173, 21 October
+
+The58-byte DingusMusic payload carries an observed playback episode, current
+position and pitch, plus the originating player for requests. Host snapshots
+advance position with the previous native rate, wrap it against the actual looping
+SoundWave duration and re-anchor rate changes. New observed play edges and explicit
+native toggles start a new episode. An already-playing first observation, changed
+sound/component, unavailable metadata or an unsupported non-looping/cue source has
+unknown phase; the ordinary playing/used/volume state still works.
+
+Retained sends include host queue age. Clients include their receive age and a
+bounded half-RTT estimate when starting/recovering playback. The actual wrapper
+uses Play(StartTime), current native duration and pitch. A heartbeat for the same
+episode does not restart an already-playing component. Missing metadata can recover
+later; replaced/stopped components or changed sounds seek once to the current
+known position. Basic hand presentation keeps its previous non-positioned path.
+
+PRE/POST captures now bind toy actions/touches to unique script invocations, actor,
+person, connection and world/role. Missing POST/fault captures prune; an untracked
+or old invocation cannot emit a squeak under a replacement participant. Toggle,
+touch and squeak requests retain their original person through transport. Host
+requests also retain current actor keys through native authority probes.
+
+The toy runner now has three executables/four production compiles, including the
+actual ParamFrame codec for seek/pitch/loop metadata. The combined25 runners have
+85 executable invocations and112 production compiles;185 compiled mutation controls
+and MSVC Release b2173 pass with1902 stable production/config hashes. Native
+contracts pin touch/toggle ordering and five cooked wave durations/loop overrides;
+44 corpus files now match installed-pak extracts. Four waves explicitly loop; the
+short prop_dingus3 sound has no cooked looping override and is decided from its
+actual runtime flag. No hardware/sample-accurate phase or asymmetric-latency claim
+is made. Two-peer timing, pre-observation phase and hand/world phase continuity
+remain open.
+
+## Gasoline spills and world fire — continuation2172, 21 October
+
+The exact world prop_gasBottle_C broken/broken_fire graph now captures its native
+grimeProjectile_C launch as kind3. Only the host executes that world break spill;
+owned-hand gas still needs explicit launch admission (identified during2173).
+Gasoline is excluded from client pour/launch
+requests. Native velocity, default trace size, collision/electrical outcomes and
+static grime_gasoline_C deposition run on the host. The dynamic decal lane carries
+birth, current cleaning, quiet saved adoption/join and retirement. A strict nonce/
+id lookup resolves only the live canonical decal, never a position twin.
+
+The fire lane uses that canonical identity for gasoline. Its actual native ignite
+body creates the Box-bound flame with fuelSpeed.25, igniteChance1 and igniteScale
+1.25; using prop_C's body here would be invalid. Host fire state creates/refreshes
+the client's native flame and extinguishes it. Client gas fireDamage/spread and
+self expiry/underwater extinction are refused; external extinguishing requests
+the host outcome. Native traces against the locally possessed player remain live.
+
+The48-byte PropFire payload now uses its former reserved uint16 for the originating
+player on requests; canonical state keeps zero. Matching2172 peers are required.
+Queues retain person/connection/readiness, reject obsolete slot packets, preserve
+newer same-key requests across native probes and failed sends, and stop bookkeeping
+after session/world/role changes. Native field/frame writes keep weak component/
+class identities; normal extinguish is allowed to destroy its own component.
+
+Five new/current fire-and-gasoline fixture executions plus two production compiles
+pass. Twelve additional compiled mutation controls cover host-only break capture,
+launch exclusion, nonce/retirement lookup, request origin/native probes, source role,
+latest desired state, failed-send occupancy and the exact native class/component.
+The combined Release/25 runners/83 executable invocations/112 production compiles
+and169 compiled mutation controls pass, with1902 stable production/config hashes.
+Six newly extracted files match the installed pak, for22 provenance files total.
+Two-peer fire/cleaning/rejoin/save timing and atomic personal stock remain open.
+
+## Garden request origin — continuation2171, 21 October
+
+Care and Harvest now serialize the captured player number after useSeq, before
+the care-specific fields. The host rejects zero, out-of-range, obsolete-person
+and legacy payloads. Matching protocol2171 peers are required. The sender keeps
+the original person through actual chunk serialization instead of consulting a
+replacement occupant. Host authority probes retain the connection epoch, session,
+world, role and world readiness before dispatch; interrupted native callbacks
+cannot continue old bookkeeping in a replacement context. Stock debit/refund is
+still open.
+
+The actual receiver/sender fixture covers recycled slots, sequence reuse by a new
+person, malformed requests, chunk reassembly and reentrant authority probes. The
+garden runner now has nine executables/six production compiles. Combined evidence:
+Release b2171,24 runners/78 executable invocations/110 production compiles and157
+compiled mutation controls;1902 production/config hashes stayed unchanged.
+
+Two-peer acceptance remains required on matching builds. Check inventory and world
+beer/wine/coffee, final-use launches, one source and one impact sound per observer,
+coffee empty-cup count without spill-triggered personal coffee effects, fresh dirt
+at an old cleaned position, cleaning/save/rejoin and role reversal. Repeat normal
+care/harvest after a participant reconnects, including simultaneous use; resource
+accounting is not qualified by the origin checks.
+
+## Coffee spill and native source audio — continuation2170, 21 October
+
+The exact prop_food_coffeeCup_C now shares its native coffee projectile, scale
+from remaining uses, default trace size5 and resulting grime_coffee_C decal. The
+inventory cup runs on its owner; world cups keep the existing host food authority,
+including a cup physically held by a remote peer. Native eaten(noobj) still owns
+the empty-cup output; no coffeePower, hunger or used() action is replayed here.
+Only the coffee cup maps to kind2; a beer-family source with an unrelated Grunge
+does not inherit its authority. Native contracts pin the tilt/velocity threshold,
+factory fields, scale, destruction, material ancestry and separate personal branch.
+
+DrinkPour234 carries60 bytes for the source identity/generation/person, sequence,
+native sound point, kind and request/canonical/refusal operation. A post-native
+PlaySoundAtLocation observer accepts only the actual active source invocation and
+exact source-graph call. The wrapper locates its caller local and native call end
+through script_calls, checks graph/class/function/index lifetime, and copies the
+actual bounds-origin or actor-location value while its frame is live. Ambiguous
+or unavailable metadata declines the cue; optional audio cannot stall core flight.
+
+The host validates source/recent hand proof and reach, acknowledges the immutable
+request, and plays/forwards only audio. Native beer/wine uses fuel1 SoundWave,
+volume.5, pitch1 and att_default; coffee uses water_splash_Cue,.5,1.25,att_small.
+The owner already heard the native source sound. A native host sound is not played
+again. Local audio and each network recipient have independent FIFO blocking and
+bounded work; failed delivery to one peer does not stop others. Older pending
+requests preserve their originating player's order. Cues expire and are not joined.
+
+Canonical spatial cues can outlive their source's roster entry. Their replay
+history is keyed by original person as well as slot, so late old sequences cannot
+mask the next occupant or play twice after a replacement. Owner acknowledgements
+still match the current person and complete payload. Source/recipient epochs,
+native read/play interruption, metadata readiness, replay, refusal and reentrant
+queue replacement have controller and actual wrapper cases.
+
+Four coffee and four audio files freshly extracted from the installed pak match
+the corpus; combined provenance now covers16 files. Native class/reference checks
+show the coffee decal referenced by the cup, with its special interface stubs
+separate from parent grime cleaning/material behavior. Release b2170,24 runners,
+77 positive executable invocations,110 production compiles and151 compiled mutation
+controls pass, with1902 stable production/config hashes. Routing covers223 kinds
+and all18 refusal controls. Two-peer gameplay and native hook census remain.
+
+## Native drink flight and paid garden invocation — continuation2169, 21 October
+
+DrinkLaunch kind233 carries100 bytes: source identity/generation/person, sequence,
+position, velocity, rotation, scale, native trace size, kind and terminal operation.
+DrinkSpill232 is now host-only canonical birth/join/retirement. An owner supplies
+the launch after the exact source invocation completes, rather than choosing an
+impact point. The source proof is captured before native consumption. Four retired
+hand generations keep their class for1500ms, bound to the received world and
+occupant; stow cannot relabel an old proof with the next person's identity.
+
+The host checks current source or recent hand-class proof, shape, velocity, person,
+connection epoch and reach before authoring the native beer/wine projectile. Native
+BeginPlay receives velocity/grunge/size before Finish. Final scale is restored and
+the native60-second lifespan is preserved. The host runs native tracing, bounce,
+decal spawning and shortCircuit; the existing decal identity/cleaning/join path
+captures its output. An accepted flight survives the owner's departure. A single
+attempted native construction is terminal, and replies echo the immutable launch.
+Replay history outlives retained replies; bounded work rotates across local and
+host queues. Source spending and host acceptance remain separate accounting.
+
+Client temporary projectiles disable actor collision and sphere simulation inside
+the Finish observer. The exact beer/wine Tick and every graph entry except native
+BeginPlay15 are refused. Other grime projectile kinds are untouched. The native
+class contains only a collision sphere, so no visible-flight transform stream is
+needed. Impact sound reaches the owner as well as other clients, with quiet joins
+and no extra host playback. Emission waits for live script/Finish hooks. Readiness,
+native reentry and same-person reconnect cannot complete a successor request.
+
+Paid garden reservations now belong to unique script invocations. A nested use
+that did not reserve a crop cannot consume the outer frame; skipped POST/fault
+reservations are pruned by invocation lifetime. Native read and cost observations
+fence tool identity, world, person and connection. Completed care remains queued
+if its local crop copy disappears. Care/harvest retries retain their originating
+player/slot/connection through cancellable chunk sends, and an old send cannot pop
+a replacement request. This does not add host rejection/refund accounting.
+
+Release b2169 passes with1902 stable production/config hashes. All24 runners,
+76 positive executable invocations and110 standalone production compiles pass.
+All128 compiled mutation controls detect the removed protections with verified
+compile-time inputs. Native contracts,222-kind routing/all18 refusals, DLL ABI
+and whitespace pass. The98-file selected prose sweep retains the same single
+include-edge finding; repository prose/fact-row findings remain visible.
+Qualified DLL/source/test/log hashes are in build/final-nonentity-verification.json.
+
+## Window delivery, drink spills and food ordering — continuation2168, 21 October
+
+Windows now retain failed per-recipient join snapshots, wait for a current index
+and reflected fields, and sample the latest minimum on retry. Scheduling is bounded
+and rotates across recipients/keys; an unready peer cannot consume another peer's
+snapshot. Actor slot/serial, person, peer epoch, world, role, session and same-key
+revision fence native reads and sends. Partial paints retry even when the scalar
+was already written. The actual baseWindow wrapper resolves indexed class/serial
+metadata again after reload, uses reflected offsets and the native no-argument
+setClean body, and checks the mesh/native function/current scalar through painting.
+The separate actual wrapper fixture exercises ParamFrame and component lifetime.
+
+DrinkSpill kind232 carries116 bytes for exact beer/wine decal state. The owner’s
+native beer-family tilt tick supplies the flight and impact result. The host
+validates source hand or driven-hold generation, player, source kind, geometry and
+reach, then authors the canonical decal without replaying the consuming source
+body. Host native break/fire spill factories are observed too, including canonical
+mod-authored breaks; client break factories are not admitted as tilt requests.
+The controller retains bounded requests, per-recipient births, quiet joins and
+retirement tombstones; replay history survives reply eviction. Attempted partial
+construction is terminal and cannot create another actor on every retry.
+
+A session/world nonce plus birth id separates each liquid decal from static
+position-based cleaning minima. Fresh dirt in an old zero-valued cell survives.
+Native saved beer/wine decals enroll quietly; joining clients claim their matching
+saved actor once instead of spawning a duplicate. Predicted owner decals are
+replaced on confirmation and excluded from static cleaning before assignment.
+Canonical transforms, type, process and decal orientation are restored after native
+construction; the initial saved actor takes the host value, then any identified newer cleaning
+minimum is reapplied. Only a baseline/join birth can adopt a saved actor; a live
+birth always retains its separate identity, even after a later join packet. Native impact audio uses
+the measured cue/attenuation/volume/pitch and excludes the predicting owner. Joins
+remain quiet. This covers static resulting decals, not host projectile simulation,
+electrical short-circuit outcomes, other grime factories or atomic liquid stock.
+
+Food world, host-hand and owner-hand publishers now reject superseded native
+captures, retain current baselines across targeted joins, and force a fresh
+publication if an older outer send followed a newer nested one. Hand corrections
+check actor serial, owning player, hand generation, role and session inside native
+writes. A new remote-hand generation waits for an accepted owner sample before
+publishing: default data from a replacement cannot be sent under the old item key
+and deadlock the owner behind an impossible correction. Latest queued corrections survive reentrant reads/writes. Join snapshots
+wait for temporary readiness, retain recipient identity/epoch and cannot erase a
+newly queued same-key snapshot during an old send.
+
+Bite observations are bound to real script-gate invocation lifetime. Cancel/fault
+or missing inner POST cannot authorize a later unrelated destroy. Final-bite
+requests own immutable payload copies; retained retry records carry revisions and
+a rotating eight-attempt budget. Native/send teardown cannot repopulate departed
+session queues or remove a newer same-key retry. Host bite writes also fence the
+current role, peer epoch, hand generation and source actor. This does not add an
+atomic inventory transaction or a new bite request/reply protocol.
+
+World toy music samples also reject superseding nested native reads. Queued music
+and squeak deliveries carry recipient person/connection epochs; the same player's
+return to a slot cannot receive an old in-flight cue. Request authorization checks
+the captured peer epoch, current role cancels suspended old work, and a teardown
+inside native pitch capture cannot resume through a null session. This preserves
+FIFO sound retries and owner exclusion. Exact music phase alignment stays open.
+
+Spill regressions additionally cover object-address recycling during prediction
+cleanup, saved-actor claiming and late retirement, two identical saved positions,
+and a newer cleaning sample arriving inside construction without a second factory
+attempt. Actual read wrappers check class and function serials as well as actor,
+component and world. The native corpus was compared byte-for-byte with eight
+fresh extracts from the current installed pak, including beer, window and flight.
+
+One-time TODO progress audit for this continuation:6/31 explicit non-Entity
+checkboxes are closed (19.35%). The implementation/investigation section alone is
+6/14 (42.86%). The denominator excludes the15 Entity coverage rows and the NPC-only
+upstream eb55ae97d candidate. Gameplay acceptance and remaining fork reviews are
+included; composite rows with unfinished accounting or gameplay stay open.
+The reproducible row inventory is build/current-todo-progress.json. These equal-row
+percentages describe checkbox completion, not estimated engineering effort.
+
+## Bucket source cues and nested cleaning — continuation 2167, 21 October
+
+The actual native bucket sound calls now produce host-validated transient requests.
+Dripping uses the evaluated spatial wade cue (volume0.25/pitch1); a whole throw
+produces exactly one wade cue (1/1.5) and one splash cue (0.5/1), independently of
+the number of water actors. Exact native pre hooks check the active source body,
+asset, frame bounds, source hand/physical hold generation and person. The host
+checks source and point reach, excludes the owner, and plays remote-owner cues
+locally once. Host-native cues are relayed without repeating their local sound.
+Short readiness/send retries expire rather than becoming join history. The new
+60-byte WaterLaunch kind231 shares ordering with impact cues, including recipient
+epochs for same-person departure/rejoin. Local audio and particle readiness also
+preserve their respective order without blocking delivery to ready peers.
+
+Grime clean/fix observers now own separate snapshots for nested invocations.
+Unrelated callbacks cannot overwrite an outer observation; a newer minimum is
+repainted if an older native body leaves a higher value. Captures fence object
+serial, world, role, connection and session epoch. The script gate exposes a
+thread-local invocation ID spanning PRE/body/POST. RAII lifetime expires on Cancel,
+C++ exceptions and native structured exceptions, so missing POST cannot retain an
+observation indefinitely. Production already uses /EHa; the actual dispatcher
+fixture now verifies both kinds of exception, including a nested native fault.
+
+The same invocation lifecycle now protects grill field observations, including
+person/peer-epoch changes during PRE and POST reads. Window cleanSponge observations
+also have independent nested snapshots and restore a newer lower dirt value. Window
+disconnect now clears the session pointer; late callbacks cannot use the departed
+session. Live window updates now retain a refused final wipe and retry with the
+latest minimum. Reentrant newer updates cannot be erased by an older send; world,
+role and session changes retire the old work. Join retry and native wrapper reload/
+paint guards remain separate open work; the window test covers observation and
+live transport through the real controller, not the native wrapper or join path.
+
+Focused water checks now run five executables/six production compiles; grime and
+window checks run four executables/five compiles. Full current Release qualification is recorded
+in TESTLOG after the final build. Personal resource refunds, dynamic grime/spill
+births and two-peer gameplay remain open. A deeper lid audit confirms that native
+HoldObject routes through addEquip and destroys the output actor: lid removal is
+an inventory transaction and cannot be completed by merely sharing a world spawn.
+The function-row gate still has branch findings and lacks captured references for
+GameplayStatics.SpawnEmitterAtLocation and PlaySoundAtLocation, both used by the
+new hooks. PlaySound2D has a captured row. Hook installation and these two native
+function signatures still need a live fingerprint census; no guessed reference
+hashes were added. Registry rows are used from their registering .cpp.
+
+## Washer projectile authority — continuation 2166, 21 October
+
+The bucket-water channel now also admits the exact prop_sponge_p output of the
+owner's native pressure-washer ReceiveTick. It captures velocity, power=1 and aim
+after the source returns; the host authors its native projectile, ten-second
+lifetime and motion/coasting. Births preserve the final transform after native
+BeginPlay's bounds-centre offset, fixing the same double-offset risk for bucket
+water. Protocol2166 uses88-byte births and44-byte transient cues.
+
+Clients refuse the leaf collision and delayed retirement graph. Native audit also
+found the parent's independent hit delegate: it cleans grime/windows before
+calling collided(). That delegate and its non-init graph paths are now refused
+only for the two exact water-projectile classes. Ordinary sponges stay native.
+Remote washer hand mirrors cannot produce projectiles on either role. A client's
+native firing tick waits for live projectile/parent watches and the launch hook,
+and cannot spend water before its world is announced.
+
+The actual canonical projectile's BeginPlay supplies its initial particle. A native
+SpawnEmitterAtLocation post hook removes only the owner's predicted initial copy,
+scoped by the exact graph and active source/begin bodies. The old periodic hand
+particle is removed. Host-authored launch sound is sent separately with owner
+exclusion, native pitch1.5, retained local-host readiness and a short TTL; impacts
+retain their distinct sound/particle path. Queues preserve recipient order and
+expire rather than becoming join history. Missing mirrors/native fields now cost
+the host's eight-attempt rotating budget too.
+
+The four water runner executables and six production compiles passed at2166, as did the
+hand-tools runner's three executables/five compiles. Native wrapper tests exercise
+actual ParamFrame, post-finish power, final transform, lifespan and launch versus
+impact sound arguments. The new controller covers source/delegate/parent/latent
+authority, readiness, owner exclusion, predicted-particle scope and budget fairness.
+The latest full DLL qualification is still2164, pending the next final build.
+Two-peer timing/appearance and personal water spending/refund remain unverified.
+Bucket source launch sounds are implemented in2167 above; dynamic spill/grime births remain open.
+
+## Ordered grill field edits — continuation 2165, 21 October
+
+Client native addCoal/setLid changes now enqueue individual person-bound field
+edits, rather than publishing an older full save record. Protocol2165 adds kind230
+with immutable request/reply identities. The host adds one coal to its current
+count, or sets only the lid bit. It does not replay either the consuming coal body
+or the lid-producing action graph. Same-key client edits await their predecessor's
+terminal reply; host work follows arrival order per key while unrelated keys and
+players progress through a rotating budget. Missing actors/metadata/initial records
+wait. Failed publication and replies remain pending. Native painting is terminal
+after a write, including partial failure; replay history survives reply eviction.
+Actor/key/slot-serial, world/session/person and per-peer epochs guard callbacks.
+
+Ordinary and parked client save records preserve the host's coals and lid as well
+as burn/active. Initial inventory/drop records still restore their source stock.
+Host edits wait for that initial record and drain queued records before mutation.
+The actual stock wrapper does not require cooking audio, and a metadata-time
+increment invalidates a previously sampled coal write instead of losing it.
+
+Focused grill-edit, kitchen, grill-hand/persistence and item-record checks pass,
+including production compilation. The routing gate passes219 kinds and all18
+negative controls. Native contracts pin the coal cap/increment/outcome and the
+personal coal destruction that follows success. Current source is2165; the last
+full Release/hash qualification below is2164 until the next complete build.
+Personal stock/profile acceptance/refund remains open. In particular, competing
+capacity fills and simultaneous lid removal still need an inventory transaction;
+these field edits do not prove that spent coal or lid outputs are durable.
+No two-peer game run, install, package, commit or publication.
+
+## Retained grime delivery and native presentation — continuation 2164, 21 October
+
+Late-join grime state now waits for the current position index and sends bounded
+batches independently for each recipient. Refused sends remain queued and sample
+the current native value/minimum on retry. Each key is attempted once per drain;
+missing fields cannot block other keys or repeatedly cost the same native read.
+The snapshot includes the existing floors and streamed-out values. Recipient,
+session/world and actor replacement, reentrant snapshot replacement and disconnect
+cannot consume the next occupant's delivery. No engine call or send holds the
+index mutex.
+
+Live minimum updates retain failed sends too, including a final complete wipe.
+Nested lower values replace pending higher values without being erased by the
+older send. Role/session/world changes cancel old transfers. Partial material
+paints remain pending even when the canonical process field already equals the
+target; retries follow the latest floor and exact actor serial. Other keys and
+recipients progress while one field, component or queue is unavailable.
+
+The grime wrapper now uses indexed class lookup and class/function weak identity,
+retries missing reflected fields and follows class reloads. It keeps the actual
+subclass's material setup and clean()'s process/100 paint ratio. Existing live
+materials are reused after failed painting, and partial setup is not repeated.
+Actor, class, material binding, native process, caller revision and world guard
+each native stage. An ended streamed-out actor has a separate slot/serial/world
+checked reader, so normal liveness refusal does not lose its saved process.
+
+run_grime_join passes controller and actual wrapper/ParamFrame executables plus
+three production compiles. Native contracts cover all 24 grime classes, the six
+material overrides and clean()/setup ratios. Nine additional compiled mutations
+detect lost retry, recipient, key-budget, floor, partial-paint and class/native
+guards. This improves existing position-keyed grime; dynamic splatter birth and
+shared projectile spill decals remain separate work. No two-peer gameplay run.
+
+
+## Record ordering through native callbacks — continuation 2164
+
+The prop-record channel now tracks a revision only while a key has active
+capture/apply/receive work. A newer same-key record arriving during native lock or
+grill normalization, getData, correction publication or transport cancels the older
+continuation. It cannot land an old record after the newer one, overwrite a queued
+successor or charge that successor for an earlier failed apply. Other keys remain
+independent. Stack-owned revision scopes survive disconnect until their calls unwind.
+
+Broadcast and targeted record transfers check session, world, role, source serial,
+native key and recipient epoch before/after each chunk. An interrupted old transfer
+cannot recreate a retry in a new session. Targeted transfers use the same guarded
+chunking primitive as broadcast transfers. Actual receiver/queue/serializer tests
+cover reentrant normalization, same-key and unrelated-key capture, newer receive
+during send/apply, world/serial/key/peer replacement and disconnect. The real shared
+chunker tests cancellation after the first chunk and after the final single chunk.
+This fixes record ordering within native callbacks; concurrent resource spending
+and coal/lid transactions still require their own accepted request/result protocol.
+
+
+## Bucket water and retained garden actions — continuation 2164
+
+WaterPour (228, 72 bytes plus an 8-byte terminal reply) captures only the exact
+prop_sponge_bucketPour_C output of a locally owned bucket's ReceiveTick or
+getFromWater. Capture waits for both native source bodies to return, preserving
+the velocity assigned after FinishSpawningActor and the inherited soapAmount.
+The owner's predicted water actor is retired after capture; the host validates
+person, hand or physical-hold generation, source and birth reach, then authors
+one native water actor. Missing metadata/mirrors retry; an attempted native spawn
+is terminal even after a partial failure. A 256-entry receive bitmap admits delayed
+earlier births without admitting repeats, including wraparound and reply eviction.
+
+The ordinary finished-spawn path streams water motion after native velocity is
+filled. Clients refuse collision gameplay and latent retirement, including a
+pre-session continuation. WaterSplash (229, 40 bytes) transmits the native hit
+Location/Normal and actor audio location. The client calls only the measured
+surface emitter and positional wade cue; it never invokes the cleaning,
+extinguishing or short-circuit graph. Surface/sound retry independently, retain
+recipient FIFO and identity, expire after 1.5 seconds and create no join history.
+Host collisions during native authoring are included. Source/session/world and
+actor/component lifetime are checked around native calls and sends.
+
+Faucet toggles and sprinkler detach requests carry their originating playerNo.
+The host retains a bounded five-second queue through missing placement/component
+readiness, preserves per-key order, and lets unrelated keys proceed. Accepted
+native attempts are terminal; duplicates, old occupants, replaced actor serials,
+changed keys/endpoints and interrupted validation cannot repeat a side effect.
+Client sending retains failed actions and cancels before/after each blob chunk
+when the source, occupant, session or world changes. Care spending/refund is a
+separate unresolved transaction; these changes cover faucet/detach actions.
+
+run_water_pour passes three actual production harnesses and six source compiles;
+run_garden_sync passes its seven harnesses and six source compiles. Native asset
+contracts pin both bucket factories, SOAP/velocity ordering and collision/latent
+effects. Additional compiled mutations exercise the new protections. Full current
+Release/source/hash qualification is recorded in TESTLOG.md when finished.
+No two-peer gameplay was run. Personal water spending still follows native owner
+behavior: this adds neither atomic stock arbitration nor a refund on host refusal.
+Real visual delay between prediction retirement and canonical birth, launch cues,
+two-peer impact appearance and concurrent save/stock behavior remain checks.
+
+
+## Forced personal profile and interrupted transfers — continuation 2163
+
+SendProfileNow now uses the complete ordinary snapshot path with cadence/hash
+suppression bypassed: live held state, current vitals and the standing-pose footer.
+Its previous items-only buffer lacked the profile footer and omitted current
+vitals, so an immediate stat-order update could be unusable by the host. Missing
+vitals retain the ordinary complete items-only fallback, including a valid footer.
+Missing or mismatched held state still defers rather than replacing stored stock.
+
+The shared chunker has a guarded send entry point. Personal profiles check the
+source/session/world before and after every chunk; interrupted sends stop at that
+part and never commit their hash/cadence into a later session. Held identity is
+checked between native capture/extension/pose/vitals calls. A nested newer capture
+or send wins over the interrupted older snapshot, including forced stat updates.
+The existing unguarded callers retain their original all-or-nothing transport
+semantics. Host receive ordering and per-GUID storage remain unchanged.
+
+run_2176 passes actual receiver/codec/chunker/profile tests for complete forced
+vitals and refreshed held stock, cadence bypass, missing-field refusal, cancellation
+at the first chunk, source/world/session change and nested capture/send ordering.
+Three production sources compile. An independent mutated-source control detects
+removal of the newer-capture fence. Two-peer stat-order/save/rejoin remains open.
+
+## Material delivery and pressure-washer presentation — continuation 2163
+
+The bounded water/cement/sponge publisher rotates its two-attempt budget across
+the pool, so continuously changing early rows cannot starve another ready item.
+Interrupted or nested reads cannot overwrite a newer observation, publish into a
+new world/session or repaint after teardown. Passive bucket ticks still preserve
+the open-container parent tick, but cannot resume old pouring after that native
+call changes context. Metadata failures in repaint do not lose an owner's stock
+publication. This does not implement atomic multi-writer resource transactions.
+
+Bucket/trowel/concrete hand presentation now carries the current-packet predicate
+through native repaint, checking actor, world and the assigned contents component
+before subsequent visibility writes. Hand extinguisher cleanup also records its
+painted world and stops before touching an actor claimed by newer presentation;
+reentrant cleanup cannot overwrite a newly installed session.
+
+Pressure-washer bursts now use SpawnEmitterAtLocation's actual bAutoActivate
+parameter, replacing the incorrect bAutoActivateSystem spelling in both code and
+its old test. Exact asset/package lookups use bounded class indexes with throttled
+misses, and dispatch resolves by the live library class. Same-class missing fields
+retry. Packet/actor/world interruption between particle and sound cannot play a
+stale sound or write an old charge after disabling tick. Native assets confirm
+eff_waterThrower as the projectile's initial particle and wade_Cue at pitch1.5;
+the separate impact particle and shared gameplay projectile remain future work.
+The API parameter was checked against Epic's UE4.27 documentation as well as the
+strict reflected-frame harness. No damage/cleaning projectile is spawned here.
+
+## Toy, sponge and Madness delivery lifecycle — continuation 2163
+
+HandToyAudio is now 18 bytes, carrying playerNo with its hand generation.
+Old packets cannot affect a reused player slot; the host validates current source,
+world readiness and reach. Stow, vanished mirrors, occupant replacement, departure,
+disconnect and a five-second stale stream retire the previous music copy. Cleanup
+does not touch actors from the previous world or a display claimed by a newer row.
+Native squeaks, touches, Play/Stop and volume writes check the current actor/audio
+component and packet between callbacks. Actual stopped music recovers without
+restarting unchanged playback. Persistent state keeps a replacement recipient's
+join delivery; old one-shot cues do not become history for that recipient.
+World Maxwell/AB presentation also retains latest state and checks transport/native
+interruption before touching its queues. Exact music phase alignment remains open.
+
+Sponge PRE/POST captures retain the source person/hand, and reject replacement
+during native reads or the native use. Foam/burst calls stop before dispatch if the
+source, component or world changes. A dispatched one-shot is consumed even when
+native dispatch reports interruption; it cannot replay because of a later lookup
+failure. Per-recipient identities and epoch checks prevent old transient delivery
+to replacement players or use of queues cleared by a send callback.
+
+Madness HUD/music rendering now owns its in-progress view while native callbacks
+run. A newer packet interrupts old presentation; disconnect disposes partial
+widgets/audio. Old-world audio is not touched after travel; its exact owned UMG
+widget is still removed if it survives through the game instance, preventing a
+stuck HUD. Viewport failure retries the created widget instead of silently treating it
+as visible. Host reads verify actor/audio lifetime and real out-parameter success;
+send teardown and recipient replacement retain the appropriate pending state.
+This changes presentation and delivery only; event AI/gameplay was not modified.
+
+Bucket-pour audit: the native bucket creates prop_sponge_bucketPour_C, then assigns
+its velocity after FinishSpawningActor. That actor's collision graph plays wade_Cue
+and eff_waterThrowSplash but also cleans, extinguishes, short-circuits and retires
+itself, with a delayed destroy continuation. A complete future route needs exact
+bucket-owner birth admission, host-owned collision/continuations and cosmetic-only
+sound/particle delivery. Current sponge foam does not cover this separate actor.
+
+## Grill hand state and persistent burning — continuation 2163
+
+Reliable kind 227 carries a 24-byte hand state: generation/person, lid, coals,
+burn progress, active fire, cooking voice and volume. The actual owner samples
+its live hand. The host waits for the matching hand mirror, verifies reach and
+world readiness, then relays only successfully applied presentation. Mirrors
+remain passive. Failed sends and missing fields retry; replacing/stowing the
+hand stops its old voice. A stale owner stream stops cooking audio after three
+seconds, including on a join replay, without inventing a gameplay fuel update.
+Recipient replacement, generation reuse, native callbacks and teardown are fenced.
+
+Native grill saves contain only coals and lid beyond the base prop record.
+The new versioned float group preserves burn progress and active fire through
+native inventory/save/load. It leaves the base floats, lid and coal fields intact,
+accepts old native saves, refuses corrupt/unknown extensions and refreshes the
+live held profile before streaming. Restoration repaints only; no fuel/heat tick.
+Ordinary client records retain host burn/active; the exact initial inventory/drop
+birth may restore its source runtime. Parked-before-birth records keep that decision.
+The apply/queue implementation was split into prop_save_apply.inc to keep its
+owning source below 800 lines while preserving the existing queue semantics.
+
+run_grill_hand passes controller and actual scalar/native persistence tests and
+seven production compiles. Current-source item-record regressions pass, including
+the new host/initial/parked cases; their stale fixture signatures were repaired.
+The actual audio helper now retries volume metadata by live class and checks
+component lifetime, rather than retaining one unvalidated raw function pointer.
+The full2163 Release rebuild/requalification passes. Two-peer gameplay
+and atomic coal/lid item accounting remain open.
+
+## Host-owned instant wall completion — continued 20 October 2026
+
+Development 2162 adds reliable kind 226 (44 bytes) for the wallbuilder's exact
+addWall -> buildWall(isCheat=true) path. The client queues the native contour and
+its source hand identity; it does not build a local successor. The host waits for
+the accepted placement, requires a contour actually spawned for that client/person,
+checks the native Custom Content rule and current reach, then dispatches the native
+completion once. Existing host actors with colliding keys are not client creations.
+The source can be stowed after host validation while its placement is still arriving.
+
+Requests and terminal replies retry. The host reserves the contour before entering
+native code, so repeats or reentrant requests cannot create another successor. A
+failed native dispatch is terminal too; it is not blindly retried after potential
+side effects. Pending requests expire after ten seconds, old occupants/worlds are
+discarded, and an active native context remains fenced through enrollment callbacks.
+The completed wall and retired contour use the existing placement/save/join stream.
+Native rule lookup uses the class/instance index, with no full object-array scan.
+The bounded host work rotates across requests and players: sixteen missing contours
+from one peer cannot starve another peer's ready completion request.
+
+run_wall_creative passes actual controller and wrapper tests plus four production
+compiles; run_2166 passes placement/record/authority/native-wrapper regressions.
+The original cement-spend refusal remains: this adds no resource-paid wall repair,
+material refund or durable personal-stock transaction. Two-peer instant-build and
+successor effects still need gameplay verification.
+
+## Hand tools and stopped audio — continued 20 October 2026
+
+HandExtinguisher carries playerNo as well as hand generation in development 2161
+(18 bytes). The shared display channel for extinguishers, washers, trowels, water
+and concrete buckets reconciles roster replacement, admits only world-ready peers
+and retires the previous mirror's effect when a newer tool/generation arrives.
+An extinguisher stream older than 1.5 seconds stops its remote particles/audio;
+stow, departure and disconnect stop it too. Join replay never restarts a stale
+spray. Owners keep native gameplay and stock consumption; recipients only display it.
+
+The extinguisher's reflected member cache now retries early field misses and follows
+class slot/serial changes. Actor and world fences protect reads/writes. A shared
+audio helper compares actual IsPlaying state and calls Play(0)/Stop only when it
+differs, recovering active-but-stopped components without restarting unchanged loops.
+Extinguisher, Watoy, grill, microwave and coffee-vending presentation use it.
+An interrupted native paint retains its partially activated actor for later cleanup.
+A newer packet can stop an older effect before it starts its sound; expiry cleanup
+cannot mark that newer packet applied with the older spray state. A recipient's
+replacement during send also cannot consume the new occupant's queued join delivery.
+Microwave/vending wrapper regressions also cover stopped-loop recovery, unchanged
+playback and missing-field retry without repeated warnings. Offline source checks pass
+for hand display identity/lifecycle, old-tool cleanup, the native cache and audio helper.
+The old flashlight harness now follows the typed fact/observer seam; its battery,
+retry and reset regression passes again. No creature implementation is involved.
+
+## Grill lid and cooking presentation — continued 20 October 2026
+
+Development protocol 2161 extends KitchenState to 108 bytes with the actual cooking
+loop state/volume and the grill lid flag. The native lid affects heating speed;
+the host remains the world heat/fuel author. Clients refuse independent cooking
+sound/timeline producers, while remote hand copies are passive and the local hand
+stays native. The wrapper repaints native lid visibility/collision and fire state,
+sets current loop volume and recovers stopped audio without restarting an unchanged
+loop. Its calls are fenced by actor/component serial, world and current state revision.
+
+Native setLid changes publish the current record through the existing save lane,
+with retry. The exact local action-7 scope permits only the grill's own bbq_1 output
+graph; unrelated calls and foreign players cannot use that birth admission. Kitchen
+join sends now retain failed unicast targets independently of broadcast dedupe and
+read latest state on retry. Reentrant native paint cannot mark a newer pending sample
+as applied or recursively paint that same actor. Actual controller and wrapper tests
+pass, as do the exact lid factory's provenance cases in the cooking runner.
+Concurrent coal/lid transactions and durable personal-stock accounting remain open;
+this presentation work does not resolve competing full save-record writers.
+Nested publication during a native read also invalidates that older sample; it
+cannot broadcast old lid/fuel values after a newer callback. The next poll samples
+the current state again.
+Kitchen ticks retain actor snapshots across native callbacks and refuse recursive
+drains. Door input arriving during a send remains queued; a failed send restores
+its movement alongside the new input. Native teardown interrupts pending ignition.
+Join delivery compares recipient identity before clearing an accepted send.
+
+## Current non-entity validation — 20 October 2026
+
+Development2164 Release rebuild, 21 focused runners (64 positive executable invocations),
+native asset contracts, 218-kind routing with 18 negative controls, ABI/import
+validation with a forbidden-import control and whitespace checks pass. All 46 separately
+compiled fault controls detect removed delivery/native/source/ordering protections.
+The existing prose detectors find no contributions in 81 selected public files,
+including the new unstaged sources. The final build keeps 1893 production/config
+hashes stable. build/final-nonentity-verification.json records the current DLL hash,
+evidence, runner logs, source hashes and remaining runtime checks.
+The general prose and fact-row gates retain their branch findings; no baseline was
+raised. Older build hashes and qualification notes below are historical. No game
+installation, two-peer gameplay test, packaging, commit, push or publication ran.
+Entity implementation remains outside this task.
+The previously blocked run_2141 is restored with current session/cord fixture
+declarations and the local toolchain. Its two performance tests and five regression
+controls pass: 100 idle cords/100 sockets require 200 identity reads and no native
+mutations; 1000 media polls use no full object walks and free all 2000 URL strings.
+
+Final Watoy lifecycle review also found a retained hand presentation after stow.
+Missing or mismatched mirrors now immediately release the old audio/owned particle
+view while retaining a newer condition sample for its exact future generation.
+The controller regression covers stow, delayed replacement and reappearance.
+World activation requests also wait up to three seconds for a missing actor or
+unready fields. Host retries are throttled to the normal sample cadence and check
+source eligibility, current requester identity and reach again. Invalid known
+sources are refused immediately; peer retirement/occupancy change and expiry
+discard deferred requests. Regressions include those cases and reentrant requester
+replacement during authorization.
+
+## Sponge surface foam synchronization — 20 October 2026
+
+Development 2160 adds reliable kind 225. The native cleanBubbles body is observed
+around the real soap debit, with a snapshot of its actual player and trace Location/
+Normal. A validated world key or hand generation/person identifies the source.
+The host checks both sponge reach and effect-point reach before publishing its
+canonical event. A matching mirror may arrive later; old occupants, stale generations,
+duplicates, malformed geometry and excessive event rates are refused.
+
+Recipients call only the surface particle spawn and eff_bubbles.Activate(false).
+They do not call cleaning, consume soap, change power or edit grime. Surface and
+attached bursts have separate completion flags, so a partial retry repeats neither.
+Transport backpressure preserves per-recipient canonical order, including delayed
+authorization and reentrant event enqueue. Effects expire after 1.5 seconds and
+are not part of join history; ongoing cleaning generates its next native burst.
+Native remote-hand cleanBubbles bodies are refused on both roles.
+
+run_sponge_effects.ps1 passes the actual controller, strict actual wrapper and four
+production-source compiles. Native contracts pin the debit and particle arguments,
+including the sponge_p inherited body. Real two-peer appearance and timing remain
+unverified. Concurrent soap/material accounting and shared spill decals remain open.
+
+Watoy start cues now wait for an unannounced local hand generation. State and
+action requests use independent replay cursors, so a level update cannot suppress
+an older transport-blocked cue. Already canonical output precedes newly authorized
+events, and retained events precede reentrant enqueues.
+
+## Food hand readiness, join retry and consumed output — 20 October 2026
+
+FoodState is now 54 bytes and carries the hand owner's playerNo (zero for world
+food) within development protocol 2160. Client and host samples wait for their
+actual hand generation/mirror and retry failed field readiness. The latest pending
+sample wins; older generations, prior occupants, local key mismatches and reentrant
+validation results cannot overwrite a newer hand. A pending local correction blocks
+publication of a newly reconstructed actor's defaults. Successful hand publication
+dedupes by key, generation and person as well as condition. Remote-hand broadcasts
+retry in the host poll. Failed world/hand join unicasts are retained independently
+of the ordinary broadcast baseline and read current condition when retried.
+
+Final world bites now create the verified banana husk and empty coffee cup as well
+as food-box packaging on the host. Personal hand factories have exact graph/source
+admission. Remote hand displays cannot run these output bodies. The separate coffee
+cup spill tick also follows world/hand authority. No poison, coffee, hunger, French
+recipe, achievement, bunny or creature eaten() body is replayed on the host.
+The French recipe audit now pins its local-main-player sitting check, cigarette
+existence,250cm French-actor overlap, plush factory and destruction of the selected
+overlap actor. This combines an owner-local condition with a world replacement;
+it needs a validated transaction, rather than adding the entire eaten graph to
+the output-only replay list.
+OnBite validates live authority and actor identity again after reach and output calls.
+
+The ordinary food wrapper now caches the base class by slot/serial, uses the object
+index, retries missing fields, refreshes offsets on class replacement and fences
+reads/writes across actor recycling and world changes. Failed reads leave their
+output unchanged. run_cooking.ps1 passes five executables and source compilation;
+profile/can regressions also pass. Gameplay and contested personal consumption
+remain unverified; these changes do not implement durable food-use transactions.
+
+Two new native physics reference rows are generated from documented UE4.27
+declarations, with three existing captured signatures as encoding controls. Their
+hashes are derived, not new live captures; live census validation remains open.
+The fact-row gate still reports other branch findings, with no watoy reference
+failure after adding those rows. The saved prose baseline is not relaxed.
+
+## Watoy world and hand synchronization — 20 October 2026
+
+Protocol 2160 adds reliable kind 224 for validated world activation, canonical
+world sound/particle phase and owner hand samples/cues. Host native activation
+remains idempotent; the existing prop-drive channel carries active world motion.
+Clients do not run the toy's force/audio tick or volume timeline. The independent
+zero-gravity component keeps its native initialization, timer and retirement;
+three source-and-mesh-scoped native seams refuse its AddForce, initial linear
+velocity and gravity writes only on remote toy copies. Other zero-gravity targets
+and the local personal hand remain native.
+
+Hand state waits for its matching mirror and is bound to playerNo as well as hand
+generation. Host hand cues wait for their mirror before reach validation. Missed
+leave edges are reconciled from the roster. One-shot starts are not replayed at
+join; current audio/particle state is. Queued cues retain recipient order under
+backpressure, and old world rows expire after ten seconds without host refresh.
+The presentation wrapper touches audio and particles only, uses the native bounds
+center for emitter attachment, adopts an existing local effect when present, retries
+missing/stopped components and releases its own emitters on expiry/teardown.
+
+run_watoy.ps1 passes the actual controller, strict reflected wrapper harness and
+four production-source compiles. Two-peer motion/audio, active pickup, stow/drop/
+save transitions remain unverified. Native saves omit a running component; this
+channel does not add that persistence or exact sound/particle playback phase.
+Remaining plain plush assets and package audit are recorded separately below.
+
+## Cooking ancestry census — 20 October 2026
+
+An ancestry census of all 1,278 prop Blueprint classes identifies 78 cooking-family
+members and 14 cookItem declarations. The earlier prefix-only 21-asset audit missed
+eggs, breadmold, four pizza toppings, fish steak and three potato declarations.
+Completion authority now watches the rare cookItem verb and filters on actual
+cooking ancestry. Personal-hand birth admission requires both a live local cooking
+food and a cooking declaring class, with that exact caller name; arbitrary replaceProp,
+world and unrelated factories remain refused. Native save extensions already follow
+ancestry. The one additional native serializer, prop_fish, retains the base float
+groups and changes bool groups only. No fish movement or other entity behavior is
+changed. Focused cooking and actual birth-provenance regressions pass.
+
+## Madness presentation timing and console readiness — 20 October 2026
+
+Madness sends advance elapsed music age by the retained host snapshot's queue age.
+Clients add their own queue/apply age and half the measured GNS RTT when available;
+the latter is an estimate, not synchronized clocks or sample-accurate audio. New
+playback/retry/join seeks use that age. Stopped or destroyed audio components are
+recreated; unchanged playing music is not restarted. Missing HUD widgets also retry.
+Only native audio/UMG presentation runs: no event master, creature or gameplay replay.
+
+Console watch registration now retries once per second after partial registration
+is unwound, with one failure diagnostic. Busy state arriving before the atlas exists
+is applied when the widget becomes available. An all-busy stalled outbox retains
+its latest level while staying at its 512-blob cap.
+
+run_2154.ps1 passes canonical console, Madness controller and actual presentation
+wrapper tests. Cases cover send-age/join, RTT correction, stopped/dead audio,
+query/spawn refusal, HUD reconstruction, unchanged playback and presentation cleanup;
+console cases cover failed watch recovery, delayed busy and 600 blocked busy updates.
+Two-peer music timing and device audio behavior still require gameplay verification.
+
+The remaining toy audit identifies a separate prop_watoy activation: it creates a
+zero-gravity component, changes physical force/velocity, runs a volume timeline and
+derives audio pitch from speed. Relaying only its initial buttonlong10 cue would not
+implement that toy. Seven other plain plush assets have no own Blueprint functions;
+dreamplush has water/fire and radius behavior. Erie plush behavior remains in the
+other owner's entity scope. Native evidence is in build/toy-native-audit.log; these
+remaining behaviors are not marked implemented.
+
+## Cooking progress and replacement authority — 20 October 2026
+
+FoodState now carries cookProgress; PropDropIntent preserves it after native load.
+The native prop_food serializer is extended with float group 2 [cookProgress] for
+the cooking family, including ordinary saves, stow/drop/load and held profile copies.
+Original saves reset progress to zero. The production scalar codec preserves base
+groups and allocation ownership; 1000 save/load cycles retain a constant allocation count.
+
+prop_cookingFood overrides ReceiveTick and continues cooking after its parent call;
+the old base-only refusal could not stop client replacements. The override and all
+four measured cookItem declarations now obey world/hand authority. Remote hand
+displays never cook on either role. The exact local-hand cookItem factories may
+author their successors; world and unrelated replaceProp/slicing paths stay excluded.
+Native contracts audit all 21 cooking assets and the three cookItem overrides.
+
+Food state received before its world actor or fields exist is retained in a bounded
+latest-state table. Eight rotating retries per tick avoid starving a later ready actor.
+Cooking-only changes publish, join unicast does not consume the broadcast baseline,
+and held canonical progress survives hand-generation changes.
+
+run_cooking.ps1 passes four production harnesses and eight source compilations;
+run_2176.ps1 passes profile/can regressions and compilation. Native contracts pass.
+Real grill/oven completion, cooking subclasses, hand transitions and two-peer
+save/rejoin remain gameplay checks. Protocol remains development 2159.
+
+## Canonical SAT console display — 20 October 2026
+
+Protocol 2159 requires matching peers for the new console display semantics.
+Client-local commands keep their native local effects, but their log writes wait
+for the host's echo. Host-local output follows the same queue. Every display,
+including the originating typist, therefore consumes one host-ordered stream.
+Periodic widget alerts have one producer, the host's visible terminal; client
+mirror alerts cannot echo back into the shared log. clr executes on the host's
+typist terminal and sends a display-only clear in order, including join history.
+Private terminals still own their typist's busy state and delayed native commands.
+Failed watch registration is retried. Context initialization and native command
+completion cannot resume through a terminal discarded by session teardown.
+
+run_2154.ps1 passes the console and Madness production harnesses plus six source
+compilations. Console cases compare all three recipient streams, replay a different
+typist order, and exercise clear, history, transport refusal, widget readiness,
+world changes and reentrant teardown. Two-player gameplay remains unverified.
+
+Current combined validation: Release main.dll identifies 0.9.0n b2159. Console,
+cooking, profile, non-entity material/placement/coin, garden/hose and world-sound
+runners pass, as do native asset contracts, reliable-kind routing and the DLL ABI
+gate with its forbidden-import negative control. Existing work is preserved;
+no game install, package replacement, commit or push is performed. The repository-wide
+public_prose gate still fails against its saved baseline (including large active
+tracking documents and other existing branch findings); its baseline is not relaxed.
+
+## Native material persistence and sky continuations — 20 October 2026
+
+Continued the owner's non-entity backlog from the same main baseline. Protocol
+2158 distinguishes extended material records from older peer implementations.
+
+Wet concrete walls now retain dryTime/timeToDry in native float group 0 after
+health/maxHealth. Serialization seams are installed from the first game-thread
+task and driven outside sessions, since a host can load its world before hosting.
+They also participate in normal getData/loadData saves, without game-file edits.
+The existing placed-actor lane captures and validates the fields, restores saved
+twins, polls the host's wet walls, and carries current progress at late join.
+Native host ReceiveTick still owns completion, replacement and retirement; the
+extension does not run a second drying simulation on clients.
+
+Concrete buckets now save dryTimer in leaf float group 1; sponges save power and
+soapAmount together in their existing leaf float group 1, including the measured
+prop_sponge_p subclass. Their native serializers omitted those timer/soap fields.
+The same save/load seams cover normal save, stow/equip and drop/load paths. Live
+held-profile copies capture both fields, preserving zero stock and the sponge's
+native small negative soap remainder. The existing bucket publisher observes
+timer-only changes at a one-second threshold and soap-only changes immediately.
+Stock arbitration and stale records across authority handoff remain open.
+
+Native scalar-group writes allocate before changing the record, preserve all
+unrelated child buffers, transfer ownership when extending the outer array, and
+free replaced scalar/outer buffers through GMalloc. Allocation failure leaves
+the original intact. One thousand native save/load cycles retain a constant live
+allocation count; outer-allocation failure after scalar allocation is rolled back.
+Original native records without the extension remain readable.
+
+newsky.tp's client start refusal now also covers the six actual Delay destinations
+(3222, 70, 437, 552, 759, 1023), so a previously started client chain cannot later
+play another earthTP cue, add local emails or change world event bookkeeping.
+BeginPlay/init, permanent-hole setup, ordinary sky tick and moon continuations
+remain native. Host continuations run normally, with the existing host sound,
+email and sky-state transports. Partial authority-watch registration is retried.
+Native asset contracts pin these exact targets and the three delayed email sites.
+
+Nine non-entity executables, seven garden/hose suites, world-sound regressions,
+native asset contracts, production-source compilation and Release build pass.
+No two-peer game validation, package, install, commit or push was performed.
+This does not complete client wall repair: the no-spend refusal remains until
+personal material debit/result/profile durability is implemented as one operation.
+Creative construction, sponge foam/surface effects, grill behavior, console/music,
+package subclasses and the other unchecked TODO items still need work.
+
+## Main-based non-entity batch — 20 October 2026
+
+The owner's source of truth is `ElvardFIC/WatchersOfTheVoid/main`, baseline
+`b6651cb91d4a7ee5ddc9c92fc558d3e3913b3b00`; version labels in earlier reports
+are historical. Local branch is `watchers-of-the-void-2155`. Entities belong
+to the other owner; this batch changes no entity behavior.
+
+The merged network admission table lacked 38 existing kinds. Twenty-seven have
+real client senders and validating host handlers, but the receive edge classified
+them as unknown and dropped them. Their Client rows are restored: ATV servicing,
+location gather, PvP preferences/hits, credit intents, food state/bites, kitchen
+and cord intents, prop support, service panels, radio, cargo lift, fire/spray,
+explosions, prop actions, short circuits, hook retrieval, music/toys, garden
+placements, scale and computer/laptop UI. Eleven existing host-only kinds and the
+new placement result explicitly remain Host. Existing entity cosmetic kinds only
+receive that unchanged default-deny classification; no entity source was edited.
+No blind relay paths were added. The router gate's old mutation target was updated
+to the current dispatcher signature and now refuses a missing target explicitly.
+
+Placement now carries a nonzero monotonic request id. The client retries the
+same immutable request; the host reserves it before native calls and retains
+accepted/refused/retry replies through transport refusal. Bounded per-occupant
+history plus an eviction-surviving watermark prevents replay from recreating a
+collected prop. Duplicate accepted requests can re-express the original canonical
+actor. Index-not-ready is retryable; class/food/key/native-spawn failures produce
+explicit refusal. Native setKey must succeed and the finished key must match.
+Client acceptance retains the original object until normal canonical adoption;
+refusal stops waiting, announces the outcome and preserves the local actor for
+pickup. Refused actors cannot leak through the trash/carry fallback or join sweep.
+World/session reset, slot replacement and recycled actor identity fence callbacks.
+The private spawn/reply helpers keep the parent source below 800 lines.
+
+Shared coin E, overlap and remote requests now use one native host transaction,
+reserved before execution. Observed credit remains committed even if the call
+faults afterwards; unreadable/failed completion is not retried as another spend.
+A successful no-op may retry. Accepted live coins enter bounded, rotating cleanup
+retries without repeating credit. Client mirrors remain intact until host outcome;
+native map-placed coins retain their local path.
+
+Current main already contains pre-session saved plant/faucet/hose discovery.
+Seven current garden/hose/wall-enrollment suites and the native asset contracts
+pass. This does not finish care acceptance/refunds, resource durability,
+concurrent writers or actual multiplayer save/rejoin. Wall repair's no-spend
+refusal remains in place until its complete material transaction exists.
+
+Release build, focused production-source tests, native asset contracts, ABI and
+all 212 reliable-kind routes pass; detailed evidence is in TESTLOG.md. Protocol
+2157 distinguishes the numbered-placement layout; the build directory's older
+name is not an artifact version. No commit, push, install or package publication.
 
 ## Merge update - local branch with multivoid-sync-2153 (19 October 2026)
 
@@ -819,7 +1864,7 @@ working; issue 41 (old basement wall) remains explicitly excluded by the owner.
 |16|Stutters when stowing items|Частично2157: removed full object-array lookups of unloaded claimed classes from save-coverage/pocket path, serial-safe cache. No frame profile or in-game confirmation; residual stutters remain unconfirmed.2165 follow-up removes recurring unresolved-class full walks in sleep resolver; production compile passed, no runtime profiling|
 |20|Bucket water disappearing|Частично2153/2159/2169: world changed-state publication/empty repair/passive simulation;2159 adds remote selected-hand level/soap-presence/alcohol display, preserving owner's actual contents.2169 adds current held water/actual soap count/alcohol to the personal profile, with validated ordered receipt. Simultaneous writers/in-flight record arbitration and pouring gameplay remain|
 |21|Cement / trowel|Частично2153/2160/2166/2168/2169: trowel hand display; world units/dry and two-bag transfer publication, passive tick, exhausted-bucket guard;2166 adds concrete-bucket hand fill/dry/empty display and no-spend client wall-repair refusal. 2168 refreshes outgoing held-trowel profile concrete from the matching local hand, including zero; identity mismatches defer the poll. 2169 adds live held concrete-bucket/cement-bag profile amounts/dry and validated ordered profile receipt. Concurrent host transactions, dryTimer handoff and actual client wall repair remain|
-|22|Brick-wall outline and build|Partial2166/2167/2168: placement/progress, existing-wall enrollment, solo-host tracking and native-key save twins;2168 adds host-validated client melee damage to completed walls. Five focused2168 tests/four production compilations pass. Client repair, atomic material transactions, creative build and effects remain; no multiplayer test.|
+|22|Brick-wall outline and build|Partial: placement/progress, existing-wall enrollment, solo-host tracking and native-key save twins; host-validated client melee damage. Current2162 adds host-owned native instant completion from a newly accepted creator-owned contour, with host Custom Content/reach/source checks, retry and single successor dispatch. Client repair, atomic material transactions, wet-wall timer persistence and gameplay/effects checks remain.|
 |25|Battery levels|2153 item batch: personal profiles capture the live held record before hashing (including zero charge) with class/key/serial/world validation. Supported mutable world pickup waits for reliable record acceptance before destroying its source. Capture/transition regressions and Release compile pass; battery hand/stow/drop/rejoin gameplay remains open.|
 |26|Airy event|Осталось|
 |27|Main-room computer walls becoming physics props|2153 item batch: seven factory-born cubicle parts and their post-finish state/coast are covered by the production birth harness; source registration remains independent of optional ambient assets. Actual struck-panel disappearance on host/client remains a gameplay check, not a closed report.|
@@ -834,7 +1879,7 @@ working; issue 41 (old basement wall) remains explicitly excluded by the owner.
 |42|Event teleport to the triggering/base-entering player|Код2161: actual agrav occupancy and runtime-verified shared armed boxes; client pose fallback, initiator gather, repeat/reentry guards and send retries. Two focused checks/five TUs passed; Other custom paths and full event effects remain separate|
 |43|Safe cracking|Код2162: both dial success and hacked converge on opened; client completion to host, single loot, saved lock publication/retries and host-lock protection against early/stale records. Initial unlocked drop record preserved. dial UI and generic child hinge identity unchanged|
 |44|Sponge wetting|Частично2160/2169: native saved power/wetness now publishes after enterWater/wash/clamp/LMB; load no echo and final-use tail checked. 2169 adds current held wetness to outgoing profiles. Soap stock/foam/surface effects and personal-hand transitions remain unverified; two-player test needed|
-|45|Grill ignition|Код2162: host ignition/off, active/coals/burn snapshot and late join, passive client heating/fuel tick, immediate coal record and request retries. Concurrent coal transactions/stale records, lid and personal item transitions remain.|
+|45|Grill ignition|Current2162: host ignition/off, active/coals/burn/lid/loop/volume snapshot and late join, passive client heating/fuel tick, immediate coal/lid record retry, exact local lid-output provenance and stopped-audio recovery. Concurrent coal/lid transactions, stale full records, personal item transitions and two-peer gameplay remain.|
 |46|Client-placed crops/faucets/hoses disappear after save reload|Частично2163: exact native placement -> host save actors, completed hose points/links, plant/pot identity, retry/dedup/retirement/late join. Two tests/five TUs passed; game save/reload not tested. Later gardening, accepted hose rerouting, concurrency and pre-session loaded-actor enrollment remain.|
 |47|Black disk/yellow-ring sky event starts on client independently|Visual code2164; common schedule-entry authority2165 covers all scheduled rows, boot/reflected calls and passEvents protection. Local checks pass. Audio/emails/pre-session latent effects remain separate. This is NOT Bad Sun or black fog|
 |48|Mimic (user identified; trees/white pillars/radar report)|Code2165: prop_impostor_C and impostorPropsMaster_C identified; client random generation and local-camera culling disabled. Reuses keyed prop class/disguise/birth/death/join; host controls lifetime. Focused checks/compilation pass; multiplayer/rendering/damage verification pending. Related to35; other creatures remain open|
@@ -878,15 +1923,19 @@ Keep these investigation details after removing mirror-backups:
 
 - [ ] Food/package final-bite destruction and subclass eaten() output; preserve local poison/player effects.
   Other package families and client-local loot need explicit provenance, not global replaceProp admission.
-- [ ] Rejected client placement may remain awaiting binding: establish acknowledgement/refusal behavior.
-- [ ] Coin pickup by E/overlap: one host credit, disappearance only after acceptance; map-placed coins remain local.
+- [x] Placement acknowledgement/refusal/retry and retained local recovery implemented;
+  game checks remain (see main-based batch above).
+- [x] Shared coin native transaction/reservation and accepted retirement retries implemented;
+  map coins remain native; game checks remain.
 - [ ] Console event bodies/AI/damage for Rufus/thiccfus, llama, Madness grunts and variants;
   simultaneous typists' canonical order, periodic/local output and exact music phase remain.
 - [ ] Wall repair requires an atomic request/result and exact personal cement stock across
   hand/slot/drop, retry/rejection/disconnect; keep the current no-spend refusal until complete.
-  Creative construction, wet-wall timer persistence and exact impact/effects remain.
+  Instant construction has host-owned code and offline tests; wet-wall timer persistence
+  and actual successor/impact/effects still need gameplay checks.
 - [ ] Water/cement/coal concurrent writers and stale in-flight records; dryTimer ownership;
-  sponge soapAmount/foam/surfaces, grill lid/final cooked food and personal-hand transitions.
+  sponge foam/surfaces, grill lid/loop and cooked-food presentation now have code and
+  offline tests; personal-hand transitions and actual two-peer outcomes remain unverified.
 - [ ] Enroll pre-session plants/faucets/hoses; later watering/fertilizing/harvest, pot transitions,
   accepted hose rerouting and concurrent use. Missing historical save objects are not migrated.
 - [ ] Sky-event audio, delayed email/bookkeeping and pre-session latent chains; other custom

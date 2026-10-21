@@ -37,16 +37,17 @@ void Install(coop::net::Session* session);
 // reliable drain loop.
 void OnReliable(const coop::net::KeyedScalarPayload& payload, uint8_t senderPeerSlot);
 
-// HOST-only: snapshot the current `process` of every indexed grime (the lower of it and its floor),
-// and the floor of every key the index does not hold live (a decal ended here, or streamed out), to a
-// freshly connected client
-// `peerSlot` with adopt=1 (the joiner adopts the host's world). Called from the net-pump connect
-// edge. Game thread.
+// Queue an adopt=1 snapshot for this occupant. The tick waits for the current
+// index, samples current values, and retains refused sends independently per peer.
 void QueueConnectBroadcastForSlot(int peerSlot);
 
-// Per-tick: install the two lowering verbs' watches and the end-of-play subscription until they
-// take. Call every net-pump tick on the game thread.
+// Drive retained snapshots, live minimum updates and partial paints, then install
+// native watches/subscriptions until they take. Game thread.
 void Tick();
+void OnPeerLeftSlot(int slot);
+void OnDisconnect();
+void RegisterDynamic(void* actor);
+void ResetDynamic();
 
 // DEV-DRILL ONLY: the quantised position key this module would index `actor` under. The
 // scan-parity drill uses it so its independent walk counts DISTINCT CELLS the way the index

@@ -92,6 +92,17 @@ thread_local const wchar_t* t_name = nullptr;
 // believing its verb is running forever. This destructor runs on all three paths.
 struct ActiveScope;
 thread_local ActiveScope* t_activeHead = nullptr;
+struct InvocationScope;
+thread_local InvocationScope* t_invocationHead = nullptr;
+thread_local uint64_t t_invocationSequence = 0;
+struct InvocationScope {
+    InvocationScope* previous=t_invocationHead;
+    uint64_t id=0;
+    InvocationScope(){if(!++t_invocationSequence)++t_invocationSequence;id=t_invocationSequence;t_invocationHead=this;}
+    ~InvocationScope(){t_invocationHead=previous;}
+    InvocationScope(const InvocationScope&)=delete;
+    InvocationScope& operator=(const InvocationScope&)=delete;
+};
 
 struct ActiveScope {
     ActiveScope* prev;
@@ -213,6 +224,8 @@ __declspec(noinline) std::uintptr_t __fastcall LoopDetour(void* ctx, void* stack
     g_matched.fetch_add(1, std::memory_order_relaxed);
 
     Call call{};
+    InvocationScope invocation;
+    call.invocation=invocation.id;
     call.object = Read<void*>(stack, P::off::FFrame_Object);
     call.function = fn;
     call.locals = Read<std::uint8_t*>(stack, P::off::FFrame_Locals);
@@ -472,6 +485,11 @@ bool IsObjectBodyActive(void* function, void* object) {
     if (!function || !object) return false;
     for (const ActiveScope* s = t_activeHead; s; s = s->prev)
         if (s->self == function && s->receiver == object) return true;
+    return false;
+}
+bool IsInvocationActive(uint64_t invocation){
+    if(!invocation)return false;
+    for(const auto* scope=t_invocationHead;scope;scope=scope->previous)if(scope->id==invocation)return true;
     return false;
 }
 

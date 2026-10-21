@@ -11,6 +11,7 @@ struct Obj {int id=0,serial=1;bool live=true;void* cls=nullptr;ue_wrap::reflecti
  float debrisForce=3000;ue_wrap::FVector impact{1,2,3};int32_t debris=6;void* shake=nullptr;uint8_t bits=0x80;} objects[12];
 auto& can=objects[1];auto& blast=objects[2];auto& cls=objects[3];auto& shake=objects[4];auto& gs=objects[5];
 uint32_t world=1;bool current=true,classes=true,bind=true,dispatch=true,spawn=true;
+bool privatePc=false;
 bool locOk=true,uniform=true,foreignWorld=false,cdo=false,marked=false,authority=false,salt=false,hasShake=true;std::wstring missing;
 int begins=0,finishes=0,destroys=0,breaks=0,lastBreak=0;
 std::function<void()> callback,locCallback,finishCallback;
@@ -18,7 +19,7 @@ X::Blast expected=[] {X::Blast b;b.transform={0,0,.6f,.8f,100,200,300,0,1.5f,2,3
 void Invoke(std::function<void()>& fn){auto c=std::move(fn);fn={};if(c)c();}
 void Reset(){++world;for(int i=0;i<12;++i){objects[i]={};objects[i].id=i;objects[i].serial=int(world);objects[i].cls=&cls;objects[i].name={i,0};}
  current=classes=bind=dispatch=spawn=locOk=uniform=true;foreignWorld=cdo=marked=false;missing.clear();
- authority=salt=false;hasShake=true;expected.variant=0;expected.shake=true;begins=finishes=destroys=breaks=lastBreak=0;callback=locCallback=finishCallback={};}
+ authority=salt=privatePc=false;hasShake=true;expected.variant=0;expected.shake=true;begins=finishes=destroys=breaks=lastBreak=0;callback=locCallback=finishCallback={};}
 struct SpawnParams {void* world;void* cls;ue_wrap::FTransform transform;uint8_t collision;uint8_t pad[7];void* owner;void* result;};
 struct FinishParams {void* actor;ue_wrap::FTransform transform;void* result;};
 }
@@ -30,7 +31,7 @@ int32_t AllocateSlotSerial(int32_t i){return SlotSerial(i);}
 void* ObjectAt(int32_t i){return i>=0&&i<12?&test::objects[i]:nullptr;}
 bool IsLiveByIndex(void* a,int32_t i){return IsLive(a)&&ObjectAt(i)==a;}
 void* ClassOf(void* a){return a?static_cast<test::Obj*>(a)->cls:nullptr;}
-std::wstring ClassNameOf(void* a){return a==&test::blast?(test::salt?L"explosion_saltrocket_C":L"explosion_C"):a==&test::can?L"prop_gascan_C":L"other_C";}
+std::wstring ClassNameOf(void* a){return a==&test::blast?(test::privatePc?L"explosion_pc_C":test::salt?L"explosion_saltrocket_C":L"explosion_C"):a==&test::can?L"prop_gascan_C":L"other_C";}
 const FName& NameOf(void* a){return static_cast<test::Obj*>(a)->name;}
 bool NameEquals(const FName&,const wchar_t*){return test::hasShake;}
 bool NameStartsWith(const FName&,const wchar_t*){return test::cdo;}
@@ -75,6 +76,9 @@ namespace ue_wrap::log {void Write(Level,const char*,...) {}}
 using namespace test;
 bool Replay(){const auto epoch=world;return X::ReplayBlast(expected,authority,[](void* a){CHECK(a==&blast);marked=true;return true;},[epoch]{return current&&epoch==world;});}
 int main(){
+ Reset();CHECK(!X::IsPrivatePcBlast(&blast));privatePc=true;CHECK(X::IsPrivatePcBlast(&blast) && !X::IsGameplayBlast(&blast));
+ cdo=true;CHECK(!X::IsPrivatePcBlast(&blast));cdo=false;foreignWorld=true;CHECK(!X::IsPrivatePcBlast(&blast));
+ foreignWorld=false;blast.live=false;CHECK(!X::IsPrivatePcBlast(&blast) && !X::IsPrivatePcBlast(nullptr));
  Reset();CHECK(Replay()&&begins==1&&finishes==1&&!destroys);
  Reset();authority=true;CHECK(Replay());
  Reset();salt=true;expected.variant=1;CHECK(Replay());

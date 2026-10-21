@@ -4,6 +4,8 @@
 
 #include "coop/comms/chat_feed.h"
 #include "coop/props/prop_key_index.h"
+#include "coop/world/material_save_sync.h"
+#include "coop/props/food_save_sync.h"
 #include "coop/dev/class_lifetime_probe.h"
 #include "coop/dev/init_seam_probe.h"
 #include "coop/dev/key_parity_probe.h"
@@ -88,6 +90,8 @@ void TickFrameTail() {
     // The prop key index's watches' names, driven to resolve (the install itself is harness::Start's first
     // game-thread task); a latched read after that.
     coop::prop_key_index::Install();
+    coop::material_save_sync::Install();
+    coop::props::food_save_sync::Install();
     // [dev] The lookup parity probes, once per world, the menu's included: the singleton probe, since a
     // lookup that outlived the world it came from would show there, and the function-list probe, since
     // a class the menu loads is judged too; each a latched read when off.

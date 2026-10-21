@@ -135,6 +135,44 @@ constexpr ClientAuthorship AuthorshipOf(ReliableKind k) {
     case ReliableKind::RemoverRequest:
     case ReliableKind::CameraToggleIntent:
     case ReliableKind::LaptopTabReport:
+    // Fork lanes retained at merge: their existing client senders must reach the
+    // host's validating handlers. None gains a relay path from this admission row.
+    case ReliableKind::AtvConditionEdit:
+    case ReliableKind::EventGather:
+    case ReliableKind::PvpChange:
+    case ReliableKind::PvpHit:
+    case ReliableKind::CreditIntent:
+    case ReliableKind::FoodState:
+    case ReliableKind::FoodBite:
+    case ReliableKind::KitchenIntent:
+    case ReliableKind::CordIntent:
+    case ReliableKind::PropSupport:
+    case ReliableKind::ServicePanel:
+    case ReliableKind::RadioState:
+    case ReliableKind::CargoLift:
+    case ReliableKind::PropFire:
+    case ReliableKind::HandFire:
+    case ReliableKind::HandExtinguisher:
+    case ReliableKind::ExplosionEvent:
+    case ReliableKind::PropActionIntent:
+    case ReliableKind::Explosion:
+    case ReliableKind::DeskShortCircuit:
+    case ReliableKind::HookRetrieve:
+    case ReliableKind::DingusMusic:
+    case ReliableKind::Watoy:
+    case ReliableKind::SpongeEffect:
+    case ReliableKind::WallCreative:
+    case ReliableKind::GrillHand:
+    case ReliableKind::GrillEdit:
+    case ReliableKind::WaterLaunch:
+    case ReliableKind::DrinkLaunch:
+    case ReliableKind::DrinkPour:
+    case ReliableKind::WaterPour:
+    case ReliableKind::HandToyAudio:
+    case ReliableKind::PlacedSave:
+    case ReliableKind::PropScaleState:
+    case ReliableKind::SharedScreen:
+    case ReliableKind::LaptopUI:
         return ClientAuthorship::Client;
     // The Host row matches MTA's protected element data, which a client may not write: opt-in there
     // (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:2743-2755), the only mode here.
@@ -210,6 +248,20 @@ constexpr ClientAuthorship AuthorshipOf(ReliableKind k) {
     case ReliableKind::CameraActiveState:
     case ReliableKind::CameraLightState:
     case ReliableKind::LaptopTabState:
+    case ReliableKind::MediaState:
+    case ReliableKind::ChestFlags:
+    case ReliableKind::HandTaken:
+    case ReliableKind::KitchenState:
+    case ReliableKind::CordState:
+    case ReliableKind::DreamScene:
+    case ReliableKind::MadnessState:
+    case ReliableKind::CeilingLampState:
+    case ReliableKind::AmbientLightState:
+    case ReliableKind::GrayboarAction:
+    case ReliableKind::GrayboarTurn:
+    case ReliableKind::PropPlacementResult:
+    case ReliableKind::WaterSplash:
+    case ReliableKind::DrinkSpill:
         return ClientAuthorship::Host;
     }
     return ClientAuthorship::NotAKind;  // a byte value that names no kind: refused like Host

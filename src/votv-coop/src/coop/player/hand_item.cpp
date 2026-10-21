@@ -38,6 +38,7 @@
 #include <cwchar>
 #include <string>
 #include <vector>
+#include <array>
 
 namespace coop::hand_item {
 namespace {
@@ -93,6 +94,10 @@ struct SlotHand {
     ue_wrap::canned_food::State can;
 };
 SlotHand g_hands[coop::players::kMaxPeers];  // GT-only
+struct RetiredHand {uint32_t generation=0,world=0;uint16_t person=0;uint64_t at=0;std::wstring cls;};
+std::array<std::array<RetiredHand,4>,coop::players::kMaxPeers> g_retired;
+std::array<RetiredHand,coop::players::kMaxPeers> g_generationProof;
+std::array<unsigned,coop::players::kMaxPeers> g_retiredCursor{};
 
 // The per-slot display mirror. A spawn that failed keeps the item and the puppet it was tried for and
 // is not tried again until either changes: a begin or a finish that failed for them fails the same way
@@ -132,6 +137,11 @@ uint64_t g_replayAt = 0;
 uint64_t g_handEpoch = 0;
 bool g_dirty[coop::players::kMaxPeers]{};
 uint64_t Now() { using namespace std::chrono; return duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count(); }
+void RetireGeneration(uint8_t slot){
+    const auto& h=g_hands[slot];if(!h.has || !h.generation || h.cls.empty())return;
+    auto proof=g_generationProof[slot];if(proof.generation!=h.generation)return;proof.at=Now();
+    g_retired[slot][g_retiredCursor[slot]++%4]=proof;
+}
 uint32_t NextGeneration() { if (!++g_generation) ++g_generation; return g_generation; }
 
 // The local player, cached by TickOwner for the fresh holding-actor read. Game thread only.
@@ -817,8 +827,10 @@ bool HandleHandItem(coop::net::Session& session,
             return true;
         }
         SlotHand& h = g_hands[describedSlot];
+        RetireGeneration(describedSlot);
         h.generation = generation;
         h.has = has; h.cls = cls; h.name = name; h.item = item;
+        g_generationProof[describedSlot]={generation,ue_wrap::world_identity::Generation(),coop::roster_ledger::Get(describedSlot).playerNo,Now(),has?cls:std::wstring{}};
         h.hasCan = hasCan; h.can = can;
         if (has) h.lastCls = cls;
         std::memcpy(h.relPos, relPos, sizeof(relPos));
@@ -871,6 +883,7 @@ void Reset() {
     for (uint8_t s = 0; s < coop::players::kMaxPeers; ++s) {
         DestroyMirror(s, "session reset");
         g_hands[s] = SlotHand{};
+        g_retired[s]={};g_retiredCursor[s]=0;g_generationProof[s]={};
         g_droppedBySender[s] = 0;
         g_unresolvedWarned[s].clear();
         g_unresolvedBySlot[s] = 0;
@@ -897,6 +910,14 @@ bool HeldClassIs(uint8_t slot, const wchar_t* cls) {
     if (slot >= coop::players::kMaxPeers || !cls) return false;
     const SlotHand& h = g_hands[slot];
     return h.has && ::_wcsicmp(h.cls.c_str(), cls) == 0;
+}
+bool RecentGenerationClass(uint8_t slot,uint32_t generation,std::wstring& className){
+    if(slot>=coop::players::kMaxPeers || !generation)return false;
+    const auto person=coop::roster_ledger::Get(slot).playerNo;const auto now=Now();const auto world=ue_wrap::world_identity::Generation();
+    const auto& h=g_hands[slot];const auto& proof=g_generationProof[slot];
+    if(h.has && h.generation==generation && proof.generation==generation && proof.person==person && proof.world==world){className=proof.cls;return !className.empty();}
+    for(const auto& row:g_retired[slot])if(row.generation==generation && row.person==person && row.world==world && now>=row.at && now-row.at<=1500){className=row.cls;return true;}
+    return false;
 }
 
 bool LastHeldClassIs(uint8_t slot, const wchar_t* cls) {
@@ -933,6 +954,7 @@ void OnSlotDisconnected(uint8_t slot) {
     ++g_handEpoch;
     DestroyMirror(slot, "peer disconnected");
     g_hands[slot] = SlotHand{};
+    g_retired[slot]={};g_retiredCursor[slot]=0;g_generationProof[slot]={};
     g_dirty[slot] = false;
 }
 

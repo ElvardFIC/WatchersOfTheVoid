@@ -6,6 +6,8 @@
 #include "ue_wrap/core/call.h"
 #include "ue_wrap/core/ftext_utils.h"
 #include "ue_wrap/core/reflection.h"
+#include "ue_wrap/core/cached_obj_ref.h"
+#include <cmath>
 
 namespace ue_wrap::component_calls {
 namespace {
@@ -69,23 +71,30 @@ bool SetActive(void* comp, bool value, bool reset) {
 }
 
 bool SetVolumeMultiplier(void* comp, float mult) {
-    if (!comp) return false;
-    static void* sFn = nullptr;
-    if (!sFn) {
-        if (void* cls = R::ClassOf(comp))
-            sFn = R::FindFunction(cls, L"SetVolumeMultiplier");
-    }
-    if (!sFn) return false;
-    ue_wrap::ParamFrame f(sFn);
-    if (!f.valid()) return false;
-    f.Set<float>(L"NewVolumeMultiplier", mult);
-    return ue_wrap::Call(comp, f);
+    if (!comp || !R::IsLive(comp) || !std::isfinite(mult)) return false;
+    CachedObjRef live;live.Set(comp);const auto world=world_identity::Generation();
+    ue_wrap::ParamFrame f(R::FindDispatchFunctionCached(R::ClassOf(comp),L"SetVolumeMultiplier"));
+    if (!f.valid() || !f.Set<float>(L"NewVolumeMultiplier",mult) || !live.Get() || world!=world_identity::Generation())return false;
+    return ue_wrap::Call(comp,f) && live.Get() && world==world_identity::Generation();
 }
 
 bool CallParamless(void* obj, void* fn) {
     if (!obj || !fn) return false;
     ue_wrap::ParamFrame f(fn);
     return f.valid() && ue_wrap::Call(obj, f);
+}
+bool SetAudioPlaying(void* comp,bool playing,const std::function<bool()>& current) {
+    if(!comp || !R::IsLive(comp) || (current && !current()))return false;
+    CachedObjRef live;live.Set(comp);const auto world=world_identity::Generation();
+    const auto valid=[&]{return live.Get() && world==world_identity::Generation() && (!current || current());};
+    ParamFrame query(R::FindDispatchFunctionCached(R::ClassOf(comp),L"IsPlaying"));
+    bool before=false;
+    if(!valid() || !query.valid() || !Call(comp,query) || !valid() ||
+       !query.GetRaw(L"ReturnValue",&before,sizeof(before)))return false;
+    if(before==playing)return true;
+    ParamFrame action(R::FindDispatchFunctionCached(R::ClassOf(comp),playing?L"Play":L"Stop"));
+    if(!valid() || !action.valid() || (playing && !action.Set<float>(L"StartTime",0.f)))return false;
+    return Call(comp,action) && valid();
 }
 
 bool CallParamlessNamed(void* obj, const wchar_t* verb) {

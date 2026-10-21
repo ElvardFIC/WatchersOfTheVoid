@@ -43,7 +43,7 @@ using coop::net::ReliableKind;
 
 // The blobs. A dish is named by its gamemode.dishs index, a panel by its placed actor's name.
 constexpr uint8_t kOpLine = 0;  // typist -> host: [i32 dish][str name][str used panel][str line]
-constexpr uint8_t kOpLog  = 1;  // host -> typist: [u8 bracketsType][str text]
+constexpr uint8_t kOpLog  = 1;  // host -> every display: [u8 bracketsType][str text]
 constexpr uint8_t kOpBusy = 2;  // host -> typist: [u8 busy], the level, on each change and as a seed
 constexpr uint8_t kOpLocalLog = 3; // client -> host: text from a command that runs locally, never execute it
 
@@ -70,6 +70,8 @@ constexpr int kTagGraph = 0x53434E47;  // 'SCNG'
 
 std::atomic<coop::net::Session*> g_session{nullptr};
 bool g_watched = false;
+Clock::time_point g_watchRetry{};
+bool g_saidWatchFailure=false;
 coop::blob_chunks::Assembler g_asm;
 uint32_t g_seq = 1;
 Clock::time_point g_nextSweep{};
@@ -99,6 +101,7 @@ struct Terminal {
     int     slot = -1;        // its typist's slot while connected, -1 once it left
     bool    busySent = false; // the busy level its typist last got
     bool    haveContext = false;
+    bool    clearing = false;
     int32_t dish = kNoDish;
     std::wstring name;
     int     lines = 0;        // lines run in the current window
@@ -115,8 +118,8 @@ bool g_saidNoContext[kMaxPeers] = {};
 // the flag: the mirror sets it while the host's terminal is busy and clears only what it set.
 bool g_mirrorBusy = false;
 bool g_localHolds = false;
-// Only actual local commands publish output; startup/periodic widget alerts do
-// not become an echo storm. A native delayed command keeps this scope while busy.
+// Local commands keep their effects on the typist; only the host orders display
+// writes. Unsolicited widget alerts have one producer, the host's visible terminal.
 unsigned g_localCommandDepth = 0;
 bool g_commandBusy = false, g_replayingLog = false;
 bool g_clearCommand = false;
@@ -164,12 +167,17 @@ void Flush(uint8_t slot) {
 void Enqueue(uint8_t slot, std::vector<uint8_t> blob) {
     Outbox& o = g_out[slot];
     if (o.q.size() >= kOutboxCap) {
+        bool removed=false;
         for (auto it = o.q.begin(); it != o.q.end(); ++it) {
             if (!it->empty() && (*it)[0] != kOpBusy) {
                 o.q.erase(it);
+                removed=true;
                 break;
             }
         }
+        // Busy is a level. When only old levels remain, the newest one still
+        // supersedes the oldest; a stalled peer cannot grow this queue forever.
+        if(!removed)o.q.pop_front();
         if (!o.saidFull) {
             o.saidFull = true;
             UE_LOGW("sat_console: %zu blobs owed to slot %u and its sends still refused -- the oldest line dropped",
@@ -238,9 +246,15 @@ void SendBusy(uint8_t slot, bool busy) {
 
 // A line the host will not run is answered as the game answers one it cannot take or run: its echo,
 // then the reason's line. The typist already consumed it.
-void AnswerRefused(uint8_t slot, const std::wstring& line, const wchar_t* why) {
+void AnswerRefused(const std::wstring& line, const wchar_t* why) {
     ShareLog(line,1,-1,true);
     ShareLog(why,0,-1,true);
+}
+
+bool IsClear(const std::wstring& line) {
+    const auto word=line.substr(0,line.find(L' '));
+    return word.size()==3 && std::towlower(word[0])==L'c' &&
+        std::towlower(word[1])==L'l' && std::towlower(word[2])==L'r';
 }
 
 // ---- the typist ----
@@ -262,10 +276,7 @@ sg::Verdict OnEnterPre(const sg::Call& c) {
     if (s->role()!=coop::net::Role::Client || !SC::ReadProcessing(term, busy) || busy ||
         !readLine || T::Classify(line) != T::Runs::OnHost) {
         g_commandTerm.Set(term); ++g_localCommandDepth;
-        const auto end=line.find(L' ');
-        const auto word=line.substr(0,end);
-        g_clearCommand=word.size()==3 && std::towlower(word[0])==L'c' &&
-            std::towlower(word[1])==L'l' && std::towlower(word[2])==L'r';
+        g_clearCommand=readLine && !busy && IsClear(line);
         return sg::Verdict::Run;
     }
     std::wstring name;
@@ -389,10 +400,11 @@ Terminal* TerminalFor(uint8_t slot, const std::string& guid) {
         }
         if (g_terms.size() >= kMaxTerminals) return nullptr;
     }
+    const auto epoch=g_epoch;
     void* desk = ue_wrap::console_desk::Instance();
     void* term = desk ? SC::CreateTerminal(desk) : nullptr;
     Terminal made;
-    if (!term || !made.pin.Pin(term) || !SC::WritePanel(term, desk)) {
+    if (!term || epoch!=g_epoch || !made.pin.Pin(term) || !SC::WritePanel(term, desk) || epoch!=g_epoch) {
         made.pin.Release();
         SC::DiscardTerminal(term);
         return nullptr;
@@ -422,10 +434,14 @@ Context ApplyContext(Terminal& t, int32_t dish, const std::wstring& name) {
     }
     // An init that fails may have set part of the context: nothing is kept, so the next line inits again.
     t.haveContext = false;
-    if (!SC::CallInit(t.pin.Raw(), name, false, d)) return Context::NotYet;
-    t.haveContext = true;
-    t.dish = dish;
-    t.name = name;
+    const auto epoch=g_epoch;
+    void* term=t.pin.Raw();
+    if (!SC::CallInit(term, name, false, d) || epoch!=g_epoch) return Context::NotYet;
+    auto* current=ByObject(term);
+    if(!current)return Context::NotYet;
+    current->haveContext = true;
+    current->dish = dish;
+    current->name = name;
     return Context::Ready;
 }
 
@@ -442,7 +458,7 @@ void HostOnBlob(uint8_t slot, const std::vector<uint8_t>& blob) {
         if(now-rate.start>=kWindow)rate={now,0,0};
         if(rate.lines>=64 || rate.chars+line.size()>32768)return;
         ++rate.lines; rate.chars+=line.size();
-        ShareLog(line,type,slot,true); // sender already printed it; never RunCommand
+        ShareLog(line,type,-1,true); // the origin waits for this same canonical echo
         return;
     }
     if (!W::RdU8(blob, o, op) || op != kOpLine || !W::RdI32(blob, o, dish) || !W::RdWStr(blob, o, name) ||
@@ -472,7 +488,7 @@ void HostOnBlob(uint8_t slot, const std::vector<uint8_t>& blob) {
             UE_LOGW("sat_console: HOST no terminal for slot %u (%s) -- its lines are answered err",
                     static_cast<unsigned>(slot), guid.empty() ? "its identity not in yet" : "none could be made");
         }
-        AnswerRefused(slot, line, kErrLine);
+        AnswerRefused(line, kErrLine);
         return;
     }
     const auto now = Clock::now();
@@ -482,7 +498,7 @@ void HostOnBlob(uint8_t slot, const std::vector<uint8_t>& blob) {
     }
     const bool spawns = T::SpawnsEveryCall(line);
     if (++t->lines > kLinesPerWindow || (spawns && now < t->nextSpawnOk)) {
-        AnswerRefused(slot, line, kBusyLine);  // the terminal cannot take the line, as the game says it
+        AnswerRefused(line, kBusyLine);  // the terminal cannot take the line, as the game says it
         return;
     }
     // A terminal still running a command keeps its context: its latent continuation reads the dish,
@@ -490,12 +506,15 @@ void HostOnBlob(uint8_t slot, const std::vector<uint8_t>& blob) {
     bool busy = false;
     const bool readOk = SC::ReadProcessing(t->pin.Raw(), busy);
     if (!readOk || busy) {
-        AnswerRefused(slot, line, readOk ? kBusyLine : kErrLine);   // an unreadable flag is not "busy"
+        AnswerRefused(line, readOk ? kBusyLine : kErrLine);   // an unreadable flag is not "busy"
         return;
     }
     // The line runs only in the context it names. One that cannot be set up is answered err and not
     // retried: a command with an effect in the world must not run twice.
+    const auto contextEpoch=g_epoch;
+    void* contextTerm=t->pin.Raw();
     const Context ctx = ApplyContext(*t, dish < kNoDish ? kNoDish : dish, name);
+    if(contextEpoch!=g_epoch || !(t=ByObject(contextTerm)))return;
     if (ctx != Context::Ready) {
         if (!g_saidNoContext[slot]) {
             g_saidNoContext[slot] = true;
@@ -503,7 +522,7 @@ void HostOnBlob(uint8_t slot, const std::vector<uint8_t>& blob) {
                     static_cast<unsigned>(slot), dish,
                     ctx == Context::Bad ? "past the host's dishes" : "not resolved, or the init failed");
         }
-        AnswerRefused(slot, line, kErrLine);
+        AnswerRefused(line, kErrLine);
         return;
     }
     // The panel the typist last used: none is a real answer (ROOT), a name that does not resolve here
@@ -515,14 +534,20 @@ void HostOnBlob(uint8_t slot, const std::vector<uint8_t>& blob) {
             UE_LOGW("sat_console: HOST no panel '%ls' for slot %u's line -- answered err",
                     Printable(used).c_str(), static_cast<unsigned>(slot));
         }
-        AnswerRefused(slot, line, kErrLine);
+        AnswerRefused(line, kErrLine);
         return;
     }
     if (spawns) t->nextSpawnOk = now + kSpawnEvery;
     UE_LOGI("sat_console: HOST runs '%ls' for slot %u (dish %d)", Printable(line).c_str(),
             static_cast<unsigned>(slot), dish);
-    if (!SC::RunCommand(t->pin.Raw(), line)) {
-        AnswerRefused(slot, line, kErrLine);
+    t->clearing=IsClear(line);
+    void* runTerm=t->pin.Raw();
+    const auto epoch=g_epoch;
+    const bool ran=SC::RunCommand(runTerm,line);
+    if(epoch!=g_epoch || !SessionIf(coop::net::Role::Host))return;
+    if(auto* current=ByObject(runTerm))current->clearing=false;
+    if (!ran) {
+        AnswerRefused(line, kErrLine);
         return;
     }
     ++g_counts.linesRun;
@@ -542,21 +567,25 @@ sg::Verdict OnWritePre(const sg::Call& c) {
     if (!s || !s->connected() || g_replayingLog) return sg::Verdict::Run;
     Terminal* t = ByObject(c.object);
     const bool local=g_commandTerm.Is(c.object) && (g_localCommandDepth || g_commandBusy);
-    if (!t && !local) return sg::Verdict::Run;
+    const bool visible=c.object==SC::LocalTerminal();
+    if (!t && !visible) return sg::Verdict::Run;
+    // A client's periodic alerts describe its mirror. The host publishes these
+    // once; forwarding every mirror would multiply them and change their order.
+    if(s->role()==coop::net::Role::Client && !local)return sg::Verdict::Cancel;
     std::wstring text;
     uint8_t type = 0;
     if (!SC::ReadWriteToLogArgs(c.locals, text, type)) return sg::Verdict::Run;
     if (type>2 || text.size()>kMaxLogChars) return sg::Verdict::Run;
     // clr clears fields directly before its final empty writeToLog. Carry this
     // display operation in order with the command echo, without re-running clr.
-    if(local && g_clearCommand && type==0 && text.empty())type=3;
-    if(s->role()==coop::net::Role::Host) ShareLog(text,type,-1,t!=nullptr);
+    if(((local && g_clearCommand) || (t && t->clearing)) && type==0 && text.empty())type=3;
+    if(s->role()==coop::net::Role::Host) ShareLog(text,type,-1,true);
     else {
         std::vector<uint8_t> b;
         W::AppU8(b,kOpLocalLog);W::AppU8(b,type);W::AppWStr(b,text);Enqueue(0,std::move(b));
     }
     ++g_counts.linesReturned;
-    return sg::Verdict::Run;
+    return sg::Verdict::Cancel;
 }
 
 void OnBodyPost(const sg::Call& c) {
@@ -575,16 +604,19 @@ void OnBodyPost(const sg::Call& c) {
 // The three watches stand or fall together: a line refused on a client whose answers no watch would send
 // back would vanish.
 void EnsureWatched() {
-    if (g_watched) return;
-    g_watched = true;
+    if (g_watched || Clock::now()<g_watchRetry) return;
+    g_watchRetry=Clock::now()+std::chrono::seconds(1);
     const bool enter = sg::WatchName(kRowEnterCommand, kTagEnter, OnEnterPre, OnBodyPost);
     const bool graph = sg::WatchName(kRowUbergraph, kTagGraph, nullptr, OnBodyPost);
     const bool write = sg::WatchName(kRowWriteToLog, kTagWrite, OnWritePre, nullptr);
-    if (enter && graph && write) return;
+    if (enter && graph && write) {g_watched=true;return;}
     if (enter) sg::UnwatchName(kRowEnterCommand, kTagEnter, OnEnterPre, OnBodyPost);
     if (graph) sg::UnwatchName(kRowUbergraph, kTagGraph, nullptr, OnBodyPost);
     if (write) sg::UnwatchName(kRowWriteToLog, kTagWrite, OnWritePre, nullptr);
-    UE_LOGE("sat_console: a terminal watch did not register -- none kept, the SAT console's lines run where typed");
+    if(!g_saidWatchFailure) {
+        g_saidWatchFailure=true;
+        UE_LOGE("sat_console: a terminal watch did not register -- none kept; registration will retry");
+    }
 }
 
 }  // namespace
@@ -601,7 +633,17 @@ void Tick() {
     if (!GT::IsGameThread()) return;
     auto* s = g_session.load(std::memory_order_acquire);
     if (!s || !s->running()) return;
+    if(g_world!=WI::Generation())Install(s);
+    EnsureWatched();
     SC::EnsureResolved();
+    // Busy may arrive before the atlas exists. Apply that retained level once
+    // the actual widget is available, including a native widget replacement.
+    if(s->role()==coop::net::Role::Client && g_mirrorBusy) {
+        if(void* term=SC::LocalTerminal()) {
+            bool busy=false;
+            if(SC::ReadProcessing(term,busy) && !busy)SC::WriteProcessing(term,true);
+        }
+    }
     DrainDisplay();
     const auto now = Clock::now();
     for (int i = 0; i < kMaxPeers; ++i)

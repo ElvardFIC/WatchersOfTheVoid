@@ -1,6 +1,9 @@
 // coop/props/prop_drop_intent.cpp -- see coop/props/prop_drop_intent.h for the design.
 
 #include "coop/props/prop_drop_intent.h"
+#include "coop/comms/peer_action_feed.h"
+#include "coop/player/roster_ledger.h"
+#include "coop/props/prop_snapshot.h"
 
 #include "coop/dev/prop_birth_key_probe.h"   // the seam's key-timing and drain-exit instrumentation
 #include "coop/element/registry.h"          // EidForActor (drain: tracked/mirror exclusion)
@@ -14,6 +17,7 @@
 #include "coop/props/prop_food_sync.h"
 #include "ue_wrap/actors/food.h"
 #include "coop/props/prop_spawn_authoring.h" // BirthIsPlayerAuthored (the spawn menu / the toolgun)
+#include "coop/props/water_pour_sync.h"
 #include "ue_wrap/actors/floor_bed.h"
 #include "coop/props/prop_wire_parity.h"    // PhysFlagsOf, the one builder of a live prop's flags
 #include "coop/props/prop_element_tracker.h"// GetPropElementIdForActor
@@ -45,6 +49,12 @@
 #include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
+#include <algorithm>
+#include <array>
+#include <chrono>
+#include <cmath>
+#include <cstring>
+#include <map>
 #include <cstdint>
 #include <deque>
 #include <string>
@@ -92,6 +102,9 @@ std::vector<PendingPlace> g_pending;         // GT-only
 struct AwaitingHost {
     ue_wrap::CachedObjRef actor;
     std::wstring key, className;
+    net::PropDropIntentPayload request{};
+    net::ReliableKind kind = net::ReliableKind::PropDropIntent;
+    uint64_t next = 0;
 };
 std::vector<AwaitingHost> g_awaitingHost;
 uint64_t g_pendingEpoch = 0;
@@ -162,6 +175,7 @@ void OnClientFinishSpawn(void* /*context*/, void* sourceObject, void* result) {
     auto* s = LoadSession();
     if (!s || !s->connected()) return;
     if (s->role() != coop::net::Role::Client) return;      // host places broadcast via host_spawn_watcher
+    if(coop::water_pour_sync::ObserveBirth(sourceObject,result))return;
     // Was a player's own spawn verb on the stack? Asked FIRST, because it is the one question only
     // this instant can answer -- the VM's calling frame is gone by the drain -- and because it is
     // what exempts a birth from the load gates below.
@@ -239,144 +253,8 @@ void OnClientFinishSpawn(void* /*context*/, void* sourceObject, void* result) {
     }
 }
 
-// Host: spawn the authoritative prop by key at the transform. Mirrors the spawn receiver's
-// spawn-by-key (deferred begin, set the key, write the parity identity, finish) but does not
-// mark it a mirror, so the host's own finish-spawn watcher catches it and broadcasts the
-// authoritative spawn to every peer. Returns the spawned actor, or null.
-void* HostSpawnPlacedProp(const coop::net::PropDropIntentPayload& p, const std::wstring& cls,
-                          const std::wstring& key, uint8_t authorSlot) {
-    // Host resolving a CLIENT's placed-prop class: object_index, so an attacker's unknown class is an
-    // O(1) miss, not a whole-array walk. Host world is always up, so the index is current.
-    void* clsObj = ue_wrap::object_index::ClassByName(cls.c_str());
-    if (!clsObj) {
-        UE_LOGW("[PROP-DROP] HOST class '%ls' not found -- cannot spawn placed prop key='%ls'",
-                cls.c_str(), key.c_str());
-        return nullptr;
-    }
-    // The lineage gate, on the CLASS, before anything is spawned. This author is the one place a
-    // client names a class the host then constructs, and the spawn-menu door widened its firing
-    // set from four whitelisted lineages to the whole prop catalog -- so what the wire may name
-    // has to be stated here rather than left to the callers. Prop lineage is the whole of it: the
-    // parity write below already assumes it, the intent kinds are all prop lanes, and a creature
-    // or event class arriving on this lane would run an unrelated begin-play on the host's world.
-    // A client cannot reach this with a non-prop class through any built door; refusing is for the
-    // wire, which is not a door.
-    if (!ue_wrap::prop::IsClassDescendantOfProp(clsObj)) {
-        UE_LOGW("[PROP-DROP] HOST refusing spawn intent from slot=%u: class '%ls' is not prop "
-                "lineage (key='%ls')", authorSlot, cls.c_str(), key.c_str());
-        return nullptr;
-    }
-    // Prop lineage is necessary and not sufficient. Two prop-lineage families are ones the host's
-    // own express refuses to broadcast: a per-player class (the inventory container, which is one
-    // actor per peer by design) and a wire-suppressed intermediate variant. Spawned from a wire
-    // intent the host would construct them and then never express them -- one silent actor per
-    // packet, accumulating in its world with nothing to retire it. A client reaches neither
-    // through a built door; this states it for the wire, which is not a door.
-    if (coop::prop_lifecycle::IsPerPlayerPropClass(cls) ||
-        coop::prop_lifecycle::IsWireSuppressedPropClass(cls)) {
-        UE_LOGW("[PROP-DROP] HOST refusing spawn intent from slot=%u: class '%ls' is per-player or "
-                "wire-suppressed -- the host would build it and never express it (key='%ls')",
-                authorSlot, cls.c_str(), key.c_str());
-        return nullptr;
-    }
-    const ue_wrap::FVector  loc{p.locX, p.locY, p.locZ};
-    const ue_wrap::FRotator rot{p.rotPitch, p.rotYaw, p.rotRoll};
-    void* actor = E::BeginDeferredSpawn(clsObj, loc, rot);
-    if (!actor) {
-        UE_LOGW("[PROP-DROP] HOST BeginDeferredSpawn('%ls') failed", cls.c_str());
-        return nullptr;
-    }
-    if (p.hasFoodCondition > 1 ||
-        (ue_wrap::food::IsFood(actor) != (p.hasFoodCondition == 1)) ||
-        (p.hasFoodCondition && !coop::props::prop_food_sync::ValidCondition(
-            p.foodTemperature, p.foodRipeness, p.foodUses))) {
-        E::DestroyActor(actor);
-        return nullptr; // never author a default portion from missing or malformed food data
-    }
-    ue_wrap::CachedObjRef identity;
-    identity.Set(actor);
-    const uint64_t epoch = g_pendingEpoch;
-    const auto stillCurrent = [&] { return epoch == g_pendingEpoch && identity.Get() == actor; };
-    // Set the key before finishing: the init inside the finish spawn's construction script mints
-    // a fresh key unless one is already set, and writing our wire key first keeps the cross-peer
-    // identity. The setter is resolved on the prop base class (its declaring class) and cached,
-    // as the spawn receiver does: the function lookup is exact-owner with no superclass climb,
-    // so a leaf-class resolve missed every subclass that does not redeclare the setter, and the
-    // host spawn then auto-minted a key unequal to the client's, an identity split and a
-    // host-side duplicate. Every wire class reaching here is prop lineage (the intent author
-    // gates on it), so the base's setter is a valid member call on the spawned actor.
-    static void* s_setKeyFn = nullptr;
-    if (!s_setKeyFn) {
-        if (void* propBase = R::FindClass(P::name::PropClass))
-            s_setKeyFn = R::FindFunction(propBase, P::name::PropSetKeyFn);
-    }
-    void* setKeyFn = s_setKeyFn;
-    if (setKeyFn) {
-        const R::FName kf = ue_wrap::fname_utils::StringToFName(key);
-        if (kf.ComparisonIndex != 0) {
-            ue_wrap::ParamFrame sk(setKeyFn);
-            if (!sk.SetRaw(L"Key", &kf, sizeof(kf)) || !ue_wrap::Call(actor, sk)) {
-                UE_LOGW("[PROP-DROP] HOST setKey('%ls') failed on '%ls'", key.c_str(), cls.c_str());
-            }
-        }
-    } else {
-        UE_LOGW("[PROP-DROP] HOST setKey UFunction not found on '%ls' -- prop will auto-mint a Key", cls.c_str());
-    }
-    if (!stillCurrent()) return nullptr;
-    // The single-player parity identity (the props-table name and the static,
-    // remove-without-respawn, frozen and sleep flags) before finishing: the init resolves the
-    // true mesh, mass and collision from the name (empty gives the default white cube).
-    if (ue_wrap::prop::IsDescendantOfProp(actor)) {
-        const std::wstring nameW = WireToWide(p.propName.len, p.propName.data, sizeof(p.propName.data));
-        R::FName nameRow{0, 0};
-        if (!nameW.empty() && nameW != L"None") nameRow = ue_wrap::fname_utils::StringToFName(nameW);
-        namespace pf = coop::net::propspawn_flags;
-        ue_wrap::prop::WriteSpParityIdentity(
-            actor, nameRow,
-            (p.physFlags & pf::kStatic) != 0,
-            (p.physFlags & pf::kRemoveWOrespawn) != 0,
-            (p.physFlags & pf::kFrozen) != 0,
-            (p.physFlags & pf::kSleep) != 0);
-    }
-    if (!stillCurrent()) return nullptr;
-    // No mirror mark: the host finish-spawn watcher must see this and broadcast it.
-    if (!E::FinishDeferredSpawn(actor, loc, rot)) {
-        UE_LOGW("[PROP-DROP] HOST FinishDeferredSpawn('%ls') failed", cls.c_str());
-        return nullptr;
-    }
-    if (!stillCurrent()) return nullptr;
-    // Construction initializes a full portion. Restore the client's LIVE values afterwards,
-    // before the host poll or next-tick birth broadcast can publish those defaults.
-    if (p.hasFoodCondition) {
-        if (!ue_wrap::food::Write(actor, {p.foodTemperature, p.foodRipeness, p.foodUses})) {
-            E::DestroyActor(actor);
-            return nullptr;
-        }
-        coop::props::prop_food_sync::ForgetPublished(key);
-    }
-    // Scale is a runtime transform (the deferred begin takes location and rotation only); apply
-    // it after finishing and before the next-tick drain re-reads the scale for the broadcast.
-    if (p.scaleX > 0.001f || p.scaleY > 0.001f || p.scaleZ > 0.001f) {
-        // Clamped, because a scale is the one field on this intent a client can make absurd with
-        // no other consequence to itself: the lane reads the client's own actor, so an honest
-        // value is whatever the game gave it, and the bound only has to be past anything the game
-        // does. Client-scoped by the project's rule -- the host's own spawns never come through
-        // here.
-        constexpr float kMaxScale = 100.0f;
-        auto clamp = [](float v) { return v < 0.f ? 0.f : (v > kMaxScale ? kMaxScale : v); };
-        E::SetActorScale3D(actor, ue_wrap::FVector{clamp(p.scaleX), clamp(p.scaleY), clamp(p.scaleZ)});
-    }
-    if (!stillCurrent()) return nullptr;
-    // The prop's own save record, if the author's copy is already here. It usually is not -- it
-    // rides behind this intent in the same FIFO -- and then it lands on this actor by Key once the
-    // actor is indexed, which is what makes the store keyed by identity rather than by actor.
-    // Until then this key is AWAITED: the host has just spawned a class-default copy, and
-    // publishing that as canonical would overwrite the author's real state on the author's own
-    // machine.
-    if (!p.hasFoodCondition && !coop::prop_save_data::ApplyParked(actor, key))
-        coop::prop_save_data::ExpectRecordFor(actor, key, authorSlot);
-    return actor;
-}
+#include "prop_drop_host.inc"
+#include "prop_drop_replies.inc"
 
 }  // namespace
 
@@ -407,11 +285,12 @@ void Install(coop::net::Session* session) {
 }
 
 void Tick(coop::net::Session* session) {
+    UE_ASSERT_GAME_THREAD("prop_drop_intent::Tick");
+    PlacementTick(session);
     std::erase_if(g_awaitingHost, [](const AwaitingHost& row) {
         void* a = row.actor.Get();
         return !a || PT::GetPropElementIdForActor(a) != coop::element::kInvalidId;
     });
-    UE_ASSERT_GAME_THREAD("prop_drop_intent::Tick");
     if (g_pending.empty() || g_draining) return;
     DrainScope scope;
     if (!session || !session->connected() || session->role() != coop::net::Role::Client) {
@@ -445,7 +324,7 @@ void Tick(coop::net::Session* session) {
             return epoch == g_pendingEpoch && session->connected() &&
                    session->role() == coop::net::Role::Client && e.actor.Get() == actor;
         };
-        if (IsAwaitingHost(actor)) {
+        if (IsAwaitingHost(actor) || IsRefusedPlacement(actor)) {
             probe::NoteDrainExit(actor, "already-requested", e.tries, std::wstring());
             continue;
         }
@@ -595,7 +474,7 @@ void Tick(coop::net::Session* session) {
         if (ue_wrap::food::IsFood(actor)) {
             ue_wrap::food::Condition food{};
             if (!ue_wrap::food::Read(actor, food) ||
-                !coop::props::prop_food_sync::ValidCondition(food.temperature, food.ripeness, food.uses)) {
+                !coop::props::prop_food_sync::ValidCondition(food.temperature, food.ripeness, food.uses,food.cookProgress)) {
                 if (++e.tries <= kMaxKeyTries) keep.push_back(e);
                 else UE_LOGW("[PROP-DROP] cannot read valid food state for key='%ls' after retries", key.c_str());
                 continue;
@@ -604,16 +483,23 @@ void Tick(coop::net::Session* session) {
             p.foodTemperature = food.temperature;
             p.foodRipeness = food.ripeness;
             p.foodUses = food.uses;
+            p.foodCookProgress=food.cookProgress;
         }
-        if (g_awaitingHost.size() >= 256 ||
-            !session->SendReliable(freshBirth ? coop::net::ReliableKind::ReelEjectIntent
-                                         : coop::net::ReliableKind::PropDropIntent,
+        if (!++g_nextPlacementRequest) ++g_nextPlacementRequest;
+        p.requestId = g_nextPlacementRequest;
+        const auto kind = freshBirth ? net::ReliableKind::ReelEjectIntent : net::ReliableKind::PropDropIntent;
+        if (g_awaitingHost.size() + g_refusedPlacements.size() >= 256) {
+            keep.push_back(e);
+            continue;
+        }
+        if (!session->SendReliable(kind,
                               &p, sizeof(p))) {
             if (++e.tries <= kMaxKeyTries) keep.push_back(e);
             else UE_LOGW("[PROP-DROP] send refused for key='%ls' after retries", key.c_str());
             continue; // do not consume the parked key or publish a record without its birth
         }
-        g_awaitingHost.push_back({e.actor, key, cls});
+        if (!stillCurrent()) continue;
+        g_awaitingHost.push_back({e.actor, key, cls, p, kind, PlacementNow() + 1000});
         if (parked) UnparkKey(key);   // the spawn intent has crossed; consume before native capture
         coop::join_membership_sweep::RecordClaimIfTracking(actor);
         // The prop's own save record behind the intent, same lane, same FIFO: the host respawns
@@ -655,6 +541,36 @@ bool IsAwaitingHost(void* actor) {
     return false;
 }
 
+bool IsRefusedPlacement(void* actor) {
+    if (!actor) return false;
+    for (const auto& row : g_refusedPlacements) if (row.Get() == actor) return true;
+    return false;
+}
+
+void OnPlacementResult(const net::PropPlacementResultPayload& p, int senderSlot) {
+    UE_ASSERT_GAME_THREAD("prop_drop_intent::OnPlacementResult");
+    auto* session = LoadSession();
+    if (!session || !session->connected() || session->role() != net::Role::Client || senderSlot != 0 ||
+        p.code > static_cast<uint8_t>(net::PropPlacementCode::Retry)) return;
+    if (p.key.len > sizeof(p.key.data) || p.className.len > sizeof(p.className.data)) return;
+    const auto key = WireToWide(p.key.len,p.key.data,sizeof(p.key.data));
+    const auto cls = WireToWide(p.className.len,p.className.data,sizeof(p.className.data));
+    for (auto it = g_awaitingHost.begin(); it != g_awaitingHost.end(); ++it) {
+        if (it->request.requestId != p.requestId || it->key != key || it->className != cls) continue;
+        if (p.code != static_cast<uint8_t>(net::PropPlacementCode::Refused)) {
+            it->next = PlacementNow() + 1000; // keep the original object available for canonical adoption
+            return;
+        }
+        void* actor = it->actor.Get();
+        if (actor && PT::GetPropElementIdForActor(actor) == coop::element::kInvalidId)
+            g_refusedPlacements.push_back(it->actor); // recover locally by picking it back up
+        g_awaitingHost.erase(it);
+        coop::peer_action_feed::AnnounceDirect(coop::players::Registry::Get().LocalPeerId(),
+                                               coop::peer_action_feed::Action::PlacementRefused);
+        return;
+    }
+}
+
 bool IsPendingHostPlacement(void* actor) {
     auto* s = LoadSession();
     if (!actor || !s || !s->connected() || s->role() != coop::net::Role::Client) return false;
@@ -688,37 +604,8 @@ void NoteClientKeyedDestroy(const std::wstring& key) {
     }
 }
 
-void OnPropDropIntent(coop::net::Session& session, const coop::net::PropDropIntentPayload& p,
-                      uint8_t senderSlot) {
-    UE_ASSERT_GAME_THREAD("prop_drop_intent::OnPropDropIntent");
-    if (session.role() != coop::net::Role::Host) return;   // host-authoritative (router also gates)
-    const std::wstring cls = WireToWide(p.className.len, p.className.data, sizeof(p.className.data));
-    const std::wstring key = WireToWide(p.key.len, p.key.data, sizeof(p.key.data));
-    if (key.empty() || key == L"None" || cls.empty()) {
-        UE_LOGW("[PROP-DROP] HOST drop intent from slot=%u missing key/class -- dropping", senderSlot);
-        return;
-    }
-    // The duplicate guard: if the host somehow still has this key live (the grab destroy did not
-    // cross), do not spawn a second one. The park-set invariant normally guarantees the host has
-    // no copy here.
-    if (coop::prop_key_index::Find(key)) {
-        UE_LOGW("[PROP-DROP] HOST already has key='%ls' live -- skip drop-intent re-spawn (no dup)", key.c_str());
-        return;
-    }
-    void* actor = HostSpawnPlacedProp(p, cls, key, senderSlot);
-    // A data drive the client brought in: its row, which only that client has, is the one the host takes for it.
-    if (actor) coop::drive_payload_sync::NoteClientBrought(actor, senderSlot);
-    if (actor) {
-        UE_LOGI("[PROP-DROP] HOST spawned client-placed prop key='%ls' cls='%ls' slot=%u at (%.1f,%.1f,%.1f) "
-                "-- FinishSpawn watcher broadcasts it this tick",
-                key.c_str(), cls.c_str(), senderSlot, p.locX, p.locY, p.locZ);
-    }
-}
-
-void OnReelEjectIntent(coop::net::Session& session, const coop::net::PropDropIntentPayload& p,
-                       uint8_t senderSlot) {
-    UE_ASSERT_GAME_THREAD("prop_drop_intent::OnReelEjectIntent");
-    if (session.role() != coop::net::Role::Host) return;
+namespace {
+bool FreshPlacementAllowed(const net::PropDropIntentPayload& p, uint8_t senderSlot) {
     // The client fresh-birth author, class-whitelisted: reels (the caddy eject), desk modules
     // (the socket unplug), drives, floppy discs and server upgrades (a box's take-out). Not a general
     // client-spawn door; any other class here is a protocol violation, dropped.
@@ -739,22 +626,78 @@ void OnReelEjectIntent(coop::net::Session& session, const coop::net::PropDropInt
     if (!isReel && !isModule && !isDrive && !isDisc && !isServerUpg && !isSleepingBag) {
         UE_LOGW("[PROP-DROP] HOST birth intent from slot=%u rejected: class '%ls' not whitelisted",
                 senderSlot, cls.c_str());
-        return;
+        return false;
     }
     // A module birth matching a fresh unplug deny for this sender is the raced ghost that got
     // dropped before the deny landed; reap it (the physics-mods sync logs).
-    if (isModule && coop::physmods_sync::HostShouldReapModuleBirth(senderSlot, clsObj)) return;
+    if (isModule && coop::physmods_sync::HostShouldReapModuleBirth(senderSlot, clsObj)) return false;
     // The same for an upgrade a refused take-out handed over (the server upgrade sync logs).
-    if (isServerUpg && coop::server_upgrade_sync::HostShouldReapUpgradeBirth(senderSlot)) return;
+    if (isServerUpg && coop::server_upgrade_sync::HostShouldReapUpgradeBirth(senderSlot)) return false;
     // Drive births are authored normally; a denied rack-take ghost is reaped when its row arrives, by the row's
     // hash (drive_payload_sync).
-    OnPropDropIntent(session, p, senderSlot);  // same author: dup-guard + HostSpawnPlacedProp
+    return true;
+}
+void ReceivePlacement(net::Session& session, const net::PropDropIntentPayload& p,
+                      uint8_t slot, net::ReliableKind kind) {
+    if (!BeginPlacement(session,p,slot,kind)) return;
+    const uint64_t epoch = g_pendingEpoch;
+    void* world = ue_wrap::world_identity::CurrentWorld();
+    const auto occupant = coop::roster_ledger::Get(slot).playerNo;
+    const auto generation = coop::roster_ledger::Get(slot).bornGeneration;
+    const auto current = [&] {
+        return epoch == g_pendingEpoch && world == ue_wrap::world_identity::CurrentWorld() &&
+            session.connected() && session.role() == net::Role::Host &&
+            session.HasPeerConn(slot) && occupant == coop::roster_ledger::Get(slot).playerNo &&
+            generation == coop::roster_ledger::Get(slot).bornGeneration;
+    };
+    const auto cls = WireToWide(p.className.len,p.className.data,sizeof(p.className.data));
+    const auto key = WireToWide(p.key.len,p.key.data,sizeof(p.key.data));
+    if (!ValidPlacement(p) || key == L"None" ||
+        (kind == net::ReliableKind::ReelEjectIntent && !FreshPlacementAllowed(p,slot))) {
+        if (current()) FinishPlacement(slot,p.requestId,net::PropPlacementCode::Refused);
+        return;
+    }
+    void* existing = nullptr;
+    const auto indexed = coop::prop_key_index::Resolve(key,&existing);
+    if (!current()) return;
+    if (indexed == coop::prop_key_index::Read::Pending) {
+        FinishPlacement(slot,p.requestId,net::PropPlacementCode::Retry);
+        return;
+    }
+    if (existing) {
+        const bool sameClass = R::ClassNameOf(existing) == cls;
+        if (!current()) return;
+        FinishPlacement(slot,p.requestId,sameClass ? net::PropPlacementCode::Accepted : net::PropPlacementCode::Refused,
+                        sameClass ? existing : nullptr);
+        if (sameClass) coop::prop_snapshot::ExpressIncrementalSpawn(existing);
+        return;
+    }
+    void* actor = HostSpawnPlacedProp(p,cls,key,slot);
+    if (!current()) return;
+    FinishPlacement(slot,p.requestId,actor ? net::PropPlacementCode::Accepted : net::PropPlacementCode::Refused,actor);
+    if (actor) coop::drive_payload_sync::NoteClientBrought(actor,slot);
+}
+} // namespace
+
+void OnPropDropIntent(net::Session& session, const net::PropDropIntentPayload& p, uint8_t slot) {
+    UE_ASSERT_GAME_THREAD("prop_drop_intent::OnPropDropIntent");
+    ReceivePlacement(session,p,slot,net::ReliableKind::PropDropIntent);
+}
+void OnReelEjectIntent(net::Session& session, const net::PropDropIntentPayload& p, uint8_t slot) {
+    UE_ASSERT_GAME_THREAD("prop_drop_intent::OnReelEjectIntent");
+    ReceivePlacement(session,p,slot,net::ReliableKind::ReelEjectIntent);
+}
+void OnPeerLeft(int slot) {
+    if (slot > 0 && slot < g_placementPeers.size()) g_placementPeers[slot] = {};
 }
 
 void Reset() {
     g_awaitingHost.clear();
     UE_ASSERT_GAME_THREAD("prop_drop_intent::Reset");
     ++g_pendingEpoch;
+    g_refusedPlacements.clear();
+    g_placementWorld = ue_wrap::world_identity::CurrentWorld();
+    for (int slot = 0; slot < g_placementPeers.size(); ++slot) g_placementPeers[slot] = {};
     // The drain's session gate normally empties this first; anything still here reached teardown
     // unresolved, and the tally says so rather than losing it.
     for (const PendingPlace& e : g_pending)

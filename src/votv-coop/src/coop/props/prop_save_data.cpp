@@ -4,6 +4,7 @@
 #include "ue_wrap/actors/safe.h"
 #include "coop/props/prop_food_sync.h"
 #include "ue_wrap/actors/food.h"
+#include "ue_wrap/devices/grill_saved_state.h"
 #include "ue_wrap/actors/prop.h"
 
 #include "coop/dev/food_clock_probe.h"   // [dev] the food catch-up's two clocks, read at these seams
@@ -89,6 +90,7 @@ struct Parked {
     uint64_t       seq        = 0;   // arrival order, for the oldest-first eviction
     size_t         bytes      = 0;   // the body this came from, for the per-sender byte ceiling
     int            failures   = 0;   // applies that reached a dispatch and did not take
+    bool preserveGrillRuntime=false;
 };
 // A row that will not apply is kept (the park has no expiry, by design) but stops costing a
 // dispatch a frame. Not covered, not resolvable and not applicable all look the same from here.
@@ -100,6 +102,7 @@ uint64_t g_worldEpoch = 0;
 // the C++ call stack, not the world: OnDisconnect must not clear them while a call is active.
 std::set<std::wstring> g_applying;
 std::set<std::wstring> g_publishing;
+#include "prop_save_order.inc"
 struct KeyScope {
     KeyScope(std::set<std::wstring>& active, const std::wstring& key)
         : active(active), key(key) { active.insert(key); }
@@ -291,6 +294,7 @@ void UnparkIfSame(const std::wstring& key, uint64_t seq) {
 }
 
 void Park(const std::wstring& key, SR::SaveRecord&& rec, uint8_t senderSlot, size_t bytes) {
+    RecordChanged(key);
     DropParked(key);
     SenderUse& use = g_parkUse[senderSlot];
     while (use.count >= kMaxParkedPerSender || use.bytes + bytes > kMaxParkBytesPerSender) {
@@ -349,90 +353,11 @@ bool AllowIntent(uint8_t senderSlot) {
 // carry save state of its own" and "has another lane claimed it", and a record that reaches a
 // claimed class would write the field that lane arbitrates with a compare-and-swap.
 bool SendBody(coop::net::Session* s,int peerSlot,const std::wstring& key,const SR::SaveRecord& rec,
-              const ue_wrap::CachedObjRef* source = nullptr);
-bool TryApply(void* actor, const std::wstring& key, const SR::SaveRecord& rec, uint64_t epoch) {
-    if (!actor) {
-        UE_LOGW("prop_save_data: TryApply failed -- actor is null for key '%ls'", key.c_str());
-        return false;
-    }
-    if (!Covers(actor)) {
-        UE_LOGW("prop_save_data: TryApply failed -- actor %p does not cover save state for key '%ls'", actor, key.c_str());
-        coop::dev::food_clock_probe::NoteRefused(actor);
-        return false;
-    }
-    ue_wrap::CachedObjRef identity;
-    identity.Set(actor);
-    // Client inventory records can arrive after the host has unlocked this safe.
-    // Preserve the irreversible lock transition, including parked-before-birth records.
-    SR::SaveRecord adjusted;
-    const SR::SaveRecord* applied=&rec;
-    if(PT::SessionIsHost()&&ue_wrap::safe::IsSafe(actor)) {
-        adjusted=rec;
-        if(ue_wrap::safe::PreserveUnlocked(actor,adjusted)&&g_session) {
-            // A claim parked before the safe existed may already have been
-            // relayed. Correct that earlier canonical as soon as it can resolve.
-            SendBody(g_session,-1,key,adjusted);
-            if(epoch!=g_worldEpoch||identity.Get()!=actor) {
-                UE_LOGW("prop_save_data: TryApply failed -- identity changed after PreserveUnlocked for key '%ls'", key.c_str());
-                return false;
-            }
-        }
-        applied=&adjusted;
-    }
-    if (!SR::ApplyRecord(actor, *applied)) {
-        UE_LOGW("prop_save_data: TryApply failed -- SR::ApplyRecord returned false for key '%ls'", key.c_str());
-        return false;
-    }
-    if (epoch != g_worldEpoch || identity.Get() != actor) {
-        UE_LOGW("prop_save_data: TryApply failed -- identity changed after ApplyRecord for key '%ls'", key.c_str());
-        return false;
-    }
-    ++g_appliedTotal;
-    UE_LOGI("prop_save_data: TryApply success for key '%ls' on actor %p", key.c_str(), actor);
-    coop::dev::food_clock_probe::NoteApply(actor, key, *applied);
-    return epoch == g_worldEpoch;
-}
-
-// Own both values across native dispatch. The queue can be cleared or this key replaced by a
-// callback; only the exact row we started with may be retired or charged a failure afterward.
-bool ApplyQueued(void* actor, const std::wstring& key, bool budgeted) {
-    if (!actor || key.empty() || g_applying.count(key)) return false;
-    if (budgeted && g_applyBudget <= 0) return false;
-    const auto it = g_parked.find(key);
-    if (it == g_parked.end()) return false;
-    if (budgeted && it->second.failures >= kMaxApplyFailures) return false;
-    const std::wstring applyKey = key;
-    const Parked snapshot = it->second;
-    const uint64_t epoch = g_worldEpoch;
-    KeyScope scope(g_applying, applyKey);
-    if (budgeted) --g_applyBudget; // failed dispatches cost a slot too; nested skips do not
-    const bool ok = TryApply(actor, applyKey, snapshot.rec, epoch);
-    if (epoch != g_worldEpoch) return false;
-    const auto current = g_parked.find(applyKey);
-    if (current != g_parked.end() && current->second.seq == snapshot.seq) {
-        if (ok) Unpark(current);
-        else if (++current->second.failures == kMaxApplyFailures) {
-            UE_LOGW("prop_save_data: the record for key '%ls' failed to apply %d times -- it "
-                    "stays parked but is no longer retried; that prop keeps its own state",
-                    applyKey.c_str(), kMaxApplyFailures);
-        }
-    }
-    return ok;
-}
-
-// Queue first so a newer arrival during native dispatch cannot be overwritten by this caller.
-void LandRecord(const std::wstring& key, SR::SaveRecord&& rec, uint8_t senderSlot, size_t bytes,
-                bool budgeted = true) {
-    Park(key, std::move(rec), senderSlot, bytes);
-    // The index only, never ResolveLiveActorByKey: that one falls back to a cold GUObjectArray
-    // scan on a miss, and a join hands this lane hundreds of arrivals at once. A prop the index
-    // does not know yet is parked and retried at O(1) on the next frame instead.
-    void* actor = (!budgeted || g_applyBudget > 0) ? PT::FindLiveActorByKey(key) : nullptr;
-    ApplyQueued(actor, key, budgeted);
-}
+              const ue_wrap::CachedObjRef* source = nullptr,const std::function<bool()>& current = {});
+#include "prop_save_apply.inc"
 
 bool SendBody(coop::net::Session* s, int peerSlot, const std::wstring& key,
-              const SR::SaveRecord& rec, const ue_wrap::CachedObjRef* source) {
+              const SR::SaveRecord& rec, const ue_wrap::CachedObjRef* source,const std::function<bool()>& current) {
     const std::vector<uint8_t> body = BuildBody(key, rec);
     if (body.size() > MaxRecordBytes()) {
         UE_LOGW("prop_save_data: record for key '%ls' is %zu B, over the %zu cap -- REFUSED, not "
@@ -442,11 +367,19 @@ bool SendBody(coop::net::Session* s, int peerSlot, const std::wstring& key,
         return false;
     }
     const bool host = PT::SessionIsHost();
+    const auto epoch=g_worldEpoch;const auto world=ue_wrap::world_identity::Generation();
+    const auto peerEpoch=peerSlot<0?0:g_peerEpoch[peerSlot];
+    const auto same=[&]{return s && s->connected() && g_session==s && epoch==g_worldEpoch &&
+        world==ue_wrap::world_identity::Generation() && PT::SessionIsHost()==host &&
+        (peerSlot<0 || peerEpoch==g_peerEpoch[peerSlot]) && (!source || source->Get()) && (!current || current());};
+    const auto valid=[&]{if(!same())return false;if(!source)return true;
+        const auto actual=ue_wrap::prop::GetInteractableKeyString(source->Get());return same() && actual==key;};
     const coop::net::ReliableKind kind = host ? coop::net::ReliableKind::PropSaveData
                                               : coop::net::ReliableKind::PropSaveDataIntent;
     const bool ok = (peerSlot < 0)
-        ? coop::blob_chunks::SendBlob(s, kind, g_blobSeq++, body)
-        : coop::blob_chunks::SendBlobToSlot(s, peerSlot, kind, g_blobSeq++, body);
+        ? coop::blob_chunks::SendBlobWhile(s, kind, g_blobSeq++, body,valid)
+        : coop::blob_chunks::SendBlobToSlotWhile(s, peerSlot, kind, g_blobSeq++, body,valid);
+    if (!valid())return false;
     if (!ok) {
         // blob_chunks' own contract: a refused blob is retried whole under a fresh seq. Doing that
         // is what makes the header's "a dropped record is a permanent divergence" false, so the
@@ -540,13 +473,16 @@ bool PublishToTarget(coop::net::Session* s, int peerSlot, void* actor, const std
     g_session = s;
     if (!Covers(actor)) { coop::dev::food_clock_probe::NoteRefused(actor); return false; }
     KeyScope scope(g_publishing, key); // owns the key even if a callback clears its source queue
+    RecordScope order(key);const auto revision=order.Revision();
     const RetryKey retryTarget{key, peerSlot};
     const auto previousRetry = g_retry.find(retryTarget);
     const uint64_t retrySequence = previousRetry == g_retry.end() ? 0 : previousRetry->second.seq;
     const uint64_t epoch = g_worldEpoch;
+    const auto world=ue_wrap::world_identity::Generation();
     const uint64_t peerEpoch = peerSlot < 0 ? 0 : g_peerEpoch[peerSlot];
     const auto stillCurrent = [&] {
-        return epoch == g_worldEpoch && (peerSlot < 0 || peerEpoch == g_peerEpoch[peerSlot]);
+        return epoch == g_worldEpoch && world==ue_wrap::world_identity::Generation() && order.Revision()==revision &&
+            s->connected() && g_session==s && (peerSlot < 0 || peerEpoch == g_peerEpoch[peerSlot]);
     };
     SR::SaveRecord rec;
     ue_wrap::CachedObjRef identity;
@@ -561,7 +497,7 @@ bool PublishToTarget(coop::net::Session* s, int peerSlot, void* actor, const std
     if (!stillCurrent() || identity.Get() != actor) return false;
     coop::dev::food_clock_probe::NotePublish(actor, scope.key, rec);
     if (!stillCurrent()) return false;
-    const bool sent = SendBody(s, peerSlot, scope.key, rec, &identity);
+    const bool sent = SendBody(s, peerSlot, scope.key, rec, &identity,stillCurrent);
     if (sent && retrySequence && stillCurrent()) {
         // A normal publication can satisfy an older failed publication too.
         // Do not erase replacement work queued by capture/transport callbacks.
@@ -622,6 +558,7 @@ void OnChunk(coop::net::Session& s, const coop::net::BlobChunkPayload& p, uint8_
                 intent ? "intent" : "record", static_cast<unsigned>(senderSlot), body.size());
         return;
     }
+    RecordScope order(key);RecordChanged(key);const auto revision=order.Revision();
     if (!intent) {
         LandRecord(key, std::move(rec), senderSlot, body.size(), /*budgeted=*/true);
         return;
@@ -645,17 +582,27 @@ void OnChunk(coop::net::Session& s, const coop::net::BlobChunkPayload& p, uint8_
         return;
     }
     g_session = &s;
+    const auto epoch=g_worldEpoch,peerEpoch=g_peerEpoch[senderSlot];
+    const auto world=ue_wrap::world_identity::Generation();
+    ue_wrap::CachedObjRef source;source.Set(actor);
+    const auto current=[&]{return epoch==g_worldEpoch && peerEpoch==g_peerEpoch[senderSlot] &&
+        world==ue_wrap::world_identity::Generation() && order.Revision()==revision && s.connected() && (!actor || source.Get()==actor);};
     // Ordinary records cannot bypass native host unlock/loot or re-lock a safe.
     // The initial record for a new client-authored birth may restore its saved
     // unlocked state; no new loot belongs to that inventory/drop transition.
     if(actor) {
         if(initialRecord)ue_wrap::safe::PreserveUnlocked(actor,rec);
         else ue_wrap::safe::PreserveHostLock(actor,rec);
+        if(!current())return;
+        if(!initialRecord && ue_wrap::grill_saved_state::Supported(actor) &&
+            !ue_wrap::grill_saved_state::PreserveHostRecord(actor,rec))return;
+        if(!current())return;
     }
-    SendBody(&s, -1, key, rec);
+    SendBody(&s, -1, key, rec,nullptr,current);
+    if(!current())return;
     // Preserve immediate host acceptance (bounded by AllowIntent); client join catch-up uses
     // the frame budget. Deferring host acceptance would expose default state to other publishers.
-    LandRecord(key, std::move(rec), senderSlot, body.size(), false);
+    LandRecord(key, std::move(rec), senderSlot, body.size(), false,!initialRecord);
 }
 
 bool ApplyParked(void* actor, const std::wstring& key) {
@@ -675,6 +622,9 @@ bool PrepareForCapture(void* actor, const std::wstring& key) {
     // Native loadData can destroy the actor, change worlds or queue a newer row.
     // None of those outcomes permits the caller to capture the old actor's state.
     return epoch == g_worldEpoch && identity.Get() == actor && !g_parked.count(key);
+}
+bool PrepareForMutation(void* actor,const std::wstring& key) {
+    return !StillAwaited(key) && PrepareForCapture(actor,key);
 }
 
 // Re-send a few refused records per frame, re-captured from the live actor so what goes out is

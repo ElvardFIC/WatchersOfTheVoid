@@ -6,11 +6,13 @@ namespace ue_wrap::prop_fire {
 struct State { bool burning=false; float fuel=0, fuelSpeed=1; };
 bool Valid(const State& state);
 bool IsProp(void* actor);
+bool IsGasoline(void* actor);
 void* Owner(void* component);
 void CollectBurning(std::vector<CachedObjRef>& actors);
 bool Read(void* actor, State& state);
 // Native verbs for the host. The client mirror bypasses subclass ignition events.
-bool Ignite(void* actor,float fuel);
-bool Extinguish(void* actor);
+// attempted becomes true immediately before dispatch, even if native completion fails.
+bool Ignite(void* actor,float fuel,bool* attempted=nullptr,const std::function<bool()>& current={});
+bool Extinguish(void* actor,bool* attempted=nullptr,const std::function<bool()>& current={});
 bool Apply(void* actor,const State& state,const std::function<bool()>& current);
 }

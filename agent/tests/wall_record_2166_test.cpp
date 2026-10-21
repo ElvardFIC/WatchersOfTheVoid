@@ -15,6 +15,12 @@ int main() {
     CHECK(P::Normalize(a,b)&&b.floats[0][0]==17);
     a.className=L"customWall_rad_C";CHECK(P::Normalize(a,b));
     a.className=L"customWall_wetConcrete_C";CHECK(P::Normalize(a,b));
+    a.floats[0]={17,200,72,360};CHECK(P::Normalize(a,b)&&b.floats[0]==a.floats[0]);
+    for(const auto& bad:std::vector<std::vector<float>>{{17,200,1},{17,200,-1,360},{17,200,1,0},{17,200,1,INFINITY}}){
+        a.floats[0]=bad;CHECK(!P::Normalize(a,b));
+    }
+    a.className=L"customWall_C";a.floats[0]={17,200,72,360};CHECK(!P::Normalize(a,b));
+    a.className=L"customWall_wetConcrete_C";a.floats[0]={17,200};
     a.floats[0][0]=std::numeric_limits<float>::quiet_NaN();CHECK(!P::Normalize(a,b));
     a.floats[0][0]=17;a.floats[0][1]=0;CHECK(!P::Normalize(a,b));
     a.className=L"customWall_unknown_C";CHECK(!P::Normalize(a,b));

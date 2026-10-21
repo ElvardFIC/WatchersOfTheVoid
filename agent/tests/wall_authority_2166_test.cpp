@@ -1,5 +1,10 @@
 #include "support_2135.h"
 #include "../../src/votv-coop/src/coop/world/wall_build_sync.cpp"
+namespace coop::wall_creative_sync {
+void Install(net::Session*){}void Tick(){}void OnDisconnect(){}
+bool NativeCurrent(void*){return true;}
+ue_wrap::script_gate::Verdict BeforeBuild(const ue_wrap::script_gate::Call&){return ue_wrap::script_gate::Verdict::Cancel;}
+}
 namespace test {
 bool feedOK=true, die=false; int fed=0,changed=0,tracked=0;
 std::function<void()> queryCallback,trackCallback;

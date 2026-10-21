@@ -87,6 +87,9 @@ void* MirrorActorForSlot(uint8_t slot);
 uint32_t Generation(uint8_t slot);
 uint32_t MirrorGeneration(uint8_t slot);
 bool IsMirrorActor(void* actor);
+// Exact current generation, or one of four generations retired in the last
+// 1500 ms by this occupant. Used for output whose native source consumes itself.
+bool RecentGenerationClass(uint8_t slot,uint32_t generation,std::wstring& className);
 
 // Whether `slot`'s hand holds an item of the class named `cls`, as its owner last announced. A host
 // asks it of a client's intent that only a held item can author (a keycard's swipe). Game thread

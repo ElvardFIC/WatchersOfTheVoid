@@ -26,6 +26,7 @@ import collections
 import io
 import json
 import os
+import posixpath
 import re
 import sys
 from public_prose_faults import (
@@ -200,23 +201,33 @@ def measure(repo):
     # another header, and excluding the declaring header misses the inline wrapper that calls the
     # out-of-line function right beneath it.
     direct = collections.defaultdict(set)          # header path -> files that #include it directly
+    fragments = collections.defaultdict(set)
     for path, bare in bare_by_file.items():
         for inc in INCLUDE.findall(bare):
-            for root in SRC_ROOTS:
-                if root + inc in bare_by_file:
-                    direct[root + inc].add(path)
-                    break
+            inc = inc.replace("\\", "/")
+            candidates = [posixpath.join(posixpath.dirname(path), inc)] + [root + inc for root in SRC_ROOTS]
+            target = next((candidate for candidate in map(posixpath.normpath, candidates) if candidate in bare_by_file), None)
+            if target is not None:
+                direct[target].add(path)
+                if target.endswith(".inc"):
+                    fragments[path].add(target)
     reach_cache = {}
 
     def reach(header):
         """Every file that can see `header`'s declarations, itself included."""
         if header not in reach_cache:
-            seen, stack = {header}, [header]
+            seen, visited, stack = set(), set(), [(header, True)]
             while stack:
-                for f in direct.get(stack.pop(), ()):
-                    if f not in seen:
-                        seen.add(f)
-                        stack.append(f)
+                path, exports = stack.pop()
+                if (path, exports) in visited:
+                    continue
+                visited.add((path, exports))
+                seen.add(path)
+                if exports:
+                    stack.extend((parent, True) for parent in direct.get(path, ()))
+                # An included fragment inherits its unit's declarations. That
+                # context must not leak into another unit sharing the fragment.
+                stack.extend((child, False) for child in fragments.get(path, ()))
             reach_cache[header] = seen
         return reach_cache[header]
 

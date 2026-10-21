@@ -20,6 +20,7 @@ bool NameStartsWith(const FName&,const wchar_t*){return false;}
 bool NameEquals(const FName&,const wchar_t*){return false;}
 std::wstring ToString(const FName&){return L"socket";}
 int32_t ParamOffset::Of(void*){return 0;}
+int32_t FunctionFrameSize(void*){return 0;}
 }
 namespace ue_wrap::world_identity {uint32_t Generation(){return test::world;}void* CurrentWorld(){return (void*)(uintptr_t)test::world;}void* WorldOf(void*){return CurrentWorld();}}
 namespace ue_wrap::object_index {uint64_t ClassSetVersion(){return 1;}}
@@ -31,6 +32,8 @@ bool ClassNameWatchLive(const wchar_t*,const wchar_t*,int){return true;}void Res
 namespace ue_wrap::prop {std::wstring GetInteractableKeyString(void* a){++test::identities;return static_cast<test::Obj*>(a)->key;}}
 namespace ue_wrap::engine {void* ParentActorOf(void*,std::wstring*){return nullptr;}}
 namespace ue_wrap::cord {
+bool ReadHeadPose(void*,FVector&,FRotator&){std::abort();}
+bool WriteHeadPose(void*,const FVector&,const FRotator&){std::abort();}
 bool IsCord(void* a){return a&&static_cast<test::Obj*>(a)->type==1;}
 bool IsSocket(void* a){return a&&static_cast<test::Obj*>(a)->type==2;}
 void* Parent(void*){return nullptr;}bool InCableReach(void*,void*){return true;}
@@ -45,6 +48,7 @@ bool Connect(void* a,void* b){auto& v=*static_cast<test::Obj*>(a);auto& s=*stati
  ++test::connects;v.socket=b;s.occupant=a;test::Callback();return true;}
 }
 namespace coop::element::scan_hub {void Register(const Consumer&) {}}
+namespace coop::element {std::wstring PortableWireKey(void* a){return static_cast<test::Obj*>(a)->key;}}
 namespace coop::net_pump {bool IsInAnnouncedWorld(void*){return true;}}
 namespace coop::prop_element_tracker {element::ElementId GetPropElementIdForActor(void* a){return static_cast<test::Obj*>(a)->id+1;}}
 namespace coop::remote_prop {element::ElementId ResolveMirrorEidByActor(void*,bool){return element::kInvalidId;}}

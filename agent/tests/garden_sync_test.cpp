@@ -9,11 +9,12 @@ test::Rec Plant(const wchar_t* key = L"native_garden_17") {
     return r;
 }
 void PollNow() { for (auto& [key, row] : g_rows) row.pollAt = 0; PollGarden(Now()); }
-std::vector<net::BlobChunkPayload> CarePacket(const test::Rec& r,uint32_t seq,P::CareKind kind,const wchar_t* source,float amount) {
-    net::Session s;std::vector<uint8_t> bytes;W::AppU8(bytes,Care);W::AppWStr(bytes,r.key);W::AppU32(bytes,seq);
+std::vector<net::BlobChunkPayload> CarePacket(const test::Rec& r,uint32_t seq,P::CareKind kind,const wchar_t* source,float amount,uint32_t person=test::playerNo) {
+    net::Session s;std::vector<uint8_t> bytes;W::AppU8(bytes,Care);W::AppWStr(bytes,r.key);W::AppU32(bytes,seq);W::AppU32(bytes,person);
     W::AppU8(bytes,uint8_t(kind));W::AppWStr(bytes,source);W::AppF32(bytes,amount);
     static uint32_t blob=7000;CHECK(blob_chunks::SendBlob(&s,net::ReliableKind::PlacedSave,++blob,bytes));return s.sent;
 }
+#ifndef GARDEN_SYNC_FIXTURE_ONLY
 int main() {
     PreviousPlacementChecks();
     net::Session s;
@@ -141,7 +142,7 @@ int main() {
     Reset(s,net::Role::Client);a=test::New(plant);Deliver(Packet(State,plant),0);Pump();
     auto* bucket=test::New(test::Make(L"bucket_key",L"prop_bucket_C"));test::hand=bucket;
     test::careReadable=true;test::careUse={a,L"bucket_key",300.f,P::CareKind::Water};
-    void* player=&test::actors[19];call.object=bucket;call.function=test::caller;call.locals=reinterpret_cast<uint8_t*>(&player);
+    void* player=&test::actors[19];call.object=bucket;call.function=test::caller;call.locals=reinterpret_cast<uint8_t*>(&player);call.invocation=1;
     CHECK(BeforeCare(call)==ue_wrap::script_gate::Verdict::Run&&g_careFrames.size()==1);
     AfterCare(call);CHECK(g_careFrames.empty()&&g_uses.empty()); // native refusal did not empty bucket
     BeforeCare(call);test::careSpent=true;AfterCare(call);CHECK(g_uses.size()==1&&g_uses.front().op==Care&&g_uses.front().care.amount==300.f);
@@ -173,3 +174,4 @@ int main() {
     puts("PASS client care: native-cost proof, reserved retry queue, no-use refusal, dead fertilizer, duplicate/source/amount/reach/tool guards, canonical host state");
     puts("PASS garden sync: saved placements, canonical growth/water/fertilizer/ripeness/death, creator updates, backpressure, fair capture budget, lifetime guards");
 }
+#endif

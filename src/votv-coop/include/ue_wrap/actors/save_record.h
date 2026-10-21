@@ -110,6 +110,12 @@ void WriteFNameField(void* dst, const std::wstring& leaf);
 // (no UFunction dispatch). `rec` is overwritten field-by-field; pass a fresh record.
 void ReadSaveRecord(const void* base, SaveRecord& rec);
 
+// Native scalar float groups. Replacement can append a missing group (up to 64),
+// allocates before swapping, and transfers other child buffers without deep copies.
+// Replaced scalar/outer buffers are freed on GMalloc; failure leaves the record intact.
+bool ReadFloatGroup(const void* record, size_t group, std::vector<float>& out);
+bool ReplaceFloatGroup(void* record, size_t group, const std::vector<float>& values);
+
 // Write one Fstruct_save into the ZEROED 0x100 slot at `base`, constructing engine-OWNED
 // TArrays via reflection::EngineAlloc (FNames interned, FStrings engine-minted, UClasses
 // FindClass'd). The slot MUST be zeroed by the caller (AllocZeroed); any previous buffers it

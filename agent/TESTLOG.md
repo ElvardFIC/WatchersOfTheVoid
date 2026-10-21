@@ -1,5 +1,610 @@
 # TestLog — current status and source reports
 
+## Current development2175 verification — 21 October 2026
+
+Release b2175 passes with1903 stable production/config hashes. All26 runners pass:
+89 positive executable invocations and115 production compiles. All214 compiled
+fault controls detect their deliberate regression, with matching generated-source
+and fixture hashes. Native contracts pass;58 corpus files match installed-pak
+extracts. Routing covers223 kinds/all18 rejection controls. DLL ABI and the
+forbidden-import drill pass. Two-peer gameplay has not been run.
+
+Scorch tests cover exact host-native explosion/salt-rocket factory provenance,
+client trace refusal, private-PC inherited calls, quiet canonical births/adoption,
+cleaning, late join, retained retirement, same-world reconnect and world/serial/
+invocation/role changes. Six simultaneous surfaces keep separate identities even
+inside one static cleaning cell. Delayed metadata retains the native host actor
+and pending capture. The actual wrapper/ParamFrame checks scale/material/rotation,
+class readiness and native lifetime; scorch cannot enter liquid launch/pour paths.
+Native contracts verify all six static directions, trace length65, hit transforms,
+inherited scale, exact factory, private PC parent BeginPlay and separate underwater
+ancestry. Full native-save provenance migration is still open.
+
+Grill regressions reproduce dropped terminal replies after transport backpressure
+and stale record publication after a key change inside presentation. Prior-code
+failures are in build/grill-reply-regression-before.log and
+build/grill-key-regression-before.log. Both now pass, including one additive edit,
+exact accepted reply retry and stale publication cleanup. Personal inventory
+acceptance/debit/refund remains open.
+
+The104-file selected prose sweep has zero findings. The baseline is unchanged;
+repository prose still reports13 counters, and fact rows report524 rows/156 files
+with existing branch findings and uncaptured native-hook references. The earlier
+four include tests and329-arm prose drill remain unchanged and passing.
+
+DLL: build/release-2153/main.dll,25,724,416 bytes, version0.9.0n b2175.
+SHA256:5C9E922F015903468AF40871B7FD04DCF8D0C0F1BFEE4F73C6F6D07C46B88083.
+Evidence: build/nonentity-2175-verification.json. Previous2174 evidence and DLL
+remain in their checkpoint paths. No installation, packaging, commit, publication
+or Entity implementation changes in this continuation.
+
+## Previous development2174 verification — 21 October 2026
+
+Release b2174 passes with1902 stable production/config hashes. All25 runners pass:
+86 positive executable invocations and112 production compiles. All201 compiled
+mutation controls detect the deliberately removed protections, with exact generated
+source/fixture manifests. Native contracts pass;46 corpus files match installed-pak
+extracts. Routing covers223 kinds/all18 rejection controls; DLL ABI and its
+forbidden-import drill pass. Two-peer gameplay has not been run.
+
+Owned-hand gasoline breaks now capture/freeze the native projectile and prove the
+current or recently consumed gas hand class before host flight. Tests cover exact
+scale/size, world-key refusal, mirror factories, unbound client cleanup, immutable
+ACK replay and host impacts. Native fire tests cover preparation retry, attempted
+partial failure without extra fuel, missing flame metadata, normal destructive
+extinguish and retained final off delivery to a blocked peer. Plush Alt state is
+captured before activation and tested across input changes inside the callback.
+Toy state/clock reads, cached playback, host sends, action/touch captures and queued
+squeaks retain the canonical actor key. Tests reproduce a rename during reads,
+between PRE/POST and during native sound callbacks, plus cached-source replacement
+and recovery. Prior-code failures are retained in build/toy-key-regression-before.log
+and build/toy-capture-key-regression-before.log. Client commands also wait for
+host-world readiness; build/toy-readiness-regression-before.log captures that
+original failure. Actual ParamFrame squeak tests distinguish interrupted pitch
+preparation from an already dispatched, once-only Activate. Current controller/
+wrapper runners and the compiled key/readiness/preparation controls pass.
+
+Four public-prose include tests and the existing329-arm drill pass. The selected
+101-file sweep now has zero findings; relative/local fragment context no longer
+hides a real caller or leaks through a shared fragment. CI includes the new tests.
+The saved prose baseline is unchanged. Repository prose still reports13 counters;
+fact rows report524 rows/156 files with branch findings and uncaptured native hooks.
+
+DLL: build/release-2153/main.dll,25,719,296 bytes, version0.9.0n b2174.
+SHA256:3A0F92134EDFFC49E52E61D9827A36804A5A3DF77A5D9FD8EBDDE50A53224A1F.
+Evidence: build/nonentity-2174-verification.json. Two-peer timing/save/rejoin,
+initial unknown music phase/hand-world continuity, inventory debit/refund and live
+native-hook census remain open. No installation, packaging, commit, publication
+or Entity implementation changes in this continuation.
+
+## Previous development2173 verification — 21 October 2026
+
+Release b2173 passes with1902 stable production/config hashes. All25 runners pass:
+85 executable invocations and112 production compiles. All185 compiled mutation
+controls detect the removed protections with matching source/fixture manifests.
+Native asset contracts pass, including native toy toggle/touch order and five
+cooked wave durations/loop overrides;44 provenance files match installed-pak
+extracts. Routing covers223 kinds/all18 rejection controls.
+
+Known looping toy starts now carry playback episode, position and pitch. Retried
+sends advance host age; receivers include their age and bounded half-RTT. Actual
+ParamFrame/Play(StartTime) tests cover native modulo/rate, stopped/replaced audio,
+same-episode heartbeats and optional metadata. Initially observed playing music,
+unsupported sounds and hand/world phase continuity remain open. Hardware/sample-
+accurate alignment and two-peer acoustic timing are not qualified.
+
+Toy action/touch source captures bind exact invocations, people and connection/
+world/role. Missing POST and old-source callbacks cannot emit new occupant cues.
+Requests carry person numbers and keep actor keys through native authority probes.
+The gas hand-source gap found during review is recorded for the next checkpoint;
+the world gas path remains covered by the regression set.
+
+DLL: build/release-2153/main.dll,25,711,616 bytes, version0.9.0n b2173.
+SHA256:6006F0DCFFC263384183F37B6200B96187E40C1863184D6900AFDE57CFCAE06C.
+Evidence: build/nonentity-2173-verification.json. General prose/fact-row findings,
+live hook census, stock/refund transactions and two-peer gameplay remain open.
+No installation, packaging, commit, publication or Entity implementation changes.
+
+## Previous development2172 verification — 21 October 2026
+
+Release b2172 passes with1902 stable production/config hashes. All25 focused
+runners pass:83 positive executable invocations and112 standalone production
+compiles. All169 compiled mutation controls detect removed protections with
+matching generated-source/fixture manifests. Native contracts,223-kind routing/
+all18 rejection controls and DLL ABI pass; two-peer gameplay remains unrun.
+
+World gasoline bottles now produce host-native flight and canonical gasoline
+decal birth, quiet saved adoption/join, cleaning and retirement. Fire state uses
+the same dynamic identity and the exact gasoline Box/fuelSpeed/igniteScale setup.
+Client world spread, gas fireDamage and native self expiry are refused; external
+extinguishing requests the host outcome and local-player traces remain native.
+Gasoline is excluded from client pour/launch admission.
+
+Fire requests now carry the originating player number. Tests cover recycled slots,
+role/world/readiness/native probes, newer same-key requests, failed-send origin,
+canonical lookup/retirement and actual native frame/component interruption.
+Twenty-two corpus files match installed-pak extracts. Selected prose retains its
+existing include-edge detector finding; repository prose/fact-row findings and
+live native-hook census remain open.
+
+DLL: build/release-2153/main.dll,25,695,744 bytes, version0.9.0n b2172.
+SHA256:A864FD127A98AC5BF12153D4672B3DCADB1EECE7E7BE939B8227491B381D9E59.
+Evidence: build/nonentity-2172-verification.json. No installation, packaging,
+commit, publication or Entity implementation changes in this continuation.
+
+## Previous development2171 verification — 21 October 2026
+
+Release b2171 passes with1902 stable production/config hashes. All24 focused
+runners pass:78 positive executable invocations and110 standalone production
+compiles. All157 compiled mutation controls detect deliberately removed guards
+with matching generated-source/fixture manifests. Native contracts,223-kind
+routing/all18 rejection controls, DLL ABI and whitespace pass.
+
+Care/Harvest request bytes now include the captured origin player. Actual sender
+chunk reassembly and host receiver tests cover recycled slots, new-person sequence
+reuse, zero/oversized/legacy payload refusal, and native authority probes that
+change connection, world, person, session, role or readiness. No stock debit/refund
+transaction is implied. Beer/wine/coffee flight and source-audio checks remain in
+the full regression set.
+
+Selected prose retains one existing include-edge detector finding; repository
+prose/fact-row findings, live hook census and two-peer gameplay remain open.
+DLL: build/release-2153/main.dll,25,683,968 bytes, version0.9.0n b2171.
+SHA256:D81255826FDF3A7C14D5722B24E08846A785DE7B981BB419A2EB79B7542247D4.
+Evidence: build/final-nonentity-verification.json and
+build/nonentity-2171-verification.json. No installation, packaging, commit,
+publication or Entity implementation changes in this continuation.
+
+## Previous development2170 verification — 21 October 2026
+
+Release b2170 passes with1902 stable production/config hashes. All24 focused
+runners pass:77 positive executable invocations and110 standalone production
+compiles. All151 compiled mutation controls detect the removed protections, with
+matching compile-time source/fixture manifests. Routing covers223 reliable kinds
+and all18 refusal controls; native contracts, DLL ABI and whitespace pass.
+
+The coffee cup now shares its exact native flight and coffee decal, including
+scale from remaining uses, trace size5 and the existing empty-cup output. Inventory
+coffee follows its owner; world coffee follows the host even during a remote grab.
+Personal used()/coffeePower behavior is never replayed by this path.
+
+DrinkPour234 carries60-byte source-sound requests and canonical/refusal replies.
+Capture requires the actual source invocation and exact native call's frame/end/
+local. It preserves fuel1/.5/1/att_default or water_splash_Cue/.5/1.25/att_small.
+Owner exclusion, native-host single playback, independent FIFO audio/recipients,
+request order, ACK/replay/expiry and native/connection interruption pass. Canonical
+spatial sound may arrive after its source left; replay keyed by person and slot
+protects the next occupant. Optional audio readiness cannot block core flight.
+
+Sixteen corpus files match installed-pak extracts. The selected98-file prose sweep
+retains one existing include-edge detector finding. Repository prose and fact-row
+findings remain; no baseline/reference table was weakened. Live hook census,
+two-peer gameplay, other grime factories and atomic stock/refund stay open.
+
+DLL: build/release-2153/main.dll,25,683,456 bytes, version0.9.0n b2170.
+SHA256:1FB2F231FBC401D64B4DA7639DCF68C1C1C887CAF1B6173AB4624565D2F9465A.
+Qualified source/test/log/document hashes: build/nonentity-2170-verification.json.
+No gameplay, installation, packaging, commit or publication; Entity untouched.
+
+## Previous development2169 verification — 21 October 2026
+
+MSVC Release b2169 passes with1902 production/config hashes unchanged through the
+final build. All24 focused runners pass:76 positive executable invocations and110
+standalone production compiles. All128 compiled mutation controls detect their
+removed protections; source/fixture manifests match the compiled inputs.
+
+DrinkLaunch233 carries100 bytes. Exact beer/wine launches now use host-native
+physics, tracing, bounce, decal birth and shortCircuit. Client temporary spheres
+disable collision/simulation and refuse Tick/impact graph entries. Native
+BeginPlay, final scale and60-second life are preserved. Final-use class proofs
+retain four hand generations for1500ms under received world/person identity.
+Requests/replies remain immutable, bounded, fair and replay guarded; hook readiness
+and native/reconnect interruptions cannot complete a successor request. The owner
+now receives canonical impact audio, without a second host sound or join replay.
+
+Paid garden reservations bind script invocation, tool, world, owner and connection.
+Nested untracked callbacks cannot steal an outer reservation; Cancel/fault prunes
+inactive calls. Queued care/harvest keeps the original occupancy through guarded
+chunk sends and preserves a replacement queue entry during reentrant send. Paid
+care can survive loss of its local crop. Resource rejection/refund remains open.
+
+Native contracts,222-kind routing/all18 rejection controls, ABI/forbidden-import
+drill and whitespace pass. The98-file selected prose sweep retains its one existing
+ExpectRecordFor include-edge finding. Repository prose/fact-row findings remain;
+the reference table and detector baselines were not relaxed. Two-peer gameplay,
+other grime factories, pour audio, atomic stock accounting and live hook census
+remain open. Entity implementation was not modified.
+
+DLL: build/release-2153/main.dll,25,657,344 bytes, version0.9.0n b2169.
+SHA256:DFE04BEA7184348F8D89BC70E6F929F9D86A86AE3DA28F2FD72849A7FFB8EE8C.
+Source/test/log/document hashes: build/final-nonentity-verification.json.
+No two-peer gameplay, installation, packaging, commit or publication ran.
+
+## Previous development2168 verification — 21 October 2026
+
+MSVC Release b2168 passes. All1902 production/config hashes remain unchanged
+through the final build. Twenty-four focused runners pass:74 positive executable
+invocations and109 standalone production-source compiles. Counts are invocations,
+not individual assertions. The full96-control batch and four new world-toy
+controls detect all100 deliberately removed protections; compile-time source and
+fixture manifests verify their hashes. Exact assertion/native-fault exit statuses
+remain in build/current-interruption-controls.json.
+
+This continuation implements retained per-recipient window joins, serial/indexed
+native metadata reload, no-argument setClean and partial-paint recovery. Exact
+beer/wine impact decals now have canonical births, independent cleaning identity,
+owner prediction replacement, quiet saved-actor adoption/join and retirement.
+Native host break/fire deposits are observed as well. Regressions cover recycled
+addresses, late retirement, two identical saved locations and cleaning updates
+inside construction without a repeated factory.
+
+Food world/host-hand/owner-hand publication and native writes fence superseding
+callbacks, current source/recipient identity and role/session/world changes.
+Remote mirror publication waits for an accepted sample of its exact hand
+generation, avoiding a new item being published under the preceding key. Join
+retry preserves recipient epochs/readiness and newer same-key snapshots. Final
+bites use actual invocation lifetime, immutable request payloads and fair,
+revision-bound retry. World toy music/squeak delivery also protects native pitch
+teardown, role changes, newer nested samples and same-person rejoin epochs.
+
+Routing passes221 kinds/all18 rejection controls. Native contracts, native physics
+signature controls, DLL ABI/forbidden-import control and whitespace pass. Eight
+fresh installed-pak extracts match the contract corpus byte for byte. The98-file
+selected prose sweep retains the existing ExpectRecordFor include-edge detector
+finding. General prose retains13 baseline counters, and function rows retain
+findings across523 rows/156 files, including missing captured native-hook
+references. Detectors and baselines are unchanged; live census remains open.
+
+DLL: build/release-2153/main.dll,25,638,912 bytes, version0.9.0n b2168.
+SHA256:E3C193255F19D8AA6620852759A97F4E0291D482E7BD1BF4F21AFB2FB7F26C91.
+Final source/test/log/document hashes: build/final-nonentity-verification.json.
+No two-peer gameplay, installation, packaging, commit or publication ran. Entity
+implementation was not modified here. Remaining: matching-peer gameplay and
+save/rejoin, other grime factories, projectile/electrical outcomes, atomic personal
+material spending/refund, garden care accounting and exact music phase.
+TODO checkbox audit excluding Entity:6/31=19.35%; main implementation6/14=42.86%.
+Partial composite rows stay open; build/current-todo-progress.json lists the rows.
+
+## Previous development2167 verification — 21 October 2026
+
+MSVC Release b2167 passes. All1897 production/config hashes remain unchanged
+through the final build. Twenty-two focused runners pass:69 positive executable
+invocations and101 standalone production-source compiles. All62 compiled mutation
+controls detect the removed protections; exact assertion/native-fault exit statuses
+are retained. Counts are executable invocations, not individual assertions.
+
+New work covers host-ordered additive coal/field-only lid edits and host stock
+preservation; actual washer projectiles, native power/lifespan/final-transform
+handling, leaf/parent collision authority and canonical presentation; exact native
+bucket drip/whole-throw audio with owner exclusion and mixed-kind queue order;
+invocation-bound grill/grime/window observations, newer-minimum repaint, native
+SEH unwind and detached window-session cleanup. Final live window wipes now
+survive refused sends and nested newer updates. Window join/native-wrapper
+readiness and personal material spending/refund remain open.
+
+Routing passes220 kinds/all18 rejection controls. Native gameplay contracts,
+native physics signature controls, ABI/forbidden-import control and whitespace
+pass. The89-file selected prose sweep retains one detector finding: ExpectRecordFor
+is called in prop_drop_host.inc, whose local include edge the detector does not
+follow. The detector and baseline are unchanged. General prose still has13
+baseline counters; function-row validation still fails across522 rows/155 files,
+including missing captured SpawnEmitterAtLocation/PlaySoundAtLocation references
+used by the new hooks. Live fingerprint census and hook installation remain checks.
+
+DLL: build/release-2153/main.dll,25,535,488 bytes, version0.9.0n b2167, SHA256
+B238C11D5A152163FC4913BA9BA29417AD35FDBA91667110A142EA2BCAB80ED5.
+The final-nonentity-verification.json report records source/test/log/document hashes.
+No two-peer gameplay, game installation, packaging, commit or publication ran.
+Entity implementation was not modified in this task. Next: matching-peer water/
+grill/cleaning timing and save/rejoin checks; dynamic grime/spill births; atomic
+coal/lid/cement/care accounting/refund; retained window joins and wrapper lifetime.
+
+## Previous development2164 verification — 21 October 2026
+
+MSVC Release b2164 passes. All 1893 production/config hashes remain unchanged
+through the final build. Twenty-one focused runners pass with 64 positive executable
+invocations and 93 standalone production-source compiles; these are invocations,
+not a count of individual assertions. All 46 separately compiled mutation controls
+identify the removed protections. One deliberate sponge mutation produces a native
+access violation; its exact exit code is retained instead of calling it an assertion.
+
+New coverage includes owned bucket water birth and post-native velocity/soap,
+host authoring/coasting/collision/latent authority, out-of-order birth admission,
+transient splash FIFO/partial retry; retained person-bound faucet/detach actions;
+same-key prop-record supersession and guarded broadcast/targeted chunk transfers;
+and bounded grime join/live-wipe delivery, current partial-paint retry, actual
+native class/material lifecycle and ended-slot storage. Native assets pin the
+bucket factories and hit fields, and all 24 grime classes/six material overrides.
+
+Routing passes 218 kinds/all 18 rejection controls. ABI and forbidden-import
+control, native physics signature controls and whitespace pass. Existing prose
+checks cover 81 selected files with no findings. General repository prose and
+fact-row validation retain their branch findings; no baseline was relaxed.
+No two-peer gameplay, game installation, packaging, commit or publication ran.
+Entity implementation remains outside this task.
+
+DLL: build/release-2153/main.dll, 25,475,072 bytes, SHA256
+C87058E715C46908C1B59BD62CB762F18A9F4CD6C6971F8B78583A2374B5DCDF.
+The final-nonentity-verification.json report records source/test/log/document hashes.
+Remaining: real timing/appearance and stow/drop/save/rejoin checks; bucket launch
+cues and shared washer/spill births; atomic coal/lid/cement/care accounting/refund.
+
+## Previous development2163 verification — 20 October 2026
+
+Fresh MSVC Release b2163 passes; all 1886 production/config hashes remain unchanged
+through the final build. Nineteen focused runners pass with 59 positive executable
+invocations: the previous fifteen, expanded hand-tools (three executables), plus
+run_grill_hand (two), run_item_records (one), run_toy_music (one) and run_2153
+(three). These are invocations, not a count of individual assertions. Eighteen
+separately compiled mutation controls detect lost queue/native/recipient/world/
+fairness/capture protections and the incorrect washer parameter. A removed sponge
+send-epoch fence produces a native access violation; the report records its exact
+exit code, and does not mislabel that detection as an assertion.
+
+Native assets, routing (216 kinds/all 18 rejection controls), native physics
+signature controls, ABI/import plus forbidden-import control and whitespace checks
+pass. The selected public-prose sweep covers70 files including new unstaged sources
+with zero findings. General repository prose still fails13 baseline counters and
+fact-row validation still reports branch reference/unused findings across519 rows;
+neither baseline was weakened. Those are distinct from the focused passing checks.
+
+Current DLL SHA256:
+163869B42BB0E430E41F24EDA7A605E319A1B28A2C825917FFDD37F15C1ACA52.
+build/final-nonentity-verification.json records DLL/source/test/log/document hashes,
+the focused checks and remaining work. No two-peer gameplay, game installation,
+packaging, commit, push or publication. Entity implementation was not modified here.
+
+Additional current checks cover old-world and vanished-hand audio cleanup,
+reentrant session installation, source replacement during soap PRE/POST, transient
+recipient replacement, consumed one-shot dispatch, Madness partial-view cleanup
+and viewport retry, material publication fairness and native repaint cancellation.
+Madness cleanup removes its exact owned widget when it survives travel through
+the game instance, while refusing old-world audio calls. Direct wrapper reuse
+across travel also retires that widget before constructing the next view.
+The actual washer frame now uses UE4.27 bAutoActivate, exact asset/package lookup
+and bounded retries, with native initial-particle/wade-pitch evidence. Impact
+particles and shared water-projectile gameplay still require separate work.
+The profile suite covers valid complete forced vitals/held-state snapshots and
+per-chunk cancellation on session/world/actor replacement, including nested newer
+capture/send. Source compilation includes the actual shared chunker.
+
+## Development2163 grill hand and persistence
+
+run_grill_hand.ps1 -CompileSources passes its actual controller and native scalar
+codec/persistence tests plus seven production compiles. Cases cover owner sampling,
+source identity across native reads, reach/readiness, hand generation/person,
+deferred mirror/fields, send retry, lid/fuel/burn/voice, stale-stream quiet join,
+stow/replacement, recipient replacement, same-person generation reuse, newer native
+receipt and reentrant session installation. Actual persistence checks cover marker/
+version/bounds, packed active flag, old saves, allocation failures, native hooks,
+held-record refresh and serial/world cancellation. Native assets confirm the free
+float group and the omission of active/burn from the game's own getData.
+
+The restored actual item-record receiver/queue test passes host burn preservation,
+initial inventory transfer and parked-before-birth cases alongside its prior
+ordering/reentry/fairness/retry regressions. Current profile, kitchen and hand-tool
+runners pass; Release2163 is qualified above. No two-peer gameplay run.
+
+## Historical development 2162 verification — 20 October 2026
+
+Fresh MSVC Release passes with 1881 production/config hashes unchanged during its
+final build. Fifteen runners pass: the nine historical non-entity runners below
+plus run_kitchen (3 executables), run_hand_tools (2), run_wall_creative (2),
+run_2166 (4), run_2145 (3) and restored run_2141 (2), for 51 positive executable
+invocations. The latter's five intentional faults are detected too. Native contracts,
+215-kind routing/all 18 rejection controls, native physics fingerprint controls,
+ABI/import rejection control and whitespace checks pass. Current DLL/log/source
+hashes are in build/final-nonentity-verification.json.
+
+Eight separately compiled fault controls all fire: old spray cleanup overwriting a
+new sample, stale audio after an interrupted activation, lost door input during a
+send, ignition after native teardown, hand/kitchen recipient replacement and wall
+request starvation, and input for a second door changing during the first door's send.
+build/current-interruption-controls.json records their exact
+assertions and source/fixture hashes. New positive cases retain partial effect
+cleanup and let a second peer complete while sixteen other contours are missing.
+
+The existing prose detectors report zero findings in 49 selected public files with
+unstaged sources included. The normal repository-wide prose and fact-row gates
+still fail on branch/baseline/reference findings; no baseline was relaxed. No game
+installation, two-peer gameplay, packaging, commit, push or publication. Entity
+implementation remains outside this work.
+
+## Development 2162 instant wall completion — continued 20 October 2026
+
+run_wall_creative.ps1 -CompileSources PASS: actual controller, strict actual wrapper
+and four production compiles. Cases cover exact addWall source/cheat argument,
+key/hand/placement readiness, creator identity, host rule/reach refusal, retained
+request and terminal reply, immutable retry after stow, duplicate/claimed contour,
+native fault, expiry, slot reuse, world change and reentrant native-context refusal.
+run_2166.ps1 -CompileSources PASS: four wall regressions/five production compiles,
+including creator ownership and existing-host collision refusal. Native asset
+contracts pin the custom-content rule, native source and successor/retirement body.
+Two-peer wall completion, particles and actual save/rejoin are not yet tested.
+
+## Development 2161 hand tools and grill — continued 20 October 2026
+
+run_hand_tools.ps1 -CompileSources PASS: actual extinguisher/controller and generic
+audio-helper tests, four production compiles. Controls include early field retry,
+class serial replacement, lost stop, stow, different-tool replacement, playerNo
+reuse, world-ready refusal, stale join, reentrant teardown and actual Play/Stop
+calls with exact StartTime. No unchanged audio restart or gameplay spray trace.
+run_2145.ps1 also passes cord/extinguisher/flashlight after repairing the flashlight
+fixture's typed fact/observer declaration.
+
+run_kitchen.ps1 -CompileSources PASS: actual controller and strict grill/appliance wrappers,
+four production compiles. Cases include lid/loop/volume propagation, partial paint
+retry, packed flags, stopped audio, component replacement, latest nested receipt,
+retained current join delivery and exact local action-7 output scope. run_cooking
+passes the exact lid graph/source admission and its negative controls. Native asset
+contracts include the verified grill lid/heating/loop/output graph. The current2162
+qualification is above; b2160 hashes below are historical. No two-peer gameplay run.
+
+## Historical development 2160 verification — 20 October 2026
+
+Nine runners pass with production compilation: run_watoy (2 executables),
+run_sponge_effects (2), run_cooking (5), run_2176 (3), run_2157 (3), run_nonentity
+(9), run_garden_sync (7), run_2154 (3) and run_world_sound (1): 35 invocations.
+The final Watoy controller checks also pass immediate view cleanup after stow,
+future-generation sample retention and exact replacement-mirror readiness.
+Deferred world activation also passes actor/field readiness, expiry, peer retirement,
+slot reuse and reentrant requester-replacement controls; known invalid world sources
+are refused immediately.
+Fresh MSVC Release b2160, ABI/import and its negative control, reliable-kind routing
+(214 kinds and 18 negative controls), native asset contracts, derived physics
+fingerprint controls and whitespace checks pass. The existing prose detectors,
+with new unstaged sources included in their read inventory, find zero contributions
+in 27 selected public files. The normal repository-wide prose and fact-row gates
+still fail against their saved baseline/reference; neither gate was weakened.
+
+Historical b2160 DLL SHA256: 35DC4516DE5A790C6C173CEE9E5EBE4C17D3B2BA2793BFD6278F5AFC90A22E72.
+build/final-nonentity-verification.json now records2162. Older b2159
+and package hashes below remain historical. No two-peer gameplay, installation,
+packaging, commit or publication. Entity implementation was not changed here.
+
+## Sponge foam and cue ordering — 20 October 2026
+
+run_sponge_effects.ps1 -CompileSources PASS: production controller, actual native
+particle/trace wrapper and four source compiles. Cases cover actual debit observation,
+no-debit/no-soap refusal, hand announcement/mirror wait, source/point reach, occupancy,
+malformed geometry, replay refusal, separate surface/burst retry, send FIFO and teardown.
+The wrapper verifies native Location/Normal rather than ImpactPoint/ImpactNormal,
+particle orientation/scale/auto-destroy, Activate(false), serial/world guards and no
+cleaning or stock mutation. No historical foam is replayed to a joiner.
+Watoy regressions also cover pre-announcement local cues and independent state/action
+replay cursors. Two-peer appearance, physical behavior and timings remain open.
+
+## Food transfer and output follow-up — 20 October 2026
+
+run_cooking.ps1 -CompileSources PASS: five executables and eight source compiles.
+The publisher cases now cover early remote/local hand state, failed field writes,
+latest values, old generation/occupant/key refusal, pending-default suppression,
+replacement publication, actual host-poll send retry, join world/hand retries,
+unicast/broadcast independence, recipient cleanup and reentrant validation/teardown.
+Host final output tests allow only box/banana/cup bodies, with null player, and refuse
+poison/personal effects. The actual family/birth harness checks all 14 cooking
+declarations plus banana/cup factory provenance. The actual food wrapper checks
+1000 cached reads, missing classes/fields, recycled class/actor slots and world changes.
+run_2176.ps1 PASS after updating the can wrapper's world-generation boundary stub.
+No two-player gameplay run; personal-consumption concurrency remains open.
+
+## Watoy state and native presentation — 20 October 2026
+
+run_watoy.ps1 -CompileSources PASS: production controller and strict actual wrapper,
+plus four source compiles. Cases include host-only activation and motion claims,
+duplicate requests, reach/readiness refusal, late join without old cues, per-peer
+cue retry FIFO, delayed hand mirrors, playerNo/generation fencing, missed leave,
+world changes, row expiry, audio recovery, exact particle attachment, native effect
+adoption, owned emitter cleanup and reentrant cancellation during particle spawn.
+The component's native initialization/timer/retirement remain enabled; only its
+scoped native force, initial velocity and gravity writes are refused remotely.
+No two-peer runtime, game installation, save migration, commit or publication.
+
+Cooking follow-up: run_cooking.ps1 PASS after replacing the partial cookItem class
+list with actual cooking ancestry. The real family predicate and birth authoring
+harness cover all 14 measured declaring classes, false cooking source, world source,
+foreign declaring class and arbitrary replaceProp negative controls. The full native
+ancestry census finds 78 cooking members among 1,278 prop assets. The prefix-only
+21-asset audit below is historical and does not establish complete recipe coverage.
+
+## Presentation timing and readiness — 20 October 2026
+
+run_2154.ps1 PASS: canonical console, Madness controller and production audio/UMG
+wrapper harnesses. New checks cover retained host send age, half-RTT estimate,
+stopped/dead audio recovery, failed query/spawn retry, unchanged playback, HUD
+reconstruction, partial console-watch recovery, pre-widget busy and bounded busy-only
+outboxes. No AI/gameplay verbs are replayed. Native two-peer timing remains open.
+
+Historical b2159 evidence: six focused runners passed (27 executable
+invocations), native contracts and reliable-kind/ABI negative controls pass.
+The single current verification JSON has since been refreshed for b2160 above.
+The touched public console/food/Madness sources and props/signals docs are SWEPT
+by public_prose_gate; its repository-wide baseline still fails elsewhere, including
+the large active working documents. Build, ABI and whitespace checks pass.
+
+## Cooking synchronization — 20 October 2026
+
+run_cooking.ps1 PASS: native save/load/profile extension, 1000-cycle allocation
+balance, malformed/old saves, live food publication/receipt, progress-only updates,
+late actor/field retry, placement transport and exact personal cooked-birth provenance.
+Eight production units compile. run_2176.ps1 PASS includes zero-progress refresh
+before profile hashing, refused send retry and existing can/profile regressions.
+Native contracts pin all 21 cooking assets, the separate tick and three cookItem
+overrides. Protocol 2159. Two-peer grill/oven/cooked-food gameplay remains unverified.
+
+## Canonical SAT console display — 20 October 2026
+
+run_2154.ps1: console and Madness production harnesses PASS, six production source
+compilations PASS. Console checks now compare the host's display with all recipient
+streams, including the originating client, for simultaneous submitted output.
+Host-only periodic alerts, remote clr, join history/clear, transport and widget
+retry, bounded queues and world/reentrant teardown also pass offline. Protocol 2159.
+Native two-player execution, delayed output and timing still require gameplay checks.
+
+## Material state and sky latent authority — 20 October 2026
+
+- PASS full Release build, resource identity b2158. Current binary and source
+  hashes: `build/material-verification.json`; build: `build/material-final-build.log`.
+- PASS `run_nonentity.ps1 -CompileSources`: nine executables, including the
+  existing coin/placement regressions and new actual native scalar/save/load
+  drying tests, wet-wall record/chunk/adoption tests, held material schemas,
+  bucket publication and sky continuation authority. Production sources compile.
+- PASS native memory ownership: 1000 save/load cycles, exact scalar frees,
+  preserved unrelated child buffers, outer-array transfer, failed allocation
+  rollback, old records, malformed metadata and world/serial changes.
+- PASS wet-wall saved host enrollment, solo elapsed polling, transport refusal,
+  late-join saved-twin adoption and canonical replacement retirement.
+- PASS concrete timer and sponge soap in held-profile snapshots, zero values,
+  NaN/negative bounds, native soap remainder, and changes with unchanged amount/power.
+- PASS all seven garden/hose/wall-enrollment suites and production compilation:
+  `build/garden-material-validation.log`.
+- PASS world sounds and production compilation: native black-hole audio phases,
+  per-peer ordered retries, readiness, malformed cues, expiry and teardown:
+  `build/world-sound-material-validation.log`.
+- PASS extracted-game contracts: original wet-wall/concrete/sponge schemas,
+  native drying/replacement, sponge subtraction, black-hole entry + all six Delay
+  targets, three delayed emails and native event bookkeeping. Asset hashes:
+  `build/material-native-contracts.json`; extracted assets remain ignored.
+- PASS reliable-kind routing with all 18 negative controls, 212 kinds; ABI check
+  including forbidden-import control; whitespace check.
+
+Focused log: `build/nonentity-material-validation.log`. No runtime two-peer,
+save/reload, authority-handoff or user-input/gameplay qualification is claimed.
+Client wall repair, concurrent stock transactions and other unchecked tasks stay open.
+
+## Main-based non-entity batch — 20 October 2026
+
+Baseline main: `b6651cb91d4a7ee5ddc9c92fc558d3e3913b3b00`. This section
+supersedes older build claims for the current checkout; entity work is excluded.
+
+- PASS full main MSVC/Ninja Release build and rebuilt current changes. Source
+  protocol/resource identity is 0.9.0n b2157; folder `build/release-2153` is reused.
+- PASS `agent/tests/run_nonentity.ps1 -CompileSources`: actual production coin
+  collection and placement handlers, all preserved birth regressions, native
+  reentrancy/fault-after-credit/no-op/ambiguous completion, retirement retry,
+  retained refusal recovery, canonical adoption, immutable retries, transport
+  backpressure, replay after cache eviction, malformed/native failures,
+  world/reset and peer/actor recycling. Both production sources compile directly.
+- PASS `agent/tests/run_garden_sync.ps1 -CompileSources`: seven suites covering
+  saved enrollment, garden state/records/wrappers, faucet/detach actions, hose
+  route ACK/conflicts and native links, and wall enrollment; six production TUs.
+- PASS extracted-game `sync_native_contract_test.py`: plant subclasses/state,
+  care costs, hose links, sound phases, laptop cart/tab contracts; coin native
+  credit at bytecode 441 precedes destruction at 829. No game assets committed.
+- PASS `.github/ci/reliablekind_gate.py --drill`: 212 kinds, 184 family-routed,
+  21 direct, 7 net-thread terminal, no duplicate claims; all 18 negative controls
+  refuse. Before the fix, the merged table lacked 38 existing kinds; 27 of them
+  blocked real client requests at Session's admission edge.
+- PASS `.github/ci/abi_gate.py --drill` on the current DLL: no UE4SS imports;
+  synthesized forbidden-import control is rejected. Whitespace check passes.
+
+Logs/manifests: `build/nonentity-validation.log`, `build/garden-audit-validation.log`,
+`build/nonentity-native-contracts.json`, `build/nonentity-routing.log`,
+`build/nonentity-abi.log`, `build/nonentity-final-build.log`,
+`build/nonentity-verification.json`. No two-peer game test was run. These checks
+do not close multiplayer behavior, resource refunds, wall repair or the full
+non-entity backlog, and do not qualify a new delivery package. No install or push.
+
 ## Merge resolution - local branch with multivoid-sync-2153 (19 October 2026)
 
 Resolved the Grayboar source/test conflicts by retaining local authority and

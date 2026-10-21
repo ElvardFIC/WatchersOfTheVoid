@@ -3,6 +3,8 @@
 #include "coop/props/prop_spawn_authoring.h"
 #include "coop/player/hand_item.h"
 #include "coop/props/bucket_sync.h"
+#include "coop/interactables/kitchen_sync.h"
+#include "ue_wrap/actors/cooking_food.h"
 
 #include "ue_wrap/core/fname_utils.h"     // StringToFName -- the two verb names, once
 #include "ue_wrap/core/game_thread.h"
@@ -157,6 +159,9 @@ bool BirthIsPlayerAuthored(void* sourceObject) {
     // Match BOTH function and declaring class: loading/replaceProp and unrelated
     // graphs must remain local. Portable benches inherit this same craft graph.
     void* owner = R::OuterOf(const_cast<void*>(caller));
+    if(sourceObject && owner && R::NameEquals(R::NameOf(owner),L"prop_bbq_C") &&
+       R::NameEquals(R::NameOf(const_cast<void*>(caller)),L"ExecuteUbergraph_prop_bbq") &&
+       coop::kitchen_sync::IsLocalLidOutput(sourceObject))return true;
     // World MRE opening is host-authoritative. A personal hand MRE still opens
     // natively on its owner; its exact spawn body/source admits the resulting
     // contents immediately, without admitting world/loader copies of that body.
@@ -165,12 +170,22 @@ bool BirthIsPlayerAuthored(void* sourceObject) {
         R::NameEquals(R::NameOf(const_cast<void*>(caller)), L"spawn") &&
         sourceObject == coop::hand_item::LocalHandActor())
         return true;
-    // A hand food box's final bite creates its empty g_foodbox wrapper in this
-    // exact graph. A world copy or a load-time spawn is not a personal birth.
-    if (sourceObject && owner && sourceObject == coop::hand_item::LocalHandActor() &&
-        R::NameEquals(R::NameOf(owner), L"prop_foodBox_C") &&
-        R::NameEquals(R::NameOf(const_cast<void*>(caller)), L"ExecuteUbergraph_prop_foodBox"))
-        return true;
+    // Only these native personal-hand graphs author empty packaging/peels.
+    // A world copy or a loader is never personal output.
+    if(sourceObject && owner && sourceObject==coop::hand_item::LocalHandActor()) {
+        struct Factory {const wchar_t* cls;const wchar_t* graph;};
+        for(const auto& factory:{Factory{L"prop_foodBox_C",L"ExecuteUbergraph_prop_foodBox"},
+                                Factory{L"prop_food_banana_C",L"ExecuteUbergraph_prop_food_banana"},
+                                Factory{L"prop_food_coffeeCup_C",L"ExecuteUbergraph_prop_food_coffeeCup"}})
+            if(R::NameEquals(R::NameOf(owner),factory.cls) &&
+               R::NameEquals(R::NameOf(const_cast<void*>(caller)),factory.graph))return true;
+    }
+    // Only the selected personal food may author its cooked successor. World
+    // cooking belongs to the host; unrelated replacement/slicing graphs stay out.
+    if(sourceObject && sourceObject==coop::hand_item::LocalHandActor() && owner &&
+       R::NameEquals(R::NameOf(const_cast<void*>(caller)),L"cookItem")) {
+        return ue_wrap::cooking_food::IsCookingFood(sourceObject) && ue_wrap::cooking_food::IsCookingClass(owner);
+    }
     if (owner && R::NameEquals(R::NameOf(owner), L"prop_workbench_C") &&
         R::NameEquals(R::NameOf(const_cast<void*>(caller)), L"ExecuteUbergraph_prop_workbench"))
         return true;

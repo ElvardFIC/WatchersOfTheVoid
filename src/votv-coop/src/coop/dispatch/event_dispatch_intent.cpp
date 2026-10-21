@@ -737,6 +737,14 @@ bool HandleIntentEvent(net::Session& session,
         coop::kerfur_command::OnHandTaken(p);
         break;
     }
+    case net::ReliableKind::PropPlacementResult: {
+        if (session.role() != net::Role::Client || msg.senderPeerSlot != 0 ||
+            msg.payloadLen != sizeof(net::PropPlacementResultPayload)) break;
+        net::PropPlacementResultPayload p{};
+        std::memcpy(&p,msg.payload,sizeof(p));
+        coop::prop_drop_intent::OnPlacementResult(p,msg.senderPeerSlot);
+        break;
+    }
     default:
         return false;  // not an intent-family kind -> event_feed tries the next family
     }

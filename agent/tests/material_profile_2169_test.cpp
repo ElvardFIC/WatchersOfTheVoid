@@ -21,9 +21,9 @@ int main(){PreviousBuildingWrappers();using namespace test;namespace B=ue_wrap::
  }
  for(int id=3;id<=5;++id){objs[1].name.ComparisonIndex=id;rec=base;rec.className=ue_wrap::reflection::ClassNameOf(&objs[0]);
   objs[0].cement=0;objs[0].height=0;objs[0].flags=0x82;CHECK(B::RefreshHeldMaterialRecord(&objs[0],rec));
-  if(id==5)CHECK(rec.floats[1][0]==0&&rec.ints==base.ints);
+  if(id==5)CHECK(rec.floats[1][0]==0&&rec.floats[1][1]==23&&rec.ints==base.ints);
   else CHECK(rec.ints[0][0]==0);
-  if(id==3)CHECK(rec.bools[1][0]==1&&rec.bools[0]==base.bools[0]);
+  if(id==3)CHECK(rec.bools[1][0]==1&&rec.bools[0]==base.bools[0]&&rec.floats[1][0]==234);
   CHECK(rec.floats[0]==base.floats[0]&&rec.names==base.names);
   objs[0].cement=-1;objs[0].height=-1;CHECK(!B::RefreshHeldMaterialRecord(&objs[0],rec));
  }
@@ -31,6 +31,12 @@ int main(){PreviousBuildingWrappers();using namespace test;namespace B=ue_wrap::
  CHECK(!B::RefreshHeldMaterialRecord(&objs[0],rec));objs[0].cement=5;CHECK(B::RefreshHeldMaterialRecord(&objs[0],rec)&&rec.ints[0][0]==5);
  objs[1].name.ComparisonIndex=3;rec.className=L"prop_concreteBucket_C";objs[0].cement=21;CHECK(!B::RefreshHeldMaterialRecord(&objs[0],rec));
  CHECK(!B::RefreshHeldMaterialRecord(nullptr,rec));rec.className=L"unrelated_C";CHECK(B::RefreshHeldMaterialRecord(nullptr,rec));
+ objs[1].name.ComparisonIndex=3;rec=base;rec.className=L"prop_concreteBucket_C";objs[0].cement=5;objs[0].dryTimer=NAN;
+ auto unchanged=rec;CHECK(!B::RefreshHeldMaterialRecord(&objs[0],rec)&&rec.floats==unchanged.floats);objs[0].dryTimer=234;
+ objs[1].name.ComparisonIndex=5;rec=base;rec.className=L"prop_sponge_C";objs[0].height=.5f;objs[0].soapAmount=-4;
+ CHECK(B::RefreshHeldMaterialRecord(&objs[0],rec)&&rec.floats[1][1]==-4);
+ unchanged=rec;objs[0].soapAmount=-6;CHECK(!B::RefreshHeldMaterialRecord(&objs[0],rec)&&rec.floats==unchanged.floats);
+ objs[0].soapAmount=INFINITY;CHECK(!B::RefreshHeldMaterialRecord(&objs[0],rec));objs[0].soapAmount=23;
  CHECK(paints==originalPaints&&visibilityWrites==originalVisibility);
  puts("PASS held material snapshots: live water/soap/alcohol, cement units/dry and sponge wetness, zero stock, base data, exact identity and no native mutation");
 }

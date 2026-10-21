@@ -127,6 +127,12 @@ table** of the build the mod was made for (`include/ue_wrap/facts/fingerprints_<
 by the port tooling from that build's pak and the mod's capture on it). A new row needs its entry there:
 the maintainer regenerates the table, and the source gate refuses a push whose rows it does not key.
 
+`[RD]` The native `PrimitiveComponent.AddForce` and `SetEnableGravity` rows use signatures
+derived from the documented UE4.27 declarations ([AddForce](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/Engine/Components/UPrimitiveComponent/AddForce?application_version=4.27),
+[SetEnableGravity](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/Engine/Components/UPrimitiveComponent/SetEnableGravity?application_version=4.27)).
+Their parameter encoding reproduces the three captured impulse/velocity rows, and their
+native bodies hash as empty. These two derived entries still require live census validation.
+
 A class row is resolved as its registration resolves it and fingerprinted. A `RuntimeClass` row with no
 class is keyed on the class its site resolved; the table carries an entry for every class that declares
 its function, and the row's key in the report is `*.<function>`. An any-class row checks the signature of

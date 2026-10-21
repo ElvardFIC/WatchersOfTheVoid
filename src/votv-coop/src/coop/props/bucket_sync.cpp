@@ -26,6 +26,7 @@ constexpr int kTag=0x42554B54;
 net::Session* g_session=nullptr;
 uint32_t g_world=0;
 uint64_t g_epoch=0;
+size_t g_cursor=0;
 bool g_draining=false;
 ue_wrap::CachedObjRef g_cementTick,g_takeConcrete,g_bagUse,g_trowelUse;
 struct State { B::Water water{}; B::Stock stock{}; };
@@ -43,7 +44,7 @@ std::array<Row,128> g_rows{};
 bool Current() {
     if(!g_session || !g_session->connected())return false;
     const auto world=ue_wrap::world_identity::Generation();
-    if(world!=g_world){++g_epoch;g_world=world;g_rows={};}
+    if(world!=g_world){++g_epoch;g_world=world;g_rows={};g_cursor=0;}
     return true;
 }
 bool Eligible(void* actor) {
@@ -62,7 +63,9 @@ Row* Find(void* actor) {
 bool Same(const State& a,const State& b) {
     if(a.stock.kind!=b.stock.kind)return false;
     if(a.stock.kind!=B::StockKind::None)return a.stock.units==b.stock.units && a.stock.dry==b.stock.dry &&
-        std::fabs(a.stock.wetness-b.stock.wetness)<.0001f;
+        std::fabs(a.stock.wetness-b.stock.wetness)<.0001f &&
+        std::fabs(a.stock.dryTimer-b.stock.dryTimer)<1.f &&
+        std::fabs(a.stock.soapAmount-b.stock.soapAmount)<.0001f;
     return std::fabs(a.water.height-b.water.height)<.01f && a.water.soap==b.water.soap && a.water.alcohol==b.water.alcohol;
 }
 bool NativeOwner(void* actor) {
@@ -76,7 +79,9 @@ void Observe(void* actor,bool applied,bool force=false) {
     const auto now=active_drive::NowMs();
     if(!applied && !force && now<row->sampleAt)return;
     row->sampleAt=now+250;
-    State state{};if(!ReadState(actor,state))return;
+    const auto epoch=g_epoch,revision=row->revision;const auto identity=row->actor;
+    State state{};if(!ReadState(actor,state) || !Current() || epoch!=g_epoch || !identity.Get() ||
+        !row->actor.Is(actor) || row->revision!=revision)return;
     if(applied){row->last=state;row->have=true;row->dirty=false;++row->revision;return;}
     if(!row->have || !Same(row->last,state)) {
         row->last=state;row->have=true;row->dirty=true;++row->revision;
@@ -92,13 +97,15 @@ SG::Verdict BeforeTick(const SG::Call& c) {
     ue_wrap::CachedObjRef live;live.Set(c.object);const auto epoch=g_epoch;
     // ReceiveTick starts with prop_openContainer::ReceiveTick. Suppressing it
     // wholesale would also break the bucket's ordinary contained-prop handling.
-    if(!B::TickBucketContents(c.object,seconds))return SG::Verdict::Run;
-    if(epoch!=g_epoch || !live.Get())return SG::Verdict::Cancel;
+    const bool ticked=B::TickBucketContents(c.object,seconds);
+    if(!Current() || epoch!=g_epoch || !live.Get())return SG::Verdict::Cancel;
+    if(!ticked)return SG::Verdict::Run;
     // Remote kinematic copies must not spill/ferment against their delayed pose.
     // Never disable the actor tick itself: disconnect immediately restores native behavior.
     Row* row=Find(c.object);
     const auto now=active_drive::NowMs();
-    if(row && now>=row->repaintAt) {row->repaintAt=now+100;B::RepaintBucket(c.object);}
+    if(row && now>=row->repaintAt) {row->repaintAt=now+100;
+        B::RepaintBucket(c.object,[&]{return Current() && epoch==g_epoch && live.Get();});}
     return SG::Verdict::Cancel;
 }
 void AfterTick(const SG::Call& c) {
@@ -121,8 +128,8 @@ void AfterUse(const SG::Call& c) {
     // Native getFromWater can fill a selected-hand bucket without ticking it.
     ue_wrap::CachedObjRef live;live.Set(c.object);const auto epoch=g_epoch;
     if(!B::RepairBucketEmpty(c.object))return;
-    B::RepaintBucket(c.object);
-    if(epoch!=g_epoch || !live.Get())return;
+    const auto valid=[&]{return Current() && epoch==g_epoch && live.Get();};
+    if(!valid())return;B::RepaintBucket(c.object,valid);if(!valid())return;
     Observe(c.object,false,true);
 }
 SG::Verdict BeforeCementTick(const SG::Call& c) {
@@ -210,7 +217,8 @@ void Tick() {
     struct Guard{Guard(){g_draining=true;}~Guard(){g_draining=false;}}guard;
     const auto epoch=g_epoch,now=active_drive::NowMs();auto* session=g_session;
     unsigned budget=2;
-    for(auto& row:g_rows) {
+    for(size_t visited=0;visited<g_rows.size();++visited) {
+        const auto index=g_cursor;g_cursor=(g_cursor+1)%g_rows.size();auto& row=g_rows[index];
         if(!row.dirty || now<row.sendAt)continue;
         void* actor=row.actor.Get();if(!actor){row={};continue;}
         if(!Eligible(actor))continue;
@@ -218,16 +226,18 @@ void Tick() {
         // inside250ms, then stop; dropping that tail would restore spent water).
         const auto copy=row;
         const auto key=ue_wrap::prop::GetInteractableKeyString(actor);
-        if(epoch!=g_epoch || !copy.actor.Get())return;
+        if(!Current() || epoch!=g_epoch || !copy.actor.Get())return;
         if(key.empty() || key==L"None"){row.sendAt=now+1000;continue;}
         const bool covered=prop_save_data::Covers(actor);
-        if(epoch!=g_epoch || !copy.actor.Get())return;
+        if(!Current() || epoch!=g_epoch || !copy.actor.Get())return;
         if(row.revision!=copy.revision)continue;
         if(!covered){row.sendAt=now+1000;continue;}
-        State state{};if(!ReadState(actor,state))continue;
+        State state{};const bool read=ReadState(actor,state);
+        if(!Current() || epoch!=g_epoch)return;
+        if(!read || !copy.actor.Get() || !row.actor.Is(actor) || row.revision!=copy.revision)continue;
         row.sendAt=now+300;
         const bool ok=prop_save_data::Publish(session,actor,key);
-        if(epoch!=g_epoch)return;
+        if(!Current() || epoch!=g_epoch)return;
         if(row.actor.Is(actor) && row.revision==copy.revision && ok) {
             row.last=state;row.have=true;row.dirty=false;
         }
@@ -251,7 +261,7 @@ bool IsMaterialBirth() {
     return SG::IsObjectBodyActive(tick,hand);
 }
 void OnDisconnect(){
-    ++g_epoch;g_session=nullptr;g_world=0;g_rows={};
+    ++g_epoch;g_session=nullptr;g_world=0;g_rows={};g_cursor=0;
     g_cementTick.Reset();g_takeConcrete.Reset();g_bagUse.Reset();g_trowelUse.Reset();
 }
 }

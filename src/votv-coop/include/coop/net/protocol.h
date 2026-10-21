@@ -30,7 +30,7 @@ inline constexpr uint32_t kMagic = 0x564D5450u;
 // This file is past the 1500-line hard cap and stays there: it is the single-feature exception the
 // rule names. One wire format, whose enum, payload structs and static_asserts are read together;
 // splitting it would put a kind's number in one file and its bytes in another.
-inline constexpr uint16_t kProtocolVersion = 2156;  // restore missing dispatcher and camera kinds with fresh wire IDs
+inline constexpr uint16_t kProtocolVersion = 2175;  // canonical explosion scorch decals
 
 // Default LAN port (overridable via multivoid.ini "net.port=").
 inline constexpr uint16_t kDefaultPort = 47621;
@@ -1056,6 +1056,18 @@ enum class ReliableKind : uint8_t {
     StatQueryReply = 220,
     CameraActiveState = 221, // host-authoritative keyed camera active bit
     CameraLightState = 222, // host-authoritative keyed camera light bit
+    PropPlacementResult = 223, // host acknowledgement/refusal of a numbered prop placement; never relayed
+    Watoy = 224, // validated world activation / owner hand state, canonical audio and motion
+    SpongeEffect = 225, // validated transient surface foam and sponge burst; no cleaning or stock replay
+    WallCreative = 226, // exact builder request; host custom-content/reach checks and terminal reply
+    GrillHand = 227, // owner state, validated on host; no native heat/fuel replay on mirrors
+    WaterPour = 228, // source-validated water birth request and terminal host reply
+    WaterSplash = 229, // transient host collision sound/particle, no gameplay replay
+    GrillEdit = 230, // person-bound coal/lid field edit and terminal host reply
+    WaterLaunch = 231, // validated native bucket source audio; no resource or collision replay
+    DrinkSpill = 232, // host liquid/scorch decal births and canonical join/retirement
+    DrinkLaunch = 233, // source-validated drink flight request and terminal host reply
+    DrinkPour = 234, // validated native drink source sound and canonical transient cue
 };
 
 #pragma pack(push, 1)
@@ -1086,8 +1098,9 @@ struct HandToyAudioPayload {
     uint32_t generation,sequence;
     float value; // volume for op0 state; pitch for op1 transient squeak
     uint8_t slot,op,playing,used;
+    uint16_t playerNo;
 };
-static_assert(sizeof(HandToyAudioPayload)==16,"HandToyAudioPayload wire size");
+static_assert(sizeof(HandToyAudioPayload)==18,"HandToyAudioPayload wire size");
 
 struct DeskShortCircuitPayload {
     uint32_t sequence;
@@ -1238,6 +1251,105 @@ struct WireKey {
 };
 static_assert(sizeof(WireKey) == 32, "WireKey must be 32 bytes");
 
+struct WatoyPayload {
+    WireKey key;
+    uint32_t sequence,generation;
+    float volume,pitch;
+    uint16_t playerNo;
+    uint8_t op,slot,active,effect;
+};
+static_assert(sizeof(WatoyPayload)==54,"WatoyPayload wire size");
+
+struct SpongeEffectPayload {
+    WireKey key;
+    uint32_t sequence,generation;
+    float x,y,z,nx,ny,nz;
+    uint16_t playerNo;
+    uint8_t slot,op; // 0 owner request, 1 canonical host effect
+};
+static_assert(sizeof(SpongeEffectPayload)==68,"SpongeEffectPayload wire size");
+
+struct WallCreativePayload {
+    WireKey key;
+    uint32_t generation,sequence;
+    uint16_t playerNo;
+    uint8_t slot,op; // 0 request, 1 native dispatched, 2 refused, 3 native dispatch failed
+};
+static_assert(sizeof(WallCreativePayload)==44,"WallCreativePayload wire size");
+struct GrillHandPayload {
+    uint32_t generation=0,sequence=0;
+    uint16_t playerNo=0;
+    uint8_t slot=0,flags=0; // active, lid, cooking voice
+    int32_t coals=0;
+    float burn=0,volume=0;
+};
+static_assert(sizeof(GrillHandPayload)==24,"GrillHandPayload wire size");
+struct GrillEditPayload {
+    WireKey key;
+    uint32_t sequence;
+    int32_t before,after;
+    uint16_t playerNo;
+    uint8_t slot,operation; // 1 add one coal, 2 lid bit
+    uint8_t result,reserved[3]; // 0 request, 1 applied, 2 refused, 3 interrupted native attempt
+};
+static_assert(sizeof(GrillEditPayload)==52,"GrillEditPayload wire size");
+struct WaterPourPayload {
+    WireKey source;
+    uint32_t sequence,generation;
+    float x,y,z,vx,vy,vz,soap;
+    float power,pitch,yaw,roll;
+    uint16_t playerNo;
+    uint8_t slot,kind; // 0 bucket pour, 1 exact washer shot
+};
+static_assert(sizeof(WaterPourPayload)==88,"WaterPourPayload wire size");
+struct WaterPourReplyPayload {
+    uint32_t sequence;
+    uint16_t playerNo;
+    uint8_t slot,code; // 1 authored, 2 refused, 3 native attempt failed
+};
+static_assert(sizeof(WaterPourReplyPayload)==8,"WaterPourReplyPayload wire size");
+struct WaterSplashPayload {
+    uint32_t sequence;
+    float x,y,z,nx,ny,nz,ax,ay,az; // native hit Location/Normal and sound actor location
+    uint8_t kind,reserved[3]; // 0 bucket impact, 1 washer impact, 2 washer launch sound
+};
+static_assert(sizeof(WaterSplashPayload)==44,"WaterSplashPayload wire size");
+struct WaterLaunchPayload {
+    WireKey source;
+    uint32_t sequence,generation;
+    float x,y,z;
+    uint16_t playerNo;
+    uint8_t slot,kind,op,reserved[3]; // kind: drip/throw-wade/throw-splash; op: request/canonical
+};
+static_assert(sizeof(WaterLaunchPayload)==60,"WaterLaunchPayload wire size");
+struct DrinkSpillPayload {
+    // kind: 0 beer, 1 wine, 2 coffee, 3 gasoline, 4 explosion scorch (decal only).
+    WireKey source;
+    uint64_t nonce;
+    uint32_t sequence,generation,id;
+    float x,y,z,sx,sy,sz,pitch,yaw,roll,dpitch,dyaw,droll,process;
+    int32_t type;
+    uint16_t playerNo;
+    uint8_t slot,kind,op,reserved[3]; // host birth/join/retirement (1/2/3)
+};
+static_assert(sizeof(DrinkSpillPayload)==116,"DrinkSpillPayload wire size");
+struct DrinkLaunchPayload {
+    WireKey source;
+    uint32_t sequence,generation;
+    float x,y,z,vx,vy,vz,pitch,yaw,roll,sx,sy,sz,size;
+    uint16_t playerNo;
+    uint8_t slot,kind,op,reserved[3]; // request/accepted/refused/terminal construction failure
+};
+static_assert(sizeof(DrinkLaunchPayload)==100,"DrinkLaunchPayload wire size");
+struct DrinkPourPayload {
+    WireKey source;
+    uint32_t sequence,generation;
+    float x,y,z;
+    uint16_t playerNo;
+    uint8_t slot,kind,op,reserved[3]; // kind beer/wine/coffee; op request/canonical
+};
+static_assert(sizeof(DrinkPourPayload)==60,"DrinkPourPayload wire size");
+
 struct PropScaleStatePayload {
     WireKey key;
     uint32_t elementId;
@@ -1250,16 +1362,19 @@ struct DingusMusicPayload {
     WireKey key;
     uint32_t sequence;
     float volume; // music volume; squeak pitch for op3/4
+    float elapsed,pitch; // canonical music position/rate; zero in requests/pulses
+    uint32_t episode; // zero when the host has not observed this playback's start
+    uint16_t playerNo; // requests only; canonical music/pulses keep zero
     uint8_t op,playing,used,reserved; // 0 host state, 1 toggle, 2 first touch, 3 squeak request, 4 host squeak
 };
-static_assert(sizeof(DingusMusicPayload)==44,"DingusMusicPayload wire size");
+static_assert(sizeof(DingusMusicPayload)==58,"DingusMusicPayload wire size");
 
 struct PropFirePayload {
     WireKey key;
     uint32_t sequence;
     float fuel, fuelSpeed;
     uint8_t op, burning; // op0 ignite request, op1 extinguish request, op2 host state
-    uint16_t reserved;
+    uint16_t playerNo; // originating person on requests; zero on canonical state
 };
 static_assert(sizeof(PropFirePayload)==48,"PropFirePayload wire size");
 
@@ -1279,8 +1394,9 @@ struct HandExtinguisherPayload {
     uint32_t generation;
     uint32_t sequence;
     float    charge;
+    uint16_t playerNo;
 };
-static_assert(sizeof(HandExtinguisherPayload) == 16, "HandExtinguisherPayload wire size");
+static_assert(sizeof(HandExtinguisherPayload) == 18, "HandExtinguisherPayload wire size");
 
 struct ExplosionPayload {
     WireKey key;
@@ -1815,9 +1931,20 @@ struct PropDropIntentPayload {
     uint8_t       _pad[2];                      // 2 -- zero on the wire
     float         foodTemperature, foodRipeness;
     int32_t       foodUses;                     // excludes the sender's save clock stamp
+    float         foodCookProgress = -1.f;
+    uint32_t      requestId;                    // nonzero, unchanged across retries
 };
-static_assert(sizeof(PropDropIntentPayload) == 180, "PropDropIntentPayload must be 180 bytes");
+static_assert(sizeof(PropDropIntentPayload) == 188, "PropDropIntentPayload must be 188 bytes");
 static_assert(sizeof(PropDropIntentPayload) <= 256 - 20 - 8, "PropDropIntentPayload must fit one datagram");
+
+enum class PropPlacementCode : uint8_t { Accepted, Refused, Retry };
+struct PropPlacementResultPayload {
+    uint32_t requestId;
+    WireClassName className;
+    WireKey key;
+    uint8_t code;
+};
+static_assert(sizeof(PropPlacementResultPayload) == 101, "PropPlacementResultPayload wire size");
 
 // --- The save transfer ---
 // Data bytes per SaveTransferChunk message (plus a 4-byte index prefix). Far above
@@ -1865,10 +1992,12 @@ struct KitchenStatePayload {
     float power;
     int32_t coals;    // grill only, native capacity 16
     float burn;       // grill's fractional coal-consumption timer
+    uint8_t cooking;
+    float cookVolume;
     uint8_t hasDoorPose;
     float doorPose[10]; // relative quaternion xyzw, translation xyz, scale xyz; no padding
 };
-static_assert(sizeof(KitchenStatePayload) == 103, "Kitchen state wire layout");
+static_assert(sizeof(KitchenStatePayload) == 108, "Kitchen state wire layout");
 struct KitchenIntentPayload {
     WireKey key;
     uint32_t elementId;
@@ -2213,8 +2342,10 @@ struct FoodStatePayload {
     float    temperature;  // 4 -- kelvin, the actor's own field
     float    ripeness;     // 4
     int32_t  uses;         // 4
+    float    cookProgress = -1.f; // 4 -- -1 for ordinary food, otherwise native cooking progress
+    uint16_t playerNo = 0; // 2 -- hand owner's session identity; zero for a world sample
 };
-static_assert(sizeof(FoodStatePayload) == 48, "FoodStatePayload must be 48 bytes");
+static_assert(sizeof(FoodStatePayload) == 54, "FoodStatePayload must be 54 bytes");
 static_assert(sizeof(FoodStatePayload) <= 256 - 20 - 8,
               "FoodStatePayload must fit in one reliable datagram");
 

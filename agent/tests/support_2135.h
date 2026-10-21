@@ -13,6 +13,7 @@ namespace test {
 struct Obj {int id=1,serial=1;bool live=true;uint8_t flags=0;void* clipboard=nullptr;};
 inline Obj actor{}, ui{2};inline uint32_t world=1;inline uint64_t now=1000;
 inline bool announced=true,fields=true;inline std::function<void()> callback;
+inline bool worldUnavailable=false;
 inline void Callback(){auto f=std::move(callback);callback={};if(f)f();}
 }
 namespace ue_wrap::reflection {
@@ -28,7 +29,7 @@ inline int32_t ParamOffset::Of(void*){return std::wstring(param_)==L"action"?0:8
 }
 namespace ue_wrap::world_identity {
 inline uint32_t Generation(){return test::world;}
-inline void* CurrentWorld(){return reinterpret_cast<void*>(uintptr_t(test::world));}
+inline void* CurrentWorld(){return test::worldUnavailable?nullptr:reinterpret_cast<void*>(uintptr_t(test::world));}
 inline void* WorldOf(void*){return CurrentWorld();}
 }
 namespace coop::active_drive {inline uint64_t NowMs(){return test::now;}}
@@ -38,6 +39,7 @@ namespace ue_wrap::script_gate {
 inline std::wstring lastWatchClass, lastWatchFunction;
 inline std::vector<std::pair<std::wstring,std::wstring>> watchedBodies;
 inline bool WatchClassName(const wchar_t* cls,const wchar_t* fn,int,PreFn,PostFn){lastWatchClass=cls;lastWatchFunction=fn;watchedBodies.emplace_back(cls,fn);return true;}
-inline bool ClassNameWatchLive(const wchar_t*,const wchar_t*,int){return true;}
+inline bool watchLive=true;
+inline bool ClassNameWatchLive(const wchar_t*,const wchar_t*,int){return watchLive;}
 inline void ResolvePendingNames(){}
 }

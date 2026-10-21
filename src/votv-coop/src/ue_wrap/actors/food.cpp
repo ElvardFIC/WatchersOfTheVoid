@@ -1,6 +1,7 @@
 // ue_wrap/actors/food.cpp -- see food.h.
 
 #include "ue_wrap/actors/food.h"
+#include "ue_wrap/actors/cooking_food.h"
 
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/actors/canned_food.h"
@@ -16,45 +17,56 @@ namespace {
 
 namespace R = reflection;
 
-int32_t g_temp = -2;
-int32_t g_ripe = -2;
-int32_t g_uses = -2;
-void*   g_cls  = nullptr;
+int32_t g_temp = -1;
+int32_t g_ripe = -1;
+int32_t g_uses = -1;
+CachedObjRef g_class;
 
 bool Resolve() {
-    if (g_temp != -2) return g_temp >= 0 && g_ripe >= 0 && g_uses >= 0;
-    g_cls = R::FindClass(L"prop_food_C");
-    if (!g_cls) return false;
-    g_temp = R::FindPropertyOffset(g_cls, L"temperature");
-    g_ripe = R::FindPropertyOffset(g_cls, L"ripeness");
-    g_uses = R::FindPropertyOffset(g_cls, L"uses");
-    return g_temp >= 0 && g_ripe >= 0 && g_uses >= 0;
+    void* cls=object_index::ClassByName(L"prop_food_C");if(!cls)return false;
+    if(g_class.Is(cls))return true;
+    CachedObjRef live;live.Set(cls);const auto world=world_identity::Generation();
+    const auto temperature=R::FindPropertyOffset(cls,L"temperature");
+    const auto ripeness=R::FindPropertyOffset(cls,L"ripeness");
+    const auto uses=R::FindPropertyOffset(cls,L"uses");
+    if(temperature<0 || ripeness<0 || uses<0 || !live.Get() || world!=world_identity::Generation())return false;
+    g_temp=temperature;g_ripe=ripeness;g_uses=uses;g_class=live;return true;
 }
 
 }  // namespace
 
 bool IsFood(void* actor) {
-    if (!actor) return false;
-    if (!g_cls && !Resolve()) return false;
+    if (!actor || !R::IsLive(actor) || !Resolve()) return false;
     void* cls = R::ClassOf(actor);
-    return cls && (cls == g_cls || R::IsDescendantOfAny(cls, &g_cls, 1));
+    void* base=g_class.Get();
+    return cls && base && (cls == base || R::IsDescendantOfAny(cls, &base, 1));
 }
 
 bool Read(void* actor, Condition& out) {
-    if (!IsFood(actor) || !Resolve()) return false;
+    CachedObjRef live;live.Set(actor);const auto world=world_identity::Generation();
+    if (!IsFood(actor) || !live.Get() || world!=world_identity::Generation()) return false;
+    const auto base=g_class;void* cls=R::ClassOf(actor);
     auto* b = reinterpret_cast<const uint8_t*>(actor);
-    out.temperature = *reinterpret_cast<const float*>(b + g_temp);
-    out.ripeness    = *reinterpret_cast<const float*>(b + g_ripe);
-    out.uses        = *reinterpret_cast<const int32_t*>(b + g_uses);
-    return true;
+    Condition value{};
+    std::memcpy(&value.temperature,b+g_temp,sizeof(float));
+    std::memcpy(&value.ripeness,b+g_ripe,sizeof(float));
+    std::memcpy(&value.uses,b+g_uses,sizeof(int32_t));
+    if(cooking_food::IsCookingFood(actor)&&!cooking_food::ReadProgress(actor,value.cookProgress))return false;
+    if(!live.Get() || !base.Get() || R::ClassOf(actor)!=cls || world!=world_identity::Generation())return false;
+    out=value;return true;
 }
 
-bool Write(void* actor, const Condition& in) {
-    if (!IsFood(actor) || !Resolve()) return false;
+bool Write(void* actor, const Condition& in,const std::function<bool()>& current) {
+    CachedObjRef live;live.Set(actor);const auto world=world_identity::Generation();
+    if (!IsFood(actor) || !live.Get() || world!=world_identity::Generation()) return false;
+    const auto base=g_class;void* cls=R::ClassOf(actor);const int temp=g_temp,ripe=g_ripe,uses=g_uses;
+    if(current && !current())return false;
+    if(in.cookProgress>=0 && !cooking_food::WriteProgress(actor,in.cookProgress))return false;
+    if(!live.Get() || !base.Get() || R::ClassOf(actor)!=cls || world!=world_identity::Generation() || (current && !current()))return false;
     auto* b = reinterpret_cast<uint8_t*>(actor);
-    *reinterpret_cast<float*>(b + g_temp)    = in.temperature;
-    *reinterpret_cast<float*>(b + g_ripe)    = in.ripeness;
-    *reinterpret_cast<int32_t*>(b + g_uses)  = in.uses;
+    std::memcpy(b+temp,&in.temperature,sizeof(float));
+    std::memcpy(b+ripe,&in.ripeness,sizeof(float));
+    std::memcpy(b+uses,&in.uses,sizeof(int32_t));
     return true;
 }
 

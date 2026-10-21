@@ -1,12 +1,13 @@
 #pragma once
 #include <cstdint>
+#include <functional>
 namespace ue_wrap::save_record { struct SaveRecord; }
 namespace ue_wrap::building_material {
 bool IsBucket(void* actor);
 bool IsTrowel(void* actor);
 bool IsConcreteBucket(void* actor);
 // Disposable remote-hand display only; never consumes or dries real stock.
-bool SetRemoteConcreteBucketDisplay(void* actor, int32_t units, bool dry);
+bool SetRemoteConcreteBucketDisplay(void* actor, int32_t units, bool dry,const std::function<bool()>& current = {});
 bool ReadConcrete(void* actor, int32_t& units);
 // Refresh a COPY of this exact trowel's held save record before profile hashing.
 // Reads live stock; never changes the actor, inventory or remote display.
@@ -15,19 +16,20 @@ bool RefreshTrowelRecord(void* actor, save_record::SaveRecord& record);
 // water/concrete bucket, cement bag or sponge). Unsupported classes are unchanged successes;
 // supported classes with missing/mismatched live identity return false without modifying record.
 bool RefreshHeldMaterialRecord(void* actor, save_record::SaveRecord& record);
-bool SetRemoteConcrete(void* actor, int32_t units);
+bool SetRemoteConcrete(void* actor, int32_t units,const std::function<bool()>& current = {});
 enum class StockKind : uint8_t { None, ConcreteBucket, CementBag, Trowel, Sponge };
-struct Stock { StockKind kind=StockKind::None; int32_t units=0; bool dry=false; float wetness=0; };
-// Native saved amounts; dryTimer is deliberately not an amount and is not saved by the game.
+struct Stock { StockKind kind=StockKind::None; int32_t units=0; bool dry=false; float wetness=0;
+    float dryTimer=0,soapAmount=0; };
+// Native amounts and the material save extension's drying/soap fields.
 bool ReadStock(void* actor, Stock& state);
 struct Water { float height=0; int32_t soap=0; bool alcohol=false; };
 bool ReadWater(void* actor, Water& state);
 // loadData restores height but omits empty; repair it BEFORE native upd reads it.
 bool RepairBucketEmpty(void* actor);
 // Repaint a passive replica without running water loss, fermentation or projectile spawns.
-bool RepaintBucket(void* actor);
+bool RepaintBucket(void* actor,const std::function<bool()>& current = {});
 // Hand display only: soap is presence, not an authoritative consumable amount.
-bool SetRemoteBucketDisplay(void* actor,float height,bool soap,bool alcohol);
+bool SetRemoteBucketDisplay(void* actor,float height,bool soap,bool alcohol,const std::function<bool()>& current = {});
 // Preserve the open container's own tick while the bucket's water simulation is parked.
 bool TickBucketContents(void* actor,float seconds);
 }

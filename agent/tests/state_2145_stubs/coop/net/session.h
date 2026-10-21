@@ -14,6 +14,8 @@ public:
  struct Sent{int slot;ReliableKind kind;std::vector<uint8_t> data;};std::vector<Sent> sent;
  bool poseActive=false; PropPoseSnapshot pose{};
  uint32_t peerEpoch=1;
+ int testRtt=-1;
+ int rttMsForSlot(int)const{return testRtt;}
  uint32_t peerGenerationForSlot(int)const{return peerEpoch;}
  void SetLocalPropPose(bool active,const PropPoseSnapshot& p){poseActive=active;pose=p;}
  bool IsSlotReady(int)const{return ready;}

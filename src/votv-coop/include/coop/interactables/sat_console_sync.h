@@ -1,15 +1,14 @@
 // coop/interactables/sat_console_sync.h -- the SAT console's shared commands run on the host.
 //
-// A machine has one terminal, the ui_console every SAT console panel shows. A client's line whose command
-// rests on the shared world (coop/interactables/sat_console_table) is refused at its terminal's enterCommand
-// while the terminal is not busy, its input consumed as the body's tail does, and sent to the host with the
-// terminal's context: its dish or ROOT, its name, the panel last used. The host keeps a terminal of the
-// game's class for each typist, by the typist's identity, never constructed or shown, and runs the line
-// there, so the command happens once, in the host's world, and its effects cross by their own lanes. Each
-// line that terminal prints goes back to its typist, who writes it into its own terminal, and so does its
-// busy level. A typist that leaves mid-command while another client keeps the session leaves the command
+// A machine's SAT panels share one terminal. A client's shared-world command is
+// sent with its dish/ROOT, name and panel context to a private host terminal kept
+// by typist identity. Its world effects run once and cross through their own lanes. Each
+// line that terminal prints is ordered by the host and sent to every display, including the origin.
+// Local commands keep their local effects and submit their output to that same order. Only the host
+// produces unsolicited terminal alerts; clr and recent join history use the same display stream.
+// The busy level belongs to its typist. A typist that leaves mid-command leaves the command
 // running, and back, is bound to its terminal again as its world is ready; the last client's leave ends
-// the session, and every terminal is discarded, its command stopping there. MTA sends a command the client does not own to the server, which runs it as that player
+// the session and discards its terminals. MTA sends commands to the server as the player
 // and echoes to that player alone (reference/mtasa-blue/Client/mods/deathmatch/ClientCommands.cpp:91,
 // reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:2406); MTA also runs the client's own
 // handlers first (:60), which here would run the one game handler twice, so a line runs on one machine.

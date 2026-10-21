@@ -24,10 +24,12 @@
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/script_gate.h"
+#include "ue_wrap/engine/engine.h"
 #include "ue_wrap/facts/function_row.h"
 #include "ue_wrap/world/economy.h"
 
 #include <atomic>
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <cstring>
@@ -73,9 +75,71 @@ std::atomic<unsigned long long> g_replayed{0};
 // The consumption guard. "The coin will be dead next time" holds only if the credit block's
 // K2_DestroyActor takes effect within our dispatch, and that timing is not measured; the
 // reliable inbox drains unbounded per tick, so two CoinCollect packets naming one eid in a frame
-// would credit twice. Keyed by eid, valued by a world-stamped CachedObjRef, so the guard
+// would credit twice. Keyed by actor index, valued by a world-stamped CachedObjRef, so the guard
 // compares identity and an entry reads dead once the coin or its world is gone.
 std::unordered_map<uint32_t, ue_wrap::CachedObjRef> g_collected;
+std::unordered_map<uint32_t, ue_wrap::CachedObjRef> g_retiringCoins;
+uint64_t g_collectEpoch = 0;
+uint64_t g_retireAt = 0;
+uint32_t g_retireCursor = 0;
+
+bool CollectAuthoritative(void* coin, void* player) {
+    auto* session = I::Session();
+    if (!session || !session->connected() || session->role() != coop::net::Role::Host || !I::IsCoinActor(coin)) return false;
+    const auto epoch = g_collectEpoch;
+    const auto world = ue_wrap::world_identity::Generation();
+    ue_wrap::CachedObjRef ref; ref.Set(coin);
+    const int index = R::InternalIndexOf(coin);
+    if (index < 0) return false;
+    const auto key = uint32_t(index);
+    if (auto it = g_collected.find(key); it != g_collected.end() && it->second.Get() == coin) {
+        ++g_replayed; return false;
+    }
+    std::erase_if(g_collected, [](const auto& row) { return !row.second.Get(); });
+    if (g_collected.size() >= 256) return false;
+    if (!g_actionOptFn) g_actionOptFn = R::FindFunction(R::ClassOf(coin), kVerbNameCollect);
+    ue_wrap::ParamFrame frame(g_actionOptFn);
+    if (!frame.valid() || !frame.Set<void*>(L"player", player) ||
+        !frame.Set<uint8_t>(L"action", kCoinCollectAction)) return false;
+    int32_t before = 0;
+    if (!ue_wrap::economy::ReadPoints(&before) || !ref.Get() || epoch != g_collectEpoch ||
+        world != ue_wrap::world_identity::Generation() || I::Session() != session || !session->connected() ||
+        session->role() != coop::net::Role::Host) return false;
+    // Reserve before native dispatch: a nested overlap/request can run before
+    // K2_DestroyActor. Slot serials distinguish a later coin at the same address.
+    g_collected[key] = ref;
+    const bool dispatched = ue_wrap::Call(coin, frame);
+    if (epoch != g_collectEpoch || world != ue_wrap::world_identity::Generation() || I::Session() != session ||
+        !session->connected() || session->role() != coop::net::Role::Host) return false;
+    int32_t after = 0;
+    const bool readable = ue_wrap::economy::ReadPoints(&after);
+    if (epoch != g_collectEpoch || world != ue_wrap::world_identity::Generation() || I::Session() != session ||
+        !session->connected() || session->role() != coop::net::Role::Host) return false;
+    if (readable && after > before) {
+        // A reflected call can fault after addPoints and before self-destroy.
+        // The credit is committed even if dispatch reports false.
+        ++g_performed;
+        if (ref.Get()) {
+            g_retiringCoins[key] = ref;
+            ue_wrap::engine::DestroyActor(coin);
+        }
+        return true;
+    }
+    ++g_noCredit;
+    // Unknown completion remains reserved: never spend the same coin twice.
+    // A proven no-op on the same live actor can be retried normally.
+    if (dispatched && readable && after == before && ref.Get()) {
+        auto it = g_collected.find(key);
+        if (it != g_collected.end() && it->second.Get() == coin) g_collected.erase(it);
+    }
+    UE_LOGW("coingun[collect]: native completion dispatch=%d balanceReadable=%d credited=%d", dispatched, readable, readable && after > before);
+    return false;
+}
+
+bool SharedHostCoin(void* coin) {
+    const auto eid = coop::element::Registry::Get().EidForActor(coin);
+    return coop::element::Registry::IsAllowedHostAllocatedEid(eid);
+}
 
 struct PendingCollect {
     ue_wrap::CachedObjRef coin;
@@ -159,8 +223,8 @@ bool ForwardCollectToHost(void* coin, const wchar_t* entry) {
     return sent;
 }
 
-// Entry 1, the overlap: one interceptor for both roles. The host never cancels; it observes so
-// the log can tell "no overlap fired" from "fired, credit refused". The client forwards and
+// Entry 1, the overlap: the host uses the same reserved native transaction as E/requests.
+// The client forwards and
 // then cancels for a mirror or a coin still materialising, and leaves a non-mirror coin native,
 // since the maps' placed coins would otherwise become uncollectable and ghosted.
 bool OnCollectPre(void* self, void* params) {
@@ -175,6 +239,11 @@ bool OnCollectPre(void* self, void* params) {
     if (params) other = *reinterpret_cast<void**>(static_cast<uint8_t*>(params) + sizeof(void*));
 
     if (s->role() == coop::net::Role::Host) {
+        if (other && (coop::players::Registry::Get().IsLocal(other) || coop::players::Registry::Get().IsPuppet(other)) &&
+            SharedHostCoin(self)) {
+            CollectAuthoritative(self, other);
+            return true;
+        }
         // Through the module's one reader of the points field.
         const int32_t pts = ReadCoinPoints(self);
         UE_LOGI("coingun[host collect]: coin=%p points=%d TRIPPED BY actor=%p class='%ls' -- the "
@@ -265,6 +334,10 @@ sg::Verdict OnCollectVerb(const sg::Call& b) {
 
     if (s->role() == coop::net::Role::Host) {
         g_seenPressHost.fetch_add(1, std::memory_order_relaxed);
+        if (SharedHostCoin(b.object)) {
+            CollectAuthoritative(b.object, coop::players::Registry::Get().Local());
+            return sg::Verdict::Cancel;
+        }
         // The host's own press: observe only, the native credit runs. The positive control for the
         // client's silence: without a line where the observer is expected to fire, a quiet client
         // log is indistinguishable from a dead hook. The host's performed collects below are
@@ -358,24 +431,6 @@ void OnCoinCollect(const uint8_t* payload, int len, uint8_t senderSlot, void* lo
                 senderSlot, p.elementId);
         return;
     }
-    // The consumption guard: was a collect already performed for this exact coin?
-    {
-        auto it = g_collected.find(p.elementId);
-        if (it != g_collected.end() && it->second.Get() == coin) {
-            g_replayed.fetch_add(1, std::memory_order_relaxed);
-            UE_LOGW("coingun[host collect]: REFUSED slot=%u eid=%u -- already collected, and the coin "
-                    "has not left the world yet. A replayed or duplicated forward credits nothing.",
-                    senderSlot, p.elementId);
-            return;
-        }
-        // A bounded sweep: the map holds coins credited for that have not finished dying, normally
-        // none or one. Erased here and cleared whole on disconnect.
-        for (auto e = g_collected.begin(); e != g_collected.end();) {
-            if (e->second.Get() == nullptr) e = g_collected.erase(e);
-            else                            ++e;
-        }
-    }
-
     // The class gate: a WorldActor eid could name a pyramid or a wisp, and actionOptionIndex on one
     // of those would run an unrelated interaction.
     if (!I::IsCoinActor(coin)) {
@@ -384,73 +439,32 @@ void OnCoinCollect(const uint8_t* payload, int len, uint8_t senderSlot, void* lo
                 senderSlot, p.elementId, R::ClassNameOf(coin).c_str());
         return;
     }
-    if (!g_actionOptFn) g_actionOptFn = R::FindFunction(R::ClassOf(coin), kVerbNameCollect);
-    if (!g_actionOptFn) {
-        UE_LOGE("coingun[host collect]: slot=%u eid=%u -- baocoin_C::actionOptionIndex unresolved, "
-                "cannot perform the collect", senderSlot, p.elementId);
-        return;
-    }
-
-    // The balance is read around the dispatch, the only way to know the collect took: the credit is
-    // lib_C::addPoints, EX_LocalVirtualFunction, with no return value and no seam.
-    // A no-op leaves both authoritative coin and client mirror available for another try.
-    int32_t before = 0;
-    const bool haveBefore = ue_wrap::economy::ReadPoints(&before);
-
-    ue_wrap::ParamFrame f(g_actionOptFn);
-    if (!f.valid()) {
-        UE_LOGE("coingun[host collect]: slot=%u eid=%u -- actionOptionIndex frame invalid",
-                senderSlot, p.elementId);
-        return;
-    }
-    // `player` is the host's own mainPlayer: the credit block is reached from the overlap entry
-    // too, which never writes the player, so it cannot depend on it, and the truthful value is
-    // right either way. `hit` stays zeroed and `lookAtComponent` null, as on the overlap entry;
-    // `action` is inert (kCoinCollectAction).
-    if (!f.Set<void*>(L"player", localPlayer) || !f.Set<uint8_t>(L"action", kCoinCollectAction)) return;
-    // Capture while the native object is still healthy; the verb destroys it.
-    ue_wrap::CachedObjRef collected;
-    collected.Set(coin);
-    const bool dispatched = ue_wrap::Call(coin, f);
-
-    int32_t after = 0;
-    const bool haveAfter = ue_wrap::economy::ReadPoints(&after);
-    const bool credited  = haveBefore && haveAfter && after != before;
-
-    if (dispatched && credited) {
-        g_performed.fetch_add(1, std::memory_order_relaxed);
-        g_collected[p.elementId] = collected;
-        UE_LOGI("coingun[host collect]: PERFORMED slot=%u eid=%u coin=%p -- balance %d -> %d (+%d). "
-                "The coin's own verb ran, so its native credit and self-destroy are the game's, not "
-                "ours; the WorldActorDestroy that follows removes every peer's mirror.",
-                senderSlot, p.elementId, coin, before, after, after - before);
-        return;
-    }
-
-    // The authoritative coin is still live and the balance did not move. The client cancelled its
-    // mirror entry while requesting this collect, so no replica repair is needed.
-    g_noCredit.fetch_add(1, std::memory_order_relaxed);
-
-    if (!haveBefore || !haveAfter) {
-        // Unknown is not "no credit": treating an unreadable balance as a failed collect would act
-        // on absence of evidence.
-        UE_LOGE("coingun[host collect]: slot=%u eid=%u coin=%p dispatch=%d -- the balance was NOT "
-                "readable (before=%d after=%d), so whether this credited is UNKNOWN. Taking no "
-                "repair action: acting on an unreadable value would be inventing a verdict.",
-                senderSlot, p.elementId, coin, dispatched ? 1 : 0, haveBefore ? 1 : 0,
-                haveAfter ? 1 : 0);
-        return;
-    }
-
-    UE_LOGE("coingun[host collect]: slot=%u eid=%u coin=%p dispatch=%d -- the coin is LIVE and the "
-            "balance did NOT move (%d -> %d); the client's matching mirror remains live because "
-            "its entry was cancelled.", senderSlot, p.elementId, coin, dispatched ? 1 : 0, before,
-            after);
+    CollectAuthoritative(coin, localPlayer);
 }
 
 bool internal::CollectInstalled() { return g_installed.load(std::memory_order_acquire); }
 
 void internal::TickCollect() {
+    if (auto* s = I::Session(); s && s->connected() && s->role() == coop::net::Role::Host) {
+        const auto epoch = g_collectEpoch;
+        std::vector<uint32_t> keys;
+        const auto now = CollectNowMs();
+        if (now < g_retireAt) return;
+        g_retireAt = now + 250;
+        for (const auto& [key, ref] : g_retiringCoins) keys.push_back(key);
+        std::sort(keys.begin(), keys.end());
+        std::rotate(keys.begin(), std::upper_bound(keys.begin(), keys.end(), g_retireCursor), keys.end());
+        if (keys.size() > 8) keys.resize(8);
+        for (auto key : keys) {
+            g_retireCursor = key;
+            auto it = g_retiringCoins.find(key);
+            if (it == g_retiringCoins.end()) continue;
+            const auto ref = it->second;
+            if (void* coin = ref.Get()) ue_wrap::engine::DestroyActor(coin);
+            if (epoch != g_collectEpoch) return;
+            if (!ref.Get()) g_retiringCoins.erase(key);
+        }
+    }
     if (g_pendingCollects.empty()) return;
     auto* s = I::Session();
     if (!s || !s->connected() || s->role() != coop::net::Role::Client) {
@@ -503,6 +517,7 @@ void internal::InstallCollect() {
 }
 
 void internal::OnDisconnectCollect() {
+    ++g_collectEpoch;
     // The session summary: the two entry counters, so the next field run answers by grep which
     // entry players use. The labels follow the role, so the first pair is always the comparable
     // one.
@@ -524,6 +539,8 @@ void internal::OnDisconnectCollect() {
             g_replayed.load(std::memory_order_relaxed));
     // Session-owned requests and consumption guards cannot enter the next session.
     g_collected.clear();
+    g_retiringCoins.clear();
+    g_retireAt = 0; g_retireCursor = 0;
     g_pendingCollects.clear();
     g_nextCollectRetryMs = 0;
 }
