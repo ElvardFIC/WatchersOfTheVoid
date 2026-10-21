@@ -1,0 +1,1 @@
+Community multiplayer fork for Voices of the Void Alpha 0.9.0n. Play co-op with up to four players, LAN/Internet, positional voice chat and host-authoritative world sync. Experimental build.

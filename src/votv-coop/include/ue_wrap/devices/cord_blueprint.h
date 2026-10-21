@@ -2,8 +2,8 @@
 #include <cstdint>
 
 namespace ue_wrap::cord::blueprint {
-// VotV 0.9.0n cooked ExecuteUbergraph_cord entries. Checked against the extracted
-// asset by agent/tests/cord_blueprint_test.py; a game recook requires remeasurement.
+// VotV 0.9.0n cooked ExecuteUbergraph_cord entries. A game recook requires
+// remeasurement against the compiled Blueprint.
 inline constexpr int32_t kReattachResume = 15;
 inline constexpr int32_t kAction = 262;
 inline constexpr int32_t kUsed = 2110;

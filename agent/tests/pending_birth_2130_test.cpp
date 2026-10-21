@@ -23,6 +23,8 @@ std::wstring className=L"prop_test_C";
 int mints=0;
 int begins=0,expresses=0,notices=0;
 int expectedRecords=0;
+int authoredSlices=0,awaitedSlices=0;
+std::function<void()> duringSlice;
 bool keySetOK=true,finishOK=true;
 bool parityOK=true,scaleOK=true;
 void* indexed=nullptr;
@@ -48,11 +50,16 @@ void Reset(){currentWorld=&world;D::Reset();session.drops.clear();session.linked
     session.replies.clear();session.ready=true;session.blockedSlot=-1;session.duringSend={};
     session.onDrop=[](const auto& p){D::OnPlacementResult(D::PlacementReply(p,coop::net::PropPlacementCode::Accepted),0);};
     duringBegin={};duringFoodWrite={};duringApplyParked={};expectedRecords=0;
+    authoredSlices=awaitedSlices=0;duringSlice={};
     roster[1].playerNo=2;roster[1].bornGeneration=1;
     readableAfter=100000;duringRead={};duringPublish={};}
 void Callback(std::function<void()>& slot){auto fn=std::move(slot);slot={};if(fn)fn();}
 }
 namespace ue_wrap::log {void Write(Level,const char*,...) {}}
+namespace coop::props::container_birth {
+void NoteAuthoredBirth(void*){++test::authoredSlices;test::Callback(test::duringSlice);}
+void ExpectBirthSlice(void*,uint8_t){++test::awaitedSlices;test::Callback(test::duringSlice);}
+}
 namespace ue_wrap::hot_path {unsigned long CurrentThreadId(){return 0;} unsigned long long CallerRva(const void*){return 0;}}
 namespace ue_wrap::game_thread {bool IsGameThread(){return true;}bool IsDefinitelyOffGameThread(){return false;}}
 namespace ue_wrap::reflection {
@@ -143,6 +150,19 @@ namespace ue_wrap::fname_utils {reflection::FName StringToFName(const std::wstri
 namespace ue_wrap::prop {bool IsClassDescendantOfProp(void*){return true;}bool WriteSpParityIdentity(void*,reflection::FName,bool,bool,bool,bool){return test::parityOK;}}
 namespace ue_wrap::ufunction_hook {bool InstallPostHook(const facts::Resolved&,void(*)(void*,void*,void*),bool){std::abort();}}
 int main(){using namespace test;
+    Reset();Enqueue();D::Tick(&session);CHECK(authoredSlices==1&&publishes==1);
+    D::Tick(&session);CHECK(authoredSlices==1);
+    const auto containerRequest=session.drops.front();
+    Reset();session.onDrop=[](const auto& p){D::OnPlacementResult(D::PlacementReply(p,coop::net::PropPlacementCode::Refused),0);};
+    Enqueue();D::Tick(&session);CHECK(authoredSlices==0&&publishes==0);
+    Reset();session.sendOK=false;Enqueue();D::Tick(&session);CHECK(authoredSlices==0&&publishes==0);
+    Reset();duringSlice=[]{D::Reset();};Enqueue();D::Tick(&session);CHECK(authoredSlices==1&&publishes==0);
+    Reset();session.mode=coop::net::Role::Host;
+    duringApplyParked=[]{CHECK(awaitedSlices==1);};
+    CHECK(D::HostSpawnPlacedProp(containerRequest,L"prop_test_C",L"item",1)==&actor);
+    CHECK(awaitedSlices==1&&expectedRecords==1);
+    Reset();session.mode=coop::net::Role::Host;duringSlice=[]{D::Reset();};
+    CHECK(!D::HostSpawnPlacedProp(containerRequest,L"prop_test_C",L"item",1));CHECK(expectedRecords==0);
     Reset();Enqueue();CHECK(D::g_pending.size()==1);D::Tick(&session);
     CHECK(session.drops.size()==1);CHECK(publishes==1);CHECK(D::g_pending.empty());
     Reset();Enqueue();++serial;D::Tick(&session);CHECK(session.drops.empty());CHECK(publishes==0);
@@ -275,6 +295,7 @@ int main(){using namespace test;
     Reset();locationOk=false;for(int n=0;n<32;++n)Enqueue();
     duringRead=[]{for(int n=0;n<40;++n)Enqueue();};D::Tick(&session);
     CHECK(D::g_pending.size()==D::kMaxPending);
+    puts("PASS: container slice hooks run only after accepted placement, before host record restore, and stop after teardown");
     puts("PASS: admitted protection across active drain, callback reset/reentry and queue handoff");
     puts("PASS: admitted placement sweep protection during capture/send retry and expiry");
     puts("PASS: transform-read recovery, bounded refusal and stale/reset birth exclusion");

@@ -115,8 +115,9 @@ void ReadSaveRecord(const void* base, SaveRecord& rec);
 // Replaced scalar/outer buffers are freed on GMalloc; failure leaves the record intact.
 bool ReadFloatGroup(const void* record, size_t group, std::vector<float>& out);
 bool ReplaceFloatGroup(void* record, size_t group, const std::vector<float>& values);
-// Mutate an existing one-value integer group without reallocating its arrays.
-bool WriteSingleIntGroup(void* record, size_t group, int32_t value);
+// Compare existing numeric groups with the snapshot, then update their values
+// together without dispatch, allocation or array replacement. Shape changes refuse.
+bool UpdateScalarGroups(void* record, const SaveRecord& expected, const SaveRecord& replacement);
 
 // Write one Fstruct_save into the ZEROED 0x100 slot at `base`, constructing engine-OWNED
 // TArrays via reflection::EngineAlloc (FNames interned, FStrings engine-minted, UClasses

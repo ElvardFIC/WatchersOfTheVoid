@@ -8,6 +8,14 @@ New-Item -ItemType Directory -Force -Path $output | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'Shared screen regression compile failed' }
 & "$output/test.exe"
 if ($LASTEXITCODE -ne 0) { throw 'Shared screen regression failed' }
+& cl /nologo /std:c++20 /EHsc /Gy /utf-8 "/I$checkout/src/votv-coop/include" `
+    "/Fo$output/boot.obj" "/Fe$output/boot.exe" "$PSScriptRoot/shared_screen_boot_test.cpp" /link /OPT:REF
+if ($LASTEXITCODE -ne 0) { throw 'Shared screen boot regression compile failed' }
+& "$output/boot.exe"
+if ($LASTEXITCODE -ne 0) { throw 'Shared screen boot regression failed' }
+$python = Join-Path $env:USERPROFILE '.local/bin/python3.15.exe'
+& $python "$PSScriptRoot/computer_boot_native_test.py"
+if ($LASTEXITCODE -ne 0) { throw 'Native computer boot contract regression failed' }
 & cl /nologo /std:c++20 /EHsc /utf-8 "/I$checkout/src/votv-coop/include" `
     "/Fo$output/sleep.obj" "/Fe$output/sleep.exe" "$PSScriptRoot/sleep_display_test.cpp"
 if ($LASTEXITCODE -ne 0) { throw 'Sleep display regression compile failed' }

@@ -21,7 +21,7 @@ bool RepaintBucket(void*,const std::function<bool()>& current){if(current && !cu
 bool TickBucketContents(void*,float seconds){CHECK(seconds==.016f);test::Run(test::onContents);return test::contentsOk;}
 }
 namespace ue_wrap::inventory {
-bool PersistHeldTrowelStock(void*,const std::function<bool()>& current){if(!current())return false;++test::persisted;return true;}
+bool PersistHeldMaterialStock(void*,const std::function<bool()>& current){if(!current())return false;++test::persisted;return true;}
 }
 namespace coop::hand_item {
 void* LocalHandActor(){return test::hand?&test::actor:nullptr;}
@@ -62,7 +62,8 @@ int main(){using namespace test;namespace S=coop::bucket_sync;using V=ue_wrap::s
  coop::local_prop_hold::held=true;CHECK(S::BeforeTick(c)==V::Run);coop::local_prop_hold::held=false;driven=false;
  session.mode=coop::net::Role::Client;CHECK(S::BeforeTick(c)==V::Cancel);
  quiesced=false;CHECK(S::BeforeTick(c)==V::Run);water.height=20;S::AfterUse(c);now+=400;S::Tick();CHECK(publishes==2);quiesced=true;
- hand=true;CHECK(S::BeforeTick(c)==V::Run);S::AfterUse(c);S::Tick();CHECK(publishes==2);hand=false;
+ hand=true;CHECK(S::BeforeTick(c)==V::Run);auto savedBefore=persisted;
+ S::AfterUse(c);S::Tick();CHECK(publishes==2&&persisted==savedBefore+1);hand=false;
  S::AfterUse(c);sendOk=false;S::Tick();CHECK(publishes==3);now+=400;sendOk=true;S::Tick();CHECK(publishes==4);
  water.height=19;S::AfterUse(c);now+=400;callback=[&]{water.height=17;S::AfterUse(c);};S::Tick();CHECK(S::Find(&actor)->dirty);
  now+=400;S::Tick();CHECK(!S::Find(&actor)->dirty);
@@ -131,9 +132,17 @@ int main(){using namespace test;namespace S=coop::bucket_sync;using V=ue_wrap::s
  CHECK(std::find(published.begin(),published.end(),&late)!=published.end());
  S::OnDisconnect();CHECK(S::BeforeTick(c)==V::Run);
  S::Install(&session);stock.kind=ue_wrap::building_material::StockKind::Trowel;hand=true;mirror=false;c.fromOurCode=false;
- S::AfterStockChange(c);CHECK(persisted==1);
- hand=false;S::AfterStockChange(c);CHECK(persisted==1);
- hand=true;c.fromOurCode=true;S::AfterStockChange(c);CHECK(persisted==1);hand=false;
+ savedBefore=persisted;S::AfterStockChange(c);CHECK(persisted==savedBefore+1);
+ hand=false;S::AfterStockChange(c);CHECK(persisted==savedBefore+1);
+ hand=true;c.fromOurCode=true;S::AfterStockChange(c);CHECK(persisted==savedBefore+1);c.fromOurCode=false;
+ for(auto kind:{ue_wrap::building_material::StockKind::ConcreteBucket,ue_wrap::building_material::StockKind::CementBag,
+                ue_wrap::building_material::StockKind::Sponge}){
+  stock.kind=kind;savedBefore=persisted;S::AfterStockChange(c);CHECK(persisted==savedBefore+1);
+ }
+ stock.kind=ue_wrap::building_material::StockKind::ConcreteBucket;savedBefore=persisted;
+ S::AfterTick(c);CHECK(persisted==savedBefore+1);
+ stock.kind=ue_wrap::building_material::StockKind::CementBag;c.locals=reinterpret_cast<uint8_t*>(args);
+ savedBefore=persisted;S::AfterBagTransfer(c);CHECK(persisted==savedBefore+1);hand=false;
  CHECK(!S::IsMaterialBirth());
  puts("PASS cement/sponge: real callback registration, amount/dry/wet publications, passive tick, empty out params, two transfer endpoints, exact local use/pour provenance, load no echo");
  puts("PASS actual bucket controller: load/no echo, changed/final state, authority/hand/load gates, retry, reentry, identity/world/teardown");

@@ -4,6 +4,7 @@ namespace coop::net { class Session; }
 namespace coop::shared_screen_sync {
 void Install(net::Session* session);
 void Tick();
+bool BeforeLocalRelease(); // flush final presentation before the ordered claim release
 void OnChunk(const net::BlobChunkPayload& chunk, uint8_t sender);
 void QueueConnectBroadcastForSlot(int slot);
 void OnDisconnectForSlot(int slot);

@@ -225,42 +225,70 @@ void* GetLocalRagdollBodyMesh(void* mainPlayer) {
 }
 
 bool RefreshLocalRagdollModel(void* mainPlayer) {
-    static CachedObjRef configured, selected;
+    static CachedObjRef owner, nativeBody, appearance, configured, selected;
     static std::chrono::steady_clock::time_point readyAfter{};
-    static bool started = false;
-    static FVector initialLinear{}, initialAngular{};
+    static bool prepared = false, started = false;
+    static FVector anchor{}, initialLinear{}, initialAngular{};
     void* target = GetLocalRagdollBodyMesh(mainPlayer);
     void* source = puppet::GetMeshPlayerVisibleComponent(mainPlayer);
     void* asset = puppet::GetComponentSkeletalMeshAsset(source);
-    if (!target || !source || !asset) { configured.Reset(); selected.Reset(); return false; }
-    if (configured.Get() == target && selected.Get() == asset) {
-        if (started) return true;
-        if (std::chrono::steady_clock::now() < readyAfter || !StartBodySim(target)) return false;
-        void* body = *reinterpret_cast<void**>(static_cast<uint8_t*>(mainPlayer) + kMainPlayer_ragdollActor);
-        DriveRagdollBodyPelvisVelocity(body, initialLinear, initialAngular);
-        started = true;
-        return true;
+    if (!target || !source || !asset) {
+        owner.Reset(); nativeBody.Reset(); appearance.Reset(); configured.Reset(); selected.Reset();
+        prepared = started = false;
+        return false;
     }
-    // Native entry has already placed the plushie's pelvis. Keep that anchor
-    // when replacing its mesh, instead of jumping back to the standing capsule.
-    FVector before{};
-    if (!GetBoneWorldLocationByName(target, L"pelvis", before)) return false;
-    FRotator previousRotation{}; FVector previousPosition{};
-    ReadLocalRagdollPelvisPhysics(mainPlayer, previousPosition, previousRotation, initialLinear, initialAngular);
-    CachedObjRef targetRef; targetRef.Set(target);
-    if (!ConfigurePlayerRagdollMesh(source, target) || !targetRef.Get()) return false;
+    void* body = *reinterpret_cast<void**>(static_cast<uint8_t*>(mainPlayer) + kMainPlayer_ragdollActor);
+    CachedObjRef playerRef, bodyRef, sourceRef, targetRef, assetRef;
+    playerRef.Set(mainPlayer); bodyRef.Set(body); sourceRef.Set(source); targetRef.Set(target); assetRef.Set(asset);
+    const auto current = [&] {
+        return playerRef.Get() && bodyRef.Get() && sourceRef.Get() && targetRef.Get() && assetRef.Get() &&
+            *reinterpret_cast<void**>(static_cast<uint8_t*>(mainPlayer) + kMainPlayer_ragdollActor) == body &&
+            GetLocalRagdollBodyMesh(mainPlayer) == target &&
+            puppet::GetMeshPlayerVisibleComponent(mainPlayer) == source &&
+            puppet::GetComponentSkeletalMeshAsset(source) == asset;
+    };
+    const auto finite = [](const FVector& value) {
+        return std::isfinite(value.X) && std::isfinite(value.Y) && std::isfinite(value.Z);
+    };
+    if (!current()) return false;
+    if (owner.Get() != mainPlayer || nativeBody.Get() != body || appearance.Get() != source ||
+        configured.Get() != target || selected.Get() != asset) {
+        // Preserve the selected model's standing/crouched entry pose. The native
+        // shell has another rig: aligning a taller body to its pelvis can push
+        // the new legs into the floor. Retain this anchor through setup retries.
+        FVector before{}, linear{}, angular{}, previousPosition{};
+        FRotator previousRotation{};
+        if (!GetBoneWorldLocationByName(source, L"pelvis", before) || !current() || !finite(before)) return false;
+        if (!ReadLocalRagdollPelvisPhysics(mainPlayer, previousPosition, previousRotation, linear, angular) ||
+            !finite(linear) || !finite(angular)) { linear = {}; angular = {}; }
+        if (!current()) return false;
+        owner = playerRef; nativeBody = bodyRef; appearance = sourceRef; configured = targetRef; selected = assetRef;
+        anchor = before; initialLinear = linear; initialAngular = angular;
+        prepared = started = false;
+    }
+    if (started) return true;
+    if (!prepared) {
+        if (!ConfigurePlayerRagdollMesh(source, target) || !current()) return false;
+        prepared = true;
+        readyAfter = std::chrono::steady_clock::now() + std::chrono::milliseconds(30);
+        return false;
+    }
+    if (std::chrono::steady_clock::now() < readyAfter) return false;
+    // The new AnimBP can move the pelvis during warmup. Align its actual pose
+    // immediately before enabling collisions/physics, with no swept movement or
+    // velocity derived from this correction.
     FVector after{};
-    if (GetBoneWorldLocationByName(target, L"pelvis", after)) {
-        const FVector origin = GetComponentLocation(target);
-        ParamFrame position(R::FindDispatchFunctionCached(R::ClassOf(target), L"K2_SetWorldLocation"));
-        if (!position.Set<FVector>(L"NewLocation", {origin.X + before.X - after.X,
-            origin.Y + before.Y - after.Y, origin.Z + before.Z - after.Z}) ||
-            !position.Set<bool>(L"bTeleport", true) || !Call(target, position) || !targetRef.Get()) return false;
-    }
-    configured.Set(target); selected.Set(asset);
-    started = false;
-    readyAfter = std::chrono::steady_clock::now() + std::chrono::milliseconds(30);
-    return false;
+    if (!GetBoneWorldLocationByName(target, L"pelvis", after) || !current() || !finite(after)) return false;
+    const FVector delta{anchor.X - after.X, anchor.Y - after.Y, anchor.Z - after.Z};
+    if (!finite(delta)) return false;
+    ParamFrame position(R::FindDispatchFunctionCached(R::ClassOf(target), L"K2_AddWorldOffset"));
+    if (!position.Set<FVector>(L"DeltaLocation", delta) || !position.Set<bool>(L"bSweep", false) ||
+        !position.Set<bool>(L"bTeleport", true) || !Call(target, position) || !current()) return false;
+    if (!StartBodySim(target) || !current()) return false;
+    DriveRagdollBodyPelvisVelocity(body, initialLinear, initialAngular);
+    if (!current()) return false;
+    started = true;
+    return true;
 }
 
 bool ReadArticulatedPose(void* mesh, std::vector<ArticulatedBone>& bones) {

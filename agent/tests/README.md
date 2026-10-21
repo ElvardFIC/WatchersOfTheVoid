@@ -18,6 +18,17 @@ handoff, send refusal, join/widget readiness, plus the production sleep/poseable
 display's selected mesh/material/scale, mattress trace, moving anchor and teardown.
 The ragdoll runners also cover animation warmup and articulated-bone validation,
 batch completion/order and rig replacement. Gameplay with two peers remains required.
+`run_ragdoll_skin.ps1` additionally compiles the actual local startup function:
+warmed-pose pelvis alignment to the selected model's standing/crouched entry
+height before simulation, anchor preservation through failed
+setup retries, invalid positions and pawn/body/model replacement during dispatch.
+Its skin wrapper checks collision/all-body shutdown before mesh/asset mutation.
+These harnesses do not simulate PhysX or close the all-role C-key launch report.
+`run_shared_screen.ps1` also checks the production desktop traversal against an
+old boot snapshot applied after native startup, repeated power pages, desktop
+text/scroll/tab retries and missing widget dependencies. Its native test reads
+the existing laptop corpus to verify rootswitch boot/desktop ownership; it does
+not extract game assets or establish runtime host/client acceptance.
 
 Current focused suite: `../../package/check_2152.ps1`. It invokes the player-report,
 wisp animation, ragdoll retry, ragdoll skin and personal-sleep runners, entity orientation, plus the three
@@ -64,6 +75,14 @@ session-serial reuse, native pose/bounds teardown and recursive location ticks.
 b2178 qualification evidence is in `build/continuation-check/`; the owner's final
 2155 release request promotes this qualified DLL into the package. Delivery hashes
 are in `build/release-2155-logs/release-verification.json`.
+
+Development b2179 extends `run_trowel.ps1` to held water/material persistence and
+the production numeric-group commit. It checks all-or-nothing malformed/stale
+refusal, zero/refill and unchanged native array ownership. `run_2153.ps1` also
+checks local held water use/tick and cement/sponge/transfer persistence hooks.
+Full development b2179 qualification passed 65/65 groups and the stable Release
+build: `build/material-persistence-check/verification.json`. Package 2155 remains
+b2178 and does not contain the material, C-key or PC boot corrections.
 
 | Runner | Production behavior exercised |
 |---|---|

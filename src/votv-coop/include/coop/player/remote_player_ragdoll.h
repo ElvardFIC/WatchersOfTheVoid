@@ -86,6 +86,9 @@ private:
     uint16_t rigBones_ = 0;
     uint32_t rigSignature_ = 0;
     std::vector<ue_wrap::engine::ArticulatedBone> bones_;
+    // Batches refresh only seven bones. Carry older limbs with the latest
+    // pelvis translation until their next batch arrives, including teleports.
+    ue_wrap::FVector boneAnchor_{};
     // The spawned (visible) playerRagdoll_C body + its GUObjectArray index
     // (IsLiveByIndex safety across ticks). null/-1 when not ragdolled.
     ue_wrap::CachedObjRef bodyRef_;

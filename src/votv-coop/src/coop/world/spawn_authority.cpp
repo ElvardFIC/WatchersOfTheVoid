@@ -56,46 +56,12 @@ UE_FACT_FN(kRowAddRoachTimerCockroachMaster, "spawn_authority", L"cockroachMaste
 UE_FACT_FN(kRowSpawnNestTimerCockroachMaster, "spawn_authority", L"cockroachMaster_C", L"spawnNestTimer",
            Declared);
 UE_FACT_FN(kRowCustomEventCockroachMaster, "spawn_authority", L"cockroachMaster_C", L"CustomEvent", Declared);
-UE_FACT_FN(kRowReceiveTickTickerInsomniacSpawner, "spawn_authority", L"ticker_insomniacSpawner_C",
-           L"ReceiveTick", Declared);
 UE_FACT_FN(kRowReceiveTickTickerFossilhoundSpawner, "spawn_authority", L"ticker_fossilhoundSpawner_C",
            L"ReceiveTick", Declared);
 UE_FACT_FN(kRowReceiveTickCockroachMaster, "spawn_authority", L"cockroachMaster_C", L"ReceiveTick", Declared);
 UE_FACT_FN(kRowReceiveTickTickerRoachSummoner, "spawn_authority", L"ticker_roachSummoner_C", L"ReceiveTick",
            Declared);
-UE_FACT_FN(kRowReceiveBeginPlayVentCrawler, "spawn_authority", L"ventCrawler_C", L"ReceiveBeginPlay", Declared);
-UE_FACT_FN(kRowBoxBeginOverlapVentCrawler, "spawn_authority", L"ventCrawler_C",
-           L"BndEvt__ventCrawler_Box_K2Node_ComponentBoundEvent_0_ComponentBeginOverlapSignature__DelegateSignature",
-           Declared);
-UE_FACT_FN(kRowReceiveBeginPlayGrayTest, "spawn_authority", L"grayTest_C", L"ReceiveBeginPlay", Declared);
-UE_FACT_FN(kRowSphereBeginOverlapGrayTest, "spawn_authority", L"grayTest_C",
-           L"BndEvt__grayTest_Sphere_K2Node_ComponentBoundEvent_0_ComponentBeginOverlapSignature__DelegateSignature",
-           Declared);
-UE_FACT_FN(kRowDeacCamsGrayTest, "spawn_authority", L"grayTest_C", L"deacCams", Declared);
-UE_FACT_FN(kRowDisableCamsGrayTest, "spawn_authority", L"grayTest_C", L"disableCams", Declared);
-UE_FACT_FN(kRowReceiveBeginPlayEg, "spawn_authority", L"eg_C", L"ReceiveBeginPlay", Declared);
-UE_FACT_FN(kRowReceiveTickEg, "spawn_authority", L"eg_C", L"ReceiveTick", Declared);
-UE_FACT_FN(kRowOnLandedEg, "spawn_authority", L"eg_C", L"OnLanded", Declared);
-UE_FACT_FN(kRowRetrieveEg, "spawn_authority", L"eg_C", L"retrieve", Declared);
-UE_FACT_FN(kRowReceiveBeginPlayTentacleBall, "spawn_authority", L"tentacleBall_C", L"ReceiveBeginPlay",
-           Declared);
-UE_FACT_FN(kRowReceiveTickTentacleBall, "spawn_authority", L"tentacleBall_C", L"ReceiveTick", Declared);
-UE_FACT_FN(kRowMoveTentacleBall, "spawn_authority", L"tentacleBall_C", L"move", Declared);
-UE_FACT_FN(kRowSphereHitTentacleBall, "spawn_authority", L"tentacleBall_C",
-           L"BndEvt__tentacleBall_Sphere_K2Node_ComponentBoundEvent_0_ComponentHitSignature__DelegateSignature",
-           Declared);
-UE_FACT_FN(kRowBeginGrayEventController, "spawn_authority", L"grayEventController_C", L"begin", Declared);
-UE_FACT_FN(kRowTurnedonGrayEventController, "spawn_authority", L"grayEventController_C", L"turnedon", Declared);
-UE_FACT_FN(kRowSpawnGrayEventController, "spawn_authority", L"grayEventController_C", L"spawn", Declared);
-UE_FACT_FN(kRowTriggerboxOverlapGrayEventController, "spawn_authority", L"grayEventController_C",
-           L"BndEvt__grayEventController_triggerbox_K2Node_ComponentBoundEvent_0_ComponentBeginOverlapSignature__DelegateSignature",
-           Declared);
-UE_FACT_FN(kRowRunTriggerTentacleBallsFollower, "spawn_authority", L"tentacleBallsFollower_C", L"runTrigger",
-           Declared);
-UE_FACT_FN(kRowReceiveTickTentacleBallsFollower, "spawn_authority", L"tentacleBallsFollower_C", L"ReceiveTick",
-           Declared);
 UE_FACT_FN(kRowReceiveBeginPlaySuperEgger, "spawn_authority", L"superEgger_C", L"ReceiveBeginPlay", Declared);
-UE_FACT_FN(kRowSpwnSuperEgger, "spawn_authority", L"superEgger_C", L"spwn", Declared);
 UE_FACT_FN(kRowReceiveBeginPlayKavotiaPatrolController, "spawn_authority", L"kavotiaPatrolController_C",
            L"ReceiveBeginPlay", Declared);
 
@@ -131,16 +97,16 @@ constexpr Row kRows[] = {
     // Insomniac is personal to the sleep-deprived player. Its spawn location,
     // pursuit, camera grab and dream entry all use the local player, so its
     // ticker must run on clients too (and its products stay off the NPC lane).
-    {nullptr, L"ticker_fossilhoundSpawner_C", L"ReceiveTick", "fossilhoundSpawner.ReceiveTick"},
-    {nullptr, L"cockroachMaster_C", L"ReceiveTick", "cockroachMaster.ReceiveTick"},
-    {nullptr, L"ticker_roachSummoner_C", L"ReceiveTick", "roachSummoner.ReceiveTick"},
+    {&kRowReceiveTickTickerFossilhoundSpawner, nullptr, nullptr, "fossilhoundSpawner.ReceiveTick"},
+    {&kRowReceiveTickCockroachMaster, nullptr, nullptr, "cockroachMaster.ReceiveTick"},
+    {&kRowReceiveTickTickerRoachSummoner, nullptr, nullptr, "roachSummoner.ReceiveTick"},
     // The event actors the world-actor lane mirrors whose own begin-play spawns the event's content
     // (the follower's balls, the egger's eggs, the cleaner's sponge, a dropper's cargo, the deployed
     // tank's gun): on a client each is a pose-driven mirror, and its begin-play would spawn a local
     // copy of what the host's creature and world-actor lanes deliver. The droppers' base body serves
     // the body and car drops; the pig and tank drops override it with bodies of their own.
     {nullptr, L"tentacleBallsFollower_C", L"ReceiveBeginPlay", "tentacleBallsFollower.ReceiveBeginPlay"},
-    {nullptr, L"superEgger_C", L"ReceiveBeginPlay", "superEgger.ReceiveBeginPlay"},
+    {&kRowReceiveBeginPlaySuperEgger, nullptr, nullptr, "superEgger.ReceiveBeginPlay"},
     {nullptr, L"soltomiaCleaning_C", L"ReceiveBeginPlay", "soltomiaCleaning.ReceiveBeginPlay"},
     {nullptr, L"ufoDropper_C", L"ReceiveBeginPlay", "ufoDropper.ReceiveBeginPlay"},
     {nullptr, L"ufoDropper_pig_C", L"ReceiveBeginPlay", "ufoDropper_pig.ReceiveBeginPlay"},

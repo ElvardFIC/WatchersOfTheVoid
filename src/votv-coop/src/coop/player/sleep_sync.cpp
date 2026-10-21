@@ -307,9 +307,14 @@ void OnReliable(const uint8_t* payload, size_t len, uint8_t senderSlot) {
 }
 
 void OnDreamScene(const coop::net::DreamScenePayload& /*p*/, uint8_t /*senderSlot*/) {
-    // Reserved legacy packet: replaying another player's dream bypasses the
-    // recipient's nightmaresEnabled, bed probability and native roll. Personal
-    // dreams now enter through their own native graph, including Insomniac grab.
+    // Reserved legacy packet. mainGamemode's native in-sleep roll checks isSleep,
+    // nightmaresEnabled and bedSleepProb(), then calls wakeup() and createDream()
+    // only on the peer whose roll won. createDream selects/processes the scene,
+    // records total_dreams, moves that local pawn and sets the local dream phase;
+    // native leaveDream returns the pawn and calls the selected dream's awoken().
+    // Replaying another peer's scene would bypass its own conditions and duplicate
+    // local progression/reward callbacks. SleepState carries presentation state;
+    // every peer keeps its own native dream and Insomniac path.
 }
 
 void QueueConnectBroadcastForSlot(int peerSlot) {

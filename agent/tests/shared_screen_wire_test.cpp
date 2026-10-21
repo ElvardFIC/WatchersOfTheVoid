@@ -13,6 +13,17 @@ int main() {
     assert(!bytes.empty() && Decode(bytes, decoded));
     assert(decoded[0].tab == 4 && decoded[1].visibility == 3 && decoded[1].scroll == 123.5f);
     assert(decoded[1].text == source[1].text);
+    const auto snapshot = EncodeSnapshot(true, 3, 7, 2, bytes);
+    Snapshot state;
+    assert(DecodeSnapshot(snapshot, state));
+    assert(state.canonical && state.lease == 3 && state.revision == 7 && state.owner == 2);
+    assert(state.rows[1].text == source[1].text);
+    for (size_t n = 0; n < snapshot.size(); ++n)
+        assert(!DecodeSnapshot({snapshot.begin(), snapshot.begin() + n}, state));
+    assert(EncodeSnapshot(false, 0, 7, 2, bytes).empty());
+    assert(EncodeSnapshot(false, 3, 0, 2, bytes).empty());
+    auto invalidSnapshot = snapshot; invalidSnapshot[0] = 2;
+    assert(!DecodeSnapshot(invalidSnapshot, state));
     for (size_t n = 0; n < bytes.size(); ++n) {
         std::vector<uint8_t> truncated(bytes.begin(), bytes.begin() + n);
         assert(!Decode(truncated, decoded));

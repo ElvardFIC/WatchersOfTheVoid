@@ -158,6 +158,10 @@ void* HostSpawnPlacedProp(const coop::net::PropDropIntentPayload& p, const std::
         if (!scaled) { E::DestroyActor(actor); return nullptr; }
     }
     if (!stillCurrent()) return nullptr;
+    // Container contents live in a separate inventory slice, outside getData.
+    // Reserve it before record restoration can reenter the contents publisher.
+    coop::props::container_birth::ExpectBirthSlice(actor, authorSlot);
+    if (!stillCurrent()) return nullptr;
     // The prop's own save record, if the author's copy is already here. It usually is not -- it
     // rides behind this intent in the same FIFO -- and then it lands on this actor by Key once the
     // actor is indexed, which is what makes the store keyed by identity rather than by actor.

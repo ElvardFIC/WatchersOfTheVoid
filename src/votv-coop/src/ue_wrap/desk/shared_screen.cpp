@@ -67,7 +67,18 @@ void Walk(void* widget, const std::string& path, int depth, std::map<std::string
 }
 std::map<std::string, void*> Widgets() {
     std::map<std::string, void*> widgets;
-    Walk(Field(world_singleton::Gamemode(), L"laptop"), "pc", 0, widgets);
+    void* widget = Field(world_singleton::Gamemode(), L"laptop");
+    void* root = Field(widget, L"rootswitch");
+    if (!root) return widgets;
+    // Native laptop startup owns rootswitch: 0 is boot, 1 is the desktop.
+    // Repainting a saved boot index every poll pins the computer to loading
+    // after its latent startup completes. Mirror only the desktop subtree;
+    // neither this switcher nor the boot UI may be captured or written.
+    ParamFrame frame(Fn(root, L"GetChildAt"));
+    void* desktop = nullptr;
+    if (frame.Set<int32_t>(L"Index", 1) && Call(root, frame) &&
+        frame.GetRaw(L"ReturnValue", &desktop, sizeof(desktop)))
+        Walk(desktop, "pc", 0, widgets);
     return widgets;
 }
 bool ReadRow(void* widget, Row& row) {

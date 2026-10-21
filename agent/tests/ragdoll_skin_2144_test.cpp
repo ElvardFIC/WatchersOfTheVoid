@@ -44,6 +44,8 @@ ParamFrame::ParamFrame(void* f):fn_(f),buf_(128){}
 bool ParamFrame::SetRaw(const wchar_t* n,const void* data,int32_t){std::wstring name=n;
  if(name==L"NewPhysicsAsset")std::memcpy(&test::installedPhysics,data,sizeof(void*));
  if(name==L"bForceReInit")CHECK(*static_cast<const bool*>(data));
+ if(name==L"NewType")CHECK(*static_cast<const uint8_t*>(data)==0);
+ if(name==L"bNewSimulate")CHECK(!*static_cast<const bool*>(data));
  if(name==L"InAnimationMode")CHECK(*static_cast<const uint8_t*>(data)==1);
  if(name==L"PhysicsBlendWeight")CHECK(*static_cast<const float*>(data)==0.f);return valid();}
 bool ParamFrame::GetRaw(const wchar_t*,void* dst,int32_t size)const{std::memcpy(dst,buf_.data(),size);return true;}
@@ -64,6 +66,8 @@ bool SetAnimTickAlways(void*){return true;}
 }
 int main(){using namespace test;using ue_wrap::engine::ConfigurePlayerRagdollMesh;
  Reset();CHECK(ConfigurePlayerRagdollMesh(&source,&target));CHECK(installedPhysics==&physics);
+ CHECK(std::find(calls.begin(),calls.end(),L"SetCollisionEnabled")<std::find(calls.begin(),calls.end(),L"mesh"));
+ CHECK(std::find(calls.begin(),calls.end(),L"SetAllBodiesSimulatePhysics")<std::find(calls.begin(),calls.end(),L"SetPhysicsAsset"));
  CHECK(std::find(calls.begin(),calls.end(),L"mesh")<std::find(calls.begin(),calls.end(),L"SetPhysicsAsset"));
  CHECK(calls.back()==L"SetAllBodiesPhysicsBlendWeight");
  Reset();source.animClass=&customSkeleton;

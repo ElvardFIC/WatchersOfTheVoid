@@ -31,6 +31,7 @@ size_t g_cursor=0;
 bool g_draining=false;
 ue_wrap::CachedObjRef g_cementTick,g_takeConcrete,g_bagUse,g_trowelUse;
 struct State { B::Water water{}; B::Stock stock{}; };
+bool PersistHandStock(void* actor);
 bool ReadState(void* actor,State& state) {
     state={};
     return B::ReadWater(actor,state.water) || B::ReadStock(actor,state.stock);
@@ -110,7 +111,8 @@ SG::Verdict BeforeTick(const SG::Call& c) {
     return SG::Verdict::Cancel;
 }
 void AfterTick(const SG::Call& c) {
-    if(Current() && !c.fromOurCode && c.object && NativeOwner(c.object))Observe(c.object,false);
+    if(Current() && !c.fromOurCode && c.object && NativeOwner(c.object) && PersistHandStock(c.object))
+        Observe(c.object,false);
 }
 SG::Verdict BeforeUpd(const SG::Call& c) {
     if(!Current() || !c.object)return SG::Verdict::Run;
@@ -124,13 +126,23 @@ void AfterLoad(const SG::Call& c) {
     if(!Current() || !c.object)return;
     B::RepairBucketEmpty(c.object);Observe(c.object,true);
 }
+bool PersistHandStock(void* actor) {
+    if(actor!=hand_item::LocalHandActor())return true;
+    const auto epoch=g_epoch;auto* session=g_session;
+    ue_wrap::CachedObjRef hand;hand.Set(actor);
+    const auto current=[&]{return Current() && g_epoch==epoch && g_session==session &&
+        hand.Get()==actor && actor==hand_item::LocalHandActor();};
+    ue_wrap::inventory::PersistHeldMaterialStock(actor,current);
+    return current();
+}
 void AfterUse(const SG::Call& c) {
     if(!Current() || c.fromOurCode || !c.object)return;
     // Native getFromWater can fill a selected-hand bucket without ticking it.
     ue_wrap::CachedObjRef live;live.Set(c.object);const auto epoch=g_epoch;
     if(!B::RepairBucketEmpty(c.object))return;
     const auto valid=[&]{return Current() && epoch==g_epoch && live.Get();};
-    if(!valid())return;B::RepaintBucket(c.object,valid);if(!valid())return;
+    if(!valid() || !PersistHandStock(c.object))return;
+    B::RepaintBucket(c.object,valid);if(!valid())return;
     Observe(c.object,false,true);
 }
 SG::Verdict BeforeCementTick(const SG::Call& c) {
@@ -147,15 +159,7 @@ void AfterStockLoad(const SG::Call& c) {
 }
 void AfterStockChange(const SG::Call& c) {
     if(!Current() || c.fromOurCode || !c.object)return;
-    if(c.object == hand_item::LocalHandActor() && B::IsTrowel(c.object)) {
-        const auto epoch=g_epoch;auto* session=g_session;
-        const auto current=[&]{return Current() && g_epoch==epoch && g_session==session &&
-            c.object==hand_item::LocalHandActor();};
-        // updConcrete runs after refill/spending and before any next updateHold
-        // rebuild. Store the scalar now, while both native keys still match.
-        ue_wrap::inventory::PersistHeldTrowelStock(c.object,current);
-        if(!current())return;
-    }
+    if(!PersistHandStock(c.object))return;
     Observe(c.object,false,true);
 }
 template<class T> bool ReadArg(const SG::Call& c,const wchar_t* name,T& value) {
@@ -170,7 +174,7 @@ void AfterBagTransfer(const SG::Call& c) {
     // identify which of its TWO amounts changed. Do not lose the other endpoint.
     for(const wchar_t* name:{L"from",L"to"}) {
         void* actor=nullptr;
-        if(ReadArg(c,name,actor) && actor && R::IsLive(actor))Observe(actor,false,true);
+        if(ReadArg(c,name,actor) && actor && R::IsLive(actor) && PersistHandStock(actor))Observe(actor,false,true);
     }
 }
 SG::Verdict BeforeTake(const SG::Call& c) {

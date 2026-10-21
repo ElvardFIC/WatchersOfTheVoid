@@ -745,8 +745,8 @@ void Tick() {
 
     if (!g_verbsRegistered) {
         g_verbsRegistered =
-            sg::WatchName(L"addObject", kVerbDirty, &OnVerbEntry, nullptr) &&
-            sg::WatchName(L"takeObj",   kVerbTakeObj, &OnVerbEntry, &OnVerbExit);
+            sg::WatchName(kRowAddObject, kVerbDirty, &OnVerbEntry, nullptr) &&
+            sg::WatchName(kRowTakeObj,   kVerbTakeObj, &OnVerbEntry, &OnVerbExit);
         static bool s_saidFailed = false;
         if (!g_verbsRegistered && !s_saidFailed) {
             // Once. This block retries every tick, and the failure it reports is the gate

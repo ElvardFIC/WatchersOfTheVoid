@@ -24,7 +24,8 @@ bool gameplayCaller=false,wrongCallerOwner=false,enrollOnExpress=false;
 bool waterPour=false;
 void* fixed=nullptr;void* frozen=nullptr;void* remoteHand=nullptr;
 std::vector<void*> coasted;
-int publishes=0;float charge=1.f,publishedCharge=-1.f;
+int publishes=0,containerBirths=0;float charge=1.f,publishedCharge=-1.f;
+std::function<void()> duringContainer;
 std::function<void()> duringReadKey;
 std::function<void()> duringKey,duringExpress;
 coop::net::Session session;
@@ -36,11 +37,14 @@ void Enqueue(int i=0){H::OnFinishSpawnFunc(nullptr,nullptr,&actors[i]);}
 void Drain(){H::DrainPendingSpawns(&session);}
 void Reset(){H::OnDisconnect();H::SetSession(&session);session.linked=true;session.mode=coop::net::Role::Host;
     for(int i=0;i<260;++i){actors[i]=Actor{};actors[i].id=i;}
-    publishes=0;charge=1.f;publishedCharge=-1.f;elementMirror=false;duringReadKey={};
+    publishes=containerBirths=0;duringContainer={};charge=1.f;publishedCharge=-1.f;elementMirror=false;duringReadKey={};
     gameplayCaller=wrongCallerOwner=enrollOnExpress=waterPour=false;fixed=frozen=remoteHand=nullptr;coasted.clear();
     current=&world;hand=nullptr;authored=mintOk=true;duringKey={};duringExpress={};}
 }
 namespace ue_wrap::log {void Write(Level,const char*,...) {}}
+namespace coop::props::container_birth {
+void NoteHostBirth(void*){++test::containerBirths;test::Callback(test::duringContainer);}
+}
 namespace ue_wrap::hot_path {unsigned long CurrentThreadId(){return 0;}unsigned long long CallerRva(const void*){return 0;}}
 namespace ue_wrap::game_thread {
 bool IsGameThread(){return true;}bool IsDefinitelyOffGameThread(){return false;}
@@ -192,9 +196,11 @@ int main(){using namespace test;
     for(int i=0;i<7;++i){actors[i].floorActor=false;actors[i].key=true;Enqueue(i);}
     gameplayCaller=false; // provenance must survive the factory frame returning
     CHECK(coasted.empty());actors[20].live=false;charge=.42f;Drain();
-    CHECK(coasted.size()==7&&publishes==7&&publishedCharge==.42f);
+    CHECK(coasted.size()==7&&publishes==7&&publishedCharge==.42f&&containerBirths==7);
     for(int i=0;i<7;++i)CHECK(actors[i].expressed==1&&coasted[i]==&actors[i]);
-    Drain();CHECK(coasted.size()==7&&publishes==7);
+    Drain();CHECK(coasted.size()==7&&publishes==7&&containerBirths==7);
+    Reset();gameplayCaller=enrollOnExpress=true;actors[0].key=true;Enqueue();
+    duringContainer=[]{H::OnDisconnect();};Drain();CHECK(containerBirths==1&&publishes==0&&coasted.empty());
     // Save/mirror/hand/static births must not start a host motion stream.
     for(int cause=0;cause<10;++cause){Reset();gameplayCaller=enrollOnExpress=true;
         actors[0].floorActor=false;actors[0].key=true;

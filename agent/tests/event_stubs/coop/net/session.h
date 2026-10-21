@@ -10,6 +10,7 @@ class Session { public:
     Role mode = Role::Host;
     bool active = true, linked = true;
     bool peers[4]{false, true, true, false}, ok[4]{true, true, true, true};
+    bool ready[4]{false, true, true, false};
     uint32_t generation[4]{1, 1, 1, 1};
     struct Sent { int slot; ReliableKind kind; std::vector<uint8_t> bytes; };
     std::vector<Sent> sent;
@@ -18,6 +19,7 @@ class Session { public:
     bool connected() const { return linked; }
     Role role() const { return mode; }
     bool HasPeerConn(int slot) const { return peers[slot]; }
+    bool IsSlotWorldReady(int slot) const { return ready[slot]; }
     uint32_t peerGenerationForSlot(int slot) const { return generation[slot]; }
     bool SendReliableToSlot(int slot, ReliableKind kind, const void* data, int len) {
         if (!ok[slot]) return false;

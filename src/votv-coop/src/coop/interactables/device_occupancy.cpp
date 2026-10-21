@@ -2,6 +2,7 @@
 
 #include "coop/interactables/device_occupancy.h"
 #include "coop/interactables/laptop_ui_sync.h"
+#include "coop/interactables/shared_screen_sync.h"
 
 #include "coop/comms/peer_action_feed.h"  // the busy-notice chat line (AnnounceDirect)
 #include "coop/interactables/atv_sync.h"  // IsOccupiedByOther -> ATV driver-seat deny gate
@@ -350,7 +351,8 @@ void Tick() {
 
     // The falling edge (or a direct widget switch): release what we held.
     if (!g_localKey.empty()) {
-        if (g_localKey == L"laptop" && !coop::laptop_ui_sync::BeforeLocalRelease()) return;
+        if (g_localKey == L"laptop" &&
+            (!coop::laptop_ui_sync::BeforeLocalRelease() || !coop::shared_screen_sync::BeforeLocalRelease())) return;
         UE_LOGI("device_occupancy: local EXIT '%ls' -- releasing", g_localKey.c_str());
         if (s->role() == coop::net::Role::Host) {
             {

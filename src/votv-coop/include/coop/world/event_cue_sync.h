@@ -32,7 +32,8 @@ namespace coop::event_cue_sync {
 // the body instead of a row match.
 void Install(coop::net::Session* session);
 
-// CLIENT: route audio to world_sound_sync, or replay an emitter. Game thread.
+// CLIENT: route audio to world_sound_sync, or replay an emitter. Missing assets,
+// pawn or frame metadata retry for up to ten seconds in a bounded queue. Game thread.
 void OnReliable(const coop::net::EventCuePayload& payload);
 
 // HOST, the answer to joining mid-event: at a joiner's world-ready edge, send every live cue
@@ -41,10 +42,12 @@ void OnReliable(const coop::net::EventCuePayload& payload);
 // still-loading slot, and the send gate opens in the same handler, so each arrives once. A mid-shower
 // joiner replays the emitter fresh -- emitter PHASE is not synced, so it sees the remaining shower
 // from t=0, accepted for transient cosmetics. No-op on a client, or when no cue template is loaded.
+// Failed sends retry per recipient; queued snapshots retain the source component's
+// identity and expire on its death, world/session change or recipient replacement.
 // Game thread.
 void QueueConnectBroadcastForSlot(int peerSlot);
 
-// Teardown: drop the session pointer.
+// Teardown: drop the session pointer and all pending sends/replays.
 void OnDisconnect();
 
 // [dev] How many cue emitters this peer has replayed, for the event drill. Any thread.

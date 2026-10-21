@@ -419,17 +419,40 @@ bool ReadFloatGroup(const void* record, size_t group, std::vector<float>& out) {
     return true;
 }
 
-bool WriteSingleIntGroup(void* record, size_t group, int32_t value) {
-    if (!record || group >= 64) return false;
-    const auto* header = reinterpret_cast<const field_io::TArrayView*>(static_cast<const uint8_t*>(record) + kSave_ints);
-    if (header->num < 0 || header->num > 64 || header->max < header->num || header->max > kMaxArr) return false;
-    const Arr outer = ReadArr(record, kSave_ints);
-    if (!outer.data || outer.num > 64 || group >= static_cast<size_t>(outer.num)) return false;
-    const auto* field = reinterpret_cast<const field_io::TArrayView*>(outer.data + group * kMxStride);
-    if (field->max < field->num || field->max > kMaxArr) return false;
-    const Arr inner = ReadArr(outer.data + group * kMxStride, 0);
-    if (!inner.data || inner.num != 1) return false;
-    std::memcpy(const_cast<uint8_t*>(inner.data), &value, sizeof(value));
+bool UpdateScalarGroups(void* record, const SaveRecord& expected, const SaveRecord& replacement) {
+    if (!record) return false;
+    struct Write { uint8_t* destination; const void* source; size_t bytes; };
+    std::array<Write, 192> writes{};
+    size_t count = 0;
+    const auto prepare = [&]<class T>(int32_t offset, const std::vector<std::vector<T>>& before,
+                                    const std::vector<std::vector<T>>& after) {
+        if (before.size() > 64 || after.size() != before.size()) return false;
+        const auto validArray = [](const field_io::TArrayView& a, size_t size) {
+            return a.num >= 0 && size_t(a.num) == size && a.max >= a.num && a.max <= kMaxArr &&
+                (!a.data || PlausibleObjPtr(a.data)) && (!a.num || a.data);
+        };
+        field_io::TArrayView outer{};
+        std::memcpy(&outer, static_cast<uint8_t*>(record) + offset, sizeof(outer));
+        if (!validArray(outer, before.size())) return false;
+        for (size_t group = 0; group < before.size(); ++group) {
+            if (before[group].size() > 4096 || after[group].size() != before[group].size()) return false;
+            field_io::TArrayView inner{};
+            std::memcpy(&inner, outer.data + group * kMxStride, sizeof(inner));
+            if (!validArray(inner, before[group].size())) return false;
+            const auto bytes = before[group].size() * sizeof(T);
+            if (!bytes) continue;
+            if (std::memcmp(inner.data, before[group].data(), bytes) != 0) return false;
+            if (std::memcmp(before[group].data(), after[group].data(), bytes) != 0)
+                writes[count++] = {inner.data, after[group].data(), bytes};
+        }
+        return true;
+    };
+    if (!prepare(kSave_bools, expected.bools, replacement.bools) ||
+        !prepare(kSave_floats, expected.floats, replacement.floats) ||
+        !prepare(kSave_ints, expected.ints, replacement.ints)) return false;
+    // No engine call occurs between validation and these game-thread writes.
+    for (size_t i = 0; i < count; ++i)
+        std::memcpy(writes[i].destination, writes[i].source, writes[i].bytes);
     return true;
 }
 

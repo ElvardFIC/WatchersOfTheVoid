@@ -120,6 +120,10 @@ void PublishAccepted(net::Session* session) {
             row.actor.Get() != actor || !session->connected() || session->role() != net::Role::Client) continue;
         // Publish can reenter Tick. Mark before crossing that boundary.
         for (auto& live : g_awaitingHost) if (live.request.requestId == row.request.requestId) live.recordSubmitted = true;
+        // Only accepted placements may transfer the separate container inventory.
+        coop::props::container_birth::NoteAuthoredBirth(actor);
+        if (epoch != g_pendingEpoch || row.actor.Get() != actor || !session->connected() ||
+            session->role() != net::Role::Client) return;
         if (row.parked) UnparkKey(row.key);
         coop::join_membership_sweep::RecordClaimIfTracking(actor);
         coop::prop_save_data::Publish(session,actor,row.key);

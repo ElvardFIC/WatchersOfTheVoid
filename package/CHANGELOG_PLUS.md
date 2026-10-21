@@ -1,3 +1,60 @@
+## Unreleased - DLL b2180
+
+- Preserve final desktop edits when leaving a computer, seed the next operator
+  from the shared screen, and reject stale screen snapshots. Retry partial sends
+  and cancel work from an old world or session. The native boot/power UI keeps
+  its own state. The shared-screen wire format requires matching b2180 peers.
+- Keep partially streamed ragdoll limbs aligned with the moving pelvis and retain
+  the standing fallback until physics starts. Reject recycled body identities.
+- Retry star-rain cues while client dependencies or delivery are unavailable,
+  with source/recipient/world/session checks and no duplicate attempted spawn.
+- Retry general-balance delivery independently per peer, including join and
+  refused-order corrections; preserve newer totals during HUD repaint.
+- Restore missing container-inventory transfers on accepted placement and host
+  births. Keep refused placements out of the contents-publication path.
+- These changes require real-peer gameplay acceptance. Full event coverage,
+  paid resource transactions and the remaining native-reference audit stay open.
+
+## 0.9.2156
+
+- Release development DLL **b2179 / protocol 2179**, including held water,
+  concrete, cement, sponge and trowel stock persistence before native hand
+  reconstruction, plus shared-screen startup and selected-model ragdoll fixes.
+  Offline regressions cover the reported startup and C-key setup failures;
+  host/client gameplay acceptance remains open.
+- Preserve each player's native sleep and dream path: local sleep/dream chance,
+  nightmare settings, Insomniac condition, native `wakeup()` and `createDream()`
+  selection, dream phase, scene effects and native `leaveDream()`/`awoken()`
+  return. Sleep-state replication is presentation only and does not roll, choose,
+  start or end another player's dream. Dream scene, reward and late-join behavior
+  still require installed-game and real-peer acceptance; the fresh game-pak audit
+  remains deferred.
+- Keep the event-frequency control from changing sleep, dream probability,
+  Insomniac conditions or story dates. The repeated-event setting still covers
+  only its five verified generators; the complete random-event list remains open.
+- All peers must use the exact 0.9.2156 package and matching game build.
+  Offline qualification and remaining limits are recorded in RELEASE_2156.md.
+
+- Prevent shared-screen repaint from restoring the stationary PC's loading page
+  after startup. Mirror the desktop subtree while native boot/power code owns
+  the outer screen. The regression reproduces the old repaint failure; actual
+  startup and repeated power cycles still need host/client acceptance.
+- Correct ragdoll setup when pressing C: stop collisions and all old physics
+  bodies before replacing the selected model, then align its warmed pelvis to
+  that model's standing/crouched entry position before restarting physics. Retain that position
+  through setup retries and refuse stale pawn/body/model continuations.
+  Offline regressions pass; the reported launch still needs host/client gameplay
+  acceptance with matching development DLLs.
+- Preserve live water/material stock in the existing held inventory record before
+  native hand reconstruction: water level, soap and alcohol; concrete amount,
+  dry state and timer; cement-bag amount; sponge wetness/soap; and trowel concrete.
+  Validate item/save/world identity, numeric group shapes and current values
+  before committing changes together, preserving native array ownership.
+  Mismatched keys and incomplete schemas remain refused. Paid repairs, resource
+  transactions and multiplayer acceptance remain open.
+- Development DLL/network identity: **b2179 / protocol 2179**. The prepared
+  **0.9.2155** archive still contains **b2178 / protocol 2178**.
+
 ## 0.9.2155
 
 - Revalidate a prop's original object identity, world and session-start serial

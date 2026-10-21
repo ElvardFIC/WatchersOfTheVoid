@@ -244,8 +244,8 @@ bool ReadAll(PlayerInventory& out) {
     return true;
 }
 
-bool PersistHeldTrowelStock(void* actor, const std::function<bool()>& current) {
-    if (!actor || (current && !current()) || !building_material::IsTrowel(actor)) return false;
+bool PersistHeldMaterialStock(void* actor, const std::function<bool()>& current) {
+    if (!actor || (current && !current())) return false;
     CachedObjRef hand; hand.Set(actor);
     void* save = ResolveSaveSlot();
     if (!save) return false;
@@ -260,22 +260,25 @@ bool PersistHeldTrowelStock(void* actor, const std::function<bool()>& current) {
     std::array<uint8_t, kEquipStride> slotImage{};
     std::memcpy(slotImage.data(), held.data, slotImage.size());
     EquipRecord original; ReadEquipRecord(held.data, original);
+    const auto& cls = original.data.className;
+    if (cls != L"prop_wallfixer_C" && cls != L"prop_bucket_C" && cls != L"prop_concreteBucket_C" &&
+        cls != L"prop_cementBag_C" && cls != L"prop_sponge_C") return false;
     auto refreshed = original.data;
     if (original.propKey.empty() || original.propKey != refreshed.key ||
-        !building_material::RefreshTrowelRecord(actor, refreshed) || !valid()) return false;
-    // The refresh has validated the actor's native key and bounded stock.
-    if (refreshed.ints.size() != 1 || refreshed.ints[0].size() != 1) return false;
+        !building_material::RefreshHeldMaterialRecord(actor, refreshed) || !valid()) return false;
     const auto stillHeld = SR::ReadArr(save, kOff_hold);
     if (stillHeld.data != held.data || stillHeld.num != held.num) return false;
     EquipRecord latest; ReadEquipRecord(stillHeld.data, latest);
     if (latest.propKey != original.propKey || latest.propName != original.propName || latest.tag != original.tag ||
         latest.data.key != original.data.key || latest.data.className != original.data.className || !valid()) return false;
-    int32_t units = 0;
-    if (!building_material::ReadConcrete(actor, units) || units != refreshed.ints[0][0] || !valid()) return false;
+    auto confirmed = original.data;
+    if (!building_material::RefreshHeldMaterialRecord(actor, confirmed) ||
+        confirmed.ints != refreshed.ints || confirmed.floats != refreshed.floats ||
+        confirmed.bools != refreshed.bools || !valid()) return false;
     const auto finalHeld = SR::ReadArr(save, kOff_hold);
     if (finalHeld.data != held.data || finalHeld.num != held.num ||
         std::memcmp(held.data, slotImage.data(), slotImage.size()) != 0) return false;
-    return SR::WriteSingleIntGroup(const_cast<uint8_t*>(held.data) + kEquip_data, 0, units);
+    return SR::UpdateScalarGroups(const_cast<uint8_t*>(held.data) + kEquip_data, original.data, refreshed);
 }
 
 int32_t LivePersonalStoreCount() {

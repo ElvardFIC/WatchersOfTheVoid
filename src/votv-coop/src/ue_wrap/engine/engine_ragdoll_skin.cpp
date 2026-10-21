@@ -125,6 +125,14 @@ bool ConfigurePlayerRagdollMesh(void* source, void* target) {
         if (material) materials[i].Set(material);
     }
     if (!sourceRef.Get() || !targetRef.Get() || !meshRef.Get() || !physicsRef.Get()) return false;
+    // Native C-key entry already simulates this component. Quiesce every old
+    // body before replacing the mesh/asset; SetSimulatePhysics alone does not
+    // stop independently simulated skeletal bodies. Keep collisions off until
+    // the new animation pose has warmed up and its pelvis has been aligned.
+    ParamFrame collision(function(target, L"SetCollisionEnabled"));
+    if (!collision.Set<uint8_t>(L"NewType", 0) || !Call(target, collision) || !targetRef.Get()) return false;
+    ParamFrame oldBodies(function(target, L"SetAllBodiesSimulatePhysics"));
+    if (!oldBodies.Set<bool>(L"bNewSimulate", false) || !Call(target, oldBodies) || !targetRef.Get()) return false;
     ParamFrame stop(function(target, L"SetSimulatePhysics"));
     if (!stop.Set<bool>(L"bSimulate", false) || !Call(target, stop) || !targetRef.Get()) return false;
     // Prevent the plushie's AnimBP from writing a six-bone pose over this rig.

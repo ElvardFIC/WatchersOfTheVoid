@@ -10,7 +10,7 @@ struct Obj {bool live=true;void* screen=nullptr;void* player=nullptr;void* activ
 int fn=0,calls=0;bool haveFn=true;
 }
 namespace ue_wrap::save_record {
-bool WriteSingleIntGroup(void*,size_t,int32_t){std::abort();}
+bool UpdateScalarGroups(void*,const SaveRecord&,const SaveRecord&){std::abort();}
 void WriteFNameField(void*,const std::wstring&){}
 void WriteSaveRecord(uint8_t*,const SaveRecord& r,ClassResolver){test::written=r;}
 Arr ReadArr(const void*,int32_t){std::abort();}
@@ -39,8 +39,7 @@ void* FindDispatchFunctionCached(void*,const wchar_t* n){CHECK(std::wstring(n)==
 namespace ue_wrap::world_singleton {void* Gamemode(){return &test::gm;}}
 namespace ue_wrap::world_identity {uint32_t Generation(){std::abort();}void* CurrentWorld(){std::abort();}void* WorldOf(void*){std::abort();}}
 namespace ue_wrap::building_material {
-bool IsTrowel(void*){std::abort();}bool ReadConcrete(void*,int32_t&){std::abort();}
-bool RefreshTrowelRecord(void*,save_record::SaveRecord&){std::abort();}
+bool RefreshHeldMaterialRecord(void*,save_record::SaveRecord&){std::abort();}
 }
 namespace ue_wrap {
 ParamFrame::ParamFrame(void* f):fn_(f){}

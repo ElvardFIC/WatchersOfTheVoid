@@ -51,7 +51,6 @@ bool ValidDamage(float d) { return std::isfinite(d) && d > 0.f && d <= kMaxDamag
 UE_FACT_FN(kRowImpactDamage, "player_damage", L"mainPlayer_C", L"impactDamage", Declared);
 UE_FACT_FN(kRowImpactDamageCpp, "player_damage", L"mainPlayer_C", L"impactDamageCPP", Declared);
 UE_FACT_FN(kRowImpactSquishCpp, "player_damage", L"mainPlayer_C", L"impactSquishCPP", Declared);
-UE_FACT_FN(kRowAddPlayerDamage, "player_damage", nullptr, L"Add Player Damage", AnyClass);
 UE_FACT_FN(kRowAddDamageInterceptor, "player_damage", L"mainPlayer_C", L"addDamage", Declared);
 UE_FACT_FN(kRowIgnite, "player_damage", L"mainPlayer_C", L"ignite", Declared);
 const ue_wrap::facts::Function* const kImpactEntryRows[3] = {
@@ -139,8 +138,10 @@ void InstallNativeStateGuards() {
     static const wchar_t* const names[] = {L"ragdollMode", L"fallen", L"ignite", L"startBurning"};
     static bool registered[4]{};
     for (int i = 0; i < 4; ++i) {
-        if (!registered[i]) registered[i] = ue_wrap::script_gate::WatchClassName(
-            L"mainPlayer_C", names[i], 0x50530000 + i, &OnNativePlayerState, nullptr);
+        if (!registered[i]) registered[i] = i == 2
+            ? ue_wrap::script_gate::WatchName(kRowIgnite, 0x50530000 + i, &OnNativePlayerState, nullptr)
+            : ue_wrap::script_gate::WatchClassName(
+                L"mainPlayer_C", names[i], 0x50530000 + i, &OnNativePlayerState, nullptr);
     }
 }
 

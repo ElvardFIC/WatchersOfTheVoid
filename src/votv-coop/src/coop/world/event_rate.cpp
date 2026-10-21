@@ -22,13 +22,14 @@ namespace W = ue_wrap::world_identity;
 UE_FACT_FN(kInterval, "event_rate", L"Actor", L"SetActorTickInterval", Declared);
 
 // These tick bodies re-arm their own spawn wait. The first four products have
-// host-owned NPC/world-actor routes; night eyes use the existing owner-entity lane.
-// Fossilhound UG @1829 and yellow-wisp UG @1322 are native interval writes.
-// Never include ticker_base, creature AI ticks or the personal Insomniac ticker.
+// host-owned NPC/world-actor routes; night eyes use the existing owner-entity lane;
+// fireflies use the peer-symmetric emitter capture/replay route. Fossilhound UG
+// @1829 and yellow-wisp UG @1322 are native interval writes. Never include
+// ticker_base, creature AI ticks or the personal Insomniac ticker.
 constexpr const wchar_t* kSpawners[] = {
     L"ticker_fossilhoundSpawner_C", L"ticker_yellowWispSpawner_C",
     L"ticker_wispSpawner_C", L"ticker_egSpawner_C",
-    L"ticker_eyers_C",
+    L"ticker_eyers_C", L"ticker_fireflySpawner_C",
 };
 struct Wait {
     ue_wrap::CachedObjRef actor;
@@ -50,8 +51,11 @@ bool Active() { return g_session && g_session->running(); }
 bool CanApply(void* actor) {
     // Night eyes already use the owner-entity lane. Each owner keeps their own
     // native night/day/chance roll; the shared setting scales only its wait.
+    // Fireflies are peer-symmetric: every peer runs its local-camera roll and
+    // the existing capture/replay path shares the resulting emitter.
     return Host() || (Active() && g_session->role() == net::Role::Client &&
-        R::ClassNameOf(actor) == L"ticker_eyers_C");
+        (R::ClassNameOf(actor) == L"ticker_eyers_C" ||
+         R::ClassNameOf(actor) == L"ticker_fireflySpawner_C"));
 }
 bool InWorld(void* actor) {
     return actor && R::IsLive(actor) && W::CurrentWorld() &&

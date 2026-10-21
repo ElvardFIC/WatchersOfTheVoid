@@ -6,6 +6,7 @@
 namespace coop::shared_screen_wire {
 using ue_wrap::shared_screen::Row;
 inline constexpr size_t kMaxBytes = 128 * 1024;
+inline constexpr size_t kEnvelopeBytes = 10;
 template<class T> void Put(std::vector<uint8_t>& bytes, T value) {
     const auto* p = reinterpret_cast<const uint8_t*>(&value);
     bytes.insert(bytes.end(), p, p + sizeof(T));
@@ -56,5 +57,31 @@ inline bool Decode(const std::vector<uint8_t>& bytes, std::vector<Row>& rows) {
     }
     if (at != bytes.size()) return false;
     rows = std::move(result); return true;
+}
+struct Snapshot {
+    bool canonical = false;
+    uint32_t lease = 0, revision = 0;
+    uint8_t owner = 0xff;
+    std::vector<Row> rows;
+};
+inline std::vector<uint8_t> EncodeSnapshot(bool canonical, uint32_t lease, uint32_t revision,
+                                         uint8_t owner, const std::vector<uint8_t>& rows) {
+    if (!lease || !revision || rows.empty() || rows.size() > kMaxBytes) return {};
+    std::vector<uint8_t> bytes;
+    bytes.reserve(kEnvelopeBytes + rows.size());
+    Put<uint8_t>(bytes, canonical ? 1 : 0); Put(bytes, lease); Put(bytes, revision); Put(bytes, owner);
+    bytes.insert(bytes.end(), rows.begin(), rows.end());
+    return bytes;
+}
+inline bool DecodeSnapshot(const std::vector<uint8_t>& bytes, Snapshot& out) {
+    if (bytes.size() <= kEnvelopeBytes || bytes.size() > kMaxBytes + kEnvelopeBytes || bytes[0] > 1) return false;
+    Snapshot result;
+    result.canonical = bytes[0] != 0;
+    std::memcpy(&result.lease, bytes.data() + 1, 4);
+    std::memcpy(&result.revision, bytes.data() + 5, 4);
+    result.owner = bytes[9];
+    if (!result.lease || !result.revision ||
+        !Decode({bytes.begin() + kEnvelopeBytes, bytes.end()}, result.rows)) return false;
+    out = std::move(result); return true;
 }
 }

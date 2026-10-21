@@ -1,8 +1,8 @@
 # Unified Work - unresolved backlog
 
-Current source/wire protocol: **2178**, game **0.9.0n**. Last verified Release:
-**b2178**, **65/65 offline validation groups**; evidence:
-`build/continuation-check/verification.json`.
+Current source/wire protocol: **2180**, game **0.9.0n**. Qualification is running
+in `build/sync-2180-check/`; prior b2179 passed 65/65 groups in
+`build/continued-20261021/verification.json`.
 Gameplay acceptance requires identical current DLLs on all peers.
 Prepared package **0.9.2155 / DLL b2178**; package evidence:
 `build/release-2155-logs/release-verification.json`.
@@ -12,11 +12,68 @@ The final package includes the qualified b2178 DLL and supersedes the earlier lo
 b2177 preparation at the owner's explicit release-build request.
 Use identical current DLLs for multiplayer acceptance.
 
+Development **b2179** adds held water/material persistence before reconstruction.
+It also corrects C-key ragdoll reconfiguration and warm-pose anchoring.
+Shared-screen capture/apply now excludes the native PC boot/power UI.
+Full 65/65 offline qualification and stable Release build pass for production
+snapshot `828154d98e2208cf82869997293f059d422511e62a8a5b2f801b5d4592ce3dcc`;
+781 build entries, Release identity/ABI check, and no production changes during
+the run. DLL SHA256 `5a92cbeda18433d3a3dde41494ddf75a2e8f0979c7698136f1fe97af53271332`.
+Package 2155 still contains qualified b2178; it does not contain this continuation.
+The full public-prose gate remains 13 counters above baseline; the fact-row gate
+reports 45 findings across 525 rows in 157 files. Resolve these separately from
+the passing offline qualification. Multiplayer acceptance remains open.
+
 This file retains unresolved implementation, investigation and gameplay work.
 Priorities: [TODO.md](TODO.md). Source reports and verification history:
 [TESTLOG.md](TESTLOG.md). Exact native entity mapping and per-class gaps:
 [ENTITY_COVERAGE.md](ENTITY_COVERAGE.md).
 Offline checks do not close gameplay reports.
+
+## Priority report: C-key ragdoll launch (5/50, 21 October 2026)
+
+The owner reports that pressing C launches the player on every role and breaks
+ragdoll. The model and runtime reproduction are not yet recorded. Development
+b2179 disables collision and all skeletal bodies before mesh/physics replacement,
+then aligns the warmed animation pelvis to the selected model's standing/crouched
+entry anchor immediately before simulation starts. The native shell has another
+rig and must not determine the selected body's pelvis height; that can put its
+legs into the floor. Failed setup retries retain the selected-model anchor;
+changed pawn/body/model identities and non-finite poses refuse the start.
+The previous mutation order, premature pelvis alignment and different-rig entry
+height fail the new production regressions; the corrected paths pass. These
+tests do not run PhysX or establish that the reported launch is resolved in game.
+
+Accept standing/crouched/repeated C entry and recovery on host and client with
+matching b2179 DLLs, selected/common/custom rigs, floors, slopes and moving props.
+Record the model, role, reproduction and logs in TESTLOG before closing 5/50.
+
+## Priority report: stationary PC infinite loading (54/55, 21 October 2026)
+
+The owner confirms that the stationary base computer remains loading on host and
+client. The existing native laptop corpus assigns `rootswitch` page 0 to boot and
+page 1 to the desktop, with a latent completion that clears `anim` and broadcasts
+`pcLaunched`. The generic shared-screen mirror captured this outer switcher and
+reapplied old boot snapshots every poll, restoring page 0 after native startup.
+
+Development b2179 captures/applies only the desktop child. Boot widgets, the
+outer switcher and its ancestors are outside the snapshot. A production-wrapper
+regression fails on the previous code and passes with the correction; desktop
+text/scroll/tab retry and native power-page ownership are covered. The existing
+native corpus confirms the page contract; no fresh extraction was performed.
+Accept actual startup on both roles, entering/leaving during boot, repeated
+ON/OFF, power loss/restoration, late join and reconnect before closing 54/55.
+
+## Backlog status - 21 October 2026
+
+TODO separates the next implementation, investigation and gameplay actions.
+This file keeps their details and every report ID still requiring work or
+acceptance. IDs 1–58 are accounted for below except closed Mining (6) and
+owner-excluded Wall41; 11/36 are duplicate reports of the same chair behavior.
+Implemented code awaiting gameplay is still open for acceptance, rather than
+an instruction to reimplement it. The b2178 Release/package checks above passed;
+real-peer acceptance and the full CI findings below remain unresolved.
+The fresh native asset audit remains deferred by the owner.
 
 ## Інтеграція watchers-of-the-void-fish — 21 жовтня 2026
 
@@ -37,7 +94,7 @@ Offline checks do not close gameplay reports.
 | Сад, профілі, небесна подія | Прив'язка care/faucet/detach до конкретного виклику й гравця; актуальний held state перед хешуванням профілю; хост володіє tp та шістьма latent продовженнями чорної діри. |
 | Перевірки | Нові production harnesses і native-contract checks; перевірки .inc-контексту в CI; спільний регресійний запуск для обох наборів змін. |
 
-Адаптація до main: протокол **2176**, збережено `KavotiaState=223` і
+На момент інтеграції в main: протокол **2176** (поточний — **2179**), збережено `KavotiaState=223` і
 `PropPlacementResult=224`, `Watoy` перенесено на **235**; інші нові повідомлення
 займають 225–234. `PropDropIntent` має 188 байт з `foodCookProgress`, відповідь
 розміщення — 101 байт з ключем і класом. Узгоджено authority, dispatch і lanes.
@@ -79,7 +136,7 @@ an event from its actor's transform route.
 
 | Requested category | Remaining implementation or acceptance |
 |---|---|
-| Dreams | Verify all named variants and wake/reward consequences with real peers; preserve native personal sleep/Insomniac conditions and independent nightmare settings. |
+| Dreams | The native local sleep roll, wakeup/createDream entry, dream phase, and leaveDream/awoken return remain peer-local; SleepState carries rest/dream presentation only and DreamScene is ignored. Verify every named scene's actor effects, wake rewards and join/lifetime behavior on peers. Preserve independent nightmare settings and Insomniac conditions. |
 | Ariral Reputation | Audit every reputation tier/case, shared reputation, randomized effects, bed/player relocation and late join. |
 | Player-Activated | Map and verify every listed interaction, simultaneous activation and canonical side effects. |
 | Time-Related | Audit real-calendar/holiday and 3AM branches, local calendar rolls and uncovered effects. |
@@ -88,16 +145,20 @@ an event from its actor's transform route.
 | Random | Audit the complete named list and remaining timer/probability sites. Black-fog client suppression alone does not mirror black fog. |
 | Signals | Audit each processing/playback trigger, funny-rule requirement, chosen outcome, phases and late join. |
 
-Frequency coverage still needs extension beyond the five verified
+Frequency coverage now includes the five verified
 `ticker_fossilhoundSpawner`, `ticker_yellowWispSpawner`, `ticker_wispSpawner`
 and `ticker_egSpawner`, plus owner-local `ticker_eyers` routes.
 The existing night-eyes Blueprint confirms a native 1800–2700s re-arm, 5% roll
 and day/night gates. Only the wait is scaled; the existing owner-entity route
 remains responsible for its creature. Host owns the first four generators.
+The verified peer-symmetric `ticker_fireflySpawner` route is also frequency-scaled
+on every peer; its local-camera eligibility/roll and emitter capture/replay remain
+native. The shared setting changes only its tick wait.
 `treeSpawner` (600–900s walking-tree output), `bp7Spawner` (camera-dependent rare
 integer roll) and `flickerer` (power/generator effects) were inspected in the
 existing corpus but not admitted without complete authority/effect routes.
-This is not the complete random-event list or a fresh pak audit.
+Other repeatable random-event candidates remain to be inventoried. This is not a
+fresh pak audit.
 Preserve native eligibility, probabilities,
 personal dream rolls and story dates; adjust eligible-roll intervals without
 changing AI/animation, effect durations or sleep needs.
@@ -139,6 +200,29 @@ live/persisted frequency changes, load windows, late join, reconnect and teardow
 - Verify imported sponge soapAmount/foam, grill lid/fuel/burn/audio and
   cooking-progress carriers on real peers. Complete remaining final cooked-food
   output and personal resource transactions.
+
+### Personal resources, grime and scorch
+
+Implemented in development b2179: exact-identity held stock now writes back to
+the existing `saveSlot.hold[0]` numeric groups after native water use/tick,
+material changes and cement transfer endpoints. This covers water level/soap/
+alcohol, concrete units/dry/dryTimer, cement-bag units, sponge wetness/soap and
+trowel concrete. Native `updateHold` can read the updated values when it rebuilds
+the hand. The commit validates all numeric group shapes/current values before
+writing any of them; it allocates no engine arrays and preserves unrelated data.
+Hand/world/save/slot/stock changes refuse the write. Legacy incomplete schemas
+and mismatched keys remain refused; no identity repair is enabled. Focused
+production-wrapper, scalar-memory and controller regressions pass. Two-peer
+reconstruction/unequip/drop acceptance and the transactions below remain open.
+
+- Complete personal resource debit, output acceptance and refund as an atomic
+  transaction, including rejection, retries, disconnect and hand/slot/drop
+  transitions. Imported profile/stock persistence does not close this work.
+- Cover remaining dynamic grime sources with canonical births, cleaning identity
+  and retirement. Verify imported quiet joins and final-state delivery on peers.
+- Preserve explosion/salt-rocket scorch provenance through a full save/world
+  reload. Known provenance currently survives reconnect within the same world;
+  that does not establish migration across world reconstruction.
 
 ### Packages, performance and models (16, 34/38/39)
 
@@ -211,8 +295,16 @@ the literal key `arirGun` and later destroys that object, not any rifle by class
 timers, so simple host pose/rate admission would not complete its route. Decoded
 evidence is in `build/placement-check/*-native.txt`; no fresh pak audit was run.
 
-Token52's counter/UI remains unidentified by the owner (21 October).
-Identify the actual display and token before changing money or any balance.
+Token52 was clarified on 22 October as probably the general balance. The shared
+`saveSlot.Points` lane had three concrete delivery defects: host send refusal was
+recorded as success, a failed join/refused-order correction was discarded, and
+client HUD callbacks could consume a newer pending total. b2180 fixes these with
+per-recipient accepted-send state, retained correction requests, atomic pending
+value acknowledgement and repaint retry. It also rejects work from replaced
+sessions/occupants and cancels queued development credits after teardown.
+Production tests cover zero/negative balances, late readiness, partial fan-out,
+same-slot reuse, reentrant updates and world changes. The original UI/report still
+needs runtime confirmation; no client-authored balance delta has been added.
 
 ## Complete open report tracker
 
@@ -227,7 +319,7 @@ old behavior. Old basement wall (41) remains excluded by the owner.
 | 2 | Prop jitter/rollback | Verify initial optimistic grab, lowest-slot hold arbitration, release fences and multiplayer convergence. |
 | 3 | Pushing one prop with another | Real PhysX contacts, chained push/coast and two-player convergence; check static/frozen/held/trash exclusions. |
 | 4 | Client R+LMB duplication | New-build gameplay result. |
-| 5 | Selected-model ragdoll | Real selected-model pose, entry/recovery and local/remote limbs; linked to 38/50. |
+| 5 | Selected-model ragdoll | Prioritize all-role C-key launch acceptance of b2179 setup/anchor correction; selected-model pose, entry/recovery and local/remote limbs; linked to 38/50. |
 | 7 | Extinguisher foam | New-build gameplay result. |
 | 8 | Loose power outlet floating | New-build gameplay result; distinct from appliance connection (51). |
 | 9 | Physics gun / both gun effects | Contested control, native release, beam/audio, freeze/unfreeze and root scale on real peers. Bone scaling/creature physics remain separate. |
@@ -238,34 +330,44 @@ old behavior. Old basement wall (41) remains excluded by the owner.
 | 14 | Funny-rule display | Other funny-rule HUD/events. |
 | 15 | Toy sounds | Other toys/squeeze paths and real world/selected-hand playback. |
 | 16 | Stutters when stowing items | Capture runtime frame times if residual stutters remain; include unresolved-class paths. |
-| 20 | Bucket water disappearing | Concurrent writers/in-flight-record arbitration, pouring and personal-hand transitions. |
+| 17 | Pressure-washer stream | Implemented visual/audio route needs gameplay acceptance; verify host impacts with the water routes. |
+| 18 | Computer sparks/damage presentation | Verify native water shortCircuit presentation on both peers; separate from ordinary ON/OFF (55). |
+| 19 | Computer shutdown from client damage | Verify the native water shortCircuit route; ordinary addDamage is empty in this cooked class. |
+| 20 | Bucket water disappearing | b2179 adds held water/soap/alcohol persistence before reconstruction. Concurrent writers/in-flight-record arbitration, pouring and personal-hand gameplay remain. |
 | 21 | Cement / trowel | Atomic repair/material transactions, trowel key/stock continuity and dryTimer handoff. |
 | 22 | Brick-wall outline/build | Client repair, creative construction, wet-wall persistence, exact effects and multiplayer damage/build acceptance. |
+| 23 | Depleted flashlight still lit remotely | Verify exhaustion/crank/low-battery transitions and remote light state on the current package. |
+| 24 | Client cannot pick up anchored hook | Verify host anchor retirement, one ordinary pickup near the requester, saved anchors, retries and late join; pickup is not an automatic inventory grant. |
 | 25 | Battery levels | Hand/stow/drop/pickup/rejoin, including zero charge and delayed record delivery. |
 | 26 | Airy event | Exact behavior, effects and multiplayer acceptance. |
 | 27 | Main-room computer panels become physics props | Struck-panel disappearance and final motion/state on host/client. |
+| 28 | Drone sound difference | Verify the implemented audio correction on real peers. |
 | 29 | Crowbar static state / dragging | Atypical parent/replacement subclasses, live ownership, refusal/retry and actual dragging gameplay. |
+| 30 | Second ATV in corridor | Verify new companion creation separately from existing saved second-ATV positions; old positions are unchanged. |
 | 31 | Sleeping body pose | Selected rigs, mattress/exhaustion anchors, moving beds, precedence and sleeping footstep/hand/head-effect suppression. |
+| 32 | Not enough space on equipment | Verify the implemented handling for all equippable items, including full inventory and equip/unequip transitions. |
+| 33 | Open container retains removed row | Verify simultaneous access/removal and row refresh on the other peer without stale capacity errors. |
 | 34 | Invisible client crate/package loot | Remaining package families, exact local loot provenance and two-peer crate/MRE/AB/foodBox output. |
 | 35 | Centipede / other creatures invisible | Per-class behavior, visibility and live acceptance in ENTITY_COVERAGE; linked to 48. |
 | 36 | Computer chair rotation | Duplicate of 11; keep both report IDs linked. |
+| 37 | Riding a carried ATV / flight | Verify simultaneous carry/mount, menu state and race convergence on both peers. |
 | 38 | Skin model list / previews | Remaining preview gaps, unknown missing model names and common/custom appearance/animation/ragdoll acceptance. |
 | 39 | Consumables refill on pickup/drop | Partial/empty portions, hand/stow/drop/pickup/rejoin, final bite and eater-local hunger/poison. |
 | 40 | Flesh Erie summon / visibility / aggro | Distinct angry-flesh-Erie spawn/target/action/damage route and gameplay. |
 | 42 | Event teleport to triggering/base-entering player | Initiator/occupancy, repeat/reentry, multiplayer teleport and other custom effects. |
 | 43 | Safe cracking | Dial/hacked completion, one loot result, persistent lock, retry/stale records and save/rejoin. |
-| 44 | Sponge wetting | Soap stock/foam/surfaces, personal-hand transitions and real wetting/final-use gameplay. |
+| 44 | Sponge wetting | b2179 adds held wetness/soap persistence before reconstruction. Soap stock/foam/surfaces, personal-hand transitions and real wetting/final-use gameplay remain. |
 | 45 | Grill ignition | Concurrent coal/stale-record arbitration, lid, final cooked food and personal-item transitions. |
 | 46 | Garden actors disappear after save reload | Pre-session save/reload, care/harvest/pot state, accepted hose rerouting, late join and simultaneous use. Missing historical save actors are not migrated. |
 | 47 | Black disk/yellow-ring sky event | Audio, delayed email/bookkeeping, pre-session latent chains and shared schedule/effects/join acceptance. |
 | 48 | Mimic | Shared rendering/disguise/material, damage/gibs and host lifetime in multiplayer; related to 35. |
 | 49 | Client insomnia demon | Personal spawn/visibility/pursuit/targeting/grab/dream, low-sleep versus rested peers, recovery/despawn, reconnect and rare Child variant. |
-| 50 | Ragdoll display still incorrect | T-pose, local native body, complete remote limbs, selected/common/custom rigs, retry/fallback and drift; linked to 5/38. |
+| 50 | Ragdoll display still incorrect | All-role C-key launch remains a gameplay report after b2179 setup/anchor correction. T-pose, local body, remote limbs, common/custom rigs, retry/fallback and drift; linked to 5/38. |
 | 51 | Client appliance plug/unplug | Near/far endpoints, short/long cables, extensions, occupancy, unpowered outlets and callback/load timing. Nearby failures may have another cause. |
 | 52 | Client token display | Identify the actual counter/UI and reproduce; do not assume credits. |
 | 53 | Base light flicker | Actual keys/overridden setters, component readiness, loading/late join and visible timing. Separate reliable messages do not ensure frame-exact alignment. |
-| 54 | Shared computer display/activity | Laptop/portable-PC tabs, text, scroll, visibility, cursor/input/activity and operator body. |
-| 55 | Computer ON/OFF | During animation/loading, power loss/restoration, failed delivery, late join and reconnect; separate from water short-circuit/damage. |
+| 54 | Shared computer display/activity | b2179 excludes boot/power UI from shared-screen repaint. Accept stationary-PC startup and laptop/portable-PC tabs, text, scroll, visibility, cursor/input/activity and operator body. |
+| 55 | Computer ON/OFF | Prioritize the host/client base-PC infinite-loading report after b2179 boot-page isolation. Animation, power loss/restoration, failed delivery, late join and reconnect remain; separate from water short-circuit/damage. |
 | 56 | Ejected ZIP becomes a huge owo | Actual inserted/ejected class, model and scale on both peers. The bool-wrapper defect is not a proven cause of the symptom. |
 | 57 | Opening/eating cans | World/held open/eat/final portion, stow/re-equip, drop/pickup, simultaneous consumption and reconnect. |
 | 58 | Items disappear on workbench | Host's old rifle confirmed; reproduce simple placement with birth/destroy caller, class/key and peer logs. Components unidentified; client recovery is separate. |
@@ -323,13 +425,25 @@ Personal Insomniac/nightmare conditions remain local.
 | Cremator | Door/paint-only lever on both peers and measured door FPS. |
 | Bodies | Common/custom rigs and selected limbs, entry/get-up/lost-body recovery, resting drift, slopes, moving props, walls, latency and teleport. Preserve rig exclusions and selected-model displays. |
 | Sleep | Different beds, mattress/moving/exhaustion anchors, sleep/sit/ragdoll/laptop transitions and sleeping effect suppression. Native playerSleepingPawn remains the camera/input pawn. |
-| ATV | Existing saved second-ATV positions, simultaneous carry/mount and stale menus. |
+| ATV (30/37) | New companion creation versus existing saved second-ATV positions, simultaneous carry/mount, stale menus and race convergence. |
 | Disks/racks | Client sv.request/hashcodes, exact floppy/ZIP text including line breaks, filled-rack save/rejoin and a slow joining peer. |
 | Whole package | Swap host/client roles; two clients contest objects; late join/rejoin/disconnect/save/reload; partial/empty consumables, full inventory, equipped items/container rows, loose cables, flashlight crank/low battery and previews. |
 
 Sleeping-body native evidence remains in the workspace `_research/`:
 `sleep_2166.txt`, `wakeup_2166.txt`, `sleep_graph_2166.txt`,
 `sleep_full_2166.txt` and `objects__misc__playerSleepingPawn_2164.txt`.
+
+## Validation follow-ups
+
+- Resolve the recorded full public-prose/fact-row CI findings, including missing
+  live native-hook references, then record a fresh full-gate result in TESTLOG.
+  HANDOFF_FISH records 13 baseline prose counters and fact-row findings across
+  524 rows/156 files at its original handoff; those are historical measurements,
+  not a new b2178 CI result. The later package entry also retains known failures.
+  Passing selected-file prose and include-context checks does not close full CI.
+- Complete the native-contract audit once the owner resumes fresh asset work.
+  The available corpus is incomplete for the imported native-contract suite;
+  keep fresh game-pak/Blueprint extraction deferred until then.
 
 ## Release preparation
 

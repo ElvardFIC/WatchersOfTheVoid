@@ -1,5 +1,103 @@
 # TestLog — current status and source reports
 
+## Recheck: PC boot, C-key ragdoll and resource identity (21 October 2026)
+
+Repeated `run_ragdoll_skin.ps1`, `run_shared_screen.ps1` and `run_trowel.ps1`;
+all passed. Then `package/check_current.ps1 -EvidenceDirectory
+build/continued-20261021` passed **65/65 groups**, Release identity/ABI and the
+stable-source check (781 entries). The production snapshot and DLL hashes match
+the previously qualified b2179 build. This confirms the offline regressions;
+the stationary-PC host/client loading report and all-role C-key ragdoll report
+still need real-peer acceptance on matching b2179 DLLs.
+
+The full public-prose and fact-row gates were not rerun: the WindowsApps Python
+launcher failed with “The file cannot be accessed by the system.” Their last
+recorded findings therefore remain unchanged (13 prose counters above baseline;
+45 fact-row findings across 525 rows/157 files). The include-context gate passed
+as part of the 65-group qualification and does not replace those full gates.
+
+## Development b2179: PC boot, C-key ragdoll and held materials (21 October 2026)
+
+Owner report: the stationary base PC stays loading on host and client. The
+production shared-screen wrapper regression reproduces an old boot snapshot
+writing `rootswitch` back to 0 after native startup has set it to 1. The previous
+code fails the root-page assertion. Desktop-only traversal passes and preserves
+native boot/power pages across repeated paints, while still restoring desktop
+text, scroll and tabs with late-child retry. `run_shared_screen.ps1` passes,
+including the existing wire, lifecycle and sleep-display cases.
+
+`computer_boot_native_test.py` checks the existing laptop corpus: rootswitch 0
+at ubergraph 29, 1 at 329, delayed continuation 315, anim=false at 550 and the
+launched notification at 561. No fresh pak/Blueprint extraction was run. Actual
+host/client startup, repeated power cycles, entering/leaving during boot, power
+loss/restoration and join/reconnect remain gameplay acceptance for reports 54/55.
+
+Owner report: pressing C launches the player on all roles and breaks ragdoll.
+Model/runtime logs are not yet recorded. New production regressions fail on
+the previous code: the skin setup changes mesh/physics asset before stopping all
+old bodies, and local startup aligns the pelvis before animation warmup. The
+latter starts simulation at the moved warm pose rather than the entry anchor.
+An additional regression exposes the different-rig height error: the native
+shell's pelvis cannot determine the selected model's standing/crouched height.
+This is an offline reproduction of code defects, not of PhysX launch.
+
+The skin setup now disables collisions and all old bodies before replacement.
+Local startup captures the selected model's standing/crouched pelvis, preserves
+that entry anchor across failed setup retries and
+teleports the warmed pose to it immediately before simulation. Pawn, body, source
+mesh and selected asset identities are checked across calls; missing/non-finite
+poses and failed teleports refuse startup. Unreadable initial velocity becomes
+zero, without reusing a previous entry's velocity.
+
+Focused PASS: `run_ragdoll_skin.ps1` (actual production startup seam and skin
+wrapper), `run_ragdoll_retry.ps1` (remote lifecycle and both production TUs).
+Tests cover different native/selected pelvis heights, crouched entry, warmed-pose
+movement, retry after configuration/read/teleport failure,
+single startup, velocity preservation, non-finite positions and replacement or
+teardown during reads/configuration/translation/start. Native C-key/faint and
+standing/crouched/repeated recovery, slopes and selected/common/custom models
+still require matching b2179 host/client gameplay. Reports 5/50 remain open.
+
+The native `mainPlayer.updateHold` corpus reads `saveSlot.hold[0]` before replacing
+the held actor. Existing profile snapshots refreshed water/material values only
+in a copy; immediate native stock persistence covered only trowels. A new
+production-controller regression first failed on the unchanged water-hand use
+path because it never invoked persistence.
+
+The controller now persists local held stock after water use/tick, material
+changes and both native cement-transfer endpoints. The inventory wrapper accepts
+the five exact supported classes, matching inner/outer keys and a current hand/
+save/world/slot, then confirms live stock again. The codec validates all existing
+bool/float/int groups against the snapshot before writing any changed values,
+without native dispatch, engine allocation or replacing array headers.
+
+Material focused PASS: `run_trowel.ps1`, `run_2153.ps1 -CompileSources`,
+`run_2169.ps1 -CompileSources`, `run_nonentity.ps1`, `run_sponge_effects.ps1`.
+Coverage includes zero/refill, unchanged base groups and array ownership,
+malformed/missing shapes, stock changes, nested saved-value changes, actor
+recycling, world/save/slot replacement and selected-hand controller hooks.
+The scalar-memory test compiles the actual production codec function.
+
+The first full attempt exposed an obsolete scalar-codec mock in
+`inventory_view_2146_test.cpp`; it now uses the current API and `run_2146.ps1`
+passes. Final qualification via `package/check_current.ps1
+-EvidenceDirectory build/material-persistence-check` passes **65/65 groups**,
+the stable-source guard and Release identity/ABI inspection (781 build entries).
+Production snapshot SHA256:
+`828154d98e2208cf82869997293f059d422511e62a8a5b2f801b5d4592ce3dcc`.
+Development DLL `build/votv-coop-2154/main.dll` SHA256:
+`5a92cbeda18433d3a3dde41494ddf75a2e8f0979c7698136f1fe97af53271332`.
+Package 2155 and its delivery archive remain b2178. No package, installation or
+publication is part of this continuation. Runtime resource transitions, trowel
+key mismatch repair, concurrent writers and paid debit/output/refund transactions
+remain open. Bench58 and Token52 are unchanged; no fresh asset audit was run.
+
+Full public-prose and fact-row gates were rerun during this continuation: prose
+still has 13 counters above baseline; fact rows reports 45 findings across 525
+rows in 157 files (missing reference entries and unused declarations). Logs are
+`build/material-persistence-check/public-prose.log` and `fact-rows.log`.
+Passing offline groups do not close these full CI findings.
+
 ## Final package 0.9.2155 / DLL b2178 (21 October 2026)
 
 At the owner's explicit request, promoted the qualified b2178 continuation into

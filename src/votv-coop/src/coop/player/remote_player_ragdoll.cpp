@@ -28,8 +28,11 @@ namespace {
 // nothing was hidden -- visible IS the puppet's normal state, forced at spawn -- so the restore
 // needs no bookkeeping.
 void SetPuppetKelMeshesVisible(void* puppetActor, bool visible) {
+    ue_wrap::CachedObjRef puppet; puppet.Set(puppetActor);
+    if (!puppet.Get()) return;
     E::SetSceneComponentVisibility(
         ue_wrap::puppet::GetNativeBodyMeshComponent(puppetActor), visible, /*propagate=*/true);
+    if (!puppet.Get()) return;
     E::SetSceneComponentVisibility(
         ue_wrap::puppet::GetMeshPlayerVisibleComponent(puppetActor), visible, /*propagate=*/true);
 }
@@ -56,15 +59,18 @@ bool RagdollDisplay::OnWireBit(bool ragdollBit, void* puppetActor, int32_t puppe
 bool RagdollDisplay::SetPose(const coop::net::RagdollPoseSnapshot& snap) {
     // Velocity alone never corrects positional drift after local collisions.
     // Translate the whole articulated body together so joints keep their pose.
-    if (active_ && bodyRef_.Get()) {
+    if (active_ && bodyRef_.Get() && puppetRef_.Get()) {
         const float values[] = {snap.x, snap.y, snap.z, snap.linVelX, snap.linVelY,
                                 snap.linVelZ, snap.angVelX, snap.angVelY, snap.angVelZ};
         for (float value : values) if (!std::isfinite(value)) return false;
         if (!net::ValidateRagdollBones(snap)) return false;
+        if (std::fabs(snap.x) > net::kMaxCoord || std::fabs(snap.y) > net::kMaxCoord ||
+            std::fabs(snap.z) > net::kMaxCoord) return false;
         if (snap.rigTag != rigTag_ || snap.rigBones != rigBones_ || snap.rigSignature != rigSignature_) {
             bones_.clear(); rigTag_ = snap.rigTag; rigBones_ = snap.rigBones;
             rigSignature_ = snap.rigSignature;
             if (void* puppet = puppetRef_.Get()) ue_wrap::sleep_display::Remove(puppet);
+            if (!bodyRef_.Get() || !puppetRef_.Get()) return false;
             E::SetSceneComponentVisibility(E::GetRagdollBodyMesh(body_), simulationStarted_, false);
             // Removing a pose display restores the standing source meshes;
             // this player is still ragdolled, so keep those sources hidden.
@@ -72,14 +78,26 @@ bool RagdollDisplay::SetPose(const coop::net::RagdollPoseSnapshot& snap) {
         }
         void* source = puppetRef_.Get() ? ue_wrap::puppet::GetMeshPlayerVisibleComponent(puppetRef_.Get()) : nullptr;
         const bool compatible = source && snap.rigSignature == E::BoneLayoutSignature(source);
+        if (!bodyRef_.Get() || !puppetRef_.Get()) return false;
         if (!compatible && !bones_.empty()) {
             bones_.clear();
             if (void* puppet = puppetRef_.Get()) {
                 ue_wrap::sleep_display::Remove(puppet);
+                if (!bodyRef_.Get() || !puppetRef_.Get()) return false;
                 SetPuppetKelMeshesVisible(puppet, !simulationStarted_);
             }
             E::SetSceneComponentVisibility(E::GetRagdollBodyMesh(body_), simulationStarted_, false);
         }
+        // The sender rotates through a subset of bones on each packet. Their
+        // cached world coordinates must follow the current pelvis; otherwise
+        // fast movement or teleport stretches unrefreshed limbs back to the
+        // previous position until the remaining batches arrive.
+        for (auto& bone : bones_) {
+            bone.world.TX += snap.x - boneAnchor_.X;
+            bone.world.TY += snap.y - boneAnchor_.Y;
+            bone.world.TZ += snap.z - boneAnchor_.Z;
+        }
+        boneAnchor_ = {snap.x, snap.y, snap.z};
         for (uint8_t i = 0; compatible && i < snap.boneCount; ++i) {
             const auto& b = snap.bones[i];
             auto it = std::find_if(bones_.begin(), bones_.end(), [&](const auto& x) { return x.index == b.index; });
@@ -92,8 +110,7 @@ bool RagdollDisplay::SetPose(const coop::net::RagdollPoseSnapshot& snap) {
         }
         std::sort(bones_.begin(), bones_.end(), [](const auto& a, const auto& b) { return a.index < b.index; });
         if (bones_.size() > rigBones_) { bones_.clear(); return false; }
-        if (std::fabs(snap.x) > net::kMaxCoord || std::fabs(snap.y) > net::kMaxCoord ||
-            std::fabs(snap.z) > net::kMaxCoord) return false;
+        if (!bodyRef_.Get() || !puppetRef_.Get()) return false;
         ue_wrap::FVector current{};
         void* mesh = E::GetRagdollBodyMesh(body_);
         if (mesh && E::GetBoneWorldLocationByName(mesh, L"pelvis", current) && bodyRef_.Get() &&
@@ -109,7 +126,7 @@ bool RagdollDisplay::SetPose(const coop::net::RagdollPoseSnapshot& snap) {
                 if (E::TranslateRagdollBody(body_, delta) && bodyRef_.Get()) pelvisAligned_ = true;
             }
         }
-        if (!bodyRef_.Get()) return false;
+        if (!bodyRef_.Get() || !puppetRef_.Get()) return false;
         const ue_wrap::FVector linVel(snap.linVelX, snap.linVelY, snap.linVelZ);
         const ue_wrap::FVector angVel(snap.angVelX, snap.angVelY, snap.angVelZ);
         E::DriveRagdollBodyPelvisVelocity(body_, linVel, angVel);
@@ -120,21 +137,34 @@ bool RagdollDisplay::SetPose(const coop::net::RagdollPoseSnapshot& snap) {
 
 RagdollDisplay::Drive RagdollDisplay::DriveAttached(void* puppetActor, int32_t puppetIdx) {
     if (!active_) return Drive::Inactive;
-    if (bodyRef_.Get()) {
+    if (bodyRef_.Get() && puppetRef_.Get() == puppetActor) {
         if (!simulationStarted_ && std::chrono::steady_clock::now() >= simulationAfter_) {
             simulationStarted_ = E::StartPlayerRagdollSimulation(body_);
+            if (!bodyRef_.Get() || puppetRef_.Get() != puppetActor) {
+                Stop(puppetActor, puppetIdx);
+                return Drive::StoppedNow;
+            }
             if (simulationStarted_) {
                 SetPuppetKelMeshesVisible(puppetActor, false);
                 E::SetSceneComponentVisibility(E::GetRagdollBodyMesh(body_), true, false);
             }
         }
         if (rigBones_ && bones_.size() == rigBones_ && puppetRef_.Get()) {
-            if (ue_wrap::sleep_display::DriveArticulated(puppetActor, bones_))
+            const bool displayed = ue_wrap::sleep_display::DriveArticulated(puppetActor, bones_);
+            if (!bodyRef_.Get() || puppetRef_.Get() != puppetActor) {
+                Stop(puppetActor, puppetIdx);
+                return Drive::StoppedNow;
+            }
+            if (displayed)
                 E::SetSceneComponentVisibility(E::GetRagdollBodyMesh(body_), false, false);
             else {
                 ue_wrap::sleep_display::Remove(puppetActor);
-                SetPuppetKelMeshesVisible(puppetActor, false);
-                E::SetSceneComponentVisibility(E::GetRagdollBodyMesh(body_), true, false);
+                if (!bodyRef_.Get() || puppetRef_.Get() != puppetActor) {
+                    Stop(puppetActor, puppetIdx);
+                    return Drive::StoppedNow;
+                }
+                SetPuppetKelMeshesVisible(puppetActor, !simulationStarted_);
+                E::SetSceneComponentVisibility(E::GetRagdollBodyMesh(body_), simulationStarted_, false);
             }
         }
         // The VISIBLE player-model body is the whole display; the puppet actor
@@ -189,7 +219,7 @@ void RagdollDisplay::Start(void* puppetActor, int32_t puppetIdx) {
     bodyRef_.Set(body);
     simulationStarted_ = false;
     simulationAfter_ = std::chrono::steady_clock::now() + std::chrono::milliseconds(30);
-    puppetRef_.Set(puppetActor);
+    puppetRef_ = puppetRef;
     bones_.clear(); rigBones_ = 0;
 
     // PELVIS-attach the puppet actor to the body: the position anchor (nameplate +
@@ -198,7 +228,7 @@ void RagdollDisplay::Start(void* puppetActor, int32_t puppetIdx) {
     if (!puppetRef.Get() || !E::AttachActorToRagdollBody(puppetActor, body) || !bodyRef_.Get() || !puppetRef.Get()) {
         UE_LOGW("RagdollDisplay::Start: pelvis-attach failed -- destroying body, puppet stays upright");
         if (bodyRef_.Get()) E::DestroyActor(body);
-        body_ = nullptr; bodyIdx_ = -1; bodyRef_.Reset();
+        body_ = nullptr; bodyIdx_ = -1; bodyRef_.Reset(); puppetRef_.Reset();
         return;
     }
     // Hide the standing player model for the flop so it does not double-image with the
@@ -212,16 +242,17 @@ void RagdollDisplay::Start(void* puppetActor, int32_t puppetIdx) {
 }
 
 void RagdollDisplay::Stop(void* puppetActor, int32_t puppetIdx) {
-    ue_wrap::sleep_display::Remove(puppetActor);
+    const auto puppet = puppetRef_;
+    if (puppet.Get() == puppetActor) ue_wrap::sleep_display::Remove(puppetActor);
     puppetRef_.Reset(); bones_.clear(); rigBones_ = 0;
-    if (puppetActor && R::IsLiveByIndex(puppetActor, puppetIdx)) {
+    if (puppetActor && puppet.Get() == puppetActor && R::IsLiveByIndex(puppetActor, puppetIdx)) {
         // Un-hide the kel meshes FIRST (their normal state -- safe no-op if Start
         // never hid them), then detach (KeepWorld -- the puppet stays where the flop
         // left it; the next pose drives it back to the streamed pose) BEFORE
         // destroying the body it's attached to.
         SetPuppetKelMeshesVisible(puppetActor, true);
-        coop::skin_effects::SetRigVisible(puppetActor, true);
-        E::DetachActorFromRagdollBody(puppetActor);
+        if (puppet.Get()) coop::skin_effects::SetRigVisible(puppetActor, true);
+        if (puppet.Get()) E::DetachActorFromRagdollBody(puppetActor);
     }
     // Destroy the physics body (IsLiveByIndex-guarded against a recycled addr).
     if (bodyRef_.Get()) E::DestroyActor(body_);

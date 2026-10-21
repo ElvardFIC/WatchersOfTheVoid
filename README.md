@@ -8,20 +8,18 @@ Play co-op on Windows with up to four players, LAN and Internet sessions, remote
 text and positional voice chat, and host-authoritative world synchronization.
 This is experimental software; multiplayer verification is still in progress.
 
-## Fork status - 21 October 2026
+## Fork status - 22 October 2026
 
-The latest locally prepared package is **0.9.2155**, for game **0.9.0n**.
-It contains DLL **b2178 / network protocol 2178** and integrates the fish branch
-with main's Entity, Kavotia, event and personal-sleep work. It adds event replay
-and join recovery, five supported frequency generators, placement/coin protection,
-water/cleaning/grill state, console/toy recovery and trowel stock persistence.
-The Release build and **65/65 offline validation groups** pass on a stable source tree.
-See [release notes](package/RELEASE_2155.md) and [changelog](package/CHANGELOG_PLUS.md).
+The latest locally prepared package is **0.9.2156**, for game **0.9.0n**, with
+DLL **b2179 / network protocol 2179**. It integrates the fish branch with main's
+Entity, Kavotia, event and personal-sleep work; adds held water/material stock
+persistence, shared-screen startup isolation and selected-model ragdoll setup
+corrections; and carries the accumulated event, placement, creature and world
+synchronization changes. Offline qualification and package scope are recorded in
+[release notes](package/RELEASE_2156.md) and [changelog](package/CHANGELOG_PLUS.md).
+Dream checks and outcomes stay native and personal; sleep replication is
+presentation only. Dream effects/rewards and real-peer acceptance remain open.
 Local packaging does not publish a binary release online.
-
-The final 2155 package also includes prop-destroy identity guards and location-event
-session/reentry protection from b2178. Its Release and 65/65 offline groups pass on
-unchanged production inputs; real-peer acceptance remains required.
 
 Complete event/creature coverage, paid repairs and resource accounting remain open.
 The fresh native-asset audit remains deferred; full public-prose and fact-row CI

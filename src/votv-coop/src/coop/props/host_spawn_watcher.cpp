@@ -15,6 +15,7 @@
 #include "coop/props/prop_drive_host.h"
 #include "coop/props/prop_lifecycle.h"      // ExpressSpawnedProp (reuse the keyed broadcast)
 #include "coop/props/prop_save_data.h"       // Publish the record after the spawn Blueprint fills it
+#include "coop/props/container_birth.h"
 #include "coop/props/prop_spawn_authoring.h"
 #include "ue_wrap/actors/floor_bed.h"
 #include "ue_wrap/core/cached_obj_ref.h"
@@ -455,8 +456,11 @@ void DrainPendingSpawns(coop::net::Session* s) {
                 actor == coop::hand_item::LocalHandActor()) return;
             const auto id = coop::element::Registry::Get().EidForActor(actor);
             const auto* owner = coop::element::Registry::Get().Get(id);
-            if (owner && !owner->IsMirror() && !owner->IsBeingDeleted())
+            if (owner && !owner->IsMirror() && !owner->IsBeingDeleted()) {
+                coop::props::container_birth::NoteHostBirth(actor);
+                if (!current()) return;
                 coop::prop_save_data::Publish(s, actor, key);
+            }
         };
         const auto coastFinishedBirth = [&] {
             // The factory/physicsImpact assigns velocities AFTER Finish returns.
