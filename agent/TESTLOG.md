@@ -1,5 +1,61 @@
 # TestLog — current status and source reports
 
+## Fish integration into main, protocol b2176 (21 October 2026)
+
+Source: `watchers-of-the-void-fish` at
+`e48f19b8717c8b695c6d235499d0baf31fccbf6b`, relative to `b6651cb91`;
+main integration baseline: `74e1729e5`. See WORK.md for the behavior inventory
+and HANDOFF_FISH.md for the original branch's qualification and open work.
+
+The merged protocol keeps Kavotia=223 and placement-result=224; Watoy moves to
+235, with new fork kinds 225..234. Placement requests/replies are 188/101 bytes;
+cooking progress, tool/player identity and other new layouts require matching
+b2176 peers. The authority table and all dispatch/lane/build/lifecycle entries
+preserve main's Entity, event-frequency/delivery and personal-sleep changes.
+
+Conflict-specific checks exercise the actual placement and coin controllers:
+acceptance-only record publication, same-key refusal, active/live key reservations
+before index enrollment, synchronous replies, immutable retries, retained replies,
+actor/world/occupant changes, readiness, malformed strings/padding/cooking values,
+pre-eid coin reservation and retirement after faulted native destruction.
+Existing fault controls now expand the production .inc fragments before mutation;
+the queue-cap control exercises simultaneous retained captures and callback arrivals.
+
+Final stable-tree qualification: **PASS, 63/63 groups**, production snapshot
+unchanged through tests and final incremental Release build; **781 source entries**.
+Command: `package/check_current.ps1 -EvidenceDirectory build/fish-integration-check`.
+DLL: `build/votv-coop-2154/main.dll`, **0.9.0n b2176**.
+SHA256: `b069a8cfb542c86a7569c495302a882003ef5a245feb1f126210ce26b02355c1`.
+Evidence: `build/fish-integration-check/{verification.json,identity.json,results.json,build.log,logs/}`.
+Identity, imports/exports and all 224 reliable kinds pass; all 18 routing fault
+controls are rejected. The full source/config hash is in verification.json.
+The earlier changing-tree pass is superseded by this final run. Its failures
+identified merged duplicate test doubles, moved production-fragment includes and
+an outdated queue-cap fault fixture; focused reruns passed after adaptation.
+No passing result is claimed for the changing-tree snapshot.
+
+Additional validation limits:
+
+- `native_physics_fingerprints_test.py`: three captured encoding controls and two
+  documented derived signatures pass. This is not a fresh installed-game census.
+- `public_prose_include_test.py`: all four include-context cases pass.
+- `sync_native_contract_test.py` was not rerun: this workstation lacks 18 of its
+  45 literal package inputs, and additional dynamic inputs are required. The
+  owner's fresh pak/Blueprint audit remains deferred. The branch's original
+  58-file installed-pak contract qualification is provenance, not a local result.
+- The complete working-tree public-prose census, including new unstaged source
+  files, remains above baseline on 14 counters (1905 source files;
+  `build/fish-public-prose-working-tree.json`). The normal tracked-only command
+  reports 15 counters because it cannot see new callers in untracked files.
+- `fact_rows_gate.py` remains red across 525 rows/157 files, including missing
+  native-hook references and unused existing rows; details are in
+  `build/fish-fact-rows.log`. Full repository CI is not claimed green.
+
+Two-peer gameplay, physical projectile/collision behavior, atomic resource
+spending/refund, ordinary paid cement repairs, remaining dynamic grime sources
+and scorch provenance through full world/save reload remain open. No package,
+game installation, commit, push or publication was performed.
+
 ## Event synchronization: stable Release b2159, 40/40 groups (21 October 2026)
 
 PASS `package/check_current.ps1 -EvidenceDirectory build/event-sync-check/validation-2159`:

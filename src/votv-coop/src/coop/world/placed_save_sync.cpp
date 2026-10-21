@@ -25,12 +25,13 @@
 #include <cmath>
 #include <algorithm>
 #include <array>
+#include <functional>
+#include <iterator>
 #include <deque>
 #include <map>
 #include <random>
 #include <set>
 #include <vector>
-
 namespace coop::placed_save_sync {
 namespace {
 UE_FACT_FN(kFinishSpawningRow, "placed_save", L"GameplayStatics", L"FinishSpawningActor", Declared);
@@ -47,7 +48,7 @@ struct Row {
     ue_wrap::CachedObjRef ref;
     Record record;
     bool local = false, ready = false, accepted = false, incoming = false, settled = true;
-    bool dead = false, remove = false, dirty = false, link = false, retireLookup = false;
+    bool dead = false, remove = false, dirty = false, link = false, retireLookup = false, spawnedForClient=false;
     uint8_t owner = 0;
     uint32_t playerNo = 0;
     uint32_t hoseStateSeq = 0;
@@ -72,6 +73,7 @@ std::wstring g_pollCursor;
 struct Use {
     std::wstring key; ue_wrap::CachedObjRef ref; uint32_t seq = 0; uint64_t expires = 0;
     Op op=Harvest; P::CareUse care{};
+    uint16_t person=0;uint8_t slot=0;uint64_t peerEpoch=0;
 };
 struct Used { uint32_t seq = 0, playerNo = 0; uint64_t at = 0; };
 std::deque<Use> g_uses;
@@ -79,8 +81,9 @@ std::array<Used, players::kMaxPeers> g_used{};
 uint32_t g_useSeq = 0;
 struct CareFrame {
     ue_wrap::CachedObjRef tool, plant;
-    void* function=nullptr; // identity token for IsObjectBodyActive; never dereferenced
-    P::CareUse care; std::wstring key; uint64_t epoch=0;
+    uint64_t invocation=0;
+    P::CareUse care; std::wstring key; uint64_t epoch=0,peerEpoch=0;
+    uint32_t world=0;uint16_t person=0;uint8_t slot=0;
 };
 std::vector<CareFrame> g_careFrames;
 std::set<std::pair<uint32_t,std::wstring>> g_spentFertilizers;
@@ -121,14 +124,16 @@ std::wstring Mint() {
     swprintf(key, 32, L"mvpl_%08x_%08x", g_nonce, ++g_keySeq);
     return key;
 }
-bool Send(Op op, const Record& record, uint32_t useSeq = 0, const P::CareUse* care=nullptr) {
+bool Send(Op op, const Record& record, uint32_t useSeq = 0, const P::CareUse* care=nullptr,const std::function<bool()>& current={},uint16_t person=0) {
+    if((op==Care || op==Harvest) && !person)return false;
     std::vector<uint8_t> bytes;
     W::AppU8(bytes, op);
     if (op == Remove || op == Retired || op == Refresh || op == Harvest || op == Care) W::AppWStr(bytes, record.key);
     else W::SerSave(bytes, record);
-    if (op == Harvest || op == Care) W::AppU32(bytes, useSeq);
+    if (op == Harvest || op == Care) {W::AppU32(bytes,useSeq);W::AppU32(bytes,person);}
     if (op == Care && care) { W::AppU8(bytes,uint8_t(care->kind));W::AppWStr(bytes,care->sourceKey);W::AppF32(bytes,care->amount); }
-    return blob_chunks::SendBlob(g_session, net::ReliableKind::PlacedSave, ++g_blobSeq, bytes);
+    return current?blob_chunks::SendBlobWhile(g_session,net::ReliableKind::PlacedSave,++g_blobSeq,bytes,current):
+        blob_chunks::SendBlob(g_session, net::ReliableKind::PlacedSave, ++g_blobSeq, bytes);
 }
 bool ValidKey(const std::wstring& key) {
     if (key.empty() || key == L"None" || key.size() > 128) return false;
@@ -224,7 +229,8 @@ void PollGarden(uint64_t now) {
         if (it == g_rows.end()) it = g_rows.begin();
         const auto key = it->first; g_pollCursor = key;
         const auto& row = it->second;
-        if (!row.accepted || row.dead || row.incoming || row.link || !Garden(P::ClassKind(row.record.className)) || now < row.pollAt) continue;
+        const bool polled = Garden(P::ClassKind(row.record.className)) || row.record.className == L"customWall_wetConcrete_C";
+        if (!row.accepted || row.dead || row.incoming || row.link || !polled || now < row.pollAt) continue;
         const auto ref = row.ref;
         void* actor = ref.Get();
         if (!actor) continue;
@@ -315,6 +321,8 @@ SG::Verdict BeforeAction(const SG::Call& c) {
                 if (g_uses.size() + g_careFrames.size() < 32) {
                     Use use{key, row.ref, ++g_useSeq, Now() + 10000};
                     if (!use.seq) use.seq = ++g_useSeq;
+                    use.slot=players::Registry::Get().LocalPeerId();if(use.slot>=players::kMaxPeers)return SG::Verdict::Cancel;
+                    use.person=roster_ledger::Get(use.slot).playerNo;use.peerEpoch=g_hosePeerEpoch[use.slot];if(!use.person)return SG::Verdict::Cancel;
                     g_uses.push_back(std::move(use));
                 }
                 return SG::Verdict::Cancel;
@@ -330,12 +338,15 @@ void FlushUses(uint64_t now) {
         const Use use = g_uses.front();
         // A completed owner-paid care use still belongs to this world if its
         // local crop copy vanished before transport; the host validates the key.
-        if (use.op==Harvest && (!use.ref.Get() || now >= use.expires)) { g_uses.pop_front(); continue; }
+        const auto current=[&]{return epoch==g_epoch && g_world==ue_wrap::world_identity::Generation() && Tracking() && !Host() &&
+            use.slot<players::kMaxPeers && use.slot==players::Registry::Get().LocalPeerId() && use.person &&
+            use.person==roster_ledger::Get(use.slot).playerNo && use.peerEpoch==g_hosePeerEpoch[use.slot];};
+        if (!current() || (use.op==Harvest && (!use.ref.Get() || now >= use.expires))) { g_uses.pop_front(); continue; }
         Record record; record.key = use.key;
-        const bool sent = Send(use.op, record, use.seq, &use.care);
+        const bool sent = Send(use.op, record, use.seq, &use.care,current,use.person);
         if (epoch != g_epoch || !Tracking() || Host()) return;
         if (!sent) break;
-        g_uses.pop_front();
+        if(!g_uses.empty() && g_uses.front().seq==use.seq)g_uses.pop_front();
     }
 }
 SG::Verdict BeforeCare(const SG::Call& c) {
@@ -346,26 +357,39 @@ SG::Verdict BeforeCare(const SG::Call& c) {
     void* player=nullptr;std::memcpy(&player,c.locals+off,sizeof(player));
     if(player!=players::Registry::Get().Local())return SG::Verdict::Run;
     const auto kind=R::ClassNameOf(c.object)==L"prop_fertilizer_C"?P::CareKind::Fertilizer:P::CareKind::Water;
-    const auto epoch=g_epoch;P::CareUse care;
-    if(!P::ReadCareUse(c.object,player,kind,care)||epoch!=g_epoch||!Tracking()||Host())return SG::Verdict::Run;
+    const auto epoch=g_epoch;const auto world=g_world;const auto slot=players::Registry::Get().LocalPeerId();
+    if(slot>=players::kMaxPeers)return SG::Verdict::Run;
+    const auto person=roster_ledger::Get(slot).playerNo;const auto peerEpoch=g_hosePeerEpoch[slot];ue_wrap::CachedObjRef tool;tool.Set(c.object);
+    const auto current=[&]{return epoch==g_epoch && world==ue_wrap::world_identity::Generation() && Tracking() && !Host() && tool.Get() &&
+        c.object==hand_item::LocalHandActor() && slot==players::Registry::Get().LocalPeerId() && person && roster_ledger::Get(slot).playerNo==person && g_hosePeerEpoch[slot]==peerEpoch;};
+    P::CareUse care;
+    if(!current())return SG::Verdict::Cancel;
+    const bool read=P::ReadCareUse(c.object,player,kind,care);if(!current())return SG::Verdict::Cancel;
+    if(!read)return SG::Verdict::Run;
+    std::erase_if(g_careFrames,[](const CareFrame& frame){return !SG::IsInvocationActive(frame.invocation);});
     for(const auto& [key,row]:g_rows)if(row.accepted&&!row.dead&&row.ref.Is(care.plant)) {
         // Reserve storage before native gameplay spends anything. Refuse a
         // tracked crop use only if there is nowhere to retain its result.
-        if(g_uses.size()+g_careFrames.size()>=32)return SG::Verdict::Cancel;
-        CareFrame frame;frame.tool.Set(c.object);frame.function=c.function;frame.plant=row.ref;frame.care=std::move(care);frame.key=key;frame.epoch=epoch;
+        if(!c.invocation || g_uses.size()+g_careFrames.size()>=32)return SG::Verdict::Cancel;
+        CareFrame frame;frame.tool=tool;frame.invocation=c.invocation;frame.plant=row.ref;frame.care=std::move(care);frame.key=key;frame.epoch=epoch;
+        frame.world=world;frame.person=person;frame.slot=slot;frame.peerEpoch=peerEpoch;
         g_careFrames.push_back(std::move(frame));break;
     }
     return SG::Verdict::Run;
 }
 void AfterCare(const SG::Call& c) {
-    if(g_careFrames.empty()||g_careFrames.back().tool.Raw()!=c.object)return;
-    const auto frame=g_careFrames.back();g_careFrames.pop_back();
-    if(frame.epoch!=g_epoch||!Tracking()||Host()||!frame.plant.Get())return;
+    if(!c.invocation)return;
+    const auto found=std::find_if(g_careFrames.rbegin(),g_careFrames.rend(),[&](const CareFrame& frame){return frame.invocation==c.invocation && frame.tool.Raw()==c.object;});
+    if(found==g_careFrames.rend())return;const auto frame=*found;g_careFrames.erase(std::next(found).base());
+    const auto current=[&]{return frame.epoch==g_epoch && frame.world==ue_wrap::world_identity::Generation() && Tracking() && !Host() &&
+        frame.slot==players::Registry::Get().LocalPeerId() && roster_ledger::Get(frame.slot).playerNo==frame.person && g_hosePeerEpoch[frame.slot]==frame.peerEpoch;};
+    if(!current())return;
     const bool spent=frame.care.kind==P::CareKind::Fertilizer?!frame.tool.Get():
         frame.tool.Get()&&P::CareWasSpent(c.object,frame.care.kind);
-    if(!spent)return;
+    if(!spent || !current() || (frame.care.kind==P::CareKind::Water && !frame.tool.Get()))return;
     Use use{frame.key,frame.plant,++g_useSeq,0,Care,frame.care};
     if(!use.seq)use.seq=++g_useSeq;
+    use.person=frame.person;use.slot=frame.slot;use.peerEpoch=frame.peerEpoch;
     g_uses.push_back(std::move(use));
 }
 // Save-loaded placements keep their persistent identity, including specialized
@@ -446,7 +470,7 @@ void Receive(const net::BlobChunkPayload& chunk, uint8_t slot) {
     std::vector<uint8_t> bytes;
     if (chunk.chunks > 300 || !g_assembler.OnChunk(chunk, slot, bytes) || bytes.size() > 64 * 1024) return;
     if (garden_actions::Receive(bytes, slot)) return;
-    size_t offset = 0; uint8_t op = 0; uint32_t useSeq = 0; Record record;P::CareUse care;
+    size_t offset = 0; uint8_t op = 0; uint32_t useSeq = 0,usePerson=0; Record record;P::CareUse care;
     if (!W::RdU8(bytes, offset, op) || op > HoseReply ||
         (Host() ? (op != Create && op != Remove && op != Refresh && op != Harvest && op != Care && op != HoseRoute) :
             (op != State && op != Retired && op != HoseReply))) return;
@@ -458,6 +482,7 @@ void Receive(const net::BlobChunkPayload& chunk, uint8_t slot) {
         if (!W::DeSave(bytes, offset, input) || !P::Normalize(input, record)) return;
     }
     if ((op == Harvest || op == Care || op == HoseRoute) && (!W::RdU32(bytes, offset, useSeq) || !useSeq)) return;
+    if((op==Harvest || op==Care) && (!W::RdU32(bytes,offset,usePerson) || !usePerson || usePerson>65535))return;
     uint32_t baselineLo = 0, baselineHi = 0;
     if (op == HoseRoute && (!W::RdU32(bytes, offset, baselineLo) || !W::RdU32(bytes, offset, baselineHi))) return;
     if(op==Care) {
@@ -480,18 +505,23 @@ void Receive(const net::BlobChunkPayload& chunk, uint8_t slot) {
     }
     if (Host()) {
         if (op == HoseRoute) { ReceiveHoseRoute(record, useSeq, uint64_t(baselineLo) | (uint64_t(baselineHi) << 32), slot); return; }
+        const auto useEpoch=g_epoch;const auto useWorld=g_world;const auto useConnection=g_hosePeerEpoch[slot];auto* useSession=g_session;
+        const auto useCurrent=[&]{return useEpoch==g_epoch && useWorld==ue_wrap::world_identity::Generation() && g_session==useSession &&
+            Tracking() && Host() && useSession->IsSlotWorldReady(slot) && g_hosePeerEpoch[slot]==useConnection && roster_ledger::Get(slot).playerNo==usePerson;};
+        if((op==Care || op==Harvest) && !useCurrent())return;
         if(op==Care) {
             if(it==g_rows.end()||!it->second.accepted||it->second.dead)return;
             const auto ref=it->second.ref;void* actor=ref.Get();const auto epoch=g_epoch;
-            const auto playerNo=roster_ledger::Get(slot).playerNo;const auto prior=g_used[slot];
+            const auto playerNo=usePerson;const auto prior=g_used[slot];
             const auto stock=std::make_pair(uint32_t(playerNo),care.sourceKey);
             if(!actor||P::Type(actor)!=P::Kind::Plant||!playerNo||
                (prior.playerNo==playerNo&&int32_t(useSeq-prior.seq)<=0)||
                !hand_item::LastHeldClassIs(slot,care.kind==P::CareKind::Water?L"prop_bucket_C":L"prop_fertilizer_C")||
                (care.kind==P::CareKind::Fertilizer&&(g_spentFertilizers.count(stock)||g_spentFertilizers.size()>=4096))||
                !element::IntentTarget::ForClientIntent(*g_session,slot,450.f).Authorize(actor))return;
-            if(epoch!=g_epoch||!Tracking()||!Host()||!ref.Get()||roster_ledger::Get(slot).playerNo!=playerNo)return;
+            if(epoch!=g_epoch||!useCurrent()||!ref.Get())return;
             if(!P::ApplyCare(actor,care.kind,care.amount))return;
+            if(!useCurrent() || !ref.Get())return;
             g_used[slot]={useSeq,playerNo,Now()};
             if(care.kind==P::CareKind::Fertilizer)g_spentFertilizers.insert(stock);
             it=g_rows.find(record.key);if(it!=g_rows.end()){it->second.pollAt=it->second.next=0;it->second.dirty=true;}
@@ -501,7 +531,7 @@ void Receive(const net::BlobChunkPayload& chunk, uint8_t slot) {
             if (it == g_rows.end() || !it->second.accepted || it->second.dead) return;
             const auto ref = it->second.ref; const auto epoch = g_epoch;
             void* actor = ref.Get();
-            const auto playerNo = roster_ledger::Get(slot).playerNo;
+            const auto playerNo = usePerson;
             const auto prior = g_used[slot]; const auto now = Now();
             auto* remote = players::Registry::Get().Puppet(slot);
             void* collector = remote && remote->valid() ? remote->GetActor() : nullptr;
@@ -510,12 +540,12 @@ void Receive(const net::BlobChunkPayload& chunk, uint8_t slot) {
                 !collectorRef.Get() || !SG::ClassNameWatchLive(L"mainPlayer_C", L"putObjectInventory2", kTag) ||
                 (prior.playerNo == playerNo && (int32_t(useSeq - prior.seq) <= 0 || now < prior.at + 250)) ||
                 !element::IntentTarget::ForClientIntent(*g_session, slot, 450.f).Authorize(actor)) return;
-            if (epoch != g_epoch || !Tracking() || !Host() || !ref.Get() || !collectorRef.Get() || roster_ledger::Get(slot).playerNo != playerNo) return;
+            if (epoch != g_epoch || !useCurrent() || !ref.Get() || !collectorRef.Get()) return;
             g_used[slot] = {useSeq, playerNo, now};
             Applying applying;
             HarvestCollector collecting(collector);
             P::Harvest(actor, collector);
-            if (epoch != g_epoch || !Tracking() || !Host()) return;
+            if (epoch != g_epoch || !useCurrent()) return;
             if (g_world != ue_wrap::world_identity::Generation()) { World(); return; }
             it = g_rows.find(record.key);
             if (it != g_rows.end()) {
@@ -627,7 +657,7 @@ void Tick() {
     // Another script-gate consumer can cancel after our pre watch; that call
     // has no post callback. Reclaim its reservation once the body is inactive.
     std::erase_if(g_careFrames, [](const CareFrame& frame) {
-        return !SG::IsObjectBodyActive(frame.function, frame.tool.Raw());
+        return !SG::IsInvocationActive(frame.invocation);
     });
     if (now >= g_sweep) {
         g_sweep = now + 1000;
@@ -698,12 +728,13 @@ void Tick() {
                     row.record = std::move(normalized);
                 } else if (!P::Apply(existing, row.record)) continue;
                 a = existing;
-            } else a = P::Spawn(row.record);
+            } else {a = P::Spawn(row.record);row.spawnedForClient=Host() && a;}
             if (epoch != g_epoch) return;
             if (!a) continue;
             it = g_rows.find(key); if (it == g_rows.end()) continue;
             it->second.record = row.record;
             it->second.ref.Set(a); it->second.incoming = false; it->second.accepted = true;
+            it->second.spawnedForClient=row.spawnedForClient;
             it->second.link = true; it->second.dirty = Host(); it->second.next = 0;
             continue;
         }
@@ -784,9 +815,15 @@ void TrackWall(void* actor) {
     ue_wrap::CachedObjRef ref; ref.Set(actor);
     EnrollPlaced(ref);
 }
+bool OwnsClientWall(const std::wstring& key,void* actor,uint8_t slot,uint16_t playerNo) {
+    if(!Tracking() || !Host() || !playerNo)return false;
+    const auto it=g_rows.find(key);if(it==g_rows.end())return false;
+    const auto& row=it->second;return row.accepted && !row.dead && row.spawnedForClient && row.ref.Is(actor) &&
+        row.owner==slot && row.playerNo==playerNo && row.record.className==L"customWall_unfinished_C";
+}
 void OnDisconnect() { wall_build_sync::OnDisconnect(); g_session = nullptr; ResetWorld(); }
-bool SendGardenAction(const std::vector<uint8_t>& bytes) {
+bool SendGardenAction(const std::vector<uint8_t>& bytes,const std::function<bool()>& current) {
     return Active() && !Host() && bytes.size() <= 64 * 1024 &&
-        blob_chunks::SendBlob(g_session, net::ReliableKind::PlacedSave, ++g_blobSeq, bytes);
+        blob_chunks::SendBlobWhile(g_session, net::ReliableKind::PlacedSave, ++g_blobSeq, bytes,current);
 }
 }

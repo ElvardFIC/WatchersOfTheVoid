@@ -1,7 +1,7 @@
 param([switch]$CompileSources)
 $ErrorActionPreference='Stop'
 $root=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
-$output=Join-Path $root '_research/tests_2154'
+$output=Join-Path $root 'build/console-event-check'
 New-Item -ItemType Directory -Force -Path $output | Out-Null
 Push-Location $root
 try {
@@ -14,6 +14,10 @@ try {
  if($LASTEXITCODE -ne 0){throw 'Madness test compile failed'}
  & "$output/madness.exe"
  if($LASTEXITCODE -ne 0){throw 'Madness test failed'}
+ & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I src/votv-coop/include "/Fo$output/madness_wrapper.obj" "/Fe$output/madness_wrapper.exe" agent/tests/madness_wrapper_test.cpp /link /OPT:REF
+ if($LASTEXITCODE -ne 0){throw 'Madness presentation compile failed'}
+ & "$output/madness_wrapper.exe"
+ if($LASTEXITCODE -ne 0){throw 'Madness presentation failed'}
  if($CompileSources){
   foreach($file in @('coop/interactables/sat_console_sync','ue_wrap/desk/sat_console','coop/world/madness_sync','ue_wrap/world/madness','coop/dispatch/event_dispatch_world','coop/session/subsystems')) {
    $name=$file -replace '/','_'

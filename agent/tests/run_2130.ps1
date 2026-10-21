@@ -6,7 +6,7 @@ Push-Location $root
 try {
     . (Join-Path $root '../_toolchain/env.ps1')
     function Compile-AndRun([string]$name,[string]$source,[bool]$negative) {
-        & cl /nologo /std:c++20 /EHsc /Gy /I agent\tests\item_record_stubs /I src\votv-coop\include "/Fo$output\$name.obj" "/Fe$output\$name.exe" $source /link /OPT:REF
+        & cl /nologo /std:c++20 /EHsc /Gy /I agent/tests /I src/votv-coop/src/coop/props /I agent/tests/item_record_stubs /I src/votv-coop/include "/Fo$output\$name.obj" "/Fe$output\$name.exe" $source /link /OPT:REF
         if ($LASTEXITCODE -ne 0) { throw "Compilation failed: $name" }
         & "$output\$name.exe"
         $rc=$LASTEXITCODE
@@ -20,7 +20,7 @@ try {
     $cases=@(
         @{Name='reentry';Before='key.empty() || g_applying.count(key)';After='key.empty()'},
         @{Name='borrowed_record';Before='const Parked snapshot = it->second;';After='const Parked& snapshot = it->second;'},
-        @{Name='erase_replacement';Before='current->second.seq == snapshot.seq';After='true'},
+        @{Name='erase_replacement';Before='landed->second.seq == snapshot.seq';After='true'},
         @{Name='world_aba';Before='++g_worldEpoch;';After='/* unchanged world epoch */'},
         @{Name='drive_reentry';Before='if (g_driving) return;';After='/* allow nested Drive */'},
         @{Name='uncharged_failure';Before='if (budgeted) --g_applyBudget;';After='/* no dispatch budget */'},
@@ -31,6 +31,12 @@ try {
     foreach ($case in $cases) {
         $relative='coop/props/prop_save_data.cpp'
         $source=[IO.File]::ReadAllText((Join-Path $root ('src/votv-coop/src/'+$relative)))
+        foreach ($fragment in @('prop_save_order.inc','prop_save_apply.inc','prop_drop_host.inc','prop_drop_replies.inc')) {
+            $include='#include "'+$fragment+'"'
+            if ($source.Contains($include)) {
+                $source=$source.Replace($include,[IO.File]::ReadAllText((Join-Path $root ('src/votv-coop/src/coop/props/'+$fragment))))
+            }
+        }
         if (-not $source.Contains($case.Before)) { throw "Mutation target changed: $($case.Name)" }
         $mutant=Join-Path $output ($case.Name+'_source.cpp')
         [IO.File]::WriteAllText($mutant,$source.Replace($case.Before,$case.After))
@@ -52,6 +58,12 @@ try {
     foreach ($case in $birthCases) {
         $relative='coop/props/prop_drop_intent.cpp'
         $source=[IO.File]::ReadAllText((Join-Path $root ('src/votv-coop/src/'+$relative)))
+        foreach ($fragment in @('prop_save_order.inc','prop_save_apply.inc','prop_drop_host.inc','prop_drop_replies.inc')) {
+            $include='#include "'+$fragment+'"'
+            if ($source.Contains($include)) {
+                $source=$source.Replace($include,[IO.File]::ReadAllText((Join-Path $root ('src/votv-coop/src/coop/props/'+$fragment))))
+            }
+        }
         if (-not $source.Contains($case.Before)) { throw "Mutation target changed: $($case.Name)" }
         $mutant=Join-Path $output ($case.Name+'_source.cpp')
         [IO.File]::WriteAllText($mutant,$source.Replace($case.Before,$case.After))

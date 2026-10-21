@@ -135,9 +135,8 @@ constexpr ClientAuthorship AuthorshipOf(ReliableKind k) {
     case ReliableKind::RemoverRequest:
     case ReliableKind::CameraToggleIntent:
     case ReliableKind::LaptopTabReport:
-    // Local lanes retained by the sync-2153 merge. These carry validated
-    // client intents/owner samples; their handlers author the canonical result.
-    // Admission does not make them blindly relayable (session_lanes.h).
+    // Fork lanes retained at merge: their existing client senders must reach the
+    // host's validating handlers. None gains a relay path from this admission row.
     case ReliableKind::AtvConditionEdit:
     case ReliableKind::EventGather:
     case ReliableKind::PvpChange:
@@ -160,6 +159,15 @@ constexpr ClientAuthorship AuthorshipOf(ReliableKind k) {
     case ReliableKind::DeskShortCircuit:
     case ReliableKind::HookRetrieve:
     case ReliableKind::DingusMusic:
+    case ReliableKind::Watoy:
+    case ReliableKind::SpongeEffect:
+    case ReliableKind::WallCreative:
+    case ReliableKind::GrillHand:
+    case ReliableKind::GrillEdit:
+    case ReliableKind::WaterLaunch:
+    case ReliableKind::DrinkLaunch:
+    case ReliableKind::DrinkPour:
+    case ReliableKind::WaterPour:
     case ReliableKind::HandToyAudio:
     case ReliableKind::PlacedSave:
     case ReliableKind::PropScaleState:
@@ -253,6 +261,8 @@ constexpr ClientAuthorship AuthorshipOf(ReliableKind k) {
     case ReliableKind::GrayboarAction:
     case ReliableKind::GrayboarTurn:
     case ReliableKind::LaptopTabState:
+    case ReliableKind::WaterSplash:
+    case ReliableKind::DrinkSpill:
         return ClientAuthorship::Host;
     }
     return ClientAuthorship::NotAKind;  // a byte value that names no kind: refused like Host

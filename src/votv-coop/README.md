@@ -7,6 +7,34 @@ substrate; the DLL imports nothing from UE4SS, which is the loader and the devel
 identity, game target plus build, is in the boot banner and the DLL's generated VERSIONINFO
 (`version.rc.in`), not in the filename.
 
+Current local non-Entity development uses protocol2175. Beer/wine and coffee launch
+requests now run native flight, collision and electrical outcomes on the host. Local
+temporary spheres stop simulating before transport; final-use hand generations
+retain their class proof. Native pour audio has its own source-validated transient
+lane, with exact caller-point capture and independent delivery/audio order.
+Paid garden uses bind their native invocation and owning connection through
+capture and send. Care/harvest bytes carry the original player number; the host
+rejects stale occupants and interrupted authority probes. Matching peers and two-player gameplay checks
+remain required. Current build evidence and open work are in agent/TESTLOG.md and
+agent/TODO.md at the repository root; historical ZIPs do not include this source.
+World and selected-hand gasoline-bottle breaks use host flight and canonical
+decal identities, including cleaning/join/retirement. Hand launches prove the exact
+current or recently consumed bottle; mirror factories are refused. Native gasoline
+flames follow the host's fire state; local player traces remain native. Fire
+requests retain their originating player. Partial native attempts cannot replay
+additive fuel, and final extinguishing state retries blocked ready recipients.
+Ordinary/salt-rocket explosion surface scorches now use host-native placement and
+quiet canonical birth/cleaning/join/retirement. The inherited private-PC explosion
+stays local. Observed source provenance survives reconnect in the same world;
+unknown existing host scorches keep static cleaning, and full-save provenance
+migration still needs work. Scorch decals cannot become liquid launch requests.
+Observed looping toy music starts carry episode/position/pitch for late join and
+stopped-component recovery, including queue age and estimated transit. Unknown
+pre-observation or unsupported sound phase keeps the ordinary state path.
+Music snapshots, cached playback, native actions and queued squeaks retain the
+canonical actor key; a renamed source cannot inherit an old state or cue.
+Client music commands wait for the host's world readiness before leaving the queue.
+
 ## Subtrees (principle 7, `docs/architecture.md`)
 
 ```

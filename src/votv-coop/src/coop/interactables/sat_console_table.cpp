@@ -13,7 +13,7 @@ namespace {
 // ui_console.enterCommand's switch.
 const wchar_t* const kHostCommands[] = {
     L"sv.ping", L"sd.cal", L"sd.calch", L"sd.calall", L"sv.hash", L"tr.check", L"tw.check", L"time",
-    L"sv.request", L"sv.eject", L"sv.check", L"cr.check", L"sauce.get", L"sv.upgrades",
+    L"sv.request", L"sv.eject", L"sv.check", L"cr.check", L"sauce.get", L"sv.upgrades", L"clr",
     // Under the game rule funnySetting: a door alienated, a dingus, the rufus and thiccfus spawns and
     // their removal, the llama and its soul, the madness at night.
     L"summon_alien", L"alien", L"maxwell", L"argemwell", L"gnarpwell", L"eriewell",

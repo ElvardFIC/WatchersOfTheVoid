@@ -2,7 +2,6 @@
 #include "../../src/votv-coop/src/coop/items/inventory_wire.cpp"
 #include "../../src/votv-coop/src/coop/items/save_record_wire.cpp"
 #include "../../src/votv-coop/src/coop/net/blob_chunks.cpp"
-namespace ue_wrap::effects {int ResetOnSaveObject(void*,bool*){return 0;}}
 #include <cstdio>
 #include <cstdlib>
 #include <map>
@@ -17,8 +16,11 @@ std::map<std::string,std::vector<uint8_t>> stored;
 int storeWrites=0;
 ue_wrap::inventory::PlayerInventory localItems;
 bool materialReady=true;int liveUnits=0;uint32_t world=1;
+bool cookingReady=true;float liveProgress=-1;
+bool grillReady=true;float liveBurn=-1;std::function<void()> onGrill;
 int pawnSerial=1,rotationReads=0;
 std::function<void()> onPose,onVitals;
+bool vitalsReady=false;ue_wrap::vitals::Snapshot liveVitals;
 std::vector<uint8_t> Blob(int units){
  coop::player_profile::Profile p;ue_wrap::inventory::EquipRecord e;
  e.propName=L"wallfixer";e.propKey=e.data.key=L"tool_1";e.data.className=L"prop_wallfixer_C";e.data.ints={{units}};
@@ -31,7 +33,8 @@ std::vector<coop::net::BlobChunkPayload> Chunks(const std::vector<uint8_t>& blob
 }
 void Send(const std::vector<uint8_t>& blob,uint32_t seq,uint8_t slot=1){for(const auto& p:Chunks(blob,seq))P::OnReliable(p,slot);}
 void Reset(){P::OnDisconnect();session={};P::g_session=&session;guids={"host","alice","bob","carol"};stored.clear();storeWrites=0;
- localItems={};materialReady=true;liveUnits=0;world=1;onPose={};onVitals={};coop::players::local=nullptr;pawnSerial=1;rotationReads=0;}
+ localItems={};materialReady=true;liveUnits=0;world=1;onPose={};onVitals={};coop::players::local=nullptr;pawnSerial=1;rotationReads=0;cookingReady=true;liveProgress=-1;
+ grillReady=true;liveBurn=-1;onGrill={};vitalsReady=false;liveVitals={};}
 }
 namespace ue_wrap::log {void Write(Level,const char*,...){}}
 namespace ue_wrap::save_record {
@@ -44,7 +47,7 @@ void* ResolveSaveSlot(){std::abort();} bool ReadAll(PlayerInventory& out){out=te
 bool ApplyToSaveObject(void*,const PlayerInventory&){std::abort();}
 }
 namespace ue_wrap::vitals {
-bool ReadSnapshot(Snapshot&){if(test::onVitals)test::onVitals();return false;}bool ReadDefaults(Snapshot&){std::abort();}
+bool ReadSnapshot(Snapshot& out){out=test::liveVitals;if(test::onVitals)test::onVitals();return test::vitalsReady;}bool ReadDefaults(Snapshot&){std::abort();}
 bool ApplySnapshot(void*,const Snapshot&){std::abort();}bool WritePlayerTransform(void*,float,float,float,float){std::abort();}
 }
 namespace ue_wrap::engine {
@@ -63,6 +66,13 @@ namespace ue_wrap::canned_food {bool RefreshHeldRecord(void*,save_record::SaveRe
 #endif
 namespace ue_wrap::building_material {bool RefreshHeldMaterialRecord(void*,save_record::SaveRecord& record){
  if(!test::materialReady)return false;record.ints={{test::liveUnits}};return true;}}
+namespace ue_wrap::cooking_food {bool RefreshHeldRecord(void*,save_record::SaveRecord& record){
+ if(!test::cookingReady)return false;if(test::liveProgress>=0){record.floats.resize(3);record.floats[2]={test::liveProgress};}return true;}}
+namespace ue_wrap::grill_saved_state {bool RefreshHeldRecord(void*,save_record::SaveRecord& record){
+ auto f=std::move(test::onGrill);test::onGrill={};if(f)f();
+ if(!test::grillReady)return false;if(test::liveBurn>=0){if(record.floats.size()<2)record.floats.resize(2);
+ record.floats[1]={43217,1,test::liveBurn,1};}return true;}}
+namespace ue_wrap::effects {int ResetOnSaveObject(void*,bool*){std::abort();}}
 namespace ue_wrap::begin_equipment {bool GiveFromClass(const std::wstring&){std::abort();}}
 namespace ue_wrap::save_capture {
 void SetWorldGatherHook(void(*)()){}bool InstallGatherWatch(){std::abort();}EventState GameEventState(){std::abort();}
@@ -141,6 +151,21 @@ int main(){using namespace test;
  CHECK(coop::inventory_wire::Deserialize(result,decoded)&&decoded.items.hold[0].data.ints[0][0]==0);
  CHECK(localItems.hold[0].data.ints[0][0]==5);session.sent.clear();poll();CHECK(session.sent.empty());
  liveUnits=2;session.sendOk=false;poll();CHECK(session.sent.empty());session.sendOk=true;poll();CHECK(!session.sent.empty());
+ // Cooking progress is refreshed before the profile hash, including zero.
+ session.sent.clear();liveProgress=12.5f;cookingReady=false;poll();CHECK(session.sent.empty());
+ cookingReady=true;poll();CHECK(!session.sent.empty());result.clear();
+ for(const auto& part:session.sent)receive.OnChunk(part,1,result);
+ CHECK(coop::inventory_wire::Deserialize(result,decoded)&&decoded.items.hold[0].data.floats[2][0]==12.5f);
+ session.sent.clear();poll();CHECK(session.sent.empty());liveProgress=0;poll();CHECK(!session.sent.empty());
+ // Grill runtime must be refreshed before hashing too, and a failed field read keeps it pending.
+ session.sent.clear();liveBurn=.75f;grillReady=false;poll();CHECK(session.sent.empty());
+ grillReady=true;poll();CHECK(!session.sent.empty());result.clear();
+ for(const auto& part:session.sent)receive.OnChunk(part,1,result);
+ CHECK(coop::inventory_wire::Deserialize(result,decoded) && decoded.items.hold[0].data.floats[1][2]==.75f);
+ CHECK(localItems.hold[0].data.floats.size()<2 || localItems.hold[0].data.floats[1].empty());
+ session.sent.clear();poll();CHECK(session.sent.empty());liveBurn=0;poll();CHECK(!session.sent.empty());
+ session.sent.clear();onGrill=[]{P::OnDisconnect();};poll();CHECK(session.sent.empty() && P::g_lastItemsHash==0);
+ liveBurn=-1;grillReady=true;
  // An engine read that disconnects or travels must not emit/commit a profile from the old context.
  for(int reason=0;reason<3;++reason){Reset();session.mode=coop::net::Role::Client;P::g_profileApplied=true;localItems=decoded.items;
   coop::players::local=&session;
@@ -151,6 +176,39 @@ int main(){using namespace test;
   if(reason<2)CHECK(rotationReads==0&&!P::g_standingPose.valid);
  }
  Reset();coop::players::local=&session;onPose=[]{++pawnSerial;};P::SampleStandingPose();CHECK(rotationReads==0&&!P::g_standingPose.valid);
- std::puts("PASS real profile receiver/codec/chunker: current stock, malformed/stale/duplicate snapshots, partial ordering, slot reuse, role guards, wrap and join apply");
+ // Forced stat-order snapshots use the complete profile footer and current held stock.
+ Reset();session.mode=coop::net::Role::Client;P::g_profileApplied=true;CHECK(coop::inventory_wire::Deserialize(full,decoded));localItems=decoded.items;
+ vitalsReady=true;liveVitals.health=25;liveVitals.maxHealth=100;liveVitals.food=40;liveVitals.sleep=75;liveUnits=3;
+ CHECK(P::SendProfileNow(&session));result.clear();receive.Clear();for(const auto& part:session.sent)receive.OnChunk(part,1,result);
+ CHECK(coop::inventory_wire::Deserialize(result,decoded) && decoded.hasVitals && decoded.vitals.health==25 && decoded.vitals.sleep==75 && decoded.items.hold[0].data.ints[0][0]==3);
+ session.sent.clear();liveVitals.sleep=90;CHECK(P::SendProfileNow(&session) && !session.sent.empty());
+ session.sent.clear();materialReady=false;CHECK(!P::SendProfileNow(&session) && session.sent.empty());materialReady=true;
+ // A partial old-session snapshot must stop immediately and leave the new session's hash untouched.
+ for(int reason=0;reason<3;++reason){
+  Reset();session.mode=coop::net::Role::Client;P::g_profileApplied=true;localItems=decoded.items;
+  session.onSend=[&,reason]{if(reason==0)P::OnDisconnect();if(reason==1)++world;if(reason==2)++pawnSerial;};
+  CHECK(!P::SendProfileNow(&session) && session.sent.size()==1 && P::g_lastItemsHash==0);
+ }
+ Reset();session.mode=coop::net::Role::Client;P::g_profileApplied=true;localItems=decoded.items;
+ const auto sendSequence=P::g_sendSeq;
+ session.onSend=[&]{liveUnits=4;CHECK(P::SendProfileNow(&session));};CHECK(!P::SendProfileNow(&session));
+ CHECK(P::g_sendSeq==sendSequence+2 && P::g_lastItemsHash!=0);result.clear();receive.Clear();
+ for(const auto& part:session.sent)if(part.blobSeq==sendSequence+2)receive.OnChunk(part,1,result);
+ CHECK(coop::inventory_wire::Deserialize(result,decoded) && decoded.items.hold[0].data.ints[0][0]==4);
+ Reset();session.mode=coop::net::Role::Client;P::g_profileApplied=true;localItems=decoded.items;vitalsReady=true;
+ liveVitals.maxHealth=100;liveVitals.sleep=20;const auto beforeCapture=P::g_sendSeq;
+ onVitals=[&]{onVitals={};liveVitals.sleep=99;CHECK(P::SendProfileNow(&session));};CHECK(!P::SendProfileNow(&session));
+ CHECK(P::g_sendSeq==beforeCapture+1);result.clear();receive.Clear();
+ for(const auto& part:session.sent)receive.OnChunk(part,1,result);
+ CHECK(coop::inventory_wire::Deserialize(result,decoded) && decoded.hasVitals && decoded.vitals.sleep==99);
+ // The same chunker also guards targeted state transfers around every send.
+ Reset();const std::vector<uint8_t> large(800,42);bool current=true;
+ session.onSend=[&]{current=false;};CHECK(!coop::blob_chunks::SendBlobToSlotWhile(&session,2,coop::net::ReliableKind::PropSaveData,90,large,[&]{return current;}));
+ CHECK(session.sent.size()==1);session.sent.clear();current=true;
+ session.onSend=[&]{current=false;};CHECK(!coop::blob_chunks::SendBlobToSlotWhile(&session,2,coop::net::ReliableKind::PropSaveData,93,{42},[&]{return current;}));
+ CHECK(session.sent.size()==1);session.sent.clear();current=true;
+ CHECK(coop::blob_chunks::SendBlobToSlotWhile(&session,2,coop::net::ReliableKind::PropSaveData,91,large,[&]{return current;}) && session.sent.size()>1);
+ session.sent.clear();CHECK(!coop::blob_chunks::SendBlobToSlotWhile(nullptr,2,coop::net::ReliableKind::PropSaveData,92,large,[&]{return current;}) && session.sent.empty());
+ std::puts("PASS real profile receiver/codec/chunker: current stock, malformed/stale/duplicate snapshots, partial ordering, slot reuse, role guards, wrap, forced vitals and broadcast/targeted per-chunk cancellation");
  return 0;
 }

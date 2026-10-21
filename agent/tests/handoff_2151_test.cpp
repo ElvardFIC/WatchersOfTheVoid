@@ -39,6 +39,7 @@ bool Call(void* coin,ParamFrame&){
  return test::dispatchOK;
 }
 }
+namespace ue_wrap::engine {bool DestroyActor(void*){return false;}}
 namespace ue_wrap::economy {bool ReadPoints(int32_t* out){*out=test::balance;return test::balanceReadable;}}
 namespace ue_wrap::reflection {
 std::wstring ClassNameOf(void*){return L"baocoin_C";}

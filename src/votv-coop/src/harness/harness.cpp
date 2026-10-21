@@ -21,6 +21,8 @@
 #include "coop/dev/log_drill.h"  // [dev] the two-process log drill
 #include "coop/input/input_owner.h"
 #include "coop/props/prop_key_index.h"  // Install, posted at boot
+#include "coop/world/material_save_sync.h"
+#include "coop/props/food_save_sync.h"
 #include "coop/dev/object_overlay.h"
 #include "coop/dev/ragdoll_bone_overlay.h"
 #include "coop/save/join_window_baseline.h"
@@ -539,7 +541,7 @@ void Start() {
     // The prop key index's watches and object-index listener, on the first game-thread task, so whether they
     // were taken is known before any session can start (coop::session_manager::SubstrateRefusal reads it);
     // the frame tail drives their names on after.
-    GT::Post([] { coop::prop_key_index::Install(); });
+    GT::Post([] { coop::prop_key_index::Install(); coop::material_save_sync::Install(); coop::props::food_save_sync::Install(); });
     // A config change's subscribers run on the game thread.
     cfg::SetNotifier([](std::function<void()> task) { GT::Post(std::move(task)); });
     // The persisted nameplate pref (absent = visible), read by the Join's prefs byte.

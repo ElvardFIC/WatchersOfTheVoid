@@ -3,13 +3,15 @@
 #include <cstdio>
 #include <cstdlib>
 #include <limits>
+#include <functional>
 #define CHECK(x) do{if(!(x)){std::fprintf(stderr,"FAIL %d: %s\n",__LINE__,#x);std::exit(1);}}while(0)
 namespace test {
 struct Obj {int id=0,serial=1;bool live=true;void* cls=nullptr;ue_wrap::reflection::FName name{};
- float height=35,interp=0;int32_t soap=2,cement=5,maxUnits=20;uint8_t flags=0x83;void* contents=nullptr;} objs[8];
+ float height=35,interp=0,dryTimer=234,soapAmount=23;int32_t soap=2,cement=5,maxUnits=20;uint8_t flags=0x83;void* contents=nullptr;} objs[8];
 bool fields=true,callOk=true,kill=false;int paints=0,ticks=0;
 bool visible=false;int visibilityWrites=0;
 std::wstring key=L"trowel_1";
+uint32_t world=1;std::function<void()> callback;
 }
 namespace ue_wrap::reflection {
 bool IsLive(void* a){return a&&static_cast<test::Obj*>(a)->live;}
@@ -34,6 +36,8 @@ int32_t FindPropertyOffset(void*,const wchar_t* n){if(!test::fields)return -1;
  if(!wcscmp(n,L"height_interp"))return offsetof(test::Obj,interp);
  if(!wcscmp(n,L"soap"))return offsetof(test::Obj,soap);
  if(!wcscmp(n,L"maxUnits"))return offsetof(test::Obj,maxUnits);
+ if(!wcscmp(n,L"dryTimer"))return offsetof(test::Obj,dryTimer);
+ if(!wcscmp(n,L"soapAmount"))return offsetof(test::Obj,soapAmount);
  if(!wcscmp(n,L"StaticMesh1"))return offsetof(test::Obj,contents);
  if(!wcscmp(n,L"key"))return offsetof(test::Obj,name);
  if(!wcscmp(n,L"concrete")||!wcscmp(n,L"units"))return offsetof(test::Obj,cement);return -1;}
@@ -48,10 +52,10 @@ bool CallFunction(void* a,void* f,void* raw){
  CHECK(a==&test::objs[0]);
  if(f==&test::objs[3])++test::paints;
  if(f==&test::objs[5]){CHECK(*static_cast<float*>(raw)==.016f);++test::ticks;}
- if(test::kill)test::objs[0].live=false;return test::callOk;
+ if(test::kill)test::objs[0].live=false;auto callback=std::move(test::callback);test::callback={};if(callback)callback();return test::callOk;
 }
 }
-namespace ue_wrap::world_identity {void* CurrentWorld(){return nullptr;}void* WorldOf(void*){return nullptr;}}
+namespace ue_wrap::world_identity {uint32_t Generation(){return test::world;}void* CurrentWorld(){return nullptr;}void* WorldOf(void*){return nullptr;}}
 namespace ue_wrap::save_record {std::wstring ReadFNameAt(const void*,int32_t){return test::key;}}
 namespace ue_wrap::log {void Write(Level,const char*,...) {}}
 namespace ue_wrap::engine {bool SetComponentVisible(void* c,bool on,bool propagate){
@@ -108,6 +112,15 @@ int main(){using namespace test;namespace B=ue_wrap::building_material;
  objs[6].live=false;CHECK(!B::SetRemoteConcreteBucketDisplay(&objs[0],10,true)&&objs[0].cement==20);objs[6].live=true;
  const int visibilityBefore=visibilityWrites;kill=true;
  CHECK(!B::SetRemoteConcreteBucketDisplay(&objs[0],10,true)&&visibilityWrites==visibilityBefore);kill=false;objs[0].live=true;
+ bool current=true;const auto valid=[&]{return current;};const auto writes=visibilityWrites;
+ callback=[&]{current=false;};CHECK(!B::SetRemoteConcreteBucketDisplay(&objs[0],10,true,valid) && visibilityWrites==writes);current=true;
+ callback=[]{++world;};CHECK(!B::SetRemoteConcreteBucketDisplay(&objs[0],10,true) && visibilityWrites==writes);
+ callback=[]{objs[0].contents=&objs[7];};CHECK(!B::SetRemoteConcreteBucketDisplay(&objs[0],10,true) && visibilityWrites==writes);objs[0].contents=&objs[6];
+ objs[1].name.ComparisonIndex=1;auto painted=paints;
+ callback=[&]{current=false;};CHECK(!B::SetRemoteBucketDisplay(&objs[0],10,true,false,valid) && paints==painted);current=true;
+ callback=[]{++world;};CHECK(!B::RepaintBucket(&objs[0]) && paints==painted);
+ callback=[]{++objs[0].serial;};CHECK(!B::RepaintBucket(&objs[0]) && paints==painted);
+ objs[1].name.ComparisonIndex=2;callback=[&]{current=false;};CHECK(!B::SetRemoteConcrete(&objs[0],2,valid));current=true;
  puts("PASS concrete bucket hand display: fill/dry/empty/refill, packed flags, missing metadata/component and destruction during repaint");
  puts("PASS real bucket display setter: level/soap/alcohol, packed-bit preservation, invalid input/metadata and lifetime guards");
  puts("PASS real building wrapper/ParamFrame: packed empty/alcohol flags, water repaint, preserved container tick, trowel bounds/classes/call failure/lifetime");

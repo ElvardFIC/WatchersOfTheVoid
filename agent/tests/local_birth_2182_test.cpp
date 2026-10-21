@@ -16,7 +16,7 @@ void* CurrentWorld(){return test::current;}
 namespace coop::prop_drop_intent {
 bool IsPendingHostPlacement(void*){return false;} // real pending queue tested by pending_birth regression
 bool IsAwaitingHost(void* p){return test::awaiting&&p==&test::actor&&test::live;}
-bool IsLocalPlacement(void* p){return IsAwaitingHost(p);}
+bool IsRefusedPlacement(void*){return false;}
 }
 int main(){
     using namespace test;using namespace coop::join_membership_sweep;

@@ -179,13 +179,18 @@ shared world -- a dish's calibration, a floppy's export or eject, a gift box, a 
 tower's state, the debug and joke commands that spawn or destroy things -- is refused on the
 client and sent to the host with the terminal's context. The host keeps a terminal of the game's
 own class for each typist, never shown, and runs the line there, so the command happens once, in
-the host's world, and its results cross by their own lanes; every line that terminal prints comes
-back to its typist alone, and so does its busy state. A line runs only once the host's terminal is
+the host's world, and its results cross by their own lanes. Every terminal's output goes through
+the host before any participant displays it, including the typist. Simultaneous writers therefore
+see the same order. Busy state still belongs to the typist. A line runs only once the host's terminal is
 idle and set to the dish, name and panel the line carried; a terminal still running a command
 answers it busy, and a dish or a named panel the host cannot resolve, or an init that fails,
 answers it err rather than running it against another context. A line is never re-run on its own, since a command such as an
 eject has an effect in the world. A line whose effect is the typist's own -- its
-compass, its terminal, the desk's radar filter and sounds on its machine -- runs where it was typed
+compass, the desk's radar filter and sounds on its machine -- runs where it was typed;
+its output waits for the host's echo. The host alone publishes unsolicited terminal alerts.
+`clr` runs through the host and clears every display in that same order. A joining terminal
+receives a clear followed by recent bounded history, without executing old commands.
+Offline regressions verify ordering, retry, clear and join replay; gameplay verification is open.
 (`coop/interactables/sat_console_sync`, the command table in `coop/interactables/sat_console_table`).
 
 ### Upgrades
@@ -242,7 +247,7 @@ not built. The ATV's physical modules are on [vehicles.md](vehicles.md).
 | `ReelSlot`, `ReelPose` (stream), `ReelEjectIntent` | the presser; the host; a client | slot edges; the corrector; a reel birth |
 | `LaptopState`, `LaptopQuad` | the presser and the host | the power edge and the portable PC's lid; the file buffer, with the slot's generation |
 | `ServerState` | the host to all | the servers' broken set |
-| `SatConsole` | a client to the host; the host to that client | a typed line with its terminal's context; the lines the host's run printed, and its busy state |
+| `SatConsole` | a client to the host; the host to every display | commands and local output up; canonical output/clear/history to all, busy state to the typist |
 
 ## Late join
 
@@ -275,8 +280,9 @@ arrive with the save and never again.
 | A level-3 refiner completion's world trigger (the evil's spawn, the rozship's, the deer's) runs on the host alone; a client sees what that object's own lane carries | `[V]` `coop/interactables/comp_sync`: the host is the one simulator; `[?]` each object's lane |
 | The red phone's ring is per-peer randomness with no lane | `[V]` no lane exists |
 | A client's own write to a drive whose row is still its class default is neither put back nor sent; no client-side writer of such a drive exists in the game (every writer is a verb the host runs, or a drive the client brings in) | `[RD]` the writer census of `prop_drive_C.data_0`; `coop/interactables/drive_payload_sync` |
-| A SAT console command that spawns or destroys a class no lane carries (the rufus, the thiccfus, the llama's soul, the madness, the centipede, the murder kerfur) acts in the host's world only; its typist does not see it | `[V]` no lane exists for those classes |
-| Each player's SAT console screen and log are its own; another player's typing is not shown | `[V]` by design until decided |
+| Console-spawned creature behavior needs each creature's own lane; shared console output does not establish that coverage | `[?]` per-creature implementation and gameplay verification |
+| Madness HUD/music uses presentation snapshots; send/apply age and half the measured RTT improve new playback positions, without synchronized audio clocks | `[?]` `coop/world/madness_sync`, `ue_wrap/world/madness`; offline tests cover retry and component recovery |
+| Shared SAT terminal output, alert authority and clear/join ordering have offline regression coverage; two-player timing and native delayed output still need gameplay validation | `[?]` `coop/interactables/sat_console_sync` |
 | A client's cheat menu (`uncalib`, `summonvirus`) and a virus its own save starts change only its copy of the dishes' precision, and the copy is put back at its next poll; the virus itself waits on a lane for the desk's `virusEvent` | `[V]` `coop/interactables/dish_calib_sync`; no lane carries `virusEvent` |
 | The fakeGrays event's level trigger (`trigger_fakeLmaos`) breaks its dish's server and zeroes the dish on the machine where an allowed actor enters its volume; on a client the zero is put back and the break stays that client's | `[V]` the chain: the eventer's fakeGrays event arms the volume, whose first object is the trigger; `[?]` whether a client's body on the host's copy fires it |
 

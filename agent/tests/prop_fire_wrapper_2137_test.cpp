@@ -10,9 +10,12 @@ struct Obj {int id=0,serial=1;bool live=true;void* cls=nullptr;ue_wrap::reflecti
  void* flame=nullptr;void* owner=nullptr;float fuel=0,speed=1;uint8_t bits=0;} objects[12];
 Obj& actor=objects[1];Obj& flame=objects[2];Obj& base=objects[3];Obj& cls=objects[4];
 uint32_t world=1;bool bind=true,dispatch=true,current=true;int calls=0,ignites=0,extinguishes=0,lastFunction=0;
+bool complete=true;
+bool flameField=true;
 std::function<void()> callback;
+std::function<void(const wchar_t*)> metadata;
 void Reset(){++world;for(int i=0;i<12;++i){objects[i]={};objects[i].id=i;objects[i].serial=int(world);objects[i].cls=&cls;objects[i].name={i,0};}
- flame.owner=&actor;calls=ignites=extinguishes=0;bind=dispatch=current=true;callback={};}
+ flame.owner=&actor;calls=ignites=extinguishes=0;bind=dispatch=current=complete=flameField=true;callback={};metadata={};}
 }
 namespace ue_wrap::reflection {
 bool IsLive(void* a){return a&&static_cast<test::Obj*>(a)->live;}
@@ -26,7 +29,8 @@ std::wstring ClassNameOf(void* a){return a==&test::flame?L"comp_flammable_C":L"p
 const FName& NameOf(void* a){return static_cast<test::Obj*>(a)->name;}
 bool NameStartsWith(const FName&,const wchar_t*){return false;}
 int32_t FindPropertyOffset(void*,const wchar_t* n){using O=test::Obj;std::wstring name=n;
- if(name==L"flameBase")return offsetof(O,flame);if(name==L"owner")return offsetof(O,owner);
+ if(test::metadata){auto callback=test::metadata;callback(n);}
+ if(name==L"flameBase")return test::flameField?offsetof(O,flame):-1;if(name==L"owner")return offsetof(O,owner);
  if(name==L"fuel")return offsetof(O,fuel);if(name==L"fuelSpeed")return offsetof(O,speed);return -1;}
 bool FindBoolProperty(void*,const wchar_t*,int32_t& off,uint8_t& mask){off=offsetof(test::Obj,bits);mask=4;return true;}
 void* FindDispatchFunctionCached(void* c,const wchar_t* n){if(std::wstring(n)==L"extinguish")return &test::objects[6];if(std::wstring(n)==L"ignite")return c==&test::base?&test::objects[7]:&test::objects[5];return nullptr;}
@@ -36,17 +40,18 @@ bool CallFunction(void* a,void* f,void* p){using namespace test;CHECK(a);++calls
  if(f==&objects[6]){++extinguishes;flame.live=false;actor.flame=nullptr;}
  else {++ignites;flame.live=true;actor.flame=&flame;float v=0;std::memcpy(&v,p,4);flame.fuel=v;flame.bits|=4;}
  if(callback){auto cb=std::move(callback);callback={};cb();}
- return true;}
+ return complete;}
 }
 namespace ue_wrap::world_identity {uint32_t Generation(){return test::world;}void* CurrentWorld(){return (void*)(uintptr_t)test::world;}void* WorldOf(void*){return CurrentWorld();}}
-namespace ue_wrap::prop {bool IsDescendantOfProp(void* a){return a==&test::actor;}}
+namespace ue_wrap::prop {bool IsDescendantOfProp(void* a){return a==&test::actor && test::actor.cls==&test::cls;}}
 namespace ue_wrap::object_index {
-void* ClassByName(const wchar_t* n){return std::wstring(n)==L"prop_C"?&test::base:&test::cls;}
+void* ClassByName(const wchar_t* n){return std::wstring(n)==L"prop_C"?&test::base:std::wstring(n)==L"grime_gasoline_C"?&test::objects[8]:&test::cls;}
 size_t ForEachInstance(void*,InstanceFn fn,void* ctx){fn(ctx,&test::flame,2);return 1;}
 }
 namespace ue_wrap::log {void Write(Level,const char*,...) {}}
 using namespace test;
 bool Apply(F::State s={true,30,1}){return F::Apply(&actor,s,[]{return current;});}
+#ifndef PROP_FIRE_WRAPPER_FIXTURE_ONLY
 int main(){
  Reset();F::State s{};CHECK(F::Read(&actor,s)&&!s.burning);CHECK(Apply());CHECK(ignites==1&&flame.fuel==30&&flame.speed==1&&lastFunction==7);
  CHECK(Apply({true,20,.5f})&&ignites==1&&flame.fuel==20&&flame.speed==.5f); // no repeated ignition/fuel extension
@@ -63,3 +68,4 @@ int main(){
  Reset();CHECK(F::Ignite(&actor,40)&&ignites==1);CHECK(F::Extinguish(&actor)&&extinguishes==1);
  puts("PASS actual fire wrapper/ParamFrame: component creation, fuel refresh, extinguish, bounds, binding/dispatch failures and cancellation");
 }
+#endif

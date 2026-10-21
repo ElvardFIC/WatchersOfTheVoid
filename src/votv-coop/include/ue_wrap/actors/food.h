@@ -7,6 +7,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 
 namespace ue_wrap::food {
 
@@ -14,6 +15,7 @@ struct Condition {
     float   temperature = 0.f;
     float   ripeness    = 0.f;
     int32_t uses        = 0;
+    float   cookProgress = -1.f; // -1 for food outside prop_cookingFood's family
 };
 
 // True for prop_food_C and every class below it. False until that class has loaded.
@@ -23,6 +25,6 @@ bool IsFood(void* actor);
 bool Read(void* actor, Condition& out);
 
 // Write the three fields in place. False on the same misses. Does not call loadData.
-bool Write(void* actor, const Condition& in);
+bool Write(void* actor, const Condition& in,const std::function<bool()>& current = {});
 
 }  // namespace ue_wrap::food

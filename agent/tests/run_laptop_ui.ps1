@@ -6,7 +6,7 @@ New-Item -ItemType Directory -Force -Path $output | Out-Null
 Push-Location $root
 try {
     if (-not (Get-Command cl -ErrorAction SilentlyContinue)) {
-        $environment = Join-Path $root 'build/local-msvc.ps1'
+        $environment = Join-Path $root '../_toolchain/env.ps1'
         if (-not (Test-Path -LiteralPath $environment)) { $environment = Join-Path $root '../_toolchain/env.ps1' }
         . $environment
     }

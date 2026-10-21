@@ -1,4 +1,5 @@
 #include "support_2135.h"
+#include "nonentity_facts_support.h"
 #include "../../src/votv-coop/src/coop/player/item_activate.cpp"
 namespace test {ue_wrap::engine::MainPlayerFlashlightState lightState{true,true,false,0};ue_wrap::engine::FlashlightSnapshot light{5,45,20,true};}
 namespace ue_wrap::engine {
@@ -23,4 +24,4 @@ int main(){namespace S=coop::item_activate;using namespace test;coop::net::Sessi
 }
 namespace ue_wrap::reflection {void* FindClass(const wchar_t*){std::abort();}void* FindFunction(void*,const wchar_t*){std::abort();}}
 namespace ue_wrap::engine {bool WriteMainPlayerFlashlight(void*,bool){std::abort();}}
-namespace ue_wrap::game_thread {void Post(Task){std::abort();}bool RegisterPostObserver(void*,ProcessEventObserverFn){std::abort();}}
+namespace ue_wrap::game_thread {void Post(Task){std::abort();}bool RegisterPostObserver(const facts::Resolved&,ProcessEventObserverFn){std::abort();}}

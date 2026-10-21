@@ -49,11 +49,6 @@ bool HandleEntityEvent(net::Session& session,
                        void* localPlayer) {
     (void)session;
     switch (msg.kind) {
-    case net::ReliableKind::PropPlacementResult: {
-        if(msg.senderPeerSlot!=0 || msg.payloadLen!=sizeof(net::PropPlacementResultPayload))return true;
-        net::PropPlacementResultPayload p{};std::memcpy(&p,msg.payload,sizeof(p));
-        prop_drop_intent::OnPlacementResult(session,p,msg.senderPeerSlot);return true;
-    }
     case net::ReliableKind::PropScaleState: {
         if(msg.payloadLen!=sizeof(net::PropScaleStatePayload))return true;
         net::PropScaleStatePayload p{};std::memcpy(&p,msg.payload,sizeof(p));

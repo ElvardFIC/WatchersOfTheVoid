@@ -54,17 +54,31 @@ bool ChunkAndSend(coop::net::ReliableKind kind, uint32_t seq,
 
 bool SendBlob(coop::net::Session* s, coop::net::ReliableKind kind, uint32_t seq,
               const std::vector<uint8_t>& blob) {
+    return SendBlobWhile(s,kind,seq,blob,[]{return true;});
+}
+bool SendBlobWhile(coop::net::Session* s, coop::net::ReliableKind kind, uint32_t seq,
+                   const std::vector<uint8_t>& blob,const std::function<bool()>& current) {
+    if(!s || !current)return false;
     return ChunkAndSend(kind, seq, blob,
                         [&](const coop::net::BlobChunkPayload& p) {
-                            return s->SendReliable(kind, &p, sizeof(p));
+                            if(!current())return false;
+                            const bool sent=s->SendReliable(kind, &p, sizeof(p));
+                            return current() && sent;
                         });
 }
 
 bool SendBlobToSlot(coop::net::Session* s, int peerSlot, coop::net::ReliableKind kind,
                     uint32_t seq, const std::vector<uint8_t>& blob) {
+    return SendBlobToSlotWhile(s,peerSlot,kind,seq,blob,[]{return true;});
+}
+bool SendBlobToSlotWhile(coop::net::Session* s,int peerSlot,coop::net::ReliableKind kind,
+                         uint32_t seq,const std::vector<uint8_t>& blob,const std::function<bool()>& current) {
+    if(!s || !current)return false;
     return ChunkAndSend(kind, seq, blob,
                         [&](const coop::net::BlobChunkPayload& p) {
-                            return s->SendReliableToSlot(peerSlot, kind, &p, sizeof(p));
+                            if(!current())return false;
+                            const bool sent=s->SendReliableToSlot(peerSlot,kind,&p,sizeof(p));
+                            return current() && sent;
                         });
 }
 

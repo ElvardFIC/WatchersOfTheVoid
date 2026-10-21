@@ -10,6 +10,8 @@
 #include "ue_wrap/core/sdk_profile.h"
 
 #include <cstdint>
+#include <cmath>
+#include <cstring>
 
 namespace ue_wrap::fire_extinguisher {
 namespace {
@@ -25,7 +27,7 @@ bool     g_namesResolved = false;
 struct Member {
     int32_t offset = -1;
     uint8_t mask = 0;   // a bool's mask; 0 for a non-bool
-    bool    tried = false;
+    CachedObjRef cls;
 };
 Member g_mountHeld, g_charge, g_spraying, g_thrusting;
 
@@ -44,26 +46,32 @@ bool IsA(void* obj, const R::FName& name) {
 }
 
 bool Resolve(Member& m, void* obj, const wchar_t* name, bool isBool) {
-    if (m.offset >= 0) return true;
-    if (m.tried) return false;
-    m.tried = true;
     void* cls = R::ClassOf(obj);
+    if(!cls || !R::IsLive(cls))return false;
+    if(m.cls.Is(cls) && m.offset>=0)return true;
+    m.offset=-1;m.mask=0;m.cls.Reset();
+    CachedObjRef live;live.Set(cls);const auto world=world_identity::Generation();
     if (isBool) {
         int32_t off = -1;
         uint8_t mask = 0;
         if (!R::FindBoolProperty(cls, name, off, mask) || off < 0 || mask == 0) return false;
+        if(!live.Get() || world!=world_identity::Generation())return false;
         m.offset = off;
         m.mask = mask;
+        m.cls=live;
         return true;
     }
     const int32_t off = R::FindPropertyOffset(cls, name);
     if (off < 0) return false;
-    m.offset = off;
+    if(!live.Get() || world!=world_identity::Generation())return false;
+    m.offset = off;m.cls=live;
     return true;
 }
 
 bool ReadBool(void* ext, Member& m, const wchar_t* name, bool& out) {
-    if (!IsExtinguisher(ext) || !Resolve(m, ext, name, /*isBool=*/true)) return false;
+    CachedObjRef live;live.Set(ext);const auto world=world_identity::Generation();
+    if (!IsExtinguisher(ext) || !Resolve(m, ext, name, /*isBool=*/true) ||
+        !live.Get() || world!=world_identity::Generation()) return false;
     out = (reinterpret_cast<const uint8_t*>(ext)[m.offset] & m.mask) != 0;
     return true;
 }
@@ -91,8 +99,10 @@ void* MountedExtinguisher(void* mount) {
 }
 
 bool ReadCharge(void* ext, float& out) {
-    if (!IsExtinguisher(ext) || !Resolve(g_charge, ext, P::name::FireExtChargeProp, false)) return false;
-    out = *reinterpret_cast<const float*>(reinterpret_cast<const uint8_t*>(ext) + g_charge.offset);
+    CachedObjRef live;live.Set(ext);const auto world=world_identity::Generation();
+    if (!IsExtinguisher(ext) || !Resolve(g_charge, ext, P::name::FireExtChargeProp, false) ||
+        !live.Get() || world!=world_identity::Generation()) return false;
+    std::memcpy(&out,static_cast<const uint8_t*>(ext)+g_charge.offset,sizeof(out));
     return true;
 }
 
@@ -105,13 +115,17 @@ bool ReadThrusting(void* ext, bool& out) {
 }
 
 bool WriteCharge(void* ext, float value) {
-    if (!IsExtinguisher(ext) || !Resolve(g_charge, ext, P::name::FireExtChargeProp, false)) return false;
+    CachedObjRef live;live.Set(ext);const auto world=world_identity::Generation();
+    if (!std::isfinite(value) || value<0 || value>1.5f || !IsExtinguisher(ext) ||
+        !Resolve(g_charge, ext, P::name::FireExtChargeProp, false) || !live.Get() || world!=world_identity::Generation()) return false;
     *reinterpret_cast<float*>(reinterpret_cast<uint8_t*>(ext) + g_charge.offset) = value;
     return true;
 }
 
 bool WriteSpraying(void* ext, bool value) {
-    if (!IsExtinguisher(ext) || !Resolve(g_spraying, ext, P::name::FireExtSprayingProp, true)) return false;
+    CachedObjRef live;live.Set(ext);const auto world=world_identity::Generation();
+    if (!IsExtinguisher(ext) || !Resolve(g_spraying, ext, P::name::FireExtSprayingProp, true) ||
+        !live.Get() || world!=world_identity::Generation()) return false;
     auto* byte = reinterpret_cast<uint8_t*>(ext) + g_spraying.offset;
     *byte = value ? static_cast<uint8_t>(*byte | g_spraying.mask)
                   : static_cast<uint8_t>(*byte & ~g_spraying.mask);
@@ -120,9 +134,11 @@ bool WriteSpraying(void* ext, bool value) {
 
 // Native fire() also starts a Tick that traces from player 0's camera and spends
 // charge. Remote hand displays need only its particle/audio components.
-bool SetRemoteSpray(void* ext, bool spraying) {
-    if (!IsExtinguisher(ext)) return false;
+bool SetRemoteSpray(void* ext, bool spraying,const std::function<bool()>& current) {
+    if ((current && !current()) || !IsExtinguisher(ext)) return false;
     CachedObjRef actor; actor.Set(ext);
+    const auto world=world_identity::Generation();
+    const auto valid=[&]{return actor.Get() && world==world_identity::Generation() && (!current || current());};
     static R::InstanceOffset effectField{L"eff_ext"}, audioField{L"fireExtFire"};
     auto component = [&](R::InstanceOffset& field) {
         CachedObjRef ref;
@@ -131,21 +147,24 @@ bool SetRemoteSpray(void* ext, bool spraying) {
         return ref;
     };
     auto effect = component(effectField), audio = component(audioField);
-    if (!effect.Get() || !audio.Get()) return false;
-    return engine::SetActorTickEnabled(ext, false) && actor.Get() &&
+    if (!valid() || !effect.Get() || !audio.Get()) return false;
+    return engine::SetActorTickEnabled(ext, false) && valid() &&
         WriteSpraying(ext, spraying) && effect.Get() &&
-        component_calls::SetActive(effect.Get(), spraying, false) && actor.Get() && audio.Get() &&
-        component_calls::SetVolumeMultiplier(audio.Get(), .5f) && actor.Get() && audio.Get() &&
-        component_calls::SetActive(audio.Get(), spraying, false) && actor.Get();
+        component_calls::SetActive(effect.Get(), spraying, false) && valid() && audio.Get() &&
+        component_calls::SetVolumeMultiplier(audio.Get(), .5f) && valid() && audio.Get() &&
+        component_calls::SetAudioPlaying(audio.Get(),spraying,valid);
 }
 
 bool AimRemoteSpray(void* ext, const FRotator& rotation) {
     if (!IsExtinguisher(ext)) return false;
+    CachedObjRef actor;actor.Set(ext);const auto world=world_identity::Generation();
     static R::InstanceOffset field{L"eff_ext"};
     const int32_t off = field.Of(ext);
-    if (off < 0) return false;
+    if (off < 0 || !actor.Get() || world!=world_identity::Generation()) return false;
     void* effect = *reinterpret_cast<void**>(static_cast<uint8_t*>(ext) + off);
-    return effect && R::IsLive(effect) && engine::SetComponentWorldRotation(effect, rotation);
+    CachedObjRef live;live.Set(effect);
+    return live.Get() && engine::SetComponentWorldRotation(effect, rotation) && actor.Get() &&
+        live.Get() && world==world_identity::Generation();
 }
 
 }  // namespace ue_wrap::fire_extinguisher

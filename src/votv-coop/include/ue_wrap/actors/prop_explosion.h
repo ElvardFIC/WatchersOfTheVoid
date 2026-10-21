@@ -30,6 +30,7 @@ struct Blast {
     bool shake=true,ignoreWalls=false,skipSetting=false;
 };
 bool IsGameplayBlast(void*);
+bool IsPrivatePcBlast(void*);
 bool Valid(const Blast&);
 bool ReadBlast(void*,Blast&);
 bool ReplayBlast(const Blast&,bool authority,const std::function<bool(void*)>& beforeFinish,

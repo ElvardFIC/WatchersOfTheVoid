@@ -7,13 +7,16 @@ int publishes=0,paints=0,repairs=0;std::wstring key=L"bucket";
 ue_wrap::building_material::Stock stock{};
 bool coopDispatch=false;Obj outDry{};
 std::vector<std::pair<void*,void*>> active;
+std::function<void()> onRead,onRepair,onPaint,onContents;bool contentsOk=true;
+std::vector<void*> published;
+void Run(std::function<void()>& callback){auto f=std::move(callback);callback={};if(f)f();}
 }
 namespace ue_wrap::building_material {
-bool ReadWater(void* a,Water& s){if(!reflection::IsLive(a)||test::stock.kind!=StockKind::None)return false;s=test::water;return true;}
-bool ReadStock(void* a,Stock& s){if(!reflection::IsLive(a)||test::stock.kind==StockKind::None)return false;s=test::stock;return true;}
-bool RepairBucketEmpty(void*){++test::repairs;return true;}
-bool RepaintBucket(void*){++test::paints;return true;}
-bool TickBucketContents(void*,float seconds){CHECK(seconds==.016f);return true;}
+bool ReadWater(void* a,Water& s){if(!reflection::IsLive(a)||test::stock.kind!=StockKind::None)return false;s=test::water;test::Run(test::onRead);return true;}
+bool ReadStock(void* a,Stock& s){if(!reflection::IsLive(a)||test::stock.kind==StockKind::None)return false;s=test::stock;test::Run(test::onRead);return true;}
+bool RepairBucketEmpty(void*){++test::repairs;test::Run(test::onRepair);return true;}
+bool RepaintBucket(void*,const std::function<bool()>& current){if(current && !current())return false;++test::paints;test::Run(test::onPaint);return !current || current();}
+bool TickBucketContents(void*,float seconds){CHECK(seconds==.016f);test::Run(test::onContents);return test::contentsOk;}
 }
 namespace coop::hand_item {
 void* LocalHandActor(){return test::hand?&test::actor:nullptr;}
@@ -25,7 +28,7 @@ namespace coop::join_membership_sweep {bool HasLoadTailQuiesced(){return test::q
 namespace ue_wrap::prop {std::wstring GetInteractableKeyString(void*){return test::key;}}
 namespace coop::prop_save_data {
 bool Covers(void*){return true;}
-bool Publish(net::Session*,void*,const std::wstring&){++test::publishes;test::Callback();return test::sendOk;}
+bool Publish(net::Session*,void* a,const std::wstring&){++test::publishes;test::published.push_back(a);test::Callback();return test::sendOk;}
 }
 namespace ue_wrap::reflection {
 bool InCoopDispatch(){return test::coopDispatch;}
@@ -100,6 +103,27 @@ int main(){using namespace test;namespace S=coop::bucket_sync;using V=ue_wrap::s
  S::AfterStockLoad(c);old=publishes;stock.wetness=1;S::AfterStockChange(c);S::Tick();CHECK(publishes==old+1);
  stock.wetness=.97f;S::AfterStockChange(c);stock.wetness=.94f;S::AfterStockChange(c);now+=400;S::Tick();
  CHECK(publishes==old+2&&S::Find(&actor)->last.stock.wetness==.94f);
+ S::g_rows={};stock={ue_wrap::building_material::StockKind::ConcreteBucket,5,false};stock.dryTimer=10;
+ S::AfterStockLoad(c);old=publishes;stock.dryTimer=10.5f;S::AfterStockChange(c);now+=400;S::Tick();CHECK(publishes==old);
+ stock.dryTimer=11.1f;S::AfterStockChange(c);now+=400;S::Tick();CHECK(publishes==old+1);
+ S::g_rows={};stock={ue_wrap::building_material::StockKind::Sponge,0,false,.75f};stock.soapAmount=20;
+ S::AfterStockLoad(c);old=publishes;stock.soapAmount=15;S::AfterStockChange(c);now+=400;S::Tick();
+ CHECK(publishes==old+1&&S::Find(&actor)->last.stock.soapAmount==15);
+ S::OnDisconnect();session.mode=coop::net::Role::Host;S::Install(&session);S::g_rows={};
+ stock.units=7;onRead=[&]{stock.units=4;S::AfterStockChange(c);};S::AfterStockChange(c);
+ CHECK(S::Find(&actor)->last.stock.units==4); // newer native observation wins the interrupted read
+ now+=400;old=publishes;onRead=[]{S::OnDisconnect();};S::Tick();CHECK(publishes==old && !S::g_session);
+ S::Install(&session);S::AfterStockChange(c);now+=400;onRead=[]{++world;};S::Tick();CHECK(publishes==old && !S::Find(&actor)->dirty);
+ auto beforePaint=paints;onRepair=[]{S::OnDisconnect();};S::AfterUse(c);CHECK(paints==beforePaint && !S::g_session);
+ S::Install(&session);session.mode=coop::net::Role::Client;stock={};c.locals=reinterpret_cast<uint8_t*>(&seconds);
+ contentsOk=false;onContents=[]{S::OnDisconnect();};CHECK(S::BeforeTick(c)==V::Cancel && paints==beforePaint);contentsOk=true;
+ S::Install(&session);session.mode=coop::net::Role::Host;stock={ue_wrap::building_material::StockKind::ConcreteBucket,5,false};
+ // Continuously changing early rows cannot starve a ready row at the end of the bounded pool.
+ CHECK(S::Current());Obj late{2};S::g_rows={};S::g_cursor=0;S::g_rows[0].actor.Set(&actor);S::g_rows[1].actor.Set(&ui);S::g_rows.back().actor.Set(&late);
+ published.clear();S::g_rows.back().dirty=true;
+ for(int i=0;i<2;++i){for(size_t row:{size_t(0),size_t(1)}){S::g_rows[row].dirty=true;S::g_rows[row].sendAt=0;}
+  now+=1000;S::Tick();}
+ CHECK(std::find(published.begin(),published.end(),&late)!=published.end());
  S::OnDisconnect();CHECK(S::BeforeTick(c)==V::Run);
  CHECK(!S::IsMaterialBirth());
  puts("PASS cement/sponge: real callback registration, amount/dry/wet publications, passive tick, empty out params, two transfer endpoints, exact local use/pour provenance, load no echo");

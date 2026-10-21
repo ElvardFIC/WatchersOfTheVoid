@@ -43,6 +43,7 @@ enum class Action : uint8_t {
     OrderNoCatalog,
     OrderCommitFailed,
     OrderRefused,
+    PlacementRefused,
     kCount
 };
 

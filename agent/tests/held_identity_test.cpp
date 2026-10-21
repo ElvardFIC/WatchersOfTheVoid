@@ -53,7 +53,7 @@ Element::~Element(){}
 void Element::SetActor(void* a,int32_t i){m_actor=a;m_internalIdx=i;}
 void* Element::LiveActor()const{return ue_wrap::reflection::IsLiveByIndex(m_actor,m_internalIdx)?m_actor:nullptr;}
 }
-namespace coop::prop_drop_intent {bool IsLocalPlacement(void*){return false;}}
+namespace coop::prop_drop_intent {bool IsAwaitingHost(void*){return false;}bool IsRefusedPlacement(void*){return false;}}
 namespace coop::kerfur_entity {bool IsKerfurActor(void*){return false;}}
 namespace coop::join_membership_sweep {
 bool IsPendingSweepCandidate(void*){return false;}

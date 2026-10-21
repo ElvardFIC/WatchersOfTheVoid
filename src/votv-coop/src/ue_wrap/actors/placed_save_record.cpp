@@ -1,4 +1,5 @@
 #include "ue_wrap/actors/placed_save.h"
+#include "ue_wrap/actors/wall_drying.h"
 #include <cmath>
 
 namespace ue_wrap::placed_save {
@@ -45,7 +46,10 @@ bool Normalize(const SR::SaveRecord& in, SR::SaveRecord& out) {
             if (in.ints[0][0] < 1 || in.ints[0][0] > 1000000 ||
                 in.ints[0][1] < 0 || in.ints[0][1] > 1000000) return false;
         } else {
-            if (in.strings[0][0].empty() || in.floats.empty() || in.floats[0].size() != 2) return false;
+            if (in.strings[0][0].empty() || in.floats.empty()) return false;
+            if (in.className == L"customWall_wetConcrete_C") {
+                if (!wall_drying::Valid(in.floats[0])) return false;
+            } else if (in.floats[0].size() != 2) return false;
             for (float f : in.floats[0]) if (!std::isfinite(f) || f < 0 || f > 1000000.f) return false;
             if (in.floats[0][1] <= 0) return false;
             r.floats = {in.floats[0]};

@@ -36,4 +36,5 @@ int main() {
  CHECK(!IsObjectBodyActive(&fn,&actor)&&!IsBodyActive(&fn)&&!CurrentThreadCall().active);
  CHECK(!IsObjectBodyActive(nullptr,&actor)&&!IsObjectBodyActive(&fn,nullptr));
  puts("PASS real script-gate body scopes: exact receiver, nested bodies, caller match and exception cleanup");
+ return 0;
 }

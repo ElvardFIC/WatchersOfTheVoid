@@ -1,9 +1,16 @@
 #include "support_2135.h"
 #include "../../src/votv-coop/src/coop/world/sky_sync.cpp"
+#include "ue_wrap/core/game_thread.h"
+#include "nonentity_facts_support.h"
 #include <limits>
 namespace test {
 bool readable=true, hidden=false, light=false, eye=false, applyOk=true;
 int skyApplies=0, blackApplies=0, eyeApplies=0;
+int entryOffset=0,entrySize=4;
+}
+namespace ue_wrap::reflection {
+int32_t FindParamOffset(void*,const wchar_t*){return test::entryOffset;}
+int32_t FunctionFrameSize(void*){return test::entrySize;}
 }
 namespace ue_wrap::skysphere {
 bool EnsureResolved(){return true;}
@@ -29,6 +36,16 @@ int main(){using namespace test;namespace S=coop::sky_sync;namespace F=coop::net
  s.mode=coop::net::Role::Client;
  announced=false;CHECK(S::OnBlackHolePre({})==V::Cancel); // also block loading-window local starts
  CHECK(S::OnBlackHoleVisibilityPre({})==V::Cancel);announced=true;
+ ue_wrap::script_gate::Call graph{};graph.object=&actor;graph.function=&actor;
+ int32_t entry=0;graph.locals=reinterpret_cast<uint8_t*>(&entry);
+ for(int32_t phase:{5062,3222,70,437,552,759,1023}){entry=phase;
+  CHECK(S::OnBlackHoleGraphPre(graph)==V::Cancel);graph.fromOurCode=true;
+  CHECK(S::OnBlackHoleGraphPre(graph)==V::Cancel);graph.fromOurCode=false;
+  s.mode=coop::net::Role::Host;CHECK(S::OnBlackHoleGraphPre(graph)==V::Run);s.mode=coop::net::Role::Client;
+ }
+ for(int32_t ordinary:{4855,4700,1282,1642,1915,1930,3276,5067}){entry=ordinary;CHECK(S::OnBlackHoleGraphPre(graph)==V::Run);}
+ entry=437;entryOffset=-1;CHECK(S::OnBlackHoleGraphPre(graph)==V::Run);entryOffset=0;
+ entrySize=3;CHECK(S::OnBlackHoleGraphPre(graph)==V::Run);entrySize=4;
  p=join;S::OnReliable(p);CHECK(blackApplies==1&&hidden&&light);
  p.blackHoleFlags=F::kBlackHoleValid;S::OnReliable(p);CHECK(!hidden&&!light&&blackApplies==2);
  p.blackHoleFlags=0;S::OnReliable(p);CHECK(blackApplies==2); // missing host metadata is not host-clear
@@ -42,4 +59,5 @@ int main(){using namespace test;namespace S=coop::sky_sync;namespace F=coop::net
  CHECK(S::OnBlackHolePre({})==V::Run);before=skyApplies;S::OnReliable(p);CHECK(skyApplies==before);
  S::Install(&s);s.linked=false;CHECK(S::OnBlackHolePre({})==V::Run);S::OnReliable(p);CHECK(skyApplies==before);
  puts("PASS sky controller: host snapshot/join, client start suppression, clear/unread, malformed input, retries, disconnect/world reentry");
+ puts("PASS sky event: tp and all six native latent destinations are host-owned; client duplicates cannot author audio/mail/bookkeeping, ordinary sky/initialization/moon paths remain native");
 }

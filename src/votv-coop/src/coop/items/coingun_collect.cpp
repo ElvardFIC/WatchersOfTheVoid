@@ -24,11 +24,13 @@
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/script_gate.h"
+#include "ue_wrap/engine/engine.h"
 #include "ue_wrap/facts/function_row.h"
 #include "ue_wrap/world/economy.h"
 #include "ue_wrap/engine/world_identity.h"
 
 #include <atomic>
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <cstring>
@@ -79,6 +81,9 @@ std::atomic<unsigned long long> g_replayed{0};
 // Actor identity is the key: overlap can precede host eid enrollment.
 std::unordered_map<void*, ue_wrap::CachedObjRef> g_collected;
 uint64_t g_collectEpoch = 0;
+std::unordered_map<void*, ue_wrap::CachedObjRef> g_retiringCoins;
+uint64_t g_retireAt = 0;
+uintptr_t g_retireCursor = 0;
 
 // One permitted native verb entry per guarded dispatch. A nested collect of
 // the same coin must still pass the consumption guard, even inside our Call.
@@ -133,12 +138,16 @@ bool PerformCollect(void* coin, void* player) {
     if (haveAfter && static_cast<int64_t>(after)-before==points) {
         g_performed.fetch_add(1,std::memory_order_relaxed);
         UE_LOGI("coingun[host collect]: PERFORMED coin=%p balance %d -> %d; native destroy follows acceptance",coin,before,after);
+        if (identity.Get() == coin) {
+            g_retiringCoins[coin] = identity;
+            ue_wrap::engine::DestroyActor(coin);
+        }
         return true;
     }
     g_noCredit.fetch_add(1,std::memory_order_relaxed);
     // Only a PROVEN no-op on the same live actor may be retried. Unknown balance
     // or partial execution keeps the reservation: neither can credit twice.
-    if (haveAfter && after==before && identity.Get()==coin) release();
+    if (dispatched && haveAfter && after==before && identity.Get()==coin) release();
     UE_LOGW("coingun[host collect]: coin=%p dispatch=%d credit unconfirmed (before=%d after=%d readable=%d)",
         coin,dispatched?1:0,before,after,haveAfter?1:0);
     return false;
@@ -440,6 +449,29 @@ void OnCoinCollect(const uint8_t* payload, int len, uint8_t senderSlot, void* lo
 bool internal::CollectInstalled() { return g_installed.load(std::memory_order_acquire); }
 
 void internal::TickCollect() {
+    if (auto* session = I::Session(); session && session->connected() && session->role() == coop::net::Role::Host) {
+        const auto now = CollectNowMs(), epoch = g_collectEpoch;
+        const auto world = ue_wrap::world_identity::Generation();
+        if (now < g_retireAt) return;
+        g_retireAt = now + 250;
+        std::vector<uintptr_t> keys;
+        for (const auto& [actor,ref] : g_retiringCoins) keys.push_back(reinterpret_cast<uintptr_t>(actor));
+        std::sort(keys.begin(),keys.end());
+        std::rotate(keys.begin(),std::upper_bound(keys.begin(),keys.end(),g_retireCursor),keys.end());
+        if (keys.size() > 8) keys.resize(8);
+        for (auto key : keys) {
+            if (epoch != g_collectEpoch || world != ue_wrap::world_identity::Generation() ||
+                I::Session() != session || !session->connected() || session->role() != coop::net::Role::Host) return;
+            g_retireCursor = key;
+            auto* actor = reinterpret_cast<void*>(key);
+            auto it = g_retiringCoins.find(actor);
+            if (it == g_retiringCoins.end()) continue;
+            const auto ref = it->second;
+            if (void* coin = ref.Get()) ue_wrap::engine::DestroyActor(coin);
+            if (epoch != g_collectEpoch || world != ue_wrap::world_identity::Generation()) return;
+            if (!ref.Get()) g_retiringCoins.erase(actor);
+        }
+    }
     if (g_pendingCollects.empty() || g_retryingCollect) return;
     auto* s = I::Session();
     if (!s || !s->connected() || s->role() != coop::net::Role::Client) {
@@ -497,6 +529,7 @@ void internal::InstallCollect() {
 }
 
 void internal::OnDisconnectCollect() {
+    ++g_collectEpoch;
     // The session summary: the two entry counters, so the next field run answers by grep which
     // entry players use. The labels follow the role, so the first pair is always the comparable
     // one.
@@ -518,7 +551,8 @@ void internal::OnDisconnectCollect() {
             g_replayed.load(std::memory_order_relaxed));
     // Session-owned requests and consumption guards cannot enter the next session.
     g_collected.clear();
-    ++g_collectEpoch;
+    g_retiringCoins.clear();
+    g_retireAt = 0; g_retireCursor = 0;
     g_pendingCollects.clear();
     g_nextCollectRetryMs = 0;
 }

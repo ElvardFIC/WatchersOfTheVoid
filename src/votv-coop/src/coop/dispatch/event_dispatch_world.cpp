@@ -27,6 +27,13 @@
 #include "coop/world/desk_short_circuit_sync.h"
 #include "coop/world/madness_sync.h"
 #include "coop/props/dingus_music_sync.h"
+#include "coop/props/watoy_sync.h"
+#include "coop/interactables/grill_hand_sync.h"
+#include "coop/interactables/grill_edits.h"
+#include "coop/props/sponge_effects_sync.h"
+#include "coop/props/water_pour_sync.h"
+#include "coop/props/drink_spill_sync.h"
+#include "coop/world/wall_creative_sync.h"
 #include "coop/world/radio_sync.h"
 #include "coop/world/cargo_lift_sync.h"
 #include "coop/props/prop_fire_sync.h"
@@ -120,6 +127,63 @@ bool HandleWorldEvent(net::Session& session,
         if(msg.payloadLen!=sizeof(net::HandToyAudioPayload) || msg.senderPeerSlot<0 || msg.senderPeerSlot>=net::kMaxPeers)break;
         net::HandToyAudioPayload p{};std::memcpy(&p,msg.payload,sizeof(p));
         coop::hand_toy_audio::Receive(p,static_cast<uint8_t>(msg.senderPeerSlot));break;
+    }
+    case net::ReliableKind::GrillHand: {
+        if(msg.payloadLen!=sizeof(net::GrillHandPayload) || msg.senderPeerSlot<0 || msg.senderPeerSlot>=net::kMaxPeers)break;
+        net::GrillHandPayload p{};std::memcpy(&p,msg.payload,sizeof(p));
+        coop::grill_hand_sync::Receive(p,static_cast<uint8_t>(msg.senderPeerSlot));break;
+    }
+    case net::ReliableKind::GrillEdit: {
+        if(msg.payloadLen!=sizeof(net::GrillEditPayload) || msg.senderPeerSlot<0 || msg.senderPeerSlot>=net::kMaxPeers)break;
+        net::GrillEditPayload p{};std::memcpy(&p,msg.payload,sizeof(p));
+        coop::grill_edits::Receive(p,static_cast<uint8_t>(msg.senderPeerSlot));break;
+    }
+    case net::ReliableKind::WallCreative: {
+        if(msg.payloadLen!=sizeof(net::WallCreativePayload) || msg.senderPeerSlot<0 || msg.senderPeerSlot>=net::kMaxPeers)break;
+        net::WallCreativePayload p{};std::memcpy(&p,msg.payload,sizeof(p));
+        coop::wall_creative_sync::Receive(p,static_cast<uint8_t>(msg.senderPeerSlot));break;
+    }
+    case net::ReliableKind::Watoy: {
+        if(msg.payloadLen!=sizeof(net::WatoyPayload) || msg.senderPeerSlot<0 || msg.senderPeerSlot>=net::kMaxPeers)break;
+        net::WatoyPayload p{};std::memcpy(&p,msg.payload,sizeof(p));
+        coop::watoy_sync::Receive(p,static_cast<uint8_t>(msg.senderPeerSlot));break;
+    }
+    case net::ReliableKind::WaterPour: {
+        if(msg.senderPeerSlot<0 || msg.senderPeerSlot>=net::kMaxPeers)break;
+        if(msg.payloadLen==sizeof(net::WaterPourPayload)){
+            net::WaterPourPayload p{};std::memcpy(&p,msg.payload,sizeof(p));
+            coop::water_pour_sync::Receive(p,static_cast<uint8_t>(msg.senderPeerSlot));
+        }else if(msg.payloadLen==sizeof(net::WaterPourReplyPayload)){
+            net::WaterPourReplyPayload p{};std::memcpy(&p,msg.payload,sizeof(p));
+            coop::water_pour_sync::ReceiveReply(p,static_cast<uint8_t>(msg.senderPeerSlot));
+        }break;
+    }
+    case net::ReliableKind::WaterSplash: {
+        if(msg.payloadLen!=sizeof(net::WaterSplashPayload) || msg.senderPeerSlot!=0)break;
+        net::WaterSplashPayload p{};std::memcpy(&p,msg.payload,sizeof(p));
+        coop::water_pour_sync::ReceiveSplash(p,0);break;
+    }
+    case net::ReliableKind::WaterLaunch: {
+        if(msg.payloadLen!=sizeof(net::WaterLaunchPayload) || msg.senderPeerSlot<0 || msg.senderPeerSlot>=net::kMaxPeers)break;
+        net::WaterLaunchPayload p{};std::memcpy(&p,msg.payload,sizeof(p));
+        coop::water_pour_sync::ReceiveLaunch(p,static_cast<uint8_t>(msg.senderPeerSlot));break;
+    }
+    case net::ReliableKind::DrinkSpill: {
+        if(msg.payloadLen!=sizeof(net::DrinkSpillPayload) || msg.senderPeerSlot<0 || msg.senderPeerSlot>=net::kMaxPeers)break;
+        net::DrinkSpillPayload p{};std::memcpy(&p,msg.payload,sizeof(p));coop::drink_spill_sync::Receive(p,static_cast<uint8_t>(msg.senderPeerSlot));break;
+    }
+    case net::ReliableKind::DrinkLaunch: {
+        if(msg.payloadLen!=sizeof(net::DrinkLaunchPayload) || msg.senderPeerSlot<0 || msg.senderPeerSlot>=net::kMaxPeers)break;
+        net::DrinkLaunchPayload p{};std::memcpy(&p,msg.payload,sizeof(p));coop::drink_spill_sync::ReceiveLaunch(p,static_cast<uint8_t>(msg.senderPeerSlot));break;
+    }
+    case net::ReliableKind::DrinkPour: {
+        if(msg.payloadLen!=sizeof(net::DrinkPourPayload) || msg.senderPeerSlot<0 || msg.senderPeerSlot>=net::kMaxPeers)break;
+        net::DrinkPourPayload p{};std::memcpy(&p,msg.payload,sizeof(p));coop::drink_spill_sync::ReceivePour(p,static_cast<uint8_t>(msg.senderPeerSlot));break;
+    }
+    case net::ReliableKind::SpongeEffect: {
+        if(msg.payloadLen!=sizeof(net::SpongeEffectPayload) || msg.senderPeerSlot<0 || msg.senderPeerSlot>=net::kMaxPeers)break;
+        net::SpongeEffectPayload p{};std::memcpy(&p,msg.payload,sizeof(p));
+        coop::sponge_effects_sync::Receive(p,static_cast<uint8_t>(msg.senderPeerSlot));break;
     }
     case net::ReliableKind::DingusMusic: {
         if(msg.payloadLen!=sizeof(net::DingusMusicPayload) || msg.senderPeerSlot<0 || msg.senderPeerSlot>=net::kMaxPeers)break;

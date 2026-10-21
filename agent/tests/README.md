@@ -1,8 +1,8 @@
 # Regression tests
 
 Current full audit: run `powershell -NoProfile -ExecutionPolicy Bypass -File
-package/check_current.ps1` from the checkout after parallel source edits finish.
-It runs 39 groups, completes the incremental Release build and verifies that the
+package/check_current.ps1` from the checkout after source edits finish.
+It runs 63 groups, completes the incremental Release build and verifies that the
 production inputs stayed unchanged, without repackaging. Results and
 logs are in `build/todo-audit/`. `run_held_identity.ps1` compiles the actual held
 broadcast seam; the older item/resource/lamp/laptop runners use the current typed
@@ -41,3 +41,34 @@ current code and mutation controls without depending on an archived source copy.
 hold yield, reliable root scale and host/receiver motion, seven existing item runners
 and the cooked native-evidence check. Logs are in build/item-batch-check/.
 These are offline checks; no PhysX or two-peer runtime is simulated.
+
+## Fish integration
+
+`package/check_current.ps1 -EvidenceDirectory build/fish-integration-check` runs
+both main and fish regression groups, then verifies a stable production snapshot,
+Release identity and loader ABI. The native physics fingerprint controls and
+public-prose include-context tests are included. Matching b2176 peers are required.
+
+| Runner | Production behavior exercised |
+|---|---|
+| run_nonentity | Coin credit/retirement, placement replies, dry walls/material records, sky latent gates |
+| run_cooking | Cooking progress, world/hand food readiness, profiles, replacement and output authority |
+| run_drink_spills / run_gasoline / run_scorch | Exact launch provenance, host flight/fire, decals, quiet join and retirement |
+| run_water_pour | Bucket/washer shots, source audio, projectile construction and host birth/coasting |
+| run_grime_join / run_windows | Cleaning snapshots, nested hooks, latest final wipe and retained join delivery |
+| run_kitchen / run_grill_hand / run_grill_edits | Lid/fuel/burn/audio, held state, saved runtime and ordered field edits |
+| run_hand_tools / run_sponge_effects | Tool display lifetime, stop expiry, soap observation and cosmetic foam |
+| run_toy_music / run_watoy / run_2157 | Maxwell phase/recovery, Watoy authority/motion and held toy audio |
+| run_wall_creative / run_2166 | Creator/source/reach/rule validation, wall construction and immutable retry |
+| run_item_records / run_2130 / run_2176 | Record ordering/reentrancy, native apply budgets, profile capture and stale sends |
+
+The placement integration cases also enforce acceptance-only record publication,
+refusal of existing same-key actors, cross-peer key reservations before indexing,
+readiness, cooking bounds and malformed wire strings. `run_2130` expands local
+production fragments before mutating them, so fault controls alter the live code.
+
+`sync_native_contract_test.py ASSET_ROOT DECODER_ROOT` needs the branch's complete
+extracted 0.9.0n corpus. This workstation lacks 18 of its 45 literal package inputs
+(and the suite has additional dynamic inputs); it is not counted as passing.
+The owner's fresh pak audit remains deferred. These offline tests do not simulate
+PhysX or establish two-peer gameplay acceptance.

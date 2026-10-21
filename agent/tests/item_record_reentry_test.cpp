@@ -13,12 +13,15 @@ int actor=0,calls=0,depth=0,notes=0,lookups=0,captures=0;
 bool nested=false,success=true,host=true,live=true,covered=true,allowOther=false;
 bool captureOK=false,sendOK=true;
 int serial=1;
+uint32_t world=1;
 std::wstring liveKey=L"item";
 bool safe=false,unlocked=false;int sentLock=-1;
+bool grill=false;float burn=.75f;
 std::wstring onlyLive;
 std::function<void(const Record&)> duringApply;
 std::function<void()> duringCapture;
 std::function<void()> duringNoteApply,duringNotePublish;
+std::function<void()> duringSend,duringRefresh,duringLock;
 std::vector<uint8_t> incoming;
 std::vector<int> sent,noted;
 coop::net::Session session;
@@ -33,11 +36,13 @@ void Occupancy() {
 }
 void Reset() {
     serial=1;liveKey=L"item";
+    world=1;duringSend=duringRefresh=duringLock={};CHECK(S::g_recordOrder.empty());
     session.linked=session.ready=true;session.blockedSlot=-1;
     CHECK(S::g_applying.empty());CHECK(S::g_publishing.empty());CHECK(!S::g_driving);S::OnDisconnect();
     calls=depth=notes=lookups=captures=0;nested=false;success=host=live=covered=sendOK=true;
     allowOther=captureOK=false;duringCapture={};duringNoteApply={};duringNotePublish={};
     safe=unlocked=false;sentLock=-1;
+    grill=false;burn=.75f;
     onlyLive.clear();duringApply={};incoming.clear();sent.clear();noted.clear();
 }
 void Deliver(const std::wstring& key,int value,uint8_t sender,bool intent) {
@@ -53,15 +58,22 @@ void Run(Mode mode) {
 }
 }
 namespace ue_wrap::log { void Write(Level,const char*,...) {} }
+namespace ue_wrap::grill_saved_state {
+bool Supported(void*){return test::grill;}
+bool RefreshHeldRecord(void*,save_record::SaveRecord& record){record.floats.resize(2);record.floats[1]={43217,1,test::burn,1};auto cb=std::move(test::duringRefresh);test::duringRefresh={};if(cb)cb();return true;}
+bool PreserveHostRecord(void* actor,save_record::SaveRecord& record){return RefreshHeldRecord(actor,record);}
+}
 namespace ue_wrap::safe {
 bool IsSafe(void*){return test::safe;}
 bool PreserveHostLock(void*,save_record::SaveRecord& r){
+ auto callback=std::move(test::duringLock);test::duringLock={};if(callback)callback();
  if(!test::safe)return false;
  const auto bit=uint8_t(!test::unlocked);
  if(r.bools.size()>1&&!r.bools[1].empty()&&r.bools[1][0]==bit)return false;
  r.bools.resize(2);r.bools[1]={bit};return true;
 }
 bool PreserveUnlocked(void*,save_record::SaveRecord& r){
+ auto callback=std::move(test::duringLock);test::duringLock={};if(callback)callback();
  if(!test::safe||!test::unlocked)return false;
  if(r.bools.size()>1&&!r.bools[1].empty()&&!r.bools[1][0])return false;
  r.bools.resize(2);r.bools[1]={0};return true;
@@ -78,7 +90,7 @@ std::wstring ToString(const FName&){return L"prop_test_C";}
 void* FindClass(const wchar_t*) { return nullptr; }
 bool IsDescendantOfAny(void*,void* const*,size_t,int) { return false; }
 }
-namespace ue_wrap::world_identity {void* CurrentWorld(){return nullptr;}void* WorldOf(void*){return nullptr;}}
+namespace ue_wrap::world_identity {void* CurrentWorld(){return nullptr;}void* WorldOf(void*){return nullptr;}uint32_t Generation(){return test::world;}}
 namespace ue_wrap::prop {std::wstring GetInteractableKeyString(void*){return test::liveKey;}}
 namespace ue_wrap::save_record {
 bool OverridesGetData(void*) { return test::covered; }
@@ -118,9 +130,13 @@ void NoteApply(void*,const std::wstring&,const Record& r) {
 namespace coop::blob_chunks {
 bool SendBlob(net::Session*,net::ReliableKind,uint32_t,const std::vector<uint8_t>& bytes) {
     std::wstring key;Record rec;CHECK(S::ParseBody(bytes,key,rec));test::sent.push_back(rec.ints.at(0).at(0));
+    auto callback=std::move(test::duringSend);test::duringSend={};if(callback)callback();
     if(rec.bools.size()>1&&!rec.bools[1].empty())test::sentLock=rec.bools[1][0];return test::sendOK;
 }
 bool SendBlobToSlot(net::Session* s,int,net::ReliableKind kind,uint32_t seq,const std::vector<uint8_t>& b) {return SendBlob(s,kind,seq,b);}
+bool SendBlobWhile(net::Session* s,net::ReliableKind kind,uint32_t seq,const std::vector<uint8_t>& b,const std::function<bool()>& current){
+    if(!current())return false;const bool sent=SendBlob(s,kind,seq,b);return current() && sent;}
+bool SendBlobToSlotWhile(net::Session* s,int,net::ReliableKind kind,uint32_t seq,const std::vector<uint8_t>& b,const std::function<bool()>& current){return SendBlobWhile(s,kind,seq,b,current);}
 bool Assembler::OnChunk(const net::BlobChunkPayload&,uint8_t,std::vector<uint8_t>& out) {out=std::move(test::incoming);return !out.empty();}
 void Assembler::Sweep(std::chrono::steady_clock::time_point,std::chrono::seconds) {}
 void Assembler::Clear() {}
@@ -332,6 +348,41 @@ int main() {
     duringCapture=[]{S::QueuePublishRetry(L"item",1);};
     CHECK(S::PublishToSlot(&session,1,&actor,L"item"));CHECK(S::g_retry.count({L"item",1}));
     puts("PASS: direct successful publication clears only its older matching retry, preserving replacement work");
+    Reset();grill=true;duringApply=[](const Record& rec){CHECK(rec.floats.size()==2 && rec.floats[1][2]==burn);};Run(Intent);CHECK(calls==1);
+    Reset();grill=true;S::ExpectRecordFor(&actor,L"item",1);duringApply=[](const Record& rec){CHECK(rec.floats.empty());};Run(Intent);CHECK(calls==1);
+    Reset();live=false;Deliver(L"item",1,1,true);CHECK(S::g_parked.at(L"item").preserveGrillRuntime);
+    live=grill=true;burn=.45f;duringApply=[](const Record& rec){CHECK(rec.floats[1][2]==.45f);};CHECK(S::ApplyParked(&actor,L"item"));
+    Reset();live=false;S::ExpectRecordFor(&actor,L"item",1);Deliver(L"item",1,1,true);CHECK(!S::g_parked.at(L"item").preserveGrillRuntime);
+    live=grill=true;duringApply=[](const Record& rec){CHECK(rec.floats.empty());};CHECK(S::ApplyParked(&actor,L"item"));
+    puts("PASS: host grill burn/active survives ordinary and parked client records; exact initial inventory birth retains its source runtime");
+    // New same-key input can arrive during normalization, capture or transport.
+    for(bool inGrill:{false,true}){
+        Reset();grill=inGrill;auto& callback=inGrill?duringRefresh:duringLock;
+        callback=[]{Deliver(L"item",2,2,true);};Run(Intent);
+        CHECK(calls==1 && sent==std::vector<int>({2}) && noted==std::vector<int>({2}) && S::g_parked.empty());
+    }
+    Reset();duringSend=[]{Deliver(L"item",2,2,true);};Run(Intent);
+    CHECK(calls==1 && sent==std::vector<int>({1,2}) && noted==std::vector<int>({2}) && S::g_parked.empty() && S::g_retry.empty());
+    Reset();grill=true;S::g_session=&session;S::Park(L"item",Make(),1,100);S::g_parked.at(L"item").preserveGrillRuntime=true;
+    duringRefresh=[]{Deliver(L"item",2,2,true);};CHECK(!S::ApplyParked(&actor,L"item"));
+    CHECK(!calls && S::g_parked.at(L"item").rec.ints[0][0]==2 && !S::g_parked.at(L"item").failures);
+    CHECK(S::ApplyParked(&actor,L"item") && calls==1 && noted==std::vector<int>({2}));
+    Reset();captureOK=true;duringCapture=[]{Deliver(L"item",2,2,true);};
+    CHECK(!S::Publish(&session,&actor,L"item") && sent==std::vector<int>({2}) && calls==1 && S::g_retry.empty());
+    Reset();captureOK=true;onlyLive=L"item";duringCapture=[]{Deliver(L"other",2,2,true);};
+    CHECK(S::Publish(&session,&actor,L"item") && sent==std::vector<int>({2,1})); // unrelated key remains independent
+    for(int cause=0;cause<5;++cause){
+        Reset();captureOK=true;sendOK=false;duringSend=[cause]{if(cause==0)S::OnDisconnect();if(cause==1)++world;
+            if(cause==2)S::OnPeerGone(1);if(cause==3)++serial;if(cause==4)liveKey=L"new_key";};
+        CHECK(!S::PublishToSlot(&session,1,&actor,L"item") && S::g_retry.empty());
+    }
+    Reset();duringSend=[]{S::OnDisconnect();Deliver(L"item",2,2,true);};Run(Intent);
+    CHECK(calls==1 && noted==std::vector<int>({2}) && S::g_parked.empty());
+    puts("PASS: same-key normalization/capture/send supersession, independent other keys, native pre-apply cancellation and stale-transfer retry refusal");
+    Reset();S::ExpectRecordFor(&actor,L"item",1);CHECK(!S::PrepareForMutation(&actor,L"item"));
+    Deliver(L"item",1,1,true);CHECK(S::PrepareForMutation(&actor,L"item"));
+    Reset();S::Park(L"item",Make(),1,100);success=false;CHECK(!S::PrepareForMutation(&actor,L"item"));
+    success=true;CHECK(S::PrepareForMutation(&actor,L"item") && S::g_parked.empty());
     puts("PASS: readiness/ownership waits preserve retry budget without blocking ready peers");
     puts("PASS: independent per-recipient/broadcast retries, attempt counts and departure cleanup");
     puts("PASS: unindexed live-source retry for capture/send failures; dead/recycled/rekeyed sources refused");

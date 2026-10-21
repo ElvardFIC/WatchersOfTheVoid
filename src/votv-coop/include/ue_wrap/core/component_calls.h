@@ -6,6 +6,7 @@
 // Game thread (reflected UFunction dispatch).
 
 #pragma once
+#include <functional>
 
 namespace ue_wrap::component_calls {
 
@@ -25,6 +26,9 @@ bool SetActive(void* comp, bool value, bool reset);
 // UAudioComponent::SetVolumeMultiplier(float). The caller owns any clamping
 // semantics (e.g. the desk's FClamp(v/10, 0.1, 5)).
 bool SetVolumeMultiplier(void* comp, float mult);
+// Query playback, then Play(0)/Stop only on a mismatch. Component activation
+// alone cannot restart an audio component whose active flag already stayed set.
+bool SetAudioPlaying(void* comp,bool playing,const std::function<bool()>& current={});
 
 // Dispatch a parameterless UFunction on obj (fn already resolved by the caller).
 bool CallParamless(void* obj, void* fn);

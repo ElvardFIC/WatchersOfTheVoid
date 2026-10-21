@@ -21,6 +21,7 @@ void* current=&world;
 Actor* hand=nullptr;
 bool authored=true,mintOk=true,elementMirror=false;
 bool gameplayCaller=false,wrongCallerOwner=false,enrollOnExpress=false;
+bool waterPour=false;
 void* fixed=nullptr;void* frozen=nullptr;void* remoteHand=nullptr;
 std::vector<void*> coasted;
 int publishes=0;float charge=1.f,publishedCharge=-1.f;
@@ -36,7 +37,7 @@ void Drain(){H::DrainPendingSpawns(&session);}
 void Reset(){H::OnDisconnect();H::SetSession(&session);session.linked=true;session.mode=coop::net::Role::Host;
     for(int i=0;i<260;++i){actors[i]=Actor{};actors[i].id=i;}
     publishes=0;charge=1.f;publishedCharge=-1.f;elementMirror=false;duringReadKey={};
-    gameplayCaller=wrongCallerOwner=enrollOnExpress=false;fixed=frozen=remoteHand=nullptr;coasted.clear();
+    gameplayCaller=wrongCallerOwner=enrollOnExpress=waterPour=false;fixed=frozen=remoteHand=nullptr;coasted.clear();
     current=&world;hand=nullptr;authored=mintOk=true;duringKey={};duringExpress={};}
 }
 namespace ue_wrap::log {void Write(Level,const char*,...) {}}
@@ -75,9 +76,12 @@ bool IsFloorBed(void* a){return static_cast<test::Actor*>(a)->floorActor;}
 bool EnsureKey(void* a){auto& actor=*static_cast<test::Actor*>(a);++actor.mints;
     test::Callback(test::duringKey);if(test::mintOk)actor.key=true;return test::mintOk;}
 }
+namespace ue_wrap::water_pour {bool IsPour(void* a){return test::waterPour && a==&test::actors[0];}bool IsProjectile(void* a){return IsPour(a);}}
+namespace coop::water_pour_sync {void ObserveHostBirth(void*,void*){}}
 namespace ue_wrap::ufunction_hook {
 CallerFrame CurrentCallerFrame(){return {test::gameplayCaller?&test::actors[254]:nullptr,nullptr};}
-bool InstallPostHook(const facts::Resolved&,PostNativeCallback cb,bool){++test::keyedHooks;test::finishCallback=cb;return test::finishHookOK;}}
+bool InstallPostHook(void*,PostNativeCallback cb,bool){++test::keyedHooks;test::finishCallback=cb;return test::finishHookOK;}}
+namespace ue_wrap::ufunction_hook {bool InstallPostHook(const facts::Resolved& fn,PostNativeCallback cb,bool flag){return InstallPostHook(fn.Fn(),cb,flag);}}
 namespace coop::element {
 Element::Element(ElementType type):m_type(type){} Element::~Element()=default;
 Element* Registry::Get(ElementId id)const {static Element e(ElementType::Prop);e.SetMirror_(test::elementMirror);return id==kInvalidId?nullptr:&e;}
@@ -207,5 +211,10 @@ int main(){using namespace test;
     actors[0].key=true;Drain();CHECK(coasted.size()==1); // delayed key
     Reset();gameplayCaller=enrollOnExpress=true;actors[0].key=true;Enqueue();
     duringExpress=[]{H::OnDisconnect();};Drain();CHECK(coasted.empty());
+    // Bucket water uses its own native factory, outside spawnPropThroughGamemode.
+    Reset();waterPour=enrollOnExpress=true;actors[0].floorActor=false;actors[0].key=true;
+    Enqueue();waterPour=false;CHECK(coasted.empty());charge=.73f;Drain();
+    CHECK(coasted.size()==1 && publishes==1 && publishedCharge==.73f);
+    Drain();CHECK(coasted.size()==1); // final velocity/record is read on the next pump
     puts("PASS: keyed install, seven-part gameplay births and coasting, final state and lifetime/exclusion guards");
 }

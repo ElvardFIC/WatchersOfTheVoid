@@ -31,13 +31,15 @@ void OnBite(const coop::net::FoodBitePayload& payload, uint8_t senderSlot);
 // The final native bite is authored before its generic destruction can cross.
 bool ConsumesClientDestroy(void* actor);
 void SendAllToSlot(int slot);
+void OnPeerLeft(int slot);
 void OnDisconnect();
 
 // No save timestamps: transfers between peers carry only the live condition.
-inline bool ValidCondition(float temperature, float ripeness, int32_t uses) {
+inline bool ValidCondition(float temperature, float ripeness, int32_t uses,float cookProgress=-1.f) {
     return std::isfinite(temperature) && temperature >= 0.f && temperature <= 2000.f &&
            std::isfinite(ripeness) && ripeness >= -100.f && ripeness <= 10000.f &&
-           uses >= -10 && uses <= 100000;
+           uses >= -10 && uses <= 100000 && std::isfinite(cookProgress) &&
+           (cookProgress==-1.f || (cookProgress>=0 && cookProgress<=1'000'000.f));
 }
 void ForgetPublished(const std::wstring& key);
 // Called after a host birth/snapshot row, on the same ordered lane as that row.

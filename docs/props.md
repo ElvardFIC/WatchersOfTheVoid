@@ -13,6 +13,15 @@ grappling hook and rope among them, are on [deployables.md](deployables.md).
 
 ### Identity
 
+Explosion surface scorches use the same session-scoped dynamic cleaning identity
+as liquid deposits. Exact host explosion/salt-rocket scorchMark factories provide
+the native hit transform and material; client explosions do not trace their own
+surfaces. Birth and join are quiet and retirement is retained for blocked peers.
+Private computer-game explosions inherit that method but stay local. Observed
+source provenance survives same-world reconnect; unknown host scorches remain in
+static cleaning and are not published as new dynamic births. Full save/world-reload
+provenance migration remains open.
+
 A prop is `Aprop_C` or a subclass, and every keyed prop carries the game's own save key: a
 string the prop's construction script mints as a fresh GUID when none is set, and the save
 persists. The mod reads it and never overwrites it, with one exception: on a receiver, the
@@ -266,6 +275,15 @@ is built; food's temperature, ripeness and use count are the host's (`coop/props
 | `PropSnapPos` | the host to one joiner | a position correction for a save-authoritative prop moved in the join window, with a keyed prop's frozen and sleep |
 | `ContainerState`, `ContainerContents` | the presser; the host | open or closed; one slice of the host's object array |
 | `InventoryPickup` | each peer, relayed | the pocket blip, so others hear a pickup |
+| `Watoy` (224) | client activation/hand sample to host; validated host state/cues to peers | world key or hand generation and player identity, active sound, particle phase, volume and pitch; never blindly relayed |
+| `SpongeEffect` (225) | owner request to host; validated host effect to peers | source key or hand generation/person, trace location and surface normal; visual foam only |
+| `WaterPour` (228) | exact owned-bucket/washer birth request to host; terminal reply to owner |88-byte birth and8-byte reply, source identity, final transform, post-native velocity and soap/power; native host water actor |
+| `WaterSplash` (229) | host to ready peers |44-byte transient hit Location/Normal, audio location and bucket/washer cue kind; independently retried emitter and sound |
+| `GrillEdit` (230) | client field edit to host; terminal reply to owner |52-byte keyed coal increment or lid edit; host applies to current stock and preserves unrelated state |
+| `WaterLaunch` (231) | exact bucket source sound request to host; validated cue to peers |60-byte source/person/generation and point; drip or whole-throw wade/splash, with owner exclusion |
+| `KitchenState` (177) | host to peers | 108-byte state, including grill lid, native cooking voice state and volume; retained current join delivery |
+| `HandExtinguisher` (187) | owner to host; validated display to peers | 18-byte stock/effect state for held tools, hand generation and player identity; stale spray expires |
+| `WallCreative` (226) | exact wallbuilder request to host; terminal reply to owner | accepted contour key, source hand generation/person and numbered request; host native completion only |
 
 ## Late join
 
@@ -287,6 +305,67 @@ prop resolves.
 
 ## Known limits
 
+`[RD]` The wallbuilder's instant-completion path calls buildWall with isCheat=true
+after creating a contour. Its native availability follows Custom Content. `[V]`
+The client asks the host to complete only a new contour created for that player;
+the host checks source identity, rule and reach, reserves the contour and invokes
+the native completion once. Requests/replies retry, and a native fault is terminal
+to avoid replaying partial output. The successor and contour retirement join through
+the placement stream. `[?]` Two-peer completion/effects and paid cement transactions
+still need gameplay verification and further work.
+
+`[V]` Hand-tool display state is bound to player identity and hand generation. A
+stalled extinguisher stream stops remote particles/audio after 1.5 seconds, and
+stow or departure retires the previous tool's effect. Owners keep native consumption;
+display receipt does not trace, clean or consume supplies. Audio follows actual
+playback state, including recovery when a component remains active after its voice
+stops. Offline lifecycle and audio-call checks pass. `[?]` Two-peer spray appearance
+and durable shared resource transactions still require verification/work.
+
+`[RD]` A grill's lid changes its native heating rate; removing it creates the bbq_1
+item through the player's native action. `[V]` Kitchen snapshots carry lid visibility,
+fire/fuel state and the actual cooking-loop play state/volume. Replica cooking audio
+does not start from local overlap or timeline decisions. The repaint changes no
+ingredients, heat or fuel and does not restart an unchanged loop. Missing components
+and failed join sends retry with the latest state. Client coal/lid changes enter a
+per-key host queue: coal adds to the current host count, while lid edits change
+only the lid field. Ordinary and parked client records preserve host coal/lid/burn;
+initial item records may restore their original stock. `[?]` Two-peer sound/lid
+behavior, capacity races, personal coal refunds and simultaneous lid-output
+inventory transactions still need gameplay verification and transaction work.
+
+`[RD]` A pressure washer creates prop_sponge_p, sets its power after FinishSpawning
+and gives it a ten-second lifetime. The bucket drip and whole-throw paths use
+different sound arguments; the whole throw emits one wade/splash pair. `[V]`
+Water births capture their final native transform and velocity; the host authors
+flight, collision, cleaning and retirement. Both the projectile's own and its
+parent sponge's client hit paths are refused. Canonical BeginPlay supplies the
+washer's initial particle; the owner's predicted initial copy is removed. Launch
+and impact cues are transient, validated and ordered, with owner exclusion and
+short readiness retry. `[?]` Two-peer timing/appearance, dynamic grime/spill births
+and durable personal water/soap accounting remain unverified or unfinished.
+
+`[RD]` Sponge foam follows the native five-unit soap debit and its trace Location/Normal.
+`[V]` The host validates source and point reach, then sends a transient surface particle
+and attached sponge burst. Recipients consume no soap and perform no cleaning. Each
+visual stage retries independently; expired bursts and old join history are discarded.
+Native remote-hand output is refused. Offline controller/native-wrapper checks cover
+identity, reach, malformed geometry, retry, ordering and teardown. `[?]` Actual two-peer
+appearance/timing and atomic soap accounting still require work.
+
+`[RD]` The watoy's native activation creates an independent zero-gravity component,
+starts a volume timeline and derives audio pitch from speed. `[V]` Its world activation
+is host-authoritative, with driven-prop poses while active. Personal hand actors remain
+native on their owner; display mirrors receive sound and particle state, fenced by
+player identity and hand generation. Native component initialization, timers and retirement
+continue; only its force, initial velocity and gravity writes are refused on remote
+copies. A join receives current state without the old start cue. Missing actors/audio/
+particles retry, and owned presentation components are released on expiry or teardown.
+Offline controller and actual wrapper checks cover these paths. `[?]` Two-peer physical
+motion, sound timing, picking up an active toy and stow/drop/save transitions still need
+gameplay checks. Native saves do not preserve a running zero-gravity component, and
+the channel does not add that persistence or sample-accurate audio/particle playback.
+
 Simultaneous holds use the same lowest-slot priority on every receiver, including the local
 holder. The losing local physics handle or weapon releases through its native cleanup before
 the winning drive parks the body. Rejected holds retain their identity so a delayed release
@@ -305,8 +384,99 @@ The personal inventory profile captures the live held record before hashing, pre
 stored transform and requiring matching class/key and actor lifetime. Pocket pickup of a
 supported mutable world item waits until its record enters the reliable queue. A client's final
 food bite is submitted before generic destruction, with a durable retry if transport refuses;
-the host retains its source long enough to create the verified food-box wrapper. Poison and
+the host retains its source long enough to create the verified box wrapper, banana husk or
+empty coffee cup. Remote hand displays cannot create these outputs. Poison and
 other eater effects remain native on the consuming player's machine.
+
+Cooking food carries `cookProgress` in the live food state, the placement request and
+native float group 2 of its saved record. Held profile snapshots refresh that field before
+hashing. The host owns world cooking and cooked replacements; a personal held food keeps
+its owner's native cooking, with only the measured `cookItem` factories admitted as births.
+Remote hand displays and client world copies cannot run cooking ticks or those factories.
+An early food state waits in a bounded retry table until its actor and fields are ready.
+Hand samples also name the owning player and wait for the matching hand generation;
+an unresolved local correction blocks default-state publication. A replacement hand
+publishes even when its condition matches the previous hand. Failed join unicasts and
+remote-hand sends retry independently of the broadcast baseline, using current values.
+`[V]` Offline checks cover class/actor recycling, world changes, missing fields,
+pending samples, native output exclusions and send refusal. `[?]` Simultaneous personal
+consumption, conditioned food recipes, other spill factories and liquid stock accounting remain open.
+Food publication and native writes retain actor/hand generation, player and current
+revision through callbacks. A newer nested sample wins, an older send requests a
+fresh correction, and joins retain individual recipient epochs/readiness. Bite
+observations expire with their actual script invocation; final-bite transport
+retries own immutable payloads and cannot erase a newer same-key request.
+
+Beer/wine/coffee spills use `drink_spill_sync`: kind233 carries a100-byte native launch
+request and exact terminal acknowledgement; kind232 carries host-only decal state.
+The host validates the owning hand/driven-hold generation, kind, launch shape,
+velocity and reach, then runs the native projectile. Its tracing, bounce, decal
+birth and electrical shortCircuit remain on the host. Client drink spheres
+freeze physics/collision immediately; Tick and all impact graph entries are refused.
+The native BeginPlay entry and other grime projectile kinds keep their behavior.
+The sphere has no visible mesh; no flight-pose presentation channel is required.
+The native60-second lifespan remains intact. A consumed hand item can be proved
+from one of four recently retired generations, for1500ms in the same world and
+occupancy. Host break/fire deposits also enroll.
+The coffee cup uses its own native scale from remaining portions and trace size5.
+Its inventory copy stays with its owner; world cups follow host food simulation,
+including a remote physical hold. Existing native empty-cup output stays intact.
+Each canonical static decal gets a session/world nonce and birth id, separating
+its cleaning minimum from old static grime at the same coordinates. Saved decals
+join quietly and use an existing matching actor once. Local temporary projectiles
+retire after immutable launch capture; partial construction is terminal, and failed births/joins/retirements
+retry per recipient. Native orientation/material/process and measured impact sound
+are carried to every live observer, including the owner who no longer simulates
+impact. Joins stay quiet; the native host impact does not play twice. Other grime
+factories and atomic liquid debit/refund remain outside this path.
+Kind234 carries60-byte native source-sound requests, acknowledgements and canonical
+cues. The exact native call's frame/end/local identifies its sound point. Beer/wine
+uses fuel1,.5 volume,1 pitch and att_default; coffee uses water_splash_Cue,.5,1.25
+and att_small. Source audio excludes the owner, preserves local/recipient FIFO and
+expires without join replay. Accepted spatial cues can outlive the origin's roster
+entry; per-person replay history prevents the next occupant inheriting old counters.
+Unavailable optional source-audio metadata does not block the host flight path.
+Gasoline-bottle break/fire graphs use kind3 for their native host projectile and
+gasoline decal. A selected local-hand bottle can submit its captured launch with
+an empty world key, native scale1/size5 and current or recently consumed exact-class
+proof. World bottles remain host-owned; mirrors cannot create spill factories.
+Unbound client gas projectiles are removed. Gasoline has no pour-audio request.
+Canonical
+gasoline identities also address the fire lane. The exact gasoline ignite body
+keeps its Box, fuelSpeed.25, igniteChance1 and igniteScale1.25. Host flame state
+creates/refreshes/extinguishes native client presentation, while gas fireDamage,
+world spread and self expiry remain host decisions. External extinguishing requests
+the canonical outcome; local-player fire traces remain native. Saved adoption,
+cleaning joins and retirement share the dynamic decal lane. Fire requests retain
+their originating person and connection through native probes and transport.
+Preparation failures can retry, while attempted native ignite/extinguish calls
+cannot replay partial additive fuel. Missing flame metadata defers presentation.
+Final extinguishing state retains delivery until every ready recipient accepts;
+one blocked peer does not stop the others.
+Observed looping toy music starts carry episode, position and pitch. Retained
+sends include queue age; receivers add receive age and bounded half-RTT before
+Play(StartTime). The actual looping SoundWave duration controls wrapping. The
+same episode does not restart on heartbeats; stopped/replaced audio or sound
+recovers once at the current known position. An already-playing first observation,
+unavailable metadata or unsupported sound has unknown phase and keeps ordinary
+state replication. Action/touch observations bind native invocations and people;
+plush Alt-use captures its input before the native activation callback.
+Sampling, cached playback, native actions/touches and queued squeaks retain the
+canonical actor key through reads, sends and native audio preparation; a renamed
+actor cannot inherit an older source's observation or presentation. An already
+dispatched Activate consumes its transient cue, including native source teardown.
+Client music commands wait for host-world readiness before transport.
+their requests retain the same person and connection. Acoustic timing and
+hand/world phase continuity remain unverified.
+Paid garden uses reserve storage under a unique script invocation. An untracked
+nested callback cannot consume an outer reservation, and Cancel/fault cleanup
+removes only inactive invocations. Queued care/harvest retains its local player,
+slot and connection epoch through guarded chunk sends. Care/harvest wire payloads
+carry that original player number; zero, oversized, legacy or replaced occupants
+are refused. Native authority probes retain session/world/role/readiness and the
+peer epoch before gameplay dispatch. Completed care can outlive the local crop
+copy; resource rejection/refund remains separate.
+These paths have offline native-contract and regression coverage; two-peer gameplay is open.
 
 | Limit | Evidence |
 |---|---|
@@ -335,6 +505,10 @@ other eater effects remain native on the consuming player's machine.
 | a prop under a hook's drive or a broom's push | `coop/props/prop_drive_host` (the host's set and stream), `coop/props/prop_drive_stream` (the receiver), `coop/items/hook_prop_claim` (the hook lane feeding it), `coop/items/hook_constraint` (the tie itself, host-only), `coop/items/broom_push` (the broom's push feeding it) |
 | containers | `coop/props/container_contents_sync`, `coop/items/save_record_wire`, `coop/interactables/interactable_sync` |
 | a record that changes in place | `coop/props/prop_record_refresh` (the drive box, the reel case) |
+| watoy activation, sound and particle state | `coop/props/watoy_sync`, `ue_wrap/actors/watoy` |
+| sponge surface foam and attached bursts | `coop/props/sponge_effects_sync`, `ue_wrap/actors/sponge_effects` |
+| bucket water birth, host collision and splash | `coop/props/water_pour_sync`, `ue_wrap/actors/water_pour`, `coop/props/host_spawn_watcher` |
+| shared beer/wine spill decals | `coop/props/drink_spill_sync`, `ue_wrap/devices/drink_spill`, `coop/interactables/grime_sync` |
 | the pocket blip | `coop/items/inventory_pickup_sync` |
 | the join | `coop/props/prop_snapshot`, `coop/props/snapshot_census`, `coop/props/join_membership_sweep`, `coop/props/unresolved_pose_ledger` |
 | the spawners a client must not run | `coop/world/spawn_authority` |

@@ -225,7 +225,7 @@ bool EnsureHeldItemBroadcast(void* heldActor, coop::net::Session* s) {
     // R+LMB can release an actor after its drop request but before the host
     // echoes PropSpawn. Minting a peer eid here creates a second author for it.
     if (s->role() == coop::net::Role::Client &&
-        coop::prop_drop_intent::IsLocalPlacement(heldActor)) return false;
+        (coop::prop_drop_intent::IsAwaitingHost(heldActor) || coop::prop_drop_intent::IsRefusedPlacement(heldActor))) return false;
     // The kerfur gate: a kerfur prop is a host-owned entity, and a client must never mint a
     // peer-range eid for it (the host's conversion gate dropped such a mint and re-mirrored it as a
     // fresh entity: the dupe-and-drop loop). The held-pose stream carries the kerfur prop mirror by

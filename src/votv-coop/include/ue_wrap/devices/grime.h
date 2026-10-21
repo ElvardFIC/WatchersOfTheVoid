@@ -17,13 +17,12 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 
 namespace ue_wrap::grime {
 
-// Resolve the grime_C UClass, the `process` / `Type` / `maxProcess` / `cleanParameter` /
-// `dynmat` field offsets, applyMaterial and the material's SetScalarParameterValue.
-// Idempotent; true once the class resolved (false while the grime_C blueprint class is not
-// loaded yet -- the caller retries on a later tick). Game thread.
+// Resolve the indexed class and reflected fields; retry incomplete metadata and
+// class/function slot replacement. True once process/Type can be read. Game thread.
 bool EnsureResolved();
 
 // True iff `obj`'s class is grime_C or one of its grime_* subclasses. Cheap (a bounded
@@ -33,17 +32,17 @@ bool IsGrime(void* obj);
 // Read the grime's `process` (dirt amount) into `out`. Returns false on null / unresolved;
 // leaves `out` untouched on failure.
 bool ReadProcess(void* grime, float& out);
+// Stream-out storage may read an ended actor only while its exact array slot and
+// serial still hold it; normal live reads keep their liveness requirement.
+bool ReadEndedProcess(void* grime,int32_t index,int32_t serial,float& out);
 
 // Read the grime's `Type` (variant selector) into `out`. Used only to disambiguate two decals
 // at the same quantized position in the cross-peer key. Returns false on null / unresolved.
 bool ReadType(void* grime, int32_t& out);
 
-// Write the grime's `process` scalar and repaint the decal at the new `process / maxProcess`
-// ratio, by setting that scalar on the decal's own dynamic material -- the same step the
-// game's clean() performs. maxProcess is a per-instance constant identical across peers (same
-// save), so the wire carries only `process`. A decal with no material yet gets one through
-// applyMaterial instead. Returns false on null or unresolved. The receiver of a remote wipe
-// uses this; it runs no lowering verb, so coop::grime_sync never hears it back as a fall.
-bool WriteProcessAndApply(void* grime, float process);
+// Paint clean()'s process/100 ratio on the current material. Missing materials use
+// the actual subclass's applyMaterial body. False retains a partial paint for the
+// caller to retry; this does not invoke cleaning or spend a resource.
+bool WriteProcessAndApply(void* grime,float process,const std::function<bool()>& current={});
 
 }  // namespace ue_wrap::grime

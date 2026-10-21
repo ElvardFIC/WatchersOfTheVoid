@@ -62,10 +62,16 @@ set(VOTVCOOP_SOURCES
     src/coop/items/hook_anchor.cpp
     src/coop/items/hook_retrieve.cpp
     src/coop/props/bucket_sync.cpp
+    src/coop/props/water_pour_sync.cpp
+    src/ue_wrap/actors/water_pour.cpp
     src/ue_wrap/actors/building_material.cpp
     src/ue_wrap/actors/dingus_music.cpp
+    src/ue_wrap/actors/watoy.cpp
+    src/ue_wrap/actors/sponge_effects.cpp
     src/ue_wrap/actors/physics_gun.cpp
     src/coop/props/dingus_music_sync.cpp
+    src/coop/props/watoy_sync.cpp
+    src/coop/props/sponge_effects_sync.cpp
     src/coop/props/prop_knock.cpp
     src/coop/props/prop_scale_sync.cpp
     src/coop/items/hook_prop_claim.cpp
@@ -102,6 +108,10 @@ set(VOTVCOOP_SOURCES
     src/ue_wrap/devices/garage.cpp
     src/ue_wrap/devices/appliance.cpp
     src/ue_wrap/devices/kitchen_machine.cpp
+    src/ue_wrap/devices/grill.cpp
+    src/ue_wrap/devices/grill_saved_state.cpp
+    src/coop/interactables/grill_hand_sync.cpp
+    src/coop/interactables/grill_edits.cpp
     src/ue_wrap/devices/cargo_lift.cpp
     src/ue_wrap/actors/prop_fire.cpp
     src/coop/props/prop_fire_sync.cpp
@@ -186,6 +196,7 @@ set(VOTVCOOP_SOURCES
     src/ue_wrap/actors/sit_pose.cpp
     src/ue_wrap/actors/kerfur.cpp
     src/ue_wrap/actors/food.cpp
+    src/ue_wrap/actors/cooking_food.cpp
     src/ue_wrap/actors/kerfus.cpp
     src/ue_wrap/world/votv_lib.cpp
     src/ue_wrap/world/economy.cpp
@@ -313,7 +324,12 @@ set(VOTVCOOP_SOURCES
     src/coop/world/placed_save_sync.cpp
     src/coop/world/garden_actions.cpp
     src/coop/world/wall_build_sync.cpp
+    src/coop/world/wall_creative_sync.cpp
+    src/ue_wrap/actors/wall_creative.cpp
     src/ue_wrap/actors/wall_build.cpp
+    src/ue_wrap/actors/wall_drying.cpp
+    src/coop/world/material_save_sync.cpp
+    src/ue_wrap/actors/material_saved_state.cpp
     src/coop/world/media_sync.cpp
     src/coop/world/event_active_sync.cpp
     src/coop/world/creature_event_relay.cpp
@@ -327,6 +343,8 @@ set(VOTVCOOP_SOURCES
     src/coop/interactables/window_sync.cpp
     src/coop/interactables/window_stroke_sync.cpp
     src/coop/interactables/grime_sync.cpp
+    src/coop/props/drink_spill_sync.cpp
+    src/ue_wrap/devices/drink_spill.cpp
     src/coop/session/player_handshake.cpp
     src/coop/session/player_handshake_prefs.cpp
     src/coop/session/player_handshake_nick.cpp
@@ -384,6 +402,7 @@ set(VOTVCOOP_SOURCES
     src/coop/props/prop_container_extract.cpp
     src/coop/props/prop_food_state.cpp
     src/coop/props/prop_food_sync.cpp
+    src/coop/props/food_save_sync.cpp
     src/coop/props/prop_record_refresh.cpp
     src/coop/props/notebook_refresh.cpp
     src/coop/props/pack_trash_intent.cpp

@@ -578,7 +578,11 @@ def drill() -> int:
 
     # 3. a family stops being chained: every case label survives, the call does not.
     t = dict(base)
-    t[FEED_FILE] = re.sub(r"if\s*\(HandleWorldEvent\([^)]*\)\)\s*break;", "", t[FEED_FILE], count=1)
+    t[FEED_FILE], removed = re.subn(
+        r"if\s*\(HandleWorldEvent\((?:session,\s*)?msg\)\)\s*break;", "", t[FEED_FILE], count=1)
+    if removed != 1:
+        print("reliablekind_gate: DRILL ABORTED -- world-dispatch mutation target changed")
+        return 1
     controls.append(("a family dispatcher no longer chained", t,
                      "HandleWorldEvent is defined in"))
 

@@ -5,7 +5,7 @@ $output=Join-Path $root '_research/tests_2141'
 New-Item -ItemType Directory -Force -Path $output | Out-Null
 Push-Location $root
 try {
- . (Join-Path $root '../_toolchain/env.ps1')
+ if(-not(Get-Command cl -ErrorAction SilentlyContinue)){. (Join-Path $root '../_toolchain/env.ps1')}
  & cl /nologo /std:c++20 /EHsc /Gy /I agent/tests/fire_stubs /I agent/tests/stubs /I src/votv-coop/include "/Fo$output/cord.obj" "/Fe$output/cord.exe" agent/tests/cord_perf_2141_test.cpp /link /OPT:REF
  if($LASTEXITCODE -ne 0){throw 'Compile cord performance test failed'}
  & "$output/cord.exe"

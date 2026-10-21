@@ -13,6 +13,7 @@
 // shared adapter and channel, as the interactable sync did for its bool features.
 
 #include "coop/interactables/grime_sync.h"
+#include "coop/props/drink_spill_sync.h"
 
 #include "coop/config/config.h"
 #include "coop/element/death_seam.h"
@@ -20,6 +21,8 @@
 #include "coop/net/session.h"
 #include "coop/net/wire_key_util.h"  // WireKeyFromString / StringFromWireKey / FnvKey (shared)
 #include "coop/player/players_registry.h"  // coop::players::kMaxPeers
+#include "coop/player/roster_ledger.h"
+#include "ue_wrap/core/cached_obj_ref.h"
 
 #include "ue_wrap/engine/engine.h"          // TryGetActorLocation (the grime's world position -> posKey)
 #include "ue_wrap/devices/grime.h"
@@ -39,6 +42,10 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+#include <array>
+#include <map>
+#include <algorithm>
+#include <set>
 
 namespace coop::grime_sync {
 namespace {
@@ -80,14 +87,16 @@ std::unordered_map<std::wstring, Ref> g_byKey;
 // This peer's own name for one decal: its location's float bits and its type. It tells a cell's twins
 // apart and never travels, so a value is enough, with no string.
 struct ExactKey {
+    uint64_t dynamic=0;
     uint32_t x = 0, y = 0, z = 0;
     int32_t type = 0;
-    bool operator==(const ExactKey& o) const { return x == o.x && y == o.y && z == o.z && type == o.type; }
+    bool operator==(const ExactKey& o) const { return dynamic==o.dynamic && x == o.x && y == o.y && z == o.z && type == o.type; }
 };
 struct ExactKeyHash {
     size_t operator()(const ExactKey& k) const {
         uint64_t h = 1469598103934665603ull;  // FNV-1a over the four words
         for (uint32_t w : {k.x, k.y, k.z, static_cast<uint32_t>(k.type)}) h = (h ^ w) * 1099511628211ull;
+        h=(h^k.dynamic)*1099511628211ull;
         // A word-wise multiply leaves the low bits a function of the words' low bits alone, and a round
         // coordinate's float has them all zero; the table picks its bucket from the low bits. murmur3's
         // 64-bit finalizer spreads every bit into them.
@@ -150,6 +159,7 @@ uint64_t g_lastLogHash = 0;        // GT-only
 // (ExactKey). False when the location read fails: a key is never made from the origin a failed read
 // leaves.
 bool KeysOf(void* grime, std::wstring& key, ExactKey& exact) {
+    if(drink_spill_sync::ExcludeFromStaticIndex(grime))return false;
     ue_wrap::FVector loc{};
     if (!E::TryGetActorLocation(grime, loc)) return false;
     int32_t type = 0; G::ReadType(grime, type);
@@ -163,6 +173,8 @@ bool KeysOf(void* grime, std::wstring& key, ExactKey& exact) {
     std::memcpy(&exact.y, &loc.Y, sizeof(exact.y));
     std::memcpy(&exact.z, &loc.Z, sizeof(exact.z));
     exact.type = type;
+    const auto dynamic=drink_spill_sync::KeyFor(grime);
+    if(!dynamic.empty()){key=dynamic;exact.dynamic=FnvKey(dynamic);}
     return true;
 }
 
@@ -195,17 +207,51 @@ bool Lower(const std::wstring& key, float value) {
     return true;
 }
 
+void ClearFalls();
+#include "grime_join.inc"
+#include "grime_falls.inc"
+struct PendingPaint {ue_wrap::CachedObjRef actor;std::wstring key;float target=0;uint64_t sequence=0;};
+std::map<void*,PendingPaint> g_paints;
+uint32_t g_paintWorld=0;
+uint64_t g_paintSequence=0;
+void* g_paintCursor=nullptr;
+bool g_drainingPaint=false;
+void PaintWorld(){const auto world=ue_wrap::world_identity::Generation();if(world!=g_paintWorld){g_paints.clear();g_paintCursor=nullptr;g_paintWorld=world;}}
 // Write `target` into a live decal and repaint it, unless it already reads that -- or, `lowerOnly`, unless
 // it already reads that or less: a fall lowers a decal and never raises one this peer cleaned further.
 // The apply runs no verb, so it is never heard back as a fall.
 void ApplyResolved(void* actor, const std::wstring& key, float target, const char* why, bool lowerOnly) {
+    PaintWorld();ue_wrap::CachedObjRef ref;ref.Set(actor);
+    const auto world=g_paintWorld;const auto epoch=g_joinEpoch;
+    auto* session=g_session.load();
+    const auto floor=Floor().find(key);const bool haveFloor=floor!=Floor().end();const float floorValue=haveFloor?floor->second:0;
+    auto pending=g_paints.find(actor);uint64_t sequence=pending==g_paints.end()?0:pending->second.sequence;
+    const auto current=[&]{if(world!=ue_wrap::world_identity::Generation() || epoch!=g_joinEpoch ||
+        session!=g_session.load() || !ref.Get())return false;
+        const auto floor=Floor().find(key);if((floor!=Floor().end())!=haveFloor || (haveFloor && floor->second!=floorValue))return false;
+        const auto row=g_paints.find(actor);return sequence?(row!=g_paints.end() && row->second.sequence==sequence):row==g_paints.end();};
     float cur = 0.f;
-    if (!G::ReadProcess(actor, cur) || std::fabs(target - cur) < kProcessEps) return;
-    if (lowerOnly && cur < target) return;
-    const bool ok = G::WriteProcessAndApply(actor, target);
-    if (ProbeLog() || !ok)
+    if (!std::isfinite(target) || !G::ReadProcess(actor, cur) || !current())return;
+    if(!sequence && std::fabs(target-cur)<kProcessEps)return;
+    if (lowerOnly && cur < target) {g_paints.erase(actor);return;}
+    sequence=++g_paintSequence;g_paints[actor]={ref,key,target,sequence};
+    const bool ok = G::WriteProcessAndApply(actor,target,current);
+    if(!current())return;if(ok)g_paints.erase(actor);
+    if (ProbeLog())
         UE_LOGI("grime: applied process=%.3f (was %.3f, %s) ok=%d key='%ls'", target, cur, why, ok ? 1 : 0,
                 key.c_str());
+}
+void DrainPaint(){
+    if(g_drainingPaint)return;PaintWorld();const auto epoch=g_joinEpoch;g_drainingPaint=true;
+    struct Busy{~Busy(){g_drainingPaint=false;}}busy;std::set<void*> visited;
+    for(unsigned work=0;work<8 && !g_paints.empty();++work){
+        auto it=g_paints.upper_bound(g_paintCursor);if(it==g_paints.end())it=g_paints.begin();
+        const auto actor=it->first;const auto pending=it->second;g_paintCursor=actor;if(!visited.insert(actor).second)break;
+        if(!pending.actor.Get()){g_paints.erase(actor);continue;}
+        const auto floor=Floor().find(pending.key);const float target=floor==Floor().end()?pending.target:floor->second;
+        ApplyResolved(actor,pending.key,target,"retry",true);
+        if(epoch!=g_joinEpoch || g_paintWorld!=ue_wrap::world_identity::Generation())return;
+    }
 }
 
 // The shared-scan hub consumer: the per-module walk is gone, and the hub's shared sliced pass
@@ -232,17 +278,23 @@ struct Found {
     Ref          ref;
 };
 std::vector<Found> g_scanFound;  // pass scratch (GT-only)
+uint64_t g_scanSequence=0;
+uint32_t g_scanWorld=0;
 bool g_scanIsFull = false;                                  // pass context
 
 void HubPassBegin(void*, bool isFull) {
+    ++g_scanSequence;g_scanWorld=ue_wrap::world_identity::Generation();
     g_scanFound.clear();
     g_scanNextCache.clear();
     g_scanIsFull = isFull;
 }
 
 void HubMatch(void*, void* obj) {
+    const auto sequence=g_scanSequence;ue_wrap::CachedObjRef identity;identity.Set(obj);
     if (R::NameStartsWith(R::NameOf(obj), L"Default__")) return;  // skip the CDO (alloc-free)
     if (!R::IsLive(obj)) return;
+    drink_spill_sync::ObserveExisting(obj);
+    if(drink_spill_sync::ExcludeFromStaticIndex(obj))return;
     const int32_t idx = R::InternalIndexOf(obj);
     auto cit = g_posKeyByActor.find(obj);
     CachedKey ck;
@@ -254,6 +306,7 @@ void HubMatch(void*, void* obj) {
         ck.idx = idx;
         ck.serial = R::AllocateSlotSerial(idx);
     }
+    if(!identity.Get() || g_scanWorld!=ue_wrap::world_identity::Generation() || sequence!=g_scanSequence)return;
     if (g_scanIsFull) g_scanNextCache.insert_or_assign(obj, ck);   // full pass rebuilds the cache
     else              g_posKeyByActor.insert_or_assign(obj, ck);   // tail pass: cache the NEW actor's key
     const int32_t serial = ck.serial;
@@ -261,14 +314,19 @@ void HubMatch(void*, void* obj) {
 }
 
 size_t HubPassComplete(void*, bool isFull, uint32_t worldGen) {
-    const size_t added = g_scanFound.size();
+    const auto sequence=g_scanSequence,epoch=g_joinEpoch;
+    const auto current=[&]{return sequence==g_scanSequence && epoch==g_joinEpoch && worldGen==ue_wrap::world_identity::Generation() && g_scanWorld==worldGen;};
+    if(!current())return 0;
+    const auto found=g_scanFound;
+    if(isFull)drink_spill_sync::IndexComplete(worldGen);
+    const size_t added = found.size();
     if (isFull) g_posKeyByActor.swap(g_scanNextCache);  // keep live actors' cached keys, drop dead ones
     uint64_t posHash = 0;
     size_t   total;
     {
         std::lock_guard<std::mutex> lk(g_indexMutex);
         if (isFull) g_byKey.clear();                           // full pass: rebuild from scratch
-        for (auto& f : g_scanFound) g_byKey[f.key] = f.ref;
+        for (const auto& f : found) if(Holds(f.ref))g_byKey[f.key] = f.ref;
         if (!isFull) {                                         // tail pass: prune dead entries (cheap, O(index))
             for (auto it = g_byKey.begin(); it != g_byKey.end(); ) {
                 if (Holds(it->second)) ++it;
@@ -285,24 +343,27 @@ size_t HubPassComplete(void*, bool isFull, uint32_t worldGen) {
     size_t lowered = 0;
     auto& floor = Floor();
     if (!floor.empty()) {
-        for (const auto& f : g_scanFound) {
+        for (const auto& f : found) {
             if (!Holds(f.ref)) continue;
             const auto it = floor.find(f.key);
             if (it == floor.end()) continue;
             float cur = 0.f;
-            if (!G::ReadProcess(f.ref.actor, cur) || cur <= it->second + kProcessEps) continue;
-            ApplyResolved(f.ref.actor, f.key, it->second, "floor at index", /*lowerOnly=*/true);
-            ++lowered;
+            const bool read=G::ReadProcess(f.ref.actor,cur);if(!current())return total;
+            if(!read || !Holds(f.ref))continue;
+            const auto latest=Floor().find(f.key);if(latest==Floor().end() || cur<=latest->second+kProcessEps)continue;
+            ApplyResolved(f.ref.actor,f.key,latest->second,"floor at index",true);
+            if(!current())return total;++lowered;
         }
     }
     // A decal that streamed back in takes the process it streamed out at, this decal alone.
     auto& parked = g_parked.Get();
     if (!parked.empty()) {
-        for (const auto& f : g_scanFound) {
+        for (const auto& f : found) {
             const auto it = parked.find(f.exact);
             if (it == parked.end() || !Holds(f.ref)) continue;
-            ApplyResolved(f.ref.actor, f.key, it->second.value, "its stream-out", /*lowerOnly=*/true);
-            parked.erase(it);
+            const auto value=it->second.value;const auto key=it->second.key;
+            ApplyResolved(f.ref.actor,key,value,"its stream-out",true);if(!current())return total;
+            const auto latest=parked.find(f.exact);if(latest!=parked.end() && latest->second.key==key && latest->second.value==value)parked.erase(latest);
             ++lowered;
         }
     }
@@ -338,9 +399,20 @@ bool g_cleanWatched = false;
 bool g_fixWatched = false;
 bool g_endSubscribed = false;
 
-// The decal a verb is running on and its process before the body. A verb never nests on one decal.
-void* g_lowering = nullptr;
-float g_before = 0.f;
+struct LowerCapture {
+    ue_wrap::CachedObjRef actor;
+    net::Session* session=nullptr;
+    uint64_t invocation=0,epoch=0;
+    uint32_t world=0;
+    net::Role role=net::Role::Host;
+    bool connected=false;
+    float before=0;
+    bool Current()const{return actor.Get() && world==ue_wrap::world_identity::Generation() && epoch==g_joinEpoch &&
+        session==g_session.load() && (!session || (session->role()==role && session->connected()==connected)) &&
+        sg::IsInvocationActive(invocation);}
+};
+std::vector<LowerCapture> g_lowerCaptures;
+void PruneLowerCaptures(){std::erase_if(g_lowerCaptures,[](const LowerCapture& row){return !row.Current();});}
 
 // The decal's cross-peer key, from the index's cache: only for a decal the current world's index holds
 // under the slot and serial it still carries. A decal no pass has reached yet has none, and its fall is
@@ -360,45 +432,48 @@ std::wstring KeyOf(void* actor, int32_t idx, int32_t serial) {
 }
 
 void Send(const std::wstring& key, float value) {
-    auto* s = g_session.load(std::memory_order_acquire);
-    if (!s || !s->connected()) return;
-    coop::net::KeyedScalarPayload p{};
-    WireKeyFromString(key, p.key);
-    p.value = value;
-    p.adopt = 0;  // a live fall: receivers apply the minimum
-    if (!s->SendReliable(coop::net::ReliableKind::GrimeState, &p, sizeof(p)))
-        UE_LOGW("grime: SendReliable failed key='%ls'", key.c_str());
-    else if (ProbeLog())
-        UE_LOGI("grime: sent process=%.3f key='%ls'", value, key.c_str());
+    QueueFall(key,value);
 }
 
 sg::Verdict OnLowerPre(const sg::Call& call) {
-    g_lowering = nullptr;
-    if (call.object && G::IsGrime(call.object) && G::ReadProcess(call.object, g_before)) g_lowering = call.object;
+    PruneLowerCaptures();
+    if(!call.invocation || !call.object || g_lowerCaptures.size()>=128)return sg::Verdict::Run;
+    LowerCapture row{};row.actor.Set(call.object);row.invocation=call.invocation;
+    row.world=ue_wrap::world_identity::Generation();row.epoch=g_joinEpoch;row.session=g_session.load();
+    if(row.session){row.role=row.session->role();row.connected=row.session->connected();}
+    if(row.Current() && G::IsGrime(call.object) && row.Current() && G::ReadProcess(call.object,row.before) &&
+       row.Current() && std::isfinite(row.before))g_lowerCaptures.push_back(row);
     return sg::Verdict::Run;
 }
 
 // After the body: the process it left, sent when it fell. A verb that took it below zero destroyed the
 // decal inside the body; its end of play sends the wipe instead (OnGrimeEnd).
 void OnLowerPost(const sg::Call& call) {
-    if (!g_lowering || call.object != g_lowering) return;
-    g_lowering = nullptr;
-    const int32_t idx = R::InternalIndexOf(call.object);
-    if (!R::IsLiveByIndex(call.object, idx)) return;
+    const auto captured=std::find_if(g_lowerCaptures.rbegin(),g_lowerCaptures.rend(),[&](const LowerCapture& row){return row.invocation==call.invocation && row.actor.Raw()==call.object;});
+    if(captured==g_lowerCaptures.rend())return;
+    const auto capture=*captured;g_lowerCaptures.erase(std::next(captured).base());
+    if(!capture.Current())return;
+    const int32_t idx = capture.actor.Idx();
     float cur = 0.f;
-    if (!G::ReadProcess(call.object, cur) || cur >= g_before) return;  // an uncleanable decal
+    if (!G::ReadProcess(call.object, cur) || !capture.Current() || !std::isfinite(cur) || cur >= capture.before) return;
     const CachedKey* ck = CachedOf(call.object, idx, R::SlotSerial(idx));
-    if (!ck) return;
+    if (!ck || !capture.Current()) return;
+    const auto exact=ck->exact;
     const std::wstring key = ck->key;
     // Measured against the floor, the lowest value every peer knows for the key, or, before the key has
     // one, the process this decal had when this peer's first fall on it began: falls smaller than the
     // epsilon add up and go out once they pass it.
     auto& floor = Floor();
     const auto it = floor.find(key);
+    if(it!=floor.end() && cur>it->second+kProcessEps){
+        // A newer minimum can land inside native material/clean callbacks. The
+        // older body must not leave its later, higher scalar on the actor.
+        ApplyResolved(call.object,key,it->second,"newer minimum during clean",true);return;
+    }
     auto& unmoved = g_unmoved.Get();
-    const float from = it != floor.end() ? it->second : unmoved.emplace(ck->exact, g_before).first->second;
+    const float from = it != floor.end() ? it->second : unmoved.emplace(exact, capture.before).first->second;
     if (cur >= from - kProcessEps) return;
-    unmoved.erase(ck->exact);
+    unmoved.erase(exact);
     Lower(key, cur);
     Send(key, cur);
 }
@@ -408,6 +483,7 @@ void OnLowerPost(const sg::Call& call) {
 // out -- ends the decal on this peer, sent as a wipe to zero and kept as the floor for a joiner's
 // snapshot.
 void OnGrimeEnd(const DS::ActorEnd& end) {
+    if(!end.streamedOut)drink_spill_sync::OnRemoved(end.actor);
     const CachedKey* ck = CachedOf(end.actor, end.actorIndex, end.actorSerial);
     if (!ck) return;
     const std::wstring key = ck->key;
@@ -416,7 +492,7 @@ void OnGrimeEnd(const DS::ActorEnd& end) {
     // serial it ended with, which a purge in between resets.
     float at = 0.f;
     const bool held = R::ObjectAt(end.actorIndex) == end.actor && R::SlotSerial(end.actorIndex) == end.actorSerial;
-    const bool read = end.streamedOut && held && G::ReadProcess(end.actor, at);
+    const bool read = end.streamedOut && held && G::ReadEndedProcess(end.actor,end.actorIndex,end.actorSerial,at);
     {
         std::lock_guard<std::mutex> lk(g_indexMutex);
         const auto it = g_byKey.find(key);
@@ -424,7 +500,7 @@ void OnGrimeEnd(const DS::ActorEnd& end) {
     }
     g_posKeyByActor.erase(end.actor);
     if (end.streamedOut) {
-        if (read) g_parked.Get().insert_or_assign(exact, Parked{key, at});
+        if (read) {g_parked.Get().insert_or_assign(exact, Parked{key, at});JoinAway(key,at);}
         return;
     }
     Lower(key, 0.f);
@@ -434,8 +510,36 @@ void OnGrimeEnd(const DS::ActorEnd& end) {
 }  // namespace
 
 void Install(coop::net::Session* session) {
+    if(g_session.load()!=session || g_joinWorld!=ue_wrap::world_identity::Generation())ResetJoins();
     g_session.store(session, std::memory_order_release);
     RegisterWithScanHub();  // the hub builds the index on its own cadence
+}
+
+void RegisterDynamic(void* actor){
+    std::wstring key;ExactKey exact;if(!KeysOf(actor,key,exact))return;
+    const int32_t idx=R::InternalIndexOf(actor),serial=R::AllocateSlotSerial(idx);
+    const auto prior=g_posKeyByActor.find(actor);
+    {std::lock_guard<std::mutex> lock(g_indexMutex);
+        if(prior!=g_posKeyByActor.end() && prior->second.key!=key){const auto old=g_byKey.find(prior->second.key);
+            if(old!=g_byKey.end() && old->second.actor==actor)g_byKey.erase(old);}
+        if(IndexCurrent())g_byKey[key]={actor,idx,serial};}
+    g_posKeyByActor[actor]={key,exact,idx,serial};
+    const auto floor=Floor().find(key);if(floor!=Floor().end())ApplyResolved(actor,key,floor->second,"dynamic birth floor",true);
+}
+
+void ResetDynamic(){
+    ++g_scanSequence;
+    const auto dynamic=[](const std::wstring& key){return key.starts_with(L"ds_");};
+    std::erase_if(Floor(),[&](const auto& item){return dynamic(item.first);});
+    std::erase_if(g_parked.Get(),[](const auto& item){return item.first.dynamic!=0;});
+    std::erase_if(g_unmoved.Get(),[](const auto& item){return item.first.dynamic!=0;});
+    std::erase_if(g_posKeyByActor,[&](const auto& item){return dynamic(item.second.key);});
+    std::erase_if(g_scanNextCache,[&](const auto& item){return dynamic(item.second.key);});
+    std::erase_if(g_scanFound,[&](const auto& item){return dynamic(item.key);});
+    {std::lock_guard<std::mutex> lock(g_indexMutex);std::erase_if(g_byKey,[&](const auto& item){return dynamic(item.first);});}
+    std::erase_if(g_paints,[&](const auto& item){return dynamic(item.second.key);});
+    std::erase_if(g_falls,[&](const auto& item){return dynamic(item.first);});
+    for(auto& join:g_joins)std::erase_if(join.keys,[&](const auto& item){return dynamic(item.first);});
 }
 
 void OnReliable(const coop::net::KeyedScalarPayload& payload, uint8_t senderPeerSlot) {
@@ -454,65 +558,19 @@ void OnReliable(const coop::net::KeyedScalarPayload& payload, uint8_t senderPeer
         ApplyResolved(actor, key, floor[key], adopt ? "adopted" : "a peer's fall", /*lowerOnly=*/!adopt);
 }
 
-void QueueConnectBroadcastForSlot(int peerSlot) {
-    auto* s = g_session.load(std::memory_order_acquire);
-    if (!s) return;
-    if (s->role() != coop::net::Role::Host) return;  // host-only snapshot
-    if (peerSlot < 0 || peerSlot >= static_cast<int>(coop::players::kMaxPeers)) return;
-    if (!IndexCurrent()) {
-        UE_LOGW("grime: connect-snapshot for slot %d skipped -- the index belongs to another world", peerSlot);
-        return;
-    }
-    // The hub keeps the index at most one pass (about two seconds) fresh, so no forced rebuild: a
-    // decal minted in that window reaches the joiner by its next fall. The connect edge is
-    // game-thread-serial with the rebuild, so holding the lock across the sends is safe.
-    int sent = 0;
-    int floors = 0;
-    size_t total = 0;
-    {
-        std::lock_guard<std::mutex> lk(g_indexMutex);
-        total = g_byKey.size();
-        auto& floor = Floor();
-        for (auto& kv : g_byKey) {
-            if (!Holds(kv.second)) continue;
-            float process = 0.f;
-            if (!G::ReadProcess(kv.second.actor, process)) continue;
-            // The lower of the decal and its floor: a cell's twin the host cleaned lowers the key until the
-            // next full pass lowers this one too.
-            const auto fl = floor.find(kv.first);
-            if (fl != floor.end() && fl->second < process) process = fl->second;
-            coop::net::KeyedScalarPayload p{};
-            WireKeyFromString(kv.first, p.key);
-            p.value = process;
-            p.adopt = 1;  // the connect snapshot: the joiner adopts the host's world as is
-            s->SendReliableToSlot(peerSlot, coop::net::ReliableKind::GrimeState, &p, sizeof(p));
-            ++sent;
-        }
-        // And every key the index does not hold live, at the lowest of its floor and its parked decals: a
-        // decal ended here -- zero -- or streamed out, which the joiner has from its own copy of the save and
-        // must see as this world has it.
-        std::unordered_map<std::wstring, float> away(floor.begin(), floor.end());
-        for (const auto& kv : g_parked.Get()) {
-            const auto ins = away.emplace(kv.second.key, kv.second.value);
-            if (!ins.second && kv.second.value < ins.first->second) ins.first->second = kv.second.value;
-        }
-        for (const auto& kv : away) {
-            const auto idx = g_byKey.find(kv.first);
-            if (idx != g_byKey.end() && Holds(idx->second)) continue;
-            coop::net::KeyedScalarPayload p{};
-            WireKeyFromString(kv.first, p.key);
-            p.value = kv.second;
-            p.adopt = 1;
-            s->SendReliableToSlot(peerSlot, coop::net::ReliableKind::GrimeState, &p, sizeof(p));
-            ++floors;
-        }
-    }
-    UE_LOGI("grime: connect-snapshot -- sent %d live process(es) + %d floor(s) of decals not indexed to slot %d "
-            "(of %zu indexed)", sent, floors, peerSlot, total);
+void QueueConnectBroadcastForSlot(int slot) {
+    auto* session=g_session.load();
+    if(!session || !session->connected() || session->role()!=net::Role::Host || slot<1 || slot>=net::kMaxPeers)return;
+    if(g_joinWorld!=ue_wrap::world_identity::Generation())ResetJoins();
+    const auto person=roster_ledger::Get(slot).playerNo;if(!person)return;
+    auto& join=g_joins[slot];join={};join.person=person;join.sequence=++g_joinSequence;join.waiting=true;
 }
-
 void Tick() {
+    PruneLowerCaptures();
+    DrainJoins();
+    DrainFalls();
     if (!G::EnsureResolved()) return;
+    DrainPaint();
     RegisterWithScanHub();  // safety net for any order where Tick precedes Install
     // The two lowering verbs' watches and the decals' end of play, each asked again until it takes. A
     // name watch matches the verb on any class; the pre half keeps only a grime decal.
@@ -526,5 +584,7 @@ std::wstring DebugPosKeyForActor(void* actor) {
     // The dev drill's parity probe: the real quantiser, cache-independent.
     return actor ? PosKey(actor) : std::wstring();
 }
+void OnPeerLeftSlot(int slot){if(slot>=0 && slot<net::kMaxPeers)g_joins[slot]={};}
+void OnDisconnect(){g_session.store(nullptr);ResetJoins();g_lowerCaptures.clear();}
 
 }  // namespace coop::grime_sync

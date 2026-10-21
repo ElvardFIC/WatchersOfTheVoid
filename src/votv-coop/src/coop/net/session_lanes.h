@@ -87,6 +87,7 @@ inline Lane LaneForKind(ReliableKind k) {
     // ReelEjectIntent, the same order-paired family: the ejecting client may pocket the reel a pass
     // later (a keyed destroy on Bulk), and in-lane ordering makes the host author the spawn first.
     case ReliableKind::ReelEjectIntent: return Lane::Bulk;
+    case ReliableKind::PropPlacementResult: return Lane::Bulk;
     case ReliableKind::EntitySpawn:    return Lane::Bulk;
     case ReliableKind::EntityDestroy:  return Lane::Bulk;
     // A creature's event count rides its lifecycle lane, so a count is ordered after its spawn and before its
@@ -218,10 +219,15 @@ inline Lane LaneForKind(ReliableKind k) {
     case ReliableKind::HookRetrieve:      return Lane::Normal; // ordered with anchor births/retirement; host intent, never relayed
     case ReliableKind::MadnessState:      return Lane::Normal; // host-owned event audio/HUD snapshot
     case ReliableKind::DingusMusic:       return Lane::Normal; // authorized here, never blindly relayed
+    case ReliableKind::Watoy:             return Lane::Normal; // keyed activation and occupant/generation-checked hand state
+    case ReliableKind::SpongeEffect:      return Lane::Normal; // validated cosmetic foam, never blindly relayed
+    case ReliableKind::WallCreative:      return Lane::Normal; // validated builder request/reply; outline can arrive on Bulk later
+    case ReliableKind::GrillHand:         return Lane::Normal; // owner hand state; host validates before relay
+    case ReliableKind::WaterPour:         return Lane::Normal; // exact bucket birth request/reply, host validation
+    case ReliableKind::WaterSplash:       return Lane::Normal; // host-only transient impact presentation
     case ReliableKind::GrayboarAction:    return Lane::Normal; // host-only cosmetic cues; no blind relay
     case ReliableKind::GrayboarTurn:      return Lane::Normal; // host-only animation state; no blind relay
     case ReliableKind::KavotiaState:      return Lane::Normal; // host phase snapshot; no gameplay-verb replay
-    case ReliableKind::PropPlacementResult: return Lane::Bulk; // ordered with the keyed spawn it acknowledges
     case ReliableKind::PropScaleState:   return Lane::Normal; // host validates holder; no blind relay
     case ReliableKind::HandToyAudio:      return Lane::Normal; // validated hand generation, no blind relay
     // PropDriveEnd is host-to-all and ordered against nothing: its stream is unreliable on its own
@@ -264,11 +270,8 @@ inline Lane LaneForKind(ReliableKind k) {
 // the handshake kinds are point-to-point or host-originated. PropPose rides the unreliable relay.
 constexpr bool IsClientRelayableReliableKind(ReliableKind k) {
     switch (k) {
-    // Both new actions terminate at host: DreamScene is host-authored; PropActionIntent is a
-    // client request whose native result must be spawned by the host, never peer-relayed.
-    case ReliableKind::DreamScene:
-    case ReliableKind::PropActionIntent:
-        return false;
+    // DreamScene and PropActionIntent use the default refusal below: their
+    // native results are host-authored and are never peer-relayed.
     case ReliableKind::ItemActivate:
     case ReliableKind::PropSpawn:
     case ReliableKind::PropDestroy:

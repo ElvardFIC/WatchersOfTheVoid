@@ -9,25 +9,35 @@ uint32_t mirrorGenerations[coop::net::kMaxPeers]{};
 ue_wrap::dingus_music::State music{true,true,.05f},applied;
 int applies=0,squeaks=0;float heard=0,pitch=1.2f;bool applyOk=true;
 bool plush=false,alt=false;
+uint16_t people[4]{10,11,12,13};int stops=0;
 }
 namespace ue_wrap::dingus_music {
 bool IsDingus(void* a){return !test::plush && a && reflection::IsLive(a);}
 bool IsSqueakyToy(void* a){return a && reflection::IsLive(a);}
 bool IsAltUse(void*,const uint8_t*){return test::alt;}
 bool Read(void*,State& s){s=test::music;test::Callback();return true;}
-bool Apply(void*,const State& s){test::applied=s;++test::applies;test::Callback();return test::applyOk;}
+bool Apply(void*,const State& s,const std::function<bool()>& current){test::applied=s;++test::applies;test::Callback();return test::applyOk && (!current || current());}
+bool StopMusic(void*,const std::function<bool()>& current){if(current && !current())return false;++test::stops;test::applied.playing=false;test::Callback();return true;}
 bool ReadSqueakPitch(void*,float& p){p=test::pitch;return true;}
-bool Squeak(void*,float p){test::heard=p;++test::squeaks;test::Callback();return true;}
+bool Squeak(void*,float p,const std::function<bool()>& current){if(current && !current())return false;test::heard=p;++test::squeaks;test::Callback();return !current || current();}
 }
 namespace coop::hand_item {
 void* LocalHandActor(){return test::local;}
 uint32_t Generation(uint8_t slot){return test::generations[slot];}
 uint32_t MirrorGeneration(uint8_t slot){return test::mirrorGenerations[slot]==test::generations[slot]?test::mirrorGenerations[slot]:0;}
 void* MirrorActorForSlot(uint8_t slot){return test::mirrors[slot];}
+bool IsMirrorActor(void* a){for(auto* mirror:test::mirrors)if(mirror==a && a)return true;return false;}
 }
+namespace coop::roster_ledger {const Row& Get(int slot){static Row rows[4];rows[slot].playerNo=test::people[slot];return rows[slot];}}
 namespace ue_wrap::reflection {
 int32_t FindParamOffset(void*,const wchar_t*){return 0;}
 int32_t FunctionFrameSize(void*){return 1;}
+}
+void ResetToy(coop::net::Session& session){
+ namespace S=coop::hand_toy_audio;using namespace test;S::OnDisconnect();++world;session={};
+ coop::players::Registry::Get().peer=0;local=nullptr;plush=alt=false;applyOk=true;music={true,true,.05f};callback={};
+ for(int slot=0;slot<4;++slot){generations[slot]=mirrorGenerations[slot]=7;mirrors[slot]=nullptr;}
+ mirrors[1]=&ui;S::Install(&session);
 }
 int main(){using namespace test;namespace S=coop::hand_toy_audio;namespace A=coop::element;using Packet=coop::net::HandToyAudioPayload;
  coop::net::Session session;auto& registry=coop::players::Registry::Get();registry.peer=0;
@@ -37,7 +47,7 @@ int main(){using namespace test;namespace S=coop::hand_toy_audio;namespace A=coo
  Packet first=S::g_rows[0].state;session.sent.clear();now+=250;S::Tick();CHECK(session.sent.empty());
  music.playing=false;session.sendOk=false;now+=250;S::Tick();CHECK(S::g_rows[0].pending);
  session.sendOk=true;S::Tick();CHECK(!S::g_rows[0].pending&&session.sent.size()==3);
- Packet p{7,10,.15f,1,0,1,1};S::Receive(p,2);CHECK(!S::g_rows[1].have);
+ Packet p{7,10,.15f,1,0,1,1,people[1]};S::Receive(p,2);CHECK(!S::g_rows[1].have);
  session.ready=false;S::Receive(p,1);CHECK(!S::g_rows[1].have);session.ready=true;
  S::Receive(p,1);S::Tick();CHECK(!S::g_rows[1].authorized); // HandItem/mirror arrives later
  mirrors[1]=&ui;mirrorGenerations[1]=7;A::reach=false;now+=250;S::Tick();CHECK(!S::g_rows[1].authorized);
@@ -68,7 +78,7 @@ int main(){using namespace test;namespace S=coop::hand_toy_audio;namespace A=coo
  S::Receive(first,2);CHECK(!S::g_rows[0].have);S::Receive(first,0);S::Tick();CHECK(S::g_rows[0].authorized&&applied.playing);
  now+=250;auto before=applies;S::Tick();CHECK(applies==before+1); // repair later native loadData
  first.sequence++;first.value=-1;S::Receive(first,0);CHECK(S::g_rows[0].state.sequence!=first.sequence);
- p={7,20,1.f,0,1,0,0};S::Receive(p,0);callback=[&]{S::OnDisconnect();};S::Tick();CHECK(!S::g_session&&S::g_pulses.empty());
+ p={7,20,1.f,0,1,0,0,people[0]};S::Receive(p,0);callback=[&]{S::OnDisconnect();};S::Tick();CHECK(!S::g_session&&S::g_pulses.empty());
  S::Install(&session);p.sequence++;S::Receive(p,0);++world;S::Install(&session);CHECK(S::g_pulses.empty()&&!S::g_rows[0].have);
  S::OnPeerLeft(1);S::OnDisconnect();
  S::Install(&session);local=&actor;c.tag=S::kPlushUse;plush=true;S::Capture(c);CHECK(S::g_pulses.empty());
@@ -80,5 +90,26 @@ int main(){using namespace test;namespace S=coop::hand_toy_audio;namespace A=coo
  session.allowSend={};S::Tick();uint32_t last=0;int pulses=0;
  for(const auto& s:session.sent)if(s.slot==2){Packet q{};std::memcpy(&q,s.data.data(),sizeof(q));if(q.op==1){CHECK(q.sequence>last);last=q.sequence;++pulses;}}
  CHECK(pulses==2);S::OnDisconnect();
+ ResetToy(session);p={7,1,.15f,1,0,1,1,people[1]};S::Receive(p,1);S::Tick();CHECK(applied.playing && S::g_rows[1].painted.Get());
+ auto stopped=stops;mirrors[1]=nullptr;now+=250;S::Tick();CHECK(stops==stopped+1 && !applied.playing);
+ mirrors[1]=&ui;now+=250;S::Tick();CHECK(applied.playing);++people[1];now+=250;S::Tick();
+ CHECK(!applied.playing && !S::g_rows[1].have);S::Receive(p,1);CHECK(!S::g_rows[1].have);
+ p.playerNo=people[1];p.sequence=1;S::Receive(p,1);S::Tick();CHECK(S::g_rows[1].authorized && applied.playing);
+ now+=5001;S::Tick();CHECK(!applied.playing && !S::g_rows[1].have);S::QueueConnect(2);CHECK(!S::g_rows[1].pending);
+ ResetToy(session);p.playerNo=people[1];auto latest=p;latest.sequence++;latest.playing=0;
+ callback=[&]{S::Receive(latest,1);};S::Receive(p,1);S::Tick();CHECK(!S::g_rows[1].authorized);
+ now+=250;S::Tick();CHECK(!applied.playing && S::g_rows[1].authorized);
+ ResetToy(session);bool recycled=false;session.allowSend=[&](int slot,auto,const void*,int){if(slot==2 && !recycled){recycled=true;++people[2];S::QueueConnect(2);}return true;};
+ S::Receive(p,1);S::Tick();CHECK(recycled && (S::g_rows[1].pending&(1u<<2)));session.allowSend={};S::Tick();CHECK(!(S::g_rows[1].pending&(1u<<2)));
+ ResetToy(session);S::Receive(p,1);S::Tick();coop::net::Session replacement,requested;
+ callback=[&]{S::Install(&replacement);S::Receive(p,1);S::Tick();};S::Install(&requested);CHECK(S::g_session==&replacement && S::g_rows[1].authorized);
+ S::OnDisconnect();
+ ResetToy(session);p={7,1,1.2f,1,1,0,0,people[1]};S::Receive(p,1);p.sequence++;S::Receive(p,1);auto prior=squeaks;
+ callback=[&]{S::OnPeerLeft(1);};S::Tick();CHECK(S::g_pulses.empty() && squeaks==prior+1);
+ ResetToy(session);p={7,1,.15f,1,0,1,1,people[1]};session.allowSend=[&](int,auto,const void*,int){S::OnDisconnect();return true;};
+ S::Receive(p,1);S::Tick();CHECK(!S::g_session && !S::g_rows[1].have);
+ worldUnavailable=true;ResetToy(session);S::Receive(p,1);S::Tick();CHECK(S::g_rows[1].painted.Get());
+ stopped=stops;++world;S::Install(&session);CHECK(stops==stopped && !S::g_rows[1].have);worldUnavailable=false;
+ puts("PASS hand toy identity: player reuse, old packet refusal, vanished-mirror/stale-loop cleanup, newer native receipt, recipient replacement and reentrant session installation");
  puts("PASS hand toy: music/pitch, owner exclusion, exact generation/late mirror, role/reach/bounds/order, retry, expiry, stow, reentry/world");
 }

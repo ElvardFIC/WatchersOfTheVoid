@@ -31,6 +31,11 @@ bool IsGameplayBlast(void* a){
        world_identity::WorldOf(a)!=world_identity::CurrentWorld()||R::NameStartsWith(R::NameOf(a),L"Default__"))return false;
     const auto cls=R::ClassNameOf(a);return cls==L"explosion_C"||cls==L"explosion_saltrocket_C";
 }
+bool IsPrivatePcBlast(void* a){
+    return a && R::IsLive(a) && world_identity::CurrentWorld() &&
+        world_identity::WorldOf(a)==world_identity::CurrentWorld() &&
+        !R::NameStartsWith(R::NameOf(a),L"Default__") && R::ClassNameOf(a)==L"explosion_pc_C";
+}
 bool Valid(const Blast& b){
     const auto& t=b.transform;
     const float norm=t.RotX*t.RotX+t.RotY*t.RotY+t.RotZ*t.RotZ+t.RotW*t.RotW;

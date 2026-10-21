@@ -14,14 +14,13 @@
 #pragma once
 
 #include <string>
+#include <functional>
 
 namespace ue_wrap::base_window {
 
-// Resolve the baseWindow_C UClass + the `clean` field offset + the inherited
-// Aactor_save_C::Key offset + the setClean UFunction. Idempotent; returns true once
-// everything resolved (false while the baseWindow_C BP class is not yet loaded -- the
-// caller retries on a later tick, same wait-and-retry shape as the other EnsureResolved
-// paths). Game thread.
+// Indexed class and reflected clean/Key fields. Missing fields retry; a class
+// serial change invalidates the layout. Repainting also requires StaticMesh1
+// and the actor class's current setClean function. Game thread.
 bool EnsureResolved();
 
 // True iff `obj`'s class is baseWindow_C or a subclass. Cheap (a bounded SuperStruct
@@ -38,8 +37,9 @@ bool ReadClean(void* win, float& out);
 
 // Write the window's `clean` scalar + call AbaseWindow_C::setClean() to push it into the
 // shader (SetCustomPrimitiveDataFloat(0, clean) -- a pure setter, no gameplay side effect,
-// game-thread). Returns false on null window / unresolved. The receiver of a remote wipe
-// uses this; it runs no cleanSponge, so coop::window_sync never hears it back as a wipe.
-bool WriteCleanAndApply(void* win, float clean);
+// game-thread). Returns false while fields, mesh or native dispatch are unavailable,
+// including a partial repaint. The current predicate fences the field write and
+// native call; an unchanged scalar may retry its paint. No cleanSponge is invoked.
+bool WriteCleanAndApply(void* win, float clean,const std::function<bool()>& current = {});
 
 }  // namespace ue_wrap::base_window

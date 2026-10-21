@@ -1,108 +1,59 @@
-// ue_wrap/devices/base_window.cpp -- see ue_wrap/devices/base_window.h. Engine access for VOTV's
-// base observation window (AbaseWindow_C).
-//
-// Offsets are resolved from the live class via reflection (FindPropertyOffset) with
-// the documented Alpha 0.9.0-n CXX-dump values as a logged fallback, matching the
-// door wrapper (version-tagging rule -- offsets stay correct across game recooks).
-
 #include "ue_wrap/devices/base_window.h"
-
 #include "ue_wrap/core/call.h"
-#include "ue_wrap/core/log.h"
-#include "ue_wrap/core/reflection.h"
-
-#include <atomic>
-#include <cstdint>
-
+#include "ue_wrap/core/cached_obj_ref.h"
+#include "ue_wrap/core/object_index.h"
+#include <cmath>
+#include <cstring>
 namespace ue_wrap::base_window {
 namespace {
-
-namespace R = reflection;
-
-// Resolved once at EnsureResolved, then read-only. Published via the g_resolved
-// release-store / acquire-load so any thread that sees g_resolved==true also sees
-// the fully-written caches below. Game-thread writes; the wipe watch's and the apply's reads.
-std::atomic<bool> g_resolved{false};
-
-void*   g_winCls     = nullptr;  // baseWindow_C UClass
-int32_t g_cleanOff   = -1;       // AbaseWindow_C::clean  (Alpha 0.9.0-n: 0x0260)
-int32_t g_keyOff     = -1;       // Aactor_save_C::Key    (Alpha 0.9.0-n: 0x0230)
-void*   g_setCleanFn = nullptr;  // AbaseWindow_C::setClean() -- SetCustomPrimitiveDataFloat(0, clean)
-
-// Documented Alpha 0.9.0-n fallbacks (CXXHeaderDump/baseWindow.hpp + actor_save.hpp).
-constexpr int32_t kCleanOffFallback = 0x0260;
-constexpr int32_t kKeyOffFallback   = 0x0230;
-
-}  // namespace
-
-bool EnsureResolved() {
-    if (g_resolved.load(std::memory_order_acquire)) return true;
-
-    void* winCls = R::FindClass(L"baseWindow_C");
-    if (!winCls) return false;  // BP class not loaded yet -- caller retries
-
-    // `clean` is declared on AbaseWindow_C itself.
-    int32_t cleanOff = R::FindPropertyOffset(winCls, L"clean");
-    if (cleanOff < 0) {
-        UE_LOGW("base_window: reflected clean offset not found -- using fallback 0x%04X", kCleanOffFallback);
-        cleanOff = kCleanOffFallback;
-    }
-    // `Key` is declared on the Aactor_save_C parent, which the property lookup climbs to.
-    int32_t keyOff = R::FindPropertyOffset(winCls, L"Key");
-    if (keyOff < 0) {
-        UE_LOGW("base_window: reflected Key offset not found -- using fallback 0x%04X", kKeyOffFallback);
-        keyOff = kKeyOffFallback;
-    }
-    void* setCleanFn = R::FindFunction(winCls, L"setClean");
-    if (!setCleanFn)
-        UE_LOGW("base_window: setClean UFunction not found -- a mirrored clean won't repaint the shader");
-
-    g_winCls     = winCls;
-    g_cleanOff   = cleanOff;
-    g_keyOff     = keyOff;
-    g_setCleanFn = setCleanFn;
-    g_resolved.store(true, std::memory_order_release);
-    UE_LOGI("base_window: resolved baseWindow_C=%p clean@0x%04X Key@0x%04X setClean=%p",
-            winCls, cleanOff, keyOff, setCleanFn);
-    return true;
+namespace R=reflection;
+struct Layout {CachedObjRef cls;int clean=-1,key=-1,mesh=-1;} g_layout;
+template<class T>T Read(void* object,int offset){T value{};std::memcpy(&value,static_cast<uint8_t*>(object)+offset,sizeof(value));return value;}
+struct Identity {
+    CachedObjRef actor;uint32_t world=world_identity::Generation();
+    explicit Identity(void* object){actor.Set(object);}
+    bool Current()const{return actor.Get() && world==world_identity::Generation();}
+};
 }
-
-bool IsBaseWindow(void* obj) {
-    if (!obj || !g_winCls) return false;
-    void* cls = R::ClassOf(obj);
-    if (!cls) return false;
-    void* bases[1] = { g_winCls };
-    return R::IsDescendantOfAny(cls, bases, 1);
+bool EnsureResolved(){
+    void* cls=object_index::ClassByName(L"baseWindow_C");if(!cls){g_layout={};return false;}
+    if(g_layout.cls.Is(cls) && g_layout.clean>=0 && g_layout.key>=0 && g_layout.mesh>=0)return true;
+    Layout fields;fields.cls.Set(cls);
+    fields.clean=R::FindPropertyOffset(cls,L"clean");fields.key=R::FindPropertyOffset(cls,L"Key");
+    fields.mesh=R::FindPropertyOffset(cls,L"StaticMesh1");
+    if(!fields.cls.Get())return false;g_layout=fields;return fields.clean>=0 && fields.key>=0;
 }
-
-std::wstring GetKeyString(void* win) {
-    if (!win || g_keyOff < 0) return std::wstring();
-    const R::FName& key = *reinterpret_cast<const R::FName*>(
-        reinterpret_cast<const char*>(win) + g_keyOff);
-    return R::ToString(key);
+bool IsBaseWindow(void* actor){
+    if(!actor || !R::IsLive(actor))return false;Identity identity(actor);
+    if(!EnsureResolved() || !identity.Current())return false;
+    void* base=g_layout.cls.Get();return base && R::IsDescendantOfAny(R::ClassOf(actor),&base,1) && identity.Current();
 }
-
-bool ReadClean(void* win, float& out) {
-    if (!win || g_cleanOff < 0) return false;
-    out = *reinterpret_cast<const float*>(
-        reinterpret_cast<const char*>(win) + g_cleanOff);
-    return true;
+std::wstring GetKeyString(void* actor){
+    if(!actor || !R::IsLive(actor))return {};Identity identity(actor);
+    if(!IsBaseWindow(actor) || !identity.Current())return {};
+    const auto fields=g_layout;const auto name=Read<R::FName>(actor,fields.key);const auto key=R::ToString(name);
+    return identity.Current() && fields.cls.Get()?key:std::wstring();
 }
-
-bool WriteCleanAndApply(void* win, float clean) {
-    if (!win || !g_resolved.load(std::memory_order_acquire) || g_cleanOff < 0) return false;
-    *reinterpret_cast<float*>(reinterpret_cast<char*>(win) + g_cleanOff) = clean;
-    // setClean() has ZERO BP input parameters (RE + CXXHeaderDump/baseWindow.hpp: `void
-    // setClean();` -- it reads this->clean directly and does StaticMesh1.
-    // SetCustomPrimitiveDataFloat(0, clean)). So the field write ABOVE must precede this call;
-    // the zeroed no-arg ParamFrame is CORRECT, not a missing argument. No-op-safe if unresolved
-    // (the field write alone is the truth; the repaint just won't show until the next native
-    // setClean), but it resolves on every real build.
-    if (g_setCleanFn) {
-        ParamFrame f(g_setCleanFn);
-        if (f.valid()) Call(win, f);
-    }
-    return true;
+bool ReadClean(void* actor,float& out){
+    if(!actor || !R::IsLive(actor))return false;Identity identity(actor);
+    if(!IsBaseWindow(actor) || !identity.Current())return false;
+    const float value=Read<float>(actor,g_layout.clean);if(!std::isfinite(value))return false;out=value;return true;
 }
-
-}  // namespace ue_wrap::base_window
+bool WriteCleanAndApply(void* actor,float clean,const std::function<bool()>& current){
+    if(!actor || !R::IsLive(actor) || !std::isfinite(clean) || clean<0 || (current && !current()))return false;
+    Identity identity(actor);if(!IsBaseWindow(actor) || !identity.Current())return false;
+    const auto fields=g_layout;void* cls=R::ClassOf(actor);
+    const auto stable=[&]{return identity.Current() && fields.cls.Get() && R::ClassOf(actor)==cls;};
+    const auto valid=[&]{return stable() && (!current || current()) && stable();};
+    if(fields.mesh<0 || !valid())return false;
+    void* mesh=Read<void*>(actor,fields.mesh);if(!mesh || !R::IsLive(mesh))return false;
+    CachedObjRef component,function;component.Set(mesh);function.Set(R::FindDispatchFunctionCached(cls,L"setClean"));
+    const auto bound=[&]{return valid() && component.Get()==mesh && Read<void*>(actor,fields.mesh)==mesh && function.Get();};
+    if(!bound())return false;ParamFrame frame(function.Get());if(!frame.valid() || !bound())return false;
+    std::memcpy(static_cast<uint8_t*>(actor)+fields.clean,&clean,sizeof(clean));
+    // setClean has no inputs: it reads clean and repaints StaticMesh1. A partial
+    // native attempt returns false so an unchanged scalar still retries its paint.
+    const bool called=Call(actor,frame);
+    return bound() && Read<float>(actor,fields.clean)==clean && called;
+}
+}

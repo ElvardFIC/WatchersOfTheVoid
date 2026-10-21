@@ -38,6 +38,7 @@ struct Call {
     int      depth;           // nesting of watched bodies on this thread; 1 = outermost
     bool     fromOurCode;     // inside a reflection::CallFunction of ours
     uintptr_t* scopeMark;     // the scope word of this call's dispatch (MarkScope); null for a post
+    uint64_t invocation = 0;  // unique on this thread, spanning PRE, body and POST
 };
 
 // The watch surface follows the Watch that Relay, Moddy's VOTV mod, publishes in its README: a
@@ -188,6 +189,9 @@ bool IsBodyActive(void* function, void* callerFunction = nullptr);
 // Same stack-lifetime check, narrowed to one receiver. Never retain a pre/post
 // counter to authorize births: cancellation and faults can skip the post phase.
 bool IsObjectBodyActive(void* function, void* object);
+// An observation's invocation still exists, including while another PRE runs.
+// Unlike body-active queries this also covers PRE/POST, and unwinds on Cancel/fault.
+bool IsInvocationActive(uint64_t invocation);
 
 // A scope mark: bits a PRE puts on the scope of the body it is about to let run, readable by any seam on
 // this thread while that body runs. MarkScope ORs `bits` into the dispatch's own word, which lives on the

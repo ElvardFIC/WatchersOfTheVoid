@@ -17,10 +17,12 @@ Obj objs[7]{{0},{1},{2},{3},{4},{5},{6}};
 uint32_t world=1;uint8_t self=0;void* held=&objs[1];
 bool hooks=true,applyOk=true;int applies=0,destroys=0,releases=0,fireReleases=0;std::function<void()> callback;
 bool propClass=true;
+std::array<coop::roster_ledger::Row,coop::players::kMaxPeers> handPeople;
 std::function<void()> spawnCallback,destroyCallback;
 coop::RemotePlayer puppet;
 void Callback(){auto c=std::move(callback);callback={};if(c)c();}
 }
+namespace coop::roster_ledger {const Row& Get(int slot){return test::handPeople.at(slot);}}
 namespace ue_wrap::reflection {
 int32_t InternalIndexOf(void* p){return p?static_cast<test::Obj*>(p)->id:-1;}
 int32_t SlotSerial(int32_t i){return i>=0&&i<7?test::objs[i].serial:0;}
@@ -66,7 +68,9 @@ uint8_t Registry::LocalPeerId()const{return test::self;}
 coop::RemotePlayer* Registry::Puppet(uint8_t){return &test::puppet;}
 }
 namespace ue_wrap::prop_fire {
-bool Extinguish(void* p){static_cast<test::Obj*>(p)->fire={};return true;}
+bool Extinguish(void* p,bool* attempted,const std::function<bool()>& current){
+    if(attempted)*attempted=false;if(current && !current())return false;
+    if(attempted)*attempted=true;static_cast<test::Obj*>(p)->fire={};return true;}
 bool Valid(const State& s){return std::isfinite(s.fuel)&&s.fuel>=0&&s.fuel<=60&&std::isfinite(s.fuelSpeed)&&s.fuelSpeed>=0&&s.fuelSpeed<=100&&(!s.burning||s.fuel>0);}
 bool Read(void* p,State& s){s=static_cast<test::Obj*>(p)->fire;return true;}
 bool Apply(void* p,const State& s,const std::function<bool()>& current){++test::applies;test::Callback();if(!current()||!test::applyOk)return false;static_cast<test::Obj*>(p)->fire=s;return true;}

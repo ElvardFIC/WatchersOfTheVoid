@@ -58,35 +58,98 @@ size_t Collect(CachedObjRef* out,size_t cap) {
 }
 bool Read(void* actor,State& out) {
     void* audio=Audio(actor);if(!audio)return false;
-    CachedObjRef live;live.Set(actor);int32_t off=-1;uint8_t mask=0;
+    CachedObjRef live,sound;live.Set(actor);sound.Set(audio);const auto world=world_identity::Generation();int32_t off=-1;uint8_t mask=0;
     if(!Used(actor,off,mask))return false;
     State value{};value.used=(static_cast<uint8_t*>(actor)[off]&mask)!=0;
-    static R::InstanceOffset volume{L"VolumeMultiplier"};const auto vo=volume.Of(audio);
-    if(vo<0)return false;
+    static R::InstanceOffset volume{L"VolumeMultiplier"},pitch{L"PitchMultiplier"};const auto vo=volume.Of(audio),po=pitch.Of(audio);
+    if(vo<0 || !live.Get() || !sound.Get())return false;
     std::memcpy(&value.volume,static_cast<uint8_t*>(audio)+vo,sizeof(float));
+    if(po>=0)std::memcpy(&value.pitch,static_cast<uint8_t*>(audio)+po,sizeof(float));
+    if(!std::isfinite(value.pitch) || value.pitch<=0 || value.pitch>10)value.pitch=1;
     if(!std::isfinite(value.volume) || value.volume<0 || value.volume>10)return false;
     ParamFrame f(R::FindDispatchFunctionCached(R::ClassOf(audio),L"IsPlaying"));
-    if(!f.valid() || !Call(audio,f) || !live.Get())return false;
-    value.playing=f.Get<bool>(L"ReturnValue");out=value;return true;
+    if(!f.valid() || !Call(audio,f) || !live.Get() || !sound.Get() || world!=world_identity::Generation() ||
+        Audio(actor)!=audio || !f.GetRaw(L"ReturnValue",&value.playing,sizeof(value.playing)))return false;
+    out=value;return true;
 }
-bool Apply(void* actor,const State& state) {
-    if(!std::isfinite(state.volume) || state.volume<0 || state.volume>10)return false;
-    State current{};if(!Read(actor,current))return false;
-    CachedObjRef live;live.Set(actor);CachedObjRef audio;audio.Set(Audio(actor));
+bool ReadClock(void* actor,Clock& out,const std::function<bool()>& current){
+    if(current && !current())return false;CachedObjRef live;live.Set(actor);Clock value{};value.audio.Set(Audio(actor));
+    const auto world=world_identity::Generation();if(!live.Get() || !value.audio.Get())return false;
+    static R::InstanceOffset source{L"Sound"},pitch{L"PitchMultiplier"};const int sourceOff=source.Of(value.audio.Get()),pitchOff=pitch.Of(value.audio.Get());
+    const auto valid=[&]{return live.Get() && value.audio.Get() && world==world_identity::Generation() && Audio(actor)==value.audio.Raw() && (!current || current());};
+    if(sourceOff<0 || pitchOff<0 || !valid())return false;
+    void* sound=nullptr;std::memcpy(&sound,static_cast<uint8_t*>(value.audio.Get())+sourceOff,sizeof(sound));value.sound.Set(sound);
+    CachedObjRef wave;wave.Set(object_index::ClassByName(L"SoundWave"));
+    if(!valid() || !value.sound.Get() || !wave.Get() || R::ClassOf(sound)!=wave.Raw())return false;
+    const int duration=R::FindPropertyOffset(wave.Get(),L"Duration");int32_t loop=-1;uint8_t mask=0;
+    if(duration<0 || !R::FindBoolProperty(wave.Get(),L"bLooping",loop,mask) || loop<0 || !mask || !valid() || !value.sound.Get() || !wave.Get() || R::ClassOf(sound)!=wave.Raw())return false;
+    void* actual=nullptr;std::memcpy(&actual,static_cast<uint8_t*>(value.audio.Get())+sourceOff,sizeof(actual));if(actual!=sound)return false;
+    std::memcpy(&value.duration,static_cast<uint8_t*>(sound)+duration,sizeof(float));
+    std::memcpy(&value.pitch,static_cast<uint8_t*>(value.audio.Get())+pitchOff,sizeof(float));
+    if(!(static_cast<uint8_t*>(sound)[loop]&mask) || !std::isfinite(value.duration) || value.duration<.01f || value.duration>86400 ||
+       !std::isfinite(value.pitch) || value.pitch<=0 || value.pitch>10 || !valid() || !value.sound.Get() || !wave.Get())return false;
+    std::memcpy(&actual,static_cast<uint8_t*>(value.audio.Get())+sourceOff,sizeof(actual));if(actual!=sound)return false;
+    out=value;return true;
+}
+namespace {
+bool ApplyState(void* actor,const State& state,Playback* playback,const std::function<bool()>& current) {
+    if(!std::isfinite(state.volume) || state.volume<0 || state.volume>10 || !IsDingus(actor))return false;
+    if(playback && (!std::isfinite(state.pitch) || state.pitch<=0 || state.pitch>10 || !std::isfinite(state.elapsed) || state.elapsed<0 || state.elapsed>1.e6f ||
+        (state.episode && !state.playing) || (!state.episode && state.elapsed)))return false;
+    if(current && !current())return false;
+    CachedObjRef live;live.Set(actor);CachedObjRef audio;audio.Set(Audio(actor));const auto world=world_identity::Generation();
+    const auto valid=[&]{return live.Get() && audio.Get() && world==world_identity::Generation() &&
+        Audio(actor)==audio.Raw() && (!current || current());};
+    State before{};if(!valid() || !Read(actor,before) || !valid())return false;
     int32_t off=-1;uint8_t mask=0;if(!Used(actor,off,mask))return false;
     auto& byte=static_cast<uint8_t*>(actor)[off];
     byte=state.used?uint8_t(byte|mask):uint8_t(byte&~mask);
-    if(current.volume!=state.volume && !component_calls::SetVolumeMultiplier(audio.Get(),state.volume))return false;
-    if(!live.Get() || !audio.Get())return false;
+    if(before.volume!=state.volume && !component_calls::SetVolumeMultiplier(audio.Get(),state.volume))return false;
+    if(!valid())return false;
+    if(playback && before.pitch!=state.pitch){
+        CachedObjRef fn;fn.Set(R::FindDispatchFunctionCached(R::ClassOf(audio.Get()),L"SetPitchMultiplier"));ParamFrame pitch(fn.Get());
+        if(!pitch.valid() || !pitch.Set<float>(L"NewPitchMultiplier",state.pitch) || !valid() || !fn.Get() || !Call(audio.Get(),pitch) || !valid())return false;
+    }
+    if(playback && state.playing && state.episode){
+        Clock clock{};
+        if(ReadClock(actor,clock,valid)){
+            if(!valid())return false;
+            const bool seek=!before.playing || playback->episode!=state.episode || !playback->audio.Is(clock.audio.Get()) || !playback->sound.Is(clock.sound.Get());
+            if(seek){
+                const auto sameClock=[&]{Clock actual{};return valid() && ReadClock(actor,actual,valid) && actual.audio.Is(clock.audio.Get()) && actual.sound.Is(clock.sound.Get());};
+                CachedObjRef fn;fn.Set(R::FindDispatchFunctionCached(R::ClassOf(audio.Get()),L"Play"));ParamFrame play(fn.Get());
+                const float position=std::fmod(state.elapsed,clock.duration);
+                if(!play.valid() || !play.Set<float>(L"StartTime",position) || !sameClock() || !fn.Get() || !Call(audio.Get(),play) || !sameClock())return false;
+            }
+            playback->audio=clock.audio;playback->sound=clock.sound;playback->episode=state.episode;
+            return true;
+        }
+        if(!valid())return false;
+    }
+    if(playback)*playback={};
     // Compare actual playback every time: a later native loadData may silence the
     // component after a successful network apply. Do not restart unchanged music.
-    return current.playing==state.playing || component_calls::SetActive(audio.Get(),state.playing,false);
+    return component_calls::SetAudioPlaying(audio.Get(),state.playing,valid);
 }
-bool Interact(void* actor,bool toggle) {
-    if(!Audio(actor))return false;
-    CachedObjRef live;live.Set(actor);
-    if(!component_calls::CallParamlessNamed(actor,L"touch") || !live.Get())return false;
-    return !toggle || component_calls::CallParamlessNamed(Audio(actor),L"ToggleActive");
+}
+bool Apply(void* actor,const State& state,const std::function<bool()>& current){return ApplyState(actor,state,nullptr,current);}
+bool ApplyPlayback(void* actor,const State& state,Playback& playback,const std::function<bool()>& current){return ApplyState(actor,state,&playback,current);}
+bool StopMusic(void* actor,const std::function<bool()>& current) {
+    if((current && !current()) || !IsDingus(actor))return false;
+    CachedObjRef live,audio;live.Set(actor);audio.Set(Audio(actor));const auto world=world_identity::Generation();
+    return live.Get() && audio.Get() && component_calls::SetAudioPlaying(audio.Get(),false,[&]{return live.Get() &&
+        audio.Get() && world==world_identity::Generation() && Audio(actor)==audio.Raw() && (!current || current());});
+}
+bool Interact(void* actor,bool toggle,const std::function<bool()>& current) {
+    if(current && !current())return false;void* component=Audio(actor);if(!component)return false;
+    CachedObjRef live,audio;live.Set(actor);audio.Set(component);const auto world=world_identity::Generation();
+    const auto valid=[&]{return live.Get() && audio.Get() && world==world_identity::Generation() &&
+        Audio(actor)==audio.Raw() && (!current || current());};
+    ParamFrame touch(R::FindDispatchFunctionCached(R::ClassOf(actor),L"touch"));
+    ParamFrame action(toggle?R::FindDispatchFunctionCached(R::ClassOf(component),L"ToggleActive"):nullptr);
+    if(!valid() || !touch.valid() || (toggle && !action.valid()))return false;
+    if(!Call(actor,touch) || !valid())return false;
+    return !toggle || (Call(audio.Get(),action) && valid());
 }
 bool ReadSqueakPitch(void* actor,float& pitch) {
     void* audio=Audio(actor,true);if(!audio)return false;
@@ -95,14 +158,18 @@ bool ReadSqueakPitch(void* actor,float& pitch) {
     std::memcpy(&pitch,static_cast<uint8_t*>(audio)+off,sizeof(float));
     return std::isfinite(pitch) && pitch>0 && pitch<=10;
 }
-bool Squeak(void* actor,float pitch) {
-    if(!std::isfinite(pitch) || pitch<=0 || pitch>10)return false;
+bool Squeak(void* actor,float pitch,const std::function<bool()>& current) {
+    if(!std::isfinite(pitch) || pitch<=0 || pitch>10 || (current && !current()))return false;
     void* audio=Audio(actor,true);if(!audio)return false;
-    CachedObjRef live;live.Set(actor);CachedObjRef sound;sound.Set(audio);
+    CachedObjRef live;live.Set(actor);CachedObjRef sound;sound.Set(audio);const auto world=world_identity::Generation();
+    const auto valid=[&]{return live.Get() && sound.Get() && world==world_identity::Generation() &&
+        Audio(actor,true)==sound.Raw() && (!current || current());};
     ParamFrame f(R::FindDispatchFunctionCached(R::ClassOf(audio),L"SetPitchMultiplier"));
-    if(!f.valid() || !f.Set<float>(L"NewPitchMultiplier",pitch) || !Call(audio,f) || !live.Get() || !sound.Get())return false;
+    if(!valid() || !f.valid() || !f.Set<float>(L"NewPitchMultiplier",pitch) || !Call(audio,f) || !valid())return false;
     // Only the native audio component: no action6 replay, b increments, damage,
     // inventory effects or achievement changes on a remote presentation copy.
-    return component_calls::Activate(sound.Get());
+    ParamFrame play(R::FindDispatchFunctionCached(R::ClassOf(sound.Get()),L"Activate"));
+    if(!valid() || !play.valid() || !play.Set<bool>(L"bReset",true))return false;
+    Call(sound.Get(),play);return true;
 }
 }

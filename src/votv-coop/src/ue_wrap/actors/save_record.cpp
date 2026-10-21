@@ -8,6 +8,7 @@
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/types.h"
 #include "ue_wrap/core/log.h"
+#include "ue_wrap/core/field_io.h"
 #include "ue_wrap/desk/signal_dynamic.h"
 
 #include <chrono>
@@ -400,6 +401,52 @@ void SpliceGroups(std::vector<V>& dst, const std::vector<V>& src) {
 bool OverridesGetData(void* cls) {
     const ClassVerbs* v = VerbsFor(cls);
     return v && v->overrides;
+}
+
+bool ReadFloatGroup(const void* record, size_t group, std::vector<float>& out) {
+    out.clear();
+    if (!record) return false;
+    const auto* header = reinterpret_cast<const field_io::TArrayView*>(static_cast<const uint8_t*>(record) + kSave_floats);
+    if (header->num < 0 || header->num > 64 || header->max < header->num || header->max > 1'000'000 ||
+        (header->data && !PlausibleObjPtr(header->data)) || (header->num && !header->data)) return false;
+    const Arr outer = ReadArr(record, kSave_floats);
+    if (group >= static_cast<size_t>(outer.num)) return false;
+    const auto* field = reinterpret_cast<const field_io::TArrayView*>(outer.data + group * kMxStride);
+    if (field->num < 0 || field->num > 4096 || field->max < field->num || field->max > 1'000'000 ||
+        (field->data && !PlausibleObjPtr(field->data)) || (field->num && !field->data)) return false;
+    if (field->num) out.assign(reinterpret_cast<const float*>(field->data),
+                               reinterpret_cast<const float*>(field->data) + field->num);
+    return true;
+}
+
+bool ReplaceFloatGroup(void* record, size_t group, const std::vector<float>& values) {
+    if (!record || group >= 64 || values.size() > 4096) return false;
+    auto* outer = reinterpret_cast<field_io::TArrayView*>(static_cast<uint8_t*>(record) + kSave_floats);
+    if (outer->num < 0 || outer->num > 64 || outer->max < outer->num || outer->max > 1'000'000 ||
+        (outer->data && !PlausibleObjPtr(outer->data)) || (outer->num && !outer->data)) return false;
+    field_io::TArrayView* field = nullptr;
+    if (group < static_cast<size_t>(outer->num)) {
+        std::vector<float> checked;
+        if (!ReadFloatGroup(record,group,checked)) return false;
+        field = reinterpret_cast<field_io::TArrayView*>(outer->data + group * kMxStride);
+    }
+    auto* fresh = values.empty() ? nullptr : static_cast<uint8_t*>(R::EngineAlloc(values.size() * sizeof(float)));
+    if (!values.empty() && !fresh) return false;
+    if (fresh) std::memcpy(fresh, values.data(), values.size() * sizeof(float));
+    if (!field) {
+        auto* expanded = static_cast<uint8_t*>(R::EngineAlloc((group+1) * kMxStride));
+        if (!expanded) { if (fresh) R::EngineFree(fresh); return false; }
+        std::memset(expanded,0,(group+1) * kMxStride);
+        if (outer->num) std::memcpy(expanded,outer->data,outer->num * kMxStride);
+        void* oldOuter = outer->data;
+        *outer = {expanded,static_cast<int32_t>(group+1),static_cast<int32_t>(group+1)};
+        if (oldOuter) R::EngineFree(oldOuter); // child arrays now belong to expanded
+        field = reinterpret_cast<field_io::TArrayView*>(expanded + group * kMxStride);
+    }
+    void* previous = field->data;
+    *field = {fresh, static_cast<int32_t>(values.size()), static_cast<int32_t>(values.size())};
+    if (previous) R::EngineFree(previous);
+    return true;
 }
 
 bool CaptureRecord(void* actor, SaveRecord& out) {

@@ -41,14 +41,19 @@ try {
         'run_placement','run_shared_screen','run_item_batch','run_held_identity',
         'run_2130','run_2139','run_2140','run_2141','run_2153','run_2154','run_2155','run_2156',
         'run_stow_2157','run_2160','run_2161','run_2162','run_2165','run_2168','run_2169',
-        'run_2170','run_2172','run_2173','run_2180'
+        'run_2170','run_2172','run_2173','run_2180',
+        'run_nonentity','run_cooking','run_drink_spills','run_gasoline','run_grill_edits',
+        'run_grill_hand','run_grime_join','run_hand_tools','run_item_records','run_kitchen',
+        'run_scorch','run_sponge_effects','run_toy_music','run_wall_creative','run_water_pour',
+        'run_watoy','run_windows','run_2166','run_2176','run_2157','run_2145'
     )) {
         Invoke-Check $name 'powershell' @('-NoProfile','-ExecutionPolicy','Bypass','-File',"agent/tests/$name.ps1")
     }
     Invoke-Check 'coin_collect' 'powershell' @('-NoProfile','-ExecutionPolicy','Bypass','-File','agent/tests/run_2151.ps1','-CollectOnly')
-    foreach($name in @('player_reports_native_test','insomnia_native_test','entity_sync_native_test','coin_collect_native_test')) {
+    foreach($name in @('player_reports_native_test','insomnia_native_test','entity_sync_native_test','coin_collect_native_test','native_physics_fingerprints_test')) {
         Invoke-Check $name $python @("agent/tests/$name.py")
     }
+    Invoke-Check 'public_prose_include' $python @('.github/ci/public_prose_include_test.py')
     # Disk regression compiles the production conversion code with MSVC.
     . (Join-Path $checkout '../_toolchain/env.ps1')
     Invoke-Check 'disk_utf8' $python @('agent/tests/disk_utf8_test.py')

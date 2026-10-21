@@ -10,11 +10,12 @@
 // mount is an ordinary grab of a frozen prop, which the game unfreezes before it grabs.
 //
 // A Blueprint class dies with the world that loaded it, so a class is known here by its name and
-// a member's offset is read off the live class; the offsets are kept, being the same for one
-// cooked class in every world.
+// a member's offset follows that class's slot/serial. Missing fields retry and a
+// replacement class cannot inherit an old offset.
 
 #pragma once
 #include "ue_wrap/core/types.h"
+#include <functional>
 
 namespace ue_wrap::fire_extinguisher {
 
@@ -40,7 +41,7 @@ bool ReadThrusting(void* ext, bool& out);
 bool WriteCharge(void* ext, float value);
 bool WriteSpraying(void* ext, bool value);
 // Display-only hand mirror: no camera traces or local charge consumption.
-bool SetRemoteSpray(void* ext, bool spraying);
+bool SetRemoteSpray(void* ext, bool spraying, const std::function<bool()>& current = {});
 bool AimRemoteSpray(void* ext, const FRotator& rotation);
 
 }  // namespace ue_wrap::fire_extinguisher
