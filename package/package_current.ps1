@@ -17,6 +17,11 @@ $snapshot = @(Get-Content -LiteralPath (Join-Path $root $release.source_snapshot
 $expectedVersion = "$($release.game_target) b$($release.protocol)"
 $dllInfo = [Diagnostics.FileVersionInfo]::GetVersionInfo($dll)
 $dllHash = (Get-FileHash -LiteralPath $dll -Algorithm SHA256).Hash.ToLowerInvariant()
+$expectedLabel = "Watchers of the Void $($release.version_number)"
+if (-not $qualification.PSObject.Properties['ui'] -or
+    $qualification.ui.packageLabel -ne $expectedLabel -or -not $qualification.ui.displayFormatterVerified) {
+    throw 'The in-game version label has not been verified against this package'
+}
 if ($dllInfo.ProductVersion -ne $expectedVersion -or $dllInfo.ProductName -ne 'Watchers of the Void' -or
     $dllInfo.CompanyName -ne 'ElvardFIC' -or $qualification.build -ne $release.protocol -or
     $qualification.game -ne $release.game_target -or $qualification.dllSha256 -ne $dllHash -or
@@ -139,6 +144,7 @@ if ((Test-Path -LiteralPath $startupLog) -and (Test-Path -LiteralPath $loaderLog
     $loader = Get-Content -LiteralPath $loaderLog -Raw
     $installedManifest = Get-Content -LiteralPath (Join-Path $installedMod 'manifest.json') -Raw | ConvertFrom-Json
     $startupVerified = $startup.Contains("boot: Watchers of the Void by ElvardFIC $expectedVersion") -and
+        $startup.Contains("boot: menu version='$expectedLabel'") -and
         $startup.Contains('HEALTH: PASS') -and $startup.Contains('4 of 4 list skins provided by installed paks') -and
         $loader.Contains("Mod '$identity' has enabled.txt, starting mod.") -and
         $installedManifest.version_number -eq $release.version_number -and

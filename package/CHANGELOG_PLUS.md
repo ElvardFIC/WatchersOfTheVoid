@@ -3,6 +3,7 @@
 - Replace the ragdoll toy with the selected character using the game's native physics.
 - Fix sky launches and upward camera snapping; preserve running momentum on entry.
 - Remove the model-swap pause on entry and delayed forced turning after getting up.
+- Show the package version 0.9.2157 in the in-game menu and server browser.
 - Fix remote ragdoll visibility and missing limb updates under lag or packet loss.
 - Preserve current main improvements to shared computers, balance, event retries and container contents.
 - Restore the full mod-manager package with the original icon, models and credits.

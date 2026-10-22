@@ -21,7 +21,7 @@ namespace coop::session_manager {
 
 // The mod's version identity is a pair: GameTarget names the VOTV cook this build targets, compiled
 // in from the header generated out of coop/version.h.in; the build number is kProtocolVersion,
-// which moves exactly when compatibility moves. DisplayVersion is the composite the menu shows.
+// which moves exactly when compatibility moves. DisplayVersion shows the public package label.
 const char* GameTarget();
 std::string DisplayVersion();
 

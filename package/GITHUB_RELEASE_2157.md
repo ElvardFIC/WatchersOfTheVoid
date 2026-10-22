@@ -3,6 +3,7 @@
 - Selected-character ragdolls with native physics and synchronized limbs.
 - Fixed sky launches, camera snapping, lost running momentum and invisible remote ragdolls.
 - Removed the entry pause and delayed forced turning after getting up.
+- Corrected the in-game version label to match package 0.9.2157.
 - Included current main improvements to shared computers, balance, events and container contents.
 - Full mod-manager package with original branding, models and ElvardFIC/AquaFishhh credits.
 

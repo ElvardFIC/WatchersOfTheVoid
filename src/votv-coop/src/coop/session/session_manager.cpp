@@ -15,7 +15,7 @@
 #include "coop/net/protocol.h"  // kProtocolVersion (the b<N> build rev), kDefaultPort
 #include "coop/session/join_progress.h"
 #include "coop/session/shutdown.h"
-#include "coop/version.h"  // kGameTarget -- the game half of the Paper-pair identity (CMake-generated)
+#include "coop/version.h"  // generated public package label and game compatibility target
 #include "ue_wrap/core/log.h"
 
 #include <algorithm>
@@ -193,15 +193,9 @@ std::string Nickname() {
 const char* GameTarget() { return coop::version::kGameTarget; }
 
 std::string DisplayVersion() {
-    // The version identity is the pair (game target, build number), with no separate mod semver;
-    // the build number is kProtocolVersion, which moves exactly when compatibility moves.
-    // Function-static: the inputs never change once the session runs, and the browser header calls
-    // this every frame.
-    // The running game build is decided at boot, before the menu's first call: a game this Multivoid was not
-    // made for carries the mark wherever the label is shown.
-    static const std::string kLabel =
-        std::string("Watchers of the Void ") + coop::version::kGameTarget +
-        " b" + std::to_string(static_cast<int>(net::kProtocolVersion));
+    // Menu and browser show the same release number as the installed package.
+    // Game target and protocol retain their separate compatibility checks.
+    static const std::string kLabel = coop::version::kDisplayVersion;
     return kLabel;
 }
 
