@@ -15,9 +15,6 @@ void DriveSitting(void* pawn, bool sitting);
 // ATV sit, or a previous DriveSitting). False on a non-kerfur body.
 bool ReadIsOnAtv(void* pawn);
 
-// True iff `pawn`'s sittingOn pointer names a live actor (the game's own sitBox / chair / ATV
-// attach). False until the field resolves or while the player is standing.
-bool IsSittingOnSomething(void* pawn);
 
 // The driver's sit component (sitarrow). Null if the ATV is dead or the property is absent;
 // the caller then seats the puppet on the rig itself.

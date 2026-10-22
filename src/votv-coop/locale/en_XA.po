@@ -95,6 +95,10 @@ msgid "%1$s could not order: too many items in one order"
 msgstr "[[%1$s could not order: too many items in one order]]"
 
 #, c-format
+msgid "%1$s could not place that: the host refused it; pick it up to retry"
+msgstr "[[%1$s could not place that: the host refused it; pick it up to retry]]"
+
+#, c-format
 msgid "%1$s could not sell that"
 msgstr "[[%1$s could not sell that]]"
 
@@ -255,9 +259,6 @@ msgstr "[[A new game can take a moment to load]]"
 msgid "A newer connection with your identity replaced this one."
 msgstr "[[A newer connection with your identity replaced this one.]]"
 
-msgid "A pak that carries no skin (another mod's) is dropped from this list once the game has been asked -- it is not a skin."
-msgstr "[[A pak that carries no skin (another mod's) is dropped from this list once the game has been asked -- it is not a skin.]]"
-
 msgid "A player"
 msgstr "[[A player]]"
 
@@ -360,9 +361,6 @@ msgstr "[[Contact (optional, e.g. a Discord name)]]"
 
 msgid "Continue anyway"
 msgstr "[[Continue anyway]]"
-
-msgid "Cosmetics"
-msgstr "[[Cosmetics]]"
 
 msgid "Could not compute the password proof on this machine."
 msgstr "[[Could not compute the password proof on this machine.]]"
@@ -481,6 +479,9 @@ msgstr "[[Files that will be included]]"
 msgid "Finding a route to %s"
 msgstr "[[Finding a route to %s]]"
 
+msgid "Frequency of the repeatable world spawners: Fossilhounds, killer wisps, sky wisps and night eggs, plus each owner's night eyes. 2x halves their native waiting intervals; eligibility and spawn chances stay native. Story dates, dreams and creature animation speed stay unchanged."
+msgstr "[[Frequency of the repeatable world spawners: Fossilhounds, killer wisps, sky wisps and night eggs, plus each owner's night eyes. 2x halves their native waiting intervals; eligibility and spawn chances stay native. Story dates, dreams and creature animation speed stay unchanged.]]"
+
 msgid "Gamemode:"
 msgstr "[[Gamemode:]]"
 
@@ -511,9 +512,6 @@ msgstr "[[Host game]]"
 
 msgid "ID"
 msgstr "[[ID]]"
-
-msgid "Interface"
-msgstr "[[Interface]]"
 
 #, c-format
 msgid "Joined %1$s's game"
@@ -626,9 +624,6 @@ msgstr[1] "[[NET  %llu peers]]"
 msgid "NET  offline"
 msgstr "[[NET  offline]]"
 
-msgid "Nameplate"
-msgstr "[[Nameplate]]"
-
 msgid "Nameplate: hidden from other players"
 msgstr "[[Nameplate: hidden from other players]]"
 
@@ -720,9 +715,6 @@ msgstr "[[Password  (leave empty if the server has none)]]"
 msgid "Peer action notifications"
 msgstr "[[Peer action notifications]]"
 
-msgid "Peers WITHOUT that pak see the default kel body instead."
-msgstr "[[Peers WITHOUT that pak see the default kel body instead.]]"
-
 #, c-format
 msgid "Peers: %1$d,  worst ping %2$d ms"
 msgstr "[[Peers: %1$d,  worst ping %2$d ms]]"
@@ -766,9 +758,6 @@ msgstr "[[Players: %1$d/%2$d]]"
 msgid "Please describe what happened (at least 20 characters)."
 msgstr "[[Please describe what happened (at least 20 characters).]]"
 
-msgid "Preview tile = <skin name>.png/.bmp beside the pak."
-msgstr "[[Preview tile = <skin name>.png/.bmp beside the pak.]]"
-
 #, c-format
 msgid "Push-to-talk (key: %s)"
 msgstr "[[Push-to-talk (key: %s)]]"
@@ -788,9 +777,6 @@ msgstr "[[Reason]]"
 msgid "Receiving world from the host"
 msgstr "[[Receiving world from the host]]"
 
-msgid "Refresh list"
-msgstr "[[Refresh list]]"
-
 msgid "Refreshing the server list..."
 msgstr "[[Refreshing the server list...]]"
 
@@ -806,11 +792,8 @@ msgstr "[[Release toast]]"
 msgid "Remote player"
 msgstr "[[Remote player]]"
 
-msgid "Report"
-msgstr "[[Report]]"
-
-msgid "Report a bug"
-msgstr "[[Report a bug]]"
+msgid "Repeatable event frequency"
+msgstr "[[Repeatable event frequency]]"
 
 msgid "Rescan devices"
 msgstr "[[Rescan devices]]"
@@ -929,12 +912,6 @@ msgstr "[[Skin '%s' is not installed here -- keeping your current one]]"
 #, c-format
 msgid "Skin: %s"
 msgstr "[[Skin: %s]]"
-
-msgid "Skins"
-msgstr "[[Skins]]"
-
-msgid "Skins come from converter .pak files under Content/Paks/LogicMods (any subfolder). One pak may carry several skins -- the four scientists ship together in scientists.pak."
-msgstr "[[Skins come from converter .pak files under Content/Paks/LogicMods (any subfolder). One pak may carry several skins -- the four scientists ship together in scientists.pak.]]"
 
 msgid "Something was sent before the identity was proved."
 msgstr "[[Something was sent before the identity was proved.]]"
@@ -1306,9 +1283,6 @@ msgstr "[[When]]"
 msgid "Whispering"
 msgstr "[[Whispering]]"
 
-msgid "World"
-msgstr "[[World]]"
-
 msgid "World rules unavailable (still loading?)."
 msgstr "[[World rules unavailable (still loading?).]]"
 
@@ -1331,9 +1305,6 @@ msgstr "[[You can't see that from there]]"
 #, c-format
 msgid "Your body skin (%s) could not be saved to multivoid.ini this launch -- it is temporary for this session. Fix whatever keeps the file from being read or saved (a lock from an editor or antivirus, permissions, or a file saved as UTF-16); nothing is lost once a launch can save again."
 msgstr "[[Your body skin (%s) could not be saved to multivoid.ini this launch -- it is temporary for this session. Fix whatever keeps the file from being read or saved (a lock from an editor or antivirus, permissions, or a file saved as UTF-16); nothing is lost once a launch can save again.]]"
-
-msgid "Your body skin -- what YOU see looking down and what OTHERS see. Saved to multivoid.ini; restored on rejoin."
-msgstr "[[Your body skin -- what YOU see looking down and what OTHERS see. Saved to multivoid.ini; restored on rejoin.]]"
 
 msgid "Your connection presented no key identity."
 msgstr "[[Your connection presented no key identity.]]"

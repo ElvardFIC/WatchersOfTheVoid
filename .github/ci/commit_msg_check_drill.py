@@ -239,6 +239,21 @@ def run_entry_points(results):
 
 def main():
     results = []
+    legacy_sha = "60ea404a6c1e1f466df2ed642c0ebef93d206375"
+    legacy_text = "docs: introduce Watchers of the Void fork and clarify development status"
+    legacy_cases = [
+        ("published message is retained by exact commit and digest",
+         not C.check_recorded_message(legacy_sha, legacy_text)),
+        ("copied historical wording in a new commit is refused",
+         bool(C.check_recorded_message("0" * 40, legacy_text))),
+        ("altered text under a historical id is refused",
+         bool(C.check_recorded_message(legacy_sha, legacy_text + " changed"))),
+        ("hook input keeps the original strict rules",
+         bool(C.check_message(legacy_text, hook_mode=True))),
+    ]
+    for name, ok in legacy_cases:
+        results.append(ok)
+        print("  {} {}".format("PASS" if ok else "FAIL", name))
     for name, msg, must_refuse, frag, hook_mode in ARMS:
         refusals = C.check_message(msg, hook_mode=hook_mode)
         refused = bool(refusals)

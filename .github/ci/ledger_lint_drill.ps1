@@ -74,7 +74,7 @@ Check 'baseline (tree as it stands)' $false (Invoke-Gate)
 
 # Negative control -- prose the row has no business reading.
 Reset-Sandbox
-Edit-File 'README.md' 'Each machine''s engine' 'Every machine''s engine'
+Edit-File 'README.md' 'Play co-op on Windows' 'Play together on Windows'
 Check 'negative control (unrelated edit)' $false (Invoke-Gate)
 
 # The reliable-kind claim drifts from the enum.
@@ -114,7 +114,7 @@ Check 'M6 sentence reworded away' $true (Invoke-Gate)
 # The count stated twice: two claims that can drift apart, of which the row
 # would only ever read the first.
 Reset-Sandbox
-Edit-File 'README.md' 'performs.' "performs. The wire carries $kindCount message kinds."
+Edit-File 'README.md' '## Development' "## Development`n`nThe wire carries $kindCount message kinds."
 Check 'M7 kinds claim stated twice' $true (Invoke-Gate)
 
 # An enumerator written WITHOUT a value is still an enumerator: C++ increments it
@@ -137,6 +137,16 @@ Reset-Sandbox
 Edit-File 'src/votv-coop/include/coop/net/protocol.h' '    VoiceFrame = 64,' `
     "    VoiceFrame = 64, DrillPair = 65,"
 Check 'M10 unreadable enum row is reported' $true (Invoke-Gate)
+
+Reset-Sandbox
+Edit-File 'src/votv-coop/include/coop/net/protocol.h' '    VoiceFrame = 64,' `
+    '    VoiceFrame = 64, // explanatory comment'
+Check 'M11 trailing comment still counted' $false (Invoke-Gate)
+
+Reset-Sandbox
+Edit-File 'src/votv-coop/include/coop/net/protocol.h' '    VoiceFrame = 64,' `
+    "    VoiceFrame = 64, // existing lane`n    DrillLane, // new lane"
+Check 'M12 new commented lane, README silent' $true (Invoke-Gate)
 
 Remove-Item -Recurse -Force $sandbox
 $failed = @($results | Where-Object { -not $_.Pass })

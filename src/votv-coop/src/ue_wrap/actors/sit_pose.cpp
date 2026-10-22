@@ -88,13 +88,6 @@ bool ReadIsOnAtv(void* pawn) {
     return false;
 }
 
-bool IsSittingOnSomething(void* pawn) {
-    if (!pawn || !R::IsLive(pawn)) return false;
-    const int32_t off = reflected_offset::MainPlayer_sittingOn();
-    if (off < 0) return false;
-    void* seat = ReadAt<void*>(pawn, off);
-    return seat && R::IsLive(seat);
-}
 
 void* ComponentAt(void* atv, int32_t off) {
     if (!atv || !R::IsLive(atv) || off < 0) return nullptr;

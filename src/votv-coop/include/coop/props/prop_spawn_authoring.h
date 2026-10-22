@@ -1,24 +1,9 @@
-// coop/props/prop_spawn_authoring.h -- did a PLAYER author this prop birth, or did the game?
-//
-// A client's world mints keyed props constantly with nobody asking: spawners, a dirthole, a
-// lightning strike, an impact, lib_C::replaceProp. Each resolves the same catalog and finishes the
-// same GameplayStatics spawn the sandbox spawn menu does, and none may cross -- every peer's game
-// makes its own, so an intent per birth would double the world. So the drop-intent lane cannot
-// admit by CLASS; the discriminator is WHO ASKED. Background:
-// docs/coop-entity-expression-map.md, "Who asked, for a client's fresh birth".
-
-// The two player spawn verbs, read from bytecode on the shipped pak. The MENU: a catalog click
-// runs ui_spawnmenu_C::spawn, which calls gamemode->spawnPropThroughGamemode -- a verb replaceProp
-// and the impact component call too, so it is identified by its CALLER, through a script-body gate
-// watch. The TOOLGUN: tool_spawn_C::init enters ExecuteUbergraph_tool_spawn, which finishes its
-// own spawns and holds no other FinishSpawningActor, so the native seam's caller frame names it.
-// The WORKBENCH also finishes crafted output directly in its own ubergraph. The
-// exact function AND declaring class identify it; other workbench calls do not.
-// Sleeping bags/mattresses use prop_sleepingbag's unfold graph and sleepingbagWrap's
-// fold verb. These replace one keyed prop with another; begin-play gen is excluded.
-
-// Gameplay layer (principle 7): reaches the engine only through ue_wrap. Game thread only -- the
-// gate and the native seam both hand their callbacks the VM's live frame.
+// Distinguish player-authored client births from ambient native spawns.
+// The spawn menu is identified by its caller; toolgun and workbench output by
+// their declaring function and class. Bed fold/unfold replaces keyed props,
+// excluding begin-play generation. A source-bound hand MRE is handled separately.
+// Other ambient births stay local. See docs/coop-entity-expression-map.md.
+// Gameplay layer: engine access through ue_wrap, on the game thread.
 
 #pragma once
 

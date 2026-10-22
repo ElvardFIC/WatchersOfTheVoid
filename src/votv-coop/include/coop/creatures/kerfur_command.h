@@ -1,23 +1,9 @@
-// coop/creatures/kerfur_command.h -- the kerfur's radial menu, relayed host-authoritatively; the kerfur
-// serves whoever picked a verb.
-//
-// The game's own actionName sets the kerfur's State and calls move(), and its verbs read the player as
-// player 0 -- the follow MoveTo and the patrol on GetPlayerPawn(0), the disc insert on lib.getMainPlayer()
-// -- which on the host is always the host. Both roles CANCEL the local dispatch (a client's mirror is a
-// parked actor) and the host runs the real actionName with the requester recorded in served_player first,
-// so those reads answer that player's puppet and the game's own follow follows it; a request waits while
-// the host has no body for its sender. A command the game refuses (kill mode, a job) changes nobody's
-// service, the host's own hands the kerfur back to player 0, a leaver's ends, and murder mode's at its
-// startKill, before the chase reads anyone. take_object, equipment and get_reports read the asking
-// player's hand. For a client that hand is staged onto the puppet for the verb: the display mirror of
-// the hand item, or the world prop that client's hold is driving, never the host player's own hand.
-// A pocket that is not in the hand still is not there. When the verb consumes what was staged, the
-// client is told and lets go of that class on both carry paths, the hotbar item and the physics
-// grab. The grab is released, not destroyed: the host's copy is the one the robot now carries.
-// turn_off stays in kerfur_convert.
-// Page: docs/npcs-and-kerfur.md.
-//
-// Principle 7: gameplay/network module; engine access through ue_wrap/kerfur and game_thread only.
+// Host-authoritative kerfur radial commands. Both roles cancel the local verb;
+// the host stages the requesting player's puppet and held item before native replay.
+// Failed commands keep the previous operator; disconnect, host takeover and kill
+// transitions clear that assignment. Consumed held items are retired on their
+// owner's carry path. turn_off belongs to kerfur_convert.
+// Engine access goes through ue_wrap on the game thread. See docs/npcs-and-kerfur.md.
 
 #pragma once
 

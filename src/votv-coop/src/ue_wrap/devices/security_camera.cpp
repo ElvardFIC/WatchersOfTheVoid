@@ -113,12 +113,6 @@ bool IsCameraClass(void* obj) {
     return cls && R::IsDescendantOfAny(cls, &base, 1);
 }
 
-bool IsCursed(void* obj) {
-    if (!obj) return false;
-    void* cursed = ClassFor(g_cursed, kCursedClass);
-    void* cls = cursed ? R::ClassOf(obj) : nullptr;
-    return cls && R::IsDescendantOfAny(cls, &cursed, 1);
-}
 
 std::wstring KeyOf(void* cam) {
     if (!IsCameraClass(cam)) return std::wstring();

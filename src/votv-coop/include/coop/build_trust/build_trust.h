@@ -84,7 +84,6 @@ const BuildIdentity& Self();       // any thread
 // Unlatched: one ini read and one signature verify per call; a caller that wants it often latches it.
 bool SelfIsOfficial();             // step == SigPresent && SignatureVerifies(sig, ResolveFlag(rows::build_trust_test_key))
 const char* StepName(SelfStep step);
-const char* StatusSuffix();        // "" when SelfIsOfficial(), else " (unofficial build)"
 std::string SelfShaHex();          // 64 lowercase hex of Self().sha256
 std::string SelfSigHex();          // 128 lowercase hex of Self().sig.sig when step == SigPresent, else ""
 

@@ -1,8 +1,8 @@
 // The puppet-damage hazard probe (VOTVCOOP_RUN_DMGHAZARD_TEST): fire mainPlayer_C's two damage
 // entries and ignite at the host's own slot-1 puppet and judge by what coop::player_damage refused
 // and what the HOST's saveSlot.health did; the same damage on the host's own player is the control
-// that the calls land. Each phase ends on readiness, never a clock. Red:
-// dev.player_damage_no_refusal. Interfaces and per-routine docs in harness/autotest.h.
+// that the calls land. Each phase ends on readiness, never a clock.
+// Interfaces and per-routine docs in harness/autotest.h.
 
 #include "harness/autotest.h"
 

@@ -32,8 +32,8 @@ The previous b2178 Release passed 65/65 offline groups. That full suite has not
 been repeated for b2184; the current qualification is specific to ragdoll changes.
 
 Complete event/creature coverage, paid repairs and resource accounting remain open.
-The fresh native-asset audit remains deferred; full public-prose and fact-row CI
-have known failures. Offline checks do not establish that reported gameplay issues
+The fresh native-asset audit remains deferred. Repository checks are described in
+[testing](docs/testing.md). Offline checks do not establish that reported gameplay issues
 are resolved. Two-player testing remains required, including the host's disappearing
 old rifle, trowel continuity, late join and reconnect. Token52's UI is unidentified.
 
@@ -49,6 +49,9 @@ explains the loader and standard mod layout. Upstream downloads are releases of 
 Multivoid project; check the package name before installing.
 
 ## Development
+
+Transport is GameNetworkingSockets: 13 unreliable pose and state streams, a voice stream beside
+a reliable channel with 224 message kinds. Each machine's engine performs its local simulation.
 
 See [BUILDING.md](BUILDING.md) and [CONTRIBUTING.md](CONTRIBUTING.md).
 The mod lives in [src/votv-coop/](src/votv-coop/); the server is in [server/](server/).
