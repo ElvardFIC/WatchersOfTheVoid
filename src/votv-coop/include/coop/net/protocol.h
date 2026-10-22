@@ -32,7 +32,7 @@ inline constexpr uint32_t kMagic = 0x564D5450u;
 // This file is past the 1500-line hard cap and stays there: it is the single-feature exception the
 // rule names. One wire format, whose enum, payload structs and static_asserts are read together;
 // splitting it would put a kind's number in one file and its bytes in another.
-inline constexpr uint16_t kProtocolVersion = 2185;  // package 2157 continuation: 32-seat acknowledgements and held-food addresses
+inline constexpr uint16_t kProtocolVersion = 2186;  // package 2158 test release
 
 // Default LAN port (overridable via multivoid.ini "net.port=").
 inline constexpr uint16_t kDefaultPort = 47621;
@@ -1231,11 +1231,13 @@ inline constexpr uint8_t kStateBitBurning = 0x20;  // visible player flame state
 inline constexpr float kVitalScalarMax = 100.0f;
 
 // Encode a [0,1] fraction as a byte (round-to-nearest, clamped). The exact
-// inverse pair lives here so sender + receiver can never drift.
+// inverse pair lives here so sender + receiver can never drift. A positive fraction
+// encodes as at least 1; zero, negative values and NaN encode as 0.
 inline uint8_t QuantizeUnitFraction(float f01) {
-    if (f01 <= 0.f) return 0;
+    if (!(f01 > 0.f)) return 0;
     if (f01 >= 1.f) return 255;
-    return static_cast<uint8_t>(f01 * 255.f + 0.5f);
+    const uint8_t b = static_cast<uint8_t>(f01 * 255.f + 0.5f);
+    return b == 0 ? 1 : b;
 }
 inline float DequantizeUnitFraction(uint8_t b) {
     return static_cast<float>(b) * (1.f / 255.f);

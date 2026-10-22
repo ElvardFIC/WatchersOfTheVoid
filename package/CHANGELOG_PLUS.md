@@ -1,18 +1,20 @@
-## 0.9.2157
-
-## Unreleased ? b2185
+## 0.9.2158
 
 - Restore registration headroom for shared door, switch and container script watches.
 - Preserve flashlight sampling through startup and retry remote light state until
   its component and setters are ready; retain newer state during callbacks.
 - Retry container initial contents for the exact recipient and occupancy, including
   unreadable initial contents and transport refusal beside other accepted peers.
-- Choose 2?32 total players when hosting. Enforce the selected limit and extend
+- Choose 2-32 total players when hosting. Enforce the selected limit and extend
   acknowledgements, recipient masks, join storage and held-food addresses.
-- Offline qualification: 67/67 groups, stable Release and loader identity/ABI.
-  Matching b2185 DLLs are required. Rendered multiplayer acceptance remains open;
+- Adopt selected upstream fixes for vital quantization, delayed prop classes, fossil-hound
+  facing, NPC transform retries and plain-wisp landing presentation.
+- Every version is a test version, requires extensive testing and may be unstable.
+- Package 0.9.2158 uses DLL/network b2186. Rendered multiplayer acceptance remains open;
   automatic lobbies above four also require the updated master service.
 
+
+## 0.9.2157
 
 - Replace the ragdoll toy with the selected character using the game's native physics.
 - Fix sky launches and upward camera snapping; preserve running momentum on entry.

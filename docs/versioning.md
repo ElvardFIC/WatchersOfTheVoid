@@ -9,13 +9,13 @@ runbook for porting to a new game version.
 ## The version pair
 
 Watchers of the Void shows its public package version in the menu and server browser,
-for example `Watchers of the Void 0.9.2157`. CMake generates this label from
+for example `Watchers of the Void 0.9.2158`. CMake generates this label from
 `package/release.json`, which the packer also reads; changing that file rebuilds the
 generated header. Packaging requires a runtime check that the shared menu/browser
 formatter matches this version.
 
 Compatibility is identified by two numbers: the game
-version targeted and the wire build number, recorded as `0.9.0n b2184` in diagnostics.
+version targeted and the wire build number, recorded as `0.9.0n b2186` in diagnostics.
 The game target is set once in `src/votv-coop/CMakeLists.txt` and
 generated into a header; the build number is the wire protocol's version in `coop/net/protocol.h`,
 bumped by every change to any wire format and by every release. The pair is stamped into the

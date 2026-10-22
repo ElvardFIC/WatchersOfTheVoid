@@ -1,3 +1,22 @@
+# Package 0.9.2158
+
+Completed: Release b2186, 68/68 offline groups, package-label and archive checks,
+manager ZIP, matching exported copy/checksums, every-version test disclaimers,
+and GitHub About/README/release/changelog documentation update.
+Native startup, rendered host/client acceptance, larger lobbies and the matching
+master-service deployment remain open; no native result is inferred from packaging.
+
+# Selected upstream import
+
+Implemented selected changes from the 137-commit upstream gap: vitals quantization,
+late prop/trash class resolution and fossil-hound body yaw. Restored the inherited
+NPC applied-pose cache and plain-wisp landing path, preserving fork-specific rotations,
+discs and sitting. Full inventory and deferred protocol conflicts:
+[FORK_AUDIT_20261022.md](FORK_AUDIT_20261022.md).
+
+Runtime acceptance with matching host/client DLLs remains open. Upstream ancestry
+has not been merged; the GitHub behind count is not a measure of these adaptations.
+
 # TODO - current priorities
 
 ## Development b2185 ? immediate-join regressions and 2?32 seats

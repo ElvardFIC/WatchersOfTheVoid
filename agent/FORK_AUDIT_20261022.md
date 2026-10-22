@@ -1,3 +1,62 @@
+# Selected upstream fixes
+
+Compared fork `21941a2df` with VOTV-MP/Multivoid `93dd26cc2`: 39 graph commits
+ahead and 137 behind. The changes below adapt selected source changes; they do
+not merge upstream ancestry. GitHub's behind counter will therefore remain.
+The full commit inventory and disposition is in
+[UPSTREAM_COMMITS_20261022.json](UPSTREAM_COMMITS_20261022.json).
+
+## Applied
+
+| Behavior | Upstream provenance |
+| --- | --- |
+| A positive health/food/sleep fraction cannot round down to the empty byte; NaN encodes as zero. The packet layout stays unchanged. | `49d8401fe`, NaN part of `3ec8d7ad9` |
+| Missing prop and trash bases resolve through the class index, retry after loading, and avoid game-thread caches on animation workers. A definitive trash verdict is cached only after the required bases resolve. | Final resolver from `6b46b3544`, `13e7193eb`, `82a28b0a4`, `873cee943`, `6a359b360`; the verdict guard from `8901caf18` was already present |
+| Fossil hound mirrors receive the host mesh's world yaw through the existing body-yaw field. The bounded class-name check retries NAME_None and accepts subclasses. | Yaw subset of `2241217a3`, `853e058b1`, `1013319b2` |
+| NPC transforms are cached only after both engine writes succeed; failed writes retry on a later tick without needing another packet. Identical poses skip transform writes. The fork's pitch and roll join the cache key. | Restore/adapt existing upstream `714c2167f`, `1e488fef2`; these are ancestors, outside the 137 |
+| Plain grounded wisp mirrors replay their native landing fade and retry a refused call. Existing mirror marking is now connected to its apply function. | Restore the previously inherited `17cde3039` landing path, whose unused wrapper was removed by `0933b0f5a` |
+
+Source authorship: the selected 137-commit changes are by **pelmentor**
+(`pelmentr@gmail.com`), with their original **Claude Opus 5.5** co-author trailers.
+Original commits remain available in the upstream remote; imported code is left
+as reviewable working-tree changes, without rewriting history or assigning those
+commits to another author.
+
+The NPC adaptation retains the fork's full rotations, Kerfur carried props,
+reports disc, cosmetic state and ATV sitting. No protocol version change is
+needed for these changes: all message numbers and payload layouts remain intact.
+
+## Deferred integrations
+
+| Group | Concrete conflict |
+| --- | --- |
+| Parked creature graphs and hit judge | Upstream `PlayerHit=20` changes the semantics of the fork's `PlayerDamage=20`. Its brain parking requires hit forwarding and attack delivery together; copying only parking could remove attacks. Reconcile the fork's PvP, impact interception and player-state guards first. |
+| Shared prop take/use reservations | Upstream request/reply/commit kinds 178/179/180 collide with `KitchenIntent`, `CordState`, `CordIntent`. Reservations, cancellation, commits, disconnect cleanup and every consuming verb need one integration across our birth/placement/hold identities. |
+| Explosion copies and coasting | Upstream `ExplosionSpawn=177` collides with `KitchenState`. The fork already has `ExplosionEvent=188`, `Explosion=191`, source identity, deduplication, player damage ownership and prop-drive/scorch paths. A second explosion pipeline would risk duplicated effects and damage. |
+| Drills and fingerprints for those groups | Depend on the deferred modules and their precise dispatch rows; they cannot prove the fork's existing lanes by themselves. |
+
+The other fork candidates remain as assessed in the original inventory below.
+In particular, the drive-rack
+mass-removal rebase hides an unexplained state reset and could discard real
+removal operations. Loading TTL and class ownership are already present here.
+
+## Verification
+
+New runner: [run_upstream.ps1](tests/run_upstream.ps1), included in
+`package/check_current.ps1`. It exercises actual quantization and hound code,
+and production prop resolver bodies under delayed loading and worker calls.
+The extended entity fixture checks stationary pitch changes, identical re-sends,
+failed final writes, hound yaw and wisp landing retry/one-shot behavior.
+
+PASS 68/68 groups and Release build; production inputs stayed stable, with 786
+build source entries. Evidence: `build/upstream-qualified/verification.json`.
+The fact-row gate passed. Public-prose checks still fail on inherited HEAD counters;
+this import adds no rule regressions and does not relax their baseline.
+Rendered gameplay with two peers remains unverified; no installed game files,
+published package or remote service are changed by this import.
+
+---
+
 # Fork and upstream review — 22 October 2026
 
 Reference checkout: `db0f59a4916dcdc844162cddbe09a260147ce1a3`.

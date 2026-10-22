@@ -128,4 +128,8 @@ bool ForceMeshTick(void* wisp);
 bool PlayFatalityMontage(void* wisp);
 
 
+// Plain wisp_C only: replay the landed flag and dir(true) fade-in. False retries later.
+// Separate from killerwisp_C; called for a grounded, parked plain-wisp mirror. Game thread.
+bool DriveWispLanding(void* wispActor);
+
 }  // namespace ue_wrap::wisp

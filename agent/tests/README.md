@@ -6,7 +6,7 @@ GitHub runs it beside the fact-row gate.
 
 Current full audit: run `powershell -NoProfile -ExecutionPolicy Bypass -File
 package/check_current.ps1` from the checkout after source edits finish.
-It runs 65 groups, completes the incremental Release build and verifies that the
+It runs 68 groups, completes the incremental Release build and verifies that the
 production inputs stayed unchanged, without repackaging. Results and
 logs are in `build/todo-audit/`. `run_held_identity.ps1` compiles the actual held
 broadcast seam; the older item/resource/lamp/laptop runners use the current typed
@@ -16,6 +16,11 @@ must produce the failure code required by their runner. Gameplay remains separat
 Run scripts from the canonical checkout. Numbered filenames identify the development
 batch that introduced a regression, not the currently packaged build; do not remove
 tests solely because their number is older.
+
+`run_upstream.ps1` tests selected upstream adaptations: tiny positive/NaN vital
+fractions, delayed fossil-hound class names and prop class resolution while loading
+or called from a worker. The entity runner also checks applied-pose deduplication,
+closed-window write retries, full rotations, hound body yaw and plain-wisp landing.
 
 `run_shared_screen.ps1` checks the shared UI wire format and operator/host authority,
 handoff, send refusal, join/widget readiness, plus the production sleep/poseable

@@ -23,6 +23,7 @@
 #include "coop/net/session.h"
 #include "coop/props/prop_drive_host.h"  // a world prop the Omega is holding follows the host copy
 #include "ue_wrap/engine/engine.h"
+#include "ue_wrap/actors/fossilhound.h"
 #include "ue_wrap/engine/engine_attach.h"
 #include "ue_wrap/actors/kerfur.h"  // HasSaveKey (savePersisted flag) + ReadKerfurState (mirror fidelity)
 #include "ue_wrap/actors/sit_pose.h"
@@ -299,12 +300,13 @@ void TickPoseStream() {
         // so the mirror reproduces the host's body facing (its actor tick is off -> it cannot
         // compute it).
         float bodyYaw = 0.f;
-        if (ue_wrap::puppet::ReadKerfurBodyYaw(actor, bodyYaw)) {
+        if (ue_wrap::puppet::ReadKerfurBodyYaw(actor, bodyYaw) ||
+            ue_wrap::fossilhound::ReadBodyYaw(actor, bodyYaw)) {
             snap.bodyYaw = ue_wrap::NormalizeAxis(bodyYaw);
             snap.stateBits |= coop::net::kEntityPoseBitHasBodyYaw;
             static bool s_loggedBody = false;
             if (!s_loggedBody) { s_loggedBody = true;
-                UE_LOGI("npc-bodyfacing: host streaming kerfur bodyYaw=%.1f eid=%u (first)",
+                UE_LOGI("npc-bodyfacing: host streaming bodyYaw=%.1f eid=%u (first)",
                         snap.bodyYaw, snap.elementId); }
         }
         // Host-authoritative kerfur cosmetic/command state: the parked mirror runs no AI (actor

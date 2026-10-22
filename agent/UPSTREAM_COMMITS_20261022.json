@@ -1,0 +1,692 @@
+{
+  "base": "21941a2dfdcc17d31c235e48864cddb8110070c4",
+  "upstream": "93dd26cc20444b2a72ab5c09df2e00f19f0c954a",
+  "count": 137,
+  "commits": [
+    {
+      "commit": "93dd26cc20444b2a72ab5c09df2e00f19f0c954a",
+      "subject": "[docs] the code map names the explosion lane's modules",
+      "decision": "Keep only documentation/fingerprint rows matching adopted production code; this commit describes the unimported lanes."
+    },
+    {
+      "commit": "7fc68f8b0b49f50238c44d35ed15240648a736cd",
+      "subject": "[port] the fingerprint table carries the explosion lane's rows",
+      "decision": "Keep only documentation/fingerprint rows matching adopted production code; this commit describes the unimported lanes."
+    },
+    {
+      "commit": "16c501d7dc1f4d2312e6fd7b46249af53001fea9",
+      "subject": "[dev] the explosion drill judges each paper by its own state",
+      "decision": "Deferred with the owning gameplay transaction; standalone import would exercise absent lanes or replace fork-specific fixtures."
+    },
+    {
+      "commit": "eb09e1bc33c5916a1d117df0d7987d2cd52cb8ca",
+      "subject": "[dev] the explosion drill's flown count says what it knows",
+      "decision": "Deferred with the owning gameplay transaction; standalone import would exercise absent lanes or replace fork-specific fixtures."
+    },
+    {
+      "commit": "b6950bab7b384b30bca1ac74a3fecc989cd06a80",
+      "subject": "[dev] the explosion drill keys its papers by actor, waits out streams",
+      "decision": "Deferred with the owning gameplay transaction; standalone import would exercise absent lanes or replace fork-specific fixtures."
+    },
+    {
+      "commit": "f41d1e09cd153c0c16ee7e333028bf63b4232f5d",
+      "subject": "[dev] the explosion drill's papers lie on the blast point's line",
+      "decision": "Deferred with the owning gameplay transaction; standalone import would exercise absent lanes or replace fork-specific fixtures."
+    },
+    {
+      "commit": "b0b9ea3d85b979faf45e4c32066adfef842425b3",
+      "subject": "[dev] the explosion drill's coast asks two papers to fly, all to rest",
+      "decision": "Deferred with the owning gameplay transaction; standalone import would exercise absent lanes or replace fork-specific fixtures."
+    },
+    {
+      "commit": "69b2ce397e050495721b2f136a029d341b1e6321",
+      "subject": "[dev] the explosion drill's coast blast moves its papers metres",
+      "decision": "Deferred with the owning gameplay transaction; standalone import would exercise absent lanes or replace fork-specific fixtures."
+    },
+    {
+      "commit": "932b9cdbc3ff7cf08756b608da1fc58d01a93ec6",
+      "subject": "[dev] the explosion drill's blast point takes the clearest of eight ways",
+      "decision": "Deferred with the owning gameplay transaction; standalone import would exercise absent lanes or replace fork-specific fixtures."
+    },
+    {
+      "commit": "ac00be7907457a7f13f59baea229e0707b1e99b7",
+      "subject": "[dev] the explosion drill's comments state its bounds and papers' life",
+      "decision": "Deferred with the owning gameplay transaction; standalone import would exercise absent lanes or replace fork-specific fixtures."
+    },
+    {
+      "commit": "5a9a93ed7b564c75bea1e5398ce3a50bc730ee86",
+      "subject": "[dev] the explosion drill bounds its waits and keeps its papers",
+      "decision": "Deferred with the owning gameplay transaction; standalone import would exercise absent lanes or replace fork-specific fixtures."
+    },
+    {
+      "commit": "2b32d770d125e4d15539dcd6ce15142c6aa103f2",
+      "subject": "[dev] the explosion drill is split into fixture, host and client files",
+      "decision": "Deferred with the owning gameplay transaction; standalone import would exercise absent lanes or replace fork-specific fixtures."
+    },
+    {
+      "commit": "1b6ed321eb6ae9ec44b80e404a5c0e326c7ad65d",
+      "subject": "[dev] a drill proves the explosion lane's apply, coast and receive",
+      "decision": "Deferred with the owning gameplay transaction; standalone import would exercise absent lanes or replace fork-specific fixtures."
+    },
+    {
+      "commit": "b98cfc70f40f278440f2809952d28c8432568761",
+      "subject": "[coop] the explosion lane counts a failed narrowing and logs by role",
+      "decision": "Deferred: existing fork explosion authority/identity/coasting must be reconciled; upstream kind 177 collides with KitchenState."
+    },
+    {
+      "commit": "eb46e1de60f9dc9380545b1ad9a929be26e1e021",
+      "subject": "[coop] the host's coast reads prop positions raw",
+      "decision": "Deferred: existing fork explosion authority/identity/coasting must be reconciled; upstream kind 177 collides with KitchenState."
+    },
+    {
+      "commit": "13ffd28afd1c6e564fa69e76d5777ed168a5a989",
+      "subject": "[ue_wrap] one raw read of an unattached actor's root pose",
+      "decision": "Not adopted: extraction of the existing drone root-pose read into a reusable engine helper; it changes no drone behavior and is only needed by the deferred explosion coast implementation."
+    },
+    {
+      "commit": "828325639ef367de885f72ba8026cdc374d1506e",
+      "subject": "[coop] the explosion lane's comments say what it does",
+      "decision": "Deferred: existing fork explosion authority/identity/coasting must be reconciled; upstream kind 177 collides with KitchenState."
+    },
+    {
+      "commit": "b6e947f43f2328d58265e8963546076682f662b7",
+      "subject": "[net] ExplosionSpawn rides the high lane",
+      "decision": "Deferred with parked-creature presentation and hit delivery: PlayerHit replaces kind 20 (fork PlayerDamage), and current PvP/damage ownership must be preserved."
+    },
+    {
+      "commit": "242894d21071faec9dc49a390d8a63e716d3ce87",
+      "subject": "[coop] a client drops an explosion out of range",
+      "decision": "Deferred: existing fork explosion authority/identity/coasting must be reconciled; upstream kind 177 collides with KitchenState."
+    },
+    {
+      "commit": "1dd305697326df97f81569bc52d183cacf86d6c3",
+      "subject": "[coop] a client's explosion copy fails closed",
+      "decision": "Deferred: existing fork explosion authority/identity/coasting must be reconciled; upstream kind 177 collides with KitchenState."
+    },
+    {
+      "commit": "51cbdfbd79d688a4b9387512d7718d0a37391941",
+      "subject": "[coop] the host sends an explosion only to peers that can apply it",
+      "decision": "Deferred: existing fork explosion authority/identity/coasting must be reconciled; upstream kind 177 collides with KitchenState."
+    },
+    {
+      "commit": "8c3dcfce3913e477d9a38ba19e9c4113433b44ea",
+      "subject": "[coop] the explosion class table re-syncs on every unlist",
+      "decision": "Deferred: existing fork explosion authority/identity/coasting must be reconciled; upstream kind 177 collides with KitchenState."
+    },
+    {
+      "commit": "bf04c29a47ef0de06fd0509241e9e52107e53bf5",
+      "subject": "[coop] the host coasts from one prop snapshot per tick",
+      "decision": "Deferred: existing fork explosion authority/identity/coasting must be reconciled; upstream kind 177 collides with KitchenState."
+    },
+    {
+      "commit": "0f8083f8147d5cabb6a69d956ec463ee9d734249",
+      "subject": "[coop] the host drives the props an explosion flings to every client",
+      "decision": "Deferred: existing fork explosion authority/identity/coasting must be reconciled; upstream kind 177 collides with KitchenState."
+    },
+    {
+      "commit": "54f71d7e0ad07d37a3f477d04d5a7b1e9f8e1d47",
+      "subject": "[coop] the host sees which props an explosion's blast would fling",
+      "decision": "Deferred: existing fork explosion authority/identity/coasting must be reconciled; upstream kind 177 collides with KitchenState."
+    },
+    {
+      "commit": "6517ab8bacc19037b3c94de025e839b7656a72d9",
+      "subject": "[coop] the host sends each captured explosion to every client",
+      "decision": "Deferred: existing fork explosion authority/identity/coasting must be reconciled; upstream kind 177 collides with KitchenState."
+    },
+    {
+      "commit": "ff2740584d91a99397c1ad52ec42922172ccde28",
+      "subject": "[coop] the host captures the explosions its game runs",
+      "decision": "Deferred: existing fork explosion authority/identity/coasting must be reconciled; upstream kind 177 collides with KitchenState."
+    },
+    {
+      "commit": "e7dc753e657ec132fcb7495f667815d28010dfb9",
+      "subject": "[coop] a client spawns the explosion the host sent",
+      "decision": "Deferred: existing fork explosion authority/identity/coasting must be reconciled; upstream kind 177 collides with KitchenState."
+    },
+    {
+      "commit": "197bdc714d03c528e03e3dcb81db53d0b3b36e36",
+      "subject": "[coop] a client receives and checks the host's ExplosionSpawn",
+      "decision": "Deferred with parked-creature presentation and hit delivery: PlayerHit replaces kind 20 (fork PlayerDamage), and current PvP/damage ownership must be preserved."
+    },
+    {
+      "commit": "23c3e65db542a20ce5c47a49273839f0a14d159e",
+      "subject": "[coop] a client's explosion copy writes only its own player's damage",
+      "decision": "Deferred: existing fork explosion authority/identity/coasting must be reconciled; upstream kind 177 collides with KitchenState."
+    },
+    {
+      "commit": "95ebaad712ab4926fe7280b9404c2a44931795c8",
+      "subject": "[coop] a client watches the explosion copy's verbs and begin-play",
+      "decision": "Deferred: existing fork explosion authority/identity/coasting must be reconciled; upstream kind 177 collides with KitchenState."
+    },
+    {
+      "commit": "7eb1df7ec015a029da5e972341a506c3431055ce",
+      "subject": "[dev] a drill shows a client dissolving a barrel explosion twice over",
+      "decision": "Deferred with the owning gameplay transaction; standalone import would exercise absent lanes or replace fork-specific fixtures."
+    },
+    {
+      "commit": "218f771270df0707ca5667fb162b93dbc452897f",
+      "subject": "[coop] a client dissolves the explosions its own game spawns",
+      "decision": "Deferred: existing fork explosion authority/identity/coasting must be reconciled; upstream kind 177 collides with KitchenState."
+    },
+    {
+      "commit": "001193570db748d84b23e9be0140ba9053025175",
+      "subject": "[coop] a client knows the explosion classes and sees their births",
+      "decision": "Deferred: existing fork explosion authority/identity/coasting must be reconciled; upstream kind 177 collides with KitchenState."
+    },
+    {
+      "commit": "9c5da85ee1d503d90364f980def7747f70779ef4",
+      "subject": "[dev] the remover host names both crowbars' eids; the client binds them",
+      "decision": "Deferred with the owning gameplay transaction; standalone import would exercise absent lanes or replace fork-specific fixtures."
+    },
+    {
+      "commit": "3a64cd0e89db96af15f55c263d559612b44dba41",
+      "subject": "[dev] the remover client binds the hooked crowbar by the host's eid",
+      "decision": "Deferred with the owning gameplay transaction; standalone import would exercise absent lanes or replace fork-specific fixtures."
+    },
+    {
+      "commit": "3ef31ce33c0a73a37a29dcdadc036fd6cbf31f2b",
+      "subject": "[dev] the act drill spawns its targets where a route reaches",
+      "decision": "Deferred with the owning gameplay transaction; standalone import would exercise absent lanes or replace fork-specific fixtures."
+    },
+    {
+      "commit": "4797d78b4892c2b5853497e7c2312328ac11a9d9",
+      "subject": "[dev] the remover's hook waits share one bound; the host walk ends clean",
+      "decision": "Deferred with the owning gameplay transaction; standalone import would exercise absent lanes or replace fork-specific fixtures."
+    },
+    {
+      "commit": "8f0e416267c4bf44376d89468b648e068aefe1c4",
+      "subject": "[dev] the throw drill waits for the host's drive of the backpack to end",
+      "decision": "Deferred with the owning gameplay transaction; standalone import would exercise absent lanes or replace fork-specific fixtures."
+    },
+    {
+      "commit": "68bfe94ca571a4e5e4f813c0af77e9a68556b2b6",
+      "subject": "[props] the raw-destroy watch also counts a destroy named by key",
+      "decision": "Deferred: take/use reservation and commit is an atomic protocol change; kinds 178-180 collide with kitchen/cord lanes."
+    },
+    {
+      "commit": "d49cf4c087e89cc06cd2a16a12f3ad9b2c76abb0",
+      "subject": "[dev] the remover drill's host walks to the crowbar it hooks",
+      "decision": "Deferred with the owning gameplay transaction; standalone import would exercise absent lanes or replace fork-specific fixtures."
+    },
+    {
+      "commit": "bc1bf2e03c9885459b40d05c8d784505b2aeca93",
+      "subject": "[dev] the loaded bin takes a small item dropped from above, upright",
+      "decision": "Deferred with the owning gameplay transaction; standalone import would exercise absent lanes or replace fork-specific fixtures."
+    },
+    {
+      "commit": "040c553798f50119f370920c34b65bcf85ff3233",
+      "subject": "[props] the judge's table check and lookups fail closed and quiet",
+      "decision": "Deferred: take/use reservation and commit is an atomic protocol change; kinds 178-180 collide with kitchen/cord lanes."
+    },
+    {
+      "commit": "b4e3a23d6dca2b40c1d5f831fee98ca0864ada5c",
+      "subject": "[dev] the grab row clears its hand through the director's own process",
+      "decision": "Deferred with the owning gameplay transaction; standalone import would exercise absent lanes or replace fork-specific fixtures."
+    },
+    {
+      "commit": "d94df7220c2bf8de25664339cbe701b22071e721",
+      "subject": "[props] the judge refuses a hose being placed, as the game does",
+      "decision": "Deferred: take/use reservation and commit is an atomic protocol change; kinds 178-180 collide with kitchen/cord lanes."
+    },
+    {
+      "commit": "4cfaecdd0917df1a268c13c58e17c866c9bf4120",
+      "subject": "[dev] the drills' new steps fail at their bounds and start clean",
+      "decision": "Deferred with the owning gameplay transaction; standalone import would exercise absent lanes or replace fork-specific fixtures."
+    },
+    {
+      "commit": "3fd92ec7d49a09ee19080a63dd8639f31ca4a486",
+      "subject": "[props] the selftest proves a frozen prop still meets its other terms",
+      "decision": "Deferred with the owning gameplay transaction; standalone import would exercise absent lanes or replace fork-specific fixtures."
+    },
+    {
+      "commit": "969ae07e52105db5b66919c922c165948871ecfd",
+      "subject": "[props] the judge checks the verb first and reads every fact fail-closed",
+      "decision": "Deferred: take/use reservation and commit is an atomic protocol change; kinds 178-180 collide with kitchen/cord lanes."
+    },
+    {
+      "commit": "c35ff08627c07263e6eb6eb6b9969366a41cb289",
+      "subject": "[dev] the drive drill re-places a drive the host lays beside the client",
+      "decision": "Deferred with the owning gameplay transaction; standalone import would exercise absent lanes or replace fork-specific fixtures."
+    },
+    {
+      "commit": "52157b9673c385e7e3923c641e9a31f6e2bb98a4",
+      "subject": "[dev] the hostile drill forges acts the game would never perform",
+      "decision": "Deferred with the owning gameplay transaction; standalone import would exercise absent lanes or replace fork-specific fixtures."
+    },
+    {
+      "commit": "2a58c4c7a1da45e2e836e0ff2a51faccb0eaebfe",
+      "subject": "[dev] the act drill's honest rows meet the take-and-use judge",
+      "decision": "Deferred with the owning gameplay transaction; standalone import would exercise absent lanes or replace fork-specific fixtures."
+    },
+    {
+      "commit": "73ef1295568f8a7824223be10d2a419d16dbaf29",
+      "subject": "[props] the selftest drives the judge's fits and order",
+      "decision": "Deferred with the owning gameplay transaction; standalone import would exercise absent lanes or replace fork-specific fixtures."
+    },
+    {
+      "commit": "ddd3caa98dee0364a35a7f934480133d17443432",
+      "subject": "[props] the host judges each act by the game's own conditions",
+      "decision": "Deferred: take/use reservation and commit is an atomic protocol change; kinds 178-180 collide with kitchen/cord lanes."
+    },
+    {
+      "commit": "19275ded2a0c51b0eceb0545757aec74b217f963",
+      "subject": "[dev] the drills' floor and gather failures say what they read",
+      "decision": "Deferred with the owning gameplay transaction; standalone import would exercise absent lanes or replace fork-specific fixtures."
+    },
+    {
+      "commit": "063e6026880e25afff586fc5be682ec9c00f948e",
+      "subject": "[dev] the act drill lays a target on the first floor of a fan",
+      "decision": "Deferred with the owning gameplay transaction; standalone import would exercise absent lanes or replace fork-specific fixtures."
+    },
+    {
+      "commit": "e298b319c566769e8506e4cbe5063317efba4ff6",
+      "subject": "[dev] the host turns the born drive's physics on, as a slot's pull-out",
+      "decision": "Deferred with the owning gameplay transaction; standalone import would exercise absent lanes or replace fork-specific fixtures."
+    },
+    {
+      "commit": "70b69494dc9ae64a07d6b93f3e51454411cba2cb",
+      "subject": "[props] the game's own gather test is one function",
+      "decision": "Deferred: take/use reservation and commit is an atomic protocol change; kinds 178-180 collide with kitchen/cord lanes."
+    },
+    {
+      "commit": "48307ac440cdb9ae45b23688e9a6596f01ee616c",
+      "subject": "[dev] the act and drive drills say what they gather in plain words",
+      "decision": "Deferred with the owning gameplay transaction; standalone import would exercise absent lanes or replace fork-specific fixtures."
+    },
+    {
+      "commit": "776ce89264e6a872c02db01552e07d1da7984e0e",
+      "subject": "[dev] the drive drill gathers the drive it was born with",
+      "decision": "Deferred with the owning gameplay transaction; standalone import would exercise absent lanes or replace fork-specific fixtures."
+    },
+    {
+      "commit": "5efb68b0bd10c491b8b2d68e135cc4ca37d1d3b0",
+      "subject": "[dev] the act drill empties the client's hunger before each eat",
+      "decision": "Deferred with the owning gameplay transaction; standalone import would exercise absent lanes or replace fork-specific fixtures."
+    },
+    {
+      "commit": "ce39a85985f50de6ff9aef6dea9a025190317512",
+      "subject": "[props] a drill names the eids whose raw destroys it counts",
+      "decision": "Deferred with the owning gameplay transaction; standalone import would exercise absent lanes or replace fork-specific fixtures."
+    },
+    {
+      "commit": "1e6fe5c088b569e50d498ef09bc479f92638d5b5",
+      "subject": "[dev] the drive drill pockets only a drive a player could gather",
+      "decision": "Deferred with the owning gameplay transaction; standalone import would exercise absent lanes or replace fork-specific fixtures."
+    },
+    {
+      "commit": "721d5575fb06da6e9cb8319ec6e4afbe34ca79f5",
+      "subject": "[dev] the act drill waits on the host's drive, not on physics",
+      "decision": "Deferred with the owning gameplay transaction; standalone import would exercise absent lanes or replace fork-specific fixtures."
+    },
+    {
+      "commit": "916c5cd00c79f4f033048a653eee5324069bebf6",
+      "subject": "[dev] the act drill waits until the mirror can be gathered",
+      "decision": "Deferred with the owning gameplay transaction; standalone import would exercise absent lanes or replace fork-specific fixtures."
+    },
+    {
+      "commit": "c76fd0eacab198b8cd6c472dd0e547bfa85645ee",
+      "subject": "[dev] the drive drill walks to the drive it pockets",
+      "decision": "Deferred with the owning gameplay transaction; standalone import would exercise absent lanes or replace fork-specific fixtures."
+    },
+    {
+      "commit": "dbc36fa4840e3898be2ce34d189221447f241259",
+      "subject": "[dev] the act drill lays its targets beside the client's puppet",
+      "decision": "Deferred with the owning gameplay transaction; standalone import would exercise absent lanes or replace fork-specific fixtures."
+    },
+    {
+      "commit": "71e762a34407fecc72ef580863f0151ca3a70053",
+      "subject": "[dev] the act drill installs once a session",
+      "decision": "Deferred with the owning gameplay transaction; standalone import would exercise absent lanes or replace fork-specific fixtures."
+    },
+    {
+      "commit": "1375dc5c7e6ab21e31b0047613c46aed5a32ea0a",
+      "subject": "[dev] the hand-drop throw refuses an empty hand before it throws",
+      "decision": "Deferred with the owning gameplay transaction; standalone import would exercise absent lanes or replace fork-specific fixtures."
+    },
+    {
+      "commit": "3fc28ba5606fcafb37ad4c9e32ed653c3c29c227",
+      "subject": "[dev] the remover drill checks its sight of both crowbars at rest",
+      "decision": "Deferred with the owning gameplay transaction; standalone import would exercise absent lanes or replace fork-specific fixtures."
+    },
+    {
+      "commit": "ebc8d0321ae1fe4a5d298182faded5760fdfdf5c",
+      "subject": "[dev] the hand-drop throw must leave a new dropped prop",
+      "decision": "Deferred with the owning gameplay transaction; standalone import would exercise absent lanes or replace fork-specific fixtures."
+    },
+    {
+      "commit": "fae2eae6b8063047a8e3e9c9669e4702e0f149b4",
+      "subject": "[dev] the hand-drop watcher names its subject or fails",
+      "decision": "Deferred with the owning gameplay transaction; standalone import would exercise absent lanes or replace fork-specific fixtures."
+    },
+    {
+      "commit": "f2817ad21d822ee275085fb0cbe2dc5e61a0cb38",
+      "subject": "[net] the take-or-use kinds move the protocol to 236",
+      "decision": "Deferred: take/use reservation and commit is an atomic protocol change; kinds 178-180 collide with kitchen/cord lanes."
+    },
+    {
+      "commit": "ab1f50c9e9314aeb21bd533cc5ff2c14ae4977ab",
+      "subject": "[dev] drill holds read the hand item; the shrimp row eats its last",
+      "decision": "Deferred with the owning gameplay transaction; standalone import would exercise absent lanes or replace fork-specific fixtures."
+    },
+    {
+      "commit": "3a3b3b40303433a2f80dec35aba6d5a7c19143dc",
+      "subject": "[dev] the hand-drop census lives in its own file",
+      "decision": "Deferred with the owning gameplay transaction; standalone import would exercise absent lanes or replace fork-specific fixtures."
+    },
+    {
+      "commit": "7a2c309512d16a8d58c062fb9c37ee8de039335a",
+      "subject": "[dev] the drill checks fail at their bounds and read their own acts",
+      "decision": "Deferred with the owning gameplay transaction; standalone import would exercise absent lanes or replace fork-specific fixtures."
+    },
+    {
+      "commit": "4c40471a73da5c2b1829e5eb20a1e636403a5b46",
+      "subject": "[dev] the drill props helpers are one file",
+      "decision": "Deferred with the owning gameplay transaction; standalone import would exercise absent lanes or replace fork-specific fixtures."
+    },
+    {
+      "commit": "6a359b360c12b6e358ad28bd80ed1662bde253f4",
+      "subject": "[props] an unresolved class base is asked again on every call",
+      "decision": "Adapted: unresolved bases retry on every game-thread call."
+    },
+    {
+      "commit": "9d676f93940034d88c51cd33e787d96335255e33",
+      "subject": "[dev] the pickup drill acts when the seed is in, not after a count",
+      "decision": "Deferred with the owning gameplay transaction; standalone import would exercise absent lanes or replace fork-specific fixtures."
+    },
+    {
+      "commit": "f34ddc6bf161576f7f26016814e8627f4aedd36d",
+      "subject": "[dev] the hand-drop selftest steps on what each peer sees",
+      "decision": "Deferred with the owning gameplay transaction; standalone import would exercise absent lanes or replace fork-specific fixtures."
+    },
+    {
+      "commit": "3b6846813ac578db45855311bfdc9eaf3c543ace",
+      "subject": "[dev] drills that take a shared prop wait for the act's end",
+      "decision": "Deferred with the owning gameplay transaction; standalone import would exercise absent lanes or replace fork-specific fixtures."
+    },
+    {
+      "commit": "a99c65ea431bfd4dd1d8df437455e018ce5cbc79",
+      "subject": "[dev] the act drill leaves mid-take and times its windows",
+      "decision": "Deferred with the owning gameplay transaction; standalone import would exercise absent lanes or replace fork-specific fixtures."
+    },
+    {
+      "commit": "817a26752c88adbd7f97652b2f3d0cca6aec8b46",
+      "subject": "[dev] the act drill races shared props between two clients",
+      "decision": "Deferred with the owning gameplay transaction; standalone import would exercise absent lanes or replace fork-specific fixtures."
+    },
+    {
+      "commit": "873cee9432a40481f015edfc05bafcf1cf8738c9",
+      "subject": "[props] the prop base uses the class index; retries wait for new classes",
+      "decision": "Partly adapted: prop base uses the class index; its class-version retry latch is superseded by 6a359b360."
+    },
+    {
+      "commit": "4127a71918dd4e2752c18957d775641820d46de1",
+      "subject": "[dev] the act drill's client steps live in their own file",
+      "decision": "Deferred with the owning gameplay transaction; standalone import would exercise absent lanes or replace fork-specific fixtures."
+    },
+    {
+      "commit": "82a28b0a4122d07c8f256fd63dc57ed7ce7e3def",
+      "subject": "[props] prop class tests resolve on the game thread and say so off it",
+      "decision": "Adapted: published base pointers and worker-thread isolation."
+    },
+    {
+      "commit": "20c604e132d102f7ee53001cbb7ad6d0ca5e2c70",
+      "subject": "[dev] the act drill's honest phase covers the native and edge cells",
+      "decision": "Deferred with the owning gameplay transaction; standalone import would exercise absent lanes or replace fork-specific fixtures."
+    },
+    {
+      "commit": "13e7193eb80c08338723d90fca6c62421004c49a",
+      "subject": "[props] the trash bases resolve on the game thread only",
+      "decision": "Adapted in the final resolver: trash base resolution stays on the game thread."
+    },
+    {
+      "commit": "41ad8e2e816d4c1d3c1f0b7d0cb3d01a0c219d4b",
+      "subject": "[dev] the act drill takes and uses each family of shared prop",
+      "decision": "Deferred with the owning gameplay transaction; standalone import would exercise absent lanes or replace fork-specific fixtures."
+    },
+    {
+      "commit": "8901caf18953968b576824d743483d8f426c6999",
+      "subject": "[props] a trash class verdict is not kept while its base is unresolved",
+      "decision": "Already equivalent: the fork already avoids caching a negative trash verdict before both bases resolve."
+    },
+    {
+      "commit": "f40e4584de6948f28e182937a271f95be4354812",
+      "subject": "[dev] the hostile drill forges takes and commits against the host",
+      "decision": "Deferred with the owning gameplay transaction; standalone import would exercise absent lanes or replace fork-specific fixtures."
+    },
+    {
+      "commit": "6b46b354422e424381aef95c2e410f7ddfd3baee",
+      "subject": "[props] the trash bases resolve through the class index",
+      "decision": "Adapted: trash bases use the class index."
+    },
+    {
+      "commit": "ab0c696ec3d28fa77636db01b80ba659570c335b",
+      "subject": "[props] a client asks only for a shared prop and reads params cheaply",
+      "decision": "Deferred: take/use reservation and commit is an atomic protocol change; kinds 178-180 collide with kitchen/cord lanes."
+    },
+    {
+      "commit": "6723fc9ddf2bff18d79a20324cdab306b52350cb",
+      "subject": "[docs] the watched take and use functions are mapped",
+      "decision": "Keep only documentation/fingerprint rows matching adopted production code; this commit describes the unimported lanes."
+    },
+    {
+      "commit": "fdfb53be19fc49a2ce8582bbd6d108e8dbe33c5f",
+      "subject": "[props] a selftest drives the take-or-use decisions",
+      "decision": "Deferred with the owning gameplay transaction; standalone import would exercise absent lanes or replace fork-specific fixtures."
+    },
+    {
+      "commit": "0e57ab2cf4fb8d9acb5341f89592f7e3a21e12dc",
+      "subject": "[props] a client asks the host before taking or using a shared prop",
+      "decision": "Deferred: take/use reservation and commit is an atomic protocol change; kinds 178-180 collide with kitchen/cord lanes."
+    },
+    {
+      "commit": "59dbb23e22371096baf6dc58c1649d4fa73e6341",
+      "subject": "[props] a replay that destroyed its target commits; logs name outcomes",
+      "decision": "Deferred: take/use reservation and commit is an atomic protocol change; kinds 178-180 collide with kitchen/cord lanes."
+    },
+    {
+      "commit": "e90dbe79e9a863d275c78492aa26c8363319d200",
+      "subject": "[props] the client keeps every expired request until the host answers it",
+      "decision": "Deferred: take/use reservation and commit is an atomic protocol change; kinds 178-180 collide with kitchen/cord lanes."
+    },
+    {
+      "commit": "e33ff61dcd691abfac4ee5bc728377280fbc5c2a",
+      "subject": "[props] the take-or-use judge reads its waits first, says its failures",
+      "decision": "Deferred: take/use reservation and commit is an atomic protocol change; kinds 178-180 collide with kitchen/cord lanes."
+    },
+    {
+      "commit": "d83373030f4eb3301b4640ca0a87ba962d6116da",
+      "subject": "[dev] the remover drill's hook steps wait on their own layout",
+      "decision": "Deferred with the owning gameplay transaction; standalone import would exercise absent lanes or replace fork-specific fixtures."
+    },
+    {
+      "commit": "ae4c8078801c0c3bdaa8210a0d812226d151e656",
+      "subject": "[props] the hold predicate states its timing and its precedents",
+      "decision": "Deferred: take/use reservation and commit is an atomic protocol change; kinds 178-180 collide with kitchen/cord lanes."
+    },
+    {
+      "commit": "b775fd825b1c094a093e518330da0d07be20b0b7",
+      "subject": "[props] a refused commit is sent again until the host has it",
+      "decision": "Deferred: take/use reservation and commit is an atomic protocol change; kinds 178-180 collide with kitchen/cord lanes."
+    },
+    {
+      "commit": "90019da3899b19d3f54580704e246875a2c122c9",
+      "subject": "[props] the host judges a client's take or use and destroys it on commit",
+      "decision": "Deferred: take/use reservation and commit is an atomic protocol change; kinds 178-180 collide with kitchen/cord lanes."
+    },
+    {
+      "commit": "f8b91d5e9af1dd1eb39bea1475da5cd13f56908f",
+      "subject": "[dev] the remover drill's host half lives in its own file",
+      "decision": "Deferred with the owning gameplay transaction; standalone import would exercise absent lanes or replace fork-specific fixtures."
+    },
+    {
+      "commit": "ceb5c91c7e40e0a599bea5334e0da85d2cb257ba",
+      "subject": "[dev] the remover drill tries props pulled by hooks",
+      "decision": "Deferred with the owning gameplay transaction; standalone import would exercise absent lanes or replace fork-specific fixtures."
+    },
+    {
+      "commit": "291661985386d17062f57d6780f58802703c1790",
+      "subject": "[dev] the hook plant is one helper the drills share",
+      "decision": "Deferred with the owning gameplay transaction; standalone import would exercise absent lanes or replace fork-specific fixtures."
+    },
+    {
+      "commit": "285ced6961335f6c9393a79102d4013b5ea1af9a",
+      "subject": "[props] a prop mirror's row can be dropped from outside the destroy file",
+      "decision": "Deferred: take/use reservation and commit is an atomic protocol change; kinds 178-180 collide with kitchen/cord lanes."
+    },
+    {
+      "commit": "6955e1dfc7a30e0ac4236760c2a54a435fb51c16",
+      "subject": "[props] the hold predicate and the reservation table live in prop_hold",
+      "decision": "Deferred: take/use reservation and commit is an atomic protocol change; kinds 178-180 collide with kitchen/cord lanes."
+    },
+    {
+      "commit": "1013319b20c98abfe0ccc8b2fa60292d85263444",
+      "subject": "[creatures] the hound's class name is not latched while it reads None",
+      "decision": "Adapted: NAME_None is never latched as the hound class name."
+    },
+    {
+      "commit": "853e058b110e7548c576a2b6654d362785b9cbfb",
+      "subject": "[creatures] the hound's body-yaw test compares class names",
+      "decision": "Adapted: bounded FName class-chain test for hound body yaw."
+    },
+    {
+      "commit": "9c6b950bbd813b4c817d860c83c886ab5a477a6d",
+      "subject": "[dev] the hound's facing verdict counts turns between samples",
+      "decision": "Deferred with the owning gameplay transaction; standalone import would exercise absent lanes or replace fork-specific fixtures."
+    },
+    {
+      "commit": "6b0d2841efe054e4bb6e681debd223781c071937",
+      "subject": "[creatures] the hound's facing has a verdict; its comments say what runs",
+      "decision": "Deferred with parked-creature presentation and hit delivery: PlayerHit replaces kind 20 (fork PlayerDamage), and current PvP/damage ownership must be preserved."
+    },
+    {
+      "commit": "2241217a332da3c0ffa0f9e91bb3cd990e5c35b6",
+      "subject": "[creatures] a fossil hound mirror faces where the host's body does",
+      "decision": "Partly adapted: fossil hound body yaw reader/driver and pose wiring, without the new hit drill."
+    },
+    {
+      "commit": "7866d9ab1fa3391e8dc905bfecf548e8976937ef",
+      "subject": "[dev] creature hit drill: log the hound's facing on both peers",
+      "decision": "Deferred with the owning gameplay transaction; standalone import would exercise absent lanes or replace fork-specific fixtures."
+    },
+    {
+      "commit": "3ec8d7ad918b5b504665037095edc53a7bd0669d",
+      "subject": "[net] vitals comments name the hit judge; a NaN encodes as 0",
+      "decision": "Partly adapted: NaN-safe quantization; hit-judge comments do not describe this fork."
+    },
+    {
+      "commit": "49d8401fed3b18bc77d68ec9c7a379f25e42393b",
+      "subject": "[net] a positive vital fraction never quantises to zero",
+      "decision": "Adapted: tiny positive vital fractions encode as at least one."
+    },
+    {
+      "commit": "692796aba8cc7cd9315f1369b9057073205c8e9e",
+      "subject": "[creatures] mirror brain counts the twin kick skips",
+      "decision": "Deferred with parked-creature presentation and hit delivery: PlayerHit replaces kind 20 (fork PlayerDamage), and current PvP/damage ownership must be preserved."
+    },
+    {
+      "commit": "07c4e470c1aebc88d2c23bd3b2b65a21efc4640e",
+      "subject": "[player] hit judge: newest aim, 60 degree bound, alive gate",
+      "decision": "Deferred with parked-creature presentation and hit delivery: PlayerHit replaces kind 20 (fork PlayerDamage), and current PvP/damage ownership must be preserved."
+    },
+    {
+      "commit": "4f5341ceb70d3a0c18962d48da6ec1faeeb9abe7",
+      "subject": "[player] player hit: count every Deliver that sent nothing",
+      "decision": "Deferred with parked-creature presentation and hit delivery: PlayerHit replaces kind 20 (fork PlayerDamage), and current PvP/damage ownership must be preserved."
+    },
+    {
+      "commit": "58a93add74091b1682da76b5f7d134f022979b8b",
+      "subject": "[player] hit judge: face the streamed aim in 3-D, drop the alive gate",
+      "decision": "Deferred with parked-creature presentation and hit delivery: PlayerHit replaces kind 20 (fork PlayerDamage), and current PvP/damage ownership must be preserved."
+    },
+    {
+      "commit": "f51ce44b69a77618c00a5418e85596756c158fac",
+      "subject": "[player] player hit: say and count a refused PlayerHit send",
+      "decision": "Deferred with parked-creature presentation and hit delivery: PlayerHit replaces kind 20 (fork PlayerDamage), and current PvP/damage ownership must be preserved."
+    },
+    {
+      "commit": "3d5debb26ea5ed89c50b5d232ba25ffa8e8d71be",
+      "subject": "[creatures] mirror brain: names first, twin skips counted, cites",
+      "decision": "Deferred with parked-creature presentation and hit delivery: PlayerHit replaces kind 20 (fork PlayerDamage), and current PvP/damage ownership must be preserved."
+    },
+    {
+      "commit": "87acc7b8493bf738200adcc5759e946df919006f",
+      "subject": "[docs] tag the creature-hit delivery claims and the judge's new checks",
+      "decision": "Keep only documentation/fingerprint rows matching adopted production code; this commit describes the unimported lanes."
+    },
+    {
+      "commit": "b06961cddad210887a02bac6140ce9550364faf7",
+      "subject": "[dev] creature hit drill: refill the host's vitals every second",
+      "decision": "Deferred with the owning gameplay transaction; standalone import would exercise absent lanes or replace fork-specific fixtures."
+    },
+    {
+      "commit": "f196b03224d48ff72dc082db7ae8734105c70029",
+      "subject": "[creatures] mirror brain: FName class tests, no kick on an adopted twin",
+      "decision": "Deferred with parked-creature presentation and hit delivery: PlayerHit replaces kind 20 (fork PlayerDamage), and current PvP/damage ownership must be preserved."
+    },
+    {
+      "commit": "aa3024b8810295fd3e33945ffa907aeb886a74fd",
+      "subject": "[creatures] hit intent: cache the call layout, log hits per class",
+      "decision": "Deferred with parked-creature presentation and hit delivery: PlayerHit replaces kind 20 (fork PlayerDamage), and current PvP/damage ownership must be preserved."
+    },
+    {
+      "commit": "be345a2c73190c866c15f4a960eb371e9f1bd372",
+      "subject": "[player] count a delivered hit only once sent; log applied per class",
+      "decision": "Deferred with parked-creature presentation and hit delivery: PlayerHit replaces kind 20 (fork PlayerDamage), and current PvP/damage ownership must be preserved."
+    },
+    {
+      "commit": "1079891c4a4b2fe7157f050b4b3a02a8a2cb2218",
+      "subject": "[player] hit judge: bound the swing's facing, read the dead flag",
+      "decision": "Deferred with parked-creature presentation and hit delivery: PlayerHit replaces kind 20 (fork PlayerDamage), and current PvP/damage ownership must be preserved."
+    },
+    {
+      "commit": "2280c08ccd718318232e9698b1f9e9d08ee7243d",
+      "subject": "[ue_wrap] weapon catalog: a missing length column leaves reach at 0",
+      "decision": "Not needed independently: the optional length column belongs to the new weapon reach/hit judge; this fork does not add or require that column."
+    },
+    {
+      "commit": "23074295bcc137f72b22b81e44a030479b5fb8bb",
+      "subject": "[ue_wrap] cache reflected offsets per class and per function",
+      "decision": "Deferred with the new creature damage wrappers: offset-cache consumers are absent, so the standalone utility would be unused."
+    },
+    {
+      "commit": "4b7ff2011daae67c5e825714c3d701dccfd326b5",
+      "subject": "[port] the fingerprint table carries the brain-off's and the hit's rows",
+      "decision": "Keep only documentation/fingerprint rows matching adopted production code; this commit describes the unimported lanes."
+    },
+    {
+      "commit": "8b75f3858bdbfeeca2f581403f9a9095abb437a3",
+      "subject": "[dev] creature hit drill: both directions per parked creature",
+      "decision": "Deferred with the owning gameplay transaction; standalone import would exercise absent lanes or replace fork-specific fixtures."
+    },
+    {
+      "commit": "dd98f1f89bc16a9bafc6e2c0635ff54e24cebd65",
+      "subject": "[player] hit judge: a block near the struck point is not cover",
+      "decision": "Deferred with parked-creature presentation and hit delivery: PlayerHit replaces kind 20 (fork PlayerDamage), and current PvP/damage ownership must be preserved."
+    },
+    {
+      "commit": "8915a7afcc2578a80345eef48c4f9197209febbd",
+      "subject": "[creatures] judge a client's hit on a parked creature on the host",
+      "decision": "Deferred with parked-creature presentation and hit delivery: PlayerHit replaces kind 20 (fork PlayerDamage), and current PvP/damage ownership must be preserved."
+    },
+    {
+      "commit": "dde16fbeca87d8b990120239ea8894625c2e01ff",
+      "subject": "[player] deliver a parked creature's hit to its victim's machine",
+      "decision": "Deferred with parked-creature presentation and hit delivery: PlayerHit replaces kind 20 (fork PlayerDamage), and current PvP/damage ownership must be preserved."
+    },
+    {
+      "commit": "2f486aebb2079a20bc6b9793a7341438670fc9fb",
+      "subject": "[creatures] keep a mirror's mark across a world change",
+      "decision": "Deferred with parked-creature presentation and hit delivery: PlayerHit replaces kind 20 (fork PlayerDamage), and current PvP/damage ownership must be preserved."
+    },
+    {
+      "commit": "5f44f3b189ae88cf69614427099c390904e83339",
+      "subject": "[creatures] mark parked-family mirrors, refuse their graph entries",
+      "decision": "Deferred with parked-creature presentation and hit delivery: PlayerHit replaces kind 20 (fork PlayerDamage), and current PvP/damage ownership must be preserved."
+    },
+    {
+      "commit": "240c9e09276ecaafb1fcf8edbafe09607c846e86",
+      "subject": "[ue_wrap] add creature presentation, hit and player-verb wrappers",
+      "decision": "Deferred with parked-creature presentation and hit delivery: PlayerHit replaces kind 20 (fork PlayerDamage), and current PvP/damage ownership must be preserved."
+    }
+  ]
+}

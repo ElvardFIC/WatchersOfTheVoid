@@ -1,3 +1,51 @@
+# Package 0.9.2158 test build
+
+PASS 68/68 exact-build offline groups, stable Release b2186 / protocol 2186,
+loader identity/imports and 786 build source entries. Evidence:
+`build/release-2158/verification.json`.
+DLL SHA256: `d57443e02bf588ec1f3fe812af1acce0f9e3b93f564bf562645ed5539b55535a`.
+
+PASS production menu/browser formatter with the generated header:
+Watchers of the Void 0.9.2158. PASS archive: 32 members, exact source/DLL hashes,
+manifest, 256x256 icon, starter models, activation marker and test disclaimers.
+ZIP SHA256: `05e67388365d16902f283aef7a9c962b942ca844eb9d5fb2bc590702ab9d6929`.
+The exported workspace copy has the same hash. Four negative controls reject
+failed/incomplete suites, a stale label and another DLL; the DLL-only routing
+fixture is also rejected. Evidence: `build/package-current/verification.json`
+and `rejection-controls.json` in the same directory.
+
+Native gameplay and archive startup remain unverified. Packaging explicitly uses
+the offline-test qualification level; it does not reuse earlier native results.
+Windows PowerShell 5 returned the snapshot as a nested array under the old packer;
+reading the parsed array directly fixes iteration and source hash validation.
+
+The GitHub About description and four README/release/changelog documents were
+published in commit `565edebe2e86b357b24cb26681102967c38bd36a`. The local branch
+was fast-forwarded to it without committing the remaining implementation changes.
+No binary release, Thunderstore upload or master-server deployment was performed.
+
+# Selected upstream qualification
+
+PASS 68/68 groups and Release build, protocol 2185, product 0.9.0n b2185,
+786 build source entries. Production inputs remained stable throughout the full
+run. Evidence: `build/upstream-qualified/verification.json`.
+DLL SHA256: `321c13ced4a507f862ef2e343d338684e8cca9abc013fad2605fba796d807c51`.
+
+The targeted upstream fixture and extended entity runner passed before the full
+run. They cover actual vital encoding, delayed hound names, prop/trash base loading,
+worker isolation, full NPC rotations, deduplication and failed-write/landing retries.
+The fact-row gate passed: 508 rows in 160 files.
+
+The public-prose gate remains failing on the same four inherited counters as HEAD:
+document count 84 against 82, naming counter 26 against 24, unresolved source
+citations 155 against 0,
+and src.files_not_swept 84 against 0. Comparing the complete proposed file set
+against HEAD adds no rule regressions; the baseline was not relaxed. Diagnostic
+counters: `build/upstream-qualified/prose-import-counters.json` and
+`prose-head-counters.json` in that same directory.
+
+Two-player rendered gameplay remains unverified. Nothing was packaged or deployed.
+
 # Development b2185 qualification ? 22 October 2026
 
 Owner report: player flashlights, switches, garage/base doors and drone-container

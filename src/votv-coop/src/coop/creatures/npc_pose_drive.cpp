@@ -13,6 +13,7 @@
 
 #include "coop/net/protocol.h"
 #include "ue_wrap/engine/engine.h"
+#include "ue_wrap/actors/fossilhound.h"
 #include "ue_wrap/actors/kerfur.h"   // DriveKerfurState -- host-authoritative command and spooky flag
 #include "ue_wrap/devices/floppy_slot.h"  // kSlotTypeCount -- the seven disc types floppyFromType indexes
 #include "ue_wrap/actors/puppet.h"
@@ -153,7 +154,15 @@ void Npc::Tick() {
     if (!actor || !R::IsLiveByIndex(actor, GetInternalIdx())) return;  // unbound / GC'd mirror
     if (!hasPose_) return;  // no pose yet -- leave the mirror at its spawn transform
     AdvanceInterp();
-    if (dirty_) { ApplyToEngine(); dirty_ = false; }
+    if (dirty_) {
+        dirty_ = false;
+        if (!SameAsApplied(actor)) {
+            if (ApplyToEngine()) RememberApplied(actor);
+            else dirty_ = true;  // retry a failed write even when the interpolation window is closed
+        }
+    }
+    if (isWispMirror_ && !wispLanded_ && !(curStateBits_ & coop::net::kStateBitInAir))
+        wispLanded_ = ue_wrap::wisp::DriveWispLanding(actor);
     // The disc is not part of the pose dirty bit: a swap that failed (the mesh component or the
     // disc library not ready yet) retries on the next frame, including while the body is still.
     if (hasKerfState_ && shownFloppy_ != wantFloppy_) {
@@ -168,6 +177,7 @@ bool Npc::SameAsApplied(void* actor) const {
     const Applied& a = applied_;
     if (a.actor != actor) return false;
     if (a.pos.X != curPos_.X || a.pos.Y != curPos_.Y || a.pos.Z != curPos_.Z) return false;
+    if (a.pitch != curPitch_ || a.roll != curRoll_) return false;
     if (a.yaw != curYaw_ || a.speed != curSpeed_ || a.stateBits != curStateBits_) return false;
     if (a.hasLookAt != hasLookAt_ || a.hasBodyYaw != hasBodyYaw_ || a.hasKerfState != hasKerfState_)
         return false;
@@ -179,7 +189,7 @@ bool Npc::SameAsApplied(void* actor) const {
 }
 
 void Npc::RememberApplied(void* actor) {
-    applied_ = Applied{actor, curPos_, curLookAt_, curYaw_, curSpeed_, curBodyYaw_, curStateBits_,
+    applied_ = Applied{actor, curPos_, curLookAt_, curYaw_, curPitch_, curRoll_, curSpeed_, curBodyYaw_, curStateBits_,
                        kerfState_, hasLookAt_, hasBodyYaw_, hasKerfState_, kerfSpooky_};
 }
 
@@ -188,8 +198,8 @@ bool Npc::ApplyToEngine() {
     if (!actor) return false;
     // NPC capsule centre IS the actor pivot (the host streams the actor's location, the mirror is the
     // same class spawned at the same place) -- no mesh-offset reconstruction (unlike RemotePlayer).
-    E::SetActorLocation(actor, curPos_);
-    E::SetActorRotation(actor, ue_wrap::FRotator{curPitch_, curYaw_, curRoll_});
+    const bool moved = E::SetActorLocation(actor, curPos_);
+    const bool turned = E::SetActorRotation(actor, ue_wrap::FRotator{curPitch_, curYaw_, curRoll_});
     // Drive the mirror's OWN CMC so its AnimBP reads the right Velocity + MovementMode (the native
     // locomotion path -- the same fields the host NPC's possessed CMC carries). Reconstruct planar
     // velocity from the streamed body-yaw + speed magnitude.
@@ -206,12 +216,16 @@ bool Npc::ApplyToEngine() {
     // host's streamed (interpolated) value. MUST be AFTER SetActorRotation above (moving the actor
     // root re-bases this child mesh's world transform). The mirror's actor tick is off, so the
     // kerfur BP never overwrites it -> no gate flag needed. Class-gated inside -> safe on non-kerfur.
-    if (hasBodyYaw_) Pup::DriveKerfurBodyYaw(actor, curBodyYaw_);
+    if (hasBodyYaw_) {
+        Pup::DriveKerfurBodyYaw(actor, curBodyYaw_);
+        ue_wrap::fossilhound::DriveBodyYaw(actor, curBodyYaw_);
+    }
     // Write the host-authoritative kerfur command and spooky flag so the parked mirror's AnimBP
     // state machine matches the host (the mirror runs no AI -> it can't pick its own). Class-gated
     // inside -> safe no-op on non-kerfur NPCs.
     if (hasKerfState_) ue_wrap::kerfur::DriveKerfurState(actor, kerfState_, kerfSpooky_);
     ue_wrap::sit_pose::DriveSitting(actor, (curStateBits_ & coop::net::kEntityPoseBitKerfurOnAtv) != 0);
+    return moved && turned;
 }
 
 }  // namespace coop::element

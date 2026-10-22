@@ -1,3 +1,27 @@
+# Package 0.9.2158 ready locally
+
+Built DLL b2186 and the full ElvardFIC-WatchersOfTheVoid-0.9.2158.zip manager package.
+68/68 offline groups, version formatter, archive/source identity and package rejection
+controls pass. Workspace delivery is in ../dist with SHA256SUMS-2158.txt.
+Every-version test/instability disclaimers are in the package and project README.
+GitHub About and four documentation files are updated; binary publication and
+native multiplayer acceptance remain separate. Details are at the top of TESTLOG.md.
+
+# Selected upstream source import
+
+Qualified: 68/68 groups and stable Release build. Evidence and remaining native
+acceptance boundaries are recorded at the top of TESTLOG.md.
+
+Adapted independently compatible parts of upstream through `93dd26cc2` onto
+`21941a2df`. The original commits, applied subsets, repeated equivalents and
+conflicting transactions are recorded in
+[FORK_AUDIT_20261022.md](FORK_AUDIT_20261022.md) and its JSON inventory.
+
+No change to packet numbers or sizes. Hound yaw reuses the body-yaw field; NPC
+transform deduplication now includes the fork's pitch/roll. Full write failure retries
+also work once interpolation closes. The existing plain-wisp materialization mark
+now reaches the restored native landing presentation wrapper.
+
 # Development b2185: immediate-join reports and larger lobbies
 
 The owner reports immediate 2157 failures in player flashlight visibility,

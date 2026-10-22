@@ -68,7 +68,7 @@ private:
     coop::LerpWindow window_;                // shared interp timing (same one RemotePlayer owns)
     ue_wrap::FVector curLookAt_{};           // streamed kerfur head-look WORLD target (NOT interpolated --
     bool             hasLookAt_      = false; //   the native FAnimNode_LookAt smooths it via its own InterpSpeed)
-    bool             hasBodyYaw_     = false; // bodyYaw valid (kerfur-family) -> drive the mesh world yaw
+    bool             hasBodyYaw_     = false; // bodyYaw valid (kerfur or fossil hound) -> drive the mesh world yaw
     uint8_t          kerfState_      = 0;     // streamed kerfur command (enum_kerfurCommand) -- snapped, drives the
     bool             kerfSpooky_     = false; //   AnimBP state machine on the parked mirror; spooky = the kill/spooky flag
     bool             hasKerfState_   = false; //   valid iff the host sent it (kerfur-family only)
@@ -87,7 +87,7 @@ private:
     struct Applied {
         void*            actor = nullptr;
         ue_wrap::FVector pos{}, lookAt{};
-        float            yaw = 0.f, speed = 0.f, bodyYaw = 0.f;
+        float            yaw = 0.f, pitch = 0.f, roll = 0.f, speed = 0.f, bodyYaw = 0.f;
         uint8_t          stateBits = 0, kerfState = 0;
         bool             hasLookAt = false, hasBodyYaw = false, hasKerfState = false, spooky = false;
     } applied_;

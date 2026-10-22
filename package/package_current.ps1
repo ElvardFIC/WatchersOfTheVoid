@@ -13,21 +13,34 @@ $stage = Join-Path $root 'build/package-current/stage'
 $logs = Join-Path $root 'build/package-current'
 $dll = Join-Path $root $release.dll
 $qualification = Get-Content -LiteralPath (Join-Path $root $release.qualification) -Raw | ConvertFrom-Json
-$snapshot = @(Get-Content -LiteralPath (Join-Path $root $release.source_snapshot) -Raw | ConvertFrom-Json)
+$snapshot = Get-Content -LiteralPath (Join-Path $root $release.source_snapshot) -Raw | ConvertFrom-Json
 $expectedVersion = "$($release.game_target) b$($release.protocol)"
 $dllInfo = [Diagnostics.FileVersionInfo]::GetVersionInfo($dll)
 $dllHash = (Get-FileHash -LiteralPath $dll -Algorithm SHA256).Hash.ToLowerInvariant()
 $expectedLabel = "Watchers of the Void $($release.version_number)"
-if (-not $qualification.PSObject.Properties['ui'] -or
-    $qualification.ui.packageLabel -ne $expectedLabel -or -not $qualification.ui.displayFormatterVerified) {
-    throw 'The in-game version label has not been verified against this package'
+$offlineTest = $release.PSObject.Properties['qualification_level'] -and $release.qualification_level -eq 'offline-test'
+if ($offlineTest) {
+    if ($qualification.Protocol -ne $release.protocol -or $qualification.ProductVersion -ne $expectedVersion -or
+        $qualification.DllSHA256 -ne $dllHash -or -not $qualification.BuildUpToDate -or
+        $qualification.PassingGroups -lt 68 -or $qualification.PassingGroups -ne $qualification.Results.Count -or
+        @($qualification.Results | Where-Object { $_.ExitCode -ne 0 }).Count -ne 0 -or
+        -not $qualification.PSObject.Properties['ui'] -or
+        $qualification.ui.packageLabel -ne $expectedLabel -or -not $qualification.ui.displayFormatterVerified) {
+        throw 'Offline test package does not match a complete passing qualification'
+    }
+} else {
+    if (-not $qualification.PSObject.Properties['ui'] -or
+        $qualification.ui.packageLabel -ne $expectedLabel -or -not $qualification.ui.displayFormatterVerified) {
+        throw 'The in-game version label has not been verified against this package'
+    }
+    if ($qualification.build -ne $release.protocol -or
+        $qualification.game -ne $release.game_target -or $qualification.dllSha256 -ne $dllHash -or
+        -not $qualification.sourceUnchanged -or -not $qualification.peerDllsIdentical -or
+        $qualification.live.scientistClientToHost -notlike 'PASS*' -or
+        $qualification.live.kerfurHostToClient -notlike 'PASS*') { throw 'DLL differs from the qualified fork build' }
 }
 if ($dllInfo.ProductVersion -ne $expectedVersion -or $dllInfo.ProductName -ne 'Watchers of the Void' -or
-    $dllInfo.CompanyName -ne 'ElvardFIC' -or $qualification.build -ne $release.protocol -or
-    $qualification.game -ne $release.game_target -or $qualification.dllSha256 -ne $dllHash -or
-    -not $qualification.sourceUnchanged -or -not $qualification.peerDllsIdentical -or
-    $qualification.live.scientistClientToHost -notlike 'PASS*' -or
-    $qualification.live.kerfurHostToClient -notlike 'PASS*') { throw 'DLL differs from the qualified fork build' }
+    $dllInfo.CompanyName -ne 'ElvardFIC') { throw 'DLL resource identity differs from the package' }
 $protocol = Get-ProtoFromWorktree -RepoRoot $root
 $game = Get-GameTargetFromCMake -CMakePath (Join-Path $root 'src/votv-coop/CMakeLists.txt')
 if ($protocol -ne $release.protocol -or $game -ne $release.game_target) { throw 'Source identity differs from release.json' }
@@ -43,7 +56,7 @@ foreach ($file in (Get-ChildItem -LiteralPath (Join-Path $root 'src/votv-coop/sr
     $relative = $file.FullName.Substring($root.Length + 1).Replace('\','/')
     if (-not $recorded.ContainsKey($relative)) { throw "Unqualified production input: $relative" }
 }
-$description = 'Watchers of the Void by ElvardFIC and AquaFishhh. A Multivoid fork for VotV 0.9.0n with co-op synchronization improvements and selected-character ragdolls. Original Multivoid by Pelmentor.'
+$description = 'Watchers of the Void by ElvardFIC and AquaFishhh, based on Multivoid by Pelmentor. VotV 0.9.0n co-op with 2-32 player hosting. Every version is a test version, requires extensive testing and may be unstable.'
 $manifest = [ordered]@{
     name = $release.name; version_number = $release.version_number
     website_url = 'https://github.com/ElvardFIC/WatchersOfTheVoid'
@@ -117,10 +130,14 @@ try {
     if ((ReadEntry $entries['CHANGELOG.md']).Split("`n")[0].Trim() -ne "## $($release.version_number)") { throw 'Changelog version mismatch' }
     if ((ReadEntry $entries['README.md']) -notlike "*$($release.version_number)*" -or
         (ReadEntry $entries['README.md']) -notlike '*AquaFishhh*') { throw 'Package page is stale' }
+    foreach ($doc in @('README.md','RELEASE.md')) {
+        if ((ReadEntry $entries[$doc]) -notlike '*Every version is a test version*' -or
+            (ReadEntry $entries[$doc]) -notlike '*may be unstable*') { throw "Test-version disclaimer missing: $doc" }
+    }
 } finally { $zip.Dispose() }
 $icon = Get-PngDimensions -Path (Join-Path $root 'assets/branding/icon.png')
 if ($icon.Width -ne 256 -or $icon.Height -ne 256) { throw 'Package icon must be 256x256 PNG' }
-# The actual broken delivery is a regression control for the routing predicate.
+# Use the old DLL-only delivery, or a fixture with the same missing routes, as a rejection control.
 $oldZip = Join-Path $root 'dist/WatchersOfTheVoid-ragdoll-b2179.zip'
 if (-not (Test-Path -LiteralPath $oldZip)) {
     $oldZip = Join-Path $root 'build/package-current/rejected-dll-only.zip'
@@ -157,7 +174,9 @@ if ((Test-Path -LiteralPath $startupLog) -and (Test-Path -LiteralPath $loaderLog
     dllSha256 = $dllHash; zipSha256 = $zipHash; sourceEntries = $snapshot.Count
     archiveMembers = $entries.Count; archive = $archiveName; previousBrokenArchiveRejected = $oldRejected
     archiveStartupVerified = $startupVerified; startupEvidence = 'build/package-current/startup.log'
-    qualification = $release.qualification; full65GroupSuiteRerun = $false
+    qualification = $release.qualification; offlineTestPackage = [bool]$offlineTest
+    nativeGameplayVerified = (-not $offlineTest)
+    fullOfflineGroupCount = $(if($offlineTest){$qualification.PassingGroups}else{0})
 } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $logs 'verification.json') -Encoding utf8
 Write-Output "PASS $archiveName -- $($entries.Count) members; loader layout, identity, icon, models and qualified DLL verified"
 Write-Output "DLL $expectedVersion SHA256 $dllHash"
