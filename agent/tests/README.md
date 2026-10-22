@@ -6,7 +6,7 @@ GitHub runs it beside the fact-row gate.
 
 Current full audit: run `powershell -NoProfile -ExecutionPolicy Bypass -File
 package/check_current.ps1` from the checkout after source edits finish.
-It runs 68 groups, completes the incremental Release build and verifies that the
+It runs 69 groups, completes the incremental Release build and verifies that the
 production inputs stayed unchanged, without repackaging. Results and
 logs are in `build/todo-audit/`. `run_held_identity.ps1` compiles the actual held
 broadcast seam; the older item/resource/lamp/laptop runners use the current typed
@@ -126,6 +126,13 @@ The owner's fresh pak audit remains deferred. These offline tests do not simulat
 PhysX or establish two-peer gameplay acceptance.
 
 ## Immediate-join regression and 32-seat checks
+
+`run_blood.ps1` checks the production player-blood observer, host validation,
+owner exclusion, native replay and bounded retries. It covers malformed/duplicate
+requests, slot 31, recipient/source replacement, recursive callbacks and world/
+session teardown. The two-function native capture verifies the `addParticle`
+reference and separates world drops from the blood-loss actor's local damage.
+Rendered host/client bleeding acceptance remains open.
 
 `run_sync_2157.ps1` compiles the production watch registration/retirement code,
 checks 1100 pending/resolved watches and repeated reopen cycles, and rejects the

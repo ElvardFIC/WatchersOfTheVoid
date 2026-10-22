@@ -10,9 +10,27 @@ Native entity gaps: [ENTITY_COVERAGE.md](ENTITY_COVERAGE.md).
 
 ## Version 0.9.2159 — bleeding synchronization
 
-- [ ] Synchronize blood after severe injuries: the host and other clients must
-  see the injured player's bleeding as well as the injured client.
-  Verify injuries to both host and client and blood visibility on the other peers.
+Implemented in development **b2187 / protocol 2187**: observe only
+`effect_bloodLoss_C` calls to `bloodDecalMaster_C.addParticle`, send the native
+drop parameters to the host, validate source identity, position, bounds and rate,
+then forward to ready observers while excluding the injured owner. Receivers
+invoke only the blood manager; local damage and viewport blur remain with the
+injured player. Short bounded retries expire on world/session/occupancy changes.
+
+`run_blood.ps1` passes production controller/wrapper regressions and verifies the
+native contract against a two-function live 0.9.0n capture. The added function
+reference passes the fact-row gate. Full qualification passes **69/69 groups**,
+stable Release b2187, identity and loader ABI; evidence:
+`build/bleeding-qualified/verification.json`.
+Exact-DLL isolated NullRHI startup passes HEALTH and the new reference matches;
+the census reports zero problem rows. Evidence: `build/bleeding-qualified/native.json`.
+
+Remaining: rendered host/client injury acceptance, stopping bleeding, mid-bleed
+joins and refusal/reconnect behavior. New joiners see subsequent drops; old drops
+are not replayed. Native collision, splat audio and stains are simulated per peer;
+identical stain positions, historical-stain joins, cleaning parity and full-save
+persistence are outside this implementation and remain unverified. Package
+0.9.2158 remains b2186; no 2159 archive or publication has been prepared.
 
 ## Immediate-join reports and larger lobbies
 
@@ -69,9 +87,9 @@ record role, item/model, reproduction and logs in TESTLOG before closing reports
 
 ## Validation and delivery follow-ups
 
-The latest fact-row gate passes (508 rows/160 files), superseding the older missing
-reference and unused-row findings. Four inherited public-prose counters remain:
-documents 84/82, naming 26/24, unresolved source citations 155/0 and
+The latest fact-row gate passes (509 rows/161 files), superseding the older missing
+reference and unused-row findings. Three public-prose counters remain:
+documents 85/82, unresolved source citations 155/0 and
 src.files_not_swept 84/0. Detailed results are in TESTLOG.
 
 Native startup, rendered gameplay, larger lobbies and remote master deployment

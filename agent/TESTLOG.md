@@ -1,3 +1,34 @@
+# Development b2187 — player bleeding (23 October 2026)
+
+For planned 2159, observe `effect_bloodLoss_C` calls to
+`bloodDecalMaster_C.addParticle`. The host validates source slot/person, position,
+bounds and rate, then forwards native drops to ready observers excluding the
+injured owner. Damage/viewport blur stay local. Bounded two-second queues expire
+on occupancy/session/world changes.
+
+PASS `run_blood.ps1`: production controller/wrapper/parameter frame, both roles,
+owner exclusion, malformed/duplicate requests, blocked-send/readiness retries,
+expiry, slot 31, join, occupancy replacement, recursive receive and callback
+teardown. Revalidation fixes a null session access after native replay disconnects.
+
+PASS native contract test: `agent/tests/blood_capture_0.9.0n.txt` (two functions).
+Final exact-DLL NullRHI fresh-world startup: HEALTH PASS, blood reference MATCH,
+census zero problem rows. Evidence: `build/bleeding-qualified/native.json`.
+Unrelated inherited destroy-watch declaration errors remain in the native log.
+Only two relevant cooked assets were inspected; the broader audit stays deferred.
+
+PASS fact-row gate (509 rows/161 files), its nine fault controls and reliable-kind
+gate (225 kinds/all 18 controls). Full qualification passes **69/69 groups**,
+stable Release b2187, identity/ABI: `build/bleeding-qualified/verification.json`.
+DLL SHA256: `b6cd023baaba1d2807a733ecd8114066c6cb72d2d052c97ecfe87578c1229a56`.
+Public-prose remains failing on documents 85/82,
+source citations 155/0 and sources not swept 84/0; the baseline was not relaxed.
+
+Rendered two-peer bleeding remains open. Joiners see future drops; native
+collisions/splats/audio/stains run per peer. Exact stain layout, historical-stain
+joins, cleaning parity and persistence are unverified. Package 2158 remains b2186;
+development protocol 2187 needs matching peers. No 2159 archive/profile install/publication.
+
 # Package 0.9.2158 test build
 
 PASS 68/68 exact-build offline groups, stable Release b2186 / protocol 2186,

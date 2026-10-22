@@ -40,7 +40,7 @@ try {
         'run_sleep_personal','run_entity_sync','run_garden_sync','run_laptop_ui','run_world_sound','run_events',
         'run_placement','run_shared_screen','run_balance','run_item_batch','run_held_identity','run_trowel',
         'run_2130','run_2139','run_2140','run_2141','run_2153','run_2154','run_2155','run_2156',
-        'run_stow_2157','run_2160','run_2161','run_2162','run_2165','run_2168','run_2169',
+        'run_stow_2157','run_2160','run_2161','run_2162','run_2165','run_2168','run_2169','run_blood',
         'run_2170','run_2172','run_2173','run_2180','run_sync_2157','run_upstream',
         'run_nonentity','run_cooking','run_drink_spills','run_gasoline','run_grill_edits',
         'run_grill_hand','run_grime_join','run_hand_tools','run_item_records','run_kitchen',

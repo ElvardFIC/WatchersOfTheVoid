@@ -2,8 +2,13 @@
 
 ## Version 0.9.2159
 
-- [ ] Synchronize bleeding after severe injuries so the host and other players
-  see the blood as well as the injured client. Verify both roles.
+- [x] Implement owner-to-host bleeding drops and validated host forwarding to
+  other players, without echoing the injured player's native drop. Development
+  **b2187 / protocol 2187**; Release and **69/69 offline groups** pass.
+- [ ] Accept visible bleeding from host and client injuries in rendered multiplayer
+  with identical b2187 DLLs, including stopping blood loss and joining mid-bleed.
+  Native drop collisions/stains run independently on each peer; exact stain layout,
+  historical-stain joins and persistence are not established by this change.
 
 ## Current baseline and pending acceptance
 
@@ -175,7 +180,8 @@ Keep personal Insomniac/nightmare and native personal spawn conditions local.
 
 ## Gameplay acceptance checklist
 
-Use matching current **b2186** DLLs. Record role, item/model, reproduction and logs.
+Use matching development **b2187** DLLs for new checks; the prepared 0.9.2158
+package remains **b2186**. Record role, item/model, reproduction and logs.
 Offline tests do not close gameplay reports. Mining (6) stays closed; previously
 working nightmares (10) only need acceptance of the newer personal-sleep behavior.
 Wall41 remains excluded.
@@ -236,9 +242,9 @@ Wall41 remains excluded.
 
 ## Validation follow-ups
 
-- [ ] Resolve the four inherited public-prose counters recorded in TESTLOG:
-  document count 84/82, naming 26/24, unresolved source citations 155/0 and
-  src.files_not_swept 84/0. The latest fact-row gate passes (508 rows/160 files);
+- [ ] Resolve the remaining public-prose counters recorded in TESTLOG:
+  document count 85/82, unresolved source citations 155/0 and
+  src.files_not_swept 84/0. The latest fact-row gate passes (509 rows/161 files);
   older missing-reference/unused-row findings are superseded.
 - [ ] Complete the native-contract audit when the owner resumes the deferred
   asset audit. The existing corpus is incomplete for the imported suite.

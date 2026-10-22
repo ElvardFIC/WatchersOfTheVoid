@@ -20,7 +20,7 @@ namespace SG = ue_wrap::script_gate;
 using Packet = net::PlayerBloodPayload;
 UE_FACT_FN(kDrop, "blood_sync", L"bloodDecalMaster_C", L"addParticle", Declared);
 constexpr int kTag = 0x424c4f44;
-struct Pending { Packet packet{}; uint64_t expires = 0; };
+struct Pending { Packet packet{}; uint64_t expires = 0, ownerEpoch = 0; };
 struct Peer {
     std::deque<Pending> queue;
     uint32_t generation = 0, seen = 0;
@@ -30,6 +30,7 @@ struct Peer {
 };
 net::Session* g_session = nullptr;
 std::array<Peer, net::kMaxPeers> g_peers;
+std::array<uint64_t, net::kMaxPeers> g_peerEpoch{};
 std::deque<Pending> g_in;
 uint32_t g_world = 0, g_serial = 0, g_sequence = 0;
 uint64_t g_epoch = 0;
@@ -58,6 +59,7 @@ void Refresh() {
         const auto generation = g_session->peerGenerationForSlot(slot);
         auto& peer = g_peers[slot];
         if (peer.person != person || peer.generation != generation) {
+            OnPeerLeft(slot);
             peer = {}; peer.person = person; peer.generation = generation;
         }
     }
@@ -68,7 +70,7 @@ bool Valid(const Packet& p) {
 }
 bool Owner(const Packet& p) { return roster_ledger::Get(p.slot).playerNo == p.playerNo; }
 void Queue(int slot, const Packet& p) {
-    if (g_peers[slot].queue.size() < 32) g_peers[slot].queue.push_back({p,Now()+2000});
+    if (g_peers[slot].queue.size() < 32) g_peers[slot].queue.push_back({p,Now()+2000,g_peerEpoch[p.slot]});
 }
 void Relay(const Packet& p) {
     for (int slot = 1; slot < net::kMaxPeers; ++slot)
@@ -105,18 +107,20 @@ void Receive(const Packet& p, uint8_t sender) {
     if (peer.seen && int32_t(p.sequence-peer.seen)<=0) return;
     if (Host()) {
         const auto generation=peer.generation;
+        const auto ownerEpoch=g_peerEpoch[p.slot];
         // Native drop origins are the midpoint of the owner's 200cm downward
         // camera trace. Never admit a remote request to paint another location.
         const ue_wrap::FVector point{p.x,p.y,p.z};
         const bool allowed=bool(element::IntentTarget::ForClientIntent(*g_session,sender,400.f).AuthorizeSegment(point,point));
-        if (!Current(epoch) || !Owner(p) || g_session->peerGenerationForSlot(sender)!=generation || !allowed) return;
+        if (!Current(epoch) || !Owner(p) || g_session->peerGenerationForSlot(sender)!=generation ||
+            g_peerEpoch[p.slot]!=ownerEpoch || !allowed || (peer.seen && int32_t(p.sequence-peer.seen)<=0)) return;
         const auto now=Now();
         if (now-peer.rateAt>=1000) { peer.rateAt=now; peer.rate=0; }
         if (peer.rate>=8) return;
         ++peer.rate;
     }
     peer.seen=p.sequence;
-    if (g_in.size()<128) g_in.push_back({p,Now()+2000});
+    if (g_in.size()<128) g_in.push_back({p,Now()+2000,g_peerEpoch[p.slot]});
     if (Host()) Relay(p);
 }
 void Tick() {
@@ -129,20 +133,22 @@ void Tick() {
     auto incoming=std::move(g_in); g_in.clear();
     for (const auto& row:incoming) {
         if (!Current(epoch)) return;
-        if (Now()>=row.expires || !Owner(row.packet)) continue;
-        const auto current=[&]{return Current(epoch) && Owner(row.packet);};
+        const auto current=[&]{return Current(epoch) && Owner(row.packet) && g_peerEpoch[row.packet.slot]==row.ownerEpoch;};
+        if (Now()>=row.expires || !current()) continue;
         if (!FX::Replay(Decode(row.packet),current) && current()) g_in.push_back(row);
     }
     for (int slot=0; slot<net::kMaxPeers; ++slot) {
+        if (!Current(epoch)) return;
         if ((!Host() && slot!=0) || slot==Local()) continue;
         auto& peer=g_peers[slot]; const auto generation=peer.generation; const auto person=peer.person;
+        const auto recipientEpoch=g_peerEpoch[slot];
         for (int budget=0; !peer.queue.empty() && budget<8; ++budget) {
             const auto row=peer.queue.front();
-            if (Now()>=row.expires || !Owner(row.packet) || !g_session->HasPeerConn(slot) ||
+            if (Now()>=row.expires || !Owner(row.packet) || g_peerEpoch[row.packet.slot]!=row.ownerEpoch || !g_session->HasPeerConn(slot) ||
                 !g_session->IsSlotWorldReady(slot)) { peer.queue.pop_front(); continue; }
             const bool sent=g_session->SendReliableToSlot(slot,net::ReliableKind::PlayerBlood,&row.packet,sizeof(row.packet));
             if (!Current(epoch)) return;
-            if (g_session->peerGenerationForSlot(slot)!=generation || roster_ledger::Get(slot).playerNo!=person) {
+            if (g_peerEpoch[slot]!=recipientEpoch || g_session->peerGenerationForSlot(slot)!=generation || roster_ledger::Get(slot).playerNo!=person) {
                 peer={}; break;
             }
             if (!sent) break;
@@ -153,6 +159,7 @@ void Tick() {
 }
 void OnPeerLeft(int slot) {
     if (slot<0 || slot>=net::kMaxPeers) return;
+    ++g_peerEpoch[slot];
     g_peers[slot]={};
     std::erase_if(g_in,[=](const Pending& row){return row.packet.slot==slot;});
     for (auto& peer:g_peers) std::erase_if(peer.queue,[=](const Pending& row){return row.packet.slot==slot;});
