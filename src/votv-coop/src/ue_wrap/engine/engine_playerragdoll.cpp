@@ -69,9 +69,9 @@ bool StartBodySim(void* comp) {
     CachedObjRef ref; ref.Set(comp);
     if (!ref.Get()) return false;
     void* cls = R::ClassOf(comp);
-    // SetSkeletalMesh replaces the six-bone plushie, but animation evaluation
-    // finishes on the next component tick. Recreate the bodies from that evaluated
-    // selected-model pose before turning simulation on.
+    // Recreate bodies from the selected-model pose before enabling simulation.
+    // Construction uses SetSkeletalMesh's initialized reference pose immediately;
+    // a late swap can also arrive here after the component's evaluation tick.
     const int physicsOffset = R::FindPropertyOffset(cls, L"PhysicsAssetOverride");
     void* physics = nullptr;
     if (physicsOffset < 0) return false;
@@ -183,7 +183,7 @@ struct RagdollView {
             player.Get() && mesh.Get() && arm.Get() && value == mesh.Get();
     }
 
-    bool Capture(void* owner, void* bodyMesh) {
+    bool Capture(void* owner, void* bodyMesh, bool beforeAttachment = false) {
         Reset();
         player.Set(owner); mesh.Set(bodyMesh);
         if (!player.Get() || !mesh.Get()) return false;
@@ -192,14 +192,14 @@ struct RagdollView {
         void* component = nullptr;
         std::memcpy(&component, static_cast<uint8_t*>(owner) + offset, sizeof(component));
         arm.Set(component);
-        if (!Attached()) { Reset(); return false; }
+        if (!arm.Get() || (!beforeAttachment && !Attached())) { Reset(); return false; }
         CachedObjRef controller; controller.Set(GetController(owner));
         if (!controller.Get()) { Reset(); return false; }
         ParamFrame rotation(R::FindDispatchFunctionCached(R::ClassOf(controller.Get()), L"GetControlRotation"));
         if (!rotation.valid() || !Call(controller.Get(), rotation) || !controller.Get() ||
             !rotation.GetRaw(L"ReturnValue", &entry, sizeof(entry)) ||
             !std::isfinite(entry.Pitch) || !std::isfinite(entry.Yaw) || !std::isfinite(entry.Roll) ||
-            !Attached()) { Reset(); return false; }
+            (!beforeAttachment && !Attached())) { Reset(); return false; }
         return true;
     }
 
@@ -329,6 +329,112 @@ bool FinishRagdollVelocity(void* mesh) {
     return true;
 }
 
+CachedObjRef g_localRagdollPlayer, g_configuredRagdoll, g_selectedRagdoll, g_entryScript;
+std::chrono::steady_clock::time_point g_ragdollReadyAfter{};
+RagdollView g_ragdollView;
+bool g_ragdollStarted = false, g_entryViewPending = false, g_recoveryAligned = false;
+
+UE_FACT_FN(kRagdollFinishSpawn, "ragdoll_transition", L"GameplayStatics", L"FinishSpawningActor", Declared);
+UE_FACT_FN(kRagdollArmRotation, "ragdoll_transition", L"SceneComponent", L"K2_SetRelativeRotation", Declared);
+UE_FACT_FN(kRagdollArmAttach, "ragdoll_transition", L"SceneComponent", L"K2_AttachToComponent", Declared);
+
+void* LocalComponent(void* player, const wchar_t* name) {
+    if (!player || !R::IsLive(player)) return nullptr;
+    const int offset = R::FindPropertyOffset(R::ClassOf(player), name);
+    void* component = nullptr;
+    if (offset >= 0) std::memcpy(&component, static_cast<uint8_t*>(player) + offset, sizeof(component));
+    return component && R::IsLive(component) ? component : nullptr;
+}
+
+bool PrepareLocalRagdoll(void* player, void* target, bool duringConstruction) {
+    void* source = puppet::GetMeshPlayerVisibleComponent(player);
+    void* asset = puppet::GetComponentSkeletalMeshAsset(source);
+    CachedObjRef playerRef, sourceRef, targetRef, assetRef;
+    playerRef.Set(player); sourceRef.Set(source); targetRef.Set(target); assetRef.Set(asset);
+    if (!playerRef.Get() || !sourceRef.Get() || !targetRef.Get() || !assetRef.Get()) return false;
+    const bool haveView = g_ragdollView.Capture(player, target, duringConstruction);
+    if (!BeginRagdollVelocity(target)) return false;
+    if (!ConfigurePlayerRagdollMesh(source, target) || !playerRef.Get() || !sourceRef.Get() ||
+        !targetRef.Get() || !assetRef.Get()) { CancelRagdollVelocity(); return false; }
+    g_configuredRagdoll = targetRef; g_selectedRagdoll = assetRef;
+    g_ragdollStarted = false; g_recoveryAligned = false;
+    g_ragdollReadyAfter = std::chrono::steady_clock::now() + std::chrono::milliseconds(30);
+    if (duringConstruction) {
+        // FinishSpawningActor returns before ragdollMode attaches the camera,
+        // starts physics and issues its chest/fall impulses. Install the final
+        // reference pose here so those native operations see the correct rig.
+        if (!StartBodySim(target) || !targetRef.Get() || !playerRef.Get() || !FinishRagdollVelocity(target)) return false;
+        g_ragdollStarted = true;
+        g_entryViewPending = haveView;
+        UE_LOGI("ragdoll_transition: selected rig ready before native camera/physics/impulses");
+    } else if (haveView) {
+        g_ragdollView.Restore();
+    }
+    return true;
+}
+
+void OnLocalRagdollConstructed(void*, void* source, void* result) {
+    void* player = g_localRagdollPlayer.Get();
+    if (!player || source != player || !result || !R::IsLive(result)) return;
+    void* owner = nullptr;
+    // Only the local player's native ragdollMode spawn, never puppet/NPC bodies.
+    if (R::ClassNameOf(result) != L"playerRagdoll_C" && R::ClassNameOf(result) != L"playerRagdoll_crouch_C") return;
+    std::memcpy(&owner, static_cast<uint8_t*>(result) + kPlayerRagdoll_Player, sizeof(owner));
+    if (owner != player) return;
+    const auto caller = ufunction_hook::CurrentCallerFrame();
+    if (!caller.function || R::ToString(R::NameOf(caller.function)) != L"ragdollMode") return;
+    g_entryScript.Set(caller.function); g_entryViewPending = false;
+    PrepareLocalRagdoll(player, RagdollMeshOf(result), true);
+}
+
+void OnNativeRagdollArmRotation(void* component, void* source, void*) {
+    if (!g_entryViewPending || source != g_localRagdollPlayer.Get() || component != g_ragdollView.arm.Get() ||
+        ufunction_hook::CurrentCallerFrame().function != g_entryScript.Get()) return;
+    if (g_ragdollView.Restore()) g_entryViewPending = false;
+}
+
+void OnNativeRagdollArmAttached(void* component, void* source, void*) {
+    void* player = g_localRagdollPlayer.Get();
+    if (!player || source != player || component != g_ragdollView.arm.Get() || !g_ragdollStarted || g_recoveryAligned ||
+        GetLocalRagdollBodyMesh(player) != g_configuredRagdoll.Get()) return;
+    const auto caller = ufunction_hook::CurrentCallerFrame();
+    if (!caller.function || R::ToString(R::NameOf(caller.function)) != L"ExecuteUbergraph_mainPlayer") return;
+    void* parent = nullptr;
+    ParamFrame attached(R::FindDispatchFunctionCached(R::ClassOf(component), L"GetAttachParent"));
+    if (!Call(component, attached) || !attached.GetRaw(L"ReturnValue", &parent, sizeof(parent)) ||
+        !parent || parent != LocalComponent(player, L"crouchRoot")) return;
+    CachedObjRef arm, controller; arm.Set(component); controller.Set(GetController(player));
+    FRotator view{}; FVector position{};
+    ParamFrame rotation(R::FindDispatchFunctionCached(R::ClassOf(component), L"K2_GetComponentRotation"));
+    ParamFrame location(R::FindDispatchFunctionCached(R::ClassOf(component), L"K2_GetComponentLocation"));
+    if (!arm.Get() || !controller.Get() || !Call(component, rotation) ||
+        !rotation.GetRaw(L"ReturnValue", &view, sizeof(view)) || !Call(component, location) ||
+        !location.GetRaw(L"ReturnValue", &position, sizeof(position)) || !FiniteVelocity(position) || !std::isfinite(view.Yaw) ||
+        !std::isfinite(view.Pitch) || !std::isfinite(view.Roll) || !g_localRagdollPlayer.Get()) return;
+    // Native wakeup captures this arm's relative transform and blends it to
+    // upright, then clears its relative rotation at the end of the timeline.
+    // Hand its current yaw to the standing owner now: clearing the arm later
+    // must not restore the capsule's pre-fall heading. Keep the visible view.
+    g_recoveryAligned = true;
+    SetControlRotation(controller.Get(), {0.f, view.Yaw, 0.f});
+    if (!g_localRagdollPlayer.Get() || !arm.Get() || !controller.Get() ||
+        !SetActorRotation(player, {0.f, view.Yaw, 0.f}) || !arm.Get()) return;
+    ParamFrame restore(R::FindDispatchFunctionCached(R::ClassOf(component), L"K2_SetWorldLocationAndRotation"));
+    if (!restore.Set<FVector>(L"NewLocation", position) || !restore.Set<FRotator>(L"NewRotation", view) ||
+        !restore.Set<bool>(L"bSweep", false) || !restore.Set<bool>(L"bTeleport", true) || !Call(component, restore)) return;
+    g_entryViewPending = false;
+    UE_LOGI("ragdoll_transition: native recovery owns current view yaw %.2f", view.Yaw);
+}
+
+void WatchLocalRagdoll(void* player) {
+    g_localRagdollPlayer.Set(player);
+    if (!g_localRagdollPlayer.Get()) return;
+    static bool spawn = false, rotation = false, attach = false;
+    if (!spawn) spawn = ufunction_hook::InstallPostHook(facts::Resolve(kRagdollFinishSpawn), &OnLocalRagdollConstructed);
+    if (!rotation) rotation = ufunction_hook::InstallPostHook(facts::Resolve(kRagdollArmRotation), &OnNativeRagdollArmRotation);
+    if (!attach) attach = ufunction_hook::InstallPostHook(facts::Resolve(kRagdollArmAttach), &OnNativeRagdollArmAttached);
+}
+
 }  // namespace
 
 void* SpawnPlayerRagdollBody(void* ownerPlayer, const FVector& location, const FRotator& rotation) {
@@ -410,19 +516,20 @@ void* GetLocalRagdollBodyMesh(void* mainPlayer) {
 }
 
 bool RefreshLocalRagdollModel(void* mainPlayer) {
-    static CachedObjRef configured, selected;
-    static std::chrono::steady_clock::time_point readyAfter{};
-    static bool started = false;
-    static RagdollView view;
+    WatchLocalRagdoll(mainPlayer);
     void* target = GetLocalRagdollBodyMesh(mainPlayer);
     void* source = puppet::GetMeshPlayerVisibleComponent(mainPlayer);
     void* asset = puppet::GetComponentSkeletalMeshAsset(source);
-    if (!target || !source || !asset) { configured.Reset(); selected.Reset(); view.Reset(); CancelRagdollVelocity(); return false; }
-    if (configured.Get() == target && selected.Get() == asset) {
-        if (!started) {
-            view.Restore();
-            if (std::chrono::steady_clock::now() < readyAfter || !StartBodySim(target)) return false;
-            view.Restore(); started=true;
+    if (!target || !source || !asset) {
+        g_configuredRagdoll.Reset(); g_selectedRagdoll.Reset(); g_ragdollView.Reset();
+        g_entryScript.Reset(); g_entryViewPending = false; g_ragdollStarted = false; g_recoveryAligned = false;
+        CancelRagdollVelocity(); return false;
+    }
+    if (g_configuredRagdoll.Get() == target && g_selectedRagdoll.Get() == asset) {
+        if (!g_ragdollStarted) {
+            g_ragdollView.Restore();
+            if (std::chrono::steady_clock::now() < g_ragdollReadyAfter || !StartBodySim(target)) return false;
+            g_ragdollView.Restore(); g_ragdollStarted=true;
             UE_LOGI("ragdoll_model: selected body simulation started (mesh=%p asset=%p)", target, asset);
         }
         return !g_velocityMesh.Get() || FinishRagdollVelocity(target);
@@ -431,20 +538,7 @@ bool RefreshLocalRagdollModel(void* mainPlayer) {
     // must remain above the floor: a plushie's low pelvis is not a human anchor.
     // Translating the new pelvis down to the old one buries the full-size limbs
     // and PhysX depenetration launches the player on the next simulation step.
-    FRotator previousRotation{}; FVector previousPosition{}, initialLinear{}, initialAngular{};
-    ReadLocalRagdollPelvisPhysics(mainPlayer, previousPosition, previousRotation, initialLinear, initialAngular);
-    UE_LOGI("ragdoll_model: entry velocity=(%.1f,%.1f,%.1f) angular=(%.1f,%.1f,%.1f)",
-        initialLinear.X, initialLinear.Y, initialLinear.Z, initialAngular.X, initialAngular.Y, initialAngular.Z);
-    CachedObjRef targetRef; targetRef.Set(target);
-    const bool haveView = view.Capture(mainPlayer, target);
-    if (!BeginRagdollVelocity(target)) return false;
-    if (!ConfigurePlayerRagdollMesh(source, target) || !targetRef.Get()) {CancelRagdollVelocity();return false;}
-    if (haveView && !view.Restore()) UE_LOGW("ragdoll_camera: entry attachment changed while configuring the model");
-    if (!targetRef.Get()) return false;
-    configured.Set(target); selected.Set(asset);
-    started = false;
-    readyAfter = std::chrono::steady_clock::now() + std::chrono::milliseconds(30);
-    UE_LOGI("ragdoll_model: selected geometry staged without plush-pelvis offset (mesh=%p asset=%p)", target, asset);
+    PrepareLocalRagdoll(mainPlayer, target, false);
     return false;
 }
 

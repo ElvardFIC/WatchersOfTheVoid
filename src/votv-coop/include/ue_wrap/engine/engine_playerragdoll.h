@@ -24,9 +24,10 @@ bool StartPlayerRagdollSimulation(void* body);
 // return false without a substitute. Physics blend stays zero for one pose
 // warmup; StartPlayerRagdollSimulation hands the posed bones to physics.
 bool ConfigurePlayerRagdollMesh(void* sourceMesh, void* targetMesh);
-// Upgrade the native local body once per component/model generation. Preserve the
-// selected model's world geometry, not the small plushie's pelvis height, while
-// retaining native ownership, recovery and interaction callbacks.
+// Call each local game-thread tick, including while upright: arm construction
+// and camera handoffs before native ragdollMode runs. Prepare the selected rig
+// before its camera/physics/impulses and retain current yaw through native wakeup.
+// A body predating hook readiness is converted once per component/model generation.
 bool RefreshLocalRagdollModel(void* mainPlayer);
 struct ArticulatedBone { uint16_t index = 0; FTransform world{}; };
 bool ReadArticulatedPose(void* skeletalMesh, std::vector<ArticulatedBone>& bones);

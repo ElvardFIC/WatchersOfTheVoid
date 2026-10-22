@@ -30,14 +30,17 @@ Every player must use this exact **0.9.2157** package and the same game version.
 
 ## Current status
 
-This package contains **DLL b2183 / network protocol 2183** and retains the
+This package contains **DLL b2184 / network protocol 2184** and retains the
 fish-branch integration and accumulated Watchers of the Void improvements.
-Ragdoll limb batches now rotate at actual sends and survive coalesced game ticks.
-Focused regressions plus native momentum8/8,camera10/10,surfaces24/24,installed
+The selected ragdoll starts immediately during native construction. Getting up
+preserves the current heading without the delayed forced turn. Limb batches
+rotate at actual sends and survive coalesced game ticks.
+Focused regressions plus native completed entry/recovery8/8,momentum8/8,
+camera10/10,surfaces24/24,installed
 models30/30 and remote sleep/sit/ragdoll transitions36/36 pass. Six bidirectional
 LAN runs pass with250ms outbound lag,40ms jitter and5% loss on both peers.
 Visual/input acceptance remains with the owner. The full65-group result belongs
-to b2178 and has not been repeated for b2183.
+to b2178 and has not been repeated for b2184.
 See RELEASE.md for the current qualification. Every player must update together.
 
 Event and creature coverage remains partial. The frequency setting preserves native

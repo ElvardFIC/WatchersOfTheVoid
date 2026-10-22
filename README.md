@@ -10,9 +10,11 @@ This is experimental software; multiplayer verification is still in progress.
 
 ## Fork status - 22 October 2026
 
-The current qualified DLL is **b2183 / protocol 2183**, for game **0.9.0n**.
-It preserves every ragdoll limb across transport/game-thread cadence while retaining
-native momentum, camera and launch fixes. Eight momentum cases, ten camera cases,
+The current qualified DLL is **b2184 / protocol 2184**, for game **0.9.0n**.
+It initializes the selected ragdoll during native construction and preserves the
+current heading through get-up, removing the entry pause and delayed forced turn.
+It retains limb synchronization, native momentum and launch fixes.
+Eight completed entry/recovery cases, eight momentum cases, ten camera cases,
 24 surface cases,30 installed models,36 remote state transitions and six impaired
 LAN runs pass. Rendered/input acceptance remains with the owner.
 See [ragdoll work state](agent/RAGDOLL_CONTINUATION.md).
@@ -22,7 +24,7 @@ original fork icon, models and enabled loader layout. See [release notes](packag
 Local packaging does not publish a binary release online.
 
 The previous b2178 Release passed 65/65 offline groups. That full suite has not
-been repeated for b2183; the current qualification is specific to ragdoll changes.
+been repeated for b2184; the current qualification is specific to ragdoll changes.
 
 Complete event/creature coverage, paid repairs and resource accounting remain open.
 The fresh native-asset audit remains deferred; full public-prose and fact-row CI

@@ -35,6 +35,10 @@
 
 namespace harness::autotest {
 void RunRagdollRobustness(void* local, bool catalogOnly);
+void RunRagdollTransitionAcceptance(void* local);
+void BeginNativeRagdollMomentumProbe(void* local, const ue_wrap::FVector& expected);
+bool ReadNativeRagdollMomentumProbe(float& mean, float& pelvis, int& count);
+void EndNativeRagdollMomentumProbe();
 namespace {
 
 namespace R = ue_wrap::reflection;
@@ -472,7 +476,7 @@ void CheckMomentumTransitions(void* local) {
         coop::local_body::RequestSkin(skin);::Sleep(1500);
         for(const auto& motion:motions) {
             if(motion.nativeInput && ReadEnv("VOTVCOOP_RAGDOLL_NATIVE_MOVEMENT_PROBE")!="1")continue;
-            struct State { bool entered=false,recovered=false;int samples=0;float bestMean=-1.e9f,bestPelvis=-1.e9f;ue_wrap::FVector expected{}; };
+            struct State { bool entered=false,recovered=false;int samples=0,nativeBodies=0;float bestMean=-1.e9f,bestPelvis=-1.e9f;ue_wrap::FVector expected{}; };
             auto state=std::make_shared<State>();
             state->expected=motion.velocity;
             if(motion.nativeInput) {
@@ -503,6 +507,11 @@ void CheckMomentumTransitions(void* local) {
                 // velocity consumed by fallImpulse after Delay(0), not a mod kick.
                 if(motion.nativeInput)std::memcpy(&state->expected,static_cast<uint8_t*>(local)+offset,sizeof(state->expected));
                 else std::memcpy(static_cast<uint8_t*>(local)+offset,&motion.velocity,sizeof(motion.velocity));
+                // The acceptance thread can run before the first body tick in a
+                // newly loaded world. Register the same upright watcher used by
+                // KeepPlayermodelVisible before measuring the first native spawn.
+                E::RefreshLocalRagdollModel(local);
+                BeginNativeRagdollMomentumProbe(local,state->expected);
                 state->entered=E::SetMainPlayerRagdollMode(local,true,false,false);
                 E::RefreshLocalRagdollModel(local);done->store(1);
             });
@@ -526,6 +535,12 @@ void CheckMomentumTransitions(void* local) {
                         if(label.Set<int32_t>(L"BoneIndex",bone.index) && ue_wrap::Call(mesh,label) && label.GetRaw(L"ReturnValue",&name,sizeof(name)) &&
                             velocity.Set<R::FName>(L"BoneName",name) && ue_wrap::Call(mesh,velocity) && velocity.GetRaw(L"ReturnValue",&v,sizeof(v))){mean+=project(v);++count;}
                     }
+                    float nativeMean=0,nativePelvis=0;int nativeCount=0;
+                    if(ReadNativeRagdollMomentumProbe(nativeMean,nativePelvis,nativeCount)){
+                        state->nativeBodies=nativeCount;
+                        state->bestMean=(std::max)(state->bestMean,nativeMean);
+                        state->bestPelvis=(std::max)(state->bestPelvis,nativePelvis);
+                    }
                     if(count){++state->samples;state->bestMean=(std::max)(state->bestMean,mean/count);
                         state->bestPelvis=(std::max)(state->bestPelvis,project(linear));}
                     done->store(1);
@@ -541,13 +556,14 @@ void CheckMomentumTransitions(void* local) {
             if(!WaitDone(done,8000))return;
             const auto expected=state->expected;
             const float speed=std::sqrt(expected.X*expected.X+expected.Y*expected.Y+expected.Z*expected.Z);
-            const bool ok=state->entered && state->recovered && state->samples>=5 && state->bestMean>speed*0.4f &&
+            const bool ok=state->entered && state->recovered && state->samples>=5 && state->nativeBodies==17 && state->bestMean>speed*0.4f &&
                 state->bestPelvis>speed*0.4f && state->bestMean<speed*1.6f;
             ++total;if(ok)++passed;
-            UE_LOGI("ragdoll_momentum_case: %s skin=%s case=%s input=%.1f mean=%.1f pelvis=%.1f samples=%d entered=%d recovered=%d",
-                ok?"PASS":"FAIL",skin,motion.name,speed,state->bestMean,state->bestPelvis,state->samples,state->entered,state->recovered);
+            UE_LOGI("ragdoll_momentum_case: %s skin=%s case=%s input=%.1f mean=%.1f pelvis=%.1f samples=%d entered=%d recovered=%d native-bodies=%d",
+                ok?"PASS":"FAIL",skin,motion.name,speed,state->bestMean,state->bestPelvis,state->samples,state->entered,state->recovered,state->nativeBodies);
         }
     }
+    GT::Post([]{EndNativeRagdollMomentumProbe();});
     const int expectedCases=ReadEnv("VOTVCOOP_RAGDOLL_NATIVE_MOVEMENT_PROBE")=="1"?10:8;
     UE_LOGI("ragdoll_momentum_acceptance: %s %d/%d",passed==total&&total==expectedCases?"PASS":"FAIL",passed,total);
 }
@@ -736,6 +752,7 @@ void RunRagdollSpawnProbe() {
     }
     UE_LOGI("ragdollspawn: local player resolved -- letting the world settle 5 s");
     ::Sleep(5000);
+    if (ReadEnv("VOTVCOOP_RAGDOLL_TRANSITION_TEST") == "1") { RunRagdollTransitionAcceptance(*local); return; }
     if (ReadEnv("VOTVCOOP_RAGDOLL_ALL_ACCEPTANCE") == "1") {
         CheckMomentumTransitions(*local); CheckCameraTransitions(*local);
         RunRagdollRobustness(*local,false); RunRagdollRobustness(*local,true);

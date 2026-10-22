@@ -31,18 +31,21 @@ namespace E = ue_wrap::engine;
 namespace R = ue_wrap::reflection;
 using ue_wrap::FVector;
 using ue_wrap::FRotator;
+std::atomic<bool> g_surfaceTravel{false};
+const char* g_surfacePhase="setup";
 UE_FACT_FN(kSurfaceOpenLevel,"ragdoll_surface_probe",L"GameplayStatics",L"OpenLevel",Declared);
 void LogTravel(void*,void* source,void*) {
+    g_surfaceTravel=true;
     const auto frame=ue_wrap::ufunction_hook::CurrentCallerFrame();
     R::FName level{};
     const int offset=frame.function?R::FindPropertyOffset(frame.function,L"K2Node_CustomEvent_LevelName"):-1;
     if(frame.locals && offset>=0)std::memcpy(&level,frame.locals+offset,sizeof(level));
     bool rag=false,dead=false;void* player=coop::players::Registry::Get().Local();
     if(player)E::ReadMainPlayerRagdollState(player,rag,dead);
-    UE_LOGW("ragdoll_surface_travel: level='%ls' rag=%d dead=%d source='%ls' script='%ls' offset=%d",
+    UE_LOGW("ragdoll_surface_travel: level='%ls' rag=%d dead=%d source='%ls' script='%ls' offset=%d phase=%s",
         R::ToString(level).c_str(),rag,dead,
         source&&R::IsLive(source)?R::ClassNameOf(source).c_str():L"<none>",
-        frame.function?R::ToString(R::NameOf(frame.function)).c_str():L"<native>",frame.codeOffset);
+        frame.function?R::ToString(R::NameOf(frame.function)).c_str():L"<native>",frame.codeOffset,g_surfacePhase);
 }
 
 template<class F> bool Game(F action) {
@@ -60,6 +63,24 @@ void* Field(void* object, const wchar_t* name) {
 }
 void* Fn(void* object, const wchar_t* name) { return R::FindDispatchFunctionCached(R::ClassOf(object), name); }
 bool Finite(const FVector& p) { return std::isfinite(p.X) && std::isfinite(p.Y) && std::isfinite(p.Z); }
+bool FullyRecovered(void* player) {
+    bool rag=true,dead=true;int32_t offset=-1;uint8_t mask=0;
+    return player && E::ReadMainPlayerRagdollState(player,rag,dead) && !rag && !dead &&
+        !E::GetLocalRagdollBodyMesh(player) && R::FindBoolProperty(R::ClassOf(player),L"isWakingUp",offset,mask) &&
+        (static_cast<uint8_t*>(player)[offset]&mask)==0;
+}
+void RecoveryProbe(void* player,const char* phase) {
+    g_surfacePhase=phase;
+    if(!player || !R::IsLive(player))return;
+    FVector position{},camera{},previous{};E::TryGetActorLocation(player,position);
+    const int offset=R::FindPropertyOffset(R::ClassOf(player),L"lastLoc");
+    if(offset>=0)std::memcpy(&previous,static_cast<uint8_t*>(player)+offset,sizeof(previous));
+    void* component=Field(player,L"Camera");
+    if(component){ue_wrap::ParamFrame loc(Fn(component,L"K2_GetComponentLocation"));
+        if(ue_wrap::Call(component,loc))loc.GetRaw(L"ReturnValue",&camera,sizeof(camera));}
+    UE_LOGI("ragdoll_surface_recovery: phase=%s complete=%d pawn=(%.1f,%.1f,%.1f) camera=(%.1f,%.1f,%.1f) last=(%.1f,%.1f,%.1f)",
+        phase,FullyRecovered(player),position.X,position.Y,position.Z,camera.X,camera.Y,camera.Z,previous.X,previous.Y,previous.Z);
+}
 void* ExpectedMesh(const std::string& skin) {
     return coop::client_model::IsNativeSkin(skin)?coop::local_body::NativeBodyMesh():coop::client_model::GetSkinMesh(skin);
 }
@@ -97,12 +118,20 @@ bool MakePlatform(const std::shared_ptr<Check>& s, float pitch) {
     ue_wrap::ParamFrame mobility(Fn(mesh,L"SetMobility"));
     ue_wrap::ParamFrame asset(Fn(mesh,L"SetStaticMesh"));
     ue_wrap::ParamFrame collision(Fn(mesh,L"SetCollisionEnabled"));
+    ue_wrap::ParamFrame objectType(Fn(mesh,L"SetCollisionObjectType"));
     ue_wrap::ParamFrame response(Fn(mesh,L"SetCollisionResponseToAllChannels"));
     if (!mobility.Set<uint8_t>(L"NewMobility",2) || !ue_wrap::Call(mesh,mobility) ||
         !asset.Set<void*>(L"NewMesh",cube) || !ue_wrap::Call(mesh,asset) ||
         !collision.Set<uint8_t>(L"NewType",3) || !ue_wrap::Call(mesh,collision) ||
+        // A spawned/movable fixture is WorldDynamic, not map geometry. Mobility
+        // alone leaves StaticMeshActor's WorldStatic channel unchanged, making
+        // native camera wall-clipping detection treat the transported fixture
+        // as a crossed map wall during recovery. All physical responses still block.
+        !objectType.Set<uint8_t>(L"Channel",1) || !ue_wrap::Call(mesh,objectType) ||
         !response.Set<uint8_t>(L"NewResponse",2) || !ue_wrap::Call(mesh,response) ||
         !E::SetActorScale3D(actor,{20.f,20.f,.4f})) return false;
+    ue_wrap::ParamFrame readType(Fn(mesh,L"GetCollisionObjectType"));
+    if(!ue_wrap::Call(mesh,readType) || readType.Get<uint8_t>(L"ReturnValue")!=1) return false;
     ue_wrap::trace::Hit hit;
     const FVector start{s->centre.X,s->centre.Y,s->centre.Z+800.f};
     const FVector end{s->centre.X,s->centre.Y,s->centre.Z-800.f};
@@ -168,6 +197,7 @@ void RemoteTransitions(const std::shared_ptr<Check>& s, const char* skin) {
 }
 
 void RunRagdollRobustness(void* local, bool catalogOnly) {
+    if(g_surfaceTravel)return;
     Game([]{ue_wrap::ufunction_hook::InstallPostHook(ue_wrap::facts::Resolve(kSurfaceOpenLevel),&LogTravel);});
     struct Surface {const char* name;float pitch;bool moving;};
     const Surface surfaces[]={{"flat",0,false},{"slope25",25,false},{"slope35",35,false},{"moving",0,true}};
@@ -202,18 +232,25 @@ void RunRagdollRobustness(void* local, bool catalogOnly) {
                 } else s->setup=MakePlatform(s,surface.pitch);
             })) return;
             ::Sleep(150);
-            if(!Game([s] {if(s->setup)s->entered=E::SetMainPlayerRagdollMode(s->pawn.Get(),true,false,false);}))return;
+            if(!Game([s] {if(s->setup){E::RefreshLocalRagdollModel(s->pawn.Get());s->entered=E::SetMainPlayerRagdollMode(s->pawn.Get(),true,false,false);}}))return;
             for(int tick=0;tick<36 && s->entered;++tick) {::Sleep(50);if(!Game([s,surface,tick]{Sample(s,surface.moving,tick);}))return;}
-            if(!Game([s]{if(s->pawn.Get())E::ForceMainPlayerWakeup(s->pawn.Get());}))return;
-            ::Sleep(500);
-            if(!Game([s]{bool rag=true,dead=true;void* pawn=s->pawn.Get();
-                s->recovered=pawn&&E::ReadMainPlayerRagdollState(pawn,rag,dead)&&!rag&&!dead&&!E::GetLocalRagdollBodyMesh(pawn);
+            // Use the real C-key recovery, which moves the capsule to the
+            // current view before blending upright. ForceWakeup is an immediate
+            // rescue/reset and can snap across scenery from a sliding head.
+            if(!Game([s]{if(s->pawn.Get()){RecoveryProbe(s->pawn.Get(),"before-wakeup");E::SetMainPlayerRagdollMode(s->pawn.Get(),false,false,false);RecoveryProbe(s->pawn.Get(),"wakeup");}}))return;
+            // The rag flag clears before the get-up animation finishes. Keep the
+            // supporting collider until the native timeline has also completed.
+            for(int tick=0;tick<80 && !s->recovered && !g_surfaceTravel;++tick){
+                ::Sleep(25);if(!Game([s]{s->recovered=FullyRecovered(s->pawn.Get());}))return;
+            }
+            if(g_surfaceTravel)return; // never continue a fixture with a pawn from the old world
+            if(!Game([s]{RecoveryProbe(s->pawn.Get(),"destroy-platform");
                 if(s->platform.Get())E::DestroyActor(s->platform.Get());
             }))return;
             // Let destruction remove the fixture's PhysX shape before moving
             // across where it was. A pending collider can still answer traces.
             ::Sleep(150);
-            if(!Game([s]{if(void* pawn=s->pawn.Get())MovePlayer(pawn,s->home);}))return;
+            if(!Game([s]{if(void* pawn=s->pawn.Get()){RecoveryProbe(pawn,"return-home");MovePlayer(pawn,s->home);RecoveryProbe(pawn,"returned-home");}}))return;
             const bool ok=s->setup&&s->entered&&s->recovered&&s->stable&&s->samples>=15&&s->matched>=10&&s->contacts>=10&&s->rise<180.f&&s->speed<3000.f&&(!surface.moving||s->platformMoved>140.f);
             ++total;if(ok)++passed;
             UE_LOGI("ragdoll_surface_case: %s skin=%s case=%s setup=%d entered=%d recovered=%d samples=%d selected=%d contact=%d rise=%.1f speed=%.1f slide=%.1f platform-move=%.1f",

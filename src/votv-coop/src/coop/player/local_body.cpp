@@ -190,8 +190,8 @@ void KeepPlayermodelVisible() {
         ue_wrap::engine::SetSceneComponentVisibility(Pup::GetNativeBodyMeshComponent(local), false, false);
         ue_wrap::engine::SetSceneComponentVisibility(Pup::GetMeshPlayerVisibleComponent(local), false, false);
     }
+    const bool ready = !sleeping && ue_wrap::engine::RefreshLocalRagdollModel(local);
     if (void* nativeRagdoll = ue_wrap::engine::GetLocalRagdollBodyMesh(local)) {
-        const bool ready = !sleeping && ue_wrap::engine::RefreshLocalRagdollModel(local);
         ue_wrap::engine::SetSceneComponentVisibility(nativeRagdoll, ready, false);
         if (!sleeping) {
             ue_wrap::engine::SetSceneComponentVisibility(Pup::GetNativeBodyMeshComponent(local), !ready, false);

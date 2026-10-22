@@ -10,7 +10,8 @@
 namespace test {
 enum Id{Player,Body,Mesh,Source,Asset,ActorClass,SkinClass,SceneClass,PrimitiveClass,
     NumBones,BoneName,BoneIndex,SocketLocation,SocketRotation,Linear,Angular,SetLinear,SetAngular,
-    Attach,Position,Collision,AllSim,Sim,Blend,AnySim,Physics,Arm,Controller,AttachParent,ControlRotation,WorldRotation,AllLinear,Count};
+    Attach,Position,Collision,AllSim,Sim,Blend,AnySim,Physics,Arm,Controller,AttachParent,ControlRotation,WorldRotation,AllLinear,
+    CrouchRoot,FinishSpawn,RelativeRotation,ComponentRotation,MainGraph,RagdollMode,WorldPose,ComponentLocation,Count};
 struct Obj{int id=0,serial=1;bool live=true;std::array<uint8_t,4096> storage{};} objects[Count];
 struct Params{void* parent=nullptr;ue_wrap::reflection::FName bone{};int32_t index=0;
     uint8_t locationRule=0,rotationRule=0,scaleRule=0,collision=0;bool weld=false,simulate=false,sweep=false,teleport=false,skip=false;
@@ -19,14 +20,15 @@ void* At(Id id){return &objects[id];}
 ue_wrap::FVector pelvis{0,0,10},origin{},initial{0,0,-25};
 float lowest=0;int positions=0,configurations=0,returnErrors=0;bool attached=false,attachOK=true,configuredOK=true;
 std::function<void()> onAttach;std::wstring missingParam;
-ue_wrap::FRotator armRotation{},controlRotation{-35,385,0};void* armParent=nullptr;
-int cameraWrites=0;std::function<void()> onRotation;
+ue_wrap::FRotator armRotation{},controlRotation{-35,385,0};void* armParent=nullptr;ue_wrap::FVector armPosition{30,40,50};
+int cameraWrites=0;std::function<void()> onRotation;float actorYaw=0;void* callerFunction=nullptr;
 std::map<int,ue_wrap::FVector> velocities;bool bodySim=true;int velocityWrites=0;
 ue_wrap::ufunction_hook::PreNativeCallback velocityHook=nullptr;bool velocityArmed=false;
 void Put(void* obj,size_t off,void* value){std::memcpy(static_cast<uint8_t*>(obj)+off,&value,sizeof(value));}
 void Reset(){for(int i=0;i<Count;++i){objects[i].id=i;++objects[i].serial;objects[i].live=true;}
     Put(At(Player),0xc40,At(Body));Put(At(Body),0x230,At(Mesh));Put(At(Mesh),0x300,At(Asset));
     Put(At(Player),0x600,At(Arm));armParent=At(Mesh);armRotation={};controlRotation={-35,385,0};cameraWrites=0;onRotation={};
+    Put(At(Player),0x610,At(CrouchRoot));Put(At(Body),0x248,At(Player));actorYaw=0;callerFunction=nullptr;
     pelvis={0,0,10};origin={};lowest=0;positions=configurations=returnErrors=0;attached=false;attachOK=configuredOK=true;onAttach={};missingParam.clear();
     velocities.clear();bodySim=true;velocityWrites=0;}
 }
@@ -37,6 +39,7 @@ int32_t SlotSerial(int32_t i){return test::objects[i].serial;}int32_t AllocateSl
 void* ObjectAt(int32_t i){return i>=0 && i<test::Count?&test::objects[i]:nullptr;}
 bool IsLiveByIndex(void* p,int32_t i){return ObjectAt(i)==p && IsLive(p);}void* ClassOf(void*){return test::At(test::ActorClass);}
 int32_t FindPropertyOffset(void*,const wchar_t* name){if(!wcscmp(name,L"lag"))return test::missingParam==L"lag"?-1:0x600;
+    if(!wcscmp(name,L"crouchRoot"))return 0x610;
     return !wcscmp(name,L"PhysicsAssetOverride")?0x300:-1;}
 void* FindClass(const wchar_t* name){using namespace test;if(!wcscmp(name,L"SkinnedMeshComponent"))return At(SkinClass);
     if(!wcscmp(name,L"SceneComponent"))return At(SceneClass);if(!wcscmp(name,L"PrimitiveComponent"))return At(PrimitiveClass);return At(ActorClass);}
@@ -47,12 +50,18 @@ void* FindFunction(void*,const wchar_t* name){using namespace test;
         {L"SetPhysicsAngularVelocityInDegrees",SetAngular},{L"K2_AttachToComponent",Attach},
         {L"K2_SetWorldLocation",Position},{L"SetCollisionEnabled",Collision},{L"SetAllBodiesSimulatePhysics",AllSim},
         {L"SetSimulatePhysics",Sim},{L"SetAllBodiesPhysicsBlendWeight",Blend},{L"IsAnySimulatingPhysics",AnySim},{L"SetPhysicsAsset",Physics},
-        {L"GetAttachParent",AttachParent},{L"GetControlRotation",ControlRotation},{L"K2_SetWorldRotation",WorldRotation}};
+        {L"GetAttachParent",AttachParent},{L"GetControlRotation",ControlRotation},{L"K2_SetWorldRotation",WorldRotation},
+        {L"FinishSpawningActor",FinishSpawn},{L"K2_SetRelativeRotation",RelativeRotation},{L"K2_GetComponentRotation",ComponentRotation},
+        {L"K2_GetComponentLocation",ComponentLocation},{L"K2_SetWorldLocationAndRotation",WorldPose}};
     if(!wcscmp(name,L"SetAllPhysicsLinearVelocity"))return At(AllLinear);
     for(const auto& row:rows)if(!wcscmp(name,row.first))return At(row.second);return nullptr;
 }
 void* FindDispatchFunctionCached(void* cls,const wchar_t* name){return FindFunction(cls,name);}
-std::wstring ToString(const FName& name){return name.ComparisonIndex==1?L"pelvis":name.ComparisonIndex==2?L"chest":L"None";}
+const FName& NameOf(void* fn){static FName value;value={static_cast<test::Obj*>(fn)->id+100,0};return value;}
+std::wstring ClassNameOf(void* object){return object==test::At(test::Body)?L"playerRagdoll_C":L"other";}
+std::wstring ToString(const FName& name){if(name.ComparisonIndex==test::MainGraph+100)return L"ExecuteUbergraph_mainPlayer";
+    if(name.ComparisonIndex==test::RagdollMode+100)return L"ragdollMode";
+    return name.ComparisonIndex==1?L"pelvis":name.ComparisonIndex==2?L"chest":L"None";}
 int32_t FunctionFrameSize(void*){return sizeof(test::Params);}
 std::vector<ParamInfo> FunctionParams(void* fn){using namespace test;std::vector<ParamInfo> p;
     const auto add=[&](const wchar_t* n,int off){if(missingParam==n)return;ParamInfo x{};x.name=n;x.offset=off;p.push_back(x);};
@@ -65,8 +74,8 @@ std::vector<ParamInfo> FunctionParams(void* fn){using namespace test;std::vector
     P("NewPhysicsAsset",parent);P("bForceReInit",teleport);
     P("NewRotation",rotation);
     if(fn==At(NumBones)||fn==At(BoneIndex))P("ReturnValue",index);else if(fn==At(BoneName))P("ReturnValue",bone);
-    else if(fn==At(SocketLocation)||fn==At(Linear)||fn==At(Angular))P("ReturnValue",vector);
-    else if(fn==At(SocketRotation)||fn==At(ControlRotation))P("ReturnValue",rotation);
+    else if(fn==At(SocketLocation)||fn==At(ComponentLocation)||fn==At(Linear)||fn==At(Angular))P("ReturnValue",vector);
+    else if(fn==At(SocketRotation)||fn==At(ControlRotation)||fn==At(ComponentRotation))P("ReturnValue",rotation);
     else if(fn==At(AttachParent))P("ReturnValue",parent);else if(fn==At(AnySim))P("ReturnValue",result);
 #undef P
     return p;
@@ -86,8 +95,11 @@ bool CallFunction(void* object,void* fn,void* raw){using namespace test;auto& p=
     if(fn==At(Position)){CHECK(!p.sweep && p.teleport);++positions;const auto delta=p.vector.Z-origin.Z;pelvis.Z+=delta;lowest+=delta;origin=p.vector;}
     if(fn==At(AttachParent))p.parent=armParent;
     if(fn==At(ControlRotation))p.rotation=controlRotation;
+    if(fn==At(ComponentRotation))p.rotation=armRotation;
+    if(fn==At(ComponentLocation))p.vector=armPosition;
     if(fn==At(WorldRotation)){CHECK(!p.sweep && p.teleport);armRotation=p.rotation;++cameraWrites;
         auto callback=std::move(onRotation);onRotation={};if(callback)callback();}
+    if(fn==At(WorldPose)){CHECK(!p.sweep && p.teleport);armRotation=p.rotation;armPosition=p.vector;++cameraWrites;}
     if(fn==At(AnySim))p.result=true;return true;
 }
 }
@@ -97,6 +109,8 @@ Function::Function(detail::MacroToken,const char* ident,const char* feature,cons
 Resolved Resolve(const Function& row){return Resolved(reflection::FindFunction(nullptr,row.Name()),&row);}
 }
 namespace ue_wrap::ufunction_hook {
+bool InstallPostHook(const facts::Resolved& fn,PostNativeCallback,bool){return bool(fn);}
+CallerFrame CurrentCallerFrame(){return {test::callerFunction,nullptr};}
 bool InstallPreHook(const facts::Resolved& fn,PreNativeCallback cb,bool armed){test::velocityHook=cb;test::velocityArmed=armed;return bool(fn);}
 bool SetArmed(void*,PreNativeCallback cb,bool armed){test::velocityHook=cb;test::velocityArmed=armed;return true;}
 }
@@ -104,18 +118,55 @@ namespace ue_wrap::world_identity{void* CurrentWorld(){return nullptr;}void* Wor
 namespace ue_wrap::log{void Write(Level,const char* fmt,...){if(std::string(fmt).find("unknown param")!=std::string::npos)++test::returnErrors;}}
 namespace ue_wrap::puppet{void* GetMeshPlayerVisibleComponent(void*){return test::At(test::Source);}void* GetComponentSkeletalMeshAsset(void*){return test::At(test::Asset);}}
 namespace ue_wrap::engine{
-bool RebuildPlayerRagdollPhysics(void*,void*){test::armRotation={90,23,-67};test::velocities.clear();return true;}
+bool RebuildPlayerRagdollPhysics(void*,void*){if(test::armParent==test::At(test::Mesh))test::armRotation={90,23,-67};test::velocities.clear();return true;}
 void* GetController(void*){return test::At(test::Controller);}
+void SetControlRotation(void*,const FRotator& value){test::controlRotation=value;}
+bool SetActorRotation(void*,const FRotator& value){if(test::armParent==test::At(test::CrouchRoot)){
+    test::armRotation.Yaw+=value.Yaw-test::actorYaw;test::armPosition={-test::armPosition.Y,test::armPosition.X,test::armPosition.Z};}
+    test::actorYaw=value.Yaw;return true;}
 void* BeginDeferredSpawn(void*,const FVector&,const FRotator&){return nullptr;}
 bool FinishDeferredSpawn(void*,const FVector&,const FRotator&){return false;}
 bool DestroyActor(void*){return true;}
 bool GetAttachParentActor(void*,void*& parent){parent=test::attached?test::At(test::Body):nullptr;return true;}
 bool ConfigurePlayerRagdollMesh(void*,void*){++test::configurations;if(!test::configuredOK)return false;
-    test::armRotation={90,23,-67};test::origin={};test::pelvis={0,0,100};test::lowest=0;test::velocities.clear();test::bodySim=false;return true;}
+    if(test::armParent==test::At(test::Mesh))test::armRotation={90,23,-67};
+    test::origin={};test::pelvis={0,0,100};test::lowest=0;test::velocities.clear();test::bodySim=false;return true;}
 bool GetBoneWorldLocationByName(void*,const wchar_t*,FVector& out){out=test::pelvis;return true;}
 FVector GetComponentLocation(void*){return test::origin;}
 }
 int main(int argc,char** argv){using namespace test;Reset();
+    if(argc>1 && std::string(argv[1])=="transition"){
+        Put(At(Player),0xc40,nullptr);armParent=At(CrouchRoot);initial={};
+        CHECK(!ue_wrap::engine::RefreshLocalRagdollModel(At(Player)));
+        callerFunction=At(RagdollMode);
+        ue_wrap::engine::OnLocalRagdollConstructed(nullptr,At(Player),At(Body));
+        CHECK(configurations==1 && bodySim && !velocityArmed);
+        Put(At(Player),0xc40,At(Body));armParent=At(Mesh);armRotation={0,-90,0};
+        ue_wrap::engine::OnNativeRagdollArmRotation(At(Arm),At(Player),nullptr);
+        CHECK(armRotation.Yaw==385 && !ue_wrap::engine::g_entryViewPending);
+        CHECK(ue_wrap::engine::RefreshLocalRagdollModel(At(Player))); // Same native call, no 30 ms freeze.
+        const int writes=cameraWrites;armRotation={20,147,35};callerFunction=At(MainGraph);
+        ue_wrap::engine::OnNativeRagdollArmRotation(At(Arm),At(Player),nullptr);
+        CHECK(cameraWrites==writes && armRotation.Yaw==147); // Mouse/head follow remains native.
+        for(float yaw:{147.f,-175.f,385.f}){
+            ue_wrap::engine::g_recoveryAligned=false;
+            armParent=At(CrouchRoot);armRotation={20,yaw,35};controlRotation={0,-90,0};actorYaw=-90;
+            const auto beforePosition=armPosition;
+            ue_wrap::engine::OnNativeRagdollArmAttached(At(Arm),At(Player),nullptr);
+            CHECK(actorYaw==yaw && controlRotation.Yaw==yaw && armRotation.Yaw==yaw && armRotation.Roll==35);
+            CHECK(armPosition.X==beforePosition.X && armPosition.Y==beforePosition.Y && armPosition.Z==beforePosition.Z);
+            // Native timeline levels pitch/roll, then clears relative rotation.
+            // It now reads the same yaw, instead of forcing the old -90 heading.
+            controlRotation={0,actorYaw,0};CHECK(controlRotation.Yaw==yaw);
+        }
+        const int recoveredWrites=cameraWrites;
+        ue_wrap::engine::OnNativeRagdollArmAttached(At(Arm),At(Source),nullptr);
+        CHECK(cameraWrites==recoveredWrites);
+        ++objects[Mesh].serial;
+        ue_wrap::engine::OnNativeRagdollArmAttached(At(Arm),At(Player),nullptr);
+        CHECK(cameraWrites==recoveredWrites);
+        puts("PASS native construction has no warmup freeze; recovery keeps current view yaw through native timeline");return 0;
+    }
     if(argc>1 && std::string(argv[1])=="momentum"){
         initial={};velocities[2]={-100,0,0};
         CHECK(!ue_wrap::engine::RefreshLocalRagdollModel(At(Player)));

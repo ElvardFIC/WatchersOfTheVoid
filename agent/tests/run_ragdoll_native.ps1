@@ -15,6 +15,8 @@ if($LASTEXITCODE -ne 0){throw 'Native ragdoll model entry regression failed'}
 if($LASTEXITCODE -ne 0){throw 'Native ragdoll camera regression failed'}
 & "$output/native.exe" momentum
 if($LASTEXITCODE -ne 0){throw 'Native ragdoll momentum regression failed'}
+& "$output/native.exe" transition
+if($LASTEXITCODE -ne 0){throw 'Native ragdoll construction/recovery transition failed'}
 if($FaultControls){
     # Compile the actual substrate with its camera correction disabled. The same
     # regression must reject it; a positive-only camera test could be blind.
@@ -56,6 +58,27 @@ if($FaultControls){
     $controlOutput | Set-Content -LiteralPath (Join-Path $output 'momentum-disabled.log')
     if($controlExit -eq 0 -or -not ($controlOutput -join "`n").Contains('velocities[1].X-600')){throw 'Momentum regression did not reject disabled command holding'}
     Write-Output 'PASS negative control: dropping native warmup commands is rejected'
+    foreach($control in @(
+        @{Name='construction';Needle='void OnLocalRagdollConstructed(void*, void* source, void* result) {';Failure='configurations==1 && bodySim'},
+        @{Name='recovery';Needle='void OnNativeRagdollArmAttached(void* component, void* source, void*) {';Failure='actorYaw==yaw'}
+    )){
+        if(-not $source.Contains($control.Needle)){throw 'Transition negative-control seam missing'}
+        $mutant=Join-Path $output ($control.Name+'-disabled.cpp')
+        [IO.File]::WriteAllText($mutant,$source.Replace($control.Needle,$control.Needle+"`n    return; // regression control"))
+        $fixture=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'ragdoll_native_test.cpp'))
+        $fixture=$fixture.Replace('../../src/votv-coop/src/ue_wrap/engine/engine_playerragdoll.cpp',$mutant.Replace('\','/'))
+        $fixture=$fixture.Replace('../../src/votv-coop/src/ue_wrap/core/call.cpp',"$checkout/src/votv-coop/src/ue_wrap/core/call.cpp".Replace('\','/'))
+        $testSource=Join-Path $output ($control.Name+'-disabled-test.cpp')
+        [IO.File]::WriteAllText($testSource,$fixture)
+        & cl /nologo /std:c++20 /EHsc /Gy /utf-8 "/I$checkout/src/votv-coop/include" `
+            "/Fo$output/$($control.Name)-disabled.obj" "/Fe$output/$($control.Name)-disabled.exe" $testSource /link /OPT:REF
+        if($LASTEXITCODE -ne 0){throw 'Transition negative control did not compile'}
+        $controlOutput=& "$output/$($control.Name)-disabled.exe" transition 2>&1
+        $controlExit=$LASTEXITCODE
+        $controlOutput | Set-Content -LiteralPath (Join-Path $output ($control.Name+'-disabled.log'))
+        if($controlExit -eq 0 -or -not ($controlOutput -join "`n").Contains($control.Failure)){throw 'Transition regression did not reject missing native lifecycle correction'}
+        Write-Output "PASS negative control: removed $($control.Name) correction is rejected"
+    }
 }
 if($CompileSources){foreach($unit in @('ue_wrap/engine/engine_playerragdoll','coop/player/local_streams','coop/player/local_body')){
     $name=$unit.Replace('/','_')

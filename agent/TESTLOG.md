@@ -1,6 +1,56 @@
 # TestLog — current status and source reports
 
-## Current release 0.9.2157 / b2183 — 22 October 2026
+## Current release 0.9.2157 / b2184 - 22 October 2026
+
+This supersedes the b2183 status below; package number and filename stay unchanged.
+Selected-character physics now starts in the local native FinishSpawningActor
+post-hook, before camera attachment and native impulses, without the polling pause.
+At native recovery attachment, preserve the camera world pose and hand current yaw
+to the capsule/controller once, preventing the late return to the pre-fall heading.
+Native fallImpulse, physics and get-up animation remain the owners of movement.
+
+PASS final exact-DLL native entry/recovery8/8 (instant selected simulation,
+completed wakeup, no delayed yaw drift and subsequent turning), momentum8/8,
+camera10/10,blocking dynamic-platform contact24/24,installed models30/30 and
+remote sleep/sit/ragdoll transitions36/36. Impaired LAN3/3 per direction passes
+with250ms lag,40ms jitter and5percent send loss; production construction hook
+fires on all six entries without a manual watcher setup in the peer driver.
+
+PASS focused native/skin/retry/stream, shared-screen C++ and personal-sleep
+regressions; four native correction-removal controls, stream old-behavior controls,
+ABI drill and18 reliable-routing negative controls. Both new camera dependencies
+match their live-captured references; the fact-row gate retains16 baseline
+violations and gains none. No new complete65-group pass.
+The legacy external toolchain/private laptop corpus is unavailable here.
+Production/build inputs frozen:2645; tested DLLs identical.
+Evidence: build/ragdoll-transition-check/verification.json and final logs.
+
+Full32-member ElvardFIC-WatchersOfTheVoid-0.9.2157.zip passes original branding,
+models, loader layout, byte comparisons and actual isolated unpacked startup.
+DLL SHA256:7bf4a68037a384605ae54fd9c8939564ba531f274d9b94fb6fc5f99617f647d2
+ZIP SHA256:cf0c122bb787876eb62e13a01f4896bc94468622460f4c559e4a89405f30955a
+Package proof: build/package-current/verification.json; archiveStartupVerified=true.
+
+The first impulse observer missed the first spawn's watcher registration; fix the
+acceptance setup before the native call. An artificial movable platform also
+retained StaticMeshActor's WorldStatic channel, triggering native camera wall
+travel on recovery. The final fixture explicitly verifies WorldDynamic and keeps
+all physical responses blocking. No native wall-detection suppression was added.
+The surface driver now uses ordinary C-key recovery through completed native
+animation, rather than ForceWakeup, whose immediate reset could snap a sliding
+head across scenery. A world change aborts the matrix instead of posting stale
+pawn tasks. Failed intermediate runs remain in build/ragdoll-transition-check/; they are not
+release evidence. Static terrain beyond the tested native ground remains open.
+
+Native test logs also expose the existing 768-slot script-name watch capacity
+being exhausted during world startup. Keep that registration-capacity issue open;
+this change does not enlarge the registry or claim the other refused lanes fixed.
+
+Entity and the normal installed profile are untouched. Owner rendered/input
+acceptance, other terrain/vehicles, native bed/chair and uninstalled rigs remain
+open. Branch updates retain AquaFishhh authorship and package0.9.2157.
+
+## Historical release 0.9.2157 / b2183 — 22 October 2026
 
 This status supersedes older package/build statements below. Existing open gameplay
 and implementation tasks remain open unless explicitly accepted.

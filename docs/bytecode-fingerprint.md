@@ -133,6 +133,12 @@ derived from the documented UE4.27 declarations ([AddForce](https://dev.epicgame
 Their parameter encoding reproduces the three captured impulse/velocity rows, and their
 native bodies hash as empty. These two derived entries still require live census validation.
 
+The ragdoll camera rows `SceneComponent.K2_SetRelativeRotation` and
+`K2_AttachToComponent` were generated from a live 0.9.0n capture on 22 October 2026.
+`agent/tests/ragdoll_transition_fingerprints_test.py` reproduces their signature and
+empty-body hashes, using captured `FinishSpawningActor` and
+`SetPhysicsLinearVelocity` as controls. Its four-function capture excerpt is checked in.
+
 A class row is resolved as its registration resolves it and fingerprinted. A `RuntimeClass` row with no
 class is keyed on the class its site resolved; the table carries an entry for every class that declares
 its function, and the row's key in the report is `*.<function>`. An any-class row checks the signature of

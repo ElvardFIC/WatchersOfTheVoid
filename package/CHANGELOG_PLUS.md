@@ -2,10 +2,11 @@
 
 - Replace the ragdoll toy with the selected character using the game's native physics.
 - Fix sky launches and upward camera snapping; preserve running momentum on entry.
+- Remove the model-swap pause on entry and delayed forced turning after getting up.
 - Fix remote ragdoll visibility and missing limb updates under lag or packet loss.
 - Preserve current main improvements to shared computers, balance, event retries and container contents.
 - Restore the full mod-manager package with the original icon, models and credits.
-- DLL/network b2183 for game 0.9.0n; all players must update together.
+- DLL/network b2184 for game 0.9.0n; all players must update together.
 
 ## 0.9.2156
 

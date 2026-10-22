@@ -1,0 +1,9 @@
+# Real VotV 0.9.0n native capture, 22 October 2026; signature-only excerpt.
+### gameplaystatics.finishspawningactor bdb90cbf23892f9f native
+sig(actor:P:objectproperty:actor,spawntransform:CPOF:structproperty:transform,returnvalue:POR:objectproperty:actor)
+### primitivecomponent.setphysicslinearvelocity 977a7e6c3b4e7196 native
+sig(newvel:P:structproperty:vector,baddtocurrent:P:boolproperty,bonename:P:nameproperty)
+### scenecomponent.k2_attachtocomponent 812aa84163b8b123 native
+sig(parent:P:objectproperty:scenecomponent,socketname:P:nameproperty,locationrule:P:enumproperty:eattachmentrule,rotationrule:P:enumproperty:eattachmentrule,scalerule:P:enumproperty:eattachmentrule,bweldsimulatedbodies:P:boolproperty,returnvalue:POR:boolproperty)
+### scenecomponent.k2_setrelativerotation af4be0f02a88e0f0 native
+sig(newrotation:P:structproperty:rotator,bsweep:P:boolproperty,sweephitresult:PO:structproperty:hitresult,bteleport:P:boolproperty)

@@ -23,6 +23,14 @@ selected geometry before physics, preserved camera direction and delayed native
 momentum commands, repeated entry/recovery and recycled-object guards.
 Its skin wrapper checks component shutdown before mesh replacement and per-body
 shutdown after the new physics asset is installed.
+`run_ragdoll_native.ps1 -FaultControls` also verifies immediate native-construction
+setup and the recovery camera handoff, including camera world position and yaw.
+Removing either correction must fail its control. The opt-in installed-game
+`VOTVCOOP_RAGDOLL_TRANSITION_TEST=1` matrix checks eight completed native wakeups,
+delayed heading drift and subsequent controller turning on Scientist and Kerfur.
+`ragdoll_transition_fingerprints_test.py` checks the two native camera references
+against a real 0.9.0n capture, with two existing signatures as format controls.
+It can regenerate those entries with `--capture <capture-file> --write`.
 These harnesses do not simulate PhysX or close the all-role C-key launch report.
 `run_shared_screen.ps1` also checks the production desktop traversal against an
 old boot snapshot applied after native startup, repeated power pages, desktop

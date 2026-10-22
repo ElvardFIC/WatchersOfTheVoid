@@ -3,7 +3,7 @@
 - Team/namespace: **ElvardFIC**. Select or create this team in Thunderstore before upload.
   The visible owner comes from the upload team, not an author field in manifest.json.
 - Package name: **WatchersOfTheVoid**; version: **0.9.2157**.
-- Internal DLL build / network protocol: **2183**; the package version is **0.9.2157**.
+- Internal DLL build / network protocol: **2184**; the package version is **0.9.2157**.
 - Expected dependency identifier after publication: `ElvardFIC-WatchersOfTheVoid-0.9.2157`.
 - Build with `package/pack_2157.ps1` and upload `dist/ElvardFIC-WatchersOfTheVoid-0.9.2157.zip` to the Voices of the Void community.
 - Preview README and icon before submitting. The supplied cover is retained at
