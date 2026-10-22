@@ -336,6 +336,8 @@ set(VOTVCOOP_SOURCES
     src/coop/interactables/window_stroke_sync.cpp
     src/coop/interactables/grime_sync.cpp
     src/coop/props/drink_spill_sync.cpp
+    src/coop/player/blood_sync.cpp
+    src/ue_wrap/actors/player_blood.cpp
     src/ue_wrap/devices/drink_spill.cpp
     src/coop/session/player_handshake.cpp
     src/coop/session/player_handshake_prefs.cpp

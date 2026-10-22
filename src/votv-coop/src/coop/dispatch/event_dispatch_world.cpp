@@ -33,6 +33,7 @@
 #include "coop/props/sponge_effects_sync.h"
 #include "coop/props/water_pour_sync.h"
 #include "coop/props/drink_spill_sync.h"
+#include "coop/player/blood_sync.h"
 #include "coop/world/wall_creative_sync.h"
 #include "coop/world/radio_sync.h"
 #include "coop/world/cargo_lift_sync.h"
@@ -179,6 +180,11 @@ bool HandleWorldEvent(net::Session& session,
     case net::ReliableKind::DrinkPour: {
         if(msg.payloadLen!=sizeof(net::DrinkPourPayload) || msg.senderPeerSlot<0 || msg.senderPeerSlot>=net::kMaxPeers)break;
         net::DrinkPourPayload p{};std::memcpy(&p,msg.payload,sizeof(p));coop::drink_spill_sync::ReceivePour(p,static_cast<uint8_t>(msg.senderPeerSlot));break;
+    }
+    case net::ReliableKind::PlayerBlood: {
+        if (msg.payloadLen!=sizeof(net::PlayerBloodPayload) || msg.senderPeerSlot<0 || msg.senderPeerSlot>=net::kMaxPeers) break;
+        net::PlayerBloodPayload p{}; std::memcpy(&p,msg.payload,sizeof(p));
+        coop::blood_sync::Receive(p,static_cast<uint8_t>(msg.senderPeerSlot)); break;
     }
     case net::ReliableKind::SpongeEffect: {
         if(msg.payloadLen!=sizeof(net::SpongeEffectPayload) || msg.senderPeerSlot<0 || msg.senderPeerSlot>=net::kMaxPeers)break;

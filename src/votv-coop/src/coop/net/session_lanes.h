@@ -225,6 +225,7 @@ inline Lane LaneForKind(ReliableKind k) {
     case ReliableKind::GrillHand:         return Lane::Normal; // owner hand state; host validates before relay
     case ReliableKind::WaterPour:         return Lane::Normal; // exact bucket birth request/reply, host validation
     case ReliableKind::WaterSplash:       return Lane::Normal; // host-only transient impact presentation
+    case ReliableKind::PlayerBlood:       return Lane::Normal; // owner drops validated by host, no blind relay
     case ReliableKind::GrayboarAction:    return Lane::Normal; // host-only cosmetic cues; no blind relay
     case ReliableKind::GrayboarTurn:      return Lane::Normal; // host-only animation state; no blind relay
     case ReliableKind::KavotiaState:      return Lane::Normal; // host phase snapshot; no gameplay-verb replay

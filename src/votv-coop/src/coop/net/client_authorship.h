@@ -167,6 +167,7 @@ constexpr ClientAuthorship AuthorshipOf(ReliableKind k) {
     case ReliableKind::WaterLaunch:
     case ReliableKind::DrinkLaunch:
     case ReliableKind::DrinkPour:
+    case ReliableKind::PlayerBlood:
     case ReliableKind::WaterPour:
     case ReliableKind::HandToyAudio:
     case ReliableKind::PlacedSave:

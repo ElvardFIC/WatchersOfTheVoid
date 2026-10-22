@@ -96,6 +96,7 @@
 #include "coop/session/join_beacon.h"
 #include "coop/interactables/grime_sync.h"
 #include "coop/props/drink_spill_sync.h"
+#include "coop/player/blood_sync.h"
 #include "coop/interactables/interactable_sync.h"
 #include "coop/interactables/atv_sync.h"
 #include "coop/interactables/drone_sync.h"
@@ -356,6 +357,7 @@ void Install(coop::net::Session& session) {
     coop::window_stroke_sync::Install(&session);  // the bay window's render-target dabs
     coop::grime_sync::Install(&session);  // surface grime (walls/ceiling/floor dirt decals)
     coop::drink_spill_sync::Install(&session);
+    coop::blood_sync::Install(&session);
     coop::trash_pile_sync::Install(&session);  // trash pile collect counters
     coop::broom_stroke::Install(&session);  // a client's broom stroke is run by the host, with what the client's stroke read
     coop::pack_trash_intent::Install(&session);  // a client's bagging of a pile is run by the host
@@ -554,6 +556,7 @@ void DisconnectSlot(coop::net::Session& session, int slot) {
     coop::water_pour_sync::OnPeerLeft(slot);
     coop::grime_sync::OnPeerLeftSlot(slot);
     coop::drink_spill_sync::OnPeerLeft(slot);
+    coop::blood_sync::OnPeerLeft(slot);
     coop::window_sync::OnPeerLeftSlot(slot);
     coop::grayboar_actions::OnPeerLeft(slot);
     coop::prop_drop_intent::OnPeerLeft(slot);
@@ -766,6 +769,7 @@ DisconnectStats DisconnectAll() {
     coop::voice_chat::OnDisconnect();
     coop::window_sync::OnDisconnect();
     coop::drink_spill_sync::OnDisconnect();
+    coop::blood_sync::OnDisconnect();
     coop::window_stroke_sync::OnDisconnect();
     coop::trash_pile_sync::OnDisconnect();
     coop::broom_stroke::OnDisconnect();  // with no session the game's broom sweeps as written
@@ -911,6 +915,7 @@ void TickGameplay(coop::net::Session& session, bool isConnected, bool isHost,
     { PP::Scope _s{PP::Bucket::Interactable}; ue_wrap::ScopedWalkTimer _w{"sync:window"}; coop::window_sync::Tick(); }  // base-window clean: deferred-apply retry (wipes go at the verb)
     { PP::Scope _s{PP::Bucket::Interactable}; ue_wrap::ScopedWalkTimer _w{"sync:window_stroke"}; coop::window_stroke_sync::Tick(); }  // bay-window dabs: send observed, replay received
     coop::drink_spill_sync::Tick();
+    coop::blood_sync::Tick();
     { PP::Scope _s{PP::Bucket::Interactable}; ue_wrap::ScopedWalkTimer _w{"sync:grime"}; coop::grime_sync::Tick(); }  // surface grime: the lowering verbs' watches + the end-of-play subscription, until they take
     { PP::Scope _s{PP::Bucket::Interactable}; ue_wrap::ScopedWalkTimer _w{"sync:movement_ledger"}; coop::movement_ledger::Tick(session); }  // HOST: throttled per-slot summary + the wire-vs-actor divergence sample (an ENGINE read, hence game thread)
     { PP::Scope _s{PP::Bucket::Interactable}; ue_wrap::ScopedWalkTimer _w{"sync:npc_host"}; coop::npc_sync::TickPoseStream(); }  // HOST: read NPCs -> publish EntityPose batch (host-only, no-op on client)

@@ -32,7 +32,7 @@ inline constexpr uint32_t kMagic = 0x564D5450u;
 // This file is past the 1500-line hard cap and stays there: it is the single-feature exception the
 // rule names. One wire format, whose enum, payload structs and static_asserts are read together;
 // splitting it would put a kind's number in one file and its bytes in another.
-inline constexpr uint16_t kProtocolVersion = 2186;  // package 2158 test release
+inline constexpr uint16_t kProtocolVersion = 2187;  // player bleeding presentation
 
 // Default LAN port (overridable via multivoid.ini "net.port=").
 inline constexpr uint16_t kDefaultPort = 47621;
@@ -1071,9 +1071,21 @@ enum class ReliableKind : uint8_t {
     DrinkSpill = 232, // host liquid/scorch decal births and canonical join/retirement
     DrinkLaunch = 233, // source-validated drink flight request and terminal host reply
     DrinkPour = 234, // validated native drink source sound and canonical transient cue
+    // Owner to host, then validated host to other peers; native cosmetic drops.
+    // No blind relay, health or viewport effects. Mid-bleed join sees new drops;
+    // expired drops are not replayed as history. PlayerBloodPayload.
+    PlayerBlood = 236,
 };
 
 #pragma pack(push, 1)
+
+struct PlayerBloodPayload {
+    uint32_t sequence;
+    float x, y, z, vx, vy, vz, size;
+    uint16_t playerNo;
+    uint8_t slot, reserved;
+};
+static_assert(sizeof(PlayerBloodPayload) == 36, "PlayerBloodPayload wire size");
 
 inline constexpr uint8_t kKavotiaLaying = 1, kKavotiaAiming = 2,
     kKavotiaCharging = 4, kKavotiaWindup = 8;
