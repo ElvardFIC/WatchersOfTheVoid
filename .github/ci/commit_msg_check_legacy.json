@@ -1,0 +1,60 @@
+{
+  "baseline": "db0f59a4916dcdc844162cddbe09a260147ce1a3",
+  "commits": {
+    "0dce3afed1a215d17cd75114dd3f2e3c8b9d7056": {
+      "message_sha256": "b76eb282e711e0c25a458a4215364367cf43c19806ce0a51292bdfe1a56ba0a0",
+      "scope": "merge",
+      "reason": "Published fork history retained; message formatting only."
+    },
+    "20ce3d0fb6fd03800e4da66247df92170f4e9b49": {
+      "message_sha256": "b76eb282e711e0c25a458a4215364367cf43c19806ce0a51292bdfe1a56ba0a0",
+      "scope": "merge",
+      "reason": "Published fork history retained; message formatting only."
+    },
+    "2a58d9344c5f358b367d300b304b787b3b24ebde": {
+      "message_sha256": "78ccb6259c717411e2590225fba46da71924209079fd329dd6b2434893548487",
+      "scope": "coop",
+      "reason": "Published fork history retained; message formatting only."
+    },
+    "332d362255df0f0b7151f5735cb326edfbcfb9c4": {
+      "message_sha256": "401a83cf88bbe5c5cb7f6b06f1f3b95e5a92747e6652d2ce643deed7f88bedbc",
+      "scope": "merge",
+      "reason": "Published fork history retained; message formatting only."
+    },
+    "60ea404a6c1e1f466df2ed642c0ebef93d206375": {
+      "message_sha256": "65833e5ddc3a9382244650e67d8b1fd8057df03401d48af1401fef9f202298a2",
+      "scope": "docs",
+      "reason": "Published fork history retained; message formatting only."
+    },
+    "7371d1454be0724c39a45829898d382b8fb04bb8": {
+      "message_sha256": "b76eb282e711e0c25a458a4215364367cf43c19806ce0a51292bdfe1a56ba0a0",
+      "scope": "merge",
+      "reason": "Published fork history retained; message formatting only."
+    },
+    "75413400ccfa8704baaf47e2883b62f332785298": {
+      "message_sha256": "b76eb282e711e0c25a458a4215364367cf43c19806ce0a51292bdfe1a56ba0a0",
+      "scope": "merge",
+      "reason": "Published fork history retained; message formatting only."
+    },
+    "7fced281e92c4cb2df0e37797bb533041022b087": {
+      "message_sha256": "96ece59053f98e1714af72aecb4236084d3bac5e86d174978e29c652effe5829",
+      "scope": "merge",
+      "reason": "Published fork history retained; message formatting only."
+    },
+    "852d667d694e9ba8d632d783125e49cffa7625f6": {
+      "message_sha256": "7f8043d010b8251bb523e3603dfb7e237ccf1a0faaa87de87f89c84576c6c51c",
+      "scope": "coop",
+      "reason": "Published fork history retained; message formatting only."
+    },
+    "d0729db1daef37b4e0fb0882a9959556870e07a9": {
+      "message_sha256": "401a83cf88bbe5c5cb7f6b06f1f3b95e5a92747e6652d2ce643deed7f88bedbc",
+      "scope": "merge",
+      "reason": "Published fork history retained; message formatting only."
+    },
+    "e48f19b8717c8b695c6d235499d0baf31fccbf6b": {
+      "message_sha256": "52e4290694e83deaa62441ef3800f185c9e3f6fe6a6ee4a9dcc62961f0e22908",
+      "scope": "coop",
+      "reason": "Published fork history retained; message formatting only."
+    }
+  }
+}

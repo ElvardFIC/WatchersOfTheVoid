@@ -51,7 +51,7 @@ sys.path.insert(0, HERE)
 # The boundary walk, the subprocess wrapper and the two subject patterns are this checker's
 # neighbours already: the trail's shape and a single message's shape are the same rule read at two
 # scales, and a second copy of either pattern would let them drift apart silently.
-from commit_msg_check import CLOSE_PREFIX, EXEMPT_SUBJECT_RE, SCOPE_RE, boundary, git  # noqa: E402
+from commit_msg_check import CLOSE_PREFIX, EXEMPT_SUBJECT_RE, LEGACY_MESSAGES, SCOPE_RE, boundary, git  # noqa: E402
 
 REPO = os.path.dirname(os.path.dirname(HERE))
 WINDOW = 100
@@ -103,7 +103,9 @@ def judge(commits):
     docs = 0
     mislabelled = []
     for sha, subject, paths in commits:
-        scope = scope_of(subject)
+        # The immutable fork-introduction commit is still documentation in the
+        # fraction, even though its published subject predates our [docs] form.
+        scope = LEGACY_MESSAGES.get(sha, {}).get("scope", scope_of(subject))
         if scope == DOCS_SCOPE:
             docs += 1
         # An empty diff cannot say what it is, so it is counted in the trail and not accused.

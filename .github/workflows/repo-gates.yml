@@ -162,6 +162,9 @@ jobs:
       - name: Fact rows gate (every watched or hooked game function is a well-formed row with a reference)
         run: python3 .github/ci/fact_rows_gate.py
 
+      - name: Captured game-function references
+        run: python3 agent/tests/ci_fingerprints_test.py
+
       - name: Data paths gate drill
         run: python3 .github/ci/data_paths_gate.py --drill
 

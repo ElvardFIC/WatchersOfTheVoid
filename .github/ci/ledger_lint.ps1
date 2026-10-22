@@ -119,7 +119,7 @@ if (-not (Test-Path -LiteralPath $protoHeaderPath)) {
         $names = @(); $bad = @()
         # Skip 1: the `enum class X : uint8_t {` line that opens the body.
         foreach ($line in (($Source.Substring($start, $end - $start) -split "`n") | Select-Object -Skip 1)) {
-            $t = $line.Trim()
+            $t = ($line -split '//', 2)[0].Trim()
             if (-not $t -or $t.StartsWith("//")) { continue }
             $m = [regex]::Match($t,
                 '^([A-Za-z_][A-Za-z0-9_]*)\s*(?:=\s*(?:0[xX][0-9a-fA-F]+|\d+))?\s*,?$')

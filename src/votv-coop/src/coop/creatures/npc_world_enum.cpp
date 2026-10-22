@@ -133,23 +133,10 @@ coop::element::ElementId EnrollUntrackedNpcActor(void* obj, const std::wstring& 
     return eid;
 }
 
-// The EX_CallMath spawn catch. The source spawner classes whose deferred-spawn output is
-// host-authoritative and mirrored: the wisps event swarm (up to 32 wisps); the piramid event
-// chain (four killer wisps on the NPC lane and one pyramid on the world-actor lane, a spawn
-// the interceptor never sees); the ambient sky-wisp ticker and its colour variants (it
-// anchors at absolute map coordinates, not around a player, so the host rolls them and the
-// client's ticker is cancelled in the spawn authority); and the sell gun's coin mint, whose
-// deferred spawn inside the sell verb is bytecode-internal on the host's own sale and on the
-// re-commit of a client's sale alike, so the world-actor lane's interceptor never sees it and
-// without this row the coin allowlist entry is inert; and the jellyfish path, whose spawn makes
-// its seven fish inside its own graph. A future creature event adds its trigger class here once
-// its target class joins the NPC allowlist.
-//
-// The eventer and the event controllers below are that step for the scheduled and story events:
-// the eventer's runEvent spawns its creatures and ships inside its own graph (the vent crawler,
-// the Rozital mothership, the morning UFO, the droppers, the follower, the egger, the cleaner), and
-// each controller spawns its own creatures in turn. Each row's output reaches only the lanes whose
-// allowlists name it; everything else it spawns stays the host's.
+// Deferred-spawn sources whose output the host may publish. Internal BP calls
+// bypass ProcessEvent: event swarms/controllers, ambient tickers, the sell-gun
+// coin mint and jellyfish route need this native seam. Output is still filtered
+// by the NPC/world-actor allowlists; unrelated births remain host-local.
 constexpr ExSpawnSource kExSpawnSources[] = {
     {L"trigger_wispSwarm_C",     nullptr},          // the wisps event swarm
     {L"piramidSpawner_C",        nullptr},          // the piramid event chain

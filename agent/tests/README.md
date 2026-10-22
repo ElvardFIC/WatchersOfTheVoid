@@ -1,5 +1,9 @@
 # Regression tests
 
+`ci_fingerprints_test.py` verifies the added game-function reference rows against
+the saved native capture, including inherited resolution and absent declarations.
+GitHub runs it beside the fact-row gate.
+
 Current full audit: run `powershell -NoProfile -ExecutionPolicy Bypass -File
 package/check_current.ps1` from the checkout after source edits finish.
 It runs 65 groups, completes the incremental Release build and verifies that the

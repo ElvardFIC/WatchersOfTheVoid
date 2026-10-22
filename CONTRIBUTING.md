@@ -131,6 +131,12 @@ Co-Authored-By: ...
   current, and nowhere if it is history: `git log -p` keeps the diff.
 - A doc that describes a subsystem changes in the same commit as the subsystem.
 
+The fork retains eleven already-published messages in
+`.github/ci/commit_msg_check_legacy.json`, pinned by full commit and message hashes.
+This preserves shared history. New commits and hook input follow every rule above;
+copying an old message does not inherit its exception. The historical fork
+introduction still counts as documentation in the commit-trail check.
+
 `.github/ci/commit_msg_check.py` is the checker. Install it as a hook once per clone:
 
 ```powershell

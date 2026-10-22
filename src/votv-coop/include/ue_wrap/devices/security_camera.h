@@ -28,8 +28,6 @@ bool EnsureResolved();
 // one verdict per class). False until resolved.
 bool IsCameraClass(void* obj);
 
-// A camera of the cursed class (its night roll writes `active` in its own tick). False until resolved.
-bool IsCursed(void* obj);
 
 // The camera's prop Key, or "" when `obj` is no camera, its key is empty or None, or it is the key its class
 // carries by default (the cursed class's fixed "cursedcam": a copy that never took a key of its own, which no

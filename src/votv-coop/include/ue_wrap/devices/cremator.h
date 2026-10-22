@@ -6,7 +6,6 @@
 namespace ue_wrap::cremator {
 // Class-family checks and the live machines used to give their runtime-created hatch a stable ID.
 bool EnsureResolved();
-bool IsCrematorDoor(void* actor);
 bool IsCremator(void* actor);
 const std::vector<void*>& Instances();
 // The manual lever is actionOptionIndex(action=4) -> useLever(), gated by the
@@ -14,10 +13,7 @@ const std::vector<void*>& Instances();
 bool CanUseLever(void* actor);
 bool CanReplayLever(void* actor);
 bool TryReadLeverActive(void* actor, bool& active);
-bool IsLeverActive(void* actor);
 bool CallUseLever(void* actor);
-// Receiver paint without collecting/burning props.
-bool ApplyLeverState(void* actor, bool active);
 std::wstring LeverWireKey(void* actor);
 void* FindByLeverWireKey(const std::wstring& key);
 }

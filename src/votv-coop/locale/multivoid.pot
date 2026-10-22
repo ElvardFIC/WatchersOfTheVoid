@@ -116,6 +116,11 @@ msgstr ""
 
 #: src/coop/comms/peer_action_feed.cpp
 #, c-format
+msgid "%1$s could not place that: the host refused it; pick it up to retry"
+msgstr ""
+
+#: src/coop/comms/peer_action_feed.cpp
+#, c-format
 msgid "%1$s could not sell that"
 msgstr ""
 
@@ -311,10 +316,6 @@ msgstr ""
 msgid "A newer connection with your identity replaced this one."
 msgstr ""
 
-#: src/ui/skins_panel.cpp
-msgid "A pak that carries no skin (another mod's) is dropped from this list once the game has been asked -- it is not a skin."
-msgstr ""
-
 #: src/coop/session/player_handshake_version.cpp
 msgid "A player"
 msgstr ""
@@ -389,7 +390,7 @@ msgstr ""
 msgid "Change name"
 msgstr ""
 
-#: src/ui/dev_menu.cpp src/ui/fonts.cpp
+#: src/ui/fonts.cpp
 msgid "Chat"
 msgstr ""
 
@@ -445,10 +446,6 @@ msgstr ""
 
 #: src/ui/game_build_dialog.cpp
 msgid "Continue anyway"
-msgstr ""
-
-#: src/ui/dev_menu.cpp
-msgid "Cosmetics"
 msgstr ""
 
 #: src/coop/net/end_reason.cpp
@@ -599,6 +596,10 @@ msgstr ""
 msgid "Finding a route to %s"
 msgstr ""
 
+#: include/coop/config/config_registry_rows.inc
+msgid "Frequency of the repeatable world spawners: Fossilhounds, killer wisps, sky wisps and night eggs, plus each owner's night eyes. 2x halves their native waiting intervals; eligibility and spawn chances stay native. Story dates, dreams and creature animation speed stay unchanged."
+msgstr ""
+
 #: src/ui/world_rules_panel.cpp
 msgid "Gamemode:"
 msgstr ""
@@ -631,10 +632,6 @@ msgstr ""
 
 #: src/ui/admin_panel.cpp src/ui/scoreboard.cpp
 msgid "ID"
-msgstr ""
-
-#: src/ui/dev_menu.cpp
-msgid "Interface"
 msgstr ""
 
 #: src/coop/session/player_handshake.cpp
@@ -781,10 +778,6 @@ msgstr[1] ""
 msgid "NET  offline"
 msgstr ""
 
-#: src/ui/dev_menu.cpp
-msgid "Nameplate"
-msgstr ""
-
 #: src/coop/player/nameplate.cpp
 msgid "Nameplate: hidden from other players"
 msgstr ""
@@ -903,10 +896,6 @@ msgstr ""
 msgid "Peer action notifications"
 msgstr ""
 
-#: src/ui/skins_panel.cpp
-msgid "Peers WITHOUT that pak see the default kel body instead."
-msgstr ""
-
 #: src/ui/net_stats_panel.cpp
 #, c-format
 msgid "Peers: %1$d,  worst ping %2$d ms"
@@ -959,10 +948,6 @@ msgstr ""
 msgid "Please describe what happened (at least 20 characters)."
 msgstr ""
 
-#: src/ui/skins_panel.cpp
-msgid "Preview tile = <skin name>.png/.bmp beside the pak."
-msgstr ""
-
 #: src/ui/voice_panel.cpp
 #, c-format
 msgid "Push-to-talk (key: %s)"
@@ -988,10 +973,6 @@ msgstr ""
 msgid "Receiving world from the host"
 msgstr ""
 
-#: src/ui/skins_panel.cpp
-msgid "Refresh list"
-msgstr ""
-
 #: src/ui/server_browser_actions.cpp
 msgid "Refreshing the server list..."
 msgstr ""
@@ -1012,12 +993,8 @@ msgstr ""
 msgid "Remote player"
 msgstr ""
 
-#: src/ui/dev_menu.cpp
-msgid "Report"
-msgstr ""
-
-#: src/ui/dev_menu.cpp
-msgid "Report a bug"
+#: include/coop/config/config_registry_rows.inc
+msgid "Repeatable event frequency"
 msgstr ""
 
 #: src/ui/voice_panel.cpp
@@ -1145,14 +1122,6 @@ msgstr ""
 #: src/coop/player/local_body.cpp
 #, c-format
 msgid "Skin: %s"
-msgstr ""
-
-#: src/ui/dev_menu.cpp
-msgid "Skins"
-msgstr ""
-
-#: src/ui/skins_panel.cpp
-msgid "Skins come from converter .pak files under Content/Paks/LogicMods (any subfolder). One pak may carry several skins -- the four scientists ship together in scientists.pak."
 msgstr ""
 
 #: src/coop/net/end_reason.cpp
@@ -1631,10 +1600,6 @@ msgstr ""
 msgid "Whispering"
 msgstr ""
 
-#: src/ui/dev_menu.cpp
-msgid "World"
-msgstr ""
-
 #: src/ui/world_rules_panel.cpp
 msgid "World rules unavailable (still loading?)."
 msgstr ""
@@ -1663,10 +1628,6 @@ msgstr ""
 #: src/ui/config_review_panel.cpp
 #, c-format
 msgid "Your body skin (%s) could not be saved to multivoid.ini this launch -- it is temporary for this session. Fix whatever keeps the file from being read or saved (a lock from an editor or antivirus, permissions, or a file saved as UTF-16); nothing is lost once a launch can save again."
-msgstr ""
-
-#: src/ui/skins_panel.cpp
-msgid "Your body skin -- what YOU see looking down and what OTHERS see. Saved to multivoid.ini; restored on rejoin."
 msgstr ""
 
 #: src/coop/net/end_reason.cpp

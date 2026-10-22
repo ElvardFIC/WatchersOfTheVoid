@@ -7,6 +7,21 @@ to four copies of the game on one machine, driven by one launcher and judged by 
 
 ## How it works
 
+### Fork checks
+
+The fork retains published commit messages by exact commit and message digests
+in `.github/ci/commit_msg_check_legacy.json`; every new message remains strict.
+The historical fork introduction counts toward the documentation share.
+The prose baseline includes this fork's tracked release notes, regression fixtures
+and report history. Source-comment and dead-declaration counters remain zero;
+the baseline does not waive those checks. Long report histories are split into
+linked files, preserving their original sections.
+
+`python agent/tests/ci_fingerprints_test.py` compares added function references to
+a saved 0.9.0n capture. It verifies native and Blueprint controls, resolved inherited
+functions and two declarations recorded absent from the loaded class. The source
+gate still refuses a row missing from the reference table.
+
 ### The rig
 
 Four copies of the game live beside the repository, each with its own saved games and logs: a

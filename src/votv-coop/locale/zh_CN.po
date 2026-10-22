@@ -238,8 +238,8 @@ msgstr ""
 msgid "A newer connection with your identity replaced this one."
 msgstr ""
 
-msgid "A pak that carries no skin (another mod's) is dropped from this list once the game has been asked -- it is not a skin."
-msgstr "不含皮肤的 pak（其他模组的）在游戏扫描后会被剔除——它不是皮肤。"
+#~ msgid "A pak that carries no skin (another mod's) is dropped from this list once the game has been asked -- it is not a skin."
+#~ msgstr "不含皮肤的 pak（其他模组的）在游戏扫描后会被剔除——它不是皮肤。"
 
 msgid "A player"
 msgstr ""
@@ -336,8 +336,8 @@ msgstr ""
 msgid "Contact (optional, e.g. a Discord name)"
 msgstr ""
 
-msgid "Cosmetics"
-msgstr ""
+#~ msgid "Cosmetics"
+#~ msgstr ""
 
 msgid "Could not compute the password proof on this machine."
 msgstr ""
@@ -478,8 +478,8 @@ msgstr "创建房间"
 msgid "ID"
 msgstr ""
 
-msgid "Interface"
-msgstr ""
+#~ msgid "Interface"
+#~ msgstr ""
 
 #, c-format
 msgid "Joined %1$s's game"
@@ -580,8 +580,8 @@ msgstr[0] ""
 msgid "NET  offline"
 msgstr ""
 
-msgid "Nameplate"
-msgstr ""
+#~ msgid "Nameplate"
+#~ msgstr ""
 
 msgid "Nameplate: hidden from other players"
 msgstr ""
@@ -669,8 +669,8 @@ msgstr "密码（服务器没设密码就留空）"
 msgid "Peer action notifications"
 msgstr "同伴动作提示"
 
-msgid "Peers WITHOUT that pak see the default kel body instead."
-msgstr "没装该 pak 的玩家会看到默认 kel 身体。"
+#~ msgid "Peers WITHOUT that pak see the default kel body instead."
+#~ msgstr "没装该 pak 的玩家会看到默认 kel 身体。"
 
 #, c-format
 msgid "Peers: %1$d,  worst ping %2$d ms"
@@ -713,8 +713,8 @@ msgstr ""
 msgid "Please describe what happened (at least 20 characters)."
 msgstr ""
 
-msgid "Preview tile = <skin name>.png/.bmp beside the pak."
-msgstr ""
+#~ msgid "Preview tile = <skin name>.png/.bmp beside the pak."
+#~ msgstr ""
 
 #, c-format
 msgid "Push-to-talk (key: %s)"
@@ -735,8 +735,8 @@ msgstr ""
 msgid "Receiving world from the host"
 msgstr ""
 
-msgid "Refresh list"
-msgstr "刷新列表"
+#~ msgid "Refresh list"
+#~ msgstr "刷新列表"
 
 msgid "Refreshing the server list..."
 msgstr ""
@@ -753,11 +753,11 @@ msgstr ""
 msgid "Remote player"
 msgstr ""
 
-msgid "Report"
-msgstr ""
+#~ msgid "Report"
+#~ msgstr ""
 
-msgid "Report a bug"
-msgstr ""
+#~ msgid "Report a bug"
+#~ msgstr ""
 
 msgid "Rescan devices"
 msgstr "重新扫描设备"
@@ -860,11 +860,11 @@ msgstr ""
 msgid "Skin: %s"
 msgstr ""
 
-msgid "Skins"
-msgstr ""
+#~ msgid "Skins"
+#~ msgstr ""
 
-msgid "Skins come from converter .pak files under Content/Paks/LogicMods (any subfolder). One pak may carry several skins -- the four scientists ship together in scientists.pak."
-msgstr "皮肤来自 Content/Paks/LogicMods 下的 .pak 文件（任意子文件夹）。一个 pak 可含多个皮肤——四个科学家就打包在 scientists.pak 里。"
+#~ msgid "Skins come from converter .pak files under Content/Paks/LogicMods (any subfolder). One pak may carry several skins -- the four scientists ship together in scientists.pak."
+#~ msgstr "皮肤来自 Content/Paks/LogicMods 下的 .pak 文件（任意子文件夹）。一个 pak 可含多个皮肤——四个科学家就打包在 scientists.pak 里。"
 
 msgid "Something was sent before the identity was proved."
 msgstr ""
@@ -1184,8 +1184,8 @@ msgstr ""
 msgid "Whispering"
 msgstr ""
 
-msgid "World"
-msgstr ""
+#~ msgid "World"
+#~ msgstr ""
 
 msgid "World rules unavailable (still loading?)."
 msgstr ""
@@ -1204,8 +1204,8 @@ msgstr ""
 msgid "Your body skin (%s) could not be saved to multivoid.ini this launch -- it is temporary for this session. Fix whatever keeps the file from being read or saved (a lock from an editor or antivirus, permissions, or a file saved as UTF-16); nothing is lost once a launch can save again."
 msgstr ""
 
-msgid "Your body skin -- what YOU see looking down and what OTHERS see. Saved to multivoid.ini; restored on rejoin."
-msgstr ""
+#~ msgid "Your body skin -- what YOU see looking down and what OTHERS see. Saved to multivoid.ini; restored on rejoin."
+#~ msgstr ""
 
 msgid "Your connection presented no key identity."
 msgstr ""

@@ -158,8 +158,8 @@ DWORD WINAPI DamageTestThread(LPVOID arg);
 // slot 1 is world-ready, the damage verb, addDamage and ignite are invoked at the slot-1 puppet and
 // judged by coop::player_damage's refusal counts against the host's own saveSlot.health (shared per
 // machine, so a puppet's damage written here drains the host); the same verb at the host's own player
-// is the control that the calls land; health is restored after. PASS = refused; FAIL = landed. Red:
-// dev.player_damage_no_refusal. The client only connects. Env VOTVCOOP_RUN_DMGHAZARD_TEST=1.
+// is the control that the calls land; health is restored after. PASS = refused; FAIL = landed.
+// The client only connects. Env VOTVCOOP_RUN_DMGHAZARD_TEST=1.
 void RunAutonomousDmgHazardTest();
 DWORD WINAPI DmgHazardTestThread(LPVOID arg);
 

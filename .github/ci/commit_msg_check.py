@@ -22,6 +22,8 @@ Usage:
 Exit 0 when every message passes, 1 otherwise; each refusal names the rule it breaks.
 """
 import argparse
+import hashlib
+import json
 import os
 import re
 import subprocess
@@ -34,6 +36,35 @@ REPO = os.path.dirname(os.path.dirname(HERE))
 # path the tree no longer has. Repointing this at the current path would name the MOVE commit
 # instead and shrink the judged range to almost nothing.
 SELF_REL = "tools/git/commit_msg_check.py"
+LEGACY_FILE = os.path.join(HERE, "commit_msg_check_legacy.json")
+
+
+def legacy_messages():
+    if not os.path.isfile(LEGACY_FILE):
+        return {}
+    with open(LEGACY_FILE, encoding="utf-8") as stream:
+        rows = json.load(stream)["commits"]
+    for sha, row in rows.items():
+        if (not re.fullmatch(r"[0-9a-f]{40}", sha)
+                or not re.fullmatch(r"[0-9a-f]{64}", row["message_sha256"])
+                or row["scope"] not in ("coop", "docs", "merge")
+                or not row["reason"]):
+            raise ValueError("Invalid published-message record: " + sha)
+    return rows
+
+
+LEGACY_MESSAGES = legacy_messages()
+
+
+def historical_message(sha, text):
+    """Recognize an immutable published message by both commit and message digest."""
+    row = LEGACY_MESSAGES.get(sha)
+    digest = hashlib.sha256(text.replace("\r\n", "\n").strip("\n").encode("utf-8")).hexdigest()
+    return row if row and row["message_sha256"] == digest else None
+
+
+def check_recorded_message(sha, text):
+    return [] if historical_message(sha, text) else check_message(text, allow_close=True)
 
 SUBJECT_MAX = 72
 BODY_MAX_LINES = 12
@@ -229,14 +260,15 @@ def check_range(repo, rng, empty_ok=True):
         print("commit_msg_check: a range cannot start with '-' ({})".format(rng))
         return 2
     raw = git(["log", "-z", "--format=%H%n%B", "--end-of-options", rng], repo)
-    bad = total = 0
+    bad = total = historical = 0
     for rec in raw.split("\0"):
         if not rec.strip():
             continue
         sha, _, body = rec.lstrip("\n").partition("\n")
         subject = body.split("\n", 1)[0]
         total += 1
-        refusals = check_message(body, allow_close=True)   # a recorded close was made by the script
+        historical += bool(historical_message(sha, body))
+        refusals = check_recorded_message(sha, body)
         if refusals:
             bad += 1
             print("{} {}".format(sha[:10], subject[:80]))
@@ -244,6 +276,8 @@ def check_range(repo, rng, empty_ok=True):
                 print("    - " + r)
     print("commit_msg_check: {} commit(s) in {}, {} refused{}".format(
         total, rng, bad, "" if total else " -- an EMPTY range judges nothing"))
+    if historical:
+        print("commit_msg_check: {} published legacy message(s) retained by exact digest".format(historical))
     if not total and not empty_ok:
         return 1
     return 1 if bad else 0

@@ -1,14 +1,4 @@
-# votv-coop/sources.cmake -- the DLL's translation units, one per line.
-#
-# Extracted from CMakeLists.txt when that file reached the 800-line cap: the build
-# CONFIGURATION (toolchain, third-party targets, the version stamp, the link and install
-# rules) and the LIST OF SOURCES are two concerns, and the list is the half that grows with
-# every feature. CMakeLists.txt includes this and expands VOTVCOOP_SOURCES.
-#
-# Order follows the principle-7 split -- bootstrap and loader, then src/ue_wrap/ (engine
-# wrapper), then src/coop/ (gameplay and network), then src/ui/ and src/harness/, with the
-# resource scripts last. The developer drills and probes of src/coop/dev/ are a list of their
-# own (sources_dev.cmake), appended at the end.
+# DLL translation units; development probes are appended from sources_dev.cmake.
 
 set(VOTVCOOP_SOURCES
     src/bootstrap/dllmain.cpp

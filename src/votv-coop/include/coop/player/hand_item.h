@@ -1,22 +1,9 @@
-// coop/player/hand_item.h -- the hotbar HAND-ITEM display axis.
-//
-// The item shown in a player's hand is NOT a world entity: VOTV's updateHold destroys and
-// respawns a fresh local actor on every quick-slot switch. Riding the WORLD-prop pipeline
-// (PropSpawn/PropPose/PropRelease) therefore produced a peer's held item updating late or never
-// -- the host's pre-quiescence express gate suppressed every host hand item forever, the client
-// dropped its 60 Hz keyed poses as unmatched, and every switch left physics-release litter and
-// a fresh key/mirror churn.
-//
-// The model is MTA's: a ped's current weapon is PLAYER STATE attached to the ped locally on
-// every machine, so the hand item is part of the player's EXPRESSION like skin and nick colour.
-// The owner polls mainPlayer.holding_actor (Aprop_C only -- the trash clump/pile carry keeps its
-// own lane) and broadcasts HandItem{class, name, item, generation} on change, with a
-// heartbeat and send retry. A same-type replacement advances generation too. Peers
-// keep a display mirror; hand_fire_sync owns its generation-matched native flame.
-// Late join replays per-slot state. All functions game-thread only.
-// Canned food also carries opened/type/foods in a two-byte trailer (presence bit,
-// opened bit, two type bits, twelve portion bits). Changes advance the hand generation;
-// a display mirror applies these fields and rebuilds its mesh without replaying eat().
+// Held-item display is player state, separate from world props. Native updateHold
+// replaces its local actor on every quick-slot edge; the owner publishes class,
+// name, item and generation, with heartbeat and retry. Peers keep display mirrors.
+// Released surviving actors enter the world-prop lane; hand_fire_sync owns flame.
+// Canned food adds opened/type/foods in a two-byte trailer. Stock changes advance
+// generation and rebuild the remote mesh without replaying eat(). Game thread.
 
 #pragma once
 

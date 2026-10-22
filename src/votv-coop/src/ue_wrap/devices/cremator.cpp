@@ -39,7 +39,6 @@ bool EnsureResolved() {
     return g_machineClass.Get() && g_doorClass.Get();
 }
 
-bool IsCrematorDoor(void* actor) { EnsureResolved(); return IsOf(actor, g_doorClass.Get()); }
 bool IsCremator(void* actor) { EnsureResolved(); return IsOf(actor, g_machineClass.Get()); }
 
 const std::vector<void*>& Instances() {
@@ -97,10 +96,6 @@ bool TryReadLeverActive(void* actor, bool& active) {
     return IsCremator(actor) && ReadBool(actor, L"isActive", active);
 }
 
-bool IsLeverActive(void* actor) {
-    bool active = false;
-    return TryReadLeverActive(actor, active) && active;
-}
 
 bool CallUseLever(void* actor) {
     if (!IsCremator(actor)) return false;
@@ -110,32 +105,6 @@ bool CallUseLever(void* actor) {
     return frame.valid() && ue_wrap::Call(actor, frame);
 }
 
-bool ApplyLeverState(void* actor,bool active) {
-    if (!IsCremator(actor)) return false;
-    CachedObjRef ref; ref.Set(actor);
-    void* cls=R::ClassOf(actor);
-    const int off=R::FindPropertyOffset(cls,L"handleLimeline");
-    int activeOff=-1,animOff=-1; uint8_t activeMask=0,animMask=0;
-    if (off<0 || !R::FindBoolProperty(cls,L"isActive",activeOff,activeMask) ||
-        !R::FindBoolProperty(cls,L"anim",animOff,animMask)) return false;
-    void* timeline=nullptr;
-    std::memcpy(&timeline,static_cast<uint8_t*>(actor)+off,sizeof(timeline));
-    if (!timeline || !R::IsLive(timeline)) return false;
-    CachedObjRef timelineRef; timelineRef.Set(timeline);
-    ParamFrame length(R::FindDispatchFunctionCached(R::ClassOf(timeline),L"GetTimelineLength"));
-    float seconds=0;
-    if (!length.valid() || !Call(timeline,length) || !length.GetRaw(L"ReturnValue",&seconds,sizeof(seconds)) ||
-        !std::isfinite(seconds) || seconds<=0 || !ref.Get() || !timelineRef.Get()) return false;
-    if (!component_calls::CallParamlessNamed(timeline,L"Stop") || !ref.Get() || !timelineRef.Get()) return false;
-    ParamFrame position(R::FindDispatchFunctionCached(R::ClassOf(timeline),L"SetPlaybackPosition"));
-    if (!position.valid() || !position.Set<float>(L"NewPosition",active ? seconds : 0.f) ||
-        !position.Set<bool>(L"bFireEvents",false) || !position.Set<bool>(L"bFireUpdate",true) ||
-        !Call(timeline,position) || !ref.Get()) return false;
-    auto* bytes=static_cast<uint8_t*>(actor);
-    bytes[activeOff]=active ? bytes[activeOff]|activeMask : bytes[activeOff]&~activeMask;
-    bytes[animOff]&=~animMask;
-    return true;
-}
 
 std::wstring LeverWireKey(void* actor) {
     if (!IsCremator(actor)) return {};

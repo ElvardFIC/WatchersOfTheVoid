@@ -127,16 +127,5 @@ bool ForceMeshTick(void* wisp);
 // The optional section jump never turns successful playback into a retry loop.
 bool PlayFatalityMontage(void* wisp);
 
-// The plain wisp landing drive. The swarm wisp (wisp_C, a different class from the killer
-// wisp, and not the coloured siblings) spawns invisible and fades in at its landing edge: its
-// tick reads the movement component's floor hit, then sets landed and fires the dir event (the
-// fade timeline forward and the point-light ramp). A network mirror parks the movement tick
-// (the pose lane owns position), so the floor stays stale, the native edge can never fire, and
-// the mirror would stay invisible forever. This drives that edge explicitly: write landed (a
-// plain blueprint bool the graph itself writes inline; no setter exists) and call the dir
-// event through the normal dispatcher. Idempotent per landed wisp: re-driving replays an
-// already-finished forward timeline, a no-op. Exact-class-gated inside. False until the class
-// and its members resolve; the caller retries. Game thread.
-bool DriveWispLanding(void* wispActor);
 
 }  // namespace ue_wrap::wisp

@@ -44,6 +44,7 @@ EXE_DIR_FILES = {
     "coop/dev/rehost_rejoin.cpp": "the rejoin trigger, a rig signal",
     "l10n/l10n.cpp": "multivoid_locale, a translator's own files, read only",
     "coop/player/skin_registry.cpp": "Content/Paks/LogicMods, the game's pak tree, read only",
+    "coop/player/model_folder.cpp": "Content/Paks/LogicMods/multimodel, player-authored skin paks and previews; shimloader maps it into the profile",
     "harness/mod_environment.cpp": "Mods/mods.txt and LogicMods, a census of other mods, read only",
     "ue_wrap/core/game_build.cpp": "the game's main pak, read only",
 }
