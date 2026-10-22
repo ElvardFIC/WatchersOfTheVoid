@@ -4,38 +4,32 @@ A community multiplayer fork for **Voices of the Void Alpha 0.9.0n**, maintained
 Based on [Multivoid by Pelmentor](https://github.com/VOTV-MP/Multivoid) and
 [MultiVoidKindaPlus](https://github.com/AquaFishhh/MultivoidKindaPlus), with help from **AquariumFishTeam**.
 
-Play co-op on Windows with up to four players, LAN and Internet sessions, remote player models,
-text and positional voice chat, and host-authoritative world synchronization.
-This is experimental software; multiplayer verification is still in progress.
+Play co-op on Windows with configurable 2-32 player hosting, LAN and Internet sessions,
+remote player models, text and positional voice chat, and shared-world synchronization.
 
-## Fork status - 22 October 2026
+> **Every version is a test version. It requires extensive testing and may be unstable.**
+> Bugs, crashes and multiplayer desynchronization may occur. A successful build or
+> automated test run does not guarantee stable gameplay.
 
-The current DLL is **b2184 / protocol 2184**, for game **0.9.0n**. Its menu and
-server-browser label reads **Watchers of the Void 0.9.2157**, generated from the
-manager package metadata. This display correction is checked by running the shared
-menu/browser formatter and one impaired LAN run per direction; the complete
-ragdoll matrix below describes the preceding qualification of the unchanged
-gameplay code.
-It initializes the selected ragdoll during native construction and preserves the
-current heading through get-up, removing the entry pause and delayed forced turn.
-It retains limb synchronization, native momentum and launch fixes.
-Eight completed entry/recovery cases, eight momentum cases, ten camera cases,
-24 surface cases,30 installed models,36 remote state transitions and six impaired
-LAN runs pass. Rendered/input acceptance remains with the owner.
-See [ragdoll work state](agent/RAGDOLL_CONTINUATION.md).
-The complete package is **ElvardFIC-WatchersOfTheVoid-0.9.2157.zip**, with the
-original fork icon, models and enabled loader layout. See [release notes](package/RELEASE.md) and
-[changelog](package/CHANGELOG_PLUS.md).
-Local packaging does not publish a binary release online.
+## Current test build
 
-The previous b2178 Release passed 65/65 offline groups. That full suite has not
-been repeated for b2184; the current qualification is specific to ragdoll changes.
+Package **0.9.2158**, DLL **b2186 / protocol 2186**, for **VotV Alpha 0.9.0n**.
+The menu and server browser show **Watchers of the Void 0.9.2158**.
+All players must update together.
 
-Complete event/creature coverage, paid repairs and resource accounting remain open.
-The fresh native-asset audit remains deferred. Repository checks are described in
-[testing](docs/testing.md). Offline checks do not establish that reported gameplay issues
-are resolved. Two-player testing remains required, including the host's disappearing
-old rifle, trowel continuity, late join and reconnect. Token52's UI is unidentified.
+This build includes startup/retry fixes for shared script watches, player flashlights
+and client container contents; configurable 2-32 player hosting; and selected upstream
+fixes for vital encoding, delayed item classes, fossil-hound facing and NPC presentation.
+Automatic lobbies above four players also require the updated master service.
+
+This build passed 68/68 offline groups. Exact-build qualification and
+remaining gameplay checks are recorded in [release notes](package/RELEASE.md).
+Two-player rendered gameplay remains unverified for this build. Full event/creature
+coverage, resource accounting and several previously reported gameplay issues remain open.
+
+The local mod-manager package is **ElvardFIC-WatchersOfTheVoid-0.9.2158.zip**.
+A local build does not publish a GitHub or Thunderstore binary release.
+See the [changelog](package/CHANGELOG_PLUS.md).
 
 ## Installation
 
