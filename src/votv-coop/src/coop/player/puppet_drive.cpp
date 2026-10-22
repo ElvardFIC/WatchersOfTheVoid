@@ -173,7 +173,9 @@ void DriveTick(coop::net::Session& session, bool worldReadyAnnounced) {
         if (!g_puppets[slot].valid()) continue;
         coop::net::RagdollPoseSnapshot rdoll;
         bool rdollNew = false;
-        if (session.TryGetRemoteRagdollPose(slot, rdoll, &rdollNew) && rdollNew) {
+        // A hitch can coalesce all 64 physical bodies. Drain their latest
+        // values in at most ten wire-sized chunks before driving the display.
+        for (int batch = 0; batch < 10 && session.TryGetRemoteRagdollPose(slot, rdoll, &rdollNew) && rdollNew; ++batch) {
             g_puppets[slot].SetRagdollPose(rdoll);
         }
     }

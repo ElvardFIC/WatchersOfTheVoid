@@ -8,6 +8,7 @@
 #pragma once
 
 #include "coop/net/protocol.h"
+#include "coop/net/ragdoll_pose_buffer.h"
 
 #include <cstdint>
 #include <vector>
@@ -53,6 +54,7 @@ struct OutboundSamples {
 
 struct OutboundStreams {
     OutboundSamples samples;
+    RagdollPoseOutbox ragdoll;
     // The host's NPC and WorldActor pose batches, serialized in place; empty = nothing to send.
     std::vector<EntityPoseSnapshot>     npcBatch;
     std::vector<WorldActorPoseSnapshot> worldActorBatch;

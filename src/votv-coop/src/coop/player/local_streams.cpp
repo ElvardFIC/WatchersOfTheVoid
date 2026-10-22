@@ -679,36 +679,34 @@ void Tick(coop::net::Session& session, void* local, void* controller) {
                 ++rigTag; lastRig.Set(mesh); lastAsset.Set(asset);
             }
             std::vector<ue_wrap::engine::ArticulatedBone> bones;
+            std::vector<coop::net::RagdollBonePose> wireBones;
             const uint32_t signature = ue_wrap::engine::BoneLayoutSignature(mesh);
             if (signature && ue_wrap::engine::ReadArticulatedPose(mesh, bones) && !bones.empty()) {
                 rp.rigSignature = signature;
                 rp.rigTag = rigTag; rp.rigBones = static_cast<uint16_t>(bones.size());
-                // Hold a batch beyond a send interval: the game pump can run
-                // faster than transport, so advancing on every poll loses limbs.
-                const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                    std::chrono::steady_clock::now().time_since_epoch()).count();
-                constexpr size_t kBonesPerPacket = 7;
-                const size_t start = (static_cast<size_t>(ms / 25) % ((bones.size()+kBonesPerPacket-1)/kBonesPerPacket)) * kBonesPerPacket;
-                rp.boneCount = static_cast<uint8_t>(std::min(kBonesPerPacket, bones.size()-start));
+                // Publish the whole sampled rig. The transport rotates seven
+                // bodies per actual send, independent of frame/send cadence.
+                wireBones.resize(bones.size());
                 auto quantize = [](float v) -> int16_t {
                     return static_cast<int16_t>(std::lround(std::clamp(v, -1.f, 1.f)*32767.f));
                 };
-                for (uint8_t i = 0; i < rp.boneCount; ++i) {
-                    const auto& bone = bones[start+i]; auto& wire = rp.bones[i];
+                for (size_t i = 0; i < bones.size(); ++i) {
+                    const auto& bone = bones[i]; auto& wire = wireBones[i];
                     wire.index = bone.index;
                     wire.x = bone.world.TX; wire.y = bone.world.TY; wire.z = bone.world.TZ;
                     wire.qx = quantize(bone.world.RotX); wire.qy = quantize(bone.world.RotY);
                     wire.qz = quantize(bone.world.RotZ); wire.qw = quantize(bone.world.RotW);
                 }
             }
-            session.SetLocalRagdollPose(true, rp);
+            session.SetLocalRagdollPose(true, rp, wireBones.data(), wireBones.size());
             g_wasRagdolling = true;
             const uint64_t n = ++g_ragdollEmitCount;
             if (n <= 3 || (n % 60) == 0) {
                 const float linMag = std::sqrt(rdLin.X * rdLin.X + rdLin.Y * rdLin.Y + rdLin.Z * rdLin.Z);
-                UE_LOGI("net: RagdollPose emit #%llu -> pelvis(%.0f, %.0f, %.0f) rot(%.0f, %.0f, %.0f) |linVel|=%.0f cm/s",
+                UE_LOGI("net: RagdollPose emit #%llu -> pelvis(%.0f, %.0f, %.0f) rot(%.0f, %.0f, %.0f) |linVel|=%.0f cm/s rig=%08x bones=%u sampled=%u",
                         static_cast<unsigned long long>(n),
-                        rp.x, rp.y, rp.z, rp.pitch, rp.yaw, rp.roll, linMag);
+                        rp.x, rp.y, rp.z, rp.pitch, rp.yaw, rp.roll, linMag,
+                        rp.rigSignature, unsigned(rp.rigBones), unsigned(wireBones.size()));
             }
         } else if (g_wasRagdolling) {
             session.SetLocalRagdollPose(false, {});

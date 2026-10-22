@@ -14,18 +14,19 @@ namespace ue_wrap::engine {
 // materials and a compatible articulated physics asset, staged without simulation.
 // No plushie substitute on failure. Death-free (never calls ragdollMode).
 void* SpawnPlayerRagdollBody(void* ownerPlayer, const FVector& location, const FRotator& rotation);
-// Activate after the selected AnimBP has evaluated once; immediate simulation
+// Activate after the selected mesh has evaluated once; immediate simulation
 // initializes collision bodies from the reference/T pose on a mesh-swap frame.
 bool StartPlayerRagdollSimulation(void* body);
 
 // Copy the selected model/materials and install its own articulated physics asset,
 // or the full Kerfur asset for a compatible common skeleton. Replaces the plushie
 // physics override; requires valid bodies, pelvis and joints. Unsupported rigs
-// return false without a substitute. Physics blend stays zero for one animation
+// return false without a substitute. Physics blend stays zero for one pose
 // warmup; StartPlayerRagdollSimulation hands the posed bones to physics.
 bool ConfigurePlayerRagdollMesh(void* sourceMesh, void* targetMesh);
-// Upgrade the native local body once per component/model generation, retaining
-// native ownership, recovery and interaction callbacks.
+// Upgrade the native local body once per component/model generation. Preserve the
+// selected model's world geometry, not the small plushie's pelvis height, while
+// retaining native ownership, recovery and interaction callbacks.
 bool RefreshLocalRagdollModel(void* mainPlayer);
 struct ArticulatedBone { uint16_t index = 0; FTransform world{}; };
 bool ReadArticulatedPose(void* skeletalMesh, std::vector<ArticulatedBone>& bones);

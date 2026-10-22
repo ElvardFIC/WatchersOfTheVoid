@@ -1,19 +1,11 @@
-## Unreleased - DLL b2180
+## 0.9.2157
 
-- Preserve final desktop edits when leaving a computer, seed the next operator
-  from the shared screen, and reject stale screen snapshots. Retry partial sends
-  and cancel work from an old world or session. The native boot/power UI keeps
-  its own state. The shared-screen wire format requires matching b2180 peers.
-- Keep partially streamed ragdoll limbs aligned with the moving pelvis and retain
-  the standing fallback until physics starts. Reject recycled body identities.
-- Retry star-rain cues while client dependencies or delivery are unavailable,
-  with source/recipient/world/session checks and no duplicate attempted spawn.
-- Retry general-balance delivery independently per peer, including join and
-  refused-order corrections; preserve newer totals during HUD repaint.
-- Restore missing container-inventory transfers on accepted placement and host
-  births. Keep refused placements out of the contents-publication path.
-- These changes require real-peer gameplay acceptance. Full event coverage,
-  paid resource transactions and the remaining native-reference audit stay open.
+- Replace the ragdoll toy with the selected character using the game's native physics.
+- Fix sky launches and upward camera snapping; preserve running momentum on entry.
+- Fix remote ragdoll visibility and missing limb updates under lag or packet loss.
+- Preserve current main improvements to shared computers, balance, event retries and container contents.
+- Restore the full mod-manager package with the original icon, models and credits.
+- DLL/network b2183 for game 0.9.0n; all players must update together.
 
 ## 0.9.2156
 

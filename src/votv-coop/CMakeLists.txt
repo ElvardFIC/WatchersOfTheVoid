@@ -188,6 +188,14 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
 add_subdirectory(third_party/GameNetworkingSockets EXCLUDE_FROM_ALL)
 
+# Abseil follows this project's C++20 setting. Its optional/string_view ABI must
+# match the ICE consumers; GNS otherwise resets both of these targets to C++14.
+foreach(_ice_target webrtc-lite steamwebrtc)
+    if(TARGET ${_ice_target})
+        set_target_properties(${_ice_target} PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
+    endif()
+endforeach()
+
 # --- voice chat substrate (v66; votv-voice-chat-port-design-2026-06-12.md) ---
 # libopus (BSD-3, vendored shallow clone pinned v1.5.2) -- the voice codec
 # (the same lib Simple Voice Chat wraps via opus4j). Its CMake overrides the

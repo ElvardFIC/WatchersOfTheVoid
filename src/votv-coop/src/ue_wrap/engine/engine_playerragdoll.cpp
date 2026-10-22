@@ -12,6 +12,7 @@
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/reflection.h"
+#include "ue_wrap/core/ufunction_hook.h"
 
 #include <cstdint>
 #include <cstring>
@@ -21,6 +22,7 @@
 #include <map>
 
 namespace ue_wrap::engine {
+bool RebuildPlayerRagdollPhysics(void* target, void* physics);
 namespace {
 
 namespace R = reflection;
@@ -67,6 +69,16 @@ bool StartBodySim(void* comp) {
     CachedObjRef ref; ref.Set(comp);
     if (!ref.Get()) return false;
     void* cls = R::ClassOf(comp);
+    // SetSkeletalMesh replaces the six-bone plushie, but animation evaluation
+    // finishes on the next component tick. Recreate the bodies from that evaluated
+    // selected-model pose before turning simulation on.
+    const int physicsOffset = R::FindPropertyOffset(cls, L"PhysicsAssetOverride");
+    void* physics = nullptr;
+    if (physicsOffset < 0) return false;
+    std::memcpy(&physics, static_cast<uint8_t*>(comp) + physicsOffset, sizeof(physics));
+    CachedObjRef physicsRef; physicsRef.Set(physics);
+    if (!physicsRef.Get()) return false;
+    if (!RebuildPlayerRagdollPhysics(comp, physics) || !ref.Get() || !physicsRef.Get()) return false;
     ParamFrame collision(R::FindDispatchFunctionCached(cls, L"SetCollisionEnabled"));
     if (!collision.Set<uint8_t>(L"NewType", 3) || !Call(comp, collision) || !ref.Get()) return false;
     ParamFrame bodies(R::FindDispatchFunctionCached(cls, L"SetAllBodiesSimulatePhysics"));
@@ -150,6 +162,173 @@ void* RagdollMeshOf(void* ragdollActor) {
     return (mesh && R::IsLive(mesh)) ? mesh : nullptr;
 }
 
+// Native ragdollMode attaches the camera spring arm to the plushie's head and
+// installs a fixed (0,-90,0) relative rotation. A selected character's head has
+// different axes. Keep the entry look while swapping/evaluating that skeleton,
+// then leave the relative attachment alone so the camera follows the real flop.
+// The controller still contains the pre-entry look, even after native ragdollMode.
+struct RagdollView {
+    CachedObjRef player, mesh, arm;
+    FRotator entry{};
+
+    void Reset() { player.Reset(); mesh.Reset(); arm.Reset(); }
+
+    bool Attached() const {
+        void* component = arm.Get();
+        if (!player.Get() || !mesh.Get() || !component) return false;
+        ParamFrame parent(R::FindDispatchFunctionCached(R::ClassOf(component), L"GetAttachParent"));
+        void* value = nullptr;
+        return parent.valid() && Call(component, parent) &&
+            parent.GetRaw(L"ReturnValue", &value, sizeof(value)) &&
+            player.Get() && mesh.Get() && arm.Get() && value == mesh.Get();
+    }
+
+    bool Capture(void* owner, void* bodyMesh) {
+        Reset();
+        player.Set(owner); mesh.Set(bodyMesh);
+        if (!player.Get() || !mesh.Get()) return false;
+        const int offset = R::FindPropertyOffset(R::ClassOf(owner), L"lag");
+        if (offset < 0) return false;
+        void* component = nullptr;
+        std::memcpy(&component, static_cast<uint8_t*>(owner) + offset, sizeof(component));
+        arm.Set(component);
+        if (!Attached()) { Reset(); return false; }
+        CachedObjRef controller; controller.Set(GetController(owner));
+        if (!controller.Get()) { Reset(); return false; }
+        ParamFrame rotation(R::FindDispatchFunctionCached(R::ClassOf(controller.Get()), L"GetControlRotation"));
+        if (!rotation.valid() || !Call(controller.Get(), rotation) || !controller.Get() ||
+            !rotation.GetRaw(L"ReturnValue", &entry, sizeof(entry)) ||
+            !std::isfinite(entry.Pitch) || !std::isfinite(entry.Yaw) || !std::isfinite(entry.Roll) ||
+            !Attached()) { Reset(); return false; }
+        return true;
+    }
+
+    bool Restore() const {
+        // Recovery can reparent the arm before ragdollActor is cleared. Never
+        // write to a recovered player's camera or a recycled component slot.
+        if (!Attached()) return false;
+        void* component = arm.Get();
+        ParamFrame rotation(R::FindDispatchFunctionCached(R::ClassOf(component), L"K2_SetWorldRotation"));
+        return rotation.Set<FRotator>(L"NewRotation", entry) &&
+            rotation.Set<bool>(L"bSweep", false) && rotation.Set<bool>(L"bTeleport", true) &&
+            Call(component, rotation) && Attached();
+    }
+};
+
+UE_FACT_FN(kRagdollLinearVelocity, "ragdoll_momentum", L"PrimitiveComponent", L"SetPhysicsLinearVelocity", Declared);
+struct BodyVelocity { R::FName bone{}; FVector linear{}, angular{}; bool linearDone=false; };
+struct VelocityCommand { R::FName bone{}; FVector linear{}; bool add=false; };
+CachedObjRef g_velocityMesh;
+std::vector<BodyVelocity> g_bodyVelocities;
+std::vector<VelocityCommand> g_velocityCommands;
+size_t g_bodyVelocityIndex=0, g_velocityCommandIndex=0;
+void* g_velocityFunction = nullptr;
+int g_velocityOffset=-1, g_addOffset=-1, g_boneOffset=-1;
+bool g_replayingVelocity = false;
+FVector g_baseLinear{};
+bool g_baseLinearDone=false;
+bool FiniteVelocity(const FVector& v) { return std::isfinite(v.X) && std::isfinite(v.Y) && std::isfinite(v.Z); }
+
+script_gate::Verdict HoldRagdollVelocity(void* component, void*, const uint8_t* params) {
+    if (!params || g_replayingVelocity || !component || component!=g_velocityMesh.Get()) return script_gate::Verdict::Run;
+    R::FName bone{}; FVector velocity{}; bool add=false;
+    std::memcpy(&bone,params+g_boneOffset,sizeof(bone));
+    std::memcpy(&velocity,params+g_velocityOffset,sizeof(velocity));
+    std::memcpy(&add,params+g_addOffset,sizeof(add));
+    if (!FiniteVelocity(velocity) || g_velocityCommands.size()>=4096) return script_gate::Verdict::Run;
+    g_velocityCommands.push_back({bone,velocity,add});
+    // fallImpulse runs after Delay(0), often while SetSkeletalMesh's bodies are
+    // being replaced. Preserve that actual native command instead of guessing
+    // velocity from a stopped CharacterMovement or adding it a second time.
+    return script_gate::Verdict::Cancel;
+}
+
+void CancelRagdollVelocity() {
+    if (g_velocityFunction) ufunction_hook::SetArmed(g_velocityFunction,&HoldRagdollVelocity,false);
+    g_velocityMesh.Reset(); g_bodyVelocities.clear(); g_replayingVelocity=false;
+    g_velocityCommands.clear(); g_bodyVelocityIndex=0; g_velocityCommandIndex=0;
+    g_baseLinear={}; g_baseLinearDone=false;
+}
+
+bool BeginRagdollVelocity(void* mesh) {
+    CancelRagdollVelocity();
+    CachedObjRef ref; ref.Set(mesh);
+    if (!ref.Get() || !ResolvePhysicsFns()) return false;
+    const auto fn=facts::Resolve(kRagdollLinearVelocity);
+    ParamFrame signature(fn.Fn());
+    g_velocityOffset=signature.ParamOffset(L"NewVel"); g_addOffset=signature.ParamOffset(L"bAddToCurrent");
+    g_boneOffset=signature.ParamOffset(L"BoneName");
+    if (g_velocityOffset<0 || g_addOffset<0 || g_boneOffset<0 ||
+        g_velocityOffset+int(sizeof(FVector))>signature.FrameSize() ||
+        g_addOffset+int(sizeof(bool))>signature.FrameSize() || g_boneOffset+int(sizeof(R::FName))>signature.FrameSize()) return false;
+    void* cls=R::ClassOf(mesh);
+    ParamFrame count(R::FindDispatchFunctionCached(cls,L"GetNumBones")); int32_t n=0;
+    if (!Call(mesh,count) || !count.GetRaw(L"ReturnValue",&n,sizeof(n)) || n<1 || n>1024) return false;
+    for (int32_t i=0;i<n;++i) {
+        if (!ref.Get()) {CancelRagdollVelocity();return false;}
+        BodyVelocity entry;
+        ParamFrame name(R::FindDispatchFunctionCached(cls,L"GetBoneName"));
+        ParamFrame linear(g_getLinVelFn), angular(g_getAngVelFn);
+        if (!name.Set<int32_t>(L"BoneIndex",i) || !Call(mesh,name) || !name.GetRaw(L"ReturnValue",&entry.bone,sizeof(entry.bone)) ||
+            !linear.Set<R::FName>(L"BoneName",entry.bone) || !Call(mesh,linear) || !linear.GetRaw(L"ReturnValue",&entry.linear,sizeof(entry.linear)) ||
+            !angular.Set<R::FName>(L"BoneName",entry.bone) || !Call(mesh,angular) || !angular.GetRaw(L"ReturnValue",&entry.angular,sizeof(entry.angular)) ||
+            !ref.Get() || !FiniteVelocity(entry.linear) || !FiniteVelocity(entry.angular)) {CancelRagdollVelocity();return false;}
+        g_bodyVelocities.push_back(entry);
+        if (R::ToString(entry.bone)==L"pelvis") g_baseLinear=entry.linear;
+    }
+    g_velocityFunction=fn.Fn();
+    if (!ufunction_hook::InstallPreHook(fn,&HoldRagdollVelocity,false)) {CancelRagdollVelocity();return false;}
+    g_velocityMesh.Set(mesh);
+    if (!ufunction_hook::SetArmed(g_velocityFunction,&HoldRagdollVelocity,true)) {CancelRagdollVelocity();return false;}
+    return true;
+}
+
+bool FinishRagdollVelocity(void* mesh) {
+    if (g_velocityMesh.Get()!=mesh) {CancelRagdollVelocity();return false;}
+    struct ReplayGuard { ReplayGuard(){g_replayingVelocity=true;} ~ReplayGuard(){g_replayingVelocity=false;} } guard;
+    // If fallImpulse already ran on the stock body before the first refresh,
+    // its pelvis carries the common translation. Give that to NEW limb bodies
+    // too, then restore per-bone differences such as the native chest kick.
+    if (!g_baseLinearDone) {
+        ParamFrame base(R::FindDispatchFunctionCached(R::ClassOf(mesh),L"SetAllPhysicsLinearVelocity"));
+        if (!base.Set<FVector>(L"NewVel",g_baseLinear) || !base.Set<bool>(L"bAddToCurrent",false) ||
+            !Call(mesh,base) || !g_velocityMesh.Get()) return false;
+        g_baseLinearDone=true;
+    }
+    while (g_bodyVelocityIndex<g_bodyVelocities.size()) {
+        auto& entry=g_bodyVelocities[g_bodyVelocityIndex]; int32_t index=-1;
+        ParamFrame bone(R::FindDispatchFunctionCached(R::ClassOf(mesh),L"GetBoneIndex"));
+        if (!bone.Set<R::FName>(L"BoneName",entry.bone) || !Call(mesh,bone) || !g_velocityMesh.Get() ||
+            !bone.GetRaw(L"ReturnValue",&index,sizeof(index))) return false;
+        // The stock rig has combined thighs/lowlegs; those are absent on the
+        // selected full rig. Only restore bones the new mesh actually owns.
+        if (index<0) {++g_bodyVelocityIndex;continue;}
+        if (!entry.linearDone) {
+            ParamFrame velocity(g_setLinVelFn);
+            if (!velocity.Set<R::FName>(L"BoneName",entry.bone) || !velocity.Set<FVector>(L"NewVel",entry.linear) ||
+                !velocity.Set<bool>(L"bAddToCurrent",false) || !Call(mesh,velocity) || !g_velocityMesh.Get()) return false;
+            entry.linearDone=true;
+        }
+        ParamFrame angular(g_setAngVelFn);
+        if (!angular.Set<R::FName>(L"BoneName",entry.bone) || !angular.Set<FVector>(L"NewAngVel",entry.angular) ||
+            !angular.Set<bool>(L"bAddToCurrent",false) || !Call(mesh,angular) || !g_velocityMesh.Get()) return false;
+        ++g_bodyVelocityIndex;
+    }
+    // Replay exactly in order, retaining additive/absolute semantics and NAME_None
+    // (the native default body). A retry resumes after successful commands.
+    while (g_velocityCommandIndex<g_velocityCommands.size()) {
+        const auto& entry=g_velocityCommands[g_velocityCommandIndex];
+        ParamFrame velocity(g_setLinVelFn);
+        if (!velocity.Set<R::FName>(L"BoneName",entry.bone) || !velocity.Set<FVector>(L"NewVel",entry.linear) ||
+            !velocity.Set<bool>(L"bAddToCurrent",entry.add) || !Call(mesh,velocity) || !g_velocityMesh.Get()) return false;
+        ++g_velocityCommandIndex;
+    }
+    UE_LOGI("ragdoll_momentum: restored native motion (base=%.1f,%.1f,%.1f deferred=%u)",
+        g_baseLinear.X,g_baseLinear.Y,g_baseLinear.Z,static_cast<unsigned>(g_velocityCommands.size()));
+    CancelRagdollVelocity();
+    return true;
+}
+
 }  // namespace
 
 void* SpawnPlayerRagdollBody(void* ownerPlayer, const FVector& location, const FRotator& rotation) {
@@ -185,19 +364,25 @@ bool AttachActorToRagdollBody(void* actor, void* body) {
     if (!actor || !R::IsLive(actor) || !body || !R::IsLive(body)) return false;
     void* mesh = *reinterpret_cast<void**>(reinterpret_cast<uint8_t*>(body) + kAragdoll_SkeletalMesh);
     if (!mesh || !R::IsLive(mesh)) return false;
+    CachedObjRef actorRef, bodyRef, meshRef;
+    actorRef.Set(actor); bodyRef.Set(body); meshRef.Set(mesh);
     void* fn = R::FindFunction(R::FindClass(L"Actor"), L"K2_AttachToComponent");
     if (!fn) { UE_LOGW("ragdoll_body: K2_AttachToComponent unresolved"); return false; }
     uint8_t socket[8] = {};                            // pelvis FName, or NAME_None on miss
     const bool gotPelvis = FindBoneFName(mesh, L"pelvis", socket);
     if (!gotPelvis) UE_LOGW("ragdoll_body: 'pelvis' bone not found on the ragdoll mesh -- attaching to the root");
     ParamFrame f(fn);
-    f.Set<void*>(L"Parent", mesh);
-    f.SetRaw(L"SocketName", socket, sizeof(socket));
-    f.Set<uint8_t>(L"LocationRule", uint8_t{1});       // EAttachmentRule::KeepWorld
-    f.Set<uint8_t>(L"RotationRule", uint8_t{1});       // KeepWorld
-    f.Set<uint8_t>(L"ScaleRule",    uint8_t{1});       // KeepWorld
-    f.Set<bool>(L"bWeldSimulatedBodies", false);
-    return Call(actor, f) && f.Get<bool>(L"ReturnValue");
+    if (!f.Set<void*>(L"Parent", mesh) || !f.SetRaw(L"SocketName", socket, sizeof(socket)) ||
+        !f.Set<uint8_t>(L"LocationRule", uint8_t{1}) ||
+        !f.Set<uint8_t>(L"RotationRule", uint8_t{1}) ||
+        !f.Set<uint8_t>(L"ScaleRule", uint8_t{1}) ||
+        !f.Set<bool>(L"bWeldSimulatedBodies", false) || !Call(actor, f) ||
+        !actorRef.Get() || !bodyRef.Get() || !meshRef.Get()) return false;
+    // Actor::K2_AttachToComponent is void; the component method has a bool return.
+    // Verify the resulting relationship rather than reading a nonexistent out param.
+    void* parent = nullptr;
+    return GetAttachParentActor(actor, parent) && parent == body &&
+        actorRef.Get() && bodyRef.Get() && meshRef.Get();
 }
 
 // Detach `actor` from its parent (the ragdoll body), KeepWorld so it stays where the
@@ -225,70 +410,42 @@ void* GetLocalRagdollBodyMesh(void* mainPlayer) {
 }
 
 bool RefreshLocalRagdollModel(void* mainPlayer) {
-    static CachedObjRef owner, nativeBody, appearance, configured, selected;
+    static CachedObjRef configured, selected;
     static std::chrono::steady_clock::time_point readyAfter{};
-    static bool prepared = false, started = false;
-    static FVector anchor{}, initialLinear{}, initialAngular{};
+    static bool started = false;
+    static RagdollView view;
     void* target = GetLocalRagdollBodyMesh(mainPlayer);
     void* source = puppet::GetMeshPlayerVisibleComponent(mainPlayer);
     void* asset = puppet::GetComponentSkeletalMeshAsset(source);
-    if (!target || !source || !asset) {
-        owner.Reset(); nativeBody.Reset(); appearance.Reset(); configured.Reset(); selected.Reset();
-        prepared = started = false;
-        return false;
+    if (!target || !source || !asset) { configured.Reset(); selected.Reset(); view.Reset(); CancelRagdollVelocity(); return false; }
+    if (configured.Get() == target && selected.Get() == asset) {
+        if (!started) {
+            view.Restore();
+            if (std::chrono::steady_clock::now() < readyAfter || !StartBodySim(target)) return false;
+            view.Restore(); started=true;
+            UE_LOGI("ragdoll_model: selected body simulation started (mesh=%p asset=%p)", target, asset);
+        }
+        return !g_velocityMesh.Get() || FinishRagdollVelocity(target);
     }
-    void* body = *reinterpret_cast<void**>(static_cast<uint8_t*>(mainPlayer) + kMainPlayer_ragdollActor);
-    CachedObjRef playerRef, bodyRef, sourceRef, targetRef, assetRef;
-    playerRef.Set(mainPlayer); bodyRef.Set(body); sourceRef.Set(source); targetRef.Set(target); assetRef.Set(asset);
-    const auto current = [&] {
-        return playerRef.Get() && bodyRef.Get() && sourceRef.Get() && targetRef.Get() && assetRef.Get() &&
-            *reinterpret_cast<void**>(static_cast<uint8_t*>(mainPlayer) + kMainPlayer_ragdollActor) == body &&
-            GetLocalRagdollBodyMesh(mainPlayer) == target &&
-            puppet::GetMeshPlayerVisibleComponent(mainPlayer) == source &&
-            puppet::GetComponentSkeletalMeshAsset(source) == asset;
-    };
-    const auto finite = [](const FVector& value) {
-        return std::isfinite(value.X) && std::isfinite(value.Y) && std::isfinite(value.Z);
-    };
-    if (!current()) return false;
-    if (owner.Get() != mainPlayer || nativeBody.Get() != body || appearance.Get() != source ||
-        configured.Get() != target || selected.Get() != asset) {
-        // Preserve the selected model's standing/crouched entry pose. The native
-        // shell has another rig: aligning a taller body to its pelvis can push
-        // the new legs into the floor. Retain this anchor through setup retries.
-        FVector before{}, linear{}, angular{}, previousPosition{};
-        FRotator previousRotation{};
-        if (!GetBoneWorldLocationByName(source, L"pelvis", before) || !current() || !finite(before)) return false;
-        if (!ReadLocalRagdollPelvisPhysics(mainPlayer, previousPosition, previousRotation, linear, angular) ||
-            !finite(linear) || !finite(angular)) { linear = {}; angular = {}; }
-        if (!current()) return false;
-        owner = playerRef; nativeBody = bodyRef; appearance = sourceRef; configured = targetRef; selected = assetRef;
-        anchor = before; initialLinear = linear; initialAngular = angular;
-        prepared = started = false;
-    }
-    if (started) return true;
-    if (!prepared) {
-        if (!ConfigurePlayerRagdollMesh(source, target) || !current()) return false;
-        prepared = true;
-        readyAfter = std::chrono::steady_clock::now() + std::chrono::milliseconds(30);
-        return false;
-    }
-    if (std::chrono::steady_clock::now() < readyAfter) return false;
-    // The new AnimBP can move the pelvis during warmup. Align its actual pose
-    // immediately before enabling collisions/physics, with no swept movement or
-    // velocity derived from this correction.
-    FVector after{};
-    if (!GetBoneWorldLocationByName(target, L"pelvis", after) || !current() || !finite(after)) return false;
-    const FVector delta{anchor.X - after.X, anchor.Y - after.Y, anchor.Z - after.Z};
-    if (!finite(delta)) return false;
-    ParamFrame position(R::FindDispatchFunctionCached(R::ClassOf(target), L"K2_AddWorldOffset"));
-    if (!position.Set<FVector>(L"DeltaLocation", delta) || !position.Set<bool>(L"bSweep", false) ||
-        !position.Set<bool>(L"bTeleport", true) || !Call(target, position) || !current()) return false;
-    if (!StartBodySim(target) || !current()) return false;
-    DriveRagdollBodyPelvisVelocity(body, initialLinear, initialAngular);
-    if (!current()) return false;
-    started = true;
-    return true;
+    // Configure copies the selected standing mesh's world transform. Its legs
+    // must remain above the floor: a plushie's low pelvis is not a human anchor.
+    // Translating the new pelvis down to the old one buries the full-size limbs
+    // and PhysX depenetration launches the player on the next simulation step.
+    FRotator previousRotation{}; FVector previousPosition{}, initialLinear{}, initialAngular{};
+    ReadLocalRagdollPelvisPhysics(mainPlayer, previousPosition, previousRotation, initialLinear, initialAngular);
+    UE_LOGI("ragdoll_model: entry velocity=(%.1f,%.1f,%.1f) angular=(%.1f,%.1f,%.1f)",
+        initialLinear.X, initialLinear.Y, initialLinear.Z, initialAngular.X, initialAngular.Y, initialAngular.Z);
+    CachedObjRef targetRef; targetRef.Set(target);
+    const bool haveView = view.Capture(mainPlayer, target);
+    if (!BeginRagdollVelocity(target)) return false;
+    if (!ConfigurePlayerRagdollMesh(source, target) || !targetRef.Get()) {CancelRagdollVelocity();return false;}
+    if (haveView && !view.Restore()) UE_LOGW("ragdoll_camera: entry attachment changed while configuring the model");
+    if (!targetRef.Get()) return false;
+    configured.Set(target); selected.Set(asset);
+    started = false;
+    readyAfter = std::chrono::steady_clock::now() + std::chrono::milliseconds(30);
+    UE_LOGI("ragdoll_model: selected geometry staged without plush-pelvis offset (mesh=%p asset=%p)", target, asset);
+    return false;
 }
 
 bool ReadArticulatedPose(void* mesh, std::vector<ArticulatedBone>& bones) {

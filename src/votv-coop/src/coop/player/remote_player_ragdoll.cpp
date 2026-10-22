@@ -67,6 +67,9 @@ bool RagdollDisplay::SetPose(const coop::net::RagdollPoseSnapshot& snap) {
         if (std::fabs(snap.x) > net::kMaxCoord || std::fabs(snap.y) > net::kMaxCoord ||
             std::fabs(snap.z) > net::kMaxCoord) return false;
         if (snap.rigTag != rigTag_ || snap.rigBones != rigBones_ || snap.rigSignature != rigSignature_) {
+            void* source = puppetRef_.Get() ? ue_wrap::puppet::GetMeshPlayerVisibleComponent(puppetRef_.Get()) : nullptr;
+            UE_LOGI("RagdollDisplay: incoming rig=%08x local=%08x bones=%u batch=%u",
+                snap.rigSignature, E::BoneLayoutSignature(source), unsigned(snap.rigBones), unsigned(snap.boneCount));
             bones_.clear(); rigTag_ = snap.rigTag; rigBones_ = snap.rigBones;
             rigSignature_ = snap.rigSignature;
             if (void* puppet = puppetRef_.Get()) ue_wrap::sleep_display::Remove(puppet);

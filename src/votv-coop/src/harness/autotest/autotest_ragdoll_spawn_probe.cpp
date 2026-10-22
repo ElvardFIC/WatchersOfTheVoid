@@ -17,19 +17,24 @@
 #include "harness/screenshot.h"
 
 #include "coop/player/players_registry.h"
+#include "coop/player/remote_player.h"
+#include "coop/player/local_body.h"
 #include "ue_wrap/core/call.h"
 #include "ue_wrap/engine/engine.h"
+#include "ue_wrap/actors/puppet.h"
 #include "ue_wrap/core/game_thread.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
 
 #include <atomic>
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <memory>
 #include <string>
 
 namespace harness::autotest {
+void RunRagdollRobustness(void* local, bool catalogOnly);
 namespace {
 
 namespace R = ue_wrap::reflection;
@@ -310,6 +315,335 @@ void RunManualExperiment(void* local) {
 }
 
 // Experiment A: the real ragdoll verb.
+void DumpSelectedGeometry(void* local) {
+    void* source = ue_wrap::puppet::GetMeshPlayerVisibleComponent(local);
+    void* target = E::GetLocalRagdollBodyMesh(local);
+    for (void* comp : {ue_wrap::puppet::GetNativeBodyMeshComponent(local), source, target}) {
+        if (!comp) continue;
+        ue_wrap::FTransform world{}; uint8_t collision = 255;
+        ue_wrap::ParamFrame transform(R::FindDispatchFunctionCached(R::ClassOf(comp), L"K2_GetComponentToWorld"));
+        if (ue_wrap::Call(comp, transform)) transform.GetRaw(L"ReturnValue", &world, sizeof(world));
+        ue_wrap::ParamFrame state(R::FindDispatchFunctionCached(R::ClassOf(comp), L"GetCollisionEnabled"));
+        if (ue_wrap::Call(comp, state)) state.GetRaw(L"ReturnValue", &collision, sizeof(collision));
+        UE_LOGI("ragdoll_geometry: comp=%p target=%d collision=%u origin=(%.1f,%.1f,%.1f) scale=(%.3f,%.3f,%.3f)",
+            comp, comp == target, collision, world.TX, world.TY, world.TZ, world.SX, world.SY, world.SZ);
+    }
+    std::vector<E::ArticulatedBone> bones;
+    if (target && E::ReadArticulatedPose(target, bones)) for (const auto& bone : bones) {
+        R::FName name{};
+        ue_wrap::ParamFrame label(R::FindDispatchFunctionCached(R::ClassOf(target), L"GetBoneName"));
+        if (!label.Set<int32_t>(L"BoneIndex", bone.index) || !ue_wrap::Call(target, label) ||
+            !label.GetRaw(L"ReturnValue", &name, sizeof(name))) continue;
+        const auto text = R::ToString(name); ue_wrap::FVector at{};
+        E::GetBoneWorldLocationByName(source, text.c_str(), at);
+        UE_LOGI("ragdoll_geometry: bone=%ls target=(%.1f,%.1f,%.1f) source=(%.1f,%.1f,%.1f) scale=(%.3f,%.3f,%.3f)",
+            text.c_str(), bone.world.TX, bone.world.TY, bone.world.TZ, at.X, at.Y, at.Z,
+            bone.world.SX, bone.world.SY, bone.world.SZ);
+    }
+}
+
+void* PlayerComponent(void* local, const wchar_t* name) {
+    if (!local || !R::IsLive(local)) return nullptr;
+    const int offset = R::FindPropertyOffset(R::ClassOf(local), name);
+    if (offset < 0) return nullptr;
+    void* component = *reinterpret_cast<void**>(static_cast<uint8_t*>(local) + offset);
+    return component && R::IsLive(component) ? component : nullptr;
+}
+
+void LogRagdollCamera(void* local, const char* tag) {
+    void* camera = PlayerComponent(local, L"Camera"); void* arm = PlayerComponent(local, L"lag");
+    const auto view = E::GetComponentWorldRotation(camera);
+    const auto parent = E::GetComponentWorldRotation(arm);
+    const auto control = E::GetControlRotation(E::GetController(local));
+    ue_wrap::FRotator target{};
+    ue_wrap::ParamFrame frame(R::FindDispatchFunctionCached(R::ClassOf(arm), L"GetTargetRotation"));
+    if (frame.valid() && ue_wrap::Call(arm, frame)) frame.GetRaw(L"ReturnValue", &target, sizeof(target));
+    UE_LOGI("ragdoll_camera_probe: %s view=(%.2f,%.2f,%.2f) arm=(%.2f,%.2f,%.2f) target=(%.2f,%.2f,%.2f) control=(%.2f,%.2f,%.2f)",
+        tag, view.Pitch, view.Yaw, view.Roll, parent.Pitch, parent.Yaw, parent.Roll,
+        target.Pitch, target.Yaw, target.Roll, control.Pitch, control.Yaw, control.Roll);
+}
+
+float RotationError(const ue_wrap::FRotator& a, const ue_wrap::FRotator& b) {
+    float ax, ay, az, aw, bx, by, bz, bw;
+    E::RotatorToQuat(a.Pitch, a.Yaw, a.Roll, ax, ay, az, aw);
+    E::RotatorToQuat(b.Pitch, b.Yaw, b.Roll, bx, by, bz, bw);
+    return 114.591559f * std::acos(std::clamp(std::abs(ax*bx + ay*by + az*bz + aw*bw), 0.f, 1.f));
+}
+
+void CheckCameraTransitions(void* local) {
+    struct Case { const char* name; ue_wrap::FRotator look; bool crouch, passOut; };
+    const Case cases[] = {{"level", {0,-90,0}, false, false}, {"down-wrapped-yaw", {-35,385,0}, false, false},
+        {"up", {40,150,0}, false, false}, {"crouched", {-25,-170,0}, true, false},
+        {"faint", {25,65,0}, false, true}};
+    int passed = 0, total = 0;
+    for (const char* skin : {"sci_v1sc", "kerfur_omega_h"}) {
+        coop::local_body::RequestSkin(skin);
+        ::Sleep(1500);
+        for (const auto& item : cases) {
+            struct Sample { ue_wrap::CachedObjRef pawn; float stageError=999, viewError=999, rise=-1.e9f, entryZ=0, motion=0;
+                bool entered=false, selected=false, recovered=false, parented=false; int samples=0; ue_wrap::FRotator initial{}; };
+            auto state = std::make_shared<Sample>();
+            auto done = std::make_shared<std::atomic<int>>(0);
+            GT::Post([local, item, state, done] {
+                state->pawn.Set(local);
+                if (state->pawn.Get()) {
+                    ue_wrap::ParamFrame crouch(R::FindDispatchFunctionCached(R::ClassOf(local), item.crouch ? L"Crouch" : L"UnCrouch"));
+                    if (crouch.Set<bool>(L"bClientSimulation", false)) ue_wrap::Call(local, crouch);
+                    E::SetControlRotation(E::GetController(local), item.look);
+                }
+                done->store(1);
+            });
+            if (!WaitDone(done, 8000)) return;
+            ::Sleep(350);
+            done = std::make_shared<std::atomic<int>>(0);
+            GT::Post([state, item, done] {
+                void* pawn = state->pawn.Get(); ue_wrap::FVector at{};
+                if (!pawn || !E::TryGetActorLocation(pawn, at)) { done->store(1); return; }
+                state->entryZ = at.Z;
+                // A synthetic pitch set in an earlier task can reset before entry.
+                // Arrange both native view transforms in this game-thread task,
+                // then run the actual ragdoll verb without an intervening tick.
+                E::SetControlRotation(E::GetController(pawn), item.look);
+                E::SetComponentWorldRotation(PlayerComponent(pawn, L"lag"), item.look);
+                const auto beforeView = E::GetComponentWorldRotation(PlayerComponent(pawn, L"Camera"));
+                LogRagdollCamera(pawn, "angle-case-before-native");
+                state->entered = E::SetMainPlayerRagdollMode(pawn, true, item.passOut, false);
+                E::RefreshLocalRagdollModel(pawn);
+                state->initial = E::GetComponentWorldRotation(PlayerComponent(pawn, L"lag"));
+                state->stageError = RotationError(state->initial, item.look);
+                state->viewError = RotationError(beforeView, E::GetComponentWorldRotation(PlayerComponent(pawn, L"Camera")));
+                state->selected = ue_wrap::puppet::GetComponentSkeletalMeshAsset(E::GetLocalRagdollBodyMesh(pawn)) ==
+                    ue_wrap::puppet::GetComponentSkeletalMeshAsset(ue_wrap::puppet::GetMeshPlayerVisibleComponent(pawn));
+                LogRagdollCamera(pawn, "angle-case-staged");
+                done->store(1);
+            });
+            if (!WaitDone(done, 8000)) return;
+            for (int i=0; i<24; ++i) {
+                ::Sleep(25);
+                done = std::make_shared<std::atomic<int>>(0);
+                GT::Post([state, done] {
+                    void* pawn = state->pawn.Get(); ue_wrap::FVector at{}, lin{}, ang{}; ue_wrap::FRotator rot{};
+                    if (pawn && E::RefreshLocalRagdollModel(pawn) && E::ReadLocalRagdollPelvisPhysics(pawn,at,rot,lin,ang)) {
+                        ++state->samples; state->rise=(std::max)(state->rise,at.Z-state->entryZ);
+                        void* arm=PlayerComponent(pawn,L"lag"); void* parent=nullptr;
+                        ue_wrap::ParamFrame attached(R::FindDispatchFunctionCached(R::ClassOf(arm),L"GetAttachParent"));
+                        state->parented=attached.valid() && ue_wrap::Call(arm,attached) && attached.GetRaw(L"ReturnValue",&parent,sizeof(parent)) &&
+                            parent==E::GetLocalRagdollBodyMesh(pawn);
+                        state->motion=(std::max)(state->motion,RotationError(state->initial,E::GetComponentWorldRotation(arm)));
+                    }
+                    done->store(1);
+                });
+                if (!WaitDone(done, 8000)) return;
+            }
+            done = std::make_shared<std::atomic<int>>(0);
+            GT::Post([state, done] {
+                if (void* pawn=state->pawn.Get()) { E::ForceMainPlayerWakeup(pawn); E::ForceMainPlayerGetUp(pawn); }
+                done->store(1);
+            });
+            if (!WaitDone(done, 8000)) return;
+            ::Sleep(1000);
+            done = std::make_shared<std::atomic<int>>(0);
+            GT::Post([state, done] {
+                bool rag=true,dead=true;
+                if (void* pawn=state->pawn.Get()) state->recovered=E::ReadMainPlayerRagdollState(pawn,rag,dead) && !rag && !dead && !E::GetLocalRagdollBodyMesh(pawn);
+                done->store(1);
+            });
+            if (!WaitDone(done, 8000)) return;
+            const bool ok=state->entered && state->stageError<0.2f && state->viewError<1.f && state->selected && state->parented &&
+                state->samples>=10 && state->rise<150.f && state->motion>1.f && state->recovered;
+            ++total; if(ok)++passed;
+            UE_LOGI("ragdoll_camera_case: %s skin=%s case=%s arm-error=%.3f view-jump=%.3f samples=%d rise=%.1fcm head-motion=%.1f selected=%d attached=%d recovered=%d",
+                ok?"PASS":"FAIL",skin,item.name,state->stageError,state->viewError,state->samples,state->rise,state->motion,state->selected,state->parented,state->recovered);
+        }
+    }
+    UE_LOGI("ragdoll_camera_acceptance: %s %d/%d", passed==total && total==10 ? "PASS":"FAIL",passed,total);
+}
+
+void CheckMomentumTransitions(void* local) {
+    struct Motion { const char* name; ue_wrap::FVector velocity; bool airborne; bool nativeInput=false; };
+    const Motion motions[]={{"walk",{300,0,0},false},{"run",{600,0,0},false},
+        {"diagonal",{-350,450,0},false},{"airborne",{400,0,-300},true},{"native-movement",{},false,true}};
+    ue_wrap::FVector home{};
+    auto done=std::make_shared<std::atomic<int>>(0);
+    GT::Post([local,&home,done]{E::TryGetActorLocation(local,home);done->store(1);});
+    if(!WaitDone(done,8000))return;
+    int passed=0,total=0;
+    for(const char* skin:{"sci_v1sc","kerfur_omega_h"}) {
+        coop::local_body::RequestSkin(skin);::Sleep(1500);
+        for(const auto& motion:motions) {
+            if(motion.nativeInput && ReadEnv("VOTVCOOP_RAGDOLL_NATIVE_MOVEMENT_PROBE")!="1")continue;
+            struct State { bool entered=false,recovered=false;int samples=0;float bestMean=-1.e9f,bestPelvis=-1.e9f;ue_wrap::FVector expected{}; };
+            auto state=std::make_shared<State>();
+            state->expected=motion.velocity;
+            if(motion.nativeInput) {
+                done=std::make_shared<std::atomic<int>>(0);
+                GT::Post([local,home,done]{
+                    E::SetActorLocation(local,home);E::SetControlRotation(E::GetController(local),{0,0,0});
+                    // Use the same held movement flags as the game's W/sprint
+                    // input. A one-off AddMovementInput can be consumed before
+                    // the next test task on a fast headless world.
+                    for(const auto* flag:{L"input_forward",L"input_run"}) {
+                        int32_t byte=-1;uint8_t mask=0;
+                        if(R::FindBoolProperty(R::ClassOf(local),flag,byte,mask))static_cast<uint8_t*>(local)[byte]|=mask;
+                    }
+                    ue_wrap::ParamFrame speed(R::FindDispatchFunctionCached(R::ClassOf(local),L"updateSpeed"));
+                    if(speed.valid())ue_wrap::Call(local,speed);done->store(1);
+                });
+                if(!WaitDone(done,8000))return;
+                ::Sleep(350);
+            }
+            done=std::make_shared<std::atomic<int>>(0);
+            GT::Post([local,home,motion,state,done] {
+                auto at=home;if(motion.airborne)at.Z+=450.f;
+                if(!motion.nativeInput)E::SetActorLocation(local,at);
+                const int offset=R::FindPropertyOffset(R::ClassOf(local),L"fallVeloc");
+                bool rag=true,dead=true;
+                if(offset<0 || !E::ReadMainPlayerRagdollState(local,rag,dead) || rag || dead || E::GetLocalRagdollBodyMesh(local)){done->store(1);return;}
+                // Controlled native input: this is the game's own saved movement
+                // velocity consumed by fallImpulse after Delay(0), not a mod kick.
+                if(motion.nativeInput)std::memcpy(&state->expected,static_cast<uint8_t*>(local)+offset,sizeof(state->expected));
+                else std::memcpy(static_cast<uint8_t*>(local)+offset,&motion.velocity,sizeof(motion.velocity));
+                state->entered=E::SetMainPlayerRagdollMode(local,true,false,false);
+                E::RefreshLocalRagdollModel(local);done->store(1);
+            });
+            if(!WaitDone(done,8000))return;
+            for(int sample=0;sample<14;++sample) {
+                ::Sleep(20);done=std::make_shared<std::atomic<int>>(0);
+                GT::Post([local,motion,state,done] {
+                    if(!E::RefreshLocalRagdollModel(local)){done->store(1);return;}
+                    ue_wrap::FVector at{},linear{},angular{};ue_wrap::FRotator rotation{};
+                    if(!E::ReadLocalRagdollPelvisPhysics(local,at,rotation,linear,angular)){done->store(1);return;}
+                    const auto expected=state->expected;
+                    const float speed=std::sqrt(expected.X*expected.X+expected.Y*expected.Y+expected.Z*expected.Z);
+                    if(speed<50.f){done->store(1);return;}
+                    const auto project=[&](const ue_wrap::FVector& v){return (v.X*expected.X+v.Y*expected.Y+v.Z*expected.Z)/speed;};
+                    void* mesh=E::GetLocalRagdollBodyMesh(local);std::vector<E::ArticulatedBone> bones;
+                    float mean=0;int count=0;
+                    if(E::ReadArticulatedPose(mesh,bones))for(const auto& bone:bones) {
+                        R::FName name{};ue_wrap::FVector v{};
+                        ue_wrap::ParamFrame label(R::FindDispatchFunctionCached(R::ClassOf(mesh),L"GetBoneName"));
+                        ue_wrap::ParamFrame velocity(R::FindDispatchFunctionCached(R::ClassOf(mesh),L"GetPhysicsLinearVelocity"));
+                        if(label.Set<int32_t>(L"BoneIndex",bone.index) && ue_wrap::Call(mesh,label) && label.GetRaw(L"ReturnValue",&name,sizeof(name)) &&
+                            velocity.Set<R::FName>(L"BoneName",name) && ue_wrap::Call(mesh,velocity) && velocity.GetRaw(L"ReturnValue",&v,sizeof(v))){mean+=project(v);++count;}
+                    }
+                    if(count){++state->samples;state->bestMean=(std::max)(state->bestMean,mean/count);
+                        state->bestPelvis=(std::max)(state->bestPelvis,project(linear));}
+                    done->store(1);
+                });
+                if(!WaitDone(done,8000))return;
+            }
+            ::Sleep(1000); // Let the airborne body land before forceWakeup transfers back to the capsule.
+            done=std::make_shared<std::atomic<int>>(0);
+            GT::Post([local,done]{E::ForceMainPlayerWakeup(local);done->store(1);});
+            if(!WaitDone(done,8000))return;::Sleep(2000);
+            done=std::make_shared<std::atomic<int>>(0);
+            GT::Post([local,state,done]{bool rag=true,dead=true;state->recovered=E::ReadMainPlayerRagdollState(local,rag,dead)&&!rag&&!dead&&!E::GetLocalRagdollBodyMesh(local);done->store(1);});
+            if(!WaitDone(done,8000))return;
+            const auto expected=state->expected;
+            const float speed=std::sqrt(expected.X*expected.X+expected.Y*expected.Y+expected.Z*expected.Z);
+            const bool ok=state->entered && state->recovered && state->samples>=5 && state->bestMean>speed*0.4f &&
+                state->bestPelvis>speed*0.4f && state->bestMean<speed*1.6f;
+            ++total;if(ok)++passed;
+            UE_LOGI("ragdoll_momentum_case: %s skin=%s case=%s input=%.1f mean=%.1f pelvis=%.1f samples=%d entered=%d recovered=%d",
+                ok?"PASS":"FAIL",skin,motion.name,speed,state->bestMean,state->bestPelvis,state->samples,state->entered,state->recovered);
+        }
+    }
+    const int expectedCases=ReadEnv("VOTVCOOP_RAGDOLL_NATIVE_MOVEMENT_PROBE")=="1"?10:8;
+    UE_LOGI("ragdoll_momentum_acceptance: %s %d/%d",passed==total&&total==expectedCases?"PASS":"FAIL",passed,total);
+}
+
+void CheckSelectedModelEntry(void* local) {
+    struct Probe {
+        coop::RemotePlayer mirror;
+        ue_wrap::CachedObjRef local;
+        float entryZ = 0, highest = -1.e9f;
+        int samples = 0;
+        bool entered = false, selected = false, shown = false, attached = false, recovered = false;
+    };
+    auto probe = std::make_shared<Probe>();
+    auto done = std::make_shared<std::atomic<int>>(0);
+    GT::Post([probe, local, done] {
+        probe->local.Set(local);
+        ue_wrap::FVector at{};
+        if (!probe->local.Get() || !E::TryGetActorLocation(local, at) ||
+            !probe->mirror.Spawn(coop::local_body::LocalSkinName())) { done->store(1); return; }
+        probe->entryZ = at.Z;
+        LogRagdollCamera(local, "before-native");
+        probe->entered = E::SetMainPlayerRagdollMode(local, true, false, false);
+        LogRagdollCamera(local, "after-native");
+        E::RefreshLocalRagdollModel(local);
+        LogRagdollCamera(local, "after-selected-stage");
+        DumpSelectedGeometry(local);
+        done->store(1);
+    });
+    if (!WaitDone(done, 8000)) return;
+    for (int sample = 0; sample < 80 && probe->entered; ++sample) {
+        ::Sleep(50);
+        done = std::make_shared<std::atomic<int>>(0);
+        GT::Post([probe, sample, done] {
+            void* pawn = probe->local.Get();
+            if (!pawn || !E::RefreshLocalRagdollModel(pawn)) { done->store(1); return; }
+            ue_wrap::FVector position{}, linear{}, angular{}; ue_wrap::FRotator rotation{};
+            if (!E::ReadLocalRagdollPelvisPhysics(pawn, position, rotation, linear, angular)) { done->store(1); return; }
+            ++probe->samples; probe->highest = (std::max)(probe->highest, position.Z);
+            if (sample < 5 || sample % 10 == 0)
+                UE_LOGI("ragdoll_sample: i=%d z=%.1f rise=%.1f velocity=(%.1f,%.1f,%.1f)",
+                    sample, position.Z, position.Z - probe->entryZ, linear.X, linear.Y, linear.Z);
+            if (sample < 5) LogRagdollCamera(pawn, "simulation");
+            void* mesh = E::GetLocalRagdollBodyMesh(pawn);
+            probe->selected = ue_wrap::puppet::GetComponentSkeletalMeshAsset(mesh) ==
+                ue_wrap::puppet::GetComponentSkeletalMeshAsset(ue_wrap::puppet::GetMeshPlayerVisibleComponent(pawn));
+            coop::net::PoseSnapshot pose{};
+            pose.x = position.X + 250.f; pose.y = position.Y; pose.z = position.Z;
+            pose.stateBits = coop::net::kStateBitRagdoll;
+            probe->mirror.SetTargetPose(pose);
+            coop::net::RagdollPoseSnapshot packet{};
+            packet.x = pose.x; packet.y = pose.y; packet.z = pose.z;
+            packet.linVelX = linear.X; packet.linVelY = linear.Y; packet.linVelZ = linear.Z;
+            packet.angVelX = angular.X; packet.angVelY = angular.Y; packet.angVelZ = angular.Z;
+            std::vector<E::ArticulatedBone> bones;
+            if (E::ReadArticulatedPose(mesh, bones) && !bones.empty() && bones.size() <= 64) {
+                packet.rigTag = 1; packet.rigBones = static_cast<uint16_t>(bones.size());
+                packet.rigSignature = E::BoneLayoutSignature(mesh);
+                const size_t first = (size_t(sample) % ((bones.size() + 6) / 7)) * 7;
+                packet.boneCount = static_cast<uint8_t>((std::min)(size_t(7), bones.size() - first));
+                const auto q = [](float v) { return static_cast<int16_t>(std::lround(std::clamp(v, -1.f, 1.f) * 32767.f)); };
+                for (uint8_t i = 0; i < packet.boneCount; ++i) {
+                    const auto& b = bones[first + i]; auto& out = packet.bones[i];
+                    out = {b.index, b.world.TX + 250.f, b.world.TY, b.world.TZ,
+                        q(b.world.RotX), q(b.world.RotY), q(b.world.RotZ), q(b.world.RotW)};
+                }
+            }
+            probe->mirror.SetRagdollPose(packet); probe->mirror.Tick();
+            void* body = probe->mirror.RagdollBody(); void* parent = nullptr;
+            if (body && probe->mirror.IsRagdollDisplayed()) {
+                probe->shown = ue_wrap::puppet::GetComponentSkeletalMeshAsset(E::GetRagdollBodyMesh(body)) ==
+                    ue_wrap::puppet::GetComponentSkeletalMeshAsset(mesh);
+                probe->attached = E::GetAttachParentActor(probe->mirror.GetActor(), parent) && parent == body;
+            }
+            done->store(1);
+        });
+        if (!WaitDone(done, 8000)) break;
+    }
+    done = std::make_shared<std::atomic<int>>(0);
+    GT::Post([probe, done] {
+        if (void* pawn = probe->local.Get()) E::ForceMainPlayerGetUp(pawn);
+        if (probe->mirror.valid()) {
+            coop::net::PoseSnapshot standing{};
+            probe->mirror.SetTargetPose(standing); probe->mirror.Tick();
+            probe->recovered = !probe->mirror.IsRagdollDisplayed() && !probe->mirror.RagdollBody();
+            probe->mirror.Destroy();
+        }
+        done->store(1);
+    });
+    WaitDone(done, 8000);
+    const float rise = probe->highest - probe->entryZ;
+    const bool ok = probe->entered && probe->samples >= 30 && probe->selected && probe->shown &&
+        probe->attached && probe->recovered && std::isfinite(rise) && rise < 150.f;
+    UE_LOGI("ragdoll_model_probe: %s samples=%d rise=%.1fcm selected=%d remote-model=%d attached=%d recovered=%d",
+        ok ? "PASS" : "FAIL", probe->samples, rise, probe->selected, probe->shown, probe->attached, probe->recovered);
+}
+
 void RunRealExperiment(void* local) {
     UE_LOGI("ragdollspawn: === EXPERIMENT A (real ragdollMode, ground truth) ===");
 
@@ -402,6 +736,16 @@ void RunRagdollSpawnProbe() {
     }
     UE_LOGI("ragdollspawn: local player resolved -- letting the world settle 5 s");
     ::Sleep(5000);
+    if (ReadEnv("VOTVCOOP_RAGDOLL_ALL_ACCEPTANCE") == "1") {
+        CheckMomentumTransitions(*local); CheckCameraTransitions(*local);
+        RunRagdollRobustness(*local,false); RunRagdollRobustness(*local,true);
+        UE_LOGI("ragdoll_all_acceptance: DONE -- individual verdicts above are mandatory"); return;
+    }
+    if (ReadEnv("VOTVCOOP_RAGDOLL_ROBUSTNESS_TEST") == "1") { RunRagdollRobustness(*local,false); return; }
+    if (ReadEnv("VOTVCOOP_RAGDOLL_MOMENTUM_TEST") == "1") { CheckMomentumTransitions(*local); return; }
+    if (ReadEnv("VOTVCOOP_RAGDOLL_CAMERA_TEST") == "1") { CheckCameraTransitions(*local); return; }
+    CheckSelectedModelEntry(*local);
+    ::Sleep(1500);
 
     // Diagnostic: is the ragdoll blueprint class already resident, or only loaded lazily when
     // the ragdoll verb first fires? (Tells whether the real-first ordering below is load-bearing

@@ -17,6 +17,9 @@
 #include "coop/player/puppet_drive.h"
 #include "coop/player/players_registry.h"
 #include "coop/player/remote_player.h"
+#include "coop/player/local_body.h"
+#include "coop/props/join_membership_sweep.h"
+#include "ue_wrap/actors/sleep_display.h"
 #include "ue_wrap/core/call.h"
 #include "ue_wrap/engine/engine.h"
 #include "ue_wrap/core/cached_obj_ref.h"
@@ -39,6 +42,8 @@ namespace GT = ue_wrap::game_thread;
 namespace E = ue_wrap::engine;
 namespace cfg = coop::config;
 
+int ObservedSlot() { return IsClientRole() ? 0 : 1; }
+
 // A bounded spin-wait on a game-thread task's completion flag. True if the task signalled,
 // false if it never completed within the timeout, which means the posted task faulted (the
 // SEH firewall ate the fault and the flag was never set). The bound is mandatory: driving the
@@ -56,7 +61,7 @@ bool PuppetHasFloppingRagdollBody() {
     auto done = std::make_shared<std::atomic<int>>(0);
     auto ok = std::make_shared<int>(0);
     GT::Post([done, ok] {
-        coop::RemotePlayer& rp = coop::puppet_drive::Puppet(1);
+        coop::RemotePlayer& rp = coop::puppet_drive::Puppet(ObservedSlot());
         void* body = rp.RagdollBody();
         if (body && R::IsLiveByIndex(body, rp.RagdollBodyIdx())) {  // recycle-proof
             void* mesh = E::GetRagdollBodyMesh(body);
@@ -66,9 +71,16 @@ bool PuppetHasFloppingRagdollBody() {
                 ue_wrap::puppet::GetComponentSkeletalMeshAsset(mesh) ==
                     ue_wrap::puppet::GetComponentSkeletalMeshAsset(playerMesh);
             if (mesh && R::IsLive(mesh)) {
-                if (void* awakeFn = R::FindFunction(R::FindClass(L"PrimitiveComponent"), L"IsAnyRigidBodyAwake")) {
+                if (void* awakeFn = R::FindDispatchFunctionCached(R::ClassOf(mesh), L"IsAnySimulatingPhysics")) {
                     ue_wrap::ParamFrame f(awakeFn);
-                    if (sameModel && ue_wrap::Call(mesh, f) && f.Get<bool>(L"ReturnValue")) *ok = 1;
+                    void* display = ue_wrap::sleep_display::Mesh(puppet);
+                    const bool streamed = display && ue_wrap::puppet::GetComponentSkeletalMeshAsset(display) ==
+                        ue_wrap::puppet::GetComponentSkeletalMeshAsset(playerMesh);
+                    if (sameModel && streamed && ue_wrap::Call(mesh, f) && f.Get<bool>(L"ReturnValue")) {
+                        *ok = 1;
+                        UE_LOGI("ragdoll_test[host]: selected mesh + articulated network display verified");
+                    }
+                    if (!*ok) UE_LOGI("ragdoll_test[host]: waiting for display -- model=%d streamed=%d", sameModel, streamed);
                 }
             }
             if (!sameModel)
@@ -93,7 +105,7 @@ bool AimHostAtPuppet() {
     auto done = std::make_shared<std::atomic<int>>(0);
     GT::Post([done] {
         void* local = coop::players::Registry::Get().Local();
-        void* puppet = coop::puppet_drive::Puppet(1).GetActor();
+        void* puppet = coop::puppet_drive::Puppet(ObservedSlot()).GetActor();
         if (!local || !R::IsLive(local) || !puppet || !R::IsLive(puppet)) { done->store(2); return; }
         void* ctrl = E::GetController(local);
         if (!ctrl || !R::IsLive(ctrl)) { done->store(2); return; }
@@ -142,7 +154,7 @@ bool PositionHostForShot() {
     auto done = std::make_shared<std::atomic<int>>(0);
     GT::Post([done] {
         void* local = coop::players::Registry::Get().Local();
-        void* puppet = coop::puppet_drive::Puppet(1).GetActor();
+        void* puppet = coop::puppet_drive::Puppet(ObservedSlot()).GetActor();
         if (!local || !R::IsLive(local) || !puppet || !R::IsLive(puppet)) { done->store(2); return; }
         ue_wrap::FVector h{}, p{};
         if (!E::TryGetActorLocation(local, h) || !E::TryGetActorLocation(puppet, p)) {
@@ -170,7 +182,7 @@ bool PositionHostForShot() {
 void ProbePuppetRagdollGeometry(const char* tag) {
     auto done = std::make_shared<std::atomic<int>>(0);
     GT::Post([done, tag] {
-        void* puppet = coop::puppet_drive::Puppet(1).GetActor();
+        void* puppet = coop::puppet_drive::Puppet(ObservedSlot()).GetActor();
         void* local = coop::players::Registry::Get().Local();
         if (!puppet || !R::IsLive(puppet)) { done->store(1); return; }
         ue_wrap::FVector origin{}, extent{};
@@ -196,22 +208,28 @@ void ProbePuppetRagdollGeometry(const char* tag) {
 // The host side: observe the slot-1 puppet (the client's body) and confirm its ragdoll
 // appears (driven by the client over the wire) and then goes.
 void ObserveOnHost() {
+    const auto observerLimit=cfg::ReadEnv("VOTVCOOP_RAGDOLL_OBSERVER_SECONDS");
+    const int observerSeconds=observerLimit.empty()?240:std::clamp(std::atoi(observerLimit.c_str()),60,900);
     UE_LOGI("ragdoll_test[host]: observer armed -- polling slot-1 puppet for a "
-            "wire-driven ragdoll (up to 120 s)");
+            "wire-driven ragdoll (up to %d s)",observerSeconds);
 
     // The phase machine: 0 waiting for the puppet to exist; 1 the puppet up, settle and frame
     // the standing puppet (the before shot), then wait for the rising edge; 2 waiting for the
     // falling edge.
     int phase = 0;
+    // NullRHI checks do not need screenshot framing. Repositioning at a still
+    // converging puppet can put the observer outside the safe spawn area and
+    // kill/disconnect it before the reverse-direction test.
+    const bool frameShots = cfg::ReadEnv("VOTVCOOP_RAGDOLL_FRAME_SHOTS") != "0";
     bool sawPuppet = false;
     bool sawFlop = false;
     bool positioned = false;  // host moved back + aimed at the standing puppet
     int settle = 0;           // poll ticks waited for the puppet to converge
-    for (int attempt = 0; attempt < 120 && phase < 3; ++attempt) {
+    for (int attempt = 0; attempt < observerSeconds && phase < 3; ++attempt) {
         auto done = std::make_shared<std::atomic<int>>(0);
         auto isRag = std::make_shared<int>(-1);  // -1 = no puppet, 0 = up, 1 = ragdoll-displayed
         GT::Post([done, isRag] {
-            coop::RemotePlayer& rp = coop::puppet_drive::Puppet(1);
+            coop::RemotePlayer& rp = coop::puppet_drive::Puppet(ObservedSlot());
             if (!rp.valid()) { *isRag = -1; done->store(1); return; }
             // A spawned ragdoll display body is the authoritative sign that this puppet is
             // ragdolled; the puppet's own ragdoll field is not driven.
@@ -233,11 +251,13 @@ void ObserveOnHost() {
         // keep tracking until the ragdoll fires.
         if (phase == 1 && !positioned) {
             if (++settle >= 4) {
-                const bool placed = PositionHostForShot();
-                const bool aimed = AimHostAtPuppet();
+                const bool placed = frameShots && PositionHostForShot();
+                const bool aimed = frameShots && AimHostAtPuppet();
                 positioned = true;
                 // READY only for a frame that happened: the before shot waits on it.
-                if (placed && aimed)
+                if (!frameShots)
+                    UE_LOGI("ragdoll_test[host]: observing in place; screenshot teleports and view writes disabled");
+                else if (placed && aimed)
                     UE_LOGI("ragdoll_test[host]: host positioned + aimed at STANDING puppet -- BEFORE-SHOT READY");
                 else
                     UE_LOGW("ragdoll_test[host]: BEFORE-SHOT NOT READY -- the host could not be %s",
@@ -245,7 +265,7 @@ void ObserveOnHost() {
                 ProbePuppetRagdollGeometry("standing");  // baseline before the flop
             }
         } else if (phase == 1 && positioned) {
-            AimHostAtPuppet();  // keep the standing puppet framed until it flops
+            if (frameShots) AimHostAtPuppet();  // keep the standing puppet framed until it flops
             if (r == 1) {
                 // Confirm the separate ragdoll display body is physically flopping (not just the
                 // display latch): the rigid-body-awake query on the body mesh, true while it falls,
@@ -257,7 +277,8 @@ void ObserveOnHost() {
             }
         }
         if (phase == 2 && r == 1) {
-            AimHostAtPuppet();  // track the puppet (anchored over the flopping body)
+            if (!sawFlop) sawFlop = PuppetHasFloppingRagdollBody();
+            if (frameShots) AimHostAtPuppet();  // track the puppet (anchored over the flopping body)
         }
         if (phase == 2 && r == 0) {
             UE_LOGI("ragdoll_test[host]: observed FALLING edge -- puppet ragdoll body destroyed (recovered)");
@@ -307,10 +328,45 @@ void DriveOnClient() {
         return;
     }
 
-    // Let the host spawn the slot-1 puppet and arm its observer (the puppet appears a few
-    // seconds after our first pose). Twelve seconds is comfortably past that on a LAN smoke.
-    UE_LOGI("ragdoll_test[client]: local player resolved -- waiting 12 s for the host puppet to spawn");
-    ::Sleep(12000);
+    // Loading a save parks the local pawn and suppresses outbound poses until
+    // the snapshot's final sweep. A fixed delay from possession can test a body
+    // which the sender is deliberately not publishing yet.
+    bool ready = false;
+    int settled = 0;
+    const auto readinessLimit=cfg::ReadEnv("VOTVCOOP_RAGDOLL_READINESS_SECONDS");
+    const int readinessSeconds=readinessLimit.empty()?180:std::clamp(std::atoi(readinessLimit.c_str()),60,900);
+    const auto readinessDeadline=std::chrono::steady_clock::now()+std::chrono::seconds(readinessSeconds);
+    for (;std::chrono::steady_clock::now()<readinessDeadline && !ready;) {
+        auto done = std::make_shared<std::atomic<int>>(0);
+        auto candidate=std::make_shared<void*>(nullptr);
+        GT::Post([candidate, done] {
+            void* current = coop::players::Registry::Get().Local();
+            if (!current || !R::IsLive(current) || (IsClientRole() && !coop::join_membership_sweep::HasLoadTailQuiesced())) {
+                done->store(2); return;
+            }
+            *candidate=current; done->store(1);
+        });
+        // World loading can occupy the game thread beyond one task wait. Keep
+        // waiting within the overall deadline; a late task owns only its result.
+        if (!WaitDone(done, 8000)) {settled=0;continue;}
+        const bool same=done->load()==1 && *candidate==*local;
+        if(done->load()==1)*local=*candidate;
+        settled = same ? settled + 1 : 0;
+        ready = settled >= 12;
+        if (!ready) ::Sleep(1000);
+    }
+    if (!ready) {
+        UE_LOGW("ragdoll_test[client]: VERDICT INCONCLUSIVE -- join has not released the outbound pose stream");
+        return;
+    }
+
+    UE_LOGI("ragdoll_test[client]: join and local pawn stable for 12 s -- driving the published player");
+    const std::string requestedSkin = cfg::ReadEnv("VOTVCOOP_RAGDOLL_TEST_SKIN");
+    if (!requestedSkin.empty()) {
+        coop::local_body::RequestSkin(requestedSkin);
+        ::Sleep(2500);
+        UE_LOGI("ragdoll_test[client]: requested test skin '%s' through the normal picker", requestedSkin.c_str());
+    }
 
     // Drive the local ragdoll (what the faint key and the exhaustion faint do). On the possessed
     // local player this is the normal in-game path.
@@ -370,10 +426,17 @@ void DriveOnClient() {
 
 void RunAutonomousRagdollTest() {
     const bool isHost = !IsClientRole();  // default Host if unset
-    if (isHost) {
-        ObserveOnHost();
-    } else {
-        DriveOnClient();
+    const auto repeatText = cfg::ReadEnv("VOTVCOOP_RAGDOLL_TEST_REPEATS");
+    const int repeats = repeatText.empty() ? 1 : std::clamp(std::atoi(repeatText.c_str()), 1, 8);
+    for (int round = 0; round < repeats; ++round) {
+        UE_LOGI("ragdoll_test: round %d/%d", round + 1, repeats);
+        if (isHost) ObserveOnHost();
+        else DriveOnClient();
+        if (cfg::ReadEnv("VOTVCOOP_RAGDOLL_BIDIRECTIONAL") == "1") {
+            UE_LOGI("ragdoll_test: reverse direction -- host drives, client observes slot 0");
+            if (isHost) { ::Sleep(6000); DriveOnClient(); }
+            else ObserveOnHost();
+        }
     }
 }
 

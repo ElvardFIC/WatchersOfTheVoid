@@ -1,14 +1,15 @@
 # Watchers of the Void
 
-**By ElvardFIC** — a community fork of **Multivoid**, originally created by **Pelmentor**.
+**By ElvardFIC, co-maintained by AquaFishhh** — a community fork of **Multivoid**, originally created by **Pelmentor**.
 
 Play Voices of the Void together, with accumulated co-op synchronization fixes and improvements.
-Version **0.9.2156** targets **Voices of the Void Alpha 0.9.0n** on Windows.
+Version **0.9.2157** targets **Voices of the Void Alpha 0.9.0n** on Windows.
 
 Source: [ElvardFIC/WatchersOfTheVoid](https://github.com/ElvardFIC/WatchersOfTheVoid).
 
 ## What's included
 
+- Selected-character ragdolls with synchronized limbs, preserved entry momentum/view, corrected physics and remote body attachment.
 - Host event delivery/recovery, active-event join retries, location-event lifetime guards and adjustable frequency for five supported generators.
 - Placement replies/recovery, prop-destroy identity guards, coin pickup protection and food/cooking state through inventory and placement.
 - Host water/spill effects, grime/window cleaning, grill edits, cement drying and held-trowel stock persistence.
@@ -21,14 +22,23 @@ See CHANGELOG.md for the full change list. Some systems are only partially imple
 
 Install with r2modman or Thunderstore Mod Manager; the Unreal shimloader dependency is included in the manifest.
 Use a profile with this fork as the only Multivoid implementation: disable the original Multivoid or an earlier fork copy.
-Every player must use this exact **0.9.2156** package and the same game version.
+For a downloaded build, import **ElvardFIC-WatchersOfTheVoid-0.9.2157.zip** using
+the manager's **Import local mod** action. The package identity remains
+**ElvardFIC-WatchersOfTheVoid**. Remove the mistakenly imported **ragdoll** entry
+if it was created from the earlier DLL-only archive.
+Every player must use this exact **0.9.2157** package and the same game version.
 
 ## Current status
 
-This is an experimental co-op build. The x64 Release build and **65/65 passing
-offline validation groups** are recorded in RELEASE_2156.md. The package contains
-**DLL b2179 / network protocol 2179**, including the fish-branch integration and
-the accumulated changes since package 2155. Every player must update together.
+This package contains **DLL b2183 / network protocol 2183** and retains the
+fish-branch integration and accumulated Watchers of the Void improvements.
+Ragdoll limb batches now rotate at actual sends and survive coalesced game ticks.
+Focused regressions plus native momentum8/8,camera10/10,surfaces24/24,installed
+models30/30 and remote sleep/sit/ragdoll transitions36/36 pass. Six bidirectional
+LAN runs pass with250ms outbound lag,40ms jitter and5% loss on both peers.
+Visual/input acceptance remains with the owner. The full65-group result belongs
+to b2178 and has not been repeated for b2183.
+See RELEASE.md for the current qualification. Every player must update together.
 
 Event and creature coverage remains partial. The frequency setting preserves native
 conditions and personal dreams; it currently covers four host generators and each
@@ -45,6 +55,7 @@ See CHANGELOG.md for the full change list and remaining limits.
 ## Credits
 
 - **ElvardFIC** — author and maintainer of Watchers of the Void.
+- **AquaFishhh** — co-maintainer, synchronization and player-ragdoll improvements.
 - **MultiVoidKindaPlus** — the codebase this mod is based on, developed with help from **AquariumFishTeam**.
 - **Pelmentor and Multivoid contributors** — original Multivoid project and foundation of this fork.
 - **Zoomard** — tester and bug reporter.

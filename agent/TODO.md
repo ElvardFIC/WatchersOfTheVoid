@@ -1,11 +1,56 @@
 # TODO - current priorities
 
-Current source/wire protocol: **2180**, game **0.9.0n**. Full qualification is
-running in `build/sync-2180-check/`; the previous qualified b2179 result is
-`build/continued-20261021/verification.json` (65 groups, 781 build entries).
+## Current release 0.9.2157 / b2183 — 22 October 2026
+
+This status supersedes older package/build statements below. Existing open gameplay
+and implementation tasks remain open unless explicitly accepted.
+
+Integrated main 2e104004b with the selected-character native ragdoll changes.
+Preserved upstream computer leases/desktop edits, balance retries, event cues,
+container births and lifetime guards. DLL/protocol2183 includes both wire changes.
+Public package version is 0.9.2157 at the owner's request; 2158/2159 below are
+historical local iterations, not the current delivery.
+
+PASS Release and focused native/skin/retry/stream, shared-screen C++/sleep,
+events, balance, placement, trowel, water/material and personal-sleep groups;
+ABI and reliable routing with all18 negative controls. The legacy full runner
+cannot complete with the absent external toolchain/private laptop corpus.
+No new complete65-group result is claimed.
+
+PASS actual NullRHI game momentum8/8,camera10/10,surfaces24/24,catalog30/30,
+remote sleep/sit/ragdoll transitions36/36 and impaired LAN3/3 per direction
+(250ms outbound lag,40ms jitter,5percent send loss on both peers).
+Frozen production/build inputs:2644; test DLLs identical.
+Evidence: build/release-2157-check/verification.json and final logs.
+
+Full32-member ElvardFIC-WatchersOfTheVoid-0.9.2157.zip passes package identity,
+original icon/models/authors/loader checks and actual unpacked startup.
+DLL SHA256:c4237cc74aed8932873bf1a6f6c7bb35d47a8e4566b1278135641ef9f2c78f9a
+ZIP SHA256:dde82f9435b31896cef5fc43b4b385dbca471b62194781b4e115aad1c5c5d9b7
+Package proof: build/package-current/verification.json; archiveStartupVerified=true.
+
+The first integration candidate included a superseded pre-mesh collision/all-body
+shutdown. Offline setup checks passed, but actual momentum fell to6/8 and camera
+entries rose over50m. Keep that rejected run in integration-first-failed.log.
+The final build retains the previously qualified staging order: pause component
+simulation, place/rebuild the selected mesh, then stop its new per-body simulation
+until warmup finishes. Both the ordering regression and all native matrices pass.
+
+Normal installation/profile and Entity remain unchanged by this release work.
+Owner handles rendered/input acceptance, especially local bed/chair interaction;
+uninstalled rigs, other terrain/vehicles and more extreme outages remain open.
+Both requested branches are intended to carry this exact release tree, preserving
+prior main/fish history and AquaFishhh commit authorship.
+
+## Historical work and qualifications
+
+Current development source/wire protocol: **2182**, game **0.9.0n**. Last full qualification recorded:
+**b2178**, **65/65 offline validation groups**; evidence:
+`build/continuation-check/verification.json`.
 Gameplay acceptance requires identical current DLLs on all peers.
-Prepared package **0.9.2155 / DLL b2178**; package/delivery verification:
-`build/release-2155-logs/release-verification.json`.
+Last prepared complete manager package **0.9.2159 / DLL b2182**; package verification:
+`build/package-current/verification.json`. It supersedes the incomplete DLL-only
+ragdoll archive; original fork name/namespace, icon, models and loader layout restored.
 b2178 adds prop-destroy and location-event lifetime guards. Focused
 regressions and full stable-source qualification pass in `build/continuation-check/`.
 The final 2155 archive includes these changes and supersedes the earlier local b2177 package.
@@ -23,6 +68,71 @@ The fish integration and its concrete behavior changes are recorded in WORK.md.
 Details and original report IDs: [WORK.md](WORK.md); verification history:
 [TESTLOG.md](TESTLOG.md); native entity mapping:
 [ENTITY_COVERAGE.md](ENTITY_COVERAGE.md).
+
+## Ragdoll stream/contact robustness — b2182, 22 October 2026
+
+- [x] Reproduce cadence starvation and loss of limb batches between game ticks.
+- [x] Rotate full-rig samples at actual sends; merge newest received values per
+  bone, bound storage/draining, reject old sequence/generation data.
+- [x] Focused stream regression with old-behavior controls, loss, cadence,
+  coalescing, reset, reorder and sequence wrap.
+- [x] Candidate native surfaces24/24 and remote state transitions6/6; candidate
+  bad-link LAN repeated3 rounds per direction (250ms lag,40ms jitter,5% loss).
+- [x] Final exact-DLL qualification: momentum8/8,camera10/10,surfaces24/24,
+  catalog30/30,remote transitions36/36,impaired LAN6/6; complete2159 startup.
+- [ ] Owner's normal rendered/input acceptance (owner handles it).
+
+## Native ragdoll entry momentum — b2181, 22 October 2026
+
+- [x] Reproduce loss of the delayed native fallImpulse through physics rebuilding.
+- [x] Preserve native per-bone velocity commands before/during/after the swap,
+  initialize new limbs, retain the chest kick and reject stale-body replay.
+- [x] Native offline regression and disabled-hold control; candidate native 8/8
+  walk/run/diagonal/airborne cases on scientist and Kerfur.
+- [x] Assess stock five-body display-only retargeting versus a compatible full
+  native physics asset. See RAGDOLL_DESIGN.md; no alternative claimed implemented.
+- [x] Qualify exact final b2181: eight momentum cases, ten camera cases and
+  selected articulated LAN display in both directions; frozen-source evidence
+  build/ragdoll-momentum-check/verification.json.
+- [x] Complete 0.9.2158 package archive/startup verification:32 members, original
+  icon/namespace/models, qualified DLL, HEALTH PASS, skins4/4, enabled loader.
+- [ ] Rendered running/input acceptance and investigate the earlier intermittent
+  partial LAN acceptance if reproduced (final diagnostic run passed).
+- [ ] Optional future rigging work: authored/cooked player PhysicsAsset or a
+  separately validated stock-body display retargeter, after choosing its tradeoffs.
+
+## Player ragdoll camera — b2180, 22 October 2026
+
+- [x] Preserve entry view when replacing the plushie head with the selected
+  skeleton. Rebase the camera arm through warmup/physics initialization, then
+  retain native head following and recovery. Guard reparenting/recycled slots.
+- [x] Add native camera regressions and a control that fails with correction
+  disabled. Check level/up/down views, crouched entry and fainting on scientist
+  and Kerfur in ten isolated actual-game transform/physics cases.
+- [x] Retain launch and articulated remote-body fixes; qualify the final b2180
+  DLL and complete 0.9.2157 package. Evidence: build/ragdoll-camera-check/ and
+  build/package-current/verification.json. NullRHI checks do not cover rendering.
+
+## Critical player ragdoll hotfix — b2179
+
+- [x] Fix remote body teardown caused by reading a return value from the void
+  Actor attachment function; verify the resulting parent relationship.
+- [x] Remove plush-pelvis lowering, initialize selected-model geometry before
+  physics, and correct the common rig's separated chest joint at instantiation.
+  Live Kerfur entry/fall/rest/recovery passes (maximum pelvis rise 22.5 cm).
+- [x] Preserve the selected model/materials and articulated limbs; add native
+  regressions including restoration of shared physics templates after failures.
+- [x] Real LAN acceptance of complete streamed limbs in both directions:
+  scientist client -> host and Kerfur host -> client; entry and recovery pass.
+- [ ] Broader Bodies checklist below: uninstalled rigs,other terrain/vehicles,
+  more extreme links and ordinary local bed/chair interactions. Controlled surfaces,
+  bad-link LAN,installed30 models and remote transitions are qualified in b2182.
+
+The older package 2155 contains b2178. Use complete package 0.9.2157 on every peer
+when checking the historical camera change; use current 0.9.2158 for momentum.
+The old 65/65 record does not qualify the new DLL.
+
+## Imported main history (superseded by current release status)
 
 ## Status and next steps - 22 October 2026
 
@@ -220,6 +330,10 @@ Keep personal Insomniac/nightmare and native personal spawn conditions local.
   and shared lifetime; Krampus attack/fireball/jump/target/despawn events.
 
 ## Gameplay acceptance checklist
+
+Use matching current **b2182** DLLs for ragdoll acceptance.
+
+## Imported main history (superseded by current release status)
 
 Use matching development **b2180** DLLs after qualification for this continuation.
 Package 2155 contains **b2178**, and the existing 2156 preparation targets b2179;

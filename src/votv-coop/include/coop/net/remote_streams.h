@@ -7,6 +7,7 @@
 #include "coop/net/eid_pose_lane.h"   // EidPoseMerge
 #include "coop/net/protocol.h"
 #include "coop/net/stream_slot.h"
+#include "coop/net/ragdoll_pose_buffer.h"
 
 #include <vector>
 
@@ -19,7 +20,7 @@ namespace coop::net {
 struct OriginStreams {
     StreamSlot<PoseSnapshot>           pose;
     StreamSlot<PropPoseSnapshot>       prop;
-    StreamSlot<RagdollPoseSnapshot>    ragdoll;
+    RagdollPoseInbox                   ragdoll;
     StreamSlot<HandPoseSnapshot>       hand;
     StreamSlot<DeskCursorPoseSnapshot> deskCursor;
 

@@ -47,9 +47,12 @@ void Session::SetLocalPropPose(bool set, const PropPoseSnapshot& pose) {
     outbound_.samples.prop.Put(set, pose);
 }
 
-void Session::SetLocalRagdollPose(bool set, const RagdollPoseSnapshot& pose) {
+void Session::SetLocalRagdollPose(bool set, const RagdollPoseSnapshot& pose,
+                                  const RagdollBonePose* bones, size_t count) {
     std::lock_guard<std::mutex> lk(localMutex_);
     outbound_.samples.ragdoll.Put(set, pose);
+    if (set) outbound_.ragdoll.Publish(pose, bones, count);
+    else outbound_.ragdoll = {};
 }
 
 void Session::SetLocalHandPose(bool set, const HandPoseSnapshot& pose) {
@@ -408,6 +411,7 @@ void Session::SendStreamsTick(std::chrono::steady_clock::time_point now,
         OutboundSamples local;
         { std::lock_guard<std::mutex> lk(localMutex_);
           local = outbound_.samples;
+          if (local.ragdoll.set) local.ragdoll.value = outbound_.ragdoll.Next();
           // The one-shot samples are taken here; the lanes that publish them own the cadence.
           outbound_.samples.clock.due = outbound_.samples.dish.due = outbound_.samples.reel.due = false; }
         const bool isHost = cfg_.role == Role::Host;

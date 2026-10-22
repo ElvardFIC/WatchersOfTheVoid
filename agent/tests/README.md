@@ -18,11 +18,11 @@ handoff, send refusal, join/widget readiness, plus the production sleep/poseable
 display's selected mesh/material/scale, mattress trace, moving anchor and teardown.
 The ragdoll runners also cover animation warmup and articulated-bone validation,
 batch completion/order and rig replacement. Gameplay with two peers remains required.
-`run_ragdoll_skin.ps1` additionally compiles the actual local startup function:
-warmed-pose pelvis alignment to the selected model's standing/crouched entry
-height before simulation, anchor preservation through failed
-setup retries, invalid positions and pawn/body/model replacement during dispatch.
-Its skin wrapper checks collision/all-body shutdown before mesh/asset mutation.
+`run_ragdoll_skin.ps1` also runs the full native startup regression:
+selected geometry before physics, preserved camera direction and delayed native
+momentum commands, repeated entry/recovery and recycled-object guards.
+Its skin wrapper checks component shutdown before mesh replacement and per-body
+shutdown after the new physics asset is installed.
 These harnesses do not simulate PhysX or close the all-role C-key launch report.
 `run_shared_screen.ps1` also checks the production desktop traversal against an
 old boot snapshot applied after native startup, repeated power pages, desktop

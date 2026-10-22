@@ -292,8 +292,12 @@ DWORD WINAPI TimelineThread(LPVOID param) {
         // save here.
         bool netEnabled = false;
         const coop::net::Config netCfg = cfg::ReadNetConfig(netEnabled);
+        // Opt-in physics/network regression: start both peers in actual worlds.
+        // This isolates ragdoll transport from the separate menu save-transfer test.
+        const bool ragdollWorldClient = cfg::ReadEnv("VOTVCOOP_RUN_RAGDOLL_TEST") == "1" &&
+            cfg::ReadEnv("VOTVCOOP_RAGDOLL_WORLD_FIRST") == "1";
         const bool saveTransferClient =
-            netEnabled && netCfg.role == coop::net::Role::Client;
+            netEnabled && netCfg.role == coop::net::Role::Client && !ragdollWorldClient;
         // [dev] client_world_first: such a client first stands in a world of its own, then joins
         // from inside it; the boot fact below stays false, so its join is the menu join. A world
         // that never came up ends the run by name: its join would start at the menu and pass

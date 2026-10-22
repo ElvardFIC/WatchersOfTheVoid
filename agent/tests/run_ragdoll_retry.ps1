@@ -1,6 +1,6 @@
 $ErrorActionPreference = 'Stop'
 $checkout = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
-. (Join-Path $checkout '../_toolchain/env.ps1')
+if(-not(Get-Command cl -ErrorAction SilentlyContinue)){. (Join-Path $checkout '../_toolchain/env.ps1')}
 $output = Join-Path $checkout 'build/ragdoll-retry-check'
 New-Item -ItemType Directory -Force -Path $output | Out-Null
 & cl /nologo /std:c++20 /EHsc /utf-8 "/I$checkout/src/votv-coop/include" `

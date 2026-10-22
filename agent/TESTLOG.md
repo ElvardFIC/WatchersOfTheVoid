@@ -1,5 +1,287 @@
 # TestLog — current status and source reports
 
+## Current release 0.9.2157 / b2183 — 22 October 2026
+
+This status supersedes older package/build statements below. Existing open gameplay
+and implementation tasks remain open unless explicitly accepted.
+
+Integrated main 2e104004b with the selected-character native ragdoll changes.
+Preserved upstream computer leases/desktop edits, balance retries, event cues,
+container births and lifetime guards. DLL/protocol2183 includes both wire changes.
+Public package version is 0.9.2157 at the owner's request; 2158/2159 below are
+historical local iterations, not the current delivery.
+
+PASS Release and focused native/skin/retry/stream, shared-screen C++/sleep,
+events, balance, placement, trowel, water/material and personal-sleep groups;
+ABI and reliable routing with all18 negative controls. The legacy full runner
+cannot complete with the absent external toolchain/private laptop corpus.
+No new complete65-group result is claimed.
+
+PASS actual NullRHI game momentum8/8,camera10/10,surfaces24/24,catalog30/30,
+remote sleep/sit/ragdoll transitions36/36 and impaired LAN3/3 per direction
+(250ms outbound lag,40ms jitter,5percent send loss on both peers).
+Frozen production/build inputs:2644; test DLLs identical.
+Evidence: build/release-2157-check/verification.json and final logs.
+
+Full32-member ElvardFIC-WatchersOfTheVoid-0.9.2157.zip passes package identity,
+original icon/models/authors/loader checks and actual unpacked startup.
+DLL SHA256:c4237cc74aed8932873bf1a6f6c7bb35d47a8e4566b1278135641ef9f2c78f9a
+ZIP SHA256:dde82f9435b31896cef5fc43b4b385dbca471b62194781b4e115aad1c5c5d9b7
+Package proof: build/package-current/verification.json; archiveStartupVerified=true.
+
+The first integration candidate included a superseded pre-mesh collision/all-body
+shutdown. Offline setup checks passed, but actual momentum fell to6/8 and camera
+entries rose over50m. Keep that rejected run in integration-first-failed.log.
+The final build retains the previously qualified staging order: pause component
+simulation, place/rebuild the selected mesh, then stop its new per-body simulation
+until warmup finishes. Both the ordering regression and all native matrices pass.
+
+Normal installation/profile and Entity remain unchanged by this release work.
+Owner handles rendered/input acceptance, especially local bed/chair interaction;
+uninstalled rigs, other terrain/vehicles and more extreme outages remain open.
+Both requested branches are intended to carry this exact release tree, preserving
+prior main/fish history and AquaFishhh commit authorship.
+
+## Historical work and qualifications
+
+## Ragdoll robustness b2182 / package0.9.2159 — 22 October 2026
+
+Owner handles rendered/input acceptance; asks to finish partial network limbs and
+contact/latency/model/sleep/sit acceptance. No additional imported models installed.
+
+Reproduce old wall-clock selection starving bodies at a75ms send cadence. Reproduce
+StreamSlot keeping only the last of three distinct bone packets before one game
+tick. The new actual-send rotation and bounded per-bone receive merge pass cadence,
+loss, burst, duplicate/reorder, sequence wrap, generation and reset controls for
+1,5,17,35 and64 bodies. Both original-behavior controls fail as expected.
+Evidence: stream-final.log and ragdoll-stream-check/legacy-{time,inbox}.log.
+
+PASS focused native/skin/retry/stream, sleep/display, shared UI/wire/sync and ABI
+checks; reliable routing224 kinds with18 negative controls. Full65 suite not rerun.
+Candidate native LAN PASS6/6 (3 per direction), with actual GNS250ms outbound lag,
+40ms jitter and5% send loss, applied after world-ready. Candidate native surfaces
+PASS24/24 across sci_v1sc,walter_v1sc,rvi_scientist_v1sc,luther_v1sc,KerfurH/M:
+flat,25deg,35deg and moving cube. Contact is a real colliding engine mesh; selected
+physical body, finite motion,no excessive rise and native recovery checked.
+Remote sleep->sit->ragdoll->sleep->stand passes6/6 on actual engine components.
+
+Invalid initial fixture moved the pawn across a newly-created platform using a
+raw snap, leaving native lastLoc behind. The game's wall ray legitimately called
+OpenLevel(sl_backroomsObsolete), from mainGamemode graph7160/7183, not player death.
+Native teleportWObackrooms updates lastLoc; fixture uses it, plus correct Block2 /
+Movable2 collider settings. No gameplay wall/backrooms rules changed. Failed logs
+surface-{initial,registered,no-mirror,travel,backrooms}.log retained. Cleanup faults
+from those invalid old-world fixtures do not count as passes. Final logs must be
+free of test travel/faults. Blueprint audit: native-gamemode-graph.txt and existing
+native-playergraph.txt67430..68046, teleportWObackrooms934..1075.
+
+PASS exact final DLL b35471ad15d0f417b26439f51c9b64e2f034987de7d2e51e3ba031ea54cbb5a1:
+momentum8/8,camera10/10,surfaces24/24,installed catalog30/30,remote transitions36/36,
+bad-link LAN6/6. Frozen2644-entry source and three identical DLL copies confirmed.
+Requested mesh asset and seated animation flag checked; platform100cm/s with175cm
+verified movement on all six skins. Camera max entry view jump0.069deg.
+Catalog runs on native ground,with contact/physical body/selected asset/recovery.
+The earlier catalog interrupted by artificial-fixture travel is retained as
+catalog-fixture-interrupted.log; final run has no travel/posted-task faults.
+
+PASS complete2159 archive32 members,original identity/icon/authors/models,and actual
+unpacked startup: correct b2182 boot,HEALTH PASS,skins4/4,enabled fork namespace.
+archiveStartupVerified=true. ZIP SHA256
+bb85eaff437b031ed101c88702d8b5c8ea676bb258d77e9a45b845aaea49e42b.
+Evidence build/ragdoll-robustness-check/{verification.json,*-final.log,source-before.json,
+catalog-names.json},build/package-current/{verification.json,startup.log,UE4SS-startup.log}.
+All private tests stopped; no normal installation/profile change or publication.
+Owner owns ordinary rendered/input acceptance,including actual local bed/chair
+interaction. Remaining scope limits are listed in the qualification JSON.
+
+## Native entry momentum b2181 — development, 22 October 2026
+
+Reproduced lost running motion in the actual engine substrate fixture before the
+fix. Native fallImpulse resumes after Delay(0), adding saved fallVeloc to every
+bone. Preserve its commands in order during physics rebuilding, restore the old
+body motion once, and initialize newly added limbs with the original translation.
+Late commands run normally; no invented movement kick or replacement solver.
+
+PASS focused attachment/entry/camera/momentum, selected physics/joint templates,
+remote lifecycle, articulated display, wire, sleep, shared screen, reliable routing
+and ABI checks. Removing the actual velocity hold makes its regression fail;
+removing camera correction also fails its control. Routing rejects all 18 controls.
+Logs: build/ragdoll-momentum-check/*-final.log. Full 65-group suite was not rerun.
+
+Native DLL 6116e6755237f01f9d227caa9335dfe6167780e756efd1f01d8c8a7868ebd293:
+PASS 8/8 controlled movement cases on sci_v1sc and kerfur_omega_h (walk 300,
+run 600, diagonal, airborne), with recovery. Native camera PASS 10/10, entry view
+change below 0.1 degrees. An optional held-input probe yielded zero movement;
+rendered input-path acceptance remains open. Initial recovery failures were a
+test setup problem: forceGetUp waits and gates recovery, forceWakeup is immediate.
+Retain the failed/intermediate logs; do not count them as successful cases.
+
+LAN on that DLL: entry/recovery observed both ways, selected model correct, but
+articulated display absent in the acceptance probe (PARTIAL, streamed=0). A prior
+8-second game-thread wait aborted readiness while loading; the harness now respects
+its overall bounded readiness deadline. That fix let the drive sequence execute.
+Final DLL 3d77b13017ed02d4353ec19a0b7de47035663ab7ca041ea9ed8924c67131d3e2
+adds rig/body/batch counts to existing limited emissions and remote rig-change logs.
+PASS exact final DLL: momentum8/8, camera10/10 (max view jump0.056deg, max rise60.9cm
+over entry centre in crouch), bidirectional LAN selected articulated display and
+recovery. Source snapshot2642 entries frozen, all three DLL copies identical.
+ABI/native/remote fixtures rerun after the logging changes. Qualification evidence
+build/ragdoll-momentum-check/verification.json. The previous partial LAN is not
+explained by a behavior change and remains an intermittent acceptance limitation.
+PASS complete ElvardFIC-WatchersOfTheVoid-0.9.2158.zip (32 members) and actual
+unpacked startup: correct b2181 boot, HEALTH PASS, starter skins4/4 and enabled
+fork namespace. build/package-current/verification.json archiveStartupVerified=true.
+ZIP SHA256 ba8277a78e51b03ac2cd9dd47707e36f2ed641525b1186a542f7d03d9f14b269.
+All private game instances stopped; git diff --check clean. Original installation,
+normal profile and Entity code remain unchanged.
+
+## Ragdoll entry camera b2180 / package 0.9.2157 (22 October 2026)
+
+Owner confirms the launch fix and reports the camera looking upward on entry.
+Before correction, native game measurements changed from a level view to
+89.75 degrees upward at the selected-mesh swap. The inherited camera arm still
+had the native plushie's fixed head-relative rotation.
+
+Capture the controller's entry rotation, rebase the head-attached arm after the
+swap and through pose warmup/physics initialization, then stop camera writes.
+Retain normal physical head following and native recovery. Cached object serials
+and actual attach-parent reads reject recycled/reparented camera references.
+
+PASS focused native attachment/entry/camera, selected rig/joint-template, remote
+lifecycle/bone batches, articulated display and wire regressions. The camera
+regression rejects an actual-substrate mutant with correction disabled. Release
+ABI and reliable-kind gates pass with their negative controls (18 routing drills).
+
+PASS ten native 0.9.0n transform/physics cases: sci_v1sc and kerfur_omega_h, each
+with level, down/wrapped-yaw, up, crouched and faint entries, with recovery between
+entries. Mesh-replacement view differences stay below 0.1 degrees; selected
+bodies remain attached and physically move without sky launch. In the NullRHI test,
+synthetic pitch resets between frames, so angled stimuli arrange native controller and
+camera-arm transforms in the same posted task as ragdollMode. These checks do not
+claim rendered-image acceptance or verification of the real input path.
+
+The first LAN attempt completed client-to-host but its old screenshot-framing
+teleport moved the reverse observer toward an unconverged puppet position. It
+fell/died and disconnected before the host drove. Evidence is retained in
+build/ragdoll-camera-check/peer-framing-{host,client}.log. The headless test now
+opts out of screenshot teleports/view writes; normal gameplay is unaffected.
+
+PASS final identical b2180 DLLs in both native LAN directions: scientist client
+to host and Kerfur host to client, selected articulated display and entry/recovery.
+PASS complete ElvardFIC-WatchersOfTheVoid-0.9.2157.zip package verification and
+actual startup from the unpacked archive in an isolated manager layout, dev off.
+Original fork identity/icon/models and ElvardFIC/AquaFishhh credits are retained.
+Normal game/profile files were not modified. No online release was published.
+
+Evidence: build/ragdoll-camera-check/{verification.json,source-before.json,
+camera-final.log,peer-host-final.log,peer-client-final.log,native-final.log};
+build/package-current/{verification.json,startup.log,UE4SS-startup.log}.
+The full 65-group suite remains specific to b2178; it was not repeated for b2180.
+Terrain, moving props, high latency, arbitrary imported rigs, sleep/chair transitions
+and visual camera acceptance remain in the broader gameplay checklist.
+
+## Corrected full manager package 0.9.2156 / b2179 (22 October 2026)
+
+The previous ragdoll ZIP was a manual DLL replacement, not an installable fork
+package. The owner's actual r2modman profile confirms it was inferred as
+WatchersOfTheVoid-ragdoll, author WatchersOfTheVoid, version 2179.0.0. Its root
+manifest/icon and loader enabled marker were absent; UE4SS did not start it.
+The ragdoll code had been tested, but that delivery had not passed manager
+installation verification. This packaging failure supersedes the earlier
+delivery claim; the player-ragdoll qualification below still applies to its DLL.
+
+Prepared the complete **ElvardFIC-WatchersOfTheVoid-0.9.2156.zip**, retaining the
+existing fork name/namespace and original supplied 256x256 icon. README credits
+ElvardFIC and co-maintainer AquaFishhh, preserving original Multivoid credits.
+The root manifest declares version 0.9.2156 and unreal_shimloader 1.1.7. The
+archive contains mod/enabled.txt, mod/dlls/main.dll, starter models/previews and
+legal notices, using the original mod/ and pak/ manager routes.
+
+PASS package/package_current.ps1: all 32 entries checked against current inputs,
+unchanged qualified b2179 DLL, production source hashes, metadata, icon dimensions
+and loader tree. The existing manager-routing predicate rejects the prior broken
+archive and accepts the complete one. The author's namespace comes from the
+canonical Author-Name-Version filename; the actual r2modman import source was
+checked, as were the installed VotV schema's shimloader route rules.
+
+PASS actual game startup from the newly unpacked archive in an isolated manager
+layout, with dev mode disabled and default loader settings. UE4SS reports
+ElvardFIC-WatchersOfTheVoid's enabled.txt and starts the module. The module reports
+Watchers of the Void by ElvardFIC, game 0.9.0n, build b2179, correct namespaced
+data path and HEALTH: PASS; the installed starter pak supplies all four skins.
+The user's Default profile was inspected without modification.
+
+The DLL is byte-identical to the one which passed the bidirectional ragdoll game
+tests. No gameplay source changed for this delivery correction. Evidence:
+build/package-current/{verification.json,startup.log,UE4SS-startup.log}.
+Package identity has one source in package/release.json. The previous manual-only
+delivery is retained under build/package-current/ as a rejected test control.
+
+## Player ragdoll hotfix b2179 (21 October 2026)
+
+Owner report: launch into the sky on entry; standing remote puppet followed by
+a recovery teleport; selected character required instead of the native plushie.
+
+Release built with MSVC x64 against the actual 0.9.0n game. The clean dependency
+build exposed a WebRTC C++14 / Abseil C++20 link mismatch; the two ICE targets
+now use the project's C++20 standard. Final incremental build reports no work.
+This is a focused hotfix qualification, not another 65/65 b2178 full-suite run.
+
+Reproduced before repair:
+
+- Original game log repeatedly read an unknown ReturnValue from the void Actor
+  attachment call, then destroyed the remote body. The actual-ParamFrame native
+  regression failed on this behavior.
+- Native entry regression failed because the selected mesh was lowered to the
+  plushie's pelvis, putting the full-size feet below the floor.
+- Isolated live Kerfur still rose 18–35 metres after the initial geometry fixes.
+  Native asset audit found the full rig's mixed-scale chest pivot; the measured
+  joint-anchor gap was 1069.2 cm. Entry velocity was zero before simulation.
+
+PASS focused checks:
+
+- run_ragdoll_native.ps1 -CompileSources: actual ParamFrame attachment contract,
+  pelvis parent verification, recycled actor/body/mesh, missing parameters,
+  selected geometry retained, one staged configuration and recovery; three
+  production translation units compile.
+- run_ragdoll_skin.ps1: selected mesh/materials, compatible common/custom rig,
+  bodies/joints/pelvis, transform before physics initialization, no player AnimBP,
+  stale objects and failures. Separated anchors are repaired while instantiating
+  bodies and shared NPC templates restored on success, dispatch failure and a
+  later joint-read failure. Foreign authored rigs are not retargeted.
+- run_ragdoll_retry.ps1: actual remote lifecycle, drift, complete bone batches,
+  parent ordering, rig replacement, malformed poses and retry/recovery.
+- sleep_display_test.cpp: model/material/scale, articulated pose and sleep
+  transitions. shared_screen_wire_test.cpp: actual protocol and bone validation.
+- abi_gate.py --drill: no UE4SS imports; injected forbidden import rejected.
+  reliablekind_gate.py --drill: 224 kinds and all 18 negative controls pass.
+- Fault control with joint-anchor repair deliberately removed fails the native
+  skin test. Original attachment and geometry failures are retained as controls.
+
+Actual game evidence uses isolated executables/profiles and native PhysX under
+NullRHI. Normal game/profile files were not modified. The loading curtain now
+uses a steady clock: its former game-thread ImGui::GetTime call faulted without
+a renderer and prevented the test client's join from completing.
+
+PASS Kerfur local entry/fall/rest/recovery: 64 samples, maximum pelvis height
+22.5 cm above the pre-entry actor centre; selected model, remote mirror model,
+pelvis attachment and recovery all verified. PASS scientist sci_v1sc with the
+final physics implementation: 52 samples, the same 22.5 cm maximum and all flags
+true. Earlier broken builds rose thousands of centimetres in the same probe.
+
+PASS real LAN in both directions: sci_v1sc client to host, then kerfur_omega_h
+host to client. Both observers verify the selected mesh and complete articulated
+network display; rising and falling edges observed, no observer death.
+Final bidirectional run and artifact hashes are recorded in
+build/ragdoll-evidence/verification.json. Its logs distinguish the reverse round.
+
+Evidence: build/ragdoll-evidence/, build/ragdoll-fault-controls/ and the actual
+native harnesses in agent/tests/. Remaining gameplay acceptance includes arbitrary
+imported rigs, slopes/moving surfaces, high latency and sleep/chair transitions.
+Entity implementation and the shared native physics asset defaults are unchanged.
+
+## Imported main history (superseded by current release status)
+
 ## Recheck: PC boot, C-key ragdoll and resource identity (21 October 2026)
 
 Repeated `run_ragdoll_skin.ps1`, `run_shared_screen.ps1` and `run_trowel.ps1`;

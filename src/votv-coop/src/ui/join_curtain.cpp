@@ -5,6 +5,7 @@
 #include "imgui.h"
 
 #include <atomic>
+#include <chrono>
 
 namespace coop::join_curtain {
 namespace {
@@ -16,7 +17,11 @@ namespace {
 // by BeginDismiss (game) and read by Render (render).
 enum class State { Hidden, Up, Fading };
 std::atomic<int>    g_state{static_cast<int>(State::Hidden)};
-std::atomic<double> g_fadeStart{0.0};  // ImGui::GetTime() at BeginDismiss
+std::atomic<double> g_fadeStart{0.0};
+
+double Now() {
+    return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+}
 
 constexpr float kFadeSeconds = 0.40f;  // smooth 1->0 dismiss (not a hard snap); the world fades in assembled
 
@@ -32,7 +37,9 @@ void BeginDismiss() {
     // Only from a raised cover; ignore a double-dismiss / not-shown. Publish g_fadeStart BEFORE flipping to
     // Fading so the render thread, on observing Fading (acquire), sees the start time (release pairs).
     int expected = static_cast<int>(State::Up);
-    g_fadeStart.store(ImGui::GetTime(), std::memory_order_relaxed);
+    // This runs on the game thread, including when no renderer/ImGui context
+    // exists yet. Keep its clock independent of render-thread UI state.
+    g_fadeStart.store(Now(), std::memory_order_relaxed);
     g_state.compare_exchange_strong(expected, static_cast<int>(State::Fading),
                                     std::memory_order_release, std::memory_order_relaxed);
 }
@@ -52,7 +59,7 @@ void Render() {
     float alpha = 1.0f;
     if (st == State::Fading) {
         const double start = g_fadeStart.load(std::memory_order_relaxed);
-        const float t = static_cast<float>(ImGui::GetTime() - start) / kFadeSeconds;
+        const float t = static_cast<float>(Now() - start) / kFadeSeconds;
         if (t >= 1.0f) return;  // fade complete -> draw nothing (Render is read-only; state stays Fading
                                 // until the next Show()/Reset() on the game thread -- harmless, IsActive
                                 // is not load-bearing).

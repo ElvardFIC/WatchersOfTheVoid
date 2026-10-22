@@ -760,6 +760,7 @@ set(VOTVCOOP_SOURCES
     src/harness/autotest/autotest_puppetframe.cpp
     src/harness/autotest/autotest_ragdoll.cpp
     src/harness/autotest/autotest_ragdoll_spawn_probe.cpp
+    src/harness/autotest/autotest_ragdoll_robustness.cpp
     src/harness/autotest/autotest_menutravel_probe.cpp
     src/harness/autotest/autotest_reloadchurn.cpp
     src/harness/autotest/autotest_islive_drill.cpp

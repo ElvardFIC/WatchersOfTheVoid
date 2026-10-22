@@ -107,7 +107,8 @@ public:
     void SetLocalPropPose(bool set, const PropPoseSnapshot& pose);
     // The local ragdoll's pelvis transform and velocity; `set` true each sendHz frame while
     // ragdolled, false on the recover edge. Sent only while set.
-    void SetLocalRagdollPose(bool set, const RagdollPoseSnapshot& pose);
+    void SetLocalRagdollPose(bool set, const RagdollPoseSnapshot& pose,
+                             const RagdollBonePose* bones = nullptr, size_t count = 0);
     // The local hand item's view-relative transform; `set` true each tick while holding, false on
     // the hand-empty edge. Sent only while set.
     void SetLocalHandPose(bool set, const HandPoseSnapshot& pose);
@@ -461,8 +462,8 @@ private:
 
     // A game-thread read or take of one received stream: nothing unless connected, the slot in
     // range. Takes remoteMutex_.
-    template <class T>
-    bool ReadOrigin(int slot, StreamSlot<T> OriginStreams::*stream, T& out, bool* isNew) {
+    template <class S, class T>
+    bool ReadOrigin(int slot, S OriginStreams::*stream, T& out, bool* isNew) {
         if (!connected() || slot < 0 || slot >= kMaxPeers) return false;
         std::lock_guard<std::mutex> lk(remoteMutex_);
         return (origin_[slot].*stream).Read(out, isNew);

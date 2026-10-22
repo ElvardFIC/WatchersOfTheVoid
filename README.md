@@ -1,6 +1,6 @@
 # Watchers of the Void
 
-A community multiplayer fork for **Voices of the Void Alpha 0.9.0n**, maintained by **ElvardFIC**.
+A community multiplayer fork for **Voices of the Void Alpha 0.9.0n**, maintained by **ElvardFIC** and **AquaFishhh**.
 Based on [Multivoid by Pelmentor](https://github.com/VOTV-MP/Multivoid) and
 [MultiVoidKindaPlus](https://github.com/AquaFishhh/MultivoidKindaPlus), with help from **AquariumFishTeam**.
 
@@ -10,16 +10,19 @@ This is experimental software; multiplayer verification is still in progress.
 
 ## Fork status - 22 October 2026
 
-The latest locally prepared package is **0.9.2156**, for game **0.9.0n**, with
-DLL **b2179 / network protocol 2179**. It integrates the fish branch with main's
-Entity, Kavotia, event and personal-sleep work; adds held water/material stock
-persistence, shared-screen startup isolation and selected-model ragdoll setup
-corrections; and carries the accumulated event, placement, creature and world
-synchronization changes. Offline qualification and package scope are recorded in
-[release notes](package/RELEASE_2156.md) and [changelog](package/CHANGELOG_PLUS.md).
-Dream checks and outcomes stay native and personal; sleep replication is
-presentation only. Dream effects/rewards and real-peer acceptance remain open.
+The current qualified DLL is **b2183 / protocol 2183**, for game **0.9.0n**.
+It preserves every ragdoll limb across transport/game-thread cadence while retaining
+native momentum, camera and launch fixes. Eight momentum cases, ten camera cases,
+24 surface cases,30 installed models,36 remote state transitions and six impaired
+LAN runs pass. Rendered/input acceptance remains with the owner.
+See [ragdoll work state](agent/RAGDOLL_CONTINUATION.md).
+The complete package is **ElvardFIC-WatchersOfTheVoid-0.9.2157.zip**, with the
+original fork icon, models and enabled loader layout. See [release notes](package/RELEASE.md) and
+[changelog](package/CHANGELOG_PLUS.md).
 Local packaging does not publish a binary release online.
+
+The previous b2178 Release passed 65/65 offline groups. That full suite has not
+been repeated for b2183; the current qualification is specific to ragdoll changes.
 
 Complete event/creature coverage, paid repairs and resource accounting remain open.
 The fresh native-asset audit remains deferred; full public-prose and fact-row CI
@@ -48,6 +51,7 @@ Local test runners, fixtures and historical evidence remain in the maintainer's 
 ## Credits and license
 
 - **ElvardFIC** — Watchers of the Void maintainer.
+- **AquaFishhh** — co-maintainer, synchronization and player-ragdoll improvements.
 - **Pelmentor and Multivoid contributors** — original project and architecture.
 - **MultiVoidKindaPlus / AquariumFishTeam** — fork foundation and development help.
 - **Zoomard** and **Бритый 2-D <3** — testing and bug reports.
