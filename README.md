@@ -10,7 +10,12 @@ This is experimental software; multiplayer verification is still in progress.
 
 ## Fork status - 22 October 2026
 
-The current qualified DLL is **b2184 / protocol 2184**, for game **0.9.0n**.
+The current DLL is **b2184 / protocol 2184**, for game **0.9.0n**. Its menu and
+server-browser label reads **Watchers of the Void 0.9.2157**, generated from the
+manager package metadata. This display correction is checked by running the shared
+menu/browser formatter and one impaired LAN run per direction; the complete
+ragdoll matrix below describes the preceding qualification of the unchanged
+gameplay code.
 It initializes the selected ragdoll during native construction and preserves the
 current heading through get-up, removing the entry pause and delayed forced turn.
 It retains limb synchronization, native momentum and launch fixes.

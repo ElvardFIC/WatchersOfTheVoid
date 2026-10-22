@@ -14,6 +14,7 @@
 #include "coop/game_build/game_build.h"    // which game build runs, and what it means for us
 #include "coop/net/protocol.h"  // kProtocolVersion -- the b<N> build rev in the banner
 #include "coop/player/model_folder.h"  // the players' models folder, prepared at boot
+#include "coop/session/session_manager.h"
 #include "coop/version.h"
 #include "harness/compat_boot.h"  // the compat report's boot sections
 #include "harness/harness.h"
@@ -155,6 +156,7 @@ DWORD WINAPI BootThread(LPVOID rawTag) {
     const char* entryTag = static_cast<const char*>(rawTag);
     WriteMarker(entryTag);
     UE_LOGI("==== %s ====", coop::version::kDisplayLabel);
+    UE_LOGI("boot: menu version='%s'", coop::session_manager::DisplayVersion().c_str());
     // The Paper-pair identity line: game target + build number (= kProtocolVersion).
     UE_LOGI("boot: Watchers of the Void by ElvardFIC %s b%u (Multivoid fork; original by Pelmentor)", coop::version::kGameTarget,
             static_cast<unsigned>(coop::net::kProtocolVersion));

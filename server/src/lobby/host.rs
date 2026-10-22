@@ -127,7 +127,7 @@ pub fn h_host(state: &mut MasterState, ctx: &HostCtx, ip: &str, body: &Value) ->
     }
     lo.world = clamp_field(body, "world", MAX_WORLD);
     lo.locked = as_bool(body, "locked", false);
-    lo.players_max = as_int(body, "players_max", 4).clamp(1, 4);
+    lo.players_max = as_int(body, "players_max", 4).clamp(2, 32);
     (lo.build_sha, lo.build_key, lo.build_sig) = build_claim_from_body(body);
     lo.listed = host_listed(body);
 

@@ -1,4 +1,5 @@
 #include "../../src/votv-coop/src/ue_wrap/core/script_gate.cpp"
+#include "../../src/votv-coop/src/ue_wrap/core/script_gate_registry.cpp"
 namespace ue_wrap::facts {void Function::NoteUse(Use,bool)const{}}
 namespace ue_wrap::scan_ledger {void Record(Scan,bool){}}
 #include <cstdio>

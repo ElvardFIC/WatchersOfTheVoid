@@ -1,12 +1,12 @@
 #include "support_2135.h"
 #include "nonentity_facts_support.h"
 #include "../../src/votv-coop/src/coop/player/item_activate.cpp"
-namespace test {ue_wrap::engine::MainPlayerFlashlightState lightState{true,true,false,0};ue_wrap::engine::FlashlightSnapshot light{5,45,20,true};}
+namespace test {bool haveLight=true,settersReady=true;int applies=0;ue_wrap::engine::MainPlayerFlashlightState lightState{true,true,false,0};ue_wrap::engine::FlashlightSnapshot light{5,45,20,true};}
 namespace ue_wrap::engine {
-void* GetController(void* a){return a;}void* GetMainPlayerLightR(void* a){return a;}
+void* GetController(void* a){return a;}void* GetMainPlayerLightR(void* a){return test::haveLight?a:nullptr;}
 bool ReadMainPlayerFlashlightState(void*,MainPlayerFlashlightState& out){out=test::lightState;return true;}
 bool ReadFlashlightSnapshot(void*,FlashlightSnapshot& out){out=test::light;return true;}
-bool SetSceneComponentVisibility(void*,bool,bool){return true;}bool SetLightIntensity(void*,float){return true;}
+bool SetSceneComponentVisibility(void*,bool,bool){return test::settersReady;}bool SetLightIntensity(void*,float){++test::applies;test::Callback();return test::settersReady;}
 bool SetSpotLightOuterConeAngle(void*,float){return true;}bool SetSpotLightInnerConeAngle(void*,float){return true;}
 }
 namespace coop::flashlight_click_sound {void PlayIfStateChanged(void*,uint8_t,bool){}}
@@ -20,8 +20,29 @@ int main(){namespace S=coop::item_activate;using namespace test;coop::net::Sessi
  lightState.hasFlashlight=false;poll();std::memcpy(&p,session.sent.back().data.data(),sizeof(p));CHECK(!p.state&&session.sent.size()==4);
  poll();CHECK(session.sent.size()==4);++world;poll();CHECK(session.sent.size()==5);
  S::OnDisconnect();CHECK(S::g_lastSentSig==S::kNoSendYet&&S::g_session.load()==nullptr);
+ S::g_flashlightClassHash=0;S::Install(&session);
+ CHECK(S::g_flashlightClassHash==S::HashClassName(L"prop_equipment_flashlight_C"));
+ lightState.hasFlashlight=true;poll();CHECK(session.sent.size()==6);
+ session.sendOk=false;S::QueueConnectBroadcastForSlot(2);CHECK(S::g_lastSentSig==S::kNoSendYet);
+ session.sendOk=true;poll();CHECK(session.sent.size()==7);
+ p={};p.itemClassHash=S::g_flashlightClassHash;p.state=1;p.intensity=5;p.outerConeAngle=45;p.innerConeAngle=20;
+ coop::players::Registry::Get().puppet.actor=&ui;
+ haveLight=false;S::ApplyToPuppetOrDefer(0,&ui,p);CHECK(S::g_pendingApplyValid[0]);
+ S::TickConnect();CHECK(S::g_pendingApplyValid[0]);
+ haveLight=true;settersReady=false;S::TickConnect();CHECK(S::g_pendingApplyValid[0]);
+ settersReady=true;S::TickConnect();CHECK(!S::g_pendingApplyValid[0]&&applies==2);
+ haveLight=false;S::ApplyToPuppetOrDefer(0,&ui,p);p.state=0;S::ApplyToPuppetOrDefer(0,&ui,p);
+ CHECK(S::g_pendingApplyValid[0]&&!S::g_pendingApplyPayload[0].state);
+ S::OnDisconnectForSlot(0);CHECK(!S::g_pendingApplyValid[0]);
+ haveLight=true;p.state=1;callback=[&]{auto newer=p;newer.state=0;S::ApplyToPuppetOrDefer(0,nullptr,newer);};
+ S::ApplyToPuppetOrDefer(0,&ui,p);CHECK(S::g_pendingApplyValid[0]&&!S::g_pendingApplyPayload[0].state);
+ S::TickConnect();CHECK(!S::g_pendingApplyValid[0]);
+ callback=[]{++world;};S::ApplyToPuppetOrDefer(0,&ui,p);
+ CHECK(S::g_pendingApplyValid[0]&&!S::g_echoSuppress);S::OnDisconnect();
+ CHECK(!S::g_pendingApplyValid[0]);
+ puts("PASS flashlight install before player-class readiness and deferred component/setter apply, latest-state and departure");
  puts("PASS actual flashlight battery-empty edge without input, send retry, dedupe, unequip and world/disconnect reset");
 }
-namespace ue_wrap::reflection {void* FindClass(const wchar_t*){std::abort();}void* FindFunction(void*,const wchar_t*){std::abort();}}
+namespace ue_wrap::reflection {void* FindClass(const wchar_t*){return nullptr;}void* FindFunction(void*,const wchar_t*){std::abort();}}
 namespace ue_wrap::engine {bool WriteMainPlayerFlashlight(void*,bool){std::abort();}}
 namespace ue_wrap::game_thread {void Post(Task){std::abort();}bool RegisterPostObserver(const facts::Resolved&,ProcessEventObserverFn){std::abort();}}

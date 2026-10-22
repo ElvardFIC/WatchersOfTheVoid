@@ -99,11 +99,11 @@ struct HandStamp {uint32_t generation=0;uint16_t playerNo=0;std::wstring key;uin
 std::array<HandStamp,coop::net::kMaxPeers> g_handPublished{};
 std::array<HandStamp,coop::net::kMaxPeers> g_handAccepted{};
 std::array<uint64_t,coop::net::kMaxPeers> g_handPublishRevision{};
-std::array<uint8_t,coop::net::kMaxPeers> g_handJoin{};
+std::array<uint32_t,coop::net::kMaxPeers> g_handJoin{};
 struct JoinTarget{uint16_t person=0;uint64_t epoch=0,revision=0;};
 std::array<std::array<JoinTarget,coop::net::kMaxPeers>,coop::net::kMaxPeers> g_handJoinTarget{};
 uint64_t g_foodJoinSequence=0;
-struct JoinFood {ue_wrap::CachedObjRef actor;uint8_t pending=0;std::array<JoinTarget,coop::net::kMaxPeers> targets{};};
+struct JoinFood {ue_wrap::CachedObjRef actor;uint32_t pending=0;std::array<JoinTarget,coop::net::kMaxPeers> targets{};};
 std::map<std::wstring,JoinFood> g_joinFoods;
 std::wstring g_joinCursor;
 std::unordered_map<uint64_t, uint64_t> g_biteAt;  // (slot<<32)|eid -> ms
@@ -210,19 +210,19 @@ bool BroadcastHandState(coop::net::Session& s, void* actor, uint8_t slot, uint32
                         int targetSlot = -1);
 
 uint32_t HandAddress(uint8_t slot, uint32_t generation) {
-    return 0x80000000u | (uint32_t(slot & 0x3u) << 29) | (generation & 0x1FFFFFFFu);
+    return 0x80000000u | (uint32_t(slot & 0x1Fu) << 26) | (generation & 0x03FFFFFFu);
 }
 bool DecodeHandAddress(uint32_t address, uint8_t& slot, uint32_t& generation) {
     if (!(address & 0x80000000u)) return false;
-    slot = static_cast<uint8_t>((address >> 29) & 0x3u);
-    generation = address & 0x1FFFFFFFu;
+    slot = static_cast<uint8_t>((address >> 26) & 0x1Fu);
+    generation = address & 0x03FFFFFFu;
     return generation != 0 && slot < coop::net::kMaxPeers;
 }
 void* HandActor(uint8_t slot, uint32_t generation) {
     if (slot >= coop::net::kMaxPeers) return nullptr;
     if (slot == coop::players::Registry::Get().LocalPeerId())
-        return (coop::hand_item::Generation(slot)&0x1FFFFFFFu) == generation ? coop::hand_item::LocalHandActor() : nullptr;
-    return (coop::hand_item::MirrorGeneration(slot)&0x1FFFFFFFu) == generation
+        return (coop::hand_item::Generation(slot)&0x03FFFFFFu) == generation ? coop::hand_item::LocalHandActor() : nullptr;
+    return (coop::hand_item::MirrorGeneration(slot)&0x03FFFFFFu) == generation
         ? coop::hand_item::MirrorActorForSlot(slot) : nullptr;
 }
 
@@ -236,9 +236,9 @@ bool BroadcastHandState(coop::net::Session& s, void* actor, uint8_t slot, uint32
     ue_wrap::CachedObjRef identity;identity.Set(actor);const auto sourceKey=g_handKeys[slot];
     const auto sourceCurrent=[&]{return Session()==&s && s.connected() && s.role()==coop::net::Role::Host && epoch==g_epoch &&
         g_world==ue_wrap::world_identity::Generation() && identity.Get() && g_peerEpoch[slot]==sourceEpoch &&
-        coop::roster_ledger::Get(slot).playerNo==person && HandActor(slot,generation&0x1FFFFFFFu)==actor &&
+        coop::roster_ledger::Get(slot).playerNo==person && HandActor(slot,generation&0x03FFFFFFu)==actor &&
         (slot==coop::players::Registry::Get().LocalPeerId() || (g_handKeys[slot]==sourceKey &&
-        g_handAccepted[slot].generation==(generation&0x1FFFFFFFu) && g_handAccepted[slot].playerNo==person && g_handAccepted[slot].key==sourceKey &&
+        g_handAccepted[slot].generation==(generation&0x03FFFFFFu) && g_handAccepted[slot].playerNo==person && g_handAccepted[slot].key==sourceKey &&
         (!g_pendingHand[slot].have || g_pendingHand[slot].revision==g_handAccepted[slot].revision))) &&
         (targetSlot<0 || (targetSlot>0 && s.IsSlotWorldReady(targetSlot) && g_peerEpoch[targetSlot]==recipientEpoch && coop::roster_ledger::Get(targetSlot).playerNo==recipient));};
     if(!person || !sourceCurrent() || !F::IsFood(actor) || !sourceCurrent())return false;
@@ -733,8 +733,8 @@ void OnPeerLeft(int slot) {
     g_pendingHand[slot]={};g_handOccupants[slot]=0;g_handKeys[slot].clear();g_handSent[slot]={};g_handPublished[slot]={};g_handAccepted[slot]={};
     g_handJoin[slot]=0;
     g_handJoinTarget[slot]={};for(auto& targets:g_handJoinTarget)targets[slot]={};
-    for(auto& mask:g_handJoin)mask&=uint8_t(~(1u<<slot));
-    std::erase_if(g_joinFoods,[slot](auto& entry){entry.second.pending&=uint8_t(~(1u<<slot));return !entry.second.pending;});
+    for(auto& mask:g_handJoin)mask&=uint32_t(~(1u<<slot));
+    std::erase_if(g_joinFoods,[slot](auto& entry){entry.second.pending&=uint32_t(~(1u<<slot));return !entry.second.pending;});
 }
 
 void ForgetPublished(const std::wstring& key) { g_sent.erase(key); }

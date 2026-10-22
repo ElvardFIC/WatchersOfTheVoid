@@ -2,7 +2,7 @@ bool SameJoin(const JoinTarget& a,const JoinTarget& b){return a.revision==b.revi
 bool JoinPerson(const JoinTarget& row,int slot){return row.revision && row.person==coop::roster_ledger::Get(slot).playerNo && row.epoch==g_peerEpoch[slot];}
 void QueueHandFoodJoin(uint8_t owner,int slot){
     if(owner>=coop::net::kMaxPeers || slot<=0 || slot>=coop::net::kMaxPeers)return;
-    g_handJoin[owner]|=uint8_t(1u<<slot);g_handJoinTarget[owner][slot]={coop::roster_ledger::Get(slot).playerNo,g_peerEpoch[slot],++g_foodJoinSequence};
+    g_handJoin[owner]|=uint32_t(1u<<slot);g_handJoinTarget[owner][slot]={coop::roster_ledger::Get(slot).playerNo,g_peerEpoch[slot],++g_foodJoinSequence};
 }
 void QueueFoodJoin(void* actor,int slot) {
     auto* s=Session();if(!s || !s->connected() || s->role()!=coop::net::Role::Host || slot<=0 || slot>=coop::net::kMaxPeers)return;
@@ -12,7 +12,7 @@ void QueueFoodJoin(void* actor,int slot) {
     const auto id=key.len?coop::net::StringFromWireKey(key):(eid?L"#"+std::to_wstring(eid):std::wstring{});
     if(id.empty() || (g_joinFoods.size()>=4096 && !g_joinFoods.count(id)))return;
     auto& row=g_joinFoods[id];if(row.targets[slot].revision>capture)return;
-    row.actor=ref;row.pending|=uint8_t(1u<<slot);row.targets[slot]=target;
+    row.actor=ref;row.pending|=uint32_t(1u<<slot);row.targets[slot]=target;
 }
 void RetryFoodJoins() {
     static bool busy=false;if(busy)return;struct Busy{Busy(){busy=true;}~Busy(){busy=false;}}guard;
@@ -30,7 +30,7 @@ void RetryFoodJoins() {
             bool done=!JoinPerson(row.targets[slot],slot);
             if(!done && s->IsSlotWorldReady(slot))done=Publish(*s,actor,slot);
             if(!current())return;it=g_joinFoods.find(id);
-            if(done && it!=g_joinFoods.end() && it->second.actor.Is(actor) && SameJoin(it->second.targets[slot],row.targets[slot]))it->second.pending&=uint8_t(~(1u<<slot));
+            if(done && it!=g_joinFoods.end() && it->second.actor.Is(actor) && SameJoin(it->second.targets[slot],row.targets[slot]))it->second.pending&=uint32_t(~(1u<<slot));
         }
         it=g_joinFoods.find(id);
         if(it!=g_joinFoods.end() && !it->second.pending)g_joinFoods.erase(it);
@@ -44,7 +44,7 @@ void RetryFoodJoins() {
             bool done=!JoinPerson(targets[slot],slot);
             if(!done && actor && s->IsSlotWorldReady(slot))done=BroadcastHandState(*s,actor,owner,generation,slot);
             if(!current())return;
-            if(done && SameJoin(targets[slot],g_handJoinTarget[owner][slot]))g_handJoin[owner]&=uint8_t(~(1u<<slot));
+            if(done && SameJoin(targets[slot],g_handJoinTarget[owner][slot]))g_handJoin[owner]&=uint32_t(~(1u<<slot));
         }
     }
 }

@@ -31,7 +31,7 @@ struct Row {
     CargoLiftPayload canonical{};
     bool have=false,applied=false,dirty=false;
     uint64_t at=0,sentAt=0;
-    uint8_t seeds=0;
+    uint32_t seeds=0;
 };
 struct Request { CargoLiftPayload p; uint64_t at; uint8_t sender; uint64_t occupancy=0; };
 std::atomic<net::Session*> g_session{nullptr};
@@ -43,7 +43,7 @@ uint64_t g_rateAt[net::kMaxPeers]{};
 uint8_t g_rateCount[net::kMaxPeers]{};
 uint32_t g_world=0,g_revision=0,g_sequence=0;
 uint64_t g_epoch=0,g_nextScan=0,g_nextSend=0;
-uint8_t g_seed=0;
+uint32_t g_seed=0;
 bool g_ticking=false;
 unsigned g_replaying=0; // stack guard; deliberately survives queue/session resets
 uint64_t Now(){using namespace std::chrono;return duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count();}
@@ -113,12 +113,12 @@ void Install(net::Session* session) {
     g_session.store(session);World();
     sg::WatchClassName(L"cargoLift_C",L"actionOptionIndex",0x4C490001,&OnAction,nullptr);
 }
-void QueueConnect(int slot){if(slot>0&&slot<net::kMaxPeers){World();g_seed|=uint8_t(1u<<slot);g_nextScan=0;}}
+void QueueConnect(int slot){if(slot>0&&slot<net::kMaxPeers){World();g_seed|=uint32_t(1u<<slot);g_nextScan=0;}}
 void OnPeerLeft(int slot) {
     if(slot<=0||slot>=net::kMaxPeers)return;
     ++g_occupancy[slot];
-    g_lastRequest[slot]=0;g_rateAt[slot]=0;g_rateCount[slot]=0;g_seed&=uint8_t(~(1u<<slot));
-    for(auto& r:g_rows)r.seeds&=uint8_t(~(1u<<slot));
+    g_lastRequest[slot]=0;g_rateAt[slot]=0;g_rateCount[slot]=0;g_seed&=uint32_t(~(1u<<slot));
+    for(auto& r:g_rows)r.seeds&=uint32_t(~(1u<<slot));
     std::erase_if(g_requests,[slot](const Request& r){return r.sender==slot;});
 }
 void Receive(const CargoLiftPayload& p,uint8_t sender) {
@@ -232,7 +232,7 @@ void Tick() {
             }
         }
         for(int slot=1;slot<net::kMaxPeers;++slot)if(row.seeds&(1u<<slot))
-            if(s->SendReliableToSlot(slot,net::ReliableKind::CargoLift,&p,sizeof(p)))row.seeds&=uint8_t(~(1u<<slot));
+            if(s->SendReliableToSlot(slot,net::ReliableKind::CargoLift,&p,sizeof(p)))row.seeds&=uint32_t(~(1u<<slot));
     }
 }
 void OnDisconnect(){g_session.store(nullptr);Clear();if(!g_session.load())g_world=0;}

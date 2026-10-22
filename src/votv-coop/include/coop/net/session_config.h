@@ -60,6 +60,8 @@ struct Config {
     // "nobody advertised an identity" by it instead of inferring one from the other.
     bool selfAddressed = false;
 
+    // Total seats, including the host; enforced at admission on every transport.
+    int playerLimit = kDefaultPlayers;
     int sendHz = 60;
 };
 

@@ -1,6 +1,61 @@
 # TODO - current priorities
 
-## Current release 0.9.2157 / b2184 - 22 October 2026
+## Development b2185 ? immediate-join regressions and 2?32 seats
+
+The owner's new 2157 reports remain open for gameplay acceptance: player
+flashlights, light switches, garage/base doors and the client's drone contents.
+Implementation, native boundaries and checks are in [SYNC_2157_FIXES.md](SYNC_2157_FIXES.md).
+
+- [x] Increase the shared script-name watch budget while retaining the sparse
+  lookup load; exercise 1100 pending/resolved watches and repeated reopen cycles.
+- [x] Initialize flashlight sampling independently of observer readiness; retry
+  incomplete remote applies and preserve newer payloads through callbacks.
+- [x] Retry container join seeds to the exact occupancy, across transport and
+  class/component/content readiness; do not satisfy them through another peer.
+- [x] Add 2?32 player selection to both hosting UIs and enforce it at admission;
+  extend acknowledgements, recipient masks, held-food addressing and join arrays.
+- [x] Review reachable fork default branches and the 137 upstream commits:
+  [FORK_AUDIT_20261022.md](FORK_AUDIT_20261022.md). No upstream merge or remote push.
+- [x] Full b2185 qualification: 67/67 groups, stable production snapshot and Release
+  identity/ABI pass in build/sync-2157-qualified/verification.json. Recorded in TESTLOG.
+- [ ] Accept the reported lanes and larger groups in ordinary rendered multiplayer
+  using identical b2185 DLLs. Offline tests do not close these reports.
+- [ ] Update the deployed master before automatic lobbies above four seats;
+  the local master source accepts 2?32. No remote service was deployed here.
+
+The published package statements below describe b2184, not this development DLL.
+
+
+## Current release 0.9.2157 / b2184 - package-label correction, 22 October 2026
+
+The menu and server browser now show Watchers of the Void 0.9.2157 from
+package/release.json. CMake regenerates the label when that metadata changes;
+game target 0.9.0n and wire protocol 2184 remain separate compatibility values.
+The packer requires matching runtime formatter evidence and verifies the label
+again in the freshly unpacked installation's startup log.
+
+PASS Release build, actual shared DisplayVersion formatter at startup, ABI drill,
+one impaired LAN run per direction (Scientist and Kerfur, selected articulated
+mesh, entry and recovery; 250ms lag,40ms jitter,5percent send loss), and isolated
+startup of the full 32-member ZIP. Production/build inputs frozen:2646.
+Evidence: build/version-2157-check/verification.json and final logs;
+build/package-current/verification.json with archiveStartupVerified=true.
+DLL SHA256:fa77a7c20c685840579e452191bc7f5f098152a0aa5f9dc961097392161f2e87
+ZIP SHA256:ab9f59c44bf8cc3dc4f2761559c222a1a9e4a4ce6f35cc621d4417bb75e525f8
+
+The gameplay, ragdoll physics and wire implementation are unchanged from the
+preceding qualification below. Its complete physics/model/camera matrix was
+not rerun on this label-only rebuild. Tests use NullRHI; native widget text
+readback and an ordinary rendered/input check are not claimed. The full65 suite,
+existing16 fact-row findings and script-name watch capacity remain open.
+Entity, original game files and the normal installed profile are untouched.
+The same 0.9.2157 filename replaces the previous ZIP; authorship is AquaFishhh.
+
+- [x] Match the in-game public version to package 0.9.2157 and replace its archive.
+- [ ] Owner rendered/input acceptance of the displayed label and ragdoll changes.
+
+
+## Preceding ragdoll qualification 0.9.2157 / b2184 - 22 October 2026
 
 This supersedes the b2183 status below; package number and filename stay unchanged.
 Selected-character physics now starts in the local native FinishSpawningActor

@@ -44,8 +44,8 @@ using coop::net::PowerGridPayload;
 using coop::net::kPowerGridGenerators;
 
 
-static_assert(coop::net::kMaxPeers <= 4, "PowerGridPayload::ack holds four slots");
-static_assert(coop::net::kMaxPeers <= 8, "the owed rows are one bit a slot");
+static_assert(coop::net::kMaxPeers <= 32, "PowerGridPayload::ack holds all slots");
+static_assert(coop::net::kMaxPeers <= 32, "the owed rows are one bit a slot");
 static_assert(kInputBurst >= coop::net::kPowerPuzzleFields, "a flush of every held field fits one burst");
 
 constexpr int32_t kMaxUpgrade   = 6;    // the insert's own gate, `upgradeLevel < 6`
@@ -91,7 +91,7 @@ struct Waiting { PowerGridPayload p; uint64_t arrivedMs; };
 std::deque<Waiting> g_waiting[coop::net::kMaxPeers];
 coop::net::IntentBucket g_rate[coop::net::kMaxPeers];       // a sender's acts
 coop::net::IntentBucket g_inputRate[coop::net::kMaxPeers];  // a sender's puzzle inputs
-uint8_t g_owed = 0;
+uint32_t g_owed = 0;
 uint64_t g_opsTaken = 0, g_opsRefused = 0, g_noisyAnswered = 0, g_inputsTaken = 0, g_queuesFull = 0;
 uint64_t g_rowsBroadcast = 0;
 bool g_puzzleDirty = false;
@@ -412,7 +412,7 @@ void HostServeOwed(coop::net::Session* s) {
     PowerGridPayload probe{};
     if (!ReadRows(probe)) return;
     for (int slot = 1; slot < coop::net::kMaxPeers; ++slot)
-        if ((g_owed & (1u << slot)) && HostSendRows(s, slot)) g_owed&=static_cast<uint8_t>(~(1u<<slot));
+        if ((g_owed & (1u << slot)) && HostSendRows(s, slot)) g_owed&=static_cast<uint32_t>(~(1u<<slot));
 }
 
 // ---- a client ------------------------------------------------------------------------------------------------
@@ -731,7 +731,7 @@ void OnReliable(const coop::net::PowerGridPayload& payload, uint8_t senderSlot) 
 void QueueConnectBroadcastForSlot(int slot) {
     auto* s = Connected();
     if (!s || s->role() != coop::net::Role::Host || slot <= 0 || slot >= coop::net::kMaxPeers) return;
-    g_owed |= static_cast<uint8_t>(1u << slot);
+    g_owed |= static_cast<uint32_t>(1u << slot);
     HostServeOwed(s);
     if (g_owed & (1u << slot))
         UE_LOGI("power_grid: slot %d's rows wait for the host's generators to resolve", slot);
@@ -746,7 +746,7 @@ void OnPeerLeft(uint8_t slot) {
     g_waiting[slot].clear();
     g_rate[slot].Reset();
     g_inputRate[slot].Reset();
-    g_owed = static_cast<uint8_t>(g_owed & ~(1u << slot));
+    g_owed = static_cast<uint32_t>(g_owed & ~(1u << slot));
 }
 
 size_t PendingOps() { return g_pending.size(); }

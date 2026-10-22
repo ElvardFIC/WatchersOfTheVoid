@@ -1,6 +1,6 @@
-// ue_wrap/core/script_gate_detail.h -- PRIVATE seam between the two script_gate translation units:
+// ue_wrap/core/script_gate_detail.h -- PRIVATE seam between the script_gate translation units:
 // script_gate.cpp (the loop's detour, exact watches, the holds) and script_gate_names.cpp (name watches
-// and their resolve). Not public API.
+// and their resolve), and script_gate_registry.cpp (registration and retirement). Not public API.
 
 #pragma once
 
@@ -23,9 +23,10 @@ namespace R = ue_wrap::reflection;
 // unresolved placeholder holds a second slot). What fills a table is its KEYED slots, retired
 // ones included, so the cap counts those: at most 3/8 of a table, the load at which a miss
 // probes under two slots. A name watch, class-scoped or not, holds two keyed slots, so the name table
-// takes 384 name watches: each peer of a two-peer smoke held 163-166, eighteen of them one lane's
-// device entries, and every polled state moved onto a watch adds its own.
-constexpr int kSlotBits = 11;
+// takes 1536 name watches, including both the placeholder and resolved slot. The combined
+// synchronization controllers exceed the old 384-watch budget during world startup. Keep
+// the same maximum load and lock-free lookup rather than admitting a densely filled table.
+constexpr int kSlotBits = 13;
 constexpr int kSlots = 1 << kSlotBits;
 constexpr int kMaxKeyed = kSlots * 3 / 8;
 

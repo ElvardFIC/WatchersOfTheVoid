@@ -18,6 +18,8 @@
 #include "coop/element/element.h"
 #include "ue_wrap/core/cached_obj_ref.h"
 
+#include "coop/net/peer_limits.h"
+
 #include <cstdint>
 #include <memory>
 
@@ -27,8 +29,8 @@ namespace coop::element { class Player; }
 namespace coop::players {
 
 // Peer session ids: the host is 0, clients count up from 1. Each peer has one local and up to
-// the maximum minus one puppets; the maximum covers a host and three clients.
-inline constexpr uint8_t kMaxPeers       = 4;
+// the maximum minus one puppets; the maximum covers the host and 31 clients.
+inline constexpr uint8_t kMaxPeers       = coop::net::kPeerCapacity;
 inline constexpr uint8_t kPeerIdHost     = 0;
 inline constexpr uint8_t kPeerIdUnknown  = 0xFF;  // not in registry
 

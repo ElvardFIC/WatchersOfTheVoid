@@ -14,6 +14,8 @@
 
 #pragma once
 
+#include "coop/net/peer_limits.h"
+
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -30,7 +32,7 @@ inline constexpr uint32_t kMagic = 0x564D5450u;
 // This file is past the 1500-line hard cap and stays there: it is the single-feature exception the
 // rule names. One wire format, whose enum, payload structs and static_asserts are read together;
 // splitting it would put a kind's number in one file and its bytes in another.
-inline constexpr uint16_t kProtocolVersion = 2184;  // package 2157: native ragdoll construction and recovery heading
+inline constexpr uint16_t kProtocolVersion = 2185;  // package 2157 continuation: 32-seat acknowledgements and held-food addresses
 
 // Default LAN port (overridable via multivoid.ini "net.port=").
 inline constexpr uint16_t kDefaultPort = 47621;
@@ -2042,7 +2044,7 @@ struct ServicePanelPayload {
     uint8_t index;
     uint8_t action;   // desk: changed cover/screw bits; radio: button/reset/confirm
     uint32_t seq;
-    uint32_t ack[4];  // slot count is checked against Session's kMaxPeers by the consumer
+    uint32_t ack[kPeerCapacity];  // slot count is checked against Session's kMaxPeers by the consumer
     uint8_t before[16];
     uint8_t state[16];
     WireKey coverKey; // op 6: physical part to consume, never just a cover index
@@ -2285,7 +2287,7 @@ struct RadioStatePayload {
     WireKey key;
     uint32_t elementId;
     uint32_t seq;
-    uint32_t ack[4];
+    uint32_t ack[kPeerCapacity];
     uint64_t track; // hash of relative local catalog filename (UTF-16), never a remote path
     int64_t ticks;
     uint8_t op; // 0 host canonical, 1 client state request, 2 host ack without a loaded track
@@ -2799,10 +2801,10 @@ struct PowerPanelPayload {
     uint8_t  leverSlot;  // 1  -- whose lever made leverBits (0xFF when none)
     uint8_t  _pad;       // 1
     uint16_t seq;        // 2
-    uint16_t ack[4];     // 8  -- by slot (kMaxPeers)
+    uint16_t ack[kPeerCapacity];     // 64 -- by slot (kMaxPeers)
     uint32_t terminal;   // 4  -- op 0, a page press: the portable PC's element id, 0xFFFFFFFF for the laptop
 };
-static_assert(sizeof(PowerPanelPayload) == 20, "PowerPanelPayload must be 20 bytes");
+static_assert(sizeof(PowerPanelPayload) == 76, "PowerPanelPayload must be 76 bytes");
 // A page press through a portable PC that has no element id yet: the host cannot say where it stands.
 inline constexpr uint32_t kPowerPanelTerminalUnnamed = 0xFFFFFFFEu;
 
@@ -2849,15 +2851,17 @@ struct PowerGridPayload {
     uint8_t      index;    // 1  -- ops 1..4: the generator's place
     uint8_t      field;    // 1  -- op 4
     uint16_t     seq;      // 2  -- ops 1, 2, 4
-    uint16_t     ack[4];   // 8  -- op 0, by slot (kMaxPeers)
-    float        damage;   // 4  -- op 3
+    union {
+        uint16_t ack[kPeerCapacity];  // op 0: acknowledgement for each seat
+        float damage;                // op 3: disjoint from canonical acknowledgements
+    };
     uint8_t      value;    // 1  -- op 4
     uint8_t      _pad;     // 1
     PowerGridRow rows[kPowerGridGenerators];  // 156
 };
 static_assert(sizeof(PowerGridPuzzle) == 30, "PowerGridPuzzle must be 30 bytes");
 static_assert(sizeof(PowerGridRow) == 39, "PowerGridRow must be 39 bytes");
-static_assert(sizeof(PowerGridPayload) == 176, "PowerGridPayload must be 176 bytes");
+static_assert(sizeof(PowerGridPayload) == 228, "PowerGridPayload must be 228 bytes");
 static_assert(sizeof(PowerGridPayload) <= 256 - 20 - 8, "PowerGridPayload must fit one reliable datagram");
 
 // The coordinate towers (CoordTowerState) by their id; a row past `count` is unused. Op 0, the host's rows, with
@@ -2894,13 +2898,13 @@ struct CoordTowerPayload {
     uint8_t       _pad;        // 1
     int32_t       tower;       // 4  -- ops 1..5: the tower's id
     uint16_t      seq;         // 2  -- ops 1..5
-    uint16_t      ack[4];      // 8  -- op 0, by slot (kMaxPeers)
-    uint16_t      refused[4];  // 8  -- op 0, by slot
+    uint16_t      ack[kPeerCapacity];      // 64 -- op 0, by slot (kMaxPeers)
+    uint16_t      refused[kPeerCapacity];  // 64 -- op 0, by slot
     uint16_t      _pad2;       // 2
     CoordTowerRow rows[kCoordTowers];  // 72
 };
 static_assert(sizeof(CoordTowerRow) == 18, "CoordTowerRow must be 18 bytes");
-static_assert(sizeof(CoordTowerPayload) == 100, "CoordTowerPayload must be 100 bytes");
+static_assert(sizeof(CoordTowerPayload) == 212, "CoordTowerPayload must be 212 bytes");
 static_assert(sizeof(CoordTowerPayload) <= 256 - 20 - 8, "CoordTowerPayload must fit one reliable datagram");
 
 // The ATV's rig pose, velocity and condition (AtvState), keyed by its Key. A receiver keeps its own

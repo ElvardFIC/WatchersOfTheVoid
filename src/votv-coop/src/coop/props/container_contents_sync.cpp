@@ -7,6 +7,7 @@
 #include "coop/props/prop_save_data.h"
 #include "coop/props/container_contents_sync.h"
 #include "coop/props/container_birth.h"
+#include "coop/props/container_seed_retry.h"
 #include "coop/props/container_park.h"
 #include "coop/props/container_slice_wire.h"
 #include "coop/props/container_write_policy.h"
@@ -24,12 +25,14 @@
 #include "ue_wrap/core/component_calls.h"  // CallParamless
 #include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/log.h"
+#include "ue_wrap/engine/world_identity.h"
 #include "ue_wrap/core/object_index.h"  // ClassByName -- the host's O(1) class resolve for a client's contents
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/script_gate.h"
 #include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
+#include <array>
 #include <chrono>
 #include <cstdint>
 #include <map>
@@ -99,6 +102,8 @@ std::map<uint32_t, uint64_t> g_baseHash;
 
 // Containers whose broadcast the transport refused; retried by the sweep.
 std::set<uint32_t> g_retry;
+coop::props::ContainerSeedRetries g_seedRetry;
+std::array<uint32_t, coop::net::kMaxPeers> g_seedScans{};
 
 // The takeObj extraction window. Never consumed: a container's hand-view actor may be the first
 // FinishSpawn after takeObj and must not steal the admission from the actual extracted world item.
@@ -281,8 +286,9 @@ void RederiveManagedState(void* owner, void* inv);
 bool BroadcastContainer(coop::net::Session* s, uint32_t eid, void* inv, int toSlot, bool force) {
     std::vector<SR::SaveRecord> recs;
     const SliceRead read = ReadContents(inv, recs);
-    // Nothing resolvable -- not a transport failure, and not a slice waiting to go out.
-    if (read == SliceRead::Unreadable) return true;
+    // A component can exist before its GObjStack index becomes readable. A join seed
+    // still owes its contents; unreadable is a dependency to retry, never an empty slice.
+    if (read == SliceRead::Unreadable) return false;
     // The records exist and were not shipped. False so the caller retries; the next call reads
     // the live inventory again. This blob is not kept, and g_sentHash is not written.
     if (read == SliceRead::OverCap) return false;
@@ -409,6 +415,29 @@ void DrainDirty(coop::net::Session* s) {
         if (IsHost() && cb::Awaited(actor, 0)) { g_retry.insert(eid); continue; }
         if (!BroadcastContainer(s, eid, inv, -1, /*force=*/false)) g_retry.insert(eid);
     }
+}
+
+void RetrySeeds(coop::net::Session* s) {
+    for (int slot = 1; slot < coop::net::kMaxPeers; ++slot) {
+        if (!g_seedScans[slot]) continue;
+        if (!s->HasPeerConn(slot) || s->peerGenerationForSlot(slot) != g_seedScans[slot]) {
+            g_seedScans[slot] = 0;
+            continue;
+        }
+        if (s->IsSlotWorldReady(slot) && ContainerClass()) QueueConnectBroadcastForSlot(slot);
+    }
+    const auto seedWorld = ue_wrap::world_identity::Generation();
+    g_seedRetry.Drain([&](uint32_t eid, int slot, uint32_t generation) {
+        if (s != g_session.load() || !s->connected() ||
+            seedWorld != ue_wrap::world_identity::Generation()) return false;
+        if (!s->HasPeerConn(slot) || s->peerGenerationForSlot(slot) != generation) return true;
+        if (!s->IsSlotWorldReady(slot)) return false;
+        void* actor = LivePropActor(eid);
+        if (!actor || !ci::IsContainer(actor)) return true;
+        void* inv = ci::InventoryOf(actor);
+        if (!inv || !ci::IsWorldInventory(inv)) return false;
+        return BroadcastContainer(s, eid, inv, slot, /*force=*/true);
+    });
 }
 
 // The apply.
@@ -775,6 +804,7 @@ void Tick() {
     // retried nor evicted for the life of the session.
     cb::Sweep(now, g_dirty);
     DrainDirty(s);
+    RetrySeeds(s);
     pk::Sweep(&ReplayParked, NowMs());
 }
 
@@ -807,9 +837,10 @@ void OnContentsChunk(const coop::net::BlobChunkPayload& p, uint8_t senderSlot) {
 
 void QueueConnectBroadcastForSlot(int peerSlot) {
     auto* s = g_session.load(std::memory_order_acquire);
-    if (!s || !IsHost()) return;
+    if (!s || !IsHost() || peerSlot <= 0 || peerSlot >= coop::net::kMaxPeers) return;
     void* base = ContainerClass();
-    if (!base) return;
+    if (!base) { g_seedScans[peerSlot] = s->peerGenerationForSlot(peerSlot); return; }
+    g_seedScans[peerSlot] = 0;
 
     std::vector<coop::element::Registry::ActorIdPair> pairs;
     coop::element::Registry::Get().SnapshotActorsByType(coop::element::ElementType::Prop, pairs);
@@ -819,11 +850,17 @@ void QueueConnectBroadcastForSlot(int peerSlot) {
         if (!pr.actor || !R::IsLiveByIndex(pr.actor, pr.internalIdx)) continue;
         if (!ue_wrap::prop::WalksToBase(R::ClassOf(pr.actor), base)) continue;
         void* inv = InventoryOf(pr.actor);
-        if (!inv || !IsWorldContainerInventory(inv)) continue;   // BOUNDARY 1 (fail-closed)
-        // False is a slice that did not go out (cap, ceiling, or a refused send). The connect
-        // pass does not run again; the dirty sweep is what retries once the live slice fits.
+        if (!inv) {
+            g_seedRetry.Queue(static_cast<uint32_t>(pr.id), peerSlot, s->peerGenerationForSlot(peerSlot));
+            continue;
+        }
+        if (!IsWorldContainerInventory(inv)) continue;   // BOUNDARY 1 (fail-closed)
+        // Missing contents or a refused send remain owed to this particular occupancy.
         if (BroadcastContainer(s, static_cast<uint32_t>(pr.id), inv, peerSlot, /*force=*/true)) ++sent;
-        else g_retry.insert(static_cast<uint32_t>(pr.id));
+        else {
+            // Only this occupancy's accepted targeted send retires its seed.
+            g_seedRetry.Queue(static_cast<uint32_t>(pr.id), peerSlot, s->peerGenerationForSlot(peerSlot));
+        }
     }
     UE_LOGI("container_contents: connect seed -> slot %d: %zu world containers", peerSlot, sent);
 }
@@ -864,6 +901,8 @@ bool ContentsDigest(uint32_t eid, int32_t& outCount, float& outVol) {
 void OnDisconnect() {
     g_dirty.clear();
     g_retry.clear();
+    g_seedRetry.Clear();
+    g_seedScans = {};
     wp::Reset();
     pk::Reset();
     g_sentHash.clear();

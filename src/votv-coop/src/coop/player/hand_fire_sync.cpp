@@ -21,7 +21,7 @@ struct Row {
     CachedObjRef actor;
     uint64_t received = 0;
     uint64_t retryAt = 0;
-    uint8_t pending = 0;
+    uint32_t pending = 0;
     bool applied = false;
 };
 std::array<Row, net::kMaxPeers> g_rows;
@@ -50,11 +50,11 @@ void World() {
     if (w != g_world) { Clear(); g_world = w; }
 }
 bool Current(uint64_t epoch) { return epoch == g_epoch && Session() && g_world == ue_wrap::world_identity::Generation(); }
-uint8_t Destinations(net::Session& s, uint8_t owner) {
+uint32_t Destinations(net::Session& s, uint8_t owner) {
     if (s.role() == net::Role::Client) return 1;
-    uint8_t mask = 0;
+    uint32_t mask = 0;
     for (int slot = 1; slot < net::kMaxPeers; ++slot)
-        if (slot != owner && s.IsSlotReady(slot)) mask |= uint8_t(1u << slot);
+        if (slot != owner && s.IsSlotReady(slot)) mask |= uint32_t(1u << slot);
     return mask;
 }
 sg::Verdict GuardMirror(const sg::Call& c) {
@@ -96,13 +96,13 @@ void Receive(const HandFirePayload& p, uint8_t sender) {
 void QueueConnect(int slot) {
     if (slot <= 0 || slot >= net::kMaxPeers) return;
     World();
-    for (auto& r : g_rows) if (r.state.sequence && r.state.slot != slot) r.pending |= uint8_t(1u << slot);
+    for (auto& r : g_rows) if (r.state.sequence && r.state.slot != slot) r.pending |= uint32_t(1u << slot);
     g_poll = 0;
 }
 void OnPeerLeft(int slot) {
     if (slot <= 0 || slot >= net::kMaxPeers) return;
     ++g_epoch; g_rows[slot] = {};
-    for (auto& r : g_rows) r.pending &= uint8_t(~(1u << slot));
+    for (auto& r : g_rows) r.pending &= uint32_t(~(1u << slot));
 }
 void OnDisconnect() { g_session.store(nullptr); Clear(); g_world = 0; }
 void Tick() {
@@ -134,7 +134,7 @@ void Tick() {
             p.fuel = aged.fuel; p.burning = uint8_t(aged.burning);
             for (int slot = 0; slot < net::kMaxPeers; ++slot) if (r.pending & (1u << slot)) {
                 if (s->role() == net::Role::Host && !s->IsSlotReady(slot)) continue;
-                if (s->SendReliableToSlot(slot, net::ReliableKind::HandFire, &p, sizeof(p))) r.pending &= uint8_t(~(1u << slot));
+                if (s->SendReliableToSlot(slot, net::ReliableKind::HandFire, &p, sizeof(p))) r.pending &= uint32_t(~(1u << slot));
             }
         }
     }

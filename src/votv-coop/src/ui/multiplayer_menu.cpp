@@ -155,8 +155,8 @@ void UpdateVersionLabel(void* menu) {
             // property write would never repaint.
             const ue_wrap::FLinearColor amber{1.f, 0.78f, 0.35f, 1.f};
             E::SetTextBlockColorDispatch(vt, outdated ? amber : kVersionWhite);
-            UE_LOGI("multiplayer_menu: native version label injected (text=%p) ABOVE txt_version=%p",
-                    vt, txtVersion);
+            UE_LOGI("multiplayer_menu: native version label injected (text=%p) ABOVE txt_version=%p label='%s'",
+                    vt, txtVersion, initial.c_str());
         }
         return;  // drive text/colour from next tick on
     }

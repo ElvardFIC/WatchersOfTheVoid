@@ -28,7 +28,7 @@ namespace Material = ue_wrap::building_material;
 struct Row {
     net::HandExtinguisherPayload state{};
     uint64_t sentAt = 0;
-    uint8_t pending = 0;
+    uint32_t pending = 0;
     bool have = false;
     bool applied = false;
     bool sprayVisible=false;
@@ -99,10 +99,10 @@ void ReconcileOwners() {
     }
 }
 
-uint8_t ReadyMask(net::Session& s, uint8_t owner) {
-    uint8_t mask = 0;
+uint32_t ReadyMask(net::Session& s, uint8_t owner) {
+    uint32_t mask = 0;
     for (int slot = 1; slot < net::kMaxPeers; ++slot)
-        if (slot != owner && s.IsSlotWorldReady(slot)) mask |= uint8_t(1u << slot);
+        if (slot != owner && s.IsSlotWorldReady(slot)) mask |= uint32_t(1u << slot);
     return mask;
 }
 
@@ -256,13 +256,13 @@ void Flush(net::Session& s) {
         Row& row = g_rows[owner];
         if (!row.have || !row.pending) continue;
         for (int slot = 1; slot < net::kMaxPeers; ++slot) {
-            const uint8_t bit = uint8_t(1u << slot);
+            const uint32_t bit = uint32_t(1u << slot);
             if (!(row.pending & bit) || !s.IsSlotWorldReady(slot)) continue;
             const auto recipient=roster_ledger::Get(slot).playerNo;
             auto state=row.state;if(NowMs()-row.sentAt>1500)state.spraying=0;
             if (s.SendReliableToSlot(slot, net::ReliableKind::HandExtinguisher,
                                      &state, sizeof(state)) && Current(&s,epoch) && row.state.sequence==state.sequence &&
-                row.state.playerNo==state.playerNo && roster_ledger::Get(slot).playerNo==recipient) row.pending &= uint8_t(~bit);
+                row.state.playerNo==state.playerNo && roster_ledger::Get(slot).playerNo==recipient) row.pending &= uint32_t(~bit);
             if(!Current(&s,epoch))return;
         }
     }
@@ -336,7 +336,7 @@ void QueueConnect(int slot) {
     ResetWorld();
     const auto epoch=g_epoch;ReconcileOwners();if(!Current(s,epoch))return;
     for (auto& row : g_rows)
-        if (row.have && row.applied && row.state.slot != slot) row.pending |= uint8_t(1u << slot);
+        if (row.have && row.applied && row.state.slot != slot) row.pending |= uint32_t(1u << slot);
     g_nextPoll = 0;
 }
 
@@ -347,7 +347,7 @@ void OnPeerLeft(int slot) {
     g_people[slot]=0;
     g_rateAt[slot] = 0;
     g_rateCount[slot] = 0;
-    for (auto& row : g_rows) row.pending &= uint8_t(~(1u << slot));
+    for (auto& row : g_rows) row.pending &= uint32_t(~(1u << slot));
     StopRow(previous);
 }
 

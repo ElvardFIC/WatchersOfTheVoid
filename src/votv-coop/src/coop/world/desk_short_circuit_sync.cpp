@@ -28,7 +28,7 @@ struct Pending { Packet p{}; uint64_t since = 0, sent = 0; };
 Pending g_request, g_effect;
 struct Peer { Pending request; uint32_t ack = 0; bool oweAck = false; };
 std::array<Peer, net::kMaxPeers> g_peers{};
-uint8_t g_oweEffect = 0;
+uint32_t g_oweEffect = 0;
 
 uint64_t Now() {
     using namespace std::chrono;
@@ -126,16 +126,16 @@ void HostTick(net::Session& s, void* desk, uint64_t now) {
         g_effect = {{Next(), 1, {}}, now, 0};
         g_oweEffect = 0;
         for (int slot = 1; slot < net::kMaxPeers; ++slot)
-            if (s.IsSlotReady(slot)) g_oweEffect |= uint8_t(1u << slot);
+            if (s.IsSlotReady(slot)) g_oweEffect |= uint32_t(1u << slot);
     }
     g_hostWasActive = active;
     g_hostDesk.Set(desk);
     if (now - g_effect.since >= kWaitMs) g_oweEffect = 0;
     for (int slot = 1; slot < net::kMaxPeers; ++slot) {
-        const auto bit = uint8_t(1u << slot);
+        const auto bit = uint32_t(1u << slot);
         if ((g_oweEffect & bit) && (!s.IsSlotReady(slot) ||
             s.SendReliableToSlot(slot, net::ReliableKind::DeskShortCircuit, &g_effect.p, sizeof(Packet))))
-            g_oweEffect &= uint8_t(~bit);
+            g_oweEffect &= uint32_t(~bit);
     }
 }
 } // namespace
@@ -200,7 +200,7 @@ void Receive(const Packet& p, uint8_t sender) {
 void OnPeerLeft(int slot) {
     if (slot > 0 && slot < net::kMaxPeers) {
         g_peers[slot] = {};
-        g_oweEffect &= uint8_t(~(1u << slot));
+        g_oweEffect &= uint32_t(~(1u << slot));
     }
 }
 void OnDisconnect() { g_session = nullptr; g_world = 0; Clear(); }

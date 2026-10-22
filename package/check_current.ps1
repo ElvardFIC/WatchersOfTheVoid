@@ -41,7 +41,7 @@ try {
         'run_placement','run_shared_screen','run_balance','run_item_batch','run_held_identity','run_trowel',
         'run_2130','run_2139','run_2140','run_2141','run_2153','run_2154','run_2155','run_2156',
         'run_stow_2157','run_2160','run_2161','run_2162','run_2165','run_2168','run_2169',
-        'run_2170','run_2172','run_2173','run_2180',
+        'run_2170','run_2172','run_2173','run_2180','run_sync_2157',
         'run_nonentity','run_cooking','run_drink_spills','run_gasoline','run_grill_edits',
         'run_grill_hand','run_grime_join','run_hand_tools','run_item_records','run_kitchen',
         'run_scorch','run_sponge_effects','run_toy_music','run_wall_creative','run_water_pour',
@@ -62,8 +62,13 @@ try {
     $build=if([IO.Path]::IsPathRooted($BuildDirectory)){$BuildDirectory}else{Join-Path $checkout $BuildDirectory}
     # CMake's always-run glob check makes Ninja dry runs pessimistically schedule
     # reconfiguration. Complete the real incremental build, then check the snapshot.
+    # Windows PowerShell promotes native stderr under Stop, including CMake's
+    # dependency deprecation notices. Preserve the output and judge the exit code.
+    $ErrorActionPreference='Continue'
     & cmake --build $build --target votv-coop --parallel 2 *> (Join-Path $evidence 'build.log')
-    if($LASTEXITCODE -ne 0){throw 'Current Release build failed; see build.log'}
+    $buildCode=$LASTEXITCODE
+    $ErrorActionPreference='Stop'
+    if($buildCode -ne 0){throw 'Current Release build failed; see build.log'}
     if((Get-SourceStamp) -ne $sourceAtStart){throw 'Production sources changed during the Release build; rerun against a stable source tree'}
     & (Join-Path $PSScriptRoot 'verify_current_build.ps1') -BuildDirectory $BuildDirectory -EvidenceDirectory $evidence
     $identity=Get-Content -LiteralPath (Join-Path $evidence 'identity.json') -Raw | ConvertFrom-Json

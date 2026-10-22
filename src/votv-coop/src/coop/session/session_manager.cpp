@@ -15,7 +15,7 @@
 #include "coop/net/protocol.h"  // kProtocolVersion (the b<N> build rev), kDefaultPort
 #include "coop/session/join_progress.h"
 #include "coop/session/shutdown.h"
-#include "coop/version.h"  // kGameTarget -- the game half of the Paper-pair identity (CMake-generated)
+#include "coop/version.h"  // generated public package label and game compatibility target
 #include "ue_wrap/core/log.h"
 
 #include <algorithm>
@@ -193,15 +193,9 @@ std::string Nickname() {
 const char* GameTarget() { return coop::version::kGameTarget; }
 
 std::string DisplayVersion() {
-    // The version identity is the pair (game target, build number), with no separate mod semver;
-    // the build number is kProtocolVersion, which moves exactly when compatibility moves.
-    // Function-static: the inputs never change once the session runs, and the browser header calls
-    // this every frame.
-    // The running game build is decided at boot, before the menu's first call: a game this Multivoid was not
-    // made for carries the mark wherever the label is shown.
-    static const std::string kLabel =
-        std::string("Watchers of the Void ") + coop::version::kGameTarget +
-        " b" + std::to_string(static_cast<int>(net::kProtocolVersion));
+    // Menu and browser show the same release number as the installed package.
+    // Game target and protocol retain their separate compatibility checks.
+    static const std::string kLabel = coop::version::kDisplayVersion;
     return kLabel;
 }
 
@@ -420,6 +414,7 @@ bool HostWithSave(const SaveChoice& choice, const std::string& name, bool locked
     // runs: empty unless `locked`, so the caller's bool alone decides whether the lock has teeth.
     // The caller's string, not a re-read of the row it wrote (the config layer line-scans the ini
     // under a global mutex, file I/O the net thread must not do).
+    playersMax = net::ClampPlayerLimit(playersMax);
     std::string lobbyPw = locked ? password : std::string();
     // A lock with no secret is downgraded, not announced: the padlock in the browser is a promise,
     // so with nothing to check the session is honestly open and the player is told. The native flow
@@ -453,6 +448,7 @@ bool HostWithSave(const SaveChoice& choice, const std::string& name, bool locked
         cfg.port = directPort;
         {
             std::lock_guard<std::mutex> lk(g_pendHostMu);
+            cfg.playerLimit = playersMax;
             cfg.lobbyPassword = lobbyPw;
             g_pendingHost.cfg = cfg;
             g_pendingHost.save = choice;
@@ -560,6 +556,7 @@ bool HostWithSave(const SaveChoice& choice, const std::string& name, bool locked
             // outlive it (a refused host told it is hosting, a withdrawn lobby kept as ours).
             {
                 std::lock_guard<std::mutex> lk(g_pendHostMu);
+                cfg.playerLimit = playersMax;
                 cfg.lobbyPassword = lobbyPw;
                 g_pendingHost.cfg = cfg;
                 g_pendingHost.save = choice;

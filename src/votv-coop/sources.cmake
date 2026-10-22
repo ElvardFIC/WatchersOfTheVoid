@@ -46,6 +46,7 @@ set(VOTVCOOP_SOURCES
     src/ue_wrap/core/script_bytecode.cpp
     src/ue_wrap/core/script_fingerprint.cpp
     src/ue_wrap/core/script_gate.cpp
+    src/ue_wrap/core/script_gate_registry.cpp
     src/ue_wrap/core/script_gate_names.cpp
     src/ue_wrap/core/script_loop.cpp
     src/ue_wrap/engine/engine.cpp
@@ -651,6 +652,7 @@ set(VOTVCOOP_SOURCES
     src/ui/native_text_field.cpp
     src/ui/host_window_native.cpp
     src/ui/host_session_choices.cpp
+    src/ui/host_player_limit.cpp
     src/ui/host_session_settings.cpp
     src/ui/browser_input_screens.cpp
     src/ui/server_browser_actions.cpp

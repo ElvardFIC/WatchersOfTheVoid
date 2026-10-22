@@ -36,8 +36,8 @@ namespace PC = ue_wrap::power_control;
 namespace sg = ue_wrap::script_gate;
 using coop::net::PowerPanelPayload;
 
-static_assert(coop::net::kMaxPeers <= 4, "PowerPanelPayload::ack holds four slots");
-static_assert(coop::net::kMaxPeers <= 8, "the owed canonicals are one bit a slot");
+static_assert(coop::net::kMaxPeers <= 32, "PowerPanelPayload::ack holds all slots");
+static_assert(coop::net::kMaxPeers <= 32, "the owed canonicals are one bit a slot");
 
 constexpr uint8_t kMaskBits = 0x1F;
 constexpr uint8_t kCalcBit = 0x08;       // press_calc: the virus lockout's end switches the servers with it
@@ -92,7 +92,7 @@ uint8_t g_takingFor = 0;          // the slot whose press the host's lever is ru
 struct Waiting { PowerPanelPayload p; uint64_t arrivedMs; };
 std::deque<Waiting> g_waiting[coop::net::kMaxPeers];
 coop::net::IntentBucket g_rate[coop::net::kMaxPeers];
-uint8_t g_owed = 0;
+uint32_t g_owed = 0;
 uint64_t g_pressesTaken = 0, g_pressesRefused = 0;
 
 // [dev] grid_drill=red: a client applies the canonical raw, as the old mirror did, with no apply behind it.
@@ -487,7 +487,7 @@ void OnReliable(const coop::net::PowerPanelPayload& payload, uint8_t senderSlot)
 void QueueConnectBroadcastForSlot(int slot) {
     auto* s = Connected();
     if (!s || s->role() != coop::net::Role::Host || slot <= 0 || slot >= coop::net::kMaxPeers) return;
-    g_owed |= static_cast<uint8_t>(1u << slot);
+    g_owed |= static_cast<uint32_t>(1u << slot);
     HostServeOwed(s);
     if (g_owed & (1u << slot))
         UE_LOGI("power_panel: slot %d's canonical waits for the host's panel to resolve", slot);
@@ -497,7 +497,7 @@ void OnPeerLeft(uint8_t slot) {
     if (slot == 0 || slot >= coop::net::kMaxPeers) return;
     g_waiting[slot].clear();
     g_rate[slot].Reset();
-    g_owed = static_cast<uint8_t>(g_owed & ~(1u << slot));
+    g_owed = static_cast<uint32_t>(g_owed & ~(1u << slot));
 }
 
 void ReassertCanonical() {

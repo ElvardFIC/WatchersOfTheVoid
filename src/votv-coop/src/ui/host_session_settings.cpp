@@ -11,6 +11,7 @@
 #include "coop/session/host_mode.h"
 #include "coop/session/session_manager.h"
 #include "coop/text/utf8_codec.h"
+#include "ui/host_player_limit.h"
 #include "ui/host_session_choices.h"     // the two-row selector these questions share
 #include "ui/host_window_native.h"      // step ONE -- what Back returns to
 #include "ui/input_focus.h"
@@ -340,6 +341,7 @@ bool BuildScreen(void* switcher) {
         NS::AddVFill(recap, nameRow, 0.f, NS::kFill, NS::kTop);
         g_nameField = TF::Create(nameRow, L"server name", kNameMaxBytes, kFieldW);
         if (!g_nameField) return false;
+        if (!ui::host_player_limit::Build(nameRow, backDonor)) { ReleaseFields(); return false; }
         g_recapWorld = NS::AddText(recap, L"", 16, kDim, NS::kJustLeft, 0.f);
         g_recapConn  = NS::AddText(recap, L"", 16, kDim, NS::kJustLeft, 0.f);
         g_recapMaster = NS::AddText(recap, L"", 16, kDim, NS::kJustLeft, 0.f);
@@ -463,7 +465,7 @@ void DoHost() {
                         : coop::session::Reachability::Brokered,
         !hideFromBrowser};
     coop::net::Refusal refused;
-    const bool accepted = sm::HostWithSave(g_choice, serverName, IsLocked(), pw, /*playersMax=*/4,
+    const bool accepted = sm::HostWithSave(g_choice, serverName, IsLocked(), pw, ui::host_player_limit::Value(),
                                            g_shownMasterUrl, mode, &refused);
     // The password is never logged: a log line is the easiest place for it to end up in a
     // screenshot.
@@ -538,6 +540,7 @@ void PollChrome() {
     // hand-built UImage must come through geometry.
     if (g_backBtn && E::WidgetIsHovered(g_backBtn)) { BackToHostWindow(); return; }
     if (g_hostBtn && E::WidgetIsHovered(g_hostBtn)) { DoHost(); return; }
+    if (ui::host_player_limit::HandleClick()) return;
     // The cursor is resolved once for both selectors; a CursorOverWidget per row is an uncached
     // GUObjectArray walk each.
     long cx = 0, cy = 0;
@@ -716,6 +719,7 @@ void OnMenuTick(void* menu, void* switcher) {
         ReleaseFields();
         g_root = nullptr; g_box = nullptr; g_scrim = nullptr; g_status = nullptr;
         g_backBtn = nullptr; g_hostBtn = nullptr;
+        ui::host_player_limit::ClearWidgets();
         g_pwBlock = nullptr; g_pwHint = nullptr;
         g_recapWorld = g_recapConn = g_recapMaster = nullptr;
         HC::ClearWidgets(g_who);

@@ -4,6 +4,7 @@
 
 Play Voices of the Void together, with accumulated co-op synchronization fixes and improvements.
 Version **0.9.2157** targets **Voices of the Void Alpha 0.9.0n** on Windows.
+The in-game mod label also shows **Watchers of the Void 0.9.2157**.
 
 Source: [ElvardFIC/WatchersOfTheVoid](https://github.com/ElvardFIC/WatchersOfTheVoid).
 
@@ -41,6 +42,10 @@ models30/30 and remote sleep/sit/ragdoll transitions36/36 pass. Six bidirectiona
 LAN runs pass with250ms outbound lag,40ms jitter and5% loss on both peers.
 Visual/input acceptance remains with the owner. The full65-group result belongs
 to b2178 and has not been repeated for b2184.
+These full ragdoll matrices belong to the preceding DLL. The display-label
+rebuild preserves its gameplay/wire implementation and is checked separately by
+the shared menu/browser formatter at runtime, startup and one impaired LAN run
+per direction.
 See RELEASE.md for the current qualification. Every player must update together.
 
 Event and creature coverage remains partial. The frequency setting preserves native

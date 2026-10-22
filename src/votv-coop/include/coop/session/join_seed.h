@@ -13,6 +13,8 @@
 
 #pragma once
 
+#include "coop/net/peer_limits.h"
+
 #include <cstdint>
 #include <map>
 
@@ -42,7 +44,7 @@ struct LaneAdapter {
 // One instance per lane (static in the lane's TU).
 class Seeder {
 public:
-    static constexpr int kMaxPeers = 4;  // static_assert'd == net::kMaxPeers in the .cpp
+    static constexpr int kMaxPeers = coop::net::kPeerCapacity;  // static_assert'd == net::kMaxPeers in the .cpp
 
     explicit Seeder(const LaneAdapter& a) : a_(a) {}
 

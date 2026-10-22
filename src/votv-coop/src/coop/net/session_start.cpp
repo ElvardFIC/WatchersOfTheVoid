@@ -132,6 +132,7 @@ bool Session::Start(const Config& cfg, Refusal* why) {
         return false;
     }
     cfg_ = cfg;
+    cfg_.playerLimit = ClampPlayerLimit(cfg.playerLimit);
     net_stats::ResetSession();  // a new session's traffic totals start at zero
     // The measured-rate controller, unless the drill has pinned a fixed rate -- that knob is an
     // instrument, and an instrument that the controller overrides measures the controller.

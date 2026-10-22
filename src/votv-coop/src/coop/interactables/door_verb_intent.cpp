@@ -1,4 +1,4 @@
-﻿// coop/interactables/door_verb_intent.cpp -- see coop/interactables/door_verb_intent.h.
+// coop/interactables/door_verb_intent.cpp -- see coop/interactables/door_verb_intent.h.
 
 #include "coop/interactables/door_verb_intent.h"
 
@@ -89,7 +89,7 @@ std::deque<coop::net::DoorVerbIntentPayload> g_pending[coop::net::kMaxPeers];
 bool g_waitSaid[coop::net::kMaxPeers] = {};  // a sender's wait for its body, said once a streak
 bool g_cutSaid[coop::net::kMaxPeers]  = {};  // a sender's hit cut to its item's swing, said once
 uint64_t g_hitRefusals = 0;                  // hits refused as no swing: said for three, then every twentieth
-struct CrematorRow { coop::net::KeyedTogglePayload payload{}; uint8_t mask = 0; };
+struct CrematorRow { coop::net::KeyedTogglePayload payload{}; uint32_t mask = 0; };
 std::vector<CrematorRow> g_crematorRows;
 std::vector<coop::net::KeyedTogglePayload> g_pendingCrematorApply;
 bool g_replayingCremator = false;
@@ -114,19 +114,19 @@ void PublishCrematorLever(void* machine, bool desiredActive, int toSlot = -1) {
     if (toSlot >= 0) {
         if (!s->SendReliableToSlot(toSlot, coop::net::ReliableKind::ContainerState, &p, sizeof(p)) &&
             toSlot < coop::net::kMaxPeers && g_crematorRows.size() < 32)
-            g_crematorRows.push_back({p, static_cast<uint8_t>(1u << toSlot)});
+            g_crematorRows.push_back({p, static_cast<uint32_t>(1u << toSlot)});
         return;
     }
     if (s->SendReliable(coop::net::ReliableKind::ContainerState, &p, sizeof(p))) return;
     for (auto& row : g_crematorRows) {
         if (row.payload.key.len == p.key.len && std::memcmp(row.payload.key.data, p.key.data, p.key.len) == 0) {
             row.payload = p;
-            row.mask = static_cast<uint8_t>(((1u << coop::net::kMaxPeers) - 1u) & ~1u);
+            row.mask = coop::net::kAllClientPeers;
             return;
         }
     }
     if (g_crematorRows.size() < 32)
-        g_crematorRows.push_back({p, static_cast<uint8_t>(((1u << coop::net::kMaxPeers) - 1u) & ~1u)});
+        g_crematorRows.push_back({p, coop::net::kAllClientPeers});
     else
         UE_LOGE("[DOOR-VERB] cremator lever state queue full -- one lever state may not reach clients");
 }
@@ -471,7 +471,7 @@ void Tick(coop::net::Session& session) {
             if (!(it->mask & (1u << slot))) continue;
             if (session.SendReliableToSlot(slot, coop::net::ReliableKind::ContainerState,
                                            &it->payload, sizeof(it->payload)))
-                it->mask &= static_cast<uint8_t>(~(1u << slot));
+                it->mask &= static_cast<uint32_t>(~(1u << slot));
         }
         if (!it->mask) it = g_crematorRows.erase(it); else ++it;
     }
@@ -528,7 +528,7 @@ void QueueCrematorSnapshot(int peerSlot) {
         p.action = active ? 1 : 0;
         if (!s->SendReliableToSlot(peerSlot, coop::net::ReliableKind::ContainerState, &p, sizeof(p)) &&
             g_crematorRows.size() < 32)
-            g_crematorRows.push_back({p, static_cast<uint8_t>(1u << peerSlot)});
+            g_crematorRows.push_back({p, static_cast<uint32_t>(1u << peerSlot)});
     }
 }
 
@@ -538,7 +538,7 @@ void OnPeerLeft(uint8_t slot) {
     g_rate[slot] = Bucket{};
     g_waitSaid[slot] = false;
     g_cutSaid[slot] = false;
-    for (auto& row : g_crematorRows) row.mask &= static_cast<uint8_t>(~(1u << slot));
+    for (auto& row : g_crematorRows) row.mask &= static_cast<uint32_t>(~(1u << slot));
     std::erase_if(g_crematorRows, [](const CrematorRow& row) { return row.mask == 0; });
 }
 

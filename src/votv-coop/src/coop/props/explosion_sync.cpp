@@ -25,7 +25,7 @@ namespace R=ue_wrap::reflection;
 namespace sg=ue_wrap::script_gate;
 using ue_wrap::CachedObjRef;
 using net::ExplosionPayload;
-struct Pending {ExplosionPayload p{};uint64_t at=0,occupancy=0;uint8_t sender=0,mask=0;};
+struct Pending {ExplosionPayload p{};uint64_t at=0,occupancy=0;uint8_t sender=0;uint32_t mask=0;};
 struct Source {CachedObjRef actor,function;std::wstring key;uint64_t epoch=0;int depth=0;};
 struct DestroyMark {CachedObjRef actor;uint64_t at=0;int32_t serial=0;};
 std::atomic<net::Session*> g_session{nullptr};
@@ -135,7 +135,7 @@ sg::Verdict OnBegin(const sg::Call& c) {
     }
     if(!Mark(g_managed,c.object))return sg::Verdict::Run;
     if(g_blasts.size()>=256){UE_LOGW("explosion: blast queue full");return sg::Verdict::Run;}
-    uint8_t mask=0;for(int slot=1;slot<net::kMaxPeers;++slot)if(s->IsSlotReady(slot))mask|=uint8_t(1u<<slot);
+    uint32_t mask=0;for(int slot=1;slot<net::kMaxPeers;++slot)if(s->IsSlotReady(slot))mask|=uint32_t(1u<<slot);
     g_blasts.push_back({Encode(state,source.key),Now(),0,0,mask});return sg::Verdict::Run;
 }
 sg::Verdict OnEffect(const sg::Call& c) {
@@ -182,7 +182,7 @@ void OnPeerLeft(int slot) {
     if(slot<=0||slot>=net::kMaxPeers)return;
     ++g_occupancy[slot];g_last[slot]=0;g_rate[slot]=0;g_rateAt[slot]=0;
     std::erase_if(g_requests,[slot](const Pending& p){return p.sender==slot;});
-    for(auto& p:g_blasts)p.mask&=uint8_t(~(1u<<slot));
+    for(auto& p:g_blasts)p.mask&=uint32_t(~(1u<<slot));
 }
 void Receive(const ExplosionPayload& p,uint8_t sender) {
     auto* s=Session();if(!s||!p.sequence||!ValidKey(p.key)||p.fire>1||p.ignoreWalls>1||p.skipSetting>1)return;
@@ -244,12 +244,12 @@ void Tick() {
             g_blasts.pop_front();
         }
     } else {
-        uint8_t blocked=0;
+        uint32_t blocked=0;
         for(auto& blast:g_blasts) {
             if(Age(now,blast.at)>10000){blast.mask=0;continue;}
             for(int slot=1;slot<net::kMaxPeers;++slot)if((blast.mask&(1u<<slot))&&!(blocked&(1u<<slot))) {
-                if(s->SendReliableToSlot(slot,net::ReliableKind::Explosion,&blast.p,sizeof(blast.p)))blast.mask&=uint8_t(~(1u<<slot));
-                else blocked|=uint8_t(1u<<slot);
+                if(s->SendReliableToSlot(slot,net::ReliableKind::Explosion,&blast.p,sizeof(blast.p)))blast.mask&=uint32_t(~(1u<<slot));
+                else blocked|=uint32_t(1u<<slot);
             }
         }
         std::erase_if(g_blasts,[](const Pending& p){return !p.mask;});

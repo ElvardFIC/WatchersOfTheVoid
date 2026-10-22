@@ -26,7 +26,7 @@ using coop::net::CoordTowerPayload;
 using coop::net::CoordTowerRow;
 using coop::net::kCoordTowers;
 
-static_assert(coop::net::kMaxPeers <= 8, "the owed rows are one bit a slot");
+static_assert(coop::net::kMaxPeers <= 32, "the owed rows are one bit a slot");
 static_assert(CT::kMaxFuses <= 8 && CT::kMaxLights <= 16, "a row holds eight fuses and sixteen lights");
 
 // A client brings a panel to the host's with its own retract; a retract that left the panel idle (a montage
@@ -104,7 +104,7 @@ bool SameRows(const CoordTowerPayload& a, const CoordTowerPayload& b) {
 CoordTowerPayload g_lastSent{};
 bool     g_haveSent = false;
 bool     g_acksDirty = false;
-uint8_t  g_owed = 0;
+uint32_t  g_owed = 0;
 uint64_t g_broadcasts = 0;
 
 // The rows with every slot's acknowledgement: to `onlySlot`, or to every peer when a tower or an acknowledgement
@@ -286,7 +286,7 @@ void OnRows(const CoordTowerPayload& p) {
 void QueueConnectBroadcastForSlot(int slot) {
     auto* s = Connected();
     if (!s || s->role() != coop::net::Role::Host || slot <= 0 || slot >= coop::net::kMaxPeers) return;
-    g_owed = static_cast<uint8_t>(g_owed | (1u << slot));
+    g_owed = static_cast<uint32_t>(g_owed | (1u << slot));
     HostServeOwed(s);
     if (g_owed & (1u << slot)) UE_LOGI("coord_tower: slot %d's rows wait for the host's towers to resolve", slot);
 }

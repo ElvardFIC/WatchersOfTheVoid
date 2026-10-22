@@ -36,7 +36,7 @@ struct Row {
     std::wstring key;CachedObjRef actor;
     PropFirePayload state{};
     uint64_t received=0,sent=0;
-    uint8_t seeds=0;
+    uint32_t seeds=0;
     bool have=false,applied=false,dirty=false;
 };
 struct Request {PropFirePayload p{};uint8_t sender=0;uint64_t at=0,occupancy=0;};
@@ -47,7 +47,7 @@ std::array<Row,512> g_rows;
 std::deque<Request> g_requests;
 uint32_t g_last[net::kMaxPeers]{},g_sequence=0,g_revision=0,g_world=0;
 uint64_t g_occupancy[net::kMaxPeers]{},g_rateAt[net::kMaxPeers]{},g_epoch=0,g_poll=0;
-uint8_t g_rateCount[net::kMaxPeers]{},g_seeds=0;
+uint8_t g_rateCount[net::kMaxPeers]{};uint32_t g_seeds=0;
 bool g_ticking=false;
 unsigned g_applying=0;
 uint64_t Now(){using namespace std::chrono;return duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count();}
@@ -169,12 +169,12 @@ void OnHandReleased(void* a) {
     PropFirePayload p{};net::WireKeyFromString(key,p.key);p.op=0;p.fuel=state.fuel;
     QueueLocal(p,key); // Existing reach/identity checks and missing-actor retry apply.
 }
-void QueueConnect(int slot){if(slot>0&&slot<net::kMaxPeers){World();g_seeds|=uint8_t(1u<<slot);g_poll=0;}}
+void QueueConnect(int slot){if(slot>0&&slot<net::kMaxPeers){World();g_seeds|=uint32_t(1u<<slot);g_poll=0;}}
 void OnPeerLeft(int slot) {
     if(slot<0||slot>=net::kMaxPeers)return;
     g_people[slot]=0;
     ++g_occupancy[slot];g_last[slot]=0;g_rateAt[slot]=0;g_rateCount[slot]=0;
-    g_seeds&=uint8_t(~(1u<<slot));for(auto& r:g_rows)r.seeds&=uint8_t(~(1u<<slot));
+    g_seeds&=uint32_t(~(1u<<slot));for(auto& r:g_rows)r.seeds&=uint32_t(~(1u<<slot));
     std::erase_if(g_requests,[slot](const Request& r){return r.sender==slot;});
 }
 void Receive(const PropFirePayload& p,uint8_t sender) {
@@ -293,7 +293,7 @@ void Tick() {
                 const bool seeded=s->SendReliableToSlot(slot,net::ReliableKind::PropFire,&p,sizeof(p));
                 if(!Current(epoch) || Session()!=s)return;
                 if(r.key!=key || r.state.sequence!=p.sequence){delivered=false;break;}
-                if(seeded && occupancy==g_occupancy[slot] && person==roster_ledger::Get(slot).playerNo)r.seeds&=uint8_t(~(1u<<slot));
+                if(seeded && occupancy==g_occupancy[slot] && person==roster_ledger::Get(slot).playerNo)r.seeds&=uint32_t(~(1u<<slot));
                 else delivered=false;
             }
             // Broadcast success may mean only one recipient accepted its queue.

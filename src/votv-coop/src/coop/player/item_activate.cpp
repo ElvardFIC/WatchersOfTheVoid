@@ -16,6 +16,7 @@
 #include "ue_wrap/engine/engine.h"
 #include "ue_wrap/engine/world_identity.h"
 #include "ue_wrap/core/game_thread.h"
+#include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/sdk_profile.h"
@@ -96,6 +97,7 @@ std::atomic<coop::net::Session*> g_session{nullptr};
 // unreliable packet, so the latest payload waits here until TickConnect finds the puppet in the
 // registry. Latest wins. Game thread.
 bool g_pendingApplyValid[coop::players::kMaxPeers] = {};
+uint64_t g_pendingApplyRevision[coop::players::kMaxPeers] = {};
 coop::net::ItemActivatePayload g_pendingApplyPayload[coop::players::kMaxPeers] = {};
 
 // The host's per-client cache of the last item state applied for that peer, not cleared on
@@ -340,6 +342,9 @@ uint32_t HashClassName(const wchar_t* s) {
 
 void Install(coop::net::Session* session) {
     g_session.store(session, std::memory_order_release);
+    // The state sampler also covers native writes that do not dispatch an input event.
+    // Its identity must exist even while the player class or observer slots are unavailable.
+    g_flashlightClassHash = HashClassName(L"prop_equipment_flashlight_C");
     if (g_installed) return;
 
     void* playerCls = R::FindClass(P::name::MainPlayerClass);
@@ -390,17 +395,17 @@ void Install(coop::net::Session* session) {
             ProbeLogEnabled() ? 1 : 0);
 }
 
-void ApplyToPuppet(void* puppetActor, const coop::net::ItemActivatePayload& payload,
+bool ApplyToPuppet(void* puppetActor, const coop::net::ItemActivatePayload& payload,
                    uint8_t senderPeerSlot) {
     if (!puppetActor || !R::IsLive(puppetActor)) {
         UE_LOGW("flashlight: ApplyToPuppet called with invalid puppet=%p", puppetActor);
-        return;
+        return false;
     }
     if (payload.itemClassHash != g_flashlightClassHash) {
         UE_LOGW("flashlight: ApplyToPuppet classHash mismatch (got 0x%08X, "
                 "expected 0x%08X = flashlight) -- dropping", payload.itemClassHash,
                 g_flashlightClassHash);
-        return;
+        return false;
     }
 
     const bool newState = (payload.state != 0);
@@ -409,8 +414,15 @@ void ApplyToPuppet(void* puppetActor, const coop::net::ItemActivatePayload& payl
     if (!light_R) {
         UE_LOGW("flashlight: puppet light_R missing or dead -- light not toggled "
                 "(puppet=%p)", puppetActor);
-        return;
+        return false;
     }
+    ue_wrap::CachedObjRef pawnRef, lightRef;
+    pawnRef.Set(puppetActor); lightRef.Set(light_R);
+    const auto world = ue_wrap::world_identity::Generation();
+    const auto current = [&] {
+        return world == ue_wrap::world_identity::Generation() && pawnRef.Get() && lightRef.Get() &&
+            ue_wrap::engine::GetMainPlayerLightR(puppetActor) == light_R;
+    };
 
     // The puppet's existing light_R is driven through SetVisibility and SetIntensity only. The
     // puppet's flashlight bool is not written (it triggers the updateFlashlight ubergraph, an
@@ -421,33 +433,40 @@ void ApplyToPuppet(void* puppetActor, const coop::net::ItemActivatePayload& payl
     // the render-state recreation that builds the scene proxy; a direct bit write does none of
     // that and produced no visible change.
     g_echoSuppress.store(true, std::memory_order_release);
+    bool applied = true;
 
     // The four dispatches go through the cached engine wrappers.
 
     // 1) SetVisibility: marks the render state dirty on the first transition, which creates the
     // proxy on the orphan puppet.
     if (!ue_wrap::engine::SetSceneComponentVisibility(light_R, newState, false)) {
+        applied = false;
         UE_LOGW("flashlight: SetSceneComponentVisibility failed (UFunction unresolved or light_R dead)");
     }
+    if (!current()) { g_echoSuppress.store(false, std::memory_order_release); return false; }
 
     // 2) SetIntensity: the sender's exact brightness; off is 0.
     const float targetIntensity = newState ? payload.intensity : 0.f;
     if (!ue_wrap::engine::SetLightIntensity(light_R, targetIntensity)) {
+        applied = false;
         UE_LOGW("flashlight: SetLightIntensity failed (UFunction unresolved or light_R dead)");
     }
+    if (!current()) { g_echoSuppress.store(false, std::memory_order_release); return false; }
 
     // 3) The cone angles (spread versus focused); both mark the render state dirty. Only when on: a
     // cone on an off light is invisible.
     if (newState) {
         if (payload.outerConeAngle > 0.f) {
-            ue_wrap::engine::SetSpotLightOuterConeAngle(light_R, payload.outerConeAngle);
+            applied = ue_wrap::engine::SetSpotLightOuterConeAngle(light_R, payload.outerConeAngle) && applied;
+            if (!current()) { g_echoSuppress.store(false, std::memory_order_release); return false; }
         }
         if (payload.innerConeAngle >= 0.f) {
-            ue_wrap::engine::SetSpotLightInnerConeAngle(light_R, payload.innerConeAngle);
+            applied = ue_wrap::engine::SetSpotLightInnerConeAngle(light_R, payload.innerConeAngle) && applied;
         }
     }
 
     g_echoSuppress.store(false, std::memory_order_release);
+    if (!applied || !current()) return false;
     UE_LOGI("flashlight: applied to puppet=%p state=%d Intensity=%.2f outerCone=%.1f innerCone=%.1f mode=%u "
             "(senderPeerSlot=%u senderElementId=0x%08x)",
             puppetActor, newState ? 1 : 0, targetIntensity,
@@ -458,6 +477,7 @@ void ApplyToPuppet(void* puppetActor, const coop::net::ItemActivatePayload& payl
     // mode-change packet does not click.
     coop::flashlight_click_sound::PlayIfStateChanged(
         puppetActor, senderPeerSlot, newState);
+    return true;
 }
 
 void ApplyToPuppetOrDefer(uint8_t senderPeerSlot, void* puppetActor,
@@ -477,15 +497,15 @@ void ApplyToPuppetOrDefer(uint8_t senderPeerSlot, void* puppetActor,
             }
         }
     }
-    if (puppetActor && R::IsLive(puppetActor)) {
-        // The puppet is ready: a stale pending entry clears and the apply runs now.
-        g_pendingApplyValid[senderPeerSlot] = false;
-        ApplyToPuppet(puppetActor, p, senderPeerSlot);
-        return;
-    }
-    // No puppet yet: stashed, latest wins, until TickConnect finds it.
+    // A live pawn can precede its light component and reflected setters. Keep the
+    // latest state until the complete apply succeeds, rather than dropping it at birth.
     g_pendingApplyPayload[senderPeerSlot] = p;
     g_pendingApplyValid[senderPeerSlot] = true;
+    const auto revision = ++g_pendingApplyRevision[senderPeerSlot];
+    if (puppetActor && R::IsLive(puppetActor) && ApplyToPuppet(puppetActor, p, senderPeerSlot)) {
+        if (revision == g_pendingApplyRevision[senderPeerSlot]) g_pendingApplyValid[senderPeerSlot] = false;
+        return;
+    }
     UE_LOGI("flashlight: ApplyToPuppetOrDefer puppet not ready for peerSlot=%u "
             "(senderElementId=0x%08x) -- stashing (state=%d Intensity=%.2f)",
             static_cast<unsigned>(senderPeerSlot), p.senderElementId,
@@ -493,6 +513,9 @@ void ApplyToPuppetOrDefer(uint8_t senderPeerSlot, void* puppetActor,
 }
 
 void QueueConnectBroadcastForSlot(int peerSlot) {
+    // A targeted seed cannot satisfy the regular broadcast. In particular a refused
+    // seed must leave a fresh publication owed when the pawn or transport becomes ready.
+    g_lastSentSig.store(kNoSendYet, std::memory_order_release);
     auto* s = g_session.load(std::memory_order_acquire);
     if (!s) {
         UE_LOGW("flashlight: QueueConnectBroadcastForSlot called with no session");
@@ -524,9 +547,6 @@ void QueueConnectBroadcastForSlot(int peerSlot) {
     }
     // To the one slot: the connected peers got the state on the toggle.
     s->SendReliableToSlot(peerSlot, coop::net::ReliableKind::ItemActivate, &p, sizeof(p));
-    const uint64_t sig = SignaturePayload(p);
-    const uint64_t storeSig = (sig == kNoSendYet) ? (kNoSendYet - 1) : sig;
-    g_lastSentSig.store(storeSig, std::memory_order_release);
     UE_LOGI("flashlight: connect-broadcast slot=%d sent state=%d Intensity=%.2f "
             "outerCone=%.1f mode=%u senderElementId=0x%08x",
             peerSlot, p.state, p.intensity, p.outerConeAngle, p.mode, p.senderElementId);
@@ -579,12 +599,13 @@ void TickConnect() {
         void* puppet = rp->GetActor();
         if (!puppet || !R::IsLive(puppet)) continue;
         coop::net::ItemActivatePayload p = g_pendingApplyPayload[peer];
-        g_pendingApplyValid[peer] = false;
+        const auto revision = g_pendingApplyRevision[peer];
         UE_LOGI("flashlight: draining deferred apply for peerSlot=%u "
                 "(senderElementId=0x%08x state=%d Intensity=%.2f)",
                 static_cast<unsigned>(peer), p.senderElementId,
                 p.state, p.intensity);
-        ApplyToPuppet(puppet, p, peer);
+        if (ApplyToPuppet(puppet, p, peer) && revision == g_pendingApplyRevision[peer])
+            g_pendingApplyValid[peer] = false;
     }
 }
 
@@ -597,6 +618,7 @@ void OnDisconnect() {
     for (uint8_t i = 0; i < coop::players::kMaxPeers; ++i) {
         if (g_pendingApplyValid[i]) ++clearedApplies;
         g_pendingApplyValid[i] = false;
+        ++g_pendingApplyRevision[i];
         g_pendingApplyPayload[i] = {};
         // The replay cache goes too: on a fresh session a different peer may reuse the slot.
         g_peerActivateValid[i] = false;
@@ -613,6 +635,7 @@ void OnDisconnectForSlot(int peerSlot) {
     // A leaving peer's cached state goes, so a peer reusing the slot does not inherit its
     // flashlight.
     g_peerActivateValid[peerSlot] = false;
+    ++g_pendingApplyRevision[peerSlot];
     g_peerActivateCache[peerSlot] = {};
     if (!g_pendingApplyValid[peerSlot]) return;
     UE_LOGI("flashlight: peer slot %d disconnected -- clearing pending apply (state=%d intensity=%.2f)",

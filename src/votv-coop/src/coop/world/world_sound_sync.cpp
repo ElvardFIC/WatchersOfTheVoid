@@ -43,6 +43,7 @@ std::deque<Pending> g_in;
 uint32_t g_world = 0;
 uint64_t g_epoch = 0;
 bool g_flushing = false;
+int g_nextRecipient = 1;
 uint64_t Now() {
     return uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now().time_since_epoch()).count());
@@ -144,7 +145,9 @@ void Flush() {
     World(); const auto epoch = g_epoch, now = Now();
     if (As(net::Role::Host)) {
         // FIFO per peer; a full send queue never blocks another recipient.
-        for (int slot = 1, work = 0; slot < players::kMaxPeers && work < 8; ++slot) {
+        for (int visited = 0, work = 0; visited < players::kMaxPeers - 1 && work < 8; ++visited) {
+            const int slot = g_nextRecipient;
+            g_nextRecipient = slot + 1 < players::kMaxPeers ? slot + 1 : 1;
             auto& queue = g_out[slot];
             if (!g_session->HasPeerConn(slot) || !g_session->IsSlotWorldReady(slot)) { queue.clear(); continue; }
             const auto peerEpoch = g_peerEpoch[slot];

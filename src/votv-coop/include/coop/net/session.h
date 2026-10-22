@@ -22,7 +22,7 @@
 #include "coop/net/send_rate_control.h"    // what each peer's link measures out at
 #include "coop/net/session_config.h"      // Role, Topology, Config: what a session starts with
 #include "coop/net/stream_refusals.h"      // refused pose packets, said once per streak
-#include "coop/player/players_registry.h"  // kMaxPeers (host + 3 clients = 4)
+#include "coop/player/players_registry.h"  // kMaxPeers (host and up to 31 clients)
 
 #include <array>
 #include <atomic>
@@ -37,7 +37,7 @@
 
 namespace coop::net {
 
-// kMaxPeers (the host + 3 clients) is coop::players::kMaxPeers; the alias sizes this header's
+// kMaxPeers is coop::players::kMaxPeers; the alias sizes this header's
 // arrays.
 inline constexpr uint8_t kMaxPeers = coop::players::kMaxPeers;
 
@@ -534,7 +534,7 @@ private:
 
 public:
     // Public: peer_admission.cpp sizes its per-pending exchange rows to it.
-    static constexpr int      kMaxPending   = 8;  // sockets, not seats
+    static constexpr int      kMaxPending   = kPeerCapacity;  // sockets, not seats
     // How long an unproved socket may sit before SweepPending closes it. Generous: a pending entry
     // costs one socket, and on P2P the whole ICE negotiation runs between the host's park edge and
     // the client's Hello.

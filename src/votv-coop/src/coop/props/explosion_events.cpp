@@ -27,7 +27,7 @@ namespace {
 namespace X=ue_wrap::prop_explosion;namespace R=ue_wrap::reflection;namespace E=ue_wrap::engine;
 namespace sg=ue_wrap::script_gate;using ue_wrap::CachedObjRef;using P=net::ExplosionEventPayload;
 UE_FACT_FN(kBeginDeferredSpawnRow, "explosion_events", L"GameplayStatics", L"BeginDeferredActorSpawnFromClass", Dispatch);
-struct Pending{P p{};uint64_t at=0,occupancy=0;uint8_t sender=0,mask=0;};
+struct Pending{P p{};uint64_t at=0,occupancy=0;uint8_t sender=0;uint32_t mask=0;};
 struct Birth{CachedObjRef actor,source;P identity{};uint64_t at=0;};
 struct Occurrence{P p{};CachedObjRef actor;uint64_t at=0;uint32_t ordinals[net::kMaxPeers]{};};
 struct Source{uint32_t nativeOrdinal=0,last[net::kMaxPeers]{};std::deque<Occurrence> events;};
@@ -107,7 +107,7 @@ void Resolve(){if(g_begin.Get()||Age(Now(),g_hookRetry)<1000)return;g_hookRetry=
     void* gs=R::FindClassDefaultObject(L"GameplayStatics");void* cls=gs?R::ClassOf(gs):nullptr;
     auto fn=cls?ue_wrap::facts::ResolveOn(kBeginDeferredSpawnRow,cls):ue_wrap::facts::Resolved{};
     if(fn&&ue_wrap::ufunction_hook::InstallPostHook(fn,&Capture))g_begin.Set(fn.Fn());}
-uint8_t Destinations(){auto* s=Session();uint8_t mask=0;if(s)for(int i=1;i<net::kMaxPeers;++i)if(s->IsSlotReady(i))mask|=uint8_t(1u<<i);return mask;}
+uint32_t Destinations(){auto* s=Session();uint32_t mask=0;if(s)for(int i=1;i<net::kMaxPeers;++i)if(s->IsSlotReady(i))mask|=uint32_t(1u<<i);return mask;}
 void Broadcast(P p){p.op=1;p.sequence=Next(g_revision);g_broadcast.push_back({p,Now(),0,0,Destinations()});}
 sg::Verdict Cancel(void* a){Mark(g_cleanup,a);E::SetActorHiddenInGame(a,true);return sg::Verdict::Cancel;}
 sg::Verdict OnBegin(const sg::Call& c){
@@ -161,7 +161,7 @@ void Install(net::Session* s){if(g_session.load()!=s)Clear();g_session.store(s);
 void OnDisconnect(){g_session.store(nullptr);Clear();g_world=0;}
 void OnPeerLeft(int slot){if(slot<=0||slot>=net::kMaxPeers)return;++g_occupancy[slot];g_last[slot]=0;g_rates[slot]=0;g_rateAt[slot]=0;
     for(auto& [key,row]:g_sources){row.last[slot]=0;for(auto& e:row.events)e.ordinals[slot]=UINT32_MAX;}
-    std::erase_if(g_requests,[&](const Pending& p){return p.sender==slot;});for(auto& p:g_broadcast)p.mask&=uint8_t(~(1u<<slot));}
+    std::erase_if(g_requests,[&](const Pending& p){return p.sender==slot;});for(auto& p:g_broadcast)p.mask&=uint32_t(~(1u<<slot));}
 void Receive(const P& p,uint8_t sender){auto* s=Session();if(!s||!p.sequence||!p.ordinal||p.reserved||p.scope>3||p.shake>1||p.ignoreWalls>1||p.skipSetting>1||p.origin>=net::kMaxPeers||
     !Text(p.sourceClass.data,p.sourceClass.len,63)||(p.scope==0&&(!Text(p.key.data,p.key.len,31)||net::StringFromWireKey(p.key)==L"None"))||!X::Valid(Decode(p)))return;
     World();const auto now=Now();if(!Client()){
@@ -225,9 +225,9 @@ void Tick(){if(!Session()||g_ticking)return;struct Guard{Guard(){g_ticking=true;
         g_retry=0;
         Broadcast(p);
     }
-    uint8_t blocked=0;for(auto& b:g_broadcast){if(Age(now,b.at)>10000){b.mask=0;continue;}
+    uint32_t blocked=0;for(auto& b:g_broadcast){if(Age(now,b.at)>10000){b.mask=0;continue;}
         for(int slot=1;slot<net::kMaxPeers;++slot)if((b.mask&(1u<<slot))&&!(blocked&(1u<<slot))){
-            if(s->SendReliableToSlot(slot,net::ReliableKind::ExplosionEvent,&b.p,sizeof(P)))b.mask&=uint8_t(~(1u<<slot));else blocked|=uint8_t(1u<<slot);}}
+            if(s->SendReliableToSlot(slot,net::ReliableKind::ExplosionEvent,&b.p,sizeof(P)))b.mask&=uint32_t(~(1u<<slot));else blocked|=uint32_t(1u<<slot);}}
     std::erase_if(g_broadcast,[](const Pending& p){return !p.mask;});
 }
 }

@@ -1,6 +1,32 @@
 # Resume ragdoll momentum work — 22 October 2026
 
-## Current release 0.9.2157 / b2184 - 22 October 2026
+## Current release 0.9.2157 / b2184 - package-label correction, 22 October 2026
+
+The menu and server browser now show Watchers of the Void 0.9.2157 from
+package/release.json. CMake regenerates the label when that metadata changes;
+game target 0.9.0n and wire protocol 2184 remain separate compatibility values.
+The packer requires matching runtime formatter evidence and verifies the label
+again in the freshly unpacked installation's startup log.
+
+PASS Release build, actual shared DisplayVersion formatter at startup, ABI drill,
+one impaired LAN run per direction (Scientist and Kerfur, selected articulated
+mesh, entry and recovery; 250ms lag,40ms jitter,5percent send loss), and isolated
+startup of the full 32-member ZIP. Production/build inputs frozen:2646.
+Evidence: build/version-2157-check/verification.json and final logs;
+build/package-current/verification.json with archiveStartupVerified=true.
+DLL SHA256:fa77a7c20c685840579e452191bc7f5f098152a0aa5f9dc961097392161f2e87
+ZIP SHA256:ab9f59c44bf8cc3dc4f2761559c222a1a9e4a4ce6f35cc621d4417bb75e525f8
+
+The gameplay, ragdoll physics and wire implementation are unchanged from the
+preceding qualification below. Its complete physics/model/camera matrix was
+not rerun on this label-only rebuild. Tests use NullRHI; native widget text
+readback and an ordinary rendered/input check are not claimed. The full65 suite,
+existing16 fact-row findings and script-name watch capacity remain open.
+Entity, original game files and the normal installed profile are untouched.
+The same 0.9.2157 filename replaces the previous ZIP; authorship is AquaFishhh.
+
+
+## Preceding ragdoll qualification 0.9.2157 / b2184 - 22 October 2026
 
 This supersedes the b2183 status below; package number and filename stay unchanged.
 Selected-character physics now starts in the local native FinishSpawningActor

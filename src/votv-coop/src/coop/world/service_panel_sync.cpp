@@ -35,7 +35,7 @@ namespace SG=ue_wrap::script_gate;
 using Packet=net::ServicePanelPayload;
 net::Session* g_session=nullptr;
 bool g_installed=false, g_applying=false;
-static_assert(net::kMaxPeers==4,"ServicePanel ack wire layout");
+static_assert(net::kMaxPeers==coop::net::kPeerCapacity,"ServicePanel ack wire layout");
 uint32_t g_world=0, g_seq=0;
 roster_ledger::PerSlotState<uint32_t> g_ack;
 struct ReturnAttempt { uint32_t seq=0;uint64_t since=0; };

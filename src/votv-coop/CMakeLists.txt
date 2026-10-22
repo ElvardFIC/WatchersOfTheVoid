@@ -37,6 +37,17 @@ endif()
 set(VOTVCOOP_BUILD ${CMAKE_MATCH_1})
 message(STATUS "multivoid identity: game ${VOTVCOOP_GAME_TARGET}, build ${VOTVCOOP_BUILD}")
 
+# The public version shown in-game is the manager package's version. Generate
+# it from the same metadata the packer reads, rather than deriving it from the
+# game target or wire revision. Editing release.json must also rebuild the DLL.
+get_filename_component(VOTVCOOP_RELEASE_JSON "${CMAKE_CURRENT_SOURCE_DIR}/../../package/release.json" ABSOLUTE)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${VOTVCOOP_RELEASE_JSON})
+file(READ ${VOTVCOOP_RELEASE_JSON} _votvcoop_release_json)
+string(JSON VOTVCOOP_PACKAGE_VERSION GET "${_votvcoop_release_json}" version_number)
+if(NOT VOTVCOOP_PACKAGE_VERSION MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$")
+    message(FATAL_ERROR "Invalid public package version in ${VOTVCOOP_RELEASE_JSON}")
+endif()
+
 # Materialize VOTVCOOP_GAME_TARGET into a generated header that the DLL
 # includes (boot banner + the announce/gate identity).
 configure_file(

@@ -8,13 +8,20 @@ runbook for porting to a new game version.
 
 ## The version pair
 
-The mod is identified by two numbers, the way Paper identifies a Minecraft build: the game
-version it targets and its own build number, displayed as `Multivoid 0.9.0n b152`. There is no
-separate semantic version. The game target is set once in `src/votv-coop/CMakeLists.txt` and
+Watchers of the Void shows its public package version in the menu and server browser,
+for example `Watchers of the Void 0.9.2157`. CMake generates this label from
+`package/release.json`, which the packer also reads; changing that file rebuilds the
+generated header. Packaging requires a runtime check that the shared menu/browser
+formatter matches this version.
+
+Compatibility is identified by two numbers: the game
+version targeted and the wire build number, recorded as `0.9.0n b2184` in diagnostics.
+The game target is set once in `src/votv-coop/CMakeLists.txt` and
 generated into a header; the build number is the wire protocol's version in `coop/net/protocol.h`,
 bumped by every change to any wire format and by every release. The pair is stamped into the
-DLL's version resource, printed in the boot banner, and carried in the release zip's name; the
-deploy and publish scripts refuse on a mismatch between the resource and the tree. The build
+DLL's version resource and printed in the boot log; the release ZIP uses the public
+package version. The deploy and publish scripts refuse on a mismatch between the
+resource and the tree. The build
 numbers themselves are minted in an append-only ledger in `.github/ci/`, and a tag or a
 release page is a drift detector, never the authority ([release.md](release.md)).
 

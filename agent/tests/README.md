@@ -115,3 +115,16 @@ extracted 0.9.0n corpus. This workstation lacks 18 of its 45 literal package inp
 (and the suite has additional dynamic inputs); it is not counted as passing.
 The owner's fresh pak audit remains deferred. These offline tests do not simulate
 PhysX or establish two-peer gameplay acceptance.
+
+## Immediate-join regression and 32-seat checks
+
+`run_sync_2157.ps1` compiles the production watch registration/retirement code,
+checks 1100 pending/resolved watches and repeated reopen cycles, and rejects the
+previous table capacity. It compiles the actual container publication and seed
+retry functions with refusal/readiness/occupancy/reentry cases and an old-retry
+negative control. Production recipient selection and held-food addressing cover
+slot 31; host admission covers every selected limit from two through 32. Protocol
+payloads retain the existing datagram bounds. `run_2145.ps1` also checks deferred
+flashlight component/setter applies, startup before the player class loads, refused
+connect publication, newer callback state and world replacement. These remain
+offline fixtures; rendered multiplayer and larger real groups require acceptance.

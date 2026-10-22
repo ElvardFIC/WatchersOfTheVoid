@@ -19,7 +19,7 @@ struct Row {
     CachedObjRef painted;
     uint64_t at=0,next=0;
     uint32_t applied=0;
-    uint8_t pending=0;
+    uint32_t pending=0;
     bool admitted=false,expired=false;
 };
 std::array<Row,net::kMaxPeers> g_rows{};
@@ -32,8 +32,8 @@ net::Session* g_session=nullptr;
 uint8_t Local(){return players::Registry::Get().LocalPeerId();}
 bool Current(uint64_t epoch){return g_session && g_session->connected() && epoch==g_epoch &&
     g_world==ue_wrap::world_identity::Generation();}
-uint8_t Mask(int except){uint8_t mask=0;for(int slot=1;slot<net::kMaxPeers;++slot)
-    if(slot!=except && g_session->IsSlotWorldReady(slot))mask|=uint8_t(1u<<slot);return mask;}
+uint32_t Mask(int except){uint32_t mask=0;for(int slot=1;slot<net::kMaxPeers;++slot)
+    if(slot!=except && g_session->IsSlotWorldReady(slot))mask|=uint32_t(1u<<slot);return mask;}
 G::State Decode(const Packet& p){return {bool(p.flags&1),bool(p.flags&2),bool(p.flags&4),p.coals,p.burn,p.volume};}
 void Encode(const G::State& s,Packet& p){p.flags=uint8_t(s.active)|(uint8_t(s.lid)<<1)|(uint8_t(s.cooking)<<2);
     p.coals=s.coals;p.burn=s.burn;p.volume=s.volume;}
@@ -123,7 +123,7 @@ void Flush(uint64_t now){
             if(!Current(epoch))return;
             auto& latest=g_rows[owner];if(sent && latest.packet.sequence==packet.sequence &&
                 latest.packet.playerNo==packet.playerNo && latest.packet.generation==packet.generation &&
-                roster_ledger::Get(slot).playerNo==person)latest.pending&=uint8_t(~(1u<<slot));
+                roster_ledger::Get(slot).playerNo==person)latest.pending&=uint32_t(~(1u<<slot));
         }
     }
 }
@@ -154,13 +154,13 @@ void Receive(const Packet& p,uint8_t sender){
 void QueueConnect(int slot){
     if(!g_session || !g_session->connected() || g_session->role()!=net::Role::Host || slot<1 || slot>=net::kMaxPeers)return;
     World();if(!Reconcile())return;
-    for(auto& row:g_rows)if(row.packet.sequence && row.admitted && row.packet.slot!=slot)row.pending|=uint8_t(1u<<slot);
+    for(auto& row:g_rows)if(row.packet.sequence && row.admitted && row.packet.slot!=slot)row.pending|=uint32_t(1u<<slot);
     g_poll=0;
 }
 void OnPeerLeft(int slot){
     if(slot<0 || slot>=net::kMaxPeers)return;const auto previous=g_rows[slot].painted;
     g_rows[slot]={};g_people[slot]=0;g_rates[slot]=0;g_rateAt[slot]=0;
-    for(auto& row:g_rows)row.pending&=uint8_t(~(1u<<slot));Stop(previous,g_world);
+    for(auto& row:g_rows)row.pending&=uint32_t(~(1u<<slot));Stop(previous,g_world);
 }
 void OnDisconnect(){
     const auto previous=g_rows;const auto world=g_world;++g_epoch;g_session=nullptr;g_rows={};g_world=g_sequence=0;g_poll=0;

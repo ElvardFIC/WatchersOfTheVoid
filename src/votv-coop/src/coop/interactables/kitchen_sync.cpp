@@ -68,7 +68,7 @@ std::unordered_map<std::wstring,GrillSave> g_grillSaves;
 uint64_t g_grillSerial=0;
 std::set<std::wstring> g_painting;
 std::map<int32_t,uint64_t> g_sampling;
-struct Join {ue_wrap::CachedObjRef actor;uint8_t pending=0;};
+struct Join {ue_wrap::CachedObjRef actor;uint32_t pending=0;};
 std::map<std::wstring,Join> g_joins;
 std::wstring g_joinCursor;
 uint16_t g_joinPeople[net::kMaxPeers]{};
@@ -242,7 +242,7 @@ void ReconcileRecipients() {
     for(int slot=1;slot<net::kMaxPeers;++slot) {
         const auto person=roster_ledger::Get(slot).playerNo;
         if(person==g_joinPeople[slot])continue;
-        for(auto& [id,row]:g_joins)row.pending&=uint8_t(~(1u<<slot));
+        for(auto& [id,row]:g_joins)row.pending&=uint32_t(~(1u<<slot));
         g_joinPeople[slot]=person;
     }
 }
@@ -253,15 +253,15 @@ void RetryJoins() {
         auto it=g_joins.upper_bound(g_joinCursor);if(it==g_joins.end())it=g_joins.begin();
         const auto id=it->first;g_joinCursor=id;const auto row=it->second;
         void* actor=row.actor.Get();if(!actor || !SharedMachine(actor)){g_joins.erase(it);continue;}
-        uint8_t done=0;
+        uint32_t done=0;
         for(int slot=1;slot<net::kMaxPeers;++slot)if(row.pending&(1u<<slot)) {
             const auto person=roster_ledger::Get(slot).playerNo;
-            if(!s->IsSlotWorldReady(slot) || (Publish(actor,slot) && roster_ledger::Get(slot).playerNo==person))done|=uint8_t(1u<<slot);
+            if(!s->IsSlotWorldReady(slot) || (Publish(actor,slot) && roster_ledger::Get(slot).playerNo==person))done|=uint32_t(1u<<slot);
             if(!Current(s,epoch))return;
         }
         it=g_joins.find(id);
         if(it!=g_joins.end() && it->second.actor.Is(actor)) {
-            it->second.pending&=uint8_t(~done);if(!it->second.pending)g_joins.erase(it);
+            it->second.pending&=uint32_t(~done);if(!it->second.pending)g_joins.erase(it);
         }
     }
 }
@@ -631,14 +631,14 @@ void SendAllToSlot(int slot) {
         if(!key.len && !eid)continue;
         const auto id=Token(key,eid);
         if(g_joins.size()>=256 && !g_joins.count(id))continue;
-        auto& row=g_joins[id];row.actor=ref;row.pending|=uint8_t(1u<<slot);
+        auto& row=g_joins[id];row.actor=ref;row.pending|=uint32_t(1u<<slot);
     }
     if(Current(s,epoch))RetryJoins();
 }
 void OnPeerLeft(int slot) {
     if(slot<0 || slot>=net::kMaxPeers)return;
     grill_hand_sync::OnPeerLeft(slot);grill_edits::OnPeerLeft(slot);g_joinPeople[slot]=0;g_intentAt[slot]=0;
-    for(auto& [key,row]:g_joins)row.pending&=uint8_t(~(1u<<slot));
+    for(auto& [key,row]:g_joins)row.pending&=uint32_t(~(1u<<slot));
     std::erase_if(g_grillOps,[slot](const auto& row){return row.second.slot==slot;});
 }
 void OnDisconnect() {

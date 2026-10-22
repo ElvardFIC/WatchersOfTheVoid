@@ -1,8 +1,23 @@
 ## 0.9.2157
 
+## Unreleased ? b2185
+
+- Restore registration headroom for shared door, switch and container script watches.
+- Preserve flashlight sampling through startup and retry remote light state until
+  its component and setters are ready; retain newer state during callbacks.
+- Retry container initial contents for the exact recipient and occupancy, including
+  unreadable initial contents and transport refusal beside other accepted peers.
+- Choose 2?32 total players when hosting. Enforce the selected limit and extend
+  acknowledgements, recipient masks, join storage and held-food addresses.
+- Offline qualification: 67/67 groups, stable Release and loader identity/ABI.
+  Matching b2185 DLLs are required. Rendered multiplayer acceptance remains open;
+  automatic lobbies above four also require the updated master service.
+
+
 - Replace the ragdoll toy with the selected character using the game's native physics.
 - Fix sky launches and upward camera snapping; preserve running momentum on entry.
 - Remove the model-swap pause on entry and delayed forced turning after getting up.
+- Show the package version 0.9.2157 in the in-game menu and server browser.
 - Fix remote ragdoll visibility and missing limb updates under lag or packet loss.
 - Preserve current main improvements to shared computers, balance, event retries and container contents.
 - Restore the full mod-manager package with the original icon, models and credits.

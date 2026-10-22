@@ -29,8 +29,9 @@ void Install(coop::net::Session* session);
 // the flashlight from future item payloads (a mismatched class no-ops). `senderPeerSlot` is
 // the resolved sender slot (the feed's element-registry lookup, with the packet's slot as
 // the fallback when the mirror is not yet established); used by the click sound's per-peer
-// state and per-peer logging. Game thread only.
-void ApplyToPuppet(void* puppetActor, const coop::net::ItemActivatePayload& p,
+// state and per-peer logging. Returns true after every light setter succeeds; a false
+// result leaves the latest state pending. Game thread only.
+bool ApplyToPuppet(void* puppetActor, const coop::net::ItemActivatePayload& p,
                    uint8_t senderPeerSlot);
 
 // The connect-time replay receiver entry: if `puppetActor` is valid, applies immediately.

@@ -39,7 +39,7 @@ ActorIdent IdentOf(void* actor, int32_t idx) {
 // from the host range), so band 0 is only ever consumed by a client's pre-slot allocations.
 constexpr uint32_t kPeerBandCount = coop::players::kMaxPeers;
 constexpr uint32_t kSlotBandSize  =
-    (kMaxElements - kHostRangeSize) / kPeerBandCount;  // 32768/4 = 8192
+    (kMaxElements - kHostRangeSize) / kPeerBandCount;  // 32768/32 = 1024 per client slot
 
 // The [base, end) of the band for a band index (0 is pre-slot, 1 and up are client slots).
 // The last band absorbs any remainder so the union exactly covers the peer range.

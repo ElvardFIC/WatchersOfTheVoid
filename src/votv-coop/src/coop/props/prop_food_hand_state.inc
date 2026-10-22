@@ -4,8 +4,8 @@ bool ValidFoodKey(const coop::net::FoodStatePayload& p) {
     for(unsigned i=0;i<p.key.len;++i)if(uint8_t(p.key.data[i])<33 || uint8_t(p.key.data[i])>126)return false;
     return !p.key.len || coop::net::StringFromWireKey(p.key)!=L"None";
 }
-bool HandAfter(uint32_t a,uint32_t b){return int32_t((a-b)<<3)>0;}
-uint32_t AnnouncedHand(uint8_t slot){return coop::hand_item::Generation(slot)&0x1FFFFFFFu;}
+bool HandAfter(uint32_t a,uint32_t b){return int32_t((a-b)<<6)>0;}
+uint32_t AnnouncedHand(uint8_t slot){return coop::hand_item::Generation(slot)&0x03FFFFFFu;}
 void ReconcileHandOwners() {
     for(int slot=0;slot<coop::net::kMaxPeers;++slot) {
         const auto person=coop::roster_ledger::Get(slot).playerNo;

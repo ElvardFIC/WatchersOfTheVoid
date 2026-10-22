@@ -278,11 +278,10 @@ int Session::FindFreePeerSlotForClient() {
     // Host: the lowest unoccupied client slot; slot 0 is the host itself. A slot is free when its
     // teardown has finished: the generation clear is that teardown's last per-slot write, so no
     // successor can be seated while a predecessor's state is still being cleared.
-    for (int i = 1; i < kMaxPeers; ++i) {
-        if (peerConns_[i].load() == 0 &&
-            peerGenBySlot_[i].load(std::memory_order_acquire) == 0) return i;
-    }
-    return -1;
+    return FindAvailableClientSeat(cfg_.playerLimit, [this](int slot) {
+        return peerConns_[slot].load() == 0 &&
+            peerGenBySlot_[slot].load(std::memory_order_acquire) == 0;
+    });
 }
 
 int Session::FindPeerSlotForConn(uint32_t hConn) {
