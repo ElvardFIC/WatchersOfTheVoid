@@ -79,12 +79,16 @@ bool LocalAnchor(FVector& position, float& yaw) {
 void Remove(void* pawn) {
     auto it = g_displays.find(pawn);
     if (it == g_displays.end()) return;
-    if (it->second.pawn.Get()) Show(pawn, true);
-    if (void* mesh = it->second.mesh.Get()) {
+    const Display display = it->second;
+    g_displays.erase(it); // native callbacks must not find a half-removed display
+    if (display.pawn.Get()) Show(pawn, true);
+    if (void* mesh = display.mesh.Get()) {
+        engine::SetSceneComponentVisibility(mesh, false, false);
         ParamFrame frame(Fn(mesh, L"K2_DestroyComponent"));
-        Call(mesh, frame);
+        // Blueprint supplies its hidden DefaultToSelf Object pin. A raw call
+        // with nullptr is refused for a component owned by another object.
+        if (display.mesh.Get() && frame.Set<void*>(L"Object", display.pawn.Get())) Call(mesh, frame);
     }
-    g_displays.erase(it);
 }
 void* Mesh(void* pawn) {
     const auto it = g_displays.find(pawn);
@@ -93,11 +97,14 @@ void* Mesh(void* pawn) {
 bool Drive(void* pawn, bool sleeping, const FVector& position, float yaw) {
     // Reap destroyed/world-swapped pawns even if their owner missed teardown.
     for (auto it = g_displays.begin(); it != g_displays.end();) {
-        if (!it->second.pawn.Get()) it = g_displays.erase(it); else ++it;
+        if (!it->second.pawn.Get()) { void* stale = it->first; ++it; Remove(stale); }
+        else ++it;
     }
     if (!sleeping) { Remove(pawn); return false; }
     if (!pawn || !R::IsLive(pawn)) return false;
-    void* source = puppet::GetMeshPlayerVisibleComponent(pawn);
+    // The first-person underlay has removeArms enabled: its animation scales
+    // away the neck/head/arms. Copy the full-body Mesh pose instead.
+    void* source = puppet::GetNativeBodyMeshComponent(pawn);
     void* asset = puppet::GetComponentSkeletalMeshAsset(source);
     if (!source || !asset) return false;
     auto it = g_displays.find(pawn);
@@ -155,7 +162,7 @@ bool DriveArticulated(void* pawn, const std::vector<engine::ArticulatedBone>& bo
     if (bones.empty()) return false;
     const auto& anchor = bones.front().world;
     if (!Drive(pawn, true, {anchor.TX, anchor.TY, anchor.TZ}, 0.f)) return false;
-    void* mesh = g_displays[pawn].mesh.Get();
+    void* mesh = Mesh(pawn);
     if (!mesh) return false;
     // Bone indices are ordered parent before child in the authored skeleton.
     // Set in world space each frame, so the local physics fallback cannot bend
