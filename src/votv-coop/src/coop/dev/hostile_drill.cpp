@@ -4,6 +4,8 @@
 
 #include "coop/dev/hostile_drill_act.h"  // the take-or-use request arms
 #include "coop/dev/hostile_drill_chat.h"  // the chat arms
+#include "coop/dev/hostile_drill_explosion.h"  // the explosion request lane's refusal arms
+#include "coop/dev/hostile_drill_explosion.h"  // the explosion request lane's refusal arms
 #include "coop/dev/hostile_drill_hand.h"  // the hand-item class arm
 #include "coop/dev/hostile_drill_latest.h"  // the keep-the-latest arm
 #include "coop/dev/hostile_drill_world.h"   // the world levels' keep-the-latest arm
@@ -51,13 +53,14 @@ using Clock = std::chrono::steady_clock;
 // hostile_drill_walk.cpp, the hand arms (bad_hand_class, bad_hand_family) in hostile_drill_hand.cpp, the chat arms
 // (chat_ill_formed, chat_flood) in hostile_drill_chat.cpp, keep_latest in hostile_drill_latest.cpp and world_latest in
 // hostile_drill_world.cpp, kerfur_flood in hostile_drill_kerfur.cpp and the remover arms in
-// hostile_drill_remover.cpp and the take-or-use arms in hostile_drill_act.cpp -- this file is the dispatcher that
+// hostile_drill_remover.cpp, the take-or-use arms in hostile_drill_act.cpp and the explosion_* arms (one Arm value,
+// the family resolving its own sub-arm) in hostile_drill_explosion.cpp -- this file is the dispatcher that
 // owns the arm selection and routes those to their module's sender and judge.
 enum class Arm { Off, SignalPark, ChatIllFormed, PropConvert, ReliableFlood, RepeatJoin,
                  RepeatWorldReady, RepeatSaveRequest, RecordBadClasses, BadAlarm, BadPropKey,
                  BadPropSpawn, BadHandClass, BadHandFamily, KeepLatest, ChatFlood, WorldLatest, KerfurFlood,
                  RemoverFar, RemoverHidden, RemoverFlood,
-                 ActFar, ActGone, ActWrongFamily, ActBadCommit, ActNotYet, ActFlood, ActFloodEarly };
+                 ActFar, ActGone, ActWrongFamily, ActBadCommit, ActNotYet, ActFlood, ActFloodEarly, Explosion };
 
 // Resolved once: with the environment variable unset every read would scan the ini on disk, and the
 // drill is asked per tick.
@@ -92,8 +95,17 @@ Arm ArmOf() {
              : v == "act_notyet"          ? Arm::ActNotYet
              : v == "act_flood"           ? Arm::ActFlood
              : v == "act_flood_early"     ? Arm::ActFloodEarly
+             : v.rfind("explosion_", 0) == 0 ? Arm::Explosion
                                           : Arm::Off;
     }();
+    return a;
+}
+
+// The explosion family's sub-arm, read from the same config value once; None unless the drill's arm is that family's.
+explosion::Arm ExplosionArmOf() {
+    static const explosion::Arm a = ArmOf() == Arm::Explosion
+        ? explosion::ArmOf(coop::config::ResolveEnum(::coop::config_registry::rows::hostile_drill))
+        : explosion::Arm::None;
     return a;
 }
 
@@ -126,6 +138,7 @@ const char* ArmName() {
     case Arm::ActNotYet:         return "act_notyet";
     case Arm::ActFlood:          return "act_flood";
     case Arm::ActFloodEarly:     return "act_flood_early";
+    case Arm::Explosion:         return explosion::ArmName(ExplosionArmOf());
     default:                     return "off";
     }
 }
@@ -684,6 +697,7 @@ void Install(coop::net::Session* session) {
     if (!IsEnabled()) return;
     g_session.store(session, std::memory_order_release);
     act::Install(session, ActArmOf());   // a pre-announce arm holds this client's announce (once per session)
+    explosion::Install(session, ExplosionArmOf());   // explosion_not_ready holds it the same way
 }
 
 void Tick() {
@@ -708,11 +722,13 @@ void Tick() {
                                   : ArmOf() == Arm::RemoverFlood    ? remover::Arm::RemoverFlood
                                                                     : remover::Arm::None;
     const act::Arm actArm = ActArmOf();
+    const explosion::Arm explosionArm = ExplosionArmOf();
     const chat::Arm chatArm = ArmOf() == Arm::ChatIllFormed ? chat::Arm::ChatIllFormed
                             : ArmOf() == Arm::ChatFlood     ? chat::Arm::ChatFlood
                                                             : chat::Arm::None;
     if (host) {
-        if (IsWalkArm())                         walk::TickHostJudge(s, WalkArmOf());  // host counts its own walks
+        if (explosionArm != explosion::Arm::None) explosion::TickHostJudge(s, explosionArm);
+        else if (IsWalkArm())                    walk::TickHostJudge(s, WalkArmOf());  // host counts its own walks
         else if (handArm != hand::Arm::None)     hand::TickHostJudge(s, handArm);
         else if (latestArm != latest::Arm::None) latest::TickHostJudge(s, latestArm);
         else if (worldArm != world::Arm::None)   world::TickHostJudge(s, worldArm);
@@ -722,7 +738,8 @@ void Tick() {
         else if (chatArm != chat::Arm::None)     chat::TickHostJudge(s, chatArm);
         else if (!ClientJudged())                TickHost(s);  // client-judged arms: the client judges, the host only answers
     } else {
-        if (IsWalkArm())                         walk::TickClient(s, WalkArmOf());
+        if (explosionArm != explosion::Arm::None) explosion::TickClient(s, explosionArm);
+        else if (IsWalkArm())                    walk::TickClient(s, WalkArmOf());
         else if (handArm != hand::Arm::None)     hand::TickClient(s, handArm);
         else if (latestArm != latest::Arm::None) latest::TickClient(s, latestArm);
         else if (worldArm != world::Arm::None)   world::TickClient(s, worldArm);
@@ -744,6 +761,7 @@ void OnDisconnect() {
     kerfur::OnDisconnect();
     remover::OnDisconnect();
     act::OnDisconnect();
+    explosion::OnDisconnect();
     chat::OnDisconnect();
     g_step = Step::WaitArm;
     g_saidArm = false;

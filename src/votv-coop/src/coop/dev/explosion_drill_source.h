@@ -5,7 +5,8 @@
 // The request arms' client half (explosion_drill_request.cpp) acts through the same verbs and the host's half
 // (explosion_drill_request_host.cpp) holds the same guard; the drill's host half (explosion_drill_host.cpp) puts it
 // back when it abandons.
-// Private to coop/dev: only those six files include it. Dev only; game thread.
+// Private to coop/dev: those six files and the hostile drill's explosion family (its client and host halves hold the
+// same guard and take the same items) include it. Dev only; game thread.
 
 #pragma once
 

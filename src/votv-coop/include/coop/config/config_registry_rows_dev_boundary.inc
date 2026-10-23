@@ -27,7 +27,11 @@ CFG_ENUM(hostile_drill, "hostile_drill", "dev", "off",
     "off|signal_park|chat_ill_formed|prop_convert|reliable_flood|repeat_join|repeat_world_ready|"
     "repeat_save_request|record_bad_classes|bad_alarm|bad_prop_key|bad_prop_spawn|bad_hand_class|"
     "bad_hand_family|keep_latest|chat_flood|world_latest|kerfur_flood|remover_far|remover_hidden|remover_flood|"
-    "act_far|act_gone|act_wrongfamily|act_bad_commit|act_notyet|act_flood|act_flood_early",
+    "act_far|act_gone|act_wrongfamily|act_bad_commit|act_notyet|act_flood|act_flood_early|"
+    "explosion_malformed|explosion_duplicate|explosion_unknown_shot|explosion_consumed|explosion_no_launcher|"
+    "explosion_origin|explosion_reach|explosion_not_seated|explosion_no_explosive|explosion_hand_bound|"
+    "explosion_story|explosion_wait_behind_shot|explosion_not_ready|explosion_evicted|explosion_flood|"
+    "explosion_rejoin|explosion_self_clamp",
     "VOTVCOOP_HOSTILE_DRILL",
     "Receive-boundary drill (BOTH peers). signal_park: a client floods refused saved-signal rows "
     "(size 0, so the game's own gate rejects each) and the host must keep them from filling the apply "
@@ -74,6 +78,9 @@ CFG_ENUM(hostile_drill, "hostile_drill", "dev", "off",
     "real camera; the host must answer OutOfSight. remover_flood: a joined client sends, in one tick, 121 remover "
     "requests each naming an unused host-range id; the host must serve them at the lane's pace and no more than its "
     "cap, judged by its own per-sender counts. act_*: A3-D2a's take-or-use requests forged against the host. "
+    "explosion_*: a joined client forges shots and explosion requests against the host, one refusal reason per arm "
+    "(or the shot table, the queue, the eviction, the not-ready and the rejoin mechanisms); the host judges by "
+    "accounting, every message one accept or one refusal, against its counters since its session start. "
     "Drill only.")
 
 // The act drill: an honest client takes and uses shared props through the real verbs, and the host judges what it
