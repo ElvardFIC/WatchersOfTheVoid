@@ -20,6 +20,7 @@
 
 #include <array>
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -169,6 +170,12 @@ bool CaptureRecord(void* actor, SaveRecord& out);
 // `resolve` is forwarded to the write of the merged record (null = FindClass; see ClassResolver).
 bool ApplyRecord(void* actor, const SaveRecord& r, ClassResolver resolve = nullptr);
 
+// Synchronous caller-owned revision/authority guard, checked through convention
+// reads, base capture and serialization before loadData. Required, never retained.
+// ApplyRecord and ApplyRecordWhile also check actor/key/world/function/cache identity.
+bool ApplyRecordWhile(void* actor, const SaveRecord& r,
+                      const std::function<bool()>& current, ClassResolver resolve = nullptr);
+
 // ---- the same dispatch, without the prop lineage ----------------------------------------------
 //
 // The pair above is the PROP codec: it resolves its verbs only for classes on the `Aprop_C` chain,
@@ -191,6 +198,11 @@ bool CaptureRecordVia(void* actor, void* recordFn, SaveRecord& out);
 // field by field, which parts it is willing to take from the sender.
 // `resolve` is forwarded to the record write (null = FindClass; see ClassResolver).
 bool ApplyRecordVia(void* actor, void* loadFn, const SaveRecord& r, ClassResolver resolve = nullptr);
+
+// Full-record restore with a required synchronous caller guard. Validates actor,
+// class, world, function and codec lifetime, while allowing the saved key to change.
+bool ApplyRecordViaWhile(void* actor, void* loadFn, const SaveRecord& r,
+                         const std::function<bool()>& current, ClassResolver resolve = nullptr);
 
 // Drop the cached class lookups (level change / disconnect).
 void ResetCodecCache();

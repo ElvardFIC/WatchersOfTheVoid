@@ -39,8 +39,8 @@ bool TryApply(void* actor, const std::wstring& key, const SR::SaveRecord& rec, u
         }
         applied=&adjusted;
     }
-    if (!current() || !SR::ApplyRecord(actor, *applied)) {
-        UE_LOGW("prop_save_data: TryApply failed -- SR::ApplyRecord returned false for key '%ls'", key.c_str());
+    if (!current() || !SR::ApplyRecordWhile(actor, *applied, current)) {
+        UE_LOGW("prop_save_data: TryApply failed -- guarded loadData refused for key '%ls'", key.c_str());
         return false;
     }
     if (!current() || epoch != g_worldEpoch || identity.Get() != actor) {
@@ -63,18 +63,25 @@ bool ApplyQueued(void* actor, const std::wstring& key, bool budgeted) {
     if (budgeted && it->second.failures >= kMaxApplyFailures) return false;
     const std::wstring applyKey = key;
     const Parked snapshot = it->second;
+    if(!AwaitCompatible(applyKey,snapshot.senderSlot,snapshot.awaited))return false;
     const uint64_t epoch = g_worldEpoch;
     const auto world=ue_wrap::world_identity::Generation();
     KeyScope scope(g_applying, applyKey);
     RecordScope order(applyKey);const auto revision=order.Revision();
     const auto current=[&]{const auto it=g_parked.find(applyKey);return epoch==g_worldEpoch && world==ue_wrap::world_identity::Generation() &&
-        order.Revision()==revision && it!=g_parked.end() && it->second.seq==snapshot.seq;};
+        order.Revision()==revision && it!=g_parked.end() && it->second.seq==snapshot.seq &&
+        AwaitCompatible(applyKey,snapshot.senderSlot,snapshot.awaited);};
     if (budgeted) --g_applyBudget; // failed dispatches cost a slot too; nested skips do not
     const bool ok = TryApply(actor, applyKey, snapshot.rec, epoch,snapshot.preserveGrillRuntime,current);
     if (epoch != g_worldEpoch) return false;
     const auto landed = g_parked.find(applyKey);
     if (landed != g_parked.end() && landed->second.seq == snapshot.seq) {
-        if (ok) Unpark(landed);
+        if (ok) {
+            const auto wait=g_awaiting.find(applyKey);
+            if(snapshot.awaited && wait!=g_awaiting.end() && wait->second.seq==snapshot.awaited &&
+               wait->second.senderSlot==snapshot.senderSlot)g_awaiting.erase(wait);
+            Unpark(landed);
+        }
         else if (++landed->second.failures == kMaxApplyFailures) {
             UE_LOGW("prop_save_data: the record for key '%ls' failed to apply %d times -- it "
                     "stays parked but is no longer retried; that prop keeps its own state",
@@ -86,9 +93,11 @@ bool ApplyQueued(void* actor, const std::wstring& key, bool budgeted) {
 
 // Queue first so a newer arrival during native dispatch cannot be overwritten by this caller.
 void LandRecord(const std::wstring& key, SR::SaveRecord&& rec, uint8_t senderSlot, size_t bytes,
-                bool budgeted = true,bool preserveGrillRuntime=false) {
+                bool budgeted = true,bool preserveGrillRuntime=false,uint64_t awaited=0) {
     Park(key, std::move(rec), senderSlot, bytes);
-    if(auto it=g_parked.find(key);it!=g_parked.end())it->second.preserveGrillRuntime=preserveGrillRuntime;
+    if(auto it=g_parked.find(key);it!=g_parked.end()){
+        it->second.preserveGrillRuntime=preserveGrillRuntime;it->second.awaited=awaited;
+    }
     // The index only, never ResolveLiveActorByKey: that one falls back to a cold GUObjectArray
     // scan on a miss, and a join hands this lane hundreds of arrivals at once. A prop the index
     // does not know yet is parked and retried at O(1) on the next frame instead.

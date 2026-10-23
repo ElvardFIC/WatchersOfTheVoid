@@ -325,6 +325,7 @@ inline constexpr RefFn kRefFns[] = {
     {L"tentacleballsfollower_c", L"runtrigger", L"tentacleballsfollower_c.runtrigger", 0xce1a7ca786fd2555ull, 0x672fec1b6254aadaull},
     {L"ticker_egspawner_c", L"receivetick", L"ticker_egspawner_c.receivetick", 0x6082ffdfa2cda429ull, 0x175209393848510cull},
     {L"ticker_fireflyspawner_c", L"receivetick", L"ticker_fireflyspawner_c.receivetick", 0x6082ffdfa2cda429ull, 0xd02c0a2ade4c7d95ull},
+    {L"ticker_flickerer_c", L"receivetick", L"ticker_flickerer_c.receivetick", 0x6082ffdfa2cda429ull, 0x4637051504842e45ull},
     {L"ticker_fossilhoundspawner_c", L"receivetick", L"ticker_fossilhoundspawner_c.receivetick", 0x6082ffdfa2cda429ull, 0xd445577a96536eaaull},
     {L"ticker_insomniacspawner_c", L"receivetick", L"ticker_insomniacspawner_c.receivetick", 0x6082ffdfa2cda429ull, 0xfb3a0c469737c017ull},
     {L"ticker_roachsummoner_c", L"receivetick", L"ticker_roachsummoner_c.receivetick", 0x6082ffdfa2cda429ull, 0xbe99e0223a1c4819ull},

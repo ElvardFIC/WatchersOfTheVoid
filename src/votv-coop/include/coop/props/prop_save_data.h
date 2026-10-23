@@ -18,6 +18,7 @@
 #include "coop/net/protocol.h"
 
 #include <cstdint>
+#include <functional>
 #include <string>
 
 namespace coop::net { class Session; }
@@ -47,6 +48,13 @@ bool Covers(void* actor);
 // backoff, and only a give-up past that ceiling is logged as a divergence.
 // The record-as-payload precedent is named in ue_wrap/actors/save_record.h, on CaptureRecord.
 bool Publish(coop::net::Session* s, void* actor, const std::wstring& key);
+
+// Synchronous publication owned by a controller's revision/authority guard.
+// Requires a guard; validates it before capture and throughout chunk delivery.
+// The caller retains retry debt: this path never queues an unguarded background retry
+// or stores the callback. Already delivered chunks cannot be recalled.
+bool PublishWhile(coop::net::Session* s, void* actor, const std::wstring& key,
+                  const std::function<bool()>& current);
 
 // The same record to ONE peer (the join seed). Host side.
 bool PublishToSlot(coop::net::Session* s, int peerSlot, void* actor, const std::wstring& key);
@@ -85,9 +93,15 @@ void OnChunk(coop::net::Session& s, const coop::net::BlobChunkPayload& p, uint8_
 // Same-key native reentry is deferred, and replacement records survive an older apply.
 bool ApplyParked(void* actor, const std::wstring& key);
 
+// Host restoration at a client-authored birth: an early record must belong to
+// that author and retain its initial runtime fields. False leaves the caller
+// responsible for ExpectRecordFor after its own birth-context validation.
+bool ApplyInitialParked(void* actor, const std::wstring& key, uint8_t authorSlot);
+
 // Before a live actor becomes a personal inventory record, drain an already
 // received canonical state even when this frame's background budget is spent.
-// False means the pending apply failed/re-entered or the actor/world disappeared;
+// False also covers an outstanding initial-author wait, including one started by
+// native apply callbacks, or an apply failure/reentry or actor/world disappearance;
 // the caller must defer capture rather than save stale class-default values.
 bool PrepareForCapture(void* actor, const std::wstring& key);
 // World edits wait for a new birth's initial record, then apply any queued record first.

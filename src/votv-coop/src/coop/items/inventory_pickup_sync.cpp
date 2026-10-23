@@ -87,9 +87,12 @@ ue_wrap::script_gate::Verdict OnPocketPre(const ue_wrap::script_gate::Call& call
     ue_wrap::CachedObjRef carrier;
     carrier.Set(actor);
     const auto extracted = detail::RestoreContainerCarrier(call, actor);
+    if(extracted == detail::ExtractRestore::Invalidated)return cancelPickup();
     if (extracted != detail::ExtractRestore::Unrelated) {
-        if (extracted == detail::ExtractRestore::Failed)
-            UE_LOGW("inventory_pickup: container carrier restore failed; native extraction continues");
+        if (extracted == detail::ExtractRestore::Failed) {
+            UE_LOGW("inventory_pickup: container carrier restore failed; pickup deferred");
+            return cancelPickup();
+        }
         // The container lane owns this transfer. A temporary carrier's pre-pocket record must
         // not become a stale parked world update. If pocketing fails, the normal spawn drain
         // publishes the surviving, now restored world actor instead.

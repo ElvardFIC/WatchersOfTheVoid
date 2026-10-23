@@ -1,5 +1,8 @@
 // Real queue, receiver and serializer; only engine/transport entry points are doubled.
-#include "../../src/votv-coop/src/coop/props/prop_save_data.cpp"
+#ifndef ITEM_RECORD_SOURCE
+#define ITEM_RECORD_SOURCE "../../src/votv-coop/src/coop/props/prop_save_data.cpp"
+#endif
+#include ITEM_RECORD_SOURCE
 #include "../../src/votv-coop/src/coop/items/save_record_wire.cpp"
 #include <cstdio>
 #include <cstdlib>
@@ -22,6 +25,7 @@ std::function<void(const Record&)> duringApply;
 std::function<void()> duringCapture;
 std::function<void()> duringNoteApply,duringNotePublish;
 std::function<void()> duringSend,duringRefresh,duringLock;
+std::function<void()> duringCodec;
 std::vector<uint8_t> incoming;
 std::vector<int> sent,noted;
 coop::net::Session session;
@@ -36,7 +40,7 @@ void Occupancy() {
 }
 void Reset() {
     serial=1;liveKey=L"item";
-    world=1;duringSend=duringRefresh=duringLock={};CHECK(S::g_recordOrder.empty());
+    world=1;duringSend=duringRefresh=duringLock=duringCodec={};CHECK(S::g_recordOrder.empty());
     session.linked=session.ready=true;session.blockedSlot=-1;
     CHECK(S::g_applying.empty());CHECK(S::g_publishing.empty());CHECK(!S::g_driving);S::OnDisconnect();
     calls=depth=notes=lookups=captures=0;nested=false;success=host=live=covered=sendOK=true;
@@ -99,6 +103,7 @@ bool CaptureRecord(void*,SaveRecord& rec) {
     if (callback) callback();rec=test::Make();return test::captureOK;
 }
 bool ApplyRecord(void*,const SaveRecord& rec,ClassResolver) {
+    auto cb=std::move(test::duringCodec);test::duringCodec={};if(cb)cb();
     ++test::calls;
     // Reject borrowed queue storage before callbacks invalidate it (a safe mutation oracle).
     auto row=S::g_parked.find(rec.key);
@@ -110,6 +115,10 @@ bool ApplyRecord(void*,const SaveRecord& rec,ClassResolver) {
     --test::depth;return test::success;
 }
 void ResetCodecCache() {}
+bool ApplyRecordWhile(void* actor,const SaveRecord& rec,const std::function<bool()>& current,ClassResolver resolve){
+    auto cb=std::move(test::duringCodec);test::duringCodec={};if(cb)cb();
+    return current && current() && ApplyRecord(actor,rec,resolve);
+}
 }
 namespace coop::prop_element_tracker {
 bool SessionIsHost() { return test::host; }
@@ -379,10 +388,113 @@ int main() {
     Reset();duringSend=[]{S::OnDisconnect();Deliver(L"item",2,2,true);};Run(Intent);
     CHECK(calls==1 && noted==std::vector<int>({2}) && S::g_parked.empty());
     puts("PASS: same-key normalization/capture/send supersession, independent other keys, native pre-apply cancellation and stale-transfer retry refusal");
+    // Capture must wait even before the author's first chunk has arrived.
+    Reset();S::ExpectRecordFor(&actor,L"item",1);
+    CHECK(!S::PrepareForCapture(&actor,L"item") && !calls && S::g_parked.empty());
+    // A successful old apply may start a new birth before returning to its caller.
+    for(bool mutation:{false,true}){
+        Reset();S::Park(L"item",Make(),1,100);
+        duringNoteApply=[]{S::ExpectRecordFor(&actor,L"item",1);};
+        const bool ready=mutation?S::PrepareForMutation(&actor,L"item"):S::PrepareForCapture(&actor,L"item");
+        CHECK(!ready && calls==1 && S::g_parked.empty() && S::StillAwaited(L"item"));
+    }
+    // Do not block an eligible parked initial record: draining it resolves the wait.
+    Reset();S::ExpectRecordFor(&actor,L"item",1);live=false;Deliver(L"item",1,1,true);live=true;
+    CHECK(S::PrepareForCapture(&actor,L"item") && calls==1 && !S::StillAwaited(L"item"));
+    Reset();S::ExpectRecordFor(&actor,L"item",1);S::g_awaiting.at(L"item").deadlineMs=0;
+    CHECK(S::PrepareForCapture(&actor,L"item"));
+    Reset();S::ExpectRecordFor(&actor,L"item",1);S::OnPeerGone(1);
+    CHECK(S::PrepareForCapture(&actor,L"item"));
+    Reset();duringCodec=[]{Deliver(L"item",2,2,true);};Run(Intent);
+    CHECK(!calls && noted.empty() && sent==std::vector<int>({1,2}) && S::g_parked.at(L"item").rec.ints[0][0]==2);
+    CHECK(!S::g_parked.at(L"item").failures && S::ApplyParked(&actor,L"item") && calls==1 && noted==std::vector<int>({2}));
     Reset();S::ExpectRecordFor(&actor,L"item",1);CHECK(!S::PrepareForMutation(&actor,L"item"));
     Deliver(L"item",1,1,true);CHECK(S::PrepareForMutation(&actor,L"item"));
     Reset();S::Park(L"item",Make(),1,100);success=false;CHECK(!S::PrepareForMutation(&actor,L"item"));
     success=true;CHECK(S::PrepareForMutation(&actor,L"item") && S::g_parked.empty());
+    // Guarded publications belong to a controller's synchronous revision scope.
+    // Refusal never transfers retry debt to this lane without that guard.
+    bool lease=false;const auto current=[&]{return lease;};
+    Reset();captureOK=true;CHECK(!S::PublishWhile(&session,&actor,L"item",{}));
+    CHECK(!S::PublishWhile(&session,&actor,L"item",current) && captures==0 && S::g_retry.empty());
+    for(bool hostRole:{false,true}){
+        Reset();host=hostRole;lease=true;captureOK=true;duringCapture=[&]{lease=false;};
+        CHECK(!S::PublishWhile(&session,&actor,L"item",current) && sent.empty() && S::g_retry.empty());
+        Reset();host=hostRole;lease=true;captureOK=true;duringNotePublish=[&]{lease=false;};
+        CHECK(!S::PublishWhile(&session,&actor,L"item",current) && sent.empty() && S::g_retry.empty());
+        Reset();host=hostRole;lease=true;captureOK=true;duringSend=[&]{lease=false;};
+        CHECK(!S::PublishWhile(&session,&actor,L"item",current) && sent.size()==1 && S::g_retry.empty());
+        Reset();host=hostRole;lease=true;captureOK=false;
+        CHECK(!S::PublishWhile(&session,&actor,L"item",current) && S::g_retry.empty());
+        lease=false;S::DriveRetries();CHECK(captures==1 && sent.empty());
+        lease=true;captureOK=true;CHECK(S::PublishWhile(&session,&actor,L"item",current) && captures==2 && sent.size()==1);
+        Reset();host=hostRole;lease=true;captureOK=true;sendOK=false;
+        CHECK(!S::PublishWhile(&session,&actor,L"item",current) && S::g_retry.empty());
+        lease=false;S::DriveRetries();CHECK(captures==1 && sent.size()==1);
+        lease=true;sendOK=true;CHECK(S::PublishWhile(&session,&actor,L"item",current) && captures==2 && sent.size()==2);
+    }
+    Reset();lease=true;CHECK(!S::Publish(&session,&actor,L"item") && S::g_retry.size()==1);
+    lease=false;CHECK(!S::PublishWhile(&session,&actor,L"item",current) && S::g_retry.size()==1);
+    lease=captureOK=true;CHECK(S::PublishWhile(&session,&actor,L"item",current) && S::g_retry.empty());
+    // Initial birth state belongs to the author until it lands on the host.
+    Reset();S::ExpectRecordFor(&actor,L"item",1);Deliver(L"item",2,2,true);
+    CHECK(S::StillAwaited(L"item") && !calls && sent.empty() && S::g_parked.empty());
+    Deliver(L"item",1,1,true);CHECK(!S::StillAwaited(L"item") && calls==1 && sent.size()==1);
+    Reset();S::ExpectRecordFor(&actor,L"item",1);live=false;Deliver(L"item",1,1,true);
+    CHECK(S::StillAwaited(L"item") && S::g_parked.count(L"item") && !calls);
+    live=captureOK=true;CHECK(!S::Publish(&session,&actor,L"item") && !captures);
+    CHECK(S::ApplyParked(&actor,L"item") && !S::StillAwaited(L"item"));
+    CHECK(S::Publish(&session,&actor,L"item") && captures==1);
+    Reset();S::ExpectRecordFor(&actor,L"item",1);success=false;Deliver(L"item",1,1,true);
+    CHECK(S::StillAwaited(L"item") && S::g_parked.at(L"item").failures==1);
+    success=true;S::Drive();CHECK(!S::StillAwaited(L"item") && S::g_parked.empty() && calls==2);
+    // A refused class is not an accepted initial state.
+    Reset();S::ExpectRecordFor(&actor,L"item",1);covered=false;Deliver(L"item",1,1,true);
+    CHECK(S::StillAwaited(L"item") && !calls && sent.empty());
+    covered=true;Deliver(L"item",1,1,true);CHECK(!S::StillAwaited(L"item") && calls==1);
+    // Reentrant foreign input must not even supersede the valid author's scope.
+    Reset();S::ExpectRecordFor(&actor,L"item",1);
+    duringApply=[](const Record&){Deliver(L"item",2,2,true);};Deliver(L"item",1,1,true);
+    CHECK(calls==1 && sent.size()==1 && S::g_parked.empty() && !S::StillAwaited(L"item"));
+    // The same author can start a distinct birth during old native completion.
+    for(uint8_t author:{uint8_t(1),uint8_t(2)}){
+        Reset();S::ExpectRecordFor(&actor,L"item",1);
+        duringApply=[author](const Record&){S::ExpectRecordFor(&actor,L"item",author);};
+        Deliver(L"item",1,1,true);CHECK(S::StillAwaited(L"item") && S::g_awaiting.at(L"item").senderSlot==author);
+        Deliver(L"item",2,author,true);CHECK(!S::StillAwaited(L"item") && calls==2);
+    }
+    Reset();S::ExpectRecordFor(&actor,L"item",1);
+    duringNoteApply=[]{S::ExpectRecordFor(&actor,L"item",1);};Deliver(L"item",1,1,true);
+    CHECK(S::StillAwaited(L"item") && calls==1);
+    Deliver(L"item",2,1,true);CHECK(!S::StillAwaited(L"item") && calls==2);
+    Reset();captureOK=true;duringCapture=[]{S::ExpectRecordFor(&actor,L"item",1);};
+    CHECK(!S::Publish(&session,&actor,L"item") && sent.empty() && S::StillAwaited(L"item"));
+    // An older parked record cannot satisfy a newly established birth wait.
+    Reset();S::Park(L"item",Make(),2,100);S::ExpectRecordFor(&actor,L"item",1);
+    CHECK(!S::ApplyParked(&actor,L"item") && !calls && !S::g_parked.at(L"item").failures);
+    Deliver(L"item",2,1,true);CHECK(!S::StillAwaited(L"item") && calls==1);
+    // Early birth restoration checks the author before native apply/normalization.
+    Reset();grill=true;live=false;Deliver(L"item",1,1,true);live=true;
+    CHECK(!S::ApplyInitialParked(&actor,L"item",2) && !calls && S::g_parked.at(L"item").preserveGrillRuntime);
+    duringApply=[](const Record& r){CHECK(r.floats.empty());};
+    CHECK(S::ApplyInitialParked(&actor,L"item",1) && calls==1 && S::g_parked.empty());
+    // A matching early record that failed before the birth wait remains eligible.
+    Reset();grill=true;live=false;Deliver(L"item",1,1,true);
+    live=true;success=false;CHECK(!S::ApplyParked(&actor,L"item"));
+    S::ExpectRecordFor(&actor,L"item",1);success=true;
+    duringApply=[](const Record& r){CHECK(r.floats.empty());};
+    CHECK(S::ApplyParked(&actor,L"item") && !S::StillAwaited(L"item"));
+    // Timeout/departure keep their existing fallback and cannot wedge parked state.
+    Reset();grill=true;S::ExpectRecordFor(&actor,L"item",1);S::g_awaiting.at(L"item").deadlineMs=0;
+    duringApply=[](const Record& r){CHECK(r.floats.size()==2);};Deliver(L"item",1,2,true);
+    CHECK(!S::StillAwaited(L"item") && calls==1);
+    Reset();S::ExpectRecordFor(&actor,L"item",1);live=false;Deliver(L"item",1,1,true);
+    S::g_awaiting.at(L"item").deadlineMs=0;live=true;
+    CHECK(S::ApplyParked(&actor,L"item") && !S::StillAwaited(L"item"));
+    Reset();S::ExpectRecordFor(&actor,L"item",1);S::OnPeerGone(1);Deliver(L"item",1,2,true);
+    CHECK(!S::StillAwaited(L"item") && calls==1);
+    puts("PASS: initial birth state waits for its exact author/application, survives refusal/reentry/replacement and releases after landing/timeout/departure");
+    puts("PASS: guarded publication cancels stale capture/transport on both roles, retains caller retry ownership and accepts a fresh retry");
     puts("PASS: readiness/ownership waits preserve retry budget without blocking ready peers");
     puts("PASS: independent per-recipient/broadcast retries, attempt counts and departure cleanup");
     puts("PASS: unindexed live-source retry for capture/send failures; dead/recycled/rekeyed sources refused");

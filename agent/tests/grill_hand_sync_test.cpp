@@ -1,5 +1,9 @@
 #include "support_2135.h"
-#include "../../src/votv-coop/src/coop/interactables/grill_hand_sync.cpp"
+#ifndef GRILL_HAND_SOURCE
+#define GRILL_HAND_SOURCE "../../src/votv-coop/src/coop/interactables/grill_hand_sync.cpp"
+#endif
+#include GRILL_HAND_SOURCE
+#include "coop/net/session_serial.h"
 #include "../../src/votv-coop/src/coop/net/session_lanes.h"
 #include <limits>
 namespace test {
@@ -109,5 +113,52 @@ int main(){
     S::OnDisconnect();
     worldUnavailable=true;Start(session,Role::Host);p=Request();S::Receive(p,1);S::Tick();CHECK(sound);
     const auto previousStops=stops;++world;S::Tick();CHECK(stops==previousStops && !S::g_rows[1].packet.sequence);worldUnavailable=false;
-    puts("PASS grill hand: exact generation/person, host reach/readiness validation, owner retry, canonical lid/fuel/burn/loop, mirror wait/replacement, expiry, stale join and reentrant packet/recipient/world fences");
+    // A new occupancy can reuse every wire identity after OnPeerLeft clears history.
+    // Finishing the old native paint must not admit that replacement packet.
+    Start(session,Role::Host);p=Request();auto replacementPacket=p;replacementPacket.flags=0;replacementPacket.coals=9;
+    callback=[&]{S::OnPeerLeft(1);S::Receive(replacementPacket,1);};S::Receive(p,1);S::Tick();
+    CHECK(!S::g_rows[1].admitted && session.sent.empty());
+    now+=100;S::Tick();CHECK(S::g_rows[1].admitted && !sound && state.coals==9);
+    // Replacing an admitted row during a send retains its new delivery debt and
+    // ends the old fan-out before any additional recipient sees the old packet.
+    Start(session,Role::Host);p=Request();bool once=false;
+    session.allowSend=[&](int slot,auto,const void*,int){if(slot==2 && !once){once=true;
+        S::OnPeerLeft(1);S::Receive(replacementPacket,1);S::Apply(now);}return true;};
+    S::Receive(p,1);S::Tick();CHECK(once && (S::g_rows[1].pending&(1u<<2)));
+    CHECK(session.sent.size()==1 && session.sent.front().slot==2);
+    session.allowSend={};S::Tick();CHECK(session.sent.size()==3);
+    CHECK(Decode(session.sent[1]).coals==9 && Decode(session.sent[2]).coals==9);
+    // A newer ordinary packet also interrupts an in-flight fan-out.
+    Start(session,Role::Host);p=Request();replacementPacket=p;replacementPacket.sequence++;replacementPacket.coals=8;once=false;
+    session.allowSend=[&](int slot,auto,const void*,int){if(slot==2 && !once){once=true;S::Receive(replacementPacket,1);}return true;};
+    S::Receive(p,1);S::Tick();CHECK(session.sent.size()==1 && !S::g_rows[1].admitted);
+    session.allowSend={};now+=100;S::Tick();CHECK(session.sent.size()==3 && Decode(session.sent.back()).coals==8);
+    // A recipient may rejoin with the same player number while its old send finishes.
+    Start(session,Role::Host);p=Request();once=false;
+    session.allowSend=[&](int slot,auto,const void*,int){if(slot==2 && !once){once=true;S::OnPeerLeft(2);S::QueueConnect(2);}return true;};
+    S::Receive(p,1);S::Tick();CHECK(once && (S::g_rows[1].pending&(1u<<2)));
+    session.allowSend={};S::Tick();CHECK(!(S::g_rows[1].pending&(1u<<2)));
+    // The local source can retire inside its native read without changing its pointer/generation.
+    Start(session,Role::Client);local=&ui;callback=[]{S::OnPeerLeft(2);};S::Tick();CHECK(session.sent.empty());
+    now+=100;S::Tick();CHECK(session.sent.size()==1);
+    // A restart also reuses the Session/world/roster/hand identities.
+    Start(session,Role::Host);p=Request(50);S::Receive(p,1);S::Tick();CHECK(sound);
+    session.sent.clear();coop::net::session_serial::Next();S::Install(&session);S::QueueConnect(2);S::Tick();
+    CHECK(!sound && !S::g_rows[1].packet.sequence && session.sent.empty());
+    p.sequence=1;S::Receive(p,1);S::Tick();CHECK(sound && S::g_rows[1].admitted);
+    Start(session,Role::Client);local=&ui;session.sendOk=false;S::Tick();
+    coop::net::session_serial::Next();local=nullptr;session.sendOk=true;S::Tick();CHECK(session.sent.empty());
+    Start(session,Role::Client);local=&ui;callback=[]{coop::net::session_serial::Next();};S::Tick();CHECK(session.sent.empty());
+    Start(session,Role::Host);p=Request();S::Receive(p,1);
+    coop::element::callback=[]{coop::net::session_serial::Next();};S::Tick();CHECK(!paints && session.sent.empty());
+    Start(session,Role::Host);p=Request();S::Receive(p,1);
+    callback=[]{coop::net::session_serial::Next();};S::Tick();CHECK(paints==1 && !S::g_rows[1].admitted && session.sent.empty());
+    S::Tick();CHECK(!sound && !S::g_rows[1].packet.sequence);
+    // A restart during cleanup cancels the remaining old sound-stop batch.
+    Start(session,Role::Host);p=Request();auto other=p;other.slot=3;other.playerNo=people[3];
+    S::Receive(p,1);S::Receive(other,3);S::Tick();CHECK(sound);
+    const auto cleanupStops=stops;callback=[]{coop::net::session_serial::Next();sound=true;};S::OnDisconnect();
+    CHECK(stops==cleanupStops+1 && sound);sound=false;
+    S::OnDisconnect();
+    puts("PASS grill hand: exact owner, row replacement, interrupted fan-out, session restart, readiness/retries, stock/loop, stale join and reentrant native lifetime fences");
 }

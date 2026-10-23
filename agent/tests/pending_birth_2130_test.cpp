@@ -124,7 +124,11 @@ bool Write(void*,const Condition& in,const std::function<bool()>& current) {CHEC
 namespace coop::props::prop_food_sync {void ForgetPublished(const std::wstring& key){CHECK(key==L"item");++test::invalidates;}}
 // Unused host/installation boundaries must never accidentally run in this client-side test.
 namespace coop::prop_lifecycle {bool IsWireSuppressedPropClass(const std::wstring&){return false;}bool IsPerPlayerPropClass(const std::wstring&){return false;}}
-namespace coop::prop_save_data {void ExpectRecordFor(void*,const std::wstring&,uint8_t){++test::expectedRecords;}bool ApplyParked(void*,const std::wstring&){test::Callback(test::duringApplyParked);return false;}}
+namespace coop::prop_save_data {
+void ExpectRecordFor(void*,const std::wstring&,uint8_t){++test::expectedRecords;}
+bool ApplyParked(void*,const std::wstring&){std::abort();}
+bool ApplyInitialParked(void*,const std::wstring&,uint8_t author){CHECK(author==1);test::Callback(test::duringApplyParked);return false;}
+}
 namespace coop::prop_key_index {Read Resolve(const std::wstring&,void** out){*out=test::indexed;return test::indexRead;}}
 namespace coop::prop_snapshot {void ExpressIncrementalSpawn(void*){++test::expresses;}}
 namespace coop::peer_action_feed {void AnnounceDirect(uint8_t,Action,const std::wstring&){++test::notices;}}

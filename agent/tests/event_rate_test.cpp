@@ -36,9 +36,9 @@ bool CallFunction(void* p,void* fn,void* data) {
 }
 namespace ue_wrap::facts { Resolved Resolve(const Function& row) { return Resolved(&test::obj[17],&row); } }
 namespace ue_wrap::object_index {
-void* ClassByName(const wchar_t* n) { if(!wcscmp(n,L"ticker_eyers_C"))return &test::obj[18];for(int i=10;i<14;++i)if(!wcscmp(test::obj[i].name,n))return &test::obj[i];return nullptr; }
+void* ClassByName(const wchar_t* n) { if(!wcscmp(n,L"ticker_eyers_C"))return &test::obj[18];if(!wcscmp(n,L"ticker_flickerer_C"))return &test::obj[15];for(int i=10;i<14;++i)if(!wcscmp(test::obj[i].name,n))return &test::obj[i];return nullptr; }
 size_t ForEachInstance(void* cls,InstanceFn cb,void* ctx) {
-    size_t count=0;for(int i=0;i<9;++i)if(test::obj[i].live&&test::obj[i].cls==cls){cb(ctx,&test::obj[i],i);++count;}return count;
+    size_t count=0;for(int i=0;i<10;++i)if(test::obj[i].live&&test::obj[i].cls==cls){cb(ctx,&test::obj[i],i);++count;}return count;
 }
 }
 namespace ue_wrap::ufunction_hook { bool InstallPostHook(const facts::Resolved&,PostNativeCallback cb,bool) {test::hook=cb;return true;} }
@@ -58,12 +58,15 @@ int main(){
     for(int i=0;i<20;++i){obj[i].id=i;obj[i].cls=&obj[i];}
     for(int i=0;i<4;++i){obj[10+i].name=E::kSpawners[i];obj[i].cls=&obj[10+i];obj[i].world=world;}
     obj[18].name=L"ticker_eyers_C";obj[8].cls=&obj[18];obj[8].world=world;
+    obj[15].name=L"ticker_flickerer_C";obj[9].cls=&obj[15];obj[9].world=world;obj[9].interval=45.f;
     coop::net::Session s;E::Install(&s);
     for(int i=0;i<4;++i)CHECK(obj[i].interval==300.f);
+    CHECK(obj[9].interval==22.5f); // existing host flickerer, with native generator roll intact
     const int initial=writes;Tick();E::Install(&s);CHECK(writes==initial); // no compounding
     Native(obj[0],800.f);CHECK(obj[0].interval==400.f);
     Native(obj[0],400.f);CHECK(obj[0].interval==200.f); // new baseline may equal last applied
     rate=4.f;Tick();E::Install(&s);CHECK(obj[0].interval==100.f&&obj[1].interval==150.f);
+    CHECK(obj[9].interval==11.25f);
     rate=1.f;Tick();E::Install(&s);CHECK(obj[0].interval==400.f&&obj[1].interval==600.f);
     rate=.5f;Tick();E::Install(&s);CHECK(obj[0].interval==800.f);
     rate=std::numeric_limits<float>::quiet_NaN();Native(obj[0],600.f);CHECK(obj[0].interval==300.f);
@@ -74,12 +77,17 @@ int main(){
     obj[5].cls=&obj[10];Native(obj[5],600.f);CHECK(obj[5].interval==600.f);
     obj[6].cls=&obj[10];obj[6].world=reinterpret_cast<void*>(2);Native(obj[6],600.f);CHECK(obj[6].interval==600.f);
     E::OnDisconnect();CHECK(obj[0].interval==600.f&&obj[1].interval==600.f);
+    CHECK(obj[9].interval==45.f);
     s.mode=coop::net::Role::Client;E::Install(&s);Native(obj[0],500.f);CHECK(obj[0].interval==500.f);
     CHECK(obj[8].interval==300.f);Native(obj[8],2400.f);CHECK(obj[8].interval==1200.f);
+    Native(obj[9],60.f);CHECK(obj[9].interval==60.f); // host-only producer never scales clients
     rate=4.f;Tick();E::Install(&s);CHECK(obj[8].interval==600.f&&obj[0].interval==500.f);
     Native(obj[4],600.f);CHECK(obj[4].interval==600.f); // personal Insomniac never scales
     E::OnDisconnect();CHECK(obj[8].interval==2400.f);rate=2.f;
     s.mode=coop::net::Role::Host;Tick();E::Install(&s);CHECK(obj[0].interval==250.f);
+    CHECK(obj[9].interval==30.f);Native(obj[9],30.f);CHECK(obj[9].interval==15.f);
+    rate=5.f;Tick();E::Install(&s);CHECK(obj[9].interval==6.f);
+    E::OnDisconnect();CHECK(obj[9].interval==30.f);rate=2.f;Tick();E::Install(&s);
     // Recycled identities never receive a prior tenant's restoration.
     ++obj[0].serial;obj[0].interval=900.f;E::OnDisconnect();CHECK(obj[0].interval==900.f);
     E::Install(&s);CHECK(obj[0].interval==450.f);
@@ -94,5 +102,5 @@ int main(){
     onRead=[]{++gen;};Native(obj[0],1000.f);CHECK(writes==prior&&obj[0].interval==1000.f);
     Tick();E::Install(&s);const auto next=writes;
     onRead=[]{++serial;};Native(obj[0],800.f);CHECK(writes==next&&obj[0].interval==800.f);
-    std::puts("PASS event rate: host ownership, 2x/default/live edits, native rearm, no compounding, restore/recycle, late actors and reentrant teardown");
+    std::puts("PASS event rate: host ownership including flickerer, 2x/default/live edits, native rearm, no compounding, restore/recycle, late actors and reentrant teardown");
 }

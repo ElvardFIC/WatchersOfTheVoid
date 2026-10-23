@@ -2,25 +2,11 @@
 
 ## Version 0.9.2159
 
-- [x] Enroll native-overlap explosion victims in host prop-motion replication
-  after the actual delayed radial impulse (development **b2189 / protocol 2189**).
-  Preserve held/frozen/static exclusions and source/target/session identity.
-  Release and 71/71 groups pass; native LAN confirms one bucket's motion, rest
-  and settled-position rejoin on identical DLLs.
 - [ ] Accept host/client blast-driven prop movement and final resting poses,
-  including simultaneous blasts, pickup and late join. Force-only blasts that
-  bypass the native damage-overlap loop still need target discovery.
-- [x] Implement ATV handlebar/front-wheel steering replication in development
-  **b2188 / protocol 2188**. Send actual speed-adjusted handle yaw; preserve it
-  after native mirror ticks without taking input/possession from the local driver.
-  Release and 70/70 groups pass; native LAN passes 6/6 cases plus nonzero late join.
-- [x] Keep a pending ATV honk when sending a late-join snapshot; the joiner
-  receives state without consuming or replaying that one-shot sound.
+  including simultaneous/force-only blasts, native object-type filters, pickup
+  and late join. Targeted native evidence does not close all gameplay cases.
 - [ ] Accept ATV steering on host/client, left/right/center, driving and stopped,
   late join and driver/carrier handoff using identical current DLLs.
-- [x] Implement owner-to-host bleeding drops and validated host forwarding to
-  other players, without echoing the injured player's native drop. Development
-  **b2187 / protocol 2187**; Release and **69/69 offline groups** pass.
 - [ ] Accept visible bleeding from host and client injuries in rendered multiplayer
   with identical current DLLs, including stopping blood loss and joining mid-bleed.
   Native drop collisions/stains run independently on each peer; exact stain layout,
@@ -28,14 +14,15 @@
 
 ## Current baseline and pending acceptance
 
-Current development: **DLL b2189 / protocol 2189**, game **0.9.0n**, targeting
-package **0.9.2159**. Release and **71/71 offline groups** pass. Targeted native
-LAN blast motion, rest and settled-position rejoin pass; rendered gameplay and
-real keyboard input still need acceptance. Earlier ATV checks are recorded above.
+Current development: **DLL b2197 / protocol 2197**, game **0.9.0n**, targeting
+package **0.9.2159**. Full-record/container/pickup regressions and 15 fault controls
+pass. Release/ABI and **74/74 offline groups** pass against stable sources.
+Native blast/ATV evidence was recorded on earlier DLLs. Rendered gameplay and
+real keyboard input still need acceptance.
 
 Last prepared manager package: **0.9.2158 / DLL b2186 / protocol 2186**.
 Its Release, **68/68 offline groups**, package label and archive checks passed.
-It does not include the b2187–b2189 fixes; no 2159 archive is prepared.
+It does not include the b2187–b2197 fixes; no 2159 archive is prepared.
 Verification history remains in [TESTLOG.md](TESTLOG.md); completed release reports
 and superseded build instructions have been removed from this backlog.
 
@@ -122,11 +109,17 @@ Details: [WORK.md](WORK.md), [ENTITY_COVERAGE.md](ENTITY_COVERAGE.md).
   in-flight records, dryTimer ownership and personal-hand transitions. Imported
   stock persistence, sponge foam, ordered grill coal/lid edits and cooking-progress
   carriers need gameplay acceptance; final output/accounting gaps remain.
-  b2179 adds immediate held water/material persistence before reconstruction;
-  this does not arbitrate cross-peer writers or complete spending/refunds.
+  Held-stock persistence, grill lifetime/delivery guards and exact material
+  snapshot validation are implemented; scope/evidence remain in WORK and TESTLOG.
 - [ ] Personal resources: finish debit, output acceptance and refund as one
   transaction; cover rejection, retry, disconnect and hand/slot/drop transitions.
   Imported stock/profile persistence alone does not complete these transactions.
+  Initial-author waits, capture readiness and guarded native record dispatch
+  (b2194–b2196) are implemented; scope/evidence are in WORK and TESTLOG.
+  Cross-peer writer arbitration and accounting remain open.
+  Retain/retry the saved carrier record or refund the container row already removed
+  before failed restoration. b2197 refuses pocket capture on failure/invalidation;
+  this does not complete the extraction transaction.
 - [ ] Grime/scorch: cover remaining dynamic grime sources and preserve explosion/
   salt-rocket scorch provenance through a full save/world reload. Same-world
   reconnect coverage does not establish persistence across world reconstruction.
@@ -141,10 +134,10 @@ Details: [WORK.md](WORK.md), [ENTITY_COVERAGE.md](ENTITY_COVERAGE.md).
 - [ ] Models (38): fill remaining preview gaps and verify custom skin compatibility
   without removing rig exclusions. Assess skeletal bone scaling and arbitrary
   creature physics separately if required.
-- [ ] Explosion follow-up: cover force-only blasts that bypass native damage
-  overlaps and verify settled poses on two peers. The b2189 feeder uses the
-  managed blast's actual overlap targets and waits for its native impulse;
-  held/frozen/static and lifecycle exclusions have offline regressions.
+- [ ] Explosion follow-up: accept ordinary/force-only blasts and settled poses
+  across host/client origins, native object-type filters, simultaneous impulses
+  and pickup/handoff. The b2190 feeder discovers targets at the native impulse;
+  held/frozen/static, output-memory and lifecycle guards have offline regressions.
   Retain local lanes 188/191; upstream ExplosionSpawn=177 conflicts with KitchenState=177.
 
 ## Entity coverage checklist
@@ -204,7 +197,7 @@ Keep personal Insomniac/nightmare and native personal spawn conditions local.
 
 ## Gameplay acceptance checklist
 
-Use matching development **b2189** DLLs for new checks; the prepared 0.9.2158
+Use matching development **b2194** DLLs for new checks; the prepared 0.9.2158
 package remains **b2186**. Record role, item/model, reproduction and logs.
 Offline tests do not close gameplay reports. Mining (6) stays closed; previously
 working nightmares (10) only need acceptance of the newer personal-sleep behavior.
@@ -269,7 +262,7 @@ Wall41 remains excluded.
 
 - [ ] Resolve the remaining public-prose counters recorded in TESTLOG:
   document count 85/82, unresolved source citations 155/0 and
-  src.files_not_swept 84/0. The latest fact-row gate passes (512 rows/164 files);
+  src.files_not_swept 84/0. The latest fact-row gate passes (513 rows/165 files);
   older missing-reference/unused-row findings are superseded.
 - [ ] Complete the native-contract audit when the owner resumes the deferred
   asset audit. The existing corpus is incomplete for the imported suite.

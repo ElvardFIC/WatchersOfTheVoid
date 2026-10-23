@@ -66,6 +66,7 @@ bool ReadStruct(const void*,Row&,bool){std::abort();}
 bool WriteStructLive(void*,const Row&){std::abort();}
 }
 namespace ue_wrap::log {void Write(Level,const char*,...) {}}
+namespace ue_wrap::prop {std::wstring GetInteractableKeyString(void*){std::abort();}}
 namespace ue_wrap::grill {
 bool IsGrill(void* a){return a && reflection::IsLive(a) && reflection::ClassNameOf(a)==L"prop_bbq_C";}
 bool ReadStock(void* actor,Stock& out,const std::function<bool()>& current){if(!IsGrill(actor) || !test::fields || (current && !current()))return false;out={7,true};return true;}

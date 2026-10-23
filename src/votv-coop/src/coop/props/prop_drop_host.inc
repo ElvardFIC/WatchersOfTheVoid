@@ -169,7 +169,7 @@ void* HostSpawnPlacedProp(const coop::net::PropDropIntentPayload& p, const std::
     // publishing that as canonical would overwrite the author's real state on the author's own
     // machine.
     if (!p.hasFoodCondition) {
-        const bool applied = coop::prop_save_data::ApplyParked(actor, key);
+        const bool applied = coop::prop_save_data::ApplyInitialParked(actor, key, authorSlot);
         if (!stillCurrent()) return nullptr;
         if (!applied) coop::prop_save_data::ExpectRecordFor(actor, key, authorSlot);
     }

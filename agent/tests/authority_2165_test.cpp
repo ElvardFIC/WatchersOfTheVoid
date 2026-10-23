@@ -57,7 +57,13 @@ int main(){
     auto reset=[&]{E::OnDisconnect();slot.rows={rows,3,4};E::Install(&s);};
     reset();Tick();CHECK(slot.rows.num==3); // host keeps native schedule
     CHECK(Dispatch(L"impostorPropsMaster_C",L"gen",&slot)==V::Run);
+    CHECK(Dispatch(L"ticker_flickerer_C",L"ReceiveTick",&slot)==V::Run);
     s.mode=coop::net::Role::Client;s.linked=false; // active loading window
+    CHECK(Dispatch(L"ticker_flickerer_C",L"ReceiveTick",&slot)==V::Cancel);
+    CHECK(Dispatch(L"ticker_flickerer_C",L"ReceiveTick",&slot,true)==V::Cancel);
+    CHECK(Dispatch(L"ticker_flickerer_C",L"intComs_gamemodeBeginPlay",&slot)==V::Run);
+    CHECK(Dispatch(L"ticker_treeSpawner_C",L"ReceiveTick",&slot)==V::Run);
+    CHECK(Dispatch(L"ticker_bp7Spawner_C",L"ReceiveTick",&slot)==V::Run);
     CHECK(Dispatch(L"other_C",L"settime",&slot)==V::Run&&slot.rows.num==3);
     Tick();CHECK(slot.rows.num==0&&slot.rows.data==rows&&slot.rows.max==4);
     Tick();E::OnDisconnect();CHECK(slot.rows.num==3); // repeated entry keeps original count
@@ -86,8 +92,10 @@ int main(){
     CHECK(Dispatch(L"prop_impostor_C",L"ReceiveBeginPlay",&slot)==V::Run);
     CHECK(Dispatch(L"prop_C",L"ReceiveTick",&slot)==V::Run);
     s.active=false;CHECK(Dispatch(L"impostorPropsMaster_C",L"gen",&slot)==V::Run);
+    CHECK(Dispatch(L"ticker_flickerer_C",L"ReceiveTick",&slot)==V::Run);
     CHECK(Dispatch(L"prop_impostor_C",L"ReceiveTick",&slot)==V::Run);
     s.active=true;s.mode=coop::net::Role::Host;CHECK(Dispatch(L"prop_impostor_C",L"ReceiveTick",&slot)==V::Run);
+    CHECK(Dispatch(L"ticker_flickerer_C",L"ReceiveTick",&slot)==V::Run);
     E::OnDisconnect();s.mode=coop::net::Role::Client;Tick();CHECK(slot.rows.num==3);
-    puts("PASS authority2165: schedule suppression/restore, loading/reflected calls, array/object lifetime, mimic generator/cull roles");
+    puts("PASS authority2165: schedule suppression/restore, loading/reflected calls, array/object lifetime, mimic generator/cull roles and host-only flickerer with native initialization/solo recovery");
 }

@@ -8,7 +8,7 @@
 #include <cwchar>
 
 namespace coop::inventory_pickup_sync::detail {
-enum class ExtractRestore { Unrelated, Restored, Failed };
+enum class ExtractRestore { Unrelated, Restored, Failed, Invalidated };
 
 // Native prop_container::extract removes the saved row, creates a temporary actor, then calls
 // putObjectInventory2 BEFORE loadData. Restore that exact carrier before getData captures it.
@@ -44,13 +44,27 @@ inline ExtractRestore RestoreContainerCarrier(const ue_wrap::script_gate::Call& 
     std::memcpy(&carrier, call.callerLocals + actorOff, sizeof(carrier));
     if (carrier != actor) return ExtractRestore::Unrelated;
 
+    ue_wrap::CachedObjRef source,caller,function;
+    source.Set(actor);caller.Set(call.callerObject);function.Set(call.callerFunction);
+    const auto world=ue_wrap::world_identity::Generation();
+    const int32_t carrierOffset=actorOff;
+    const auto current=[&]{
+        if(world!=ue_wrap::world_identity::Generation() || source.Get()!=actor ||
+           caller.Get()!=call.callerObject || !function.Is(call.callerFunction))return false;
+        void* selected=nullptr;
+        std::memcpy(&selected,call.callerLocals+carrierOffset,sizeof(selected));
+        return selected==actor;
+    };
     SR::SaveRecord record;
     SR::ReadSaveRecord(call.callerLocals + recordOff, record);
+    if(!current())return ExtractRestore::Invalidated;
     if (record.className.empty() || record.className != R::ClassNameOf(actor) || record.key.empty())
         return ExtractRestore::Failed;
     void* load = R::FindDispatchFunctionCached(R::ClassOf(actor), L"loadData");
     // Use the full native record: the temporary carrier needs the ORIGINAL key/name as well as
     // its charge/uses. ApplyRecord's network splice intentionally preserves the receiver's key.
-    return load && SR::ApplyRecordVia(actor, load, record) ? ExtractRestore::Restored : ExtractRestore::Failed;
+    const bool restored=load && SR::ApplyRecordViaWhile(actor,load,record,current);
+    if(!current())return ExtractRestore::Invalidated;
+    return restored ? ExtractRestore::Restored : ExtractRestore::Failed;
 }
 } // namespace coop::inventory_pickup_sync::detail

@@ -1,4 +1,4 @@
-param([switch]$InventoryOnly,[switch]$CollectOnly)
+param([switch]$InventoryOnly,[switch]$CollectOnly,[switch]$FaultControls)
 $ErrorActionPreference='Stop'
 $root=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 $output=Join-Path $root '_research/tests_2151'
@@ -18,12 +18,32 @@ try {
   [IO.File]::WriteAllText((Join-Path $output $entry[2]),$body,[Text.UTF8Encoding]::new($false))
  }
  $tests=if($CollectOnly){@('handoff_2151')}elseif($InventoryOnly){@('pocket_state_2151')}else{@('handoff_2151','skin_previews_2151','flashlight_2145','pocket_state_2151')}
+ function Compile-Test([string]$TestName,[string]$TestSource){
+  & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I agent/tests/handoff_stubs /I agent/tests/state_2145_stubs /I agent/tests/text_drone_stubs /I agent/tests/stubs /I src/votv-coop/include "/Fo$output/$TestName.obj" "/Fe$output/$TestName.exe" $TestSource /link /OPT:REF
+  if($LASTEXITCODE -ne 0){throw "Test compile failed: $TestName"}
+ }
  foreach($name in $tests) {
-  & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I agent/tests/handoff_stubs /I agent/tests/state_2145_stubs /I agent/tests/text_drone_stubs /I agent/tests/stubs /I src/votv-coop/include "/Fo$output/$name.obj" "/Fe$output/$name.exe" "agent/tests/${name}_test.cpp" /link /OPT:REF
-  if($LASTEXITCODE -ne 0){throw "Test compile failed: $name"}
+  Compile-Test $name (Join-Path $PSScriptRoot "${name}_test.cpp")
   if($name -eq 'skin_previews_2151') {& "$output/$name.exe" (Join-Path $output ([guid]::NewGuid().ToString()))}
   else {& "$output/$name.exe"}
   if($LASTEXITCODE -ne 0){throw "Test failed: $name"}
+ }
+ if($FaultControls){
+  if(-not $InventoryOnly){throw 'Pickup controls require -InventoryOnly'}
+  $pocketPath=Join-Path $output 'pocket.h'
+  $pocket=[IO.File]::ReadAllText($pocketPath)
+  try {
+   foreach($name in @('failed-restore-pickup','invalidated-restore-pickup')){
+    $mutant=if($name -eq 'failed-restore-pickup'){$pocket.Replace('if (extracted == detail::ExtractRestore::Failed) {','if (false) {')}
+     else {$pocket.Replace('if(extracted == detail::ExtractRestore::Invalidated)','if(false)')}
+    if($mutant -eq $pocket){throw "Missing pickup mutation site: $name"}
+    [IO.File]::WriteAllText($pocketPath,$mutant,[Text.UTF8Encoding]::new($false))
+    Compile-Test $name (Join-Path $PSScriptRoot 'pocket_state_2151_test.cpp')
+    & "$output/$name.exe"
+    if($LASTEXITCODE -ne 1){throw "Pickup control did not fire: $name"}
+    Write-Output "PASS expected-failure control: $name"
+   }
+  } finally {[IO.File]::WriteAllText($pocketPath,$pocket,[Text.UTF8Encoding]::new($false))}
  }
  $files=@('coop/items/inventory_pickup_sync','coop/props/prop_save_data')
  if($CollectOnly){$files=@('coop/items/coingun_collect')}

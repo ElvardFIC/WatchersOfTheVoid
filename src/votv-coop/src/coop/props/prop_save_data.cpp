@@ -13,8 +13,6 @@
 #include "coop/net/session.h"
 #include "coop/props/prop_element_tracker.h"
 #include "coop/props/prop_key_index.h"
-#include "coop/props/remote_prop.h"       // IsOwnedHere: a held prop takes no record
-#include "ue_wrap/actors/prop.h"          // GetInteractableKeyString (the host birth path)
 #include "ue_wrap/actors/save_record.h"
 #include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/log.h"
@@ -31,6 +29,7 @@
 #include <vector>
 
 namespace coop::prop_save_data {
+bool StillAwaited(const std::wstring& key);
 namespace {
 
 namespace R  = ue_wrap::reflection;
@@ -91,6 +90,7 @@ struct Parked {
     size_t         bytes      = 0;   // the body this came from, for the per-sender byte ceiling
     int            failures   = 0;   // applies that reached a dispatch and did not take
     bool preserveGrillRuntime=false;
+    uint64_t awaited=0;             // exact initial-state wait that admitted this row
 };
 // A row that will not apply is kept (the park has no expiry, by design) but stops costing a
 // dispatch a frame. Not covered, not resolvable and not applicable all look the same from here.
@@ -157,14 +157,6 @@ void QueuePublishRetry(const std::wstring& key, int peerSlot,
 std::array<uint64_t, 256> g_peerEpoch{};
 coop::net::Session* g_session = nullptr;          // for the retry, which has no caller of its own
 
-// Keys the host spawned from a client's intent and whose record is still in flight behind it. Each
-// row names WHO is owed and until WHEN: without both, a client that drops, an intent the rate bound
-// refuses, or a prop that dies first would silence this key's publisher for the rest of the session
-// -- including the join seed, so a later joiner would never get that prop's record at all.
-constexpr size_t   kMaxAwaiting   = 256;
-constexpr uint64_t kAwaitTimeoutMs = 15000;   // an intent rides one FIFO behind its spawn; 15 s is generous
-struct Await { uint8_t senderSlot = 0; uint64_t deadlineMs = 0; };
-std::map<std::wstring, Await> g_awaiting;
 // Classes a dedicated lane owns, by name, and the resolved answer per UClass.
 // Transparent comparator so the per-tick re-declaration below can LOOK UP a `const wchar_t*`
 // without minting a std::wstring for it -- every claimed name is past the small-string buffer, so
@@ -353,11 +345,11 @@ bool AllowIntent(uint8_t senderSlot) {
 // carry save state of its own" and "has another lane claimed it", and a record that reaches a
 // claimed class would write the field that lane arbitrates with a compare-and-swap.
 bool SendBody(coop::net::Session* s,int peerSlot,const std::wstring& key,const SR::SaveRecord& rec,
-              const ue_wrap::CachedObjRef* source = nullptr,const std::function<bool()>& current = {});
+              const ue_wrap::CachedObjRef* source = nullptr,const std::function<bool()>& current = {},bool retryInternally = true);
 #include "prop_save_apply.inc"
 
 bool SendBody(coop::net::Session* s, int peerSlot, const std::wstring& key,
-              const SR::SaveRecord& rec, const ue_wrap::CachedObjRef* source,const std::function<bool()>& current) {
+              const SR::SaveRecord& rec, const ue_wrap::CachedObjRef* source,const std::function<bool()>& current,bool retryInternally) {
     const std::vector<uint8_t> body = BuildBody(key, rec);
     if (body.size() > MaxRecordBytes()) {
         UE_LOGW("prop_save_data: record for key '%ls' is %zu B, over the %zu cap -- REFUSED, not "
@@ -380,7 +372,7 @@ bool SendBody(coop::net::Session* s, int peerSlot, const std::wstring& key,
         ? coop::blob_chunks::SendBlobWhile(s, kind, g_blobSeq++, body,valid)
         : coop::blob_chunks::SendBlobToSlotWhile(s, peerSlot, kind, g_blobSeq++, body,valid);
     if (!valid())return false;
-    if (!ok) {
+    if (!ok && retryInternally) {
         // blob_chunks' own contract: a refused blob is retried whole under a fresh seq. Doing that
         // is what makes the header's "a dropped record is a permanent divergence" false, so the
         // key goes on the retry register rather than into a warning nobody can act on.
@@ -404,7 +396,15 @@ void ExpectRecordFor(void* actor, const std::wstring& key, uint8_t senderSlot) {
     Await a;
     a.senderSlot = senderSlot;
     a.deadlineMs = NowMs() + kAwaitTimeoutMs;
+    a.seq=++g_awaitSeq;
     g_awaiting[key] = a;
+    RecordChanged(key); // New birth supersedes an active record scope.
+    // An early author record may already have failed on this new actor's readiness.
+    // Do not adopt the old row from a still-active native capture/apply scope.
+    auto parked=g_parked.find(key);
+    if(!g_applying.count(key) && !g_publishing.count(key) && parked!=g_parked.end() && parked->second.senderSlot==senderSlot){
+        parked->second.awaited=a.seq;parked->second.preserveGrillRuntime=false;
+    }
 }
 
 // True while the author's record for this key has not landed here. A wait that has run out is
@@ -459,9 +459,10 @@ bool Covers(void* actor) {
 }
 
 namespace {
-bool PublishToTarget(coop::net::Session* s, int peerSlot, void* actor, const std::wstring& key) {
+bool PublishToTarget(coop::net::Session* s, int peerSlot, void* actor, const std::wstring& key,
+                     const std::function<bool()>& current = {}) {
     if (!s || !actor || key.empty() || key.size() > kMaxKeyChars ||
-        peerSlot >= static_cast<int>(g_peerEpoch.size())) return false;
+        peerSlot >= static_cast<int>(g_peerEpoch.size()) || (current && !current())) return false;
     // A capture/apply callback must not publish a partially loaded record or recurse into getData.
     if (g_applying.count(key) || g_publishing.count(key)) return false;
     // Nobody to publish to: return before the capture, not at the send. A host loading its own
@@ -482,13 +483,14 @@ bool PublishToTarget(coop::net::Session* s, int peerSlot, void* actor, const std
     const uint64_t peerEpoch = peerSlot < 0 ? 0 : g_peerEpoch[peerSlot];
     const auto stillCurrent = [&] {
         return epoch == g_worldEpoch && world==ue_wrap::world_identity::Generation() && order.Revision()==revision &&
-            s->connected() && g_session==s && (peerSlot < 0 || peerEpoch == g_peerEpoch[peerSlot]);
+            s->connected() && g_session==s && (peerSlot < 0 || peerEpoch == g_peerEpoch[peerSlot]) && (!current || current());
     };
     SR::SaveRecord rec;
     ue_wrap::CachedObjRef identity;
     identity.Set(actor);
+    if (!stillCurrent() || identity.Get() != actor) return false;
     if (!SR::CaptureRecord(actor, rec)) {
-        if (stillCurrent() && identity.Get() == actor && s->connected())
+        if (!current && stillCurrent() && identity.Get() == actor && s->connected())
             QueuePublishRetry(scope.key, peerSlot, &identity);
         UE_LOGW("prop_save_data: getData failed on the prop keyed '%ls' -- no record published",
                 scope.key.c_str());
@@ -497,7 +499,7 @@ bool PublishToTarget(coop::net::Session* s, int peerSlot, void* actor, const std
     if (!stillCurrent() || identity.Get() != actor) return false;
     coop::dev::food_clock_probe::NotePublish(actor, scope.key, rec);
     if (!stillCurrent()) return false;
-    const bool sent = SendBody(s, peerSlot, scope.key, rec, &identity,stillCurrent);
+    const bool sent = SendBody(s, peerSlot, scope.key, rec, &identity,stillCurrent,!current);
     if (sent && retrySequence && stillCurrent()) {
         // A normal publication can satisfy an older failed publication too.
         // Do not erase replacement work queued by capture/transport callbacks.
@@ -510,6 +512,11 @@ bool PublishToTarget(coop::net::Session* s, int peerSlot, void* actor, const std
 
 bool Publish(coop::net::Session* s, void* actor, const std::wstring& key) {
     return PublishToTarget(s, -1, actor, key);
+}
+
+bool PublishWhile(coop::net::Session* s, void* actor, const std::wstring& key,
+                  const std::function<bool()>& current) {
+    return current && PublishToTarget(s, -1, actor, key, current);
 }
 
 bool PublishToSlot(coop::net::Session* s, int peerSlot, void* actor, const std::wstring& key) {
@@ -558,15 +565,20 @@ void OnChunk(coop::net::Session& s, const coop::net::BlobChunkPayload& p, uint8_
                 intent ? "intent" : "record", static_cast<unsigned>(senderSlot), body.size());
         return;
     }
+    uint64_t awaited=0;
+    if(intent && StillAwaited(key)){
+        const auto& wait=g_awaiting.at(key);
+        if(wait.senderSlot!=senderSlot)return;
+        awaited=wait.seq;
+    }
     RecordScope order(key);RecordChanged(key);const auto revision=order.Revision();
     if (!intent) {
         LandRecord(key, std::move(rec), senderSlot, body.size(), /*budgeted=*/true);
         return;
     }
-    // The claim has landed, so the key is no longer awaited and the host may publish it again.
-    const auto awaiting=g_awaiting.find(key);
-    const bool initialRecord=awaiting!=g_awaiting.end()&&awaiting->second.senderSlot==senderSlot;
-    g_awaiting.erase(key);
+    // Receipt is not native application. Keep the birth wait until this exact
+    // author's record lands, including parking and readiness retries.
+    const bool initialRecord=awaited!=0;
     // The host takes a client's claim: queue the canonical before entering native code so a
     // newer claim received re-entrantly cannot be sent before this older one. As before, the
     // claim is canonical even when the actor has not arrived or native apply must be retried.
@@ -586,7 +598,8 @@ void OnChunk(coop::net::Session& s, const coop::net::BlobChunkPayload& p, uint8_
     const auto world=ue_wrap::world_identity::Generation();
     ue_wrap::CachedObjRef source;source.Set(actor);
     const auto current=[&]{return epoch==g_worldEpoch && peerEpoch==g_peerEpoch[senderSlot] &&
-        world==ue_wrap::world_identity::Generation() && order.Revision()==revision && s.connected() && (!actor || source.Get()==actor);};
+        world==ue_wrap::world_identity::Generation() && order.Revision()==revision && s.connected() &&
+        AwaitCompatible(key,senderSlot,awaited) && (!actor || source.Get()==actor);};
     // Ordinary records cannot bypass native host unlock/loot or re-lock a safe.
     // The initial record for a new client-authored birth may restore its saved
     // unlocked state; no new loot belongs to that inventory/drop transition.
@@ -602,7 +615,7 @@ void OnChunk(coop::net::Session& s, const coop::net::BlobChunkPayload& p, uint8_
     if(!current())return;
     // Preserve immediate host acceptance (bounded by AllowIntent); client join catch-up uses
     // the frame budget. Deferring host acceptance would expose default state to other publishers.
-    LandRecord(key, std::move(rec), senderSlot, body.size(), false,!initialRecord);
+    LandRecord(key, std::move(rec), senderSlot, body.size(), false,!initialRecord,awaited);
 }
 
 bool ApplyParked(void* actor, const std::wstring& key) {
@@ -612,16 +625,24 @@ bool ApplyParked(void* actor, const std::wstring& key) {
     return ApplyQueued(actor, key, false);
 }
 
+bool ApplyInitialParked(void* actor,const std::wstring& key,uint8_t authorSlot) {
+    if(g_applying.count(key) || g_publishing.count(key))return false;
+    const auto parked=g_parked.find(key);
+    if(parked==g_parked.end() || parked->second.senderSlot!=authorSlot)return false;
+    parked->second.preserveGrillRuntime=false;
+    return ApplyParked(actor,key);
+}
+
 bool PrepareForCapture(void* actor, const std::wstring& key) {
     if (!actor || key.empty() || g_applying.count(key) || g_publishing.count(key)) return false;
-    if (!g_parked.count(key)) return true;
+    if (!g_parked.count(key)) return !StillAwaited(key);
     ue_wrap::CachedObjRef identity;
     identity.Set(actor);
     const uint64_t epoch = g_worldEpoch;
     ApplyQueued(actor, key, false);
-    // Native loadData can destroy the actor, change worlds or queue a newer row.
-    // None of those outcomes permits the caller to capture the old actor's state.
-    return epoch == g_worldEpoch && identity.Get() == actor && !g_parked.count(key);
+    // Native callbacks may replace the actor/world, queue a row or start a new birth.
+    // Drain a matching initial row first, then refuse any outstanding author wait.
+    return epoch == g_worldEpoch && identity.Get() == actor && !g_parked.count(key) && !StillAwaited(key);
 }
 bool PrepareForMutation(void* actor,const std::wstring& key) {
     return !StillAwaited(key) && PrepareForCapture(actor,key);

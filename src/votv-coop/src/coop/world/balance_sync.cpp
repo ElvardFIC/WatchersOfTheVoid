@@ -135,9 +135,11 @@ void CreditLocal(int32_t amount) {
         // poll sees the new Points and broadcasts it to all clients.
         const auto epoch = g_epoch.load();
         const auto serial = net::session_serial::Current();
-        GT::Post([amount, s, epoch, serial] {
+        const auto world = ue_wrap::world_identity::Generation();
+        GT::Post([amount, s, epoch, serial, world] {
             if (g_epoch.load() != epoch || g_session.load() != s ||
-                net::session_serial::Current() != serial) return;
+                net::session_serial::Current() != serial ||
+                ue_wrap::world_identity::Generation() != world) return;
             E::AddPoints(amount);
         });
         UE_LOGI("balance_sync: local credit %+d (%s)", amount,

@@ -1,5 +1,8 @@
 #include "support_2135.h"
-#include "../../src/votv-coop/src/coop/props/bucket_sync.cpp"
+#ifndef BUCKET_SOURCE
+#define BUCKET_SOURCE "../../src/votv-coop/src/coop/props/bucket_sync.cpp"
+#endif
+#include BUCKET_SOURCE
 namespace test {
 ue_wrap::building_material::Water water{35,0,false};
 bool hand=false,mirror=false,driven=false,quiesced=true,sendOk=true;
@@ -8,7 +11,7 @@ ue_wrap::building_material::Stock stock{};
 bool coopDispatch=false;Obj outDry{};
 int persisted=0;
 std::vector<std::pair<void*,void*>> active;
-std::function<void()> onRead,onRepair,onPaint,onContents;bool contentsOk=true;
+std::function<void()> onRead,onRepair,onPaint,onContents,onCapture;bool contentsOk=true;
 std::vector<void*> published;
 void Run(std::function<void()>& callback){auto f=std::move(callback);callback={};if(f)f();}
 }
@@ -33,7 +36,10 @@ namespace coop::join_membership_sweep {bool HasLoadTailQuiesced(){return test::q
 namespace ue_wrap::prop {std::wstring GetInteractableKeyString(void*){return test::key;}}
 namespace coop::prop_save_data {
 bool Covers(void*){return true;}
-bool Publish(net::Session*,void* a,const std::wstring&){++test::publishes;test::published.push_back(a);test::Callback();return test::sendOk;}
+bool Publish(net::Session*,void* a,const std::wstring&){test::Run(test::onCapture);++test::publishes;test::published.push_back(a);test::Callback();return test::sendOk;}
+bool PublishWhile(net::Session* s,void* a,const std::wstring& key,const std::function<bool()>& current){
+ if(!current || !current())return false;test::Run(test::onCapture);if(!current())return false;
+ const bool sent=Publish(s,a,key);return current()&&sent;}
 }
 namespace ue_wrap::reflection {
 bool InCoopDispatch(){return test::coopDispatch;}
@@ -144,6 +150,35 @@ int main(){using namespace test;namespace S=coop::bucket_sync;using V=ue_wrap::s
  stock.kind=ue_wrap::building_material::StockKind::CementBag;c.locals=reinterpret_cast<uint8_t*>(args);
  savedBefore=persisted;S::AfterBagTransfer(c);CHECK(persisted==savedBefore+1);hand=false;
  CHECK(!S::IsMaterialBirth());
+ // getData can re-enter a newer native stock change before its old snapshot is sent.
+ S::OnDisconnect();session.mode=coop::net::Role::Host;S::Install(&session);
+ stock={};water.height=15;S::AfterUse(c);now+=400;old=publishes;
+ onCapture=[&]{water.height=3;S::AfterUse(c);};S::Tick();
+ CHECK(publishes==old && S::Find(&actor)->dirty);
+ now+=400;S::Tick();CHECK(publishes==old+1 && !S::Find(&actor)->dirty && S::Find(&actor)->last.water.height==3);
+ // Native calls inside getData run under our dispatch guard, so their POST may
+ // intentionally skip observation. Check live fields as well as the row revision.
+ water.height=2;S::AfterUse(c);now+=400;old=publishes;onCapture=[]{water.height=1;};S::Tick();
+ CHECK(publishes==old && S::Find(&actor)->dirty);
+ now+=400;S::Tick();CHECK(publishes==old+1 && S::Find(&actor)->last.water.height==1);
+ // A selected-hand transition during capture invalidates the world publication.
+ water.height=2;S::AfterUse(c);now+=400;old=publishes;onCapture=[]{hand=true;};S::Tick();
+ CHECK(publishes==old && S::Find(&actor)->dirty);hand=false;
+ now+=400;S::Tick();CHECK(publishes==old+1 && !S::Find(&actor)->dirty);
+ for(auto kind:{ue_wrap::building_material::StockKind::ConcreteBucket,ue_wrap::building_material::StockKind::CementBag,
+                ue_wrap::building_material::StockKind::Trowel,ue_wrap::building_material::StockKind::Sponge}){
+  const bool sponge=kind==ue_wrap::building_material::StockKind::Sponge;
+  S::OnDisconnect();S::Install(&session);stock={kind,sponge?0:5,false,sponge?.9f:0.f};S::AfterStockLoad(c);
+  if(sponge)stock.wetness=.8f;else stock.units=4;S::AfterStockChange(c);now+=400;old=publishes;
+  onCapture=[&]{if(sponge)stock.wetness=.5f;else stock.units=2;S::AfterStockChange(c);};S::Tick();
+  CHECK(publishes==old && S::Find(&actor)->dirty);
+  now+=400;S::Tick();CHECK(publishes==old+1 && !S::Find(&actor)->dirty);
+  CHECK(sponge?S::Find(&actor)->last.stock.wetness==.5f:S::Find(&actor)->last.stock.units==2);
+  if(sponge)stock.wetness=.4f;else stock.units=1;S::AfterStockChange(c);now+=400;old=publishes;
+  onCapture=[&]{if(sponge)stock.soapAmount=5;else stock.units=0;};S::Tick();
+  CHECK(publishes==old && S::Find(&actor)->dirty);
+  now+=400;S::Tick();CHECK(publishes==old+1 && !S::Find(&actor)->dirty);
+ }
  puts("PASS cement/sponge: real callback registration, amount/dry/wet publications, passive tick, empty out params, two transfer endpoints, exact local use/pour provenance, load no echo");
  puts("PASS actual bucket controller: load/no echo, changed/final state, authority/hand/load gates, retry, reentry, identity/world/teardown");
 }

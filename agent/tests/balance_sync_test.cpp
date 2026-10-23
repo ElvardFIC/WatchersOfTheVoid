@@ -69,7 +69,8 @@ int main(){
     Reset(s,Role::Client);B::CreditLocal(10);Drain();assert(credits==0);
     Reset(s);B::CreditLocal(10);B::OnDisconnect();Drain();assert(credits==0);
     Reset(s);B::CreditLocal(10);++serial;Drain();assert(credits==0);
+    Reset(s);B::CreditLocal(10);++world;Drain();assert(credits==0&&points==100);
     Reset(s);B::CreditLocal(10);Drain();assert(credits==1&&points==110);
     B::OnDisconnect();B::CreditLocal(5);Drain();assert(points==115);
-    puts("PASS balance per-peer delivery/retry, static joins/refusals, signed totals, latest HUD update, reentry, world/session/occupant replacement and deferred credit cancellation");
+    puts("PASS balance per-peer delivery/retry, static joins/refusals, signed totals, latest HUD update, reentry, world/session/occupant replacement and deferred credit cancellation across world/session changes");
 }

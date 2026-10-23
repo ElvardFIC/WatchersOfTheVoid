@@ -64,6 +64,7 @@ bool WatchName(const facts::Function& row,int,PreFn pre,PostFn post){CHECK(!pre)
 }
 }
 namespace ue_wrap::log {void Write(Level,const char*,...) {}}
+namespace ue_wrap::prop {std::wstring GetInteractableKeyString(void*){std::abort();}}
 int main(){using namespace test;namespace C=ue_wrap::cooking_food;namespace SR=ue_wrap::save_record;
  for(int i=0;i<3;++i)objects[i].index=i;objects[2].cls=L"prop_cookingFood_C";
  alignas(16) uint8_t record[SR::kSaveRecordBytes]{};

@@ -23,13 +23,16 @@ UE_FACT_FN(kInterval, "event_rate", L"Actor", L"SetActorTickInterval", Declared)
 
 // These tick bodies re-arm their own spawn wait. The first four products have
 // host-owned NPC/world-actor routes; night eyes use the existing owner-entity lane;
-// fireflies use the peer-symmetric emitter capture/replay route. Fossilhound UG
+// fireflies use the peer-symmetric emitter capture/replay route. The flickerer
+// produces only lamp/ambient setActive phases, carried by their host-only lanes.
+// Fossilhound UG
 // @1829 and yellow-wisp UG @1322 are native interval writes. Never include
 // ticker_base, creature AI ticks or the personal Insomniac ticker.
 constexpr const wchar_t* kSpawners[] = {
     L"ticker_fossilhoundSpawner_C", L"ticker_yellowWispSpawner_C",
     L"ticker_wispSpawner_C", L"ticker_egSpawner_C",
     L"ticker_eyers_C", L"ticker_fireflySpawner_C",
+    L"ticker_flickerer_C",
 };
 struct Wait {
     ue_wrap::CachedObjRef actor;

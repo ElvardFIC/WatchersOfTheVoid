@@ -1,14 +1,73 @@
-# Development b2189 - explosion prop motion (23 October 2026)
+# Development b2197 - full-record carriers (23 October 2026)
 
-Managed host blast overlap victims coast after the actual delayed radial impulse.
-PASS focused controller/native contract and four expected-failure controls.
-PASS 71/71 groups, stable Release/ABI: `build/explosion-motion-qualified/verification.json`.
-DLL SHA256: `f8129e89a15552da2925b0f6b6b6865283f0791ef3a3375a0d1de4232f0838ad`.
-PASS exact-DLL native LAN: bucket moves 547.57 cm, reliable rest edge, live/rejoin
-positions agree within 0.1 cm: `build/explosion-motion-qualified/native.json`.
-Both compatibility reports HEALTHY; live impulse reference MATCH; fact rows 512/164.
-Native Lua/NullRHI evidence does not establish rendered/input or all-blast acceptance.
-Force-only target discovery remains open. Existing corpus reused; broader audit deferred.
+Pre-fix: full restore ignores native invalidation; failed restoration still allows pickup.
+PASS guarded explicit-function capture/restore, saved key/full state and extraction owner/frame binding.
+PASS 15 codec/container/pickup controls: `build/container-lifetime-qualified/` control logs.
+PASS **74/74 groups**, stable Release/ABI: `verification.json` in that directory.
+DLL SHA256: `b1dc33c642e5136c36b1f35f30d823b166a3facd57701cbac0be9214ee0d34a2`.
+Fact rows 513/165 and nine controls pass; three inherited prose counters remain.
+Existing cooked corpus reused; fresh asset audit remains deferred.
+Failed-row retry/refund and current-DLL gameplay remain open; no package/install.
+
+# Development b2196 - guarded record dispatch (23 October 2026)
+
+Pre-fix native capture rekeys an actor but old loadData still dispatches: `pre-fix.log`.
+PASS production capture/apply/convention/context guards and receiver revision forwarding.
+PASS seven codec/eleven receiver controls: `build/record-dispatch-qualified/` control logs.
+Superseded run stopped for lineage ordering; scalar-fixture link mocks updated.
+PASS **73/73 groups**, stable Release/ABI: `verification.json` in that directory.
+DLL SHA256: `6d800135d85644e6a325549659213befb9a22d456249528d76f95620cda223b6`.
+Fact rows 513/165 and nine controls pass; three inherited prose counters remain.
+Current-DLL gameplay, writer/accounting and new package/install remain open.
+
+# Development b2194–b2195 - initial author state (23 October 2026)
+
+b2195 pre-fix: an empty park bypasses the author wait. PASS capture/matching drain,
+new native wait, pickup/output reset and ten controls; stable Release/ABI, **72/72 groups**.
+Evidence: `build/capture-wait-qualified/verification.json`, `pre-fix-pickup.log`, `fault-controls.log`.
+b2195 DLL SHA256: `2bd5e745df8e5b638abf0f09cda6ec6d168ceec5bdecd9cf82bb8d1b18a2c0bc`.
+b2194 pre-fix: foreign claims clear the wait. PASS author/application/early-state
+and repeated-birth refusal/retry, placement and eight controls; stable Release/ABI, **71/71 groups**.
+Evidence: `build/initial-record-qualified/verification.json` and `fault-controls.log`.
+b2194 DLL SHA256: `d5582405d608be4fa5a6d04b93f3b80a6e011d7b0e7adce895682a04647d89dc`.
+Writer/accounting and rendered acceptance stay open; no package/install.
+
+# Development b2193 - material publication revisions (23 October 2026)
+
+Pre-fix stale water publication includes native stock changes that skip observation.
+PASS exact-stock/material/hand and host/client capture/send fences, caller retries,
+compilation and four controls: `build/material-publish-qualified/fault-controls.log`, `stock-control.log`.
+PASS 71/71 stable Release/ABI: `build/material-publish-qualified/verification.json`.
+The superseded pre-correction run is not qualification evidence.
+DLL SHA256: `c11af21a8ac6868721222b2d93c8b4a1fc29271eba3c271c242e954176b50208`.
+Delivered records cannot be recalled; arbitration, debit/refunds and rendered acceptance remain open.
+
+# Development b2191–b2192 - grill lifetime (23 October 2026)
+
+Pre-fix regressions fail on stale coal after session restart and false admission
+of a replaced hand row. PASS ordered/hand restart fences, revision/fan-out/debt
+guards, native-read retirement and audio cleanup; two/seven fault controls pass.
+Each DLL passes 71/71 groups and stable Release/ABI; evidence and fault logs:
+b2191: `build/grill-session-qualified/verification.json`.
+DLL SHA256: `8fc98843693b4b4332c96d1a7e3f3a4aaea834611ee9f61ee2ed6194bacfe2de`.
+b2192: `build/grill-hand-qualified/verification.json`.
+DLL SHA256: `a767674fcfa8e989ec4736c23f406d5c2990ec56ad602091f844b7643638ea43`.
+Fact rows 513/165 pass; three inherited prose counters remain. Personal debit/refunds
+and rendered acceptance stay open; native payloads unchanged, no package/install.
+
+# Development b2190 - zero-damage explosion motion (23 October 2026)
+
+Accepted host blasts are tracked independently of damage; the native impulse's
+sphere/object-type query discovers targets before physics integrates positions.
+PASS production feeder/wrapper/native contract and five expected-failure controls.
+PASS 71/71 groups, stable Release/ABI: `build/force-only-qualified/verification.json`.
+DLL SHA256: `60f082e28962f60ab58057c7d0ec86c91b2b86311e6e176fe244970e6f3b899f`.
+PASS native LAN damage 0 / force 5000: bucket moves 541.02 cm, reliable rest edge,
+live/rejoin agree within 0.1 cm: `build/force-only-qualified/native.json`.
+Both compatibility reports HEALTHY; native query MATCH; fact rows 513/165.
+Historical b2189 qualification: `build/explosion-motion-qualified/verification.json`;
+ordinary-blast evidence: `build/explosion-motion-qualified/native.json`.
+Rendered/input/all-blast acceptance stays open; existing corpus reused, broader audit deferred.
 Package 2158 stays b2186; no archive, profile installation or publication.
 
 # Development b2188 - ATV steering and join honk (23 October 2026)
@@ -31,92 +90,43 @@ Rendered bleeding and stain/join/cleaning/save parity stay open; package stays b
 
 # Package 0.9.2158 test build
 
-PASS 68/68 exact-build offline groups, stable Release b2186 / protocol 2186,
-loader identity/imports and 786 build source entries. Evidence:
-`build/release-2158/verification.json`.
+PASS 68/68 stable Release/ABI b2186 / protocol 2186, 786 entries: `build/release-2158/verification.json`.
 DLL SHA256: `d57443e02bf588ec1f3fe812af1acce0f9e3b93f564bf562645ed5539b55535a`.
-
-PASS production menu/browser formatter with the generated header:
-Watchers of the Void 0.9.2158. PASS archive: 32 members, exact source/DLL hashes,
-manifest, 256x256 icon, starter models, activation marker and test disclaimers.
+PASS label 0.9.2158, 32-member archive, source/DLL hashes, manifest/icon/models,
+activation/disclaimers and matching export; four rejections and DLL-only routing:
+`build/package-current/verification.json` and `rejection-controls.json`.
 ZIP SHA256: `05e67388365d16902f283aef7a9c962b942ca844eb9d5fb2bc590702ab9d6929`.
-The exported workspace copy has the same hash. Four negative controls reject
-failed/incomplete suites, a stale label and another DLL; the DLL-only routing
-fixture is also rejected. Evidence: `build/package-current/verification.json`
-and `rejection-controls.json` in the same directory.
-
-Native gameplay and archive startup remain unverified. Packaging explicitly uses
-the offline-test qualification level; it does not reuse earlier native results.
-Windows PowerShell 5 returned the snapshot as a nested array under the old packer;
-reading the parsed array directly fixes iteration and source hash validation.
-
-The GitHub About description and four README/release/changelog documents were
-published in commit `565edebe2e86b357b24cb26681102967c38bd36a`. The local branch
-was fast-forwarded to it without committing the remaining implementation changes.
-No binary release, Thunderstore upload or master-server deployment was performed.
+Native gameplay/archive startup stayed unverified; qualification is explicitly offline.
+About/README/release/changelog publication: `565edebe2e86b357b24cb26681102967c38bd36a`.
+The branch fast-forward left implementation changes uncommitted; no binary/upload/master deployment.
 
 # Selected upstream qualification
 
-PASS 68/68 groups and Release build, protocol 2185, product 0.9.0n b2185,
-786 build source entries. Production inputs remained stable throughout the full
-run. Evidence: `build/upstream-qualified/verification.json`.
+PASS stable Release/ABI 0.9.0n b2185 / protocol 2185, 68/68 groups and 786 entries:
+`build/upstream-qualified/verification.json`.
 DLL SHA256: `321c13ced4a507f862ef2e343d338684e8cca9abc013fad2605fba796d807c51`.
-
-The targeted upstream fixture and extended entity runner passed before the full
-run. They cover actual vital encoding, delayed hound names, prop/trash base loading,
-worker isolation, full NPC rotations, deduplication and failed-write/landing retries.
-The fact-row gate passed: 508 rows in 160 files.
-
-The public-prose gate remains failing on the same four inherited counters as HEAD:
-document count 84 against 82, naming counter 26 against 24, unresolved source
-citations 155 against 0,
-and src.files_not_swept 84 against 0. Comparing the complete proposed file set
-against HEAD adds no rule regressions; the baseline was not relaxed. Diagnostic
-counters: `build/upstream-qualified/prose-import-counters.json` and
-`prose-head-counters.json` in that same directory.
-
-Two-player rendered gameplay remains unverified. Nothing was packaged or deployed.
+PASS vital encoding, delayed loading, worker isolation, NPC rotations, dedup and
+write/landing retries; fact rows 508/160. Prose counters 84/82 documents, 26/24 naming,
+155/0 citations, 84/0 unswept; baseline unchanged: `build/upstream-qualified/prose-import-counters.json`,
+`prose-head-counters.json`. Rendered gameplay stayed unverified; no package/deployment.
 
 # Development b2185 qualification ? 22 October 2026
 
-Owner report: player flashlights, switches, garage/base doors and drone-container
-contents fail immediately after joining package 2157. These reports remain open
-for rendered host/client acceptance. Implemented changes and boundaries:
-[SYNC_2157_FIXES.md](SYNC_2157_FIXES.md).
-
-PASS **67/67 current offline groups**, stable production inputs, Release DLL/source
-identity, loader exports and forbidden-import check. The final incremental build
-reports no work remaining; 785 production build entries. Full result:
-`build/sync-2157-qualified/verification.json`.
-
-The new production fixtures cover 1100 pending/resolved watches and eight reopens;
-old-capacity refusal; container exact-recipient seeding through blocked delivery,
-class/component/content readiness, occupancy replacement and reentry; all 2?32
-admission limits and slot-31 acknowledgements/recipient masks/held-food addresses.
-The extended flashlight fixture covers class/observer startup, incomplete setter
-retry, connect-send refusal, newer callback state and world replacement.
-
-The first attempt exposed two fixture link omissions after splitting the watch
-registry; the shared gate fixture now includes the new production translation
-unit. Both affected groups pass in the final run. The runner records CMake's
-native stderr and checks its exit status, so dependency deprecation notices do
-not terminate Windows PowerShell before compilation. Assertions remain enabled.
-An intermediate run was stopped for the targeted multi-recipient seed correction;
-it is not final qualification evidence.
-
-Protocol/game: **2185 / 0.9.0n**. DLL: `build/votv-coop-2154/main.dll`.
+Rendered join reports remain open: [SYNC_2157_FIXES.md](SYNC_2157_FIXES.md).
+PASS 67/67 stable Release/ABI, 785 entries, protocol 2185 / game 0.9.0n:
+`build/sync-2157-qualified/verification.json`; DLL: `build/votv-coop-2154/main.dll`.
+PASS 1100 watches/eight reopens, exact-recipient seeds/readiness, occupancy/reentry,
+2–32 seats/slot-31 and flashlight setter/connect/world retries. Assertions stay enabled.
+CMake exit status is checked; stopped seed-correction run is not final evidence.
 DLL SHA256: `5b5b5a4a745f11c1e2dc31840f886b7188569a6faa77a94ef81451aaa8109207`.
 Production snapshot SHA256: `9bc95f5f4c6c29e80604ccae7f23916b1ef80671f918513e668ecca558932908`.
-
-No rendered game session, 32-player session, Rust build, remote deployment or new
-release archive is claimed. The master source accepts 2?32, but an old deployed
-four-seat master still needs updating for larger automatic lobbies. Use matching
-b2185 DLLs on every peer. Fork/upstream review:
-[FORK_AUDIT_20261022.md](FORK_AUDIT_20261022.md).
+Rendered/32-player/Rust/deployment/archive checks stayed open; update the old master
+for larger automatic lobbies and use identical b2185 DLLs.
+Fork review: [FORK_AUDIT_20261022.md](FORK_AUDIT_20261022.md).
 
 # TestLog — current status and source reports
 
-## Current release 0.9.2157 / b2184 - package-label correction, 22 October 2026
+## Historical release 0.9.2157 / b2184 - package-label correction, 22 October 2026
 
 The menu and server browser now show Watchers of the Void 0.9.2157 from
 package/release.json. CMake regenerates the label when that metadata changes;
@@ -574,27 +584,17 @@ Passing offline groups do not close these full CI findings.
 
 ## Final package 0.9.2155 / DLL b2178 (21 October 2026)
 
-At the owner's explicit request, promoted the qualified b2178 continuation into
-the final **0.9.2155** package. This supersedes the earlier local b2177 package
-described below. The 2155 changelog and GitHub notes now include all continuation
-fixes; README, release instructions, checks and delivery metadata agree on b2178.
-
-PASS final incremental Release build (`build/release-2155-logs/final-build.log`):
-no work needed. Rechecked identity/imports/exports and the unchanged production
-snapshot against `build/continuation-check/verification.json`, retaining its
-**65/65 passing groups**, 781 source entries and b2178 qualification. No production
-code changed during final packaging, so the full suite was not repeated.
-
-PASS `package/pack_2155.ps1` and `package/verify_2155.ps1`: manifest version 0.9.2155,
-256x256 PNG icon, 32 archive members, current embedded documents/paks, qualified
-DLL, enabled loader layout and matching outer delivery copy.
-Evidence: `build/release-2155-logs/release-verification.json`.
-Delivery: outer `dist/WatchersOfTheVoid-0.9.2155.zip`, `GITHUB_RELEASE_2155.md`
-and `SHA256SUMS-2155.txt`.
+At the owner's request, final **0.9.2155 / b2178** superseded local b2177.
+Release notes, README, checks and metadata agree on b2178. PASS incremental Release:
+`build/release-2155-logs/final-build.log`; unchanged source/identity/import/export
+qualification retains **65/65 groups**, 781 entries: `build/continuation-check/verification.json`.
+PASS pack/verify_2155: manifest 0.9.2155, 256x256 icon, 32 members, embedded docs/paks,
+qualified DLL, enabled loader layout and matching delivery copy:
+`build/release-2155-logs/release-verification.json`. Delivery: outer
+`dist/WatchersOfTheVoid-0.9.2155.zip`, `GITHUB_RELEASE_2155.md`, `SHA256SUMS-2155.txt`.
 
 DLL SHA256: `9e5f4fd23b272efa6fd807df45cba466664acfe8639c5d4d639a9f23c9c4d5f8`.
 ZIP SHA256: `ce2688393150abb294f3c3edb4acc489439042fc661fd09eefa80afb029764b1`.
-All peers need this final b2178 package; the earlier local b2177 preparation is
-incompatible. No online publication, commit, push or game installation performed.
-Real-peer acceptance, host-rifle runtime evidence, Token52, full event coverage,
-paid material transactions and the deferred native audit remain open as recorded below.
+Earlier b2177 is incompatible. No publication, commit, push or installation performed.
+Real-peer acceptance, host-rifle evidence, Token52, events, paid transactions and
+the deferred native audit remain open.

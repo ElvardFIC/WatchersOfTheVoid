@@ -43,13 +43,15 @@ try {
         'run_stow_2157','run_2160','run_2161','run_2162','run_2165','run_2168','run_2169','run_blood','run_atv_steering',
         'run_2170','run_2172','run_2173','run_2180','run_sync_2157','run_upstream','run_explosion_motion',
         'run_nonentity','run_cooking','run_drink_spills','run_gasoline','run_grill_edits',
-        'run_grill_hand','run_grime_join','run_hand_tools','run_item_records','run_kitchen',
+        'run_grill_hand','run_grime_join','run_hand_tools','run_item_records','run_save_record','run_kitchen',
         'run_scorch','run_sponge_effects','run_toy_music','run_wall_creative','run_water_pour',
-        'run_watoy','run_windows','run_2166','run_2176','run_2157','run_2145'
+        'run_watoy','run_windows','run_2166','run_2176','run_2157','run_2145','run_2147'
     )) {
         Invoke-Check $name 'powershell' @('-NoProfile','-ExecutionPolicy','Bypass','-File',"agent/tests/$name.ps1")
     }
-    Invoke-Check 'coin_collect' 'powershell' @('-NoProfile','-ExecutionPolicy','Bypass','-File','agent/tests/run_2151.ps1','-CollectOnly')
+    foreach($entry in @(@('coin_collect','-CollectOnly'),@('inventory_capture','-InventoryOnly'))) {
+        Invoke-Check $entry[0] 'powershell' @('-NoProfile','-ExecutionPolicy','Bypass','-File','agent/tests/run_2151.ps1',$entry[1])
+    }
     foreach($name in @('player_reports_native_test','insomnia_native_test','entity_sync_native_test','coin_collect_native_test','native_physics_fingerprints_test','event_rate_native_test')) {
         Invoke-Check $name $python @("agent/tests/$name.py")
     }

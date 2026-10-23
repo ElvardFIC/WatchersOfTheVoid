@@ -2,6 +2,7 @@
 #include "coop/interactables/kitchen_sync.h"
 #include "coop/element/intent_authority.h"
 #include "coop/net/session.h"
+#include "coop/net/session_serial.h"
 #include "coop/net/wire_key_util.h"
 #include "coop/player/hand_item.h"
 #include "coop/player/players_registry.h"
@@ -30,7 +31,7 @@ struct Capture {CachedObjRef actor;Packet packet{};void* stack=nullptr;void* fun
 struct Local {Packet packet{};uint64_t next=0;};
 struct Host {Packet packet{};CachedObjRef actor;uint64_t until=0,next=0;bool bound=false,processing=false,owed=false,kitchen=false,record=false;};
 net::Session* g_session=nullptr;
-uint32_t g_world=0,g_sequence=0;
+uint32_t g_world=0,g_sequence=0,g_serial=0;
 uint64_t g_epoch=0;
 bool g_ticking=false;
 size_t g_cursor=0;
@@ -44,12 +45,14 @@ std::array<uint64_t,net::kMaxPeers> g_rateAt{};
 std::array<unsigned,net::kMaxPeers> g_rate{};
 std::array<uint64_t,net::kMaxPeers> g_peerEpoch{};
 uint64_t Now(){using namespace std::chrono;return uint64_t(duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count());}
-bool Current(uint64_t epoch){return g_session && g_session->connected() && g_epoch==epoch && g_world==ue_wrap::world_identity::Generation();}
+// Stop/Start can preserve the Session pointer and world; edits belong to one start.
+bool Current(uint64_t epoch){return g_session && g_session->connected() && g_epoch==epoch &&
+    g_world==ue_wrap::world_identity::Generation() && g_serial==net::session_serial::Current();}
 bool Current(){return Current(g_epoch);}
 void PruneCaptures(){std::erase_if(g_captures,[](const Capture& row){return !Current(row.epoch) ||
     !row.actor.Get() || !ue_wrap::script_gate::IsInvocationActive(row.invocation);});}
-void World(){if(g_session && g_world!=ue_wrap::world_identity::Generation()){
-    auto* session=g_session;OnDisconnect();g_session=session;g_world=ue_wrap::world_identity::Generation();}}
+void World(){if(g_session && (g_world!=ue_wrap::world_identity::Generation() || g_serial!=net::session_serial::Current())){
+    auto* session=g_session;OnDisconnect();g_session=session;g_world=ue_wrap::world_identity::Generation();g_serial=net::session_serial::Current();}}
 bool Key(const net::WireKey& key){
     if(!key.len || key.len>sizeof(key.data))return false;
     for(unsigned i=0;i<key.len;++i)if(uint8_t(key.data[i])<33 || uint8_t(key.data[i])>126)return false;
@@ -122,8 +125,8 @@ void Process(const Packet& p,uint64_t now){
 }
 }
 
-void Install(net::Session* session){if(g_session!=session || g_world!=ue_wrap::world_identity::Generation()){
-    OnDisconnect();g_session=session;g_world=ue_wrap::world_identity::Generation();}}
+void Install(net::Session* session){if(g_session!=session || g_world!=ue_wrap::world_identity::Generation() || g_serial!=net::session_serial::Current()){
+    OnDisconnect();g_session=session;g_world=ue_wrap::world_identity::Generation();g_serial=net::session_serial::Current();}}
 void BeforeChange(const ue_wrap::script_gate::Call& call,uint8_t operation){
     World();if(!Current() || g_session->role()!=net::Role::Client || call.fromOurCode || !Reconcile() || !Shared(call.object))return;
     PruneCaptures();if(!call.invocation)return;
@@ -246,6 +249,6 @@ void OnPeerLeft(int slot){
     std::erase_if(g_captures,[slot](const Capture& row){return row.packet.slot==slot;});
     g_people[slot]=0;g_high[slot]=0;g_seen[slot].reset();g_rate[slot]=0;g_rateAt[slot]=0;
 }
-void OnDisconnect(){++g_epoch;g_session=nullptr;g_world=0;g_local.clear();g_host.clear();g_captures.clear();
+void OnDisconnect(){++g_epoch;g_session=nullptr;g_world=g_serial=0;g_local.clear();g_host.clear();g_captures.clear();
     g_people={};g_high={};g_seen={};g_rate={};g_rateAt={};g_cursor=0;}
 }

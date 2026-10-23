@@ -49,6 +49,7 @@ UE_FACT_FN(kRowReceiveTickTickerYellowWispSpawner, "spawn_authority", L"ticker_y
 UE_FACT_FN(kRowReceiveTickTickerWispSpawner, "spawn_authority", L"ticker_wispSpawner_C", L"ReceiveTick",
            Declared);
 UE_FACT_FN(kRowReceiveTickTickerEgSpawner, "spawn_authority", L"ticker_egSpawner_C", L"ReceiveTick", Declared);
+UE_FACT_FN(kRowReceiveTickTickerFlickerer, "spawn_authority", L"ticker_flickerer_C", L"ReceiveTick", Declared);
 UE_FACT_FN(kRowSpawnJellyfishPath, "spawn_authority", L"jellyfishPath_C", L"spawn", Declared);
 UE_FACT_FN(kRowSummonRoachCockroachMaster, "spawn_authority", L"cockroachMaster_C", L"summonRoach", Declared);
 UE_FACT_FN(kRowAddRoachTimerCockroachMaster, "spawn_authority", L"cockroachMaster_C", L"addRoachTimer",
@@ -85,6 +86,11 @@ constexpr Row kRows[] = {
     // writing gamemode->eg (ticker_egSpawner_C UG:6-44). The host rolls, the catch mirrors the
     // egg; a client's own tick would mint a second, unsynced egg.
     {&kRowReceiveTickTickerEgSpawner, nullptr, nullptr, "egSpawner.ReceiveTick"},
+    // The 30-60 s tick rolls from generator condition, then flicks each root.
+    // Root flick() writes only lamp/ambient setActive phases; both host-only
+    // presentation lanes carry the output; native delays remain on the host. A client
+    // must not start another RNG/latent sequence; begin-play still gathers roots.
+    {&kRowReceiveTickTickerFlickerer, nullptr, nullptr, "flickerer.ReceiveTick"},
     // The space jellyfish: the host's run is mirrored through the source-gated catch.
     {&kRowSpawnJellyfishPath, nullptr, nullptr, "jellyfishPath.spawn"},
     // The roach sim's entries: the ticker's cross-object call and the three looping timer

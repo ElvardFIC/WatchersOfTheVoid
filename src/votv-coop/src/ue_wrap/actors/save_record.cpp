@@ -1,8 +1,10 @@
 // ue_wrap/actors/save_record.cpp -- see ue_wrap/actors/save_record.h.
 
 #include "ue_wrap/actors/save_record.h"
+#include "ue_wrap/actors/prop.h"
 
 #include "ue_wrap/core/call.h"
+#include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/fname_utils.h"
 #include "ue_wrap/core/fstring_utils.h"
 #include "ue_wrap/core/reflection.h"
@@ -247,12 +249,31 @@ void*    g_propCls      = nullptr;  // Aprop_C -- the root the override test mea
 void*    g_baseGetData  = nullptr;  // Aprop_C::getData, for the base half of a record
 uint64_t g_nextPropTryMs = 0;
 
+uint64_t g_codecEpoch=0;
+struct RecordGuard {
+    void* actor;
+    CachedObjRef object,type;
+    std::wstring key;
+    bool checkKey;
+    uint64_t epoch=g_codecEpoch;
+    uint32_t world=world_identity::Generation();
+    explicit RecordGuard(void* value,bool retainKey=true):actor(value),checkKey(retainKey) {
+        object.Set(actor);type.Set(R::ClassOf(actor));
+        if(checkKey)key=prop::GetInteractableKeyString(actor);
+    }
+    bool Current()const {
+        return epoch==g_codecEpoch && world==world_identity::Generation() &&
+            object.Get()==actor && type.Get() && R::ClassOf(actor)==type.Get() &&
+            (!checkKey || prop::GetInteractableKeyString(actor)==key);
+    }
+};
+
 // Class -> "declares a getData of its own below Aprop_C", and the resolved verbs. A UClass is
 // immortal once loaded, so these are keyed by the pointer and only ResetCodecCache drops them.
 // The verbs are cached because a lookup reads the class's function list, rendering each name it
 // passes: uncached, every capture and every apply paid that, at join-drain rates.
 struct ClassVerbs { void* getData = nullptr; void* loadData = nullptr; bool overrides = false;
-                    bool conventionChecked = false; };
+                    bool conventionChecked = false, conventionChecking = false; };
 std::unordered_map<void*, ClassVerbs> g_verbs;
 
 uint64_t NowMs() {
@@ -332,16 +353,28 @@ bool CallForRecord(void* actor, void* fn, SaveRecord& out) {
 // group SHORTER than the base's is admitted where a whole-group compare rejected it on length
 // alone -- harmless, since the splice grows it back and fills the new indices from the base.
 //
-// Both dispatches are paid once per class and cached with the verbs.
-bool EnsureConventionChecked(void* actor, void* cls) {
+// Successful probes are cached per class; interrupted or refused probes retry.
+bool EnsureConventionChecked(void* actor, void* cls, const std::function<bool()>& guard) {
+    if(!guard())return false;
     auto it = g_verbs.find(cls);
     if (it == g_verbs.end()) return false;
     if (it->second.conventionChecked) return it->second.overrides;
-    it->second.conventionChecked = true;
-    if (!it->second.overrides) return false;
+    if (!it->second.overrides || it->second.conventionChecking) return false;
+    it->second.conventionChecking = true;
+    struct Checking {
+        void* cls;uint64_t epoch=g_codecEpoch;
+        ~Checking(){if(epoch!=g_codecEpoch)return;const auto row=g_verbs.find(cls);
+            if(row!=g_verbs.end())row->second.conventionChecking=false;}
+    } checking{cls};
+    CachedObjRef baseFn,leafFn;
+    baseFn.Set(g_baseGetData);leafFn.Set(it->second.getData);
+    const auto current=[&]{return guard() && baseFn.Get() && leafFn.Get();};
     SaveRecord base, leaf;
-    if (!CallForRecord(actor, g_baseGetData, base)) return true;    // unresolvable: re-checked never; the apply's own guard catches it
-    if (!CallForRecord(actor, it->second.getData, leaf)) return true;
+    if(!current())return false;
+    if (!CallForRecord(actor, baseFn.Get(), base)) return false;
+    if(!current())return false;
+    if (!CallForRecord(actor, leafFn.Get(), leaf)) return false;
+    if(!current())return false;
     // Both records come off the SAME actor in the same frame, and the leaf's getData calls the
     // base's first, so every element the base wrote is in the leaf's record unchanged -- unless
     // the leaf overwrote it, which is exactly what this asks.
@@ -368,6 +401,9 @@ bool EnsureConventionChecked(void* actor, void* cls) {
     else if (clash(leaf.bytes,      base.bytes))      which = L"bytes";
     else if (clash(leaf.names,      base.names))      which = L"names";
     else if (clashFlat(leaf.signals, base.signals))   which = L"signals";
+    it=g_verbs.find(cls); // Native reads may insert other classes and rehash the map.
+    if(it==g_verbs.end())return false;
+    it->second.conventionChecked = true;
     if (!which) return true;
     it->second.overrides = false;   // and so Covers() is false for this class from here on
     UE_LOGW("save_record: '%ls' stores its own value in `%ls` at an element Aprop_C writes too -- "
@@ -491,14 +527,21 @@ bool CaptureRecord(void* actor, SaveRecord& out) {
     void* cls = R::ClassOf(actor);
     const ClassVerbs* v = VerbsFor(cls);
     if (!v || !v->getData) return false;
+    const RecordGuard context(actor);
+    CachedObjRef getFn;getFn.Set(v->getData);
+    const auto current=[&]{return context.Current() && getFn.Get();};
     // Measured before the first record of this class ever leaves: a class that fails the splice
     // convention must not be published, or every receiver would drop what it sent.
-    if (!EnsureConventionChecked(actor, cls)) return false;
-    return CallForRecord(actor, v->getData, out);
+    if (!EnsureConventionChecked(actor, cls, current) || !current()) return false;
+    return CallForRecord(actor, getFn.Get(), out) && current();
 }
 
 bool ApplyRecord(void* actor, const SaveRecord& r, ClassResolver resolve) {
-    if (!actor || !EnsurePropClass() || !g_baseGetData) return false;
+    return ApplyRecordWhile(actor,r,[]{return true;},resolve);
+}
+
+bool ApplyRecordWhile(void* actor, const SaveRecord& r, const std::function<bool()>& guard, ClassResolver resolve) {
+    if (!guard || !guard() || !actor || !EnsurePropClass() || !g_baseGetData) return false;
     const ClassVerbs* v = VerbsFor(R::ClassOf(actor));
     // `overrides` and not merely "a loadData exists somewhere": this function dispatches
     // Aprop_C::getData on `actor` below, and Aprop_C::getData reads key, name, nametag and four
@@ -507,7 +550,11 @@ bool ApplyRecord(void* actor, const SaveRecord& r, ClassResolver resolve) {
     // also holds trash piles, clumps and chip piles, none of which descend from Aprop_C. So the
     // lineage is a precondition of the codec, checked here rather than trusted from a call site.
     if (!v || !v->overrides || !v->loadData) return false;
-    if (!EnsureConventionChecked(actor, R::ClassOf(actor))) return false;
+    const RecordGuard context(actor);
+    CachedObjRef baseFn,loadFn;
+    baseFn.Set(g_baseGetData);loadFn.Set(v->loadData);
+    const auto current=[&]{return context.Current() && baseFn.Get() && loadFn.Get() && guard();};
+    if (!EnsureConventionChecked(actor, R::ClassOf(actor), current) || !current()) return false;
 
     // THE BASE HALF IS NEVER THE SENDER'S. Aprop_C::loadData restores the save Key, the transform
     // scale, the four saved bools, the lifespan and the two names from whatever record it is
@@ -518,7 +565,7 @@ bool ApplyRecord(void* actor, const SaveRecord& r, ClassResolver resolve) {
     // class does not write, which is the leaf's own save state and the only thing this codec
     // exists to move.
     SaveRecord base;
-    if (!CallForRecord(actor, g_baseGetData, base)) return false;
+    if (!CallForRecord(actor, baseFn.Get(), base) || !current()) return false;
     SaveRecord merged = r;
     merged.className = base.className;
     merged.xform     = base.xform;
@@ -535,32 +582,48 @@ bool ApplyRecord(void* actor, const SaveRecord& r, ClassResolver resolve) {
     SpliceGroups(merged.names,      base.names);
     SpliceElements(merged.signals,  base.signals);   // a flat array, so the rule applies one level up
 
-    ParamFrame f(v->loadData);
+    ParamFrame f(loadFn.Get());
     const int32_t off = f.ParamOffset(L"data");
     if (!f.valid() || off < 0 || off + kSaveRecordBytes > f.FrameSize()) return false;
     // The frame arrives zeroed, which is WriteSaveRecord's stated precondition.
     WriteSaveRecord(static_cast<uint8_t*>(f.data()) + off, merged, resolve);
-    return Call(actor, f);
+    // Class resolution can dispatch/re-enter; refuse before loadData can touch a retired target.
+    if(!current())return false;
+    return Call(actor, f) && current();
 }
 
 bool CaptureRecordVia(void* actor, void* recordFn, SaveRecord& out) {
-    if (!actor) return false;
-    return CallForRecord(actor, recordFn, out);
+    if (!actor || !recordFn) return false;
+    const RecordGuard context(actor,false);
+    CachedObjRef fn;fn.Set(recordFn);
+    const auto current=[&]{return context.Current() && fn.Get();};
+    return current() && CallForRecord(actor, fn.Get(), out) && current();
 }
 
 bool ApplyRecordVia(void* actor, void* loadFn, const SaveRecord& r, ClassResolver resolve) {
-    if (!actor || !loadFn) return false;
-    ParamFrame f(loadFn);
+    return ApplyRecordViaWhile(actor,loadFn,r,[]{return true;},resolve);
+}
+
+bool ApplyRecordViaWhile(void* actor,void* loadFn,const SaveRecord& r,
+                         const std::function<bool()>& guard,ClassResolver resolve) {
+    if (!actor || !loadFn || !guard || !guard()) return false;
+    const RecordGuard context(actor,false);
+    CachedObjRef fn;fn.Set(loadFn);
+    const auto current=[&]{return context.Current() && fn.Get() && guard();};
+    if(!current())return false;
+    ParamFrame f(fn.Get());
     const int32_t off = f.ParamOffset(L"data");
     if (!f.valid() || off < 0 || off + kSaveRecordBytes > f.FrameSize()) return false;
     // The slot must be zeroed before WriteSaveRecord: it constructs engine-owned TArrays in place
     // and reads nothing, so a dirty slot would leave the engine dereferencing whatever was there.
     std::memset(static_cast<uint8_t*>(f.data()) + off, 0, static_cast<size_t>(kSaveRecordBytes));
     WriteSaveRecord(static_cast<uint8_t*>(f.data()) + off, r, resolve);
-    return Call(actor, f);
+    if(!current())return false;
+    return Call(actor, f) && current();
 }
 
 void ResetCodecCache() {
+    ++g_codecEpoch;
     g_propCls = nullptr;
     g_baseGetData = nullptr;
     g_nextPropTryMs = 0;

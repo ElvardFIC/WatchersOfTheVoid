@@ -1,5 +1,9 @@
 #define GRILL_EDITS_ACTUAL_TEST
-#include "../../src/votv-coop/src/coop/interactables/grill_edits.cpp"
+#ifndef GRILL_EDITS_SOURCE
+#define GRILL_EDITS_SOURCE "../../src/votv-coop/src/coop/interactables/grill_edits.cpp"
+#endif
+#include GRILL_EDITS_SOURCE
+#include "coop/net/session_serial.h"
 #define main PriorKitchenMain
 #include "kitchen_2124_test.cpp"
 #undef main
@@ -100,5 +104,28 @@ int main(){
     EditReset(s,net::Role::Client);test::stockReadCallback=[]{++test::occupancy;};E::BeforeChange(call,1);CHECK(E::g_captures.empty());
     EditReset(s,net::Role::Client);E::BeforeChange(call,1);++test::state.coals;
     test::stockReadCallback=[]{E::OnPeerLeft(1);};E::AfterChange(call);CHECK(E::g_local.empty());
-    puts("PASS grill edits: actual native-hook/controller paths, additive concurrent coal, field-only lid, per-key FIFO, readiness/fairness, retained publication/reply, serial/world/person fences and terminal replay history");
+    // Session::Start can reuse the same Session, world, actor and roster occupant.
+    // Neither queued stock edits nor terminal history belong to that new start.
+    EditReset(s,net::Role::Host);E::Receive(Edit(1),1);
+    net::session_serial::Next();E::Tick();CHECK(test::stockWrites==0 && E::g_host.empty() && s.grillEdits.empty());
+    E::Receive(Edit(1),1);E::Tick();CHECK(test::stockWrites==1 && s.grillEdits.back().result==1);
+    net::session_serial::Next();E::Install(&s);s.grillEdits.clear();E::Receive(Edit(1),1);E::Tick();
+    CHECK(test::stockWrites==2 && s.grillEdits.size()==1 && s.grillEdits.back().result==1);
+    EditReset(s,net::Role::Client);E::BeforeChange(call,1);++test::state.coals;E::AfterChange(call);
+    net::session_serial::Next();E::Tick();CHECK(E::g_local.empty() && s.grillEdits.empty());
+    E::BeforeChange(call,1);++test::state.coals;E::AfterChange(call);E::Tick();
+    CHECK(E::g_local.size()==1 && s.grillEdits.size()==1);
+    EditReset(s,net::Role::Client);E::BeforeChange(call,1);++test::state.coals;
+    net::session_serial::Next();E::AfterChange(call);CHECK(E::g_local.empty());
+    // Invalidate immediately inside native reads, before the next Tick/Install.
+    EditReset(s,net::Role::Host);E::Receive(Edit(1),1);
+    test::stockReadCallback=[]{net::session_serial::Next();};E::Tick();
+    CHECK(test::stockWrites==0 && s.grillEdits.empty());
+    EditReset(s,net::Role::Client);test::stockReadCallback=[]{net::session_serial::Next();};
+    E::BeforeChange(call,1);CHECK(E::g_captures.empty());
+    // Reinstalling during the native mutation cannot acknowledge or publish old work.
+    EditReset(s,net::Role::Host);E::Receive(Edit(1),1);
+    test::stockEditCallback=[&]{net::session_serial::Next();E::Install(&s);};E::Tick();
+    CHECK(test::stockWrites==1 && test::records==0 && s.grillEdits.empty() && E::g_host.empty());
+    puts("PASS grill edits: native hooks, additive coal, field-only lid, FIFO/retries, retained results, actor/world/person/session-start fences and replay history");
 }

@@ -70,6 +70,11 @@ bool Same(const State& a,const State& b) {
         std::fabs(a.stock.soapAmount-b.stock.soapAmount)<.0001f;
     return std::fabs(a.water.height-b.water.height)<.01f && a.water.soap==b.water.soap && a.water.alcohol==b.water.alcohol;
 }
+bool Exact(const State& a,const State& b) {
+    return a.stock.kind==b.stock.kind && a.stock.units==b.stock.units && a.stock.dry==b.stock.dry &&
+        a.stock.wetness==b.stock.wetness && a.stock.dryTimer==b.stock.dryTimer && a.stock.soapAmount==b.stock.soapAmount &&
+        a.water.height==b.water.height && a.water.soap==b.water.soap && a.water.alcohol==b.water.alcohol;
+}
 bool NativeOwner(void* actor) {
     if(actor==hand_item::LocalHandActor() || local_prop_hold::IsHeld(actor))return true;
     return g_session->role()==net::Role::Host && !hand_item::IsMirrorActor(actor) &&
@@ -251,7 +256,16 @@ void Tick() {
         if(!Current() || epoch!=g_epoch)return;
         if(!read || !copy.actor.Get() || !row.actor.Is(actor) || row.revision!=copy.revision)continue;
         row.sendAt=now+300;
-        const bool ok=prop_save_data::Publish(session,actor,key);
+        // getData and chunk sends can re-enter native stock changes or a hand transition.
+        // This queue owns the retry, so an invalid snapshot never escapes its revision guard.
+        const auto bound=[&]{return Current() && epoch==g_epoch && g_session==session &&
+            copy.actor.Get()==actor && row.actor.Is(actor) && row.revision==copy.revision && Eligible(actor);};
+        const auto valid=[&]{
+            if(!bound())return false;
+            // A nested native mutation under our dispatch guard may skip observation.
+            State live{};return ReadState(actor,live) && bound() && Exact(state,live);
+        };
+        const bool ok=prop_save_data::PublishWhile(session,actor,key,valid);
         if(!Current() || epoch!=g_epoch)return;
         if(row.actor.Is(actor) && row.revision==copy.revision && ok) {
             row.last=state;row.have=true;row.dirty=false;
