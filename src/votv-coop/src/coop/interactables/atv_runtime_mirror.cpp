@@ -95,13 +95,23 @@ void OnAtvSpawn(const coop::net::AtvSpawnPayload& payload) {
     }
     const FVector loc{ payload.x, payload.y, payload.z };
     const FRotator rot{ payload.pitch, payload.yaw, payload.roll };
-    void* spawned = A::SpawnMirror(className, loc, rot, key);  // physics LEFT ON -- a native idle grabbable ATV
+    A::SpawnFail why = A::SpawnFail::None;
+    std::wstring bornKey;
+    // physics LEFT ON -- a native idle grabbable ATV
+    void* spawned = A::SpawnMirror(className, loc, rot, key, &why, &bornKey);
     if (!spawned) {
         // In a world that reads ready, a refused spawn is the class, the key or the engine saying no: final,
         // never a mirror under a key of its own making, and said once per key (every replay asks again).
-        if (detail::FirstSaying(L"spawn-failed|", key))
-            UE_LOGW("atv: OnAtvSpawn SpawnMirror failed key='%ls' class='%ls' -- dropped (said once per key)",
-                    key.c_str(), className.c_str());
+        // The wrapper reports the step and logs nothing; a key mismatch names both keys.
+        if (detail::FirstSaying(L"spawn-failed|", key)) {
+            if (why == A::SpawnFail::KeyMismatch)
+                UE_LOGW("atv: OnAtvSpawn SpawnMirror failed key='%ls' class='%ls': %s -- born with key '%ls', "
+                        "not the requested '%ls' -- dropped (said once per key)",
+                        key.c_str(), className.c_str(), A::SpawnFailText(why), bornKey.c_str(), key.c_str());
+            else
+                UE_LOGW("atv: OnAtvSpawn SpawnMirror failed key='%ls' class='%ls': %s -- dropped (said once per key)",
+                        key.c_str(), className.c_str(), A::SpawnFailText(why));
+        }
         spawn_park::Discard(key);
         return;
     }

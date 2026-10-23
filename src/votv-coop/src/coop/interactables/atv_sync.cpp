@@ -346,7 +346,7 @@ int RuntimeMirrors() {
     return n;
 }
 
-// The runtime mirror's half (atv_runtime_mirror.cpp) reaches the map through these (atv_sync_internal.h);
+// The mirror half (atv_runtime_mirror.cpp) reaches the map through these (atv_sync_internal.h);
 // every structural change to it is made here or by the index's hub pass (atv_index.cpp).
 coop::net::Session* LaneSession() { return g_session.load(std::memory_order_acquire); }
 
@@ -537,7 +537,7 @@ void OnDisconnect() {
     for (auto& kv : g_atvs) {
         const bool live = R::IsLiveByIndex(kv.second.actor, kv.second.idx);
         if (kv.second.isClientSpawnedMirror) {
-            if (live) A::DestroyMirror(kv.second.actor);   // a fresh-spawned runtime mirror is a coop artifact
+            if (live) A::DestroyMirror(kv.second.actor);   // a mirror this lane spawned is a coop artifact
         }
         // Nothing to restore: the lane disables neither tick nor physics, so a session leaves every
         // save ATV as it found it.
@@ -549,7 +549,7 @@ void OnDisconnect() {
     const auto c  = coop::atv_corrector::ReadCounters();
     const auto hg = coop::atv_hit_guard::ReadCounters();
     if (n > 0)
-        UE_LOGI("atv: OnDisconnect -- cleared %zu ATV(s) (brains restored; runtime mirrors destroyed); "
+        UE_LOGI("atv: OnDisconnect -- cleared %zu ATV(s) (brains restored; spawned mirrors destroyed); "
                 "hit guard: %s, %llu neutered / %llu allowed / %llu UNRESOLVED; "
                 "corrector: %llu nudged / %llu warped "
                 "/ %llu cut-on-stall / %llu parked-replace",

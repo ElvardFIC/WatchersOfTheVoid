@@ -69,8 +69,9 @@ struct AtvEntry {
                                    // teleporting for the rest of the session.
     // ---- the index (atv_index.cpp sets these; later fields of that kind append below) ----
     void*    world = nullptr;      // the world the actor was last found in (its UWorld, as an identity, never
-                                   // dereferenced): the host sends AtvDestroy for a row whose actor died in the
-                                   // world it is in now, and prunes silently a row whose world was left.
+                                   // dereferenced): the host sends AtvDestroy for a row it prunes in the
+                                   // world it is in now (its actor died, or stands under another key), and
+                                   // prunes silently a row whose world was left.
 };
 
 // Vector length. Shared rather than duplicated: the corrector measures the position error with

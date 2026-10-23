@@ -12,7 +12,6 @@
 #include "coop/net/protocol.h"
 #include "coop/net/session.h"
 #include "coop/net/wire_key_util.h"  // WireKeyFromString / StringFromWireKey / FnvKey (shared)
-#include "coop/props/prop_element_tracker.h"  // InPurgeEpisode
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/types.h"           // FVector, FRotator
@@ -134,8 +133,9 @@ bool SendAtvSpawn(const std::wstring& key, void* actor, int slot) {
 
 // The scan-hub consumer: the hub's shared sliced pass drives these callbacks, preserving the sender
 // state for keys that persist (only the actor and index update). Every keyed ATV is filed under its
-// own game Key. The host announces a key it gains (AtvSpawn) and a key whose actor died (AtvDestroy);
-// a joiner is seeded from the whole index by the connect snapshot (atv_sync.cpp).
+// own game Key. The host announces a key it gains (AtvSpawn) and a key it loses (AtvDestroy): its
+// actor died, or still stands under another key; a joiner is seeded from the whole index by the
+// connect snapshot (atv_sync.cpp).
 uint32_t g_indexGen = 0;  // world gen of the last completed pass (stale-gen index = EMPTY)
 namespace {
 size_t   g_lastLogCount = SIZE_MAX;
@@ -178,20 +178,21 @@ size_t HubPassComplete(void*, bool isFull, uint32_t worldGen) {
     // key of a row pruned in the world it is in now, whether its actor died or still stands under
     // another key (a re-key, a reused slot's new tenant: the old key names no ATV of the host's any
     // more, and the actor's new key is announced by the insert below). A row whose world has been left
-    // prunes silently, and so does every prune while a mass purge is draining a world away (engine
-    // teardown the clients run on their own travel, as the prop lane's reaper treats it).
+    // prunes silently: the clients run that teardown on their own travel.
     // Divergence from MTA, which removes an element at its destroy call
     // (reference/mtasa-blue/Server/mods/deathmatch/logic/CStaticFunctionDefinitions.cpp:369-376):
     // the SP game destroys an ATV without telling this mod, so the remove follows from the scan,
     // within a pass.
-    const bool purging = coop::prop_element_tracker::InPurgeEpisode();
     for (auto it = g_atvs.begin(); it != g_atvs.end();) {
         const AtvEntry& row = it->second;
         const bool live = LiveInThisWorld(row.actor, row.idx);
         const bool keep = isFull ? live && A::GetKeyString(row.actor) == it->first
                                  : R::IsLiveByIndex(row.actor, row.idx);
         if (keep) { ++it; continue; }
-        if (isHost && !purging && thisWorld && row.world == thisWorld) SendAtvDestroy(it->first);
+        // Residual: in the <= 100 ms before CurrentWorld()'s memo moves at a host world swap, the old
+        // world's rows still compare equal, so a destroy can reach a client still in its own world. The
+        // host's re-spawn of a recurring key (a save-placed one) heals it: a flicker, not a ghost.
+        if (isHost && thisWorld && row.world == thisWorld) SendAtvDestroy(it->first);
         it = g_atvs.erase(it);
     }
     // Update or add. A wire key can outlive its actor (a save-placed key is deterministic and a

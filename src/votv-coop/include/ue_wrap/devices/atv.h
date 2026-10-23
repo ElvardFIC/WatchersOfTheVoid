@@ -18,6 +18,7 @@
 
 #include "ue_wrap/core/types.h"  // FVector, FRotator
 
+#include <cstdint>
 #include <string>
 
 namespace ue_wrap::atv {
@@ -58,6 +59,24 @@ bool  GetBrake(void* atv);   // the handbrake
 // why the game ships two teleport forms. False on unresolved/null. Game thread.
 bool TeleportRig(void* atv, const FVector& loc, const FRotator& rot);
 
+// The step at which SpawnMirror failed. SpawnMirror reports it and logs nothing for it: the caller
+// (coop) says it once per key, since a replay asks again.
+enum class SpawnFail : uint8_t {
+    None,
+    Unresolved,      // the ATV wrapper, the spawn functions or the world context are not available
+    NoKey,           // the class name or the key is empty
+    ClassNotFound,   // no class of that name is loaded
+    NotAnAtv,        // the class does not descend from ATV_C
+    NoOffset,        // the class has no key property
+    NameNone,        // the key did not convert to a name
+    BeginFailed,     // BeginDeferredActorSpawnFromClass did not dispatch or returned null
+    FinishFailed,    // FinishSpawningActor could not be built or did not dispatch
+    KeyMismatch,     // the finished actor stands under another key; it was destroyed
+};
+
+// The failed step as a short phrase for a log line.
+const char* SpawnFailText(SpawnFail why);
+
 // ATV mirror materialization: fresh-spawn an AATV_C-or-subclass (`className`) carrying `key` at
 // `loc`/`rot` via GameplayStatics BeginDeferred + FinishSpawning, leaving physics ON -- the result is
 // a NATIVE idle ATV the local player can grab/drive (NOT a frozen mirror). The key is written before
@@ -67,10 +86,11 @@ bool TeleportRig(void* atv, const FVector& loc, const FRotator& rot);
 // Returns the spawned actor, or nullptr on resolve/spawn failure; nullptr WITHOUT spawning anything
 // when `key` is empty, the class has no key property, or the key does not convert to a name (the
 // string library not yet resolved included: ask fname_utils::Resolved() first to tell "not yet"). The
-// key is read back after the finish: a mirror born under another key is destroyed and nullptr returned.
-// Game thread only.
+// key is read back after the finish, exactly (the index and the prune file key case-sensitively): a
+// mirror born under another key is destroyed and nullptr returned. `why` (optional) names the failed
+// step; `bornKey` (optional) receives the key the read-back found on a KeyMismatch. Game thread only.
 void* SpawnMirror(const std::wstring& className, const FVector& loc, const FRotator& rot,
-                  const std::wstring& key);
+                  const std::wstring& key, SpawnFail* why = nullptr, std::wstring* bornKey = nullptr);
 
 // Tear down an ATV -- K2_DestroyActor on the actor -- a SpawnMirror'd one or a native twin, when the
 // host announces it gone (AtvDestroy), or a mirror on disconnect. False, and nothing done, on a null or

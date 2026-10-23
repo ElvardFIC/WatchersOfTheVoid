@@ -19,7 +19,6 @@ struct Parked {
 std::unordered_map<std::wstring, Parked> g_parked;
 constexpr uint64_t kPollMs = 500;
 uint64_t g_nextPollMs = 0;
-uint32_t g_libMissGen = 0;   // the world gen in which the name library was found unresolved (0 = no miss held)
 bool     g_saidCap = false;
 uint32_t g_parkedEver = 0;
 
@@ -75,21 +74,16 @@ void DrainReady() {
         ++it;
     }
     if (ready.empty()) return;
-    // Asked once for the whole poll, not once per parked spawn: a miss would otherwise walk the object
-    // array for each of them, twice a second. The entries stay parked; this world's miss is held, and the
-    // poll after a world change asks again.
-    if (g_libMissGen == gen) return;
-    if (!ue_wrap::fname_utils::Resolved()) {
-        g_libMissGen = gen;
-        return;
-    }
+    // Asked once for the whole poll, not once per parked spawn, and on every poll with no miss held: a
+    // library that resolves late is then found by the next poll. Before it resolves the cost is one
+    // probe per 500 ms poll, and the library resolves at boot, long before a gameplay world.
+    if (!ue_wrap::fname_utils::Resolved()) return;
     for (const auto& p : ready) OnAtvSpawn(p);
 }
 
 void Clear() {
     g_parked.clear();
     g_nextPollMs = 0;
-    g_libMissGen = 0;
     g_saidCap = false;
 }
 }  // namespace coop::atv_sync::spawn_park

@@ -54,7 +54,8 @@ void OnAtvRelease(const coop::net::AtvReleasePayload& payload, uint8_t senderPee
 void OnAtvSpawn(const coop::net::AtvSpawnPayload& payload);
 
 // Receiver entry (CLIENT-only): an AtvDestroy arrived. The host's ATV with that Key is gone ->
-// K2_DestroyActor the fresh-spawned mirror + drop the index entry. From event_feed.
+// K2_DestroyActor the row's actor (a mirror this lane spawned or a native twin) + drop the index
+// entry. From event_feed.
 void OnAtvDestroy(const coop::net::AtvDestroyPayload& payload);
 
 // HOST-only: snapshot every indexed ATV's pose, VELOCITY and holder to a freshly connected client
@@ -78,8 +79,8 @@ void QueueConnectBroadcastForSlot(int peerSlot);
 void Tick();
 
 // Session teardown: disarm the collision guard, give EVERY surviving ATV its brain back
-// unconditionally (single-player must own its own vehicles again), destroy any runtime mirror we
-// fresh-spawned, then clear the index.
+// unconditionally (single-player must own its own vehicles again), destroy every mirror this
+// lane spawned, then clear the index.
 void OnDisconnect();
 
 // Interaction query: true iff `actor` is indexed as an ATV currently occupied by another network
