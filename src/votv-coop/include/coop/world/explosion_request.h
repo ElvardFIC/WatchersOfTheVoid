@@ -16,6 +16,8 @@
 
 #pragma once
 
+#include "coop/world/explosion_recipe.h"
+
 #include <cstdint>
 
 namespace coop::net {
@@ -40,11 +42,13 @@ const char* RefusalName(Refusal r);
 // What this process's half of the lane has counted since the session began. The per-kind arrays are indexed by the
 // request's kind less one: 0 projectile, 1 hand, 2 self.
 struct Counters {
-    // The host: refusals by reason, shots and requests accepted, shots evicted from the table by the cap, shots that
+    // The host: refusals by reason, shots and requests accepted (the shots also by launcher, indexed by the
+    // Launcher's value), shots evicted from the table by the cap, shots that
     // aged out unrequested, and the ticks a judge returned Wait for a hand state still owed (a head that waits again
     // counts again; the wait on a shot still queued is not counted).
     uint64_t refused[static_cast<int>(Refusal::Count)];
-    uint64_t shotsAccepted, requestsAccepted[3], evicted, expired, waited;
+    uint64_t shotsAccepted, shotsAcceptedBy[coop::explosion_recipe::kLauncherSlots], requestsAccepted[3], evicted,
+        expired, waited;
     // The client: shots and requests sent, pending births pushed out by the cap, pending births whose projectile
     // died inside the fire body, pending births left by a body that ended without its post, messages dropped unsent
     // (a location that did not read, a send that failed, the outbox's cap), projectiles other than a host's copy that

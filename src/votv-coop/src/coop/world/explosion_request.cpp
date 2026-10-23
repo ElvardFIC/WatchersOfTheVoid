@@ -186,14 +186,25 @@ void OnDisconnect() {
                                     static_cast<unsigned long long>(g_counters.refused[r]));
         if (w > 0) n += static_cast<size_t>(w);
     }
+    // The accepted shots by launcher, the launchers that took one only; the label prints only when one did.
+    char   by[128];
+    size_t nb = 0;
+    by[0] = '\0';
+    for (size_t l = 0; l < RC::kLauncherSlots; ++l) {
+        if (g_counters.shotsAcceptedBy[l] == 0 || nb >= sizeof(by)) continue;
+        const int w = std::snprintf(by + nb, sizeof(by) - nb, " launcher%zu=%llu", l,
+                                    static_cast<unsigned long long>(g_counters.shotsAcceptedBy[l]));
+        if (w > 0) nb += static_cast<size_t>(w);
+    }
     const Counters& c = g_counters;
     const auto u = [](uint64_t v) { return static_cast<unsigned long long>(v); };
     const bool hostSaw = n > 0 || c.shotsAccepted || c.evicted || c.expired || c.waited || c.requestsAccepted[0] ||
                          c.requestsAccepted[1] || c.requestsAccepted[2];
     if (hostSaw)
         UE_LOGI("[EXPLOSION] request lane at disconnect: shots=%llu requests=%llu/%llu/%llu evicted=%llu "
-                "expired=%llu waited=%llu refused%s", u(c.shotsAccepted), u(c.requestsAccepted[0]),
-                u(c.requestsAccepted[1]), u(c.requestsAccepted[2]), u(c.evicted), u(c.expired), u(c.waited), line);
+                "expired=%llu waited=%llu%s%s refused%s", u(c.shotsAccepted), u(c.requestsAccepted[0]),
+                u(c.requestsAccepted[1]), u(c.requestsAccepted[2]), u(c.evicted), u(c.expired), u(c.waited),
+                nb > 0 ? " shotsBy" : "", by, line);
     if (c.shotsSent || c.requestsSent[0] || c.requestsSent[1] || c.requestsSent[2] || c.pendingDropped ||
         c.pendingDead || c.pendingOrphaned || c.clientDropped || c.unmappedProjectile || c.shotNotAnnounced)
         UE_LOGI("[EXPLOSION] request lane at disconnect (client): shotsSent=%llu requestsSent=%llu/%llu/%llu "

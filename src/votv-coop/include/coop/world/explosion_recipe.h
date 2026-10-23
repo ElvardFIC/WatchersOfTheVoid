@@ -7,6 +7,7 @@
 #include "ue_wrap/world/explosion.h"
 #include "ue_wrap/world/explosion_source.h"
 
+#include <cstddef>
 #include <cstdint>
 
 namespace coop::explosion_recipe {
@@ -14,6 +15,9 @@ namespace coop::explosion_recipe {
 // The wire's values. Anything else is not a value of the field.
 enum class ProjClass : uint8_t { Rocket = 1, Sticky = 2 };
 enum class Launcher : uint8_t { Rpg = 1, StickyLauncher = 2, WitchCar = 3 };
+// The length of an array indexed by a Launcher's value (index 0 is no launcher), from the enum's last value.
+// A launcher added after WitchCar must move this to the new last value.
+inline constexpr size_t kLauncherSlots = static_cast<size_t>(Launcher::WitchCar) + 1;
 enum class RequestKind : uint8_t { Projectile = 1, Hand = 2, Self = 3 };
 
 // L"prop_funGun_rpg_C", L"prop_funGun_stickyLauncher_C", L"car1_witch_C"; null for any other value.

@@ -5,7 +5,7 @@
 // its mirror with the director, takes the seat through the game's own verb and says where its car camera points; the
 // host puts a crate on that line, out of the blast's reach of the car, and says so; the client then presses the car's
 // left mouse once. Each half judges its own lane counters as deltas against a baseline taken before the first send.
-// The host reports its shot half (accepted, not refused as not_seated, from the witch car's seat) apart from its blast
+// The host reports its shot half (accepted under the witch car's launcher, nothing refused) apart from its blast
 // half (the request accepted, the blast captured): a rocket that meets nothing expires, which leaves the blast half
 // INCONCLUSIVE. The car destroys itself at begin-play in the story mode or outside Halloween, each peer on its own
 // state, so both halves put the sandbox mode and isHalloween in force before the car exists on them and back at the
@@ -21,7 +21,6 @@
 #include "coop/dev/director/director.h"
 #include "coop/interactables/atv_sync.h"
 #include "coop/net/net_clock.h"
-#include "coop/player/hand_history.h"
 #include "coop/player/players_registry.h"
 #include "coop/props/join_membership_sweep.h"
 #include "coop/session/join_progress.h"
@@ -72,7 +71,6 @@ constexpr const char*    kReadyLine = "hostile-drill request_witch client-ready"
 constexpr const char*    kHostLine = "hostile-drill request_witch host-ready";
 constexpr const char*    kSeatedLine = "hostile-drill request_witch client-seated";
 constexpr const char*    kTargetLine = "hostile-drill request_witch target-ready";
-constexpr uint8_t        kClientSlot = 1;          // the one client slot of the drill's pair (the host half waits on it)
 // The crate's distance from the camera along its line: past the explosion's 1000 cm radius (explosion.cpp:9) from the
 // car and from the host's player, who stands within 600 cm of the car's spawn point.
 constexpr float          kTargetCm = 2500.f;
@@ -82,9 +80,6 @@ constexpr int            kWalkDeadlineS = 90;      // the director's walk gives 
 // the seat (three tries two seconds apart) and the shot's life (32 s), which kVerdictBound covers with the host's own
 // spawn and rest waits.
 constexpr auto           kHostBound = kVerdictBound + std::chrono::seconds(kWalkDeadlineS);
-// The judge's own launcher window (explosion_request_host.cpp): a shot of the rpg or the sticky launcher is accepted
-// only when that launcher was in the shooter's hand within it.
-constexpr uint64_t       kLauncherWindowMs = 2000;
 
 unsigned long long U(uint64_t v) { return static_cast<unsigned long long>(v); }
 
@@ -157,7 +152,7 @@ struct Host {
     ER::Counters          req0{};
     ue_wrap::CachedObjRef car, crate;
     Rest                  rest;
-    bool                  shotSaid = false, launcherChecked = false;
+    bool                  shotSaid = false;
     uint32_t              blastsLogged = 0;
 };
 Host g_h;
@@ -270,35 +265,23 @@ void LogBlasts() {
         &s);
 }
 
-// The accepted shot's launcher is the witch car's (3). The lane keeps no per-launcher reading, so this is read from the
-// judge's own gates (explosion_request_host.cpp): launcher 3 is taken from the shooter's seat in a witch car, and
-// launcher 1 or 2 only with that launcher in the shooter's hand within the window, which is not so here.
-bool ShotIsWitchCar() {
-    void* seat = coop::atv_sync::ActorSeatedBy(kClientSlot);
-    if (!seat || !R::NameEquals(R::NameOf(R::ClassOf(seat)), kCarCls)) return false;
-    const uint64_t now = coop::net::NowMs();
-    for (const RC::Launcher l : {RC::Launcher::Rpg, RC::Launcher::StickyLauncher})
-        if (coop::hand_history::HeldWithin(kClientSlot, RC::LauncherClassName(static_cast<uint8_t>(l)),
-                                           kLauncherWindowMs, now))
-            return false;
-    return true;
-}
-
 void HostJudge() {
     Host&              h = g_h;
     const ER::Counters c = ER::GetCounters();
     const uint64_t     shots = c.shotsAccepted - h.req0.shotsAccepted;
+    // The lane counts each accepted shot under its launcher (explosion_request_host.cpp, JudgeShot), so the shot is the
+    // witch car's when its counter is the one that moved.
+    constexpr size_t   kWitch = static_cast<size_t>(RC::Launcher::WitchCar);
+    const uint64_t     witchShots = c.shotsAcceptedBy[kWitch] - h.req0.shotsAcceptedBy[kWitch];
     const uint64_t     captured = ES::GetCounters().captured - h.sync0.captured;
     if (captured > h.blastsLogged) {
         h.blastsLogged = static_cast<uint32_t>(captured);
         LogBlasts();
     }
-    if (shots >= 1 && !h.launcherChecked) {
-        h.launcherChecked = true;
-        if (!ShotIsWitchCar()) {
-            Warn("FAIL host arm=%s launcher got=0 want=%u", kName, static_cast<unsigned>(RC::Launcher::WitchCar));
-            return HostEnd();
-        }
+    if (shots >= 1 && witchShots != 1) {
+        Warn("FAIL host arm=%s launcher got=%llu want=1 (shots accepted from the witch car's launcher, %u)", kName,
+             U(witchShots), static_cast<unsigned>(RC::Launcher::WitchCar));
+        return HostEnd();
     }
     uint64_t refused = 0, accepted = 0;
     Miss     m;
@@ -315,7 +298,7 @@ void HostJudge() {
         accepted += d;
         Compare(m, k == 0 ? "requestsAccepted[projectile]" : "requestsAccepted[hand or self]", d, k == 0 ? 1 : 0);
     }
-    if (!h.shotSaid && shots == 1 && refused == 0) {
+    if (!h.shotSaid && shots == 1 && witchShots == 1 && refused == 0) {
         h.shotSaid = true;
         Info("host shot half PASS arm=%s shotsAccepted=1 launcher=%u not_seated=0", kName,
              static_cast<unsigned>(RC::Launcher::WitchCar));

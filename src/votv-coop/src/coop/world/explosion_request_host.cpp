@@ -224,6 +224,7 @@ Served JudgeShot(uint8_t slot, Slot& s, const FiredItem& it) {
     sh.origin[2] = p.origin[2];
     sh.recvMs    = it.recvMs;
     ++MutCounters().shotsAccepted;
+    if (p.launcher < RC::kLauncherSlots) ++MutCounters().shotsAcceptedBy[p.launcher];  // LegalPair passed 1..3 only
     UE_LOGI("[EXPLOSION] shot accepted slot=%u id=%u class=%s launcher=%u", static_cast<unsigned>(slot),
             static_cast<unsigned>(p.shotId), ProjName(p.projClass), static_cast<unsigned>(p.launcher));
     return Served::Done;
