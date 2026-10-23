@@ -1,14 +1,15 @@
 // coop/dev/explosion_drill_witch.cpp -- see coop/dev/explosion_drill_internal.h.
 //
 // The witch car arm (request_witch). A client sitting in the witch car fires the rocket its left-mouse event spawns;
-// the host must take that shot from the client's seat. The host spawns the car and a crate for the rocket to meet,
-// the client walks to its mirror with the director, takes the seat through the game's own verb and presses the car's
+// the host must take that shot from the client's seat. The host spawns the car and says where, the client walks to
+// its mirror with the director, takes the seat through the game's own verb and says where its car camera points; the
+// host puts a crate on that line, out of the blast's reach of the car, and says so; the client then presses the car's
 // left mouse once. Each half judges its own lane counters as deltas against a baseline taken before the first send.
-// The host reports its shot half (accepted, not refused as not_seated) apart from its blast half (the request
-// accepted, the blast captured): a rocket that meets nothing expires, which leaves the blast half INCONCLUSIVE.
-// The car destroys itself at begin-play in the story mode or outside Halloween, each peer on its own state, so both
-// halves put the sandbox mode and isHalloween in force before the car exists on them and back at the end; the host
-// spawns only after the client's chat line says its own state is in.
+// The host reports its shot half (accepted, not refused as not_seated, from the witch car's seat) apart from its blast
+// half (the request accepted, the blast captured): a rocket that meets nothing expires, which leaves the blast half
+// INCONCLUSIVE. The car destroys itself at begin-play in the story mode or outside Halloween, each peer on its own
+// state, so both halves put the sandbox mode and isHalloween in force before the car exists on them and back at the
+// end; the host spawns only after the client's chat line says its own state is in.
 
 #include "coop/dev/explosion_drill_internal.h"
 
@@ -16,24 +17,36 @@
 #include "atv_seat.h"                        // TrySit (co-located private header)
 #include "hostile_drill_explosion_detail.h"  // Say, ChatHas, PollDue (co-located private header)
 
+#include "coop/comms/chat_feed.h"
 #include "coop/dev/director/director.h"
 #include "coop/interactables/atv_sync.h"
+#include "coop/net/net_clock.h"
+#include "coop/player/hand_history.h"
 #include "coop/player/players_registry.h"
 #include "coop/props/join_membership_sweep.h"
 #include "coop/session/join_progress.h"
 #include "coop/session/net_pump.h"
+#include "coop/world/explosion_recipe.h"
 
+#include "ue_wrap/actors/prop.h"
 #include "ue_wrap/core/call.h"
 #include "ue_wrap/core/object_index.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/reflection_props.h"
 #include "ue_wrap/engine/engine.h"
 #include "ue_wrap/engine/engine_component.h"
+#include "ue_wrap/engine/engine_physics.h"
 #include "ue_wrap/world/game_mode.h"
 #include "ue_wrap/world/world_singleton.h"
 
 #include <algorithm>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <memory>
+#include <string>
+#include <string_view>
 
 namespace coop::dev::explosion_drill::detail {
 
@@ -43,21 +56,57 @@ namespace ES = coop::explosion_sync;
 namespace ER = coop::explosion_request;
 namespace GM = ue_wrap::game_mode;
 namespace HD = coop::dev::hostile_drill::explosion::detail;
+namespace RC = coop::explosion_recipe;
 
 namespace {
 
 constexpr const char*    kName = "request_witch";
 constexpr const wchar_t* kCarCls = L"car1_witch_C";
 constexpr const wchar_t* kCarPath = L"/Game/objects/car1_witch.car1_witch_C";
+constexpr const wchar_t* kExplosionCls = L"explosion_C";
 // The car's left-mouse input event: the game's own fire, which spawns the rocket along the car's camera.
 constexpr const wchar_t* kFireFn = L"InpActEvt_LeftMouseButton_K2Node_InputKeyEvent_0";
+// The lobby-chat lines the two peers say to each other: the client's state is in force, the host's car stands at
+// <x y z>, the client sits with its car camera at <x y z> facing <fx fy fz>, the host's crate stands on that line.
 constexpr const char*    kReadyLine = "hostile-drill request_witch client-ready";
-constexpr int            kSandbox = 4;             // enum_gamemode's sandbox (ue_wrap/world/game_mode.h)
-constexpr float          kTargetAheadCm = 1000.f;  // the crate, along the car's forward vector
-constexpr float          kReachCm = 400.f;         // the walk ends this near the car
-constexpr int            kWalkDeadlineS = 90;
+constexpr const char*    kHostLine = "hostile-drill request_witch host-ready";
+constexpr const char*    kSeatedLine = "hostile-drill request_witch client-seated";
+constexpr const char*    kTargetLine = "hostile-drill request_witch target-ready";
+constexpr uint8_t        kClientSlot = 1;          // the one client slot of the drill's pair (the host half waits on it)
+// The crate's distance from the camera along its line: past the explosion's 1000 cm radius (explosion.cpp:9) from the
+// car and from the host's player, who stands within 600 cm of the car's spawn point.
+constexpr float          kTargetCm = 2500.f;
+constexpr float          kReachCm = 400.f;         // the director's walk ends within this distance of the car
+constexpr int            kWalkDeadlineS = 90;      // the director's walk gives up after this long
+// The host's verdict bound, from the client's ready line: the client's chain after it is the walk (kWalkDeadlineS),
+// the seat (three tries two seconds apart) and the shot's life (32 s), which kVerdictBound covers with the host's own
+// spawn and rest waits.
+constexpr auto           kHostBound = kVerdictBound + std::chrono::seconds(kWalkDeadlineS);
+// The judge's own launcher window (explosion_request_host.cpp): a shot of the rpg or the sticky launcher is accepted
+// only when that launcher was in the shooter's hand within it.
+constexpr uint64_t       kLauncherWindowMs = 2000;
 
 unsigned long long U(uint64_t v) { return static_cast<unsigned long long>(v); }
+
+// The numbers a peer said after `prefix` in the lobby chat; true once a line holds `n` of them.
+bool ChatNumbers(const char* prefix, float* out, int n) {
+    bool found = false;
+    coop::chat_feed::ForEachRow([&](const coop::chat_feed::RowView& r) {
+        if (found) return;
+        const size_t at = r.line.find(prefix);
+        if (at == std::string_view::npos) return;
+        const std::string tail(r.line.substr(at + std::strlen(prefix)));
+        const char*       p = tail.c_str();
+        for (int i = 0; i < n; ++i) {
+            char* end = nullptr;
+            out[i] = std::strtof(p, &end);
+            if (end == p) return;
+            p = end;
+        }
+        found = true;
+    });
+    return found;
+}
 
 // An edge's time, taken the first time it is seen.
 void Edge(Clock::time_point& t) {
@@ -79,7 +128,7 @@ bool HoldEnv(Env& e) {
     if (!gi || !gm || !R::IsLive(gm) || !ReadBool(gm, L"isHalloween", halloween)) return false;
     const int mode = GM::ReadFrom(gi);
     if (mode < 0) return false;
-    GM::WriteTo(gi, kSandbox);
+    GM::WriteTo(gi, GM::kSandbox);
     WriteBool(gm, L"isHalloween", true);
     e = Env{true, mode, halloween};
     Info("witch mode %d and isHalloween %d put in force (sandbox, true)", mode, halloween ? 1 : 0);
@@ -98,17 +147,18 @@ void PutEnv(Env& e) {
 
 // ---- the host ----
 
-enum class HP : uint8_t { Wait, Spawn, Rest, Judge, Done };
+enum class HP : uint8_t { Wait, Spawn, Rest, Aim, Judge, Done };
 
 struct Host {
     HP                    phase = HP::Wait;
-    Clock::time_point     at{};
+    Clock::time_point     at{}, readyAt{};
     Env                   env;
     ES::Counters          sync0{};
     ER::Counters          req0{};
-    ue_wrap::CachedObjRef car;
+    ue_wrap::CachedObjRef car, crate;
     Rest                  rest;
-    bool                  shotSaid = false;
+    bool                  shotSaid = false, launcherChecked = false;
+    uint32_t              blastsLogged = 0;
 };
 Host g_h;
 
@@ -135,7 +185,7 @@ bool HostLate(const char* why) {
     return true;
 }
 
-// The state in force on the host, then the car at the blast point.
+// The state in force on the host, then the car at the blast point; the client is told where it stands.
 void HostSpawn() {
     void* me = coop::players::Registry::Get().Local();
     Vec B{};
@@ -153,21 +203,13 @@ void HostSpawn() {
     }
     g_h.car.Set(car);
     Info("host witch car spawned at (%.0f,%.0f,%.0f)", B.X, B.Y, B.Z + kLift);
+    char line[160];
+    std::snprintf(line, sizeof(line), "%s %.0f %.0f %.0f", kHostLine, B.X, B.Y, B.Z + kLift);
+    HD::Say(line);
     HostEnter(HP::Rest);
 }
 
-// The car's camera component height: the rocket flies from the car along that camera.
-bool CameraZ(void* car, float& z) {
-    static R::InstanceOffset sCamera{L"Camera"};
-    const int32_t off = sCamera.Of(car);
-    void* cam = off < 0 ? nullptr : *reinterpret_cast<void* const*>(static_cast<const uint8_t*>(car) + off);
-    if (!cam || !R::IsLive(cam)) return false;
-    const Vec p = E::GetComponentLocation(cam);
-    z = p.Z;
-    return Len(p) > 0.f;
-}
-
-// The car at rest: the crate goes ahead of it at the camera's height, as the rocket's target.
+// The car at rest; the crate waits for the client's camera line.
 void HostRest() {
     void* car = g_h.car.Get();
     if (!car) return HostStop("the witch car is gone before it rested (it destroys itself in story mode)");
@@ -177,17 +219,69 @@ void HostRest() {
         return;
     }
     Vec at{};
-    float z = 0.f;
+    E::TryGetActorLocation(car, at);
+    Info("host witch car at rest (%.0f,%.0f,%.0f)", at.X, at.Y, at.Z);
+    HostEnter(HP::Aim);
+}
+
+// The crate goes on the line the seated client's camera points along, with physics off so it stays where the line
+// points; the client fires once the host says so.
+void HostAim() {
+    float v[6];
+    if (Past(g_h.readyAt, kHostBound)) return HostStop("the client never said it was seated");
+    if (!HD::PollDue() || !ChatNumbers(kSeatedLine, v, 6)) return;
     void* cls = ResolveClass(kCrateCls, kCratePath);
-    if (!cls || !E::TryGetActorLocation(car, at) || !CameraZ(car, z))
-        return HostStop("the crate's class, or the car's place or camera, is unreadable");
-    const Vec fwd = E::GetActorForwardVector(car);
-    if (!E::SpawnActor(cls, {at.X + fwd.X * kTargetAheadCm, at.Y + fwd.Y * kTargetAheadCm, z})) {
-        HostLate("the crate could not be spawned");
-        return;
-    }
-    Info("host witch car at rest (%.0f,%.0f,%.0f), crate ahead at camera height %.0f", at.X, at.Y, at.Z, z);
+    if (!cls) return HostStop("the crate's class is unloadable");
+    void* crate = E::SpawnActor(cls, {v[0] + v[3] * kTargetCm, v[1] + v[4] * kTargetCm, v[2] + v[5] * kTargetCm});
+    if (!crate) return;  // a refused spawn is tried again on the next poll, until the bound
+    if (!E::SetComponentSimulatePhysics(ue_wrap::prop::GetStaticMesh(crate), false))
+        return HostStop("the crate's physics could not be turned off");
+    g_h.crate.Set(crate);
+    Info("host witch crate on the camera line (%.0f,%.0f,%.0f) + %.0f cm along (%.3f,%.3f,%.3f)", v[0], v[1], v[2],
+         kTargetCm, v[3], v[4], v[5]);
+    HD::Say(kTargetLine);
     HostEnter(HP::Judge);
+}
+
+struct BlastScan {
+    Vec  crate{}, car{};
+    bool haveCrate = false, haveCar = false;
+};
+
+// Every live explosion actor with its place and its distance to the crate and the car, when a capture was just made.
+void LogBlasts() {
+    void* cls = ue_wrap::object_index::ClassByName(kExplosionCls);
+    if (!cls) return;
+    BlastScan s;
+    void*     crate = g_h.crate.Get();
+    void*     car = g_h.car.Get();
+    s.haveCrate = crate && E::TryGetActorLocation(crate, s.crate);
+    s.haveCar = car && E::TryGetActorLocation(car, s.car);
+    ue_wrap::object_index::ForEachInstance(
+        cls,
+        [](void* ctx, void* obj, int32_t) {
+            if (R::NameStartsWith(R::NameOf(obj), L"Default__")) return;
+            const BlastScan& b = *static_cast<const BlastScan*>(ctx);
+            Vec              at{};
+            if (!E::TryGetActorLocation(obj, at)) return;
+            Info("host blast at (%.0f,%.0f,%.0f): %.0f cm from the crate, %.0f from the car (-1 = unread)", at.X, at.Y,
+                 at.Z, b.haveCrate ? Dist(at, b.crate) : -1.f, b.haveCar ? Dist(at, b.car) : -1.f);
+        },
+        &s);
+}
+
+// The accepted shot's launcher is the witch car's (3). The lane keeps no per-launcher reading, so this is read from the
+// judge's own gates (explosion_request_host.cpp): launcher 3 is taken from the shooter's seat in a witch car, and
+// launcher 1 or 2 only with that launcher in the shooter's hand within the window, which is not so here.
+bool ShotIsWitchCar() {
+    void* seat = coop::atv_sync::ActorSeatedBy(kClientSlot);
+    if (!seat || !R::NameEquals(R::NameOf(R::ClassOf(seat)), kCarCls)) return false;
+    const uint64_t now = coop::net::NowMs();
+    for (const RC::Launcher l : {RC::Launcher::Rpg, RC::Launcher::StickyLauncher})
+        if (coop::hand_history::HeldWithin(kClientSlot, RC::LauncherClassName(static_cast<uint8_t>(l)),
+                                           kLauncherWindowMs, now))
+            return false;
+    return true;
 }
 
 void HostJudge() {
@@ -195,8 +289,19 @@ void HostJudge() {
     const ER::Counters c = ER::GetCounters();
     const uint64_t     shots = c.shotsAccepted - h.req0.shotsAccepted;
     const uint64_t     captured = ES::GetCounters().captured - h.sync0.captured;
-    uint64_t           refused = 0, accepted = 0;
-    Miss               m;
+    if (captured > h.blastsLogged) {
+        h.blastsLogged = static_cast<uint32_t>(captured);
+        LogBlasts();
+    }
+    if (shots >= 1 && !h.launcherChecked) {
+        h.launcherChecked = true;
+        if (!ShotIsWitchCar()) {
+            Warn("FAIL host arm=%s launcher got=0 want=%u", kName, static_cast<unsigned>(RC::Launcher::WitchCar));
+            return HostEnd();
+        }
+    }
+    uint64_t refused = 0, accepted = 0;
+    Miss     m;
     Compare(m, "shotsAccepted", shots, 1);
     Compare(m, "captured", captured, 1);
     Compare(m, "evicted", c.evicted - h.req0.evicted, 0);
@@ -212,7 +317,8 @@ void HostJudge() {
     }
     if (!h.shotSaid && shots == 1 && refused == 0) {
         h.shotSaid = true;
-        Info("host shot half PASS arm=%s shotsAccepted=1 not_seated=0", kName);
+        Info("host shot half PASS arm=%s shotsAccepted=1 launcher=%u not_seated=0", kName,
+             static_cast<unsigned>(RC::Launcher::WitchCar));
     }
     if (!m.over && c.expired - h.req0.expired > 0) {
         Warn("ABANDONED INCONCLUSIVE arm=%s the rocket expired: its blast half is not shown", kName);
@@ -222,14 +328,14 @@ void HostJudge() {
         Info("host DONE PASS arm=%s accepted=%llu captured=%llu", kName, U(accepted), U(captured));
         return HostEnd();
     }
-    if (!m.over && !Past(h.at, kVerdictBound)) return;
+    if (!m.over && !Past(h.readyAt, kHostBound)) return;
     Warn("FAIL host arm=%s %s got=%llu want=%llu", kName, m.name, U(m.got), U(m.want));
     HostEnd();
 }
 
 // ---- the client ----
 
-enum class CP : uint8_t { Wait, Walk, Sit, Judge, Done };
+enum class CP : uint8_t { Wait, Walk, Sit, Target, Judge, Done };
 
 struct Client {
     CP                    phase = CP::Wait;
@@ -240,6 +346,8 @@ struct Client {
     ue_wrap::CachedObjRef car;
     std::shared_ptr<coop::director::BackgroundWalk> walk;
     atv_seat::SitTry      sit;
+    Vec                   spawn{};  // where the host said its car stands
+    bool                  haveSpawn = false;
 };
 Client g_c;
 
@@ -275,6 +383,8 @@ void ClientWait() {
     const bool streams = coop::net_pump::HasAnnouncedWorldReady() &&
                          coop::join_progress::CurrentPhase() == coop::join_progress::Phase::Idle &&
                          coop::net_pump::IsWorldSettled() && coop::join_membership_sweep::HasLoadTailQuiesced();
+    // Guard holds startInvinc (the host's blast copy reaches the seated client) and also unlockFungunsInStory, which this
+    // arm does not need: it writes sandbox, and the helper has no hold of the first alone.
     if (!streams || !HoldEnv(g_c.env) || Guard(false)) {
         ClientLate(kVerdictBound, "the client's streams, the gamemode or the guard never resolved");
         return;
@@ -288,25 +398,48 @@ void ClientWait() {
     ClientEnter(CP::Walk);
 }
 
-// The witch car's mirror here, once the host's announce has placed it.
-void* FindMirror() {
+// The witch car's mirror here nearest the point the host said its car stands at (a leftover car is farther), once the
+// host's announce has placed it.
+void* FindMirror(const Vec& spawn) {
+    struct Best {
+        Vec   spawn;
+        void* car = nullptr;
+        float dist = 0.f;
+    } best{spawn};
     void* cls = ue_wrap::object_index::ClassByName(kCarCls);
-    void* found = nullptr;
     if (cls)
         ue_wrap::object_index::ForEachInstance(
             cls,
             [](void* ctx, void* obj, int32_t) {
-                if (!R::NameStartsWith(R::NameOf(obj), L"Default__")) *static_cast<void**>(ctx) = obj;
+                if (R::NameStartsWith(R::NameOf(obj), L"Default__")) return;
+                auto* b = static_cast<Best*>(ctx);
+                Vec   at{};
+                if (!E::TryGetActorLocation(obj, at)) return;
+                const float d = Dist(at, b->spawn);
+                if (!b->car || d < b->dist) {
+                    b->car = obj;
+                    b->dist = d;
+                }
             },
-            &found);
-    return found;
+            &best);
+    return best.car;
 }
 
-// The mirror found, the walk to it started with the director and waited for.
+// The host said where its car stands, the mirror found, the walk to it started with the director and waited for.
 void ClientWalk() {
     Vec at{};
     if (!g_c.walk) {
-        void* car = FindMirror();
+        if (!g_c.haveSpawn) {
+            float p[3];
+            if (HD::PollDue() && ChatNumbers(kHostLine, p, 3)) {
+                g_c.spawn = {p[0], p[1], p[2]};
+                g_c.haveSpawn = true;
+            } else {
+                ClientLate(kVerdictBound, "the host never said where its witch car stands");
+            }
+            return;
+        }
+        void* car = FindMirror(g_c.spawn);
         if (!car || !E::TryGetActorLocation(car, at) || Len(at) < 1.f) {  // a mirror at the origin is not placed yet
             ClientLate(kVerdictBound, "the witch car's mirror never stood here");
             return;
@@ -322,20 +455,61 @@ void ClientWalk() {
     if (state == 1) ClientEnter(CP::Sit);
 }
 
-// The seat through the game's own verb; seated, the car's left-mouse event runs once with an empty key. The seat claim
-// and its first state leave in the tick the lane makes the claim, so the host has the seat before the shot.
+// The car's camera: its world location and the direction it faces, which the rocket's spawn follows.
+bool CameraLine(void* car, Vec& loc, Vec& fwd) {
+    static R::InstanceOffset sCamera{L"Camera"};
+    const int32_t off = sCamera.Of(car);
+    void* cam = off < 0 ? nullptr : *reinterpret_cast<void* const*>(static_cast<const uint8_t*>(car) + off);
+    if (!cam || !R::IsLive(cam)) return false;
+    loc = E::GetComponentLocation(cam);
+    const ue_wrap::FRotator rot = E::GetComponentWorldRotation(cam);
+    constexpr float         kDeg = 3.14159265f / 180.f;
+    const float             pitch = rot.Pitch * kDeg, yaw = rot.Yaw * kDeg;
+    fwd = {std::cos(pitch) * std::cos(yaw), std::cos(pitch) * std::sin(yaw), std::sin(pitch)};
+    return Len(loc) > 0.f;
+}
+
+// The seat through the game's own verb. Seated, the camera's line is said to the host, which puts the crate on it. The
+// seat claim and its first state leave in the tick the lane makes the claim, so the host has the seat before the shot.
 void ClientSit() {
     void* car = g_c.car.Get();
     void* player = coop::players::Registry::Get().Local();
     if (!car) return ClientAbandon("the witch car is gone before the seat");
-    if (!player || !atv_seat::TrySit(player, car, g_c.sit)) return;
-    if (coop::atv_sync::ActorSeatedBy(coop::players::Registry::Get().LocalPeerId()) != car)
-        return ClientAbandon("the seat was refused (see the [ATVP] sit lines)");
+    if (!player) {
+        ClientLate(kBound, "the local player is gone before the seat");
+        return;
+    }
+    if (!atv_seat::TrySit(player, car, g_c.sit)) return;
+    if (coop::atv_sync::ActorSeatedBy(coop::players::Registry::Get().LocalPeerId()) != car) {
+        Warn("FAIL client arm=%s seated got=0 want=1 (see the [ATVP] sit lines)", kName);
+        return ClientEnd();
+    }
+    Vec loc{}, fwd{};
+    if (!CameraLine(car, loc, fwd)) return ClientAbandon("the car's camera did not read");
+    char line[200];
+    std::snprintf(line, sizeof(line), "%s %.0f %.0f %.0f %.3f %.3f %.3f", kSeatedLine, loc.X, loc.Y, loc.Z, fwd.X,
+                  fwd.Y, fwd.Z);
+    HD::Say(line);
+    Info("client witch seated, camera at (%.0f,%.0f,%.0f) facing (%.3f,%.3f,%.3f)", loc.X, loc.Y, loc.Z, fwd.X, fwd.Y,
+         fwd.Z);
+    ClientEnter(CP::Target);
+}
+
+// Once the host says the crate stands, the car's left-mouse event runs once with an empty key.
+void ClientTarget() {
+    void* car = g_c.car.Get();
+    if (!car) return ClientAbandon("the witch car is gone before the shot");
+    if (ClientLate(kBound, "the host never said the crate stood")) return;
+    if (!HD::PollDue() || !HD::ChatHas(kTargetLine)) return;
+    Vec loc{}, fwd{};
+    if (CameraLine(car, loc, fwd))  // the camera at the shot, to read against the line the host used
+        Info("client witch fires, camera at (%.0f,%.0f,%.0f) facing (%.3f,%.3f,%.3f)", loc.X, loc.Y, loc.Z, fwd.X,
+             fwd.Y, fwd.Z);
     void* fn = R::FindFunction(R::ClassOf(car), kFireFn);
     ue_wrap::ParamFrame f(fn);
     if (!fn || !f.valid() || !ue_wrap::Call(car, f)) return ClientAbandon("the car's left-mouse event did not run");
     g_c.firedAt = Clock::now();
-    Info("client witch seated and fired");
+    Info("client witch fired");
     ClientEnter(CP::Judge);
 }
 
@@ -355,8 +529,8 @@ void ClientJudge() {
     if (dissolved >= 1) Edge(c.dissAt);
     if (applied >= 1) Edge(c.appliedAt);
     Compare(m, "shotsSent", rc.shotsSent - c.req0.shotsSent, 1);
-    Compare(m, "dissolved", dissolved, 1);
-    Compare(m, "applied", applied, 1);
+    Compare(m, "dissolved", dissolved, 1);  // the client's own rocket is dissolved once
+    Compare(m, "applied", applied, 1);      // and the host's blast copy is applied once
     // The counters the arm does not use stay at 0.
     Compare(m, "pendingDropped", rc.pendingDropped - c.req0.pendingDropped, 0);
     Compare(m, "pendingDead", rc.pendingDead - c.req0.pendingDead, 0);
@@ -391,7 +565,10 @@ void WitchHostTick() {
             h.req0 = ER::GetCounters();
             h.at = Clock::now();
         }
-        if (HD::PollDue() && HD::ChatHas(kReadyLine)) return HostEnter(HP::Spawn);
+        if (HD::PollDue() && HD::ChatHas(kReadyLine)) {
+            h.readyAt = Clock::now();
+            return HostEnter(HP::Spawn);
+        }
         if (Past(h.at, kVerdictBound)) {
             Warn("ABANDONED the client never said its state was in force");
             HostEnd();
@@ -399,6 +576,7 @@ void WitchHostTick() {
         return;
     case HP::Spawn: return HostSpawn();
     case HP::Rest: return HostRest();
+    case HP::Aim: return HostAim();
     case HP::Judge: return HostJudge();
     case HP::Done: return;
     }
@@ -406,11 +584,15 @@ void WitchHostTick() {
 
 void WitchClientTick() {
     Client& c = g_c;
-    if (c.at == Clock::time_point{}) c.at = Clock::now();
+    if (c.at == Clock::time_point{}) {  // the bounds run from the world-ready edge, not from the first Tick
+        if (!coop::net_pump::HasAnnouncedWorldReady()) return;
+        c.at = Clock::now();
+    }
     switch (c.phase) {
     case CP::Wait: return ClientWait();
     case CP::Walk: return ClientWalk();
     case CP::Sit: return ClientSit();
+    case CP::Target: return ClientTarget();
     case CP::Judge: return ClientJudge();
     case CP::Done: return;
     }

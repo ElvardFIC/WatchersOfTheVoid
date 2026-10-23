@@ -148,8 +148,9 @@ void RequestHostReset();
 // ---- the witch car arm (explosion_drill_witch.cpp) ----
 //
 // request_witch does not go through the request arms' table: the client fires from a car's seat, not from a hand. The
-// host spawns the car and a crate and judges the shot and the blast apart; the client walks to the car, takes the
-// seat and fires. Each Tick of a role is its half; WitchReset puts back the mode and isHalloween the arm wrote.
+// host spawns the car, then a crate on the line the seated client's car camera points along, and judges the shot and
+// the blast apart; the client walks to the car, takes the seat, says where its camera points and fires. Each Tick of a
+// role is its half; WitchReset puts back the mode and isHalloween the arm wrote.
 void WitchHostTick();
 void WitchClientTick();
 void WitchReset();

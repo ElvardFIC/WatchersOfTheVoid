@@ -24,6 +24,9 @@ constexpr int kStory = 0;
 // Infinite, the second mode whose guns are held only through the exits FungunHoldAllowed reads.
 constexpr int kInfinite = 1;
 
+// Sandbox, the mode whose rules let a player cheat (ordinal 4 in the name table, game_mode.cpp).
+constexpr int kSandbox = 4;
+
 constexpr bool IsValid(int ord) { return ord >= 0 && ord < kCount; }
 
 // The game's own name for an ordinal ("Sandbox"), or null when the ordinal names no mode.
