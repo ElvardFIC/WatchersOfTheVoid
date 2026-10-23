@@ -13,13 +13,16 @@ namespace ue_wrap::save_record {
 bool UpdateScalarGroups(void*,const SaveRecord&,const SaveRecord&){std::abort();}
 void WriteFNameField(void*,const std::wstring&){}
 void WriteSaveRecord(uint8_t*,const SaveRecord& r,ClassResolver){test::written=r;}
+bool WriteSaveRecordChecked(uint8_t* at,const SaveRecord& r,ClassResolver resolve){WriteSaveRecord(at,r,resolve);return true;}
 Arr ReadArr(const void*,int32_t){std::abort();}
+bool TryReadArr(const void*,int32_t,Arr&){std::abort();}
 void WriteArrHeader(void*,int32_t,void*,int32_t){std::abort();}
 void* AllocZeroed(size_t,size_t){std::abort();}
 std::wstring ReadFNameAt(const void*,int32_t){std::abort();}
 void ReadSaveRecord(const void*,SaveRecord&){std::abort();}
 }
 namespace ue_wrap::log {void Write(Level,const char*,...){}}
+namespace ue_wrap::container_inventory {bool ReadPersonalFlag(void*,bool&){std::abort();}}
 namespace ue_wrap::object_index {void* ClassByName(const wchar_t*){std::abort();}}
 namespace ue_wrap::reflection {
 int32_t InternalIndexOf(void*){std::abort();}int32_t SlotSerial(int32_t){std::abort();}
@@ -29,6 +32,7 @@ bool IsDescendantOfAny(void*,void* const*,size_t,int){std::abort();}
 void EngineFree(void*){std::abort();}void* EngineAlloc(size_t,uint32_t){std::abort();}
 bool IsLive(void* a){return a&&static_cast<test::Obj*>(a)->live;}
 void* ClassOf(void* a){return a;}
+int32_t InstanceOffset::Of(void*){std::abort();}
 int32_t FindPropertyOffset(void*,const wchar_t* n){const std::wstring name=n;
  if(name==L"propInventory")return offsetof(test::Obj,screen);
  if(name==L"mainPlayer")return offsetof(test::Obj,player);

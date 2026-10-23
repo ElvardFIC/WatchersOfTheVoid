@@ -16,6 +16,7 @@
 #include "coop/net/protocol.h"
 #include "coop/net/session.h"
 #include "coop/net/stream_slot.h"
+#include "coop/net/session_serial.h"
 #include "coop/props/prop_synth_key.h"  // RandomKeyString, the fresh key of a copied record
 #include "coop/session/player_handshake.h"
 #include "ue_wrap/actors/begin_equipment.h"  // GiveFromClass, the starter-kit probe
@@ -83,6 +84,7 @@ constexpr auto kAsmTtl      = std::chrono::seconds(30);
 coop::blob_chunks::Assembler g_clientAssembler;
 coop::net::SeqLatch g_applySeq;
 coop::player_profile::Profile g_pendingApply;
+uint64_t g_pendingRevision=0;
 // Client: where the join's world appearance puts this player, and the pose for a ProfilePose; the
 // placement reads both once (TakeJoinPlacement).
 coop::player_profile::Pose g_joinPose;
@@ -101,7 +103,7 @@ bool g_profileApplied = false;
 // right before it loads a world, consumed by the hook. Without it the hook cannot tell a join from
 // any other load in this process: the session's role outlives a stopped session, so "I am a
 // client" stayed true through a later Host-with-save, whose load the hook would then have emptied.
-std::atomic<bool> g_joinApplyArmed{false};
+std::atomic<uint64_t> g_joinApplyState{0}; // request counter plus armed low bit
 
 // Host: the per-slot send sequence for the on-join push (independent of the client stream's
 // sequence space; assembler keys are per sender and sequence, so they never collide).
@@ -111,6 +113,8 @@ std::array<uint32_t, coop::net::kMaxPeers> g_hostSendSeq{};
 // from the host tick the instant the slot is connected and its join GUID has arrived, well
 // before the client finishes its save transfer and load. Reset on disconnect.
 std::array<bool, coop::net::kMaxPeers> g_applySentToSlot{};
+std::array<uint32_t,coop::net::kMaxPeers> g_applySentGeneration{};
+std::array<std::string,coop::net::kMaxPeers> g_applySentGuid{};
 
 // Client: the last place the local player was standing (see player_profile::Pose). Sampled at
 // the poll, kept while the player drives, falls or lies ragdolled.
@@ -232,7 +236,16 @@ void HostPersistTick(coop::net::Session* s) {
     if (now - g_lastSweep < std::chrono::seconds(1)) return;
     g_lastSweep = now;
     g_assembler.Sweep(now, kAsmTtl);
+    const auto epoch=g_streamEpoch;
+    const auto world=ue_wrap::world_identity::Generation(),serial=coop::net::session_serial::Current();
     for (int slot = 1; slot < coop::net::kMaxPeers; ++slot) {
+        if(g_session.load()!=s || epoch!=g_streamEpoch || world!=ue_wrap::world_identity::Generation() ||
+            serial!=coop::net::session_serial::Current() || !s->running() || !s->connected() || s->role()!=coop::net::Role::Host)return;
+        const auto generation=s->peerGenerationForSlot(slot);
+        const std::string guid=coop::player_handshake::GuidForSlot(slot);
+        if(!s->IsSlotConnected(slot) || g_applySentGeneration[slot]!=generation || g_applySentGuid[slot]!=guid) {
+            g_applySentToSlot[slot]=false;g_applySentGeneration[slot]=generation;g_applySentGuid[slot]=guid;
+        }
         // The connect-edge push: once a slot is connected and its GUID has arrived (carried in the
         // join), send it its persisted inventory once, latching on a successful enqueue only, so a
         // channel-busy refusal or a not-yet-arrived GUID retries on the next 1 Hz tick. Reliable
@@ -240,7 +253,11 @@ void HostPersistTick(coop::net::Session* s) {
         // receiver, installed before any world, buffers it for the save-object hook.
         if (!g_applySentToSlot[slot] && s->IsSlotConnected(slot) &&
             !coop::player_handshake::GuidForSlot(slot).empty()) {
-            if (SendInventoryToSlot(slot)) g_applySentToSlot[slot] = true;
+            const auto sequence=g_hostSendSeq[slot];
+            if (SendInventoryToSlot(slot) && epoch==g_streamEpoch && g_session.load()==s &&
+                s->IsSlotConnected(slot) && s->peerGenerationForSlot(slot)==generation &&
+                coop::player_handshake::GuidForSlot(slot)==guid && g_hostSendSeq[slot]==sequence+1)
+                g_applySentToSlot[slot] = true;
         }
     }
 }
@@ -253,105 +270,10 @@ void HostPersistTick(coop::net::Session* s) {
 // blob; if it still is not here, the host's items are emptied out of the save
 // object all the same -- they are the host's, not data of this player's that could be lost -- and
 // the stream stays shut for the session, so the profile on the host survives for the next join.
-void OnSaveObjectReady(void* saveSlotObject) {
-    if (!g_joinApplyArmed.exchange(false, std::memory_order_acq_rel)) return;  // not a join's load
-    // The host's status effects are records among its world's in this save object, and a player
-    // joins without them: the game's own reset takes them out before the world is built, ahead of
-    // both branches below (the profile branch returns early).
-    // Divergence from MTA, which resets a joiner's own state at the join (Event_OnIngame ->
-    // ResetStats, reference/mtasa-blue/Client/mods/deathmatch/logic/CClientGame.cpp:3452-3515) and
-    // composes what a joiner receives per recipient on its server
-    // (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:1436-1483). Here the records
-    // are removed at the receiver: the join streams the canonical on-disk slot when the live
-    // capture fails (src/votv-coop/src/coop/save/save_transfer.cpp:370,423) and the capture
-    // serialises the host's own live save object
-    // (src/votv-coop/src/ue_wrap/engine/save_capture.cpp:178-181), which the host must keep.
-    bool gamemodeSet = false;
-    const int effectsReset = ue_wrap::effects::ResetOnSaveObject(saveSlotObject, &gamemodeSet);
-    if (effectsReset > 0)
-        UE_LOGI("player_inventory[client]: left the host's status effects out of this player's world "
-                "(%d record(s) reset; gamemode=%s)", effectsReset, gamemodeSet ? "set" : "none");
-    else if (effectsReset < 0)
-        UE_LOGW("player_inventory[client]: the game's effect reset did not run -- this player may "
-                "start with the host's effects");
-    g_profileApplied = false;
-    g_joinPose = {};
-    g_joinPlacement = JoinStaysAtHost() ? JoinPlacement::AtHost : JoinPlacement::StartPoint;
-    if (!g_hasPendingApply.load(std::memory_order_acquire)) {
-        const bool emptied = ue_wrap::inventory::ApplyToSaveObject(
-            saveSlotObject, ue_wrap::inventory::PlayerInventory{});
-        ue_wrap::vitals::Snapshot fresh;
-        const bool vitals = ue_wrap::vitals::ReadDefaults(fresh) &&
-                            ue_wrap::vitals::ApplySnapshot(saveSlotObject, fresh);
-        namespace N = ue_wrap::profile::name;
-        if (g_joinPlacement == JoinPlacement::StartPoint)
-            ue_wrap::vitals::WritePlayerTransform(saveSlotObject, N::kKPPSpawnX, N::kKPPSpawnY,
-                                                  N::kKPPSpawnZ, 0.f);
-        UE_LOGE("player_inventory[client]: SaveObjectReady with no profile from the host -- %s, "
-                "vitals %s; this session plays empty-handed and reports nothing back, the profile "
-                "on the host is untouched",
-                emptied ? "emptied the host's items out of the save object"
-                        : "the save object could not be written",
-                vitals ? "fresh" : "NOT written (the host's)");
-        return;
-    }
-    if (!ue_wrap::inventory::ApplyToSaveObject(saveSlotObject, g_pendingApply.items)) {
-        UE_LOGE("player_inventory[client]: ApplyToSaveObject FAILED on %p -- the world comes up "
-                "with the host's items and the stream stays shut", saveSlotObject);
-        return;
-    }
-    // A player who left dead, whose numbers are not numbers, or whose profile holds no vitals
-    // starts a fresh life at the start point: health 0 applied as stored would kill them again on
-    // the first frame.
-    ue_wrap::vitals::Snapshot v = g_pendingApply.vitals;
-    const bool alive = g_pendingApply.hasVitals && std::isfinite(v.health) &&
-                       std::isfinite(v.maxHealth) && std::isfinite(v.food) &&
-                       std::isfinite(v.sleep) && v.health > 0.f;
-    const bool vitalsOk = (alive || ue_wrap::vitals::ReadDefaults(v)) &&
-                          ue_wrap::vitals::ApplySnapshot(saveSlotObject, v);
-    if (!vitalsOk)
-        UE_LOGE("player_inventory[client]: the vitals were NOT written -- this player starts at "
-                "the host's numbers");
-    // The pose is a world position off the wire: finite and inside the bound every other world
-    // position on the wire is held to (an extreme finite coordinate still asserts in the engine).
-    const auto& pose = g_pendingApply.pose;
-    auto inWorld = [](float c) { return std::isfinite(c) && std::fabs(c) <= coop::net::kMaxCoord; };
-    if (alive && pose.valid && inWorld(pose.x) && inWorld(pose.y) && inWorld(pose.z) &&
-        std::isfinite(pose.yaw))
-        g_joinPose = pose;
-    // Where the game itself believes this player is: its anti-noclip check falls back there, and
-    // in a join capture that is where the HOST stood.
-    namespace N = ue_wrap::profile::name;
-    if (g_joinPlacement != JoinPlacement::AtHost && g_joinPose.valid) g_joinPlacement = JoinPlacement::ProfilePose;
-    bool placed = true;
-    if (g_joinPlacement == JoinPlacement::ProfilePose)
-        placed = ue_wrap::vitals::WritePlayerTransform(saveSlotObject, g_joinPose.x, g_joinPose.y,
-                                                       g_joinPose.z, g_joinPose.yaw);
-    else if (g_joinPlacement == JoinPlacement::StartPoint)
-        placed = ue_wrap::vitals::WritePlayerTransform(saveSlotObject, N::kKPPSpawnX, N::kKPPSpawnY,
-                                                       N::kKPPSpawnZ, 0.f);
-    // Do not open the client->host profile stream after a partial restore.  In
-    // particular, a failed vitals/transform write leaves host-save values in
-    // this player's world; streaming those values back would corrupt the
-    // player's GUID-keyed profile on the next save.  Keep the stream closed
-    // until every required save-object field was applied successfully.
-    g_profileApplied = vitalsOk && placed;
-    if (!g_profileApplied) {
-        UE_LOGE("player_inventory[client]: per-player profile was only partially applied "
-                "(vitals=%s transform=%s); client profile reporting remains disabled",
-                vitalsOk ? "ok" : "failed", placed ? "ok" : "failed");
-    }
-    UE_LOGI("player_inventory[client]: applied per-player profile to save object %p (carried=%zu "
-            "equip=%zu hold=%zu | vitals %s: hp=%.0f/%.0f food=%.0f sleep=%.0f | pose %s%s)",
-            saveSlotObject, g_pendingApply.items.inventory.size(),
-            g_pendingApply.items.equipment.size(), g_pendingApply.items.hold.size(),
-            !vitalsOk ? "NOT WRITTEN" : alive ? "restored" : "fresh", v.health, v.maxHealth, v.food,
-            v.sleep,
-            g_joinPlacement == JoinPlacement::AtHost        ? "the host's (join_at_host)"
-            : g_joinPlacement == JoinPlacement::ProfilePose ? "restored"
-                                                            : "start point",
-            placed ? "" : ", playerTransform NOT written");
-}
+#ifndef PROFILE_JOIN_APPLY_SOURCE
+#define PROFILE_JOIN_APPLY_SOURCE "player_join_apply.inc"
+#endif
+#include PROFILE_JOIN_APPLY_SOURCE
 
 // Host: the game is gathering the world into its save object (ue_wrap/engine/save_capture: its own
 // save, or a join capture). The profiles as they stand now are the ones consistent with that
@@ -518,6 +440,7 @@ void OnReliable(const coop::net::BlobChunkPayload& p, uint8_t senderPeerSlot) {
         g_applySeq = next; // invalid/partial profiles never advance the accepted sequence
         g_clientAssembler.DiscardThrough(senderPeerSlot, p.blobSeq);
         g_pendingApply = std::move(inv);
+        ++g_pendingRevision;
         g_hasPendingApply.store(true, std::memory_order_release);
         UE_LOGI("player_inventory[client]: received per-player apply blob from host (%zu bytes, "
                 "inventory=%zu equip=%zu hold=%zu)", blob.size(),
@@ -629,22 +552,34 @@ bool LiftProjectionProfile(std::vector<uint8_t>& blob) {
 
 bool SendInventoryToSlot(int peerSlot) {
     auto* s = g_session.load(std::memory_order_acquire);
-    if (!s || s->role() != coop::net::Role::Host) return false;  // host pushes; clients receive
+    if (!s || !s->running() || !s->connected() || s->role() != coop::net::Role::Host) return false;
     if (peerSlot < 1 || peerSlot >= coop::net::kMaxPeers) return false;
-    const std::string& guid = coop::player_handshake::GuidForSlot(peerSlot);
+    if(!s->IsSlotConnected(peerSlot))return false;
+    const std::string guid = coop::player_handshake::GuidForSlot(peerSlot);
     if (guid.empty()) {
         UE_LOGI("player_inventory: slot %d has no GUID yet -- not sending an apply blob this edge",
                 peerSlot);
         return false;  // not sent -> caller does not latch; retries when the GUID lands
     }
+    const auto epoch=g_streamEpoch;
+    const auto world=ue_wrap::world_identity::Generation();
+    const auto serial=coop::net::session_serial::Current();
+    const auto generation=s->peerGenerationForSlot(peerSlot),sequence=++g_hostSendSeq[peerSlot];
+    const auto current=[&]{return epoch==g_streamEpoch && g_session.load()==s && world==ue_wrap::world_identity::Generation() &&
+        serial==coop::net::session_serial::Current() && s->running() && s->connected() && s->role()==coop::net::Role::Host &&
+        s->IsSlotConnected(peerSlot) && s->peerGenerationForSlot(peerSlot)==generation &&
+        coop::player_handshake::GuidForSlot(peerSlot)==guid && g_hostSendSeq[peerSlot]==sequence;};
     std::vector<uint8_t> blob;
     namespace PS = coop::player_profile_store;
     const PS::Found found = PS::Get(guid, blob);
+    if(!current())return false;
     // A profile that is there and does not read (a corrupt or locked file, a blob of a build this
     // one cannot parse) is a RETURNING player: they get the kit for this session, and nothing they
     // stream back may be written over what is on disk.
     const bool usable = found == PS::Found::Yes && LiftProjectionProfile(blob);
+    if(!current())return false;
     if (!usable && found != PS::Found::Absent) PS::Quarantine(guid);
+    if(!current())return false;
     if (!usable) {
         // First join (nothing held and no stored file), or the quarantined case above: seed the starter kit so the
         // player is not dropped into the host's world empty-handed (a loaded coop save runs no
@@ -654,15 +589,17 @@ bool SendInventoryToSlot(int peerSlot) {
         // host's numbers, and there is no pose: a first join appears at the start point.
         coop::player_profile::Profile first;
         const bool kit = BuildFirstJoinStarterKit(first.items);
+        if(!current())return false;
         if (!kit) first.items = {};
         first.hasVitals = ue_wrap::vitals::ReadDefaults(first.vitals);  // else the joiner reads its own
+        if(!current())return false;
         blob = coop::inventory_wire::Serialize(first);
         UE_LOGI("player_inventory: slot %d guid=%s -- first join, %s (inventory=%zu equip-slots=%zu)",
                 peerSlot, guid.c_str(), kit ? "seeding the starter kit" : "starter kit unavailable, EMPTY",
                 first.items.inventory.size(), first.items.equipment.size());
     }
-    if (coop::blob_chunks::SendBlobToSlot(s, peerSlot, coop::net::ReliableKind::PlayerInventoryBlob,
-                                          ++g_hostSendSeq[peerSlot], blob)) {
+    if (coop::blob_chunks::SendBlobToSlotWhile(s, peerSlot, coop::net::ReliableKind::PlayerInventoryBlob,
+                                               sequence, blob,current)) {
         UE_LOGI("player_inventory: sent slot %d guid=%s its per-player inventory (%zu-byte blob)",
                 peerSlot, guid.c_str(), blob.size());
         return true;
@@ -674,7 +611,10 @@ bool SendInventoryToSlot(int peerSlot) {
 
 bool HasPendingApply() { return g_hasPendingApply.load(std::memory_order_acquire); }
 
-void BeginJoinApply() { g_joinApplyArmed.store(true, std::memory_order_release); }
+void BeginJoinApply() {
+    auto old=g_joinApplyState.load(std::memory_order_acquire);
+    while(!g_joinApplyState.compare_exchange_weak(old,((old&~uint64_t{1})+2)|1,std::memory_order_acq_rel)){}
+}
 
 JoinPlacement TakeJoinPlacement(float& x, float& y, float& z, float& yaw) {
     const JoinPlacement at = g_joinPlacement;
@@ -694,6 +634,8 @@ void OnDisconnectForSlot(int peerSlot) {
     // host's world cuts it to disk with everyone else's.
     if (peerSlot >= 0 && peerSlot < coop::net::kMaxPeers) {
         g_applySentToSlot[peerSlot] = false;  // a rejoin re-pushes the apply blob
+        ++g_hostSendSeq[peerSlot]; // cancel an in-flight send even before transport generation changes
+        g_applySentGeneration[peerSlot]=0;g_applySentGuid[peerSlot].clear();
         g_assembler.ClearSlot(static_cast<uint8_t>(peerSlot));
         g_receivedSeq[peerSlot] = {};
         g_receivedGuid[peerSlot].clear();
@@ -708,6 +650,7 @@ void OnDisconnect() {
     g_receivedSeq = {};
     g_receivedGuid = {};
     g_applySentToSlot = {};
+    g_applySentGeneration={};g_applySentGuid={};
     g_applySeq = {};
     // Client: reset the send dedup so a reconnect re-streams, and drop any pending apply blob and
     // its assembler, so a rejoin waits for a fresh host push and never applies a stale inventory
@@ -720,10 +663,13 @@ void OnDisconnect() {
     g_oversizeHash = 0;
     g_lastPoll = Clock::time_point{};
     g_hasPendingApply.store(false, std::memory_order_release);
-    g_joinApplyArmed.store(false, std::memory_order_release);
+    auto state=g_joinApplyState.load(std::memory_order_acquire);
+    while(!g_joinApplyState.compare_exchange_weak(state,(state&~uint64_t{1})+2,std::memory_order_acq_rel)){}
+    ++g_pendingRevision;
     g_profileApplied = false;
     g_pendingApply = coop::player_profile::Profile{};
     g_clientAssembler.Clear();
+    g_lastSweep={};
 }
 
 }  // namespace coop::player_inventory_sync

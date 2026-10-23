@@ -297,6 +297,7 @@ coop::net::Config ReadNetConfig(bool& enabled) {
     // The range [1, 65535] lives on the row; an out-of-range or partial parse keeps the compiled
     // default, so a rejected value never reaches the cast.
     c.port = static_cast<uint16_t>(ResolveInt(config_registry::rows::net_port));
+    c.playerLimit = coop::net::ClampPlayerLimit(static_cast<int>(ResolveInt(config_registry::rows::net_player_limit)));
 
     // net.topology: "lan" (the default, direct IP) or "p2p" (ICE).
     c.topology = ResolveEnum(config_registry::rows::net_topology) == "p2p"

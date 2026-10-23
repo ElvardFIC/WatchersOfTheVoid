@@ -19,6 +19,7 @@ bool Name(const std::wstring& s) {
 bool Empty(const std::wstring& s) { return s.empty() || s == L"None"; }
 }
 Kind ClassKind(const std::wstring& name) {
+    if (name == L"dirthole_C") return Kind::DirtHole;
     if (name == L"faucet_C") return Kind::Faucet;
     if (name == L"groundHose_C") return Kind::Hose;
     if (name == L"customWall_unfinished_C") return Kind::WallOutline;
@@ -35,6 +36,11 @@ bool Normalize(const SR::SaveRecord& in, SR::SaveRecord& out) {
     for (int i = 4; i < 7; ++i) if (std::fabs(in.xform[i]) > 2'000'000.f) return false;
     for (int i = 7; i < 10; ++i) if (in.xform[i] < .01f || in.xform[i] > 100.f) return false;
     SR::SaveRecord r; r.className = in.className; r.key = in.key; r.xform = in.xform;
+    if (kind == Kind::DirtHole) {
+        if (in.ints.size() != 1 || in.ints[0].size() != 1 || in.ints[0][0] < 0 || in.ints[0][0] > 2) return false;
+        r.ints = in.ints;
+        out = std::move(r); return true;
+    }
     if (IsWall(kind)) {
         const bool outline = kind == Kind::WallOutline;
         const size_t count = outline ? 4 : 2;

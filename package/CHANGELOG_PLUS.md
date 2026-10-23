@@ -204,7 +204,7 @@ Missing model assets and static preview mismatches remain unverified without mod
 
 ## 0.9.2150
 
-- Renamed the fork to Watchers of the Void, authored and maintained by ElvardFIC, with a new supplied cover. Original Multivoid credit remains with Pelmentor.
+- Renamed the fork to Watchers of the Void, authored and maintained by ElvardFIC, with a new supplied cover.
 
 - Consolidates all accumulated Plus changes since 2146, including development work through 2192, into one release numbered 2150.
 - Preserves partially used item records through container extraction and pocket capture; retries failed birth/save delivery without stale retries overwriting newer state. Adds identity and lifecycle checks before removing replicated objects.

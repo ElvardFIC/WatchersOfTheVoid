@@ -30,6 +30,8 @@ void OnHandState(const coop::net::FoodStatePayload& payload, uint8_t senderSlot)
 void OnBite(const coop::net::FoodBitePayload& payload, uint8_t senderSlot);
 // The final native bite is authored before its generic destruction can cross.
 bool ConsumesClientDestroy(void* actor);
+// Only an active native eaten invocation may author its verified empty wrapper.
+bool IsLocalConsumedOutput(void* actor,void* callerFunction);
 void SendAllToSlot(int slot);
 void OnPeerLeft(int slot);
 void OnDisconnect();

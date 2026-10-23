@@ -10,11 +10,22 @@
 #include "ue_wrap/world/keyed_objects.h"
 #include <cmath>
 #include <cstring>
+#include <map>
 
 namespace ue_wrap::placed_save {
 namespace {
 namespace R = reflection;
 namespace SR = save_record;
+// Native holes are transient AActors with no save key/getData. Retain a
+// session identity alongside the live actor, without inventing engine fields.
+struct HoleKey { CachedObjRef actor; std::wstring key; };
+std::map<int32_t, HoleKey> g_holeKeys;
+uint32_t g_holeWorld = 0;
+void CleanHoleKeys() {
+    const auto world = world_identity::Generation();
+    if (g_holeWorld != world) { g_holeKeys.clear(); g_holeWorld = world; }
+    std::erase_if(g_holeKeys, [](const auto& row) { return !row.second.actor.Get(); });
+}
 bool Verb(void* actor, const wchar_t* name) {
     ParamFrame f(R::FindDispatchFunctionCached(R::ClassOf(actor), name));
     return f.valid() && Call(actor, f);
@@ -58,6 +69,7 @@ Kind Type(void* actor) {
     void* cls = R::ClassOf(actor);
     if (!cls) return Kind::None;
     const auto& name = R::NameOf(cls);
+    if (R::NameEquals(name, L"dirthole_C")) return Kind::DirtHole;
     if (R::NameEquals(name, L"faucet_C")) return Kind::Faucet;
     if (R::NameEquals(name, L"groundHose_C")) return Kind::Hose;
     if (R::NameEquals(name, L"customWall_unfinished_C")) return Kind::WallOutline;
@@ -71,6 +83,8 @@ bool PlacementCaller(Kind kind, void* function) {
     if (!owner) return false;
     const auto& fn = R::NameOf(function);
     const auto& cls = R::NameOf(owner);
+    if (kind == Kind::DirtHole)
+        return R::NameEquals(cls, L"mainPlayer_C") && R::NameEquals(fn, L"ExecuteUbergraph_mainPlayer");
     if (IsWall(kind))
         return (R::NameEquals(cls, L"prop_wallbuilder_C") && R::NameEquals(fn, L"addWall")) ||
             (kind == Kind::Wall && ((R::NameEquals(cls, L"customWall_unfinished_C") && R::NameEquals(fn, L"buildWall")) ||
@@ -94,6 +108,23 @@ bool Ready(void* actor) {
 }
 bool Capture(void* actor, SR::SaveRecord& record) {
     if (Type(actor) == Kind::None) return false;
+    if (Type(actor) == Kind::DirtHole) {
+        CachedObjRef ref; ref.Set(actor);
+        const auto world = world_identity::Generation();
+        FVector pos{}; FRotator rot{};
+        if (!engine::TryGetActorLocation(actor, pos) || !ref.Get() ||
+            !engine::TryGetActorRotation(actor, rot) || !ref.Get()) return false;
+        const auto scale = engine::GetActorScale3D(actor);
+        if (!ref.Get() || world != world_identity::Generation()) return false;
+        const int off = R::FindPropertyOffset(R::ClassOf(actor), L"matType");
+        if (off < 0) return false;
+        int32_t material = 0; std::memcpy(&material, static_cast<uint8_t*>(actor) + off, sizeof(material));
+        SR::SaveRecord out; out.className = L"dirthole_C"; out.key = ExistingKey(actor);
+        engine::RotatorToQuat(rot.Pitch, rot.Yaw, rot.Roll, out.xform[0], out.xform[1], out.xform[2], out.xform[3]);
+        out.xform[4] = pos.X; out.xform[5] = pos.Y; out.xform[6] = pos.Z;
+        out.xform[7] = scale.X; out.xform[8] = scale.Y; out.xform[9] = scale.Z;
+        out.ints = {{material}}; record = std::move(out); return true;
+    }
     const auto world = world_identity::Generation();
     CachedObjRef ref; ref.Set(actor);
     if (!SR::CaptureRecordVia(actor,
@@ -116,6 +147,12 @@ bool Capture(void* actor, SR::SaveRecord& record) {
 }
 bool SetKey(void* actor, const std::wstring& key) {
     if (Type(actor) == Kind::None || Empty(key) || !Name(key)) return false;
+    if (Type(actor) == Kind::DirtHole) {
+        CleanHoleKeys();
+        CachedObjRef ref; ref.Set(actor);
+        if (g_holeKeys.size() >= 1024 && !g_holeKeys.count(ref.Idx())) return false;
+        g_holeKeys[ref.Idx()] = {ref, key}; return true;
+    }
     R::InstanceOffset field(L"key");
     const int32_t off = field.Of(actor);
     if (off < 0) return false;
@@ -126,6 +163,11 @@ bool SetKey(void* actor, const std::wstring& key) {
 }
 std::wstring ExistingKey(void* actor) {
     if (Type(actor) == Kind::None) return {};
+    if (Type(actor) == Kind::DirtHole) {
+        CleanHoleKeys(); CachedObjRef ref; ref.Set(actor);
+        const auto it = g_holeKeys.find(ref.Idx());
+        return it != g_holeKeys.end() && it->second.actor.Is(actor) ? it->second.key : std::wstring{};
+    }
     R::InstanceOffset field(L"key");
     const int32_t off = field.Of(actor);
     return off >= 0 ? SR::ReadFNameAt(actor, off) : std::wstring{};
@@ -201,6 +243,14 @@ bool ApplyCare(void* plant, CareKind kind, float amount) {
 bool Apply(void* actor, const SR::SaveRecord& record) {
     if (Type(actor) != ClassKind(record.className) || R::ClassNameOf(actor) != record.className) return false;
     CachedObjRef ref; ref.Set(actor);
+    if (Type(actor) == Kind::DirtHole) {
+        SR::SaveRecord checked;
+        if (!Normalize(record, checked) || !SetKey(actor, record.key)) return false;
+        const int off = R::FindPropertyOffset(R::ClassOf(actor), L"matType");
+        if (off < 0) return false;
+        std::memcpy(static_cast<uint8_t*>(actor) + off, &checked.ints[0][0], sizeof(int32_t));
+        return Verb(actor, L"UserConstructionScript") && ref.Get();
+    }
     if (Type(actor) == Kind::Plant) {
         R::InstanceOffset amount(L"amount");
         const int32_t off = amount.Of(actor);
@@ -256,6 +306,13 @@ void* Spawn(const SR::SaveRecord& record) {
     void* a = engine::BeginDeferredSpawn(cls, pos, rot);
     if (!a) return nullptr;
     CachedObjRef ref; ref.Set(a);
+    if (ClassKind(record.className) == Kind::DirtHole) {
+        const int off = R::FindPropertyOffset(R::ClassOf(a), L"matType");
+        if (off < 0 || record.ints.empty() || record.ints[0].size() != 1) {
+            engine::DestroyActor(a); return nullptr;
+        }
+        std::memcpy(static_cast<uint8_t*>(a) + off, &record.ints[0][0], sizeof(int32_t));
+    }
     if (ClassKind(record.className) == Kind::Plant) {
         R::InstanceOffset field(L"plant");
         const int32_t off = field.Of(a);
@@ -293,7 +350,7 @@ bool Link(void* actor, const SR::SaveRecord& record) {
     const Kind kind = Type(actor);
     if (kind == Kind::None) return false;
     CachedObjRef ref; ref.Set(actor);
-    if (IsWall(kind)) return true; // no hose/pot links or processKeys work
+    if (IsWall(kind) || kind == Kind::DirtHole) return true; // no hose/pot links or processKeys work
     if (kind == Kind::Faucet) {
         const auto& key = record.names[0][0];
         if (!Empty(key)) {

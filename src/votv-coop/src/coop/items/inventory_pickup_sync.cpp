@@ -2,6 +2,7 @@
 
 #include "coop/items/inventory_pickup_sync.h"
 #include "container_extract_restore.h"
+#include "coop/items/container_extract_recovery.h"
 
 #include "coop/net/protocol.h"
 #include "coop/net/session.h"
@@ -51,9 +52,12 @@ constexpr const wchar_t* kPocketVerb = L"putObjectInventory2";
 constexpr int kPocketTag = 0x504F434B;  // 'POCK'
 ue_wrap::script_gate::Verdict OnPocketPre(const ue_wrap::script_gate::Call& call) {
     auto* s = g_session.load(std::memory_order_acquire);
-    if (!s || !s->connected() || !call.locals || !call.function) return ue_wrap::script_gate::Verdict::Run;
+    if (!s || !s->connected()) return ue_wrap::script_gate::Verdict::Run;
+    const auto untracked=[&]{return coop::container_extract_recovery::InFlight() ?
+        ue_wrap::script_gate::Verdict::Cancel : ue_wrap::script_gate::Verdict::Run;};
+    if(!call.locals || !call.function)return untracked();
     void* local = coop::players::Registry::Get().Local();
-    if (!local || call.object != local) return ue_wrap::script_gate::Verdict::Run;
+    if (!local || call.object != local) return untracked();
 
     static ue_wrap::CachedObjRef s_fn;
     static int32_t s_inputOff = -1;
@@ -70,7 +74,7 @@ ue_wrap::script_gate::Verdict OnPocketPre(const ue_wrap::script_gate::Call& call
             UE_LOGW("inventory_pickup: %ls InputPin did not resolve -- mutable pocket state cannot be published",
                     kPocketVerb);
     }
-    if (s_inputOff < 0) return ue_wrap::script_gate::Verdict::Run;
+    if (s_inputOff < 0 || s_returnOff < 0) return untracked();
     const auto cancelPickup = [&] {
         // Cancel preserves out parameters. A reused caller frame may still hold
         // true from its previous pickup: explicitly report that no transfer took place.
@@ -86,16 +90,20 @@ ue_wrap::script_gate::Verdict OnPocketPre(const ue_wrap::script_gate::Call& call
         return ue_wrap::script_gate::Verdict::Run;
     ue_wrap::CachedObjRef carrier;
     carrier.Set(actor);
-    const auto extracted = detail::RestoreContainerCarrier(call, actor);
+    const auto recovery=coop::container_extract_recovery::RestoreForPickup(call,actor);
+    using Recovery=coop::container_extract_recovery::RestoreResult;
+    const auto extracted = recovery==Recovery::Unrelated ? detail::RestoreContainerCarrier(call,actor) :
+        recovery==Recovery::Restored ? detail::ExtractRestore::Restored :
+        recovery==Recovery::Failed ? detail::ExtractRestore::Failed : detail::ExtractRestore::Invalidated;
     if(extracted == detail::ExtractRestore::Invalidated)return cancelPickup();
     if (extracted != detail::ExtractRestore::Unrelated) {
         if (extracted == detail::ExtractRestore::Failed) {
             UE_LOGW("inventory_pickup: container carrier restore failed; pickup deferred");
             return cancelPickup();
         }
-        // The container lane owns this transfer. A temporary carrier's pre-pocket record must
-        // not become a stale parked world update. If pocketing fails, the normal spawn drain
-        // publishes the surviving, now restored world actor instead.
+        // The extraction escrow owns acceptance/refund. A temporary carrier's
+        // pre-pocket record must not become a parked world update; on refusal
+        // the escrow retires that carrier and returns its exact saved row.
         return carrier.Get() == actor ? ue_wrap::script_gate::Verdict::Run
                                       : cancelPickup();
     }
@@ -158,8 +166,9 @@ void OnPlaySound2DPost(void* /*self*/, void* /*function*/, void* params) {
 
 void Install(coop::net::Session* session) {
     g_session.store(session, std::memory_order_release);
+    coop::container_extract_recovery::Install(session);
     if (!g_pocketWatchRegistered &&
-        ue_wrap::script_gate::WatchName(kPocketVerb, kPocketTag, &OnPocketPre, nullptr)) {
+        ue_wrap::script_gate::WatchName(kPocketVerb, kPocketTag, &OnPocketPre, &coop::container_extract_recovery::OnPocketPost)) {
         g_pocketWatchRegistered = true;
         UE_LOGI("inventory_pickup: watching %ls -- keyed save state publishes before pocket capture",
                 kPocketVerb);
@@ -221,6 +230,7 @@ void OnReliable(const coop::net::InventoryPickupPayload& payload) {
 }
 
 void OnDisconnect() {
+    coop::container_extract_recovery::OnDisconnect();
     g_session.store(nullptr, std::memory_order_release);
     // The observer stays registered; it self-gates on a connected session.
 }

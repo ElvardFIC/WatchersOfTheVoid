@@ -414,7 +414,7 @@ pub fn h_heartbeat(state: &mut MasterState, ip: &str, body: &Value) -> (u16, Val
     let now = Instant::now();
     let lo = state.lobbies.get_mut(&sid).expect("just authed");
     let pc = as_int(body, "players_cur", lo.players_cur);
-    lo.players_cur = pc.clamp(0, lo.players_max);
+    lo.players_cur = pc.clamp(1, lo.players_max); // the hosting player always occupies one seat
     if body_has(body, "listed") {
         lo.listed = as_bool(body, "listed", lo.listed);
     }

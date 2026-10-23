@@ -32,7 +32,7 @@ inline constexpr uint32_t kMagic = 0x564D5450u;
 // This file is past the 1500-line hard cap and stays there: it is the single-feature exception the
 // rule names. One wire format, whose enum, payload structs and static_asserts are read together;
 // splitting it would put a kind's number in one file and its bytes in another.
-inline constexpr uint16_t kProtocolVersion = 2198;  // host flicker rolls and world-bound balance credits
+inline constexpr uint16_t kProtocolVersion = 2214;  // owned prop action delivery and exact MRE output provenance
 
 // Default LAN port (overridable via multivoid.ini "net.port=").
 inline constexpr uint16_t kDefaultPort = 47621;
@@ -1075,6 +1075,9 @@ enum class ReliableKind : uint8_t {
     // No blind relay, health or viewport effects. Mid-bleed join sees new drops;
     // expired drops are not replayed as history. PlayerBloodPayload.
     PlayerBlood = 236,
+    // Host -> world-ready clients only. Current arirShipAppear scene actor phase;
+    // quiet seeds never replay historical air bursts, emails or photo rewards.
+    AriralShipState = 237,
 };
 
 #pragma pack(push, 1)
@@ -1449,6 +1452,14 @@ struct WireClassName {
     char    data[63];  // ASCII (VOTV class names are ASCII)
 };
 static_assert(sizeof(WireClassName) == 64, "WireClassName must be 64 bytes");
+
+struct AriralShipStatePayload {
+    WireClassName name;  // native scene instance identifier, zero bytes beyond len
+    uint32_t generation, revision, cue;
+    float x,y,z,alpha;
+    uint8_t flags, reserved[3]; // visible=1, quiet seed=2, retired=4
+};
+static_assert(sizeof(AriralShipStatePayload)==96,"AriralShipStatePayload wire size");
 
 struct ExplosionEventPayload {
     WireKey key;

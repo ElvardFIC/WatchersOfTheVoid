@@ -19,4 +19,5 @@ try {
             if ($LASTEXITCODE -ne 0) { throw "Source compile failed: $file" }
         }
     }
+    & (Join-Path $PSScriptRoot 'run_serverbox.ps1') -CompileSources:$CompileSources
 } finally { Pop-Location }

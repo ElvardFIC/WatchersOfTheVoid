@@ -6,9 +6,11 @@
 // watches the three BY NAME: a client refuses every one through its whole connected session, and its player's own
 // repair -- fix called by the gamemode's repair widget -- goes to the host as a repair intent, which the host runs on
 // its box when broken and within reach and answers, refused, with the state row to the presser alone. The host polls
-// the state at about 1 Hz and broadcasts a change, at once after a repair, and sends a joiner the row at its
-// world-ready; a client raw-writes each box's flags and type, re-skins through the notify-free check() and mirrors the
-// totals. Identity is the save-stable servers[] index. MTA shape: the server validates a client's request and answers
+// the state at about 1 Hz, tracking the last accepted row PER recipient, at once after a repair, and sends a joiner
+// the row at its world-ready. A refused send keeps its debt through unchanged polls; a replacement occupant or world
+// requires a fresh row. A client retains its latest row through wrapper/list readiness, raw-writes each box's flags
+// and type, re-skins through the notify-free check() and mirrors the totals. Pending work is bound to its world,
+// gamemode and session lifetime. Identity is the save-stable servers[] index. MTA shape: the server validates a client's request and answers
 // a refusal with its own value (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:2779-2793).
 
 #pragma once
@@ -27,13 +29,13 @@ namespace coop::serverbox_sync {
 void Install(coop::net::Session* session);
 
 // Per net-pump tick, game thread: the watches driven to settled, then, throttled to about 1 Hz, the HOST's poll and
-// its broadcast on a change. A no-op until resolved.
+// its per-recipient send on a change or delivery debt; client pending applies retry until resolved.
 void Tick();
 
-// HOST, game thread, at a joiner's ClientWorldReady edge: the current state row to this slot.
+// HOST, game thread, at a joiner's ClientWorldReady edge: request the current row; retry a refused/unresolved send.
 void QueueConnectBroadcastForSlot(int slot);
 
-// Game thread (event_feed drain). CLIENT: the host's state row, applied; the host refuses a client's copy at
+// Game thread (event_feed drain). CLIENT: retain/apply the latest host row; the host refuses a client's copy at
 // its receive edge (client_authorship.h).
 void OnReliable(const coop::net::ServerStatePayload& payload);
 

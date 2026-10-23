@@ -137,6 +137,7 @@
 #include "coop/world/power_grid.h"
 #include "coop/world/power_panel.h"
 #include "coop/world/sky_sync.h"
+#include "coop/world/ariral_ship_sync.h"
 #include "coop/world/time_sync.h"
 #include "coop/interactables/window_stroke_sync.h"
 #include "coop/interactables/window_sync.h"
@@ -261,6 +262,7 @@ void Install(coop::net::Session& session) {
     coop::keypad_sync::Install(&session);  // the password keypads' index and wire (its own module)
     coop::time_sync::Install(&session);  // host-authoritative world clock (time-of-day / dark-world fix)
     coop::sky_sync::Install(&session);  // host-authoritative night-sky orientation, moon phase and eye
+    coop::ariral_ship_sync::Install(&session);
     coop::power_panel::Install(&session);  // the power panel: presses to the host, its canonical to every peer
     coop::power_grid::Install(&session);  // the grid runs on the host: its generators' rows, a client's ops
     coop::coord_tower_rows::Install(&session);  // the towers roll and judge on the host: their rows to every peer
@@ -437,6 +439,7 @@ void ConnectReplayForSlot(int slot) {
     coop::interactable_sync::QueueConnectBroadcastForSlot(slot);  // door/light/container states
     coop::keypad_sync::QueueConnectBroadcastForSlot(slot);  // keypad states
     coop::sky_sync::QueueConnectBroadcastForSlot(slot);  // night-sky orientation, moon phase, eye
+    coop::ariral_ship_sync::QueueConnectBroadcastForSlot(slot);
     coop::power_grid::QueueConnectBroadcastForSlot(slot);  // the generators' rows, before the panel they gate
     coop::power_panel::QueueConnectBroadcastForSlot(slot);  // the panel's canonical
     coop::coord_tower_rows::QueueConnectBroadcastForSlot(slot);  // every tower's row
@@ -673,6 +676,7 @@ DisconnectStats DisconnectAll() {
     coop::keypad_sync::OnDisconnect();
     coop::time_sync::OnDisconnect();
     coop::sky_sync::OnDisconnect();
+    coop::ariral_ship_sync::OnDisconnect();
     coop::power_panel::OnDisconnect();
     coop::power_grid::OnDisconnect();
     coop::coord_tower_ops::OnDisconnect();
@@ -835,6 +839,7 @@ void TickGameplay(coop::net::Session& session, bool isConnected, bool isHost,
     { PP::Scope _s{PP::Bucket::Interactable}; ue_wrap::ScopedWalkTimer _w{"sync:keypad"}; coop::keypad_sync::Tick(); }  // a keypad state that arrived before its keypad was indexed
     { PP::Scope _s{PP::Bucket::Interactable}; ue_wrap::ScopedWalkTimer _w{"sync:time"}; coop::time_sync::Tick(); }  // the world clock: the host hands the net thread a sample when one is due; the client applies at its cycle's own tick
     { PP::Scope _s{PP::Bucket::Interactable}; ue_wrap::ScopedWalkTimer _w{"sync:sky"}; coop::sky_sync::Tick(); }  // night-sky: the eye gate's name (both roles), then the host's throttled push
+    { PP::Scope _s{PP::Bucket::Interactable}; ue_wrap::ScopedWalkTimer _w{"sync:ariral-ship"}; coop::ariral_ship_sync::Tick(); }
     { PP::Scope _s{PP::Bucket::Interactable}; ue_wrap::ScopedWalkTimer _w{"sync:media_sync"}; coop::media_sync::Tick(); }  // a TV or a music file the host is playing, once a second
     { PP::Scope _s{PP::Bucket::Interactable}; ue_wrap::ScopedWalkTimer _w{"sync:kitchen_sync"}; coop::kitchen_sync::Tick(); }
     { PP::Scope _s{PP::Bucket::Interactable}; ue_wrap::ScopedWalkTimer _w{"sync:service_panel_sync"}; coop::service_panel_sync::Tick(); }

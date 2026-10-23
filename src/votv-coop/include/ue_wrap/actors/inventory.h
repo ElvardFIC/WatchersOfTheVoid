@@ -46,7 +46,8 @@ void* ResolveSaveSlot();
 
 // Read what the local player carries, wears and holds into `out` (cleared first): the live
 // personal store below, plus saveSlot.equipment and saveSlot.hold, all three of which gameplay
-// reads and writes in place. False before the world is up (no player container yet). Pure field
+// reads and writes in place. False before the world is up or when an outer array
+// header is malformed; a partial snapshot is never returned. Pure field
 // reads plus FName::ToString, no UFunction dispatch. Game thread.
 //
 // saveSlot.inventoryData is deliberately not read: it is a projection mainGamemode::saveObjects
@@ -76,7 +77,7 @@ struct LivePersonalStore {
 
 // Read the live personal store into `out` (cleared first). False, with `out` left empty, if
 // the gamemode, playerContainer, component or GObjStack slot is unresolvable, the index is
-// out of range, or the component is not flagged personal. Pure field reads, no UFunction
+// not the baked personal slot, a header is malformed, or the component is not flagged personal. Pure field reads, no UFunction
 // dispatch. Game thread.
 //
 // `Player == true` is the ADDRESS ASSERTION here, and the same flag is a REFUSAL in
@@ -109,14 +110,21 @@ int32_t LivePersonalStoreCount();
 // the old nested sub-arrays and FString buffers recursively is far more crash-prone than leaking
 // them, and the engine never double-frees a buffer it has lost. Ours are GMalloc-owned, so a
 // later engine realloc or free is allocator-matched. False, having written nothing, if
-// `saveSlot` is null or dead, GMalloc is unresolved, or there is no player slot. Game thread.
+// `saveSlot` is null/dead, allocation/encoding fails, there is no player slot or
+// the target/world/save binding/array headers change during staging. Nested apply
+// supersedes older work. All three arrays publish together after staging succeeds.
+// Unpublished partial nested buffers follow the same pin policy. Game thread.
 bool ApplyToSaveObject(void* saveSlot, const PlayerInventory& inv);
+// Same transaction, also refusing publication after a caller's join/session
+// request is superseded during native encoding. The callback is synchronous.
+bool ApplyToSaveObjectWhile(void* saveSlot, const PlayerInventory& inv,const std::function<bool()>& current);
 
 // Writes the live save slot's first hold slot, the hand, for a dev drill that takes an item into the
 // hand: the item's name (list_props' row), and in its record the class the player's updateHold
 // spawns as the hand item and the name that item takes as it loads ("None" and a null class empty
 // the hand). False when the save slot or its hold slot cannot be reached, or `classLeaf` names no
-// loaded class. Game thread.
+// loaded class, full encoding fails, or the hand/save changes during staging.
+// The previous complete slot survives refusal. Game thread.
 bool WriteHeldItem(const std::wstring& name, const wchar_t* classLeaf);
 
 // The item name in the live save slot's first hold slot, the hand: the name the player's updateHold

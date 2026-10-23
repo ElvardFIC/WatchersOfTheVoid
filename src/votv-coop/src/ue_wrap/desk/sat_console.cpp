@@ -260,15 +260,42 @@ bool CallWriteToLog(void* term, const std::wstring& text, uint8_t bracketsType) 
 }
 
 bool ConsumeInput(void* term) {
-    if (!g_resolved || !IsTerminal(term)) return false;
-    if (!WriteFStringField(term, g_offCommand, std::wstring())) return false;
-    void* box = ReadObject(term, g_offTextBox);
-    if (!box) return true;  // no text box: the input was the command alone
+    return ConsumeInputWhile(term, [] { return true; });
+}
+
+bool ConsumeInputWhile(void* term, const std::function<bool()>& current) {
+    if (!current || !current() || !g_resolved || !IsTerminal(term)) return false;
+    CachedObjRef terminal, terminalClass, textBox, setText;
+    terminal.Set(term);
+    void* cls = R::ClassOf(term);
+    terminalClass.Set(cls);
+    const int32_t commandOffset = g_offCommand, boxOffset = g_offTextBox;
+    if (commandOffset < 0 || boxOffset < 0) return false;
+    void* box = *At<void*>(term, boxOffset);
+    if (box) {
+        if (!R::IsLive(box) || !g_fnSetText || !R::IsLive(g_fnSetText)) return false;
+        textBox.Set(box);
+        setText.Set(g_fnSetText);
+    }
+    const auto valid = [&] {
+        return current() && terminal.Is(term) && terminalClass.Is(cls) && R::ClassOf(term) == cls &&
+            g_resolved && g_offCommand == commandOffset && g_offTextBox == boxOffset &&
+            *At<void*>(term, boxOffset) == box && (!box || (textBox.Is(box) && setText.Is(g_fnSetText)));
+    };
+    if (!valid()) return false;
+    if (!box) {
+        // The command itself is the complete input when there is no text box.
+        return WriteFStringField(term, commandOffset, std::wstring()) && valid();
+    }
+    // Minting empty FText may dispatch. Finish every fallible preparation before
+    // changing command, and never use a box that its terminal replaced meanwhile.
     uint8_t empty[ftext_utils::kFTextSize];
-    if (!ftext_utils::EmptyFText(empty)) return false;
+    if (!ftext_utils::EmptyFText(empty) || !valid()) return false;
     ParamFrame f(g_fnSetText);
-    if (!f.valid() || !f.SetRaw(L"InText", empty, sizeof(empty))) return false;
-    return Call(box, f);
+    if (!valid() || !f.valid() || !f.SetRaw(L"InText", empty, sizeof(empty)) || !valid()) return false;
+    if (!WriteFStringField(term, commandOffset, std::wstring()) || !valid()) return false;
+    const bool consumed = Call(box, f);
+    return valid() && consumed;
 }
 
 bool ClearLog(void* term) {

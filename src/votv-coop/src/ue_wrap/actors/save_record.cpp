@@ -15,6 +15,7 @@
 
 #include <chrono>
 #include <cstring>
+#include <limits>
 #include <unordered_map>
 
 namespace ue_wrap::save_record {
@@ -87,19 +88,23 @@ bool WriteClassField(void* dst, const std::wstring& leaf, ClassResolver resolve)
 // Build the outer TArray<Fstruct_mX> for a value group (vector<vector<X>>): each Fstruct_mX
 // (0x10) wraps a TArray<X> at +0; `writeOne(elemPtr, x)` writes one X into a zeroed slot.
 template <class V, class F>
-void WriteGroups(void* save, int32_t off, int32_t elemSize, const std::vector<V>& groups, F writeOne) {
+bool WriteGroups(void* save, int32_t off, int32_t elemSize, const std::vector<V>& groups, F writeOne) {
+    if(groups.size()>kMaxArr)return false;
     void* outer = AllocZeroed(groups.size(), kMxStride);
-    if (!outer) { WriteArrHeader(save, off, nullptr, 0); return; }
+    if (!outer) { WriteArrHeader(save, off, nullptr, 0); return groups.empty(); }
+    bool complete=true;
     for (size_t i = 0; i < groups.size(); ++i) {
         const V& inner = groups[i];
         uint8_t* mx = reinterpret_cast<uint8_t*>(outer) + i * kMxStride;
+        if(inner.size()>kMaxArr){complete=false;continue;}
         void* ib = AllocZeroed(inner.size(), static_cast<size_t>(elemSize));
-        if (!ib) { WriteArrHeader(mx, 0, nullptr, 0); continue; }
+        if (!ib) { WriteArrHeader(mx, 0, nullptr, 0); complete &= inner.empty(); continue; }
         for (size_t j = 0; j < inner.size(); ++j)
             writeOne(reinterpret_cast<uint8_t*>(ib) + j * elemSize, inner[j]);
         WriteArrHeader(mx, 0, ib, static_cast<int32_t>(inner.size()));
     }
     WriteArrHeader(save, off, outer, static_cast<int32_t>(groups.size()));
+    return complete;
 }
 
 }  // namespace
@@ -118,6 +123,18 @@ Arr ReadArr(const void* base, int32_t off) {
     return a;
 }
 
+bool TryReadArr(const void* base,int32_t off,Arr& out) {
+    out={};if(!base || off<0)return false;
+    Arr value{};int32_t capacity=0;
+    const auto* bytes=static_cast<const uint8_t*>(base)+off;
+    std::memcpy(&value.data,bytes,sizeof(value.data));
+    std::memcpy(&value.num,bytes+8,sizeof(value.num));
+    std::memcpy(&capacity,bytes+12,sizeof(capacity));
+    if(value.num<0 || value.num>kMaxArr || capacity<value.num || capacity<0 ||
+       (value.data ? !PlausibleObjPtr(value.data) : value.num!=0 || capacity!=0))return false;
+    out=value;return true;
+}
+
 void WriteArrHeader(void* base, int32_t off, void* data, int32_t num) {
     uint8_t* p = reinterpret_cast<uint8_t*>(base) + off;
     std::memcpy(p, &data, sizeof(void*));
@@ -126,7 +143,7 @@ void WriteArrHeader(void* base, int32_t off, void* data, int32_t num) {
 }
 
 void* AllocZeroed(size_t count, size_t elemSize) {
-    if (!count) return nullptr;
+    if (!count || !elemSize || count>std::numeric_limits<size_t>::max()/elemSize) return nullptr;
     void* buf = R::EngineAlloc(count * elemSize);
     if (buf) std::memset(buf, 0, count * elemSize);
     return buf;
@@ -181,7 +198,14 @@ void ReadSaveRecord(const void* base, SaveRecord& rec) {
     }
 }
 
-void WriteSaveRecord(uint8_t* base, const SaveRecord& r, ClassResolver resolve) {
+bool WriteSaveRecordChecked(uint8_t* base, const SaveRecord& r, ClassResolver resolve) {
+    if(!base)return false;
+    bool complete=true,valuesComplete=true;
+    const auto writeName=[&](void* dst,const std::wstring& text) {
+        WriteFNameField(dst,text);
+        R::FName value{};std::memcpy(&value,dst,sizeof(value));
+        valuesComplete &= text.empty() || ::_wcsicmp(text.c_str(),L"None")==0 || value.ComparisonIndex!=0;
+    };
     int classMiss = 0;          // non-empty class leaves that did not resolve, said once below
     std::wstring firstMiss;     // the first one's name, so an honest single miss is still debuggable
     auto noteMiss = [&](const std::wstring& leaf) { if (firstMiss.empty()) firstMiss = leaf; ++classMiss; };
@@ -191,16 +215,16 @@ void WriteSaveRecord(uint8_t* base, const SaveRecord& r, ClassResolver resolve) 
     t.TX = r.xform[4]; t.TY = r.xform[5]; t.TZ = r.xform[6];
     t.SX = r.xform[7]; t.SY = r.xform[8]; t.SZ = r.xform[9];
     std::memcpy(base + kSave_transform, &t, sizeof(t));
-    WriteFNameField(base + kSave_key, r.key);
-    WriteGroups(base, kSave_bools, 1, r.bools,
+    writeName(base + kSave_key, r.key);
+    complete &= WriteGroups(base, kSave_bools, 1, r.bools,
                 [](uint8_t* e, uint8_t v) { *e = v ? 1 : 0; });
-    WriteGroups(base, kSave_floats, 4, r.floats,
+    complete &= WriteGroups(base, kSave_floats, 4, r.floats,
                 [](uint8_t* e, float v) { std::memcpy(e, &v, 4); });
-    WriteGroups(base, kSave_ints, 4, r.ints,
+    complete &= WriteGroups(base, kSave_ints, 4, r.ints,
                 [](uint8_t* e, int32_t v) { std::memcpy(e, &v, 4); });
-    WriteGroups(base, kSave_strings, 16, r.strings,
-                [](uint8_t* e, const std::wstring& v) { ue_wrap::fstring_utils::MintFString(v, e); });
-    WriteGroups(base, kSave_classes, 8, r.classes,
+    complete &= WriteGroups(base, kSave_strings, 16, r.strings,
+                [&](uint8_t* e, const std::wstring& v) { valuesComplete &= ue_wrap::fstring_utils::MintFString(v, e); });
+    complete &= WriteGroups(base, kSave_classes, 8, r.classes,
                 [&](uint8_t* e, const std::wstring& v) { if (!WriteClassField(e, v, resolve)) noteMiss(v); });
     // One line per record, not per leaf. A record with a null class is an item the game cannot
     // materialise, said out loud rather than lost -- but a crafted `classes` group is thousands of
@@ -211,11 +235,11 @@ void WriteSaveRecord(uint8_t* base, const SaveRecord& r, ClassResolver resolve) 
         // an unbounded print would be a 256 KB log line per crafted record.
         UE_LOGE("save_record: %d class name(s) in this record are not loaded (first: '%.64ls') -- "
                 "written WITHOUT their class", classMiss, firstMiss.c_str());
-    WriteGroups(base, kSave_vectors, 12, r.vectors,
+    complete &= WriteGroups(base, kSave_vectors, 12, r.vectors,
                 [](uint8_t* e, const std::array<float, 3>& v) { std::memcpy(e, v.data(), 12); });
-    WriteGroups(base, kSave_rotators, 12, r.rotators,
+    complete &= WriteGroups(base, kSave_rotators, 12, r.rotators,
                 [](uint8_t* e, const std::array<float, 3>& v) { std::memcpy(e, v.data(), 12); });
-    WriteGroups(base, kSave_transforms, 48, r.transforms,
+    complete &= WriteGroups(base, kSave_transforms, 48, r.transforms,
                 [](uint8_t* e, const std::array<float, 10>& v) {
                     ue_wrap::FTransform tt;
                     tt.RotX = v[0]; tt.RotY = v[1]; tt.RotZ = v[2]; tt.RotW = v[3];
@@ -223,21 +247,26 @@ void WriteSaveRecord(uint8_t* base, const SaveRecord& r, ClassResolver resolve) 
                     tt.SX = v[7]; tt.SY = v[8]; tt.SZ = v[9];
                     std::memcpy(e, &tt, sizeof(tt));
                 });
-    WriteGroups(base, kSave_bytes, 1, r.bytes,
+    complete &= WriteGroups(base, kSave_bytes, 1, r.bytes,
                 [](uint8_t* e, uint8_t v) { *e = v; });
-    WriteGroups(base, kSave_names, 8, r.names,
-                [](uint8_t* e, const std::wstring& v) { WriteFNameField(e, v); });
+    complete &= WriteGroups(base, kSave_names, 8, r.names,
+                [&](uint8_t* e, const std::wstring& v) { writeName(e, v); });
     // signals: a FLAT TArray<Fstruct_signalDataDynamic> (0x70). Reuse the proven live writer
     // (engine-mints the row FStrings, interns the FNames, zeroes image).
+    if(r.signals.size()>kMaxArr)return false;
     void* sb = AllocZeroed(r.signals.size(), kSignalStride);
-    if (!sb) { WriteArrHeader(base, kSave_signals, nullptr, 0); return; }
+    if (!sb) { WriteArrHeader(base, kSave_signals, nullptr, 0); return complete && valuesComplete && !classMiss && r.signals.empty(); }
     for (size_t i = 0; i < r.signals.size(); ++i)
-        // Ignore the bool: the slot is AllocZeroed, so a partial mint (KismetStringLibrary
-        // unresolved) leaves a valid empty row (null FStrings / NAME_None / empty image) -- a
-        // safe blank fallback, never garbage. We never crash a whole inventory over one signal.
-        ue_wrap::signal_dynamic::WriteStructLive(
+        complete &= ue_wrap::signal_dynamic::WriteStructLive(
             reinterpret_cast<uint8_t*>(sb) + i * kSignalStride, r.signals[i]);
     WriteArrHeader(base, kSave_signals, sb, static_cast<int32_t>(r.signals.size()));
+    return complete && valuesComplete && !classMiss;
+}
+
+void WriteSaveRecord(uint8_t* base, const SaveRecord& r, ClassResolver resolve) {
+    // Existing live writers retain their valid-empty fallback. Transactional
+    // callers use the checked result before publishing any of their scratch.
+    (void)WriteSaveRecordChecked(base,r,resolve);
 }
 
 
@@ -607,18 +636,19 @@ bool ApplyRecordVia(void* actor, void* loadFn, const SaveRecord& r, ClassResolve
 bool ApplyRecordViaWhile(void* actor,void* loadFn,const SaveRecord& r,
                          const std::function<bool()>& guard,ClassResolver resolve) {
     if (!actor || !loadFn || !guard || !guard()) return false;
+    const SaveRecord record=r; // native frame/name construction can reenter the owner of r
     const RecordGuard context(actor,false);
     CachedObjRef fn;fn.Set(loadFn);
     const auto current=[&]{return context.Current() && fn.Get() && guard();};
     if(!current())return false;
     ParamFrame f(fn.Get());
+    if(!current() || !f.valid())return false;
     const int32_t off = f.ParamOffset(L"data");
-    if (!f.valid() || off < 0 || off + kSaveRecordBytes > f.FrameSize()) return false;
+    if (!current() || off < 0 || off > f.FrameSize() || kSaveRecordBytes > f.FrameSize()-off) return false;
     // The slot must be zeroed before WriteSaveRecord: it constructs engine-owned TArrays in place
     // and reads nothing, so a dirty slot would leave the engine dereferencing whatever was there.
     std::memset(static_cast<uint8_t*>(f.data()) + off, 0, static_cast<size_t>(kSaveRecordBytes));
-    WriteSaveRecord(static_cast<uint8_t*>(f.data()) + off, r, resolve);
-    if(!current())return false;
+    if(!WriteSaveRecordChecked(static_cast<uint8_t*>(f.data()) + off, record, resolve) || !current())return false;
     return Call(actor, f) && current();
 }
 

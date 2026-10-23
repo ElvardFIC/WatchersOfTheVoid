@@ -430,7 +430,7 @@ void OnMenuTick(void* menu, void* switcher) {
     }
     if (g_autoOpenIn > 0 && --g_autoOpenIn == 0) {
         // Through the surface, as the MULTIPLAYER button opens it: the requests that ride an open
-        // (the update check, the thanks list) are then part of the lab's run too.
+        // (the update check) is then part of the lab's run too.
         ui::server_browser_surface::Open();
         selftest::Arm();
     }

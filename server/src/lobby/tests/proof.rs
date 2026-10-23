@@ -113,6 +113,52 @@ fn a_valid_proof_lists_a_proved_row_that_names_its_key() {
 }
 
 #[test]
+fn every_two_to_thirty_two_player_limit_survives_create_heartbeat_browse_and_join() {
+    // A separate table per limit avoids rate/cap interactions between independent servers.
+    for limit in 2..=32 {
+        let (env, mut state, h) = (Env::new(), MasterState::new(), host());
+        let mut body = env.signed(&mut state, IP, &h, NEW, NAME);
+        body["players_max"] = json!(limit);
+        let (status, answer) = env.create(&mut state, IP, &body);
+        assert_eq!(status, 200, "limit={limit}: {answer}");
+        assert_eq!(answer["players_max"], limit);
+        let sid = answer["sessionId"].as_str().unwrap();
+        let token = answer["token"].as_str().unwrap();
+        let lobby_id = answer["lobbyId"].as_str().unwrap();
+        let beat = json!({"sessionId": sid, "token": token, "players_cur": limit});
+        assert_eq!(h_heartbeat(&mut state, IP, &beat).0, 200);
+        let rows = build_rows(&state);
+        assert_eq!(rows[0]["players_max"], limit);
+        assert_eq!(rows[0]["players_cur"], limit);
+        // Listing fullness is advisory; the host's transport admits and reclaims seats.
+        assert_eq!(crate::lobby::h_join(&mut state, IP, &json!({"lobbyId": lobby_id})).0, 200);
+        for (claimed, expected) in [(-1, 1), (0, 1), (limit + 1, limit)] {
+            let beat = json!({"sessionId": sid, "token": token, "players_cur": claimed});
+            assert_eq!(h_heartbeat(&mut state, IP, &beat).0, 200);
+            assert_eq!(build_rows(&state)[0]["players_cur"], expected);
+        }
+    }
+}
+
+#[test]
+fn player_limit_bounds_and_legacy_default_include_the_host() {
+    for (requested, expected) in [(json!(-1), 2), (json!(1), 2), (json!(33), 32), (json!(999), 32), (json!("32"), 32), (json!("many"), 4), (Value::Null, 4)] {
+        let (env, mut state, h) = (Env::new(), MasterState::new(), host());
+        let mut body = env.signed(&mut state, IP, &h, NEW, NAME);
+        body["players_max"] = requested;
+        let (status, answer) = env.create(&mut state, IP, &body);
+        assert_eq!(status, 200, "{answer}");
+        assert_eq!(answer["players_max"], expected);
+        assert_eq!(build_rows(&state)[0]["players_cur"], 1);
+    }
+    let (env, mut state, h) = (Env::new(), MasterState::new(), host());
+    let body = env.signed(&mut state, IP, &h, NEW, NAME);
+    let (status, answer) = env.create(&mut state, IP, &body);
+    assert_eq!(status, 200);
+    assert_eq!(answer["players_max"], 4);
+}
+
+#[test]
 fn a_forged_proof_is_refused_and_lists_nothing() {
     let (env, mut state, victim, attacker) = (Env::new(), MasterState::new(), host(), host());
     // The attacker signs the blob that names the VICTIM's key, with its own.

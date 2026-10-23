@@ -8,6 +8,7 @@
 #include "coop/element/prop.h"
 #include "coop/net/protocol.h"
 #include "coop/net/session.h"
+#include "coop/net/session_serial.h"
 #include "coop/net/wire_key_util.h"
 #include "coop/player/hand_item.h"
 #include "coop/player/players_registry.h"
@@ -28,6 +29,7 @@
 #include "ue_wrap/engine/world_identity.h"
 
 #include <atomic>
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cmath>
@@ -57,6 +59,15 @@ bool     g_watched = false;
 uint64_t g_nextPoll = 0;
 uint32_t g_world = 0;
 uint64_t g_epoch=0;
+coop::net::Session* g_source=nullptr;
+uint32_t g_serial=0;
+coop::net::Role g_role=coop::net::Role::Host;
+bool g_running=false,g_connected=false;
+bool SourceCurrent(coop::net::Session* s,uint64_t epoch) {
+    return s && s==g_session.load() && s==g_source && epoch==g_epoch && s->running() && s->connected() &&
+        s->role()==g_role && g_serial==coop::net::session_serial::Current() &&
+        g_world==ue_wrap::world_identity::Generation();
+}
 struct PendingWorld {coop::net::FoodStatePayload state{};uint64_t revision=0;};
 std::map<std::wstring,PendingWorld> g_pendingWorld;
 std::wstring g_worldCursor;
@@ -120,24 +131,33 @@ constexpr uint64_t kClientBiteAckTimeoutMs = 2500;
 // when that count actually fell. A refused eat never reaches the host.
 struct BitePending {
     void* actor = nullptr;
-    ue_wrap::CachedObjRef identity;
+    ue_wrap::CachedObjRef identity,type;
     coop::net::FoodBitePayload request{};
     int32_t uses = 0;
     int32_t serial = 0;
     bool have = false;
     bool submitted = false;
+    bool localHand = false;
     coop::net::Session* session=nullptr;
     coop::net::Role role=coop::net::Role::Host;
     uint64_t epoch=0,invocation=0,peerEpoch=0;
     uint32_t world=0;
     uint8_t slot=0;
     uint16_t person=0;
-    bool Current()const{return session && session==g_session.load() && session->connected() && session->role()==role &&
-        epoch==g_epoch && world==ue_wrap::world_identity::Generation() && g_peerEpoch[slot]==peerEpoch &&
+    bool Current()const{return SourceCurrent(session,epoch) && session->role()==role &&
+        world==ue_wrap::world_identity::Generation() && g_peerEpoch[slot]==peerEpoch &&
         coop::roster_ledger::Get(slot).playerNo==person && R::SlotSerial(identity.Idx())==serial && sg::IsInvocationActive(invocation);}
+    bool Live()const{return Current() && identity.Get()==actor && type.Get() && R::ClassOf(actor)==type.Raw();}
 };
 std::vector<BitePending> g_bite;
 void PruneBites(){std::erase_if(g_bite,[](const BitePending& b){return !b.Current();});}
+struct ConsumedOutput {BitePending source;ue_wrap::CachedObjRef function,owner;};
+std::vector<ConsumedOutput> g_outputs;
+bool OutputCurrent(const ConsumedOutput& row) {
+    return row.source.Live() && row.function.Get() && row.owner.Get() && R::OuterOf(row.function.Raw())==row.owner.Raw() &&
+        R::FindDispatchFunctionCached(row.source.type.Raw(),L"eaten")==row.function.Raw();
+}
+void PruneOutputs(){std::erase_if(g_outputs,[](const ConsumedOutput& row){return !OutputCurrent(row);});}
 
 uint64_t NowMs() {
     return static_cast<uint64_t>(
@@ -152,12 +172,12 @@ std::wstring BiteKey(const coop::net::FoodBitePayload& p) {
 coop::net::Session* Session();
 bool SubmitBite(coop::net::Session& s, const coop::net::FoodBitePayload p) {
     const auto id = BiteKey(p);
-    if (id.empty() || Session()!=&s || !s.connected() || s.role()!=coop::net::Role::Client || (g_clientBiteRetry.size()>=64 && !g_clientBiteRetry.count(id))) return false;
+    if (id.empty() || !SourceCurrent(&s,g_epoch) || s.role()!=coop::net::Role::Client || (g_clientBiteRetry.size()>=64 && !g_clientBiteRetry.count(id))) return false;
     const auto epoch=g_epoch,revision=++g_biteSendSequence;
     g_clientBiteRetry[id]={p,revision}; // retain before sending: native final-bite may retire the actor
     g_clientBitePending[id] = NowMs();
     const bool sent=s.SendReliable(coop::net::ReliableKind::FoodBite, &p, sizeof(p));
-    if(Session()!=&s || !s.connected() || s.role()!=coop::net::Role::Client || epoch!=g_epoch || g_world!=ue_wrap::world_identity::Generation())return false;
+    if(!SourceCurrent(&s,epoch) || s.role()!=coop::net::Role::Client)return false;
     const auto latest=g_clientBiteRetry.find(id);if(sent && latest!=g_clientBiteRetry.end() && latest->second.revision==revision)g_clientBiteRetry.erase(latest);
     return true;
 }
@@ -166,7 +186,7 @@ void RetryBiteRequests(coop::net::Session& session){
     const auto epoch=g_epoch;const auto pending=g_clientBiteRetry;auto it=pending.upper_bound(g_biteRetryCursor);if(it==pending.end())it=pending.begin();
     for(size_t work=0;work<(std::min)(size_t(8),pending.size());++work){
         const auto key=it->first;const auto row=it->second;if(++it==pending.end())it=pending.begin();g_biteRetryCursor=key;
-        const auto current=[&]{return Session()==&session && session.connected() && session.role()==coop::net::Role::Client && epoch==g_epoch && g_world==ue_wrap::world_identity::Generation();};
+        const auto current=[&]{return SourceCurrent(&session,epoch) && session.role()==coop::net::Role::Client;};
         if(!current())return;auto live=g_clientBiteRetry.find(key);if(live==g_clientBiteRetry.end() || live->second.revision!=row.revision)continue;
         const bool sent=session.SendReliable(coop::net::ReliableKind::FoodBite,&row.payload,sizeof(row.payload));if(!current())return;
         live=g_clientBiteRetry.find(key);if(sent && live!=g_clientBiteRetry.end() && live->second.revision==row.revision){
@@ -177,8 +197,11 @@ void RetryBiteRequests(coop::net::Session& session){
 
 void EnsureWorld() {
     const uint32_t world = ue_wrap::world_identity::Generation();
-    if (world == g_world) return;
-    g_world = world;
+    auto* s=g_session.load();const auto serial=coop::net::session_serial::Current();
+    const auto role=s?s->role():coop::net::Role::Host;
+    const bool running=s && s->running(),connected=s && s->connected();
+    if (world==g_world && s==g_source && serial==g_serial && role==g_role && running==g_running && connected==g_connected) return;
+    g_world=world;g_source=s;g_serial=serial;g_role=role;g_running=running;g_connected=connected;
     ++g_epoch;g_pendingWorld.clear();g_worldCursor.clear();
     g_pendingHand={};g_handOccupants={};
     g_handPublished={};g_handAccepted={};g_handPublishRevision={};
@@ -195,6 +218,7 @@ void EnsureWorld() {
     g_clientBitePending.clear();
     g_clientBiteRetry.clear();g_biteRetryCursor.clear();
     g_bite.clear();
+    g_outputs.clear();
 }
 
 coop::net::Session* Session() { return g_session.load(std::memory_order_acquire); }
@@ -290,12 +314,31 @@ sg::Verdict OnTick(const sg::Call& c) {
 }
 
 sg::Verdict OnConsumedOutput(const sg::Call& c) {
-    if(c.fromOurCode)return sg::Verdict::Run;
     auto* s=Session();
     if(s && s->connected() && coop::hand_item::IsMirrorActor(c.object))return sg::Verdict::Cancel;
-    // A world food leaves one host-authored wrapper. Personal hand output is
-    // native on its owner and admitted by its exact factory's provenance.
-    return IsClient() && c.object!=coop::hand_item::LocalHandActor()?sg::Verdict::Cancel:sg::Verdict::Run;
+    if(!IsClient())return sg::Verdict::Run;
+    EnsureWorld();PruneBites();PruneOutputs();
+    // The hand can be cleared by the native final bite before eaten runs. Its
+    // active eat still owns the output; an arbitrary world factory does not.
+    const bool hand=c.object && (c.object==coop::hand_item::LocalHandActor() ||
+        std::any_of(g_bite.begin(),g_bite.end(),[&](const BitePending& b){return b.actor==c.object && b.localHand && b.Live();}));
+    if(!hand || !c.invocation || g_outputs.size()>=64 ||
+        std::any_of(g_outputs.begin(),g_outputs.end(),[&](const ConsumedOutput& row){return row.source.actor==c.object;}))return sg::Verdict::Cancel;
+    ConsumedOutput row;auto& b=row.source;
+    b.actor=c.object;b.identity.Set(c.object);b.type.Set(R::ClassOf(c.object));b.serial=R::SlotSerial(b.identity.Idx());
+    b.session=s;b.role=s->role();b.epoch=g_epoch;b.world=g_world;b.invocation=c.invocation;
+    b.slot=coop::players::Registry::Get().LocalPeerId();if(b.slot>=coop::net::kMaxPeers)return sg::Verdict::Cancel;
+    b.person=coop::roster_ledger::Get(b.slot).playerNo;b.peerEpoch=g_peerEpoch[b.slot];
+    row.function.Set(c.function);row.owner.Set(c.function?R::OuterOf(c.function):nullptr);
+    if(!OutputCurrent(row) || R::FindDispatchFunctionCached(b.type.Raw(),L"eaten")!=c.function)return sg::Verdict::Cancel;
+    bool verified=false;
+    for(const auto* cls:{L"prop_foodBox_C",L"prop_food_banana_C",L"prop_food_coffeeCup_C"})
+        verified=R::NameEquals(R::NameOf(row.owner.Raw()),cls) || verified;
+    if(!verified || !OutputCurrent(row))return sg::Verdict::Cancel;
+    g_outputs.push_back(row);return sg::Verdict::Run;
+}
+void OnConsumedOutputPost(const sg::Call& c) {
+    std::erase_if(g_outputs,[&](const ConsumedOutput& row){return row.source.actor==c.object && row.source.invocation==c.invocation;});
 }
 sg::Verdict OnCook(const sg::Call& c) {
     return ue_wrap::cooking_food::IsCookingFood(c.object)?OnTick(c):sg::Verdict::Run;
@@ -308,6 +351,11 @@ void FillKey(void* actor, coop::net::WireKey& key, uint32_t& eid) {
     if (!k.empty() && k != L"None") coop::net::WireKeyFromString(k, key);
     const auto id = coop::prop_element_tracker::GetPropElementIdForActor(actor);
     if (id != coop::element::kInvalidId) eid = static_cast<uint32_t>(id);
+}
+bool BiteAddressCurrent(const BitePending& b) {
+    if(!b.Live())return false;
+    coop::net::WireKey key{};uint32_t eid=0;FillKey(b.actor,key,eid);
+    return b.Live() && eid==b.request.elementId && coop::net::StringFromWireKey(key)==coop::net::StringFromWireKey(b.request.key);
 }
 
 bool WorthSending(const Last& prev, const F::Condition& now) {
@@ -325,7 +373,7 @@ bool Publish(coop::net::Session& s, void* actor, int slot, bool force = false) {
     ue_wrap::CachedObjRef identity;identity.Set(actor);
     const uint16_t person=slot>0 && slot<coop::net::kMaxPeers?coop::roster_ledger::Get(slot).playerNo:0;
     const uint64_t peerEpoch=slot>0 && slot<coop::net::kMaxPeers?g_peerEpoch[slot]:0;
-    const auto sourceCurrent=[&]{return Session()==&s && s.connected() && s.role()==coop::net::Role::Host &&
+    const auto sourceCurrent=[&]{return SourceCurrent(&s,epoch) && s.role()==coop::net::Role::Host &&
         epoch==g_epoch && world==ue_wrap::world_identity::Generation() && identity.Get() &&
         (slot<0 || (slot>0 && slot<coop::net::kMaxPeers && s.IsSlotWorldReady(slot) &&
         g_peerEpoch[slot]==peerEpoch && coop::roster_ledger::Get(slot).playerNo==person));};
@@ -448,22 +496,26 @@ sg::Verdict OnAction(const sg::Call& c) {
         (s->role() != coop::net::Role::Client && s->role() != coop::net::Role::Host) ||
         !F::IsFood(c.object)) return sg::Verdict::Run;
     EnsureWorld();
-    PruneBites();if(!c.invocation || g_bite.size()>=64)return sg::Verdict::Run;
-    BitePending b;b.actor=c.object;b.identity.Set(c.object);b.serial=R::SlotSerial(b.identity.Idx());
-    b.session=s;b.role=s->role();b.epoch=g_epoch;b.world=g_world;b.invocation=c.invocation;
-    b.slot=coop::players::Registry::Get().LocalPeerId();if(b.slot>=coop::net::kMaxPeers)return sg::Verdict::Run;
-    b.person=coop::roster_ledger::Get(b.slot).playerNo;b.peerEpoch=g_peerEpoch[b.slot];
     const int32_t off = R::FindParamOffset(c.function, L"action");
     if (off < 0 || off >= R::FunctionFrameSize(c.function) || !c.locals || c.locals[off] != 4)
         return sg::Verdict::Run;
+    const auto refused=s->role()==coop::net::Role::Client?sg::Verdict::Cancel:sg::Verdict::Run;
+    PruneBites();if(!c.invocation || g_bite.size()>=64 ||
+        std::any_of(g_bite.begin(),g_bite.end(),[&](const BitePending& row){return row.actor==c.object;}))return refused;
+    BitePending b;b.actor=c.object;b.identity.Set(c.object);b.type.Set(R::ClassOf(c.object));b.serial=R::SlotSerial(b.identity.Idx());
+    b.session=s;b.role=s->role();b.epoch=g_epoch;b.world=g_world;b.invocation=c.invocation;
+    b.slot=coop::players::Registry::Get().LocalPeerId();if(b.slot>=coop::net::kMaxPeers)return refused;
+    b.person=coop::roster_ledger::Get(b.slot).playerNo;b.peerEpoch=g_peerEpoch[b.slot];
+    b.localHand=c.object==coop::hand_item::LocalHandActor();
+    // Reserve before getKey/read: either can enter another native eat.
+    g_bite.push_back(b);
+    struct Reservation {uint64_t invocation;void* actor;bool keep=false;~Reservation(){if(!keep)std::erase_if(g_bite,[&](const BitePending& row){return row.invocation==invocation && row.actor==actor;});}} reservation{b.invocation,b.actor};
+    FillKey(c.object,b.request.key,b.request.elementId);
+    if(!b.Live())return sg::Verdict::Cancel;
     if (s->role() == coop::net::Role::Client) {
-        coop::net::WireKey key{};
-        uint32_t eid = 0;
-        FillKey(c.object, key, eid);
-        if(!b.Current() || !b.identity.Get())return sg::Verdict::Run;
-        const std::wstring id = key.len ? coop::net::StringFromWireKey(key)
-                                        : (eid ? L"#" + std::to_wstring(eid) : std::wstring{});
-        if (!id.empty()) {
+        const auto id=BiteKey(b.request);
+        if(id.empty())return sg::Verdict::Cancel;
+        {
             if (g_clientBiteRetry.count(id) || g_clientBiteRetry.size() >= 64) return sg::Verdict::Cancel;
             const uint64_t now = NowMs();
             auto pending = g_clientBitePending.find(id);
@@ -473,20 +525,21 @@ sg::Verdict OnAction(const sg::Call& c) {
             }
         }
     }
-    FillKey(c.object, b.request.key, b.request.elementId);
     F::Condition now{};
-    if(!b.Current() || !b.identity.Get())return sg::Verdict::Run;
-    b.have = F::Read(c.object, now);if(!b.Current() || !b.identity.Get())return sg::Verdict::Run;
+    b.have = F::Read(c.object, now);
+    if(!b.Live())return sg::Verdict::Cancel;
+    if(!b.have || !Valid(now) || now.uses<=0)return refused;
+    if(!BiteAddressCurrent(b))return sg::Verdict::Cancel;
     b.uses = now.uses;
-    g_bite.push_back(b);
+    const auto row=std::find_if(g_bite.begin(),g_bite.end(),[&](const BitePending& row){return row.actor==b.actor && row.invocation==b.invocation;});
+    if(row==g_bite.end())return sg::Verdict::Cancel;
+    *row=b;reservation.keep=true;
     return sg::Verdict::Run;
 }
 
 void OnActionPost(const sg::Call& c) {
     // The post runs for every action on this food, including ones the pre did not record. Popping
     // those would throw away an eat that is still on the stack.
-    const int32_t off = R::FindParamOffset(c.function, L"action");
-    if (off < 0 || off >= R::FunctionFrameSize(c.function) || !c.locals || c.locals[off] != 4) return;
     if (c.fromOurCode) return;
     EnsureWorld();
     const auto captured=std::find_if(g_bite.rbegin(),g_bite.rend(),[&](const BitePending& b){return b.actor==c.object && b.invocation==c.invocation;});
@@ -496,7 +549,7 @@ void OnActionPost(const sg::Call& c) {
     const bool alive = b.identity.Get() == b.actor;
     // Native final-bite destroys the actor before POST. Its identity must have
     // been captured in PRE; reading getData/key from that dead actor loses the bite.
-    if (alive ? (!F::Read(b.actor, now) || !b.Current() || now.uses >= b.uses) : b.uses != 1) return;
+    if (alive ? (!b.Live() || !F::Read(b.actor, now) || !BiteAddressCurrent(b) || !Valid(now) || now.uses >= b.uses) : b.uses != 1) return;
     auto* s = Session();
     if (!s || !s->connected()) return;
     if (s->role() == coop::net::Role::Host) {
@@ -521,7 +574,15 @@ void OnActionPost(const sg::Call& c) {
 
 }  // namespace
 
+bool IsLocalConsumedOutput(void* actor,void* callerFunction) {
+    EnsureWorld();PruneOutputs();
+    if(!IsClient() || !actor || !callerFunction || !R::IsLive(callerFunction))return false;
+    for(const auto& row:g_outputs)if(row.source.actor==actor && OutputCurrent(row) && R::OuterOf(callerFunction)==row.owner.Raw())return true;
+    return false;
+}
+
 bool ConsumesClientDestroy(void* actor) {
+    EnsureWorld();
     auto* s = Session();
     PruneBites();if (!s || !IsClient()) return false;
     auto it=std::find_if(g_bite.rbegin(),g_bite.rend(),[&](const BitePending& b){return b.actor==actor && b.Current();});
@@ -539,7 +600,7 @@ void Install(coop::net::Session* session) {
     const bool bite = sg::WatchClassName(L"prop_food_C", L"actionOptionIndex", kTagBite, &OnAction, &OnActionPost);
     bool outputs=true;
     for(const auto* cls:{L"prop_foodBox_C",L"prop_food_banana_C",L"prop_food_coffeeCup_C"})
-        outputs=sg::WatchClassName(cls,L"eaten",0x46440003,&OnConsumedOutput,nullptr) && outputs;
+        outputs=sg::WatchClassName(cls,L"eaten",0x46440003,&OnConsumedOutput,&OnConsumedOutputPost) && outputs;
     const bool cup=sg::WatchClassName(L"prop_food_coffeeCup_C",L"ReceiveTick",kTagTick,&OnTick,nullptr);
     const bool cooking=sg::WatchClassName(L"prop_cookingFood_C",L"ReceiveTick",kTagTick,&OnTick,nullptr);
     // Several recipes declare cookItem outside the prop_cookingFood name prefix.
@@ -620,16 +681,22 @@ void OnBite(const coop::net::FoodBitePayload& payload, uint8_t senderSlot) {
         payload.key.len>sizeof(payload.key.data)) return;
     const auto person=coop::roster_ledger::Get(senderSlot).playerNo;if(!person)return;
     const auto epoch=g_epoch,peerEpoch=g_peerEpoch[senderSlot];
-    const auto current=[&]{return Session()==s && s->connected() && epoch==g_epoch &&
+    const auto current=[&]{return SourceCurrent(s,epoch) &&
         s->role()==coop::net::Role::Host && s->IsSlotWorldReady(senderSlot) && g_peerEpoch[senderSlot]==peerEpoch &&
         g_world==ue_wrap::world_identity::Generation() && coop::roster_ledger::Get(senderSlot).playerNo==person;};
     const std::wstring key = coop::net::StringFromWireKey(payload.key);
     void* actor = coop::hand_item::MirrorActorForSlot(senderSlot);
     if (!F::IsFood(actor) || g_handKeys[senderSlot] != key) actor = Resolve(payload.key, payload.elementId);
     if (!actor || !F::IsFood(actor)) return;
-    ue_wrap::CachedObjRef identity;identity.Set(actor);
+    ue_wrap::CachedObjRef identity,type;identity.Set(actor);type.Set(R::ClassOf(actor));
     const auto handGeneration=coop::hand_item::MirrorGeneration(senderSlot);const bool held=actor==coop::hand_item::MirrorActorForSlot(senderSlot);
-    const auto valid=[&]{return current() && identity.Get() && (!held || (coop::hand_item::MirrorActorForSlot(senderSlot)==actor && coop::hand_item::MirrorGeneration(senderSlot)==handGeneration && g_handKeys[senderSlot]==key));};
+    const auto valid=[&]{
+        if(!current() || identity.Get()!=actor || !type.Get() || R::ClassOf(actor)!=type.Raw())return false;
+        if(held)return coop::hand_item::MirrorActorForSlot(senderSlot)==actor && coop::hand_item::MirrorGeneration(senderSlot)==handGeneration && g_handKeys[senderSlot]==key;
+        coop::net::WireKey liveKey{};uint32_t eid=0;FillKey(actor,liveKey,eid);
+        return current() && identity.Get()==actor && type.Get() && R::ClassOf(actor)==type.Raw() &&
+            (payload.key.len?coop::net::StringFromWireKey(liveKey)==key:eid==payload.elementId);
+    };
     auto target = coop::element::IntentTarget::ForClientIntent(*s, senderSlot, kBiteReach);
     if (!target.Authorize(actor) || !valid()) return;
     const uint64_t now = NowMs();
@@ -650,7 +717,7 @@ void OnBite(const coop::net::FoodBitePayload& payload, uint8_t senderSlot) {
     const auto it = g_biteAt.find(token);
     if (it != g_biteAt.end() && now - it->second < kBiteGapMs) return;
     F::Condition c{};
-    if (!F::Read(actor, c) || c.uses <= 0 || !valid()) return;
+    if (!F::Read(actor, c) || !Valid(c) || c.uses <= 0 || !valid()) return;
     g_biteAt[token] = now;
     c.uses -= 1;
     if (!F::Write(actor, c,valid) || !valid()) return;
@@ -666,19 +733,28 @@ void OnBite(const coop::net::FoodBitePayload& payload, uint8_t senderSlot) {
         BroadcastHandState(*s, actor, senderSlot, generation);
     } else {
         Publish(*s, actor, -1);
-        if (c.uses <= 0 && current() && identity.Get()) {
+        const auto empty=[&]{F::Condition live{};return valid() && F::Read(actor,live) && valid() && Valid(live) && live.uses==0;};
+        if (c.uses == 0 && empty()) {
             // These verified overrides create only the empty wrapper/husk/cup.
             // Native bitten, poison, coffee and hunger already ran on the owner.
-            void* fn = R::FindDispatchFunctionCached(R::ClassOf(actor), L"eaten");
+            void* fn = R::FindDispatchFunctionCached(type.Raw(), L"eaten");
             void* owner = fn ? R::OuterOf(fn) : nullptr;
+            ue_wrap::CachedObjRef functionRef,ownerRef;functionRef.Set(fn);ownerRef.Set(owner);
+            const auto outputCurrent=[&]{return valid() && functionRef.Get() && ownerRef.Get() &&
+                R::OuterOf(fn)==owner && R::FindDispatchFunctionCached(type.Raw(),L"eaten")==fn;};
             bool output=false;
             if(owner)for(const auto* cls:{L"prop_foodBox_C",L"prop_food_banana_C",L"prop_food_coffeeCup_C"})
                 output=R::NameEquals(R::NameOf(owner),cls) || output;
-            if (output) {
+            if (output && outputCurrent()) {
                 ue_wrap::ParamFrame frame(fn);
-                if (frame.valid() && frame.Set<void*>(L"player", nullptr) && valid()) ue_wrap::Call(actor, frame);
+                if(!outputCurrent())return;
+                if (frame.valid() && frame.Set<void*>(L"player", nullptr)) {
+                    if(!outputCurrent())return;
+                    if(empty())ue_wrap::Call(actor, frame);
+                    if(!outputCurrent())return;
+                }
             }
-            if (current() && identity.Get()) ue_wrap::engine::DestroyActor(actor);
+            if (empty()) ue_wrap::engine::DestroyActor(actor);
         }
     }
 }
@@ -723,6 +799,7 @@ void OnDisconnect() {
     g_clientBitePending.clear();
     g_clientBiteRetry.clear();g_biteRetryCursor.clear();
     g_bite.clear();
+    g_outputs.clear();g_source=nullptr;g_serial=0;g_running=g_connected=false;
     g_nextPoll = 0;
     g_world = 0;
     g_session.store(nullptr, std::memory_order_release);

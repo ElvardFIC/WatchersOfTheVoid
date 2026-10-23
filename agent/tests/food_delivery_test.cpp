@@ -79,9 +79,9 @@ int main(){coop::net::Session session;using coop::net::Role;
  // A cancelled/faulted eat cannot leave a final-bite destroy authorization behind.
  HandReset(session,Role::Client);meal.uses=1;S::OnAction(call);foodInvocations.clear();
  CHECK(!S::ConsumesClientDestroy(&actor) && S::g_bite.empty() && session.bites.empty());
- // Missing inner POST must not steal the outer observation on the same receiver.
- HandReset(session,Role::Client);meal.uses=2;S::OnAction(call);auto inner=call;inner.invocation=2;foodInvocations.insert(2);S::OnAction(inner);
- foodInvocations.erase(2);meal.uses=1;S::OnActionPost(call);CHECK(session.bites.size()==1 && S::g_bite.size()==1);
+ // A nested eat is refused; its missing POST cannot steal the outer observation.
+ HandReset(session,Role::Client);meal.uses=2;S::OnAction(call);auto inner=call;inner.invocation=2;foodInvocations.insert(2);CHECK(S::OnAction(inner)==ue_wrap::script_gate::Verdict::Cancel);
+ foodInvocations.erase(2);meal.uses=1;S::OnActionPost(call);CHECK(session.bites.size()==1 && S::g_bite.empty());
  CHECK(!S::ConsumesClientDestroy(&actor) && S::g_bite.empty());
  for(int cause=0;cause<6;++cause){HandReset(session,Role::Client);meal.uses=2;S::OnAction(call);meal.uses=1;
   foodReadCallback=[&,cause]{if(cause==0)S::OnDisconnect();if(cause==1)++foodWorld;if(cause==2)++foodSerial;

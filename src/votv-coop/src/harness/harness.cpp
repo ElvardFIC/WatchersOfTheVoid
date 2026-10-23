@@ -377,7 +377,7 @@ DWORD WINAPI TimelineThread(LPVOID param) {
                     // in the browser); best effort.
                     std::string w = cfg::ResolveString(coop::config_registry::rows::save);
                     coop::session_manager::AnnounceEnvHostHidden(
-                        coop::session_manager::Nickname() + "'s game", w);
+                        coop::session_manager::Nickname() + "'s game", w, netCfg.playerLimit);
                 }
             } else {
                 // The env client goes through the same session_manager door as the browser: the

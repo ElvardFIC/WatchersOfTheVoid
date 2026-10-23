@@ -604,6 +604,24 @@ void OnChunk(coop::net::Session& s, const coop::net::BlobChunkPayload& p, uint8_
     // The initial record for a new client-authored birth may restore its saved
     // unlocked state; no new loot belongs to that inventory/drop transition.
     if(actor) {
+        const auto& cls = rec.className;
+        const bool can = cls == L"prop_cannedFood_C" || cls == L"prop_cannedFood_0_C" ||
+            cls == L"prop_cannedFood_1_C" || cls == L"prop_cannedFood_2_C" || cls == L"prop_cannedFood_3_C";
+        if (!initialRecord && can) {
+            // Cans cannot refill or close natively. An ordinary stale writer
+            // may consume more portions, but cannot restore an earlier count.
+            // Birth records remain exempt so a reconstructed can restores its
+            // actual saved state rather than the new actor's class defaults.
+            SR::SaveRecord host;
+            if (!PrepareForMutation(actor, key) || !current() || !SR::CaptureRecord(actor, host) || !current()) return;
+            if (host.className != cls || host.key != key || rec.ints.empty() || host.ints.empty() ||
+                rec.ints[0].size() < 2 || host.ints[0].size() < 2 ||
+                rec.bools.size() < 2 || host.bools.size() < 2 || rec.bools[1].empty() || host.bools[1].empty() ||
+                rec.ints[0][1] < 0 || host.ints[0][1] < 0) return;
+            rec.ints[0][0] = host.ints[0][0];
+            rec.ints[0][1] = std::min(rec.ints[0][1], host.ints[0][1]);
+            rec.bools[1][0] = (rec.bools[1][0] || host.bools[1][0]) ? 1 : 0;
+        }
         if(initialRecord)ue_wrap::safe::PreserveUnlocked(actor,rec);
         else ue_wrap::safe::PreserveHostLock(actor,rec);
         if(!current())return;

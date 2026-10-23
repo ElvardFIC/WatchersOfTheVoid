@@ -14,7 +14,6 @@
 #include "coop/player/players_registry.h"
 #include "coop/player/puppet_drive.h"
 #include "coop/player/remote_player.h"
-#include "coop/session/teleport_client.h"
 
 #include "ue_wrap/core/call.h"
 #include "ue_wrap/core/cached_obj_ref.h"
@@ -106,20 +105,6 @@ bool PersonalOnly(const std::string& name) {
     return name == "toeStab" || name == "mann" || name == "fakeGrays" || name == "susArir";
 }
 
-// Volume events whose scene only makes sense where the player is standing. falseEnter is the
-// passlock: the doors lock and the garage is the way that is left. vent breaks the ventilation,
-// and it only starts for someone standing in the control room, so the others are brought there
-// and the break is run on every machine.
-bool IsGatherEvent(const std::string& name) {
-    // These rows only ARM a box/poll. Gather when that location actually fires,
-    // including remote players whose puppets do not generate native overlaps.
-    if(event_location_sync::IsLocationRow(name.c_str()))return false;
-    static const char* const kRows[] = {
-        "falseEnter", "vent", "obelisk", "arirShip", "piramid", "wisps", "call0", "crys", "cookier", "arirEgg",
-    };
-    for (const char* r : kRows) if (name == r) return true;
-    return false;
-}
 uint64_t GatherNowMs() {
     using namespace std::chrono;
     return static_cast<uint64_t>(duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count());
@@ -398,45 +383,28 @@ void OnRunEventPost(const sg::Call& call) {
     // A reflected clock update may contain a genuine host scheduler fire. Observe
     // that above, but do not echo our direct network/dev replay below.
     if (call.fromOurCode) return;
-    // The host's broadcast already ran this row here. A volume the teleport then walks into must
-    // not start it a second time.
+    // The host's broadcast already ran this row here; another overlap must not
+    // start it a second time.
     if (s->role() != coop::net::Role::Host && g_replayed.count(name)) return;
     // A player walked into it. A personal scare stays on that machine. A row the replay
     // policy runs on every machine is a world change (the vent break). A location event still
-    // brings the others even when its creatures already ride another lane and must not be replayed.
+    // uses its native activator when its creatures already ride another lane.
     const char* lane = nullptr;
     const bool replay = ReplayVerdict(name, &lane) == 1;
-    const bool gather = IsGatherEvent(name);
-    if (PersonalOnly(name) || (!replay && !gather)) return;
+    if (PersonalOnly(name) || !replay) return;
     if (event_location_sync::IsLocationRow(name.c_str())) {
         if (s->role()==coop::net::Role::Host && replay)Broadcast(FireKind::RunEvent,name);
-        return; // arm now; event_location_sync gathers at the real activation
+        return; // arm now; event_location_sync handles the real activation
     }
     if (GatherRecently(name)) {
-        // The teleport can walk someone back into the same volume. The event already ran.
+        // Another overlap in the same volume must not repeat an accepted event.
         return;
     }
     if (s->role() == coop::net::Role::Host) {
         MarkGather(name);
-        // Move first. The vent break only starts for someone standing in the control room, so the
-        // others have to be there before their machine runs the row. Teleport packets go out
-        // before the event broadcast, and a reliable stream keeps that order.
-        if (gather) {
-            void* local = coop::players::Registry::Get().Local();
-            ue_wrap::FVector loc{};
-            ue_wrap::FRotator rot{};
-            if (local && ue_wrap::engine::TryGetActorLocation(local, loc) &&
-                ue_wrap::engine::TryGetActorRotation(local, rot)) {
-                UE_LOGI("event_fire: location event '%s' on the host -- bringing the others here",
-                        name.c_str());
-                coop::teleport_client::GatherOthersTo(coop::players::Registry::Get().LocalPeerId(),
-                                                       loc.X, loc.Y, loc.Z, rot.Yaw);
-            }
-        }
         if (replay) {
             Broadcast(FireKind::RunEvent, name);
-            if (!gather)
-                UE_LOGI("event_fire: shared event '%s' on the host -- every machine runs it",
+            UE_LOGI("event_fire: shared event '%s' on the host -- every machine runs it",
                         name.c_str());
         }
     } else if (SendGather(s, name)) {
@@ -797,8 +765,7 @@ void OnLocationGather(const coop::net::EventGatherPayload& payload, uint8_t send
     const std::string name(buf);
     const char* lane = nullptr;
     const bool replay = ReplayVerdict(name, &lane) == 1;
-    const bool gather = IsGatherEvent(name);
-    if (PersonalOnly(name) || event_location_sync::IsLocationRow(name.c_str()) || (!replay && !gather) || GatherRecently(name)) return;
+    if (PersonalOnly(name) || event_location_sync::IsLocationRow(name.c_str()) || !replay || GatherRecently(name)) return;
     float x = 0, y = 0, z = 0, yaw = 0;
     if (!GatherPoint(senderSlot, payload.x, payload.y, payload.z, payload.yaw, x, y, z, yaw)) {
         UE_LOGW("event_fire: shared event '%s' from slot %u ignored -- their body is not here yet",
@@ -806,19 +773,11 @@ void OnLocationGather(const coop::net::EventGatherPayload& payload, uint8_t send
         return;
     }
     MarkGather(name);
-    // The host's own body moves before NativeFire, and the other clients' teleport packets are
-    // queued before the event, so a row that checks "standing in the control room" sees them there.
-    if (gather) {
-        UE_LOGI("event_fire: location event '%s' from slot %u -- bringing everyone there",
-                name.c_str(), static_cast<unsigned>(senderSlot));
-        coop::teleport_client::GatherOthersTo(senderSlot, x, y, z, yaw);
-    }
     if (!replay) return;
     const std::wstring w(name.begin(), name.end());
     // The sender's machine already ran it. This machine and the other clients still have to.
     NativeFire(FireKind::RunEvent, w, L"None");
-    if (!gather)
-        UE_LOGI("event_fire: shared event '%s' from slot %u -- every machine runs it",
+    UE_LOGI("event_fire: shared event '%s' from slot %u -- every machine runs it",
                 name.c_str(), static_cast<unsigned>(senderSlot));
 }
 

@@ -183,6 +183,9 @@ bool EnrollPlaced(const ue_wrap::CachedObjRef& ref) {
         if (epoch != g_epoch || !ref.Get() || !Tracking() || !Host()) return false;
         if (!ValidKey(key)) return false;
     }
+    if (P::Type(actor) == P::Kind::DirtHole && !ValidKey(P::ExistingKey(actor))) {
+        if (!P::SetKey(actor, Mint()) || !ref.Get() || epoch != g_epoch) return false;
+    }
     Record raw, record;
     if (!P::Capture(actor, raw) || !ref.Get() || epoch != g_epoch) return false;
     // A census cannot rename an actor: a join snapshot may already contain its
@@ -262,6 +265,11 @@ SG::Verdict BeforePlantSimulation(const SG::Call& c) {
     if (g_applying) return SG::Verdict::Cancel;
     for (const auto& [key, row] : g_rows) if (row.accepted && row.ref.Is(c.object)) return SG::Verdict::Cancel;
     return SG::Verdict::Run;
+}
+SG::Verdict BeforeHoleBegin(const SG::Call&) {
+    // A hole's native BeginPlay searches for buried treasure and spawns loot.
+    // Constructing its network mirror must only construct the surface/material.
+    return g_applying ? SG::Verdict::Cancel : SG::Verdict::Run;
 }
 SG::Verdict BeforeHarvestPocket(const SG::Call& c) {
     // Keep this scoped refusal alive even if native harvest callbacks stop the
@@ -453,7 +461,9 @@ void Install(net::Session* session) {
             SG::WatchClassName(L"prop_fertilizer_C", L"playerHandUse_LMB", kTag, &BeforeCare, &AfterCare) &&
             SG::WatchClassName(L"faucet_C", L"actionOptionIndex", kTag, &BeforeAction, nullptr) &&
             SG::WatchClassName(L"groundHose_C", L"actionOptionIndex", kTag, &BeforeAction, nullptr) &&
-            SG::WatchClassName(L"growingPlant_C", L"actionOptionIndex", kTag, &BeforeAction, nullptr);
+            SG::WatchClassName(L"growingPlant_C", L"actionOptionIndex", kTag, &BeforeAction, nullptr) &&
+            SG::WatchClassName(L"dirthole_C", L"ReceiveBeginPlay", kTag, &BeforeHoleBegin, nullptr) &&
+            SG::WatchClassName(L"dirthole_C", L"playerUsedOn", kTag, &BeforeAction, nullptr);
     }
     if (!g_finish.Get()) {
         const auto fn = ue_wrap::facts::Resolve(kFinishSpawningRow);
@@ -728,7 +738,14 @@ void Tick() {
                     row.record = std::move(normalized);
                 } else if (!P::Apply(existing, row.record)) continue;
                 a = existing;
-            } else {a = P::Spawn(row.record);row.spawnedForClient=Host() && a;}
+            } else {
+                // Registration alone does not mean the name watch is live yet.
+                // Never enter native hole BeginPlay before its loot suppression
+                // can run; the retained row retries when resolution completes.
+                if (P::ClassKind(row.record.className) == P::Kind::DirtHole &&
+                    !SG::ClassNameWatchLive(L"dirthole_C", L"ReceiveBeginPlay", kTag)) continue;
+                a = P::Spawn(row.record);row.spawnedForClient=Host() && a;
+            }
             if (epoch != g_epoch) return;
             if (!a) continue;
             it = g_rows.find(key); if (it == g_rows.end()) continue;

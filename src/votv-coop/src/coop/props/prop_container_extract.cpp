@@ -1,216 +1,233 @@
-// coop/props/prop_container_extract.cpp -- the propInventory_C::takeObj container-extract seam of
-// coop::prop_lifecycle (see coop/props/prop_lifecycle.h): the PRE/POST observer pair, the in-flight
-// bracket and InstallInventory.
-//
-// An Aprop extracted from a container spawns INSIDE takeObj, before loadData has restored its saved
-// Key, so the nested Aprop_C::Init POST observer in prop_lifecycle.cpp must defer its broadcast and
-// let the takeObj POST here be the canonical broadcaster. g_takeObjInFlight, defined here and
-// shared through prop_lifecycle_detail.h, is that bracket.
-
+// Native extraction: wait for the saved key, then retain birth/state delivery.
 #include "coop/props/prop_lifecycle.h"
-
-#include "prop_lifecycle_detail.h"  // co-located private header (src tree, not include/)
-
+#include "coop/items/container_extract_recovery.h"
+#include "prop_lifecycle_detail.h"
 #include "coop/element/element.h"
-#include "coop/net/session.h"
-#include "coop/props/prop_save_data.h"
+#include "coop/net/net_clock.h"
+#include "coop/net/session_serial.h"
+#include "coop/props/join_membership_sweep.h"
+#include "coop/props/prop_echo_suppress.h"
 #include "coop/props/prop_element_tracker.h"
+#include "coop/props/prop_save_data.h"
 #include "coop/props/prop_synth_key.h"
-#include "coop/props/join_membership_sweep.h"  // self-claim after the wire express
-#include "coop/props/prop_wire_parity.h"  // PhysFlagsOf, the one flag builder
-#include "ue_wrap/engine/engine.h"
+#include "coop/props/prop_wire_parity.h"
+#include "ue_wrap/actors/food.h"
+#include "ue_wrap/actors/prop.h"
+#include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/game_thread.h"
 #include "ue_wrap/core/log.h"
-#include "ue_wrap/actors/prop.h"
 #include "ue_wrap/core/reflection.h"
-#include "ue_wrap/core/sdk_profile.h"
-#include "ue_wrap/core/types.h"
+#include "ue_wrap/core/script_gate.h"
+#include "ue_wrap/engine/engine.h"
+#include "ue_wrap/engine/world_identity.h"
 #include "ue_wrap/facts/function_row.h"
-
-#include <atomic>
-#include <cstdint>
-#include <string>
+#include <cmath>
+#include <cstring>
+#include <functional>
+#include <map>
+#include <vector>
 
 namespace coop::prop_lifecycle {
 namespace {
-
-namespace P = ue_wrap::profile;
 namespace R = ue_wrap::reflection;
+namespace SG = ue_wrap::script_gate;
 namespace GT = ue_wrap::game_thread;
+namespace E = ue_wrap::engine;
 namespace PT = coop::prop_element_tracker;
-
 UE_FACT_FN(kRowTakeObj, "prop_container_extract", L"propInventory_C", L"takeObj", Declared);
+constexpr int kTakeTag = 0x54414b45;
+constexpr size_t kPendingCap = 128;
+constexpr uint64_t kRetryMs = 250;
+bool g_watchRegistered = false, g_draining = false;
+ue_wrap::CachedObjRef g_takeFunction;
+struct ResultLayout {
+    ue_wrap::CachedObjRef function;
+    int32_t actor = -1, success = -1;
+} g_result;
+struct Pending {
+    ue_wrap::CachedObjRef actor;
+    uint64_t revision = 0, next = 0;
+    bool spawnQueued = false;
+    std::wstring key;
+};
+std::map<int32_t, Pending> g_pending;
+int32_t g_cursor = -1;
+uint64_t g_epoch = 0, g_revision = 0;
+uint32_t g_world = 0, g_serial = 0;
+net::Session* g_context = nullptr;
+net::Role g_role = net::Role::Host;
 
-// Install idempotency (InstallInventory only; the Init/destroy latches live
-// with Install in prop_lifecycle.cpp).
-bool g_inventoryObserverInstalled = false;
-
-// PRE observer for propInventory_C::takeObj -- sets g_takeObjInFlight so
-// the nested Aprop_C::Init POST observer defers its broadcast (Key is
-// NewGuid pre-loadData).
-void GrabObserver_PropInventory_TakeObj_PRE(void* self, void* /*function*/, void* /*params*/) {
-    auto* s = LoadSession();
-    if (!self || !s) return;
-    if (!s->connected()) return;
-    g_takeObjInFlight.store(true, std::memory_order_relaxed);
+bool Active(net::Session* s) {
+    return GT::IsGameThread() && s && s == LoadSession() && s->connected() &&
+        s == g_context && s->role() == g_role && g_world == ue_wrap::world_identity::Generation() &&
+        g_serial == net::session_serial::Current();
 }
-
-// POST observer for propInventory_C::takeObj -- the canonical broadcaster
-// for container extracts (after loadData restored the saved Key).
-void GrabObserver_PropInventory_TakeObj_POST(void* self, void* function, void* params) {
-    // Clear the in-flight flag FIRST regardless of any early returns.
-    g_takeObjInFlight.store(false, std::memory_order_relaxed);
-
+void Context(net::Session* s) {
+    const auto world = ue_wrap::world_identity::Generation(), serial = net::session_serial::Current();
+    if (s != g_context || world != g_world || serial != g_serial || (s && s->role() != g_role)) {
+        ClearContainerExtractions();
+        g_context = s; g_world = world; g_serial = serial;
+        if (s) g_role = s->role();
+    }
+}
+SG::Verdict BeforeTake(const SG::Call& call) {
+    if (GT::IsGameThread() && call.function) g_takeFunction.Set(call.function);
+    return SG::Verdict::Run;
+}
+// Cache offsets by UFunction incarnation and validate both fields before reading.
+// Out parameters may live in the caller rather than the gate's local frame.
+void* CompletedActor(const SG::Call& call) {
+    if (!call.function || !call.locals) return nullptr;
+    if (!g_result.function.Is(call.function)) {
+        g_result = {};
+        g_result.function.Set(call.function);
+        const auto frame = R::FunctionFrameSize(call.function);
+        const auto fits = [frame](int32_t off, int32_t bytes) {
+            return off >= 0 && off <= frame && bytes <= frame - off;
+        };
+        const auto actor = R::FindParamOffset(call.function, L"object");
+        const auto success = R::FindParamOffset(call.function, L"return");
+        if (fits(actor, sizeof(void*))) g_result.actor = actor;
+        if (fits(success, 1)) g_result.success = success;
+    }
+    if (!g_result.function.Is(call.function) || g_result.actor < 0 || g_result.success < 0) return nullptr;
+    const auto* success = SG::OutParamPtr(call, g_result.success);
+    if (!success) success = call.locals + g_result.success;
+    if (!*success) return nullptr;
+    const auto* output = SG::OutParamPtr(call, g_result.actor);
+    if (!output) output = call.locals + g_result.actor;
+    void* actor = nullptr; std::memcpy(&actor, output, sizeof(actor));
+    return actor;
+}
+void AfterTake(const SG::Call& call) {
     auto* s = LoadSession();
-    if (!self || !params || !function || !s) return;
-    // Cache the Object out-param offset. Atomic because the observer can
-    // dispatch on either the game thread (typical) or a task-graph worker.
-    static std::atomic<int32_t> sObjectOff{-2};
-    int32_t off = sObjectOff.load(std::memory_order_acquire);
-    if (off == -2) {
-        const int32_t resolved = R::FindParamOffset(function, L"Object");
-        sObjectOff.store(resolved >= 0 ? resolved : -1, std::memory_order_release);
-        off = resolved >= 0 ? resolved : -1;
-        UE_LOGI("grab_hook[takeObj POST]: resolved Object out-param offset = %d", resolved);
-    }
-    if (off < 0) return;
-    void* spawnedActor = *reinterpret_cast<void**>(
-        reinterpret_cast<uint8_t*>(params) + off);
-    if (!spawnedActor || !R::IsLive(spawnedActor)) return;
-    if (!s->connected()) {
-        UE_LOGI("grab_hook[takeObj POST]: spawned %p but session not connected -- skipping broadcast",
-                spawnedActor);
+    if (!Active(s) || !call.object) return;
+    void* actor = CompletedActor(call);
+    if (!actor || !R::IsLive(actor) || coop::prop_echo_suppress::IsMirrorSpawn(actor)) return;
+    ue_wrap::CachedObjRef ref; ref.Set(actor);
+    auto it = g_pending.find(ref.Idx());
+    if (it != g_pending.end() && it->second.actor.Is(actor)) return;
+    if (g_pending.size() >= kPendingCap) {
+        UE_LOGW("container birth: pending cap %zu reached; actor %p not queued", kPendingCap, actor);
         return;
     }
-    if (!ue_wrap::prop::IsKeyedInteractable(spawnedActor)) {
-        UE_LOGW("grab_hook[takeObj POST]: spawned actor %p is NOT a keyed-interactable -- skipping",
-                spawnedActor);
-        return;
-    }
-
-    coop::net::PropSpawnPayload p{};
-    const std::wstring cls = R::ClassNameOf(spawnedActor);
-    p.className.len = 0;
-    for (size_t i = 0; i < cls.size() && i < 63; ++i) {
-        p.className.data[p.className.len++] = static_cast<char>(cls[i]);
-    }
-    // Mirror the Init POST's EnsureKeyForBroadcast call here, so a non-Aprop_C keyed interactable
-    // extracted from an inventory container also gets a synthetic Key. It is a no-op for the
-    // Aprop_C lineage, whose Key is already set through loadData: it just returns currentKey
-    // unchanged, at zero cost in the typical inventory drop.
-    std::wstring keyStr = ue_wrap::prop::GetInteractableKeyString(spawnedActor);
-    keyStr = coop::prop_synth_key::EnsureKeyForBroadcast(spawnedActor, keyStr);
-    p.key.len = 0;
-    for (size_t i = 0; i < keyStr.size() && i < 31; ++i) {
-        p.key.data[p.key.len++] = static_cast<char>(keyStr[i]);
-    }
-    ue_wrap::FVector loc{};
-    ue_wrap::FRotator rot{};
-    if (!ue_wrap::engine::TryGetActorLocation(spawnedActor, loc) ||
-        !ue_wrap::engine::TryGetActorRotation(spawnedActor, rot)) {
-        UE_LOGW("prop_container_extract: the extracted item's location or rotation could not be read -- not sent");
-        return;
-    }
+    Pending row; row.actor = ref; row.revision = ++g_revision;
+    g_pending.insert_or_assign(ref.Idx(), std::move(row));
+}
+bool BuildSpawn(void* actor, net::PropSpawnPayload& p, const std::function<bool()>& current) {
+    if (!current() || !ue_wrap::prop::IsKeyedInteractable(actor) || !current()) return false;
+    const auto cls = R::ClassNameOf(actor);
+    if (cls.empty() || cls.size() > sizeof(p.className.data)) return false;
+    auto key = ue_wrap::prop::GetInteractableKeyString(actor);
+    if (!current()) return false;
+    key = coop::prop_synth_key::EnsureKeyForBroadcast(actor, key);
+    if (!current()) return false;
+    ue_wrap::FVector loc{}; ue_wrap::FRotator rot{};
+    if (!E::TryGetActorLocation(actor, loc) || !current() ||
+        !E::TryGetActorRotation(actor, rot) || !current()) return false;
+    const auto scale = E::GetActorScale3D(actor);
+    if (!current()) return false;
+    for (float value : {loc.X, loc.Y, loc.Z, rot.Pitch, rot.Yaw, rot.Roll, scale.X, scale.Y, scale.Z})
+        if (!std::isfinite(value)) return false;
+    p.className.len = static_cast<uint8_t>(cls.size());
+    for (size_t i = 0; i < cls.size(); ++i) p.className.data[i] = static_cast<char>(cls[i]);
     p.locX = loc.X; p.locY = loc.Y; p.locZ = loc.Z;
-    p.rotPitch = ue_wrap::NormalizeAxis(rot.Pitch);
-    p.rotYaw   = ue_wrap::NormalizeAxis(rot.Yaw);
-    p.rotRoll  = ue_wrap::NormalizeAxis(rot.Roll);
-    // Real scale, identity row and SP-parity bools, the same stamp the Init POST site makes, since
-    // a container extraction is a fresh simulating spawn. The flag reads are Aprop_C-gated: without
-    // that gate they read the heavy and frozen offsets on non-Aprop_C lineages too, which is stray
-    // bytes.
-    const auto scl = ue_wrap::engine::GetActorScale3D(spawnedActor);
-    p.scaleX = scl.X; p.scaleY = scl.Y; p.scaleZ = scl.Z;
-    // The live prop's own flags (0 for anything but an Aprop_C), with simulation stated on: a
-    // birth moves.
-    p.physFlags = coop::prop_wire_parity::PhysFlagsOf(spawnedActor) |
-                  coop::net::propspawn_flags::kSimulatePhysics;
-    p.propName.len = 0;
-    if (ue_wrap::prop::IsDescendantOfProp(spawnedActor)) {
-        const std::wstring nm = ue_wrap::prop::GetPropNameString(spawnedActor);
-        for (size_t i = 0; i < nm.size() && i < 31; ++i) {
-            p.propName.data[p.propName.len++] = static_cast<char>(nm[i]);
+    p.rotPitch = ue_wrap::NormalizeAxis(rot.Pitch); p.rotYaw = ue_wrap::NormalizeAxis(rot.Yaw); p.rotRoll = ue_wrap::NormalizeAxis(rot.Roll);
+    p.scaleX = scale.X; p.scaleY = scale.Y; p.scaleZ = scale.Z;
+    p.physFlags = coop::prop_wire_parity::PhysFlagsOf(actor) | net::propspawn_flags::kSimulatePhysics;
+    if (!current()) return false;
+    if (ue_wrap::prop::IsDescendantOfProp(actor)) {
+        const auto name = ue_wrap::prop::GetPropNameString(actor);
+        if (!current() || name.size() > sizeof(p.propName.data)) return false;
+        p.propName.len = static_cast<uint8_t>(name.size());
+        for (size_t i = 0; i < name.size(); ++i) p.propName.data[i] = static_cast<char>(name[i]);
+    }
+    key = PT::MarkPropElement(actor, key, cls, PT::EnrollSource::kExpressSeam);
+    if (!current() || key.empty() || key == L"None" || key.size() > sizeof(p.key.data)) return false;
+    p.key.len = static_cast<uint8_t>(key.size());
+    for (size_t i = 0; i < key.size(); ++i) p.key.data[i] = static_cast<char>(key[i]);
+    p.elementId = PT::GetPropElementIdForActor(actor);
+    if (!current() || !p.elementId || p.elementId == coop::element::kInvalidId) return false;
+    return ue_wrap::prop::GetInteractableKeyString(actor) == key && current();
+}
+void Drain() {
+    if (g_draining) return;
+    auto* s = LoadSession();
+    if (!Active(s) || g_pending.empty()) return;
+    g_draining = true;
+    struct Scope { ~Scope(){g_draining=false;} } scope;
+    const auto epoch = g_epoch, now = net::NowMs();
+    // A rotating cursor keeps later identities moving even at low frame rates.
+    // No iterator or reference to the map crosses a native call.
+    std::vector<std::pair<int32_t,Pending>> work;
+    for (size_t visited=0; visited<g_pending.size() && work.size()<8; ++visited) {
+        auto it=g_pending.upper_bound(g_cursor);
+        if(it==g_pending.end())it=g_pending.begin();
+        g_cursor=it->first;
+        if(it->second.next<=now)work.push_back(*it);
+    }
+    for (const auto& [index, snapshot] : work) {
+        const auto current = [&] {
+            const auto it = g_pending.find(index);
+            return epoch == g_epoch && Active(s) && snapshot.actor.Get() &&
+                it != g_pending.end() && it->second.revision == snapshot.revision;
+        };
+        if (epoch != g_epoch || !Active(s)) return;
+        auto it = g_pending.find(index);
+        if (it == g_pending.end() || it->second.revision != snapshot.revision) continue;
+        void* actor = snapshot.actor.Get();
+        if (!actor || coop::prop_echo_suppress::IsMirrorSpawn(actor)) {g_pending.erase(it); continue;}
+        it->second.next = now + kRetryMs;
+        if (!snapshot.spawnQueued) {
+            net::PropSpawnPayload p{};
+            if (!BuildSpawn(actor, p, current) || !current()) continue;
+            coop::join_membership_sweep::RecordClaimIfTracking(actor);
+            if (!current() || !s->SendPropSpawn(p) || !current()) continue;
+            it = g_pending.find(index);
+            it->second.spawnQueued = true;
+            it->second.key.assign(p.key.data, p.key.data + p.key.len);
         }
+        if (!current()) continue;
+        it = g_pending.find(index);
+        const auto key = it->second.key;
+        if (ue_wrap::prop::GetInteractableKeyString(actor) != key || !current()) {
+            if (current()) g_pending.erase(index);
+            continue;
+        }
+        const bool carries = coop::prop_save_data::Covers(actor) || ue_wrap::food::IsFood(actor);
+        if (!current()) continue;
+        if (carries) {
+            net::WireKey wire{}; wire.len = static_cast<uint8_t>(key.size());
+            for (size_t i=0;i<key.size();++i) wire.data[i] = static_cast<char>(key[i]);
+            if (!coop::prop_save_data::PublishWithSpawn(s, actor, wire) || !current()) continue;
+        }
+        if (current()) g_pending.erase(index);
     }
-    p.initLinVelX = p.initLinVelY = p.initLinVelZ = 0.f;
-    p.initAngVelX = p.initAngVelY = p.initAngVelZ = 0.f;
-
-    // The Init POST returned early on g_takeObjInFlight, so MarkPropElement was not called from
-    // that path. Mint the Prop Element here, so this container-extracted actor has a Registry
-    // shadow. Mark may RE-KEY a duplicate under host key authority, so rebuild p.key -- filled
-    // above -- from the enrolled key.
-    keyStr = PT::MarkPropElement(spawnedActor, keyStr, cls, PT::EnrollSource::kExpressSeam);
-    p.key.len = 0;
-    for (size_t i = 0; i < keyStr.size() && i < 31; ++i) {
-        p.key.data[p.key.len++] = static_cast<char>(keyStr[i]);
-    }
-    {
-        const coop::element::ElementId eid = PT::GetPropElementIdForActor(spawnedActor);
-        p.elementId = (eid == coop::element::kInvalidId) ? 0u : eid;
-    }
-    UE_LOGI("grab_hook[takeObj POST]: SPAWN broadcast cls='%ls' key='%ls' loc=(%.1f, %.1f, %.1f) heavy=%d frozen=%d eid=%u",
-            cls.c_str(), keyStr.c_str(), p.locX, p.locY, p.locZ,
-            (p.physFlags & coop::net::propspawn_flags::kIsHeavy)  ? 1 : 0,
-            (p.physFlags & coop::net::propspawn_flags::kFrozen)   ? 1 : 0,
-            p.elementId);
-    s->SendPropSpawn(p);  // channel queues internally
-    // The prop's own save record, behind the spawn row in the same FIFO: a reel extracted from a
-    // container keeps its progress, a disc its files.
-    coop::prop_save_data::PublishWithSpawn(s, spawnedActor, p.key);
-    // Self-claim (see the Init POST site).
-    coop::join_membership_sweep::RecordClaimIfTracking(spawnedActor);
 }
+} // namespace
 
-}  // namespace
-
-// takeObj-in-flight bracket (declared in prop_lifecycle_detail.h). The nested Init POST reads it;
-// the POST observer here clears it per dispatch, and prop_lifecycle's OnDisconnect clears it at
-// teardown.
-//
-// It is a std::atomic<bool> rather than a plain one: the PRE and POST observers and the nested Init
-// POST all run from parallel-anim worker threads, per game_thread.cpp's header, so plain-bool
-// writes in the PRE against reads in the Init POST race under the C++ memory model. The
-// PRE-then-POST sequencing within one ProcessEvent dispatch is preserved by same-thread execution
-// order, and relaxed memory order is enough, since no other state depends on this bool's visibility
-// ordering.
-std::atomic<bool> g_takeObjInFlight{false};
-
-void InstallInventory(coop::net::Session* session) {
+bool ContainerExtractionInFlight() {
+    // The gate's per-thread scope unwinds on cancellation/faults. An inner
+    // extraction cannot clear the scope of a still-running outer extraction.
+    return coop::container_extract_recovery::InFlight() ||
+        (GT::IsGameThread() && g_takeFunction.Get() && SG::IsBodyActive(g_takeFunction.Get()));
+}
+bool ContainerBirthPending(void* actor) {
+    if (!GT::IsGameThread() || !actor) return false;
+    if(coop::container_extract_recovery::Pending(actor))return true;
+    if (ContainerExtractionInFlight()) return true;
+    const auto it = g_pending.find(R::InternalIndexOf(actor));
+    return it != g_pending.end() && it->second.actor.Is(actor);
+}
+void ClearContainerExtractions() {
+    ++g_epoch; g_pending.clear(); g_cursor=-1; g_takeFunction.Reset(); g_result = {};
+}
+void InstallInventory(net::Session* session) {
     g_session_ptr.store(session, std::memory_order_release);
-    PT::SetSession(session);  // mirror; see SetSession comment in prop_lifecycle.cpp.
-    // An atomic latch, matching Install()'s. Without it the 125 Hz pump's InstallGrabObservers call
-    // runs R::FindClass -- a full GUObjectArray walk with a std::wstring allocation per entry -- on
-    // every tick until propInventory_C loads.
-    static std::atomic<bool> s_done{false};
-    if (s_done.load(std::memory_order_acquire)) return;
-    if (g_inventoryObserverInstalled) {
-        s_done.store(true, std::memory_order_release);
-        return;
-    }
-    void* invCls = R::FindClass(P::name::PropInventoryClass);
-    if (!invCls) return;  // not loaded yet -- retry next tick
-    const ue_wrap::facts::Resolved fn = ue_wrap::facts::Resolve(kRowTakeObj);
-    if (!fn) {
-        UE_LOGW("grab_hook: %ls.%ls UFunction not found -- Bug C disabled permanently this session",
-                P::name::PropInventoryClass, P::name::PropInventoryTakeObjFn);
-        g_inventoryObserverInstalled = true;  // stop the retry loop
-        s_done.store(true, std::memory_order_release);
-        return;
-    }
-    if (!GT::RegisterPostObserver(fn, GrabObserver_PropInventory_TakeObj_POST)) {
-        UE_LOGW("grab_hook: failed to register takeObj POST observer (table full?)");
-        return;
-    }
-    if (!GT::RegisterPreObserver(fn, GrabObserver_PropInventory_TakeObj_PRE)) {
-        UE_LOGW("grab_hook: failed to register takeObj PRE observer (table full?) -- container extracts may double-broadcast with mismatched keys");
-    } else {
-        UE_LOGI("grab_hook: registered PRE observer for %ls.%ls (takeObj-in-flight bracket)",
-                P::name::PropInventoryClass, P::name::PropInventoryTakeObjFn);
-    }
-    UE_LOGI("grab_hook: registered POST observer for %ls.%ls @ %p (Bug C inventory drop ready)",
-            P::name::PropInventoryClass, P::name::PropInventoryTakeObjFn, fn.Fn());
-    g_inventoryObserverInstalled = true;
-    s_done.store(true, std::memory_order_release);
+    PT::SetSession(session);
+    if (!GT::IsGameThread()) return;
+    Context(session);
+    if (!g_watchRegistered) g_watchRegistered = SG::WatchName(kRowTakeObj, kTakeTag, &BeforeTake, &AfterTake);
+    Drain();
 }
-
-}  // namespace coop::prop_lifecycle
+} // namespace coop::prop_lifecycle

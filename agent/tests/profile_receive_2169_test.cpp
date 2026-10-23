@@ -1,4 +1,7 @@
-#include "../../src/votv-coop/src/coop/items/player_inventory_sync.cpp"
+#ifndef PLAYER_PROFILE_SOURCE
+#define PLAYER_PROFILE_SOURCE "../../src/votv-coop/src/coop/items/player_inventory_sync.cpp"
+#endif
+#include PLAYER_PROFILE_SOURCE
 #include "../../src/votv-coop/src/coop/items/inventory_wire.cpp"
 #include "../../src/votv-coop/src/coop/items/save_record_wire.cpp"
 #include "../../src/votv-coop/src/coop/net/blob_chunks.cpp"
@@ -18,6 +21,7 @@ ue_wrap::inventory::PlayerInventory localItems;
 bool materialReady=true;int liveUnits=0;uint32_t world=1;
 bool cookingReady=true;float liveProgress=-1;
 bool grillReady=true;float liveBurn=-1;std::function<void()> onGrill;
+uint32_t sessionSerial=1;
 int pawnSerial=1,rotationReads=0;
 std::function<void()> onPose,onVitals;
 bool vitalsReady=false;ue_wrap::vitals::Snapshot liveVitals;
@@ -44,11 +48,17 @@ bool CaptureRecord(void*,SaveRecord& out){
 }
 namespace ue_wrap::inventory {
 void* ResolveSaveSlot(){std::abort();} bool ReadAll(PlayerInventory& out){out=test::localItems;return true;}
+#ifndef PROFILE_JOIN_HARNESS
 bool ApplyToSaveObject(void*,const PlayerInventory&){std::abort();}
+bool ApplyToSaveObjectWhile(void*,const PlayerInventory&,const std::function<bool()>&){std::abort();}
+#endif
 }
 namespace ue_wrap::vitals {
-bool ReadSnapshot(Snapshot& out){out=test::liveVitals;if(test::onVitals)test::onVitals();return test::vitalsReady;}bool ReadDefaults(Snapshot&){std::abort();}
+bool ReadSnapshot(Snapshot& out){out=test::liveVitals;if(test::onVitals)test::onVitals();return test::vitalsReady;}
+#ifndef PROFILE_JOIN_HARNESS
+bool ReadDefaults(Snapshot&){std::abort();}
 bool ApplySnapshot(void*,const Snapshot&){std::abort();}bool WritePlayerTransform(void*,float,float,float,float){std::abort();}
+#endif
 }
 namespace ue_wrap::engine {
 bool ReadMainPlayerRagdollState(void*,bool& r,bool& d){r=d=false;return true;}bool ReadMainPlayerSittingOn(void*,void*& seat){seat=nullptr;return true;}
@@ -57,6 +67,7 @@ void SetSaveObjectReadyHook(void(*)(void*)){}
 }
 namespace ue_wrap::world_identity {uint32_t Generation(){return test::world;}void* WorldOf(void*){return nullptr;}void* CurrentWorld(){return nullptr;}}
 namespace ue_wrap::reflection {
+bool IsLive(void* p){return p&&(p==coop::players::local||p==&test::liveUnits);}
 int32_t InternalIndexOf(void* p){return p==&test::liveUnits?2:1;}int32_t AllocateSlotSerial(int32_t){return test::pawnSerial;}
 int32_t SlotSerial(int32_t){return test::pawnSerial;}bool IsLiveByIndex(void* p,int32_t i){return (p==coop::players::local&&i==1)||(p==&test::liveUnits&&i==2);}
 }
@@ -72,14 +83,19 @@ namespace ue_wrap::grill_saved_state {bool RefreshHeldRecord(void*,save_record::
  auto f=std::move(test::onGrill);test::onGrill={};if(f)f();
  if(!test::grillReady)return false;if(test::liveBurn>=0){if(record.floats.size()<2)record.floats.resize(2);
  record.floats[1]={43217,1,test::liveBurn,1};}return true;}}
+#ifndef PROFILE_JOIN_HARNESS
 namespace ue_wrap::effects {int ResetOnSaveObject(void*,bool*){std::abort();}}
+#endif
+namespace coop::net::session_serial {uint32_t Current(){return test::sessionSerial;}}
 namespace ue_wrap::begin_equipment {bool GiveFromClass(const std::wstring&){std::abort();}}
 namespace ue_wrap::save_capture {
 void SetWorldGatherHook(void(*)()){}bool InstallGatherWatch(){std::abort();}EventState GameEventState(){std::abort();}
 }
 namespace ue_wrap::save_to_slot_hook {void SetWritten(void(*)(void*,const wchar_t*)) {}}
 namespace coop::hand_item {void* LocalHandActor(){return &test::liveUnits;}}
+#ifndef PROFILE_JOIN_HARNESS
 namespace coop::prop_synth_key {std::wstring RandomKeyString(){std::abort();}}
+#endif
 namespace coop::player_handshake {
 const std::string& GuidForSlot(int slot){return test::guids.at(slot);}
 const std::wstring& NicknameForSlot(int){return test::nick;}
@@ -87,7 +103,9 @@ const std::wstring& NicknameForSlot(int){return test::nick;}
 namespace coop::player_profile_store {
 std::string NickForJson(const std::wstring&){return "player";}
 bool Put(const std::string& guid,std::vector<uint8_t> blob,const std::string&){test::stored[guid]=std::move(blob);++test::storeWrites;return true;}
+#ifndef PROFILE_JOIN_HARNESS
 Found Get(const std::string&,std::vector<uint8_t>&){std::abort();}void Quarantine(const std::string&){std::abort();}
+#endif
 bool AnythingPending(){std::abort();}void MarkWorldGathered(){std::abort();}size_t CutToDisk(const std::wstring&){std::abort();}
 }
 namespace coop::signal_wire {

@@ -1,21 +1,182 @@
 # Regression tests
 
+`run_prop_action_delivery.ps1 -FaultControls` runs the real action controller in
+18 scenario groups. Coverage includes owned first-send payloads and nested FIFO,
+source/key/class replacement, refusal/caps/eight-row budget/expiry, fresh queues
+after teardown, world-MRE request/cue suppression, exact personal spawn scopes,
+hand-cleared provenance, nine scope retirements, one admitted received opening,
+preparation retry, 36 metadata/body/source cases, authorization replacement and
+safe capture/requeue/publication ownership. Nine source-copy controls must fail
+at their intended assertions. Both production TUs compile. Fresh cooked MRE
+checks retain action-4 spawn/cue/destroy order, three loot finish paths plus the
+ancillary poison pour, native initialization/weights and reward/roach/portion
+side effects. Existing birth filters, action/safe and wall regressions remain
+separate. No rendered gameplay or transactional output/refund recovery is claimed.
+
+`run_food_callbacks.ps1 -FaultControls` executes the production food controller
+in 18 scenario groups with controlled native/transport boundaries. It checks
+untracked/capacity refusal, valid/addressable positive portions, reserved nested
+eats, exact key and POST ownership, source/class retirement, dead final-bite
+retry, eaten output scope and hand-cleared provenance, skipped POST, output caps,
+verified factories, host refill protection and native function/owner retirement.
+Eight compiled source-copy controls must reach their intended failing assertions.
+The fresh cooked check follows each eaten entry and its branches: only box,
+banana and cup spawn wrappers; six personal overrides and the empty base are
+excluded from host replay. Both production TUs compile. `run_cooking` separately
+covers the actual birth-authoring filter, wrapper and existing hand/world state
+delivery. These checks do not establish concurrent cross-peer food transactions
+or rendered multiplayer acceptance.
+
+`run_host_players.ps1 -FaultControls` checks the actual native selector and config
+registry: all 31 limits, presets/bounds, shared choice, deferred slider persistence,
+concurrent selections, reopening and every partial-build allocation. The real
+HostWithSave, HostLobby and environment announcement bodies exercise all 31 limits
+across new/existing saves, direct/hidden/listed/brokered and offline fallback.
+The real lobby parser tests normal, missing, malformed and 64-bit-overflow counts.
+Seven removed-protection controls must fail. The runner also executes all 118
+Rust master tests, including each 2–32 capacity through signed create, heartbeat,
+browse and join. Cargo is required; a portable installation under
+`../_toolchain/rust/` is used when Cargo is absent from PATH. These checks do not
+simulate rendered multiplayer or deploy the master service.
+
+`run_sleep_personal.ps1 -FaultControls` executes the actual sleep controller at
+32-seat capacity. Native personal nightmare state/probability, sender authority
+and real 36-byte wire shape remain covered. New delivery coverage checks refused
+host flags/peer relays, coalescing and retry pacing, complete awake-inclusive joins,
+generation/readiness replacement, paced wake veto, host dreams, pending teardown,
+foreign sessions, stopped/disconnected/malformed input, world/serial/role changes,
+reentrant delivery and exact/nested client publication. A 32-player vote and last
+recipient/subject slot are exercised. Twelve controls remove each relevant guard,
+including separate client payload/request protection and pending disconnect reset.
+The production TU compiles. These tests do not establish rendered clock behavior.
+
+`run_profile_join.ps1 -FaultControls` executes the production save-ready callback,
+profile controller, receiver and chunk sender. It checks one-shot client requests,
+owned items/vitals/pose, dead/missing-profile defaults, partial native failure,
+reentrant profile/request changes and nested joins. Every native stage is tested
+against world/session/save/request replacement. Host preparation and chunking
+cover GUID ownership, disconnected/replaced recipients, nested sends, exact
+occupancy latches and retry debt. Seven controls remove world/revision/request
+guards, guarded chunks, GUID ownership, occupancy rearming and disconnect refusal.
+The complete profile controller also compiles. This is not a rendered join test.
+
+`run_container_apply.ps1 -FaultControls` compiles the production receive/apply/
+relay functions with the real inventory/container wrappers, record codec and park.
+It covers checked allocation/construction and retry, exact world-slot isolation,
+accepted/rejected reentrant input, actor/component/store/header/session/recipient
+changes, commit-bound birth completion, targeted relay debt, park replacement/
+reset/retirement/caps/clock rollback and duplicate hashes after binding replacement.
+Strict outer-header cases require an unreadable slice rather than false empty
+state. Seven controls remove checked encoding, current-source proof, relay debt,
+the masked boundary, old-park retirement, revision checks and strict slice reads.
+Both production TUs compile.
+
+`run_inventory_apply.ps1 -FaultControls` compiles the actual inventory wrapper,
+container wrapper, record codec and extracted production InstanceOffset method.
+It refuses each of 69 allocation points in a rich carried/worn/held fixture and
+checks that all old array headers survive. Class/name/string/signal failures,
+fixed empty-slot transforms, owned inputs, nested supersession, world/save/class/
+gamemode replacement, changed headers, packed Player flags, exact slot-zero
+isolation and replacement metadata are covered. Strict personal/equipment/hand/
+target headers, genuine/reserved empty arrays, checked held-record replacement,
+caller cancellation and container volume/name callback lifetime are also covered.
+Nine controls remove checked encoding, lifetime guards, slot refusal, class-cache
+refresh, strict personal/target reads, complete snapshots, checked hand staging
+and derived-state lifetime checks. The fresh native
+check reads the actual player component template and fixed equipment graph.
+It does not establish rendered joins or the original unknown item-copy trigger.
+
+`run_ariral_ship.ps1 -FaultControls` runs the production arirShipAppear phase
+controller and wrapper/ParamFrame path. It checks host-only authority, graph and
+latent-continuation refusal, scoped photo-listener admission, native local-photo
+eligibility, validated wire data, ordered incarnations/tombstones, quiet seeds,
+partial application and metadata readiness, live-cue deadlines, reentrant newer
+states, bounded fair sends, recipient replacement and actor/world/session cleanup.
+The wrapper verifies timeline stopping, packed bits, alpha/light, native emitter
+parameters and event-sender isolation. Four removed-protection controls must fail.
+Its fresh cooked contract binds the exact entries and blank-email loop to 0.9.0n;
+it does not qualify arirShipVanishing, shared reputation or rendered multiplayer.
+
+`run_container_birth.ps1 -FaultControls` runs the actual takeObj consumer and
+generic finish feeder. It covers native-body scope use, nested/absent/skipped
+POSTs, thread isolation, reincarnated function layouts, caller out storage,
+failed results, final saved identity, separate spawn/state refusal, reentry,
+actor/world/session/role changes, bounded fair retries and feeder ordering.
+Four removed-protection controls must fail assertions. Its fresh native check
+verifies the successful restored-object out and the separate record-only path;
+it does not establish the original client dupe trigger or rendered peer acceptance.
+
 `ci_fingerprints_test.py` verifies the added game-function reference rows against
 the saved native capture, including inherited resolution and absent declarations.
 GitHub runs it beside the fact-row gate.
 
 Current full audit: run `powershell -NoProfile -ExecutionPolicy Bypass -File
 package/check_current.ps1` from the checkout after source edits finish.
-It runs 71 groups, completes the incremental Release build and verifies that the
+With no filter it runs 92 groups, including prop-action delivery, food callbacks, wall delivery, container recovery, console callbacks/delivery, host-player selection, profile-join, container-apply,
+inventory-restore, Ariral phase, container-birth, session-report and canned-refresh runners,
+completes the incremental Release build and verifies that the
 production inputs stayed unchanged, without repackaging. Results and
 logs are in `build/todo-audit/`. `run_held_identity.ps1` compiles the actual held
 broadcast seam; the older item/resource/lamp/laptop runners use the current typed
 fact-row and save-codec APIs. The expected assertion failures in mutation logs
 must produce the failure code required by their runner. Gameplay remains separate.
 
+For a focused qualification, call the script from PowerShell with
+`-CheckGroups @('run_container_apply','run_inventory_apply','run_sync_2157')`.
+The same stable-source, Release and ABI checks still run; `verification.json`
+records `FullRegression=false` and the exact selected groups. Unknown groups fail.
+A focused report does not replace the last full-suite qualification.
+The b2214 qualification in `build/prop-action-delivery-2214/` covers 6 selected groups.
+The last full aggregate remains 83/83 on b2203. Focused qualifications and
+separate fault-control runs are recorded in TESTLOG; they do not claim a full run.
+
+`run_sat_console_delivery.ps1` exercises the actual console controller, wire
+codecs, chunk sender and assembler with 32 independently replaceable peer slots.
+Its 14 scenarios cover capacity, recipient/source replacement, owned/reentrant
+queues, refused or mutated history, nested clear ordering, busy/widget lifetime,
+native command preparation and detached teardown/install/eviction. Transport and
+engine calls use controlled doubles. `-FaultControls` requires assertion failures
+for eight production-source mutations; a compile failure does not count. The
+runner also compiles the controller against production headers. `-Case` selects
+one scenario, and `-Source` can test a source copy without editing production.
+
+`run_sat_console_callbacks.ps1` checks the production controller and real wire
+codec/chunker across 17 input, invocation, display and replay scenarios. These
+include 63 read/consume retirement transitions, failed consumption and recovery,
+nested Enter/clear, skipped or stale POST, latent local output, failed-row retry,
+widget and host-binding replacement, scoped replay/preclaim and exact watch
+rollback. Engine calls and transport use controlled doubles. The runner also
+compiles production headers and tests the actual native input wrapper with real
+ParamFrame, FString and FText code: 39 preparation invalidations, five post-call
+invalidations, missing/dead textbox and native failures. `-FaultControls` requires
+nine source-copy controls to reach their intended runtime assertions. `-Source`
+and `-Case` support focused controller checks.
+
 Run scripts from the canonical checkout. Numbered filenames identify the development
 batch that introduced a regression, not the currently packaged build; do not remove
 tests solely because their number is older.
+
+`run_container_recovery.ps1` covers local base-container extraction with 16
+production-controller scenarios, nine real refund-wrapper groups and fresh cooked
+native ordering checks. It preserves a saved native capture for the new extract
+fingerprint, with the existing takeObj reference as a hash-format control. The
+wrapper uses the actual checked save codec, metadata and allocator seams; native
+VM/transport boundaries remain doubled. `-FaultControls` requires seven compiled
+source-copy defects to fail their intended assertions. `-WrapperOnly` omits the
+controller fixture. The runner also compiles five production translation units.
+Receipt-less faults retain unresolved debt; these checks do not establish
+cross-peer transaction authority, persistent debt or rendered acceptance.
+
+`run_wall_delivery.ps1` exercises the actual wall controller, native wrapper and
+ParamFrame across 20 scenarios: admission versus post-admission failure, paced
+fair retries, lifecycle/actor/class/component/function retirement, nested callbacks,
+exact replay ownership, partial publication, invocation pruning/capacity, independent
+guard registration, replacement sessions, solo hosting and no-spend repair refusal.
+Engine objects and native dispatch use controlled doubles. `-FaultControls`
+requires eight compiled controller/wrapper mutations to reach their intended
+runtime assertions. Both production translation units also compile against their
+real headers. The older 2166/2168/creative suites retain integration coverage;
+paid client repair and rendered gameplay remain separate work.
 
 `run_explosion_motion.ps1 -FaultControls` checks the production host feeder from
 native overlap selection through the actual delayed radial impulse to deferred
@@ -91,6 +252,22 @@ hold yield, reliable root scale and host/receiver motion, seven existing item ru
 and the cooked native-evidence check. Logs are in build/item-batch-check/.
 These are offline checks; no PhysX or two-peer runtime is simulated.
 
+Current event qualification also includes `run_dream_identity.ps1`, serverbox
+delivery/application regressions within `run_events.ps1`, and fresh cooked
+dream/server-breaker/full-suite contracts. `package/check_current.ps1` accepts
+`-AssetDirectory` (default `../_research/current-assets`); these contracts require
+the extracted 0.9.0n uasset/uexp pairs and local `_research/kismet_dis.py` /
+`dump_2135.py` decoder. They verify native contracts, not rendered peer acceptance.
+
+`run_session_reports.ps1` exercises the actual physical-console classifiers,
+companion retry controller and host/client sleep controller. Its native check
+verifies the fresh hole/material/treasure, console-owner and can contracts.
+The garden runners cover synthetic hole identities, schema, both authors,
+acknowledgement, late join, duplicate creation, removal and suppression readiness;
+the record runner checks stale can refill/reclose/type refusal and initial births.
+`run_2174.ps1` covers canonical readiness before native can mutations. These do
+not reproduce the unidentified client item copy or close warp-arrow presentation.
+
 ## Fish integration
 
 `package/check_current.ps1 -EvidenceDirectory build/fish-integration-check` runs
@@ -126,6 +303,8 @@ b2178 and does not contain the material, C-key or PC boot corrections.
 |---|---|
 | run_nonentity | Coin credit/retirement, placement replies, dry walls/material records, sky latent gates |
 | run_cooking | Cooking progress, world/hand food readiness, profiles, replacement and output authority |
+| run_food_callbacks | Reserved eat admission, captured final bites, native eaten output provenance and host final-state guards |
+| run_prop_action_delivery | Owned/reentrant action FIFO, MRE request/spawn/open admission and safe publication ownership |
 | run_drink_spills / run_gasoline / run_scorch | Exact launch provenance, host flight/fire, decals, quiet join and retirement |
 | run_water_pour | Bucket/washer shots, source audio, projectile construction and host birth/coasting |
 | run_grime_join / run_windows | Cleaning snapshots, nested hooks, latest final wipe and retained join delivery |

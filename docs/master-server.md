@@ -38,8 +38,8 @@ join; a host's lives ten, because the host allocates with it for every joiner it
 each heartbeat reports the one the host's session holds and is answered with a new one once the
 master's record of it is half spent, or with the record's again when the host missed it. The
 master also answers the update check with the latest released pair; with no released record it
-answers nothing, and the client stays silent. And it serves the thanks
-list the main menu rolls ([ui.md](ui.md)): the text of one file on the box, named by
+answers nothing, and the client stays silent. For older clients it also serves a
+legacy thanks list: the text of one file on the box, named by
 `COOP_THANKS_FILE` and re-read at most every thirty seconds, so publishing a name is moving a
 file into place, with no restart. **Three answers, and only one of them is destructive.** The text
 is served as 200. A file that is not there at all answers 404, the master saying it has no list,
@@ -64,8 +64,8 @@ launch (`coop/net/master_slots`, `ui/server_browser_tabs`). A lobby lives on the
 announced to, and everything a session needs follows from that one fact: a host announces to the
 chosen master, which is then also its rendezvous and relay; the list on screen knows which master
 it came from, and a join goes through that master, the password prompt included; switching tabs
-drops the old list at once, since a lobby id means nothing on another master. The update check and
-the thanks list come from the chosen master too, so only the master the player picked learns
+drops the old list at once, since a lobby id means nothing on another master. The update check
+comes from the chosen master too, so only the master the player picked learns
 their address. Every release before the list existed knows only the first master's address, which
 is why the default slot keeps it.
 
@@ -144,7 +144,7 @@ locally for a scripted run, and serves a synthetic lobby list to the browser in 
 | `/v1/host`, `/v1/heartbeat`, `/v1/visibility`, `/v1/leave` | the host | the announce, which carries the host's build claim (`build_sha`, `build_key`, `build_sig`, optional), the game build it runs (`game_build`, refused unless of its shape), `listed`, and the lobby proof (`nonce` from the challenge, `proof`: the host's signature over the tag `multivoid-lobby-announce-v1`, its identity, the nonce and the master's name); a build that signs is refused without a valid proof (`409 proof-required`), a proof that is present must verify (`400 bad-proof`), a nonce that is spent, expired, another master's or another address's is `410 nonce-expired`, a build below the master's configured floor is `403 build-too-old`, an identity the operator listed in `COOP_BLOCKED_IDENTITIES` is `403 blocked`; a valid proof marks the row proved, and a proved announce for a key already listed replaces that row; the keepalive with players, their links, listing and the TURN credential the host holds, answered with its renewal; the listing flip; the leave |
 | `/v1/lobbies`, `/v1/join` | the client | the list (its own rate class, 120 a minute per address), each row with the host's `identity` (its key) and `proved` (whether the host signed for it), one word for how its players reach the host (relay, direct, lan, or none before anyone has joined) and the counts behind it, and `build_sha`, `build_key` and `build_sig`: the host's own claim of its build, recorded as sent: a field of the wrong type reads as none (no hash, key 0, an empty signature), and a claim whose hash, key and signature do not fit together is dropped with one log line (the master verifies nothing about the build claim); the dialing information for a lobby |
 | `/v1/latest`, `/healthz` | the client; an operator | the newest release per game version (`games`, from `COOP_LATEST_GAMES`), with the 0.9.0n entry as the `proto`/`mod` older clients read; liveness |
-| `/v1/thanks` | the client, on opening the browser | the thanks list's text |
+| `/v1/thanks` | older clients only | the legacy thanks list's text; current builds do not request it |
 | the signaling lines | both peers | the greeting, the challenge and its proof, the forwarded candidates |
 
 ## Late join

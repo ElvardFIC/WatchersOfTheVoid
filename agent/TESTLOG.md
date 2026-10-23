@@ -1,3 +1,829 @@
+# Development b2214 - prop-action/MRE delivery (25 October 2026)
+
+Ten completed fixes are checked in TODO. Prop action queues now own target/class
+identity and a numbered entry before the first send. Native key/send callbacks
+cannot borrow invalidated queue storage, repeat a draining head, overtake an older
+request or erase a newly installed queue. Exact source/revision completion and
+owned payloads preserve FIFO across refusal and nested actions. Each drain handles
+at most eight rows; the existing capacity, expiry/clock, key and MRE hand-transition
+guards remain. Session pointer/serial, world, role, running and connection changes
+retire queued actions, buckets, safe retries and MRE scopes.
+
+Client world-MRE opening now refuses malformed/foreign-source/unscoped reflected
+calls, coalesces a pending open and guards request feedback through callbacks.
+Personal MRE loot requires the exact active native spawn scope, declaring function
+and actor/class/player ownership. A tracked native hand opening can clear the hand
+before spawn without losing that provenance. Bounded scopes use exact POST and
+active-invocation pruning; a hand pointer alone no longer admits loot.
+
+Received host opens capture readiness/person/body before authorization and retain
+target/key/function/owner/mesh currency through ParamFrame construction, argument
+binding and hit preparation. A bounded per-actor reservation prevents nested
+received opens; failed preparation releases it, while an admitted dispatch remains
+latched until actor/class or source retirement. This is conservative at-most-once
+admission, not proof that native output committed. Host-local native actions retain
+their existing path. Safe capture/retry now owns actor/class/revision snapshots;
+native key reads and old publication completions preserve fresh requeues.
+
+PASS **18 new controller scenario groups**, including six source transitions,
+four capture retirements, exact payload/order after nested installation, queue caps
+and eight-row budget, expiry/clock/key/class retirement, MRE request/cue guards,
+cleared-hand output, nine scope retirements, received-opening dedup/preparation
+retry, 36 native preparation combinations, six authorization changes and safe
+requeue/capture lifetime. Engine/native/transport seams are controlled doubles.
+PASS nine compiled source-copy controls at their intended assertions: prequeue
+send, recursive drain, budget, session serial, target class, missing spawn scope,
+duplicate received open, native function incarnation and safe revision.
+Evidence: `build/prop-action-delivery-check/final-2214.log`. Both production TUs
+compile against real headers.
+
+PASS fresh cooked MRE contracts: native action-4 entry calls spawn, ripping cue
+then destruction; three loot factories and ancillary poison-pour finish directly
+inside spawn. Native name/food initialization, weighted choices, jackpot reward,
+poison and roach/portion side effects are retained. This audit establishes the
+scope boundary; it does not establish multiplayer parity for ancillary effects
+or change native reward routing.
+
+PASS **6/6 selected groups**: run_prop_action_delivery, run_2162, run_2168,
+run_cooking, public_prose_include and reliablekind_gate (18 refusal controls).
+Evidence: `build/prop-action-delivery-2214/verification.json` (`FullRegression=false`).
+PASS stable-source Release/ABI **b2214 / protocol 2214**, 793 build source entries.
+DLL SHA256: `a4a227726743b7eec1178b289e1495a8eb4920ff64942329c3ba388285b0aac3`.
+Production snapshot SHA256:
+`51c6e5a78e4f30052c58bdf316ad46dccd7611e868af492da26d6f3a3f6aca05`.
+The current 92-group suite was not run in full; the last full aggregate remains
+83/83 on b2203. Final diff and new-file whitespace checks pass.
+
+All checks run locally. Rendered opening, package debit/output/refund recovery,
+remaining package subclasses, ancillary effects/rewards and full-save behavior
+remain open. No game run, package, installation, commit, publication or remote
+update was performed.
+
+# Development b2213 - food callback/output ownership (25 October 2026)
+
+Ten implemented fixes are checked in TODO. Client eat admission now requires a
+bounded, active observation, an addressable actor and a successful valid read
+with positive portions. Reserving before native reads refuses nested eats of
+the same item. Key/element and actor/class revalidation prevents a callback from
+retagging that observation. Exact POST owns and detaches its record without
+rereading caller parameters. Captured last-bite delivery and refused-send retry
+survive native destruction. Food caches and callback ownership retire across
+world, session pointer/serial, role, running and connection transitions.
+
+Empty box/banana/cup authoring now requires an active native eaten scope and its
+exact declaring graph. A captured local-hand eat retains that provenance when
+the native final bite clears the hand before eaten. World and mirror outputs
+keep host ownership. Bounded scopes validate the actor/class, function/owner,
+player and active invocation; exact POST or skipped-POST pruning removes them.
+Host bites require valid current food data and preserve source/key/class currency
+through authorization and writes. Final output/destruction rechecks zero portions
+after publication and native preparation. Refilling/replacing food during those
+callbacks cannot leave an empty wrapper or destroy the replacement. Native
+function/owner replacement retires the old prepared completion.
+
+PASS **18 new controller scenario groups**, including six invalid-condition
+cases, eight PRE retirements, nine output retirements, both capacity refusals,
+key/POST ownership, nested eats, cleared hand, dead final delivery, three allowed
+factories versus personal overrides, refilled final state and four native
+function/owner preparation changes. Engine/native/transport calls are controlled
+boundaries; production synchronization code runs unchanged. Both production TUs
+compile against real headers.
+
+PASS eight compiled source-copy fault controls: untracked eat, invalid condition,
+nested eat, captured address, session serial, missing output scope, refilled final
+state and native function incarnation. Each reaches its intended assertion.
+Evidence: `build/food-callbacks-check/final-2213.log`. PASS fresh cooked native
+contracts: final portion decrement precedes eaten/output/destruction; exactly
+three eaten paths spawn wrappers, while six personal overrides and the empty
+base are excluded from host replay. Personal hunger, poison, hints and
+achievements continue to run on the eater.
+
+PASS **8/8 selected groups**: run_cooking, run_food_callbacks, run_2140,
+run_2174, run_grill_hand, run_grill_edits, public_prose_include and reliablekind_gate
+(18 refusal controls). Evidence: `build/food-callbacks-2213/verification.json`
+(`FullRegression=false`). PASS stable-source Release/ABI **b2213 / protocol 2213**,
+793 build source entries.
+DLL SHA256: `05ea31f7c207aee8f499a5670681f83b7d83708f4a675964351b5a39357e3e99`.
+Production snapshot SHA256:
+`63cbd508943f485822a2d8e00a8fd193d5073d6a681c5699230c9812c873df05`.
+The current 91-group suite was not run in full; last full aggregate remains
+83/83 on b2203. Final diff checks pass.
+
+All checks run locally. Cross-peer concurrent consumption/output transactions,
+optimistic personal effects before host acceptance, remaining package subclasses,
+full-save behavior and rendered multiplayer acceptance remain open. No game run,
+package, installation, commit, publication or remote update was performed.
+
+# Development b2212 - wall material delivery (25 October 2026)
+
+Ten completed changes are checked in TODO. The deferred host wall/material queue
+now expires ownership across world, session serial, role and running transitions.
+Both actors and their class incarnations are captured before native enrollment;
+malformed or callback-retired input never queues a spend. The active pair remains
+visible during preparation, and its one replay permit is claimed before another
+callback can steal or requeue that pair. Recycled identities cannot mint a new
+queued attempt from an old replay.
+
+Native FeedWhile guards the caller through metadata binding, collision query and
+overlap dispatch, including actor/class/component/field/function incarnations.
+Only failures before native admission retain a paced 250 ms retry. Rotation keeps
+later due pairs moving, with eight actual attempts per tick, the existing expiry
+and bounded queue. Once the native gate admits that queued attempt, it is retired
+even if dispatch fails or POST is skipped: its graph may already have spent
+material. Admission is conservative and does not claim every admitted body ran.
+
+Native POST records are invocation/source/actor owned, detached before callbacks,
+bounded and pruned when cancellation/fault skips POST. Source-current partial wall
+state is marked for publication when admitted work lacks a successful POST;
+material-spending code is never rerun to obtain that state. Fresh callback queues
+and nested session installations survive old completions. Six guard registrations
+are attempted independently; accepted protections remain while only missing ones
+retry. Solo hosts and last-peer departure retain native host ownership.
+
+PASS **20 new scenarios** using the actual controller, wrapper and ParamFrame
+with controlled engine/native dispatch doubles. Coverage includes admitted failure
+versus pre-admission retry, pacing/fair budget, lifecycle retirement, 14 collision
+query changes, enrollment invalidation and reentry, nested body/tick callbacks,
+20 metadata retirement combinations, exact registration retry, stale POST,
+no-spend repair, missing-POST publication, replacement queue/install, solo hosting,
+four pre-dispatch identity/class changes, component requery and body-record cap.
+Both production translation units compile against real headers.
+
+PASS eight compiled source-copy controller/wrapper controls, each reaching its
+intended assertion: admitted retry, ignored session serial, enrollment reentry,
+unguarded wrapper source, stale collision component, registration short circuit,
+stale POST and wrong replay pair. Evidence: `build/wall-delivery-2212.log`.
+PASS existing placement/records/authority/wrapper, wall enrollment/damage and
+creative construction regressions: `build/wall-baseline-2212.log`,
+`build/wall-damage-2212.log`, `build/wall-creative-2212.log`.
+
+PASS **6/6 selected groups**: run_wall_delivery, run_2166, run_2168,
+run_wall_creative, public_prose_include and reliablekind_gate (18 refusal controls).
+Evidence: `build/wall-delivery-2212/verification.json` (`FullRegression=false`).
+PASS stable-source Release/ABI **b2212 / protocol 2212**, 793 build source entries.
+DLL SHA256: `a0288a41fb67ae40b03c1cca236315b489055a49318a29f766adc0a14e771a38`.
+Production snapshot SHA256:
+`91c0faecf0c358b171a23d2522780b58c60c432e810829e4162f63017b36f51a`.
+The current 90-group suite was not run in full; last full aggregate remains
+83/83 on b2203. Final diff checks pass.
+
+All verification runs locally. Paid client repair remains a no-spend refusal:
+host request/result acceptance and exact personal-stock accounting across
+hand/slot/drop, refusal and disconnect remain open. Native rendered material
+consumption, wall construction/impact/destruction and ordinary game acceptance
+still need current-DLL gameplay checks. No game run, package, installation,
+commit, publication or remote update was performed.
+
+# Development b2211 - local container failure recovery (25 October 2026)
+
+Ten completed fixes are listed in TODO. Base world-container extract now reserves
+bounded, invocation-owned full-record escrow before native takeObj can debit its
+source. Exact debit/pocket receipts distinguish accepted personal credit from
+refusal. Checked full-record restore owns its input and rejects incomplete scratch
+or stale frame/source state before loadData. No generic native loadData result
+bool is used: the base implementation does not reliably assign it.
+
+Failed/null spawning, including an alive deferred actor without a finished actor,
+and failed restoration/full-inventory refusal settle locally by retiring the exact
+carrier before atomically returning the retained record to its current source.
+Destruction/refund refusal retains paced debt. Same-key/class dedup preserves newer
+data; conflicting identity classes refuse. The append stages checked engine-owned
+data, revalidates save/component/index/headers and copies latest other rows only
+after callback-capable preparation. Cleanup reentry cannot turn a committed refund
+into another attempted credit.
+
+The contents lane is notified after a current-source commit. Both container
+derivation paths rebuild names before volume/mass, as native volume calculation
+reads nameData. The recovery caller's source guard spans those native callbacks.
+The existing birth suppressors now cover the whole native extraction and its
+pending carrier, preventing default-state publication before the transaction ends.
+Stopped-session teardown attempts only proven refunds against the original live
+source; a nested installation keeps its own state.
+
+PASS 16 production-controller scenarios on controlled engine/native VM seams,
+including both roles, owned data after caller locals expire, null/partial spawn,
+successful pocket, full inventory, refused destroy/refund retry, skipped receipts,
+nested extracts/installation, class/source retirement, teardown settlement and
+pre-debit capacity refusal. PASS nine real-wrapper groups using actual
+container_inventory/save_record/metadata code: all typed groups and zero values,
+same-save nested index, every allocation point, class/name/string/signal failures,
+key/class dedup, 13 source/header retirements, owned/nested input, current in-place
+edits and late same-key return, cleanup reentry and personal-store exclusion.
+
+PASS seven compiled controller fault controls: ignored refund refusal, carrier
+quarantine, partial spawn, ambiguous debit, admission cap, nested install and
+accepted credit. Each reaches its intended runtime assertion. Evidence:
+`build/container-recovery-check/final-2211.log`. Existing codec regression plus
+ten codec fault controls and source compilation also pass:
+`build/save-record-check/checked-restore-2211.log`.
+
+PASS fresh cooked extraction/debit/pocket-failure and names/volume contracts.
+The new extract reference is generated from saved live 0.9.0n canonical capture
+text; its whole-text hash and the existing takeObj signature/body control match.
+The 68-line capture is retained in tests. PASS fact-row gate: **517 rows / 166
+files**, `build/container-recovery-check/fact-rows-2211.log`.
+
+PASS **9/9 selected groups**: run_container_recovery, run_container_birth,
+run_container_apply, run_inventory_apply, run_save_record, run_2147,
+inventory_capture, public_prose_include and reliablekind_gate. Evidence:
+`build/container-recovery-2211/verification.json` (`FullRegression=false`).
+PASS stable-source Release/ABI **b2211 / protocol 2211**, 793 build source entries.
+DLL SHA256: `c48f57b607a0f5bbace1e19239b39d654f8a0370c3bbc1669739da2a26ac61fe`.
+Production snapshot SHA256:
+`980cff1745837906bc6978c04da6dc9935e685a975baaf076c159971e84c1f25`.
+The current 89-group suite was not run in full; last full aggregate remains
+83/83 on b2203. Final diff checks pass.
+
+All verification runs locally. This completes proven local base-container failure
+recovery; it does not close cross-peer debit/output arbitration, personal extract
+overrides/raw takeObj, rendered multiplayer acceptance or persistent recovery.
+Receipt-less faults keep bounded unresolved debt instead of speculative refunds;
+world/session replacement clears that debt. Teardown settlement is best effort,
+so guaranteed disconnect failure recovery remains open. No game run, package,
+installation, commit, publication or remote update was performed.
+
+# Development b2210 - console input and native playback (25 October 2026)
+
+Ten input/playback changes are checked in TODO. Client shared-world commands
+consume native input successfully before submission and refuse nested commits of
+the same input. A full command outbox refuses before consumption. The guarded
+wrapper prepares FText/SetText before changing the command, validates source,
+terminal/class/function/textbox serials and field ownership around reflected
+work, and returns failure after invalidation. Failed consumption sends no command
+and does not allow the original world-command body to execute on the client.
+
+Client preparation and counters retain their source/widget/host-binding token.
+Local command/graph records use invocation IDs, preserving nested clear/output
+ownership and pruning canceled/faulted calls whose POST never runs. Exact POST
+ownership detaches before native reads; source and revision checks protect busy
+state and latent output. The graph watch and its rollback use the same callbacks.
+
+Display rows retain source, target and clear revision across native dispatch.
+A failed row may retry ahead of an ordinary append, while a newer clear retires
+that old row. Widget replacement stops the drain; client host-binding replacement
+retires old text and mirror busy debt, including discovery immediately before a
+drain. Each replay scope owns expected arguments and claims one direct write
+invocation. Nested writes/commands, pre-claim alerts and replacement-session
+output follow normal canonical synchronization.
+
+PASS **17 callbacks scenarios** using the actual controller, wire codecs,
+chunker and assembler, with controlled native/transport doubles. Coverage
+includes 63 client read/consume retirement transitions, failed input recovery,
+duplicate Enter, consume-before-send ordering, stale POST and native arg reads,
+nested clear, skipped POST, latent local graph output, failed row clear/append,
+display source/widget/host-binding replacement and recovery, replay attribution,
+new-session output, pre-claim/probe reentry and exact watch rollback.
+
+PASS the actual input wrapper with real ParamFrame, field_io, FString and FText
+implementations: 39 preparation callback invalidations, five post-SetText
+invalidations, no textbox, dead textbox, failed mint/frame/parameter/native calls
+and ownership/serial replacement. Preparation failures retain original input;
+a native failure after mutation is refused, without claiming a complete rollback.
+
+PASS nine source-copy callback fault controls: ignored consume refusal, duplicate
+input ownership, stale POST, missing unwind pruning, clear revision, widget stop,
+replay invocation/preclaim and mismatched watch rollback. Every control compiles
+and reaches its intended runtime assertion; compile failures do not count.
+Evidence: `build/console-callbacks-2210/fault-controls/callbacks.json` and adjacent
+assertion logs. Existing delivery scenarios and all eight delivery controls pass:
+`build/console-callbacks-2210/fault-controls/delivery-controls.log`.
+
+PASS existing console/Madness controllers, Madness presentation and six production
+integration TU compiles: `build/console-baseline-2210.log`.
+PASS **6/6 selected groups**: run_sat_console_callbacks, run_sat_console_delivery,
+run_2154, run_session_reports, public_prose_include and reliablekind_gate
+(including its 18 refusal controls). Evidence: `build/console-callbacks-2210/`.
+PASS stable-source Release/ABI **b2210 / protocol 2210**, 792 build source entries:
+`build/console-callbacks-2210/verification.json`.
+DLL SHA256: `4e8687d8cc2657687aa2a76a11044c94bd5ce47d656da23b4b12adc03ecdb1af`.
+Production snapshot SHA256:
+`b0b8d9573b9afc9fa4f7b2002a26b63f3fc75359480048bbce0a608f7d7d0f1a`.
+FullRegression=false; the current 88-group suite was not run in full. Last full
+aggregate remains 83/83 on b2203. Final diff checks pass.
+
+All verification runs locally. Rendered console input, multiplayer world-command
+effects and ordinary game startup remain open. Other events/entity variants and
+personal resource transactions remain separate work. No game run, archive,
+installation, commit, publication or remote service update was performed.
+
+# Development b2209 - console delivery and lifetime (25 October 2026)
+
+Ten console changes are checked in TODO: 31 remote terminals; current-source
+guards; recipient generation/GUID/leave-incarnation binding; owned outgoing
+blobs; exact queue entry completion; nonreentrant per-recipient flush; guarded
+real wire chunks and retained refusals; revision-owned history/current-busy
+reseed with canonical all-observer clear ordering; both busy levels and
+widget-bound local holds; detached terminal/session teardown and guarded native
+construction, context initialization and command preparation.
+
+The actual controller retains its bounded text history and paced outbox. A join
+replays current text/busy state without executing a previous native command.
+Source/recipient changes stop old callbacks before committing a cached context
+or running a command. Nested transport callbacks cannot pop a replacement queue
+head or make later observers receive old text after a clear. Retired terminals
+and session state are detached before callbacks, so a nested replacement session
+keeps its own state.
+
+PASS local `run_sat_console_delivery.ps1 -FaultControls`: 14 scenarios using
+the production controller, wire codecs, chunk sender and assembler, with
+controlled engine/transport doubles. They include all 31 remote seats, slot 31,
+generation/GUID replacement, partial assembly retirement, queued append/replace,
+world/serial/role/link/session changes, refused/mutated history, busy reseeding,
+widget reincarnation, nested teardown/install, detached eviction and a nested
+clear during a multi-chunk broadcast to three recipients. Native preparation
+covers 27 source/recipient changes across busy read, context init and panel write.
+All eight production-source fault controls fail their intended assertions:
+capacity, recipient invalidation, nested flush, world identity, false busy,
+history revision, broadcast ordering and native command source. Compile failures
+do not count. Evidence: `build/sat-console-delivery-check/fault-controls-2209.log`.
+
+PASS existing console/Madness controllers and Madness presentation, plus
+production-header compilation of six integration translation units:
+`build/console-baseline-2209.log`. The new runner also compiles the console
+controller against production headers.
+
+PASS **5/5 selected groups**: run_sat_console_delivery, run_2154,
+run_session_reports, public_prose_include and reliablekind_gate (including its
+18 refusal controls). Evidence: `build/console-delivery-2209/`.
+PASS stable-source Release/ABI **b2209 / protocol 2209**, 792 build source entries:
+`build/console-delivery-2209/verification.json`.
+DLL SHA256: `febebb9da4e71f84ec5173afc57c7bfa68d52035cd4b8a9ab0d8810e2bc3aab1`.
+Production snapshot SHA256:
+`05d591b5340d92f56210aa5f1df4bd681ca105163c48a92963e630fc90655bab`.
+FullRegression=false; the current 87-group suite was not run in full. The last
+full aggregate remains 83/83 on b2203. Final diff checks pass.
+
+All verification runs locally. Rendered simultaneous console use, world command
+effects and real keyboard input remain open. Broader Rufus/thiccfus, llama,
+Madness/event variants and other entity effects are not closed by these changes.
+No game run, release archive, game installation, commit, publication or remote
+service update was performed.
+
+# Development b2208 - main-menu and promotional cleanup (24 October 2026)
+
+Removed the mod's tester/reviewer thanks block from the main-menu tick. Its
+renderer, widget builder, embedded text/resource, startup initialization, cache/
+parser, browser refresh and client FetchThanks API are retired together. CMake
+and the HTTP/prose censuses no longer retain those inputs or the /v1/thanks client
+operation. The server's legacy endpoint remains available to older clients.
+
+Removed voluntary original-author promotion from the boot banner, current root/
+package README copy, distributed branding changelog sentence, future package
+manifest description and repository Sponsor metadata. Current maintainers remain
+credited. LICENSE, THIRD-PARTY-NOTICES and historical source provenance are
+unchanged; no attribution is falsely reassigned. UI/master/release documentation
+now describes the current client rather than the removed roll.
+
+PASS **3/3 selected groups**, stable-source Release/ABI b2208 / protocol 2208,
+792 build source entries: `build/menu-cleanup-2208/verification.json`.
+Groups: run_host_players (including its 118 Rust library tests),
+public_prose_include and reliablekind_gate.
+DLL SHA256: `4868a0d7b5ae588c8e75575cd533457d718b9a44aa450b5ce62d9a982cc0d7be`.
+Production snapshot SHA256:
+`82d2bdcf2df6bb3510eea7bb0650cd02e3b4c29dfa1f9a2fe9ee567f4897df92`.
+FullRegression=false; the 86-group suite was not run in full. Last full aggregate
+remains 83/83 on b2203.
+
+PASS master contact census: 8 endpoints across two files, no failures;
+`build/menu-cleanup-master-contact.log`. Scans find no retired roll/cache/client
+API/endpoint references in current production code or promotional original-author
+references in the edited current copy. The license/third-party files have no diff.
+PASS artifact check: LoadLibraryEx loaded the current DLL as data only (no DLL
+entry execution), and FindResource confirms retired RCDATA ID 320 is absent:
+`build/menu-cleanup-2208/resource-check.json`. Diff checks pass.
+
+All verification ran locally. Visual in-game main-menu acceptance remains open;
+no game run, release archive, game installation, commit, publication or remote
+service update was performed. TODO records the ten concrete cleanup steps without
+claiming ten unrelated gameplay fixes.
+
+# Development b2207 - complete 2–32-player selection (24 October 2026)
+
+Ten completed changes:
+1. Capacity has its own row in native session settings, with window height for
+   the extra controls and an explicit total-including-host label.
+2. Quick 2/4/8/16/32 buttons complement minus/plus for every integer from 2 to 32.
+3. A typed net.player_limit row remembers the choice, defaults to four and bounds
+   both the UI and environment/config host path. Failed disk writes retain the
+   live choice and can retry persistence later.
+4. Native and overlay menus share the same selection. Slider dragging changes
+   memory; release/host remembers once. Serialized choices and cached reads avoid
+   competing defaults, per-frame ini reads/writes and render-thread widget calls.
+5. Partial build/menu cleanup clears every selector pointer. Endpoint controls
+   dim, ambiguous hover is refused and all external selector inputs clamp.
+6. ReadNetConfig carries the registered limit into scripted/environment hosting.
+7. The legacy HostLobby path copies the selected capacity into its actual network
+   Config, closing its advertised-limit versus default-four admission mismatch.
+8. Environment hosts announce their actual configured limit instead of four.
+9. Initial and retained/re-announced lobby requests normalize to the same bound.
+10. Browser counts stay within host-inclusive capacity, with safe signed/unsigned
+    64-bit JSON clamping. Master heartbeat counts cannot erase the hosting seat,
+    and create replies echo the accepted players_max without changing old fields.
+
+PASS `run_host_players.ps1 -FaultControls`: actual selector and config registry,
+all 31 limits/presets/endpoints, cached reads, concurrent choices, delayed writes,
+reopen, failed persistence and every one of eight partial-build points. Extracted
+production HostWithSave/HostLobby/environment bodies cover 496 save/mode/listing/
+master-availability combinations plus every legacy/environment limit. Real lobby
+list parsing covers missing/wrong-typed and extreme 64-bit counts.
+Seven controls fail after removing remembered choice, persistence, bounds,
+partial-build cleanup, deferred writes, legacy capacity or environment capacity.
+Evidence: `build/host-players-controls.log`.
+
+PASS all **118 Rust library tests**, including each 2–32 limit through signed
+create, heartbeat, browse and join, legacy/default/bad/out-of-range capacity and
+host-inclusive count bounds. Rust 1.99.1 runs from a portable workspace toolchain;
+the system PATH was not changed. Optimized local Windows master build passes:
+`build/master-player-limit-release.log`, `server/target/release/coop-master.exe`.
+Master SHA256: `8d5af3ec8a34bbf4fcce6734998f3a2c754158bf642569d6aff52965646e4ba7`.
+PASS config registry gate: 292 rows plus five font-role rows and its fixture
+controls, `build/host-players-registry.log`.
+
+PASS **7/7 selected groups**, stable-source Release/ABI b2207 / protocol 2207,
+794 build source entries: `build/host-players-2207/verification.json`.
+Groups: run_host_players, run_sync_2157, run_sleep_personal, run_profile_join,
+run_session_reports, public_prose_include and reliablekind_gate.
+DLL SHA256: `6e681dc776f64d68165095e8913a5baf8753c3a34221fdc2069d353cedd25a96`.
+Production snapshot SHA256:
+`4fc742aeed5572d5f1b373394592266041ba3bcdba67444e3f75f8d915ba5ed9`.
+FullRegression=false; the new default has 86 groups and was not run in full.
+Last full aggregate remains 83/83 on b2203. All verification ran locally.
+
+The chooser implementation is complete and checked in TODO. Rendered input/layout,
+real two/32-player admission/full/reuse and larger-group performance remain
+unperformed acceptance. The remote master's matching deployment is not confirmed
+or changed by this work. README distinguishes these b2207 development controls
+from prepared package 0.9.2158. No game run, release package, game installation, commit or
+publication was performed.
+
+# Development b2206 - ten sleep synchronization fixes (24 October 2026)
+
+1. Refused host-asleep flags retain recipient-specific current-state debt rather
+   than disappearing after the only edge. New sleep/wake truth supersedes old
+   levels; a refused recipient retries after 100 ms instead of on every frame.
+2. Refused peer-rest relays retain the same bounded debt, including wake and
+   departure notifications. Transport acceptance clears only the observed revision.
+3. Join/readiness seeds include every peer row, including explicit awake rows.
+   Partial/refused seeds retry, repairing old sleeping mirrors without history replay.
+4. Rest state, pending input and recipient delivery follow transport generation
+   and readiness. Missed departure edges, reused seats and readiness loss clear
+   old votes; a replacement needs its own accepted resting report.
+5. Paced reports are paid only by the installed running/connected host session.
+   Unready/departed reports are cleared, and full disconnect resets their token
+   state and debt so an old sleep cannot reappear in the next session.
+6. A valid wake/dream waiting in the pacing queue vetoes shared acceleration
+   immediately. Presentation remains paced; the clock no longer trusts an older
+   applied Resting value while its author's newest report says otherwise.
+7. Unanimity reads the host's native sleep/dream state, refusing unreadable or
+   non-finite flags. An overlapping host dream cannot count as ordinary rest.
+8. Sleep receive refuses stopped/disconnected input, null payloads and nonzero
+   padding. Awake-with-bed is rejected on the client receive path as on the host.
+9. World generation, session serial/object and role changes clear all snapshots,
+   pending reports and delivery debt. In-flight source/recipient checks stop old
+   delivery; a reentrant newer revision cannot be erased by the old completion.
+10. Clients publish their initial awake state and latch the exact accepted wire
+    payload. A nested newer send owns completion; an interrupted/disconnected
+    send cannot falsely mark the new local state as delivered.
+
+PASS `run_sleep_personal.ps1 -FaultControls`: the actual controller, native
+personal nightmare behavior and real 36-byte wire payload run with 32-seat stubs.
+Delivery refusal/coalescing/backoff, awake-inclusive seed repair, generation and
+readiness changes, real paced wake input, host dream, pending teardown, foreign
+session payment, malformed/offline input, world/serial/role reset, reentrant
+delivery and exact/nested client latches pass. Every connected seat votes, with
+the final subject/recipient slot covered. The complete production TU compiles.
+Twelve removed-protection controls fail their assertions: lost-host-level,
+lost-peer-level, incomplete-join, stale-occupancy, foreign-debt, paced-wake,
+host-dream, inactive-input, stale-world, stale-client-payload, stale-client-send
+and disconnect-debt. Evidence: `build/sleep-personal-check/fault-controls-2206.log`.
+
+PASS **7/7 selected groups**, stable-source Release/ABI b2206 / protocol 2206,
+794 build source entries: `build/sleep-delivery-2206/verification.json`.
+Groups: run_sleep_personal, run_session_reports, run_dream_identity,
+dream_identity_native_test, insomnia_native_test, public_prose_include and
+reliablekind_gate. The session-report sleep-speed controller and fresh native
+dream/Insomniac contracts remain green.
+DLL SHA256: `f1469bb7f1966bce051ea3ca0c84b82b85835cb1973f08b38fb9327aeb4601d0`.
+Production snapshot SHA256:
+`f5c08f20cc6ce85c02adaf202feb08c0a5855e0f14358fcd3dd180fde00af0a3`.
+FullRegression=false; the 85-group suite was not run in full. Last full aggregate
+remains 83/83 on b2203. All verification ran locally.
+
+Rendered multiplayer clock/wake/dream and recipient replacement acceptance remains
+open. Native nightmare probability/rewards stay personal, and the optional
+per-mattress capacity suggestion remains deferred because the wire identifies
+bed classes. No game run, package, installation, commit or publication was
+performed. TODO checks the ten implementations separately from game acceptance.
+
+# Development b2205 - ten inventory/profile fixes (24 October 2026)
+
+1. Strict personal-store outer headers refuse negative/inconsistent counts,
+   invalid pointers and malformed capacity. An unreadable inventory no longer
+   looks empty to profile persistence; genuine/reserved empty arrays stay valid.
+2. Personal snapshots validate equipment/hand headers before publishing any
+   carried/equipment/hand output. Failed reads cannot expose a partial profile.
+3. World-container reads use the same strict headers and return Unreadable on
+   corruption, preserving shared contents instead of broadcasting false emptiness.
+4. Restore validates existing carried/equipment/hand headers before using their
+   fixed-slot shape or staging replacements. Failure preserves the live arrays.
+5. Held-item replacement stages the complete record through the checked codec.
+   Failed construction and changed save/world/header/slot or nested replacement
+   refuse publication; existing key, tag and other saved data are preserved.
+6. Native container volume/name derivation checks object/class/world, ownership,
+   component binding and function lifetime between dispatches. A stale volume
+   callback cannot continue into an unrelated or replaced owner's name update.
+7. Save-ready join restoration binds each native step to the live client session,
+   world/serial and save incarnation. Failed effects reset also keeps client-to-host
+   profile reporting closed, protecting the stored profile after a partial restore.
+8. The callback owns one complete pending profile revision and consumes an exact
+   atomic request generation. New profiles/requests and nested joins cancel older
+   work without mixing items, vitals and pose or overwriting newer completion.
+9. Host profile delivery owns the recipient GUID and binds preparation and every
+   chunk to source epoch/world/serial, role, connection, occupancy, GUID and send
+   sequence. Disconnect callbacks fence an in-flight send immediately.
+10. The sent latch records recipient generation and GUID. Silent seat reuse
+    rearms delivery; refused/interrupted sends retain retry debt, and a stale
+    host tick cannot continue across a world/session change into another seat.
+
+PASS all three fault-control runners: 23 expected-failure controls (9 inventory,
+7 container and 7 profile-join). Each removed protection fails its assertion while
+the real implementation passes. Evidence:
+`build/inventory-apply-check/fault-controls-2205.log`,
+`build/container-apply-check/fault-controls-2205.log`,
+`build/profile-join-check/fault-controls.log`.
+The actual wrappers, record codec, extracted world read/apply/relay, profile
+controller/receiver/chunker and private save-ready callback are exercised. Join
+coverage changes world/session/save/request at each native stage, admits nested
+newer joins, checks partial failure and tests recipient replacement between chunks.
+Complete production inventory/container/save-record/profile TUs also compile.
+The equipment-view fixture (run_2146) passes separately.
+
+PASS **12/12 selected groups**, stable-source Release/ABI b2205 / protocol 2205,
+794 build source entries: `build/profile-safety-2205/verification.json`.
+Groups: run_profile_join, run_inventory_apply, run_container_apply,
+run_container_birth, run_2169, run_2176, run_trowel, run_2147, run_sync_2157,
+run_item_records, public_prose_include and reliablekind_gate.
+DLL SHA256: `f03c8e6843f63e24b5d9739d679141c0d60db512e2aa4a9b2363a178869bfa77`.
+Production snapshot SHA256:
+`f626d68fe29a739feba03fc87847fec2cde594c6d4d72b370ecd5c85ecf7edbe`.
+FullRegression=false; the new default has 85 groups and was not run in full.
+Last full aggregate remains 83/83 on b2203. All verification ran locally.
+
+Outer-header validation does not validate every nested record or allocation
+extent. A newer profile cancels an old restore without automatically restarting
+that consumed save-ready hook. Existing unpublished nested scratch retains the
+codec pin policy. Rendered join/rejoin, held/container UI and original item-copy
+reproduction remain open, as does removed-row/carrier refund accounting. No game
+run, package, installation, commit or publication was performed. TODO checks all
+ten implementations separately from those unperformed acceptance cases.
+
+# Tracking reconciliation (24 October 2026)
+
+At the owner's request, TODO now explicitly checks the six implemented b2200
+report paths, earlier blast/ATV/blood code, immediate-join infrastructure and
+record/material/grill safeguards. The 15 b2201–b2204 code items remain checked;
+their headings now identify completed implementation. Unreproduced item-copy,
+broader warp events, unfinished transactions and rendered acceptance stay open.
+Continuation size changes from 3–5 to **10 concrete fixes per pass** in the active
+instructions and TODO. This is a documentation reconciliation against existing
+evidence; no source, DLL, test result or gameplay status changed.
+
+# Development b2204 - five world-container fixes (24 October 2026)
+
+1. Removed the lane's separate raw Player/offset readers. Dirty publication,
+   receive/apply and diagnostics share the masked, class-incarnation wrapper.
+   World addressing also refuses reserved personal index zero when Player=false.
+2. Container slices stage checked records before swapping the live header. Failed
+   outer/nested allocation or construction retains the old contents and parks the
+   input without advancing hashes/publication. Missing classes wait before scratch
+   allocation; partial nested scratch retains the existing codec pin policy.
+3. Stack-owned apply scopes bind accepted work to session/role/world, sender
+   occupancy, actor/class/component/save/store/header and accepted newer/local
+   changes. Rejected input cannot cancel accepted work. Duplicate hashes require
+   the same live component/store binding. Transfer completion follows commit,
+   before native volume/name/view callbacks, preventing a committed birth from
+   being merged again after an interrupted callback. Interrupted committed host
+   state remains dirty for current-state publication.
+4. Park sweeps copy identities first and own one callback payload at a time.
+   Revisions/epochs preserve replacement/reset, nested sweeps defer, author-cap
+   replacement is counted, clock rollback cannot expire a row, and newer handled
+   input retires only the observed older park. Old held state cannot reappear
+   after newer truth, and large join queues do not duplicate every blob at once.
+5. Refused accepted-state relay becomes debt to that exact recipient generation.
+   The existing seed retry sends current truth; departed/replaced seats retire
+   their old debt. Relay checks source and recipient currency between chunks.
+
+PASS `run_container_apply.ps1 -FaultControls`: extracted production receive/apply/
+relay functions, actual record codec and container/inventory wrappers, real park
+and both complete production TUs. Allocation/construction refusal, retry, reserved
+personal address, callbacks/newer and rejected input, birth completion, binding
+replacement, recipient debt and old/new park cases pass. Six controls fail when
+checked encoding, current-source proof, relay debt, masked boundary, old-row
+retirement or revision protection is removed.
+Evidence: `build/container-apply-check/fault-controls.log`.
+
+PASS **8/8 selected groups**, stable-source Release/ABI b2204 / protocol 2204,
+794 source entries: `build/container-apply-2204/verification.json`.
+Groups: run_container_apply, run_inventory_apply, run_container_birth, run_2147,
+run_sync_2157, run_item_records, public_prose_include and reliablekind_gate.
+DLL SHA256: `922fec45cc6bbfc2c14949c4d5cb8e7d4e3328036df3f6e36c0353dd97a70d93`.
+The earlier same-build qualification was superseded after reducing park-copy
+peak memory; only this final stable snapshot qualifies the current DLL.
+
+check_current.ps1 now accepts an explicit CheckGroups array, rejects unknown
+groups before building, and records FullRegression/RequestedGroups. The default
+still runs all 84 groups. A focused pass is explicitly FullRegression=false;
+the last full aggregate remains 83/83 on b2203. The unknown-group control passes:
+`build/container-apply-check/selection-control.log`. All work ran locally.
+Rendered container concurrency/UI/rejoin and the original item-copy cause remain
+open, as does native removed-row/carrier refund accounting. No game run, package,
+installation, commit or publication was performed.
+
+# Development b2203 - four inventory restore fixes (24 October 2026)
+
+1. Prepare carried, worn and held arrays before publishing any live header.
+   Checked record encoding reports outer/nested allocation and class/name/string/
+   signal construction failures. Fixed empty equipment/hand slots preserve the
+   native shape and identity transform. Size/overflow refusals cannot empty the
+   previous inventory. Legacy record writers retain their existing fallback.
+2. Own the input before native dispatch, and bind staging to the target actor/
+   class, world, gamemode, save binding and original array headers. Nested apply
+   supersedes older staging. Changed/dead contexts return without publication.
+   Unwritten scratch is freed; failed partial nested scratch follows the existing
+   buffer pin policy rather than introducing a speculative deep destructor.
+3. Personal and world readers share the reflected Player bit/mask. Adjacent
+   flags no longer imply personal ownership. Both personal readers refuse an
+   index other than the baked zero instead of logging and reading foreign data.
+4. Save/container/index/owner/volume field offsets now use the actual class's
+   slot/serial incarnation. Replacement classes refresh positive and negative
+   old metadata; the Player mask cache refreshes with its class too.
+
+PASS `run_inventory_apply.ps1 -FaultControls`: actual inventory/container wrappers,
+record codec and extracted production InstanceOffset. Every one of the fixture's
+69 allocations is failed separately, preserving all three previous arrays.
+Coverage includes construction failures, nested/newer input, target/world/class/
+gamemode/save/header changes, fixed slots, masked flags and exact slot isolation.
+Four removed-protection controls fail: unchecked records, stale targets, foreign
+personal slot and stale class layout. Fresh cooked evidence reads the player
+component's index=0/player=true/customVolume=50000 and native fixed-slot lookup.
+Evidence: `build/inventory-apply-check/fault-controls.log`.
+The existing trowel/material persistence and equipment/view fixtures also pass.
+PASS **83/83 groups**, stable Release/ABI b2203 / protocol 2203, 794 source entries:
+`build/inventory-apply-2203/verification.json`.
+DLL SHA256: `6e665deb20a8f591ee9f8efb7dcffc418cbc5481a3564858a22fd5dadb7e168a`.
+
+All runners and compilation execute locally. Focused tests cover work in progress;
+this full aggregate qualifies a shared-codec change across its consumers. Full
+regressions are not required after every intermediate edit. Rendered join/rejoin,
+the unidentified original item-copy trigger and removed-row/carrier refund remain
+open. No game run, archive, installation, commit or publication was performed.
+
+# Development b2202 - three arirShipAppear fixes (24 October 2026)
+
+1. Host visible/alpha phase reaches ready clients on a dedicated host-only lane.
+   The adapter paints native material/light/radar and event-sender membership on
+   existing scene actors. It stops old client timelines, which write their float
+   track even when the Blueprint Update callback is refused. Indexed exact-class
+   discovery and name/position corroboration avoid generic event-actor spawning.
+2. Clients refuse their own appearance, camera/day disappearance and blank-email
+   function/latent entries, including chains started before joining. An exact
+   actor/epoch scope admits native photo-delegate bind/unbind while appear stays
+   blocked; native local photography runs only against an applied visible phase.
+   The host retains native timing, eligibility and mail generation. No host photo
+   reward is replayed by the adapter; shared reputation remains separate work.
+3. Current-state joins are quiet, with ordered incarnations/retirement, bounded
+   fair send retries, recipient generations/replay tokens and retained partial
+   application. Live cosmetic air cues have one-second retries from receipt.
+   Actor/component/gamemode, world/session/role and callback guards cancel stale
+   work. Whole discovery batches are slot/serial stamped before native reads;
+   newer incarnations during a read cannot inherit the old actor association.
+
+PASS `run_ariral_ship.ps1 -FaultControls`: production controller and real
+wrapper/ParamFrame tests, four removed-protection controls, fresh cooked native
+contract and both production TUs. Controls reject local latent continuations,
+stale phase overwrite, lost refused sends and historical join cues.
+Evidence: `build/ariral-ship-check/fault-controls.log`.
+PASS **82/82 groups**, stable Release/ABI b2202 / protocol 2202, 794 build inputs:
+`build/ariral-ship-2202/verification.json`.
+DLL SHA256: `4b8e918b1783b20fc631038ad85f801a66f515a9560ea6543021f716a2e430f5`.
+The first aggregate was stopped before its build to add discovery-batch and
+reentrant-incarnation guards. Only the subsequent stable aggregate qualifies b2202.
+
+This three-item pass covers `arirShipAppear_C`, whose native blank-email loop
+matches the screenshot clue. Original report (6.1) still needs rendered host/client
+acceptance. `arirShipVanishing_C`, other warp events, broader event completeness
+and shared reputation remain open. The unidentified item-copy report also stays
+open. The game disk remains unavailable; no archive, installation, commit or
+publication was performed.
+
+# Development b2201 - three container-birth fixes (24 October 2026)
+
+1. Replaced the process-global takeObj flag/ProcessEvent observers with the script
+   gate's native-body scope and a named body watch. Nested native calls cannot
+   clear an outer extraction, and cancellation/fault paths need no balancing POST.
+   The consumer reads its own thread's scope; Blueprint-internal calls are covered.
+2. Successful extraction results require current UFunction metadata, checked frame
+   bounds and the true caller out storage. Recreated functions refresh both offsets;
+   failed calls, truncated layouts and stale/recycled actors are refused.
+3. A bounded rotating queue retains birth and mutable-state delivery separately.
+   No state is published before the spawn is accepted, and a refused state does
+   not repeat that spawn. Final live key/EID and callback/lifetime guards bind each
+   attempt to its actor/world/session/role. Generic host finish work waits for this
+   owner rather than publishing a record around the refused birth.
+
+PASS `run_container_birth.ps1 -FaultControls`: production consumer/feeder tests,
+four removed-protection controls and the fresh cooked native takeObj/extract
+contract. Controls reject leaked scope, stale metadata, lost refused spawns and
+repeated spawns during a state retry. Three changed production TUs compile.
+Evidence: `build/container-birth-check/fault-controls.log`.
+PASS **81/81 groups**, stable Release/ABI b2201 / protocol 2201, 792 build inputs:
+`build/container-birth-2201/verification.json`.
+DLL SHA256: `38e98a8bbd7981f7a576749d95b83e92555b6a21b273d38dc7765957e7ee67f6`.
+
+This is a three-item continuation, per the owner's new workflow preference,
+recorded in agent/README. It does not close the unidentified original client
+item-copy reproduction, warp-arrow presentation, or the separate inventory
+removed-row/carrier-restore/refund transaction. Real-peer acceptance remains open;
+no package archive, game installation, commit or publication was requested.
+
+# Development b2200 - 24 October report batch
+
+Implemented paths for this batch's reports (1), (3), (4), (5), (6.2) and (7):
+transient shovel-hole identity/soil/geometry and lifetime, pending canonical can
+state before mutation plus no-refill/reclose/type rollback, physical satellite
+console claims, unpublished companion-ATV retry recovery, location activation
+without forced gathering, and unanimous host sleep acceleration.
+
+Hole mirrors wait for a live BeginPlay suppression watch; native BeginPlay
+would search buried objects and spawn treasure again. The adapter does not add
+persistent hole saves or close buried-item/loot accounting. Can initial births
+retain their saved portions; cross-peer concurrent-use accounting and other
+consumable families remain separate work. The bed-capacity suggestion is deferred.
+
+PASS targeted production regressions: `run_session_reports`, `run_sleep_personal`,
+`run_2174`, `run_item_records`, `run_garden_sync` and `run_2161`. Coverage includes
+actual console classifiers, ATV and sleep controllers, hole authors/ACK/late join/
+retirement/duplicate creation/watch readiness, and ordinary stale versus initial
+can records. Fresh cooked contracts verify the hole factory/material/loot path,
+console `used` owner before entry, and non-refillable native can semantics.
+PASS **80/80 groups**, stable Release/ABI b2200 / protocol 2200, 792 build inputs:
+`build/session-reports-2200/verification.json`.
+DLL SHA256: `54bc6b86735f11c9d236e765c4774b2b5ae7618bb276e2653b1c122f547413b2`.
+The first aggregate was intentionally interrupted to add the mirror-watch
+readiness guard; only the subsequent stable run may qualify b2200.
+
+The user could not identify the report build or item-copy trigger. Screenshot
+retrieval succeeded through stable GitHub attachment URLs after the signed-link
+viewer failed. The item images show a shovel and noodle packaging, without
+class/key/EID or transition evidence, so report (2) stays open. The warp-event
+image shows repeated blank emails; the native `arirShipAppear_C` graph's delayed
+blank-email loop makes it a strong candidate. Its alpha/light timeline, local
+camera/trace checks, photo reputation and email side effects require a specific
+presentation route; report (6.1) is not fixed by this batch.
+
+Rendered host/client acceptance remains open; the owner previously confirmed
+that the game disk is absent. No archive, installation, commit or publication
+was performed by this work.
+
+# Development b2199 - server delivery and personal dreams (24 October 2026)
+
+Serverbox per-recipient delivery debt survives refused/partial sends and occupant changes.
+Clients retain latest state and unfinished re-skin debt through native readiness/failure;
+per-box incarnations and callback/lifetime guards cancel stale work. Old-code regressions fail.
+Dream-burger overlaps reject remote puppets/ragdolls while preserving local/native collection.
+Function offsets bind to UFunction incarnations and checked parameter-frame bounds.
+PASS production regressions/compilation and three dream removal controls:
+`build/events-2199-final/dream-controls.log`, `build/requested-events-audit/serverbox-*.log`.
+Fresh native dream reward and protected-server contracts pass; serverBreaker stays excluded.
+Fresh audit: 42,941 pak entries, 37,971 extracted uasset/uexp files, 18,854 assets;
+1,621 relevant Blueprint packages / 22,691 functions / 69 scheduled-event rows.
+Zero package errors; 190 focused dumps: `build/requested-events-audit/summary.json`.
+PASS imported native-contract suite: `build/requested-events-qualified/fresh-native-contract.log`.
+The raw inventory's two graph rejections were hint-text false positives. PASS all 22,691
+raw decodes, zero actual errors: `build/requested-events-audit/reclassified-graphs.json`.
+Level/map scripts and complete semantic event coverage remain outside this result.
+PASS **78/78 groups**, stable Release/ABI: `build/events-2199-final/verification.json`.
+DLL SHA256: `a376716c7f9fd6bfce562ef983257db9abd95d04a2239644e72e5e94e7adcdd3`.
+The earlier `events-2199-qualified` run rejected source changes during the re-skin fix.
+Fact rows 515/165 and nine controls pass; prose findings: 85/82 documents,
+src.comment_doc_row 155/0, src.files_not_swept 84/0 with reading-room checkouts absent
+(previously 1/0 and 1/0 with them present). No new package or installation.
+Runtime acceptance remains open: owner confirms the game disk is absent on 24 October.
+
+# Development b2198 - event frequency and queued credit (23–24 October 2026)
+
+Queued credits cancel after world replacement; the old-code assertion reproduces the defect.
+Host-owned flickerer scales only its native 30–60s eligible wait, preserving probability/effects.
+PASS production/native/captured-reference regressions, **74/74 groups**, stable Release/ABI:
+`build/requested-events-qualified/verification.json`; sequential `final-build.log` supersedes
+the aggregate's concurrent-Ninja failure in `build.log`. No failed build counted as a pass.
+DLL SHA256: `0b9ea938eaa683e18d968d66898af25f687c4bb0d3f359a1c492958c85bc4d42`.
+Two isolated native launches overflowed before acceptance. Dumps prove recursive native
+lib_C.end; Untitled_1.CustomEvent's borders check is the strongest initial-caller candidate.
+Exact caller/failed check still needs live confirmation; no native guard was suppressed.
+Evidence: `build/requested-events-native/crash-analysis-20261024.md` and retained crashes.
+Bench58 placement, Token52 orders, trowel continuity and real-peer events remain unverified.
+
 # Development b2197 - full-record carriers (23 October 2026)
 
 Pre-fix: full restore ignores native invalidation; failed restoration still allows pickup.
@@ -124,8 +950,6 @@ Rendered/32-player/Rust/deployment/archive checks stayed open; update the old ma
 for larger automatic lobbies and use identical b2185 DLLs.
 Fork review: [FORK_AUDIT_20261022.md](FORK_AUDIT_20261022.md).
 
-# TestLog — current status and source reports
-
 ## Historical release 0.9.2157 / b2184 - package-label correction, 22 October 2026
 
 The menu and server browser now show Watchers of the Void 0.9.2157 from
@@ -244,57 +1068,30 @@ uninstalled rigs, other terrain/vehicles and more extreme outages remain open.
 Both requested branches are intended to carry this exact release tree, preserving
 prior main/fish history and AquaFishhh commit authorship.
 
-## Historical work and qualifications
-
 ## Ragdoll robustness b2182 / package0.9.2159 — 22 October 2026
 
-Owner handles rendered/input acceptance; asks to finish partial network limbs and
-contact/latency/model/sleep/sit acceptance. No additional imported models installed.
-
-Reproduce old wall-clock selection starving bodies at a75ms send cadence. Reproduce
-StreamSlot keeping only the last of three distinct bone packets before one game
-tick. The new actual-send rotation and bounded per-bone receive merge pass cadence,
-loss, burst, duplicate/reorder, sequence wrap, generation and reset controls for
-1,5,17,35 and64 bodies. Both original-behavior controls fail as expected.
-Evidence: stream-final.log and ragdoll-stream-check/legacy-{time,inbox}.log.
-
-PASS focused native/skin/retry/stream, sleep/display, shared UI/wire/sync and ABI
-checks; reliable routing224 kinds with18 negative controls. Full65 suite not rerun.
-Candidate native LAN PASS6/6 (3 per direction), with actual GNS250ms outbound lag,
-40ms jitter and5% send loss, applied after world-ready. Candidate native surfaces
-PASS24/24 across sci_v1sc,walter_v1sc,rvi_scientist_v1sc,luther_v1sc,KerfurH/M:
-flat,25deg,35deg and moving cube. Contact is a real colliding engine mesh; selected
-physical body, finite motion,no excessive rise and native recovery checked.
-Remote sleep->sit->ragdoll->sleep->stand passes6/6 on actual engine components.
-
-Invalid initial fixture moved the pawn across a newly-created platform using a
-raw snap, leaving native lastLoc behind. The game's wall ray legitimately called
-OpenLevel(sl_backroomsObsolete), from mainGamemode graph7160/7183, not player death.
-Native teleportWObackrooms updates lastLoc; fixture uses it, plus correct Block2 /
-Movable2 collider settings. No gameplay wall/backrooms rules changed. Failed logs
-surface-{initial,registered,no-mirror,travel,backrooms}.log retained. Cleanup faults
-from those invalid old-world fixtures do not count as passes. Final logs must be
-free of test travel/faults. Blueprint audit: native-gamemode-graph.txt and existing
-native-playergraph.txt67430..68046, teleportWObackrooms934..1075.
-
-PASS exact final DLL b35471ad15d0f417b26439f51c9b64e2f034987de7d2e51e3ba031ea54cbb5a1:
-momentum8/8,camera10/10,surfaces24/24,installed catalog30/30,remote transitions36/36,
-bad-link LAN6/6. Frozen2644-entry source and three identical DLL copies confirmed.
-Requested mesh asset and seated animation flag checked; platform100cm/s with175cm
-verified movement on all six skins. Camera max entry view jump0.069deg.
-Catalog runs on native ground,with contact/physical body/selected asset/recovery.
-The earlier catalog interrupted by artificial-fixture travel is retained as
-catalog-fixture-interrupted.log; final run has no travel/posted-task faults.
-
-PASS complete2159 archive32 members,original identity/icon/authors/models,and actual
-unpacked startup: correct b2182 boot,HEALTH PASS,skins4/4,enabled fork namespace.
-archiveStartupVerified=true. ZIP SHA256
-bb85eaff437b031ed101c88702d8b5c8ea676bb258d77e9a45b845aaea49e42b.
-Evidence build/ragdoll-robustness-check/{verification.json,*-final.log,source-before.json,
-catalog-names.json},build/package-current/{verification.json,startup.log,UE4SS-startup.log}.
-All private tests stopped; no normal installation/profile change or publication.
-Owner owns ordinary rendered/input acceptance,including actual local bed/chair
-interaction. Remaining scope limits are listed in the qualification JSON.
+Reproduced wall-clock body starvation at 75ms and loss of distinct same-tick bone packets.
+PASS actual-send rotation/bounded merge for 1/5/17/35/64 bodies, loss/burst/reorder/wrap/reset;
+both old-behavior controls fail: stream-final.log, ragdoll-stream-check/legacy-{time,inbox}.log.
+PASS native/skin/retry/stream, sleep/display, shared UI/wire, ABI and routing224/18 controls.
+Full65 suite not rerun. Candidate LAN6/6, surfaces24/24 and remote transitions6/6 passed.
+Initial raw-snap fixtures left native lastLoc stale, legitimately triggering backrooms travel
+(mainGamemode7160/7183). Native teleportWObackrooms934..1075 and Block2/Movable2 correct
+the fixture; gameplay rules unchanged. Retained surface-{initial,registered,no-mirror,travel,
+backrooms}.log cleanup faults and catalog-fixture-interrupted.log are not passing evidence.
+PASS final DLL `b35471ad15d0f417b26439f51c9b64e2f034987de7d2e51e3ba031ea54cbb5a1`:
+momentum8/8, camera10/10, surfaces24/24, installed catalog30/30, transitions36/36, LAN6/6.
+Frozen2644 inputs/three matching DLLs; GNS250ms lag,40ms jitter,5% loss after world-ready.
+Six skins sci_v1sc/walter_v1sc/rvi_scientist_v1sc/luther_v1sc/KerfurH/M use real colliders,
+flat/25deg/35deg/moving surfaces, selected body/mesh, finite motion and native recovery.
+Moving platform100cm/s traveled175cm; max camera entry jump0.069deg; final logs free of travel.
+PASS historical2159 archive32 members, identity/icon/authors/models and unpacked startup:
+b2182, HEALTH, skins4/4, fork namespace, archiveStartupVerified=true.
+ZIP SHA256: `bb85eaff437b031ed101c88702d8b5c8ea676bb258d77e9a45b845aaea49e42b`.
+Evidence: build/ragdoll-robustness-check/{verification.json,*-final.log,source-before.json,
+catalog-names.json}, build/package-current/{verification.json,startup.log,UE4SS-startup.log}.
+No extra models installed or normal profile/publication changed; private processes stopped.
+Ordinary rendered/input and local bed/chair acceptance remains with the owner.
 
 ## Native entry momentum b2181 — development, 22 October 2026
 
@@ -482,23 +1279,14 @@ native harnesses in agent/tests/. Remaining gameplay acceptance includes arbitra
 imported rigs, slopes/moving surfaces, high latency and sleep/chair transitions.
 Entity implementation and the shared native physics asset defaults are unchanged.
 
-## Imported main history (superseded by current release status)
-
 ## Recheck: PC boot, C-key ragdoll and resource identity (21 October 2026)
 
-Repeated `run_ragdoll_skin.ps1`, `run_shared_screen.ps1` and `run_trowel.ps1`;
-all passed. Then `package/check_current.ps1 -EvidenceDirectory
-build/continued-20261021` passed **65/65 groups**, Release identity/ABI and the
-stable-source check (781 entries). The production snapshot and DLL hashes match
-the previously qualified b2179 build. This confirms the offline regressions;
-the stationary-PC host/client loading report and all-role C-key ragdoll report
-still need real-peer acceptance on matching b2179 DLLs.
-
-The full public-prose and fact-row gates were not rerun: the WindowsApps Python
-launcher failed with “The file cannot be accessed by the system.” Their last
-recorded findings therefore remain unchanged (13 prose counters above baseline;
-45 fact-row findings across 525 rows/157 files). The include-context gate passed
-as part of the 65-group qualification and does not replace those full gates.
+PASS repeated ragdoll_skin/shared_screen/trowel and **65/65 groups**, stable Release/ABI,
+781 inputs: `build/continued-20261021/verification.json`; snapshot/DLL match qualified b2179.
+PC loading and all-role C-key reports still need real-peer acceptance on matching DLLs.
+WindowsApps Python failed, so full prose/fact gates were not rerun: historical findings
+remain13 prose counters and45 fact findings/525 rows/157 files. Passing include-context
+tests do not replace the full gates; subsequent qualification records supersede these counts.
 
 ## Development b2179: PC boot, C-key ragdoll and held materials (21 October 2026)
 
@@ -584,17 +1372,12 @@ Passing offline groups do not close these full CI findings.
 
 ## Final package 0.9.2155 / DLL b2178 (21 October 2026)
 
-At the owner's request, final **0.9.2155 / b2178** superseded local b2177.
-Release notes, README, checks and metadata agree on b2178. PASS incremental Release:
-`build/release-2155-logs/final-build.log`; unchanged source/identity/import/export
-qualification retains **65/65 groups**, 781 entries: `build/continuation-check/verification.json`.
-PASS pack/verify_2155: manifest 0.9.2155, 256x256 icon, 32 members, embedded docs/paks,
-qualified DLL, enabled loader layout and matching delivery copy:
-`build/release-2155-logs/release-verification.json`. Delivery: outer
-`dist/WatchersOfTheVoid-0.9.2155.zip`, `GITHUB_RELEASE_2155.md`, `SHA256SUMS-2155.txt`.
-
+Final **0.9.2155 / b2178** supersedes incompatible b2177; labels/metadata agree.
+PASS Release `build/release-2155-logs/final-build.log`; unchanged **65/65**, 781 inputs,
+identity/ABI: `build/continuation-check/verification.json`. PASS32 members,256x256 icon,
+manifest/docs/paks/loader and delivery identity: `build/release-2155-logs/release-verification.json`.
+Delivery: outer `dist/WatchersOfTheVoid-0.9.2155.zip`, `GITHUB_RELEASE_2155.md`, `SHA256SUMS-2155.txt`.
 DLL SHA256: `9e5f4fd23b272efa6fd807df45cba466664acfe8639c5d4d639a9f23c9c4d5f8`.
 ZIP SHA256: `ce2688393150abb294f3c3edb4acc489439042fc661fd09eefa80afb029764b1`.
-Earlier b2177 is incompatible. No publication, commit, push or installation performed.
-Real-peer acceptance, host-rifle evidence, Token52, events, paid transactions and
-the deferred native audit remain open.
+No publication/commit/push/installation. Real-peer acceptance, host rifle, Token52,
+events, paid transactions and then-deferred native audit remained open at this date.

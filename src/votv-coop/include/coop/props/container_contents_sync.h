@@ -30,6 +30,10 @@ void Install(coop::net::Session* session);
 // drain. Near-free when the dirty set is empty, the steady state.
 void Tick();
 
+// A guarded local transaction committed contents without a native add/take verb.
+// Retain the same publication/cache-invalidation debt as those verb edges.
+void NoteLocalContentsChange(void* owner);
+
 // True while a world/personal inventory's takeObj Blueprint body is executing. The direct proof
 // handles synchronous spawns; TakeObjWindowOpen is the fallback for UI paths that spawn just
 // after takeObj returns. Game thread.

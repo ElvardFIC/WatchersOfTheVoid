@@ -7,6 +7,7 @@
 #include "coop/net/blob_chunks.h"
 #include "coop/net/protocol.h"
 #include "coop/net/session.h"
+#include "coop/net/session_serial.h"
 #include "coop/session/player_handshake.h"  // GuidForSlot: a typist's durable identity
 
 #include "ue_wrap/core/game_thread.h"
@@ -21,6 +22,7 @@
 #include "ue_wrap/engine/world_identity.h"
 
 #include <atomic>
+#include <algorithm>
 #include <chrono>
 #include <deque>
 #include <cwctype>
@@ -55,7 +57,7 @@ constexpr size_t kMaxLogChars    = 8192;  // `debug rules` prints the game rules
 constexpr int    kLinesPerWindow = 4;     // a person types slower: lines a typist may run per window
 constexpr auto   kWindow         = std::chrono::seconds(1);
 constexpr auto   kSpawnEvery     = std::chrono::seconds(2);  // a typist's spawn-on-every-call commands
-constexpr size_t kMaxTerminals   = 16;    // kept terminals, by identity, while the session lasts
+constexpr size_t kMaxTerminals   = coop::net::kPeerCapacity - 1; // one per remote participant
 constexpr size_t kOutboxCap      = 512;   // blobs owed to one slot while its sends are refused
 constexpr auto   kResendEvery    = std::chrono::milliseconds(250);  // a refused slot is tried this often
 const wchar_t* const kBusyLine = L"<r>The terminal is busy</>";  // the game's answer to a line it cannot take
@@ -84,10 +86,18 @@ bool g_saidOffThread = false;
 // busy level, which the typist's terminal needs to stop being busy.
 struct Outbox {
     std::deque<std::vector<uint8_t>> q;
+    std::deque<uint64_t> ids;
     Clock::time_point nextTry{};
     bool saidFull = false;
 };
 Outbox g_out[kMaxPeers];
+bool g_flushing[kMaxPeers]{},g_seeding[kMaxPeers]{},g_seedOwed[kMaxPeers]{};
+bool g_peerKnown[kMaxPeers]{};
+uint32_t g_peerGeneration[kMaxPeers]{};
+uint64_t g_peerVersion[kMaxPeers]{},g_seedVersion[kMaxPeers]{};
+std::string g_peerGuid[kMaxPeers];
+uint64_t g_queueRevision=0;
+unsigned g_batching=0;
 
 // HOST: the terminal each typist runs on, keyed by its durable identity, not its slot: a typist that
 // leaves mid-command leaves its terminal running that command, as the game's terminal runs on when its
@@ -118,12 +128,29 @@ bool g_saidNoContext[kMaxPeers] = {};
 // the flag: the mirror sets it while the host's terminal is busy and clears only what it set.
 bool g_mirrorBusy = false;
 bool g_localHolds = false;
+bool g_haveMirrorBusy=false;
+ue_wrap::CachedObjRef g_busyTerm;
 // Local commands keep their effects on the typist; only the host orders display
 // writes. Unsolicited widget alerts have one producer, the host's visible terminal.
-unsigned g_localCommandDepth = 0;
-bool g_commandBusy = false, g_replayingLog = false;
-bool g_clearCommand = false;
-ue_wrap::CachedObjRef g_commandTerm;
+struct Surface {
+    coop::net::Session* session=nullptr;
+    uint64_t epoch=0,binding=0;
+    uint32_t generation=0;
+    ue_wrap::CachedObjRef term;
+    bool visible=false;
+};
+struct BodyFrame { Surface source; uint64_t invocation=0; bool command=false,clear=false; };
+std::vector<BodyFrame> g_bodies;
+Surface g_asyncCommand;
+bool g_commandBusy=false,g_draining=false;
+uint64_t g_commandRevision=0,g_busyRevision=0,g_displayRevision=0;
+struct InputScope { Surface source; InputScope* previous=nullptr; };
+InputScope* g_input=nullptr;
+struct ReplayScope {
+    Surface source; bool claimed=false; uint64_t invocation=0; ReplayScope* previous=nullptr;
+    std::wstring text;uint8_t type=0;bool probing=false;
+};
+ReplayScope* g_replay=nullptr;
 struct DisplayLine { std::wstring text; uint8_t type = 0; };
 std::deque<DisplayLine> g_display;
 constexpr size_t kDisplayCap = 128;
@@ -136,10 +163,79 @@ struct LogRate { Clock::time_point start{}; size_t chars=0, lines=0; };
 LogRate g_logRate[kMaxPeers]{};
 uint32_t g_world = 0;
 uint64_t g_epoch = 0;
+uint64_t g_serial=0,g_historyRevision=0;
+coop::net::Role g_role=coop::net::Role::Host;
+
+bool Current(coop::net::Session* s,uint64_t epoch) {
+    return s && g_session.load()==s && epoch==g_epoch && s->running() && s->connected() &&
+        s->role()==g_role && WI::Generation()==g_world && coop::net::session_serial::Current()==g_serial;
+}
+
+bool Recipient(coop::net::Session* s,uint8_t slot,uint32_t generation,const std::string& guid,uint64_t epoch,uint64_t binding) {
+    return slot<kMaxPeers && g_peerKnown[slot] && g_peerVersion[slot]==binding && Current(s,epoch) && s->peerGenerationForSlot(slot)==generation &&
+        (s->role()==coop::net::Role::Client ? slot==0 :
+        slot>0 && s->IsSlotConnected(slot) && s->IsSlotWorldReady(slot) && coop::player_handshake::GuidForSlot(slot)==guid);
+}
+
+bool BindPeer(coop::net::Session* s,uint8_t slot) {
+    if(slot>=kMaxPeers || !Current(s,g_epoch))return false;
+    if(s->role()==coop::net::Role::Host ? slot==0 || !s->IsSlotConnected(slot) || !s->IsSlotWorldReady(slot) : slot!=0)return false;
+    const auto generation=s->peerGenerationForSlot(slot);
+    const std::string guid=s->role()==coop::net::Role::Host?coop::player_handshake::GuidForSlot(slot):std::string{};
+    if(g_peerKnown[slot] && (g_peerGeneration[slot]!=generation || g_peerGuid[slot]!=guid)) {
+        OnPeerGone(slot);
+        g_seedOwed[slot]=s->role()==coop::net::Role::Host;++g_seedVersion[slot];
+    }
+    g_peerKnown[slot]=true;g_peerGeneration[slot]=generation;g_peerGuid[slot]=guid;
+    return true;
+}
 
 coop::net::Session* SessionIf(coop::net::Role role) {
     auto* s = g_session.load(std::memory_order_acquire);
-    return (s && s->running() && s->role() == role) ? s : nullptr;
+    return (Current(s,g_epoch) && s->role() == role) ? s : nullptr;
+}
+
+Surface CaptureSurface(void* term,bool visible) {
+    Surface source;source.session=g_session.load();source.epoch=g_epoch;source.visible=visible;
+    if(!Current(source.session,source.epoch))return source;
+    if(source.session->role()==coop::net::Role::Client) {
+        if(!BindPeer(source.session,0))return source;
+        source.generation=g_peerGeneration[0];source.binding=g_peerVersion[0];
+    }
+    source.term.Set(term);
+    return source;
+}
+
+bool SurfaceCurrent(const Surface& source) {
+    auto* s=source.session;
+    return Current(s,source.epoch) && source.term.Get() &&
+        (!source.visible || source.term.Raw()==SC::LocalTerminal()) &&
+        Current(s,source.epoch) &&
+        (s->role()!=coop::net::Role::Client || Recipient(s,0,source.generation,{},source.epoch,source.binding));
+}
+
+void PruneBodies() {
+    std::erase_if(g_bodies,[](const BodyFrame& frame){return !sg::IsInvocationActive(frame.invocation);});
+}
+
+const BodyFrame* ActiveBody(void* term,bool commandsOnly=false) {
+    for(auto it=g_bodies.rbegin();it!=g_bodies.rend();++it)
+        if(it->source.term.Raw()==term && (!commandsOnly || it->command) && sg::IsInvocationActive(it->invocation))return &*it;
+    return nullptr;
+}
+
+sg::Verdict TrackBody(const sg::Call& c,const Surface& source,bool command=false,bool clear=false) {
+    PruneBodies();
+    if(!SurfaceCurrent(source) || !c.invocation || g_bodies.size()>=64)return sg::Verdict::Cancel;
+    g_bodies.push_back({source,c.invocation,command,clear});
+    return sg::Verdict::Run;
+}
+
+sg::Verdict OnBodyPre(const sg::Call& c) {
+    if(!Current(g_session.load(),g_epoch))return sg::Verdict::Run;
+    const bool visible=c.object==SC::LocalTerminal();
+    if(!visible && !std::any_of(g_terms.begin(),g_terms.end(),[&](const Terminal& t){return t.pin.Raw()==c.object;}))return sg::Verdict::Run;
+    return TrackBody(c,CaptureSurface(c.object,visible));
 }
 
 // A client's text, as the host's log shows it: printable characters only, so a line cannot forge one.
@@ -152,24 +248,36 @@ std::wstring Printable(const std::wstring& s) {
 
 void Flush(uint8_t slot) {
     auto* s = g_session.load(std::memory_order_acquire);
-    if (!s || !s->connected()) return;
+    if (!BindPeer(s,slot) || g_flushing[slot]) return;
+    g_flushing[slot]=true;
+    struct Guard{uint8_t slot;~Guard(){g_flushing[slot]=false;}} guard{slot};
+    const auto epoch=g_epoch;
+    const auto generation=g_peerGeneration[slot];const auto guid=g_peerGuid[slot];
+    const auto binding=g_peerVersion[slot];
     Outbox& o = g_out[slot];
     while (!o.q.empty()) {
-        if (!coop::blob_chunks::SendBlobToSlot(s, slot, ReliableKind::SatConsole, g_seq++, o.q.front())) {
+        const auto id=o.ids.front();const auto blob=o.q.front();
+        const auto current=[&]{return Recipient(s,slot,generation,guid,epoch,binding) && !o.ids.empty() && o.ids.front()==id;};
+        if(!current())return;
+        const bool sent=coop::blob_chunks::SendBlobToSlotWhile(s,slot,ReliableKind::SatConsole,g_seq++,blob,current);
+        if(!current())return;
+        if (!sent) {
             o.nextTry = Clock::now() + kResendEvery;
             return;
         }
-        o.q.pop_front();
+        o.q.pop_front();o.ids.pop_front();
     }
     o.saidFull = false;
 }
 
 void Enqueue(uint8_t slot, std::vector<uint8_t> blob) {
+    auto* s=g_session.load();if(!BindPeer(s,slot))return;
     Outbox& o = g_out[slot];
     if (o.q.size() >= kOutboxCap) {
         bool removed=false;
         for (auto it = o.q.begin(); it != o.q.end(); ++it) {
             if (!it->empty() && (*it)[0] != kOpBusy) {
+                o.ids.erase(o.ids.begin()+std::distance(o.q.begin(),it));
                 o.q.erase(it);
                 removed=true;
                 break;
@@ -177,7 +285,7 @@ void Enqueue(uint8_t slot, std::vector<uint8_t> blob) {
         }
         // Busy is a level. When only old levels remain, the newest one still
         // supersedes the oldest; a stalled peer cannot grow this queue forever.
-        if(!removed)o.q.pop_front();
+        if(!removed){o.q.pop_front();o.ids.pop_front();}
         if (!o.saidFull) {
             o.saidFull = true;
             UE_LOGW("sat_console: %zu blobs owed to slot %u and its sends still refused -- the oldest line dropped",
@@ -185,7 +293,8 @@ void Enqueue(uint8_t slot, std::vector<uint8_t> blob) {
         }
     }
     o.q.push_back(std::move(blob));
-    if (Clock::now() >= o.nextTry) Flush(slot);
+    o.ids.push_back(++g_queueRevision);
+    if (!g_batching && Clock::now() >= o.nextTry) Flush(slot);
 }
 
 void SendLog(uint8_t slot, const std::wstring& text, uint8_t bracketsType) {
@@ -197,7 +306,7 @@ void SendLog(uint8_t slot, const std::wstring& text, uint8_t bracketsType) {
 }
 
 void QueueDisplay(const std::wstring& text, uint8_t type) {
-    if(type==3)g_display.clear(); // everything queued before clr is superseded
+    if(type==3){g_display.clear();++g_displayRevision;} // everything queued before clr is superseded
     if (g_display.size() >= kDisplayCap) {
         // Keep the pending clear when the atlas opens after a burst of replies.
         if(g_display.front().type==3)g_display.erase(g_display.begin()+1);
@@ -209,7 +318,8 @@ void QueueDisplay(const std::wstring& text, uint8_t type) {
 void ShareLog(const std::wstring& text, uint8_t type, int excludeSlot, bool showHere) {
     auto* s = SessionIf(coop::net::Role::Host);
     if (!s || !s->connected()) return;
-    g_haveHistory=true;
+    const auto epoch=g_epoch;
+    g_haveHistory=true;++g_historyRevision;
     if(type==3){g_history.clear();g_historyChars=0;}
     else {
         g_history.push_back({text,type});g_historyChars+=text.size();
@@ -218,22 +328,69 @@ void ShareLog(const std::wstring& text, uint8_t type, int excludeSlot, bool show
         }
     }
     if (showHere) QueueDisplay(text,type);
-    for (int slot=1; slot<kMaxPeers; ++slot)
-        if (slot!=excludeSlot && s->IsSlotWorldReady(slot)) SendLog(uint8_t(slot),text,type);
+    {
+        // Every observer receives this row before a send can reenter with the
+        // next row/clear. Otherwise a late observer can receive A after clr.
+        ++g_batching;struct Guard{~Guard(){--g_batching;}} guard;
+        for (int slot=1; slot<kMaxPeers; ++slot) {
+            if(!Current(s,epoch))return;
+            if (slot!=excludeSlot && s->IsSlotWorldReady(slot)) SendLog(uint8_t(slot),text,type);
+        }
+    }
+    if(!g_batching)for(int slot=1;slot<kMaxPeers;++slot){
+        if(!Current(s,epoch))return;
+        if(slot!=excludeSlot && Clock::now()>=g_out[slot].nextTry)Flush(uint8_t(slot));
+    }
+}
+
+Terminal* ByGuid(const std::string& guid);
+void Rebind(Terminal& t,uint8_t slot);
+void SendBusy(uint8_t slot,bool busy);
+
+void SeedHistory(uint8_t slot) {
+    auto* s=SessionIf(coop::net::Role::Host);
+    if(!BindPeer(s,slot) || !g_seedOwed[slot] || g_seeding[slot])return;
+    g_seeding[slot]=true;
+    struct Guard{uint8_t slot;~Guard(){g_seeding[slot]=false;}} guard{slot};
+    const auto epoch=g_epoch,revision=g_historyRevision;
+    const auto request=g_seedVersion[slot],binding=g_peerVersion[slot];
+    const auto generation=g_peerGeneration[slot];const auto guid=g_peerGuid[slot];
+    const auto history=g_history;
+    const auto current=[&]{return Recipient(s,slot,generation,guid,epoch,binding) && revision==g_historyRevision && request==g_seedVersion[slot];};
+    // Supersede unsent history/live text with one ordered current snapshot.
+    g_out[slot]=Outbox{};
+    if(g_haveHistory) {
+        SendLog(slot,L"",3);if(!current())return;
+        for(const auto& line:history){SendLog(slot,line.text,line.type);if(!current())return;}
+    }
+    // Replacing queued history also replaced any busy debt. Seed its current
+    // level again, including false when this typist has no private terminal.
+    if(auto* term=ByGuid(guid))Rebind(*term,slot);
+    else SendBusy(slot,false);
+    if(current())g_seedOwed[slot]=false;
 }
 
 void DrainDisplay() {
-    if (g_replayingLog) return;
-    struct Guard { Guard(){g_replayingLog=true;} ~Guard(){g_replayingLog=false;} } guard;
-    // Wait for the atlas widget to exist instead of silently losing join-time
-    // replies. Pop before dispatch: a native call may tear the session down.
-    const auto epoch=g_epoch;
+    if(g_draining || !Current(g_session.load(),g_epoch))return;
+    g_draining=true;struct Guard{~Guard(){g_draining=false;}} guard;
     for (int budget=8; budget && !g_display.empty(); --budget) {
         void* term=SC::LocalTerminal(); if(!term)return;
+        const auto source=CaptureSurface(term,true);if(!SurfaceCurrent(source))return;
+        if(g_display.empty())return; // binding discovery may have retired old-host display debt
+        const auto revision=g_displayRevision;
         auto line=std::move(g_display.front()); g_display.pop_front();
+        ReplayScope replay{source,false,0,g_replay,line.text,line.type==3?uint8_t(0):line.type};g_replay=&replay;
+        struct ReplayGuard{ReplayScope* previous;~ReplayGuard(){g_replay=previous;}} replayGuard{replay.previous};
         const bool ok=line.type==3 ? SC::ClearLog(term) : SC::CallWriteToLog(term,line.text,line.type);
-        if(epoch!=g_epoch || !g_session.load())return;
-        if(!ok){g_display.push_front(std::move(line));return;}
+        if(!Current(source.session,source.epoch) || revision!=g_displayRevision)return;
+        if(source.session->role()==coop::net::Role::Client &&
+           !Recipient(source.session,0,source.generation,{},source.epoch,source.binding)) {
+            BindPeer(source.session,0);return;
+        }
+        if(!ok || !SurfaceCurrent(source)) {
+            if(g_display.size()<kDisplayCap)g_display.push_front(std::move(line));
+            return;
+        }
     }
 }
 
@@ -257,6 +414,20 @@ bool IsClear(const std::wstring& line) {
         std::towlower(word[1])==L'l' && std::towlower(word[2])==L'r';
 }
 
+void ObserveLocalTerminal(void* term) {
+    if(!g_busyTerm.Is(term)){g_localHolds=false;g_busyTerm.Set(term);++g_busyRevision;}
+}
+
+void ApplyMirrorBusy() {
+    auto* s=SessionIf(coop::net::Role::Client);if(!s || !g_haveMirrorBusy)return;
+    const auto epoch=g_epoch;void* term=SC::LocalTerminal();if(!term)return;
+    ObserveLocalTerminal(term);
+    const auto revision=g_busyRevision;
+    bool busy=false;
+    if(SC::ReadProcessing(term,busy) && Current(s,epoch) && revision==g_busyRevision && g_busyTerm.Is(term) &&
+       (g_mirrorBusy || !g_localHolds) && busy!=g_mirrorBusy)SC::WriteProcessing(term,g_mirrorBusy);
+}
+
 // ---- the typist ----
 
 // A line whose command rests on the shared world goes to the host, with the terminal's context as it
@@ -267,25 +438,39 @@ bool IsClear(const std::wstring& line) {
 // from the host.
 sg::Verdict OnEnterPre(const sg::Call& c) {
     auto* s=g_session.load();
-    if (!s || !s->connected() || c.fromOurCode || g_replayingLog) return sg::Verdict::Run;
+    if (!Current(s,g_epoch)) return sg::Verdict::Run;
     void* term = c.object;
-    if (term != SC::LocalTerminal()) return sg::Verdict::Run;
+    if (term != SC::LocalTerminal()) return OnBodyPre(c);
+    const auto source=CaptureSurface(term,true);
+    if(!SurfaceCurrent(source))return sg::Verdict::Cancel;
+    for(auto* input=g_input;input;input=input->previous)
+        if(input->source.epoch==source.epoch && input->source.term.Is(term))return sg::Verdict::Cancel;
+    InputScope input{source,g_input};g_input=&input;
+    struct Guard{InputScope* previous;~Guard(){g_input=previous;}} guard{input.previous};
+    const auto current=[&]{return SurfaceCurrent(source);};
+    if(s->role()==coop::net::Role::Client)ObserveLocalTerminal(term);
     bool busy = false;
     std::wstring line;
     const bool readLine=SC::ReadEnterCommandLine(c.locals,line);
-    if (s->role()!=coop::net::Role::Client || !SC::ReadProcessing(term, busy) || busy ||
-        !readLine || T::Classify(line) != T::Runs::OnHost) {
-        g_commandTerm.Set(term); ++g_localCommandDepth;
-        g_clearCommand=readLine && !busy && IsClear(line);
-        return sg::Verdict::Run;
-    }
+    if(!current())return sg::Verdict::Cancel;
+    if(!readLine)return s->role()==coop::net::Role::Host?TrackBody(c,source,true):sg::Verdict::Cancel;
+    const bool readBusy=SC::ReadProcessing(term,busy);
+    if(!current())return sg::Verdict::Cancel;
+    if(s->role()!=coop::net::Role::Client || (readBusy && busy) || T::Classify(line)!=T::Runs::OnHost)
+        return TrackBody(c,source,true,readBusy && !busy && IsClear(line));
+    if(!readBusy)return sg::Verdict::Cancel;
     std::wstring name;
-    if (!SC::ReadName(term, name)) return sg::Verdict::Run;
+    if (!SC::ReadName(term, name) || !current()) return sg::Verdict::Cancel;
     if (name.size() > kMaxNameChars) name.resize(kMaxNameChars);
     if (line.size() > kMaxLineChars) line.resize(kMaxLineChars);
     void* dish = SC::ReadActiveDish(term);
+    if(!current())return sg::Verdict::Cancel;
     const int32_t dishIdx = dish ? ue_wrap::dish::IndexOf(dish) : kNoDish;
-    std::wstring used = SC::PanelName(SC::ReadUsed(term));
+    if(!current())return sg::Verdict::Cancel;
+    void* panel=SC::ReadUsed(term);
+    if(!current())return sg::Verdict::Cancel;
+    std::wstring used = SC::PanelName(panel);
+    if(!current())return sg::Verdict::Cancel;
     if (used.size() > kMaxNameChars) used.clear();
     std::vector<uint8_t> b;
     W::AppU8(b, kOpLine);
@@ -293,9 +478,11 @@ sg::Verdict OnEnterPre(const sg::Call& c) {
     W::AppWStr(b, name);
     W::AppWStr(b, used);
     W::AppWStr(b, line);
+    // Consume first: failed or retired native input must never have an accepted
+    // world command behind it. A nested commit of this same input is refused.
+    if(g_out[0].q.size()>=kOutboxCap || !SC::ConsumeInputWhile(term,current) || !current())return sg::Verdict::Cancel;
     Enqueue(0, std::move(b));
-    SC::ConsumeInput(term);
-    ++g_counts.linesSent;
+    if(current())++g_counts.linesSent;
     UE_LOGI("sat_console: CLIENT '%ls' runs on the host's terminal (dish %d)", line.c_str(), dishIdx);
     return sg::Verdict::Cancel;
 }
@@ -304,8 +491,11 @@ sg::Verdict OnEnterPre(const sg::Call& c) {
 // a line this terminal ran itself may have cleared it, and it is set again, the line's hold over. Else
 // the flag is the line's own.
 void ClientAfterLocalBody(void* term) {
+    const auto source=CaptureSurface(term,true);if(!SurfaceCurrent(source))return;
+    ObserveLocalTerminal(term);
+    const auto revision=++g_busyRevision;
     bool busy = false;
-    if (!SC::ReadProcessing(term, busy)) return;
+    if (!SC::ReadProcessing(term, busy) || !SurfaceCurrent(source) || revision!=g_busyRevision) return;
     if (g_mirrorBusy) {
         if (!busy) {
             g_localHolds = false;
@@ -320,7 +510,6 @@ void ClientOnBlob(const std::vector<uint8_t>& blob) {
     size_t o = 0;
     uint8_t op = 0;
     if (!W::RdU8(blob, o, op)) return;
-    void* term = SC::LocalTerminal();
     if (op == kOpLog) {
         uint8_t type = 0;
         std::wstring text;
@@ -336,7 +525,8 @@ void ClientOnBlob(const std::vector<uint8_t>& blob) {
         uint8_t busy = 0;
         if (!W::RdU8(blob, o, busy) || busy>1 || o!=blob.size()) return;
         g_mirrorBusy = busy != 0;
-        if (term && (g_mirrorBusy || !g_localHolds)) SC::WriteProcessing(term, g_mirrorBusy);
+        ++g_busyRevision;
+        g_haveMirrorBusy=true;ApplyMirrorBusy();
         return;
     }
     UE_LOGW("sat_console: op %u reached a client -- dropped", static_cast<unsigned>(op));
@@ -360,51 +550,74 @@ Terminal* ByGuid(const std::string& guid) {
 // Unpin a terminal and stop what it runs; its typist, if still here, is told it is no longer busy.
 void Discard(Terminal& t) {
     void* term = t.pin.Raw();
-    if (t.slot >= 0 && t.busySent) SendBusy(static_cast<uint8_t>(t.slot), false);
+    if (t.slot>0 && t.slot<kMaxPeers && t.busySent && coop::player_handshake::GuidForSlot(t.slot)==t.guid)
+        SendBusy(static_cast<uint8_t>(t.slot), false);
     t.pin.Release();
     SC::DiscardTerminal(term);
 }
 
 void DiscardAt(size_t i) {
-    Discard(g_terms[i]);
+    Terminal retired=std::move(g_terms[i]);
     g_terms.erase(g_terms.begin() + static_cast<std::ptrdiff_t>(i));
+    Discard(retired);
 }
 
 // A typist back at the terminal it left: bound to it again and told its busy level, so its own terminal
 // is busy while the command it left runs on, and gets that command's lines from here on.
 void Rebind(Terminal& t, uint8_t slot) {
+    auto* s=SessionIf(coop::net::Role::Host);if(!s || !BindPeer(s,slot))return;
+    const auto epoch=g_epoch;void* term=t.pin.Raw();const auto guid=t.guid;
+    const auto generation=g_peerGeneration[slot];
+    const auto binding=g_peerVersion[slot];
+    if(g_peerGuid[slot]!=guid)return;
     t.slot = slot;
     bool busy = false;
-    SC::ReadProcessing(t.pin.Raw(), busy);
-    t.busySent = busy;
-    SendBusy(slot, busy);
+    SC::ReadProcessing(term, busy);
+    auto* current=ByObject(term);
+    if(!Recipient(s,slot,generation,guid,epoch,binding) || !current || current->guid!=guid || current->slot!=slot)return;
+    current->busySent = busy;
     ++g_counts.rebinds;
     if (busy) ++g_counts.busyRebinds;
+    SendBusy(slot, busy);
     UE_LOGI("sat_console: HOST slot %u is back at its terminal (busy=%d)", static_cast<unsigned>(slot), busy ? 1 : 0);
 }
 
 // The typist's terminal, made on its first line. At the cap, a departed typist's idle terminal gives way;
 // with none, the line is refused.
-Terminal* TerminalFor(uint8_t slot, const std::string& guid) {
+Terminal* TerminalFor(uint8_t slot, const std::string& requestedGuid) {
+    auto* s=SessionIf(coop::net::Role::Host);if(!s || !BindPeer(s,slot))return nullptr;
+    const auto epoch=g_epoch;const auto generation=g_peerGeneration[slot];
+    const auto binding=g_peerVersion[slot];
+    const std::string guid=requestedGuid;
+    const auto current=[&]{return Recipient(s,slot,generation,guid,epoch,binding);};
+    if(!current())return nullptr;
     if (Terminal* t = ByGuid(guid)) {
         if (t->slot != slot) Rebind(*t, slot);
-        return t;
+        return current()?ByGuid(guid):nullptr;
     }
     if (g_terms.size() >= kMaxTerminals) {
-        for (size_t i = 0; i < g_terms.size(); ++i) {
+        std::vector<void*> candidates;
+        for(const auto& t:g_terms)if(t.slot<0)candidates.push_back(t.pin.Raw());
+        for(void* object:candidates) {
+            auto* t=ByObject(object);if(!t || t->slot>=0)continue;
             bool busy = true;
-            if (g_terms[i].slot < 0 && SC::ReadProcessing(g_terms[i].pin.Raw(), busy) && !busy) {
-                DiscardAt(i);
+            const bool read=SC::ReadProcessing(object,busy);
+            if(!current())return nullptr;
+            t=ByObject(object);
+            if(t && t->slot<0 && read && !busy) {
+                DiscardAt(size_t(t-g_terms.data()));
+                if(!current())return nullptr;
                 break;
             }
         }
         if (g_terms.size() >= kMaxTerminals) return nullptr;
     }
-    const auto epoch=g_epoch;
     void* desk = ue_wrap::console_desk::Instance();
     void* term = desk ? SC::CreateTerminal(desk) : nullptr;
+    if(current())if(auto* existing=ByObject(term))return existing->guid==guid?existing:nullptr;
     Terminal made;
-    if (!term || epoch!=g_epoch || !made.pin.Pin(term) || !SC::WritePanel(term, desk) || epoch!=g_epoch) {
+    if (!term || !current() || !made.pin.Pin(term) || !current() || !SC::WritePanel(term, desk) || !current() ||
+        g_terms.size()>=kMaxTerminals || ByGuid(guid)) {
         made.pin.Release();
         SC::DiscardTerminal(term);
         return nullptr;
@@ -422,7 +635,8 @@ Terminal* TerminalFor(uint8_t slot, const std::string& guid) {
 // so the next line with the same index tries again. An index past the host's dishes is no dish at all.
 enum class Context { Ready, NotYet, Bad };
 
-Context ApplyContext(Terminal& t, int32_t dish, const std::wstring& name) {
+template<class IsCurrent>
+Context ApplyContext(Terminal& t, int32_t dish, const std::wstring& name, const IsCurrent& currentRequest) {
     if (t.haveContext && dish == t.dish && name == t.name) return Context::Ready;
     void* d = nullptr;
     if (dish >= 0) {
@@ -436,7 +650,7 @@ Context ApplyContext(Terminal& t, int32_t dish, const std::wstring& name) {
     t.haveContext = false;
     const auto epoch=g_epoch;
     void* term=t.pin.Raw();
-    if (!SC::CallInit(term, name, false, d) || epoch!=g_epoch) return Context::NotYet;
+    if (!SC::CallInit(term, name, false, d) || epoch!=g_epoch || !currentRequest()) return Context::NotYet;
     auto* current=ByObject(term);
     if(!current)return Context::NotYet;
     current->haveContext = true;
@@ -446,6 +660,10 @@ Context ApplyContext(Terminal& t, int32_t dish, const std::wstring& name) {
 }
 
 void HostOnBlob(uint8_t slot, const std::vector<uint8_t>& blob) {
+    auto* s=SessionIf(coop::net::Role::Host);if(!s || !BindPeer(s,slot))return;
+    const auto requestEpoch=g_epoch,binding=g_peerVersion[slot];
+    const auto generation=g_peerGeneration[slot];const auto requestGuid=g_peerGuid[slot];
+    const auto currentRequest=[&]{return Recipient(s,slot,generation,requestGuid,requestEpoch,binding);};
     size_t o = 0;
     uint8_t op = 0;
     int32_t dish = kNoDish;
@@ -480,8 +698,9 @@ void HostOnBlob(uint8_t slot, const std::vector<uint8_t>& blob) {
         }
         return;
     }
-    const std::string& guid = coop::player_handshake::GuidForSlot(slot);
+    const std::string guid = requestGuid;
     Terminal* t = guid.empty() ? nullptr : TerminalFor(slot, guid);
+    if(!currentRequest())return;
     if (!t) {
         if (!g_saidNoTerminal[slot]) {
             g_saidNoTerminal[slot] = true;
@@ -504,7 +723,9 @@ void HostOnBlob(uint8_t slot, const std::vector<uint8_t>& blob) {
     // A terminal still running a command keeps its context: its latent continuation reads the dish,
     // name and panel it started with. The game's own terminal refuses a line while busy, so does this.
     bool busy = false;
-    const bool readOk = SC::ReadProcessing(t->pin.Raw(), busy);
+    void* requestTerm=t->pin.Raw();
+    const bool readOk = SC::ReadProcessing(requestTerm, busy);
+    if(!currentRequest() || !(t=ByObject(requestTerm)))return;
     if (!readOk || busy) {
         AnswerRefused(line, readOk ? kBusyLine : kErrLine);   // an unreadable flag is not "busy"
         return;
@@ -513,8 +734,8 @@ void HostOnBlob(uint8_t slot, const std::vector<uint8_t>& blob) {
     // retried: a command with an effect in the world must not run twice.
     const auto contextEpoch=g_epoch;
     void* contextTerm=t->pin.Raw();
-    const Context ctx = ApplyContext(*t, dish < kNoDish ? kNoDish : dish, name);
-    if(contextEpoch!=g_epoch || !(t=ByObject(contextTerm)))return;
+    const Context ctx = ApplyContext(*t, dish < kNoDish ? kNoDish : dish, name, currentRequest);
+    if(contextEpoch!=g_epoch || !currentRequest() || !(t=ByObject(contextTerm)))return;
     if (ctx != Context::Ready) {
         if (!g_saidNoContext[slot]) {
             g_saidNoContext[slot] = true;
@@ -528,7 +749,9 @@ void HostOnBlob(uint8_t slot, const std::vector<uint8_t>& blob) {
     // The panel the typist last used: none is a real answer (ROOT), a name that does not resolve here
     // is not, and the line does not run against no panel in its place.
     void* panel = used.empty() ? nullptr : SC::FindPanelByName(used);
-    if ((!used.empty() && !panel) || !SC::WriteUsed(t->pin.Raw(), panel)) {
+    const bool panelReady=(used.empty() || panel) && SC::WriteUsed(contextTerm,panel);
+    if(!currentRequest() || !(t=ByObject(contextTerm)))return;
+    if (!panelReady) {
         if (!g_saidNoContext[slot]) {
             g_saidNoContext[slot] = true;
             UE_LOGW("sat_console: HOST no panel '%ls' for slot %u's line -- answered err",
@@ -544,7 +767,7 @@ void HostOnBlob(uint8_t slot, const std::vector<uint8_t>& blob) {
     void* runTerm=t->pin.Raw();
     const auto epoch=g_epoch;
     const bool ran=SC::RunCommand(runTerm,line);
-    if(epoch!=g_epoch || !SessionIf(coop::net::Role::Host))return;
+    if(epoch!=g_epoch || !currentRequest())return;
     if(auto* current=ByObject(runTerm))current->clearing=false;
     if (!ran) {
         AnswerRefused(line, kErrLine);
@@ -556,19 +779,47 @@ void HostOnBlob(uint8_t slot, const std::vector<uint8_t>& blob) {
 // Every write of a terminal's busy flag lies in its enterCommand or its ubergraph, the latent
 // continuations included, so the level is read after each and sent when it moved.
 void HostAfterBody(Terminal& t) {
+    const int slot=t.slot;const auto guid=t.guid;void* term=t.pin.Raw();
+    auto* s=SessionIf(coop::net::Role::Host);
+    if(slot<=0 || slot>=kMaxPeers || !s || !BindPeer(s,uint8_t(slot)) || g_peerGuid[slot]!=guid)return;
+    const auto epoch=g_epoch,binding=g_peerVersion[slot];const auto generation=g_peerGeneration[slot];
     bool busy = false;
-    if (t.slot < 0 || !SC::ReadProcessing(t.pin.Raw(), busy) || busy == t.busySent) return;
-    t.busySent = busy;
-    SendBusy(static_cast<uint8_t>(t.slot), busy);
+    const bool read=SC::ReadProcessing(term,busy);
+    auto* current=ByObject(term);
+    if(!Recipient(s,uint8_t(slot),generation,guid,epoch,binding) || !current || current->guid!=guid ||
+       current->slot!=slot || !read || busy==current->busySent)return;
+    current->busySent = busy;
+    SendBusy(static_cast<uint8_t>(slot), busy);
 }
 
 sg::Verdict OnWritePre(const sg::Call& c) {
+    // fromOurCode covers every nested reflected call. Only this one direct
+    // invocation is the row being replayed; nested alerts still need ordering.
+    if(g_replay && !g_replay->claimed && !g_replay->probing && c.fromOurCode && !c.callerFunction && g_replay->source.term.Raw()==c.object) {
+        auto& replay=*g_replay;replay.probing=true;
+        struct ProbeGuard{ReplayScope& row;~ProbeGuard(){row.probing=false;}} guard{replay};
+        std::wstring text;uint8_t type=0;
+        if(SC::ReadWriteToLogArgs(c.locals,text,type) && text==replay.text && type==replay.type) {
+            replay.claimed=true;replay.invocation=c.invocation;
+            return SurfaceCurrent(replay.source)?sg::Verdict::Run:sg::Verdict::Cancel;
+        }
+    }
     auto* s=g_session.load();
-    if (!s || !s->connected() || g_replayingLog) return sg::Verdict::Run;
+    const auto epoch=g_epoch;
+    if (!Current(s,epoch)) return sg::Verdict::Run;
+    PruneBodies();
+    const auto* active=ActiveBody(c.object);
+    if(active && !SurfaceCurrent(active->source))return sg::Verdict::Cancel;
     Terminal* t = ByObject(c.object);
-    const bool local=g_commandTerm.Is(c.object) && (g_localCommandDepth || g_commandBusy);
+    const bool privateClearing=t && t->clearing;
     const bool visible=c.object==SC::LocalTerminal();
     if (!t && !visible) return sg::Verdict::Run;
+    const auto source=CaptureSurface(c.object,visible);
+    if(!SurfaceCurrent(source))return sg::Verdict::Cancel;
+    const auto* command=ActiveBody(c.object,true);
+    const bool local=(command && SurfaceCurrent(command->source)) ||
+        (g_commandBusy && g_asyncCommand.term.Is(c.object) && SurfaceCurrent(g_asyncCommand));
+    const bool clearing=command && command->clear;
     // A client's periodic alerts describe its mirror. The host publishes these
     // once; forwarding every mirror would multiply them and change their order.
     if(s->role()==coop::net::Role::Client && !local)return sg::Verdict::Cancel;
@@ -578,26 +829,41 @@ sg::Verdict OnWritePre(const sg::Call& c) {
     if (type>2 || text.size()>kMaxLogChars) return sg::Verdict::Run;
     // clr clears fields directly before its final empty writeToLog. Carry this
     // display operation in order with the command echo, without re-running clr.
-    if(((local && g_clearCommand) || (t && t->clearing)) && type==0 && text.empty())type=3;
+    if(!SurfaceCurrent(source))return sg::Verdict::Cancel;
+    if(((local && clearing) || privateClearing) && type==0 && text.empty())type=3;
     if(s->role()==coop::net::Role::Host) ShareLog(text,type,-1,true);
     else {
         std::vector<uint8_t> b;
         W::AppU8(b,kOpLocalLog);W::AppU8(b,type);W::AppWStr(b,text);Enqueue(0,std::move(b));
     }
-    ++g_counts.linesReturned;
+    if(SurfaceCurrent(source))++g_counts.linesReturned;
     return sg::Verdict::Cancel;
 }
 
 void OnBodyPost(const sg::Call& c) {
-    if (!g_replayingLog && g_commandTerm.Is(c.object)) {
-        if(c.tag==kTagEnter && !c.fromOurCode && g_localCommandDepth) {--g_localCommandDepth;g_clearCommand=false;}
+    const auto found=std::find_if(g_bodies.begin(),g_bodies.end(),[&](const BodyFrame& frame){
+        return frame.invocation==c.invocation && frame.source.term.Raw()==c.object;
+    });
+    if(found==g_bodies.end())return;
+    // A callback can install new frames. Retire this exact invocation before
+    // reading native state, then commit only against its copied source token.
+    const auto frame=*found;g_bodies.erase(found);
+    if(!SurfaceCurrent(frame.source))return;
+    if(frame.source.visible) {
+        if(frame.command){g_asyncCommand=frame.source;g_commandBusy=false;++g_commandRevision;}
+        const auto revision=g_commandRevision;
         bool busy=false;
-        if(SC::ReadProcessing(c.object,busy)) g_commandBusy=busy && !g_mirrorBusy;
+        const bool read=SC::ReadProcessing(c.object,busy);
+        if(!SurfaceCurrent(frame.source))return;
+        if(read && revision==g_commandRevision && g_asyncCommand.term.Is(c.object) && SurfaceCurrent(g_asyncCommand)) {
+            g_commandBusy=busy && !g_mirrorBusy;
+            if(!g_commandBusy)g_asyncCommand={};
+        }
     }
-    if (SessionIf(coop::net::Role::Host)) {
+    if (frame.source.session->role()==coop::net::Role::Host) {
         if (Terminal* t = ByObject(c.object)) HostAfterBody(*t);
-    } else if (SessionIf(coop::net::Role::Client)) {
-        if (c.object == SC::LocalTerminal()) ClientAfterLocalBody(c.object);
+    } else if (frame.source.visible && SurfaceCurrent(frame.source)) {
+        ClientAfterLocalBody(c.object);
     }
 }
 
@@ -607,11 +873,11 @@ void EnsureWatched() {
     if (g_watched || Clock::now()<g_watchRetry) return;
     g_watchRetry=Clock::now()+std::chrono::seconds(1);
     const bool enter = sg::WatchName(kRowEnterCommand, kTagEnter, OnEnterPre, OnBodyPost);
-    const bool graph = sg::WatchName(kRowUbergraph, kTagGraph, nullptr, OnBodyPost);
+    const bool graph = sg::WatchName(kRowUbergraph, kTagGraph, OnBodyPre, OnBodyPost);
     const bool write = sg::WatchName(kRowWriteToLog, kTagWrite, OnWritePre, nullptr);
     if (enter && graph && write) {g_watched=true;return;}
     if (enter) sg::UnwatchName(kRowEnterCommand, kTagEnter, OnEnterPre, OnBodyPost);
-    if (graph) sg::UnwatchName(kRowUbergraph, kTagGraph, nullptr, OnBodyPost);
+    if (graph) sg::UnwatchName(kRowUbergraph, kTagGraph, OnBodyPre, OnBodyPost);
     if (write) sg::UnwatchName(kRowWriteToLog, kTagWrite, OnWritePre, nullptr);
     if(!g_saidWatchFailure) {
         g_saidWatchFailure=true;
@@ -623,31 +889,39 @@ void EnsureWatched() {
 
 void Install(coop::net::Session* s) {
     const auto world=WI::Generation();
-    if(g_session.load()!=s || (g_world && world!=g_world)) OnDisconnect();
-    g_world=world;
+    const auto serial=coop::net::session_serial::Current();
+    if(g_session.load()!=s || world!=g_world || serial!=g_serial || (s && s->role()!=g_role)) {
+        const auto epoch=g_epoch;OnDisconnect();
+        if(g_epoch!=epoch+1 || g_session.load())return;
+    }
+    g_world=WI::Generation();g_serial=coop::net::session_serial::Current();if(s)g_role=s->role();
     g_session.store(s, std::memory_order_release);
     EnsureWatched();
 }
 
 void Tick() {
     if (!GT::IsGameThread()) return;
+    PruneBodies();
     auto* s = g_session.load(std::memory_order_acquire);
     if (!s || !s->running()) return;
-    if(g_world!=WI::Generation())Install(s);
+    if(g_world!=WI::Generation() || g_serial!=coop::net::session_serial::Current() || s->role()!=g_role)Install(s);
+    const auto epoch=g_epoch;if(!Current(s,epoch))return;
     EnsureWatched();
     SC::EnsureResolved();
-    // Busy may arrive before the atlas exists. Apply that retained level once
-    // the actual widget is available, including a native widget replacement.
-    if(s->role()==coop::net::Role::Client && g_mirrorBusy) {
-        if(void* term=SC::LocalTerminal()) {
-            bool busy=false;
-            if(SC::ReadProcessing(term,busy) && !busy)SC::WriteProcessing(term,true);
-        }
-    }
+    // Both levels survive a late/replaced widget, and local holds belong to it.
+    ApplyMirrorBusy();if(!Current(s,epoch))return;
     DrainDisplay();
+    if(!Current(s,epoch))return;
     const auto now = Clock::now();
-    for (int i = 0; i < kMaxPeers; ++i)
+    for (int i = 0; i < kMaxPeers; ++i) {
+        if(!Current(s,epoch))return;
+        if(s->role()==coop::net::Role::Host && i>0) {
+            if(!s->IsSlotConnected(i)){if(g_peerKnown[i])OnPeerGone(uint8_t(i));continue;}
+            BindPeer(s,uint8_t(i));if(g_seedOwed[i])SeedHistory(uint8_t(i));
+        }
         if (!g_out[i].q.empty() && now >= g_out[i].nextTry) Flush(static_cast<uint8_t>(i));
+    }
+    if(!Current(s,epoch))return;
     // A terminal holds its world's desk, dish and panel: one made in a world that is known and no longer
     // the current one goes. An unknown world keeps it.
     if (void* world = WI::CurrentWorld()) {
@@ -676,8 +950,7 @@ void OnChunk(const coop::net::BlobChunkPayload& p, uint8_t senderSlot) {
     }
     if (senderSlot >= kMaxPeers) return;
     auto* s=g_session.load();
-    if(!s || !s->connected() || (s->role()==coop::net::Role::Host ?
-       (senderSlot==0 || !s->IsSlotWorldReady(senderSlot)) : senderSlot!=0))return;
+    if(!BindPeer(s,senderSlot))return;
     std::vector<uint8_t> blob;
     if (!g_asm.OnChunk(p, senderSlot, blob)) return;
     if (SessionIf(coop::net::Role::Host)) {
@@ -688,21 +961,21 @@ void OnChunk(const coop::net::BlobChunkPayload& p, uint8_t senderSlot) {
 }
 
 void OnPeerWorldReady(int slot) {
-    if (!SessionIf(coop::net::Role::Host) || slot < 1 || slot >= kMaxPeers) return;
-    if(g_haveHistory) {
-        SendLog(static_cast<uint8_t>(slot),L"",3);
-        for(const auto& line:g_history)SendLog(static_cast<uint8_t>(slot),line.text,line.type);
-    }
-    const std::string& guid = coop::player_handshake::GuidForSlot(slot);
-    if (guid.empty()) return;
-    if (Terminal* t = ByGuid(guid))
-        if (t->slot != slot) Rebind(*t, static_cast<uint8_t>(slot));
+    auto* s=SessionIf(coop::net::Role::Host);
+    if (!s || slot < 1 || slot >= kMaxPeers || !BindPeer(s,uint8_t(slot))) return;
+    g_seedOwed[slot]=true;++g_seedVersion[slot];SeedHistory(uint8_t(slot));
 }
 
 void OnPeerGone(uint8_t slot) {
     if (slot >= kMaxPeers) return;
+    if(slot==0 && g_role==coop::net::Role::Client) {
+        g_display.clear();++g_displayRevision;
+        g_mirrorBusy=false;g_haveMirrorBusy=true;++g_busyRevision;
+    }
     g_asm.ClearSlot(slot);
     g_out[slot] = Outbox{};
+    g_peerKnown[slot]=false;g_peerGeneration[slot]=0;g_peerGuid[slot].clear();g_seedOwed[slot]=false;
+    ++g_peerVersion[slot];++g_seedVersion[slot];
     g_saidRefused[slot] = g_saidMalformed[slot] = g_saidNoTerminal[slot] = false;
     g_logRate[slot]={};
     for (Terminal& t : g_terms) {
@@ -713,27 +986,33 @@ void OnPeerGone(uint8_t slot) {
 }
 
 void OnDisconnect() {
+    // Detach all old ownership before the first native callback. A callback may
+    // install a new session whose terminals and queues the old teardown must keep.
+    std::vector<Terminal> retired;retired.swap(g_terms);
+    const auto busyTerm=g_busyTerm;const bool clearBusy=g_mirrorBusy && !g_localHolds;
+    const auto counts=g_counts;
     ++g_epoch;
     g_session.store(nullptr,std::memory_order_release);
-    g_world=0; g_display.clear(); g_localCommandDepth=0; g_commandBusy=false; g_clearCommand=false; g_commandTerm={};
-    g_history.clear();g_historyChars=0;g_haveHistory=false;
+    g_world=0; g_display.clear();++g_displayRevision;
+    g_commandBusy=false;g_asyncCommand={};++g_commandRevision;++g_busyRevision;
+    PruneBodies();
+    g_history.clear();g_historyChars=0;g_haveHistory=false;++g_historyRevision;
     for(auto& rate:g_logRate)rate={};
-    // A busy flag this terminal holds only as the host's mirror goes with the session.
-    if (g_mirrorBusy && !g_localHolds)
-        if (void* term = SC::LocalTerminal()) SC::WriteProcessing(term, false);
-    g_mirrorBusy = g_localHolds = false;
-    while (!g_terms.empty()) DiscardAt(g_terms.size() - 1);
+    g_mirrorBusy = g_localHolds = g_haveMirrorBusy = false;g_busyTerm.Reset();
     for (auto& o : g_out) o = Outbox{};
+    for(int i=0;i<kMaxPeers;++i){g_peerKnown[i]=false;g_peerGeneration[i]=0;g_peerGuid[i].clear();g_seedOwed[i]=false;++g_peerVersion[i];++g_seedVersion[i];}
     for (bool& b : g_saidRefused) b = false;
     for (bool& b : g_saidMalformed) b = false;
     for (bool& b : g_saidNoTerminal) b = false;
     for (bool& b : g_saidNoContext) b = false;
     g_asm.Clear();
-    if (g_counts.linesSent || g_counts.linesRun)
-        UE_LOGI("sat_console: session end -- %llu line(s) sent to the host, %llu run for clients",
-                static_cast<unsigned long long>(g_counts.linesSent),
-                static_cast<unsigned long long>(g_counts.linesRun));
     g_counts = Counts{};
+    if(clearBusy)if(void* term=busyTerm.Get())SC::WriteProcessing(term,false);
+    for(auto& t:retired){void* term=t.pin.Raw();t.pin.Release();SC::DiscardTerminal(term);}
+    if (counts.linesSent || counts.linesRun)
+        UE_LOGI("sat_console: session end -- %llu line(s) sent to the host, %llu run for clients",
+                static_cast<unsigned long long>(counts.linesSent),
+                static_cast<unsigned long long>(counts.linesRun));
 }
 
 Counts LaneCounts() {

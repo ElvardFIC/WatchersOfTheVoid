@@ -10,11 +10,11 @@ enum class Role {Host,Client};
 class Session {
 public:
  struct ReliableMessage {};
- Role mode=Role::Host;bool linked=true,sendOk=true,ready=true;
+ Role mode=Role::Host;bool linked=true,sendOk=true,ready=true,active=true;
  struct Sent{int slot;FoodStatePayload state;};std::vector<Sent> sent;
  std::vector<FoodBitePayload> bites;
  std::function<void()> beforeSend;
- bool connected()const{return linked;}Role role()const{return mode;}
+ bool running()const{return active;}bool connected()const{return linked;}Role role()const{return mode;}
  bool IsSlotWorldReady(int)const{return ready;}
  bool SendReliableToSlot(int slot,ReliableKind k,const void* data,int n){
   auto fn=std::move(beforeSend);beforeSend={};if(fn)fn();

@@ -18,6 +18,26 @@ std::vector<net::BlobChunkPayload> CarePacket(const test::Rec& r,uint32_t seq,P:
 int main() {
     PreviousPlacementChecks();
     net::Session s;
+    auto hole=test::Make(L"mvpl_01234567_00000001",L"dirthole_C");hole.names.clear();hole.bools.clear();hole.ints={{2}};
+    for (auto role : {net::Role::Host,net::Role::Client}) {
+        Reset(s,role);auto* native=test::New(hole);Finished(nullptr,nullptr,native);Pump();
+        CHECK(g_rows.size()==1 && test::spawned==0 && !s.sent.empty());
+        auto key=g_rows.begin()->first;
+        if(role==net::Role::Client){auto canonical=hole;canonical.key=key;Deliver(Packet(State,canonical),0);Pump();CHECK(test::spawned==0);}
+        else {s.sent.clear();QueueConnectBroadcastForSlot(1);Pump();CHECK(!s.sent.empty());}
+        ue_wrap::script_gate::Call c{};c.object=native;BeforeAction(c);native->live=false;Pump();
+        CHECK(role==net::Role::Host ? g_rows.at(key).dead : g_rows.at(key).remove);
+    }
+    Reset(s,net::Role::Host);Deliver(Packet(Create,hole),1);Pump();CHECK(test::spawned==1 && g_rows.at(hole.key).accepted);
+    Deliver(Packet(Create,hole),1);Pump();CHECK(test::spawned==1);
+    Reset(s,net::Role::Client);Deliver(Packet(State,hole),0);Pump();CHECK(test::spawned==1);
+    Deliver(Packet(Retired,hole),0);Pump();CHECK(test::destroyed==1);
+    CHECK(BeforeHoleBegin({})==ue_wrap::script_gate::Verdict::Run);
+    {Applying applying;CHECK(BeforeHoleBegin({})==ue_wrap::script_gate::Verdict::Cancel);}
+    Reset(s,net::Role::Client);test::holeWatchLive=false;
+    Deliver(Packet(State,hole),0);Pump();CHECK(test::spawned==0 && g_rows.at(hole.key).incoming);
+    test::holeWatchLive=true;Pump();CHECK(test::spawned==1);
+    puts("PASS hole transport: both authors, one native actor, canonical ACK, late join, duplicate creation, fill/retirement and no mirror treasure BeginPlay");
     auto plant = Plant();
     Reset(s, net::Role::Host); s.linked = false;
     auto* a = test::New(plant); ScanPlaced(nullptr, a); Pump();

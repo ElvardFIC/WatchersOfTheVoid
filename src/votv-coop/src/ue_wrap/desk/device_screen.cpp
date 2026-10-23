@@ -245,6 +245,14 @@ std::wstring ClassifyWidgetClaimKey(void* widget) {
     void* cls = R::ClassOf(widget);
     if (!cls) return {};
     FillWidgetSlotFromClass(cls);  // beta: resolve this widget's class from its own ClassOf (late-buy safe), inline before the match
+    if (g_widgets[1].cls && cls == g_widgets[1].cls) {
+        // panel_SATconsole.action sets ui_console.used before entering the shared
+        // widget. Occupancy belongs to that physical panel, not every console.
+        const int32_t off = R::FindPropertyOffset(cls, L"used");
+        if (off < 0) return {};
+        void* owner = *reinterpret_cast<void**>(reinterpret_cast<uint8_t*>(widget) + off);
+        return owner && R::IsLive(owner) ? PosKey(L"sat_", owner) : std::wstring{};
+    }
     for (size_t i = 0; i < 5; ++i)
         if (g_widgets[i].cls && cls == g_widgets[i].cls) return g_widgetKeys[i];
     if (g_widgets[5].cls && cls == g_widgets[5].cls) {
@@ -271,6 +279,7 @@ std::wstring ClassifyDeviceActorClaimKey(void* actor) {
     void* cls = R::ClassOf(actor);
     if (!cls) return {};
     FillDeviceSlotFromClass(cls);  // beta: resolve this device's class from its own ClassOf (late-buy safe), inline before the match
+    if (g_devices[1].cls && cls == g_devices[1].cls) return PosKey(L"sat_", actor);
     for (size_t i = 0; i < 6; ++i)
         if (g_devices[i].cls && cls == g_devices[i].cls) return g_deviceKeys[i];
     if (g_devices[6].cls && cls == g_devices[6].cls) return PosKey(L"tfm_", actor);

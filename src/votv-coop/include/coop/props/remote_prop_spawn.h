@@ -14,7 +14,7 @@
 // BEFORE FinishSpawningActor, so Aprop_C.Init() cannot overwrite the Key with a new guid.
 //
 // No echo loop: this path spawns through engine::SpawnActor rather than UpropInventory_C.takeObj,
-// so the takeObj POST observer that authors a send never fires. Its cross-TU calls into
+// so the takeObj body watch that authors a send never fires. Its cross-TU calls into
 // coop::remote_prop are IsActorUnderAnyDrive, RegisterPropMirror and KeyToWString.
 
 namespace coop::net {

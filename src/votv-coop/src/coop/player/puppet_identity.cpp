@@ -6,6 +6,7 @@
 
 #include "coop/net/session.h"
 #include "coop/player/players_registry.h"
+#include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/object_index.h"
 #include "ue_wrap/core/reflection.h"
@@ -74,6 +75,8 @@ UE_FACT_FN(kRowPuppetGruntMark, "puppet_identity", L"prop_grunt_C",
            Declared);
 UE_FACT_FN(kRowPuppetSkullzone, "puppet_identity", L"skullzone_C",
            L"BndEvt__dest_K2Node_ComponentBoundEvent_2_ComponentBeginOverlapSignature__DelegateSignature", Declared);
+UE_FACT_FN(kRowPuppetDreamBurger, "puppet_identity", L"dreamBurger_coll_C",
+           L"BndEvt__Capsule_K2Node_ComponentBoundEvent_1_ComponentBeginOverlapSignature__DelegateSignature", Declared);
 
 sg::Verdict OnWholePre(const sg::Call& call);
 sg::Verdict OnBoxMarkPre(const sg::Call& call);
@@ -113,9 +116,13 @@ const Watch kWatches[] = {
     {&kRowPuppetDreamfillDoor, kDreamfillDoor, &OnWholePre, nullptr},
     {&kRowPuppetGruntMark, kRowCount, &OnGruntPre, &OnGruntPost},
     {&kRowPuppetSkullzone, kSkullzone, &OnWholePre, nullptr},
+    // Native collection ignores OtherActor: it removes this burger from the local
+    // dream's remaining array and destroys it. Only the owner's native collection
+    // may contribute to that dream's food/achievement reward at awoken().
+    {&kRowPuppetDreamBurger, kDreamBurger, &OnWholePre, nullptr},
 };
 constexpr int kWatchCount = static_cast<int>(sizeof(kWatches) / sizeof(kWatches[0]));
-static_assert(kWatchCount == 19, "nineteen name watches: seventeen stubs and two runTrigger bodies");
+static_assert(kWatchCount == 20, "twenty name watches: eighteen stubs and two runTrigger bodies");
 
 constexpr int kPiTagBase = 0x50490000;  // 'PI' and the watch's index
 
@@ -130,13 +137,16 @@ RowCounter g_counters[kRowCount] = {
     {"wellTp.end", 0}, {"dreamBoulder", 0}, {"mapTransition", 0}, {"trigger.openLevel", 0}, {"trigger.spikes", 0},
     {"dream_climb", 0}, {"dream_jump", 0}, {"dream_run.fin", 0}, {"dream_run.wok", 0}, {"dreamfillDoor", 0},
     {"grunt", 0}, {"shower", 0}, {"birch", 0}, {"erie", 0}, {"skullzone", 0},
+    {"dreamBurger", 0},
 };
 uint32_t g_logged = 0;  // a bit per row: said since the last resolve
 
-// Each stub's OtherActor parameter, found by name in the stub's own frame at its first call: kUnread until then,
-// -1 when the stub has none, said once.
+// Each stub's OtherActor parameter belongs to that UFunction incarnation. A name
+// watch survives class reload and address reuse; its old frame offset must not.
+// kUnread until resolved, -1 when this incarnation has none, said once.
 constexpr int32_t kUnread = INT32_MIN;
 int32_t g_actorOff[kWatchCount] = {};
+ue_wrap::CachedObjRef g_actorFn[kWatchCount];
 
 // The scope mark rows 3, 9 and 11 put on a puppet's touch and read downstream. Its address is the owner.
 int       g_markOwner = 0;
@@ -173,14 +183,22 @@ int      g_gen = 0;  // moves with each resolve that looked at anything
 
 // The stub's toucher, or null.
 void* Toucher(int index, const sg::Call& call) {
+    if (!call.locals || !call.function) return nullptr;
     int32_t& off = g_actorOff[index];
+    if (!g_actorFn[index].Is(call.function)) {
+        g_actorFn[index].Set(call.function);
+        off = kUnread;
+    }
     if (off == kUnread) {
         off = R::FindParamOffset(call.function, L"OtherActor");
         if (off < 0)
             UE_LOGE("[PI] %ls::%ls has no OtherActor parameter -- this stub refuses nothing",
                     kWatches[index].row->Class(), kWatches[index].row->Name());
     }
-    if (off < 0 || !call.locals) return nullptr;
+    if (off < 0) return nullptr;
+    const int32_t bytes = R::FunctionFrameSize(call.function);
+    if (bytes < static_cast<int32_t>(sizeof(void*)) ||
+        off > bytes - static_cast<int32_t>(sizeof(void*))) return nullptr;
     return *reinterpret_cast<void* const*>(call.locals + off);
 }
 
@@ -405,6 +423,10 @@ void OnDisconnect() {
     g_boxStub = g_gruntStub = g_wispPStub = nullptr;
     g_resolvedVer = kNoVersion;
     g_logged = 0;
+    for (int i = 0; i < kWatchCount; ++i) {
+        g_actorFn[i].Reset();
+        g_actorOff[i] = kUnread;
+    }
     scan::Clear();
 }
 

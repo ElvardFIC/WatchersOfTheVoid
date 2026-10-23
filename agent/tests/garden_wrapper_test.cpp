@@ -1,4 +1,9 @@
 #include "../../src/votv-coop/src/ue_wrap/actors/placed_save.cpp"
+#define Name RecordName
+#define Empty RecordEmpty
+#include "../../src/votv-coop/src/ue_wrap/actors/placed_save_record.cpp"
+#undef Empty
+#undef Name
 #include "../../src/votv-coop/src/ue_wrap/actors/wall_drying.cpp"
 #include "../../src/votv-coop/src/ue_wrap/core/call.cpp"
 #include <cstdio>
@@ -6,7 +11,7 @@
 #include <map>
 #define CHECK(x) do { if (!(x)) { std::fprintf(stderr,"FAIL %d: %s\n",__LINE__,#x); std::exit(1); } } while (0)
 namespace test {
-struct Obj { int id=0, serial=1, amount=7; bool live=true; uint8_t flags=0; std::wstring key=L"saved_plant_5"; ue_wrap::reflection::FName name{};
+struct Obj { int id=0, serial=1, amount=7, material=0; bool live=true; uint8_t flags=0; std::wstring key=L"saved_plant_5"; ue_wrap::reflection::FName name{};
 float water=0,fertilizer=0,height=35,maxHeight=35;
 int classId=1, generations=0, updates=0; void* faucet=nullptr; void* sprinkler=nullptr; void* hose=nullptr;
 std::wstring hoseKey=L"None", sprinklerKey=L"None"; } objs[20];
@@ -18,7 +23,7 @@ int toggles=0, detaches=0;
 ue_wrap::save_record::SaveRecord captured;
 void (*processCallback)(void*)=nullptr;
 void (*nameCallback)()=nullptr;
-const wchar_t* ClassLabel(int i) { return i==6?L"faucet_C":i==7?L"groundHose_C":i==8?L"prop_sprinkler_C":L"growingPlant_C"; }
+const wchar_t* ClassLabel(int i) { return i==9?L"dirthole_C":i==6?L"faucet_C":i==7?L"groundHose_C":i==8?L"prop_sprinkler_C":L"growingPlant_C"; }
 }
 namespace ue_wrap::reflection {
 int32_t InternalIndexOf(void* a) { return a?static_cast<test::Obj*>(a)->id:-1; }
@@ -31,7 +36,8 @@ void* ClassOf(void* a) { return a?&test::objs[static_cast<test::Obj*>(a)->classI
 void* SuperStructOf(void*) { return nullptr; }
 std::wstring ClassNameOf(void* a) { return a==&test::objs[4]?L"prop_bucket_C":a==&test::objs[3]?L"prop_fertilizer_C":test::ClassLabel(static_cast<test::Obj*>(a)->classId); }
 const FName& NameOf(void* a) { return static_cast<test::Obj*>(a)->name; }
-bool NameEquals(const FName& n,const wchar_t* name) { return !wcscmp(name,test::ClassLabel(n.ComparisonIndex))&&(n.ComparisonIndex==1||n.ComparisonIndex==6||n.ComparisonIndex==7||n.ComparisonIndex==8); }
+bool NameEquals(const FName& n,const wchar_t* name) { return !wcscmp(name,test::ClassLabel(n.ComparisonIndex))&&(n.ComparisonIndex==1||n.ComparisonIndex==6||n.ComparisonIndex==7||n.ComparisonIndex==8||n.ComparisonIndex==9); }
+int32_t FindPropertyOffset(void*,const wchar_t* name) { return test::fields && !wcscmp(name,L"matType") ? offsetof(test::Obj,material) : -1; }
 bool NameStartsWith(const FName& n,const wchar_t* name) { return n.ComparisonIndex==1&&!wcscmp(name,L"growingPlant"); }
 void* OuterOf(void*) { return &test::objs[test::validOwner?1:5]; }
 bool FindBoolProperty(void*,const wchar_t*,int32_t& off,uint8_t& mask) { off=offsetof(test::Obj,flags);mask=4;return test::fields; }
@@ -82,9 +88,12 @@ uint32_t Generation(){return test::world;}
 void* CurrentWorld(){return reinterpret_cast<void*>(uintptr_t(test::world));}
 void* WorldOf(void* a){return a==&test::objs[0]?CurrentWorld():nullptr;}
 }
-namespace ue_wrap::placed_save { Kind ClassKind(const std::wstring& n) { return n==L"growingPlant_C"?Kind::Plant:n==L"groundHose_C"?Kind::Hose:n==L"faucet_C"?Kind::Faucet:Kind::None; } }
 namespace ue_wrap::log {void Write(Level,const char*,...) {}}
 namespace ue_wrap::engine {
+bool TryGetActorLocation(void*,FVector& out){out={11,22,33};return true;}
+bool TryGetActorRotation(void*,FRotator& out){out={};return true;}
+FVector GetActorScale3D(void*){return {1,1,1};}
+void RotatorToQuat(float,float,float,float& x,float& y,float& z,float& w){x=y=z=0;w=1;}
 bool SetActorScale3D(void*,const FVector&){return true;}
 bool DestroyActor(void*){return false;}
 void* BeginDeferredSpawn(void*,const FVector&,const FRotator&){return nullptr;}
@@ -142,5 +151,15 @@ int main() {
     CHECK(!P::ApplyCare(a,P::CareKind::Water,601.f)&&!P::ApplyCare(a,P::CareKind::Fertilizer,300.f));
     puts("PASS measured care wrapper: bucket ratio/capacity/minimum/key, empty-source proof, fertilizer 600/no-reset and canonical field writes");
     puts("PASS native garden wrapper/ParamFrame: explicit collector, packed discard/metadata/owner guards, saved identity, ripe-to-harvested amount reset");
+    objs[9].id=9;objs[9].name.ComparisonIndex=9;a->classId=9;a->material=2;
+    CHECK(P::Type(a)==P::Kind::DirtHole && P::SetKey(a,L"mvpl_00000001_00000001"));
+    ue_wrap::save_record::SaveRecord hole, normalized;
+    CHECK(P::Capture(a,hole) && hole.key==L"mvpl_00000001_00000001" && hole.ints[0][0]==2);
+    CHECK(hole.xform[4]==11 && hole.xform[5]==22 && hole.xform[6]==33 && P::Normalize(hole,normalized));
+    hole.ints[0][0]=1;CHECK(P::Apply(a,hole) && a->material==1 && P::Link(a,hole));
+    hole.ints[0][0]=3;CHECK(!P::Apply(a,hole) && a->material==1);
+    ++a->serial;CHECK(P::ExistingKey(a).empty());
+    CHECK(P::SetKey(a,L"fresh"));++world;CHECK(P::ExistingKey(a).empty());
+    puts("PASS transient hole identity, position/material capture, validated repaint and recycled-slot/world cleanup");
     return 0;
 }

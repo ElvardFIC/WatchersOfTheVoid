@@ -46,7 +46,8 @@ void OnReliable(const coop::net::BlobChunkPayload& p, uint8_t senderPeerSlot);
 // moment the slot is connected and its GUID has arrived, so the blob lands in the joiner's
 // pre-world window. No-op off the host or when the peer's GUID hasn't arrived. Returns true iff
 // the blob was actually enqueued -- the caller (HostPersistTick) latches "sent" ONLY on true, and retries next tick on a channel-busy refusal
-// (else the connect-edge refusal was never retried -> the client never got its inventory). Game thread.
+// The latch belongs to the exact slot generation/GUID; preparation and each chunk
+// cancel when the source or recipient changes. Game thread.
 bool SendInventoryToSlot(int peerSlot);
 
 // CLIENT: true once the host's on-join apply blob has arrived + deserialized (the join boot waits
@@ -57,7 +58,9 @@ bool HasPendingApply();
 // profile into it (or empty the host's items out of it when none arrived), and the hook resets the
 // host's status effects out of it before either. One-shot, consumed by
 // the hook and cleared on disconnect; the join boot calls it right before each world load. Every
-// other load in the process -- a later Host-with-save above all -- is left alone. Any thread.
+// other load in the process -- a later Host-with-save above all -- is left alone.
+// A newer request cancels older callbacks. One owned profile revision supplies
+// items/vitals/pose; failed/obsolete restores cannot open profile reporting. Any thread.
 void BeginJoinApply();
 
 // CLIENT: where the join's world appearance puts this player, taken once: a later body in the same

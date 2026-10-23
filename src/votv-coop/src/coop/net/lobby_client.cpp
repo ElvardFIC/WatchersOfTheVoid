@@ -1,6 +1,7 @@
 // coop/net/lobby_client.cpp -- see coop/net/lobby_client.h.
 
 #include "coop/net/lobby_client.h"
+#include "coop/net/peer_limits.h"
 #include "coop/game_build/game_build.h"
 
 #include "coop/net/http_client.h"
@@ -96,8 +97,11 @@ bool FetchList(const std::string& masterUrl, const std::string& versionFilter,
         peer_identity::PubKey keyBytes{};
         if (!peer_identity::PublicKeyFromIdentityString(r.identity, keyBytes)) r.identity.clear();
         r.proved     = J::Bool(e, "proved");
-        r.playersCur = J::IntClamped(e, "players_cur", 0, 64);
-        r.playersMax = J::IntClamped(e, "players_max", 0, 64);
+        const auto max=e.find("players_max");
+        r.playersMax = max!=e.end() && max->is_number_integer()
+            ? J::IntClamped(e,"players_max",coop::net::kMinPlayers,coop::net::kPeerCapacity)
+            : coop::net::kDefaultPlayers;
+        r.playersCur = J::IntClamped(e, "players_cur", 1, r.playersMax);
         r.ageSec     = J::IntClamped(e, "age", 0, 2000000000);
         r.proto      = J::IntClamped(e, "proto", 0, 65535);  // the join gate; 0 means a host older than the field
         r.locked     = J::Bool(e, "locked");
@@ -310,37 +314,6 @@ LatestInfo LobbyClient::FetchLatest(const std::string& masterUrl, int timeoutMs)
     }
     info.ok    = info.proto > 0 || !info.games.empty();
     return info;
-}
-
-ThanksFetch LobbyClient::FetchThanks(const std::string& masterUrl, int timeoutMs,
-                                     std::string& outText) {
-    const http::Response resp = http::Get(masterUrl, "/v1/thanks", timeoutMs);
-    // 404 is the ONE answer that means this master has no list, and the only one a caller may
-    // act on destructively. Everything else -- no answer, a 503 for a list the master holds but
-    // could not serve this moment, a body that does not parse -- is "no word from the master".
-    if (resp.ok && resp.status == 404) {
-        UE_LOGI("lobby: /v1/thanks -- this master serves no list");
-        return ThanksFetch::NoList;
-    }
-    if (!resp.ok || resp.status != 200) {
-        UE_LOGI("lobby: /v1/thanks -- no usable answer from the master (ok=%d status=%d)",
-                resp.ok ? 1 : 0, resp.status);
-        return ThanksFetch::Unreachable;
-    }
-    J::Json j;
-    if (!J::ParseObject(resp.body, j)) {
-        UE_LOGW("lobby: /v1/thanks -- malformed response");
-        return ThanksFetch::Unreachable;
-    }
-    // The cap is the list parser's own file bound plus slack; a longer text is refused there.
-    outText = J::StrN(j, "text", 80 * 1024);
-    // A 200 with no text is not the master saying it has none -- it never serves an empty list,
-    // so this is a malformed answer, and malformed is "no word", never a reason to evict.
-    if (outText.empty()) {
-        UE_LOGW("lobby: /v1/thanks -- 200 with an empty text; treating it as no answer");
-        return ThanksFetch::Unreachable;
-    }
-    return ThanksFetch::Text;
 }
 
 JoinInfo LobbyClient::Join(const std::string& masterUrl, const std::string& lobbyId,

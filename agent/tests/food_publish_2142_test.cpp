@@ -1,5 +1,8 @@
 // Actual publisher; engine reads and reliable transport are the only boundaries used here.
-#include "../../src/votv-coop/src/coop/props/prop_food_sync.cpp"
+#ifndef FOOD_CALLBACK_SOURCE
+#define FOOD_CALLBACK_SOURCE "../../src/votv-coop/src/coop/props/prop_food_sync.cpp"
+#endif
+#include FOOD_CALLBACK_SOURCE
 #include "../../src/votv-coop/src/coop/net/session_lanes.h"
 #include <cstdio>
 #include <cstdlib>
@@ -14,7 +17,7 @@ bool foodAlive=true;int foodSerial=1;
 bool foodHand=false;
 bool foodMirror=false;
 bool foodCooking=true;
-bool foodResolvable=true,foodWritable=true;
+bool foodResolvable=true,foodWritable=true,foodReadable=true;
 void* foodLocalActor=nullptr;void* foodRemoteActor=nullptr;
 uint32_t foodGeneration=1,foodMirrorGeneration=1,foodWorld=1;
 uint8_t foodLocalSlot=0;
@@ -24,36 +27,40 @@ std::wstring foodKey=L"meal";
 std::function<void()> foodAuthorize;
 std::array<coop::roster_ledger::Row,4> foodRoster{};
 bool foodNative=false;int foodFn=0,foodOwner=0,foodOutputs=0,foodDestroys=0;
+int foodGraph=0,foodOtherType=0,foodFnSerial=1,foodOwnerSerial=1;
+void* foodActorType=&foodOwner;void* foodFunctionOwner=&foodOwner;
+uint32_t foodElementId=1;
 bool foodAllowCensus=false;
 std::wstring foodOutputClass;
 std::function<void()> foodOutputCallback;
 std::function<void()> foodReadCallback,foodWriteCallback,foodResolveCallback;
+std::function<void()> foodKeyCallback,foodFrameCallback,foodBindCallback;
 std::set<uint64_t> foodInvocations{1};
-namespace ue_wrap::food {bool Read(void*,Condition& out){out=meal;auto fn=std::move(foodReadCallback);foodReadCallback={};if(fn)fn();return true;}}
+namespace ue_wrap::food {bool Read(void*,Condition& out){out=meal;auto fn=std::move(foodReadCallback);foodReadCallback={};if(fn)fn();return foodReadable;}}
 namespace ue_wrap::cooking_food {bool IsCookingFood(void*){return foodCooking;}}
-namespace ue_wrap::prop {std::wstring GetInteractableKeyString(void*){return foodKey;}}
-namespace coop::prop_element_tracker {element::ElementId GetPropElementIdForActor(void*){return 1;}}
+namespace ue_wrap::prop {std::wstring GetInteractableKeyString(void*){const auto key=foodKey;auto fn=std::move(foodKeyCallback);foodKeyCallback={};if(fn)fn();return key;}}
+namespace coop::prop_element_tracker {element::ElementId GetPropElementIdForActor(void*){return foodElementId;}}
 // Unused engine surfaces fail loudly; no fake implementation of food synchronization.
 namespace ue_wrap::reflection {
 int32_t FindParamOffset(void*,const wchar_t*){return 0;}
 int32_t FunctionFrameSize(void*){return 1;}
-int32_t InternalIndexOf(void*){return 1;}
-int32_t SlotSerial(int32_t){return foodSerial;}
-int32_t AllocateSlotSerial(int32_t){return foodSerial;}
-bool IsLiveByIndex(void*,int32_t){return foodAlive;}
-bool IsLive(void*){return foodAlive;}
+int32_t InternalIndexOf(void* p){return p==&foodFn?2:p==&foodOwner?3:p==&foodGraph?4:p==&foodOtherType?5:1;}
+int32_t SlotSerial(int32_t i){return i==2?foodFnSerial:i==3?foodOwnerSerial:i==4 || i==5?1:foodSerial;}
+int32_t AllocateSlotSerial(int32_t i){return SlotSerial(i);}
+bool IsLiveByIndex(void* p,int32_t){return p && (p!=&actor || foodAlive);}
+bool IsLive(void* p){return p && (p!=&actor || foodAlive);}
 const FName& NameOf(void* p){CHECK(foodNative && p==&foodOwner);static FName name{1,0};return name;}
 void* FindClass(const wchar_t* name){if(foodAllowCensus && !wcscmp(name,L"prop_food_C"))return nullptr;std::fprintf(stderr,"unexpected %s\n",__FUNCTION__);std::exit(2);}
 bool NameStartsWith(const FName&,const wchar_t*){std::fprintf(stderr,"unexpected %s\n",__FUNCTION__);std::exit(2);}
 bool IsDescendantOfAny(void*,void* const*,size_t,int){std::fprintf(stderr,"unexpected %s\n",__FUNCTION__);std::exit(2);}
-void* ClassOf(void* p){CHECK(foodNative && p==&actor);return &foodOwner;}
-void* OuterOf(void* p){CHECK(foodNative && p==&foodFn);return &foodOwner;}
+void* ClassOf(void* p){CHECK(p==&actor || p==&foodOtherType);return p==&actor?foodActorType:&foodOwner;}
+void* OuterOf(void* p){CHECK(foodNative && (p==&foodFn || p==&foodGraph));return foodFunctionOwner;}
 void* FindDispatchFunctionCached(void* cls,const wchar_t* name){CHECK(foodNative && cls==&foodOwner && !wcscmp(name,L"eaten"));return &foodFn;}
 bool NameEquals(const FName& name,const wchar_t* text){CHECK(foodNative && name.ComparisonIndex==1);return foodOutputClass==text;}
 }
 namespace ue_wrap {
-ParamFrame::ParamFrame(void* fn):fn_(fn){CHECK(foodNative && fn==&foodFn);}
-bool ParamFrame::SetRaw(const wchar_t* name,const void* p,int32_t n){CHECK(foodNative && !wcscmp(name,L"player") && n==8 && !*static_cast<void* const*>(p));return true;}
+ParamFrame::ParamFrame(void* fn):fn_(fn){CHECK(foodNative && fn==&foodFn);auto cb=std::move(foodFrameCallback);foodFrameCallback={};if(cb)cb();}
+bool ParamFrame::SetRaw(const wchar_t* name,const void* p,int32_t n){CHECK(foodNative && !wcscmp(name,L"player") && n==8 && !*static_cast<void* const*>(p));auto cb=std::move(foodBindCallback);foodBindCallback={};if(cb)cb();return true;}
 bool Call(void* object,ParamFrame& f){CHECK(foodNative && object==&actor && f.function()==&foodFn);++foodOutputs;
     auto callback=std::move(foodOutputCallback);foodOutputCallback={};if(callback)callback();return true;}
 }
@@ -124,10 +131,12 @@ int main(){
  CHECK(S::OnAction(call)==ue_wrap::script_gate::Verdict::Run);++foodSerial;S::OnActionPost(call);
  CHECK(session.bites.size()==2); // recycled pointer is not the consumed item
  CHECK(S::OnConsumedOutput(call)==ue_wrap::script_gate::Verdict::Cancel);
- foodLocalActor=&actor;CHECK(S::OnConsumedOutput(call)==ue_wrap::script_gate::Verdict::Run);foodLocalActor=nullptr;
+ foodNative=true;foodOutputClass=L"prop_foodBox_C";call.function=&foodFn;
+ foodLocalActor=&actor;CHECK(S::OnConsumedOutput(call)==ue_wrap::script_gate::Verdict::Run);S::OnConsumedOutputPost(call);foodLocalActor=nullptr;
  foodMirror=true;CHECK(S::OnConsumedOutput(call)==ue_wrap::script_gate::Verdict::Cancel);
  session.mode=coop::net::Role::Host;CHECK(S::OnConsumedOutput(call)==ue_wrap::script_gate::Verdict::Cancel);foodMirror=false;
  CHECK(S::OnConsumedOutput(call)==ue_wrap::script_gate::Verdict::Run);
+ foodNative=false;call.function=&actor;
  // Progress-only changes publish and survive live receive without cooking again.
  meal={350,.5f,2,12.f};S::ForgetPublished(L"meal");CHECK(S::Publish(session,&actor,-1));
  const auto progressState=session.sent.back().state;CHECK(progressState.cookProgress==12.f);

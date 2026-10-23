@@ -51,7 +51,7 @@ constexpr float kWindowW  = 980.f;
 // One height across both lock states (a window that resizes as you click inside it is worse than
 // one with slack): sized for the locked state, the tallest cell; the fit probe logs an error the
 // moment a cell overflows.
-constexpr float kWindowH  = 690.f;
+constexpr float kWindowH  = 750.f;
 constexpr float kBorderPx = 2.f;
 constexpr float kPadPx    = 6.f;
 constexpr float kFieldW   = 420.f;
@@ -123,6 +123,7 @@ TF::Field* g_nameField = nullptr;   // the server name, editable here (see the r
 // Every early return from the build past the first TF::Create comes through here, so no path can
 // forget a release.
 void ReleaseFields() {
+    ui::host_player_limit::ClearWidgets();
     TF::Release(g_nameField); g_nameField = nullptr;
     TF::Release(g_pwField);   g_pwField   = nullptr;
 }
@@ -341,7 +342,11 @@ bool BuildScreen(void* switcher) {
         NS::AddVFill(recap, nameRow, 0.f, NS::kFill, NS::kTop);
         g_nameField = TF::Create(nameRow, L"server name", kNameMaxBytes, kFieldW);
         if (!g_nameField) return false;
-        if (!ui::host_player_limit::Build(nameRow, backDonor)) { ReleaseFields(); return false; }
+        NS::AddText(recap,L"Players (including you): 2-32",16,kText,NS::kJustLeft,0.f);
+        void* playersRow=NS::Spawn(L"HorizontalBox",recap);
+        if(!playersRow){ReleaseFields();return false;}
+        NS::AddVFill(recap,playersRow,0.f,NS::kFill,NS::kTop);
+        if (!ui::host_player_limit::Build(playersRow, backDonor)) { ReleaseFields(); return false; }
         g_recapWorld = NS::AddText(recap, L"", 16, kDim, NS::kJustLeft, 0.f);
         g_recapConn  = NS::AddText(recap, L"", 16, kDim, NS::kJustLeft, 0.f);
         g_recapMaster = NS::AddText(recap, L"", 16, kDim, NS::kJustLeft, 0.f);
@@ -618,6 +623,7 @@ void Show() {
         g_visModeWhenChosen = g_connMode;
     }
     BecameLive();
+    ui::host_player_limit::Refresh();
     g_lastStatus.clear();
     g_sawHostAttempt = false;
     g_lastHostStatus.clear();

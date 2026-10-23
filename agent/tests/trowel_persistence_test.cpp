@@ -23,6 +23,7 @@ int32_t SlotSerial(int32_t i){return test::objects[i].serial;}
 int32_t AllocateSlotSerial(int32_t i){return SlotSerial(i);}
 void* ClassOf(void* p){return p;}
 int32_t FindPropertyOffset(void*,const wchar_t*){return offsetof(test::Obj,save);}
+int32_t InstanceOffset::Of(void* p){return p?FindPropertyOffset(ClassOf(p),prop_):-1;}
 void* FindClass(const wchar_t*){std::abort();}
 void EngineFree(void*){std::abort();}void* EngineAlloc(size_t,uint32_t){std::abort();}
 }
@@ -35,7 +36,9 @@ namespace ue_wrap::save_record {
 void WriteArrHeader(void*,int32_t,void*,int32_t){std::abort();}void* AllocZeroed(size_t,size_t){std::abort();}
 void WriteFNameField(void*,const std::wstring&){std::abort();}
 void WriteSaveRecord(uint8_t*,const SaveRecord&,ClassResolver){std::abort();}
+bool WriteSaveRecordChecked(uint8_t*,const SaveRecord&,ClassResolver){std::abort();}
 Arr ReadArr(const void* p,int32_t off){CHECK(p==&test::objects[1]&&off==0x450);return test::present?Arr{test::held,1}:Arr{};}
+bool TryReadArr(const void* p,int32_t off,Arr& out){out=ReadArr(p,off);return true;}
 std::wstring ReadFNameAt(const void*,int32_t off){return off==8?test::outerKey:off==0?L"wallfixer":L"tag";}
 void ReadSaveRecord(const void*,SaveRecord& out){out=test::record;auto cb=std::move(test::onDecode);test::onDecode={};if(cb)cb();}
 bool UpdateScalarGroups(void* p,const SaveRecord& before,const SaveRecord& after){CHECK(p==test::held+0x10);
@@ -46,6 +49,7 @@ bool UpdateScalarGroups(void* p,const SaveRecord& before,const SaveRecord& after
  ++test::writes;test::record.ints=after.ints;test::record.floats=after.floats;test::record.bools=after.bools;return true;}
 }
 namespace ue_wrap::log {void Write(Level,const char*,...) {}}
+namespace ue_wrap::container_inventory {bool ReadPersonalFlag(void*,bool&){std::abort();}}
 namespace ue_wrap::building_material {
 bool IsTrowel(void* p){return p==&test::objects[2];}
 bool ReadConcrete(void*,int32_t& out){out=test::units;return out>=0&&out<=5;}

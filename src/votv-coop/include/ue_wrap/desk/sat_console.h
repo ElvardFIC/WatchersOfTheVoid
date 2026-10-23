@@ -8,6 +8,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <string>
 
 namespace ue_wrap::sat_console {
@@ -61,6 +62,9 @@ bool CallWriteToLog(void* term, const std::wstring& text, uint8_t bracketsType);
 // Native clr's display-only effect; no command parser or world effects.
 bool ClearLog(void* term);
 bool ConsumeInput(void* term);
+// Stop before further input changes when the caller or either widget incarnation
+// changes during reflected preparation/SetText. A missing text box is valid.
+bool ConsumeInputWhile(void* term, const std::function<bool()>& current);
 
 // The panels, named by the placed actor's name, which the map gives every machine alike: a panel's
 // name, and this machine's panel of that name in the desk's list, or null.
