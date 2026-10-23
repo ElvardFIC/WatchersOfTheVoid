@@ -24,6 +24,10 @@ extern std::unordered_map<std::wstring, AtvEntry> g_atvs;
 // World gen of the last completed hub pass (a stale-gen index is EMPTY).
 extern uint32_t                                g_indexGen;
 
+// An actor the index may announce or keep: live by index, an ATV, and in the world this peer is in
+// now. IsAtv comes first, since the key is read at a fixed offset.
+bool LiveInThisWorld(void* actor, int32_t idx);
+
 // Whether `key` can name an ATV on the wire: not empty, not "None", at most 31 chars (what a WireKey
 // carries). A refusal is logged once per key; `side` ("host" / "client") says whose it is.
 bool KeyNamesAnAtv(const std::wstring& key, const char* side);

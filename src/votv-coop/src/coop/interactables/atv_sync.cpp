@@ -86,6 +86,7 @@ std::unordered_map<std::wstring, AtvEntry> g_atvs;
 
 using detail::g_indexGen;
 using detail::SendAtvSpawn;
+using detail::LiveInThisWorld;
 using detail::ResetAnnounceState;
 using detail::RegisterWithScanHub;
 using detail::g_session;
@@ -378,7 +379,9 @@ void QueueConnectBroadcastForSlot(int peerSlot) {
     int sent = 0, spawns = 0;
     for (auto& kv : g_atvs) {
         AtvEntry& e = kv.second;
-        if (!R::IsLiveByIndex(e.actor, e.idx)) continue;
+        // A row of a world since left is skipped (the next pass prunes it): announcing it would put an
+        // ATV on the joiner that the host's world no longer holds.
+        if (!LiveInThisWorld(e.actor, e.idx)) continue;
         // Every row is announced first on the same lane, so the joiner holds the ATV under its Key
         // before the pose lands. Divergence from MTA, which builds a joiner's world from these packets
         // alone (reference/mtasa-blue/Server/mods/deathmatch/logic/CMapManager.cpp:195-297): ours also

@@ -11,6 +11,7 @@
 #include "coop/net/protocol.h"
 #include "coop/net/session.h"
 #include "coop/net/wire_key_util.h"  // WireKeyFromString / StringFromWireKey / FnvKey (shared)
+#include "coop/props/prop_element_tracker.h"  // InPurgeEpisode
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/types.h"           // FVector, FRotator
@@ -57,13 +58,6 @@ void Refuse(const std::wstring& key, const char* why, const char* side) {
                 side, key.c_str(), why);
 }
 
-// "Live", for the index: live by index, an ATV, and in the world this peer is in now. IsAtv comes
-// before any key read, since GetKeyString reads a fixed offset, and the world test is what the old
-// "found is authoritative" prune carried through the hub's world filter.
-bool LiveInThisWorld(void* actor, int32_t idx) {
-    return R::IsLiveByIndex(actor, idx) && A::IsAtv(actor) && W::WorldOf(actor) == W::CurrentWorld();
-}
-
 void SendAtvDestroy(const std::wstring& key) {
     auto* s = g_session.load(std::memory_order_acquire);
     if (!s || !s->connected()) return;
@@ -72,6 +66,13 @@ void SendAtvDestroy(const std::wstring& key) {
     s->SendReliable(coop::net::ReliableKind::AtvDestroy, &p, sizeof(p));
 }
 }  // namespace
+
+// "Live", for the index: live by index, an ATV, and in the world this peer is in now. IsAtv comes
+// before any key read, since GetKeyString reads a fixed offset, and the world test is what the old
+// "found is authoritative" prune carried through the hub's world filter.
+bool LiveInThisWorld(void* actor, int32_t idx) {
+    return R::IsLiveByIndex(actor, idx) && A::IsAtv(actor) && W::WorldOf(actor) == W::CurrentWorld();
+}
 
 bool KeyNamesAnAtv(const std::wstring& key, const char* side) {
     if (key.empty())              { Refuse(key, "empty", side); return false; }
@@ -151,15 +152,24 @@ size_t HubPassComplete(void*, bool isFull, uint32_t worldGen) {
     // One prune rule on a full pass: a row goes iff its actor is not live or its current key is no
     // longer the row's. A mirror spawned while the sliced pass was in flight survives, so does a
     // transient scan miss; a recycled slot's foreign tenant and a re-key do not. A tail pass only has
-    // the new arrivals in `found`, so it prunes by liveness alone. The host sends AtvDestroy for a
-    // row whose actor died in the world it is in now; a row whose world has been left prunes silently.
+    // the new arrivals in `found`, so it prunes by liveness alone. The host sends AtvDestroy for the
+    // key of a row pruned in the world it is in now, whether its actor died or still stands under
+    // another key (a re-key, a reused slot's new tenant: the old key names no ATV of the host's any
+    // more, and the actor's new key is announced by the insert below). A row whose world has been left
+    // prunes silently, and so does every prune while a mass purge is draining a world away (engine
+    // teardown the clients run on their own travel, as the prop lane's reaper treats it).
+    // Divergence from MTA, which removes an element at its destroy call
+    // (reference/mtasa-blue/Server/mods/deathmatch/logic/CStaticFunctionDefinitions.cpp:369-376):
+    // the SP game destroys an ATV without telling this mod, so the remove follows from the scan,
+    // within a pass.
+    const bool purging = coop::prop_element_tracker::InPurgeEpisode();
     for (auto it = g_atvs.begin(); it != g_atvs.end();) {
         const AtvEntry& row = it->second;
         const bool live = LiveInThisWorld(row.actor, row.idx);
         const bool keep = isFull ? live && A::GetKeyString(row.actor) == it->first
                                  : R::IsLiveByIndex(row.actor, row.idx);
         if (keep) { ++it; continue; }
-        if (isHost && !live && thisWorld && row.world == thisWorld) SendAtvDestroy(it->first);
+        if (isHost && !purging && thisWorld && row.world == thisWorld) SendAtvDestroy(it->first);
         it = g_atvs.erase(it);
     }
     // Update or add. A wire key can outlive its actor (a save-placed key is deterministic and a
@@ -169,6 +179,8 @@ size_t HubPassComplete(void*, bool isFull, uint32_t worldGen) {
     for (auto& f : found) {
         auto row = g_atvs.find(f.key);
         const bool gained = row == g_atvs.end();
+        // A key the wire cannot carry is not indexed on the host: a lane addressing it would put an
+        // unaddressable key on the wire, and an ATV with no key is skipped the same way (HubMatch).
         if (gained && isHost && !KeyNamesAnAtv(f.key, "host")) continue;
         AtvEntry& e = gained ? g_atvs[f.key] : row->second;
         if (e.actor && e.actor != f.obj) {
