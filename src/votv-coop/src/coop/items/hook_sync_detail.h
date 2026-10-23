@@ -40,7 +40,7 @@ struct Owned {
     ue_wrap::hook::Kind   kind      = ue_wrap::hook::Kind::Hook;
     bool                  committed = false;  // the anchor commit has been sent; stop streaming
     // The change gate's baseline, and its clock. lastPollMs bumps on every poll whether or not
-    // anything was sent: bumping it only on a send is the bug atv_sync.cpp:671-674 had to go back
+    // anything was sent: bumping it only on a send is the bug atv_sync.cpp's idle branch in Tick had to go back
     // and fix, where a quiet entity's stale clock let the gate run its dispatches at the pump rate.
     ue_wrap::hook::State  last{};
     uint64_t              lastPollMs = 0;
