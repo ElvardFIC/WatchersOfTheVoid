@@ -68,15 +68,20 @@ bool TrySit(void* player, void* atv, SitTry& t) {
     if (coop::atv_sync::ActorSeatedBy(coop::players::Registry::Get().LocalPeerId()) == atv) return true;
     const uint64_t now = coop::net::NowMs();
     if (now < t.nextMs) return false;
-    if (t.tries >= kSitRetries) return true;   // the last step's gap has passed unclaimed: given up
     if (t.called) {
-        // The verb took the seat and is not called again on an occupied one; each wait for the lane's claim is a try.
-        ++t.tries;
-        t.nextMs = now + kSitRetryMs;
-        UE_LOGI("[ATVP] ARM sit: waiting for the lane to claim the seat of atv=%p, wait %d/%d", atv, t.tries,
+        // The verb took the seat and is not called again on an occupied one; the steps after it wait for the lane's
+        // claim, kSitRetries of them, the last being the final look.
+        ++t.waits;
+        UE_LOGI("[ATVP] ARM sit: waiting for the lane to claim the seat of atv=%p, wait %d/%d", atv, t.waits,
                 kSitRetries);
+        if (t.waits >= kSitRetries) {
+            UE_LOGW("[ATVP] ARM sit: the lane made no claim for the seat the verb took on atv=%p", atv);
+            return true;
+        }
+        t.nextMs = now + kSitRetryMs;
         return false;
     }
+    if (t.tries >= kSitRetries) return true;   // the verb has been tried and refused kSitRetries times
     if (!g_actionNameFn) {
         if (void* cls = R::FindClass(L"ATV_C")) g_actionNameFn = R::FindFunction(cls, L"actionName");
         if (!g_actionNameFn) {
@@ -103,7 +108,9 @@ bool TrySit(void* player, void* atv, SitTry& t) {
     const bool driven = ue_wrap::atv::IsDriven(atv);
     UE_LOGI("[ATVP] ARM sit: actionName(local=%p, 'sit') on atv=%p -> %s, try %d/%d, driven=%d",
             player, atv, ok ? "called" : "CALL FAILED", t.tries, kSitRetries, driven ? 1 : 0);
-    if (driven) {   // the verb took the seat; the ATV lane claims it on its next tick, which the next steps wait for
+    // The verb took the seat for the local player (a seat another occupant drives is a refusal); the ATV lane claims
+    // it on its next tick, which the next steps wait for.
+    if (driven && ue_wrap::atv::GetOccupantPlayer(atv) == player) {
         t.called = true;
         return false;
     }

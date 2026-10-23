@@ -132,6 +132,10 @@ bool SetActorRotation(void* actor, const FRotator& rotation);
 // USceneComponent::K2_GetComponentRotation (world); zero on failure. Game thread.
 FRotator GetComponentWorldRotation(void* component);
 
+// The same read, false (and `out` untouched) when the component is dead, the function unresolved or the call failed:
+// for a reader that must tell a failed read from a zero rotation. Game thread.
+bool TryGetComponentWorldRotation(void* component, FRotator& out);
+
 // USceneComponent::K2_SetWorldRotation (bSweep=false, bTeleport=true). Call after SetActorRotation:
 // moving the root re-bases the child's world transform. Game thread.
 bool SetComponentWorldRotation(void* component, const FRotator& rotation);

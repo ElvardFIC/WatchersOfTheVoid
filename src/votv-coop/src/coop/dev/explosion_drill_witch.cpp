@@ -2,7 +2,7 @@
 //
 // The witch car arm (request_witch). A client sitting in the witch car fires the rocket its left-mouse event spawns;
 // the host must take that shot from the client's seat. The host spawns the car and says where, the client walks to
-// its mirror with the director, takes the seat through the game's own verb and says where its car camera points; the
+// its mirror with the director, takes the seat through the game's own verb and says where its rocket would fly; the
 // host puts a crate on that line, out of the blast's reach of the car, and says so; the client then presses the car's
 // left mouse once. Each half judges its own lane counters as deltas against a baseline taken before the first send.
 // The host reports its shot half (accepted under the witch car's launcher, nothing refused) apart from its blast
@@ -15,7 +15,7 @@
 
 #include "explosion_drill_source.h"          // Guard, ReadBool, WriteBool, Count (co-located private header)
 #include "atv_seat.h"                        // TrySit (co-located private header)
-#include "hostile_drill_explosion_detail.h"  // Say, ChatHas, PollDue (co-located private header)
+#include "hostile_drill_explosion_detail.h"  // Say, PollDue (co-located private header)
 
 #include "coop/comms/chat_feed.h"
 #include "coop/dev/director/director.h"
@@ -66,14 +66,18 @@ constexpr const wchar_t* kExplosionCls = L"explosion_C";
 // The car's left-mouse input event: the game's own fire, which spawns the rocket along the car's camera.
 constexpr const wchar_t* kFireFn = L"InpActEvt_LeftMouseButton_K2Node_InputKeyEvent_0";
 // The lobby-chat lines the two peers say to each other: the client's state is in force, the host's car stands at
-// <x y z>, the client sits with its car camera at <x y z> facing <fx fy fz>, the host's crate stands on that line.
+// <x y z>, the client sits and its rocket would leave <x y z> along <fx fy fz>, the host's crate stands on that line.
 constexpr const char*    kReadyLine = "hostile-drill request_witch client-ready";
 constexpr const char*    kHostLine = "hostile-drill request_witch host-ready";
 constexpr const char*    kSeatedLine = "hostile-drill request_witch client-seated";
 constexpr const char*    kTargetLine = "hostile-drill request_witch target-ready";
-// The crate's distance from the camera along its line: past the explosion's 1000 cm radius (explosion.cpp:9) from the
-// car and from the host's player, who stands within 600 cm of the car's spawn point.
+// The crate's distance from the rocket's spawn point along its line: past the explosion's 1000 cm radius
+// (explosion.cpp:9) from the car and from the host's player, who stands within 600 cm of the car's spawn point.
 constexpr float          kTargetCm = 2500.f;
+// The mirror the client walks to is the witch car within this distance of the point the host said its car stands at:
+// the host's spawn (HostSpawn) puts the car there and the announce places the mirror there, where only the fall to rest
+// differs (tens of cm).
+constexpr float          kMirrorCm = 500.f;
 constexpr float          kReachCm = 400.f;         // the director's walk ends within this distance of the car
 constexpr int            kWalkDeadlineS = 90;      // the director's walk gives up after this long
 // The host's verdict bound, from the client's ready line: the client's chain after it is the walk (kWalkDeadlineS),
@@ -83,24 +87,53 @@ constexpr auto           kHostBound = kVerdictBound + std::chrono::seconds(kWalk
 
 unsigned long long U(uint64_t v) { return static_cast<unsigned long long>(v); }
 
-// The numbers a peer said after `prefix` in the lobby chat; true once a line holds `n` of them.
-bool ChatNumbers(const char* prefix, float* out, int n) {
+// The arm's chat rows are its own run's: a LIVE row (the retained tier holds earlier history) with a key past the
+// newest one the feed held when the arm began, so a line an earlier run on this process said, or a joiner's seeded
+// history, is never read. The live-tier rule is the one prop_act_drill_client.cpp (HostSaidLive) reads its host's
+// lines by; `key` rises with the lines' order (chat_feed.h, Line).
+using Mark = unsigned long long;
+
+Mark FeedMark() {
+    Mark newest = 0;
+    coop::chat_feed::ForEachRow([&](const coop::chat_feed::RowView& r) {
+        if (r.key > newest) newest = r.key;
+    });
+    return newest;
+}
+
+bool RunRow(const coop::chat_feed::RowView& r, Mark mark) { return !r.retained && r.key > mark; }
+
+bool ChatHasNew(const char* needle, Mark mark) {
     bool found = false;
     coop::chat_feed::ForEachRow([&](const coop::chat_feed::RowView& r) {
-        if (found) return;
+        if (RunRow(r, mark) && r.line.find(needle) != std::string_view::npos) found = true;
+    });
+    return found;
+}
+
+enum class Said : uint8_t { No, Ok, Malformed };
+
+// The numbers a peer said after `prefix` in this run's rows of the lobby chat: Ok once a row holds `n` finite ones,
+// Malformed (the row in `whole`) when the first row with the prefix does not.
+Said ChatNumbers(const char* prefix, float* out, int n, Mark mark, std::string& whole) {
+    Said said = Said::No;
+    coop::chat_feed::ForEachRow([&](const coop::chat_feed::RowView& r) {
+        if (said != Said::No || !RunRow(r, mark)) return;
         const size_t at = r.line.find(prefix);
         if (at == std::string_view::npos) return;
         const std::string tail(r.line.substr(at + std::strlen(prefix)));
         const char*       p = tail.c_str();
+        said = Said::Ok;
         for (int i = 0; i < n; ++i) {
             char* end = nullptr;
             out[i] = std::strtof(p, &end);
-            if (end == p) return;
+            if (end == p || !std::isfinite(out[i])) said = Said::Malformed;
+            if (said == Said::Malformed) break;
             p = end;
         }
-        found = true;
+        if (said == Said::Malformed) whole = std::string(r.line);
     });
-    return found;
+    return said;
 }
 
 // An edge's time, taken the first time it is seen.
@@ -153,7 +186,10 @@ struct Host {
     ue_wrap::CachedObjRef car, crate;
     Rest                  rest;
     bool                  shotSaid = false;
+    bool                  seated = false;      // the client's seated line has been read: seatedLine holds its numbers
+    float                 seatedLine[6]{};     // the rocket's spawn point and the camera's forward, as the client said
     uint32_t              blastsLogged = 0;
+    Mark                  mark = 0;  // the newest chat key at the arm's start: the rows after it are this run's
 };
 Host g_h;
 
@@ -164,6 +200,7 @@ void HostEnter(HP p) {
 
 // The car and the crate stay in the world: the run ends on the done line.
 void HostEnd() {
+    Unguard();
     PutEnv(g_h.env);
     g_h.phase = HP::Done;
 }
@@ -184,7 +221,13 @@ bool HostLate(const char* why) {
 void HostSpawn() {
     void* me = coop::players::Registry::Get().Local();
     Vec B{};
-    const Fix f = HoldEnv(g_h.env) ? ComputeB(me, me, B) : Fix::Wait;
+    // The family's host half (Guard(true): the gamemode's rule alone), released with the arm. It does not shield the
+    // host's player or the car: a rocket that meets something inside the car's radius blasts the car, which can add a
+    // second capture, which the captured compare reads as a FAIL; a single blast there still passes the counters (the
+    // arm proves the request crossed and was served, not where the rocket hit), and the blast log's distances say
+    // where it fell.
+    g_src.host = true;
+    const Fix f = HoldEnv(g_h.env) && !Guard(true) ? ComputeB(me, me, B) : Fix::Wait;
     if (f == Fix::Wait) {
         HostLate("the gamemode or the fixture never resolved");
         return;
@@ -204,7 +247,7 @@ void HostSpawn() {
     HostEnter(HP::Rest);
 }
 
-// The car at rest; the crate waits for the client's camera line.
+// The car at rest; the crate waits for the client's rocket line.
 void HostRest() {
     void* car = g_h.car.Get();
     if (!car) return HostStop("the witch car is gone before it rested (it destroys itself in story mode)");
@@ -219,12 +262,27 @@ void HostRest() {
     HostEnter(HP::Aim);
 }
 
-// The crate goes on the line the seated client's camera points along, with physics off so it stays where the line
-// points; the client fires once the host says so.
+// The client's seated line, read from the Spawn phase on: a live row retires from the live tier after a few seconds,
+// and the client can sit while the host's car is still coming to rest. False when the line was malformed and the arm
+// has ended.
+bool PollSeated() {
+    std::string whole;
+    const Said  said = ChatNumbers(kSeatedLine, g_h.seatedLine, 6, g_h.mark, whole);
+    if (said == Said::Malformed) {
+        Warn("FAIL host arm=%s malformed line: %s", kName, whole.c_str());
+        HostEnd();
+        return false;
+    }
+    if (said == Said::Ok) g_h.seated = true;
+    return true;
+}
+
+// The crate goes on the rocket's line (its spawn point, the car camera's direction), with physics off so it stays where
+// the line points; the client fires once the host says so.
 void HostAim() {
-    float v[6];
     if (Past(g_h.readyAt, kHostBound)) return HostStop("the client never said it was seated");
-    if (!HD::PollDue() || !ChatNumbers(kSeatedLine, v, 6)) return;
+    if (!g_h.seated || !HD::PollDue()) return;   // the crate's spawn is tried once per poll, until the bound
+    const float* v = g_h.seatedLine;
     void* cls = ResolveClass(kCrateCls, kCratePath);
     if (!cls) return HostStop("the crate's class is unloadable");
     void* crate = E::SpawnActor(cls, {v[0] + v[3] * kTargetCm, v[1] + v[4] * kTargetCm, v[2] + v[5] * kTargetCm});
@@ -232,7 +290,7 @@ void HostAim() {
     if (!E::SetComponentSimulatePhysics(ue_wrap::prop::GetStaticMesh(crate), false))
         return HostStop("the crate's physics could not be turned off");
     g_h.crate.Set(crate);
-    Info("host witch crate on the camera line (%.0f,%.0f,%.0f) + %.0f cm along (%.3f,%.3f,%.3f)", v[0], v[1], v[2],
+    Info("host witch crate on the rocket's line (%.0f,%.0f,%.0f) + %.0f cm along (%.3f,%.3f,%.3f)", v[0], v[1], v[2],
          kTargetCm, v[3], v[4], v[5]);
     HD::Say(kTargetLine);
     HostEnter(HP::Judge);
@@ -331,6 +389,7 @@ struct Client {
     atv_seat::SitTry      sit;
     Vec                   spawn{};  // where the host said its car stands
     bool                  haveSpawn = false;
+    Mark                  mark = 0;  // the newest chat key when the client said it was ready
 };
 Client g_c;
 
@@ -376,13 +435,15 @@ void ClientWait() {
     g_c.sync0 = ES::GetCounters();
     g_c.req0 = ER::GetCounters();
     SnapshotPre();  // the arm's rocket is the one born after this
+    g_c.mark = FeedMark();  // the host's lines are the rows after the chat as it stands now
     HD::Say(kReadyLine);
     Info("client witch state in force, the host told");
     ClientEnter(CP::Walk);
 }
 
-// The witch car's mirror here nearest the point the host said its car stands at (a leftover car is farther), once the
-// host's announce has placed it.
+// The witch car's mirror here: the nearest one within kMirrorCm of the point the host said its car stands at, which
+// the host's announce places. A car farther away (a leftover, or a mirror not yet placed, at the origin) is not it,
+// and none means the caller keeps waiting.
 void* FindMirror(const Vec& spawn) {
     struct Best {
         Vec   spawn;
@@ -399,6 +460,7 @@ void* FindMirror(const Vec& spawn) {
                 Vec   at{};
                 if (!E::TryGetActorLocation(obj, at)) return;
                 const float d = Dist(at, b->spawn);
+                if (d > kMirrorCm) return;
                 if (!b->car || d < b->dist) {
                     b->car = obj;
                     b->dist = d;
@@ -413,8 +475,14 @@ void ClientWalk() {
     Vec at{};
     if (!g_c.walk) {
         if (!g_c.haveSpawn) {
-            float p[3];
-            if (HD::PollDue() && ChatNumbers(kHostLine, p, 3)) {
+            float       p[3];
+            std::string whole;
+            const Said  said = HD::PollDue() ? ChatNumbers(kHostLine, p, 3, g_c.mark, whole) : Said::No;
+            if (said == Said::Malformed) {
+                Warn("FAIL client arm=%s malformed line: %s", kName, whole.c_str());
+                return ClientEnd();
+            }
+            if (said == Said::Ok) {
                 g_c.spawn = {p[0], p[1], p[2]};
                 g_c.haveSpawn = true;
             } else {
@@ -423,7 +491,7 @@ void ClientWalk() {
             return;
         }
         void* car = FindMirror(g_c.spawn);
-        if (!car || !E::TryGetActorLocation(car, at) || Len(at) < 1.f) {  // a mirror at the origin is not placed yet
+        if (!car || !E::TryGetActorLocation(car, at)) {
             ClientLate(kVerdictBound, "the witch car's mirror never stood here");
             return;
         }
@@ -438,21 +506,30 @@ void ClientWalk() {
     if (state == 1) ClientEnter(CP::Sit);
 }
 
-// The car's camera: its world location and the direction it faces, which the rocket's spawn follows.
-bool CameraLine(void* car, Vec& loc, Vec& fwd) {
-    static R::InstanceOffset sCamera{L"Camera"};
-    const int32_t off = sCamera.Of(car);
-    void* cam = off < 0 ? nullptr : *reinterpret_cast<void* const*>(static_cast<const uint8_t*>(car) + off);
-    if (!cam || !R::IsLive(cam)) return false;
-    loc = E::GetComponentLocation(cam);
-    const ue_wrap::FRotator rot = E::GetComponentWorldRotation(cam);
-    constexpr float         kDeg = 3.14159265f / 180.f;
-    const float             pitch = rot.Pitch * kDeg, yaw = rot.Yaw * kDeg;
-    fwd = {std::cos(pitch) * std::cos(yaw), std::cos(pitch) * std::sin(yaw), std::sin(pitch)};
-    return Len(loc) > 0.f;
+// A component the car's Blueprint holds in a member of that name; null when it is unresolved or dead.
+void* CarComponent(void* car, R::InstanceOffset& member) {
+    const int32_t off = member.Of(car);
+    void* comp = off < 0 ? nullptr : *reinterpret_cast<void* const*>(static_cast<const uint8_t*>(car) + off);
+    return comp && R::IsLive(comp) ? comp : nullptr;
 }
 
-// The seat through the game's own verb. Seated, the camera's line is said to the host, which puts the crate on it. The
+// The rocket's line as the car's left-mouse event builds it (car1_witch, bp_cpp): the world location of the `fire`
+// arrow and the world rotation of the Camera. False when either does not read, a failed rotation read included.
+bool FireLine(void* car, Vec& origin, Vec& fwd) {
+    static R::InstanceOffset sFire{L"fire"};
+    static R::InstanceOffset sCamera{L"Camera"};
+    void* arrow = CarComponent(car, sFire);
+    void* cam = CarComponent(car, sCamera);
+    ue_wrap::FRotator rot;
+    if (!arrow || !cam || !E::TryGetComponentWorldRotation(cam, rot)) return false;
+    origin = E::GetComponentLocation(arrow);
+    constexpr float kDeg = 3.14159265f / 180.f;
+    const float     pitch = rot.Pitch * kDeg, yaw = rot.Yaw * kDeg;
+    fwd = {std::cos(pitch) * std::cos(yaw), std::cos(pitch) * std::sin(yaw), std::sin(pitch)};
+    return Len(origin) > 0.f;
+}
+
+// The seat through the game's own verb. Seated, the rocket's line is said to the host, which puts the crate on it. The
 // seat claim and its first state leave in the tick the lane makes the claim, so the host has the seat before the shot.
 void ClientSit() {
     void* car = g_c.car.Get();
@@ -468,12 +545,12 @@ void ClientSit() {
         return ClientEnd();
     }
     Vec loc{}, fwd{};
-    if (!CameraLine(car, loc, fwd)) return ClientAbandon("the car's camera did not read");
+    if (!FireLine(car, loc, fwd)) return ClientAbandon("the rocket's line (fire arrow, camera) did not read");
     char line[200];
     std::snprintf(line, sizeof(line), "%s %.0f %.0f %.0f %.3f %.3f %.3f", kSeatedLine, loc.X, loc.Y, loc.Z, fwd.X,
                   fwd.Y, fwd.Z);
     HD::Say(line);
-    Info("client witch seated, camera at (%.0f,%.0f,%.0f) facing (%.3f,%.3f,%.3f)", loc.X, loc.Y, loc.Z, fwd.X, fwd.Y,
+    Info("client witch seated, rocket from (%.0f,%.0f,%.0f) facing (%.3f,%.3f,%.3f)", loc.X, loc.Y, loc.Z, fwd.X, fwd.Y,
          fwd.Z);
     ClientEnter(CP::Target);
 }
@@ -483,10 +560,10 @@ void ClientTarget() {
     void* car = g_c.car.Get();
     if (!car) return ClientAbandon("the witch car is gone before the shot");
     if (ClientLate(kBound, "the host never said the crate stood")) return;
-    if (!HD::PollDue() || !HD::ChatHas(kTargetLine)) return;
+    if (!HD::PollDue() || !ChatHasNew(kTargetLine, g_c.mark)) return;
     Vec loc{}, fwd{};
-    if (CameraLine(car, loc, fwd))  // the camera at the shot, to read against the line the host used
-        Info("client witch fires, camera at (%.0f,%.0f,%.0f) facing (%.3f,%.3f,%.3f)", loc.X, loc.Y, loc.Z, fwd.X,
+    if (FireLine(car, loc, fwd))  // the line at the shot, to read against the line the host used
+        Info("client witch fires, rocket from (%.0f,%.0f,%.0f) facing (%.3f,%.3f,%.3f)", loc.X, loc.Y, loc.Z, fwd.X,
              fwd.Y, fwd.Z);
     void* fn = R::FindFunction(R::ClassOf(car), kFireFn);
     ue_wrap::ParamFrame f(fn);
@@ -546,9 +623,10 @@ void WitchHostTick() {
         if (h.at == Clock::time_point{}) {
             h.sync0 = ES::GetCounters();
             h.req0 = ER::GetCounters();
+            h.mark = FeedMark();
             h.at = Clock::now();
         }
-        if (HD::PollDue() && HD::ChatHas(kReadyLine)) {
+        if (HD::PollDue() && ChatHasNew(kReadyLine, h.mark)) {
             h.readyAt = Clock::now();
             return HostEnter(HP::Spawn);
         }
@@ -557,9 +635,13 @@ void WitchHostTick() {
             HostEnd();
         }
         return;
-    case HP::Spawn: return HostSpawn();
-    case HP::Rest: return HostRest();
-    case HP::Aim: return HostAim();
+    case HP::Spawn:
+    case HP::Rest:
+    case HP::Aim:
+        if (!h.seated && HD::PollDue() && !PollSeated()) return;
+        if (h.phase == HP::Spawn) return HostSpawn();
+        if (h.phase == HP::Rest) return HostRest();
+        return HostAim();
     case HP::Judge: return HostJudge();
     case HP::Done: return;
     }
@@ -583,6 +665,7 @@ void WitchClientTick() {
 
 void WitchReset() {
     if (g_c.phase != CP::Done) ClientEnd();
+    Unguard();  // the host half's hold, when its arm was still running at the disconnect
     PutEnv(g_h.env);
     g_c = Client{};
     g_h = Host{};

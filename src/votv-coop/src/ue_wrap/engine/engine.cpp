@@ -520,18 +520,22 @@ bool SetActorLifeSpan(void* actor, float seconds) {
     return f.Set<float>(L"InLifespan", seconds) && Call(actor, f);
 }
 
-FRotator GetComponentWorldRotation(void* component) {
-    FRotator rot;
-    if (!component || !R::IsLive(component)) return rot;
+bool TryGetComponentWorldRotation(void* component, FRotator& out) {
+    if (!component || !R::IsLive(component)) return false;
     static void* fn = nullptr;
     if (!fn) {
         if (void* sc = R::FindClass(P::name::SceneComponentClass))
             fn = R::FindFunction(sc, P::name::GetComponentRotationFn);
     }
-    if (!fn) return rot;
+    if (!fn) return false;
     ParamFrame f(fn);
-    if (!Call(component, f)) return rot;
-    f.GetRaw(L"ReturnValue", &rot, sizeof(rot));
+    if (!Call(component, f)) return false;
+    return f.GetRaw(L"ReturnValue", &out, sizeof(out));
+}
+
+FRotator GetComponentWorldRotation(void* component) {
+    FRotator rot;
+    if (!TryGetComponentWorldRotation(component, rot)) return FRotator{};
     return rot;
 }
 
