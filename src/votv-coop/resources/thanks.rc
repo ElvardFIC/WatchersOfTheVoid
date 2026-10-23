@@ -1,6 +1,0 @@
-// resources/thanks.rc -- embed the thanks list (assets/thanks/thanks.txt) into the DLL as RCDATA:
-// the fallback the main menu rolls when no newer copy has been downloaded.
-
-#include "thanks_resource_ids.h"
-
-IDR_THANKS_LIST RCDATA "../assets/thanks/thanks.txt"

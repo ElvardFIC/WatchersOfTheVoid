@@ -6,10 +6,12 @@
 // dilation, camera or wake, and nothing waits for anyone. What crosses the wire is the fact of rest:
 //   - each peer's state (awake, resting in a bed or fainted, dreaming in a nightmare) with the bed's
 //     class name, sent by a client to the host on a change and relayed by the host to every other client;
-//   - the host's own sleeping flag, which a client shows as one chat line when it rises (the world is
-//     about to run faster: the host's machine runs the game's native speed-up, and a client sees it
-//     through the host's clock and streams).
-// Late join: a joiner gets the host's flag and every non-awake state; a client repeats a non-awake state on each flag it gets.
+//   - the host's own sleeping flag, which a client shows as one chat line when it rises.
+// sleep_rest permits shared clock acceleration only when every connected participant is resting.
+// Late join: a joiner gets the host flag and every slot, including explicit awake
+// rows. Refused delivery retains current-state debt for that recipient generation.
+// A client reports its initial state and repeats a non-awake state on host flags.
+// World/session/role changes clear snapshots, paced reports and delivery debt.
 //
 // Every peer retains its own native nightmare conditions and probability. A dream
 // scene is personal; the legacy DreamScene packet cannot start one on another peer.
@@ -41,7 +43,7 @@ void OnReliable(const uint8_t* payload, size_t len, uint8_t senderSlot);
 // Reserved legacy packet; ignored because replay bypasses personal conditions.
 void OnDreamScene(const coop::net::DreamScenePayload& p, uint8_t senderSlot);
 
-// HOST: a world-ready joiner receives current host/resting-peer state.
+// HOST: a world-ready joiner receives current host and every peer state, with retry.
 void QueueConnectBroadcastForSlot(int peerSlot);
 
 // HOST: a leaver's state goes back to awake and every client is told.
@@ -54,6 +56,11 @@ coop::net::SleepPeerState PeerState(int slot);
 // Is the host asleep: on the host its own isSleep, on a client the last flag the host sent. For
 // instruments. Game thread.
 bool HostAsleepNow();
+
+// Host clock acceleration requires every connected participant to be resting.
+// A joining player with no accepted rest report keeps the world at normal speed.
+// A pending wake/dream, reused occupancy or the host's own dream also vetoes it.
+bool AllPlayersResting();
 
 // Instruments (the world_latest drill, coop/dev/hostile_drill_world), game thread: how many of a
 // client's rest reports the host applied from `slot`; whether this peer's own polled state is not awake.

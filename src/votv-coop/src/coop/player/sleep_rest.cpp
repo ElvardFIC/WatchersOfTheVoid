@@ -1,6 +1,7 @@
 // coop/player/sleep_rest.cpp -- see coop/player/sleep_rest.h.
 
 #include "coop/player/sleep_rest.h"
+#include "coop/player/sleep_sync.h"
 
 #include "coop/net/net_clock.h"
 #include "coop/net/session.h"
@@ -62,9 +63,10 @@ bool  g_haveCoffee = false;
 float g_foodBase = 0.f;
 float g_coffeeBase = 0.f;
 
-bool ConnectedClient() {
+bool PersonalRest() {
     auto* s = g_session.load(std::memory_order_acquire);
-    return s && s->connected() && s->role() == coop::net::Role::Client;
+    return s && s->connected() &&
+        (s->role() == coop::net::Role::Client || !coop::sleep_sync::AllPlayersResting());
 }
 
 // The local player's body: the registry's (warm while the controller holds the sleeping pawn), else the
@@ -142,7 +144,7 @@ void EndRest(const char* why) {
 // factor again: it is put back to 1 here as well, and begins no new rest. A second call the game refused
 // leaves the world at the 1 the rest holds, which is legal and returns before the factor check.
 void OnSleepPost(const sg::Call&) {
-    if (!ConnectedClient()) return;
+    if (!PersonalRest()) return;
     float asleep = 0.f;
     if (!V::Read(V::Field::Sleeping, &asleep) || asleep == 0.f) return;
     if (!SLP::EnsureResolved()) {
@@ -220,9 +222,22 @@ void Install(coop::net::Session* session) {
 void Tick() {
     auto* s = g_session.load(std::memory_order_acquire);
     if (!s || !s->running()) return;
-    if (s->role() == coop::net::Role::Client) EnsureWatch();
+    EnsureWatch();
+    if (s->role() == coop::net::Role::Host) {
+        float asleep = 0.f;
+        if (V::Read(V::Field::Sleeping, &asleep) && asleep != 0.f) {
+            if (coop::sleep_sync::AllPlayersResting()) {
+                if (g_resting) EndRest("all players are resting");
+                SLP::SetGlobalTimeDilation(kNativeSleepDilation);
+            } else {
+                // Reevaluate during the rest as peers wake, join or disconnect.
+                SLP::SetGlobalTimeDilation(1.f);
+                if (!g_resting) BeginRest();
+            }
+        }
+    }
     if (!g_resting) return;
-    if (!ConnectedClient()) return EndRest("the session left");
+    if (!PersonalRest()) return EndRest("the personal rest ended");
     void* const gm = ue_wrap::world_singleton::Gamemode();
     if (!gm || gm != g_gm.Raw() || !g_gm.Alive()) return EndRest("the gamemode changed");
     void* const body = CurrentBody();

@@ -4,7 +4,6 @@
 
 #include "coop/config/config.h"
 #include "coop/session/session_manager.h"  // RefreshLatestVersion -- the update check's ONE trigger
-#include "coop/thanks/thanks_list.h"
 #include "ui/server_browser.h"          // the ImGui overlay browser -- the fallback
 #include "ui/server_browser_native.h"   // the UMG screen -- the default
 #include "ue_wrap/core/log.h"
@@ -40,9 +39,6 @@ void Open() {
     // response, which would be strictly better -- one round trip, arriving when it is relevant --
     // but that needs a master-side change, so it is a follow-up and not a precondition.
     coop::session_manager::RefreshLatestVersion();
-    // The thanks list rides the same request for the same reason: the master holds the copy a
-    // name can be added to or taken out of without a release.
-    coop::thanks_list::RefreshFromMaster();
 
     if (UseNative()) ui::server_browser_native::Open();
     else             ui::server_browser::Open();

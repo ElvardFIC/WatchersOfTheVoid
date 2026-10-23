@@ -42,6 +42,20 @@ constexpr int kTagCanEat = 0x43414E02;
 bool g_canOpenWatched = false;
 bool g_canEatWatched = false;
 
+sg::Verdict OnCanChanging(const sg::Call& call) {
+    if (call.fromOurCode || !call.object || !R::IsLive(call.object)) return sg::Verdict::Run;
+    auto* s = g_session.load(std::memory_order_acquire);
+    if (!s || !s->connected() || coop::hand_item::IsHandAxisActor(call.object)) return sg::Verdict::Run;
+    if (s->role() == coop::net::Role::Client &&
+        !coop::join_membership_sweep::HasLoadTailQuiesced()) return sg::Verdict::Cancel;
+    const auto key = ue_wrap::prop::GetInteractableKeyString(call.object);
+    if (key.empty() || key == L"None") return sg::Verdict::Cancel;
+    // A received record can still be waiting in the budgeted apply queue.
+    // Native eating must see those portions before it mutates/publishes them.
+    return coop::prop_save_data::PrepareForMutation(call.object, key)
+        ? sg::Verdict::Run : sg::Verdict::Cancel;
+}
+
 void OnCanChanged(const sg::Call& call) {
     if (call.fromOurCode || !call.object || !R::IsLive(call.object)) return;
     auto* s = g_session.load(std::memory_order_acquire);
@@ -241,10 +255,10 @@ void Install(coop::net::Session* session) {
     if (!GT::IsGameThread()) return;
     if (!g_canOpenWatched)
         g_canOpenWatched = sg::WatchClassName(L"prop_cannedFood_C", L"open", kTagCanOpen,
-                                             nullptr, &OnCanChanged);
+                                             &OnCanChanging, &OnCanChanged);
     if (!g_canEatWatched)
         g_canEatWatched = sg::WatchClassName(L"prop_cannedFood_C", L"eat", kTagCanEat,
-                                            nullptr, &OnCanChanged);
+                                            &OnCanChanging, &OnCanChanged);
     // Throttle the class walks while a class is unresolved, the shape prop_spawn_authoring and
     // prop_drop_intent use: this Install is the per-tick retry pump, a FindClass MISS is not cached
     // (a class can load later), and a walk renders a name per object, so an unresolved class would

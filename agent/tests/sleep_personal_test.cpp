@@ -1,7 +1,10 @@
 #include <cassert>
 #include <cstdio>
 #include <cstdarg>
-#include "../../src/votv-coop/src/coop/player/sleep_sync.cpp"
+#ifndef SLEEP_SYNC_SOURCE
+#define SLEEP_SYNC_SOURCE "../../src/votv-coop/src/coop/player/sleep_sync.cpp"
+#endif
+#include SLEEP_SYNC_SOURCE
 
 namespace coop::text {std::string ToUtf8(const std::wstring&){return "Host";}}
 namespace l10n {
@@ -14,7 +17,7 @@ int main(){
     Session session;
     auto reset=[&](Role role){S::OnDisconnect();session={};session.mode=role;
         L::sleeping=L::dreaming=false;L::probability=.37f;L::dilation=1;L::need=10;L::wakeCalls=0;
-        L::bed=L"bed_C";S::Install(&session);S::Tick();};
+        L::bed=L"bed_C";S::Install(&session);S::Tick();session.sent.clear();session.destinations.clear();};
     auto receive=[&](SleepStatePayload p,uint8_t sender){S::OnReliable(reinterpret_cast<const uint8_t*>(&p),sizeof(p),sender);};
     for(auto role:{Role::Host,Role::Client}){
         reset(role);L::sleeping=true;L::dilation=role==Role::Host?20.f:1.f;S::Tick();
@@ -47,5 +50,17 @@ int main(){
     assert(S::PeerState(1)==SleepPeerState::Resting);
     receive({uint8_t(SleepOp::HostAsleep),1,0,0,{}},1);assert(!S::g_hostSleeping);
     S::OnDisconnectForSlot(1);assert(S::PeerState(1)==SleepPeerState::Awake);
+    L::sleeping=true;
+    assert(!S::AllPlayersResting()); // an awake connected player prevents acceleration
+    receive({uint8_t(SleepOp::ClientRest),uint8_t(SleepPeerState::Resting),0,0,{}},1);
+    assert(S::AllPlayersResting());
+    receive({uint8_t(SleepOp::ClientRest),uint8_t(SleepPeerState::Dreaming),0,0,{}},1);
+    assert(!S::AllPlayersResting()); // personal dreams do not accelerate the shared world
+    session.ready[1]=false;
+    assert(S::AllPlayersResting()); // a disconnected player is no longer a voter
+    session.joining[2]=true;assert(!S::AllPlayersResting());
+    session.joining[2]=false;assert(S::AllPlayersResting());
+    L::sleeping=false;assert(!S::AllPlayersResting());
     puts("PASS personal native nightmare probability/entry, unchanged wake/rest state, real 36-byte rest reports, sender authority and peer cleanup");
+    return 0;
 }

@@ -7,9 +7,8 @@
 //     coop/props/host_spawn_watcher instead.
 //   - AActor::K2_DestroyActor, a post-native Func patch: bidirectional broadcast (food consumption,
 //     container break). Echo-suppressed through prop_echo_suppress's incoming-destroy marks.
-//   - propInventory_C::takeObj PRE/POST: brackets a container extract so the nested Init POST
-//     defers its broadcast (Key is a NewGuid until loadData runs) and takeObj POST broadcasts
-//     with the restored saved UUID.
+//   - propInventory_C::takeObj script-gate scope: defers provisional Init keys,
+//     then retains the successful extraction until its saved birth/state can be sent.
 //
 // Principle 7: gameplay/network logic, reaching the engine through reflection + game_thread.
 
@@ -41,10 +40,14 @@ void SetSession(coop::net::Session* session);
 // them. Idempotent; each part settles within a few pump ticks of the world, then O(1).
 void Install(coop::net::Session* session);
 
-// Install propInventory_C::takeObj PRE/POST observers. Separate because
-// the inventory class may load later than the prop class. Idempotent;
-// retried each NetPumpTick until propInventory_C appears.
+// Watch propInventory_C::takeObj through the script gate, including Blueprint
+// calls and late/re-created classes. Each pump also retries extracted births and
+// their saved state; successful spawn delivery is never repeated for a state retry.
 void InstallInventory(coop::net::Session* session);
+
+// The container body or its retained publisher still owns this birth. Other
+// finish-spawn feeders must wait before expressing defaults or sending records.
+bool ContainerBirthPending(void* actor);
 
 // Host-authoritative intermediate-variant suppression predicate. Three
 // call sites (Init POST host-broadcast, snapshot enumerate, client local
@@ -91,7 +94,7 @@ void ExpressSpawnedProp(void* actor);
 coop::element::ElementId RegisterHostPropSilent(void* actor);
 
 // Per-session state cleanup on disconnect. Returns counters for the
-// log line. Clears: takeObj-in-flight flag, processed-Init dedupe set.
+// log line. Clears: pending extraction delivery, processed-Init dedupe set.
 struct DisconnectStats {
     size_t initProcessedDropped = 0;
 };

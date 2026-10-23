@@ -61,7 +61,7 @@ constexpr int      kWalkDeadlineS = 60;     // Apart's bound
 constexpr float    kApartMinCm = 1500.f;    // flat distance from the body at which Apart has ended
 constexpr float    kRestMoveCm = 5.f;       // the body moved less than this in total over kRestStillMs
 constexpr uint64_t kRestStillMs = 1000;
-constexpr int      kPiWatches = 19;         // PI-2b's table: its module has settled when this many are live
+constexpr int      kPiWatches = 20;         // The identity table, including the personal dream burger guard.
 constexpr uint64_t kStillLineMs = 500;      // a still peer's STILL lines: at most one in this long
 constexpr uint32_t kContactEvery = 30;      // the contact watches are read once in this many ticks
 

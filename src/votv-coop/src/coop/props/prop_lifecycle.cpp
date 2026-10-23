@@ -63,8 +63,7 @@ constexpr int kTagInit = 0x50494E54;  // 'PINT'
 UE_FACT_FN(kRowInit, "prop_lifecycle", nullptr, L"Init", AnyClass);
 UE_FACT_FN(kRowK2DestroyActor, "prop_lifecycle", L"Actor", L"K2_DestroyActor", Declared);
 
-// The takeObj-in-flight bracket is defined in prop_container_extract.cpp and shared through
-// prop_lifecycle_detail.h; the Init POST body reads it, OnDisconnect clears it.
+// The takeObj body scope and retained delivery queue live in prop_container_extract.cpp.
 
 void GrabObserver_Aprop_Init_POST_Body(void* self) {
     if (!self) return;
@@ -109,7 +108,7 @@ void GrabObserver_Aprop_Init_POST_Body(void* self) {
 
     // An actor spawned inside a takeObj call is broadcast by the takeObj POST, which sees the saved
     // Key restored by loadData.
-    if (g_takeObjInFlight.load(std::memory_order_relaxed)) {
+    if (ContainerExtractionInFlight()) {
         UE_LOGI("grab_hook[Aprop.Init POST]: actor %p spawned inside takeObj -- defer to takeObj POST (Key not yet restored by loadData)",
                 self);
         return;
@@ -416,7 +415,7 @@ void Install(coop::net::Session* session) {
 DisconnectStats OnDisconnect() {
     DisconnectStats s;
     s.initProcessedDropped = PT::ClearProcessedInit();
-    g_takeObjInFlight.store(false, std::memory_order_relaxed);
+    ClearContainerExtractions();
     return s;
 }
 

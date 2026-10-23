@@ -91,6 +91,9 @@ inline bool PlausibleObjPtr(const void* p) {
 // A read TArray header, with a garbage header rejected to {nullptr, 0}.
 struct Arr { const uint8_t* data = nullptr; int32_t num = 0; };
 Arr ReadArr(const void* base, int32_t off);
+// Strict outer-header read: malformed Data/Num/Max is not a valid empty array.
+// A reserved empty array (Num=0, live Data, Max>0) remains valid.
+bool TryReadArr(const void* base, int32_t off, Arr& out);
 
 // Write a UE TArray header {Data, Num, Max=Num} at base+off. (Max==Num is correct for a
 // freshly-built array the engine will read then, on its next mutation, realloc wholesale.)
@@ -130,6 +133,10 @@ bool UpdateScalarGroups(void* record, const SaveRecord& expected, const SaveReco
 // `resolve` governs how every class leaf (the record's own class and its `classes` group) resolves;
 // null = reflection::FindClass (see ClassResolver).
 void WriteSaveRecord(uint8_t* base, const SaveRecord& r, ClassResolver resolve = nullptr);
+// Encode into a zeroed, unpublished slot, reporting allocation, class,
+// name/string and signal construction failures. False may leave partial scratch
+// data: never publish that slot. Existing live writers keep their fallback policy.
+bool WriteSaveRecordChecked(uint8_t* base, const SaveRecord& r, ClassResolver resolve = nullptr);
 
 // ---- The GAME's own codec, on a LIVE actor --------------------------------------------------
 //

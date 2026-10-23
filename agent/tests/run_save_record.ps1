@@ -22,9 +22,12 @@ try {
   $rawGuarded=[int]$source.Contains('bool ApplyRecordViaWhile(')
   & cl /nologo /std:c++20 /EHsc /Gy /utf-8 "/DGUARDED_CODEC=$guarded" "/DRAW_CODEC=$rawGuarded" /I src/votv-coop/include "/Fo$output/$Name.obj" "/Fe$output/$Name.exe" (Join-Path $PSScriptRoot 'save_record_guard_test.cpp') /link /OPT:REF
   if($LASTEXITCODE -ne 0){throw "Codec test compile failed: $Name"}
-  & "$output/$Name.exe"
-  if($Negative){if($LASTEXITCODE -ne 1){throw "Control did not fail its assertion: $Name"};Write-Output "PASS expected-failure control: $Name"}
-  elseif($LASTEXITCODE -ne 0){throw 'Codec guard regression failed'}
+  $savedPreference=$ErrorActionPreference
+  try{$ErrorActionPreference='Continue';$report=& "$output/$Name.exe" 2>&1 | Out-String;$code=$LASTEXITCODE}
+  finally{$ErrorActionPreference=$savedPreference}
+  Write-Output $report.TrimEnd()
+  if($Negative){if($code -ne 1 -or $report -notmatch 'FAIL \d+:'){throw "Control did not fail its assertion: $Name"};Write-Output "PASS expected-failure control: $Name"}
+  elseif($code -ne 0){throw 'Codec guard regression failed'}
  }
  Check 'codec' $functions $false
  if($FaultControls){
@@ -39,7 +42,7 @@ try {
     'ignores-caller' {$functions.Replace('&& guard();',';')}
     'retired-cache' {$functions.Replace('++g_codecEpoch;','/* unchanged codec epoch */')}
     'premature-convention' {$functions.Replace('it->second.conventionChecking = true;','it->second.conventionChecking = true;it->second.conventionChecked = true;')}
-    'raw-stale-dispatch' {$functions.Replace($rawApply,$rawApply.Replace("if(!current())return false;`n    return Call(actor, f)",'return Call(actor, f)'))}
+    'raw-stale-dispatch' {$functions.Replace($rawApply,$rawApply.Replace(' || !current())return false;',')return false;'))}
     'raw-ignores-caller' {$functions.Replace($rawApply,$rawApply.Replace('&& guard();',';'))}
     'raw-stale-capture' {$functions.Replace('return current() && CallForRecord(actor, fn.Get(), out) && current();','return current() && CallForRecord(actor, fn.Get(), out);')}
    }
@@ -53,3 +56,4 @@ try {
   if($LASTEXITCODE -ne 0){throw 'Production codec compile failed'}
  }
 }finally{Pop-Location}
+exit 0

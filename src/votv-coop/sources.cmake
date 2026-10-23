@@ -93,6 +93,7 @@ set(VOTVCOOP_SOURCES
     src/ue_wrap/world/red_sky.cpp
     src/ue_wrap/world/skysphere.cpp
     src/ue_wrap/world/sky_black_hole.cpp
+    src/ue_wrap/world/ariral_ship.cpp
     src/ue_wrap/world/directionalwind.cpp
     src/ue_wrap/devices/lightswitch.cpp
     src/ue_wrap/devices/garage.cpp
@@ -279,6 +280,7 @@ set(VOTVCOOP_SOURCES
     src/coop/world/time_sync.cpp
     src/coop/world/day_edge.cpp
     src/coop/world/sky_sync.cpp
+    src/coop/world/ariral_ship_sync.cpp
     src/coop/world/power_decay.cpp
     src/coop/world/power_grid.cpp
     src/coop/world/power_panel.cpp
@@ -357,6 +359,7 @@ set(VOTVCOOP_SOURCES
     src/coop/player/flashlight_click_sound.cpp
     src/coop/props/prop_sound.cpp
     src/coop/items/inventory_pickup_sync.cpp
+    src/coop/items/container_extract_recovery.cpp
     src/coop/session/shutdown.cpp
     src/coop/player/players_registry.cpp
     src/coop/player/puppet_identity.cpp
@@ -675,9 +678,6 @@ set(VOTVCOOP_SOURCES
     src/ui/atlas_watch.cpp
     src/ui/scale.cpp
     resources/fonts.rc
-    src/coop/thanks/thanks_list.cpp
-    src/ui/thanks_roll.cpp
-    resources/thanks.rc
     src/coop/player/roster.cpp
     src/coop/player/roster_ledger.cpp
     src/coop/moderation/ban_list.cpp

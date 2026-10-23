@@ -38,13 +38,17 @@ void Admit(uint32_t eid, uint8_t authorSlot, std::vector<uint8_t>&& blob, uint64
 // entry.
 using ReplayFn = bool (*)(const std::vector<uint8_t>& blob, uint8_t authorSlot);
 
-// Replay what can be replayed, and drop what has waited past the TTL outside a join bracket.
+// Replay copied snapshots and drop expired entries outside a join bracket.
+// Reentrant replacement/reset survives an older callback's result; nested sweeps defer.
 void Sweep(ReplayFn replay, uint64_t nowMs);
 
 // The join snapshot's bracket, from the client-side SnapshotBegin / SnapshotComplete dispatch.
 void NoteJoinBracket(bool open, uint64_t nowMs);
 
 size_t Size();
+// Observe/retire the exact older row around a callback. A newer admission is safe.
+uint64_t Revision(uint32_t eid, uint8_t* author = nullptr);
+void Retire(uint32_t eid, uint64_t revision);
 
 void Reset();
 

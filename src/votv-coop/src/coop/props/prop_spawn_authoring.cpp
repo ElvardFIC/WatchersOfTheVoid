@@ -3,6 +3,8 @@
 #include "coop/props/prop_spawn_authoring.h"
 #include "coop/player/hand_item.h"
 #include "coop/props/bucket_sync.h"
+#include "coop/props/prop_food_sync.h"
+#include "coop/props/prop_action_sync.h"
 #include "coop/interactables/kitchen_sync.h"
 #include "ue_wrap/actors/cooking_food.h"
 
@@ -168,11 +170,11 @@ bool BirthIsPlayerAuthored(void* sourceObject) {
     if (sourceObject && owner &&
         R::NameEquals(R::NameOf(owner), L"prop_food_mre_C") &&
         R::NameEquals(R::NameOf(const_cast<void*>(caller)), L"spawn") &&
-        sourceObject == coop::hand_item::LocalHandActor())
+        coop::prop_action_sync::IsLocalMreOutput(sourceObject,const_cast<void*>(caller)))
         return true;
     // Only these native personal-hand graphs author empty packaging/peels.
     // A world copy or a loader is never personal output.
-    if(sourceObject && owner && sourceObject==coop::hand_item::LocalHandActor()) {
+    if(sourceObject && owner && coop::props::prop_food_sync::IsLocalConsumedOutput(sourceObject,const_cast<void*>(caller))) {
         struct Factory {const wchar_t* cls;const wchar_t* graph;};
         for(const auto& factory:{Factory{L"prop_foodBox_C",L"ExecuteUbergraph_prop_foodBox"},
                                 Factory{L"prop_food_banana_C",L"ExecuteUbergraph_prop_food_banana"},

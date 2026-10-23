@@ -80,17 +80,17 @@ int main(){using namespace test;namespace S=coop::event_location_sync;namespace 
  CHECK(S::IsLocationRow("vent")&&S::IsLocationRow("agrav")&&!S::IsLocationRow("toeStab"));
  // Arm merely prepares the box; client enters later, without a native puppet overlap.
  o[3].active=1;reg.puppets[1].pos={500,0,0};now+=250;S::Tick(s);CHECK(!fires&&!gathers);
- reg.puppets[1].pos={10,20,0};now+=250;S::Tick(s);CHECK(fires==1&&gathers==1&&anchor==1&&gatherPos.X==10);
- now+=250;S::Tick(s);CHECK(fires==1&&gathers==1);
- // Re-arm and actual host overlap: gather's recursive overlap cannot duplicate native effects.
+ reg.puppets[1].pos={10,20,0};now+=250;S::Tick(s);CHECK(fires==1&&gathers==0);
+ now+=250;S::Tick(s);CHECK(fires==1&&gathers==0);
+ // Re-arm and actual host overlap must not move any participant.
  ue_wrap::script_gate::Call arm{};arm.object=&o[2];S::OnArm(arm);localPos={0,0,0};
  ue_wrap::script_gate::Call hit{};hit.object=&o[3];hit.callerFunction=&o[12];hit.callerLocals=reinterpret_cast<uint8_t*>(&frame);frame.entrant=&o[5];
- onGather=[&]{CHECK(S::OnRunBox(hit)==ue_wrap::script_gate::Verdict::Cancel);};
- CHECK(S::OnRunBox(hit)==ue_wrap::script_gate::Verdict::Run&&gathers==2&&anchor==0);
+
+ CHECK(S::OnRunBox(hit)==ue_wrap::script_gate::Verdict::Run&&gathers==0);
  // Exact native zero-gravity query: missing client collision is supplied by its valid pose.
  arm.object=&o[7];S::OnArm(arm);localPos={500,500,0};caller={&o[10],reinterpret_cast<uint8_t*>(&frame)};
- result=false;S::OnAgravOverlap(nullptr,&o[7],nullptr);CHECK(result&&gathers==2);
- S::Tick(s);CHECK(gathers==3&&anchor==1);S::OnAgravOverlap(nullptr,&o[7],nullptr);S::Tick(s);CHECK(gathers==3);
+ result=false;S::OnAgravOverlap(nullptr,&o[7],nullptr);CHECK(result&&gathers==0);
+ S::Tick(s);CHECK(gathers==0);S::OnAgravOverlap(nullptr,&o[7],nullptr);S::Tick(s);CHECK(gathers==0);
  S::OnArm(arm);s.ready[1]=false;result=false;S::OnAgravOverlap(nullptr,&o[7],nullptr);CHECK(!result);
  s.ready[1]=true;reg.puppets[1].pose=false;S::OnAgravOverlap(nullptr,&o[7],nullptr);CHECK(!result);reg.puppets[1].pose=true;
  S::OnAgravOverlap(nullptr,&o[6],nullptr);CHECK(!result);o[10].outer=&o[3];S::OnAgravOverlap(nullptr,&o[7],nullptr);CHECK(!result);o[10].outer=&o[11];
@@ -103,11 +103,11 @@ int main(){using namespace test;namespace S=coop::event_location_sync;namespace 
  b.extent.X=10;CHECK(!L::Contains(b,{std::numeric_limits<float>::quiet_NaN(),0,0}));
  L::Box query{};CHECK(L::ReadAgravQuery(&o[10],reinterpret_cast<uint8_t*>(&frame),query));
  CHECK(!L::ReadAgravQuery(&o[12],reinterpret_cast<uint8_t*>(&frame),query));
- // Retry a failed native activation without teleporting players repeatedly.
+ // Retry a failed native activation while keeping every participant in place.
  s.mode=coop::net::Role::Host;localPos={500,500,0};arm.object=&o[2];S::OnArm(arm);
- fireOk=false;count=gathers;now+=250;S::Tick(s);CHECK(gathers==count+1);
- now+=250;S::Tick(s);CHECK(gathers==count+1);fireOk=true;auto firedBefore=fires;
- now+=250;S::Tick(s);CHECK(gathers==count+1&&fires==firedBefore+1);
+ fireOk=false;count=gathers;now+=250;S::Tick(s);CHECK(gathers==count);
+ now+=250;S::Tick(s);CHECK(gathers==count);fireOk=true;auto firedBefore=fires;
+ now+=250;S::Tick(s);CHECK(gathers==count&&fires==firedBefore+1);
  // Reusing the same session/world must not retain old fired/queued state.
  ++sessionId;CHECK(!S::Current());S::Tick(s);CHECK(S::Current());
  auto prepare=[&]{S::OnDisconnect();S::Tick(s);o[3].active=1;localPos={0,0,0};reg.puppets[1].pos={500,500,0};now+=250;};

@@ -14,6 +14,12 @@
 // handlers first (:60), which here would run the one game handler twice, so a line runs on one machine.
 #pragma once
 
+// Queued logs/busy levels belong to one session/world and recipient occupancy.
+// History seeds own a revision and include current busy state; refused sends
+// retry without replaying native commands. Capacity covers all remote seats.
+// Native input is consumed before submission. Invocation-owned command frames
+// and per-row playback scopes keep nested/canceled calls from sharing ownership.
+
 #include <cstddef>
 #include <cstdint>
 

@@ -1,6 +1,6 @@
 # Watchers of the Void
 
-**By ElvardFIC, co-maintained by AquaFishhh** — a community fork of **Multivoid**, originally created by **Pelmentor**.
+**By ElvardFIC, co-maintained by AquaFishhh** — community co-op for Voices of the Void.
 
 Play Voices of the Void together, with accumulated co-op synchronization fixes and improvements.
 Version **0.9.2158** targets **Voices of the Void Alpha 0.9.0n** on Windows.
@@ -51,10 +51,9 @@ reported gameplay issues remain open.
 - **ElvardFIC** — author and maintainer of Watchers of the Void.
 - **AquaFishhh** — co-maintainer, synchronization and player-ragdoll improvements.
 - **MultiVoidKindaPlus** — the codebase this mod is based on, developed with help from **AquariumFishTeam**.
-- **Pelmentor and Multivoid contributors** — original Multivoid project and foundation of this fork.
 - **Zoomard** — tester and bug reporter.
 - **Бритый 2-D <3** — tester and bug reporter.
 - Development includes AI-assisted implementation. Cover supplied by ElvardFIC.
 
-Original MIT license and third-party notices are included. This fork is not an official release
-from the Voices of the Void developers or the original Multivoid author.
+MIT license and third-party notices are included. This fork is unaffiliated
+with the Voices of the Void developers.

@@ -158,7 +158,7 @@ DWORD WINAPI BootThread(LPVOID rawTag) {
     UE_LOGI("==== %s ====", coop::version::kDisplayLabel);
     UE_LOGI("boot: menu version='%s'", coop::session_manager::DisplayVersion().c_str());
     // The Paper-pair identity line: game target + build number (= kProtocolVersion).
-    UE_LOGI("boot: Watchers of the Void by ElvardFIC %s b%u (Multivoid fork; original by Pelmentor)", coop::version::kGameTarget,
+    UE_LOGI("boot: Watchers of the Void by ElvardFIC %s b%u", coop::version::kGameTarget,
             static_cast<unsigned>(coop::net::kProtocolVersion));
     // Build triage lines: the compile time below, then build_trust's line with this DLL's own hash
     // and its type (official, signed by the test key, or unofficial and why). The exe identity

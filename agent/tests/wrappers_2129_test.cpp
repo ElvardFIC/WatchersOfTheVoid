@@ -31,7 +31,7 @@ Obj objs[]={{{1,0},L"prop_workbench_C"},{{2,0},L"ExecuteUbergraph_prop_workbench
 Obj sw{{11,0},L"switch"}, other{{12,0},L"other"};
 void* caller=nullptr;bool body=false, locationOk=true, callOk=true, nested=false, attenuationOk=false;
 int clicks=0,uses=0;float vol=0,pitch=0;
-bool cookingSource=false,lidOutput=false;
+bool cookingSource=false,lidOutput=false,foodOutput=false,mreOutput=false;
 ue_wrap::ufunction_hook::PreNativeCallback hook=nullptr;
 struct Sound { void* cue=&other;float volume=.75f,pitch=1.2f; } sound;
 }
@@ -93,6 +93,8 @@ bool InstallPreHook(void*,PreNativeCallback cb,bool armed) { CHECK(armed);test::
 bool InstallPreHook(const facts::Resolved&,PreNativeCallback cb,bool armed) { CHECK(armed);test::hook=cb;return true; }
 CallerFrame CurrentCallerFrame() { return {test::caller,nullptr}; }
 }
+namespace coop::props::prop_food_sync {bool IsLocalConsumedOutput(void* actor,void* fn){return test::foodOutput && actor==&test::sw && fn==test::caller;}}
+namespace coop::prop_action_sync {bool IsLocalMreOutput(void* actor,void* fn){return test::mreOutput && actor==&test::sw && fn==test::caller;}}
 namespace ue_wrap::script_gate {
 bool Watch(void*,int,PreFn,PostFn) { return true; }
 bool Watch(const facts::Resolved&,int,PreFn,PostFn) { return true; }
@@ -132,17 +134,21 @@ int main() {
     objs[16].owner=&objs[0];caller=&objs[16];CHECK(!BirthIsPlayerAuthored());
     objs[18].owner=&objs[0];caller=&objs[18];CHECK(!BirthIsPlayerAuthored());
     objs[20].owner=&objs[19];caller=&objs[20];
+    CHECK(!BirthIsPlayerAuthored(&sw));mreOutput=true;
     CHECK(BirthIsPlayerAuthored(&sw)); // exact local-hand MRE spawn source
     CHECK(!BirthIsPlayerAuthored());CHECK(!BirthIsPlayerAuthored(&other)); // world/loader source excluded
     objs[20].owner=&objs[0];CHECK(!BirthIsPlayerAuthored(&sw)); // foreign spawn body excluded
     objs[14].owner=&objs[19];caller=&objs[14];CHECK(!BirthIsPlayerAuthored(&sw)); // MRE class, other verb
+    mreOutput=false;
     objs[22].owner=&objs[21];caller=&objs[22];
+    CHECK(!BirthIsPlayerAuthored(&sw));foodOutput=true; // a held source alone has no output provenance
     CHECK(BirthIsPlayerAuthored(&sw)); // hand box's verified empty-wrapper spawn
     CHECK(!BirthIsPlayerAuthored(&other)&&!BirthIsPlayerAuthored());
     objs[22].owner=&objs[19];CHECK(!BirthIsPlayerAuthored(&sw)); // wrong class
     for(int i=38;i<42;i+=2){objs[i+1].owner=&objs[i];caller=&objs[i+1];
         CHECK(BirthIsPlayerAuthored(&sw));CHECK(!BirthIsPlayerAuthored(&other)&&!BirthIsPlayerAuthored());
         objs[i+1].owner=&objs[0];CHECK(!BirthIsPlayerAuthored(&sw));}
+    foodOutput=false;
     caller=&objs[27];
     cookingSource=true;
     for(int i=23;i<27;++i){objs[27].owner=&objs[i];CHECK(BirthIsPlayerAuthored(&sw));CHECK(!BirthIsPlayerAuthored(&other)&&!BirthIsPlayerAuthored());}

@@ -11,7 +11,7 @@ namespace coop::puppet_identity {
 enum Row : uint8_t {
     kWispW, kWispO, kWispP, kKelura, kOrborb, kWellTpBegin, kWellTpEnd, kDreamBoulder, kMapTransition,
     kTriggerOpenLevel, kTriggerSpikes, kDreamClimb, kDreamJump, kDreamRunFin, kDreamRunWok, kDreamfillDoor,
-    kGrunt, kShower, kBirch, kErie, kSkullzone,
+    kGrunt, kShower, kBirch, kErie, kSkullzone, kDreamBurger,
     kRowCount
 };
 

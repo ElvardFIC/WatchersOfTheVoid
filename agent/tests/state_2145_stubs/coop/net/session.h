@@ -19,6 +19,7 @@ public:
  uint32_t peerGenerationForSlot(int)const{return peerEpoch;}
  void SetLocalPropPose(bool active,const PropPoseSnapshot& p){poseActive=active;pose=p;}
  bool IsSlotReady(int)const{return ready;}
+ bool IsSlotConnected(int)const{return ready;}
  bool connected()const{return linked;}bool running()const{return linked;}Role role()const{return mode;}
  bool AnyWorldReadyPeer()const{return ready;}bool IsSlotWorldReady(int)const{return ready;}
  bool SendReliableToSlot(int slot,ReliableKind k,const void* data,int n,uint8_t origin=0){

@@ -18,6 +18,7 @@ void GardenCallback(std::function<void()>& f){auto callback=std::move(f);f={};if
 int paramPlayerOff = 0;
 bool ready = true, reach = true, registry = true, spawnOK = true, linkOK = true, captureOK = true;
 bool travelOnSpawn = false, failDestroy = false;
+bool holeWatchLive = true;
 bool applyOK = true;
 void (*captureCallback)() = nullptr;
 void (*harvestCallback)() = nullptr;
@@ -63,7 +64,7 @@ Resolved ResolveOn(const Function&, void*) { return {}; }
 namespace coop::element::scan_hub { void Register(const Consumer&) {} }
 namespace ue_wrap::script_gate {
 bool WatchClassName(const wchar_t*,const wchar_t*,int,PreFn,PostFn) { return true; }
-bool ClassNameWatchLive(const wchar_t*,const wchar_t*,int) { return true; }
+bool ClassNameWatchLive(const wchar_t* cls,const wchar_t*,int) { return wcscmp(cls,L"dirthole_C") || test::holeWatchLive; }
 bool IsObjectBodyActive(void*,void*) { return false; }
 bool IsInvocationActive(uint64_t id){return test::careInvocations.contains(id);}
 uint8_t* OutParamPtr(const Call& c,int32_t off) { return c.locals+off; }
@@ -88,7 +89,7 @@ namespace ue_wrap::engine {
 bool DestroyActor(void* p) { ++test::destroyed; if(!test::failDestroy)static_cast<test::Actor*>(p)->live=false;return !test::failDestroy; }
 }
 namespace ue_wrap::placed_save {
-Kind ClassKind(const std::wstring& s) { return s==L"faucet_C" ? Kind::Faucet : s==L"groundHose_C" ? Kind::Hose : (s==L"growingPlant_C"||s==L"growingPlant_pine_C"||s==L"growingPlant_stolasHerb_C") ? Kind::Plant : s==L"customWall_unfinished_C" ? Kind::WallOutline : (s==L"customWall_C"||s==L"customWall_wetConcrete_C") ? Kind::Wall : Kind::None; }
+Kind ClassKind(const std::wstring& s) { return s==L"dirthole_C" ? Kind::DirtHole : s==L"faucet_C" ? Kind::Faucet : s==L"groundHose_C" ? Kind::Hose : (s==L"growingPlant_C"||s==L"growingPlant_pine_C"||s==L"growingPlant_stolasHerb_C") ? Kind::Plant : s==L"customWall_unfinished_C" ? Kind::WallOutline : (s==L"customWall_C"||s==L"customWall_wetConcrete_C") ? Kind::Wall : Kind::None; }
 Kind Type(void* a) { return a ? ClassKind(static_cast<test::Actor*>(a)->record.className) : Kind::None; }
 bool PlacementCaller(Kind k,void* f) { return k!=Kind::None && f==reinterpret_cast<void*>(1); }
 bool Ready(void* a) {test::GardenCallback(test::gardenReady);if(!test::gardenReadyAnswers.empty()){const bool result=test::gardenReadyAnswers.front();test::gardenReadyAnswers.pop_front();return result;}return test::ready && a!=test::notReady; }

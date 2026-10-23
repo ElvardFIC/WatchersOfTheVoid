@@ -3,6 +3,7 @@
 #include "coop/net/session.h"
 #include "coop/player/players_registry.h"
 #include "coop/props/prop_save_data.h"
+#include "coop/items/container_extract_recovery.h"
 #include "ue_wrap/core/cached_obj_ref.h"
 #include <atomic>
 #include <cstring>
@@ -11,15 +12,21 @@
 namespace test {
 bool applyOk=true,retainNewer=false,dieOnKey=false,dieOnApply=false,dieOnPublish=false;
 bool awaiting=false,awaitOnApply=false,carriesRecord=true;
+bool badPocketLayout=false;
 int applies=0,publishes=0;float liveCharge=1,queuedCharge=.25f,publishedCharge=-1;
 struct Args {void* target;uint8_t result=1;};uint8_t callerResult=1;
 }
 namespace ue_wrap::reflection {
-int32_t FindParamOffset(void*,const wchar_t* n){return !wcscmp(n,L"return")?offsetof(test::Args,result):0;}
+int32_t FindParamOffset(void*,const wchar_t* n){return test::badPocketLayout?-1:!wcscmp(n,L"return")?offsetof(test::Args,result):0;}
 int32_t FunctionFrameSize(void*){return sizeof(test::Args);}
 std::wstring ClassNameOf(void* p){CHECK(static_cast<test::Obj*>(p)->live);return L"prop_batts_C";}
 }
 namespace ue_wrap::script_gate {uint8_t* OutParamPtr(const Call&,int32_t){return &test::callerResult;}}
+namespace coop::container_extract_recovery {
+bool active=false;
+bool InFlight(){return active;}
+RestoreResult RestoreForPickup(const ue_wrap::script_gate::Call&,void*){return RestoreResult::Unrelated;}
+}
 namespace ue_wrap::prop {
 bool IsKeyedInteractable(void*){return true;}
 std::wstring GetInteractableKeyString(void*){if(test::dieOnKey)test::actor.live=false;return L"battery";}
@@ -86,6 +93,9 @@ int main(){using namespace test;namespace P=coop::prop_save_data;namespace I=coo
  dieOnApply=true;CHECK(run()==V::Cancel&&publishes==n);actor.live=true;dieOnApply=false;
  dieOnKey=true;CHECK(run()==V::Cancel&&publishes==n);actor.live=true;dieOnKey=false;
  dieOnPublish=true;CHECK(run()==V::Cancel);actor.live=true;dieOnPublish=false;
+ coop::container_extract_recovery::active=true;badPocketLayout=true;c.function=&actor;n=publishes;
+ CHECK(run()==V::Cancel&&publishes==n); // unknown pocket schema cannot bypass the extraction escrow
+ coop::container_extract_recovery::active=false;
  s.linked=false;n=publishes;CHECK(run()==V::Run&&publishes==n);
  puts("PASS pickup applies queued partial/zero state before capture; apply failure/reentry/dead actor defer safely");
 }

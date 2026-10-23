@@ -11,6 +11,7 @@
 #include "coop/props/container_park.h"
 #include "coop/props/container_slice_wire.h"
 #include "coop/props/container_write_policy.h"
+#include "container_apply_scope.h"
 
 #include "coop/element/registry.h"
 #include "coop/items/save_record_wire.h"
@@ -24,6 +25,7 @@
 #include "ue_wrap/actors/save_record.h"
 #include "ue_wrap/core/component_calls.h"  // CallParamless
 #include "ue_wrap/core/cached_obj_ref.h"
+#include "ue_wrap/core/game_thread.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/engine/world_identity.h"
 #include "ue_wrap/core/object_index.h"  // ClassByName -- the host's O(1) class resolve for a client's contents
@@ -34,6 +36,7 @@
 #include <atomic>
 #include <array>
 #include <chrono>
+#include <cstring>
 #include <cstdint>
 #include <map>
 #include <set>
@@ -90,6 +93,9 @@ std::set<uint32_t> g_dirty;
 // what bounds the orphaned-buffer cost: a steady-state re-broadcast applies and allocates nothing.
 std::map<uint32_t, uint64_t> g_sentHash;
 std::map<uint32_t, uint64_t> g_appliedHash;
+std::map<uint32_t,detail::AppliedBinding> g_appliedObject;
+uint64_t g_applyEpoch=0;
+uint32_t g_contextWorld=0,g_contextSerial=0;
 
 // Client: the content this peer believes the host now publishes for an eid -- host truth it
 // applied, or its own slice once the transport took it, since an accepted client write becomes
@@ -128,75 +134,12 @@ bool IsHost() {
     return s && s->role() == coop::net::Role::Host;
 }
 
-// Reflected offsets, resolved once and cached.
-
-int32_t g_offInvIndex  = -2;  // propInventory_C.Index
-int32_t g_offInvPlayer = -2;  // propInventory_C.Player  -- the world-vs-PERSONAL discriminator
-int32_t g_offInvOwner  = -2;  // propInventory_C.Owner   -- the Aprop_container_C
-int32_t g_offGObjStack = -2;  // saveSlot_C.GObjStack
-int32_t g_offPropInv   = -2;  // prop_container_C.propInventory
-
-// An offset resolved once; -1 means looked and failed, never retried, never guessed.
-int32_t CachedOffset(int32_t& slot, void* cls, const wchar_t* name) {
-    if (slot == -2) {
-        slot = cls ? R::FindPropertyOffset(cls, name) : -1;
-        if (slot < 0)
-            UE_LOGW("container_contents: could not resolve %ls -- lane inert for it", name);
-    }
-    return slot;
-}
-
-template <class T> T ReadAt(const void* base, int32_t off) {
-    T v{};
-    std::memcpy(&v, reinterpret_cast<const uint8_t*>(base) + off, sizeof(T));
-    return v;
-}
-
-// The propInventory component of a container actor, or null.
-void* InventoryOf(void* containerActor) {
-    if (!containerActor) return nullptr;
-    if (CachedOffset(g_offPropInv, R::ClassOf(containerActor), L"propInventory") < 0) return nullptr;
-    void* inv = ReadAt<void*>(containerActor, g_offPropInv);
-    return (inv && R::IsLive(inv)) ? inv : nullptr;
-}
-
-// The owning Aprop_container_C of a propInventory component, or null.
-void* OwnerOf(void* inv) {
-    if (!inv) return nullptr;
-    if (CachedOffset(g_offInvOwner, R::ClassOf(inv), L"Owner") < 0) return nullptr;
-    void* owner = ReadAt<void*>(inv, g_offInvOwner);
-    return (owner && R::IsLive(owner)) ? owner : nullptr;
-}
-
-// Boundary 1, fail closed: true only for a world container this lane may author. Player true is a
-// personal inventory (mainPlayer and ui_playerInventory share the same global GObjStack, and
-// GObjStack[0] is the local player's inventory by construction, baked by the player container's
-// component template), and authoring it from the host would wipe that peer's inventory; an
-// unresolvable offset refuses too. The same flag is the address assertion in
-// ue_wrap::inventory::ReadLivePersonalStore, fail-closed in the other direction. GObjStackSlot and
-// that reader each resolve GObjStack and Index themselves; folding them is a refactor of a shipped
-// lane for its own arc.
-bool IsWorldContainerInventory(void* inv) {
-    if (!inv) return false;
-    if (CachedOffset(g_offInvPlayer, R::ClassOf(inv), L"Player") < 0) return false;
-    return ReadAt<uint8_t>(inv, g_offInvPlayer) == 0;
-}
-
-// The live TArray<Fstruct_save> slot for this component's contents inside the global GObjStack;
-// null if the save slot, the offsets or the index do not resolve. The contents array is the
-// struct_mObject element's single field, at +0.
-uint8_t* GObjStackSlot(void* inv) {
-    if (!inv) return nullptr;
-    void* save = ue_wrap::inventory::ResolveSaveSlot();
-    if (!save) return nullptr;
-    if (CachedOffset(g_offGObjStack, R::ClassOf(save), L"GObjStack") < 0) return nullptr;
-    if (CachedOffset(g_offInvIndex, R::ClassOf(inv), L"Index") < 0) return nullptr;
-    const int32_t idx = ReadAt<int32_t>(inv, g_offInvIndex);
-    if (idx < 0) return nullptr;  // -1 = never initialised; nothing to ship or apply
-    const SR::Arr stack = SR::ReadArr(save, g_offGObjStack);
-    if (idx >= stack.num) return nullptr;
-    return const_cast<uint8_t*>(stack.data) + static_cast<size_t>(idx) * SR::kMxStride;
-}
+// Publication, verb edges, diagnostics and apply share one masked boundary and
+// class-incarnation field reader. A second raw-byte implementation diverged.
+void* InventoryOf(void* actor) { return ci::InventoryOf(actor); }
+void* OwnerOf(void* inv) { return ci::OwnerOf(inv); }
+bool IsWorldContainerInventory(void* inv) { return ci::IsWorldInventory(inv); }
+uint8_t* GObjStackSlot(void* inv) { return ci::WorldContentsSlot(inv); }
 
 // The container base and the inventory component's class, looked up per use, one index lookup each: a
 // class not loaded yet, or still loading, answers null and is asked for again. Game thread, as every
@@ -251,7 +194,7 @@ enum class SliceRead { Ready, Unreadable, OverCap };
 SliceRead ReadContents(void* inv, std::vector<SR::SaveRecord>& out) {
     uint8_t* slot = GObjStackSlot(inv);
     if (!slot) return SliceRead::Unreadable;
-    const SR::Arr objs = SR::ReadArr(slot, 0);  // struct_mObject.obj @ +0
+    SR::Arr objs{};if(!SR::TryReadArr(slot,0,objs))return SliceRead::Unreadable;
     if (static_cast<size_t>(objs.num) > cw::kMaxRecords) {
         // Retried every sweep from DrainDirty; the line is the permanent-failure case.
         static uint64_t s_nextMs = 0;
@@ -280,8 +223,6 @@ SliceRead ReadContents(void* inv, std::vector<SR::SaveRecord>& out) {
 // the record cap refused, or the blob is over the transport ceiling. True when there is nothing
 // to send (unreadable inventory) or the fan-out hash is unchanged. Run by both peers: on the host
 // toSlot < 0 fans out; on a client the same call reaches the host alone, the author-to-arbiter edge.
-// RederiveManagedState is defined below.
-void RederiveManagedState(void* owner, void* inv);
 
 bool BroadcastContainer(coop::net::Session* s, uint32_t eid, void* inv, int toSlot, bool force) {
     std::vector<SR::SaveRecord> recs;
@@ -359,15 +300,22 @@ bool BroadcastContainer(coop::net::Session* s, uint32_t eid, void* inv, int toSl
 // Host: an accepted client-authored slice on to every other peer, never back to the author:
 // echoing a peer's own state reverts a newer local value and primes the baseline over it,
 // silently eating that player's next action.
-void RelayToOthers(coop::net::Session* s, uint8_t authorSlot, const std::vector<uint8_t>& blob) {
+void RelayToOthers(coop::net::Session* s, uint8_t authorSlot, const std::vector<uint8_t>& blob,
+                   const detail::ApplySource& source) {
     if (!s || !IsHost()) return;
     size_t sent = 0;
     for (int slot = 1; slot < coop::net::kMaxPeers; ++slot) {
+        if(!source.Current())return;
         if (slot == static_cast<int>(authorSlot)) continue;   // NEVER back to the author
         if (!s->IsSlotConnected(slot)) continue;
-        if (coop::blob_chunks::SendBlobToSlot(s, slot, coop::net::ReliableKind::ContainerContents,
-                                              g_nextSeq++, blob)) {
+        const auto peer=s->peerGenerationForSlot(slot);
+        const auto current=[&]{return source.Current() && s->IsSlotConnected(slot) && s->peerGenerationForSlot(slot)==peer;};
+        if (coop::blob_chunks::SendBlobToSlotWhile(s, slot, coop::net::ReliableKind::ContainerContents,
+                                                   g_nextSeq++, blob,current)) {
             ++sent;
+        } else if(current()) {
+            size_t offset=0;uint32_t eid=0;uint64_t base=0;
+            if(cw::ParseHeader(blob,offset,eid,base))g_seedRetry.Queue(eid,slot,peer);
         }
     }
     if (sent) {
@@ -450,7 +398,9 @@ void RetrySeeds(coop::net::Session* s) {
 // and holds its answer by the class's slot and serial, so no function of a class that is gone is
 // called. A verb that does not resolve is said once: the applied contents then show a stale currVol or
 // stale names.
-void RederiveManagedState(void* owner, void* inv) {
+void RederiveManagedState(void* owner, void* inv,const std::function<bool()>& current) {
+    const auto valid=[&]{return !current || current();};
+    if(!valid())return;
     void* const updateVol =
         owner ? R::FindDispatchFunctionCached(R::ClassOf(owner), L"updateVolumesAndMass") : nullptr;
     void* const recalcNames = inv ? R::FindDispatchFunctionCached(R::ClassOf(inv), L"recalculateNames") : nullptr;
@@ -462,10 +412,11 @@ void RederiveManagedState(void* owner, void* inv) {
                     "-- applied contents will show a STALE currVol / names", updateVol, recalcNames);
         }
     }
-    ue_wrap::CachedObjRef invRef;
-    invRef.Set(inv);
-    if (updateVol)   ue_wrap::component_calls::CallParamless(owner, updateVol);
-    if (recalcNames && invRef.Get()) ue_wrap::component_calls::CallParamless(invRef.Get(), recalcNames);
+    ue_wrap::CachedObjRef invRef,ownerRef,update;
+    invRef.Set(inv);ownerRef.Set(owner);update.Set(updateVol);
+    ue_wrap::CachedObjRef function;function.Set(recalcNames);
+    if (valid() && function.Get() && invRef.Get()) ue_wrap::component_calls::CallParamless(invRef.Get(), function.Get());
+    if (valid() && ownerRef.Get() && update.Get()) ue_wrap::component_calls::CallParamless(ownerRef.Get(),update.Get());
 }
 
 // What an inbound blob did to this peer; a bool cannot express it, since "handled" and "changed
@@ -480,7 +431,9 @@ enum class Ingest {
 };
 
 // Applied, Handled or Park; see Ingest.
-Ingest ApplyContents(uint32_t eid, const std::vector<SR::SaveRecord>& recs, uint64_t blobHash) {
+Ingest ApplyContents(uint32_t eid, const std::vector<SR::SaveRecord>& recs, uint64_t blobHash,
+                     const detail::ApplySource& source,const std::function<void()>& committed) {
+    if(!source.Current())return Ingest::Handled;
     void* actor = LivePropActor(eid);
     if (!actor) return Ingest::Park;
     // The wire eid must name a container before a cached component offset is read off it.
@@ -493,51 +446,80 @@ Ingest ApplyContents(uint32_t eid, const std::vector<SR::SaveRecord>& recs, uint
     {   // Identical contents -> do nothing. The raw-write orphans the previous arrays, so a
         // no-op apply must not allocate at all (that is what bounds the leak).
         auto it = g_appliedHash.find(eid);
-        if (it != g_appliedHash.end() && it->second == blobHash) return Ingest::Handled;
+        const auto identity=g_appliedObject.find(eid);
+        if (it != g_appliedHash.end() && it->second == blobHash &&
+            identity!=g_appliedObject.end() && identity->second.Matches(actor,inv,ue_wrap::inventory::ResolveSaveSlot(),ci::WorldContentsSlot(inv))) return Ingest::Handled;
     }
     if (!ci::IsWorldInventory(inv)) {           // BOUNDARY 1 (fail-closed)
         UE_LOGW("container_contents: eid=%u resolves to a PERSONAL inventory (or an unresolvable "
                 "Player flag) -- refusing to apply", eid);
         return Ingest::Handled;                       // resolved; deliberately not applied
     }
-    uint8_t* slot = ci::ContentsSlot(inv);
+    uint8_t* slot = ci::WorldContentsSlot(inv);
     if (!slot) return Ingest::Park;
 
-    // The allocator pre-flight: without it an empty array would silently replace real contents.
-    if (void* probe = R::EngineAlloc(16)) {
-        R::EngineFree(probe);
-    } else {
-        UE_LOGW("container_contents: eid=%u -- EngineAlloc unavailable; refusing to write", eid);
-        return Ingest::Handled;
+    void* save=ue_wrap::inventory::ResolveSaveSlot();if(!save)return Ingest::Park;
+    ue_wrap::CachedObjRef actorRef,invRef,saveRef,type,invType,saveType;
+    actorRef.Set(actor);invRef.Set(inv);saveRef.Set(save);type.Set(R::ClassOf(actor));invType.Set(R::ClassOf(inv));saveType.Set(R::ClassOf(save));
+    std::array<uint8_t,16> expected{};std::memcpy(expected.data(),slot,expected.size());
+    const auto current=[&]{return source.Current() && actorRef.Get() && invRef.Get() && saveRef.Get() && type.Get() && invType.Get() && saveType.Get() &&
+        LivePropActor(eid)==actor && R::ClassOf(actor)==type.Get() && R::ClassOf(inv)==invType.Get() &&
+        R::ClassOf(save)==saveType.Get() &&
+        ci::InventoryOf(actor)==inv && ci::OwnerOf(inv)==actor && ci::IsWorldInventory(inv) &&
+        ue_wrap::inventory::ResolveSaveSlot()==save && ci::WorldContentsSlot(inv)==slot &&
+        !std::memcmp(expected.data(),slot,expected.size());};
+    if(!current())return Ingest::Handled;
+
+    // Missing classes must wait without repeatedly allocating partial scratch.
+    const SR::ClassResolver resolve = IsHost() ? &ue_wrap::object_index::ClassByName : nullptr;
+    const auto classReady=[&](const std::wstring& leaf){return leaf.empty() || (resolve?resolve(leaf.c_str()):R::FindClass(leaf.c_str()));};
+    for(const auto& record:recs) {
+        if(!classReady(record.className))return source.Current()?Ingest::Park:Ingest::Handled;
+        for(const auto& group:record.classes)for(const auto& cls:group)
+            if(!classReady(cls))return source.Current()?Ingest::Park:Ingest::Handled;
     }
+    if(!current())return Ingest::Handled;
 
     const int32_t n = static_cast<int32_t>(recs.size());
     void* buf = SR::AllocZeroed(static_cast<size_t>(n), static_cast<size_t>(SR::kSaveStride));
     if (!buf && n > 0) {
         UE_LOGW("container_contents: eid=%u -- alloc of %d records failed; leaving contents", eid, n);
-        return Ingest::Handled;
+        return source.Current()?Ingest::Park:Ingest::Handled;
     }
     // The HOST applies a CLIENT's contents with its world up, so it resolves each record's class
     // names through object_index (an attacker's unknown name is an O(1) miss, not a whole-array walk);
     // a CLIENT applying the host's broadcast may be mid-load, so it keeps FindClass (its index can trail).
-    const SR::ClassResolver resolve = IsHost() ? &ue_wrap::object_index::ClassByName : nullptr;
-    for (int32_t i = 0; i < n; ++i)
-        SR::WriteSaveRecord(reinterpret_cast<uint8_t*>(buf) + static_cast<size_t>(i) * SR::kSaveStride,
-                            recs[i], resolve);
+    // Scratch is not published if any nested record fails. Its partial nested
+    // buffers follow the codec's existing pin policy; old live contents survive.
+    for (int32_t i = 0; i < n; ++i) {
+        if(!current())return Ingest::Handled;
+        const bool complete=SR::WriteSaveRecordChecked(reinterpret_cast<uint8_t*>(buf) + static_cast<size_t>(i) * SR::kSaveStride,recs[i],resolve);
+        if(!current())return Ingest::Handled;
+        if(!complete)return Ingest::Park;
+    }
+    if(!current())return Ingest::Handled;
     // The previous buffer is orphaned: freeing the nested sub-arrays, minted FStrings and signal
     // rows recursively is far more crash-prone than leaking them, and the engine never double-frees
     // a buffer it has lost. inventory::ApplyToSaveObject orphans the same way once per join; this
     // lane is steady-state, and the content-hash gate above bounds it, since an apply happens only
     // when the contents changed.
     SR::WriteArrHeader(slot, 0, buf, n);
+    std::memcpy(expected.data(),slot,expected.size());
 
     g_appliedHash[eid] = blobHash;
+    g_appliedObject[eid]={actorRef,invRef,saveRef,slot,expected};
     // The base a later local edit declares; never cleared by our own verb edge.
     if (!IsHost()) g_baseHash[eid] = blobHash;
+    // Transfer completion follows the actual commit, ahead of callbacks. A
+    // post-commit interruption must not merge the same birth's records twice.
+    if(committed)committed();
+    if(IsHost())g_dirty.insert(eid);
     ue_wrap::CachedObjRef owner;
     owner.Set(OwnerOf(inv));
-    RederiveManagedState(owner.Get(), inv);
+    RederiveManagedState(owner.Get(), inv,current);
+    if(!current())return Ingest::Handled;
     if (void* currentOwner = owner.Get()) ue_wrap::container_view::Refresh(currentOwner);
+    if(!current())return Ingest::Handled;
     UE_LOGI("container_contents: eid=%u applied %d records", eid, n);
     return Ingest::Applied;
 }
@@ -547,6 +529,9 @@ Ingest ParseAndApply(const std::vector<uint8_t>& blob, uint32_t& outEid, uint8_t
     size_t o = 0;
     uint64_t baseHash = 0;
     if (!cw::ParseHeader(blob, o, outEid, baseHash)) return Ingest::Handled;
+    auto* session=g_session.load(std::memory_order_acquire);const auto epoch=g_applyEpoch;
+    detail::ApplySource source(session,outEid,senderSlot,[=]{return epoch==g_applyEpoch && g_session.load(std::memory_order_acquire)==session;});
+    if(!source.Current())return Ingest::Handled;
     // A container a client threw: the host built its copy empty from the intent and has published
     // nothing for it, so any slice of that author is the newest version of the transfer, whatever
     // base it names -- an edit made while the first slice waited in the pen included. There is no
@@ -572,6 +557,7 @@ Ingest ParseAndApply(const std::vector<uint8_t>& blob, uint32_t& outEid, uint8_t
         // that cannot be explained is still a refusal.
         const wp::Decision d = s ? wp::Accept(outEid, baseHash, senderSlot, NowMs(), *s, src)
                                  : wp::Decision::StaleBase;
+        if(!source.Current())return Ingest::Handled;
         // No body to measure the author against yet: HOLD, do not refuse. The pen replays it and
         // the reach is judged the moment that peer has posed; the hold is bounded per author and
         // by the TTL, so a peer that never poses costs the host eight slices for thirty seconds.
@@ -594,6 +580,7 @@ Ingest ParseAndApply(const std::vector<uint8_t>& blob, uint32_t& outEid, uint8_t
         }
     }
     std::vector<SR::SaveRecord> recs;
+    if(!source.Current())return Ingest::Handled;
     const char* why = "";
     if (!cw::ParseRecords(blob, o, recs, &why)) {
         UE_LOGW("container_contents: eid=%u -- %s; dropped", outEid, why);
@@ -639,7 +626,10 @@ Ingest ParseAndApply(const std::vector<uint8_t>& blob, uint32_t& outEid, uint8_t
         }
     }
     const uint64_t contentHash = cw::ContentHash(outEid, recs);
-    const Ingest outcome = ApplyContents(outEid, recs, contentHash);
+    if(!source.Current())return Ingest::Handled;
+    source.Claim(); // Refused/malformed packets must not cancel an accepted native write.
+    const Ingest outcome = ApplyContents(outEid, recs, contentHash,source,[&]{if(birth)cb::Complete(bornActor);});
+    if(!source.Current())return Ingest::Handled;
     // Host, client-authored and accepted. Two records, and the second one was missing: g_sentHash
     // keeps the host's own drain from re-broadcasting the identical slice back the long way round,
     // while NotePublished moves the compare-and-swap baseline onto what the relay is about to hand
@@ -647,7 +637,6 @@ Ingest ParseAndApply(const std::vector<uint8_t>& blob, uint32_t& outEid, uint8_t
     // moved on, and the second peer to edit a container was refused for being as up to date as the
     // first.
     if (outcome == Ingest::Applied && IsHost() && senderSlot != 0) {
-        if (birth) cb::Complete(bornActor);
         if (merged) {
             // The author lacks the host's part: the merged contents go to every peer, the author
             // included, by the host's own fan-out on the next sweep.
@@ -667,7 +656,7 @@ Ingest ParseAndApply(const std::vector<uint8_t>& blob, uint32_t& outEid, uint8_t
         // and relaying only the second kind left every other peer without it, silently, while the
         // baseline above told the host they had it.
         if (auto* s = g_session.load(std::memory_order_acquire))
-            RelayToOthers(s, senderSlot, blob);
+            RelayToOthers(s, senderSlot, blob,source);
     }
     return outcome;
 }
@@ -722,6 +711,7 @@ sg::Verdict OnVerbEntry(const sg::Call& br) {
         static_cast<uint32_t>(coop::element::Registry::Get().EidForActor(owner));
     if (eid == static_cast<uint32_t>(coop::element::kInvalidId)) return sg::Verdict::Run;
     g_dirty.insert(eid);   // resolve identity AT THE EDGE; deref nothing later
+    detail::ApplySource::Changed(eid);
     // The local change is stamped, so the host can tell a stale client write from a clean one.
     // Host-only: nothing on a client ever reads it, and an ungated stamp grows a row per container
     // that peer has ever touched.
@@ -747,6 +737,15 @@ void OnVerbExit(const sg::Call& br) {
 
 }  // namespace
 
+void NoteLocalContentsChange(void* owner) {
+    auto* s=g_session.load(std::memory_order_acquire);
+    if(!ue_wrap::game_thread::IsGameThread() || !s || !s->connected() || !owner || !IsContainerActor(owner))return;
+    const auto eid=static_cast<uint32_t>(coop::element::Registry::Get().EidForActor(owner));
+    if(eid==static_cast<uint32_t>(coop::element::kInvalidId))return;
+    g_dirty.insert(eid);detail::ApplySource::Changed(eid);g_appliedHash.erase(eid);
+    if(IsHost())wp::NoteLocalChange(eid,NowMs());
+}
+
 // From event_feed's client-side SnapshotBegin and SnapshotComplete dispatch, on the game thread.
 void NoteJoinSnapshotBracket(bool open) { pk::NoteJoinBracket(open, NowMs()); }
 
@@ -762,6 +761,10 @@ bool TakeObjWindowOpen() {
 }
 
 void Install(coop::net::Session* session) {
+    auto* previous=g_session.load(std::memory_order_acquire);
+    const auto world=ue_wrap::world_identity::Generation(),serial=coop::net::session_serial::Current();
+    if(previous && (previous!=session || world!=g_contextWorld || serial!=g_contextSerial))OnDisconnect();
+    g_contextWorld=world;g_contextSerial=serial;
     // This lane owns a container's GObjStack slice behind a host-arbitrated compare-and-swap; the
     // container's own save record carries the index into that stack, with none of the arbitration.
     coop::prop_save_data::DeclareClassOwnedElsewhere(L"prop_container_C");
@@ -810,7 +813,7 @@ void Tick() {
 
 void OnContentsChunk(const coop::net::BlobChunkPayload& p, uint8_t senderSlot) {
     auto* s = g_session.load(std::memory_order_acquire);
-    if (!s) return;
+    if (!s || !s->running() || !s->connected() || senderSlot>=coop::net::kMaxPeers) return;
     // The acceptance matrix, before the assembler so no peer drives reassembly for a direction it
     // may not send: the host accepts only a non-zero slot (slot 0 is its own fan-out coming back);
     // a client accepts only slot 0, since peers never hear each other directly.
@@ -825,7 +828,9 @@ void OnContentsChunk(const coop::net::BlobChunkPayload& p, uint8_t senderSlot) {
     std::vector<uint8_t> blob;
     if (!g_asm.OnChunk(p, senderSlot, blob)) return;  // incomplete
 
-    uint32_t eid = 0;
+    uint32_t eid = 0;size_t offset=0;uint64_t base=0;
+    if(!cw::ParseHeader(blob,offset,eid,base))return;
+    uint8_t parkedAuthor=0;const auto parked=pk::Revision(eid,&parkedAuthor);
     const Ingest outcome = ParseAndApply(blob, eid, senderSlot, wp::Source::Arrival);
     if (outcome == Ingest::Park) {
         // The container's element is not bound yet: parked (latest wins per eid) and retried by the
@@ -833,6 +838,9 @@ void OnContentsChunk(const coop::net::BlobChunkPayload& p, uint8_t senderSlot) {
         pk::Admit(eid, senderSlot, std::move(blob), NowMs());
         return;
     }
+    // An accepted newer state (or this author's handled replacement) retires
+    // only the entry observed before dispatch, never a reentrant newer park.
+    if(outcome==Ingest::Applied || parkedAuthor==senderSlot)pk::Retire(eid,parked);
 }
 
 void QueueConnectBroadcastForSlot(int peerSlot) {
@@ -899,6 +907,8 @@ bool ContentsDigest(uint32_t eid, int32_t& outCount, float& outVol) {
 }
 
 void OnDisconnect() {
+    ++g_applyEpoch;
+    g_session.store(nullptr,std::memory_order_release);
     g_dirty.clear();
     g_retry.clear();
     g_seedRetry.Clear();
@@ -908,6 +918,7 @@ void OnDisconnect() {
     g_sentHash.clear();
     g_baseHash.clear();
     g_appliedHash.clear();
+    g_appliedObject.clear();
     cb::Reset();
     g_asm.Clear();
     g_nextSweep = 0;

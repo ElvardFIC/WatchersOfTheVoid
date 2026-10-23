@@ -8,6 +8,7 @@
 
 #include "ue_wrap/actors/save_record.h"
 #include "ue_wrap/actors/building_material.h"
+#include "ue_wrap/actors/container_inventory.h"
 #include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/engine/world_identity.h"
 #include "ue_wrap/core/log.h"
@@ -46,31 +47,19 @@ constexpr int32_t kEquipStride     = 0x120;
 // reader checks the running component against it.
 constexpr int32_t kPersonalSlot    = 0;
 
-int32_t g_offSave = -1;
+R::InstanceOffset g_offSave{L"saveSlot"};
 
-// ---- live personal store: reflected offsets (resolved once; -1 = looked and failed) ----------
-// -2 = not looked at yet. Never guessed: an unresolvable offset makes the reader inert, it does
-// not fall back to a hardcoded number.
-int32_t g_offPlayerContainer  = -2;  // mainGamemode_C.playerContainer  -> Aprop_inventoryContainer_player_C*
-int32_t g_offContainerPropInv = -2;  // prop_container_C.propInventory  -> UpropInventory_C*
-int32_t g_offInvPlayer        = -2;  // propInventory_C.Player          -> the personal discriminator
-int32_t g_offInvIndex         = -2;  // propInventory_C.Index           -> the GObjStack slot
-int32_t g_offGObjStack        = -2;  // saveSlot_C.GObjStack
-
-int32_t CachedOffset(int32_t& slot, void* cls, const wchar_t* name) {
-    if (slot == -2) {
-        slot = cls ? R::FindPropertyOffset(cls, name) : -1;
-        if (slot < 0)
-            UE_LOGW("inventory: could not resolve %ls -- the live-store reader is inert", name);
-    }
-    return slot;
-}
+// Class/slot/serial-scoped offsets, including failures against an old class.
+R::InstanceOffset g_offPlayerContainer{L"playerContainer"},g_offContainerPropInv{L"propInventory"},
+    g_offInvIndex{L"Index"},g_offGObjStack{L"GObjStack"};
+uint64_t g_applySerial=0;
+uint64_t g_handWriteSerial=0;
 
 // The contents TArray header of GObjStack[kPersonalSlot] on `save` (the struct_mObject element's
 // single field, at +0), or null when the save object has no such slot.
 uint8_t* PersonalSlotOf(void* save) {
-    if (CachedOffset(g_offGObjStack, R::ClassOf(save), L"GObjStack") < 0) return nullptr;
-    const SR::Arr stack = SR::ReadArr(save, g_offGObjStack);
+    const auto off=g_offGObjStack.Of(save);if(off<0)return nullptr;
+    SR::Arr stack{};if(!SR::TryReadArr(save,off,stack))return nullptr;
     if (kPersonalSlot >= stack.num) return nullptr;
     return const_cast<uint8_t*>(stack.data) + static_cast<size_t>(kPersonalSlot) * SR::kMxStride;
 }
@@ -88,7 +77,7 @@ void ReadEquipRecord(const void* base, EquipRecord& rec) {
     rec.tag      = SR::ReadFNameAt(base, kEquip_tag);
 }
 
-void WriteEquipRecord(uint8_t* base, const EquipRecord& r) {
+bool WriteEquipRecord(uint8_t* base, const EquipRecord& r) {
     SR::WriteFNameField(base + kEquip_propName, r.propName);
     SR::WriteFNameField(base + kEquip_propKey, r.propKey);
     // Repair empty slots in profiles saved by older builds, too. Occupied records (and their
@@ -97,25 +86,34 @@ void WriteEquipRecord(uint8_t* base, const EquipRecord& r) {
     if (r.propName.empty() && r.propKey.empty() && r.tag.empty() && data.className.empty() &&
         data.key.empty() && data.xform == std::array<float, 10>{})
         data.xform = SR::SaveRecord{}.xform;
-    SR::WriteSaveRecord(base + kEquip_data, data);  // embedded Fstruct_save (0x100 slot)
+    const bool encoded=SR::WriteSaveRecordChecked(base + kEquip_data, data);
     SR::WriteFNameField(base + kEquip_tag, r.tag);
+    const auto nameReady=[&](int32_t off,const std::wstring& name) {
+        R::FName value{};std::memcpy(&value,base+off,sizeof(value));
+        return name.empty() || ::_wcsicmp(name.c_str(),L"None")==0 || value.ComparisonIndex!=0;
+    };
+    return encoded && nameReady(kEquip_propName,r.propName) && nameReady(kEquip_propKey,r.propKey) && nameReady(kEquip_tag,r.tag);
 }
 
 // Build one engine TArray<RecordT> from `recs` and overwrite the header at base+off. The
 // old buffer is intentionally orphaned (see ApplyToSaveObject's contract).
-template <class RecordT, class F>
-void BuildAndSwapArray(void* base, int32_t off, int32_t stride,
-                       const std::vector<RecordT>& recs, F writeOne) {
-    const int32_t num = static_cast<int32_t>(recs.size());
-    void* buf = SR::AllocZeroed(static_cast<size_t>(num), static_cast<size_t>(stride));
-    if (buf) {
-        for (int32_t i = 0; i < num; ++i)
-            writeOne(reinterpret_cast<uint8_t*>(buf) + static_cast<size_t>(i) * stride, recs[i]);
-        SR::WriteArrHeader(base, off, buf, num);
-    } else {
-        SR::WriteArrHeader(base, off, nullptr, 0);  // num==0 or alloc failed -> empty
+struct StagedArray {
+    void* data=nullptr;int32_t num=0;bool writing=false;
+    ~StagedArray(){if(data && !writing)R::EngineFree(data);}
+    bool Allocate(size_t count,size_t stride) {
+        if(count>SR::kMaxArr)return false;
+        num=static_cast<int32_t>(count);data=SR::AllocZeroed(count,stride);
+        return !num || data;
     }
-}
+    template<class T,class F> bool Encode(const std::vector<T>& records,size_t stride,F write,const std::function<bool()>& current) {
+        writing=true;
+        for(size_t i=0;i<records.size();++i) {
+            if(!current() || !write(static_cast<uint8_t*>(data)+i*stride,records[i]) || !current())return false;
+        }
+        return current();
+    }
+    void Publish(void* base,int32_t off) {SR::WriteArrHeader(base,off,data,num);data=nullptr;}
+};
 
 // The player's contents array, addressed ONLY through the assertions that prove it is the
 // personal store: the container component, its `Player` flag, and its running Index against the
@@ -130,18 +128,18 @@ int32_t ValidatedPersonalSlot(SR::Arr& contents) {
     void* gm = world_singleton::Gamemode();
     if (!save || !gm) return -1;
 
-    if (CachedOffset(g_offPlayerContainer, R::ClassOf(gm), L"playerContainer") < 0) return -1;
-    void* pc = ReadAt<void*>(gm, g_offPlayerContainer);
+    const auto containerOff=g_offPlayerContainer.Of(gm);if(containerOff<0)return -1;
+    void* pc = ReadAt<void*>(gm, containerOff);
     if (!pc || !SR::PlausibleObjPtr(pc) || !R::IsLive(pc)) return -1;
 
-    if (CachedOffset(g_offContainerPropInv, R::ClassOf(pc), L"propInventory") < 0) return -1;
-    void* inv = ReadAt<void*>(pc, g_offContainerPropInv);
+    const auto inventoryOff=g_offContainerPropInv.Of(pc);if(inventoryOff<0)return -1;
+    void* inv = ReadAt<void*>(pc, inventoryOff);
     if (!inv || !SR::PlausibleObjPtr(inv) || !R::IsLive(inv)) return -1;
 
     // ADDRESS ASSERTION (fail-closed): this must be the PERSONAL store and nothing else. Same flag
     // that container_contents_sync's BOUNDARY 1 refuses on -- opposite sides of one boundary.
-    if (CachedOffset(g_offInvPlayer, R::ClassOf(inv), L"Player") < 0) return -1;
-    if (ReadAt<uint8_t>(inv, g_offInvPlayer) == 0) {
+    bool personal=false;
+    if (!container_inventory::ReadPersonalFlag(inv,personal) || !personal) {
         static bool s_warned = false;
         if (!s_warned) {
             s_warned = true;
@@ -152,8 +150,8 @@ int32_t ValidatedPersonalSlot(SR::Arr& contents) {
         return -1;
     }
 
-    if (CachedOffset(g_offInvIndex, R::ClassOf(inv), L"Index") < 0) return -1;
-    const int32_t idx = ReadAt<int32_t>(inv, g_offInvIndex);
+    const auto indexOff=g_offInvIndex.Of(inv);if(indexOff<0)return -1;
+    const int32_t idx = ReadAt<int32_t>(inv, indexOff);
     if (idx < 0) return -1;  // -1 = never initialised
     if (idx != kPersonalSlot) {
         // The join apply wrote kPersonalSlot before this component existed. A different running
@@ -162,16 +160,17 @@ int32_t ValidatedPersonalSlot(SR::Arr& contents) {
         if (!s_warned) {
             s_warned = true;
             UE_LOGE("inventory: the player container runs on GObjStack[%d], not the baked slot %d "
-                    "-- the join apply addressed the wrong slot", idx, kPersonalSlot);
+                    "-- refusing foreign-slot contents", idx, kPersonalSlot);
         }
+        return -1;
     }
 
-    if (CachedOffset(g_offGObjStack, R::ClassOf(save), L"GObjStack") < 0) return -1;
-    const SR::Arr stack = SR::ReadArr(save, g_offGObjStack);
+    const auto stackOff=g_offGObjStack.Of(save);if(stackOff<0)return -1;
+    SR::Arr stack{};if(!SR::TryReadArr(save,stackOff,stack))return -1;
     if (idx >= stack.num) return -1;
 
     // The struct_mObject element's single field is the contents TArray<Fstruct_save> at +0.
-    contents = SR::ReadArr(stack.data + static_cast<size_t>(idx) * SR::kMxStride, 0);
+    if(!SR::TryReadArr(stack.data+static_cast<size_t>(idx)*SR::kMxStride,0,contents))return -1;
     return idx;
 }
 
@@ -180,9 +179,8 @@ int32_t ValidatedPersonalSlot(SR::Arr& contents) {
 void* ResolveSaveSlot() {
     void* gm = world_singleton::Gamemode();
     if (!gm) return nullptr;
-    if (g_offSave < 0) g_offSave = R::FindPropertyOffset(R::ClassOf(gm), L"saveSlot");
-    if (g_offSave < 0) return nullptr;
-    void* save = *reinterpret_cast<void**>(reinterpret_cast<uint8_t*>(gm) + g_offSave);
+    const auto off=g_offSave.Of(gm);if(off<0)return nullptr;
+    void* save = *reinterpret_cast<void**>(reinterpret_cast<uint8_t*>(gm) + off);
     return (save && R::IsLive(save)) ? save : nullptr;
 }
 
@@ -199,48 +197,57 @@ std::wstring ReadHeldItemName() {
 bool WriteHeldItem(const std::wstring& name, const wchar_t* classLeaf) {
     void* save = ResolveSaveSlot();
     if (!save) return false;
-    const SR::Arr hd = SR::ReadArr(save, kOff_hold);
+    SR::Arr hd{};if(!SR::TryReadArr(save,kOff_hold,hd))return false;
     if (!hd.data || hd.num < 1) return false;
-    if (classLeaf && !R::FindClass(classLeaf)) return false;
-    auto* slot = const_cast<uint8_t*>(hd.data);
+    const auto serial=++g_handWriteSerial;
+    const auto world=world_identity::Generation();
+    CachedObjRef target;target.Set(save);
+    std::array<uint8_t,16> header{};std::memcpy(header.data(),static_cast<uint8_t*>(save)+kOff_hold,header.size());
+    std::array<uint8_t,kEquipStride> image{};std::memcpy(image.data(),hd.data,image.size());
+    const auto current=[&]{return serial==g_handWriteSerial && world==world_identity::Generation() && target.Get()==save &&
+        ResolveSaveSlot()==save && !std::memcmp(header.data(),static_cast<uint8_t*>(save)+kOff_hold,header.size()) &&
+        !std::memcmp(image.data(),hd.data,image.size());};
+    const std::wstring cls=classLeaf?classLeaf:L"";
+    const std::wstring itemName=name;
+    if(!cls.empty() && !R::FindClass(cls.c_str()))return false;
+    if(!current())return false;
     // The record as the game's own pickup leaves it, as far as the hand reads it: the class updateHold
     // spawns, and the name the spawned actor's loadData takes, its first names entry, which
     // propToDynamic also made the slot's own name from; an emptied hand's has neither. The rest of the
     // record stays, and its old buffers are orphaned, as every rewrite of one is.
-    SR::SaveRecord rec;
-    SR::ReadSaveRecord(slot + kEquip_data, rec);
-    rec.className = classLeaf ? classLeaf : L"";
-    if (classLeaf) rec.names.assign(1, std::vector<std::wstring>{name});
-    else rec.names.clear();
-    std::memset(slot + kEquip_data, 0, SR::kSaveStride);
-    SR::WriteSaveRecord(slot + kEquip_data, rec);
-    SR::WriteFNameField(slot + kEquip_propName, name);
+    EquipRecord record;ReadEquipRecord(hd.data,record);
+    if(!current())return false;
+    record.propName=itemName;record.data.className=cls;
+    if(classLeaf)record.data.names.assign(1,std::vector<std::wstring>{itemName});
+    else record.data.names.clear();
+    std::array<uint8_t,kEquipStride> staged{};
+    if(!WriteEquipRecord(staged.data(),record) || !current())return false;
+    std::memcpy(const_cast<uint8_t*>(hd.data),staged.data(),staged.size());
     return true;
 }
 
 bool ReadAll(PlayerInventory& out) {
-    out.inventory.clear();
-    out.equipment.clear();
-    out.hold.clear();
+    out={};PlayerInventory snapshot;
     LivePersonalStore live;
     if (!ReadLivePersonalStore(live)) return false;  // pre-world: no container, nothing carried yet
     void* save = ResolveSaveSlot();
     if (!save) return false;
-    out.inventory = std::move(live.records);
-    const SR::Arr eq = SR::ReadArr(save, kOff_equipment);
-    out.equipment.reserve(static_cast<size_t>(eq.num));
+    SR::Arr eq{},hd{};
+    if(!SR::TryReadArr(save,kOff_equipment,eq) || !SR::TryReadArr(save,kOff_hold,hd))return false;
+    snapshot.inventory=std::move(live.records);
+    snapshot.equipment.reserve(static_cast<size_t>(eq.num));
     for (int32_t i = 0; i < eq.num; ++i) {
         EquipRecord r;
         ReadEquipRecord(eq.data + static_cast<size_t>(i) * kEquipStride, r);
-        out.equipment.push_back(std::move(r));
+        snapshot.equipment.push_back(std::move(r));
     }
-    const SR::Arr hd = SR::ReadArr(save, kOff_hold);
-    out.hold.reserve(static_cast<size_t>(hd.num));
+    snapshot.hold.reserve(static_cast<size_t>(hd.num));
     for (int32_t i = 0; i < hd.num; ++i) {
         EquipRecord r;
         ReadEquipRecord(hd.data + static_cast<size_t>(i) * kEquipStride, r);
-        out.hold.push_back(std::move(r));
+        snapshot.hold.push_back(std::move(r));
     }
+    out=std::move(snapshot);
     return true;
 }
 
@@ -303,40 +310,67 @@ bool ReadLivePersonalStore(LivePersonalStore& out) {
     return true;
 }
 
-bool ApplyToSaveObject(void* saveSlot, const PlayerInventory& inv) {
+bool ApplyToSaveObjectWhile(void* saveSlot, const PlayerInventory& inv,const std::function<bool()>& callerCurrent) {
+    if(callerCurrent && !callerCurrent())return false;
     if (!saveSlot || !R::IsLive(saveSlot)) return false;
-    if (void* probe = R::EngineAlloc(16)) {  // GMalloc probe: a failure -> we'd silently write
-        R::EngineFree(probe);                // empty arrays over a real inventory; refuse instead
-    } else {
-        UE_LOGW("inventory: ApplyToSaveObject -- EngineAlloc unavailable (GMalloc unresolved); "
-                "refusing to write empty inventory over saveSlot %p", saveSlot);
-        return false;
-    }
+    if(inv.inventory.size()>SR::kMaxArr || inv.equipment.size()>SR::kMaxArr || inv.hold.size()>SR::kMaxArr)return false;
+    // Native string/name construction may reenter the caller and replace its
+    // profile. Own every input before the first engine dispatch.
+    const PlayerInventory snapshot=inv;
+    const auto serial=++g_applySerial;
+    const auto world=world_identity::Generation();
+    void* gm=world_singleton::Gamemode();void* bound=ResolveSaveSlot();
+    CachedObjRef target,type,mode,liveSave;
+    target.Set(saveSlot);type.Set(R::ClassOf(saveSlot));mode.Set(gm);liveSave.Set(bound);
     uint8_t* carried = PersonalSlotOf(saveSlot);
     if (!carried) {
         UE_LOGE("inventory: ApplyToSaveObject -- save object %p has no GObjStack[%d]; refusing to "
                 "write a partial inventory", saveSlot, kPersonalSlot);
         return false;
     }
-    BuildAndSwapArray(carried, 0, SR::kSaveStride, inv.inventory,
-                      [](uint8_t* e, const SR::SaveRecord& r) { SR::WriteSaveRecord(e, r); });
+    const auto stackOff=g_offGObjStack.Of(saveSlot);
+    struct Header {
+        const uint8_t* at;std::array<uint8_t,16> bytes{};
+        explicit Header(const void* p):at(static_cast<const uint8_t*>(p)){std::memcpy(bytes.data(),at,bytes.size());}
+        bool Same()const{return std::memcmp(at,bytes.data(),bytes.size())==0;}
+    } stackHeader(static_cast<uint8_t*>(saveSlot)+stackOff),carriedHeader(carried),
+      equipmentHeader(static_cast<uint8_t*>(saveSlot)+kOff_equipment),heldHeader(static_cast<uint8_t*>(saveSlot)+kOff_hold);
+    const auto current=[&] {
+        return (!callerCurrent || callerCurrent()) && serial==g_applySerial && world==world_identity::Generation() && target.Get()==saveSlot && type.Get() &&
+            R::ClassOf(saveSlot)==type.Get() && (!gm || mode.Get()==gm) && (!bound || liveSave.Get()==bound) &&
+            world_singleton::Gamemode()==gm && ResolveSaveSlot()==bound &&
+            stackHeader.Same() && carriedHeader.Same() && equipmentHeader.Same() && heldHeader.Same();
+    };
     // equipment and hold are FIXED-SHAPE slot arrays: the game finds an empty slot to equip into
     // (AddEquipment: Array_Find, "Not enough space" on -1) and writes hold[0] in place, and
     // nothing in it ever grows them. A profile with fewer slots than the save object -- an empty
     // one above all -- is padded with blank slots to the shape the save object came with.
-    auto slotsOf = [saveSlot](int32_t off, const std::vector<EquipRecord>& recs) {
+    SR::Arr oldCarried{},oldEquipment{},oldHeld{};
+    if(!SR::TryReadArr(carried,0,oldCarried) || !SR::TryReadArr(saveSlot,kOff_equipment,oldEquipment) ||
+       !SR::TryReadArr(saveSlot,kOff_hold,oldHeld))return false;
+    auto slotsOf = [](size_t shape, const std::vector<EquipRecord>& recs) {
         std::vector<EquipRecord> out = recs;
-        const size_t shape = static_cast<size_t>(SR::ReadArr(saveSlot, off).num);
         if (out.size() < shape) out.resize(shape);
         return out;
     };
-    BuildAndSwapArray(saveSlot, kOff_equipment, kEquipStride, slotsOf(kOff_equipment, inv.equipment),
-                      [](uint8_t* e, const EquipRecord& r) { WriteEquipRecord(e, r); });
-    BuildAndSwapArray(saveSlot, kOff_hold, kEquipStride, slotsOf(kOff_hold, inv.hold),
-                      [](uint8_t* e, const EquipRecord& r) { WriteEquipRecord(e, r); });
+    const auto equipment=slotsOf(static_cast<size_t>(oldEquipment.num),snapshot.equipment),held=slotsOf(static_cast<size_t>(oldHeld.num),snapshot.hold);
+    StagedArray items,worn,hand;
+    if(!current() || !items.Allocate(snapshot.inventory.size(),SR::kSaveStride) || !current() ||
+       !worn.Allocate(equipment.size(),kEquipStride) || !current() ||
+       !hand.Allocate(held.size(),kEquipStride) || !current())return false;
+    const auto writeItem=[](uint8_t* at,const SR::SaveRecord& record){return SR::WriteSaveRecordChecked(at,record);};
+    const auto writeEquip=[](uint8_t* at,const EquipRecord& record){return WriteEquipRecord(at,record);};
+    if(!items.Encode(snapshot.inventory,SR::kSaveStride,writeItem,current) ||
+       !worn.Encode(equipment,kEquipStride,writeEquip,current) ||
+       !hand.Encode(held,kEquipStride,writeEquip,current) || !current())return false;
+    // No dispatch between these raw header swaps. Until here the live save has
+    // not changed. Old/dead scratch follows the existing nested-buffer pin policy.
+    items.Publish(carried,0);worn.Publish(saveSlot,kOff_equipment);hand.Publish(saveSlot,kOff_hold);
     UE_LOGI("inventory: ApplyToSaveObject(%p) wrote carried=%zu equipment=%zu hold=%zu",
-            saveSlot, inv.inventory.size(), inv.equipment.size(), inv.hold.size());
+            saveSlot, snapshot.inventory.size(), snapshot.equipment.size(), snapshot.hold.size());
     return true;
 }
+
+bool ApplyToSaveObject(void* saveSlot,const PlayerInventory& inv) {return ApplyToSaveObjectWhile(saveSlot,inv,{});}
 
 }  // namespace ue_wrap::inventory

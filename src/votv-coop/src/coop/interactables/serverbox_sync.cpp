@@ -9,10 +9,12 @@
 #include "coop/element/intent_authority.h"  // IntentTarget: a repair's presser within reach of its box
 #include "coop/net/protocol.h"
 #include "coop/net/session.h"
+#include "coop/net/session_serial.h"
 #include "coop/player/players_registry.h"  // kMaxPeers
 #include "coop/player/roster_ledger.h"     // PerSlotState
 
 #include "ue_wrap/core/game_thread.h"
+#include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/script_gate.h"
@@ -38,6 +40,9 @@ namespace SB = ue_wrap::serverbox;
 namespace sg = ue_wrap::script_gate;
 
 std::atomic<coop::net::Session*> g_session{nullptr};
+std::atomic<uint64_t> g_epoch{0};
+uint32_t g_sessionSerial = 0;
+bool g_driving = false;
 Counts g_counts;
 
 constexpr int       kMaxServers     = 64;    // the row's width; a base runs ~54 boxes
@@ -55,12 +60,48 @@ constexpr int kTagFix   = 0x53424633;  // 'SBF3'
 
 coop::net::Session* ClientSession() {
     auto* s = g_session.load(std::memory_order_acquire);
-    return s && s->connected() && s->role() == coop::net::Role::Client ? s : nullptr;
+    return s && s->connected() && g_sessionSerial == coop::net::session_serial::Current() &&
+        s->role() == coop::net::Role::Client ? s : nullptr;
 }
 coop::net::Session* HostSession() {
     auto* s = g_session.load(std::memory_order_acquire);
-    return s && s->connected() && s->role() == coop::net::Role::Host ? s : nullptr;
+    return s && s->connected() && g_sessionSerial == coop::net::session_serial::Current() &&
+        s->role() == coop::net::Role::Host ? s : nullptr;
 }
+
+struct Root {
+    uint64_t epoch = 0;
+    uint32_t world = 0;
+    void* gm = nullptr;
+    int32_t gmIndex = -1, gmSerial = 0;
+};
+
+Root CaptureRoot() {
+    Root root{g_epoch.load(), ue_wrap::world_identity::Generation(), ue_wrap::world_singleton::Gamemode()};
+    if (root.gm) {
+        root.gmIndex = R::InternalIndexOf(root.gm);
+        root.gmSerial = R::AllocateSlotSerial(root.gmIndex);
+    }
+    return root;
+}
+
+bool Current(coop::net::Session* s, const Root& root) {
+    return s && s == g_session.load() && s->connected() && g_epoch.load() == root.epoch &&
+        g_sessionSerial == coop::net::session_serial::Current() &&
+        root.world == ue_wrap::world_identity::Generation() &&
+        root.gm == ue_wrap::world_singleton::Gamemode() &&
+        (!root.gm || (R::IsLiveByIndex(root.gm, root.gmIndex) && R::SlotSerial(root.gmIndex) == root.gmSerial));
+}
+
+bool SameRoot(const Root& a, const Root& b) {
+    return a.epoch == b.epoch && a.world == b.world && a.gm == b.gm &&
+        a.gmIndex == b.gmIndex && a.gmSerial == b.gmSerial;
+}
+
+struct DriveGuard {
+    DriveGuard() { g_driving = true; }
+    ~DriveGuard() { g_driving = false; }
+};
 
 long long NowMs() {
     using namespace std::chrono;
@@ -108,77 +149,145 @@ bool ReadState(coop::net::ServerStatePayload& p) {
     return true;
 }
 
-// ---- host poll baseline ---------------------------------------------------------------------------
+// ---- host delivery -------------------------------------------------------------------------------
 uint32_t g_polledWorldGen = 0;
 void* g_polledGm = nullptr;  // the gamemode the baseline was read from; an identity, never dereferenced
-bool  g_primed = false;
-coop::net::ServerStatePayload g_last{};
+int32_t g_polledGmSerial = 0;
 long long g_lastPollMs = 0;
+struct Delivery {
+    uint32_t occupant = 0;
+    bool sent = false;
+    uint64_t requested = 0, delivered = 0;
+    coop::net::ServerStatePayload last{};
+};
+coop::roster_ledger::PerSlotState<Delivery> g_delivery;
+
+struct Pending {
+    bool present = false;
+    uint64_t version = 0;
+    Root root{};
+    coop::net::ServerStatePayload state{};
+    // ApplyBreak writes IsBroken before invoking the native check(). A failed
+    // call leaves that flag changed, so retain its separate effect debt, bound
+    // to the exact box incarnation, even when a newer row has the same flag.
+    ue_wrap::CachedObjRef skinDebt[kMaxServers];
+} g_pending;
+
+void ConformWorld(const Root& root) {
+    if (g_polledWorldGen == root.world && g_polledGm == root.gm && g_polledGmSerial == root.gmSerial) return;
+    g_polledWorldGen = root.world;
+    g_polledGm = root.gm;
+    g_polledGmSerial = root.gmSerial;
+    for (int slot = 0; slot < g_delivery.size(); ++slot) g_delivery[slot] = {};
+}
 
 // The flags, the types and the broken count are the edges; the efficiencies also move off one (a download ramps
 // serverEfficiency_downl), so they count with a small epsilon and the SAT console's sv.*/tw.* reads stay fresh.
-bool StateChanged(const coop::net::ServerStatePayload& p) {
-    return p.isBrokenMask != g_last.isBrokenMask || p.damagedMask != g_last.damagedMask ||
-           p.brokenServers != g_last.brokenServers || p.serverCount != g_last.serverCount ||
-           std::memcmp(p.minigame, g_last.minigame, sizeof(p.minigame)) != 0 ||
-           std::fabs(p.effCalc  - g_last.effCalc)  > 0.005f ||
-           std::fabs(p.effDownl - g_last.effDownl) > 0.005f || p.timeBest != g_last.timeBest;
+bool StateChanged(const coop::net::ServerStatePayload& p, const coop::net::ServerStatePayload& last) {
+    return p.isBrokenMask != last.isBrokenMask || p.damagedMask != last.damagedMask ||
+           p.brokenServers != last.brokenServers || p.serverCount != last.serverCount ||
+           std::memcmp(p.minigame, last.minigame, sizeof(p.minigame)) != 0 ||
+           std::fabs(p.effCalc  - last.effCalc)  > 0.005f ||
+           std::fabs(p.effDownl - last.effDownl) > 0.005f || p.timeBest != last.timeBest;
 }
 
-// HOST: the row to every client, on a change of the baseline.
-void BroadcastIfChanged(coop::net::Session* s, const char* why) {
+void Deliver(coop::net::Session* s, int slot, const coop::net::ServerStatePayload& p, const Root& root) {
+    auto& row = g_delivery[slot];
+    const uint32_t occupant = s->peerGenerationForSlot(slot);
+    if (row.occupant != occupant) { row = {}; row.occupant = occupant; }
+    if (!s->HasPeerConn(slot) || !s->IsSlotWorldReady(slot)) { row.sent = false; return; }
+    if (row.sent && row.requested == row.delivered && !StateChanged(p, row.last)) return;
+    const uint64_t request = row.requested;
+    const bool sent = s->SendReliableToSlot(slot, coop::net::ReliableKind::ServerState, &p, sizeof(p));
+    if (!Current(s, root) || s->peerGenerationForSlot(slot) != occupant) return;
+    // A fan-out's true means ANY peer accepted it, so only the single-target
+    // accepted send can retire this recipient's debt.
+    if (!sent) return;
+    row.sent = true; row.last = p; row.delivered = request;
+    UE_LOGI("serverbox_sync: host state sent to slot %d (broken=%d mask=0x%llX damaged=0x%llX count=%d)", slot,
+        p.brokenServers, static_cast<unsigned long long>(p.isBrokenMask),
+        static_cast<unsigned long long>(p.damagedMask), p.serverCount);
+}
+
+// HOST: every recipient keeps its own accepted row, including an unchanged join/refusal correction.
+void BroadcastIfChanged(coop::net::Session* s) {
+    if (g_driving) return;
+    DriveGuard guard;
+    const Root root = CaptureRoot();
+    ConformWorld(root);
     coop::net::ServerStatePayload p{};
-    if (!ReadState(p) || !StateChanged(p)) return;
-    g_last = p;
-    if (s->SendReliable(coop::net::ReliableKind::ServerState, &p, sizeof(p)))
-        UE_LOGI("serverbox_sync: host broadcast, %s (broken=%d mask=0x%llX damaged=0x%llX count=%d)", why,
-                p.brokenServers, static_cast<unsigned long long>(p.isBrokenMask),
-                static_cast<unsigned long long>(p.damagedMask), p.serverCount);
-    else
-        UE_LOGW("serverbox_sync: host broadcast send FAILED (broken=%d mask=0x%llX)", p.brokenServers,
-                static_cast<unsigned long long>(p.isBrokenMask));
+    if (!root.world || !root.gm || !ReadState(p) || !Current(s, root)) return;
+    for (int slot = 1; slot < g_delivery.size(); ++slot) {
+        Deliver(s, slot, p, root);
+        if (!Current(s, root)) return;
+    }
 }
 
 bool SendStateTo(coop::net::Session* s, int slot) {
+    const Root root = CaptureRoot();
+    ConformWorld(root);
+    auto& row = g_delivery[slot];
+    const uint32_t occupant = s->peerGenerationForSlot(slot);
+    if (row.occupant != occupant) { row = {}; row.occupant = occupant; }
+    ++row.requested;
+    if (g_driving) return false;
+    DriveGuard guard;
     coop::net::ServerStatePayload p{};
-    return ReadState(p) && s->SendReliableToSlot(slot, coop::net::ReliableKind::ServerState, &p, sizeof(p));
+    if (!root.world || !root.gm || !SB::EnsureBreakResolved() || !ReadState(p) || !Current(s, root)) return false;
+    Deliver(s, slot, p, root);
+    return Current(s, root) && row.occupant == occupant && row.sent && row.delivered == row.requested;
 }
 
 // ---- client apply ---------------------------------------------------------------------------------
-void ApplyState(const coop::net::ServerStatePayload& p) {
+bool ApplyState(coop::net::Session* s, const coop::net::ServerStatePayload& p, const Root& root) {
     // The totals, so the SAT console's sv.*/tw.* queries read the host's.
     SB::Aggregates agg;
     agg.brokenServers      = p.brokenServers;
     agg.efficiencyCalc     = p.effCalc;
     agg.efficiencyDownload = p.effDownl;
-    if (!SB::WriteAggregates(agg)) return;
+    if (!SB::WriteAggregates(agg) || !Current(s, root)) return false;
     // The record the host pays against, so this peer's repair widget judges a record (its sound, its own best write)
     // against the same best the host's payment does. The widget still writes its own solve here first; this row,
     // broadcast after the host's repair, puts the host's answer over it.
-    if (std::isfinite(p.timeBest) && p.timeBest >= 0.f) SB::WriteRepairBest(p.timeBest);
+    bool complete = true;
+    if (std::isfinite(p.timeBest) && p.timeBest >= 0.f) complete = SB::WriteRepairBest(p.timeBest);
+    if (!Current(s, root)) return false;
     std::vector<void*> servers;
     ReadServers(servers);
     const bool repair = SB::EnsureRepairResolved();
+    if (!Current(s, root)) return false;
+    complete = complete && repair && servers.size() >= p.serverCount;
     int reskinned = 0;
     const int32_t n = static_cast<int32_t>(servers.size());
     const int32_t take = n < p.serverCount ? n : p.serverCount;
     for (int32_t i = 0; i < take && i < kMaxServers; ++i) {
         void* sb = servers[i];
-        if (!sb || !R::IsLive(sb)) continue;
+        if (!sb || !R::IsLive(sb)) { complete = false; continue; }
         if (repair) {
             // What the repair widget reads: the type it enters with, and whether the repair pays.
             SB::RepairState r;
             r.damaged = (p.damagedMask >> i) & 1ull;
             r.minigame = p.minigame[i];
-            SB::WriteRepairState(sb, r);
+            complete = SB::WriteRepairState(sb, r) && complete;
+            if (!Current(s, root)) return false;
         }
         const bool desired = (p.isBrokenMask >> i) & 1ull;
-        if (SB::ReadIsBroken(sb) == desired) continue;   // already matches -> no re-skin
-        if (SB::ApplyBreak(sb, desired)) ++reskinned;
+        auto& debt = g_pending.skinDebt[i];
+        const bool retry = debt.Is(sb);
+        if (!retry) debt.Reset();
+        if (SB::ReadIsBroken(sb) == desired && !retry) continue;
+        debt.Set(sb);   // publish before native callbacks can deliver a newer row
+        const bool applied = SB::ApplyBreak(sb, desired);
+        if (!Current(s, root)) return false;
+        if (applied && debt.Is(sb)) {
+            ++reskinned;
+            debt.Reset();
+        } else complete = false;
     }
     if (reskinned)
         UE_LOGI("serverbox_sync: client applied host state (broken=%d mask=0x%llX, %d server(s) re-skinned)",
                 p.brokenServers, static_cast<unsigned long long>(p.isBrokenMask), reskinned);
+    return complete;
 }
 
 // ---- the verbs at the gate ------------------------------------------------------------------------
@@ -249,18 +358,21 @@ constexpr uint16_t kMinSolveDs = 10;
 
 // HOST: the reward of a client's repair the host just ran, as the widget computes it, from the host's own
 // box and saveSlot. Returns the base reward paid; `record` gets the record bonus paid.
-int32_t PayRepairReward(const coop::net::ServerRepairPayload& p, bool damaged, int32_t& record) {
+int32_t PayRepairReward(coop::net::Session* s, const Root& root,
+                       const coop::net::ServerRepairPayload& p, bool damaged, int32_t& record) {
     record = 0;
     if (!(p.flags & coop::net::kRepairSettles) || damaged) return 0;
     const bool lol = (p.flags & coop::net::kRepairLol) != 0;
     const int32_t reward = lol ? kRewardLol : kRewardPlain;
     if (!ue_wrap::economy::AddPoints(reward)) return 0;
+    if (!Current(s, root)) return reward;
     if (p.timeDs < kMinSolveDs) return reward;   // no time, or none a hand makes: the reward, no record
     float best = 0.f;
-    if (!SB::ReadRepairBest(best)) return reward;
+    if (!SB::ReadRepairBest(best) || !Current(s, root)) return reward;
     const float t = static_cast<float>(p.timeDs) / 10.f;
     const int32_t bonus = lol ? kRecordLol : kRecordPlain;
     if (t < best && ue_wrap::economy::AddPoints(bonus)) record = bonus;
+    if (!Current(s, root)) return reward;
     SB::WriteRepairBest(best == 0.f ? t : std::fmin(best, t));
     return reward;
 }
@@ -336,6 +448,12 @@ void DriveWatches() {
 }  // namespace
 
 void Install(coop::net::Session* session) {
+    ++g_epoch;
+    g_sessionSerial = coop::net::session_serial::Current();
+    g_polledWorldGen = 0; g_polledGm = nullptr; g_polledGmSerial = 0;
+    g_lastPollMs = 0;
+    for (int slot = 0; slot < g_delivery.size(); ++slot) g_delivery[slot] = {};
+    g_pending = {};
     g_session.store(session, std::memory_order_release);
     DriveWatches();
 }
@@ -343,31 +461,38 @@ void Install(coop::net::Session* session) {
 void Tick() {
     if (!GT::IsGameThread()) return;
     DriveWatches();
+    if (g_driving) return;
+    if (auto* client = ClientSession()) {
+        if (!g_pending.present) return;
+        // The world can be announced before its gamemode is discoverable. Bind
+        // the snapshot once it appears; once bound, a replacement cancels it.
+        if (!g_pending.root.gm) {
+            const Root discovered = CaptureRoot();
+            if (g_pending.root.epoch == discovered.epoch && g_pending.root.world == discovered.world)
+                g_pending.root = discovered;
+        }
+        const Pending pending = g_pending;
+        if (!Current(client, pending.root)) { g_pending.present = false; return; }
+        if (!pending.root.gm) return;
+        DriveGuard guard;
+        if (!SB::EnsureBreakResolved() || !Current(client, pending.root)) return;
+        if (ApplyState(client, pending.state, pending.root) && Current(client, pending.root) &&
+            g_pending.version == pending.version) g_pending.present = false;
+        return;
+    }
     auto* s = HostSession();
     if (!s) return;
     const long long now = NowMs();
     if (now - g_lastPollMs < kPollIntervalMs) return;
     g_lastPollMs = now;
-    if (!SB::EnsureBreakResolved()) return;
-    // A world or save reload minted a new gamemode with its world -> the baseline is meaningless; re-prime silently
-    // (a prime must never masquerade as an edge; the join edge and the next real transition deliver state). The
-    // gamemode is the anchor as much as the generation: in a travel the world reads unknown for a while, and a
-    // gamemode swapped inside it keeps the generation.
-    const uint32_t gen = ue_wrap::world_identity::Generation();
-    void* const gm = ue_wrap::world_singleton::Gamemode();
-    if (gen != g_polledWorldGen || gm != g_polledGm || !g_primed) {
-        coop::net::ServerStatePayload p{};
-        if (!ReadState(p)) return;
-        g_polledWorldGen = gen; g_polledGm = gm; g_primed = true; g_last = p;
-        return;
-    }
-    BroadcastIfChanged(s, "a change");
+    const Root root = CaptureRoot();
+    if (!SB::EnsureBreakResolved() || !Current(s, root)) return;
+    BroadcastIfChanged(s);
 }
 
 void QueueConnectBroadcastForSlot(int slot) {
     auto* s = HostSession();
-    if (!s || slot < 0 || slot >= static_cast<int>(coop::players::kMaxPeers)) return;
-    if (!SB::EnsureBreakResolved()) return;  // no world yet -> the first transition delivers state
+    if (!GT::IsGameThread() || !s || slot <= 0 || slot >= static_cast<int>(coop::players::kMaxPeers)) return;
     // Unconditional (even all-healthy): the joiner's load ran none of the verbs; this row is its state.
     if (SendStateTo(s, slot)) UE_LOGI("serverbox_sync: connect-snapshot sent to slot %d", slot);
     else UE_LOGW("serverbox_sync: connect-snapshot to slot %d send FAILED", slot);
@@ -378,14 +503,20 @@ void OnReliable(const coop::net::ServerStatePayload& payload) {
         UE_LOGW("serverbox_sync: OnReliable off-game-thread -- dropping");
         return;
     }
-    auto* s = g_session.load(std::memory_order_acquire);
-    if (!s || !s->connected()) return;  // from the host alone: its receive edge refuses a client's copy
-    if (!SB::EnsureBreakResolved()) {
-        UE_LOGW("serverbox_sync: ServerState arrived before resolution -- dropped (the next host change / "
-                "connect-snapshot re-delivers)");
-        return;
+    auto* s = ClientSession();
+    if (!s) return;  // from the host alone: its receive edge refuses a client's copy
+    const Root root = CaptureRoot();
+    if (!root.world) return;
+    // A world-ready snapshot can precede wrapper resolution or the server list.
+    // Keep the latest row until ALL fields apply in this same root lifetime.
+    if (!SameRoot(root, g_pending.root)) {
+        for (auto& debt : g_pending.skinDebt) debt.Reset();
     }
-    ApplyState(payload);
+    g_pending.present = true;
+    ++g_pending.version;
+    g_pending.root = root;
+    g_pending.state = payload;
+    Tick();
 }
 
 void OnRepair(const coop::net::ServerRepairPayload& payload, int senderPeerSlot) {
@@ -395,8 +526,10 @@ void OnRepair(const coop::net::ServerRepairPayload& payload, int senderPeerSlot)
     }
     auto* s = HostSession();
     if (!s || senderPeerSlot < 1 || senderPeerSlot >= static_cast<int>(coop::players::kMaxPeers)) return;
-    if (!SB::EnsureBreakResolved() || !SB::EnsureRepairResolved()) return;
+    const Root root = CaptureRoot();
+    if (!SB::EnsureBreakResolved() || !SB::EnsureRepairResolved() || !Current(s, root)) return;
     const uint8_t slot = static_cast<uint8_t>(senderPeerSlot);
+    const uint32_t occupant = s->peerGenerationForSlot(slot);
     std::vector<void*> servers;
     ReadServers(servers);
     void* box = payload.box < servers.size() ? servers[payload.box] : nullptr;
@@ -410,8 +543,10 @@ void OnRepair(const coop::net::ServerRepairPayload& payload, int senderPeerSlot)
         else if (const auto outcome = token.Authorize(box).outcome; outcome != coop::element::IntentOutcome::Ok)
             why = outcome == coop::element::IntentOutcome::NoTarget ? "the box's place did not read"
                                                                       : "the box is out of its reach";
+        else if (!Current(s, root) || s->peerGenerationForSlot(slot) != occupant) return;
         else if (!SB::ReadRepairState(box, repair) || !SB::CallFix(box)) why = "the box's fix did not run";
     }
+    if (!Current(s, root) || s->peerGenerationForSlot(slot) != occupant) return;
     if (why) {
         ++g_counts.repairsRefused;
         SendStateTo(s, slot);
@@ -422,10 +557,11 @@ void OnRepair(const coop::net::ServerRepairPayload& payload, int senderPeerSlot)
     }
     ++g_counts.repairsRun;
     int32_t record = 0;
-    const int32_t reward = PayRepairReward(payload, repair.damaged, record);
+    const int32_t reward = PayRepairReward(s, root, payload, repair.damaged, record);
+    if (!Current(s, root)) return;
     UE_LOGI("serverbox_sync: HOST ran slot %u's repair of box %u (reward %d, record %d%s)", slot, payload.box,
             reward, record, (payload.flags & coop::net::kRepairSettles) ? "" : ", the sender sent no reward fields");
-    BroadcastIfChanged(s, "a client's repair");
+    BroadcastIfChanged(s);
 }
 
 void OnDisconnect() {
@@ -438,8 +574,11 @@ void OnDisconnect() {
                 static_cast<unsigned long long>(g_counts.repairsRun),
                 static_cast<unsigned long long>(g_counts.repairsRefused));
     g_counts = Counts{};
-    g_polledWorldGen = 0; g_polledGm = nullptr; g_primed = false;
-    g_last = coop::net::ServerStatePayload{};
+    ++g_epoch;
+    g_sessionSerial = 0;
+    g_polledWorldGen = 0; g_polledGm = nullptr; g_polledGmSerial = 0;
+    for (int slot = 0; slot < g_delivery.size(); ++slot) g_delivery[slot] = {};
+    g_pending = {};
     g_lastPollMs = 0;
     g_session.store(nullptr, std::memory_order_release);
 }

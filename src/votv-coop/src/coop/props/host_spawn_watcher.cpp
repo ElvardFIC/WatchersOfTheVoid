@@ -443,6 +443,10 @@ void DrainPendingSpawns(coop::net::Session* s) {
                    s->role() == coop::net::Role::Host && e.actor.Get() == actor;
         };
         if (!current()) continue;
+        // takeObj restores its saved identity after Finish returns. Its retained
+        // publisher also owns refused spawn/state sends; do not send a record
+        // here before that publisher has queued the birth.
+        if (coop::prop_lifecycle::ContainerBirthPending(actor)) { keep.push_back(e); continue; }
         // Marked as a mirror after our enqueue check: not ours.
         if (coop::prop_echo_suppress::IsMirrorSpawn(actor)) continue;
         // The local hotbar hand actor, the hold update's view spawn: display-only while held, and

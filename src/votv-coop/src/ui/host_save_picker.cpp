@@ -145,7 +145,7 @@ void DoHostNew() {
 void Open(const std::string& hostName, bool locked, int playersMax) {
     g_hostName = hostName.empty() ? std::string("My VOTV Server") : hostName;
     g_hostLocked = locked;
-    g_hostMax = playersMax > 0 ? playersMax : 4;
+    g_hostMax = coop::net::ClampPlayerLimit(playersMax);
     g_selected = -1;
     g_conflictSlot.clear();
     // RESOLVED ON OPEN, NEVER IN Render(). `ResolveInt` reaches `ReadIniValue`, which

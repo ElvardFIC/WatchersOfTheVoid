@@ -59,34 +59,6 @@ The top row of the game's own build labels gets one more native label: the mod's
 build, white as the game's own labels, amber when the master reports a newer release, and silent
 while the master has no released record. The MULTIPLAYER button itself is white, as the menu's own items are.
 
-Under those labels the menu rolls the thanks list (`ui/thanks_roll`): the people the mod thanks.
-Its two-line sentence is its legend: the title in the amber of the game's own "Patrons Tier III"
-header across the screen, and under it each role in that role's colour ("testers, bug reporters,
-contributors and Boosty supporters:"). Below, on a dark backing as wide as the columns, are the
-names and nothing else, each in its role's colour and behind a dash as the game lists its own
-supporters. The columns are not the roles: the common names are dealt by count into two columns
-of equal length that roll as one, and a role marked `apart` keeps a column to itself. It is the
-game's idiom, a vertical credit roll printed twice so the loop has no seam, with two differences. A column that fits its window stands still; and the roll
-moves by a render translation, only when the offset has changed by a whole unit, where the game
-moves a canvas slot every frame. `[V]` on the title screen that is about 28 engine calls a
-second beside the 120 the menu tick already made, at an unchanged 120 fps; in a world it is
-none, because the roll is a child of the menu.
-
-The names are data, never code (`coop/thanks/thanks_list`). One text file,
-`assets/thanks/thanks.txt`, is embedded in the build and also served by the master, so a name
-is added or taken out by publishing the file, with no release. Nobody expires: a name stays for
-as long as its line does. Two copies are weighed, the build's and what the master last said: the
-higher `revision` wins and the master takes a tie, so a master left holding an old file cannot
-take names away from a newer build. The cache in the mod's own folder (`multivoid_thanks.txt`) is
-only a memo of the master's last word: it names the master it came from, a new answer replaces
-it whatever its revision, and "no list" erases it, so a copy a master once served never outlives
-that master's say. The fetch rides the browser's open beside the update check and never the
-title screen. The master's text is untrusted: sizes, counts and the revision's length are capped,
-a name that is not well-formed UTF-8 is dropped whole, controls, line separators and the
-invisible and bidi-override codepoints are taken out, and the roll draws plain text blocks, so
-markup in a name is drawn as written. `[RD]` the game keeps its own supporter list the same way, downloaded and
-keyed by tier tag, one name per line.
-
 ### Joining, and when it fails
 
 While a client joins, the menu's widgets are hidden so only the 3D backdrop remains, and the
@@ -208,7 +180,6 @@ the two tables published 233 ms apart in that run.
 | the hosting choices | the host, at creation | the reachability and the listing are announced once |
 | the loading state | the joining client | a snapshot the screen renders |
 | the version line's verdict | the master's latest record | silent without one |
-| the thanks list | `assets/thanks/thanks.txt`, published to the master | the higher revision of the build's copy and the master's last word |
 | nameplates, the scoreboard | game-thread snapshots | render-thread draws |
 | the notifications | each machine's game | the state behind them is synced, not the toast |
 
@@ -216,7 +187,7 @@ the two tables published 233 ms apart in that run.
 
 None of its own: every surface renders a snapshot owned by a lane on another page. The preferences
 it edits (skin, nameplate, colour) travel on the players page's kinds; the lobby list, the
-update check and the thanks list are the master server's HTTP.
+update check are the master server's HTTP.
 
 ## Late join
 
@@ -236,7 +207,6 @@ scoreboard fills as roster rows arrive; nameplates appear with each puppet's fir
 
 | Concept | Files |
 |---|---|
-| the thanks roll | `ui/thanks_roll`, `coop/thanks/thanks_list`, `assets/thanks/thanks.txt`, `resources/thanks.rc` |
 | the main menu and the native screens | `ui/multiplayer_menu`, `ui/server_browser_native` with `ui/server_browser_rows`, `ui/server_browser_tabs`, `ui/server_browser_actions`, `ui/server_browser_panels`, `ui/server_browser_surface`, `ui/host_window_native`, `ui/host_save_picker`, `ui/host_session_settings`, `ui/host_session_choices`, `ui/browser_input_screens`, `ui/native_screen`, `ui/native_text_field`, `ue_wrap/engine/umg_build` |
 | the fallback browser | `ui/server_browser` |
 | joining and failing | `ui/loading_screen`, `ui/join_curtain`, `ui/end_reason_dialog`, `ui/boot_warning_dialog`, `ui/console` |

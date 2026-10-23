@@ -11,6 +11,7 @@
 #include "ui/server_browser.h"
 
 #include "ui/host_save_picker.h"
+#include "ui/host_player_limit.h"
 #include "coop/net/peer_limits.h"
 #include "ui/menu_sfx.h"        // native VOTV button click + rollover sounds
 #include "coop/net/protocol.h"  // kProtocolVersion (the "Ver" mismatch tint)
@@ -147,9 +148,11 @@ void Render() {
         }
         ImGui::Spacing();
 
-        static int playerLimit = coop::net::kDefaultPlayers;
+        int playerLimit = ui::host_player_limit::Value();
         ImGui::SetNextItemWidth(S(220.0f));
-        ImGui::SliderInt("Max players", &playerLimit, coop::net::kMinPlayers, coop::net::kPeerCapacity);
+        if(ImGui::SliderInt("Players (including you)", &playerLimit, coop::net::kMinPlayers, coop::net::kPeerCapacity))
+            ui::host_player_limit::Select(playerLimit,false);
+        if(ImGui::IsItemDeactivatedAfterEdit())ui::host_player_limit::Remember();
 
         // Host controls row.
         ImGui::SetNextItemWidth(S(220.0f));
@@ -158,6 +161,7 @@ void Render() {
         ImGui::Checkbox("Locked", &g_hostLocked);
         ImGui::SameLine();
         if (ui::menu_sfx::Button("Host Game")) {
+            ui::host_player_limit::Remember();
             // Open the save picker (native loadSlots list + New Game); on confirm it
             // calls HostWithSave -> the harness loads the chosen world then hosts. (The
             // old immediate HostLobby-on-the-current-world path is gone, RULE 2.)

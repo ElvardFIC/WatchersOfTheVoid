@@ -13,7 +13,8 @@ Obj actor{1},cls{2},baseFn{3},getFn{4},loadFn{5};
 Obj* objects[]={nullptr,&actor,&cls,&baseFn,&getFn,&loadFn};
 uint32_t world=1;std::wstring key=L"item";
 int bases=0,leaves=0,loads=0,writes=0,keyReads=0;bool lease=true,clash=false,captureOK=true,dispatchOK=true,raw=false;
-std::function<void()> onBase,onLeaf,onWrite,onLoad;
+std::function<void()> onBase,onLeaf,onWrite,onLoad,onFrame;
+bool encodingOK=true;
 void Callback(std::function<void()>& slot){auto fn=std::move(slot);slot={};if(fn)fn();}
 }
 namespace ue_wrap::reflection {
@@ -36,7 +37,7 @@ namespace ue_wrap::log {void Write(Level,const char*,...) {}}
 namespace ue_wrap {
 class ParamFrame {
 public:
- explicit ParamFrame(void* fn):fn_(fn){}
+ explicit ParamFrame(void* fn):fn_(fn){test::Callback(test::onFrame);}
  bool valid()const{return fn_!=nullptr;}
  int32_t ParamOffset(const wchar_t*)const{return 0;}
  int32_t FrameSize()const{return 256;}
@@ -71,6 +72,7 @@ void WriteSaveRecord(uint8_t*,const SaveRecord& record,ClassResolver resolve){
  else CHECK(record.key==L"item"&&record.bools[0][0]==1&&record.ints[0]==std::vector<int32_t>({7,99}));
  if(resolve)resolve(L"nested_class");test::Callback(test::onWrite);
 }
+bool WriteSaveRecordChecked(uint8_t* at,const SaveRecord& record,ClassResolver resolve){WriteSaveRecord(at,record,resolve);return test::encodingOK;}
 #include "../../build/save-record-check/functions.inc"
 }
 namespace S=ue_wrap::save_record;
@@ -78,7 +80,7 @@ namespace test {
 void Reset(){
  for(auto* obj:objects)if(obj){obj->serial=1;obj->live=true;}
  world=1;key=L"item";bases=leaves=loads=writes=keyReads=0;lease=captureOK=dispatchOK=true;clash=raw=false;
- onBase=onLeaf=onWrite=onLoad={};S::g_baseGetData=&baseFn;S::g_verbs.clear();
+ onBase=onLeaf=onWrite=onLoad=onFrame={};encodingOK=true;S::g_baseGetData=&baseFn;S::g_verbs.clear();
  S::g_verbs[&cls]={&getFn,&loadFn,true,true};
 }
 S::SaveRecord Incoming(){S::SaveRecord r;r.key=L"foreign";r.bools={{0}};r.ints={{2,99}};return r;}
@@ -153,6 +155,9 @@ int main(){using namespace test;
  Reset();S::SaveRecord retired;onLeaf=[]{++world;};
  CHECK(!S::CaptureRecordVia(&actor,&getFn,retired));
 #if RAW_CODEC
+ Reset();raw=true;encodingOK=false;CHECK(!S::ApplyRecordViaWhile(&actor,&loadFn,Incoming(),[]{return lease;},nullptr)&&!loads);
+ Reset();raw=true;onFrame=[]{++world;};CHECK(!S::ApplyRecordViaWhile(&actor,&loadFn,Incoming(),[]{return lease;},nullptr)&&!writes&&!loads);
+ Reset();raw=true;auto owned=Incoming();onFrame=[&]{owned.key=L"reentered input";};CHECK(S::ApplyRecordViaWhile(&actor,&loadFn,owned,[]{return lease;},nullptr)&&loads==1);
  Reset();raw=true;CHECK(!S::ApplyRecordViaWhile(&actor,&loadFn,Incoming(),{},nullptr)&&!writes&&!loads);
  Reset();raw=true;onWrite=[]{lease=false;};
  CHECK(!S::ApplyRecordViaWhile(&actor,&loadFn,Incoming(),[]{return lease;},nullptr)&&!loads);

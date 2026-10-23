@@ -10,8 +10,9 @@
 // the GLOBAL dilation, is restored by (1 - 1/F) of each fall; coffee, which drains in the gamemode's
 // tick, loses (F - 1) times each fall more. The rest ends when the sleeping flag falls, with the
 // session, or when the gamemode or the body changes. Timer-driven owners (the ariral pillow's rolls, the
-// nightmare) are scaled by no dilation at 1 and are not touched here. A host never runs this: its sleep
-// is the game's own, at the game's own speed.
+// nightmare) are scaled by no dilation at 1 and are not touched here. A connected host uses the same
+// personal rest while another participant is awake/joining/dreaming. Only unanimous rest permits
+// its native global factor; a wake/join/disconnect reevaluates the choice on the next pump tick.
 
 #pragma once
 

@@ -21,8 +21,7 @@ WHAT IT HOLDS:
   2. `RefreshLatestVersion()` has exactly ONE caller, and it is the browser
      surface. This is the fix of b349de42 held in place: the update check used to
      fire at boot and on every main-menu entrance, so the master learned the
-     player's address before they had made any multiplayer decision at all. The
-     thanks list's `RefreshFromMaster()` is held to the same single caller.
+     player's address before they had made any multiplayer decision at all.
 
   3. Raw socket connects live only in the signaling client, and the STUN/TURN
      config writes only in ice_config. Either spreading is a new class of contact
@@ -51,13 +50,11 @@ ALLOWED_HTTP = {
     # `<computed>` is the /v1/lobbies fetch: the path is assembled with query
     # parameters, so it reaches http::Get as a variable rather than a literal.
     # Declared explicitly so an unreadable endpoint still has to be admitted.
-    # `/v1/thanks` is the thanks list the main menu rolls. It rides the browser's open beside
-    # `/v1/latest`, and the build carries a fallback copy, so the title screen never asks for it.
-    "coop/net/lobby_client.cpp": {"<computed>", "/v1/latest", "/v1/join", "/v1/thanks"},
+    "coop/net/lobby_client.cpp": {"<computed>", "/v1/latest", "/v1/join"},
 }
 
 # --- class 2: the lanes that must stay player-triggered ----------------------
-# Both fire when the player opens the server browser and nowhere else: opening it is a request
+# It fires when the player opens the server browser and nowhere else: opening it is a request
 # to talk to the master, entering the title screen is not. name -> (call pattern, the file that
 # defines it, the one file that may call it).
 REFRESH_CALLER = "ui/server_browser_surface.cpp"
@@ -65,9 +62,6 @@ PLAYER_TRIGGERED = {
     "RefreshLatestVersion": (
         re.compile(r"\bRefreshLatestVersion\s*\(\s*\)"),
         "coop/session/session_manager.cpp", REFRESH_CALLER),
-    "thanks_list::RefreshFromMaster": (
-        re.compile(r"\bthanks_list::RefreshFromMaster\s*\(\s*\)"),
-        "coop/thanks/thanks_list.cpp", REFRESH_CALLER),
 }
 
 # --- classes 3 and 4: the raw socket and the ICE credentials -----------------

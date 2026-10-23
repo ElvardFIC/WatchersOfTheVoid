@@ -1,6 +1,9 @@
 #include "support_2135.h"
 #include "facts_test_support.h"
-#include "../../src/votv-coop/src/coop/interactables/sat_console_sync.cpp"
+#ifndef SAT_CONSOLE_SOURCE
+#define SAT_CONSOLE_SOURCE "../../src/votv-coop/src/coop/interactables/sat_console_sync.cpp"
+#endif
+#include SAT_CONSOLE_SOURCE
 #include "../../src/votv-coop/src/coop/interactables/sat_console_table.cpp"
 #include "../../src/votv-coop/src/coop/items/save_record_wire.cpp"
 #include "../../src/votv-coop/src/coop/interactables/signal_wire.cpp"
@@ -10,12 +13,14 @@ std::wstring command=L"wrong.command",log;
 bool available=true,busy=false,writeOk=true;
 bool watchFail=true;int watches=0,unwatches=0;
 int runs=0,prints=0;
+uint32_t sessionSerial=1;
 std::vector<std::pair<int,std::vector<uint8_t>>> sent;
 }
 namespace ue_wrap {
 bool GcPin::Pin(void* a){obj_=a;return a!=nullptr;} void GcPin::Release(){obj_=nullptr;}
 namespace game_thread {bool IsGameThread(){return true;}}
 namespace script_gate {
+bool IsInvocationActive(uint64_t invocation){return invocation!=0;}
 bool WatchName(const facts::Function& row,int,PreFn,PostFn){++test::watches;return !(test::watchFail&&!wcscmp(row.Name(),L"writeToLog"));}
 bool UnwatchName(const facts::Function&,int,PreFn,PostFn){++test::unwatches;return true;}
 }
@@ -37,6 +42,7 @@ std::wstring PanelName(void*){return {};}
 void* FindPanelByName(const std::wstring&){return nullptr;}
 bool CallInit(void*,const std::wstring&,bool,void*){return true;}
 bool ConsumeInput(void*){return true;}
+bool ConsumeInputWhile(void* term,const std::function<bool()>& current){return current() && ConsumeInput(term) && current();}
 bool CallWriteToLog(void* t,const std::wstring& s,uint8_t type){
  test::Args a{s,type};script_gate::Call c{};c.object=t;c.locals=reinterpret_cast<uint8_t*>(&a);c.fromOurCode=true;
  if(coop::sat_console_sync::OnWritePre(c)==script_gate::Verdict::Cancel)return true;
@@ -48,9 +54,11 @@ bool ClearLog(void* t){test::log.clear();return CallWriteToLog(t,L"",0);}
 }
 }
 namespace coop {
+namespace net::session_serial {uint32_t Current(){return test::sessionSerial;}}
 namespace player_handshake {const std::string& GuidForSlot(int){static std::string s="typist";return s;}}
 namespace blob_chunks {
 bool SendBlobToSlot(net::Session* s,int slot,net::ReliableKind,uint32_t,const std::vector<uint8_t>& b){if(!s->sendOk)return false;test::sent.emplace_back(slot,b);return true;}
+bool SendBlobToSlotWhile(net::Session* s,int slot,net::ReliableKind kind,uint32_t seq,const std::vector<uint8_t>& b,const std::function<bool()>& current){return current()&&SendBlobToSlot(s,slot,kind,seq,b)&&current();}
 bool Assembler::OnChunk(const net::BlobChunkPayload&,uint8_t,std::vector<uint8_t>&){return false;}
 void Assembler::Sweep(std::chrono::steady_clock::time_point,std::chrono::seconds){}
 void Assembler::Clear(){map_.clear();} void Assembler::ClearSlot(uint8_t){}
@@ -62,9 +70,9 @@ int main(){using namespace test;namespace S=coop::sat_console_sync;namespace W=c
  coop::net::Session session;session.mode=coop::net::Role::Client;S::Install(&session);
  CHECK(!S::g_watched&&watches==3&&unwatches==2);S::EnsureWatched();CHECK(watches==3);
  watchFail=false;S::g_watchRetry={};S::EnsureWatched();CHECK(S::g_watched&&watches==6);
- ue_wrap::script_gate::Call c{};c.object=&actor;c.tag=S::kTagEnter;
+ ue_wrap::script_gate::Call c{};c.object=&actor;c.tag=S::kTagEnter;c.invocation=1;
  CHECK(S::OnEnterPre(c)==V::Run);CHECK(Write(&actor,command,1)==V::Cancel);CHECK(Write(&actor,L"<r>err</>")==V::Cancel);S::OnBodyPost(c);
- CHECK(sent.size()==2&&sent[0].first==0&&sent[0].second[0]==3&&S::g_localCommandDepth==0);
+ CHECK(sent.size()==2&&sent[0].first==0&&sent[0].second[0]==3&&S::g_bodies.empty());
  CHECK(Write(&actor,L"periodic alert")==V::Cancel);CHECK(sent.size()==2);
  auto echo=sent[0].second,answer=sent[1].second;
  S::OnDisconnect();session.mode=coop::net::Role::Host;S::Install(&session);sent.clear();
@@ -105,8 +113,8 @@ int main(){using namespace test;namespace S=coop::sat_console_sync;namespace W=c
  writeOk=true;S::ClientOnBlob(Line(1,L"old world"));++world;S::Install(&session);CHECK(S::g_display.empty());
  S::OnDisconnect();session.mode=coop::net::Role::Host;S::Install(&session);sent.clear();
  S::ShareLog(L"before clear",1,-1,false);S::ShareLog(L"",3,-1,false);S::ShareLog(L"after clear",0,-1,false);
- sent.clear();session.sendOk=false;S::OnPeerWorldReady(2);CHECK(S::g_out[2].q.size()==2);
- session.sendOk=true;S::Flush(2);CHECK(sent.size()==2&&sent[0].second==Line(1,L"",3));
+ sent.clear();session.sendOk=false;S::OnPeerWorldReady(2);CHECK(S::g_out[2].q.size()==3);
+ session.sendOk=true;S::Flush(2);CHECK(sent.size()==3&&sent[0].second==Line(1,L"",3));
  const auto history=sent;const auto runCount=runs;
  S::OnDisconnect();session.mode=coop::net::Role::Client;S::Install(&session);available=false;
  S::ClientOnBlob(Line(1,L"obsolete pending"));for(const auto& p:history)S::ClientOnBlob(p.second);
@@ -131,4 +139,5 @@ int main(){using namespace test;namespace S=coop::sat_console_sync;namespace W=c
  CHECK(S::g_out[0].q.size()==S::kOutboxCap&&S::g_out[0].q.back()==std::vector<uint8_t>({2,1}));
  S::OnDisconnect();
  puts("PASS console: canonical simultaneous output, one alert producer, clear, execute once, retry, history, teardown");
+ return 0;
 }

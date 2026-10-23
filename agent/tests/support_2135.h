@@ -18,13 +18,19 @@ inline void Callback(){auto f=std::move(callback);callback={};if(f)f();}
 }
 namespace ue_wrap::reflection {
 inline int32_t InternalIndexOf(void* a){return a?static_cast<test::Obj*>(a)->id:-1;}
+#ifndef TEST_CUSTOM_ACTION_REFS
 inline int32_t SlotSerial(int32_t i){return i==1?test::actor.serial:test::ui.serial;}
+#endif
 inline int32_t AllocateSlotSerial(int32_t i){return SlotSerial(i);}
 inline bool IsLiveByIndex(void* a,int32_t){return a&&static_cast<test::Obj*>(a)->live;}
 inline bool IsLive(void* a){return IsLiveByIndex(a,0);}
+#ifndef TEST_CUSTOM_ACTION_REFS
 inline void* ClassOf(void* a){return a;}
+#endif
+#ifndef TEST_CUSTOM_ACTION_FIELDS
 inline int32_t FindPropertyOffset(void*,const wchar_t*){return offsetof(test::Obj,clipboard);}
 inline bool FindBoolProperty(void*,const wchar_t* n,int32_t& off,uint8_t& mask){off=offsetof(test::Obj,flags);mask=std::wstring(n)==L"skipTextSave"?2:1;return test::fields;}
+#endif
 inline int32_t ParamOffset::Of(void*){return std::wstring(param_)==L"action"?0:8;}
 }
 namespace ue_wrap::world_identity {

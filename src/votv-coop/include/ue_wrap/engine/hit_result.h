@@ -11,6 +11,7 @@
 #pragma once
 
 #include "ue_wrap/core/types.h"
+#include <functional>
 
 namespace ue_wrap { class ParamFrame; }
 
@@ -22,10 +23,14 @@ namespace ue_wrap::hit_result {
 // (dispatches a UFunction).
 bool Write(ue_wrap::ParamFrame& frame, const wchar_t* param, void* actor, void* component,
            const FVector& location);
+bool WriteWhile(ue_wrap::ParamFrame& frame,const wchar_t* param,void* actor,void* component,
+                const FVector& location,const std::function<bool()>& current);
 
 // The same hit, written into `object`'s FHitResult property `field`. False as above, or when the
 // class has no such property or its struct differs in size. Game thread.
 bool WriteField(void* object, const wchar_t* field, void* actor, void* component, const FVector& location);
+bool WriteFieldWhile(void* object,const wchar_t* field,void* actor,void* component,
+                     const FVector& location,const std::function<bool()>& current);
 
 // What an FHitResult holds, as the game reads it through BreakHitResult. `actor` and `component` are the
 // hit's weak pointers resolved to the live object: null when the pointer is empty, stale (its slot recycled)

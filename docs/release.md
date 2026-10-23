@@ -82,14 +82,6 @@ release is fired as the last thing; its publish job waits for the maintainer's a
    (`kOfficialMasterSlots`) for every game's newest release and for the 0.9.0n pair older clients
    read, and one left behind fails it (`-AllowDev` when the masters were pointed at a prerelease on
    purpose).
-   If `src/votv-coop/assets/thanks/thanks.txt` changed since the last release, publish it to
-   every master's `COOP_THANKS_FILE` too: the build embeds it, the master serves it, and the higher
-   `revision` wins in the game, so the two are kept equal. **Put it in place atomically** -- copy
-   beside the target and `mv` onto it, never write over it in place. A plain copy truncates the
-   destination first, and a read landing in that window sees a file it cannot serve whole. The
-   master answers such a moment by serving its last good copy rather than "no list", which keeps
-   an in-place write from costing players their cached list; an atomic move means no reader ever
-   sees the seam at all.
 9. **The mod store.** Upload the same zip to the package listing; never delete a listed version,
    deprecate it.
 

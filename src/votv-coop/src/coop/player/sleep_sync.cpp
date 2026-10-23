@@ -6,6 +6,7 @@
 #include "coop/net/latest_wins.h"
 #include "coop/net/net_clock.h"
 #include "coop/net/session.h"
+#include "coop/net/session_serial.h"
 #include "coop/net/wire_key_util.h"
 #include "coop/player/roster_ledger.h"  // PerSlotState, DisplayName
 #include "coop/text/utf8_codec.h"
@@ -14,9 +15,12 @@
 #include "ue_wrap/actors/sleep.h"
 #include "ue_wrap/actors/vitals.h"
 #include "ue_wrap/core/log.h"
+#include "ue_wrap/engine/world_identity.h"
 #include "ue_wrap/world/world_singleton.h"
 
 #include <atomic>
+#include <array>
+#include <cmath>
 #include <cstring>
 #include <string>
 
@@ -45,8 +49,29 @@ bool           g_hostSleeping = false;    // the host: its isSleep as last publi
 // A client: the state last sent to the host.
 SleepPeerState g_sentState = SleepPeerState::Awake;
 WireKey        g_sentBed{};
+bool g_haveSent=false;
+uint64_t g_clientSendSerial=0;
+uint64_t g_epoch=0,g_revision=0,g_serial=0;
+uint32_t g_world=0;
+coop::net::Role g_role=coop::net::Role::Client;
+std::array<uint32_t,coop::net::kMaxPeers> g_generation{};
+std::array<bool,coop::net::kMaxPeers> g_ready{};
+std::array<uint64_t,coop::net::kMaxPeers> g_hostDebt{};
+std::array<uint64_t,coop::net::kMaxPeers> g_nextTry{};
+std::array<std::array<uint64_t,coop::net::kMaxPeers>,coop::net::kMaxPeers> g_restDebt{};
+bool g_flushing=false;
 
 bool IsHost(coop::net::Session* s) { return s->role() == coop::net::Role::Host; }
+
+bool Current(coop::net::Session* s,uint64_t epoch) {
+    return s && g_session.load()==s && epoch==g_epoch && s->running() &&
+        g_world==ue_wrap::world_identity::Generation() && g_serial==coop::net::session_serial::Current() && s->role()==g_role;
+}
+
+void RefreshContext(coop::net::Session* s) {
+    if(s && (g_world!=ue_wrap::world_identity::Generation() ||
+       g_serial!=coop::net::session_serial::Current() || s->role()!=g_role))Install(s);
+}
 
 // Two beds are the same name: the length and the bytes inside it, whatever sits past them.
 bool SameBed(const WireKey& a, const WireKey& b) {
@@ -102,33 +127,60 @@ bool BedFaulty(const WireKey& bed, BedRefusal* why) {
 void PushHostAsleepLine() {
     const std::string name = coop::text::ToUtf8(coop::roster_ledger::DisplayName(0));
     char buf[256];
-    if (l10n::Fmt(buf, sizeof(buf), l10n::T("%1$s is asleep -- the world runs faster"), name.c_str()) < 0)
+    if (l10n::Fmt(buf, sizeof(buf), l10n::T("%1$s is asleep"), name.c_str()) < 0)
         return;
     // A status readout of a state that ends: reading it back hours later would be noise, not history.
     coop::chat_feed::Push(std::string(buf), coop::chat_feed::Keep::Transient);
 }
 
+// Delivery stores current-state debt, never an unbounded history of sleep edges.
+// Reentrant changes supersede the observed revision; old sends cannot clear them.
+void FlushHost(coop::net::Session* s) {
+    if(g_flushing || !s || !IsHost(s) || !s->connected())return;
+    g_flushing=true;
+    struct Guard{~Guard(){g_flushing=false;}} guard;
+    const auto epoch=g_epoch;
+    const auto now=coop::net::NowMs();
+    for(int to=1;to<coop::net::kMaxPeers;++to) {
+        const auto generation=g_generation[to];
+        const auto recipient=[&]{return Current(s,epoch) && s->connected() && s->IsSlotWorldReady(to) &&
+            s->IsSlotConnected(to) && generation==s->peerGenerationForSlot(to);};
+        if(!Current(s,epoch))return;
+        if(!recipient() || now<g_nextTry[to])continue;
+        const auto hostRevision=g_hostDebt[to];
+        if(hostRevision) {
+            SleepStatePayload p{};p.op=uint8_t(SleepOp::HostAsleep);p.state=g_hostSleeping?1:0;
+            const bool sent=s->SendReliableToSlot(to,coop::net::ReliableKind::SleepState,&p,sizeof(p));
+            if(!recipient())continue;
+            if(sent && g_hostDebt[to]==hostRevision)g_hostDebt[to]=0;
+            if(!sent){g_nextTry[to]=now+100;continue;}
+        }
+        for(int slot=0;slot<coop::net::kMaxPeers;++slot) {
+            if(!recipient())break;
+            const auto revision=g_restDebt[to][slot];if(!revision)continue;
+            SleepStatePayload p{};p.op=uint8_t(SleepOp::PeerRest);p.state=uint8_t(g_state[slot]);
+            p.slot=uint8_t(slot);p.bed=g_bed[slot];
+            const bool sent=s->SendReliableToSlot(to,coop::net::ReliableKind::SleepState,&p,sizeof(p));
+            if(!recipient())break;
+            if(sent && g_restDebt[to][slot]==revision)g_restDebt[to][slot]=0;
+            if(!sent){g_nextTry[to]=now+100;break;}
+        }
+    }
+}
+
 // To one slot, or (toSlot < 0) to every client but `exceptSlot` (-1: none).
 void SendPeerRest(coop::net::Session* s, int toSlot, int slot, int exceptSlot = -1) {
-    SleepStatePayload p{};
-    p.op = static_cast<uint8_t>(SleepOp::PeerRest);
-    p.state = static_cast<uint8_t>(g_state[slot]);
-    p.slot = static_cast<uint8_t>(slot);
-    p.bed = g_bed[slot];
-    if (toSlot >= 0) {
-        s->SendReliableToSlot(toSlot, coop::net::ReliableKind::SleepState, &p, sizeof(p));
-        return;
-    }
+    const auto revision=++g_revision;
     for (int to = 1; to < static_cast<int>(coop::net::kMaxPeers); ++to)
-        if (to != exceptSlot) s->SendReliableToSlot(to, coop::net::ReliableKind::SleepState, &p, sizeof(p));
+        if ((toSlot<0 || to==toSlot) && to!=exceptSlot && s->IsSlotWorldReady(to))g_restDebt[to][slot]=revision;
+    FlushHost(s);
 }
 
 void SendHostAsleep(coop::net::Session* s, int toSlot) {
-    SleepStatePayload p{};
-    p.op = static_cast<uint8_t>(SleepOp::HostAsleep);
-    p.state = g_hostSleeping ? 1 : 0;
-    if (toSlot < 0) s->SendReliable(coop::net::ReliableKind::SleepState, &p, sizeof(p));
-    else s->SendReliableToSlot(toSlot, coop::net::ReliableKind::SleepState, &p, sizeof(p));
+    const auto revision=++g_revision;
+    for(int to=1;to<coop::net::kMaxPeers;++to)
+        if((toSlot<0 || to==toSlot) && s->IsSlotWorldReady(to))g_hostDebt[to]=revision;
+    FlushHost(s);
 }
 
 // ---- the host's side of a client's reports --------------------------------------------------------
@@ -149,6 +201,30 @@ struct PendingRest {
     coop::net::LatestWins pace;
 };
 coop::roster_ledger::PerSlotState<PendingRest> g_pending;
+
+void SeedSlot(int to) {
+    g_hostDebt[to]=++g_revision;
+    for(int slot=0;slot<coop::net::kMaxPeers;++slot)g_restDebt[to][slot]=++g_revision;
+}
+
+// Heal a missed leave edge and readiness transitions before accepting reports.
+void ConformPeers(coop::net::Session* s) {
+    for(int slot=1;slot<coop::net::kMaxPeers;++slot) {
+        const bool connected=s->IsSlotConnected(slot),ready=connected && s->IsSlotWorldReady(slot);
+        const auto generation=connected?s->peerGenerationForSlot(slot):0;
+        if(generation!=g_generation[slot] || !connected || (g_ready[slot] && !ready)) {
+            const bool changed=g_state[slot]!=SleepPeerState::Awake || g_bed[slot].len;
+            g_generation[slot]=generation;g_ready[slot]=false;
+            g_state[slot]=SleepPeerState::Awake;g_bed[slot]={};g_pending[slot]={};
+            g_hostDebt[slot]=0;g_restDebt[slot]={};g_nextTry[slot]=0;
+            if(changed)for(int to=1;to<coop::net::kMaxPeers;++to)
+                if(to!=slot && s->IsSlotWorldReady(to))g_restDebt[to][slot]=++g_revision;
+        }
+        if(!ready)g_pending[slot]={};
+        if(ready && !g_ready[slot])SeedSlot(slot);
+        g_ready[slot]=ready;
+    }
+}
 
 bool HoldsRest(int slot, SleepPeerState state, const WireKey& bed) {
     return g_state[slot] == state && SameBed(g_bed[slot], bed);
@@ -172,6 +248,7 @@ bool ReadLocal(SleepPeerState* state, bool* sleeping) {
     float asleep = 0.f, dreaming = 0.f;
     namespace V = ue_wrap::vitals;
     if (!V::Read(V::Field::Sleeping, &asleep) || !V::Read(V::Field::Dreaming, &dreaming)) return false;
+    if(!std::isfinite(asleep) || !std::isfinite(dreaming))return false;
     *sleeping = asleep != 0.f;
     *state = dreaming != 0.f ? SleepPeerState::Dreaming
                              : (*sleeping ? SleepPeerState::Resting : SleepPeerState::Awake);
@@ -184,26 +261,37 @@ void SendClientRest(coop::net::Session* s) {
     p.op = static_cast<uint8_t>(SleepOp::ClientRest);
     p.state = static_cast<uint8_t>(g_localState);
     p.bed = g_localBed;
-    if (s->SendReliableToSlot(0, coop::net::ReliableKind::SleepState, &p, sizeof(p))) {
-        g_sentState = g_localState;
-        g_sentBed = g_localBed;
+    const auto epoch=g_epoch;
+    const auto serial=++g_clientSendSerial;
+    if (s->SendReliableToSlot(0, coop::net::ReliableKind::SleepState, &p, sizeof(p)) && Current(s,epoch) &&
+        s->connected() && !IsHost(s) && serial==g_clientSendSerial) {
+        g_sentState = static_cast<SleepPeerState>(p.state);
+        g_sentBed = p.bed;g_haveSent=true;
     }
 }
 
 }  // namespace
 
 void Install(coop::net::Session* session) {
+    if(g_session.load()!=session || (session && (g_world!=ue_wrap::world_identity::Generation() ||
+       g_serial!=coop::net::session_serial::Current() || g_role!=session->role())))OnDisconnect();
+    g_world=ue_wrap::world_identity::Generation();g_serial=coop::net::session_serial::Current();
+    if(session)g_role=session->role();
     g_session.store(session, std::memory_order_release);
 }
 
 void Tick() {
     auto* s = g_session.load(std::memory_order_acquire);
     if (!s || !s->running()) return;
+    RefreshContext(s);
+    if(IsHost(s)){ConformPeers(s);FlushHost(s);}
+    const auto epoch=g_epoch;
     if (!SLP::EnsureResolved()) return;
 
     SleepPeerState state = SleepPeerState::Awake;
     bool sleeping = false;
     if (!ReadLocal(&state, &sleeping)) return;
+    if(!Current(s,epoch))return;
     if (state != g_localState || sleeping != g_localSleeping) {
         // The bed is read at the edge only: the gamemode sets it before isSleep rises, and a read per tick
         // would allocate. Into a dream the bed is kept as published: the non-ariral wakeup() clears
@@ -211,6 +299,7 @@ void Tick() {
         WireKey bed{};
         if (state == SleepPeerState::Dreaming && g_localState != SleepPeerState::Awake) bed = g_localBed;
         else if (state != SleepPeerState::Awake) coop::net::WireKeyFromString(SLP::BedClassName(), bed);
+        if(!Current(s,epoch))return;
         g_localState = state;
         g_localSleeping = sleeping;
         g_localBed = bed;
@@ -224,6 +313,7 @@ void Tick() {
         if (sleeping != g_hostSleeping) {
             g_hostSleeping = sleeping;
             if (s->connected()) SendHostAsleep(s, -1);
+            if(!Current(s,epoch))return;
         }
         if (!HoldsRest(0, g_localState, g_localBed)) {
             g_state[0] = g_localState;
@@ -235,15 +325,17 @@ void Tick() {
 
     if (!s->connected()) return;
 
-    if (g_localState != g_sentState || !SameBed(g_localBed, g_sentBed)) SendClientRest(s);
+    if (!g_haveSent || g_localState != g_sentState || !SameBed(g_localBed, g_sentBed)) SendClientRest(s);
 }
 
 void OnReliable(const uint8_t* payload, size_t len, uint8_t senderSlot) {
     auto* s = g_session.load(std::memory_order_acquire);
-    if (!s) return;
-    if (len != sizeof(SleepStatePayload)) return Refuse("length", senderSlot);
+    if (!s || !s->running() || !s->connected()) return;
+    RefreshContext(s);
+    if (len != sizeof(SleepStatePayload) || !payload) return Refuse("length", senderSlot);
     SleepStatePayload p{};
     std::memcpy(&p, payload, sizeof(p));
+    if(p._pad)return Refuse("padding",senderSlot);
     if (p.op > static_cast<uint8_t>(SleepOp::PeerRest)) return Refuse("op", senderSlot);
     if (p.state > static_cast<uint8_t>(p.op == static_cast<uint8_t>(SleepOp::HostAsleep)
                                            ? SleepPeerState::Resting
@@ -251,6 +343,8 @@ void OnReliable(const uint8_t* payload, size_t len, uint8_t senderSlot) {
         return Refuse("state", senderSlot);
     BedRefusal fault{};
     if (BedFaulty(p.bed, &fault)) return RefuseBed(fault, senderSlot);
+    if(p.op!=uint8_t(SleepOp::HostAsleep) && p.state==uint8_t(SleepPeerState::Awake) && p.bed.len)
+        return RefuseBed(BedRefusal::AwakeWithBed,senderSlot);
     if (p.op == static_cast<uint8_t>(SleepOp::HostAsleep)) {
         if (p.slot != 0) return Refuse("slot", senderSlot);
         if (p.bed.len != 0) return Refuse("bed", senderSlot);
@@ -263,8 +357,8 @@ void OnReliable(const uint8_t* payload, size_t len, uint8_t senderSlot) {
         if (p.slot != 0) return Refuse("slot", senderSlot);
         // MTA acts on a joined player's reports only (CGame.cpp:2376; coop/interactables/dish_calib_sync.cpp).
         if (!s->IsSlotWorldReady(senderSlot)) return Refuse("slot", senderSlot);
+        ConformPeers(s);
         const SleepPeerState state = static_cast<SleepPeerState>(p.state);
-        if (state == SleepPeerState::Awake && p.bed.len != 0) return RefuseBed(BedRefusal::AwakeWithBed, senderSlot);
         PendingRest& pend = g_pending[senderSlot];
         if (HoldsRest(senderSlot, state, p.bed)) {
             pend.pace.Withdraw();
@@ -319,18 +413,19 @@ void OnDreamScene(const coop::net::DreamScenePayload& /*p*/, uint8_t /*senderSlo
 
 void QueueConnectBroadcastForSlot(int peerSlot) {
     auto* s = g_session.load(std::memory_order_acquire);
-    if (!s || !IsHost(s)) return;
+    if (!s || !s->running() || !s->connected() || !IsHost(s)) return;
     if (peerSlot <= 0 || peerSlot >= static_cast<int>(coop::net::kMaxPeers)) return;
-    SendHostAsleep(s, peerSlot);
-    for (int slot = 0; slot < static_cast<int>(coop::net::kMaxPeers); ++slot)
-        if (g_state[slot] != SleepPeerState::Awake) SendPeerRest(s, peerSlot, slot);
+    RefreshContext(s);ConformPeers(s);
+    if(!s->IsSlotWorldReady(peerSlot))return;
+    SeedSlot(peerSlot);FlushHost(s);
 }
 
 void OnDisconnectForSlot(int slot) {
     auto* s = g_session.load(std::memory_order_acquire);
     if (!s || !IsHost(s)) return;
     if (slot <= 0 || slot >= static_cast<int>(coop::net::kMaxPeers)) return;
-    g_pending[slot].pace.Withdraw();
+    g_pending[slot]={};g_generation[slot]=0;g_ready[slot]=false;
+    g_hostDebt[slot]=0;g_restDebt[slot]={};g_nextTry[slot]=0;
     if (g_state[slot] == SleepPeerState::Awake) return;  // every client already holds it awake
     g_state[slot] = SleepPeerState::Awake;
     std::memset(&g_bed[slot], 0, sizeof(WireKey));
@@ -348,10 +443,28 @@ bool HostAsleepNow() {
     return SLP::IsSleeping();
 }
 
+bool AllPlayersResting() {
+    auto* s = g_session.load(std::memory_order_acquire);
+    if (!s || !s->running() || !IsHost(s))return false;
+    RefreshContext(s);
+    SleepPeerState local{};bool sleeping=false;
+    if(!ReadLocal(&local,&sleeping) || local!=SleepPeerState::Resting || !sleeping)return false;
+    for (int slot = 1; slot < static_cast<int>(coop::net::kMaxPeers); ++slot) {
+        if (!s->IsSlotConnected(slot)) continue;
+        if (!s->IsSlotWorldReady(slot) || g_generation[slot]!=s->peerGenerationForSlot(slot) ||
+            g_state[slot] != SleepPeerState::Resting ||
+            (g_pending[slot].pace.Owed() && g_pending[slot].state!=SleepPeerState::Resting)) return false;
+    }
+    return true;
+}
+
 void PayOwed(coop::net::Session& session) {
-    if (session.role() != coop::net::Role::Host) return;
+    if(g_session.load()!=&session || !session.running() || !session.connected() || !IsHost(&session))return;
+    RefreshContext(&session);ConformPeers(&session);
+    const auto epoch=g_epoch;
     uint64_t now = 0;  // read once, and only when a report is owed
     for (int slot = 1; slot < static_cast<int>(coop::net::kMaxPeers); ++slot) {
+        if(!Current(&session,epoch))return;
         PendingRest& pend = g_pending[slot];
         if (!pend.pace.Owed()) continue;
         if (HoldsRest(slot, pend.state, pend.bed)) {  // the slot's own arrival or leaving got there first
@@ -359,8 +472,12 @@ void PayOwed(coop::net::Session& session) {
             continue;
         }
         if (now == 0) now = coop::net::NowMs();
-        if (pend.pace.Due(kRestBudget, now)) ApplyRest(&session, slot, pend.state, pend.bed);
+        if (pend.pace.Due(kRestBudget, now)) {
+            const auto state=pend.state;const auto bed=pend.bed;
+            ApplyRest(&session, slot, state, bed);
+        }
     }
+    FlushHost(&session);
 }
 
 uint32_t ReportsApplied(int slot) { return g_reportsApplied[slot]; }
@@ -372,6 +489,9 @@ uint32_t BedRefusalsFrom(int slot, BedRefusal why) {
 bool LocalInBed() { return g_localState != SleepPeerState::Awake; }
 
 void OnDisconnect() {
+    ++g_epoch;g_session.store(nullptr,std::memory_order_release);
+    g_haveSent=false;g_generation={};g_ready={};g_hostDebt={};g_restDebt={};g_nextTry={};
+    for(int slot=0;slot<coop::net::kMaxPeers;++slot){g_pending[slot]={};g_reportsApplied[slot]=0;g_bedRefused[slot]={};}
     // Nightmare probability and sleep entry stay native on every peer. The
     // reports below carry presentation state, never another player's dream roll.
     g_localState = SleepPeerState::Awake;

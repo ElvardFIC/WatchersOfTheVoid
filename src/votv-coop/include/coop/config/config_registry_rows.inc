@@ -44,6 +44,10 @@ CFG_STRING(net_join_password, "net.join_password", "net", "", "VOTVCOOP_NET_JOIN
 CFG_FLAG(net_lobby_locked, "net.lobby_locked", "net", false, "VOTVCOOP_NET_LOBBY_LOCKED",
     "Whether the sessions you host require the password above. Set from the hosting window; "
     "remembered so your next session starts the way your last one did.")
+CFG_INT(net_player_limit, "net.player_limit", "net", ::coop::net::kDefaultPlayers,
+    ::coop::net::kMinPlayers, ::coop::net::kPeerCapacity, "VOTVCOOP_NET_PLAYER_LIMIT",
+    "Maximum total players, including the host. Chosen in the hosting window and remembered "
+    "for the next session; applied when a new server starts.")
 CFG_ENUM(net_role, "net.role", "net", "", "host|client", "VOTVCOOP_NET_ROLE",
     "Auto-start role for the LAN test framework. Leave unset for normal play -- the in-game "
     "Multiplayer menu handles hosting and joining.")

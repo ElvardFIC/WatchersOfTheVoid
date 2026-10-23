@@ -13,9 +13,12 @@ struct Parked {
     std::vector<uint8_t> blob;
     uint64_t atMs = 0;
     uint8_t authorSlot = 0;
+    uint64_t revision = 0;
 };
 
 std::map<uint32_t, Parked> g_parked;
+uint64_t g_revision=0,g_epoch=0;
+bool g_sweeping=false;
 
 bool g_joinBracketOpen = false;
 
@@ -49,7 +52,8 @@ size_t CountFor(uint8_t authorSlot, uint32_t& outOldestEid, bool& outHaveOldest)
 
 void Admit(uint32_t eid, uint8_t authorSlot, std::vector<uint8_t>&& blob, uint64_t nowMs) {
     // Only a NEW eid grows the table: replacing this author's own entry costs nothing.
-    if (authorSlot != 0 && g_parked.find(eid) == g_parked.end()) {
+    const auto old=g_parked.find(eid);
+    if (authorSlot != 0 && (old==g_parked.end() || old->second.authorSlot!=authorSlot)) {
         uint32_t oldestEid = 0;
         bool haveOldest = false;
         if (CountFor(authorSlot, oldestEid, haveOldest) >= kMaxParksPerClient && haveOldest) {
@@ -61,25 +65,39 @@ void Admit(uint32_t eid, uint8_t authorSlot, std::vector<uint8_t>&& blob, uint64
             g_parked.erase(oldestEid);
         }
     }
-    g_parked[eid] = Parked{std::move(blob), nowMs, authorSlot};
+    g_parked[eid] = Parked{std::move(blob), nowMs, authorSlot,++g_revision};
     if (g_quiet) return;
     UE_LOGI("container_contents: eid=%u not resolvable yet -- parked (TTL %llu ms, author slot %u)",
             eid, static_cast<unsigned long long>(kTtlMs), static_cast<unsigned>(authorSlot));
 }
 
 void Sweep(ReplayFn replay, uint64_t nowMs) {
-    if (g_parked.empty() || !replay) return;
-    for (auto it = g_parked.begin(); it != g_parked.end();) {
-        if (replay(it->second.blob, it->second.authorSlot)) {
-            it = g_parked.erase(it);
-        } else if (!g_joinBracketOpen && nowMs - it->second.atMs > kTtlMs) {
+    if (g_sweeping || g_parked.empty() || !replay) return;
+    g_sweeping=true;
+    struct Scope{~Scope(){g_sweeping=false;}} scope;
+    const auto epoch=g_epoch;
+    // Snapshot identities first; own one blob at a time across its callback.
+    // Large join queues must not duplicate every saved payload simultaneously.
+    std::vector<std::pair<uint32_t,uint64_t>> work;
+    work.reserve(g_parked.size());
+    for(const auto& [eid,row]:g_parked)work.emplace_back(eid,row.revision);
+    for (const auto& [eid,revision]:work) {
+        if(epoch!=g_epoch)return;
+        auto it=g_parked.find(eid);
+        if(it==g_parked.end() || it->second.revision!=revision)continue;
+        const Parked snapshot=it->second;
+        const bool handled=replay(snapshot.blob,snapshot.authorSlot);
+        if(epoch!=g_epoch)return;
+        it=g_parked.find(eid);
+        if(it==g_parked.end() || it->second.revision!=snapshot.revision)continue;
+        if (handled) {
+            g_parked.erase(it);
+        } else if (!g_joinBracketOpen && nowMs>=it->second.atMs && nowMs-it->second.atMs > kTtlMs) {
             if (!g_quiet) {
                 UE_LOGW("container_contents: parked eid=%u expired after %llu ms unresolved -- "
                         "dropped", it->first, static_cast<unsigned long long>(kTtlMs));
             }
-            it = g_parked.erase(it);
-        } else {
-            ++it;
+            g_parked.erase(it);
         }
     }
 }
@@ -96,8 +114,17 @@ void NoteJoinBracket(bool open, uint64_t nowMs) {
 }
 
 size_t Size() { return g_parked.size(); }
+uint64_t Revision(uint32_t eid,uint8_t* author) {
+    const auto it=g_parked.find(eid);if(it==g_parked.end())return 0;
+    if(author)*author=it->second.authorSlot;return it->second.revision;
+}
+void Retire(uint32_t eid,uint64_t revision) {
+    const auto it=g_parked.find(eid);
+    if(it!=g_parked.end() && it->second.revision==revision)g_parked.erase(it);
+}
 
 void Reset() {
+    ++g_epoch;
     g_parked.clear();
     g_joinBracketOpen = false;  // session state must not survive the session
 }

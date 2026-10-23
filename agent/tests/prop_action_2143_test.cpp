@@ -1,12 +1,30 @@
 // Real client gate, host receiver and dispatch; Unreal reflection/transport are boundary doubles.
 #include "support_2135.h"
-#include "../../src/votv-coop/src/coop/props/prop_action_sync.cpp"
+#ifndef PROP_ACTION_SOURCE
+#define PROP_ACTION_SOURCE "../../src/votv-coop/src/coop/props/prop_action_sync.cpp"
+#endif
+#include PROP_ACTION_SOURCE
 #include <limits>
+#include <set>
 namespace A=coop::prop_action_sync;
+namespace coop::net::session_serial {uint32_t testSerial=1;uint32_t Current(){return testSerial;}}
+namespace coop::roster_ledger {
+std::array<Row,4> testRows=[] {std::array<Row,4> rows{};for(int i=0;i<4;++i){rows[i].playerNo=uint16_t(10+i);rows[i].bornGeneration=1;}return rows;}();
+const Row& Get(int slot){static Row empty;return slot>=0 && slot<4?testRows[slot]:empty;}
+}
 namespace test {
-int damageFn, sliceFn, mreFn, damageCalls=0, sliceCalls=0, mreCalls=0, dispatches=0, cues=0;
+Obj damageFn{3},sliceFn{4},mreFn{5},spawnFn{6},mreOwner{7},localPlayer{12};
+int damageCalls=0, sliceCalls=0, mreCalls=0, dispatches=0, cues=0;
 bool haveFunction=true, hitOk=true, parametersOk=true;
 bool mre=true,handAxis=false;uint8_t appliedAction=0;
+void* localHand=nullptr;
+void* meshActor=nullptr;void* functionOwner=&mreOwner;
+std::set<uint64_t> invocations{1,2};
+std::wstring propKey=L"box";
+std::function<void()> keyCallback,frameCallback,bindCallback,locationCallback,hitCallback,callCallback,publishCallback;
+std::function<void()> argCallback,heldCallback;
+std::wstring held=L"hammer";bool sawTool=false,finiteLocation=true;
+void CallbackOnce(std::function<void()>& slot){auto fn=std::move(slot);slot={};if(fn)fn();}
 bool safe=false,locked=true,publishOK=true;int loot=0,records=0;
 ue_wrap::placed_save::Kind wallKind=ue_wrap::placed_save::Kind::None;
 std::wstring wallKey=L"native_wall_17";
@@ -23,35 +41,43 @@ void* FindFunction(void*,const wchar_t*){return nullptr;}
 void* FindDispatchFunctionCached(void*,const wchar_t* name){
  ++test::dispatches;if(!test::haveFunction)return nullptr;
  if(std::wstring(name)==L"actionOptionIndex")return &test::mreFn;
+ if(std::wstring(name)==L"spawn")return &test::spawnFn;
  return std::wstring(name)==L"addDamage"?&test::damageFn:&test::sliceFn;
 }
-void* OuterOf(void*){return &test::mreFn;}
+void* OuterOf(void*){return test::functionOwner;}
 void* FindObject(const wchar_t*,const wchar_t*){return &test::actor;}
 const FName& NameOf(void*){static FName n{};return n;}
 bool NameEquals(const FName&,const wchar_t*){return test::mre;}
 int32_t FunctionFrameSize(void*){return test::frameSize;}
+#ifndef TEST_CUSTOM_ACTION_FIELDS
+int32_t StructSize(void*){return sizeof(test::Obj);}
+#endif
 int32_t FindParamOffset(void*,const wchar_t* name){std::wstring n=name;
+ test::CallbackOnce(test::argCallback);
  if(n==L"actor"||n==L"player")return offsetof(test::Params,actor);
  if(n==L"action")return offsetof(test::Params,action);
+ if(n==L"clean")return 0;
  if(n==L"damage")return test::damageOffset;
  if(n==L"impact")return test::impactOffset;return -1;
 }
 }
 namespace ue_wrap::script_gate {bool WatchName(const wchar_t*,int,PreFn,PostFn){return true;}}
+namespace ue_wrap::script_gate {bool IsInvocationActive(uint64_t id){return test::invocations.contains(id);}}
 namespace ue_wrap::prop {
 bool IsDescendantOfProp(void* a){return a==&test::actor&&test::wallKind==ue_wrap::placed_save::Kind::None;}
-std::wstring GetKeyString(void*){return L"box";}
-void* GetStaticMesh(void*){return &test::actor;}
+std::wstring GetKeyString(void*){const auto key=test::propKey;test::CallbackOnce(test::keyCallback);return key;}
+void* GetStaticMesh(void*){return test::meshActor?test::meshActor:&test::actor;}
 }
 namespace ue_wrap::engine {
-bool TryGetActorLocation(void*,FVector& p){p={1,2,3};return true;}
+bool TryGetActorLocation(void*,FVector& p){p={1,2,3};if(!test::finiteLocation)p.X=std::numeric_limits<float>::quiet_NaN();test::CallbackOnce(test::locationCallback);return true;}
 void PlaySoundAtLocation(void*,void*,const FVector&,void* attenuation,float volume,float pitch){
  CHECK(attenuation&&volume==1.f&&pitch==1.f);++test::cues;
 }
 }
 namespace ue_wrap {
-ParamFrame::ParamFrame(void* fn):fn_(fn){}
+ParamFrame::ParamFrame(void* fn):fn_(fn){test::CallbackOnce(test::frameCallback);}
 bool ParamFrame::SetRaw(const wchar_t* name,const void* data,int32_t){
+ test::CallbackOnce(test::bindCallback);
  if(!test::parametersOk)return false;
  if(std::wstring(name)==L"damage")std::memcpy(&test::appliedDamage,data,sizeof(float));
  if(std::wstring(name)==L"action")std::memcpy(&test::appliedAction,data,sizeof(uint8_t));
@@ -59,20 +85,24 @@ bool ParamFrame::SetRaw(const wchar_t* name,const void* data,int32_t){
 }
 bool Call(void* target,ParamFrame& f){CHECK(target==&test::actor);
  if(f.function()==&test::damageFn)++test::damageCalls;
- else if(f.function()==&test::mreFn)++test::mreCalls;else ++test::sliceCalls;return true;
+ else if(f.function()==&test::mreFn)++test::mreCalls;else ++test::sliceCalls;test::CallbackOnce(test::callCallback);return true;
 }
 }
-namespace ue_wrap::hit_result {bool Write(ParamFrame&,const wchar_t*,void*,void*,const FVector&){return test::hitOk;}}
+namespace ue_wrap::hit_result {bool Write(ParamFrame&,const wchar_t*,void*,void*,const FVector&){test::CallbackOnce(test::hitCallback);return test::hitOk;}}
+namespace ue_wrap::hit_result {bool WriteWhile(ParamFrame& f,const wchar_t* n,void* a,void* c,const FVector& p,const std::function<bool()>& current){return current() && Write(f,n,a,c,p) && current();}}
 namespace ue_wrap::weapon_catalog {bool Lookup(const std::wstring& name,Swing& out){out={name==L"hammer",25.f};return true;}}
 namespace coop::hand_item {
-std::wstring HeldItem(uint8_t){return L"hammer";}bool LastHeldClassIs(uint8_t,const wchar_t*){return false;}
+std::wstring HeldItem(uint8_t){const auto held=test::held;test::CallbackOnce(test::heldCallback);return held;}
+bool LastHeldClassIs(uint8_t,const wchar_t*){const auto saw=test::sawTool;test::CallbackOnce(test::heldCallback);return saw;}
 bool IsHandAxisActor(void*){return test::handAxis;}
+void* LocalHandActor(){return test::localHand?test::localHand:test::handAxis?&test::actor:nullptr;}
 }
 namespace coop::prop_element_tracker {void* ResolveLiveActorByKey(const std::wstring& key,void*){return key==L"box"?&test::actor:nullptr;}}
 namespace ue_wrap::placed_save {Kind Type(void* a){return a==&test::actor?test::wallKind:Kind::None;}}
 namespace ue_wrap::wall_build {
 std::wstring Key(void*){return test::wallKey;}
 bool Damage(void*,float amount){++test::wallHits;test::appliedDamage=amount;return true;}
+bool DamageWhile(void* a,float amount,const std::function<bool()>& current){return current() && Damage(a,amount);}
 }
 namespace ue_wrap::keyed_objects {void* Resolve(const wchar_t* key){if(test::wallResolveCallback)test::wallResolveCallback();return key==test::wallKey?&test::actor:nullptr;}}
 namespace ue_wrap::safe {
@@ -80,7 +110,7 @@ bool IsSafe(void* a){return test::safe&&a==&test::actor;}
 bool Unlock(void* a){if(!IsSafe(a))return false;if(test::locked){test::locked=false;++test::loot;}return true;}
 }
 namespace coop::prop_save_data {
-bool Publish(net::Session*,void* a,const std::wstring& key){CHECK(a==&test::actor&&key==L"box");++test::records;return test::publishOK;}
+bool Publish(net::Session*,void* a,const std::wstring& key){CHECK(a==&test::actor&&key==L"box");++test::records;test::CallbackOnce(test::publishCallback);return test::publishOK;}
 bool PublishToSlot(net::Session* s,int,void* a,const std::wstring& k){return Publish(s,a,k);}
 }
 coop::net::Session session;
@@ -90,8 +120,12 @@ void Reset(){A::OnDisconnect();session={};++test::world;
  test::mre=true;test::handAxis=false;
  test::safe=false;test::locked=test::publishOK=true;test::loot=test::records=0;test::announced=true;
  test::cues=0;
+ test::localHand=test::meshActor=nullptr;test::functionOwner=&test::mreOwner;test::propKey=L"box";test::invocations={1,2};
+ test::keyCallback=test::frameCallback=test::bindCallback=test::locationCallback=test::hitCallback=test::callCallback=test::publishCallback={};
+ test::argCallback=test::heldCallback={};test::held=L"hammer";test::sawTool=false;test::finiteLocation=true;
  test::wallKind=ue_wrap::placed_save::Kind::None;test::wallHits=0;test::wallKey=L"native_wall_17";test::wallResolveCallback=nullptr;
  coop::element::reach=true;coop::players::Registry::Get().peer=1;
+ coop::players::Registry::Get().local=&test::localPlayer;
  coop::players::Registry::Get().puppet.actor=&test::ui;A::Install(&session);
 }
 int main(){using namespace test;using V=ue_wrap::script_gate::Verdict;
@@ -104,13 +138,13 @@ int main(){using namespace test;using V=ue_wrap::script_gate::Verdict;
  }
  Reset();session.mode=coop::net::Role::Client;
  Params args{coop::players::Registry::Get().Local(),20.f,{100,0,0}};
- ue_wrap::script_gate::Call c{};c.object=&actor;c.function=&damageFn;c.locals=reinterpret_cast<uint8_t*>(&args);
+ ue_wrap::script_gate::Call c{};c.object=&actor;c.function=&damageFn;c.locals=reinterpret_cast<uint8_t*>(&args);c.invocation=1;
  CHECK(A::OnDamage(c)==V::Cancel);CHECK(session.sent.size()==1&&damageCalls==0);
  auto sent=session.sent.back();CHECK(sent.slot==0&&sent.kind==coop::net::ReliableKind::PropActionIntent);
  coop::net::PropActionIntentPayload p{};std::memcpy(&p,sent.data.data(),sizeof(p));
  session.mode=coop::net::Role::Host;A::OnReliable(p,1);
- CHECK(damageCalls==1&&appliedDamage==20.f&&appliedPlayer==&ui&&dispatches==1);
- A::RunSlice(&actor,true);CHECK(sliceCalls==1);
+ CHECK(damageCalls==1&&appliedDamage==20.f&&appliedPlayer==&ui&&dispatches>0);
+ A::RunSlice(&actor,true,[]{return true;});CHECK(sliceCalls==1);
  for(int failure=0;failure<6;++failure){Reset();auto bad=p;
   if(failure==0)bad.damage=1000.f;
   if(failure==1)bad.impactX=std::numeric_limits<float>::quiet_NaN();
@@ -157,7 +191,7 @@ int main(){using namespace test;using V=ue_wrap::script_gate::Verdict;
  Reset();session.mode=coop::net::Role::Client;handAxis=true;
  CHECK(A::OnMreOpen(c)==V::Run&&session.sent.empty());handAxis=false;
  args.action=1;CHECK(A::OnMreOpen(c)==V::Run&&session.sent.empty());args.action=4;
- c.fromOurCode=true;CHECK(A::OnMreOpen(c)==V::Run&&session.sent.empty());
+ c.fromOurCode=true;CHECK(A::OnMreOpen(c)==V::Cancel&&session.sent.empty());
  c.fromOurCode=false;Reset();session.mode=coop::net::Role::Client;session.sendOk=false;
  CHECK(A::OnMreOpen(c)==V::Cancel&&A::g_pending.size()==1);
  handAxis=true;session.sendOk=true;A::Tick();CHECK(A::g_pending.empty()&&session.sent.empty());

@@ -212,6 +212,7 @@ pub fn h_host(state: &mut MasterState, ctx: &HostCtx, ip: &str, body: &Value) ->
     resp.insert("hostIdentity".into(), json!(host_identity));
     resp.insert("token".into(), json!(token));
     resp.insert("conn".into(), json!(conn));
+    resp.insert("players_max".into(), json!(state.lobbies[&session_id].players_max));
     // A DIRECT host never touches signaling/ICE -> no creds. P2P hosts get the block.
     // TURN cred is bound to the client's IP bucket (audit M2), not the host identity.
     if !is_direct {

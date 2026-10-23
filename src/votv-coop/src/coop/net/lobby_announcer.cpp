@@ -74,7 +74,7 @@ std::string HostBody(const AnnounceRequest& r, bool listed, const BuildClaim& cl
     // our behalf, and the relay registers only names their holder signed for.
     b["identity"] = coop::net::peer_identity::LocalIdentityString();
     b["locked"] = r.locked;
-    b["players_max"] = r.playersMax;
+    b["players_max"] = coop::net::ClampPlayerLimit(r.playersMax);
     if (r.directPort > 0) {  // DIRECT lobby (see header): master advertises src-ip:port
         b["conn"] = "direct";
         b["direct_port"] = r.directPort;
@@ -251,7 +251,7 @@ HostInfo LobbyAnnouncer::Host(const std::string& masterUrl, const std::string& n
     const uint64_t entryGen = gen_.load();
     Stop();  // retire any prior lobby first (sends /leave, joins) -- on a worker, safe
 
-    const AnnounceRequest req{masterUrl, name, world, locked, playersMax, timeoutMs, directPort};
+    const AnnounceRequest req{masterUrl, name, world, locked, coop::net::ClampPlayerLimit(playersMax), timeoutMs, directPort};
     const BuildClaim claim = ReadBuildClaim();
     if (claim.present)
         UE_LOGI("lobby: announcing the build claim key=%u sha=%.8s", claim.key, claim.sha.c_str());

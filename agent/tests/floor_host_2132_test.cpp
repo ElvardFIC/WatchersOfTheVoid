@@ -22,6 +22,7 @@ Actor* hand=nullptr;
 bool authored=true,mintOk=true,elementMirror=false;
 bool gameplayCaller=false,wrongCallerOwner=false,enrollOnExpress=false;
 bool waterPour=false;
+bool pendingContainerBirth=false;
 void* fixed=nullptr;void* frozen=nullptr;void* remoteHand=nullptr;
 std::vector<void*> coasted;
 int publishes=0,containerBirths=0;float charge=1.f,publishedCharge=-1.f;
@@ -38,7 +39,7 @@ void Drain(){H::DrainPendingSpawns(&session);}
 void Reset(){H::OnDisconnect();H::SetSession(&session);session.linked=true;session.mode=coop::net::Role::Host;
     for(int i=0;i<260;++i){actors[i]=Actor{};actors[i].id=i;}
     publishes=containerBirths=0;duringContainer={};charge=1.f;publishedCharge=-1.f;elementMirror=false;duringReadKey={};
-    gameplayCaller=wrongCallerOwner=enrollOnExpress=waterPour=false;fixed=frozen=remoteHand=nullptr;coasted.clear();
+    gameplayCaller=wrongCallerOwner=enrollOnExpress=waterPour=pendingContainerBirth=false;fixed=frozen=remoteHand=nullptr;coasted.clear();
     current=&world;hand=nullptr;authored=mintOk=true;duringKey={};duringExpress={};}
 }
 namespace ue_wrap::log {void Write(Level,const char*,...) {}}
@@ -111,8 +112,14 @@ namespace coop::prop_spawn_authoring {bool BirthIsPlayerAuthored(void*){return t
 namespace coop::join_membership_sweep {void RecordClaimIfTracking(void*){std::abort();}}
 namespace coop::prop_lifecycle {void ExpressSpawnedProp(void* a){auto& actor=*static_cast<test::Actor*>(a);
     CHECK(actor.live);if(actor.key&&!actor.processed){++actor.expressed;actor.processed=true;if(test::enrollOnExpress)actor.tracked=true;}test::Callback(test::duringExpress);}}
+namespace coop::prop_lifecycle {bool ContainerBirthPending(void*){return test::pendingContainerBirth;}}
 namespace coop::prop_save_data {bool Publish(net::Session*,void*,const std::wstring& key){CHECK(key==L"item");++test::publishes;test::publishedCharge=test::charge;return true;}}
 int main(){using namespace test;
+    Reset();actors[0].key=true;pendingContainerBirth=true;Enqueue();Drain();
+    CHECK(!actors[0].expressed&&!publishes&&H::g_pendingFinished.size()==1);
+    pendingContainerBirth=false;Drain();CHECK(actors[0].expressed==1);
+    Reset();actors[0].tracked=actors[0].key=true;pendingContainerBirth=true;Enqueue();Drain();
+    CHECK(!publishes&&H::g_pendingFinished.size()==1);pendingContainerBirth=false;Drain();CHECK(publishes==1);
     Reset();Enqueue();Drain();CHECK(actors[0].mints==1 && actors[0].expressed==1);Drain();CHECK(actors[0].expressed==1);
     for(int gate=0;gate<5;++gate){Reset();
         if(gate==0)authored=false;if(gate==1)actors[0].mirror=true;if(gate==2)actors[0].tracked=true;

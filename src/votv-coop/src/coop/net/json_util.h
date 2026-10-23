@@ -54,8 +54,16 @@ inline std::string StrN(const Json& j, const char* key, size_t maxlen) {
 // Clamped integer: a hostile master's out-of-range count/age must not narrow to garbage or a
 // negative in the UI.
 inline int IntClamped(const Json& j, const char* key, int lo, int hi) {
-    int v = Int(j, key);
-    return v < lo ? lo : (v > hi ? hi : v);
+    const auto it=j.find(key);
+    if(it==j.end() || !it->is_number_integer())return 0<lo?lo:(0>hi?hi:0);
+    if(it->is_number_unsigned()) {
+        const auto v=it->get<uint64_t>();
+        if(hi<0)return hi;
+        if(v>static_cast<uint64_t>(hi))return hi;
+        return v<static_cast<uint64_t>(lo>0?lo:0)?lo:static_cast<int>(v);
+    }
+    const auto v=it->get<int64_t>();
+    return v<lo?lo:(v>hi?hi:static_cast<int>(v));
 }
 
 // A credential field safe to splice into GNS's comma-separated TURN lists: reject a value

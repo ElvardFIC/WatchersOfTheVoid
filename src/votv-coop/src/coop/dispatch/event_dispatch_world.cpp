@@ -53,6 +53,7 @@
 #include "coop/items/hook_retrieve.h"
 #include "coop/world/placed_save_sync.h"
 #include "coop/world/sky_sync.h"
+#include "coop/world/ariral_ship_sync.h"
 #include "coop/world/weather_lightning.h"
 #include "coop/world/weather_redsky.h"
 #include "coop/world/creature_event_relay.h"
@@ -101,6 +102,11 @@ bool VerifySenderEidRange(int senderPeerSlot,
 bool HandleWorldEvent(net::Session& session,
                       const net::Session::ReliableMessage& msg) {
     switch (msg.kind) {
+    case net::ReliableKind::AriralShipState: {
+        if(msg.senderPeerSlot!=0 || msg.payloadLen!=sizeof(net::AriralShipStatePayload))break;
+        net::AriralShipStatePayload packet{};std::memcpy(&packet,msg.payload,sizeof(packet));
+        coop::ariral_ship_sync::Receive(packet,msg.senderPeerSlot);break;
+    }
     case net::ReliableKind::KavotiaState: {
         if(msg.senderPeerSlot!=0 || msg.payloadLen!=sizeof(net::KavotiaStatePayload))break;
         net::KavotiaStatePayload packet{};std::memcpy(&packet,msg.payload,sizeof(packet));

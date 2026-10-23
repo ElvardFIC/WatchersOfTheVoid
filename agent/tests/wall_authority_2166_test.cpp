@@ -6,10 +6,13 @@ bool NativeCurrent(void*){return true;}
 ue_wrap::script_gate::Verdict BeforeBuild(const ue_wrap::script_gate::Call&){return ue_wrap::script_gate::Verdict::Cancel;}
 }
 namespace test {
+uint32_t sessionSerial=1;
 bool feedOK=true, die=false; int fed=0,changed=0,tracked=0;
 std::function<void()> queryCallback,trackCallback;
 ue_wrap::script_gate::Verdict lastFeed=ue_wrap::script_gate::Verdict::Run;
 }
+namespace coop::net::session_serial {uint32_t Current(){return test::sessionSerial;}}
+namespace ue_wrap::script_gate {bool IsInvocationActive(uint64_t invocation){return invocation!=0;}}
 namespace ue_wrap::reflection {
 int32_t FunctionFrameSize(void*){return 16;}
 int32_t FindParamOffset(void*,const wchar_t*){return offsetof(test::Obj,flags);}
@@ -25,6 +28,7 @@ void TrackWall(void*){
 }
 }
 namespace ue_wrap::wall_build {
+bool FeedWhile(void* wall,void* material,const std::function<bool()>& current){return current() && Feed(wall,material);}
 bool Feed(void* w,void* material) {
     using namespace coop::wall_build_sync;
     script_gate::Call c{};c.object=w;c.fromOurCode=true;c.function=&test::actor;
@@ -53,8 +57,8 @@ int main() {
     CHECK(S::BeforeMutation(c)==V::Run&&tracked==2);
     CHECK(S::BeforeRepair(c)==V::Run&&tracked==3);
     S::BeforeOverlap(c);CHECK(S::g_pending.size()==1); // duplicate overlap before drain
-    feedOK=false;S::Tick();CHECK(fed==1&&S::g_pending.size()==1);
-    feedOK=true;S::Tick();CHECK(fed==2&&S::g_pending.empty());
+    feedOK=false;S::Tick();CHECK(fed==1&&S::g_pending.empty());
+    feedOK=true;S::BeforeOverlap(c);S::Tick();CHECK(fed==2&&S::g_pending.empty());
     S::BeforeOverlap(c);++ui.serial;S::Tick();CHECK(fed==2); // recycled material
     S::BeforeOverlap(c);++world;S::Tick();CHECK(fed==2); // world swap
     S::BeforeOverlap(c);S::g_pending[0].until=0;S::Tick();CHECK(fed==2);
@@ -67,6 +71,7 @@ int main() {
     s.mode=coop::net::Role::Host;
     s.linked=true;c.locals=nullptr;CHECK(S::BeforeOverlap(c)==V::Cancel&&S::g_pending.empty());
     CHECK(S::BeforeMutation(c)==V::Run);
+    c.locals=params;
     disconnectOnTrack=true;
     CHECK(S::BeforeOverlap(c)==V::Cancel&&S::g_session==nullptr);
     S::Install(&s);CHECK(S::BeforeMutation(c)==V::Cancel);
@@ -96,9 +101,9 @@ int main() {
     S::Tick();S::Tick();CHECK(fed==2&&S::g_pending.empty());
     reset();feedOK=false;queue(&actor,&ui);
     callback=[&]{CHECK(queue(&actor,&ui)==V::Cancel);};
-    S::Tick();CHECK(fed==1&&S::g_pending.size()==1);
-    feedOK=true;S::Tick();CHECK(fed==2&&S::g_pending.empty());
-    puts("PASS material overlap dedup: in-flight and unprocessed pairs stay visible, nested ticks are refused and failed feeds retain exactly one retry");
+    S::Tick();CHECK(fed==1&&S::g_pending.empty());
+    feedOK=true;queue(&actor,&ui);S::Tick();CHECK(fed==2&&S::g_pending.empty());
+    puts("PASS material overlap dedup: in-flight/unprocessed pairs stay visible; an entered native feed is never retried automatically");
 
     // Only the exact material may consume the replay permit. Another overlap
     // raised from enrollment is queued for the next tick.

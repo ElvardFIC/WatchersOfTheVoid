@@ -349,6 +349,7 @@ bool HostRefusedBySubstrate(net::Refusal* out = nullptr) {
 void HostLobby(const std::string& name, const std::string& world, bool locked, int playersMax) {
     if (HostRefusedBySubstrate()) return;
     if (g_actionBusy.exchange(true)) { UE_LOGW("session_manager: action busy -- Host ignored"); return; }
+    playersMax=net::ClampPlayerLimit(playersMax);
     const std::string masterUrl = slots::Selected().url;
     std::thread([masterUrl, name, world, locked, playersMax] {
         // An exception escaping a detached thread is std::terminate; the store(false) is outside
@@ -358,7 +359,8 @@ void HostLobby(const std::string& name, const std::string& world, bool locked, i
             const lobby::HostInfo info =
                 Announcer().Host(masterUrl, name, world, locked, playersMax, 8000);
             if (info.ok && !coop::shutdown::IsShuttingDown()) {
-                const net::Config cfg = LobbyP2PConfig(net::Role::Host, info);
+                net::Config cfg = LobbyP2PConfig(net::Role::Host, info);
+                cfg.playerLimit=playersMax;
                 QueueStart(cfg);
                 UE_LOGI("session_manager: HOST ready -- lobby=%s identity=%s (session boot = harness Tier 2)",
                         info.lobbyId.c_str(), info.hostIdentity.c_str());
@@ -374,17 +376,18 @@ void HostLobby(const std::string& name, const std::string& world, bool locked, i
 
 extern std::atomic<bool> g_listedState;  // defined below at SetListed (UI mirror)
 
-void AnnounceEnvHostHidden(const std::string& name, const std::string& world) {
+void AnnounceEnvHostHidden(const std::string& name, const std::string& world, int playersMax) {
     if (g_actionBusy.exchange(true)) { UE_LOGW("session_manager: action busy -- env announce skipped"); return; }
     const std::string masterUrl = slots::Selected().url;
-    std::thread([masterUrl, name, world] {
+    playersMax=net::ClampPlayerLimit(playersMax);
+    std::thread([masterUrl, name, world, playersMax] {
         // An exception escaping a detached thread is std::terminate; the store(false) is outside
         // the try so g_actionBusy clears on every path.
         try {
             if (coop::shutdown::IsShuttingDown()) { g_actionBusy.store(false); return; }
             const lobby::HostInfo info =
                 Announcer().Host(masterUrl, name, world,
-                                 /*locked=*/false, /*playersMax=*/4, 8000);
+                                 /*locked=*/false, playersMax, 8000);
             if (info.ok) {
                 Announcer().SetListed(false); // the hide-from-list flag, immediately
                 // Seed the UI mirror too, or the scoreboard's "Show in server browser" tick reads

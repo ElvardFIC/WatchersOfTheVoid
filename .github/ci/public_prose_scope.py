@@ -54,11 +54,9 @@ OTHER_MARKER_OWNERS = (".github/ci/public_prose_", ".github/ci/prose_drill_",
 # so it names them by construction.
 OTHER_EXEMPT = ("LICENSE", "THIRD-PARTY", "public_prose_baseline.json")
 # In an ignore file the RULE is data and only the comment is prose: a rule cannot ignore a path
-# without naming it, so `docs/AGENT_SPAWNING.md` must appear for the rule to work at all. The
-# thanks list is the same shape: a line is a person's name as they write it, in whatever
-# alphabet, and only its `;` comments are ours. Suffix -> the file's comment prefix.
-OTHER_COMMENTS_ONLY = {".gitignore": "#", ".gitattributes": "#",
-                       "src/votv-coop/assets/thanks/thanks.txt": ";"}
+# without naming it, so `docs/AGENT_SPAWNING.md` must appear for the rule to work at all.
+# Suffix -> the file's comment prefix.
+OTHER_COMMENTS_ONLY = {".gitignore": "#", ".gitattributes": "#"}
 
 
 def comment_prefix(path):

@@ -56,7 +56,7 @@ foreach ($file in (Get-ChildItem -LiteralPath (Join-Path $root 'src/votv-coop/sr
     $relative = $file.FullName.Substring($root.Length + 1).Replace('\','/')
     if (-not $recorded.ContainsKey($relative)) { throw "Unqualified production input: $relative" }
 }
-$description = 'Watchers of the Void by ElvardFIC and AquaFishhh, based on Multivoid by Pelmentor. VotV 0.9.0n co-op with 2-32 player hosting. Every version is a test version, requires extensive testing and may be unstable.'
+$description = 'Watchers of the Void by ElvardFIC and AquaFishhh. VotV 0.9.0n co-op with 2-32 player hosting. Every version is a test version, requires extensive testing and may be unstable.'
 $manifest = [ordered]@{
     name = $release.name; version_number = $release.version_number
     website_url = 'https://github.com/ElvardFIC/WatchersOfTheVoid'

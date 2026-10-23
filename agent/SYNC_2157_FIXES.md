@@ -58,22 +58,27 @@ negative control.
 
 ## Choosing 2–32 players
 
-The native hosting screen has minus/plus controls beside the session name; the
-fallback ImGui browser has a Max players slider. The value includes the host,
-defaults to four, and is clamped to 2–32. HostWithSave carries the choice through
-direct, hidden, automatic and fallback configurations. Host admission enforces
-the selected limit rather than just advertising it.
+The b2207 native hosting screen has a separate Players (including you) row,
+minus/plus controls for every value and 2/4/8/16/32 shortcuts. The fallback ImGui
+slider shares that value. The typed net.player_limit row remembers the choice,
+defaults to four and accepts 2–32. Dragging writes once on completion. HostWithSave
+carries the choice through direct, hidden, automatic and fallback configurations;
+the legacy HostLobby and scripted/environment host paths now carry it too. Host
+admission enforces the selected total rather than just advertising it.
 
 Capacity is shared by the player registry, join seeder, protocol acknowledgements
 and transport arrays. Recipient masks are 32 bits. Held-food addresses now reserve
 five seat bits, and world-sound delivery rotates its bounded recipient budget.
 The largest generator-state payload remains exactly 228 bytes inside the existing
-256-byte transport. All participating peers must use protocol 2185.
+256-byte transport. The original qualification used protocol 2185; new checks
+require matching current DLLs as recorded in TODO.
 
-The master source accepts `players_max` from 2 through 32. An already running
-master with the old four-seat clamp must be updated for automatic joins beyond
-four players. No deployed master was changed. Rust compilation was not run because
-this workspace has no Cargo toolchain.
+The master accepts and returns players_max from 2 through 32; heartbeat counts
+include the host and cannot exceed that total. Old four-seat master code must be
+updated for accurate larger-lobby counts. No remote deployment is recorded.
+All 118 local Rust tests pass, including every limit through signed create,
+heartbeat, browse and join; the optimized local master builds successfully.
+Current selector/hosting evidence: build/host-players-2207/verification.json.
 
 ## Validation and acceptance
 

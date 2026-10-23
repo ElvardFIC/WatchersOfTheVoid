@@ -742,6 +742,16 @@ void WatchMintedCompanion(uint64_t nowMs) {
 }
 
 void TrySpawnCompanion(uint64_t nowMs) {
+    // A failed publication/collision cleanup can remove the minted body before
+    // it ever has an indexed key. The settled latch must not suppress retries
+    // for the rest of the session when the world still contains only one ATV.
+    if (g_companionSpawned && g_companionKey.empty() &&
+        (!g_companionActor || !R::IsLive(g_companionActor))) {
+        g_companionActor = nullptr;
+        g_companionSpawned = false;
+        g_companionCapped = false;
+        g_companionSettledSince = 0;
+    }
     if (g_companionSpawned) {
         if (!g_companionCapped) WatchMintedCompanion(nowMs);
         RepairCompanionKeyCollision();

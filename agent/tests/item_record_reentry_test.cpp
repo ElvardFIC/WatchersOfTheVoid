@@ -15,6 +15,8 @@ namespace test {
 int actor=0,calls=0,depth=0,notes=0,lookups=0,captures=0;
 bool nested=false,success=true,host=true,live=true,covered=true,allowOther=false;
 bool captureOK=false,sendOK=true;
+bool overrideCapture=false;
+Record capturedRecord;
 int serial=1;
 uint32_t world=1;
 std::wstring liveKey=L"item";
@@ -39,6 +41,7 @@ void Occupancy() {
     for (const auto& [slot,use]:expected) {CHECK(S::g_parkUse.count(slot));CHECK(S::g_parkUse.at(slot).count==use.count);}
 }
 void Reset() {
+    overrideCapture=false;capturedRecord={};
     serial=1;liveKey=L"item";
     world=1;duringSend=duringRefresh=duringLock=duringCodec={};CHECK(S::g_recordOrder.empty());
     session.linked=session.ready=true;session.blockedSlot=-1;
@@ -100,7 +103,7 @@ namespace ue_wrap::save_record {
 bool OverridesGetData(void*) { return test::covered; }
 bool CaptureRecord(void*,SaveRecord& rec) {
     ++test::captures;auto callback=std::move(test::duringCapture);test::duringCapture={};
-    if (callback) callback();rec=test::Make();return test::captureOK;
+    if (callback) callback();rec=test::overrideCapture?test::capturedRecord:test::Make();return test::captureOK;
 }
 bool ApplyRecord(void*,const SaveRecord& rec,ClassResolver) {
     auto cb=std::move(test::duringCodec);test::duringCodec={};if(cb)cb();
@@ -157,6 +160,24 @@ bool Deserialize(const std::vector<uint8_t>&,ue_wrap::signal_dynamic::Row&) { st
 }
 int main() {
     using namespace test;
+    for (int portions : {0, 2}) {
+        Reset();captureOK=overrideCapture=true;capturedRecord=Make();
+        capturedRecord.className=L"prop_cannedFood_C";capturedRecord.ints={{2,portions}};capturedRecord.bools={{},{1}};
+        auto old=capturedRecord;old.ints={{1,5}};old.bools[1][0]=0;
+        incoming=S::BuildBody(L"item",old);
+        duringApply=[portions](const Record& r){CHECK(r.ints[0][0]==2 && r.ints[0][1]==portions && r.bools[1][0]==1);};
+        S::OnChunk(session,{},1,true);CHECK(calls==1);
+    }
+    Reset();captureOK=overrideCapture=true;capturedRecord=Make();
+    capturedRecord.className=L"prop_cannedFood_C";capturedRecord.ints={{2,3}};capturedRecord.bools={{},{1}};
+    auto bite=capturedRecord;bite.ints[0][1]=2;incoming=S::BuildBody(L"item",bite);
+    duringApply=[](const Record& r){CHECK(r.ints[0][1]==2);};S::OnChunk(session,{},1,true);CHECK(calls==1);
+    Reset();S::ExpectRecordFor(&actor,L"item",1);auto birth=Make();
+    birth.className=L"prop_cannedFood_C";birth.ints={{1,5}};birth.bools={{},{0}};
+    incoming=S::BuildBody(L"item",birth);
+    duringApply=[](const Record& r){CHECK(r.ints[0][1]==5 && r.bools[1][0]==0);};
+    S::OnChunk(session,{},1,true);CHECK(calls==1);
+    puts("PASS can records: no stale refill/reclosing/type replacement, accepted consumption and unchanged initial saved birth");
     Reset();safe=unlocked=true;auto stale=Make();stale.bools={{1},{1}};
     incoming=S::BuildBody(L"item",stale);
     duringApply=[](const Record& r){CHECK(r.bools[1][0]==0);};S::OnChunk(session,{},1,true);

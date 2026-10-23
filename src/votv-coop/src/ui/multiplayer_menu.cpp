@@ -4,7 +4,7 @@
 // property offsets for the field reads, and the pause flag to target the main menu. The
 // button itself is built by the engine wrapper's canvas inject; this file owns the feature:
 // which menu, where, and what the click does. The menu tick also drives the native
-// sub-screens, the version label and the thanks roll.
+// sub-screens and the version label.
 
 #include "ui/multiplayer_menu.h"
 
@@ -13,7 +13,6 @@
 #include "ui/input_focus.h"
 #include "coop/session/join_progress.h"
 #include "coop/session/session_manager.h"  // LatestVersionLine, DisplayVersion
-#include "coop/thanks/thanks_list.h"
 #include "ui/server_browser.h"
 #include "ui/server_browser_surface.h"  // WHICH browser this session uses
 #include "ui/native_screen.h"   // Begin/EndMenuTick -- one index read per menu tick
@@ -21,7 +20,6 @@
 #include "ui/host_session_settings.h"
 #include "ui/host_window_native.h"
 #include "ui/server_browser_native.h"
-#include "ui/thanks_roll.h"
 #include "ue_wrap/engine/engine.h"
 #include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/game_thread.h"
@@ -193,9 +191,6 @@ void OnMenuTickPost(void* self, void* /*function*/, void* /*params*/) {
     // local identity until a check has landed. Inject and drive the version label, a child of the
     // menu, so it shows and hides with it.
     UpdateVersionLabel(self);
-    // The thanks roll joins the same rows container as its last row, under the game's own lines;
-    // the game's label is its anchor.
-    ui::thanks_roll::OnMenuTick(self, ReadPtr(self, g_txtVersionOff));
 
     // The client loading state: while a join is in progress the whole menu widget is hidden, so
     // only the 3D background remains for the connecting screen to draw over, and restored when
@@ -348,8 +343,6 @@ void Init() {
         UE_LOGI("multiplayer_menu: disabled via [coop] multiplayer_menu_off=1");
         return;
     }
-    // The thanks list the menu rolls: the embedded copy or the cached one, read once here.
-    coop::thanks_list::Init();
     // Try immediately (the menu is usually already up at boot), else retry.
     GT::Post([] {
         if (!TryInstall() && !g_retrying.exchange(true)) {

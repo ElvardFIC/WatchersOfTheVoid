@@ -192,7 +192,7 @@ void SetLinksSource(net::lobby::LobbyLinks (*fn)());
 // (script and test lobbies must not pollute the list; joiners connect by IP). Best-effort on a
 // worker: a master that is down is logged and hosting continues. The lobby is briefly listed
 // between the announce and the async visibility flip.
-void AnnounceEnvHostHidden(const std::string& name, const std::string& world);
+void AnnounceEnvHostHidden(const std::string& name, const std::string& world, int playersMax);
 
 // Retire the announced lobby: the leave request, stop the heartbeat thread, and clear the
 // host-side lobby state. The lobby's lifetime is the host session's, and the callers are its

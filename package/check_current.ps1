@@ -1,6 +1,8 @@
 param(
     [string]$BuildDirectory='build/votv-coop-2154',
-    [string]$EvidenceDirectory='build/todo-audit'
+    [string]$EvidenceDirectory='build/todo-audit',
+    [string]$AssetDirectory='../_research/current-assets',
+    [string[]]$CheckGroups=@()
 )
 $ErrorActionPreference='Stop'
 $checkout=Split-Path -Parent $PSScriptRoot
@@ -22,6 +24,7 @@ function Get-SourceStamp {
     finally {$sha.Dispose()}
 }
 function Invoke-Check([string]$Name,[string]$Program,[string[]]$Arguments) {
+    if($CheckGroups.Count -and $Name -notin $CheckGroups){return}
     $log=Join-Path $logs ($Name+'.log')
     # Expected-failure controls write assertions to stderr and still pass their
     # runner. Record the runner's exit code instead of treating stderr as failure.
@@ -35,31 +38,42 @@ function Invoke-Check([string]$Name,[string]$Program,[string[]]$Arguments) {
 Push-Location $checkout
 try {
     $sourceAtStart=Get-SourceStamp
+    [IO.File]::WriteAllText((Join-Path $evidence 'source-start.sha256'), $sourceAtStart)
     foreach($name in @(
-        'run_player_reports','run_wisp_animation','run_ragdoll_retry','run_ragdoll_skin',
-        'run_sleep_personal','run_entity_sync','run_garden_sync','run_laptop_ui','run_world_sound','run_events',
+        'run_player_reports','run_host_players','run_session_reports','run_sat_console_delivery','run_sat_console_callbacks','run_container_recovery','run_container_birth','run_container_apply','run_ariral_ship','run_inventory_apply','run_profile_join','run_2174','run_wisp_animation','run_ragdoll_retry','run_ragdoll_skin',
+        'run_sleep_personal','run_dream_identity','run_entity_sync','run_garden_sync','run_laptop_ui','run_world_sound','run_events',
         'run_placement','run_shared_screen','run_balance','run_item_batch','run_held_identity','run_trowel',
         'run_2130','run_2139','run_2140','run_2141','run_2153','run_2154','run_2155','run_2156',
         'run_stow_2157','run_2160','run_2161','run_2162','run_2165','run_2168','run_2169','run_blood','run_atv_steering',
         'run_2170','run_2172','run_2173','run_2180','run_sync_2157','run_upstream','run_explosion_motion',
-        'run_nonentity','run_cooking','run_drink_spills','run_gasoline','run_grill_edits',
+        'run_nonentity','run_cooking','run_food_callbacks','run_prop_action_delivery','run_drink_spills','run_gasoline','run_grill_edits',
         'run_grill_hand','run_grime_join','run_hand_tools','run_item_records','run_save_record','run_kitchen',
         'run_scorch','run_sponge_effects','run_toy_music','run_wall_creative','run_water_pour',
-        'run_watoy','run_windows','run_2166','run_2176','run_2157','run_2145','run_2147'
+        'run_watoy','run_windows','run_2166','run_wall_delivery','run_2176','run_2157','run_2145','run_2147'
     )) {
         Invoke-Check $name 'powershell' @('-NoProfile','-ExecutionPolicy','Bypass','-File',"agent/tests/$name.ps1")
     }
     foreach($entry in @(@('coin_collect','-CollectOnly'),@('inventory_capture','-InventoryOnly'))) {
         Invoke-Check $entry[0] 'powershell' @('-NoProfile','-ExecutionPolicy','Bypass','-File','agent/tests/run_2151.ps1',$entry[1])
     }
-    foreach($name in @('player_reports_native_test','insomnia_native_test','entity_sync_native_test','coin_collect_native_test','native_physics_fingerprints_test','event_rate_native_test')) {
-        Invoke-Check $name $python @("agent/tests/$name.py")
+    foreach($name in @('player_reports_native_test','insomnia_native_test','entity_sync_native_test','coin_collect_native_test','native_physics_fingerprints_test','event_rate_native_test','dream_identity_native_test','server_breaker_native_test','sync_native_contract_test')) {
+        $arguments=@("agent/tests/$name.py")
+        $runner=$name
+        if($name -in @('dream_identity_native_test','server_breaker_native_test','sync_native_contract_test')) {
+            $arguments+=$AssetDirectory
+        }
+        if($name -eq 'sync_native_contract_test') {
+            $arguments+='../_research'
+            $runner='sync_native_contract'
+        }
+        Invoke-Check $runner $python $arguments
     }
     Invoke-Check 'public_prose_include' $python @('.github/ci/public_prose_include_test.py')
     # Disk regression compiles the production conversion code with MSVC.
     . (Join-Path $checkout '../_toolchain/env.ps1')
     Invoke-Check 'disk_utf8' $python @('agent/tests/disk_utf8_test.py')
     Invoke-Check 'reliablekind_gate' $python @('.github/ci/reliablekind_gate.py','--drill')
+    foreach($requested in $CheckGroups){if($requested -notin $results.Runner){throw "Unknown check group: $requested"}}
     if((Get-SourceStamp) -ne $sourceAtStart){throw 'Production sources changed during the regression run; rerun against a stable source tree'}
     $build=if([IO.Path]::IsPathRooted($BuildDirectory)){$BuildDirectory}else{Join-Path $checkout $BuildDirectory}
     # CMake's always-run glob check makes Ninja dry runs pessimistically schedule
@@ -85,6 +99,8 @@ try {
     }
     $identity | Add-Member -NotePropertyName Results -NotePropertyValue @($results.ToArray())
     $identity | Add-Member -NotePropertyName PassingGroups -NotePropertyValue @($results | Where-Object ExitCode -eq 0).Count
+    $identity | Add-Member -NotePropertyName FullRegression -NotePropertyValue ($CheckGroups.Count -eq 0)
+    $identity | Add-Member -NotePropertyName RequestedGroups -NotePropertyValue @($CheckGroups)
     $identity | Add-Member -NotePropertyName SourceSHA256 -NotePropertyValue $sourceHashes
     $identity | Add-Member -NotePropertyName SourceSnapshotSHA256 -NotePropertyValue $sourceAtStart
     $identity | Add-Member -NotePropertyName BuildUpToDate -NotePropertyValue $true
