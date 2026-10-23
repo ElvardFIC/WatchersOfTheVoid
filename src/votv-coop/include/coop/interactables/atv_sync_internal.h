@@ -1,7 +1,8 @@
 // coop/interactables/atv_sync_internal.h -- the per-ATV record, shared by the ATV lane's
 // translation units. atv_sync.cpp owns the map of these and every structural change to it;
 // atv_corrector.cpp mutates the fields of ONE entry when a packet arrives, and
-// atv_runtime_mirror.cpp asks for its two changes through the calls at the end. Nothing outside
+// atv_runtime_mirror.cpp asks for its two changes through the calls at the end, and atv_index.cpp
+// fills the map through the two globals under detail. Nothing outside
 // coop/interactables/ includes this -- the lane's public surface is
 // coop/interactables/atv_sync.h.
 
@@ -10,10 +11,12 @@
 #include "ue_wrap/core/types.h"
 #include "ue_wrap/devices/atv_condition.h"
 
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <string>
+#include <unordered_map>
 
 namespace coop::net { class Session; }
 
