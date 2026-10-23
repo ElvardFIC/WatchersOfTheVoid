@@ -2,15 +2,8 @@
 
 #include "coop/dev/hostile_drill.h"
 
-#include "coop/dev/hostile_drill_act.h"  // the take-or-use request arms
-#include "coop/dev/hostile_drill_chat.h"  // the chat arms
-#include "coop/dev/hostile_drill_explosion.h"  // the explosion request lane's refusal arms
-#include "coop/dev/hostile_drill_hand.h"  // the hand-item class arm
-#include "coop/dev/hostile_drill_latest.h"  // the keep-the-latest arm
-#include "coop/dev/hostile_drill_world.h"   // the world levels' keep-the-latest arm
-#include "coop/dev/hostile_drill_kerfur.h"  // the kerfur verbs' flood arm
-#include "coop/dev/hostile_drill_remover.h"  // the remover request's far, hidden and flood arms
-#include "coop/dev/hostile_drill_walk.h"  // the four walk arms
+#include "hostile_drill_arms.h"  // co-located private header (src tree, not include/)
+
 #include "coop/comms/chat_feed.h"
 #include "coop/comms/chat_log.h"
 #include "coop/config/config.h"
@@ -47,135 +40,6 @@ namespace {
 namespace SD = ue_wrap::signal_dynamic;
 namespace SS = ue_wrap::saved_signals;
 using Clock = std::chrono::steady_clock;
-
-// The walk arms (record_bad_classes, bad_alarm, bad_prop_key, bad_prop_spawn) live in
-// hostile_drill_walk.cpp, the hand arms (bad_hand_class, bad_hand_family) in hostile_drill_hand.cpp, the chat arms
-// (chat_ill_formed, chat_flood) in hostile_drill_chat.cpp, keep_latest in hostile_drill_latest.cpp and world_latest in
-// hostile_drill_world.cpp, kerfur_flood in hostile_drill_kerfur.cpp and the remover arms in
-// hostile_drill_remover.cpp, the take-or-use arms in hostile_drill_act.cpp and the explosion_* arms (one Arm value,
-// the family resolving its own sub-arm) in hostile_drill_explosion.cpp -- this file is the dispatcher that
-// owns the arm selection and routes those to their module's sender and judge.
-enum class Arm { Off, SignalPark, ChatIllFormed, PropConvert, ReliableFlood, RepeatJoin,
-                 RepeatWorldReady, RepeatSaveRequest, RecordBadClasses, BadAlarm, BadPropKey,
-                 BadPropSpawn, BadHandClass, BadHandFamily, KeepLatest, ChatFlood, WorldLatest, KerfurFlood,
-                 RemoverFar, RemoverHidden, RemoverFlood,
-                 ActFar, ActGone, ActWrongFamily, ActBadCommit, ActNotYet, ActFlood, ActFloodEarly, Explosion };
-
-// Resolved once: with the environment variable unset every read would scan the ini on disk, and the
-// drill is asked per tick.
-Arm ArmOf() {
-    static const Arm a = [] {
-        const std::string v =
-            coop::config::ResolveEnum(::coop::config_registry::rows::hostile_drill);
-        return v == "signal_park"         ? Arm::SignalPark
-             : v == "chat_ill_formed"     ? Arm::ChatIllFormed
-             : v == "prop_convert"        ? Arm::PropConvert
-             : v == "reliable_flood"      ? Arm::ReliableFlood
-             : v == "repeat_join"         ? Arm::RepeatJoin
-             : v == "repeat_world_ready"  ? Arm::RepeatWorldReady
-             : v == "repeat_save_request" ? Arm::RepeatSaveRequest
-             : v == "record_bad_classes"  ? Arm::RecordBadClasses
-             : v == "bad_alarm"           ? Arm::BadAlarm
-             : v == "bad_prop_key"        ? Arm::BadPropKey
-             : v == "bad_prop_spawn"      ? Arm::BadPropSpawn
-             : v == "bad_hand_class"      ? Arm::BadHandClass
-             : v == "bad_hand_family"     ? Arm::BadHandFamily
-             : v == "keep_latest"         ? Arm::KeepLatest
-             : v == "chat_flood"          ? Arm::ChatFlood
-             : v == "world_latest"        ? Arm::WorldLatest
-             : v == "kerfur_flood"        ? Arm::KerfurFlood
-             : v == "remover_far"         ? Arm::RemoverFar
-             : v == "remover_hidden"      ? Arm::RemoverHidden
-             : v == "remover_flood"       ? Arm::RemoverFlood
-             : v == "act_far"             ? Arm::ActFar
-             : v == "act_gone"            ? Arm::ActGone
-             : v == "act_wrongfamily"     ? Arm::ActWrongFamily
-             : v == "act_bad_commit"      ? Arm::ActBadCommit
-             : v == "act_notyet"          ? Arm::ActNotYet
-             : v == "act_flood"           ? Arm::ActFlood
-             : v == "act_flood_early"     ? Arm::ActFloodEarly
-             : v.rfind("explosion_", 0) == 0 ? Arm::Explosion
-                                          : Arm::Off;
-    }();
-    return a;
-}
-
-// The explosion family's sub-arm, read from the same config value once; None unless the drill's arm is that family's.
-explosion::Arm ExplosionArmOf() {
-    static const explosion::Arm a = ArmOf() == Arm::Explosion
-        ? explosion::ArmOf(coop::config::ResolveEnum(::coop::config_registry::rows::hostile_drill))
-        : explosion::Arm::None;
-    return a;
-}
-
-const char* ArmName() {
-    switch (ArmOf()) {
-    case Arm::SignalPark:        return "signal_park";
-    case Arm::ChatIllFormed:     return "chat_ill_formed";
-    case Arm::PropConvert:       return "prop_convert";
-    case Arm::ReliableFlood:     return "reliable_flood";
-    case Arm::RepeatJoin:        return "repeat_join";
-    case Arm::RepeatWorldReady:  return "repeat_world_ready";
-    case Arm::RepeatSaveRequest: return "repeat_save_request";
-    case Arm::RecordBadClasses:  return "record_bad_classes";
-    case Arm::BadAlarm:          return "bad_alarm";
-    case Arm::BadPropKey:        return "bad_prop_key";
-    case Arm::BadPropSpawn:      return "bad_prop_spawn";
-    case Arm::BadHandClass:      return "bad_hand_class";
-    case Arm::BadHandFamily:     return "bad_hand_family";
-    case Arm::KeepLatest:        return "keep_latest";
-    case Arm::ChatFlood:         return "chat_flood";
-    case Arm::WorldLatest:       return "world_latest";
-    case Arm::KerfurFlood:       return "kerfur_flood";
-    case Arm::RemoverFar:        return "remover_far";
-    case Arm::RemoverHidden:     return "remover_hidden";
-    case Arm::RemoverFlood:      return "remover_flood";
-    case Arm::ActFar:            return "act_far";
-    case Arm::ActGone:           return "act_gone";
-    case Arm::ActWrongFamily:    return "act_wrongfamily";
-    case Arm::ActBadCommit:      return "act_bad_commit";
-    case Arm::ActNotYet:         return "act_notyet";
-    case Arm::ActFlood:          return "act_flood";
-    case Arm::ActFloodEarly:     return "act_flood_early";
-    case Arm::Explosion:         return explosion::ArmName(ExplosionArmOf());
-    default:                     return "off";
-    }
-}
-
-// The two walk arms are host-JUDGED (the host reads its own whole-array walk count), so they route to
-// hostile_drill_walk, not to the Step machine below. None when the active arm is not one of them.
-walk::Arm WalkArmOf() {
-    switch (ArmOf()) {
-    case Arm::RecordBadClasses: return walk::Arm::RecordBadClasses;
-    case Arm::BadAlarm:         return walk::Arm::BadAlarm;
-    case Arm::BadPropKey:       return walk::Arm::BadPropKey;
-    case Arm::BadPropSpawn:     return walk::Arm::BadPropSpawn;
-    default:                    return walk::Arm::None;
-    }
-}
-bool IsWalkArm() { return WalkArmOf() != walk::Arm::None; }
-
-// The take-or-use arms: each peer's half is hostile_drill_act's.
-act::Arm ActArmOf() {
-    switch (ArmOf()) {
-    case Arm::ActFar:         return act::Arm::ActFar;
-    case Arm::ActGone:        return act::Arm::ActGone;
-    case Arm::ActWrongFamily: return act::Arm::ActWrongFamily;
-    case Arm::ActBadCommit:   return act::Arm::ActBadCommit;
-    case Arm::ActNotYet:      return act::Arm::ActNotYet;
-    case Arm::ActFlood:       return act::Arm::ActFlood;
-    case Arm::ActFloodEarly:  return act::Arm::ActFloodEarly;
-    default:                  return act::Arm::None;
-    }
-}
-
-// reliable_flood, repeat_world_ready and repeat_save_request are judged by the SENDER (the host's answer
-// is this session ending, with a code): the host runs no judge, the client reads the end on OnDisconnect.
-// repeat_join is host-judged: its answer is the host refusing the repeat and KEEPING the link.
-bool ClientJudged() {
-    return ArmOf() == Arm::ReliableFlood || ArmOf() == Arm::RepeatWorldReady ||
-           ArmOf() == Arm::RepeatSaveRequest;
-}
 
 // The forged content, named once and shared by the sender and the host's judge so the two never drift.
 constexpr const wchar_t* kSignalSentinelName = L"hostile-drill sentinel";
@@ -695,8 +559,7 @@ bool IsEnabled() { return ArmOf() != Arm::Off; }
 void Install(coop::net::Session* session) {
     if (!IsEnabled()) return;
     g_session.store(session, std::memory_order_release);
-    act::Install(session, ActArmOf());   // a pre-announce arm holds this client's announce (once per session)
-    explosion::Install(session, ExplosionArmOf());   // explosion_not_ready holds it the same way
+    InstallFamilies(session);
 }
 
 void Tick() {
@@ -710,58 +573,18 @@ void Tick() {
                 ClientJudged() ? (host ? "HOST (under test)" : "CLIENT (sender and judge)")
                                : (host ? "HOST (judge)" : "CLIENT (sender)"));
     }
-    const hand::Arm handArm = ArmOf() == Arm::BadHandClass  ? hand::Arm::BadHandClass
-                            : ArmOf() == Arm::BadHandFamily ? hand::Arm::BadHandFamily
-                                                            : hand::Arm::None;
-    const latest::Arm latestArm = ArmOf() == Arm::KeepLatest ? latest::Arm::KeepLatest : latest::Arm::None;
-    const world::Arm worldArm = ArmOf() == Arm::WorldLatest ? world::Arm::WorldLatest : world::Arm::None;
-    const kerfur::Arm kerfurArm = ArmOf() == Arm::KerfurFlood ? kerfur::Arm::KerfurFlood : kerfur::Arm::None;
-    const remover::Arm removerArm = ArmOf() == Arm::RemoverFar      ? remover::Arm::RemoverFar
-                                  : ArmOf() == Arm::RemoverHidden   ? remover::Arm::RemoverHidden
-                                  : ArmOf() == Arm::RemoverFlood    ? remover::Arm::RemoverFlood
-                                                                    : remover::Arm::None;
-    const act::Arm actArm = ActArmOf();
-    const explosion::Arm explosionArm = ExplosionArmOf();
-    const chat::Arm chatArm = ArmOf() == Arm::ChatIllFormed ? chat::Arm::ChatIllFormed
-                            : ArmOf() == Arm::ChatFlood     ? chat::Arm::ChatFlood
-                                                            : chat::Arm::None;
     if (host) {
-        if (explosionArm != explosion::Arm::None) explosion::TickHostJudge(s, explosionArm);
-        else if (IsWalkArm())                    walk::TickHostJudge(s, WalkArmOf());  // host counts its own walks
-        else if (handArm != hand::Arm::None)     hand::TickHostJudge(s, handArm);
-        else if (latestArm != latest::Arm::None) latest::TickHostJudge(s, latestArm);
-        else if (worldArm != world::Arm::None)   world::TickHostJudge(s, worldArm);
-        else if (kerfurArm != kerfur::Arm::None) kerfur::TickHostJudge(s, kerfurArm);
-        else if (removerArm != remover::Arm::None) remover::TickHostJudge(s, removerArm);
-        else if (actArm != act::Arm::None)       act::TickHostJudge(s, actArm);
-        else if (chatArm != chat::Arm::None)     chat::TickHostJudge(s, chatArm);
-        else if (!ClientJudged())                TickHost(s);  // client-judged arms: the client judges, the host only answers
+        // The client-judged arms: the client judges, the host only answers.
+        if (!TickFamilyHost(s) && !ClientJudged()) TickHost(s);
     } else {
-        if (explosionArm != explosion::Arm::None) explosion::TickClient(s, explosionArm);
-        else if (IsWalkArm())                    walk::TickClient(s, WalkArmOf());
-        else if (handArm != hand::Arm::None)     hand::TickClient(s, handArm);
-        else if (latestArm != latest::Arm::None) latest::TickClient(s, latestArm);
-        else if (worldArm != world::Arm::None)   world::TickClient(s, worldArm);
-        else if (kerfurArm != kerfur::Arm::None) kerfur::TickClient(s, kerfurArm);
-        else if (removerArm != remover::Arm::None) remover::TickClient(s, removerArm);
-        else if (actArm != act::Arm::None)       act::TickClient(s, actArm);
-        else if (chatArm != chat::Arm::None)     chat::TickClient(s, chatArm);
-        else                                     TickClient(s);
+        if (!TickFamilyClient(s)) TickClient(s);
     }
 }
 
 void OnDisconnect() {
     if (ArmOf() == Arm::ReliableFlood) JudgeFloodEnd();
     else if (ArmOf() == Arm::RepeatWorldReady || ArmOf() == Arm::RepeatSaveRequest) JudgeRepeatEnd();
-    walk::OnDisconnect();
-    hand::OnDisconnect();
-    latest::OnDisconnect();
-    world::OnDisconnect();
-    kerfur::OnDisconnect();
-    remover::OnDisconnect();
-    act::OnDisconnect();
-    explosion::OnDisconnect();
-    chat::OnDisconnect();
+    OnDisconnectFamilies();
     g_step = Step::WaitArm;
     g_saidArm = false;
     g_slot = -1;
