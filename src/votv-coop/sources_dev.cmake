@@ -179,6 +179,7 @@ set(VOTVCOOP_DEV_SOURCES
     src/coop/dev/client_model_probe.cpp
     src/coop/dev/atv_eject_drill.cpp
     src/coop/dev/atv_probe.cpp
+    src/coop/dev/atv_seat.cpp
     src/coop/dev/atv_tire_probe.cpp
     src/coop/dev/pinecone_probe.cpp
     src/coop/dev/event_trigger.cpp

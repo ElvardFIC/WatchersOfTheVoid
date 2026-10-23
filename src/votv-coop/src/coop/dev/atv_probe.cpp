@@ -6,8 +6,11 @@
 #include "coop/dev/atv_probe.h"
 #include "coop/dev/atv_tire_probe.h"
 
+#include "atv_seat.h"  // co-located private header
+
 #include "coop/config/config.h"
 #include "coop/element/object_scan_hub.h"
+#include "coop/net/net_clock.h"
 #include "coop/net/session.h"
 #include "coop/player/players_registry.h"
 #include "ue_wrap/core/call.h"
@@ -55,10 +58,6 @@ constexpr int kPulseOnMs  = 250;
 constexpr int kPulseOffMs = 750;
 // A crash costs a re-seat; capped so a rig wedged against a wall cannot loop for good.
 constexpr int kMaxReseats = 6;
-// The seat verb is refused, not queued, while the player is mid-fall, so a refusal is worth a
-// couple of retries.
-constexpr int kSitRetries    = 3;
-constexpr int kSitRetryMs    = 2000;
 
 // The drive arm. ATV_C::playerSit is not the seat path; the seat verb is actionName(player,
 // hit, name) with name "sit", gated three deep: the player's fall velocity, empty hands
@@ -71,8 +70,7 @@ constexpr int kSitRetryMs    = 2000;
 // is the input path.
 enum class Arm { Wait, Sit, Drive, Done };
 Arm g_arm = Arm::Wait;
-int  g_sitTries = 0;
-std::chrono::steady_clock::time_point g_lastSitTry{};
+atv_seat::SitTry g_sit;
 std::chrono::steady_clock::time_point g_driveStart{};
 std::chrono::steady_clock::time_point g_lastDriveSample{};
 long long g_drivenMs = 0;     // cumulative time the rig was ACTUALLY driven
@@ -86,7 +84,6 @@ std::chrono::steady_clock::time_point g_armDoneAt{};
 bool g_doneAnnounced = false;
 void* g_armAtv = nullptr;
 
-void* g_actionNameFn = nullptr;  // ATV_C::actionName(player, hit, name)
 void* g_dismountFn   = nullptr;  // ATV_C::dismount()
 void* g_setBrakeFn    = nullptr;  // ATV_C::setBrake()
 
@@ -176,7 +173,6 @@ bool ResolveOffsets() {
 
     // The arm's own surface, resolved whether or not the arm is armed, so a run whose arm never
     // fires still records which of these was missing.
-    g_actionNameFn = R::FindFunction(cls, L"actionName");
     g_dismountFn   = R::FindFunction(cls, L"dismount");
     g_setBrakeFn   = R::FindFunction(cls, L"setBrake");
     R::FindBoolProperty(cls, L"input_forward", g_bInputFwd.off,    g_bInputFwd.mask);
@@ -192,7 +188,7 @@ bool ResolveOffsets() {
             "input_forward=%d/%02x brake=%d/%02x empty=%d broken=%d underwater=%d",
             g_batteryOff, g_dirtOff, g_dirtVelOff, g_torqOff, g_speedOff,
             g_wheelsOnSurfaceOff, g_airtimeOff, g_tirescountOff,
-            g_partsFn, g_actionNameFn, g_dismountFn, g_setBrakeFn,
+            g_partsFn, g_dismountFn, g_setBrakeFn,
             g_bInputFwd.off, g_bInputFwd.mask, g_bBrake.off, g_bBrake.mask,
             g_bEmpty.off, g_bBroken.off, g_bUnderwater.off);
     return true;
@@ -405,87 +401,6 @@ void Install() {
     UE_LOGI("atv_probe: scan-hub consumer registered");
 }
 
-// Which of the seat verb's three gates refused. Two are cheap and side-effect free (the fall
-// velocity is a field read; checkEquip is a pure read of the held item), so the arm measures
-// them; the third (the seat overlap) is left to elimination, with the occupant pointer as the
-// nearest proxy.
-void DiagnoseSeatRefusal(void* local, void* atv) {
-    void* pcls = R::ClassOf(local);
-    float fallZ = 0.f;
-    bool haveFall = false;
-    if (pcls) {
-        const int32_t off = R::FindPropertyOffset(pcls, L"fallVeloc");
-        if (off >= 0) {
-            const ue_wrap::FVector v =
-                *reinterpret_cast<ue_wrap::FVector*>(reinterpret_cast<uint8_t*>(local) + off);
-            fallZ = v.Z;
-            haveFall = true;
-        }
-    }
-
-    int emptyHands = -1;              // -1 = could not ask
-    std::wstring holdingClass = L"?";
-    if (pcls) {
-        if (void* fn = R::FindFunction(pcls, L"checkEquip")) {
-            ue_wrap::ParamFrame pf(fn);
-            if (pf.valid() && ue_wrap::Call(local, pf))
-                emptyHands = pf.Get<bool>(L"empty") ? 1 : 0;
-        }
-        const int32_t hoff = R::FindPropertyOffset(pcls, L"holding_actor");
-        if (hoff >= 0) {
-            void* held = *reinterpret_cast<void**>(reinterpret_cast<uint8_t*>(local) + hoff);
-            holdingClass = held ? R::ClassNameOf(held) : std::wstring(L"<none>");
-        }
-    }
-
-    UE_LOGW("[ATVP] ARM sit gates: fallVeloc.Z=%s (need |Z|<800), checkEquip.empty=%s "
-            "(need 1), holding_actor=%ls, atv.occupant=%p (need null)",
-            haveFall ? std::to_string(fallZ).c_str() : "?",
-            emptyHands < 0 ? "?" : (emptyHands ? "1" : "0"),
-            holdingClass.c_str(), ue_wrap::atv::GetOccupantPlayer(atv));
-}
-
-// Seat the local player through the game's own verb. True once the arm is finished with the
-// attempt (seated, or out of retries).
-bool TrySit(void* atv) {
-    if (!g_actionNameFn) {
-        UE_LOGW("[ATVP] ARM sit: actionName unresolved -- arm cannot fire");
-        return true;
-    }
-    void* local = coop::players::Registry::Get().Local();
-    if (!local) return false;   // not in gameplay yet; retry next tick
-
-    // The verb dispatches on a string compare, so the frame carries a real FString aliasing this
-    // local for the synchronous call; the callee only compares it.
-    std::wstring verb = L"sit";
-    R::FString fs{ verb.data(),
-                   static_cast<int32_t>(verb.size()) + 1,
-                   static_cast<int32_t>(verb.size()) + 1 };
-
-    ue_wrap::ParamFrame pf(g_actionNameFn);
-    if (!pf.valid()) { UE_LOGE("[ATVP] ARM sit: ParamFrame(actionName) invalid"); return true; }
-    pf.Set<void*>(L"player", local);          // `hit` stays the frame's zeroed HitResult
-    pf.Set<R::FString>(L"name", fs);
-    const bool ok = ue_wrap::Call(atv, pf);
-    ++g_sitTries;
-
-    const bool driven = ue_wrap::atv::IsDriven(atv);
-    UE_LOGI("[ATVP] ARM sit: actionName(local=%p, 'sit') on atv=%p -> %s, try %d/%d, driven=%d",
-            local, atv, ok ? "called" : "CALL FAILED", g_sitTries, kSitRetries, driven ? 1 : 0);
-    if (driven) return true;
-    DiagnoseSeatRefusal(local, atv);
-    if (g_sitTries >= kSitRetries) {
-        // The three gates are named in the log; the seat overlap cannot be read without a second
-        // write into the player.
-        UE_LOGW("[ATVP] ARM sit: REFUSED %d times -- the seat verb is gated on "
-                "|fallVeloc.Z|<800, empty hands (checkEquip), and an unoccupied playerHit "
-                "[disasm @46420/@46522/@46645]; the run cannot exercise the corrector",
-                g_sitTries);
-        return true;
-    }
-    return false;
-}
-
 // Release the handbrake and hold the throttle: the fields the game's own key handlers write;
 // setBrake is what makes `brake` physical.
 void StartDrive(void* atv) {
@@ -639,11 +554,9 @@ void Tick(coop::net::Session& session, bool isHost) {
     }
 
     if (g_arm == Arm::Sit) {
-        if (g_lastSitTry.time_since_epoch().count() != 0 &&
-            std::chrono::duration_cast<std::chrono::milliseconds>(now - g_lastSitTry).count() < kSitRetryMs)
-            return;
-        g_lastSitTry = now;
-        if (!TrySit(atv)) return;
+        void* local = coop::players::Registry::Get().Local();
+        if (!local) return;   // not in gameplay yet; retry next tick
+        if (!atv_seat::TrySit(local, atv, g_sit)) return;
         if (!ue_wrap::atv::IsDriven(atv)) {
             if (g_reseats > 0)
                 UE_LOGW("[ATVP] ARM: could not re-seat after ejection %d -- banked %lld ms "
@@ -679,8 +592,7 @@ void Tick(coop::net::Session& session, bool isHost) {
             }
             WriteBool(atv, g_bInputFwd, false);
             ++g_reseats;
-            g_sitTries = 0;
-            g_lastSitTry = now;
+            g_sit = atv_seat::SitTry{0, coop::net::NowMs() + atv_seat::kSitRetryMs};
             g_arm = Arm::Sit;
             UE_LOGI("[ATVP] ARM: ejected (crash) -- re-seat %d/%d, banked %lld/%d ms driven",
                     g_reseats, kMaxReseats, g_drivenMs, kDriveMs);
