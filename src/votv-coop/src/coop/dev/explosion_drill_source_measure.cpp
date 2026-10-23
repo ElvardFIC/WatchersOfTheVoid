@@ -50,9 +50,6 @@ namespace {
 // echo-suppressed destroy on a client): a prop has no break verb of its own, its breaking is its physics-impact
 // component's damage accumulation, which ends in the same actor destroy.
 
-constexpr const wchar_t* kCrateCls = L"prop_paper_C";
-constexpr const wchar_t* kCratePath = L"/Game/objects/prop_paper.prop_paper_C";
-
 // ---- selfpill ----
 //
 // Blueprint mainPlayer, ignite(fuel): burningTime = max(fuel, burningTime), the burning effect and audio on,

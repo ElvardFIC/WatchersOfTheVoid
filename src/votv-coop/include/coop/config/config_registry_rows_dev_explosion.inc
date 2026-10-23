@@ -5,7 +5,8 @@
 
 CFG_ENUM(explosion_drill, "explosion_drill", "dev", "off", "off|dissolve|apply|coast|spawn_malformed|source_host|source_client"
     "|request_rocket|request_sticky|request_detonate|request_detonate_switch|request_hand|request_hand_poop"
-    "|request_hand_soap|request_pipe|request_self|request_thrown|request_switch|request_expiry|request_rocket_early",
+    "|request_hand_soap|request_pipe|request_self|request_thrown|request_switch|request_expiry|request_rocket_early"
+    "|request_witch",
     "VOTVCOOP_EXPLOSION_DRILL",
     "Drill, the explosion lane's arms; each runs the roles it names. dissolve (the CLIENT acts, the host only "
     "hosts): a bomb barrel is spawned and broken once while the client's world loads and once in the loaded world; "
@@ -24,7 +25,8 @@ CFG_ENUM(explosion_drill, "explosion_drill", "dev", "off", "off|dissolve|apply|c
     "DONE line. The request_ arms (HOST and CLIENT, a verdict): the client's game causes one explosion of its own "
     "through the game's hand verbs (a rocket, a sticky bomb, twelve sticky bombs detonated by the launcher's "
     "RMB or by switching hands, a held grenade, poop or soap grenade or pipe bomb, the pilled player lit, a "
-    "thrown grenade as a control, thirteen hand swaps then a rocket, a rocket that expires unrequested); each "
+    "thrown grenade as a control, thirteen hand swaps then a rocket, a rocket that expires unrequested, and request_witch: the host spawns a "
+    "witch car and the client walks to it, sits in it and fires its rocket); each "
     "half counts its own lane and the host's blast must reach the client once. Run it on a fresh host world.")
 CFG_FLAG(explosion_birth_log, "explosion_birth_log", "dev", false, "VOTVCOOP_EXPLOSION_BIRTH_LOG",
     "Off by default. When on, a host or single-player game logs one line per explosion born, naming the class of "

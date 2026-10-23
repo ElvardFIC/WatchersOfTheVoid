@@ -72,6 +72,7 @@ Arm ArmOf() {
         if (v == "spawn_malformed") return Arm::SpawnMalformed;
         if (v == "source_host") return Arm::SourceHost;
         if (v == "source_client") return Arm::SourceClient;
+        if (v == "request_witch") return Arm::RequestWitch;
         Arm request{};
         if (detail::RequestArmFromName(v, request)) return request;
         return Arm::Off;
@@ -286,10 +287,14 @@ void Tick(coop::net::Session* s) {
     const Arm arm = ArmOf();
     if (arm == Arm::Off || !s) return;
     if (arm == Arm::Dissolve) return DissolveWorld(s);
+    const bool witch = arm == Arm::RequestWitch;
     if (s->role() == coop::net::Role::Host) {
-        if (s->connected()) detail::HostTick(*s, arm);
+        if (!s->connected()) return;
+        if (witch) detail::WitchHostTick();
+        else detail::HostTick(*s, arm);
     } else if (ClientRuns(s)) {
-        detail::ClientTick(arm);
+        if (witch) detail::WitchClientTick();
+        else detail::ClientTick(arm);
     }
 }
 
@@ -299,6 +304,7 @@ void OnDisconnect() {
     detail::HostReset();
     detail::ClientReset();
     detail::SourceReset();
+    detail::WitchReset();
 }
 
 }  // namespace coop::dev::explosion_drill

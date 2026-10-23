@@ -5,8 +5,9 @@
 // The request arms' client half (explosion_drill_request.cpp) acts through the same verbs and the host's half
 // (explosion_drill_request_host.cpp) holds the same guard; the drill's host half (explosion_drill_host.cpp) puts it
 // back when it abandons.
-// Private to coop/dev: those six files and the hostile drill's explosion family (its client and host halves hold the
-// same guard and take the same items) include it. Dev only; game thread.
+// Private to coop/dev: those six files, the witch car arm (explosion_drill_witch.cpp: the guard, the crate) and the
+// hostile drill's explosion family (its client and host halves hold the same guard and take the same items) include
+// it. Dev only; game thread.
 
 #pragma once
 
@@ -37,6 +38,9 @@ constexpr auto kSpawnGap = std::chrono::milliseconds(500);
 
 constexpr const wchar_t* kRocketCls = L"prop_rocket_C";
 constexpr const wchar_t* kBombCls = L"prop_stickybomb_C";
+// Any Aprop_C that simulates physics will do for a crate; prop_paper is the one the salt legs rest and attach to.
+constexpr const wchar_t* kCrateCls = L"prop_paper_C";
+constexpr const wchar_t* kCratePath = L"/Game/objects/prop_paper.prop_paper_C";
 
 enum class Kind : uint8_t { Grenade, Pipebomb, Rocket, Sticky, SaltAttached, SaltFree, StickyParent, SelfPill };
 struct LegDef {

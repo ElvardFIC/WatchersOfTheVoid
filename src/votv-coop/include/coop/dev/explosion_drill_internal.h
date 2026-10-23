@@ -1,8 +1,9 @@
 // coop/dev/explosion_drill_internal.h -- what the explosion drill's files share: the arm, the fixture and rest helpers
 // (coop/dev/explosion_drill_fixture.cpp), the host's half (coop/dev/explosion_drill_host.cpp) and the client's half
 // (coop/dev/explosion_drill_client.cpp), the source arms' legs both roles run (coop/dev/explosion_drill_source.cpp,
-// its measure legs in coop/dev/explosion_drill_source_measure.cpp), and the request arms' two halves
-// (coop/dev/explosion_drill_request.cpp, coop/dev/explosion_drill_request_host.cpp).
+// its measure legs in coop/dev/explosion_drill_source_measure.cpp), the request arms' two halves
+// (coop/dev/explosion_drill_request.cpp, coop/dev/explosion_drill_request_host.cpp) and the witch car arm
+// (coop/dev/explosion_drill_witch.cpp).
 // Dev only; game thread.
 
 #pragma once
@@ -37,7 +38,7 @@ constexpr int   kPapers = 4;
 enum class Arm : uint8_t { Off, Dissolve, Apply, Coast, SpawnMalformed, SourceHost, SourceClient,
                            RequestRocket, RequestSticky, RequestDetonate, RequestDetonateSwitch, RequestHand,
                            RequestHandPoop, RequestHandSoap, RequestPipe, RequestSelf, RequestThrown, RequestSwitch,
-                           RequestExpiry, RequestRocketEarly };
+                           RequestExpiry, RequestRocketEarly, RequestWitch };
 inline bool IsSource(Arm a) { return a == Arm::SourceHost || a == Arm::SourceClient; }
 inline bool IsRequest(Arm a) { return a >= Arm::RequestRocket; }
 
@@ -143,5 +144,14 @@ void RequestClientReset();
 bool RequestHostBegin();
 bool RequestHostTick(Arm arm);
 void RequestHostReset();
+
+// ---- the witch car arm (explosion_drill_witch.cpp) ----
+//
+// request_witch does not go through the request arms' table: the client fires from a car's seat, not from a hand. The
+// host spawns the car and a crate and judges the shot and the blast apart; the client walks to the car, takes the
+// seat and fires. Each Tick of a role is its half; WitchReset puts back the mode and isHalloween the arm wrote.
+void WitchHostTick();
+void WitchClientTick();
+void WitchReset();
 
 }  // namespace coop::dev::explosion_drill::detail

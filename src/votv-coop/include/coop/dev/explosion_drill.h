@@ -21,13 +21,16 @@ namespace coop::net { class Session; }
 namespace coop::dev::explosion_drill {
 
 // The world half of dissolve, or either role of the other arms. Game thread, once per gameplay pump tick; a latched
-// string compare when off.
+// string compare when off. request_witch is the one request arm with a seat for a launcher: the host spawns a witch
+// car, the client walks to it with the director, sits in it and fires its rocket, and the host judges the shot and the
+// blast apart (an expired rocket leaves the blast half INCONCLUSIVE).
 void Tick(coop::net::Session* s);
 
 // The load half of dissolve. Game thread, once per pump tick, the world load included.
 void TickLoad(coop::net::Session* s);
 
 // Back to the start: a rejoin's peers run their halves again; the host first destroys the papers its coast spawned.
+// A witch arm that wrote the mode and isHalloween puts them back.
 void OnDisconnect();
 
 }  // namespace coop::dev::explosion_drill

@@ -1,5 +1,6 @@
 // coop/dev/hostile_drill_explosion_detail.h -- what the explosion family's files share: the arm table, the verdict
-// print and the lobby-chat lines the two peers say to each other. Private to coop/dev: hostile_drill_explosion*.cpp.
+// print and the lobby-chat lines the two peers say to each other. Private to coop/dev: hostile_drill_explosion*.cpp,
+// and the explosion drill's witch car arm, which reads the chat helpers.
 
 #pragma once
 
