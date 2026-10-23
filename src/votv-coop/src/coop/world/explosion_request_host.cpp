@@ -302,8 +302,8 @@ Served JudgeBody(uint8_t slot, Slot&, const RequestItem& it) {
             Refuse(slot, Refusal::NoPuppet);
             return Served::Done;
         }
-        // The same alive test as the hit judge: the health the puppet's pose stream last carried is above 0.
-        if (!(rp->GetHealth() > 0.0f)) {
+        // The same alive test as the hit judge (Registry::LifeOf).
+        if (coop::players::Registry::Get().LifeOf(slot) != coop::players::PuppetLife::Alive) {
             Refuse(slot, Refusal::PuppetDead);
             return Served::Done;
         }

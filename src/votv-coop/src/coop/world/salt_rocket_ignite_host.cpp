@@ -14,7 +14,6 @@
 #include "coop/player/hand_history.h"
 #include "coop/player/hand_item.h"
 #include "coop/player/players_registry.h"
-#include "coop/player/remote_player.h"
 #include "coop/player/roster_ledger.h"
 #include "coop/props/prop_key_index.h"
 
@@ -56,14 +55,6 @@ void* ResolveRocket(const coop::net::PropIgniteIntentPayload& p) {
     return EL::LivePropActor(static_cast<EL::ElementId>(p.elementId));
 }
 
-// Whether the sender's puppet exists and lives: the test the explosion request judge refuses a self blast by
-// (NoPuppet, PuppetDead), the health the puppet's pose stream last carried above 0. MTA refuses a sender that is not
-// spawned (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:3096-3100).
-bool SenderAlive(uint8_t slot) {
-    coop::RemotePlayer* rp = coop::players::Registry::Get().Puppet(slot);
-    return rp && rp->valid() && rp->GetActor() && rp->GetHealth() > 0.0f;
-}
-
 coop::net::Served Refused(uint8_t slot, Refusal r) {
     detail::Refuse(slot, r);
     return coop::net::Served::Done;
@@ -77,7 +68,10 @@ coop::net::Served Judge(coop::net::Session& s, uint8_t slot, const detail::Item&
     void* rocket = ResolveRocket(p);
     if (!rocket) return Refused(slot, Refusal::Gone);
     if (!detail::IsRocket(rocket)) return Refused(slot, Refusal::NotRocket);
-    if (!SenderAlive(slot)) return Refused(slot, Refusal::SenderDead);
+    // The sender's puppet exists and lives (Registry::LifeOf, the explosion request judge's test too). MTA refuses a
+    // sender that is not spawned (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:3096-3100).
+    if (coop::players::Registry::Get().LifeOf(slot) != coop::players::PuppetLife::Alive)
+        return Refused(slot, Refusal::SenderDead);
     // A puppet that exists but has no pose yet (NoBody) is a Reach refusal: its place cannot be measured.
     if (!EL::IntentTarget::ForClientIntent(s, slot, detail::kReachUU).Authorize(rocket)) return Refused(slot, Refusal::Reach);
     const bool lighter = coop::hand_history::HeldWithin(slot, L"prop_lighter_C", detail::kToolWindowMs, it.recvMs);

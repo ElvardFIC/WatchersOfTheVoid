@@ -149,6 +149,12 @@ RemotePlayer* Registry::Puppet(uint8_t peerSessionId) {
     return puppetByPeer_[peerSessionId];
 }
 
+PuppetLife Registry::LifeOf(uint8_t peerSessionId) {
+    RemotePlayer* rp = Puppet(peerSessionId);
+    if (!rp || !rp->valid() || !rp->GetActor()) return PuppetLife::None;
+    return rp->GetHealth() > 0.0f ? PuppetLife::Alive : PuppetLife::Dead;
+}
+
 int Registry::PuppetCount_() const {
     int count = 0;
     for (int i = 0; i < kMaxPeers; ++i)

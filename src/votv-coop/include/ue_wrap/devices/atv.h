@@ -106,4 +106,8 @@ void* SpawnMirror(const std::wstring& className, const FVector& loc, const FRota
 // already-dead actor or a destroy that did not dispatch. Game thread.
 bool DestroyMirror(void* atv);
 
+// The ATV's own `dismount()`: the seated player is handed back (re-possessed, shown) and `isDriven` clears. False,
+// and nothing done, on a null or dead actor, an unresolved function or a call that did not dispatch. Game thread.
+bool Dismount(void* atv);
+
 }  // namespace ue_wrap::atv

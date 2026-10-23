@@ -53,19 +53,19 @@ bool JudgeHit(int slot, const FVector& eye, const FVector& aim, const FVector& h
 
     // Players are Pawns and so stand outside the {WorldStatic, WorldDynamic} set: a body between the eye and the point
     // is not cover. The puppet is the trace's world context and is ignored as its own actor.
-    coop::RemotePlayer* rp = coop::players::Registry::Get().Puppet(static_cast<uint8_t>(slot));
-    void* puppet = (rp && rp->valid()) ? rp->GetActor() : nullptr;
-    if (!puppet) {
+    // Alive: the health the puppet's pose stream last carried is above 0 (Registry::LifeOf). MTA refuses a dead shooter
+    // on its server's own death state
+    // (reference/mtasa-blue/Server/mods/deathmatch/logic/packets/CBulletsyncPacket.cpp:165).
+    const coop::players::PuppetLife life = coop::players::Registry::Get().LifeOf(static_cast<uint8_t>(slot));
+    if (life == coop::players::PuppetLife::None) {
         outReason = "puppet unreadable";
         return false;
     }
-    // Alive: the health the puppet's pose stream last carried is above 0. A peer's death never sets the puppet's `dead`
-    // flag, but its dead player's pose says health 0. MTA refuses a dead shooter on its server's own death state
-    // (reference/mtasa-blue/Server/mods/deathmatch/logic/packets/CBulletsyncPacket.cpp:165).
-    if (!(rp->GetHealth() > 0.f)) {
+    if (life == coop::players::PuppetLife::Dead) {
         outReason = "dead";
         return false;
     }
+    void* puppet = coop::players::Registry::Get().Puppet(static_cast<uint8_t>(slot))->GetActor();
 
     // Written so that a NaN fails.
     if (!(Dist(eye, hitLoc) <= swing.length + kReachSlackCm)) {

@@ -265,6 +265,13 @@ void* SpawnMirror(const std::wstring& className, const FVector& loc, const FRota
     return spawned;  // physics LEFT ON -- a native idle ATV (grabbable). atv_sync owns lifetime/sync.
 }
 
+bool Dismount(void* atv) {
+    if (!atv || !R::IsLive(atv)) return false;
+    void* const fn = R::FindDispatchFunctionCached(R::ClassOf(atv), L"dismount");
+    ParamFrame f(fn);
+    return fn && f.valid() && Call(atv, f);
+}
+
 bool DestroyMirror(void* atv) {
     if (!atv || !R::IsLive(atv)) return false;
     // A driver this peer's controller holds in it is handed back first, through the ATV's own dismount,
@@ -273,13 +280,9 @@ bool DestroyMirror(void* atv) {
     // removes its driver and passengers before its game vehicle goes
     // (reference/mtasa-blue/Client/mods/deathmatch/logic/CClientVehicle.cpp:3075-3094). A dismount that
     // cannot run is said: the destroy still goes ahead, and the player is left as the seat held them.
-    if (engine::GetController(atv)) {
-        void* const fn = R::FindDispatchFunctionCached(R::ClassOf(atv), L"dismount");
-        ParamFrame f(fn);
-        if (!fn || !f.valid() || !Call(atv, f))
-            UE_LOGW("atv: DestroyMirror could not run the ATV's own dismount -- the local driver stays "
-                    "unpossessed and hidden after the ATV goes");
-    }
+    if (engine::GetController(atv) && !Dismount(atv))
+        UE_LOGW("atv: DestroyMirror could not run the ATV's own dismount -- the local driver stays "
+                "unpossessed and hidden after the ATV goes");
     // K2_DestroyActor is declared on Actor, not on ATV_C, so it is resolved there.
     return engine::DestroyActor(atv);
 }
