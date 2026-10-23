@@ -5,7 +5,7 @@
 // set, and each tick the set's rockets are claimed on the driven-prop channel (coop/props/prop_drive_host.h), which
 // streams the pose through the flight and closes the stream when the body rests or is destroyed.
 // On a client the same watch only counts a fire() that ran on its own copy: a client's copy never fuses, since its
-// light is the host's to perform; the count is the drill's proof.
+// light is the host's to perform (coop/world/salt_rocket_ignite.h); the count is the drill's proof.
 // Game thread throughout.
 
 #pragma once

@@ -11,6 +11,7 @@
 #include "coop/world/explosion_parking.h"
 #include "coop/world/explosion_request.h"
 #include "coop/world/salt_rocket_flight.h"
+#include "coop/world/salt_rocket_ignite.h"
 #include "coop/world/spawn_authority.h"
 
 #include "ue_wrap/core/game_thread.h"
@@ -257,6 +258,7 @@ void Install(coop::net::Session* s) {
     g_session.store(s, std::memory_order_release);
     coop::explosion_request::Install(s);
     coop::salt_rocket_flight::Install(s);
+    coop::salt_rocket_ignite::Install(s);
     const bool birthSettled = g_hookInstalled || g_gaveUp;
     const bool captureSettled = g_captureInstalled || g_captureGaveUp;
     if (birthSettled && captureSettled) return;
@@ -308,15 +310,18 @@ void Tick() {
         ue_wrap::explosion_source::Reset();
         coop::explosion_request::OnWorldChange();
         coop::salt_rocket_flight::OnWorldChange();
+        coop::salt_rocket_ignite::OnWorldChange();
     }
     X::Resolve();
     coop::explosion_request::Tick();
     coop::salt_rocket_flight::Tick();
+    coop::salt_rocket_ignite::Tick();
 }
 
 void OnDisconnect() {
     coop::explosion_request::OnDisconnect();
     coop::salt_rocket_flight::OnDisconnect();
+    coop::salt_rocket_ignite::OnDisconnect();
     const Counters c = GetCounters();
     if (c.dissolved || c.captured || c.applied[0] || c.applied[1] || c.applied[2])
         UE_LOGI("[EXPLOSION] session end: dissolved=%u byName=%u destroyedByTask=%u captured=%u sendFailed=%u "

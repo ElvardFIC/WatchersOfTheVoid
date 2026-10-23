@@ -30,7 +30,7 @@ inline constexpr uint32_t kMagic = 0x564D5450u;
 // This file is past the 1500-line hard cap and stays there: it is the single-feature exception the
 // rule names. One wire format, whose enum, payload structs and static_asserts are read together;
 // splitting it would put a kind's number in one file and its bytes in another.
-inline constexpr uint16_t kProtocolVersion = 243;
+inline constexpr uint16_t kProtocolVersion = 244;
 
 // Default LAN port (overridable via multivoid.ini "net.port=").
 inline constexpr uint16_t kDefaultPort = 47621;
@@ -1091,6 +1091,14 @@ enum class ReliableKind : uint8_t {
     // prop_lifecycle carry the replacement birth and source death. Late join: host save plus the
     // ordinary prop snapshot. Never relayed.
     SleepingbagIntent = 190,
+
+    // CLIENT->HOST: this client's player lit a salt rocket (the lighter's attemptIgnite or ignite, or the torch's
+    // ignite), which the client's own copy refused to run. The host judges the sender's reach and the tool its hand
+    // held, then runs the same verb on its own copy; the rocket's fire() then claims the flight and EX-1 applies the
+    // blast. Never relayed; not pre-world; a running client's own, never parked. Late join: a rocket lit before the
+    // joiner's world is ready is a claimed row on the host, which the drive lane's world-ready answer replays.
+    // PropIgniteIntentPayload.
+    PropIgniteIntent = 193,
 };
 
 #pragma pack(push, 1)
@@ -3639,6 +3647,17 @@ struct ExplosionRequestPayload {
 };
 static_assert(sizeof(ExplosionRequestPayload) == 22, "ExplosionRequestPayload must be 22 bytes");
 static_assert(sizeof(ExplosionRequestPayload) <= 256 - 20 - 8, "ExplosionRequestPayload must fit in one reliable datagram");
+
+// A client's light on a salt rocket (PropIgniteIntent): the rocket by its prop key, or by its host eid when it has
+// none, and which verb ran. The host's fuel (the game's own 10) is not on the wire.
+struct PropIgniteIntentPayload {
+    WireKey  key;         // len 0 = keyless: the eid names the rocket
+    uint32_t elementId;   // the host's eid of the rocket
+    uint8_t  verb;        // 0 attemptIgnite, 1 ignite
+    uint8_t  pad[3];      // zero
+};
+static_assert(sizeof(PropIgniteIntentPayload) == 40, "PropIgniteIntentPayload must be 40 bytes");
+static_assert(sizeof(PropIgniteIntentPayload) <= 256 - 20 - 8, "PropIgniteIntentPayload must fit in one reliable datagram");
 
 // The loading-screen brackets: SnapshotBegin carries the candidate count (the denominator),
 // SnapshotComplete the count actually sent.

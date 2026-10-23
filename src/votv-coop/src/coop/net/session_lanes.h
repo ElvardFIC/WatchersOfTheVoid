@@ -228,9 +228,11 @@ inline Lane LaneForKind(ReliableKind k) {
     case ReliableKind::CreatureHitIntent: return Lane::Normal;
     // Order-paired: a blast's request is judged after its own shot, so the two share one lane; the judges also read the
     // hand and seat states their lanes apply, and Normal keeps them ordered with those. MTA sends both at high
-    // priority (reference/mtasa-blue/Client/mods/deathmatch/logic/CClientGame.cpp:5403, :5501).
+    // priority (reference/mtasa-blue/Client/mods/deathmatch/logic/CClientGame.cpp:5403, :5501). A light on a salt rocket
+    // is judged against the sender's hand states, which ride Normal.
     case ReliableKind::ProjectileFired:   return Lane::Normal;
     case ReliableKind::ExplosionRequest:  return Lane::Normal;
+    case ReliableKind::PropIgniteIntent:  return Lane::Normal;
     // A take or use: the request and its reply ride Normal; the commit rides PropDestroy's lane (Bulk), where PropDropIntent
     // is order-paired with it, so the item's drop cannot overtake it. The next request (Normal) can reach the host before this
     // commit, so the host waits on the slot's own reservation; MTA sends both as one packet id (CVehicleInOutPacket.h:27).

@@ -2,6 +2,7 @@
 
 #include "ue_wrap/actors/prop_fire.h"
 
+#include "ue_wrap/core/call.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/reflection_props.h"
 
@@ -17,6 +18,20 @@ bool PropFlameBaseValid(void* prop) {
     void* flame = nullptr;
     std::memcpy(&flame, reinterpret_cast<const uint8_t*>(prop) + off, sizeof(flame));
     return flame && reflection::IsLive(flame);
+}
+
+bool CallAttemptIgnite(void* prop) {
+    void* fn = reflection::FindDispatchFunctionCached(reflection::ClassOf(prop), L"attemptIgnite");
+    if (!fn) return false;
+    ParamFrame frame(fn);
+    return frame.valid() && Call(prop, frame);
+}
+
+bool CallIgnite(void* prop, float fuel) {
+    void* fn = reflection::FindDispatchFunctionCached(reflection::ClassOf(prop), L"ignite");
+    if (!fn) return false;
+    ParamFrame frame(fn);
+    return frame.valid() && frame.Set(L"fuel", fuel) && Call(prop, frame);
 }
 
 }  // namespace ue_wrap::prop

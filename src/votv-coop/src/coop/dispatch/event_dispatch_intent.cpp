@@ -35,6 +35,7 @@
 #include "coop/props/remover_request.h"  // CLIENT->HOST the tool gun's remover; HOST->CLIENT its answer
 #include "coop/items/broom_stroke.h"
 #include "coop/world/explosion_request.h"  // CLIENT->HOST a shot and an explosion request, strictly checked and queued
+#include "coop/world/salt_rocket_ignite.h"  // CLIENT->HOST a light on a salt rocket, judged and performed on the host
 #include "coop/props/trash_channel.h"
 
 #include "ue_wrap/core/log.h"
@@ -418,6 +419,22 @@ bool HandleIntentEvent(net::Session& session,
             break;
         }
         coop::explosion_request::OnRequestReceived(static_cast<int>(msg.senderPeerSlot), msg.payload, msg.payloadLen);
+        break;
+    }
+    case net::ReliableKind::PropIgniteIntent: {
+        // CLIENT->HOST: this client's player lit a salt rocket its own copy refused to run. The host judges the light
+        // and performs it on its own copy (coop::salt_rocket_ignite); the format lives there, counted. Never relayed.
+        // The handler refuses a sender that is not world-ready, as MTA tests IsJoined
+        // (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:2835).
+        if (session.role() != net::Role::Host) {
+            UE_LOGW("event_feed: PropIgniteIntent received on a client -- dropping");
+            break;
+        }
+        if (msg.senderPeerSlot < 1 || msg.senderPeerSlot >= net::kMaxPeers) {
+            UE_LOGW("event_feed: PropIgniteIntent from invalid senderPeerSlot=%d -- dropping", msg.senderPeerSlot);
+            break;
+        }
+        coop::salt_rocket_ignite::OnIntentReceived(static_cast<int>(msg.senderPeerSlot), msg.payload, msg.payloadLen);
         break;
     }
     case net::ReliableKind::PropActRequest: {

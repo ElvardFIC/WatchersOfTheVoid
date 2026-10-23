@@ -280,6 +280,8 @@ set(VOTVCOOP_SOURCES
     src/coop/world/explosion_request_host.cpp
     src/coop/world/explosion_request_client.cpp
     src/coop/world/salt_rocket_flight.cpp
+    src/coop/world/salt_rocket_ignite.cpp
+    src/coop/world/salt_rocket_ignite_host.cpp
     src/coop/world/explosion_recipe.cpp
     src/coop/world/explosion_recipe_selftest.cpp
     src/coop/world/explosion_parking.cpp
