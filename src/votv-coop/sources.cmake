@@ -176,6 +176,7 @@ set(VOTVCOOP_SOURCES
     src/ue_wrap/actors/spawner_stamp.cpp
     src/ue_wrap/actors/prop_events.cpp
     src/ue_wrap/actors/prop_use.cpp
+    src/ue_wrap/actors/prop_fire.cpp
     src/ue_wrap/actors/garbage_bag.cpp
     src/ue_wrap/actors/vitals.cpp
     src/ue_wrap/actors/effects.cpp
@@ -278,6 +279,7 @@ set(VOTVCOOP_SOURCES
     src/coop/world/explosion_request.cpp
     src/coop/world/explosion_request_host.cpp
     src/coop/world/explosion_request_client.cpp
+    src/coop/world/salt_rocket_flight.cpp
     src/coop/world/explosion_recipe.cpp
     src/coop/world/explosion_recipe_selftest.cpp
     src/coop/world/explosion_parking.cpp
