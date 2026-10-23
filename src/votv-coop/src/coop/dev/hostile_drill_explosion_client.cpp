@@ -45,6 +45,8 @@ enum class CStep { Prep, Await, Stream, AwaitTaken, Done };
 CStep    g_step = CStep::Prep;
 bool     g_idleSaid = false, g_guarded = false, g_took = false, g_haveB = false, g_ready = false;
 bool     g_life2 = false;   // the rejoin arm's second life, known from the host's live ready line
+bool     g_taken = false;   // the host's live shot-taken line has been seen
+Clock::time_point g_readyAt{};   // when the live ready line was first seen
 FVector  g_B{};
 uint32_t g_streamed = 0;
 Clock::time_point g_since{};
@@ -169,15 +171,24 @@ void SendArm(Out& o, Arm a, const FVector& p, const FVector& b) {
 // the act family uses: the hold set, the local player up, the slot assigned. A location read that still fails past
 // the failure bound ends the arm and lets the hold go.
 void TickNotReady(coop::net::Session* s, const Spec& sp) {
-    const bool late = WaitedTooLong();   // starts the arm's clock on the first tick
     if (coop::net_pump::HasAnnouncedWorldReady()) {
         Inconclusive(sp, "the hold did not take: the announce was already out before the shot could be sent");
         return;
     }
     if (!coop::dev::announce_hold::Held()) return;   // Install sets the hold at the session's start
+    // One clock for every wait below, started at the tick the hold is seen set.
+    const bool late = WaitedTooLong();
+    auto giveUp = [&](const char* why) {
+        if (!late) return;
+        coop::dev::announce_hold::Set(false);
+        Inconclusive(sp, why);
+    };
     const uint8_t self = coop::players::Registry::Get().LocalPeerId();
     void* player = coop::players::Registry::Get().Local();
-    if (!player || !s->connected() || self == 0 || self >= coop::players::kMaxPeers) return;
+    if (!player || !s->connected() || self == 0 || self >= coop::players::kMaxPeers) {
+        giveUp("the local player, the connection or the slot did not resolve before the shot could be sent");
+        return;
+    }
     if (self != kSlot) {
         UE_LOGI("[HOSTILE-DRILL] %s idles: this client is slot %u, the family acts on slot %u", sp.name,
                 static_cast<unsigned>(self), static_cast<unsigned>(kSlot));
@@ -187,10 +198,7 @@ void TickNotReady(coop::net::Session* s, const Spec& sp) {
     }
     FVector at{};
     if (!E::TryGetActorLocation(player, at)) {
-        if (late) {
-            coop::dev::announce_hold::Set(false);
-            Inconclusive(sp, "the local player's location did not resolve before the shot could be sent");
-        }
+        giveUp("the local player's location did not resolve before the shot could be sent");
         return;
     }
     const bool ok = SendFired(s, kRocket, kRpg, kIdBase, at);
@@ -230,16 +238,22 @@ bool Prepare(const Spec& sp, void* player) {
     return true;
 }
 
-// The host's ready line, taken from a live chat row only: a seeded row is the record of an earlier life. The rejoin
-// arm lives the life the first such line names (the returning occupant's is life-2); the other arms have one life.
-// Polled a few times a second; true once a live line has been seen.
-bool ReadyLive(const Spec& sp) {
-    if (!PollDue()) return false;
-    if (sp.mode == Mode::Rejoin && ChatHasLive(ReadyLine(sp.arm, 2))) {
-        g_life2 = true;
-        return true;
+// What the host said, latched on sight from the arm's first tick, whatever step the client is in: a live chat row
+// retires after seconds, so a line is read when it lands, never when a later step comes to look. Live rows only: a
+// seeded row is the record of an earlier life. The rejoin arm lives the life the first ready line names (the
+// returning occupant's is life-2); the other arms have one life. Polled a few times a second.
+void Observe(const Spec& sp) {
+    if (!PollDue()) return;
+    if (!g_ready) {
+        if (sp.mode == Mode::Rejoin && ChatHasLive(ReadyLine(sp.arm, 2))) {
+            g_life2 = true;
+            g_ready = true;
+        } else if (ChatHasLive(ReadyLine(sp.arm, 1))) {
+            g_ready = true;
+        }
+        if (g_ready) g_readyAt = Clock::now();
     }
-    return ChatHasLive(ReadyLine(sp.arm, 1));
+    if (sp.mode == Mode::Rejoin && !g_taken && ChatHasLive(TakenLine(sp.arm))) g_taken = true;
 }
 
 // The rejoin arm's second life: a request for the first life's shot.
@@ -256,6 +270,7 @@ void SendLife2(coop::net::Session* s, const Spec& sp, const FVector& at) {
 void ClientTick(coop::net::Session* s, const Spec& sp) {
     if (g_step == CStep::Done) return;
     if (sp.mode == Mode::NotReady) return TickNotReady(s, sp);
+    Observe(sp);
     if (!OwnJoinOver()) return;
     const uint8_t self = coop::players::Registry::Get().LocalPeerId();
     void* player = coop::players::Registry::Get().Local();
@@ -271,30 +286,37 @@ void ClientTick(coop::net::Session* s, const Spec& sp) {
     }
     if (g_step == CStep::AwaitTaken) {
         if (WaitedTooLong()) return Inconclusive(sp, "the host never said it took the shot");
-        if (!PollDue() || !ChatHasLive(TakenLine(sp.arm))) return;
+        if (!g_taken) return;
         UE_LOGI("[HOSTILE-DRILL] %s life-1 shot-taken", sp.name);   // the rejoin marker, read from this log
         g_step = CStep::Done;
         return;
     }
     if (g_step == CStep::Prep) {
-        if (!Prepare(sp, player)) {
-            if (g_step != CStep::Done && WaitedTooLong())
-                Inconclusive(sp, std::string("timed out waiting for ") + g_waiting);
-            return;
+        if (g_life2) {
+            g_step = CStep::Await;   // life 2 needs neither the guard nor a hand item
+        } else {
+            if (!Prepare(sp, player)) {
+                if (g_step != CStep::Done && WaitedTooLong())
+                    Inconclusive(sp, std::string("timed out waiting for ") + g_waiting);
+                return;
+            }
+            g_step = CStep::Await;
+            g_since = {};
         }
-        g_step = CStep::Await;
-        g_since = {};
     }
     if (g_step == CStep::Await) {
         if (!g_ready) {
-            g_ready = ReadyLive(sp);
-            if (!g_ready && WaitedTooLong()) Inconclusive(sp, "the host never said it was ready");
-            if (!g_ready) return;
+            if (WaitedTooLong()) Inconclusive(sp, "the host never said it was ready");
+            return;
         }
         g_step = CStep::Stream;
     }
     FVector here{};
-    if (!E::TryGetActorLocation(player, here)) return;
+    if (!E::TryGetActorLocation(player, here)) {
+        if (Clock::now() - g_readyAt > kFailBound)
+            Inconclusive(sp, "the local player's location did not resolve after the host said it was ready");
+        return;
+    }
     if (g_life2) return SendLife2(s, sp, here);
     // evicted: one sticky shot per tick, so the host's queue never holds the whole run.
     if (sp.arm == Arm::Evicted) {
@@ -326,7 +348,8 @@ void ClientReset() {
     if (g_guarded) XD::Unguard();
     g_step = CStep::Prep;
     g_idleSaid = g_guarded = g_took = g_haveB = g_ready = false;
-    g_life2 = false;
+    g_life2 = g_taken = false;
+    g_readyAt = {};
     g_B = FVector{};
     g_streamed = 0;
     g_since = {};
