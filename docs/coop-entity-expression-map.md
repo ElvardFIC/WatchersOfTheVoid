@@ -348,6 +348,7 @@ registry recycled that id. `[V]`
   (a prop broken, a device run, a prop lit) is its trigger's lane, whose host copy explodes natively and so
   reaches the capture. A projectile of the client's with no shot sent is not requested and is counted.
   `[V]`
+- **A salt rocket a client lights.** The rocket's own fuse and thrust run only on the host: a client's gate refuses its `attemptIgnite` and its `ignite`, and a light its own player's lighter or torch made goes to the host as `PropIgniteIntent` (`coop/world/salt_rocket_ignite`); the host checks the sender's reach and the tool its hand held, performs the verb on its copy, and its `fire()` puts the rocket under the drive claim (`coop/world/salt_rocket_flight`) until its blast, which the capture above carries. `[V]`
 - **Destroy.** Nothing crosses. Each copy ends by the actor's own lifespan, 10 s by the class default.
   `[RD]`
 - **Late join.** None: a one-shot cue, not re-sent; a request's state clears with its session. `[V]`
@@ -374,6 +375,7 @@ Every place two seams can express one actor, and what deduplicates it:
 | a joiner's save-loaded Bad Sun copy and the seed's present, or the host's live present | the apply counts the live copies first: one copy is left alone, none is spawned, two are logged and not repaired `[V]` (the drill's rejoin) |
 | a client's menu-spawned prop and the host's copy of it, spawned from the intent | the client's own actor IS the mirror: the host sets the client's key, and the echo resolves it back to that actor and converges its pose instead of minting a second `[V]` |
 | a client's own rocket, sticky bomb, held grenade or pipe bomb, or pilled burn: the client's birth of its explosion and the host's blast its request makes | one blast: the client's birth is dissolved and never spawns; the host's blast reaches every peer as `ExplosionSpawn`, the requester included `[V]` (the request drill's arms) |
+| a client's light on a salt rocket and the host's | one fuse: a client's copy never runs `fire()` (its gate refuses the light and asks); the host lights its copy and drives its flight `[V]` (`fire_ignite_drill`) |
 
 ## Needs a probe
 
