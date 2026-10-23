@@ -59,11 +59,8 @@ constexpr int kPulseOffMs = 750;
 // A crash costs a re-seat; capped so a rig wedged against a wall cannot loop for good.
 constexpr int kMaxReseats = 6;
 
-// The drive arm. ATV_C::playerSit is not the seat path; the seat verb is actionName(player,
-// hit, name) with name "sit", gated three deep: the player's fall velocity, empty hands
-// (checkEquip) and an unoccupied seat overlap. The seat body attaches and teleports the player
-// onto the seat, possesses the ATV and sets isDriven, so it needs no proximity, which is why
-// the arm may call it from wherever the player spawned. Torque then needs isDriven and a
+// The drive arm. The seat is atv_seat's (the game's own seat verb, which needs no proximity, so
+// the arm may seat from wherever the player spawned). Torque then needs isDriven and a
 // non-zero torqAlpha, whose producer bails whole on empty, brake, brokenn, underwater or a dead
 // battery. A parked ATV sits on its handbrake, so the arm releases it through the game's own
 // setBrake; brake and input_forward are the fields the game's own key handlers write, so this
@@ -184,7 +181,7 @@ bool ResolveOffsets() {
     g_offsResolved = true;
     UE_LOGI("atv_probe: resolved battery=%d dirt=%d dirtVel=%d torqAlpha=%d speed=%d "
             "wheelsOnSurface=%d airtime=%d tirescount=%d "
-            "vehicleGetParts=%p actionName=%p dismount=%p setBrake=%p "
+            "vehicleGetParts=%p dismount=%p setBrake=%p "
             "input_forward=%d/%02x brake=%d/%02x empty=%d broken=%d underwater=%d",
             g_batteryOff, g_dirtOff, g_dirtVelOff, g_torqOff, g_speedOff,
             g_wheelsOnSurfaceOff, g_airtimeOff, g_tirescountOff,
@@ -592,7 +589,7 @@ void Tick(coop::net::Session& session, bool isHost) {
             }
             WriteBool(atv, g_bInputFwd, false);
             ++g_reseats;
-            g_sit = atv_seat::SitTry{0, coop::net::NowMs() + atv_seat::kSitRetryMs};
+            g_sit = atv_seat::SitTry{0, coop::net::NowMs() + atv_seat::kSitRetryMs, false};
             g_arm = Arm::Sit;
             UE_LOGI("[ATVP] ARM: ejected (crash) -- re-seat %d/%d, banked %lld/%d ms driven",
                     g_reseats, kMaxReseats, g_drivenMs, kDriveMs);

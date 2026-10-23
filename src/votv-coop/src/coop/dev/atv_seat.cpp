@@ -68,7 +68,15 @@ bool TrySit(void* player, void* atv, SitTry& t) {
     if (coop::atv_sync::ActorSeatedBy(coop::players::Registry::Get().LocalPeerId()) == atv) return true;
     const uint64_t now = coop::net::NowMs();
     if (now < t.nextMs) return false;
-    if (t.tries >= kSitRetries) return true;   // the last try's gap has passed unseated: given up
+    if (t.tries >= kSitRetries) return true;   // the last step's gap has passed unclaimed: given up
+    if (t.called) {
+        // The verb took the seat and is not called again on an occupied one; each wait for the lane's claim is a try.
+        ++t.tries;
+        t.nextMs = now + kSitRetryMs;
+        UE_LOGI("[ATVP] ARM sit: waiting for the lane to claim the seat of atv=%p, wait %d/%d", atv, t.tries,
+                kSitRetries);
+        return false;
+    }
     if (!g_actionNameFn) {
         if (void* cls = R::FindClass(L"ATV_C")) g_actionNameFn = R::FindFunction(cls, L"actionName");
         if (!g_actionNameFn) {
@@ -95,7 +103,10 @@ bool TrySit(void* player, void* atv, SitTry& t) {
     const bool driven = ue_wrap::atv::IsDriven(atv);
     UE_LOGI("[ATVP] ARM sit: actionName(local=%p, 'sit') on atv=%p -> %s, try %d/%d, driven=%d",
             player, atv, ok ? "called" : "CALL FAILED", t.tries, kSitRetries, driven ? 1 : 0);
-    if (driven) return false;   // the verb took the seat; the ATV lane claims it on its next tick
+    if (driven) {   // the verb took the seat; the ATV lane claims it on its next tick, which the next steps wait for
+        t.called = true;
+        return false;
+    }
     DiagnoseSeatRefusal(player, atv);
     if (t.tries >= kSitRetries) {
         // The three gates are named in the log; the seat overlap cannot be read without a second
