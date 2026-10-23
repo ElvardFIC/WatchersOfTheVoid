@@ -13,12 +13,13 @@
 #include "coop/net/wire_key_util.h"
 #include "coop/player/hand_history.h"
 #include "coop/player/hand_item.h"
+#include "coop/player/players_registry.h"
+#include "coop/player/remote_player.h"
 #include "coop/player/roster_ledger.h"
 #include "coop/props/prop_key_index.h"
 
 #include "ue_wrap/actors/prop_fire.h"
 #include "ue_wrap/core/log.h"
-#include "ue_wrap/core/reflection.h"
 
 #include <cstdint>
 #include <cstring>
@@ -28,7 +29,6 @@ namespace coop::salt_rocket_ignite {
 namespace {
 
 namespace EL = coop::element;
-namespace R  = ue_wrap::reflection;
 
 coop::roster_ledger::PerSlotState<detail::Slot> g_slots;
 
@@ -56,8 +56,12 @@ void* ResolveRocket(const coop::net::PropIgniteIntentPayload& p) {
     return EL::LivePropActor(static_cast<EL::ElementId>(p.elementId));
 }
 
-bool IsRocket(void* actor) {
-    return R::NameEquals(R::NameOf(R::ClassOf(actor)), L"prop_saltrocket_C");
+// Whether the sender's puppet exists and lives: the test the explosion request judge refuses a self blast by
+// (NoPuppet, PuppetDead), the health the puppet's pose stream last carried above 0. MTA refuses a sender that is not
+// spawned (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:3096-3100).
+bool SenderAlive(uint8_t slot) {
+    coop::RemotePlayer* rp = coop::players::Registry::Get().Puppet(slot);
+    return rp && rp->valid() && rp->GetActor() && rp->GetHealth() > 0.0f;
 }
 
 coop::net::Served Refused(uint8_t slot, Refusal r) {
@@ -65,14 +69,16 @@ coop::net::Served Refused(uint8_t slot, Refusal r) {
     return coop::net::Served::Done;
 }
 
-// One intent at its sender's queue head: the rocket, the sender's reach, the tool its hand held, then the verb run on
-// the host's copy. A hand state still owed holds the head, as the explosion lane's judge holds its launcher check.
+// One intent at its sender's queue head: the rocket, that the sender lives, its reach, the tool its hand held, then
+// the verb run on the host's copy. A hand state still owed holds the head, as the explosion lane's judge holds its
+// launcher check. The shape is MTA's request, check, perform of Packet_Vehicle_InOut (see salt_rocket_ignite.h).
 coop::net::Served Judge(coop::net::Session& s, uint8_t slot, const detail::Item& it) {
     const coop::net::PropIgniteIntentPayload& p = it.p;
     void* rocket = ResolveRocket(p);
     if (!rocket) return Refused(slot, Refusal::Gone);
-    if (!IsRocket(rocket)) return Refused(slot, Refusal::NotRocket);
-    // A puppet with no pose yet (NoBody) is a Reach refusal too.
+    if (!detail::IsRocket(rocket)) return Refused(slot, Refusal::NotRocket);
+    if (!SenderAlive(slot)) return Refused(slot, Refusal::SenderDead);
+    // A puppet that exists but has no pose yet (NoBody) is a Reach refusal: its place cannot be measured.
     if (!EL::IntentTarget::ForClientIntent(s, slot, detail::kReachUU).Authorize(rocket)) return Refused(slot, Refusal::Reach);
     const bool lighter = coop::hand_history::HeldWithin(slot, L"prop_lighter_C", detail::kToolWindowMs, it.recvMs);
     const bool torch = p.verb == 1 &&
@@ -84,9 +90,16 @@ coop::net::Served Judge(coop::net::Session& s, uint8_t slot, const detail::Item&
         }
         return Refused(slot, Refusal::NoTool);
     }
-    // The game's own fuel for a lighter's second call.
-    if (p.verb == 0) ue_wrap::prop::CallAttemptIgnite(rocket);
-    else ue_wrap::prop::CallIgnite(rocket, 10.f);
+    // The game's own fuel for a lighter's second call. Only a call that ran counts as performed.
+    const bool ran = p.verb == 0 ? ue_wrap::prop::CallAttemptIgnite(rocket) : ue_wrap::prop::CallIgnite(rocket, 10.f);
+    if (!ran) {
+        if (!detail::NotRunSaid()) {
+            detail::NotRunSaid() = true;
+            UE_LOGW("[SALT] the host could not run verb %u on a rocket for slot %u -- the light is dropped",
+                    static_cast<unsigned>(p.verb), static_cast<unsigned>(slot));
+        }
+        return coop::net::Served::Done;
+    }
     ++detail::MutCounters().performed[p.verb];
     return coop::net::Served::Done;
 }
@@ -94,8 +107,6 @@ coop::net::Served Judge(coop::net::Session& s, uint8_t slot, const detail::Item&
 }  // namespace
 
 namespace detail {
-
-Slot& SlotOf(uint8_t slot) { return g_slots[slot]; }
 
 void Refuse(uint8_t slot, Refusal r) {
     ++MutCounters().refused[static_cast<int>(r)];

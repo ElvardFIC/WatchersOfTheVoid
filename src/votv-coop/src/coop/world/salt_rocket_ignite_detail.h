@@ -21,6 +21,8 @@ namespace coop::salt_rocket_ignite::detail {
 
 // A person lights a rocket a few times a second at most, and one click is at most two intents (the lighter's attempt
 // and its ignite): a sender is served four a second after a burst of four, with eight pending (the door verbs' bound).
+// Source queues a player's commands and spends a tick budget on them, dropping the excess
+// (reference/source-sdk-2013/src/game/server/player.cpp:103, :3392); MTA has no per-player rate on gameplay packets.
 inline constexpr coop::net::IntentBudget kBudget{4.0f, 4.0f};
 inline constexpr size_t kMaxPending = 8;
 
@@ -52,8 +54,13 @@ coop::net::Session* SessionPtr();
 // The counters (coop/world/salt_rocket_ignite.h), writable by the lane's own files.
 Counters& MutCounters();
 
-// The sender's state; the one PerSlotState<Slot>.
-Slot& SlotOf(uint8_t slot);
+// Whether `obj` is a salt rocket: its class is the loaded prop_saltrocket_C, compared by pointer. The class is looked
+// up once and held under its listing identity; ForgetRocketClass drops it (a new world). Game thread.
+bool IsRocket(void* obj);
+void ForgetRocketClass();
+
+// Whether the host has said that a verb it ran on a rocket's copy did not run; cleared at disconnect.
+bool& NotRunSaid();
 
 // One refusal from `slot`: the counter, and a line the first time and then at most every kRefusalSayMs.
 void Refuse(uint8_t slot, Refusal r);

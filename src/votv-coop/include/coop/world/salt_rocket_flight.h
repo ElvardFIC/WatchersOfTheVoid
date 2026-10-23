@@ -3,9 +3,14 @@
 // and no hook ties it, so no channel streamed its pose and a client's copy stood still until the blast. The fire
 // body is watched on the host: a call that starts the fuse (the prop has no flame yet) puts the rocket in a small
 // set, and each tick the set's rockets are claimed on the driven-prop channel (coop/props/prop_drive_host.h), which
-// streams the pose through the flight and closes the stream when the body rests or is destroyed.
-// On a client the same watch only counts a fire() that ran on its own copy: a client's copy never fuses, since its
-// light is the host's to perform (coop/world/salt_rocket_ignite.h); the count is the drill's proof.
+// streams the pose through the flight. A claimed row stays open, probed at 4 Hz while the body rests, until the
+// rocket is destroyed or a hand takes it (coop/props/prop_drive_host.cpp, the rest rule in Tick). On a client the
+// same watch only counts a fire() that ran on its own copy, which never fuses: its light is the host's to perform
+// (coop/world/salt_rocket_ignite.h); the count is the drill's proof.
+// MTA's unoccupied-vehicle syncer is the precedent (reference/mtasa-blue/Server/mods/deathmatch/logic/
+// CUnoccupiedVehicleSync.cpp). Here the host is always the syncer (MTA picks a client by a 500 ms scan, :36-42,
+// :171-192) and the set is fed by the fire() PRE, never by a scan; the set is capped at 32 (MTA iterates every
+// vehicle); stale packets are dropped by the drive channel, not by this lane (MTA by time context, :285).
 // Game thread throughout.
 
 #pragma once

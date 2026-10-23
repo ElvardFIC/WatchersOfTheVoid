@@ -5,12 +5,13 @@
 //     whose object is a salt rocket are refused, whatever called them. A refusal is the player's when the local
 //     player's own lighter or torch verb is running on the tool in the engine's hand; it is queued, in click order,
 //     and sent as PropIgniteIntent once this client's own hand announce of the tool is out and the rocket's host eid is
-//     known. Any other refusal (a world fire on this client) is counted and dropped: the host's own world fire lights
-//     the host's copy.
+//     known. Any other refusal (a world fire) is counted and dropped: the host's own world fire lights its copy.
 //   - HOST (salt_rocket_ignite_host.cpp): the intent joins its sender's queue (a per-sender budget and cap), is
-//     checked -- the sender's world, the form of the message, the rocket, the sender's reach, the tool its hand held --
-//     and the same verb then runs on the host's own copy, as single player would. A refusal is counted and never
-//     answered. The rocket's fire() then claims the flight, and the blast reaches every peer through the explosion lane.
+//     checked -- the sender's world, the form of the message, the rocket, that the sender lives, its reach, the tool
+//     its hand held -- and the same verb then runs on the host's own copy, as single player would. The rocket's
+//     fire() then claims the flight, and the blast reaches every peer through the explosion lane.
+// MTA's shape, request, check, perform and reply (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:
+// 3018-3140, Packet_Vehicle_InOut); no reply is sent here: a refused light is counted and dropped.
 // Game thread throughout.
 
 #pragma once
@@ -24,9 +25,9 @@ class Session;
 namespace coop::salt_rocket_ignite {
 
 // Why the host refused an intent, one counter each.
-enum class Refusal : uint8_t { NotWorldReady, Malformed, QueueFull, Gone, NotRocket, Reach, NoTool, Count };
+enum class Refusal : uint8_t { NotWorldReady, Malformed, QueueFull, Gone, NotRocket, Reach, NoTool, SenderDead, Count };
 
-// Snake case: "not_world_ready", "malformed", "queue_full", "gone", "not_rocket", "reach", "no_tool".
+// Snake case: "not_world_ready", "malformed", "queue_full", "gone", "not_rocket", "reach", "no_tool", "sender_dead".
 const char* RefusalName(Refusal r);
 
 // What this process's half of the lane has counted since the session began.

@@ -36,6 +36,7 @@ int g_count = 0;
 Counters g_counters{};
 bool g_fullWarned = false;
 bool g_registered = false;
+bool g_refused = false;   // the gate refused the watch at registration: it has no table entry to settle on
 bool g_settled = false;
 
 coop::net::Session* Connected() {
@@ -79,13 +80,16 @@ void Install(coop::net::Session* s) {
     g_session.store(s, std::memory_order_release);
     if (g_registered) return;
     g_registered = true;
-    if (!sg::WatchName(kRowFire, kTagFire, &OnFirePre, nullptr))
+    if (!sg::WatchName(kRowFire, kTagFire, &OnFirePre, nullptr)) {
+        g_refused = true;
         UE_LOGE("salt_rocket_flight: the script-body gate refused the watch on %ls::%ls -- a host rocket's flight is "
                 "not driven", kRowFire.Class(), kRowFire.Name());
+    }
 }
 
 void Tick() {
-    if (g_registered && !g_settled) {
+    // A refused watch is settled dead from the start: Install said so once and nothing is left to wait on.
+    if (g_registered && !g_settled && !g_refused) {
         sg::ResolvePendingNames();
         if (sg::NameWatchLive(kRowFire, kTagFire)) {
             g_settled = true;

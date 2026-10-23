@@ -16,6 +16,7 @@
 #include "ue_wrap/actors/prop.h"
 #include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/log.h"
+#include "ue_wrap/core/object_index.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/script_gate.h"
 #include "ue_wrap/facts/function_row.h"
@@ -31,6 +32,7 @@ namespace {
 
 namespace EL = coop::element;
 namespace R  = ue_wrap::reflection;
+namespace OI = ue_wrap::object_index;
 namespace sg = ue_wrap::script_gate;
 
 UE_FACT_FN(kRowAttempt, "salt_rocket", L"prop_saltrocket_C", L"attemptIgnite", Declared);
@@ -54,7 +56,10 @@ constexpr const wchar_t* ToolClass(uint8_t tool) { return tool == kLighter ? L"p
 constexpr int kPendingCap = 16;
 // How long a light waits for the host's spawn of a rocket this client has just placed. The wait has no edge of its
 // own: the drop lane refuses a place silently (coop/props/prop_drop_intent.cpp), so the bound is a protocol deadline,
-// the shape of EX-2's kRocketLifeMs, and 2000 ms is EX-2's flat window for the hand lane's round trip.
+// the shape of EX-2's kRocketLifeMs, and 2000 ms is EX-2's flat window for the hand lane's round trip. MTA answers a
+// failed request at once (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:3038-3044), but our drop lane
+// refuses a place silently, so the wait is bounded instead; the orphan is tracked off-arc in
+// TRACKER_OCTOBER_3D_2026.
 constexpr uint64_t kPlaceAnswerMs = 2000;
 constexpr uint64_t kStatsEveryMs = 60000;
 
@@ -79,10 +84,16 @@ int g_pendHead = 0;
 int g_pendCount = 0;
 bool g_fullSaid = false;
 
+bool g_notRunSaid = false;
+
 bool g_registered = false;
+int  g_refused = 0;       // watches the gate refused at registration: they have no table entry to settle on
 bool g_settled = false;
 
-bool IsRocket(void* obj) { return obj && R::NameEquals(R::NameOf(R::ClassOf(obj)), L"prop_saltrocket_C"); }
+// The salt rocket class and the listing it was found under (ObjectIndex ClassListingId): a class unloaded and loaded
+// again answers a new listing, so a stale pointer is looked up again and never read through.
+void*    g_rocketClass = nullptr;
+uint64_t g_rocketListing = 0;
 
 // The tool the local player's own verb is running on: the body is active on this thread and its object is the
 // engine's hold (the hand actor), not the announce latch.
@@ -134,7 +145,7 @@ sg::Verdict OnToolPre(const sg::Call& c) {
 sg::Verdict OnRocketPre(const sg::Call& c) {
     if (!coop::spawn_authority::IsActiveClientSession()) return sg::Verdict::Run;
     const bool ignite = c.tag == kTagIgnite;
-    if (ignite && !IsRocket(c.object)) return sg::Verdict::Run;
+    if (ignite && !detail::IsRocket(c.object)) return sg::Verdict::Run;
     const uint8_t tool = RunningTool();
     // The lighter calls both verbs, the torch only ignite.
     const bool player = tool == kLighter || (tool == kTorch && ignite);
@@ -168,19 +179,21 @@ void SettleWatches() {
         if (sg::NameWatchLive(*w.row, w.tag)) ++live;
         if (sg::NameWatchSettled(*w.row, w.tag)) ++settled;
     }
+    // A refused watch is settled dead: it has no table entry, so it is neither live nor settled there.
     if (live == kWatchCount) {
         g_settled = true;
         UE_LOGI("salt_rocket_ignite: the light gates are live (attemptIgnite, ignite, the lighter's and the torch's "
                 "verbs)");
-    } else if (settled == kWatchCount) {
+    } else if (settled + g_refused == kWatchCount) {
         g_settled = true;
-        UE_LOGE("salt_rocket_ignite: %d of %d light gates are dead -- a client's light on a rocket stays its own",
-                kWatchCount - live, kWatchCount);
+        UE_LOGE("salt_rocket_ignite: %d of %d light gates are dead and %d were refused -- a client's light on a "
+                "rocket stays its own", kWatchCount - live - g_refused, kWatchCount, g_refused);
     }
 }
 
 // The head first: a light goes once the hand announce of its tool has, and once the rocket is the host's; the first
-// head that must wait holds everything behind it, so a click's attempt and ignite stay in order.
+// head that must wait holds everything behind it, so a click's attempt and ignite stay in order. The look-seq wait and
+// the send retry are each bounded by an edge: the hand lane's next look, and the send's own acceptance.
 void TickClient() {
     coop::net::Session* s = detail::SessionPtr();
     if (!s) return;
@@ -193,7 +206,10 @@ void TickClient() {
             continue;
         }
         // The tool's announce sends it. A look at the hand since the click that left the tool unannounced means it
-        // never will be: dropped. No look yet -- the hand lane may not have started -- the light waits.
+        // never will be: dropped. No look yet -- the hand lane may not have started -- the light waits. The tool's
+        // announce and the use travel separately, the shape EX-2 inherited (explosion_request_client.cpp). Source
+        // sends them in one command (reference/source-sdk-2013/src/game/client/in_main.cpp:1176); VOTV's hand lane
+        // is a separate stream, so the client waits.
         if (!coop::hand_item::OwnAnnounced(ToolClass(h.tool))) {
             if (coop::hand_item::OwnHandLookSeq() == h.lookSeq) return;
             ++g_counters.notAnnounced;
@@ -250,6 +266,23 @@ coop::net::Session* SessionPtr() { return g_session.load(std::memory_order_acqui
 
 Counters& MutCounters() { return g_counters; }
 
+bool& NotRunSaid() { return g_notRunSaid; }
+
+bool IsRocket(void* obj) {
+    if (!obj) return false;
+    // A class held across ticks stands only while its listing does; a null or stale one is looked up again.
+    if (!g_rocketClass || OI::ClassListingId(g_rocketClass) != g_rocketListing) {
+        g_rocketClass = OI::ClassByName(L"prop_saltrocket_C");
+        g_rocketListing = g_rocketClass ? OI::ClassListingId(g_rocketClass) : 0;
+    }
+    return g_rocketClass && R::ClassOf(obj) == g_rocketClass;
+}
+
+void ForgetRocketClass() {
+    g_rocketClass = nullptr;
+    g_rocketListing = 0;
+}
+
 }  // namespace detail
 
 const char* RefusalName(Refusal r) {
@@ -261,6 +294,7 @@ const char* RefusalName(Refusal r) {
         case Refusal::NotRocket:     return "not_rocket";
         case Refusal::Reach:         return "reach";
         case Refusal::NoTool:        return "no_tool";
+        case Refusal::SenderDead:    return "sender_dead";
         case Refusal::Count:         break;
     }
     return "unknown";
@@ -273,9 +307,11 @@ void Install(coop::net::Session* s) {
     if (g_registered) return;
     g_registered = true;
     for (const WatchDef& w : kWatches)
-        if (!sg::WatchName(*w.row, w.tag, w.pre, nullptr))
+        if (!sg::WatchName(*w.row, w.tag, w.pre, nullptr)) {
+            ++g_refused;
             UE_LOGE("salt_rocket_ignite: the script-body gate refused the watch on %ls::%ls -- that light stays each "
                     "peer's own", w.row->Class() ? w.row->Class() : L"*", w.row->Name());
+        }
 }
 
 void Tick() {
@@ -293,6 +329,7 @@ void Tick() {
 
 void OnWorldChange() {
     detail::HostReset();
+    detail::ForgetRocketClass();
     ClearPending();
     g_toolFn[0] = g_toolFn[1] = nullptr;
     g_toolObj[0] = g_toolObj[1] = nullptr;
@@ -304,6 +341,7 @@ void OnDisconnect() {
     g_counters = Counters{};
     g_statsSeen = Counters{};
     g_fullSaid = false;
+    g_notRunSaid = false;
 }
 
 }  // namespace coop::salt_rocket_ignite
