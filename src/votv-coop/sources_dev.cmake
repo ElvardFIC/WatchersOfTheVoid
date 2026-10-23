@@ -37,6 +37,7 @@ set(VOTVCOOP_DEV_SOURCES
     src/coop/dev/hostile_drill_act.cpp
     src/coop/dev/hostile_drill_arms.cpp
     src/coop/dev/hostile_drill_act_family.cpp
+    src/coop/dev/drill_chat.cpp
     src/coop/dev/hostile_drill_chat.cpp
     src/coop/dev/hostile_drill_explosion.cpp
     src/coop/dev/hostile_drill_explosion_client.cpp

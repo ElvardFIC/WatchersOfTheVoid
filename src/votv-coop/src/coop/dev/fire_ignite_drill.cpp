@@ -7,6 +7,7 @@
 #include "coop/config/config.h"
 #include "coop/config/config_registry.h"
 #include "coop/dev/director/aim_fan.h"
+#include "coop/dev/drill_chat.h"
 #include "coop/dev/drill_hand.h"
 #include "coop/net/session.h"
 #include "coop/player/players_registry.h"
@@ -41,6 +42,7 @@
 namespace coop::dev::fire_ignite_drill {
 namespace {
 
+namespace DC  = coop::dev::drill_chat;
 namespace E   = ue_wrap::engine;
 namespace R   = ue_wrap::reflection;
 namespace XD  = coop::dev::explosion_drill::detail;
@@ -60,6 +62,8 @@ constexpr int      kRestChecks    = 4;      // ...that many reads in a row, a ch
 constexpr uint64_t kFindBoundMs   = 20000;  // CLIENT: world-ready to the rocket's mirror
 constexpr uint64_t kHoldBoundMs   = 5000;   // CLIENT: the take to the lighter in the hand
 constexpr uint64_t kLifeBoundMs   = 60000;  // the light (or what the light caused) to the rocket's end
+// The client says this once its start set is recorded; the host spawns the rocket only after it.
+constexpr const char* kClientReadyLine = "fire-ignite client-ready";
 
 enum class Arm : uint8_t { Off, Client, Host };
 
@@ -116,6 +120,7 @@ Settle                 g_hSettle;
 SRF::Counters          g_flight0{};
 SRI::Counters          g_ignite0{};
 uint32_t               g_captured0 = 0;
+bool                   g_clientReady = false;   // the client said its start set is recorded
 
 void HNext(HStep s) { g_h = s; g_hStepMs = Now(); }
 
@@ -135,7 +140,9 @@ uint32_t Delta(uint32_t now, uint32_t base) { return now >= base ? now - base : 
 
 // The spawn: the rocket 150 cm before, and 50 cm above, the acting player (the client's puppet, or the host's own).
 void HostArm(coop::net::Session* s) {
-    if (!s->IsSlotWorldReady(1)) return;
+    // The client's line, latched on sight from the first tick: a live chat row retires after seconds.
+    if (!g_clientReady && DC::PollDue()) g_clientReady = DC::ChatHasLive(kClientReadyLine);
+    if (!s->IsSlotWorldReady(1) || !g_clientReady) return;
     void* actor = ArmOf() == Arm::Client ? coop::puppet_drive::Puppet(1).GetActor()
                                          : coop::players::Registry::Get().Local();
     ue_wrap::FVector at{};
@@ -269,6 +276,7 @@ void ClientArm() {
     }
     g_cFlight0 = SRF::GetCounters();
     g_cIgnite0 = SRI::GetCounters();
+    DC::Say(kClientReadyLine);
     CNext(CStep::Find);
 }
 
@@ -432,6 +440,7 @@ void OnDisconnect() {
     g_flight0 = SRF::Counters{};
     g_ignite0 = SRI::Counters{};
     g_captured0 = 0;
+    g_clientReady = false;
     g_c = CStep::Arm;
     g_cStepMs = g_cNextMs = g_cRestMs = g_cSentMs = 0;
     g_start.clear();

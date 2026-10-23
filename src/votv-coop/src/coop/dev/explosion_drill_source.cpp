@@ -19,8 +19,8 @@
 #include "coop/props/prop_lifecycle.h"  // DestroyLocalProp: the echo-suppressed local destroy
 #include "coop/world/explosion_sync.h"
 
+#include "ue_wrap/actors/prop_fire.h"
 #include "ue_wrap/actors/vitals.h"
-#include "ue_wrap/core/call.h"
 #include "ue_wrap/core/object_index.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/engine/engine.h"
@@ -374,9 +374,7 @@ void SaltIgnite(const LegDef& d) {
     r.rain1 = r.rain0;
     g_src.base = ES::GetCounters();
     g_src.verbAt = Clock::now();
-    void* fn = R::FindDispatchFunctionCached(R::ClassOf(rk), L"attemptIgnite");
-    ue_wrap::ParamFrame f(fn);
-    r.ignited = fn && f.valid() && ue_wrap::Call(rk, f);
+    r.ignited = ue_wrap::prop::CallAttemptIgnite(rk);
     if (!r.ignited) return Skip("attemptIgnite did not run");
     Track(rk);
     Enter(LStep::SaltWait);

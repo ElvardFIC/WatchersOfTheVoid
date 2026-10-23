@@ -1,5 +1,6 @@
 // coop/dev/hostile_drill_ignite_detail.h -- what the ignite family's files share: the arm table, the verdict print and
-// the lobby-chat lines the two peers say to each other. Private to coop/dev: hostile_drill_ignite*.cpp.
+// the lobby-chat lines the two peers say to each other (coop/dev/drill_chat.h). Private to coop/dev:
+// hostile_drill_ignite*.cpp.
 
 #pragma once
 
@@ -48,14 +49,10 @@ const Spec* SpecOf(Arm a);
 // The verdict line: PASS to the info log, FAIL and INCONCLUSIVE as warnings.
 void Verdict(Arm a, const char* what, const std::string& why);
 
-// The lobby chat line the host says once it is ready.
+// The lobby chat lines the peers say (coop/dev/drill_chat.h): the host's once it is ready, and the client's once its
+// start set is recorded, which the host spawns the targets after.
 std::string ReadyLine(Arm a);
-void Say(const std::string& line);
-// True when a LIVE chat row holds `needle`. A row seeded at the join sits in the retained tier and never counts, so a
-// peer acts on what the other said after it joined, never on the record of an earlier life.
-bool ChatHasLive(const std::string& needle);
-// A feed walk is a few times a second: true on every fifteenth call.
-bool PollDue();
+std::string ClientReadyLine(Arm a);
 
 // The tool the hand holds for the arm: the class name the hand lane compares, the game's row name of the item, and the
 // class's asset path; null for an empty hand.

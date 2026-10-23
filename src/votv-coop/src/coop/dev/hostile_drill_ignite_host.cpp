@@ -8,6 +8,7 @@
 
 #include "hostile_drill_act_detail.h"  // SpawnOnFloor (co-located private header of the act family)
 
+#include "coop/dev/drill_chat.h"
 #include "coop/net/session.h"
 #include "coop/player/hand_item.h"
 #include "coop/player/puppet_drive.h"
@@ -25,6 +26,7 @@
 namespace coop::dev::hostile_drill::ignite::detail {
 namespace {
 
+namespace DC  = coop::dev::drill_chat;
 namespace SRI = coop::salt_rocket_ignite;
 using Refusal = SRI::Refusal;
 constexpr size_t kReasons = static_cast<size_t>(Refusal::Count);
@@ -33,7 +35,7 @@ enum class HStep { Begin, WaitReady, Judge, Done };
 HStep             g_step = HStep::Begin;
 SRI::Counters     g_base{};
 Clock::time_point g_armAt{}, g_judgeAt{};
-bool              g_spawned = false;
+bool              g_spawned = false, g_clientReady = false;
 const char*       g_waiting = "slot 1's world-ready";
 uint16_t          g_playerNo = 0;    // slot 1's occupant when the host said ready
 
@@ -88,15 +90,20 @@ void WaitReady(coop::net::Session* s, const Spec& sp) {
         Finish(sp, "INCONCLUSIVE", std::string("the precondition never held: waiting for ") + g_waiting);
         return;
     }
+    // The client's line, latched on sight from the arm's first tick: a live chat row retires after seconds.
+    if (!g_clientReady && DC::PollDue()) g_clientReady = DC::ChatHasLive(ClientReadyLine(sp.arm));
     if (!PuppetReady(s)) return;
     if (!g_spawned) {
+        // The client records the rockets and lighters it already holds, then says so: a target born earlier would
+        // sit in that set.
+        if (!g_clientReady) { g_waiting = "the client's ready line"; return; }
         if (!SpawnTargets(sp)) return;
         g_spawned = true;
     }
     if (!HandReady(sp)) { g_waiting = "slot 1's hand state"; return; }
     g_base = SRI::GetCounters();
     g_playerNo = coop::roster_ledger::Get(kSlot).playerNo;
-    Say(ReadyLine(sp.arm));
+    DC::Say(ReadyLine(sp.arm));
     g_judgeAt = Clock::now();
     g_step = HStep::Judge;
     UE_LOGI("[HOSTILE-DRILL] %s armed on slot %u (the targets stand, the hand state is in)", sp.name,
@@ -207,7 +214,7 @@ void HostReset() {
     g_step = HStep::Begin;
     g_base = SRI::Counters{};
     g_armAt = g_judgeAt = {};
-    g_spawned = false;
+    g_spawned = g_clientReady = false;
     g_waiting = "slot 1's world-ready";
     g_playerNo = 0;
 }

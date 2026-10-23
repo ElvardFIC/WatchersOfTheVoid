@@ -6,16 +6,12 @@
 
 #include "hostile_drill_ignite_detail.h"  // co-located private header (src tree, not include/)
 
-#include "coop/comms/chat_feed.h"
-#include "coop/comms/chat_sync.h"
 #include "coop/dev/announce_hold.h"
 #include "coop/net/session.h"
 
 #include "ue_wrap/core/log.h"
 
-#include <cstdint>
 #include <cstring>
-#include <string_view>
 
 namespace coop::dev::hostile_drill::ignite {
 namespace detail {
@@ -54,21 +50,7 @@ void Verdict(Arm a, const char* what, const std::string& why) {
 
 // A line no save can hold, as a prop class or a place could.
 std::string ReadyLine(Arm a) { return std::string("hostile-drill ") + ArmName(a) + " host-ready life-1"; }
-
-void Say(const std::string& line) { coop::chat_sync::QueueSend(line); }
-
-bool ChatHasLive(const std::string& needle) {
-    bool found = false;
-    coop::chat_feed::ForEachRow([&](const coop::chat_feed::RowView& r) {
-        if (!r.retained && r.line.find(needle) != std::string_view::npos) found = true;
-    });
-    return found;
-}
-
-bool PollDue() {
-    static uint32_t sTicks = 0;
-    return sTicks++ % 15 == 0;
-}
+std::string ClientReadyLine(Arm a) { return std::string("hostile-drill ") + ArmName(a) + " client-ready"; }
 
 const wchar_t* HandClass(Hand h) {
     switch (h) {

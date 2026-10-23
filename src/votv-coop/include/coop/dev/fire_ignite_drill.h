@@ -9,6 +9,8 @@
 // Each peer prints one `[FIRE-IGNITE] host DONE` or `[FIRE-IGNITE] client DONE` on a pass. `[FIRE-IGNITE] FAIL` is
 // the lane failing (--fail-marker), `[FIRE-IGNITE] ABANDONED` the drill unable to do its part (--dead-marker). The
 // bounds in the .cpp are failure bounds of the instrument, never a wait for a milestone. Run on a fresh host world.
+// The CLIENT records the rockets it already holds and says `fire-ignite client-ready` in the lobby chat; the HOST
+// spawns its rocket only after it sees that line, so the rocket is never in the start set.
 
 #pragma once
 

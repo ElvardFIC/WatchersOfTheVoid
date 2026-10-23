@@ -7,9 +7,9 @@
 // counter deltas since its baseline equals the messages sent, and each reason's delta matches the arm's table.
 //   ignite_malformed  ignite_no_tool  ignite_torch_attempt  ignite_torch_ignite  ignite_reach  ignite_not_rocket
 //   ignite_not_ready  ignite_flood
-// The host spawns the targets before the client's puppet (a near rocket, a far rocket, a lighter on the floor) and
-// says it is ready in the lobby chat once the client's hand holds what the arm needs. The family acts on slot 1 only;
-// another slot idles.
+// The client records the rockets and lighters it already holds and says so in the lobby chat; the host then spawns the
+// targets before the client's puppet (a near rocket, a far rocket, a lighter on the floor) and says it is ready in
+// the lobby chat once the client's hand holds what the arm needs. The family acts on slot 1 only; another slot idles.
 
 #pragma once
 
@@ -35,7 +35,8 @@ void Install(coop::net::Session* s, Arm a);
 // INCONCLUSIVE.
 void TickHostJudge(coop::net::Session* s, Arm a);
 
-// Client (sender), game thread: take the tool, wait for the host's ready line, then send the arm's forged messages.
+// Client (sender), game thread: record the start set and say so, take the tool, wait for the host's ready line, then
+// send the arm's forged messages.
 void TickClient(coop::net::Session* s, Arm a);
 
 // Back to the un-armed state, putting back what the arm held (disconnect / re-arm).

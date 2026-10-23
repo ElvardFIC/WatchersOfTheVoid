@@ -1,13 +1,14 @@
 // coop/dev/hostile_drill_ignite_client.cpp -- the ignite family's sender: see coop/dev/hostile_drill_ignite.h.
-// The client takes the tool the arm needs into its hand, waits for the host to say it holds the matching state, finds
-// the host's three targets, then sends raw PropIgniteIntent payloads through the session's own send, bypassing its
-// ignite lane.
+// The client records the rockets and lighters it holds and says so in the lobby chat, takes the tool the arm needs into
+// its hand, waits for the host to say it holds the matching state, finds the host's three targets, then sends raw
+// PropIgniteIntent payloads through the session's own send, bypassing its ignite lane.
 
 #include "hostile_drill_ignite_detail.h"  // co-located private header (src tree, not include/)
 
 #include "explosion_drill_source.h"  // HeldOf, ResolveClass (co-located private header)
 
 #include "coop/dev/announce_hold.h"
+#include "coop/dev/drill_chat.h"
 #include "coop/dev/drill_hand.h"
 #include "coop/element/registry.h"
 #include "coop/net/protocol.h"
@@ -35,6 +36,7 @@
 namespace coop::dev::hostile_drill::ignite::detail {
 namespace {
 
+namespace DC = coop::dev::drill_chat;
 namespace XD = coop::dev::explosion_drill::detail;
 namespace E  = ue_wrap::engine;
 namespace EL = coop::element;
@@ -275,8 +277,8 @@ bool Prepare(const Spec& sp, void* player) {
 // The host's ready line, latched on sight from the arm's first tick, whatever the client is doing: a live chat row
 // retires after seconds, so a line is read when it lands. Polled a few times a second.
 void Observe(const Spec& sp) {
-    if (g_ready || !PollDue()) return;
-    g_ready = ChatHasLive(ReadyLine(sp.arm));
+    if (g_ready || !DC::PollDue()) return;
+    g_ready = DC::ChatHasLive(ReadyLine(sp.arm));
 }
 
 }  // namespace
@@ -301,6 +303,8 @@ void ClientTick(coop::net::Session* s, const Spec& sp) {
     if (!g_started) {   // before the tool is taken, so the held lighter is not mistaken for the world's
         RecordStart();
         g_started = true;
+        // The host spawns the targets only after this line: a target born before the set is recorded would sit in it.
+        DC::Say(ClientReadyLine(sp.arm));
     }
     if (!Prepare(sp, player)) return;
     if (!g_ready) {
