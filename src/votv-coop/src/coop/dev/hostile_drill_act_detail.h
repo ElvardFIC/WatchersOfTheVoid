@@ -1,6 +1,7 @@
 // coop/dev/hostile_drill_act_detail.h -- sibling-internal state shared by the act drill arms' two TUs
 // (hostile_drill_act.cpp, the router and the single-target arms; hostile_drill_act_family.cpp, the act_wrongfamily arm).
-// The remover_drill_detail.h shape: private to the src tree, never part of the include surface.
+// The remover_drill_detail.h shape: private to the src tree, never part of the include surface. The ignite family's host
+// half (hostile_drill_ignite_host.cpp) includes it too, for SpawnOnFloor.
 
 #pragma once
 

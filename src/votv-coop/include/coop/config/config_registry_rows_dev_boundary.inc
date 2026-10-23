@@ -31,7 +31,9 @@ CFG_ENUM(hostile_drill, "hostile_drill", "dev", "off",
     "explosion_malformed|explosion_duplicate|explosion_unknown_shot|explosion_consumed|explosion_no_launcher|"
     "explosion_origin|explosion_reach|explosion_not_seated|explosion_no_explosive|explosion_hand_bound|"
     "explosion_story|explosion_wait_behind_shot|explosion_not_ready|explosion_evicted|explosion_flood|"
-    "explosion_rejoin|explosion_self_clamp",
+    "explosion_rejoin|explosion_self_clamp|"
+    "ignite_malformed|ignite_no_tool|ignite_torch_attempt|ignite_torch_ignite|ignite_reach|ignite_not_rocket|"
+    "ignite_not_ready|ignite_flood",
     "VOTVCOOP_HOSTILE_DRILL",
     "Receive-boundary drill (BOTH peers). signal_park: a client floods refused saved-signal rows "
     "(size 0, so the game's own gate rejects each) and the host must keep them from filling the apply "
@@ -81,6 +83,8 @@ CFG_ENUM(hostile_drill, "hostile_drill", "dev", "off",
     "explosion_*: a joined client forges shots and explosion requests against the host, one refusal reason per arm "
     "(or the shot table, the queue, the eviction, the not-ready and the rejoin mechanisms); the host judges by "
     "accounting, every message one accept or one refusal, against its counters since its session start. "
+    "ignite_*: a joined client forges salt rocket light requests against the host, one refusal reason per arm "
+    "(or the not-ready, the flood and the accepted torch light); the host judges by the same accounting. "
     "Drill only.")
 
 // The act drill: an honest client takes and uses shared props through the real verbs, and the host judges what it

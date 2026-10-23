@@ -13,14 +13,14 @@ namespace coop::dev::hostile_drill {
 // (chat_ill_formed, chat_flood) in hostile_drill_chat.cpp, keep_latest in hostile_drill_latest.cpp and world_latest in
 // hostile_drill_world.cpp, kerfur_flood in hostile_drill_kerfur.cpp and the remover arms in
 // hostile_drill_remover.cpp, the take-or-use arms in hostile_drill_act.cpp and the explosion_* arms (one Arm value,
-// the family resolving its own sub-arm) in hostile_drill_explosion.cpp -- hostile_drill.cpp is the dispatcher that
-// owns the Step machine of its own arms, and hostile_drill_arms.cpp owns the arm selection and routes those to their
-// module's sender and judge.
+// the family resolving its own sub-arm) in hostile_drill_explosion.cpp and the ignite_* arms (likewise) in
+// hostile_drill_ignite.cpp -- hostile_drill.cpp is the dispatcher that owns the Step machine of its own arms, and
+// hostile_drill_arms.cpp owns the arm selection and routes those to their module's sender and judge.
 enum class Arm { Off, SignalPark, ChatIllFormed, PropConvert, ReliableFlood, RepeatJoin,
                  RepeatWorldReady, RepeatSaveRequest, RecordBadClasses, BadAlarm, BadPropKey,
                  BadPropSpawn, BadHandClass, BadHandFamily, KeepLatest, ChatFlood, WorldLatest, KerfurFlood,
                  RemoverFar, RemoverHidden, RemoverFlood,
-                 ActFar, ActGone, ActWrongFamily, ActBadCommit, ActNotYet, ActFlood, ActFloodEarly, Explosion };
+                 ActFar, ActGone, ActWrongFamily, ActBadCommit, ActNotYet, ActFlood, ActFloodEarly, Explosion, Ignite };
 
 // The selected arm, resolved once from the config value.
 Arm ArmOf();
