@@ -99,6 +99,7 @@
 #include "coop/player/blood_sync.h"
 #include "coop/interactables/interactable_sync.h"
 #include "coop/interactables/atv_sync.h"
+#include "coop/interactables/atv_steering_sync.h"
 #include "coop/interactables/drone_sync.h"
 #include "coop/items/coingun_sync.h"
 #include "coop/items/order_sync.h"
@@ -119,6 +120,7 @@
 #include "coop/world/cargo_lift_sync.h"
 #include "coop/props/prop_fire_sync.h"
 #include "coop/props/explosion_sync.h"
+#include "coop/props/explosion_prop_motion.h"
 #include "coop/props/explosion_events.h"
 #include "coop/player/hand_fire_sync.h"
 #include "coop/player/hand_extinguisher_sync.h"
@@ -285,6 +287,7 @@ void Install(coop::net::Session& session) {
     coop::radio_sync::Install(&session);
     coop::cargo_lift_sync::Install(&session);
     coop::prop_fire_sync::Install(&session);
+    coop::explosion_prop_motion::Install(&session);
     coop::explosion_sync::Install(&session);
     coop::explosion_events::Install(&session);
     coop::hand_fire_sync::Install(&session);
@@ -557,6 +560,7 @@ void DisconnectSlot(coop::net::Session& session, int slot) {
     coop::grime_sync::OnPeerLeftSlot(slot);
     coop::drink_spill_sync::OnPeerLeft(slot);
     coop::blood_sync::OnPeerLeft(slot);
+    coop::atv_steering_sync::OnPeerLeft(slot);
     coop::window_sync::OnPeerLeftSlot(slot);
     coop::grayboar_actions::OnPeerLeft(slot);
     coop::prop_drop_intent::OnPeerLeft(slot);
@@ -697,6 +701,7 @@ DisconnectStats DisconnectAll() {
     coop::cargo_lift_sync::OnDisconnect();
     coop::prop_fire_sync::OnDisconnect();
     coop::explosion_sync::OnDisconnect();
+    coop::explosion_prop_motion::OnDisconnect();
     coop::explosion_events::OnDisconnect();
     coop::hand_fire_sync::OnDisconnect();
     coop::hand_extinguisher_sync::OnDisconnect();
@@ -869,6 +874,7 @@ void TickGameplay(coop::net::Session& session, bool isConnected, bool isHost,
     { PP::Scope _s{PP::Bucket::Interactable}; ue_wrap::ScopedWalkTimer _w{"sync:hook"}; coop::hook_sync::Tick(); }  // hook: one activeHook read, then a gated 4/20 Hz head poll only while a hook exists
     { PP::Scope _s{PP::Bucket::Interactable}; coop::placed_save_sync::Tick(); }
     { PP::Scope _s{PP::Bucket::Interactable}; coop::garden_actions::Tick(); }
+    coop::explosion_prop_motion::Tick();
     if (isHost) { PP::Scope _s{PP::Bucket::Interactable}; ue_wrap::ScopedWalkTimer _w{"sync:prop_drive_host"}; coop::prop_drive_host::Tick(session); }  // HOST: publish the driven props that moved, close the streams that rested (after the hook poll that feeds it; an empty set costs one size check)
     coop::dev::dev_lanes::TickDrills(session);  // [dev] the drills' and censuses' legs (a single read each when off)
     coop::player_damage::Tick();  // impact-entry PRE cancels lazy install (non-local bodies)

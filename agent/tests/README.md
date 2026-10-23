@@ -6,7 +6,7 @@ GitHub runs it beside the fact-row gate.
 
 Current full audit: run `powershell -NoProfile -ExecutionPolicy Bypass -File
 package/check_current.ps1` from the checkout after source edits finish.
-It runs 69 groups, completes the incremental Release build and verifies that the
+It runs 71 groups, completes the incremental Release build and verifies that the
 production inputs stayed unchanged, without repackaging. Results and
 logs are in `build/todo-audit/`. `run_held_identity.ps1` compiles the actual held
 broadcast seam; the older item/resource/lamp/laptop runners use the current typed
@@ -16,6 +16,27 @@ must produce the failure code required by their runner. Gameplay remains separat
 Run scripts from the canonical checkout. Numbered filenames identify the development
 batch that introduced a regression, not the currently packaged build; do not remove
 tests solely because their number is older.
+
+`run_explosion_motion.ps1 -FaultControls` checks the production host feeder from
+native overlap selection through the actual delayed radial impulse to deferred
+coasting. It covers repeated blasts, source/target reuse, pickup/frozen/static
+exclusions, capacity, session/world replacement and reentrant cleanup. Five
+controls reject early motion, unrelated impulses, held-prop admission and stale
+session work and missing force-only discovery. The production radial wrapper tests
+actual ParamFrame sphere/filter arguments, copied inputs, engine-owned output cleanup
+and refusal after native callback teardown. The existing gascan/general controllers test their host-only feeder
+calls; the item-batch drive harness checks motion publishing and final rest edges.
+The native script uses the existing cooked corpus and a live impulse-signature
+capture with two existing engine-function controls. `native_explosion_motion_probe.lua`
+is the opt-in isolated LAN fixture: set `EXPLOSION_MOTION_PROBE_DIR`, select source
+gascan and target keys in `blast.txt`, record both baselines with `watch`, then
+change it to `fire`, or `force` for zero damage with unchanged native impulse.
+The latter sets damage/debris/fire to zero before native BeginPlay and records the
+actual values in `host-force-only.tsv`. It invokes native gascan break at the target's original surface
+and samples peer positions; use a disposable profile and matching current DLLs.
+Accepted host blasts are registered independently of damage. A native overlap
+query at FireImpulse also discovers force-only targets; the feeder does not scan
+props or generate impulses. Ordinary rendered/input acceptance remains open.
 
 `run_upstream.ps1` tests selected upstream adaptations: tiny positive/NaN vital
 fractions, delayed fossil-hound class names and prop class resolution while loading
@@ -126,6 +147,18 @@ The owner's fresh pak audit remains deferred. These offline tests do not simulat
 PhysX or establish two-peer gameplay acceptance.
 
 ## Immediate-join regression and 32-seat checks
+
+`run_atv_steering.ps1` compiles the production native wrapper and mirror controller:
+actual handle yaw, native tick reset, front-wheel constraint calls, driver handoff,
+readiness retry, actor/occupant replacement and reentrant teardown. The extracted
+production join function must preserve a pending honk without replaying it to the
+joiner. Live-captured tick/steering fingerprints verify the native contract.
+`-FaultControls` must reject both the omitted steering sample and a snapshot
+that clears the pending honk. `native_atv_steering_probe.lua` is an optional
+isolated-game fixture: set `ATV_PROBE_DIR` to a generated evidence directory and
+write `host 1`, `host -1`, `host 0` (or `client`) to its `driver.txt`. It samples
+native handle yaw on both roles and uses native driver/input-field stimuli;
+it does not establish keyboard or rendered acceptance. Runtime files stay in build/.
 
 `run_blood.ps1` checks the production player-blood observer, host validation,
 owner exclusion, native replay and bounded retries. It covers malformed/duplicate

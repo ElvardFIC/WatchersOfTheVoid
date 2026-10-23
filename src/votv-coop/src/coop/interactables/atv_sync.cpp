@@ -16,6 +16,7 @@
 #include "coop/interactables/atv_sync.h"
 #include "atv_spawn_park.h"
 #include "coop/interactables/atv_corrector.h"
+#include "coop/interactables/atv_steering_sync.h"
 #include "coop/dev/atv_eject_drill.h"
 #include "coop/interactables/atv_condition_sync.h"
 #include "coop/interactables/atv_hit_guard.h"
@@ -248,7 +249,7 @@ bool ReadPayload(void* actor, const std::wstring& key, uint8_t occupantSlot, uin
     if (A::GetRadio(actor))  p.cockpit |= coop::net::kAtvCockpitRadio;
     if (A::GetHasMap(actor)) p.cockpit |= coop::net::kAtvCockpitMap;
     p.modules = A::ReadModuleMask(actor);
-    p._padCockpit = 0;
+    p.steering = coop::atv_steering_sync::Capture(actor);
     // The condition block (tires, spare, dirt, fuel, health), filled at this one site so the
     // authority, the idle syncer and the adopt seed cannot fork; a failed read leaves it zeroed
     // with tiresValid 0, and receivers touch nothing.
@@ -852,6 +853,7 @@ int RuntimeMirrors() {
 
 void Install(coop::net::Session* session) {
     g_session.store(session, std::memory_order_release);
+    coop::atv_steering_sync::Install(session);
     // Install is the per-tick ensure path (net_pump re-calls it until the class loads), latched so
     // the one-time registration happens once.
     if (!g_installed && A::EnsureResolved()) {
@@ -926,7 +928,8 @@ void OnReliable(const coop::net::AtvStatePayload& payload, uint8_t senderPeerSlo
     if (!IndexCurrent()) return;  // a stale-generation index holds another world's ATVs; the stream re-sends
     // A non-finite guard before the engine writes.
     if (!std::isfinite(payload.x) || !std::isfinite(payload.y) || !std::isfinite(payload.z) ||
-        !std::isfinite(payload.pitch) || !std::isfinite(payload.yaw) || !std::isfinite(payload.roll)) {
+        !std::isfinite(payload.pitch) || !std::isfinite(payload.yaw) || !std::isfinite(payload.roll) ||
+        !coop::atv_steering_sync::Valid(payload.steering)) {
         UE_LOGW("atv: OnReliable non-finite pose -- dropping key='%ls'", key.c_str());
         return;
     }
@@ -948,6 +951,7 @@ void OnReliable(const coop::net::AtvStatePayload& payload, uint8_t senderPeerSlo
 
     e.occupantSlot = payload.occupantSlot;
     e.authorSlot   = payload.authorSlot;
+    coop::atv_steering_sync::Receive(e.actor,payload.steering,payload.authorSlot);
 
     // Lights, brake, turbo, radio, honk and the frame modules. The driver already has them.
     A::SetBrake(e.actor, (payload.stateBits & coop::net::kAtvStateBitBrake) != 0);
@@ -1315,8 +1319,8 @@ void QueueConnectBroadcastForSlot(int peerSlot) {
         const uint8_t authorSlot = hostAuthors ? localSlot : e.authorSlot;
         coop::net::AtvStatePayload p{};
         if (!ReadPayload(e.actor, kv.first, e.occupantSlot, authorSlot, /*adopt*/true, p,
-                         /*grabbed*/false, e.honkPulse)) continue;
-        e.honkPulse = false;
+                         /*grabbed*/false, /*honk*/false)) continue;
+        // A join snapshot carries state, not a pending one-shot for existing peers.
         s->SendReliableToSlot(peerSlot, coop::net::ReliableKind::AtvState, &p, sizeof(p));
         PublishRadio(*s, e.actor, kv.first, peerSlot, true);
         ++sent;
@@ -1453,13 +1457,14 @@ void Tick() {
                 const uint8_t face = static_cast<uint8_t>(p.cockpit & ~coop::net::kAtvCockpitHonk);
                 const bool brakeOn = (p.stateBits & coop::net::kAtvStateBitBrake) != 0;
                 const bool faceMoved = readable && (!e.haveFace || e.lastCockpit != face ||
-                                                    e.lastModules != p.modules || e.lastBrake != brakeOn);
+                                                    e.lastModules != p.modules || e.lastBrake != brakeOn || e.lastSteering != p.steering);
                 if (readable && (changed || condMoved || keepalive || honk || faceMoved)) {
                     e.honkPulse = false;
                     e.haveFace = true;
                     e.lastCockpit = face;
                     e.lastModules = p.modules;
                     e.lastBrake = brakeOn;
+                    e.lastSteering = p.steering;
                     e.lastIdleSendMs = nowMs;
                     s->SendReliable(coop::net::ReliableKind::AtvState, &p, sizeof(p));
                     coop::atv_condition_sync::NoteSent(e, p);
@@ -1477,6 +1482,7 @@ void Tick() {
 }
 
 void OnDisconnect() {
+    coop::atv_steering_sync::OnDisconnect();
     spawn_park::Clear();
     // Disarmed first: nothing publishes an owned set from here, and a live hit must reach the game.
     coop::atv_hit_guard::SetActive(false);

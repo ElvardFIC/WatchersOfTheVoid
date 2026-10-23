@@ -1,4 +1,5 @@
 #include "coop/props/explosion_sync.h"
+#include "coop/props/explosion_prop_motion.h"
 #include "coop/net/session.h"
 #include "coop/net/wire_key_util.h"
 #include "coop/element/intent_authority.h"
@@ -134,12 +135,14 @@ sg::Verdict OnBegin(const sg::Call& c) {
         UE_LOGW("explosion: native gascan blast could not be captured");return sg::Verdict::Run;
     }
     if(!Mark(g_managed,c.object))return sg::Verdict::Run;
+    explosion_prop_motion::ObserveBlast(c.object);
     if(g_blasts.size()>=256){UE_LOGW("explosion: blast queue full");return sg::Verdict::Run;}
     uint32_t mask=0;for(int slot=1;slot<net::kMaxPeers;++slot)if(s->IsSlotReady(slot))mask|=uint32_t(1u<<slot);
     g_blasts.push_back({Encode(state,source.key),Now(),0,0,mask});return sg::Verdict::Run;
 }
 sg::Verdict OnEffect(const sg::Call& c) {
     if(!Session()||!Has(g_managed,c.callerObject))return sg::Verdict::Run;
+    if(!Client()&&c.tag==0x45580006)explosion_prop_motion::Observe(c.object,c.callerObject);
     auto& players=coop::players::Registry::Get();
     if(players.IsLocal(c.object))return sg::Verdict::Run;
     // A mainPlayer other than the possessed one must never touch this machine's

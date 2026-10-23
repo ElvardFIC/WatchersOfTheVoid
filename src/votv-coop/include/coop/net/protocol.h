@@ -32,7 +32,7 @@ inline constexpr uint32_t kMagic = 0x564D5450u;
 // This file is past the 1500-line hard cap and stays there: it is the single-feature exception the
 // rule names. One wire format, whose enum, payload structs and static_asserts are read together;
 // splitting it would put a kind's number in one file and its bytes in another.
-inline constexpr uint16_t kProtocolVersion = 2187;  // player bleeding presentation
+inline constexpr uint16_t kProtocolVersion = 2190;  // force-only explosion prop motion
 
 // Default LAN port (overridable via multivoid.ini "net.port=").
 inline constexpr uint16_t kDefaultPort = 47621;
@@ -2942,7 +2942,7 @@ struct AtvStatePayload {
     uint8_t  cockpit;      // 1  -- bit0 lights, bit1 turbo, bit2 honk edge, bit3 radio playing,
                            //      bit4 the map upgrade (hasMap). Bits 5 and 7 are unused.
     uint8_t  modules;      // 1  -- bit i set when that frame module is showing
-    uint16_t _padCockpit;  // 2
+    int16_t steering;      // 2 -- actual handle yaw in hundredths of a degree; unavailable = -32768
     // The condition block: the author's accumulators travel; a mirror's own accrual is held at zero,
     // so overwriting never races an irreversible act. Presence (tiresMask, hasSpare) is consumed
     // from host-authored packets only: a client's eject ships a mask bit whose wheel-prop birth
@@ -2965,6 +2965,7 @@ struct AtvStatePayload {
                                   //      because it IS reducer input and 4 B closes the class)
 };
 static_assert(sizeof(AtvStatePayload) == 152, "AtvStatePayload must be 152 bytes");
+inline constexpr int16_t kAtvSteeringUnavailable = -32768;
 
 // AtvStatePayload.stateBits packing. Bits 0-2 are the flags. Bit 6 is the retired rear-seat
 // packet: receivers drop it so an older sender cannot move the rig with a passenger-only claim.

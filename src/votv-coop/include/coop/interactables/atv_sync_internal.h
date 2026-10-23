@@ -42,6 +42,7 @@ struct AtvEntry {
     bool     honkPulse = false;    // the local driver honked; the next pose packet carries the edge
     uint8_t  lastCockpit = 0;      // idle gate: lights/turbo/radio, honk excluded
     uint8_t  lastModules = 0;
+    int16_t  lastSteering = coop::net::kAtvSteeringUnavailable;
     bool     lastBrake = false;
     bool     haveFace = false;
     uint8_t  presenceEjectFailed = 0;  // wheel bits whose host eject already failed once

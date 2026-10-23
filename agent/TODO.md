@@ -2,23 +2,46 @@
 
 ## Version 0.9.2159
 
+- [x] Enroll native-overlap explosion victims in host prop-motion replication
+  after the actual delayed radial impulse (development **b2189 / protocol 2189**).
+  Preserve held/frozen/static exclusions and source/target/session identity.
+  Release and 71/71 groups pass; native LAN confirms one bucket's motion, rest
+  and settled-position rejoin on identical DLLs.
+- [ ] Accept host/client blast-driven prop movement and final resting poses,
+  including simultaneous blasts, pickup and late join. Force-only blasts that
+  bypass the native damage-overlap loop still need target discovery.
+- [x] Implement ATV handlebar/front-wheel steering replication in development
+  **b2188 / protocol 2188**. Send actual speed-adjusted handle yaw; preserve it
+  after native mirror ticks without taking input/possession from the local driver.
+  Release and 70/70 groups pass; native LAN passes 6/6 cases plus nonzero late join.
+- [x] Keep a pending ATV honk when sending a late-join snapshot; the joiner
+  receives state without consuming or replaying that one-shot sound.
+- [ ] Accept ATV steering on host/client, left/right/center, driving and stopped,
+  late join and driver/carrier handoff using identical current DLLs.
 - [x] Implement owner-to-host bleeding drops and validated host forwarding to
   other players, without echoing the injured player's native drop. Development
   **b2187 / protocol 2187**; Release and **69/69 offline groups** pass.
 - [ ] Accept visible bleeding from host and client injuries in rendered multiplayer
-  with identical b2187 DLLs, including stopping blood loss and joining mid-bleed.
+  with identical current DLLs, including stopping blood loss and joining mid-bleed.
   Native drop collisions/stains run independently on each peer; exact stain layout,
   historical-stain joins and persistence are not established by this change.
 
 ## Current baseline and pending acceptance
 
-Current local test package: **0.9.2158 / DLL b2186 / protocol 2186**, game **0.9.0n**.
-Release and **68/68 offline groups**, package label and archive checks passed.
+Current development: **DLL b2189 / protocol 2189**, game **0.9.0n**, targeting
+package **0.9.2159**. Release and **71/71 offline groups** pass. Targeted native
+LAN blast motion, rest and settled-position rejoin pass; rendered gameplay and
+real keyboard input still need acceptance. Earlier ATV checks are recorded above.
+
+Last prepared manager package: **0.9.2158 / DLL b2186 / protocol 2186**.
+Its Release, **68/68 offline groups**, package label and archive checks passed.
+It does not include the b2187–b2189 fixes; no 2159 archive is prepared.
 Verification history remains in [TESTLOG.md](TESTLOG.md); completed release reports
 and superseded build instructions have been removed from this backlog.
 
-- [ ] Verify native startup from the current full manager package and ordinary
-  rendered host/client gameplay, including the displayed public version.
+- [ ] Verify startup from the full manager package, including the displayed public
+  version. Development DLL native startup passes; full-package acceptance remains open.
+- [ ] Accept ordinary rendered host/client gameplay with identical current DLLs.
 - [ ] Accept the 2157 immediate-join reports: player flashlights, light switches,
   garage/base doors and client drone contents. Watch capacity, flashlight retries
   and exact-recipient container seeds are implemented; details:
@@ -118,10 +141,11 @@ Details: [WORK.md](WORK.md), [ENTITY_COVERAGE.md](ENTITY_COVERAGE.md).
 - [ ] Models (38): fill remaining preview gaps and verify custom skin compatibility
   without removing rig exclusions. Assess skeletal bone scaling and arbitrary
   creature physics separately if required.
-- [ ] Explosion follow-up: assess and implement host tracking/coasting of affected
-  props through native delayed impulses; validate held/frozen/static exclusions,
-  blast ownership/range and settled poses on two peers. Retain local explosion
-  lanes 188/191; upstream ExplosionSpawn=177 conflicts with KitchenState=177.
+- [ ] Explosion follow-up: cover force-only blasts that bypass native damage
+  overlaps and verify settled poses on two peers. The b2189 feeder uses the
+  managed blast's actual overlap targets and waits for its native impulse;
+  held/frozen/static and lifecycle exclusions have offline regressions.
+  Retain local lanes 188/191; upstream ExplosionSpawn=177 conflicts with KitchenState=177.
 
 ## Entity coverage checklist
 
@@ -180,7 +204,7 @@ Keep personal Insomniac/nightmare and native personal spawn conditions local.
 
 ## Gameplay acceptance checklist
 
-Use matching development **b2187** DLLs for new checks; the prepared 0.9.2158
+Use matching development **b2189** DLLs for new checks; the prepared 0.9.2158
 package remains **b2186**. Record role, item/model, reproduction and logs.
 Offline tests do not close gameplay reports. Mining (6) stays closed; previously
 working nightmares (10) only need acceptance of the newer personal-sleep behavior.
@@ -233,7 +257,8 @@ Wall41 remains excluded.
   effects for the black-disk/yellow-ring event.
   Missing historical garden save actors are not migrated.
 - [ ] ATV (30/37): new companion spawn versus saved second-ATV positions,
-  simultaneous carry/mount, stale menus and race convergence.
+  simultaneous carry/mount, stale menus and race convergence; steering visibility
+  on remote copies and retained honk when another player joins.
 - [ ] Disks/racks: client sv.request/hashcodes, floppy/ZIP transfers preserving
   exact text, filled rack save/rejoin and a slow joining peer.
 - [ ] Whole-package smoke: swap host/client roles; two clients contest objects;
@@ -244,7 +269,7 @@ Wall41 remains excluded.
 
 - [ ] Resolve the remaining public-prose counters recorded in TESTLOG:
   document count 85/82, unresolved source citations 155/0 and
-  src.files_not_swept 84/0. The latest fact-row gate passes (509 rows/161 files);
+  src.files_not_swept 84/0. The latest fact-row gate passes (512 rows/164 files);
   older missing-reference/unused-row findings are superseded.
 - [ ] Complete the native-contract audit when the owner resumes the deferred
   asset audit. The existing corpus is incomplete for the imported suite.

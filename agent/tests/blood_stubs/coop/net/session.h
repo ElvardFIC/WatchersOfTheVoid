@@ -15,6 +15,7 @@ public:
     std::array<uint32_t,kMaxPeers> generations{};
     struct Sent {int slot;PlayerBloodPayload packet;};
     std::vector<Sent> sent;
+    std::vector<AtvStatePayload> atvStates;
     std::function<void()> callback;
     Session(){peers.fill(true);ready.fill(true);generations.fill(1);}
     bool running()const{return started;}
@@ -24,6 +25,9 @@ public:
     bool IsSlotWorldReady(int s)const{return ready[s];}
     uint32_t peerGenerationForSlot(int s)const{return generations[s];}
     bool SendReliableToSlot(int s,ReliableKind kind,const void* raw,size_t size){
+        if(kind==ReliableKind::AtvState && size==sizeof(AtvStatePayload)){
+            if(s==blocked)return false;atvStates.push_back(*static_cast<const AtvStatePayload*>(raw));return true;
+        }
         if(kind!=ReliableKind::PlayerBlood || size!=sizeof(PlayerBloodPayload) || s==blocked)return false;
         sent.push_back({s,*static_cast<const PlayerBloodPayload*>(raw)});
         auto fn=std::move(callback);callback={};if(fn)fn();return true;

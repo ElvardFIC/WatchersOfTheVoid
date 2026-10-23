@@ -1,4 +1,5 @@
 #include "coop/props/explosion_events.h"
+#include "coop/props/explosion_prop_motion.h"
 #include "coop/props/explosion_sync.h"
 #include "coop/props/prop_element_tracker.h"
 #include "coop/props/prop_echo_suppress.h"
@@ -133,17 +134,22 @@ sg::Verdict OnBegin(const sg::Call& c){
         return Cancel(c.object);
     }
     if(g_broadcast.size()>=512||!Mark(g_managed,c.object))return sg::Verdict::Run;
+    explosion_prop_motion::ObserveBlast(c.object);
     if(p.scope==0)Remember(*Row(p),p,birth.source,0);
     Broadcast(p);return sg::Verdict::Run;
 }
 sg::Verdict Effect(const sg::Call& c){if(!Session()||!Has(g_managed,c.callerObject))return sg::Verdict::Run;
+    if(!Client()&&c.tag==0x45590004)explosion_prop_motion::Observe(c.object,c.callerObject);
     if(players::Registry::Get().IsLocal(c.object))return sg::Verdict::Run;
     if(c.object&&R::IsLive(c.object)&&R::ClassNameOf(c.object)==L"mainPlayer_C")return sg::Verdict::Cancel;
     return !Client()||c.object==hand_item::LocalHandActor()?sg::Verdict::Run:sg::Verdict::Cancel;
 }
 sg::Verdict Rune(const sg::Call& c){return IsReplica(c.object)?sg::Verdict::Cancel:sg::Verdict::Run;}
 bool Play(const P& p,bool authority,uint64_t epoch){struct Spawn{Spawn(){++g_spawning;}~Spawn(){--g_spawning;}}spawn;
-    return X::ReplayBlast(Decode(p),authority,[&](void* a){return Current(epoch)&&Mark(g_managed,a);},[&]{return Current(epoch);});}
+    return X::ReplayBlast(Decode(p),authority,[&](void* a){
+        if(!Current(epoch)||!Mark(g_managed,a))return false;
+        if(authority)explosion_prop_motion::ObserveBlast(a);return true;
+    },[&]{return Current(epoch);});}
 }
 bool IsReplica(void* a){return Client()&&Has(g_managed,a);}
 bool ConsumesClientDestroy(void* a){if(!Client()||!a)return false;World();

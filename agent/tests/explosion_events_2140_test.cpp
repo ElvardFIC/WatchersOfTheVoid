@@ -11,6 +11,7 @@ Resolved ResolveOn(const Function& row,void* cls){
 #include <functional>
 #define CHECK(x) do{if(!(x)){std::fprintf(stderr,"FAIL %d: %s\n",__LINE__,#x);std::exit(1);}}while(0)
 namespace S=coop::explosion_events;namespace X=ue_wrap::prop_explosion;namespace sg=ue_wrap::script_gate;
+namespace coop::explosion_prop_motion { int observations=0,births=0; void Observe(void*,void*){++observations;} void ObserveBlast(void*){++births;} }
 namespace test {
 struct Obj{int id,serial=1;bool live=true;} objects[12]{{0},{1},{2},{3},{4},{5},{6},{7},{8},{9},{10},{11}};
 auto& source=objects[1];auto& blast=objects[2];auto& local=objects[3];auto& foreign=objects[4];auto& hand=objects[5];
@@ -71,6 +72,13 @@ auto Native(void* src=&source){S::Capture(nullptr,src,&blast);sg::Call c{};c.obj
 S::P Packet(uint32_t seq=1,uint32_t ordinal=1){S::P p{};S::Encode(state,p);coop::net::WireKeyFromString(key,p.key);S::SetClass(p,&source);p.sequence=seq;p.ordinal=ordinal;p.origin=1;return p;}
 void NewBlast(){blast.live=true;++blast.serial;}
 int main(){using coop::net::Role;using sg::Verdict;
+ Reset();Native();CHECK(coop::explosion_prop_motion::births==1);sg::Call hit{};hit.callerObject=&blast;hit.object=&source;hit.tag=0x45590004;
+ S::Effect(hit);CHECK(coop::explosion_prop_motion::observations==1);
+ hit.tag=0x45590002;S::Effect(hit);CHECK(coop::explosion_prop_motion::observations==1);
+ hit.tag=0x45590004;hit.callerObject=&source;S::Effect(hit);CHECK(coop::explosion_prop_motion::observations==1);
+ Reset(Role::Client);auto received=Packet();received.op=1;S::Receive(received,0);S::Tick();hit.callerObject=&blast;S::Effect(hit);CHECK(coop::explosion_prop_motion::observations==1);
+ {const auto before=coop::explosion_prop_motion::births;const float damage=state.damage;Reset();state.damage=0;state.force=5000;
+ S::Receive(Packet(),1);S::Tick();CHECK(plays==1&&authority&&coop::explosion_prop_motion::births==before+1);state.damage=damage;}
  Reset();CHECK(Native()==Verdict::Run);S::Tick();CHECK(session.sent.size()==3&&session.sent[0].p.ordinal==1&&!plays);
  Reset(Role::Client);CHECK(Native()==Verdict::Cancel);source.live=false;CHECK(S::ConsumesClientDestroy(&source));S::Tick();CHECK(session.sent.size()==2&&session.sent[0].p.op==0&&session.sent[1].p.op==2&&session.sent[0].p.sequence<session.sent[1].p.sequence);
  ++source.serial;CHECK(!S::ConsumesClientDestroy(&source));

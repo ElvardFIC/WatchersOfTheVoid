@@ -1,5 +1,4 @@
 # DLL translation units; development probes are appended from sources_dev.cmake.
-
 set(VOTVCOOP_SOURCES
     src/bootstrap/dllmain.cpp
     src/bootstrap/boot.cpp
@@ -107,6 +106,8 @@ set(VOTVCOOP_SOURCES
     src/ue_wrap/actors/prop_fire.cpp
     src/coop/props/prop_fire_sync.cpp
     src/coop/props/explosion_sync.cpp
+    src/coop/props/explosion_prop_motion.cpp
+    src/ue_wrap/actors/radial_impulse.cpp
     src/coop/props/explosion_events.cpp
     src/ue_wrap/actors/explosion_blast.cpp
     src/ue_wrap/actors/prop_explosion.cpp
@@ -337,6 +338,8 @@ set(VOTVCOOP_SOURCES
     src/coop/interactables/grime_sync.cpp
     src/coop/props/drink_spill_sync.cpp
     src/coop/player/blood_sync.cpp
+    src/coop/interactables/atv_steering_sync.cpp
+    src/ue_wrap/devices/atv_steering.cpp
     src/ue_wrap/actors/player_blood.cpp
     src/ue_wrap/devices/drink_spill.cpp
     src/coop/session/player_handshake.cpp
@@ -793,6 +796,5 @@ set(VOTVCOOP_SOURCES
     src/l10n/l10n.cpp
     src/l10n/l10n_selftest.cpp
 )
-
 include(${CMAKE_CURRENT_LIST_DIR}/sources_dev.cmake)
 list(APPEND VOTVCOOP_SOURCES ${VOTVCOOP_DEV_SOURCES})

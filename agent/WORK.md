@@ -1,12 +1,70 @@
 # Unified Work — unresolved backlog
 
-Current local test package: **0.9.2158 / DLL b2186 / protocol 2186**, game **0.9.0n**.
-Release, 68/68 offline groups, public-version formatter and archive identity checks
-passed. Native package startup and rendered multiplayer acceptance remain open.
+Current development: **DLL b2189 / protocol 2189**, game **0.9.0n**, targeting
+package **0.9.2159**. Release and **71/71 offline groups** pass. Targeted native
+LAN blast motion, rest and settled-position rejoin pass; rendered gameplay and
+real keyboard input still need acceptance.
+
+Last prepared manager package: **0.9.2158 / DLL b2186 / protocol 2186**.
+Its Release, 68/68 offline groups, public-version formatter and archive identity
+checks passed. It does not include the b2187–b2189 fixes; no 2159
+archive is prepared. Full-package startup and rendered multiplayer acceptance remain open.
 Completed implementation/release reports and superseded build instructions have
 been removed here; verification history remains in [TESTLOG.md](TESTLOG.md).
 Priorities and detailed report checklists: [TODO.md](TODO.md).
 Native entity gaps: [ENTITY_COVERAGE.md](ENTITY_COVERAGE.md).
+
+## Version 0.9.2159 — explosion prop motion
+
+Development **b2189 / protocol 2189** connects managed gascan/general blast
+overlap victims to host prop-motion replication. The native graph selects targets
+before a latent delay; a `RadialForceComponent.FireImpulse` post hook releases only
+that source's candidates after the real impulse. The next gameplay tick enrolls
+them through `Coast` before the existing drive publisher, which owns movement and
+the reliable final rest edge. No synthetic impulse or timer estimates are used.
+
+The bounded feeder rejects held/frozen/static and unsupported trash targets,
+deduplicates each source/victim pair, validates cached object identities and
+cancels stale world/session work. Regressions cover delayed/repeated impulses,
+pickup, capacity, native source destruction and reentrant teardown. Both existing
+blast controllers test host-only native-overlap enrollment. Focused tests, four
+expected-failure controls and **71/71 full groups** pass with stable Release/ABI:
+`build/explosion-motion-qualified/verification.json`.
+
+Exact-DLL native LAN confirms a host gascan moves an existing bucket 547.57 cm,
+emits the reliable rest edge and converges on the live/rejoining client within
+0.1 cm; both compatibility reports are HEALTHY and the impulse reference matches.
+Evidence: `build/explosion-motion-qualified/native.json`. The Lua fixture invokes
+native break on a disposable profile; it does not establish rendered/input acceptance.
+
+Remaining: actual host/client physics, settled poses, pickup/handoff and late join.
+Force-only blasts skip the native damage-overlap loop and still need target
+discovery. The existing cooked corpus was reused; the broader audit stays deferred.
+
+## Version 0.9.2159 — ATV steering and join sound
+
+Development **b2188 / protocol 2188** sends the actual handle yaw in the ATV state
+packet, using the former cockpit padding for signed hundredths of a degree. Size
+remains 152 bytes; the protocol bump rejects peers that read it as padding.
+Mirrors apply handle rotation and the native front-wheel constraint reducer after
+the ATV's own tick, which otherwise recomputes local steering between packets.
+The local driver/carrier keeps ownership; cached targets are invalidated on
+actor, world, session or occupant replacement and retry native readiness.
+
+The late-join snapshot no longer clears a pending honk or plays that old edge
+for the joiner. `run_atv_steering.ps1` tests the actual producer, join function,
+mirror controller and wrapper. Both missing-steering and honk-clearing negative
+controls fail their intended assertions. Two live-captured function references
+verify the native tick/constraint contract; the fact-row gate passes 511 rows.
+Full qualification passes **70/70 groups**, stable Release b2188 and identity/ABI:
+`build/atv-steering-qualified/verification.json`.
+Exact-DLL native LAN passes six left/right/center cases in both directions and
+nonzero steering at late join; both compatibility reports are HEALTHY. The fixture
+sets native driver/input fields; rendered/keyboard acceptance is separate.
+Evidence: `build/atv-steering-qualified/native.json`.
+
+Remaining: rendered host/client steering and join/handoff acceptance. The
+prepared 0.9.2158 package stays b2186; no new archive or publication is prepared.
 
 ## Version 0.9.2159 — bleeding synchronization
 
@@ -87,13 +145,13 @@ record role, item/model, reproduction and logs in TESTLOG before closing reports
 
 ## Validation and delivery follow-ups
 
-The latest fact-row gate passes (509 rows/161 files), superseding the older missing
+The latest fact-row gate passes (512 rows/164 files), superseding the older missing
 reference and unused-row findings. Three public-prose counters remain:
 documents 85/82, unresolved source citations 155/0 and
 src.files_not_swept 84/0. Detailed results are in TESTLOG.
 
-Native startup, rendered gameplay, larger lobbies and remote master deployment
-remain unverified. Binary publication is pending. Requalify after source changes
+Full-manager-package startup, rendered gameplay, larger lobbies and remote master
+deployment remain unverified. Binary publication is pending. Requalify after source changes
 using the current package scripts/metadata. The fresh game-pak/Blueprint audit
 remains deferred by the owner; the existing corpus is incomplete for the imported
 native-contract suite.

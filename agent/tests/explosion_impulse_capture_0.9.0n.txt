@@ -1,0 +1,6 @@
+### actor.k2_destroyactor 6a2d5d90ab51fa2d native
+sig()
+### actorcomponent.deactivate 6a2d5d90ab51fa2d native
+sig()
+### radialforcecomponent.fireimpulse 6a2d5d90ab51fa2d native
+sig()

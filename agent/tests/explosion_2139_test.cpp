@@ -4,6 +4,7 @@
 #include <functional>
 #define CHECK(x) do{if(!(x)){std::fprintf(stderr,"FAIL %d: %s\n",__LINE__,#x);std::exit(1);}}while(0)
 namespace S=coop::explosion_sync;namespace X=ue_wrap::prop_explosion;namespace sg=ue_wrap::script_gate;
+namespace coop::explosion_prop_motion { int observations=0,births=0; void Observe(void*,void*){++observations;} void ObserveBlast(void*){++births;} }
 namespace test {
 struct Obj {int id,serial=1;bool live=true;} objects[8]{{0},{1},{2},{3},{4},{5},{6},{7}};
 auto& can=objects[1];auto& blast=objects[2];auto& local=objects[3];auto& foreign=objects[4];
@@ -53,6 +54,13 @@ auto Packet(uint8_t op=0,uint32_t seq=1){auto p=S::Encode(state,L"can");p.op=op;
 sg::Verdict Break(){sg::Call c{};c.object=&can;c.depth=1;c.tag=0x45580001;auto v=S::OnBreak(c);if(v==sg::Verdict::Run)S::AfterBreak(c);return v;}
 void NativeHost(){X::BreakGascan(&can,false);}
 int main(){using coop::net::Role;using sg::Verdict;
+ Reset();NativeHost();CHECK(coop::explosion_prop_motion::births==1);sg::Call hit{};hit.callerObject=&blast;hit.object=&can;hit.tag=0x45580006;
+ S::OnEffect(hit);CHECK(coop::explosion_prop_motion::observations==1);
+ hit.tag=0x45580004;S::OnEffect(hit);CHECK(coop::explosion_prop_motion::observations==1);
+ hit.tag=0x45580006;hit.callerObject=&can;S::OnEffect(hit);CHECK(coop::explosion_prop_motion::observations==1);
+ Reset(Role::Client);S::Receive(Packet(1),0);S::Tick();hit.callerObject=&blast;S::OnEffect(hit);CHECK(coop::explosion_prop_motion::observations==1);
+ {const auto before=coop::explosion_prop_motion::births;const float damage=state.damage;state.damage=0;Reset();NativeHost();
+ CHECK(coop::explosion_prop_motion::births==before+1);state.damage=damage;}
  Reset(Role::Client);CHECK(Break()==Verdict::Cancel&&S::g_requests.size()==1);can.live=false;CHECK(S::ConsumesClientDestroy(&can));++can.serial;CHECK(!S::ConsumesClientDestroy(&can));
  session.sendOk[0]=false;S::Tick();CHECK(S::g_requests.size()==1);session.sendOk[0]=true;S::Tick();CHECK(S::g_requests.empty()&&session.sent.size()==1);
  Reset(Role::Client);announced=false;CHECK(Break()==Verdict::Run);announced=true;episode=true;CHECK(Break()==Verdict::Run);episode=false;hand=true;CHECK(Break()==Verdict::Run);
