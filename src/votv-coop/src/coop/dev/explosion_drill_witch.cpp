@@ -62,7 +62,6 @@ namespace {
 constexpr const char*    kName = "request_witch";
 constexpr const wchar_t* kCarCls = L"car1_witch_C";
 constexpr const wchar_t* kCarPath = L"/Game/objects/car1_witch.car1_witch_C";
-constexpr const wchar_t* kExplosionCls = L"explosion_C";
 // The car's left-mouse input event: the game's own fire, which spawns the rocket along the car's camera.
 constexpr const wchar_t* kFireFn = L"InpActEvt_LeftMouseButton_K2Node_InputKeyEvent_0";
 // The lobby-chat lines the two peers say to each other: the client's state is in force, the host's car stands at
@@ -188,7 +187,6 @@ struct Host {
     bool                  shotSaid = false;
     bool                  seated = false;      // the client's seated line has been read: seatedLine holds its numbers
     float                 seatedLine[6]{};     // the rocket's spawn point and the camera's forward, as the client said
-    uint32_t              blastsLogged = 0;
     Mark                  mark = 0;  // the newest chat key at the arm's start: the rows after it are this run's
 };
 Host g_h;
@@ -296,33 +294,6 @@ void HostAim() {
     HostEnter(HP::Judge);
 }
 
-struct BlastScan {
-    Vec  crate{}, car{};
-    bool haveCrate = false, haveCar = false;
-};
-
-// Every live explosion actor with its place and its distance to the crate and the car, when a capture was just made.
-void LogBlasts() {
-    void* cls = ue_wrap::object_index::ClassByName(kExplosionCls);
-    if (!cls) return;
-    BlastScan s;
-    void*     crate = g_h.crate.Get();
-    void*     car = g_h.car.Get();
-    s.haveCrate = crate && E::TryGetActorLocation(crate, s.crate);
-    s.haveCar = car && E::TryGetActorLocation(car, s.car);
-    ue_wrap::object_index::ForEachInstance(
-        cls,
-        [](void* ctx, void* obj, int32_t) {
-            if (R::NameStartsWith(R::NameOf(obj), L"Default__")) return;
-            const BlastScan& b = *static_cast<const BlastScan*>(ctx);
-            Vec              at{};
-            if (!E::TryGetActorLocation(obj, at)) return;
-            Info("host blast at (%.0f,%.0f,%.0f): %.0f cm from the crate, %.0f from the car (-1 = unread)", at.X, at.Y,
-                 at.Z, b.haveCrate ? Dist(at, b.crate) : -1.f, b.haveCar ? Dist(at, b.car) : -1.f);
-        },
-        &s);
-}
-
 void HostJudge() {
     Host&              h = g_h;
     const ER::Counters c = ER::GetCounters();
@@ -332,10 +303,6 @@ void HostJudge() {
     constexpr size_t   kWitch = static_cast<size_t>(RC::Launcher::WitchCar);
     const uint64_t     witchShots = c.shotsAcceptedBy[kWitch] - h.req0.shotsAcceptedBy[kWitch];
     const uint64_t     captured = ES::GetCounters().captured - h.sync0.captured;
-    if (captured > h.blastsLogged) {
-        h.blastsLogged = static_cast<uint32_t>(captured);
-        LogBlasts();
-    }
     if (shots >= 1 && witchShots != 1) {
         Warn("FAIL host arm=%s launcher got=%llu want=1 (shots accepted from the witch car's launcher, %u)", kName,
              U(witchShots), static_cast<unsigned>(RC::Launcher::WitchCar));
