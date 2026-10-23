@@ -178,8 +178,8 @@ bool HandleStateEvent(net::Session& session,
         break;
     }
     case net::ReliableKind::AtvSpawn: {
-        // The host-to-client runtime-ATV announce: the client fresh-spawns a native ATV it has no
-        // save twin of (spawned at runtime from the props table; nothing sells an ATV).
+        // The host-to-client ATV announce, named by the ATV's game Key: a client that holds no ATV under
+        // that Key fresh-spawns a native one carrying it.
         // Host-authoritative; a client's copy is refused at the host's receive edge (client_authorship.h).
         if (msg.payloadLen < sizeof(net::AtvSpawnPayload)) {
             UE_LOGW("event_feed: AtvSpawn payload too short (%zu < %zu)",
@@ -192,8 +192,8 @@ bool HandleStateEvent(net::Session& session,
         break;
     }
     case net::ReliableKind::AtvDestroy: {
-        // The host-to-client runtime-ATV teardown. Host-authoritative; a client's copy is refused at the host's
-        // receive edge (client_authorship.h).
+        // The host-to-client ATV teardown, named by its game Key. Host-authoritative; a client's copy is
+        // refused at the host's receive edge (client_authorship.h).
         if (msg.payloadLen < sizeof(net::AtvDestroyPayload)) {
             UE_LOGW("event_feed: AtvDestroy payload too short (%zu < %zu)",
                     static_cast<size_t>(msg.payloadLen), sizeof(net::AtvDestroyPayload));

@@ -36,7 +36,7 @@ Step     g_step = Step::Arm;
 uint64_t g_stepMs = 0;
 uint64_t g_nextCheckMs = 0;
 int      g_session = 1;
-uint32_t g_announced0 = 0;   // HOST: runtime ATVs announced before the drill's
+uint32_t g_announced0 = 0;   // HOST: ATV broadcasts sent before the drill's
 uint32_t g_parked0 = 0;      // CLIENT: spawns parked before this session's first tick
 int      g_onceReads = 0;    // CLIENT: polls in a row with exactly one mirror and nothing parked
 bool     g_baselined = false;
@@ -76,7 +76,7 @@ void HostTick(coop::net::Session* s) {
         if (!me || !E::TryGetActorLocation(me, at)) return;
         void* cls = ue_wrap::object_index::ClassByName(L"ATV_C");
         if (!cls) { Abandon("the ATV's class is not loaded"); return; }
-        g_announced0 = coop::atv_sync::RuntimeAnnounced();
+        g_announced0 = coop::atv_sync::RuntimeBroadcasts();
         const ue_wrap::FVector fwd = E::GetActorForwardVector(me);
         if (!E::SpawnActor(cls, {at.X + fwd.X * kAheadCm, at.Y + fwd.Y * kAheadCm, at.Z + kLiftCm})) {
             Abandon("the ATV did not spawn");
@@ -86,8 +86,8 @@ void HostTick(coop::net::Session* s) {
         Next(Step::Announce);
         return;
     }
-    if (coop::atv_sync::RuntimeAnnounced() > g_announced0) {
-        UE_LOGI("[ATV-SPAWN-DRILL] host: the ATV lane announced the spawn under a synthetic key");
+    if (coop::atv_sync::RuntimeBroadcasts() > g_announced0) {
+        UE_LOGI("[ATV-SPAWN-DRILL] host: the ATV lane announced the spawn under its game key");
         g_step = Step::Done;
         return;
     }

@@ -30,7 +30,7 @@ inline constexpr uint32_t kMagic = 0x564D5450u;
 // This file is past the 1500-line hard cap and stays there: it is the single-feature exception the
 // rule names. One wire format, whose enum, payload structs and static_asserts are read together;
 // splitting it would put a kind's number in one file and its bytes in another.
-inline constexpr uint16_t kProtocolVersion = 244;
+inline constexpr uint16_t kProtocolVersion = 245;
 
 // Default LAN port (overridable via multivoid.ini "net.port=").
 inline constexpr uint16_t kDefaultPort = 47621;
@@ -420,11 +420,12 @@ enum class ReliableKind : uint8_t {
     // AtvReleasePayload.
     AtvRelease = 71,
 
-    // Host to all: a runtime-spawned ATV exists under this synthetic key (its own save key is
-    // random per peer); clients spawn a native idle ATV for it. AtvSpawnPayload.
+    // Host to all: an ATV with this game Key exists; a receiver that holds none under that Key
+    // spawns a native idle ATV carrying it. The host announces every ATV of its index to a joiner
+    // and each ATV its index gains. AtvSpawnPayload.
     AtvSpawn = 72,
 
-    // Host to all: the runtime ATV with this synthetic key is gone. AtvDestroyPayload.
+    // Host to all: the ATV with this game Key is gone. AtvDestroyPayload.
     AtvDestroy = 73,
 
     // Host to all: a kerfur changed form. Carries the kerfur id, the old and new element ids, the
@@ -2540,10 +2541,10 @@ struct AtvStatePayload {
 };
 static_assert(sizeof(AtvStatePayload) == 148, "AtvStatePayload must be 148 bytes");
 
-// A runtime ATV (AtvSpawn): the host-assigned synthetic key (its own save key is random per peer)
-// and the class, so the client spawns the exact skin.
+// An ATV (AtvSpawn): the host ATV's own game Key and its class, so the receiver spawns the exact skin
+// under that Key. The Key is at most 31 chars (an ATV's is 22, or "ATV"); a receiver drops a longer one.
 struct AtvSpawnPayload {
-    WireKey       synthKey;   // 32 -- host-assigned stable identity ("coopatv#N")
+    WireKey       key;         // 32 -- the host ATV's game Key (A::GetKeyString)
     WireClassName className;   // 64 -- "ATV_C" or a skin subclass
     float         x, y, z;     // 12 -- spawn pose (cm)
     float         pitch, yaw, roll;  // 12
@@ -2552,9 +2553,9 @@ static_assert(sizeof(AtvSpawnPayload) == 120, "AtvSpawnPayload must be 120 bytes
 static_assert(sizeof(AtvSpawnPayload) <= 256 - 20 - 8,
               "AtvSpawnPayload must fit in one reliable datagram (kMaxReliablePayload)");
 
-// A runtime ATV's teardown (AtvDestroy).
+// An ATV's teardown (AtvDestroy), named by its game Key.
 struct AtvDestroyPayload {
-    WireKey synthKey;  // 32
+    WireKey key;       // 32
 };
 static_assert(sizeof(AtvDestroyPayload) == 32, "AtvDestroyPayload must be 32 bytes");
 

@@ -67,6 +67,10 @@ struct AtvEntry {
                                    // does not hold, the difference is not something a pose
                                    // lane can close, and the lane must say so instead of
                                    // teleporting for the rest of the session.
+    // ---- the index (atv_index.cpp sets these; later fields of that kind append below) ----
+    void*    world = nullptr;      // the world the actor was last found in (its UWorld, as an identity, never
+                                   // dereferenced): the host sends AtvDestroy for a row whose actor died in the
+                                   // world it is in now, and prunes silently a row whose world was left.
 };
 
 // Vector length. Shared rather than duplicated: the corrector measures the position error with
@@ -83,7 +87,7 @@ inline uint64_t NowMs() {
 
 // atv_sync.cpp's surface for atv_runtime_mirror.cpp, a client receiving a runtime ATV: the lane's session,
 // whether the index belongs to this world, the row under a key, and that half's two structural changes -- a
-// fresh-spawned mirror adopted under the host's synthetic key, a row dropped with its actor's key. Game thread.
+// fresh-spawned mirror adopted under the host's game Key, a row dropped with its actor's key. Game thread.
 coop::net::Session* LaneSession();
 bool IndexCurrent();
 const AtvEntry* FindEntry(const std::wstring& key);

@@ -1,7 +1,7 @@
 // coop/dev/atv_spawn_drill.h -- [dev] an ATV spawned at runtime on the host reaches each client once (L21).
 //   HOST   -- spawns an ATV_C in front of its own player: run, once slot 1's world is ready (the spawn's broadcast);
 //             join, once slot 1 is seated and still loading (the world-ready replay of every runtime ATV); park, as
-//             run. It says when its ATV lane announced the ATV under a synthetic key.
+//             run. It says when its ATV lane announced the ATV under its game key.
 //   CLIENT -- once its world is ready, passes when exactly one runtime ATV mirror stands here with nothing parked,
 //             held for a second; run covers either delivery (the broadcast, or the park's hand-back when it lands in
 //             a world not yet ready). In park mode atv_park_first_spawn=1 parks the first spawn that reaches a ready

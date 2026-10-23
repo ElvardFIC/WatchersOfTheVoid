@@ -1,6 +1,6 @@
-// coop/interactables/atv_runtime_mirror.cpp -- a client's mirror of a runtime ATV (declared in
-// coop/interactables/atv_sync.h). The host announces an ATV spawned mid-session under a synthetic key; this
-// client fresh-spawns a native ATV for it, physics on so it is grabbable, and destroys it when the host's goes.
+// coop/interactables/atv_runtime_mirror.cpp -- a client's mirror of an ATV the host announced (declared in
+// coop/interactables/atv_sync.h). The host announces an ATV under its game Key; this client fresh-spawns a
+// native ATV carrying that Key, physics on so it is grabbable, and destroys it when the host's goes.
 // A spawn landing while this world is not ready waits in the park (atv_spawn_park.h). The map stays
 // atv_sync.cpp's: this half asks it to adopt or drop a row (atv_sync_internal.h).
 
@@ -8,11 +8,13 @@
 #include "atv_spawn_park.h"
 #include "coop/config/config.h"
 #include "coop/config/config_registry.h"
+#include "coop/interactables/atv_index_internal.h"
 #include "coop/interactables/atv_sync_internal.h"
 #include "coop/net/protocol.h"
 #include "coop/net/session.h"
 #include "coop/net/wire_key_util.h"
 #include "coop/session/world_load_episode.h"
+#include "ue_wrap/core/fname_utils.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/devices/atv.h"
@@ -45,54 +47,66 @@ void OnAtvSpawn(const coop::net::AtvSpawnPayload& payload) {
     // From the host alone: the host's receive edge refuses a client's copy (client_authorship.h).
     auto* s = LaneSession();
     if (!s || !s->connected()) return;
-    std::wstring synthKey = StringFromWireKey(payload.synthKey);
-    if (synthKey.empty()) { UE_LOGW("atv: OnAtvSpawn empty synthKey -- dropping"); return; }
+    if (!detail::WireKeyNamesAnAtv(payload.key, "client")) return;
+    const std::wstring key = StringFromWireKey(payload.key);
     // The payload is checked before any wait: a malformed spawn is dropped, only a sound one is deferred.
     if (!std::isfinite(payload.x) || !std::isfinite(payload.y) || !std::isfinite(payload.z) ||
         !std::isfinite(payload.pitch) || !std::isfinite(payload.yaw) || !std::isfinite(payload.roll)) {
-        UE_LOGW("atv: OnAtvSpawn non-finite pose synthKey='%ls' -- dropping", synthKey.c_str());
-        spawn_park::Discard(synthKey);  // a malformed spawn is final
+        UE_LOGW("atv: OnAtvSpawn non-finite pose key='%ls' -- dropping", key.c_str());
+        spawn_park::Discard(key);  // a malformed spawn is final
         return;
     }
     std::wstring className = WireClassNameToString(payload.className);
     if (className.empty()) {
-        UE_LOGW("atv: OnAtvSpawn empty className synthKey='%ls' -- dropping", synthKey.c_str());
-        spawn_park::Discard(synthKey);
+        UE_LOGW("atv: OnAtvSpawn empty className key='%ls' -- dropping", key.c_str());
+        spawn_park::Discard(key);
         return;
     }
     if (ue_wrap::world_identity::CurrentWorldKind() != ue_wrap::world_identity::WorldKind::Gameplay ||
         !IndexCurrent() || !coop::world_load_episode::HasQuiesced()) {
-        spawn_park::Park(synthKey, payload, "the receiving world is not ready");
+        spawn_park::Park(key, payload, "the receiving world is not ready");
         return;
     }
     // The ATV spawn drill's park arm: the first spawn reaching a ready world is parked as if it were not, so the
     // park's hand-back is what spawns it. A hand-back is already the park's work and is let through.
     static const bool s_parkFirst = coop::config::ResolveFlag(coop::config_registry::rows::atv_park_first_spawn);
     static bool s_parkedFirst = false;
-    if (s_parkFirst && !s_parkedFirst && !spawn_park::Holds(synthKey)) {
+    if (s_parkFirst && !s_parkedFirst && !spawn_park::Holds(key)) {
         s_parkedFirst = true;
-        spawn_park::Park(synthKey, payload, "the drill parks the first spawn");
+        spawn_park::Park(key, payload, "the drill parks the first spawn");
         return;
     }
-    if (!A::EnsureResolved()) { spawn_park::Park(synthKey, payload, "the ATV wrapper is not resolved"); return; }
-    if (const AtvEntry* known = FindEntry(synthKey)) {
-        if (R::IsLiveByIndex(known->actor, known->idx)) { spawn_park::Discard(synthKey); return; }
-        EraseEntry(synthKey);   // a dead row is not "already spawned"
+    if (!A::EnsureResolved()) { spawn_park::Park(key, payload, "the ATV wrapper is not resolved"); return; }
+    // The key becomes a name through the string library, which resolves at boot, long before a gameplay
+    // world: until it does the spawn waits (a parked entry keeps the world it first arrived in).
+    if (!ue_wrap::fname_utils::Resolved()) {
+        static bool sSaidUnresolved = false;
+        if (!sSaidUnresolved) {
+            sSaidUnresolved = true;
+            UE_LOGW("atv: OnAtvSpawn key='%ls' waits -- the name library is not resolved (said once)", key.c_str());
+        }
+        spawn_park::Park(key, payload, "the name library is not resolved");
+        return;
+    }
+    if (const AtvEntry* known = FindEntry(key)) {
+        if (R::IsLiveByIndex(known->actor, known->idx)) { spawn_park::Discard(key); return; }
+        EraseEntry(key);   // a dead row is not "already spawned"
     }
     const FVector loc{ payload.x, payload.y, payload.z };
     const FRotator rot{ payload.pitch, payload.yaw, payload.roll };
-    void* spawned = A::SpawnMirror(className, loc, rot, synthKey);  // physics LEFT ON -- a native idle grabbable ATV
+    void* spawned = A::SpawnMirror(className, loc, rot, key);  // physics LEFT ON -- a native idle grabbable ATV
     if (!spawned) {
-        // In a world that reads ready, a refused spawn is the class or the engine saying no: final, not retried.
-        UE_LOGW("atv: OnAtvSpawn SpawnMirror failed synthKey='%ls' class='%ls' -- not retried", synthKey.c_str(),
+        // In a world that reads ready, a refused spawn is the class, the key or the engine saying no: final,
+        // not retried, and never a mirror under a key of its own making.
+        UE_LOGW("atv: OnAtvSpawn SpawnMirror failed key='%ls' class='%ls' -- not retried", key.c_str(),
                 className.c_str());
-        spawn_park::Discard(synthKey);
+        spawn_park::Discard(key);
         return;
     }
-    spawn_park::Discard(synthKey);
-    AdoptClientMirror(synthKey, spawned);
-    UE_LOGI("atv: spawned runtime-ATV mirror synthKey='%ls' class='%ls' actor=%p loc=(%.0f, %.0f, %.0f)",
-            synthKey.c_str(), className.c_str(), spawned, loc.X, loc.Y, loc.Z);
+    spawn_park::Discard(key);
+    AdoptClientMirror(key, spawned);
+    UE_LOGI("atv: spawned ATV mirror key='%ls' class='%ls' actor=%p loc=(%.0f, %.0f, %.0f)",
+            key.c_str(), className.c_str(), spawned, loc.X, loc.Y, loc.Z);
 }
 
 uint32_t ParkedEver() { return spawn_park::ParkedEver(); }
@@ -100,16 +114,16 @@ size_t ParkPending() { return spawn_park::Pending(); }
 
 void OnAtvDestroy(const coop::net::AtvDestroyPayload& payload) {
     if (!LaneSession()) return;  // from the host alone: its receive edge refuses a client's copy
-    std::wstring synthKey = StringFromWireKey(payload.synthKey);
-    if (synthKey.empty()) return;
-    spawn_park::Discard(synthKey);  // a destroy ends a spawn still waiting
+    if (!detail::WireKeyNamesAnAtv(payload.key, "client")) return;
+    const std::wstring key = StringFromWireKey(payload.key);
+    spawn_park::Discard(key);  // a destroy ends a spawn still waiting
     if (!IndexCurrent()) return;  // the pass prunes a dead-world entry itself
-    const AtvEntry* row = FindEntry(synthKey);
+    const AtvEntry* row = FindEntry(key);
     if (!row) return;
     const bool destroyed = row->isClientSpawnedMirror && R::IsLiveByIndex(row->actor, row->idx) &&
                            A::DestroyMirror(row->actor);  // our own fresh spawn
-    EraseEntry(synthKey);
-    UE_LOGI("atv: runtime-ATV mirror synthKey='%ls' %s", synthKey.c_str(),
+    EraseEntry(key);
+    UE_LOGI("atv: ATV mirror key='%ls' %s", key.c_str(),
             destroyed ? "destroyed" : "dropped from the lane, not destroyed here");
 }
 

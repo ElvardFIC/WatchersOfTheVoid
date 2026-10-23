@@ -1,19 +1,21 @@
-// coop/interactables/atv_index.cpp -- the ATV lane's index: which actor is which wire key. The hub's shared
-// scan pass drives the callbacks below and fills the map atv_sync.cpp owns; the runtime-spawned identity
-// (synthetic keys, the AtvSpawn / AtvDestroy announce) lives here with them. Declared in
+// coop/interactables/atv_index.cpp -- the ATV lane's index: which actor is which game Key. The hub's shared
+// scan pass drives the callbacks below and fills the map atv_sync.cpp owns; the host's announce of that
+// index (AtvSpawn on a key gained, AtvDestroy on a key lost) lives here with them. Declared in
 // atv_index_internal.h; atv_sync.cpp keeps the authority, the stream and the connect snapshot.
 
 #include "coop/interactables/atv_index_internal.h"
 #include "coop/interactables/atv_sync_internal.h"
 
 #include "coop/element/object_scan_hub.h"      // the shared sliced scan pass
+#include "coop/interactables/atv_sync.h"       // RuntimeBroadcasts
 #include "coop/net/protocol.h"
 #include "coop/net/session.h"
-#include "coop/net/wire_key_util.h"  // WireKeyFromString / FnvKey (shared)
+#include "coop/net/wire_key_util.h"  // WireKeyFromString / StringFromWireKey / FnvKey (shared)
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/types.h"           // FVector, FRotator
 #include "ue_wrap/devices/atv.h"
+#include "ue_wrap/engine/world_identity.h"
 
 #include <atomic>
 #include <cstdint>
@@ -27,30 +29,14 @@ namespace coop::atv_sync {
 
 namespace R = ue_wrap::reflection;
 namespace A = ue_wrap::atv;
+namespace W = ue_wrap::world_identity;
 using ue_wrap::FVector;
 using ue_wrap::FRotator;
 using coop::net::WireKeyFromString;
+using coop::net::StringFromWireKey;
 using coop::net::FnvKey;
 
 namespace detail {
-
-// Runtime-spawned ATV identity. Nothing sells an ATV, but list_props row 'atv' spawns an ATV_C
-// from the spawn menu; such an ATV has no save twin on the other peers and its own save key is
-// minted randomly per peer, so the host gives it a synthetic wire key ("coopatv#N") and announces
-// it, and clients fresh-spawn a native AATV_C under that key. A save-placed ATV (a deterministic
-// key both peers loaded) keeps its real key.
-std::unordered_set<std::wstring>        g_savePlacedKeys;    // host: real keys seen before any client connected, so save-placed
-std::unordered_set<void*>               g_savePlacedActors;  // host: the actors present before any client, so a save ATV that mints its key late is not misread as a runtime spawn
-std::unordered_map<void*, std::wstring> g_synthForActor;     // actor -> synthetic wire key (host runtime-spawned + client mirror)
-uint32_t                                g_synthCounter = 0;  // host: the monotonic synthetic-key id
-
-namespace {
-const wchar_t* const kSynthPrefix = L"coopatv#";  // distinguishes synth keys from real ATV keys ("atv"/base64)
-}  // namespace
-
-bool IsSynthKey(const std::wstring& k) {
-    return k.compare(0, 8, kSynthPrefix) == 0;  // "coopatv#" is 8 chars
-}
 
 namespace {
 // A WireClassName from a wide class name (ASCII), truncated at 63.
@@ -59,114 +45,121 @@ void FillWireClassName(coop::net::WireClassName& out, const std::wstring& name) 
     for (size_t i = 0; i < name.size() && i < sizeof(out.data); ++i)
         out.data[out.len++] = static_cast<char>(name[i]);
 }
-}  // namespace
 
-// Host: announces a runtime ATV so clients fresh-spawn a native mirror; slot < 0 broadcasts (a
-// new ATV mid-session), slot >= 0 seeds one joiner. Reads the class and the current pose.
-void SendAtvSpawn(const std::wstring& synthKey, void* actor, int slot) {
-    auto* s = g_session.load(std::memory_order_acquire);
-    if (!s || !s->connected() || !actor) return;
-    void* cls = R::ClassOf(actor);
-    if (!cls) return;
-    FVector loc; FRotator rot;
-    if (!A::GetRootTransform(actor, loc, rot)) return;
-    coop::net::AtvSpawnPayload p{};
-    WireKeyFromString(synthKey, p.synthKey);
-    FillWireClassName(p.className, R::ToString(R::NameOf(cls)));
-    p.x = loc.X; p.y = loc.Y; p.z = loc.Z;
-    p.pitch = rot.Pitch; p.yaw = rot.Yaw; p.roll = rot.Roll;
-    if (slot < 0) s->SendReliable(coop::net::ReliableKind::AtvSpawn, &p, sizeof(p));
-    else          s->SendReliableToSlot(slot, coop::net::ReliableKind::AtvSpawn, &p, sizeof(p));
+constexpr size_t kMaxKeyChars = sizeof(coop::net::WireKey::data);  // 31: what a WireKey carries
+
+uint32_t g_runtimeBroadcasts = 0;                 // host: the AtvSpawn broadcasts the hub's pass sent this session
+std::unordered_set<std::wstring> g_refusedKeys;   // keys whose refusal has been said (once per key)
+
+void Refuse(const std::wstring& key, const char* why, const char* side) {
+    if (g_refusedKeys.insert(key).second)
+        UE_LOGW("atv: %s refuses the ATV key '%ls' (%s) -- not announced / not taken (said once per key)",
+                side, key.c_str(), why);
 }
 
-namespace {
-void SendAtvDestroy(const std::wstring& synthKey) {
+// "Live", for the index: live by index, an ATV, and in the world this peer is in now. IsAtv comes
+// before any key read, since GetKeyString reads a fixed offset, and the world test is what the old
+// "found is authoritative" prune carried through the hub's world filter.
+bool LiveInThisWorld(void* actor, int32_t idx) {
+    return R::IsLiveByIndex(actor, idx) && A::IsAtv(actor) && W::WorldOf(actor) == W::CurrentWorld();
+}
+
+void SendAtvDestroy(const std::wstring& key) {
     auto* s = g_session.load(std::memory_order_acquire);
     if (!s || !s->connected()) return;
     coop::net::AtvDestroyPayload p{};
-    WireKeyFromString(synthKey, p.synthKey);
+    WireKeyFromString(key, p.key);
     s->SendReliable(coop::net::ReliableKind::AtvDestroy, &p, sizeof(p));
 }
 }  // namespace
 
-// The scan-hub consumer: the hub's shared sliced pass drives these callbacks, preserving the
-// sender state for keys that persist (only the actor and index update) and classifying identity
-// as above (a save-placed ATV keeps its real key; a host-side runtime ATV gets a synthetic key
-// and an announce). A spawn landing inside the pass window at a join is announced on the next
-// pass, when the joiner is connected.
+bool KeyNamesAnAtv(const std::wstring& key, const char* side) {
+    if (key.empty())              { Refuse(key, "empty", side); return false; }
+    if (key == L"None")           { Refuse(key, "None", side); return false; }
+    if (key.size() > kMaxKeyChars) { Refuse(key, "longer than 31 chars", side); return false; }
+    return true;
+}
+
+bool WireKeyNamesAnAtv(const coop::net::WireKey& k, const char* side) {
+    if (k.len > kMaxKeyChars) { Refuse(StringFromWireKey(k), "longer than 31 chars", side); return false; }
+    return KeyNamesAnAtv(StringFromWireKey(k), side);
+}
+
+void ResetAnnounceState() {
+    g_runtimeBroadcasts = 0;
+    g_refusedKeys.clear();
+}
+
+// Announces an ATV of the host's index so receivers hold it under its game Key; slot < 0 broadcasts
+// (a key the index gained), slot >= 0 seeds one joiner. Reads the class and the current pose. True
+// when the packet was queued.
+bool SendAtvSpawn(const std::wstring& key, void* actor, int slot) {
+    auto* s = g_session.load(std::memory_order_acquire);
+    if (!s || !s->connected() || !actor) return false;
+    void* cls = R::ClassOf(actor);
+    if (!cls) return false;
+    FVector loc; FRotator rot;
+    if (!A::GetRootTransform(actor, loc, rot)) return false;
+    coop::net::AtvSpawnPayload p{};
+    WireKeyFromString(key, p.key);
+    FillWireClassName(p.className, R::ToString(R::NameOf(cls)));
+    p.x = loc.X; p.y = loc.Y; p.z = loc.Z;
+    p.pitch = rot.Pitch; p.yaw = rot.Yaw; p.roll = rot.Roll;
+    if (slot < 0) return s->SendReliable(coop::net::ReliableKind::AtvSpawn, &p, sizeof(p));
+    return s->SendReliableToSlot(slot, coop::net::ReliableKind::AtvSpawn, &p, sizeof(p));
+}
+
+// The scan-hub consumer: the hub's shared sliced pass drives these callbacks, preserving the sender
+// state for keys that persist (only the actor and index update). Every keyed ATV is filed under its
+// own game Key. The host announces a key it gains (AtvSpawn) and a key whose actor died (AtvDestroy);
+// a joiner is seeded from the whole index by the connect snapshot (atv_sync.cpp).
 uint32_t g_indexGen = 0;  // world gen of the last completed pass (stale-gen index = EMPTY)
 namespace {
 size_t   g_lastLogCount = SIZE_MAX;
 uint64_t g_lastLogHash  = 0;
-struct ScanFound { std::wstring wireKey; void* obj; int32_t idx; std::wstring realKey; };
+struct ScanFound { std::wstring key; void* obj; int32_t idx; };
 std::vector<ScanFound> g_scanFound;   // pass scratch (GT-only)
-bool g_scanIsHost = false;            // pass context, captured at pass begin
-bool g_scanCapturing = false;
 
 void HubPassBegin(void*, bool) {
     g_scanFound.clear();
-    auto* s = g_session.load(std::memory_order_acquire);
-    g_scanIsHost = s && s->role() == coop::net::Role::Host;
-    const bool isHost = g_scanIsHost;
-    // The baseline window: before any client is connected, every keyed ATV the host has is
-    // save-placed; after that a newly appearing key is a runtime spawn. Accumulated, not a
-    // single-frame latch, so a save ATV slow to mint its key still lands in the set.
-    g_scanCapturing = isHost && (!s || !s->connected());
 }
 
 void HubMatch(void*, void* obj) {
-    const bool isHost = g_scanIsHost;
-    const bool capturing = g_scanCapturing;
-    auto& found = g_scanFound;
-    {
-        const std::wstring nm = R::ToString(R::NameOf(obj));
-        if (nm.rfind(L"Default__", 0) == 0) return;  // skip CDO
-        if (!R::IsLive(obj)) return;
-        if (capturing) g_savePlacedActors.insert(obj);  // capture the ACTOR (even before it mints its key)
-        std::wstring realKey = A::GetKeyString(obj);
-        if (realKey.empty() || realKey == L"None") return;  // not yet keyed -- the next pass picks it up
-        std::wstring wireKey;
-        auto sf = g_synthForActor.find(obj);
-        if (sf != g_synthForActor.end()) {
-            wireKey = sf->second;                              // already synth (host runtime-spawn / client mirror)
-        } else if (capturing) {
-            g_savePlacedKeys.insert(realKey);                 // baseline: a save-placed ATV
-            wireKey = realKey;
-        } else if (isHost && g_savePlacedKeys.find(realKey) == g_savePlacedKeys.end() &&
-                   g_savePlacedActors.find(obj) == g_savePlacedActors.end()) {
-            // Host: a mid-session ATV not in the save set is a runtime spawn: a synthetic wire key
-            // and an announce, so the clients fresh-spawn a mirror.
-            wireKey = std::wstring(kSynthPrefix) + std::to_wstring(++g_synthCounter);
-            g_synthForActor[obj] = wireKey;
-            SendAtvSpawn(wireKey, obj, /*slot*/ -1);          // broadcast to all connected clients
-            UE_LOGI("atv: runtime-spawned ATV detected -- synthKey='%ls' class='%ls' (host-announced AtvSpawn)",
-                    wireKey.c_str(), R::ToString(R::NameOf(R::ClassOf(obj))).c_str());
-        } else {
-            wireKey = realKey;                                 // save-placed default ATV (both peers have it)
-        }
-        found.push_back({ std::move(wireKey), obj, R::InternalIndexOf(obj), std::move(realKey) });
-    }
+    const std::wstring nm = R::ToString(R::NameOf(obj));
+    if (nm.rfind(L"Default__", 0) == 0) return;  // skip CDO
+    if (!R::IsLive(obj)) return;
+    std::wstring key = A::GetKeyString(obj);
+    if (key.empty() || key == L"None") return;   // not yet keyed -- the next pass picks it up
+    g_scanFound.push_back({ std::move(key), obj, R::InternalIndexOf(obj) });
+}
+
+// Host: a key the index just gained goes to every connected client. The liveness is read again first
+// (the pass is sliced; the actor can have died inside it).
+void AnnounceGained(const std::wstring& key, const AtvEntry& e) {
+    if (!LiveInThisWorld(e.actor, e.idx)) return;
+    if (!SendAtvSpawn(key, e.actor, /*slot*/ -1)) return;
+    ++g_runtimeBroadcasts;
+    UE_LOGI("atv: announced ATV key='%ls' class='%ls' (AtvSpawn)", key.c_str(),
+            R::ToString(R::NameOf(R::ClassOf(e.actor))).c_str());
 }
 
 size_t HubPassComplete(void*, bool isFull, uint32_t worldGen) {
-    const bool isHost = g_scanIsHost;
+    auto* sess = g_session.load(std::memory_order_acquire);
+    const bool isHost = sess && sess->role() == coop::net::Role::Host;
     auto& found = g_scanFound;
-    // Entries whose ATV vanished are dropped; a gone host-synthetic ATV sends AtvDestroy so the
-    // clients tear down their mirror. On a full pass `found` is authoritative; on a tail pass it is
-    // only the new tail, so liveness by index prunes instead.
+    void* const thisWorld = W::CurrentWorld();
+    // One prune rule on a full pass: a row goes iff its actor is not live or its current key is no
+    // longer the row's. A mirror spawned while the sliced pass was in flight survives, so does a
+    // transient scan miss; a recycled slot's foreign tenant and a re-key do not. A tail pass only has
+    // the new arrivals in `found`, so it prunes by liveness alone. The host sends AtvDestroy for a
+    // row whose actor died in the world it is in now; a row whose world has been left prunes silently.
     for (auto it = g_atvs.begin(); it != g_atvs.end();) {
-        bool keep;
-        if (isFull) {
-            keep = false;
-            for (auto& f : found) if (f.wireKey == it->first) { keep = true; break; }
-        } else {
-            keep = R::IsLiveByIndex(it->second.actor, it->second.idx);
-        }
+        const AtvEntry& row = it->second;
+        const bool live = LiveInThisWorld(row.actor, row.idx);
+        const bool keep = isFull ? live && A::GetKeyString(row.actor) == it->first
+                                 : R::IsLiveByIndex(row.actor, row.idx);
         if (keep) { ++it; continue; }
-        if (IsSynthKey(it->first)) {
-            if (isHost) SendAtvDestroy(it->first);
-            if (it->second.actor) g_synthForActor.erase(it->second.actor);
-        }
+        if (isHost && !live && thisWorld && row.world == thisWorld) SendAtvDestroy(it->first);
         it = g_atvs.erase(it);
     }
     // Update or add. A wire key can outlive its actor (a save-placed key is deterministic and a
@@ -174,7 +167,10 @@ size_t HubPassComplete(void*, bool isFull, uint32_t worldGen) {
     // authority, seat, correction clock and change-gate baseline: the entry stays, everything that
     // described the actor resets.
     for (auto& f : found) {
-        AtvEntry& e = g_atvs[f.wireKey];
+        auto row = g_atvs.find(f.key);
+        const bool gained = row == g_atvs.end();
+        if (gained && isHost && !KeyNamesAnAtv(f.key, "host")) continue;
+        AtvEntry& e = gained ? g_atvs[f.key] : row->second;
         if (e.actor && e.actor != f.obj) {
             e.occupantSlot = 0xFF; e.authorSlot = 0xFF;
             e.wasPoseAuthor = false;
@@ -183,6 +179,8 @@ size_t HubPassComplete(void*, bool isFull, uint32_t worldGen) {
         }
         e.actor = f.obj;
         e.idx   = f.idx;
+        e.world = W::WorldOf(f.obj);
+        if (gained && isHost) AnnounceGained(f.key, e);
     }
     g_indexGen = worldGen;
     // The keys hash over the whole index, since on a tail pass `found` is only the new arrivals.
@@ -211,5 +209,7 @@ void RegisterWithScanHub() {
 }
 
 }  // namespace detail
+
+uint32_t RuntimeBroadcasts() { return detail::g_runtimeBroadcasts; }
 
 }  // namespace coop::atv_sync

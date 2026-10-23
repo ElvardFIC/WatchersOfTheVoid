@@ -16,7 +16,7 @@ struct Parked {
     uint32_t worldGen = 0;   // the world it arrived in; another world drops it
 };
 std::unordered_map<std::wstring, Parked> g_parked;
-// The host runs a handful of runtime ATVs; a park past this describes no world of theirs.
+// The park bounds every ATV of the host's world (a few); a park past this describes no world of theirs.
 constexpr size_t   kCap = 16;
 constexpr uint64_t kPollMs = 500;
 uint64_t g_nextPollMs = 0;
@@ -37,12 +37,12 @@ void Park(const std::wstring& key, const coop::net::AtvSpawnPayload& payload, co
         if (g_parked.size() >= kCap) {
             if (!g_saidCap) {
                 g_saidCap = true;
-                UE_LOGW("atv: %zu runtime-ATV spawns already parked -- synthKey='%ls' (%s) dropped; the next "
+                UE_LOGW("atv: %zu ATV spawns already parked -- key='%ls' (%s) dropped; the next "
                         "world-ready replay sends it again (said once)", kCap, key.c_str(), why);
             }
             return;
         }
-        UE_LOGI("atv: runtime-ATV synthKey='%ls' parked until this world is ready (%s)", key.c_str(), why);
+        UE_LOGI("atv: ATV key='%ls' parked until this world is ready (%s)", key.c_str(), why);
         g_parked.emplace(key, Parked{payload, gen});
         ++g_parkedEver;
         return;
@@ -67,7 +67,7 @@ void DrainReady() {
     std::vector<coop::net::AtvSpawnPayload> ready;
     for (auto it = g_parked.begin(); it != g_parked.end();) {
         if (it->second.worldGen != gen) {
-            UE_LOGI("atv: a parked runtime-ATV spawn of a world since left dropped -- this world's replay sends it");
+            UE_LOGI("atv: a parked ATV spawn of a world since left dropped -- this world's replay sends it");
             it = g_parked.erase(it);
             continue;
         }

@@ -1,8 +1,9 @@
-// coop/interactables/atv_index_internal.h -- what the ATV index (atv_index.cpp) shares with atv_sync.cpp.
-// atv_index.cpp owns the runtime-spawned identity (synthetic wire keys and the set of save-placed
-// ones) and the hub's scan callbacks that fill atv_sync.cpp's map; atv_sync.cpp reads the identity at
-// the connect snapshot, the mirror adoption and the disconnect, and asks for the registration. Nothing
-// outside coop/interactables/ includes this. Game thread only.
+// coop/interactables/atv_index_internal.h -- what the ATV index (atv_index.cpp) shares with the rest of
+// the lane. atv_index.cpp owns the hub's scan callbacks that fill atv_sync.cpp's map, the host's announce
+// of that index (AtvSpawn / AtvDestroy) and the test of a key that may name an ATV on the wire;
+// atv_sync.cpp reads them at the connect snapshot and the disconnect and asks for the registration,
+// atv_runtime_mirror.cpp asks which keys it may take. Nothing outside coop/interactables/ includes this.
+// Game thread only.
 
 #pragma once
 
@@ -12,29 +13,29 @@
 #include <cstdint>
 #include <string>
 #include <unordered_map>
-#include <unordered_set>
+
+namespace coop::net { struct WireKey; }
 
 namespace coop::atv_sync::detail {
 
 // atv_sync.cpp's state, defined there and filled by the index: the lane's session and the key -> record map.
 extern std::atomic<coop::net::Session*>        g_session;
 extern std::unordered_map<std::wstring, AtvEntry> g_atvs;
-
-// Host: real keys seen before any client connected, and the actors present then.
-extern std::unordered_set<std::wstring>        g_savePlacedKeys;
-extern std::unordered_set<void*>               g_savePlacedActors;
-// Actor -> synthetic wire key (host runtime-spawned + client mirror).
-extern std::unordered_map<void*, std::wstring> g_synthForActor;
-// Host: the monotonic synthetic-key id.
-extern uint32_t                                g_synthCounter;
 // World gen of the last completed hub pass (a stale-gen index is EMPTY).
 extern uint32_t                                g_indexGen;
 
-bool IsSynthKey(const std::wstring& k);
+// Whether `key` can name an ATV on the wire: not empty, not "None", at most 31 chars (what a WireKey
+// carries). A refusal is logged once per key; `side` ("host" / "client") says whose it is.
+bool KeyNamesAnAtv(const std::wstring& key, const char* side);
+// The same test on a received key, which also refuses a declared length past what the field holds.
+bool WireKeyNamesAnAtv(const coop::net::WireKey& key, const char* side);
 
-// Host: announces a runtime ATV so clients fresh-spawn a native mirror; slot < 0 broadcasts, slot >= 0
-// seeds one joiner.
-void SendAtvSpawn(const std::wstring& synthKey, void* actor, int slot);
+// Announces the ATV filed under `key` to every connected client (slot < 0) or seeds one joiner
+// (slot >= 0). True when the packet was queued.
+bool SendAtvSpawn(const std::wstring& key, void* actor, int slot);
+
+// A session ended: the broadcast counter restarts and the refused keys may be said again.
+void ResetAnnounceState();
 
 // Registers the index's scan callbacks with the hub; latched, safe to call every tick.
 void RegisterWithScanHub();

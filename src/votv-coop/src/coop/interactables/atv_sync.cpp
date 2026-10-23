@@ -9,7 +9,7 @@
 // since their vehicle is one rigid body. Two predicates: IsPoseAuthor (I drive or carry it) and
 // OwnsTick (that, or I am the host and nobody authors it); the seat (occupantSlot, which the
 // mount deny reads) and the author (authorSlot, who streams) stay separate, since a grabbing
-// peer must not deny the seat. Keyed by the save key. The seat is self-elected, and two peers
+// peer must not deny the seat. Keyed by the game Key. The seat is self-elected, and two peers
 // mounting inside one round-trip both elect themselves: the lower slot wins in OnReliable, a
 // tie-break, not authority.
 
@@ -84,13 +84,9 @@ std::unordered_map<std::wstring, AtvEntry> g_atvs;
 
 }  // namespace detail
 
-using detail::g_savePlacedKeys;
-using detail::g_savePlacedActors;
-using detail::g_synthForActor;
-using detail::g_synthCounter;
 using detail::g_indexGen;
-using detail::IsSynthKey;
 using detail::SendAtvSpawn;
+using detail::ResetAnnounceState;
 using detail::RegisterWithScanHub;
 using detail::g_session;
 using detail::g_atvs;
@@ -342,8 +338,6 @@ void OnAtvRelease(const coop::net::AtvReleasePayload& payload, uint8_t senderPee
             key.c_str());
 }
 
-uint32_t RuntimeAnnounced() { return g_synthCounter; }
-
 int RuntimeMirrors() {
     int n = 0;
     for (const auto& kv : g_atvs)
@@ -364,16 +358,13 @@ void AdoptClientMirror(const std::wstring& key, void* actor) {
     AtvEntry e{};
     e.actor = actor;
     e.idx = R::InternalIndexOf(actor);
+    e.world = ue_wrap::world_identity::WorldOf(actor);
     e.isClientSpawnedMirror = true;
     g_atvs[key] = std::move(e);
-    g_synthForActor[actor] = key;
 }
 
 void EraseEntry(const std::wstring& key) {
-    auto it = g_atvs.find(key);
-    if (it == g_atvs.end()) return;
-    if (it->second.actor) g_synthForActor.erase(it->second.actor);
-    g_atvs.erase(it);
+    g_atvs.erase(key);
 }
 
 void QueueConnectBroadcastForSlot(int peerSlot) {
@@ -388,9 +379,11 @@ void QueueConnectBroadcastForSlot(int peerSlot) {
     for (auto& kv : g_atvs) {
         AtvEntry& e = kv.second;
         if (!R::IsLiveByIndex(e.actor, e.idx)) continue;
-        // A synthetic-keyed ATV is announced first on the same lane, so the joiner fresh-spawns it
-        // before the pose lands.
-        if (IsSynthKey(kv.first)) { SendAtvSpawn(kv.first, e.actor, peerSlot); ++spawns; }
+        // Every row is announced first on the same lane, so the joiner holds the ATV under its Key
+        // before the pose lands. Divergence from MTA, which builds a joiner's world from these packets
+        // alone (reference/mtasa-blue/Server/mods/deathmatch/logic/CMapManager.cpp:195-297): ours also
+        // loads the host's save, so a joiner adopts the ATV its save already holds (the adopt package).
+        if (SendAtvSpawn(kv.first, e.actor, peerSlot)) ++spawns;
         // The change gate re-arms for the joiner: the snapshot is fire-once and a fresh joiner is
         // the peer most likely to drop it, and a satisfied gate would then send nothing until the
         // host's copy moved.
@@ -405,7 +398,7 @@ void QueueConnectBroadcastForSlot(int peerSlot) {
         s->SendReliableToSlot(peerSlot, coop::net::ReliableKind::AtvState, &p, sizeof(p));
         ++sent;
     }
-    UE_LOGI("atv: connect-snapshot -- sent %d ATV pose(s) (%d runtime-ATV announce(s)) to slot %d (of %zu indexed)",
+    UE_LOGI("atv: connect-snapshot -- sent %d ATV pose(s) (%d AtvSpawn announce(s), one per key) to slot %d (of %zu indexed)",
             sent, spawns, peerSlot, g_atvs.size());
 }
 
@@ -548,10 +541,7 @@ void OnDisconnect() {
     }
     const size_t n = g_atvs.size();
     g_atvs.clear();
-    g_synthForActor.clear();
-    g_savePlacedKeys.clear();
-    g_savePlacedActors.clear();
-    g_synthCounter = 0;
+    ResetAnnounceState();
     g_installed = false;  // a new session re-indexes via the next Install (latched again)
     const auto c  = coop::atv_corrector::ReadCounters();
     const auto hg = coop::atv_hit_guard::ReadCounters();

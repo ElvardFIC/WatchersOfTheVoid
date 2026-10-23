@@ -1,9 +1,9 @@
-// coop/interactables/atv_spawn_park.h -- a runtime ATV's spawn, held until this client's world can take it.
+// coop/interactables/atv_spawn_park.h -- an ATV's spawn, held until this client's world can take it.
 //
-// The host sends an ATV's spawn only to a world-ready slot and re-sends every runtime ATV at each world-ready
+// The host sends an ATV's spawn only to a world-ready slot and re-sends every ATV of its index at each world-ready
 // announce, so a spawn arriving in a world since left is answered by that replay. What the replay cannot answer is a
 // spawn landing in THIS world while it is not ready for it -- a post-snapshot sweep re-arming the load probe, the ATV
-// wrapper not resolved yet -- which would otherwise be dropped for good, the pose stream only moving an ATV that
+// wrapper or the name library not resolved yet -- which would otherwise be dropped for good, the pose stream only moving an ATV that
 // exists. Such a spawn is parked here, stamped with the world it arrived in, and handed back once the world reads
 // ready; a world change drops it, the new world's replay bringing it again. A spawn that fails once its world is
 // ready is final: nothing here retries it. Game thread.
