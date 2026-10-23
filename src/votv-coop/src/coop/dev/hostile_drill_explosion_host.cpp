@@ -232,7 +232,7 @@ std::string Mismatch(const Spec& sp, const Delta& d) {
 bool RejoinPhases(coop::net::Session* s, const Spec& sp, const Delta& d) {
     if (g_rejoin == Rejoin::One) {
         if (d.sum == 0) {
-            if (Clock::now() - g_judgeAt > kFailBound) Finish(sp, "INCONCLUSIVE", "the first life's shot never reached the host");
+            if (Clock::now() - g_judgeAt > kFailBound) Finish(sp, "FAIL", "the first life's shot never reached the host");
             return true;
         }
         if (d.sum != 1 || d.shots != 1) {
@@ -280,7 +280,6 @@ void Judge(coop::net::Session* s, const Spec& sp) {
     if (d.sum < sp.sent) {
         if (Clock::now() - g_judgeAt <= kFailBound) return;
         if (sp.mode == Mode::NotReady) return Finish(sp, "FAIL", "the shot sent before the announce was never refused: " + Summary(d));
-        if (d.sum == 0) return Finish(sp, "INCONCLUSIVE", "no message was accounted (the client never sent, or a queue was wiped)");
         return Finish(sp, "FAIL", "timeout, " + std::to_string(d.sum) + " of " + std::to_string(sp.sent) + " accounted: " + Summary(d));
     }
     const std::string bad = Mismatch(sp, d);

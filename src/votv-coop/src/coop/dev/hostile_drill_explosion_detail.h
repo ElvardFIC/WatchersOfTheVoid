@@ -47,7 +47,9 @@ void Verdict(Arm a, const char* what, const std::string& why);
 std::string ReadyLine(Arm a, int life);
 std::string TakenLine(Arm a);
 void Say(const std::string& line);
-bool ChatHas(const std::string& needle);
+// True when a LIVE chat row holds `needle`. A row seeded at the join sits in the retained tier and never counts, so a
+// peer acts on what the other said after it joined, never on the record of an earlier life.
+bool ChatHasLive(const std::string& needle);
 // A feed walk is a few times a second: true on every fifteenth call.
 bool PollDue();
 

@@ -69,10 +69,10 @@ std::string TakenLine(Arm a) { return std::string("hostile-drill ") + ArmName(a)
 
 void Say(const std::string& line) { coop::chat_sync::QueueSend(line); }
 
-bool ChatHas(const std::string& needle) {
+bool ChatHasLive(const std::string& needle) {
     bool found = false;
     coop::chat_feed::ForEachRow([&](const coop::chat_feed::RowView& r) {
-        if (r.line.find(needle) != std::string_view::npos) found = true;
+        if (!r.retained && r.line.find(needle) != std::string_view::npos) found = true;
     });
     return found;
 }

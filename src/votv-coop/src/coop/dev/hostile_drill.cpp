@@ -5,7 +5,6 @@
 #include "coop/dev/hostile_drill_act.h"  // the take-or-use request arms
 #include "coop/dev/hostile_drill_chat.h"  // the chat arms
 #include "coop/dev/hostile_drill_explosion.h"  // the explosion request lane's refusal arms
-#include "coop/dev/hostile_drill_explosion.h"  // the explosion request lane's refusal arms
 #include "coop/dev/hostile_drill_hand.h"  // the hand-item class arm
 #include "coop/dev/hostile_drill_latest.h"  // the keep-the-latest arm
 #include "coop/dev/hostile_drill_world.h"   // the world levels' keep-the-latest arm
