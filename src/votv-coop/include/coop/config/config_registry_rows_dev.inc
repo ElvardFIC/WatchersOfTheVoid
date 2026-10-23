@@ -820,6 +820,8 @@ CFG_FLAG(key_index_forget_one, "key_index_forget_one", "dev", false, "VOTVCOOP_K
 // The explosion lane's drill, birth line and selftest red arms: their own file, one concept, included as
 // _dev_port.inc is above.
 #include "coop/config/config_registry_rows_dev_explosion.inc"
+// The fire lane's drill: its own file, one concept, included as _dev_port.inc is above.
+#include "coop/config/config_registry_rows_dev_fire.inc"
 // The puppet-identity arc's selftests and drill (PI-1, PI-2, PI-3): their own file, one concept, included as
 // _dev_port.inc is above.
 #include "coop/config/config_registry_rows_dev_pi.inc"

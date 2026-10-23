@@ -126,6 +126,7 @@ set(VOTVCOOP_DEV_SOURCES
     src/coop/dev/explosion_drill_source.cpp
     src/coop/dev/explosion_drill_source_verbs.cpp
     src/coop/dev/explosion_drill_source_measure.cpp
+    src/coop/dev/fire_ignite_drill.cpp
     src/coop/dev/grid_drill.cpp
     src/coop/dev/grid_drill_checks.cpp
     src/coop/dev/grid_drill_upgrade.cpp

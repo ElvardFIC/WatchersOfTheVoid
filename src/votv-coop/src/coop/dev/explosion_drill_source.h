@@ -7,7 +7,7 @@
 // back when it abandons.
 // Private to coop/dev: those six files, the witch car arm (explosion_drill_witch.cpp: the guard, the crate) and the
 // hostile drill's explosion family (its client and host halves hold the same guard and take the same items) include
-// it. Dev only; game thread.
+// it, as does the fire ignite drill (the hand's item and the reflected reads and writes). Dev only; game thread.
 
 #pragma once
 
@@ -152,6 +152,9 @@ void LastText(char* out, size_t cap);
 
 // A reflected bool written in place.
 bool WriteBool(void* obj, const wchar_t* name, bool value);
+
+// A reflected int field written in place.
+bool WriteInt(void* obj, const wchar_t* name, int value);
 
 // The held leg's start: its class loaded, the item taken into the hand.
 void BeginItem(const LegDef& d);

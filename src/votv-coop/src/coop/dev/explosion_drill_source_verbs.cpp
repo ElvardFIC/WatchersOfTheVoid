@@ -53,14 +53,6 @@ bool ReadInt(void* obj, const wchar_t* name, int& out) {
     return true;
 }
 
-// A reflected int field written in place (the Blueprint's own member, the way its functions write it).
-bool WriteInt(void* obj, const wchar_t* name, int value) {
-    const int32_t off = obj ? R::FindPropertyOffset(R::ClassOf(obj), name) : -1;
-    if (off < 0) return false;
-    *reinterpret_cast<int32_t*>(static_cast<uint8_t*>(obj) + off) = value;
-    return true;
-}
-
 // ---- what keeps the acting player and its guns whole ----
 //
 // Blueprint mainPlayer: Add Player Damage and kill() return while startInvinc holds (Add Player Damage also on
@@ -110,6 +102,14 @@ bool WriteBool(void* obj, const wchar_t* name, bool value) {
     if (!obj || !R::FindBoolProperty(R::ClassOf(obj), name, off, mask)) return false;
     uint8_t* b = static_cast<uint8_t*>(obj) + off;
     *b = value ? static_cast<uint8_t>(*b | mask) : static_cast<uint8_t>(*b & ~mask);
+    return true;
+}
+
+// A reflected int field written in place (the Blueprint's own member, the way its functions write it).
+bool WriteInt(void* obj, const wchar_t* name, int value) {
+    const int32_t off = obj ? R::FindPropertyOffset(R::ClassOf(obj), name) : -1;
+    if (off < 0) return false;
+    *reinterpret_cast<int32_t*>(static_cast<uint8_t*>(obj) + off) = value;
     return true;
 }
 
