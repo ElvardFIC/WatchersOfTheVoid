@@ -81,7 +81,7 @@ void OnAtvSpawn(const coop::net::AtvSpawnPayload& payload) {
     }
     const FVector loc{ payload.x, payload.y, payload.z };
     const FRotator rot{ payload.pitch, payload.yaw, payload.roll };
-    void* spawned = A::SpawnMirror(className, loc, rot);  // physics LEFT ON -- a native idle grabbable ATV
+    void* spawned = A::SpawnMirror(className, loc, rot, synthKey);  // physics LEFT ON -- a native idle grabbable ATV
     if (!spawned) {
         // In a world that reads ready, a refused spawn is the class or the engine saying no: final, not retried.
         UE_LOGW("atv: OnAtvSpawn SpawnMirror failed synthKey='%ls' class='%ls' -- not retried", synthKey.c_str(),

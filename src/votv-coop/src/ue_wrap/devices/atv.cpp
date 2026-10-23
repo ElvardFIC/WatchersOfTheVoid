@@ -7,6 +7,7 @@
 #include "ue_wrap/devices/atv.h"
 
 #include "ue_wrap/core/call.h"      // ParamFrame / Call -- the GameplayStatics spawn (SpawnMirror)
+#include "ue_wrap/core/fname_utils.h"  // StringToFName -- SpawnMirror's key
 #include "ue_wrap/engine/engine.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/object_index.h"
@@ -133,8 +134,15 @@ bool TeleportRig(void* atv, const FVector& loc, const FRotator& rot) {
     return Call(atv, f);
 }
 
-void* SpawnMirror(const std::wstring& className, const FVector& loc, const FRotator& rot) {
-    if (!EnsureResolved() || className.empty()) return nullptr;
+// The key is written as a raw FName into the deferred actor, before its finish: the construction script
+// runs in the finish and, finding a key, keeps it and registers it; finding none, it mints a random one.
+// A raw write because ATV_C's own setKey is an empty stub in the Blueprint (its entry is a bare return),
+// so the props lane's setKey call (coop/props/prop_fresh_spawn.cpp, the deferred key write) writes nothing on
+// an ATV. The offset and the FName are resolved before anything is spawned; a miss spawns nothing,
+// never a mirror with a random key.
+void* SpawnMirror(const std::wstring& className, const FVector& loc, const FRotator& rot,
+                  const std::wstring& key) {
+    if (!EnsureResolved() || className.empty() || key.empty()) return nullptr;
     void* actorClass = R::FindClass(className.c_str());
     if (!actorClass) {
         UE_LOGW("atv: SpawnMirror class '%ls' not found in GUObjectArray", className.c_str());
@@ -144,6 +152,16 @@ void* SpawnMirror(const std::wstring& className, const FVector& loc, const FRota
     void* atvCls = AtvClass();
     if (!atvCls || !R::IsDescendantOfAny(actorClass, &atvCls, 1)) {
         UE_LOGW("atv: SpawnMirror '%ls' is NOT an ATV subclass -- refusing", className.c_str());
+        return nullptr;
+    }
+    const int32_t keyOff = R::FindPropertyOffset(actorClass, L"key");
+    if (keyOff < 0) {
+        UE_LOGW("atv: SpawnMirror '%ls' has no key property -- not spawned", className.c_str());
+        return nullptr;
+    }
+    const R::FName keyName = fname_utils::StringToFName(key);
+    if (keyName.ComparisonIndex == 0) {
+        UE_LOGW("atv: SpawnMirror key '%ls' did not convert to a name -- not spawned", key.c_str());
         return nullptr;
     }
     // GameplayStatics spawn refs (resolved once; same pair npc_mirror drives).
@@ -186,6 +204,8 @@ void* SpawnMirror(const std::wstring& className, const FVector& loc, const FRota
         UE_LOGW("atv: SpawnMirror BeginDeferred returned null for '%ls'", className.c_str());
         return nullptr;
     }
+    // While the actor is still deferred: its construction script runs in the finish.
+    *reinterpret_cast<R::FName*>(reinterpret_cast<char*>(spawned) + keyOff) = keyName;
     {
         ParamFrame finish(sFinishFn);
         if (!finish.valid()) {
