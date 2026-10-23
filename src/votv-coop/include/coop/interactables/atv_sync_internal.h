@@ -33,7 +33,7 @@ struct AtvEntry {
     uint8_t  authorSlot   = 0xFF;  // who STREAMS it (driver or grabber; 0xFF = nobody -> host syncs)
     bool     wasPoseAuthor = false;// POSE authority last tick -- the release-edge detect, and it is
                                    // deliberately not the same variable as ownsTick
-    bool     isClientSpawnedMirror = false;  // a runtime ATV WE fresh-spawned (AtvSpawn) -> K2 on destroy
+    bool     isClientSpawnedMirror = false;  // an ATV mirror WE fresh-spawned (AtvSpawn)
     // idle-syncer change gate
     ue_wrap::FVector  lastSyncPos{};
     ue_wrap::FRotator lastSyncRot{};
@@ -85,7 +85,7 @@ inline uint64_t NowMs() {
         std::chrono::steady_clock::now().time_since_epoch()).count());
 }
 
-// atv_sync.cpp's surface for atv_runtime_mirror.cpp, a client receiving a runtime ATV: the lane's session,
+// atv_sync.cpp's surface for atv_runtime_mirror.cpp, a client receiving an announced ATV: the lane's session,
 // whether the index belongs to this world, the row under a key, and that half's two structural changes -- a
 // fresh-spawned mirror adopted under the host's game Key, a row dropped with its actor's key. Game thread.
 coop::net::Session* LaneSession();

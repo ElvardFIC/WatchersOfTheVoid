@@ -16,6 +16,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <cwchar>
 #include <string>
 
 namespace ue_wrap::atv {
@@ -178,7 +179,7 @@ void* SpawnMirror(const std::wstring& className, const FVector& loc, const FRota
     if (!sGsCdo || !sBeginFn || !sFinishFn) {
         static bool sWarned = false;
         if (!sWarned) { sWarned = true;
-            UE_LOGW("atv: SpawnMirror -- GameplayStatics BeginDeferred/Finish unresolved; cannot spawn runtime ATV"); }
+            UE_LOGW("atv: SpawnMirror -- GameplayStatics BeginDeferred/Finish unresolved; cannot spawn an ATV mirror"); }
         return nullptr;
     }
     void* worldCtx = engine::GetWorldContext();
@@ -221,6 +222,16 @@ void* SpawnMirror(const std::wstring& className, const FVector& loc, const FRota
             DestroyMirror(spawned);  // don't leak the half-spawned actor
             return nullptr;
         }
+    }
+    // The construction script's keeping of a preset key is read back, not assumed: a mirror that stands
+    // under another key (names compare case-insensitively) would be filed by the caller under the host's
+    // and be pruned as a stranger by the next pass. The same rig destroy as the failures above.
+    const std::wstring born = GetKeyString(spawned);
+    if (_wcsicmp(born.c_str(), key.c_str()) != 0) {
+        UE_LOGW("atv: SpawnMirror '%ls' was born with key '%ls', not the requested '%ls' -- destroyed",
+                className.c_str(), born.c_str(), key.c_str());
+        DestroyMirror(spawned);
+        return nullptr;
     }
     return spawned;  // physics LEFT ON -- a native idle ATV (grabbable). atv_sync owns lifetime/sync.
 }

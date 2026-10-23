@@ -58,7 +58,7 @@ bool  GetBrake(void* atv);   // the handbrake
 // why the game ships two teleport forms. False on unresolved/null. Game thread.
 bool TeleportRig(void* atv, const FVector& loc, const FRotator& rot);
 
-// Runtime-ATV materialization: fresh-spawn an AATV_C-or-subclass (`className`) carrying `key` at
+// ATV mirror materialization: fresh-spawn an AATV_C-or-subclass (`className`) carrying `key` at
 // `loc`/`rot` via GameplayStatics BeginDeferred + FinishSpawning, leaving physics ON -- the result is
 // a NATIVE idle ATV the local player can grab/drive (NOT a frozen mirror). The key is written before
 // the finish, so the actor is born with the host's Key and never mints one of its own. coop::atv_sync
@@ -66,13 +66,14 @@ bool TeleportRig(void* atv, const FVector& loc, const FRotator& rot);
 // `className` is validated to descend from ATV_C (trust boundary -- a peer could send any string).
 // Returns the spawned actor, or nullptr on resolve/spawn failure; nullptr WITHOUT spawning anything
 // when `key` is empty, the class has no key property, or the key does not convert to a name (the
-// string library not yet resolved included: ask fname_utils::Resolved() first to tell "not yet").
+// string library not yet resolved included: ask fname_utils::Resolved() first to tell "not yet"). The
+// key is read back after the finish: a mirror born under another key is destroyed and nullptr returned.
 // Game thread only.
 void* SpawnMirror(const std::wstring& className, const FVector& loc, const FRotator& rot,
                   const std::wstring& key);
 
-// Tear down a SpawnMirror'd runtime-ATV mirror -- K2_DestroyActor on the actor -- when the host
-// announces it gone (AtvDestroy), or on disconnect. False, and nothing done, on a null or
+// Tear down an ATV -- K2_DestroyActor on the actor -- a SpawnMirror'd one or a native twin, when the
+// host announces it gone (AtvDestroy), or a mirror on disconnect. False, and nothing done, on a null or
 // already-dead actor or a destroy that did not dispatch. Game thread.
 bool DestroyMirror(void* atv);
 

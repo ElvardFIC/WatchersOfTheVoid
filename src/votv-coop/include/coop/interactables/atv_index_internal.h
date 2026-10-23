@@ -28,6 +28,10 @@ extern uint32_t                                g_indexGen;
 // now. IsAtv comes first, since the key is read at a fixed offset.
 bool LiveInThisWorld(void* actor, int32_t idx);
 
+// True the first time `topic` + `key` is asked in a session, for a log line said once per key. The set is
+// capped (the park's cap): past it a saying is counted and not stored, and false is returned.
+bool FirstSaying(const wchar_t* topic, const std::wstring& key);
+
 // Whether `key` can name an ATV on the wire: not empty, not "None", at most 31 chars (what a WireKey
 // carries). A refusal is logged once per key; `side` ("host" / "client") says whose it is.
 bool KeyNamesAnAtv(const std::wstring& key, const char* side);
@@ -38,7 +42,7 @@ bool WireKeyNamesAnAtv(const coop::net::WireKey& key, const char* side);
 // (slot >= 0). True when the packet was queued.
 bool SendAtvSpawn(const std::wstring& key, void* actor, int slot);
 
-// A session ended: the broadcast counter restarts and the refused keys may be said again.
+// A session ended: the broadcast counter restarts and the said keys may be said again.
 void ResetAnnounceState();
 
 // Registers the index's scan callbacks with the hub; latched, safe to call every tick.

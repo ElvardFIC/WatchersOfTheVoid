@@ -6,6 +6,7 @@
 #include "coop/interactables/atv_index_internal.h"
 #include "coop/interactables/atv_sync_internal.h"
 
+#include "atv_spawn_park.h"                    // spawn_park::kCap
 #include "coop/element/object_scan_hub.h"      // the shared sliced scan pass
 #include "coop/interactables/atv_sync.h"       // RuntimeBroadcasts
 #include "coop/net/protocol.h"
@@ -50,10 +51,11 @@ void FillWireClassName(coop::net::WireClassName& out, const std::wstring& name) 
 constexpr size_t kMaxKeyChars = sizeof(coop::net::WireKey::data);  // 31: what a WireKey carries
 
 uint32_t g_runtimeBroadcasts = 0;                 // host: the AtvSpawn broadcasts the hub's pass sent this session
-std::unordered_set<std::wstring> g_refusedKeys;   // keys whose refusal has been said (once per key)
+std::unordered_set<std::wstring> g_saidKeys;      // "topic|key" pairs already said (once per key and topic)
+uint32_t g_saidPastCap = 0;                       // sayings counted but not stored, once the set was full
 
 void Refuse(const std::wstring& key, const char* why, const char* side) {
-    if (g_refusedKeys.insert(key).second)
+    if (FirstSaying(L"refuse|", key))
         UE_LOGW("atv: %s refuses the ATV key '%ls' (%s) -- not announced / not taken (said once per key)",
                 side, key.c_str(), why);
 }
@@ -74,6 +76,22 @@ bool LiveInThisWorld(void* actor, int32_t idx) {
     return R::IsLiveByIndex(actor, idx) && A::IsAtv(actor) && W::WorldOf(actor) == W::CurrentWorld();
 }
 
+// Past the cap a saying is counted and not stored: a client's keys come off the wire, and an unbounded
+// set of them would grow with the host's packets. The cap is hit with one log line.
+bool FirstSaying(const wchar_t* topic, const std::wstring& key) {
+    std::wstring entry(topic);
+    entry += key;
+    if (g_saidKeys.count(entry)) return false;
+    if (g_saidKeys.size() >= spawn_park::kCap) {
+        if (g_saidPastCap++ == 0)
+            UE_LOGW("atv: %zu keys already said -- further sayings are counted, not stored (said once)",
+                    spawn_park::kCap);
+        return false;
+    }
+    g_saidKeys.insert(std::move(entry));
+    return true;
+}
+
 bool KeyNamesAnAtv(const std::wstring& key, const char* side) {
     if (key.empty())              { Refuse(key, "empty", side); return false; }
     if (key == L"None")           { Refuse(key, "None", side); return false; }
@@ -87,8 +105,12 @@ bool WireKeyNamesAnAtv(const coop::net::WireKey& k, const char* side) {
 }
 
 void ResetAnnounceState() {
+    if (g_saidPastCap)
+        UE_LOGI("atv: %u saying(s) past the %zu-key cap of the said-once set were counted, not stored or logged",
+                g_saidPastCap, coop::atv_sync::spawn_park::kCap);
     g_runtimeBroadcasts = 0;
-    g_refusedKeys.clear();
+    g_saidKeys.clear();
+    g_saidPastCap = 0;
 }
 
 // Announces an ATV of the host's index so receivers hold it under its game Key; slot < 0 broadcasts

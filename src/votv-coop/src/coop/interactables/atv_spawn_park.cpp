@@ -2,6 +2,7 @@
 #include "atv_spawn_park.h"
 #include "coop/interactables/atv_sync.h"
 #include "coop/net/protocol.h"
+#include "ue_wrap/core/fname_utils.h"      // Resolved
 #include "ue_wrap/core/hot_path_guard.h"   // UE_ASSERT_GAME_THREAD
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/engine/world_identity.h"
@@ -16,10 +17,9 @@ struct Parked {
     uint32_t worldGen = 0;   // the world it arrived in; another world drops it
 };
 std::unordered_map<std::wstring, Parked> g_parked;
-// The park bounds every ATV of the host's world (a few); a park past this describes no world of theirs.
-constexpr size_t   kCap = 16;
 constexpr uint64_t kPollMs = 500;
 uint64_t g_nextPollMs = 0;
+uint32_t g_libMissGen = 0;   // the world gen in which the name library was found unresolved (0 = no miss held)
 bool     g_saidCap = false;
 uint32_t g_parkedEver = 0;
 
@@ -74,12 +74,22 @@ void DrainReady() {
         ready.push_back(it->second.payload);
         ++it;
     }
+    if (ready.empty()) return;
+    // Asked once for the whole poll, not once per parked spawn: a miss would otherwise walk the object
+    // array for each of them, twice a second. The entries stay parked; this world's miss is held, and the
+    // poll after a world change asks again.
+    if (g_libMissGen == gen) return;
+    if (!ue_wrap::fname_utils::Resolved()) {
+        g_libMissGen = gen;
+        return;
+    }
     for (const auto& p : ready) OnAtvSpawn(p);
 }
 
 void Clear() {
     g_parked.clear();
     g_nextPollMs = 0;
+    g_libMissGen = 0;
     g_saidCap = false;
 }
 }  // namespace coop::atv_sync::spawn_park

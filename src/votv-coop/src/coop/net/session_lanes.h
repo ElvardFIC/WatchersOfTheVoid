@@ -123,7 +123,7 @@ inline Lane LaneForKind(ReliableKind k) {
     case ReliableKind::PropStickState: return Lane::Normal;
     case ReliableKind::PropRelease:    return Lane::Normal;
     // The four ATV kinds are order-paired: a release or destroy overtaking the last pose would
-    // re-enable physics or tear down a mirror mid-update, and a runtime-spawned ATV must spawn
+    // re-enable physics or tear down a mirror mid-update, and an ATV's announce must reach a peer
     // before its first pose. Pinned together.
     case ReliableKind::AtvState:       return Lane::Normal;
     case ReliableKind::AtvRelease:     return Lane::Normal;

@@ -1,6 +1,7 @@
 // coop/interactables/atv_runtime_mirror.cpp -- a client's mirror of an ATV the host announced (declared in
 // coop/interactables/atv_sync.h). The host announces an ATV under its game Key; this client fresh-spawns a
-// native ATV carrying that Key, physics on so it is grabbable, and destroys it when the host's goes.
+// native ATV carrying that Key, physics on so it is grabbable, and destroys the copy it holds under that Key
+// (its own spawn or the save's native one) when the host's goes.
 // A spawn landing while this world is not ready waits in the park (atv_spawn_park.h). The map stays
 // atv_sync.cpp's: this half asks it to adopt or drop a row (atv_sync_internal.h).
 
@@ -97,9 +98,10 @@ void OnAtvSpawn(const coop::net::AtvSpawnPayload& payload) {
     void* spawned = A::SpawnMirror(className, loc, rot, key);  // physics LEFT ON -- a native idle grabbable ATV
     if (!spawned) {
         // In a world that reads ready, a refused spawn is the class, the key or the engine saying no: final,
-        // not retried, and never a mirror under a key of its own making.
-        UE_LOGW("atv: OnAtvSpawn SpawnMirror failed key='%ls' class='%ls' -- not retried", key.c_str(),
-                className.c_str());
+        // never a mirror under a key of its own making, and said once per key (every replay asks again).
+        if (detail::FirstSaying(L"spawn-failed|", key))
+            UE_LOGW("atv: OnAtvSpawn SpawnMirror failed key='%ls' class='%ls' -- dropped (said once per key)",
+                    key.c_str(), className.c_str());
         spawn_park::Discard(key);
         return;
     }
@@ -119,12 +121,20 @@ void OnAtvDestroy(const coop::net::AtvDestroyPayload& payload) {
     spawn_park::Discard(key);  // a destroy ends a spawn still waiting
     if (!IndexCurrent()) return;  // the pass prunes a dead-world entry itself
     const AtvEntry* row = FindEntry(key);
-    if (!row) return;
-    const bool destroyed = row->isClientSpawnedMirror && R::IsLiveByIndex(row->actor, row->idx) &&
-                           A::DestroyMirror(row->actor);  // our own fresh spawn
+    if (!row) {
+        // Nothing held under this key and nothing to destroy: a spawn that never landed here, or one a
+        // pass already pruned.
+        if (detail::FirstSaying(L"destroy-unheld|", key))
+            UE_LOGI("atv: AtvDestroy key='%ls' -- no row held, nothing to destroy (said once per key)",
+                    key.c_str());
+        return;
+    }
+    // The host's world lost this ATV, so the copy standing here goes, whether it is a mirror this lane
+    // spawned or a native one the save placed (the row's adopted twin).
+    const bool destroyed = R::IsLiveByIndex(row->actor, row->idx) && A::DestroyMirror(row->actor);
     EraseEntry(key);
-    UE_LOGI("atv: ATV mirror key='%ls' %s", key.c_str(),
-            destroyed ? "destroyed" : "dropped from the lane, not destroyed here");
+    UE_LOGI("atv: ATV key='%ls' %s", key.c_str(),
+            destroyed ? "destroyed (the host's is gone)" : "row dropped, no live actor was destroyed");
 }
 
 }  // namespace coop::atv_sync
