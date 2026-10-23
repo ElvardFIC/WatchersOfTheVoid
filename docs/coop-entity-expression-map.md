@@ -53,6 +53,7 @@ are peer-gated. `[V]`
 | the kerfur | conversion verbs inside the Blueprint | the script-body gate on the verbs: refused on a client, converged at the return on the host; whom it serves, its player-0 reads answered on the host with the puppet of the client whose command it runs (`kerfur_command`, `served_player`) | one host kerfur id across both forms |
 | the plain kerfur (the Kerfus) | a keyed prop with a brain; on and off are a field, not a second form | the prop lanes for identity and the record at birth; while on, the host's prop drive for its pose; KerfusState for on, charging and energy; whom it follows, its player-0 reads answered on the host with the puppet of the client that turned it on (`kerfus_follow`, `served_player`) | its prop key and host eid |
 | a deployed hook or rope | the fire input, inside the Blueprint | the thrower polls its own `activeHook` field | `(owner slot, sequence)` while the thrower holds it, a host-minted save key once anchored |
+| an explosion (`explosion_C`) | a Blueprint's deferred spawn (a projectile, a fuse, a burn, a broken prop, a device) | on the host the capture watch on its begin-play; on a client the deferred-spawn post, which dissolves it after the request half has read its source | none: the host's actor is the only one and each client spawns a copy of its own from `ExplosionSpawn` |
 | a remote player's puppet (`mainPlayer_C`, unpossessed) | `RemotePlayer::Spawn` -> `engine::SpawnActor` | registered between its deferred spawn and its `FinishSpawning`, by the before-finish callback; unregistered after its destroy (`DestroySlot`) | the peer's slot in `players::Registry` |
 | status effects (effect_C) | each peer's own, from its gamemode's addEffect; never sent | -- | none: a per-process actor; at a join the host's effect records are reset out of the joiner's save at the join |
 
@@ -320,6 +321,37 @@ registry recycled that id. `[V]`
   client, so the host's is the one constraint and the other copies are parented display -- `[V]`
   for the seam on an owner-phase build, `[?]` for an anchored build, which no run has staged.
 
+## Explosions
+
+- **Birth.** The host's own game spawns every explosion that exists: its capture watch on `explosion_C`'s
+  begin-play reads the class, the transform and the blast parameters. A client's game spawns none: the
+  deferred-spawn post nulls the result of every explosion birth and destroys the actor by a posted task
+  (`coop/world/explosion_sync`). `[V]`
+- **Identity: none.** No element, key or id is made for an explosion. The one name the wire carries is the
+  actor the blast must not hurt, as an element id or a server box's index, so a copy spares the same actor
+  the host's did. `[V]`
+- **Expression: the host's spawn, fanned out.** The capture is sent as `ExplosionSpawn` to every
+  world-ready client, and each spawns its own copy natively at the host's place inside the lane's own spawn
+  scope, which the birth seam leaves alone. What a copy may still move is
+  listed in `coop/world/explosion_parking`: its own player's damage and knock-back, the scorch. `[V]`
+- **A client's request.** An explosion a client's own player is responsible for is requested, not made:
+  its dissolved birth sends `ExplosionRequest`, and the host judges it and spawns the blast with its own
+  parameters for the source (`coop/world/explosion_request`, `explosion_recipe`); the capture above then
+  carries it to every peer, the requester included. Three kinds, told apart at the dissolved birth by
+  its source: PROJECTILE (a rocket or sticky bomb the client fired, named by the `ProjectileFired` its
+  launcher's fire body sent, the point read from the projectile), HAND (an armed grenade or pipe bomb that
+  is the client's hand view, the point read from the hand item) and SELF (the client's gasoline-pilled
+  body: no point on the wire, the host blasts at the sender's puppet with the pill level). A request has
+  no identity of its own: a shot is the host's record until its blast consumes it, expires or the cap
+  evicts it. `[V]`
+- **Not requested here.** An ATV's own blast will be the ATV lane's request (not yet built: the ATV health arc); until then a client-driven ATV's blast is dissolved and requested by no one `[V]`; every other source
+  (a prop broken, a device run, a prop lit) is its trigger's lane, whose host copy explodes natively and so
+  reaches the capture. A projectile of the client's with no shot sent is not requested and is counted.
+  `[V]`
+- **Destroy.** Nothing crosses. Each copy ends by the actor's own lifespan, 10 s by the class default.
+  `[RD]`
+- **Late join.** None: a one-shot cue, not re-sent; a request's state clears with its session. `[V]`
+
 ## The dupe matrix
 
 Every place two seams can express one actor, and what deduplicates it:
@@ -341,7 +373,7 @@ Every place two seams can express one actor, and what deduplicates it:
 | a conversion's fresh prop and the generic spawn seams | the captured form is tracked and its broadcast suppressed `[V]` |
 | a joiner's save-loaded Bad Sun copy and the seed's present, or the host's live present | the apply counts the live copies first: one copy is left alone, none is spawned, two are logged and not repaired `[V]` (the drill's rejoin) |
 | a client's menu-spawned prop and the host's copy of it, spawned from the intent | the client's own actor IS the mirror: the host sets the client's key, and the echo resolves it back to that actor and converges its pose instead of minting a second `[V]` |
-| a client's own rocket, sticky bomb, held grenade or pipe bomb, or pilled burn: the client's dissolved birth and the host's blast its request makes | one blast: the client's birth is dissolved and never spawns; the host's blast reaches every peer as `ExplosionSpawn`, the requester included `[?]` until the drill's arms |
+| a client's own rocket, sticky bomb, held grenade or pipe bomb, or pilled burn: the client's birth of its explosion and the host's blast its request makes | one blast: the client's birth is dissolved and never spawns; the host's blast reaches every peer as `ExplosionSpawn`, the requester included `[V]` (the request drill's arms) |
 
 ## Needs a probe
 
