@@ -148,8 +148,8 @@ void SpawnBlast(uint8_t slot, RC::RequestKind kind, XS::Kind src, const float lo
     }
     if (!actor) return Refuse(slot, Refusal::SpawnFailed);
     ++MutCounters().requestsAccepted[KindSlot(kind)];
-    UE_LOGI("[EXPLOSION] request accepted kind=%s class=%ls slot=%u", KindName(kind), XS::ClassName(src),
-            static_cast<unsigned>(slot));
+    UE_LOGI("[EXPLOSION] request accepted kind=%s class=%ls slot=%u at (%.0f,%.0f,%.0f)", KindName(kind),
+            XS::ClassName(src), static_cast<unsigned>(slot), loc[0], loc[1], loc[2]);
 }
 
 }  // namespace
