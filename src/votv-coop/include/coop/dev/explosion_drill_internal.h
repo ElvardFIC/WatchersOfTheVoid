@@ -91,8 +91,8 @@ void ClientReset();
 // ---- the source arms (explosion_drill_source.cpp) ----
 
 // One Tick of a source arm on this role, once its bodies rest: the role the arm names walks its legs (blast point,
-// then each source: the held ones through the game's hand verbs, the salt rocket spawned and lit), the other only
-// reads and reports. Back to the start destroys what the legs left in the world.
+// then each source: the held ones through the game's hand verbs, the salt rocket spawned and lit, on the host only),
+// the other only reads and reports. Back to the start destroys what the legs left in the world.
 void SourceTick(Arm arm, bool isHost);
 void SourceReset();
 

@@ -2,9 +2,10 @@
 //
 // The source arms (source_host, source_client): a measurement of which peer's game reaches each request-eligible
 // explosion source's birth, whether a client's rocket or sticky bomb exists on the host, and the salt rocket's
-// fuse. The role the arm names walks eight legs: four through the game's hand verbs (grenade, pipe bomb, rocket,
-// sticky launcher), two that spawn a salt rocket in the world and call its attemptIgnite, and the two measure legs
-// (sticky_parent, selfpill: explosion_drill_source_measure.cpp); the other role only reads its counts and reports.
+// fuse. The host role walks eight legs: four through the game's hand verbs (grenade, pipe bomb, rocket, sticky
+// launcher), two that spawn a salt rocket in the world and call its attemptIgnite, and the two measure legs
+// (sticky_parent, selfpill: explosion_drill_source_measure.cpp). The client role walks six, no salt rocket, since a
+// client's salt rocket is the host's to light on the client's word. The other role only reads its counts and reports.
 // A leg ends on a readiness edge (the birth, the attach, the rest) or on its own failure bound and prints one
 // measurement line (a note line may come before it); a verb the Blueprint refuses ends that leg alone ("abandoned",
 // never the run's dead marker). The run ends on a DONE line that carries a count, never a verdict.
@@ -61,7 +62,21 @@ constexpr LegDef kLegs[] = {
      L"/Game/objects/prop_funGun_stickyLauncher.prop_funGun_stickyLauncher_C"},
     {"selfpill", Kind::SelfPill, nullptr, nullptr, nullptr},
 };
-constexpr int kLegCount = static_cast<int>(sizeof(kLegs) / sizeof(kLegs[0]));
+
+// The legs each role walks, as indices into kLegs: the acting role is the arm's (Arm::SourceHost acts on the host).
+// A client's salt rocket is the host's to light on the client's word, so the client's walk has no salt leg.
+constexpr int kHostLegs[] = {0, 1, 2, 3, 4, 5, 6, 7};
+constexpr int kClientLegs[] = {0, 1, 2, 3, 6, 7};
+
+struct LegList {
+    const int* idx;
+    int        count;
+};
+
+LegList LegsOf(bool host) {
+    return host ? LegList{kHostLegs, static_cast<int>(sizeof(kHostLegs) / sizeof(kHostLegs[0]))}
+                : LegList{kClientLegs, static_cast<int>(sizeof(kClientLegs) / sizeof(kClientLegs[0]))};
+}
 
 // Every projectile a leg can leave in the world, swept at its end (only what the drill's start did not find).
 constexpr const wchar_t* kSwept[] = {L"prop_grenade_C", L"prop_pipebomb_C", L"prop_rocket_C", L"prop_stickybomb_C"};
@@ -305,12 +320,12 @@ void Emit(const LegDef& d, bool host) {
 
 // ---- the salt rocket legs ----
 //
-// Blueprint prop_saltrocket, attemptIgnite -> fire(): with no flameBase it lights the fuse and plays Timeline_0
-// (four seconds); its finish waits one second, then, only when the rocket's attach parent actor exists and its root
-// simulates physics, plays timeline `a`, whose finish calls explode(); otherwise it detaches and returns, so a free
-// rocket never reaches explode(). explode() reads the day cycle's isRaining: while it is false the call sets it true
-// and returns (no explosion), while it is true the rocket spawns explosion_saltrocket and destroys itself. The leg
-// reads isRaining before the ignite and on every tick, so the call of explode() shows as the flag turning true.
+// Blueprint prop_saltrocket, attemptIgnite -> fire() (the control-flow reading): with no flameBase it lights the fuse
+// and plays Timeline_0 (four seconds); its finish waits one second, then the attach test at @366 pops into the
+// timeline at @292 whichever variant it is, so an attached and a free rocket both thrust, and the timeline's finish
+// calls explode(). explode() always spawns explosion_saltrocket_C; its rain branch pops back to the spawn. R7's
+// "attached gave no blast" stays unexplained. The leg reads the day cycle's isRaining before the ignite and on every
+// tick.
 
 void SaltBegin(const LegDef& d) {
     Reading& r = g_src.r;
@@ -410,7 +425,7 @@ void Cleanup(const LegDef& d, bool host) {
 }
 
 void LegTick(Arm arm, bool host) {
-    const LegDef& d = kLegs[g_src.leg];
+    const LegDef& d = kLegs[LegsOf(g_src.host).idx[g_src.leg]];
     void* player = coop::players::Registry::Get().Local();
     if (!player && g_src.step != LStep::End) {
         if (!Late(kStepBound)) return;
@@ -452,9 +467,9 @@ void LegTick(Arm arm, bool host) {
     case LStep::End:
         Emit(d, host);
         Cleanup(d, host);
-        if (++g_src.leg >= kLegCount) {
+        if (++g_src.leg >= LegsOf(g_src.host).count) {
             Unguard();
-            Info("source DONE arm=%s legs=%d measured=%d", ArmName(arm), kLegCount, g_src.measured);
+            Info("source DONE arm=%s legs=%d measured=%d", ArmName(arm), LegsOf(g_src.host).count, g_src.measured);
             g_src.phase = SP::Done;
             return;
         }
@@ -544,8 +559,8 @@ void SourceReset() {
     Unguard();
     PutBackRain();
     // A disconnect inside the selfpill leg leaves the player lit and the pill written: the leg's own put-back.
-    if (g_src.phase == SP::Legs && kLegs[g_src.leg].kind == Kind::SelfPill)
-        CleanupMeasure(kLegs[g_src.leg], g_src.host);
+    if (g_src.phase == SP::Legs && kLegs[LegsOf(g_src.host).idx[g_src.leg]].kind == Kind::SelfPill)
+        CleanupMeasure(kLegs[LegsOf(g_src.host).idx[g_src.leg]], g_src.host);
     Remove(g_src.rocket.Get(), g_src.host);
     Remove(g_src.parent.Get(), g_src.host);
     // The host that only read holds a mirror of whatever of the client's crossed; none of it is the host's own.
