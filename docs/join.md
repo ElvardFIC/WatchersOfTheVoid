@@ -124,7 +124,7 @@ are the client's own rebuild churn, and broadcasting them would destroy the host
 (a bare client join would strip the host of most of its keyed props), so the destroy seam runs
 inside a world-load episode that suppresses the broadcast
 (`coop/session/world_load_episode`). The loader's last step is the gamemode's `loadObjects`, the
-world's save replay; the same module watches it by name on a client, and the quiescence probe opens
+world's save replay; `coop/session/save_replay_watch` watches it by name on a client, and the quiescence probe opens
 only once it has returned in the world the client stands in. From then on the probe runs: five times a
 second it counts the load-tail population, and the load is settled when the count holds across
 consecutive scans. One absolute deadline bounds a pathological load; past it the client announces
@@ -471,7 +471,7 @@ not raise the game's own active-event counter, whose save and pause blocks the m
 | why a join or a session ended, as a code | `coop/net/end_reason` |
 | the save transfer | `coop/save/save_transfer`, `ue_wrap/engine/save_capture`, `coop/props/save_identity_map`, `coop/props/save_identity_bind` |
 | the host owns the save | `coop/save/save_guard`, `coop/save/save_block`, `coop/save/save_button_disable`, `coop/save/save_indicator_suppress` |
-| the world-load episode and the probe | `coop/session/world_load_episode` |
+| the world-load episode and the probe | `coop/session/world_load_episode`, `coop/session/save_replay_watch` |
 | the announce, the placement, the edges | `coop/session/net_pump`, `coop/session/teleport_client` |
 | the connect replay | `coop/session/subsystems`, `coop/props/prop_snapshot`, `coop/props/snapshot_census`, `coop/session/join_seed` |
 | the reconcile | `coop/props/join_membership_sweep`, `coop/props/pile_spawn_bind`, `coop/element/quiescence_drain`, `coop/creatures/kerfur_reconcile`, `coop/element/mirror_defer` |

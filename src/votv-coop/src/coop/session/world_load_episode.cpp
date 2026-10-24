@@ -3,11 +3,10 @@
 
 #include "coop/session/world_load_episode.h"
 
-#include "coop/config/config.h"  // ReadEnv, for the drill switch; ResolveFlag, for the red arms
-#include "coop/config/config_registry.h"
+#include "coop/config/config.h"  // ReadEnv, for the drill switch
 #include "coop/net/net_clock.h"
 #include "coop/net/session.h"
-#include "coop/text/utf8_codec.h"  // ToUtf8: the watch row's names in the failure text
+#include "coop/session/save_replay_watch.h"
 
 #include "coop/creatures/npc_sync.h"          // IsAllowlistedClass (the NPC load tail)
 #include "coop/props/prop_element_tracker.h"  // HasSeededOnce / InPurgeEpisode (purge-aware progress)
@@ -17,9 +16,6 @@
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/actors/prop.h"
 #include "ue_wrap/core/reflection.h"
-#include "ue_wrap/core/script_gate.h"
-#include "ue_wrap/engine/world_identity.h"
-#include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <chrono>
@@ -30,8 +26,6 @@
 namespace coop::world_load_episode {
 
 namespace R = ue_wrap::reflection;
-namespace SG = ue_wrap::script_gate;
-namespace WI = ue_wrap::world_identity;
 
 namespace {
 
@@ -40,9 +34,6 @@ namespace {
 // staleness is fine.
 std::atomic<bool> g_inEpisode{false};
 
-UE_FACT_FN(kRowLoadObjects, "join_world_ready", L"mainGamemode_C", L"loadObjects", Declared);
-UE_FACT_FN(kRowLoadObjectsRed, "dev.replay_watch_break", L"mainGamemode_C", L"loadObjectsJwRed", Declared);
-constexpr int kTagReplay = 0x4A575250;  // 'JWRP'
 // A world change's replay must return within this. MTA drops a client that misses its join bounds
 // (CLIENT_VERIFICATION_TIMEOUT 10 s and NET_CONNECT_TIMEOUT 30 s,
 // reference/mtasa-blue/Client/mods/deathmatch/logic/Config.h:105-106); ours is 120 s because a
@@ -58,24 +49,10 @@ constexpr int64_t kWorldChangeReplayBoundMs = 120000;
 std::atomic<uint8_t> g_request{0};
 std::atomic<uint64_t> g_requestRaisedAtMs{0};  // coop::net::NowMs() when a world change raised it
 
-// The save replay's record: the gamemode that ran loadObjects, and when its body returned.
-ue_wrap::CachedObjRef g_replayGm;
-std::chrono::steady_clock::time_point g_replayPostAt{};
 // The world this connection last settled on; its identity, not its address.
 ue_wrap::CachedObjRef g_baseline;
 
-// The replay watch's installer (game thread).
-bool g_watchRegistered = false;
-bool g_watchSettled = false;
-bool g_watchDead = false;
-uint64_t g_nextWatchMs = 0;
-const ue_wrap::facts::Function* g_watchRow = nullptr;
-bool g_postDrop = false;
-std::atomic<bool> g_watchRefused{false};
-
-// The red arm that skips the replay wait is read once per process, beside the watch's two flags. Per
-// request: the log said once, and why the request failed.
-bool g_gateBreak = false;
+// Per request: the log said once, and why the request failed.
 bool g_sweepSkipSaid = false;
 RequestFailureInfo g_failure;
 
@@ -171,26 +148,6 @@ int CountLoadTailUnsettled_() {
     return unsettled;
 }
 
-// The save replay's POST: the gamemode's loadObjects body returned. Records which gamemode and when;
-// the consume reads it on a later tick.
-void OnLoadObjectsPost(const SG::Call& c) {
-    if (g_postDrop) return;
-    const bool fresh = !g_replayGm.Is(c.object);
-    g_replayGm.Set(c.object);
-    g_replayPostAt = std::chrono::steady_clock::now();
-    if (fresh) UE_LOGI("world_load_episode: save replay returned (gamemode %p)", c.object);
-}
-
-// Did the replay run in the world the player is in now (a replay of a world already left does not
-// count). The world tested is returned through `world`, read once, so the caller's baseline is the
-// world this answer judged.
-bool SaveReplayedInThisWorld(void** world) {
-    void* gm = g_replayGm.Get();
-    void* cw = WI::CurrentWorld();
-    *world = cw;
-    return gm && cw && WI::WorldOf(gm) == cw;
-}
-
 void OpenProbeSession_(const char* reason, bool forRequest) {
     g_probeOpen = true;
     g_everOpened = true;
@@ -202,10 +159,9 @@ void OpenProbeSession_(const char* reason, bool forRequest) {
     g_probeReason = reason ? reason : "?";
     char replay[64] = "";
     if (forRequest) {
-        if (g_replayPostAt.time_since_epoch().count() != 0)
+        if (save_replay_watch::HasRecord())
             std::snprintf(replay, sizeof replay, "; save replay returned %lld ms before the open",
-                          static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(
-                              g_probeArmedAt - g_replayPostAt).count()));
+                          save_replay_watch::MsFromPostTo(g_probeArmedAt));
         else
             std::snprintf(replay, sizeof replay, "; no save replay recorded");
     }
@@ -256,32 +212,7 @@ void ArmQuiesceProbe(const char* reason) {
 }
 
 void InstallReplayWatch(coop::net::Session& session) {
-    if (session.role() == coop::net::Role::Host) return;
-    const bool pending = g_request.load(std::memory_order_acquire) != 0;
-    if (g_watchSettled && !pending) return;
-    const uint64_t now = coop::net::NowMs();
-    if (now < g_nextWatchMs) return;
-    g_nextWatchMs = now + 1000;
-    if (!g_watchRow) {
-        g_watchRow = coop::config::ResolveFlag(::coop::config_registry::rows::replay_watch_break)
-                         ? &kRowLoadObjectsRed : &kRowLoadObjects;
-        g_postDrop = coop::config::ResolveFlag(::coop::config_registry::rows::replay_post_drop);
-        g_gateBreak = coop::config::ResolveFlag(::coop::config_registry::rows::replay_gate_break);
-    }
-    if (!g_watchRegistered && !g_watchRefused.load(std::memory_order_relaxed)) {
-        g_watchRegistered = SG::WatchName(*g_watchRow, kTagReplay, nullptr, &OnLoadObjectsPost);
-        if (!g_watchRegistered) g_watchRefused.store(true, std::memory_order_relaxed);  // the consume owns the ERROR
-    }
-    if (!g_watchRegistered) return;
-    SG::ResolvePendingNames();
-    if (SG::NameWatchLive(*g_watchRow, kTagReplay)) {
-        if (!g_watchSettled) UE_LOGI("world_load_episode: the save-replay watch is live");
-        g_watchSettled = true;
-        g_watchDead = false;
-    } else if (SG::NameWatchSettled(*g_watchRow, kTagReplay)) {
-        g_watchSettled = true;
-        g_watchDead = true;
-    }
+    save_replay_watch::Drive(session, AwaitingSaveReplay());
 }
 
 bool RequestWorldChangeProbe() {
@@ -345,16 +276,16 @@ bool TickQuiesceProbe() {
         void* cw = nullptr;  // the world the replay test judged, for the baseline
         g_probeOpen = false;
         g_quiesced = false;  // (1) no session while a request pends
-        if (g_failure.failure == Failure::None && (g_watchRefused.load(std::memory_order_relaxed) || g_watchDead)) {
+        if (g_failure.failure == Failure::None && (save_replay_watch::Refused() || save_replay_watch::Dead())) {
             // (2) the watch cannot see the replay
-            const std::string row = coop::text::ToUtf8(std::wstring(g_watchRow->Class())) + "::" +
-                                    coop::text::ToUtf8(std::wstring(g_watchRow->Name()));
+            const std::string row = save_replay_watch::RowText();
             const std::string text = "the save-replay watch (" + row + ") is not live";
             g_failure = {Failure::WatchDead, text};
             UE_LOGE("world_load_episode: the save-replay watch (%s) is not live -- %s", row.c_str(),
-                    g_watchRefused.load(std::memory_order_relaxed) ? "the script gate refused it"
-                                                                   : "its function does not exist in this game build");
-        } else if (g_failure.failure == Failure::None && (SaveReplayedInThisWorld(&cw) || g_gateBreak)) {
+                    save_replay_watch::Refused() ? "the script gate refused it"
+                                                 : "its function does not exist in this game build");
+        } else if (g_failure.failure == Failure::None &&
+                   (save_replay_watch::ReturnedInThisWorld(&cw) || save_replay_watch::GateBreak())) {
             // (3) the replay returned: the request is consumed and its session opens. An Arm that
             // replaced the request this tick, off the game thread, fails the exchange; the next tick
             // sees the new one.
@@ -428,12 +359,8 @@ long long MsSinceQuiesced() {
 void Reset() {
     g_inEpisode.store(false, std::memory_order_relaxed);
     g_request.store(0, std::memory_order_relaxed);
-    g_replayGm.Reset();
-    g_replayPostAt = {};
+    save_replay_watch::Reset();
     g_baseline.Reset();
-    // The watch registration and a refusal last for the process; its liveness is read again.
-    g_watchSettled = false;
-    g_watchDead = false;
     g_failure = {};
     g_sweepSkipSaid = false;
     g_probeOpen = false;

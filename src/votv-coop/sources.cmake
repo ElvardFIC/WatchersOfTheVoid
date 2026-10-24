@@ -369,6 +369,7 @@ set(VOTVCOOP_SOURCES
     src/coop/props/remote_prop_spawn.cpp
     src/coop/props/join_membership_sweep.cpp
     src/coop/session/world_load_episode.cpp
+    src/coop/session/save_replay_watch.cpp
     src/coop/interactables/garbage_sync.cpp
     src/coop/props/host_spawn_watcher.cpp
     src/coop/props/trash_channel.cpp
