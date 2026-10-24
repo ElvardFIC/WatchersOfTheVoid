@@ -24,6 +24,7 @@ constexpr float  kMinViaCm      = 300.f;    // a via point at the walker's feet 
 constexpr float  kSampleCm      = 100.f;    // floor samples along a route, about a stride apart
 constexpr float  kSpotClearCm   = 300.f;    // a route keeps this far from a remembered spot
 constexpr float  kSpotLevelCm   = 300.f;    // ...on its level: a spot on a slope below is not one above
+constexpr float  kBackIntoMarginCm = 10.f;  // a route nearer the spot than its start by more than this runs back into it
 constexpr float  kOnwardCheckCm = 1500.f;   // the onward route's floor is sampled this far past the via point
 constexpr float  kViaReachCm    = 150.f;    // a route to the via point ends this near it
 constexpr float  kProbeUpCm     = 150.f;    // FloorStandable's trace starts this far above the point...
@@ -185,15 +186,63 @@ bool Search::BeginRound(const ue_wrap::FVector& from, const ue_wrap::FVector& go
     return true;
 }
 
+namespace {
+
+// The flat distance from `p` to the segment a-b, with `z` the segment's height at its closest point.
+float SegmentFlatDist(const ue_wrap::FVector& a, const ue_wrap::FVector& b, const ue_wrap::FVector& p, float* z) {
+    const float dx = b.X - a.X, dy = b.Y - a.Y;
+    const float len2 = dx * dx + dy * dy;
+    const float t = len2 > 0.f ? (std::max)(0.f, (std::min)(1.f, ((p.X - a.X) * dx + (p.Y - a.Y) * dy) / len2)) : 0.f;
+    *z = a.Z + (b.Z - a.Z) * t;
+    return std::hypot(p.X - (a.X + dx * t), p.Y - (a.Y + dy * t));
+}
+
+// Whether the route, which starts within kSpotClearCm of `spot`, runs back toward it over its first stretch: the closest
+// approach of its segments (the stretch's first kSpotClearCm of flat length) is nearer than its first point by more
+// than kBackIntoMarginCm. Segments, not sampled points: route points lie about a metre apart while the blocker stood
+// 25-66 cm ahead, so a route through it can have no point near it.
+bool RunsBackInto(const std::vector<ue_wrap::FVector>& route, const ue_wrap::FVector& spot) {
+    const float start = Flat(spot, route.front());
+    float along = 0.f;
+    for (size_t k = 1; k < route.size() && along < kSpotClearCm; ++k) {
+        const ue_wrap::FVector a = route[k - 1];
+        ue_wrap::FVector b = route[k];
+        const float seg = Flat(a, b);
+        if (seg > kSpotClearCm - along) {   // only the stretch's own length
+            const float t = (kSpotClearCm - along) / seg;
+            b = {a.X + (b.X - a.X) * t, a.Y + (b.Y - a.Y) * t, a.Z + (b.Z - a.Z) * t};
+        }
+        float z = 0.f;
+        const float d = SegmentFlatDist(a, b, spot, &z);
+        if (std::fabs(spot.Z - z) <= kSpotLevelCm && d < start - kBackIntoMarginCm) return true;
+        along += seg;
+    }
+    return false;
+}
+
+}  // namespace
+
+// A spot the route starts within kSpotClearCm of is the one the walker stands at, so the clearance test cannot hold in
+// the route's first stretch: there RunsBackInto judges it instead, a slope's spot too (a route climbing back up the
+// slope the walker slid off is as wrong as one through a crate). A route that starts farther out, and every route past
+// its first stretch, keeps the plain clearance test over its length.
 int Search::PassedSpot(const std::vector<ue_wrap::FVector>& route) const {
+    if (route.empty()) return -1;
+    bool near[kMaxSpots] = {};
+    for (size_t i = 0; i < spots_.size(); ++i) {
+        near[i] = Flat(spots_[i], route.front()) <= kSpotClearCm &&
+                  std::fabs(spots_[i].Z - route.front().Z) <= kSpotLevelCm;
+        if (near[i] && RunsBackInto(route, spots_[i])) return static_cast<int>(i);
+    }
     int found = -1;
     Walk(route, [&](const ue_wrap::FVector& p, float along) {
-        if (along <= kSpotClearCm) return true;
-        for (size_t i = 0; i < spots_.size(); ++i)
+        for (size_t i = 0; i < spots_.size(); ++i) {
+            if (near[i] && along <= kSpotClearCm) continue;
             if (Flat(spots_[i], p) <= kSpotClearCm && std::fabs(spots_[i].Z - p.Z) <= kSpotLevelCm) {
                 found = static_cast<int>(i);
                 return false;
             }
+        }
         return true;
     });
     return found;
@@ -208,7 +257,7 @@ bool Search::Holds(void* player, const ue_wrap::FVector& via, std::vector<ue_wra
     if (Flat(via, from_) < kMinViaCm || NearFailedVia(via)) return false;
     samples_ += kRouteCost;
     // The way there: floor the body stands on all along, clear of every remembered spot past the
-    // stretch the walker stands in.
+    // stretch the walker stands in, and not running back toward one it starts beside.
     std::vector<ue_wrap::FVector> there;
     if (!RouteFrom(player, from_, via, &there) || there.size() < 2 || Flat(there.back(), via) > kViaReachCm)
         return false;

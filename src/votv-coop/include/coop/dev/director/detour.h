@@ -70,7 +70,8 @@ public:
     // route goes, its first point the walker's start. Exhausted: no candidate held.
     Step Advance(void* player, std::vector<ue_wrap::FVector>* route);
 
-    // The remembered spot a route passes within clearance of, past its first stretch, or -1.
+    // The remembered spot a route passes within clearance of, or, when it starts within clearance of one, runs back toward
+    // over its first stretch (by its segments); or -1.
     int PassedSpot(const std::vector<ue_wrap::FVector>& route) const;
 
     bool Active() const { return active_; }

@@ -146,7 +146,8 @@ private:
 // toward the waypoint (2 m at most) and one down for the floor's slope. The NavMesh routes through
 // what the capsule cannot pass, and this line says what that is. On a persistent stuck only. True with
 // `spot` the hit point of the nearer of the knee and chest hits when either is blocked: the blocker to go round.
-bool LogBlocker(const PlayerContext& ctx, const ue_wrap::FVector& wp, ue_wrap::FVector* spot) {
+// It decides as well as logs: its answer starts the detour search, and a false sends the walker to the old grind.
+bool BlockerAhead(const PlayerContext& ctx, const ue_wrap::FVector& wp, ue_wrap::FVector* spot) {
     ue_wrap::FVector d{wp.X - ctx.pos.X, wp.Y - ctx.pos.Y, 0.f};
     const float h = std::sqrt(d.X * d.X + d.Y * d.Y);
     if (h < 1.f) return false;
@@ -326,7 +327,7 @@ public:
                 // A prop the NavMesh does not know holds the body where a fresh route leads back to: the spot is
                 // remembered like a slope, so a route that passes it again is sent round it (detour.h).
                 ue_wrap::FVector blocker{};
-                if (LogBlocker(ctx, waypoints_[wp_], &blocker) && detours_ < kMaxDetours && floorZ_ > 0.f &&
+                if (BlockerAhead(ctx, waypoints_[wp_], &blocker) && detours_ < kMaxDetours && floorZ_ > 0.f &&
                     detour_.Begin(ctx.pos, goal_.targetPos, blocker, floorZ_, "blocking the body")) {
                     ++detours_;
                     UE_LOGW("director/Goto: persistent stuck (toPile=%.0f) at a blocker -- going round it (episode %d)",
