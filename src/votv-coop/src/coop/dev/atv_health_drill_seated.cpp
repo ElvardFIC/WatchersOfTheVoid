@@ -35,13 +35,34 @@ bool SeatedActs(SeatedClient& c, void** player, uint8_t* self) {
     return true;
 }
 
-bool AtvReady(AtvAt* out) {
+bool AtvReady(const std::wstring& key, AtvAt* out) {
     coop::atv_sync::TableView t;
     ue_wrap::FRotator rot{};
-    if (!StreamsRun() || !coop::atv_sync::ReadTable(kKey, t) || !ue_wrap::atv::GetRootTransform(t.actor, out->at, rot))
+    if (!StreamsRun() || !coop::atv_sync::ReadTable(key, t) || !ue_wrap::atv::GetRootTransform(t.actor, out->at, rot))
         return false;
     out->actor = t.actor;
     return true;
+}
+
+// The spawned ATV's wait is the peers arms' shape: ready once the streams run, then the host's key line and its
+// `parked` (it spawns after the ready line, so the ATV reaches this table by the lane's own path), then the table.
+bool SpawnedAtvReady(SpawnedWait& w, Arm a, bool due, AtvAt* out) {
+    namespace DC = coop::dev::drill_chat;
+    if (!w.readySaid) {
+        if (StreamsRun()) {
+            w.readySaid = true;
+            DC::Say(ReadyLine(a));
+        }
+        return false;
+    }
+    if (due) {
+        if (!w.haveKey && KeyFromChat(&w.key)) {
+            w.haveKey = true;
+            UE_LOGI("[ATV-HEALTH-DRILL] client arm=%s the host's ATV key is '%ls'", SpecOf(a).name, w.key.c_str());
+        }
+        if (!w.sawParked) w.sawParked = DC::ChatHasLive(PhaseLine("parked"));
+    }
+    return w.haveKey && w.sawParked && AtvReady(w.key, out);
 }
 
 void WalkStart(SeatedClient& c, Arm a, const AtvAt& t, float reachCm) {
@@ -62,7 +83,7 @@ Stage WaitBound(SeatedClient& c, Arm a) {
 
 Stage WalkStep(SeatedClient& c, Arm a) {
     if (!c.atv.Get()) {
-        Fail(c.role, a, c.run, "the ATV is gone before the walk ended", "no ATV", "the world's ATV");
+        Fail(c.role, a, c.run, "the ATV is gone before the walk ended", "no ATV", "the ATV");
         return Stage::Failed;
     }
     const int state = c.walk->state.load();

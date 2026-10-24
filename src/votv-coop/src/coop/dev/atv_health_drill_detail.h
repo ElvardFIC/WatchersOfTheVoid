@@ -41,7 +41,9 @@ const Spec& SpecOf(Arm a);
 Arm         ArmOf();
 
 inline constexpr uint8_t           kSlot = 1;               // the one slot the drill acts on
-inline constexpr const wchar_t*    kKey = L"ATV";           // the world's own ATV, under its game key
+// The world's own ATV, under its game key: only `trap` acts on it (the game's atvExplode arms the gamemode's `car`).
+// Every other arm acts on the ATV the host spawns (SpawnStep) under the key it says in the lobby chat.
+inline constexpr const wchar_t*    kWorldAtvKey = L"ATV";
 inline constexpr uint8_t           kNoSeat = 0xFF;
 inline constexpr auto              kFailBound = std::chrono::seconds(180);      // a failure bound, never a wait
 inline constexpr auto              kHostFirstBound = std::chrono::seconds(360); // the client's walk and its act
@@ -72,14 +74,27 @@ std::string ReadyLine(Arm a, const char* role = "client");
 std::string PhaseLine(const char* name);
 std::string ClientLine(const char* what);
 
-// The host's phases. Wait..Yielded are the arms where the client acts (`sit`, `grab`, `silent`: First names the edge
-// the client's act makes, Left the freed seat, Silenced and Yielded the silent syncer's loss and the client's yield);
-// Walk, Act and Judge are the arms where the host acts (`occupied`, `synced`: atv_health_drill_host.cpp).
-enum class HP : int { Wait, First, Left, Back, Silenced, Yielded, Walk, Act, Judge };
+// The ATV the host spawns for every arm but `trap` (the steps are below): the actor, the clock of its spawn, its table
+// and its rest, and the key it says in the lobby chat.
+struct SpawnStep {
+    ue_wrap::CachedObjRef atv;
+    bool                  spawned = false;
+    Clock::time_point     spawnAt{}, tableAt{}, parkedAt{}, lastStampAt{};
+    std::wstring          key;
+    ue_wrap::FVector      lastAt{};      // the last stamp's root and when it was read
+    int                   calm = 0;      // successive stamp pairs under 5 cm/s
+};
+
+// The host's phases. Spawn and Park come first: the ATV is born and at rest before the arm's first edge. Wait..Yielded
+// are the arms where the client acts (`sit`, `grab`, `silent`: First names the edge the client's act makes, Left the
+// freed seat, Silenced and Yielded the silent syncer's loss and the client's yield); Walk, Act and Judge are the arms
+// where the host acts (`occupied`, `synced`: atv_health_drill_host.cpp).
+enum class HP : int { Wait, First, Left, Back, Silenced, Yielded, Walk, Act, Judge, Spawn, Park };
 
 struct Host {
     Run                                             run;
-    coop::atv_authority::Counters                   base{};   // the lane's counters at the client's ready line
+    SpawnStep                                       sp;       // the ATV every edge of the arm is read on
+    coop::atv_authority::Counters                   base{};   // the lane's counters once the ATV is parked
     coop::atv_authority::Counters                   snap{};   // and at the host's own act
     Clock::time_point                               firstAt{}, leftAt{}, walkAt{}, arrivedAt{}, mutedAt{}, silencedAt{};
     std::shared_ptr<coop::director::BackgroundWalk> walk;
@@ -128,11 +143,21 @@ struct AtvAt {
     ue_wrap::FVector at{};
 };
 
+// A walking client's wait for the host's spawned ATV: its ready line once its streams run, the key from the host's chat
+// line and the host's `phase parked`, each latched on sight (a live chat row retires after seconds).
+struct SpawnedWait {
+    bool         readySaid = false, haveKey = false, sawParked = false;
+    std::wstring key;
+};
+
 // The head of a client tick: true with this machine's player and slot when the client acts. False when its run is done,
 // its world is not announced or its slot is not the drill's (said once).
 bool SeatedActs(SeatedClient& c, void** player, uint8_t* self);
-// Once the streams run and the table holds the ATV: true with the ATV and its root.
-bool AtvReady(AtvAt* out);
+// Once the streams run and the table holds the ATV under `key`: true with the ATV and its root (`trap`'s world ATV).
+bool AtvReady(const std::wstring& key, AtvAt* out);
+// The spawned ATV: true with the ATV and its root once the key and `parked` came and the table holds it. `due` is this
+// tick's chat poll (DC::PollDue, called once a tick by the caller).
+bool SpawnedAtvReady(SpawnedWait& w, Arm a, bool due, AtvAt* out);
 // The director's walk to within `reachCm` of the ATV's root, the ATV kept, the ready line said.
 void WalkStart(SeatedClient& c, Arm a, const AtvAt& t, float reachCm);
 // The wait for the ATV: Failed once kFailBound has passed.
@@ -144,7 +169,7 @@ Stage SitStep(SeatedClient& c, Arm a, void* player, void* atv, uint8_t self);
 // A walk still walking is cancelled.
 void WalkCancel(SeatedClient& c);
 
-// The damage arms (`gate`, `owner`, `trap`): the client sits in the world's ATV and the host's blast, the client's kill
+// The damage arms (`gate`, `owner`, `trap`): the client sits in the spawned ATV (`trap`: the world's) and the host's blast, the client's kill
 // or the host's story-event trap is judged on the owner's copy and the host's table (atv_health_drill_damage.cpp). They
 // keep their own phases and state; Tick routes them past HostTick and ClientTick.
 inline bool IsDamageArm(Arm a) { return a == Arm::Gate || a == Arm::Owner || a == Arm::Trap; }
@@ -160,17 +185,9 @@ void SpawnedHostTick(coop::net::Session* s, Arm a);
 void SpawnedClientTick(coop::net::Session* s, Arm a);
 void SpawnedReset();
 
-// The host half of the spawn the `spawned` arm and the peers arms share (atv_health_drill_spawned.cpp): the host spawns
-// an ATV beside its player and says its key in the lobby chat, then waits for it to park and says `phase parked`. The
-// steps print the FAIL line on the host's own run and return Failed. The peers read the key from the chat line.
-struct SpawnStep {
-    ue_wrap::CachedObjRef atv;
-    bool                  spawned = false;
-    Clock::time_point     spawnAt{}, tableAt{}, parkedAt{}, lastStampAt{};
-    std::wstring          key;
-    ue_wrap::FVector      lastAt{};      // the last stamp's root and when it was read
-    int                   calm = 0;      // successive stamp pairs under 5 cm/s
-};
+// The host half of the spawn every arm but `trap` shares (atv_health_drill_spawned.cpp): the host spawns an ATV beside
+// its player and says its key in the lobby chat, then waits for it to park and says `phase parked`. The steps print the
+// FAIL line on the host's own run and return Failed. The other peers read the key from the chat line.
 Stage SpawnAtvStep(SpawnStep& s, Run& run, Arm a);   // Next once the key is said
 Stage ParkAtvStep(SpawnStep& s, Run& run, Arm a);    // Next once parked and said
 void  SayKey(const std::wstring& key);

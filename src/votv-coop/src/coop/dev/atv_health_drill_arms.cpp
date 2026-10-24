@@ -1,9 +1,10 @@
 // coop/dev/atv_health_drill_arms.cpp -- the ATV health drill's arms where the client acts, `sit`, `grab` and `silent`,
 // and the client's side of `occupied` and `synced`, for both roles: see coop/dev/atv_health_drill.h. The client walks
-// to the world's own ATV with the director and acts on it (the seat through the game's own verb, the grav hand's grab,
-// or a raw request) and undoes it on the host's word; the host reads the table it judged and the lane's counters as
-// deltas against a baseline taken at the client's ready line, says each edge in the lobby chat, and prints the times
-// the hand-back took. The host's side of `occupied` and `synced` is atv_health_drill_host.cpp.
+// to the ATV the host spawns (parked, its key said in the lobby chat) with the director and acts on it (the seat through
+// the game's own verb, the grav hand's grab, or a raw request) and undoes it on the host's word; the host reads the
+// table it judged and the lane's counters as deltas against a baseline taken once the ATV is parked, says each edge
+// in the lobby chat, and prints the times the hand-back took. The host's side of `occupied` and `synced` is
+// atv_health_drill_host.cpp.
 
 #include "atv_health_drill_detail.h"  // co-located private header (src tree, not include/)
 
@@ -81,14 +82,19 @@ std::string Numbers(Arm a, Clock::time_point end, float lastBlockSpeed) {
     return buf;
 }
 
+// The client's ready line starts the spawn (the ATV then reaches its table by the lane's own path); once the ATV is
+// parked the baseline is taken and the arm's first phase begins.
 void HostWait(Arm a) {
-    if (DC::PollDue() && DC::ChatHasLive(ReadyLine(a))) {
-        g_h.base = AU::ReadCounters();
-        if (a == Arm::Occupied || a == Arm::Synced) return HostEnter(HP::Walk, "walk");
-        return HostEnter(HP::First, SpecOf(a).first);
-    }
+    if (DC::PollDue() && DC::ChatHasLive(ReadyLine(a))) return HostEnter(HP::Spawn, "spawn");
     if (Past(g_h.run, kFailBound))
         Fail("host", a, g_h.run, "the client never said it was ready", "no line", ReadyLine(a));
+}
+
+void HostPark(Arm a) {
+    if (ParkAtvStep(g_h.sp, g_h.run, a) != Stage::Next) return;
+    g_h.base = AU::ReadCounters();
+    if (a == Arm::Occupied || a == Arm::Synced) return HostEnter(HP::Walk, "walk");
+    HostEnter(HP::First, SpecOf(a).first);
 }
 
 // The edge the client's act makes: the sit (and the silent arm's) names the client occupant and syncer, the grab names
@@ -199,6 +205,7 @@ struct Client : SeatedClient {
     std::unique_ptr<coop::director::AimedGrab>      grab;
     Clock::time_point                               nextTry{};
     Clock::time_point                               rawFrom{};   // the raw send's first try: its bound counts from here
+    SpawnedWait                                     spawn;       // the host's ATV: its key and its `parked`
 };
 Client g_c;
 
@@ -216,10 +223,10 @@ void ClientFail(Arm a, const std::string& what, const std::string& got, const st
     ClientEnd();
 }
 
-// Once the streams run and the table holds the ATV: the director's walk to its root, and the host told.
-void ClientWait(Arm a) {
+// Once the host's spawned ATV is parked and the table holds it: the director's walk to its root, and the host told.
+void ClientWait(Arm a, bool due) {
     AtvAt t;
-    if (AtvReady(&t)) {
+    if (SpawnedAtvReady(g_c.spawn, a, due, &t)) {
         WalkStart(g_c, a, t, a == Arm::Grab ? kGrabReachCm : kSitReachCm);
         return ClientEnter(CP::Walk, "walk");
     }
@@ -292,7 +299,7 @@ void ClientMute(Arm a) {
 
 void ClientYield(Arm a) {
     TableView t;
-    const bool read = coop::atv_sync::ReadTable(kKey, t);
+    const bool read = coop::atv_sync::ReadTable(g_c.spawn.key, t);
     if (read && !t.localSeated) {
         DC::Say(ClientLine("yielded"));
         return ClientEnter(CP::Back, "back");
@@ -318,14 +325,14 @@ void ClientRaw(coop::net::Session* s, Arm a) {
     bool sent = false;
     if (a == Arm::Occupied) {
         coop::net::AtvSeatPayload p{};
-        coop::net::WireKeyFromString(kKey, p.key);
+        coop::net::WireKeyFromString(g_c.spawn.key, p.key);
         p.seat = 0;
         p.action = 1;
         p.seq = kSeatSeq;
         sent = s->SendReliable(coop::net::ReliableKind::AtvSeat, &p, sizeof(p));
     } else {
         coop::net::AtvTakeoverPayload p{};
-        coop::net::WireKeyFromString(kKey, p.key);
+        coop::net::WireKeyFromString(g_c.spawn.key, p.key);
         p.seq = kTakeoverSeq;
         sent = s->SendReliable(coop::net::ReliableKind::AtvTakeover, &p, sizeof(p));
     }
@@ -356,9 +363,13 @@ void HostTick(coop::net::Session* s, Arm a) {
     }
     if (static_cast<HP>(g_h.run.phase) == HP::Wait) return HostWait(a);
     TableView t;
-    const bool read = coop::atv_sync::ReadTable(kKey, t);
+    const bool read = !g_h.sp.key.empty() && coop::atv_sync::ReadTable(g_h.sp.key, t);
     const TableView* view = read ? &t : nullptr;
     switch (static_cast<HP>(g_h.run.phase)) {
+    case HP::Spawn:
+        if (SpawnAtvStep(g_h.sp, g_h.run, a) == Stage::Next) HostEnter(HP::Park, "park");
+        return;
+    case HP::Park:  return HostPark(a);
     case HP::First: return HostFirst(a, view);
     case HP::Left:  return HostLeft(a, view);
     case HP::Back:  return HostBack(a, view);
@@ -377,22 +388,23 @@ void ClientTick(coop::net::Session* s, Arm a) {
     if (!SeatedActs(g_c, &player, &self)) return;
     if (g_c.run.at == Clock::time_point{}) ClientEnter(CP::Wait, "wait");   // the bounds run from the world-ready edge
     // The host's edge lines, latched on sight: a live chat row retires after seconds.
-    if (DC::PollDue()) {
+    const bool due = DC::PollDue();
+    if (due) {
         if (!g_c.sawFirst) g_c.sawFirst = DC::ChatHasLive(PhaseLine(SpecOf(a).first));
         if (!g_c.sawBack) g_c.sawBack = DC::ChatHasLive(PhaseLine("back"));
     }
     void* atv = g_c.atv.Get();
     switch (static_cast<CP>(g_c.run.phase)) {
-    case CP::Wait: return ClientWait(a);
+    case CP::Wait: return ClientWait(a, due);
     case CP::Walk: return ClientWalk(a, player);
     case CP::Act:
-        if (!atv) return ClientFail(a, "the ATV is gone before the act", "no ATV", "the world's ATV");
+        if (!atv) return ClientFail(a, "the ATV is gone before the act", "no ATV", "the ATV");
         if (a == Arm::Grab) return ClientGrab();
         if (a == Arm::Occupied || a == Arm::Synced) return ClientRaw(s, a);
         return ClientSit(a, player, atv, self);
     case CP::Undo:
         if (a == Arm::Silent) return ClientMute(a);
-        if (!atv) return ClientFail(a, "the ATV is gone before the undo", "no ATV", "the world's ATV");
+        if (!atv) return ClientFail(a, "the ATV is gone before the undo", "no ATV", "the ATV");
         return ClientUndo(a, player, atv, self);
     case CP::Yield: return ClientYield(a);
     case CP::Back: return ClientBack(a);

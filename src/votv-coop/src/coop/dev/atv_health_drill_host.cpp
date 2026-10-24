@@ -1,5 +1,5 @@
 // coop/dev/atv_health_drill_host.cpp -- the ATV health drill's arms where the HOST acts, `occupied` and `synced`: see
-// coop/dev/atv_health_drill.h. The host walks to the world's own ATV with the director, takes its seat (the game's own
+// coop/dev/atv_health_drill.h. The host walks to the ATV it spawned with the director, takes its seat (the game's own
 // verb) or grabs it (the grav hand), says the edge in the lobby chat, and then judges the client's raw request for the
 // same seat or the same ATV: the lane's refusal counter for it must rise by one and nothing may be granted. The
 // client's side of both arms is atv_health_drill_arms.cpp.
@@ -71,7 +71,7 @@ void Walk(Arm a, const TableView* t) {
         }
         return;
     }
-    if (!t) return HostFail(a, "the ATV is gone before the walk ended", "no ATV", "the world's ATV");
+    if (!t) return HostFail(a, "the ATV is gone before the walk ended", "no ATV", "the ATV");
     const int state = g_h.walk->state.load();
     if (state == 2) return HostFail(a, "the director's walk to the ATV did not arrive", "walk failed", "arrived");
     if (state != 1) {
@@ -87,7 +87,7 @@ void Walk(Arm a, const TableView* t) {
 // The host's own seat (through the game's verb) or grab, then the table it judged for itself: the seat or the carry
 // is the host's, the syncer stays the host. The lane's counters are snapshotted and the edge said.
 void Act(Arm a, const TableView* t) {
-    if (!t) return HostFail(a, "the ATV is gone before the act", "no ATV", "the world's ATV");
+    if (!t) return HostFail(a, "the ATV is gone before the act", "no ATV", "the ATV");
     void* player = coop::players::Registry::Get().Local();
     const bool sit = a == Arm::Occupied;
     if (sit) {
@@ -123,7 +123,7 @@ void Act(Arm a, const TableView* t) {
 // since the host's act (and, for the carry, the syncer still the host). A grant ends the judgement at once, since it
 // cannot be undone; anything else waits for the bound. The host then undoes its act.
 void Judge(Arm a, const TableView* t) {
-    if (!t) return HostFail(a, "the ATV is gone before the judgement", "no ATV", "the world's ATV");
+    if (!t) return HostFail(a, "the ATV is gone before the judgement", "no ATV", "the ATV");
     if (!g_h.sawSent && DC::PollDue()) g_h.sawSent = DC::ChatHasLive(ClientLine("sent"));
     if (!g_h.sawSent) {
         if (Past(g_h.run, kFailBound))

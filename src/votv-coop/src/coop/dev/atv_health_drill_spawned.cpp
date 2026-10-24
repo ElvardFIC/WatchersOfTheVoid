@@ -49,7 +49,7 @@ float Dist(const ue_wrap::FVector& a, const ue_wrap::FVector& b) {
 }
 }  // namespace
 
-// ---- the host: the spawn and the park steps the peers arms reuse, then this arm's own phases ----
+// ---- the host: the spawn and the park steps every arm but trap reuses, then this arm's own phases ----
 
 // The ATV, born a few metres ahead of the host's player on the NavMesh. A point the NavMesh does not project fails the
 // arm: the run says whether a point near the base start always projects.
@@ -121,7 +121,8 @@ Stage SpawnAtvStep(SpawnStep& st, Run& run, Arm a) {
 }
 
 // Parked: two successive stamps of the root, a gap apart, each pair under kParkedCmS. The lane's block speed is the
-// client syncer's, so a host-owned ATV reads its own root.
+// client syncer's, so a host-owned ATV reads its own root. The edge said is `phase parked` for every arm, so the walking
+// arms' own first edges (`seated`, `synced`, ...) stay the client's act.
 Stage ParkAtvStep(SpawnStep& st, Run& run, Arm a) {
     const Clock::time_point now = Clock::now();
     const bool first = st.lastStampAt == Clock::time_point{};
@@ -145,7 +146,7 @@ Stage ParkAtvStep(SpawnStep& st, Run& run, Arm a) {
     st.lastStampAt = now;
     if (st.calm >= 2) {
         st.parkedAt = now;
-        DC::Say(PhaseLine(SpecOf(a).first));
+        DC::Say(PhaseLine("parked"));
         return Stage::Next;
     }
     return notParked();

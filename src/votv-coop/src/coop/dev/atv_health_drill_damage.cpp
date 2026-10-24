@@ -1,8 +1,9 @@
 // coop/dev/atv_health_drill_damage.cpp -- the ATV health drill's damage arms, `gate`, `owner` and `trap`: see
-// coop/dev/atv_health_drill.h. The client walks to the world's own ATV with the director and sits in it, so its copy
-// owns the tick; the host stays where it spawned. gate: the host's native blast must be cancelled on the host's copy and
-// run on the client's. owner: the client's kill of its copy is one request the host accepts, marking the ATV blown, and
-// the lane sends no second request for it when the host's blast lands. trap: the host's story-event trap reaches the seated owner's
+// coop/dev/atv_health_drill.h. The host spawns an ATV beside the players (`trap` alone uses the world's own ATV, which the
+// gamemode's `car` is) and the client walks to it with the director and sits in it, so its copy owns the tick. gate: the
+// host's native blast must be cancelled on the host's copy and run on the client's. owner: the client's kill of its copy is
+// one request the host accepts, marking the ATV blown, and the lane sends no second request for it when the host's
+// blast lands. trap: the host's story-event trap reaches the seated owner's
 // copy, fires there as one request, and the re-arm lets a second kill through. Both peers hold the explosion drill's
 // guard from the ready line to the verdict or a reset. Every judge polls from its entering edge until its counters hold
 // or its bound passes.
@@ -74,10 +75,11 @@ void* GamemodeCar() {
 
 // ---- the host ----
 
-enum class HPh : int { Wait, Seated, Armed, Judge, Await };
+enum class HPh : int { Wait, Seated, Armed, Judge, Await, Spawn, Park };   // Spawn and Park: every arm but trap
 
 struct DHost {
     Run                             run;
+    SpawnStep                       sp;        // the ATV the arm acts on (trap: unused, the world's)
     coop::atv_damage_gate::Counters gate0{};   // the gate's counters at the seated edge
     ER::Counters                    req0{};    // and the request lane's
     bool readySeen = false, carChecked = false, sawAwait = false;
@@ -114,7 +116,14 @@ void HostWait(Arm a) {
     }
     if (const wchar_t* bad = XD::Guard(true))
         return HostFail(a, "the host's guard did not resolve", Narrow(bad), "readable");
-    HostPhase(HPh::Seated, "seated");
+    HostPhase(a == Arm::Trap ? HPh::Seated : HPh::Spawn, a == Arm::Trap ? "seated" : "spawn");
+}
+
+// The spawned ATV at rest: the arm's wait for the client's seat begins.
+void HostPark(Arm a) {
+    const Stage st = ParkAtvStep(g_dh.sp, g_dh.run, a);
+    if (st == Stage::Next) HostPhase(HPh::Seated, "seated");
+    else if (st == Stage::Failed) DamageHostEnd();
 }
 
 // The client seated (occupant and syncer): the counters are snapshotted, and the arm's act is the host's one move.
@@ -242,6 +251,7 @@ struct DClient : SeatedClient {
     GATE::Counters                                  gate0{};   // at the ready line, before any blast can run
     ER::Counters                                    req0{};    // at the kill (owner) or the press (trap)
     uint64_t                                        applied0 = 0;   // the lane's applied blasts at the kill or the press
+    SpawnedWait                                     spawn;     // the host's ATV (not trap): its key and its `parked`
 };
 DClient g_dc;
 
@@ -340,9 +350,9 @@ bool KillFixture(Arm a, void* atv, bool snapshot) {
 }
 
 // The gate's counters are snapshotted at the ready line: the host blasts only after the client sat, which is after it.
-void ClientWait(Arm a) {
+void ClientWait(Arm a, bool due) {
     AtvAt t;
-    if (AtvReady(&t)) {
+    if (a == Arm::Trap ? AtvReady(kWorldAtvKey, &t) : SpawnedAtvReady(g_dc.spawn, a, due, &t)) {
         if (const wchar_t* bad = XD::Guard(false))
             return ClientFail(a, "the client's guard did not resolve", Narrow(bad), "readable");
         g_dc.gate0 = GATE::ReadCounters();
@@ -384,7 +394,7 @@ void ClientPrime(Arm a, void* atv) {
     bool trap = false;
     TableView t;
     const bool copy = A::ReadTrap(atv, trap) && trap;
-    const bool table = coop::atv_sync::ReadTable(kKey, t) && t.trap;
+    const bool table = coop::atv_sync::ReadTable(kWorldAtvKey, t) && t.trap;
     if (copy && table) {
         g_dc.req0 = ER::GetCounters();
         g_dc.applied0 = Applied();
@@ -488,9 +498,18 @@ void DamageHostTick(coop::net::Session* s, Arm a) {
     if (static_cast<HPh>(h.run.phase) == HPh::Wait) return HostWait(a);
     if (static_cast<HPh>(h.run.phase) == HPh::Await) return HostAwait(a);
     TableView t;
-    const bool read = coop::atv_sync::ReadTable(kKey, t);
+    static const std::wstring world = kWorldAtvKey;
+    const std::wstring& key = a == Arm::Trap ? world : h.sp.key;
+    const bool read = !key.empty() && coop::atv_sync::ReadTable(key, t);
     const TableView* view = read ? &t : nullptr;
     switch (static_cast<HPh>(h.run.phase)) {
+    case HPh::Spawn: {
+        const Stage st = SpawnAtvStep(h.sp, h.run, a);
+        if (st == Stage::Next) HostPhase(HPh::Park, "park");
+        else if (st == Stage::Failed) DamageHostEnd();   // the FAIL line is printed: the guard is let go
+        return;
+    }
+    case HPh::Park:   return HostPark(a);
     case HPh::Seated: return HostSeated(a, view);
     case HPh::Armed:  return HostArmed(a, view);
     case HPh::Judge:  return HostJudge(a, view);
@@ -506,14 +525,15 @@ void DamageClientTick(coop::net::Session*, Arm a) {
     if (!SeatedActs(c, &player, &self)) return;
     if (c.run.at == Clock::time_point{}) ClientPhase(CPh::Wait, "wait");   // the bounds run from the world-ready edge
     // The host's edge lines, latched on sight: a live chat row retires after seconds.
-    if (DC::PollDue()) {
+    const bool due = DC::PollDue();
+    if (due) {
         if (!c.sawEdge) c.sawEdge = DC::ChatHasLive(PhaseLine(SpecOf(a).first));
         if (!c.sawBlown) c.sawBlown = DC::ChatHasLive(PhaseLine("blown"));
         if (!c.sawBack) c.sawBack = DC::ChatHasLive(PhaseLine("back"));
     }
     void* atv = c.atv.Get();
     const CPh phase = static_cast<CPh>(c.run.phase);
-    if (phase == CPh::Wait) return ClientWait(a);
+    if (phase == CPh::Wait) return ClientWait(a, due);
     if (phase == CPh::Walk) return ClientWalk(a);
     if (!atv) return ClientFail(a, "the ATV is gone before the verdict", "no ATV", "the world's ATV");
     switch (phase) {
