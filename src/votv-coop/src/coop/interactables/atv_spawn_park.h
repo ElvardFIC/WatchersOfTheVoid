@@ -32,7 +32,6 @@ void Discard(const std::wstring& key);
 // stays parked without re-entering the handlers, and the miss is held until the poll after a world change.
 void DrainReady();
 void Clear();
-// The spawns ever parked, and the arrivals parked now. For the ATV spawn drill.
-uint32_t ParkedEver();
+// The arrivals parked now. For the ATV spawn drill.
 size_t Pending();
 }  // namespace coop::atv_sync::spawn_park

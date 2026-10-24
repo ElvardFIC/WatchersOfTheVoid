@@ -23,7 +23,6 @@ std::unordered_map<std::wstring, Parked> g_parked;
 constexpr uint64_t kPollMs = 500;
 uint64_t g_nextPollMs = 0;
 bool     g_saidCap = false;
-uint32_t g_parkedEver = 0;
 
 uint64_t NowMs() {
     return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -54,7 +53,6 @@ void Park(const std::wstring& key, const coop::net::AtvSpawnPayload& payload, co
         if (Full(key, "spawn", why)) return;
         Say("spawn", key, why);
         g_parked.emplace(key, Parked{payload, gen, false});
-        ++g_parkedEver;
         return;
     }
     const bool wasDestroy = it->second.destroy;
@@ -79,7 +77,6 @@ void ParkDestroy(const std::wstring& key, const char* why) {
 
 void Discard(const std::wstring& key) { g_parked.erase(key); }
 
-uint32_t ParkedEver() { return g_parkedEver; }
 size_t Pending() { return g_parked.size(); }
 
 void DrainReady() {

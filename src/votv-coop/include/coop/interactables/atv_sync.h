@@ -14,6 +14,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace coop::net {
 class Session;
@@ -120,12 +121,16 @@ void* ActorSeatedBy(uint8_t slot);
 // an instrumented run can state which side of the mirror each sample came from. Game thread.
 bool OwnsTick(void* actor);
 
-// For the ATV spawn drill, game thread: HOST, the AtvSpawn broadcasts the index's pass sent this
-// session (a key the index gained while a client was connected); CLIENT, the live ATV mirrors this
-// peer fresh-spawned, the spawns its park ever held, and those it holds now.
-uint32_t RuntimeBroadcasts();
-int RuntimeMirrors();
-uint32_t ParkedEver();
+// For the ATV spawn drill, CLIENT, game thread; each counts this session and starts over at a disconnect: the
+// announces answered by a copy the world already held, the mirrors this peer fresh-spawned, the actors
+// destroyed for the host's AtvDestroy or its set, the host's sets applied, the drill's deliberate parks, the
+// arrivals the park holds now, and the keys the host's AtvSpawns named.
+uint32_t AdoptedEver();
+uint32_t SpawnedEver();
+uint32_t DestroysApplied();
+uint32_t SetEdgesApplied();
+uint32_t DeliberateParks();
 size_t ParkPending();
+std::vector<std::wstring> ReceivedSpawnKeys();
 
 }  // namespace coop::atv_sync

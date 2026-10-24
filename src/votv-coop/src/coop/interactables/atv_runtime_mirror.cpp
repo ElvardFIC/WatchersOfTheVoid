@@ -162,22 +162,26 @@ void ResolveSpawn(const std::wstring& key, const coop::net::AtvSpawnPayload& pay
         return;
     }
     // Resolve by key: the copy this world already holds is the host's ATV, so nothing is spawned beside it.
-    // (a) The lane's own row, live in this world: a mirror this lane spawned is a duplicate announce; the save's
-    // copy, filed by the hub, is adopted.
-    if (const AtvEntry* known = FindEntry(key)) {
-        if (detail::LiveInThisWorld(known->actor, known->idx)) {
-            if (known->isClientSpawnedMirror) { spawn_park::Discard(key); return; }
-            Adopted(key, known->actor, "row");
+    // The drill's red arm skips both steps, so a mirror always spawns.
+    static const bool s_adoptBreak = coop::config::ResolveFlag(coop::config_registry::rows::atv_adopt_break);
+    if (!s_adoptBreak) {
+        // (a) The lane's own row, live in this world: a mirror this lane spawned is a duplicate announce; the
+        // save's copy, filed by the hub, is adopted.
+        if (const AtvEntry* known = FindEntry(key)) {
+            if (detail::LiveInThisWorld(known->actor, known->idx)) {
+                if (known->isClientSpawnedMirror) { spawn_park::Discard(key); return; }
+                Adopted(key, known->actor, "row");
+                return;
+            }
+            EraseEntry(key);   // a dead row is not "already spawned"
+        }
+        // (b) The game's key map, which holds the save's copy once its load has run even where the hub's pass has
+        // not filed it yet. One linear lookup, only on a row miss.
+        if (void* held = KeyMapActor(key)) {
+            detail::AdoptNative(key, held);
+            Adopted(key, held, "key map");
             return;
         }
-        EraseEntry(key);   // a dead row is not "already spawned"
-    }
-    // (b) The game's key map, which holds the save's copy once its load has run even where the hub's pass has not
-    // filed it yet. One linear lookup, only on a row miss.
-    if (void* held = KeyMapActor(key)) {
-        detail::AdoptNative(key, held);
-        Adopted(key, held, "key map");
-        return;
     }
     // (c) Nothing here under the key. The ATV spawn drill's park arm parks the first arrival that would spawn,
     // once per session, as if the world were not ready, so the park's hand-back is what spawns it. A hand-back
@@ -218,8 +222,15 @@ void ResolveSpawn(const std::wstring& key, const coop::net::AtvSpawnPayload& pay
             key.c_str(), className.c_str(), spawned, loc.X, loc.Y, loc.Z);
 }
 
-uint32_t ParkedEver() { return spawn_park::ParkedEver(); }
 size_t ParkPending() { return spawn_park::Pending(); }
+uint32_t AdoptedEver() { return g_adoptedEver; }
+uint32_t SpawnedEver() { return g_spawnedEver; }
+uint32_t DestroysApplied() { return g_destroysApplied; }
+uint32_t SetEdgesApplied() { return g_setEdgesApplied; }
+uint32_t DeliberateParks() { return g_deliberateParks; }
+std::vector<std::wstring> ReceivedSpawnKeys() {
+    return std::vector<std::wstring>(g_receivedKeys.begin(), g_receivedKeys.end());
+}
 
 void OnAtvDestroy(const coop::net::AtvDestroyPayload& payload) {
     if (!LaneSession()) return;  // from the host alone: its receive edge refuses a client's copy
@@ -301,9 +312,11 @@ void ApplyPendingSet() {
         auto* w = static_cast<Walk*>(ctx);
         if (!w->set->count(key) && !w->next->count(key)) w->victims.push_back(Victim{ actor, key });
     }, &walk);
+    // The drill's red arm applies the set without removing anything.
+    static const bool s_setBreak = coop::config::ResolveFlag(coop::config_registry::rows::atv_set_break);
     uint32_t removed = 0;
     for (const Victim& v : walk.victims) {
-        if (!A::DestroyMirror(v.actor)) continue;
+        if (s_setBreak || !A::DestroyMirror(v.actor)) continue;
         if (const AtvEntry* row = FindEntry(v.key); row && row->actor == v.actor) EraseEntry(v.key);
         ++g_destroysApplied;
         ++removed;

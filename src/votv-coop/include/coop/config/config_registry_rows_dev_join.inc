@@ -83,3 +83,7 @@ CFG_FLAG(replay_watch_break, "replay_watch_break", "dev", false, "VOTVCOOP_DEV_R
     "Red arm: the save-replay watch is registered on a function this game does not have.")
 CFG_FLAG(replay_post_drop, "replay_post_drop", "dev", false, "VOTVCOOP_DEV_REPLAY_POST_DROP",
     "Red arm: the save-replay watch ignores the replay.")
+CFG_FLAG(atv_adopt_break, "atv_adopt_break", "dev", false, "VOTVCOOP_DEV_ATV_ADOPT_BREAK",
+    "Red arm: an announced ATV is never adopted from the world's own copy; a mirror is spawned beside it.")
+CFG_FLAG(atv_set_break, "atv_set_break", "dev", false, "VOTVCOOP_DEV_ATV_SET_BREAK",
+    "Red arm: the host's complete ATV set removes nothing on this client.")

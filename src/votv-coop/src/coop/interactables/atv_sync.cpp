@@ -340,13 +340,6 @@ void OnAtvRelease(const coop::net::AtvReleasePayload& payload, uint8_t senderPee
             key.c_str());
 }
 
-int RuntimeMirrors() {
-    int n = 0;
-    for (const auto& kv : g_atvs)
-        if (kv.second.isClientSpawnedMirror && R::IsLiveByIndex(kv.second.actor, kv.second.idx)) ++n;
-    return n;
-}
-
 // The mirror half (atv_runtime_mirror.cpp) reaches the map through these (atv_sync_internal.h);
 // every structural change to it is made here or by the index's hub pass (atv_index.cpp).
 coop::net::Session* LaneSession() { return g_session.load(std::memory_order_acquire); }

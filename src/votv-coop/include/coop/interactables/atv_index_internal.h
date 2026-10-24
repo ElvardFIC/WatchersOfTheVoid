@@ -47,7 +47,7 @@ bool SendAtvSpawn(const std::wstring& key, void* actor, int slot);
 // not flagged as a mirror this lane spawned. The host never files a row outside the hub's pass.
 void AdoptNative(const std::wstring& key, void* actor);
 
-// A session ended: the broadcast counter restarts and the said keys may be said again.
+// A session ended: the said keys may be said again.
 void ResetAnnounceState();
 
 // Registers the index's scan callbacks with the hub; latched, safe to call every tick.

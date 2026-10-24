@@ -528,12 +528,12 @@ CFG_STRING(throw_drill, "throw_drill", "dev", "", "VOTVCOOP_THROW_DRILL", false,
 CFG_FLAG(container_birth_skip_slice, "container_birth_skip_slice", "dev", false, "VOTVCOOP_CONTAINER_BIRTH_SKIP_SLICE",
     "Developer: a container this client throws sends no contents slice (the throw drill's red and gone).")
 CFG_STRING(atv_spawn_drill, "atv_spawn_drill", "dev", "", "VOTVCOOP_ATV_SPAWN_DRILL", false,
-    "Drill (BOTH peers): a runtime ATV spawned on the host reaches each client once. run -- spawned once the client's "
-    "world is ready; join -- while it is still loading (the world-ready replay); park -- as run, with "
-    "atv_park_first_spawn=1 on the client. The client's DONE line ends it.")
+    "Drill (BOTH peers): a client holds one actor per ATV the host holds, none the host does not. run -- one is "
+    "spawned once the client's world is ready; join -- while it loads, so its save carries it; park -- as run, with "
+    "atv_park_first_spawn=1 on the client; divergence -- as join, destroyed as the stream ends. The DONE line ends it.")
 CFG_FLAG(atv_park_first_spawn, "atv_park_first_spawn", "dev", false, "VOTVCOOP_ATV_PARK_FIRST_SPAWN",
-    "Developer: the first runtime ATV spawn that reaches this client's ready world and is not already a park's "
-    "hand-back is parked once, process-wide, as if the world were not (the ATV spawn drill's park arm).")
+    "Developer: the first ATV arrival that would spawn a mirror is parked once per session, as if the world were "
+    "not ready, and spawned by the park's hand-back (the ATV spawn drill's park arm).")
 CFG_STRING(fall_drill, "fall_drill", "dev", "", "VOTVCOOP_FALL_DRILL", false,
     "Drill (BOTH peers): a host birth that falls lands on the client where it lands on the host. run -- the host "
     "drops a drive from 4 m once the client's world is ready; the client's DONE line ends it.")

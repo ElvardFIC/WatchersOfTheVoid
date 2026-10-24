@@ -8,7 +8,7 @@
 
 #include "atv_spawn_park.h"                    // spawn_park::kCap
 #include "coop/element/object_scan_hub.h"      // the shared sliced scan pass
-#include "coop/interactables/atv_sync.h"       // RuntimeBroadcasts
+#include "coop/interactables/atv_sync.h"       // AnnounceableAtvKey, ForEachAnnounceableAtv
 #include "coop/net/protocol.h"
 #include "coop/net/session.h"
 #include "coop/net/wire_key_util.h"  // WireKeyFromString / StringFromWireKey / FnvKey (shared)
@@ -49,7 +49,6 @@ void FillWireClassName(coop::net::WireClassName& out, const std::wstring& name) 
 
 constexpr size_t kMaxKeyChars = sizeof(coop::net::WireKey::data);  // 31: what a WireKey carries
 
-uint32_t g_runtimeBroadcasts = 0;                 // host: the AtvSpawn broadcasts the hub's pass sent this session
 std::unordered_set<std::wstring> g_saidKeys;      // "topic|key" pairs already said (once per key and topic)
 uint32_t g_saidPastCap = 0;                       // sayings counted but not stored, once the set was full
 
@@ -106,7 +105,6 @@ void ResetAnnounceState() {
     if (g_saidPastCap)
         UE_LOGI("atv: %u saying(s) past the %zu-key cap of the said-once set were counted, not stored or logged",
                 g_saidPastCap, coop::atv_sync::spawn_park::kCap);
-    g_runtimeBroadcasts = 0;
     g_saidKeys.clear();
     g_saidPastCap = 0;
 }
@@ -160,7 +158,6 @@ void HubMatch(void*, void* obj) {
 void AnnounceGained(const std::wstring& key, const AtvEntry& e) {
     if (!LiveInThisWorld(e.actor, e.idx)) return;
     if (!SendAtvSpawn(key, e.actor, /*slot*/ -1)) return;
-    ++g_runtimeBroadcasts;
     UE_LOGI("atv: announced ATV key='%ls' class='%ls' (AtvSpawn)", key.c_str(),
             R::ToString(R::NameOf(R::ClassOf(e.actor))).c_str());
 }
@@ -267,7 +264,5 @@ void ForEachAnnounceableAtv(void (*fn)(void* ctx, void* actor, const std::wstrin
         if (AnnounceableAtvKey(key)) w->fn(w->ctx, actor, key);
     }, &walk);
 }
-
-uint32_t RuntimeBroadcasts() { return detail::g_runtimeBroadcasts; }
 
 }  // namespace coop::atv_sync
