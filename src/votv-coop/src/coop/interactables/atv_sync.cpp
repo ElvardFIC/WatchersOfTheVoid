@@ -17,6 +17,8 @@
 #include "coop/interactables/atv_authority.h"
 #include "coop/interactables/atv_corrector.h"
 #include "coop/interactables/atv_damage_gate.h"
+#include "coop/config/config.h"
+#include "coop/config/config_registry.h"
 #include "coop/dev/atv_eject_drill.h"
 #include "coop/interactables/atv_condition_sync.h"
 #include "coop/interactables/atv_hit_guard.h"
@@ -397,7 +399,11 @@ void OnReliable(const coop::net::AtvStatePayload& payload, uint8_t senderPeerSlo
     e.occupantSlot = payload.occupantSlot;
     e.syncerSlot   = payload.syncerSlot;
     // The trap rides every block the host sends, so it is taken before the authority return like the rest of the stamp.
-    TakeStampTrap(e, (payload.stateBits & coop::net::kAtvTrap) != 0, IsLocalSyncer(e, localSlot));
+    // The developer red arm of the ATV health drill: the bit is ignored, so the drill's `armed` phase must fail.
+    // Resolved once.
+    static const bool s_redTrapbit =
+        coop::config::ResolveEnum(coop::config_registry::rows::atv_health_red) == "trapbit";
+    TakeStampTrap(e, !s_redTrapbit && (payload.stateBits & coop::net::kAtvTrap) != 0, IsLocalSyncer(e, localSlot));
     // An ATV this machine syncs, or has a request in flight for, keeps its own state and takes only the stamp; MTA's
     // StartSync ships the server's pose and state to the new syncer
     // (reference/mtasa-blue/Server/mods/deathmatch/logic/packets/CUnoccupiedVehicleStartSyncPacket.cpp).
@@ -792,6 +798,10 @@ bool ReadTable(const std::wstring& key, TableView& out) {
     out.syncerSlot = it->second.syncerSlot;
     out.lastBlockSpeed = it->second.lastBlockSpeed;
     out.localSeated = it->second.localSeated;
+    auto* s = g_session.load(std::memory_order_acquire);
+    out.trap = s && s->role() == coop::net::Role::Host ? it->second.hostTrap : it->second.stampTrap;
+    out.blown = it->second.blown;
+    out.blownBy = it->second.blownBy;
     out.actor = it->second.actor;
     return true;
 }

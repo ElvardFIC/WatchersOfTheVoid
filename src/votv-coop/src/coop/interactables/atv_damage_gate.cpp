@@ -2,6 +2,8 @@
 
 #include "coop/interactables/atv_damage_gate.h"
 
+#include "coop/config/config.h"
+#include "coop/config/config_registry.h"
 #include "coop/interactables/atv_sync.h"
 
 #include "ue_wrap/core/log.h"
@@ -29,7 +31,11 @@ enum Row { kAddDamage, kExploded, kExplode };
 Counters g_counters{};
 
 SG::Verdict Judge(Row row, const SG::Call& c) {
-    if (coop::atv_sync::NonOwnerCopy(c.object)) {
+    // The developer red arm of the ATV health drill: no copy is a non-owner here, so the host's copy runs the damage
+    // the drill's `gate` arm needs it to cancel. Resolved once.
+    static const bool s_redNonowner =
+        coop::config::ResolveEnum(coop::config_registry::rows::atv_health_red) == "nonowner";
+    if (!s_redNonowner && coop::atv_sync::NonOwnerCopy(c.object)) {
         ++g_counters.cancelled[row];
         return SG::Verdict::Cancel;
     }

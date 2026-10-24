@@ -122,12 +122,17 @@ bool IsOccupiedByOther(void* actor, uint8_t* outOccupantSlot = nullptr);
 void* ActorSeatedBy(uint8_t slot);
 
 // What a drill reads of one ATV's table: the seat, the syncer, the speed of the syncer's last admitted block (the
-// host's; a client's stays 0), whether this machine's own body sits in the seat and the actor the entry holds.
+// host's; a client's stays 0), whether this machine's own body sits in the seat and the actor the entry holds, the
+// story event's trap (the host's: its own copy's, as of its last Tick; a client's: the last stamp's bit as applied) and
+// the host's blown mark with the slot that blew it (0xFF = none; the host's table only, a client's stays unmarked).
 struct TableView {
     uint8_t occupantSlot = 0xFF;
     uint8_t syncerSlot = 0;
     float   lastBlockSpeed = 0.f;
     bool    localSeated = false;
+    bool    trap = false;
+    bool    blown = false;
+    uint8_t blownBy = 0xFF;
     void*   actor = nullptr;
 };
 
