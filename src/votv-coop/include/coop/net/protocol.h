@@ -421,11 +421,12 @@ enum class ReliableKind : uint8_t {
     AtvRelease = 71,
 
     // Host to all: an ATV with this game Key exists; a receiver that holds none under that Key
-    // spawns a native idle ATV carrying it. The host announces every ATV of its index to a joiner
+    // spawns a native idle ATV carrying it. The host announces every ATV its world holds to a joiner
     // and each ATV its index gains. AtvSpawnPayload.
     AtvSpawn = 72,
 
-    // Host to all: the ATV with this game Key is gone. AtvDestroyPayload.
+    // Host to all: the ATV with this game Key is gone. The receiver destroys the actor its row names, else the
+    // game's key map's copy under that Key. AtvDestroyPayload.
     AtvDestroy = 73,
 
     // Host to all: a kerfur changed form. Carries the kerfur id, the old and new element ids, the
@@ -1102,10 +1103,11 @@ enum class ReliableKind : uint8_t {
     PropIgniteIntent = 193,
 
     // HOST->CLIENT: the host's ATV connect snapshot is complete. It follows the snapshot's AtvSpawns on one lane and
-    // carries their count; the joiner then removes every ATV it holds that no AtvSpawn since the previous edge named,
-    // so an ATV its save holds and the host's world does not goes. Sent at every connect replay (the first world-ready
-    // announce and a world-change re-announce), and withheld when the host could not walk its ATVs completely, in
-    // which case the joiner removes nothing that replay. Host-authored: refused from a client at the host's receive
+    // carries the count of distinct keys they named; the joiner then removes every ATV it holds that no AtvSpawn since
+    // the previous edge named, so an ATV its save holds and the host's world does not goes. Sent at every connect
+    // replay (the first world-ready announce and a world-change re-announce), and withheld when the host could not
+    // walk its ATVs completely, in which case the joiner removes nothing and the host owes the edge, retried while
+    // the slot is world-ready. Host-authored: refused from a client at the host's receive
     // edge; never relayed; not pre-world; a copy landing before the joiner's world is ready waits for it.
     // AtvSetCompletePayload.
     AtvSetComplete = 199,

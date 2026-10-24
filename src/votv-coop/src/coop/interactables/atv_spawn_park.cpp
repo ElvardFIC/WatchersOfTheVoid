@@ -33,13 +33,13 @@ void Say(const char* kind, const std::wstring& key, const char* why) {
     UE_LOGI("atv: an ATV %s waits -- %s (key='%ls')", kind, why, key.c_str());
 }
 
-// A new key past the cap is dropped, said once: the host's next replay brings its set again.
+// A new key past the cap is dropped, said once; it comes again only with a later replay of the host's set.
 bool Full(const std::wstring& key, const char* kind, const char* why) {
     if (g_parked.size() < kCap) return false;
     if (!g_saidCap) {
         g_saidCap = true;
-        UE_LOGW("atv: %zu ATV arrivals already parked -- the %s for key='%ls' (%s) dropped; the next "
-                "world-ready replay brings the host's set again (said once)", kCap, kind, key.c_str(), why);
+        UE_LOGW("atv: %zu ATV arrivals already parked -- the %s for key='%ls' (%s) dropped; it comes "
+                "again only with a later replay of the host's set (said once)", kCap, kind, key.c_str(), why);
     }
     return true;
 }

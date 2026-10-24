@@ -18,6 +18,7 @@
 
 #include "ue_wrap/core/types.h"  // FVector, FRotator
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 
@@ -34,8 +35,10 @@ bool IsAtv(void* obj);
 // Every live ATV in the lineage (ATV_C and each subclass with an instance, the witch car included), one call per
 // actor with its object-array slot. Skips the class default objects and the objects a load has not handed to the
 // game thread yet or the engine is destroying; the caller still asks its own world and key questions. Walks the
-// object index, never the object array. The callback must not create or destroy objects. Game thread.
-void ForEachAtv(void (*fn)(void* ctx, void* actor, int32_t idx), void* ctx);
+// object index, never the object array. The callback must not create or destroy objects. Returns how many instances
+// it skipped as not yet handed to the game thread (an ATV still loading; one the engine is destroying is not
+// counted, it is leaving). Game thread.
+size_t ForEachAtv(void (*fn)(void* ctx, void* actor, int32_t idx), void* ctx);
 
 // The ATV's save-persistent Key as a wide string ("" on failure, L"None" if unkeyed).
 std::wstring GetKeyString(void* atv);

@@ -77,22 +77,25 @@ bool IsAtv(void* obj) {
     return cls && R::IsDescendantOfAny(cls, &atvCls, 1);
 }
 
-void ForEachAtv(void (*fn)(void* ctx, void* actor, int32_t idx), void* ctx) {
-    if (!fn) return;
+size_t ForEachAtv(void (*fn)(void* ctx, void* actor, int32_t idx), void* ctx) {
+    if (!fn) return 0;
     // The classes first: the instance walk does not run from inside the class walk.
     std::vector<void*> classes;
     object_index::ForEachClass([](void* c, void* cls, void* anyInstance) {
         if (IsAtv(anyInstance)) static_cast<std::vector<void*>*>(c)->push_back(cls);
     }, &classes);
-    struct Walk { void (*fn)(void*, void*, int32_t); void* ctx; } walk{fn, ctx};
+    struct Walk { void (*fn)(void*, void*, int32_t); void* ctx; size_t loading; } walk{fn, ctx, 0};
     for (void* cls : classes) {
         object_index::ForEachInstance(cls, [](void* p, void* obj, int32_t idx) {
-            const Walk* w = static_cast<const Walk*>(p);
-            if (R::SlotFlags(idx) & (R::slot_flags::Dying | R::slot_flags::NotYetReadable)) return;
+            Walk* w = static_cast<Walk*>(p);
+            const auto flags = R::SlotFlags(idx);
+            if (flags & R::slot_flags::Dying) return;   // leaving: not counted
+            if (flags & R::slot_flags::NotYetReadable) { ++w->loading; return; }
             if (R::NameStartsWith(R::NameOf(obj), L"Default__")) return;
             w->fn(w->ctx, obj, idx);
         }, &walk);
     }
+    return walk.loading;
 }
 
 std::wstring GetKeyString(void* atv) {

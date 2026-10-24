@@ -131,8 +131,8 @@ bool SendAtvSpawn(const std::wstring& key, void* actor, int slot) {
 // The scan-hub consumer: the hub's shared sliced pass drives these callbacks, preserving the sender
 // state for keys that persist (only the actor and index update). Every keyed ATV is filed under its
 // own game Key. The host announces a key it gains (AtvSpawn) and a key it loses (AtvDestroy): its
-// actor died, or still stands under another key; a joiner is seeded from the whole index by the
-// connect snapshot (atv_sync.cpp).
+// actor died, or still stands under another key; a joiner is seeded from every ATV the host's world holds
+// by the connect snapshot, which walks the world and not this index (atv_sync.cpp).
 uint32_t g_indexGen = 0;  // world gen of the last completed pass (stale-gen index = EMPTY)
 namespace {
 size_t   g_lastLogCount = SIZE_MAX;
@@ -255,9 +255,9 @@ bool AnnounceableAtvKey(const std::wstring& key) {
     return !key.empty() && key != L"None" && key.size() <= detail::kMaxKeyChars;
 }
 
-void ForEachAnnounceableAtv(void (*fn)(void* ctx, void* actor, const std::wstring& key), void* ctx) {
+size_t ForEachAnnounceableAtv(void (*fn)(void* ctx, void* actor, const std::wstring& key), void* ctx) {
     struct Walk { void (*fn)(void*, void*, const std::wstring&); void* ctx; } walk{fn, ctx};
-    A::ForEachAtv([](void* p, void* actor, int32_t idx) {
+    return A::ForEachAtv([](void* p, void* actor, int32_t idx) {
         const Walk* w = static_cast<const Walk*>(p);
         if (!detail::LiveInThisWorld(actor, idx)) return;
         const std::wstring key = A::GetKeyString(actor);

@@ -41,10 +41,10 @@ using ue_wrap::FRotator;
 using coop::net::StringFromWireKey;
 
 // One session's arrival state; ResetArrivalState drops it all at a disconnect.
-// The most keys one set, or the session's record, holds: far above the ATVs of a world.
-constexpr size_t kMaxSetKeys = 256;
-// The keys the AtvSpawns named since the previous edge: the set the next edge closes.
+// The keys the AtvSpawns named since the previous edge: the set the next edge closes. The most keys one set, or the
+// session's record, holds is spawn_park::kCap, far above the ATVs of a world.
 std::unordered_set<std::wstring> g_setKeys;
+uint32_t g_setGen = 0;   // the world generation g_setKeys was named in (0 = none yet)
 // Every key the session's AtvSpawns named, not cleared at an edge.
 std::unordered_set<std::wstring> g_receivedKeys;
 bool g_setOverflowed = false;   // g_setKeys passed the cap: its edge removes nothing
@@ -74,6 +74,9 @@ std::wstring WireClassNameToString(const coop::net::WireClassName& in) {
 // The one gate every arrival waits on, AtvSpawn, AtvDestroy and the set's edge alike: a gameplay world whose save
 // replay has returned and whose ATV index is current, with the wrapper, the name library and the game's key map
 // all answering. Null when open, else what is missing.
+// Divergence from MTA, whose joiner takes the join packet only once its game is loaded and raises a protocol error
+// otherwise (reference/mtasa-blue/Client/mods/deathmatch/logic/CPacketHandler.cpp:338-342): the host's arrivals can
+// precede this world's readiness, since the save loads beside them, so they wait in the park.
 const char* GateClosedBecause() {
     if (ue_wrap::world_identity::CurrentWorldKind() != ue_wrap::world_identity::WorldKind::Gameplay ||
         !IndexCurrent() || !coop::world_load_episode::HasQuiesced())
@@ -87,19 +90,25 @@ const char* GateClosedBecause() {
 // The host named this key: it is in the next set and in the session's record. Both are capped, and a set past the
 // cap is marked, so its edge removes nothing rather than judge by a part of it.
 void NoteNamed(const std::wstring& key) {
+    // Keys named in a world since left are not this world's set.
+    if (const uint32_t gen = ue_wrap::world_identity::Generation(); gen != g_setGen) {
+        g_setKeys.clear();
+        g_setOverflowed = false;
+        g_setGen = gen;
+    }
     bool over = false;
     if (!g_setOverflowed && !g_setKeys.count(key)) {
-        if (g_setKeys.size() >= kMaxSetKeys) { g_setOverflowed = true; over = true; }
+        if (g_setKeys.size() >= spawn_park::kCap) { g_setOverflowed = true; over = true; }
         else g_setKeys.insert(key);
     }
     if (!g_receivedKeys.count(key)) {
-        if (g_receivedKeys.size() >= kMaxSetKeys) over = true;
+        if (g_receivedKeys.size() >= spawn_park::kCap) over = true;
         else g_receivedKeys.insert(key);
     }
     if (over && !g_saidOverflow) {
         g_saidOverflow = true;
         UE_LOGE("atv: the host named more than %zu ATV keys -- the set in flight removes nothing and the "
-                "record of received keys stops growing (said once)", kMaxSetKeys);
+                "record of received keys stops growing (said once)", spawn_park::kCap);
     }
 }
 
@@ -122,6 +131,7 @@ void Adopted(const std::wstring& key, void* actor, const char* via) {
 
 void ResetArrivalState() {
     g_setKeys.clear();
+    g_setGen = 0;
     g_receivedKeys.clear();
     g_setOverflowed = false;
     g_saidOverflow = false;
@@ -236,6 +246,8 @@ void OnAtvDestroy(const coop::net::AtvDestroyPayload& payload) {
     if (!LaneSession()) return;  // from the host alone: its receive edge refuses a client's copy
     if (!detail::WireKeyNamesAnAtv(payload.key, "client")) return;
     const std::wstring key = StringFromWireKey(payload.key);
+    // The destroy is the host's last word on the key: a set still open no longer names it.
+    g_setKeys.erase(key);
     if (const char* why = GateClosedBecause()) {
         spawn_park::ParkDestroy(key, why);   // the destroy is the host's last word on the key: it waits, not drops
         return;
@@ -271,16 +283,26 @@ void OnAtvSetComplete(const coop::net::AtvSetCompletePayload& payload) {
     // (reference/mtasa-blue/Server/mods/deathmatch/logic/CMapManager.cpp:195, SendMapInformation, and
     // reference/mtasa-blue/Server/mods/deathmatch/logic/packets/CEntityAddPacket.cpp:90-94): this client first
     // loads the host's save, so the host's complete set, closed by an edge carrying its count, lets it drop what
-    // the save holds and the host does not.
-    std::unordered_set<std::wstring> keys = std::move(g_setKeys);
+    // the save holds and the host does not. The set is N reliable messages, so its count trails the batch and the
+    // host can withhold the edge after a partial send, which MTA's one counted packet never needs.
+    // Only keys named in this world are its set: those of a world since left count as none.
+    const bool current = g_setGen == ue_wrap::world_identity::Generation();
+    const bool otherWorld = !current && g_setGen != 0;
+    std::unordered_set<std::wstring> keys;
+    if (current) keys = std::move(g_setKeys);
     g_setKeys.clear();
-    const bool overflowed = g_setOverflowed;
+    const bool overflowed = current && g_setOverflowed;
     g_setOverflowed = false;
     if (overflowed) {
         UE_LOGW("atv: the host's set of %u is not applied -- more keys arrived than a set holds", payload.count);
         return;
     }
     if (keys.size() < payload.count) {
+        if (otherWorld) {
+            UE_LOGI("atv: the host's set of %u is not applied -- its AtvSpawns were named in a world since left; "
+                    "the next replay brings a fresh one", payload.count);
+            return;
+        }
         UE_LOGE("atv: the host's set declares %u ATV(s) but %zu AtvSpawn key(s) arrived ahead of it -- the lane is "
                 "ordered, so this is a defect; nothing is removed", payload.count, keys.size());
         return;
@@ -297,6 +319,13 @@ void ApplyPendingSet() {
     if (g_pending.worldGen != ue_wrap::world_identity::Generation()) {
         UE_LOGI("atv: the host's set of %u is dropped -- its world was left; the next replay brings a fresh one",
                 g_pending.count);
+        g_pending = PendingSet{};
+        return;
+    }
+    if (g_setOverflowed) {
+        // The keys named since the edge are incomplete, and a stranger is judged against them.
+        UE_LOGW("atv: the host's set of %u is dropped -- more keys arrived since its edge than a set holds; "
+                "nothing is removed", g_pending.count);
         g_pending = PendingSet{};
         return;
     }
