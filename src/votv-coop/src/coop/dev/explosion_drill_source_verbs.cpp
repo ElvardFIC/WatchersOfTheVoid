@@ -153,6 +153,7 @@ bool SpawnNativeBlast(ue_wrap::explosion::Cls c, const Vec& at, float damage, fl
 // client holds both. A host that only hosts holds the gamemode's unlockFungunsInStory alone: a client's gun in hand
 // runs on the host's world rule, and its own player is not the one acting.
 const wchar_t* Guard(bool hostRole) {
+    g_src.host = hostRole;  // the role the guard's own lines name, for a caller that does not tick the drill
     const wchar_t* bad = nullptr;
     const struct { int bit; const wchar_t* name; bool ok; } rows[] = {
         {kInvincBit, L"startInvinc",

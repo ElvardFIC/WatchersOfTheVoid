@@ -2,29 +2,24 @@
 // coop/dev/atv_health_drill.h. The client walks to the world's own ATV with the director and sits in it, so its copy
 // owns the tick; the host stays where it spawned. gate: the host's native blast must be cancelled on the host's copy and
 // run on the client's. owner: the client's kill of its copy is one request the host accepts, marking the ATV blown, and
-// the host's blast on that copy does not explode it again. trap: the host's story-event trap reaches the seated owner's
+// the lane sends no second request for it when the host's blast lands. trap: the host's story-event trap reaches the seated owner's
 // copy, fires there as one request, and the re-arm lets a second kill through. Both peers hold the explosion drill's
 // guard from the ready line to the verdict or a reset. Every judge polls from its entering edge until its counters hold
 // or its bound passes.
 
 #include "atv_health_drill_detail.h"  // co-located private header (src tree, not include/)
-#include "atv_seat.h"                 // TrySit (co-located private header)
 #include "explosion_drill_source.h"   // Guard, SpawnNativeBlast (co-located private header)
 
-#include "coop/dev/director/director.h"
 #include "coop/dev/drill_chat.h"
 #include "coop/interactables/atv_damage_gate.h"
 #include "coop/interactables/atv_sync.h"
 #include "coop/net/session.h"
-#include "coop/player/players_registry.h"
-#include "coop/session/net_pump.h"
 #include "coop/world/event_fire_sync.h"
 #include "coop/world/explosion_request.h"
 #include "coop/world/explosion_sync.h"
 
 #include "ue_wrap/actors/int_objects.h"
 #include "ue_wrap/actors/sleep.h"
-#include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/types.h"
@@ -36,7 +31,6 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
-#include <memory>
 #include <string>
 #include <vector>
 
@@ -243,25 +237,18 @@ void HostAwait(Arm a) {
 
 enum class CPh : int { Wait, Walk, Sit, Edge, Judge, Fired, Blown, Kill, Killed, Blast, Back };
 
-struct DClient {
-    Run                                             run;
-    bool                                            idleSaid = false;
+struct DClient : SeatedClient {
     bool                                            sawEdge = false, sawBlown = false, sawBack = false;
-    ue_wrap::CachedObjRef                           atv;
-    std::shared_ptr<coop::director::BackgroundWalk> walk;
-    atv_seat::SitTry                                sit;
-    Clock::time_point                               walkAt{}, arrivedAt{};
-    GATE::Counters                                  gate0{};   // at the seated edge
+    GATE::Counters                                  gate0{};   // at the ready line, before any blast can run
     ER::Counters                                    req0{};    // at the kill (owner) or the press (trap)
-    uint64_t                                        applied0 = 0;
+    uint64_t                                        applied0 = 0;   // the lane's applied blasts at the kill or the press
 };
 DClient g_dc;
 
 void ClientPhase(CPh p, const char* name) { Enter(g_dc.run, static_cast<int>(p), name); }
 
 void ClientEnd() {
-    if (g_dc.walk && g_dc.walk->state.load() == 0) coop::director::CancelBackgroundWalk(*g_dc.walk);
-    g_dc.walk.reset();
+    WalkCancel(g_dc);
     XD::Unguard();
 }
 
@@ -337,7 +324,10 @@ bool KillFixture(Arm a, void* atv, bool snapshot) {
         ClientFail(a, "the copy's root does not read", "no transform", "root transform");
         return false;
     }
-    if (snapshot) g_dc.req0 = ER::GetCounters();
+    if (snapshot) {   // before the call: the request, the host's blast and its apply can all land within one frame
+        g_dc.req0 = ER::GetCounters();
+        g_dc.applied0 = Applied();
+    }
     const float rad = 3.14159265f / 180.f;
     const ue_wrap::FVector push{std::cos(rot.Pitch * rad) * std::cos(rot.Yaw * rad) * kKillPush,
                                 std::cos(rot.Pitch * rad) * std::sin(rot.Yaw * rad) * kKillPush,
@@ -349,44 +339,30 @@ bool KillFixture(Arm a, void* atv, bool snapshot) {
     return true;
 }
 
+// The gate's counters are snapshotted at the ready line: the host blasts only after the client sat, which is after it.
 void ClientWait(Arm a) {
-    TableView t;
-    ue_wrap::FVector at{};
-    ue_wrap::FRotator rot{};
-    if (StreamsRun() && coop::atv_sync::ReadTable(kKey, t) && A::GetRootTransform(t.actor, at, rot)) {
+    AtvAt t;
+    if (AtvReady(&t)) {
         if (const wchar_t* bad = XD::Guard(false))
             return ClientFail(a, "the client's guard did not resolve", Narrow(bad), "readable");
-        g_dc.atv.Set(t.actor);
-        g_dc.walk = coop::director::StartBackgroundWalk(at, kSitReachCm, kWalkDeadlineS);
-        g_dc.walkAt = Clock::now();
-        DC::Say(ReadyLine(a));
-        UE_LOGI("[ATV-HEALTH-DRILL] client arm=%s the ATV is at (%.0f,%.0f,%.0f), walking to it", SpecOf(a).name, at.X,
-                at.Y, at.Z);
+        g_dc.gate0 = GATE::ReadCounters();
+        WalkStart(g_dc, a, t, kSitReachCm);
         return ClientPhase(CPh::Walk, "walk");
     }
-    if (Past(g_dc.run, kFailBound))
-        ClientFail(a, "the client's streams or the ATV's table never held", "not ready", "streams running, ATV indexed");
+    if (WaitBound(g_dc, a) == Stage::Failed) ClientEnd();
 }
 
 void ClientWalk(Arm a) {
-    if (!g_dc.atv.Get()) return ClientFail(a, "the ATV is gone before the walk ended", "no ATV", "the world's ATV");
-    const int state = g_dc.walk->state.load();
-    if (state == 2) return ClientFail(a, "the director's walk to the ATV did not arrive", "walk failed", "arrived");
-    if (state != 1) return;
-    g_dc.arrivedAt = Clock::now();
-    ClientPhase(CPh::Sit, "sit");
+    const Stage s = WalkStep(g_dc, a);
+    if (s == Stage::Failed) return ClientEnd();
+    if (s == Stage::Next) ClientPhase(CPh::Sit, "sit");
 }
 
-// The seat through the game's own verb, then the host's grant: the copy then owns the tick. The gate's counters are
-// snapshotted at the seat.
+// The seat through the game's own verb, then the host's grant: the copy then owns the tick.
 void ClientSit(Arm a, void* player, void* atv, uint8_t self) {
-    if (!atv_seat::TrySit(player, atv, g_dc.sit)) {
-        if (Past(g_dc.run, kFailBound)) ClientFail(a, "the sit never finished", "no grant", "seated");
-        return;
-    }
-    if (coop::atv_sync::ActorSeatedBy(self) != atv)
-        return ClientFail(a, "the sit did not take (see the [ATVP] sit lines)", "not seated", "seated");
-    g_dc.gate0 = GATE::ReadCounters();
+    const Stage s = SitStep(g_dc, a, player, atv, self);
+    if (s == Stage::Failed) return ClientEnd();
+    if (s == Stage::Wait) return;
     if (a == Arm::Owner) ClientPhase(CPh::Kill, "kill");
     else ClientPhase(CPh::Edge, "edge");
 }
@@ -411,6 +387,7 @@ void ClientPrime(Arm a, void* atv) {
     const bool table = coop::atv_sync::ReadTable(kKey, t) && t.trap;
     if (copy && table) {
         g_dc.req0 = ER::GetCounters();
+        g_dc.applied0 = Applied();
         if (!PressInput(atv, L"InpActEvt_atv_forward_K2Node_InputActionEvent_4"))
             return ClientFail(a, "the forward press did not run", "not called", "called");
         if (!PressInput(atv, L"InpActEvt_atv_forward_K2Node_InputActionEvent_5"))
@@ -439,13 +416,24 @@ void ClientFired(Arm a, void* atv) {
                    "sent +1, trap clear");
 }
 
-// trap: on the host's `blown` edge the copy's health is printed and the kill fixture runs again (the re-arm).
+// True once the explosion lane has applied a blast on this client since `applied0` (the kill or the press), the host's
+// blast for it; at the bound the FAIL is printed and the run ends.
+bool BlastLanded(Arm a) {
+    if (Applied() > g_dc.applied0) return true;
+    if (Past(g_dc.run, kFailBound))
+        ClientFail(a, "the host's blast was never applied on the client", "applied +0", "applied +1");
+    return false;
+}
+
+// trap: on the host's `blown` edge and once its blast has landed here, the copy's health is printed and the kill
+// fixture runs again (the re-arm).
 void ClientBlown(Arm a, void* atv) {
     if (!g_dc.sawBlown) {
         if (Past(g_dc.run, kFailBound))
             ClientFail(a, "the host never said it had the kill", "no line", PhaseLine("blown"));
         return;
     }
+    if (!BlastLanded(a)) return;
     UE_LOGI("[ATV-HEALTH-DRILL] client arm=trap the copy's health after the host's blast is %.1f", A::GetHealth(atv));
     if (KillFixture(a, atv, false)) ClientPhase(CPh::Killed, "killed");
 }
@@ -458,21 +446,17 @@ void ClientKilled(Arm a) {
     if (sent == want) {
         DC::Say(ClientLine(a == Arm::Owner ? "killed" : "rekilled"));
         if (a == Arm::Trap) return ClientPhase(CPh::Back, "back");
-        g_dc.applied0 = Applied();
         return ClientPhase(CPh::Blast, "blast");
     }
     if (Past(g_dc.run, kFailBound))
         ClientFail(a, "the kill sent no request", "sent " + Plus(sent), "sent " + Plus(want));
 }
 
-// owner: the host's blast is applied here, the lane's next one after the `killed` line.
+// owner: the host's blast for the kill is applied here.
 void ClientBlast(Arm a) {
-    if (Applied() > g_dc.applied0) {
-        DC::Say(ClientLine("blast-seen"));
-        return ClientPhase(CPh::Back, "back");
-    }
-    if (Past(g_dc.run, kFailBound))
-        ClientFail(a, "the host's blast was never applied on the client", "applied +0", "applied +1");
+    if (!BlastLanded(a)) return;
+    DC::Say(ClientLine("blast-seen"));
+    ClientPhase(CPh::Back, "back");
 }
 
 void ClientBack(Arm a, void* atv) {
@@ -481,8 +465,10 @@ void ClientBack(Arm a, void* atv) {
             ClientFail(a, "the host never said it had finished", "no line", PhaseLine("back"));
         return;
     }
+    // Guards the lane: one kill is one request, and the host's blast on this copy sends no second one. The game itself
+    // cannot explode again from health -1 (the DONE line's health shows it), so this proves no game behaviour.
     if (a == Arm::Owner && Sent() != 1)
-        return ClientFail(a, "the host's blast re-exploded the ATV", "sent " + Plus(Sent()), "sent +1");
+        return ClientFail(a, "the lane sent a second request for the one ATV", "sent " + Plus(Sent()), "sent +1");
     char nums[64];
     std::snprintf(nums, sizeof(nums), "walk_ms=%lld health=%.1f", Ms(g_dc.walkAt, g_dc.arrivedAt),
                   atv ? A::GetHealth(atv) : 0.f);
@@ -515,18 +501,9 @@ void DamageHostTick(coop::net::Session* s, Arm a) {
 
 void DamageClientTick(coop::net::Session*, Arm a) {
     DClient& c = g_dc;
-    if (c.run.done) return;
-    const uint8_t self = coop::players::Registry::Get().LocalPeerId();
-    void* player = coop::players::Registry::Get().Local();
-    if (!coop::net_pump::HasAnnouncedWorldReady() || !player || self == 0 || self >= coop::players::kMaxPeers) return;
-    if (self != kSlot) {
-        if (!c.idleSaid) {
-            c.idleSaid = true;
-            UE_LOGI("[ATV-HEALTH-DRILL] client idles: this client is slot %u, the drill acts on slot %u",
-                    static_cast<unsigned>(self), static_cast<unsigned>(kSlot));
-        }
-        return;
-    }
+    void* player = nullptr;
+    uint8_t self = 0;
+    if (!SeatedActs(c, &player, &self)) return;
     if (c.run.at == Clock::time_point{}) ClientPhase(CPh::Wait, "wait");   // the bounds run from the world-ready edge
     // The host's edge lines, latched on sight: a live chat row retires after seconds.
     if (DC::PollDue()) {

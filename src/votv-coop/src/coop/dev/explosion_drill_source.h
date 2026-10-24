@@ -165,7 +165,8 @@ void BeginItem(const LegDef& d);
 bool SpawnNativeBlast(ue_wrap::explosion::Cls c, const Vec& at, float damage, float force, std::string* why);
 
 // Holds the acting player's startInvinc and the gamemode's unlockFungunsInStory (the host's role: the gamemode's
-// alone); the name of the first member that cannot be read, else null. Unguard puts back what Guard held.
+// alone), and records the role for the guard's log lines; the name of the first member that cannot be read, else null.
+// Unguard puts back what Guard held.
 const wchar_t* Guard(bool hostRole);
 void Unguard();
 

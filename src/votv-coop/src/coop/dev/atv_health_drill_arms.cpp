@@ -6,7 +6,6 @@
 // the hand-back took. The host's side of `occupied` and `synced` is atv_health_drill_host.cpp.
 
 #include "atv_health_drill_detail.h"  // co-located private header (src tree, not include/)
-#include "atv_seat.h"                 // TrySit (co-located private header)
 
 #include "coop/dev/director/aimed_grab.h"
 #include "coop/dev/director/director.h"
@@ -16,12 +15,10 @@
 #include "coop/net/protocol.h"
 #include "coop/net/session.h"
 #include "coop/net/wire_key_util.h"
-#include "coop/player/players_registry.h"
 #include "coop/props/join_membership_sweep.h"
 #include "coop/session/join_progress.h"
 #include "coop/session/net_pump.h"
 
-#include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/types.h"
 #include "ue_wrap/devices/atv.h"
@@ -197,15 +194,10 @@ enum class CP : int { Wait, Walk, Act, Undo, Yield, Back };
 // fresh world, where this client sends a handful of requests before the raw one: the drill's contract.
 constexpr uint8_t kSeatSeq = 250, kTakeoverSeq = 251;
 
-struct Client {
-    Run                                             run;
-    bool                                            idleSaid = false;
+struct Client : SeatedClient {
     bool                                            sawFirst = false, sawBack = false;  // the host's edges, latched
-    ue_wrap::CachedObjRef                           atv;
-    std::shared_ptr<coop::director::BackgroundWalk> walk;
-    atv_seat::SitTry                                sit;
     std::unique_ptr<coop::director::AimedGrab>      grab;
-    Clock::time_point                               walkAt{}, arrivedAt{}, nextTry{};
+    Clock::time_point                               nextTry{};
     Clock::time_point                               rawFrom{};   // the raw send's first try: its bound counts from here
 };
 Client g_c;
@@ -214,8 +206,7 @@ void ClientEnter(CP p, const char* name) { Enter(g_c.run, static_cast<int>(p), n
 
 // A verdict ends the run: a walk still walking is cancelled, the grab let go of and the stream's mute lifted.
 void ClientEnd() {
-    if (g_c.walk && g_c.walk->state.load() == 0) coop::director::CancelBackgroundWalk(*g_c.walk);
-    g_c.walk.reset();
+    WalkCancel(g_c);
     g_c.grab.reset();
     coop::atv_sync::SetDrillMute(false);
 }
@@ -227,43 +218,27 @@ void ClientFail(Arm a, const std::string& what, const std::string& got, const st
 
 // Once the streams run and the table holds the ATV: the director's walk to its root, and the host told.
 void ClientWait(Arm a) {
-    TableView t;
-    ue_wrap::FVector at{};
-    ue_wrap::FRotator rot{};
-    if (StreamsRun() && coop::atv_sync::ReadTable(kKey, t) && A::GetRootTransform(t.actor, at, rot)) {
-        g_c.atv.Set(t.actor);
-        const float reach = a == Arm::Grab ? kGrabReachCm : kSitReachCm;
-        g_c.walk = coop::director::StartBackgroundWalk(at, reach, kWalkDeadlineS);
-        g_c.walkAt = Clock::now();
-        DC::Say(ReadyLine(a));
-        UE_LOGI("[ATV-HEALTH-DRILL] client arm=%s the ATV is at (%.0f,%.0f,%.0f), walking to it", SpecOf(a).name,
-                at.X, at.Y, at.Z);
+    AtvAt t;
+    if (AtvReady(&t)) {
+        WalkStart(g_c, a, t, a == Arm::Grab ? kGrabReachCm : kSitReachCm);
         return ClientEnter(CP::Walk, "walk");
     }
-    if (Past(g_c.run, kFailBound))
-        ClientFail(a, "the client's streams or the ATV's table never held", "not ready", "streams running, ATV indexed");
+    if (WaitBound(g_c, a) == Stage::Failed) ClientEnd();
 }
 
 void ClientWalk(Arm a, void* player) {
-    void* atv = g_c.atv.Get();
-    if (!atv) return ClientFail(a, "the ATV is gone before the walk ended", "no ATV", "the world's ATV");
-    const int state = g_c.walk->state.load();
-    if (state == 2) return ClientFail(a, "the director's walk to the ATV did not arrive", "walk failed", "arrived");
-    if (state != 1) return;
-    g_c.arrivedAt = Clock::now();
-    if (a == Arm::Grab) g_c.grab = std::make_unique<coop::director::AimedGrab>(player, atv);
+    const Stage s = WalkStep(g_c, a);
+    if (s == Stage::Failed) return ClientEnd();
+    if (s == Stage::Wait) return;
+    if (a == Arm::Grab) g_c.grab = std::make_unique<coop::director::AimedGrab>(player, g_c.atv.Get());
     ClientEnter(CP::Act, SpecOf(a).act);
 }
 
 // The seat through the game's own verb, then the host's grant: the seat is the host's table, so one check follows.
 void ClientSit(Arm a, void* player, void* atv, uint8_t self) {
-    if (!atv_seat::TrySit(player, atv, g_c.sit)) {
-        if (Past(g_c.run, kFailBound)) ClientFail(a, "the sit never finished", "no grant", "seated");
-        return;
-    }
-    if (coop::atv_sync::ActorSeatedBy(self) != atv)
-        return ClientFail(a, "the sit did not take (see the [ATVP] sit lines)", "not seated", "seated");
-    ClientEnter(CP::Undo, SpecOf(a).undo);
+    const Stage s = SitStep(g_c, a, player, atv, self);
+    if (s == Stage::Failed) return ClientEnd();
+    if (s == Stage::Next) ClientEnter(CP::Undo, SpecOf(a).undo);
 }
 
 // The grav hand's grab until the player's own grabbing actor is the ATV.
@@ -397,18 +372,9 @@ void HostTick(coop::net::Session* s, Arm a) {
 }
 
 void ClientTick(coop::net::Session* s, Arm a) {
-    if (g_c.run.done) return;
-    const uint8_t self = coop::players::Registry::Get().LocalPeerId();
-    void* player = coop::players::Registry::Get().Local();
-    if (!coop::net_pump::HasAnnouncedWorldReady() || !player || self == 0 || self >= coop::players::kMaxPeers) return;
-    if (self != kSlot) {
-        if (!g_c.idleSaid) {
-            g_c.idleSaid = true;
-            UE_LOGI("[ATV-HEALTH-DRILL] client idles: this client is slot %u, the drill acts on slot %u",
-                    static_cast<unsigned>(self), static_cast<unsigned>(kSlot));
-        }
-        return;
-    }
+    void* player = nullptr;
+    uint8_t self = 0;
+    if (!SeatedActs(g_c, &player, &self)) return;
     if (g_c.run.at == Clock::time_point{}) ClientEnter(CP::Wait, "wait");   // the bounds run from the world-ready edge
     // The host's edge lines, latched on sight: a live chat row retires after seconds.
     if (DC::PollDue()) {

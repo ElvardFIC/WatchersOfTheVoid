@@ -1,6 +1,7 @@
 // coop/dev/atv_health_drill.cpp -- see coop/dev/atv_health_drill.h. The arm table, the phase clock, the verdict and chat
 // lines and the entry points; the arms' phases are atv_health_drill_arms.cpp (the client's acts, the silent syncer),
-// atv_health_drill_host.cpp (the arms where the host acts) and atv_health_drill_damage.cpp (gate, owner, trap).
+// atv_health_drill_host.cpp (the arms where the host acts), atv_health_drill_seated.cpp (the client walk and sit the
+// client halves share) and atv_health_drill_damage.cpp (gate, owner, trap).
 
 #include "coop/dev/atv_health_drill.h"
 

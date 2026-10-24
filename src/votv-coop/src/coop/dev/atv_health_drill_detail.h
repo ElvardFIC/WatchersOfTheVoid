@@ -11,6 +11,9 @@
 #include "coop/interactables/atv_authority.h"
 #include "coop/interactables/atv_sync.h"
 
+#include "ue_wrap/core/cached_obj_ref.h"
+#include "ue_wrap/core/types.h"
+
 #include <chrono>
 #include <cstdint>
 #include <memory>
@@ -98,6 +101,43 @@ void ClientReset();
 
 // The client acts once its own streams run, as a player in a settled world does.
 bool StreamsRun();
+
+// The client half the walk-and-sit arms share (atv_health_drill_seated.cpp): the run, the ATV, the director's walk and
+// the seating. An arm's own client state derives from it and keeps its phases; a step that fails prints the FAIL line
+// and returns Failed, and the arm ends its run its own way.
+struct SeatedClient {
+    Run                                             run;
+    bool                                            idleSaid = false;
+    ue_wrap::CachedObjRef                           atv;
+    std::shared_ptr<coop::director::BackgroundWalk> walk;
+    atv_seat::SitTry                                sit;
+    Clock::time_point                               walkAt{}, arrivedAt{};
+};
+
+// Wait: still going. Next: this step is done, enter the next phase. Failed: the FAIL line is printed.
+enum class Stage : uint8_t { Wait, Next, Failed };
+
+// The ATV the table holds and where its root is.
+struct AtvAt {
+    void*           actor = nullptr;
+    ue_wrap::FVector at{};
+};
+
+// The head of a client tick: true with this machine's player and slot when the client acts. False when its run is done,
+// its world is not announced or its slot is not the drill's (said once).
+bool SeatedActs(SeatedClient& c, void** player, uint8_t* self);
+// Once the streams run and the table holds the ATV: true with the ATV and its root.
+bool AtvReady(AtvAt* out);
+// The director's walk to within `reachCm` of the ATV's root, the ATV kept, the ready line said.
+void WalkStart(SeatedClient& c, Arm a, const AtvAt& t, float reachCm);
+// The wait for the ATV: Failed once kFailBound has passed.
+Stage WaitBound(SeatedClient& c, Arm a);
+// The walk: Next once it arrived (arrivedAt set).
+Stage WalkStep(SeatedClient& c, Arm a);
+// The seat through the game's own verb, then the host's grant: Next once the local peer is the ATV's seat in the lane.
+Stage SitStep(SeatedClient& c, Arm a, void* player, void* atv, uint8_t self);
+// A walk still walking is cancelled.
+void WalkCancel(SeatedClient& c);
 
 // The damage arms (`gate`, `owner`, `trap`): the client sits in the world's ATV and the host's blast, the client's kill
 // or the host's story-event trap is judged on the owner's copy and the host's table (atv_health_drill_damage.cpp). They
