@@ -1,7 +1,8 @@
 // coop/world/explosion_parking.h -- the explosion copy on a client writes nothing in the world but its own
-// player's damage and the scorch grime: the four interface verbs it calls on anything but this machine's own
-// player are refused, its rune check is refused, and its radial force is narrowed to pawns. The watches are
-// installed from the load watchers; every refusal acts only on an active client session.
+// player's damage, the damage of an ATV whose tick this client owns (addDamage and exploded) and the scorch grime:
+// the four interface verbs it calls on anything else are refused, its rune check is refused, and its radial force is
+// narrowed to pawns. The watches are installed from the load watchers; every refusal acts only on an active client
+// session.
 #pragma once
 
 #include <cstdint>

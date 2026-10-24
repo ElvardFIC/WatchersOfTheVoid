@@ -268,6 +268,7 @@ set(VOTVCOOP_SOURCES
     src/coop/interactables/atv_condition_sync.cpp
     src/coop/interactables/atv_corrector.cpp
     src/coop/interactables/atv_hit_guard.cpp
+    src/coop/interactables/atv_damage_gate.cpp
     src/coop/interactables/drone_sync.cpp
     src/coop/items/coingun_sync.cpp
     src/coop/items/coingun_arbiter.cpp

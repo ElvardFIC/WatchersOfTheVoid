@@ -191,6 +191,8 @@ void InstallHitGuard() {
 
 void SetActive(bool active) { g_guardActive.store(active, std::memory_order_release); }
 
+bool Active() { return g_guardActive.load(std::memory_order_acquire); }
+
 bool Armed() { return g_hitGuardArmed.load(std::memory_order_relaxed); }
 
 bool Owns(void* actor) {

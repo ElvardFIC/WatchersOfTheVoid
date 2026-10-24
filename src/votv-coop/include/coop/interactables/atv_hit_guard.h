@@ -48,6 +48,10 @@ bool Owns(void* actor);
 // Arm/disarm the whole lane. False in single-player: the game must keep its own damage.
 void SetActive(bool active);
 
+// Is the lane armed right now, so that the owned set says who owns what? False in single-player and on every pump
+// tick that did not publish a set: a caller that reads "not owned" as "another copy owns it" asks this first.
+bool Active();
+
 // Did all seven delegates register? A lane that never armed runs INERT by design.
 // Callable from either context: the flag is atomic so that `Armed()` and `ReadCounters()` carry
 // the same contract as their siblings. It was a plain bool when this module was carved out of

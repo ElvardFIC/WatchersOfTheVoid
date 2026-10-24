@@ -16,6 +16,7 @@
 #include "atv_spawn_park.h"
 #include "coop/interactables/atv_authority.h"
 #include "coop/interactables/atv_corrector.h"
+#include "coop/interactables/atv_damage_gate.h"
 #include "coop/dev/atv_eject_drill.h"
 #include "coop/interactables/atv_condition_sync.h"
 #include "coop/interactables/atv_hit_guard.h"
@@ -417,6 +418,9 @@ bool IndexCurrent() { return g_indexGen == ue_wrap::world_identity::Generation()
 
 void Install(coop::net::Session* session) {
     g_session.store(session, std::memory_order_release);
+    // First, before the latch: the damage gate has its own, and registers its watches by name on every pump tick
+    // until they are live, whether or not the ATV class has loaded.
+    coop::atv_damage_gate::Install();
     // Install is the per-tick ensure path (net_pump re-calls it until the class loads), latched so
     // the one-time registration happens once.
     if (!g_installed && A::EnsureResolved()) {
@@ -815,19 +819,23 @@ void OnDisconnect() {
     g_blockRefusals.Clear();
     const auto c  = coop::atv_corrector::ReadCounters();
     const auto hg = coop::atv_hit_guard::ReadCounters();
+    const auto dg = coop::atv_damage_gate::ReadCounters();
     if (n > 0)
         UE_LOGI("atv: OnDisconnect -- cleared %zu ATV(s) (brains restored; spawned mirrors destroyed); "
                 "hit guard: %s, %llu neutered / %llu allowed / %llu UNRESOLVED; "
+                "damage gate (addDamage/exploded/explode): cancelled %llu/%llu/%llu, ran %llu/%llu/%llu; "
                 "corrector: %llu nudged / %llu warped "
                 "/ %llu cut-on-stall / %llu parked-replace",
                 n, hg.armed ? "armed" : "NEVER ARMED",
                 static_cast<unsigned long long>(hg.neutered),
                 static_cast<unsigned long long>(hg.allowed),
                 static_cast<unsigned long long>(hg.unresolved),
+                dg.cancelled[0], dg.cancelled[1], dg.cancelled[2], dg.ran[0], dg.ran[1], dg.ran[2],
                 static_cast<unsigned long long>(c.corrections),
                 static_cast<unsigned long long>(c.warps),
                 static_cast<unsigned long long>(c.stallWarps),
                 static_cast<unsigned long long>(c.restPlaces));
+    coop::atv_damage_gate::Reset();
     AU::LogSummary();
     AU::Reset();
 }
@@ -835,6 +843,17 @@ void OnDisconnect() {
 bool OwnsTick(void* actor) {
     // The set, the latch and the answer live with the collision guard (atv_hit_guard::Owns).
     return coop::atv_hit_guard::Owns(actor);
+}
+
+bool IsIndexed(void* actor) {
+    if (!actor || !IndexCurrent()) return false;   // a stale-generation index holds another world's ATVs
+    for (const auto& kv : g_atvs)
+        if (kv.second.actor == actor) return R::IsLiveByIndex(kv.second.actor, kv.second.idx);
+    return false;
+}
+
+bool NonOwnerCopy(void* actor) {
+    return coop::atv_hit_guard::Active() && IsIndexed(actor) && !OwnsTick(actor);
 }
 
 // Whether a remote peer occupies this ATV; the mount deny reads it. The occupant is the host's table, stamped.

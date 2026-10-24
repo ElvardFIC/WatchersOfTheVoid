@@ -126,6 +126,15 @@ void* ActorSeatedBy(uint8_t slot);
 // an instrumented run can state which side of the mirror each sample came from. Game thread.
 bool OwnsTick(void* actor);
 
+// Does the lane hold `actor` as an ATV: a live entry of this world's index (any ATV_C, the witch car included). Game
+// thread.
+bool IsIndexed(void* actor);
+
+// Is `actor` an indexed ATV whose tick ANOTHER copy owns? True only while the collision guard is active (an inactive
+// guard means the lane is not deciding, so every copy runs as it does without the mod), the ATV is indexed and this
+// peer does not own its tick. Game thread.
+bool NonOwnerCopy(void* actor);
+
 // For the ATV spawn drill, CLIENT, game thread; each counts this session and starts over at a disconnect: the
 // announces answered by a copy the world already held, the mirrors this peer fresh-spawned, the actors
 // destroyed for the host's AtvDestroy or its set, the host's sets applied, the drill's deliberate parks, the

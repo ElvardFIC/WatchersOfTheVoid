@@ -3,6 +3,7 @@
 #include "coop/world/explosion_parking.h"
 
 #include "coop/element/registry.h"
+#include "coop/interactables/atv_sync.h"
 #include "coop/net/protocol.h"
 #include "coop/net/session.h"
 #include "coop/player/players_registry.h"
@@ -45,6 +46,7 @@ UE_FACT_FN(kRowRuneCheck, "explosion", L"explosion_C", L"runeCheck", Declared);
 UE_FACT_FN(kRowNarrowBeginPlay, "explosion", L"explosion_C", L"ReceiveBeginPlay", Declared);
 
 constexpr int kVerbs = 4;
+constexpr int kVerbsOwnerTakes = 2;    // addDamage and exploded: the first two rows of kTable
 constexpr int kTagVerb0 = 0x45585630;  // 'EXV0'..'EXV3'
 constexpr int kTagRune = 0x45585243;   // 'EXRC'
 constexpr int kTagNarrow = 0x45584E52; // 'EXNR'
@@ -140,6 +142,9 @@ SG::Verdict OnVerbPre(const SG::Call& c) {
     if (!c.callerFunction || !R::NameEquals(R::NameOf(c.callerFunction), L"ExecuteUbergraph_explosion"))
         return SG::Verdict::Run;
     if (IsOwnPlayer(c.object)) return SG::Verdict::Run;
+    // An ATV whose tick this client owns takes the blasts that reach it: its copy authors the ATV's damage. The other
+    // two verbs stay refused (their ATV_C bodies are empty).
+    if (verb < kVerbsOwnerTakes && coop::atv_sync::OwnsTick(c.object)) return SG::Verdict::Run;
     ++g_counters.verbRefused[verb];
     void* cls = c.object ? R::ClassOf(c.object) : nullptr;
     if (c.callerObject && FirstRefusal(c.callerObject, verb, cls))
