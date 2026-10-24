@@ -20,6 +20,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <limits>
+#include <string>
 
 namespace coop::dev::explosion_drill::detail {
 
@@ -83,18 +84,9 @@ constexpr float kCoastForce = 1000.f;
 
 // A native-shaped host birth: no lane scope, so the capture sees it as the game's own. False (said) on failure.
 bool HostBlast(X::Cls c, const Vec& b, float damage, float force) {
-    if (!X::ResolveNow(c)) {
-        char what[32];
-        std::snprintf(what, sizeof(what), "class %d", static_cast<int>(c));
-        HostAbandon(what);
-        return false;
-    }
-    const float loc[3] = {b.X, b.Y, b.Z}, rot[3] = {0.f, 0.f, 0.f}, scale[3] = {1.f, 1.f, 1.f};
-    const X::Params p{damage, 1000.f, force, 0.f, 0.f, 0.f, 0.f, 0, true, false};
-    if (!X::SpawnDeferred(c, loc, rot, scale, p, nullptr)) {
-        char what[48];
-        std::snprintf(what, sizeof(what), "blast class %d did not spawn", static_cast<int>(c));
-        HostAbandon(what);
+    std::string why;
+    if (!SpawnNativeBlast(c, b, damage, force, &why)) {
+        HostAbandon(why.c_str());
         return false;
     }
     Info("host blast class=%d", static_cast<int>(c));

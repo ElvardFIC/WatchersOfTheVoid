@@ -21,11 +21,13 @@
 #include "ue_wrap/engine/engine_attach.h"
 #include "ue_wrap/engine/engine_mainplayer.h"
 #include "ue_wrap/engine/engine_pawn.h"
+#include "ue_wrap/world/explosion.h"
 #include "ue_wrap/world/world_singleton.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <string>
 #include <vector>
 
@@ -127,6 +129,24 @@ std::string HeldClassName(void* player) {
     if (!E::ReadMainPlayerGrabState(player, gs) || !gs.holdingActor || !R::IsLive(gs.holdingActor)) return "none";
     const std::wstring w = R::ClassNameOf(gs.holdingActor);
     return std::string(w.begin(), w.end());
+}
+
+bool SpawnNativeBlast(ue_wrap::explosion::Cls c, const Vec& at, float damage, float force, std::string* why) {
+    namespace X = ue_wrap::explosion;
+    char what[48];
+    if (!X::ResolveNow(c)) {
+        std::snprintf(what, sizeof(what), "class %d", static_cast<int>(c));
+        if (why) *why = what;
+        return false;
+    }
+    const float loc[3] = {at.X, at.Y, at.Z}, rot[3] = {0.f, 0.f, 0.f}, scale[3] = {1.f, 1.f, 1.f};
+    const X::Params p{damage, 1000.f, force, 0.f, 0.f, 0.f, 0.f, 0, true, false};
+    if (!X::SpawnDeferred(c, loc, rot, scale, p, nullptr)) {
+        std::snprintf(what, sizeof(what), "blast class %d did not spawn", static_cast<int>(c));
+        if (why) *why = what;
+        return false;
+    }
+    return true;
 }
 
 // Holds the switches; the name of the first member that cannot be read (said once per member), else null. The acting

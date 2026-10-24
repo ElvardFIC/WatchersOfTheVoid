@@ -15,6 +15,7 @@
 #include "coop/world/explosion_sync.h"
 
 #include "ue_wrap/core/cached_obj_ref.h"
+#include "ue_wrap/world/explosion.h"
 
 #include <chrono>
 #include <cstddef>
@@ -158,6 +159,10 @@ bool WriteInt(void* obj, const wchar_t* name, int value);
 
 // The held leg's start: its class loaded, the item taken into the hand.
 void BeginItem(const LegDef& d);
+
+// A native-shaped birth of explosion class `c` at `at`: no lane scope, so the capture sees it as the game's own. False,
+// with `why` (when non-null) naming the step, when the class does not resolve or the spawn fails. Game thread.
+bool SpawnNativeBlast(ue_wrap::explosion::Cls c, const Vec& at, float damage, float force, std::string* why);
 
 // Holds the acting player's startInvinc and the gamemode's unlockFungunsInStory (the host's role: the gamemode's
 // alone); the name of the first member that cannot be read, else null. Unguard puts back what Guard held.
