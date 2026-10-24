@@ -4,11 +4,22 @@
 
 #pragma once
 
+#include <cstdint>
 #include <string>
 
 namespace coop::dev::drill_chat {
 
+// Queues the line. The host refuses a slot's line inside 0.66 s of its last, with no answer (chat_rate.h), so a drill's
+// lines leave one at a time, each when the host's own rule would take it: Pump sends them.
 void Say(const std::string& line);
+
+// Once per tick, `nowMs` the net clock's milliseconds: sends the oldest queued line when no sent line awaits its echo
+// (the host's commit in the chat feed) and chat_rate::Allows it, the budget's last talk being the echo's time. A line
+// with no echo in a few seconds is sent again, a few times, then dropped with a WARN: it arrives later or says so.
+void Pump(uint64_t nowMs);
+
+// Empties the queue, the wait for an echo and the budget: a session's lines belong to that session.
+void Reset();
 
 // True when a LIVE chat row holds `needle`. A row seeded at the join sits in the retained tier and never counts, so a
 // peer acts on what the other said after it joined, never on the record of an earlier life.

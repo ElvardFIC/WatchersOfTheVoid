@@ -21,9 +21,8 @@ constexpr uint64_t kTalkIntervalMs     = 660;  // CanPlayerTalk's talk_interval,
 
 coop::roster_ledger::PerSlotState<TalkBudget> g_budget;
 
-}  // namespace
-
-TalkVerdict Attempt(TalkBudget& b, uint64_t nowMs) {
+// One attempt on `b`, which it advances: the single place the two tests live, so Attempt and Allows cannot drift.
+TalkVerdict Judge(TalkBudget& b, uint64_t nowMs) {
     // CanPlayerTalk (player.cpp:8809-8818): the interval, then the bucket, both on every attempt.
     const bool intervalOk = b.lastTalkMs == 0 || b.lastTalkMs + kTalkIntervalMs < nowMs;
 
@@ -49,6 +48,15 @@ TalkVerdict Attempt(TalkBudget& b, uint64_t nowMs) {
     if (!bucketOk) return TalkVerdict::Bucket;
     b.lastTalkMs = nowMs;  // NotePlayerTalked, after Host_Say (client.cpp:850-851)
     return TalkVerdict::Talk;
+}
+
+}  // namespace
+
+TalkVerdict Attempt(TalkBudget& b, uint64_t nowMs) { return Judge(b, nowMs); }
+
+bool Allows(const TalkBudget& b, uint64_t nowMs) {
+    TalkBudget copy = b;
+    return Judge(copy, nowMs) == TalkVerdict::Talk;
 }
 
 TalkVerdict AttemptLine(uint8_t slot, uint64_t nowMs) { return Attempt(g_budget[slot], nowMs); }
@@ -117,6 +125,33 @@ bool RunChatRateSelftest() {
         for (int i = 0; i < 20; ++i) Attempt(b, t0 + 100 * 3100ull);
         check(paced && near(b.tier1, -2.5f) && near(b.tier2, 0.0f),
               "a paced run floors tier 2 at 0, then a burst floors tier 1 at -2.5");
+    }
+
+    {
+        // Allows is Attempt's answer with no mutation: allowed, interval-refused and bucket-refused.
+        TalkBudget fresh{};
+        const TalkBudget before = fresh;
+        const bool freshAllows = Allows(fresh, t0);
+        check(freshAllows && fresh.lastAttemptMs == before.lastAttemptMs && fresh.lastTalkMs == before.lastTalkMs &&
+                  near(fresh.tier1, before.tier1) && near(fresh.tier2, before.tier2),
+              "Allows on a fresh budget is true and leaves the budget as it was");
+        TalkBudget talked;
+        Attempt(talked, t0);
+        check(!Allows(talked, t0 + 660) && !Allows(talked, t0 + 100) && Allows(talked, t0 + 670),
+              "Allows is false inside the interval and true just past it");
+        TalkBudget drained;
+        Attempt(drained, t0);
+        Attempt(drained, t0 + 900);
+        Attempt(drained, t0 + 1800);
+        check(!Allows(drained, t0 + 2700), "Allows is false when the bucket refuses");
+        bool agree = true;
+        for (const TalkBudget* base : {&fresh, &talked, &drained, &afterTen}) {
+            for (uint64_t dt : {0ull, 100ull, 660ull, 670ull, 900ull, 2700ull, 3100ull, 24000ull, 25000ull}) {
+                TalkBudget a = *base;
+                agree = agree && (Allows(*base, t0 + 3000000 + dt) == (Attempt(a, t0 + 3000000 + dt) == V::Talk));
+            }
+        }
+        check(agree, "Allows agrees with Attempt's verdict from every sampled state");
     }
 
     if (pass == total) {

@@ -61,6 +61,8 @@
 #include "coop/dev/stats_probe.h"  // [dev] every player stat read, written and restored in one frame, and the game's status effects added, listed and removed
 #include "coop/dev/stat_order_drill.h"  // [dev] the host orders and queries a client's stats and effects and checks every answer
 #include "coop/dev/chat_drill.h"  // [dev] the chat checks, judged in memory
+#include "coop/dev/drill_chat.h"  // [dev] the drills' queued chat lines, paced to the host's talk rule
+#include "coop/net/net_clock.h"
 #include "coop/dev/l10n_drill.h"  // [dev] the interface language, judged on each peer
 #include "coop/dev/ban_drill.h"  // [dev] the host bans a joined client by the moderation verb
 #include "coop/dev/bug_report_drill.h"  // [dev] a bug report is saved and its zip judged in memory
@@ -186,6 +188,7 @@ void EndSession() {
     coop::dev::throw_drill::OnDisconnect();  // [dev] the backpack and its copy belong to one session
     coop::dev::atv_spawn_drill::OnDisconnect();  // [dev] the spawn belongs to one session
     coop::dev::atv_health_drill::OnDisconnect();  // [dev] the phases and the walk belong to one session
+    coop::dev::drill_chat::Reset();  // [dev] the queued lines and the talk budget belong to one session
     coop::dev::fall_drill::OnDisconnect();  // [dev] the drop belongs to one session
     coop::dev::remover_drill::OnDisconnect();  // [dev] the props and the toolgun belong to one session
     coop::dev::prop_act_drill::OnDisconnect();  // [dev] the steps, the target and the walk belong to one session
@@ -253,6 +256,7 @@ void TickLoadWindow(coop::net::Session& session) {
 }
 
 void TickDrills(coop::net::Session& session) {
+    coop::dev::drill_chat::Pump(coop::net::NowMs());  // [dev] the drills' queued chat lines, one per the host's talk pace (an empty-queue check when idle)
     coop::dev::rng_roll_census::Tick();  // [dev] the roll censuses (a single bool read when off)
     coop::dev::server_breaker_census::Tick();  // [dev] the server breaker census (a single bool read when off)
     coop::dev::desk_diag::Tick();  // [dev] desk divergence census (single bool read when off; self-throttled)
