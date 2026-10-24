@@ -48,6 +48,7 @@ struct AtvEntry {
     float    lastBlockSpeed = 0.f;   // the last admitted block's linear speed, cm/s (a drill reads it)
     bool     haveRestPos  = false;
     bool     lastGrabbed  = false;   // the last block's grabbed bit: the syncer carries it
+    bool     snapshotReached = false; // client: a connect-snapshot block (adopt != 0) reached the corrector for this ATV (a drill reads it)
     bool     stampDue     = false;   // the table changed: one stamped block goes to every ready client
     uint64_t stampRetryMs = 0;       // host: before this a stamp whose payload did not read is not tried again
     // The story event's trap (ATV_C's `trap`), the host's state carried in the stamp's bit 4 (kAtvTrap). Cleared with

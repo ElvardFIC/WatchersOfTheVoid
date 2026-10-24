@@ -45,9 +45,16 @@ using coop::atv_sync::TableView;
 using coop::net::AtvRefusal;
 
 constexpr uint8_t  kObserverSlot = 2;
-constexpr uint64_t kCarryBlocks = 30;   // 3 s of the syncer's stream (3x the rest window), counted not clocked
+// Counted not clocked: the stream sends a block every 50 ms (kDriveSendMs), the rest rule needs kRestMs = 1 s of rest and
+// the host's pass runs once a second, so a hand-back with the grab bit ignored lands 1.05-2.05 s after the first still
+// block. 70 blocks (about 3.5 s) cover that whole span, so the carry_back red fails in every phase of the pass and a
+// hand-back broken to fire late still shows inside the window.
+constexpr uint64_t kCarryBlocks = 70;
 constexpr int      kBurst = 100;        // blocks the stream_pace client sends in one tick
 constexpr uint32_t kBucket = 16;        // the stream bucket's burst: what one tick's blocks may carry through
+// The host's tolerance on the burst's paced count: the bucket refills one token per 25 ms (kStreamBudget, 40/s) while
+// the burst is received, so a few more than kBucket pass; 10 covers 250 ms of refill. A missing bucket paces none.
+constexpr uint32_t kHostPaceSlack = 10;
 // The observer's tolerance on its estimate of the normal stream over the burst's window; an unpaced burst clears it by
 // kBurst - kBucket - kPaceSlack blocks.
 constexpr uint32_t kPaceSlack = 15;
@@ -110,7 +117,7 @@ void AfterPark(Arm a) {
     }
 }
 
-// carry_still: from the client's `holding` line, 30 blocks of the carry standing still and no hand-back while it holds.
+// carry_still: from the client's `holding` line, 70 blocks of the carry standing still and no hand-back while it holds.
 void HostHeld(Arm a, const TableView* t, bool due) {
     PHost& h = g_ph;
     if (!h.saw) {
@@ -138,7 +145,7 @@ void HostHeld(Arm a, const TableView* t, bool due) {
         char got[96];
         std::snprintf(got, sizeof(got), "carried_still +%llu syncer %u", U(still),
                       t ? static_cast<unsigned>(t->syncerSlot) : 0xFFFFu);
-        HostFail(a, "the carry never showed 30 still blocks", got, "carried_still +30 syncer 1");
+        HostFail(a, "the carry never showed 70 still blocks", got, "carried_still +70 syncer 1");
     }
 }
 
@@ -237,7 +244,7 @@ void HostPaced(Arm a, bool due) {
     const std::string got = "stream_paced " + Plus(paced) + " not_syncer " + Plus(notSyncer);
     if (notSyncer != 0)
         return HostFail(a, "a block of the seated syncer was refused as not its own", got, "not_syncer +0");
-    if (paced >= static_cast<uint64_t>(kBurst) - kBucket) {
+    if (paced >= static_cast<uint64_t>(kBurst) - kBucket - kHostPaceSlack) {
         DC::Say(PhaseLine("paced"));
         char nums[48];
         std::snprintf(nums, sizeof(nums), "stream_paced=%llu", U(paced));
@@ -245,7 +252,7 @@ void HostPaced(Arm a, bool due) {
     }
     if (due) Latch(h.saw, ClientLine("burst"));
     if (h.saw || Past(h.run, kFailBound))
-        HostFail(a, "the burst was not paced by the bucket", got, "stream_paced +84");
+        HostFail(a, "the burst was not paced by the bucket", got, "stream_paced +74");
 }
 
 // ---- the client (slot 1) and the observer (slot 2) ----
@@ -440,16 +447,15 @@ void ObserverJoin(PPeer& p, Arm a, bool due) {
     if (ReadyAndKey(p, a, due)) {
         TableView t;
         if (coop::atv_sync::ReadTable(p.key, t)) {
-            const uint32_t placed = coop::atv_sync::SnapshotPlaced();
             char got[96];
-            std::snprintf(got, sizeof(got), "occupant %u syncer %u snapshot_placed %u",
-                          static_cast<unsigned>(t.occupantSlot), static_cast<unsigned>(t.syncerSlot), placed);
-            if (placed < 1 || t.occupantSlot != kSlot || t.syncerSlot != kSlot)
-                return PFail(p, a, "the connect snapshot did not give the seat and the pose", got,
-                             "snapshot_placed >= 1 occupant 1 syncer 1");
+            std::snprintf(got, sizeof(got), "occupant %u syncer %u snapshot_reached %d",
+                          static_cast<unsigned>(t.occupantSlot), static_cast<unsigned>(t.syncerSlot),
+                          t.snapshotReached ? 1 : 0);
+            if (!t.snapshotReached || t.occupantSlot != kSlot || t.syncerSlot != kSlot)
+                return PFail(p, a, "the connect snapshot did not give the spawned ATV's seat and pose", got,
+                             "snapshot_reached 1 occupant 1 syncer 1");
             char nums[64];
-            std::snprintf(nums, sizeof(nums), "boot_to_table_ms=%lld snapshot_placed=%u", Ms(p.bootAt, Clock::now()),
-                          placed);
+            std::snprintf(nums, sizeof(nums), "boot_to_judge_ms=%lld", Ms(p.bootAt, Clock::now()));
             return Pass(p.role, a, p.run, nums);
         }
     }
@@ -546,7 +552,7 @@ void PeersClientTick(coop::net::Session* s, Arm a) {
     uint8_t self = 0;
     if (observer) {
         PPeer& p = g_po;
-        if (p.bootAt == Clock::time_point{}) p.bootAt = Clock::now();   // boot_to_table_ms counts from the first tick
+        if (p.bootAt == Clock::time_point{}) p.bootAt = Clock::now();   // boot_to_judge_ms counts from the first tick
         if (p.run.done) return;
         player = coop::players::Registry::Get().Local();
         self = kObserverSlot;

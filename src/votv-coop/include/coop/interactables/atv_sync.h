@@ -130,6 +130,7 @@ struct TableView {
     uint8_t syncerSlot = 0;
     float   lastBlockSpeed = 0.f;
     bool    localSeated = false;
+    bool    snapshotReached = false;  // client: this ATV's own connect-snapshot block reached the corrector
     bool    trap = false;
     bool    blown = false;
     uint8_t blownBy = 0xFF;
@@ -172,10 +173,10 @@ uint32_t DeliberateParks();
 size_t ParkPending();
 std::vector<std::wstring> ReceivedSpawnKeys();
 
-// For the ATV health drill, CLIENT, game thread; each counts this session and starts over at a disconnect: the
-// blocks the host re-sent for a client syncer (kAtvFromSyncer) that this client placed, and the connect
-// snapshot's blocks (adopt != 0) it placed with the snap.
+// For the ATV health drill, CLIENT, game thread; counts this session and starts over at a disconnect: the blocks the
+// host re-sent for a client syncer (kAtvFromSyncer) that reached the corrector, counted on the place path before
+// ApplyCorrection (which may still refuse them: corrector off, transform unreadable, teleport failed). The connect
+// snapshot is read per ATV instead: TableView::snapshotReached.
 uint32_t AppliedFromSyncer();
-uint32_t SnapshotPlaced();
 
 }  // namespace coop::atv_sync

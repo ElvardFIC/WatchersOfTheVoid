@@ -314,8 +314,10 @@ bool AdmitBlock(AtvEntry& e, const coop::net::AtvStatePayload& p, uint8_t sender
     const FVector pos{p.x, p.y, p.z};
     const FVector lin{p.linVelX, p.linVelY, p.linVelZ};
     const bool grabbedBit = (p.stateBits & 0x4) != 0;
-    // The developer red arm of the ATV health drill's carry_still: the grab bit is ignored by the rest test, so a
-    // carry standing still is handed back while held and the drill's `held` phase must fail. Resolved once.
+    // The developer red arm of the ATV health drill's carry_still: the grab bit is ignored, so a carry standing still
+    // is handed back while held and the drill's `held` phase must fail. It clears the bit for the rest test AND for
+    // lastGrabbed below, since the hand-back holds two redundant grab terms (the rest test and !lastGrabbed in
+    // RunPass); clearing one would leave the other blocking it. Resolved once.
     static const bool s_redCarryBack =
         coop::config::ResolveEnum(coop::config_registry::rows::atv_health_red) == "carry_back";
     const bool grabbed = grabbedBit && !s_redCarryBack;

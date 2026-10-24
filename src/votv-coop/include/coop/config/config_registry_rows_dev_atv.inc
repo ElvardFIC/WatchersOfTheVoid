@@ -39,11 +39,11 @@ CFG_ENUM(atv_health_drill, "atv_health_drill", "dev", "off",
     "story event's trap; the trap must reach the client's copy and fire there as one request, and a second kill after "
     "the host's blast must be accepted. spawned: the host spawns an ATV beside the players and says its key; the "
     "client waits for it in its table (the DONE line prints how long), walks to it and sits. carry_still: the host spawns "
-    "an ATV, the client grabs it and holds it still; the host must count 30 still blocks and not hand it back while held, "
+    "an ATV, the client grabs it and holds it still; the host must count 70 still blocks and not hand it back while held, "
     "then hand it back once released. synced_peer (three peers): the client carries the spawned ATV and the observer "
     "(slot 2) grabs it too; the host must refuse the second client's takeover as synced, and the observer must lose the "
     "grab. join (three peers): the client sits in the spawned ATV and the observer joins afterwards; its table must "
-    "show the seat and the syncer from the connect snapshot. stream_pace (three peers): the seated client sends 100 "
+    "show the seat and the syncer, and the spawned ATV's own connect-snapshot block must have reached the corrector.stream_pace (three peers): the seated client sends 100 "
     "blocks in one tick; the host's bucket must pace most of them and the observer must see no more than the burst "
     "budget over the normal stream. Each peer prints one DONE line on a "
     "pass, the host's with the times it measured. Run it on a fresh host world; only the client in slot 1 acts.")

@@ -116,9 +116,10 @@ bool     g_installed    = false;  // latches the one-time index; Install is the 
 uint64_t g_lastPassMs   = 0;      // the host's last syncer pass
 uint64_t g_lastHostTickMs = 0;    // the host's previous Tick: a longer gap is a stall of this machine
 bool     g_drillMute    = false;  // dev: the client syncer's stream is held back (SetDrillMute)
-// CLIENT, for the ATV health drill: the syncer's blocks this client placed, and the connect snapshot's.
+// CLIENT, for the ATV health drill: the syncer's blocks and the connect snapshot's that reached the corrector (counted
+// on the place path before ApplyCorrection, which may still refuse them).
 uint32_t g_appliedFromSyncer = 0;
-uint32_t g_snapshotPlaced    = 0;
+uint32_t g_snapshotReached   = 0;
 // A block refused at the door of OnReliable (an empty key, a non-finite pose): said once per window, not per packet.
 coop::net::RefusalTally g_blockRefusals{"atv_sync"};
 
@@ -417,7 +418,7 @@ void OnReliable(const coop::net::AtvStatePayload& payload, uint8_t senderPeerSlo
                        payload.adopt != 0;
     if (!place) return;
     if ((payload.stateBits & coop::net::kAtvFromSyncer) != 0) ++g_appliedFromSyncer;
-    if (payload.adopt != 0) ++g_snapshotPlaced;
+    if (payload.adopt != 0) { ++g_snapshotReached; e.snapshotReached = true; }
     coop::atv_corrector::ApplyCorrection(e, payload, /*snap*/ payload.adopt != 0);
     // The condition block applies after the pose, behind the same gates; every block a client receives is the
     // host's, and its presence is consumed only for the host's own copy (atv_condition_sync.h).
@@ -429,7 +430,6 @@ void OnReliable(const coop::net::AtvStatePayload& payload, uint8_t senderPeerSlo
 coop::net::Session* LaneSession() { return g_session.load(std::memory_order_acquire); }
 
 uint32_t AppliedFromSyncer() { return g_appliedFromSyncer; }
-uint32_t SnapshotPlaced() { return g_snapshotPlaced; }
 
 const AtvEntry* FindEntry(const std::wstring& key) {
     auto it = g_atvs.find(key);
@@ -738,7 +738,7 @@ void OnDisconnect() {
                 "hit guard: %s, %llu neutered / %llu allowed / %llu UNRESOLVED; "
                 "damage gate (addDamage/exploded/explode): cancelled %llu/%llu/%llu, ran %llu/%llu/%llu; "
                 "corrector: %llu nudged / %llu warped "
-                "/ %llu cut-on-stall / %llu parked-replace; placed from the syncer %u / from the snapshot %u",
+                "/ %llu cut-on-stall / %llu parked-replace; reached the corrector from the syncer %u / from the snapshot %u",
                 n, hg.armed ? "armed" : "NEVER ARMED",
                 static_cast<unsigned long long>(hg.neutered),
                 static_cast<unsigned long long>(hg.allowed),
@@ -747,8 +747,8 @@ void OnDisconnect() {
                 static_cast<unsigned long long>(c.corrections),
                 static_cast<unsigned long long>(c.warps),
                 static_cast<unsigned long long>(c.stallWarps),
-                static_cast<unsigned long long>(c.restPlaces), AppliedFromSyncer(), SnapshotPlaced());
-    g_appliedFromSyncer = g_snapshotPlaced = 0;
+                static_cast<unsigned long long>(c.restPlaces), AppliedFromSyncer(), g_snapshotReached);
+    g_appliedFromSyncer = g_snapshotReached = 0;
     coop::atv_damage_gate::Reset();
     AU::LogSummary();
     AU::Reset();
@@ -804,6 +804,7 @@ bool ReadTable(const std::wstring& key, TableView& out) {
     out.syncerSlot = it->second.syncerSlot;
     out.lastBlockSpeed = it->second.lastBlockSpeed;
     out.localSeated = it->second.localSeated;
+    out.snapshotReached = it->second.snapshotReached;
     auto* s = g_session.load(std::memory_order_acquire);
     out.trap = s && s->role() == coop::net::Role::Host ? it->second.hostTrap : it->second.stampTrap;
     out.blown = it->second.blown;
