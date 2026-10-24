@@ -45,8 +45,9 @@ inline constexpr auto              kFailBound = std::chrono::seconds(180);      
 inline constexpr auto              kHostFirstBound = std::chrono::seconds(360); // the client's walk and its act
 inline constexpr int               kWalkDeadlineS = 300;
 inline constexpr float             kSitReachCm = 400.f;     // the director's walk ends this close to the ATV's root
-inline constexpr float             kGrabReachCm = 150.f;    // the use key's reach
-
+// The grab walk ends well inside the use key's reach: this is measured to the ATV's root, the game's to its body
+// (stopped 116-119 cm away the grab took; at 144 it did not).
+inline constexpr float             kGrabReachCm = 100.f;
 // One role's phase: the arm's own enum value, its name for the lines, and when it began. `done` once the role has
 // printed its verdict.
 struct Run {
