@@ -84,13 +84,21 @@ the prop lane.
 |---|---|---|
 | `AtvState` | the author, relayed; the host when idle | key, pose, rotation, velocities, the seat, the author, the condition block, an adopt flag |
 | `AtvRelease` | the author | authority lost, nothing else |
-| `AtvSpawn`, `AtvDestroy` | the host to all | a runtime ATV's synthetic key and birth; its teardown |
+| `AtvSpawn`, `AtvDestroy` | the host to all | an ATV's key, class and pose; its teardown |
+| `AtvSetComplete` | the host to a joiner | the count of distinct keys its connect snapshot named |
 
 ## Late join
 
-Every indexed ATV is snapshotted to the joiner with its pose, velocity, author and condition, so
-an ATV airborne at the join arrives moving and lands, and the joiner's mirror is cut to the pose
-on its first packet.
+The joiner loads the host's save first, so it already holds the ATVs the save placed. Once its
+save has finished loading, the host walks every ATV its world holds and announces each by key, then
+closes the set with `AtvSetComplete`. The joiner adopts the copy it holds under that key and spawns
+a mirror only when it holds none, so it ends with exactly one actor per host ATV. It then removes
+every ATV the set did not name, such as one the host lost after the save was taken. Arrivals that
+come before the joiner's world is ready wait in a park. A set the host cannot vouch for (an ATV
+still loading, a send that failed) is withheld, which removes nothing; the host owes it and
+retries. Each ATV's pose, velocity, author and condition follow, so an ATV airborne at the join
+arrives moving and lands. `[V]` the ATV spawn drill's run, join, park and divergence arms, each red
+arm failing as designed (`coop/dev/atv_spawn_drill`).
 
 ## Known limits
 

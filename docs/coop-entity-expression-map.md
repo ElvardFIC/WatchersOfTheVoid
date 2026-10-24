@@ -55,6 +55,7 @@ are peer-gated. `[V]`
 | a deployed hook or rope | the fire input, inside the Blueprint | the thrower polls its own `activeHook` field | `(owner slot, sequence)` while the thrower holds it, a host-minted save key once anchored |
 | an explosion (`explosion_C`) | a Blueprint's deferred spawn (a projectile, a fuse, a burn, a broken prop, a device) | on the host the capture watch on its begin-play; on a client the deferred-spawn post, which dissolves it after the request half has read its source | none: the host's actor is the only one and each client spawns a copy of its own from `ExplosionSpawn` |
 | a remote player's puppet (`mainPlayer_C`, unpossessed) | `RemotePlayer::Spawn` -> `engine::SpawnActor` | registered between its deferred spawn and its `FinishSpawning`, by the before-finish callback; unregistered after its destroy (`DestroySlot`) | the peer's slot in `players::Registry` |
+| an ATV (`ATV_C` and its descendants, the witch car included) | the save; a runtime spawn | the object scan's ATV lane (`atv_index`); the host announces each by key (`AtvSpawn`) | the game's own key, which the save carries; a runtime one gets a synthetic key at its host birth |
 | status effects (effect_C) | each peer's own, from its gamemode's addEffect; never sent | -- | none: a per-process actor; at a join the host's effect records are reset out of the joiner's save at the join |
 
 ## Keyed props
@@ -375,6 +376,7 @@ Every place two seams can express one actor, and what deduplicates it:
 | a joiner's save-loaded Bad Sun copy and the seed's present, or the host's live present | the apply counts the live copies first: one copy is left alone, none is spawned, two are logged and not repaired `[V]` (the drill's rejoin) |
 | a client's menu-spawned prop and the host's copy of it, spawned from the intent | the client's own actor IS the mirror: the host sets the client's key, and the echo resolves it back to that actor and converges its pose instead of minting a second `[V]` |
 | a client's own rocket, sticky bomb, held grenade or pipe bomb, or pilled burn: the client's birth of its explosion and the host's blast its request makes | one blast: the client's birth is dissolved and never spawns; the host's blast reaches every peer as `ExplosionSpawn`, the requester included `[V]` (the request drill's arms) |
+| a joiner's save-loaded ATV and the host's announce of the same ATV | the joiner resolves the announce by key (the lane's row, else the game's key map) and adopts the copy it holds; it spawns a mirror only for a key it holds none under, and the host's set edge (`AtvSetComplete`) removes the save's ATVs the host no longer holds `[V]` (`atv_spawn_drill`) |
 | a client's light on a salt rocket and the host's | one fuse: a client's copy never runs `fire()` (its gate refuses the light and asks); the host lights its copy and drives its flight `[V]` (`fire_ignite_drill`) |
 
 ## Needs a probe
