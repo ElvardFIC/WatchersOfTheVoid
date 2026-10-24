@@ -30,7 +30,7 @@ inline constexpr uint32_t kMagic = 0x564D5450u;
 // This file is past the 1500-line hard cap and stays there: it is the single-feature exception the
 // rule names. One wire format, whose enum, payload structs and static_asserts are read together;
 // splitting it would put a kind's number in one file and its bytes in another.
-inline constexpr uint16_t kProtocolVersion = 247;
+inline constexpr uint16_t kProtocolVersion = 248;
 
 // Default LAN port (overridable via multivoid.ini "net.port=").
 inline constexpr uint16_t kDefaultPort = 47621;
@@ -2540,8 +2540,8 @@ struct AtvStatePayload {
     uint8_t  syncerSlot;   // 1  -- who writes this ATV's pose and condition, assigned by the host: 0 = the
                            //      host itself, k = client slot k
     uint8_t  stateBits;    // 1  -- bit0=isDriven, bit1=brake, bit2=grabbed (the sender's grav hand holds it),
-                           //      bit3=kAtvFromSyncer
-    uint8_t  adopt;        // 1  -- 1 = host connect-snapshot (warp as is), 0 = live stream
+                           //      bit3=kAtvFromSyncer, bit4=kAtvTrap
+    uint8_t  adopt;       // 1  -- 1 = host connect-snapshot (warp as is), 0 = live stream
     // The condition block: the syncer's accumulators travel; a mirror's own accrual is held at zero,
     // so overwriting never races an irreversible act. Presence (tiresMask, hasSpare) is consumed
     // from the host's own copy only: a client's eject ships a mask bit whose wheel-prop birth
@@ -2569,6 +2569,10 @@ static_assert(sizeof(AtvStatePayload) == 148, "AtvStatePayload must be 148 bytes
 // host's own copy. A receiver applies the pose and condition of such a block to an ATV it does not sync; the host's
 // own copy takes effect only when the host is the syncer.
 constexpr uint8_t kAtvFromSyncer = 0x08;
+
+// stateBits bit 4: the host's own copy has its `trap` set (the story event's explosion). The host writes it in every
+// block it sends and ignores a client's bit; a client copy takes it from the stamp (atv_sync.cpp).
+constexpr uint8_t kAtvTrap = 0x10;
 
 // An ATV (AtvSpawn): the host ATV's own game Key and its class, so the receiver spawns the exact skin
 // under that Key. The Key is at most 31 chars (an ATV's is 22, or "ATV"); a receiver drops a longer one.

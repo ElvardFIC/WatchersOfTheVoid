@@ -31,6 +31,8 @@ int32_t g_isDrivenOff = -1;       // isDriven (0x05F7, bool)
 int32_t g_fuelOff     = -1;       // fuel     (0x05D4, float)
 int32_t g_healthOff   = -1;       // health   (0x05E4, float)
 int32_t g_brakeOff    = -1;       // Brake    (0x05D9, bool)
+int32_t g_trapOff     = -1;       // trap     (a bool bit: the byte, with its mask below)
+uint8_t g_trapMask    = 0;
 
 int32_t ResolveOff(void* cls, const wchar_t* name, int32_t fallback) {
     int32_t o = R::FindPropertyOffset(cls, name);
@@ -61,6 +63,12 @@ bool EnsureResolved() {
     g_fuelOff     = ResolveOff(cls, L"fuel",     0x05D4);
     g_healthOff   = ResolveOff(cls, L"health",   0x05E4);
     g_brakeOff    = ResolveOff(cls, L"Brake",    0x05D9);
+    // No fallback: a miss leaves the trap host-only, as it was before it travelled. The flag is a bit packed with its
+    // neighbours (inWater, floater), so its byte and mask are both resolved.
+    if (!R::FindBoolProperty(cls, L"trap", g_trapOff, g_trapMask) || g_trapOff < 0 || g_trapMask == 0) {
+        g_trapOff = -1;
+        UE_LOGW("atv: trap offset not found -- the story event's trap stays host-only");
+    }
 
     g_resolved.store(true, std::memory_order_release);
     UE_LOGI("atv: resolved ATV_C=%p Key@0x%04X Player@0x%04X isDriven@0x%04X fuel@0x%04X "
@@ -132,6 +140,19 @@ float GetHealth(void* atv) {
 bool GetBrake(void* atv) {
     if (!atv || g_brakeOff < 0) return false;
     return *reinterpret_cast<const bool*>(reinterpret_cast<const char*>(atv) + g_brakeOff);
+}
+
+bool ReadTrap(void* atv, bool& out) {
+    if (!atv || g_trapOff < 0) return false;
+    out = (*(reinterpret_cast<const uint8_t*>(atv) + g_trapOff) & g_trapMask) != 0;
+    return true;
+}
+
+bool WriteTrap(void* atv, bool v) {
+    if (!atv || g_trapOff < 0) return false;
+    uint8_t& byte = *(reinterpret_cast<uint8_t*>(atv) + g_trapOff);
+    byte = v ? static_cast<uint8_t>(byte | g_trapMask) : static_cast<uint8_t>(byte & ~g_trapMask);
+    return true;
 }
 
 bool TeleportRig(void* atv, const FVector& loc, const FRotator& rot) {

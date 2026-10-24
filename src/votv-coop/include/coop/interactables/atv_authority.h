@@ -54,7 +54,7 @@ bool AdmitBlock(coop::atv_sync::AtvEntry& e, const coop::net::AtvStatePayload& p
 // of range or the ATV is at rest and uncarried (the host takes it). Every change marks the entry for a stamp.
 void RunPass(uint64_t nowMs);
 
-// The table reset: the seat empty, the syncer the host, the clocks and the stream bucket cleared, a stamp due.
+// The table reset: the seat empty, the syncer the host, the clocks, the stream bucket and the trap marks cleared, a stamp due.
 // A departure runs this alone (a neighbour leaving never cancels this machine's own request); the successor reset
 // of a repointed entry runs it with ResetRequests (the actor changed).
 void ClearTable(coop::atv_sync::AtvEntry& e);

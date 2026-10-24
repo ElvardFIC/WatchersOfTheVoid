@@ -59,6 +59,12 @@ float GetFuel(void* atv);    // fuel, 0..100
 float GetHealth(void* atv);  // health, 0..100
 bool  GetBrake(void* atv);   // the handbrake
 
+// The story event's flag: while it is set the ATV's own tick explodes it (health to 0, then `explode`) once its driver
+// has moved. Resolved by name with no fallback; both return false, and touch nothing, on null, an unresolved ATV_C or a
+// class without the property. Game thread.
+bool ReadTrap(void* atv, bool& out);
+bool WriteTrap(void* atv, bool v);
+
 // The game's OWN rig-consistent teleport: ATV_C::teleportVehicle(NewLocation, NewRotation) --
 // K2_SetActorLocation(bTeleport=true) + K2_SetActorRotation(bTeleportPhysics=true), and THEN it
 // re-places frontWheel_R onto ax_FR1, frontWheel_L onto ax_FL1 and backWheelRoot onto `back`

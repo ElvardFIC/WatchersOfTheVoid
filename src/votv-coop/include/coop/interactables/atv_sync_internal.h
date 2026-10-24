@@ -49,6 +49,12 @@ struct AtvEntry {
     bool     lastGrabbed  = false;   // the last block's grabbed bit: the syncer carries it
     bool     stampDue     = false;   // the table changed: one stamped block goes to every ready client
     uint64_t stampRetryMs = 0;       // host: before this a stamp whose payload did not read is not tried again
+    // The story event's trap (ATV_C's `trap`), the host's state carried in the stamp's bit 4 (kAtvTrap). Cleared with
+    // the table.
+    bool     hostTrap     = false;   // host: this copy's trap as of the last Tick; a change owes a stamp
+    bool     stampTrap    = false;   // client: the last stamp's bit
+    bool     haveStampTrap = false;  // client: a stamp has been seen (the first one writes the level)
+    bool     copyTrapSeen = false;   // client: this copy's trap as of the last Tick (the explosion request reads it)
     // This machine's own body, host and client alike (atv_body.cpp writes them, nothing else does).
     bool     localSeated  = false;   // the local player sits in this ATV
     bool     localCarrying = false;  // the local player's grav hand holds it

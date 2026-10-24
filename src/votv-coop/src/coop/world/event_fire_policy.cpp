@@ -66,9 +66,9 @@ const NoReplayRow kNoReplayRows[] = {
     { "arirEgg", "prop lane (armed prop)" },
     { "console", "device lanes" }, { "lightswitch", "device lanes" },
     { "keypadGuess", "device lanes" },
-    // atvExplode writes car.trap -- a host-owned flag no lane carries (atv_condition_sync
-    // transfers neither trap nor zapped):
-    { "atvExplode", "car.trap is host-owned (no lane carries trap/zapped)" },
+    // atvExplode sets car.trap on the host's own ATV; the ATV lane carries that flag to every copy in the stamp's
+    // bit 4, so the event itself stays host-only (a client's car need not be the host's). `zapped` has no lane:
+    { "atvExplode", "car.trap rides the ATV lane's stamp (zapped has no lane)" },
     // Host-local by design:
     { "agrav", "physics divergence (by-design host-local)" },
     { "treehouseSleep", "per-player teleport" },

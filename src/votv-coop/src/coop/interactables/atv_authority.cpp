@@ -351,6 +351,10 @@ void ClearTable(AtvEntry& e) {
     e.prevSyncerSlot = 0xFF;
     e.haveRestPos = false;
     e.streamBucket.Reset();
+    e.hostTrap = false;
+    e.stampTrap = false;
+    e.haveStampTrap = false;
+    e.copyTrapSeen = false;
     e.stampDue = true;
 }
 

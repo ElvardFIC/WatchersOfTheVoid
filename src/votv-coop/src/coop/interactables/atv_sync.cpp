@@ -183,6 +183,38 @@ bool ReadPayload(void* actor, const std::wstring& key, uint8_t occupantSlot, uin
     return true;
 }
 
+// HOST: the bit-4 mark of a block it sends is this copy's own `trap` (the host's state, which every client takes from the
+// stamp; a client's bit is never read). Set on the whole byte by mask; `e.actor` is live at every call. A trap that cannot
+// be read stays host-only.
+void StampHostTrap(const AtvEntry& e, coop::net::AtvStatePayload& p) {
+    bool trap = false;
+    A::ReadTrap(e.actor, trap);
+    p.stateBits = static_cast<uint8_t>((p.stateBits & ~coop::net::kAtvTrap) | (trap ? coop::net::kAtvTrap : 0));
+}
+
+// HOST: each live entry's own `trap` against the last one seen; a change owes a stamp (bit 4 sits outside the condition's
+// change gate, so an idle ATV would otherwise carry it only at the keepalive).
+void ReadHostTraps() {
+    for (auto& kv : g_atvs) {
+        AtvEntry& e = kv.second;
+        bool trap = false;
+        if (!R::IsLiveByIndex(e.actor, e.idx) || !A::ReadTrap(e.actor, trap) || trap == e.hostTrap) continue;
+        e.hostTrap = trap;
+        e.stampDue = true;
+    }
+}
+
+// CLIENT: the stamp's trap bit. A copy that does not own the tick takes the stamp's level on every stamp. One that owns
+// it takes only a change, so the copy that just fired is not re-armed by a stamp sent before the host learned it fired,
+// and the first stamp of an entry writes the level either way.
+void TakeStampTrap(AtvEntry& e, bool stamped, bool owns) {
+    const bool first = !e.haveStampTrap;
+    const bool changed = !first && e.stampTrap != stamped;
+    e.stampTrap = stamped;
+    e.haveStampTrap = true;
+    if (!owns || first || changed) A::WriteTrap(e.actor, stamped);
+}
+
 // The idle syncer's change gate: true if the ATV moved, turned or is moving; the baseline updates
 // on a yes, so a slow drift accumulates into a send instead of being rounded away.
 bool IdleWorthSending(AtvEntry& e) {
@@ -257,6 +289,7 @@ void SendStamps(coop::net::Session& s, uint64_t nowMs) {
             continue;
         }
         e.stampRetryMs = 0;
+        StampHostTrap(e, p);
         SendToReadyClients(s, p, -1);
         coop::atv_condition_sync::NoteSent(e, p);
         e.stampDue = false;
@@ -322,7 +355,7 @@ void OnReliable(const coop::net::AtvStatePayload& payload, uint8_t senderPeerSlo
     if (s->role() == coop::net::Role::Host) {
         // A client's block: applied only from the ATV's syncer, then re-sent to the other clients with the host's
         // stamp. The stamp is overwritten, never read from the sender, and the bits a client may not set are
-        // masked (bit 3 is the host's own mark).
+        // masked (bit 3 is the host's own mark, bit 4 its trap).
         if (!AU::AdmitBlock(e, payload, senderPeerSlot, NowMs())) return;
         coop::atv_corrector::ApplyCorrection(e, payload, /*snap*/ false);
         coop::atv_condition_sync::ApplyPayload(e, payload, /*fromHost*/ false);
@@ -330,6 +363,7 @@ void OnReliable(const coop::net::AtvStatePayload& payload, uint8_t senderPeerSlo
         out.syncerSlot = e.syncerSlot;
         out.occupantSlot = e.occupantSlot;
         out.stateBits = static_cast<uint8_t>((payload.stateBits & 0x07) | coop::net::kAtvFromSyncer);
+        StampHostTrap(e, out);
         out.adopt = 0;
         SendToReadyClients(*s, out, senderPeerSlot);
         return;
@@ -339,6 +373,8 @@ void OnReliable(const coop::net::AtvStatePayload& payload, uint8_t senderPeerSlo
     const uint8_t localSlot = coop::players::Registry::Get().LocalPeerId();
     e.occupantSlot = payload.occupantSlot;
     e.syncerSlot   = payload.syncerSlot;
+    // The trap rides every block the host sends, so it is taken before the authority return like the rest of the stamp.
+    TakeStampTrap(e, (payload.stateBits & coop::net::kAtvTrap) != 0, IsLocalSyncer(e, localSlot));
     // An ATV this machine syncs, or has a request in flight for, keeps its own state and takes only the stamp; MTA's
     // StartSync ships the server's pose and state to the new syncer
     // (reference/mtasa-blue/Server/mods/deathmatch/logic/packets/CUnoccupiedVehicleStartSyncPacket.cpp).
@@ -433,6 +469,7 @@ SetSent SendSetToSlot(coop::net::Session* s, int peerSlot, bool withPoses) {
             // the air at a join arrives moving and lands.
             coop::net::AtvStatePayload p{};
             if (!ReadPayload(e.actor, h.key, e.occupantSlot, e.syncerSlot, /*adopt*/true, p)) continue;
+            StampHostTrap(e, p);
             s->SendReliableToSlot(peerSlot, coop::net::ReliableKind::AtvState, &p, sizeof(p));
             ++r.poses;
         }
@@ -547,6 +584,7 @@ void Tick() {
     const bool gateOpen = !isHost && coop::net_pump::HasAnnouncedWorldReady();
     if (isHost) {
         ExcuseHostStall(nowMs);
+        ReadHostTraps();
         JudgeHostBody(localPlayer);
         if (nowMs - g_lastPassMs >= kPassMs) { g_lastPassMs = nowMs; AU::RunPass(nowMs); }
         SendStamps(*s, nowMs);
@@ -557,7 +595,10 @@ void Tick() {
     for (auto& kv : g_atvs) {
         AtvEntry& e = kv.second;
         if (!R::IsLiveByIndex(e.actor, e.idx)) continue;
-        if (!isHost) TickClientBody(*s, e, kv.first, localPlayer, localSlot, gateOpen);
+        if (!isHost) {
+            TickClientBody(*s, e, kv.first, localPlayer, localSlot, gateOpen);
+            A::ReadTrap(e.actor, e.copyTrapSeen);   // this copy's own trap, kept for the explosion request
+        }
 
         // Tick ownership: this machine syncs the ATV (on the host: the table names the host), so it runs the
         // brain and the collision damage. There is no brain-off (parking the tick was measured useless, since
@@ -588,7 +629,7 @@ void Tick() {
                 coop::net::AtvStatePayload p{};
                 const uint8_t occ = isHost ? e.occupantSlot : uint8_t{0xFF};   // the host stamps; a client's is overwritten
                 if (ReadPayload(e.actor, kv.first, occ, localSlot, /*adopt*/false, p, /*grabbed*/e.localCarrying)) {
-                    if (isHost) SendToReadyClients(*s, p, -1);
+                    if (isHost) { StampHostTrap(e, p); SendToReadyClients(*s, p, -1); }
                     else s->SendReliable(coop::net::ReliableKind::AtvState, &p, sizeof(p));
                     coop::atv_condition_sync::NoteSent(e, p);  // keep the idle gate's baseline fresh across a drive-to-idle handoff
                 }
@@ -604,6 +645,7 @@ void Tick() {
             // host eject (a mask flip, no motion) would otherwise wait out the keepalive.
             coop::net::AtvStatePayload p{};
             const bool readable  = ReadPayload(e.actor, kv.first, e.occupantSlot, /*syncerSlot*/0, /*adopt*/false, p);
+            if (readable) StampHostTrap(e, p);
             const bool changed   = IdleWorthSending(e);
             const bool condMoved = readable && coop::atv_condition_sync::CondChangedSinceLastSend(e, p);
             const bool keepalive = nowMs - e.lastIdleSendMs >= kIdleKeepaliveMs;
