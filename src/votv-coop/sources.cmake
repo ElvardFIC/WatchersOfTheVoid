@@ -485,6 +485,7 @@ set(VOTVCOOP_SOURCES
     src/coop/session/local_grants.cpp
     src/coop/session/grants_sync.cpp
     src/coop/session/net_pump.cpp
+    src/coop/session/net_pump_world_ready.cpp
     src/coop/player/puppet_drive.cpp
     src/coop/props/registry_reaper.cpp
     src/coop/session/pause_guard.cpp
