@@ -47,6 +47,13 @@ std::string GrabWhy(const coop::director::AimedGrab& g) {
     return what;
 }
 
+// The client acts once its own streams run, as a player in a settled world does.
+bool StreamsRun() {
+    return coop::net_pump::HasAnnouncedWorldReady() &&
+           coop::join_progress::CurrentPhase() == coop::join_progress::Phase::Idle &&
+           coop::net_pump::IsWorldSettled() && coop::join_membership_sweep::HasLoadTailQuiesced();
+}
+
 namespace {
 
 namespace A  = ue_wrap::atv;
@@ -216,13 +223,6 @@ void ClientEnd() {
 void ClientFail(Arm a, const std::string& what, const std::string& got, const std::string& want) {
     Fail("client", a, g_c.run, what, got, want);
     ClientEnd();
-}
-
-// The client acts once its own streams run, as a player in a settled world does.
-bool StreamsRun() {
-    return coop::net_pump::HasAnnouncedWorldReady() &&
-           coop::join_progress::CurrentPhase() == coop::join_progress::Phase::Idle &&
-           coop::net_pump::IsWorldSettled() && coop::join_membership_sweep::HasLoadTailQuiesced();
 }
 
 // Once the streams run and the table holds the ATV: the director's walk to its root, and the host told.

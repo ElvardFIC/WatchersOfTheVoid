@@ -1,6 +1,6 @@
 // coop/dev/atv_health_drill.cpp -- see coop/dev/atv_health_drill.h. The arm table, the phase clock, the verdict and chat
-// lines and the entry points; the arms' phases are atv_health_drill_arms.cpp (the client's acts, the silent syncer) and
-// atv_health_drill_host.cpp (the arms where the host acts).
+// lines and the entry points; the arms' phases are atv_health_drill_arms.cpp (the client's acts, the silent syncer),
+// atv_health_drill_host.cpp (the arms where the host acts) and atv_health_drill_damage.cpp (gate, owner, trap).
 
 #include "coop/dev/atv_health_drill.h"
 
@@ -25,6 +25,9 @@ constexpr Spec kSpecs[] = {
     {Arm::Occupied, "occupied", "seated",   "send", ""},
     {Arm::Synced,   "synced",   "carrying", "send", ""},
     {Arm::Silent,   "silent",   "seated",   "sit",  "mute"},
+    {Arm::Gate,     "gate",     "blasted",  "sit",  ""},
+    {Arm::Owner,    "owner",    "blown",    "sit",  ""},
+    {Arm::Trap,     "trap",     "armed",    "sit",  ""},
 };
 
 }  // namespace
@@ -43,6 +46,9 @@ Arm ArmOf() {
         if (v == "occupied") return Arm::Occupied;
         if (v == "synced") return Arm::Synced;
         if (v == "silent") return Arm::Silent;
+        if (v == "gate") return Arm::Gate;
+        if (v == "owner") return Arm::Owner;
+        if (v == "trap") return Arm::Trap;
         return Arm::Off;
     }();
     return a;
@@ -82,14 +88,16 @@ std::string ClientLine(const char* what) { return std::string("ATVHD client ") +
 void Tick(coop::net::Session* s) {
     const detail::Arm a = detail::ArmOf();
     if (a == detail::Arm::Off || !s) return;
-    if (s->role() == coop::net::Role::Host) detail::HostTick(s, a);
-    else if (s->connected()) detail::ClientTick(s, a);
+    const bool damage = detail::IsDamageArm(a);
+    if (s->role() == coop::net::Role::Host) damage ? detail::DamageHostTick(s, a) : detail::HostTick(s, a);
+    else if (s->connected()) damage ? detail::DamageClientTick(s, a) : detail::ClientTick(s, a);
 }
 
 void OnDisconnect() {
     if (detail::ArmOf() == detail::Arm::Off) return;
     detail::HostReset();
     detail::ClientReset();
+    detail::DamageReset();
 }
 
 }  // namespace coop::dev::atv_health_drill

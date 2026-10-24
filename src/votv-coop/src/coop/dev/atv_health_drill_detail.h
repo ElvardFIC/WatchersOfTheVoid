@@ -22,7 +22,7 @@ namespace coop::dev::atv_health_drill::detail {
 
 using Clock = std::chrono::steady_clock;
 
-enum class Arm : uint8_t { Off, Sit, Grab, Occupied, Synced, Silent };
+enum class Arm : uint8_t { Off, Sit, Grab, Occupied, Synced, Silent, Gate, Owner, Trap };
 
 // An arm's names: its own, the host's first edge, the client's act and the client's undo (the phases' names).
 struct Spec {
@@ -95,5 +95,16 @@ void HostTick(coop::net::Session* s, Arm a);
 void ClientTick(coop::net::Session* s, Arm a);
 void HostReset();
 void ClientReset();
+
+// The client acts once its own streams run, as a player in a settled world does.
+bool StreamsRun();
+
+// The damage arms (`gate`, `owner`, `trap`): the client sits in the world's ATV and the host's blast, the client's kill
+// or the host's story-event trap is judged on the owner's copy and the host's table (atv_health_drill_damage.cpp). They
+// keep their own phases and state; Tick routes them past HostTick and ClientTick.
+inline bool IsDamageArm(Arm a) { return a == Arm::Gate || a == Arm::Owner || a == Arm::Trap; }
+void DamageHostTick(coop::net::Session* s, Arm a);
+void DamageClientTick(coop::net::Session* s, Arm a);
+void DamageReset();
 
 }  // namespace coop::dev::atv_health_drill::detail

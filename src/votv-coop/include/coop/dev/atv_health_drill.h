@@ -1,5 +1,5 @@
 // coop/dev/atv_health_drill.h -- [dev] the ATV lane's table, judged on the world's own ATV (atv_health_drill=sit|grab|
-// occupied|synced|silent on BOTH peers; only the client in slot 1 acts, another slot idles).
+// occupied|synced|silent|gate|owner|trap on BOTH peers; only the client in slot 1 acts, another slot idles).
 //   sit      -- CLIENT sits in the ATV through the game's own verb and leaves on the host's word; HOST names the seat
 //               and the syncer, the freed seat, then the ATV handed back at rest.
 //   grab     -- CLIENT grabs the ATV with the grav hand and lets go; HOST names the syncer, then the hand-back.
@@ -7,9 +7,11 @@
 //   synced   -- HOST grabs the ATV; CLIENT sends one raw takeover, which the host must refuse as synced.
 //   silent   -- CLIENT sits, then stops streaming; HOST must take the seat and the ATV back by its silence rule and the
 //               client's own copy must give up the seat on the host's stamp.
+//   gate, owner, trap -- the damage arms (atv_health_drill_damage.cpp): the host's blast on the sitting client's copy,
+//               the client's kill of its copy, the host's story-event trap fired on the client's copy.
 // The peers sequence on lobby-chat lines. "[ATV-HEALTH-DRILL] FAIL" is the lane failing (--fail-marker); a pass prints
-// a DONE PASS line on each peer, the host's with the times it measured. The red arm atv_health_red (host) turns one
-// check off, so the arm that tests it must FAIL: back (sit, grab), occupied, takeover (synced), silence (silent).
+// a DONE PASS line on each peer. The red arm atv_health_red turns one check off, so the arm that tests it must FAIL:
+// back (sit, grab), occupied, takeover (synced), silence (silent), nonowner (gate), trapbit (trap).
 
 #pragma once
 

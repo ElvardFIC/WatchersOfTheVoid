@@ -1,10 +1,10 @@
 // coop/config/config_registry_rows_dev_atv.inc -- the [dev] rows of the ATV lane's health drill and its red arm.
 // Included by config_registry_rows_dev.inc after the fire rows, before the PI and NB rows, which stay the last ones,
 // so each row keeps its place in every expansion of the list. The entry forms are config_registry_rows.inc's.
-// The drill's arms: sit, grab, occupied, synced, silent; the red arm's values: back, occupied, takeover, silence,
-// nonowner, trapbit.
+// The drill's arms: sit, grab, occupied, synced, silent, gate, owner, trap; the red arm's values: back, occupied,
+// takeover, silence, nonowner, trapbit.
 
-CFG_ENUM(atv_health_drill, "atv_health_drill", "dev", "off", "off|sit|grab|occupied|synced|silent",
+CFG_ENUM(atv_health_drill, "atv_health_drill", "dev", "off", "off|sit|grab|occupied|synced|silent|gate|owner|trap",
     "VOTVCOOP_ATV_HEALTH_DRILL",
     "Drill, the ATV lane's table; set on BOTH peers, the arm names what is done to the world's own ATV. sit: "
     "the client walks to the ATV with the director, takes its seat and leaves it; the host must name the client as "
@@ -13,7 +13,12 @@ CFG_ENUM(atv_health_drill, "atv_health_drill", "dev", "off", "off|sit|grab|occup
     "ATV back at rest. occupied: the host sits in the ATV; the client's raw sit request must be refused as occupied "
     "and grant nothing. synced: the host grabs the ATV; the client's raw takeover request must be refused as synced "
     "and grant nothing. silent: the client sits and then stops streaming; the host must take the seat and the ATV "
-    "back by its silence rule, and the client's own copy must give up the seat. Each peer prints one DONE line on a "
+    "back by its silence rule, and the client's own copy must give up the seat. gate: the client sits in the ATV, the "
+    "host spawns a native blast above it, and the damage must be cancelled on the host's copy and run on the "
+    "client's. owner: the client sits and kills its copy; the host must accept one request and mark the ATV blown by "
+    "the client, and the host's own blast must not explode it again. trap: the client sits and the host sets the "
+    "story event's trap; the trap must reach the client's copy and fire there as one request, and a second kill after "
+    "the host's blast must be accepted. Each peer prints one DONE line on a "
     "pass, the host's with the times it measured. Run it on a fresh host world; only the client in slot 1 acts.")
 CFG_ENUM(atv_health_red, "atv_health_red", "dev", "off", "off|back|occupied|takeover|silence|nonowner|trapbit",
     "VOTVCOOP_ATV_HEALTH_RED",
