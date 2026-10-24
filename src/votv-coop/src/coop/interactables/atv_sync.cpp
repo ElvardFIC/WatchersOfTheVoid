@@ -9,7 +9,7 @@
 // since their vehicle is one rigid body. The seat (occupantSlot, which the mount deny reads) and the
 // syncer (syncerSlot, who streams) are the host's table (atv_authority.cpp), never decided by the
 // machine they concern: a client's block reaches the host alone, which re-sends it stamped, and every
-// machine follows the stamp. A peer's own sit and grab are a request and a local body; it yields to
+// machine follows the stamp. A peer's own sit and grab are a request and a local body (atv_body.cpp); it yields to
 // the answer. Keyed by the game Key.
 
 #include "coop/interactables/atv_sync.h"
@@ -68,7 +68,6 @@ constexpr uint64_t kIdleSendMs  = 200;  // the idle syncer's ceiling, 5 Hz, and 
 // non-zero.
 constexpr uint64_t kIdleKeepaliveMs = 2000;
 constexpr uint64_t kPassMs = 1000;      // the host's syncer pass, once a second
-constexpr uint64_t kRetryMs = 1000;     // a yield or stamp that did not run is tried again after this, per entry
 
 // The idle syncer's change gate (MTA's WriteVehicleInformation in our units): a parked ATV sends
 // nothing.
@@ -113,7 +112,6 @@ bool IsLocalGrabber(void* actor, void* localPlayer) {
 namespace {
 
 bool     g_installed    = false;  // latches the one-time index; Install is the per-tick ensure path
-uint8_t  g_lastSeq      = 0;      // this client's one request counter (1..255, wrapping to 1)
 uint64_t g_lastPassMs   = 0;      // the host's last syncer pass
 uint64_t g_lastHostTickMs = 0;    // the host's previous Tick: a longer gap is a stall of this machine
 // A block refused at the door of OnReliable (an empty key, a non-finite pose): said once per window, not per packet.
@@ -144,17 +142,6 @@ void ArmOwed(int slot, uint64_t nowMs, const char* said) {
     g_owedIntervalMs[slot] = kOwedRetryMinMs;
     g_owedNextMs[slot] = nowMs + kOwedRetryMinMs;
     g_owedSaid[slot] = said;
-}
-
-// True if this peer's player is seated in `actor`, per the local engine.
-bool IsLocalOccupant(void* actor, void* localPlayer) {
-    return localPlayer && A::IsDriven(actor) && A::GetOccupantPlayer(actor) == localPlayer;
-}
-
-// The next request number: one counter per client for its sits, leaves and takeovers.
-uint8_t NextSeq() {
-    g_lastSeq = g_lastSeq >= 255 ? uint8_t{1} : static_cast<uint8_t>(g_lastSeq + 1);
-    return g_lastSeq;
 }
 
 // Whether this machine writes `e`: the host's table names it (on the host that is the host itself), or this
@@ -252,86 +239,6 @@ void SubscribeDepartures() {
     coop::roster_ledger::SubscribeSlotReplaced(&OnSlotReplaced);
 }
 
-// This machine's own body against `e`, the one place the local seat and carry are written. A rising carry
-// edge owes a takeover (a falling one sends nothing: the carrier stays the syncer until the ATV settles).
-void ReadLocalBody(AtvEntry& e, void* localPlayer) {
-    const bool wasCarrying = e.localCarrying;
-    e.localSeated = IsLocalOccupant(e.actor, localPlayer);
-    e.localCarrying = !e.localSeated && IsLocalGrabber(e.actor, localPlayer);   // seated or carrying, never both
-    if (e.localCarrying && !wasCarrying) e.takeoverDue = true;
-    else if (!e.localCarrying) e.takeoverDue = false;
-}
-
-// The game's own dismount for a seat the host did not give this machine; no leave follows it (it was never the
-// host's occupant). A dismount that cannot run is tried again once a second per entry and said once.
-void YieldSeat(AtvEntry& e, const std::wstring& key, const char* why) {
-    const uint64_t nowMs = NowMs();
-    if (nowMs < e.yieldRetryMs) return;
-    if (!A::Dismount(e.actor)) {
-        e.yieldRetryMs = nowMs + kRetryMs;
-        static bool sSaid = false;
-        if (!sSaid) { sSaid = true;
-            UE_LOGW("atv: the ATV's own dismount did not run for '%ls' (%s) -- the seat stays (said once)",
-                    key.c_str(), why); }
-        return;
-    }
-    e.yieldRetryMs = 0;
-    e.sentSeated = false;
-    UE_LOGI("atv: seat on '%ls' yielded -- %s", key.c_str(), why);
-}
-
-// The grav hand's grab of an ATV the host gave to another machine. A release that leaves the grab in place is
-// tried again once a second per entry and said once.
-void YieldCarry(AtvEntry& e, void* localPlayer, const std::wstring& key, const char* why) {
-    const uint64_t nowMs = NowMs();
-    if (nowMs < e.yieldRetryMs) return;
-    if (ue_wrap::engine::ReleaseMainPlayerGrabIfHolding(localPlayer, e.actor)) {
-        e.yieldRetryMs = 0;
-        UE_LOGI("atv: carry of '%ls' dropped -- %s", key.c_str(), why);
-    } else if (IsLocalGrabber(e.actor, localPlayer)) {
-        e.yieldRetryMs = nowMs + kRetryMs;
-        static bool sSaid = false;
-        if (!sSaid) { sSaid = true;
-            UE_LOGW("atv: the grav hand's release did not run for '%ls' (%s) -- the carry stays (said once)",
-                    key.c_str(), why); }
-    }
-}
-
-// HOST: the host's own body against the table, each step over every entry before the next (the map is
-// unordered, so a host that leaves X and sits in Y inside one pump interval is judged leave-first). The host
-// Tick runs before the pump's receive drain: a client request already in the table wins, one in the same
-// frame's drain meets the host's verdict.
-void JudgeHostBody(void* localPlayer) {
-    for (auto& kv : g_atvs)                                  // (1) the body's seat and carry
-        if (R::IsLiveByIndex(kv.second.actor, kv.second.idx)) ReadLocalBody(kv.second, localPlayer);
-    for (auto& kv : g_atvs) {                                // (2) falling seat, rising seat, rising carry
-        AtvEntry& e = kv.second;
-        if (R::IsLiveByIndex(e.actor, e.idx) && !e.localSeated && e.sentSeated) {
-            AU::JudgeLocal(e, AU::AtvRequest::Leave);
-            e.sentSeated = false;
-        }
-    }
-    for (auto& kv : g_atvs) {
-        AtvEntry& e = kv.second;
-        if (R::IsLiveByIndex(e.actor, e.idx) && e.localSeated && !e.sentSeated) {
-            AU::JudgeLocal(e, AU::AtvRequest::Sit);
-            e.sentSeated = true;
-        }
-    }
-    for (auto& kv : g_atvs) {
-        AtvEntry& e = kv.second;
-        if (!R::IsLiveByIndex(e.actor, e.idx) || !e.takeoverDue) continue;
-        e.takeoverDue = false;
-        if (e.localCarrying) AU::JudgeLocal(e, AU::AtvRequest::Takeover);
-    }
-    for (auto& kv : g_atvs) {                                // (3) the host's yield on its own table
-        AtvEntry& e = kv.second;
-        if (!R::IsLiveByIndex(e.actor, e.idx)) continue;
-        if (e.localSeated && e.occupantSlot != 0) YieldSeat(e, kv.first, "the seat is another's");
-        if (e.localCarrying && e.syncerSlot != 0) YieldCarry(e, localPlayer, kv.first, "another syncs it");
-    }
-}
-
 // HOST: one stamped block to every world-ready client for each entry whose table changed. A payload that does not
 // read leaves the stamp due and is tried again once a second per entry, said once. The stamp goes to every client; MTA
 // sends StartSync / StopSync to the syncer alone
@@ -367,49 +274,6 @@ void ExcuseHostStall(uint64_t nowMs) {
         kv.second.lastBlockMs += gap;
         if (kv.second.handBackMs != 0) kv.second.handBackMs += gap;
     }
-}
-
-// CLIENT: one request to the host, its seq the latest. The state moves only when the send did, so a refused
-// send is retried by the next tick's edge.
-void SendSeat(coop::net::Session& s, AtvEntry& e, const std::wstring& key, bool sit) {
-    coop::net::AtvSeatPayload p{};
-    WireKeyFromString(key, p.key);
-    p.action = sit ? 1 : 0;
-    p.seq = NextSeq();
-    if (!s.SendReliable(coop::net::ReliableKind::AtvSeat, &p, sizeof(p))) return;
-    e.pendingSeq = p.seq;
-    e.pendingAction = sit ? AU::AtvRequest::Sit : AU::AtvRequest::Leave;
-    e.sentSeated = sit;
-}
-
-void SendTakeover(coop::net::Session& s, AtvEntry& e, const std::wstring& key) {
-    coop::net::AtvTakeoverPayload p{};
-    WireKeyFromString(key, p.key);
-    p.seq = NextSeq();
-    if (!s.SendReliable(coop::net::ReliableKind::AtvTakeover, &p, sizeof(p))) return;
-    e.pendingSeq = p.seq;
-    e.pendingAction = AU::AtvRequest::Takeover;
-    e.takeoverDue = false;
-}
-
-// CLIENT: this client's own body against `e`: read it, ask the host for what it did once its own world is
-// ready (a level, so an edge before the gate is sent at it and never lost), then yield to what the host decided.
-// The yield reads only a request this client has SENT, and only outside the window of an unanswered one, where
-// only the answer moves it: a sit or grab made before the gate is neither yielded nor streamed.
-void TickClientBody(coop::net::Session& s, AtvEntry& e, const std::wstring& key, void* localPlayer,
-                    uint8_t localSlot, bool gateOpen) {
-    ReadLocalBody(e, localPlayer);
-    if (gateOpen) {
-        if (e.localSeated && !e.sentSeated) SendSeat(s, e, key, true);
-        // A death leaves the seat on this edge; MTA clears it server-side at PlayerWasted (CGame.cpp:2141-2165).
-        else if (!e.localSeated && e.sentSeated) SendSeat(s, e, key, false);
-        if (e.takeoverDue) SendTakeover(s, e, key);
-    }
-    if (e.pendingSeq != 0) return;
-    if (e.sentSeated && e.localSeated && e.occupantSlot != localSlot)
-        YieldSeat(e, key, "the host's stamp names another occupant");
-    else if (e.localCarrying && !e.takeoverDue && e.syncerSlot != localSlot)
-        YieldCarry(e, localPlayer, key, "the host's stamp names another syncer");
 }
 
 }  // namespace
@@ -489,43 +353,6 @@ void OnReliable(const coop::net::AtvStatePayload& payload, uint8_t senderPeerSlo
     // The condition block applies after the pose, behind the same gates; every block a client receives is the
     // host's, and its presence is consumed only for the host's own copy (atv_condition_sync.h).
     coop::atv_condition_sync::ApplyPayload(e, payload, /*fromHost*/ true);
-}
-
-void OnAnswer(const coop::net::AtvAnswerPayload& a) {
-    const std::wstring key = StringFromWireKey(a.key);
-    auto it = g_atvs.find(key);
-    if (it == g_atvs.end()) {
-        UE_LOGI("atv: answer for '%ls' (seq %u) with no entry -- older, dropped", key.c_str(),
-                static_cast<unsigned>(a.seq));
-        return;
-    }
-    AtvEntry& e = it->second;
-    if (a.seq != e.pendingSeq) {
-        UE_LOGI("atv: answer for '%ls' seq %u is not the latest request (%u) -- older, logged only", key.c_str(),
-                static_cast<unsigned>(a.seq), static_cast<unsigned>(e.pendingSeq));
-        return;
-    }
-    e.pendingSeq = 0;
-    // No engine call before the actor is known live: on a dead entry the window only closes, and the
-    // successor reset finishes the rest.
-    if (!R::IsLiveByIndex(e.actor, e.idx)) return;
-    const uint8_t localSlot = coop::players::Registry::Get().LocalPeerId();
-    e.occupantSlot = a.occupantSlot;
-    e.syncerSlot   = a.syncerSlot;
-    UE_LOGI("atv: host %s '%ls' seq %u (reason %u) -- seat %u, syncer %u", a.admitted ? "granted" : "refused",
-            key.c_str(), static_cast<unsigned>(a.seq), static_cast<unsigned>(a.reason),
-            static_cast<unsigned>(a.occupantSlot), static_cast<unsigned>(a.syncerSlot));
-    switch (e.pendingAction) {
-    case AU::AtvRequest::Sit:
-        if (e.localSeated && a.occupantSlot != localSlot) YieldSeat(e, key, "the host refused the sit");
-        break;
-    case AU::AtvRequest::Takeover:
-        if (a.syncerSlot != localSlot)
-            YieldCarry(e, coop::players::Registry::Get().Local(), key, "the host refused the takeover");
-        break;
-    case AU::AtvRequest::Leave:
-        break;
-    }
 }
 
 // The mirror half (atv_runtime_mirror.cpp) reaches the map through these (atv_sync_internal.h);
@@ -813,7 +640,7 @@ void OnDisconnect() {
     g_atvs.clear();
     ResetAnnounceState();
     g_installed = false;  // a new session re-indexes via the next Install (latched again)
-    g_lastSeq = 0;
+    ResetRequestSeq();
     g_lastPassMs = 0;
     g_lastHostTickMs = 0;
     g_blockRefusals.Clear();

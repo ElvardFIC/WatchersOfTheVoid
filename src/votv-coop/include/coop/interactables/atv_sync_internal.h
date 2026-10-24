@@ -49,7 +49,7 @@ struct AtvEntry {
     bool     lastGrabbed  = false;   // the last block's grabbed bit: the syncer carries it
     bool     stampDue     = false;   // the table changed: one stamped block goes to every ready client
     uint64_t stampRetryMs = 0;       // host: before this a stamp whose payload did not read is not tried again
-    // This machine's own body, host and client alike (atv_sync's Tick writes them, nothing else does).
+    // This machine's own body, host and client alike (atv_body.cpp writes them, nothing else does).
     bool     localSeated  = false;   // the local player sits in this ATV
     bool     localCarrying = false;  // the local player's grav hand holds it
     bool     sentSeated   = false;   // what this machine last told the host (the host's own table, for itself)
@@ -113,6 +113,18 @@ inline uint64_t NowMs() {
 // The cadence of a syncer's stream while it drives or carries (about 20 Hz). The host's late-block window
 // (atv_authority.cpp) is counted in these.
 inline constexpr uint64_t kDriveSendMs = 50;
+
+// A yield or a stamp that did not run is tried again after this, per entry.
+inline constexpr uint64_t kRetryMs = 1000;
+
+// atv_body.cpp's surface for atv_sync.cpp's Tick: this machine's own body against the host's table. The host judges
+// its own player (leave, then sit, then carry, then its yields, each step over every entry); a client reads its body
+// for one entry, asks the host for what it did once `gateOpen` (its own world is ready) and yields to what the host
+// decided. ResetRequestSeq restarts the client's request counter for a new session. Game thread.
+void JudgeHostBody(void* localPlayer);
+void TickClientBody(coop::net::Session& s, AtvEntry& e, const std::wstring& key, void* localPlayer,
+                    uint8_t localSlot, bool gateOpen);
+void ResetRequestSeq();
 
 // atv_sync.cpp's surface for atv_runtime_mirror.cpp and atv_authority.cpp, a client receiving an announced ATV: the lane's session,
 // whether the index belongs to this world, the row under a key, and that half's two structural changes -- a
