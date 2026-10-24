@@ -319,15 +319,6 @@ CFG_FLAG(ragdoll_bone_overlay, "ragdoll_bone_overlay", "dev", false, nullptr,
     "Debug overlay: ragdoll bone positions.")
 CFG_FLAG(puppet_head_probe, "puppet_head_probe", "dev", false, nullptr,
     "Diagnostic probe: puppet head/aim pose.")
-CFG_FLAG(atv_probe, "atv_probe", "dev", false, "VOTVCOOP_ATV_PROBE",
-    "Diagnostic probe: the ATV rig baseline (4-body pose, suspension travel, vitals).")
-CFG_FLAG(atv_probe_sit, "atv_probe_sit", "dev", false, nullptr,
-    "ATV probe DRIVE arm (ONE peer, one shot): seat the local player, release the brake and hold the throttle so the ATV is authored AND moving. Set it on one peer only.")
-CFG_FLAG(atv_corrector, "atv_corrector", "dev", true, "VOTVCOOP_ATV_CORRECTOR",
-    "ATV pose corrector, ON by default. Set 0 to leave a mirrored ATV entirely alone -- the "
-    "CONTROL arm for 'does the mirror settle wrong on its own, or do we settle it wrong'. The "
-    "mirror still simulates and still receives state; only the position/velocity correction is "
-    "withheld, so the two arms differ in exactly one thing.")
 CFG_FLAG(native_pile_inert_probe, "native_pile_inert_probe", "dev", false, nullptr,
     "Diagnostic probe: native pile inertness on clients.")
 CFG_FLAG(spawn_order_probe, "spawn_order_probe", "dev", false, nullptr,
@@ -527,13 +518,6 @@ CFG_STRING(throw_drill, "throw_drill", "dev", "", "VOTVCOOP_THROW_DRILL", false,
     "The host's DONE line ends it.")
 CFG_FLAG(container_birth_skip_slice, "container_birth_skip_slice", "dev", false, "VOTVCOOP_CONTAINER_BIRTH_SKIP_SLICE",
     "Developer: a container this client throws sends no contents slice (the throw drill's red and gone).")
-CFG_STRING(atv_spawn_drill, "atv_spawn_drill", "dev", "", "VOTVCOOP_ATV_SPAWN_DRILL", false,
-    "Drill (BOTH peers): a client holds one actor per ATV the host holds, none the host does not. run -- one is "
-    "spawned once the client's world is ready; join -- while it loads, so its save carries it; park -- as run, with "
-    "atv_park_first_spawn=1 on the client; divergence -- as join, destroyed as the stream ends. The DONE line ends it.")
-CFG_FLAG(atv_park_first_spawn, "atv_park_first_spawn", "dev", false, "VOTVCOOP_ATV_PARK_FIRST_SPAWN",
-    "Developer: the first ATV arrival that would spawn a mirror is parked once per session, as if the world were "
-    "not ready, and spawned by the park's hand-back (the ATV spawn drill's park arm).")
 CFG_STRING(fall_drill, "fall_drill", "dev", "", "VOTVCOOP_FALL_DRILL", false,
     "Drill (BOTH peers): a host birth that falls lands on the client where it lands on the host. run -- the host "
     "drops a drive from 4 m once the client's world is ready; the client's DONE line ends it.")
@@ -822,7 +806,7 @@ CFG_FLAG(key_index_forget_one, "key_index_forget_one", "dev", false, "VOTVCOOP_K
 #include "coop/config/config_registry_rows_dev_explosion.inc"
 // The fire lane's drill: its own file, one concept, included as _dev_port.inc is above.
 #include "coop/config/config_registry_rows_dev_fire.inc"
-// The ATV lane's health drill and its red arm: their own file, one concept, included as _dev_port.inc is above.
+// The ATV lane's rows (its probe, corrector arm, spawn drill, health drill): their own file, as _dev_port.inc is above.
 #include "coop/config/config_registry_rows_dev_atv.inc"
 // The puppet-identity arc's selftests and drill (PI-1, PI-2, PI-3): their own file, one concept, included as
 // _dev_port.inc is above.

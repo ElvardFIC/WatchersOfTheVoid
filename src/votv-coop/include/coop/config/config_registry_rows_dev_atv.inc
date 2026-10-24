@@ -1,8 +1,26 @@
-// coop/config/config_registry_rows_dev_atv.inc -- the [dev] rows of the ATV lane's health drill and its red arm.
+// coop/config/config_registry_rows_dev_atv.inc -- the [dev] rows of the ATV lane: its rig probe, the corrector's
+// control arm, the spawn drill and its park, the health drill and its red arm.
 // Included by config_registry_rows_dev.inc after the fire rows, before the PI and NB rows, which stay the last ones,
 // so each row keeps its place in every expansion of the list. The entry forms are config_registry_rows.inc's.
 // The drill's arms: sit, grab, occupied, synced, silent, gate, owner, trap; the red arm's values: back, occupied,
 // takeover, silence, nonowner, trapbit.
+
+CFG_FLAG(atv_probe, "atv_probe", "dev", false, "VOTVCOOP_ATV_PROBE",
+    "Diagnostic probe: the ATV rig baseline (4-body pose, suspension travel, vitals).")
+CFG_FLAG(atv_probe_sit, "atv_probe_sit", "dev", false, nullptr,
+    "ATV probe DRIVE arm (ONE peer, one shot): seat the local player, release the brake and hold the throttle so the ATV is authored AND moving. Set it on one peer only.")
+CFG_FLAG(atv_corrector, "atv_corrector", "dev", true, "VOTVCOOP_ATV_CORRECTOR",
+    "ATV pose corrector, ON by default. Set 0 to leave a mirrored ATV entirely alone -- the "
+    "CONTROL arm for 'does the mirror settle wrong on its own, or do we settle it wrong'. The "
+    "mirror still simulates and still receives state; only the position/velocity correction is "
+    "withheld, so the two arms differ in exactly one thing.")
+CFG_STRING(atv_spawn_drill, "atv_spawn_drill", "dev", "", "VOTVCOOP_ATV_SPAWN_DRILL", false,
+    "Drill (BOTH peers): a client holds one actor per ATV the host holds, none the host does not. run -- one is "
+    "spawned once the client's world is ready; join -- while it loads, so its save carries it; park -- as run, with "
+    "atv_park_first_spawn=1 on the client; divergence -- as join, destroyed as the stream ends. The DONE line ends it.")
+CFG_FLAG(atv_park_first_spawn, "atv_park_first_spawn", "dev", false, "VOTVCOOP_ATV_PARK_FIRST_SPAWN",
+    "Developer: the first ATV arrival that would spawn a mirror is parked once per session, as if the world were "
+    "not ready, and spawned by the park's hand-back (the ATV spawn drill's park arm).")
 
 CFG_ENUM(atv_health_drill, "atv_health_drill", "dev", "off", "off|sit|grab|occupied|synced|silent|gate|owner|trap",
     "VOTVCOOP_ATV_HEALTH_DRILL",
