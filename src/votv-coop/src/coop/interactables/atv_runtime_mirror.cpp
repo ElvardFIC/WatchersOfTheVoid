@@ -54,6 +54,7 @@ struct PendingSet {
     std::unordered_set<std::wstring> keys;
     uint32_t count = 0;      // what the edge declared
     uint32_t worldGen = 0;   // the world the edge arrived in
+    uint64_t nextWalkMs = 0; // after a walk that met a loading ATV, the next walk waits until then
     bool     present = false;
 } g_pending;
 uint32_t g_adoptedEver = 0;     // announces answered by a copy the world already held
@@ -88,8 +89,13 @@ const char* GateClosedBecause() {
 }
 
 // The host named this key: it is in the next set and in the session's record. Both are capped, and a set past the
-// cap is marked, so its edge removes nothing rather than judge by a part of it.
+// cap is marked, so its edge removes nothing rather than judge by a part of it. The open set is every key named
+// since the last edge in this world: a withheld snapshot and its retries add up, and a key the host lost without
+// an AtvDestroy stays named, which fails toward not removing.
 void NoteNamed(const std::wstring& key) {
+    // Generation() only loads; the refresh runs inside the accessors, so ask one first or a batch can straddle
+    // a change this tick already holds.
+    (void)ue_wrap::world_identity::CurrentWorldKind();
     // Keys named in a world since left are not this world's set.
     if (const uint32_t gen = ue_wrap::world_identity::Generation(); gen != g_setGen) {
         g_setKeys.clear();
@@ -285,7 +291,9 @@ void OnAtvSetComplete(const coop::net::AtvSetCompletePayload& payload) {
     // loads the host's save, so the host's complete set, closed by an edge carrying its count, lets it drop what
     // the save holds and the host does not. The set is N reliable messages, so its count trails the batch and the
     // host can withhold the edge after a partial send, which MTA's one counted packet never needs.
-    // Only keys named in this world are its set: those of a world since left count as none.
+    // Only keys named in this world are its set: those of a world since left count as none. Refreshed first, as
+    // in NoteNamed.
+    (void)ue_wrap::world_identity::CurrentWorldKind();
     const bool current = g_setGen == ue_wrap::world_identity::Generation();
     const bool otherWorld = !current && g_setGen != 0;
     std::unordered_set<std::wstring> keys;
@@ -330,6 +338,7 @@ void ApplyPendingSet() {
         return;
     }
     if (GateClosedBecause()) return;
+    if (NowMs() < g_pending.nextWalkMs) return;
     // Collected during the walk and destroyed after it: the object index's callback must not destroy.
     struct Victim { void* actor; std::wstring key; };
     struct Walk {
@@ -337,10 +346,17 @@ void ApplyPendingSet() {
         const std::unordered_set<std::wstring>* next;   // named since the edge: the next set's, not a stranger
         std::vector<Victim> victims;
     } walk{ &g_pending.keys, &g_setKeys, {} };
-    ForEachAnnounceableAtv([](void* ctx, void* actor, const std::wstring& key) {
+    const size_t loading = ForEachAnnounceableAtv([](void* ctx, void* actor, const std::wstring& key) {
         auto* w = static_cast<Walk*>(ctx);
         if (!w->set->count(key) && !w->next->count(key)) w->victims.push_back(Victim{ actor, key });
     }, &walk);
+    // An ATV still loading is not judged: the set stays pending and is judged again half a second later (DrainReady
+    // calls every tick, the walk is not a per-tick cost), with nothing destroyed from this walk. A world change drops
+    // it (above).
+    if (loading > 0) {
+        g_pending.nextWalkMs = NowMs() + 500;
+        return;
+    }
     // The drill's red arm applies the set without removing anything.
     static const bool s_setBreak = coop::config::ResolveFlag(coop::config_registry::rows::atv_set_break);
     uint32_t removed = 0;

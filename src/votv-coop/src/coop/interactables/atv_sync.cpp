@@ -100,8 +100,30 @@ bool     g_installed    = false;  // latches the one-time index; Install is the 
 
 // HOST: the slots owed the set edge (bit = slot). A snapshot that withheld the edge sets its slot's bit; the owed
 // poll in Tick clears it once the edge goes, a new replay for the slot or the slot's departure clears it too.
+// Each owed slot retries on its own interval (1 s, doubled after a retry that did not send the edge, up to 32 s) and
+// says why a retry withheld once per reason; clearing the bit resets all three.
 uint32_t g_setOwed = 0;
 static_assert(coop::players::kMaxPeers <= 32, "g_setOwed holds one bit per slot");
+constexpr uint64_t kOwedRetryMinMs = 1000;
+constexpr uint64_t kOwedRetryMaxMs = 32000;
+uint64_t    g_owedNextMs[coop::players::kMaxPeers] = {};
+uint64_t    g_owedIntervalMs[coop::players::kMaxPeers] = {};
+const char* g_owedSaid[coop::players::kMaxPeers] = {};   // the reason last logged for the slot's bit
+
+void ClearOwed(int slot) {
+    g_setOwed &= ~(1u << slot);
+    g_owedNextMs[slot] = 0;
+    g_owedIntervalMs[slot] = 0;
+    g_owedSaid[slot] = nullptr;
+}
+// Arming starts the first retry a second away, never at the next Tick. `said` is the reason the snapshot already
+// logged, so the first retry does not repeat it.
+void ArmOwed(int slot, uint64_t nowMs, const char* said) {
+    g_setOwed |= 1u << slot;
+    g_owedIntervalMs[slot] = kOwedRetryMinMs;
+    g_owedNextMs[slot] = nowMs + kOwedRetryMinMs;
+    g_owedSaid[slot] = said;
+}
 
 
 // True if this peer's player is seated in `actor`, per the local engine.
@@ -205,7 +227,7 @@ void OnSlotReplaced(int slot, const coop::roster_ledger::Row& /*outgoing*/,
                     const coop::roster_ledger::Row& /*incoming*/) {
     if (slot < 0 || slot > 0xFE) return;
     const uint8_t s8 = static_cast<uint8_t>(slot);
-    if (slot < static_cast<int>(coop::players::kMaxPeers)) g_setOwed &= ~(1u << slot);  // a leaver is owed no edge
+    if (slot < static_cast<int>(coop::players::kMaxPeers)) ClearOwed(slot);  // a leaver is owed no edge
     int freed = 0;
     for (auto& kv : g_atvs) {
         AtvEntry& e = kv.second;
@@ -378,6 +400,7 @@ struct SetSent {
     int      poses = 0;     // AtvStates sent (the connect snapshot only)
     size_t   named = 0;     // ATVs the walk found
     uint32_t keys = 0;
+    const char* why = nullptr;   // what withheld the edge; null when it went
 };
 
 // The set half: the host's ATVs themselves, walked from the object index (the lane's rows lag a birth by a pass and
@@ -399,7 +422,7 @@ SetSent SendSetToSlot(coop::net::Session* s, int peerSlot, bool withPoses) {
     else if (!IndexCurrent()) incomplete = "the host's ATV index has not completed a pass in this world";
     else if (!ue_wrap::object_index::IsSeeded()) incomplete = "the host's object index is not seeded";
     else if (ue_wrap::object_index::Backlog() > 0) incomplete = "the host's object index has births it has not applied";
-    if (!withPoses && incomplete) return r;
+    if (!withPoses && incomplete) { r.why = incomplete; return r; }
     void* localPlayer = coop::players::Registry::Get().Local();
     const uint8_t localSlot = coop::players::Registry::Get().LocalPeerId();
     // Every ATV is announced first on the same lane, so the joiner holds it under its Key before the pose
@@ -445,9 +468,10 @@ SetSent SendSetToSlot(coop::net::Session* s, int peerSlot, bool withPoses) {
             withheld = "the edge was not sent";
         }
     }
+    r.why = withheld;
     if (withheld && withPoses)
-        UE_LOGW("atv: connect-snapshot to slot %d has no set edge -- %s; owed: retried once a second while the "
-                "slot is world-ready", peerSlot, withheld);
+        UE_LOGW("atv: connect-snapshot to slot %d has no set edge -- %s; owed: retried while the slot is "
+                "world-ready, from 1 s with a growing wait", peerSlot, withheld);
     return r;
 }
 
@@ -457,37 +481,45 @@ void QueueConnectBroadcastForSlot(int peerSlot) {
     auto* s = g_session.load(std::memory_order_acquire);
     if (!s || s->role() != coop::net::Role::Host) return;  // host-only snapshot
     if (peerSlot < 0 || peerSlot >= static_cast<int>(coop::players::kMaxPeers)) return;
-    g_setOwed &= ~(1u << peerSlot);   // this replay supersedes an owed one
+    ClearOwed(peerSlot);   // this replay supersedes an owed one
+    const uint64_t nowMs = NowMs();
     if (!A::EnsureResolved()) {
-        g_setOwed |= 1u << peerSlot;
-        UE_LOGW("atv: connect-snapshot to slot %d withheld -- the ATV wrapper is not resolved; owed: retried once a "
-                "second while the slot is world-ready", peerSlot);
+        ArmOwed(peerSlot, nowMs, "the ATV wrapper is not resolved");
+        UE_LOGW("atv: connect-snapshot to slot %d withheld -- the ATV wrapper is not resolved; owed: retried while the "
+                "slot is world-ready, from 1 s with a growing wait", peerSlot);
         return;
     }
     const SetSent r = SendSetToSlot(s, peerSlot, /*withPoses*/ true);
-    if (!r.edge) g_setOwed |= 1u << peerSlot;
+    if (!r.edge) ArmOwed(peerSlot, nowMs, r.why);
     UE_LOGI("atv: connect-snapshot -- sent %d ATV pose(s) (%d AtvSpawn announce(s); the set names %zu) to slot %d (of %zu indexed)",
             r.poses, r.spawns, r.named, peerSlot, g_atvs.size());
 }
 
 namespace {
-constexpr uint64_t kOwedPollMs = 1000;
-uint64_t g_nextOwedPollMs = 0;
-
-// HOST, 1 Hz while a bit is set: each owed slot that is world-ready gets the set half again (the AtvSpawns the edge
-// counts, then the edge; no poses, the snapshot sent those). The edge going clears the bit. Divergence from MTA,
+// HOST, while a bit is set: each owed slot that is world-ready and due gets the set half again (the AtvSpawns the
+// edge counts, then the edge; no poses, the snapshot sent those). The edge going clears the bit; a retry that did
+// not send it doubles that slot's interval and says why, once per reason. Divergence from MTA,
 // whose join packet is one counted batch and so is never withheld: this set is N reliable messages behind a walk
 // that can be incomplete, so the host holds the edge as a debt
 // (reference/mtasa-blue/Server/mods/deathmatch/logic/CMapManager.cpp:195-297).
 void PollOwedSetEdges(coop::net::Session* s, uint64_t nowMs) {
-    if (!g_setOwed || nowMs < g_nextOwedPollMs) return;
-    g_nextOwedPollMs = nowMs + kOwedPollMs;
+    if (!g_setOwed) return;
     for (int slot = 0; slot < static_cast<int>(coop::players::kMaxPeers); ++slot) {
-        if (!(g_setOwed & (1u << slot)) || !s->IsSlotWorldReady(slot)) continue;
+        if (!(g_setOwed & (1u << slot)) || nowMs < g_owedNextMs[slot] || !s->IsSlotWorldReady(slot)) continue;
         const SetSent r = SendSetToSlot(s, slot, /*withPoses*/ false);
-        if (!r.edge) continue;
-        g_setOwed &= ~(1u << slot);
-        UE_LOGI("atv: the owed set edge to slot %d sent (%u key(s))", slot, r.keys);
+        if (r.edge) {
+            ClearOwed(slot);
+            UE_LOGI("atv: the owed set edge to slot %d sent (%u key(s))", slot, r.keys);
+            continue;
+        }
+        if (!g_owedSaid[slot] || std::strcmp(g_owedSaid[slot], r.why ? r.why : "") != 0) {
+            g_owedSaid[slot] = r.why ? r.why : "";
+            UE_LOGW("atv: the owed set edge to slot %d is withheld -- %s; retried with a growing wait", slot,
+                    g_owedSaid[slot]);
+        }
+        g_owedIntervalMs[slot] = g_owedIntervalMs[slot] * 2 > kOwedRetryMaxMs ? kOwedRetryMaxMs
+                                                                              : g_owedIntervalMs[slot] * 2;
+        g_owedNextMs[slot] = nowMs + g_owedIntervalMs[slot];
     }
 }
 }  // namespace
@@ -622,8 +654,7 @@ void Tick() {
 void OnDisconnect() {
     spawn_park::Clear();
     ResetArrivalState();
-    g_setOwed = 0;
-    g_nextOwedPollMs = 0;
+    for (int slot = 0; slot < static_cast<int>(coop::players::kMaxPeers); ++slot) ClearOwed(slot);
     // Disarmed first: nothing publishes an owned set from here, and a live hit must reach the game.
     coop::atv_hit_guard::SetActive(false);
     coop::atv_hit_guard::PublishOwned(nullptr, 0);

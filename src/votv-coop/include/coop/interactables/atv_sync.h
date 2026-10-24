@@ -87,8 +87,8 @@ size_t ForEachAnnounceableAtv(void (*fn)(void* ctx, void* actor, const std::wstr
 // ATV that is airborne or rolling at the join arrive moving and land, instead of hanging where it was
 // (principle 8). The set ends with AtvSetComplete, which the joiner reads as "remove what is not named"; it is
 // withheld when the host's walk cannot be taken as complete (an ATV still loading, the index not past this world,
-// an announce not sent); a withheld edge is owed to the slot and retried from Tick once a second while the slot is
-// world-ready. Net-pump connect edge, at every connect replay. Game thread.
+// an announce not sent); a withheld edge is owed to the slot and retried from Tick (from 1 s, doubling to 32 s) while the
+// slot is world-ready. Net-pump connect edge, at every connect replay. Game thread.
 void QueueConnectBroadcastForSlot(int peerSlot);
 
 // Per-tick pump. Per ATV: resolve both predicates, latch the brain to tick ownership, and either

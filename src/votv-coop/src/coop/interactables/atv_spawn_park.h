@@ -15,9 +15,9 @@
 namespace coop::net { struct AtvSpawnPayload; }
 namespace coop::atv_sync::spawn_park {
 // The park holds at most one arrival per key of the host's set, so it takes the set's own cap (the most keys one set
-// holds: atv_runtime_mirror.cpp bounds its set and record by this constant): a set the host sent whole must be parkable whole, or the keys past a smaller cap
-// would be dropped while the edge still counts them. The client's other once-per-key sets (the refused keys) take
-// the same bound.
+// holds: atv_runtime_mirror.cpp bounds its set and record by this constant): a set the host sent whole must be
+// parkable whole, or the keys past a smaller cap would be dropped while the edge still counts them. The client's
+// other once-per-key sets (the refused keys) take the same bound.
 inline constexpr size_t kCap = 256;
 // Hold the newest spawn for this key until the world is ready (a destroy parked for the key is replaced); `why`
 // names the readiness that was missing. The first park of a key says so once; `say` says it again for a key
