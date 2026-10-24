@@ -55,7 +55,7 @@ are peer-gated. `[V]`
 | a deployed hook or rope | the fire input, inside the Blueprint | the thrower polls its own `activeHook` field | `(owner slot, sequence)` while the thrower holds it, a host-minted save key once anchored |
 | an explosion (`explosion_C`) | a Blueprint's deferred spawn (a projectile, a fuse, a burn, a broken prop, a device) | on the host the capture watch on its begin-play; on a client the deferred-spawn post, which dissolves it after the request half has read its source | none: the host's actor is the only one and each client spawns a copy of its own from `ExplosionSpawn` |
 | a remote player's puppet (`mainPlayer_C`, unpossessed) | `RemotePlayer::Spawn` -> `engine::SpawnActor` | registered between its deferred spawn and its `FinishSpawning`, by the before-finish callback; unregistered after its destroy (`DestroySlot`) | the peer's slot in `players::Registry` |
-| an ATV (`ATV_C` and its descendants, the witch car included) | the save; a runtime spawn | the object scan's ATV lane (`atv_index`); the host announces each by key (`AtvSpawn`) | the game's own key, which the save carries; a runtime one gets a synthetic key at its host birth |
+| an ATV (`ATV_C` and its descendants, the witch car included) | the save; a runtime spawn | the object scan's ATV lane (`atv_index`); the host announces each by key (`AtvSpawn`); the seat and the syncer are the host's table (`atv_authority`) | the game's own key, which the save carries; a runtime one gets a synthetic key at its host birth |
 | status effects (effect_C) | each peer's own, from its gamemode's addEffect; never sent | -- | none: a per-process actor; at a join the host's effect records are reset out of the joiner's save at the join |
 
 ## Keyed props
@@ -354,6 +354,29 @@ registry recycled that id. `[V]`
   `[RD]`
 - **Late join.** None: a one-shot cue, not re-sent; a request's state clears with its session. `[V]`
 
+## The ATV
+
+- **Birth.** The save places an ATV, or the host's own game spawns one at runtime. The host's index
+  (`coop/interactables/atv_index`) files every live ATV under its game key and announces a key it gains with
+  `AtvSpawn`; a client's mirror (`atv_runtime_mirror`) is spawned carrying that key, parked until its world is
+  ready. `[V]`
+- **Identity.** The ATV's own game key, on every peer. An ATV a client spawned, if one can be, is unknown to the
+  host's index; a sit in it is answered `unknown_atv` and the client dismounts. `[?]`
+- **Authority: the seat and the syncer are the host's table.** `AtvEntry::occupantSlot` (the seat) and
+  `syncerSlot` (who writes the rig) are decided by the host alone (`coop/interactables/atv_authority`): a client
+  asks with `AtvSeat` (sit or leave) and `AtvTakeover` (a grab), each judged and answered with `AtvAnswer`; the
+  host's own player is judged by the same table. The three are never aliased: the host's index row (the birth
+  owner), the occupant, the syncer. `[?]`
+- **Expression: the syncer's stamped stream.** The syncer streams `AtvState`; a client's reaches the host alone,
+  which applies only its syncer's blocks and re-sends each, marked and stamped with the seat and the syncer, to
+  every other client. The host's own copy streams while it syncs. Every machine follows the stamp, yielding to
+  an answer or a stamp that names another occupant or syncer through the game's own dismount or a dropped grab.
+  `[?]`
+- **Destroy.** `AtvDestroy` from the host, for a key its index pruned; the client destroys the mirror or the
+  native twin under that key. `[V]`
+- **Late join.** The connect snapshot stamps every live ATV with the host's table and sets the adopt flag, so a
+  joiner places its copy once whoever syncs it; a joiner sends no request before its world is ready. `[?]`
+
 ## The dupe matrix
 
 Every place two seams can express one actor, and what deduplicates it:
@@ -378,6 +401,8 @@ Every place two seams can express one actor, and what deduplicates it:
 | a client's own rocket, sticky bomb, held grenade or pipe bomb, or pilled burn: the client's birth of its explosion and the host's blast its request makes | one blast: the client's birth is dissolved and never spawns; the host's blast reaches every peer as `ExplosionSpawn`, the requester included `[V]` (the request drill's arms) |
 | a joiner's save-loaded ATV and the host's announce of the same ATV | the joiner resolves the announce by key (the lane's row, else the game's key map) and adopts the copy it holds; it spawns a mirror only for a key it holds none under, and the host's set edge (`AtvSetComplete`) removes the save's ATVs the host no longer holds `[V]` (`atv_spawn_drill`) |
 | a client's light on a salt rocket and the host's | one fuse: a client's copy never runs `fire()` (its gate refuses the light and asks); the host lights its copy and drives its flight `[V]` (`fire_ignite_drill`) |
+| a client's local sit or grab of an ATV and the host's table | one seat and one syncer: the client acts at once, asks, and yields to the answer or stamp that names another; the host drops a block from any slot that is not the ATV's syncer `[?]` |
+| the host's idle stream and a client syncer's stream of one ATV | the host streams an ATV only while its table names the host; until the hand-back a client syncer's blocks are the ones applied and re-sent `[?]` |
 
 ## Needs a probe
 
