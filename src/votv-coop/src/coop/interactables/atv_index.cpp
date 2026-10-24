@@ -1,9 +1,11 @@
 // coop/interactables/atv_index.cpp -- the ATV lane's index: which actor is which game Key. The hub's shared
 // scan pass drives the callbacks below and fills the map atv_sync.cpp owns; the host's announce of that
 // index (AtvSpawn on a key gained, AtvDestroy on a key lost) lives here with them. Declared in
-// atv_index_internal.h; atv_sync.cpp keeps the authority, the stream and the connect snapshot.
+// atv_index_internal.h; atv_authority.cpp keeps the seat and syncer table, atv_sync.cpp the stream and the
+// connect snapshot.
 
 #include "coop/interactables/atv_index_internal.h"
+#include "coop/interactables/atv_authority.h"   // ClearTable / ResetRequests: a successor actor starts from the empty table
 #include "coop/interactables/atv_sync_internal.h"
 
 #include "atv_spawn_park.h"                    // spawn_park::kCap
@@ -193,7 +195,7 @@ size_t HubPassComplete(void*, bool isFull, uint32_t worldGen) {
     }
     // Update or add. A wire key can outlive its actor (a save-placed key is deterministic and a
     // world's replay re-creates its actors), and the successor must not inherit the dead actor's
-    // authority, seat, correction clock and change-gate baseline: the entry stays, everything that
+    // seat, syncer, correction clock and change-gate baseline: the entry stays, everything that
     // described the actor resets.
     for (auto& f : found) {
         auto row = g_atvs.find(f.key);
@@ -203,8 +205,8 @@ size_t HubPassComplete(void*, bool isFull, uint32_t worldGen) {
         if (gained && isHost && !KeyNamesAnAtv(f.key, "host")) continue;
         AtvEntry& e = gained ? g_atvs[f.key] : row->second;
         if (e.actor && e.actor != f.obj) {
-            e.occupantSlot = 0xFF; e.authorSlot = 0xFF;
-            e.wasPoseAuthor = false;
+            coop::atv_authority::ClearTable(e);
+            coop::atv_authority::ResetRequests(e);
             e.haveLastSync = false; e.lastIdleSendMs = 0; e.lastPktMs = 0;
             e.lastErrCm = -1.f; e.stallPackets = 0; e.restReplaces = 0; e.lastRestPlaceMs = 0;
         }

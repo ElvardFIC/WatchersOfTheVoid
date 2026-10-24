@@ -122,11 +122,13 @@ inline Lane LaneForKind(ReliableKind k) {
     // Pinned, so a single-kind lane move cannot split them.
     case ReliableKind::PropStickState: return Lane::Normal;
     case ReliableKind::PropRelease:    return Lane::Normal;
-    // The four ATV kinds are order-paired: a release or destroy overtaking the last pose would
-    // re-enable physics or tear down a mirror mid-update, and an ATV's announce must reach a peer
-    // before its first pose. Pinned together.
+    // The ATV kinds are order-paired: a destroy overtaking the last pose would tear down a mirror
+    // mid-update, an announce must reach a peer before its first pose, and the host must meet a
+    // client's sits, takeovers and stream in the order it made them. Pinned together; none is relayed.
     case ReliableKind::AtvState:       return Lane::Normal;
-    case ReliableKind::AtvRelease:     return Lane::Normal;
+    case ReliableKind::AtvSeat:        return Lane::Normal;
+    case ReliableKind::AtvTakeover:    return Lane::Normal;
+    case ReliableKind::AtvAnswer:      return Lane::Normal;
     case ReliableKind::AtvSpawn:       return Lane::Normal;
     case ReliableKind::AtvDestroy:     return Lane::Normal;
     // The set's edge rides behind the AtvSpawns it counts: FIFO on this lane is what makes the count mean them.
@@ -276,8 +278,6 @@ constexpr bool IsClientRelayableReliableKind(ReliableKind k) {
     case ReliableKind::ApplianceState:    // symmetric
     case ReliableKind::OvenRepairState:   // symmetric, one way
     case ReliableKind::LockerDoorState:   // symmetric
-    case ReliableKind::AtvState:          // occupant- or grabber-authoritative
-    case ReliableKind::AtvRelease:        // the grabber's release edge
     // DeskState is not relayable: adopt-only, host to joiner; live desk input rides DeskInput.
     case ReliableKind::DeskInput:         // presser-authored deltas
     case ReliableKind::DeskScanEvent:     // presser-authored; every mirror replays the visual

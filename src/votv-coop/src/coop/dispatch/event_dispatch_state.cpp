@@ -129,10 +129,10 @@ bool HandleStateEvent(net::Session& session,
         break;
     }
     case net::ReliableKind::AtvState: {
-        // The ATV body pose. Occupant-authoritative: the seated driver streams, and the host relays
-        // a client driver's pose to the other clients. Trust the edge (any peer may legitimately
-        // send the ATV it drives); atv_sync gates the apply and ignores a pose for an ATV this peer
-        // is itself driving.
+        // The ATV body pose. Syncer-authoritative: the machine the host assigned streams it. A client's
+        // block reaches the host alone, which applies it only from the ATV's syncer and re-sends it to
+        // the other clients with its own stamp; a client receives only the host's. atv_sync gates the
+        // apply on both sides.
         if (msg.payloadLen < sizeof(net::AtvStatePayload)) {
             UE_LOGW("event_feed: AtvState payload too short (%zu < %zu)",
                     static_cast<size_t>(msg.payloadLen), sizeof(net::AtvStatePayload));
@@ -157,24 +157,22 @@ bool HandleStateEvent(net::Session& session,
         coop::atv_sync::OnReliable(ap, senderSlot);
         break;
     }
-    case net::ReliableKind::AtvRelease: {
-        // The authority-lost edge: the sender no longer authors this ATV. It carries the key and
-        // nothing else; the receiver clears the seat and the author (atv_sync ignores it if this
-        // peer is itself the author). There is no velocity to validate, since there is no un-freeze
-        // to hand a launch velocity to. The host relays a client's release to the other clients,
-        // like the pose.
-        if (msg.payloadLen < sizeof(net::AtvReleasePayload)) {
-            UE_LOGW("event_feed: AtvRelease payload too short (%zu < %zu)",
-                    static_cast<size_t>(msg.payloadLen), sizeof(net::AtvReleasePayload));
+    case net::ReliableKind::AtvAnswer: {
+        // HOST->CLIENT: the host's verdict on this client's AtvSeat or AtvTakeover, with the seat and the syncer
+        // it holds for that ATV. Host-authored: a client's copy is refused at the host's receive edge
+        // (client_authorship.h) and the host relays none. coop::atv_sync::OnAnswer.
+        if (session.role() != net::Role::Client) {
+            UE_LOGW("event_feed: AtvAnswer received on the host -- dropping");
             break;
         }
-        net::AtvReleasePayload arp{};
-        std::memcpy(&arp, msg.payload, sizeof(arp));
-        const uint8_t senderSlot =
-            (msg.senderPeerSlot >= 0 && msg.senderPeerSlot < net::kMaxPeers)
-                ? static_cast<uint8_t>(msg.senderPeerSlot)
-                : static_cast<uint8_t>(0xFF);
-        coop::atv_sync::OnAtvRelease(arp, senderSlot);
+        if (msg.payloadLen < sizeof(net::AtvAnswerPayload)) {
+            UE_LOGW("event_feed: AtvAnswer payload too short (%zu < %zu)",
+                    static_cast<size_t>(msg.payloadLen), sizeof(net::AtvAnswerPayload));
+            break;
+        }
+        net::AtvAnswerPayload aap{};
+        std::memcpy(&aap, msg.payload, sizeof(aap));
+        coop::atv_sync::OnAnswer(aap);
         break;
     }
     case net::ReliableKind::AtvSpawn: {

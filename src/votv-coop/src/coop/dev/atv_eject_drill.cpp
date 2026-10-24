@@ -8,7 +8,7 @@
 // TWO ARMS, chosen by the VOTVCOOP_ATV_EJECT_TEST environment variable. "host" fires on the HOST
 // for an ATV it owns the tick for, the direction that works: the wheel prop broadcasts, the mask
 // travels in the next AtvState and the mirror's updTires fires once. "client" fires on a CLIENT
-// while it is the pose AUTHOR, the direction presence-authority refuses: the host must RETAIN the
+// while it is the ATV's syncer, the direction presence-authority refuses: the host must RETAIN the
 // wheel, count presence-skipped, and its wheel-key census must not grow.
 //
 // Fires ONCE per process, the arm's delay after eligibility begins -- and the countdown restarts

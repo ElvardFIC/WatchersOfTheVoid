@@ -67,7 +67,6 @@ constexpr ClientAuthorship AuthorshipOf(ReliableKind k) {
     case ReliableKind::SleepState:
     case ReliableKind::PlayerInventoryBlob:
     case ReliableKind::KerfurCommand:
-    case ReliableKind::AtvRelease:
     case ReliableKind::GrabIntent:
     case ReliableKind::ThrowIntent:
     case ReliableKind::SkinChange:
@@ -136,6 +135,8 @@ constexpr ClientAuthorship AuthorshipOf(ReliableKind k) {
     case ReliableKind::ProjectileFired:
     case ReliableKind::ExplosionRequest:
     case ReliableKind::PropIgniteIntent:
+    case ReliableKind::AtvSeat:
+    case ReliableKind::AtvTakeover:
     case ReliableKind::PropActRequest:
     case ReliableKind::PropActCommit:
     case ReliableKind::CameraToggleIntent:
@@ -174,6 +175,7 @@ constexpr ClientAuthorship AuthorshipOf(ReliableKind k) {
     case ReliableKind::WispGrab:
     case ReliableKind::WispTear:
     case ReliableKind::AtvSpawn:
+    case ReliableKind::AtvAnswer:
     case ReliableKind::AtvDestroy:
     case ReliableKind::KerfurConvert:
     case ReliableKind::WorldActorSpawn:

@@ -1,6 +1,7 @@
 // coop/interactables/atv_sync_internal.h -- the per-ATV record, shared by the ATV lane's
 // translation units. atv_sync.cpp owns the map of these and every structural change to it;
-// atv_corrector.cpp mutates the fields of ONE entry when a packet arrives, and
+// atv_authority.cpp judges over it (the host's table: the seat and the syncer) and writes those
+// fields; atv_corrector.cpp mutates the fields of ONE entry when a packet arrives, and
 // atv_runtime_mirror.cpp asks for its two changes through the calls at the end, and atv_index.cpp
 // fills the map through the two globals under detail. Nothing outside
 // coop/interactables/ includes this -- the lane's public surface is
@@ -8,6 +9,8 @@
 
 #pragma once
 
+#include "coop/interactables/atv_authority.h"  // AtvRequest
+#include "coop/net/intent_bucket.h"
 #include "ue_wrap/core/types.h"
 #include "ue_wrap/devices/atv_condition.h"
 
@@ -27,12 +30,31 @@ struct AtvEntry {
     int32_t idx   = -1;
     uint64_t lastSentMs   = 0;
     uint64_t lastPktMs    = 0;     // arrival of the last correcting packet -- the corrector's dt
+    // ---- the host's table: what the host decided, on every peer (the host writes it by its judgement,
+    // a client by the host's stamp and answers). Three concepts, never aliased: the seat, the syncer, the
+    // local body's own sit and carry below. ----
     uint8_t  occupantSlot = 0xFF;  // the SEATED driver's peer slot (0xFF = seat free). THE SEAT --
                                    // device_occupancy::IsOccupiedByOther reads this and denies an
                                    // E-press from it, so a grabber must never appear here.
-    uint8_t  authorSlot   = 0xFF;  // who STREAMS it (driver or grabber; 0xFF = nobody -> host syncs)
-    bool     wasPoseAuthor = false;// POSE authority last tick -- the release-edge detect, and it is
-                                   // deliberately not the same variable as ownsTick
+    uint8_t  syncerSlot   = 0;     // who WRITES it (0 = the host, k = client slot k): the one whose blocks
+                                   // the host applies and re-sends, whose copy owns the tick
+    // Host only: the judgement's clocks. A block, a grant or a pass moves them (atv_authority.cpp).
+    uint8_t  prevSyncerSlot = 0xFF; // the client a hand-back just replaced, for the late-block count
+    uint64_t lastBlockMs  = 0;     // when the syncer's last block was applied (a grant counts as one)
+    uint64_t restSinceMs  = 0;     // since when the syncer's blocks show it at rest (0 = moving)
+    uint64_t handBackMs   = 0;     // when the last hand-back to the host happened
+    coop::net::IntentBucket streamBucket;  // the syncer's blocks only; reset on every syncer change
+    ue_wrap::FVector lastRestPos{};  // the last block's position, for the rest test
+    bool     haveRestPos  = false;
+    bool     lastGrabbed  = false;   // the last block's grabbed bit: the syncer carries it
+    bool     stampDue     = false;   // the table changed: one stamped block goes to every ready client
+    // This machine's own body, host and client alike (atv_sync's Tick writes them, nothing else does).
+    bool     localSeated  = false;   // the local player sits in this ATV
+    bool     localCarrying = false;  // the local player's grav hand holds it
+    bool     sentSeated   = false;   // what this machine last told the host (the host's own table, for itself)
+    bool     takeoverDue  = false;   // a rising carry edge not yet sent
+    uint8_t  pendingSeq   = 0;       // the latest request sent and not yet answered (0 = none)
+    coop::atv_authority::AtvRequest pendingAction = coop::atv_authority::AtvRequest::Sit;
     bool     isClientSpawnedMirror = false;  // an ATV mirror WE fresh-spawned (AtvSpawn)
     // idle-syncer change gate
     ue_wrap::FVector  lastSyncPos{};
@@ -43,7 +65,7 @@ struct AtvEntry {
     bool     haveLastSync = false;
     uint64_t lastRestPlaceMs = 0;  // when the last one happened -- the episode's clock, not the
                                    // send's. Counting CONSECUTIVE re-places does not bound
-                                   // anything: a teleport lands the rig exactly on the author's
+                                   // anything: a teleport lands the rig exactly on the syncer's
                                    // pose, so the very next packet is the one most likely to be
                                    // in band, which zeroes the count. Measured: a give-up
                                    // bounded at three fired three times in 46 seconds.
@@ -59,11 +81,11 @@ struct AtvEntry {
     // ACTUAL send. Pose-only gating would make a parked host eject wait out the 2 s keepalive.
     uint8_t lastSentCond[64] = {};
     bool    haveLastSentCond = false;
-    int      restReplaces = 0;     // re-places of a mirror whose author is at rest, WITHIN one
+    int      restReplaces = 0;     // re-places of a mirror whose syncer is at rest, WITHIN one
                                    // episode (see lastRestPlaceMs).
                                    // A corrector owes a convergence check on EVERY arm it
                                    // has, and this is the at-rest arm's: if putting the rig
-                                   // on the author's pose and then leaving it alone still
+                                   // on the syncer's pose and then leaving it alone still
                                    // does not hold, the difference is not something a pose
                                    // lane can close, and the lane must say so instead of
                                    // teleporting for the rest of the session.
@@ -86,7 +108,11 @@ inline uint64_t NowMs() {
         std::chrono::steady_clock::now().time_since_epoch()).count());
 }
 
-// atv_sync.cpp's surface for atv_runtime_mirror.cpp, a client receiving an announced ATV: the lane's session,
+// The cadence of a syncer's stream while it drives or carries (about 20 Hz). The host's late-block window
+// (atv_authority.cpp) is counted in these.
+inline constexpr uint64_t kDriveSendMs = 50;
+
+// atv_sync.cpp's surface for atv_runtime_mirror.cpp and atv_authority.cpp, a client receiving an announced ATV: the lane's session,
 // whether the index belongs to this world, the row under a key, and that half's two structural changes -- a
 // fresh-spawned mirror adopted under the host's game Key, a row dropped with its actor's key. Game thread.
 coop::net::Session* LaneSession();
@@ -103,5 +129,9 @@ void ApplyPendingSet();
 // An announced spawn, already counted in the host's set, resolved by key, parked or spawned: OnAtvSpawn's second
 // half, and the park's hand-back, which is not a new arrival.
 void ResolveSpawn(const std::wstring& key, const coop::net::AtvSpawnPayload& payload);
+
+// Whether the local player's grav hand holds `actor` (its grabbing_actor or holding_actor): the one carry read the
+// lane's Tick and the host's takeover test share. False for a null player or actor. Game thread.
+bool IsLocalGrabber(void* actor, void* localPlayer);
 
 }  // namespace coop::atv_sync

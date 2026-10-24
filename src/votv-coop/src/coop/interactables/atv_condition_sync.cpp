@@ -96,8 +96,7 @@ void FillPayload(void* actor, coop::net::AtvStatePayload& p) {
     p.tiresValid = 1;
 }
 
-void ApplyPayload(coop::atv_sync::AtvEntry& e, const coop::net::AtvStatePayload& p,
-                  uint8_t senderSlot) {
+void ApplyPayload(coop::atv_sync::AtvEntry& e, const coop::net::AtvStatePayload& p, bool fromHost) {
     using coop::atv_sync::AtvEntry;
     if (!p.tiresValid) {
         g_invalid.fetch_add(1, std::memory_order_relaxed);
@@ -148,25 +147,29 @@ void ApplyPayload(coop::atv_sync::AtvEntry& e, const coop::net::AtvStatePayload&
                 g_invalid.fetch_add(1, std::memory_order_relaxed);
                 static bool warned = false;
                 if (!warned) { warned = true;
-                    UE_LOGW("atv_condition: non-finite float in a condition block from slot %u "
-                            "-- block refused (counted as invalid)", static_cast<unsigned>(senderSlot)); }
+                    UE_LOGW("atv_condition: non-finite float in a condition block "
+                            "-- block refused (counted as invalid)"); }
                 return;
             }
         }
     }
     // CLIENT-SCOPED domain clamps. Per the standing rule the
-    // HOST may cheat and we relay it -- so a bound on host-authored values would be a bug;
-    // only client-authored values are clamped to the game's own domains before they can
-    // reach the host's persisted fields.
-    if (senderSlot != 0) {
+    // HOST may cheat and we relay it -- so a bound on the host's own values would be a bug;
+    // only a client syncer's values are clamped to the game's own domains before they can
+    // reach the host's persisted fields: its own block on the host, and its block as the host
+    // re-sent it (kAtvFromSyncer) on the other clients. Health reaches -1 in the game.
+    const bool fromSyncer = (p.stateBits & coop::net::kAtvFromSyncer) != 0;
+    if (!fromHost || fromSyncer) {
         auto c01  = [](float& v) { if (v < 0.f) v = 0.f; else if (v > 1.f)   v = 1.f; };
         auto c100 = [](float& v) { if (v < 0.f) v = 0.f; else if (v > 100.f) v = 100.f; };
         for (int i = 0; i < 4; ++i) { c100(in.dur[i]); c01(in.dirt[i]); }
-        c01(in.bodyDirt); c100(in.spareDur); c01(in.spareDirt); c100(in.fuel); c100(in.health);
+        c01(in.bodyDirt); c100(in.spareDur); c01(in.spareDirt); c100(in.fuel);
+        if (in.health < -1.f) in.health = -1.f; else if (in.health > 100.f) in.health = 100.f;
     }
 
     const AC::Snapshot& ex = e.condExpressed;
-    const bool applyPresence = senderSlot == 0;
+    // Presence is consumed from the host's own copy only (a connect snapshot's block included).
+    const bool applyPresence = fromHost && !fromSyncer;
 
     // Change groups vs the EXPRESSED baseline, over the WRITTEN set only (presence
     // terms leave the groups entirely when presence is not applied, else updTires would refire
@@ -182,14 +185,14 @@ void ApplyPayload(coop::atv_sync::AtvEntry& e, const coop::net::AtvStatePayload&
 
     if (!applyPresence && presenceDiffers) {
         // The KNOWN-BROKEN direction, counted and visible (CRUTCHES row; (b2) asserts it):
-        // a non-host author's presence claim is not consumed -- its paired wheel-prop birth
+        // a client syncer's presence claim is not consumed -- its paired wheel-prop birth
         // cannot travel, so consuming the mask would persist an item loss on the host.
         const auto n = g_presenceSkipped.fetch_add(1, std::memory_order_relaxed) + 1;
         if (n == 1 || n % 100 == 0)
-            UE_LOGW("atv_condition: presence from slot %u DIFFERS (mask %02X vs expressed %02X) "
+            UE_LOGW("atv_condition: presence from a client syncer DIFFERS (mask %02X vs expressed %02X) "
                     "-- skipped by the authority rule, x%llu (KNOWN divergence until the "
                     "act-as-host tire-eject intent lane)",
-                    static_cast<unsigned>(senderSlot), p.tiresMask, ex.mask, n);
+                    p.tiresMask, ex.mask, n);
     }
 
     // Fields first, always: values are cheap truth; verbs are the gated part.
@@ -241,7 +244,7 @@ void ApplyPayload(coop::atv_sync::AtvEntry& e, const coop::net::AtvStatePayload&
             std::memcpy(e.condExpressed.types, in.types, sizeof(in.types));
             dirtExpressed = true;  // updTires contains updDirt (measured)
             UE_LOGI("atv_condition: updTires dispatched (mask %02X -> %02X) -- presence edge "
-                    "from the host-authored stream", maskWas, in.mask);
+                    "from the host's own copy", maskWas, in.mask);
         }
     }
     if (groupDirt && !dirtExpressed) {

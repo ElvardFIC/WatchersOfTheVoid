@@ -30,7 +30,7 @@ inline constexpr uint32_t kMagic = 0x564D5450u;
 // This file is past the 1500-line hard cap and stays there: it is the single-feature exception the
 // rule names. One wire format, whose enum, payload structs and static_asserts are read together;
 // splitting it would put a kind's number in one file and its bytes in another.
-inline constexpr uint16_t kProtocolVersion = 246;
+inline constexpr uint16_t kProtocolVersion = 247;
 
 // Default LAN port (overridable via multivoid.ini "net.port=").
 inline constexpr uint16_t kDefaultPort = 47621;
@@ -123,7 +123,7 @@ enum class MsgType : uint8_t {
 };
 
 // Payload kinds carried inside a Reliable message. A retired value is never reused: 16, 17, 21,
-// 22, 24, 26, 29 and 138 stay unassigned; 32 and 128 are reserved.
+// 22, 24, 26, 29, 71 and 138 stay unassigned; 32 and 128 are reserved.
 enum class ReliableKind : uint8_t {
     // Each peer to the other, once after admission: the sender's Player element id, then the nick,
     // the skin, the display flags, the nick colour, the game target, the build claim (the build's
@@ -267,10 +267,12 @@ enum class ReliableKind : uint8_t {
     // world-ready; a refused press is answered to its author alone. Never relayed. PowerPanelPayload.
     PowerControlState = 36,
 
-    // The ATV's pose, velocity and condition from its author: the seated driver or the grabbing
-    // hand, or the host at 5 Hz for an idle ATV that moved. A receiver keeps simulating and is
-    // corrected toward the wire; presence fields (tires, spare) are taken from host-authored packets
-    // only. Keyed by the ATV's Key; relayed; the host snapshots pose and velocity to a joiner.
+    // The ATV's pose, velocity and condition from its syncer, the machine the host assigned: a client
+    // syncer's block goes to the host alone, which applies it and re-sends it to every other client
+    // stamped with the host's seat and syncer; the host's own copy goes out while it drives or carries,
+    // and at 5 Hz on change while it syncs an idle ATV. A receiver keeps simulating and is corrected
+    // toward the wire; presence fields (tires, spare) are taken from the host's own copy only. Keyed by
+    // the ATV's Key; never relayed; the host snapshots every ATV's stamped block to a joiner.
     // AtvStatePayload.
     AtvState = 37,
 
@@ -414,11 +416,6 @@ enum class ReliableKind : uint8_t {
     // the requesting player's puppet, which the Blueprint cannot do for a remote player.
     // KerfurCommandPayload.
     KerfurCommand = 70,
-
-    // From the ATV's author, relayed: I am no longer this ATV's author (a dismount or an ungrab,
-    // not a yield). The receiver clears the author slot; the host becomes the idle syncer.
-    // AtvReleasePayload.
-    AtvRelease = 71,
 
     // Host to all: an ATV with this game Key exists; a receiver that holds none under that Key
     // spawns a native idle ATV carrying it. The host announces every ATV its world holds to a joiner
@@ -1102,6 +1099,19 @@ enum class ReliableKind : uint8_t {
     // PropIgniteIntentPayload.
     PropIgniteIntent = 193,
 
+    // CLIENT->HOST: this client's player sat in an ATV's driver seat, or left it. The host judges the request
+    // (world-ready, key, seat, sender alive, pace, one seat at a time, the seat free, reach) and answers every
+    // one with AtvAnswer. Never relayed; not pre-world; a client sends none before its own world-ready. Late
+    // join: none, a request is an act. AtvSeatPayload.
+    AtvSeat = 196,
+    // CLIENT->HOST: this client's player took hold of an ATV with the grav hand. The host judges it as AtvSeat
+    // (an ATV nobody sits in, nobody else carries, within reach) and answers every one with AtvAnswer. Never
+    // relayed; not pre-world. Late join: none. AtvTakeoverPayload.
+    AtvTakeover = 197,
+    // HOST->CLIENT: the host's verdict on one AtvSeat or AtvTakeover, to its sender alone, with the seat and the
+    // syncer the host holds for that ATV; the request's seq is echoed. Never relayed; not pre-world; lost only
+    // with the session. Late join: none. AtvAnswerPayload.
+    AtvAnswer = 198,
     // HOST->CLIENT: the host's ATV connect snapshot is complete. It follows the snapshot's AtvSpawns on one lane and
     // carries the count of distinct keys they named; the joiner then removes every ATV it holds that no AtvSpawn since
     // the previous edge named, so an ATV its save holds and the host's world does not goes. Sent at every connect
@@ -2522,16 +2532,19 @@ struct AtvStatePayload {
     float    pitch, yaw, roll;  // 12 -- full rotation (the ATV tips/flips, unlike a biped)
     float    linVelX, linVelY, linVelZ;  // 12 -- root body linear velocity (cm/s) at sample time
     float    angVelX, angVelY, angVelZ;  // 12 -- root body angular velocity (deg/s)
-    uint8_t  occupantSlot; // 1  -- the SEATED driver's peer slot (0xFF = seat free). This is the
-                           //      SEAT, not the author: device_occupancy's E-press deny reads it,
-                           //      so a peer merely GRABBING the ATV must not appear here.
-    uint8_t  authorSlot;   // 1  -- who is streaming this ATV (the driver or the grabber); 0xFF = nobody, which
-                           //      elects the host as its syncer
-    uint8_t  stateBits;    // 1  -- bit0=isDriven, bit1=brake, bit2=grabbed (produced, not yet read)
+    // The host's stamp on a block it sends (occupantSlot, syncerSlot, kAtvFromSyncer): what a client
+    // sends in them is overwritten by the host, never read.
+    uint8_t  occupantSlot; // 1  -- the SEATED driver's peer slot (0xFF = seat free), the seat the host
+                           //      judged. The SEAT, not the syncer: device_occupancy's E-press deny reads
+                           //      it, so a peer merely GRABBING the ATV must not appear here.
+    uint8_t  syncerSlot;   // 1  -- who writes this ATV's pose and condition, assigned by the host: 0 = the
+                           //      host itself, k = client slot k
+    uint8_t  stateBits;    // 1  -- bit0=isDriven, bit1=brake, bit2=grabbed (the sender's grav hand holds it),
+                           //      bit3=kAtvFromSyncer
     uint8_t  adopt;        // 1  -- 1 = host connect-snapshot (warp as is), 0 = live stream
-    // The condition block: the author's accumulators travel; a mirror's own accrual is held at zero,
+    // The condition block: the syncer's accumulators travel; a mirror's own accrual is held at zero,
     // so overwriting never races an irreversible act. Presence (tiresMask, hasSpare) is consumed
-    // from host-authored packets only: a client's eject ships a mask bit whose wheel-prop birth
+    // from the host's own copy only: a client's eject ships a mask bit whose wheel-prop birth
     // cannot travel, and applying it would turn a divergence into persisted item loss.
     float    tiresDurability[4];  // 16 -- 0..100 per wheel (order: the game's tires[] index order)
     float    tiresDirt[4];        // 16 -- 0..1 per wheel
@@ -2539,11 +2552,11 @@ struct AtvStatePayload {
     float    spareDurability;     // 4  -- spareTire_durability (no visual consumer; value truth)
     float    spareDirt;           // 4  -- spareTire_dirt
     float    fuel;                // 4  -- 0..100
-    float    health;              // 4  -- 0..100; author-real via its own ALLOWED hits, mirror-stale
-    uint8_t  tiresMask;           // 1  -- bit i = tires[i] (PRESENCE -- host-authored packets only)
+    float    health;              // 4  -- -1..100 as a client syncer may send it; the syncer's own, a mirror's stale
+    uint8_t  tiresMask;           // 1  -- bit i = tires[i] (PRESENCE -- the host's own copy only)
     uint8_t  tiresValid;          // 1  -- 0 = the producer could not read the arrays; the receiver touches nothing (mask 0
                                   //      is a legal state, all four ejected, so absence needs its own bit)
-    uint8_t  hasSpare;            // 1  -- hasSpareTire (PRESENCE -- host-authored packets only)
+    uint8_t  hasSpare;            // 1  -- hasSpareTire (PRESENCE -- the host's own copy only)
     int8_t   spareFixes;          // 1  -- spareTire_fixes; signed: ejectWheel writes fixes-1 uncapped, so -1 is reachable,
                                   //      and getTireDamage's input is fixes (a uint8 wrap would render the wrong material)
     int8_t   tiresFixes[4];       // 4  -- per-wheel repair countdown (int32 in-game, int8 on wire)
@@ -2551,6 +2564,11 @@ struct AtvStatePayload {
                                   //      because it IS reducer input and 4 B closes the class)
 };
 static_assert(sizeof(AtvStatePayload) == 148, "AtvStatePayload must be 148 bytes");
+
+// stateBits bit 3: the block is the syncer's, re-sent by the host (a client syncer's pose and condition), not the
+// host's own copy. A receiver applies the pose and condition of such a block to an ATV it does not sync; the host's
+// own copy takes effect only when the host is the syncer.
+constexpr uint8_t kAtvFromSyncer = 0x08;
 
 // An ATV (AtvSpawn): the host ATV's own game Key and its class, so the receiver spawns the exact skin
 // under that Key. The Key is at most 31 chars (an ATV's is 22, or "ATV"); a receiver drops a longer one.
@@ -2576,12 +2594,60 @@ struct AtvSetCompletePayload {
 };
 static_assert(sizeof(AtvSetCompletePayload) == 4, "AtvSetCompletePayload must be 4 bytes");
 
-// The authority-lost edge (AtvRelease): a dismount or an ungrab, not a yield. The receiver clears
-// the author slot and nothing else; the stream continues from the host as the idle syncer.
-struct AtvReleasePayload {
+// A client's sit in an ATV's driver seat, or its leaving it (AtvSeat). One seq counter per client for its sits,
+// leaves and takeovers (1..255, wrapping to 1); the host keeps no record of it and echoes it in the answer.
+struct AtvSeatPayload {
     WireKey key;       // 32 -- the ATV's Key
+    uint8_t seat;      // 1  -- 0 the driver's; 1 is reserved for a passenger seat and refused until one exists
+    uint8_t action;    // 1  -- 1 sit, 0 leave; anything else is malformed
+    uint8_t seq;       // 1
+    uint8_t pad;       // 1  -- zero
 };
-static_assert(sizeof(AtvReleasePayload) == 32, "AtvReleasePayload must be 32 bytes");
+static_assert(sizeof(AtvSeatPayload) == 36, "AtvSeatPayload must be 36 bytes");
+static_assert(sizeof(AtvSeatPayload) <= 256 - 20 - 8, "AtvSeatPayload must fit in one reliable datagram");
+
+// A client's grav-hand grab of an ATV (AtvTakeover): the request to become its syncer.
+struct AtvTakeoverPayload {
+    WireKey key;       // 32 -- the ATV's Key
+    uint8_t seq;       // 1  -- the client's one counter, as AtvSeatPayload's
+    uint8_t pad[3];    // 3  -- zero
+};
+static_assert(sizeof(AtvTakeoverPayload) == 36, "AtvTakeoverPayload must be 36 bytes");
+static_assert(sizeof(AtvTakeoverPayload) <= 256 - 20 - 8, "AtvTakeoverPayload must fit in one reliable datagram");
+
+// Why the host refused an AtvSeat or AtvTakeover. Wire-visible: the values are stable and a client logs them.
+enum class AtvRefusal : uint8_t {
+    Admitted = 0,
+    NotWorldReady = 1,   // never answered; counted
+    Malformed = 2,
+    UnknownAtv = 3,
+    NoSeat = 4,
+    NotOccupant = 5,
+    SenderDead = 6,
+    SeatPaced = 7,
+    AlreadySeated = 8,
+    Occupied = 9,
+    NoBody = 10,
+    OutOfReach = 11,
+    NoTarget = 12,
+    Seated = 13,
+    Synced = 14,
+    TakeoverPaced = 15,
+};
+
+// The host's verdict on one request (AtvAnswer), with the seat and the syncer it holds for that ATV: 0xFF and 0 when
+// it holds no entry for the key.
+struct AtvAnswerPayload {
+    WireKey key;           // 32 -- the request's key
+    uint8_t seq;           // 1  -- the request's seq
+    uint8_t admitted;      // 1  -- 1 granted, 0 refused
+    uint8_t occupantSlot;  // 1  -- the host's seat for that ATV (0xFF = free)
+    uint8_t syncerSlot;    // 1  -- the host's syncer for that ATV (0 = the host)
+    uint8_t reason;        // 1  -- an AtvRefusal
+    uint8_t pad[3];        // 3  -- zero
+};
+static_assert(sizeof(AtvAnswerPayload) == 40, "AtvAnswerPayload must be 40 bytes");
+static_assert(sizeof(AtvAnswerPayload) <= 256 - 20 - 8, "AtvAnswerPayload must fit in one reliable datagram");
 
 // The drone's state (DroneState): transform, activity, effect bits and the dust anchor.
 struct DroneStatePayload {

@@ -19,7 +19,8 @@ namespace coop::net { struct WireKey; }
 
 namespace coop::atv_sync::detail {
 
-// atv_sync.cpp's state, defined there and filled by the index: the lane's session and the key -> record map.
+// atv_sync.cpp's state, defined there and filled by the index: the lane's session and the key -> record map
+// (atv_authority.cpp judges over the map).
 extern std::atomic<coop::net::Session*>        g_session;
 extern std::unordered_map<std::wstring, AtvEntry> g_atvs;
 // World gen of the last completed hub pass (a stale-gen index is EMPTY).
