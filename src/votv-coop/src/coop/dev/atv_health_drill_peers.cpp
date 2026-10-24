@@ -58,6 +58,9 @@ constexpr uint32_t kHostPaceSlack = 10;
 // The observer's tolerance on its estimate of the normal stream over the burst's window; an unpaced burst clears it by
 // kBurst - kBucket - kPaceSlack blocks.
 constexpr uint32_t kPaceSlack = 15;
+// The observer's baseline is a run of syncer blocks it counts itself (the seated client streams one every 50 ms), long
+// enough that the rate it reads is the stream's and not one tick's.
+constexpr uint32_t kBaselineBlocks = 20;
 
 unsigned long long U(uint64_t v) { return static_cast<unsigned long long>(v); }
 
@@ -81,6 +84,7 @@ struct PHost {
     SpawnStep          sp;
     bool               clientReady = false, observerReady = false;
     bool               saw = false;       // the phase's client line, latched
+    bool               observerBaselined = false;   // stream_pace: the observer's normal-rate baseline is taken
     AU::Counters       base{};            // the lane's counters at the phase's baseline
     Clock::time_point  heldAt{};
 };
@@ -220,18 +224,23 @@ void HostRejoin(Arm a, const TableView* t, bool due) {
                  h.observerReady ? "not seated" : "no line", h.observerReady ? "occupant 1 syncer 1" : ReadyLine(a, "observer"));
 }
 
-// stream_pace: the client seated and the syncer, the baseline, and the word to burst.
+// stream_pace: the client seated and the syncer and the observer's baseline taken, the host's baseline, and the word to
+// burst (the observer measures the normal stream between the client's `sat` and its own `baselined`).
 void HostSeated(Arm a, const TableView* t, bool due) {
     PHost& h = g_ph;
-    if (due) Latch(h.saw, ClientLine("sat"));
-    if (h.saw && t && t->occupantSlot == kSlot && t->syncerSlot == kSlot) {
+    if (due) {
+        Latch(h.saw, ClientLine("sat"));
+        Latch(h.observerBaselined, ObserverLine("baselined"));
+    }
+    if (h.saw && h.observerBaselined && t && t->occupantSlot == kSlot && t->syncerSlot == kSlot) {
         h.base = AU::ReadCounters();
         h.run.at = Clock::now();
         DC::Say(PhaseLine("seated"));
         return HostPhase(PH::Paced, "paced");
     }
     if (Past(h.run, kHostFirstBound))
-        HostFail(a, "the client never sat in the spawned ATV", "no line", ClientLine("sat"));
+        HostFail(a, h.saw ? "the observer never took its stream baseline" : "the client never sat in the spawned ATV",
+                 "no line", h.saw ? ObserverLine("baselined") : ClientLine("sat"));
 }
 
 // The burst is paced: the bucket refused all but its burst, and no block was refused as not the syncer's. The client's
@@ -266,7 +275,9 @@ struct PPeer : SeatedClient {
     bool                                       sawPaced = false, sawCarrying = false, sawSat = false;
     std::unique_ptr<coop::director::AimedGrab> grab;
     Clock::time_point                          nextTry{}, bootAt{};
-    bool                                       haveA0 = false, haveA1 = false;   // the observer's stream samples
+    bool                                       haveA0 = false, haveBase = false, haveA1 = false;   // the observer's stream samples
+    uint32_t                                   ab = 0;   // and the count at the end of the baseline run
+    Clock::time_point                          tb{};
     uint32_t                                   a0 = 0, a1 = 0;
     Clock::time_point                          t0{}, t1{};
 };
@@ -463,8 +474,9 @@ void ObserverJoin(PPeer& p, Arm a, bool due) {
         PFail(p, a, "the host's ATV never came to the joiner's table", "no row", "a row under the host's key");
 }
 
-// stream_pace, on the observer: the normal stream's rate between the client's `sat` and the host's `seated`, then the
-// blocks placed from the host's `seated` to its `paced` against that rate and the bucket's burst.
+// stream_pace, on the observer: the normal stream's rate over a run of kBaselineBlocks syncer blocks counted from the
+// client's `sat` (then `baselined` is said, which the host waits for before `seated`), then the blocks placed from the
+// host's `seated` to its `paced` against that rate and the bucket's burst.
 void ObserverPace(PPeer& p, Arm a, bool due) {
     if (!p.haveKey) {
         if (ReadyAndKey(p, a, due)) PEnter(p, PC::Hold, "pace");
@@ -473,13 +485,17 @@ void ObserverPace(PPeer& p, Arm a, bool due) {
     }
     const Clock::time_point now = Clock::now();
     if (!p.haveA0 && p.sawSat) { p.a0 = coop::atv_sync::AppliedFromSyncer(); p.t0 = now; p.haveA0 = true; }
-    if (p.haveA0 && !p.haveA1 && p.sawSeated) { p.a1 = coop::atv_sync::AppliedFromSyncer(); p.t1 = now; p.haveA1 = true; }
+    if (p.haveA0 && !p.haveBase && coop::atv_sync::AppliedFromSyncer() - p.a0 >= kBaselineBlocks) {
+        p.ab = coop::atv_sync::AppliedFromSyncer();
+        p.tb = now;
+        p.haveBase = true;
+        DC::Say(ObserverLine("baselined"));
+    }
+    if (p.haveBase && !p.haveA1 && p.sawSeated) { p.a1 = coop::atv_sync::AppliedFromSyncer(); p.t1 = now; p.haveA1 = true; }
     if (p.haveA1 && p.sawPaced) {
         const uint32_t window = coop::atv_sync::AppliedFromSyncer() - p.a1;
-        const uint32_t before = p.a1 - p.a0;
-        if (before == 0)
-            return PFail(p, a, "the observer saw no syncer block before the burst", "0 blocks", "the normal stream");
-        const double perMs = static_cast<double>(before) / static_cast<double>(std::max<long long>(1, Ms(p.t0, p.t1)));
+        const uint32_t before = p.ab - p.a0;
+        const double perMs = static_cast<double>(before) / static_cast<double>(std::max<long long>(1, Ms(p.t0, p.tb)));
         const uint32_t normal = static_cast<uint32_t>(std::ceil(perMs * static_cast<double>(Ms(p.t1, now))));
         char got[96];
         std::snprintf(got, sizeof(got), "applied %u over a normal stream of about %u", window, normal);
@@ -489,7 +505,12 @@ void ObserverPace(PPeer& p, Arm a, bool due) {
         std::snprintf(nums, sizeof(nums), "burst_applied=%u normal_est=%u", window, normal);
         return Pass(p.role, a, p.run, nums);
     }
-    if (Past(p.run, kHostFirstBound)) PFail(p, a, "the host never said the burst was judged", "no line", PhaseLine("paced"));
+    if (!Past(p.run, kHostFirstBound)) return;
+    if (!p.haveBase)
+        return PFail(p, a, "the observer counted too few syncer blocks for its baseline",
+                     std::to_string(p.haveA0 ? coop::atv_sync::AppliedFromSyncer() - p.a0 : 0u) + " blocks",
+                     std::to_string(kBaselineBlocks) + " blocks");
+    PFail(p, a, "the host never said the burst was judged", "no line", PhaseLine("paced"));
 }
 
 // One peer's tick, after its head: the observer of join and stream_pace has its own wait, every other peer walks.
