@@ -97,4 +97,9 @@ coop::net::Served JudgeShot(uint8_t slot, Slot& s, const FiredItem& it);
 coop::net::Served JudgeShotBlast(uint8_t slot, Slot& s, const RequestItem& it);
 coop::net::Served JudgeBody(uint8_t slot, Slot& s, const RequestItem& it);
 
+// The one spawn of a request's blast, for every family, in explosion_request_host.cpp: the host's own parameters for
+// `src` at `level`, spawned natively inside the lane's scope so the birth seam leaves it alone. Refuses and counts
+// only Unresolved and SpawnFailed, and returns false for either; the caller counts and says its own accept.
+bool HostSpawn(uint8_t slot, ue_wrap::explosion_source::Kind src, const float loc[3], float level);
+
 }  // namespace coop::explosion_request::detail

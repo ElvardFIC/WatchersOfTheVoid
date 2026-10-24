@@ -133,10 +133,23 @@ Served Wait() {
     return Served::Wait;
 }
 
+// A blast of one of the three judged families was spawned: the kind's accept count and the accept line.
+void NoteAccepted(uint8_t slot, RC::RequestKind kind, XS::Kind src, const float loc[3]) {
+    ++MutCounters().requestsAccepted[KindSlot(kind)];
+    UE_LOGI("[EXPLOSION] request accepted kind=%s class=%ls slot=%u at (%.0f,%.0f,%.0f)", KindName(kind),
+            XS::ClassName(src), static_cast<unsigned>(slot), loc[0], loc[1], loc[2]);
+}
+
+}  // namespace
+
 // The blast itself: the host's own parameters for the source, spawned natively inside the lane's scope so the birth
-// seam leaves it alone; the host's capture of its begin-play carries it to every peer.
-void SpawnBlast(uint8_t slot, RC::RequestKind kind, XS::Kind src, const float loc[3], float level) {
-    if (!X::ResolveNow(X::Cls::Explosion)) return Refuse(slot, Refusal::Unresolved);
+// seam leaves it alone; the host's capture of its begin-play carries it to every peer. Refuses and counts only its
+// own two failures; the caller counts and says the accept.
+bool HostSpawn(uint8_t slot, XS::Kind src, const float loc[3], float level) {
+    if (!X::ResolveNow(X::Cls::Explosion)) {
+        Refuse(slot, Refusal::Unresolved);
+        return false;
+    }
     X::Params params{};
     float scale[3];
     RC::RecipeFor(src, level, params, scale);
@@ -146,13 +159,12 @@ void SpawnBlast(uint8_t slot, RC::RequestKind kind, XS::Kind src, const float lo
         coop::explosion_sync::LaneSpawnScope scope;
         actor = X::SpawnDeferred(X::Cls::Explosion, loc, rot, scale, params, nullptr);
     }
-    if (!actor) return Refuse(slot, Refusal::SpawnFailed);
-    ++MutCounters().requestsAccepted[KindSlot(kind)];
-    UE_LOGI("[EXPLOSION] request accepted kind=%s class=%ls slot=%u at (%.0f,%.0f,%.0f)", KindName(kind),
-            XS::ClassName(src), static_cast<unsigned>(slot), loc[0], loc[1], loc[2]);
+    if (!actor) {
+        Refuse(slot, Refusal::SpawnFailed);
+        return false;
+    }
+    return true;
 }
-
-}  // namespace
 
 Served JudgeShot(uint8_t slot, Slot& s, const FiredItem& it) {
     const coop::net::ProjectileFiredPayload& p = it.p;
@@ -265,7 +277,7 @@ Served JudgeShotBlast(uint8_t slot, Slot& s, const RequestItem& it) {
         Refuse(slot, Refusal::Reach);
         return Served::Done;
     }
-    SpawnBlast(slot, RC::RequestKind::Projectile, src, p.loc, 0.0f);
+    if (HostSpawn(slot, src, p.loc, 0.0f)) NoteAccepted(slot, RC::RequestKind::Projectile, src, p.loc);
     return Served::Done;
 }
 
@@ -293,7 +305,7 @@ Served JudgeBody(uint8_t slot, Slot&, const RequestItem& it) {
             Refuse(slot, Refusal::HandBound);
             return Served::Done;
         }
-        SpawnBlast(slot, RC::RequestKind::Hand, src, p.loc, 0.0f);
+        if (HostSpawn(slot, src, p.loc, 0.0f)) NoteAccepted(slot, RC::RequestKind::Hand, src, p.loc);
         return Served::Done;
     }
     if (p.kind == static_cast<uint8_t>(RC::RequestKind::Self)) {
@@ -308,7 +320,8 @@ Served JudgeBody(uint8_t slot, Slot&, const RequestItem& it) {
             return Served::Done;
         }
         const float loc[3] = {at.X, at.Y, at.Z};
-        SpawnBlast(slot, RC::RequestKind::Self, src, loc, RC::ClampLevel(p.pillLevel));
+        if (HostSpawn(slot, src, loc, RC::ClampLevel(p.pillLevel)))
+            NoteAccepted(slot, RC::RequestKind::Self, src, loc);
         return Served::Done;
     }
     Refuse(slot, Refusal::Malformed);  // the receive edge queues only these two kinds here
