@@ -205,13 +205,15 @@ void OnDisconnect() {
     }
     const Counters& c = g_counters;
     const auto u = [](uint64_t v) { return static_cast<unsigned long long>(v); };
-    const bool hostSaw = n > 0 || c.shotsAccepted || c.evicted || c.expired || c.waited || c.requestsAccepted[0] ||
-                         c.requestsAccepted[1] || c.requestsAccepted[2] || c.requestsAccepted[3];
+    const bool hostSaw = n > 0 || c.shotsAccepted || c.evicted || c.expired || c.waited || c.lateAccepted ||
+                         c.requestsAccepted[0] || c.requestsAccepted[1] || c.requestsAccepted[2] ||
+                         c.requestsAccepted[3];
     if (hostSaw)
         UE_LOGI("[EXPLOSION] request lane at disconnect: shots=%llu requests=%llu/%llu/%llu/%llu evicted=%llu "
-                "expired=%llu waited=%llu%s%s refused%s", u(c.shotsAccepted), u(c.requestsAccepted[0]),
-                u(c.requestsAccepted[1]), u(c.requestsAccepted[2]), u(c.requestsAccepted[3]), u(c.evicted),
-                u(c.expired), u(c.waited), nb > 0 ? " shotsBy" : "", by, line);
+                "expired=%llu waited=%llu lateAccepted=%llu%s%s refused%s", u(c.shotsAccepted),
+                u(c.requestsAccepted[0]), u(c.requestsAccepted[1]), u(c.requestsAccepted[2]),
+                u(c.requestsAccepted[3]), u(c.evicted), u(c.expired), u(c.waited), u(c.lateAccepted),
+                nb > 0 ? " shotsBy" : "", by, line);
     if (c.shotsSent || c.requestsSent[0] || c.requestsSent[1] || c.requestsSent[2] || c.requestsSent[3] ||
         c.pendingDropped || c.pendingDead || c.pendingOrphaned || c.clientDropped || c.unmappedProjectile ||
         c.shotNotAnnounced || c.atvBirthUnowned)

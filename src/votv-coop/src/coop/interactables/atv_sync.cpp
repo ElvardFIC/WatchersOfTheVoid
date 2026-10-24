@@ -218,14 +218,20 @@ void TakeStampTrap(AtvEntry& e, bool stamped, bool owns) {
     if (!owns || first || changed) A::WriteTrap(e.actor, stamped);
 }
 
-// HOST: the re-arm of an accepted explosion request, a RISING EDGE inside one syncer's own stream: the game explodes an
-// ATV when its old health is at 0 or above, so the mark clears when the health read before this one was below 0 and
-// this one is not. The first read after a syncer change (haveSyncerHealth false) only records, so a new syncer's first
-// block never re-arms. A NaN never rises and stays blown. MTA bumps a sync time context on its re-arm
+// HOST: the re-arm of an accepted explosion request. The game re-arms at health >= 0 (its explode test is the old value
+// >= 0), so the slot that blew the ATV re-arms it at once on a report at 0 or above, which a trap death at exactly 0
+// needs. Any other syncer needs a RISING EDGE inside its own stream (the health read before this one below 0, this one
+// not), since its copy may be stale from before the death; its first read after a syncer change (haveSyncerHealth
+// false) only records. The host is never `blownBy` (its own death needs no request). A NaN stays blown. MTA bumps a
+// sync time context on its re-arm
 // (reference/mtasa-blue/Server/mods/deathmatch/logic/CStaticFunctionDefinitions.cpp:5585-5589, so a report in flight
-// from before it is dropped, CUnoccupiedVehicleSync.cpp:285); here the edge within one syncer's stream serves.
-void NoteSyncerHealth(AtvEntry& e, float health) {
-    if (e.blown && e.haveSyncerHealth && e.lastSyncerHealth < 0.0f && health >= 0.0f) e.blown = false;
+// from before it is dropped, CUnoccupiedVehicleSync.cpp:285); here the edge for a stale copy serves.
+void NoteSyncerHealth(AtvEntry& e, uint8_t syncer, float health) {
+    if (e.blown && health >= 0.0f &&
+        (syncer == e.blownBy || (e.haveSyncerHealth && e.lastSyncerHealth < 0.0f))) {
+        e.blown = false;
+        e.blownBy = 0xFF;
+    }
     e.lastSyncerHealth = health;
     e.haveSyncerHealth = true;
 }
@@ -372,7 +378,7 @@ void OnReliable(const coop::net::AtvStatePayload& payload, uint8_t senderPeerSlo
         // stamp. The stamp is overwritten, never read from the sender, and the bits a client may not set are
         // masked (bit 3 is the host's own mark, bit 4 its trap).
         if (!AU::AdmitBlock(e, payload, senderPeerSlot, NowMs())) return;
-        NoteSyncerHealth(e, payload.health);
+        NoteSyncerHealth(e, senderPeerSlot, payload.health);
         coop::atv_corrector::ApplyCorrection(e, payload, /*snap*/ false);
         coop::atv_condition_sync::ApplyPayload(e, payload, /*fromHost*/ false);
         coop::net::AtvStatePayload out = payload;
@@ -621,7 +627,7 @@ void Tick() {
             A::ReadTrap(e.actor, e.copyTrapSeen);   // this copy's own trap, kept for the explosion request
         } else if (e.blown && IsLocalSyncer(e, localSlot)) {
             // A wreck handed back to the host: its own copy's health is the stream to read.
-            NoteSyncerHealth(e, A::GetHealth(e.actor));
+            NoteSyncerHealth(e, 0, A::GetHealth(e.actor));
         }
 
         // Tick ownership: this machine syncs the ATV (on the host: the table names the host), so it runs the

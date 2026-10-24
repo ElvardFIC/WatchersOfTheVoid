@@ -105,13 +105,15 @@ void OnAtvRequestReceived(int senderSlot, const uint8_t* bytes, uint16_t len) {
     if (e->syncerSlot != slot && !coop::atv_authority::IsLateSyncer(*e, slot, coop::atv_sync::NowMs()))
         return detail::Refuse(slot, Refusal::NotSyncer);
     // MTA blows a vehicle once (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:2870-2904); here the
-    // game's own re-arm applies: the mark clears when the syncer's health is back at 0 or above.
+    // game's own re-arm applies: the mark clears when the slot that blew it reports health at 0 or above (atv_sync).
     if (e->blown) return detail::Refuse(slot, Refusal::Blown);
     if (!detail::SlotOf(slot).atvBlast.Push(detail::AtvItem{key}, detail::kAtvBlastCap))
         return detail::Refuse(slot, Refusal::QueueFull);
+    if (e->syncerSlot != slot) ++detail::MutCounters().lateAccepted;
     // Marked only now the request is queued; a trap that fired on the client has fired for everyone, so the host's
     // own copy must not fire it again.
     e->blown = true;
+    e->blownBy = slot;
     if (p.trapFired) A::WriteTrap(e->actor, false);
 }
 
@@ -120,7 +122,10 @@ namespace detail {
 coop::net::Served JudgeAtvBlast(uint8_t slot, const AtvItem& it) {
     AtvEntry* e = LiveEntry(it.key);
     if (!e) {
-        if (AtvEntry* gone = coop::atv_sync::FindEntryMutable(it.key)) gone->blown = false;
+        if (AtvEntry* gone = coop::atv_sync::FindEntryMutable(it.key)) {
+            gone->blown = false;
+            gone->blownBy = 0xFF;
+        }
         Refuse(slot, Refusal::UnknownAtv);
         return coop::net::Served::Done;
     }
@@ -131,12 +136,14 @@ coop::net::Served JudgeAtvBlast(uint8_t slot, const AtvItem& it) {
     FVector tp{};
     if (!A::ReadTpLocation(e->actor, tp)) {  // no place to put the blast: never one at the origin
         e->blown = false;
+        e->blownBy = 0xFF;
         Refuse(slot, Refusal::NoTp);
         return coop::net::Served::Done;
     }
     const float loc[3] = {tp.X, tp.Y, tp.Z};
     if (!HostSpawn(slot, XS::Kind::None, loc, 0.0f)) {
         e->blown = false;  // no blast was made
+        e->blownBy = 0xFF;
         return coop::net::Served::Done;
     }
     ++MutCounters().requestsAccepted[KindSlot(RC::RequestKind::Atv)];
