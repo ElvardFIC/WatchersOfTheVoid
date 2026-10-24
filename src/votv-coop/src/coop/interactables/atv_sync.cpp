@@ -3,8 +3,8 @@
 // on, and is corrected toward the syncer through velocity, never frozen or teleported. AATV_C is
 // a five-body constraint rig whose visible output is suspension travel, and SetActorLocation moves
 // the root only, so a kinematic apply dragged four constrained bodies behind one teleported root.
-// The one thing a mirror may not do is author collision damage (the hit guard). MTA's shape (a hard
-// velocity write per packet, a warp past a speed-scaled threshold, a server-assigned syncer for an
+// A mirror may not author collision damage (the hit guard) or the blast and death routes (the damage gate).
+// MTA's shape (a hard velocity write per packet, a warp past a speed-scaled threshold, a server-assigned syncer for an
 // unoccupied vehicle that sends only on change) with one divergence: correction through velocity,
 // since their vehicle is one rigid body. The seat (occupantSlot, which the mount deny reads) and the
 // syncer (syncerSlot, who streams) are the host's table (atv_authority.cpp), never decided by the
@@ -185,7 +185,10 @@ bool ReadPayload(void* actor, const std::wstring& key, uint8_t occupantSlot, uin
 
 // HOST: the bit-4 mark of a block it sends is this copy's own `trap` (the host's state, which every client takes from the
 // stamp; a client's bit is never read). Set on the whole byte by mask; `e.actor` is live at every call. A trap that cannot
-// be read stays host-only.
+// be read stays host-only. MTA keeps the cause of a blow server-side too: the server marks the vehicle awaiting its
+// explosion (reference/mtasa-blue/Server/mods/deathmatch/logic/CStaticFunctionDefinitions.cpp:5617) and the client
+// reports the blow bit back (reference/mtasa-blue/Client/mods/deathmatch/logic/CClientGame.cpp:5380); here the trap
+// is the host's state.
 void StampHostTrap(const AtvEntry& e, coop::net::AtvStatePayload& p) {
     bool trap = false;
     A::ReadTrap(e.actor, trap);

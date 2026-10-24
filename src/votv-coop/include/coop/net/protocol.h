@@ -2547,7 +2547,7 @@ struct AtvStatePayload {
                            //      host itself, k = client slot k
     uint8_t  stateBits;    // 1  -- bit0=isDriven, bit1=brake, bit2=grabbed (the sender's grav hand holds it),
                            //      bit3=kAtvFromSyncer, bit4=kAtvTrap
-    uint8_t  adopt;       // 1  -- 1 = host connect-snapshot (warp as is), 0 = live stream
+    uint8_t  adopt;        // 1  -- 1 = host connect-snapshot (warp as is), 0 = live stream
     // The condition block: the syncer's accumulators travel; a mirror's own accrual is held at zero,
     // so overwriting never races an irreversible act. Presence (tiresMask, hasSpare) is consumed
     // from the host's own copy only: a client's eject ships a mask bit whose wheel-prop birth

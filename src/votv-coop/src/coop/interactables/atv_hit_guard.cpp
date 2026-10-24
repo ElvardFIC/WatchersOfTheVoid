@@ -43,8 +43,8 @@ UE_FACT_FN(kRowHitBackWheelRoot, "atv_hit_guard", L"ATV_C",
 // driven flag, and the battery-drain terms select on driven, lights and turbo, all local-only
 // state). So the mirror ticks. The owned-tick flag keeps its two real jobs: electing the idle
 // syncer, and telling the collision interceptor whose copy may author damage. The interceptor
-// is the only thing that makes a mirror differ from a native ATV, and it has to be: a hit
-// delegate is dispatched by the physics scene and was never tick-gated.
+// and the damage gate's cancels (atv_damage_gate.cpp) are what make a mirror differ from a native ATV, and the
+// interceptor has to be: a hit delegate is dispatched by the physics scene and was never tick-gated.
 
 namespace {
 

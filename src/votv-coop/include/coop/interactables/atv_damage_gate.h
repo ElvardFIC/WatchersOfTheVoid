@@ -7,9 +7,11 @@
 //
 // The watches fail open: a dead one leaves that route of an ATV's damage running on every copy, said in one ERROR
 // line per row. (The collision guard fails closed, since without it the lane cannot run at all.)
-// MTA keeps a vehicle's health with its one syncer, whose report the others take
-// (reference/mtasa-blue/Server/mods/deathmatch/logic/CUnoccupiedVehicleSync.cpp); the divergence is a gate on each
-// copy, since every VOTV copy simulates the ATV.
+// MTA also gates damage per copy: a client vehicle is damageable only while its driver is the local player or it
+// syncs the unoccupied vehicle (reference/mtasa-blue/Client/mods/deathmatch/logic/CClientVehicle.cpp:1210-1228,
+// reference/mtasa-blue/Client/mods/deathmatch/logic/CDeathmatchVehicle.cpp:37-40), and the server takes health from
+// the syncer's report (reference/mtasa-blue/Server/mods/deathmatch/logic/CUnoccupiedVehicleSync.cpp:285, :330-351).
+// The divergence is the mechanism: ATV_C has no can-be-damaged flag, so the gate cancels each route's call.
 
 #pragma once
 

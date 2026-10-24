@@ -379,10 +379,17 @@ registry recycled that id. `[V]`
   every other client. The host's own copy streams while it syncs. Every machine follows the stamp, yielding to
   an answer or a stamp that names another occupant or syncer through the game's own dismount or a dropped grab.
   `[?]`
+- **Expression: the syncer authors the damage and the death.** A copy that does not own the ATV's tick cancels
+  its `addDamage`, `exploded` and `explode` (`coop/interactables/atv_damage_gate`, beside the collision guard) and
+  takes the health from the syncer's condition block. The death is the owner's own `explode`, whose blast is
+  dissolved at the birth seam, and the host's blast that `AtvExplodeRequest` asks for (the explosion section
+  above). The story event's trap is the host's state: the stamp's bit 4 (`kAtvTrap`) carries it to every copy,
+  and a client whose trap fired tells the host so in the request. `[?]`
 - **Destroy.** `AtvDestroy` from the host, for a key its index pruned; the client destroys the mirror or the
   native twin under that key. `[V]`
-- **Late join.** The connect snapshot stamps every live ATV with the host's table and sets the adopt flag, so a
-  joiner places its copy once whoever syncs it; a joiner sends no request before its world is ready. `[?]`
+- **Late join.** The connect snapshot stamps every live ATV with the host's table and its trap and sets the adopt
+  flag, so a joiner places its copy once whoever syncs it; a joiner sends no request before its world is ready.
+  `[?]`
 
 ## The dupe matrix
 
