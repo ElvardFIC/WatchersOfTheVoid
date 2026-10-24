@@ -25,7 +25,9 @@ namespace coop::dev::atv_health_drill::detail {
 
 using Clock = std::chrono::steady_clock;
 
-enum class Arm : uint8_t { Off, Sit, Grab, Occupied, Synced, Silent, Gate, Owner, Trap, Spawned };
+enum class Arm : uint8_t {
+    Off, Sit, Grab, Occupied, Synced, Silent, Gate, Owner, Trap, Spawned, CarryStill, SyncedPeer, Join, StreamPace
+};
 
 // An arm's names: its own, the host's first edge, the client's act and the client's undo (the phases' names).
 struct Spec {
@@ -66,7 +68,7 @@ void Pass(const char* role, Arm a, Run& r, const std::string& numbers);
 
 // The lobby-chat lines: the client's ready line (the host's start), the host's phase edges (the client's) and the
 // client's other edges (the host's).
-std::string ReadyLine(Arm a);
+std::string ReadyLine(Arm a, const char* role = "client");
 std::string PhaseLine(const char* name);
 std::string ClientLine(const char* what);
 
@@ -105,9 +107,11 @@ bool StreamsRun();
 
 // The client half the walk-and-sit arms share (atv_health_drill_seated.cpp): the run, the ATV, the director's walk and
 // the seating. An arm's own client state derives from it and keeps its phases; a step that fails prints the FAIL line
-// and returns Failed, and the arm ends its run its own way.
+// and returns Failed, and the arm ends its run its own way. `role` is the name its lines print (`client`, or
+// `observer` for the third peer of the peers arms).
 struct SeatedClient {
     Run                                             run;
+    const char*                                     role = "client";
     bool                                            idleSaid = false;
     ue_wrap::CachedObjRef                           atv;
     std::shared_ptr<coop::director::BackgroundWalk> walk;
@@ -155,5 +159,31 @@ inline bool IsSpawnedArm(Arm a) { return a == Arm::Spawned; }
 void SpawnedHostTick(coop::net::Session* s, Arm a);
 void SpawnedClientTick(coop::net::Session* s, Arm a);
 void SpawnedReset();
+
+// The host half of the spawn the `spawned` arm and the peers arms share (atv_health_drill_spawned.cpp): the host spawns
+// an ATV beside its player and says its key in the lobby chat, then waits for it to park and says `phase parked`. The
+// steps print the FAIL line on the host's own run and return Failed. The peers read the key from the chat line.
+struct SpawnStep {
+    ue_wrap::CachedObjRef atv;
+    bool                  spawned = false;
+    Clock::time_point     spawnAt{}, tableAt{}, parkedAt{}, lastStampAt{};
+    std::wstring          key;
+    ue_wrap::FVector      lastAt{};      // the last stamp's root and when it was read
+    int                   calm = 0;      // successive stamp pairs under 5 cm/s
+};
+Stage SpawnAtvStep(SpawnStep& s, Run& run, Arm a);   // Next once the key is said
+Stage ParkAtvStep(SpawnStep& s, Run& run, Arm a);    // Next once parked and said
+void  SayKey(const std::wstring& key);
+bool  KeyFromChat(std::wstring* out);                // the last live key line, or false
+
+// The peers arms (carry_still, synced_peer, join, stream_pace): the host spawns an ATV, the client acts on it and the
+// observer is the third peer (atv_health_drill_peers.cpp). Own phases and state; Tick routes them past HostTick and
+// ClientTick, and the observer is the client path of slot 2.
+inline bool IsPeersArm(Arm a) {
+    return a == Arm::CarryStill || a == Arm::SyncedPeer || a == Arm::Join || a == Arm::StreamPace;
+}
+void PeersHostTick(coop::net::Session* s, Arm a);
+void PeersClientTick(coop::net::Session* s, Arm a);
+void PeersReset();
 
 }  // namespace coop::dev::atv_health_drill::detail

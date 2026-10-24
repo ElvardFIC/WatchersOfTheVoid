@@ -47,20 +47,118 @@ float Dist(const ue_wrap::FVector& a, const ue_wrap::FVector& b) {
     const float dx = a.X - b.X, dy = a.Y - b.Y, dz = a.Z - b.Z;
     return std::sqrt(dx * dx + dy * dy + dz * dz);
 }
+}  // namespace
 
-// ---- the host ----
+// ---- the host: the spawn and the park steps the peers arms reuse, then this arm's own phases ----
+
+// The ATV, born a few metres ahead of the host's player on the NavMesh. A point the NavMesh does not project fails the
+// arm: the run says whether a point near the base start always projects.
+static bool SpawnAtv(SpawnStep& st, Run& run, Arm a) {
+    void* me = coop::players::Registry::Get().Local();
+    ue_wrap::FVector at{};
+    if (!me || !E::TryGetActorLocation(me, at)) {
+        Fail("host", a, run, "the host's player does not read", "no location", "a location");
+        return false;
+    }
+    const ue_wrap::FVector fwd = E::GetActorForwardVector(me);
+    const ue_wrap::FVector point{at.X + fwd.X * kAheadCm, at.Y + fwd.Y * kAheadCm, at.Z + SN::kLiftCm};
+    st.spawnAt = Clock::now();
+    SN::Spawned sp;
+    if (!SN::SpawnAtNav(me, point, sp)) {
+        Fail("host", a, run, sp.what, sp.got, sp.want);
+        return false;
+    }
+    UE_LOGI("[ATV-HEALTH-DRILL] host arm=%s the point is on the NavMesh at (%.0f,%.0f,%.0f)", SpecOf(a).name,
+            sp.onMesh.X, sp.onMesh.Y, sp.onMesh.Z + SN::kLiftCm);
+    st.atv.Set(sp.actor);
+    st.spawned = true;
+    return true;
+}
+
+void SayKey(const std::wstring& key) {
+    std::string line = kSpawnedPrefix;
+    for (const wchar_t c : key) line += static_cast<char>(c);
+    DC::Say(line);
+}
+
+// The key in the LAST live line that starts with the host's spawn prefix, or false. The retained tier is a record of an
+// earlier life and never counts.
+bool KeyFromChat(std::wstring* out) {
+    std::string rest;
+    if (!DC::LiveRestOf(kSpawnedPrefix, &rest)) return false;
+    out->assign(rest.begin(), rest.end());
+    return true;
+}
+
+// Once the host's own table holds the ATV under an announceable key: the key is said, with the ms since the spawn call.
+Stage SpawnAtvStep(SpawnStep& st, Run& run, Arm a) {
+    if (!st.spawned && !SpawnAtv(st, run, a)) return Stage::Failed;
+    void* atv = st.atv.Get();
+    if (!atv) {
+        Fail("host", a, run, "the spawned ATV is gone before its key", "no ATV", "the spawned ATV");
+        return Stage::Failed;
+    }
+    std::wstring key;
+    const char* why = nullptr;
+    const SN::Key k = SN::KeyOf(atv, &key, &why);
+    if (k == SN::Key::Bad) {
+        Fail("host", a, run, "the spawned ATV's key cannot ride a chat line", why, "plain ASCII");
+        return Stage::Failed;
+    }
+    if (k == SN::Key::Ok) {
+        st.tableAt = Clock::now();
+        st.key = key;
+        SayKey(key);
+        UE_LOGI("[ATV-HEALTH-DRILL] host arm=%s the spawned ATV is in the host's table as '%ls' after %lld ms",
+                SpecOf(a).name, key.c_str(), Ms(st.spawnAt, st.tableAt));
+        return Stage::Next;
+    }
+    if (Past(run, kFailBound)) {
+        Fail("host", a, run, "the spawned ATV never entered the host's table", "no table row", "a row");
+        return Stage::Failed;
+    }
+    return Stage::Wait;
+}
+
+// Parked: two successive stamps of the root, a gap apart, each pair under kParkedCmS. The lane's block speed is the
+// client syncer's, so a host-owned ATV reads its own root.
+Stage ParkAtvStep(SpawnStep& st, Run& run, Arm a) {
+    const Clock::time_point now = Clock::now();
+    const bool first = st.lastStampAt == Clock::time_point{};
+    const auto notParked = [&] {
+        if (!Past(run, kFailBound)) return Stage::Wait;
+        Fail("host", a, run, "the spawned ATV never came to rest", "still moving", "two stamps under 5 cm/s");
+        return Stage::Failed;
+    };
+    if (!first && now - st.lastStampAt < kStampGap) return notParked();   // between stamps: no engine call, only the bound
+    void* atv = st.atv.Get();
+    ue_wrap::FVector at{};
+    if (!atv || !E::TryGetActorLocation(atv, at)) {
+        Fail("host", a, run, "the spawned ATV is gone before it parked", "no ATV", "the spawned ATV");
+        return Stage::Failed;
+    }
+    if (!first) {
+        const float secs = static_cast<float>(Ms(st.lastStampAt, now)) / 1000.f;
+        st.calm = Dist(at, st.lastAt) / secs < kParkedCmS ? st.calm + 1 : 0;
+    }
+    st.lastAt = at;
+    st.lastStampAt = now;
+    if (st.calm >= 2) {
+        st.parkedAt = now;
+        DC::Say(PhaseLine(SpecOf(a).first));
+        return Stage::Next;
+    }
+    return notParked();
+}
+
+namespace {
 
 enum class HPh : int { Wait, Spawn, Seen, Sat };
 
 struct SHost {
-    Run                   run;
-    ue_wrap::CachedObjRef atv;
-    bool                  spawned = false, readySeen = false, satSeen = false;
-    Clock::time_point     spawnAt{}, tableAt{}, parkedAt{};
-    std::wstring          key;
-    ue_wrap::FVector      lastAt{};        // the last stamp's root and when it was read
-    Clock::time_point     lastStampAt{};
-    int                   calm = 0;        // successive stamp pairs under kParkedCmS
+    Run       run;
+    SpawnStep sp;
+    bool      readySeen = false, satSeen = false;
 };
 SHost g_sh;
 
@@ -76,87 +174,12 @@ void HostWait(Arm a) {
     if (Past(g_sh.run, kFailBound)) HostFail(a, "the client never said it was ready", "no line", ReadyLine(a));
 }
 
-// The ATV, born a few metres ahead of the host's player on the NavMesh. A point the NavMesh does not project fails the
-// arm: the run says whether a point near the base start always projects.
-bool HostSpawnAtv(Arm a) {
-    void* me = coop::players::Registry::Get().Local();
-    ue_wrap::FVector at{};
-    if (!me || !E::TryGetActorLocation(me, at)) {
-        HostFail(a, "the host's player does not read", "no location", "a location");
-        return false;
-    }
-    const ue_wrap::FVector fwd = E::GetActorForwardVector(me);
-    const ue_wrap::FVector point{at.X + fwd.X * kAheadCm, at.Y + fwd.Y * kAheadCm, at.Z + SN::kLiftCm};
-    g_sh.spawnAt = Clock::now();
-    SN::Spawned sp;
-    if (!SN::SpawnAtNav(me, point, sp)) {
-        HostFail(a, sp.what, sp.got, sp.want);
-        return false;
-    }
-    UE_LOGI("[ATV-HEALTH-DRILL] host arm=spawned the point is on the NavMesh at (%.0f,%.0f,%.0f)", sp.onMesh.X,
-            sp.onMesh.Y, sp.onMesh.Z + SN::kLiftCm);
-    g_sh.atv.Set(sp.actor);
-    g_sh.spawned = true;
-    return true;
-}
-
-// Once the host's own table holds the ATV under an announceable key: the key is said, with the ms since the spawn call.
-void HostSpawn(Arm a) {
-    if (!g_sh.spawned && !HostSpawnAtv(a)) return;
-    void* atv = g_sh.atv.Get();
-    if (!atv) return HostFail(a, "the spawned ATV is gone before its key", "no ATV", "the spawned ATV");
-    std::wstring key;
-    const char* why = nullptr;
-    const SN::Key k = SN::KeyOf(atv, &key, &why);
-    if (k == SN::Key::Bad) return HostFail(a, "the spawned ATV's key cannot ride a chat line", why, "plain ASCII");
-    if (k == SN::Key::Ok) {
-        g_sh.tableAt = Clock::now();
-        g_sh.key = key;
-        std::string line = kSpawnedPrefix;
-        for (const wchar_t c : key) line += static_cast<char>(c);
-        DC::Say(line);
-        UE_LOGI("[ATV-HEALTH-DRILL] host arm=spawned the spawned ATV is in the host's table as '%ls' after %lld ms",
-                key.c_str(), Ms(g_sh.spawnAt, g_sh.tableAt));
-        return HostPhase(HPh::Seen, "seen");
-    }
-    if (Past(g_sh.run, kFailBound)) HostFail(a, "the spawned ATV never entered the host's table", "no table row", "a row");
-}
-
-// Parked: two successive stamps of the root, a gap apart, each pair under kParkedCmS. The lane's block speed is the
-// client syncer's, so a host-owned ATV reads its own root.
-void HostSeen(Arm a) {
-    const Clock::time_point now = Clock::now();
-    const bool first = g_sh.lastStampAt == Clock::time_point{};
-    if (!first && now - g_sh.lastStampAt < kStampGap) {   // between stamps: no engine call, only the bound
-        if (Past(g_sh.run, kFailBound))
-            HostFail(a, "the spawned ATV never came to rest", "still moving", "two stamps under 5 cm/s");
-        return;
-    }
-    void* atv = g_sh.atv.Get();
-    ue_wrap::FVector at{};
-    if (!atv || !E::TryGetActorLocation(atv, at))
-        return HostFail(a, "the spawned ATV is gone before it parked", "no ATV", "the spawned ATV");
-    if (!first) {
-        const float secs = static_cast<float>(Ms(g_sh.lastStampAt, now)) / 1000.f;
-        g_sh.calm = Dist(at, g_sh.lastAt) / secs < kParkedCmS ? g_sh.calm + 1 : 0;
-    }
-    g_sh.lastAt = at;
-    g_sh.lastStampAt = now;
-    if (g_sh.calm >= 2) {
-        g_sh.parkedAt = now;
-        DC::Say(PhaseLine(SpecOf(a).first));
-        return HostPhase(HPh::Sat, "sat");
-    }
-    if (Past(g_sh.run, kFailBound))
-        HostFail(a, "the spawned ATV never came to rest", "still moving", "two stamps under 5 cm/s");
-}
-
 void HostSat(Arm a) {
     if (!g_sh.satSeen && DC::PollDue()) g_sh.satSeen = DC::ChatHasLive(ClientLine("sat"));
     if (g_sh.satSeen) {
         char nums[96];
-        std::snprintf(nums, sizeof(nums), "spawn_to_host_table_ms=%lld parked_ms=%lld", Ms(g_sh.spawnAt, g_sh.tableAt),
-                      Ms(g_sh.tableAt, g_sh.parkedAt));
+        std::snprintf(nums, sizeof(nums), "spawn_to_host_table_ms=%lld parked_ms=%lld",
+                      Ms(g_sh.sp.spawnAt, g_sh.sp.tableAt), Ms(g_sh.sp.tableAt, g_sh.sp.parkedAt));
         return Pass("host", a, g_sh.run, nums);
     }
     if (Past(g_sh.run, kHostFirstBound)) HostFail(a, "the client never sat in the spawned ATV", "no line", ClientLine("sat"));
@@ -182,15 +205,6 @@ void ClientFail(Arm a, const std::string& what, const std::string& got, const st
     ClientEnd();
 }
 
-// The key in the LAST live line that starts with the host's spawn prefix, or false. The retained tier is a record of an
-// earlier life and never counts.
-bool HostKeyFromChat(std::wstring* out) {
-    std::string rest;
-    if (!DC::LiveRestOf(kSpawnedPrefix, &rest)) return false;
-    out->assign(rest.begin(), rest.end());
-    return true;
-}
-
 // The client says it is ready once its streams run, then waits for the host's key line.
 void ClientWait(Arm a) {
     SClient& c = g_sc;
@@ -199,7 +213,7 @@ void ClientWait(Arm a) {
             c.readySaid = true;
             DC::Say(ReadyLine(a));
         }
-    } else if (DC::PollDue() && HostKeyFromChat(&c.key)) {
+    } else if (DC::PollDue() && KeyFromChat(&c.key)) {
         c.lineAt = Clock::now();
         UE_LOGI("[ATV-HEALTH-DRILL] client arm=spawned the host's ATV key is '%ls'", c.key.c_str());
         return ClientPhase(CPh::Adopt, "adopt");
@@ -265,8 +279,12 @@ void SpawnedHostTick(coop::net::Session* s, Arm a) {
     }
     switch (static_cast<HPh>(h.run.phase)) {
     case HPh::Wait:  return HostWait(a);
-    case HPh::Spawn: return HostSpawn(a);
-    case HPh::Seen:  return HostSeen(a);
+    case HPh::Spawn:
+        if (SpawnAtvStep(h.sp, h.run, a) == Stage::Next) HostPhase(HPh::Seen, "seen");
+        return;
+    case HPh::Seen:
+        if (ParkAtvStep(h.sp, h.run, a) == Stage::Next) HostPhase(HPh::Sat, "sat");
+        return;
     case HPh::Sat:   return HostSat(a);
     }
 }

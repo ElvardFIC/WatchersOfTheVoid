@@ -1,7 +1,8 @@
 // coop/dev/atv_health_drill.cpp -- see coop/dev/atv_health_drill.h. The arm table, the phase clock, the verdict and chat
 // lines and the entry points; the arms' phases are atv_health_drill_arms.cpp (the client's acts, the silent syncer),
 // atv_health_drill_host.cpp (the arms where the host acts), atv_health_drill_seated.cpp (the client walk and sit the
-// client halves share), atv_health_drill_damage.cpp (gate, owner, trap) and atv_health_drill_spawned.cpp (spawned).
+// client halves share), atv_health_drill_damage.cpp (gate, owner, trap), atv_health_drill_spawned.cpp (spawned and the
+// host spawn step) and atv_health_drill_peers.cpp (carry_still, synced_peer, join, stream_pace).
 
 #include "coop/dev/atv_health_drill.h"
 
@@ -30,6 +31,10 @@ constexpr Spec kSpecs[] = {
     {Arm::Owner,    "owner",    "blown",    "sit",  ""},
     {Arm::Trap,     "trap",     "armed",    "sit",  ""},
     {Arm::Spawned,  "spawned",  "parked",   "sit",  ""},
+    {Arm::CarryStill, "carry_still", "parked", "grab", "release"},
+    {Arm::SyncedPeer, "synced_peer", "parked", "grab", "release"},
+    {Arm::Join,       "join",        "parked", "sit",  ""},
+    {Arm::StreamPace, "stream_pace", "parked", "sit",  ""},
 };
 
 }  // namespace
@@ -52,6 +57,10 @@ Arm ArmOf() {
         if (v == "owner") return Arm::Owner;
         if (v == "trap") return Arm::Trap;
         if (v == "spawned") return Arm::Spawned;
+        if (v == "carry_still") return Arm::CarryStill;
+        if (v == "synced_peer") return Arm::SyncedPeer;
+        if (v == "join") return Arm::Join;
+        if (v == "stream_pace") return Arm::StreamPace;
         return Arm::Off;
     }();
     return a;
@@ -82,7 +91,9 @@ void Pass(const char* role, Arm a, Run& r, const std::string& numbers) {
 }
 
 // Lines no save can hold, as a prop class or a place could.
-std::string ReadyLine(Arm a) { return std::string("ATVHD client ready ") + SpecOf(a).name; }
+std::string ReadyLine(Arm a, const char* role) {
+    return std::string("ATVHD ") + role + " ready " + SpecOf(a).name;
+}
 std::string PhaseLine(const char* name) { return std::string("ATVHD phase ") + name; }
 std::string ClientLine(const char* what) { return std::string("ATVHD client ") + what; }
 
@@ -93,13 +104,16 @@ void Tick(coop::net::Session* s) {
     if (a == detail::Arm::Off || !s) return;
     const bool damage = detail::IsDamageArm(a);
     const bool spawned = detail::IsSpawnedArm(a);
+    const bool peers = detail::IsPeersArm(a);
     if (s->role() == coop::net::Role::Host) {
         if (damage) detail::DamageHostTick(s, a);
         else if (spawned) detail::SpawnedHostTick(s, a);
+        else if (peers) detail::PeersHostTick(s, a);
         else detail::HostTick(s, a);
     } else if (s->connected()) {
         if (damage) detail::DamageClientTick(s, a);
         else if (spawned) detail::SpawnedClientTick(s, a);
+        else if (peers) detail::PeersClientTick(s, a);
         else detail::ClientTick(s, a);
     }
 }
@@ -110,6 +124,7 @@ void OnDisconnect() {
     detail::ClientReset();
     detail::DamageReset();
     detail::SpawnedReset();
+    detail::PeersReset();
 }
 
 }  // namespace coop::dev::atv_health_drill

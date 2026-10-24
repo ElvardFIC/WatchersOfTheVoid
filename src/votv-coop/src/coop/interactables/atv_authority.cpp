@@ -169,8 +169,12 @@ AtvRefusal TakeoverTests(const AtvEntry& e, uint8_t who) {
     // phase must fail. Resolved once.
     static const bool s_redTakeover =
         coop::config::ResolveEnum(coop::config_registry::rows::atv_health_red) == "takeover";
+    // The developer red arm of the ATV health drill's synced_peer: the client-carry clause alone is skipped, so the
+    // second client's takeover of a carried ATV is granted and the drill's `judge` phase must fail. Resolved once.
+    static const bool s_redPeerCarry =
+        coop::config::ResolveEnum(coop::config_registry::rows::atv_health_red) == "peer_carry";
     if (e.occupantSlot != kNoSeat) return AtvRefusal::Seated;
-    if (e.syncerSlot != 0 && e.syncerSlot != who && e.lastGrabbed) return AtvRefusal::Synced;
+    if (!s_redPeerCarry && e.syncerSlot != 0 && e.syncerSlot != who && e.lastGrabbed) return AtvRefusal::Synced;
     if (!s_redTakeover && who != 0 &&
         coop::atv_sync::IsLocalGrabber(e.actor, coop::players::Registry::Get().Local()))
         return AtvRefusal::Synced;
@@ -309,7 +313,12 @@ bool AdmitBlock(AtvEntry& e, const coop::net::AtvStatePayload& p, uint8_t sender
     // so the pose is the one that decides.
     const FVector pos{p.x, p.y, p.z};
     const FVector lin{p.linVelX, p.linVelY, p.linVelZ};
-    const bool grabbed = (p.stateBits & 0x4) != 0;
+    const bool grabbedBit = (p.stateBits & 0x4) != 0;
+    // The developer red arm of the ATV health drill's carry_still: the grab bit is ignored by the rest test, so a
+    // carry standing still is handed back while held and the drill's `held` phase must fail. Resolved once.
+    static const bool s_redCarryBack =
+        coop::config::ResolveEnum(coop::config_registry::rows::atv_health_red) == "carry_back";
+    const bool grabbed = grabbedBit && !s_redCarryBack;
     const float speed = coop::atv_sync::Len(lin);
     bool motionStill = false;
     if (e.haveRestPos) {
@@ -317,7 +326,7 @@ bool AdmitBlock(AtvEntry& e, const coop::net::AtvStatePayload& p, uint8_t sender
         motionStill = speed < kRestCmS && coop::atv_sync::Len(d) < kRestMovedCm;
     }
     const bool still = motionStill && !grabbed;
-    if (motionStill && grabbed) ++g_counters.carriedStillBlocks;
+    if (motionStill && grabbedBit) ++g_counters.carriedStillBlocks;
     e.lastBlockSpeed = speed;
     e.restSinceMs = !still ? 0 : (e.restSinceMs != 0 ? e.restSinceMs : nowMs);
     e.lastRestPos = pos;

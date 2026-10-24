@@ -48,26 +48,26 @@ void WalkStart(SeatedClient& c, Arm a, const AtvAt& t, float reachCm) {
     c.atv.Set(t.actor);
     c.walk = coop::director::StartBackgroundWalk(t.at, reachCm, kWalkDeadlineS);
     c.walkAt = Clock::now();
-    coop::dev::drill_chat::Say(ReadyLine(a));
-    UE_LOGI("[ATV-HEALTH-DRILL] client arm=%s the ATV is at (%.0f,%.0f,%.0f), walking to it", SpecOf(a).name, t.at.X,
-            t.at.Y, t.at.Z);
+    coop::dev::drill_chat::Say(ReadyLine(a, c.role));
+    UE_LOGI("[ATV-HEALTH-DRILL] %s arm=%s the ATV is at (%.0f,%.0f,%.0f), walking to it", c.role, SpecOf(a).name,
+            t.at.X, t.at.Y, t.at.Z);
 }
 
 Stage WaitBound(SeatedClient& c, Arm a) {
     if (!Past(c.run, kFailBound)) return Stage::Wait;
-    Fail("client", a, c.run, "the client's streams or the ATV's table never held", "not ready",
+    Fail(c.role, a, c.run, "the client's streams or the ATV's table never held", "not ready",
          "streams running, ATV indexed");
     return Stage::Failed;
 }
 
 Stage WalkStep(SeatedClient& c, Arm a) {
     if (!c.atv.Get()) {
-        Fail("client", a, c.run, "the ATV is gone before the walk ended", "no ATV", "the world's ATV");
+        Fail(c.role, a, c.run, "the ATV is gone before the walk ended", "no ATV", "the world's ATV");
         return Stage::Failed;
     }
     const int state = c.walk->state.load();
     if (state == 2) {
-        Fail("client", a, c.run, "the director's walk to the ATV did not arrive", "walk failed", "arrived");
+        Fail(c.role, a, c.run, "the director's walk to the ATV did not arrive", "walk failed", "arrived");
         return Stage::Failed;
     }
     if (state != 1) return Stage::Wait;
@@ -78,11 +78,11 @@ Stage WalkStep(SeatedClient& c, Arm a) {
 Stage SitStep(SeatedClient& c, Arm a, void* player, void* atv, uint8_t self) {
     if (!atv_seat::TrySit(player, atv, c.sit)) {
         if (!Past(c.run, kFailBound)) return Stage::Wait;
-        Fail("client", a, c.run, "the sit never finished", "no grant", "seated");
+        Fail(c.role, a, c.run, "the sit never finished", "no grant", "seated");
         return Stage::Failed;
     }
     if (coop::atv_sync::ActorSeatedBy(self) != atv) {
-        Fail("client", a, c.run, "the sit did not take (see the [ATVP] sit lines)", "not seated", "seated");
+        Fail(c.role, a, c.run, "the sit did not take (see the [ATVP] sit lines)", "not seated", "seated");
         return Stage::Failed;
     }
     return Stage::Next;

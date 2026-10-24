@@ -22,7 +22,8 @@ CFG_FLAG(atv_park_first_spawn, "atv_park_first_spawn", "dev", false, "VOTVCOOP_A
     "Developer: the first ATV arrival that would spawn a mirror is parked once per session, as if the world were "
     "not ready, and spawned by the park's hand-back (the ATV spawn drill's park arm).")
 
-CFG_ENUM(atv_health_drill, "atv_health_drill", "dev", "off", "off|sit|grab|occupied|synced|silent|gate|owner|trap|spawned",
+CFG_ENUM(atv_health_drill, "atv_health_drill", "dev", "off",
+    "off|sit|grab|occupied|synced|silent|gate|owner|trap|spawned|carry_still|synced_peer|join|stream_pace",
     "VOTVCOOP_ATV_HEALTH_DRILL",
     "Drill, the ATV lane's table; set on BOTH peers, the arm names what is done to the world's own ATV. sit: "
     "the client walks to the ATV with the director, takes its seat and leaves it; the host must name the client as "
@@ -37,9 +38,17 @@ CFG_ENUM(atv_health_drill, "atv_health_drill", "dev", "off", "off|sit|grab|occup
     "the client, and the host's own blast must not explode it again. trap: the client sits and the host sets the "
     "story event's trap; the trap must reach the client's copy and fire there as one request, and a second kill after "
     "the host's blast must be accepted. spawned: the host spawns an ATV beside the players and says its key; the "
-    "client waits for it in its table (the DONE line prints how long), walks to it and sits. Each peer prints one DONE line on a "
+    "client waits for it in its table (the DONE line prints how long), walks to it and sits. carry_still: the host spawns "
+    "an ATV, the client grabs it and holds it still; the host must count 30 still blocks and not hand it back while held, "
+    "then hand it back once released. synced_peer (three peers): the client carries the spawned ATV and the observer "
+    "(slot 2) grabs it too; the host must refuse the second client's takeover as synced, and the observer must lose the "
+    "grab. join (three peers): the client sits in the spawned ATV and the observer joins afterwards; its table must "
+    "show the seat and the syncer from the connect snapshot. stream_pace (three peers): the seated client sends 100 "
+    "blocks in one tick; the host's bucket must pace most of them and the observer must see no more than the burst "
+    "budget over the normal stream. Each peer prints one DONE line on a "
     "pass, the host's with the times it measured. Run it on a fresh host world; only the client in slot 1 acts.")
-CFG_ENUM(atv_health_red, "atv_health_red", "dev", "off", "off|back|occupied|takeover|silence|nonowner|trapbit|not_syncer",
+CFG_ENUM(atv_health_red, "atv_health_red", "dev", "off",
+    "off|back|occupied|takeover|silence|nonowner|trapbit|not_syncer|carry_back|peer_carry",
     "VOTVCOOP_ATV_HEALTH_RED",
     "Developer red arm: never set. back (HOST): the at-rest hand-back of a client-synced ATV is skipped, so the ATV "
     "health drill's `back` phase must fail; range and silence still take an ATV back. occupied (HOST): a sit on an "
@@ -48,4 +57,6 @@ CFG_ENUM(atv_health_red, "atv_health_red", "dev", "off", "off|back|occupied|take
     "`silent` arm must fail. nonowner (HOST): the damage gate treats no copy as a non-owner, so the host's copy runs the "
     "blast the `gate` arm needs cancelled and it must fail. trapbit (CLIENT): the stamp's trap bit is ignored, so the "
     "`trap` arm must fail. not_syncer (HOST): a block from a client that does not sync the ATV is not refused, so the "
-    "hostile drill's `atv_state_forge` arm must fail.")
+    "hostile drill's `atv_state_forge` arm must fail. carry_back (HOST): the rest test ignores the grab bit, so a carry "
+    "standing still is handed back while held and the `carry_still` arm must fail. peer_carry (HOST): a takeover of an "
+    "ATV another client carries is not refused, so the `synced_peer` arm must fail.")
