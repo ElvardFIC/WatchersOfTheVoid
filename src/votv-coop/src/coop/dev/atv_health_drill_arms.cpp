@@ -186,7 +186,9 @@ void HostYielded(Arm a) {
 
 enum class CP : int { Wait, Walk, Act, Undo, Yield, Back };
 
-constexpr uint8_t kSeatSeq = 250, kTakeoverSeq = 251;   // the raw requests' numbers: no honest request carries one
+// The raw requests' numbers. Honest requests cycle NextSeq 1..255, so 250 and 251 are free only on the drill's
+// fresh world, where this client sends a handful of requests before the raw one: the drill's contract.
+constexpr uint8_t kSeatSeq = 250, kTakeoverSeq = 251;
 
 struct Client {
     Run                                             run;
@@ -197,6 +199,7 @@ struct Client {
     atv_seat::SitTry                                sit;
     std::unique_ptr<coop::director::AimedGrab>      grab;
     Clock::time_point                               walkAt{}, arrivedAt{}, nextTry{};
+    Clock::time_point                               rawFrom{};   // the raw send's first try: its bound counts from here
 };
 Client g_c;
 
@@ -335,6 +338,8 @@ void ClientRaw(coop::net::Session* s, Arm a) {
     const Clock::time_point now = Clock::now();
     if (now < g_c.nextTry) return;
     g_c.nextTry = now + std::chrono::seconds(1);
+    if (g_c.rawFrom == Clock::time_point{}) g_c.rawFrom = now;
+    if (now - g_c.rawFrom > kFailBound) return ClientFail(a, "the raw request never went out", "no send", "sent");
     bool sent = false;
     if (a == Arm::Occupied) {
         coop::net::AtvSeatPayload p{};
