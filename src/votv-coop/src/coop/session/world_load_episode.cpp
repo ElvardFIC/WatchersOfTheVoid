@@ -43,7 +43,11 @@ std::atomic<bool> g_inEpisode{false};
 UE_FACT_FN(kRowLoadObjects, "join_world_ready", L"mainGamemode_C", L"loadObjects", Declared);
 UE_FACT_FN(kRowLoadObjectsRed, "dev.replay_watch_break", L"mainGamemode_C", L"loadObjectsJwRed", Declared);
 constexpr int kTagReplay = 0x4A575250;  // 'JWRP'
-constexpr int64_t kWorldChangeReplayBoundMs = 120000;  // a world change's replay must return within this
+// A world change's replay must return within this. MTA drops a client that misses its join bounds
+// (CLIENT_VERIFICATION_TIMEOUT 10 s and NET_CONNECT_TIMEOUT 30 s,
+// reference/mtasa-blue/Client/mods/deathmatch/logic/Config.h:105-106); ours is 120 s because a
+// world's load frame can block the game thread for that long.
+constexpr int64_t kWorldChangeReplayBoundMs = 120000;
 
 // The probe-session open request (a Request value). Arm() may NOT touch the plain probe fields
 // below: it runs off the game thread and would race the game-thread ticker, one of those fields
@@ -69,9 +73,9 @@ const ue_wrap::facts::Function* g_watchRow = nullptr;
 bool g_postDrop = false;
 std::atomic<bool> g_watchRefused{false};
 
-// Per request: the red arm read once, the log said once, and why the request failed.
-bool g_reqGateBreak = false;
-bool g_reqFlagsRead = false;
+// The red arm that skips the replay wait is read once per process, beside the watch's two flags. Per
+// request: the log said once, and why the request failed.
+bool g_gateBreak = false;
 bool g_sweepSkipSaid = false;
 RequestFailureInfo g_failure;
 
@@ -177,10 +181,13 @@ void OnLoadObjectsPost(const SG::Call& c) {
     if (fresh) UE_LOGI("world_load_episode: save replay returned (gamemode %p)", c.object);
 }
 
-// Did the replay run in the world the player is in now (a replay of a world already left does not count).
-bool SaveReplayedInThisWorld() {
+// Did the replay run in the world the player is in now (a replay of a world already left does not
+// count). The world tested is returned through `world`, read once, so the caller's baseline is the
+// world this answer judged.
+bool SaveReplayedInThisWorld(void** world) {
     void* gm = g_replayGm.Get();
     void* cw = WI::CurrentWorld();
+    *world = cw;
     return gm && cw && WI::WorldOf(gm) == cw;
 }
 
@@ -259,6 +266,7 @@ void InstallReplayWatch(coop::net::Session& session) {
         g_watchRow = coop::config::ResolveFlag(::coop::config_registry::rows::replay_watch_break)
                          ? &kRowLoadObjectsRed : &kRowLoadObjects;
         g_postDrop = coop::config::ResolveFlag(::coop::config_registry::rows::replay_post_drop);
+        g_gateBreak = coop::config::ResolveFlag(::coop::config_registry::rows::replay_gate_break);
     }
     if (!g_watchRegistered && !g_watchRefused.load(std::memory_order_relaxed)) {
         g_watchRegistered = SG::WatchName(*g_watchRow, kTagReplay, nullptr, &OnLoadObjectsPost);
@@ -295,7 +303,9 @@ bool IsBaselineWorld(void* world) {
     return world && world == g_baseline.Raw() && g_baseline.Is(world);
 }
 
-void SetBaselineWorld(void* world) { g_baseline.Set(world); }
+void SetBaselineWorld(void* world) {
+    if (world) g_baseline.Set(world);  // a null read keeps the baseline held; an empty one hides a later change
+}
 
 void ClearBaselineWorld() { g_baseline.Reset(); }
 
@@ -332,10 +342,7 @@ bool TickQuiesceProbe() {
     // session opens here, on the game thread, so the plain probe fields below are single-thread-owned.
     const auto req = static_cast<Request>(g_request.load(std::memory_order_acquire));
     if (req != Request::None) {
-        if (!g_reqFlagsRead) {
-            g_reqGateBreak = coop::config::ResolveFlag(::coop::config_registry::rows::replay_gate_break);
-            g_reqFlagsRead = true;
-        }
+        void* cw = nullptr;  // the world the replay test judged, for the baseline
         g_probeOpen = false;
         g_quiesced = false;  // (1) no session while a request pends
         if (g_failure.failure == Failure::None && (g_watchRefused.load(std::memory_order_relaxed) || g_watchDead)) {
@@ -347,14 +354,18 @@ bool TickQuiesceProbe() {
             UE_LOGE("world_load_episode: the save-replay watch (%s) is not live -- %s", row.c_str(),
                     g_watchRefused.load(std::memory_order_relaxed) ? "the script gate refused it"
                                                                    : "its function does not exist in this game build");
-        } else if (g_failure.failure == Failure::None && (g_reqGateBreak || SaveReplayedInThisWorld())) {
-            // (3) the replay returned: the request is consumed and its session opens
-            const auto was = static_cast<Request>(g_request.exchange(0, std::memory_order_acq_rel));
-            g_baseline.Set(WI::CurrentWorld());
-            g_reqFlagsRead = false;
-            g_sweepSkipSaid = false;
-            OpenProbeSession_(was == Request::Join ? "join world-load" : "world-change re-announce",
-                              /*forRequest*/ true);
+        } else if (g_failure.failure == Failure::None && (SaveReplayedInThisWorld(&cw) || g_gateBreak)) {
+            // (3) the replay returned: the request is consumed and its session opens. An Arm that
+            // replaced the request this tick, off the game thread, fails the exchange; the next tick
+            // sees the new one.
+            uint8_t expect = static_cast<uint8_t>(req);
+            if (g_request.compare_exchange_strong(expect, 0, std::memory_order_acq_rel)) {
+                SetBaselineWorld(cw);
+                g_sweepSkipSaid = false;
+                OpenProbeSession_(static_cast<Request>(expect) == Request::Join ? "join world-load"
+                                                                                : "world-change re-announce",
+                                  /*forRequest*/ true);
+            }
         } else if (g_failure.failure == Failure::None && req == Request::WorldChange &&
                    PendingRequestAgeMs() >= kWorldChangeReplayBoundMs) {
             // (4) the world change's bound
@@ -424,7 +435,6 @@ void Reset() {
     g_watchSettled = false;
     g_watchDead = false;
     g_failure = {};
-    g_reqFlagsRead = false;
     g_sweepSkipSaid = false;
     g_probeOpen = false;
     g_everOpened = false;  // back to vacuous: a reconnect with no world change announces freely

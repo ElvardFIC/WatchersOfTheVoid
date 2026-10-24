@@ -70,7 +70,10 @@ void OnAnnounce(coop::net::Session& session, int slot) {
     // A later announce. The connect replay is some 64 lane calls + a walk of the whole object array
     // (npc_world_enum.cpp), so an unbounded re-announce flood would cost that per message. The bucket caps
     // it at two per occupancy (no refill): a legitimate world-change re-seed (at most one) is within the
-    // cap; a flood at any pace empties the burst and the slot is ended.
+    // cap; a flood at any pace empties the burst and the slot is ended. MTA's server ends a client at
+    // its first repeated in-game notice because it owns the map change
+    // (reference/mtasa-blue/Server/mods/deathmatch/logic/CRPCFunctions.cpp:94-122); here the client's
+    // level travel is its own, so the host cannot see it and caps the repeat instead.
     if (g_rate[slot].Take(kReplayBudget, NowMs())) {
         coop::subsystems::ConnectReplayForSlot(slot);
     } else {

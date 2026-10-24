@@ -21,6 +21,13 @@
 
 namespace coop::net { class Session; }
 
+// MTA's client has no local world to restore (its map arrives in CMapManager::SendMapInformation,
+// reference/mtasa-blue/Server/mods/deathmatch/logic/CMapManager.cpp:195), so its in-game notice
+// (reference/mtasa-blue/Client/mods/deathmatch/logic/CClientGame.cpp:3526) waits only for the
+// engine; ours also waits for the host's save to finish replaying here, as Source activates a
+// client only after the server restores its entities
+// (reference/source-sdk-2013/src/game/server/gameinterface.cpp:2703).
+
 namespace coop::world_load_episode {
 
 // The client join world load has started (the harness timeline thread, before the blocking
@@ -61,9 +68,13 @@ bool RequestWorldChangeProbe();
 bool AwaitingSaveReplay();
 
 // The world this connection last settled on, held as a weak identity. Game thread.
+// True when a baseline world is held.
 bool HasBaselineWorld();
+// True when `world` is the baseline: the same address holding the same live object.
 bool IsBaselineWorld(void* world);
+// Hold `world` as the baseline; a null `world` keeps the baseline already held.
 void SetBaselineWorld(void* world);
+// Forget the baseline (the connection went, or the session ended).
 void ClearBaselineWorld();
 
 // Milliseconds since a world-change request was raised, or -1 when none pends. Game thread.

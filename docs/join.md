@@ -125,8 +125,7 @@ are the client's own rebuild churn, and broadcasting them would destroy the host
 inside a world-load episode that suppresses the broadcast
 (`coop/session/world_load_episode`). The loader's last step is the gamemode's `loadObjects`, the
 world's save replay; the same module watches it by name on a client, and the quiescence probe opens
-only once it has returned in the world the client stands in (the announce used to follow the replay
-by timing margin alone, and now follows it by condition). From then on the probe runs: five times a
+only once it has returned in the world the client stands in. From then on the probe runs: five times a
 second it counts the load-tail population, and the load is settled when the count holds across
 consecutive scans. One absolute deadline bounds a pathological load; past it the client announces
 anyway, logged loudly as degraded. The wait for the replay itself has no deadline on a join beyond the
@@ -322,7 +321,7 @@ travel, the player is told so (`MV-J31`), unless the reason the session ended is
 | `MV-J29` | `net.ice=relay`, and the session has no TURN server to relay through |
 | `MV-J30` | `net.ice=relay`, and the join is a direct one, which would show the host the player's address |
 | `MV-J31` | The game would not travel to the main menu: from a world a join starts in, or after a session ended (its game mode refused the travel, or it never dispatched or arrived); the player is still in that world |
-| `MV-J32` | The game's script loop could not be hooked at boot, or the prop key watches were refused, so a prop's key is never seen written and props cannot be matched between players by key; no session starts, a join or a host's own, the host's before its world loads, and a join from a world before the world is left |
+| `MV-J32` | The game's script loop could not be hooked at boot, or the prop key watches or the save-replay watch were refused, so a prop's key is never seen written or the world's save replay cannot be seen to return, and props cannot be matched between players by key; no session starts, a join or a host's own, the host's before its world loads, and a join from a world before the world is left |
 | `MV-H01` | Wrong password |
 | `MV-H02` | This server needs a password |
 | `MV-H03` | Too many password attempts; try again in ten minutes |
@@ -452,7 +451,7 @@ not raise the game's own active-event counter, whose save and pause blocks the m
 | Limit | Evidence |
 |---|---|
 | The transfer runs at a rate the mod measures per connection, climbing from about 145 KB/s to whatever the link acknowledges carrying; the transport itself contributes no bandwidth estimation, so a link that genuinely is slow is still a long download | `[V]` `coop/net/send_rate_control`, `coop/net/connection_tuning` |
-| The world load is capped by the probe's two deadlines, one on no progress and one absolute; a load past either announces into a world that may still be churning, logged as degraded | `[V]` `coop/session/world_load_episode` |
+| The world load is capped by one absolute deadline on the probe; a load past it announces into a world that may still be churning, logged as degraded. The wait for the world's save replay has the loading phase's budget on a join, and 120 s on a world change | `[V]` `coop/session/world_load_episode` |
 | Keyless save-loaded objects are matched by position; the index-to-id sidecar is built and transferred, and its bind is off by default, behind the `save_identity_bind` developer flag | `[V]` `coop/config/config_registry_rows.inc`, `coop/props/save_identity_bind` |
 | A host change inside the window that post-dates the snapshot (a kerfur turned off) materialises at quiescence, after the curtain has lifted, as a visible pop-in | `[V]` `coop/element/mirror_defer` holds it until quiescence |
 | A local save-loaded actor repositioned after the curtain lifts is visible: the curtain lifts at the end marker, before quiescence, a short curtain being chosen over a blank screen | `[V]` `ui/join_curtain` |

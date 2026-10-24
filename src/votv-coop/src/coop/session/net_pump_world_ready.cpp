@@ -72,6 +72,9 @@ void ForgetWorldReadyAnnounce() {
 }
 
 // The announce axis' one owner; registry_reaper only requests through here. No-op on the host.
+// MTA never re-announces: the server owns a map change, and a repeated in-game notice is a
+// disconnect (reference/mtasa-blue/Server/mods/deathmatch/logic/CRPCFunctions.cpp:94-122). A level
+// travel here is local to the client, so the client says it and the host caps the repeat.
 void MaybeRequestReAnnounce(coop::net::Session& session, void* reapWorld) {
     if (session.role() == coop::net::Role::Host) return;
     // A world is the same only when the same address holds the same live object. Without a baseline
@@ -105,19 +108,26 @@ void MaybeRequestReAnnounce(coop::net::Session& session, void* reapWorld) {
     }
 }
 
+// MTA's client has no local world to restore (its map arrives in CMapManager::SendMapInformation,
+// reference/mtasa-blue/Server/mods/deathmatch/logic/CMapManager.cpp:195), so its in-game notice
+// (reference/mtasa-blue/Client/mods/deathmatch/logic/CClientGame.cpp:3526) waits only for the
+// engine; ours also waits for the host's save to finish replaying here, as Source activates a
+// client only after the server restores its entities
+// (reference/source-sdk-2013/src/game/server/gameinterface.cpp:2703).
 const char* TickWorldReadyAnnounce(coop::net::Session& session, void* localNow, bool worldUp,
                                    bool isConnected, bool isHost) {
     // A client announces world-ready once per connection, when a gameplay world is up, the prop
     // registry expresses it, the load tail has quiesced and the prop key index holds the world, so the
-    // host's stream is read by key against it: the MTA INITIAL_DATA_STREAM barrier
-    // (reference/mtasa-blue/Client/mods/deathmatch/logic/CPacketHandler.cpp:463,
-    // reference/mtasa-blue/Server/mods/deathmatch/logic/CRPCFunctions.cpp:54), whose own terms have no key
-    // index to wait for, its ids being minted by their owner
-    // (reference/mtasa-blue/Server/mods/deathmatch/logic/CElementIDs.cpp:23). The host streams the whole
-    // world state on it, so announcing into a churning load would put the authoritative stream into it.
-    // The load tail is not read before the world's own save replay has returned, which a failed watch or
-    // a world change's bound ends by name; the probe after it is deadline-capped, so a pathological load
-    // still announces. Re-fires on a re-announce request under the same coherence gate.
+    // host's stream is read by key against it. MTA gates the same step on the engine being loaded
+    // (reference/mtasa-blue/Client/mods/deathmatch/logic/CClientGame.cpp:1364-1367) and then asks for
+    // the stream (reference/mtasa-blue/Client/mods/deathmatch/logic/CPacketHandler.cpp:463); this
+    // message is both. Its terms have no key index to wait for, its ids being minted by their owner
+    // (reference/mtasa-blue/Server/mods/deathmatch/logic/CElementIDs.cpp:23). The host streams the
+    // whole world state on it, so announcing into a churning load would put the authoritative stream
+    // into it. The load tail is not read before the world's own save replay has returned, which a
+    // failed watch or a world change's bound ends by name; the probe after it is deadline-capped, so a
+    // pathological load still announces. Re-fires on a re-announce request under the same coherence
+    // gate.
     const bool reAnnounce = g_reAnnounceWorldReady.load(std::memory_order_relaxed);
     if (!isHost && isConnected &&
         (!g_worldReadyAnnounced.load(std::memory_order_relaxed) || reAnnounce)) {
@@ -141,14 +151,15 @@ const char* TickWorldReadyAnnounce(coop::net::Session& session, void* localNow, 
         const WLE::RequestFailureInfo& f = WLE::RequestFailure();
         if (f.failure != WLE::Failure::None && !g_failureActed) {
             g_failureActed = true;
-            const auto code = f.failure == WLE::Failure::WatchDead
-                                  ? coop::net::EndReason::ScriptHooksUnavailable
-                                  : coop::net::EndReason::WorldNeverSettled;
+            const bool watchDead = f.failure == WLE::Failure::WatchDead;
+            const auto code = watchDead ? coop::net::EndReason::ScriptHooksUnavailable
+                                        : coop::net::EndReason::WorldNeverSettled;
             if (coop::join_progress::CurrentPhase() != coop::join_progress::Phase::Idle)
                 coop::join_progress::Fail(code, f.text);
             else {
                 coop::join_progress::NoteDisconnect(code, f.text, /*afterJoin*/ true);
-                return "the new world's save replay failed";
+                return watchDead ? "the save-replay watch is not live"
+                                 : "the new world's save replay never returned";
             }
         }
         // An install found unable to index after the session started (its watches resolve on the game
@@ -187,7 +198,7 @@ const char* TickWorldReadyAnnounce(coop::net::Session& session, void* localNow, 
                 // reaper's world gate: the two are compared in MaybeRequestReAnnounce, and
                 // FindObjectByClass answers "a world object exists" (the incoming world, while the
                 // player chain still reads null), not "the world the player is in".
-                WLE::SetBaselineWorld(WI::CurrentWorld());
+                WLE::SetBaselineWorld(WI::CurrentWorld());  // a null read keeps the baseline held
                 g_announcedWorldRef.Set(ue_wrap::world_identity::WorldOf(localNow));  // fresh this tick
                 // A fresh connect replay is about to arrive: reset the deferred-adoption per-world
                 // state so the new world re-adopts its save NPCs and re-sweeps orphans.
