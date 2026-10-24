@@ -2,7 +2,8 @@
 // the lane. atv_index.cpp owns the hub's scan callbacks that fill atv_sync.cpp's map, the host's announce
 // of that index (AtvSpawn / AtvDestroy) and the test of a key that may name an ATV on the wire;
 // atv_sync.cpp reads them at the connect snapshot and the disconnect and asks for the registration,
-// atv_runtime_mirror.cpp asks which keys it may take. Nothing outside coop/interactables/ includes this.
+// atv_runtime_mirror.cpp asks which keys it may take and files the rows it adopts. Nothing outside
+// coop/interactables/ includes this.
 // Game thread only.
 
 #pragma once
@@ -41,6 +42,10 @@ bool WireKeyNamesAnAtv(const coop::net::WireKey& key, const char* side);
 // Announces the ATV filed under `key` to every connected client (slot < 0) or seeds one joiner
 // (slot >= 0). True when the packet was queued.
 bool SendAtvSpawn(const std::wstring& key, void* actor, int slot);
+
+// CLIENT: files a row under `key` for a live actor the world already held (the save's copy of an announced ATV),
+// not flagged as a mirror this lane spawned. The host never files a row outside the hub's pass.
+void AdoptNative(const std::wstring& key, void* actor);
 
 // A session ended: the broadcast counter restarts and the said keys may be said again.
 void ResetAnnounceState();

@@ -129,6 +129,8 @@ inline Lane LaneForKind(ReliableKind k) {
     case ReliableKind::AtvRelease:     return Lane::Normal;
     case ReliableKind::AtvSpawn:       return Lane::Normal;
     case ReliableKind::AtvDestroy:     return Lane::Normal;
+    // The set's edge rides behind the AtvSpawns it counts: FIFO on this lane is what makes the count mean them.
+    case ReliableKind::AtvSetComplete: return Lane::Normal;
     // DeskState, DeskInput and DeskScanEvent are order-coupled (adopt before deltas, charge before
     // scan); pinned together.
     case ReliableKind::DeskState:      return Lane::Normal;

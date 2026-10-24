@@ -30,7 +30,7 @@ inline constexpr uint32_t kMagic = 0x564D5450u;
 // This file is past the 1500-line hard cap and stays there: it is the single-feature exception the
 // rule names. One wire format, whose enum, payload structs and static_asserts are read together;
 // splitting it would put a kind's number in one file and its bytes in another.
-inline constexpr uint16_t kProtocolVersion = 245;
+inline constexpr uint16_t kProtocolVersion = 246;
 
 // Default LAN port (overridable via multivoid.ini "net.port=").
 inline constexpr uint16_t kDefaultPort = 47621;
@@ -1100,6 +1100,15 @@ enum class ReliableKind : uint8_t {
     // joiner's world is ready is a claimed row on the host, which the drive lane's world-ready answer replays.
     // PropIgniteIntentPayload.
     PropIgniteIntent = 193,
+
+    // HOST->CLIENT: the host's ATV connect snapshot is complete. It follows the snapshot's AtvSpawns on one lane and
+    // carries their count; the joiner then removes every ATV it holds that no AtvSpawn since the previous edge named,
+    // so an ATV its save holds and the host's world does not goes. Sent at every connect replay (the first world-ready
+    // announce and a world-change re-announce), and withheld when the host could not walk its ATVs completely, in
+    // which case the joiner removes nothing that replay. Host-authored: refused from a client at the host's receive
+    // edge; never relayed; not pre-world; a copy landing before the joiner's world is ready waits for it.
+    // AtvSetCompletePayload.
+    AtvSetComplete = 199,
 };
 
 #pragma pack(push, 1)
@@ -2558,6 +2567,12 @@ struct AtvDestroyPayload {
     WireKey key;       // 32
 };
 static_assert(sizeof(AtvDestroyPayload) == 32, "AtvDestroyPayload must be 32 bytes");
+
+// The end of the host's ATV set for one joiner (AtvSetComplete): how many AtvSpawns the snapshot sent ahead of it.
+struct AtvSetCompletePayload {
+    uint32_t count;    // 4 -- the AtvSpawns of this set
+};
+static_assert(sizeof(AtvSetCompletePayload) == 4, "AtvSetCompletePayload must be 4 bytes");
 
 // The authority-lost edge (AtvRelease): a dismount or an ungrab, not a yield. The receiver clears
 // the author slot and nothing else; the stream continues from the host as the idle syncer.

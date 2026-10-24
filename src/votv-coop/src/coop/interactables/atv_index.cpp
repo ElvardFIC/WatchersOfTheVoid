@@ -92,10 +92,9 @@ bool FirstSaying(const wchar_t* topic, const std::wstring& key) {
 }
 
 bool KeyNamesAnAtv(const std::wstring& key, const char* side) {
-    if (key.empty())              { Refuse(key, "empty", side); return false; }
-    if (key == L"None")           { Refuse(key, "None", side); return false; }
-    if (key.size() > kMaxKeyChars) { Refuse(key, "longer than 31 chars", side); return false; }
-    return true;
+    if (AnnounceableAtvKey(key)) return true;
+    Refuse(key, key.empty() ? "empty" : key == L"None" ? "None" : "longer than 31 chars", side);
+    return false;
 }
 
 bool WireKeyNamesAnAtv(const coop::net::WireKey& k, const char* side) {
@@ -243,7 +242,31 @@ void RegisterWithScanHub() {
         &HubPassBegin, &HubMatch, &HubPassComplete, /*settleScans*/ 15});
 }
 
+// The receiver files the world's own copy of an announced ATV the way the hub files it, with one difference
+// the hub never makes: the row is not a mirror this lane spawned, so a disconnect leaves the actor standing.
+void AdoptNative(const std::wstring& key, void* actor) {
+    AtvEntry e{};
+    e.actor = actor;
+    e.idx   = R::InternalIndexOf(actor);
+    e.world = W::WorldOf(actor);
+    g_atvs[key] = std::move(e);
+}
+
 }  // namespace detail
+
+bool AnnounceableAtvKey(const std::wstring& key) {
+    return !key.empty() && key != L"None" && key.size() <= detail::kMaxKeyChars;
+}
+
+void ForEachAnnounceableAtv(void (*fn)(void* ctx, void* actor, const std::wstring& key), void* ctx) {
+    struct Walk { void (*fn)(void*, void*, const std::wstring&); void* ctx; } walk{fn, ctx};
+    A::ForEachAtv([](void* p, void* actor, int32_t idx) {
+        const Walk* w = static_cast<const Walk*>(p);
+        if (!detail::LiveInThisWorld(actor, idx)) return;
+        const std::wstring key = A::GetKeyString(actor);
+        if (AnnounceableAtvKey(key)) w->fn(w->ctx, actor, key);
+    }, &walk);
+}
 
 uint32_t RuntimeBroadcasts() { return detail::g_runtimeBroadcasts; }
 

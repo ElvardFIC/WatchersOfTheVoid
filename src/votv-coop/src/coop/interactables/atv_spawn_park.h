@@ -1,12 +1,13 @@
-// coop/interactables/atv_spawn_park.h -- an ATV's spawn, held until this client's world can take it.
+// coop/interactables/atv_spawn_park.h -- an ATV's spawn or destroy, held until this client's world can take it.
 //
-// The host sends an ATV's spawn only to a world-ready slot and re-sends every ATV of its index at each world-ready
-// announce, so a spawn arriving in a world since left is answered by that replay. What the replay cannot answer is a
-// spawn landing in THIS world while it is not ready for it -- a post-snapshot sweep re-arming the load probe, the ATV
-// wrapper or the name library not resolved yet -- which would otherwise be dropped for good, the pose stream only moving an ATV that
-// exists. Such a spawn is parked here, stamped with the world it arrived in, and handed back once the world reads
-// ready; a world change drops it, the new world's replay bringing it again. A spawn that fails once its world is
-// ready is final: nothing here retries it. Game thread.
+// The host sends an ATV's spawn only to a world-ready slot and re-sends every ATV it holds at each world-ready
+// announce, so an arrival in a world since left is answered by that replay. What the replay cannot answer is an
+// arrival landing in THIS world while it is not ready for it -- a post-snapshot sweep re-arming the load probe, the ATV
+// wrapper, the name library or the game's key map not resolved yet -- which would otherwise be dropped for good, the
+// pose stream only moving an ATV that exists. Such an arrival is parked here, stamped with the world it arrived in,
+// and handed back once the world reads ready; a world change drops it, the new world's replay bringing it again. A
+// key holds one entry: the host's last word on it, a spawn (with its payload) or a destroy (the key alone). An
+// arrival that fails once its world is ready is final: nothing here retries it. Game thread.
 #pragma once
 #include <cstddef>
 #include <cstdint>
@@ -16,19 +17,22 @@ namespace coop::atv_sync::spawn_park {
 // The park bounds every ATV of the host's world (a few); a park past this describes no world of theirs. The
 // client's other once-per-key sets (the refused keys) take the same bound.
 inline constexpr size_t kCap = 16;
-// Hold the newest spawn for this key until the world is ready; `why` names the readiness that was missing.
-void Park(const std::wstring& key, const coop::net::AtvSpawnPayload& payload, const char* why);
-// A spawn that landed, was malformed, or whose ATV was destroyed: nothing for it waits any longer.
+// Hold the newest spawn for this key until the world is ready (a destroy parked for the key is replaced); `why`
+// names the readiness that was missing. The first park of a key says so once; `say` says it again for a key
+// already held, which only a deliberate park wants.
+void Park(const std::wstring& key, const coop::net::AtvSpawnPayload& payload, const char* why, bool say = false);
+// Hold a destroy for this key until the world is ready: the host's last word, so a spawn parked for the key is
+// dropped for it.
+void ParkDestroy(const std::wstring& key, const char* why);
+// An arrival that landed, was malformed, or was overtaken: nothing for this key waits any longer.
 void Discard(const std::wstring& key);
-// Whether a spawn for this key waits here: a hand-back still holds its entry while OnAtvSpawn runs it.
-bool Holds(const std::wstring& key);
-// Tick, inside a gameplay world: hand each parked spawn back to OnAtvSpawn, which parks it again while the world is
-// still not ready. A half-second poll of that readiness. The name library is asked once per poll: while it is
-// unresolved every parked spawn stays parked without re-entering OnAtvSpawn, and the miss is held until the poll
-// after a world change.
+// Tick, inside a gameplay world: apply the host's pending set when its world is ready, then hand each parked
+// arrival back to ResolveSpawn / OnAtvDestroy, which park it again while the world is still not ready. A half-second
+// poll of that readiness. The name library is asked once per poll: while it is unresolved every parked arrival
+// stays parked without re-entering the handlers, and the miss is held until the poll after a world change.
 void DrainReady();
 void Clear();
-// The spawns ever parked, and those parked now. For the ATV spawn drill.
+// The spawns ever parked, and the arrivals parked now. For the ATV spawn drill.
 uint32_t ParkedEver();
 size_t Pending();
 }  // namespace coop::atv_sync::spawn_park

@@ -204,6 +204,19 @@ bool HandleStateEvent(net::Session& session,
         coop::atv_sync::OnAtvDestroy(adp);
         break;
     }
+    case net::ReliableKind::AtvSetComplete: {
+        // The host's ATV set for this joiner is complete: what it did not name is removed. Host-authoritative; a
+        // client's copy is refused at the host's receive edge (client_authorship.h).
+        if (msg.payloadLen < sizeof(net::AtvSetCompletePayload)) {
+            UE_LOGW("event_feed: AtvSetComplete payload too short (%zu < %zu)",
+                    static_cast<size_t>(msg.payloadLen), sizeof(net::AtvSetCompletePayload));
+            break;
+        }
+        net::AtvSetCompletePayload scp{};
+        std::memcpy(&scp, msg.payload, sizeof(scp));
+        coop::atv_sync::OnAtvSetComplete(scp);
+        break;
+    }
     case net::ReliableKind::DroneState: {
         // The delivery drone body pose, a host-authoritative singleton: host to client only, refused from a client
         // at the host's receive edge. The client suppresses its own drone tick and mirrors the streamed transform.

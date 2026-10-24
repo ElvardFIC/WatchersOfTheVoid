@@ -31,6 +31,12 @@ bool EnsureResolved();
 // so the object scan hub's one judgement per class holds. Game thread.
 bool IsAtv(void* obj);
 
+// Every live ATV in the lineage (ATV_C and each subclass with an instance, the witch car included), one call per
+// actor with its object-array slot. Skips the class default objects and the objects a load has not handed to the
+// game thread yet or the engine is destroying; the caller still asks its own world and key questions. Walks the
+// object index, never the object array. The callback must not create or destroy objects. Game thread.
+void ForEachAtv(void (*fn)(void* ctx, void* actor, int32_t idx), void* ctx);
+
 // The ATV's save-persistent Key as a wide string ("" on failure, L"None" if unkeyed).
 std::wstring GetKeyString(void* atv);
 

@@ -217,6 +217,7 @@ constexpr ClientAuthorship AuthorshipOf(ReliableKind k) {
     case ReliableKind::CameraActiveState:
     case ReliableKind::CameraLightState:
     case ReliableKind::LaptopTabState:
+    case ReliableKind::AtvSetComplete:
         return ClientAuthorship::Host;
     }
     return ClientAuthorship::NotAKind;  // a byte value that names no kind: refused like Host

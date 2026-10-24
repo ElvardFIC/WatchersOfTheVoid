@@ -17,6 +17,7 @@
 #include <atomic>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace ue_wrap::atv {
 namespace {
@@ -74,6 +75,24 @@ bool IsAtv(void* obj) {
     if (!atvCls) return false;
     void* cls = R::ClassOf(obj);
     return cls && R::IsDescendantOfAny(cls, &atvCls, 1);
+}
+
+void ForEachAtv(void (*fn)(void* ctx, void* actor, int32_t idx), void* ctx) {
+    if (!fn) return;
+    // The classes first: the instance walk does not run from inside the class walk.
+    std::vector<void*> classes;
+    object_index::ForEachClass([](void* c, void* cls, void* anyInstance) {
+        if (IsAtv(anyInstance)) static_cast<std::vector<void*>*>(c)->push_back(cls);
+    }, &classes);
+    struct Walk { void (*fn)(void*, void*, int32_t); void* ctx; } walk{fn, ctx};
+    for (void* cls : classes) {
+        object_index::ForEachInstance(cls, [](void* p, void* obj, int32_t idx) {
+            const Walk* w = static_cast<const Walk*>(p);
+            if (R::SlotFlags(idx) & (R::slot_flags::Dying | R::slot_flags::NotYetReadable)) return;
+            if (R::NameStartsWith(R::NameOf(obj), L"Default__")) return;
+            w->fn(w->ctx, obj, idx);
+        }, &walk);
+    }
 }
 
 std::wstring GetKeyString(void* atv) {

@@ -31,6 +31,7 @@
 #include "ue_wrap/devices/atv.h"
 #include "ue_wrap/engine/engine.h"          // ReadMainPlayerGrabState (grabber authority) + Get/SetActorRootPhysicsVelocity
 #include "ue_wrap/core/log.h"
+#include "ue_wrap/core/object_index.h"      // IsSeeded / Backlog: whether the host's walk of its ATVs can be complete
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/engine/world_identity.h"     // the generation-stamped index
 #include "ue_wrap/core/types.h"           // FVector, FRotator, NormalizeAxis
@@ -42,6 +43,7 @@
 #include <string>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 #include <chrono>
 
 namespace coop::atv_sync {
@@ -86,7 +88,6 @@ std::unordered_map<std::wstring, AtvEntry> g_atvs;
 
 using detail::g_indexGen;
 using detail::SendAtvSpawn;
-using detail::LiveInThisWorld;
 using detail::ResetAnnounceState;
 using detail::RegisterWithScanHub;
 using detail::g_session;
@@ -372,21 +373,32 @@ void QueueConnectBroadcastForSlot(int peerSlot) {
     auto* s = g_session.load(std::memory_order_acquire);
     if (!s || s->role() != coop::net::Role::Host) return;  // host-only snapshot
     if (peerSlot < 0 || peerSlot >= static_cast<int>(coop::players::kMaxPeers)) return;
-    // The hub keeps the index a pass fresh; a spawn inside that window is announced on the next
-    // pass.
+    if (!A::EnsureResolved()) {
+        UE_LOGW("atv: connect-snapshot to slot %d withheld -- the ATV wrapper is not resolved", peerSlot);
+        return;
+    }
+    // The set is the host's ATVs themselves, walked from the object index: the lane's rows lag a birth by a
+    // pass and can hold a stale row under a live key, and the joiner removes whatever the set does not name.
+    struct Held { std::wstring key; void* actor; };
+    std::vector<Held> held;
+    ForEachAnnounceableAtv([](void* ctx, void* actor, const std::wstring& key) {
+        static_cast<std::vector<Held>*>(ctx)->push_back(Held{ key, actor });
+    }, &held);
     void* localPlayer = coop::players::Registry::Get().Local();
     const uint8_t localSlot = coop::players::Registry::Get().LocalPeerId();
     int sent = 0, spawns = 0;
-    for (auto& kv : g_atvs) {
-        AtvEntry& e = kv.second;
-        // A row of a world since left is skipped (the next pass prunes it): announcing it would put an
-        // ATV on the joiner that the host's world no longer holds.
-        if (!LiveInThisWorld(e.actor, e.idx)) continue;
-        // Every row is announced first on the same lane, so the joiner holds the ATV under its Key
-        // before the pose lands. Divergence from MTA, which builds a joiner's world from these packets
-        // alone (reference/mtasa-blue/Server/mods/deathmatch/logic/CMapManager.cpp:195-297): ours also
-        // loads the host's save, so a joiner adopts the ATV its save already holds (the adopt package).
-        if (SendAtvSpawn(kv.first, e.actor, peerSlot)) ++spawns;
+    for (const Held& h : held) {
+        // Every ATV is announced first on the same lane, so the joiner holds it under its Key before the pose
+        // lands. Divergence from MTA, which builds a joiner's world from these packets alone
+        // (reference/mtasa-blue/Server/mods/deathmatch/logic/CMapManager.cpp:195-297): ours also loads the
+        // host's save, so a joiner adopts the ATV its save already holds, and the set's edge below lets it
+        // drop the ones the save holds and this world does not.
+        if (SendAtvSpawn(h.key, h.actor, peerSlot)) ++spawns;
+        // An ATV born inside the hub's pass window has no row yet: it is announced and the hub files it, its
+        // stream following. The index is read here, never written.
+        const auto row = g_atvs.find(h.key);
+        if (row == g_atvs.end() || row->second.actor != h.actor) continue;
+        AtvEntry& e = row->second;
         // The change gate re-arms for the joiner: the snapshot is fire-once and a fresh joiner is
         // the peer most likely to drop it, and a satisfied gate would then send nothing until the
         // host's copy moved.
@@ -397,12 +409,29 @@ void QueueConnectBroadcastForSlot(int peerSlot) {
         const bool hostAuthors = IsPoseAuthor(e.actor, localPlayer, e.occupantSlot, localSlot);
         const uint8_t authorSlot = hostAuthors ? localSlot : e.authorSlot;
         coop::net::AtvStatePayload p{};
-        if (!ReadPayload(e.actor, kv.first, e.occupantSlot, authorSlot, /*adopt*/true, p)) continue;
+        if (!ReadPayload(e.actor, h.key, e.occupantSlot, authorSlot, /*adopt*/true, p)) continue;
         s->SendReliableToSlot(peerSlot, coop::net::ReliableKind::AtvState, &p, sizeof(p));
         ++sent;
     }
-    UE_LOGI("atv: connect-snapshot -- sent %d ATV pose(s) (%d AtvSpawn announce(s), one per key) to slot %d (of %zu indexed)",
-            sent, spawns, peerSlot, g_atvs.size());
+    // The set's edge, behind the AtvSpawns on the same lane. Withheld whenever the walk cannot be taken as
+    // complete -- an announce that did not go, or births the host's object index has not applied yet -- since
+    // the joiner removes everything the set does not name: it then removes nothing this replay, and an ATV the
+    // host lost stays on it until the next replay.
+    const char* withheld = nullptr;
+    if (spawns != static_cast<int>(held.size())) withheld = "an AtvSpawn was not sent";
+    else if (!ue_wrap::object_index::IsSeeded()) withheld = "the host's object index is not seeded";
+    else if (ue_wrap::object_index::Backlog() > 0) withheld = "the host's object index has births it has not applied";
+    else {
+        coop::net::AtvSetCompletePayload done{};
+        done.count = static_cast<uint32_t>(spawns);
+        if (!s->SendReliableToSlot(peerSlot, coop::net::ReliableKind::AtvSetComplete, &done, sizeof(done)))
+            withheld = "the edge was not sent";
+    }
+    if (withheld)
+        UE_LOGW("atv: connect-snapshot to slot %d has no set edge -- %s; the joiner removes nothing this replay",
+                peerSlot, withheld);
+    UE_LOGI("atv: connect-snapshot -- sent %d ATV pose(s) (%d AtvSpawn announce(s), one per key; the set names %zu) to slot %d (of %zu indexed)",
+            sent, spawns, held.size(), peerSlot, g_atvs.size());
 }
 
 void Tick() {
@@ -531,6 +560,7 @@ void Tick() {
 
 void OnDisconnect() {
     spawn_park::Clear();
+    ResetArrivalState();
     // Disarmed first: nothing publishes an owned set from here, and a live hit must reach the game.
     coop::atv_hit_guard::SetActive(false);
     coop::atv_hit_guard::PublishOwned(nullptr, 0);

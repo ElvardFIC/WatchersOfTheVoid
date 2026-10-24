@@ -18,7 +18,7 @@
 #include <string>
 #include <unordered_map>
 
-namespace coop::net { class Session; }
+namespace coop::net { class Session; struct AtvSpawnPayload; }
 
 namespace coop::atv_sync {
 
@@ -94,5 +94,14 @@ bool IndexCurrent();
 const AtvEntry* FindEntry(const std::wstring& key);
 void AdoptClientMirror(const std::wstring& key, void* actor);
 void EraseEntry(const std::wstring& key);
+
+// atv_runtime_mirror.cpp's surface for the rest of the lane: the arrival state of one session (the keys the host's
+// announces named, the host's pending set, the counters), dropped at a disconnect; and the host's set, applied once
+// this world is ready -- on its edge's arrival and again from the park's drain. Game thread.
+void ResetArrivalState();
+void ApplyPendingSet();
+// An announced spawn, already counted in the host's set, resolved by key, parked or spawned: OnAtvSpawn's second
+// half, and the park's hand-back, which is not a new arrival.
+void ResolveSpawn(const std::wstring& key, const coop::net::AtvSpawnPayload& payload);
 
 }  // namespace coop::atv_sync

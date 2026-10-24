@@ -13,6 +13,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 
 namespace coop::net {
 class Session;
@@ -20,6 +21,7 @@ struct AtvStatePayload;
 struct AtvReleasePayload;
 struct AtvSpawnPayload;
 struct AtvDestroyPayload;
+struct AtvSetCompletePayload;
 }  // namespace coop::net
 
 namespace coop::atv_sync {
@@ -30,7 +32,8 @@ namespace coop::atv_sync {
 // Identity is the ATV's own game Key on every peer -- a keyed pose stream, not the
 // eid/Element/spawn machinery (YAGNI for one always-present keyed actor; the grime and window-dirt
 // syncs made the same call). The host announces every ATV of its index to a joiner and each one its
-// index gains (AtvSpawn / AtvDestroy), and a mirror is spawned carrying the host's Key.
+// index gains (AtvSpawn / AtvDestroy); a joiner adopts the copy its world holds under that Key, else a mirror is
+// spawned carrying it.
 void Install(coop::net::Session* session);
 
 // Receiver entry: an AtvState packet arrived (payload already memcpy'd + range-checked by
@@ -47,21 +50,41 @@ void OnReliable(const coop::net::AtvStatePayload& payload, uint8_t senderPeerSlo
 void OnAtvRelease(const coop::net::AtvReleasePayload& payload, uint8_t senderPeerSlot);
 
 // Receiver entry (CLIENT-only): an AtvSpawn arrived. The host announces an ATV of its index under
-// its game Key. A key that cannot name an ATV is dropped; one this peer already holds live is a
-// no-op (re-announce / connect dup). Otherwise fresh-spawns a native AATV_C carrying that Key
-// (ue_wrap::atv::SpawnMirror, physics ON = grabbable) at the host pose and registers it under it,
-// so the existing AtvState/AtvRelease key-stream drives it. From event_feed.
+// its game Key. A key that cannot name an ATV is dropped. The ATV this world already holds under the
+// Key -- a row of the index, else the game's own key map (the save's copy) -- is adopted and nothing
+// is spawned; a mirror this lane spawned is a duplicate announce and is a no-op. Otherwise
+// fresh-spawns a native AATV_C carrying that Key (ue_wrap::atv::SpawnMirror, physics ON = grabbable)
+// at the host pose and registers it under it, so the existing AtvState/AtvRelease key-stream drives
+// it. Waits in the park while this world is not ready to resolve it. From event_feed.
 void OnAtvSpawn(const coop::net::AtvSpawnPayload& payload);
 
 // Receiver entry (CLIENT-only): an AtvDestroy arrived. The host's ATV with that Key is gone ->
-// K2_DestroyActor the row's actor (a mirror this lane spawned or a native twin) + drop the index
-// entry. From event_feed.
+// K2_DestroyActor the actor this world holds under it (the row's, else the key map's: a mirror this
+// lane spawned or the save's copy) + drop the index entry. Waits in the park while this world is not
+// ready. From event_feed.
 void OnAtvDestroy(const coop::net::AtvDestroyPayload& payload);
 
-// HOST-only: snapshot every indexed ATV's pose, VELOCITY and holder to a freshly connected client
-// `peerSlot` (adopt=1 -> the joiner warps to it). Carrying the velocity is what lets an ATV that is
-// airborne or rolling at the join arrive moving and land, instead of hanging where it was
-// (principle 8). Net-pump connect edge. Game thread.
+// Receiver entry (CLIENT-only): the host's ATV set for this peer is complete (AtvSetComplete). The
+// host named every ATV it holds, one AtvSpawn each, ahead of this edge on one lane; once this world is
+// ready, every ATV it holds that the set did not name is removed. From event_feed.
+void OnAtvSetComplete(const coop::net::AtvSetCompletePayload& payload);
+
+// Whether `key` can name an ATV on the wire: not empty, not "None", at most 31 chars (what a WireKey
+// carries). No logging; the lane's logging refusals wrap it.
+bool AnnounceableAtvKey(const std::wstring& key);
+
+// Every live ATV actor of this world (the witch car included) whose key passes AnnounceableAtvKey, with that key,
+// from the object index rather than the lane's map (whose rows lag a birth by a pass). The host's set walk,
+// the client's set apply and the spawn drill all read it. The callback must not create or destroy objects.
+// Game thread.
+void ForEachAnnounceableAtv(void (*fn)(void* ctx, void* actor, const std::wstring& key), void* ctx);
+
+// HOST-only: snapshot every live ATV's announce, and the pose, VELOCITY and holder of each the index holds, to a
+// freshly connected client `peerSlot` (adopt=1 -> the joiner warps to it). Carrying the velocity is what lets an
+// ATV that is airborne or rolling at the join arrive moving and land, instead of hanging where it was
+// (principle 8). The set ends with AtvSetComplete, which the joiner reads as "remove what is not named"; it is
+// withheld when the host's walk cannot be taken as complete. Net-pump connect edge, at every connect replay.
+// Game thread.
 void QueueConnectBroadcastForSlot(int peerSlot);
 
 // Per-tick pump. Per ATV: resolve both predicates, latch the brain to tick ownership, and either
