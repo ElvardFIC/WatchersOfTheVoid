@@ -80,6 +80,8 @@ struct Counters {
     unsigned long long silenced   = 0;     // the host took an ATV from a silent syncer
     unsigned long long idleStreamBlocks = 0;  // blocks admitted from a client syncer with the seat free and no carry
                                               // (the release stream before a hand-back)
+    unsigned long long carriedStillBlocks = 0;  // blocks admitted with the grabbed bit whose speed and moved distance
+                                                // pass the rest test: a carry standing still, never handed back
 };
 Counters ReadCounters();
 

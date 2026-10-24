@@ -172,4 +172,10 @@ uint32_t DeliberateParks();
 size_t ParkPending();
 std::vector<std::wstring> ReceivedSpawnKeys();
 
+// For the ATV health drill, CLIENT, game thread; each counts this session and starts over at a disconnect: the
+// blocks the host re-sent for a client syncer (kAtvFromSyncer) that this client placed, and the connect
+// snapshot's blocks (adopt != 0) it placed with the snap.
+uint32_t AppliedFromSyncer();
+uint32_t SnapshotPlaced();
+
 }  // namespace coop::atv_sync

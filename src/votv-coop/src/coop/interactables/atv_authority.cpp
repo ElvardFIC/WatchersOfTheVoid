@@ -311,11 +311,13 @@ bool AdmitBlock(AtvEntry& e, const coop::net::AtvStatePayload& p, uint8_t sender
     const FVector lin{p.linVelX, p.linVelY, p.linVelZ};
     const bool grabbed = (p.stateBits & 0x4) != 0;
     const float speed = coop::atv_sync::Len(lin);
-    bool still = false;
+    bool motionStill = false;
     if (e.haveRestPos) {
         const FVector d{pos.X - e.lastRestPos.X, pos.Y - e.lastRestPos.Y, pos.Z - e.lastRestPos.Z};
-        still = speed < kRestCmS && coop::atv_sync::Len(d) < kRestMovedCm && !grabbed;
+        motionStill = speed < kRestCmS && coop::atv_sync::Len(d) < kRestMovedCm;
     }
+    const bool still = motionStill && !grabbed;
+    if (motionStill && grabbed) ++g_counters.carriedStillBlocks;
     e.lastBlockSpeed = speed;
     e.restSinceMs = !still ? 0 : (e.restSinceMs != 0 ? e.restSinceMs : nowMs);
     e.lastRestPos = pos;
@@ -413,12 +415,13 @@ void LogSummary() {
     }
     if (g_counters.admitted == 0 && refusedTotal == 0 && g_counters.notSyncer == 0 && g_counters.lateSyncer == 0 &&
         g_counters.streamPaced == 0 && g_counters.handedBack == 0 && g_counters.silenced == 0 &&
-        g_counters.idleStreamBlocks == 0)
+        g_counters.idleStreamBlocks == 0 && g_counters.carriedStillBlocks == 0)
         return;
     UE_LOGI("atv_authority: session -- %llu admitted, %llu refused (%s); blocks: %llu not_syncer / %llu late_syncer / "
-            "%llu stream_paced / %llu idle_stream; taken back: %llu handed_back / %llu silenced",
+            "%llu stream_paced / %llu idle_stream / %llu carried_still; taken back: %llu handed_back / %llu silenced",
             g_counters.admitted, refusedTotal, byReason, g_counters.notSyncer, g_counters.lateSyncer,
-            g_counters.streamPaced, g_counters.idleStreamBlocks, g_counters.handedBack, g_counters.silenced);
+            g_counters.streamPaced, g_counters.idleStreamBlocks, g_counters.carriedStillBlocks, g_counters.handedBack,
+            g_counters.silenced);
 }
 
 void Reset() {
