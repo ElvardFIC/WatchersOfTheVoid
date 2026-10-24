@@ -56,7 +56,7 @@ host applies only its syncer's blocks, paced, and re-sends each to the other cli
 An idle ATV is
 synced by the host at five hertz gated on change with a two-second keepalive floor, so a parked
 vehicle costs one packet every two seconds. An ATV that appears at runtime, from the spawn menu,
-has no save twin, so the host mints a synthetic key and announces it.
+has no save twin, so the host announces it under its game key.
 The client parks a valid announcement until gameplay, the discovery index and load quiescence
 agree, stamped with the world it arrived in: a world change drops it, the new world's own replay
 bringing it again, and a spawn that fails in a ready world is final, never retried.
@@ -87,7 +87,7 @@ the prop lane.
 | collision damage, the accumulators, wheel torque | the tick owner, the syncer's machine | a mirror's impulses are zeroed |
 | the condition values | the syncer | overwritten on the mirror, re-derived on edges |
 | tyre and spare presence | the host | consumed from the host's own copy only |
-| a runtime ATV's identity | the host | a synthetic key, announced |
+| a runtime ATV's identity | the host | its game key, announced |
 
 ## Wire messages
 
