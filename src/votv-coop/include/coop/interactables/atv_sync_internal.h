@@ -21,7 +21,7 @@
 #include <string>
 #include <unordered_map>
 
-namespace coop::net { class Session; struct AtvSpawnPayload; }
+namespace coop::net { class Session; struct AtvSpawnPayload; struct AtvStatePayload; }
 
 namespace coop::atv_sync {
 
@@ -168,5 +168,14 @@ void ResolveSpawn(const std::wstring& key, const coop::net::AtvSpawnPayload& pay
 // spawns, never a world ATV): the one carry read the lane's Tick and the host's takeover test share. False for a null
 // player or actor. Game thread.
 bool IsLocalGrabber(void* actor, void* localPlayer);
+
+// atv_stream_gates.cpp: the stream's per-block gates, each a function of one entry and its actor and none touching the
+// lane's map. StampHostTrap sets a block's trap bit from the host's own copy; TakeStampTrap is the client's take of
+// that bit; NoteSyncerHealth is the host's re-arm of an accepted explosion request; IdleWorthSending is the idle
+// syncer's change gate (it updates the entry's baseline on a yes). Game thread.
+void StampHostTrap(const AtvEntry& e, coop::net::AtvStatePayload& p);
+void TakeStampTrap(AtvEntry& e, bool stamped, bool owns);
+void NoteSyncerHealth(AtvEntry& e, uint8_t syncer, float health);
+bool IdleWorthSending(AtvEntry& e);
 
 }  // namespace coop::atv_sync
