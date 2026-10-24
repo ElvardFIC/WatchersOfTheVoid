@@ -4,6 +4,7 @@
 #include "hostile_drill_arms.h"  // co-located private header (src tree, not include/)
 
 #include "coop/dev/hostile_drill_act.h"  // the take-or-use request arms
+#include "coop/dev/hostile_drill_atv.h"  // the ATV lanes' refusal arms
 #include "coop/dev/hostile_drill_chat.h"  // the chat arms
 #include "coop/dev/hostile_drill_explosion.h"  // the explosion request lane's refusal arms
 #include "coop/dev/hostile_drill_hand.h"  // the hand-item class arm
@@ -55,6 +56,7 @@ Arm ArmOf() {
              : v == "act_flood_early"     ? Arm::ActFloodEarly
              : v.rfind("explosion_", 0) == 0 ? Arm::Explosion
              : v.rfind("ignite_", 0) == 0    ? Arm::Ignite
+             : v.rfind("atv_", 0) == 0       ? Arm::Atv
                                           : Arm::Off;
     }();
     return a;
@@ -75,6 +77,14 @@ ignite::Arm IgniteArmOf() {
     static const ignite::Arm a = ArmOf() == Arm::Ignite
         ? ignite::ArmOf(coop::config::ResolveEnum(::coop::config_registry::rows::hostile_drill))
         : ignite::Arm::None;
+    return a;
+}
+
+// The ATV family's sub-arm, the same way.
+atv::Arm AtvArmOf() {
+    static const atv::Arm a = ArmOf() == Arm::Atv
+        ? atv::ArmOf(coop::config::ResolveEnum(::coop::config_registry::rows::hostile_drill))
+        : atv::Arm::None;
     return a;
 }
 
@@ -111,6 +121,7 @@ const char* ArmName() {
     case Arm::ActFloodEarly:     return "act_flood_early";
     case Arm::Explosion:         return explosion::ArmName(ExplosionArmOf());
     case Arm::Ignite:            return ignite::ArmName(IgniteArmOf());
+    case Arm::Atv:               return atv::ArmName(AtvArmOf());
     default:                     return "off";
     }
 }
@@ -174,11 +185,13 @@ bool TickFamilyHost(coop::net::Session* s) {
     const act::Arm actArm = ActArmOf();
     const explosion::Arm explosionArm = ExplosionArmOf();
     const ignite::Arm igniteArm = IgniteArmOf();
+    const atv::Arm atvArm = AtvArmOf();
     const chat::Arm chatArm = ArmOf() == Arm::ChatIllFormed ? chat::Arm::ChatIllFormed
                             : ArmOf() == Arm::ChatFlood     ? chat::Arm::ChatFlood
                                                             : chat::Arm::None;
     if (explosionArm != explosion::Arm::None) explosion::TickHostJudge(s, explosionArm);
     else if (igniteArm != ignite::Arm::None) ignite::TickHostJudge(s, igniteArm);
+    else if (atvArm != atv::Arm::None)       atv::TickHostJudge(s, atvArm);
     else if (IsWalkArm())                    walk::TickHostJudge(s, WalkArmOf());  // host counts its own walks
     else if (handArm != hand::Arm::None)     hand::TickHostJudge(s, handArm);
     else if (latestArm != latest::Arm::None) latest::TickHostJudge(s, latestArm);
@@ -205,11 +218,13 @@ bool TickFamilyClient(coop::net::Session* s) {
     const act::Arm actArm = ActArmOf();
     const explosion::Arm explosionArm = ExplosionArmOf();
     const ignite::Arm igniteArm = IgniteArmOf();
+    const atv::Arm atvArm = AtvArmOf();
     const chat::Arm chatArm = ArmOf() == Arm::ChatIllFormed ? chat::Arm::ChatIllFormed
                             : ArmOf() == Arm::ChatFlood     ? chat::Arm::ChatFlood
                                                             : chat::Arm::None;
     if (explosionArm != explosion::Arm::None) explosion::TickClient(s, explosionArm);
     else if (igniteArm != ignite::Arm::None) ignite::TickClient(s, igniteArm);
+    else if (atvArm != atv::Arm::None)       atv::TickClient(s, atvArm);
     else if (IsWalkArm())                    walk::TickClient(s, WalkArmOf());
     else if (handArm != hand::Arm::None)     hand::TickClient(s, handArm);
     else if (latestArm != latest::Arm::None) latest::TickClient(s, latestArm);
@@ -232,6 +247,7 @@ void OnDisconnectFamilies() {
     act::OnDisconnect();
     explosion::OnDisconnect();
     ignite::OnDisconnect();
+    atv::OnDisconnect();
     chat::OnDisconnect();
 }
 

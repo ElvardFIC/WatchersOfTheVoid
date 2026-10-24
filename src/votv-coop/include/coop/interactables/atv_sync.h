@@ -140,9 +140,10 @@ struct TableView {
 // this world's, an entry stands under the key and its actor is live. Game thread.
 bool ReadTable(const std::wstring& key, TableView& out);
 
-// DEV, for the ATV health drill's silent arm only: while set, this CLIENT's syncer stream sends no block (its body, its
-// request and the host's stamps run on), so the host's silence rule is what takes the ATV. Cleared by the drill and by
-// OnDisconnect. Game thread.
+// DEV, for the ATV health drill's silent arm and the hostile drill's atv_ arms: while set, this CLIENT's syncer
+// stream sends no block (its body, its request and the host's stamps run on), so the host's silence rule is what
+// takes the ATV and the host's counters hold only what the drill sent. Cleared by the drill and by OnDisconnect.
+// Game thread.
 void SetDrillMute(bool on);
 
 // Diagnostic read: does THIS peer own `actor`'s tick (run its brain) right now? False for an

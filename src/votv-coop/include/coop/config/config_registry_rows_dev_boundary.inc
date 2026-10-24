@@ -33,7 +33,8 @@ CFG_ENUM(hostile_drill, "hostile_drill", "dev", "off",
     "explosion_story|explosion_wait_behind_shot|explosion_not_ready|explosion_evicted|explosion_flood|"
     "explosion_rejoin|explosion_self_clamp|"
     "ignite_malformed|ignite_no_tool|ignite_torch_attempt|ignite_torch_ignite|ignite_reach|ignite_not_rocket|"
-    "ignite_not_ready|ignite_flood",
+    "ignite_not_ready|ignite_flood|"
+    "atv_state_forge|atv_seat_forge|atv_takeover_forge|atv_explode_forge",
     "VOTVCOOP_HOSTILE_DRILL",
     "Receive-boundary drill (BOTH peers). signal_park: a client floods refused saved-signal rows "
     "(size 0, so the game's own gate rejects each) and the host must keep them from filling the apply "
@@ -85,6 +86,11 @@ CFG_ENUM(hostile_drill, "hostile_drill", "dev", "off",
     "accounting, every message one accept or one refusal, against its counters since its session start. "
     "ignite_*: a joined client forges salt rocket light requests against the host, one refusal reason per arm "
     "(or the not-ready, the flood and the accepted torch light); the host judges by the same accounting. "
+    "atv_*: a joined client forges raw ATV messages against the host, in phases: atv_state_forge (blocks for an ATV the "
+    "host syncs), atv_seat_forge (ill-formed, unknown, out-of-reach and paced sits and a leave), atv_takeover_forge "
+    "(takeovers of a seated ATV and a burst past the pace) and atv_explode_forge (blast requests from a non-syncer, "
+    "ill-formed, and twice from the syncer); the host judges each phase by its counters, and a counter the phase does "
+    "not name must not move. "
     "Drill only.")
 
 // The act drill: an honest client takes and uses shared props through the real verbs, and the host judges what it

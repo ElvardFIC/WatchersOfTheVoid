@@ -12,7 +12,7 @@
 //   spawned  -- HOST spawns its own ATV and says its key; CLIENT times its table showing it, walks and sits (_spawned).
 // The peers sequence on lobby-chat lines. "[ATV-HEALTH-DRILL] FAIL" is the lane failing (--fail-marker); a pass prints
 // a DONE PASS line on each peer. The red arm atv_health_red turns one check off, so the arm that tests it must FAIL:
-// back (sit, grab), occupied, takeover (synced), silence (silent), nonowner (gate), trapbit (trap).
+// back (sit, grab), occupied, takeover (synced), silence (silent), nonowner (gate), trapbit (trap), not_syncer (hostile).
 
 #pragma once
 

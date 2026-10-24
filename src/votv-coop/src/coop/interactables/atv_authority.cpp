@@ -288,7 +288,11 @@ bool IsLateSyncer(const AtvEntry& e, uint8_t slot, uint64_t nowMs) {
 bool AdmitBlock(AtvEntry& e, const coop::net::AtvStatePayload& p, uint8_t senderSlot, uint64_t nowMs) {
     // No time context: the lane is FIFO and no host code repositions a client-synced ATV. MTA's context guards a
     // server move against a syncer's packet in flight (CUnoccupiedVehicleSync.cpp:285, CElement.cpp:1281-1305).
-    if (senderSlot == 0 || senderSlot != e.syncerSlot) {
+    // The developer red arm of the hostile drill's atv_state_forge: the sender test is skipped, so a forged block is
+    // not counted `not_syncer` and applies, and the drill's table must fail. Resolved once.
+    static const bool s_redNotSyncer =
+        coop::config::ResolveEnum(coop::config_registry::rows::atv_health_red) == "not_syncer";
+    if (!s_redNotSyncer && (senderSlot == 0 || senderSlot != e.syncerSlot)) {
         // The honest race: the block of the syncer a hand-back just replaced, sent before the stamp reached it.
         if (IsLateSyncer(e, senderSlot, nowMs))
             ++g_counters.lateSyncer;

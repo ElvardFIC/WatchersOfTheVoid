@@ -117,6 +117,19 @@ bool ChatHasLive(const std::string& needle) {
     return found;
 }
 
+bool LiveRestOf(const std::string& prefix, std::string* rest) {
+    bool found = false;
+    coop::chat_feed::ForEachRow([&](const coop::chat_feed::RowView& r) {
+        if (r.retained || r.line.compare(0, prefix.size(), prefix) != 0) return;
+        std::string_view tail = r.line.substr(prefix.size());
+        while (!tail.empty() && tail.back() == ' ') tail.remove_suffix(1);
+        if (tail.empty()) return;
+        rest->assign(tail.begin(), tail.end());
+        found = true;
+    });
+    return found;
+}
+
 bool PollDue() {
     static uint32_t sTicks = 0;
     return sTicks++ % 15 == 0;

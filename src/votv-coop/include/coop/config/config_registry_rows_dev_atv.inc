@@ -39,7 +39,7 @@ CFG_ENUM(atv_health_drill, "atv_health_drill", "dev", "off", "off|sit|grab|occup
     "the host's blast must be accepted. spawned: the host spawns an ATV beside the players and says its key; the "
     "client waits for it in its table (the DONE line prints how long), walks to it and sits. Each peer prints one DONE line on a "
     "pass, the host's with the times it measured. Run it on a fresh host world; only the client in slot 1 acts.")
-CFG_ENUM(atv_health_red, "atv_health_red", "dev", "off", "off|back|occupied|takeover|silence|nonowner|trapbit",
+CFG_ENUM(atv_health_red, "atv_health_red", "dev", "off", "off|back|occupied|takeover|silence|nonowner|trapbit|not_syncer",
     "VOTVCOOP_ATV_HEALTH_RED",
     "Developer red arm: never set. back (HOST): the at-rest hand-back of a client-synced ATV is skipped, so the ATV "
     "health drill's `back` phase must fail; range and silence still take an ATV back. occupied (HOST): a sit on an "
@@ -47,4 +47,5 @@ CFG_ENUM(atv_health_red, "atv_health_red", "dev", "off", "off|back|occupied|take
     "carries is not refused, so the `synced` arm must fail. silence (HOST): a silent syncer is not taken back, so the "
     "`silent` arm must fail. nonowner (HOST): the damage gate treats no copy as a non-owner, so the host's copy runs the "
     "blast the `gate` arm needs cancelled and it must fail. trapbit (CLIENT): the stamp's trap bit is ignored, so the "
-    "`trap` arm must fail.")
+    "`trap` arm must fail. not_syncer (HOST): a block from a client that does not sync the ATV is not refused, so the "
+    "hostile drill's `atv_state_forge` arm must fail.")

@@ -6,7 +6,8 @@
 
 #include "atv_health_drill_detail.h"  // co-located private header (src tree, not include/)
 
-#include "coop/comms/chat_feed.h"
+#include "atv_spawn_near.h"  // SpawnAtNav, KeyOf (co-located private header)
+
 #include "coop/dev/drill_chat.h"
 #include "coop/interactables/atv_sync.h"
 #include "coop/net/session.h"
@@ -14,18 +15,15 @@
 
 #include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/log.h"
-#include "ue_wrap/core/object_index.h"
 #include "ue_wrap/core/types.h"
 #include "ue_wrap/devices/atv.h"
 #include "ue_wrap/engine/engine.h"
-#include "ue_wrap/engine/engine_nav.h"
 
 #include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <string>
-#include <string_view>
 
 namespace coop::dev::atv_health_drill::detail {
 
@@ -36,9 +34,9 @@ namespace DC = coop::dev::drill_chat;
 namespace E  = ue_wrap::engine;
 using coop::atv_sync::TableView;
 
+namespace SN = coop::dev::atv_spawn_near;
+
 constexpr float kAheadCm = 600.f;        // in front of the host's player, as atv_spawn_drill places it
-constexpr float kLiftCm = 50.f;
-constexpr float kProjectCm = 300.f;      // the NavMesh query's box about the point, on all three axes
 constexpr float kParkedCmS = 5.f;        // an ATV is parked when two successive stamps read under this speed
 constexpr auto  kStampGap = std::chrono::milliseconds(250);   // the distance between two stamps, not a wait
 
@@ -87,30 +85,17 @@ bool HostSpawnAtv(Arm a) {
         HostFail(a, "the host's player does not read", "no location", "a location");
         return false;
     }
-    void* cls = ue_wrap::object_index::ClassByName(L"ATV_C");
-    if (!cls) {
-        HostFail(a, "the ATV's class is not loaded", "no class", "ATV_C");
-        return false;
-    }
     const ue_wrap::FVector fwd = E::GetActorForwardVector(me);
-    const ue_wrap::FVector point{at.X + fwd.X * kAheadCm, at.Y + fwd.Y * kAheadCm, at.Z + kLiftCm};
-    ue_wrap::FVector onMesh{};
-    if (!E::ProjectToNav(me, point, {kProjectCm, kProjectCm, kProjectCm}, &onMesh)) {
-        char got[96];
-        std::snprintf(got, sizeof(got), "no NavMesh point within %.0f cm of (%.0f,%.0f,%.0f)", kProjectCm, point.X,
-                      point.Y, point.Z);
-        HostFail(a, "the spawn point did not project to the navmesh", got, "a NavMesh point");
-        return false;
-    }
-    const ue_wrap::FVector loc{onMesh.X, onMesh.Y, onMesh.Z + kLiftCm};
-    UE_LOGI("[ATV-HEALTH-DRILL] host arm=spawned the point is on the NavMesh at (%.0f,%.0f,%.0f)", loc.X, loc.Y, loc.Z);
+    const ue_wrap::FVector point{at.X + fwd.X * kAheadCm, at.Y + fwd.Y * kAheadCm, at.Z + SN::kLiftCm};
     g_sh.spawnAt = Clock::now();
-    void* spawned = E::SpawnActor(cls, loc);
-    if (!spawned) {
-        HostFail(a, "the ATV did not spawn", "no actor", "an ATV");
+    SN::Spawned sp;
+    if (!SN::SpawnAtNav(me, point, sp)) {
+        HostFail(a, sp.what, sp.got, sp.want);
         return false;
     }
-    g_sh.atv.Set(spawned);
+    UE_LOGI("[ATV-HEALTH-DRILL] host arm=spawned the point is on the NavMesh at (%.0f,%.0f,%.0f)", sp.onMesh.X,
+            sp.onMesh.Y, sp.onMesh.Z + SN::kLiftCm);
+    g_sh.atv.Set(sp.actor);
     g_sh.spawned = true;
     return true;
 }
@@ -120,13 +105,11 @@ void HostSpawn(Arm a) {
     if (!g_sh.spawned && !HostSpawnAtv(a)) return;
     void* atv = g_sh.atv.Get();
     if (!atv) return HostFail(a, "the spawned ATV is gone before its key", "no ATV", "the spawned ATV");
-    const std::wstring key = A::GetKeyString(atv);
-    TableView t;
-    if (coop::atv_sync::AnnounceableAtvKey(key) && coop::atv_sync::ReadTable(key, t)) {
-        for (const wchar_t c : key)
-            if (c >= 128 || c == L' ')
-                return HostFail(a, "the spawned ATV's key cannot ride a chat line", "a space or a non-ASCII char",
-                                "plain ASCII");
+    std::wstring key;
+    const char* why = nullptr;
+    const SN::Key k = SN::KeyOf(atv, &key, &why);
+    if (k == SN::Key::Bad) return HostFail(a, "the spawned ATV's key cannot ride a chat line", why, "plain ASCII");
+    if (k == SN::Key::Ok) {
         g_sh.tableAt = Clock::now();
         g_sh.key = key;
         std::string line = kSpawnedPrefix;
@@ -202,17 +185,10 @@ void ClientFail(Arm a, const std::string& what, const std::string& got, const st
 // The key in the LAST live line that starts with the host's spawn prefix, or false. The retained tier is a record of an
 // earlier life and never counts.
 bool HostKeyFromChat(std::wstring* out) {
-    bool found = false;
-    constexpr size_t kPrefixLen = std::char_traits<char>::length(kSpawnedPrefix);
-    coop::chat_feed::ForEachRow([&](const coop::chat_feed::RowView& r) {
-        if (r.retained || r.line.compare(0, kPrefixLen, kSpawnedPrefix) != 0) return;
-        std::string_view rest = r.line.substr(kPrefixLen);
-        while (!rest.empty() && rest.back() == ' ') rest.remove_suffix(1);
-        if (rest.empty()) return;
-        out->assign(rest.begin(), rest.end());
-        found = true;
-    });
-    return found;
+    std::string rest;
+    if (!DC::LiveRestOf(kSpawnedPrefix, &rest)) return false;
+    out->assign(rest.begin(), rest.end());
+    return true;
 }
 
 // The client says it is ready once its streams run, then waits for the host's key line.

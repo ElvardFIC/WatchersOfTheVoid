@@ -46,6 +46,9 @@ set(VOTVCOOP_DEV_SOURCES
     src/coop/dev/hostile_drill_ignite.cpp
     src/coop/dev/hostile_drill_ignite_client.cpp
     src/coop/dev/hostile_drill_ignite_host.cpp
+    src/coop/dev/hostile_drill_atv.cpp
+    src/coop/dev/hostile_drill_atv_client.cpp
+    src/coop/dev/hostile_drill_atv_host.cpp
     src/coop/dev/hostile_drill_kerfur.cpp
     src/coop/dev/hostile_drill_remover.cpp
     src/coop/dev/hostile_drill_latest.cpp
@@ -110,6 +113,7 @@ set(VOTVCOOP_DEV_SOURCES
     src/coop/dev/atv_health_drill_host.cpp
     src/coop/dev/atv_health_drill_seated.cpp
     src/coop/dev/atv_health_drill_spawned.cpp
+    src/coop/dev/atv_spawn_near.cpp
     src/coop/dev/throw_drill.cpp
     src/coop/dev/log_drill.cpp
     src/coop/dev/server_upgrade_drill.cpp

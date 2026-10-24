@@ -25,6 +25,10 @@ void Reset();
 // peer acts on what the other said after it joined, never on the record of an earlier life.
 bool ChatHasLive(const std::string& needle);
 
+// True with the text after `prefix` (trailing spaces cut, never empty) from the LAST live row that starts with `prefix`.
+// A retained row never counts, as in ChatHasLive.
+bool LiveRestOf(const std::string& prefix, std::string* rest);
+
 // A feed walk is a few times a second: true on every fifteenth call.
 bool PollDue();
 
