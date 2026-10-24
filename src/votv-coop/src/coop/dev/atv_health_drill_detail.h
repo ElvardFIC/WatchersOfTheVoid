@@ -25,7 +25,7 @@ namespace coop::dev::atv_health_drill::detail {
 
 using Clock = std::chrono::steady_clock;
 
-enum class Arm : uint8_t { Off, Sit, Grab, Occupied, Synced, Silent, Gate, Owner, Trap };
+enum class Arm : uint8_t { Off, Sit, Grab, Occupied, Synced, Silent, Gate, Owner, Trap, Spawned };
 
 // An arm's names: its own, the host's first edge, the client's act and the client's undo (the phases' names).
 struct Spec {
@@ -147,5 +147,13 @@ inline bool IsDamageArm(Arm a) { return a == Arm::Gate || a == Arm::Owner || a =
 void DamageHostTick(coop::net::Session* s, Arm a);
 void DamageClientTick(coop::net::Session* s, Arm a);
 void DamageReset();
+
+// The `spawned` arm: the host spawns its own ATV beside the players and says its key; the client waits for the key in the
+// table, walks to the ATV and sits (atv_health_drill_spawned.cpp). Own phases and state; Tick routes it past
+// HostTick and ClientTick.
+inline bool IsSpawnedArm(Arm a) { return a == Arm::Spawned; }
+void SpawnedHostTick(coop::net::Session* s, Arm a);
+void SpawnedClientTick(coop::net::Session* s, Arm a);
+void SpawnedReset();
 
 }  // namespace coop::dev::atv_health_drill::detail

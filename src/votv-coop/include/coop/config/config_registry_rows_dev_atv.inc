@@ -22,7 +22,7 @@ CFG_FLAG(atv_park_first_spawn, "atv_park_first_spawn", "dev", false, "VOTVCOOP_A
     "Developer: the first ATV arrival that would spawn a mirror is parked once per session, as if the world were "
     "not ready, and spawned by the park's hand-back (the ATV spawn drill's park arm).")
 
-CFG_ENUM(atv_health_drill, "atv_health_drill", "dev", "off", "off|sit|grab|occupied|synced|silent|gate|owner|trap",
+CFG_ENUM(atv_health_drill, "atv_health_drill", "dev", "off", "off|sit|grab|occupied|synced|silent|gate|owner|trap|spawned",
     "VOTVCOOP_ATV_HEALTH_DRILL",
     "Drill, the ATV lane's table; set on BOTH peers, the arm names what is done to the world's own ATV. sit: "
     "the client walks to the ATV with the director, takes its seat and leaves it; the host must name the client as "
@@ -36,7 +36,8 @@ CFG_ENUM(atv_health_drill, "atv_health_drill", "dev", "off", "off|sit|grab|occup
     "client's. owner: the client sits and kills its copy; the host must accept one request and mark the ATV blown by "
     "the client, and the host's own blast must not explode it again. trap: the client sits and the host sets the "
     "story event's trap; the trap must reach the client's copy and fire there as one request, and a second kill after "
-    "the host's blast must be accepted. Each peer prints one DONE line on a "
+    "the host's blast must be accepted. spawned: the host spawns an ATV beside the players and says its key; the "
+    "client waits for it in its table (the DONE line prints how long), walks to it and sits. Each peer prints one DONE line on a "
     "pass, the host's with the times it measured. Run it on a fresh host world; only the client in slot 1 acts.")
 CFG_ENUM(atv_health_red, "atv_health_red", "dev", "off", "off|back|occupied|takeover|silence|nonowner|trapbit",
     "VOTVCOOP_ATV_HEALTH_RED",

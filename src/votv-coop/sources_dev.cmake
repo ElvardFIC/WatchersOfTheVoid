@@ -109,6 +109,7 @@ set(VOTVCOOP_DEV_SOURCES
     src/coop/dev/atv_health_drill_damage.cpp
     src/coop/dev/atv_health_drill_host.cpp
     src/coop/dev/atv_health_drill_seated.cpp
+    src/coop/dev/atv_health_drill_spawned.cpp
     src/coop/dev/throw_drill.cpp
     src/coop/dev/log_drill.cpp
     src/coop/dev/server_upgrade_drill.cpp
