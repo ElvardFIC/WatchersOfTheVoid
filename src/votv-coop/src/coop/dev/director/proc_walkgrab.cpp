@@ -281,7 +281,7 @@ public:
         ue_wrap::FVector steepAhead{};
         if (floorZ_ > 0.f && detours_ < kMaxDetours &&
             ahead_.Advance(ctx.player, ahead_.Along(wp_ + 1, toWp), floorZ_, &steepAhead) &&
-            detour_.Begin(ctx.pos, goal_.targetPos, steepAhead, floorZ_, "too steep for the body")) {
+            detour_.Begin(ctx.pos, goal_.targetPos, steepAhead, floorZ_, detour::SpotKind::Slope)) {
             ++detours_;
             UE_LOGI("director/Goto: a slope too steep for the body ahead at (%.0f,%.0f,%.0f) -- going round before it",
                     steepAhead.X, steepAhead.Y, steepAhead.Z);
@@ -312,7 +312,7 @@ public:
             ue_wrap::FVector steep{};
             if (detours_ < kMaxDetours && floorZ_ > 0.f &&
                 detour::SteepAhead(ctx.player, ctx.pos, waypoints_[wp_], floorZ_, &steep) &&
-                detour_.Begin(ctx.pos, goal_.targetPos, steep, floorZ_, "too steep for the body")) {
+                detour_.Begin(ctx.pos, goal_.targetPos, steep, floorZ_, detour::SpotKind::Slope)) {
                 ++detours_;
                 return ProcStatus::Working;
             }
@@ -328,7 +328,7 @@ public:
                 // remembered like a slope, so a route that passes it again is sent round it (detour.h).
                 ue_wrap::FVector blocker{};
                 if (BlockerAhead(ctx, waypoints_[wp_], &blocker) && detours_ < kMaxDetours && floorZ_ > 0.f &&
-                    detour_.Begin(ctx.pos, goal_.targetPos, blocker, floorZ_, "blocking the body")) {
+                    detour_.Begin(ctx.pos, goal_.targetPos, blocker, floorZ_, detour::SpotKind::Blocker)) {
                     ++detours_;
                     UE_LOGW("director/Goto: persistent stuck (toPile=%.0f) at a blocker -- going round it (episode %d)",
                             toPile, stuckEpisodes_);

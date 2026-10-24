@@ -8,12 +8,15 @@
 // via point, one a route reaches over floor the body stands on and from which the route on to the
 // goal passes no remembered spot. The spot may as well be a blocker the NavMesh does not know: a walk
 // stood minutes before physics props it routed straight into, each fresh route leading back to them.
+// A blocker the walker stands beside is also refused a route that runs back into it; a slope is not
+// (every route from a start on the slope toward the goal comes nearer its spot).
 // Dev director only; game thread.
 #pragma once
 
 #include "ue_wrap/core/types.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <vector>
 
 namespace coop::director::detour {
@@ -52,13 +55,18 @@ private:
     float steepRun_ = 0.f;     // the length of the run too steep so far, ending at scanned_
 };
 
+// What the body could not pass at a remembered spot: a slope too steep to stand on, or a blocker the
+// NavMesh does not know (a physics prop). A route is judged differently near each (PassedSpot).
+enum class SpotKind : uint8_t { Slope, Blocker };
+
 class Search {
 public:
-    // Remembers the spot `spot` and starts a search round it, from `from` toward `goal`; `why` says what
-    // the body could not pass there (a literal, logged with each round). False, and no search, round a
-    // spot whose last search was exhausted: the stuck handler grinds there instead.
+    // Remembers the spot `spot` and starts a search round it, from `from` toward `goal`; `kind` says what
+    // the body could not pass there (logged with each round). A spot already remembered keeps its kind.
+    // False, and no search, round a spot whose last search was exhausted: the stuck handler grinds there
+    // instead.
     bool Begin(const ue_wrap::FVector& from, const ue_wrap::FVector& goal, const ue_wrap::FVector& spot,
-               float floorZ, const char* why);
+               float floorZ, SpotKind kind);
     // Starts a search round a spot already remembered, the one a route passes (PassedSpot). Either entry,
     // round the spot the last way round was found for, says that way did not hold: its via point is
     // never offered again, so each retry tries the next way round.
@@ -70,9 +78,10 @@ public:
     // route goes, its first point the walker's start. Exhausted: no candidate held.
     Step Advance(void* player, std::vector<ue_wrap::FVector>* route);
 
-    // The remembered spot a route passes within clearance of, or, when it starts within clearance of one, runs back toward
-    // over its first stretch (by its segments); or -1.
-    int PassedSpot(const std::vector<ue_wrap::FVector>& route) const;
+    // The remembered spot a route passes within clearance of, past its first stretch when it starts within
+    // clearance of the spot; or, for a blocker it starts beside, runs back toward over its first stretch (by
+    // its segments); or -1. A slope's spot the route starts beside is left to the walker's own stretch.
+    int PassedSpot(const std::vector<ue_wrap::FVector>& route) const { return PassedSpotWhy(route, nullptr); }
 
     bool Active() const { return active_; }
     // The via point of the last way round found.
@@ -80,6 +89,8 @@ public:
     size_t Spots() const { return spots_.size(); }
 
 private:
+    // PassedSpot; `backInto`, when given, says the spot was found by the back-into test, not by clearance.
+    int PassedSpotWhy(const std::vector<ue_wrap::FVector>& route, bool* backInto) const;
     bool Holds(void* player, const ue_wrap::FVector& via, std::vector<ue_wrap::FVector>* walk, float* score);
     bool Standable(void* player, const ue_wrap::FVector& at);
 
@@ -87,7 +98,7 @@ private:
 
     std::vector<ue_wrap::FVector> spots_;
     std::vector<bool> exhausted_;           // per spot: its last search held no way round
-    std::vector<const char*> why_;          // per spot: what the body could not pass there
+    std::vector<SpotKind> kind_;            // per spot: what the body could not pass there
     std::vector<ue_wrap::FVector> failedVias_;
     ue_wrap::FVector from_{}, goal_{}, round_{};
     size_t roundSpot_ = 0;
@@ -100,6 +111,10 @@ private:
     float bestScore_ = 0.f;
     std::vector<ue_wrap::FVector> best_;    // the best held route of the ring under evaluation
     ue_wrap::FVector bestVia_{};
+
+    // Why the candidates of this round failed, logged when it is exhausted; reset by BeginRound.
+    struct Failed { int floor = 0, route = 0, tooLong = 0, failedVia = 0, passes = 0, backInto = 0, steep = 0; };
+    Failed failed_;
 };
 
 }  // namespace coop::director::detour

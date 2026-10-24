@@ -138,7 +138,7 @@ bool Lookahead::Advance(void* player, float along, float floorZ, ue_wrap::FVecto
 }
 
 bool Search::Begin(const ue_wrap::FVector& from, const ue_wrap::FVector& goal, const ue_wrap::FVector& spot,
-                   float floorZ, const char* why) {
+                   float floorZ, SpotKind kind) {
     size_t at = spots_.size();
     for (size_t i = 0; i < spots_.size(); ++i)
         if (Flat(spots_[i], spot) <= kSpotClearCm && std::fabs(spots_[i].Z - spot.Z) <= kSpotLevelCm) at = i;
@@ -146,11 +146,11 @@ bool Search::Begin(const ue_wrap::FVector& from, const ue_wrap::FVector& goal, c
         if (spots_.size() == kMaxSpots) {
             spots_.erase(spots_.begin());
             exhausted_.erase(exhausted_.begin());
-            why_.erase(why_.begin());
+            kind_.erase(kind_.begin());
         }
         spots_.push_back(spot);
         exhausted_.push_back(false);
-        why_.push_back(why);
+        kind_.push_back(kind);
         at = spots_.size() - 1;
     }
     return BeginRound(from, goal, at, floorZ);
@@ -178,11 +178,12 @@ bool Search::BeginRound(const ue_wrap::FVector& from, const ue_wrap::FVector& go
     floorZ_ = floorZ;
     active_ = true;
     lastFound_ = false;
+    failed_ = {};
     next_ = 0;
     best_.clear();
     bestScore_ = 0.f;
     UE_LOGI("director/detour: round the spot (%.0f,%.0f,%.0f), %s -- %zu remembered", round_.X, round_.Y, round_.Z,
-            why_[spot], spots_.size());
+            kind_[spot] == SpotKind::Slope ? "too steep for the body" : "blocking the body", spots_.size());
     return true;
 }
 
@@ -223,16 +224,21 @@ bool RunsBackInto(const std::vector<ue_wrap::FVector>& route, const ue_wrap::FVe
 }  // namespace
 
 // A spot the route starts within kSpotClearCm of is the one the walker stands at, so the clearance test cannot hold in
-// the route's first stretch: there RunsBackInto judges it instead, a slope's spot too (a route climbing back up the
-// slope the walker slid off is as wrong as one through a crate). A route that starts farther out, and every route past
-// its first stretch, keeps the plain clearance test over its length.
-int Search::PassedSpot(const std::vector<ue_wrap::FVector>& route) const {
+// the route's first stretch. For a blocker RunsBackInto judges that stretch instead (a route through a crate it stands
+// beside); a slope's spot is skipped there, since every route from a start on the slope toward the goal comes nearer
+// its spot. A route that starts farther out, and every route past its first stretch, keeps the plain clearance test
+// over its length.
+int Search::PassedSpotWhy(const std::vector<ue_wrap::FVector>& route, bool* backInto) const {
+    if (backInto) *backInto = false;
     if (route.empty()) return -1;
     bool near[kMaxSpots] = {};
     for (size_t i = 0; i < spots_.size(); ++i) {
         near[i] = Flat(spots_[i], route.front()) <= kSpotClearCm &&
                   std::fabs(spots_[i].Z - route.front().Z) <= kSpotLevelCm;
-        if (near[i] && RunsBackInto(route, spots_[i])) return static_cast<int>(i);
+        if (near[i] && kind_[i] == SpotKind::Blocker && RunsBackInto(route, spots_[i])) {
+            if (backInto) *backInto = true;
+            return static_cast<int>(i);
+        }
     }
     int found = -1;
     Walk(route, [&](const ue_wrap::FVector& p, float along) {
@@ -254,23 +260,48 @@ bool Search::Standable(void* player, const ue_wrap::FVector& at) {
 }
 
 bool Search::Holds(void* player, const ue_wrap::FVector& via, std::vector<ue_wrap::FVector>* walk, float* score) {
-    if (Flat(via, from_) < kMinViaCm || NearFailedVia(via)) return false;
+    if (Flat(via, from_) < kMinViaCm) return false;
+    if (NearFailedVia(via)) {
+        ++failed_.failedVia;
+        return false;
+    }
     samples_ += kRouteCost;
     // The way there: floor the body stands on all along, clear of every remembered spot past the
     // stretch the walker stands in, and not running back toward one it starts beside.
     std::vector<ue_wrap::FVector> there;
-    if (!RouteFrom(player, from_, via, &there) || there.size() < 2 || Flat(there.back(), via) > kViaReachCm)
+    if (!RouteFrom(player, from_, via, &there) || there.size() < 2 || Flat(there.back(), via) > kViaReachCm) {
+        ++failed_.route;
         return false;
-    if (PassedSpot(there) >= 0 || Length(there) > kMaxDetourRatio * Flat(from_, via)) return false;
-    if (!Walk(there, [&](const ue_wrap::FVector& p, float) { return Standable(player, p); })) return false;
+    }
+    bool back = false;
+    if (PassedSpotWhy(there, &back) >= 0) {
+        ++(back ? failed_.backInto : failed_.passes);
+        return false;
+    }
+    if (Length(there) > kMaxDetourRatio * Flat(from_, via)) {
+        ++failed_.tooLong;
+        return false;
+    }
+    if (!Walk(there, [&](const ue_wrap::FVector& p, float) { return Standable(player, p); })) {
+        ++failed_.floor;
+        return false;
+    }
     // The way on: clear of every remembered spot, its floor sampled for its first stretch. The walker
     // follows this very route, not a fresh one asked where it stands at the via point.
     std::vector<ue_wrap::FVector> on;
     samples_ += kRouteCost;
-    if (!RouteFrom(player, via, goal_, &on) || on.size() < 2) return false;
-    if (PassedSpot(on) >= 0) return false;
-    if (!Walk(on, [&](const ue_wrap::FVector& p, float along) { return along > kOnwardCheckCm || Standable(player, p); }))
+    if (!RouteFrom(player, via, goal_, &on) || on.size() < 2) {
+        ++failed_.route;
         return false;
+    }
+    if (PassedSpotWhy(on, &back) >= 0) {
+        ++(back ? failed_.backInto : failed_.passes);
+        return false;
+    }
+    if (!Walk(on, [&](const ue_wrap::FVector& p, float along) { return along > kOnwardCheckCm || Standable(player, p); })) {
+        ++failed_.steep;
+        return false;
+    }
     *score = Length(there) + Length(on) + Flat(on.back(), goal_);
     there.insert(there.end(), on.begin() + 1, on.end());
     *walk = std::move(there);
@@ -289,8 +320,9 @@ Search::Step Search::Advance(void* player, std::vector<ue_wrap::FVector>* route)
         std::vector<ue_wrap::FVector> walk;
         float score = 0.f;
         ++samples_;
-        if (FloorUnder(player, c, &floor) &&
-            Holds(player, {floor.X, floor.Y, floor.Z + kViaLiftCm}, &walk, &score) &&
+        const bool hasFloor = FloorUnder(player, c, &floor);
+        if (!hasFloor) ++failed_.floor;
+        if (hasFloor && Holds(player, {floor.X, floor.Y, floor.Z + kViaLiftCm}, &walk, &score) &&
             (best_.empty() || score < bestScore_)) {
             best_ = std::move(walk);
             bestScore_ = score;
@@ -313,8 +345,9 @@ Search::Step Search::Advance(void* player, std::vector<ue_wrap::FVector>* route)
     active_ = false;
     // The spot may have shifted in the list (the oldest dropped at the cap); mark it only where it still is.
     if (roundSpot_ < exhausted_.size() && Flat(spots_[roundSpot_], round_) < 1.f) exhausted_[roundSpot_] = true;
-    UE_LOGW("director/detour: no via point within %.0f cm of the spot holds -- back to grinding",
-            kRingsCm[kRings - 1]);
+    UE_LOGW("director/detour: no via point within %.0f cm of the spot holds (floor %d, route %d, long %d, failed-via %d, "
+            "passes %d/back-into %d, steep %d) -- back to grinding", kRingsCm[kRings - 1], failed_.floor,
+            failed_.route, failed_.tooLong, failed_.failedVia, failed_.passes, failed_.backInto, failed_.steep);
     return Step::Exhausted;
 }
 
