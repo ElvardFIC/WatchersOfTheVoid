@@ -4,6 +4,8 @@
 
 #include "coop/interactables/atv_condition_sync.h"
 
+#include "coop/config/config.h"
+#include "coop/config/config_registry.h"
 #include "coop/interactables/atv_sync_internal.h"
 #include "coop/net/protocol.h"
 
@@ -169,7 +171,8 @@ void ApplyPayload(coop::atv_sync::AtvEntry& e, const coop::net::AtvStatePayload&
 
     const AC::Snapshot& ex = e.condExpressed;
     // Presence is consumed from the host's own copy only (a connect snapshot's block included).
-    const bool applyPresence = fromHost && !fromSyncer;
+    static const bool s_ejectRed = coop::config::ResolveFlag(coop::config_registry::rows::atv_eject_red);
+    const bool applyPresence = (fromHost && !fromSyncer) != s_ejectRed;  // red arm: the rule inverted
 
     // Change groups vs the EXPRESSED baseline, over the WRITTEN set only (presence
     // terms leave the groups entirely when presence is not applied, else updTires would refire

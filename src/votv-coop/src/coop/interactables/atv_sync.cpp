@@ -16,7 +16,6 @@
 #include "atv_spawn_park.h"
 #include "coop/config/config.h"
 #include "coop/config/config_registry.h"
-#include "coop/dev/atv_eject_drill.h"
 #include "coop/interactables/atv_authority.h"
 #include "coop/interactables/atv_condition_sync.h"
 #include "coop/interactables/atv_corrector.h"
@@ -650,8 +649,6 @@ void Tick() {
         // SetCenterOfMass runs unconditionally per tick, and the wheel torque and battery terms are already
         // single-peer by the game's own isDriven gates).
         const bool syncs = IsLocalSyncer(e, localSlot);
-        // The eject drill, env-gated, once per process.
-        coop::atv_eject_drill::MaybeFire(e.actor, kv.first.c_str(), nowMs, isHost, syncs, syncs);
         if (syncs) {
             if (ownedN < coop::atv_hit_guard::kMaxOwned) {
                 owned[ownedN++] = e.actor;

@@ -1,5 +1,5 @@
 // coop/config/config_registry_rows_dev_atv.inc -- the [dev] rows of the ATV lane: its rig probe, the corrector's
-// control arm, the spawn drill and its park, the health drill and its red arm.
+// control arm, the spawn drill and its park, the health drill and its red arm, the eject drill and its red arm.
 // Included by config_registry_rows_dev.inc after the fire rows, before the PI and NB rows, which stay the last ones,
 // so each row keeps its place in every expansion of the list. The entry forms are config_registry_rows.inc's.
 // The drill's arms: sit, grab, occupied, synced, silent, gate, owner, trap; the red arm's values: back, occupied,
@@ -60,3 +60,12 @@ CFG_ENUM(atv_health_red, "atv_health_red", "dev", "off",
     "hostile drill's `atv_state_forge` arm must fail. carry_back (HOST): the rest test ignores the grab bit, so a carry "
     "standing still is handed back while held and the `carry_still` arm must fail. peer_carry (HOST): a takeover of an "
     "ATV another client carries is not refused, so the `synced_peer` arm must fail.")
+CFG_ENUM(atv_eject_drill, "atv_eject_drill", "dev", "off", "off|host|client",
+    "VOTVCOOP_ATV_EJECT_DRILL",
+    "Drill, the ATV lane's wheel presence; set on BOTH peers, on a fresh host world. host: the host knocks a rear wheel "
+    "off its own idle ATV with the game's own damage path, and the client's copy must lose that wheel once. client: the "
+    "client walks to the ATV with the director, sits and knocks the wheel off its copy; the host must keep its wheel and "
+    "count the client's claim as skipped. Each peer prints one DONE line on a pass; only the client in slot 1 acts.")
+CFG_FLAG(atv_eject_red, "atv_eject_red", "dev", false, "VOTVCOOP_ATV_EJECT_RED",
+    "Developer red arm: never set. The receiving copy inverts its wheel presence rule (the host's own presence is "
+    "skipped, a client syncer's is consumed), so both arms of the ATV eject drill must fail.")
