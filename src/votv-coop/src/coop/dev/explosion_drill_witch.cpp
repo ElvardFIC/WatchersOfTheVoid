@@ -496,8 +496,9 @@ bool FireLine(void* car, Vec& origin, Vec& fwd) {
     return Len(origin) > 0.f;
 }
 
-// The seat through the game's own verb. Seated, the rocket's line is said to the host, which puts the crate on it. The
-// seat claim and its first state leave in the tick the lane makes the claim, so the host has the seat before the shot.
+// The seat through the game's own verb, then the host's grant: the seat is the host's table, arriving as its answer
+// or stamp. Seated, the rocket's line is said to the host, which puts the crate on it, so the host holds the seat
+// before the shot.
 void ClientSit() {
     void* car = g_c.car.Get();
     void* player = coop::players::Registry::Get().Local();

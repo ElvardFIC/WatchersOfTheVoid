@@ -69,13 +69,13 @@ bool TrySit(void* player, void* atv, SitTry& t) {
     const uint64_t now = coop::net::NowMs();
     if (now < t.nextMs) return false;
     if (t.called) {
-        // The verb took the seat and is not called again on an occupied one; the steps after it wait for the lane's
-        // claim, kSitRetries of them, the last being the final look.
+        // The verb took the seat and is not called again on an occupied one; the steps after it wait for the host's
+        // grant, kSitRetries of them, the last being the final look.
         ++t.waits;
-        UE_LOGI("[ATVP] ARM sit: waiting for the lane to claim the seat of atv=%p, wait %d/%d", atv, t.waits,
+        UE_LOGI("[ATVP] ARM sit: waiting for the host's grant of the seat of atv=%p, wait %d/%d", atv, t.waits,
                 kSitRetries);
         if (t.waits >= kSitRetries) {
-            UE_LOGW("[ATVP] ARM sit: the lane made no claim for the seat the verb took on atv=%p", atv);
+            UE_LOGW("[ATVP] ARM sit: the host's grant of the seat the verb took on atv=%p did not arrive", atv);
             return true;
         }
         t.nextMs = now + kSitRetryMs;
@@ -108,8 +108,8 @@ bool TrySit(void* player, void* atv, SitTry& t) {
     const bool driven = ue_wrap::atv::IsDriven(atv);
     UE_LOGI("[ATVP] ARM sit: actionName(local=%p, 'sit') on atv=%p -> %s, try %d/%d, driven=%d",
             player, atv, ok ? "called" : "CALL FAILED", t.tries, kSitRetries, driven ? 1 : 0);
-    // The verb took the seat for the local player (a seat another occupant drives is a refusal); the ATV lane claims
-    // it on its next tick, which the next steps wait for.
+    // The verb took the seat for the local player (a seat another occupant drives is a refusal); the lane puts the
+    // request to the host's table on its next tick, and the next steps wait for the grant.
     if (driven && ue_wrap::atv::GetOccupantPlayer(atv) == player) {
         t.called = true;
         return false;
