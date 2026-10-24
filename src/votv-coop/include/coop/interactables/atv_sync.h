@@ -121,6 +121,19 @@ bool IsOccupiedByOther(void* actor, uint8_t* outOccupantSlot = nullptr);
 // IsOccupiedByOther; an entry whose actor is no longer live by its index is skipped. Game thread.
 void* ActorSeatedBy(uint8_t slot);
 
+// What a drill reads of one ATV's table: the seat, the syncer, the speed of the syncer's last admitted block (the
+// host's; a client's stays 0) and the actor the entry holds.
+struct TableView {
+    uint8_t occupantSlot = 0xFF;
+    uint8_t syncerSlot = 0;
+    float   lastBlockSpeed = 0.f;
+    void*   actor = nullptr;
+};
+
+// The table of the ATV indexed under `key`, as this peer holds it. False, and `out` untouched, unless the index is
+// this world's, an entry stands under the key and its actor is live. Game thread.
+bool ReadTable(const std::wstring& key, TableView& out);
+
 // Diagnostic read: does THIS peer own `actor`'s tick (run its brain) right now? False for an
 // unindexed actor, and false whenever the lane is not running. Exposed for coop/dev/atv_probe, so
 // an instrumented run can state which side of the mirror each sample came from. Game thread.

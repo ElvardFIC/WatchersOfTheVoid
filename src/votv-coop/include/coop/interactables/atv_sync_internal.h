@@ -45,6 +45,7 @@ struct AtvEntry {
     uint64_t handBackMs   = 0;     // when the last hand-back to the host happened
     coop::net::IntentBucket streamBucket;  // the syncer's blocks only; reset on every syncer change
     ue_wrap::FVector lastRestPos{};  // the last block's position, for the rest test
+    float    lastBlockSpeed = 0.f;   // the last admitted block's linear speed, cm/s (a drill reads it)
     bool     haveRestPos  = false;
     bool     lastGrabbed  = false;   // the last block's grabbed bit: the syncer carries it
     bool     stampDue     = false;   // the table changed: one stamped block goes to every ready client

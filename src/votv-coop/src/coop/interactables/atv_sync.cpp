@@ -781,4 +781,15 @@ void* ActorSeatedBy(uint8_t slot) {
     return nullptr;
 }
 
+bool ReadTable(const std::wstring& key, TableView& out) {
+    if (!IndexCurrent()) return false;
+    const auto it = g_atvs.find(key);
+    if (it == g_atvs.end() || !R::IsLiveByIndex(it->second.actor, it->second.idx)) return false;
+    out.occupantSlot = it->second.occupantSlot;
+    out.syncerSlot = it->second.syncerSlot;
+    out.lastBlockSpeed = it->second.lastBlockSpeed;
+    out.actor = it->second.actor;
+    return true;
+}
+
 }  // namespace coop::atv_sync

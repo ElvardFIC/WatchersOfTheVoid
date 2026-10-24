@@ -104,6 +104,8 @@ set(VOTVCOOP_DEV_SOURCES
     src/coop/dev/sack_drill.cpp
     src/coop/dev/fall_drill.cpp
     src/coop/dev/atv_spawn_drill.cpp
+    src/coop/dev/atv_health_drill.cpp
+    src/coop/dev/atv_health_drill_arms.cpp
     src/coop/dev/throw_drill.cpp
     src/coop/dev/log_drill.cpp
     src/coop/dev/server_upgrade_drill.cpp

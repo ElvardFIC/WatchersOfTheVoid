@@ -19,6 +19,7 @@
 #include "coop/dev/rack_birth_drill.h"  // [dev] a rack born holding rows reaches the client, which sends no op
 #include "coop/dev/burn_revive_drill.h"  // [dev] a client who dies burning is revived with no fire
 #include "coop/dev/drone_call_drill.h"  // [dev] a client's console press flies the host's drone
+#include "coop/dev/atv_health_drill.h"  // [dev] the ATV lane's table judged on the world's own ATV
 #include "coop/dev/atv_spawn_drill.h"  // [dev] a runtime ATV reaches each client once
 #include "coop/dev/throw_drill.h"  // [dev] a thrown container keeps its contents on the host
 #include "coop/dev/fall_drill.h"  // [dev] a falling host birth lands on the client where it lands on the host
@@ -184,6 +185,7 @@ void EndSession() {
     coop::dev::physmods_drill::OnDisconnect();  // [dev] the client arms again, so a rejoin says its line
     coop::dev::throw_drill::OnDisconnect();  // [dev] the backpack and its copy belong to one session
     coop::dev::atv_spawn_drill::OnDisconnect();  // [dev] the spawn belongs to one session
+    coop::dev::atv_health_drill::OnDisconnect();  // [dev] the phases and the walk belong to one session
     coop::dev::fall_drill::OnDisconnect();  // [dev] the drop belongs to one session
     coop::dev::remover_drill::OnDisconnect();  // [dev] the props and the toolgun belong to one session
     coop::dev::prop_act_drill::OnDisconnect();  // [dev] the steps, the target and the walk belong to one session
@@ -292,6 +294,7 @@ void TickDrills(coop::net::Session& session) {
     coop::dev::physmods_drill::Tick(&session);  // [dev] the module-plug drill (a single bool read when off)
     coop::dev::throw_drill::Tick(&session);  // [dev] the throw drill (latched string compares when off)
     coop::dev::atv_spawn_drill::Tick(&session);  // [dev] the ATV spawn drill (latched string compares when off)
+    coop::dev::atv_health_drill::Tick(&session);  // [dev] the ATV health drill (a latched enum read when off)
     coop::dev::fall_drill::Tick(&session);  // [dev] the fall drill (a latched bool read when off)
     coop::dev::remover_drill::Tick(&session);  // [dev] the remover drill (a latched enum read when off)
     coop::dev::prop_act_drill::Tick(&session);  // [dev] the act drill (a latched phase read when off)

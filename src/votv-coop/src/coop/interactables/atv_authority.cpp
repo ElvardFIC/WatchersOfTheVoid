@@ -5,6 +5,8 @@
 
 #include "coop/interactables/atv_authority.h"
 
+#include "coop/config/config.h"
+#include "coop/config/config_registry.h"
 #include "coop/element/intent_authority.h"
 #include "coop/interactables/atv_index_internal.h"
 #include "coop/interactables/atv_sync_internal.h"
@@ -295,11 +297,13 @@ bool AdmitBlock(AtvEntry& e, const coop::net::AtvStatePayload& p, uint8_t sender
     const FVector pos{p.x, p.y, p.z};
     const FVector lin{p.linVelX, p.linVelY, p.linVelZ};
     const bool grabbed = (p.stateBits & 0x4) != 0;
+    const float speed = coop::atv_sync::Len(lin);
     bool still = false;
     if (e.haveRestPos) {
         const FVector d{pos.X - e.lastRestPos.X, pos.Y - e.lastRestPos.Y, pos.Z - e.lastRestPos.Z};
-        still = coop::atv_sync::Len(lin) < kRestCmS && coop::atv_sync::Len(d) < kRestMovedCm && !grabbed;
+        still = speed < kRestCmS && coop::atv_sync::Len(d) < kRestMovedCm && !grabbed;
     }
+    e.lastBlockSpeed = speed;
     e.restSinceMs = !still ? 0 : (e.restSinceMs != 0 ? e.restSinceMs : nowMs);
     e.lastRestPos = pos;
     e.haveRestPos = true;
@@ -309,6 +313,10 @@ bool AdmitBlock(AtvEntry& e, const coop::net::AtvStatePayload& p, uint8_t sender
 }
 
 void RunPass(uint64_t nowMs) {
+    // The developer red arm of the ATV health drill: the at-rest hand-back is skipped (range and silence stay), so
+    // the drill's `back` phase must fail. Resolved once.
+    static const bool s_redBack =
+        coop::config::ResolveEnum(coop::config_registry::rows::atv_health_red) == "back";
     for (auto& kv : g_atvs) {
         AtvEntry& e = kv.second;
         if (e.syncerSlot == 0 || !R::IsLiveByIndex(e.actor, e.idx)) continue;
@@ -337,7 +345,7 @@ void RunPass(uint64_t nowMs) {
         const FVector d{at.X - atvAt.X, at.Y - atvAt.Y, at.Z - atvAt.Z};
         // A puppet whose location does not read is not out of range: departure and silence cover a gone client.
         const bool outOfRange = located && !(coop::atv_sync::Len(d) <= kSyncerDistance);
-        const bool atRest = e.restSinceMs != 0 && nowMs - e.restSinceMs >= kRestMs && !e.lastGrabbed;
+        const bool atRest = !s_redBack && e.restSinceMs != 0 && nowMs - e.restSinceMs >= kRestMs && !e.lastGrabbed;
         if (outOfRange || atRest) {
             HandToHost(e, syncer, nowMs);
             ++g_counters.handedBack;
