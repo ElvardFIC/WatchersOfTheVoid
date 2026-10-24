@@ -122,6 +122,7 @@ const char* KindName(RC::RequestKind kind) {
         case RC::RequestKind::Projectile: return "projectile";
         case RC::RequestKind::Hand:       return "hand";
         case RC::RequestKind::Self:       return "self";
+        case RC::RequestKind::Atv:        return "atv";
     }
     return "unknown";
 }

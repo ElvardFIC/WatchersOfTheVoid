@@ -73,15 +73,6 @@ bool RequestWellFormed(const coop::net::ExplosionRequestPayload& p) {
     return false;
 }
 
-bool ValidSenderSlot(int senderSlot) { return senderSlot >= 1 && senderSlot < coop::net::kMaxPeers; }
-
-// A sender still in its load window has no puppet and no hand state to judge against; MTA drops a packet from a
-// player that has not finished joining (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:2835, :2957).
-bool SenderWorldReady(uint8_t slot) {
-    const coop::net::Session* s = detail::SessionPtr();
-    return s && s->IsSlotWorldReady(slot);
-}
-
 // A rocket's life is 30 s and 2 s more are allowed; an entry past that can no longer be asked for. A sticky waits
 // for its launcher's RMB or destruction, so it has no age.
 constexpr uint64_t kRocketLifeMs = 32000;
@@ -140,6 +131,13 @@ void Refuse(uint8_t slot, Refusal r) {
 }
 
 coop::net::Session* SessionPtr() { return g_session.load(std::memory_order_acquire); }
+
+bool ValidSenderSlot(int senderSlot) { return senderSlot >= 1 && senderSlot < coop::net::kMaxPeers; }
+
+bool SenderWorldReady(uint8_t slot) {
+    const coop::net::Session* s = SessionPtr();
+    return s && s->IsSlotWorldReady(slot);
+}
 
 Slot& SlotOf(uint8_t slot) { return g_slots[slot]; }
 
@@ -216,24 +214,25 @@ void OnDisconnect() {
                 u(c.expired), u(c.waited), nb > 0 ? " shotsBy" : "", by, line);
     if (c.shotsSent || c.requestsSent[0] || c.requestsSent[1] || c.requestsSent[2] || c.requestsSent[3] ||
         c.pendingDropped || c.pendingDead || c.pendingOrphaned || c.clientDropped || c.unmappedProjectile ||
-        c.shotNotAnnounced)
+        c.shotNotAnnounced || c.atvBirthUnowned)
         UE_LOGI("[EXPLOSION] request lane at disconnect (client): shotsSent=%llu requestsSent=%llu/%llu/%llu/%llu "
                 "pendingDropped=%llu pendingDead=%llu pendingOrphaned=%llu clientDropped=%llu "
-                "unmappedProjectile=%llu shotNotAnnounced=%llu", u(c.shotsSent), u(c.requestsSent[0]),
-                u(c.requestsSent[1]), u(c.requestsSent[2]), u(c.requestsSent[3]), u(c.pendingDropped),
-                u(c.pendingDead), u(c.pendingOrphaned), u(c.clientDropped), u(c.unmappedProjectile),
-                u(c.shotNotAnnounced));
+                "unmappedProjectile=%llu shotNotAnnounced=%llu atvBirthUnowned=%llu", u(c.shotsSent),
+                u(c.requestsSent[0]), u(c.requestsSent[1]), u(c.requestsSent[2]), u(c.requestsSent[3]),
+                u(c.pendingDropped), u(c.pendingDead), u(c.pendingOrphaned), u(c.clientDropped),
+                u(c.unmappedProjectile), u(c.shotNotAnnounced), u(c.atvBirthUnowned));
     for (int i = 0; i < g_slots.size(); ++i) g_slots[i] = detail::Slot{};
     detail::ClearClient();
+    detail::ClearAtvClient();
     g_counters = Counters{};
     g_refusals.Clear();
 }
 
 void OnFiredReceived(int senderSlot, const uint8_t* bytes, uint16_t len) {
-    if (!ValidSenderSlot(senderSlot)) return;  // the dispatch's own guard, kept at this lane's edge
+    if (!detail::ValidSenderSlot(senderSlot)) return;  // the dispatch's own guard, kept at this lane's edge
     const auto slot = static_cast<uint8_t>(senderSlot);
     coop::net::ProjectileFiredPayload p{};
-    if (!SenderWorldReady(slot)) return detail::Refuse(slot, Refusal::NotWorldReady);
+    if (!detail::SenderWorldReady(slot)) return detail::Refuse(slot, Refusal::NotWorldReady);
     if (!bytes || len != sizeof(p)) return detail::Refuse(slot, Refusal::Malformed);
     std::memcpy(&p, bytes, sizeof(p));
     if (!FiredWellFormed(p)) return detail::Refuse(slot, Refusal::Malformed);
@@ -242,10 +241,10 @@ void OnFiredReceived(int senderSlot, const uint8_t* bytes, uint16_t len) {
 }
 
 void OnRequestReceived(int senderSlot, const uint8_t* bytes, uint16_t len) {
-    if (!ValidSenderSlot(senderSlot)) return;  // the dispatch's own guard, kept at this lane's edge
+    if (!detail::ValidSenderSlot(senderSlot)) return;  // the dispatch's own guard, kept at this lane's edge
     const auto slot = static_cast<uint8_t>(senderSlot);
     coop::net::ExplosionRequestPayload p{};
-    if (!SenderWorldReady(slot)) return detail::Refuse(slot, Refusal::NotWorldReady);
+    if (!detail::SenderWorldReady(slot)) return detail::Refuse(slot, Refusal::NotWorldReady);
     if (!bytes || len != sizeof(p)) return detail::Refuse(slot, Refusal::Malformed);
     std::memcpy(&p, bytes, sizeof(p));
     if (!RequestWellFormed(p)) return detail::Refuse(slot, Refusal::Malformed);

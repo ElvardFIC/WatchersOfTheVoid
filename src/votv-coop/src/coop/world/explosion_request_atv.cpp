@@ -9,6 +9,8 @@
 
 #include "explosion_request_internal.h"  // co-located private header (src tree, not include/)
 
+#include "coop/interactables/atv_authority.h"
+#include "coop/interactables/atv_hit_guard.h"
 #include "coop/interactables/atv_sync.h"
 #include "coop/interactables/atv_sync_internal.h"
 #include "coop/net/protocol.h"
@@ -44,10 +46,20 @@ AtvEntry* LiveEntry(const std::wstring& key) {
     return e;
 }
 
+bool g_dropSaid = false;   // a send the session refused, said once per session
+
 }  // namespace
 
+void detail::ClearAtvClient() { g_dropSaid = false; }
+
 bool OnClientAtvBirth(void* source) {
-    if (!A::IsAtv(source) || !coop::atv_sync::OwnsTick(source)) return false;
+    if (!A::IsAtv(source)) return false;
+    if (!coop::atv_sync::OwnsTick(source)) {
+        // "Not owned" means another copy owns it only while the guard's set is published; with it withdrawn (a tick's
+        // early return, a world change in flight) this copy may be the owner, and the blast is dissolved unasked.
+        if (!coop::atv_hit_guard::Active()) ++detail::MutCounters().atvBirthUnowned;
+        return false;
+    }
     coop::net::Session* s = detail::SessionPtr();
     if (!s) return true;
     const std::wstring key = A::GetKeyString(source);
@@ -61,9 +73,8 @@ bool OnClientAtvBirth(void* source) {
     p.trapFired = trapFired ? 1 : 0;
     if (!s->SendReliable(coop::net::ReliableKind::AtvExplodeRequest, &p, sizeof(p))) {
         ++detail::MutCounters().clientDropped;
-        static bool s_said = false;   // a send the session refused, said once
-        if (!s_said) {
-            s_said = true;
+        if (!g_dropSaid) {
+            g_dropSaid = true;
             UE_LOGW("[EXPLOSION] an ATV's request was dropped unsent: the session took no reliable message");
         }
         return true;
@@ -74,24 +85,25 @@ bool OnClientAtvBirth(void* source) {
 }
 
 void OnAtvRequestReceived(int senderSlot, const uint8_t* bytes, uint16_t len) {
-    if (senderSlot < 1 || senderSlot >= coop::net::kMaxPeers) return;  // the dispatch's guard, kept at this edge
+    if (!detail::ValidSenderSlot(senderSlot)) return;  // the dispatch's guard, kept at this edge
     const auto slot = static_cast<uint8_t>(senderSlot);
-    const coop::net::Session* s = detail::SessionPtr();
-    // A sender still in its load window has no ATV to judge against; MTA drops a packet from a player that has not
-    // finished joining (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:2835).
-    if (!s || !s->IsSlotWorldReady(slot)) return detail::Refuse(slot, Refusal::NotWorldReady);
+    if (!detail::SenderWorldReady(slot)) return detail::Refuse(slot, Refusal::NotWorldReady);
     coop::net::AtvExplodeRequestPayload p{};
     if (!bytes || len != sizeof(p)) return detail::Refuse(slot, Refusal::Malformed);
     std::memcpy(&p, bytes, sizeof(p));
     const std::wstring key = coop::net::StringFromWireKey(p.key);
-    if (key.empty() || p.trapFired > 1) return detail::Refuse(slot, Refusal::Malformed);
+    if (key.empty() || p.trapFired > 1 || p.pad[0] || p.pad[1] || p.pad[2])
+        return detail::Refuse(slot, Refusal::Malformed);
 
     AtvEntry* e = LiveEntry(key);
     if (!e) return detail::Refuse(slot, Refusal::UnknownAtv);
-    // MTA's client sends a vehicle's explosion only for a vehicle it syncs
-    // (reference/mtasa-blue/Client/mods/deathmatch/logic/CClientExplosionManager.cpp:155-160) and its server does not
-    // test it; here the host judges the syncer at its receive boundary.
-    if (e->syncerSlot != slot) return detail::Refuse(slot, Refusal::NotSyncer);
+    // MTA's client sends a vehicle's explosion only for a responsible it may report: the local player, the vehicle
+    // the local player sits in (:153) or an unoccupied vehicle it syncs, and its server does not test it
+    // (reference/mtasa-blue/Client/mods/deathmatch/logic/CClientExplosionManager.cpp:152-157); here the host judges
+    // the syncer at its receive boundary. The syncer a hand-back just replaced is admitted inside AdmitBlock's late
+    // window: its copy owned the tick when the ATV died, so its report is honest.
+    if (e->syncerSlot != slot && !coop::atv_authority::IsLateSyncer(*e, slot, coop::atv_sync::NowMs()))
+        return detail::Refuse(slot, Refusal::NotSyncer);
     // MTA blows a vehicle once (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:2870-2904); here the
     // game's own re-arm applies: the mark clears when the syncer's health is back at 0 or above.
     if (e->blown) return detail::Refuse(slot, Refusal::Blown);
@@ -112,6 +124,10 @@ coop::net::Served JudgeAtvBlast(uint8_t slot, const AtvItem& it) {
         Refuse(slot, Refusal::UnknownAtv);
         return coop::net::Served::Done;
     }
+    // The blast's place is the host copy's own `tp`, read here after the slot's queue and bucket. MTA reads its
+    // vehicle's position synchronously at the packet
+    // (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:2866-2867); a wreck is at rest by now, and the
+    // host copy trails the syncer by the corrector's lag.
     FVector tp{};
     if (!A::ReadTpLocation(e->actor, tp)) {  // no place to put the blast: never one at the origin
         e->blown = false;

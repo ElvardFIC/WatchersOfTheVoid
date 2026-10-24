@@ -49,6 +49,12 @@ void Refuse(uint8_t slot, Refusal r);
 // The session Install stored; null before it.
 coop::net::Session* SessionPtr();
 
+// The edge of every host receive: the sender's slot is a client's (1..kMaxPeers-1), and its world is ready. A sender
+// still in its load window has no puppet, hand state or ATV to judge against; MTA drops a packet from a player that
+// has not finished joining (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:2835, :2957).
+bool ValidSenderSlot(int senderSlot);
+bool SenderWorldReady(uint8_t slot);
+
 struct FiredItem {
     coop::net::ProjectileFiredPayload p;
     uint64_t                          recvMs;
@@ -98,6 +104,9 @@ void InstallClient();
 void TickClient();
 void ClearClient();
 void ClearClientWorld();
+
+// The ATV family's once-per-session log latch, in explosion_request_atv.cpp; cleared with the session.
+void ClearAtvClient();
 
 // The four judges, one per queue, the first three in explosion_request_host.cpp and the ATV's in
 // explosion_request_atv.cpp. Each returns Done (accepted or refused) except at its Waits, each bounded for an honest
