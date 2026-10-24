@@ -158,6 +158,7 @@ uint8_t NextSeq() {
 
 // Whether this machine writes `e`: the host's table names it (on the host that is the host itself), or this
 // client's own sit or takeover is sent and not yet answered (the optimistic window, the client drives at once).
+// MTA's client waits for the confirm before it animates in (Client CPacketHandler.cpp:1744-1770, a refusal :2135-2142).
 bool IsLocalSyncer(const AtvEntry& e, uint8_t localSlot) {
     if (e.syncerSlot == localSlot) return true;
     return e.pendingSeq != 0 && e.pendingAction != AU::AtvRequest::Leave;
@@ -331,7 +332,9 @@ void JudgeHostBody(void* localPlayer) {
 }
 
 // HOST: one stamped block to every world-ready client for each entry whose table changed. A payload that does not
-// read leaves the stamp due and is tried again once a second per entry, said once.
+// read leaves the stamp due and is tried again once a second per entry, said once. The stamp goes to every client; MTA
+// sends StartSync / StopSync to the syncer alone
+// (reference/mtasa-blue/Server/mods/deathmatch/logic/CUnoccupiedVehicleSync.cpp:194-222).
 void SendStamps(coop::net::Session& s, uint64_t nowMs) {
     for (auto& kv : g_atvs) {
         AtvEntry& e = kv.second;
@@ -397,6 +400,7 @@ void TickClientBody(coop::net::Session& s, AtvEntry& e, const std::wstring& key,
     ReadLocalBody(e, localPlayer);
     if (gateOpen) {
         if (e.localSeated && !e.sentSeated) SendSeat(s, e, key, true);
+        // A death leaves the seat on this edge; MTA clears it server-side at PlayerWasted (CGame.cpp:2141-2165).
         else if (!e.localSeated && e.sentSeated) SendSeat(s, e, key, false);
         if (e.takeoverDue) SendTakeover(s, e, key);
     }
@@ -467,7 +471,9 @@ void OnReliable(const coop::net::AtvStatePayload& payload, uint8_t senderPeerSlo
     const uint8_t localSlot = coop::players::Registry::Get().LocalPeerId();
     e.occupantSlot = payload.occupantSlot;
     e.syncerSlot   = payload.syncerSlot;
-    // An ATV this machine syncs, or has a request in flight for, keeps its own state and takes only the stamp.
+    // An ATV this machine syncs, or has a request in flight for, keeps its own state and takes only the stamp; MTA's
+    // StartSync ships the server's pose and state to the new syncer
+    // (reference/mtasa-blue/Server/mods/deathmatch/logic/packets/CUnoccupiedVehicleStartSyncPacket.cpp).
     if (e.syncerSlot == localSlot || e.pendingSeq != 0) return;
     // Pose and condition: the syncer's re-sent block, the host's own copy when the host is the syncer, or the
     // connect snapshot (a joiner syncs nothing yet, so it always places). A connect snapshot warps (the joiner has

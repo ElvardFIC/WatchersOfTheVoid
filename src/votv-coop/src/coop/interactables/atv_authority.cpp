@@ -1,6 +1,7 @@
 // coop/interactables/atv_authority.cpp -- see coop/interactables/atv_authority.h. The host's seat and syncer table
 // for the ATVs of the lane's index, the judgement of a client's AtvSeat and AtvTakeover, the admission of a syncer's
-// blocks and the once-a-second pass that takes an ATV back to the host.
+// blocks and the once-a-second pass that takes an ATV back to the host. MTA files named below are
+// reference/mtasa-blue/Server/mods/deathmatch/logic/ (CGame.cpp, CUnoccupiedVehicleSync.cpp, CElement.cpp).
 
 #include "coop/interactables/atv_authority.h"
 
@@ -42,6 +43,7 @@ namespace {
 
 // The buckets are the host's per-slot paces: a client past one costs the host no work and no answer beyond the
 // refusal. A leave takes no token. The stream bucket is per entry (atv_sync_internal.h).
+// The takeover pace is per sender; MTA's is per vehicle, one push per 1500 ms (CUnoccupiedVehicleSync.cpp:490).
 constexpr IntentBudget kSeatBudget{4.f, 1.f};
 constexpr IntentBudget kTakeoverBudget{2.f, 1.f};
 constexpr IntentBudget kStreamBudget{16.f, 40.f};   // twice the 20 Hz a syncer sends
@@ -89,6 +91,8 @@ void Count(uint8_t slot, AtvRefusal r) {
 }
 
 // The verdict to its sender, with the seat and the syncer the host now holds for that ATV (0xFF and 0 without one).
+// Only the requester is answered; MTA broadcasts its confirm (CGame.cpp:3196-3197), a refusal going to the sender
+// alone (:3358-3366), and here the stamp tells the other clients.
 void Answer(coop::net::Session& s, uint8_t slot, const coop::net::WireKey& key, uint8_t seq, AtvRefusal why,
             const AtvEntry* e) {
     coop::net::AtvAnswerPayload a{};
@@ -151,7 +155,9 @@ AtvRefusal SitTests(const AtvEntry& e, uint8_t who) {
 
 // The table's tests for a takeover by `who`: nobody sits in the ATV (a carrier never takes a driven one, and a
 // sit takes a carried one), and nobody else carries it: another client whose last block had the grabbed bit, or the
-// host's own player. No carry is stolen; a settling or parked ATV yields to a grab.
+// host's own player. No carry is stolen; a settling or parked ATV yields to a grab. A takeover is a grab, not
+// MTA's push by contact (CUnoccupiedVehicleSync.cpp:480-504), and that push steals from any syncer that is not
+// persistent (:499-502).
 AtvRefusal TakeoverTests(const AtvEntry& e, uint8_t who) {
     if (e.occupantSlot != kNoSeat) return AtvRefusal::Seated;
     if (e.syncerSlot != 0 && e.syncerSlot != who && e.lastGrabbed) return AtvRefusal::Synced;
@@ -260,6 +266,8 @@ bool JudgeLocal(AtvEntry& e, AtvRequest req) {
 }
 
 bool AdmitBlock(AtvEntry& e, const coop::net::AtvStatePayload& p, uint8_t senderSlot, uint64_t nowMs) {
+    // No time context: the lane is FIFO and no host code repositions a client-synced ATV. MTA's context guards a
+    // server move against a syncer's packet in flight (CUnoccupiedVehicleSync.cpp:285, CElement.cpp:1281-1305).
     if (senderSlot == 0 || senderSlot != e.syncerSlot) {
         // The honest race: the block of the syncer a hand-back just replaced, sent before the stamp reached it.
         coop::net::Session* s = coop::atv_sync::LaneSession();
@@ -299,7 +307,8 @@ void RunPass(uint64_t nowMs) {
         AtvEntry& e = kv.second;
         if (e.syncerSlot == 0 || !R::IsLiveByIndex(e.actor, e.idx)) continue;
         const uint8_t syncer = e.syncerSlot;
-        // 1. silent: the host takes the ATV, and the seat with it when that client held it.
+        // 1. silent: the host takes the ATV, and the seat with it when that client held it. MTA's syncer sends only
+        // on change (CUnoccupiedVehicleSync.cpp:459), so silence is normal there; here a syncer streams.
         if (nowMs - e.lastBlockMs >= kSyncerSilenceMs) {
             if (e.occupantSlot == syncer) e.occupantSlot = kNoSeat;
             HandToHost(e, syncer, nowMs);
@@ -311,15 +320,16 @@ void RunPass(uint64_t nowMs) {
         }
         // 2. seated: the syncer is the occupant.
         if (e.occupantSlot != kNoSeat) continue;
-        // 3. out of range, or at rest and uncarried: the host takes the ATV (MTA hands an out-of-range vehicle
-        // to the nearest player; here the host's world is always loaded).
+        // 3. out of range, or at rest and uncarried: the host takes the ATV. MTA keeps an in-range syncer and hands an
+        // out-of-range vehicle to the nearest player (CUnoccupiedVehicleSync.cpp:127-146, :171-192); here the host's
+        // world is always loaded, and an ATV at rest returns to it, which MTA has no rule for.
         FVector atvAt; FRotator rot;
         if (!A::GetRootTransform(e.actor, atvAt, rot)) continue;
         FVector at{};
         coop::RemotePlayer* rp = coop::players::Registry::Get().Puppet(syncer);
         const bool located = rp && rp->TryGetLocation(at);
         const FVector d{at.X - atvAt.X, at.Y - atvAt.Y, at.Z - atvAt.Z};
-        // A puppet whose location does not read is not out of range: the departure and silence rules cover a gone client.
+        // A puppet whose location does not read is not out of range: departure and silence cover a gone client.
         const bool outOfRange = located && !(coop::atv_sync::Len(d) <= kSyncerDistance);
         const bool atRest = e.restSinceMs != 0 && nowMs - e.restSinceMs >= kRestMs && !e.lastGrabbed;
         if (outOfRange || atRest) {
@@ -345,7 +355,7 @@ void ClearTable(AtvEntry& e) {
 }
 
 void ResetRequests(AtvEntry& e) {
-    // sentSeated stays: it is what the host believes of this machine's seat, so a client no longer seated sends its leave.
+    // sentSeated stays: it is what the host believes of this seat, so a client no longer seated sends its leave.
     e.pendingSeq = 0;
     e.takeoverDue = false;
 }
