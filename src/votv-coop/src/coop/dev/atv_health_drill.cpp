@@ -1,5 +1,6 @@
 // coop/dev/atv_health_drill.cpp -- see coop/dev/atv_health_drill.h. The arm table, the phase clock, the verdict and chat
-// lines and the entry points; the arms' phases are atv_health_drill_arms.cpp.
+// lines and the entry points; the arms' phases are atv_health_drill_arms.cpp (the client's acts, the silent syncer) and
+// atv_health_drill_host.cpp (the arms where the host acts).
 
 #include "coop/dev/atv_health_drill.h"
 
@@ -21,6 +22,9 @@ constexpr Spec kSpecs[] = {
     {Arm::Off,  "off",  "", "", ""},
     {Arm::Sit,  "sit",  "seated", "sit",  "dismount"},
     {Arm::Grab, "grab", "synced", "grab", "release"},
+    {Arm::Occupied, "occupied", "seated",   "send", ""},
+    {Arm::Synced,   "synced",   "carrying", "send", ""},
+    {Arm::Silent,   "silent",   "seated",   "sit",  "mute"},
 };
 
 }  // namespace
@@ -36,6 +40,9 @@ Arm ArmOf() {
         const std::string v = coop::config::ResolveEnum(coop::config_registry::rows::atv_health_drill);
         if (v == "sit") return Arm::Sit;
         if (v == "grab") return Arm::Grab;
+        if (v == "occupied") return Arm::Occupied;
+        if (v == "synced") return Arm::Synced;
+        if (v == "silent") return Arm::Silent;
         return Arm::Off;
     }();
     return a;
@@ -68,6 +75,7 @@ void Pass(const char* role, Arm a, Run& r, const std::string& numbers) {
 // Lines no save can hold, as a prop class or a place could.
 std::string ReadyLine(Arm a) { return std::string("ATVHD client ready ") + SpecOf(a).name; }
 std::string PhaseLine(const char* name) { return std::string("ATVHD phase ") + name; }
+std::string ClientLine(const char* what) { return std::string("ATVHD client ") + what; }
 
 }  // namespace detail
 
@@ -75,7 +83,7 @@ void Tick(coop::net::Session* s) {
     const detail::Arm a = detail::ArmOf();
     if (a == detail::Arm::Off || !s) return;
     if (s->role() == coop::net::Role::Host) detail::HostTick(s, a);
-    else if (s->connected()) detail::ClientTick(a);
+    else if (s->connected()) detail::ClientTick(s, a);
 }
 
 void OnDisconnect() {

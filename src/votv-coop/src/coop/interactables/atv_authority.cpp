@@ -150,8 +150,12 @@ bool SeatedAnywhere(uint8_t slot) {
 // FAIL_IN_VEHICLE :3347). MTA lets a player jack an occupied vehicle (:3130-3132); VOTV's sit has no jack, so an
 // occupied seat is refused.
 AtvRefusal SitTests(const AtvEntry& e, uint8_t who) {
+    // The developer red arm of the ATV health drill: the occupied-seat test is skipped, so the drill's `judge` phase
+    // must fail. Resolved once.
+    static const bool s_redOccupied =
+        coop::config::ResolveEnum(coop::config_registry::rows::atv_health_red) == "occupied";
     if (SeatedAnywhere(who)) return AtvRefusal::AlreadySeated;
-    if (e.occupantSlot != kNoSeat) return AtvRefusal::Occupied;
+    if (!s_redOccupied && e.occupantSlot != kNoSeat) return AtvRefusal::Occupied;
     return AtvRefusal::Admitted;
 }
 
@@ -161,9 +165,14 @@ AtvRefusal SitTests(const AtvEntry& e, uint8_t who) {
 // MTA's push by contact (CUnoccupiedVehicleSync.cpp:480-504), and that push steals from any syncer that is not
 // persistent (:499-502).
 AtvRefusal TakeoverTests(const AtvEntry& e, uint8_t who) {
+    // The developer red arm of the ATV health drill: the host-carry clause alone is skipped, so the drill's `judge`
+    // phase must fail. Resolved once.
+    static const bool s_redTakeover =
+        coop::config::ResolveEnum(coop::config_registry::rows::atv_health_red) == "takeover";
     if (e.occupantSlot != kNoSeat) return AtvRefusal::Seated;
     if (e.syncerSlot != 0 && e.syncerSlot != who && e.lastGrabbed) return AtvRefusal::Synced;
-    if (who != 0 && coop::atv_sync::IsLocalGrabber(e.actor, coop::players::Registry::Get().Local()))
+    if (!s_redTakeover && who != 0 &&
+        coop::atv_sync::IsLocalGrabber(e.actor, coop::players::Registry::Get().Local()))
         return AtvRefusal::Synced;
     return AtvRefusal::Admitted;
 }
@@ -314,16 +323,19 @@ bool AdmitBlock(AtvEntry& e, const coop::net::AtvStatePayload& p, uint8_t sender
 
 void RunPass(uint64_t nowMs) {
     // The developer red arm of the ATV health drill: the at-rest hand-back is skipped (range and silence stay), so
-    // the drill's `back` phase must fail. Resolved once.
+    // the drill's `back` phase must fail. `silence` skips the silence rule alone, so the `silenced` phase must fail.
+    // Each resolved once.
     static const bool s_redBack =
         coop::config::ResolveEnum(coop::config_registry::rows::atv_health_red) == "back";
+    static const bool s_redSilence =
+        coop::config::ResolveEnum(coop::config_registry::rows::atv_health_red) == "silence";
     for (auto& kv : g_atvs) {
         AtvEntry& e = kv.second;
         if (e.syncerSlot == 0 || !R::IsLiveByIndex(e.actor, e.idx)) continue;
         const uint8_t syncer = e.syncerSlot;
         // 1. silent: the host takes the ATV, and the seat with it when that client held it. MTA's syncer sends only
         // on change (CUnoccupiedVehicleSync.cpp:459), so silence is normal there; here a syncer streams.
-        if (nowMs - e.lastBlockMs >= kSyncerSilenceMs) {
+        if (!s_redSilence && nowMs - e.lastBlockMs >= kSyncerSilenceMs) {
             if (e.occupantSlot == syncer) e.occupantSlot = kNoSeat;
             HandToHost(e, syncer, nowMs);
             ++g_counters.silenced;

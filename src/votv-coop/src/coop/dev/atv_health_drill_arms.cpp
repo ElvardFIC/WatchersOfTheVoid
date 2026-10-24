@@ -1,8 +1,9 @@
-// coop/dev/atv_health_drill_arms.cpp -- the ATV health drill's two arms, `sit` and `grab`, for both roles: see
-// coop/dev/atv_health_drill.h. The client walks to the world's own ATV with the director, acts on it (the seat through
-// the game's own verb, or the grav hand's grab) and undoes it on the host's word; the host reads the table it judged
-// and the lane's counters as deltas against a baseline taken at the client's ready line, says each edge in the lobby
-// chat, and prints the times the hand-back took.
+// coop/dev/atv_health_drill_arms.cpp -- the ATV health drill's arms where the client acts, `sit`, `grab` and `silent`,
+// and the client's side of `occupied` and `synced`, for both roles: see coop/dev/atv_health_drill.h. The client walks
+// to the world's own ATV with the director and acts on it (the seat through the game's own verb, the grav hand's grab,
+// or a raw request) and undoes it on the host's word; the host reads the table it judged and the lane's counters as
+// deltas against a baseline taken at the client's ready line, says each edge in the lobby chat, and prints the times
+// the hand-back took. The host's side of `occupied` and `synced` is atv_health_drill_host.cpp.
 
 #include "atv_health_drill_detail.h"  // co-located private header (src tree, not include/)
 #include "atv_seat.h"                 // TrySit (co-located private header)
@@ -12,7 +13,9 @@
 #include "coop/dev/drill_chat.h"
 #include "coop/interactables/atv_authority.h"
 #include "coop/interactables/atv_sync.h"
+#include "coop/net/protocol.h"
 #include "coop/net/session.h"
+#include "coop/net/wire_key_util.h"
 #include "coop/player/players_registry.h"
 #include "coop/props/join_membership_sweep.h"
 #include "coop/session/join_progress.h"
@@ -31,6 +34,19 @@
 #include <string>
 
 namespace coop::dev::atv_health_drill::detail {
+
+Host g_h;
+
+std::string Plus(uint64_t n) { return "+" + std::to_string(n); }
+
+// The grab's failure: why, and which calls of the use key's chain ran.
+std::string GrabWhy(const coop::director::AimedGrab& g) {
+    char what[200];
+    std::snprintf(what, sizeof(what), "the grab did not take: %s, chain pre/use/post %d/%d/%d", g.Why(),
+                  g.ChainPre() ? 1 : 0, g.ChainUse() ? 1 : 0, g.ChainPost() ? 1 : 0);
+    return what;
+}
+
 namespace {
 
 namespace A  = ue_wrap::atv;
@@ -42,17 +58,6 @@ using coop::atv_sync::TableView;
 unsigned long long U(uint64_t v) { return static_cast<unsigned long long>(v); }
 
 // ---- the host ----
-
-enum class HP : int { Wait, First, Left, Back };
-
-struct Host {
-    Run               run;
-    AU::Counters      base{};
-    Clock::time_point firstAt{}, leftAt{};
-};
-Host g_h;
-
-void HostEnter(HP p, const char* name) { Enter(g_h.run, static_cast<int>(p), name); }
 
 uint64_t Admitted() { return AU::ReadCounters().admitted - g_h.base.admitted; }
 uint64_t HandedBack() { return AU::ReadCounters().handedBack - g_h.base.handedBack; }
@@ -72,26 +77,27 @@ std::string Numbers(Arm a, Clock::time_point end, float lastBlockSpeed) {
     return buf;
 }
 
-std::string Plus(uint64_t n) { return "+" + std::to_string(n); }
-
 void HostWait(Arm a) {
     if (DC::PollDue() && DC::ChatHasLive(ReadyLine(a))) {
         g_h.base = AU::ReadCounters();
+        if (a == Arm::Occupied || a == Arm::Synced) return HostEnter(HP::Walk, "walk");
         return HostEnter(HP::First, SpecOf(a).first);
     }
     if (Past(g_h.run, kFailBound))
         Fail("host", a, g_h.run, "the client never said it was ready", "no line", ReadyLine(a));
 }
 
-// The edge the client's act makes: the sit names the client occupant and syncer, the grab names it syncer with the
-// seat free (and `admitted` +1, the takeover). The host then says the edge, which the client undoes its act on.
+// The edge the client's act makes: the sit (and the silent arm's) names the client occupant and syncer, the grab names
+// it syncer with the seat free (and `admitted` +1, the takeover). The host then says the edge, which the client undoes
+// its act on.
 void HostFirst(Arm a, const TableView* t) {
-    const bool sit = a == Arm::Sit;
+    const bool sit = a == Arm::Sit || a == Arm::Silent;
     if (t && t->syncerSlot == kSlot && t->occupantSlot == (sit ? kSlot : kNoSeat)) {
         if (!sit && Admitted() != 1)
             return Fail("host", a, g_h.run, "the grant", "admitted " + Plus(Admitted()), "admitted +1");
         g_h.firstAt = Clock::now();
         DC::Say(PhaseLine(SpecOf(a).first));
+        if (a == Arm::Silent) return HostEnter(HP::Silenced, "silenced");
         return HostEnter(sit ? HP::Left : HP::Back, sit ? "left" : "back");
     }
     if (!Past(g_h.run, kHostFirstBound)) return;
@@ -134,9 +140,53 @@ void HostBack(Arm a, const TableView* t) {
          "handedBack +1 syncer 0");
 }
 
+// The silent syncer: from the client's `muted` line the lane must take the seat and the ATV back by its silence rule
+// (the seat free, the host the syncer, one `silenced`); the bound runs from the muting.
+void HostSilenced(Arm a, const TableView* t) {
+    if (!g_h.sawMuted) {
+        if (DC::PollDue() && DC::ChatHasLive(ClientLine("muted"))) {
+            g_h.sawMuted = true;
+            g_h.mutedAt = Clock::now();
+            return HostEnter(HP::Silenced, "silenced");
+        }
+        if (Past(g_h.run, kFailBound))
+            Fail("host", a, g_h.run, "the client never said it muted its stream", "no line", ClientLine("muted"));
+        return;
+    }
+    const uint64_t silenced = AU::ReadCounters().silenced - g_h.base.silenced;
+    if (t && t->occupantSlot == kNoSeat && t->syncerSlot == 0) {
+        if (silenced != 1)
+            return Fail("host", a, g_h.run, "the seat and the ATV went back to the host by no silence rule",
+                        "silenced " + Plus(silenced), "silenced +1");
+        g_h.silencedAt = Clock::now();
+        return HostEnter(HP::Yielded, "yielded");
+    }
+    if (!Past(g_h.run, kFailBound)) return;
+    char got[96];
+    std::snprintf(got, sizeof(got), "occupant %u syncer %u silenced +%llu",
+                  t ? static_cast<unsigned>(t->occupantSlot) : 0xFFFFu, t ? static_cast<unsigned>(t->syncerSlot) : 0xFFFFu,
+                  U(silenced));
+    Fail("host", a, g_h.run, "the silent syncer was not taken back", t ? got : "no table",
+         "occupant 255 syncer 0 silenced +1");
+}
+
+// The client's own copy gives up the seat on the host's stamp: its `yielded` line ends the run.
+void HostYielded(Arm a) {
+    if (DC::PollDue() && DC::ChatHasLive(ClientLine("yielded"))) {
+        DC::Say(PhaseLine("back"));
+        char nums[64];
+        std::snprintf(nums, sizeof(nums), "mute_to_silenced_ms=%lld", Ms(g_h.mutedAt, g_h.silencedAt));
+        return Pass("host", a, g_h.run, nums);
+    }
+    if (Past(g_h.run, kFailBound))
+        Fail("host", a, g_h.run, "the client's own copy never gave up the seat", "no line", ClientLine("yielded"));
+}
+
 // ---- the client ----
 
-enum class CP : int { Wait, Walk, Act, Undo, Back };
+enum class CP : int { Wait, Walk, Act, Undo, Yield, Back };
+
+constexpr uint8_t kSeatSeq = 250, kTakeoverSeq = 251;   // the raw requests' numbers: no honest request carries one
 
 struct Client {
     Run                                             run;
@@ -152,11 +202,12 @@ Client g_c;
 
 void ClientEnter(CP p, const char* name) { Enter(g_c.run, static_cast<int>(p), name); }
 
-// A verdict ends the run: a walk still walking is cancelled and the grab let go of.
+// A verdict ends the run: a walk still walking is cancelled, the grab let go of and the stream's mute lifted.
 void ClientEnd() {
     if (g_c.walk && g_c.walk->state.load() == 0) coop::director::CancelBackgroundWalk(*g_c.walk);
     g_c.walk.reset();
     g_c.grab.reset();
+    coop::atv_sync::SetDrillMute(false);
 }
 
 void ClientFail(Arm a, const std::string& what, const std::string& got, const std::string& want) {
@@ -178,7 +229,8 @@ void ClientWait(Arm a) {
     ue_wrap::FRotator rot{};
     if (StreamsRun() && coop::atv_sync::ReadTable(kKey, t) && A::GetRootTransform(t.actor, at, rot)) {
         g_c.atv.Set(t.actor);
-        g_c.walk = coop::director::StartBackgroundWalk(at, a == Arm::Sit ? kSitReachCm : kGrabReachCm, kWalkDeadlineS);
+        const float reach = a == Arm::Grab ? kGrabReachCm : kSitReachCm;
+        g_c.walk = coop::director::StartBackgroundWalk(at, reach, kWalkDeadlineS);
         g_c.walkAt = Clock::now();
         DC::Say(ReadyLine(a));
         UE_LOGI("[ATV-HEALTH-DRILL] client arm=%s the ATV is at (%.0f,%.0f,%.0f), walking to it", SpecOf(a).name,
@@ -201,14 +253,14 @@ void ClientWalk(Arm a, void* player) {
 }
 
 // The seat through the game's own verb, then the host's grant: the seat is the host's table, so one check follows.
-void ClientSit(void* player, void* atv, uint8_t self) {
+void ClientSit(Arm a, void* player, void* atv, uint8_t self) {
     if (!atv_seat::TrySit(player, atv, g_c.sit)) {
-        if (Past(g_c.run, kFailBound)) ClientFail(Arm::Sit, "the sit never finished", "no grant", "seated");
+        if (Past(g_c.run, kFailBound)) ClientFail(a, "the sit never finished", "no grant", "seated");
         return;
     }
     if (coop::atv_sync::ActorSeatedBy(self) != atv)
-        return ClientFail(Arm::Sit, "the sit did not take (see the [ATVP] sit lines)", "not seated", "seated");
-    ClientEnter(CP::Undo, SpecOf(Arm::Sit).undo);
+        return ClientFail(a, "the sit did not take (see the [ATVP] sit lines)", "not seated", "seated");
+    ClientEnter(CP::Undo, SpecOf(a).undo);
 }
 
 // The grav hand's grab until the player's own grabbing actor is the ATV.
@@ -217,13 +269,8 @@ void ClientGrab() {
     case coop::director::GrabState::Working:
         if (Past(g_c.run, kFailBound)) ClientFail(Arm::Grab, "the grab never finished", "working", "grabbed");
         return;
-    case coop::director::GrabState::Failed: {
-        const coop::director::AimedGrab& g = *g_c.grab;
-        char what[200];
-        std::snprintf(what, sizeof(what), "the grab did not take: %s, chain pre/use/post %d/%d/%d", g.Why(),
-                      g.ChainPre() ? 1 : 0, g.ChainUse() ? 1 : 0, g.ChainPost() ? 1 : 0);
-        return ClientFail(Arm::Grab, what, "failed", "grabbed");
-    }
+    case coop::director::GrabState::Failed:
+        return ClientFail(Arm::Grab, GrabWhy(*g_c.grab), "failed", "grabbed");
     case coop::director::GrabState::Grabbed:
         g_c.grab.reset();
         return ClientEnter(CP::Undo, SpecOf(Arm::Grab).undo);
@@ -249,6 +296,63 @@ void ClientUndo(Arm a, void* player, void* atv, uint8_t self) {
     g_c.nextTry = now + std::chrono::seconds(1);
     if (sit) { if (A::IsDriven(atv)) A::Dismount(atv); }
     else E::ReleaseMainPlayerGrabIfHolding(player, atv);
+}
+
+// The silent arm: on the host's edge line the stream goes quiet, and the client's own copy must then give up the seat
+// by the host's stamp (the table's occupant alone does not say so; the body does).
+void ClientMute(Arm a) {
+    if (!g_c.sawFirst) {
+        if (Past(g_c.run, kFailBound))
+            ClientFail(a, "the host never said its edge", "no line", PhaseLine(SpecOf(a).first));
+        return;
+    }
+    coop::atv_sync::SetDrillMute(true);
+    DC::Say(ClientLine("muted"));
+    UE_LOGI("[ATV-HEALTH-DRILL] client arm=%s the stream is muted", SpecOf(a).name);
+    ClientEnter(CP::Yield, "yield");
+}
+
+void ClientYield(Arm a) {
+    TableView t;
+    const bool read = coop::atv_sync::ReadTable(kKey, t);
+    if (read && !t.localSeated) {
+        DC::Say(ClientLine("yielded"));
+        return ClientEnter(CP::Back, "back");
+    }
+    if (Past(g_c.run, kFailBound))
+        ClientFail(a, "the client's own copy never gave up the seat", read ? "seated" : "no table", "not seated");
+}
+
+// The arms where the host acts: one raw request once the host says its edge, retried once a second until the send took.
+// The client's local verb may refuse first, so the host's judgement is what is under test: an AtvSeat for the seat the
+// host holds, or an AtvTakeover of the ATV the host carries.
+void ClientRaw(coop::net::Session* s, Arm a) {
+    if (!g_c.sawFirst) {
+        if (Past(g_c.run, kHostFirstBound))
+            ClientFail(a, "the host never said its edge", "no line", PhaseLine(SpecOf(a).first));
+        return;
+    }
+    const Clock::time_point now = Clock::now();
+    if (now < g_c.nextTry) return;
+    g_c.nextTry = now + std::chrono::seconds(1);
+    bool sent = false;
+    if (a == Arm::Occupied) {
+        coop::net::AtvSeatPayload p{};
+        coop::net::WireKeyFromString(kKey, p.key);
+        p.seat = 0;
+        p.action = 1;
+        p.seq = kSeatSeq;
+        sent = s->SendReliable(coop::net::ReliableKind::AtvSeat, &p, sizeof(p));
+    } else {
+        coop::net::AtvTakeoverPayload p{};
+        coop::net::WireKeyFromString(kKey, p.key);
+        p.seq = kTakeoverSeq;
+        sent = s->SendReliable(coop::net::ReliableKind::AtvTakeover, &p, sizeof(p));
+    }
+    if (!sent) return;
+    DC::Say(ClientLine("sent"));
+    UE_LOGI("[ATV-HEALTH-DRILL] client arm=%s sent its raw request", SpecOf(a).name);
+    ClientEnter(CP::Back, "back");
 }
 
 void ClientBack(Arm a) {
@@ -278,11 +382,16 @@ void HostTick(coop::net::Session* s, Arm a) {
     case HP::First: return HostFirst(a, view);
     case HP::Left:  return HostLeft(a, view);
     case HP::Back:  return HostBack(a, view);
+    case HP::Silenced: return HostSilenced(a, view);
+    case HP::Yielded:  return HostYielded(a);
+    case HP::Walk:
+    case HP::Act:
+    case HP::Judge: return ActHostTick(a, view);
     case HP::Wait:  return;
     }
 }
 
-void ClientTick(Arm a) {
+void ClientTick(coop::net::Session* s, Arm a) {
     if (g_c.run.done) return;
     const uint8_t self = coop::players::Registry::Get().LocalPeerId();
     void* player = coop::players::Registry::Get().Local();
@@ -307,15 +416,22 @@ void ClientTick(Arm a) {
     case CP::Walk: return ClientWalk(a, player);
     case CP::Act:
         if (!atv) return ClientFail(a, "the ATV is gone before the act", "no ATV", "the world's ATV");
-        return a == Arm::Sit ? ClientSit(player, atv, self) : ClientGrab();
+        if (a == Arm::Grab) return ClientGrab();
+        if (a == Arm::Occupied || a == Arm::Synced) return ClientRaw(s, a);
+        return ClientSit(a, player, atv, self);
     case CP::Undo:
+        if (a == Arm::Silent) return ClientMute(a);
         if (!atv) return ClientFail(a, "the ATV is gone before the undo", "no ATV", "the world's ATV");
         return ClientUndo(a, player, atv, self);
+    case CP::Yield: return ClientYield(a);
     case CP::Back: return ClientBack(a);
     }
 }
 
-void HostReset() { g_h = Host{}; }
+void HostReset() {
+    HostEnd();
+    g_h = Host{};
+}
 
 void ClientReset() {
     ClientEnd();

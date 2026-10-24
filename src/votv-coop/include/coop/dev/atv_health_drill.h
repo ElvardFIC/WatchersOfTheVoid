@@ -1,12 +1,15 @@
-// coop/dev/atv_health_drill.h -- [dev] the ATV lane's table, judged on the world's own ATV (atv_health_drill=sit|grab on
-// BOTH peers; only the client in slot 1 acts, another slot idles).
-//   sit  -- CLIENT walks to the ATV with the director, takes its seat through the game's own verb and leaves it on the
-//           host's word. HOST names the seat and the syncer, then the freed seat, then the ATV handed back at rest.
-//   grab -- CLIENT grabs the ATV with the grav hand and lets it go on the host's word. HOST names the syncer with the
-//           seat free, then the ATV handed back at rest.
+// coop/dev/atv_health_drill.h -- [dev] the ATV lane's table, judged on the world's own ATV (atv_health_drill=sit|grab|
+// occupied|synced|silent on BOTH peers; only the client in slot 1 acts, another slot idles).
+//   sit      -- CLIENT sits in the ATV through the game's own verb and leaves on the host's word; HOST names the seat
+//               and the syncer, the freed seat, then the ATV handed back at rest.
+//   grab     -- CLIENT grabs the ATV with the grav hand and lets go; HOST names the syncer, then the hand-back.
+//   occupied -- HOST sits in the ATV; CLIENT sends one raw sit request, which the host must refuse as occupied.
+//   synced   -- HOST grabs the ATV; CLIENT sends one raw takeover, which the host must refuse as synced.
+//   silent   -- CLIENT sits, then stops streaming; HOST must take the seat and the ATV back by its silence rule and the
+//               client's own copy must give up the seat on the host's stamp.
 // The peers sequence on lobby-chat lines. "[ATV-HEALTH-DRILL] FAIL" is the lane failing (--fail-marker); a pass prints
-// a DONE PASS line on each peer (the done marker names the role), the host's with the times it measured. The red arm
-// atv_health_red=back (host) skips the at-rest hand-back, so both arms must FAIL at `back`.
+// a DONE PASS line on each peer, the host's with the times it measured. The red arm atv_health_red (host) turns one
+// check off, so the arm that tests it must FAIL: back (sit, grab), occupied, takeover (synced), silence (silent).
 
 #pragma once
 

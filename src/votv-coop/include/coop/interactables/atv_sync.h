@@ -122,17 +122,23 @@ bool IsOccupiedByOther(void* actor, uint8_t* outOccupantSlot = nullptr);
 void* ActorSeatedBy(uint8_t slot);
 
 // What a drill reads of one ATV's table: the seat, the syncer, the speed of the syncer's last admitted block (the
-// host's; a client's stays 0) and the actor the entry holds.
+// host's; a client's stays 0), whether this machine's own body sits in the seat and the actor the entry holds.
 struct TableView {
     uint8_t occupantSlot = 0xFF;
     uint8_t syncerSlot = 0;
     float   lastBlockSpeed = 0.f;
+    bool    localSeated = false;
     void*   actor = nullptr;
 };
 
 // The table of the ATV indexed under `key`, as this peer holds it. False, and `out` untouched, unless the index is
 // this world's, an entry stands under the key and its actor is live. Game thread.
 bool ReadTable(const std::wstring& key, TableView& out);
+
+// DEV, for the ATV health drill's silent arm only: while set, this CLIENT's syncer stream sends no block (its body, its
+// request and the host's stamps run on), so the host's silence rule is what takes the ATV. Cleared by the drill and by
+// OnDisconnect. Game thread.
+void SetDrillMute(bool on);
 
 // Diagnostic read: does THIS peer own `actor`'s tick (run its brain) right now? False for an
 // unindexed actor, and false whenever the lane is not running. Exposed for coop/dev/atv_probe, so

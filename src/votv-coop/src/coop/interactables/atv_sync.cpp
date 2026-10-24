@@ -114,6 +114,7 @@ namespace {
 bool     g_installed    = false;  // latches the one-time index; Install is the per-tick ensure path
 uint64_t g_lastPassMs   = 0;      // the host's last syncer pass
 uint64_t g_lastHostTickMs = 0;    // the host's previous Tick: a longer gap is a stall of this machine
+bool     g_drillMute    = false;  // dev: the client syncer's stream is held back (SetDrillMute)
 // A block refused at the door of OnReliable (an empty key, a non-finite pose): said once per window, not per packet.
 coop::net::RefusalTally g_blockRefusals{"atv_sync"};
 
@@ -653,8 +654,9 @@ void Tick() {
         const bool driving = e.localSeated || e.localCarrying;
         if (!isHost || driving) {
             // A client syncer streams at the drive rate whether it sits, carries or has only not been handed
-            // back yet; the host streams at it while its own player drives or carries.
-            if (nowMs - e.lastSentMs >= kDriveSendMs) {
+            // back yet; the host streams at it while its own player drives or carries. The ATV health drill's
+            // silent arm holds a client's block back (SetDrillMute).
+            if (!(g_drillMute && !isHost) && nowMs - e.lastSentMs >= kDriveSendMs) {
                 e.lastSentMs = nowMs;
                 coop::net::AtvStatePayload p{};
                 const uint8_t occ = isHost ? e.occupantSlot : uint8_t{0xFF};   // the host stamps; a client's is overwritten
@@ -715,6 +717,7 @@ void OnDisconnect() {
     ResetRequestSeq();
     g_lastPassMs = 0;
     g_lastHostTickMs = 0;
+    g_drillMute = false;
     g_blockRefusals.Clear();
     const auto c  = coop::atv_corrector::ReadCounters();
     const auto hg = coop::atv_hit_guard::ReadCounters();
@@ -788,8 +791,11 @@ bool ReadTable(const std::wstring& key, TableView& out) {
     out.occupantSlot = it->second.occupantSlot;
     out.syncerSlot = it->second.syncerSlot;
     out.lastBlockSpeed = it->second.lastBlockSpeed;
+    out.localSeated = it->second.localSeated;
     out.actor = it->second.actor;
     return true;
 }
+
+void SetDrillMute(bool on) { g_drillMute = on; }
 
 }  // namespace coop::atv_sync

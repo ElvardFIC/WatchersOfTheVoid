@@ -1,11 +1,19 @@
 // coop/dev/atv_health_drill_detail.h -- what the ATV health drill's files share: the arm table, the phase clock, the
-// verdict lines and the lobby-chat lines the two peers say to each other (coop/dev/drill_chat.h). Private to coop/dev:
-// atv_health_drill*.cpp.
+// verdict lines, the host's phase record and the lobby-chat lines the two peers say to each other
+// (coop/dev/drill_chat.h). Private to coop/dev: atv_health_drill*.cpp.
 
 #pragma once
 
+#include "atv_seat.h"  // SitTry (co-located private header)
+
+#include "coop/dev/director/aimed_grab.h"
+#include "coop/dev/director/director.h"
+#include "coop/interactables/atv_authority.h"
+#include "coop/interactables/atv_sync.h"
+
 #include <chrono>
 #include <cstdint>
+#include <memory>
 #include <string>
 
 namespace coop::net { class Session; }
@@ -14,7 +22,7 @@ namespace coop::dev::atv_health_drill::detail {
 
 using Clock = std::chrono::steady_clock;
 
-enum class Arm : uint8_t { Off, Sit, Grab };
+enum class Arm : uint8_t { Off, Sit, Grab, Occupied, Synced, Silent };
 
 // An arm's names: its own, the host's first edge, the client's act and the client's undo (the phases' names).
 struct Spec {
@@ -52,12 +60,39 @@ long long Ms(Clock::time_point from, Clock::time_point to);
 void Fail(const char* role, Arm a, Run& r, const std::string& what, const std::string& got, const std::string& want);
 void Pass(const char* role, Arm a, Run& r, const std::string& numbers);
 
-// The lobby-chat lines: the client's ready line (the host's start) and the host's phase edges (the client's).
+// The lobby-chat lines: the client's ready line (the host's start), the host's phase edges (the client's) and the
+// client's other edges (the host's).
 std::string ReadyLine(Arm a);
 std::string PhaseLine(const char* name);
+std::string ClientLine(const char* what);
+
+// The host's phases. Wait..Yielded are the arms where the client acts (`sit`, `grab`, `silent`: First names the edge
+// the client's act makes, Left the freed seat, Silenced and Yielded the silent syncer's loss and the client's yield);
+// Walk, Act and Judge are the arms where the host acts (`occupied`, `synced`: atv_health_drill_host.cpp).
+enum class HP : int { Wait, First, Left, Back, Silenced, Yielded, Walk, Act, Judge };
+
+struct Host {
+    Run                                             run;
+    coop::atv_authority::Counters                   base{};   // the lane's counters at the client's ready line
+    coop::atv_authority::Counters                   snap{};   // and at the host's own act
+    Clock::time_point                               firstAt{}, leftAt{}, walkAt{}, arrivedAt{}, mutedAt{}, silencedAt{};
+    std::shared_ptr<coop::director::BackgroundWalk> walk;
+    atv_seat::SitTry                                sit;
+    std::unique_ptr<coop::director::AimedGrab>      grab;
+    bool                                            sawSent = false, sawMuted = false, sawYielded = false;
+};
+extern Host g_h;
+
+inline void HostEnter(HP p, const char* name) { Enter(g_h.run, static_cast<int>(p), name); }
+std::string Plus(uint64_t n);
+std::string GrabWhy(const coop::director::AimedGrab& g);
+
+// The arms where the host acts: its walk, its sit or grab, and the judgement of the client's raw request.
+void ActHostTick(Arm a, const coop::atv_sync::TableView* t);
+void HostEnd();   // a verdict or a reset: a walk still walking is cancelled, the grab let go of
 
 void HostTick(coop::net::Session* s, Arm a);
-void ClientTick(Arm a);
+void ClientTick(coop::net::Session* s, Arm a);
 void HostReset();
 void ClientReset();
 
