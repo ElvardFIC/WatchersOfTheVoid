@@ -136,18 +136,20 @@ bool Lookahead::Advance(void* player, float along, float floorZ, ue_wrap::FVecto
     return false;
 }
 
-bool Search::Begin(const ue_wrap::FVector& from, const ue_wrap::FVector& goal, const ue_wrap::FVector& steep,
-                   float floorZ) {
+bool Search::Begin(const ue_wrap::FVector& from, const ue_wrap::FVector& goal, const ue_wrap::FVector& spot,
+                   float floorZ, const char* why) {
     size_t at = spots_.size();
     for (size_t i = 0; i < spots_.size(); ++i)
-        if (Flat(spots_[i], steep) <= kSpotClearCm && std::fabs(spots_[i].Z - steep.Z) <= kSpotLevelCm) at = i;
+        if (Flat(spots_[i], spot) <= kSpotClearCm && std::fabs(spots_[i].Z - spot.Z) <= kSpotLevelCm) at = i;
     if (at == spots_.size()) {
         if (spots_.size() == kMaxSpots) {
             spots_.erase(spots_.begin());
             exhausted_.erase(exhausted_.begin());
+            why_.erase(why_.begin());
         }
-        spots_.push_back(steep);
+        spots_.push_back(spot);
         exhausted_.push_back(false);
+        why_.push_back(why);
         at = spots_.size() - 1;
     }
     return BeginRound(from, goal, at, floorZ);
@@ -178,8 +180,8 @@ bool Search::BeginRound(const ue_wrap::FVector& from, const ue_wrap::FVector& go
     next_ = 0;
     best_.clear();
     bestScore_ = 0.f;
-    UE_LOGI("director/detour: round the spot (%.0f,%.0f,%.0f), too steep for the body -- %zu remembered", round_.X,
-            round_.Y, round_.Z, spots_.size());
+    UE_LOGI("director/detour: round the spot (%.0f,%.0f,%.0f), %s -- %zu remembered", round_.X, round_.Y, round_.Z,
+            why_[spot], spots_.size());
     return true;
 }
 

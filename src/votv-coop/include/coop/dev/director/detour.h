@@ -6,7 +6,9 @@
 // fresh route leading back to the same spot. The NavMesh proposes and the body's own floor limit
 // disposes: a walker stopped by a surface too steep to stand on remembers that spot and asks for a
 // via point, one a route reaches over floor the body stands on and from which the route on to the
-// goal passes no remembered spot. Dev director only; game thread.
+// goal passes no remembered spot. The spot may as well be a blocker the NavMesh does not know: a walk
+// stood minutes before physics props it routed straight into, each fresh route leading back to them.
+// Dev director only; game thread.
 #pragma once
 
 #include "ue_wrap/core/types.h"
@@ -52,10 +54,11 @@ private:
 
 class Search {
 public:
-    // Remembers the spot `steep` and starts a search round it, from `from` toward `goal`. False, and no
-    // search, round a spot whose last search was exhausted: the stuck handler grinds there instead.
-    bool Begin(const ue_wrap::FVector& from, const ue_wrap::FVector& goal, const ue_wrap::FVector& steep,
-               float floorZ);
+    // Remembers the spot `spot` and starts a search round it, from `from` toward `goal`; `why` says what
+    // the body could not pass there (a literal, logged with each round). False, and no search, round a
+    // spot whose last search was exhausted: the stuck handler grinds there instead.
+    bool Begin(const ue_wrap::FVector& from, const ue_wrap::FVector& goal, const ue_wrap::FVector& spot,
+               float floorZ, const char* why);
     // Starts a search round a spot already remembered, the one a route passes (PassedSpot). Either entry,
     // round the spot the last way round was found for, says that way did not hold: its via point is
     // never offered again, so each retry tries the next way round.
@@ -83,6 +86,7 @@ private:
 
     std::vector<ue_wrap::FVector> spots_;
     std::vector<bool> exhausted_;           // per spot: its last search held no way round
+    std::vector<const char*> why_;          // per spot: what the body could not pass there
     std::vector<ue_wrap::FVector> failedVias_;
     ue_wrap::FVector from_{}, goal_{}, round_{};
     size_t roundSpot_ = 0;

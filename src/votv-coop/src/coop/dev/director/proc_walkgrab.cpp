@@ -60,7 +60,8 @@ constexpr float kDoorReachCm    = 320.f; // a closed door within this of the stu
 constexpr int   kMaxDoorOpens   = 20;    // grind: keep opening doors as needed (never-give-up rule)
 constexpr int   kUnstickTicks   = 70;    // ~0.28 s of sideways juke to slide off a box before re-checking
 constexpr int   kSettleTicks    = 12;    // ~0.25 s braking before the grab
-constexpr int   kMaxDetours     = 24;    // ways round a slope too steep for the body, per walk (detour.h)
+constexpr int   kMaxDetours     = 24;    // ways round a spot the body cannot pass, per walk (detour.h): a slope too
+                                         // steep for it, or a prop the NavMesh does not know that blocks it
 constexpr float kMinLegCm       = 100.f; // a leg ending no nearer the goal than this is no leg: the stuck handler takes it
 constexpr int   kRouteRetryTicks = 50;   // a walker with no route here asks again this often while it stands
 // A walk this far from its goal holds the run key (mainPlayer's InpActEvt_run: at least twice the walk
@@ -143,20 +144,29 @@ private:
 
 // What stands between a stuck walker and its waypoint, named: a trace at knee and at chest height
 // toward the waypoint (2 m at most) and one down for the floor's slope. The NavMesh routes through
-// what the capsule cannot pass, and this line says what that is. On a persistent stuck only.
-void LogBlocker(const PlayerContext& ctx, const ue_wrap::FVector& wp) {
+// what the capsule cannot pass, and this line says what that is. On a persistent stuck only. True with
+// `spot` the hit point of the nearer of the knee and chest hits when either is blocked: the blocker to go round.
+bool LogBlocker(const PlayerContext& ctx, const ue_wrap::FVector& wp, ue_wrap::FVector* spot) {
     ue_wrap::FVector d{wp.X - ctx.pos.X, wp.Y - ctx.pos.Y, 0.f};
     const float h = std::sqrt(d.X * d.X + d.Y * d.Y);
-    if (h < 1.f) return;
+    if (h < 1.f) return false;
     d.X /= h; d.Y /= h;
     const float reach = (std::min)(h + 50.f, 200.f);
-    const auto describe = [&](const char* what, const ue_wrap::FVector& a, const ue_wrap::FVector& b) {
+    bool found = false;
+    float nearest = 0.f;
+    const auto describe = [&](const char* what, const ue_wrap::FVector& a, const ue_wrap::FVector& b, bool ahead) {
         ue_wrap::trace::Hit hit;
         if (!ue_wrap::trace::LineHitStatDyn(ctx.player, a, b, &hit)) {
             UE_LOGW("director/Goto:   %s trace unresolved", what);
         } else if (!hit.blocked) {
             UE_LOGW("director/Goto:   %s trace clear for %.0f cm", what, reach);
         } else {
+            const float away = std::hypot(hit.point.X - a.X, hit.point.Y - a.Y);
+            if (ahead && (!found || away < nearest)) {
+                found = true;
+                nearest = away;
+                *spot = hit.point;
+            }
             const std::wstring actor = hit.actor ? R::ToString(R::NameOf(hit.actor)) : L"?";
             const std::wstring actorCls = hit.actor ? R::ClassNameOf(hit.actor) : L"?";
             const std::wstring comp = hit.component ? R::ToString(R::NameOf(hit.component)) : L"?";
@@ -164,7 +174,7 @@ void LogBlocker(const PlayerContext& ctx, const ue_wrap::FVector& wp) {
             UE_LOGW("director/Goto:   %s trace hits '%ls' (%ls) component '%ls' (%ls) at (%.0f,%.0f,%.0f), "
                     "%.0f cm ahead, normal (%.2f,%.2f,%.2f)", what, actor.c_str(), actorCls.c_str(), comp.c_str(),
                     compCls.c_str(), hit.point.X, hit.point.Y, hit.point.Z,
-                    std::hypot(hit.point.X - a.X, hit.point.Y - a.Y), hit.normal.X, hit.normal.Y, hit.normal.Z);
+                    away, hit.normal.X, hit.normal.Y, hit.normal.Z);
         }
     };
     UE_LOGW("director/Goto: blocked at (%.0f,%.0f,%.0f) toward the waypoint (%.0f,%.0f,%.0f), %.0f cm away",
@@ -182,9 +192,10 @@ void LogBlocker(const PlayerContext& ctx, const ue_wrap::FVector& wp) {
     }
     for (const float dz : {-50.f, 30.f}) {
         const ue_wrap::FVector a{ctx.pos.X, ctx.pos.Y, ctx.pos.Z + dz};
-        describe(dz < 0.f ? "knee" : "chest", a, {a.X + d.X * reach, a.Y + d.Y * reach, a.Z});
+        describe(dz < 0.f ? "knee" : "chest", a, {a.X + d.X * reach, a.Y + d.Y * reach, a.Z}, true);
     }
-    describe("floor", ctx.pos, {ctx.pos.X, ctx.pos.Y, ctx.pos.Z - 300.f});
+    describe("floor", ctx.pos, {ctx.pos.X, ctx.pos.Y, ctx.pos.Z - 300.f}, false);
+    return found;
 }
 
 // ---- GotoProcess -----------------------------------------------------------------------
@@ -269,7 +280,7 @@ public:
         ue_wrap::FVector steepAhead{};
         if (floorZ_ > 0.f && detours_ < kMaxDetours &&
             ahead_.Advance(ctx.player, ahead_.Along(wp_ + 1, toWp), floorZ_, &steepAhead) &&
-            detour_.Begin(ctx.pos, goal_.targetPos, steepAhead, floorZ_)) {
+            detour_.Begin(ctx.pos, goal_.targetPos, steepAhead, floorZ_, "too steep for the body")) {
             ++detours_;
             UE_LOGI("director/Goto: a slope too steep for the body ahead at (%.0f,%.0f,%.0f) -- going round before it",
                     steepAhead.X, steepAhead.Y, steepAhead.Z);
@@ -300,7 +311,7 @@ public:
             ue_wrap::FVector steep{};
             if (detours_ < kMaxDetours && floorZ_ > 0.f &&
                 detour::SteepAhead(ctx.player, ctx.pos, waypoints_[wp_], floorZ_, &steep) &&
-                detour_.Begin(ctx.pos, goal_.targetPos, steep, floorZ_)) {
+                detour_.Begin(ctx.pos, goal_.targetPos, steep, floorZ_, "too steep for the body")) {
                 ++detours_;
                 return ProcStatus::Working;
             }
@@ -312,7 +323,16 @@ public:
             // DEADLINE (>= 30 s of grinding) are the terminators, not an early stuck-count.
             ++stuckEpisodes_;
             if (stuckEpisodes_ % 4 == 0) {   // periodic fresh route from where we actually are
-                LogBlocker(ctx, waypoints_[wp_]);
+                // A prop the NavMesh does not know holds the body where a fresh route leads back to: the spot is
+                // remembered like a slope, so a route that passes it again is sent round it (detour.h).
+                ue_wrap::FVector blocker{};
+                if (LogBlocker(ctx, waypoints_[wp_], &blocker) && detours_ < kMaxDetours && floorZ_ > 0.f &&
+                    detour_.Begin(ctx.pos, goal_.targetPos, blocker, floorZ_, "blocking the body")) {
+                    ++detours_;
+                    UE_LOGW("director/Goto: persistent stuck (toPile=%.0f) at a blocker -- going round it (episode %d)",
+                            toPile, stuckEpisodes_);
+                    return ProcStatus::Working;
+                }
                 pathed_ = false; waypoints_.clear(); wp_ = 0; lastWp_ = 0; bestWp_ = 1e9f; bestPile_ = 1e9f;
                 UE_LOGW("director/Goto: persistent stuck (toPile=%.0f) -- RE-PATH (episode %d, never give up)", toPile, stuckEpisodes_);
                 return ProcStatus::Working;
