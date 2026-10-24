@@ -65,22 +65,19 @@ void DiagnoseSeatRefusal(void* local, void* atv) {
 }  // namespace
 
 bool TrySit(void* player, void* atv, SitTry& t) {
+    // The host's grant is the stamp that names this peer's seat.
     if (coop::atv_sync::ActorSeatedBy(coop::players::Registry::Get().LocalPeerId()) == atv) return true;
-    const uint64_t now = coop::net::NowMs();
-    if (now < t.nextMs) return false;
     if (t.called) {
-        // The verb took the seat and is not called again on an occupied one; the steps after it wait for the host's
-        // grant, kSitRetries of them, the last being the final look.
-        ++t.waits;
-        UE_LOGI("[ATVP] ARM sit: waiting for the host's grant of the seat of atv=%p, wait %d/%d", atv, t.waits,
-                kSitRetries);
-        if (t.waits >= kSitRetries) {
-            UE_LOGW("[ATVP] ARM sit: the host's grant of the seat the verb took on atv=%p did not arrive", atv);
+        // The verb took the seat and is not called again on an occupied one. The grant is awaited as an edge: the
+        // local seat lost before it came is the host's refusal, which the lane yielded to.
+        if (!ue_wrap::atv::IsDriven(atv) || ue_wrap::atv::GetOccupantPlayer(atv) != player) {
+            UE_LOGW("[ATVP] ARM sit: the host refused the seat the verb took on atv=%p -- the lane yielded it", atv);
             return true;
         }
-        t.nextMs = now + kSitRetryMs;
         return false;
     }
+    const uint64_t now = coop::net::NowMs();
+    if (now < t.nextMs) return false;
     if (t.tries >= kSitRetries) return true;   // the verb has been tried and refused kSitRetries times
     if (!g_actionNameFn) {
         if (void* cls = R::FindClass(L"ATV_C")) g_actionNameFn = R::FindFunction(cls, L"actionName");
