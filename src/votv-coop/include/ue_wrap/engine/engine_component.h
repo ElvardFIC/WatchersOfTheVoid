@@ -29,6 +29,10 @@ bool IsComponentTickEnabled(void* component);
 // USceneComponent world location (K2_GetComponentLocation) and forward vector; (0,0,0) on failure.
 FVector GetComponentLocation(void* component);
 
+// The same read that says when it did not happen: false on a null component or a call that failed, `out` then the
+// world origin, an ordinary position the caller must not mistake for a place. Game thread.
+bool TryGetComponentLocation(void* component, FVector& out);
+
 // USceneComponent::RelativeLocation, read raw at the sdk_profile.h offset: the Blueprint-authored
 // value, stable once construction has run, where K2_GetComponentLocation is unsettled mid-init.
 // (0,0,0) on null.

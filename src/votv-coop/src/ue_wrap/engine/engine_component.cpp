@@ -133,14 +133,23 @@ bool ResolveSetMaterialFn() {
 
 }  // namespace
 
+bool TryGetComponentLocation(void* component, FVector& out) {
+    out = FVector{};
+    if (!component || !SceneCompClass()) return false;
+    if (!g_getCompLocFn) g_getCompLocFn = R::FindFunction(g_sceneCompClass, P::name::GetComponentLocationFn);
+    if (!g_getCompLocFn) return false;
+    ParamFrame f(g_getCompLocFn);
+    if (!Call(component, f)) return false;
+    if (!f.GetRaw(L"ReturnValue", &out, static_cast<int32_t>(sizeof(out)))) {
+        out = FVector{};
+        return false;
+    }
+    return true;
+}
+
 FVector GetComponentLocation(void* component) {
     FVector loc;
-    if (!component || !SceneCompClass()) return loc;
-    if (!g_getCompLocFn) g_getCompLocFn = R::FindFunction(g_sceneCompClass, P::name::GetComponentLocationFn);
-    if (!g_getCompLocFn) return loc;
-    ParamFrame f(g_getCompLocFn);
-    if (!Call(component, f)) return loc;
-    f.GetRaw(L"ReturnValue", &loc, sizeof(loc));
+    TryGetComponentLocation(component, loc);
     return loc;
 }
 
