@@ -176,6 +176,7 @@ void Grant(AtvEntry& e, uint8_t who, bool seat, bool carried, uint64_t nowMs) {
     e.haveRestPos = false;
     e.lastGrabbed = carried;
     e.streamBucket.Reset();
+    e.haveSyncerHealth = false;
     e.stampDue = true;
 }
 
@@ -185,6 +186,7 @@ void HandToHost(AtvEntry& e, uint8_t prev, uint64_t nowMs) {
     e.handBackMs = nowMs;
     e.syncerSlot = 0;
     e.streamBucket.Reset();
+    e.haveSyncerHealth = false;
     e.stampDue = true;
 }
 
@@ -265,15 +267,19 @@ bool JudgeLocal(AtvEntry& e, AtvRequest req) {
     return false;
 }
 
+bool IsLateSyncer(const AtvEntry& e, uint8_t slot, uint64_t nowMs) {
+    coop::net::Session* s = coop::atv_sync::LaneSession();
+    const int rtt = s ? s->rttMsForSlot(slot) : -1;
+    const uint64_t window = static_cast<uint64_t>(rtt > 0 ? rtt : 0) + 2 * coop::atv_sync::kDriveSendMs;
+    return e.handBackMs != 0 && slot == e.prevSyncerSlot && nowMs - e.handBackMs <= window;
+}
+
 bool AdmitBlock(AtvEntry& e, const coop::net::AtvStatePayload& p, uint8_t senderSlot, uint64_t nowMs) {
     // No time context: the lane is FIFO and no host code repositions a client-synced ATV. MTA's context guards a
     // server move against a syncer's packet in flight (CUnoccupiedVehicleSync.cpp:285, CElement.cpp:1281-1305).
     if (senderSlot == 0 || senderSlot != e.syncerSlot) {
         // The honest race: the block of the syncer a hand-back just replaced, sent before the stamp reached it.
-        coop::net::Session* s = coop::atv_sync::LaneSession();
-        const int rtt = s ? s->rttMsForSlot(senderSlot) : -1;
-        const uint64_t window = static_cast<uint64_t>(rtt > 0 ? rtt : 0) + 2 * coop::atv_sync::kDriveSendMs;
-        if (e.handBackMs != 0 && senderSlot == e.prevSyncerSlot && nowMs - e.handBackMs <= window)
+        if (IsLateSyncer(e, senderSlot, nowMs))
             ++g_counters.lateSyncer;
         else
             ++g_counters.notSyncer;
@@ -356,6 +362,7 @@ void ClearTable(AtvEntry& e) {
     e.haveStampTrap = false;
     e.copyTrapSeen = false;
     e.blown = false;
+    e.haveSyncerHealth = false;
     e.stampDue = true;
 }
 

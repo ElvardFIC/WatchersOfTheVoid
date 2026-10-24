@@ -41,6 +41,11 @@ void OnTakeover(const coop::net::AtvTakeoverPayload& p, uint8_t slot);
 // may cheat; it is its own authority). True when the table granted it. Called from atv_sync's Tick.
 bool JudgeLocal(coop::atv_sync::AtvEntry& e, AtvRequest req);
 
+// HOST: whether `slot` is the syncer a hand-back just replaced, inside the window its late block is still honest: a
+// round trip and two sends of it. AdmitBlock counts such a block `late_syncer` and the explosion request's judge
+// admits the death report of that syncer; one window for both.
+bool IsLateSyncer(const coop::atv_sync::AtvEntry& e, uint8_t slot, uint64_t nowMs);
+
 // HOST: whether a client's AtvState block is admitted. Only the entry's syncer's blocks are; a block from another
 // slot is dropped and counted (`late_syncer` when it is the syncer a hand-back just replaced, within a round trip
 // and two sends of it, else `not_syncer`), one past the entry's stream bucket is dropped and counted
@@ -54,7 +59,7 @@ bool AdmitBlock(coop::atv_sync::AtvEntry& e, const coop::net::AtvStatePayload& p
 // of range or the ATV is at rest and uncarried (the host takes it). Every change marks the entry for a stamp.
 void RunPass(uint64_t nowMs);
 
-// The table reset: the seat empty, the syncer the host, the clocks, the stream bucket and the trap marks cleared, a stamp due.
+// The table reset: the seat empty, the syncer the host, the clocks, the stream bucket, the trap and blown marks cleared, a stamp due.
 // A departure runs this alone (a neighbour leaving never cancels this machine's own request); the successor reset
 // of a repointed entry runs it with ResetRequests (the actor changed).
 void ClearTable(coop::atv_sync::AtvEntry& e);

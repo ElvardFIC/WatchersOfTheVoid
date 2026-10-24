@@ -215,6 +215,18 @@ void TakeStampTrap(AtvEntry& e, bool stamped, bool owns) {
     if (!owns || first || changed) A::WriteTrap(e.actor, stamped);
 }
 
+// HOST: the re-arm of an accepted explosion request, a RISING EDGE inside one syncer's own stream: the game explodes an
+// ATV when its old health is at 0 or above, so the mark clears when the health read before this one was below 0 and
+// this one is not. The first read after a syncer change (haveSyncerHealth false) only records, so a new syncer's first
+// block never re-arms. A NaN never rises and stays blown. MTA bumps a sync time context on its re-arm
+// (reference/mtasa-blue/Server/mods/deathmatch/logic/CStaticFunctionDefinitions.cpp:5585-5589, so a report in flight
+// from before it is dropped, CUnoccupiedVehicleSync.cpp:285); here the edge within one syncer's stream serves.
+void NoteSyncerHealth(AtvEntry& e, float health) {
+    if (e.blown && e.haveSyncerHealth && e.lastSyncerHealth < 0.0f && health >= 0.0f) e.blown = false;
+    e.lastSyncerHealth = health;
+    e.haveSyncerHealth = true;
+}
+
 // The idle syncer's change gate: true if the ATV moved, turned or is moving; the baseline updates
 // on a yes, so a slow drift accumulates into a send instead of being rounded away.
 bool IdleWorthSending(AtvEntry& e) {
@@ -357,9 +369,7 @@ void OnReliable(const coop::net::AtvStatePayload& payload, uint8_t senderPeerSlo
         // stamp. The stamp is overwritten, never read from the sender, and the bits a client may not set are
         // masked (bit 3 is the host's own mark, bit 4 its trap).
         if (!AU::AdmitBlock(e, payload, senderPeerSlot, NowMs())) return;
-        // The re-arm of an accepted explosion request: the game explodes an ATV when its old health is at 0 or above,
-        // and the syncer's block says it is back there. A NaN stays blown.
-        if (payload.health >= 0.0f) e.blown = false;
+        NoteSyncerHealth(e, payload.health);
         coop::atv_corrector::ApplyCorrection(e, payload, /*snap*/ false);
         coop::atv_condition_sync::ApplyPayload(e, payload, /*fromHost*/ false);
         coop::net::AtvStatePayload out = payload;
@@ -606,8 +616,9 @@ void Tick() {
         if (!isHost) {
             TickClientBody(*s, e, kv.first, localPlayer, localSlot, gateOpen);
             A::ReadTrap(e.actor, e.copyTrapSeen);   // this copy's own trap, kept for the explosion request
-        } else if (e.blown && IsLocalSyncer(e, localSlot) && A::GetHealth(e.actor) >= 0.0f) {
-            e.blown = false;   // a wreck handed back to the host and lifted: the host's own copy is the one to read
+        } else if (e.blown && IsLocalSyncer(e, localSlot)) {
+            // A wreck handed back to the host: its own copy's health is the stream to read.
+            NoteSyncerHealth(e, A::GetHealth(e.actor));
         }
 
         // Tick ownership: this machine syncs the ATV (on the host: the table names the host), so it runs the

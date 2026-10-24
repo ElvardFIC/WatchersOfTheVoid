@@ -56,9 +56,13 @@ struct AtvEntry {
     bool     haveStampTrap = false;  // client: a stamp has been seen (the first one writes the level)
     bool     copyTrapSeen = false;   // client: this copy's trap as of the last Tick (the explosion request reads it)
     // Host: this ATV's syncer reported its explosion and the host has accepted the request; no second one is taken
-    // until the syncer's health is back at 0 or above (the game's own rule). The explosion request lane writes it,
-    // through FindEntryMutable; the host's block apply and Tick re-arm it. Cleared with the table.
+    // until the syncer's health rises from below 0 to 0 or above (the game's own rule), seen inside ONE syncer's
+    // stream: `lastSyncerHealth` is that stream's previous health, and a syncer change clears `haveSyncerHealth`, so
+    // a new syncer's first block never re-arms. The explosion request lane writes `blown`, through FindEntryMutable;
+    // the host's block apply and Tick re-arm it. Cleared with the table.
     bool     blown        = false;
+    float    lastSyncerHealth = 0.0f;
+    bool     haveSyncerHealth = false;
     // This machine's own body, host and client alike (atv_body.cpp writes them, nothing else does).
     bool     localSeated  = false;   // the local player sits in this ATV
     bool     localCarrying = false;  // the local player's grav hand holds it
