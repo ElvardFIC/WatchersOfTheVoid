@@ -345,8 +345,15 @@ registry recycled that id. `[V]`
   body: no point on the wire, the host blasts at the sender's puppet with the pill level). A request has
   no identity of its own: a shot is the host's record until its blast consumes it, expires or the cap
   evicts it. `[V]`
-- **Not requested here.** An ATV's own blast will be the ATV lane's request (not yet built: the ATV health arc); until then a client-driven ATV's blast is dissolved and requested by no one `[V]`; every other source
-  (a prop broken, a device run, a prop lit) is its trigger's lane, whose host copy explodes natively and so
+- **An ATV a client syncs.** The ATV's own `explode` runs on its syncer's copy, which ejects the driver and
+  spawns a blast that the client's birth seam dissolves; the client sends `AtvExplodeRequest` (the ATV's key and
+  whether the story event's trap fell in that frame), and the host judges that the sender is the ATV's syncer
+  and that the ATV has not just blown, then spawns the blast at the ATV's own `tp`
+  (`coop/world/explosion_request_atv`), which the capture above carries. The ATV is blown until its syncer's
+  health is back at 0 or above, the game's own re-arm. A host-synced ATV's death runs natively and needs no
+  request. `[?]`
+- **Not requested here.** Every other source (a prop broken, a device run, a prop lit) is its trigger's lane,
+  whose host copy explodes natively and so
   reaches the capture. A projectile of the client's with no shot sent is not requested and is counted.
   `[V]`
 - **A salt rocket a client lights.** The rocket's own fuse and thrust run only on the host: a client's gate refuses its `attemptIgnite` and its `ignite`, and a light its own player's lighter or torch made goes to the host as `PropIgniteIntent` (`coop/world/salt_rocket_ignite`); the host checks the sender's reach and the tool its hand held, performs the verb on its copy, and its `fire()` puts the rocket under the drive claim (`coop/world/salt_rocket_flight`) until its blast, which the capture above carries. `[V]`
