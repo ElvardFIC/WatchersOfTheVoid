@@ -23,6 +23,7 @@
 #include "coop/interactables/atv_index_internal.h"
 
 #include "coop/net/protocol.h"
+#include "coop/net/refusal_tally.h"
 #include "coop/net/session.h"
 #include "coop/net/wire_key_util.h"  // WireKeyFromString / StringFromWireKey / FnvKey (shared)
 #include "coop/player/players_registry.h"   // Registry::Local / LocalPeerId / kMaxPeers
@@ -66,6 +67,7 @@ constexpr uint64_t kIdleSendMs  = 200;  // the idle syncer's ceiling, 5 Hz, and 
 // non-zero.
 constexpr uint64_t kIdleKeepaliveMs = 2000;
 constexpr uint64_t kPassMs = 1000;      // the host's syncer pass, once a second
+constexpr uint64_t kRetryMs = 1000;     // a yield or stamp that did not run is tried again after this, per entry
 
 // The idle syncer's change gate (MTA's WriteVehicleInformation in our units): a parked ATV sends
 // nothing.
@@ -98,12 +100,13 @@ using detail::g_atvs;
 
 // True if this peer's player is grabbing `actor` with the grav hand (carried, not seated). The
 // ATV has no grabbed flag of its own (isDriven and Player are written only on the seating path),
-// so the grabber identity is the player's grabbing_actor or holding_actor, both accepted.
+// so the grabber identity is the player's grabbing_actor, the slot the release clears. holding_actor
+// is only ever the hand item the player spawns (mainPlayer BP: one write besides null), never a world ATV.
 bool IsLocalGrabber(void* actor, void* localPlayer) {
     if (!localPlayer || !actor) return false;
     ue_wrap::engine::MainPlayerGrabState gs{};
     if (!ue_wrap::engine::ReadMainPlayerGrabState(localPlayer, gs)) return false;
-    return gs.grabbingActor == actor || gs.holdingActor == actor;
+    return gs.grabbingActor == actor;
 }
 
 namespace {
@@ -111,6 +114,9 @@ namespace {
 bool     g_installed    = false;  // latches the one-time index; Install is the per-tick ensure path
 uint8_t  g_lastSeq      = 0;      // this client's one request counter (1..255, wrapping to 1)
 uint64_t g_lastPassMs   = 0;      // the host's last syncer pass
+uint64_t g_lastHostTickMs = 0;    // the host's previous Tick: a longer gap is a stall of this machine
+// A block refused at the door of OnReliable (an empty key, a non-finite pose): said once per window, not per packet.
+coop::net::RefusalTally g_blockRefusals{"atv_sync"};
 
 // HOST: the slots owed the set edge (bit = slot). A snapshot that withheld the edge sets its slot's bit; the owed
 // poll in Tick clears it once the edge goes, a new replay for the slot or the slot's departure clears it too.
@@ -255,23 +261,38 @@ void ReadLocalBody(AtvEntry& e, void* localPlayer) {
 }
 
 // The game's own dismount for a seat the host did not give this machine; no leave follows it (it was never the
-// host's occupant). The failure is said once: a dismount that cannot run repeats every frame.
+// host's occupant). A dismount that cannot run is tried again once a second per entry and said once.
 void YieldSeat(AtvEntry& e, const std::wstring& key, const char* why) {
+    const uint64_t nowMs = NowMs();
+    if (nowMs < e.yieldRetryMs) return;
     if (!A::Dismount(e.actor)) {
+        e.yieldRetryMs = nowMs + kRetryMs;
         static bool sSaid = false;
         if (!sSaid) { sSaid = true;
             UE_LOGW("atv: the ATV's own dismount did not run for '%ls' (%s) -- the seat stays (said once)",
                     key.c_str(), why); }
         return;
     }
+    e.yieldRetryMs = 0;
     e.sentSeated = false;
     UE_LOGI("atv: seat on '%ls' yielded -- %s", key.c_str(), why);
 }
 
-// The grav hand's grab of an ATV the host gave to another machine.
+// The grav hand's grab of an ATV the host gave to another machine. A release that leaves the grab in place is
+// tried again once a second per entry and said once.
 void YieldCarry(AtvEntry& e, void* localPlayer, const std::wstring& key, const char* why) {
-    if (ue_wrap::engine::ReleaseMainPlayerGrabIfHolding(localPlayer, e.actor))
+    const uint64_t nowMs = NowMs();
+    if (nowMs < e.yieldRetryMs) return;
+    if (ue_wrap::engine::ReleaseMainPlayerGrabIfHolding(localPlayer, e.actor)) {
+        e.yieldRetryMs = 0;
         UE_LOGI("atv: carry of '%ls' dropped -- %s", key.c_str(), why);
+    } else if (IsLocalGrabber(e.actor, localPlayer)) {
+        e.yieldRetryMs = nowMs + kRetryMs;
+        static bool sSaid = false;
+        if (!sSaid) { sSaid = true;
+            UE_LOGW("atv: the grav hand's release did not run for '%ls' (%s) -- the carry stays (said once)",
+                    key.c_str(), why); }
+    }
 }
 
 // HOST: the host's own body against the table, each step over every entry before the next (the map is
@@ -309,16 +330,38 @@ void JudgeHostBody(void* localPlayer) {
     }
 }
 
-// HOST: one stamped block to every world-ready client for each entry whose table changed.
-void SendStamps(coop::net::Session& s) {
+// HOST: one stamped block to every world-ready client for each entry whose table changed. A payload that does not
+// read leaves the stamp due and is tried again once a second per entry, said once.
+void SendStamps(coop::net::Session& s, uint64_t nowMs) {
     for (auto& kv : g_atvs) {
         AtvEntry& e = kv.second;
-        if (!e.stampDue || !R::IsLiveByIndex(e.actor, e.idx)) continue;
+        if (!e.stampDue || nowMs < e.stampRetryMs || !R::IsLiveByIndex(e.actor, e.idx)) continue;
         coop::net::AtvStatePayload p{};
-        if (!ReadPayload(e.actor, kv.first, e.occupantSlot, e.syncerSlot, /*adopt*/false, p)) continue;
+        if (!ReadPayload(e.actor, kv.first, e.occupantSlot, e.syncerSlot, /*adopt*/false, p)) {
+            e.stampRetryMs = nowMs + kRetryMs;
+            static bool sSaid = false;
+            if (!sSaid) { sSaid = true;
+                UE_LOGW("atv: the stamp of '%ls' did not read its transform -- tried again each second (said once)",
+                        kv.first.c_str()); }
+            continue;
+        }
+        e.stampRetryMs = 0;
         SendToReadyClients(s, p, -1);
         coop::atv_condition_sync::NoteSent(e, p);
         e.stampDue = false;
+    }
+}
+
+// HOST: a stall of this Tick is not a client's silence. The blocks that arrived during it are still queued in the
+// drain that runs after this Tick (net_pump.cpp: the ticks, then the receive drain), so the judgement clocks of
+// every entry move on by the gap before the pass reads them.
+void ExcuseHostStall(uint64_t nowMs) {
+    const uint64_t gap = g_lastHostTickMs != 0 ? nowMs - g_lastHostTickMs : 0;
+    g_lastHostTickMs = nowMs;
+    if (gap <= kPassMs) return;
+    for (auto& kv : g_atvs) {
+        kv.second.lastBlockMs += gap;
+        if (kv.second.handBackMs != 0) kv.second.handBackMs += gap;
     }
 }
 
@@ -385,13 +428,16 @@ void Install(coop::net::Session* session) {
 
 void OnReliable(const coop::net::AtvStatePayload& payload, uint8_t senderPeerSlot) {
     std::wstring key = StringFromWireKey(payload.key);
-    if (key.empty()) { UE_LOGW("atv: OnReliable empty key -- dropping"); return; }
+    if (key.empty()) {
+        g_blockRefusals.Note(senderPeerSlot, "an empty key", std::chrono::steady_clock::now());
+        return;
+    }
     if (!A::EnsureResolved()) return;
     if (!IndexCurrent()) return;  // a stale-generation index holds another world's ATVs; the stream re-sends
     // A non-finite guard before the engine writes.
     if (!std::isfinite(payload.x) || !std::isfinite(payload.y) || !std::isfinite(payload.z) ||
         !std::isfinite(payload.pitch) || !std::isfinite(payload.yaw) || !std::isfinite(payload.roll)) {
-        UE_LOGW("atv: OnReliable non-finite pose -- dropping key='%ls'", key.c_str());
+        g_blockRefusals.Note(senderPeerSlot, "a non-finite pose", std::chrono::steady_clock::now());
         return;
     }
     auto it = g_atvs.find(key);
@@ -638,6 +684,7 @@ void Tick() {
         }
     } scope;
 
+    g_blockRefusals.Flush(std::chrono::steady_clock::now());
     if (!A::EnsureResolved()) return;
     RegisterWithScanHub();  // safety net for any order where Tick precedes Install
     if (!IndexCurrent()) return;  // index belongs to a dead world -- wait for the hub's next pass
@@ -662,9 +709,10 @@ void Tick() {
     const bool isHost = s->role() == coop::net::Role::Host;
     const bool gateOpen = !isHost && coop::net_pump::HasAnnouncedWorldReady();
     if (isHost) {
+        ExcuseHostStall(nowMs);
         JudgeHostBody(localPlayer);
         if (nowMs - g_lastPassMs >= kPassMs) { g_lastPassMs = nowMs; AU::RunPass(nowMs); }
-        SendStamps(*s);
+        SendStamps(*s, nowMs);
     }
     void* owned[coop::atv_hit_guard::kMaxOwned];
     int   ownedN = 0;
@@ -757,6 +805,8 @@ void OnDisconnect() {
     g_installed = false;  // a new session re-indexes via the next Install (latched again)
     g_lastSeq = 0;
     g_lastPassMs = 0;
+    g_lastHostTickMs = 0;
+    g_blockRefusals.Clear();
     const auto c  = coop::atv_corrector::ReadCounters();
     const auto hg = coop::atv_hit_guard::ReadCounters();
     if (n > 0)

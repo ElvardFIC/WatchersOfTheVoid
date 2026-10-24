@@ -48,11 +48,13 @@ struct AtvEntry {
     bool     haveRestPos  = false;
     bool     lastGrabbed  = false;   // the last block's grabbed bit: the syncer carries it
     bool     stampDue     = false;   // the table changed: one stamped block goes to every ready client
+    uint64_t stampRetryMs = 0;       // host: before this a stamp whose payload did not read is not tried again
     // This machine's own body, host and client alike (atv_sync's Tick writes them, nothing else does).
     bool     localSeated  = false;   // the local player sits in this ATV
     bool     localCarrying = false;  // the local player's grav hand holds it
     bool     sentSeated   = false;   // what this machine last told the host (the host's own table, for itself)
     bool     takeoverDue  = false;   // a rising carry edge not yet sent
+    uint64_t yieldRetryMs = 0;       // before this a seat or carry yield that did not run is not tried again
     uint8_t  pendingSeq   = 0;       // the latest request sent and not yet answered (0 = none)
     coop::atv_authority::AtvRequest pendingAction = coop::atv_authority::AtvRequest::Sit;
     bool     isClientSpawnedMirror = false;  // an ATV mirror WE fresh-spawned (AtvSpawn)
@@ -130,8 +132,9 @@ void ApplyPendingSet();
 // half, and the park's hand-back, which is not a new arrival.
 void ResolveSpawn(const std::wstring& key, const coop::net::AtvSpawnPayload& payload);
 
-// Whether the local player's grav hand holds `actor` (its grabbing_actor or holding_actor): the one carry read the
-// lane's Tick and the host's takeover test share. False for a null player or actor. Game thread.
+// Whether the local player's grav hand holds `actor` (its grabbing_actor; holding_actor is the hand item the player
+// spawns, never a world ATV): the one carry read the lane's Tick and the host's takeover test share. False for a null
+// player or actor. Game thread.
 bool IsLocalGrabber(void* actor, void* localPlayer);
 
 }  // namespace coop::atv_sync

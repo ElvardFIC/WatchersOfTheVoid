@@ -58,7 +58,8 @@ void RunPass(uint64_t nowMs);
 // A departure runs this alone (a neighbour leaving never cancels this machine's own request); the successor reset
 // of a repointed entry runs it with ResetRequests (the actor changed).
 void ClearTable(coop::atv_sync::AtvEntry& e);
-// This machine's own request fields: nothing pending, nothing sent, no takeover due.
+// This machine's own request fields: nothing pending, no takeover due. `sentSeated` is kept: it is what the host
+// believes of this machine's seat.
 void ResetRequests(coop::atv_sync::AtvEntry& e);
 
 // The session's judgements, for the teardown line and the drills: every refusal by reason (indexed by AtvRefusal),
@@ -72,6 +73,8 @@ struct Counters {
     unsigned long long streamPaced = 0;    // a block past the syncer's stream bucket
     unsigned long long handedBack = 0;     // the host took an ATV from a client syncer (range or rest)
     unsigned long long silenced   = 0;     // the host took an ATV from a silent syncer
+    unsigned long long idleStreamBlocks = 0;  // blocks admitted from a client syncer with the seat free and no carry
+                                              // (the release stream before a hand-back)
 };
 Counters ReadCounters();
 

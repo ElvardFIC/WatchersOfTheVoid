@@ -140,8 +140,9 @@ bool SeatedAnywhere(uint8_t slot) {
 }
 
 // The table's tests for a sit by `who`: one seat at a time, and the seat free. `already_seated` comes first, as
-// MTA's one-vehicle-per-player does (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:3110). MTA lets
-// a player jack an occupied vehicle (:3130-3132); VOTV's sit has no jack, so an occupied seat is refused.
+// MTA's one-vehicle-per-player does (reference/mtasa-blue/Server/mods/deathmatch/logic/CGame.cpp:3111, refused
+// FAIL_IN_VEHICLE :3347). MTA lets a player jack an occupied vehicle (:3130-3132); VOTV's sit has no jack, so an
+// occupied seat is refused.
 AtvRefusal SitTests(const AtvEntry& e, uint8_t who) {
     if (SeatedAnywhere(who)) return AtvRefusal::AlreadySeated;
     if (e.occupantSlot != kNoSeat) return AtvRefusal::Occupied;
@@ -289,6 +290,7 @@ bool AdmitBlock(AtvEntry& e, const coop::net::AtvStatePayload& p, uint8_t sender
     e.lastRestPos = pos;
     e.haveRestPos = true;
     e.lastGrabbed = grabbed;
+    if (e.occupantSlot == kNoSeat && !e.lastGrabbed) ++g_counters.idleStreamBlocks;
     return true;
 }
 
@@ -317,7 +319,8 @@ void RunPass(uint64_t nowMs) {
         coop::RemotePlayer* rp = coop::players::Registry::Get().Puppet(syncer);
         const bool located = rp && rp->TryGetLocation(at);
         const FVector d{at.X - atvAt.X, at.Y - atvAt.Y, at.Z - atvAt.Z};
-        const bool outOfRange = !located || !(coop::atv_sync::Len(d) <= kSyncerDistance);
+        // A puppet whose location does not read is not out of range: the departure and silence rules cover a gone client.
+        const bool outOfRange = located && !(coop::atv_sync::Len(d) <= kSyncerDistance);
         const bool atRest = e.restSinceMs != 0 && nowMs - e.restSinceMs >= kRestMs && !e.lastGrabbed;
         if (outOfRange || atRest) {
             HandToHost(e, syncer, nowMs);
@@ -342,8 +345,8 @@ void ClearTable(AtvEntry& e) {
 }
 
 void ResetRequests(AtvEntry& e) {
+    // sentSeated stays: it is what the host believes of this machine's seat, so a client no longer seated sends its leave.
     e.pendingSeq = 0;
-    e.sentSeated = false;
     e.takeoverDue = false;
 }
 
@@ -362,12 +365,13 @@ void LogSummary() {
         if (w > 0 && used + static_cast<size_t>(w) < sizeof(byReason)) used += static_cast<size_t>(w);
     }
     if (g_counters.admitted == 0 && refusedTotal == 0 && g_counters.notSyncer == 0 && g_counters.lateSyncer == 0 &&
-        g_counters.streamPaced == 0 && g_counters.handedBack == 0 && g_counters.silenced == 0)
+        g_counters.streamPaced == 0 && g_counters.handedBack == 0 && g_counters.silenced == 0 &&
+        g_counters.idleStreamBlocks == 0)
         return;
     UE_LOGI("atv_authority: session -- %llu admitted, %llu refused (%s); blocks: %llu not_syncer / %llu late_syncer / "
-            "%llu stream_paced; taken back: %llu handed_back / %llu silenced",
+            "%llu stream_paced / %llu idle_stream; taken back: %llu handed_back / %llu silenced",
             g_counters.admitted, refusedTotal, byReason, g_counters.notSyncer, g_counters.lateSyncer,
-            g_counters.streamPaced, g_counters.handedBack, g_counters.silenced);
+            g_counters.streamPaced, g_counters.idleStreamBlocks, g_counters.handedBack, g_counters.silenced);
 }
 
 void Reset() {
