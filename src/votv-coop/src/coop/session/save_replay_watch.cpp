@@ -52,7 +52,7 @@ void OnLoadObjectsPost(const SG::Call& c) {
     const bool fresh = !g_replayGm.Is(c.object);
     g_replayGm.Set(c.object);
     g_replayPostAt = std::chrono::steady_clock::now();
-    if (fresh) UE_LOGI("world_load_episode: save replay returned (gamemode %p)", c.object);
+    if (fresh) UE_LOGI("save_replay_watch: save replay returned (gamemode %p)", c.object);
 }
 
 }  // namespace
@@ -76,7 +76,7 @@ void Drive(coop::net::Session& session, bool requestPending) {
     if (!g_watchRegistered) return;
     SG::ResolvePendingNames();
     if (SG::NameWatchLive(*g_watchRow, kTagReplay)) {
-        if (!g_watchSettled) UE_LOGI("world_load_episode: the save-replay watch is live");
+        if (!g_watchSettled) UE_LOGI("save_replay_watch: the save-replay watch is live");
         g_watchSettled = true;
         g_watchDead = false;
     } else if (SG::NameWatchSettled(*g_watchRow, kTagReplay)) {

@@ -111,9 +111,9 @@ void MaybeRequestReAnnounce(coop::net::Session& session, void* reapWorld) {
 // MTA's client has no local world to restore (its map arrives in CMapManager::SendMapInformation,
 // reference/mtasa-blue/Server/mods/deathmatch/logic/CMapManager.cpp:195), so its in-game notice
 // (reference/mtasa-blue/Client/mods/deathmatch/logic/CClientGame.cpp:3526) waits only for the
-// engine; ours also waits for the host's save to finish replaying here, as Source activates a
-// client only after the server restores its entities
-// (reference/source-sdk-2013/src/game/server/gameinterface.cpp:2703).
+// engine; ours also waits for the host's save to finish replaying here, as Source's server
+// restores a loaded save's entities in the client-activation path (EndRestoreEntities inside
+// CServerGameClients::ClientActive, reference/source-sdk-2013/src/game/server/gameinterface.cpp:2710).
 const char* TickWorldReadyAnnounce(coop::net::Session& session, void* localNow, bool worldUp,
                                    bool isConnected, bool isHost) {
     // A client announces world-ready once per connection, when a gameplay world is up, the prop

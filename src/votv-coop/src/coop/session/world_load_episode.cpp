@@ -34,10 +34,10 @@ namespace {
 // staleness is fine.
 std::atomic<bool> g_inEpisode{false};
 
-// A world change's replay must return within this. MTA drops a client that misses its join bounds
-// (CLIENT_VERIFICATION_TIMEOUT 10 s and NET_CONNECT_TIMEOUT 30 s,
-// reference/mtasa-blue/Client/mods/deathmatch/logic/Config.h:105-106); ours is 120 s because a
-// world's load frame can block the game thread for that long.
+// A world change's replay must return within this. MTA's constants bound the connect and the
+// client's verification, not a load (NET_CONNECT_TIMEOUT 30 s, CLIENT_VERIFICATION_TIMEOUT 10 s,
+// reference/mtasa-blue/Client/mods/deathmatch/logic/Config.h:105-106); this one bounds a world's
+// save replay, and is 120 s because a world's load frame can block the game thread for that long.
 constexpr int64_t kWorldChangeReplayBoundMs = 120000;
 
 // The probe-session open request (a Request value). Arm() may NOT touch the plain probe fields

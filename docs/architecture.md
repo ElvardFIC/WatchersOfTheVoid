@@ -170,9 +170,9 @@ explicitly:
    from the host's per-player store.
 4. **World load and quiescence.** While the client's world loads, the destroy seam is inside an
    episode that does not broadcast the load's own churn, and a probe watches the load tail; the
-   client announces ready only when the population is stable
-   (`coop/session/world_load_episode`). This is MTA's join barrier: no authoritative state lands
-   in a world that is still churning.
+   client announces ready only when the world's save replay has returned and the population is
+   stable (`coop/session/world_load_episode`). This is MTA's join barrier with the save replay
+   added to it: no authoritative state lands in a world that is still churning.
 5. **Connect replay.** On the ready announce the host runs the connect replay for that slot
    (`coop/session/subsystems`): the snapshot bracket of every synced element, a true-up for
    whatever moved since the save was written; then each state lane's current state; then the

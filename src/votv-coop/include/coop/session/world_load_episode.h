@@ -2,13 +2,13 @@
 // suppression episode and the load-tail quiescence probe and latch, the one owner of the
 // is-my-own-world-settled axis. The world-ready announce, which opens the host's per-slot send
 // gate and triggers the full connect replay (the key diff, the snapshot bracket, the state
-// lanes), is sent at load-tail quiescence rather than at world-up, the MTA join barrier, so
-// no authoritative wire state ever lands in a world still churning. The episode: while a
-// joining client is inside its own world load (the gamemode's pre-delete and respawn of every
-// save object), the destroy seam must not broadcast the keyed-prop destroys the load churn
-// issues; they are local net-zero rebuild churn, on the wire only the destroy half fires, and
-// broadcasting it made the host destroy most of its authoritative copies by key on a bare
-// join. The probe counts the load-tail population (keyless props, allowlisted NPCs, the
+// lanes), is sent at load-tail quiescence and after the world's save replay has returned, not
+// at world-up: MTA's join barrier with the save replay added, so no authoritative wire state
+// ever lands in a world still churning. The episode: while a joining client is inside its own
+// world load (the gamemode's pre-delete and respawn of every save object), the destroy seam
+// must not broadcast the keyed-prop destroys the load churn issues; they are local net-zero
+// rebuild churn, on the wire only the destroy half fires, and broadcasting it made the host
+// destroy most of its authoritative copies by key on a bare join. The probe counts the load-tail population (keyless props, allowlisted NPCs, the
 // chipPile field) at 5 Hz; a stable count for the required scans means the async load pass
 // has drained, and an absolute ceiling bounds a pathological load, the announce firing
 // anyway, loudly. The latch is a serially reused session (the join load, a travel re-seed,
@@ -20,13 +20,6 @@
 #include <string>
 
 namespace coop::net { class Session; }
-
-// MTA's client has no local world to restore (its map arrives in CMapManager::SendMapInformation,
-// reference/mtasa-blue/Server/mods/deathmatch/logic/CMapManager.cpp:195), so its in-game notice
-// (reference/mtasa-blue/Client/mods/deathmatch/logic/CClientGame.cpp:3526) waits only for the
-// engine; ours also waits for the host's save to finish replaying here, as Source activates a
-// client only after the server restores its entities
-// (reference/source-sdk-2013/src/game/server/gameinterface.cpp:2703).
 
 namespace coop::world_load_episode {
 
