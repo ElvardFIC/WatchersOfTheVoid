@@ -541,12 +541,12 @@ void TickClientReconcile() {
     // a reconcile that converge-binds a re-create claims it and the sweep spares it. Doom judges
     // last.
     coop::element::quiescence_drain::RunReconcile();
-    // A save-transfer join goes through two level loads, and a keyed prop re-created by the second
-    // (or by GC churn) reuses a freed GUObjectArray slot: NumObjects stays flat and the steady
-    // re-seed's grew-gate never indexes it, so it is invisible to the membership here and survives
-    // as a duplicate (the joining client's starting suitcase, twice). The tracked-key membership is
-    // refreshed at this one cold per-join point, so the re-create is either re-bind-spared or
-    // doomed, leaving exactly one. One array walk per join.
+    // A world gets one save replay, before its announce, and a keyed prop re-created after the
+    // registry seeded (a world swap, or GC churn) reuses a freed GUObjectArray slot: NumObjects stays
+    // flat and the steady re-seed's grew-gate never indexes it, so it is invisible to the membership
+    // here and survives as a duplicate (the joining client's starting suitcase, twice). The
+    // tracked-key membership is refreshed at this one cold per-join point, so the re-create is either
+    // re-bind-spared or doomed, leaving exactly one. One array walk per join.
     coop::prop_element_tracker::ReSeedKnownKeyedProps(nullptr);
     RunDivergenceSweep_(localPlayer);
     // The read-only probes and the bind summary report at quiescence.

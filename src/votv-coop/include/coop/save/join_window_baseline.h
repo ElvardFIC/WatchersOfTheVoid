@@ -7,8 +7,8 @@
 // has, sent as an explicit PropDestroy per key ahead of the bracket (MTA's Packet_EntityRemove),
 // so the divergence sweep need not INFER the delete. MOVED: the save-time position of every
 // chipPile, clump, off-form kerfur and keyed prop, re-asserted once the joiner has quiesced -- a
-// pile carries no position on the wire at all, and a keyed prop's is clobbered by the joiner's own
-// loadObjects afterwards. The flush is LATE-ARMED past the connect edge, because a pile moved late
+// pile carries no position on the wire at all, and a keyed prop's can be moved by the host inside
+// the join window, after this capture. The flush is LATE-ARMED past the connect edge, because a pile moved late
 // in a long load tail would get no correction from a one-shot; its expiry is the join window's
 // true close and retires the maps (a prop a hand held after its correction went out keeps its keyed
 // map through a settle phase). A stale-fallback join captures nothing and every entry point is

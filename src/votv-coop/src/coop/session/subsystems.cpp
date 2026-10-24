@@ -111,6 +111,7 @@
 #include "coop/interactables/window_stroke_sync.h"
 #include "coop/interactables/window_sync.h"
 #include "coop/session/join_progress.h"
+#include "coop/session/world_load_episode.h"
 #include "coop/interactables/garbage_sync.h"
 #include "coop/props/pile_look.h"
 #include "coop/props/trash_channel.h"
@@ -203,6 +204,7 @@ void InstallLoadWatchers(coop::net::Session& session) {
     coop::player_hit::Install(&session);  // the session the host's hit deliveries send through
     coop::explosion_sync::Install(&session);  // the birth seam on every Blueprint deferred spawn: a client's own explosions dissolve, from the load window on; also the request lane's session and client watches
     coop::explosion_parking::Install(&session);  // the explosion copy's parking watches: the four verbs, the rune check, the force narrowing (client session only)
+    coop::world_load_episode::InstallReplayWatch(session);
 }
 
 void Install(coop::net::Session& session) {

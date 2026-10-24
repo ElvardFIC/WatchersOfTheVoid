@@ -278,9 +278,10 @@ void OnSnapshotComplete() {
 void OnClientWorldReady() {
     UE_ASSERT_GAME_THREAD("npc_adoption::OnClientWorldReady");
     // A fresh connect replay is about to deliver this world's EntitySpawns. First DROP stale
-    // dead-actor mirrors from the prior world (a save-transfer join does TWO level loads; a mirror
-    // bound in world-1 survives the swap as a dangling Element and would block world-2 from re-
-    // mirroring/re-adopting the SAME host eid -- see npc_mirror::PruneDeadClientMirrors). Then drop
+    // dead-actor mirrors from the prior world (a world gets one save replay, before its announce; a
+    // mirror bound in a world since left survives the swap as a dangling Element and would block the
+    // new world from re-mirroring/re-adopting the SAME host eid -- see
+    // npc_mirror::PruneDeadClientMirrors). Then drop
     // any stale pending from a prior world and re-arm the latches so the new world re-adopts +
     // re-sweeps.
     coop::npc_mirror::PruneDeadClientMirrors();

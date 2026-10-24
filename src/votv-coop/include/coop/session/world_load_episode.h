@@ -16,19 +16,61 @@
 
 #pragma once
 
+#include <cstdint>
+#include <string>
+
+namespace coop::net { class Session; }
+
 namespace coop::world_load_episode {
 
 // The client join world load has started (the harness timeline thread, before the blocking
-// save boot). Arms the episode latch and raises the join probe-session request; the session
-// opens on the next game-thread probe tick, and HasQuiesced reads false while the request is
-// pending, so the handoff window cannot leak an early announce. Idempotent. Any thread,
-// atomics only.
+// save boot). Arms the episode latch and raises the join request; the probe session opens on a
+// game-thread tick once the loaded world's save replay has returned (the gamemode's
+// `loadObjects`, watched by name), and HasQuiesced reads false while the request is pending, so
+// the handoff window cannot leak an early announce. Idempotent. Any thread, atomics only.
 void Arm();
 
-// Open a quiescence-probe session without arming the episode: the travel re-announce (the new
-// world must settle before the host re-replays into it) and the post-snapshot sweep gate.
-// Resets the latch. `reason` is logged. Game thread.
+// Open a quiescence-probe session without arming the episode: the post-snapshot sweep gate.
+// Refused, logged once, while a request still awaits its world's save replay: that request's own
+// session answers. Resets the latch. `reason` is logged. Game thread.
 void ArmQuiesceProbe(const char* reason);
+
+// What a pending request is: a join's world load, or a world change after the join.
+enum class Request : uint8_t { None, Join, WorldChange };
+
+// Why a request failed. WatchDead: the save-replay watch is not live (the script gate refused it,
+// or the game build has no such function). ReplayTimeout: a world change's replay never returned.
+enum class Failure : uint8_t { None, WatchDead, ReplayTimeout };
+
+struct RequestFailureInfo {
+    Failure failure = Failure::None;
+    std::string text;  // the player-facing detail, composed where the failure is set
+};
+
+// Install the save-replay watch and keep its liveness read, on a client; a no-op on the host.
+// Called every session tick, acts at most once a second, and only while a request pends or the
+// watch is not yet settled. Game thread.
+void InstallReplayWatch(coop::net::Session& session);
+
+// Raise a world-change request (the pump's world-change path). True when one is pending now: this
+// call raised it, or an earlier one stands; false when a join's request holds the slot, which
+// covers the change. Game thread.
+bool RequestWorldChangeProbe();
+
+// True while a request awaits its world's save replay; the announce waits on it. Game thread.
+bool AwaitingSaveReplay();
+
+// The world this connection last settled on, held as a weak identity. Game thread.
+bool HasBaselineWorld();
+bool IsBaselineWorld(void* world);
+void SetBaselineWorld(void* world);
+void ClearBaselineWorld();
+
+// Milliseconds since a world-change request was raised, or -1 when none pends. Game thread.
+int64_t PendingRequestAgeMs();
+
+// The failure of the pending request, or None. Read every tick. Game thread.
+const RequestFailureInfo& RequestFailure();
 
 // Drive the probe. Cheap when latched or with no session open (one bool read); while a session
 // is open, the 5 Hz throttled population walk, the stability counter and the ceiling. On the
@@ -36,8 +78,8 @@ void ArmQuiesceProbe(const char* reason);
 // latch state; safe to call from several per-tick sites. Game thread.
 bool TickQuiesceProbe();
 
-// True once the most recent probe session latched, stable or by the ceiling. Reset by the arms
-// and by Reset. Game thread.
+// True once the most recent probe session latched, stable or by the ceiling, and no request awaits
+// its world's save replay. Reset by the arms and by Reset. Game thread.
 bool HasQuiesced();
 
 // Milliseconds since the latch, or -1 when not latched; the sweep's post-announce

@@ -452,10 +452,10 @@ void DrainClientMirrors() {
 }
 
 void PruneDeadClientMirrors() {
-    // The client world-swap teardown. A save-transfer join performs two level loads, and a mirror
-    // installed in the first world survives the swap as a dangling Element: the host sends no
+    // The client world-swap teardown. A world gets one save replay, before its announce, and a mirror
+    // installed in a world since left survives the swap as a dangling Element: the host sends no
     // EntityDestroy for a client swap, and the disconnect drain is full-disconnect only. The stale
-    // Element then blocks the second world from re-mirroring the same eid, so every mirror whose
+    // Element then blocks the new world from re-mirroring the same eid, so every mirror whose
     // actor the level load freed is released (tracking only; the actor is gone). A still-live
     // mirror is kept. Game thread only.
     auto* s = coop::npc_sync::GetSession();

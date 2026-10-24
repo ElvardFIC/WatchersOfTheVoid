@@ -196,7 +196,7 @@ size_t HubPassComplete(void*, bool isFull, uint32_t worldGen) {
         it = g_atvs.erase(it);
     }
     // Update or add. A wire key can outlive its actor (a save-placed key is deterministic and a
-    // client join runs two level loads), and the successor must not inherit the dead actor's
+    // world's replay re-creates its actors), and the successor must not inherit the dead actor's
     // authority, seat, correction clock and change-gate baseline: the entry stays, everything that
     // described the actor resets.
     for (auto& f : found) {

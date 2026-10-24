@@ -52,9 +52,9 @@ std::unordered_map<coop::element::ElementId, ue_wrap::FVector>
     g_blobKerfurXforms[coop::net::kMaxPeers];
 
 // The save-time position of every live keyed prop at the capture instant, by host eid. A keyed
-// prop rides the connect snapshot at the host's current position, but the joiner's own loadObjects
-// re-creates it at the save position afterwards and clobbers that; the diverged flush re-asserts
-// the host's live position at quiescence, past the clobber. Unlike the pile map, it lives on through
+// prop rides the connect snapshot at the host's current position, and the joiner's own loadObjects has
+// returned before the snapshot lands; the diverged flush re-asserts the host's live position at
+// quiescence, which heals a host move inside the join window. Unlike the pile map, it lives on through
 // a settle phase (<= 30 s) after the window closes, and clears when the settle ends.
 std::unordered_map<coop::element::ElementId, ue_wrap::FVector>
     g_blobKeyedXforms[coop::net::kMaxPeers];
@@ -201,10 +201,10 @@ bool FlushKeyedProp_(int peerSlot, const char* phase, coop::element::ElementId e
 
 // The diverged-position flush, one reconcile for every save-authoritative entity: a pile has no
 // wire-position channel (both peers load it from the identical save), and a keyed prop rides the
-// snapshot but the joiner's loadObjects re-creates it at the save position afterwards; either
-// way a host move in the join window goes stale on the client. Per the joiner's save-time maps,
-// the host's current position is compared and, where it diverged, a PropSnapPos is sent for the
-// client to apply at quiescence, after its loadObjects. A pure position compare, independent of
+// snapshot, which lands after the joiner's loadObjects; either way a host move in the join window
+// goes stale on the client. Per the joiner's save-time maps, the host's current position is
+// compared and, where it diverged, a PropSnapPos is sent for the client to apply at quiescence,
+// after its loadObjects. A pure position compare, independent of
 // any convert's timing. The first run arms the late window and resets the dedupe; the cadence
 // runs deliver only new moves.
 void FlushDivergedPositions_(int peerSlot, bool firstRun) {
@@ -314,8 +314,8 @@ void CaptureForSlot(int peerSlot) {
     // KerfurConvert.
     g_blobKerfurXforms[peerSlot].clear();
     coop::prop_element_tracker::CollectTrackedKerfurTransforms(g_blobKerfurXforms[peerSlot]);
-    // Every live keyed prop's save-time position at this same instant, for the diverged flush past
-    // the joiner's loadObjects clobber.
+    // Every live keyed prop's save-time position at this same instant, for the diverged flush that
+    // heals a host move in the join window.
     g_blobKeyedXforms[peerSlot].clear();
     coop::prop_element_tracker::CollectTrackedKeyedPropTransforms(g_blobKeyedXforms[peerSlot]);
     g_blobKeyedState[peerSlot].clear();

@@ -597,11 +597,11 @@ void Tick(coop::net::Session& session) {
         // The one-shot install of the per-subsystem observers (idempotent).
         { PP::Scope _s{PP::Bucket::InstallObs}; coop::subsystems::Install(session); }
         // The outbound local streams (coop/local_streams). A joining client's pawn is parked and
-        // teleported through positions that must not stream as our pose, and ClientWorldReady fires
-        // seconds before loadObjects' final teleport, which cannot be hooked
-        // (docs/coop-dispatch-visibility.md); so the client gate is load-tail quiescence
-        // (join_membership_sweep), the signal that observes its effect, reset per world. The host
-        // keeps the worldUp gate.
+        // teleported through positions that must not stream as our pose. ClientWorldReady follows the
+        // world's save replay (the gamemode's loadObjects, watched by name once it returns,
+        // docs/coop-dispatch-visibility.md), so the client gate is that announce plus load-tail
+        // quiescence (join_membership_sweep), the signal that observes the load's effect, reset per
+        // world. The host keeps the worldUp gate.
         const bool poseAuthoritative =
             isHost ? worldUp
                    : (IsWorldSettled() &&

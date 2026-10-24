@@ -28,34 +28,33 @@
 
 namespace coop::net_pump {
 
+namespace WLE = coop::world_load_episode;
+namespace WI = ue_wrap::world_identity;
+
 // Has this client announced world-ready for the current connection? Gates the world-dependent tick
 // blocks during a save-transfer join's menu window (no actors into the menu world). Reset on
 // disconnect.
 static std::atomic<bool> g_worldReadyAnnounced{false};
 
-// The re-announce request, set when a world-change re-seed completes: a save-transfer join runs two
-// level loads, and the re-announce drives the host's ConnectReplayForSlot to re-assert every
-// host-authoritative state into the final world (the only way keyless chipPiles re-acquire their
-// host eid). Reset on send and on disconnect.
+// The re-announce request, set when a world-change re-seed completes on a world other than the one
+// this connection settled on (a mid-session world swap): the re-announce drives the host's
+// ConnectReplayForSlot to re-assert every host-authoritative state into the new world (the only way
+// keyless chipPiles re-acquire their host eid). Reset on send and on disconnect.
 static std::atomic<bool> g_reAnnounceWorldReady{false};
 
 // The gate a re-announce after the join last waited on, named by the pump: the join is Idle then, so
 // join_progress names nothing. Game thread; reset with the announce state.
 static coop::join_progress::WorldGate g_reAnnounceGate = coop::join_progress::WorldGate::None;
 
-// The UWorld last announced against (game thread), by the reaper's own reader, held as a weak identity.
-// A re-seed re-announces only when the UWorld actually swapped: the join's menu-to-game shadow drain is a
-// reap inside the announced world, and treating it as a change would replay the full snapshot and
-// re-adopt NPCs into live mirrors (duplicate kerfurs). A real level travel re-opens untitled_1 as a new
-// UWorld, so it still re-announces, and it does where the allocator hands the new world the old one's
-// address: the identity (slot and serial) tells them apart, as IsInAnnouncedWorld's does. Reset on
-// disconnect.
-static ue_wrap::CachedObjRef g_announcedWorld;
-
-// The same world, held as a weak identity (its slot and serial), for IsInAnnouncedWorld: a later world
-// is a new object even where the allocator hands it the old one's address. Game thread; stamped from
+// The world announced in, held as a weak identity (its slot and serial), for IsInAnnouncedWorld: a later
+// world is a new object even where the allocator hands it the old one's address. Game thread; stamped from
 // the local pawn at each announce, reset on disconnect.
 static ue_wrap::CachedObjRef g_announcedWorldRef;
+
+// The latch that acts on a request's failure once per connection, and the one-shot for a world change
+// that finds no baseline world. Game thread; both cleared with the announce state.
+static bool g_failureActed = false;
+static bool g_noBaselineSaid = false;
 
 // The save-transfer kerfur-ghost reconcile lives in npc_adoption (it owns the timing); net_pump
 // only notifies it at the announce (OnClientWorldReady) so it resets its per-world state.
@@ -66,29 +65,43 @@ void ForgetWorldReadyAnnounce() {
     g_worldReadyAnnounced.store(false, std::memory_order_relaxed);
     g_reAnnounceWorldReady.store(false, std::memory_order_relaxed);
     g_reAnnounceGate = coop::join_progress::WorldGate::None;
-    g_announcedWorld.Reset();
     g_announcedWorldRef.Reset();
+    g_failureActed = false;
+    g_noBaselineSaid = false;
+    coop::world_load_episode::ClearBaselineWorld();
 }
 
 // The announce axis' one owner; registry_reaper only requests through here. No-op on the host.
 void MaybeRequestReAnnounce(coop::net::Session& session, void* reapWorld) {
     if (session.role() == coop::net::Role::Host) return;
-    // The same world only when the same address holds the same live object; two nulls, neither reader
-    // naming a world, are the same too.
-    const bool same = reapWorld == g_announcedWorld.Raw() && (!reapWorld || g_announcedWorld.Is(reapWorld));
-    if (!same) {
+    // A world is the same only when the same address holds the same live object. Without a baseline
+    // world there is nothing to compare: the join's own announce covers it.
+    if (!WLE::HasBaselineWorld()) {
+        if (!g_noBaselineSaid)
+            UE_LOGI("net_pump: a world change with no baseline world -- %s",
+                    WLE::AwaitingSaveReplay() ? "the join waits on its replay"
+                                              : "the first announce will cover it");
+        g_noBaselineSaid = true;
+        return;
+    }
+    if (WLE::IsBaselineWorld(reapWorld)) {
+        UE_LOGI("net_pump: world-change re-seed on the SAME world this connection settled on (%p) -- "
+                "NOT re-announcing (suppresses the join menu-shadow-drain double-snapshot + "
+                "kerfur re-adopt dupe)", reapWorld);
+        return;
+    }
+    // The re-announce waits for the new world's save replay and its load tail, as the first announce
+    // did: a request the probe's tick turns into a session.
+    if (WLE::RequestWorldChangeProbe()) {
         g_reAnnounceWorldReady.store(true, std::memory_order_relaxed);
-        // The join barrier: the re-announce waits for the new world's load tail as the first
-        // announce did; a fresh probe session.
-        coop::world_load_episode::ArmQuiesceProbe("world-change re-announce");
         // A reload is a teardown plus a rebuild: raise the reconcile window (kind = load) so the
         // destroy seam and the drop intent stay suppressed through the re-replay. InEpisode is not
         // raised: the lane parks' reload semantics are unmeasured.
         coop::world_load_episode::RaiseReconcileForReload();
+        UE_LOGI("net_pump: world change -- re-announce owed (%p)", reapWorld);
     } else {
-        UE_LOGI("net_pump: world-change re-seed on the SAME world already announced (%p) -- "
-                "NOT re-announcing (suppresses the join menu-shadow-drain double-snapshot + "
-                "kerfur re-adopt dupe)", reapWorld);
+        UE_LOGI("net_pump: world change while the join waits on its replay -- the join covers it (%p)",
+                reapWorld);
     }
 }
 
@@ -102,11 +115,19 @@ const char* TickWorldReadyAnnounce(coop::net::Session& session, void* localNow, 
     // index to wait for, its ids being minted by their owner
     // (reference/mtasa-blue/Server/mods/deathmatch/logic/CElementIDs.cpp:23). The host streams the whole
     // world state on it, so announcing into a churning load would put the authoritative stream into it.
-    // The probe is deadline-capped, so a pathological load still announces. Re-fires on a re-announce
-    // request under the same coherence gate.
+    // The load tail is not read before the world's own save replay has returned, which a failed watch or
+    // a world change's bound ends by name; the probe after it is deadline-capped, so a pathological load
+    // still announces. Re-fires on a re-announce request under the same coherence gate.
     const bool reAnnounce = g_reAnnounceWorldReady.load(std::memory_order_relaxed);
     if (!isHost && isConnected &&
         (!g_worldReadyAnnounced.load(std::memory_order_relaxed) || reAnnounce)) {
+        // A connection that joined from inside a world (no join load) has no request: its baseline is
+        // the world it stands in at the connect.
+        if (!g_worldReadyAnnounced.load(std::memory_order_relaxed) && !WLE::AwaitingSaveReplay() &&
+            !WLE::HasBaselineWorld() && WI::CurrentWorldKind() == WI::WorldKind::Gameplay) {
+            WLE::SetBaselineWorld(WI::CurrentWorld());
+            UE_LOGI("net_pump: baseline world set at the connect (no join)");
+        }
         // Name the gate BEFORE testing the rest: most of these have no deadline of their own, and
         // with the whole-join failsafe deleted the joiner's phase token is what stands behind them.
         // TickQuiesceProbe must still run every tick, so it is called first and its result reused --
@@ -116,6 +137,20 @@ const char* TickWorldReadyAnnounce(coop::net::Session& session, void* localNow, 
         const bool thisWorld = seeded && coop::prop_element_tracker::IsRegistrySeededForCurrentWorld();
         const bool purging  = coop::prop_element_tracker::InPurgeEpisode();
         const bool quiesced = coop::world_load_episode::TickQuiesceProbe();
+        const bool awaitingReplay = WLE::AwaitingSaveReplay();
+        const WLE::RequestFailureInfo& f = WLE::RequestFailure();
+        if (f.failure != WLE::Failure::None && !g_failureActed) {
+            g_failureActed = true;
+            const auto code = f.failure == WLE::Failure::WatchDead
+                                  ? coop::net::EndReason::ScriptHooksUnavailable
+                                  : coop::net::EndReason::WorldNeverSettled;
+            if (coop::join_progress::CurrentPhase() != coop::join_progress::Phase::Idle)
+                coop::join_progress::Fail(code, f.text);
+            else {
+                coop::join_progress::NoteDisconnect(code, f.text, /*afterJoin*/ true);
+                return "the new world's save replay failed";
+            }
+        }
         // An install found unable to index after the session started (its watches resolve on the game
         // thread) can never clear the key term: the join ends by name rather than waiting on it.
         if (coop::prop_key_index::Unavailable())
@@ -128,6 +163,7 @@ const char* TickWorldReadyAnnounce(coop::net::Session& session, void* localNow, 
                       : !seeded   ? WG::RegistryUnseeded
                       : !thisWorld ? WG::RegistryOtherWorld
                       : purging   ? WG::RegistryPurging
+                      : awaitingReplay ? WG::SaveReplayPending
                       : !quiesced ? WG::WorldSettling
                       : !keysReady ? WG::KeyIndexPending
                                   : WG::None;
@@ -151,7 +187,7 @@ const char* TickWorldReadyAnnounce(coop::net::Session& session, void* localNow, 
                 // reaper's world gate: the two are compared in MaybeRequestReAnnounce, and
                 // FindObjectByClass answers "a world object exists" (the incoming world, while the
                 // player chain still reads null), not "the world the player is in".
-                g_announcedWorld.Set(ue_wrap::world_identity::CurrentWorld());
+                WLE::SetBaselineWorld(WI::CurrentWorld());
                 g_announcedWorldRef.Set(ue_wrap::world_identity::WorldOf(localNow));  // fresh this tick
                 // A fresh connect replay is about to arrive: reset the deferred-adoption per-world
                 // state so the new world re-adopts its save NPCs and re-sweeps orphans.

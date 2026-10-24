@@ -77,3 +77,9 @@ CFG_ENUM(join_abort, "join_abort", "dev", "off", "off|download|world",
     "is cleared and that the player left the host's world for the menu, where the browser opens, then "
     "rejoin and pass at the second world-ready. [JOIN-ABORT] lines; download has no "
     "rejoin leg (the host's stall hits every joiner).")
+CFG_FLAG(replay_gate_break, "replay_gate_break", "dev", false, "VOTVCOOP_DEV_REPLAY_GATE_BREAK",
+    "Red arm: the joiner's world-ready probe opens without waiting for the save replay.")
+CFG_FLAG(replay_watch_break, "replay_watch_break", "dev", false, "VOTVCOOP_DEV_REPLAY_WATCH_BREAK",
+    "Red arm: the save-replay watch is registered on a function this game does not have.")
+CFG_FLAG(replay_post_drop, "replay_post_drop", "dev", false, "VOTVCOOP_DEV_REPLAY_POST_DROP",
+    "Red arm: the save-replay watch ignores the replay.")

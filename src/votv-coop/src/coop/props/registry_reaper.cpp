@@ -210,9 +210,9 @@ bool Tick(coop::net::Session& session) {
                 }
             }
         };
-        // The client's re-announce, only when the UWorld actually swapped since the last announce,
-        // not for the join's shadow drain within the same world (which double-snapshotted and
-        // duplicated kerfurs); net_pump owns the compare.
+        // The client's re-announce, only when the UWorld actually swapped since the world this
+        // connection settled on, not for the join's shadow drain within the same world (which
+        // double-snapshotted and duplicated kerfurs); net_pump owns the compare.
         auto maybeReAnnounce = [&session, world]() {
             coop::net_pump::MaybeRequestReAnnounce(session, world);
         };

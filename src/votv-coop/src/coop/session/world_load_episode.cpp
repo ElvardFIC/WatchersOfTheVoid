@@ -3,23 +3,35 @@
 
 #include "coop/session/world_load_episode.h"
 
-#include "coop/config/config.h"  // ReadEnv, for the drill switch
+#include "coop/config/config.h"  // ReadEnv, for the drill switch; ResolveFlag, for the red arms
+#include "coop/config/config_registry.h"
+#include "coop/net/net_clock.h"
+#include "coop/net/session.h"
+#include "coop/text/utf8_codec.h"  // ToUtf8: the watch row's names in the failure text
 
 #include "coop/creatures/npc_sync.h"          // IsAllowlistedClass (the NPC load tail)
 #include "coop/props/prop_element_tracker.h"  // HasSeededOnce / InPurgeEpisode (purge-aware progress)
 #include "coop/props/prop_lifecycle.h"        // IsPerPlayerPropClass
+#include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/hot_path_guard.h"           // UE_ASSERT_GAME_THREAD (probe fields are GT-owned)
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/actors/prop.h"
 #include "ue_wrap/core/reflection.h"
+#include "ue_wrap/core/script_gate.h"
+#include "ue_wrap/engine/world_identity.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <chrono>
+#include <cstdint>
+#include <cstdio>
 #include <string>
 
 namespace coop::world_load_episode {
 
 namespace R = ue_wrap::reflection;
+namespace SG = ue_wrap::script_gate;
+namespace WI = ue_wrap::world_identity;
 
 namespace {
 
@@ -28,12 +40,40 @@ namespace {
 // staleness is fine.
 std::atomic<bool> g_inEpisode{false};
 
-// The probe-session open request. Arm() may NOT touch the plain probe fields below: it runs off the
-// game thread and would race the game-thread ticker, one of those fields being a std::string. Arm
-// raises this atomic only; the ticker consumes it and opens the session on the game thread.
-// HasQuiesced() reads a pending request as "session open", so the window between an off-thread Arm
-// and the first tick cannot leak an early announce.
-std::atomic<bool> g_joinProbeRequested{false};
+UE_FACT_FN(kRowLoadObjects, "join_world_ready", L"mainGamemode_C", L"loadObjects", Declared);
+UE_FACT_FN(kRowLoadObjectsRed, "dev.replay_watch_break", L"mainGamemode_C", L"loadObjectsJwRed", Declared);
+constexpr int kTagReplay = 0x4A575250;  // 'JWRP'
+constexpr int64_t kWorldChangeReplayBoundMs = 120000;  // a world change's replay must return within this
+
+// The probe-session open request (a Request value). Arm() may NOT touch the plain probe fields
+// below: it runs off the game thread and would race the game-thread ticker, one of those fields
+// being a std::string. Arm raises this atomic only; the ticker consumes it and opens the session on
+// the game thread, once the loaded world's save replay has returned. HasQuiesced() reads a pending
+// request as "session open", so the window between an off-thread Arm and the session cannot leak an
+// early announce.
+std::atomic<uint8_t> g_request{0};
+std::atomic<uint64_t> g_requestRaisedAtMs{0};  // coop::net::NowMs() when a world change raised it
+
+// The save replay's record: the gamemode that ran loadObjects, and when its body returned.
+ue_wrap::CachedObjRef g_replayGm;
+std::chrono::steady_clock::time_point g_replayPostAt{};
+// The world this connection last settled on; its identity, not its address.
+ue_wrap::CachedObjRef g_baseline;
+
+// The replay watch's installer (game thread).
+bool g_watchRegistered = false;
+bool g_watchSettled = false;
+bool g_watchDead = false;
+uint64_t g_nextWatchMs = 0;
+const ue_wrap::facts::Function* g_watchRow = nullptr;
+bool g_postDrop = false;
+std::atomic<bool> g_watchRefused{false};
+
+// Per request: the red arm read once, the log said once, and why the request failed.
+bool g_reqGateBreak = false;
+bool g_reqFlagsRead = false;
+bool g_sweepSkipSaid = false;
+RequestFailureInfo g_failure;
 
 // ---- Quiescence-probe session state (game thread only; no mutex) ----
 bool g_probeOpen  = false;     // a session is open, probing
@@ -61,7 +101,7 @@ constexpr int kQuiesceScans     = 10;     // a stable population across this man
 // so the only stretch such a deadline could ever see is one the probe did not scan at all -- one
 // script body holding every tick, a world load's tail -- and it would call the load stalled on the
 // first scan after that body, the population having moved throughout it.
-constexpr int kAbsoluteCeilingMs = 120000;  // since the arm, the stuck-purge backstop; the announce then goes degraded
+constexpr int kAbsoluteCeilingMs = 120000;  // since the session opened, the stuck-purge backstop; the announce then goes degraded
 
 // ---- The reconcile window; see the header block ----
 // `up` and `kindIsLoad` are atomics because Arm() raises off the game thread; every other writer
@@ -127,7 +167,24 @@ int CountLoadTailUnsettled_() {
     return unsettled;
 }
 
-void OpenProbeSession_(const char* reason) {
+// The save replay's POST: the gamemode's loadObjects body returned. Records which gamemode and when;
+// the consume reads it on a later tick.
+void OnLoadObjectsPost(const SG::Call& c) {
+    if (g_postDrop) return;
+    const bool fresh = !g_replayGm.Is(c.object);
+    g_replayGm.Set(c.object);
+    g_replayPostAt = std::chrono::steady_clock::now();
+    if (fresh) UE_LOGI("world_load_episode: save replay returned (gamemode %p)", c.object);
+}
+
+// Did the replay run in the world the player is in now (a replay of a world already left does not count).
+bool SaveReplayedInThisWorld() {
+    void* gm = g_replayGm.Get();
+    void* cw = WI::CurrentWorld();
+    return gm && cw && WI::WorldOf(gm) == cw;
+}
+
+void OpenProbeSession_(const char* reason, bool forRequest) {
     g_probeOpen = true;
     g_everOpened = true;
     g_quiesced = false;
@@ -136,9 +193,18 @@ void OpenProbeSession_(const char* reason) {
     g_lastUnsettledCount = -1;
     g_stableScans = 0;
     g_probeReason = reason ? reason : "?";
-    UE_LOGI("world_load_episode: quiescence probe ARMED (%s) -- population stable x%d scans @%dms, "
+    char replay[64] = "";
+    if (forRequest) {
+        if (g_replayPostAt.time_since_epoch().count() != 0)
+            std::snprintf(replay, sizeof replay, "; save replay returned %lld ms before the open",
+                          static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                              g_probeArmedAt - g_replayPostAt).count()));
+        else
+            std::snprintf(replay, sizeof replay, "; no save replay recorded");
+    }
+    UE_LOGI("world_load_episode: quiescence probe ARMED (%s%s) -- population stable x%d scans @%dms, "
             "absolute ceiling %ds",
-            g_probeReason.c_str(), kQuiesceScans, kScanIntervalMs, kAbsoluteCeilingMs / 1000);
+            g_probeReason.c_str(), replay, kQuiesceScans, kScanIntervalMs, kAbsoluteCeilingMs / 1000);
 }
 
 void Latch_(const char* how) {
@@ -155,9 +221,9 @@ void Latch_(const char* how) {
 }  // namespace
 
 void Arm() {
-    // Off-game-thread safe: touches only the atomics. The probe session opens on the next
-    // game-thread tick through the request flag. Opening it inline here would race the ticker on
-    // eight plain fields.
+    // Off-game-thread safe: touches only the atomics. The probe session opens on a game-thread
+    // tick through the request, once the save replay has returned. Opening it inline here would
+    // race the ticker on eight plain fields.
     if (g_inEpisode.load(std::memory_order_relaxed)) return;  // idempotent: one arm per world load
     g_inEpisode.store(true, std::memory_order_relaxed);
     // Raise the reconcile window, kind load. Atomics here; the game-thread half, the raisedAt stamp
@@ -165,16 +231,80 @@ void Arm() {
     g_reconKindLoad.store(true, std::memory_order_relaxed);
     g_reconUp.store(true, std::memory_order_relaxed);
     g_reconRaiseRequested.store(true, std::memory_order_release);
-    g_joinProbeRequested.store(true, std::memory_order_release);
+    g_request.store(static_cast<uint8_t>(Request::Join), std::memory_order_release);
     UE_LOGI("world_load_episode: ARMED -- client world-load starting; KEYED-prop destroy broadcasts "
-            "suppressed until load-tail quiescence (host-wipe root fix); probe session opens on the "
-            "next game-thread tick");
+            "suppressed until load-tail quiescence (host-wipe root fix); probe session opens once "
+            "the world's save replay has returned");
 }
 
 void ArmQuiesceProbe(const char* reason) {
     UE_ASSERT_GAME_THREAD("world_load_episode::ArmQuiesceProbe");
-    OpenProbeSession_(reason);
+    if (g_request.load(std::memory_order_acquire) != 0) {
+        if (!g_sweepSkipSaid)
+            UE_LOGI("world_load_episode: %s waits on the pending request's probe session", reason);
+        g_sweepSkipSaid = true;
+        return;
+    }
+    OpenProbeSession_(reason, /*forRequest*/ false);
 }
+
+void InstallReplayWatch(coop::net::Session& session) {
+    if (session.role() == coop::net::Role::Host) return;
+    const bool pending = g_request.load(std::memory_order_acquire) != 0;
+    if (g_watchSettled && !pending) return;
+    const uint64_t now = coop::net::NowMs();
+    if (now < g_nextWatchMs) return;
+    g_nextWatchMs = now + 1000;
+    if (!g_watchRow) {
+        g_watchRow = coop::config::ResolveFlag(::coop::config_registry::rows::replay_watch_break)
+                         ? &kRowLoadObjectsRed : &kRowLoadObjects;
+        g_postDrop = coop::config::ResolveFlag(::coop::config_registry::rows::replay_post_drop);
+    }
+    if (!g_watchRegistered && !g_watchRefused.load(std::memory_order_relaxed)) {
+        g_watchRegistered = SG::WatchName(*g_watchRow, kTagReplay, nullptr, &OnLoadObjectsPost);
+        if (!g_watchRegistered) g_watchRefused.store(true, std::memory_order_relaxed);  // the consume owns the ERROR
+    }
+    if (!g_watchRegistered) return;
+    SG::ResolvePendingNames();
+    if (SG::NameWatchLive(*g_watchRow, kTagReplay)) {
+        if (!g_watchSettled) UE_LOGI("world_load_episode: the save-replay watch is live");
+        g_watchSettled = true;
+        g_watchDead = false;
+    } else if (SG::NameWatchSettled(*g_watchRow, kTagReplay)) {
+        g_watchSettled = true;
+        g_watchDead = true;
+    }
+}
+
+bool RequestWorldChangeProbe() {
+    UE_ASSERT_GAME_THREAD("world_load_episode::RequestWorldChangeProbe");
+    uint8_t expect = 0;
+    if (g_request.compare_exchange_strong(expect, static_cast<uint8_t>(Request::WorldChange),
+                                          std::memory_order_acq_rel)) {
+        g_requestRaisedAtMs.store(coop::net::NowMs(), std::memory_order_relaxed);
+        return true;
+    }
+    return expect == static_cast<uint8_t>(Request::WorldChange);
+}
+
+bool AwaitingSaveReplay() { return g_request.load(std::memory_order_acquire) != 0; }
+
+bool HasBaselineWorld() { return g_baseline.Raw() != nullptr; }
+
+bool IsBaselineWorld(void* world) {
+    return world && world == g_baseline.Raw() && g_baseline.Is(world);
+}
+
+void SetBaselineWorld(void* world) { g_baseline.Set(world); }
+
+void ClearBaselineWorld() { g_baseline.Reset(); }
+
+int64_t PendingRequestAgeMs() {
+    if (g_request.load(std::memory_order_acquire) != static_cast<uint8_t>(Request::WorldChange)) return -1;
+    return static_cast<int64_t>(coop::net::NowMs() - g_requestRaisedAtMs.load(std::memory_order_relaxed));
+}
+
+const RequestFailureInfo& RequestFailure() { return g_failure; }
 
 bool TickQuiesceProbe() {
     UE_ASSERT_GAME_THREAD("world_load_episode::TickQuiesceProbe");
@@ -198,10 +328,41 @@ bool TickQuiesceProbe() {
                 "patience)", kReconCeilingMs / 1000);
         ReconLowerGT_("ceiling");
     }
-    // Consume a pending session request: the session opens here, on the game thread, so the plain
-    // probe fields below are single-thread-owned.
-    if (g_joinProbeRequested.exchange(false, std::memory_order_acq_rel))
-        OpenProbeSession_("join world-load");
+    // A pending request: no session until the loaded world's save replay has returned, then the
+    // session opens here, on the game thread, so the plain probe fields below are single-thread-owned.
+    const auto req = static_cast<Request>(g_request.load(std::memory_order_acquire));
+    if (req != Request::None) {
+        if (!g_reqFlagsRead) {
+            g_reqGateBreak = coop::config::ResolveFlag(::coop::config_registry::rows::replay_gate_break);
+            g_reqFlagsRead = true;
+        }
+        g_probeOpen = false;
+        g_quiesced = false;  // (1) no session while a request pends
+        if (g_failure.failure == Failure::None && (g_watchRefused.load(std::memory_order_relaxed) || g_watchDead)) {
+            // (2) the watch cannot see the replay
+            const std::string row = coop::text::ToUtf8(std::wstring(g_watchRow->Class())) + "::" +
+                                    coop::text::ToUtf8(std::wstring(g_watchRow->Name()));
+            const std::string text = "the save-replay watch (" + row + ") is not live";
+            g_failure = {Failure::WatchDead, text};
+            UE_LOGE("world_load_episode: the save-replay watch (%s) is not live -- %s", row.c_str(),
+                    g_watchRefused.load(std::memory_order_relaxed) ? "the script gate refused it"
+                                                                   : "its function does not exist in this game build");
+        } else if (g_failure.failure == Failure::None && (g_reqGateBreak || SaveReplayedInThisWorld())) {
+            // (3) the replay returned: the request is consumed and its session opens
+            const auto was = static_cast<Request>(g_request.exchange(0, std::memory_order_acq_rel));
+            g_baseline.Set(WI::CurrentWorld());
+            g_reqFlagsRead = false;
+            g_sweepSkipSaid = false;
+            OpenProbeSession_(was == Request::Join ? "join world-load" : "world-change re-announce",
+                              /*forRequest*/ true);
+        } else if (g_failure.failure == Failure::None && req == Request::WorldChange &&
+                   PendingRequestAgeMs() >= kWorldChangeReplayBoundMs) {
+            // (4) the world change's bound
+            g_failure = {Failure::ReplayTimeout, "the new world's save replay never returned"};
+            UE_LOGE("world_load_episode: the new world's save replay never returned in %lld s (or this "
+                    "machine cannot name its world)", static_cast<long long>(kWorldChangeReplayBoundMs / 1000));
+        }
+    }
     if (!g_probeOpen) return HasQuiesced();  // steady, latched or vacuous: bool reads only
     const auto now = std::chrono::steady_clock::now();
     const auto msSince = [now](std::chrono::steady_clock::time_point t) {
@@ -212,7 +373,8 @@ bool TickQuiesceProbe() {
         msSince(g_lastScanAt) < kScanIntervalMs) return false;
     g_lastScanAt = now;
 
-    // The absolute ceiling fires even through a stuck purge, so the announce can never defer forever.
+    // The absolute ceiling fires even through a stuck purge, so an open session always latches; the wait
+    // for the save replay before it has its own end (a failure, or the join phase's watchdog).
     if (msSince(g_probeArmedAt) >= kAbsoluteCeilingMs) {
         UE_LOGW("world_load_episode: probe ABSOLUTE ceiling (%d s) -- latching DEGRADED (stuck "
                 "purge / pathological load; the settled-world guarantee does NOT hold for this join)",
@@ -240,7 +402,7 @@ bool TickQuiesceProbe() {
 }
 
 bool HasQuiesced() {
-    if (g_joinProbeRequested.load(std::memory_order_acquire)) return false;  // arm raised, session not yet open
+    if (g_request.load(std::memory_order_acquire) != 0) return false;  // request raised, session not yet open
     if (g_probeOpen) return false;    // mid-load: a session is probing
     if (!g_everOpened) return true;   // vacuous: no world-load observed since Reset -- nothing to wait for
     return g_quiesced;
@@ -254,7 +416,16 @@ long long MsSinceQuiesced() {
 
 void Reset() {
     g_inEpisode.store(false, std::memory_order_relaxed);
-    g_joinProbeRequested.store(false, std::memory_order_relaxed);
+    g_request.store(0, std::memory_order_relaxed);
+    g_replayGm.Reset();
+    g_replayPostAt = {};
+    g_baseline.Reset();
+    // The watch registration and a refusal last for the process; its liveness is read again.
+    g_watchSettled = false;
+    g_watchDead = false;
+    g_failure = {};
+    g_reqFlagsRead = false;
+    g_sweepSkipSaid = false;
     g_probeOpen = false;
     g_everOpened = false;  // back to vacuous: a reconnect with no world change announces freely
     g_quiesced = false;

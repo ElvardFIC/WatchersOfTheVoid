@@ -123,15 +123,22 @@ The game's loader destroys and respawns the world's props as it reads the save. 
 are the client's own rebuild churn, and broadcasting them would destroy the host's copies by key
 (a bare client join would strip the host of most of its keyed props), so the destroy seam runs
 inside a world-load episode that suppresses the broadcast
-(`coop/session/world_load_episode`). The same module runs the quiescence probe: five times a
+(`coop/session/world_load_episode`). The loader's last step is the gamemode's `loadObjects`, the
+world's save replay; the same module watches it by name on a client, and the quiescence probe opens
+only once it has returned in the world the client stands in (the announce used to follow the replay
+by timing margin alone, and now follows it by condition). From then on the probe runs: five times a
 second it counts the load-tail population, and the load is settled when the count holds across
-consecutive scans. Two deadlines bound a pathological load, one on no progress and one absolute;
-past either the client announces anyway, logged loudly as degraded.
+consecutive scans. One absolute deadline bounds a pathological load; past it the client announces
+anyway, logged loudly as degraded. The wait for the replay itself has no deadline on a join beyond the
+loading phase's budget, which names the gate ("the save has not finished loading"); a watch that
+cannot see the replay (the script gate refused it, or the game build has no such function) ends the
+join at once (`MV-J32`), and a world change's replay that does not return within 120 s ends the
+session (`MV-J27`) `[?]`.
 
 The client announces ready once per world, when a gameplay world is up, the prop registry is
-seeded for that world, no purge is running, the probe has settled, and the prop key index holds the
-world (`coop/session/net_pump`). This is the join barrier: no authoritative state lands in a world
-that is still churning. The key index term has no deadline and no degraded announce: an index that
+seeded for that world, no purge is running, the world's save replay has returned, the probe has
+settled, and the prop key index holds the world (`coop/session/net_pump`). This is the join barrier:
+no authoritative state lands in a world that is still churning. The key index term has no deadline and no degraded announce: an index that
 does not hold the world would duplicate it, so a build whose index cannot exist ends the join
 (`MV-J32`) instead, and on any other build the term clears once the index has seeded and the
 object index's last drain left no backlog, the session's first ticks. On
@@ -201,8 +208,8 @@ match; see the limits.
 
 A level travel replaces the engine world (a cave is not one: the caves are the gameplay map's own,
 kept by its `caveMaster`). The client's registry re-seeds, and when the current world differs from
-the one it announced against, the client re-announces after a fresh probe session settles the new
-world's load tail; the host runs the connect replay again. The replay is idempotent, and the
+the one this connection settled on, the client re-announces after the new world's save replay has
+returned and a fresh probe session settles its load tail; the host runs the connect replay again. The replay is idempotent, and the
 join-once placement is not repeated. The lanes that refuse a client's own calls of a device's verbs
 (doors, light groups, keypads) run a call natively while its object is in a world the client has
 not announced ready: that world's load is the host's save (`coop::net_pump::IsInAnnouncedWorld`).
@@ -400,7 +407,7 @@ and it is the reason the relay's own silence stays.
 |---|---|---|
 | the world at join | the host | its live world, captured and streamed whole |
 | what changed since the capture | the host | explicit deletes, the snapshot bracket, position corrections, per-lane seeds |
-| the ready signal | the client | announced at quiescence; the host never guesses when a world is loaded |
+| the ready signal | the client | announced after the world's save replay, at quiescence; the host never guesses when a world is loaded |
 | the joiner's placement | the client | the profile's standing spot once, for a returning player; else the base gate |
 | the joiner's profile (items, vitals, position) | the joiner; the host stores it | pushed before the world exists |
 | the world save | the host only | clients are blocked at the write chokepoint |
@@ -416,7 +423,7 @@ and it is the reason the relay's own silence stays.
 | `RosterRow` | host to all | who occupies a slot, zero meaning empty, and the host's number for that occupancy; re-sent as state |
 | `SaveTransferRequest`, `SaveTransferBegin`, `SaveTransferChunk` | client, then host | the request; total bytes, sidecar bytes, checksum, game mode; the chunks |
 | `PlayerInventoryBlob` | both | the per-player profile, pre-world |
-| `ClientWorldReady` | client to host | once per world, at quiescence |
+| `ClientWorldReady` | client to host | once per world, after its save replay, at quiescence |
 | `JoinPhaseNote` | host to one client | once a second while the host is working a phase of this join, or its link is delivering the bracket (`Draining`, `done` = KiB delivered): which phase, and how far in |
 | `SnapshotBegin`, `PropSpawn`, `PropSnapPos`, `PropDestroy`, `SnapshotComplete` | host to one client | the bracket; a `PropSnapPos` carries the host's drive context for its prop, and the client drops one older than a drive END still on its copy `[?]` |
 | `EventSnapshot` | host to one client | one per in-flight event |

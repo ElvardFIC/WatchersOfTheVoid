@@ -119,20 +119,23 @@ void NoteDownload(uint32_t doneBytes, uint32_t totalBytes);
 void BeginWorldLoad();
 
 // WHY THIS CLIENT HAS NOT ANNOUNCED WORLD-READY YET. Between the engine reaching gameplay and
-// the announce sit gates that are this machine's own, and five of the six carry no deadline of
-// their own: a local player that never resolves, three registry-coherence reads, and the prop key
-// index (which clears once it has seeded and the object index has no backlog, and ends the join,
-// MV-J32, on an install that can never seed). The sixth, the load-tail quiescence probe, carries its
-// own 120 s ceiling and always latches. Until B2 the only thing standing behind any of them was the
-// 240 s whole-join failsafe, which is deleted -- so the pump names the gate it is blocked on, once a
-// tick, and the phase waits on THAT changing. The same rule as the host's beacon, pointed at ourselves.
+// the announce sit gates that are this machine's own, and six of the seven carry no deadline of
+// their own: a local player that never resolves, three registry-coherence reads, the loaded world's
+// save replay (its own wait is bounded only for a world change, and a watch that cannot see the
+// replay ends the join by name), and the prop key index (which clears once it has seeded and the
+// object index has no backlog, and ends the join, MV-J32, on an install that can never seed). The
+// seventh, the load-tail quiescence probe, carries its own 120 s ceiling and always latches. Until B2
+// the only thing standing behind any of them was the 240 s whole-join failsafe, which is deleted --
+// so the pump names the gate it is blocked on, once a tick, and the phase waits on THAT changing. The
+// same rule as the host's beacon, pointed at ourselves.
 enum class WorldGate : uint8_t {
     None = 0,
     NoLocalPlayer,       // no possessed local player in a gameplay world yet
     RegistryUnseeded,    // the prop registry has never seeded
     RegistryOtherWorld,  // it is seeded, but for a world that is not the one we loaded
     RegistryPurging,     // it is draining a dead world
-    WorldSettling,       // the load tail has not quiesced -- the ONE gate with its own bound
+    SaveReplayPending,   // the loaded world's save replay has not returned yet
+    WorldSettling,       // the load tail has not quiesced -- the gate with its own ceiling
     KeyIndexPending,     // the prop key index has not caught up with the loaded world
 };
 

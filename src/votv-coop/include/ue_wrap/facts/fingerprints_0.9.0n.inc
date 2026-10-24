@@ -208,6 +208,8 @@ inline constexpr RefFn kRefFns[] = {
     {L"maingamemode_c", L"calcservereff", L"maingamemode_c.calcservereff", 0x6a2d5d90ab51fa2dull, 0x7d19aec2d386c9c2ull},
     {L"maingamemode_c", L"deleteactivesignal", L"maingamemode_c.deleteactivesignal", 0x6a2d5d90ab51fa2dull, 0xa51e52a96e2190f9ull},
     {L"maingamemode_c", L"deletesignal", L"maingamemode_c.deletesignal", 0xda44a5b9522df358ull, 0xc1b797e2975a61b7ull},
+    {L"maingamemode_c", L"loadobjects", L"maingamemode_c.loadobjects", 0x6a2d5d90ab51fa2dull, 0xcf59233f46bc5cbbull},
+    {L"maingamemode_c", L"loadobjectsjwred", nullptr, 0, 0},
     {L"maingamemode_c", L"save", L"maingamemode_c.save", 0xc4f1a88df726e6fcull, 0x3cd354c7b98676eaull},
     {L"maingamemode_c", L"saveanim", L"maingamemode_c.saveanim", 0x72b3d5f8ca0d3208ull, 0x8da4a7f736efe61bull},
     {L"maingamemode_c", L"savesignal", L"maingamemode_c.savesignal", 0x306a6d0c11d7acaeull, 0xe92e0ec65c65dd38ull},
