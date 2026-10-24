@@ -357,6 +357,9 @@ void OnReliable(const coop::net::AtvStatePayload& payload, uint8_t senderPeerSlo
         // stamp. The stamp is overwritten, never read from the sender, and the bits a client may not set are
         // masked (bit 3 is the host's own mark, bit 4 its trap).
         if (!AU::AdmitBlock(e, payload, senderPeerSlot, NowMs())) return;
+        // The re-arm of an accepted explosion request: the game explodes an ATV when its old health is at 0 or above,
+        // and the syncer's block says it is back there. A NaN stays blown.
+        if (payload.health >= 0.0f) e.blown = false;
         coop::atv_corrector::ApplyCorrection(e, payload, /*snap*/ false);
         coop::atv_condition_sync::ApplyPayload(e, payload, /*fromHost*/ false);
         coop::net::AtvStatePayload out = payload;
@@ -396,6 +399,11 @@ void OnReliable(const coop::net::AtvStatePayload& payload, uint8_t senderPeerSlo
 coop::net::Session* LaneSession() { return g_session.load(std::memory_order_acquire); }
 
 const AtvEntry* FindEntry(const std::wstring& key) {
+    auto it = g_atvs.find(key);
+    return it == g_atvs.end() ? nullptr : &it->second;
+}
+
+AtvEntry* FindEntryMutable(const std::wstring& key) {
     auto it = g_atvs.find(key);
     return it == g_atvs.end() ? nullptr : &it->second;
 }
@@ -598,6 +606,8 @@ void Tick() {
         if (!isHost) {
             TickClientBody(*s, e, kv.first, localPlayer, localSlot, gateOpen);
             A::ReadTrap(e.actor, e.copyTrapSeen);   // this copy's own trap, kept for the explosion request
+        } else if (e.blown && IsLocalSyncer(e, localSlot) && A::GetHealth(e.actor) >= 0.0f) {
+            e.blown = false;   // a wreck handed back to the host and lifted: the host's own copy is the one to read
         }
 
         // Tick ownership: this machine syncs the ATV (on the host: the table names the host), so it runs the

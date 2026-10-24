@@ -65,6 +65,11 @@ bool  GetBrake(void* atv);   // the handbrake
 bool ReadTrap(void* atv, bool& out);
 bool WriteTrap(void* atv, bool v);
 
+// Where the ATV's own `explode` places its blast: the world location of its `tp` billboard component. Resolved by name
+// with no fallback; false, with `out` the origin, on null, an unresolved ATV_C or `tp`, a null component or a call
+// that does not dispatch. Game thread.
+bool ReadTpLocation(void* atv, FVector& out);
+
 // The game's OWN rig-consistent teleport: ATV_C::teleportVehicle(NewLocation, NewRotation) --
 // K2_SetActorLocation(bTeleport=true) + K2_SetActorRotation(bTeleportPhysics=true), and THEN it
 // re-places frontWheel_R onto ax_FR1, frontWheel_L onto ax_FL1 and backWheelRoot onto `back`

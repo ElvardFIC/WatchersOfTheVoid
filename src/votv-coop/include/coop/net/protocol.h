@@ -30,7 +30,7 @@ inline constexpr uint32_t kMagic = 0x564D5450u;
 // This file is past the 1500-line hard cap and stays there: it is the single-feature exception the
 // rule names. One wire format, whose enum, payload structs and static_asserts are read together;
 // splitting it would put a kind's number in one file and its bytes in another.
-inline constexpr uint16_t kProtocolVersion = 248;
+inline constexpr uint16_t kProtocolVersion = 249;
 
 // Default LAN port (overridable via multivoid.ini "net.port=").
 inline constexpr uint16_t kDefaultPort = 47621;
@@ -1090,6 +1090,12 @@ enum class ReliableKind : uint8_t {
     // prop_lifecycle carry the replacement birth and source death. Late join: host save plus the
     // ordinary prop snapshot. Never relayed.
     SleepingbagIntent = 190,
+
+    // CLIENT->HOST: the ATV this client syncs exploded here and its blast was dissolved; the host judges the sender
+    // is that ATV's syncer and that it has not just blown, then spawns the blast at the ATV's own `tp`, and
+    // ExplosionSpawn carries it to every peer. Never relayed; not pre-world. Late join: none, a request is an act.
+    // AtvExplodeRequestPayload.
+    AtvExplodeRequest = 191,
 
     // CLIENT->HOST: this client's player lit a salt rocket (the lighter's attemptIgnite or ignite, or the torch's
     // ignite), which the client's own copy refused to run. The host judges the sender's reach and the tool its hand
@@ -3735,6 +3741,16 @@ struct ExplosionRequestPayload {
 };
 static_assert(sizeof(ExplosionRequestPayload) == 22, "ExplosionRequestPayload must be 22 bytes");
 static_assert(sizeof(ExplosionRequestPayload) <= 256 - 20 - 8, "ExplosionRequestPayload must fit in one reliable datagram");
+
+// A client's ATV exploded (AtvExplodeRequest): the ATV by its Key. `trapFired` is 1 when the story event's trap fell
+// in the explode's frame on the client's copy, which tells the host to clear its own copy's trap.
+struct AtvExplodeRequestPayload {
+    WireKey key;          // 32 -- the ATV's Key
+    uint8_t trapFired;    // 1  -- 0 or 1; anything else is malformed
+    uint8_t pad[3];       // 3  -- zero
+};
+static_assert(sizeof(AtvExplodeRequestPayload) == 36, "AtvExplodeRequestPayload must be 36 bytes");
+static_assert(sizeof(AtvExplodeRequestPayload) <= 256 - 20 - 8, "AtvExplodeRequestPayload must fit in one reliable datagram");
 
 // A client's light on a salt rocket (PropIgniteIntent): the rocket by its prop key, or by its host eid when it has
 // none, and which verb ran. The host's fuel (the game's own 10) is not on the wire.

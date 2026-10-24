@@ -2,7 +2,8 @@
 // queues and shot table, the budgets, the refusal note and the writable counters (their types are public), the
 // judges, the client half's install and clear, and the session.
 // Declarations only; the queue and counter definitions sit in explosion_request.cpp, the judges in
-// explosion_request_host.cpp and the client half in explosion_request_client.cpp. Impl-private: nothing outside
+// explosion_request_host.cpp (the ATV's in explosion_request_atv.cpp) and the client half in
+// explosion_request_client.cpp. Impl-private: nothing outside
 // coop/world includes this.
 
 #pragma once
@@ -15,6 +16,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
 
 namespace coop::net {
 class Session;
@@ -26,12 +28,14 @@ namespace coop::explosion_request::detail {
 inline constexpr size_t kFiredCap     = 64;
 inline constexpr size_t kShotBlastCap = 64;
 inline constexpr size_t kBodyBlastCap = 4;
+inline constexpr size_t kAtvBlastCap  = 8;
 
 // Each queue's own pacing, the only cadence of its judge: a person's fastest launcher input (the witch car fires
-// per press), a detonate-all of every live sticky in one frame, and one fuse or one burn.
+// per press), a detonate-all of every live sticky in one frame, one fuse or one burn, and one ATV's death.
 inline constexpr coop::net::IntentBudget kFired     = {16.0f, 10.0f};
 inline constexpr coop::net::IntentBudget kShotBlast = {64.0f, 10.0f};
 inline constexpr coop::net::IntentBudget kBodyBlast = {2.0f, 1.0f / 3.0f};
+inline constexpr coop::net::IntentBudget kAtvBlast  = {4.0f, 1.0f};
 
 // The judged shots kept per slot: a 65th evicts the oldest sticky entry, else the oldest.
 inline constexpr size_t kShotsMax = 64;
@@ -53,6 +57,10 @@ struct RequestItem {
     coop::net::ExplosionRequestPayload p;
     uint64_t                           recvMs;
 };
+// An ATV's request, by its key: the ATV is found again when the item is served.
+struct AtvItem {
+    std::wstring key;
+};
 
 // A judged shot: what the request that follows is bounded against. `recvMs` is the host's receive time of the
 // shot, so a paced queue never eats a rocket's reach.
@@ -70,6 +78,7 @@ struct Slot {
     coop::net::IntentQueue<FiredItem>   fired;
     coop::net::IntentQueue<RequestItem> shotBlast;
     coop::net::IntentQueue<RequestItem> bodyBlast;
+    coop::net::IntentQueue<AtvItem>     atvBlast;
     Shot                                shots[kShotsMax];
     size_t                              count = 0;
 };
@@ -90,12 +99,14 @@ void TickClient();
 void ClearClient();
 void ClearClientWorld();
 
-// The three judges, one per queue, in explosion_request_host.cpp. Each returns Done (accepted or refused) except
-// at its Waits, each bounded for an honest sender: the hand lane's refill, or the slot's own Fired queue draining.
-// Each measures its windows from its item's arrival, never from the tick that serves it.
+// The four judges, one per queue, the first three in explosion_request_host.cpp and the ATV's in
+// explosion_request_atv.cpp. Each returns Done (accepted or refused) except at its Waits, each bounded for an honest
+// sender: the hand lane's refill, or the slot's own Fired queue draining. Each measures its windows from its item's
+// arrival, never from the tick that serves it. The ATV's never waits.
 coop::net::Served JudgeShot(uint8_t slot, Slot& s, const FiredItem& it);
 coop::net::Served JudgeShotBlast(uint8_t slot, Slot& s, const RequestItem& it);
 coop::net::Served JudgeBody(uint8_t slot, Slot& s, const RequestItem& it);
+coop::net::Served JudgeAtvBlast(uint8_t slot, const AtvItem& it);
 
 // The one spawn of a request's blast, for every family, in explosion_request_host.cpp: the host's own parameters for
 // `src` at `level`, spawned natively inside the lane's scope so the birth seam leaves it alone. Refuses and counts

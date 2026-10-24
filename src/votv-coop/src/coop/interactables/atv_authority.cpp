@@ -355,6 +355,7 @@ void ClearTable(AtvEntry& e) {
     e.stampTrap = false;
     e.haveStampTrap = false;
     e.copyTrapSeen = false;
+    e.blown = false;
     e.stampDue = true;
 }
 

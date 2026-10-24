@@ -461,6 +461,7 @@ void OnClientProjectileBirth(void* actor) {
 void OnClientBirth(void* sourceObject, void* /*explosionActor*/) {
     coop::net::Session* s = detail::SessionPtr();
     if (!s || !sourceObject) return;
+    if (OnClientAtvBirth(sourceObject)) return;  // an ATV's own explosion has its own kind and its own judge
     const XS::Kind kind = XS::KindOfClass(R::ClassOf(sourceObject));
     coop::net::ExplosionRequestPayload p{};
     p.srcClass = RC::SrcClassOf(kind);

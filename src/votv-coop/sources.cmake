@@ -281,6 +281,7 @@ set(VOTVCOOP_SOURCES
     src/coop/world/spawn_authority.cpp
     src/coop/world/explosion_sync.cpp
     src/coop/world/explosion_request.cpp
+    src/coop/world/explosion_request_atv.cpp
     src/coop/world/explosion_request_host.cpp
     src/coop/world/explosion_request_client.cpp
     src/coop/world/salt_rocket_flight.cpp

@@ -134,6 +134,7 @@ constexpr ClientAuthorship AuthorshipOf(ReliableKind k) {
     case ReliableKind::CreatureHitIntent:
     case ReliableKind::ProjectileFired:
     case ReliableKind::ExplosionRequest:
+    case ReliableKind::AtvExplodeRequest:
     case ReliableKind::PropIgniteIntent:
     case ReliableKind::AtvSeat:
     case ReliableKind::AtvTakeover:

@@ -67,6 +67,8 @@ bool RequestWellFormed(const coop::net::ExplosionRequestPayload& p) {
                     src == XS::Kind::SoapGrenade) && p.shotId == 0 && p.pillLevel == 0.0f;
         case RC::RequestKind::Self:
             return src == XS::Kind::Player && p.shotId == 0 && Zero3(p.loc);
+        case RC::RequestKind::Atv:  // its own wire kind (AtvExplodeRequest), never this one
+            return false;
     }
     return false;
 }
@@ -119,6 +121,10 @@ const char* RefusalName(Refusal r) {
         case Refusal::PuppetDead:    return "puppet_dead";
         case Refusal::Unresolved:    return "unresolved";
         case Refusal::SpawnFailed:   return "spawn_failed";
+        case Refusal::NotSyncer:     return "not_syncer";
+        case Refusal::Blown:         return "blown";
+        case Refusal::UnknownAtv:    return "unknown_atv";
+        case Refusal::NoTp:          return "no_tp";
         case Refusal::Count:         break;
     }
     return "unknown";
@@ -154,7 +160,7 @@ void Tick() {
     g_refusals.Flush(coop::net::RefusalTally::Clock::now());
     coop::net::Session* s = detail::SessionPtr();
     if (!s || !s->running() || s->role() != coop::net::Role::Host) return;
-    // Per slot, in order: its shots, then the blasts of those shots, then the blasts of its body.
+    // Per slot, in order: its shots, then the blasts of those shots, then the blasts of its body, then its ATV's.
     for (uint8_t slot = 1; slot < coop::net::kMaxPeers; ++slot) {
         detail::Slot& sl = g_slots[slot];
         sl.fired.Serve(detail::kFired, coop::net::NowMs, [&](const detail::FiredItem& it) {
@@ -165,6 +171,9 @@ void Tick() {
         });
         sl.bodyBlast.Serve(detail::kBodyBlast, coop::net::NowMs, [&](const detail::RequestItem& it) {
             return detail::JudgeBody(slot, sl, it);
+        });
+        sl.atvBlast.Serve(detail::kAtvBlast, coop::net::NowMs, [&](const detail::AtvItem& it) {
+            return detail::JudgeAtvBlast(slot, it);
         });
         ExpireRockets(sl);
     }
@@ -199,19 +208,21 @@ void OnDisconnect() {
     const Counters& c = g_counters;
     const auto u = [](uint64_t v) { return static_cast<unsigned long long>(v); };
     const bool hostSaw = n > 0 || c.shotsAccepted || c.evicted || c.expired || c.waited || c.requestsAccepted[0] ||
-                         c.requestsAccepted[1] || c.requestsAccepted[2];
+                         c.requestsAccepted[1] || c.requestsAccepted[2] || c.requestsAccepted[3];
     if (hostSaw)
-        UE_LOGI("[EXPLOSION] request lane at disconnect: shots=%llu requests=%llu/%llu/%llu evicted=%llu "
+        UE_LOGI("[EXPLOSION] request lane at disconnect: shots=%llu requests=%llu/%llu/%llu/%llu evicted=%llu "
                 "expired=%llu waited=%llu%s%s refused%s", u(c.shotsAccepted), u(c.requestsAccepted[0]),
-                u(c.requestsAccepted[1]), u(c.requestsAccepted[2]), u(c.evicted), u(c.expired), u(c.waited),
-                nb > 0 ? " shotsBy" : "", by, line);
-    if (c.shotsSent || c.requestsSent[0] || c.requestsSent[1] || c.requestsSent[2] || c.pendingDropped ||
-        c.pendingDead || c.pendingOrphaned || c.clientDropped || c.unmappedProjectile || c.shotNotAnnounced)
-        UE_LOGI("[EXPLOSION] request lane at disconnect (client): shotsSent=%llu requestsSent=%llu/%llu/%llu "
+                u(c.requestsAccepted[1]), u(c.requestsAccepted[2]), u(c.requestsAccepted[3]), u(c.evicted),
+                u(c.expired), u(c.waited), nb > 0 ? " shotsBy" : "", by, line);
+    if (c.shotsSent || c.requestsSent[0] || c.requestsSent[1] || c.requestsSent[2] || c.requestsSent[3] ||
+        c.pendingDropped || c.pendingDead || c.pendingOrphaned || c.clientDropped || c.unmappedProjectile ||
+        c.shotNotAnnounced)
+        UE_LOGI("[EXPLOSION] request lane at disconnect (client): shotsSent=%llu requestsSent=%llu/%llu/%llu/%llu "
                 "pendingDropped=%llu pendingDead=%llu pendingOrphaned=%llu clientDropped=%llu "
                 "unmappedProjectile=%llu shotNotAnnounced=%llu", u(c.shotsSent), u(c.requestsSent[0]),
-                u(c.requestsSent[1]), u(c.requestsSent[2]), u(c.pendingDropped), u(c.pendingDead),
-                u(c.pendingOrphaned), u(c.clientDropped), u(c.unmappedProjectile), u(c.shotNotAnnounced));
+                u(c.requestsSent[1]), u(c.requestsSent[2]), u(c.requestsSent[3]), u(c.pendingDropped),
+                u(c.pendingDead), u(c.pendingOrphaned), u(c.clientDropped), u(c.unmappedProjectile),
+                u(c.shotNotAnnounced));
     for (int i = 0; i < g_slots.size(); ++i) g_slots[i] = detail::Slot{};
     detail::ClearClient();
     g_counters = Counters{};

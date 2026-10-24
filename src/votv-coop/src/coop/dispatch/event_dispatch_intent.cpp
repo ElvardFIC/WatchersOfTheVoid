@@ -422,6 +422,22 @@ bool HandleIntentEvent(net::Session& session,
         coop::explosion_request::OnRequestReceived(static_cast<int>(msg.senderPeerSlot), msg.payload, msg.payloadLen);
         break;
     }
+    case net::ReliableKind::AtvExplodeRequest: {
+        // CLIENT->HOST: the ATV this client syncs exploded here and its blast was dissolved. The host judges the
+        // sender is the ATV's syncer and performs the blast (coop::explosion_request); the format lives there,
+        // counted. Never relayed.
+        if (session.role() != net::Role::Host) {
+            UE_LOGW("event_feed: AtvExplodeRequest received on a client -- dropping");
+            break;
+        }
+        if (msg.senderPeerSlot < 1 || msg.senderPeerSlot >= net::kMaxPeers) {
+            UE_LOGW("event_feed: AtvExplodeRequest from invalid senderPeerSlot=%d -- dropping", msg.senderPeerSlot);
+            break;
+        }
+        coop::explosion_request::OnAtvRequestReceived(static_cast<int>(msg.senderPeerSlot), msg.payload,
+                                                      msg.payloadLen);
+        break;
+    }
     case net::ReliableKind::PropIgniteIntent: {
         // CLIENT->HOST: this client's player lit a salt rocket its own copy refused to run. The host judges the light
         // and performs it on its own copy (coop::salt_rocket_ignite); the format lives there, counted. Never relayed.

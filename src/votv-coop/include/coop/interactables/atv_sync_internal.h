@@ -3,9 +3,9 @@
 // atv_authority.cpp judges over it (the host's table: the seat and the syncer) and writes those
 // fields; atv_corrector.cpp mutates the fields of ONE entry when a packet arrives, and
 // atv_runtime_mirror.cpp asks for its two changes through the calls at the end, and atv_index.cpp
-// fills the map through the two globals under detail. Nothing outside
-// coop/interactables/ includes this -- the lane's public surface is
-// coop/interactables/atv_sync.h.
+// fills the map through the two globals under detail. Nothing outside coop/interactables/ includes this but the
+// explosion request lane's ATV family (coop/world/explosion_request_atv.cpp), which judges over an entry's syncer and
+// writes its `blown` through FindEntryMutable -- the lane's public surface is coop/interactables/atv_sync.h.
 
 #pragma once
 
@@ -55,6 +55,10 @@ struct AtvEntry {
     bool     stampTrap    = false;   // client: the last stamp's bit
     bool     haveStampTrap = false;  // client: a stamp has been seen (the first one writes the level)
     bool     copyTrapSeen = false;   // client: this copy's trap as of the last Tick (the explosion request reads it)
+    // Host: this ATV's syncer reported its explosion and the host has accepted the request; no second one is taken
+    // until the syncer's health is back at 0 or above (the game's own rule). The explosion request lane writes it,
+    // through FindEntryMutable; the host's block apply and Tick re-arm it. Cleared with the table.
+    bool     blown        = false;
     // This machine's own body, host and client alike (atv_body.cpp writes them, nothing else does).
     bool     localSeated  = false;   // the local player sits in this ATV
     bool     localCarrying = false;  // the local player's grav hand holds it
@@ -134,10 +138,12 @@ void ResetRequestSeq();
 
 // atv_sync.cpp's surface for atv_runtime_mirror.cpp and atv_authority.cpp, a client receiving an announced ATV: the lane's session,
 // whether the index belongs to this world, the row under a key, and that half's two structural changes -- a
-// fresh-spawned mirror adopted under the host's game Key, a row dropped with its actor's key. Game thread.
+// fresh-spawned mirror adopted under the host's game Key, a row dropped with its actor's key. FindEntryMutable is the
+// explosion request lane's write path to one entry (its `blown`). Game thread.
 coop::net::Session* LaneSession();
 bool IndexCurrent();
 const AtvEntry* FindEntry(const std::wstring& key);
+AtvEntry* FindEntryMutable(const std::wstring& key);
 void AdoptClientMirror(const std::wstring& key, void* actor);
 void EraseEntry(const std::wstring& key);
 

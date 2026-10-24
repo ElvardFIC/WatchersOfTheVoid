@@ -9,6 +9,7 @@
 #include "ue_wrap/core/call.h"      // ParamFrame / Call -- the GameplayStatics spawn (SpawnMirror)
 #include "ue_wrap/core/fname_utils.h"  // StringToFName -- SpawnMirror's key
 #include "ue_wrap/engine/engine.h"
+#include "ue_wrap/engine/engine_component.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/object_index.h"
 #include "ue_wrap/core/reflection.h"
@@ -33,6 +34,7 @@ int32_t g_healthOff   = -1;       // health   (0x05E4, float)
 int32_t g_brakeOff    = -1;       // Brake    (0x05D9, bool)
 int32_t g_trapOff     = -1;       // trap     (a bool bit: the byte, with its mask below)
 uint8_t g_trapMask    = 0;
+int32_t g_tpOff       = -1;       // tp       (a UBillboardComponent*: where `explode` places its blast)
 
 int32_t ResolveOff(void* cls, const wchar_t* name, int32_t fallback) {
     int32_t o = R::FindPropertyOffset(cls, name);
@@ -69,6 +71,9 @@ bool EnsureResolved() {
         g_trapOff = -1;
         UE_LOGW("atv: trap offset not found -- the story event's trap stays host-only");
     }
+    // No fallback: a miss leaves a client's ATV explosion unrequested, since the host has no place to put it.
+    g_tpOff = R::FindPropertyOffset(cls, L"tp");
+    if (g_tpOff < 0) UE_LOGW("atv: tp offset not found -- a client's ATV explosion cannot be requested");
 
     g_resolved.store(true, std::memory_order_release);
     UE_LOGI("atv: resolved ATV_C=%p Key@0x%04X Player@0x%04X isDriven@0x%04X fuel@0x%04X "
@@ -153,6 +158,13 @@ bool WriteTrap(void* atv, bool v) {
     uint8_t& byte = *(reinterpret_cast<uint8_t*>(atv) + g_trapOff);
     byte = v ? static_cast<uint8_t>(byte | g_trapMask) : static_cast<uint8_t>(byte & ~g_trapMask);
     return true;
+}
+
+bool ReadTpLocation(void* atv, FVector& out) {
+    out = FVector{};
+    if (!atv || g_tpOff < 0) return false;
+    void* tp = *reinterpret_cast<void* const*>(reinterpret_cast<const char*>(atv) + g_tpOff);
+    return tp && engine::TryGetComponentLocation(tp, out);
 }
 
 bool TeleportRig(void* atv, const FVector& loc, const FRotator& rot) {

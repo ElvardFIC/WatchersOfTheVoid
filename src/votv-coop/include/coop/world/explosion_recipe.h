@@ -18,7 +18,9 @@ enum class Launcher : uint8_t { Rpg = 1, StickyLauncher = 2, WitchCar = 3 };
 // The length of an array indexed by a Launcher's value (index 0 is no launcher), from the enum's last value.
 // A launcher added after WitchCar must move this to the new last value.
 inline constexpr size_t kLauncherSlots = static_cast<size_t>(Launcher::WitchCar) + 1;
-enum class RequestKind : uint8_t { Projectile = 1, Hand = 2, Self = 3 };
+// Atv is the lane's fourth family and never rides ExplosionRequest's wire (its own kind, AtvExplodeRequest); the
+// receive refuses it there as malformed.
+enum class RequestKind : uint8_t { Projectile = 1, Hand = 2, Self = 3, Atv = 4 };
 
 // L"prop_funGun_rpg_C", L"prop_funGun_stickyLauncher_C", L"car1_witch_C"; null for any other value.
 const wchar_t* LauncherClassName(uint8_t launcher);

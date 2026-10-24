@@ -236,6 +236,7 @@ inline Lane LaneForKind(ReliableKind k) {
     // is judged against the sender's hand states, which ride Normal.
     case ReliableKind::ProjectileFired:   return Lane::Normal;
     case ReliableKind::ExplosionRequest:  return Lane::Normal;
+    case ReliableKind::AtvExplodeRequest: return Lane::Normal;
     case ReliableKind::PropIgniteIntent:  return Lane::Normal;
     // A take or use: the request and its reply ride Normal; the commit rides PropDestroy's lane (Bulk), where PropDropIntent
     // is order-paired with it, so the item's drop cannot overtake it. The next request (Normal) can reach the host before this
