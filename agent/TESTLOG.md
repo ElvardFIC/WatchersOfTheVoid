@@ -1,3 +1,45 @@
+# Package 0.9.2160 / b2215 (25 October 2026)
+
+Prepared the requested manager package with the combined upstream/fork source
+and ten native damage/slice/hit fixes now checked in TODO. Those fixes have 23
+scenario groups and ten compiled source-copy controls; actual getter dispatch,
+hit construction, parameter bindings, owner/class/source lifetime and wall
+destruction run through controlled native boundaries. Cutting/fragment gameplay
+is a separate path and remains unaccepted.
+
+The canonical production snapshot exactly matches the already qualified 94-group
+integration snapshot `67fc6c1e8c87ae12efbaf938d60248bf0d4d84d42e7fe5fad71fc0ced348ff88`.
+The new metadata-driven `package/build_current.ps1` reuses that complete evidence
+only after matching protocol and production hashes. `FreshFullRegression=false`
+and `RegressionReuse` retain the original report/hash/scope; this is not a new
+execution of all 94 groups on the changed public-version label.
+
+PASS fresh Release/ABI **0.9.0n b2215**, 842 build source entries, and the actual
+menu/browser formatter using its generated header: **Watchers of the Void 0.9.2160**.
+PASS complete manager archive: 32 members, exact DLL/content hashes, identity,
+enabled loader, shimloader dependency, 256x256 icon and starter-model paks.
+PASS five package controls rejecting failed, incomplete or focused qualification,
+stale labels and wrong DLLs. Public prose and final diff checks pass.
+PASS current fact-row gate: **565 rows / 181 files**, reference 0.9.0n.
+
+DLL SHA256: `e859eada7c2da04d7e60fd654d418678621158385ec6eab6d495b5b6826bc534`.
+ZIP SHA256: `5522ba389cc46535336e8a967c525f015a28c7931b47c059f306cb77725be59a`.
+Archive: `dist/ElvardFIC-WatchersOfTheVoid-0.9.2160.zip` (15,185,210 bytes).
+Evidence: `build/release-2160/verification.json`, retained reference qualification
+and source snapshot, `build/package-current/verification.json`,
+`build/package-current/rejection-controls.json`, `dist/SHA256SUMS-current.txt`.
+
+The requested GitHub README/changelog/release descriptions are published in
+`157fefd70743e93392fa1b0c2affc41dd9e01aa5`; the shared 201-character short About
+description is updated through the official API and read back. The connector
+publishes the documentation commit with a checked branch lease. Local main is
+fast-forwarded only after every published file matches its local content.
+Evidence: `build/release-2160/github-publication.json`. No GitHub binary release
+is created. The new Thunderstore README/manifest/changelog are inside the ZIP,
+but the live page has not been updated here: its upload API access is missing.
+No game run, game installation or master deployment was performed. Existing
+rendered, event/effect and debit/output/refund acceptance remains open.
+
 # Upstream integration b2215 (25 October 2026)
 
 Merged VOTV-MP/Multivoid through `ad531561142ff5685153dc799f9ff2de4af07056`

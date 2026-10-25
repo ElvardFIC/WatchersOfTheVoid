@@ -5,7 +5,7 @@ code with recorded verification; unchecked items mean remaining implementation
 or a named acceptance test that has not passed. Completed code does not close an
 unreproduced report or an unperformed rendered multiplayer test.
 
-## Priority acceptance — 0.9.2159
+## Priority acceptance — 0.9.2160
 
 - [x] Implement blast-driven prop discovery/motion and final rest publication,
   including zero-damage force-only blasts (b2189–b2190). Targeted native LAN and
@@ -26,17 +26,24 @@ unreproduced report or an unperformed rendered multiplayer test.
 
 ## Current baseline and pending acceptance
 
-Current development: **DLL b2215 / protocol 2215**, game **0.9.0n**, targeting
-package **0.9.2159**. Upstream `ad5315611` is merged with all local history,
+Current development: **DLL b2215 / protocol 2215**, game **0.9.0n**, package
+**0.9.2160**. Upstream `ad5315611` is merged with all local history,
 including native-action/hit-result fixes from `ddc711220`.
 **94/94 full regression groups pass**; Release/ABI qualification is recorded in
 `build/upstream-qualified-2215/verification.json`. See [TESTLOG.md](TESTLOG.md).
 Native blast/ATV evidence was recorded on earlier DLLs. Rendered gameplay and
 real keyboard input still need acceptance.
 
-Last prepared manager package: **0.9.2158 / DLL b2186 / protocol 2186**.
-Its Release, **68/68 offline groups**, package label and archive checks passed.
-It does not include the b2187–b2215 fixes; no 2159 archive is prepared.
+Prepared manager package: **0.9.2160 / DLL b2215 / protocol 2215**.
+Its fresh Release/ABI, package label, 32-member archive and five rejection controls
+pass. The complete 94-group results are reused from the identical production
+snapshot; they were not freshly rerun for the new public-version label.
+Evidence: `build/release-2160/verification.json` and `build/package-current/verification.json`.
+Thunderstore upload remains pending access; no game startup or master deployment is claimed.
+- [x] Prepare and verify package 0.9.2160, including its public version label and
+  shared description; publish README/release descriptions and short About text on GitHub.
+- [ ] Upload 0.9.2160 to Thunderstore to update the live description; the prepared
+  ZIP contains the new README/manifest/changelog. API access is still needed here.
 Verification history remains in [TESTLOG.md](TESTLOG.md); completed release reports
 and superseded build instructions have been removed from this backlog.
 
@@ -72,6 +79,35 @@ Blueprint extraction and the imported native-contract suite now pass.
 Details: [WORK.md](WORK.md), [ENTITY_COVERAGE.md](ENTITY_COVERAGE.md).
 
 ## Report batch of 24 October (numbers local to this batch)
+
+### Implemented — ten native damage/slice/hit fixes (b2215)
+
+- [x] Capture client actor/class, player/person and function/owner before native
+  argument lookup; retired input cannot enqueue a hit against a replacement.
+- [x] Refuse reflected client damage/slice echoes and revalidate the current tool
+  before submission, preserving host ownership of world mutations.
+- [x] Revalidate the receiver's exact world key and current author through damage
+  and slice preparation; authorization cannot migrate to a retagged target.
+- [x] Recheck the live melee tool and damage allowance after callback-capable
+  preparation instead of retaining an old held-item proof.
+- [x] Guard inherited damage function/owner, actor/class and parameter binding
+  through native dispatch, without reading a retired target for failure logging.
+- [x] Bind damage to the current mesh/class and finite position through hit
+  construction; metadata and component replacement cannot authorize an old hit.
+- [x] Invoke the native actor isNotSawable getter, including overrides; it is a
+  function rather than a component field. Refuse failed/unreadable/reentrant
+  getter work and preserve source/function/tool currency through slice dispatch.
+- [x] Carry caller/source ownership through wall damage metadata, location and
+  argument preparation, while preserving native destruction as a valid outcome.
+- [x] Check every MakeHitResult binding, exact destination struct, blocking flag,
+  weak target and source/function lifetime before writing the owned hit bytes.
+- [x] Protect hit-field destination/class/offset/schema and bounds through native
+  construction; retry missing/replaced layout metadata and retain caller location.
+
+PASS 23 new scenario groups and ten compiled fault controls, included in the
+94-group qualified source snapshot. Native/cooked contracts distinguish inherited
+damage, the base no-op slice and the hacksaw's separate mesh-cut/broken path.
+Rendered impacts, cutting/fragment replication and full gameplay acceptance stay open.
 
 ### Implemented — ten prop-action/MRE delivery fixes (b2214)
 
@@ -612,8 +648,8 @@ Keep personal Insomniac/nightmare and native personal spawn conditions local.
 
 ## Gameplay acceptance checklist
 
-Use matching development **b2214** DLLs for new checks; the prepared 0.9.2158
-package remains **b2186**. Record role, item/model, reproduction and logs.
+Use matching **0.9.2160 / b2215** packages for new checks. Record role,
+item/model, reproduction and logs.
 Offline tests do not close gameplay reports. Mining (6) stays closed; previously
 working nightmares (10) only need acceptance of the newer personal-sleep behavior.
 Wall41 remains excluded.
@@ -679,15 +715,15 @@ Wall41 remains excluded.
 - [ ] Resolve the remaining public-prose counters recorded in TESTLOG:
   document count 85/82, src.comment_doc_row 155/0 and
   src.files_not_swept 84/0 with the reading-room checkouts absent.
-  The latest fact-row gate passes (517 rows/166 files);
+  The latest fact-row gate passes (565 rows/181 files);
   older missing-reference/unused-row findings are superseded.
 
 ## Release preparation
 
-Package 0.9.2158 is prepared locally with offline-test qualification.
-Requalify changed source and build the next package through package/release.json,
-package/check_current.ps1 and package/package_current.ps1. Native startup and
-rendered multiplayer acceptance remain open; see TESTLOG for verification limits.
+Package 0.9.2160 is prepared and its GitHub descriptions are published. Thunderstore
+upload remains pending API access or manual import of the verified ZIP. Use
+package/build_current.ps1 and package/release.json for later builds. Native startup
+and rendered multiplayer acceptance remain open; see TESTLOG for verification limits.
 
 Commit, push, game installation and publication require an explicit request.
 No other-agent workflow. Update the active tracking documents in place.

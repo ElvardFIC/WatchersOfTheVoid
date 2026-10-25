@@ -1,11 +1,15 @@
 # WORK — current state and open work
 
-Current development: **DLL b2215 / protocol 2215**, game **0.9.0n**, targeting
-package **0.9.2159**. **94/94 full regression groups pass**; Release/ABI evidence:
+Current development: **DLL b2215 / protocol 2215**, game **0.9.0n**, package
+**0.9.2160**. **94/94 full regression groups pass**; underlying-source evidence:
 `build/upstream-qualified-2215/verification.json`. Upstream `ad5315611` and
 local native-action/hit-result fixes `ddc711220` are included with their history.
-Last prepared manager package: **0.9.2158 / DLL b2186 / protocol 2186**,
-qualified with **68/68 groups**. It excludes b2187–b2215; no 2159 archive is prepared.
+Prepared manager package: **0.9.2160 / DLL b2215 / protocol 2215**. Matching-source
+94-group results are reused for its public-version change; fresh Release/ABI,
+menu/browser label, 32-member archive and five package rejection controls pass.
+Current package evidence: `build/release-2160/verification.json` and
+`build/package-current/verification.json`. Thunderstore upload remains pending
+access. Rendered gameplay, manager startup and master deployment remain unverified.
 
 [TODO.md](TODO.md) owns priorities and report checklists.
 [TESTLOG.md](TESTLOG.md) owns completed-change reports, hashes and evidence.
@@ -30,8 +34,8 @@ host state twice. Details and verification boundaries: [TESTLOG.md](TESTLOG.md).
 
 Rendered host/client acceptance remains open for these combined paths, including
 concurrent actions, driver handoff, force-only blasts and late join. Every peer
-requires b2215. No manager archive, game installation or master deployment was
-performed; older acceptance items below remain open.
+requires b2215. The subsequent 0.9.2160 package is recorded above; no game
+installation or master deployment was performed. Older acceptance items remain open.
 
 ## 24 October report batch
 
@@ -139,11 +143,12 @@ Wall41; chair reports 11/36 are duplicates. Previously working nightmares (10)
 need acceptance of newer personal-sleep behavior. Use identical current DLLs and
 record role, item/model, reproduction and logs in TESTLOG before closing reports.
 
-The latest fact-row gate passes **517 rows / 166 files**. Remaining public-prose
+The latest fact-row gate passes **565 rows / 181 files**. Remaining public-prose
 counters: documents **85/82**, src.comment_doc_row **155/0** and
 src.files_not_swept **84/0**, with reading-room checkouts absent.
 Full-manager-package startup and rendered multiplayer remain unverified.
-Requalify changed source through current package scripts/metadata. Publication is pending.
+Requalify changed source through current package scripts/metadata. GitHub descriptions
+are published; the 0.9.2160 Thunderstore upload remains pending access.
 
 ## Requested event synchronization and frequency
 

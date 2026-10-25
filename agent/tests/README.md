@@ -1,5 +1,15 @@
 # Regression tests
 
+`run_prop_action_native.ps1 -FaultControls` covers nine controller scenario groups,
+ten actual hit-wrapper/ParamFrame groups and four wall-wrapper groups. It checks
+current actor/key/player/tool/metadata through native damage and slice preparation,
+client input retirement, the actual isNotSawable getter and its reentry/refusal,
+required hit bindings, exact schemas/weak pointers/blocking, destination lifetime,
+layout recovery and native wall destruction. Ten source-copy controls reach their
+intended failing assertions. Cooked evidence confirms the getter call, inherited
+damage forwarding, the base slice no-op and the distinct hacksaw mesh-break path.
+These checks do not accept rendered cutting or fragment synchronization.
+
 `run_upstream_integration.ps1` validates the merged native blast decoder with
 valid, force-only and salt-rocket packets, malformed lengths, non-finite values,
 coordinate/scale/range limits and private-PC refusal. It runs the real drone
