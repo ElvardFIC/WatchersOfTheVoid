@@ -22,6 +22,7 @@ $offlineTest = $release.PSObject.Properties['qualification_level'] -and $release
 if ($offlineTest) {
     if ($qualification.Protocol -ne $release.protocol -or $qualification.ProductVersion -ne $expectedVersion -or
         $qualification.DllSHA256 -ne $dllHash -or -not $qualification.BuildUpToDate -or
+        -not $qualification.PSObject.Properties['FullRegression'] -or -not $qualification.FullRegression -or
         $qualification.PassingGroups -lt 68 -or $qualification.PassingGroups -ne $qualification.Results.Count -or
         @($qualification.Results | Where-Object { $_.ExitCode -ne 0 }).Count -ne 0 -or
         -not $qualification.PSObject.Properties['ui'] -or
@@ -56,7 +57,7 @@ foreach ($file in (Get-ChildItem -LiteralPath (Join-Path $root 'src/votv-coop/sr
     $relative = $file.FullName.Substring($root.Length + 1).Replace('\','/')
     if (-not $recorded.ContainsKey($relative)) { throw "Unqualified production input: $relative" }
 }
-$description = 'Watchers of the Void by ElvardFIC and AquaFishhh. VotV 0.9.0n co-op with 2-32 player hosting. Every version is a test version, requires extensive testing and may be unstable.'
+$description = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'description.txt'),[Text.Encoding]::UTF8).Trim()
 $manifest = [ordered]@{
     name = $release.name; version_number = $release.version_number
     website_url = 'https://github.com/ElvardFIC/WatchersOfTheVoid'

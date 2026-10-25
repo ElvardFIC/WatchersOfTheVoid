@@ -1,11 +1,11 @@
 {
   "name": "WatchersOfTheVoid",
   "namespace": "ElvardFIC",
-  "version_number": "0.9.2158",
+  "version_number": "0.9.2160",
   "game_target": "0.9.0n",
-  "protocol": 2186,
+  "protocol": 2215,
   "dll": "build/votv-coop-2154/main.dll",
-  "qualification": "build/release-2158/verification.json",
-  "source_snapshot": "build/release-2158/source-before.json",
+  "qualification": "build/release-2160/verification.json",
+  "source_snapshot": "build/release-2160/source-before.json",
   "qualification_level": "offline-test"
 }

@@ -1,3 +1,28 @@
+## 0.9.2160
+
+- Package the current combined fork and upstream source as DLL/network **b2215**
+  for VotV **0.9.0n**. All players must update together.
+- Finish the remembered 2-32-player chooser across both hosting menus and all
+  admission paths. Larger automatic lobbies still need the matching master service.
+- Implement shared shovel holes, can-portion guards, all-player sleep voting,
+  companion ATV recovery and current Ariral ship presentation/join state.
+- Improve concurrent console ownership, ordered request/history delivery,
+  input consumption and native display callback lifetime.
+- Preserve exact inventory/container identities through checked restoration,
+  refused sends, joining and proven local failed-extraction recovery.
+- Guard food final bites and MRE output provenance; fix native saw eligibility
+  lookup and protect damage/slice/hit/wall preparation from stale state.
+- Retain bleeding, ATV steering, blast-driven prop movement, material-stock and
+  guarded host wall-delivery changes since 0.9.2158.
+- Integrate upstream damage/creature intents, host ATV ownership/join tables,
+  editing/codecs and device/UI fixes while retaining fork synchronization guards.
+- Remove the main-menu tester roll and outdated promotional attribution.
+- The identical production source snapshot passed 94/94 offline groups. These
+  results are reused for the public-version change; Release, label and package
+  checks are fresh. Rendered multiplayer and remaining transaction/event cases
+  are still open. Every version is a test version, requires extensive testing
+  and may be unstable.
+
 ## 0.9.2158
 
 - Restore registration headroom for shared door, switch and container script watches.

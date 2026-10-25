@@ -3,8 +3,8 @@
 **By ElvardFIC, co-maintained by AquaFishhh** — community co-op for Voices of the Void.
 
 Play Voices of the Void together, with accumulated co-op synchronization fixes and improvements.
-Version **0.9.2158** targets **Voices of the Void Alpha 0.9.0n** on Windows.
-The in-game mod label also shows **Watchers of the Void 0.9.2158**.
+Version **0.9.2160** targets **Voices of the Void Alpha 0.9.0n** on Windows.
+The in-game mod label also shows **Watchers of the Void 0.9.2160**.
 
 Source: [ElvardFIC/WatchersOfTheVoid](https://github.com/ElvardFIC/WatchersOfTheVoid).
 
@@ -17,6 +17,10 @@ Source: [ElvardFIC/WatchersOfTheVoid](https://github.com/ElvardFIC/WatchersOfThe
 - Ordered console output, toy/music recovery, garden/hose actions and current held-item profile capture.
 - Accumulated creature, personal-sleep, laptop, selected-model and shared-interaction improvements.
 - Configurable 2-32 player hosting and selected upstream item/creature-state fixes.
+- Shared shovel holes, guarded canned-food portions and final-bite/MRE output handling.
+- Console queues and panel ownership, personal sleep voting, companion ATV recovery and Ariral ship presentation.
+- Checked inventory/container restoration, local failed-extraction recovery and safer native damage/saw requests.
+- The current upstream integration, preserving this fork's player capacity, item identity and delivery guards.
 
 See CHANGELOG.md for the full change list. Some systems are only partially implemented.
 
@@ -24,11 +28,11 @@ See CHANGELOG.md for the full change list. Some systems are only partially imple
 
 Install with r2modman or Thunderstore Mod Manager; the Unreal shimloader dependency is included in the manifest.
 Use a profile with this fork as the only Multivoid implementation: disable the original Multivoid or an earlier fork copy.
-For a downloaded build, import **ElvardFIC-WatchersOfTheVoid-0.9.2158.zip** using
+For a downloaded build, import **ElvardFIC-WatchersOfTheVoid-0.9.2160.zip** using
 the manager's **Import local mod** action. The package identity remains
 **ElvardFIC-WatchersOfTheVoid**. Remove the mistakenly imported **ragdoll** entry
 if it was created from the earlier DLL-only archive.
-Every player must use this exact **0.9.2158** package and the same game version.
+Every player must use this exact **0.9.2160** package and the same game version.
 
 ## Current status
 
@@ -36,15 +40,16 @@ Every player must use this exact **0.9.2158** package and the same game version.
 > Bugs, crashes and multiplayer desynchronization may occur. Automated checks do not
 > guarantee stable gameplay. Test with matching host/client packages and report issues.
 
-This test package contains **DLL b2186 / network protocol 2186**.
-It includes flashlight/container delivery and shared-watch startup fixes,
-configurable 2-32 player hosting, and selected upstream creature/item-state fixes.
+This test package contains **DLL b2215 / network protocol 2215** and includes the
+changes since 0.9.2158, plus the current upstream integration.
 Automatic joins above four players also require the updated master service.
 
-Release compilation, offline regressions, version labels and archive checks are
-recorded in RELEASE.md. Rendered gameplay, real-peer synchronization and full event
-coverage remain unverified for this exact build. Existing repair/resource and
-reported gameplay issues remain open.
+The identical production source snapshot passed **94/94 offline groups**.
+Those results are reused for this public-version change; fresh Release compilation,
+menu/browser label and archive checks are recorded in RELEASE.md.
+Rendered gameplay, real-peer synchronization and full event coverage remain
+unverified for this exact package. Paid client repair, resource transactions,
+ancillary MRE effects and other reported gameplay cases remain open.
 
 ## Credits
 

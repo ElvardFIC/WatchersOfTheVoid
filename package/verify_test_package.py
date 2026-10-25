@@ -13,7 +13,7 @@ qualification = json.loads(original.decode("utf-8-sig"))
 assert qualification["TwoPlayerGameplayVerified"] is False
 controls = []
 try:
-    for name in ("failed_group", "stale_label", "wrong_dll", "incomplete_suite"):
+    for name in ("failed_group", "stale_label", "wrong_dll", "incomplete_suite", "focused_suite"):
         bad = copy.deepcopy(qualification)
         if name == "failed_group":
             bad["Results"][0]["ExitCode"] = 1
@@ -21,8 +21,10 @@ try:
             bad["ui"]["packageLabel"] = "Watchers of the Void 0.9.2157"
         elif name == "wrong_dll":
             bad["DllSHA256"] = "0" * 64
-        else:
+        elif name == "incomplete_suite":
             bad["PassingGroups"] = 0
+        else:
+            bad["FullRegression"] = False
         path.write_text(json.dumps(bad))
         result = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
                                  str(root / "package/package_current.ps1"), "-VerifyOnly"],
