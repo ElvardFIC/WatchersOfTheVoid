@@ -230,7 +230,7 @@ void ClientWait(Arm a, bool due) {
         WalkStart(g_c, a, t, a == Arm::Grab ? kGrabReachCm : kSitReachCm);
         return ClientEnter(CP::Walk, "walk");
     }
-    if (WaitBound(g_c, a) == Stage::Failed) ClientEnd();
+    if (WaitBound(g_c, a, &g_c.spawn) == Stage::Failed) ClientEnd();
 }
 
 void ClientWalk(Arm a, void* player) {

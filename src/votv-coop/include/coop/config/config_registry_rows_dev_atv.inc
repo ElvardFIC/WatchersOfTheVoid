@@ -25,7 +25,8 @@ CFG_FLAG(atv_park_first_spawn, "atv_park_first_spawn", "dev", false, "VOTVCOOP_A
 CFG_ENUM(atv_health_drill, "atv_health_drill", "dev", "off",
     "off|sit|grab|occupied|synced|silent|gate|owner|trap|spawned|carry_still|synced_peer|join|stream_pace",
     "VOTVCOOP_ATV_HEALTH_DRILL",
-    "Drill, the ATV lane's table; set on BOTH peers, the arm names what is done to the world's own ATV. sit: "
+    "Drill, the ATV lane's table; set on BOTH peers, the arm names what is done to the ATV the host spawns "
+    "beside the players (trap: the world's own ATV). sit: "
     "the client walks to the ATV with the director, takes its seat and leaves it; the host must name the client as "
     "occupant and syncer, then free the seat, then take the ATV back once it rests. grab: the client grabs the ATV "
     "with the grav hand and lets it go; the host must name the client as syncer with the seat free, then take the "

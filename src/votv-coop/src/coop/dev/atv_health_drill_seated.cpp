@@ -74,9 +74,16 @@ void WalkStart(SeatedClient& c, Arm a, const AtvAt& t, float reachCm) {
             t.at.X, t.at.Y, t.at.Z);
 }
 
-Stage WaitBound(SeatedClient& c, Arm a) {
+Stage WaitBound(SeatedClient& c, Arm a, const SpawnedWait* w) {
     if (!Past(c.run, kFailBound)) return Stage::Wait;
-    Fail(c.role, a, c.run, "the client's streams or the ATV's table never held", "not ready",
+    std::string got = "not ready";
+    if (w) {
+        if (!w->readySaid) got = "the client's streams never ran (no ready line said)";
+        else if (!w->haveKey) got = "the host's ATV key line never came";
+        else if (!w->sawParked) got = "the host's `" + PhaseLine("parked") + "` line never came";
+        else got = "the table never held the parked ATV";
+    }
+    Fail(c.role, a, c.run, "the client's streams or the ATV's table never held", got,
          "streams running, ATV indexed");
     return Stage::Failed;
 }

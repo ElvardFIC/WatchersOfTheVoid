@@ -129,7 +129,7 @@ void HostPark(Arm a) {
 // The client seated (occupant and syncer): the counters are snapshotted, and the arm's act is the host's one move.
 void HostSeated(Arm a, const TableView* t) {
     DHost& h = g_dh;
-    if (!t) return HostFail(a, "the ATV is gone before the seat", "no ATV", "the world's ATV");
+    if (!t) return HostFail(a, "the ATV is gone before the seat", "no ATV", "the ATV the arm acts on");
     if (a == Arm::Trap && !h.carChecked) {
         h.carChecked = true;
         if (GamemodeCar() != t->actor)
@@ -192,7 +192,7 @@ void HostJudgeGate(Arm a) {
 // cleared. The mark and the clear are latched as seen: the client's next health report can re-arm the mark.
 void HostJudge(Arm a, const TableView* t) {
     DHost& h = g_dh;
-    if (!t) return HostFail(a, "the ATV is gone before the judgement", "no ATV", "the world's ATV");
+    if (!t) return HostFail(a, "the ATV is gone before the judgement", "no ATV", "the ATV the arm acts on");
     if (a == Arm::Gate) return HostJudgeGate(a);
     if (t->blown && t->blownBy == kSlot) h.sawBlown = true;
     if (!t->trap) h.sawTrapClear = true;
@@ -248,7 +248,7 @@ enum class CPh : int { Wait, Walk, Sit, Edge, Judge, Fired, Blown, Kill, Killed,
 
 struct DClient : SeatedClient {
     bool                                            sawEdge = false, sawBlown = false, sawBack = false;
-    GATE::Counters                                  gate0{};   // at the ready line, before any blast can run
+    GATE::Counters                                  gate0{};   // when the ATV is parked, before any blast can run
     ER::Counters                                    req0{};    // at the kill (owner) or the press (trap)
     uint64_t                                        applied0 = 0;   // the lane's applied blasts at the kill or the press
     SpawnedWait                                     spawn;     // the host's ATV (not trap): its key and its `parked`
@@ -349,7 +349,7 @@ bool KillFixture(Arm a, void* atv, bool snapshot) {
     return true;
 }
 
-// The gate's counters are snapshotted at the ready line: the host blasts only after the client sat, which is after it.
+// The gate's counters are snapshotted when the ATV is parked: the host blasts only after the client sat.
 void ClientWait(Arm a, bool due) {
     AtvAt t;
     if (a == Arm::Trap ? AtvReady(kWorldAtvKey, &t) : SpawnedAtvReady(g_dc.spawn, a, due, &t)) {
@@ -359,7 +359,7 @@ void ClientWait(Arm a, bool due) {
         WalkStart(g_dc, a, t, kSitReachCm);
         return ClientPhase(CPh::Walk, "walk");
     }
-    if (WaitBound(g_dc, a) == Stage::Failed) ClientEnd();
+    if (WaitBound(g_dc, a, a == Arm::Trap ? nullptr : &g_dc.spawn) == Stage::Failed) ClientEnd();
 }
 
 void ClientWalk(Arm a) {
@@ -535,7 +535,7 @@ void DamageClientTick(coop::net::Session*, Arm a) {
     const CPh phase = static_cast<CPh>(c.run.phase);
     if (phase == CPh::Wait) return ClientWait(a, due);
     if (phase == CPh::Walk) return ClientWalk(a);
-    if (!atv) return ClientFail(a, "the ATV is gone before the verdict", "no ATV", "the world's ATV");
+    if (!atv) return ClientFail(a, "the ATV is gone before the verdict", "no ATV", "the ATV the arm acts on");
     switch (phase) {
     case CPh::Sit:    return ClientSit(a, player, atv, self);
     case CPh::Edge:

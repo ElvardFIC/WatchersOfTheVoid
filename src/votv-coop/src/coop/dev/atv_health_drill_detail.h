@@ -161,7 +161,8 @@ bool SpawnedAtvReady(SpawnedWait& w, Arm a, bool due, AtvAt* out);
 // The director's walk to within `reachCm` of the ATV's root, the ATV kept, the ready line said.
 void WalkStart(SeatedClient& c, Arm a, const AtvAt& t, float reachCm);
 // The wait for the ATV: Failed once kFailBound has passed.
-Stage WaitBound(SeatedClient& c, Arm a);
+// `w` is the spawned ATV's wait (null for trap): its missing edge goes into the FAIL.
+Stage WaitBound(SeatedClient& c, Arm a, const SpawnedWait* w);
 // The walk: Next once it arrived (arrivedAt set).
 Stage WalkStep(SeatedClient& c, Arm a);
 // The seat through the game's own verb, then the host's grant: Next once the local peer is the ATV's seat in the lane.

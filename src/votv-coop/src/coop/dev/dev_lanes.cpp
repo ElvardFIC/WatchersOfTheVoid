@@ -19,7 +19,7 @@
 #include "coop/dev/rack_birth_drill.h"  // [dev] a rack born holding rows reaches the client, which sends no op
 #include "coop/dev/burn_revive_drill.h"  // [dev] a client who dies burning is revived with no fire
 #include "coop/dev/drone_call_drill.h"  // [dev] a client's console press flies the host's drone
-#include "coop/dev/atv_health_drill.h"  // [dev] the ATV lane's table judged on the world's own ATV
+#include "coop/dev/atv_health_drill.h"  // [dev] the ATV lane's table judged on the ATV the host spawns (trap: the world's)
 #include "coop/dev/atv_eject_drill.h"  // [dev] a wheel knocked off an ATV is the host's to express, never a client's
 #include "coop/dev/atv_spawn_drill.h"  // [dev] a runtime ATV reaches each client once
 #include "coop/dev/throw_drill.h"  // [dev] a thrown container keeps its contents on the host

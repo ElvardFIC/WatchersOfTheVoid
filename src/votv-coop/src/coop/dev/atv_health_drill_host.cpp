@@ -36,16 +36,16 @@ using coop::net::AtvRefusal;
 // The refusal this arm waits for.
 AtvRefusal WantRefusal(Arm a) { return a == Arm::Occupied ? AtvRefusal::Occupied : AtvRefusal::Synced; }
 
-uint64_t RefusedSinceReady(AtvRefusal r) {
+uint64_t RefusedSincePark(AtvRefusal r) {
     const unsigned i = static_cast<unsigned>(r) & 15u;
     return AU::ReadCounters().refused[i] - g_h.base.refused[i];
 }
 
-// Every other refusal since the ready line: what a request refused for another reason would show.
-uint64_t OtherRefusedSinceReady(AtvRefusal r) {
+// Every other refusal since the park: what a request refused for another reason would show.
+uint64_t OtherRefusedSincePark(AtvRefusal r) {
     uint64_t n = 0;
     for (unsigned i = 1; i < 16; ++i) n += AU::ReadCounters().refused[i] - g_h.base.refused[i];
-    return n - RefusedSinceReady(r);
+    return n - RefusedSincePark(r);
 }
 
 uint64_t AdmittedSinceAct() { return AU::ReadCounters().admitted - g_h.snap.admitted; }
@@ -131,7 +131,7 @@ void Judge(Arm a, const TableView* t) {
         return;
     }
     const AtvRefusal want = WantRefusal(a);
-    const uint64_t refused = RefusedSinceReady(want);
+    const uint64_t refused = RefusedSincePark(want);
     const uint64_t granted = AdmittedSinceAct();
     if (granted != 0)
         return HostFail(a, "the host's judgement granted the client's request", "admitted " + Plus(granted),
@@ -150,7 +150,7 @@ void Judge(Arm a, const TableView* t) {
     if (refused <= 1 && !Past(g_h.run, kFailBound)) return;
     HostFail(a, refused > 1 ? "the request was refused more than once" : "the request was not refused as expected",
              "refused " + Plus(refused) + ", others " +
-                 Plus(OtherRefusedSinceReady(want)) + ", syncer " + std::to_string(t->syncerSlot),
+                 Plus(OtherRefusedSincePark(want)) + ", syncer " + std::to_string(t->syncerSlot),
              "refused +1, admitted +0, syncer 0");
 }
 

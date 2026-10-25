@@ -510,6 +510,9 @@ void ObserverPace(PPeer& p, Arm a, bool due) {
         return PFail(p, a, "the observer counted too few syncer blocks for its baseline",
                      std::to_string(p.haveA0 ? coop::atv_sync::AppliedFromSyncer() - p.a0 : 0u) + " blocks",
                      std::to_string(kBaselineBlocks) + " blocks");
+    if (!p.sawSeated)
+        return PFail(p, a, "the host never said the baseline was taken and the client seated", "no line",
+                     PhaseLine("seated"));
     PFail(p, a, "the host never said the burst was judged", "no line", PhaseLine("paced"));
 }
 
