@@ -1,3 +1,57 @@
+## 0.9.2161
+- Guard remote flashlight clicks by current peer/body/session identity, retain
+  transitions through unavailable resources/positions and recover replaced assets.
+- Preserve newer states through nested preparation, refuse non-finite positions
+  and wait for spatial attenuation instead of playing an unattenuated click.
+- Freeze held-toy sound identity and action before native use; bind deferred
+  music/squeaks to exact sender/recipient connections through reconnect and reentry.
+- Preserve overflow retries and fresh join debt, own incoming packets, share a
+  64-send budget and enforce transient expiry/clock retirement.
+- Guard native watoy state/audio/effect preparation by current source, component,
+  mesh/template and service identities; refuse unreadable or non-finite outputs.
+- Keep requester/presentation checks through activation/audio, validate spawned
+  particles and preserve fresh View ownership during Apply/Clear reentry.
+- Guard watoy session, activation invocation and requester/recipient connection
+  ownership; preserve current rows/queues through nested sends and cleanup.
+- Reserve activation capture capacity, retain overflow cue retries and copy
+  incoming packets before native authorization. Wire layout remains unchanged.
+- Retire world toy music/squeak work across session restarts and transport
+  replacement; keep exact PRE/POST ownership through nested native callbacks.
+- Preserve overflow retries, own received packets, share a 64-send tick budget,
+  expire transient sounds across callbacks and validate keys consistently.
+- Keep ongoing sponge-foam fixes in public version 2161. Scope effects to their
+  session, invocation, original prop/hand and exact player/recipient connection.
+- Preserve queue admission and ordered retries, bound per-tick work and expiry,
+  and guard native hit-result ownership without replaying stock consumption.
+
+- Retain a bay-window dab when native preparation is unavailable; consume an
+  admitted canvas draw once, including uncertain failure.
+- Guard window, canvas, material, function and class lifetimes through native
+  preparation, parameter writes and callback-driven replacement.
+- Check scalar updates and every draw/factory binding, including exact Vector2D
+  layout; missing metadata retries instead of permanently disabling drawing.
+- Read held brushes only while their author, item, stock and material remain
+  current; reject unreadable or non-finite values without publishing partial output.
+- Preserve brush ownership through factory failure, GC pinning, teardown and
+  reentry; wait when the shared signal canvas state cannot be established.
+- Every version is a test version, requires extensive testing and may be unstable.
+  Rendered multiplayer, original-dab brush provenance, dynamic grime and full-save
+  parity remain open.
+
+
+
+- Retain bay-window sponge strokes through refused reliable sends, preserving
+  their order and sealed brush values until delivery or a 20-second expiry.
+- Bound sending and replay to eight dabs per tick; preserve admitted queued work
+  when full and protect queues from nested native/transport callbacks.
+- Retire strokes across world, session-start, role, stop and disconnect changes.
+- Validate draw ranges and source readiness while accepting host-relayed origins.
+- Check window slot serials and scan generations; stop replay on replacement,
+  signal playback or source retirement, and recover replaced/failed draw hooks.
+- Clean obsolete artifacts before version work and reconcile the active TODO/WORK.
+- Every version is a test version, requires extensive testing and may be unstable.
+  Rendered multiplayer, dynamic grime sources and full-save parity remain open.
+
 ## 0.9.2160
 
 - Package the current combined fork and upstream source as DLL/network **b2215**

@@ -3,8 +3,8 @@
 **By ElvardFIC, co-maintained by AquaFishhh** — community co-op for Voices of the Void.
 
 Play Voices of the Void together, with accumulated co-op synchronization fixes and improvements.
-Version **0.9.2160** targets **Voices of the Void Alpha 0.9.0n** on Windows.
-The in-game mod label also shows **Watchers of the Void 0.9.2160**.
+Version **0.9.2161** targets **Voices of the Void Alpha 0.9.0n** on Windows.
+The in-game mod label also shows **Watchers of the Void 0.9.2161**.
 
 Source: [ElvardFIC/WatchersOfTheVoid](https://github.com/ElvardFIC/WatchersOfTheVoid).
 
@@ -21,6 +21,8 @@ Source: [ElvardFIC/WatchersOfTheVoid](https://github.com/ElvardFIC/WatchersOfThe
 - Console queues and panel ownership, personal sleep voting, companion ATV recovery and Ariral ship presentation.
 - Checked inventory/container restoration, local failed-extraction recovery and safer native damage/saw requests.
 - The current upstream integration, preserving this fork's player capacity, item identity and delivery guards.
+- Bay-window sponge-stroke FIFO retries, bounded replay and session/world lifetime guards.
+- Retried native canvas preparation, checked draw/scalar bindings and guarded brush/canvas ownership.
 
 See CHANGELOG.md for the full change list. Some systems are only partially implemented.
 
@@ -28,11 +30,11 @@ See CHANGELOG.md for the full change list. Some systems are only partially imple
 
 Install with r2modman or Thunderstore Mod Manager; the Unreal shimloader dependency is included in the manifest.
 Use a profile with this fork as the only Multivoid implementation: disable the original Multivoid or an earlier fork copy.
-For a downloaded build, import **ElvardFIC-WatchersOfTheVoid-0.9.2160.zip** using
+For a downloaded build, import **ElvardFIC-WatchersOfTheVoid-0.9.2161.zip** using
 the manager's **Import local mod** action. The package identity remains
 **ElvardFIC-WatchersOfTheVoid**. Remove the mistakenly imported **ragdoll** entry
 if it was created from the earlier DLL-only archive.
-Every player must use this exact **0.9.2160** package and the same game version.
+Every player must use this exact **0.9.2161** package and the same game version.
 
 ## Current status
 
@@ -40,13 +42,14 @@ Every player must use this exact **0.9.2160** package and the same game version.
 > Bugs, crashes and multiplayer desynchronization may occur. Automated checks do not
 > guarantee stable gameplay. Test with matching host/client packages and report issues.
 
-This test package contains **DLL b2215 / network protocol 2215** and includes the
+This test package contains **DLL b2217 / network protocol 2217** and includes the
 changes since 0.9.2158, plus the current upstream integration.
 Automatic joins above four players also require the updated master service.
 
-The identical production source snapshot passed **94/94 offline groups**.
-Those results are reused for this public-version change; fresh Release compilation,
-menu/browser label and archive checks are recorded in RELEASE.md.
+The active version remains **2161** across development continuations. Current
+sponge-foam changes have focused regression coverage; full regression and a new
+manager-package qualification remain open. Existing archives describe earlier
+snapshots. Current evidence and limits are recorded in RELEASE.md and agent/TESTLOG.md.
 Rendered gameplay, real-peer synchronization and full event coverage remain
 unverified for this exact package. Paid client repair, resource transactions,
 ancillary MRE effects and other reported gameplay cases remain open.

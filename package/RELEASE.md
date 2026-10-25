@@ -1,55 +1,77 @@
-# Watchers of the Void 0.9.2160
+# Watchers of the Void 0.9.2161 — development
 
-For Voices of the Void Alpha 0.9.0n, Windows x64. Maintained by ElvardFIC and
-AquaFishhh. DLL/network build: **b2215 / protocol 2215**.
+For Voices of the Void Alpha 0.9.0n, Windows x64. ElvardFIC and AquaFishhh.
+Internal DLL/network identity remains **b2217 / protocol 2217**.
 
 > **Every version is a test version. It requires extensive testing and may be unstable.**
-> Bugs, crashes and multiplayer desynchronization may occur. Automated checks do not
-> establish stable gameplay or confirm that every reported issue is resolved.
+> Automated checks do not establish stable gameplay or resolve unperformed acceptance.
 
-Import **ElvardFIC-WatchersOfTheVoid-0.9.2160.zip** through the mod manager.
-The archive includes the original icon, starter models, enabled loader and
-shimloader dependency. Every player must install the same package and game version.
+The public version remains 2161 across continuations. The previous 2162 label was
+an assistant error; its immutable verification files describe that historical
+snapshot. Current development metadata is corrected to 2161. Existing ZIPs represent
+earlier snapshots; these changes are under development and do not form a newly
+qualified manager package. Package preparation/publication require an explicit request.
 
-## Changes since 0.9.2158
+The latest continuation fixes ten remote flashlight-click paths: slot/body
+routing, source lifetime, dedup scope, preparation retry, sound/attenuation cache
+recovery, reentry ownership, finite positions and refusal of unattenuated playback.
+Ten 32-slot groups, ten compiled removal controls, both production TUs, three
+related groups, Release/ABI and the production 2161 formatter pass. Retry requires
+a subsequent apply. The native playback wrapper is void; one admitted attempt
+does not establish audible completion. Rendered toggles/mode changes/joins, full
+regression/package qualification and native wrapper metadata lifetime remain open.
 
-- Finish the remembered 2-32-player chooser across hosting menus and admission.
-- Add shovel-hole replication, can-portion guards, personal sleep voting and
-  companion ATV recovery; implement the Ariral ship presentation adapter.
-- Improve simultaneous console ownership, queued commands and native display
-  callbacks; preserve fresh requests and state through refused sends and teardown.
-- Guard inventory restoration and container delivery; recover proven local
-  failed extractions without guessing a removed record or replacement actor.
-- Strengthen food final-bite and MRE output ownership, native damage preparation,
-  saw eligibility and hit construction. Keep unsupported client repair from spending stock.
-- Retain bleeding, ATV steering, blast-driven prop motion and material delivery fixes.
-- Integrate upstream damage/creature intents, ATV ownership/joins, editing/codecs
-  and device/UI changes while preserving this fork's behavior.
-- Remove the main-menu tester/reviewer roll and outdated promotional attribution;
-  retain the license and third-party notices.
+The preceding continuation fixes ten held-toy audio paths: session scope, exact
+sender/recipient connections, frozen PRE hand/action identity, bounded exact
+PRE/POST, admission before dedup/rate charge, owned packet, 64-send budget,
+strict callback expiry/clock retirement and fresh-join completion. Ten new
+32-seat groups, ten compiled removal controls, seven production-TU compiles,
+eight related groups, Release/ABI and the production 2161 formatter pass.
+Unknown initial hand generation is refused for network replay; native local
+use remains untouched. Rendered initial-hand/music/squeak acceptance, full
+regression/package qualification and hook/schema/native-work budgets remain open.
 
-## Verification and limits
+The preceding continuation fixes ten native watoy paths: field/class identity,
+unknown zero metadata, source bindings, requester-aware activation, guarded audio,
+service CDO lifetime, mesh/template currency, checked/finite outputs, spawned
+candidate ownership and direct View reentry. Ten new actual-wrapper groups and
+ten new removal controls pass, alongside ten controller groups/controls, legacy
+fixtures, four production-TU compiles, seven related groups, Release/ABI and the
+production 2161 formatter. Complete reflected schemas/function ownership,
+independently copied View cleanup and rendered parity remain open.
 
-The exact production source snapshot passed **94/94 full offline regression groups**,
-including 118 local master tests, cooked native contracts and routing controls.
-The native-action/hit-result/wall tests additionally pass ten fault controls.
-For this package's public-version change, those complete regression results are
-reused only after matching the production snapshot and protocol. Release compilation,
-loader imports/exports, the generated menu/browser label and archive integrity
-are checked again. This is not a fresh rerun of all 94 groups on the new label.
+The preceding continuation fixes ten watoy controller paths: session scope, exact
+activation POST, reserved PRE capacity, requester/recipient connection identity,
+owned state-flush snapshots, retired drain ownership, exact revision pruning,
+cue admission before deduplication and owned receive packets. Native wrapper
+preparation lifetime, rendered multiplayer and a fresh full package qualification
+remain open; the wire format and version are unchanged.
+The legacy controller/native wrapper, ten new 32-seat groups, ten compiled removal
+controls, four production-TU compiles and seven related groups pass, together
+with Release/ABI and the production 2161 label formatter.
 
-Evidence in the build workspace: `build/release-2160/verification.json`, its retained
-reference qualification, `source-before.json`, and `build/package-current/verification.json`.
-Five negative package controls reject failed/incomplete/focused qualifications,
-stale labels and mismatched DLLs. `dist/SHA256SUMS-current.txt` records delivery hashes.
+The preceding music/squeak continuation fixes ten paths: session scope,
+requester/recipient transport identity, exact POST, reserved PRE capacity, admission
+before pulse deduplication, owned receive packets, shared 64-send budget,
+callback expiry/clock rollback and consistent key validation. Ten lifetime groups,
+ten compiled removal controls, four production-TU compiles and seven related
+groups pass, with Release/ABI and the production 2161 formatter.
 
-This is an **offline-qualified test package**. Rendered multiplayer, real keyboard
-input, full-manager startup and larger-lobby acceptance remain open. Paid client
-repair/resource transactions, uncertain MRE output/refund recovery, ancillary
-effects/rewards, remaining event variants and full-save parity are not complete.
-Automatic lobbies above four players also need the matching master service;
-this package does not deploy it.
+The preceding continuation fixes ten sponge-foam paths: session retirement, exact
+PRE/POST invocation, reserved observation capacity, frozen item/hand address,
+class/key/authorization currency, source occupancy, recipient occupancy, queue
+admission versus deduplication, per-tick budgets/expiry/clock handling and native
+hit-result ownership. The existing canvas and stroke fixes remain included.
+Foam replay does not consume soap or repeat native cleaning; effects remain transient.
 
-Build recipe: `package/build_current.ps1 -ReuseQualification build/upstream-qualified-2215/verification.json`.
-Without that option, the recipe runs the complete regression suite.
-See CHANGELOG.md in the archive for version history.
+Focused checks cover the real controller, ten lifetime scenario groups, the native
+wrapper and trace-replacement scenarios, eleven compiled fault controls and four
+production translation units. Related validation and Release/ABI use
+`build/qualification-current/verification.json`. This is focused evidence;
+previous complete 95-group results do not qualify this changed production snapshot.
+A new full regression/package qualification and rendered multiplayer acceptance
+remain open. The displayed 2161 label is checked using the production formatter.
+
+Native gameplay/full-manager startup, exact original-dab brush provenance, atomic
+material-scalar capture, thrown sponge transport, dynamic grime and full-save
+parity remain open. See agent/TODO.md, WORK.md and TESTLOG.md for current boundaries.

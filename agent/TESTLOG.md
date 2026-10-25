@@ -1,3 +1,375 @@
+# Current 2161 continuation — console metadata (26 October 2026)
+
+Four implemented changes: delayed-resolution retry, clean partial layouts, live
+metadata dependencies and bounded/validated FString reads. Versions stay 2161/b2217.
+
+PASS run_sat_console_callbacks.ps1 -FaultControls: 21 controller scenarios, the actual
+ParamFrame/FText/FString input wrapper and four new wrapper regression groups:
+recovery after eight incomplete attempts; missing enter/write metadata cannot reuse
+old offsets; class/function serial replacement invalidates and re-resolves the cache;
+and malformed capacity/count/null storage/termination/oversized output is rejected.
+All thirteen compiled removal controls fail their expected runtime assertions: nine
+existing controller controls plus metadata-retry, partial-layout, metadata-currency
+and string-capacity. Control logs: build/sat-console-callbacks-check/mutants/.
+PASS production-header compile of ue_wrap/desk/sat_console.cpp to
+build/sat-console-callbacks-check/native_wrapper_production.obj.
+
+An attempted run_2145 compile exposed concurrent Seat/Scope edits to item_activate.cpp
+colliding with this continuation's own in-progress lifetime state. The same file then
+changed again (Publish/DebugForceToggle) without an edit from this agent. Own overlapping
+flashlight changes were withdrawn; external edits preserved. The user was asked about
+file ownership. Six planned flashlight fixes remain pending in TODO. No combined Release
+or current-source qualification is claimed; qualification-current below belongs to the
+preceding snapshot. Rendered gameplay, archive and installation remain unperformed.
+
+# Earlier 2161 continuation — flashlight and console priorities (26 October 2026)
+
+Public 0.9.2161, internal b2217/protocol 2217 unchanged. Ten individually named
+changes and remaining gameplay scope are in TODO/WORK. The owner report has no
+reproduced rendered stimulus yet; do not equate offline guards with full acceptance.
+
+PASS run_2145: existing battery-empty/unequip/send retry/deferred setter tests plus
+exact local publisher, pawn serial replacement during sampling, non-finite sample,
+invalid incoming cone/intensity, superseding state before cone dispatch, nested
+echo restoration and unchanged-state publication on pawn reincarnation.
+PASS run_sat_console_callbacks: 21 scenarios, including new exact POST mismatch,
+owned body across vector reallocation/erasure, oversized shared command preserving
+input, unreadable/oversized/invalid-type output on both roles. Nine existing compiled
+removal controls still fail their intended runtime assertions. Production controller
+and actual ParamFrame/FText/FString input wrapper compile/pass.
+PASS run_sat_console_delivery: 14 existing queue/history/busy/source/recipient
+scenarios. PASS ten flashlight-click groups and both production TUs.
+
+PASS current check_current.ps1 with five selected groups: run_2145,
+run_flashlight_click, run_sat_console_callbacks, run_sat_console_delivery and
+sync_native_contract. Release/ABI and version formatter pass. Current evidence:
+`build/qualification-current/verification.json`, source-before.json and logs/.
+DLL SHA256: `18cea268033e48548bad5a2707458e5a1d2260e1383c5714c30f1a3de670d301`.
+FullRegression=false. No native game startup/rendered acceptance, new archive,
+profile installation, commit/push or publication. Previous snapshot statements below
+are historical; the current focused evidence supersedes their DLL hashes.
+
+# Earlier 2161 continuation — remote flashlight clicks (26 October 2026)
+
+Public **0.9.2161**, internal b2217/protocol 2217 unchanged. Ten TODO/WORK fixes:
+slot bounds; exact remote-body routing; puppet/class/world lifetime; scoped
+deduplication; retryable preparation; sound and attenuation incarnation caches;
+per-slot reentry ownership; finite position; and refusal of unattenuated fallback.
+The one-third attenuation configuration and the local player's native click remain.
+Preparation failure leaves the transition available on a subsequent apply. A native
+attempt commits once before dispatch; the void wrapper does not prove audibility.
+
+PASS ten new 32-slot groups, ten separately compiled removal controls and two
+production-TU compiles (click controller and item activation). Tests use the real
+roster PerSlotState and CachedObjRef with native resource/location/playback fakes.
+They cover same-state recursion, nested different states, cancellation back to
+the previously admitted state, roster replacement and recursive attenuation creation.
+Evidence: `build/flashlight-click-check/final-focused.log` and `fault_*.log`.
+The new runner is included in `package/check_current.ps1` for future full runs.
+
+PASS **3/3 selected related groups**: run_flashlight_click, run_2145 and
+sync_native_contract. Release/ABI and the production formatter pass:
+**Watchers of the Void 0.9.2161**. Current evidence:
+`build/qualification-current/verification.json`, `source-before.json` and
+`build/qualification-current-run.log`. FullRegression remains false.
+DLL SHA256:
+`d663f3b9f752711a6adca219c31fcddf47c78a6d740a2317cfba9c832f04c110`.
+No game startup, rendered multiplayer, full regression, new archive, commit or
+publication was performed. Rendered toggle/mode-change/join acceptance, full
+regression/package qualification and the native audio wrapper's internal reflected
+metadata/admission lifetime remain open. Current evidence supersedes the preceding
+focused snapshot contents; prior group counts describe their earlier snapshots.
+
+# Earlier 2161 continuation — held-toy audio (26 October 2026)
+
+Public **0.9.2161**, internal b2217/protocol 2217 unchanged. Ten TODO/WORK fixes:
+full session scope; sender and recipient occupancy; frozen pre-native hand/action
+identity; exact bounded PRE/POST; queue admission before dedup/rate charge; owned
+incoming packet; shared 64-send budget; strict callback expiry/clock retirement;
+and exact recipient completion preserving fresh join debt.
+
+PASS legacy held-toy/world-toy/contact fixtures, ten new 32-seat lifetime groups,
+ten compiled removal controls and seven production-TU compiles. Evidence:
+`build/hand-toy-check/final-focused.log` and individual `fault_*.log` files.
+The legacy fixture now runs real PRE/POST pairs. Unknown initial hand generation
+does not create a network event that can later adopt another generation; a fresh
+use after announcement sends normally. Native local use is not cancelled. The
+squeak fake models SetPitch preparation and checks currency before Activate, as
+the real wrapper does, rather than counting a sound before the preparation callback.
+
+PASS **8/8 selected groups**: run_2155, run_2156, run_2157, run_toy_music,
+run_watoy, run_sponge_effects, run_window_stroke and sync_native_contract.
+Release/ABI and the production formatter pass: **Watchers of the Void 0.9.2161**.
+Current evidence: `build/qualification-current/verification.json`,
+`source-before.json` and `build/qualification-current-run.log`.
+FullRegression remains false. DLL SHA256:
+`1990c650e1e57b9c83d14e341d0099c86a8ad31d8fd053452dc4c95e7939f751`.
+No game startup, rendered multiplayer, full regression, new archive, commit or
+publication was performed. Full regression/package qualification, initial-hand
+readiness and rendered music/squeak acceptance remain open. Hook-function/schema
+lifetime and native presentation/authorization budgets are separate implementation
+limits. Current evidence supersedes the preceding focused snapshot contents.
+
+# Earlier 2161 continuation — watoy native wrapper (26 October 2026)
+
+Public **0.9.2161**, internal b2217/protocol 2217 unchanged. Ten TODO/WORK fixes
+cover field/class identity, unknown zero-component metadata, complete read
+bindings, requester predicate at activation, audio currency, service CDOs,
+mesh/template currency, checked/finite outputs, spawn candidate ownership and
+direct same-View Apply/Clear reentry. The controller passes its requester predicate
+into activation; reflected metadata and native query callbacks cannot silently
+continue an explicitly retired request in the tested preparation boundaries.
+
+PASS the legacy controller/native wrapper, ten controller lifetime groups and
+ten new wrapper lifetime groups. PASS ten existing controller and ten new wrapper
+compiled removal controls (**20 total**) and four production-TU compiles. Each
+wrapper control runs its named scenario and must reach a failing assertion.
+Evidence: `build/watoy-check/final-focused.log` and `wrapper_fault_*.log`.
+
+PASS **7/7 selected groups**: run_2155, run_2156, run_toy_music, run_watoy,
+run_sponge_effects, run_window_stroke and sync_native_contract. Release/ABI and
+the production formatter pass: **Watchers of the Void 0.9.2161**.
+Current evidence: `build/qualification-current/verification.json`,
+`source-before.json` and `build/qualification-current-run.log`.
+FullRegression remains false. DLL SHA256:
+`225c5a080fc29194f80bfc27d25a98f0b24688c98b92043bcadabb50eb3705a7`.
+No game startup, rendered multiplayer, full regression, new archive, commit or
+publication was performed. Full regression/package qualification, rendered
+acceptance, complete reflected schemas/function ownership, cleanup across
+independently copied View owners, original-hand provenance and native-work budgets
+remain open. Current evidence supersedes the preceding focused snapshot contents.
+
+# Earlier 2161 continuation — watoy controller (26 October 2026)
+
+Public **0.9.2161**, internal b2217/protocol 2217 unchanged. Ten individually named
+TODO/WORK fixes cover full session scope, exact activation POST, bounded PRE
+reservation/pruning, requester and recipient transport identity, snapshot state
+flush, retired drain ownership, revision-safe pruning, admission before cue dedup
+and owned incoming payload. Drains also handle a departure removing the remaining
+queue during native playback. Teardown preserves a freshly installed session.
+
+PASS legacy controller/native wrapper, ten new 32-seat lifetime groups, ten
+compiled protection-removal controls and four production-TU compiles. Evidence:
+`build/watoy-check/final-focused.log` and individual `fault_*.log` files. Controls
+run their selected scenario and must reach a failing assertion. The legacy fixture
+now supplies real invocation/function identity and expects automatic world-scope
+retirement; it retains existing activation, hand-readiness and reliable FIFO cases.
+
+PASS **7/7 selected groups**: run_2155, run_2156, run_toy_music, run_watoy,
+run_sponge_effects, run_window_stroke and sync_native_contract. Release/ABI and
+the production menu/browser formatter pass: **Watchers of the Void 0.9.2161**.
+Current evidence: `build/qualification-current/verification.json`,
+`source-before.json` and `build/qualification-current-run.log`.
+FullRegression remains false. DLL SHA256:
+`aa1f5388a39da63184fb669a4653d9e4498268ca3c16bfea6fb4533649fe2af0`.
+No game startup, rendered multiplayer, full regression, new archive, commit or
+publication was performed. Full regression/package qualification and game
+acceptance remain open. Complete native-wrapper preparation lifetime, original
+hand provenance and bounded native work are separate open implementation limits.
+The current evidence directory supersedes the preceding focused snapshot contents.
+
+# Earlier 2161 continuation — world toy music/squeak (26 October 2026)
+
+Public version **0.9.2161**, internal b2217/protocol 2217 unchanged. Ten fixes
+are individually tracked in TODO/WORK: session scope, requester transport,
+recipient transport, exact POST, reserved PRE, admission before pulse dedup,
+owned receive payload, 64-send budget, callback expiry/rollback and key domain.
+
+PASS the wrapper/phase/clock fixtures, ten new 32-seat lifetime groups, ten compiled
+protection-removal controls and four production-TU compiles. Evidence:
+`build/toy-music-check/final-focused.log` and individual `fault_*.log` files.
+Overflow is tested both before and during authorization, including nested newer
+receipt. The old fixture now uses distinct invocation IDs for distinct native
+calls and expects automatic scope retirement/rebinding on world change.
+The first seven-group run failed those two obsolete fixture assumptions; they
+were corrected before the complete seven-group rerun against stable source.
+
+PASS **7/7 selected groups**: run_2155, run_2156, run_toy_music, run_watoy,
+run_sponge_effects, run_window_stroke and sync_native_contract. Release/ABI and
+the production menu/browser formatter pass: **Watchers of the Void 0.9.2161**.
+Current evidence is `build/qualification-current/verification.json`,
+`source-before.json` and `build/qualification-current-run.log`.
+FullRegression is false. DLL SHA256:
+`55df3183b7befd6ce4bcc4f0cb5678614ccaa17726a6894d11f17c100202b42e`.
+No game startup, rendered multiplayer, full regression, new archive or publication
+was performed. Full regression/package qualification and game acceptance remain open.
+The following sections describe earlier snapshots; the current evidence directory
+tracks the latest continuation and supersedes its prior focused-run contents.
+
+# Earlier 2161 continuation — sponge foam and version correction (26 October 2026)
+
+Owner correction: remain on public version **0.9.2161**. The assistant's previous
+2162 label was erroneous. Active metadata/documentation is corrected to 2161;
+internal b2217/protocol 2217 and the 68-byte SpongeEffect wire shape are unchanged.
+Earlier immutable reports retain their original labels as historical evidence.
+No new public version, release archive, publication or additional cleanup is part
+of this continuation. New evidence uses `build/qualification-current/` to avoid
+overwriting historical release qualification.
+
+Implemented the ten individually named TODO items: session retirement; exact
+invocation and POST pruning; PRE reservation; original item/hand address;
+actor/class/key authorization; source occupancy; recipient occupancy; queue
+admission before dedup; bounded native/send work with expiry/clock recovery; and
+current actor/player/class/player-link/hitResult schema through trace capture.
+
+PASS existing controller/wrapper, ten new lifetime groups at 32-seat capacity,
+trace-retirement/recovery cases, eleven compiled fault controls and four production
+TU compiles. Evidence: `build/sponge-effects-check/final-focused.log` and individual
+fault logs. The budget regression also checks ready effects behind eight unready
+mirrors; presentation rotates independently of wire FIFO. PASS **5/5 selected
+groups** on the final stable snapshot: sponge effects, window stroke, cooking,
+grime join and the cooked synchronization contract. Release/ABI and the actual
+production formatter also pass; displayed label: **Watchers of the Void 0.9.2161**.
+Evidence: `build/qualification-current/verification.json`, `source-before.json`
+and `build/qualification-current-run.log`; FullRegression remains false.
+DLL SHA256: `d09f1756759245a3a893b6116e12f460d2e679daf02033a608871761ff20a943`.
+Earlier 95-group/archive results do not qualify this changed implementation.
+Full regression/package qualification and rendered multiplayer remain open.
+
+# Historical native canvas continuation b2217 (26 October 2026; mistaken 2162 label)
+
+Started 0.9.2162 after previewing/running cleanup against the qualified 2161
+metadata: 752 files / 535.9 MiB removed, retaining the exact prior archive/DLL
+hashes. Removed obsolete 2160 delivery and generated test outputs/staging/caches;
+source, dependencies and unique research/verification/crash evidence remain.
+Current inventory: `package/cleanup-inventory.json`.
+
+Implemented ten native-window-canvas fixes documented in TODO/WORK: retriable
+incarnation-owned metadata, live raw observers, guarded/whole brush reads and
+known stock, checked factory/type/pin publication, detached teardown, current
+packed signal gate, source/target/component/function fences, checked argument
+sizes/offsets/Vector2D and retained pre-draw retries with at-most-once admission.
+
+PASS 14 controller + 14 actual-wrapper/ParamFrame scenario groups and 17 compiled
+fault controls (eight controller, nine wrapper), plus both production-TU compiles.
+The cooked 0.9.0n graph confirms canvas only opens/joins and rearms its 0.25-second
+close; K2_DrawMaterial is a separate painting admission. The wrapper keeps native
+ownership and never calls setDraw/endDraw directly. Native file hashes and scope:
+`build/window-stroke-check/native-contract.json`; focused evidence:
+`build/window-stroke-check/final-focused.log`.
+
+The complete final b2217 run passes **95/95 current-source groups** without
+prior-version result reuse. Release/ABI, the production formatter's 2162 label,
+32-member archive and five package rejection controls pass. Qualification:
+`build/release-2162/verification.json`; archive/control evidence:
+`build/package-current/verification.json` and `rejection-controls.json`.
+Prepared locally; no commit, push, publication or game installation.
+DLL SHA256: `0f34cdf7f1d276468f9c86d4a7de112aaf539b14c810bb70ff8b78c8385fa769`.
+ZIP SHA256: `c80bfe4c677fbf6ba0b4904b489128707faeb69bd1bbb645920b57956cfa1601`.
+Partial full runs were stopped for review corrections: native
+cleanBubbles can leave finite negative soap (subtract five without clamping), and
+Vector2D schema incarnations must remain owned through the final signal check
+and actual draw admission. Added late-schema replacement scenarios
+and a fresh cooked final-soap contract; all focused checks/17 controls pass again.
+Preparation also requires the audited base canvas entry: inherited subclasses
+are allowed; an unverified override cannot enter a supposedly repeatable path.
+The complete qualification restarts on that corrected production snapshot.
+Rendered/game startup and master deployment remain unverified. Original-dab
+brush provenance, atomic material-scalar sampling, thrown sponge transport,
+independent periodic grime, dynamic-source completeness and full-save parity remain open.
+
+# Bay-window stroke continuation b2216 (26 October 2026)
+
+Implemented ten window-stroke delivery/lifetime fixes for package 0.9.2161:
+source retirement across world/start serial/role/running/link changes; retained
+FIFO refusal and sealed brush payloads; eight-row send budget and 20-second expiry;
+owned completion across nested callbacks; validated ranges and ready host origins
+with host-relayed client slots; no oldest-row eviction at capacity; serial/world
+scan identity; guarded bounded at-most-once replay and hook recovery.
+
+PASS `agent/tests/run_window_stroke.ps1 -FaultControls`: 13 scenario groups and
+seven compiled controls reach their intended failing assertion when the named
+protection is removed. The actual production translation unit compiles separately.
+Coverage includes same-world reconnect without waiting for a scan backstop,
+32-seat origin bounds, nested replacement queues and old callback completion.
+The runner is registered in the complete current qualification.
+
+The first full-suite attempt was intentionally stopped after review identified
+the same-world scan-cache issue. Focused checks/controls passed again after that
+fix, and the complete suite restarted from the stable b2216 source snapshot.
+All 95 groups then ran on that stable snapshot. The only failure was the upstream
+integration fixture's hardcoded protocol 2215 assertion. Changed it to require the
+release metadata's protocol and at least 2215, retaining all wire-ID/32-seat checks.
+The corrected group reran after Release/ABI completed; production and DLL hashes
+matched the full run. PASS **95/95 groups** after that rerun, with no 2160 results
+reused. Initial qualification/failure remains in
+`build/release-2161/initial-verification.json`; the final report's
+`CorrectedTestRerun` records the original hash, corrected test hash, retry log and
+matching production stamps. Current report: `build/release-2161/verification.json`.
+
+PASS production menu/browser formatter: Watchers of the Void 0.9.2161.
+PASS 32-member manager archive, loader layout, branding, models, matching qualified
+DLL and five failed/incomplete/focused/stale-label/wrong-DLL package controls.
+Evidence: `build/package-current/verification.json`, `rejection-controls.json`
+and `dist/SHA256SUMS-current.txt`. Prepared locally; no commit/push/publication.
+DLL SHA256: `45b83eece370901457248db4012ab9b01f6c851af06318458a75462ec5888566`.
+ZIP SHA256: `ab201777ed50b2a67984a8f1a38814f3bb6ab68147b771fe93b27ad22878eaad`.
+
+No rendered/game startup or master deployment was performed. Uncertain admitted
+native draws are not retried. The brush is first sampled at the outgoing drain;
+exact original-dab hand/material provenance, thrown sponge transport, independent
+periodic grime, full-save parity and complete native-wrapper lifetime remain open.
+
+# Version-start cleanup for 2161 (25 October 2026)
+
+Next development target is 0.9.2161; the last qualified release remains
+0.9.2160 / DLL b2215 / protocol 2215. No 2161 build or gameplay pass is claimed.
+Updated the recurring cleanup workflow and reconciled TODO/WORK before fixes.
+
+Previewed and ran `package/cleanup_current.ps1`: 1,038 files / 849.4 MiB removed,
+including obsolete 2158 archives, superseded publication drafts, generated test
+binaries, copied test outputs, package staging and Python caches. Active source,
+test runners, CMake/dependencies, unique research and verification/crash evidence
+remain. Detailed targets and retained hashes: `package/cleanup-inventory.json`.
+
+PASS `package/package_current.ps1 -VerifyOnly` after cleanup: the retained 2160
+archive still has 32 members and matching loader layout, branding, models,
+identity and qualified DLL. Retained archive/DLL SHA256 values are unchanged.
+This verifies package preservation only; it does not rerun the 94 regression
+groups or close native startup/rendered multiplayer acceptance.
+
+# Package 0.9.2160 / b2215 (25 October 2026)
+
+Prepared the requested manager package with the combined upstream/fork source
+and ten native damage/slice/hit fixes now checked in TODO. Those fixes have 23
+scenario groups and ten compiled source-copy controls; actual getter dispatch,
+hit construction, parameter bindings, owner/class/source lifetime and wall
+destruction run through controlled native boundaries. Cutting/fragment gameplay
+is a separate path and remains unaccepted.
+
+The canonical production snapshot exactly matches the already qualified 94-group
+integration snapshot `67fc6c1e8c87ae12efbaf938d60248bf0d4d84d42e7fe5fad71fc0ced348ff88`.
+The new metadata-driven `package/build_current.ps1` reuses that complete evidence
+only after matching protocol and production hashes. `FreshFullRegression=false`
+and `RegressionReuse` retain the original report/hash/scope; this is not a new
+execution of all 94 groups on the changed public-version label.
+
+PASS fresh Release/ABI **0.9.0n b2215**, 842 build source entries, and the actual
+menu/browser formatter using its generated header: **Watchers of the Void 0.9.2160**.
+PASS complete manager archive: 32 members, exact DLL/content hashes, identity,
+enabled loader, shimloader dependency, 256x256 icon and starter-model paks.
+PASS five package controls rejecting failed, incomplete or focused qualification,
+stale labels and wrong DLLs. Public prose and final diff checks pass.
+PASS current fact-row gate: **565 rows / 181 files**, reference 0.9.0n.
+
+DLL SHA256: `e859eada7c2da04d7e60fd654d418678621158385ec6eab6d495b5b6826bc534`.
+ZIP SHA256: `5522ba389cc46535336e8a967c525f015a28c7931b47c059f306cb77725be59a`.
+Archive: `dist/ElvardFIC-WatchersOfTheVoid-0.9.2160.zip` (15,185,210 bytes).
+Evidence: `build/release-2160/verification.json`, retained reference qualification
+and source snapshot, `build/package-current/verification.json`,
+`build/package-current/rejection-controls.json`, `dist/SHA256SUMS-current.txt`.
+
+The requested GitHub README/changelog/release descriptions are published in
+`157fefd70743e93392fa1b0c2affc41dd9e01aa5`; the shared 201-character short About
+description is updated through the official API and read back. The connector
+publishes the documentation commit with a checked branch lease. Local main is
+fast-forwarded only after every published file matches its local content.
+Evidence: `build/release-2160/github-publication.json`. No GitHub binary release
+is created. The new Thunderstore README/manifest/changelog are inside the ZIP,
+but the live page has not been updated here: its upload API access is missing.
+No game run, game installation or master deployment was performed. Existing
+rendered, event/effect and debit/output/refund acceptance remains open.
+
 # Upstream integration b2215 (25 October 2026)
 
 Merged VOTV-MP/Multivoid through `ad531561142ff5685153dc799f9ff2de4af07056`

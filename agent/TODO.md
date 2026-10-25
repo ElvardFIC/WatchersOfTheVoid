@@ -5,7 +5,285 @@ code with recorded verification; unchecked items mean remaining implementation
 or a named acceptance test that has not passed. Completed code does not close an
 unreproduced report or an unperformed rendered multiplayer test.
 
-## Priority acceptance — 0.9.2159
+## Active development — 0.9.2161 / b2217
+
+Owner correction: **keep working on 2161**. A continuation does not change the
+public version or automatically prepare a package. Historical 2162 labels were
+an assistant mistake; their evidence remains historical, not current qualification.
+
+### Current continuation — console metadata and concurrent flashlight edits
+
+Version remains 0.9.2161 / b2217. Four completed console fixes:
+- [x] Retry delayed console metadata after five incomplete resolution passes.
+- [x] Reset every layout/parameter offset before a new resolution attempt.
+- [x] Validate all eleven class/function/CDO dependencies before using the cached layout; re-resolve replacements.
+- [x] Bound FString lengths and validate header capacity, storage and terminator before console reads.
+
+PASS 21 console controller scenarios, the actual native input wrapper with four new
+regression groups, thirteen compiled removal controls, and a production native-wrapper
+compile. No full Release/source qualification was attempted while another writer was
+actively changing item_activate.cpp (new Seat/Scope/Publish/DebugForceToggle work).
+Own overlapping flashlight changes from this continuation were withdrawn, preserving
+the earlier completed fixes and the concurrent writer's work. The user was asked which
+writer should own that file; no response had arrived when this status was recorded.
+
+Six named flashlight items remain uncompleted by this continuation:
+- [ ] Reconcile session/world/role/running/link lifetime.
+- [ ] Bind deferred states to the original player and connection.
+- [ ] Require exact registry actor-to-slot association.
+- [ ] Copy received payloads before callback-capable engine work.
+- [ ] Recheck source identity before the first light setter.
+- [ ] Protect the publication signature from stale send completion.
+
+- [ ] Complete the six items after coordinating file ownership, then qualify the
+  stable combined source. Rendered two-player flashlight/console acceptance remains open.
+
+### Implemented — flashlight and console priority continuation (26 October)
+
+Owner prioritises flashlight operation and sharing each player's submitted console
+text. Development remains 0.9.2161 / b2217 / protocol 2217. The planned and completed
+ten fixes are:
+
+- [x] Restrict flashlight publication to the registry's exact local player.
+- [x] Reject flashlight snapshots retired during player/component reads.
+- [x] Reject invalid flashlight state, non-finite intensity and invalid cone ranges before applying/caching.
+- [x] Stop older flashlight setters when a newer per-slot state arrives.
+- [x] Preserve enclosing echo suppression through nested flashlight application.
+- [x] Match console POST by invocation, function incarnation, stack, locals and tag.
+- [x] Copy console body attribution before callback-capable checks can change the frame vector.
+- [x] Refuse oversized shared commands without consuming input or executing a truncated command.
+- [x] Refuse unreadable/invalid console output instead of allowing an unsynchronised local write.
+- [x] Republish unchanged flashlight state after local pawn replacement, including same-address reincarnation.
+
+PASS five selected current validation groups, Release/ABI and production version
+formatter; 21 console callback scenarios, nine compiled removal controls and native
+input wrapper; flashlight source/component/setter regression and ten click groups.
+Evidence: `build/qualification-current/verification.json`. This is focused evidence.
+- [ ] Rendered multiplayer flashlight beam/mode/battery/joins and simultaneous
+  console authors/clear/history/reconnect acceptance; full regression and package
+  qualification for this snapshot. Submitted console output is shared; live
+  unfinished keystrokes are not added by this continuation. No new archive/install.
+
+### Implemented — ten remote flashlight-click fixes
+
+- [x] Refuse invalid peer slots before per-slot state or audio preparation.
+- [x] Refuse local/foreign/unregistered actors and keep exact registry slot association through preparation.
+- [x] Own puppet/class/world identity through resource and position reads.
+- [x] Retire the dedup latch on session serial, world, person and puppet incarnation changes.
+- [x] Keep preparation failures retryable on a subsequent apply; commit only before the one native attempt.
+- [x] Replace the raw sound latch with live object/class references and recover replaced assets.
+- [x] Replace the raw attenuation latch with live object/class references and recover replaced runtime attenuation.
+- [x] Reserve a per-slot revision during preparation; nested different states supersede older work and same-state repeats cannot duplicate it.
+- [x] Refuse non-finite puppet positions without consuming the state transition.
+- [x] Wait for spatial attenuation instead of dispatching an unattenuated map-wide click.
+
+PASS ten new lifetime/readiness/reentry groups at 32-slot capacity, ten compiled
+removal controls and both production TUs. The shared attenuation retains its native
+one-third sphere/falloff tuning; the original local-player click is untouched.
+PASS 3/3 selected related groups, Release/ABI and the production 2161 formatter;
+current focused evidence: `build/qualification-current/verification.json`.
+- [ ] Rendered remote toggles/mode changes/joins, full regression and new package
+  qualification. Preparation can retry only on a subsequent apply. Native dispatch
+  is a void wrapper: admission is one attempt, not proof of audible completion;
+  internal reflected-call preparation lifetime remains outside these checks.
+
+### Implemented — ten held-toy audio fixes
+
+- [x] Retire work across session serial, world, role, running and link changes.
+- [x] Fence deferred music/pulses by sender person, transport generation and peer epoch.
+- [x] Bind recipient delivery to the exact person/connection/peer epoch.
+- [x] Freeze hand actor, person, generation and action/Alt choice before native use.
+- [x] Match exact PRE/POST invocation/function/stack/tag; reserve bounded ownership and prune skipped POST.
+- [x] Admit bounded pulses before committing receive deduplication or charging the host rate window.
+- [x] Copy incoming packets before reconciliation/native cleanup can overwrite decode storage.
+- [x] Share a 64-send-attempt budget across transient pulses and persistent music per tick.
+- [x] Check strict transient expiry across callbacks and retire work on clock rollback without resetting receive watermarks.
+- [x] Complete a persistent delivery only for the captured recipient revision; preserve a fresh join's pending bit.
+
+PASS legacy held/world-toy/contact fixtures, ten new 32-seat lifetime groups,
+ten compiled removal controls and seven production-TU compiles. A use observed
+with an unknown hand generation is not queued for adoption by a later hand;
+the original native local sound still runs. Remote pitch preparation tests now
+model the real wrapper's current check before Activate.
+PASS 8/8 related groups, Release/ABI and the production 2161 formatter;
+current focused evidence: `build/qualification-current/verification.json`.
+- [ ] Rendered held-toy music/squeak, initial-hand readiness, reconnect and native
+  timing acceptance; full regression/package qualification for this changed snapshot.
+  Hook-function/schema lifetime and native presentation/authorization work budgets
+  remain separate open implementation boundaries.
+
+### Implemented — ten watoy native-wrapper fixes
+
+- [x] Own object/class/world identity through offset resolution before field reads.
+- [x] Fail unknown `a` metadata instead of reporting an invented inactive state.
+- [x] Keep the exact actor/audio/zero component bindings through complete state sampling.
+- [x] Carry the requester/session predicate into reflected activation preparation/admission.
+- [x] Carry presentation currency through audio query/volume/pitch/start and recheck Audio binding.
+- [x] Own service CDOs and their classes through effect transform/bounds/spawn work.
+- [x] Recheck the original mesh binding and live template through effect preparation.
+- [x] Require successful output reads and finite transform, bounds and inverse-location values.
+- [x] Admit only live particle-component spawn results and release a stale owned candidate.
+- [x] Use View revisions and local candidates so reentrant Apply/Clear preserves fresh ownership.
+
+PASS ten new native-wrapper lifetime groups, ten new compiled removal controls,
+existing controller/wrapper and ten controller lifetime groups, ten existing
+controller controls and four production-TU compiles.
+PASS 7/7 related groups, Release/ABI and the production 2161 formatter;
+current focused evidence: `build/qualification-current/verification.json`.
+- [ ] Rendered host/client audio/effect acceptance and a new full regression/package
+  qualification. Full reflected parameter schema/ownership checks, cleanup across
+  independent copied View owners, original hand provenance and native-work budgets
+  remain open; these tests do not establish complete native parity.
+
+### Implemented — ten watoy controller fixes
+
+- [x] Retire state across session serial, world, role, running and link changes;
+  preserve a fresh owner installed during native view release.
+- [x] Match activation POST by exact invocation, live function, actor and stack.
+- [x] Reserve bounded PRE capacity before native state reads; prune inactive invocations.
+- [x] Freeze requester person/transport/peer epoch for immediate and deferred authorization.
+- [x] Bind state/cue recipients to exact person, transport generation and peer epoch.
+- [x] Flush owned state snapshots; complete only the matching current row after sends.
+- [x] Abort retired drains and sanitize detached retries before restoring queue ownership.
+- [x] Prune snapshots and exact row revisions; detach views before native cleanup.
+- [x] Admit host/client cues before committing receive sequence watermarks.
+- [x] Copy incoming packets before authorization/native reads can overwrite decode storage.
+
+PASS the legacy controller/native wrapper, ten new 32-seat lifetime groups,
+ten compiled removal controls and four production-TU compiles. PASS 7/7 related
+groups, Release/ABI and the production 2161 formatter; current focused evidence
+is `build/qualification-current/verification.json`.
+- [ ] Rendered multiplayer acceptance, full regression and qualification of a new
+  package for the changed snapshot. Controller tests do not establish complete
+  native preparation lifetime or effect/audio parity.
+
+### Implemented — ten world toy music/squeak fixes
+
+- [x] Retire queues on session-start serial, running/link, world and role transitions.
+- [x] Freeze requester transport generation before lookup/authorization; reject replacement completion.
+- [x] Bind deferred state/pulse recipients to their transport generation as well as person/epoch.
+- [x] Match PRE/POST by live function incarnation and exact stack, invocation and actor.
+- [x] Reserve bounded PRE capacity before key/Alt reads and commit only the owned reservation.
+- [x] Commit pulse receive deduplication only after bounded admission on host and client.
+- [x] Copy the incoming packet before callback-capable authorization/native work.
+- [x] Share a 64-send-attempt budget across pulses, client intents and host state per tick.
+- [x] Recheck transient deadlines across native callbacks; retire pending work on clock rollback.
+- [x] Apply the same printable, non-space ASCII key domain to local sampling and wire input.
+
+PASS ten lifetime groups at 32-seat capacity, ten compiled protection-removal controls,
+the existing wrapper/phase/clock fixtures and four production-TU compiles.
+PASS 7/7 related groups, Release/ABI and the production 2161 label formatter;
+current focused evidence: `build/qualification-current/verification.json`.
+- [ ] Rendered host/client music/squeak acceptance across reconnect, saturation and teardown.
+  Full regression and package qualification for the changed snapshot remain open.
+
+### Implemented — ten sponge-foam fixes
+
+- [x] Retire captures/effects across world, start serial, role, running and link changes.
+- [x] Match exact invocation/function/stack/object POST and prune skipped POST records.
+- [x] Reserve bounded PRE ownership before callback-capable key/trace/stock reads.
+- [x] Freeze the original key/hand generation before native use; never adopt a future hand.
+- [x] Recheck actor/class/key and authorization before presentation and relays.
+- [x] Fence source departure/replacement by peer epoch and host transport generation.
+- [x] Fence recipient delivery by exact person, connection generation and peer epoch.
+- [x] Advance receive deduplication only after bounded queue admission succeeds.
+- [x] Bound authorizations/presentations to eight and sends to 64 per tick;
+  rotate presentation past unready mirrors while preserving wire order, expire
+  at 1,500 ms across callbacks and retire clock-rollback work.
+- [x] Own actor/player/class/hitResult schema through trace/stock reads and publish
+  complete output only while the exact player link and struct binding remain current.
+
+PASS legacy controller/wrapper, ten new lifetime groups, trace replacement cases,
+eleven compiled fault controls and four production-TU compiles. PASS 5/5 related
+groups, Release/ABI and the production 2161 label formatter. Evidence:
+`build/qualification-current/verification.json` (focused, not full qualification).
+- [ ] Full regression/package qualification for this changed snapshot and rendered
+  host/client foam acceptance, including two authors, hand swaps, joins and teardown.
+  These cosmetic effects do not replay cleaning/soap debit or become join history.
+
+## Earlier 2161 continuation — native canvas (b2217)
+
+- [x] Preview and run cleanup before the version bump: 752 files / 535.9 MiB
+  removed; retained 2161 DLL/archive hashes match. `package/cleanup-inventory.json`.
+- [x] Implement the ten native-canvas fixes below and run focused checks.
+- [x] Complete fresh full regression, Release/ABI, menu-label and archive qualification
+  for the historical snapshot mistakenly labelled 2162: 95/95 groups, 32 archive
+  members and five package rejection controls passed; this is not current foam evidence.
+
+### Implemented — ten native canvas fixes (b2217)
+
+- [x] Replace permanent raw class/function/layout latches with incarnation-owned,
+  checked publication; incomplete or replaced native metadata can resolve again.
+- [x] Validate live window class and packed cv flag for observation, including
+  subclasses; refuse dead/foreign actors and non-finite stroke corners.
+- [x] Guard player, held item, sponge stock, material and getter/name preparation
+  through brush reads; publish all output scalars only after current proof holds.
+- [x] Refuse missing/invalid stock and unreadable dynamic-material values instead
+  of inventing defaults or mixing a replacement hand/material with older input.
+- [x] Check factory context/parent/output bindings and returned MID type, own the
+  candidate pin locally, and reject retired factory/pin completion before publication.
+- [x] Detach brush ownership before unroot callbacks; retired teardown and nested
+  factory/draw work cannot release or overwrite a fresh owner.
+- [x] Read the current gamemode/panels/packed signal flag and wait on unknown state;
+  refreshed classes and missing metadata cannot falsely authorize the shared canvas.
+- [x] Fence native canvas/scalar preparation by source, actor/class, function/owner,
+  canvas and material identity; honor failed scalar calls and reject nested draws.
+- [x] Check every frame parameter's live offset/size/bounds and Vector2D type/layout;
+  incomplete frames and stale schemas cannot dispatch default or malformed draws.
+- [x] Keep a FIFO dab through pre-draw Retry, but consume an admitted native attempt
+  once even on uncertain failure; completion owns its exact queued row.
+
+PASS 14 controller + 14 actual-wrapper/ParamFrame scenario groups, 17 compiled
+fault controls, cooked canvas open/join/timer/close/draw proof and both production TUs.
+- [ ] Accept rendered host/client sponge/mop wiping, temporary native readiness,
+  scalar/factory failure recovery, signal transitions, joins/reconnect and teardown.
+  Original-dab brush provenance, atomic material-scalar sampling, thrown sponges,
+  periodic dynamic grime and full-save parity remain open.
+
+## Previous local release — 0.9.2161
+
+- [x] Establish mandatory cleanup before each new version and reconcile TODO/WORK.
+  The 25 October cleanup removes obsolete delivery copies, generated test binaries,
+  staging, caches and superseded publication drafts; inventory and retained hashes:
+  `package/cleanup-inventory.json`. Current source, tests, dependencies and evidence stay.
+- [x] Implement the next selected fixes for 2161 and record their checks here and
+  in WORK/TESTLOG, keeping implementation separate from rendered acceptance.
+- [x] Prepare and qualify 2161 with the current build/package scripts; update release
+  metadata and package descriptions together when preparing its actual build.
+
+2161 uses **b2216 / protocol 2216**. All 95 current-source regression groups pass
+after the corrected protocol-test group rerun; no 2160 test results are reused.
+
+### Implemented — ten bay-window stroke fixes (b2216)
+
+- [x] Retire queues on world, session-start serial, role, running and connection
+  changes, including reuse of the same Session pointer.
+- [x] Retain a refused reliable dab in FIFO order; later dabs cannot overtake it.
+- [x] Seal each outgoing dab's brush once at its first drain, retaining the payload
+  through backpressure instead of resampling another held brush on retry.
+- [x] Bound sends to eight per tick and expire outgoing dabs after 20 seconds.
+- [x] Own rows across transport/native callbacks; nested Tick cannot resend a dab
+  and old completion cannot erase a freshly installed queue.
+- [x] Validate incoming draw ranges, active source and ready host-side origins;
+  preserve host-relayed original sender slots on clients.
+- [x] Refuse new overflow instead of evicting the oldest admitted inbound dab;
+  preserve the 256-row caps and expire parked or ready incoming work.
+- [x] Scope the scan/index to world generation and object slot serial, refusing
+  same-address replacement and stale scan completion.
+- [x] Revalidate source/window and signal playback between draws; own native
+  replay depth and retire each admitted attempt once, including uncertain failure.
+- [x] Retry failed hook installation/arming, re-resolve retired hook functions
+  and refuse observations retired during native corner capture.
+
+PASS 13 controller scenario groups, seven compiled fault controls and the
+production TU compile. `run_window_stroke` is part of the full current suite.
+- [ ] Accept rendered sponge/mop wiping on both roles, concurrent authors,
+  backpressure, signal playback, late join/reconnect and world replacement.
+  Native preparation/callback/schema guards are implemented in the 2161 continuation above.
+  Thrown sponges, first-drain brush provenance, periodic dynamic grime, full-save
+  parity and rendered acceptance remain open.
+
+## Priority acceptance — 0.9.2160
 
 - [x] Implement blast-driven prop discovery/motion and final rest publication,
   including zero-damage force-only blasts (b2189–b2190). Targeted native LAN and
@@ -26,17 +304,21 @@ unreproduced report or an unperformed rendered multiplayer test.
 
 ## Current baseline and pending acceptance
 
-Current development: **DLL b2215 / protocol 2215**, game **0.9.0n**, targeting
-package **0.9.2159**. Upstream `ad5315611` is merged with all local history,
+Current development: **DLL b2217 / protocol 2217**, game **0.9.0n**, package
+**0.9.2161**. Upstream `ad5315611` is merged with all local history,
 including native-action/hit-result fixes from `ddc711220`.
-**94/94 full regression groups pass**; Release/ABI qualification is recorded in
-`build/upstream-qualified-2215/verification.json`. See [TESTLOG.md](TESTLOG.md).
+Current foam changes have focused checks; related regression/Release evidence is
+`build/qualification-current/verification.json`. Earlier complete 95-group results
+describe older snapshots. See [TESTLOG.md](TESTLOG.md).
 Native blast/ATV evidence was recorded on earlier DLLs. Rendered gameplay and
 real keyboard input still need acceptance.
 
-Last prepared manager package: **0.9.2158 / DLL b2186 / protocol 2186**.
-Its Release, **68/68 offline groups**, package label and archive checks passed.
-It does not include the b2187–b2215 fixes; no 2159 archive is prepared.
+Current package preparation remains open for this changed 2161 snapshot.
+Historical 2162 archives/reports retain the erroneous label and are not current delivery.
+- [x] Prepare and verify package 0.9.2160, including its public version label and
+  shared description; publish README/release descriptions and short About text on GitHub.
+- [ ] Prepare/qualify and publish 0.9.2161 only when explicitly requested; reconcile its
+  README/manifest/changelog. Earlier GitHub descriptions describe 2160.
 Verification history remains in [TESTLOG.md](TESTLOG.md); completed release reports
 and superseded build instructions have been removed from this backlog.
 
@@ -72,6 +354,35 @@ Blueprint extraction and the imported native-contract suite now pass.
 Details: [WORK.md](WORK.md), [ENTITY_COVERAGE.md](ENTITY_COVERAGE.md).
 
 ## Report batch of 24 October (numbers local to this batch)
+
+### Implemented — ten native damage/slice/hit fixes (b2215)
+
+- [x] Capture client actor/class, player/person and function/owner before native
+  argument lookup; retired input cannot enqueue a hit against a replacement.
+- [x] Refuse reflected client damage/slice echoes and revalidate the current tool
+  before submission, preserving host ownership of world mutations.
+- [x] Revalidate the receiver's exact world key and current author through damage
+  and slice preparation; authorization cannot migrate to a retagged target.
+- [x] Recheck the live melee tool and damage allowance after callback-capable
+  preparation instead of retaining an old held-item proof.
+- [x] Guard inherited damage function/owner, actor/class and parameter binding
+  through native dispatch, without reading a retired target for failure logging.
+- [x] Bind damage to the current mesh/class and finite position through hit
+  construction; metadata and component replacement cannot authorize an old hit.
+- [x] Invoke the native actor isNotSawable getter, including overrides; it is a
+  function rather than a component field. Refuse failed/unreadable/reentrant
+  getter work and preserve source/function/tool currency through slice dispatch.
+- [x] Carry caller/source ownership through wall damage metadata, location and
+  argument preparation, while preserving native destruction as a valid outcome.
+- [x] Check every MakeHitResult binding, exact destination struct, blocking flag,
+  weak target and source/function lifetime before writing the owned hit bytes.
+- [x] Protect hit-field destination/class/offset/schema and bounds through native
+  construction; retry missing/replaced layout metadata and retain caller location.
+
+PASS 23 new scenario groups and ten compiled fault controls, included in the
+94-group qualified source snapshot. Native/cooked contracts distinguish inherited
+damage, the base no-op slice and the hacksaw's separate mesh-cut/broken path.
+Rendered impacts, cutting/fragment replication and full gameplay acceptance stay open.
 
 ### Implemented — ten prop-action/MRE delivery fixes (b2214)
 
@@ -612,8 +923,8 @@ Keep personal Insomniac/nightmare and native personal spawn conditions local.
 
 ## Gameplay acceptance checklist
 
-Use matching development **b2214** DLLs for new checks; the prepared 0.9.2158
-package remains **b2186**. Record role, item/model, reproduction and logs.
+Use matching **0.9.2161 / b2217** packages for new checks. Record role,
+item/model, reproduction and logs.
 Offline tests do not close gameplay reports. Mining (6) stays closed; previously
 working nightmares (10) only need acceptance of the newer personal-sleep behavior.
 Wall41 remains excluded.
@@ -679,15 +990,15 @@ Wall41 remains excluded.
 - [ ] Resolve the remaining public-prose counters recorded in TESTLOG:
   document count 85/82, src.comment_doc_row 155/0 and
   src.files_not_swept 84/0 with the reading-room checkouts absent.
-  The latest fact-row gate passes (517 rows/166 files);
+  The latest fact-row gate passes (565 rows/181 files);
   older missing-reference/unused-row findings are superseded.
 
 ## Release preparation
 
-Package 0.9.2158 is prepared locally with offline-test qualification.
-Requalify changed source and build the next package through package/release.json,
-package/check_current.ps1 and package/package_current.ps1. Native startup and
-rendered multiplayer acceptance remain open; see TESTLOG for verification limits.
+Current 2161 work is development, not a newly qualified package. The last recorded GitHub description update was 2160. Thunderstore
+upload remains pending API access or manual import of the verified ZIP. Use
+package/build_current.ps1 and package/release.json for later builds. Native startup
+and rendered multiplayer acceptance remain open; see TESTLOG for verification limits.
 
 Commit, push, game installation and publication require an explicit request.
 No other-agent workflow. Update the active tracking documents in place.

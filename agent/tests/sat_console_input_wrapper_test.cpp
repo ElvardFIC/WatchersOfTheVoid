@@ -34,6 +34,7 @@ Obj& textLibrary=objects[7]; Obj& mintText=objects[8]; Obj& otherClass=objects[9
 Obj& otherFunction=objects[10]; Obj& otherTerm=objects[11];
 uint32_t world=0;
 bool current=true, mintOk=true, callOk=true, paramsOk=true;
+bool metadataReady=false,missingEnter=false,missingWrite=false,missingInit=false;
 int frameBytes=ue_wrap::ftext_utils::kFTextSize;
 int mints=0, calls=0, frees=0;
 void* shown=nullptr;
@@ -52,6 +53,9 @@ void Reset() {
     current=mintOk=callOk=paramsOk=true;frameBytes=ue_wrap::ftext_utils::kFTextSize;
     mints=calls=frees=0;shown=&term;onMint=onFrame=onParams=onSetText=onFree={};
     SC::g_termCls.Set(&termClass);SC::g_resolved=true;
+    for(auto& ref:SC::g_layoutRefs)ref.Set(&termClass);
+    SC::g_nextTryMs=0;SC::g_attempts=0;SC::g_resolving=false;
+    metadataReady=missingEnter=missingWrite=missingInit=false;
     SC::g_offCommand=int(offsetof(Obj,command));SC::g_offTextBox=int(offsetof(Obj,box));SC::g_fnSetText=&setText;
     ue_wrap::ftext_utils::g_cached=false;ue_wrap::ftext_utils::g_ktlCdo=nullptr;
     ue_wrap::ftext_utils::g_convStrToTextFn=nullptr;ue_wrap::ftext_utils::g_inputParam=nullptr;
@@ -73,10 +77,15 @@ bool IsLive(void* p){return p && IsLiveByIndex(p,InternalIndexOf(p));}
 void* ClassOf(void* p){return p?static_cast<test::Obj*>(p)->cls:nullptr;}
 void* FindClass(const wchar_t*){return &test::termClass;}
 void* FindClassDefaultObject(const wchar_t*){return &test::textLibrary;}
-void* FindFunction(void*,const wchar_t* name){return !std::wcscmp(name,L"Conv_StringToText")?&test::mintText:&test::setText;}
+void* FindFunction(void*,const wchar_t* name){
+    if((test::missingEnter&&!std::wcscmp(name,L"enterCommand")) ||
+       (test::missingWrite&&!std::wcscmp(name,L"writeToLog")) ||
+       (test::missingInit&&!std::wcscmp(name,L"init")))return nullptr;
+    return !std::wcscmp(name,L"Conv_StringToText")?&test::mintText:&test::setText;
+}
 void* FindDispatchFunctionCached(void*,const wchar_t*){return &test::setText;}
-int32_t FindPropertyOffset(void*,const wchar_t*){return -1;}
-bool FindBoolProperty(void*,const wchar_t*,int32_t&,uint8_t&){return false;}
+int32_t FindPropertyOffset(void*,const wchar_t*){return test::metadataReady?0:-1;}
+bool FindBoolProperty(void*,const wchar_t*,int32_t& offset,uint8_t& mask){if(!test::metadataReady)return false;offset=0;mask=1;return true;}
 int32_t FindParamOffset(void*,const wchar_t*){return 0;}
 bool MarkPendingKill(void* p){static_cast<test::Obj*>(p)->live=false;return true;}
 const FName& NameOf(void*){static FName name{};return name;}
@@ -150,5 +159,36 @@ int main(){using namespace test;
     Reset();SC::g_resolved=false;CHECK(!Consume());Untouched();CHECK(!mints);
     Reset();SC::g_offCommand=-1;CHECK(!Consume());Untouched();CHECK(!mints);
     Reset();SC::g_offTextBox=-1;CHECK(!Consume());Untouched();CHECK(!mints);
-    Reset();puts("PASS production console input wrapper: real ParamFrame/FText/FString, no-box success, preparation/errors and callback/serial/field-owner guards");
+    Reset();SC::g_resolved=false;
+    for(int i=0;i<8;++i){SC::g_nextTryMs=0;CHECK(!SC::EnsureResolved());}
+    metadataReady=true;SC::g_nextTryMs=0;CHECK(SC::EnsureResolved());
+    puts("PASS console delayed metadata recovers after eight incomplete attempts");
+    // A new attempt cannot borrow a parameter offset from an incomplete predecessor.
+    for(bool write:{false,true}){
+        Reset();SC::g_resolved=false;metadataReady=true;missingInit=true;CHECK(!SC::EnsureResolved());
+        missingInit=false;if(write)missingWrite=true;else missingEnter=true;
+        SC::g_nextTryMs=0;CHECK(!SC::EnsureResolved());CHECK(write?SC::g_offWriteB<0:SC::g_offEnterC<0);
+        missingWrite=missingEnter=false;SC::g_nextTryMs=0;CHECK(SC::EnsureResolved());
+    }
+    puts("PASS console incomplete resolutions never reuse previous parameter offsets");
+    Reset();SC::g_resolved=false;metadataReady=true;CHECK(SC::EnsureResolved());
+    ++setText.serial;CHECK(!SC::LayoutCurrent());CHECK(SC::EnsureResolved());CHECK(SC::LayoutCurrent());
+    ++termClass.serial;CHECK(!SC::LayoutCurrent());CHECK(SC::EnsureResolved());CHECK(SC::LayoutCurrent());
+    puts("PASS console replaced class/function metadata re-resolves before use");
+    Reset();SC::g_offEnterC=0;SC::g_offWriteB=0;SC::g_offWriteType=sizeof(ue_wrap::field_io::FStringView);
+    struct Args {ue_wrap::field_io::FStringView value;uint8_t type=2;};
+    wchar_t good[]=L"help";Args args{{good,5,5}};std::wstring text;uint8_t type=0;
+    const auto* raw=reinterpret_cast<const uint8_t*>(&args);
+    CHECK(SC::ReadEnterCommandLine(raw,text)&&text==L"help");
+    CHECK(SC::ReadWriteToLogArgs(raw,text,type)&&text==L"help"&&type==2);
+    for(int mode=0;mode<5;++mode){args.value={good,5,5};
+        if(mode==0)args.value.num=-1;if(mode==1)args.value.max=2;
+        if(mode==2)args.value.data=nullptr;if(mode==3)args.value.num=70000;
+        if(mode==4){args.value.num=4;args.value.max=4;}
+        CHECK(!SC::ReadEnterCommandLine(raw,text));CHECK(!SC::ReadWriteToLogArgs(raw,text,type));
+    }
+    args.value={nullptr,0,0};CHECK(SC::ReadEnterCommandLine(raw,text)&&text.empty());
+    args.value={good,9000,9000};CHECK(!SC::ReadWriteToLogArgs(raw,text,type));
+    Reset();puts("PASS bounded console FString headers reject malformed storage and oversized output");
+    puts("PASS production console input wrapper: real ParamFrame/FText/FString, no-box success, preparation/errors and callback/serial/field-owner guards");
 }

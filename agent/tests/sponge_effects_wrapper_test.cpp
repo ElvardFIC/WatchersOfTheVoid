@@ -1,4 +1,7 @@
-#include "../../src/votv-coop/src/ue_wrap/actors/sponge_effects.cpp"
+#ifndef SPONGE_WRAPPER_SOURCE
+#define SPONGE_WRAPPER_SOURCE "../../src/votv-coop/src/ue_wrap/actors/sponge_effects.cpp"
+#endif
+#include SPONGE_WRAPPER_SOURCE
 #include <cstdio>
 #include <cstdlib>
 #include <map>
@@ -8,6 +11,7 @@ enum Index {Sponge,Player,Bubbles,SpongeClass,PlayerClass,ParticleClass,Particle
 struct Hit {ue_wrap::FVector location{100,200,300},normal{0,0,1},impact{9,9,9},impactNormal{1,0,0};};
 struct Obj {int index=0,serial=1;bool live=true;void* player=nullptr;void* effect=nullptr;Hit hit;float soap=100;} objects[Count];
 uint32_t world=1;bool fields=true,stock=true,spawnOk=true,valid=true;
+bool alternateSchema=false;
 int surfaces=0,bursts=0;ue_wrap::FRotator rotation{};
 std::function<void()> onLookup,onCall,onStock,onFunction;
 std::map<std::wstring,std::wstring> functions;
@@ -27,7 +31,7 @@ void* ClassOf(void* p){if(p==test::At(test::Sponge))return test::At(test::Sponge
 bool IsDescendantOfAny(void* cls,void* const* bases,size_t count,int){return count==1 && cls==bases[0];}
 int32_t InstanceOffset::Of(void*){if(!test::fields)return -1;if(!wcscmp(prop_,L"player"))return offsetof(test::Obj,player);
     if(!wcscmp(prop_,L"hitResult"))return offsetof(test::Obj,hit);CHECK(!wcscmp(prop_,L"eff_bubbles"));return offsetof(test::Obj,effect);}
-void* PropertyInnerStruct(void* cls,const wchar_t* name){CHECK(cls==test::At(test::PlayerClass) && !wcscmp(name,L"hitResult"));return test::At(test::HitStruct);}
+void* PropertyInnerStruct(void* cls,const wchar_t* name){CHECK(cls==test::At(test::PlayerClass) && !wcscmp(name,L"hitResult"));return test::At(test::alternateSchema?test::Other:test::HitStruct);}
 int32_t StructSize(void* p){CHECK(p==test::At(test::HitStruct));return sizeof(test::Hit);}
 int32_t FindPropertyOffset(void* p,const wchar_t* name){CHECK(p==test::At(test::HitStruct));auto result=!wcscmp(name,L"Location")?offsetof(test::Hit,location):offsetof(test::Hit,normal);
     CHECK(!wcscmp(name,L"Location") || !wcscmp(name,L"Normal"));test::Callback(test::onLookup);return int32_t(result);}
@@ -90,4 +94,5 @@ int main() {
     onFunction=[]{objects[Sponge].effect=At(Other);};CHECK(!FX::Burst(At(Sponge)));objects[Sponge].effect=At(Bubbles);
     onCall=[]{++world;};CHECK(FX::Burst(At(Sponge)) && objects[Sponge].soap==100);
     puts("PASS sponge wrapper: exact native trace location/normal, source/soap/lifetime checks, particle geometry, auto cleanup, no-reset burst and no cleaning/stock calls");
+    return 0;
 }

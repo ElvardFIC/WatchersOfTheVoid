@@ -11,6 +11,11 @@
 // Known limits: a thrown sponge's dab is not sent (no hand to read its brush from); dabs that
 // arrive while a signal plays wait for playback to end; the periodic dirt splotch still rolls on
 // each peer independently.
+// Queues are scoped to one running session/world/role and bounded to 256 dabs.
+// Outgoing payloads are sealed at the first drain and retain their brush on refused
+// sends; FIFO retries expire after 20 seconds. Each tick sends/replays at most eight.
+// Unresolved native preparation retains its FIFO row; an admitted native draw is
+// attempted once, including an uncertain failure.
 
 #pragma once
 
@@ -26,7 +31,7 @@ namespace coop::window_stroke_sync {
 // Store the session and register the window with the shared scan. Idempotent. Game thread.
 void Install(coop::net::Session* session);
 
-// A WindowStroke arrived (payload already range-checked by the dispatch): queue the dab for replay.
+// Validate the active source, sender and draw ranges, then queue the dab for replay.
 void OnReliable(const coop::net::WindowStrokePayload& payload, uint8_t senderPeerSlot);
 
 // Per net-pump tick: install the stroke observer once, send observed dabs, replay received ones.

@@ -1,7 +1,11 @@
 #include "support_2135.h"
-#include "../../src/votv-coop/src/coop/props/watoy_sync.cpp"
+#ifndef WATOY_SYNC_SOURCE
+#define WATOY_SYNC_SOURCE "../../src/votv-coop/src/coop/props/watoy_sync.cpp"
+#endif
+#include WATOY_SYNC_SOURCE
 #include "../../src/votv-coop/src/coop/net/session_lanes.h"
 #include <limits>
+#include <set>
 namespace test {
 bool found=true,toy=true,writable=true,readable=true;
 void* localHand=nullptr;
@@ -11,14 +15,19 @@ uint32_t handGeneration=1,mirrorGeneration=1;
 int activations=0,applies=0,cues=0,claims=0,releases=0;
 ue_wrap::watoy::State state{},heard{},handHeard{};
 std::wstring key=L"watoy";
-std::array<coop::roster_ledger::Row,4> roster{};
+std::array<coop::roster_ledger::Row,coop::net::kMaxPeers> roster{};
+uint32_t sessionSerial=1;
+std::set<uint64_t> invocations;
+std::function<void()> toyCallback;
 }
+namespace coop::net::session_serial {uint32_t Current(){return test::sessionSerial;}}
+namespace ue_wrap::script_gate {bool IsInvocationActive(uint64_t id){return test::invocations.contains(id);}}
 namespace ue_wrap::watoy {
-bool IsToy(void* a){return a && reflection::IsLive(a) && test::toy;}
+bool IsToy(void* a){const bool result=a && reflection::IsLive(a) && test::toy;auto callback=std::move(test::toyCallback);test::toyCallback={};if(callback)callback();return result;}
 size_t Collect(CachedObjRef* out,size_t cap){if(!cap || !test::found)return 0;out[0].Set(&test::actor);return 1;}
 bool Read(void*,State& s){s=test::state;test::Callback();return test::readable;}
-bool Activate(void*){++test::activations;test::state.active=true;test::Callback();return true;}
-bool ApplyAudio(void* a,const State& s){++test::applies;test::heard=s;if(a==&test::ui)test::handHeard=s;test::Callback();return test::writable;}
+bool Activate(void*,const std::function<bool()>& current){if(current && !current())return false;++test::activations;test::state.active=true;test::Callback();return !current || current();}
+bool ApplyAudio(void* a,const State& s,const std::function<bool()>& current){if(current && !current())return false;++test::applies;test::heard=s;if(a==&test::ui)test::handHeard=s;test::Callback();return test::writable && (!current || current());}
 bool Apply(View& view,void* actor,const State& state,const std::function<bool()>& current){view.actor.Set(actor);return ApplyAudio(actor,state) && current();}
 void Clear(View& view){auto actor=view.actor.Get();view={};if(actor)ApplyAudio(actor,{});}
 bool PlayStartCue(){++test::cues;test::Callback();return true;}
@@ -35,7 +44,7 @@ uint32_t MirrorGeneration(uint8_t){return test::mirrorGeneration;}
 bool IsMirrorActor(void* a){return a && a==test::mirror;}
 bool IsHandAxisActor(void* a){return a && (a==test::localHand || a==test::mirror);}
 }
-namespace coop::roster_ledger {const Row& Get(int slot){static Row empty;return slot>=0 && slot<4?test::roster[slot]:empty;}}
+namespace coop::roster_ledger {const Row& Get(int slot){static Row empty;return slot>=0 && slot<net::kMaxPeers?test::roster[slot]:empty;}}
 namespace ue_wrap::object_index {void* ClassByName(const wchar_t*){return &test::ui;}}
 namespace ue_wrap::facts {
 Function::Function(detail::MacroToken,const char* id,const char* feature,const wchar_t* cls,const wchar_t* fn,Mode mode)
@@ -49,9 +58,9 @@ void Start(coop::net::Session& session,coop::net::Role role) {
     S::OnDisconnect();session.mode=role;session.linked=session.ready=session.sendOk=true;session.sent.clear();session.allowSend={};
     coop::players::Registry::Get().peer=role==coop::net::Role::Host?0:1;
     found=toy=writable=readable=true;localHand=mirror=componentOwner=nullptr;handGeneration=mirrorGeneration=1;
-    for(int slot=0;slot<4;++slot)roster[slot].playerNo=uint16_t(slot+10);
+    for(int slot=0;slot<coop::net::kMaxPeers;++slot)roster[slot].playerNo=uint16_t(slot+10);
     state={};heard={};S::Install(&session);S::ReconcileOccupants();
-    coop::element::reach=true;callback={};coop::element::callback={};
+    coop::element::reach=true;callback=toyCallback={};coop::element::callback={};
 }
 Packet World(uint32_t sequence,uint8_t op=0) {
     Packet p{};coop::net::WireKeyFromString(key,p.key);p.sequence=sequence;p.op=op;
@@ -63,6 +72,7 @@ Packet Hand(uint32_t sequence,uint32_t generation=1,uint8_t slot=2,uint8_t op=3)
 }
 Packet Decode(const coop::net::Session::Sent& sent){Packet p{};CHECK(sent.kind==coop::net::ReliableKind::Watoy);std::memcpy(&p,sent.data.data(),sizeof(p));return p;}
 }
+#ifndef WATOY_FIXTURE_ONLY
 int main() {
     using namespace test;using coop::net::Role;using V=ue_wrap::script_gate::Verdict;coop::net::Session session;
     CHECK(coop::net::LaneForKind(coop::net::ReliableKind::Watoy)==coop::net::Lane::Normal);
@@ -91,7 +101,7 @@ int main() {
     auto previous=S::g_hands[1].state;roster[1].playerNo=100;S::Tick();CHECK(!S::g_hands[1].state.sequence);
     S::Receive(previous,1);CHECK(!S::g_hands[1].state.sequence); // no missed-leave inheritance
     // World and foreign-hand producer bodies stay native only on their author.
-    ue_wrap::script_gate::Call call{};call.object=&actor;
+    ue_wrap::script_gate::Call call{};call.object=&actor;call.function=&ui;call.invocation=1;invocations.insert(1);
     mirror=&actor;CHECK(S::BeforeActivate(call)==V::Cancel && S::BeforeTick(call)==V::Cancel);
     componentOwner=&actor;CHECK(S::BeforePhysics(&ui,&actor,nullptr)==V::Cancel);
     CHECK(S::BeforePhysics(&actor,&actor,nullptr)==V::Run);componentOwner=nullptr;CHECK(S::BeforePhysics(&ui,&actor,nullptr)==V::Run);
@@ -143,7 +153,7 @@ int main() {
     callback=[&]{S::OnDisconnect();};now+=100;S::Tick();CHECK(!S::g_session && S::g_worldRows.empty());
     Start(session,Role::Host);state.active=false;request=World(1,1);coop::element::callback=[&]{S::OnDisconnect();};native=activations;
     S::Receive(request,1);CHECK(!S::g_session && activations==native);
-    Start(session,Role::Client);S::Receive(active,0);++world;S::Tick();CHECK(!S::Current());S::Install(&session);CHECK(S::g_worldRows.empty());
+    Start(session,Role::Client);S::Receive(active,0);++world;S::Tick();CHECK(S::Current() && S::g_worldRows.empty());S::Install(&session);CHECK(S::g_worldRows.empty());
     // Reliable backpressure cannot let a newer live cue overtake an older one.
     Start(session,Role::Host);state.active=false;
     for(int i=0;i<5;++i)S::QueueCue(&actor);auto oldest=S::g_sequence+1;
@@ -171,3 +181,4 @@ int main() {
     coop::element::callback=[]{roster[1].playerNo++;};S::Receive(request,1);CHECK(activations==native);
     puts("PASS watoy: canonical world activation/motion/audio, late actor/field retry, join, native producer guards, owner hand readiness/occupancy, retry FIFO and teardown");
 }
+#endif

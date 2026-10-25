@@ -1,5 +1,8 @@
 #include "support_2135.h"
-#include "../../src/votv-coop/src/coop/props/dingus_music_sync.cpp"
+#ifndef TOY_MUSIC_SOURCE
+#define TOY_MUSIC_SOURCE "../../src/votv-coop/src/coop/props/dingus_music_sync.cpp"
+#endif
+#include TOY_MUSIC_SOURCE
 #include "../../src/votv-coop/src/coop/net/session_lanes.h"
 #include <limits>
 #include <set>
@@ -9,11 +12,14 @@ bool plush=false,alt=false;
 int squeaks=0;float pitch=1.25f,heardPitch=0;
 ue_wrap::dingus_music::State music{true,false,.3f};
 std::wstring key=L"maxwell";
-uint16_t people[4]{10,11,12,13};
+uint16_t people[coop::net::kMaxPeers]{10,11,12,13};
 std::function<void()> pitchCallback;
 bool clockReady=false;std::function<void()> clockCallback;
 std::set<uint64_t> invocations;
+uint32_t sessionSerial=1;
+std::function<void()> keyCallback;
 }
+namespace coop::net::session_serial {uint32_t Current(){return test::sessionSerial;}}
 namespace ue_wrap::dingus_music {
 bool IsDingus(void* actor){return !test::plush && actor==&test::actor && test::actor.live;}
 bool IsSqueakyToy(void* actor){return actor==&test::actor && test::actor.live;}
@@ -32,8 +38,8 @@ bool Interact(void*,bool toggle,const std::function<bool()>& current){if(current
  test::music.used=true;if(toggle)test::music.playing=!test::music.playing;test::Callback();return !current || current();}
 }
 namespace coop::hand_item {bool IsHandAxisActor(void*){return test::hand;}}
-namespace coop::roster_ledger {const Row& Get(int slot){static Row rows[4];rows[slot].playerNo=test::people[slot];return rows[slot];}}
-namespace ue_wrap::prop {std::wstring GetInteractableKeyString(void*){return test::key;}}
+namespace coop::roster_ledger {const Row& Get(int slot){static Row rows[net::kMaxPeers];rows[slot].playerNo=test::people[slot];return rows[slot];}}
+namespace ue_wrap::prop {std::wstring GetInteractableKeyString(void*){auto key=test::key;auto callback=std::move(test::keyCallback);test::keyCallback={};if(callback)callback();return key;}}
 namespace coop::prop_element_tracker {void* FindLiveActorByKey(const std::wstring& k){return test::found && k==test::key?&test::actor:nullptr;}}
 namespace ue_wrap::reflection {
 int32_t FindParamOffset(void*,const wchar_t*){return 0;}
@@ -46,7 +52,7 @@ void NativeAfterAction(ue_wrap::script_gate::Call call){
 }
 void ResetWorldToy(coop::net::Session& session,coop::net::Role role=coop::net::Role::Host){
     using namespace test;coop::dingus_music_sync::OnDisconnect();++world;session={};session.mode=role;
-    actor.live=true;found=true;hand=plush=alt=clockReady=false;music={true,false,.3f};callback=pitchCallback=clockCallback={};
+    actor.live=true;found=true;hand=plush=alt=clockReady=false;music={true,false,.3f};callback=pitchCallback=clockCallback=keyCallback={};
     coop::players::Registry::Get().peer=role==coop::net::Role::Host?0:1;
     coop::element::reach=true;coop::element::callback={};coop::dingus_music_sync::Install(&session);
 }
@@ -80,11 +86,11 @@ int main(){using namespace test;namespace S=coop::dingus_music_sync;namespace A=
  session.sendOk=false;S::Tick();CHECK(S::g_intents.size()==1);
  session.sendOk=true;S::Tick();CHECK(S::g_intents.empty());
  action=6;CHECK(S::BeforeAction(call)==V::Run);action=5;hand=true;CHECK(S::BeforeAction(call)==V::Run);
- hand=false;S::BeforeTouch(call);CHECK(S::g_intents.size()==1 && S::g_intents.front().state.op==2);
+ hand=false;call.invocation=2;invocations.insert(2);S::BeforeTouch(call);CHECK(S::g_intents.size()==1 && S::g_intents.front().state.op==2);
  music.used=true;S::BeforeTouch(call);CHECK(S::g_intents.size()==1);
  now+=4000;S::Tick();CHECK(S::g_intents.empty());
  now+=250;callback=[&]{S::OnDisconnect();};S::Tick();CHECK(!S::g_session && S::g_rows.empty());
- S::Install(&session);S::Receive(initial,0);++world;S::Tick();CHECK(!S::Current());S::Install(&session);CHECK(S::g_rows.empty());
+ S::Install(&session);S::Receive(initial,0);++world;S::Tick();CHECK(S::Current() && S::g_rows.empty());S::Install(&session);CHECK(S::g_rows.empty());
  S::OnDisconnect();session.mode=coop::net::Role::Host;S::Install(&session);session.sent.clear();
  Packet pulse{};coop::net::WireKeyFromString(key,pulse.key);pulse.op=3;pulse.sequence=1;pulse.volume=1.75f;pulse.playerNo=people[1];
  auto nativeBefore=interactions;S::Receive(pulse,1);S::Receive(pulse,1);CHECK(S::g_pulses.size()==1);

@@ -1,11 +1,258 @@
 # WORK — current state and open work
 
-Current development: **DLL b2215 / protocol 2215**, game **0.9.0n**, targeting
-package **0.9.2159**. **94/94 full regression groups pass**; Release/ABI evidence:
-`build/upstream-qualified-2215/verification.json`. Upstream `ad5315611` and
-local native-action/hit-result fixes `ddc711220` are included with their history.
-Last prepared manager package: **0.9.2158 / DLL b2186 / protocol 2186**,
-qualified with **68/68 groups**. It excludes b2187–b2215; no 2159 archive is prepared.
+Active development: **0.9.2161 / b2217 / protocol 2217** (26 October 2026).
+The owner explicitly keeps work in 2161. Continuations do not advance versions or
+automatically prepare releases. The previous 2162 label was an assistant mistake;
+older reports/archives retain their historical bytes and do not qualify new changes.
+
+## Current continuation — console metadata; flashlight ownership unresolved
+
+Four completed fixes in ue_wrap/desk/sat_console.cpp: keep throttled metadata retries
+after the former five-pass permanent shutdown; clear every partial offset before retry;
+retain and validate eleven class/function/CDO incarnations before using cached offsets;
+and validate bounded FString headers/capacity/storage/terminators for command, output,
+name and history reads. Replaced metadata invalidates the ready latch and can resolve
+again. Reflection resolution also refuses recursive entry. Versions are unchanged.
+
+PASS the 21 existing controller scenarios, actual-wrapper tests with four new groups,
+thirteen compiled removal controls (nine controller, four wrapper), and native wrapper
+production-header compilation. Gameplay acceptance and a stable combined Release build
+remain unperformed. The former qualification-current evidence describes the prior snapshot.
+
+The same continuation initially selected six flashlight lifetime/routing/publication
+fixes (listed individually as pending in TODO). During implementation another writer
+inserted Seat/Scope state, rewrote Publish and DebugForceToggle in item_activate.cpp.
+This was observed changing again after the first conflict. Own overlapping changes
+were withdrawn without removing the other writer's implementation. The user has a
+pending question about file ownership. Do not claim these six implemented or qualify
+an actively changing combined source; coordinate ownership first. No install/package,
+version bump, commit or publication.
+
+## Flashlight and console priority continuation — 26 October
+
+Owner prioritises flashlight operation and sharing each player's console text.
+The ten individually named fixes are in TODO: exact local publisher; coherent
+player/light sampling; finite/range validation before apply/cache; newer-state
+interruption; nested echo restoration; exact console POST matching; owned body
+attribution; no truncated command execution; no malformed output escaping local
+synchronisation; and unchanged-state publication after local pawn reincarnation.
+Wire/public/internal versions stay 0.9.2161/b2217. Console bodies now retain their
+function incarnation, stack, locals and watch tag, and readers receive a value copy
+instead of a pointer into a vector that callbacks can reallocate or erase. A shared
+command over 255 characters remains editable in the input rather than executing
+its shortened prefix. Invalid native output is cancelled rather than rendered on
+one peer alone. Flashlight signature float reads also use defined bit_cast.
+
+PASS five selected current groups, Release/ABI and label formatter, plus 21 callback
+scenarios and nine compiled console removal controls. TESTLOG records current
+evidence. These checks establish the named code paths, not a reproduced diagnosis
+of every owner-visible failure. Rendered two-player beam/mode/battery/joins and
+concurrent console input/clear/history/reconnect remain open. Only submitted output
+is shared; unfinished keystrokes are outside this change. Full regression and a
+new package are unperformed. No installation, commit or publication.
+
+## Remote flashlight-click continuation
+
+Development remains 2161/b2217. Ten fixes cover invalid slots, registry association,
+puppet/class/world currency, session/world/person/body dedup scope, retryable
+preparation, sound-cache lifetime, attenuation-cache lifetime, per-slot reentry
+ownership, finite positions and refusal of unattenuated fallback. The receiver
+reserves a revision before resource/location calls and validates the same source
+after each callback-capable preparation step. Same-state nested calls do not
+duplicate work; a newer different state supersedes older preparation, including
+a return to the last admitted state. The latch commits immediately before the
+one native attempt and does not overwrite a nested completion afterward. Resource
+caches hold checked object/class references; attenuation construction is guarded
+against recursive allocation and the constant shared resource may survive a world
+change. Native one-third attenuation tuning and local sound are preserved.
+
+PASS ten new 32-slot groups, ten compiled removal controls and two production-TU
+compiles. Three related groups, Release/ABI and the production 2161 formatter pass.
+The runner is added to the current suite; qualification is recorded in TESTLOG.
+Rendered acceptance, full regression and a new package qualification remain
+open. Retry requires a subsequent apply; the void native playback wrapper does not
+report audible completion or expose its internal dispatch admission. These checks
+do not establish complete reflected-call metadata lifetime inside that wrapper.
+
+## Held-toy audio continuation
+
+Development remains 2161/b2217. Ten fixes cover full session scope, sender and
+recipient connection identity, frozen pre-native hand/action provenance, exact
+bounded PRE/POST ownership, admission before pulse dedup/rate charge, owned decode
+payload, shared send budget, strict expiry/clock recovery and exact recipient
+completion. Receive reconciles person/transport changes and freezes source proof
+through authorization, native presentation and delivery. PRE reserves capacity
+before callback-capable parameter reads and keeps the original actor, person,
+generation, invocation/function/stack/tag. Unknown hand generation cannot be
+adopted by a later hand. Native local sound is untouched; outgoing cosmetic replay
+waits only for the already-addressed remote mirror. At most 64 send attempts run
+per tick; transient expiry is strict at 1,500 ms through native/send callbacks.
+Clock rollback retires captures/queues/painted rows while keeping receive watermarks.
+Delivery completion compares exact captured recipient identity, preserving debt
+installed by a reentrant join. The wire layout, public version and protocol stay.
+
+PASS legacy held/world toy and contact fixtures, ten new 32-seat lifetime groups,
+ten compiled removal controls and seven production-TU compiles. Eight related
+groups, Release/ABI and the production 2161 formatter pass; details are recorded
+in TESTLOG. Rendered acceptance, full regression and a new package
+qualification remain open, as do hook-function/schema lifetime and bounded native
+presentation/authorization work. Initial-hand readiness needs rendered acceptance.
+
+## Watoy native-wrapper continuation
+
+Development remains 2161/b2217. Ten fixes guard field object/class/world identity,
+unknown zero-component metadata, complete source bindings, activation admission,
+audio preparation, service CDO lifetime, mesh/template currency, checked/finite
+native outputs, spawned candidate validation/cleanup and direct View reentry.
+Read publishes complete state only while the sampled Audio/a links remain current.
+Activate accepts the controller's requester predicate; ApplyAudio accepts the
+presentation predicate and checks it between native query/volume/pitch/start calls.
+Spawn owns source/mesh/template/service identities, refuses unreadable/non-finite
+results and validates a particle-component result before publication. Stale owned
+candidates are released separately from the live View. View revisions prevent an
+older Apply/Clear from replacing or disabling a fresh same-View owner after reentry.
+No wire layout, public version or protocol change.
+
+PASS ten new actual-wrapper groups and ten new compiled removal controls, all
+existing watoy controller/wrapper groups and ten controller controls, plus four
+production-TU compiles. Seven related groups, Release/ABI and the production 2161
+formatter pass; qualification is recorded in TESTLOG. Rendered acceptance
+and a new full regression/package qualification remain open. Full reflected
+parameter schemas/function ownership, cleanup across independently copied View
+owners, original-hand provenance and native-work budgets are not established.
+
+## Watoy controller continuation
+
+Development stays 2161/b2217. Ten fixes cover full session scope, exact activation
+POST, bounded PRE reservation/pruning, requester connection identity, recipient
+connection identity, snapshot-based state flush, retired drain ownership, exact
+revision pruning, cue admission before deduplication and owned receive payloads.
+Requester person/transport/peer epoch remains checked through authorization and
+native state reads, including deferred requests and remote-hand presentation.
+Recipient snapshots prevent old state/cue debt from crossing slot reuse; join
+explicitly binds the current recipient. Outbound state is copied before sends,
+then completion re-finds the matching revision and recipient. Drains abort after
+session retirement and validate detached retries before restoring them. Pruning
+copies rows, checks the exact revision and detaches views before native release.
+Teardown leaves a freshly installed session intact. No wire or version change.
+
+PASS legacy controller/native wrapper, ten 32-seat lifetime groups, ten compiled
+removal controls and four production-TU compiles. Seven related groups,
+Release/ABI and the production 2161 formatter pass; details are recorded in TESTLOG.
+Rendered multiplayer, full regression and
+new package qualification remain open. This does not close native-wrapper
+preparation lifetime, original hand provenance, bounded native work or full-save
+parity; those are separate unverified implementation/acceptance boundaries.
+
+## World toy music/squeak continuation
+
+Development stays 2161/b2217. Ten fixes cover session scope, requester transport,
+recipient transport, exact PRE/POST, reserved PRE capacity, admission before pulse
+deduplication, owned receive payload, shared send budget, callback expiry/clock
+rollback and consistent key validation. PRE records retain live function identity
+and stack alongside invocation/actor. Requester proof is frozen before lookup and
+authorization. Existing person/peer epochs now also reconcile transport replacement.
+Reliable retries retain FIFO; all three outbound paths share 64 attempts per tick.
+Pulse expiry is strict at 1,500 ms, including native preparation callbacks. A clock
+rollback retires queued events/captures and cached state for fresh sampling while
+preserving received sequence watermarks. No wire layout or version changes.
+
+PASS ten new 32-seat lifetime groups, ten compiled removal controls, existing
+wrapper/phase/clock fixtures and four production-TU compiles. Current focused
+qualification passes seven related groups, Release/ABI and the production 2161
+formatter; details are recorded in TESTLOG. Rendered multiplayer, full regression and
+a newly qualified archive remain open; no new archive is prepared by continuation.
+
+## Sponge-foam continuation
+
+Ten implemented points are individually listed in TODO: full session retirement,
+exact invocation/POST pruning, reserved PRE ownership, frozen item/hand identity,
+target/class/key authorization, source occupancy, recipient occupancy, admission
+before deduplication, bounded work/expiry/clock handling and native trace ownership.
+Targets keep source, actor/class, key, person, hand and connection proof through
+callback-capable work. Retained detached rows are revalidated before queue merge.
+At most eight authorization/presentation rows and 64 send attempts run per tick.
+The 1,500-ms transient TTL is checked across callbacks as well as on initial drain.
+Presentation rotates by owned event ID independently of ordered wire delivery;
+unready mirrors do not spend the authorization budget or starve later ready effects.
+
+PASS the existing controller/wrapper, ten lifetime groups, trace replacement cases,
+eleven compiled fault controls and four production-TU compiles. Five related groups,
+Release/ABI and the production 2161 formatter pass. Current evidence:
+`build/qualification-current/verification.json`. This is
+focused evidence; a new full regression/package qualification remains open.
+Foam never replays native cleaning or debits soap; rendered host/client acceptance
+and ancillary native-effect parity remain open. Existing canvas/grime/save gaps remain.
+
+## Native canvas preparation and draw admission (b2217)
+
+Ten fixes replace stale layout/function caches, validate raw observers, guard
+complete brush reads and refuse unknown stock/material values, check factory
+bindings and MID type, protect pin/teardown ownership, fail closed on unreadable
+signal state, fence native source/target/component/function preparation, validate
+all argument offsets/sizes/Vector2D schemas, and retain pre-admission Retry rows
+without repeating an admitted uncertain draw. Native canvas owns open/join and
+its 0.25-second retriggerable close; the wrapper never calls setDraw/endDraw directly.
+Only the audited base canvas entry can prepare a retry; inherited subclasses are
+accepted, while unverified overrides wait. Finite negative final-use soap remains
+valid by the native subtract-without-clamp/getStrength contract. Vector2D schema
+identities and parameter links remain checked through actual draw admission.
+
+PASS 14 controller and 14 actual-wrapper/ParamFrame scenario groups, 17 compiled
+fault controls, both production-TU compiles and the cooked 0.9.0n canvas contract.
+The existing `run_window_stroke` group covers both layers. Historical pre-foam
+b2217 evidence retains its mistaken label in `build/release-2162/verification.json`
+and the earlier `build/package-current/verification.json`; current focused evidence
+is under `build/qualification-current/`.
+
+This implements specific callback/metadata lifetime guards left open in 2161;
+rendered multiplayer still needs acceptance. Brush values are first sampled at
+outgoing drain; original-dab hand/material provenance and atomic material-scalar
+sampling are not established. Thrown sponges, independent periodic grime,
+dynamic-source completeness and full-save parity remain open.
+
+## Bay-window stroke delivery (b2216)
+
+Ten fixes retire work across all session/world/role/start/stop/link transitions,
+retain refused FIFO dabs, seal brush payloads once, bound sends and expiry, own
+callback completion, validate ranges and ready origins while accepting host-relayed
+slots, preserve admitted rows at capacity, track serial/world scan identity,
+guard each replay and recover hook installation/arming/function replacement.
+`run_window_stroke.ps1 -FaultControls` passes 13 scenario groups, seven compiled
+protection-removal controls and a production-TU compile. The runner is included
+in `package/check_current.ps1`; historical b2216 qualification remains in
+`build/release-2161/verification.json` and TESTLOG.
+
+Native draw admission remains at-most-once even when its result is uncertain.
+Brush values are sampled at first drain, so exact original-dab hand/material
+provenance is still open. Thrown sponge strokes and independent periodic grime
+remain unchanged; dynamic-grime completeness, full-save parity, complete wrapper
+callback/metadata lifetime and rendered multiplayer acceptance are not established.
+
+## Version-start housekeeping
+
+Before every new version, preview and run `package/cleanup_current.ps1`, review
+TODO against implemented work, and update TODO/WORK in place. Keep the active
+source/tests, dependencies, current qualified package/DLL and unique verification,
+crash and research evidence. Remove obsolete delivery copies, generated test
+outputs, caches, staging and redundant publication drafts/backups.
+
+The historical cleanup before the mistakenly labelled 2162 snapshot removed 752 files / 535.9 MiB and records retained
+SHA256 values in `package/cleanup-inventory.json`. The cleanup now reads the current
+archive from the packager's canonical `dist/` inside the checkout, matches names
+with the ElvardFIC namespace and removes superseded versions without hardcoded
+215x ranges. The workspace README identifies current 2161 development.
+Historic release reports and source handoffs retain their original evidence;
+TODO/WORK own current status. Gameplay acceptance remains open as listed below.
+
+## Historical full-suite baseline
+
+The pre-foam b2217 snapshot passed 95 groups and package/ABI checks under the
+mistaken 2162 label; `build/release-2162/verification.json` preserves that evidence.
+Those results do not qualify the changed foam controller/trace reader. Current
+public development remains 2161 with focused evidence under qualification-current.
+Upstream `ad5315611` and local native-action fixes remain integrated. Rendered
+gameplay, full-manager startup, fresh full qualification and package preparation remain open.
 
 [TODO.md](TODO.md) owns priorities and report checklists.
 [TESTLOG.md](TESTLOG.md) owns completed-change reports, hashes and evidence.
@@ -30,8 +277,8 @@ host state twice. Details and verification boundaries: [TESTLOG.md](TESTLOG.md).
 
 Rendered host/client acceptance remains open for these combined paths, including
 concurrent actions, driver handoff, force-only blasts and late join. Every peer
-requires b2215. No manager archive, game installation or master deployment was
-performed; older acceptance items below remain open.
+requires b2217 for current checks. Current 2161 development is recorded above; no game
+installation or master deployment was performed. Older acceptance items remain open.
 
 ## 24 October report batch
 
@@ -98,7 +345,7 @@ current DLL and delivery archive hashes are unchanged.
 | Bleeding (b2187) | Drop parameters reach ready observers, excluding the injured owner; damage and blur remain personal. | Rendered injuries, stopping bleeding, mid-bleed joins and refusal/reconnect. Exact stain layout, historical-stain joins, cleaning parity and full-save persistence remain unverified. |
 
 Native blast/ATV evidence belongs to earlier DLLs. Offline/native checks do not
-close rendered gameplay or real keyboard-input acceptance on b2214.
+close rendered gameplay or real keyboard-input acceptance on b2217.
 
 ## Runtime investigations and implementation gaps
 
@@ -129,7 +376,8 @@ complete; confirm matching capacity on the deployed master. No remote deployment
 Boundaries: [SYNC_2157_FIXES.md](SYNC_2157_FIXES.md).
 
 Selected upstream adaptations still need rendered checks:
-[FORK_AUDIT_20261022.md](FORK_AUDIT_20261022.md). Upstream ancestry was not merged.
+[FORK_AUDIT_20261022.md](FORK_AUDIT_20261022.md). Its original unmerged snapshot is
+historical; upstream ancestry through `ad5315611` is now merged.
 Ragdoll reports 5/50 and stationary-PC loading 54/55 remain open; TODO keeps
 input, transition, power-cycle and handoff cases. Optional authored PhysicsAsset/
 display retargeting is separate from current acceptance.
@@ -139,11 +387,12 @@ Wall41; chair reports 11/36 are duplicates. Previously working nightmares (10)
 need acceptance of newer personal-sleep behavior. Use identical current DLLs and
 record role, item/model, reproduction and logs in TESTLOG before closing reports.
 
-The latest fact-row gate passes **517 rows / 166 files**. Remaining public-prose
+The latest fact-row gate passes **565 rows / 181 files**. Remaining public-prose
 counters: documents **85/82**, src.comment_doc_row **155/0** and
 src.files_not_swept **84/0**, with reading-room checkouts absent.
 Full-manager-package startup and rendered multiplayer remain unverified.
-Requalify changed source through current package scripts/metadata. Publication is pending.
+Requalify changed source through current package scripts/metadata. GitHub descriptions
+for 2160 are published; the mistakenly labelled 2162 archive is historical.
 
 ## Requested event synchronization and frequency
 

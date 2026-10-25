@@ -11,30 +11,18 @@ remote player models, text and positional voice chat, and shared-world synchroni
 > Bugs, crashes and multiplayer desynchronization may occur. A successful build or
 > automated test run does not guarantee stable gameplay.
 
-## Prepared test build
+## Development — 0.9.2161
 
-Package **0.9.2160**, DLL **b2215 / protocol 2215**, for **VotV Alpha 0.9.0n**.
-The menu and server browser show **Watchers of the Void 0.9.2160**.
-All players must update together.
+The active public version is **0.9.2161**, targeting **VotV Alpha 0.9.0n**.
+Internal DLL/network identity remains **b2217 / protocol 2217**. Continuations
+add fixes to this version; a new public version requires the owner's request.
 
-This package includes the remembered 2-32-player chooser, shovel-hole and food-state
-replication, console ownership/queues, personal sleep voting, ATV recovery/steering,
-Ariral ship presentation, inventory/container restoration and guarded native actions.
-It also includes the current upstream integration while retaining this fork's fixes.
-Automatic lobbies above four players also require the updated master service.
-
-The identical production source snapshot passed **94/94 offline groups**. Those
-results are reused for the public-version change; Release compilation, the new
-version label and archive checks are fresh. Details and remaining checks are in
-the [release notes](package/RELEASE.md).
-Rendered multiplayer remains unverified for this package. Full event/creature
-coverage, resource accounting and several previously reported gameplay issues remain open.
-
-The prepared mod-manager package is **ElvardFIC-WatchersOfTheVoid-0.9.2160.zip**.
-Binary download availability follows the published release/package listing;
-this description alone does not publish the archive.
-See the [changelog](package/CHANGELOG_PLUS.md).
-
+Current work includes guarded remote flashlight clicks, held-toy audio, watoy state/cue delivery, world-toy music/squeak, bay-window wiping and sponge foam,
+with the existing co-op, 2-32-player, inventory, event and native-action fixes.
+The current implementation is under verification; existing delivery archives
+represent earlier snapshots. Current evidence and gameplay limits are in
+[TESTLOG](agent/TESTLOG.md) and the [development notes](package/RELEASE.md).
+Every peer used for testing must carry identical current DLL bytes.
 ## Installation
 
 Use a package explicitly published for this fork when available on this repository's
@@ -51,7 +39,7 @@ Multivoid project; check the package name before installing.
 The development hosting window offers **Players (including you)** under session
 settings: choose 2–32 with minus/plus or use 2/4/8/16/32 shortcuts. Both hosting
 menus remember the same choice for your next session (`net.player_limit`).
-These chooser improvements are included in package 0.9.2160.
+These chooser improvements are included in package 0.9.2161.
 
 Transport uses GameNetworkingSockets with positional voice and reliable state lanes.
 Each machine's engine performs its local simulation.

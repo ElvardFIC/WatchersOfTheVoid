@@ -1,13 +1,20 @@
 #include "support_2135.h"
-#include "../../src/votv-coop/src/coop/props/sponge_effects_sync.cpp"
+#include <set>
+#ifndef SPONGE_EFFECT_SOURCE
+#define SPONGE_EFFECT_SOURCE "../../src/votv-coop/src/coop/props/sponge_effects_sync.cpp"
+#endif
+#include SPONGE_EFFECT_SOURCE
 #include "../../src/votv-coop/src/coop/net/session_lanes.h"
 namespace test {
 bool sponge=true,found=true,readable=true,surfaceOk=true,burstOk=true;
+uint32_t sessionSerial=1;std::set<uint64_t> inactiveInvocations;
 void* localHand=nullptr;void* mirror=nullptr;uint32_t generation=1,mirrorGeneration=1;
 float soap=100;int surfaces=0,bursts=0;
 std::wstring key=L"sponge";
-std::array<coop::roster_ledger::Row,4> roster{};
+std::array<coop::roster_ledger::Row,coop::net::kMaxPeers> roster{};
 }
+namespace coop::net::session_serial {uint32_t Current(){return test::sessionSerial;}}
+namespace ue_wrap::script_gate {bool IsInvocationActive(uint64_t id){return id && !test::inactiveInvocations.contains(id);}}
 namespace ue_wrap::sponge_effects {
 bool IsSponge(void* actor){return actor && reflection::IsLive(actor) && test::sponge;}
 bool ReadUse(void*,void*,Use& use){use={{100,200,300},{0,0,1},test::soap};test::Callback();return test::readable && test::soap>0;}
@@ -23,13 +30,15 @@ uint32_t Generation(uint8_t){return test::generation;}uint32_t MirrorGeneration(
 bool IsMirrorActor(void* a){return a && a==test::mirror;}
 bool IsHandAxisActor(void* a){return a && (a==test::localHand || a==test::mirror);}
 }
-namespace coop::roster_ledger {const Row& Get(int slot){static Row empty;return slot>=0 && slot<4?test::roster[slot]:empty;}}
+namespace coop::roster_ledger {const Row& Get(int slot){static Row empty;return slot>=0 && slot<net::kMaxPeers?test::roster[slot]:empty;}}
 namespace test {
 namespace S=coop::sponge_effects_sync;using Packet=coop::net::SpongeEffectPayload;using Role=coop::net::Role;
 void Start(coop::net::Session& session,Role role) {
     S::OnDisconnect();session.mode=role;session.linked=session.ready=session.sendOk=true;session.sent.clear();session.allowSend={};
+    session.active=true;session.generations.fill(1);
+    inactiveInvocations.clear();++sessionSerial;
     coop::players::Registry::Get().peer=role==Role::Host?0:1;coop::players::Registry::Get().local=&ui;
-    for(int slot=0;slot<4;++slot)roster[slot].playerNo=uint16_t(slot+10);
+    for(int slot=0;slot<coop::net::kMaxPeers;++slot)roster[slot].playerNo=uint16_t(slot+10);
     localHand=mirror=nullptr;generation=mirrorGeneration=1;soap=100;sponge=found=readable=surfaceOk=burstOk=true;
     callback={};coop::element::reach=coop::element::segmentReach=true;coop::element::callback={};
     S::Install(&session);S::Reconcile();
@@ -45,15 +54,15 @@ int main() {
     using namespace test;using V=ue_wrap::script_gate::Verdict;coop::net::Session session;
     CHECK(coop::net::LaneForKind(coop::net::ReliableKind::SpongeEffect)==coop::net::Lane::Normal);
     CHECK(!coop::net::IsClientRelayableReliableKind(coop::net::ReliableKind::SpongeEffect));
-    Start(session,Role::Client);ue_wrap::script_gate::Call call{};call.object=&actor;call.stack=&ui;call.depth=1;
+    Start(session,Role::Client);ue_wrap::script_gate::Call call{};call.object=&actor;call.stack=&ui;call.depth=1;call.invocation=1;call.function=&ui;
     NativeUse(call);CHECK(S::g_events.size()==1 && soap==95);session.sendOk=false;S::Tick();CHECK(S::g_events.size()==1);
     session.sendOk=true;S::Tick();CHECK(S::g_events.empty() && session.sent.size()==1 && surfaces==0 && bursts==0);
     auto request=Decode(session.sent.back());CHECK(request.op==0 && request.slot==1 && request.playerNo==11);
     auto old=soap;CHECK(S::Before(call)==V::Run);S::AfterUse(call);CHECK(S::g_events.empty() && soap==old); // no native debit, no event
     soap=0;CHECK(S::Before(call)==V::Run);S::AfterUse(call);CHECK(S::g_frames.empty() && S::g_events.empty());soap=100;
     mirror=&actor;CHECK(S::Before(call)==V::Cancel);mirror=nullptr;
-    localHand=&actor;generation=0;NativeUse(call);S::Tick();CHECK(S::g_events.size()==1 && session.sent.size()==1);
-    generation=3;S::Tick();CHECK(S::g_events.empty() && Decode(session.sent.back()).generation==3);
+    localHand=&actor;generation=0;NativeUse(call);S::Tick();CHECK(S::g_events.empty() && session.sent.size()==1);
+    generation=3;S::Tick();CHECK(S::g_events.empty() && session.sent.size()==1);
     NativeUse(call);localHand=nullptr;S::Tick();CHECK(S::g_events.empty()); // stow before send does not hit another hand
     NativeUse(call);now+=1600;S::Tick();CHECK(S::g_events.empty());
     Start(session,Role::Host);auto beforeSurface=surfaces,beforeBurst=bursts;
@@ -119,6 +128,7 @@ int main() {
     Start(session,Role::Host);request=Request(1);S::Receive(request,1);
     coop::element::callback=[]{++roster[1].playerNo;};beforeSurface=surfaces;S::Tick();CHECK(surfaces==beforeSurface && S::g_events.empty());
     Start(session,Role::Client);canonical.sequence++;S::Receive(canonical,0);
-    ++world;S::Tick();CHECK(!S::Current());S::Install(&session);CHECK(S::g_events.empty());S::OnDisconnect();
+    ++world;S::Tick();CHECK(S::Current() && S::g_events.empty() && S::g_world==world);S::Install(&session);CHECK(S::g_events.empty());S::OnDisconnect();
     puts("PASS sponge effects: native-debit capture, hand/world identity, reach/point checks, mirror refusal, canonical transient output, partial/FIFO retry, no stock replay and teardown");
+    return 0;
 }

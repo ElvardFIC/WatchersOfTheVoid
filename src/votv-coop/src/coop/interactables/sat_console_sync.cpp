@@ -29,6 +29,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <optional>
 
 namespace coop::sat_console_sync {
 namespace {
@@ -139,7 +140,13 @@ struct Surface {
     ue_wrap::CachedObjRef term;
     bool visible=false;
 };
-struct BodyFrame { Surface source; uint64_t invocation=0; bool command=false,clear=false; };
+struct BodyFrame {
+    Surface source; uint64_t invocation=0; bool command=false,clear=false;
+    ue_wrap::CachedObjRef function;
+    void* stack=nullptr;
+    uint8_t* locals=nullptr;
+    int tag=0;
+};
 std::vector<BodyFrame> g_bodies;
 Surface g_asyncCommand;
 bool g_commandBusy=false,g_draining=false;
@@ -218,16 +225,18 @@ void PruneBodies() {
     std::erase_if(g_bodies,[](const BodyFrame& frame){return !sg::IsInvocationActive(frame.invocation);});
 }
 
-const BodyFrame* ActiveBody(void* term,bool commandsOnly=false) {
+std::optional<BodyFrame> ActiveBody(void* term,bool commandsOnly=false) {
     for(auto it=g_bodies.rbegin();it!=g_bodies.rend();++it)
-        if(it->source.term.Raw()==term && (!commandsOnly || it->command) && sg::IsInvocationActive(it->invocation))return &*it;
-    return nullptr;
+        if(it->source.term.Raw()==term && (!commandsOnly || it->command) && sg::IsInvocationActive(it->invocation))return *it;
+    return std::nullopt;
 }
 
 sg::Verdict TrackBody(const sg::Call& c,const Surface& source,bool command=false,bool clear=false) {
     PruneBodies();
     if(!SurfaceCurrent(source) || !c.invocation || g_bodies.size()>=64)return sg::Verdict::Cancel;
-    g_bodies.push_back({source,c.invocation,command,clear});
+    BodyFrame frame{source,c.invocation,command,clear};
+    frame.function.Set(c.function);frame.stack=c.stack;frame.locals=c.locals;frame.tag=c.tag;
+    g_bodies.push_back(std::move(frame));
     return sg::Verdict::Run;
 }
 
@@ -459,10 +468,12 @@ sg::Verdict OnEnterPre(const sg::Call& c) {
     if(s->role()!=coop::net::Role::Client || (readBusy && busy) || T::Classify(line)!=T::Runs::OnHost)
         return TrackBody(c,source,true,readBusy && !busy && IsClear(line));
     if(!readBusy)return sg::Verdict::Cancel;
+    // Executing a shortened command can change its meaning. Preserve the input
+    // so the typist can edit it and submit the intended complete line.
+    if(line.size()>kMaxLineChars)return sg::Verdict::Cancel;
     std::wstring name;
     if (!SC::ReadName(term, name) || !current()) return sg::Verdict::Cancel;
     if (name.size() > kMaxNameChars) name.resize(kMaxNameChars);
-    if (line.size() > kMaxLineChars) line.resize(kMaxLineChars);
     void* dish = SC::ReadActiveDish(term);
     if(!current())return sg::Verdict::Cancel;
     const int32_t dishIdx = dish ? ue_wrap::dish::IndexOf(dish) : kNoDish;
@@ -808,7 +819,7 @@ sg::Verdict OnWritePre(const sg::Call& c) {
     const auto epoch=g_epoch;
     if (!Current(s,epoch)) return sg::Verdict::Run;
     PruneBodies();
-    const auto* active=ActiveBody(c.object);
+    const auto active=ActiveBody(c.object);
     if(active && !SurfaceCurrent(active->source))return sg::Verdict::Cancel;
     Terminal* t = ByObject(c.object);
     const bool privateClearing=t && t->clearing;
@@ -816,7 +827,7 @@ sg::Verdict OnWritePre(const sg::Call& c) {
     if (!t && !visible) return sg::Verdict::Run;
     const auto source=CaptureSurface(c.object,visible);
     if(!SurfaceCurrent(source))return sg::Verdict::Cancel;
-    const auto* command=ActiveBody(c.object,true);
+    const auto command=ActiveBody(c.object,true);
     const bool local=(command && SurfaceCurrent(command->source)) ||
         (g_commandBusy && g_asyncCommand.term.Is(c.object) && SurfaceCurrent(g_asyncCommand));
     const bool clearing=command && command->clear;
@@ -825,8 +836,8 @@ sg::Verdict OnWritePre(const sg::Call& c) {
     if(s->role()==coop::net::Role::Client && !local)return sg::Verdict::Cancel;
     std::wstring text;
     uint8_t type = 0;
-    if (!SC::ReadWriteToLogArgs(c.locals, text, type)) return sg::Verdict::Run;
-    if (type>2 || text.size()>kMaxLogChars) return sg::Verdict::Run;
+    if (!SC::ReadWriteToLogArgs(c.locals, text, type)) return sg::Verdict::Cancel;
+    if (type>2 || text.size()>kMaxLogChars) return sg::Verdict::Cancel;
     // clr clears fields directly before its final empty writeToLog. Carry this
     // display operation in order with the command echo, without re-running clr.
     if(!SurfaceCurrent(source))return sg::Verdict::Cancel;
@@ -842,7 +853,9 @@ sg::Verdict OnWritePre(const sg::Call& c) {
 
 void OnBodyPost(const sg::Call& c) {
     const auto found=std::find_if(g_bodies.begin(),g_bodies.end(),[&](const BodyFrame& frame){
-        return frame.invocation==c.invocation && frame.source.term.Raw()==c.object;
+        return frame.invocation==c.invocation && frame.source.term.Raw()==c.object &&
+            frame.function.Raw()==c.function && (!c.function || frame.function.Get()) &&
+            frame.stack==c.stack && frame.locals==c.locals && frame.tag==c.tag;
     });
     if(found==g_bodies.end())return;
     // A callback can install new frames. Retire this exact invocation before

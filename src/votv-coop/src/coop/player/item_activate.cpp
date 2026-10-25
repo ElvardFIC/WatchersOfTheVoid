@@ -10,6 +10,8 @@
 #include "coop/player/flashlight_click_sound.h"
 #include "coop/net/protocol.h"
 #include "coop/net/session.h"
+#include "coop/net/session_serial.h"
+#include "coop/player/roster_ledger.h"
 #include "coop/player/players_registry.h"
 #include "coop/player/remote_player.h"
 #include "coop/config/config.h"
@@ -28,6 +30,8 @@
 #include <atomic>
 #include <cstdint>
 #include <cstring>
+#include <cmath>
+#include <bit>
 
 namespace coop::item_activate {
 namespace {
@@ -55,6 +59,7 @@ UE_FACT_FN(kRowTimerHoldFlashlight, "item_activate", L"mainPlayer_C", L"timerHol
 bool g_installed = false;
 uint64_t g_nextStatePoll = 0;
 uint32_t g_pollWorld = 0;
+ue_wrap::CachedObjRef g_pollPlayer;
 
 // The candidate UFunctions of the flashlight chain, resolved once. updateFlashlight is
 // BP-inlined into Flashlight Update and never reaches ProcessEvent, so every candidate gets an
@@ -107,10 +112,60 @@ coop::net::ItemActivatePayload g_pendingApplyPayload[coop::players::kMaxPeers] =
 // only, game thread.
 bool g_peerActivateValid[coop::players::kMaxPeers] = {};
 coop::net::ItemActivatePayload g_peerActivateCache[coop::players::kMaxPeers] = {};
-
 // Echo suppression around the receiver's apply, so a UFunction invoked on the puppet cannot
 // bounce back as a wire packet. Atomic, as the session pointer.
 std::atomic<bool> g_echoSuppress{false};
+
+struct SessionScope {
+    coop::net::Session* session=nullptr;
+    uint32_t serial=0,world=0;
+    coop::net::Role role=coop::net::Role::Host;
+    bool running=false,connected=false;
+};
+SessionScope g_scopeState;
+uint64_t g_epoch=0,g_sendRevision=0;
+bool g_publishing=false;
+uint64_t g_inflightSig=kNoSendYet;
+struct PeerBinding { bool known=false; uint16_t person=0; uint32_t generation=0; };
+PeerBinding g_peerBinding[coop::players::kMaxPeers]{};
+
+void RetireState() {
+    ++g_epoch;++g_sendRevision;
+    g_nextStatePoll=0;g_pollPlayer.Reset();g_publishing=false;g_inflightSig=kNoSendYet;
+    g_lastSentSig.store(kNoSendYet);g_latchedOnIntensity.store(0.f);
+    for(int slot=0;slot<coop::players::kMaxPeers;++slot)OnDisconnectForSlot(slot);
+}
+
+void Reconcile() {
+    auto* s=g_session.load();
+    const SessionScope now{s,coop::net::session_serial::Current(),ue_wrap::world_identity::Generation(),
+        s?s->role():coop::net::Role::Host,s&&s->running(),s&&s->connected()};
+    if(now.session!=g_scopeState.session || now.serial!=g_scopeState.serial || now.world!=g_scopeState.world ||
+       now.role!=g_scopeState.role || now.running!=g_scopeState.running || now.connected!=g_scopeState.connected){
+        RetireState();g_scopeState=now;
+    }
+}
+
+bool Current(uint64_t epoch) {
+    auto* s=g_session.load();
+    return epoch==g_epoch && s && s==g_scopeState.session && s->running() && s->connected() &&
+        s->role()==g_scopeState.role && coop::net::session_serial::Current()==g_scopeState.serial &&
+        ue_wrap::world_identity::Generation()==g_scopeState.world;
+}
+
+void BindPeer(uint8_t slot) {
+    auto* s=g_session.load();
+    const PeerBinding now{true,coop::roster_ledger::Get(slot).playerNo,s?s->peerGenerationForSlot(slot):0};
+    auto& old=g_peerBinding[slot];
+    if(old.known && (old.person!=now.person || old.generation!=now.generation))OnDisconnectForSlot(slot);
+    old=now;
+}
+
+bool PeerCurrent(uint8_t slot,const PeerBinding& peer,uint64_t epoch) {
+    return Current(epoch) && g_peerBinding[slot].known &&
+        peer.person==coop::roster_ledger::Get(slot).playerNo &&
+        peer.generation==g_session.load()->peerGenerationForSlot(slot);
+}
 
 bool ProbeLogEnabled() {
     // Read once per process: the observer is hot.
@@ -118,18 +173,35 @@ bool ProbeLogEnabled() {
     return s_enabled;
 }
 
+bool ValidLight(const coop::net::ItemActivatePayload& p) {
+    return p.state <= 1 && std::isfinite(p.intensity) && p.intensity >= 0.f &&
+        std::isfinite(p.outerConeAngle) && p.outerConeAngle > 0.f && p.outerConeAngle < 90.f &&
+        std::isfinite(p.innerConeAngle) && p.innerConeAngle >= 0.f && p.innerConeAngle <= p.outerConeAngle;
+}
+
 // The local player's flashlight state and cone shape as a payload; direct memory reads on the
 // calling thread (the observer on the game thread, DebugForceToggle inside its posted lambda).
 // False if light_R is dead.
 bool BuildPayloadFromLocal(void* mp, coop::net::ItemActivatePayload& out, coop::net::Session* session) {
-    if (!mp || !session) return false;
+    if (!mp || !session || mp != coop::players::Registry::Get().Local()) return false;
+    const auto epoch=g_epoch;
+    ue_wrap::CachedObjRef pawnRef, lightRef;
+    pawnRef.Set(mp);
+    const auto world = ue_wrap::world_identity::Generation();
     void* light_R = ue_wrap::engine::GetMainPlayerLightR(mp);
     if (!light_R) return false;
+    lightRef.Set(light_R);
+    const auto current = [&] {
+        if(!Current(epoch) || session!=g_session.load() || world!=ue_wrap::world_identity::Generation() ||
+            !pawnRef.Get() || !lightRef.Get() || mp!=coop::players::Registry::Get().Local())return false;
+        const bool sameLight=E::GetMainPlayerLightR(mp)==light_R;
+        return sameLight && Current(epoch) && pawnRef.Get() && lightRef.Get() && mp==coop::players::Registry::Get().Local();
+    };
 
     ue_wrap::engine::MainPlayerFlashlightState fl{};
-    if (!ue_wrap::engine::ReadMainPlayerFlashlightState(mp, fl)) return false;
+    if (!current() || !ue_wrap::engine::ReadMainPlayerFlashlightState(mp, fl) || !current()) return false;
     ue_wrap::engine::FlashlightSnapshot snap{};
-    if (!ue_wrap::engine::ReadFlashlightSnapshot(light_R, snap)) return false;
+    if (!ue_wrap::engine::ReadFlashlightSnapshot(light_R, snap) || !current()) return false;
 
     out = {};
     out.itemClassHash   = g_flashlightClassHash;
@@ -148,7 +220,7 @@ bool BuildPayloadFromLocal(void* mp, coop::net::ItemActivatePayload& out, coop::
     out.intensity       = snap.intensity;
     out.outerConeAngle  = snap.outerConeAngle;
     out.innerConeAngle  = snap.innerConeAngle;
-    return true;
+    return ValidLight(out) && current();
 }
 
 // FNV1a over the mutable fields, to dedupe the observer fires of one logical change (a press
@@ -159,173 +231,73 @@ uint64_t SignaturePayload(const coop::net::ItemActivatePayload& p) {
     auto mix = [&](uint64_t v) { h ^= v; h *= 0x100000001b3ULL; };
     mix(p.state);
     mix(p.mode);
-    mix(reinterpret_cast<const uint32_t&>(p.intensity));
-    mix(reinterpret_cast<const uint32_t&>(p.outerConeAngle));
-    mix(reinterpret_cast<const uint32_t&>(p.innerConeAngle));
+    mix(std::bit_cast<uint32_t>(p.intensity));
+    mix(std::bit_cast<uint32_t>(p.outerConeAngle));
+    mix(std::bit_cast<uint32_t>(p.innerConeAngle));
     return h;
 }
 
-void OnUpdateFlashlightPost(void* self, void* function, void* /*params*/) {
-    if (!self) return;
-    // Which hook fired, for the probe log.
-    const char* which =
-        (function == g_flashlightUpdateFn)     ? "Flashlight_Update" :
-        (function == g_updateFlashlightFn)     ? "updateFlashlight"  :
-        (function == g_flashlightInput13Fn)    ? "InpActEvt_13"      :
-        (function == g_flashlightInput14Fn)    ? "InpActEvt_14"      :
-        (function == g_timerHoldFlashlightFn)  ? "timerHoldFlashlight" :
-        "<unknown>";
-
-    // A receiver-applied change must not bounce back as a packet.
-    if (g_echoSuppress.load(std::memory_order_acquire)) return;
-
-    // Puppets are skipped: a fire on a puppet would send its state back to the peer that authored
-    // it. A controller is the local-versus-puppet discriminator.
-    if (!E::GetController(self)) return;
-
-    // The state after the BP ran: the bools carry the new value. One wrapper read.
-    ue_wrap::engine::MainPlayerFlashlightState fl{};
-    if (!ue_wrap::engine::ReadMainPlayerFlashlightState(self, fl)) return;
-    const bool flashlight = fl.flashlight;
-    const bool hasFlashlight = fl.hasFlashlight;
-    const bool crankFlashlight = fl.crankFlashlight;
-
-    if (ProbeLogEnabled()) {
-        // The probe line: whether the BP early-returned without a flashlight (the bool unchanged)
-        // and whether light_R's visibility tracks the bool; the crank variant is logged separately
-        // since it is not sent.
-        void* light_R = ue_wrap::engine::GetMainPlayerLightR(self);
-        ue_wrap::engine::FlashlightSnapshot snap{};
-        const bool snapOk = ue_wrap::engine::ReadFlashlightSnapshot(light_R, snap);
-        UE_LOGI("flashlight[POST %s] self=%p flashlight=%d hasFL=%d crankFL=%d "
-                "light_R=%p bVisible=%d Intensity=%.1f", which, self,
-                flashlight ? 1 : 0, hasFlashlight ? 1 : 0,
-                crankFlashlight ? 1 : 0, light_R,
-                snapOk && snap.visible ? 1 : 0,
-                snapOk ? snap.intensity : -1.f);
-    }
-
-    // Missing/replaced equipment must publish OFF to clear a previously lit puppet.
-    // BuildPayloadFromLocal leaves the crank lantern's separate light out of this lane.
-
-    // The "on" intensity latches the first time it reads clearly above the off sentinel (about 0.2
-    // Unitless); above 1.0 filters the sentinel.
-    if (flashlight) {
-        ue_wrap::engine::FlashlightSnapshot snap{};
-        if (ue_wrap::engine::ReadFlashlightSnapshot(
-                ue_wrap::engine::GetMainPlayerLightR(self), snap)) {
-            if (snap.intensity > 1.f && g_latchedOnIntensity.load(std::memory_order_acquire) == 0.f) {
-                g_latchedOnIntensity.store(snap.intensity, std::memory_order_release);
-                UE_LOGI("flashlight: latched local 'on' intensity = %.2f (will drive puppet)", snap.intensity);
-            }
-        }
-    }
-
-    auto* s = g_session.load(std::memory_order_acquire);
-    if (!s || !s->connected()) return;
-
+bool PublishState(void* self) {
+    Reconcile();
+    const auto epoch=g_epoch;
+    auto* session=g_session.load();
+    if(!Current(epoch) || !self || self!=coop::players::Registry::Get().Local() || g_echoSuppress.load())return false;
+    ue_wrap::CachedObjRef publisher;publisher.Set(self);
+    const auto observedRevision=g_sendRevision;
     coop::net::ItemActivatePayload p{};
-    if (!BuildPayloadFromLocal(self, p, s)) return;
-
-    // Only the first observer of a logical change sends: the signature covers state, mode,
-    // intensity and cones.
-    const uint64_t sig = SignaturePayload(p);
-    // A hash equal to kNoSendYet is shifted by one so the sentinel stays unambiguous.
-    const uint64_t storeSig = (sig == kNoSendYet) ? (kNoSendYet - 1) : sig;
-    if (g_lastSentSig.load(std::memory_order_acquire) == storeSig) {
-        if (ProbeLogEnabled()) {
-            UE_LOGI("flashlight: payload signature unchanged (sig=%llX) -- no wire send",
-                    static_cast<unsigned long long>(storeSig));
-        }
-        return;
-    }
-
-    const bool sent = s->SendReliable(coop::net::ReliableKind::ItemActivate, &p, sizeof(p));
-    if (!sent) {
-        UE_LOGW("flashlight: SendReliable failed (channel busy or not connected) [%s]", which);
-    } else {
-        g_lastSentSig.store(storeSig, std::memory_order_release);
-        UE_LOGI("flashlight: sent state=%d mode=%u Intensity=%.2f outerCone=%.1f innerCone=%.1f "
-                "(senderElementId=0x%08x, via %s)",
-                p.state, p.mode, p.intensity, p.outerConeAngle, p.innerConeAngle,
-                p.senderElementId, which);
-    }
+    if(!BuildPayloadFromLocal(self,p,session) || !Current(epoch) || observedRevision!=g_sendRevision)return false;
+    const auto hash=SignaturePayload(p),sig=hash==kNoSendYet?kNoSendYet-1:hash;
+    if(g_publishing && g_inflightSig==sig)return false;
+    if(g_lastSentSig.load()==sig)return true;
+    if(p.state && p.intensity>1.f)g_latchedOnIntensity=p.intensity;
+    const auto revision=++g_sendRevision;
+    const bool previousBusy=g_publishing;const auto previousSig=g_inflightSig;
+    g_publishing=true;g_inflightSig=sig;
+    struct Publishing {
+        uint64_t epoch;bool previousBusy;uint64_t previousSig;
+        ~Publishing(){if(epoch==g_epoch){g_publishing=previousBusy;g_inflightSig=previousSig;}}
+    } publishing{epoch,previousBusy,previousSig};
+    // A nested return to the previously admitted state still owes a correction
+    // while a different state is in flight. Completion owns this exact revision.
+    g_lastSentSig=kNoSendYet;
+    const bool sent=session->SendReliable(coop::net::ReliableKind::ItemActivate,&p,sizeof(p));
+    if(!Current(epoch) || revision!=g_sendRevision || !publisher.Is(coop::players::Registry::Get().Local()))return false;
+    if(sent)g_lastSentSig=sig;
+    if(ProbeLogEnabled())UE_LOGI("flashlight: publish state=%u mode=%u sent=%d",p.state,p.mode,sent?1:0);
+    return sent;
 }
 
+void OnUpdateFlashlightPost(void* self,void*,void*) {
+    PublishState(self);
+}
 }  // namespace
 
 bool DebugForceToggle(void* mp) {
-    if (!mp) return false;
-
-    // The field flip runs on the game thread (UObject memory), posted and awaited from this worker
-    // thread; the autotest calls this from its worker, never inside a posted lambda. The local
-    // light_R's intensity is driven too, so the sender's own light toggles: the BP path is gated
-    // by input state reflection cannot reach, so calling Flashlight Update by reflection produces
-    // no visible toggle, and writing the bool and the intensity is the pair the BP would write.
-    auto done = std::make_shared<std::atomic<int>>(0);
-    auto newStateOut = std::make_shared<std::atomic<bool>>(false);
-    GT::Post([mp, done, newStateOut] {
-        // Read and flip through the wrappers.
-        ue_wrap::engine::MainPlayerFlashlightState cur{};
-        if (!ue_wrap::engine::ReadMainPlayerFlashlightState(mp, cur)) {
-            done->store(1, std::memory_order_release);
-            return;
+    if(!mp)return false;
+    auto done=std::make_shared<std::atomic<int>>(0);
+    auto result=std::make_shared<std::atomic<bool>>(false);
+    auto work=[mp,done,result]{
+        Reconcile();const auto epoch=g_epoch;
+        ue_wrap::CachedObjRef actor;
+        if(!Current(epoch) || mp!=coop::players::Registry::Get().Local()){done->store(1);return;}
+        actor.Set(mp);
+        const auto current=[&]{return Current(epoch) && actor.Get() && mp==coop::players::Registry::Get().Local();};
+        ue_wrap::engine::MainPlayerFlashlightState state{};
+        if(!E::ReadMainPlayerFlashlightState(mp,state) || !current()){done->store(1);return;}
+        const bool enabled=!state.flashlight;
+        if(!E::WriteMainPlayerFlashlight(mp,enabled) || !current()){done->store(1);return;}
+        void* light=E::GetMainPlayerLightR(mp);
+        if(current() && light){
+            float intensity=enabled?g_latchedOnIntensity.load():0.f;
+            if(enabled && intensity==0.f)intensity=kIntensityOnFallback;
+            E::SetLightIntensity(light,intensity);
         }
-        const bool newState = !cur.flashlight;
-        ue_wrap::engine::WriteMainPlayerFlashlight(mp, newState);
-
-        // The local light_R's intensity follows the new state, through the same SetIntensity the
-        // puppet receiver uses.
-        void* light_R = ue_wrap::engine::GetMainPlayerLightR(mp);
-        float localTarget = kIntensityOffDefault;
-        if (newState) {
-            localTarget = g_latchedOnIntensity.load(std::memory_order_acquire);
-            if (localTarget == 0.f) localTarget = kIntensityOnFallback;
-        }
-        if (light_R) {
-            ue_wrap::engine::SetLightIntensity(light_R, localTarget);
-        }
-        // The on value latches too, so the receiver gets the intensity in use rather than the
-        // fallback.
-        if (newState && localTarget > 1.f) {
-            g_latchedOnIntensity.store(localTarget, std::memory_order_release);
-        }
-        newStateOut->store(newState, std::memory_order_release);
-        UE_LOGI("flashlight: DebugForceToggle wrote flashlight=%d Intensity=%.2f on %p (LAN test path)",
-                newState ? 1 : 0, localTarget, mp);
-        done->store(1, std::memory_order_release);
-    });
-    while (done->load(std::memory_order_acquire) == 0) ::Sleep(1);
-    const bool newState = newStateOut->load(std::memory_order_acquire);
-
-    // SendReliable queues inside the channel and fails only on a malformed packet.
-    auto* s = g_session.load(std::memory_order_acquire);
-    if (!s || !s->connected()) {
-        UE_LOGW("flashlight: DebugForceToggle session not connected -- skipping wire send");
-        return newState;
-    }
-
-    // The cone shape is whatever the local light_R carries: this bypasses the BP, so the cones do
-    // not reflect a real mode change, which the autotest does not exercise.
-    coop::net::ItemActivatePayload p{};
-    if (!BuildPayloadFromLocal(mp, p, s)) {
-        UE_LOGW("flashlight: DebugForceToggle BuildPayloadFromLocal failed (light_R dead?)");
-        return newState;
-    }
-
-    if (s->SendReliable(coop::net::ReliableKind::ItemActivate, &p, sizeof(p))) {
-        const uint64_t sig = SignaturePayload(p);
-        const uint64_t storeSig = (sig == kNoSendYet) ? (kNoSendYet - 1) : sig;
-        g_lastSentSig.store(storeSig, std::memory_order_release);
-        UE_LOGI("flashlight: DebugForceToggle sent state=%d mode=%u Intensity=%.2f outerCone=%.1f "
-                "(senderElementId=0x%08x)",
-                p.state, p.mode, p.intensity, p.outerConeAngle, p.senderElementId);
-    } else {
-        UE_LOGW("flashlight: DebugForceToggle SendReliable failed (state=%d)", p.state);
-    }
-    return newState;
+        if(current()){PublishState(mp);result->store(enabled);}
+        done->store(1);
+    };
+    if(GT::IsGameThread())work();else {GT::Post(work);while(!done->load())::Sleep(1);}
+    return result->load();
 }
-
 uint32_t HashClassName(const wchar_t* s) {
     // FNV-1a 32-bit over the UTF-16 bytes; the same encoding on every peer.
     uint32_t h = 0x811c9dc5u;
@@ -342,6 +314,7 @@ uint32_t HashClassName(const wchar_t* s) {
 
 void Install(coop::net::Session* session) {
     g_session.store(session, std::memory_order_release);
+    Reconcile();
     // The state sampler also covers native writes that do not dispatch an input event.
     // Its identity must exist even while the player class or observer slots are unavailable.
     g_flashlightClassHash = HashClassName(L"prop_equipment_flashlight_C");
@@ -395,8 +368,16 @@ void Install(coop::net::Session* session) {
             ProbeLogEnabled() ? 1 : 0);
 }
 
-bool ApplyToPuppet(void* puppetActor, const coop::net::ItemActivatePayload& payload,
+bool ApplyToPuppet(void* puppetActor, const coop::net::ItemActivatePayload& incoming,
                    uint8_t senderPeerSlot) {
+    const auto payload=incoming;
+    Reconcile();
+    if (senderPeerSlot >= coop::players::kMaxPeers || !ValidLight(payload)) return false;
+    if(!Current(g_epoch))return false;
+    BindPeer(senderPeerSlot);
+    const auto epoch=g_epoch;
+    const auto peer=g_peerBinding[senderPeerSlot];
+    const auto revision = g_pendingApplyRevision[senderPeerSlot];
     if (!puppetActor || !R::IsLive(puppetActor)) {
         UE_LOGW("flashlight: ApplyToPuppet called with invalid puppet=%p", puppetActor);
         return false;
@@ -410,18 +391,26 @@ bool ApplyToPuppet(void* puppetActor, const coop::net::ItemActivatePayload& payl
 
     const bool newState = (payload.state != 0);
 
+    const auto belongs=[&]{return !coop::players::Registry::Get().IsLocal(puppetActor) &&
+        coop::players::Registry::Get().PeerIdOfActor(puppetActor)==senderPeerSlot;};
+    if(!belongs() || !PeerCurrent(senderPeerSlot,peer,epoch))return false;
+    ue_wrap::CachedObjRef pawnRef, lightRef;
+    pawnRef.Set(puppetActor);
+
     void* light_R = ue_wrap::engine::GetMainPlayerLightR(puppetActor);
     if (!light_R) {
         UE_LOGW("flashlight: puppet light_R missing or dead -- light not toggled "
                 "(puppet=%p)", puppetActor);
         return false;
     }
-    ue_wrap::CachedObjRef pawnRef, lightRef;
-    pawnRef.Set(puppetActor); lightRef.Set(light_R);
+    lightRef.Set(light_R);
     const auto world = ue_wrap::world_identity::Generation();
     const auto current = [&] {
-        return world == ue_wrap::world_identity::Generation() && pawnRef.Get() && lightRef.Get() &&
-            ue_wrap::engine::GetMainPlayerLightR(puppetActor) == light_R;
+        if(!PeerCurrent(senderPeerSlot,peer,epoch) || world!=ue_wrap::world_identity::Generation() ||
+            !pawnRef.Get() || !lightRef.Get() || !belongs() || revision!=g_pendingApplyRevision[senderPeerSlot])return false;
+        const bool sameLight=ue_wrap::engine::GetMainPlayerLightR(puppetActor)==light_R;
+        return sameLight && PeerCurrent(senderPeerSlot,peer,epoch) && pawnRef.Get() && lightRef.Get() &&
+            revision==g_pendingApplyRevision[senderPeerSlot] && belongs();
     };
 
     // The puppet's existing light_R is driven through SetVisibility and SetIntensity only. The
@@ -432,8 +421,10 @@ bool ApplyToPuppet(void* puppetActor, const coop::net::ItemActivatePayload& payl
     // which for a light calls MarkRenderStateDirty (native, so no BP observer fires) and schedules
     // the render-state recreation that builds the scene proxy; a direct bit write does none of
     // that and produced no visible change.
-    g_echoSuppress.store(true, std::memory_order_release);
+    const bool previousSuppress = g_echoSuppress.exchange(true, std::memory_order_acq_rel);
+    struct EchoGuard { bool previous; ~EchoGuard() { g_echoSuppress.store(previous, std::memory_order_release); } } echo{previousSuppress};
     bool applied = true;
+    if(!current())return false;
 
     // The four dispatches go through the cached engine wrappers.
 
@@ -443,7 +434,7 @@ bool ApplyToPuppet(void* puppetActor, const coop::net::ItemActivatePayload& payl
         applied = false;
         UE_LOGW("flashlight: SetSceneComponentVisibility failed (UFunction unresolved or light_R dead)");
     }
-    if (!current()) { g_echoSuppress.store(false, std::memory_order_release); return false; }
+    if (!current()) return false;
 
     // 2) SetIntensity: the sender's exact brightness; off is 0.
     const float targetIntensity = newState ? payload.intensity : 0.f;
@@ -451,21 +442,20 @@ bool ApplyToPuppet(void* puppetActor, const coop::net::ItemActivatePayload& payl
         applied = false;
         UE_LOGW("flashlight: SetLightIntensity failed (UFunction unresolved or light_R dead)");
     }
-    if (!current()) { g_echoSuppress.store(false, std::memory_order_release); return false; }
+    if (!current()) return false;
 
     // 3) The cone angles (spread versus focused); both mark the render state dirty. Only when on: a
     // cone on an off light is invisible.
     if (newState) {
         if (payload.outerConeAngle > 0.f) {
             applied = ue_wrap::engine::SetSpotLightOuterConeAngle(light_R, payload.outerConeAngle) && applied;
-            if (!current()) { g_echoSuppress.store(false, std::memory_order_release); return false; }
+            if (!current()) return false;
         }
         if (payload.innerConeAngle >= 0.f) {
             applied = ue_wrap::engine::SetSpotLightInnerConeAngle(light_R, payload.innerConeAngle) && applied;
         }
     }
 
-    g_echoSuppress.store(false, std::memory_order_release);
     if (!applied || !current()) return false;
     UE_LOGI("flashlight: applied to puppet=%p state=%d Intensity=%.2f outerCone=%.1f innerCone=%.1f mode=%u "
             "(senderPeerSlot=%u senderElementId=0x%08x)",
@@ -481,12 +471,17 @@ bool ApplyToPuppet(void* puppetActor, const coop::net::ItemActivatePayload& payl
 }
 
 void ApplyToPuppetOrDefer(uint8_t senderPeerSlot, void* puppetActor,
-                          const coop::net::ItemActivatePayload& p) {
+                          const coop::net::ItemActivatePayload& incoming) {
+    const auto p=incoming;
+    Reconcile();
+    if (!ValidLight(p) || !g_flashlightClassHash || p.itemClassHash != g_flashlightClassHash) return;
     if (senderPeerSlot >= coop::players::kMaxPeers) {
         UE_LOGW("flashlight: ApplyToPuppetOrDefer senderPeerSlot=%u out of range -- dropping",
                 static_cast<unsigned>(senderPeerSlot));
         return;
     }
+    if(!Current(g_epoch))return;
+    BindPeer(senderPeerSlot);
     // The host remembers each client's latest item state, applied or deferred, for a later joiner;
     // the host's own state goes through QueueConnectBroadcastForSlot.
     if (senderPeerSlot >= 1) {
@@ -513,6 +508,7 @@ void ApplyToPuppetOrDefer(uint8_t senderPeerSlot, void* puppetActor,
 }
 
 void QueueConnectBroadcastForSlot(int peerSlot) {
+    Reconcile();
     // A targeted seed cannot satisfy the regular broadcast. In particular a refused
     // seed must leave a fresh publication owed when the pawn or transport becomes ready.
     g_lastSentSig.store(kNoSendYet, std::memory_order_release);
@@ -553,6 +549,7 @@ void QueueConnectBroadcastForSlot(int peerSlot) {
 }
 
 void ReplayPeerStatesToSlot(int newSlot) {
+    Reconcile();
     // Every other client's cached state, replayed to a new client so it converges; ItemActivate is
     // edge-triggered, and the joiner cannot learn these otherwise. Host only.
     auto* s = g_session.load(std::memory_order_acquire);
@@ -560,6 +557,7 @@ void ReplayPeerStatesToSlot(int newSlot) {
     if (newSlot < 1 || newSlot >= static_cast<int>(coop::players::kMaxPeers)) return;
     for (int peer = 1; peer < static_cast<int>(coop::players::kMaxPeers); ++peer) {
         if (peer == newSlot) continue;
+        BindPeer(static_cast<uint8_t>(peer));
         if (!g_peerActivateValid[peer]) continue;
         const coop::net::ItemActivatePayload& p = g_peerActivateCache[peer];
         // Off is skipped: the joiner's puppet for that peer spawns off.
@@ -575,13 +573,16 @@ void ReplayPeerStatesToSlot(int newSlot) {
 }
 
 void TickConnect() {
+    Reconcile();
     // Battery exhaustion clears flashlight/light_R directly inside the native Tick,
     // bypassing the input UFunctions observed above. Four small reads per second;
     // the existing signature sends only changes and retries a refused send.
     auto* session = g_session.load(std::memory_order_acquire);
     const uint64_t now = GetTickCount64();
     const uint32_t world = ue_wrap::world_identity::Generation();
-    if (world != g_pollWorld) {
+    void* local = coop::players::Registry::Get().Local();
+    if (world != g_pollWorld || !g_pollPlayer.Is(local)) {
+        g_pollPlayer.Set(local);
         g_pollWorld = world; g_nextStatePoll = 0;
         g_lastSentSig.store(kNoSendYet, std::memory_order_release);
         g_latchedOnIntensity.store(0.f, std::memory_order_release);
@@ -593,6 +594,7 @@ void TickConnect() {
 
     // The pending applies drain once the registry has a live puppet for the slot.
     for (uint8_t peer = 0; peer < coop::players::kMaxPeers; ++peer) {
+        BindPeer(peer);
         if (!g_pendingApplyValid[peer]) continue;
         auto* rp = coop::players::Registry::Get().Puppet(peer);
         if (!rp || !rp->valid()) continue;
@@ -610,28 +612,13 @@ void TickConnect() {
 }
 
 void OnDisconnect() {
-    g_session.store(nullptr, std::memory_order_release);
-    g_nextStatePoll = 0; g_pollWorld = 0;
-    g_lastSentSig.store(kNoSendYet, std::memory_order_release);
-    g_latchedOnIntensity.store(0.f, std::memory_order_release);
-    int clearedApplies = 0;
-    for (uint8_t i = 0; i < coop::players::kMaxPeers; ++i) {
-        if (g_pendingApplyValid[i]) ++clearedApplies;
-        g_pendingApplyValid[i] = false;
-        ++g_pendingApplyRevision[i];
-        g_pendingApplyPayload[i] = {};
-        // The replay cache goes too: on a fresh session a different peer may reuse the slot.
-        g_peerActivateValid[i] = false;
-        g_peerActivateCache[i] = {};
-    }
-    if (clearedApplies > 0) {
-        UE_LOGI("flashlight: OnDisconnect cleared %d pending apply slot(s)",
-                clearedApplies);
-    }
+    RetireState();g_scopeState={};
+    g_session.store(nullptr,std::memory_order_release);
+    g_pollWorld=0;
 }
-
 void OnDisconnectForSlot(int peerSlot) {
     if (peerSlot < 0 || peerSlot >= static_cast<int>(coop::players::kMaxPeers)) return;
+    g_peerBinding[peerSlot]={};
     // A leaving peer's cached state goes, so a peer reusing the slot does not inherit its
     // flashlight.
     g_peerActivateValid[peerSlot] = false;

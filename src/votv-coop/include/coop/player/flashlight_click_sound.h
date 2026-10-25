@@ -22,8 +22,11 @@ namespace coop::flashlight_click_sound {
 
 // Play the click for a wire packet's just-applied state on `puppetActor`. A `newState` equal to
 // the last one applied for `peerSlot` is a no-op: that packet was a mode change. Otherwise the
-// sound asset and the attenuation are resolved on first use and PlaySoundAtLocation is
-// dispatched. Game thread only.
+// sound asset and attenuation are resolved with live incarnation checks. Invalid/local/
+// unregistered bodies are refused. Preparation failure keeps the state retryable on a
+// subsequent apply; one admitted native attempt commits the latch. Session/world/body
+// replacement retires the latch, and nested calls cannot complete over a newer state.
+// Game thread only.
 void PlayIfStateChanged(void* puppetActor, uint8_t peerSlot, bool newState);
 
 }  // namespace coop::flashlight_click_sound

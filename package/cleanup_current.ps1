@@ -6,7 +6,7 @@ $checkout = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..')).TrimEnd('\')
 $workspace = [IO.Path]::GetFullPath((Join-Path $checkout '..')).TrimEnd('\')
 $metadata = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'release.json') -Raw | ConvertFrom-Json
 $archiveName = '{0}-{1}-{2}.zip' -f $metadata.namespace, $metadata.name, $metadata.version_number
-$archive = Join-Path $workspace "dist/$archiveName"
+$archive = Join-Path $checkout "dist/$archiveName"
 $dll = Join-Path $checkout $metadata.dll
 $dependencies = Join-Path $checkout 'build/votv-coop/vcpkg_installed'
 foreach ($required in @($archive, $dll, $dependencies)) {
@@ -25,17 +25,25 @@ foreach ($relative in @(
 )) { $targets.Add((Join-Path $checkout $relative)) }
 $targets.Add((Join-Path $workspace '_research/__pycache__'))
 
-# Keep the packager's current output; remove only older releases and their staging.
-$version = [regex]::Escape($metadata.version_number)
-foreach ($item in Get-ChildItem -LiteralPath (Join-Path $checkout 'dist') -ErrorAction SilentlyContinue) {
-    if ($item.Name -match '^stage-\d+$' -or
-        ($item.Name -match '^WatchersOfTheVoid-.*\.zip$' -and $item.Name -notmatch $version) -or
-        $item.Name -match '^SHA256SUMS-215[3-6]\.txt$') { $targets.Add($item.FullName) }
-}
-foreach ($item in Get-ChildItem -LiteralPath (Join-Path $workspace 'dist') -File) {
-    if ($item.Name -match '^(WatchersOfTheVoid-0\.9\.215[2-6]\.zip|SHA256SUMS(?:-215[2-6])?\.txt|GITHUB_(?:DESCRIPTION|RELEASE)_215[3-6]\.(?:txt|md))$') {
-        $targets.Add($item.FullName)
+# The checkout dist is canonical. Keep its exact current archive and checksum;
+# discard superseded packages and duplicate delivery copies outside the checkout.
+foreach ($directory in @((Join-Path $checkout 'dist'), (Join-Path $workspace 'dist'))) {
+    foreach ($item in Get-ChildItem -LiteralPath $directory -ErrorAction SilentlyContinue) {
+        if ($item.FullName -eq $archive -or
+            $item.FullName -eq (Join-Path $checkout 'dist/SHA256SUMS-current.txt')) { continue }
+        if ($item.Name -match '^stage-\d+$' -or
+            $item.Name -match '^(?:ElvardFIC-)?WatchersOfTheVoid-\d+\.\d+\.\d+\.zip$' -or
+            $item.Name -match '^SHA256SUMS(?:-[\w.-]+)?\.txt$' -or
+            $item.Name -match '^GITHUB_(?:DESCRIPTION|RELEASE)_\d+\.(?:txt|md)$') {
+            $targets.Add($item.FullName)
+        }
     }
+}
+# These publication drafts are superseded by README, description, RELEASE and
+# CHANGELOG_PLUS. Historical qualification reports and source handoffs stay intact.
+foreach ($item in Get-ChildItem -LiteralPath $PSScriptRoot -File) {
+    if ($item.Name -match '^GITHUB_(?:DESCRIPTION|RELEASE)_\d+\.(?:txt|md)$' -or
+        $item.Name -match '^SHA256SUMS-\d+\.txt$') { $targets.Add($item.FullName) }
 }
 
 # Preserve the active CMake tree and shared vcpkg installation in full.
@@ -75,15 +83,36 @@ foreach ($target in $existing) {
     }
 }
 $files = 0; $bytes = 0L
+$inventory = [Collections.Generic.List[object]]::new()
 foreach ($target in $existing) {
     $item = Get-Item -LiteralPath $target -Force
     $contents = if ($item.PSIsContainer) { @(Get-ChildItem -LiteralPath $target -Recurse -File -Force) } else { @($item) }
     $files += $contents.Count
     $bytes += ($contents | Measure-Object Length -Sum).Sum
+    $inventory.Add([pscustomobject]@{
+        path = $target.Substring($workspace.Length + 1).Replace('\', '/')
+        files = $contents.Count
+        bytes = [long](($contents | Measure-Object Length -Sum).Sum)
+    })
     if ($PSCmdlet.ShouldProcess($target, 'Remove generated or obsolete artifacts')) {
         Remove-Item -LiteralPath $target -Recurse -Force
     }
 }
 if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne $archiveHash -or
     (Get-FileHash -LiteralPath $dll -Algorithm SHA256).Hash -ne $dllHash) { throw 'Retained archive/DLL changed during cleanup' }
+if (-not $WhatIfPreference -and $existing.Count) {
+    $inventoryPath = Join-Path $PSScriptRoot 'cleanup-inventory.json'
+    $report = Get-Content -LiteralPath $inventoryPath -Raw | ConvertFrom-Json
+    $report | Add-Member -Force -NotePropertyName latestRun -NotePropertyValue ([pscustomobject]@{
+        dateUtc = [DateTime]::UtcNow.ToString('o')
+        retainedPackage = $metadata.version_number
+        archive = $archive.Substring($workspace.Length + 1).Replace('\', '/')
+        archiveSHA256 = $archiveHash
+        dllSHA256 = $dllHash
+        files = $files
+        bytes = $bytes
+        targets = @($inventory.ToArray())
+    })
+    $report | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $inventoryPath -Encoding UTF8
+}
 [pscustomobject]@{ Preview = [bool]$WhatIfPreference; Targets = $existing.Count; Files = $files; MiB = [math]::Round($bytes / 1MB, 1) }

@@ -1,282 +1,340 @@
-// ue_wrap/devices/window_canvas.cpp -- see ue_wrap/devices/window_canvas.h. Engine access for the
-// base's bay window render target (Ad_window_C). Every offset is resolved by name from the live
-// classes; the bytecode facts this relies on are in the header.
-
+// Engine access for the bay window's native canvas; no session or network state.
 #include "ue_wrap/devices/window_canvas.h"
-
 #include "ue_wrap/core/call.h"
+#include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/fname_utils.h"
 #include "ue_wrap/core/gc_pin.h"
-#include "ue_wrap/core/log.h"
-#include "ue_wrap/core/reflection.h"
-#include "ue_wrap/engine/engine_component.h"
-#include "ue_wrap/world/world_singleton.h"
+#include "ue_wrap/core/object_index.h"
 #include "ue_wrap/core/types.h"
-
-#include <atomic>
-#include <cstdint>
+#include "ue_wrap/world/world_singleton.h"
+#include <cmath>
 #include <cstring>
+#include <utility>
+#include <vector>
 
 namespace ue_wrap::window_canvas {
 namespace {
+namespace R=reflection;
+using Guard=std::function<bool()>;
+uint64_t g_epoch=0, g_coreRevision=0;
+bool g_drawing=false, g_creating=false;
+GcPin g_brush;
+CachedObjRef g_brushIdentity;
+uint32_t g_brushWorld=0;
+R::FName g_nOpac{},g_nCol{};
 
-namespace R = reflection;
-
-// ---- core: the window and the draw (resolved together; published through g_resolved) ----
-std::atomic<bool> g_resolved{false};
-void*   g_winCls      = nullptr;  // d_window_C
-int32_t g_offA        = -1;       // FVector2D A  -- the last dab's top-left corner
-int32_t g_offCanv     = -1;       // UCanvas* canv -- the world's shared render-target canvas
-int32_t g_cvByte      = -1;       // bool cv      -- a stroke session is open
-uint8_t g_cvMask      = 0;
-void*   g_canvasEvent = nullptr;  // d_window_C::Canvas -- opens/joins the session, re-arms its close
-void*   g_drawFn      = nullptr;  // UCanvas::K2_DrawMaterial
-
-template <class T>
-T ReadField(void* obj, int32_t off) {
-    T v{};
-    std::memcpy(&v, static_cast<const char*>(obj) + off, sizeof(T));
-    return v;
+template<class T>T Read(void* object,int offset){
+    T result{};std::memcpy(&result,static_cast<const uint8_t*>(object)+offset,sizeof(result));return result;
 }
-
-// ---- lazily resolved: sponge brush, material parameters, the signal-playback gate ----
-void*   g_spongeCls     = nullptr;  // prop_sponge_C (prop_mop_C derives from it)
-int32_t g_offSize       = -1;       // float size
-int32_t g_offStrength   = -1;       // float strength
-int32_t g_offSoap       = -1;       // float soapAmount
-int32_t g_offDynmat     = -1;       // MaterialInstanceDynamic* dynmat
-int32_t g_offDrawmat    = -1;       // MaterialInterface* drawmat (the brush parent material)
-void*   g_playerCls     = nullptr;
-int32_t g_offHolding    = -1;       // mainPlayer_C::holding_actor -- the item in hand
-void*   g_setScalarFn   = nullptr;  // MaterialInstanceDynamic::SetScalarParameterValue
-void*   g_matLibCdo     = nullptr;  // Default__KismetMaterialLibrary
-void*   g_createMidFn   = nullptr;  // KismetMaterialLibrary::CreateDynamicMaterialInstance
-int32_t g_offPanels     = -1;       // mainGamemode_C::analogPanels
-void*   g_panelsCls     = nullptr;  // class the isPlayingSignal offset below was resolved on
-int32_t g_playingByte   = -1;
-uint8_t g_playingMask   = 0;
-bool    g_drawSigChecked = false;
-bool    g_drawSigOk      = false;
-
-ue_wrap::GcPin g_brush;  // our brush MaterialInstanceDynamic (outer = transient package)
-
-bool EnsureSponge() {
-    if (g_spongeCls) return true;
-    void* cls = R::FindClass(L"prop_sponge_C");
-    if (!cls) return false;
-    g_offSize     = R::FindPropertyOffset(cls, L"size");
-    g_offStrength = R::FindPropertyOffset(cls, L"strength");
-    g_offSoap     = R::FindPropertyOffset(cls, L"soapAmount");
-    g_offDynmat   = R::FindPropertyOffset(cls, L"dynmat");
-    g_offDrawmat  = R::FindPropertyOffset(cls, L"drawmat");
-    g_spongeCls = cls;
-    UE_LOGI("window_canvas: sponge resolved size@0x%X strength@0x%X soap@0x%X dynmat@0x%X drawmat@0x%X",
-            g_offSize, g_offStrength, g_offSoap, g_offDynmat, g_offDrawmat);
-    return true;
-}
-
-bool EnsureMaterialFns() {
-    if (g_setScalarFn) return true;
-    void* mid = R::FindClass(L"MaterialInstanceDynamic");
-    if (!mid) return false;
-    g_setScalarFn = R::FindFunction(mid, L"SetScalarParameterValue");
-    return g_setScalarFn != nullptr;
-}
-
-// The two parameter names, converted once. StringToFName DISPATCHES ProcessEvent, so converting a
-// literal per call would put an engine dispatch in front of every scalar read and write -- four per
-// dab replayed. The drone's dust parameter is cached the same way and for the same reason.
-R::FName NameOnce(R::FName& slot, const wchar_t* name) {
-    if (slot.ComparisonIndex == 0 && slot.Number == 0) slot = fname_utils::StringToFName(name);
-    return slot;
-}
-R::FName g_nOpac{0, 0};
-R::FName g_nCol{0, 0};
-
-bool SetScalar(void* mid, R::FName name, float value) {
-    ParamFrame f(g_setScalarFn);
-    if (!f.valid()) return false;
-    f.Set<R::FName>(L"ParameterName", name);
-    f.Set<float>(L"Value", value);
-    return Call(mid, f);
-}
-
-// The brush parent material: the sponge class default's drawmat, else the asset by name.
-void* FindBrushParent() {
-    if (EnsureSponge() && g_offDrawmat >= 0) {
-        if (void* cdo = R::FindClassDefaultObject(L"prop_sponge_C")) {
-            void* m = ReadField<void*>(cdo, g_offDrawmat);
-            if (m && R::IsLive(m)) return m;
-        }
+struct Operation {
+    uint32_t world=world_identity::Generation();uint64_t epoch=g_epoch;
+    bool Current()const{return world==world_identity::Generation() && epoch==g_epoch;}
+};
+struct Identity {
+    CachedObjRef object,cls;
+    explicit Identity(void* value){
+        if(value && R::IsLive(value)){object.Set(value);if(object.Get())cls.Set(R::ClassOf(value));}
     }
-    return R::FindObject(L"mat_cleanBrush_Inst", L"MaterialInstanceConstant");
+    bool Current()const{return object.Get() && cls.Get() && R::ClassOf(object.Raw())==cls.Raw();}
+};
+bool Valid(const Guard& stable,const Guard& current={}){
+    return stable() && (!current || current()) && stable();
 }
+struct Binding {
+    CachedObjRef fn,owner;
+    bool Live()const{return fn.Get() && owner.Get() && R::OuterOf(fn.Raw())==owner.Raw();}
+};
+Binding FindBinding(void* cls,const wchar_t* name,const Guard& current){
+    Binding result;if(!current() || !cls || !R::IsLive(cls))return result;
+    CachedObjRef source;source.Set(cls);
+    void* fn=R::FindDispatchFunctionCached(cls,name);
+    if(!current() || !source.Get() || !fn || !R::IsLive(fn))return result;
+    result.fn.Set(fn);if(!current() || !source.Get() || !result.fn.Get())return {};
+    void* owner=R::OuterOf(fn);
+    if(!current() || !source.Get() || !result.fn.Get() || !owner || !R::IsLive(owner))return {};
+    result.owner.Set(owner);return result.Live()?result:Binding{};
+}
+template<class T>bool Set(ParamFrame& frame,const wchar_t* name,const T& value,const Guard& current){
+    if(!current() || !frame.valid())return false;
+    const int offset=frame.ParamOffset(name);
+    const int size=R::FindParamSize(frame.function(),name);
+    if(!current())return false;
+    const int liveOffset=R::FindParamOffset(frame.function(),name);
+    if(!current() || offset<0 || liveOffset!=offset || size!=sizeof(T) || frame.FrameSize()<int(sizeof(T)) ||
+        offset>frame.FrameSize()-int(sizeof(T)))return false;
+    return frame.Set<T>(name,value) && current();
+}
+struct VectorSchema {CachedObjRef type;const wchar_t* name;void* function;};
+bool Vector(ParamFrame& frame,const wchar_t* name,FVector2D value,const Guard& current,
+            std::vector<VectorSchema>& schemas){
+    if(!current())return false;
+    void* schema=R::PropertyInnerStruct(frame.function(),name);
+    if(!current() || !schema || !R::IsLive(schema))return false;
+    CachedObjRef type;type.Set(schema);
+    const auto valid=[&]{return current() && type.Get()==schema;};
+    if(!valid() || !R::NameEquals(R::NameOf(schema),L"Vector2D") || !valid())return false;
+    const int size=R::StructSize(schema);if(!valid() || size!=sizeof(FVector2D))return false;
+    const int x=R::FindPropertyOffset(schema,L"X");if(!valid() || x!=offsetof(FVector2D,X))return false;
+    const int y=R::FindPropertyOffset(schema,L"Y");if(!valid() || y!=offsetof(FVector2D,Y))return false;
+    if(!Set(frame,name,value,valid))return false;
+    schemas.push_back({type,name,frame.function()});return valid();
+}
+struct Core {
+    CachedObjRef cls,canvasClass;
+    Binding draw;
+    int a=-1,canv=-1,cv=-1;uint8_t mask=0;
+    bool Live()const{return cls.Get() && canvasClass.Get() && draw.Live() && a>=0 && canv>=0 && cv>=0 && mask;}
+} g_core;
+struct Sponge {
+    CachedObjRef cls;int size=-1,strength=-1,soap=-1,mid=-1,parent=-1;
+    bool Live()const{return cls.Get() && size>=0 && strength>=0 && soap>=0 && mid>=0 && parent>=0;}
+} g_sponge;
 
-void* EnsureBrush(void* worldContext) {
-    if (g_brush.Held() && R::IsLive(g_brush.Raw())) return g_brush.Raw();
-    if (!g_matLibCdo) g_matLibCdo = R::FindClassDefaultObject(L"KismetMaterialLibrary");
-    if (!g_createMidFn) {
-        if (void* lib = R::FindClass(L"KismetMaterialLibrary"))
-            g_createMidFn = R::FindFunction(lib, L"CreateDynamicMaterialInstance");
+bool EnsureSponge(const Guard& current){
+    if(!current())return false;
+    void* cls=object_index::ClassByName(L"prop_sponge_C");
+    if(!current() || !cls || !R::IsLive(cls))return false;
+    if(g_sponge.cls.Is(cls) && g_sponge.Live())return true;
+    Sponge fields;fields.cls.Set(cls);
+    const auto valid=[&]{return current() && fields.cls.Get()==cls;};
+    fields.size=R::FindPropertyOffset(cls,L"size");if(!valid())return false;
+    fields.strength=R::FindPropertyOffset(cls,L"strength");if(!valid())return false;
+    fields.soap=R::FindPropertyOffset(cls,L"soapAmount");if(!valid())return false;
+    fields.mid=R::FindPropertyOffset(cls,L"dynmat");if(!valid())return false;
+    fields.parent=R::FindPropertyOffset(cls,L"drawmat");
+    if(!valid() || !fields.Live() || object_index::ClassByName(L"prop_sponge_C")!=cls || !valid())return false;
+    g_sponge=fields;return true;
+}
+bool Name(R::FName& cached,const wchar_t* text,R::FName& out,const Guard& current){
+    if(!current())return false;
+    if(!cached.ComparisonIndex && !cached.Number){
+        const auto found=fname_utils::StringToFName(text);
+        if(!current() || found.ComparisonIndex<=0)return false;
+        cached=found;
     }
-    void* parent = FindBrushParent();
-    if (!g_matLibCdo || !g_createMidFn || !parent) return nullptr;
-    ParamFrame f(g_createMidFn);
-    if (!f.valid() || f.ParamOffset(L"Parent") < 0 || f.ParamOffset(L"ReturnValue") < 0) return nullptr;
-    if (f.ParamOffset(L"WorldContextObject") >= 0) f.Set<void*>(L"WorldContextObject", worldContext);
-    f.Set<void*>(L"Parent", parent);
-    if (!Call(g_matLibCdo, f)) return nullptr;
-    void* mid = f.Get<void*>(L"ReturnValue");
-    if (!mid || !g_brush.Pin(mid)) return nullptr;
-    UE_LOGI("window_canvas: brush material instance %p created from %p", mid, parent);
-    return mid;
+    out=cached;return current();
+}
+bool Scalar(void* material,R::FName name,float& out,const Guard& current){
+    Identity target(material);
+    const auto stable=[&]{return current() && target.Current();};
+    if(!stable())return false;
+    const auto fn=FindBinding(target.cls.Raw(),L"K2_GetScalarParameterValue",stable);
+    const auto bound=[&]{return stable() && fn.Live();};
+    if(!bound())return false;
+    ParamFrame frame(fn.fn.Raw());if(!bound() || !Set(frame,L"ParameterName",name,bound) ||
+        !Set(frame,L"ReturnValue",0.f,bound))return false;
+    const bool called=Call(material,frame);if(!bound() || !called)return false;
+    float value=0;if(!frame.GetRaw(L"ReturnValue",&value,sizeof(value)) || !bound() || !std::isfinite(value))return false;
+    out=value;return true;
+}
+bool SetScalar(void* material,R::FName name,float value,const Guard& current){
+    Identity target(material);
+    const auto stable=[&]{return current() && target.Current();};
+    if(!stable())return false;
+    const auto fn=FindBinding(target.cls.Raw(),L"SetScalarParameterValue",stable);
+    const auto bound=[&]{return stable() && fn.Live();};
+    if(!bound())return false;
+    ParamFrame frame(fn.fn.Raw());if(!bound() || !Set(frame,L"ParameterName",name,bound) ||
+        !Set(frame,L"Value",value,bound))return false;
+    const bool called=Call(material,frame);return bound() && called;
 }
 
-// K2_DrawMaterial is set up by name; refuse (once, loudly) if the engine's signature differs.
-bool DrawSignatureOk() {
-    if (g_drawSigChecked) return g_drawSigOk;
-    g_drawSigChecked = true;
-    ParamFrame f(g_drawFn);
-    const wchar_t* const names[] = {L"RenderMaterial", L"ScreenPosition", L"ScreenSize",
-                                    L"CoordinatePosition", L"CoordinateSize", L"Rotation", L"PivotPoint"};
-    g_drawSigOk = f.valid();
-    for (const wchar_t* n : names) {
-        if (f.ParamOffset(n) < 0) {
-            UE_LOGE("window_canvas: UCanvas::K2_DrawMaterial has no parameter '%ls' -- refusing to draw", n);
-            g_drawSigOk = false;
-        }
+void* BrushParent(const Guard& current){
+    if(!EnsureSponge(current) || !current())return nullptr;
+    const auto fields=g_sponge;
+    void* object=R::FindClassDefaultObject(L"prop_sponge_C");
+    if(!current() || !fields.Live())return nullptr;
+    if(object && R::IsLive(object)){
+        Identity cdo(object);void* base=fields.cls.Raw();
+        if(!cdo.Current() || !R::IsDescendantOfAny(cdo.cls.Raw(),&base,1) || !current() || !fields.Live())return nullptr;
+        void* parent=Read<void*>(object,fields.parent);
+        if(parent && R::IsLive(parent))return parent;
     }
-    return g_drawSigOk;
+    void* parent=R::FindObject(L"mat_cleanBrush_Inst",L"MaterialInstanceConstant");
+    return current() && parent && R::IsLive(parent)?parent:nullptr;
 }
-
-}  // namespace
-
-bool EnsureResolved() {
-    if (g_resolved.load(std::memory_order_acquire)) return true;
-    void* winCls = R::FindClass(L"d_window_C");
-    if (!winCls) return false;
-    const int32_t offA    = R::FindPropertyOffset(winCls, L"A");
-    const int32_t offCanv = R::FindPropertyOffset(winCls, L"canv");
-    int32_t cvByte = -1;
-    uint8_t cvMask = 0;
-    const bool cvOk = R::FindBoolProperty(winCls, L"cv", cvByte, cvMask);
-    void* canvasEvent = R::FindFunction(winCls, L"Canvas");
-    void* canvasCls = R::FindClass(L"Canvas");
-    void* drawFn = canvasCls ? R::FindFunction(canvasCls, L"K2_DrawMaterial") : nullptr;
-    if (offA < 0 || offCanv < 0 || !cvOk || !canvasEvent || !drawFn) {
-        static bool warned = false;
-        if (!warned) {
-            warned = true;
-            UE_LOGW("window_canvas: d_window_C incomplete (A@%d canv@%d cv=%d Canvas=%p K2_DrawMaterial=%p)",
-                    offA, offCanv, cvOk ? 1 : 0, canvasEvent, drawFn);
-        }
-        return false;
+void* EnsureBrush(void* context,const Guard& current){
+    if(!current())return nullptr;
+    if(g_brush.Held()){
+        if(g_brushWorld==world_identity::Generation() && g_brushIdentity.Get()==g_brush.Raw())return g_brush.Raw();
+        ReleaseBrush();return nullptr;
     }
-    g_winCls = winCls;
-    g_offA = offA;
-    g_offCanv = offCanv;
-    g_cvByte = cvByte;
-    g_cvMask = cvMask;
-    g_canvasEvent = canvasEvent;
-    g_drawFn = drawFn;
-    g_resolved.store(true, std::memory_order_release);
-    UE_LOGI("window_canvas: resolved d_window_C=%p A@0x%X canv@0x%X cv@0x%X/0x%02X Canvas=%p K2_DrawMaterial=%p",
-            winCls, offA, offCanv, cvByte, cvMask, canvasEvent, drawFn);
-    return true;
+    if(g_creating)return nullptr;
+    struct Creating {Creating(){g_creating=true;}~Creating(){g_creating=false;}} creating;
+    void* parent=BrushParent(current);if(!current() || !parent)return nullptr;
+    Identity parentId(parent);
+    void* cdo=R::FindClassDefaultObject(L"KismetMaterialLibrary");
+    if(!current() || !parentId.Current() || !cdo || !R::IsLive(cdo))return nullptr;
+    Identity library(cdo);
+    const auto stable=[&]{return current() && parentId.Current() && library.Current() && !g_brush.Held();};
+    const auto factory=FindBinding(library.cls.Raw(),L"CreateDynamicMaterialInstance",stable);
+    const auto bound=[&]{return stable() && factory.Live();};
+    if(!bound())return nullptr;
+    ParamFrame frame(factory.fn.Raw());
+    if(!bound() || !Set(frame,L"WorldContextObject",context,bound) ||
+        !Set(frame,L"Parent",parent,bound) || !Set<void*>(frame,L"ReturnValue",nullptr,bound))return nullptr;
+    const bool called=Call(cdo,frame);if(!bound() || !called)return nullptr;
+    void* material=nullptr;
+    if(!frame.GetRaw(L"ReturnValue",&material,sizeof(material)) || !bound() || !material || !R::IsLive(material))return nullptr;
+    Identity result(material);
+    void* cls=object_index::ClassByName(L"MaterialInstanceDynamic");
+    if(!bound() || !result.Current() || !cls || !R::IsLive(cls))return nullptr;
+    CachedObjRef type;type.Set(cls);
+    if(!R::IsDescendantOfAny(result.cls.Raw(),&cls,1) || !bound() || !result.Current() || !type.Get())return nullptr;
+    GcPin owned;
+    if(!owned.Pin(material) || !bound() || !result.Current() || !type.Get())return nullptr;
+    // Move only into the still-empty owner. A retired factory completion cannot
+    // publish its pin over a brush installed by teardown/reentry.
+    g_brush=std::move(owned);g_brushIdentity=result.object;g_brushWorld=world_identity::Generation();
+    return material;
+}
+bool DabValid(const Dab& d){
+    return std::isfinite(d.x) && std::isfinite(d.y) && std::isfinite(d.size) && std::isfinite(d.opac) &&
+        std::isfinite(d.col) && d.x>=-512 && d.x<=2157 && d.y>=-512 && d.y<=1024 &&
+        d.size>0 && d.size<=512 && d.opac>=0 && d.opac<=4 && d.col>=0 && d.col<=1;
+}
 }
 
-bool IsWindow(void* obj) {
-    if (!obj || !g_resolved.load(std::memory_order_acquire)) return false;
-    void* cls = R::ClassOf(obj);
-    void* bases[1] = {g_winCls};
-    return cls && R::IsDescendantOfAny(cls, bases, 1);
+bool EnsureResolved(){
+    const Operation source;
+    const auto revision=g_coreRevision;
+    void* cls=object_index::ClassByName(L"d_window_C");if(!source.Current() || !cls || !R::IsLive(cls))return false;
+    CachedObjRef identity;identity.Set(cls);
+    void* canvas=object_index::ClassByName(L"Canvas");
+    if(!source.Current() || !identity.Get() || !canvas || !R::IsLive(canvas))return false;
+    if(g_core.cls.Is(cls) && g_core.canvasClass.Is(canvas) && g_core.Live())return true;
+    Core fields;fields.cls=identity;fields.canvasClass.Set(canvas);
+    const auto valid=[&]{return source.Current() && revision==g_coreRevision && fields.cls.Get() && fields.canvasClass.Get();};
+    fields.a=R::FindPropertyOffset(cls,L"A");if(!valid())return false;
+    fields.canv=R::FindPropertyOffset(cls,L"canv");if(!valid())return false;
+    const bool cv=R::FindBoolProperty(cls,L"cv",fields.cv,fields.mask);if(!valid() || !cv)return false;
+    fields.draw=FindBinding(canvas,L"K2_DrawMaterial",valid);
+    if(!valid() || !fields.Live() || object_index::ClassByName(L"d_window_C")!=cls ||
+        object_index::ClassByName(L"Canvas")!=canvas || !valid())return false;
+    g_core=fields;++g_coreRevision;return true;
+}
+bool IsWindow(void* object){
+    if(!g_core.Live())return false;Identity actor(object);
+    void* base=g_core.cls.Raw();
+    return actor.Current() && R::IsDescendantOfAny(actor.cls.Raw(),&base,1) && actor.Current() && g_core.Live();
+}
+bool IsStrokeDraw(void* object){
+    if(!IsWindow(object))return false;
+    return (Read<uint8_t>(object,g_core.cv)&g_core.mask)!=0;
+}
+bool ReadStrokeCorner(void* object,float& x,float& y){
+    if(!IsWindow(object))return false;
+    const auto point=Read<FVector2D>(object,g_core.a);
+    if(!std::isfinite(point.X) || !std::isfinite(point.Y))return false;
+    x=point.X;y=point.Y;return true;
 }
 
-bool IsStrokeDraw(void* sourceObject) {
-    if (!sourceObject || !g_resolved.load(std::memory_order_acquire)) return false;
-    if (R::ClassOf(sourceObject) != g_winCls) return false;
-    const uint8_t b = ReadField<uint8_t>(sourceObject, g_cvByte);
-    return (b & g_cvMask) != 0;
-}
-
-bool ReadStrokeCorner(void* window, float& x, float& y) {
-    if (!window || !g_resolved.load(std::memory_order_acquire)) return false;
-    const FVector2D a = ReadField<FVector2D>(window, g_offA);
-    x = a.X;
-    y = a.Y;
-    return true;
-}
-
-bool ReadHeldBrush(void* mainPlayer, float& size, float& opac, float& col) {
-    if (!mainPlayer || !R::IsLive(mainPlayer) || !EnsureSponge()) return false;
-    if (g_playerCls != R::ClassOf(mainPlayer)) {
-        g_playerCls = R::ClassOf(mainPlayer);
-        g_offHolding = R::FindPropertyOffset(g_playerCls, L"holding_actor");
+bool ReadHeldBrush(void* player,float& size,float& opac,float& col,const Guard& current){
+    const Operation source;Identity author(player);
+    const auto valid=[&]{return Valid([&]{return source.Current() && author.Current();},current);};
+    if(!valid() || !EnsureSponge(valid) || !valid())return false;
+    const auto fields=g_sponge;
+    const int holding=R::FindPropertyOffset(author.cls.Raw(),L"holding_actor");
+    if(!valid() || !fields.Live() || holding<0)return false;
+    void* held=Read<void*>(player,holding);Identity item(held);
+    const auto stable=[&]{return valid() && fields.Live() && item.Current() && Read<void*>(player,holding)==held;};
+    if(!stable())return false;
+    void* base=fields.cls.Raw();if(!R::IsDescendantOfAny(item.cls.Raw(),&base,1) || !stable())return false;
+    const float edge=Read<float>(held,fields.size);
+    if(!std::isfinite(edge) || edge<=0 || edge>512)return false;
+    const float strength=Read<float>(held,fields.strength),soap=Read<float>(held,fields.soap);
+    // Native cleanBubbles subtracts five without clamping; a final use can leave
+    // finite negative soap. getStrength treats every nonpositive value as dry.
+    if(!std::isfinite(strength) || strength<0 || !std::isfinite(soap))return false;
+    const auto stockCurrent=[&]{return stable() && Read<float>(held,fields.size)==edge &&
+        Read<float>(held,fields.strength)==strength && Read<float>(held,fields.soap)==soap;};
+    void* mid=Read<void*>(held,fields.mid);float alpha=0,color=0;
+    if(mid){
+        Identity material(mid);
+        const auto bound=[&]{return stockCurrent() && material.Current() && Read<void*>(held,fields.mid)==mid;};
+        R::FName opacity{},colour{};
+        if(!bound() || !Name(g_nOpac,L"opac",opacity,bound) || !Name(g_nCol,L"col",colour,bound))return false;
+        if(!Scalar(mid,opacity,alpha,bound) || !bound() || !Scalar(mid,colour,color,bound) || !bound())return false;
+    }else{
+        alpha=.4f*strength*(soap>0?2.f:1.f);
     }
-    if (g_offHolding < 0 || g_offSize < 0) return false;
-    void* held = ReadField<void*>(mainPlayer, g_offHolding);
-    if (!held || !R::IsLive(held)) return false;
-    void* bases[1] = {g_spongeCls};
-    if (!R::IsDescendantOfAny(R::ClassOf(held), bases, 1)) return false;
+    if(!stockCurrent() || !std::isfinite(alpha) || alpha<0 || alpha>4 || !std::isfinite(color) || color<0 || color>1)return false;
+    size=edge;opac=alpha;col=color;return true;
+}
 
-    size = ReadField<float>(held, g_offSize);
-    // The sponge rewrote its material's opac right before the dab; read it back. If the material
-    // cannot be read, fall back to the held-sponge formula: 0.4 x strength, doubled with soap.
-    void* mid = g_offDynmat >= 0 ? ReadField<void*>(held, g_offDynmat) : nullptr;
-    if (mid && R::IsLive(mid) &&
-        ue_wrap::engine::GetScalarParameterValue(mid, NameOnce(g_nOpac, L"opac"), opac) &&
-        ue_wrap::engine::GetScalarParameterValue(mid, NameOnce(g_nCol, L"col"), col)) {
+bool IsSignalPlaying(){
+    const Operation source;
+    void* gm=world_singleton::Gamemode();if(!source.Current())return true;
+    Identity gamemode(gm);
+    const auto valid=[&]{return source.Current() && gamemode.Current() && world_singleton::Gamemode()==gm && source.Current() && gamemode.Current();};
+    if(!valid())return true;
+    const int offset=R::FindPropertyOffset(gamemode.cls.Raw(),L"analogPanels");if(!valid() || offset<0)return true;
+    void* panels=Read<void*>(gm,offset);Identity target(panels);
+    const auto bound=[&]{return valid() && target.Current() && Read<void*>(gm,offset)==panels;};
+    if(!bound())return true;
+    int byte=-1;uint8_t mask=0;
+    const bool found=R::FindBoolProperty(target.cls.Raw(),L"isPlayingSignal",byte,mask);
+    if(!bound() || !found || byte<0 || !mask)return true;
+    return (Read<uint8_t>(panels,byte)&mask)!=0;
+}
+
+DrawResult DrawDab(void* window,const Dab& input,const Guard& current){
+    const Dab d=input;const Operation source;Identity actor(window);
+    const auto valid=[&]{return Valid([&]{return source.Current() && actor.Current();},current);};
+    if(g_drawing || !DabValid(d) || !valid())return DrawResult::Retry;
+    struct Drawing {Drawing(){g_drawing=true;}~Drawing(){g_drawing=false;}} drawing;
+    if(!EnsureResolved() || !valid())return DrawResult::Retry;
+    const Core fields=g_core;const auto revision=g_coreRevision;
+    const auto stable=[&]{return valid() && revision==g_coreRevision && fields.Live();};
+    void* base=fields.cls.Raw();
+    if(!stable() || !R::IsDescendantOfAny(actor.cls.Raw(),&base,1) || !stable() || IsSignalPlaying() || !stable())return DrawResult::Retry;
+    void* brush=EnsureBrush(window,stable);if(!stable() || !brush)return DrawResult::Retry;
+    Identity material(brush);
+    const auto owned=[&]{return stable() && material.Current() && g_brushIdentity.Get()==brush && g_brush.Raw()==brush;};
+    const auto opener=FindBinding(actor.cls.Raw(),L"canvas",owned);
+    // Only the audited base canvas entry is known to be repeatable preparation.
+    // Inherited subclasses use it; an unverified override may already paint or
+    // spend stock and must not enter the pre-draw retry path.
+    const auto opening=[&]{return owned() && opener.Live() && opener.owner.Raw()==fields.cls.Raw();};
+    if(!opening())return DrawResult::Retry;
+    ParamFrame open(opener.fn.Raw());if(!opening() || !open.valid())return DrawResult::Retry;
+    const bool opened=Call(window,open);if(!opening() || !opened)return DrawResult::Retry;
+    void* canvas=Read<void*>(window,fields.canv);Identity destination(canvas);
+    std::vector<VectorSchema> schemas;
+    const auto bound=[&]{
+        if(!owned() || !destination.Current() || Read<void*>(window,fields.canv)!=canvas ||
+            !(Read<uint8_t>(window,fields.cv)&fields.mask))return false;
+        for(const auto& schema:schemas)if(!schema.type.Get())return false;
         return true;
+    };
+    void* canvasBase=fields.canvasClass.Raw();
+    if(!bound() || !R::IsDescendantOfAny(destination.cls.Raw(),&canvasBase,1) || !bound())return DrawResult::Retry;
+    R::FName opacity{},colour{};
+    if(!Name(g_nOpac,L"opac",opacity,bound) || !Name(g_nCol,L"col",colour,bound) ||
+        !SetScalar(brush,opacity,d.opac,bound) || !bound() || !SetScalar(brush,colour,d.col,bound) || !bound())return DrawResult::Retry;
+    ParamFrame frame(fields.draw.fn.Raw());
+    if(!bound() || !Set(frame,L"RenderMaterial",brush,bound) ||
+        !Vector(frame,L"ScreenPosition",FVector2D{d.x,d.y},bound,schemas) ||
+        !Vector(frame,L"ScreenSize",FVector2D{d.size,d.size},bound,schemas) ||
+        !Vector(frame,L"CoordinatePosition",FVector2D{0,0},bound,schemas) ||
+        !Vector(frame,L"CoordinateSize",FVector2D{1,1},bound,schemas) ||
+        !Set(frame,L"Rotation",0.f,bound) || !Vector(frame,L"PivotPoint",FVector2D{.5f,.5f},bound,schemas))return DrawResult::Retry;
+    if(!bound() || IsSignalPlaying() || !bound())return DrawResult::Retry;
+    for(const auto& schema:schemas){
+        if(!bound())return DrawResult::Retry;
+        void* live=R::PropertyInnerStruct(schema.function,schema.name);
+        if(!bound() || live!=schema.type.Raw())return DrawResult::Retry;
     }
-    const float strength = g_offStrength >= 0 ? ReadField<float>(held, g_offStrength) : 1.5f;
-    const float soap = g_offSoap >= 0 ? ReadField<float>(held, g_offSoap) : 0.f;
-    opac = 0.4f * strength * (soap > 0.f ? 2.f : 1.f);
-    col = 0.f;
-    return true;
+    // This is the sole draw admission. Preparation can retry; once the canvas
+    // call begins, an uncertain result must not repeat a partly applied dab.
+    const bool called=Call(canvas,frame);
+    return called && bound()?DrawResult::Applied:DrawResult::Attempted;
 }
-
-bool IsSignalPlaying() {
-    void* gm = world_singleton::Gamemode();
-    if (!gm) return false;
-    if (g_offPanels < 0) g_offPanels = R::FindPropertyOffset(R::ClassOf(gm), L"analogPanels");
-    if (g_offPanels < 0) return false;
-    void* panels = ReadField<void*>(gm, g_offPanels);
-    if (!panels || !R::IsLive(panels)) return false;
-    if (g_panelsCls != R::ClassOf(panels)) {
-        g_panelsCls = R::ClassOf(panels);
-        if (!R::FindBoolProperty(g_panelsCls, L"isPlayingSignal", g_playingByte, g_playingMask))
-            g_playingByte = -1;
-    }
-    if (g_playingByte < 0) return false;
-    return (ReadField<uint8_t>(panels, g_playingByte) & g_playingMask) != 0;
+void ReleaseBrush(){
+    ++g_epoch;
+    GcPin retired=std::move(g_brush);
+    g_brushIdentity.Reset();g_brushWorld=0;
+    // retired unroots after the live slot has been detached, preserving a new
+    // owner installed by an engine teardown callback.
 }
-
-bool DrawDab(void* window, const Dab& d) {
-    if (!window || !R::IsLive(window) || !g_resolved.load(std::memory_order_acquire)) return false;
-    if (!DrawSignatureOk() || !EnsureMaterialFns()) return false;
-    void* brush = EnsureBrush(window);
-    if (!brush) return false;
-
-    ParamFrame open(g_canvasEvent);
-    if (!open.valid() || !Call(window, open)) return false;
-    void* canv = ReadField<void*>(window, g_offCanv);
-    if (!canv || !R::IsLive(canv)) return false;
-
-    SetScalar(brush, NameOnce(g_nOpac, L"opac"), d.opac);
-    SetScalar(brush, NameOnce(g_nCol, L"col"), d.col);
-    ParamFrame f(g_drawFn);
-    f.Set<void*>(L"RenderMaterial", brush);
-    f.Set<FVector2D>(L"ScreenPosition", FVector2D{d.x, d.y});
-    f.Set<FVector2D>(L"ScreenSize", FVector2D{d.size, d.size});
-    f.Set<FVector2D>(L"CoordinatePosition", FVector2D{0.f, 0.f});
-    f.Set<FVector2D>(L"CoordinateSize", FVector2D{1.f, 1.f});
-    f.Set<float>(L"Rotation", 0.f);
-    f.Set<FVector2D>(L"PivotPoint", FVector2D{0.5f, 0.5f});
-    return Call(canv, f);
 }
-
-void ReleaseBrush() {
-    g_brush.Release();
-}
-
-}  // namespace ue_wrap::window_canvas

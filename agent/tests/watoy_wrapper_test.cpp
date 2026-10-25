@@ -1,10 +1,13 @@
-#include "../../src/votv-coop/src/ue_wrap/actors/watoy.cpp"
+#ifndef WATOY_WRAPPER_SOURCE
+#define WATOY_WRAPPER_SOURCE "../../src/votv-coop/src/ue_wrap/actors/watoy.cpp"
+#endif
+#include WATOY_WRAPPER_SOURCE
 #include <cstdio>
 #include <cstdlib>
 #include <map>
 #define CHECK(x) do{if(!(x)){std::fprintf(stderr,"FAIL %d: %s\n",__LINE__,#x);std::exit(1);}}while(0)
 namespace test {
-enum Index {World,Actor,Audio,Zero,NativeEffect,Mesh,ToyClass,ZeroClass,ParticleClass,Template,Package,Library,System,Math,Spawned,Other,Count};
+enum Index {World,Actor,Audio,Zero,NativeEffect,Mesh,ToyClass,ZeroClass,ParticleClass,Template,Package,Library,System,Math,Spawned,Other,PSCClass,Count};
 struct Obj {int index=0,serial=1;bool live=true,active=false;void* audio=nullptr;void* zero=nullptr;void* owner=nullptr;void* effect=nullptr;float volume=.1f,pitch=1;uint8_t flags=1;} objects[Count];
 uint32_t world=1;bool fields=true,playing=false,queryOk=true,spawnOk=true,valid=true;
 int starts=0,stops=0,spawns=0,destroys=0,activations=0,cues=0;
@@ -12,6 +15,12 @@ std::wstring callFail;
 std::wstring afterName;
 std::function<void(const std::wstring&)> callback;
 std::map<std::wstring,std::wstring> functions;
+std::wstring missingField,metaName,badOutputFunction,badOutputName,poisonOutput;
+std::function<void()> metaCallback;
+std::vector<std::wstring> calls;
+void* meshOverride=nullptr;void* spawnResult=nullptr;
+void* classes[Count]{};
+void Meta(const std::wstring& name){if(name!=metaName)return;auto callback=std::move(metaCallback);metaCallback={};if(callback)callback();}
 using Bytes=std::vector<uint8_t>;
 std::map<const ue_wrap::ParamFrame*,std::map<std::wstring,Bytes>> frames;
 void* At(Index i){return &objects[i];}
@@ -26,7 +35,9 @@ int32_t InternalIndexOf(void* p){return p?static_cast<test::Obj*>(p)->index:-1;}
 int32_t AllocateSlotSerial(int32_t i){return test::objects[i].serial;}
 int32_t SlotSerial(int32_t i){return test::objects[i].serial;}
 bool IsLiveByIndex(void* p,int32_t i){return i>=0 && i<test::Count && p==&test::objects[i] && IsLive(p);}
-void* ClassOf(void* p){if(p==test::At(test::Actor))return test::At(test::ToyClass);if(p==test::At(test::Zero))return test::At(test::ZeroClass);return p;}
+void* ClassOf(void* p){if(p && test::classes[static_cast<test::Obj*>(p)->index])return test::classes[static_cast<test::Obj*>(p)->index];
+    if(p==test::At(test::Actor))return test::At(test::ToyClass);if(p==test::At(test::Zero))return test::At(test::ZeroClass);
+    if(p==test::At(test::Spawned) || p==test::At(test::NativeEffect))return test::At(test::PSCClass);return p;}
 bool IsDescendantOfAny(void* cls,void* const* bases,size_t n,int){return n==1 && cls==bases[0];}
 const FName& NameOf(void* p){static FName names[test::Count]{};const auto i=static_cast<test::Obj*>(p)->index;names[i].ComparisonIndex=i;return names[i];}
 bool NameEquals(const FName& name,const wchar_t* text){return (name.ComparisonIndex==test::Template && !wcscmp(text,L"eff_zgrav")) ||
@@ -34,9 +45,10 @@ bool NameEquals(const FName& name,const wchar_t* text){return (name.ComparisonIn
 void* OuterOf(void* p){if(p==test::At(test::Zero))return test::At(test::Actor);return p==test::At(test::Template)?test::At(test::Package):nullptr;}
 void* FindClassDefaultObject(const wchar_t* name){if(!wcscmp(name,L"GameplayStatics"))return test::At(test::Library);
     if(!wcscmp(name,L"KismetSystemLibrary"))return test::At(test::System);CHECK(!wcscmp(name,L"KismetMathLibrary"));return test::At(test::Math);}
-void* FindDispatchFunctionCached(void*,const wchar_t* name){return test::Fn(name);}
+void* FindDispatchFunctionCached(void*,const wchar_t* name){test::Meta(std::wstring(L"resolve:")+name);return test::Fn(name);}
 int32_t InstanceOffset::Of(void*) {
-    if(!test::fields)return -1;
+    test::Meta(std::wstring(L"field:")+prop_);
+    if(!test::fields || test::missingField==prop_)return -1;
     if(!wcscmp(prop_,L"Audio"))return offsetof(test::Obj,audio);
     if(!wcscmp(prop_,L"a"))return offsetof(test::Obj,zero);
     if(!wcscmp(prop_,L"owner"))return offsetof(test::Obj,owner);
@@ -44,17 +56,18 @@ int32_t InstanceOffset::Of(void*) {
     if(!wcscmp(prop_,L"VolumeMultiplier"))return offsetof(test::Obj,volume);
     CHECK(!wcscmp(prop_,L"PitchMultiplier"));return offsetof(test::Obj,pitch);
 }
-bool FindBoolProperty(void*,const wchar_t* name,int32_t& off,uint8_t& mask){CHECK(!wcscmp(name,L"dir"));off=offsetof(test::Obj,flags);mask=1;return test::fields;}
+bool FindBoolProperty(void*,const wchar_t* name,int32_t& off,uint8_t& mask){CHECK(!wcscmp(name,L"dir"));test::Meta(L"bool:dir");off=offsetof(test::Obj,flags);mask=1;return test::fields;}
 }
 namespace ue_wrap::world_identity {
 uint32_t Generation(){return test::world;}void* CurrentWorld(){return test::At(test::World);}void* WorldOf(void*){return CurrentWorld();}
 }
 namespace ue_wrap::object_index {
 void* ClassByName(const wchar_t* name){if(!wcscmp(name,L"prop_watoy_C"))return test::At(test::ToyClass);
+    if(!wcscmp(name,L"ParticleSystemComponent"))return test::At(test::PSCClass);
     if(!wcscmp(name,L"comp_zerog_C"))return test::At(test::ZeroClass);CHECK(!wcscmp(name,L"ParticleSystem"));return test::At(test::ParticleClass);}
 size_t ForEachInstance(void* cls,void(*fn)(void*,void*,int32_t),void* ctx){auto i=cls==test::At(test::ToyClass)?test::Actor:test::Template;fn(ctx,test::At(i),i);return 1;}
 }
-namespace ue_wrap::prop {void* GetStaticMesh(void* actor){CHECK(actor==test::At(test::Actor));return test::At(test::Mesh);}}
+namespace ue_wrap::prop {void* GetStaticMesh(void* actor){CHECK(actor==test::At(test::Actor));return test::meshOverride?test::meshOverride:test::At(test::Mesh);}}
 namespace ue_wrap::engine {
 void* GetWorldContext(){return test::At(test::World);}
 void* FindSound(const std::wstring& name){CHECK(name==L"SoundWave /Game/audio/sort/buttonlong10.buttonlong10");return test::At(test::Template);}
@@ -64,21 +77,23 @@ bool DestroyComponent(void* effect,void*){CHECK(effect==test::At(test::Spawned))
 namespace ue_wrap {
 ParamFrame::ParamFrame(void* fn):fn_(fn){test::frames[this].clear();}
 bool ParamFrame::SetRaw(const wchar_t* name,const void* p,int32_t n){auto& bytes=test::frames[this][name];bytes.resize(n);std::memcpy(bytes.data(),p,n);return true;}
-bool ParamFrame::GetRaw(const wchar_t* name,void* p,int32_t n)const {const auto& fields=test::frames[this];auto it=fields.find(name);if(it==fields.end() || it->second.size()!=n)return false;std::memcpy(p,it->second.data(),n);return true;}
+bool ParamFrame::GetRaw(const wchar_t* name,void* p,int32_t n)const {if(*static_cast<std::wstring*>(fn_)==test::badOutputFunction && name==test::badOutputName)return false;
+    const auto& fields=test::frames[this];auto it=fields.find(name);if(it==fields.end() || it->second.size()!=n)return false;std::memcpy(p,it->second.data(),n);return true;}
 bool Call(void* object,ParamFrame& f) {
-    using namespace test;const auto name=*static_cast<std::wstring*>(f.function());if(name==callFail)return false;
-    if(name==L"IsPlaying"){CHECK(object==At(Audio));if(!queryOk)return false;Put(f,L"ReturnValue",playing);}
+    using namespace test;const auto name=*static_cast<std::wstring*>(f.function());calls.push_back(name);if(name==callFail)return false;
+    if(name==L"activate"){CHECK(object==At(Actor));++activations;}
+    else if(name==L"IsPlaying"){CHECK(object==At(Audio));if(!queryOk)return false;Put(f,L"ReturnValue",playing);}
     else if(name==L"SetPitchMultiplier"){CHECK(object==At(Audio));objects[Audio].pitch=Get<float>(f,L"NewPitchMultiplier");}
-    else if(name==L"K2_GetComponentToWorld"){CHECK(object==At(Mesh));FTransform t{};t.TX=12;Put(f,L"ReturnValue",t);}
-    else if(name==L"GetComponentBounds"){CHECK(object==At(System) && Get<void*>(f,L"Component")==At(Mesh));Put(f,L"Origin",FVector{22,32,42});}
-    else if(name==L"InverseTransformLocation"){CHECK(object==At(Math) && Get<FTransform>(f,L"T").TX==12 && Get<FVector>(f,L"Location").X==22);Put(f,L"ReturnValue",FVector{10,20,30});}
+    else if(name==L"K2_GetComponentToWorld"){CHECK(object==At(Mesh));FTransform t{};t.TX=12;if(poisonOutput==name)t.RotX=NAN;Put(f,L"ReturnValue",t);}
+    else if(name==L"GetComponentBounds"){CHECK(object==At(System) && Get<void*>(f,L"Component")==At(Mesh));Put(f,L"Origin",FVector{poisonOutput==name?NAN:22,32,42});}
+    else if(name==L"InverseTransformLocation"){CHECK(object==At(Math) && Get<FTransform>(f,L"T").TX==12 && Get<FVector>(f,L"Location").X==22);Put(f,L"ReturnValue",FVector{poisonOutput==name?NAN:10,20,30});}
     else if(name==L"SpawnEmitterAttached") {
         CHECK(object==At(Library) && Get<void*>(f,L"EmitterTemplate")==At(Template) && Get<void*>(f,L"AttachToComponent")==At(Mesh));
         const auto pos=Get<FVector>(f,L"Location");CHECK(pos.X==10 && pos.Y==20 && pos.Z==30);
         CHECK(Get<FVector>(f,L"Scale").X==1 && Get<uint8_t>(f,L"LocationType")==0 && !Get<bool>(f,L"bAutoDestroy") && Get<bool>(f,L"bAutoActivate"));
         CHECK(Get<uint8_t>(f,L"PoolingMethod")==0 && Get<reflection::FName>(f,L"AttachPointName").ComparisonIndex==0);
         if(!spawnOk)return false;++spawns;if(!objects[Spawned].live)++objects[Spawned].serial;objects[Spawned].live=true;objects[Spawned].active=true;
-        Put(f,L"ReturnValue",At(Spawned));
+        Put(f,L"ReturnValue",spawnResult?spawnResult:At(Spawned));
     } else if(name==L"GetOwner"){CHECK(object==At(Zero));Put(f,L"ReturnValue",At(Actor));}
     else CHECK(false);
     Callback(name);return true;
@@ -95,6 +110,7 @@ bool SetActive(void* comp,bool active,bool reset){CHECK(!reset);if(comp==test::A
     if(active)++test::starts;else ++test::stops;test::playing=active;
 } else {CHECK(comp==test::At(test::Spawned) || comp==test::At(test::NativeEffect));static_cast<test::Obj*>(comp)->active=active;}return true;}
 }
+#ifndef WATOY_WRAPPER_FIXTURE_ONLY
 int main() {
     using namespace test;namespace W=ue_wrap::watoy;
     for(int i=0;i<Count;++i)objects[i].index=i;objects[Actor].audio=At(Audio);objects[Actor].zero=At(Zero);objects[Zero].owner=At(Actor);
@@ -130,3 +146,4 @@ int main() {
     CHECK(W::PlayStartCue() && cues==1);CHECK(W::Activate(At(Actor)) && activations==1);
     puts("PASS watoy wrapper: native phase fields, audio recovery, exact particle attachment, native-effect adoption, owned cleanup, refusal/serial/world retry, no physics replay");
 }
+#endif

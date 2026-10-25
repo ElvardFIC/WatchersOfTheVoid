@@ -1,5 +1,22 @@
 # Agent context
 
+Owner correction, 26 October: development remains **0.9.2161**. Do not increment
+the public version for each continuation. Keep internal build/protocol identity
+separate, and change it only when required/explicitly requested, not per batch.
+Name every planned fix and every completed fix individually. Historical 2162
+labels were an assistant mistake; retain their evidence as historical evidence.
+
+Before starting every new package version, clean the workspace with
+`powershell -NoProfile -ExecutionPolicy Bypass -File package/cleanup_current.ps1 -WhatIf`,
+review the selected paths, then run the same command without `-WhatIf`.
+Remove generated artifacts, obsolete delivery files and redundant backups; preserve
+active source/tests, build dependencies, the current qualified DLL/package, unique
+research and verification/crash evidence. Record the result in the existing
+`package/cleanup-inventory.json`. Do not create a backup tree before cleaning.
+Reconcile TODO.md and WORK.md before implementation and update them as work lands.
+Name the next development target separately from the last qualified release; bump
+release.json only when preparing that version and record fresh verification.
+
 The user leads the project. Assistant scope is bug fixes only; `another agent` is
 retired. Historical archives and backup copies were removed at the owner's request.
 When the owner says "продовжуй", handle 10 concrete fix items per pass, run the

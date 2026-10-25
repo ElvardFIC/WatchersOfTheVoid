@@ -1,5 +1,85 @@
 # Regression tests
 
+`run_flashlight_click.ps1 -CompileSources -FaultControls` executes the real remote
+click controller with 32 slots, actual roster PerSlotState and CachedObjRef, and
+native preparation fakes. Ten groups cover slot/body routing, puppet/class/world
+retirement, dedup scope, readiness retry, sound/attenuation replacement, nested
+state changes/roster replacement, non-finite location and missing attenuation.
+Ten compiled removal controls run their named scenario and must reach assertions.
+Both click-controller and item-activation TUs compile. The runner is included in
+`package/check_current.ps1`. Native audio wrapper admission/metadata and rendered
+multiplayer remain unverified; preparation retries only on a subsequent apply.
+
+`run_2157.ps1 -CompileSources -FaultControls` keeps the held-toy/world-toy/contact
+fixtures and adds ten 32-seat held-audio groups for session scope, sender/recipient
+transport, frozen PRE hand identity, exact bounded PRE/POST, overflow retry,
+receive-buffer mutation, 64-send budget, strict expiry/clock rollback and reentrant
+join completion. Ten compiled controls run their named scenario and must fail an
+assertion. Seven production TUs compile. Current output is `build/hand-toy-check/`;
+the historical runner name does not select a release version. Unknown pre-use
+hand generation is refused for network replay rather than adopted later. The
+pitch-preparation fake checks source currency before the actual sound dispatch.
+
+`run_watoy.ps1 -CompileSources -FaultControls` runs the legacy controller/native
+wrapper plus ten 32-seat controller lifetime groups: session scope and teardown
+reentry, exact POST, bounded PRE reservation/pruning, requester/recipient transport
+replacement, state-flush replacement, fresh-queue preservation, revision pruning,
+overflow retry and caller-owned packet mutation. Ten compiled removal controls
+run their selected scenario and must reach an assertion failure. Four production
+translation units compile. Rendered multiplayer and complete wrapper-preparation
+lifetime remain unverified.
+It also runs ten actual-wrapper lifetime groups for field/class ownership, unknown
+zero metadata, source bindings, activation/audio predicates, service CDOs,
+mesh/template retirement, checked/finite outputs, spawned candidate cleanup and
+same-View Apply/Clear reentry. Ten additional compiled wrapper controls must reach
+their selected assertion: twenty controls total. Native parameter-schema/complete
+function ownership and independently copied View cleanup remain open.
+
+`run_toy_music.ps1 -CompileSources -FaultControls` runs the existing native
+wrapper/phase/clock fixtures plus ten 32-seat lifetime groups: session transitions,
+source/recipient transport replacement, exact POST, reserved PRE, overflow retry,
+receive-buffer ownership, shared 64-send budget, callback expiry/clock rollback
+and consistent key restrictions. Ten separately compiled removal controls must
+reach failing assertions. Four production TUs compile. The existing `run_2155`
+and `run_2156` groups continue to exercise the world-toy controller fixture.
+These checks do not establish rendered multiplayer audio acceptance.
+
+`run_sponge_effects.ps1 -CompileSources -FaultControls` runs the existing sponge
+controller/wrapper, ten lifetime groups at 32-seat capacity, and real trace-reader
+replacement/recovery cases. Eleven compiled controls cover session serial, exact
+POST, PRE reservation, frozen keys, actor class, source departure/connection,
+recipient connection, overflow admission, native work budgets and player-link
+currency. It checks callback expiry, clock rollback, FIFO, reused persons, failed
+sends and fresh queues installed during teardown. Four production TUs compile.
+These are transient cosmetic effects: no cleaning/soap debit replay or join history.
+Current development remains public version 2161; focused checks do not qualify
+an earlier ZIP or establish rendered native-effect parity.
+
+`run_window_stroke.ps1 -FaultControls` executes the real bay-window stroke
+controller in 14 scenario groups: refused FIFO and sealed brush values, send/drain
+budgets and expiry, nested callbacks and source retirement, malformed input and
+32-seat/relayed origins, queue overflow, serial/world scan identity, signal
+playback and at-most-once native replay, observer retirement and hook recovery.
+Eight controller controls must reach their named failing assertion. The actual
+native wrapper and ParamFrame run 14 more groups plus nine compiled controls:
+checked offsets/sizes/Vector2D, class/function/canvas/material retirement, stock
+and hand changes, unknown signals, scalar failure, factory type/pin lifetime,
+teardown reentry, preparation retry and at-most-once admitted draws. Both production
+TUs compile. A cooked 0.9.0n test follows native canvas open/join, retriggerable
+close, signal veto and separate drawing. The runner is in the full current suite.
+This does not establish rendered canvas parity, original-dab brush provenance,
+atomic material-scalar sampling, thrown-sponge transport or independent grime/save parity.
+
+`run_prop_action_native.ps1 -FaultControls` covers nine controller scenario groups,
+ten actual hit-wrapper/ParamFrame groups and four wall-wrapper groups. It checks
+current actor/key/player/tool/metadata through native damage and slice preparation,
+client input retirement, the actual isNotSawable getter and its reentry/refusal,
+required hit bindings, exact schemas/weak pointers/blocking, destination lifetime,
+layout recovery and native wall destruction. Ten source-copy controls reach their
+intended failing assertions. Cooked evidence confirms the getter call, inherited
+damage forwarding, the base slice no-op and the distinct hacksaw mesh-break path.
+These checks do not accept rendered cutting or fragment synchronization.
+
 `run_upstream_integration.ps1` validates the merged native blast decoder with
 valid, force-only and salt-rocket packets, malformed lengths, non-finite values,
 coordinate/scale/range limits and private-PC refusal. It runs the real drone
