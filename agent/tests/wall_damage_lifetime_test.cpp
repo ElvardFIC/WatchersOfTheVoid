@@ -36,8 +36,3 @@ int main(int argc,char** argv){using namespace test;namespace W=ue_wrap::wall_bu
  },count);
  CHECK(count>0);std::printf("PASS wall damage lifetime: %d cases, real metadata/ParamFrame, source/actor/class/function retirement, finite location and native destruction\n",count);
 }
-
-namespace ue_wrap::reflection {
-std::wstring ToString(const FName&){return L"fixture_function";}
-const FName& NameOf(void*){static const FName name{};return name;}
-}
