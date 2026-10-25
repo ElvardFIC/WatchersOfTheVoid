@@ -6,6 +6,7 @@
 
 #include "coop/config/config.h"
 #include "coop/net/session.h"
+#include "coop/player/revive_protection.h"
 #include "coop/session/net_pump.h"
 #include "coop/session/teleport_client.h"
 #include "ue_wrap/actors/vitals.h"
@@ -18,18 +19,23 @@
 #include "ue_wrap/core/sdk_profile.h"
 #include "ue_wrap/core/sdk_profile_names.h"
 #include "ue_wrap/engine/engine.h"
+#include "ue_wrap/engine/engine_player_verbs.h"
+#include "ue_wrap/engine/screen_state.h"
 
 #include <windows.h>
 
 #include <atomic>
 #include <cmath>
+#include <cstdint>
 #include <string>
+#include <vector>
 
 namespace coop::death_revive {
 namespace {
 
 namespace E = ue_wrap::engine;
 namespace R = ue_wrap::reflection;
+namespace OI = ue_wrap::object_index;
 namespace P = ue_wrap::profile;
 namespace V = ue_wrap::vitals;
 
@@ -37,7 +43,7 @@ namespace V = ue_wrap::vitals;
 // travel is what disposes of it, so a cancelled travel keeps a permanent black screen unless it
 // is removed. RemoveFromParent detaches rather than destroys, so the completion test is
 // IsInViewport, never findability.
-constexpr const wchar_t* kBlackScreenClass = L"blackScreen_C";
+constexpr const wchar_t* kBlackScreenClass = ue_wrap::profile::name::BlackScreenWidgetClass;
 
 // ESlateVisibility::Collapsed: ui_damageIndicator_C authors dmg_full Collapsed and only the
 // death branch of its Tick ever writes Visible, so the restore value is a constant off the asset.
@@ -52,6 +58,8 @@ std::atomic<int32_t>  g_deadByte{-1};
 std::atomic<uint8_t>  g_deadMask{0};
 std::atomic<bool>     g_armed{false};          // this death is ours to answer
 std::atomic<bool>     g_revivePending{false};  // the seam cancelled a travel; the pump owes a revive
+std::atomic<uint32_t> g_screenCleanupsEnded{0};  // revives whose screen cleanup ended, cleared or given up
+std::atomic<uint64_t> g_screenCensusAtMs{0};  // when the second census after a revive's cleanup is due, or 0
 std::atomic<uint64_t> g_cancelAtMsAtomic{0};   // when it cancelled -- stamped AT the cancel (see Watchdog)
 std::atomic<bool>     g_verbsResolved{false};  // ResolveVerbs succeeded (read off the game thread)
 std::atomic<bool>     g_seamReady{false};      // run_end_travel can cancel a run-ending travel
@@ -82,7 +90,7 @@ std::atomic<bool>     g_puppetResidue{false};
 int                   g_puppetBlackLeft = 0;
 std::atomic<uint64_t> g_cancelAtMs{0};
 
-// The revive is six synchronous writes on one tick, so past a few ticks it is failure, not
+// The revive is ten synchronous steps on one tick, so past a few ticks it is failure, not
 // slowness. While dead the player can neither pause nor quit, so this window has no manual
 // exit; the deadline is the exit.
 constexpr uint64_t kReviveDeadlineMs = 3000;
@@ -185,15 +193,36 @@ bool ReadInViewport(void* widget, bool& out) {
     return true;
 }
 
-// Detach the black screen. True once it is provably off the viewport, including when there is
-// none yet (a revive before +5 s).
+// Detach every black screen on the viewport. Each death makes a new blackScreen_C and
+// RemoveFromParent only detaches one, so an earlier death's widget (or a departed world's) stays in
+// the object index, and the first by index need not be the one on screen: detaching it could leave
+// the new one up while this reported clear (not reproduced on the rig). True once no live one is on
+// the viewport, including when there is none yet (a revive before +5 s); false while one cannot be
+// read or the index cannot be brought to this instant.
 bool ClearBlackScreen() {
-    void* w = R::FindObjectByClass(kBlackScreenClass);
-    if (!w || !R::IsLive(w)) return true;  // nothing on screen
-    CallNoArgs(w, g_verbs.removeFromParent);
-    bool inViewport = true;
-    if (!ReadInViewport(w, inViewport)) return false;  // cannot verify -> not done
-    return !inViewport;
+    // The object index's instances of the class, not a walk of the whole object array on every attempt. "None on
+    // screen" must be true now, so the index is drained to this instant first (a screen born in its backlog would be a
+    // false clear); a drain that cannot run, or an index not seeded, is not known clear. The list is taken before any
+    // detach, since RemoveFromParent runs engine code the index's callback must not, and leaves out the class default.
+    if (!OI::IsSeeded() || OI::DrainAll() == SIZE_MAX) return false;
+    std::vector<void*> screens;
+    if (void* cls = OI::ClassByName(kBlackScreenClass)) {
+        OI::ForEachInstance(cls, [](void* ctx, void* obj, int32_t) {
+            if (!R::NameStartsWith(R::NameOf(obj), L"Default__")) static_cast<std::vector<void*>*>(ctx)->push_back(obj);
+        }, &screens);
+    }
+    bool allOff = true;
+    for (void* w : screens) {
+        bool inViewport = false;
+        if (!ReadInViewport(w, inViewport)) {  // a dead one is not on screen; a live unreadable one is not known off
+            if (w && R::IsLive(w)) allOff = false;
+            continue;
+        }
+        if (!inViewport) continue;
+        CallNoArgs(w, g_verbs.removeFromParent);
+        if (!ReadInViewport(w, inViewport) || inViewport) allOff = false;
+    }
+    return allOff;
 }
 
 // The one-way writes a cancelled run-ending leaves behind. In the August build the cut was at
@@ -352,8 +381,8 @@ bool DistanceToKpp(void* pawn, float& out) {
     return true;
 }
 
-// The revive: six writes, then the conjunction, each verified by reading the world back rather
-// than by the return of the call meant to cause it. A six-write sequence cannot be pre-proven;
+// The revive: ten steps, then the conjunction, each verified by reading the world back rather
+// than by the return of the call meant to cause it. A ten-step sequence cannot be pre-proven;
 // what is cheaply resolvable is pre-flighted, the rest is read back, and the player leaves for
 // the menu if the world disagrees.
 bool RunRevive(coop::net::Session& session, void* pawn) {
@@ -419,18 +448,24 @@ bool RunRevive(coop::net::Session& session, void* pawn) {
     // four saw the same-frame IsInViewport read after RemoveFromParent still true, and a living
     // player was thrown to the main menu over a widget that had not detached yet. The screen
     // artifacts are retried on the following pump ticks instead.
-    const bool ok = fireCleared && vitalsOk && wokeUp && teleReported &&
+    float burnTime = -1.f;
+    const bool haveBurnTime = V::Read(V::Field::BurningTime, &burnTime);
+    float burning = 1.f;  // a Bool row reads 0 or 1; logged, not a term: the game does not show the flag
+    const bool haveBurning = V::Read(V::Field::Burning, &burning);
+    const bool ok = vitalsOk && haveBurnTime && burnTime <= 0.f &&
+                    wokeUp && teleReported &&
                     deadCleared && haveState && !isRagdoll && !deadNow && haveHp && hp > 0.f &&
                     atKpp;
 
     UE_LOGI("death_revive: REVIVE %s after a run-ending authored by %ls -- vitals=%d wake=%d "
-            "tele=%d deadClr=%d fireClear=%d "
+            "tele=%d deadClr=%d fireClr=%d burn=%.1f burning=%d "
             "| screen (retried, NOT a gate): black=%d dmgRed=%.2f bloodLoss=%.0f actor(s) @%.1fs "
             "| readback: ragdoll=%d dead=%d hp=%.1f distKPP=%.0f cm (tol %.0f)",
             ok ? "OK" : "FAILED",
             g_pendingAuthorClass.empty() ? L"(unrecorded)" : g_pendingAuthorClass.c_str(),
             vitalsOk ? 1 : 0, wokeUp ? 1 : 0,
             teleReported ? 1 : 0, deadCleared ? 1 : 0, fireCleared ? 1 : 0,
+            haveBurnTime ? burnTime : -1.f, haveBurning ? static_cast<int>(burning) : -1,
             blackCleared ? 1 : 0, redBefore, bloodActors, bloodTimeBefore,
             haveState ? (isRagdoll ? 1 : 0) : -1, haveState ? (deadNow ? 1 : 0) : -1,
             haveHp ? hp : -1.f, dist, kAtKppToleranceCm);
@@ -440,17 +475,36 @@ bool RunRevive(coop::net::Session& session, void* pawn) {
 
 // How many pump ticks after a revive the screen cleanup is re-attempted, and how many ticks
 // apart. The measured case needs ONE attempt; each is a no-op once the artifact is gone, and the
-// run stops the moment all three read clear. The stride is not cosmetic: an attempt is two full
-// GUObjectArray walks (a FindObjectByClass miss walks every slot, and FindObjectsByClass always
-// does), so the stuck case -- an effect actor whose own tick never destroys it -- used to spend
-// 120 consecutive pump ticks doing ~240 walks of a ~293k array. Same wall-clock window, an
-// eighth of the walks.
+// run stops the moment all three read clear. The stride is not cosmetic: an attempt walks the
+// whole GUObjectArray once, for the bloodLoss actors (the black screens come from the object
+// index), so the stuck case -- an effect actor whose own tick never destroys it -- would spend
+// 120 consecutive pump ticks walking a ~293k array. Same wall-clock window, an eighth of the
+// walks.
 constexpr int kScreenCleanupTicks = 120;
 constexpr int kScreenCleanupStride = 8;
 std::atomic<int> g_screenCleanupLeft{0};
 
+// What covers the view after a revive, logged at the screen cleanup's end and again 5 s later: a field client's
+// screen stayed black after repeated deaths while every cleanup read clear, and the drill never reproduced it. It
+// reads the object index and says what it could not read: "unreadable" counts the widgets of each class whose
+// IsInViewport could not be asked, and listed=0 means the index was not seeded or could not be brought to this
+// instant. A black screen on the viewport, an unread black screen, or a view that could not be listed is a warning
+// (not known clear); a blur read gap is not. The first reading arms the second.
+void LogScreenCensus(const char* when, bool armSecond) {
+    const ue_wrap::engine::ScreenState s = ue_wrap::engine::ReadScreenState();
+    const bool covered = s.blackOnScreen > 0 || s.blackUnreadable > 0 || !s.listed;
+    ::ue_wrap::log::Write(covered ? ::ue_wrap::log::Level::Warn : ::ue_wrap::log::Level::Info,
+                          "death_revive: screen census %s -- blackScreen_C live=%d on viewport=%d unreadable=%d | "
+                          "bloodLoss blur on viewport=%d "
+                          "unreadable=%d | listed=%d | view target=%ls",
+                          when, s.blackLive, s.blackOnScreen, s.blackUnreadable, s.blurOnScreen, s.blurUnreadable,
+                          s.listed ? 1 : 0, s.viewTarget.empty() ? L"?" : s.viewTarget.c_str());
+    g_screenCensusAtMs.store(armSecond ? ::GetTickCount64() + 5000 : 0, std::memory_order_relaxed);
+}
+
 // Re-attempt the three screen artifacts until they are provably gone; true when nothing is
-// left. Idempotent, one class lookup per artifact once clear.
+// left. Idempotent; each attempt drains the object index once (the black screens) and looks a
+// class up per artifact.
 bool TickScreenCleanup() {
     const bool black = ClearBlackScreen();
     const float red = ClearDamageIndicator();
@@ -515,6 +569,8 @@ void OnSessionStart() {
     g_lastReviveOk = false;
     g_cancelAtMs = 0;
     g_screenCleanupLeft = 0;
+    g_screenCensusAtMs.store(0, std::memory_order_relaxed);
+    g_pendingAuthorClass.clear();
 }
 
 void Tick(coop::net::Session& session, void* localPawn) {
@@ -631,6 +687,7 @@ void Tick(coop::net::Session& session, void* localPawn) {
         g_revivePending.store(false, std::memory_order_release);
         g_reviveRanThisDeath = true;
         g_lastReviveOk = RunRevive(session, localPawn);
+        if (g_lastReviveOk) coop::revive_protection::Begin(localPawn);
         if (g_lastReviveOk) {
             g_armed.store(false, std::memory_order_release);
             g_cancelAtMs = 0;
@@ -642,6 +699,9 @@ void Tick(coop::net::Session& session, void* localPawn) {
         return;
     }
 
+    const uint64_t censusDue = g_screenCensusAtMs.load(std::memory_order_relaxed);
+    if (censusDue != 0 && ::GetTickCount64() >= censusDue)
+        LogScreenCensus("5 s after the cleanup", false);
     // The screen artifacts, retried until gone; after the pending-revive block and outside every
     // gate above it, since it must keep running once the death is over. The window counts every
     // tick and an attempt runs on each stride-th one, so a failed attempt is followed by the next a
@@ -652,7 +712,11 @@ void Tick(coop::net::Session& session, void* localPawn) {
             UE_LOGI("death_revive: screen cleanup complete (black screen, damage indicator and "
                     "bloodLoss all clear) after %d of %d retry ticks", tick + 1, kScreenCleanupTicks);
             g_screenCleanupLeft = 0;
+            g_screenCleanupsEnded.fetch_add(1, std::memory_order_relaxed);
+            LogScreenCensus("at the cleanup's end", true);
         } else if (g_screenCleanupLeft == 0) {
+            g_screenCleanupsEnded.fetch_add(1, std::memory_order_relaxed);
+            LogScreenCensus("at the cleanup's end", true);
             UE_LOGW("death_revive: screen cleanup did NOT finish in %d ticks -- the player is "
                     "alive and playable but something red or black may still be on screen. "
                     "This is deliberately NOT a reason to leave the world.",
@@ -697,6 +761,8 @@ void Watchdog() {
 
 bool ArmedForThisDeath() { return g_armed.load(std::memory_order_acquire); }
 bool LastReviveSucceeded() { return g_lastReviveOk.load(std::memory_order_acquire); }
+
+uint32_t ScreenCleanupsEnded() { return g_screenCleanupsEnded.load(std::memory_order_relaxed); }
 
 bool ReconcileDisabled() {
     static const bool s = (coop::config::ReadEnv("VOTVCOOP_DEATH_NO_RECONCILE") == "1");

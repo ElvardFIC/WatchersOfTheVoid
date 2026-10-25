@@ -65,3 +65,9 @@ int main(){using namespace test;namespace T=coop::teleport_client;
  s.mode=coop::net::Role::Host;s.sendOk[1]=false;T::GatherOthersTo(0,1,2,3,0);T::ClearGather();s.sendOk[1]=true;now+=201;T::TickGather();CHECK(s.sent.size()==3);
  puts("PASS gather: native host movement, retry without duplicate, initiator protection, supersession/reentry, world/readiness/deadline/disconnect, invalid inputs and roles");
 }
+
+// Reflection names used by ParamFrame missing-field diagnostics.
+namespace ue_wrap::reflection {
+std::wstring ToString(const FName&){return L"fixture_function";}
+const FName& NameOf(void*){static const FName name{};return name;}
+}

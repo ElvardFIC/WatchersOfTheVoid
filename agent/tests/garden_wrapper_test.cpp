@@ -163,3 +163,8 @@ int main() {
     puts("PASS transient hole identity, position/material capture, validated repaint and recycled-slot/world cleanup");
     return 0;
 }
+
+// Reflection names used by ParamFrame missing-field diagnostics.
+namespace ue_wrap::reflection {
+std::wstring ToString(const FName&){return L"fixture_function";}
+}

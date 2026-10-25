@@ -5,6 +5,7 @@
 #include "ue_wrap/core/call.h"
 #include "ue_wrap/core/object_index.h"
 #include "ue_wrap/core/reflection.h"
+#include "ue_wrap/engine/engine_component.h"
 #include "ue_wrap/world/world_instances.h"
 
 #include <cstdint>
@@ -22,6 +23,7 @@ const wchar_t* const kConsoleClass = L"droneConsole_C";
 int32_t g_conOpenedOff   = -1;  // droneConsole_C::opened          (the lid)
 int32_t g_conKeyboardOff = -1;  // droneConsole_C::lookatKeyboard  (the presser's own cursor)
 int32_t g_conLidOff      = -1;  // droneConsole_C::lookatDoor      (the same, on the lid's latch)
+int32_t g_conLeaveOff    = -1;  // droneConsole_C::lookat_changeTime (the leave timer selector)
 int32_t g_conDroneOff    = -1;  // droneConsole_C::drone           (a level reference)
 
 // A console field by name, resolved once off the live instance's own class.
@@ -62,6 +64,11 @@ bool IsCursorOnDeparture(void* console) {
            (static_cast<const uint8_t*>(console)[off] & mask) != 0;
 }
 
+bool IsCursorOnLeaveTimer(void* console) {
+    bool on = false;
+    return ConsoleBool(console, g_conLeaveOff, L"lookat_changeTime", on) && on;
+}
+
 bool IsCursorOnLid(void* console) {
     bool on = false;
     return ConsoleBool(console, g_conLidOff, L"lookatDoor", on) && on;
@@ -89,6 +96,14 @@ bool TriggerFly(void* console) {
     if (!f.valid()) return false;
     f.Set<void*>(L"console", console);
     return ue_wrap::Call(drone, f);
+}
+
+bool PlayChangeCue(void* console) {
+    return ue_wrap::engine::PlayAudioComponent(PartOf(console, L"audio_change"));
+}
+
+bool IsChangeCuePlaying(void* console) {
+    return ue_wrap::engine::IsAudioComponentPlaying(PartOf(console, L"audio_change"));
 }
 
 }  // namespace ue_wrap::drone_console

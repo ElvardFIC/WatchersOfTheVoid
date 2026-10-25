@@ -37,6 +37,7 @@
 #include "coop/net/session.h"
 #include "coop/element/intent_authority.h"
 #include "coop/element/portable_identity.h"
+#include "coop/element/quiescence_drain.h"
 #include "coop/net/connect_history.h"
 #include "coop/net/intent_queue.h"
 #include "coop/net/latest_wins.h"
@@ -48,6 +49,7 @@
 #include "coop/net/apply_pause.h"
 #include "coop/permissions/permission_host.h"
 #include "coop/permissions/permissions_selftest.h"
+#include "coop/player/hand_history.h"
 #include "coop/player/movement_ledger.h"
 #include "coop/player/player_profile_store.h"
 #include "coop/player/players_registry.h"
@@ -58,6 +60,7 @@
 #include "coop/props/container_birth.h"
 #include "coop/props/container_park.h"
 #include "coop/props/container_write_policy.h"
+#include "coop/props/prop_act_host.h"
 #include "coop/props/prop_lifecycle.h"
 #include "coop/props/prop_snapshot.h"
 #include "coop/save/save_guard.h"
@@ -75,6 +78,7 @@
 #include "coop/server_profile/server_profile.h"
 #include "coop/session/subsystems.h"
 #include "coop/session/teleport_client.h"
+#include "coop/world/explosion_recipe.h"
 #include "coop/world/spawn_authority.h"
 #include "ui/server_browser.h"
 #include "coop/net/end_reason.h"  // the named reason a join that reached the world load ends on
@@ -240,6 +244,12 @@ bool StartCoopSession(const coop::net::Config& netCfg, coop::net::Refusal* why) 
     // And a client's queued intents: the cap's refusal, no token serving nothing, a Done leaving and a Wait keeping its
     // head with the token back, a value-initialised instance.
     coop::net::RunIntentQueueSelftest();
+    // And a take or use of a shared prop: the host's judge and the order it reads in, the reply a verdict sends, the
+    // commit's rows and the client's reply decision, each from a stated input.
+    coop::prop_act_host::RunSelftest();
+    // And the deferred-destroy table's retire rule: a destroy naming an element leaves with a spawn of
+    // that element only, a key-only destroy with a spawn of its key, a None or empty key with nothing.
+    coop::element::quiescence_drain::RunDestroyDeferSelftest();
     // And a client's chat rate, Source's two tiers: the interval, a burst's debt, the slowed refill, tier 2's long run
     // and both floors, each row from a stated state -- arithmetic no honest run reaches.
     coop::chat_rate::RunChatRateSelftest();
@@ -256,6 +266,12 @@ bool StartCoopSession(const coop::net::Config& netCfg, coop::net::Refusal* why) 
     // And the build's own type: a parser that accepts a bent line, or a verifier that trusts an
     // unknown key, makes a fork read as official.
     coop::build_trust::RunSelftest();
+    // And the per-slot hand history: a ring that forgets a held class early, or keeps one forever,
+    // answers "held it within N ms" wrongly in both directions, and no honest run notices.
+    coop::hand_history::RunSelftest();
+    // And the explosion recipes: a source whose numbers are off, or a pill level left unclamped, blasts
+    // with parameters its Blueprint never uses, and no honest run notices.
+    coop::explosion_recipe::RunSelftest();
     // And the newest-wins latch every received stream keeps: no LAN run reorders a datagram, so the
     // batch that arrives behind one already taken is refused here, on pinned sequences.
     coop::net::stream_slot::RunSelftest();

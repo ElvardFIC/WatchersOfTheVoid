@@ -4,15 +4,15 @@
 //
 // The console's one action option dispatches on what the presser is looking at: its keyboard runs
 // drone.triggerFly(console), the button behind the "drone is active" line, and its other face
-// toggles leaveAfter5min. The console holds its drone as a LEVEL reference, so every peer's
-// console points at its own drone -- and a client's is a mirror whose flight tick drone_sync
+// toggles leaveAfter5min and clicks. The console holds its drone as a LEVEL reference, so every
+// peer's console points at its own drone -- and a client's is a mirror whose flight tick drone_sync
 // suppresses, so a client's press reached a drone that cannot fly and told nobody.
 //
 // This lane refuses the client's own body at the script-body gate and sends the press. The
 // console is not named: level-baked and keyed by no lane, it has neither a save key nor an
 // element id, so the host resolves the one the sender stands at -- that resolve IS the reach
-// test -- re-tests the lid, and runs the same verb. Nothing to replay on a late join: a press
-// the host has not run changed nothing.
+// test -- re-tests the lid, then calls/sends or flips its leaveAfter5min (DroneState carries it) and clicks.
+// The presser's machine clicks for the body it cancelled. Nothing to replay on a late join.
 
 #pragma once
 
@@ -41,7 +41,7 @@ void OnDroneFlyIntent(coop::net::Session& session, const coop::net::DroneFlyInte
 // per-slot state and go with its occupant, so the next occupant of the slot starts clean.
 void OnDisconnect();
 
-// The keyboard presses this client has sent the host (the drone call drill's proof that a press
+// The presses (either face) this client has sent the host (the drone call drill's proof that a press
 // reached the lane's gate). Game thread.
 uint64_t SentCount();
 

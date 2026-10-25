@@ -5,6 +5,7 @@
 #include "coop/net/latest_wins.h"
 #include "coop/net/net_clock.h"
 #include "coop/net/protocol.h"
+#include "coop/player/hand_history.h"
 #include "coop/player/hand_item_pose.h"  // where the mirror sits: the owner's measure, the per-tick drive
 #include "coop/player/players_registry.h"
 #include "coop/player/remote_player.h"
@@ -122,6 +123,7 @@ Mirror g_mirrors[coop::players::kMaxPeers];  // GT-only
 coop::net::Session* g_session = nullptr;
 
 // Owner-side change detection.
+uint32_t     g_ownLookSeq = 0;  // owner ticks that read the hand; the latch below is its class at the last one
 bool         g_ownHas = false;
 std::wstring g_ownCls;
 std::wstring g_ownName;
@@ -303,6 +305,7 @@ void ApplyHandState(coop::net::Session& session, uint8_t slot, const SlotHand& i
     std::memcpy(h.relPos, in.relPos, sizeof(h.relPos));
     std::memcpy(h.relRot, in.relRot, sizeof(h.relRot));
     h.haveRel = in.has;
+    coop::hand_history::Note(slot, in.has, in.cls, coop::net::NowMs());
     SendState(session, slot, h);
     ++g_statesApplied[slot];
 }
@@ -497,6 +500,7 @@ void TickOwner(coop::net::Session& session, void* local, void* holdingProp) {
     if (!session.connected()) return;
     const uint8_t self = coop::players::Registry::Get().LocalPeerId();
     if (self >= coop::players::kMaxPeers) return;
+    ++g_ownLookSeq;  // every path below leaves the latch naming the class the hand holds now
 
     // Retry rejected sends; refresh all known host states for a join that raced its replay.
     const auto now = Now();
@@ -617,16 +621,26 @@ void TickOwner(coop::net::Session& session, void* local, void* holdingProp) {
 }
 
 void* LocalHandActor() {
-    if (!g_localIdentity.Get())
-        return nullptr;
+    void* player=coop::players::Registry::Get().Local();
+    if(!player)return nullptr;
     ue_wrap::engine::MainPlayerGrabState gs{};
-    if (!ue_wrap::engine::ReadMainPlayerGrabState(g_localPlayer, gs)) return nullptr;
+    if (!player || !ue_wrap::engine::ReadMainPlayerGrabState(player, gs)) return nullptr;
     void* ha = gs.holdingActor;
     if (!ha || !R::IsLive(ha)) return nullptr;
     // The same routing predicate as local_streams: only a prop descendant in the holding actor is
     // the hotbar hand; the clump or pile carry is a world entity and must stay adoptable.
     if (!ue_wrap::prop::IsDescendantOfProp(ha)) return nullptr;
     return ha;
+}
+
+bool IsLocalHandViewActor(void* actor) {
+    if (!actor) return false;
+    void* player = coop::players::Registry::Get().Local();
+    ue_wrap::engine::MainPlayerGrabState gs{};
+    if (!player || !ue_wrap::engine::ReadMainPlayerGrabState(player, gs)) return false;
+    // Pointer identity with no liveness check on the actor: it is asked at the entry of the
+    // actor's own destroy, and R::IsLive would refuse an actor already pending kill.
+    return gs.holdingActor == actor && ue_wrap::prop::IsDescendantOfProp(actor);
 }
 
 void* MirrorActorForSlot(uint8_t slot) {
@@ -887,6 +901,7 @@ void Reset() {
         g_droppedBySender[s] = 0;
         g_unresolvedWarned[s].clear();
         g_unresolvedBySlot[s] = 0;
+        coop::hand_history::Clear(s);
     }
     g_ownHas = false;
     g_ownCls.clear();
@@ -920,6 +935,12 @@ bool RecentGenerationClass(uint8_t slot,uint32_t generation,std::wstring& classN
     return false;
 }
 
+bool OwnAnnounced(const wchar_t* cls) {
+    return cls && g_ownHas && ::_wcsicmp(g_ownCls.c_str(), cls) == 0;
+}
+
+uint32_t OwnHandLookSeq() { return g_ownLookSeq; }
+
 bool LastHeldClassIs(uint8_t slot, const wchar_t* cls) {
     if (slot >= coop::players::kMaxPeers || !cls) return false;
     const SlotHand& h = g_hands[slot];
@@ -939,6 +960,10 @@ bool HoldsItem(uint8_t slot) {
     return slot < coop::players::kMaxPeers && g_hands[slot].has;
 }
 
+bool HandStateOwed(uint8_t slot) {
+    return slot < coop::players::kMaxPeers && g_pendingHand[slot].pace.Owed();
+}
+
 uint32_t StatesApplied(int slot) {
     return (slot >= 0 && slot < static_cast<int>(coop::players::kMaxPeers)) ? g_statesApplied[slot] : 0;
 }
@@ -956,6 +981,10 @@ void OnSlotDisconnected(uint8_t slot) {
     g_hands[slot] = SlotHand{};
     g_retired[slot]={};g_retiredCursor[slot]=0;g_generationProof[slot]={};
     g_dirty[slot] = false;
+    g_droppedBySender[slot] = 0;
+    g_unresolvedWarned[slot].clear();
+    g_unresolvedBySlot[slot] = 0;
+    coop::hand_history::Clear(slot);
 }
 
 }  // namespace coop::hand_item

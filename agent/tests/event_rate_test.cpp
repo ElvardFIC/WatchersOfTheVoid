@@ -104,3 +104,9 @@ int main(){
     onRead=[]{++serial;};Native(obj[0],800.f);CHECK(writes==next&&obj[0].interval==800.f);
     std::puts("PASS event rate: host ownership including flickerer, 2x/default/live edits, native rearm, no compounding, restore/recycle, late actors and reentrant teardown");
 }
+
+// Reflection names used by ParamFrame missing-field diagnostics.
+namespace ue_wrap::reflection {
+std::wstring ToString(const FName&){return L"fixture_function";}
+const FName& NameOf(void*){static const FName name{};return name;}
+}

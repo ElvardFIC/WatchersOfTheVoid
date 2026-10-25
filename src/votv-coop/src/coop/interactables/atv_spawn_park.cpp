@@ -1,7 +1,10 @@
 // coop/interactables/atv_spawn_park.cpp -- see coop/interactables/atv_spawn_park.h.
 #include "atv_spawn_park.h"
 #include "coop/interactables/atv_sync.h"
+#include "coop/interactables/atv_sync_internal.h"   // ApplyPendingSet, ResolveSpawn
 #include "coop/net/protocol.h"
+#include "coop/net/wire_key_util.h"        // WireKeyFromString
+#include "ue_wrap/core/fname_utils.h"      // Resolved
 #include "ue_wrap/core/hot_path_guard.h"   // UE_ASSERT_GAME_THREAD
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/engine/world_identity.h"
@@ -12,69 +15,106 @@
 namespace coop::atv_sync::spawn_park {
 namespace {
 struct Parked {
-    coop::net::AtvSpawnPayload payload{};
+    coop::net::AtvSpawnPayload payload{};   // a spawn's description; a destroy carries the key alone
     uint32_t worldGen = 0;   // the world it arrived in; another world drops it
+    bool     destroy = false;
 };
 std::unordered_map<std::wstring, Parked> g_parked;
-// The host runs a handful of runtime ATVs; a park past this describes no world of theirs.
-constexpr size_t   kCap = 16;
 constexpr uint64_t kPollMs = 500;
 uint64_t g_nextPollMs = 0;
 bool     g_saidCap = false;
-uint32_t g_parkedEver = 0;
 
 uint64_t NowMs() {
     return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now().time_since_epoch()).count());
 }
+
+void Say(const char* kind, const std::wstring& key, const char* why) {
+    UE_LOGI("atv: an ATV %s waits -- %s (key='%ls')", kind, why, key.c_str());
+}
+
+// A new key past the cap is dropped, said once; it comes again only with a later replay of the host's set.
+bool Full(const std::wstring& key, const char* kind, const char* why) {
+    if (g_parked.size() < kCap) return false;
+    if (!g_saidCap) {
+        g_saidCap = true;
+        UE_LOGW("atv: %zu ATV arrivals already parked -- the %s for key='%ls' (%s) dropped; it comes "
+                "again only with a later replay of the host's set (said once)", kCap, kind, key.c_str(), why);
+    }
+    return true;
+}
 }  // namespace
 
-void Park(const std::wstring& key, const coop::net::AtvSpawnPayload& payload, const char* why) {
+void Park(const std::wstring& key, const coop::net::AtvSpawnPayload& payload, const char* why, bool say) {
     UE_ASSERT_GAME_THREAD("atv_spawn_park::Park");
     const uint32_t gen = ue_wrap::world_identity::Generation();
     auto it = g_parked.find(key);
     if (it == g_parked.end()) {
-        if (g_parked.size() >= kCap) {
-            if (!g_saidCap) {
-                g_saidCap = true;
-                UE_LOGW("atv: %zu runtime-ATV spawns already parked -- synthKey='%ls' (%s) dropped; the next "
-                        "world-ready replay sends it again (said once)", kCap, key.c_str(), why);
-            }
-            return;
-        }
-        UE_LOGI("atv: runtime-ATV synthKey='%ls' parked until this world is ready (%s)", key.c_str(), why);
-        g_parked.emplace(key, Parked{payload, gen});
-        ++g_parkedEver;
+        if (Full(key, "spawn", why)) return;
+        Say("spawn", key, why);
+        g_parked.emplace(key, Parked{payload, gen, false});
         return;
     }
-    it->second.payload = payload;   // the newest description of this ATV wins
-    it->second.worldGen = gen;
+    const bool wasDestroy = it->second.destroy;
+    it->second = Parked{payload, gen, false};   // the newest description of this ATV wins
+    if (wasDestroy || say) Say("spawn", key, why);
+}
+
+void ParkDestroy(const std::wstring& key, const char* why) {
+    UE_ASSERT_GAME_THREAD("atv_spawn_park::ParkDestroy");
+    const uint32_t gen = ue_wrap::world_identity::Generation();
+    auto it = g_parked.find(key);
+    if (it == g_parked.end()) {
+        if (Full(key, "destroy", why)) return;
+        Say("destroy", key, why);
+        g_parked.emplace(key, Parked{{}, gen, true});
+        return;
+    }
+    const bool wasSpawn = !it->second.destroy;
+    it->second = Parked{{}, gen, true};   // the host's last word on this key is the destroy
+    if (wasSpawn) Say("destroy", key, why);
 }
 
 void Discard(const std::wstring& key) { g_parked.erase(key); }
-bool Holds(const std::wstring& key) { return g_parked.count(key) != 0; }
 
-uint32_t ParkedEver() { return g_parkedEver; }
 size_t Pending() { return g_parked.size(); }
 
 void DrainReady() {
     UE_ASSERT_GAME_THREAD("atv_spawn_park::DrainReady");
+    // The host's pending set is judged on every call, ahead of the early returns: it waits on the same
+    // readiness as a parked arrival but is not one, and an empty pending set returns at once.
+    ApplyPendingSet();
     if (g_parked.empty()) return;
     const uint64_t now = NowMs();
     if (now < g_nextPollMs) return;
     g_nextPollMs = now + kPollMs;
     const uint32_t gen = ue_wrap::world_identity::Generation();
-    std::vector<coop::net::AtvSpawnPayload> ready;
+    struct Ready { std::wstring key; coop::net::AtvSpawnPayload payload; bool destroy; };
+    std::vector<Ready> ready;
     for (auto it = g_parked.begin(); it != g_parked.end();) {
         if (it->second.worldGen != gen) {
-            UE_LOGI("atv: a parked runtime-ATV spawn of a world since left dropped -- this world's replay sends it");
+            UE_LOGI("atv: a parked ATV %s of a world since left dropped -- this world's replay brings the host's set",
+                    it->second.destroy ? "destroy" : "spawn");
             it = g_parked.erase(it);
             continue;
         }
-        ready.push_back(it->second.payload);
+        ready.push_back(Ready{it->first, it->second.payload, it->second.destroy});
         ++it;
     }
-    for (const auto& p : ready) OnAtvSpawn(p);
+    if (ready.empty()) return;
+    // Asked once for the whole poll, not once per parked arrival, and on every poll with no miss held: a
+    // library that resolves late is then found by the next poll. fname_utils::Resolved is lazy and retried
+    // on each call, so before it resolves the cost is one probe per 500 ms poll.
+    if (!ue_wrap::fname_utils::Resolved()) return;
+    for (const auto& r : ready) {
+        if (r.destroy) {
+            coop::net::AtvDestroyPayload dp{};
+            coop::net::WireKeyFromString(r.key, dp.key);
+            OnAtvDestroy(dp);
+        } else {
+            ResolveSpawn(r.key, r.payload);
+        }
+    }
 }
 
 void Clear() {

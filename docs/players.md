@@ -295,7 +295,7 @@ host. A setting that holds a password is never set or shown by command.
 | `Join`, `RosterRow` | each peer; the host | identity, nickname, skin, preferences; who occupies each slot |
 | `SkinChange`, `NameplateChange`, `NickColorChange` | each peer, relayed | the three preferences |
 | `HandItem`, `ItemActivate` | each peer, relayed | the held item's class, its actor's name and its hold slot's item name (the key of the game's item tables); the flashlight state |
-| `PlayerDamage` | host to the hit peer | an enemy hit to apply |
+| `PlayerHit` | host to the hit peer | a parked creature's hit on the peer's puppet: the verb (addDamage or punch) to run on its own player |
 | `SleepState` | a client to the host; the host to all | a rest state with its bed (awake, resting, dreaming); the host's sleeping flag; one peer's rest state relayed |
 | `PlayerInventoryBlob` | both | the per-player profile (items, vitals, standing spot), pre-world |
 | `TeleportClient` | host to one peer | a placement; the administration action, not the join |

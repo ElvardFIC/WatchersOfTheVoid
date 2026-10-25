@@ -31,13 +31,14 @@ from `git shortlog -sne` and fold each person's identity variants together.
 | **Claude** (Anthropic) | code | Implementation, across the whole mod | 1,367 commits |
 | **Tarangok** | code | KO respawn, live skin preview, held-prop visibility, container extraction | 5 commits |
 | **hediiiqq** | code · report | Dish mirror interpolation; a CI gate failing every build on the unfetched MTA submodule ([#10](https://github.com/VOTV-MP/Multivoid/issues/10)) | 1 commit · #10 |
-| **arigalit** | code · report | ATV seat contention ([#9](https://github.com/VOTV-MP/Multivoid/pull/9)); join-time prop-count divergence; the grappling-hook lane ([#16](https://github.com/VOTV-MP/Multivoid/pull/16)) — four of its decisions are in the shipped lane | 2 commits · 2 co-authored |
+| **arigalit** | code · report | ATV seat contention ([#9](https://github.com/VOTV-MP/Multivoid/pull/9)); join-time prop-count divergence; the grappling-hook lane ([#16](https://github.com/VOTV-MP/Multivoid/pull/16)) — four of its decisions are in the shipped lane; the drone leave timer, the desk ping's scan progress, the sleeping-bag transitions, the notebook's shared page and the revive's fire ([#50](https://github.com/VOTV-MP/Multivoid/pull/50)) | 9 commits · 2 co-authored |
 | **huoyan1231** | code · report | CI and automated builds; the b125 host-log pack | 2 commits · b134 |
 | **Marlore** | code · report | A nine-symptom pass over the trash carry ([#29](https://github.com/VOTV-MP/Multivoid/pull/29)). Four were real defects and are fixed at the root, co-authored: a refused grab that was never answered, a pile that looked different on every peer (865 of 871 measured), a thrower refused every later grab, and a fallen player who kept carrying | 6 commits · unreleased |
 | [**Wigard**](https://github.com/wigarddev) | code | A guest of a sandbox host came up in story ([#32](https://github.com/VOTV-MP/Multivoid/pull/32)) — the transfer header had carried the host's game mode from the start and the host filled it with a constant. Then seven more, each measured red and green before it was sent: a build that did not link on VS 2022 ([#30](https://github.com/VOTV-MP/Multivoid/pull/30)), the shower's mirrored toggle running the wrong verb ([#31](https://github.com/VOTV-MP/Multivoid/pull/31)), a drive left frozen in the port on the far peer ([#33](https://github.com/VOTV-MP/Multivoid/pull/33)), a pile a client bags that the host never learns of ([#34](https://github.com/VOTV-MP/Multivoid/pull/34)), a client's upgrade purchase that charged nobody ([#35](https://github.com/VOTV-MP/Multivoid/pull/35)), a prop whose record changes in place telling no one ([#36](https://github.com/VOTV-MP/Multivoid/pull/36)), the bay window's sponge dabs reaching no other peer ([#37](https://github.com/VOTV-MP/Multivoid/pull/37)), and a client's press of the drone console reaching a drone that cannot fly ([#38](https://github.com/VOTV-MP/Multivoid/pull/38)). Then a disc the host ejects that reached the others blank, with the disc drill that proves it ([#39](https://github.com/VOTV-MP/Multivoid/pull/39)), and a desk repaint whose diagnosis matched a fix main already carried ([#40](https://github.com/VOTV-MP/Multivoid/pull/40)) | 13 commits · unreleased |
 | [**Shinobu2**](https://github.com/Shinobu2) | code | About twenty lanes in one request ([#45](https://github.com/VOTV-MP/Multivoid/pull/45)), adopted lane by lane: a newer save record replacing a parked one, a thrown container that kept its contents, damage and fire refused on a peer's puppet with its flame shown, the story-event creatures mirrored, an event fire crossing at the verb it ran in, a client's point sack paid by the host, the server repair's reward, the runtime ATV spawn, a joiner's daily task and nine more | 23 commits · unreleased |
 | [**Slintchen**](https://github.com/Slintchen) | code | The request that the mod's UI speak the player's language ([#41](https://github.com/VOTV-MP/Multivoid/pull/41)): its Chinese pack, in as authored, and its translator's guide and system-face merge for CJK, carried into the translation layer with Slintchen as co-author | 1 commit, 2 co-authored · unreleased |
 | [**archhn0madd**](https://github.com/archhn0madd) | code | Rejoin without a relaunch — the boot poll answered from the dying world | 1 commit |
+| [**AwazonDotCom**](https://github.com/AwazonDotCom) | code | A floppy row lost its line breaks on the way to a client, so the server-data row a host's dish writes, hash code included, did not parse there; and a drive rack written by two lanes at once ([#53](https://github.com/VOTV-MP/Multivoid/pull/53)) | 2 commits · unreleased |
 | **Moddy** | review · design | The architecture and documentation review that became the UE4SS move; the public UE-Modding-Tools pointer that became the blueprint-CFG rung and the migration scanner (patternsleuth); and design published for [Relay](https://github.com/modestimpala/Relay), Moddy's Blueprint networking API for VOTV ([Thunderstore](https://thunderstore.io/c/voices-of-the-void/p/Moddy/Relay/)), in its README and the [README Blueprint](https://blueprintue.com/blueprint/g3s09x9c/) that README links: the watch surface on a Blueprint function, a watch that reads the parameters before the call and can cancel it, and one that only observes after it, which became the script-body gate; the readable join reason and stable diagnostic codes, which became the join screen's named steps and the end-reason codes; the list of cheap edge protections, of which two were missing here: a per-source limit on connections and a private access list on the identity key file; the rule columns that make an actor's own save record its spawn payload, the general form of what this project's prop save-data work was building case by case; the client-only `Quiesce` column, which made this project state its parking rule once and read every park against it; the one paragraph on container handling, which made it write down and measure its own container invariants; the note that a watch on a parent class misses a child's override, which sent us to audit every hook we install, which found three seams that had never installed and two verbs called on the wrong class; and the list of what a returning player's profile covers, which is the list this project's per-player profile now carries | b122 · b143 · 2026-09-02 · b153 · b157 · b160 · b161 · b167 |
 | **SentientYeet** | review | The substrate critique that re-opened the loader decision | b143 |
 | **Violet** | report | ~9 FPS for a friend joining on Linux — five separate defects behind it | b134 |
@@ -82,6 +83,26 @@ Community commits are adopted with their **original authorship preserved**
   locally with submodules populated. Fixed exactly as suggested.
 
 ### arigalit
+- **The drone leave timer** ([#50](https://github.com/VOTV-MP/Multivoid/pull/50), its first piece): a
+  client pressing the garage console's leave-timer face now sets the host's drone, and every peer sees
+  the setting. The commit is theirs as written; the console's click and the drill's timer leg were
+  added beside it.
+- **The desk ping's scan progress** ([#50](https://github.com/VOTV-MP/Multivoid/pull/50), its second piece):
+  while one player pings coordinates at the main desk, every other peer now sees the coordinate lines
+  fill in stage by stage. Their two commits are kept as written (the notebook half of the second waits for
+  the notebook piece); a measurement, the pinger's identity on the wire and the observer checks were added
+  beside them.
+- **The sleeping bag and mattress** ([#50](https://github.com/VOTV-MP/Multivoid/pull/50), its third piece): a
+  bag a player unrolls or folds no longer vanishes on the other peers (FI-11). The host runs the
+  game's own transition for a client and the unrolled bag, which the game never keys, gets a key. Their
+  commit is kept as written; the bunk-bed mattress, the press-side watch and the drill were added.
+- **The notebook** ([#50](https://github.com/VOTV-MP/Multivoid/pull/50), its fourth piece): what one player
+  writes in a notebook is now what every peer reads, one editor at a time. Their two commits are kept
+  as written; the text was then routed through the notebook's own save record, which already crossed,
+  and the editor claim, the write rule and the drill were added beside them.
+- **The revive's fire** ([#50](https://github.com/VOTV-MP/Multivoid/pull/50), its fifth piece): a player who
+  died burning came back still burning. Their commit is kept as written; the fire is now put out with the
+  game's own verb, and a drill sets the player alight, kills it and checks the revived body.
 - **The grappling-hook lane** ([#16](https://github.com/VOTV-MP/Multivoid/pull/16)): the first
   implementation of hook and rope visibility across peers. It could not be merged — a mirror is a
   live `hook_C`, `hook_C` is an `actor_save_C`, and the game's save walk collects by that interface,
@@ -195,6 +216,18 @@ Community commits are adopted with their **original authorship preserved**
   un-strands a host trying to re-host after a death-flee.
   Contributed on the fork [Multifoid](https://github.com/archhn0madd/Multifoid);
   adopted as `engine_save.cpp`'s `SurveyBootWorld` with authorship preserved.
+
+### AwazonDotCom
+- **A floppy row's line breaks** ([#53](https://github.com/VOTV-MP/Multivoid/pull/53)): the floppy slot,
+  floppy box and laptop buffer lanes encoded their strings with the chat encoder, which drops control
+  characters, so the host's several-line server-data row reached a client on one line and the game could
+  not find its type. The commit, authored as DexxInTime, is kept as written; the text codec now owns the
+  three lanes' strings both ways, and the laptop and floppy drills carry rows with line breaks to prove it.
+- **A drive rack with one author** (the same request): a client's drive rack was written by the rack lane and
+  by the save-record lane, whose record the rack lane would read as the player's takes and sets. The commit
+  claims the rack from the save-record lane and holds a joiner's rack canonicals through its join; its
+  several-rows guard was taken out, and the host now sends a rack it first sees mid-session, with a drill
+  that spawns a rack holding rows to prove it.
 
 ---
 

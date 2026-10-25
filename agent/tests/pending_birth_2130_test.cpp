@@ -307,3 +307,5 @@ int main(){using namespace test;
     puts("PASS: pending birth identity, callback enqueue/reset/reentry, admission, key wait and bounded queue");
     return 0;
 }
+
+namespace ue_wrap::notebook { bool IsNotebookSheet(void*){return false;} }

@@ -32,3 +32,9 @@ int main(){using namespace test;namespace M=ue_wrap::dingus_music;
     CHECK(M::Squeak(At(Actor),1.7f,[&]{return sourceCurrent;}) && chirps==heard+1);
     puts("PASS toy clock wrapper/actual ParamFrame: looping-wave duration, native seek/modulo/rate, no heartbeat restart, stopped/replaced component/sound recovery, optional metadata and native lifetime fences");return 0;
 }
+
+// Reflection names used by ParamFrame missing-field diagnostics.
+namespace ue_wrap::reflection {
+std::wstring ToString(const FName&){return L"fixture_function";}
+const FName& NameOf(void*){static const FName name{};return name;}
+}

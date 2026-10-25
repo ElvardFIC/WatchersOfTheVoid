@@ -26,7 +26,15 @@ CFG_ENUM(auth_drill, "auth_drill", "dev", "off", "off|corrupt|silent|mismatch",
 CFG_ENUM(hostile_drill, "hostile_drill", "dev", "off",
     "off|signal_park|chat_ill_formed|prop_convert|reliable_flood|repeat_join|repeat_world_ready|"
     "repeat_save_request|record_bad_classes|bad_alarm|bad_prop_key|bad_prop_spawn|bad_hand_class|"
-    "bad_hand_family|keep_latest|chat_flood|world_latest|kerfur_flood|remover_far|remover_hidden|remover_flood",
+    "bad_hand_family|keep_latest|chat_flood|world_latest|kerfur_flood|remover_far|remover_hidden|remover_flood|"
+    "act_far|act_gone|act_wrongfamily|act_bad_commit|act_notyet|act_flood|act_flood_early|"
+    "explosion_malformed|explosion_duplicate|explosion_unknown_shot|explosion_consumed|explosion_no_launcher|"
+    "explosion_origin|explosion_reach|explosion_not_seated|explosion_no_explosive|explosion_hand_bound|"
+    "explosion_story|explosion_wait_behind_shot|explosion_not_ready|explosion_evicted|explosion_flood|"
+    "explosion_rejoin|explosion_self_clamp|"
+    "ignite_malformed|ignite_no_tool|ignite_torch_attempt|ignite_torch_ignite|ignite_reach|ignite_not_rocket|"
+    "ignite_not_ready|ignite_flood|"
+    "atv_state_forge|atv_seat_forge|atv_takeover_forge|atv_explode_forge",
     "VOTVCOOP_HOSTILE_DRILL",
     "Receive-boundary drill (BOTH peers). signal_park: a client floods refused saved-signal rows "
     "(size 0, so the game's own gate rejects each) and the host must keep them from filling the apply "
@@ -72,4 +80,24 @@ CFG_ENUM(hostile_drill, "hostile_drill", "dev", "off",
     "OutOfSight and nothing else. remover_hidden: a joined client asks for a host prop its camera cannot see, from its "
     "real camera; the host must answer OutOfSight. remover_flood: a joined client sends, in one tick, 121 remover "
     "requests each naming an unused host-range id; the host must serve them at the lane's pace and no more than its "
-    "cap, judged by its own per-sender counts. Drill only.")
+    "cap, judged by its own per-sender counts. act_*: A3-D2a's take-or-use requests forged against the host. "
+    "explosion_*: a joined client forges shots and explosion requests against the host, one refusal reason per arm "
+    "(or the shot table, the queue, the eviction, the not-ready and the rejoin mechanisms); the host judges by "
+    "accounting, every message one accept or one refusal, against its counters since its session start. "
+    "ignite_*: a joined client forges salt rocket light requests against the host, one refusal reason per arm "
+    "(or the not-ready, the flood and the accepted torch light); the host judges by the same accounting. "
+    "atv_*: a joined client forges raw ATV messages against the host, in phases: atv_state_forge (blocks for an ATV the "
+    "host syncs), atv_seat_forge (ill-formed, unknown, out-of-reach and paced sits and a leave), atv_takeover_forge "
+    "(takeovers of a seated ATV and a burst past the pace) and atv_explode_forge (blast requests from a non-syncer, "
+    "ill-formed, and twice from the syncer); the host judges each phase by its counters, and a counter the phase does "
+    "not name must not move. "
+    "Drill only.")
+
+// The act drill: an honest client takes and uses shared props through the real verbs, and the host judges what it
+// answered and committed. Set on BOTH peers (the host spawns and judges, the client acts); it arms the sending side
+// only, like the rows above.
+CFG_ENUM(prop_act_drill, "prop_act_drill", "dev", "off", "off|honest|race|depart|edge", "VOTVCOOP_PROP_ACT_DRILL",
+    "Drill (host and clients): A3-D2a -- a client's take or use of a shared prop asks the host first. honest: one client "
+    "takes and uses each family; race: two clients and the host contend for one prop (with --observer); depart: a "
+    "client leaves holding a reservation and a newcomer takes its slot (with --rejoin); edge: the windows. Lines "
+    "tagged [ACT-DRILL]; the host's PASS line ends a phase.")

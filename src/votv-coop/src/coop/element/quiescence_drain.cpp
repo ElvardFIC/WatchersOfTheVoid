@@ -29,6 +29,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>   // memcmp
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -522,6 +523,43 @@ void ArmPendingDestroy(const coop::net::PropDestroyPayload& payload) {
     UE_LOGI("[DESTROY-DEFER] CLIENT armed deferred destroy key='%ls' eid=%u -- arrived before the target loaded; "
             "the drain-edge applies it post-bind at quiescence (destroy-before-load order fix)",
             coop::remote_prop::KeyToWString(payload.key).c_str(), payload.elementId);
+}
+
+namespace {
+// The wire key's meaningful bytes, capped as KeyToWString caps them.
+size_t WireKeyLen(const coop::net::WireKey& k) { return k.len < 31 ? k.len : 31; }
+bool WireKeyKeyed(const coop::net::WireKey& k) {
+    const size_t n = WireKeyLen(k);
+    return n != 0 && !(n == 4 && std::memcmp(k.data, "None", 4) == 0);
+}
+bool WireKeySame(const coop::net::WireKey& a, const coop::net::WireKey& b) {
+    const size_t n = WireKeyLen(a);
+    return n == WireKeyLen(b) && std::memcmp(a.data, b.data, n) == 0;
+}
+}  // namespace
+
+namespace internal {
+bool RetireMatches(const coop::net::PropDestroyPayload& pending, const coop::net::PropSpawnPayload& spawn) {
+    // A destroy that names an element is the death of that element: only a spawn of the same
+    // element is a re-creation of it. A key-only destroy (no element named) is retired by the
+    // same key.
+    if (pending.elementId != 0) return spawn.elementId == pending.elementId;
+    return WireKeyKeyed(spawn.key) && WireKeyKeyed(pending.key) && WireKeySame(pending.key, spawn.key);
+}
+}  // namespace internal
+
+void RetirePendingDestroyFor(const coop::net::PropSpawnPayload& spawn) {
+    if (g_pendingDestroy.empty()) return;
+    for (auto it = g_pendingDestroy.begin(); it != g_pendingDestroy.end(); ) {
+        if (!internal::RetireMatches(it->payload, spawn)) {
+            ++it;
+            continue;
+        }
+        UE_LOGI("[DESTROY-DEFER] CLIENT retired deferred destroy key='%ls' eid=%u -- a later spawn of the "
+                "same identity arrived (newer on the same lane)",
+                coop::remote_prop::KeyToWString(it->payload.key).c_str(), it->payload.elementId);
+        it = g_pendingDestroy.erase(it);
+    }
 }
 
 // HasPendingWork, the sequence, the triggers, Reset.

@@ -13,7 +13,7 @@ use crate::lobby_proof::{MAX_SPENT, SPENT_ENTRY_BYTES};
 #[test]
 fn latest_games_parse_keeps_good_entries_and_names_bad_ones() {
     let (games, refused) =
-        parse_latest_games("0.9.0n:221:0.9.0n b221, 0.10.0:230:0.10.0 b230,garbage,0.9.0n:0:x,0.9.0n:5:a:b");
+        parse_latest_games("0.9.0n:221:0.9.0n b221, 0.10.0:1:0.10.0 b1,garbage,0.9.0n:0:x,0.9.0n:5:a:b");
     assert_eq!(games.len(), 2);
     assert_eq!(games[0], LatestGame { game: "0.9.0n".into(), proto: 221, tag: "0.9.0n b221".into() });
     assert_eq!(games[1].game, "0.10.0");
@@ -27,7 +27,7 @@ fn latest_games_parse_keeps_good_entries_and_names_bad_ones() {
 
 #[test]
 fn latest_answer_gives_the_old_cohort_its_own_game() {
-    let (games, _) = parse_latest_games("0.9.0n:221:0.9.0n b221,0.10.0:230:0.10.0 b230");
+    let (games, _) = parse_latest_games("0.9.0n:221:0.9.0n b221,0.10.0:1:0.10.0 b1");
     let body = latest_answer(&games, LATEST_URL);
     assert_eq!(body["proto"], 221, "the legacy fields are 0.9.0n's, not the newest release's");
     assert_eq!(body["mod"], "0.9.0n b221");

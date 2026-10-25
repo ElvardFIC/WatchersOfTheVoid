@@ -12,6 +12,7 @@
 #include "coop/element/registry.h"  // the host's eid-to-actor lookup
 #include "coop/config/config.h"  // the test-cue flag
 #include "coop/config/config_registry.h"  // [dev] stall_world_stream_at_pct, the stalled-download drill
+#include "coop/dev/atv_spawn_drill.h"  // [dev] the ATV spawn drill's divergence arm acts as a stream ends
 #include "coop/interactables/meadow_db_sync.h"  // the join-seed multiset snapshot at the blob instant
 #include "coop/interactables/download_arm_sync.h"  // the armed state at the capture
 #include "coop/interactables/signal_sync.h"  // the seed snapshot capture and cancel
@@ -628,6 +629,7 @@ void TickHost() {
         }
         if (hs.nextChunk >= hs.chunkCount) {
             UE_LOGI("save_transfer: slot %d stream complete (%u chunks)", slot, hs.chunkCount);
+            coop::dev::atv_spawn_drill::OnSlotStreamComplete(slot);   // [dev] a no-op unless that drill's arm asks
             hs = HostStream{};  // frees the 17MB blob
         }
     }

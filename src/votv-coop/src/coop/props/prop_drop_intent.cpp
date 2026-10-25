@@ -33,6 +33,7 @@
 #include "ue_wrap/core/hot_path_guard.h"         // UE_ASSERT_GAME_THREAD
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/actors/floppy_disc.h"
+#include "ue_wrap/actors/notebook.h"
 #include "ue_wrap/actors/prop.h"                   // the prop lineage, key, name and parity-identity accessors
 #include "ue_wrap/core/object_index.h"  // ClassByName -- the host's O(1) class resolve for a client's intent
 #include "ue_wrap/core/reflection.h"
@@ -249,7 +250,7 @@ void OnClientFinishSpawn(void* /*context*/, void* sourceObject, void* result) {
         // adopting the host's world.
         coop::join_membership_sweep::RecordSelfAuthored(actor);
         UE_LOGI("[PROP-DROP] CLIENT enqueued PLAYER-AUTHORED birth actor=%p cls='%ls' "
-                "(spawn menu or toolgun; admitted at drain, claimed against the join sweep)",
+                "(spawn menu or toolgun; admitted at drain, spared by the join sweep)",
                 actor, R::ClassNameOf(actor).c_str());
     }
 }
@@ -394,6 +395,7 @@ void Tick(coop::net::Session* session) {
         // pickup, so what comes is the one a full hand left at the player, and it falls where it is.
         const bool isUpgradeBirth = ue_wrap::serverbox::IsUpgradeClass(R::ClassOf(actor));
         const bool isSleepingBagBirth = ue_wrap::floor_bed::IsFloorBed(actor);
+        const bool isNotebookSheet = ue_wrap::notebook::IsNotebookSheet(actor);
         // Proven world births take precedence over the class-only device
         // fallback. A crafted/spawned or container-extracted module is not an
         // unplug: do not force it asleep or apply a recent device-denial reap.
@@ -418,7 +420,7 @@ void Tick(coop::net::Session* session) {
         // NOT a freshBirth: that kind means a device put an item in a hand and sleeps the host's
         // copy, while a menu prop is dropped in the world at the player's aim and must fall on the
         // host exactly as it falls here -- the transform block below sends its real physics state.
-        if (!parked && !freshBirth && !e.containerExtract && !e.playerSpawn) {
+        if (!parked && !freshBirth && !e.containerExtract && !e.playerSpawn && !isNotebookSheet) {
             probe::NoteDrainExit(actor, "not-a-place-nor-whitelisted-birth", e.tries, key);
             continue;
         }
@@ -515,11 +517,13 @@ void Tick(coop::net::Session* session) {
         probe::NoteDrainExit(actor,
                              freshBirth     ? "authored-fresh-birth"
                              : e.playerSpawn ? "authored-player-spawn"
+                             : isNotebookSheet ? "authored-notebook-sheet"
                                              : "authored-drop-intent",
                              e.tries, key);
         UE_LOGI("[PROP-DROP] CLIENT authored %s key='%ls' cls='%ls' name='%ls' loc=(%.1f,%.1f,%.1f)%s",
                 freshBirth     ? "FRESH-BIRTH intent"
                 : e.playerSpawn ? "PLAYER-SPAWN intent"
+                : isNotebookSheet ? "NOTEBOOK-SHEET intent"
                                 : "drop intent",
                 key.c_str(), cls.c_str(),
                 WireToWide(p.propName.len, p.propName.data, sizeof(p.propName.data)).c_str(),

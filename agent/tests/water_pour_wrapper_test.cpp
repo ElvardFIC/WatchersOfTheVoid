@@ -176,3 +176,8 @@ int main(){using namespace test;namespace W=ue_wrap::water_pour;
     input.volume=1;input.pitch=1.5f;onLocation=[]{++objects[Sound].serial;};CHECK(!W::ReadBucketCue(At(Actor),At(PlaySound),reinterpret_cast<uint8_t*>(&input),true,cue,valid));
     puts("PASS water projectile wrapper/ParamFrame: exact bucket/washer classes, post-native speed/power/soap/rotation, final bounds-offset repair, native lifetime and distinct launch/impact sound arguments with terminal construction guards");
 }
+
+// Reflection names used by ParamFrame missing-field diagnostics.
+namespace ue_wrap::reflection {
+std::wstring ToString(const FName&){return L"fixture_function";}
+}

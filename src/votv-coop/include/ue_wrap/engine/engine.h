@@ -83,6 +83,11 @@ FVector GetActorScale3D(void* actor);
 // actor even mid-teardown.
 bool IsChildActor(void* actor);
 
+// The same read, saying whether it could be made: `readable` is false when the Actor class is not loaded yet or
+// its ParentComponent member is missing (the answer is then false, which is no evidence the actor is not a
+// child). A reader that must fail closed uses this form.
+bool IsChildActor(void* actor, bool& readable);
+
 // The child actor's parent (the ParentComponent's Outer) and, in `outComponentName`, the
 // UChildActorComponent's name: the half of a child actor's identity that is stable across processes
 // (the `_CAT_<n>` tail of the actor's own name is a per-process counter). Null when not a child
@@ -93,6 +98,10 @@ void* ParentActorOf(void* actor, std::wstring* outComponentName = nullptr);
 // on every convert and spawn. Game thread.
 bool SetActorScale3D(void* actor, const FVector& scale);
 
+// AActor::SetLifeSpan: the actor destroys itself `seconds` from now, by the engine's own lifespan expiry (the end an
+// InitialLifeSpan default gives). False on a resolution miss or a failed call. Game thread.
+bool SetActorLifeSpan(void* actor, float seconds);
+
 // UKismetSystemLibrary::CollectGarbage: a full purge at the end of the frame, paired with the
 // adoption sweep's destruction burst so pending-kill garbage does not wait for UE's 61 s periodic
 // purge. Game thread.
@@ -100,6 +109,9 @@ bool ForceGarbageCollection();
 
 // AActor::GetActorForwardVector; (0,0,0) on failure.
 FVector GetActorForwardVector(void* actor);
+
+// AActor::GetActorUpVector; (0,0,0) on failure (a unit vector is never zero, so a zero is an unread one).
+FVector GetActorUpVector(void* actor);
 
 // AActor::K2_GetActorRotation (world), the one rotation read: false when the rotation could not be
 // obtained, a read that faulted inside the engine and was absorbed included. `out` is then the zero
@@ -119,6 +131,10 @@ bool SetActorRotation(void* actor, const FRotator& rotation);
 
 // USceneComponent::K2_GetComponentRotation (world); zero on failure. Game thread.
 FRotator GetComponentWorldRotation(void* component);
+
+// The same read, false (and `out` untouched) when the component is dead, the function unresolved or the call failed:
+// for a reader that must tell a failed read from a zero rotation. Game thread.
+bool TryGetComponentWorldRotation(void* component, FRotator& out);
 
 // USceneComponent::K2_SetWorldRotation (bSweep=false, bTeleport=true). Call after SetActorRotation:
 // moving the root re-bases the child's world transform. Game thread.

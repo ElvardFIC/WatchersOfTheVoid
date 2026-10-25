@@ -27,6 +27,7 @@
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/object_index.h"
 #include "ue_wrap/core/script_gate.h"
+#include "ue_wrap/actors/sleepingbag.h"  // BP replacement forms can finish with Key=None
 #include "ue_wrap/actors/prop.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/sdk_profile.h"
@@ -297,6 +298,31 @@ std::atomic<coop::net::Session*> g_session_ptr{nullptr};
 // same keyed broadcast. Game thread (the caller guarantees it); the HasProcessedInit latch
 // dedupes against an Init POST that did fire.
 void ExpressSpawnedProp(void* actor) {
+    // The sleepingbag Blueprint creates sleepingbagWrap_* with Key=None. Its Init POST is seen
+    // before the deferred spawn finishes, marks ProcessedInit, and exits at the normal None-key
+    // guard. The host_spawn_watcher calls this only after FinishSpawningActor and the Blueprint
+    // verb have returned, when this actor is mature. Give that host-owned successor a key and reopen
+    // the Init dedupe so the ordinary lifecycle express can assign its eid and send PropSpawn;
+    // otherwise the source's later destroy reaches clients with no replacement birth. The key
+    // persists into the host's save, so it is the random persisted-key kind (the one the host's
+    // duplicate-key census mints), never the per-boot counter's.
+    if (actor && PT::SessionIsHost() &&
+        (ue_wrap::sleepingbag::IsPacked(actor) || ue_wrap::sleepingbag::IsDeployed(actor))) {
+        const std::wstring currentKey = ue_wrap::prop::GetInteractableKeyString(actor);
+        if (currentKey.empty() || currentKey == L"None") {
+            const std::wstring key = coop::prop_synth_key::MintFreshKeyForDuplicate(actor);
+            if (key.empty() || key == L"None") {
+                UE_LOGW("grab_hook[spawn seam]: sleepingbag successor %p class='%ls' still has no Key "
+                        "after FinishSpawningActor -- replacement birth cannot be expressed",
+                        actor, R::ClassNameOf(actor).c_str());
+                return;
+            }
+            PT::UnmarkProcessedInit(actor);
+            UE_LOGI("grab_hook[spawn seam]: host sleepingbag successor %p class='%ls' had no Key "
+                    "after Blueprint finish -- minted '%ls' and retrying its birth express",
+                    actor, R::ClassNameOf(actor).c_str(), key.c_str());
+        }
+    }
     GrabObserver_Aprop_Init_POST_Body(actor);
 }
 
@@ -400,6 +426,16 @@ void Install(coop::net::Session* session) {
                 UE_LOGI("grab_hook: Func-patched %ls.%ls @ %p (destroy seam -- catches "
                         "EX_CallMath destroys the old PE observer missed)",
                         P::name::ActorClassName, P::name::DestroyActorFn, fn.Fn());
+                // The pre half takes the hand-view test at the call's entry (the post alone misses
+                // the outer call of a nested pair); same function, same settle.
+                if (ue_wrap::ufunction_hook::InstallPreHook(fn, &OnK2DestroyPre, /*armed=*/true)) {
+                    UE_LOGI("grab_hook: pre-patched %ls.%ls @ %p (destroy seam entry -- hand-view record)",
+                            P::name::ActorClassName, P::name::DestroyActorFn, fn.Fn());
+                } else {
+                    UE_LOGE("grab_hook: the pre patch on %ls.%ls failed -- the hand-view destroy is "
+                            "broadcast as a world prop's",
+                            P::name::ActorClassName, P::name::DestroyActorFn);
+                }
             } else {
                 UE_LOGE("grab_hook: the Func patch on %ls.%ls failed -- destroy broadcast disabled",
                         P::name::ActorClassName, P::name::DestroyActorFn);

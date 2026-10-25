@@ -16,18 +16,18 @@ bool IsLocalGrabber(void* actor,void*){return actor&&actor==held;}
 namespace S=coop::atv_sync;
 int main(){using namespace test;
  auto& registry=coop::players::Registry::Get();registry.peer=1;
- S::g_indexGen=world;S::AtvEntry e{};e.actor=&actor;e.idx=1;e.authorSlot=2;
+ S::g_indexGen=world;S::AtvEntry e{};e.actor=&actor;e.idx=1;e.syncerSlot=2;e.lastGrabbed=true;
  S::g_atvs[L"atv"]=e;uint8_t holder=0xFF;
  CHECK(S::IsHeldForMount(&actor,&holder)&&holder==2);
  S::g_atvs[L"atv"].occupantSlot=2;CHECK(!S::IsHeldForMount(&actor,nullptr)); // seated != carried
- S::g_atvs[L"atv"].occupantSlot=0xFF;S::g_atvs[L"atv"].authorSlot=1;
+ S::g_atvs[L"atv"].occupantSlot=0xFF;S::g_atvs[L"atv"].syncerSlot=1;
  CHECK(!S::IsHeldForMount(&actor,nullptr)); // a stale local carry claim cannot deny after release
  held=&actor;CHECK(S::IsHeldForMount(&actor,&holder)&&holder==1);
  ++world;CHECK(S::IsHeldForMount(&actor,nullptr)); // fresh local hold before indexing
  held=nullptr;CHECK(!S::IsHeldForMount(&actor,nullptr));
- S::g_indexGen=world;S::g_atvs[L"atv"].authorSlot=2;actor.live=false;
+ S::g_indexGen=world;S::g_atvs[L"atv"].syncerSlot=2;actor.live=false;
  CHECK(!S::IsHeldForMount(&actor,nullptr));actor.live=true;
- S::g_atvs[L"atv"].authorSlot=0xFF;CHECK(!S::IsHeldForMount(&actor,nullptr));
+ S::g_atvs[L"atv"].syncerSlot=0xFF;CHECK(!S::IsHeldForMount(&actor,nullptr));
  CHECK(!S::IsHeldForMount(nullptr,nullptr));
  puts("PASS actual ATV mount query: remote/local carry, seated, release, dead actor and world change");
 }

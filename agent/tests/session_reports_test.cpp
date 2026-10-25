@@ -22,7 +22,14 @@ int32_t FindPropertyOffset(void*,const wchar_t*){return offsetof(Obj,used);}
 namespace ue_wrap::engine {
 bool TryGetActorLocation(void* a,FVector& p){auto* o=static_cast<Obj*>(a);p=o->pos;return o->located;}
 }
+namespace ue_wrap::notebook {
+bool IsEditorWidget(void*){return false;}bool IsPaperDrawWidget(void*){return false;}
+bool IsNotebook(void*){return false;}bool IsDrawablePaper(void*){return false;}
+void* NotebookOf(void*){return nullptr;}void* PaperOf(void*){return nullptr;}
+}
 namespace screen {
+std::wstring PropKey(const wchar_t*,void*){return {};}
+
 struct Slot { void* cls=nullptr; };
 Obj widgetClasses[7],deviceClasses[8];
 Slot g_widgets[7],g_devices[8];

@@ -28,6 +28,10 @@ enum class TalkVerdict : uint8_t { Talk, Interval, Bucket };
 // Talk the slot has talked now (NotePlayerTalked). Pure.
 TalkVerdict Attempt(TalkBudget& b, uint64_t nowMs);
 
+// True exactly when Attempt(b, nowMs) would return Talk; `b` is left as it was. A drill peer paces its own lines by
+// this against its copy of the budget the host keeps for it.
+bool Allows(const TalkBudget& b, uint64_t nowMs);
+
 // Attempt on `slot`'s own budget. Host, game thread.
 TalkVerdict AttemptLine(uint8_t slot, uint64_t nowMs);
 

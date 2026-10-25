@@ -113,3 +113,9 @@ int main(){
     CHECK(S::g_in.empty());S::OnDisconnect();
     std::puts("PASS blood: native provenance, host/client routing, retries, duplicates, malformed requests, join, occupancy and callback teardown");
 }
+
+// Reflection names used by ParamFrame missing-field diagnostics.
+namespace ue_wrap::reflection {
+std::wstring ToString(const FName&){return L"fixture_function";}
+const FName& NameOf(void*){static const FName name{};return name;}
+}

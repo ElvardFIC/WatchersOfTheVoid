@@ -136,3 +136,8 @@ int main() {
     p.x=1;CHECK(S::OnReliable(p)&&plays==6);
     puts("PASS world sounds: native black-hole phases, alien position, per-peer FIFO/retry, no duplicate accepted sends, readiness, missing assets, malformed cues, expiry/travel/teardown");
 }
+
+// Reflection names used by ParamFrame missing-field diagnostics.
+namespace ue_wrap::reflection {
+std::wstring ToString(const FName&){return L"fixture_function";}
+}

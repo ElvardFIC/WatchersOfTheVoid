@@ -18,8 +18,10 @@
 
 #include "coop/element/element.h"  // coop::element::ElementId
 #include "coop/props/join_membership_sweep.h"
-#include "coop/net/protocol.h"     // PropDestroyPayload
+#include "coop/net/protocol.h"     // PropDestroyPayload, PropSpawnPayload
 #include "ue_wrap/core/types.h"         // ue_wrap::FVector / FRotator
+
+#include <cstddef>
 
 namespace coop::element::quiescence_drain {
 
@@ -95,11 +97,29 @@ void CancelPendingSaveTimeTwin(coop::element::ElementId eid);
 // doomed save-loaded prop. The destroy receiver finds no local actor and arms it here
 // instead of dropping it (the prop would later load unopposed, a duplicate); the sequence
 // re-applies it after the bind through the destroy re-apply, so destroy delivery becomes
-// order-independent. Since the join barrier this is unreachable in the join window (no
-// destroy arrives pre-quiescence); it remains live for the travel window (host sends flow
-// while a cave or level reload churns, with no travel-start gate) and the probe-deadline
-// degraded mode.
+// order-independent. It arms in the join window too, since live destroys flow while the
+// bracket streams, as in the travel window (host sends flow while a cave or level reload churns, with no
+// travel-start gate) and the probe-deadline degraded mode. A later spawn of the same identity
+// retires it (RetirePendingDestroyFor).
 void ArmPendingDestroy(const coop::net::PropDestroyPayload& payload);
+
+// A spawn of an identity retires the destroy of that identity still waiting here: PropSpawn and
+// PropDestroy ride one lane in order, so a spawn received after the destroy is newer, the host
+// re-created the prop, and applying the older destroy at quiescence would kill the re-creation.
+// Called at the client's wire receive edge of PropSpawn only, never from a replay of an older
+// arrival. A pending destroy with a non-zero eid is retired by a spawn of that eid; one with eid 0
+// (key-only identity) by a spawn of the same non-empty, non-"None" key. Returns at once on an empty
+// table. Game thread only.
+void RetirePendingDestroyFor(const coop::net::PropSpawnPayload& spawn);
+
+// The retire rule on stated inputs, once per session start: which pending destroys a spawn retires.
+// Never touches the live table beyond one call on an empty table. Pure checks, no engine call.
+void RunDestroyDeferSelftest();
+
+namespace internal {  // for quiescence_drain_selftest
+// Whether `spawn` retires `pending`: the rule RetirePendingDestroyFor applies per entry. Pure.
+bool RetireMatches(const coop::net::PropDestroyPayload& pending, const coop::net::PropSpawnPayload& spawn);
+}  // namespace internal
 
 // True iff there is armed but unconsumed reconcile work (a pending save-time twin, position
 // correction, destroy or kerfur retire). The tick polls this so it only walks when there is

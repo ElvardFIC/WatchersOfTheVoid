@@ -21,7 +21,6 @@
 #include <atomic>
 #include <cmath>
 #include <cstdint>
-#include <cstring>
 
 namespace ue_wrap::drone {
 namespace {
@@ -32,18 +31,11 @@ namespace E = engine;
 std::atomic<bool> g_resolved{false};
 void*   g_cls       = nullptr;  // drone_C UClass
 int32_t g_activeOff = -1;       // Adrone_C::Active (Alpha 0.9.0-n: 0x0370, bool)
+int32_t g_leaveAfter5minOff = -1; // Adrone_C::leaveAfter5min
 
 constexpr int32_t kActiveOffFallback = 0x0370;
 
                                // (the project rule; IsLive(ptr) derefs the maybe-freed object itself)
-
-// ---- The pose, read from memory (AActor::RootComponent, then the root's relative transform) ----
-bool    g_poseTried       = false;
-bool    g_poseResolved    = false;
-int32_t g_rootOff         = -1;  // AActor::RootComponent
-int32_t g_relLocOff       = -1;  // USceneComponent::RelativeLocation
-int32_t g_relRotOff       = -1;  // USceneComponent::RelativeRotation
-int32_t g_attachParentOff = -1;  // USceneComponent::AttachParent
 
 // ---- FX mirroring -- resolved lazily (separate from the pose path) ----
 bool    g_fxResolved   = false;
@@ -143,24 +135,6 @@ bool ComponentIsActive(void* comp) {
     return (*(reinterpret_cast<const uint8_t*>(comp) + g_activeByteOff) & g_activeMask) != 0;
 }
 
-bool EnsurePoseResolved() {
-    if (g_poseResolved) return true;
-    if (g_poseTried) return false;
-    g_poseTried = true;
-    if (void* actorCls = R::FindClass(L"Actor")) g_rootOff = R::FindPropertyOffset(actorCls, L"RootComponent");
-    if (void* sceneCls = R::FindClass(profile::name::SceneComponentClass)) {
-        g_relLocOff = R::FindPropertyOffset(sceneCls, L"RelativeLocation");
-        g_relRotOff = R::FindPropertyOffset(sceneCls, profile::name::RelativeRotationProp);
-        g_attachParentOff = R::FindPropertyOffset(sceneCls, L"AttachParent");
-    }
-    g_poseResolved = g_rootOff >= 0 && g_relLocOff >= 0 && g_relRotOff >= 0 && g_attachParentOff >= 0;
-    if (!g_poseResolved)
-        UE_LOGW("drone: the root's pose members did not resolve (RootComponent@%d RelativeLocation@%d "
-                "RelativeRotation@%d AttachParent@%d) -- the pose is read through the engine",
-                g_rootOff, g_relLocOff, g_relRotOff, g_attachParentOff);
-    return g_poseResolved;
-}
-
 void SetComponentActive(void* comp, bool on) {
     if (!comp || !g_setActiveFn) return;
     ParamFrame f(g_setActiveFn);
@@ -226,6 +200,9 @@ bool EnsureResolved() {
 
     g_cls = cls;
     g_activeOff = activeOff;
+    g_leaveAfter5minOff = R::FindPropertyOffset(cls, L"leaveAfter5min");
+    if (g_leaveAfter5minOff < 0)
+        UE_LOGW("drone: reflected leaveAfter5min offset not found -- the leave timer does not sync");
     g_resolved.store(true, std::memory_order_release);
     UE_LOGI("drone: resolved drone_C=%p Active@0x%04X", cls, activeOff);
     return true;
@@ -241,20 +218,21 @@ bool IsActive(void* drone) {
     return *reinterpret_cast<const bool*>(reinterpret_cast<const char*>(drone) + g_activeOff);
 }
 
+bool ReadLeaveAfter5min(void* drone, bool& out) {
+    if (!drone || !EnsureResolved() || g_leaveAfter5minOff < 0) return false;
+    out = *reinterpret_cast<const bool*>(reinterpret_cast<const char*>(drone) + g_leaveAfter5minOff);
+    return true;
+}
+
+bool WriteLeaveAfter5min(void* drone, bool value) {
+    if (!drone || !EnsureResolved() || g_leaveAfter5minOff < 0) return false;
+    *reinterpret_cast<bool*>(reinterpret_cast<char*>(drone) + g_leaveAfter5minOff) = value;
+    return true;
+}
+
 bool ReadPose(void* drone, FVector& loc, FRotator& rot) {
     if (!drone) return false;
-    if (EnsurePoseResolved()) {
-        const char* d = static_cast<const char*>(drone);
-        void* root = *reinterpret_cast<void* const*>(d + g_rootOff);
-        if (root && R::IsLive(root)) {
-            const char* r = static_cast<const char*>(root);
-            if (*reinterpret_cast<void* const*>(r + g_attachParentOff) == nullptr) {
-                std::memcpy(&loc, r + g_relLocOff, sizeof(loc));
-                std::memcpy(&rot, r + g_relRotOff, sizeof(rot));
-                return true;
-            }
-        }
-    }
+    if (E::TryGetRootPoseRaw(drone, loc, rot)) return true;
     return E::TryGetActorLocation(drone, loc) && E::TryGetActorRotation(drone, rot);
 }
 
@@ -276,8 +254,11 @@ void RestoreTick(void* drone) {
 }
 
 uint8_t ReadFxBits(void* drone) {
-    if (!drone || !EnsureFxResolved()) return 0;
+    if (!drone) return 0;
     uint8_t bits = 0;
+    bool leaveAfter5min = false;
+    if (ReadLeaveAfter5min(drone, leaveAfter5min) && leaveAfter5min) bits |= kFxLeaveAfter5min;
+    if (!EnsureFxResolved()) return bits;
     if (void* dust = ReadComp(drone, g_dustOff))
         if (ComponentIsActive(dust)) bits |= kFxDust;
     auto rb = [drone](int32_t off) -> bool {

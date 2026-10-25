@@ -111,7 +111,8 @@ PhaseWatch WatchFor(Phase ph, Stage st) {
     // so no watchdog here can tick through it, and the window AFTER it, where the render is alive
     // and this client is waiting on its own announce gates. The budget is on the second: it starts
     // when the pump first names a gate, and only a gate that CHANGED renews it. 150 s clears the
-    // quiescence probe's own 120 s ceiling, the one gate that legitimately holds this long.
+    // quiescence probe's own 120 s ceiling, the gate that legitimately holds this long; a save replay
+    // that never returns holds its gate until this budget ends the join.
     case Phase::LoadingWorld:
         return {150'000, EndReason::WorldNeverSettled,
                 "this machine never finished settling into the world it loaded"};
@@ -143,6 +144,7 @@ const char* WorldGateName(uint8_t g) {
     case WorldGate::RegistryUnseeded:   return "the prop registry has not seeded once";
     case WorldGate::RegistryOtherWorld: return "the prop registry expresses a different world";
     case WorldGate::RegistryPurging:    return "the prop registry is still draining a dead world";
+    case WorldGate::SaveReplayPending:  return "the save has not finished loading";
     case WorldGate::WorldSettling:      return "the load tail has not settled";
     case WorldGate::KeyIndexPending:    return "the prop key index has not caught up with the loaded world";
     case WorldGate::None:               return "nothing -- every gate is clear";

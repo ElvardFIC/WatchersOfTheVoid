@@ -3,13 +3,13 @@
 #include "coop/props/prop_save_data.h"
 #include "coop/interactables/floppybox_sync.h"
 
-#include "coop/comms/chat_feed.h"  // ToUtf8
 #include "coop/element/registry.h"
 #include "coop/net/blob_chunks.h"
 #include "coop/net/session.h"
 #include "coop/player/players_registry.h"
 #include "coop/props/prop_lifecycle.h"  // DestroyLocalProp (deny reap)
 #include "coop/session/net_pump.h"      // HasAnnouncedWorldReady
+#include "coop/text/utf8_codec.h"
 
 #include "ue_wrap/devices/floppybox.h"
 #include "ue_wrap/actors/floppy_disc.h"  // IsDiscClass (the reap target gate)
@@ -42,30 +42,8 @@ constexpr uint64_t kPendingTtlMs = 30000;
 
 uint64_t NowMs() { return static_cast<uint64_t>(::GetTickCount64()); }
 
-std::wstring FromUtf8(const std::string& s) {
-    if (s.empty()) return std::wstring();
-    const int n = ::MultiByteToWideChar(CP_UTF8, 0, s.data(),
-                                        static_cast<int>(s.size()), nullptr, 0);
-    if (n <= 0) return std::wstring();
-    std::wstring w(static_cast<size_t>(n), L'\0');
-    ::MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), w.data(), n);
-    return w;
-}
-
-// The wire's string encoder: UTF-8 of every code unit, control characters included. coop::chat_feed::ToUtf8 is a chat
-// sanitiser and drops CR and LF, which a disc's rows are made of ("$t", "Server data: ...", "/n kilo", "/d " are
-// separate lines). A row sent through it arrived with its line breaks gone, so the laptop could not parse it.
-std::string ToUtf8Exact(const std::wstring& w) {
-    if (w.empty()) return std::string();
-    const int n = ::WideCharToMultiByte(CP_UTF8, 0, w.data(), static_cast<int>(w.size()), nullptr, 0, nullptr, nullptr);
-    if (n <= 0) return std::string();
-    std::string s(static_cast<size_t>(n), '\0');
-    ::WideCharToMultiByte(CP_UTF8, 0, w.data(), static_cast<int>(w.size()), s.data(), n, nullptr, nullptr);
-    return s;
-}
-
 uint64_t HashStr(const std::wstring& w) {
-    const std::string u = ToUtf8Exact(w);
+    const std::string u = coop::text::ToUtf8Exact(w);
     return coop::blob_chunks::Fnv64(reinterpret_cast<const uint8_t*>(u.data()), u.size());
 }
 
@@ -83,8 +61,8 @@ void PutU64(std::vector<uint8_t>& b, uint64_t v) {
     for (int i = 0; i < 8; ++i) b.push_back(static_cast<uint8_t>((v >> (i * 8)) & 0xFF));
 }
 void PutStr(std::vector<uint8_t>& b, const std::wstring& w) {
-    std::string u = ToUtf8Exact(w);
-    if (u.size() > 0xFFFF) u.resize(0xFFFF);
+    std::string u = coop::text::ToUtf8Exact(w);
+    u = coop::text::CapUtf8Bytes(std::move(u), 0xFFFF);
     PutU16(b, static_cast<uint16_t>(u.size()));
     b.insert(b.end(), u.begin(), u.end());
 }
@@ -99,9 +77,11 @@ struct Reader {
     std::wstring Str() {
         const uint16_t len = U16();
         if (!ok || off + len > n) { ok = false; return std::wstring(); }
-        std::string u(reinterpret_cast<const char*>(p + off), len);
+        std::wstring w;
+        const bool wellFormed = coop::text::FromUtf8Strict(reinterpret_cast<const char*>(p + off), len, &w);
         off += len;
-        return FromUtf8(u);
+        if (!wellFormed) { ok = false; return std::wstring(); }
+        return w;
     }
 };
 

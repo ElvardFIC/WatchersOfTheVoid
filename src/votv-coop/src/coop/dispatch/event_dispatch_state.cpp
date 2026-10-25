@@ -45,6 +45,13 @@ bool HandleStateEvent(net::Session& session,
                       const net::Session::ReliableMessage& msg,
                       void* localPlayer) {
     switch (msg.kind) {
+    // These published values stay reserved. The new protocol uses PlayerHit and
+    // host-judged ATV requests, so legacy payloads cannot alter the current table.
+    case net::ReliableKind::PlayerDamage:
+    case net::ReliableKind::AtvRelease:
+        UE_LOGW("event_feed: retired damage/ATV message refused");
+        break;
+
     case net::ReliableKind::SharedScreen: {
         if (msg.payloadLen != sizeof(net::BlobChunkPayload) || msg.senderPeerSlot < 0) break;
         net::BlobChunkPayload chunk{};
@@ -157,10 +164,10 @@ bool HandleStateEvent(net::Session& session,
         break;
     }
     case net::ReliableKind::AtvState: {
-        // The ATV body pose. Occupant-authoritative: the seated driver streams, and the host relays
-        // a client driver's pose to the other clients. Trust the edge (any peer may legitimately
-        // send the ATV it drives); atv_sync gates the apply and ignores a pose for an ATV this peer
-        // is itself driving.
+        // The ATV body pose. Syncer-authoritative: the machine the host assigned streams it. A client's
+        // block reaches the host alone, which applies it only from the ATV's syncer and re-sends it to
+        // the other clients with its own stamp; a client receives only the host's. atv_sync gates the
+        // apply on both sides.
         if (msg.payloadLen < sizeof(net::AtvStatePayload)) {
             UE_LOGW("event_feed: AtvState payload too short (%zu < %zu)",
                     static_cast<size_t>(msg.payloadLen), sizeof(net::AtvStatePayload));
@@ -240,29 +247,27 @@ bool HandleStateEvent(net::Session& session,
         }
         break;
     }
-    case net::ReliableKind::AtvRelease: {
-        // The authority-lost edge: the sender no longer authors this ATV. It carries the key and
-        // nothing else; the receiver clears the seat and the author (atv_sync ignores it if this
-        // peer is itself the author). There is no velocity to validate, since there is no un-freeze
-        // to hand a launch velocity to. The host relays a client's release to the other clients,
-        // like the pose.
-        if (msg.payloadLen < sizeof(net::AtvReleasePayload)) {
-            UE_LOGW("event_feed: AtvRelease payload too short (%zu < %zu)",
-                    static_cast<size_t>(msg.payloadLen), sizeof(net::AtvReleasePayload));
+    case net::ReliableKind::AtvAnswer: {
+        // HOST->CLIENT: the host's verdict on this client's AtvSeat or AtvTakeover, with the seat and the syncer
+        // it holds for that ATV. Host-authored: a client's copy is refused at the host's receive edge
+        // (client_authorship.h) and the host relays none. coop::atv_sync::OnAnswer.
+        if (session.role() != net::Role::Client) {
+            UE_LOGW("event_feed: AtvAnswer received on the host -- dropping");
             break;
         }
-        net::AtvReleasePayload arp{};
-        std::memcpy(&arp, msg.payload, sizeof(arp));
-        const uint8_t senderSlot =
-            (msg.senderPeerSlot >= 0 && msg.senderPeerSlot < net::kMaxPeers)
-                ? static_cast<uint8_t>(msg.senderPeerSlot)
-                : static_cast<uint8_t>(0xFF);
-        coop::atv_sync::OnAtvRelease(arp, senderSlot);
+        if (msg.payloadLen < sizeof(net::AtvAnswerPayload)) {
+            UE_LOGW("event_feed: AtvAnswer payload too short (%zu < %zu)",
+                    static_cast<size_t>(msg.payloadLen), sizeof(net::AtvAnswerPayload));
+            break;
+        }
+        net::AtvAnswerPayload aap{};
+        std::memcpy(&aap, msg.payload, sizeof(aap));
+        coop::atv_sync::OnAnswer(aap);
         break;
     }
     case net::ReliableKind::AtvSpawn: {
-        // The host-to-client runtime-ATV announce: the client fresh-spawns a native ATV it has no
-        // save twin of (spawned at runtime from the props table; nothing sells an ATV).
+        // The host-to-client ATV announce, named by the ATV's game Key: a client that holds no ATV under
+        // that Key fresh-spawns a native one carrying it.
         // Host-authoritative; a client's copy is refused at the host's receive edge (client_authorship.h).
         if (msg.payloadLen < sizeof(net::AtvSpawnPayload)) {
             UE_LOGW("event_feed: AtvSpawn payload too short (%zu < %zu)",
@@ -275,8 +280,8 @@ bool HandleStateEvent(net::Session& session,
         break;
     }
     case net::ReliableKind::AtvDestroy: {
-        // The host-to-client runtime-ATV teardown. Host-authoritative; a client's copy is refused at the host's
-        // receive edge (client_authorship.h).
+        // The host-to-client ATV teardown, named by its game Key. Host-authoritative; a client's copy is
+        // refused at the host's receive edge (client_authorship.h).
         if (msg.payloadLen < sizeof(net::AtvDestroyPayload)) {
             UE_LOGW("event_feed: AtvDestroy payload too short (%zu < %zu)",
                     static_cast<size_t>(msg.payloadLen), sizeof(net::AtvDestroyPayload));
@@ -303,6 +308,19 @@ bool HandleStateEvent(net::Session& session,
                 ? static_cast<uint8_t>(msg.senderPeerSlot)
                 : static_cast<uint8_t>(0xFF);
         coop::atv_sync::OnConditionEdit(cep, senderSlot);
+        break;
+    }
+    case net::ReliableKind::AtvSetComplete: {
+        // The host's ATV set for this joiner is complete: what it did not name is removed. Host-authoritative; a
+        // client's copy is refused at the host's receive edge (client_authorship.h).
+        if (msg.payloadLen < sizeof(net::AtvSetCompletePayload)) {
+            UE_LOGW("event_feed: AtvSetComplete payload too short (%zu < %zu)",
+                    static_cast<size_t>(msg.payloadLen), sizeof(net::AtvSetCompletePayload));
+            break;
+        }
+        net::AtvSetCompletePayload scp{};
+        std::memcpy(&scp, msg.payload, sizeof(scp));
+        coop::atv_sync::OnAtvSetComplete(scp);
         break;
     }
     case net::ReliableKind::DroneState: {

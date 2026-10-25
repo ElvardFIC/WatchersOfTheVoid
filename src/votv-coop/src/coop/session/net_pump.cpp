@@ -3,6 +3,7 @@
 // and the outbound pose, held-prop and ragdoll streams in coop/player/local_streams.cpp.
 
 #include "coop/session/net_pump.h"
+#include "net_pump_world_ready_internal.h"  // co-located private header (src tree, not include/)
 
 #include "coop/comms/chat_feed.h"    // Reset() on the leave-world flee (session UI dies with the session)
 #include "coop/comms/chat_bubbles.h" // ResetSlots() on flee -- overhead bubbles are session UI too
@@ -21,19 +22,13 @@
 #include "coop/player/local_streams.h"
 #include "ui/multiplayer_menu.h"  // MenuTickFn(): the death-flee bypass release condition
 #include "coop/net/fake_link_steps.h"  // Tick, and the joiner's `wr` origin
-#include "coop/net/protocol.h"
 #include "coop/net/session.h"
-#include "coop/creatures/npc_adoption.h"
-#include "coop/creatures/kerfur_prop_adoption.h"  // OnClientWorldReady: the deferred-adoption per-world reset
-#include "coop/world/event_fire_sync.h"  // OnClientWorldReady: the fires queued in the join window
-#include "coop/world/daily_task_sync.h"  // OnClientWorldReady: a task kept from the world left behind
 #include "coop/player/puppet_drive.h"      // the puppet array and its drive
 #include "coop/player/sit_pose.h"
 #include "coop/props/registry_reaper.h"    // the reaper and the re-seed engine
 #include "coop/props/remote_prop_spawn.h"  // OnClientWorldReadyResetSweep (deferred prop sweep per-world reset)
 #include "coop/props/join_membership_sweep.h"  // the join claim and the divergence sweep
 #include "coop/session/player_handshake.h"
-#include "coop/session/rig_ready.h"
 #include "coop/player/players_registry.h"
 #include "coop/player/roster_ledger.h"
 #include "coop/props/prop_element_tracker.h"
@@ -44,7 +39,6 @@
 #include "coop/props/save_identity_bind.h"  // BindUnboundReCreates: re-bind on re-seed
 #include "coop/save/save_transfer.h"
 #include "coop/session/subsystems.h"
-#include "coop/session/world_load_episode.h"  // the announce waits on the load-tail quiescence latch
 
 #include "ue_wrap/engine/engine.h"
 #include "ue_wrap/core/cached_obj_ref.h"
@@ -54,12 +48,12 @@
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/sdk_profile.h"
 #include "coop/player/death_revive.h"
+#include "coop/player/revive_protection.h"
 #include "coop/player/run_end_travel.h"
 #include "coop/items/broom_stroke.h"
 #include "coop/props/trash_morph_gate.h"
 #include "coop/items/player_inventory_sync.h"  // TakeJoinPlacement: where the join's appearance goes
 #include "coop/session/teleport_client.h"  // the checkpoint join spawn (the client pawn-Set edge)
-#include "ue_wrap/engine/world_identity.h"
 #include "ue_wrap/core/types.h"
 
 #include <array>
@@ -213,48 +207,6 @@ void FleeToMainMenuOnDeath(coop::net::Session& session, const char* why) {
     FleeToMainMenu(session, why);
 }
 
-// Has this client announced world-ready for the current connection? Gates the world-dependent tick
-// blocks during a save-transfer join's menu window (no actors into the menu world). Reset on
-// disconnect.
-static std::atomic<bool> g_worldReadyAnnounced{false};
-
-// The re-announce request, set when a world-change re-seed completes: a save-transfer join runs two
-// level loads, and the re-announce drives the host's ConnectReplayForSlot to re-assert every
-// host-authoritative state into the final world (the only way keyless chipPiles re-acquire their
-// host eid). Reset on send and on disconnect.
-static std::atomic<bool> g_reAnnounceWorldReady{false};
-
-// The gate a re-announce after the join last waited on, named by the pump: the join is Idle then, so
-// join_progress names nothing. Game thread; reset with the announce state.
-static coop::join_progress::WorldGate g_reAnnounceGate = coop::join_progress::WorldGate::None;
-
-// The UWorld last announced against (game thread), by the reaper's own reader, held as a weak identity.
-// A re-seed re-announces only when the UWorld actually swapped: the join's menu-to-game shadow drain is a
-// reap inside the announced world, and treating it as a change would replay the full snapshot and
-// re-adopt NPCs into live mirrors (duplicate kerfurs). A real level travel re-opens untitled_1 as a new
-// UWorld, so it still re-announces, and it does where the allocator hands the new world the old one's
-// address: the identity (slot and serial) tells them apart, as IsInAnnouncedWorld's does. Reset on
-// disconnect.
-static ue_wrap::CachedObjRef g_announcedWorld;
-
-// The same world, held as a weak identity (its slot and serial), for IsInAnnouncedWorld: a later world
-// is a new object even where the allocator hands it the old one's address. Game thread; stamped from
-// the local pawn at each announce, reset on disconnect.
-static ue_wrap::CachedObjRef g_announcedWorldRef;
-
-// The save-transfer kerfur-ghost reconcile lives in npc_adoption (it owns the timing); net_pump
-// only notifies it at the announce (OnClientWorldReady) so it resets its per-world state.
-
-// The world-ready announce state, forgotten when the connection goes and when the session ends, so the
-// next connection announces again and re-stamps its world.
-static void ForgetWorldReadyAnnounce() {
-    g_worldReadyAnnounced.store(false, std::memory_order_relaxed);
-    g_reAnnounceWorldReady.store(false, std::memory_order_relaxed);
-    g_reAnnounceGate = coop::join_progress::WorldGate::None;
-    g_announcedWorld.Reset();
-    g_announcedWorldRef.Reset();
-}
-
 void TearDownSession(coop::net::Session& session, const char* why) {
     UE_ASSERT_GAME_THREAD("net_pump::TearDownSession (puppets + every lane's session state)");
     if (session.running()) return;  // a live session is not ended here; its stop comes first
@@ -271,11 +223,12 @@ void TearDownSession(coop::net::Session& session, const char* why) {
         uint64_t stops;
         ~FinishGuard() { g_tornDownFinished.store(stops, std::memory_order_release); }
     } finish{stops};
+    coop::revive_protection::End(coop::revive_protection::EndWhy::Session);
     g_wasConnected = false;
     g_wasConnectedBySlot.fill(false);
     ForgetWorldReadyAnnounce();
     for (int slot = 0; slot < coop::players::kMaxPeers; ++slot) {
-        // DestroySlot is destroy-if-live plus UnregisterPuppet; its interleave with DisconnectSlot
+        // DestroySlot is the puppet's Destroy plus UnregisterPuppet; its interleave with DisconnectSlot
         // is composed here only.
         coop::puppet_drive::DestroySlot(slot);
         coop::subsystems::DisconnectSlot(session, slot);
@@ -307,28 +260,6 @@ void TearDownSession(coop::net::Session& session, const char* why) {
 bool EndOwed(const coop::net::Session& session) {
     return !session.running() &&
            session.StopCount() != g_tornDownFinished.load(std::memory_order_acquire);
-}
-
-// The announce axis' one owner; registry_reaper only requests through here. No-op on the host.
-void MaybeRequestReAnnounce(coop::net::Session& session, void* reapWorld) {
-    if (session.role() == coop::net::Role::Host) return;
-    // The same world only when the same address holds the same live object; two nulls, neither reader
-    // naming a world, are the same too.
-    const bool same = reapWorld == g_announcedWorld.Raw() && (!reapWorld || g_announcedWorld.Is(reapWorld));
-    if (!same) {
-        g_reAnnounceWorldReady.store(true, std::memory_order_relaxed);
-        // The join barrier: the re-announce waits for the new world's load tail as the first
-        // announce did; a fresh probe session.
-        coop::world_load_episode::ArmQuiesceProbe("world-change re-announce");
-        // A reload is a teardown plus a rebuild: raise the reconcile window (kind = load) so the
-        // destroy seam and the drop intent stay suppressed through the re-replay. InEpisode is not
-        // raised: the lane parks' reload semantics are unmeasured.
-        coop::world_load_episode::RaiseReconcileForReload();
-    } else {
-        UE_LOGI("net_pump: world-change re-seed on the SAME world already announced (%p) -- "
-                "NOT re-announcing (suppresses the join menu-shadow-drain double-snapshot + "
-                "kerfur re-adopt dupe)", reapWorld);
-    }
 }
 
 uint64_t TickSerial() { return g_tickSerial; }
@@ -460,85 +391,11 @@ void Tick(coop::net::Session& session) {
         g_wasConnectedBySlot[slot] = slotConnected;
     }
 
-    // A client announces world-ready once per connection, when a gameplay world is up, the prop
-    // registry expresses it, the load tail has quiesced and the prop key index holds the world, so the
-    // host's stream is read by key against it: the MTA INITIAL_DATA_STREAM barrier
-    // (reference/mtasa-blue/Client/mods/deathmatch/logic/CPacketHandler.cpp:463,
-    // reference/mtasa-blue/Server/mods/deathmatch/logic/CRPCFunctions.cpp:54), whose own terms have no key
-    // index to wait for, its ids being minted by their owner
-    // (reference/mtasa-blue/Server/mods/deathmatch/logic/CElementIDs.cpp:23). The host streams the whole
-    // world state on it, so announcing into a churning load would put the authoritative stream into it.
-    // The probe is deadline-capped, so a pathological load still announces. Re-fires on a re-announce
-    // request under the same coherence gate.
-    const bool reAnnounce = g_reAnnounceWorldReady.load(std::memory_order_relaxed);
-    if (!isHost && isConnected &&
-        (!g_worldReadyAnnounced.load(std::memory_order_relaxed) || reAnnounce)) {
-        // Name the gate BEFORE testing the rest: most of these have no deadline of their own, and
-        // with the whole-join failsafe deleted the joiner's phase token is what stands behind them.
-        // TickQuiesceProbe must still run every tick, so it is called first and its result reused --
-        // naming a gate must never cost the probe a tick. The key index is asked last, once the rest
-        // are clear.
-        const bool seeded   = coop::prop_element_tracker::HasSeededOnce();
-        const bool thisWorld = seeded && coop::prop_element_tracker::IsRegistrySeededForCurrentWorld();
-        const bool purging  = coop::prop_element_tracker::InPurgeEpisode();
-        const bool quiesced = coop::world_load_episode::TickQuiesceProbe();
-        // An install found unable to index after the session started (its watches resolve on the game
-        // thread) can never clear the key term: the join ends by name rather than waiting on it.
-        if (coop::prop_key_index::Unavailable())
-            coop::join_progress::Fail(coop::net::EndReason::ScriptHooksUnavailable,
-                                      "the prop key index cannot hold this world");
-        const bool keysReady = worldUp && seeded && thisWorld && !purging && quiesced &&
-                               coop::prop_key_index::CanAnswer();
-        using WG = coop::join_progress::WorldGate;
-        const WG gate = !worldUp    ? WG::NoLocalPlayer
-                      : !seeded   ? WG::RegistryUnseeded
-                      : !thisWorld ? WG::RegistryOtherWorld
-                      : purging   ? WG::RegistryPurging
-                      : !quiesced ? WG::WorldSettling
-                      : !keysReady ? WG::KeyIndexPending
-                                  : WG::None;
-        coop::join_progress::NoteWorldReadyGate(gate);
-        // A re-announce made after the join (a world change) waits at the same gates with the join Idle,
-        // where the call above names nothing.
-        if (reAnnounce && coop::join_progress::CurrentPhase() == coop::join_progress::Phase::Idle &&
-            gate != g_reAnnounceGate) {
-            g_reAnnounceGate = gate;
-            if (gate != WG::None)
-                UE_LOGI("net_pump: the re-announce waits on this machine -- %s",
-                        coop::join_progress::WorldGateText(gate));
-        }
-        if (keysReady) {
-            if (session.SendReliableToSlot(0, coop::net::ReliableKind::ClientWorldReady,
-                                           nullptr, 0)) {
-                g_worldReadyAnnounced.store(true, std::memory_order_relaxed);
-                g_reAnnounceWorldReady.store(false, std::memory_order_relaxed);
-                g_reAnnounceGate = WG::None;
-                // Stamp the world announced against, once per real announce. The same reader as the
-                // reaper's world gate: the two are compared in MaybeRequestReAnnounce, and
-                // FindObjectByClass answers "a world object exists" (the incoming world, while the
-                // player chain still reads null), not "the world the player is in".
-                g_announcedWorld.Set(ue_wrap::world_identity::CurrentWorld());
-                g_announcedWorldRef.Set(ue_wrap::world_identity::WorldOf(localNow));  // fresh this tick
-                // A fresh connect replay is about to arrive: reset the deferred-adoption per-world
-                // state so the new world re-adopts its save NPCs and re-sweeps orphans.
-                coop::npc_adoption::OnClientWorldReady();
-                coop::kerfur_prop_adoption::OnClientWorldReady();  // drop the stale prop-kerfur pending set
-                coop::event_fire_sync::OnClientWorldReady();  // the fires queued in the join window replay now
-                coop::daily_task_sync::OnClientWorldReady();  // a task kept from the world left behind goes
-                // The same reset for the deferred prop divergence sweep: one armed for the prior
-                // world must not fire against this one.
-                coop::join_membership_sweep::OnClientWorldReadyResetSweep();
-                // The join's wait changes owner here: this client has a world, and everything left
-                // is the host's bracket. Named so, the cover stops saying "loading the world" over
-                // a wait that is the host's, and the phase gets a watchdog of its own.
-                coop::join_progress::NoteWorldReady();
-                coop::net::fake_link_steps::NoteOrigin(coop::net::fake_link_steps::Origin::WorldReady);
-                UE_LOGI("net_pump: ClientWorldReady announced (world up + registry coherent + load "
-                        "tail quiesced + key index caught up%s)",
-                        reAnnounce ? " -- re-announce after world-change" : "");
-                coop::rig_ready::Say("world-ready");
-            }
-        }
+    // The client's world-ready announce lives in net_pump_world_ready.cpp; a reason back is the
+    // session ending, and the flee is this file's.
+    if (const char* why = TickWorldReadyAnnounce(session, localNow, worldUp, isConnected, isHost)) {
+        FleeToMainMenu(session, why);
+        return;
     }
 
     if (!isConnected) ForgetWorldReadyAnnounce();  // re-announce next connection
@@ -701,6 +558,7 @@ void Tick(coop::net::Session& session) {
         // run-ending seam asked for. Here, not in the seam's own callback, because that runs inside
         // the VM's body loop, where a UFunction dispatch re-enters the interpreter.
         coop::death_revive::Tick(session, g_netLocal.Raw());
+        coop::revive_protection::Tick();
         // A revive that gave up has torn the session down and fled, as the local-death branch below
         // does; nothing after it may run for this session, the lanes' Install least of all.
         if (g_fleeing) return;
@@ -741,15 +599,14 @@ void Tick(coop::net::Session& session) {
         // The one-shot install of the per-subsystem observers (idempotent).
         { PP::Scope _s{PP::Bucket::InstallObs}; coop::subsystems::Install(session); }
         // The outbound local streams (coop/local_streams). A joining client's pawn is parked and
-        // teleported through positions that must not stream as our pose, and ClientWorldReady fires
-        // seconds before loadObjects' final teleport, which cannot be hooked
-        // (docs/coop-dispatch-visibility.md); so the client gate is load-tail quiescence
-        // (join_membership_sweep), the signal that observes its effect, reset per world. The host
-        // keeps the worldUp gate.
+        // teleported through positions that must not stream as our pose. ClientWorldReady follows the
+        // world's save replay (the gamemode's loadObjects, watched by name once it returns,
+        // docs/coop-dispatch-visibility.md), so the client gate is that announce plus load-tail
+        // quiescence (join_membership_sweep), the signal that observes the load's effect, reset per
+        // world. The host keeps the worldUp gate.
         const bool poseAuthoritative =
             isHost ? worldUp
-                   : (g_worldReadyAnnounced.load(std::memory_order_relaxed) &&
-                      !g_reAnnounceWorldReady.load(std::memory_order_relaxed) &&
+                   : (IsWorldSettled() &&
                       coop::join_membership_sweep::HasLoadTailQuiesced());
         if (poseAuthoritative)
             coop::local_streams::Tick(session, g_netLocal.Raw(), g_netLocalController.Raw());
@@ -760,7 +617,7 @@ void Tick(coop::net::Session& session) {
     // (a prop concern), under the same gate, after the drive.
     if (worldUp) {
         coop::puppet_drive::DriveTick(session,
-                                      g_worldReadyAnnounced.load(std::memory_order_relaxed));
+                                      HasAnnouncedWorldReady());
         coop::sit_pose::DriveRemotes();
         coop::sit_pose::DriveAtvDrivers();
 
@@ -772,27 +629,6 @@ void Tick(coop::net::Session& session) {
     // Session events (joins, disconnects) to the feed, and our Join; g_netLocal goes along so
     // remote_prop::OnRelease can dispatch Aprop_C.thrown(player).
     { PP::Scope _s{PP::Bucket::EventFeed}; coop::event_feed::Update(session, g_netLocal.Raw()); }
-}
-
-bool HasAnnouncedWorldReady() {
-    return g_worldReadyAnnounced.load(std::memory_order_relaxed);
-}
-
-bool IsWorldSettled() {
-    return g_worldReadyAnnounced.load(std::memory_order_relaxed) &&
-           !g_reAnnounceWorldReady.load(std::memory_order_relaxed);
-}
-
-bool IsInAnnouncedWorld(void* obj) {
-    if (!obj || !g_worldReadyAnnounced.load(std::memory_order_relaxed) ||
-        g_reAnnounceWorldReady.load(std::memory_order_relaxed))
-        return false;
-    // A world the reader cannot name (a recook renamed a field it resolves, so the object's world or
-    // the stamp reads null) is no licence for the client to act on its own: the connection's announce
-    // stands for it, as it did before this test was per world.
-    void* const world = ue_wrap::world_identity::WorldOf(obj);
-    if (!world || !g_announcedWorldRef.Raw()) return true;
-    return g_announcedWorldRef.Is(world);
 }
 
 }  // namespace coop::net_pump

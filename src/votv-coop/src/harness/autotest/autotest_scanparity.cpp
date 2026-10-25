@@ -11,8 +11,8 @@
 //
 // The probe counts DISTINCT KEYS through each consumer's REAL key function -- independence is about
 // the walk and the classifier, not the extractor. grime keys by DebugPosKeyForActor, since an
-// instance count over-reads its cell collisions; turbine counts instances; the atv row assumes no
-// purchased synth-keyed ATVs. Every row and the verdict print under "[SCANPARITY]".
+// instance count over-reads its cell collisions; turbine counts instances; the atv row counts GetKeyString for
+// each ATV. Every row and the verdict print under "[SCANPARITY]".
 
 #include "harness/autotest.h"
 

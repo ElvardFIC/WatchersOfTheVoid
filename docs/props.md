@@ -232,6 +232,105 @@ host re-publishes. The far side applies it through the prop's `loadData`, whose 
 the reel case; the drive box's look follows its name, which a record does not carry, so the
 receiver re-derives it from `opened` (`coop/props/prop_record_refresh`).
 
+### Notebook
+
+A notebook's pages are `text` on the prop, which its own `getData` and `loadData` save, so the
+text is the prop's save record and crosses on the record lane above with no message of its own.
+`coop/interactables/notebook_sync` adds what that lane cannot know, the editor.
+
+- **One editor at a time.** The open editor claims the notebook, a claim keyed by the prop
+  (`coop/interactables/device_occupancy`); a second peer pressing E on it is denied.
+- **What the editor wrote.** The editing peer publishes the notebook's record when it closes the
+  editor and, while it holds the claim, at the editor's own commit (focus leaving the box, or the
+  game's commit) when `text` differs from the last text published or applied, at most once every
+  2 s; a change the gate held back goes with the next commit or the close. Live text crosses at a
+  commit and at the close, not per keystroke: the widget writes `text` only then, and the lane reads
+  that array, never the box. The host's own edit publishes the canonical the same way.
+- **Who the host believes.** The host takes a client's record for a notebook from the slot that
+  holds its claim, or from any slot while nobody holds it: a free notebook is anyone's to change,
+  which a torn page added to it is. A record from another slot while a peer holds it is refused
+  and logged. The rule is judged where the record lands, so a record that parked first (the
+  host did not index the notebook yet) is judged by it too, and is republished to the other
+  peers only when it lands, never at arrival. It is registered with
+  `coop/props/prop_record_gates`; the record lane names no class.
+- **The close reaches the host while its sender holds.** The record rides the Bulk lane and the
+  release the Normal one, so a client keeps the claim after it closes the editor until the host's
+  republish of its last publish comes back (the lane's acknowledgement: the canonical record for
+  that notebook's Key arriving after its publish), and lets go anyway after 10 s, logged. Opening
+  an editor while that wait is pending ends it: the old claim goes, then the new open is handled.
+  A host's own close needs no wait: it is the canonical.
+- **No echo onto the editor.** A peer that holds the claim and has published the notebook in this
+  claim applies no record for it, whether it arrives live or from the park: its own edit is the
+  newer state. Before its first publish it has nothing newer to protect, so the previous editor's
+  close, which the host sent before the grant and the grant overtook, is applied, and the open
+  editor's page is reloaded from the notebook's `text` through the widget's own page load
+  (`init`), so the box shows what was applied and the lane measures later edits from it. Text
+  typed in the box and not yet committed at that instant is dropped by the reload; the window is
+  the round trip after the grant. If the reload does not dispatch, a warning says so once. The
+  mark, the wait and the baseline reset when the claim ends, by whatever route: a release, a lost
+  race, the world going down, the session ending.
+- **A page added outside the editor.** Using a torn sheet on a notebook (`playerUsedOn`) appends the
+  sheet's text to the notebook's and destroys the sheet, with no editor open and no claim. The
+  verb's end publishes the notebook's record when its page count grew, from whichever peer ran it;
+  the host's rule takes it while nobody holds the notebook. While another peer has the notebook open
+  the verb is cancelled at its start on the peer that ran it, when the hand holds a torn sheet: the
+  sheet stays in the player's hand and a notice names the holder, because the game cannot merge two
+  writers and the open editor's close would overwrite the page on every peer. Any other use of a
+  held notebook runs as the game has it. One window remains: a page added before this peer has heard
+  the other peer's claim (about one round trip after that peer opened the editor) stays on this peer
+  and is overwritten at that holder's close. The root fix, the host running the page add on behalf of
+  the peer that pressed it, is a recorded follow-up and not built.
+- **Forced exits.** Ragdoll, a faint and death leave the interface without `quit`, as in the
+  single-player game, so the box's uncommitted text is lost there and nothing is published.
+- **Late join.** A joiner is handed every prop's record in the snapshot, the notebook's last
+  published text included, and the claim table, so it reads the text as last published and is
+  denied the editor while another peer holds it; the close then reaches it as an ordinary record.
+- **The ceiling.** A record over 32 KiB is refused with a log line and stays on the editing peer.
+
+A page torn out of a notebook is `prop_notebook_paper_C`, born by a client's prop birth route
+(`coop/props/prop_drop_intent`). The drawn pixels of `prop_paper_drawable_C` are in no save
+record and do not cross; that paper has a claim only. `[RD]` for the Blueprints, `[?]` until the
+notebook drill has run.
+
+### Sleeping bags and mattresses
+
+`prop_sleepingbag_C` exposes `actionOptionIndex` and has an `unwrapOnBed` field. Its generated
+Blueprint graph carries a `FinishSpawningActor` result typed as `sleepingbagWrap_C`. The wrapped
+form derives from `bed_C`, which derives from `Aprop_C`; it exposes `fold()`, whose graph carries a
+`FinishSpawningActor` result typed as `prop_sleepingbag_C`. The blue, brown, Stolas and mattress
+forms are subclasses of these two base classes. `[RD]`
+
+The deployed Blueprint form finishes with `Key=None`; after `FinishSpawningActor` the host assigns
+it a random prop key (the persisted kind) and retries the ordinary lifecycle express. The client gates the
+`actionOptionIndex` press of the packed bag (action 4, the unroll) and of the deployed bag (action
+7, whose graph calls `fold()`); it watches the press and not `fold()` itself, which the deployed
+bag's own `BeginPlay` also runs when its foundation traces fail and which no player pressed. It
+sends the source prop's host element id and the action byte, and cancels its local Blueprint
+verb once the host was asked; a press the client cannot send (the source has no host prop id, or the
+send fails) runs on its own copy as it would with no lane. The host checks that the sender is in
+reach, that no other peer holds the prop, and that the named prop is still in the expected form
+with the action byte of that form, then invokes that same Blueprint verb on its copy. The Blueprint
+owns the replacement birth and source destruction; the host spawn watcher and prop lifecycle carry
+those edges to every peer. The joiner's host save and ordinary prop snapshot seed whichever form is
+live. The client does not choose the replacement class or transform. `[RD]`
+`coop/interactables/sleepingbag_sync`, `ue_wrap/actors/sleepingbag`, `coop/props/host_spawn_watcher`,
+`coop/props/prop_lifecycle`. Whether a deployed bag already in the host's world before the session
+(loaded from a save) carries a key is not measured; one without a key gets no host prop id and its
+press takes the local path above. `[?]`
+
+Unfolding is relayed as the interaction action byte so the Blueprint retains its own placement and
+mattress branches. The host runs it with the sender's remote-player puppet, preserving the game's
+player-relative checks. The intent is refused if the source lacks a host prop id, is out of reach,
+or has already changed form. `[RD]` the packed Blueprint graph uses two sphere traces, checks the
+target bed, spawns the wrapped actor and destroys its source; the wrapped graph's `fold()` spawns a
+packed actor and destroys its source. `[V]` sleepingbag CFG and generated SDK parameters.
+
+A mattress lying on a bunk bed (`bed_bunkMattress_C`) is taken off by its action 7, which spawns the
+packed mattress and destroys the source the same way; that press rides the same intent with the
+mattress's host element id and the action byte, and the host accepts only that class and action. The
+packed mattress is a `prop_sleepingbag_C` and keys itself like any prop, so the ordinary prop
+lifecycle carries it. `[V]` `bed_bunkMattress` and `prop_sleepingbag_mattress` Blueprint decompiles.
+
 ### Props that change on their own
 
 A joiner loads the host's save, so every keyed world prop is a real save-loaded actor with its
@@ -258,6 +357,8 @@ is built; food's temperature, ripeness and use count are the host's (`coop/props
 | container contents | the host | slices of its object array; an extraction is an intent |
 | a stuck prop, and its unstick | the peer that sticks or frees it; every peer runs the component's own verb | one reliable message |
 | a self-changing prop's progression | the host | park, corrector or anchor, per prop |
+| notebook editor occupancy | the host arbitrates | a claim keyed by the owning prop |
+| notebook page text | the editing peer; the host takes it from the claim's holder, or from anyone while it is free | the notebook's own save record on the record lane, at the editor's commit and at the close |
 | a client's shared-world spawners | the host | refused on a client at the script-body gate; shared-world content arrives only from the host |
 
 ## Wire messages
@@ -498,6 +599,7 @@ These paths have offline native-contract and regression coverage; two-peer gamep
 
 | Concept | Files |
 |---|---|
+| sleeping bag and mattress replacement | `coop/interactables/sleepingbag_sync`, `ue_wrap/actors/sleepingbag`, `coop/props/host_spawn_watcher`, `coop/props/prop_lifecycle` |
 | the birth and death seams | `coop/props/prop_lifecycle`, `coop/props/host_spawn_watcher`, `coop/props/prop_element_tracker`, `coop/props/prop_synth_key`, `coop/props/registry_reaper`, `coop/props/prop_echo_suppress` |
 | the receivers | `coop/props/remote_prop` (held), `coop/props/remote_prop_spawn` (birth: adopt, converge, create), `coop/props/prop_fresh_spawn` (the materialiser), `coop/props/prop_wire_parity`, `coop/props/active_drive`, `coop/props/prop_sound` |
 | a client's intents | `coop/props/prop_drop_intent` |

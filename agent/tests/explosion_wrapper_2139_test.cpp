@@ -90,3 +90,8 @@ int main(){
   if(i==4)v.damage=-1;if(i==5)v.fireStrength=1.01f;if(i==6)v.fireFuel=61;if(i==7)v.innerShake=-1;if(i==8)v.outerShake=NAN;if(i==9)v.position.Z=1000001;CHECK(!X::Valid(v));}
  puts("PASS actual explosion wrapper/ParamFrame: deferred field binding, preserved bool bits, no replica force/debris, native break variants, cancellation/cleanup, one-shot finish and bounds");
 }
+
+// Reflection names used by ParamFrame missing-field diagnostics.
+namespace ue_wrap::reflection {
+std::wstring ToString(const FName&){return L"fixture_function";}
+}

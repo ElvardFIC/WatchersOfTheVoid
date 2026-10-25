@@ -27,7 +27,7 @@ void Install(coop::net::Session* session);
 // Game thread.
 void Tick();
 
-// CLIENT: an OrderQueue message from the host (router: event_dispatch_intent.cpp). Game thread.
+// CLIENT: an OrderQueue message from the host (router: event_dispatch_economy.cpp). Game thread.
 void OnReliable(const void* payload, int len);
 
 // HOST: a reset and every queued order, to a joiner at its world-ready. Game thread.

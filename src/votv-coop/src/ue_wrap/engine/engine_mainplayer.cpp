@@ -17,8 +17,10 @@
 #include "ue_wrap/core/sdk_profile.h"
 #include "ue_wrap/core/reflected_offset.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <cstring>
+#include <utility>
 #include <vector>
 
 namespace ue_wrap::engine {
@@ -97,108 +99,7 @@ void ResolveAddPlayerDamageFn() {
     g_addPlayerDamageFn = R::FindFunction(cls, P::name::MainPlayerAddPlayerDamageFn);
 }
 
-
-// The damage body pulse: the cached gore hurt material and the primitive component's
-// material UFunctions (count, get, set).
-ue_wrap::CachedObjRef g_hurtMat;  // a slot-validated cache
-void* g_getNumMatFn = nullptr, *g_getMatFn = nullptr, *g_setMatFn = nullptr;
-
-void* ResolveHurtMat() {
-    if (g_hurtMat.Alive()) return g_hurtMat.Raw();
-    g_hurtMat.Set(ResolveMaterialByName(P::name::PlayerHurtFlashMaterialName));
-    return g_hurtMat.Raw();
-}
-void ResolveMatFns() {
-    if (g_getNumMatFn && g_getMatFn && g_setMatFn) return;
-    void* c = R::FindClass(L"PrimitiveComponent");
-    if (!c) return;
-    if (!g_getNumMatFn) g_getNumMatFn = R::FindFunction(c, L"GetNumMaterials");
-    if (!g_getMatFn)    g_getMatFn    = R::FindFunction(c, L"GetMaterial");
-    if (!g_setMatFn)    g_setMatFn    = R::FindFunction(c, L"SetMaterial");
-}
-
-// Swap every material slot on one component to `mat`, appending each (component, index,
-// original) into `saved`, caller-owned, for the restore.
-void SwapComponentMaterials(void* comp, void* mat, std::vector<SavedMaterial>& saved) {
-    if (!comp || !R::IsLive(comp) || !mat) return;
-    ResolveMatFns();
-    if (!g_getNumMatFn || !g_getMatFn || !g_setMatFn) return;
-    int32_t num = 0;
-    { ParamFrame f(g_getNumMatFn); if (Call(comp, f)) num = f.Get<int32_t>(L"ReturnValue"); }
-    for (int32_t i = 0; i < num && i < 16; ++i) {
-        void* orig = nullptr;
-        { ParamFrame f(g_getMatFn); f.Set<int32_t>(L"ElementIndex", i); if (Call(comp, f)) orig = f.Get<void*>(L"ReturnValue"); }
-        SavedMaterial sm;
-        sm.component.Set(comp);  // comp validated at entry; orig fresh from GetMaterial
-        sm.index = i;
-        sm.original.Set(orig);
-        saved.push_back(sm);
-        { ParamFrame f(g_setMatFn); f.Set<int32_t>(L"ElementIndex", i); f.Set<void*>(L"Material", mat); Call(comp, f); }
-    }
-}
-
-// The puppet's two visible body meshes (the native character mesh and the player-visible
-// mesh): both render, and both carry the skin.
-void* PuppetVisibleMesh(void* puppet, size_t off) {
-    if (!puppet || !R::IsLive(puppet)) return nullptr;
-    void* c = *reinterpret_cast<void**>(reinterpret_cast<uint8_t*>(puppet) + off);
-    return (c && R::IsLive(c)) ? c : nullptr;
-}
-
 }  // namespace
-
-void* ResolveMaterialByName(const wchar_t* name) {
-    if (!name) return nullptr;
-    // A material instance constant first (most pak materials), then a base material, then an
-    // any-class fallback.
-    void* m = R::FindObject(name, P::name::MaterialInstanceConstantClassName);
-    if (m && R::IsLive(m)) return m;
-    m = R::FindObject(name, L"Material");
-    if (m && R::IsLive(m)) return m;
-    m = R::FindObject(name, nullptr);
-    return (m && R::IsLive(m)) ? m : nullptr;
-}
-
-bool ApplyHurtFlashMaterial(void* puppet, std::vector<SavedMaterial>& saved) {
-    // Self-protecting: a non-empty `saved` means a flash is already applied, and a second apply
-    // without a restore in between would re-read the hurt material as the original and stick it
-    // permanently. The caller is edge-gated, but the guard makes the API safe for any caller.
-    if (!saved.empty()) return false;
-    void* hurtMat = ResolveHurtMat();
-    if (!hurtMat || !puppet || !R::IsLive(puppet)) return false;
-    SwapComponentMaterials(PuppetVisibleMesh(puppet, P::off::ACharacter_Mesh), hurtMat, saved);
-    SwapComponentMaterials(PuppetVisibleMesh(puppet, P::off::AmainPlayer_mesh_playerVisible), hurtMat, saved);
-    return !saved.empty();
-}
-
-bool RestoreHurtFlashMaterial(void* /*puppet*/, std::vector<SavedMaterial>& saved) {
-    ResolveMatFns();
-    if (g_setMatFn) {
-        for (const auto& s : saved) {
-            void* comp = s.component.Get();  // slot-validated
-            if (!comp) continue;  // component GC'd
-            // If the cached original material was collected during the flash window, restore null:
-            // a null material reverts the slot to the mesh asset's default, the skin, the correct
-            // outcome.
-            void* orig = s.original.Get();  // null -> revert to the asset default (correct)
-            ParamFrame f(g_setMatFn);
-            f.Set<int32_t>(L"ElementIndex", s.index);
-            f.Set<void*>(L"Material", orig);
-            Call(comp, f);
-        }
-    }
-    saved.clear();
-    return true;
-}
-
-// Eager-resolve the hurt material and the material UFunctions, so the first damage flash
-// does no object-array name walks. Called once per puppet spawn, cached forever on success;
-// if the material is not loaded yet the warm-up is a no-op and the first flash resolves
-// lazily, but it is resident base content, so steady-state flashes never re-walk the array.
-void WarmupHurtFlashCache() {
-    ResolveHurtMat();
-    ResolveMatFns();
-}
 
 bool WarmupPhcReleaseCache() {
     const bool ok = ResolvePhcReleaseCached();
@@ -315,6 +216,18 @@ bool CallMainPlayerHoldObject(void* mainPlayer, void* target, bool& collected) {
     return true;
 }
 
+bool CallPutObjectInventory2(void* mainPlayer, void* target, bool noNotify, bool& taken) {
+    taken = false;
+    if (!mainPlayer || !R::IsLive(mainPlayer) || !target) return false;
+    void* fn = R::FindDispatchFunctionCached(R::ClassOf(mainPlayer), L"putObjectInventory2");
+    if (!fn) return false;
+    ParamFrame f(fn);
+    if (!f.valid() || !f.Set<void*>(L"InputPin", target) || !f.Set<bool>(L"noNotify", noNotify) || !Call(mainPlayer, f))
+        return false;
+    taken = f.Get<bool>(L"return");
+    return true;
+}
+
 bool ReadMainPlayerGrabState(void* mainPlayer, MainPlayerGrabState& out) {
     out = {};
     if (!mainPlayer || !R::IsLive(mainPlayer)) return false;
@@ -393,6 +306,13 @@ void* ReadMainPlayerHitComponent(void* mainPlayer) {
 void* ReadMainPlayerLookAtActor(void* mainPlayer) {
     if (!mainPlayer || !R::IsLive(mainPlayer)) return nullptr;
     const int32_t off = ue_wrap::reflected_offset::MainPlayer_lookAtActor();
+    if (off < 0) return nullptr;
+    return *reinterpret_cast<void**>(reinterpret_cast<uint8_t*>(mainPlayer) + off);
+}
+
+void* ReadMainPlayerDroppedItem(void* mainPlayer) {
+    if (!mainPlayer || !R::IsLive(mainPlayer)) return nullptr;
+    const int32_t off = ue_wrap::reflected_offset::MainPlayer_droppedItem();
     if (off < 0) return nullptr;
     return *reinterpret_cast<void**>(reinterpret_cast<uint8_t*>(mainPlayer) + off);
 }
@@ -648,23 +568,50 @@ bool ReadMainPlayerSittingOn(void* mainPlayer, void*& sittingOn) {
     return true;
 }
 
-bool WriteMainPlayerDead(void* mainPlayer, bool dead) {
+namespace {
+
+// One bool property's resolved place on a class: the byte and the bit mask, kept per class.
+struct CachedBool { void* cls = nullptr; int32_t byte = -1; uint8_t mask = 0; };
+
+// FindBoolProperty, not the plain-byte offset the READ above uses: a UE bool property can be a
+// bitfield sharing its byte with its neighbours, and a byte-wide store would clear them. The
+// read can afford the shortcut; a write cannot. Resolved once per class, then a masked store.
+bool WriteMainPlayerBool(void* mainPlayer, const wchar_t* prop, bool on, CachedBool& cache) {
     if (!mainPlayer || !R::IsLive(mainPlayer)) return false;
-    // FindBoolProperty, not the plain-byte offset the READ above uses: a UE bool property can be a
-    // bitfield sharing its byte with its neighbours, and a byte-wide store would clear them. The
-    // read can afford the shortcut; a write cannot. Resolved once per class, then a masked store.
-    static void* sCls = nullptr;
-    static int32_t sByte = -1;
-    static uint8_t sMask = 0;
     void* cls = R::ClassOf(mainPlayer);
-    if (cls != sCls || sMask == 0) {
+    if (cls != cache.cls || cache.mask == 0) {
         int32_t b = -1; uint8_t m = 0;
-        if (!R::FindBoolProperty(cls, L"dead", b, m)) return false;
-        sCls = cls; sByte = b; sMask = m;
+        if (!R::FindBoolProperty(cls, prop, b, m)) return false;
+        cache.cls = cls; cache.byte = b; cache.mask = m;
     }
-    uint8_t* p = reinterpret_cast<uint8_t*>(mainPlayer) + sByte;
-    if (dead) *p |= sMask; else *p &= static_cast<uint8_t>(~sMask);
-    return ((*p & sMask) != 0) == dead;   // read BACK: wrote is not holds
+    uint8_t* p = reinterpret_cast<uint8_t*>(mainPlayer) + cache.byte;
+    if (on) *p |= cache.mask; else *p &= static_cast<uint8_t>(~cache.mask);
+    return ((*p & cache.mask) != 0) == on;   // read BACK: wrote is not holds
+}
+
+}  // namespace
+
+bool WriteMainPlayerDead(void* mainPlayer, bool dead) {
+    static CachedBool s_dead;
+    return WriteMainPlayerBool(mainPlayer, L"dead", dead, s_dead);
+}
+
+bool WriteMainPlayerStartInvinc(void* mainPlayer, bool on) {
+    static CachedBool s_startInvinc;
+    return WriteMainPlayerBool(mainPlayer, L"startInvinc", on, s_startInvinc);
+}
+
+bool ReadMainPlayerStartInvinc(void* mainPlayer, bool& on) {
+    if (!mainPlayer || !R::IsLive(mainPlayer)) return false;
+    static CachedBool s_startInvinc;
+    void* cls = R::ClassOf(mainPlayer);
+    if (cls != s_startInvinc.cls || s_startInvinc.mask == 0) {
+        int32_t b = -1; uint8_t m = 0;
+        if (!R::FindBoolProperty(cls, L"startInvinc", b, m)) return false;
+        s_startInvinc.cls = cls; s_startInvinc.byte = b; s_startInvinc.mask = m;
+    }
+    on = (reinterpret_cast<const uint8_t*>(mainPlayer)[s_startInvinc.byte] & s_startInvinc.mask) != 0;
+    return true;
 }
 
 bool SetMainPlayerRagdollMode(void* mainPlayer, bool ragdoll, bool passOut, bool death) {

@@ -36,8 +36,8 @@ const Detected& Running();
 // "the target", "newer", "older", "untested".
 const char* KindWord(Kind kind);
 
-// The running build in one phrase for a log or report line: "VOTV 0.9.0n (the target)", "VOTV 0.10.0
-// early build 0003 (newer)", "an untested version (6aa6f055-0bc42acf66e7daaa)".
+// The running build in one phrase for a log or report line: "VOTV 0.9.0n (the target)", "a newer
+// version (untested)", "an untested version".
 std::string Describe();
 
 // For an untested build, which half matched a known one, in words: "its executable is 0.9.0n's",

@@ -96,7 +96,13 @@ S3 = re.compile(r"(?:flag (?:it )?for|file (?:it )?(?:as|under)|belongs in|shoul
 # doc is where moved prose would land); an unclosed fence hides nothing (its lines stay sources); memory notes,
 # CLAUDE.md, the skills and docs/security/ stay whole sources. The 21 left are the older shapes: lines shared with
 # memory notes, an event doc's quoted lines and dev rows quoted in prose.
-OVERLAP_BASELINE = 21
+# 21 -> 22 (2026-10-25), SCOPE, approved by the maintainer: the explosion release unit landed three benign code->doc
+# citations -- the launcher's-shot function list in the public map `coop-dispatch-visibility.md` that the unpublished
+# `EXPLOSION_ARC.md` also states (the BP function names are public in the code), and two dev-drill help texts in
+# `config_registry_rows_dev.inc` (the drive-rack and fire-revive rows) that `CHERRY_PICKING_PR_ARC.md` quotes. All
+# three are code/public-map lines a design doc describes, not prose moved INTO a tracked file; verified against
+# origin/main (the three are the ones new since the 21 baseline).
+OVERLAP_BASELINE = 22
 # EXCLUDED because it is a deliberate practice, not a leak: copying memory topics into the public
 # piles archive. It alone contributes ~1,263 of the raw 1,300 overlaps.
 OVERLAP_SKIP = ("docs/piles/_archive/session-log/",)

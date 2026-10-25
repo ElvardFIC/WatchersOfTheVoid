@@ -45,3 +45,9 @@ int main(){using namespace test;namespace B=ue_wrap::skysphere;
  kill=false;objs[0].live=true;CHECK(B::ApplyBlackHole(true,true)&&changes==6); // partial apply converges
  puts("PASS real black-hole wrapper/ParamFrame: material/light verbs, packed bits, idempotency, readiness, failed/partial call, destroyed actor");
 }
+
+// Reflection names used by ParamFrame missing-field diagnostics.
+namespace ue_wrap::reflection {
+std::wstring ToString(const FName&){return L"fixture_function";}
+const FName& NameOf(void*){static const FName name{};return name;}
+}

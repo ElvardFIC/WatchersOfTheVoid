@@ -92,3 +92,9 @@ int main(){using namespace test;namespace W=ue_wrap::wall_build;
  puts("PASS real wall wrapper/ParamFrame: live overlap, native arguments, dead source, failures and restored material lookup");
  return 0;
 }
+
+// Reflection names used by ParamFrame missing-field diagnostics.
+namespace ue_wrap::reflection {
+std::wstring ToString(const FName&){return L"fixture_function";}
+const FName& NameOf(void*){static const FName name{};return name;}
+}

@@ -1,4 +1,5 @@
 #include "../../src/votv-coop/src/coop/player/hand_item.cpp"
+#include "../../src/votv-coop/src/coop/player/hand_history.cpp"
 #include "../../src/votv-coop/src/coop/player/hand_fire_sync.cpp"
 #include <cstdio>
 #include <cstdlib>

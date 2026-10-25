@@ -7,7 +7,14 @@
 #include "bootstrap/boot.h"
 
 #include "bootstrap/refuse_dialog.h"  // the stand-down modal (never the overlay's dialog)
-#include "coop/dev/patron_gate.h"  // [dev] LOCAL: neutralise the patron Shadow-Test-Build mod gate
+// Per-developer local boot hook: a gitignored header on this box, found only when its include
+// root is on the build; the public build has none and the seam below compiles to nothing.
+#if defined(__has_include)
+#  if __has_include("local/boot_hook.h")
+#    include "local/boot_hook.h"
+#    define VOTVCOOP_HAS_LOCAL_BOOT_HOOK 1
+#  endif
+#endif
 #include "ui/game_build_dialog.h"    // the popup naming a game this Multivoid was not made for
 #include "ui/native_text_field.h"   // its un-gated editing selftest
 #include "coop/build_trust/build_trust.h"  // ComputeSelf -- this DLL's hash and type
@@ -258,10 +265,10 @@ DWORD WINAPI BootThread(LPVOID rawTag) {
                     tid, bootTid, tid != bootTid ? "DIFFERENT thread -- OK" : "SAME -- WRONG",
                     n);
             UE_LOGI("==== GAME-THREAD CONTEXT: LIVE ====");
-            // [dev] LOCAL port-prep: if patron_mod_gate_bypass is set, neutralise the patron
-            // Shadow-Test-Build's anti-mod gate here, before the first gamemode BeginPlay runs its
-            // DLL/pak scan. A single bool read (and a no-op) when the flag is off; never ships.
-            coop::dev::patron_gate::EnsureArmed();
+            // The local boot hook, when this box has one; nothing in the public build.
+#ifdef VOTVCOOP_HAS_LOCAL_BOOT_HOOK
+            coop::local_boot::OnGameThreadLive();
+#endif
         });
         UE_LOGI("boot: game-thread dispatcher installed; self-test task posted");
         // The script-body gate beside it: the second detour, on the VM's own body loop, so a

@@ -13,6 +13,7 @@
 #include "remote_prop_internal.h"  // impl-private (src-local), NOT under include/
 
 #include "coop/element/mirror_manager.h"
+#include "coop/element/registry.h"             // Registry::EidForActor (the key fallback refuses another incarnation)
 #include "coop/element/mirror_managers.h"     // PropMirrors() (UnregisterPropMirror)
 #include "coop/element/quiescence_drain.h"    // ArmPendingDestroy (destroy-before-load capture)
 #include "coop/props/join_membership_sweep.h" // HasLoadTailQuiesced (steady-state vs load-tail gate for the defer)
@@ -77,6 +78,37 @@ struct DestroyAttempt {
             session == coop::net::session_serial::Current() && actor.Alive();
     }
 };
+// The dev drills' watch on the PropDestroy messages that reach OnDestroy: one sender slot and up to
+// two eids, each counted on its own, so the receive path allocates nothing and truncates nothing.
+// Each eid also carries the key of its actor at arm time (empty when none), for a destroy sent by key
+// alone. Set through WatchWireDestroys, read through WireDestroysNaming.
+struct WireWatch {
+    int slot = -1;
+    coop::element::ElementId a = coop::element::kInvalidId, b = coop::element::kInvalidId;
+    std::wstring keyA, keyB;
+    uint32_t countA = 0, countB = 0;
+};
+WireWatch g_wireWatch;
+
+// The key of the live actor an eid names, as the wire carries it (at most 31 chars); empty when the eid
+// has no live actor or its actor has no key.
+std::wstring WatchedKeyOf(coop::element::ElementId eid) {
+    if (eid == coop::element::kInvalidId) return {};
+    void* actor = ResolveLiveActorByEid(eid);
+    if (!actor) return {};
+    std::wstring key = ue_wrap::prop::GetInteractableKeyString(actor);
+    if (key == L"None") return {};
+    if (key.size() > 31) key.resize(31);
+    return key;
+}
+
+// The wire key's bytes against a watched key, ASCII widened as the dispatcher builds its own copy.
+bool WireKeyIs(const std::wstring& key, const coop::net::WireKey& wire) {
+    if (key.empty() || key.size() != wire.len) return false;
+    for (uint8_t i = 0; i < wire.len && i < 31; ++i)
+        if (key[i] != static_cast<wchar_t>(static_cast<unsigned char>(wire.data[i]))) return false;
+    return true;
+}
 
 // The cached destroy UFunction for receiver-side destroys.
 void* g_destroyActorFn = nullptr;
@@ -89,6 +121,8 @@ bool ResolveDestroyFn() {
     g_destroyActorFn = R::FindFunction(g_actorCls.Raw(), P::name::DestroyActorFn);
     return g_destroyActorFn != nullptr;
 }
+
+}  // namespace
 
 // Drop a Prop mirror by the sender's eid. The drain pattern lives inside the manager's Take
 // (extract under lock, destruct outside). Idempotent; Take rather than Drop, so the drained
@@ -104,6 +138,8 @@ void UnregisterPropMirror(coop::element::ElementId eid) {
     UE_LOGI("remote_prop::UnregisterPropMirror: eid=%u drained", eid);
     // drained falls out of scope here; the element destructor unregisters the mirror.
 }
+
+namespace {
 
 // The terminal local teardown of a resolved doomed actor, shared by the in-time destroy and
 // the deferred re-apply: clear any drive, release a local grab, echo-suppress, then destroy.
@@ -199,6 +235,20 @@ DestroyApply OnDestroyImpl_(const coop::net::PropDestroyPayload& payload, void* 
         } else if (coop::prop_key_index::Resolve(keyW, &actor) == coop::prop_key_index::Read::Pending) {
             return DestroyApply::NotYet;
         }
+        // The destroy names an element and the key resolved an actor that is bound to a different
+        // one: that actor is another incarnation carrying the same key (a re-creation), not the
+        // doomed element. Refuse it and take the miss path below, so the destroy waits for its own
+        // target instead of killing the newer one. An actor with no element of its own (a native
+        // not yet bound) is the key fallback's intended target.
+        if (actor && payload.elementId != 0 && payload.elementId != coop::element::kInvalidId) {
+            const coop::element::ElementId ownEid = coop::element::Registry::Get().EidForActor(actor);
+            if (ownEid != 0 && ownEid != coop::element::kInvalidId && ownEid != payload.elementId) {
+                UE_LOGI("remote_prop::OnDestroy: key '%ls' resolves to an actor bound to eid=%u, not the "
+                        "destroy's eid=%u -- another incarnation of the key, not destroyed",
+                        keyW.c_str(), static_cast<unsigned>(ownEid), payload.elementId);
+                actor = nullptr;
+            }
+        }
     }
     DestroyAttempt attempt(actor);
     // An outer application owns this incarnation. Do not repeat listener/spend
@@ -265,8 +315,35 @@ DestroyApply OnDestroyImpl_(const coop::net::PropDestroyPayload& payload, void* 
 }  // namespace
 
 void OnDestroy(const coop::net::PropDestroyPayload& payload, void* localPlayer, int senderSlot) {
+    // Counts PropDestroy messages from the watched slot only: the kerfur synthetic OnDestroy(..., 0)
+    // on a client is slot 0, never the watched client slot, so it cannot reach the count. A message that
+    // names no eid counts for the eid whose recorded key it carries: the host resolves it by key too.
+    if (senderSlot == g_wireWatch.slot) {
+        if (payload.elementId != 0 && payload.elementId != coop::element::kInvalidId) {
+            if (payload.elementId == g_wireWatch.a) ++g_wireWatch.countA;
+            else if (payload.elementId == g_wireWatch.b) ++g_wireWatch.countB;
+        } else if (payload.elementId == 0) {
+            if (WireKeyIs(g_wireWatch.keyA, payload.key)) ++g_wireWatch.countA;
+            else if (WireKeyIs(g_wireWatch.keyB, payload.key)) ++g_wireWatch.countB;
+        }
+    }
     OnDestroyImpl_(payload, localPlayer, senderSlot, /*allowDefer=*/true);
 }
+
+void ResetWireDestroys() { g_wireWatch = WireWatch{}; }
+
+namespace dev {
+void WatchWireDestroys(int slot, coop::element::ElementId a, coop::element::ElementId b) {
+    g_wireWatch = WireWatch{slot, a, b, WatchedKeyOf(a), WatchedKeyOf(b), 0, 0};
+}
+
+uint32_t WireDestroysNaming(coop::element::ElementId eid) {
+    if (eid == coop::element::kInvalidId) return 0;
+    if (eid == g_wireWatch.a) return g_wireWatch.countA;
+    if (eid == g_wireWatch.b) return g_wireWatch.countB;
+    return 0;
+}
+}  // namespace dev
 
 void AddDestroyListener(DestroyHeardFn fn) {
     if (fn && std::find(g_destroyHeard.begin(), g_destroyHeard.end(), fn) == g_destroyHeard.end())
@@ -280,6 +357,11 @@ void AddDestroyListener(DestroyHeardFn fn) {
 DestroyApply TryApplyDestroy(const coop::net::PropDestroyPayload& payload) {
     void* localPlayer = coop::players::Registry::Get().Local();
     return OnDestroyImpl_(payload, localPlayer, /*senderSlot=*/-1, /*allowDefer=*/false);
+}
+
+DestroyApply DestroyJudged(const coop::net::PropDestroyPayload& payload, int senderSlot) {
+    void* localPlayer = coop::players::Registry::Get().Local();
+    return OnDestroyImpl_(payload, localPlayer, senderSlot, /*allowDefer=*/false);
 }
 
 void ConsumeLocalActor(void* actor) {

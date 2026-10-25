@@ -154,12 +154,14 @@ void* g_actorClass = nullptr;  // the Actor UClass (owns K2_Get/SetActorLocation
 void* g_getLocFn = nullptr;
 void* g_setLocFn = nullptr;
 void* g_getFwdFn = nullptr;
+void* g_getUpFn = nullptr;
 void* g_getRotFn = nullptr;
 void* g_getVelFn = nullptr;
 void* g_setRotFn = nullptr;
 void* g_setTickFn = nullptr;
 void* g_getScaleFn = nullptr;
 void* g_setScaleFn = nullptr;
+void* g_setLifeFn = nullptr;
 void* g_setHiddenFn = nullptr;     // SetActorHiddenInGame (visual-only; instant-world deferred-hide)
 void* g_setCollisionFn = nullptr;  // SetActorEnableCollision (paired with hide so a hidden mirror is not grabbable)
 
@@ -182,12 +184,14 @@ bool ResolveActorFns() {
         if (!g_getLocFn) g_getLocFn = R::FindFunction(g_actorClass, P::name::GetActorLocationFn);
         if (!g_setLocFn) g_setLocFn = R::FindFunction(g_actorClass, P::name::SetActorLocationFn);
         if (!g_getFwdFn) g_getFwdFn = R::FindFunction(g_actorClass, P::name::GetActorForwardVectorFn);
+        if (!g_getUpFn) g_getUpFn = R::FindFunction(g_actorClass, P::name::GetActorUpVectorFn);
         if (!g_getRotFn) g_getRotFn = R::FindFunction(g_actorClass, P::name::GetActorRotationFn);
         if (!g_getVelFn) g_getVelFn = R::FindFunction(g_actorClass, P::name::GetActorVelocityFn);
         if (!g_setRotFn) g_setRotFn = R::FindFunction(g_actorClass, P::name::SetActorRotationFn);
         if (!g_setTickFn) g_setTickFn = R::FindFunction(g_actorClass, P::name::SetActorTickEnabledFn);
         if (!g_getScaleFn) g_getScaleFn = R::FindFunction(g_actorClass, P::name::GetActorScale3DFn);
         if (!g_setScaleFn) g_setScaleFn = R::FindFunction(g_actorClass, P::name::SetActorScale3DFn);
+        if (!g_setLifeFn) g_setLifeFn = R::FindFunction(g_actorClass, P::name::SetLifeSpanFn);
         if (!g_setHiddenFn) g_setHiddenFn = R::FindFunction(g_actorClass, P::name::SetActorHiddenInGameFn);
         if (!g_setCollisionFn) g_setCollisionFn = R::FindFunction(g_actorClass, P::name::SetActorEnableCollisionFn);
     }
@@ -344,9 +348,10 @@ FVector GetActorScale3D(void* actor) {
     return scl;
 }
 
-bool IsChildActor(void* actor) {
+bool IsChildActor(void* actor, bool& readable) {
     // See engine.h. Offset states: -2 not yet resolved (retry while the Actor class loads), -1
     // property missing (layout drift; the exclusion goes inert, loudly, once).
+    readable = false;
     if (!actor) return false;
     static std::atomic<int32_t> sOff{-2};
     int32_t off = sOff.load(std::memory_order_acquire);
@@ -367,7 +372,13 @@ bool IsChildActor(void* actor) {
     if (off < 0) return false;
     struct { int32_t idx; int32_t serial; } weak{};
     std::memcpy(&weak, reinterpret_cast<uint8_t*>(actor) + off, sizeof(weak));
+    readable = true;
     return weak.idx >= 0 && weak.serial != 0;
+}
+
+bool IsChildActor(void* actor) {
+    bool readable = false;
+    return IsChildActor(actor, readable);
 }
 
 void* ParentActorOf(void* actor, std::wstring* outComponentName) {
@@ -441,6 +452,15 @@ FVector GetActorForwardVector(void* actor) {
     return fwd;
 }
 
+FVector GetActorUpVector(void* actor) {
+    FVector up;
+    if (!actor || !ResolveActorFns() || !g_getUpFn) return up;
+    ParamFrame f(g_getUpFn);
+    if (!Call(actor, f)) return up;
+    f.GetRaw(L"ReturnValue", &up, sizeof(up));
+    return up;
+}
+
 bool TryGetActorRotation(void* actor, FRotator& out) {
     // A zero rotator is an ordinary facing: a read that could not report its failure would turn the
     // actor that way, so the read reports failure.
@@ -494,18 +514,28 @@ bool SetActorScale3D(void* actor, const FVector& scale) {
     return Call(actor, f);
 }
 
-FRotator GetComponentWorldRotation(void* component) {
-    FRotator rot;
-    if (!component || !R::IsLive(component)) return rot;
+bool SetActorLifeSpan(void* actor, float seconds) {
+    if (!actor || !ResolveActorFns() || !g_setLifeFn) return false;
+    ParamFrame f(g_setLifeFn);
+    return f.Set<float>(L"InLifespan", seconds) && Call(actor, f);
+}
+
+bool TryGetComponentWorldRotation(void* component, FRotator& out) {
+    if (!component || !R::IsLive(component)) return false;
     static void* fn = nullptr;
     if (!fn) {
         if (void* sc = R::FindClass(P::name::SceneComponentClass))
             fn = R::FindFunction(sc, P::name::GetComponentRotationFn);
     }
-    if (!fn) return rot;
+    if (!fn) return false;
     ParamFrame f(fn);
-    if (!Call(component, f)) return rot;
-    f.GetRaw(L"ReturnValue", &rot, sizeof(rot));
+    if (!Call(component, f)) return false;
+    return f.GetRaw(L"ReturnValue", &out, sizeof(out));
+}
+
+FRotator GetComponentWorldRotation(void* component) {
+    FRotator rot;
+    if (!TryGetComponentWorldRotation(component, rot)) return FRotator{};
     return rot;
 }
 

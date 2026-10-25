@@ -12,6 +12,8 @@
 namespace S=coop::prop_save_data;
 using Record=ue_wrap::save_record::SaveRecord;
 namespace test {
+bool intentGate=true,applyGate=true,held=false;std::function<void()> duringGate;
+
 int actor=0,calls=0,depth=0,notes=0,lookups=0,captures=0;
 bool nested=false,success=true,host=true,live=true,covered=true,allowOther=false;
 bool captureOK=false,sendOK=true;
@@ -41,6 +43,7 @@ void Occupancy() {
     for (const auto& [slot,use]:expected) {CHECK(S::g_parkUse.count(slot));CHECK(S::g_parkUse.at(slot).count==use.count);}
 }
 void Reset() {
+    intentGate=applyGate=true;held=false;duringGate={};
     overrideCapture=false;capturedRecord={};
     serial=1;liveKey=L"item";
     world=1;duringSend=duringRefresh=duringLock=duringCodec={};CHECK(S::g_recordOrder.empty());
@@ -208,7 +211,8 @@ int main() {
             };Run(mode);
             CHECK(calls==1);CHECK(S::g_parked.count(L"item"));CHECK(S::g_parked.at(L"item").rec.ints[0][0]==2);
             CHECK(S::g_parked.at(L"item").failures==0);Occupancy();
-            if (mode==Intent) CHECK(sent==std::vector<int>({1,2}));
+            // Superseded or failed native records are never published; the fresh row waits for its own land.
+            if (mode==Intent) CHECK(sent.empty());
             success=true;CHECK(S::ApplyParked(&actor,L"item"));CHECK(S::g_parked.empty());Occupancy();
 
             // Disconnect resets sequence to 1: the epoch prevents retirement of a new-world row.
@@ -392,7 +396,9 @@ int main() {
         CHECK(calls==1 && sent==std::vector<int>({2}) && noted==std::vector<int>({2}) && S::g_parked.empty());
     }
     Reset();duringSend=[]{Deliver(L"item",2,2,true);};Run(Intent);
-    CHECK(calls==1 && sent==std::vector<int>({1,2}) && noted==std::vector<int>({2}) && S::g_parked.empty() && S::g_retry.empty());
+    CHECK(calls==1 && sent==std::vector<int>({1}) && noted==std::vector<int>({1}) && S::g_parked.count(L"item") && S::g_retry.empty());
+    CHECK(S::ApplyParked(&actor,L"item"));
+    CHECK(calls==2 && sent==std::vector<int>({1,2}) && noted==std::vector<int>({1,2}) && S::g_parked.empty());
     Reset();grill=true;S::g_session=&session;S::Park(L"item",Make(),1,100);S::g_parked.at(L"item").preserveGrillRuntime=true;
     duringRefresh=[]{Deliver(L"item",2,2,true);};CHECK(!S::ApplyParked(&actor,L"item"));
     CHECK(!calls && S::g_parked.at(L"item").rec.ints[0][0]==2 && !S::g_parked.at(L"item").failures);
@@ -400,14 +406,18 @@ int main() {
     Reset();captureOK=true;duringCapture=[]{Deliver(L"item",2,2,true);};
     CHECK(!S::Publish(&session,&actor,L"item") && sent==std::vector<int>({2}) && calls==1 && S::g_retry.empty());
     Reset();captureOK=true;onlyLive=L"item";duringCapture=[]{Deliver(L"other",2,2,true);};
-    CHECK(S::Publish(&session,&actor,L"item") && sent==std::vector<int>({2,1})); // unrelated key remains independent
+    CHECK(S::Publish(&session,&actor,L"item") && sent==std::vector<int>({1})); // unrelated key remains independent
+    CHECK(S::g_parked.count(L"other"));onlyLive=L"other";liveKey=L"other";
+    CHECK(S::ApplyParked(&actor,L"other") && sent==std::vector<int>({1,2}));
     for(int cause=0;cause<5;++cause){
         Reset();captureOK=true;sendOK=false;duringSend=[cause]{if(cause==0)S::OnDisconnect();if(cause==1)++world;
             if(cause==2)S::OnPeerGone(1);if(cause==3)++serial;if(cause==4)liveKey=L"new_key";};
         CHECK(!S::PublishToSlot(&session,1,&actor,L"item") && S::g_retry.empty());
     }
     Reset();duringSend=[]{S::OnDisconnect();Deliver(L"item",2,2,true);};Run(Intent);
-    CHECK(calls==1 && noted==std::vector<int>({2}) && S::g_parked.empty());
+    CHECK(calls==1 && noted==std::vector<int>({1}) && S::g_parked.count(L"item"));
+    CHECK(S::ApplyParked(&actor,L"item"));
+    CHECK(calls==2 && noted==std::vector<int>({1,2}) && S::g_parked.empty());
     puts("PASS: same-key normalization/capture/send supersession, independent other keys, native pre-apply cancellation and stale-transfer retry refusal");
     // Capture must wait even before the author's first chunk has arrived.
     Reset();S::ExpectRecordFor(&actor,L"item",1);
@@ -427,7 +437,7 @@ int main() {
     Reset();S::ExpectRecordFor(&actor,L"item",1);S::OnPeerGone(1);
     CHECK(S::PrepareForCapture(&actor,L"item"));
     Reset();duringCodec=[]{Deliver(L"item",2,2,true);};Run(Intent);
-    CHECK(!calls && noted.empty() && sent==std::vector<int>({1,2}) && S::g_parked.at(L"item").rec.ints[0][0]==2);
+    CHECK(!calls && noted.empty() && sent.empty() && S::g_parked.at(L"item").rec.ints[0][0]==2);
     CHECK(!S::g_parked.at(L"item").failures && S::ApplyParked(&actor,L"item") && calls==1 && noted==std::vector<int>({2}));
     Reset();S::ExpectRecordFor(&actor,L"item",1);CHECK(!S::PrepareForMutation(&actor,L"item"));
     Deliver(L"item",1,1,true);CHECK(S::PrepareForMutation(&actor,L"item"));
@@ -520,8 +530,23 @@ int main() {
     puts("PASS: independent per-recipient/broadcast retries, attempt counts and departure cleanup");
     puts("PASS: unindexed live-source retry for capture/send failures; dead/recycled/rekeyed sources refused");
     puts("PASS: failed capture retries, recovery, invalidated capture exclusion and bounded failure");
+    // A class gate is final; an unknown/held actor waits without authoring a canonical.
+    Reset();applyGate=false;Run(Intent);CHECK(!calls && sent.empty() && S::g_parked.empty());
+    Reset();live=false;Deliver(L"item",1,1,true);CHECK(!calls && sent.empty() && S::g_parked.count(L"item"));
+    live=true;intentGate=false;CHECK(!S::ApplyParked(&actor,L"item"));CHECK(!calls && sent.empty() && S::g_parked.empty());
+    Reset();held=true;Run(Intent);CHECK(!calls && sent.empty() && S::g_parked.count(L"item"));
+    held=false;CHECK(S::ApplyParked(&actor,L"item"));CHECK(calls==1 && sent==std::vector<int>({1}));
+    Reset();S::Park(L"item",Make(),1,100);duringGate=[]{++serial;};
+    CHECK(!S::ApplyParked(&actor,L"item"));CHECK(!calls && sent.empty() && !S::g_parked.at(L"item").failures);
+    Reset();
+    puts("PASS class record gates: denied apply/intent, delayed birth, held retry, actor replacement and publication only after land");
     puts("PASS: item record reentry, replacement, teardown, ordering, bounded work, fairness and retry lifecycle");
 }
 
 namespace ue_wrap::food {bool IsFood(void*){return false;}}
 namespace coop::props::prop_food_sync {bool PublishSpawnState(coop::net::Session&,void*,int){std::abort();}}
+
+namespace coop::prop_record_gates { bool IntentAllows(void*,uint8_t){return test::intentGate;} bool ApplyAllows(void*){auto callback=std::move(test::duringGate);test::duringGate={};if(callback)callback();return test::applyGate;} }
+namespace coop::prop_hold { bool HostHolds(void*){return test::held;} }
+namespace coop::remote_prop { bool IsActorUnderAnyDrive(void*){return false;} }
+namespace coop::prop_drive_host { bool IsDriven(void*){return false;} }

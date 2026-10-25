@@ -287,8 +287,8 @@ public:
     uint64_t packetsSent() const { return net_stats::PacketsSent(); }
     uint64_t packetsRecv() const { return net_stats::PacketsRecv(); }
     // Per-slot RTT in ms (the GNS ping), -1 without a live connection or a sample; sampled ~1 Hz on
-    // the net thread. Its one consumer, roster_ledger::RefreshLinkFacts, publishes the host's
-    // measurement on RosterRow.
+    // the net thread. Its consumers: roster_ledger::RefreshLinkFacts (publishes it on RosterRow) and
+    // the explosion request lane's judges (a distance bound widened by one round trip's travel).
     int rttMsForSlot(int slot) const {
         return (slot >= 0 && slot < kMaxPeers) ? rttMsBySlot_[slot].load() : -1;
     }

@@ -4,9 +4,12 @@
 
 #include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/call.h"
+#include "ue_wrap/core/fname_utils.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
+#include "ue_wrap/desk/coords_panel.h"
 #include "ue_wrap/engine/engine_audio.h"
+#include "ue_wrap/engine/engine_component.h"
 
 #include <cstdint>
 #include <cstring>
@@ -53,6 +56,27 @@ T* Field(void* desk, R::InstanceOffset& member) {
     return off < 0 ? nullptr : reinterpret_cast<T*>(static_cast<uint8_t*>(desk) + off);
 }
 
+R::InstanceOffset g_linesEdges{L"dynmat_linesEdges"};  // ui_coordinates_C: TArray<UMaterialInstanceDynamic*>
+R::InstanceOffset g_linesInner{L"dynmat_linesInner"};
+R::FName g_alphaName{0, 0};
+
+// The first material of the panel's TArray<UMaterialInstanceDynamic*> at `off` on `panel`, and its alpha scalar.
+bool ReadFirstLineAlpha(void* panel, int32_t off, float& out) {
+    if (off < 0) return false;
+    const auto* base = static_cast<const uint8_t*>(panel) + off;
+    uint8_t* data = nullptr;
+    int32_t num = 0;
+    std::memcpy(&data, base, sizeof(data));
+    std::memcpy(&num, base + sizeof(void*), sizeof(num));
+    if (!data || num < 1) return false;
+    void* mid = nullptr;
+    std::memcpy(&mid, data, sizeof(mid));
+    if (!mid || !R::IsLive(mid)) return false;
+    if (g_alphaName.ComparisonIndex == 0 && g_alphaName.Number == 0)
+        g_alphaName = fname_utils::StringToFName(L"alpha");
+    return engine::GetScalarParameterValue(mid, g_alphaName, out);
+}
+
 R::ParamOffset g_return{L"return"};
 R::ParamOffset g_caughtAny{L"caughtAtLeastOne"};
 R::ParamOffset g_data{L"data"};
@@ -81,6 +105,45 @@ bool ReadPinging(void* desk, bool& out) {
     const uint8_t* b = PingingByte(desk, mask);
     if (!b) return false;
     out = (*b & mask) != 0;
+    return true;
+}
+
+bool ReadProgress(void* desk, Progress& out) {
+    int32_t* stage = Field<int32_t>(desk, g_stage);
+    float* outer = Field<float>(desk, g_outer);
+    float* inner = Field<float>(desk, g_inner);
+    float* ping = Field<float>(desk, g_ping);
+    if (!stage || !outer || !inner || !ping) return false;
+    out = {*stage, *outer, *inner, *ping};
+    return true;
+}
+
+bool WriteProgress(void* desk, const Progress& value) {
+    int32_t* stage = Field<int32_t>(desk, g_stage);
+    float* outer = Field<float>(desk, g_outer);
+    float* inner = Field<float>(desk, g_inner);
+    float* ping = Field<float>(desk, g_ping);
+    if (!stage || !outer || !inner || !ping) return false;
+    *stage = value.stage;
+    *outer = value.outer;
+    *inner = value.inner;
+    *ping = value.ping;
+    return true;
+}
+
+bool ReadObserverView(void* desk, ObserverView& out) {
+    Progress p;
+    ObserverView v;
+    void* panel = coords_panel::Instance();
+    if (!ReadPinging(desk, v.isPing) || !ReadProgress(desk, p) || !panel) return false;
+    if (!ReadFirstLineAlpha(panel, g_linesEdges.Of(panel), v.alphaEdges) ||
+        !ReadFirstLineAlpha(panel, g_linesInner.Of(panel), v.alphaInner))
+        return false;
+    v.stage = p.stage;
+    v.outer = p.outer;
+    v.inner = p.inner;
+    v.ping = p.ping;
+    out = v;
     return true;
 }
 

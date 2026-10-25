@@ -1,6 +1,10 @@
 // coop/props/prop_save_data.cpp -- see coop/props/prop_save_data.h.
 
 #include "coop/props/prop_save_data.h"
+#include "coop/props/prop_record_gates.h"
+#include "coop/props/remote_prop.h"
+#include "coop/props/prop_hold.h"
+#include "coop/props/prop_drive_host.h"
 #include "ue_wrap/actors/safe.h"
 #include "coop/props/prop_food_sync.h"
 #include "ue_wrap/actors/food.h"
@@ -579,10 +583,9 @@ void OnChunk(coop::net::Session& s, const coop::net::BlobChunkPayload& p, uint8_
     // Receipt is not native application. Keep the birth wait until this exact
     // author's record lands, including parking and readiness retries.
     const bool initialRecord=awaited!=0;
-    // The host takes a client's claim: queue the canonical before entering native code so a
-    // newer claim received re-entrantly cannot be sent before this older one. As before, the
-    // claim is canonical even when the actor has not arrived or native apply must be retried.
-    // Every peer, including the author as acknowledgement, takes the same canonical bytes.
+    // The host queues the claim under its exact revision. Its canonical is sent only after
+    // the native apply and the class gates succeed; an unknown actor's claim waits in the park.
+    // A newer reentrant claim owns a new revision and cannot be retired by the older apply.
     void* actor = PT::FindLiveActorByKey(key);
     if (actor && !Covers(actor)) {
         // The claim names a class another lane owns, or one that carries no save state of its own.
@@ -629,8 +632,8 @@ void OnChunk(coop::net::Session& s, const coop::net::BlobChunkPayload& p, uint8_
             !ue_wrap::grill_saved_state::PreserveHostRecord(actor,rec))return;
         if(!current())return;
     }
-    SendBody(&s, -1, key, rec,nullptr,current);
-    if(!current())return;
+    if(actor && (!coop::prop_record_gates::IntentAllows(actor,senderSlot) || !current()))return;
+    // ApplyQueued publishes the canonical only after this record lands.
     // Preserve immediate host acceptance (bounded by AllowIntent); client join catch-up uses
     // the frame budget. Deferring host acceptance would expose default state to other publishers.
     LandRecord(key, std::move(rec), senderSlot, body.size(), false,!initialRecord,awaited);

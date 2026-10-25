@@ -21,6 +21,12 @@ constexpr int kCount = 8;
 // Story, the mode a peer falls back to when no other answer is representable.
 constexpr int kStory = 0;
 
+// Infinite, the second mode whose guns are held only through the exits FungunHoldAllowed reads.
+constexpr int kInfinite = 1;
+
+// Sandbox, the mode whose rules let a player cheat (ordinal 4 in the name table, game_mode.cpp).
+constexpr int kSandbox = 4;
+
 constexpr bool IsValid(int ord) { return ord >= 0 && ord < kCount; }
 
 // The game's own name for an ordinal ("Sandbox"), or null when the ordinal names no mode.
@@ -44,5 +50,12 @@ int WriteTo(void* gameInstance, int mode);
 // lib.cpp:1646-1688). Read, never that gate called: its flying branch reads a key file and, without one, quits
 // the game (lib.cpp:1690-1698). False while flying, or when the gamemode or its members do not read. Game thread.
 bool CheatsAllowed(bool& allowed);
+
+// Whether the running world lets a player hold the rocket or sticky launcher, as the guns' own hold gate answers for
+// a gun that does not ignore story mode (neither launcher does): true when the GameInstance's mode reads as a valid
+// mode that is neither story nor infinite, or when any of the gamemode's isChristmas, isHalloween or
+// unlockFungunsInStory reads true. A member that does not read grants nothing, and a mode that does not read
+// leaves the three flags still read. Read, never the gate called: it force-drops the gun. Game thread.
+bool FungunHoldAllowed();
 
 }  // namespace ue_wrap::game_mode

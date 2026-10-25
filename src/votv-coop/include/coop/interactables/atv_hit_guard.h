@@ -1,11 +1,11 @@
-// coop/interactables/atv_hit_guard.h -- the ONE thing that makes a mirrored ATV differ from a
-// native one: it may not author collision damage.
+// coop/interactables/atv_hit_guard.h -- what keeps a mirrored ATV from authoring collision damage; with the damage
+// gate (atv_damage_gate.h), which cancels the blast and death routes, the whole difference from a native one.
 //
 // ONE concept: seven ComponentHit delegates, intercepted PRE-dispatch, cancelled on a peer that
 // does not own the rig's tick. Everything about WHO owns it stays in atv_sync.cpp -- this module is
 // handed the owned set and answers yes or no.
 //
-// It is deliberately the whole difference. The freeze-and-park model that used to distinguish a
+// Authorship of damage is deliberately the whole difference. The freeze-and-park model that used to distinguish a
 // mirror is gone: a mirror runs the rig natively, so the only asymmetry left is authorship of
 // damage, and a ComponentHit delegate is dispatched by the physics scene, where no tick switch can
 // reach it.
@@ -47,6 +47,10 @@ bool Owns(void* actor);
 
 // Arm/disarm the whole lane. False in single-player: the game must keep its own damage.
 void SetActive(bool active);
+
+// Is the lane armed right now, so that the owned set says who owns what? False in single-player and on every pump
+// tick that did not publish a set: a caller that reads "not owned" as "another copy owns it" asks this first.
+bool Active();
 
 // Did all seven delegates register? A lane that never armed runs INERT by design.
 // Callable from either context: the flag is atomic so that `Armed()` and `ReadCounters()` carry

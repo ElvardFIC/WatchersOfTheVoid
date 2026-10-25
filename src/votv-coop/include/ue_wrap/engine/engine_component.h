@@ -29,6 +29,10 @@ bool IsComponentTickEnabled(void* component);
 // USceneComponent world location (K2_GetComponentLocation) and forward vector; (0,0,0) on failure.
 FVector GetComponentLocation(void* component);
 
+// The same read that says when it did not happen: false on a null component or a call that failed, `out` then the
+// world origin, an ordinary position the caller must not mistake for a place. Game thread.
+bool TryGetComponentLocation(void* component, FVector& out);
+
 // USceneComponent::RelativeLocation, read raw at the sdk_profile.h offset: the Blueprint-authored
 // value, stable once construction has run, where K2_GetComponentLocation is unsettled mid-init.
 // (0,0,0) on null.
@@ -72,6 +76,11 @@ bool SetTextureParameterValue(void* materialInstanceDynamic, const wchar_t* para
 bool SetScalarParameterValue(void* materialInstanceDynamic, const wchar_t* paramName, float value);
 bool SetScalarParameterValue(void* materialInstanceDynamic, const reflection::FName& param, float value);
 
+// UMaterialInstanceDynamic::K2_GetScalarParameterValue: the scalar the material holds now. False when the material
+// is null, the name is NAME_None, or the call does not dispatch (the engine answers 0 for an unknown name, so a
+// caller that must tell the two apart passes a name it knows the material has). Game thread.
+bool GetScalarParameterValue(void* materialInstanceDynamic, const reflection::FName& param, float& out);
+
 // UStaticMeshComponent::SetStaticMesh, resolved on the owning class; recomputes bounds and
 // collision. Rejects null: a caller that has failed to resolve a mesh and one that means "no mesh"
 // pass the same argument, and blanking a component is the wrong answer to the first. Game thread.
@@ -94,5 +103,13 @@ bool SetComponentMaterial(void* primitiveComponent, int32_t elementIndex, void* 
 // UActorComponent::K2_DestroyComponent (`contextObject` = the owning actor, for the engine's auth
 // check). Game thread.
 bool DestroyComponent(void* component, void* contextObject);
+
+// UAudioComponent::Play(StartTime = 0): the component's sound from its start. False when `audio` is not
+// live or the call does not dispatch. Game thread.
+bool PlayAudioComponent(void* audio);
+
+// UAudioComponent::IsPlaying: whether the component's sound is playing now. False when `audio` is not
+// live, the call does not dispatch, or nothing plays. Game thread.
+bool IsAudioComponentPlaying(void* audio);
 
 }  // namespace ue_wrap::engine

@@ -107,6 +107,12 @@ CFG_FLAG(deck_selftest, "deck_selftest", "dev", false, nullptr,
     "Autonomous selftest: tape deck playback sync.")
 CFG_FLAG(drive_selftest, "drive_selftest", "dev", false, "VOTVCOOP_DRIVE_SELFTEST",
     "Autonomous selftest: drive rack digest instrument.")
+CFG_FLAG(rack_birth_drill, "rack_birth_drill", "dev", false, "VOTVCOOP_RACK_BIRTH_DRILL",
+    "Drill (BOTH peers): once a client's world is ready the host spawns a drive rack holding four rows; the client "
+    "must hold them and send the host no op. Lines tagged [RACK-BIRTH]; the client's DONE line ends it.")
+CFG_FLAG(burn_revive_drill, "burn_revive_drill", "dev", false, "VOTVCOOP_BURN_REVIVE_DRILL",
+    "Drill (the CLIENT): the player is set on fire, dies, and must be revived not burning. Lines tagged "
+    "[BURN-REVIVE]; the client's DONE line ends it.")
 CFG_FLAG(desk_snd_selftest, "desk_snd_selftest", "dev", false, nullptr,
     "Autonomous selftest: desk sound mirror.")
 CFG_FLAG(container_selftest, "container_selftest", "dev", false, "VOTVCOOP_CONTAINER_SELFTEST",
@@ -148,6 +154,10 @@ CFG_FLAG(puppet_reg_probe, "puppet_reg_probe", "dev", false, "VOTVCOOP_PUPPET_RE
 CFG_FLAG(pi0_selftest, "pi0_selftest", "dev", false, "VOTVCOOP_PI0_SELFTEST",
     "Autonomous selftest (HOST): a Player Element whose puppet was cleared keeps its id when the retry's "
     "puppet is registered -- one [PI-0-SELFTEST] line, on a spare peer slot, the registry left as found.")
+CFG_FLAG(hurt_flash_gc_probe, "hurt_flash_gc_probe", "dev", false, "VOTVCOOP_HURT_FLASH_GC_PROBE",
+    "Probe (the peer that draws a puppet): a garbage collection is forced as each hurt flash starts, and "
+    "the class of slot 0's material on both body meshes is logged before the flash and after its restore "
+    "-- one [HFG] line each -- so a skin material collected during the flash shows as a changed class.")
 CFG_FLAG(death_seam_census, "death_seam_census", "dev", false, "VOTVCOOP_DEATH_SEAM_CENSUS",
     "Probe: every element end the death seam announces, one [DEATH] line each -- the element's type "
     "and id, mirror or local, destroyed or streamed out, and its class -- to pair with the lanes' own "
@@ -307,15 +317,6 @@ CFG_FLAG(ragdoll_bone_overlay, "ragdoll_bone_overlay", "dev", false, nullptr,
     "Debug overlay: ragdoll bone positions.")
 CFG_FLAG(puppet_head_probe, "puppet_head_probe", "dev", false, nullptr,
     "Diagnostic probe: puppet head/aim pose.")
-CFG_FLAG(atv_probe, "atv_probe", "dev", false, nullptr,
-    "Diagnostic probe: the ATV rig baseline (4-body pose, suspension travel, vitals).")
-CFG_FLAG(atv_probe_sit, "atv_probe_sit", "dev", false, nullptr,
-    "ATV probe DRIVE arm (ONE peer, one shot): seat the local player, release the brake and hold the throttle so the ATV is authored AND moving. Set it on one peer only.")
-CFG_FLAG(atv_corrector, "atv_corrector", "dev", true, "VOTVCOOP_ATV_CORRECTOR",
-    "ATV pose corrector, ON by default. Set 0 to leave a mirrored ATV entirely alone -- the "
-    "CONTROL arm for 'does the mirror settle wrong on its own, or do we settle it wrong'. The "
-    "mirror still simulates and still receives state; only the position/velocity correction is "
-    "withheld, so the two arms differ in exactly one thing.")
 CFG_FLAG(native_pile_inert_probe, "native_pile_inert_probe", "dev", false, nullptr,
     "Diagnostic probe: native pile inertness on clients.")
 CFG_FLAG(spawn_order_probe, "spawn_order_probe", "dev", false, nullptr,
@@ -379,6 +380,14 @@ CFG_ENUM(event_relay_drill, "event_relay_drill", "dev", "off", "off|on", "VOTVCO
     "tells the host by chat, and rejoins and reads the same; the host then destroys the krampus and the client's "
     "count must fall by one while the host's returns to where it began. Each step ends on a [EVR] PASS or "
     "[EVR] FAIL line (src/coop/dev/event_relay_drill.cpp); a step that does not come is a FAIL after 60 s.")
+CFG_ENUM(creature_hit_drill, "creature_hit_drill", "dev", "off", "off|zombie|fossilhound", "VOTVCOOP_CREATURE_HIT_DRILL",
+    "Drill (BOTH peers, one run), a parked creature's hit and a client's hit on it: the host spawns the creature "
+    "300 cm in front of the client's puppet once the client's join is over; its hits on the puppet must reach the "
+    "client three times and none may come from the mirror's own copy; then the client, with an empty hand and "
+    "then with an axe, calls the mirror's addDamage, and the host must refuse the first and judge the rest until "
+    "its creature dies and the mirror is destroyed. The fossilhound arm adds the mirror's own per-viewer event. "
+    "Each step ends on a [CHD] PASS or [CHD] FAIL line (src/coop/dev/creature_hit_drill.cpp); a step that does "
+    "not come is a FAIL after 60 s.")
 CFG_ENUM(world_roll_drill, "world_roll_drill", "dev", "off",
     "off|eye_host|eye_client|eye_join|jelly_host|jelly_client|jelly_join|redsky_host|redsky_client|redsky_join",
     "VOTVCOOP_WORLD_ROLL_DRILL",
@@ -507,13 +516,6 @@ CFG_STRING(throw_drill, "throw_drill", "dev", "", "VOTVCOOP_THROW_DRILL", false,
     "The host's DONE line ends it.")
 CFG_FLAG(container_birth_skip_slice, "container_birth_skip_slice", "dev", false, "VOTVCOOP_CONTAINER_BIRTH_SKIP_SLICE",
     "Developer: a container this client throws sends no contents slice (the throw drill's red and gone).")
-CFG_STRING(atv_spawn_drill, "atv_spawn_drill", "dev", "", "VOTVCOOP_ATV_SPAWN_DRILL", false,
-    "Drill (BOTH peers): a runtime ATV spawned on the host reaches each client once. run -- spawned once the client's "
-    "world is ready; join -- while it is still loading (the world-ready replay); park -- as run, with "
-    "atv_park_first_spawn=1 on the client. The client's DONE line ends it.")
-CFG_FLAG(atv_park_first_spawn, "atv_park_first_spawn", "dev", false, "VOTVCOOP_ATV_PARK_FIRST_SPAWN",
-    "Developer: the first runtime ATV spawn that reaches this client's ready world and is not already a park's "
-    "hand-back is parked once, process-wide, as if the world were not (the ATV spawn drill's park arm).")
 CFG_STRING(fall_drill, "fall_drill", "dev", "", "VOTVCOOP_FALL_DRILL", false,
     "Drill (BOTH peers): a host birth that falls lands on the client where it lands on the host. run -- the host "
     "drops a drive from 4 m once the client's world is ready; the client's DONE line ends it.")
@@ -525,10 +527,12 @@ CFG_STRING(sack_drill, "sack_drill", "dev", "", "VOTVCOOP_SACK_DRILL", false,
 CFG_FLAG(point_sack_client_runs, "point_sack_client_runs", "dev", false, "VOTVCOOP_POINT_SACK_CLIENT_RUNS",
     "Developer: a client's point sack runs the game's own body there instead of asking the host (the sack drill's red).")
 CFG_FLAG(drone_call_drill, "drone_call_drill", "dev", false, "VOTVCOOP_DRONE_CALL_DRILL",
-    "Drill (BOTH peers): the client walks to the garage's drone console, opens its lid if it is shut, aims "
-    "at its keyboard and presses it through the player's own E dispatch; the press goes to the host, which "
-    "presses its console for the client. A sack the first press brought is followed by a second press, and "
-    "the client's DONE line says whether the drone flew on its copy; the host logs its drone's changes. "
+    "Drill (BOTH peers): the client walks to the garage's drone console, opens its lid if it is shut, presses "
+    "the leave-timer face twice (the click sounds on its copy and the host's stream flips the timer, then flips "
+    "it back), then aims at the keyboard and presses it through the player's own E dispatch; each press goes to "
+    "the host, which presses its console for the client. A sack the first press brought is followed by a "
+    "second press, and the client's DONE line says whether the drone flew on its copy; the host logs its "
+    "drone's changes. "
     "Lines tagged [DRONE-CALL-DRILL].")
 CFG_STRING(sat_console_drill, "sat_console_drill", "dev", "", "VOTVCOOP_SAT_CONSOLE_DRILL", false,
     "Drill (BOTH peers): run -- a client types sd.cal, sauce.get and sv.hash at its SAT console; the host runs "
@@ -562,6 +566,24 @@ CFG_STRING(camera_drill, "camera_drill", "dev", "", "VOTVCOOP_CAMERA_DRILL", fal
     "is refused here and performed by the host; light -- the same for the laptop's camera-light button, after a walk "
     "to the laptop; host-event -- the host fires the gray event beside a switched-on camera, the client reads it on "
     "and then off; join -- the host switches both bits on before any client joins, every session reads both.")
+CFG_STRING(sleepingbag_drill, "sleepingbag_drill", "dev", "", "VOTVCOOP_SLEEPINGBAG_DRILL", false,
+    "Drill (BOTH peers): a sleeping bag unrolls and folds once on each peer, one for one. run -- once a client is "
+    "in its world the host drops a packed bag on a floor a route reaches; the client walks to it, unrolls it, "
+    "waits 5 s of world time to see its deployed form stand, and folds it; then the host unrolls and folds it "
+    "itself and the client reads each change; last, the host drops a bunk mattress on another empty floor and the "
+    "client takes it off. Each peer judges its own copy: the old form gone, exactly one new form with an element id. "
+    "Lines tagged [BAG-DRILL]; the client's DONE line ends it.")
+CFG_STRING(notebook_drill, "notebook_drill", "dev", "", "VOTVCOOP_NOTEBOOK_DRILL", false,
+    "Drill (EVERY peer): a notebook's page is written at one peer's editor and read on the others. run -- once a "
+    "client is in its world the host drops a notebook on a floor a route reaches and writes a seed page; the client "
+    "walks to it, opens it with the notebook's own action and holds its claim; the host presses the open on its own "
+    "copy, and the claim sends its editor out again; the client types a page and leaves the editor open, and the "
+    "host reads it (the publish at the editor's commit) and checks that its rule refuses a slot that is not the holder; the client then "
+    "writes a last page and closes with the editor's own quit, and the host's copy must read it, taken from the slot "
+    "that still held the claim. A second client (the rig's "
+    "--observer) reads the page too. rejoin -- the same, and the client's first life ends on \"client LIFE DONE\"; its "
+    "second life reads the page from the snapshot. red -- the editor is closed with the game's discard (skipEdit), "
+    "so no page is carried and the host's read must fail. Lines tagged [NOTE-DRILL]; each peer's DONE line ends it.")
 CFG_STRING(laptop_tab_drill, "laptop_tab_drill", "dev", "", "VOTVCOOP_LAPTOP_TAB_DRILL", false,
     "Drill (BOTH peers): everyone sees the tab the base computer's user is on. The user walks to the PC with the "
     "director, enters it and switches tabs; the other peer judges the LAST tab on arrival of a state carrying it. tab "
@@ -624,8 +646,14 @@ CFG_STRING(desk_ping_drill, "desk_ping_drill", "dev", "", "VOTVCOOP_DESK_PING_DR
     "sky), catch (the host's fixture signal under the triangle), busy (a second verdict right behind the catch's). "
     "The client says its gatherSignal was entered and never ran, the host's failure line reached its log once, the "
     "catch is on its profile and desk, and the busy verdict came back refused; the host that it rolled two, caught "
-    "the second without counting it as its own, relayed it as the client's, and refused the third. Lines tagged "
-    "[DESK-PING-DRILL]; 'client DONE PASS|FAIL' ends it; ABANDONED is a step that could not run.")
+    "the second without counting it as its own, relayed it as the client's, and refused the third. Every peer that "
+    "does not ping (the host, and a second client under --observer) also reads its own desk: the first edge line's "
+    "alpha must pass 0.5 at stage 0 and the first inner line's at stage 1 with coord_isPing clear, and all four "
+    "values must read 0 after the scan's ending; a second client says observer PASS|FAIL per scan, and observer DONE "
+    "once the first client, which leaves the desk before its DONE, has left it. observed: the same, but the client "
+    "starts only once the observer in slot 2 is ready (rig --observer), and the observer must judge both scans, the "
+    "miss and the catch; under run one judged scan passes. Lines tagged [DESK-PING-DRILL]; 'client DONE' ('observer "
+    "DONE' under --observer) ends it; ABANDONED is a step that could not run.")
 CFG_STRING(download_drill, "download_drill", "dev", "", "VOTVCOOP_DOWNLOAD_DRILL", false,
     "Drill (BOTH peers): the host arms and resets its download five times; the client must replay each once with the "
     "host's values (formDownload's body once an arm, one reset line a reset, the reset clean) and have its own "
@@ -768,13 +796,21 @@ CFG_FLAG(key_index_forget_one, "key_index_forget_one", "dev", false, "VOTVCOOP_K
     "Red arm of the prop key index's parity pass: once a session, after the seed, one filed prop of the "
     "current world is dropped from the index. The pass must name it as a filing the feeds missed and file "
     "it again within a full pass (about 20 s).")
-CFG_FLAG(selftest_break_permissions, "selftest_break_permissions", "dev", false, "VOTVCOOP_SELFTEST_BREAK_PERMISSIONS",
-    "Red arm of the permissions selftest: its first case expects the opposite answer, so it must fail.")
-CFG_FLAG(selftest_break_action_log, "selftest_break_action_log", "dev", false, "VOTVCOOP_SELFTEST_BREAK_ACTION_LOG",
-    "Red arm of the commands selftest's action-log cases: the first acting case of each cases file expects "
-    "no record, so it must fail.")
+// The permissions and action-log selftests' red arms: their own file, one concept, included as
+// _dev_port.inc is above.
+#include "coop/config/config_registry_rows_dev_selftest.inc"
+// The explosion lane's drill, birth line and selftest red arms: their own file, one concept, included as
+// _dev_port.inc is above.
+#include "coop/config/config_registry_rows_dev_explosion.inc"
+// The fire lane's drill: its own file, one concept, included as _dev_port.inc is above.
+#include "coop/config/config_registry_rows_dev_fire.inc"
+// The ATV lane's rows (its probe, corrector arm, spawn drill, health drill): their own file, as _dev_port.inc is above.
+#include "coop/config/config_registry_rows_dev_atv.inc"
 // The puppet-identity arc's selftests and drill (PI-1, PI-2, PI-3): their own file, one concept, included as
 // _dev_port.inc is above.
 #include "coop/config/config_registry_rows_dev_pi.inc"
 // The NPC-spawner arc's native-spawn probe (NB): the same shape, the last rows of the list.
 #include "coop/config/config_registry_rows_dev_nb.inc"
+
+CFG_FLAG(player_damage_no_refusal, "player_damage_no_refusal", "dev", false, "VOTVCOOP_PLAYER_DAMAGE_NO_REFUSAL",
+    "Developer: disable puppet damage and ignite refusal for the damage hazard negative control.")

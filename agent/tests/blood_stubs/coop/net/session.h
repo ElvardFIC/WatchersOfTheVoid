@@ -25,6 +25,7 @@ public:
     bool IsSlotWorldReady(int s)const{return ready[s];}
     uint32_t peerGenerationForSlot(int s)const{return generations[s];}
     bool SendReliableToSlot(int s,ReliableKind kind,const void* raw,size_t size){
+        if(kind==ReliableKind::AtvSetComplete)return s!=blocked;
         if(kind==ReliableKind::AtvState && size==sizeof(AtvStatePayload)){
             if(s==blocked)return false;atvStates.push_back(*static_cast<const AtvStatePayload*>(raw));return true;
         }

@@ -129,3 +129,8 @@ int main(){
     objs[2].live=false;CHECK(!UI::Read(read));
     puts("PASS laptop UI wrapper: reflected tabs, duplicate/reordered cart rows, native catalog key stamping, suffix edits, native rebuild, validation before mutation, no purchase/camera replay, effect and world fences");
 }
+
+// Reflection names used by ParamFrame missing-field diagnostics.
+namespace ue_wrap::reflection {
+const FName& NameOf(void*){static const FName name{};return name;}
+}

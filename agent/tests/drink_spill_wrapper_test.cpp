@@ -169,3 +169,8 @@ int main(){using namespace test;namespace N=ue_wrap::drink_spill;Reset();auto st
     puts("PASS drink-spill wrapper/actual ParamFrame: native launch fields before BeginPlay, final scale/lifespan, exact class/assets, transform/material capture, defaults/canonical state, terminal construction and serial/world/current/mesh fences");
     return 0;
 }
+
+// Reflection names used by ParamFrame missing-field diagnostics.
+namespace ue_wrap::reflection {
+std::wstring ToString(const FName&){return L"fixture_function";}
+}

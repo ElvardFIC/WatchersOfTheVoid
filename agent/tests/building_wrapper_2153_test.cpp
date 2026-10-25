@@ -126,3 +126,8 @@ int main(){using namespace test;namespace B=ue_wrap::building_material;
  puts("PASS real building wrapper/ParamFrame: packed empty/alcohol flags, water repaint, preserved container tick, trowel bounds/classes/call failure/lifetime");
  return 0;
 }
+
+// Reflection names used by ParamFrame missing-field diagnostics.
+namespace ue_wrap::reflection {
+std::wstring ToString(const FName&){return L"fixture_function";}
+}

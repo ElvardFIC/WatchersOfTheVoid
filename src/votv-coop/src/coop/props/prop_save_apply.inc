@@ -1,5 +1,5 @@
 bool TryApply(void* actor, const std::wstring& key, const SR::SaveRecord& rec, uint64_t epoch,bool preserveGrillRuntime,
-              const std::function<bool()>& current) {
+              const std::function<bool()>& current, SR::SaveRecord* landedRecord=nullptr) {
     if (!actor) {
         UE_LOGW("prop_save_data: TryApply failed -- actor is null for key '%ls'", key.c_str());
         return false;
@@ -47,6 +47,7 @@ bool TryApply(void* actor, const std::wstring& key, const SR::SaveRecord& rec, u
         UE_LOGW("prop_save_data: TryApply failed -- identity changed after ApplyRecord for key '%ls'", key.c_str());
         return false;
     }
+    if(landedRecord)*landedRecord=*applied;
     ++g_appliedTotal;
     UE_LOGI("prop_save_data: TryApply success for key '%ls' on actor %p", key.c_str(), actor);
     coop::dev::food_clock_probe::NoteApply(actor, key, *applied);
@@ -71,8 +72,22 @@ bool ApplyQueued(void* actor, const std::wstring& key, bool budgeted) {
     const auto current=[&]{const auto it=g_parked.find(applyKey);return epoch==g_worldEpoch && world==ue_wrap::world_identity::Generation() &&
         order.Revision()==revision && it!=g_parked.end() && it->second.seq==snapshot.seq &&
         AwaitCompatible(applyKey,snapshot.senderSlot,snapshot.awaited);};
+    if ((coop::prop_hold::HostHolds(actor) || coop::remote_prop::IsActorUnderAnyDrive(actor) || coop::prop_drive_host::IsDriven(actor))) return false;
+    ue_wrap::CachedObjRef target,type;target.Set(actor);type.Set(R::ClassOf(actor));
+    const auto sameTarget=[&]{return current() && target.Get()==actor && type.Get() && R::ClassOf(actor)==type.Raw();};
+    if(!sameTarget())return false;
+    bool allowed=coop::prop_record_gates::ApplyAllows(actor);
+    if(!sameTarget())return false;
+    if(allowed && PT::SessionIsHost())allowed=coop::prop_record_gates::IntentAllows(actor,snapshot.senderSlot);
+    if(!sameTarget())return false;
+    if (!allowed) { const auto row=g_parked.find(applyKey); if(row!=g_parked.end() && row->second.seq==snapshot.seq)Unpark(row); return false; }
     if (budgeted) --g_applyBudget; // failed dispatches cost a slot too; nested skips do not
-    const bool ok = TryApply(actor, applyKey, snapshot.rec, epoch,snapshot.preserveGrillRuntime,current);
+    SR::SaveRecord canonical;
+    const bool ok = TryApply(actor, applyKey, snapshot.rec, epoch,snapshot.preserveGrillRuntime,sameTarget,&canonical);
+    if(ok && sameTarget() && PT::SessionIsHost() && snapshot.senderSlot>0 && g_session) {
+        SendBody(g_session,-1,applyKey,canonical,&target,sameTarget);
+        if(!sameTarget())return false;
+    }
     if (epoch != g_worldEpoch) return false;
     const auto landed = g_parked.find(applyKey);
     if (landed != g_parked.end() && landed->second.seq == snapshot.seq) {

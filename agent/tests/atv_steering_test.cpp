@@ -44,6 +44,7 @@ void* CurrentWorld(){return reinterpret_cast<void*>(uintptr_t(test::world));}
 void* WorldOf(void* p){return p==&test::objects[0]||p==&test::objects[1]?CurrentWorld():nullptr;}
 }
 namespace ue_wrap::atv {
+bool EnsureResolved(){return true;}
 bool IsDriven(void* p){return static_cast<test::Obj*>(p)->driven;}
 void* GetOccupantPlayer(void* p){return static_cast<test::Obj*>(p)->occupant;}
 bool GetRootTransform(void*,FVector& at,FRotator& rot){at={1,2,3};rot={};return true;}
@@ -52,6 +53,7 @@ bool GetRadio(void*){return false;}bool GetHasMap(void*){return false;}uint8_t R
 }
 namespace ue_wrap::engine {bool GetActorRootPhysicsVelocity(void*,FVector& lin,FVector& ang){lin={};ang={};return true;}}
 namespace coop::atv_condition_sync {void FillPayload(void*,net::AtvStatePayload& p){p.tiresValid=1;}}
+namespace ue_wrap::object_index {bool IsSeeded(){return true;}size_t Backlog(){return 0;}}
 namespace coop::atv_sync {
 namespace R=ue_wrap::reflection;
 namespace A=ue_wrap::atv;
@@ -61,7 +63,11 @@ std::atomic<net::Session*> g_session{nullptr};
 std::unordered_map<std::wstring,AtvEntry> g_atvs;
 std::unordered_map<void*,std::wstring> g_synthForActor;
 bool IsSynthKey(const std::wstring&){return false;}
-void SendAtvSpawn(const std::wstring&,void*,int){CHECK(false);}
+bool SendAtvSpawn(const std::wstring&,void*,int slot){return g_session.load()->blocked!=slot;}
+size_t ForEachAnnounceableAtv(void(*fn)(void*,void*,const std::wstring&),void* ctx){for(auto& [key,e]:g_atvs)fn(ctx,e.actor,key);return 0;}
+bool IndexCurrent(){return true;}
+void ClearOwed(int){} void ArmOwed(int,uint64_t,const char*){}
+void StampHostTrap(const AtvEntry&,net::AtvStatePayload&){}
 bool IsPoseAuthor(void*,void*,uint8_t,uint8_t){return false;}
 #include "read_payload.inc"
 void PublishRadio(net::Session&,void*,const std::wstring&,int,bool){}
@@ -109,4 +115,10 @@ int main(){using namespace test;namespace S=coop::atv_steering_sync;namespace FX
     CHECK(session.atvStates[0].adopt&&session.atvStates[0].steering==2500);
     session.blocked=1;coop::atv_sync::QueueConnectBroadcastForSlot(1);CHECK(coop::atv_sync::g_atvs[L"atv"].honkPulse);
     std::puts("PASS ATV steering and join: native tick reset, wheels, driver handoff, readiness, occupancy, teardown and retained honk");
+}
+
+// Reflection names used by ParamFrame missing-field diagnostics.
+namespace ue_wrap::reflection {
+std::wstring ToString(const FName&){return L"fixture_function";}
+const FName& NameOf(void*){static const FName name{};return name;}
 }

@@ -83,3 +83,8 @@ int main(){
  Reset();loaded=false;CHECK(M::CopyPlaying(out,4)==0);loaded=true;CHECK(M::CopyPlaying(out,4)==1);
  puts("PASS actual media wrapper/ParamFrame: indexed enumeration, no engine calls during iteration, balanced FString ownership, CDO/radio exclusion, seek/pause/open results, native lifetime changes and late class loading");
 }
+
+// Reflection names used by ParamFrame missing-field diagnostics.
+namespace ue_wrap::reflection {
+std::wstring ToString(const FName&){return L"fixture_function";}
+}

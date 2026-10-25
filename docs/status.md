@@ -5,9 +5,9 @@ row is. This is a count view, never a percentage: the number of facets a system 
 is not enumerable, so a single "N% done" would hide which systems are solid and which are untouched.
 
 **State** says how far the row is: `works` (established in play), `tested` (exercised by a scripted
-run), `built` (the lane exists and has not been exercised), with the known breaks counted where
-there are any; the breaks themselves are on the system's page. Most mechanic-level facets sit at
-`built`; that majority is the honest state. **Owner**: `host` (the host writes, clients mirror), `peer` (each peer authors its own slice
+run), `built` (the lane exists and has not been exercised); known breaks are counted where there are any,
+and the breaks themselves are on the system's page. Most mechanic-level facets sit at `built`; that
+majority is the honest state. **Owner**: `host` (the host writes, clients mirror), `peer` (each peer authors its own slice
 and streams it), `presser` (whoever performs the action authors it, the host relays), `arbiter` (the
 host validates and commits contested writes), `local` (never shared).
 
@@ -21,7 +21,7 @@ host validates and commits contested writes), `local` (never shared).
 | Nameplates, colours, skins | nickname, ping, health bar, visibility preference, colour, the body skin | peer, arbitrated by the host for uniqueness | at join | works |
 | Chat and the event feed | text lines, join and leave lines, a retained history shown to late joiners | presser; host relays | seeded from the host's retained log | works |
 | Voice | Opus frames, 3D positional | peer | state replay | works |
-| Player damage and hazards | enemy hits delivered to the hit peer; vitals as fractions | host delivers, peer computes | none needed | works |
+| Player damage and hazards | vitals as fractions; a zombie or fossil hound hit on a peer delivered to that peer `[RD]` | host delivers, peer computes | none needed | vitals work; the hit delivery is read from the code and not yet run |
 | Death | the native death runs to its end; the level travel is refused and a revive written in its place | peer | none needed | tested |
 | Teleport (dev) | host pushes a placement | host | the join placement | works |
 
@@ -30,6 +30,7 @@ host validates and commits contested writes), `local` (never shared).
 | System | Synced | Owner | Late join | State |
 |---|---|---|---|---|
 | Physics props | spawn, pose, grab, carry, throw, drop, destroy, a hook's drag and a broom's push (built); identity across saves and rejoins; each prop's own save record, for the classes that keep one; client-born props, including what a player spawns from the sandbox menu | presser while held, host at rest and under a hook | snapshot; a player-authored birth is claimed at its seam and re-claimed by the host's echo, so a pending sweep cannot doom it | works |
+| Sleeping bags and mattresses | a client interaction action sent to the host; the host runs the Blueprint that replaces the packed bag or mattress with its deployed form, or folds it back | host | host save and prop snapshot contain the currently live form | built (see [props.md](props.md)) |
 | Chip piles and clumps | the grab, carry, throw and re-pile cycle, and a broom's sweep | host with client intents | snapshot, a spawn-time bind, and a bounded hold for a pile the save load has not reached; a clump rolling at the join arrives as the pile it lands as | works |
 | Trash-bits piles | the counter pair | presser and host | snapshot | built |
 | Containers | open and close, contents (a slice of the host's object stack) | presser; host for contents | snapshot | works, two known breaks |
@@ -43,6 +44,7 @@ host validates and commits contested writes), `local` (never shared).
 | Drone | the delivery drone's flight and state | host | snapshot | built |
 | Sky and time | sky rotation, moon phase, the sky eye, the clock and the day number (a client's clock never runs on its own: neither its own advance nor its cheat menu's day buttons roll a midnight; at the host's midnight it performs its own share: its profile's days, midnights since load, music flags and achievements) | host | the clock stream from the connect; the sky seeded at connect | built |
 | Weather | rain, snow, fog, wind, lightning, red sky, the event-born weathers | host | snapshot | tested, two known breaks |
+| Explosions | every explosion runs on the host and reaches each peer once; a client's own rocket, sticky bomb, held grenade or pipe bomb and pilled burn are requested by the client and performed on the host; a client's light on a salt rocket is performed on the host, and a lit rocket's flight is streamed to every peer | host | none (a one-shot act) | built; the other client-triggered sources are known limits with their owners |
 | Fireflies, ambient spawners | cosmetic spawns and the flora and forage spawners (host only) | peer for cosmetics, host for spawners | none; a client's spawners are refused from its session's start | built |
 | Story and scheduled events | host-observed fires replayed on clients by a per-event policy; the active-events registry mirrored for late joiners | host | replay and snapshot | built |
 | Alarm | the base klaxon | presser | snapshot | built |

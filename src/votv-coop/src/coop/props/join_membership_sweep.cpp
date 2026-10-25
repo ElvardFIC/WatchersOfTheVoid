@@ -4,6 +4,8 @@
 // per-class completeness floor and a >50% valve.
 
 #include "coop/props/join_membership_sweep.h"
+#include "coop/player/hand_item.h"
+#include "coop/player/players_registry.h"
 #include "coop/props/local_birth_protection.h"
 #include "coop/session/world_load_episode.h"  // the load-tail quiescence probe
 
@@ -173,6 +175,9 @@ static void RunDivergenceSweep_(void* localPlayer, const ReconcilePass& pass) {
     };
     int inClass = 0;        // live, non-mirror, LOCAL Prop Elements (the membership universe)
     int claimedCount = 0;
+    void* handAxis[1 + coop::players::kMaxPeers]{};
+    const auto handCount=coop::hand_item::CollectHandAxisActors(handAxis,std::size(handAxis));
+    const auto onHandAxis=[&](void* actor){for(size_t i=0;i<handCount;++i)if(handAxis[i]==actor)return true;return false;};
     std::vector<SweepCandidate> doomed;
     doomed.reserve(propPairs.size());
     std::vector<std::wstring> doomedClass;  // Phase 0: class per doomed actor, parallel to `doomed`
@@ -192,7 +197,7 @@ static void RunDivergenceSweep_(void* localPlayer, const ReconcilePass& pass) {
         const std::wstring acls = R::ClassNameOf(a);
         if (g_claimedActors.count(a)) { ++claimedCount; ++claimedByClass[acls]; continue; }  // host-expressed / self-claimed -> converged, keep
         // Exempt local births without counting them as host snapshot coverage.
-        if (ProtectedLocalBirth(a, g_selfAuthored)) {
+        if (onHandAxis(a) || ProtectedLocalBirth(a, g_selfAuthored)) {
             g_claimedActors.insert(a);
             continue;
         }
@@ -269,7 +274,7 @@ static void RunDivergenceSweep_(void* localPlayer, const ReconcilePass& pass) {
                 ++claimedCount; ++claimedByClass[acls]; ++idxClaimed;   // floor numerator keeps its semantics
                 continue;
             }
-            if (ProtectedLocalBirth(ke.actor, g_selfAuthored)) continue;
+            if (onHandAxis(ke.actor) || ProtectedLocalBirth(ke.actor, g_selfAuthored)) continue;
             if (coop::prop_lifecycle::IsPerPlayerPropClass(acls)) continue;
             // A cached (actor, idx) pair can survive a slot recycle; only the live actor's current
             // key proves the entry still names it. A mismatch (an impostor or an un-reindexed
@@ -551,7 +556,7 @@ void TickClientReconcile() {
 
     // The local player is re-resolved here (a pointer stashed at arm time could go stale); the
     // sweep releases its grab if a doomed actor is held. One FindObjectByClass, cold.
-    void* localPlayer = R::FindObjectByClass(P::name::MainPlayerClass);
+    void* localPlayer = coop::players::Registry::Get().Local();
     if (!pass.Current()) return;
     const auto msSinceArm = std::chrono::duration_cast<std::chrono::milliseconds>(
                                 std::chrono::steady_clock::now() - g_sweepArmedAt).count();

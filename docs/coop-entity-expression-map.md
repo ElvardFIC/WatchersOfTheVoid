@@ -41,6 +41,8 @@ are peer-gated. `[V]`
 |---|---|---|---|
 | keyed props | the save; a spawner; the spawn menu; a container extract | the object scan at world start; the initialisation post observer; the finish-spawning seam | the save key, plus a host id |
 | chip piles | the save; a re-pile | the object scan's keyless lane; the native seam on the re-pile spawn | a host id only, keyless |
+| the unrolled sleeping bag (`sleepingbagWrap_C`) | the packed bag's unroll, inside its Blueprint (host-run for a client's press, `sleepingbag_sync`) | the finish-spawning seam on the host | a portable random key minted at its host birth (the game never keys it: its construction runs `gen(false)`, never `init()`), plus a host id; a wrap already in the host's world before a client connects: unmeasured |
+| a notebook's page text | the editor's commit and close (`ui_notebook`), a torn page added (`playerUsedOn`) | the prop record lane (`prop_save_data`): the editing peer publishes the notebook's own record | the notebook's save key; one editor at a time through a `device_occupancy` claim keyed by that key (`note_<hash>`); the host takes a record from the claim's holder or, while free, from anyone |
 | the trash clump | the grab, inside the Blueprint; a broom stroke; a few creatures' graphs | the native seam on the clump's deferred spawn -- a broom's reads the swept pile out of the broom's frame, and a creature's has no pile to name (piles.md, Known limits) | the same host id, rebound at birth |
 | a held physics prop | the grab | the new-held edge of the local stream | the key it already had; a keyless one is minted a key at the edge |
 | the hotbar hand item | the hotbar switch | not a world entity: polled as player state | none; display only |
@@ -51,7 +53,9 @@ are peer-gated. `[V]`
 | the kerfur | conversion verbs inside the Blueprint | the script-body gate on the verbs: refused on a client, converged at the return on the host; whom it serves, its player-0 reads answered on the host with the puppet of the client whose command it runs (`kerfur_command`, `served_player`) | one host kerfur id across both forms |
 | the plain kerfur (the Kerfus) | a keyed prop with a brain; on and off are a field, not a second form | the prop lanes for identity and the record at birth; while on, the host's prop drive for its pose; KerfusState for on, charging and energy; whom it follows, its player-0 reads answered on the host with the puppet of the client that turned it on (`kerfus_follow`, `served_player`) | its prop key and host eid |
 | a deployed hook or rope | the fire input, inside the Blueprint | the thrower polls its own `activeHook` field | `(owner slot, sequence)` while the thrower holds it, a host-minted save key once anchored |
+| an explosion (`explosion_C`) | a Blueprint's deferred spawn (a projectile, a fuse, a burn, a broken prop, a device) | on the host the capture watch on its begin-play; on a client the deferred-spawn post, which dissolves it after the request half has read its source | none: the host's actor is the only one and each client spawns a copy of its own from `ExplosionSpawn` |
 | a remote player's puppet (`mainPlayer_C`, unpossessed) | `RemotePlayer::Spawn` -> `engine::SpawnActor` | registered between its deferred spawn and its `FinishSpawning`, by the before-finish callback; unregistered after its destroy (`DestroySlot`) | the peer's slot in `players::Registry` |
+| an ATV (`ATV_C` and its descendants, the witch car included) | the save; a runtime spawn | the object scan's ATV lane (`atv_index`); the host announces each by key (`AtvSpawn`); the seat and the syncer are the host's table (`atv_authority`) | the game's own key, which the save carries; a runtime one gets a synthetic key at its host birth |
 | status effects (effect_C) | each peer's own, from its gamemode's addEffect; never sent | -- | none: a per-process actor; at a join the host's effect records are reset out of the joiner's save at the join |
 
 ## Keyed props
@@ -193,6 +197,28 @@ install are taken back, and taken back again at its end (`coop/world/creature_ev
 fossilhound, the antibreather and the egg compute their event from the local camera, render state or player 0 and keep
 their own per peer. `[RD]`
 
+**A parked creature's brain.** A mirror of the zombie family or the fossilhound runs none of its Blueprint's event
+graph. It is marked when it is born (between the two halves of its spawn, or at the bind of a client's own
+save-loaded twin), and the graph watches (`coop/creatures/npc_mirror_brain`) refuse every entry of a marked mirror
+but the few a table names: the footstep notify, and the fossilhound's per-viewer loop. What its BeginPlay set up
+for the eye is done by our code after the install: the zombie's animation instance and walk blend, the fossilhound's
+mesh parent, animation instance and owner. Lost on a mirror: the attack animation and sounds, the fossilhound's hit
+sound and its hidden-then-dig-out. A client's own creature of these classes is never marked and runs whole. The mark
+is the actor's slot and the slot's serial, so a recycled address is never a mirror, and it ends with the mirror.
+`[RD]`; the refusals `[?]` until a run reads them.
+
+**A client's hit on a parked creature.** A client's swing ends in the struck mirror's `addDamage` with the player as the
+damager. The call is watched (`coop/creatures/creature_hit_intent`): the client plays the zombie family's hit feedback
+at once (the fossilhound has none), sends the creature's element id with the claimed damage, the point struck and the
+impact, and cancels the call. The host judges the swing against the sender's held item and its reach data, its reach
+from the eye the host holds for it, that the sender's newest streamed aim faces the point (within 60 degrees, in 3-D; eye
+and aim are captured when the intent arrives), the sight to the point and the point's distance from the creature,
+cuts the damage to the item's most and runs the creature's own `addDamage` with a null damager; health, death and
+the destroy are the host's, and nothing is answered. The swinger's liveness is judged by the health its pose stream
+carries (a dead player's pose says 0, and the puppet's `dead` flag is never set by a peer's death): at most 0 refuses
+the swing `dead`. A zombie the host kills this way leaves its ragdoll body on the host alone: the body's class has no
+lane (owed). A ranged tool's hit is not a swing and is refused. `[RD]`
+
 ## Event actors
 
 A second interceptor on the same deferred-spawn call carries a disjoint, name-matched allowlist
@@ -296,6 +322,75 @@ registry recycled that id. `[V]`
   client, so the host's is the one constraint and the other copies are parented display -- `[V]`
   for the seam on an owner-phase build, `[?]` for an anchored build, which no run has staged.
 
+## Explosions
+
+- **Birth.** The host's own game spawns every explosion that exists: its capture watch on `explosion_C`'s
+  begin-play reads the class, the transform and the blast parameters. A client's game spawns none: the
+  deferred-spawn post nulls the result of every explosion birth and destroys the actor by a posted task
+  (`coop/world/explosion_sync`). `[V]`
+- **Identity: none.** No element, key or id is made for an explosion. The one name the wire carries is the
+  actor the blast must not hurt, as an element id or a server box's index, so a copy spares the same actor
+  the host's did. `[V]`
+- **Expression: the host's spawn, fanned out.** The capture is sent as `ExplosionSpawn` to every
+  world-ready client, and each spawns its own copy natively at the host's place inside the lane's own spawn
+  scope, which the birth seam leaves alone. What a copy may still move is
+  listed in `coop/world/explosion_parking`: its own player's damage and knock-back, the scorch. `[V]`
+- **A client's request.** An explosion a client's own player is responsible for is requested, not made:
+  its dissolved birth sends `ExplosionRequest`, and the host judges it and spawns the blast with its own
+  parameters for the source (`coop/world/explosion_request`, `explosion_recipe`); the capture above then
+  carries it to every peer, the requester included. Three kinds, told apart at the dissolved birth by
+  its source: PROJECTILE (a rocket or sticky bomb the client fired, named by the `ProjectileFired` its
+  launcher's fire body sent, the point read from the projectile), HAND (an armed grenade or pipe bomb that
+  is the client's hand view, the point read from the hand item) and SELF (the client's gasoline-pilled
+  body: no point on the wire, the host blasts at the sender's puppet with the pill level). A request has
+  no identity of its own: a shot is the host's record until its blast consumes it, expires or the cap
+  evicts it. `[V]`
+- **An ATV a client syncs.** The ATV's own `explode` runs on its syncer's copy, which ejects the driver and
+  spawns a blast that the client's birth seam dissolves; the client sends `AtvExplodeRequest` (the ATV's key and
+  whether the story event's trap fell in that frame), and the host judges that the sender is the ATV's syncer
+  and that the ATV has not just blown, then spawns the blast at the ATV's own `tp`
+  (`coop/world/explosion_request_atv`), which the capture above carries. The ATV is blown until its syncer's
+  health is back at 0 or above, the game's own re-arm. A host-synced ATV's death runs natively and needs no
+  request. `[?]`
+- **Not requested here.** Every other source (a prop broken, a device run, a prop lit) is its trigger's lane,
+  whose host copy explodes natively and so
+  reaches the capture. A projectile of the client's with no shot sent is not requested and is counted.
+  `[V]`
+- **A salt rocket a client lights.** The rocket's own fuse and thrust run only on the host: a client's gate refuses its `attemptIgnite` and its `ignite`, and a light its own player's lighter or torch made goes to the host as `PropIgniteIntent` (`coop/world/salt_rocket_ignite`); the host checks the sender's reach and the tool its hand held, performs the verb on its copy, and its `fire()` puts the rocket under the drive claim (`coop/world/salt_rocket_flight`) until its blast, which the capture above carries. `[V]`
+- **Destroy.** Nothing crosses. Each copy ends by the actor's own lifespan, 10 s by the class default.
+  `[RD]`
+- **Late join.** None: a one-shot cue, not re-sent; a request's state clears with its session. `[V]`
+
+## The ATV
+
+- **Birth.** The save places an ATV, or the host's own game spawns one at runtime. The host's index
+  (`coop/interactables/atv_index`) files every live ATV under its game key and announces a key it gains with
+  `AtvSpawn`; a client's mirror (`atv_runtime_mirror`) is spawned carrying that key, parked until its world is
+  ready. `[V]`
+- **Identity.** The ATV's own game key, on every peer. An ATV a client spawned, if one can be, is unknown to the
+  host's index; a sit in it is answered `unknown_atv` and the client dismounts. `[?]`
+- **Authority: the seat and the syncer are the host's table.** `AtvEntry::occupantSlot` (the seat) and
+  `syncerSlot` (who writes the rig) are decided by the host alone (`coop/interactables/atv_authority`): a client
+  asks with `AtvSeat` (sit or leave) and `AtvTakeover` (a grab), each judged and answered with `AtvAnswer`; the
+  host's own player is judged by the same table. The three are never aliased: the host's index row (the birth
+  owner), the occupant, the syncer. `[?]`
+- **Expression: the syncer's stamped stream.** The syncer streams `AtvState`; a client's reaches the host alone,
+  which applies only its syncer's blocks and re-sends each, marked and stamped with the seat and the syncer, to
+  every other client. The host's own copy streams while it syncs. Every machine follows the stamp, yielding to
+  an answer or a stamp that names another occupant or syncer through the game's own dismount or a dropped grab.
+  `[?]`
+- **Expression: the syncer authors the damage and the death.** A copy that does not own the ATV's tick cancels
+  its `addDamage`, `exploded` and `explode` (`coop/interactables/atv_damage_gate`, beside the collision guard) and
+  takes the health from the syncer's condition block. The death is the owner's own `explode`, whose blast is
+  dissolved at the birth seam, and the host's blast that `AtvExplodeRequest` asks for (the explosion section
+  above). The story event's trap is the host's state: the stamp's bit 4 (`kAtvTrap`) carries it to every copy,
+  and a client whose trap fired tells the host so in the request. `[?]`
+- **Destroy.** `AtvDestroy` from the host, for a key its index pruned; the client destroys the mirror or the
+  native twin under that key. `[V]`
+- **Late join.** The connect snapshot stamps every live ATV with the host's table and its trap and sets the adopt
+  flag, so a joiner places its copy once whoever syncs it; a joiner sends no request before its world is ready.
+  `[?]`
+
 ## The dupe matrix
 
 Every place two seams can express one actor, and what deduplicates it:
@@ -317,6 +412,11 @@ Every place two seams can express one actor, and what deduplicates it:
 | a conversion's fresh prop and the generic spawn seams | the captured form is tracked and its broadcast suppressed `[V]` |
 | a joiner's save-loaded Bad Sun copy and the seed's present, or the host's live present | the apply counts the live copies first: one copy is left alone, none is spawned, two are logged and not repaired `[V]` (the drill's rejoin) |
 | a client's menu-spawned prop and the host's copy of it, spawned from the intent | the client's own actor IS the mirror: the host sets the client's key, and the echo resolves it back to that actor and converges its pose instead of minting a second `[V]` |
+| a client's own rocket, sticky bomb, held grenade or pipe bomb, or pilled burn: the client's birth of its explosion and the host's blast its request makes | one blast: the client's birth is dissolved and never spawns; the host's blast reaches every peer as `ExplosionSpawn`, the requester included `[V]` (the request drill's arms) |
+| a joiner's save-loaded ATV and the host's announce of the same ATV | the joiner resolves the announce by key (the lane's row, else the game's key map) and adopts the copy it holds; it spawns a mirror only for a key it holds none under, and the host's set edge (`AtvSetComplete`) removes the save's ATVs the host no longer holds `[V]` (`atv_spawn_drill`) |
+| a client's light on a salt rocket and the host's | one fuse: a client's copy never runs `fire()` (its gate refuses the light and asks); the host lights its copy and drives its flight `[V]` (`fire_ignite_drill`) |
+| a client's local sit or grab of an ATV and the host's table | one seat and one syncer: the client acts at once, asks, and yields to the answer or stamp that names another; the host drops a block from any slot that is not the ATV's syncer `[?]` |
+| the host's idle stream and a client syncer's stream of one ATV | the host streams an ATV only while its table names the host; until the hand-back a client syncer's blocks are the ones applied and re-sent `[?]` |
 
 ## Needs a probe
 

@@ -14,6 +14,7 @@
 // Every action is at the human-INPUT seam. All OnTick runs on the game thread
 // (inside the ControlManager's per-tick closure), so engine calls are direct.
 
+#include "coop/dev/director/clear_hand.h"
 #include "coop/dev/director/detour.h"
 #include "coop/dev/director/director.h"
 #include "coop/dev/director/routes.h"
@@ -59,7 +60,8 @@ constexpr float kDoorReachCm    = 320.f; // a closed door within this of the stu
 constexpr int   kMaxDoorOpens   = 20;    // grind: keep opening doors as needed (never-give-up rule)
 constexpr int   kUnstickTicks   = 70;    // ~0.28 s of sideways juke to slide off a box before re-checking
 constexpr int   kSettleTicks    = 12;    // ~0.25 s braking before the grab
-constexpr int   kMaxDetours     = 24;    // ways round a slope too steep for the body, per walk (detour.h)
+constexpr int   kMaxDetours     = 24;    // ways round a spot the body cannot pass, per walk (detour.h): a slope too
+                                         // steep for it, or a prop the NavMesh does not know that blocks it
 constexpr float kMinLegCm       = 100.f; // a leg ending no nearer the goal than this is no leg: the stuck handler takes it
 constexpr int   kRouteRetryTicks = 50;   // a walker with no route here asks again this often while it stands
 // A walk this far from its goal holds the run key (mainPlayer's InpActEvt_run: at least twice the walk
@@ -104,15 +106,9 @@ bool Arrived(const PlayerContext& ctx, const DirectorGoal& goal) {
     return HorizDist(ctx.pos, goal.targetPos) <= goal.reachCm && OnLevel(ctx.pos, goal.targetPos);
 }
 constexpr int   kVerifyTicks    = 90;    // ~1.8 s polling for the held clump
-constexpr int   kDropMeasureTicks = 20;  // ~0.4 s to MEASURE if the input-seam drop cleared the hand
 
 // ---- ClearHandProcess ------------------------------------------------------------------
-// Drive-at-input-seam FIRST: press InpActEvt_drop (the key a human presses), then
-// MEASURE whether the hand actually cleared. Do NOT mask with a mutator blindly --
-// that would be a workaround standing on an unmeasured fact. If the input seam is
-// INERT (the reflection stub does not run the drop body, the same way the chippile
-// InpActEvt_use body is inert), that is a HALT-fact we LABEL and record, then fall
-// back to the proven effect-seam release so the run can proceed.
+// The walk set's unit for ClearHand (clear_hand.h): it ticks the shared clearing while the hand is full.
 // `usedEffectFallback` is surfaced in the verdict.
 bool g_clearHandUsedEffectFallback = false;   // read by the scenario verdict (drive-at-seam honesty)
 
@@ -129,69 +125,49 @@ public:
         return ctx.HandFull() && !goal_.grabbed && HorizDist(ctx.pos, goal_.targetPos) > goal_.reachCm;
     }
     ProcStatus OnTick(const PlayerContext& ctx) override {
-        ++ticks_;
-        if (ticks_ == 1) {   // input seam ONLY -- the key a human presses to drop (measure it first)
-            const bool pressed = PressInputEvent(ctx.player, g_drop);
-            UE_LOGI("director/ClearHand: hand full (grabbing=%p holding=%p place=%d) -- input-seam "
-                    "InpActEvt_drop pressed=%d; MEASURING", ctx.held, ctx.holding, ctx.placeMode ? 1 : 0, pressed ? 1 : 0);
-            return ProcStatus::Working;
-        }
-        if (ticks_ == kDropMeasureTicks && !measured_) {   // MEASURE the input-seam result, don't assume
-            measured_ = true;
-            if (!ctx.HandFull()) {
-                UE_LOGI("director/ClearHand: input-seam InpActEvt_drop WORKED -- hand cleared (measured); "
-                        "no effect-seam needed");
-                return ProcStatus::Working;
-            }
-            // MEASURED HALT-fact, LABELED (not a silent mask): the reflection input stub does not run the
-            // drop body (chippile InpActEvt_use precedent) -> the drop is not input-seam-faithful. Clear at
-            // the effect seam, ONE reasoned verb per slot: grabbing_actor -> PHC release; holding_actor
-            // (the hand item / morph carry) -> throwHoldingProp (the SDK's "drop the held prop").
-            g_clearHandUsedEffectFallback = true;
-            void* cls = R::FindClass(P::name::MainPlayerClass);
-            void* throwFn = cls ? R::FindFunction(cls, L"throwHoldingProp") : nullptr;
-            UE_LOGW("director/ClearHand: InpActEvt_drop INERT (measured) -- effect-seam clear: "
-                    "release(grabbing=%p) + throwHoldingProp(holding=%p) fn=%p", ctx.held, ctx.holding, throwFn);
-            if (ctx.held) E::ReleaseMainPlayerGrabIfHolding(ctx.player, ctx.held);
-            if (ctx.holding && throwFn) { ue_wrap::ParamFrame pf(throwFn); ue_wrap::Call(ctx.player, pf); }
-            return ProcStatus::Working;
-        }
-        if (ticks_ == kDropMeasureTicks * 2 && ctx.HandFull()) {   // still full -> honest failure, not a silent deadline
-            UE_LOGW("director/ClearHand: STILL full after effect-seam clear (grabbing=%p holding=%p place=%d) "
-                    "-- no known verb emptied the slot; failing the run", ctx.held, ctx.holding, ctx.placeMode ? 1 : 0);
+        const ClearState st = clear_.Tick(ctx);
+        if (clear_.UsedEffectFallback()) g_clearHandUsedEffectFallback = true;
+        if (st == ClearState::Failed) {   // the run ends on this process's failure: the hand was not cleared
             failed_ = true;
             return ProcStatus::Failed;
         }
         return ProcStatus::Working;   // IsActive() flips false once the hand clears -> we yield
     }
     void OnLostControl() override {
-        if (ticks_ > 0 && !failed_)
-            UE_LOGI("director/ClearHand: hand cleared after %d ticks (input-seam-faithful=%d) -- yielding",
-                    ticks_, g_clearHandUsedEffectFallback ? 0 : 1);
+        if (clear_.Ticks() > 0 && !failed_) clear_.LogCleared();
     }
 private:
     DirectorGoal& goal_;
-    int  ticks_ = 0;
-    bool measured_ = false;
-    bool failed_ = false;   // the run ends on this process's failure: the hand was not cleared
+    ClearHand clear_;
+    bool failed_ = false;
 };
 
 // What stands between a stuck walker and its waypoint, named: a trace at knee and at chest height
 // toward the waypoint (2 m at most) and one down for the floor's slope. The NavMesh routes through
-// what the capsule cannot pass, and this line says what that is. On a persistent stuck only.
-void LogBlocker(const PlayerContext& ctx, const ue_wrap::FVector& wp) {
+// what the capsule cannot pass, and this line says what that is. On a persistent stuck only. True with
+// `spot` the hit point of the nearer of the knee and chest hits when either is blocked: the blocker to go round.
+// It decides as well as logs: its answer starts the detour search, and a false sends the walker to the old grind.
+bool BlockerAhead(const PlayerContext& ctx, const ue_wrap::FVector& wp, ue_wrap::FVector* spot) {
     ue_wrap::FVector d{wp.X - ctx.pos.X, wp.Y - ctx.pos.Y, 0.f};
     const float h = std::sqrt(d.X * d.X + d.Y * d.Y);
-    if (h < 1.f) return;
+    if (h < 1.f) return false;
     d.X /= h; d.Y /= h;
     const float reach = (std::min)(h + 50.f, 200.f);
-    const auto describe = [&](const char* what, const ue_wrap::FVector& a, const ue_wrap::FVector& b) {
+    bool found = false;
+    float nearest = 0.f;
+    const auto describe = [&](const char* what, const ue_wrap::FVector& a, const ue_wrap::FVector& b, bool ahead) {
         ue_wrap::trace::Hit hit;
         if (!ue_wrap::trace::LineHitStatDyn(ctx.player, a, b, &hit)) {
             UE_LOGW("director/Goto:   %s trace unresolved", what);
         } else if (!hit.blocked) {
             UE_LOGW("director/Goto:   %s trace clear for %.0f cm", what, reach);
         } else {
+            const float away = std::hypot(hit.point.X - a.X, hit.point.Y - a.Y);
+            if (ahead && (!found || away < nearest)) {
+                found = true;
+                nearest = away;
+                *spot = hit.point;
+            }
             const std::wstring actor = hit.actor ? R::ToString(R::NameOf(hit.actor)) : L"?";
             const std::wstring actorCls = hit.actor ? R::ClassNameOf(hit.actor) : L"?";
             const std::wstring comp = hit.component ? R::ToString(R::NameOf(hit.component)) : L"?";
@@ -199,7 +175,7 @@ void LogBlocker(const PlayerContext& ctx, const ue_wrap::FVector& wp) {
             UE_LOGW("director/Goto:   %s trace hits '%ls' (%ls) component '%ls' (%ls) at (%.0f,%.0f,%.0f), "
                     "%.0f cm ahead, normal (%.2f,%.2f,%.2f)", what, actor.c_str(), actorCls.c_str(), comp.c_str(),
                     compCls.c_str(), hit.point.X, hit.point.Y, hit.point.Z,
-                    std::hypot(hit.point.X - a.X, hit.point.Y - a.Y), hit.normal.X, hit.normal.Y, hit.normal.Z);
+                    away, hit.normal.X, hit.normal.Y, hit.normal.Z);
         }
     };
     UE_LOGW("director/Goto: blocked at (%.0f,%.0f,%.0f) toward the waypoint (%.0f,%.0f,%.0f), %.0f cm away",
@@ -217,9 +193,10 @@ void LogBlocker(const PlayerContext& ctx, const ue_wrap::FVector& wp) {
     }
     for (const float dz : {-50.f, 30.f}) {
         const ue_wrap::FVector a{ctx.pos.X, ctx.pos.Y, ctx.pos.Z + dz};
-        describe(dz < 0.f ? "knee" : "chest", a, {a.X + d.X * reach, a.Y + d.Y * reach, a.Z});
+        describe(dz < 0.f ? "knee" : "chest", a, {a.X + d.X * reach, a.Y + d.Y * reach, a.Z}, true);
     }
-    describe("floor", ctx.pos, {ctx.pos.X, ctx.pos.Y, ctx.pos.Z - 300.f});
+    describe("floor", ctx.pos, {ctx.pos.X, ctx.pos.Y, ctx.pos.Z - 300.f}, false);
+    return found;
 }
 
 // ---- GotoProcess -----------------------------------------------------------------------
@@ -304,7 +281,7 @@ public:
         ue_wrap::FVector steepAhead{};
         if (floorZ_ > 0.f && detours_ < kMaxDetours &&
             ahead_.Advance(ctx.player, ahead_.Along(wp_ + 1, toWp), floorZ_, &steepAhead) &&
-            detour_.Begin(ctx.pos, goal_.targetPos, steepAhead, floorZ_)) {
+            detour_.Begin(ctx.pos, goal_.targetPos, steepAhead, floorZ_, detour::SpotKind::Slope)) {
             ++detours_;
             UE_LOGI("director/Goto: a slope too steep for the body ahead at (%.0f,%.0f,%.0f) -- going round before it",
                     steepAhead.X, steepAhead.Y, steepAhead.Z);
@@ -335,7 +312,7 @@ public:
             ue_wrap::FVector steep{};
             if (detours_ < kMaxDetours && floorZ_ > 0.f &&
                 detour::SteepAhead(ctx.player, ctx.pos, waypoints_[wp_], floorZ_, &steep) &&
-                detour_.Begin(ctx.pos, goal_.targetPos, steep, floorZ_)) {
+                detour_.Begin(ctx.pos, goal_.targetPos, steep, floorZ_, detour::SpotKind::Slope)) {
                 ++detours_;
                 return ProcStatus::Working;
             }
@@ -347,7 +324,16 @@ public:
             // DEADLINE (>= 30 s of grinding) are the terminators, not an early stuck-count.
             ++stuckEpisodes_;
             if (stuckEpisodes_ % 4 == 0) {   // periodic fresh route from where we actually are
-                LogBlocker(ctx, waypoints_[wp_]);
+                // A prop the NavMesh does not know holds the body where a fresh route leads back to: the spot is
+                // remembered like a slope, so a route that passes it again is sent round it (detour.h).
+                ue_wrap::FVector blocker{};
+                if (BlockerAhead(ctx, waypoints_[wp_], &blocker) && detours_ < kMaxDetours && floorZ_ > 0.f &&
+                    detour_.Begin(ctx.pos, goal_.targetPos, blocker, floorZ_, detour::SpotKind::Blocker)) {
+                    ++detours_;
+                    UE_LOGW("director/Goto: persistent stuck (toPile=%.0f) at a blocker -- going round it (episode %d)",
+                            toPile, stuckEpisodes_);
+                    return ProcStatus::Working;
+                }
                 pathed_ = false; waypoints_.clear(); wp_ = 0; lastWp_ = 0; bestWp_ = 1e9f; bestPile_ = 1e9f;
                 UE_LOGW("director/Goto: persistent stuck (toPile=%.0f) -- RE-PATH (episode %d, never give up)", toPile, stuckEpisodes_);
                 return ProcStatus::Working;
@@ -539,6 +525,65 @@ ue_wrap::FRotator LookAt(const ue_wrap::FVector& from, const ue_wrap::FVector& t
     r.Pitch = std::atan2(dz, std::sqrt(dx * dx + dy * dy)) * kRad2Deg;
     r.Roll  = 0.f;
     return r;
+}
+
+// Drive-at-input-seam FIRST: press InpActEvt_drop (the key a human presses), then
+// MEASURE whether the hand actually cleared. Do NOT mask with a mutator blindly --
+// that would be a workaround standing on an unmeasured fact. If the input seam is
+// INERT (the reflection stub does not run the drop body, the same way the chippile
+// InpActEvt_use body is inert), that is a HALT-fact we LABEL and record, then fall
+// back to the proven effect-seam release so the run can proceed.
+constexpr int kDropMeasureTicks = 20;   // ~0.4 s to MEASURE if the input-seam drop cleared the hand
+
+ClearState ClearHand::Tick(const PlayerContext& ctx) {
+    if (failed_) return ClearState::Failed;
+    if (!ctx.HandFull()) {
+        if (ticks_ > 0) LogCleared();
+        return ClearState::Cleared;
+    }
+    ++ticks_;
+    if (ticks_ == 1) {   // input seam ONLY -- the key a human presses to drop (measure it first)
+        const bool pressed = PressInputEvent(ctx.player, g_drop);
+        UE_LOGI("director/ClearHand: hand full (grabbing=%p holding=%p place=%d) -- input-seam "
+                "InpActEvt_drop pressed=%d; MEASURING", ctx.held, ctx.holding, ctx.placeMode ? 1 : 0, pressed ? 1 : 0);
+        return ClearState::Working;
+    }
+    if (ticks_ == kDropMeasureTicks) {   // MEASURED, the hand still full: the input-seam result, not assumed
+        // MEASURED HALT-fact, LABELED (not a silent mask): the reflection input stub does not run the
+        // drop body (chippile InpActEvt_use precedent) -> the drop is not input-seam-faithful. Clear at
+        // the effect seam, ONE reasoned verb per slot: grabbing_actor -> PHC release; holding_actor
+        // (the hand item / morph carry) -> throwHoldingProp (the SDK's "drop the held prop").
+        usedEffectFallback_ = true;
+        void* cls = R::FindClass(P::name::MainPlayerClass);
+        void* throwFn = cls ? R::FindFunction(cls, L"throwHoldingProp") : nullptr;
+        UE_LOGW("director/ClearHand: InpActEvt_drop INERT (measured) -- effect-seam clear: "
+                "release(grabbing=%p) + throwHoldingProp(holding=%p) fn=%p", ctx.held, ctx.holding, throwFn);
+        if (ctx.held) E::ReleaseMainPlayerGrabIfHolding(ctx.player, ctx.held);
+        if (ctx.holding && throwFn) { ue_wrap::ParamFrame pf(throwFn); ue_wrap::Call(ctx.player, pf); }
+        return ClearState::Working;
+    }
+    if (ticks_ >= kDropMeasureTicks * 2) {   // still full -> honest failure, not a silent deadline
+        UE_LOGW("director/ClearHand: STILL full after effect-seam clear (grabbing=%p holding=%p place=%d) "
+                "-- no known verb emptied the slot; failing the run", ctx.held, ctx.holding, ctx.placeMode ? 1 : 0);
+        failed_ = true;
+        why_ = "the drop key and the effect-seam release both left the hand full";
+        return ClearState::Failed;
+    }
+    return ClearState::Working;
+}
+
+ClearState ClearHand::Tick() {
+    PlayerContext ctx;
+    if (!ctx.Refresh()) {
+        why_ = "the local player is not possessed or its state could not be read";
+        return ClearState::Failed;
+    }
+    return Tick(ctx);
+}
+
+void ClearHand::LogCleared() const {
+    UE_LOGI("director/ClearHand: hand cleared after %d ticks (input-seam-faithful=%d)", ticks_,
+            usedEffectFallback_ ? 0 : 1);
 }
 
 void AddWalkGrabProcesses(ControlManager& mgr, DirectorGoal& goal) {

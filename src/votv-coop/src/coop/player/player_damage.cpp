@@ -1,58 +1,59 @@
 // coop/player/player_damage.cpp -- see coop/player/player_damage.h.
 //
-// The damage relay's wire half: the host SENDS PlayerDamage to the hit peer, and the owner APPLIES
-// it to its own possessed player. The vitals tail -- the pose stream's health fraction, and the
-// puppet hurt flash its drop arms -- is already wired, so this module's job ends at making the
-// owner's local saveSlot.health drop.
+// The refusals on a peer's puppet. A hit lands on the puppet in the host's world and must not write the
+// host's per-machine health; its owner takes it on its own player. For a creature of a parked family the
+// host also delivers the hit, as a PlayerHit that the owner's machine applies (coop/player/player_hit.h).
 
 #include "coop/player/player_damage.h"
 
 #include "coop/config/config.h"
 #include "coop/config/config_registry.h"
+#include "coop/creatures/creature_hit.h"
 #include "coop/element/element.h"
-#include "coop/element/player.h"
+#include "coop/element/registry.h"
 #include "coop/net/protocol.h"
 #include "coop/net/session.h"
 #include "coop/player/hand_item.h"
 #include "coop/player/players_registry.h"
 #include "coop/player/pvp.h"
 #include "ue_wrap/engine/engine.h"
+#include "coop/player/player_hit.h"
+#include "coop/player/players_registry.h"
 #include "ue_wrap/core/game_thread.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/object_index.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/script_gate.h"
-#include "ue_wrap/actors/vitals.h"
 #include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
-#include <cmath>
 #include <cstdint>
+#include <cstring>
+#include <string>
 
 namespace coop::player_damage {
 namespace {
 
 namespace R = ue_wrap::reflection;
 namespace GT = ue_wrap::game_thread;
-namespace E = ue_wrap::engine;
+namespace sg = ue_wrap::script_gate;
 
 std::atomic<coop::net::Session*> g_session{nullptr};  // read in the impact interceptor (any thread)
-
-// Defensive per-hit bound: VOTV max health is ~100, so 1000 is generous headroom for
-// any legitimate big hit while rejecting an absurd/exploit value before it reaches the
-// damage BP. NaN/Inf/<=0 are rejected too.
-constexpr float kMaxDamagePerHit = 1000.f;
-
-bool ValidDamage(float d) { return std::isfinite(d) && d > 0.f && d <= kMaxDamagePerHit; }
 
 // The impact-entry cancel. mainPlayer_C's three native->BP impact events, one shared PRE callback
 // registered once for each. The class is loaded at the main menu and lives for the process
 // (coop/dev/class_lifetime_probe measures it), so the registrations hold across a world change.
+UE_FACT_FN(kRowAddPlayerDamage, "player_damage", nullptr, L"Add Player Damage", AnyClass);
+constexpr int kDamageVerbTag=0x50445642, kIgniteTag=0x50444947;
+bool g_damageWatchDone=false,g_igniteWatchDone=false;
 UE_FACT_FN(kRowImpactDamage, "player_damage", L"mainPlayer_C", L"impactDamage", Declared);
 UE_FACT_FN(kRowImpactDamageCpp, "player_damage", L"mainPlayer_C", L"impactDamageCPP", Declared);
 UE_FACT_FN(kRowImpactSquishCpp, "player_damage", L"mainPlayer_C", L"impactSquishCPP", Declared);
 UE_FACT_FN(kRowAddDamageInterceptor, "player_damage", L"mainPlayer_C", L"addDamage", Declared);
 UE_FACT_FN(kRowIgnite, "player_damage", L"mainPlayer_C", L"ignite", Declared);
+UE_FACT_FN(kRowAddDamage, "player_damage", L"mainPlayer_C", L"addDamage", Declared);
+UE_FACT_FN(kRowPunch, "player_damage", L"mainPlayer_C", L"punch", Declared);
+UE_FACT_FN(kRowRagdollMode, "player_damage", L"mainPlayer_C", L"ragdollMode", Declared);
 const ue_wrap::facts::Function* const kImpactEntryRows[3] = {
     &kRowImpactDamage, &kRowImpactDamageCpp, &kRowImpactSquishCpp,
 };
@@ -109,7 +110,23 @@ bool OnAddDamage(void* self, void* params) {
     if (!localPawn) return false;
     if (self == localPawn) return coop::pvp::CancelLocalImpact(params, g_addDamageFn);
     coop::pvp::OnPuppetImpact(self, params, g_addDamageFn);
-    return true;
+    return false;
+}
+
+// One refusal of any of the four verbs on a puppet, counted in RefusedDamage and logged on a rate.
+void NoteRefused(const char* verb, void* puppet) {
+    const uint32_t n = ++g_verbCanceled;
+    if (n <= 5 || (n % 100) == 0)
+        UE_LOGI("player_damage: canceled %s on a peer's puppet %p (#%u) -- its owner computes its own damage", verb,
+                puppet, n);
+}
+
+sg::Verdict OnDamageVerbPre(const sg::Call& c) {
+    // IsPuppet alone: no session or local-pawn early-out in front of it, since the local pawn reads
+    // null for a whole death or travel window, and one call let through then burns for the session.
+    if (!c.object || !coop::players::Registry::Get().IsPuppet(c.object)) return sg::Verdict::Run;
+    NoteRefused("the damage verb", c.object);
+    return sg::Verdict::Cancel;
 }
 
 // These BP bodies also run through internal Blueprint calls, bypassing the
@@ -145,6 +162,160 @@ void InstallNativeStateGuards() {
     }
 }
 
+sg::Verdict OnIgnitePre(const sg::Call& c) {
+    // IsPuppet alone: no session or local-pawn early-out in front of it, since the local pawn reads
+    // null for a whole death or travel window, and one call let through then burns for the session.
+    if (!c.object || !coop::players::Registry::Get().IsPuppet(c.object))
+        return sg::Verdict::Run;
+    const uint32_t n = ++g_igniteCanceled;
+    if (n <= 5 || (n % 100) == 0)
+        UE_LOGI("player_damage: refused setting a peer's puppet %p alight (#%u) -- its fire is its owner's",
+                c.object, n);
+    return sg::Verdict::Cancel;
+}
+
+// The hit verbs. A creature's hit on a player is addDamage (damage, then a punch above 25) or punch (a
+// knock-down, then the damage); ragdollMode is the knock-down itself. Each is refused on a puppet like the
+// damage verb above, whatever the caller, a call the puppet makes on itself included: MTA locks a remote copy's
+// health and the damage handler restores it (reference/mtasa-blue/Client/mods/deathmatch/logic/CClientGame.cpp:4509).
+// Beside the refusal:
+//   - HOST, a cancelled addDamage or punch whose caller is a creature of a parked family is delivered to the
+//     puppet's peer, rebuilt from the call's parameters. A parked family's mirror makes no hit of its own, so
+//     this is the only one; any other caller, and a call routed through ProcessEvent (no caller object), is
+//     only refused. Source's delivery with MTA's ownership: Source's NPC runs and hits on the server
+//     (reference/source-sdk-2013/src/game/server/hl2/npc_BaseZombie.cpp:1267), MTA's player owns its health
+//     on its own client (reference/mtasa-blue/Client/mods/deathmatch/logic/CNetAPI.cpp:1189).
+//   - CLIENT, a call on this machine's own player whose caller is a parked creature's mirror, outside the
+//     delivery's own apply, is counted and said once per class: the brain-off leaked. A tripwire; it runs.
+constexpr int kAddDamageTag = 0x50444144;  // 'PDAD'
+constexpr int kPunchTag     = 0x50445055;  // 'PDPU'
+constexpr int kRagdollTag   = 0x50445247;  // 'PDRG'
+bool g_hitWatchesDone = false;
+std::atomic<uint32_t> g_delivered{0};
+std::atomic<uint32_t> g_mirrorHits{0};
+
+constexpr size_t kSeenMax = 16;
+struct SeenKey {
+    void*   cls  = nullptr;
+    uint8_t verb = 0;
+};
+SeenKey g_sentSeen[kSeenMax];     // (creature class, verb) pairs whose first delivery was said
+size_t  g_sentSeenCount = 0;
+void*   g_mirrorSeen[kSeenMax];   // classes whose mirror hit was said
+size_t  g_mirrorSeenCount = 0;
+
+// First time for this key? Records it; a full list says nothing more (the counters still count).
+bool FirstSent(void* cls, uint8_t verb) {
+    for (size_t i = 0; i < g_sentSeenCount; ++i)
+        if (g_sentSeen[i].cls == cls && g_sentSeen[i].verb == verb) return false;
+    if (g_sentSeenCount >= kSeenMax) return false;
+    g_sentSeen[g_sentSeenCount++] = SeenKey{cls, verb};
+    return true;
+}
+
+bool FirstMirror(void* cls) {
+    for (size_t i = 0; i < g_mirrorSeenCount; ++i)
+        if (g_mirrorSeen[i] == cls) return false;
+    if (g_mirrorSeenCount >= kSeenMax) return false;
+    g_mirrorSeen[g_mirrorSeenCount++] = cls;
+    return true;
+}
+
+// A parameter out of the call's frame, by its reflected offset; zero when the function has no such parameter.
+float ReadFloat(const sg::Call& c, R::ParamOffset& off) {
+    const int32_t o = off.Of(c.function);
+    float v = 0.f;
+    if (o >= 0) std::memcpy(&v, c.locals + o, sizeof(v));
+    return v;
+}
+
+void ReadVec(const sg::Call& c, R::ParamOffset& off, float (&out)[3]) {
+    const int32_t o = off.Of(c.function);
+    if (o >= 0) std::memcpy(out, c.locals + o, sizeof(out));
+}
+
+// The payload of an addDamage call on a puppet. The target is stamped by player_hit::Deliver.
+coop::net::PlayerHitPayload BuildAddDamage(const sg::Call& c) {
+    static R::ParamOffset sActor{L"actor"}, sDamage{L"damage"}, sImpact{L"impact"};
+    coop::net::PlayerHitPayload p{};
+    p.verb = coop::net::kPlayerHitVerbAddDamage;
+    p.damage = ReadFloat(c, sDamage);
+    ReadVec(c, sImpact, p.v0);
+    const int32_t o = sActor.Of(c.function);
+    void* actor = nullptr;
+    if (o >= 0) std::memcpy(&actor, c.locals + o, sizeof(actor));
+    // A null actor travels as 0. An actor with no element travels as the invalid id, which no mirror resolves, so
+    // the victim drops the hit rather than run the other branch of the Blueprint.
+    if (actor) p.sourceEid = coop::element::Registry::Get().EidForActor(actor);
+    return p;
+}
+
+// The payload of a punch call on a puppet.
+coop::net::PlayerHitPayload BuildPunch(const sg::Call& c) {
+    static R::ParamOffset sFullBody{L"fullBody"}, sBoneImp{L"boneImp"}, sBone{L"bn1"}, sDamage{L"damage"},
+        sDamageLoc{L"damageLocation"};
+    coop::net::PlayerHitPayload p{};
+    p.verb = coop::net::kPlayerHitVerbPunch;
+    p.damage = ReadFloat(c, sDamage);
+    ReadVec(c, sFullBody, p.v0);
+    ReadVec(c, sBoneImp, p.v1);
+    ReadVec(c, sDamageLoc, p.v2);
+    const int32_t o = sBone.Of(c.function);
+    if (o >= 0) {
+        R::FName bone{};
+        std::memcpy(&bone, c.locals + o, sizeof(bone));
+        p.bone = coop::player_hit::BoneIndex(R::ToString(bone));
+    }
+    return p;
+}
+
+// HOST: the cancelled hit's delivery. Game thread (a script-gate watch).
+void DeliverToOwner(const sg::Call& c, bool punch) {
+    auto* s = g_session.load(std::memory_order_acquire);
+    if (!s || !s->connected() || s->role() != coop::net::Role::Host) return;
+    if (!coop::creature_hit::IsDelivered(c.callerObject)) return;
+    const uint8_t slot = coop::players::Registry::Get().PeerIdOfActor(c.object);
+    if (slot == coop::players::kPeerIdHost || slot >= coop::players::kMaxPeers) return;
+    const coop::net::PlayerHitPayload p = punch ? BuildPunch(c) : BuildAddDamage(c);
+    if (!coop::player_hit::Deliver(slot, p)) return;   // not sent: not delivered (Deliver says and counts it)
+    ++g_delivered;
+    void* const cls = R::ClassOf(c.callerObject);
+    if (FirstSent(cls, p.verb)) {
+        const std::wstring caller = c.callerFunction ? R::ToString(R::NameOf(c.callerFunction)) : L"none";
+        UE_LOGI("[HIT] sent verb=%s slot=%u creature=%ls caller=%ls", punch ? "punch" : "addDamage",
+                static_cast<unsigned>(slot), R::ClassNameOf(c.callerObject).c_str(), caller.c_str());
+    }
+}
+
+// CLIENT: a hit on this machine's own player that a parked creature's mirror made. MTA's guard refuses a remote
+// player's duplicate damage event (reference/mtasa-blue/Client/mods/deathmatch/logic/CClientGame.cpp:4345-4377);
+// this only counts. A refusal here would hide a leaked brain-off instead of showing it, and the mark table fails open:
+// a mirror left unmarked would hit here and again through the delivery, and the count is what shows that double.
+void WatchMirrorHit(const sg::Call& c) {
+    if (!c.callerObject || coop::player_hit::InApply()) return;
+    auto* s = g_session.load(std::memory_order_acquire);
+    if (!s || !s->connected() || s->role() != coop::net::Role::Client) return;
+    if (!coop::players::Registry::Get().IsLocal(c.object)) return;
+    if (!coop::creature_hit::IsDelivered(c.callerObject)) return;
+    ++g_mirrorHits;
+    if (FirstMirror(R::ClassOf(c.callerObject)))
+        UE_LOGW("player_damage: a parked %ls mirror hit this player -- the brain-off leaked",
+                R::ClassNameOf(c.callerObject).c_str());
+}
+
+sg::Verdict OnHitVerbPre(const sg::Call& c) {
+    if (!c.object) return sg::Verdict::Run;
+    const bool ragdoll = c.tag == kRagdollTag;
+    const bool punch   = c.tag == kPunchTag;
+    if (!coop::players::Registry::Get().IsPuppet(c.object)) {
+        if (!ragdoll) WatchMirrorHit(c);
+        return sg::Verdict::Run;
+    }
+    NoteRefused(ragdoll ? "ragdollMode" : punch ? "punch" : "addDamage", c.object);
+    if (!ragdoll) DeliverToOwner(c, punch);
+    return sg::Verdict::Cancel;
+}
+
 }  // namespace
 
 void Install(coop::net::Session* session) {
@@ -153,6 +324,8 @@ void Install(coop::net::Session* session) {
 
 uint32_t RefusedDamage() { return g_verbCanceled.load(std::memory_order_relaxed); }
 uint32_t RefusedIgnites() { return g_igniteCanceled.load(std::memory_order_relaxed); }
+uint32_t DeliveredCount() { return g_delivered.load(std::memory_order_relaxed); }
+uint32_t MirrorHitCount() { return g_mirrorHits.load(std::memory_order_relaxed); }
 
 void Tick() {
     InstallNativeStateGuards();
@@ -162,6 +335,36 @@ void Tick() {
     g_localPawn.store(local, std::memory_order_release);
     coop::pvp::NoteBodies(local, coop::hand_item::LocalHandActor());
     coop::pvp::Tick();
+    g_localPawn.store(coop::players::Registry::Get().Local(), std::memory_order_release);
+    // The dmghazard probe's red: no refusal is watched, so a puppet takes damage and fire here, and
+    // nothing is delivered.
+    static const bool s_noRefusal =
+        coop::config::ResolveFlag(coop::config_registry::rows::player_damage_no_refusal);
+    if (s_noRefusal && (!g_damageWatchDone || !g_igniteWatchDone || !g_hitWatchesDone)) {
+        g_damageWatchDone = g_igniteWatchDone = g_hitWatchesDone = true;
+        UE_LOGW("player_damage: DRILL -- the damage, hit-verb and ignite refusals on a peer's puppet are OFF "
+                "(dev.player_damage_no_refusal); a puppet takes them here and no hit is delivered");
+    }
+    if (!g_damageWatchDone) {
+        g_damageWatchDone = true;
+        if (!sg::WatchName(kRowAddPlayerDamage, kDamageVerbTag, &OnDamageVerbPre, nullptr))
+            UE_LOGE("player_damage: the damage verb watch did not register -- a burning puppet damages "
+                    "this machine's player");
+    }
+    if (!g_igniteWatchDone) {
+        g_igniteWatchDone = true;
+        if (!sg::WatchName(kRowIgnite, kIgniteTag, &OnIgnitePre, nullptr))
+            UE_LOGE("player_damage: the ignite watch did not register -- a peer's puppet can burn here");
+    }
+    if (!g_hitWatchesDone) {
+        g_hitWatchesDone = true;
+        if (!sg::WatchName(kRowAddDamage, kAddDamageTag, &OnHitVerbPre, nullptr))
+            UE_LOGE("player_damage: the addDamage watch did not register -- a creature's hit runs on a puppet here");
+        if (!sg::WatchName(kRowPunch, kPunchTag, &OnHitVerbPre, nullptr))
+            UE_LOGE("player_damage: the punch watch did not register -- a creature's punch runs on a puppet here");
+        if (!sg::WatchName(kRowRagdollMode, kRagdollTag, &OnHitVerbPre, nullptr))
+            UE_LOGE("player_damage: the ragdollMode watch did not register -- a puppet can ragdoll here");
+    }
     if (g_impactInterceptorsDone) return;
     void* cls = ue_wrap::object_index::ClassByName(L"mainPlayer_C");
     if (!cls) return;
@@ -195,70 +398,9 @@ void Tick() {
     }
 }
 
-void OnWireDamage(const coop::net::PlayerDamagePayload& p) {
-    if (!ValidDamage(p.damage)) {
-        UE_LOGW("player_damage: dropping wire damage with invalid amount=%.3f", p.damage);
-        return;
-    }
-    const uint32_t targetEid = p.targetElementId;
-    const float damage = p.damage;
-    GT::Post([targetEid, damage] {
-        auto& reg = coop::players::Registry::Get();
-        const coop::element::ElementId localEid = reg.LocalPlayerElementId();
-        // Defense-in-depth: PlayerDamage is sent point-to-point to our slot, so it IS
-        // for us; the element check guards a future fan-out/relay-path bug. Apply on a
-        // match OR when our id isn't allocated yet (boot window); drop ONLY on a
-        // definite mismatch against a valid local id.
-        if (localEid != coop::element::kInvalidId && targetEid != localEid) {
-            UE_LOGW("player_damage: wire damage targetEid=%u != our localEid=%u -- dropping "
-                    "(not addressed to us)", targetEid, localEid);
-            return;
-        }
-        void* mp = reg.Local();
-        if (!mp || !R::IsLive(mp)) {
-            UE_LOGW("player_damage: wire damage but no live local player to apply to -- dropping");
-            return;
-        }
-        const bool possessed = (E::GetController(mp) != nullptr);
-        const bool isPup = reg.IsPuppet(mp);
-        float before = -1.f, after = -1.f;
-        ue_wrap::vitals::Read(ue_wrap::vitals::Field::Health, &before);
-        const bool ok = E::InvokeAddPlayerDamage(mp, damage);
-        ue_wrap::vitals::Read(ue_wrap::vitals::Field::Health, &after);
-        UE_LOGI("player_damage: applied %.1f to own player (targetEid=%u) -> ok=%d, "
-                "saveSlot.health %.2f -> %.2f [mp possessed=%d isPuppet=%d]",
-                damage, targetEid, ok ? 1 : 0, before, after, possessed ? 1 : 0, isPup ? 1 : 0);
-    });
-}
-
-void SendPlayerDamage(int ownerSlot, float damage) {
-    auto* s = g_session.load(std::memory_order_acquire);
-    if (!s) {
-        UE_LOGW("player_damage: SendPlayerDamage but session is unset");
-        return;
-    }
-    if (ownerSlot <= 0 || ownerSlot >= coop::players::kMaxPeers) {
-        UE_LOGW("player_damage: SendPlayerDamage invalid ownerSlot=%d", ownerSlot);
-        return;
-    }
-    if (!ValidDamage(damage)) {
-        UE_LOGW("player_damage: SendPlayerDamage invalid amount=%.3f", damage);
-        return;
-    }
-    auto& reg = coop::players::Registry::Get();
-    coop::element::Player* el = reg.GetPlayerElement(static_cast<uint8_t>(ownerSlot));
-    if (!el) {
-        UE_LOGW("player_damage: SendPlayerDamage slot=%d has no Player Element yet -- skipping "
-                "(peer not fully identified)", ownerSlot);
-        return;
-    }
-    coop::net::PlayerDamagePayload p{};
-    p.targetElementId = el->GetId();
-    p.damage = damage;
-    const bool sent = s->SendReliableToSlot(
-        ownerSlot, coop::net::ReliableKind::PlayerDamage, &p, sizeof(p), /*senderSlot=*/0);
-    UE_LOGI("player_damage: sent PlayerDamage(%.1f) to slot=%d (targetEid=%u) -> sent=%d",
-            damage, ownerSlot, p.targetElementId, sent ? 1 : 0);
+void SendPlayerDamage(int slot,float damage) {
+    coop::net::PlayerHitPayload p{};p.verb=coop::net::kPlayerHitVerbAddDamage;p.damage=damage;
+    coop::player_hit::Deliver(static_cast<uint8_t>(slot),p);
 }
 
 bool DebugForceHitPuppet(int ownerSlot, float damage) {
@@ -272,8 +414,10 @@ bool DebugForceHitPuppet(int ownerSlot, float damage) {
                 "-- cannot simulate a hit", ownerSlot);
         return false;
     }
-    SendPlayerDamage(ownerSlot, damage);
-    return true;
+    coop::net::PlayerHitPayload p{};
+    p.verb = coop::net::kPlayerHitVerbAddDamage;
+    p.damage = damage;
+    return coop::player_hit::Deliver(static_cast<uint8_t>(ownerSlot), p);
 }
 
 }  // namespace coop::player_damage

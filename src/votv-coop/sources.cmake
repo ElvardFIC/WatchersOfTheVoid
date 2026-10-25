@@ -46,6 +46,8 @@ set(VOTVCOOP_SOURCES
     src/ue_wrap/actors/container_openers.cpp
     src/ue_wrap/actors/container_view.cpp
     src/ue_wrap/actors/floppy_disc.cpp
+    src/ue_wrap/actors/sleepingbag.cpp
+    src/ue_wrap/actors/notebook.cpp
     src/ue_wrap/actors/hook.cpp
     src/ue_wrap/world/keyed_objects.cpp
     src/coop/items/hook_sync.cpp
@@ -75,7 +77,10 @@ set(VOTVCOOP_SOURCES
     src/ue_wrap/engine/engine_bones.cpp
     src/ue_wrap/engine/engine_component.cpp
     src/ue_wrap/engine/hit_result.cpp
+    src/ue_wrap/engine/engine_hurt_flash.cpp
+    src/ue_wrap/engine/screen_state.cpp
     src/ue_wrap/engine/engine_mainplayer.cpp
+    src/ue_wrap/engine/engine_player_verbs.cpp
     src/ue_wrap/engine/scs_rig.cpp
     src/ue_wrap/engine/engine_playerragdoll.cpp
     src/ue_wrap/engine/engine_ragdoll_skin.cpp
@@ -91,6 +96,8 @@ set(VOTVCOOP_SOURCES
     src/ue_wrap/world/jellyfish_path.cpp
     src/ue_wrap/world/bad_sun.cpp
     src/ue_wrap/world/red_sky.cpp
+    src/ue_wrap/world/explosion.cpp
+    src/ue_wrap/world/explosion_source.cpp
     src/ue_wrap/world/skysphere.cpp
     src/ue_wrap/world/sky_black_hole.cpp
     src/ue_wrap/world/ariral_ship.cpp
@@ -105,6 +112,7 @@ set(VOTVCOOP_SOURCES
     src/coop/interactables/grill_edits.cpp
     src/ue_wrap/devices/cargo_lift.cpp
     src/ue_wrap/actors/prop_fire.cpp
+    src/ue_wrap/actors/prop_ignite.cpp
     src/coop/props/prop_fire_sync.cpp
     src/coop/props/explosion_sync.cpp
     src/coop/props/explosion_prop_motion.cpp
@@ -162,6 +170,7 @@ set(VOTVCOOP_SOURCES
     src/ue_wrap/devices/passwordlock.cpp
     src/ue_wrap/core/trace.cpp
     src/ue_wrap/actors/fossilhound.cpp
+    src/ue_wrap/actors/fossilhound_presentation.cpp
     src/ue_wrap/actors/wisp.cpp
     src/ue_wrap/actors/swinger.cpp
     src/ue_wrap/actors/broom.cpp
@@ -192,6 +201,8 @@ set(VOTVCOOP_SOURCES
     src/ue_wrap/actors/food.cpp
     src/ue_wrap/actors/cooking_food.cpp
     src/ue_wrap/actors/kerfus.cpp
+    src/ue_wrap/actors/zombie.cpp
+    src/ue_wrap/actors/int_objects.cpp
     src/ue_wrap/world/votv_lib.cpp
     src/ue_wrap/world/economy.cpp
     src/ue_wrap/world/profile.cpp
@@ -203,8 +214,10 @@ set(VOTVCOOP_SOURCES
     src/ue_wrap/actors/prop_keys.cpp
     src/ue_wrap/actors/floor_bed.cpp
     src/ue_wrap/actors/prop_flags.cpp
+    src/ue_wrap/actors/prop_gather.cpp
     src/ue_wrap/actors/spawner_stamp.cpp
     src/ue_wrap/actors/prop_events.cpp
+    src/ue_wrap/actors/prop_use.cpp
     src/ue_wrap/actors/garbage_bag.cpp
     src/ue_wrap/actors/vitals.cpp
     src/ue_wrap/actors/effects.cpp
@@ -224,6 +237,11 @@ set(VOTVCOOP_SOURCES
     src/coop/player/model_folder.cpp
     src/coop/player/local_body.cpp
     src/coop/player/sit_pose.cpp
+    src/coop/props/prop_act_host.cpp
+    src/coop/props/prop_act_request.cpp
+    src/coop/props/prop_act_selftest.cpp
+    src/coop/props/prop_hold.cpp
+    src/coop/props/remover_request.cpp
     src/coop/props/remote_prop.cpp
     src/coop/props/unresolved_pose_ledger.cpp
     src/coop/props/remote_prop_convert.cpp
@@ -240,6 +258,8 @@ set(VOTVCOOP_SOURCES
     src/coop/player/nick_color.cpp
     src/coop/player/nickname_arbiter.cpp
     src/coop/player/hand_item.cpp
+    src/coop/player/hand_history.cpp
+    src/coop/player/hand_history_selftest.cpp
     src/coop/player/hand_item_pose.cpp
     src/coop/player/sleep_rest.cpp
     src/coop/player/hand_fire_sync.cpp
@@ -250,6 +270,7 @@ set(VOTVCOOP_SOURCES
     src/coop/comms/chat_bubbles.cpp
     src/coop/comms/peer_action_feed.cpp
     src/coop/dispatch/event_feed.cpp
+    src/coop/dispatch/event_dispatch_economy.cpp
     src/coop/dispatch/event_dispatch_entity.cpp
     src/coop/dispatch/event_dispatch_intent.cpp
     src/coop/dispatch/event_dispatch_signal.cpp
@@ -277,6 +298,7 @@ set(VOTVCOOP_SOURCES
     src/coop/creatures/served_player.cpp
     src/coop/interactables/keypad_sync.cpp
     src/coop/interactables/keypad_verbs.cpp
+    src/coop/interactables/sleepingbag_sync.cpp
     src/coop/world/time_sync.cpp
     src/coop/world/day_edge.cpp
     src/coop/world/sky_sync.cpp
@@ -289,12 +311,17 @@ set(VOTVCOOP_SOURCES
     src/coop/world/coord_tower_ops.cpp
     src/coop/world/coord_tower_rows.cpp
     src/coop/interactables/atv_sync.cpp
+    src/coop/interactables/atv_stream_gates.cpp
+    src/coop/interactables/atv_authority.cpp
+    src/coop/interactables/atv_body.cpp
+    src/coop/interactables/atv_index.cpp
     src/coop/interactables/atv_runtime_mirror.cpp
     src/coop/interactables/laptop_tab.cpp
     src/coop/interactables/atv_spawn_park.cpp
     src/coop/interactables/atv_condition_sync.cpp
     src/coop/interactables/atv_corrector.cpp
     src/coop/interactables/atv_hit_guard.cpp
+    src/coop/interactables/atv_damage_gate.cpp
     src/coop/interactables/drone_sync.cpp
     src/coop/items/coingun_sync.cpp
     src/coop/items/coingun_arbiter.cpp
@@ -304,6 +331,17 @@ set(VOTVCOOP_SOURCES
     src/coop/items/order_queue_sync.cpp
     src/coop/world/firefly_sync.cpp
     src/coop/world/spawn_authority.cpp
+    src/coop/world/explosion_sync.cpp
+    src/coop/world/explosion_request.cpp
+    src/coop/world/explosion_request_atv.cpp
+    src/coop/world/explosion_request_host.cpp
+    src/coop/world/explosion_request_client.cpp
+    src/coop/world/salt_rocket_flight.cpp
+    src/coop/world/salt_rocket_ignite.cpp
+    src/coop/world/salt_rocket_ignite_host.cpp
+    src/coop/world/explosion_recipe.cpp
+    src/coop/world/explosion_recipe_selftest.cpp
+    src/coop/world/explosion_parking.cpp
     src/coop/world/event_cue_sync.cpp
     src/coop/world/world_sound_sync.cpp
     src/coop/world/event_fire_sync.cpp
@@ -352,8 +390,11 @@ set(VOTVCOOP_SOURCES
     src/coop/props/grab_observer.cpp
     src/coop/player/item_activate.cpp
     src/coop/player/player_damage.cpp
+    src/coop/player/player_hit.cpp
+    src/coop/player/hit_judge.cpp
     src/coop/player/ragdoll_gate.cpp
     src/coop/player/death_revive.cpp
+    src/coop/player/revive_protection.cpp
     src/coop/player/run_end_travel.cpp
     src/coop/player/skin_preview.cpp
     src/coop/player/flashlight_click_sound.cpp
@@ -368,6 +409,10 @@ set(VOTVCOOP_SOURCES
     src/ui/join_curtain.cpp
     src/coop/creatures/npc_adoption.cpp
     src/coop/creatures/npc_mirror.cpp
+    src/coop/creatures/npc_mirror_brain.cpp
+    src/coop/creatures/npc_mirror_brain_table.cpp
+    src/coop/creatures/creature_hit.cpp
+    src/coop/creatures/creature_hit_intent.cpp
     src/coop/creatures/npc_pose_drive.cpp
     src/coop/creatures/npc_pose_host.cpp
     src/coop/creatures/npc_sync.cpp
@@ -396,7 +441,6 @@ set(VOTVCOOP_SOURCES
     src/coop/props/prop_element_tracker.cpp
     src/coop/props/prop_tracked_keys.cpp
     src/coop/props/prop_key_index.cpp
-    src/coop/props/remover_request.cpp
     src/coop/props/prop_destroy_seam.cpp
     src/coop/props/prop_lifecycle.cpp
     src/coop/props/prop_container_extract.cpp
@@ -411,6 +455,7 @@ set(VOTVCOOP_SOURCES
     src/coop/props/prop_spawn_authoring.cpp
     src/coop/props/prop_snapshot.cpp
     src/coop/props/prop_save_data.cpp
+    src/coop/props/prop_record_gates.cpp
     src/coop/props/prop_stick_sync.cpp
     src/coop/props/prop_synth_key.cpp
     src/coop/props/prop_fresh_spawn.cpp
@@ -418,6 +463,7 @@ set(VOTVCOOP_SOURCES
     src/coop/props/remote_prop_spawn.cpp
     src/coop/props/join_membership_sweep.cpp
     src/coop/session/world_load_episode.cpp
+    src/coop/session/save_replay_watch.cpp
     src/coop/interactables/garbage_sync.cpp
     src/coop/props/host_spawn_watcher.cpp
     src/coop/props/trash_channel.cpp
@@ -471,6 +517,7 @@ set(VOTVCOOP_SOURCES
     src/coop/element/intent_authority.cpp
     src/coop/element/world_actor.cpp
     src/coop/element/quiescence_drain.cpp
+    src/coop/element/quiescence_drain_selftest.cpp
     src/coop/element/identity_create.cpp
     src/coop/element/identity_destroy.cpp
     src/coop/element/portable_identity.cpp
@@ -534,6 +581,7 @@ set(VOTVCOOP_SOURCES
     src/coop/session/local_grants.cpp
     src/coop/session/grants_sync.cpp
     src/coop/session/net_pump.cpp
+    src/coop/session/net_pump_world_ready.cpp
     src/coop/player/puppet_drive.cpp
     src/coop/props/registry_reaper.cpp
     src/coop/session/pause_guard.cpp
@@ -541,6 +589,7 @@ set(VOTVCOOP_SOURCES
     src/coop/session/world_ready_answer.cpp
     src/coop/player/local_streams.cpp
     src/coop/interactables/device_occupancy.cpp
+    src/coop/interactables/notebook_sync.cpp
     src/coop/interactables/console_state_sync.cpp
     src/coop/interactables/desk_visual_sync.cpp
     src/coop/interactables/desk_cursor_sync.cpp

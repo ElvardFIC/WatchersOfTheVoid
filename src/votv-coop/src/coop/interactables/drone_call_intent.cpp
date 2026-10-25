@@ -7,6 +7,8 @@
 #include "coop/net/session.h"
 #include "coop/props/active_drive.h"
 
+#include "ue_wrap/core/cached_obj_ref.h"
+#include "ue_wrap/core/game_thread.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/devices/drone.h"
@@ -15,6 +17,8 @@
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/script_gate.h"
 #include "ue_wrap/devices/drone_console.h"
+#include "ue_wrap/devices/drone.h"
+#include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
 #include <cstdint>
@@ -27,6 +31,7 @@ namespace coop::drone_call_intent {
 namespace {
 
 namespace D  = ue_wrap::drone_console;
+namespace GT = ue_wrap::game_thread;
 namespace R  = ue_wrap::reflection;
 namespace sg = ue_wrap::script_gate;
 
@@ -136,6 +141,17 @@ bool Execute(coop::net::Session& s, const coop::net::DroneFlyIntentPayload& p, u
                 static_cast<unsigned>(slot), nc);
         return true;
     }
+    if (p.verb == coop::net::drone_verb::kLeaveTimer) {
+        ue_wrap::CachedObjRef drone,target;drone.Set(ue_wrap::drone::Find());target.Set(console);
+        bool leave=false;
+        if(!drone.Get() || !ue_wrap::drone::ReadDeparturePreference(drone.Raw(),leave))return false;
+        if(!Current(epoch,occupant,slot) || !drone.Get() || !target.Get())return true;
+        const bool written=ue_wrap::drone::WriteDeparturePreference(drone.Raw(),!leave);
+        if(!Current(epoch,occupant,slot) || !target.Get())return true;
+        if(!written)return false;
+        D::PlayChangeCue(target.Raw());
+        return true;
+    }
     if (p.verb == 1) {
         // The native timer face is usable with the lid closed. It changes only this field;
         // the host's existing timer/flight graph owns when the drone actually departs.
@@ -183,12 +199,7 @@ sg::Verdict OnActionPre(const sg::Call& call) {
     if (!departure && !D::IsCursorOnKeyboard(call.object)) return sg::Verdict::Run;
 
     coop::net::DroneFlyIntentPayload p{};
-    p.verb = departure ? 1 : 0;
-    if (departure) {
-        bool leave = false;
-        if (!ue_wrap::drone::ReadDeparturePreference(ue_wrap::drone::Find(), leave)) return sg::Verdict::Cancel;
-        p.leaveAfter5min = !leave;
-    }
+    p.verb = departure ? coop::net::drone_verb::kLeaveTimer : coop::net::drone_verb::kCall;
     World();
     if (g_pending[0].size() < kMaxPending) g_pending[0].push_back({p, coop::active_drive::NowMs()});
     else {
@@ -251,7 +262,7 @@ void Tick(coop::net::Session& session) {
 
 void OnDroneFlyIntent(coop::net::Session& session, const coop::net::DroneFlyIntentPayload& payload,
                       uint8_t senderSlot) {
-    if (session.role() != coop::net::Role::Host || !session.connected() || payload.verb > 1 ||
+    if (session.role() != coop::net::Role::Host || !session.connected() || payload.verb > coop::net::drone_verb::kMax ||
         (payload.verb == 1 && payload.leaveAfter5min > 1)) return;
     World();
     if (senderSlot < 1 || senderSlot >= coop::net::kMaxPeers) return;

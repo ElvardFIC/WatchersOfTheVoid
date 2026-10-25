@@ -12,12 +12,14 @@
 
 #include <cstdint>
 
-namespace coop::net { class Session; struct PlayerDamagePayload; }
+namespace coop::net { class Session; }
 
 namespace coop::player_damage {
 
-// Store the session pointer for SendPlayerDamage; idempotent, nullptr disables sends. Game thread.
+// Store the session pointer the refusals read their role from; idempotent, nullptr disables
+// them. Game thread.
 void Install(coop::net::Session* session);
+void SendPlayerDamage(int ownerSlot,float damage);
 
 // Per tick, game thread: once mainPlayer_C is loaded, resolve its three impact entries and register
 // the non-local-body PRE cancel, settled on that first attempt. Also installs
@@ -25,24 +27,23 @@ void Install(coop::net::Session* session);
 // internal Blueprint calls as well. Called from subsystems::TickGameplay.
 void Tick();
 
-// The refusals so far on this machine: the damage verb and ignite refused on a peer's puppet. What
-// the dmghazard probe judges by. Any thread.
+// The refusals so far on this machine: the four verbs refused on a peer's puppet (all four in one
+// count), and ignite. What the dmghazard probe judges by. Any thread.
 uint32_t RefusedDamage();
 uint32_t RefusedIgnites();
 
-// Owner side: validate the payload, verify on the game thread that it addresses this peer
-// (targetElementId is our Player Element id) and run "Add Player Damage" on our own possessed
-// mainPlayer_C, so our armour and inventory BP mitigate the hit. The host-only trust gate is
-// event_feed's, before this.
-void OnWireDamage(const coop::net::PlayerDamagePayload& p);
+// [dev], for the drill alone. The hits delivered to a peer: every call of player_hit::Deliver this
+// watch made. Any thread.
+uint32_t DeliveredCount();
 
-// Host side: send a PlayerDamage event to peer `ownerSlot`, targetElementId stamped from that
-// slot's Player Element. No-op (logged) if the session is unset, the slot invalid or without a
-// Player Element, or the amount non-finite or out of range. Game thread.
-void SendPlayerDamage(int ownerSlot, float damage);
+// [dev], for the drill alone. On a client, the calls of addDamage or punch on this machine's own player
+// whose caller was a creature of a parked family and that player_hit's apply did not make: a mirror
+// that still hits. A tripwire; the call runs. Any thread.
+uint32_t MirrorHitCount();
 
-// Test entry (host): confirm slot `ownerSlot` has a puppet, then SendPlayerDamage; true if a send
-// was attempted. Drives the relay without an enemy. Game thread.
+// Test entry (host): confirm slot `ownerSlot` has a puppet, then deliver an addDamage of `damage`
+// with no source to that peer. True if the hit was sent (player_hit::Deliver's result). Drives the relay without a
+// creature. Game thread.
 bool DebugForceHitPuppet(int ownerSlot, float damage);
 
 }  // namespace coop::player_damage

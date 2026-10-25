@@ -57,7 +57,8 @@ inline Lane LaneForKind(ReliableKind k) {
     case ReliableKind::TeleportClient: return Lane::High;
     case ReliableKind::RestoreVitals:  return Lane::High;
     case ReliableKind::ItemActivate:   return Lane::High;
-    case ReliableKind::PlayerDamage:   return Lane::High;  // combat event -- prioritize
+    case ReliableKind::PlayerHit:      return Lane::High;  // combat event -- prioritize
+    case ReliableKind::ExplosionSpawn: return Lane::High;  // carries a victim's damage; MTA's packet is high priority
     // Spawn and Destroy share a lane: GNS orders delivery within a lane, not across lanes, and a
     // destroy overtaking its spawn under backpressure leaves a phantom actor.
     case ReliableKind::PropSpawn:      return Lane::Bulk;
@@ -88,6 +89,9 @@ inline Lane LaneForKind(ReliableKind k) {
     // later (a keyed destroy on Bulk), and in-lane ordering makes the host author the spawn first.
     case ReliableKind::ReelEjectIntent: return Lane::Bulk;
     case ReliableKind::PropPlacementResult: return Lane::Bulk;
+    // A client's press, on the lane of its other prop intents: ordered against that client's own bulk
+    // sends only; the host's birth and destroy it causes travel the other way and are not ordered by it.
+    case ReliableKind::SleepingbagIntent: return Lane::Bulk;
     case ReliableKind::EntitySpawn:    return Lane::Bulk;
     case ReliableKind::EntityDestroy:  return Lane::Bulk;
     // A creature's event count rides its lifecycle lane, so a count is ordered after its spawn and before its
@@ -120,11 +124,13 @@ inline Lane LaneForKind(ReliableKind k) {
     // Pinned, so a single-kind lane move cannot split them.
     case ReliableKind::PropStickState: return Lane::Normal;
     case ReliableKind::PropRelease:    return Lane::Normal;
-    // The four ATV kinds are order-paired: a release or destroy overtaking the last pose would
-    // re-enable physics or tear down a mirror mid-update, and a runtime-spawned ATV must spawn
-    // before its first pose. Pinned together.
+    // The ATV kinds are order-paired: a destroy overtaking the last pose would tear down a mirror
+    // mid-update, an announce must reach a peer before its first pose, and the host must meet a
+    // client's sits, takeovers and stream in the order it made them. Pinned together; none is relayed.
     case ReliableKind::AtvState:       return Lane::Normal;
-    case ReliableKind::AtvRelease:     return Lane::Normal;
+    case ReliableKind::AtvSeat:        return Lane::Normal;
+    case ReliableKind::AtvTakeover:    return Lane::Normal;
+    case ReliableKind::AtvAnswer:      return Lane::Normal;
     case ReliableKind::AtvSpawn:       return Lane::Normal;
     case ReliableKind::AtvDestroy:     return Lane::Normal;
     // A service rides the ATV family's lane: it must not overtake the AtvState that made its
@@ -141,6 +147,8 @@ inline Lane LaneForKind(ReliableKind k) {
     case ReliableKind::CordIntent:       return Lane::Normal;
     case ReliableKind::PropSupport:      return Lane::Normal;
     case ReliableKind::ServicePanel:     return Lane::Normal;
+    // The set's edge rides behind the AtvSpawns it counts: FIFO on this lane is what makes the count mean them.
+    case ReliableKind::AtvSetComplete: return Lane::Normal;
     // DeskState, DeskInput and DeskScanEvent are order-coupled (adopt before deltas, charge before
     // scan); pinned together.
     case ReliableKind::DeskState:      return Lane::Normal;
@@ -259,6 +267,34 @@ inline Lane LaneForKind(ReliableKind k) {
     case ReliableKind::FoodBite:          return Lane::Bulk;
     case ReliableKind::HandTaken:         return Lane::Normal;
     case ReliableKind::AtvRadio:          return Lane::Normal;
+    // A remover press and a creature hit reach the host in the order their client made them; the remover's answer
+    // follows the host's serve of it. Not relayable: a request goes to the host alone. The default, by decision.
+    case ReliableKind::RemoverRequest:    return Lane::Normal;
+    case ReliableKind::RemoverResult:     return Lane::Normal;
+    case ReliableKind::CreatureHitIntent: return Lane::Normal;
+    // Order-paired: a blast's request is judged after its own shot, so the two share one lane; the judges also read the
+    // hand and seat states their lanes apply, and Normal keeps them ordered with those. MTA sends both at high
+    // priority (reference/mtasa-blue/Client/mods/deathmatch/logic/CClientGame.cpp:5403, :5501). A light on a salt rocket
+    // is judged against the sender's hand states, which ride Normal.
+    case ReliableKind::ProjectileFired:   return Lane::Normal;
+    case ReliableKind::ExplosionRequest:  return Lane::Normal;
+    case ReliableKind::AtvExplodeRequest: return Lane::Normal;
+    case ReliableKind::PropIgniteIntent:  return Lane::Normal;
+    // A take or use: the request and its reply ride Normal; the commit rides PropDestroy's lane (Bulk), where PropDropIntent
+    // is order-paired with it, so the item's drop cannot overtake it. The next request (Normal) can reach the host before this
+    // commit, so the host waits on the slot's own reservation; MTA sends both as one packet id (CVehicleInOutPacket.h:27).
+    case ReliableKind::PropActRequest:    return Lane::Normal;
+    case ReliableKind::PropActReply:      return Lane::Normal;
+    case ReliableKind::PropActCommit:     return Lane::Bulk;
+
+    // The camera kinds are ordered against nothing else and not relayable. The default, by decision.
+    case ReliableKind::CameraActiveState:  return Lane::Normal;
+    case ReliableKind::CameraLightState:   return Lane::Normal;
+    case ReliableKind::CameraToggleIntent: return Lane::Normal;
+    // DeviceClaim's lane (Normal, the default) by an explicit case: a tab never overtakes its claim, nor the release
+    // a leaving holder's last tab.
+    case ReliableKind::LaptopTabReport: return Lane::Normal;
+    case ReliableKind::LaptopTabState:  return Lane::Normal;
     default:                           return Lane::Normal;
     }
 }
@@ -287,8 +323,6 @@ constexpr bool IsClientRelayableReliableKind(ReliableKind k) {
     case ReliableKind::ApplianceState:    // symmetric
     case ReliableKind::OvenRepairState:   // symmetric, one way
     case ReliableKind::LockerDoorState:   // symmetric
-    case ReliableKind::AtvState:          // occupant- or grabber-authoritative
-    case ReliableKind::AtvRelease:        // the grabber's release edge
     // DeskState is not relayable: adopt-only, host to joiner; live desk input rides DeskInput.
     case ReliableKind::DeskInput:         // presser-authored deltas
     case ReliableKind::DeskScanEvent:     // presser-authored; every mirror replays the visual

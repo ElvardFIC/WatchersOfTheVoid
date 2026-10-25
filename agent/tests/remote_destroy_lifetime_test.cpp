@@ -101,3 +101,11 @@ int main(){
  Reset();coop::remote_prop::DestroyEchoSuppressed(&objects[2]);CHECK(calls==1&&marks==1&&clears==1);
  std::puts("PASS remote destroy: native success, listener/resolve/drive/release/unpin identity changes, world/session replacement, recursion, listener registration and load-tail preservation");
 }
+
+namespace coop::element {
+Registry::Registry()=default;
+Registry::~Registry()=default;
+Registry& Registry::Get(){static Registry registry;return registry;}
+ElementId Registry::EidForActor(void*)const{return kInvalidId;}
+}
+namespace ue_wrap::prop {std::wstring GetInteractableKeyString(void*){return L"rifle";}}

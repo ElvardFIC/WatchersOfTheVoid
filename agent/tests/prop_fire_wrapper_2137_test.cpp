@@ -69,3 +69,8 @@ int main(){
  puts("PASS actual fire wrapper/ParamFrame: component creation, fuel refresh, extinguish, bounds, binding/dispatch failures and cancellation");
 }
 #endif
+
+// Reflection names used by ParamFrame missing-field diagnostics.
+namespace ue_wrap::reflection {
+std::wstring ToString(const FName&){return L"fixture_function";}
+}

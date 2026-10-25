@@ -122,3 +122,9 @@ int main(){using namespace test;namespace C=ue_wrap::cord;
  }
  puts("PASS real cord wrapper/ParamFrame: native length boundary, argument values, occupancy and callback lifetime");
 }
+
+// Reflection names used by ParamFrame missing-field diagnostics.
+namespace ue_wrap::reflection {
+std::wstring ToString(const FName&){return L"fixture_function";}
+const FName& NameOf(void*){static const FName name{};return name;}
+}

@@ -70,6 +70,9 @@ public:
     // Tear down the puppet (DestroyActor on the engine actor) and its nameplate. Called on peer
     // disconnect; the next remote pose re-spawns a fresh puppet through the pump's auto-spawn path.
     void Destroy();
+    // Ends a hurt flash without a restore, its saved originals let go (their pins released). Destroy runs it, and the
+    // drive runs it for a slot whose puppet is no longer valid, so a body gone mid-flash never keeps a material rooted.
+    void ReleaseHurtFlash();
 
     // An absolute position only (a teleport, no sweep), for the harness; the network path is
     // SetTargetPose and Tick.
@@ -94,6 +97,10 @@ public:
     // Positions a puppet-held item at the hand, since the puppet's own tick does not drive it. Game
     // thread.
     ue_wrap::FVector GetSyncedAimDirection() const;
+    // The same unit forward vector from the NEWEST streamed pose (the target the interpolation is heading to: the last
+    // packet's yaw, headYawDelta and pitch), not the interpolated one, which trails it by the interpolation window.
+    // What a judge of a swing reads: the sender's aim as the stream last said it. Game thread.
+    ue_wrap::FVector GetLatestAimDirection() const;
     // The same aim as a rotator (pitch, yaw, no roll), for a caller that wants the angles.
     ue_wrap::FRotator GetSyncedAimRotation() const { return {curPitch_, curYaw_ + curHeadYawDelta_, 0.f}; }
 
@@ -104,11 +111,11 @@ public:
     void SetNickname(std::wstring name);
     const std::wstring& GetNickname() const { return nickname_; }
 
-    // Display-only vitals, each a [0,1] fraction streamed in every PoseSnapshot (health over
-    // maxHealth; food and sleep over kVitalScalarMax). Set from SetTargetPose; the nameplate reads
-    // GetHealth for its bar. They never touch a saveSlot, since a puppet write would corrupt the
-    // local player's persisted health. SetVitals also edge-detects a health decrease and arms the
-    // hurt flash. Game thread only.
+    // The streamed vitals, each a [0,1] fraction from every PoseSnapshot (health over maxHealth;
+    // food and sleep over kVitalScalarMax). Set from SetTargetPose; the nameplate reads GetHealth
+    // for its bar, and the host's hit judge refuses a swing when it is 0. They never touch a
+    // saveSlot, since a puppet write would corrupt the local player's persisted health. SetVitals
+    // also edge-detects a health decrease and arms the hurt flash. Game thread only.
     void SetVitals(float health01, float food01, float sleep01);
     float GetHealth() const { return health_; }
     float GetFood() const { return food_; }
@@ -214,7 +221,8 @@ private:
     static constexpr uint64_t kHurtFlashMs = 500;     // red for about half a second per hit
     static constexpr float    kHurtEpsilon = 0.006f;  // over one wire quantisation step (1/255), so dequantisation jitter is ignored
     // The puppet's original materials on both visible meshes, saved on the flash's rising edge
-    // (the engine's hurt material replaces them) and restored on the falling edge.
+    // (the engine's hurt material replaces them) and restored on the falling edge; a run-time one
+    // is pinned against collection while it is here (ue_wrap/core/types.h SavedMaterial).
     std::vector<ue_wrap::SavedMaterial> hurtSavedMaterials_;
 
     // The interpolation state, game thread only. cur* is what was last applied to the engine,

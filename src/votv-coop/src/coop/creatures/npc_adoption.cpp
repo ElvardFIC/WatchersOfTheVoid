@@ -9,6 +9,7 @@
 #include "coop/element/identity_create.h"   // the single NPC mirror create funnel (Inc A)
 #include "coop/net/session.h"
 #include "coop/creatures/npc_mirror.h"
+#include "coop/creatures/npc_mirror_brain.h"  // PrepareBirth / SetUpPresentation: a parked family's twin has its brain off
 #include "coop/creatures/npc_sync.h"
 #include "coop/world/creature_event_relay.h"  // OnMirrorBound: the host's event count for a new mirror
 #include "coop/props/remote_prop_spawn.h"  // HasLoadTailQuiesced -- shared save-load-tail quiescence signal
@@ -81,6 +82,10 @@ bool BindAsMirror(uint32_t eid, void* obj, const std::wstring& classW) {
     // The twin's BeginPlay ran as the client's own creature, so its setEvent(true) is registered: the relay
     // retracts it and applies the host's count.
     coop::creature_event_relay::OnMirrorBound(static_cast<coop::element::ElementId>(eid), obj);
+    // A twin of a parked family is a mirror from here on: marked, so its armed timers and resumes fire into refused
+    // entries (its BeginPlay ran as the client's own creature), and given the presentation that BeginPlay set up.
+    coop::npc_mirror_brain::PrepareBirth(obj);
+    coop::npc_mirror_brain::SetUpPresentation(obj, coop::npc_mirror_brain::Origin::Adopted);
     // THOROUGH PARK: stop actor + CMC ticks AND neutralize the kerfur's looping AI timers
     // (timer_face/timer_kerf/checkDoor survive a tick-disable). Now host-driven, zero local AI.
     ue_wrap::puppet::DisableCharacterTicks(obj);
@@ -273,9 +278,10 @@ void OnSnapshotComplete() {
 void OnClientWorldReady() {
     UE_ASSERT_GAME_THREAD("npc_adoption::OnClientWorldReady");
     // A fresh connect replay is about to deliver this world's EntitySpawns. First DROP stale
-    // dead-actor mirrors from the prior world (a save-transfer join does TWO level loads; a mirror
-    // bound in world-1 survives the swap as a dangling Element and would block world-2 from re-
-    // mirroring/re-adopting the SAME host eid -- see npc_mirror::PruneDeadClientMirrors). Then drop
+    // dead-actor mirrors from the prior world (a world gets one save replay, before its announce; a
+    // mirror bound in a world since left survives the swap as a dangling Element and would block the
+    // new world from re-mirroring/re-adopting the SAME host eid -- see
+    // npc_mirror::PruneDeadClientMirrors). Then drop
     // any stale pending from a prior world and re-arm the latches so the new world re-adopts +
     // re-sweeps.
     coop::npc_mirror::PruneDeadClientMirrors();

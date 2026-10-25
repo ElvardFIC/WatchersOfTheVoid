@@ -59,6 +59,13 @@ uint64_t g_nextSayMs[coop::net::kMaxPeers] = {};
 // A refusal is answered every time and said at most every kSayEveryMs a sender, the ones between counted.
 uint64_t g_nextRefuseSayMs[coop::net::kMaxPeers] = {};
 uint32_t g_refusedQuiet[coop::net::kMaxPeers] = {};
+constexpr uint64_t kProgressIntervalMs = 100;
+bool g_publishingProgress = false;
+uint32_t g_progressSeq = 0;
+uint64_t g_nextProgressMs = 0;
+int g_mirrorSlot = -1;  // the pinger whose scan this desk shows: p.pinger of the packet that began it
+uint32_t g_mirrorSeq = 0;
+bool g_mirrorActive = false;
 
 uint64_t NowMs() {
     using namespace std::chrono;
@@ -80,6 +87,15 @@ void Send(coop::net::Session* s, int slot, uint8_t op, uint32_t seq, uint8_t rea
             g_pendingReplies[slot].push_back({p, NowMs()});
         else
             UE_LOGE("desk_ping: HOST could not queue reply op=%u seq=%u to slot=%d", op, seq, slot);
+    }
+}
+
+void BroadcastProgress(coop::net::Session* s, const coop::net::DeskPingVerdictPayload& p, int excludeSlot = -1) {
+    if (!s) return;
+    if (s->role() == Role::Client) {
+        s->SendReliableToSlot(0, coop::net::ReliableKind::DeskPingVerdict, &p, static_cast<int>(sizeof(p)));
+    } else if (s->role() == Role::Host) {
+        s->SendReliable(coop::net::ReliableKind::DeskPingVerdict, &p, static_cast<int>(sizeof(p)), excludeSlot);
     }
 }
 
@@ -429,13 +445,55 @@ void Register() {
             g_live[kWatchSound], g_live[kWatchInsta]);
 }
 
+// ---- the mirrored scan --------------------------------------------------------------------------------------------
+
+// The four fields go into the desk only while its own machine is idle: a scan of this peer's own, or the verdict the
+// host primed for a client, owns them while coord_isPing is set, and the Blueprint's reset ends it.
+void WriteProgressIdle(const DP::Progress& value) {
+    void* desk = CD::Instance();
+    bool pinging = false;
+    if (desk && DP::ReadPinging(desk, pinging) && !pinging) DP::WriteProgress(desk, value);
+}
+
+// The scan this peer's desk shows is `p`'s (active), or none (its ending). The Blueprint writes none of the four fields
+// while coord_isPing is clear, so one write per packet holds until the next. A write refused for a running machine
+// leaves the state taken: a later active packet writes, and an ending leaves the zero to the Blueprint's own reset.
+void TakeProgress(const coop::net::DeskPingVerdictPayload& p, bool active) {
+    g_mirrorSlot = active ? static_cast<int>(p.pinger) : -1;
+    g_mirrorSeq = p.seq;
+    g_mirrorActive = active;
+    if (!active) ++g_counts.mirrorEnded;
+    WriteProgressIdle(active ? DP::Progress{p.progressStage, p.progressOuter, p.progressInner, p.progressPing}
+                             : DP::Progress{});
+}
+
+// A client's progress on the host: stamped with its slot, taken when that slot holds the desk and no other pinger's
+// scan is mirrored, and relayed to the other clients.
+void HostTakeProgress(coop::net::Session& session, const coop::net::DeskPingVerdictPayload& sent, int slot) {
+    coop::net::DeskPingVerdictPayload p = sent;
+    p.pinger = static_cast<uint8_t>(slot);  // whoever sent it, never what the sender's byte says
+    const bool active = p.reason == PV::kProgressActive;
+    // The desk's holder is the authority for whose scan the desk shows.
+    const bool holds = coop::device_occupancy::HolderOf(L"desk") == p.pinger;
+    const bool valid = !active || (holds && p.progressStage >= 0 && p.progressStage <= 3 &&
+        std::isfinite(p.progressOuter) && std::isfinite(p.progressInner) && std::isfinite(p.progressPing) &&
+        p.progressOuter >= 0.f && p.progressOuter <= 1.f && p.progressInner >= 0.f && p.progressInner <= 1.f &&
+        p.progressPing >= 0.f && p.progressPing <= 1.f);
+    if (!valid || !(active ? holds : (g_mirrorSlot == slot && g_mirrorSeq == p.seq))) return;
+    if (active && g_mirrorSlot != -1 && g_mirrorSlot != slot) {
+        ++g_counts.mirrorRefused;  // the clients' own test: one scan at a time
+        return;
+    }
+    TakeProgress(p, active);
+    BroadcastProgress(&session, p, slot);
+}
+
 }  // namespace
 
 void Install(coop::net::Session* session) { g_session.store(session, std::memory_order_release); }
 
-void Tick() {
-    Register();
-    auto* s = g_session.load(std::memory_order_acquire);
+void FlushPendingVerdicts() {
+    auto* s = g_session.load();
     if (!s || !s->running() || !s->connected()) {
         g_pendingClient.clear();
         for (auto& q : g_pendingReplies) q.clear();
@@ -475,11 +533,72 @@ void Tick() {
     }
 }
 
+void Tick() {
+    FlushPendingVerdicts();
+    Register();
+    auto* s = g_session.load(std::memory_order_acquire);
+    if (!s || !s->running() || !s->connected()) return;
+
+    void* desk = CD::Instance();
+    bool pinging = false;
+    // Only this peer's own scan is published. A mirrored one is someone else's, and on the host so is the machine it
+    // primed for a client's verdict, which desk_input_sync attributes to that client from its rising edge to its
+    // falling one.
+    const bool own = s->role() != Role::Host || coop::desk_input_sync::PingActiveSlot() == 0;
+    const bool reading = desk && own && !g_mirrorActive && DP::ReadPinging(desk, pinging);
+    const uint64_t now = NowMs();
+    if (reading && pinging) {
+        if (!g_publishingProgress) {
+            g_publishingProgress = true;
+            if (++g_progressSeq == 0) ++g_progressSeq;
+            g_nextProgressMs = 0;
+        }
+        if (now >= g_nextProgressMs) {
+            DP::Progress state;
+            if (DP::ReadProgress(desk, state)) {
+                coop::net::DeskPingVerdictPayload p{};
+                p.op = PV::kOpProgress;
+                p.reason = PV::kProgressActive;
+                p.seq = g_progressSeq;
+                p.progressStage = state.stage;
+                p.progressOuter = state.outer;
+                p.progressInner = state.inner;
+                p.progressPing = state.ping;
+                BroadcastProgress(s, p);
+                g_nextProgressMs = now + kProgressIntervalMs;
+            }
+        }
+    } else if (g_publishingProgress) {
+        // A reliable terminal edge prevents the last progress bar from remaining frozen on observers.
+        coop::net::DeskPingVerdictPayload p{};
+        p.op = PV::kOpProgress;
+        p.reason = PV::kProgressEnded;
+        p.seq = g_progressSeq;
+        BroadcastProgress(s, p);
+        g_publishingProgress = false;
+        g_nextProgressMs = 0;
+    }
+}
+
 void OnMessage(coop::net::Session& session, const coop::net::DeskPingVerdictPayload& p, int senderSlot) {
     if (session.role() == Role::Host) {
-        if ((p.op == PV::kOpIntent || p.op == PV::kOpInsta) && senderSlot > 0 &&
-            senderSlot < static_cast<int>(coop::net::kMaxPeers))
+        if (senderSlot > 0 && senderSlot < static_cast<int>(coop::net::kMaxPeers) && p.op == PV::kOpProgress) {
+            HostTakeProgress(session, p, senderSlot);
+        } else if ((p.op == PV::kOpIntent || p.op == PV::kOpInsta) && senderSlot > 0 &&
+                   senderSlot < static_cast<int>(coop::net::kMaxPeers)) {
             OnIntent(session, p, static_cast<uint8_t>(senderSlot));
+        }
+        return;
+    }
+    // A client takes the host's progress, its own or a relayed pinger's; the sender is always the host, the pinger is
+    // named in the packet.
+    if (p.op == PV::kOpProgress && senderSlot == 0 && p.pinger < coop::net::kMaxPeers) {
+        const bool active = p.reason == PV::kProgressActive;
+        if (active && (p.progressStage < 0 || p.progressStage > 3 || !std::isfinite(p.progressOuter) ||
+            !std::isfinite(p.progressInner) || !std::isfinite(p.progressPing))) return;
+        if (!active && (g_mirrorSlot != p.pinger || g_mirrorSeq != p.seq)) return;
+        if (active && g_mirrorSlot != -1 && g_mirrorSlot != p.pinger) return;
+        TakeProgress(p, active);
         return;
     }
     if (senderSlot != 0) return;
@@ -511,6 +630,16 @@ void OnPeerLeft(uint8_t slot) {
                 g_run.seq);
         g_run = HostRun{};
     }
+    if (g_mirrorSlot == slot) {
+        // The ending the pinger would have sent, to every client, so none keeps a scan that no one runs.
+        coop::net::DeskPingVerdictPayload p{};
+        p.op = PV::kOpProgress;
+        p.reason = PV::kProgressEnded;
+        p.pinger = slot;
+        p.seq = g_mirrorSeq;
+        TakeProgress(p, false);
+        if (auto* s = SessionAs(Role::Host)) BroadcastProgress(s, p);
+    }
 }
 
 void OnDisconnect() {
@@ -518,6 +647,12 @@ void OnDisconnect() {
     g_verdictRefused = false;
     g_refusedFn = nullptr;
     g_run = HostRun{};
+    g_publishingProgress = false;
+    g_nextProgressMs = 0;
+    g_mirrorSlot = -1;
+    g_mirrorSeq = 0;
+    if (g_mirrorActive) WriteProgressIdle(DP::Progress{});
+    g_mirrorActive = false;
     for (uint8_t slot = 0; slot < coop::net::kMaxPeers; ++slot) {
         g_pendingReplies[slot].clear();
         g_budget[slot].Reset();

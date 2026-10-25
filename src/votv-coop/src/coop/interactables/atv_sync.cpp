@@ -1,43 +1,46 @@
 // coop/interactables/atv_sync.cpp -- see coop/interactables/atv_sync.h. The ATV (AATV_C) rig sync.
-// The mirror simulates: a peer that does not author an ATV runs the rig natively, physics and tick
-// on, and is corrected toward the authority through velocity, never frozen or teleported. AATV_C is
+// The mirror simulates: a peer that does not sync an ATV runs the rig natively, physics and tick
+// on, and is corrected toward the syncer through velocity, never frozen or teleported. AATV_C is
 // a five-body constraint rig whose visible output is suspension travel, and SetActorLocation moves
 // the root only, so a kinematic apply dragged four constrained bodies behind one teleported root.
-// The one thing a mirror may not do is author collision damage (the hit guard). MTA's shape (a hard
-// velocity write per packet, a warp past a speed-scaled threshold, an elected syncer for an
+// A mirror may not author collision damage (the hit guard) or the blast and death routes (the damage gate).
+// MTA's shape (a hard velocity write per packet, a warp past a speed-scaled threshold, a server-assigned syncer for an
 // unoccupied vehicle that sends only on change) with one divergence: correction through velocity,
-// since their vehicle is one rigid body. Two predicates: IsPoseAuthor (I drive or carry it) and
-// OwnsTick (that, or I am the host and nobody authors it); the seat (occupantSlot, which the
-// mount deny reads) and the author (authorSlot, who streams) stay separate. A carried ATV
-// denies mounting until released. Keyed by the save key. The seat is self-elected, and two peers
-// mounting inside one round-trip both elect themselves: the lower slot wins in OnReliable, a
-// tie-break, not authority.
+// since their vehicle is one rigid body. The seat (occupantSlot, which the mount deny reads) and the
+// syncer (syncerSlot, who streams) are the host's table (atv_authority.cpp), never decided by the
+// machine they concern: a client's block reaches the host alone, which re-sends it stamped, and every
+// machine follows the stamp. A peer's own sit and grab are a request and a local body (atv_body.cpp); it yields to
+// the answer. Keyed by the game Key.
 
 #include "coop/interactables/atv_sync.h"
 #include "atv_spawn_park.h"
-#include "coop/interactables/atv_corrector.h"
+#include "coop/config/config.h"
+#include "coop/config/config_registry.h"
+#include "coop/interactables/atv_authority.h"
 #include "coop/interactables/atv_steering_sync.h"
-#include "coop/dev/atv_eject_drill.h"
+#include "coop/player/remote_player.h"
+#include "ue_wrap/core/script_gate.h"
 #include "coop/interactables/atv_condition_sync.h"
+#include "coop/interactables/atv_corrector.h"
+#include "coop/interactables/atv_damage_gate.h"
 #include "coop/interactables/atv_hit_guard.h"
+#include "coop/interactables/atv_index_internal.h"
 #include "coop/interactables/atv_sync_internal.h"
 
-#include "coop/net/intent_bucket.h"  // a sender's budget of service edits on the host
 #include "coop/net/protocol.h"
+#include "coop/net/refusal_tally.h"
 #include "coop/net/session.h"
 #include "coop/net/wire_key_util.h"  // WireKeyFromString / StringFromWireKey / FnvKey (shared)
 #include "coop/player/players_registry.h"   // Registry::Local / LocalPeerId / kMaxPeers
-#include "coop/player/remote_player.h"      // the sender's puppet, for the host's reach check
-#include "coop/player/roster_ledger.h"      // SubscribeSlotReplaced: a departed author must not hold an ATV
+#include "coop/player/roster_ledger.h"      // SubscribeSlotReplaced: a departed peer must not hold an ATV
+#include "coop/session/net_pump.h"          // HasAnnouncedWorldReady: a client sends no request before it
 
 #include "ue_wrap/devices/atv.h"
-#include "ue_wrap/engine/engine.h"          // ReadMainPlayerGrabState (grabber authority) + Get/SetActorRootPhysicsVelocity
+#include "ue_wrap/engine/engine.h"          // ReadMainPlayerGrabState (the grab) + Get/SetActorRootPhysicsVelocity
 #include "ue_wrap/core/log.h"
-#include "ue_wrap/core/script_gate.h"
+#include "ue_wrap/core/object_index.h"      // IsSeeded / Backlog: whether the host's walk of its ATVs can be complete
 #include "ue_wrap/core/reflection.h"
-#include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/engine/world_identity.h"     // the generation-stamped index
-#include "coop/element/object_scan_hub.h"      // the shared sliced scan pass
 #include "ue_wrap/core/types.h"           // FVector, FRotator, NormalizeAxis
 
 #include <atomic>
@@ -48,55 +51,31 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
-#include <chrono>
 #include <vector>
+#include <chrono>
 
 namespace coop::atv_sync {
 namespace {
 
 namespace R = ue_wrap::reflection;
 namespace A = ue_wrap::atv;
+namespace AU = coop::atv_authority;
 using ue_wrap::FVector;
 using ue_wrap::FRotator;
 using coop::net::WireKeyFromString;
-
-std::wstring WireClassNameToString(const coop::net::WireClassName& in) {
-    const uint8_t n = in.len <= sizeof(in.data) ? in.len : static_cast<uint8_t>(sizeof(in.data));
-    std::wstring out;
-    out.reserve(n);
-    for (uint8_t i = 0; i < n; ++i)
-        out.push_back(static_cast<wchar_t>(static_cast<unsigned char>(in.data[i])));
-    return out;
-}
 using coop::net::StringFromWireKey;
-using coop::net::FnvKey;
 
-constexpr uint64_t kDriveSendMs = 50;   // about 20 Hz while a peer authors it
 constexpr uint64_t kIdleSendMs  = 200;  // the idle syncer's ceiling, 5 Hz, and only when it changed
 // Never nothing: the change gate asks whether the sender's copy moved and is blind to the
 // receiver, whose mirror can roll while the host's copy is parked, and a dropped connect snapshot
 // would otherwise be permanent for an idle ATV. The gate lowers the rate; this floor keeps it
 // non-zero.
 constexpr uint64_t kIdleKeepaliveMs = 2000;
+constexpr uint64_t kPassMs = 1000;      // the host's syncer pass, once a second
 
-// The idle syncer's change gate (MTA's WriteVehicleInformation in our units): a parked ATV sends
-// nothing.
-constexpr float kIdleMovedCm   = 1.0f;
-constexpr float kIdleTurnedDeg = 0.5f;
-constexpr float kIdleMovingCmS = 1.0f;
+}  // namespace
 
-// A peer that does not author an ATV reports its own player's service of it (coop/interactables/
-// atv_condition_sync): measured five times a second, and once more before an author's block
-// overwrites the copy, and sent at most once per window, the measurements between merged.
-constexpr uint64_t kServiceScanMs = 200;
-constexpr uint64_t kServiceSendMs = 200;
-// A service is the player's own use of a can, a toolbox or a tyre on the ATV, within arm's reach of
-// it; a movement on a copy whose player is further away is never reported.
-constexpr float kServiceReachCm = 600.f;
-// A sender's edit budget on the host: a scan's worth a second, with a burst for the block-arrival
-// scans of a second ATV.
-constexpr coop::net::IntentBudget kEditBudget{8.f, 6.f};
-
+namespace detail {
 
 // Per-ATV state; a mirror is a simulating body whose velocity is biased at packet arrival, with
 // no interpolation state. Game thread only.
@@ -107,156 +86,21 @@ std::atomic<coop::net::Session*> g_session{nullptr};
 // serially inside the pump. Tick mutates entry fields only; inserts and erases happen in the hub
 // pass (scan_hub::Tick runs before this Tick) and in OnReliable (the drain, before the ticks).
 std::unordered_map<std::wstring, AtvEntry> g_atvs;
-size_t   g_lastLogCount = SIZE_MAX;
-uint64_t g_lastLogHash  = 0;
-bool     g_installed    = false;  // latches the one-time index; Install is the per-tick ensure path
-coop::net::IntentBucket g_editBuckets[coop::players::kMaxPeers];  // host: by sender slot
 
-// Runtime-spawned ATV identity. Nothing sells an ATV, but list_props row 'atv' spawns an ATV_C
-// from the spawn menu; such an ATV has no save twin on the other peers and its own save key is
-// minted randomly per peer, so the host gives it a synthetic wire key ("coopatv#N") and announces
-// it, and clients fresh-spawn a native AATV_C under that key. A save-placed ATV (a deterministic
-// key both peers loaded) keeps its real key.
-std::unordered_set<std::wstring>        g_savePlacedKeys;    // host: real keys seen before any client connected, so save-placed
-std::unordered_set<void*>               g_savePlacedActors;  // host: the actors present before any client, so a save ATV that mints its key late is not misread as a runtime spawn
-std::unordered_map<void*, std::wstring> g_synthForActor;     // actor -> synthetic wire key (host runtime-spawned + client mirror)
-uint32_t                                g_synthCounter = 0;  // host: the monotonic synthetic-key id
-bool                                    g_companionSpawned = false;  // host: a second ATV already minted this session
-bool                                    g_companionCapped = false;   // the post-mint watch has closed; do not mint another
-void*                                   g_companionActor = nullptr;  // the minted body, until it is destroyed
-uint64_t                                g_companionSettledSince = 0; // settled at two or fewer while a save twin is still absent
-std::wstring                            g_companionKey;
-// The same pause the mint waits for the source scooter to sit still. While the loaded save
-// names coopatv1 and that scooter is not live yet, the companion is not given that key.
-// After this long of a settled count that is still two or fewer, it is announced under the
-// next free key, and the count watch stays open so a later third body is still removed.
-constexpr uint64_t kCompanionSettleMs = 2000;
-void*                                   g_compSrc = nullptr;
-FVector                                 g_compLoc{};
-uint64_t                                g_compStillSince = 0;
+}  // namespace detail
 
-const wchar_t* const kSynthPrefix = L"coopatv#";  // distinguishes synth keys from real ATV keys ("atv"/base64)
+using detail::g_indexGen;
+using detail::SendAtvSpawn;
+using detail::ResetAnnounceState;
+using detail::RegisterWithScanHub;
+using detail::g_session;
+using detail::g_atvs;
 
-bool IsSynthKey(const std::wstring& k) {
-    return k.compare(0, 8, kSynthPrefix) == 0;  // "coopatv#" is 8 chars
-}
-
-// A WireClassName from a wide class name (ASCII), truncated at 63.
-void FillWireClassName(coop::net::WireClassName& out, const std::wstring& name) {
-    out.len = 0;
-    for (size_t i = 0; i < name.size() && i < sizeof(out.data); ++i)
-        out.data[out.len++] = static_cast<char>(name[i]);
-}
-
-// Host: announces a runtime ATV so clients fresh-spawn a native mirror; slot < 0 broadcasts (a
-// new ATV mid-session), slot >= 0 seeds one joiner. Reads the class and the current pose.
-void SendAtvSpawn(const std::wstring& synthKey, void* actor, int slot) {
-    auto* s = g_session.load(std::memory_order_acquire);
-    if (!s || !s->connected() || !actor) return;
-    void* cls = R::ClassOf(actor);
-    if (!cls) return;
-    FVector loc; FRotator rot;
-    if (!A::GetRootTransform(actor, loc, rot)) return;
-    coop::net::AtvSpawnPayload p{};
-    WireKeyFromString(synthKey, p.synthKey);
-    FillWireClassName(p.className, R::ToString(R::NameOf(cls)));
-    p.x = loc.X; p.y = loc.Y; p.z = loc.Z;
-    p.pitch = rot.Pitch; p.yaw = rot.Yaw; p.roll = rot.Roll;
-    if (slot < 0) s->SendReliable(coop::net::ReliableKind::AtvSpawn, &p, sizeof(p));
-    else          s->SendReliableToSlot(slot, coop::net::ReliableKind::AtvSpawn, &p, sizeof(p));
-}
-
-void SendAtvDestroy(const std::wstring& synthKey) {
-    auto* s = g_session.load(std::memory_order_acquire);
-    if (!s || !s->connected()) return;
-    coop::net::AtvDestroyPayload p{};
-    WireKeyFromString(synthKey, p.synthKey);
-    s->SendReliable(coop::net::ReliableKind::AtvDestroy, &p, sizeof(p));
-}
-
-
-// True if this peer's player is seated in `actor`, per the local engine.
-bool IsLocalOccupant(void* actor, void* localPlayer) {
-    return localPlayer && A::IsDriven(actor) && A::GetOccupantPlayer(actor) == localPlayer;
-}
-
-// True if this peer can claim or holds driver authority; a seat another peer holds cannot be
-// claimed (the double-mount race).
-bool CanClaimOrIsDriver(void* actor, void* localPlayer, uint8_t occupantSlot, uint8_t localSlot) {
-    if (!IsLocalOccupant(actor, localPlayer)) return false;
-    return occupantSlot == 0xFF || occupantSlot == localSlot;
-}
-
-// True if this peer's player is grabbing `actor` with the grav hand (carried, not seated). The
-// ATV has no grabbed flag of its own (isDriven and Player are written only on the seating path),
-// so the grabber identity comes from the physical hand, held actor or gravity beam.
-bool IsLocalGrabber(void* actor, void* localPlayer) {
-    if (!localPlayer || !actor) return false;
-    ue_wrap::engine::MainPlayerGrabState gs{};
-    if (!ue_wrap::engine::ReadMainPlayerGrabState(localPlayer, gs)) return false;
-    return gs.grabbingActor == actor || gs.holdingActor == actor || gs.gravityActor == actor ||
-           gs.physicsActor == actor;
-}
-
-// Pose authority: this peer streams `actor`, driving or carrying it. Not tick ownership.
-bool IsPoseAuthor(void* actor, void* localPlayer, uint8_t occupantSlot, uint8_t localSlot) {
-    // A seated driver takes pose authority from a grabber. Otherwise the holder keeps publishing
-    // its hand-held pose after a remote peer mounts, so the rider moves independently until the
-    // dismount snaps the ATV back to the holder.
-    if (occupantSlot != 0xFF && occupantSlot != localSlot) return false;
-    return CanClaimOrIsDriver(actor, localPlayer, occupantSlot, localSlot) ||
-           IsLocalGrabber(actor, localPlayer);
-}
-
-// Tick ownership: the peer that authors the ATV, else the host (MTA's unoccupied-vehicle
-// election). A different set from pose authority: on the host with nobody driving, IsPoseAuthor
-// is false and this is true. Its two jobs are electing the idle syncer and feeding the collision
-// guard's owned set; there is no brain-off (parking the tick was measured useless, since
-// SetCenterOfMass runs unconditionally per tick, and the wheel torque and battery terms are
-// already single-peer by the game's own isDriven gates).
-bool OwnsTickFor(bool isPoseAuthor, bool isHost, uint8_t authorSlot) {
-    return isPoseAuthor || (isHost && authorSlot == 0xFF);
-}
-
-// An AtvStatePayload from a live read; false if the transform read fails. `grabbed` marks the
-// authority as the grav-hand grabber (bit 2); `authorSlot` names who holds it (0xFF = nobody,
-// which elects the host as its idle syncer).
-bool ReadPayload(void* actor, const std::wstring& key, uint8_t occupantSlot, uint8_t authorSlot,
-                 bool adopt, coop::net::AtvStatePayload& p, bool grabbed = false, bool honk = false) {
-    FVector loc; FRotator rot;
-    if (!A::GetRootTransform(actor, loc, rot)) return false;
-    FVector lin{}, ang{};
-    // Best effort: a failed read leaves zeros, the honest value and also a body at rest.
-    ue_wrap::engine::GetActorRootPhysicsVelocity(actor, lin, ang);
-    std::memset(&p, 0, sizeof(p));
-    WireKeyFromString(key, p.key);
-    p.x = loc.X; p.y = loc.Y; p.z = loc.Z;
-    p.pitch = rot.Pitch; p.yaw = rot.Yaw; p.roll = rot.Roll;
-    p.linVelX = lin.X; p.linVelY = lin.Y; p.linVelZ = lin.Z;
-    p.angVelX = ang.X; p.angVelY = ang.Y; p.angVelZ = ang.Z;
-    p.occupantSlot = occupantSlot;
-    p.authorSlot   = authorSlot;
-    uint8_t sb = 0;
-    if (A::IsDriven(actor)) sb |= coop::net::kAtvStateBitDriven;
-    if (A::GetBrake(actor)) sb |= coop::net::kAtvStateBitBrake;
-    if (grabbed)            sb |= coop::net::kAtvStateBitGrabbed;
-    p.stateBits = sb;
-    p.adopt = adopt ? 1 : 0;
-    p.cockpit = 0;
-    if (A::GetLights(actor)) p.cockpit |= coop::net::kAtvCockpitLights;
-    if (A::GetTurbo(actor))  p.cockpit |= coop::net::kAtvCockpitTurbo;
-    if (honk)                p.cockpit |= coop::net::kAtvCockpitHonk;
-    if (A::GetRadio(actor))  p.cockpit |= coop::net::kAtvCockpitRadio;
-    if (A::GetHasMap(actor)) p.cockpit |= coop::net::kAtvCockpitMap;
-    p.modules = A::ReadModuleMask(actor);
-    p.steering = coop::atv_steering_sync::Capture(actor);
-    // The condition block (tires, spare, dirt, fuel, health), filled at this one site so the
-    // authority, the idle syncer and the adopt seed cannot fork; a failed read leaves it zeroed
-    // with tiresValid 0, and receivers touch nothing.
-    coop::atv_condition_sync::FillPayload(actor, p);
-    return true;
-}
-
+namespace {
+constexpr uint64_t kServiceScanMs=200, kServiceSendMs=200;
+constexpr float kServiceReachCm=600.f;
+constexpr coop::net::IntentBudget kEditBudget{8.f,6.f};
+coop::net::IntentBucket g_editBuckets[coop::players::kMaxPeers];
 struct RadioSent {
     std::string url;
     bool playing = false;
@@ -326,9 +170,9 @@ void FlushLocalService(coop::net::Session* s, AtvEntry& e, const std::wstring& k
     if (!isHost) {
         attempted = true;
         sent = s->SendReliable(coop::net::ReliableKind::AtvConditionEdit, &p, sizeof(p));
-    } else if (e.authorSlot != 0xFF && e.authorSlot != localSlot) {
+    } else if (e.syncerSlot != 0xFF && e.syncerSlot != localSlot) {
         attempted = true;
-        sent = s->SendReliableToSlot(e.authorSlot, coop::net::ReliableKind::AtvConditionEdit, &p, sizeof(p));
+        sent = s->SendReliableToSlot(e.syncerSlot, coop::net::ReliableKind::AtvConditionEdit, &p, sizeof(p));
     }
     UE_LOGI("atv: local service of '%ls' %s -- fuel %+.1f health %+.1f dirt %+.2f tyres on %02X spare on %u",
             key.c_str(), sent ? (isHost ? "sent to its author" : "sent to the host") : "NOT sent",
@@ -343,207 +187,6 @@ void FlushLocalService(coop::net::Session* s, AtvEntry& e, const std::wstring& k
         e.hasPendingService = false;
 }
 
-// The idle syncer's change gate: true if the ATV moved, turned or is moving; the baseline updates
-// on a yes, so a slow drift accumulates into a send instead of being rounded away.
-bool IdleWorthSending(AtvEntry& e) {
-    FVector loc; FRotator rot;
-    if (!A::GetRootTransform(e.actor, loc, rot)) return false;
-    FVector lin{}, ang{};
-    ue_wrap::engine::GetActorRootPhysicsVelocity(e.actor, lin, ang);
-    bool send = !e.haveLastSync || Len(lin) > kIdleMovingCmS;
-    if (!send) {
-        const FVector d{ loc.X - e.lastSyncPos.X, loc.Y - e.lastSyncPos.Y, loc.Z - e.lastSyncPos.Z };
-        send = Len(d) > kIdleMovedCm ||
-               std::fabs(ue_wrap::NormalizeAxis(rot.Pitch - e.lastSyncRot.Pitch)) > kIdleTurnedDeg ||
-               std::fabs(ue_wrap::NormalizeAxis(rot.Yaw   - e.lastSyncRot.Yaw))   > kIdleTurnedDeg ||
-               std::fabs(ue_wrap::NormalizeAxis(rot.Roll  - e.lastSyncRot.Roll))  > kIdleTurnedDeg;
-    }
-    if (send) { e.lastSyncPos = loc; e.lastSyncRot = rot; e.haveLastSync = true; }
-    return send;
-}
-
-
-// The scan-hub consumer: the hub's shared sliced pass drives these callbacks, preserving the
-// sender state for keys that persist (only the actor and index update) and classifying identity
-// as above (a save-placed ATV keeps its real key; a host-side runtime ATV gets a synthetic key
-// and an announce). A spawn landing inside the pass window at a join is announced on the next
-// pass, when the joiner is connected.
-uint32_t g_indexGen = 0;  // world gen of the last completed pass (stale-gen index = EMPTY)
-struct ScanFound { std::wstring wireKey; void* obj; int32_t idx; std::wstring realKey; };
-std::vector<ScanFound> g_scanFound;   // pass scratch (GT-only)
-bool g_scanIsHost = false;            // pass context, captured at pass begin
-bool g_scanCapturing = false;
-bool g_havePendingSpawn = false;
-coop::net::AtvSpawnPayload g_pendingSpawn{};
-bool g_clientMirrorWatch = false;          // a mirror spawned while the settled count was 1
-void* g_clientMirrorActor = nullptr;       // that body; never a save-restored ATV
-std::wstring g_clientMirrorKey;
-
-void HubPassBegin(void*, bool) {
-    g_scanFound.clear();
-    auto* s = g_session.load(std::memory_order_acquire);
-    g_scanIsHost = s && s->role() == coop::net::Role::Host;
-    const bool isHost = g_scanIsHost;
-    // The baseline window: before any client is connected, every keyed ATV the host has is
-    // save-placed; after that a newly appearing key is a runtime spawn. Accumulated, not a
-    // single-frame latch, so a save ATV slow to mint its key still lands in the set.
-    g_scanCapturing = isHost && (!s || !s->connected());
-}
-
-void HubMatch(void*, void* obj) {
-    const bool isHost = g_scanIsHost;
-    const bool capturing = g_scanCapturing;
-    auto& found = g_scanFound;
-    {
-        const std::wstring nm = R::ToString(R::NameOf(obj));
-        if (nm.rfind(L"Default__", 0) == 0) return;  // skip CDO
-        if (!R::IsLive(obj)) return;
-        if (capturing) g_savePlacedActors.insert(obj);  // capture the ACTOR (even before it mints its key)
-        std::wstring wireKey;
-        std::wstring realKey;
-        auto sf = g_synthForActor.find(obj);
-        if (sf != g_synthForActor.end()) {
-            wireKey = sf->second;  // the companion, even before the game has minted its own Key
-            realKey = wireKey;
-        } else {
-        realKey = A::GetKeyString(obj);
-        if (realKey.empty() || realKey == L"None") return;  // not yet keyed -- the next pass picks it up
-        if (capturing) {
-            g_savePlacedKeys.insert(realKey);                 // baseline: a save-placed ATV
-            wireKey = realKey;
-        } else if (isHost && g_savePlacedKeys.find(realKey) == g_savePlacedKeys.end() &&
-                   g_savePlacedActors.find(obj) == g_savePlacedActors.end()) {
-            // Host: a mid-session ATV not in the save set is a runtime spawn: a synthetic wire key
-            // and an announce, so the clients fresh-spawn a mirror.
-            wireKey = std::wstring(kSynthPrefix) + std::to_wstring(++g_synthCounter);
-            g_synthForActor[obj] = wireKey;
-            SendAtvSpawn(wireKey, obj, /*slot*/ -1);          // broadcast to all connected clients
-            UE_LOGI("atv: runtime-spawned ATV detected -- synthKey='%ls' class='%ls' (host-announced AtvSpawn)",
-                    wireKey.c_str(), R::ToString(R::NameOf(R::ClassOf(obj))).c_str());
-        } else {
-            wireKey = realKey;                                 // save-placed default ATV (both peers have it)
-        }
-        }
-        found.push_back({ std::move(wireKey), obj, R::InternalIndexOf(obj), std::move(realKey) });
-    }
-}
-
-size_t HubPassComplete(void*, bool isFull, uint32_t worldGen) {
-    const bool isHost = g_scanIsHost;
-    auto& found = g_scanFound;
-    // Entries whose ATV vanished are dropped; a gone host-synthetic ATV sends AtvDestroy so the
-    // clients tear down their mirror. On a full pass `found` is authoritative; on a tail pass it is
-    // only the new tail, so liveness by index prunes instead.
-    for (auto it = g_atvs.begin(); it != g_atvs.end();) {
-        bool keep;
-        if (isFull) {
-            keep = false;
-            for (auto& f : found) if (f.wireKey == it->first) { keep = true; break; }
-            // Minted during this pass, or carried under its save key. Dropping it here would
-            // announce a destroy and then mint another.
-            auto held = g_synthForActor.find(it->second.actor);
-            if (!keep && held != g_synthForActor.end() && held->second == it->first &&
-                R::IsLiveByIndex(it->second.actor, it->second.idx))
-                keep = true;
-        } else {
-            keep = R::IsLiveByIndex(it->second.actor, it->second.idx);
-        }
-        if (keep) { ++it; continue; }
-        {
-            auto held = g_synthForActor.find(it->second.actor);
-            const bool ours = IsSynthKey(it->first) ||
-                              (held != g_synthForActor.end() && held->second == it->first);
-            if (ours) {
-                if (isHost) SendAtvDestroy(it->first);
-                if (it->second.actor) g_synthForActor.erase(it->second.actor);
-            }
-            if (it->first == g_companionKey) {
-                g_companionSpawned = false;
-                g_companionCapped = false;
-                g_companionKey.clear();
-                g_companionActor = nullptr;
-                g_companionSettledSince = 0;
-                g_compStillSince = 0;
-            }
-        }
-        it = g_atvs.erase(it);
-    }
-    // Update or add. A wire key can outlive its actor (a save-placed key is deterministic and a
-    // client join runs two level loads), and the successor must not inherit the dead actor's
-    // authority, seat, correction clock and change-gate baseline: the entry stays, everything that
-    // described the actor resets.
-    for (auto& f : found) {
-        AtvEntry& e = g_atvs[f.wireKey];
-        if (e.actor && e.actor != f.obj) {
-            // The flag belongs to the body we spawned. A save scooter that took this key must
-            // not inherit it, or a later teardown would destroy the saved one.
-            if (e.isClientSpawnedMirror && f.obj != g_clientMirrorActor)
-                e.isClientSpawnedMirror = false;
-            e.occupantSlot = 0xFF; e.authorSlot = 0xFF;
-            e.wasPoseAuthor = false;
-            e.haveLastSync = false; e.lastIdleSendMs = 0; e.lastPktMs = 0;
-            e.lastErrCm = -1.f; e.stallPackets = 0; e.restReplaces = 0; e.lastRestPlaceMs = 0;
-            // The service floor and an unsent edit were measured on the body that left. A
-            // failed send keeps that edit until it goes out, so the successor would otherwise
-            // inherit the old scooter's fuel, repair and dirt.
-            e.hasPendingService = false;
-            e.pendingService = {};
-            e.lastServiceSentMs = 0;
-            e.condFloorFields = 0;
-            e.condFloorUntilMs = 0;
-            e.condLocalRefValid = false;
-            e.condLocalRefActor = nullptr;
-            e.condExpressedSeeded = false;
-            e.condExpressedActor = nullptr;
-            e.haveLastSentCond = false;
-        }
-        e.actor = f.obj;
-        e.idx   = f.idx;
-    }
-    g_indexGen = worldGen;
-    // The keys hash over the whole index, since on a tail pass `found` is only the new arrivals.
-    uint64_t keysHash = 0;
-    for (auto& kv : g_atvs) keysHash ^= FnvKey(kv.first);
-    if (g_atvs.size() != g_lastLogCount || keysHash != g_lastLogHash) {
-        g_lastLogCount = g_atvs.size();
-        g_lastLogHash  = keysHash;
-        UE_LOGI("atv: index rebuilt -- %zu live ATV(s), keysHash=0x%016llX (%s pass, +%zu new) "
-                "(compare host vs client for cross-peer Key stability)",
-                g_atvs.size(), static_cast<unsigned long long>(keysHash),
-                isFull ? "full" : "tail", found.size());
-    }
-    g_scanFound.clear();
-    return g_atvs.size();
-}
-
-// A peer whose seat or authorship we hold has left or been replaced (slots recycle lowest-free,
-// so a slot can change occupant with no absence between, which is why this hangs off the
-// ledger's row transition). Every ATV it held is released: an authorSlot stuck on a departed peer
-// means nobody ever syncs that ATV again.
-void OnSlotReplaced(int slot, const coop::roster_ledger::Row& /*outgoing*/,
-                    const coop::roster_ledger::Row& /*incoming*/) {
-    if (slot < 0 || slot > 0xFE) return;
-    const uint8_t s8 = static_cast<uint8_t>(slot);
-    int freed = 0;
-    for (auto& kv : g_atvs) {
-        AtvEntry& e = kv.second;
-        if (e.occupantSlot == s8) { e.occupantSlot = 0xFF; ++freed; }
-        if (e.authorSlot   == s8) { e.authorSlot   = 0xFF; ++freed; }
-        // The change gate re-arms: the other peers still hold the departed claim, and healing them
-        // depends on the host sending something.
-        e.haveLastSync = false;
-    }
-    if (static_cast<size_t>(slot) < std::size(g_editBuckets)) g_editBuckets[slot].Reset();
-    if (freed > 0)
-        UE_LOGI("atv: slot %d departed -- freed %d ATV seat/author reservation(s)", slot, freed);
-}
-
-void SubscribeDepartures() {
-    static bool sDone = false;
-    if (sDone) return;
-    sDone = true;
-    coop::roster_ledger::SubscribeSlotReplaced(&OnSlotReplaced);
-}
 
 ue_wrap::script_gate::Verdict OnHonkPre(const ue_wrap::script_gate::Call& call) {
     if (call.fromOurCode || !A::IsAtv(call.object)) return ue_wrap::script_gate::Verdict::Run;
@@ -554,7 +197,6 @@ ue_wrap::script_gate::Verdict OnHonkPre(const ue_wrap::script_gate::Call& call) 
     }
     return ue_wrap::script_gate::Verdict::Run;
 }
-
 ue_wrap::script_gate::Verdict OnMountPre(const ue_wrap::script_gate::Call& c) {
     using V = ue_wrap::script_gate::Verdict;
     auto* s = g_session.load(std::memory_order_acquire);
@@ -576,26 +218,22 @@ ue_wrap::script_gate::Verdict OnMountPre(const ue_wrap::script_gate::Call& c) {
     return IsHeldForMount(c.object) || IsOccupiedByOther(c.object) ? V::Cancel : V::Run;
 }
 
-void EnsureHonkWatch() {
-    static bool once = false;
-    if (once) return;
-    once = true;
-    ue_wrap::script_gate::WatchClassName(L"ATV_C", L"InpActEvt_atv_honk_K2Node_InputActionEvent",
-                                         0x4154484B, &OnHonkPre, nullptr);
-    ue_wrap::script_gate::WatchClassName(L"ATV_C", L"actionName",
-                                         0x41544D54, &OnMountPre, nullptr);
-    ue_wrap::script_gate::ResolvePendingNames();
+bool g_companionSpawned=false,g_companionCapped=false;
+void* g_companionActor=nullptr;std::wstring g_companionKey;
+uint64_t g_companionSettledSince=0,g_compStillSince=0;
+void* g_compSrc=nullptr;FVector g_compLoc{};
+constexpr uint64_t kCompanionSettleMs=2000;
+bool IsSynthKey(const std::wstring& key){return key.rfind(L"coopatv",0)==0;}
+void SendAtvDestroy(const std::wstring& key) {
+    auto* session=LaneSession();if(!session || !session->connected())return;
+    coop::net::AtvDestroyPayload p{};WireKeyFromString(key,p.key);
+    session->SendReliable(coop::net::ReliableKind::AtvDestroy,&p,sizeof(p));
 }
 
-// -1 while a load is still delivering actors. The count is every live scooter in THIS world,
-// subclasses included. A stale scan total is not folded in: one that once saw a scooter from a
-// world already left would keep the cap shut, or one that had not yet seen a second would open it.
 int LiveAtvCount() {
     return A::CountLiveSettled();
 }
 
-// Our mint only. Never a third: a save scooter that was already in the world stays, and an
-// index entry that has moved onto that scooter stays with it.
 void RemoveMintedCompanion() {
     void* extra = g_companionActor;
     const std::wstring key = g_companionKey;
@@ -603,7 +241,6 @@ void RemoveMintedCompanion() {
     const bool entryIsOurs = it != g_atvs.end() && (!extra || it->second.actor == extra);
     if (entryIsOurs) {
         g_atvs.erase(it);
-        if (extra) g_synthForActor.erase(extra);
         if (!key.empty()) {
             SendAtvDestroy(key);
             UE_LOGW("atv: removed scooter '%ls' -- keeping the world at two", key.c_str());
@@ -612,7 +249,6 @@ void RemoveMintedCompanion() {
         SendAtvDestroy(key);
     }
     if (extra && R::IsLive(extra)) {
-        g_synthForActor.erase(extra);
         A::DestroyMirror(extra);
         if (!entryIsOurs)
             UE_LOGW("atv: removed the companion body -- keeping the world at two");
@@ -622,16 +258,12 @@ void RemoveMintedCompanion() {
     g_companionCapped = true;
 }
 
-// The wire key IS the save key. A second name (coopatv#N) made the friend's copy, restored
-// from the save under the game key, a different scooter from the one the host was driving.
-// Empty from EnsureOwnSaveKey means the key already belongs to another scooter and could not
-// be moved: this body is not announced.
 bool PublishCompanion(void* spawned) {
     std::wstring key = A::EnsureOwnSaveKey(spawned);
     if (key.empty() || key == L"None") {
         const std::wstring now = A::GetKeyString(spawned);
         if (!now.empty() && now != L"None") return false;
-        key = std::wstring(kSynthPrefix) + std::to_wstring(++g_synthCounter);
+        return false;
     }
     auto taken = g_atvs.find(key);
     if (taken != g_atvs.end() && taken->second.actor && taken->second.actor != spawned)
@@ -639,10 +271,10 @@ bool PublishCompanion(void* spawned) {
     g_companionKey = key;
     UE_LOGI("atv: companion game-save key '%ls' (its own record, not the other scooter's)",
             key.c_str());
-    g_synthForActor[spawned] = key;
     AtvEntry e{};
     e.actor = spawned;
     e.idx = R::InternalIndexOf(spawned);
+    e.world=ue_wrap::world_identity::WorldOf(spawned);
     g_atvs[key] = std::move(e);
     SendAtvSpawn(key, spawned, /*slot*/ -1);
     FVector loc{}; FRotator rot{};
@@ -652,8 +284,6 @@ bool PublishCompanion(void* spawned) {
     return true;
 }
 
-// Announced under `from`, now saved under `to`. The friend's mirror follows the destroy and
-// the new announce, so the two names do not become two scooters.
 void RebindCompanionKey(const std::wstring& from, const std::wstring& to) {
     AtvEntry entry{};
     auto it = g_atvs.find(from);
@@ -664,7 +294,6 @@ void RebindCompanionKey(const std::wstring& from, const std::wstring& to) {
     entry.actor = g_companionActor;
     entry.idx = R::InternalIndexOf(g_companionActor);
     g_atvs[to] = entry;
-    if (g_companionActor) g_synthForActor[g_companionActor] = to;
     g_companionKey = to;
     SendAtvDestroy(from);
     SendAtvSpawn(to, g_companionActor, /*slot*/ -1);
@@ -672,8 +301,6 @@ void RebindCompanionKey(const std::wstring& from, const std::wstring& to) {
             to.c_str(), from.c_str());
 }
 
-// A scooter that arrived after we wrote our key. Above two, our mint is the extra and goes.
-// At two or fewer, move to coopatv2 so the two records stay distinct.
 void RepairCompanionKeyCollision() {
     if (!g_companionActor || !R::IsLive(g_companionActor) || g_companionKey.empty()) return;
     std::wstring mine = A::GetKeyString(g_companionActor);
@@ -694,12 +321,6 @@ void RepairCompanionKeyCollision() {
     RemoveMintedCompanion();
 }
 
-// Minted while the count was still short. The mint tick is not a settlement: the body just
-// added is in it, and a save scooter can still be absent. An unsettled count (n < 0) does not
-// close the watch. It closes when a later count has settled at two or fewer and the loaded
-// save has no scooter still missing, or when a settled count above two has removed this mint.
-// After it closes, a live scooter that arrives holding our key still moves that key or
-// removes this body.
 void WatchMintedCompanion(uint64_t nowMs) {
     if (!g_companionActor || !R::IsLive(g_companionActor)) {
         g_companionActor = nullptr;
@@ -814,56 +435,216 @@ void TrySpawnCompanion(uint64_t nowMs) {
             spawn.X, spawn.Y, spawn.Z);
 }
 
-void RegisterWithScanHub() {
+void EnsureHonkWatch() {
+    static bool once = false;
+    if (once) return;
+    once = true;
+    ue_wrap::script_gate::WatchClassName(L"ATV_C", L"InpActEvt_atv_honk_K2Node_InputActionEvent",
+                                         0x4154484B, &OnHonkPre, nullptr);
+    ue_wrap::script_gate::WatchClassName(L"ATV_C", L"actionName",
+                                         0x41544D54, &OnMountPre, nullptr);
+    ue_wrap::script_gate::ResolvePendingNames();
+}
+
+}
+
+// True if this peer's player is grabbing `actor` with the grav hand (carried, not seated). The
+// ATV has no grabbed flag of its own (isDriven and Player are written only on the seating path),
+// so the grabber identity is the player's grabbing_actor, the slot the release clears. holding_actor
+// is only ever the hand item the player spawns (mainPlayer BP: one write besides null), never a world ATV.
+bool IsLocalGrabber(void* actor, void* localPlayer) {
+    if (!localPlayer || !actor) return false;
+    ue_wrap::engine::MainPlayerGrabState gs{};
+    if (!ue_wrap::engine::ReadMainPlayerGrabState(localPlayer, gs)) return false;
+    return gs.grabbingActor == actor;
+}
+
+namespace {
+
+bool     g_installed    = false;  // latches the one-time index; Install is the per-tick ensure path
+uint64_t g_lastPassMs   = 0;      // the host's last syncer pass
+uint64_t g_lastHostTickMs = 0;    // the host's previous Tick: a longer gap is a stall of this machine
+bool     g_drillMute    = false;  // dev: the client syncer's stream is held back (SetDrillMute)
+// CLIENT, for the ATV health drill: the syncer's blocks and the connect snapshot's that reached the corrector (counted
+// on the place path before ApplyCorrection, which may still refuse them).
+uint32_t g_appliedFromSyncer = 0;
+uint32_t g_snapshotReached   = 0;
+// A block refused at the door of OnReliable (an empty key, a non-finite pose): said once per window, not per packet.
+coop::net::RefusalTally g_blockRefusals{"atv_sync"};
+
+// HOST: the slots owed the set edge (bit = slot). A snapshot that withheld the edge sets its slot's bit; the owed
+// poll in Tick clears it once the edge goes, a new replay for the slot or the slot's departure clears it too.
+// Each owed slot retries on its own interval (1 s, doubled after a retry that did not send the edge, up to 32 s) and
+// says why a retry withheld once per reason; clearing the bit resets all three.
+uint32_t g_setOwed = 0;
+static_assert(coop::players::kMaxPeers <= 32, "g_setOwed holds one bit per slot");
+constexpr uint64_t kOwedRetryMinMs = 1000;
+constexpr uint64_t kOwedRetryMaxMs = 32000;
+uint64_t    g_owedNextMs[coop::players::kMaxPeers] = {};
+uint64_t    g_owedIntervalMs[coop::players::kMaxPeers] = {};
+const char* g_owedSaid[coop::players::kMaxPeers] = {};   // the reason last logged for the slot's bit
+
+void ClearOwed(int slot) {
+    g_setOwed &= ~(1u << slot);
+    g_owedNextMs[slot] = 0;
+    g_owedIntervalMs[slot] = 0;
+    g_owedSaid[slot] = nullptr;
+}
+// Arming starts the first retry a second away, never at the next Tick. `said` is the reason the snapshot already
+// logged, so the first retry does not repeat it.
+void ArmOwed(int slot, uint64_t nowMs, const char* said) {
+    g_setOwed |= 1u << slot;
+    g_owedIntervalMs[slot] = kOwedRetryMinMs;
+    g_owedNextMs[slot] = nowMs + kOwedRetryMinMs;
+    g_owedSaid[slot] = said;
+}
+
+// Whether this machine writes `e`: the host's table names it (on the host that is the host itself), or this
+// client's own sit or takeover is sent and not yet answered (the optimistic window, the client drives at once).
+// MTA's client waits for the confirm before it animates in (Client CPacketHandler.cpp:1744-1770, a refusal :2135-2142).
+bool IsLocalSyncer(const AtvEntry& e, uint8_t localSlot) {
+    if (e.syncerSlot == localSlot) return true;
+    return e.pendingSeq != 0 && e.pendingAction != AU::AtvRequest::Leave;
+}
+
+// An AtvStatePayload from a live read; false if the transform read fails. `grabbed` marks the
+// sender's grav hand as holding it (bit 2); `occupantSlot` and `syncerSlot` are the table's values,
+// the stamp a host block carries.
+bool ReadPayload(void* actor, const std::wstring& key, uint8_t occupantSlot, uint8_t syncerSlot,
+                 bool adopt, coop::net::AtvStatePayload& p, bool grabbed = false, bool honk = false) {
+    FVector loc; FRotator rot;
+    if (!A::GetRootTransform(actor, loc, rot)) return false;
+    FVector lin{}, ang{};
+    // Best effort: a failed read leaves zeros, the honest value and also a body at rest.
+    ue_wrap::engine::GetActorRootPhysicsVelocity(actor, lin, ang);
+    std::memset(&p, 0, sizeof(p));
+    WireKeyFromString(key, p.key);
+    p.x = loc.X; p.y = loc.Y; p.z = loc.Z;
+    p.pitch = rot.Pitch; p.yaw = rot.Yaw; p.roll = rot.Roll;
+    p.linVelX = lin.X; p.linVelY = lin.Y; p.linVelZ = lin.Z;
+    p.angVelX = ang.X; p.angVelY = ang.Y; p.angVelZ = ang.Z;
+    p.occupantSlot = occupantSlot;
+    p.syncerSlot   = syncerSlot;
+    uint8_t sb = 0;
+    if (A::IsDriven(actor)) sb |= 0x1;
+    if (A::GetBrake(actor)) sb |= 0x2;
+    if (grabbed)            sb |= 0x4;
+    p.stateBits = sb;
+    p.adopt = adopt ? 1 : 0;
+    p.cockpit = 0;
+    if (A::GetLights(actor)) p.cockpit |= coop::net::kAtvCockpitLights;
+    if (A::GetTurbo(actor))  p.cockpit |= coop::net::kAtvCockpitTurbo;
+    if (honk)                p.cockpit |= coop::net::kAtvCockpitHonk;
+    if (A::GetRadio(actor))  p.cockpit |= coop::net::kAtvCockpitRadio;
+    if (A::GetHasMap(actor)) p.cockpit |= coop::net::kAtvCockpitMap;
+    p.modules = A::ReadModuleMask(actor);
+    p.steering = coop::atv_steering_sync::Capture(actor);
+    // The condition block (tires, spare, dirt, fuel, health), filled at this one site so the
+    // syncer, the idle syncer and the adopt seed cannot fork; a failed read leaves it zeroed
+    // with tiresValid 0, and receivers touch nothing.
+    coop::atv_condition_sync::FillPayload(actor, p);
+    return true;
+}
+
+// HOST: each live entry's own `trap` against the last one seen; a change owes a stamp (bit 4 sits outside the condition's
+// change gate, so an idle ATV would otherwise carry it only at the keepalive).
+void ReadHostTraps() {
+    for (auto& kv : g_atvs) {
+        AtvEntry& e = kv.second;
+        bool trap = false;
+        if (!R::IsLiveByIndex(e.actor, e.idx) || !A::ReadTrap(e.actor, trap) || trap == e.hostTrap) continue;
+        e.hostTrap = trap;
+        e.stampDue = true;
+    }
+}
+
+// gets the connect snapshot instead, and none of the stream.
+bool SendToReadyClients(coop::net::Session& s, const coop::net::AtvStatePayload& p, int skipSlot) {
+    bool sent=true;
+    for (uint8_t slot = 1; slot < coop::net::kMaxPeers; ++slot)
+        if (slot != skipSlot && s.IsSlotWorldReady(slot))
+            sent=s.SendReliableToSlot(slot, coop::net::ReliableKind::AtvState, &p, sizeof(p)) && sent;
+    return sent;
+}
+
+// A peer whose seat or syncership we hold has left or been replaced (slots recycle lowest-free,
+// so a slot can change occupant with no absence between, which is why this hangs off the
+// ledger's row transition). Every ATV it sat in or synced goes back to the host's table: a seat or
+// a syncer stuck on a departed peer means nobody ever syncs that ATV again. Slot 0, the host, is never a
+// departure.
+void OnSlotReplaced(int slot, const coop::roster_ledger::Row& /*outgoing*/,
+                    const coop::roster_ledger::Row& /*incoming*/) {
+    if (slot < 1 || slot > 0xFE) return;
+    const uint8_t s8 = static_cast<uint8_t>(slot);
+    if (slot < static_cast<int>(coop::players::kMaxPeers)) ClearOwed(slot);  // a leaver is owed no edge
+    int freed = 0;
+    for (auto& kv : g_atvs) {
+        AtvEntry& e = kv.second;
+        if (e.occupantSlot == s8 || e.syncerSlot == s8) { AU::ClearTable(e); ++freed; }
+        // The change gate re-arms: the other peers still hold the departed claim, and healing them
+        // depends on the host sending something.
+        e.haveLastSync = false;
+    }
+    if (freed > 0)
+        UE_LOGI("atv: slot %d departed -- cleared the seat and syncer of %d ATV(s)", slot, freed);
+}
+
+void SubscribeDepartures() {
     static bool sDone = false;
     if (sDone) return;
     sDone = true;
-    coop::element::scan_hub::Register(coop::element::scan_hub::Consumer{
-        "atv", nullptr, &A::EnsureResolved, &A::IsAtv,
-        &HubPassBegin, &HubMatch, &HubPassComplete, /*settleScans*/ 15});
+    coop::roster_ledger::SubscribeSlotReplaced(&OnSlotReplaced);
+}
+
+// HOST: one stamped block to every world-ready client for each entry whose table changed. A payload that does not
+// read leaves the stamp due and is tried again once a second per entry, said once. The stamp goes to every client; MTA
+// sends StartSync / StopSync to the syncer alone
+// (reference/mtasa-blue/Server/mods/deathmatch/logic/CUnoccupiedVehicleSync.cpp:194-222).
+void SendStamps(coop::net::Session& s, uint64_t nowMs) {
+    for (auto& kv : g_atvs) {
+        AtvEntry& e = kv.second;
+        if (!e.stampDue || nowMs < e.stampRetryMs || !R::IsLiveByIndex(e.actor, e.idx)) continue;
+        coop::net::AtvStatePayload p{};
+        if (!ReadPayload(e.actor, kv.first, e.occupantSlot, e.syncerSlot, /*adopt*/false, p)) {
+            e.stampRetryMs = nowMs + kRetryMs;
+            static bool sSaid = false;
+            if (!sSaid) { sSaid = true;
+                UE_LOGW("atv: the stamp of '%ls' did not read its transform -- tried again each second (said once)",
+                        kv.first.c_str()); }
+            continue;
+        }
+        e.stampRetryMs = 0;
+        StampHostTrap(e, p);
+        SendToReadyClients(s, p, -1);
+        coop::atv_condition_sync::NoteSent(e, p);
+        e.stampDue = false;
+    }
+}
+
+// HOST: a stall of this Tick is not a client's silence. The blocks that arrived during it are still queued in the
+// drain that runs after this Tick (net_pump.cpp: the ticks, then the receive drain), so the judgement clocks of
+// every entry move on by the gap before the pass reads them.
+void ExcuseHostStall(uint64_t nowMs) {
+    const uint64_t gap = g_lastHostTickMs != 0 ? nowMs - g_lastHostTickMs : 0;
+    g_lastHostTickMs = nowMs;
+    if (gap <= kPassMs) return;
+    for (auto& kv : g_atvs) {
+        kv.second.lastBlockMs += gap;
+        if (kv.second.handBackMs != 0) kv.second.handBackMs += gap;
+    }
 }
 
 }  // namespace
 
 bool IndexCurrent() { return g_indexGen == ue_wrap::world_identity::Generation(); }
 
-coop::net::Session* LaneSession() { return g_session.load(std::memory_order_acquire); }
-
-const AtvEntry* FindEntry(const std::wstring& key) {
-    if (!IndexCurrent()) return nullptr;
-    const auto it = g_atvs.find(key);
-    return it == g_atvs.end() ? nullptr : &it->second;
-}
-
-void AdoptClientMirror(const std::wstring& key, void* actor) {
-    if (key.empty() || !actor || !IndexCurrent()) return;
-    AtvEntry entry{};
-    entry.actor = actor;
-    entry.idx = R::InternalIndexOf(actor);
-    entry.isClientSpawnedMirror = true;
-    g_atvs[key] = std::move(entry);
-    g_synthForActor[actor] = key;
-}
-
-void EraseEntry(const std::wstring& key) {
-    const auto it = g_atvs.find(key);
-    if (it == g_atvs.end()) return;
-    if (it->second.actor) g_synthForActor.erase(it->second.actor);
-    g_atvs.erase(it);
-}
-
-uint32_t RuntimeAnnounced() { return g_synthCounter; }
-
-int RuntimeMirrors() {
-    int count = 0;
-    for (const auto& row : g_atvs)
-        if (row.second.isClientSpawnedMirror && R::IsLiveByIndex(row.second.actor, row.second.idx)) ++count;
-    return count;
-}
-
 void Install(coop::net::Session* session) {
-    g_session.store(session, std::memory_order_release);
     coop::atv_steering_sync::Install(session);
+    EnsureHonkWatch();
+    g_session.store(session, std::memory_order_release);
+    // First, before the latch: the damage gate has its own, and registers its watches by name on every pump tick
+    // until they are live, whether or not the ATV class has loaded.
+    coop::atv_damage_gate::Install();
     // Install is the per-tick ensure path (net_pump re-calls it until the class loads), latched so
     // the one-time registration happens once.
     if (!g_installed && A::EnsureResolved()) {
@@ -871,369 +652,510 @@ void Install(coop::net::Session* session) {
         // The condition layout is warmed here, with ATV_C resident, so its one-shot resolve (thirteen
         // offsets and four function lookups) lands at session setup rather than in the first apply frame.
         ue_wrap::atv_condition::Resolve();
-        EnsureHonkWatch();
         coop::atv_hit_guard::InstallHitGuard();      // the seven ComponentHit interceptors -- Tick refuses to run without them
-        SubscribeDepartures();  // a departed author must not hold an ATV hostage
+        SubscribeDepartures();  // a departed peer must not hold an ATV hostage
         g_installed = true;
     }
 }
 
-// A peer may name itself as an ATV's holder, never anyone else: authorSlot elects the idle syncer
-// and every other peer's mount deny reads it, so an unattributed one is an authority assertion,
-// and one packet a second from any client would pin an empty ATV as occupied for everyone. Client
-// scoped: the host legitimately speaks for other peers in its snapshot and its relay, and the
-// relay preserves the origin slot.
-bool SenderMaySpeakFor(uint8_t senderSlot, uint8_t claimedSlot) {
-    if (senderSlot == 0 || senderSlot == 0xFF) return true;  // host, or unattributed local path
-    return claimedSlot == 0xFF || claimedSlot == senderSlot;
-}
-
-bool AcceptIncomingOccupancy(AtvEntry& e, const coop::net::AtvStatePayload& payload,
-                             uint8_t senderPeerSlot, void* localPlayer, uint8_t localSlot) {
-    // Validate before any local possession/seat change, including the tie-break.
-    if (senderPeerSlot >= coop::players::kMaxPeers ||
-        (payload.authorSlot != 0xFF && payload.authorSlot >= coop::players::kMaxPeers) ||
-        (payload.occupantSlot != 0xFF && payload.occupantSlot >= coop::players::kMaxPeers) ||
-        !SenderMaySpeakFor(senderPeerSlot, payload.authorSlot) ||
-        !SenderMaySpeakFor(senderPeerSlot, payload.occupantSlot)) return false;
-    const bool incomingRemoteDriver =
-        payload.occupantSlot != 0xFF && payload.occupantSlot != localSlot;
-    const bool incomingRemoteCarrier = payload.occupantSlot == 0xFF &&
-        payload.authorSlot != 0xFF && payload.authorSlot != localSlot &&
-        (payload.stateBits & coop::net::kAtvStateBitGrabbed) != 0;
-    // A carrier wins a mount/grab race. Keep the live physics handle intact on
-    // its owner; the newly seated peer runs its own native dismount instead.
-    if (incomingRemoteDriver && IsLocalGrabber(e.actor, localPlayer)) return false;
-    if (incomingRemoteCarrier && IsLocalOccupant(e.actor, localPlayer)) {
-        ue_wrap::CachedObjRef vehicle; vehicle.Set(e.actor);
-        if (!A::Dismount(e.actor) || !vehicle.Get()) return false;
-        e.occupantSlot = 0xFF;
-        e.authorSlot = payload.authorSlot;
-        e.wasPoseAuthor = false; // do not emit a release for the winning carrier
-    }
-    // The local dismount/ungrab may already have happened before this packet,
-    // with its release edge still waiting for Tick. It must not clear the new
-    // remote carrier's claim on that next Tick.
-    if (incomingRemoteCarrier && !IsLocalGrabber(e.actor, localPlayer)) e.wasPoseAuthor = false;
-
-    // The simultaneous-mount tie-break, before the authority early-return that reads the seat: two
-    // peers mounting inside one round-trip both elect themselves and each treats the other's stream
-    // as an echo, a permanent double drive. The lower slot wins, a total order both hold; only a
-    // genuine claim from a peer we outrank takes the seat, so an echo can never demote us.
-    if (payload.occupantSlot != 0xFF && payload.occupantSlot < localSlot &&
-        IsLocalOccupant(e.actor, localPlayer) &&
-        (e.occupantSlot == 0xFF || e.occupantSlot == localSlot)) {
-        ue_wrap::CachedObjRef vehicle; vehicle.Set(e.actor);
-        if (!A::Dismount(e.actor) || !vehicle.Get()) return false;
-        e.occupantSlot = payload.occupantSlot;   // a mirror now; Tick's release edge is suppressed for a yield
-    }
-
-    return true;
-}
-
 void OnReliable(const coop::net::AtvStatePayload& payload, uint8_t senderPeerSlot) {
     std::wstring key = StringFromWireKey(payload.key);
-    if (key.empty()) { UE_LOGW("atv: OnReliable empty key -- dropping"); return; }
+    if (key.empty()) {
+        g_blockRefusals.Note(senderPeerSlot, "an empty key", std::chrono::steady_clock::now());
+        return;
+    }
     if (!A::EnsureResolved()) return;
     if (!IndexCurrent()) return;  // a stale-generation index holds another world's ATVs; the stream re-sends
     // A non-finite guard before the engine writes.
     if (!std::isfinite(payload.x) || !std::isfinite(payload.y) || !std::isfinite(payload.z) ||
-        !std::isfinite(payload.pitch) || !std::isfinite(payload.yaw) || !std::isfinite(payload.roll) ||
-        !coop::atv_steering_sync::Valid(payload.steering)) {
-        UE_LOGW("atv: OnReliable non-finite pose -- dropping key='%ls'", key.c_str());
+        !std::isfinite(payload.pitch) || !std::isfinite(payload.yaw) || !std::isfinite(payload.roll)) {
+        g_blockRefusals.Note(senderPeerSlot, "a non-finite pose", std::chrono::steady_clock::now());
         return;
     }
     auto it = g_atvs.find(key);
     if (it == g_atvs.end()) return;  // not indexed yet -- the throttled rebuild will pick it up
     AtvEntry& e = it->second;
     if (!R::IsLiveByIndex(e.actor, e.idx)) return;
+    auto* s = g_session.load(std::memory_order_acquire);
+    if (!s) return;
 
-    void* localPlayer = coop::players::Registry::Get().Local();
-    const uint8_t localSlot = coop::players::Registry::Get().LocalPeerId();
-
-    // An older build's rear-seat claim. It carries no pose worth applying.
-    if (payload.stateBits & coop::net::kAtvStateBitPassengerOnly) return;
-
-    if (!AcceptIncomingOccupancy(e, payload, senderPeerSlot, localPlayer, localSlot)) return;
-
-    // A surviving local driver/carrier ignores echoes after contention resolution.
-    if (IsPoseAuthor(e.actor, localPlayer, e.occupantSlot, localSlot)) return;
-
-    e.occupantSlot = payload.occupantSlot;
-    e.authorSlot   = payload.authorSlot;
-    coop::atv_steering_sync::Receive(e.actor,payload.steering,payload.authorSlot);
-
-    // Lights, brake, turbo, radio, honk and the frame modules. The driver already has them.
+    if (s->role() == coop::net::Role::Host) {
+        // A client's block: applied only from the ATV's syncer, then re-sent to the other clients with the host's
+        // stamp. The stamp is overwritten, never read from the sender, and the bits a client may not set are
+        // masked (bit 3 is the host's own mark, bit 4 its trap).
+        if (!AU::AdmitBlock(e, payload, senderPeerSlot, NowMs())) return;
+        NoteSyncerHealth(e, senderPeerSlot, payload.health);
+        coop::atv_corrector::ApplyCorrection(e, payload, /*snap*/ false);
     A::SetBrake(e.actor, (payload.stateBits & coop::net::kAtvStateBitBrake) != 0);
     A::SetLights(e.actor, (payload.cockpit & coop::net::kAtvCockpitLights) != 0);
     A::SetTurbo(e.actor, (payload.cockpit & coop::net::kAtvCockpitTurbo) != 0);
     A::SetRadio(e.actor, (payload.cockpit & coop::net::kAtvCockpitRadio) != 0);
     A::SetHasMap(e.actor, (payload.cockpit & coop::net::kAtvCockpitMap) != 0);
     A::ApplyModuleMask(e.actor, payload.modules);
+    coop::atv_steering_sync::Receive(e.actor, payload.steering, e.syncerSlot);
     if (payload.cockpit & coop::net::kAtvCockpitHonk) A::PlayHonk(e.actor);
-
-    // A connect snapshot warps (the joiner has not seen the world); a live packet corrects. The rig
-    // keeps simulating either way; the state machine between "adopt an idle ATV" and "mirror an
-    // authored one" is where the release defect lived.
-    coop::atv_corrector::ApplyCorrection(e, payload, /*snap*/ payload.adopt != 0);
-    // A service this peer's player made since the last scan is measured before the block below
-    // overwrites the copy it was made on; the tick sends it.
-    CollectLocalService(e, localPlayer);
-    // The condition block applies after the pose, behind the same gates; presence consumption is
-    // further gated inside on the host as sender (atv_condition_sync.h).
-    coop::atv_condition_sync::ApplyPayload(e, payload, senderPeerSlot);
-}
-
-void OnRadio(const coop::net::AtvRadioPayload& payload, uint8_t senderPeerSlot) {
-    const uint8_t localSlot = coop::players::Registry::Get().LocalPeerId();
-    if (senderPeerSlot == localSlot) return;
-    const std::wstring key = StringFromWireKey(payload.key);
-    if (key.empty() || !A::EnsureResolved() || !IndexCurrent()) return;
-    auto it = g_atvs.find(key);
-    if (it == g_atvs.end() || !R::IsLiveByIndex(it->second.actor, it->second.idx)) return;
-    // PublishRadio runs for the peer that authors the ATV (the driver or the grabber) and, while
-    // nobody authors it, for the host as the idle syncer, and again in the host's connect snapshot.
-    // A client beside a parked scooter does not send this. author 0xFF used to fail open, so any
-    // client could set the url on every peer. Sender 0 stays accepted: that is the host's packet.
-    // A relay keeps the origin slot, so a client's radio is applied only when that slot authors it.
-    if (senderPeerSlot != 0 &&
-        (it->second.authorSlot == 0xFF || senderPeerSlot != it->second.authorSlot)) {
-        UE_LOGW("atv: radio of '%ls' from slot %u refused -- author is slot %u",
-                key.c_str(), static_cast<unsigned>(senderPeerSlot),
-                static_cast<unsigned>(it->second.authorSlot));
+    CollectLocalService(e, coop::players::Registry::Get().Local());
+        coop::atv_condition_sync::ApplyPayload(e, payload, /*fromHost*/ false);
+        coop::net::AtvStatePayload out = payload;
+        // Publish the host's actual condition after native wheel operations. A
+        // refused eject must not make every mirror consume the requested mask.
+        out.tiresValid=0;
+        coop::atv_condition_sync::FillPayload(e.actor,out);
+        out.syncerSlot = e.syncerSlot;
+        out.occupantSlot = e.occupantSlot;
+        out.stateBits = static_cast<uint8_t>((payload.stateBits & 0x07) | coop::net::kAtvFromSyncer);
+        StampHostTrap(e, out);
+        out.adopt = 0;
+        SendToReadyClients(*s, out, senderPeerSlot);
         return;
     }
-    std::wstring url;
-    if (payload.url[0]) {
-        for (const char* c = payload.url; *c; ++c)
-            url.push_back(static_cast<wchar_t>(static_cast<unsigned char>(*c)));
-    }
-    A::DriveRadio(it->second.actor, url.empty() ? nullptr : url.c_str(), payload.playing != 0);
+
+    // A client takes the host's table FIRST, before any return: the stamp is what the host decided.
+    const uint8_t localSlot = coop::players::Registry::Get().LocalPeerId();
+    e.occupantSlot = payload.occupantSlot;
+    e.syncerSlot   = payload.syncerSlot;
+    // The trap rides every block the host sends, so it is taken before the authority return like the rest of the stamp.
+    // The developer red arm of the ATV health drill: the bit is ignored, so the drill's `armed` phase must fail.
+    // Resolved once.
+    static const bool s_redTrapbit =
+        coop::config::ResolveEnum(coop::config_registry::rows::atv_health_red) == "trapbit";
+    TakeStampTrap(e, !s_redTrapbit && (payload.stateBits & coop::net::kAtvTrap) != 0, IsLocalSyncer(e, localSlot));
+    // An ATV this machine syncs, or has a request in flight for, keeps its own state and takes only the stamp; MTA's
+    // StartSync ships the server's pose and state to the new syncer
+    // (reference/mtasa-blue/Server/mods/deathmatch/logic/packets/CUnoccupiedVehicleStartSyncPacket.cpp).
+    if (e.syncerSlot == localSlot || e.pendingSeq != 0) return;
+    // Pose and condition: the syncer's re-sent block, the host's own copy when the host is the syncer, or the
+    // connect snapshot (a joiner syncs nothing yet, so it always places). A connect snapshot warps (the joiner has
+    // not seen the world); a live packet corrects. The rig keeps simulating either way.
+    const bool place = (payload.stateBits & coop::net::kAtvFromSyncer) != 0 || e.syncerSlot == 0 ||
+                       payload.adopt != 0;
+    if (!place) return;
+    if ((payload.stateBits & coop::net::kAtvFromSyncer) != 0) ++g_appliedFromSyncer;
+    if (payload.adopt != 0) { ++g_snapshotReached; e.snapshotReached = true; }
+    coop::atv_corrector::ApplyCorrection(e, payload, /*snap*/ payload.adopt != 0);
+    // The condition block applies after the pose, behind the same gates; every block a client receives is the
+    // host's, and its presence is consumed only for the host's own copy (atv_condition_sync.h).
+    A::SetBrake(e.actor, (payload.stateBits & coop::net::kAtvStateBitBrake) != 0);
+    A::SetLights(e.actor, (payload.cockpit & coop::net::kAtvCockpitLights) != 0);
+    A::SetTurbo(e.actor, (payload.cockpit & coop::net::kAtvCockpitTurbo) != 0);
+    A::SetRadio(e.actor, (payload.cockpit & coop::net::kAtvCockpitRadio) != 0);
+    A::SetHasMap(e.actor, (payload.cockpit & coop::net::kAtvCockpitMap) != 0);
+    A::ApplyModuleMask(e.actor, payload.modules);
+    coop::atv_steering_sync::Receive(e.actor, payload.steering, e.syncerSlot);
+    if (payload.cockpit & coop::net::kAtvCockpitHonk) A::PlayHonk(e.actor);
+    CollectLocalService(e, coop::players::Registry::Get().Local());
+    coop::atv_condition_sync::ApplyPayload(e, payload, /*fromHost*/ true);
 }
 
-void OnAtvRelease(const coop::net::AtvReleasePayload& payload, uint8_t senderPeerSlot) {
-    std::wstring key = StringFromWireKey(payload.key);
-    if (key.empty()) { UE_LOGW("atv: OnAtvRelease empty key -- dropping"); return; }
-    if (!A::EnsureResolved()) return;
-    if (!IndexCurrent()) return;  // a stale-generation index holds another world's ATVs
-    auto it = g_atvs.find(key);
-    if (it == g_atvs.end()) return;  // not indexed yet -- nothing whose author we could clear
-    AtvEntry& e = it->second;
-    if (!R::IsLiveByIndex(e.actor, e.idx)) return;
+// The mirror half (atv_runtime_mirror.cpp) reaches the map through these (atv_sync_internal.h);
+// every structural change to it is made here or by the index's hub pass (atv_index.cpp).
+coop::net::Session* LaneSession() { return g_session.load(std::memory_order_acquire); }
 
+uint32_t AppliedFromSyncer() { return g_appliedFromSyncer; }
+
+const AtvEntry* FindEntry(const std::wstring& key) {
+    auto it = g_atvs.find(key);
+    return it == g_atvs.end() ? nullptr : &it->second;
+}
+
+AtvEntry* FindEntryMutable(const std::wstring& key) {
+    auto it = g_atvs.find(key);
+    return it == g_atvs.end() ? nullptr : &it->second;
+}
+
+void AdoptClientMirror(const std::wstring& key, void* actor) {
+    AtvEntry e{};
+    e.actor = actor;
+    e.idx = R::InternalIndexOf(actor);
+    e.world = ue_wrap::world_identity::WorldOf(actor);
+    e.isClientSpawnedMirror = true;
+    g_atvs[key] = std::move(e);
+}
+
+void EraseEntry(const std::wstring& key) {
+    g_atvs.erase(key);
+}
+
+namespace {
+
+// What one run of the set half did. `edge` is the AtvSetComplete going out; `keys` the distinct keys it counted.
+struct SetSent {
+    bool     edge = false;
+    int      spawns = 0;    // AtvSpawns sent
+    int      poses = 0;     // AtvStates sent (the connect snapshot only)
+    size_t   named = 0;     // ATVs the walk found
+    uint32_t keys = 0;
+    const char* why = nullptr;   // what withheld the edge; null when it went
+};
+
+// The set half: the host's ATVs themselves, walked from the object index (the lane's rows lag a birth by a pass and
+// can hold a stale row under a live key, and the joiner removes whatever the set does not name), one AtvSpawn each,
+// then the edge. `withPoses` is the connect snapshot: each ATV's AtvState follows its AtvSpawn, ahead of the edge. An
+// owed retry (`!withPoses`) sends nothing while the walk still cannot be taken as complete, so a wait costs no wire.
+SetSent SendSetToSlot(coop::net::Session* s, int peerSlot, bool withPoses) {
+    SetSent r;
+    struct Held { std::wstring key; void* actor; };
+    std::vector<Held> held;
+    const size_t loading = ForEachAnnounceableAtv([](void* ctx, void* actor, const std::wstring& key) {
+        static_cast<std::vector<Held>*>(ctx)->push_back(Held{ key, actor });
+    }, &held);
+    r.named = held.size();
+    // The walk is complete only if no ATV is still loading, the lane's index has passed this world and the host's
+    // object index has applied its births: the joiner removes everything the set does not name.
+    const char* incomplete = nullptr;
+    if (loading > 0) incomplete = "an ATV is still loading on the host";
+    else if (!IndexCurrent()) incomplete = "the host's ATV index has not completed a pass in this world";
+    else if (!ue_wrap::object_index::IsSeeded()) incomplete = "the host's object index is not seeded";
+    else if (ue_wrap::object_index::Backlog() > 0) incomplete = "the host's object index has births it has not applied";
+    if (!withPoses && incomplete) { r.why = incomplete; return r; }
+    // Every ATV is announced first on the same lane, so the joiner holds it under its Key before the pose
+    // lands. Divergence from MTA, which builds a joiner's world from these packets alone
+    // (reference/mtasa-blue/Server/mods/deathmatch/logic/CMapManager.cpp:195-297): ours also loads the
+    // host's save, so a joiner adopts the ATV its save already holds, and the set's edge below lets it
+    // drop the ones the save holds and this world does not.
+    std::unordered_set<std::wstring> sentKeys;   // several save ATVs can share a key; the joiner's set is of keys
+    for (const Held& h : held)
+        if (SendAtvSpawn(h.key, h.actor, peerSlot)) { ++r.spawns; sentKeys.insert(h.key); }
+    if (withPoses) {
+        for (const Held& h : held) {
+            // An ATV born inside the hub's pass window has no row yet: it is announced and the hub files it, its
+            // stream following. The index is read here, never written.
+            const auto row = g_atvs.find(h.key);
+            if (row == g_atvs.end() || row->second.actor != h.actor) continue;
+            AtvEntry& e = row->second;
+            // The change gate re-arms for the joiner: the snapshot is fire-once and a fresh joiner is
+            // the peer most likely to drop it, and a satisfied gate would then send nothing until the
+            // host's copy moved.
+            // A join snapshot carries state, not a pending one-shot for existing peers.
+            e.haveLastSync = false;
+            // The joiner gets pose and velocity and warps to it, stamped with the host's table: it holds the seat and
+            // the syncer from the first block, and places its copy once even when a client syncs the ATV. An ATV in
+            // the air at a join arrives moving and lands.
+            coop::net::AtvStatePayload p{};
+            if (!ReadPayload(e.actor, h.key, e.occupantSlot, e.syncerSlot, /*adopt*/true, p)) continue;
+            StampHostTrap(e, p);
+            s->SendReliableToSlot(peerSlot, coop::net::ReliableKind::AtvState, &p, sizeof(p));
+            PublishRadio(*s,e.actor,h.key,peerSlot,true);
+            ++r.poses;
+        }
+    }
+    // The edge, behind the AtvSpawns on the same lane. Withheld whenever the walk cannot be taken as complete -- an
+    // announce that did not go, or one of the reasons above.
+    const char* withheld = r.spawns != static_cast<int>(held.size()) ? "an AtvSpawn was not sent" : incomplete;
+    if (!withheld) {
+        coop::net::AtvSetCompletePayload done{};
+        done.count = static_cast<uint32_t>(sentKeys.size());
+        if (s->SendReliableToSlot(peerSlot, coop::net::ReliableKind::AtvSetComplete, &done, sizeof(done))) {
+            r.edge = true;
+            r.keys = done.count;
+        } else {
+            withheld = "the edge was not sent";
+        }
+    }
+    r.why = withheld;
+    if (withheld && withPoses)
+        UE_LOGW("atv: connect-snapshot to slot %d has no set edge -- %s; owed: retried while the slot is "
+                "world-ready, from 1 s with a growing wait", peerSlot, withheld);
+    return r;
+}
+
+}  // namespace
+
+void QueueConnectBroadcastForSlot(int peerSlot) {
+    auto* s = g_session.load(std::memory_order_acquire);
+    if (!s || s->role() != coop::net::Role::Host) return;  // host-only snapshot
+    if (peerSlot < 0 || peerSlot >= static_cast<int>(coop::players::kMaxPeers)) return;
+    ClearOwed(peerSlot);   // this replay supersedes an owed one
+    const uint64_t nowMs = NowMs();
+    if (!A::EnsureResolved()) {
+        ArmOwed(peerSlot, nowMs, "the ATV wrapper is not resolved");
+        UE_LOGW("atv: connect-snapshot to slot %d withheld -- the ATV wrapper is not resolved; owed: retried while the "
+                "slot is world-ready, from 1 s with a growing wait", peerSlot);
+        return;
+    }
+    const SetSent r = SendSetToSlot(s, peerSlot, /*withPoses*/ true);
+    if (!r.edge) ArmOwed(peerSlot, nowMs, r.why);
+    UE_LOGI("atv: connect-snapshot -- sent %d ATV pose(s) (%d AtvSpawn announce(s); the set names %zu) to slot %d (of %zu indexed)",
+            r.poses, r.spawns, r.named, peerSlot, g_atvs.size());
+}
+
+namespace {
+// HOST, while a bit is set: each owed slot that is world-ready and due gets the set half again (the AtvSpawns the
+// edge counts, then the edge; no poses, the snapshot sent those). The edge going clears the bit; a retry that did
+// not send it doubles that slot's interval and says why, once per reason. Divergence from MTA,
+// whose join packet is one counted batch and so is never withheld: this set is N reliable messages behind a walk
+// that can be incomplete, so the host holds the edge as a debt
+// (reference/mtasa-blue/Server/mods/deathmatch/logic/CMapManager.cpp:195-297).
+void PollOwedSetEdges(coop::net::Session* s, uint64_t nowMs) {
+    if (!g_setOwed) return;
+    for (int slot = 0; slot < static_cast<int>(coop::players::kMaxPeers); ++slot) {
+        if (!(g_setOwed & (1u << slot)) || nowMs < g_owedNextMs[slot] || !s->IsSlotWorldReady(slot)) continue;
+        const SetSent r = SendSetToSlot(s, slot, /*withPoses*/ false);
+        if (r.edge) {
+            ClearOwed(slot);
+            UE_LOGI("atv: the owed set edge to slot %d sent (%u key(s))", slot, r.keys);
+            continue;
+        }
+        if (!g_owedSaid[slot] || std::strcmp(g_owedSaid[slot], r.why ? r.why : "") != 0) {
+            g_owedSaid[slot] = r.why ? r.why : "";
+            UE_LOGW("atv: the owed set edge to slot %d is withheld -- %s; retried with a growing wait", slot,
+                    g_owedSaid[slot]);
+        }
+        g_owedIntervalMs[slot] = g_owedIntervalMs[slot] * 2 > kOwedRetryMaxMs ? kOwedRetryMaxMs
+                                                                              : g_owedIntervalMs[slot] * 2;
+        g_owedNextMs[slot] = nowMs + g_owedIntervalMs[slot];
+    }
+}
+}  // namespace
+
+void Tick() {
+    // Every early return means this module is not deciding who owns what, and the collision guard
+    // must then be inert: it suppresses damage by default, and armed against a stale set it would
+    // make the local ATV invulnerable. Disarmed first; the path that earns it re-arms at the end.
+    struct DisarmUnlessArmed {
+        bool armed = false;
+        ~DisarmUnlessArmed() {
+            if (armed) return;
+            coop::atv_hit_guard::SetActive(false);
+            // The set clears too: OwnsTick is a public read, and a stale set would label a mirror
+            // sample as an owner sample.
+            coop::atv_hit_guard::PublishOwned(nullptr, 0);
+        }
+    } scope;
+
+    g_blockRefusals.Flush(std::chrono::steady_clock::now());
+    if (!A::EnsureResolved()) return;
+    RegisterWithScanHub();  // safety net for any order where Tick precedes Install
+    if (!IndexCurrent()) return;  // index belongs to a dead world -- wait for the hub's next pass
+    auto* s = g_session.load(std::memory_order_acquire);
+
+    if (!s || !s->connected()) return;
+    // Parked spawns go back to OnAtvSpawn only inside a gameplay world, which re-judges the rest of its readiness.
+    if (s->role() != coop::net::Role::Host &&
+        ue_wrap::world_identity::CurrentWorldKind() == ue_wrap::world_identity::WorldKind::Gameplay)
+        spawn_park::DrainReady();
     void* localPlayer = coop::players::Registry::Get().Local();
     const uint8_t localSlot = coop::players::Registry::Get().LocalPeerId();
+    const uint64_t nowMs = NowMs();
+    // The set edge a connect snapshot withheld is owed to its slot; ahead of the guard's return, which is no
+    // concern of the snapshot.
+    if (s->role() == coop::net::Role::Host) PollOwedSetEdges(s, nowMs);
 
-    // Our own authority ignores a stale or echoed release.
-    if (IsPoseAuthor(e.actor, localPlayer, e.occupantSlot, localSlot)) return;
+    // Fail closed: without the hit interceptors a non-owner would author damage on a simulating
+    // rig, so nothing is mirrored and the ERROR at Install says why.
+    if (!coop::atv_hit_guard::Armed()) return;
 
-    // Only the recorded author may clear the author (the host excepted), or any client could hand
-    // itself the idle election or un-seat a driver.
-    if (senderPeerSlot != 0 && senderPeerSlot != 0xFF &&
-        e.authorSlot != 0xFF && e.authorSlot != senderPeerSlot) {
-        UE_LOGW("atv: slot %u released '%ls' held by slot %u -- refusing",
-                static_cast<unsigned>(senderPeerSlot), key.c_str(),
-                static_cast<unsigned>(e.authorSlot));
-        return;
+    const bool isHost = s->role() == coop::net::Role::Host;
+    const bool gateOpen = !isHost && coop::net_pump::HasAnnouncedWorldReady();
+    if (isHost) {
+        TrySpawnCompanion(nowMs);
+        ExcuseHostStall(nowMs);
+        ReadHostTraps();
+        JudgeHostBody(localPlayer);
+        if (nowMs - g_lastPassMs >= kPassMs) { g_lastPassMs = nowMs; AU::RunPass(nowMs); }
+        SendStamps(*s, nowMs);
     }
+    void* owned[coop::atv_hit_guard::kMaxOwned];
+    int   ownedN = 0;
 
-    // The whole handler: the seat and the author free. No physics write and no velocity, since
-    // nothing was frozen and every AtvState carried the velocity; on the host this election makes
-    // it the idle syncer on the next tick.
-    e.occupantSlot = 0xFF;
-    e.authorSlot   = 0xFF;
-    UE_LOGI("atv: OnAtvRelease key='%ls' -- author cleared (the rig kept simulating throughout)",
-            key.c_str());
-}
-
-// A mirror spawned while the settled count was 1. The spawn tick is not a settlement. An
-// unsettled count does not close the watch. Above two, this mirror is destroyed and a
-// save-restored ATV is not. If another live body already holds the synth key, that body is
-// adopted and the mirror is the one that goes. A save record that names the key, with no such
-// body yet, keeps the watch open so the later body is adopted instead of left beside the mirror.
-void WatchClientMirror() {
-    if (!g_clientMirrorWatch) return;
-    void* mirror = g_clientMirrorActor;
-    if (!mirror || !R::IsLive(mirror)) {
-        g_clientMirrorActor = nullptr;
-        g_clientMirrorWatch = false;
-        return;
-    }
-    const int n = LiveAtvCount();
-    if (n < 0) return;
-    const std::wstring key = g_clientMirrorKey;
-    auto it = g_atvs.find(key);
-
-    auto dropMirror = [&]() {
-        g_synthForActor.erase(mirror);
-        if (R::IsLive(mirror)) A::DestroyMirror(mirror);
-        g_clientMirrorActor = nullptr;
-        g_clientMirrorWatch = false;
-        g_clientMirrorKey.clear();
-    };
-
-    if (it != g_atvs.end() && it->second.actor && it->second.actor != mirror &&
-        R::IsLive(it->second.actor)) {
-        it->second.isClientSpawnedMirror = false;
-        g_synthForActor[it->second.actor] = key;
-        dropMirror();
-        UE_LOGI("atv: companion '%ls' is already in this world -- dropped the extra mirror", key.c_str());
-        return;
-    }
-    if (void* other = A::FindOtherLiveByKey(key, mirror)) {
-        AtvEntry e = it != g_atvs.end() ? it->second : AtvEntry{};
-        // The entry was the mirror's. Its unsent service and floor belong to that body, not
-        // to the save scooter this key is moving onto.
-        if (e.actor != other) {
-            e.hasPendingService = false;
-            e.pendingService = {};
-            e.lastServiceSentMs = 0;
-            e.condFloorFields = 0;
-            e.condFloorUntilMs = 0;
-            e.condLocalRefValid = false;
-            e.condLocalRefActor = nullptr;
-            e.condExpressedSeeded = false;
-            e.condExpressedActor = nullptr;
-            e.haveLastSentCond = false;
+    for (auto& kv : g_atvs) {
+        AtvEntry& e = kv.second;
+        if (!R::IsLiveByIndex(e.actor, e.idx)) continue;
+        if (!isHost) {
+            TickClientBody(*s, e, kv.first, localPlayer, localSlot, gateOpen);
+            A::ReadTrap(e.actor, e.copyTrapSeen);   // this copy's own trap, kept for the explosion request
+        } else if (e.blown && IsLocalSyncer(e, localSlot)) {
+            // A wreck handed back to the host: its own copy's health is the stream to read.
+            NoteSyncerHealth(e, 0, A::GetHealth(e.actor));
         }
-        e.actor = other;
-        e.idx = R::InternalIndexOf(other);
-        e.isClientSpawnedMirror = false;
-        g_atvs[key] = std::move(e);
-        g_synthForActor[other] = key;
-        dropMirror();
-        UE_LOGI("atv: companion '%ls' is already in this world -- dropped the extra mirror", key.c_str());
-        return;
-    }
-    if (n > 2) {
-        if (it != g_atvs.end() && it->second.actor == mirror) g_atvs.erase(it);
-        else if (it != g_atvs.end()) it->second.isClientSpawnedMirror = false;
-        dropMirror();
-        UE_LOGW("atv: removed client mirror '%ls' -- keeping the world at two", key.c_str());
-        return;
-    }
-    const int saveN = A::LoadedSaveAtvCount();
-    if (saveN >= 0 && saveN > n - 1) return;
-    if (!key.empty() && A::LoadedSaveNamesKey(key.c_str())) return;
-    g_clientMirrorWatch = false;
-}
 
-void FlushPendingAtvSpawn() {
-    WatchClientMirror();
-    if (!g_havePendingSpawn) return;
-    const int live = LiveAtvCount();
-    if (live < 0) return;  // the load is still delivering actors; a count taken now is short
-    const std::wstring synthKey = StringFromWireKey(g_pendingSpawn.synthKey);
-    if (!synthKey.empty() && g_atvs.find(synthKey) != g_atvs.end()) {
-        g_havePendingSpawn = false;
-        return;
-    }
-    // The save already built this scooter. Adopting it keeps one actor, under the same key the
-    // host saves and drives. Spawning here would be a third body with a copy of that key.
-    if (void* existing = A::FindLiveByKey(synthKey)) {
-        g_havePendingSpawn = false;
-        AtvEntry e{};
-        e.actor = existing;
-        e.idx = R::InternalIndexOf(existing);
-        g_atvs[synthKey] = std::move(e);
-        g_synthForActor[existing] = synthKey;
-        UE_LOGI("atv: companion '%ls' is already in this world -- not spawning another", synthKey.c_str());
-        return;
-    }
-    if (live >= 2) {
-        g_havePendingSpawn = false;
-        UE_LOGI("atv: not spawning another scooter -- the world already has %d", live);
-        return;
-    }
-    if (live == 0) return;  // the save scooter is not listed yet
-    const coop::net::AtvSpawnPayload payload = g_pendingSpawn;
-    g_havePendingSpawn = false;
-    std::wstring className = WireClassNameToString(payload.className);
-    if (className.empty()) return;
-    const FVector loc{ payload.x, payload.y, payload.z };
-    const FRotator rot{ payload.pitch, payload.yaw, payload.roll };
-    void* spawned = A::SpawnMirror(className, loc, rot);
-    if (!spawned) {
-        UE_LOGW("atv: mirror spawn failed synthKey='%ls' class='%ls'", synthKey.c_str(), className.c_str());
-        return;
-    }
-    // Same save key as the host, so a later world load finds this body instead of creating
-    // another. skipSave: the host's actor is the one the world save writes.
-    A::WriteSaveKey(spawned, synthKey);
-    A::SetIncludedInSave(spawned, false);
-    AtvEntry e{};
-    e.actor = spawned;
-    e.idx = R::InternalIndexOf(spawned);
-    e.isClientSpawnedMirror = true;
-    g_atvs[synthKey] = std::move(e);
-    g_synthForActor[spawned] = synthKey;
-    // The count on this tick is the one the mirror just joined. The watch runs from the next
-    // flush, so a save scooter that appears after this spawn can still drop the mirror.
-    g_clientMirrorActor = spawned;
-    g_clientMirrorKey = synthKey;
-    g_clientMirrorWatch = true;
-    UE_LOGI("atv: spawned runtime-ATV mirror synthKey='%ls' class='%ls' actor=%p loc=(%.0f, %.0f, %.0f)",
-            synthKey.c_str(), className.c_str(), spawned, loc.X, loc.Y, loc.Z);
-}
-
-void OnAtvSpawn(const coop::net::AtvSpawnPayload& payload, uint8_t /*senderPeerSlot*/) {
-    auto* s = g_session.load(std::memory_order_acquire);
-    if (!s || s->role() == coop::net::Role::Host) return;  // client-only (the host owns the real ATV)
-    if (!A::EnsureResolved()) return;
-    std::wstring synthKey = StringFromWireKey(payload.synthKey);
-    if (synthKey.empty()) { UE_LOGW("atv: OnAtvSpawn empty synthKey -- dropping"); return; }
-    if (g_atvs.find(synthKey) != g_atvs.end()) return;  // already spawned (re-announce / connect dup) -- idempotent
-    if (!std::isfinite(payload.x) || !std::isfinite(payload.y) || !std::isfinite(payload.z) ||
-        !std::isfinite(payload.pitch) || !std::isfinite(payload.yaw) || !std::isfinite(payload.roll)) {
-        UE_LOGW("atv: OnAtvSpawn non-finite pose synthKey='%ls' -- dropping", synthKey.c_str());
-        return;
-    }
-    if (WireClassNameToString(payload.className).empty()) {
-        UE_LOGW("atv: OnAtvSpawn empty className synthKey='%ls' -- dropping", synthKey.c_str());
-        return;
-    }
-    // Held until the object index has finished the load, so a scooter the save already restored
-    // is visible and this does not add a third.
-    g_pendingSpawn = payload;
-    g_havePendingSpawn = true;
-    FlushPendingAtvSpawn();
-}
-
-void OnAtvDestroy(const coop::net::AtvDestroyPayload& payload, uint8_t /*senderPeerSlot*/) {
-    auto* s = g_session.load(std::memory_order_acquire);
-    if (!s || s->role() == coop::net::Role::Host) return;  // client-only
-    std::wstring synthKey = StringFromWireKey(payload.synthKey);
-    if (synthKey.empty()) return;
-    // A spawn held for the load must not flush after the host has already taken the scooter back.
-    if (g_havePendingSpawn && StringFromWireKey(g_pendingSpawn.synthKey) == synthKey)
-        g_havePendingSpawn = false;
-    void* mirror = nullptr;
-    if (g_clientMirrorKey == synthKey) {
-        mirror = g_clientMirrorActor;
-        if (mirror && R::IsLive(mirror)) {
-            A::DestroyMirror(mirror);
-            g_synthForActor.erase(mirror);
+        // Tick ownership: this machine syncs the ATV (on the host: the table names the host), so it runs the
+        // brain and the collision damage. There is no brain-off (parking the tick was measured useless, since
+        // SetCenterOfMass runs unconditionally per tick, and the wheel torque and battery terms are already
+        // single-peer by the game's own isDriven gates).
+        const bool syncs = IsLocalSyncer(e, localSlot);
+        if (!syncs && nowMs - e.lastServiceScanMs >= kServiceScanMs) {
+            e.lastServiceScanMs = nowMs;
+            CollectLocalService(e, localPlayer);
+            FlushLocalService(s,e,kv.first,isHost,localSlot,nowMs);
+        } else if (syncs) coop::atv_condition_sync::ResetLocalService(e);
+        if (syncs) {
+            if (ownedN < coop::atv_hit_guard::kMaxOwned) {
+                owned[ownedN++] = e.actor;
+            } else {
+                static bool sSaturated = false;
+                if (!sSaturated) { sSaturated = true;
+                    UE_LOGE("atv: owned-set saturated at %d -- ATV '%ls' and any beyond it will "
+                            "have their OWN collisions suppressed on the peer that owns them",
+                            coop::atv_hit_guard::kMaxOwned, kv.first.c_str()); }
+            }
         }
-        g_clientMirrorActor = nullptr;
-        g_clientMirrorWatch = false;
-        g_clientMirrorKey.clear();
+        if (!syncs) continue;   // a mirror does nothing more here; it is corrected at packet arrival
+
+        PublishRadio(*s,e.actor,kv.first,-1,false);
+        const bool driving = e.localSeated || e.localCarrying;
+        if (!isHost || driving) {
+            // A client syncer streams at the drive rate whether it sits, carries or has only not been handed
+            // back yet; the host streams at it while its own player drives or carries. The ATV health drill's
+            // silent arm holds a client's block back (SetDrillMute).
+            if (!(g_drillMute && !isHost) && nowMs - e.lastSentMs >= kDriveSendMs) {
+                e.lastSentMs = nowMs;
+                coop::net::AtvStatePayload p{};
+                const uint8_t occ = isHost ? e.occupantSlot : uint8_t{0xFF};   // the host stamps; a client's is overwritten
+                if (ReadPayload(e.actor, kv.first, occ, localSlot, /*adopt*/false, p, /*grabbed*/e.localCarrying,e.honkPulse)) {
+                    bool sent=false;
+                    if (isHost) { StampHostTrap(e, p); sent=SendToReadyClients(*s, p, -1); }
+                    else sent=s->SendReliable(coop::net::ReliableKind::AtvState, &p, sizeof(p));
+                    if(sent)e.honkPulse=false;
+                    coop::atv_condition_sync::NoteSent(e, p);  // keep the idle gate's baseline fresh across a drive-to-idle handoff
+                }
+            }
+        } else if (nowMs - e.lastSentMs >= kIdleSendMs) {
+            // The idle syncer (the host, nobody driving): a slower cadence and a change gate, so a
+            // parked ATV costs nothing while one rolling down a hill still converges.
+            // The clock bumps once the window elapses, as MTA's does, not only on a send:
+            // bumped only on a send it stayed stale for the parked ATV, and the gate then ran
+            // its dispatches at the pump rate.
+            e.lastSentMs = nowMs;
+            // The payload is built before the gate so the condition block can vote: a parked
+            // host eject (a mask flip, no motion) would otherwise wait out the keepalive.
+            coop::net::AtvStatePayload p{};
+            const bool readable  = ReadPayload(e.actor, kv.first, e.occupantSlot, /*syncerSlot*/0, /*adopt*/false, p, false, e.honkPulse);
+            if (readable) StampHostTrap(e, p);
+            const bool changed   = IdleWorthSending(e);
+            const bool condMoved = readable && coop::atv_condition_sync::CondChangedSinceLastSend(e, p);
+            const bool keepalive = nowMs - e.lastIdleSendMs >= kIdleKeepaliveMs;
+            const uint8_t face = p.cockpit & ~coop::net::kAtvCockpitHonk;
+            const bool faceMoved = !e.haveFace || face != e.lastCockpit || p.modules != e.lastModules || p.steering != e.lastSteering;
+            if (readable && (changed || condMoved || keepalive || faceMoved || e.honkPulse)) {
+                e.haveFace=true; e.lastCockpit=face; e.lastModules=p.modules; e.lastSteering=p.steering;
+                e.lastIdleSendMs = nowMs;
+                if(SendToReadyClients(*s,p,-1))e.honkPulse=false;
+                coop::atv_condition_sync::NoteSent(e, p);
+            }
+        }
     }
-    if (!IndexCurrent()) return;  // the pass prunes a dead-world entry itself
-    auto it = g_atvs.find(synthKey);
-    if (it == g_atvs.end()) return;
-    void* actor = it->second.actor;
-    // The entry moved onto a save scooter. The mirror is already gone; that scooter stays.
-    if (mirror && actor && actor != mirror) {
-        it->second.isClientSpawnedMirror = false;
-        UE_LOGI("atv: runtime-ATV mirror synthKey='%ls' destroyed; the saved scooter stays",
-                synthKey.c_str());
-        return;
-    }
-    const bool destroyed = it->second.isClientSpawnedMirror && R::IsLiveByIndex(actor, it->second.idx) &&
-                           A::DestroyMirror(actor);  // our own fresh spawn
-    if (actor) g_synthForActor.erase(actor);
-    g_atvs.erase(it);
+
+    // Published before arming, so the guard never runs against an unrefreshed set.
+    coop::atv_hit_guard::PublishOwned(owned, ownedN);
+    coop::atv_hit_guard::SetActive(true);
+    scope.armed = true;
 }
+
+void OnDisconnect() {
+    coop::atv_steering_sync::OnDisconnect();
+    g_radioSent.clear();
+    if(g_companionKey.empty() && g_companionActor && R::IsLive(g_companionActor))A::DestroyMirror(g_companionActor);
+    g_companionActor=nullptr;g_companionKey.clear();g_companionSpawned=false;g_companionCapped=false;
+    g_companionSettledSince=0;g_compStillSince=0;g_compSrc=nullptr;
+    for (auto& b:g_editBuckets) b.Reset();
+    spawn_park::Clear();
+    ResetArrivalState();
+    for (int slot = 0; slot < static_cast<int>(coop::players::kMaxPeers); ++slot) ClearOwed(slot);
+    // Disarmed first: nothing publishes an owned set from here, and a live hit must reach the game.
+    coop::atv_hit_guard::SetActive(false);
+    coop::atv_hit_guard::PublishOwned(nullptr, 0);
+    for (auto& kv : g_atvs) {
+        const bool live = R::IsLiveByIndex(kv.second.actor, kv.second.idx);
+        if (kv.second.isClientSpawnedMirror) {
+            if (live) A::DestroyMirror(kv.second.actor);   // a mirror this lane spawned is a coop artifact
+        }
+        // Nothing to restore: the lane disables neither tick nor physics, so a session leaves every
+        // save ATV as it found it.
+    }
+    const size_t n = g_atvs.size();
+    g_atvs.clear();
+    ResetAnnounceState();
+    g_installed = false;  // a new session re-indexes via the next Install (latched again)
+    ResetRequestSeq();
+    g_lastPassMs = 0;
+    g_lastHostTickMs = 0;
+    g_drillMute = false;
+    g_blockRefusals.Clear();
+    const auto c  = coop::atv_corrector::ReadCounters();
+    const auto hg = coop::atv_hit_guard::ReadCounters();
+    const auto dg = coop::atv_damage_gate::ReadCounters();
+    if (n > 0)
+        UE_LOGI("atv: OnDisconnect -- cleared %zu ATV(s) (brains restored; spawned mirrors destroyed); "
+                "hit guard: %s, %llu neutered / %llu allowed / %llu UNRESOLVED; "
+                "damage gate (addDamage/exploded/explode): cancelled %llu/%llu/%llu, ran %llu/%llu/%llu; "
+                "corrector: %llu nudged / %llu warped "
+                "/ %llu cut-on-stall / %llu parked-replace; reached the corrector from the syncer %u / from the snapshot %u",
+                n, hg.armed ? "armed" : "NEVER ARMED",
+                static_cast<unsigned long long>(hg.neutered),
+                static_cast<unsigned long long>(hg.allowed),
+                static_cast<unsigned long long>(hg.unresolved),
+                dg.cancelled[0], dg.cancelled[1], dg.cancelled[2], dg.ran[0], dg.ran[1], dg.ran[2],
+                static_cast<unsigned long long>(c.corrections),
+                static_cast<unsigned long long>(c.warps),
+                static_cast<unsigned long long>(c.stallWarps),
+                static_cast<unsigned long long>(c.restPlaces), AppliedFromSyncer(), g_snapshotReached);
+    g_appliedFromSyncer = g_snapshotReached = 0;
+    coop::atv_damage_gate::Reset();
+    AU::LogSummary();
+    AU::Reset();
+}
+
+bool OwnsTick(void* actor) {
+    // The set, the latch and the answer live with the collision guard (atv_hit_guard::Owns).
+    return coop::atv_hit_guard::Owns(actor);
+}
+
+bool IsIndexed(void* actor) {
+    if (!actor || !IndexCurrent()) return false;   // a stale-generation index holds another world's ATVs
+    for (const auto& kv : g_atvs)
+        if (kv.second.actor == actor) return R::IsLiveByIndex(kv.second.actor, kv.second.idx);
+    return false;
+}
+
+bool NonOwnerCopy(void* actor) {
+    return coop::atv_hit_guard::Active() && IsIndexed(actor) && !OwnsTick(actor);
+}
+
+// Whether a remote peer occupies this ATV; the mount deny reads it. The occupant is the host's table, stamped.
+bool IsOccupiedByOther(void* actor, uint8_t* outOccupantSlot) {
+    if (!actor) return false;
+    if (!IndexCurrent()) return false;   // a stale-generation index holds another world's ATVs
+    const uint8_t localSlot = coop::players::Registry::Get().LocalPeerId();
+    for (const auto& kv : g_atvs) {
+        if (kv.second.actor == actor) {
+            const uint8_t occ = kv.second.occupantSlot;
+            if (occ != 0xFF && occ != localSlot) {
+                if (outOccupantSlot) *outOccupantSlot = occ;
+                return true;
+            }
+            return false;
+        }
+    }
+    return false;
+}
+
+void* ActorSeatedBy(uint8_t slot) {
+    if (slot == 0xFF) return nullptr;       // 0xFF is the empty seat, never a slot
+    if (!IndexCurrent()) return nullptr;    // a stale-generation index holds another world's ATVs
+    for (const auto& kv : g_atvs)
+        if (kv.second.occupantSlot == slot && R::IsLiveByIndex(kv.second.actor, kv.second.idx)) return kv.second.actor;
+    return nullptr;
+}
+
+bool ReadTable(const std::wstring& key, TableView& out) {
+    if (!IndexCurrent()) return false;
+    const auto it = g_atvs.find(key);
+    if (it == g_atvs.end() || !R::IsLiveByIndex(it->second.actor, it->second.idx)) return false;
+    out.occupantSlot = it->second.occupantSlot;
+    out.syncerSlot = it->second.syncerSlot;
+    out.lastBlockSpeed = it->second.lastBlockSpeed;
+    out.localSeated = it->second.localSeated;
+    out.snapshotReached = it->second.snapshotReached;
+    auto* s = g_session.load(std::memory_order_acquire);
+    out.trap = s && s->role() == coop::net::Role::Host ? it->second.hostTrap : it->second.stampTrap;
+    out.blown = it->second.blown;
+    out.blownBy = it->second.blownBy;
+    out.actor = it->second.actor;
+    return true;
+}
+
+void SetDrillMute(bool on) { g_drillMute = on; }
 
 void OnConditionEdit(const coop::net::AtvConditionEditPayload& payload, uint8_t senderPeerSlot) {
     auto* s = g_session.load(std::memory_order_acquire);
@@ -1260,7 +1182,7 @@ void OnConditionEdit(const coop::net::AtvConditionEditPayload& payload, uint8_t 
     if (!R::IsLiveByIndex(e.actor, e.idx)) return;
     void* localPlayer = coop::players::Registry::Get().Local();
     const uint8_t localSlot = coop::players::Registry::Get().LocalPeerId();
-    const bool iAuthor = IsPoseAuthor(e.actor, localPlayer, e.occupantSlot, localSlot);
+    const bool iAuthor = e.syncerSlot == localSlot;
     const bool putsOn = payload.tiresAdded != 0 || payload.spareAdded != 0;
     const bool putsOff = payload.tiresRemoved != 0 || payload.spareRemoved != 0;
 
@@ -1285,291 +1207,46 @@ void OnConditionEdit(const coop::net::AtvConditionEditPayload& payload, uint8_t 
                 key.c_str(), static_cast<unsigned>(senderPeerSlot), kServiceReachCm);
         return;
     }
-    if (iAuthor || e.authorSlot == 0xFF || e.authorSlot == localSlot) {
+    if (iAuthor || e.syncerSlot == 0xFF || e.syncerSlot == localSlot) {
         coop::atv_condition_sync::ApplyService(e, payload, /*deltas*/true, /*presence*/true);
         return;
     }
     // A client authors it: tyre presence is the host's own, the accumulators are the author's, and
     // an author that made the service itself already streams them.
     if (putsOn || putsOff) coop::atv_condition_sync::ApplyService(e, payload, /*deltas*/false, /*presence*/true);
-    if (e.authorSlot == senderPeerSlot) return;
+    if (e.syncerSlot == senderPeerSlot) return;
     coop::net::AtvConditionEditPayload fwd = payload;
     fwd.originSlot = senderPeerSlot;
-    s->SendReliableToSlot(e.authorSlot, coop::net::ReliableKind::AtvConditionEdit, &fwd, sizeof(fwd));
+    s->SendReliableToSlot(e.syncerSlot, coop::net::ReliableKind::AtvConditionEdit, &fwd, sizeof(fwd));
     UE_LOGI("atv: service of '%ls' by slot %u forwarded to its author, slot %u", key.c_str(),
-            static_cast<unsigned>(senderPeerSlot), static_cast<unsigned>(e.authorSlot));
+            static_cast<unsigned>(senderPeerSlot), static_cast<unsigned>(e.syncerSlot));
 }
-
-void QueueConnectBroadcastForSlot(int peerSlot) {
-    auto* s = g_session.load(std::memory_order_acquire);
-    if (!s || s->role() != coop::net::Role::Host) return;  // host-only snapshot
-    if (peerSlot < 0 || peerSlot >= static_cast<int>(coop::players::kMaxPeers)) return;
-    // The hub keeps the index a pass fresh; a spawn inside that window is announced on the next
-    // pass.
-    void* localPlayer = coop::players::Registry::Get().Local();
+void OnRadio(const coop::net::AtvRadioPayload& payload, uint8_t senderPeerSlot) {
     const uint8_t localSlot = coop::players::Registry::Get().LocalPeerId();
-    int sent = 0, spawns = 0;
-    for (auto& kv : g_atvs) {
-        AtvEntry& e = kv.second;
-        if (!R::IsLiveByIndex(e.actor, e.idx)) continue;
-        // A synthetic-keyed ATV is announced first on the same lane, so the joiner fresh-spawns it
-        // before the pose lands.
-        auto held = g_synthForActor.find(e.actor);
-        const bool runtime = IsSynthKey(kv.first) ||
-                             (held != g_synthForActor.end() && held->second == kv.first);
-        if (runtime) { SendAtvSpawn(kv.first, e.actor, peerSlot); ++spawns; }
-        // The change gate re-arms for the joiner: the snapshot is fire-once and a fresh joiner is
-        // the peer most likely to drop it, and a satisfied gate would then send nothing until the
-        // host's copy moved.
-        e.haveLastSync = false;
-        // The joiner gets pose and velocity and warps to it. It needs who holds the ATV: the host
-        // itself if it authors, else the recorded author (or nobody, which makes the host its
-        // syncer). An ATV in the air at a join arrives moving and lands.
-        const bool hostAuthors = IsPoseAuthor(e.actor, localPlayer, e.occupantSlot, localSlot);
-        const uint8_t authorSlot = hostAuthors ? localSlot : e.authorSlot;
-        coop::net::AtvStatePayload p{};
-        if (!ReadPayload(e.actor, kv.first, e.occupantSlot, authorSlot, /*adopt*/true, p,
-                         /*grabbed*/false, /*honk*/false)) continue;
-        // A join snapshot carries state, not a pending one-shot for existing peers.
-        s->SendReliableToSlot(peerSlot, coop::net::ReliableKind::AtvState, &p, sizeof(p));
-        PublishRadio(*s, e.actor, kv.first, peerSlot, true);
-        ++sent;
+    if (senderPeerSlot == localSlot) return;
+    const std::wstring key = StringFromWireKey(payload.key);
+    if (key.empty() || !A::EnsureResolved() || !IndexCurrent()) return;
+    auto it = g_atvs.find(key);
+    if (it == g_atvs.end() || !R::IsLiveByIndex(it->second.actor, it->second.idx)) return;
+    // PublishRadio runs for the peer that authors the ATV (the driver or the grabber) and, while
+    // nobody authors it, for the host as the idle syncer, and again in the host's connect snapshot.
+    // A client beside a parked scooter does not send this. author 0xFF used to fail open, so any
+    // client could set the url on every peer. Sender 0 stays accepted: that is the host's packet.
+    // A relay keeps the origin slot, so a client's radio is applied only when that slot authors it.
+    if (senderPeerSlot != 0 &&
+        (it->second.syncerSlot == 0xFF || senderPeerSlot != it->second.syncerSlot)) {
+        UE_LOGW("atv: radio of '%ls' from slot %u refused -- author is slot %u",
+                key.c_str(), static_cast<unsigned>(senderPeerSlot),
+                static_cast<unsigned>(it->second.syncerSlot));
+        return;
     }
-    UE_LOGI("atv: connect-snapshot -- sent %d ATV pose(s) (%d runtime-ATV announce(s)) to slot %d (of %zu indexed)",
-            sent, spawns, peerSlot, g_atvs.size());
-}
-
-void Tick() {
-    // Every early return means this module is not deciding who owns what, and the collision guard
-    // must then be inert: it suppresses damage by default, and armed against a stale set it would
-    // make the local ATV invulnerable. Disarmed first; the path that earns it re-arms at the end.
-    struct DisarmUnlessArmed {
-        bool armed = false;
-        ~DisarmUnlessArmed() {
-            if (armed) return;
-            coop::atv_hit_guard::SetActive(false);
-            // The set clears too: OwnsTick is a public read, and a stale set would label a mirror
-            // sample as an owner sample.
-            coop::atv_hit_guard::PublishOwned(nullptr, 0);
-        }
-    } scope;
-
-    if (!A::EnsureResolved()) return;
-    RegisterWithScanHub();  // safety net for any order where Tick precedes Install
-    if (!IndexCurrent()) return;  // index belongs to a dead world -- wait for the hub's next pass
-    auto* s = g_session.load(std::memory_order_acquire);
-    const uint64_t nowMs = NowMs();
-    // Mint before a peer is connected. connected() flips when the first peer finishes joining,
-    // so a host who walks over to look before that never saw the second scooter.
-    if (s && s->role() == coop::net::Role::Host) TrySpawnCompanion(nowMs);
-
-    if (!s || !s->connected()) return;
-    FlushPendingAtvSpawn();  // a mirror announce that arrived before the load finished counting
-    void* localPlayer = coop::players::Registry::Get().Local();
-    const uint8_t localSlot = coop::players::Registry::Get().LocalPeerId();
-    const bool isHost = s->role() == coop::net::Role::Host;
-
-    // Fail closed: without the hit interceptors a non-owner would author damage on a simulating
-    // rig, so nothing is mirrored and the ERROR at Install says why.
-    if (!coop::atv_hit_guard::Armed()) return;
-
-    void* owned[coop::atv_hit_guard::kMaxOwned];
-    int   ownedN = 0;
-
-    for (auto& kv : g_atvs) {
-        AtvEntry& e = kv.second;
-        if (!R::IsLiveByIndex(e.actor, e.idx)) continue;
-
-        const bool isDriver = CanClaimOrIsDriver(e.actor, localPlayer, e.occupantSlot, localSlot);
-        const bool seatHeldByOther = e.occupantSlot != 0xFF && e.occupantSlot != localSlot;
-        const bool isGrabber = !isDriver && !seatHeldByOther &&
-                               IsLocalGrabber(e.actor, localPlayer);  // mutually exclusive
-        const bool authority = isDriver || isGrabber;
-
-        // The authority-lost edge, with two causes handled oppositely: a dismount or ungrab frees
-        // the ATV (the seat and author clear, and a release goes out); a yield (still seated, but
-        // outranked by a lower slot) means someone else holds it, and clearing would erase the
-        // winner's claim, re-claim next tick and flap.
-        const bool yielded = seatHeldByOther;
-        if (e.wasPoseAuthor && !authority && !yielded) {
-            e.occupantSlot = 0xFF;
-            e.authorSlot   = 0xFF;
-            coop::net::AtvReleasePayload rp{};
-            WireKeyFromString(kv.first, rp.key);
-            s->SendReliable(coop::net::ReliableKind::AtvRelease, &rp, sizeof(rp));
-            UE_LOGI("atv: authority released key='%ls' -- author cleared; the host now syncs it idle",
-                    kv.first.c_str());
-        }
-        e.wasPoseAuthor = authority;
-
-        if (authority) {
-            if (isDriver) e.occupantSlot = localSlot;   // claim the seat locally
-            e.authorSlot = localSlot;
-        }
-
-        // Tick ownership, a different question from pose authority.
-        const bool ownsTick = OwnsTickFor(authority, isHost, e.authorSlot);
-        // The eject drill, env-gated, once per process.
-        coop::atv_eject_drill::MaybeFire(e.actor, kv.first.c_str(), nowMs, isHost, authority, ownsTick);
-        // A copy this peer does not own is a mirror, and its player's service of it is the one write
-        // a mirror makes that must reach the truth.
-        if (ownsTick) {
-            coop::atv_condition_sync::ResetLocalService(e);
-        } else {
-            if (nowMs - e.lastServiceScanMs >= kServiceScanMs) {
-                e.lastServiceScanMs = nowMs;
-                CollectLocalService(e, localPlayer);
-            }
-            FlushLocalService(s, e, kv.first, isHost, localSlot, nowMs);
-        }
-        if (ownsTick) {
-            if (ownedN < coop::atv_hit_guard::kMaxOwned) {
-                owned[ownedN++] = e.actor;
-            } else {
-                static bool sSaturated = false;
-                if (!sSaturated) { sSaturated = true;
-                    UE_LOGE("atv: owned-set saturated at %d -- ATV '%ls' and any beyond it will "
-                            "have their OWN collisions suppressed on the peer that owns them",
-                            coop::atv_hit_guard::kMaxOwned, kv.first.c_str()); }
-            }
-        }
-
-        if (authority) {
-            if (nowMs - e.lastSentMs >= kDriveSendMs) {
-                e.lastSentMs = nowMs;
-                coop::net::AtvStatePayload p{};
-                const uint8_t occSlot = isDriver ? localSlot : uint8_t{0xFF};  // grabber: no seated driver
-                if (ReadPayload(e.actor, kv.first, occSlot, localSlot, /*adopt*/false, p,
-                                /*grabbed*/isGrabber, e.honkPulse)) {
-                    e.honkPulse = false;
-                    s->SendReliable(coop::net::ReliableKind::AtvState, &p, sizeof(p));
-                    coop::atv_condition_sync::NoteSent(e, p);  // keep the idle gate's baseline fresh across a drive-to-idle handoff
-                    PublishRadio(*s, e.actor, kv.first, -1, false);
-                }
-            }
-        } else if (ownsTick) {
-            // The idle syncer (the host, nobody driving): a slower cadence and a change gate, so a
-            // parked ATV costs nothing while one rolling down a hill still converges.
-            if (nowMs - e.lastSentMs >= kIdleSendMs) {
-                // The clock bumps once the window elapses, as MTA's does, not only on a send:
-                // bumped only on a send it stayed stale for the parked ATV, and the gate then ran
-                // its dispatches at the pump rate.
-                e.lastSentMs = nowMs;
-                // The payload is built before the gate so the condition block can vote: a parked
-                // host eject (a mask flip, no motion) would otherwise wait out the keepalive.
-                coop::net::AtvStatePayload p{};
-                const bool honk = e.honkPulse;
-                const bool readable  = ReadPayload(e.actor, kv.first, e.occupantSlot, /*authorSlot*/0xFF,
-                                                   /*adopt*/false, p, /*grabbed*/false, honk);
-                const bool changed   = IdleWorthSending(e);
-                const bool condMoved = readable && coop::atv_condition_sync::CondChangedSinceLastSend(e, p);
-                const bool keepalive = nowMs - e.lastIdleSendMs >= kIdleKeepaliveMs;
-                const uint8_t face = static_cast<uint8_t>(p.cockpit & ~coop::net::kAtvCockpitHonk);
-                const bool brakeOn = (p.stateBits & coop::net::kAtvStateBitBrake) != 0;
-                const bool faceMoved = readable && (!e.haveFace || e.lastCockpit != face ||
-                                                    e.lastModules != p.modules || e.lastBrake != brakeOn || e.lastSteering != p.steering);
-                if (readable && (changed || condMoved || keepalive || honk || faceMoved)) {
-                    e.honkPulse = false;
-                    e.haveFace = true;
-                    e.lastCockpit = face;
-                    e.lastModules = p.modules;
-                    e.lastBrake = brakeOn;
-                    e.lastSteering = p.steering;
-                    e.lastIdleSendMs = nowMs;
-                    s->SendReliable(coop::net::ReliableKind::AtvState, &p, sizeof(p));
-                    coop::atv_condition_sync::NoteSent(e, p);
-                }
-                if (readable) PublishRadio(*s, e.actor, kv.first, -1, false);
-            }
-        }
-        // A mirror does nothing here; it is corrected at packet arrival.
+    std::wstring url;
+    if (payload.url[0]) {
+        for (const char* c = payload.url; *c; ++c)
+            url.push_back(static_cast<wchar_t>(static_cast<unsigned char>(*c)));
     }
-
-    // Published before arming, so the guard never runs against an unrefreshed set.
-    coop::atv_hit_guard::PublishOwned(owned, ownedN);
-    coop::atv_hit_guard::SetActive(true);
-    scope.armed = true;
+    A::DriveRadio(it->second.actor, url.empty() ? nullptr : url.c_str(), payload.playing != 0);
 }
-
-void OnDisconnect() {
-    coop::atv_steering_sync::OnDisconnect();
-    spawn_park::Clear();
-    // Disarmed first: nothing publishes an owned set from here, and a live hit must reach the game.
-    coop::atv_hit_guard::SetActive(false);
-    coop::atv_hit_guard::PublishOwned(nullptr, 0);
-    for (auto& kv : g_atvs) {
-        const bool live = R::IsLiveByIndex(kv.second.actor, kv.second.idx);
-        if (kv.second.isClientSpawnedMirror) {
-            if (live) A::DestroyMirror(kv.second.actor);   // a fresh-spawned runtime mirror is a coop artifact
-            if (kv.second.actor == g_clientMirrorActor) g_clientMirrorActor = nullptr;
-        }
-        // Nothing to restore: the lane disables neither tick nor physics, so a session leaves every
-        // save ATV as it found it.
-    }
-    const size_t n = g_atvs.size();
-    g_atvs.clear();
-    g_radioSent.clear();
-    for (auto& b : g_editBuckets) b.Reset();
-    g_synthForActor.clear();
-    g_savePlacedKeys.clear();
-    g_savePlacedActors.clear();
-    g_synthCounter = 0;
-    if (g_companionKey.empty() && g_companionActor && R::IsLive(g_companionActor))
-        A::DestroyMirror(g_companionActor);  // minted, not yet its own save record
-    g_companionSpawned = false;
-    g_companionCapped = false;
-    g_companionKey.clear();
-    g_companionActor = nullptr;
-    g_companionSettledSince = 0;
-    if (g_clientMirrorActor && R::IsLive(g_clientMirrorActor))
-        A::DestroyMirror(g_clientMirrorActor);
-    g_clientMirrorActor = nullptr;
-    g_clientMirrorWatch = false;
-    g_clientMirrorKey.clear();
-    g_havePendingSpawn = false;
-    g_compSrc = nullptr;
-    g_compStillSince = 0;
-    g_installed = false;  // a new session re-indexes via the next Install (latched again)
-    const auto c  = coop::atv_corrector::ReadCounters();
-    const auto hg = coop::atv_hit_guard::ReadCounters();
-    if (n > 0)
-        UE_LOGI("atv: OnDisconnect -- cleared %zu ATV(s) (brains restored; runtime mirrors destroyed); "
-                "hit guard: %s, %llu neutered / %llu allowed / %llu UNRESOLVED; "
-                "corrector: %llu nudged / %llu warped "
-                "/ %llu cut-on-stall / %llu parked-replace",
-                n, hg.armed ? "armed" : "NEVER ARMED",
-                static_cast<unsigned long long>(hg.neutered),
-                static_cast<unsigned long long>(hg.allowed),
-                static_cast<unsigned long long>(hg.unresolved),
-                static_cast<unsigned long long>(c.corrections),
-                static_cast<unsigned long long>(c.warps),
-                static_cast<unsigned long long>(c.stallWarps),
-                static_cast<unsigned long long>(c.restPlaces));
-}
-
-bool OwnsTick(void* actor) {
-    // The set, the latch and the answer live with the collision guard (atv_hit_guard::Owns).
-    return coop::atv_hit_guard::Owns(actor);
-}
-
-// Whether a remote peer occupies this ATV; the mount deny reads it.
-bool IsOccupiedByOther(void* actor, uint8_t* outOccupantSlot) {
-    if (!actor) return false;
-    if (!IndexCurrent()) return false;   // a stale-generation index holds another world's ATVs
-    const uint8_t localSlot = coop::players::Registry::Get().LocalPeerId();
-    for (const auto& kv : g_atvs) {
-        if (kv.second.actor == actor) {
-            const uint8_t occ = kv.second.occupantSlot;
-            if (occ != 0xFF && occ != localSlot) {
-                if (outOccupantSlot) *outOccupantSlot = occ;
-                return true;
-            }
-            return false;
-        }
-    }
-    return false;
-}
-
 bool LocalIsDriving() {
     if (!IndexCurrent()) return false;
     const uint8_t localSlot = coop::players::Registry::Get().LocalPeerId();
@@ -1578,31 +1255,6 @@ bool LocalIsDriving() {
     }
     return false;
 }
-
-bool IsHeldForMount(void* actor, uint8_t* outHolderSlot) {
-    if (!actor) return false;
-    const uint8_t localSlot = coop::players::Registry::Get().LocalPeerId();
-    // The fresh pawn read closes the interval before our next outgoing ATV state.
-    if (IsLocalGrabber(actor, coop::players::Registry::Get().Local())) {
-        if (outHolderSlot) *outHolderSlot = localSlot;
-        return true;
-    }
-    if (!IndexCurrent()) return false;
-    for (const auto& kv : g_atvs) {
-        const AtvEntry& e = kv.second;
-        if (e.actor != actor || !R::IsLiveByIndex(e.actor, e.idx)) continue;
-        // A pose author without a driver seat is a carrier. Our own cached
-        // claim can lag a release, so only the fresh pawn decides local holds.
-        if (e.occupantSlot == 0xFF && e.authorSlot < coop::players::kMaxPeers &&
-            e.authorSlot != localSlot) {
-            if (outHolderSlot) *outHolderSlot = e.authorSlot;
-            return true;
-        }
-        return false;
-    }
-    return false;
-}
-
 int CopyIndexed(void** atvs, uint8_t* driverSlots, int max) {
     if (!atvs || !driverSlots || max <= 0 || !IndexCurrent()) return 0;
     int n = 0;
@@ -1614,6 +1266,18 @@ int CopyIndexed(void** atvs, uint8_t* driverSlots, int max) {
         ++n;
     }
     return n;
+}
+bool IsHeldForMount(void* actor,uint8_t* holder) {
+    if(IsLocalGrabber(actor,coop::players::Registry::Get().Local())) {
+        if(holder)*holder=coop::players::Registry::Get().LocalPeerId();return true;
+    }
+    if(!IndexCurrent())return false;
+    const auto localSlot=coop::players::Registry::Get().LocalPeerId();
+    for(const auto& [key,e]:g_atvs) if(e.actor==actor && R::IsLiveByIndex(e.actor,e.idx) &&
+        e.occupantSlot==0xFF && e.lastGrabbed && e.syncerSlot!=localSlot && e.syncerSlot!=0xFF) {
+        if(holder)*holder=e.syncerSlot;return true;
+    }
+    return false;
 }
 
 }  // namespace coop::atv_sync

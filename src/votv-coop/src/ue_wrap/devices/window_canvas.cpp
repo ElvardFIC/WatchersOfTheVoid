@@ -9,6 +9,7 @@
 #include "ue_wrap/core/gc_pin.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
+#include "ue_wrap/engine/engine_component.h"
 #include "ue_wrap/world/world_singleton.h"
 #include "ue_wrap/core/types.h"
 
@@ -48,7 +49,6 @@ int32_t g_offDrawmat    = -1;       // MaterialInterface* drawmat (the brush par
 void*   g_playerCls     = nullptr;
 int32_t g_offHolding    = -1;       // mainPlayer_C::holding_actor -- the item in hand
 void*   g_setScalarFn   = nullptr;  // MaterialInstanceDynamic::SetScalarParameterValue
-void*   g_getScalarFn   = nullptr;  // MaterialInstanceDynamic::K2_GetScalarParameterValue
 void*   g_matLibCdo     = nullptr;  // Default__KismetMaterialLibrary
 void*   g_createMidFn   = nullptr;  // KismetMaterialLibrary::CreateDynamicMaterialInstance
 int32_t g_offPanels     = -1;       // mainGamemode_C::analogPanels
@@ -76,12 +76,11 @@ bool EnsureSponge() {
 }
 
 bool EnsureMaterialFns() {
-    if (g_setScalarFn && g_getScalarFn) return true;
+    if (g_setScalarFn) return true;
     void* mid = R::FindClass(L"MaterialInstanceDynamic");
     if (!mid) return false;
     g_setScalarFn = R::FindFunction(mid, L"SetScalarParameterValue");
-    g_getScalarFn = R::FindFunction(mid, L"K2_GetScalarParameterValue");
-    return g_setScalarFn && g_getScalarFn;
+    return g_setScalarFn != nullptr;
 }
 
 // The two parameter names, converted once. StringToFName DISPATCHES ProcessEvent, so converting a
@@ -100,15 +99,6 @@ bool SetScalar(void* mid, R::FName name, float value) {
     f.Set<R::FName>(L"ParameterName", name);
     f.Set<float>(L"Value", value);
     return Call(mid, f);
-}
-
-bool GetScalar(void* mid, R::FName name, float& out) {
-    ParamFrame f(g_getScalarFn);
-    if (!f.valid() || f.ParamOffset(L"ReturnValue") < 0) return false;
-    f.Set<R::FName>(L"ParameterName", name);
-    if (!Call(mid, f)) return false;
-    out = f.Get<float>(L"ReturnValue");
-    return true;
 }
 
 // The brush parent material: the sponge class default's drawmat, else the asset by name.
@@ -233,9 +223,9 @@ bool ReadHeldBrush(void* mainPlayer, float& size, float& opac, float& col) {
     // The sponge rewrote its material's opac right before the dab; read it back. If the material
     // cannot be read, fall back to the held-sponge formula: 0.4 x strength, doubled with soap.
     void* mid = g_offDynmat >= 0 ? ReadField<void*>(held, g_offDynmat) : nullptr;
-    if (mid && R::IsLive(mid) && EnsureMaterialFns() &&
-        GetScalar(mid, NameOnce(g_nOpac, L"opac"), opac) &&
-        GetScalar(mid, NameOnce(g_nCol, L"col"), col)) {
+    if (mid && R::IsLive(mid) &&
+        ue_wrap::engine::GetScalarParameterValue(mid, NameOnce(g_nOpac, L"opac"), opac) &&
+        ue_wrap::engine::GetScalarParameterValue(mid, NameOnce(g_nCol, L"col"), col)) {
         return true;
     }
     const float strength = g_offStrength >= 0 ? ReadField<float>(held, g_offStrength) : 1.5f;

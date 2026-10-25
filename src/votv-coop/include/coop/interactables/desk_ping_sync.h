@@ -1,6 +1,7 @@
 // coop/interactables/desk_ping_sync.h -- the ping's verdict on the main desk is the host's. A client's own ping runs
-// whole as its presentation and its clock: its start, loop, bars and stage sounds reach everyone through the desk log
-// and sound lanes, as a ping does in single player. At its stage 3 its gate refuses the renderer's gatherSignal, with
+// as its clock; its stage and three accumulators stream as visual-only snapshots, while observers keep coord_isPing
+// clear so their local Blueprint does not start a second machine. Start, loop and stage sounds reach everyone through
+// the desk sound lane. At its stage 3 its gate refuses the renderer's gatherSignal, with
 // the out parameters written false, and so the failure line and sound that follow in that process_coords body; the
 // verdict intent carries its view and aim to the host. The host writes them and primes its own machine to stage 2
 // complete from the pre of its next process_coords, so that very body rolls the verdict against the sky of that moment
@@ -22,11 +23,13 @@ void Install(coop::net::Session* session);
 // Per pump tick: registers the watches until they are live or refused.
 void Tick();
 
-// DeskPingVerdict from `senderSlot`: a HOST takes a client's verdict, a CLIENT a refusal or its find.
+// DeskPingVerdict from `senderSlot`: a HOST takes a client's verdict and relays its scan's progress; a CLIENT takes a
+// refusal, its find, or the progress of the scan the host names a pinger for.
 void OnMessage(coop::net::Session& session, const coop::net::DeskPingVerdictPayload& p, int senderSlot);
 
-// HOST: a peer left: its budget resets, and a verdict of its that waits for the desk is dropped. One the machine has
-// rolled finishes as the host machine's run (desk_input_sync::OnPeerLeft).
+// HOST: a peer left: its budget resets, a verdict of its that waits for the desk is dropped, and the scan it was pinging
+// ends on every client. A verdict the machine has rolled finishes as the host machine's run
+// (desk_input_sync::OnPeerLeft).
 void OnPeerLeft(uint8_t slot);
 
 void OnDisconnect();
@@ -44,6 +47,8 @@ struct Counts {
     uint32_t caught;      // HOST: client verdicts that caught
     uint32_t busy;        // HOST: intents refused while its desk was pinging or held another's verdict
     uint32_t overBudget;  // HOST: intents dropped unanswered past their sender's budget
+    uint32_t mirrorEnded; // EVERY PEER: scan endings taken from another peer's ping (the pinger's own, or its leaving)
+    uint32_t mirrorRefused; // HOST: a second pinger's progress refused while another pinger's scan is mirrored
 };
 Counts CountsNow();
 

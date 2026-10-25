@@ -42,14 +42,14 @@ constexpr uint64_t kStepBoundMs  = 30000;  // one leg's answer
 constexpr uint64_t kCheckEveryMs = 250;
 constexpr int32_t  kDiscWrites   = 32;
 constexpr int32_t  kBufferUid    = 771101;
-const wchar_t* const kRowA = L"LAPTOP-DRILL-A";  // the client's first disc
-const wchar_t* const kRowB = L"LAPTOP-DRILL-B";  // its edit after its claim, before the answer
-const wchar_t* const kRowE = L"LAPTOP-DRILL-E";  // the client's second disc
-const wchar_t* const kRowH = L"LAPTOP-DRILL-H";  // the host's word that its eject is armed
-const wchar_t* const kRowC = L"LAPTOP-DRILL-C";  // the client's edit the host's eject races
-const wchar_t* const kRowD = L"LAPTOP-DRILL-D";  // the client's batch on the ejected disc's generation
-const wchar_t* const kRowJ = L"LAPTOP-DRILL-J";  // the host's disc in a joiner's window
-const wchar_t* const kRowK = L"LAPTOP-DRILL-K";  // the host's buffer row in that window
+const wchar_t* const kRowA = L"LAPTOP-DRILL\nA";    // the client's first disc
+const wchar_t* const kRowB = L"LAPTOP-DRILL\r\nB";  // its edit after its claim, before the answer
+const wchar_t* const kRowE = L"LAPTOP-DRILL\nE";    // the client's second disc
+const wchar_t* const kRowH = L"LAPTOP-DRILL\nH";    // the host's word that its eject is armed
+const wchar_t* const kRowC = L"LAPTOP-DRILL\nC";    // the client's edit the host's eject races
+const wchar_t* const kRowD = L"LAPTOP-DRILL\nD";    // the client's batch on the ejected disc's generation
+const wchar_t* const kRowJ = L"LAPTOP-DRILL\nJ";    // the host's disc in a joiner's window
+const wchar_t* const kRowK = L"LAPTOP-DRILL\r\nK";  // the host's buffer row in that window
 const wchar_t* const kDiscClasses[] = {L"prop_floppyDisc_R_C", L"prop_floppyDisc_G_C", L"prop_floppyDisc_Y_C"};
 
 enum class HStep : uint8_t { Wait, AwaitInsert, AwaitEdit, AwaitClientEject, AwaitSecond, Watch, JoinWindow, JoinEdit,

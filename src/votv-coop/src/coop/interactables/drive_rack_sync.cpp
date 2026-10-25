@@ -14,7 +14,10 @@
 #include "coop/props/prop_save_data.h"
 #include "coop/session/join_progress.h"
 #include "coop/props/prop_lifecycle.h"        // DestroyLocalProp (deny-ghost teardown)
+#include "coop/props/prop_save_data.h"        // DeclareClassOwnedElsewhere (the rack's rows are this lane's)
+#include "coop/session/join_progress.h"       // a joiner's pending canonicals wait out its join
 
+#include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/desk/drive_chain.h"
@@ -43,6 +46,9 @@ std::atomic<bool> g_rackDirty{false};
 // ---- baselines ----
 std::map<uint32_t, uint64_t> g_rackBase;    // rack eid -> arrays blob hash
 std::map<uint32_t, std::vector<uint8_t>> g_rackShadow;  // rack eid -> last canonical-form blob (client op derivation)
+// MTA keeps an element's state on the element (reference/mtasa-blue/Client/mods/deathmatch/logic/CClientObject.cpp);
+// ours is the engine's actor, so the lane tags each shadow with the actor it was read from.
+std::map<uint32_t, ue_wrap::CachedObjRef> g_rackActor;  // rack eid -> the actor its shadow was taken from
 
 bool g_primed = false;
 bool g_wasConnected = false;
@@ -54,6 +60,9 @@ coop::blob_chunks::Assembler g_rackAsm;
 // ---- pending applies (rack actor not resolvable yet -- spawn in flight).
 // Replay predicate = resolve-only (canonicals are absolute states; two queued
 // blobs replay in insertion order, newest wins).
+// MTA drops an RPC whose element is not there yet (reference/mtasa-blue/Client/mods/deathmatch/logic/rpc/
+// CRPCFunctions.cpp); its one ordered stream makes that safe. A canonical here rides another lane than its rack's
+// spawn, so it parks.
 struct Pending {
     std::vector<uint8_t> blob;
     Clock::time_point until{};
@@ -151,21 +160,25 @@ void RecordDeny(uint8_t slot, uint64_t rowHash) {
 // --------------------------------------------------------------------------
 // the rack lane
 
-void HostBroadcastRackCanonical(uint32_t rackEid, void* rack, int toSlot /* -1 = all */) {
+bool HostBroadcastRackCanonical(uint32_t rackEid, void* rack, int toSlot /* -1 = all */) {
     auto* s = g_session.load(std::memory_order_acquire);
-    if (!s || !s->connected()) return;
+    if (!s || !s->connected()) return false;
     DC::RackRow rows[DC::kRackSlots];
     int n = 0;
-    if (!DC::ReadRack(rack, rows, n)) return;
+    if (!DC::ReadRack(rack, rows, n)) return false;
     std::vector<uint8_t> blob = RackCanonicalBlob(rackEid, rows);
     const uint32_t seq = g_nextSeq++;
-    if (toSlot < 0)
-        coop::blob_chunks::SendBlob(s, coop::net::ReliableKind::RackState, seq, blob);
-    else
-        coop::blob_chunks::SendBlobToSlot(s, toSlot, coop::net::ReliableKind::RackState, seq, blob);
-    g_rackBase[rackEid] = coop::blob_chunks::Fnv64(blob);
-    g_rackShadow[rackEid] = std::move(blob);
+    const bool sent = toSlot < 0
+        ? coop::blob_chunks::SendBlob(s, coop::net::ReliableKind::RackState, seq, blob)
+        : coop::blob_chunks::SendBlobToSlot(s, toSlot, coop::net::ReliableKind::RackState, seq, blob);
+    // Only a send to every peer moves the shared view; a joiner's seed answers one.
+    if (toSlot < 0) {
+        g_rackBase[rackEid] = coop::blob_chunks::Fnv64(blob);
+        g_rackShadow[rackEid] = std::move(blob);
+        g_rackActor[rackEid].Set(rack);
+    }
     ++g_cRackCanon;
+    return sent;
 }
 
 void ClientSendRackOp(uint32_t rackEid, uint8_t op, uint8_t idx, const SD::Row* row) {
@@ -197,10 +210,21 @@ void SweepRacks(bool announce) {
         std::vector<uint8_t> blob = RackCanonicalBlob(eid, rows);
         const uint64_t h = coop::blob_chunks::Fnv64(blob);
         auto it = g_rackBase.find(eid);
-        if (it != g_rackBase.end() && it->second == h) continue;
-        if (!announce || it == g_rackBase.end()) {  // first sight: prime silently
+        const auto act = g_rackActor.find(eid);
+        const bool sameActor = act != g_rackActor.end() && act->second.Is(rack);
+        if (it != g_rackBase.end() && sameActor && it->second == h) continue;
+        if (!announce || it == g_rackBase.end() || !sameActor) {  // first sight of this actor
             g_rackBase[eid] = h;
             g_rackShadow[eid] = std::move(blob);
+            if (announce && host) {
+                // A rack born holding rows reaches the clients here, not through a record. MTA pushes an element's
+                // state at its creation (reference/mtasa-blue/Server/mods/deathmatch/logic/
+                // CStaticFunctionDefinitions.cpp); a rack's birth is the game's own, so the sweep finds it.
+                const bool sent = HostBroadcastRackCanonical(eid, rack, -1);
+                UE_LOGI("drive_rack: host rack eid=%u first seen mid-session -- canonical %s", eid,
+                        sent ? "sent" : "not sent (no peer accepted it; a joiner gets it in its connect seed)");
+            }
+            g_rackActor[eid].Set(rack);
             continue;
         }
         if (host) {
@@ -221,6 +245,7 @@ void SweepRacks(bool announce) {
             }
             g_rackBase[eid] = h;
             g_rackShadow[eid] = blob;
+            g_rackActor[eid].Set(rack);
             HostBroadcastRackCanonical(eid, rack, -1);
             UE_LOGI("drive_rack: host rack eid=%u organic change -- canonical broadcast", eid);
         } else {
@@ -249,6 +274,7 @@ void SweepRacks(bool announce) {
             }
             g_rackBase[eid] = h;
             g_rackShadow[eid] = std::move(blob);
+            g_rackActor[eid].Set(rack);
         }
     }
 }
@@ -414,6 +440,7 @@ void ClientApplyRackBlob(const coop::net::RackStateHead& h, const std::vector<ui
         std::vector<uint8_t> nb = RackCanonicalBlob(h.rackEid, now);
         g_rackBase[h.rackEid] = coop::blob_chunks::Fnv64(nb);
         g_rackShadow[h.rackEid] = std::move(nb);
+        g_rackActor[h.rackEid].Set(rack);
     }
     ++g_cCanonApplied;
     UE_LOGI("drive_rack: rack canonical adopted eid=%u", h.rackEid);
@@ -422,10 +449,11 @@ void ClientApplyRackBlob(const coop::net::RackStateHead& h, const std::vector<ui
 void RetryPendingTick() {
     if (g_pending.empty()) return;
     const auto now = Clock::now();
+    // A joiner's wait starts once its join is over: its racks arrive with the world's snapshot, on
+    // another lane (same rule as drive_payload_sync::RetryParked).
     const bool joining = coop::join_progress::CurrentPhase() != coop::join_progress::Phase::Idle;
     std::vector<Pending> keep;
     for (auto& pd : g_pending) {
-        // Rack actors can arrive after their state while the world snapshot drains.
         if (joining) pd.until = now + kPendingTtl;
         if (now >= pd.until) {
             UE_LOGW("drive_rack: pending canonical expired (rack never resolved)");
@@ -445,6 +473,7 @@ void RetryPendingTick() {
 void PrimeRacks() {
     g_rackBase.clear();
     g_rackShadow.clear();
+    g_rackActor.clear();
     SweepRacks(/*announce*/false);
 }
 
@@ -453,7 +482,9 @@ void PrimeRacks() {
 // --------------------------------------------------------------------------
 
 void Install(coop::net::Session* session) {
-    // Rack rows have one authority: this canonical lane, never generic save replay.
+    // This lane owns prop_driveRack's rows by canonical; the save-record lane's loadData must not
+    // rewrite them from a second address space (a reset there reads as the player taking every
+    // drive). Idempotent -- only a NEW claim does any work -- so a per-tick call is safe.
     coop::prop_save_data::DeclareClassOwnedElsewhere(L"prop_driveRack_C");
     g_session.store(session, std::memory_order_release);
     // Verb matchers live in drive_sync (one-callback-per-verb-name; putDriveIn
@@ -541,10 +572,19 @@ bool TryConsumeDenyReap(uint8_t senderSlot, uint64_t rowHash) {
     return false;
 }
 
+bool HostSeesRack(uint32_t rackEid) {
+    return g_rackBase.count(rackEid) != 0;
+}
+
+uint64_t HostCanonicalsSent() {
+    return g_cRackCanon;
+}
+
 void OnDisconnect() {
     g_rackDirty.store(false, std::memory_order_relaxed);
     g_rackBase.clear();
     g_rackShadow.clear();
+    g_rackActor.clear();
     g_pending.clear();
     g_rackAsm.Clear();
     for (auto& d : g_denies) d = DenyRec{};

@@ -50,7 +50,7 @@ salt = Package(str(research / 'assets/VotV__Content__objects__misc__explosion_sa
 assert not any(salt.class_of_export(e) == 'Function' for e in salt.exports)
 
 sub = (root / 'src/votv-coop/src/coop/session/subsystems.cpp').read_text()
-assert sub.index('explosion_prop_motion::Install(&session)') < sub.index('explosion_sync::Install(&session)')
+assert sub.index('explosion_prop_motion::Install(&session)') < sub.index('native_explosion_sync::Install(&session)')
 assert sub.index('explosion_prop_motion::Tick()') < sub.index('prop_drive_host::Tick(session)')
 assert 'explosion_prop_motion::OnDisconnect()' in sub
 wrapper = (root / 'src/votv-coop/src/ue_wrap/actors/radial_impulse.cpp').read_text()
@@ -58,3 +58,10 @@ assert 'L"Radius"' in wrapper and 'L"ImpulseStrength"' in wrapper and 'L"ObjectT
 assert 'L"SphereOverlapActors"' in wrapper and 'L"K2_GetComponentLocation"' in wrapper
 assert 'CollectTracked' not in wrapper and 'NumObjects' not in wrapper
 print('PASS existing native corpus: actual overlap targets precede latent radial impulse; salt inheritance and publisher ordering')
+
+capture=(root/'src/votv-coop/src/coop/world/explosion_sync.cpp').read_text()
+assert 'explosion_prop_motion::ObserveBlast(c.object)' in capture
+assert capture.index('explosion_prop_motion::ObserveBlast(c.object)') < capture.index('if(!s->AnyWorldReadyPeer())')
+assert 'coop::explosion_sync::Install(&session)' not in sub
+assert 'coop::explosion_events::Install(&session)' not in sub
+print('PASS merged blast pipeline: one native capture, retained native-filter discovery and both coast feeds before the shared drive tick')

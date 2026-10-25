@@ -98,3 +98,9 @@ int main() {
     CHECK(SetMainPlayerCanRagdoll(&pawn,true));CHECK(pawn.flags==0xFF);
     std::puts("PASS: real fire wrapper/ParamFrame, missing/dead targets, failed dispatch/readback, idempotence, bool-bit preservation");
 }
+
+// Reflection names used by ParamFrame missing-field diagnostics.
+namespace ue_wrap::reflection {
+std::wstring ToString(const FName&){return L"fixture_function";}
+const FName& NameOf(void*){static const FName name{};return name;}
+}

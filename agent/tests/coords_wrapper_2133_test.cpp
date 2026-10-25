@@ -93,3 +93,8 @@ int main(){using namespace test;
  Reset();CHECK(CP::Instance()==&widget);++cls.serial;CP::g_offCoordinate0=-1;CHECK(CP::Instance()==&widget && CP::g_offCoordinate0>=0);
  puts("PASS: actual coordinate wrappers + ParamFrame, live widget/class, readiness, geometry, seven alpha materials, active-FSM exclusion, failure and callback lifetime");
 }
+
+// Reflection names used by ParamFrame missing-field diagnostics.
+namespace ue_wrap::reflection {
+std::wstring ToString(const FName&){return L"fixture_function";}
+}

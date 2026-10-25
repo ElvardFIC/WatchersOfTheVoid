@@ -216,8 +216,10 @@ inline constexpr const wchar_t* GetActorScale3DFn = L"GetActorScale3D";  // AAct
 inline constexpr const wchar_t* CollectGarbageFn = L"CollectGarbage";  // KismetSystemLibrary static; schedules a full GC purge end-of-frame (post-sweep plateau collapse). Class constant @ the existing KismetSystemLibraryClass above.
 inline constexpr const wchar_t* PropInventoryContainerPlayerClass = L"prop_inventoryContainer_player_C";  // PER-PLAYER inventory container -- never snapshot-expressed/broadcast/swept (prop_lifecycle::IsPerPlayerPropClass)
 inline constexpr const wchar_t* GetActorForwardVectorFn = L"GetActorForwardVector";
+inline constexpr const wchar_t* GetActorUpVectorFn = L"GetActorUpVector";
 inline constexpr const wchar_t* SetActorRotationFn = L"K2_SetActorRotation";
 inline constexpr const wchar_t* SetActorScale3DFn = L"SetActorScale3D";  // AActor::SetActorScale3D(FVector) -> void
+inline constexpr const wchar_t* SetLifeSpanFn = L"SetLifeSpan";  // AActor::SetLifeSpan(float InLifespan) -> void
 inline constexpr const wchar_t* SetActorTickEnabledFn = L"SetActorTickEnabled";
 inline constexpr const wchar_t* SetActorHiddenInGameFn = L"SetActorHiddenInGame";        // AActor::SetActorHiddenInGame(bool bNewHidden) -- visual-only (instant-world deferred-hide)
 inline constexpr const wchar_t* SetActorEnableCollisionFn = L"SetActorEnableCollision";  // AActor::SetActorEnableCollision(bool bNewActorEnableCollision) -- paired with hide so a hidden mirror is not grabbable
@@ -358,6 +360,9 @@ inline constexpr const wchar_t* MaterialInstanceConstantClass = L"MaterialInstan
 inline constexpr const wchar_t* SpawnObjectFn = L"SpawnObject";        // on GameplayStatics: (objectClass, Outer)->UObject*
 inline constexpr const wchar_t* UserWidgetClass = L"UserWidget";
 inline constexpr const wchar_t* WidgetTreeClass = L"WidgetTree";
+// The game's full-screen widgets a revive leaves to be read: the death chain's black screen and the blood-loss blur.
+inline constexpr const wchar_t* BlackScreenWidgetClass = L"blackScreen_C";
+inline constexpr const wchar_t* BloodLossBlurWidgetClass = L"ui_bloodLossBlur_C";
 // The two-line nameplate (the nick and a separately coloured health bar): a UVerticalBox root
 // stacks two UTextBlocks so each carries its own ColorAndOpacity; AddChildToVerticalBox returns
 // the slot, and the default Fill slot plus centre justification needs no slot writes.
@@ -469,9 +474,9 @@ inline constexpr const wchar_t* PlaySoundAtLocationFn    = L"PlaySoundAtLocation
 inline constexpr const wchar_t* SoundAttenuationClass = L"SoundAttenuation";
 
 // mainPlayer_C drives every ragdoll cause through `ragdollMode(bool ragdoll, bool passOut, bool
-// death)` (mainPlayer.hpp:484) and recovers through `forceGetUp()` (line 641); both drive an
-// unpossessed puppet (ragdollMode(true,true,false) flips isRagdoll and spawns the ragdoll actor;
-// forceGetUp clears the AnimBP gate).
+// death)` (mainPlayer.hpp:484) and recovers through `forceGetUp()` (line 641). On an unpossessed puppet
+// ragdollMode(true,true,false) flips isRagdoll and spawns the ragdoll actor, and forceGetUp clears the AnimBP
+// gate; coop/player/player_damage refuses ragdollMode on a peer's puppet, whoever calls it.
 inline constexpr const wchar_t* MainPlayerRagdollModeFn = L"ragdollMode";
 inline constexpr const wchar_t* MainPlayerForceGetUpFn  = L"forceGetUp";
 // `forceWakeup()`: the unconditional stand-up. It jumps straight to the ubergraph block (@25800)
@@ -481,9 +486,9 @@ inline constexpr const wchar_t* MainPlayerForceGetUpFn  = L"forceGetUp";
 // respawn calls this one.
 inline constexpr const wchar_t* MainPlayerForceWakeupFn = L"forceWakeup";
 
-// The primary player-damage entry: the owning peer invokes it on its own possessed mainPlayer_C
-// when the host relays an enemy hit, so the damage runs through that peer's armour and inventory
-// BP and drops its saveSlot.health; it early-outs on an unpossessed puppet. The FName keeps its
+// The primary player-damage entry: addDamage and punch end in it on the owning peer's own possessed
+// mainPlayer_C, so a delivered hit runs through that peer's armour and inventory BP and drops its
+// saveSlot.health; coop/player/player_damage refuses it on a peer's puppet. The FName keeps its
 // spaces.
 inline constexpr const wchar_t* MainPlayerAddPlayerDamageFn = L"Add Player Damage";
 

@@ -122,3 +122,8 @@ int main(){using namespace test;namespace S=coop::event_location_sync;namespace 
  S::OnDisconnect();CHECK(!S::Current());
  puts("PASS location events: native query identity, remote occupancy, arm/fire separation, host/client roles, exact initiator, dedupe/reentry, readiness/world and rotated bounds");
 }
+
+// Reflection names used by ParamFrame missing-field diagnostics.
+namespace ue_wrap::reflection {
+std::wstring ToString(const FName&){return L"fixture_function";}
+}

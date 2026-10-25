@@ -91,6 +91,15 @@ bool ResolveMidScalarFn() {
     return g_setScalarParamFn != nullptr;
 }
 
+void* g_getScalarParamFn = nullptr;
+
+bool ResolveMidGetScalarFn() {
+    if (!g_midClass) g_midClass = R::FindClass(L"MaterialInstanceDynamic");
+    if (g_midClass && !g_getScalarParamFn)
+        g_getScalarParamFn = R::FindFunction(g_midClass, L"K2_GetScalarParameterValue");
+    return g_getScalarParamFn != nullptr;
+}
+
 void* g_staticMeshCompClass = nullptr;  // owns SetStaticMesh
 void* g_setStaticMeshFn = nullptr;
 
@@ -124,14 +133,23 @@ bool ResolveSetMaterialFn() {
 
 }  // namespace
 
+bool TryGetComponentLocation(void* component, FVector& out) {
+    out = FVector{};
+    if (!component || !SceneCompClass()) return false;
+    if (!g_getCompLocFn) g_getCompLocFn = R::FindFunction(g_sceneCompClass, P::name::GetComponentLocationFn);
+    if (!g_getCompLocFn) return false;
+    ParamFrame f(g_getCompLocFn);
+    if (!Call(component, f)) return false;
+    if (!f.GetRaw(L"ReturnValue", &out, static_cast<int32_t>(sizeof(out)))) {
+        out = FVector{};
+        return false;
+    }
+    return true;
+}
+
 FVector GetComponentLocation(void* component) {
     FVector loc;
-    if (!component || !SceneCompClass()) return loc;
-    if (!g_getCompLocFn) g_getCompLocFn = R::FindFunction(g_sceneCompClass, P::name::GetComponentLocationFn);
-    if (!g_getCompLocFn) return loc;
-    ParamFrame f(g_getCompLocFn);
-    if (!Call(component, f)) return loc;
-    f.GetRaw(L"ReturnValue", &loc, sizeof(loc));
+    TryGetComponentLocation(component, loc);
     return loc;
 }
 
@@ -226,6 +244,17 @@ bool SetScalarParameterValue(void* materialInstanceDynamic, const wchar_t* param
     if (!paramName) return false;
     return SetScalarParameterValue(materialInstanceDynamic,
                                    ue_wrap::fname_utils::StringToFName(paramName), value);
+}
+
+bool GetScalarParameterValue(void* materialInstanceDynamic, const R::FName& param, float& out) {
+    if (!materialInstanceDynamic || (param.ComparisonIndex == 0 && param.Number == 0) || !ResolveMidGetScalarFn())
+        return false;
+    ParamFrame f(g_getScalarParamFn);
+    if (!f.valid() || f.ParamOffset(L"ReturnValue") < 0) return false;
+    f.Set<R::FName>(L"ParameterName", param);
+    if (!Call(materialInstanceDynamic, f)) return false;
+    out = f.Get<float>(L"ReturnValue");
+    return true;
 }
 
 bool DestroyComponent(void* component, void* contextObject) {
@@ -378,6 +407,20 @@ bool IsComponentTickEnabled(void* component) {
     if (!sFn) return false;
     ParamFrame f(sFn);
     return Call(component, f) && f.Get<bool>(L"ReturnValue");
+}
+
+bool PlayAudioComponent(void* audio) {
+    if (!audio || !R::IsLive(audio)) return false;
+    void* fn = R::FindDispatchFunctionCached(R::ClassOf(audio), L"Play");
+    ParamFrame f(fn);
+    return fn && f.valid() && f.Set<float>(L"StartTime", 0.f) && Call(audio, f);
+}
+
+bool IsAudioComponentPlaying(void* audio) {
+    if (!audio || !R::IsLive(audio)) return false;
+    void* fn = R::FindDispatchFunctionCached(R::ClassOf(audio), L"IsPlaying");
+    ParamFrame f(fn);
+    return fn && f.valid() && Call(audio, f) && f.Get<bool>(L"ReturnValue");
 }
 
 }  // namespace ue_wrap::engine

@@ -10,8 +10,10 @@
 #pragma once
 
 #include "coop/net/session.h"
+#include "ue_wrap/core/script_gate.h"  // Verdict
 
 #include <atomic>
+#include <cstdint>
 
 namespace coop::prop_lifecycle {
 
@@ -30,8 +32,11 @@ void ClearContainerExtractions();
 // The destroy seam (prop_destroy_seam.cpp). OnK2DestroyFunc is the
 // ufunction_hook Func-patch callback prop_lifecycle::Install registers on
 // Actor.K2_DestroyActor; DestroySeamBody is its body (the dying actor is the
-// dispatch context).
-void DestroySeamBody(void* self);
+// dispatch context). OnK2DestroyPre is the pre hook on the same function: it records the local
+// hand-view actor at the call's entry, and the post side passes what the record said to the body.
+enum class HandView : uint8_t { No, Nested, Outermost };
+void DestroySeamBody(void* self, HandView handView);
 void OnK2DestroyFunc(void* context, void* srcObj, void* result);
+ue_wrap::script_gate::Verdict OnK2DestroyPre(void* context, void* srcObj, const uint8_t* parms);
 
 }  // namespace coop::prop_lifecycle

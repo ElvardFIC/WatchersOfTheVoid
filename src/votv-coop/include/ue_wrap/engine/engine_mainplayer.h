@@ -86,6 +86,10 @@ bool MainPlayerHasSelectedAction(void* mainPlayer);
 // its refusals. False when the function does not resolve or the call fails. Game thread.
 bool CallMainPlayerHoldObject(void* mainPlayer, void* target, bool& collected);
 
+// mainPlayer_C's putObjectInventory2(InputPin, noNotify) on `target`; `taken` is its return. False when the call could
+// not run (the player not live, the function unresolved). Game thread.
+bool CallPutObjectInventory2(void* mainPlayer, void* target, bool noNotify, bool& taken);
+
 // AmainPlayer_C::hitResult's actor -- the RAW interaction trace, the field the game's own tool
 // bodies break when they decide what a press is on. It is not the same answer as lookAtActor
 // below: that one is derived from this trace later in the tick and is skipped while a grab is
@@ -101,6 +105,12 @@ void* ReadMainPlayerHitComponent(void* mainPlayer);
 // AmainPlayer_C::lookAtActor, the interactable under the crosshair; nullptr if unresolved or
 // nothing is aimed at. Reflection-resolved. Game thread.
 void* ReadMainPlayerLookAtActor(void* mainPlayer);
+
+// AmainPlayer_C::droppedItem, the actor the player's last release put into the world (after
+// throwHoldingProp, the thrown prop). Null on a dead pawn, an unresolved field or an empty slot;
+// the pointer is not validated, so a caller holding it across ticks keeps it in a CachedObjRef.
+// Reflection-resolved. Game thread.
+void* ReadMainPlayerDroppedItem(void* mainPlayer);
 
 // Direct write of lookAtActor, the interaction-trace result the BP re-derives each tick; lets a
 // test aim the next InpActEvt_use dispatch at a chosen actor. Game thread.
@@ -246,8 +256,17 @@ bool ReadMainPlayerSittingOn(void* mainPlayer, void*& sittingOn);
 // masked write and its offset live here, beside the read, instead of once per caller.
 bool WriteMainPlayerDead(void* mainPlayer, bool dead);
 
-// AmainPlayer_C::ragdollMode(ragdoll, passOut, death); (true, true, false) is the faint pose, which
-// works on an unpossessed puppet.
+// The game's own spawn invulnerability: Add Player Damage and kill refuse while it is set. Masked write, read back.
+// Game thread.
+bool WriteMainPlayerStartInvinc(void* mainPlayer, bool on);
+
+// The same flag, read: `on` is set only when the property resolved (false, `on` untouched, while unresolved or the
+// player is not live). Game thread.
+bool ReadMainPlayerStartInvinc(void* mainPlayer, bool& on);
+
+// AmainPlayer_C::ragdollMode(ragdoll, passOut, death); (true, true, false) is the faint pose. On a peer's
+// puppet this verb is cancelled, whoever calls (coop/player/player_damage), so a puppet's faint is shown by
+// its playerRagdoll actor and not through here.
 bool SetMainPlayerRagdollMode(void* mainPlayer, bool ragdoll, bool passOut, bool death);
 
 // AmainPlayer_C::forceGetUp(): the get-up of a possessed player (its cleanup is tick-driven, so a
@@ -272,10 +291,10 @@ bool SetMainPlayerCanRagdoll(void* mainPlayer, bool allowed);
 // Read the same bool back, so a test can assert the gate took.
 bool ReadMainPlayerCanRagdoll(void* mainPlayer, bool& allowed);
 
-// AmainPlayer_C::"Add Player Damage": the owning peer applies a host-relayed enemy hit on its own
-// possessed pawn, so it runs through that peer's armour BP and drops saveSlot.health; early-outs on
-// a puppet. `blood` is not cosmetic: it gates the bloodLoss effect (@2784), so a hit without it
-// produces a death the game never produces. Game thread.
+// AmainPlayer_C::"Add Player Damage" on a possessed pawn: it runs through that pawn's armour BP and
+// drops saveSlot.health; early-outs on a puppet. Its callers are the death test and the burn drill; the
+// delivery of a creature's hit is coop/player/player_hit. `blood` is not cosmetic: it gates the bloodLoss effect
+// (@2784), so a hit without it produces a death the game never produces. Game thread.
 bool InvokeAddPlayerDamage(void* mainPlayer, float damage, bool blood = false);
 
 
@@ -284,25 +303,6 @@ bool InvokeAddPlayerDamage(void* mainPlayer, float damage, bool blood = false);
 // player, and on a tickless orphan the actor is never reaped and its PhysX keeps simulating. The
 // display spawns the ragdoll body directly (SpawnPlayerRagdollBody), hides the puppet's meshes and
 // pelvis-attaches the puppet (RagdollDisplay in coop/player/remote_player_ragdoll).
-
-// ---- Damage body pulse (material swap) ----
-// SavedMaterial (types.h) is (component, slot, original); the puppet renders two body meshes, the
-// native ACharacter slot and mesh_playerVisible, so the saved set spans both. The caller owns the
-// vector.
-using ue_wrap::SavedMaterial;
-
-// Swap both body meshes' materials to the hurt-flash material (a skeletal gore skin, so it renders
-// red), caching the originals into `saved`; Restore puts them back. False, with no effect, when
-// anything does not resolve. Game thread.
-bool ApplyHurtFlashMaterial(void* puppet, std::vector<SavedMaterial>& saved);
-
-bool RestoreHurtFlashMaterial(void* puppet, std::vector<SavedMaterial>& saved);
-
-// Eager-resolve the hurt material and the material UFunctions once per puppet spawn. Game thread.
-void WarmupHurtFlashCache();
-
-// A loaded UMaterialInterface by object name; nullptr if not loaded. Game thread.
-void* ResolveMaterialByName(const wchar_t* name);
 
 // ---- The reach segment ----
 // AmainPlayer_C::arm, the segment a held tool traces along: from the camera of player index 0 --

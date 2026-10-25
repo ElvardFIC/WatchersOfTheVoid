@@ -299,10 +299,7 @@ bool Play(void* tower, Sound sound) {
     const int i = static_cast<int>(sound);
     if (!Usable(tower) || i < 0 || i >= kSoundCount) return false;
     void* comp = ObjectAt(tower, g_offSound[i]);
-    if (!comp || !R::IsLive(comp)) return false;
-    void* fn = R::FindDispatchFunctionCached(R::ClassOf(comp), L"Play");
-    ParamFrame f(fn);
-    return fn && f.valid() && f.Set<float>(L"StartTime", 0.0f) && Call(comp, f);
+    return engine::PlayAudioComponent(comp);
 }
 
 bool ReadLookAt(void* tower, LookAt& out) {

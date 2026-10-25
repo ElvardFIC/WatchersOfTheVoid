@@ -16,6 +16,7 @@
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/reflection_props.h"
+#include "ue_wrap/engine/engine_player_verbs.h"
 #include "ue_wrap/actors/vitals.h"
 
 #include <atomic>
@@ -40,8 +41,8 @@ bool WaitDone(const std::shared_ptr<std::atomic<int>>& d, int timeoutMs) {
 // ===================== puppet-damage hazard PROBE =====================
 // mainPlayer_C carries no per-actor health: it lives on UsaveSlot_C, one store per machine, so a damage
 // or fire entry run on an UNPOSSESSED host-side puppet (a second mainPlayer_C) could drain or burn the
-// HOST. coop/player/player_damage refuses the damage verb and ignite on a puppet; this probe fires both
-// and addDamage at the slot-1 puppet and judges by those refusals and the host's own health, the same
+// HOST. coop/player/player_damage refuses the damage verb, addDamage and ignite on a puppet; this probe fires all
+// three at the slot-1 puppet and judges by those refusals and the host's own health, the same
 // verb at the host's own player the control that the calls land. Health is restored after; the hit is
 // 5 of ~100. The client only connects, so the puppet exists. Host-only verdict.
 
@@ -117,18 +118,6 @@ void RestoreHostHealth(float v) {
     GT::Post([v, done] { ue_wrap::vitals::Write(ue_wrap::vitals::Field::Health, v);
         UE_LOGI("dmghazard[host]: restored host saveSlot.health=%.2f", v); done->store(1); });
     WaitDone(done, 8000);
-}
-
-// Invoke AmainPlayer_C::ignite(fuel) on `target`. Game-thread only.
-bool InvokeIgnite(void* target, float fuel) {
-    if (!target || !R::IsLive(target)) return false;
-    void* cls = R::FindClass(L"mainPlayer_C");
-    void* fn = cls ? R::FindFunction(cls, L"ignite") : nullptr;
-    if (!fn) { UE_LOGW("dmghazard: 'ignite' UFunction did not resolve"); return false; }
-    ue_wrap::ParamFrame f(fn);
-    if (!f.valid()) return false;
-    f.Set<float>(L"fuel", fuel);
-    return ue_wrap::Call(target, f);
 }
 
 // The puppet's own isBurning, by its reflected bool storage, read in a game-thread task. -1 unread.
@@ -209,7 +198,8 @@ void ProbeDamageHazardOnHost() {
     UE_LOGI("dmghazard[host]: 'Add Player Damage' at the puppet -> %s (health %.2f -> %.2f)", Name(o1), h1,
             ReadHostHealthGT());
 
-    // 2. addDamage at the puppet, the entry a native hit forwards to: its nested verb is refused.
+    // 2. addDamage at the puppet, the entry a native hit forwards to: cancelled itself, counted in
+    //    RefusedDamage. The call has no caller object, so nothing is delivered to the peer.
     const uint32_t d2 = PD::RefusedDamage();
     const float h2 = ReadHostHealthGT();
     InvokeAddDamageGT(*puppet, 5.f, "PUPPET");
@@ -222,7 +212,11 @@ void ProbeDamageHazardOnHost() {
     {
         auto d = std::make_shared<std::atomic<int>>(0);
         const ue_wrap::CachedObjRef target = *puppet;
-        GT::Post([target, d] { InvokeIgnite(target.Get(), 10.f); d->store(1); });
+        GT::Post([target, d] {
+            if (!ue_wrap::engine::InvokeMainPlayerIgnite(target.Get(), 10.f))
+                UE_LOGW("dmghazard: 'ignite' did not run");
+            d->store(1);
+        });
         WaitDone(d, 8000);
     }
     const ue_wrap::CachedObjRef pup = *puppet;
@@ -238,15 +232,15 @@ void ProbeDamageHazardOnHost() {
             Name(o4), h4, ReadHostHealthGT());
     RestoreHostHealth(before);
 
-    const bool refusedAll = o1 == Outcome::Refused && o2 != Outcome::Landed && o3 == Outcome::Refused;
+    const bool refusedAll = o1 == Outcome::Refused && o2 == Outcome::Refused && o3 == Outcome::Refused;
     const bool controlLanded = o4 == Outcome::Landed;
     if (o1 == Outcome::Landed || o2 == Outcome::Landed || o3 == Outcome::Landed) {
         UE_LOGW("dmghazard[host]: VERDICT FAIL -- a peer's puppet took %s%s%s on this machine (health restored to "
                 "%.2f)", o1 == Outcome::Landed ? "the damage verb " : "", o2 == Outcome::Landed ? "addDamage " : "",
                 o3 == Outcome::Landed ? "fire" : "", before);
     } else if (refusedAll && controlLanded) {
-        UE_LOGI("dmghazard[host]: VERDICT PASS -- the damage verb and ignite at a peer's puppet were refused, "
-                "addDamage wrote nothing, and the same verb at this machine's player landed (health restored to "
+        UE_LOGI("dmghazard[host]: VERDICT PASS -- the damage verb, addDamage and ignite at a peer's puppet were "
+                "refused, and the same verb at this machine's player landed (health restored to "
                 "%.2f)", before);
     } else {
         UE_LOGW("dmghazard[host]: VERDICT INCONCLUSIVE -- verb=%s addDamage=%s ignite=%s control=%s: a call that "

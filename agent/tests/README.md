@@ -1,5 +1,13 @@
 # Regression tests
 
+`run_upstream_integration.ps1` validates the merged native blast decoder with
+valid, force-only and salt-rocket packets, malformed lengths, non-finite values,
+coordinate/scale/range limits and private-PC refusal. It runs the real drone
+intent controller, including two queued timer toggles, and checks that all 226
+published fork message values remain reserved beside fifteen distinct upstream
+additions. It is included in the full current-source qualification. Integration
+boundaries are recorded in [the integration report](../UPSTREAM_INTEGRATION_20261025.md).
+
 `run_prop_action_delivery.ps1 -FaultControls` runs the real action controller in
 18 scenario groups. Coverage includes owned first-send payloads and nested FIFO,
 source/key/class replacement, refusal/caps/eight-row budget/expiry, fresh queues

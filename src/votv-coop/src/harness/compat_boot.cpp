@@ -71,7 +71,7 @@ std::string HashHex(const uint8_t* bytes, size_t n) {
     return out;
 }
 
-// What runs, for a person: "VOTV 0.10.0 early build 0003 -- a newer version, untested." and its kin.
+// What runs, for a person: "VOTV <version> -- a newer version, untested." and its kin.
 std::string RunningSentence(const GB::Detected& d) {
     if (!d.row) return "an untested version: " + GB::UntestedDetail() + ".";
     const std::string name = std::string("VOTV ") + d.row->display;

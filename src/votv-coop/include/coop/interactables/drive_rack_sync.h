@@ -1,9 +1,10 @@
 // coop/interactables/drive_rack_sync.h -- the drive-rack lane, extracted from drive_sync.cpp.
-//
 // RackState is prop_driveRack's 16-row storage: index ops go peer to host and are
 // host-terminal, the host broadcasts a canonical full array and re-applies gen() by
 // reflection, and a raced op is denied and refunded. The take-race axis -- the deny ring, the
 // taken ring, the TTL and the consume -- lives WHOLE in this module.
+// The rack's rows are this lane's alone: the save-record lane is told the class is owned elsewhere,
+// so a rack born with rows reaches the clients at the host's first sight of it, a canonical to every peer.
 //
 // Owner-API contract, a strictly ONE-WAY dependency (drive_sync and drive_payload_sync include
 // this; this includes neither):
@@ -47,6 +48,12 @@ void MarkDirtyFromVerb();
 // (clear the slot) and return true -- the caller destroys the ghost instead
 // of applying. Mirrors the correlation this was extracted from, 1:1.
 bool TryConsumeDenyReap(uint8_t senderSlot, uint64_t rowHash);
+
+// Game thread, HOST, read by a drill: whether this lane has taken the rack with this eid into its view, and
+// every canonical send it has attempted since the process began, a joiner's seed included (never reset; a drill
+// reads a delta).
+bool HostSeesRack(uint32_t rackEid);
+uint64_t HostCanonicalsSent();
 
 // Full teardown (the OnDisconnect fanout) -- baselines, shadow, dirty mark,
 // pending applies, deny + taken rings, assembler.

@@ -19,7 +19,7 @@ object or property pointer takes 8 bytes and a name (`FScriptName`) 12. The oper
 opcode, and its name, follow UAssetAPI's expression readers (MIT): an expression is written with the
 name of its `EExprToken` less `EX_`. A decoder that mis-sized one operand would not land on the script's
 end; on both game builds it has read every function of every loaded Blueprint class to its end with no
-problem `[V]` (every function of a capture: 21,087 on 0.9.0n, 22,762 on 0.10.0, in a world). Expressions nested more than
+problem `[V]` (every function of a capture: 21,087 on 0.9.0n, in a world). Expressions nested more than
 256 deep are refused as a corrupt script; a compiled Blueprint nests a few dozen deep.
 
 ### The canonical text
@@ -99,9 +99,8 @@ assets (UAssetAPI's expression tree). A difference between the two is a defect i
 Over every loaded Blueprint function the cooked assets also hold, the two agree `[V]`: on 0.9.0n 21,008
 of 21,068 captured are identical and none differs; the other 60 have no counterpart among the pak's
 Blueprint classes (48 natives, five native event declarations such as `actor.receivetick`, and the
-seven functions of the level's own script class, which lives in the map). On 0.10.0, 22,744 of 22,756
-are identical and none differs; the other 12 are the level's script class and a function library outside
-the pak's Blueprints.
+seven functions of the level's own script class, which lives in the map). A newer build compares the same way: nearly all identical, none differing, the few non-counterparts
+being the level's script class and a function library outside the pak's Blueprints.
 
 ### The registry
 
@@ -175,10 +174,9 @@ until the census has reported the verdict reads PENDING, never HEALTHY. The heal
 first pass ends, when a product row's outcome moves, and when a registration is refused; a count that
 moves, a dev row, or a registration accepted (at most once a second) rewrites the file alone. Each
 problem row and each refused registration warns once, naming its lane; rows of dev instruments are
-counted apart, out of the verdict, and warn only while their instrument has registered them. Measured on
-0.10.0 against the 0.9.0n reference, the census named 42 problem rows by lane -- three of them functions
-whose only change is statements trading places (the known limit below) -- and agreed with the port
-tooling's diff of the two builds' paks on all 266 rows both could judge `[V]`.
+counted apart, out of the verdict, and warn only while their instrument has registered them. Run against the 0.9.0n reference on a newer build, the census named its problem rows by lane -- some
+of them functions whose only change is statements trading places (the known limit below) -- and agreed
+with the port tooling's pak diff on every row both could judge `[V]`.
 
 `[dev] fingerprint_census_red=<class>.<function>` falsifies one row's reference: the census must report
 it `body changed` and print `fingerprint-census: RED ARM <row> reported body changed` once the row is
@@ -216,7 +214,7 @@ Not applicable: every peer checks its own game, once a process, in its first gam
 ## Known limits
 
 - Two statements that swap places inside one straight run read as a change although nothing depends on
-  their order: 19 of 362 functions that differ between 0.9.0n and 0.10.0 in the hooked Blueprints `[V]`.
+  their order: some functions that differ between 0.9.0n and a newer build in the hooked Blueprints `[V]`.
   It errs toward reporting.
 - A native function is compared by its signature; its body is not readable.
 - Only loaded classes are read in the game; the port tooling reads every class of the pak.

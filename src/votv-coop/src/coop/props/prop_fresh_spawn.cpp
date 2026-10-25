@@ -228,22 +228,13 @@ void* Materialize(const coop::net::PropSpawnPayload& payload, int senderSlot,
     if (payload.key.len == 0) {
         for (size_t i = 0; i < P::name::kAmbientPropSpawnMirrorClassesSize; ++i) {
             if (classW != P::name::kAmbientPropSpawnMirrorClasses[i]) continue;
-            // SetLifeSpan lives on the actor base and the lookup is exact-owner, so a leaf-class
-            // lookup returned null every call and paid a futile full-array walk per mirror.
-            // Resolved once on the actor class, latched.
-            static void* s_lifeFn = nullptr;
-            static bool  s_lifeTried = false;
-            if (!s_lifeTried) {   // GT-only path (event drain) -- plain statics
-                s_lifeTried = true;
-                if (void* actorCls = R::FindClass(P::name::ActorClassName))
-                    s_lifeFn = R::FindFunction(actorCls, L"SetLifeSpan");
-                if (!s_lifeFn)
-                    UE_LOGW("remote_prop::OnSpawn: Actor.SetLifeSpan not resolved -- "
+            if (!ue_wrap::engine::SetActorLifeSpan(spawned, 900.f)) {
+                static bool s_said = false;   // GT-only path (event drain)
+                if (!s_said) {
+                    s_said = true;
+                    UE_LOGW("remote_prop::OnSpawn: Actor.SetLifeSpan did not run -- "
                             "ambient-mirror orphan backstop disabled");
-            }
-            if (s_lifeFn) {
-                ParamFrame life(s_lifeFn);
-                if (life.Set<float>(L"InLifespan", 900.f)) Call(spawned, life);
+                }
             }
             break;
         }

@@ -1,5 +1,5 @@
 // coop/config/config_registry_rows_dev_port.inc -- the [dev] rows of the version-port tooling (the fingerprint
-// capture and census red arm, the dependency dump, the patron gate bypass, the version gate's arms), included by
+// capture and census red arm, the dependency dump, the version gate's arms), included by
 // config_registry_rows_dev.inc where they stood, so each keeps its place in every expansion of the list.
 // The entry forms are config_registry_rows.inc's.
 
@@ -17,15 +17,9 @@ CFG_STRING(fingerprint_census_red, "fingerprint_census_red", "dev", "", "VOTVCOO
     "The fingerprint census's red arm: a row key ('class.function', lowercase) whose reference is falsified, so the "
     "census must report it 'body changed' and print 'fingerprint-census: RED ARM <row> reported body changed', or "
     "'RED ARM FAILED'. Empty: no red arm.")
-CFG_FLAG(patron_mod_gate_bypass, "patron_mod_gate_bypass", "dev", false, "VOTVCOOP_PATRON_MOD_GATE_BYPASS",
-    "LOCAL port-prep only: neutralise the VOTV 0.10 patron Shadow-Test-Build anti-mod gate (its "
-    "mainGamemode BeginPlay scans Binaries for *.dll and Content/Paks for *.pak, then pops 'Modded "
-    "client detected!' and quits). Empties that one scan's file list through our Func-patch substrate; "
-    "edits no game file. For running the mod on the unpacked patron build before the public 0.10; the "
-    "public build is expected to carry no such gate, so this is off by default and never ships.")
 CFG_STRING(game_build_force, "game_build_force", "dev", "", "VOTVCOOP_GAME_BUILD_FORCE", false,
     "The version gate's drill arm: run the mod as if the game were another build -- a row id of "
-    "ue_wrap/facts/game_builds.inc ('0.10.0-early-0003'), or 'unknown' for a build no row names -- so the "
+    "ue_wrap/facts/game_builds.inc (a row's id), or 'unknown' for a build no row names -- so the "
     "popup, the report, the stand-down's wording and the Join's refusal can be shown on a healthy install. "
     "Changes what the mod believes, never the game. Empty: the build as read.")
 CFG_STRING(scan_ledger_red, "scan_ledger_red", "dev", "", "VOTVCOOP_SCAN_LEDGER_RED", false,

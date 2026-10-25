@@ -70,3 +70,9 @@ int main(){using namespace test;namespace G=ue_wrap::grime;Reset();
     Reset();objects[Actor].process=NAN;CHECK(!G::ReadProcess(At(Actor),process));CHECK(!G::WriteProcessAndApply(At(Actor),NAN));
     puts("PASS grime wrapper/actual ParamFrame: indexed missing-class lookup, reflected-field retry, class serial/reload, native ratio and subclass setup, partial material reuse, ended-slot reads and current/actor/class/world/material fences");
 }
+
+// Reflection names used by ParamFrame missing-field diagnostics.
+namespace ue_wrap::reflection {
+std::wstring ToString(const FName&){return L"fixture_function";}
+const FName& NameOf(void*){static const FName name{};return name;}
+}

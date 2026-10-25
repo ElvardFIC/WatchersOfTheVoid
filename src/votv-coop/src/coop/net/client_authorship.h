@@ -116,6 +116,7 @@ constexpr ClientAuthorship AuthorshipOf(ReliableKind k) {
     case ReliableKind::UpgradeIntent:
     case ReliableKind::WindowStroke:
     case ReliableKind::DoorVerbIntent:
+    case ReliableKind::SleepingbagIntent:
     case ReliableKind::KeypadIntent:
     case ReliableKind::OvenRepairState:
     case ReliableKind::KerfusIntent:
@@ -133,6 +134,15 @@ constexpr ClientAuthorship AuthorshipOf(ReliableKind k) {
     case ReliableKind::StatQueryReply:
     case ReliableKind::PointSackRedeem:
     case ReliableKind::RemoverRequest:
+    case ReliableKind::CreatureHitIntent:
+    case ReliableKind::ProjectileFired:
+    case ReliableKind::ExplosionRequest:
+    case ReliableKind::AtvExplodeRequest:
+    case ReliableKind::PropIgniteIntent:
+    case ReliableKind::AtvSeat:
+    case ReliableKind::AtvTakeover:
+    case ReliableKind::PropActRequest:
+    case ReliableKind::PropActCommit:
     case ReliableKind::CameraToggleIntent:
     case ReliableKind::LaptopTabReport:
     // Fork lanes retained at merge: their existing client senders must reach the
@@ -187,9 +197,11 @@ constexpr ClientAuthorship AuthorshipOf(ReliableKind k) {
     case ReliableKind::BadSun:
     case ReliableKind::CreatureEventActive:
     case ReliableKind::LightningStrike:
+    case ReliableKind::ExplosionSpawn:
     case ReliableKind::AssignPeerSlot:
     case ReliableKind::RosterRow:
     case ReliableKind::PlayerDamage:
+    case ReliableKind::PlayerHit:
     case ReliableKind::BalanceSync:
     case ReliableKind::KeypadState:
     case ReliableKind::SnapshotBegin:
@@ -207,6 +219,7 @@ constexpr ClientAuthorship AuthorshipOf(ReliableKind k) {
     case ReliableKind::WispGrab:
     case ReliableKind::WispTear:
     case ReliableKind::AtvSpawn:
+    case ReliableKind::AtvAnswer:
     case ReliableKind::AtvDestroy:
     case ReliableKind::KerfurConvert:
     case ReliableKind::WorldActorSpawn:
@@ -246,6 +259,7 @@ constexpr ClientAuthorship AuthorshipOf(ReliableKind k) {
     case ReliableKind::TaskNewState:
     case ReliableKind::HookAnchored:
     case ReliableKind::RemoverResult:
+    case ReliableKind::PropActReply:
     case ReliableKind::CameraActiveState:
     case ReliableKind::CameraLightState:
     case ReliableKind::KavotiaState:
@@ -265,6 +279,7 @@ constexpr ClientAuthorship AuthorshipOf(ReliableKind k) {
     case ReliableKind::WaterSplash:
     case ReliableKind::DrinkSpill:
     case ReliableKind::AriralShipState:
+    case ReliableKind::AtvSetComplete:
         return ClientAuthorship::Host;
     }
     return ClientAuthorship::NotAKind;  // a byte value that names no kind: refused like Host

@@ -167,3 +167,8 @@ int main() {
     ++session;gameplay=true;E::Install(&s);CHECK(E::g_pending.empty()&&nativeRuns==prior+1);
     E::OnDisconnect(); std::puts("PASS event dispatch, chosen/repeated specials, ordered retries, peer/world/session cleanup and client replay gates");
 }
+
+// Reflection names used by ParamFrame missing-field diagnostics.
+namespace ue_wrap::reflection {
+const FName& NameOf(void*){static const FName name{};return name;}
+}

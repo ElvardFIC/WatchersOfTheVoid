@@ -34,6 +34,9 @@ inline constexpr uint8_t kMaxPeers       = coop::net::kPeerCapacity;
 inline constexpr uint8_t kPeerIdHost     = 0;
 inline constexpr uint8_t kPeerIdUnknown  = 0xFF;  // not in registry
 
+// The answer to "does this peer's puppet live?", see Registry::LifeOf.
+enum class PuppetLife : uint8_t { None, Dead, Alive };
+
 class Registry {
 public:
     // The singleton accessor; the static initializer is thread-safe.
@@ -54,6 +57,11 @@ public:
 
     // The RemotePlayer for a peer id, or null; the puppet's actor is its GetActor.
     RemotePlayer* Puppet(uint8_t peerSessionId);
+
+    // Whether the peer's puppet lives, by the health its pose stream last carried (a peer's death never sets the
+    // puppet's `dead` flag, but its dead player's pose says health 0): None for no puppet, or one that is not valid()
+    // or has no actor; Alive above 0; Dead otherwise. The one test the host's judges ask of a client's body.
+    PuppetLife LifeOf(uint8_t peerSessionId);
 
     // Register or unregister a puppet. The RemotePlayer is owned by the caller; the registry holds
     // a non-owning pointer and clears it on unregister. A puppet is registered by its spawn, before

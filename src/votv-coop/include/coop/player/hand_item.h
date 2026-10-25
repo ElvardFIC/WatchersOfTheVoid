@@ -14,10 +14,10 @@
 
 namespace coop::hand_item {
 
-// Owner side, per tick (from local_streams::Tick). `local` is the local mainPlayer (cached for
-// LocalHandActor's fresh read); `holdingProp` is the local player's holding_actor IF it is a
-// live Aprop_C descendant, else nullptr. Announces EDGE-INSTANT on change -- a quick-slot switch
-// is one synchronous updateHold call, bytecode-proven, so a null IS the stow.
+// Owner side, per tick (from local_streams::Tick). `local` is the local mainPlayer; `holdingProp` is
+// the local player's holding_actor IF it is a live Aprop_C descendant, else nullptr. Announces
+// EDGE-INSTANT on change -- a quick-slot switch is one synchronous updateHold call, bytecode-proven,
+// so a null IS the stow.
 //
 // At the hand edge, an ex-hand actor that SURVIVED the edge was RELEASED into the world (an
 // R-drop or quick-slot place is not a spawn; the game re-uses the view actor), so it is expressed
@@ -56,6 +56,12 @@ void ReplayPeerStatesToSlot(int slot);
 // tick than TickOwner, and updateHold can have respawned the actor in between.
 void* LocalHandActor();
 
+// Whether `actor` is the local player's hotbar hand actor (mainPlayer.holding_actor, Aprop_C-gated,
+// the predicate LocalHandActor routes by). Pointer identity only, with no liveness check on `actor`:
+// the destroy seam's pre hook asks it at the call's entry, while holding_actor still names the actor
+// (the Blueprint nulls it only after the destroy). Game thread only.
+bool IsLocalHandViewActor(void* actor);
+
 // The FULL hand-axis boundary, ONE owner: true for the local hand actor AND for every live
 // remote mirror. LocalHandActor above answers only for the local half, and a census that asks
 // it alone adopts the mirrors. Callers: prop_drop_intent on both enqueue AND drain -- the
@@ -83,6 +89,16 @@ bool RecentGenerationClass(uint8_t slot,uint32_t generation,std::wstring& classN
 // only.
 bool HeldClassIs(uint8_t slot, const wchar_t* cls);
 
+// Whether this peer's own announce of a hand item of the class named `cls` has been queued, and the
+// hand has not emptied or changed class since: true from the TickOwner statement that announces it. A
+// client's launcher shot waits for it, so the host has the hand first on the one ordered lane. Game
+// thread only.
+bool OwnAnnounced(const wchar_t* cls);
+
+// How many owner ticks have read this peer's hand: after each, OwnAnnounced says what the hand held at it. A held
+// launcher shot that sees this move without its launcher announced will never see it. Game thread only.
+uint32_t OwnHandLookSeq();
+
 // Whether the class `slot`'s hand held last is the one named `cls`: the one it holds now or, since
 // the hand emptied, the one it held before. A host asks it of a verb that takes the held item as it
 // starts: a crowbar's pry, whose prying crowbar destroys the held one when it goes into the door, so
@@ -100,6 +116,9 @@ void PayOwed(coop::net::Session& session);
 
 // Whether `slot`'s hand holds anything, as the lane holds it. Game thread only.
 bool HoldsItem(uint8_t slot);
+
+// True while a received hand state of `slot` waits for its pacing token, not yet applied. Host, game thread.
+bool HandStateOwed(uint8_t slot);
 
 // Host: the hand states applied for `slot`'s occupant (kept and re-sent); cleared with the occupant.
 // The hostile drill's keep_latest arm reads it. Game thread only.

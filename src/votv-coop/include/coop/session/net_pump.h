@@ -66,9 +66,11 @@ bool EndOwed(const coop::net::Session& session);
 bool IsFleeing();
 
 // The announce axis' ONE owner: registry_reaper requests a world-ready re-announce after a
-// world-change re-seed, and this owner compares against the last-announced world, arms the quiesce
-// probe and sets the re-announce flag -- or logs the same-world suppression. No-op on the host.
-// Game thread.
+// world-change re-seed, and this owner compares against the world this connection settled on, raises
+// the world-change request (the probe session follows the new world's save replay) and sets the
+// re-announce flag. It raises nothing, and logs why, when the world is the same one, when a join's
+// request still holds the slot (the join covers it), or when no baseline world is held yet (the first
+// announce covers it). No-op on the host. Game thread.
 void MaybeRequestReAnnounce(coop::net::Session& session, void* reapWorld);
 
 // The session's end for a quit to the menu whose travel the game itself runs: the session ends (the

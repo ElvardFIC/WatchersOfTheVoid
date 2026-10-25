@@ -99,3 +99,8 @@ int main(){
   if(i==10)v.debris=129;if(i==11)v.variant=2;if(i==12)v.transform.SZ=0;CHECK(!X::Valid(v));}
  puts("PASS actual general blast wrapper/ParamFrame: complete transform/parameters, salt rocket, optional shake, authority force/debris, identity/epoch cleanup, one-shot finish, bounds");
 }
+
+// Reflection names used by ParamFrame missing-field diagnostics.
+namespace ue_wrap::reflection {
+std::wstring ToString(const FName&){return L"fixture_function";}
+}

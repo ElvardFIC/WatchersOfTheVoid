@@ -30,9 +30,25 @@ set(VOTVCOOP_DEV_SOURCES
     src/coop/dev/badsun_drill_clock.cpp
     src/coop/dev/badsun_drill_lane.cpp
     src/coop/dev/event_relay_drill.cpp
+    src/coop/dev/creature_hit_drill.cpp
+    src/coop/dev/drill_hand.cpp
+    src/coop/dev/announce_hold.cpp
     src/coop/dev/hostile_drill.cpp
+    src/coop/dev/hostile_drill_act.cpp
+    src/coop/dev/hostile_drill_arms.cpp
+    src/coop/dev/hostile_drill_act_family.cpp
+    src/coop/dev/drill_chat.cpp
     src/coop/dev/hostile_drill_chat.cpp
+    src/coop/dev/hostile_drill_explosion.cpp
+    src/coop/dev/hostile_drill_explosion_client.cpp
+    src/coop/dev/hostile_drill_explosion_host.cpp
     src/coop/dev/hostile_drill_hand.cpp
+    src/coop/dev/hostile_drill_ignite.cpp
+    src/coop/dev/hostile_drill_ignite_client.cpp
+    src/coop/dev/hostile_drill_ignite_host.cpp
+    src/coop/dev/hostile_drill_atv.cpp
+    src/coop/dev/hostile_drill_atv_client.cpp
+    src/coop/dev/hostile_drill_atv_host.cpp
     src/coop/dev/hostile_drill_kerfur.cpp
     src/coop/dev/hostile_drill_remover.cpp
     src/coop/dev/hostile_drill_latest.cpp
@@ -45,6 +61,7 @@ set(VOTVCOOP_DEV_SOURCES
     src/coop/dev/kerfus_throw_drill.cpp
     src/coop/dev/desk_crossing_drill.cpp
     src/coop/dev/desk_ping_drill.cpp
+    src/coop/dev/desk_ping_drill_observer.cpp
     src/coop/dev/command_drill.cpp
     src/coop/dev/mv_drill.cpp
     src/coop/dev/stats_probe.cpp
@@ -63,6 +80,9 @@ set(VOTVCOOP_DEV_SOURCES
     src/coop/dev/load_reroll_watch.cpp
     src/coop/dev/container_selftest.cpp
     src/coop/dev/drive_selftest.cpp
+    src/coop/dev/rack_birth_drill.cpp
+    src/coop/dev/burn_revive_drill.cpp
+    src/coop/dev/hand_drop_census.cpp
     src/coop/dev/hand_drop_selftest.cpp
     src/coop/dev/run_and_wait_selftest.cpp
     src/coop/dev/world_singleton_parity.cpp
@@ -73,15 +93,35 @@ set(VOTVCOOP_DEV_SOURCES
     src/coop/dev/physmods_drill.cpp
     src/coop/dev/drone_call_drill.cpp
     src/coop/dev/remover_drill.cpp
+    src/coop/dev/remover_drill_host.cpp
     src/coop/dev/remover_drill_layout.cpp
+    src/coop/dev/drill_props.cpp
+    src/coop/dev/prop_act_drill.cpp
+    src/coop/dev/prop_act_drill_client.cpp
+    src/coop/dev/prop_act_drill_depart.cpp
+    src/coop/dev/prop_act_drill_edge.cpp
+    src/coop/dev/prop_act_drill_edge_client.cpp
+    src/coop/dev/prop_act_drill_honest.cpp
+    src/coop/dev/prop_act_drill_race.cpp
+    src/coop/dev/prop_act_drill_race_client.cpp
     src/coop/dev/sack_drill.cpp
     src/coop/dev/fall_drill.cpp
     src/coop/dev/atv_spawn_drill.cpp
+    src/coop/dev/atv_health_drill.cpp
+    src/coop/dev/atv_health_drill_arms.cpp
+    src/coop/dev/atv_health_drill_damage.cpp
+    src/coop/dev/atv_health_drill_host.cpp
+    src/coop/dev/atv_health_drill_seated.cpp
+    src/coop/dev/atv_health_drill_peers.cpp
+    src/coop/dev/atv_health_drill_spawned.cpp
+    src/coop/dev/atv_spawn_near.cpp
     src/coop/dev/throw_drill.cpp
     src/coop/dev/log_drill.cpp
     src/coop/dev/server_upgrade_drill.cpp
     src/coop/dev/server_drill.cpp
     src/coop/dev/camera_drill.cpp
+    src/coop/dev/sleepingbag_drill.cpp
+    src/coop/dev/notebook_drill.cpp
     src/coop/dev/camera_state_drill.cpp
     src/coop/dev/laptop_tab_drill.cpp
     src/coop/dev/laptop_tab_drill_steps.cpp
@@ -92,13 +132,23 @@ set(VOTVCOOP_DEV_SOURCES
     src/coop/dev/download_drill.cpp
     src/coop/dev/laptop_drill.cpp
     src/coop/dev/laptop_power_drill.cpp
+    src/coop/dev/explosion_drill.cpp
+    src/coop/dev/explosion_drill_client.cpp
+    src/coop/dev/explosion_drill_fixture.cpp
+    src/coop/dev/explosion_drill_host.cpp
+    src/coop/dev/explosion_drill_request.cpp
+    src/coop/dev/explosion_drill_request_host.cpp
+    src/coop/dev/explosion_drill_witch.cpp
+    src/coop/dev/explosion_drill_source.cpp
+    src/coop/dev/explosion_drill_source_verbs.cpp
+    src/coop/dev/explosion_drill_source_measure.cpp
+    src/coop/dev/fire_ignite_drill.cpp
     src/coop/dev/grid_drill.cpp
     src/coop/dev/grid_drill_checks.cpp
     src/coop/dev/grid_drill_upgrade.cpp
     src/coop/dev/tower_drill.cpp
     src/coop/dev/dependency_dump.cpp
     src/coop/dev/end_play_probe.cpp
-    src/coop/dev/patron_gate.cpp
     src/coop/dev/death_seam_census.cpp
     src/coop/dev/damage_probe.cpp
     src/coop/dev/grime_drill.cpp
@@ -107,6 +157,7 @@ set(VOTVCOOP_DEV_SOURCES
     src/coop/dev/key_parity_probe.cpp
     src/coop/dev/floppy_selftest_world.cpp
     src/coop/dev/hookdrag_selftest.cpp
+    src/coop/dev/hook_plant.cpp
     src/coop/dev/roster_token_selftest.cpp
     src/coop/dev/kerfur_census.cpp
     src/coop/dev/food_clock_probe.cpp
@@ -145,6 +196,7 @@ set(VOTVCOOP_DEV_SOURCES
     src/coop/dev/client_model_probe.cpp
     src/coop/dev/atv_eject_drill.cpp
     src/coop/dev/atv_probe.cpp
+    src/coop/dev/atv_seat.cpp
     src/coop/dev/atv_tire_probe.cpp
     src/coop/dev/pinecone_probe.cpp
     src/coop/dev/event_trigger.cpp
@@ -188,3 +240,6 @@ set(VOTVCOOP_DEV_SOURCES
     src/coop/dev/pi3_drill.cpp
     src/coop/dev/native_spawn_probe.cpp
 )
+# Per-developer local sources: a gitignored file on this box may append its own entries to
+# VOTVCOOP_DEV_SOURCES and add its own include root. Absent from the public tree; a no-op without it.
+include(${CMAKE_CURRENT_SOURCE_DIR}/../../ignore_folder/local_dev/local/sources.local.cmake OPTIONAL)

@@ -1,13 +1,13 @@
-// coop/interactables/atv_condition_sync.h -- the ATV CONDITION lane: the author's
+// coop/interactables/atv_condition_sync.h -- the ATV CONDITION lane: the syncer's
 // tires/spare/dirt/fuel/health ride the AtvState payload's condition block, and a mirror is
-// OVERWRITTEN from the author, re-deriving visuals through the game's own per-facet reducers
+// OVERWRITTEN from the syncer, re-deriving visuals through the game's own per-facet reducers
 // on change edges. The impulse neuter makes that safe -- a mirror's own accrual is held at
 // zero, so an overwrite cannot race an irreversible act.
 //
-// AUTHORITY: accumulators apply from any legitimate author, PRESENCE (tiresMask, hasSpare)
-// only from host-authored packets, because a client-authored eject ships a mask bit whose
-// paired prop_atvWheel_C birth cannot travel, so applying it would turn a retained-wheel
-// divergence into host-PERSISTED item loss. docs/vehicles.md carries it as a known limit.
+// AUTHORITY: accumulators apply from the syncer the host assigned, PRESENCE (tiresMask, hasSpare)
+// from the host's canonical block. A client syncer's request is first consumed on the host,
+// where native ejection births the wheel prop; the host reads its actual resulting presence
+// back into the stamped block. A receiving client updates presence without ejecting another item.
 //
 // EDGES: change groups run against a LAST-EXPRESSED baseline, seeded from the ACTOR at first
 // apply and advanced only when a verb runs. Against the last packet, slow drift starves
@@ -29,11 +29,11 @@ namespace coop::atv_condition_sync {
 // Game thread, like everything here.
 void FillPayload(void* actor, coop::net::AtvStatePayload& p);
 
-// Apply a received condition block to this entry's actor. Honors tiresValid, the
-// presence-authority rule (senderSlot==0), the skipTireUpdate defer guard, and the
-// last-expressed change edges. Game thread.
-void ApplyPayload(coop::atv_sync::AtvEntry& e, const coop::net::AtvStatePayload& p,
-                  uint8_t senderSlot);
+// Apply a received condition block to this entry's actor. `fromHost` is whether the datagram's sender is the
+// host: a block that is not, or that the host re-sent for a client syncer (kAtvFromSyncer), is clamped to the
+// game's domains; presence is consumed from the host's canonical, a connect snapshot's block included.
+// Honors tiresValid, the skipTireUpdate defer guard, and the last-expressed change edges. Game thread.
+void ApplyPayload(coop::atv_sync::AtvEntry& e, const coop::net::AtvStatePayload& p, bool fromHost);
 
 // Idle-syncer change-gate term: true when the payload's condition block differs from the
 // last block this entry actually SENT (or nothing was ever sent). NoteSent records a send.

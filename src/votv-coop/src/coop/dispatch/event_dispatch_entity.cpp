@@ -29,6 +29,7 @@
 #include "coop/props/prop_drive_stream.h"  // the driven-prop end edge
 #include "coop/props/prop_element_tracker.h"
 #include "coop/player/remote_player.h"
+#include "coop/props/prop_element_tracker.h"  // SessionIsHost
 #include "coop/props/remote_prop.h"
 #include "coop/props/remote_prop_spawn.h"
 #include "coop/props/join_membership_sweep.h"  // HasLoadTailQuiesced
@@ -253,6 +254,14 @@ bool HandleEntityEvent(net::Session& session,
                 break;
             }
         }
+        // The host saying an identity is alive now retires that identity's deferred destroy. PropSpawn
+        // and PropDestroy share the Bulk lane in order, and the host's snapshot drain re-validates
+        // liveness per row, so a spawn received after a destroy is newer: applying the older destroy at
+        // quiescence would kill the re-creation. Taken here, at the wire edge, since OnSpawn is also
+        // replayed with an older arrival's payload (kerfur adoption), which proves nothing about order.
+        // The deferred table is the client's.
+        if (!coop::prop_element_tracker::SessionIsHost())
+            coop::element::quiescence_drain::RetirePendingDestroyFor(p);
         remote_prop_spawn::OnSpawn(p, msg.senderPeerSlot, localPlayer);
         // Advance the join loading bar; outside a join this is one relaxed atomic load.
         coop::join_progress::NotePropApplied();

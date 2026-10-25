@@ -56,3 +56,8 @@ int main(){using namespace test;using namespace ue_wrap::floor_bed;
     frameSize=8;++serial;CHECK(EnsureKey(&actor));
     puts("PASS: real floor wrapper/ParamFrame, lineage, existing keys, native failure/readback, recursive call, identity/world/death");
 }
+
+// Reflection names used by ParamFrame missing-field diagnostics.
+namespace ue_wrap::reflection {
+std::wstring ToString(const FName&){return L"fixture_function";}
+}

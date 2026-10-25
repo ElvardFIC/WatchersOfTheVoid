@@ -45,6 +45,7 @@
 #include "coop/player/hand_toy_audio.h"
 #include "coop/player/sit_pose.h"
 #include "coop/player/players_registry.h"
+#include "coop/world/explosion_sync.h"
 #include "coop/world/coord_tower_ops.h"
 #include "coop/world/coord_tower_rows.h"
 #include "coop/world/firefly_sync.h"
@@ -720,6 +721,11 @@ bool HandleWorldEvent(net::Session& session,
         });
         break;
     }
+    case net::ReliableKind::ExplosionSpawn:
+        // A host explosion for this client to re-spawn. The host is the only author (client_authorship.h
+        // refuses a client's copy at the host's receive edge); the receive validates the bytes itself.
+        ::coop::native_explosion_sync::OnSpawnReceived(msg.payload, msg.payloadLen);
+        break;
     case net::ReliableKind::WeatherState: {
         // The host-authoritative weather state. The receiver looks up its local day-night cycle and
         // invokes the cycle's mutator UFunctions to apply each delta; see the weather sync's apply.

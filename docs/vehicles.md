@@ -20,10 +20,10 @@ travel of thirty centimetres against a native two to four, and a release that la
 peer's copy at a metre and a half per second. That lane was replaced whole
 (`coop/interactables/atv_sync`).
 
-A peer that does not author an ATV runs the rig natively, physics on and tick on, and is
-corrected toward the authority on every packet (`coop/interactables/atv_corrector`): the
+A peer that does not sync an ATV runs the rig natively, physics on and tick on, and is
+corrected toward the syncer on every packet (`coop/interactables/atv_corrector`): the
 velocity is written, the position error is closed by a bounded corrective velocity, and past a
-speed-scaled threshold, or when the error stops shrinking, the mirror is cut to the authority's
+speed-scaled threshold, or when the error stops shrinking, the mirror is cut to the syncer's
 pose through the game's own teleport. This is MTA's vehicle shape, and the one thing a mirror may
 not do is author collision damage: the seven hit delegates are intercepted on a peer that does
 not own the rig's tick and dispatched with a zeroed impulse, so the notification runs whole and
@@ -31,48 +31,49 @@ only the damage dies (`coop/interactables/atv_hit_guard`). Cancelling the wheel 
 outright cost a mirror its rig shape, a sag of twenty-five to forty centimetres, until the cause was
 found.
 
-### Two predicates
+### The seat and the syncer are the host's
 
-Who streams and whose machine runs the brain are different questions. Pose authority, the peer
-driving or carrying the ATV, decides who streams; tick ownership, that peer or the host when
-nobody authors, decides whose accumulators, wheel torque and collision damage are real. On the
-wire the author is one slot and the seat another, because the driver seat is what the occupancy
-deny reads, and a peer merely grabbing an ATV must
-not deny a seat nobody is in. A simultaneous mount resolves to the lower slot. A peer may name only itself as author, and only the recorded author
-may release; the release clears the author and nothing else, since nothing was frozen.
+Who sits and who writes the rig are different questions, and the host decides both
+(`coop/interactables/atv_authority`); no machine decides either for itself. The seat is a claim: a
+client's local sit sends `AtvSeat`, and the host judges it (the sender's world ready, the ATV known,
+the sender alive, a pace, one seat at a time, the seat free, the sender within reach) and answers
+every request with `AtvAnswer`. The host's own player is judged by the same table at its own tick,
+without the reach test. The syncer is the peer whose copy writes the rig and runs the brain, the
+accumulators, wheel torque and collision damage. It is the occupant while seated; unseated, it stays
+with the peer that drove or carried the ATV until that peer is out of range (130 m) or silent for
+five seconds, or the ATV has been at rest and uncarried for a second, and then the host takes it
+back. A grab sends `AtvTakeover`, judged the same way and refused while the ATV is seated or another
+peer carries it. A peer merely carrying an ATV syncs it but is not its occupant, so it never denies
+the seat. A client acts at once on its local sit or grab and yields to the answer: a refused sit
+dismounts through the game's own dismount, a refused grab drops. Every machine follows the host's
+stamp, the seat and the syncer on each `AtvState` the host sends. `[?]` Built to this design; no
+two-peer run has judged it yet.
 
 ### The stream
 
-While authored, the rig's pose, full rotation, linear and angular velocity stream about twenty
-times a second, keyed by the ATV's save key; the host relays a client's stream. An idle ATV is synced by
-the host at five hertz gated on change with a two-second keepalive floor, so a parked vehicle
-costs one packet every two seconds. An ATV that appears at runtime, from the spawn menu or the
-host's companion spawn, has no save twin, so the host mints a synthetic key and announces it.
-
-A save usually places one ATV. Once that one has sat still, and the world has no second one
-already, the host mints one `ATV_C` beside it and places it with the game's own vehicle teleport.
-It is given its own save key when it has none, and it is included in the save, so a save and quit
-writes each scooter's fuel, tires and position into that scooter's own record. A later load that
-already has two does not mint a third, and a joining player who already received both in the
-world save is not handed another copy.
-
-### The driver
-
-The driver's puppet is snapped onto `sitarrow` after the pose drive, so they sit in the saddle
-instead of trailing the rig. A player who sits in a chair sends that seat's point (`SitAnchor`)
-and the other machines put their puppet there. There is no second seat on the ATV.
+While synced by a peer, the rig's pose, full rotation, linear and angular velocity stream about
+twenty times a second, keyed by the ATV's game key. A client's stream reaches the host alone: the
+host applies only its syncer's blocks, paced, and re-sends each to the other clients with its stamp.
+An idle ATV is
+synced by the host at five hertz gated on change with a two-second keepalive floor, so a parked
+vehicle costs one packet every two seconds. An ATV that appears at runtime, from the spawn menu,
+has no save twin, so the host announces it under its game key.
+The client parks a valid announcement until gameplay, the discovery index and load quiescence
+agree, stamped with the world it arrived in: a world change drops it, the new world's own replay
+bringing it again, and a spawn that fails in a ready world is final, never retried.
+`[?]` This readiness path still needs a two-peer join and travel test.
 
 ### Condition
 
-The author's condition rides the same payload: per-wheel durability, dirt, fixes and type, the
+The syncer's condition rides the same payload: per-wheel durability, dirt, fixes and type, the
 spare's trio, body dirt, fuel and health (`coop/interactables/atv_condition_sync`). A mirror is
 overwritten and re-derives its visuals through the game's own reducers on change edges, against a
 baseline seeded from the actor rather than from the last packet: a zero baseline would break all
 eight constraints on a settled rig, and a per-packet one would starve the dirt reducer forever.
-Accumulators apply from any legitimate author; presence, which tyres are on and whether the
-spare is, is consumed only from host-authored packets, because a client-authored eject ships a
-mask whose paired wheel prop cannot travel, and applying it would turn a divergence into an item
-loss the host persists. The mirror's own accrual is held at zero by the impulse neuter, so an
+Accumulators apply from the syncer, clamped to the game's domains when it is a client; presence,
+which tyres are on and whether the spare is, is canonical on the host. A client syncer's
+ejection runs the native wheel operation on the host; its actual resulting condition is read
+back into the stamped block. Clients consume that block without birthing another wheel. The mirror's own accrual is held at zero by the impulse neuter, so an
 overwrite never races an irreversible act. The battery is an inserted prop's charge and rides
 the prop lane.
 
@@ -96,36 +97,53 @@ servicing peer's copy keeps the serviced values (a three-second floor), so nothi
 
 | State | Owner | Shape |
 |---|---|---|
-| the pose while driven or carried | the author | a twenty-hertz stream, relayed |
+| the pose while driven or carried | the syncer | a twenty-hertz stream; a client's reaches the host, which re-sends it stamped |
 | the pose while idle | the host | five hertz on change, a keepalive floor |
-| the driver seat | the occupancy arbiter | the lower slot wins a simultaneous mount |
-| collision damage, the accumulators, wheel torque | the tick owner | a mirror's impulses are zeroed |
-| the condition values | the author | overwritten on the mirror, re-derived on edges |
-| tyre and spare presence | the host | consumed from host-authored packets only |
-| a second ATV | the host | minted once beside the save ATV after it has sat still, and announced at once |
-| a runtime ATV's identity | the host | a synthetic key, announced |
+| the seat | the host | a judged request, answered, stamped to every client |
+| the syncer | the host | assigned on a sit or a grab, taken back at rest, out of range or on silence |
+| collision damage, the accumulators, wheel torque | the tick owner, the syncer's machine | a mirror's impulses are zeroed |
+| every route to an ATV's damage and death (the two blast verbs, the explosion) | the tick owner | a copy that does not own the tick cancels them at the script gate; the owner takes every blast that reaches it |
+| the story event's trap | the host | the host copy's `trap` rides the stamp (bit 4); the driven copy fires it |
+| the condition values | the syncer | overwritten on the mirror, re-derived on edges |
+| tyre and spare presence | the host | consumed from the host's own copy only |
+| a runtime ATV's identity | the host | its game key, announced |
 
 ## Wire messages
 
 | Kind | Direction | Carries |
 |---|---|---|
-| `AtvState` | the author, relayed; the host when idle | key, pose, rotation, velocities, the driver seat, the author, brake, lights, turbo, honk, radio, the frame modules, the condition block, an adopt flag |
-| `AtvRelease` | the author | authority lost, nothing else |
-| `AtvSpawn`, `AtvDestroy` | the host to all | a runtime ATV's synthetic key and birth; its teardown |
+| `AtvState` | the syncer (a client's to the host alone), re-sent by the host; the host when idle | key, pose, rotation, velocities, the seat and the syncer the host stamps, the host copy's trap, the condition block, an adopt flag |
+| `AtvSeat`, `AtvTakeover` | a client to the host | a sit in or leave of the driver's seat; a grab of the ATV |
+| `AtvAnswer` | the host to the asking client | the verdict on one request, with the seat and the syncer the host holds |
+| `AtvExplodeRequest` | a client to the host | the ATV the client syncs that exploded, by key, and whether the story event's trap fell in that frame; the host blasts at the ATV's own `tp` |
+| `AtvSpawn`, `AtvDestroy` | the host to all | an ATV's key, class and pose; its teardown |
+| `AtvSetComplete` | the host to a joiner | the count of distinct keys its connect snapshot named |
 
 ## Late join
 
-Every indexed ATV is snapshotted to the joiner with its pose, velocity, author
-and condition, so an ATV airborne at the join arrives moving and lands, and the joiner's mirror
-is cut to the pose on its first packet.
+The joiner loads the host's save first, so it already holds the ATVs the save placed. Once its
+save has finished loading, the host walks every ATV its world holds and announces each by key, then
+closes the set with `AtvSetComplete`. The joiner adopts the copy it holds under that key and spawns
+a mirror only when it holds none, so it ends with exactly one actor per host ATV. It then removes
+every ATV the set did not name, such as one the host lost after the save was taken. Arrivals that
+come before the joiner's world is ready wait in a park. A set the host cannot vouch for (an ATV
+still loading, a send that failed) is withheld, which removes nothing; the host owes it and
+retries. Each ATV's pose, velocity, condition and the host's stamp (the seat and the syncer) follow,
+so an ATV airborne at the join arrives moving and lands, and the joiner's mirror is cut to the pose
+on its first packet, even for an ATV a client syncs; after that it follows the syncer's blocks. A
+joiner sends no request before its own world is ready: a sit or a grab it makes before then is held,
+not yielded, and goes out at that point. A rejoin into the same slot is a departure and an arrival,
+and the leaver's seat and syncerships were cleared at its departure. `[V]` the ATV spawn drill's
+run, join, park and divergence arms, each red arm failing as designed (`coop/dev/atv_spawn_drill`).
 
 ## Known limits
 
 | Limit | Evidence |
 |---|---|
-| While driving, the mirror trails the author: the correction is a bounded velocity bias, and the cut to the author's pose happens only past a speed-scaled error or when the error stops shrinking | `[V]` `coop/interactables/atv_corrector` |
-| At an authority handoff the host becomes the idle syncer on the tick after the release, so its stream and the new author's overlap until the new author's first packet lands | `[V]` `coop/interactables/atv_sync` |
-| A tyre put ON by the driver is copied as presence: the other machines show the wheel and do not receive an inventory tyre. A tyre taken off is ejected on the host from the pose stream | `[V]` `coop/interactables/atv_condition_sync` |
+| While driving, the mirror trails the syncer: the correction is a bounded velocity bias, and the cut to the syncer's pose happens only past a speed-scaled error or when the error stops shrinking | `[V]` `coop/interactables/atv_corrector` |
+| A client drives for one round trip before the host's answer can refuse its sit or grab; a refused sit dismounts, a refused grab drops, and the blocks it streamed meanwhile are dropped and counted, never applied | `[?]` `coop/interactables/atv_authority`, built to the design and not yet run |
+| At a hand-back to the host the old syncer's last blocks may still be in flight; the host drops and counts them, and the stamp moves every client to the host's copy | `[?]` `coop/interactables/atv_authority`, `coop/interactables/atv_sync` |
+| Wheel ejection uses native births on the host and canonical presence on clients; rendered acceptance remains open | `[RD]` production controller regression in `atv_condition_merge_test.cpp` |
 | The pose stream rides the reliable lane; a sequenced unreliable stream is the intended shape | `[V]` `coop/interactables/atv_sync` sends it reliable |
 | A radio station that is a file on the driver's machine does not play on a machine that does not have that file. The playing flag and a text url do travel | `[V]` `coop/interactables/atv_sync` (`AtvRadio`); `ue_wrap/devices/atv` reads the radio's MediaPlayer |
 | A non-author's refuel, repair or wash is measured, not intercepted: it travels as the movement it left on the copy | `[RD]` `coop/interactables/atv_condition_sync`; built, not yet played |
@@ -134,9 +152,9 @@ is cut to the pose on its first packet.
 
 | Concept | Files |
 |---|---|
-| the lane | `coop/interactables/atv_sync`, `coop/interactables/atv_sync_internal.h` |
-| the driver in the saddle | `coop/player/sit_pose`, `ue_wrap/actors/sit_pose` |
-| the corrector and the hit guard | `coop/interactables/atv_corrector`, `coop/interactables/atv_hit_guard` |
+| the lane | `coop/interactables/atv_sync`, `coop/interactables/atv_sync_internal.h`; `coop/interactables/atv_body` (this machine's own seat and carry against the table) |
+| the seat and syncer table, and the host's judgements | `coop/interactables/atv_authority` |
+| the corrector, the hit guard and the damage gate | `coop/interactables/atv_corrector`, `coop/interactables/atv_hit_guard`, `coop/interactables/atv_damage_gate` |
 | condition | `coop/interactables/atv_condition_sync`, `ue_wrap/devices/atv_condition` |
 | the engine wrapper | `ue_wrap/devices/atv` |
 | the driver seat | `coop/interactables/device_occupancy` |

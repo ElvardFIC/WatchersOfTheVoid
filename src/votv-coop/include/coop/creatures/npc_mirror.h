@@ -65,9 +65,8 @@ void DrainClientMirrors();
 
 // Client world-swap teardown: drop every client mirror whose actor a level load freed (the host
 // sends no EntityDestroy for a client world swap). Release only, no destroy; live mirrors are
-// kept. Without it a save-transfer join's second level load could not re-mirror or re-adopt
-// the same host eid, since the receivers early-return on a stale Element at that id. Game
-// thread only.
+// kept. Without it a world swap after the announce could not re-mirror or re-adopt the same
+// host eid, since the receivers early-return on a stale Element at that id. Game thread only.
 void PruneDeadClientMirrors();
 
 // Client-side reconciliation: destroy every live allowlisted NPC actor on this client that is

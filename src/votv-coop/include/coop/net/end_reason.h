@@ -74,8 +74,9 @@ enum class EndReason : uint8_t {
     // LOCAL, after a session ended or before a join from a world: the game would not travel to the menu.
     WorldNotLeft,           // the game mode refused the travel to the menu, or it never dispatched or arrived
     // LOCAL, before a session starts (a join or a host's own) or while a join waits to announce: the game's
-    // script loop could not be hooked at boot, or the prop key watches were refused, so a prop's key writes go
-    // unseen and props cannot be matched between players by key.
+    // script loop could not be hooked at boot, or the prop key watches or the save-replay watch were
+    // refused, so a prop's key writes go unseen, or the world's save replay cannot be seen to return, and
+    // props cannot be matched between players by key.
     ScriptHooksUnavailable,
 
     // H -- the host decided; rides the transport's application end reason. Values 40..89.

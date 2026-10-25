@@ -145,10 +145,10 @@ void CollectTrackedKerfurTransforms(
     std::unordered_map<coop::element::ElementId, ue_wrap::FVector>& out);
 
 // The save-time position of every live keyed prop by host eid: a keyed prop rides the snapshot at
-// the host's current position, but the joiner's own loadObjects re-creates it at the save
-// position afterwards, so the diverged-position flush re-asserts a host-moved position at
-// quiescence. The index copied under the leaf mutex, positions read outside it. Game thread,
-// connect edge.
+// the host's current position, and the joiner's own loadObjects has returned before it lands, so
+// the diverged-position flush re-asserts a host-moved position at quiescence, which heals a host
+// move inside the join window. The index copied under the leaf mutex, positions read outside it.
+// Game thread, connect edge.
 void CollectTrackedKeyedPropTransforms(
     std::unordered_map<coop::element::ElementId, ue_wrap::FVector>& out);
 

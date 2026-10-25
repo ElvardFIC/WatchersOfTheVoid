@@ -4,6 +4,8 @@
 // the footsteps, the hurt flash and the ragdoll display.
 
 #include "coop/player/remote_player.h"
+#include "coop/config/config.h"
+#include "coop/config/config_registry.h"
 
 #include "coop/dev/puppet_head_probe.h"
 #include "coop/player/client_model.h"
@@ -14,6 +16,7 @@
 #include "ue_wrap/actors/sleep_display.h"
 #include "ue_wrap/core/call.h"
 #include "ue_wrap/engine/engine.h"
+#include "ue_wrap/engine/engine_hurt_flash.h"
 #include "ue_wrap/engine/world_identity.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/actors/puppet.h"
@@ -265,7 +268,7 @@ void RemotePlayer::SetVitals(float health01, float food01, float sleep01) {
 void RemotePlayer::SetTargetPose(const coop::net::PoseSnapshot& snap) {
     if (!valid()) { actor_ = nullptr; return; }
 
-    // The vitals ride the pose packet and snap (display only, the nameplate bar); before the
+    // The vitals ride the pose packet and snap (the nameplate bar, the hit judge's alive test); before the
     // interpolation branches, so they apply on the first packet, a teleport snap and the normal
     // path.
     SetVitals(coop::net::DequantizeUnitFraction(snap.healthFrac),
@@ -430,8 +433,23 @@ void RemotePlayer::Tick() {
         // The nameplate reads IsHurtFlashing() and flashes red; the body swaps to the hurt material
         // on the rising edge and restores on the falling one. The kel mesh stays visible while
         // ragdolled (pelvis-attached to the invisible ragdoll body), so the flash composes with it.
-        if (wantFlash) E::ApplyHurtFlashMaterial(actor_, hurtSavedMaterials_);
-        else           E::RestoreHurtFlashMaterial(actor_, hurtSavedMaterials_);
+        // PROBE (hurt_flash_gc_probe): slot 0's material class before the flash, a collection forced inside
+        // it, and the class after the restore -- a skin material the collection took shows as a changed class.
+        static const bool sHfg = coop::config::ResolveFlag(::coop::config_registry::rows::hurt_flash_gc_probe);
+        auto hfgClasses = [this](const char* when) {
+            void* a = E::PuppetBodyMaterial(actor_, false, 0);
+            void* b = E::PuppetBodyMaterial(actor_, true, 0);
+            UE_LOGI("[HFG] %s native=%ls visible=%ls", when, a ? R::ClassNameOf(a).c_str() : L"null",
+                    b ? R::ClassNameOf(b).c_str() : L"null");
+        };
+        if (wantFlash) {
+            if (sHfg) hfgClasses("before flash");
+            E::ApplyHurtFlashMaterial(actor_, hurtSavedMaterials_);
+            if (sHfg) UE_LOGI("[HFG] flash on, collection forced ran=%d", E::ForceGarbageCollection() ? 1 : 0);
+        } else {
+            E::RestoreHurtFlashMaterial(actor_, hurtSavedMaterials_);
+            if (sHfg) hfgClasses("after restore");
+        }
         if (!wantFlash) hurtFlashEndMs_ = 0;
     }
 }
@@ -468,7 +486,14 @@ void RemotePlayer::ShowBurning(bool burning) {
     burningShown_ = burning;
 }
 
+void RemotePlayer::ReleaseHurtFlash() {
+    hurtFlashEndMs_ = 0;
+    hurtFlashActive_ = false;
+    hurtSavedMaterials_.clear();  // the destructors release the pins
+}
+
 void RemotePlayer::Destroy() {
+    ReleaseHurtFlash();  // first: a puppet whose body already went still holds the flash's pins
     if (!actor_) return;
     ResetBurning();
     // The AnimInstance dies with the actor, so no field cleanup. The ragdoll display body is a
@@ -486,9 +511,6 @@ void RemotePlayer::Destroy() {
     window_.Close();
     dirty_ = false;
     bodyYaw_.Reset(0.f);    // clears the latch + dt clock; re-seeded at the next Spawn
-    hurtFlashEndMs_ = 0;         // clear the hurt flash (the nameplate is already unregistered)
-    hurtFlashActive_ = false;
-    hurtSavedMaterials_.clear(); // the mesh died with the actor -- no restore needed, drop stale ptrs
     appliedSkin_.clear();        // the next Spawn re-applies from SkinForSlot
     UE_LOGI("RemotePlayer::Destroy: puppet + nameplate gone");
 }
@@ -667,14 +689,24 @@ bool RemotePlayer::TryGetLocation(ue_wrap::FVector& out) const {
     return E::TryGetActorLocation(actor_, out);
 }
 
-ue_wrap::FVector RemotePlayer::GetSyncedAimDirection() const {
-    // The same convention as the head look: yaw = the wire yaw + the head-yaw delta, pitch = the
-    // controller pitch; the unit forward is (cp cos y, cp sin y, sin p).
+// The same convention as the head look: yaw = the wire yaw + the head-yaw delta, pitch = the controller pitch; the unit
+// forward is (cp cos y, cp sin y, sin p).
+namespace {
+ue_wrap::FVector AimForward(float yaw, float headYawDelta, float pitch) {
     constexpr float kDeg2Rad = 0.01745329252f;
-    const float yawRad   = (curYaw_ + curHeadYawDelta_) * kDeg2Rad;
-    const float pitchRad = curPitch_ * kDeg2Rad;
+    const float yawRad   = (yaw + headYawDelta) * kDeg2Rad;
+    const float pitchRad = pitch * kDeg2Rad;
     const float cp = std::cos(pitchRad);
     return { cp * std::cos(yawRad), cp * std::sin(yawRad), std::sin(pitchRad) };
+}
+}  // namespace
+
+ue_wrap::FVector RemotePlayer::GetSyncedAimDirection() const {
+    return AimForward(curYaw_, curHeadYawDelta_, curPitch_);
+}
+
+ue_wrap::FVector RemotePlayer::GetLatestAimDirection() const {
+    return AimForward(targetYaw_, targetHeadYawDelta_, targetPitch_);
 }
 
 // The head bone of whatever mesh renders the peer right now: the visible flop body while ragdolled (the kel meshes are

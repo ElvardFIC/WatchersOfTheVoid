@@ -55,7 +55,9 @@ bool DestroySlot(int slot) {
     // destroy and the unregister below; the ones read (tick readers) are not reached from the
     // puppet's end of play, by inspection, and the rest were not enumerated.
     const bool had = g_puppets[slot].valid();
-    if (had) g_puppets[slot].Destroy();
+    // Unconditional: Destroy also ends a hurt flash on a puppet whose body already went (its pins released) and
+    // tears down a stale body's ragdoll and effect actors; on a slot with no body at all it returns after the flash.
+    g_puppets[slot].Destroy();
     // UnregisterPuppet drops the Player Element from players::Registry, on every path: a puppet never
     // spawned -- the peer disconnected after Join but before any PoseSnapshot -- leaves
     // g_puppets[slot].valid() false while playerBySlot_[slot] may still hold a mirror Element
@@ -185,6 +187,7 @@ void DriveTick(coop::net::Session& session, bool worldReadyAnnounced) {
     // when no fresh pose arrived).
     for (int slot = 0; slot < coop::players::kMaxPeers; ++slot) {
         if (g_puppets[slot].valid()) g_puppets[slot].Tick();
+        else g_puppets[slot].ReleaseHurtFlash();  // a body gone mid-flash: its pins go with it
     }
 
     // Killer-wisp grab-window body placement. MUST run AFTER the puppet Tick loop above: a held

@@ -68,3 +68,8 @@ int main(){using namespace test;namespace W=ue_wrap::base_window;Reset();float c
     CHECK(!W::WriteCleanAndApply(At(Actor),NAN));objects[Actor].clean=NAN;CHECK(!W::ReadClean(At(Actor),clean));
     puts("PASS actual window wrapper/ParamFrame: indexed class/serial reload, field/function/component readiness, native no-input dispatch, partial repaint retry and actor/class/world/component/current/value fences");
 }
+
+// Reflection names used by ParamFrame missing-field diagnostics.
+namespace ue_wrap::reflection {
+const FName& NameOf(void*){static const FName name{};return name;}
+}

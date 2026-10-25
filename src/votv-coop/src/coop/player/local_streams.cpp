@@ -145,8 +145,8 @@ bool ReadLocalPose(void* local, void* controller, coop::net::PoseSnapshot& out) 
         out.stateBits |= coop::net::kStateBitComputer;
     // The vitals (health fraction, food, sleep) in three bytes: ue_wrap::vitals reads this
     // machine's UsaveSlot_C, so each peer packs its own. Full (255) until the save resolves, so a
-    // booting peer does not flash an empty bar; the receiver treats them as display only. O(1)
-    // reads after the one-time resolve.
+    // booting peer does not flash an empty bar; the receiver draws them, and the host's hit judge
+    // reads a health of 0 as dead. O(1) reads after the one-time resolve.
     out.healthFrac = out.foodFrac = out.sleepFrac = 255;
     {
         namespace V = ue_wrap::vitals;
@@ -275,6 +275,15 @@ void Tick(coop::net::Session& session, void* local, void* controller) {
     }
     // The hand-item axis: the owner announces a change, the peers maintain their mirrors; both idle
     // cheaply.
+    if (hotbarProp) {   // once per process: the first hand item given to the hand lane, and its two gates
+        static bool s_said = false;
+        if (!s_said) {
+            s_said = true;
+            UE_LOGI("local_streams: first hand item to the hand lane cls=%ls connected=%d self=%u",
+                    R::ClassNameOf(hotbarProp).c_str(), session.connected() ? 1 : 0,
+                    static_cast<unsigned>(coop::players::Registry::Get().LocalPeerId()));
+        }
+    }
     coop::hand_item::TickOwner(session, local, hotbarProp);
     coop::hand_item::TickMirrors();
     // The ATV belongs to coop::atv_sync: a grabbed ATV is not a keyed interactable and would emit

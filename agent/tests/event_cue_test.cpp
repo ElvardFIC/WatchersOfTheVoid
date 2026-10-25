@@ -104,3 +104,9 @@ int main() {
     p.x=std::numeric_limits<float>::quiet_NaN();E::OnReliable(p);p.x=3'000'000;E::OnReliable(p);p={99,0,0,0};E::OnReliable(p);CHECK(plays==9);
     E::OnDisconnect();puts("PASS event cues: peer retries/readiness, bounded frames, join source identity/world, deferred assets/pawn/frames, cached asset reuse, no ambiguous duplicate, reentrancy and session/expiry cleanup");
 }
+
+// Reflection names used by ParamFrame missing-field diagnostics.
+namespace ue_wrap::reflection {
+std::wstring ToString(const FName&){return L"fixture_function";}
+const FName& NameOf(void*){static const FName name{};return name;}
+}

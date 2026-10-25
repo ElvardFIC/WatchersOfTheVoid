@@ -5,9 +5,12 @@ $checkout=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 $output=Join-Path $checkout 'build/atv-steering-check'
 New-Item -ItemType Directory -Force -Path $output | Out-Null
 $source=Get-Content (Join-Path $checkout 'src/votv-coop/src/coop/interactables/atv_sync.cpp') -Raw
+$setType=[regex]::Match($source,'(?ms)^struct SetSent \{.*?^\};').Value
+$setSender=[regex]::Match($source,'(?ms)^SetSent SendSetToSlot\(.*?^\}').Value
 $snapshot=[regex]::Match($source,'(?ms)^void QueueConnectBroadcastForSlot\(.*?^\}')
-if(-not $snapshot.Success){throw 'Production ATV join function missing'}
-[IO.File]::WriteAllText((Join-Path $output 'connect_snapshot.inc'),$snapshot.Value,[Text.UTF8Encoding]::new($false))
+if(-not $snapshot.Success -or -not $setType -or -not $setSender){throw 'Production ATV join functions missing'}
+$joinSource=$setType+"`n"+$setSender+"`n"+$snapshot.Value
+[IO.File]::WriteAllText((Join-Path $output 'connect_snapshot.inc'),$joinSource,[Text.UTF8Encoding]::new($false))
 $read=[regex]::Match($source,'(?ms)^bool ReadPayload\(.*?^\}')
 if(-not $read.Success){throw 'Production ATV payload function missing'}
 [IO.File]::WriteAllText((Join-Path $output 'read_payload.inc'),$read.Value,[Text.UTF8Encoding]::new($false))
@@ -23,13 +26,13 @@ if($FaultControls){
         $control=Join-Path $output $name
         New-Item -ItemType Directory -Force -Path $control | Out-Null
         $readControl=$read.Value
-        $joinControl=$snapshot.Value
+        $joinControl=$joinSource
         if($name -eq 'missing-steering'){
             $readControl=$readControl.Replace('p.steering = coop::atv_steering_sync::Capture(actor);','p.steering = 0;')
             if($readControl -eq $read.Value){throw 'Missing steering mutation site'}
         }else{
             $joinControl=$joinControl.Replace('// A join snapshot carries state, not a pending one-shot for existing peers.','e.honkPulse = false;')
-            if($joinControl -eq $snapshot.Value){throw 'Missing join mutation site'}
+            if($joinControl -eq $joinSource){throw 'Missing join mutation site'}
         }
         [IO.File]::WriteAllText((Join-Path $control 'read_payload.inc'),$readControl,[Text.UTF8Encoding]::new($false))
         [IO.File]::WriteAllText((Join-Path $control 'connect_snapshot.inc'),$joinControl,[Text.UTF8Encoding]::new($false))

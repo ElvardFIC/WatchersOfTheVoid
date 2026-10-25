@@ -4,6 +4,7 @@ namespace C=coop::drone_call_intent;
 namespace test {inline bool leave=false,lid=false,departure=true,keyboard=true,writeOk=true;inline int writes=0,flights=0;}
 namespace ue_wrap::drone_console {
 int32_t LiveConsoles(void** out,int32_t){out[0]=&test::actor;return 1;}
+bool PlayChangeCue(void*){return true;}
 bool IsLidOpen(void*){return test::lid;}bool IsCursorOnKeyboard(void*){return test::keyboard;}
 bool IsCursorOnDeparture(void*){return test::departure;}
 bool TriggerFly(void*){++test::flights;test::Callback();return true;}
@@ -27,6 +28,9 @@ int main(){using namespace test;coop::net::DroneFlyIntentPayload p{};p.verb=1;p.
  Reset();writeOk=false;C::OnDroneFlyIntent(session,p,1);C::Tick(session);CHECK(writes==0&&!C::g_pending[1].empty());writeOk=true;C::Tick(session);CHECK(writes==1);
  Reset();session.mode=coop::net::Role::Client;uint8_t local[32]{};local[0]=4;void* who=coop::players::Registry::Get().Local();std::memcpy(local+8,&who,sizeof(who));ue_wrap::script_gate::Call c{};c.object=&actor;c.locals=local;
  CHECK(C::OnActionPre(c)==ue_wrap::script_gate::Verdict::Cancel);CHECK(!leave&&C::g_pending[0].size()==1);session.sendOk=false;C::Tick(session);CHECK(C::g_pending[0].size()==1);session.sendOk=true;C::Tick(session);CHECK(C::g_pending[0].empty()&&session.sent.size()==1);
- coop::net::DroneFlyIntentPayload sent{};std::memcpy(&sent,session.sent[0].data.data(),sizeof(sent));CHECK(sent.verb==1&&sent.leaveAfter5min==1);
+ coop::net::DroneFlyIntentPayload sent{};std::memcpy(&sent,session.sent[0].data.data(),sizeof(sent));CHECK(sent.verb==coop::net::drone_verb::kLeaveTimer);
+ Reset();auto toggle=p;toggle.verb=coop::net::drone_verb::kLeaveTimer;
+ C::OnDroneFlyIntent(session,toggle,1);C::OnDroneFlyIntent(session,toggle,1);
+ C::Tick(session);CHECK(leave&&writes==1);C::Tick(session);CHECK(!leave&&writes==2);
  puts("PASS actual drone intents: native timer priority/closed lid, reach, set semantics, backpressure, expiry, reentry, peer/world/serial lifetime");
 }

@@ -18,6 +18,8 @@
 
 #include "ue_wrap/core/types.h"  // FVector, FRotator
 
+#include <cstddef>
+#include <cstdint>
 #include <string>
 
 namespace ue_wrap::atv {
@@ -29,6 +31,14 @@ bool EnsureResolved();
 // ATV_C loads with the main menu and stays one object for the process (measured across a rejoin),
 // so the object scan hub's one judgement per class holds. Game thread.
 bool IsAtv(void* obj);
+
+// Every live ATV in the lineage (ATV_C and each subclass with an instance, the witch car included), one call per
+// actor with its object-array slot. Skips the class default objects and the objects a load has not handed to the
+// game thread yet or the engine is destroying; the caller still asks its own world and key questions. Walks the
+// object index, never the object array. The callback must not create or destroy objects. Returns how many instances
+// it skipped as not yet handed to the game thread (an ATV still loading; one the engine is destroying is not
+// counted, it is leaving). Game thread.
+size_t ForEachAtv(void (*fn)(void* ctx, void* actor, int32_t idx), void* ctx);
 
 // The ATV's save-persistent Key as a wide string ("" on failure, L"None" if unkeyed).
 std::wstring GetKeyString(void* atv);
@@ -119,6 +129,17 @@ void PlayHonk(void* atv);
 // The native tyre eject: getTire then damageWheel, so the wheel prop is born on this machine.
 bool EjectWheel(void* atv, int index);
 
+// The story event's flag: while it is set the ATV's own tick explodes it (health to 0, then `explode`) once its driver
+// has moved. Resolved by name with no fallback; both return false, and touch nothing, on null, an unresolved ATV_C or a
+// class without the property. Game thread.
+bool ReadTrap(void* atv, bool& out);
+bool WriteTrap(void* atv, bool v);
+
+// Where the ATV's own `explode` places its blast: the world location of its `tp` billboard component. Resolved by name
+// with no fallback; false, with `out` the origin, on null, an unresolved ATV_C or `tp`, a null component or a call
+// that does not dispatch. Game thread.
+bool ReadTpLocation(void* atv, FVector& out);
+
 // The game's OWN rig-consistent teleport: ATV_C::teleportVehicle(NewLocation, NewRotation) --
 // K2_SetActorLocation(bTeleport=true) + K2_SetActorRotation(bTeleportPhysics=true), and THEN it
 // re-places frontWheel_R onto ax_FR1, frontWheel_L onto ax_FL1 and backWheelRoot onto `back`
@@ -128,19 +149,49 @@ bool EjectWheel(void* atv, int index);
 // why the game ships two teleport forms. False on unresolved/null. Game thread.
 bool TeleportRig(void* atv, const FVector& loc, const FRotator& rot);
 
-// Runtime-ATV materialization: fresh-spawn an AATV_C-or-subclass (`className`) at `loc`/`rot`
-// via GameplayStatics BeginDeferred + FinishSpawning, leaving physics ON -- the result is a NATIVE
-// idle ATV the local player can grab/drive (NOT a frozen mirror). coop::atv_sync uses this when
-// the host announces a RUNTIME-SPAWNED ATV (AtvSpawn) that this client has no save-twin of.
-// Nothing sells an ATV: the source is the list_props row 'atv' -> spawnAsObject = ATV_C, reached
-// from ui_spawnmenu. `className` is validated to descend from ATV_C (trust boundary -- a peer
-// could send any string). Returns the spawned actor, or nullptr on resolve/spawn failure.
-// Game thread only.
+// The step at which SpawnMirror failed. SpawnMirror reports it and logs nothing for it: the caller
+// (coop) says it once per key, since a replay asks again.
+enum class SpawnFail : uint8_t {
+    None,
+    Unresolved,      // the ATV wrapper, the spawn functions or the world context are not available
+    NoKey,           // the class name or the key is empty
+    ClassNotFound,   // no class of that name is loaded
+    NotAnAtv,        // the class does not descend from ATV_C
+    NoOffset,        // the class has no key property
+    NameNone,        // the key did not convert to a name
+    BeginFailed,     // BeginDeferredActorSpawnFromClass did not dispatch or returned null
+    FinishFailed,    // FinishSpawningActor could not be built or did not dispatch
+    KeyMismatch,     // the finished actor stands under another key; it was destroyed
+};
+
+// The failed step as a short phrase for a log line.
+const char* SpawnFailText(SpawnFail why);
+
+// ATV mirror materialization: fresh-spawn an AATV_C-or-subclass (`className`) carrying `key` at
+// `loc`/`rot` via GameplayStatics BeginDeferred + FinishSpawning, leaving physics ON -- the result is
+// a NATIVE idle ATV the local player can grab/drive (NOT a frozen mirror). The key is written before
+// the finish, so the actor is born with the host's Key and never mints one of its own. coop::atv_sync
+// uses this when the host announces an ATV (AtvSpawn) that this peer does not hold.
+// `className` is validated to descend from ATV_C (trust boundary -- a peer could send any string).
+// Returns the spawned actor, or nullptr on resolve/spawn failure; nullptr WITHOUT spawning anything
+// when `key` is empty, the class has no key property, or the key does not convert to a name (the
+// string library not yet resolved included: ask fname_utils::Resolved() first to tell "not yet"). The
+// key is read back after the finish, exactly (the index and the prune file key case-sensitively): a
+// mirror born under another key is destroyed and nullptr returned. `why` (optional) names the failed
+// step; `bornKey` (optional) receives the key the read-back found on a KeyMismatch. Game thread only.
+// Host companion: reserves an unused persisted key and includes the new rig in its save.
 void* SpawnMirror(const std::wstring& className, const FVector& loc, const FRotator& rot);
 
-// Tear down a SpawnMirror'd runtime-ATV mirror -- K2_DestroyActor on the actor -- when the host
-// announces it gone (AtvDestroy), or on disconnect. False, and nothing done, on a null or
+void* SpawnMirror(const std::wstring& className, const FVector& loc, const FRotator& rot,
+                  const std::wstring& key, SpawnFail* why = nullptr, std::wstring* bornKey = nullptr);
+
+// Tear down an ATV -- K2_DestroyActor on the actor -- a SpawnMirror'd one or a native twin, when the
+// host announces it gone (AtvDestroy), or a mirror on disconnect. False, and nothing done, on a null or
 // already-dead actor or a destroy that did not dispatch. Game thread.
 bool DestroyMirror(void* atv);
+
+// The ATV's own `dismount()`: the seated player is handed back (re-possessed, shown) and `isDriven` clears. False,
+// and nothing done, on a null or dead actor, an unresolved function or a call that did not dispatch. Game thread.
+bool Dismount(void* atv);
 
 }  // namespace ue_wrap::atv

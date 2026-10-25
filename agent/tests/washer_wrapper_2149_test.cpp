@@ -86,3 +86,8 @@ int main(){using namespace test;namespace W=ue_wrap::pressure_washer;
  objs[1].name.ComparisonIndex=2;CHECK(!W::EmitRemote(&objs[0],{1,2,3},{12,34,0}));
  puts("PASS real washer wrapper and ParamFrame: display-only calls, charge/flags, failed emission, lifetime and class reload");
 }
+
+// Reflection names used by ParamFrame missing-field diagnostics.
+namespace ue_wrap::reflection {
+std::wstring ToString(const FName&){return L"fixture_function";}
+}

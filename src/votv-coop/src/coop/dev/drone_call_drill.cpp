@@ -25,6 +25,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cmath>
+#include <cstdio>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -41,6 +42,7 @@ namespace WS = ue_wrap::world_singleton;
 // asks the world for.
 const wchar_t* const kKeyboard  = L"button_call";
 const wchar_t* const kLidLatch  = L"button_door";
+const wchar_t* const kLeaveFace = L"button_changeLeave";
 const wchar_t* const kSackClass = L"prop_dronesack_C";
 
 constexpr float    kReachCm         = 150.f;  // the director's stop; the host's reach test is 400
@@ -56,16 +58,23 @@ constexpr uint64_t kReadEveryMs     = 250;    // the drone and the sack are read
 constexpr uint64_t kParkBoundMs     = 240000;  // a delivery in flight at the load lands within minutes
 constexpr uint64_t kSettleBoundMs   = 30000;
 constexpr uint64_t kLidBoundMs      = 10000;
+constexpr uint64_t kTimerBoundMs    = 10000;  // the host's stream carries a flipped timer within a send interval
+constexpr uint64_t kClickBoundMs    = 2000;   // the click is posted a task after the press and must read playing by then
 constexpr uint64_t kOutcomeBoundMs  = 30000;
 
 // ---- the client's legs -----------------------------------------------------------------------
-enum class Step : uint8_t { Arm, Settle, Walk, Aim, Press, LidWait, Outcome, Done };
+enum class Step : uint8_t { Arm, Settle, Walk, Aim, Press, LidWait, TimerWait, Outcome, Done };
+enum class Face : uint8_t { Lid, Timer, Keyboard };  // the part the Aim and Press legs are on
 Step     g_step = Step::Arm;
 int      g_stepTicks = 0;
 uint64_t g_stepMs = 0;
 int      g_aimPose = 0;
-bool     g_aimLid = false;       // the part the Aim and Press legs are on: the lid's latch, else the keyboard
+Face     g_face = Face::Keyboard;
 int      g_presses = 0;          // keyboard presses that went to the host
+int      g_timerPress = 0;       // timer-face presses that went to the host: 1 = the flip, 2 = the flip back
+bool     g_timerBase = false;    // the mirror's leaveAfter5min before the first timer press
+bool     g_timerWant = false;    // the value the host's stream must bring after the press in flight
+bool     g_timerClick = false;   // the timer's click read as playing on this copy since the press in flight
 bool     g_sackAtPress = false;  // a sack lay in this world when the last press went
 bool     g_saidInFlight = false;
 uint64_t g_armMs = 0;            // when the legs first could start: the park wait's bound runs from here
@@ -126,7 +135,28 @@ int HasSack(void* drone) { return drone && (DR::ReadFxBits(drone) & DR::kFxHasSa
 bool AimedAt(void* player, void* console, void* part) {
     if (E::ReadMainPlayerHitActor(player) != console || E::ReadMainPlayerHitComponent(player) != part)
         return false;
-    return g_aimLid ? D::IsCursorOnLid(console) : D::IsCursorOnKeyboard(console);
+    switch (g_face) {
+    case Face::Lid:   return D::IsCursorOnLid(console);
+    case Face::Timer: return D::IsCursorOnLeaveTimer(console);
+    default:          return D::IsCursorOnKeyboard(console);
+    }
+}
+
+const wchar_t* FacePart() {
+    return g_face == Face::Lid ? kLidLatch : g_face == Face::Timer ? kLeaveFace : kKeyboard;
+}
+
+const char* FaceName() {
+    return g_face == Face::Lid ? "lid latch" : g_face == Face::Timer ? "leave timer face" : "keyboard";
+}
+
+const char* LeaveName(bool leaveAfter5min) { return leaveAfter5min ? "five minutes" : "indefinitely"; }
+
+// Abandon for a reason that names the face the legs are on; `fmt` holds one %s for it.
+void AbandonFace(const char* fmt) {
+    char why[160];
+    std::snprintf(why, sizeof(why), fmt, FaceName());
+    Abandon(why);
 }
 
 void ClientTick(void* player) {
@@ -193,7 +223,7 @@ void ClientTick(void* player) {
         if (WalkState() == 2) { Abandon("the walk to the console did not arrive"); return; }
         void* c = g_console.Get();
         if (!c) { Abandon("the console died"); return; }
-        g_aimLid = !D::IsLidOpen(c);  // the keyboard takes no press while the lid is shut
+        g_face = D::IsLidOpen(c) ? Face::Timer : Face::Lid;  // nothing takes a press while the lid is shut
         g_aimPose = 0;
         Go(Step::Aim);
         return;
@@ -201,19 +231,18 @@ void ClientTick(void* player) {
     case Step::Aim: {
         void* c = g_console.Get();
         if (!c) { Abandon("the console died"); return; }
-        void* part = D::PartOf(c, g_aimLid ? kLidLatch : kKeyboard);
-        if (!part) { Abandon(g_aimLid ? "the console's lid latch is unread" : "the console's keyboard is unread"); return; }
+        void* part = D::PartOf(c, FacePart());
+        if (!part) { AbandonFace("the console's %s is unread"); return; }
         if (AimedAt(player, c, part)) {
             UE_LOGI("[DRONE-CALL-DRILL] client: the trace took the console's %s at fan pose %d",
-                    g_aimLid ? "lid latch" : "keyboard", g_aimPose);
+                    FaceName(), g_aimPose);
             Go(Step::Press);
             return;
         }
         if (g_stepTicks % kAimTicksPerPose != 1) return;
         const auto& fan = AimFan();
         if (g_aimPose >= static_cast<int>(fan.size())) {
-            Abandon(g_aimLid ? "no heading of the fan put the trace on the lid latch"
-                             : "no heading of the fan put the trace on the keyboard");
+            AbandonFace("no heading of the fan put the trace on the %s");
             return;
         }
         ue_wrap::FRotator r = coop::director::LookAt(E::GetCameraLocation(), E::GetComponentLocation(part));
@@ -225,10 +254,33 @@ void ClientTick(void* player) {
     }
     case Step::Press: {
         if (!g_console.Get()) { Abandon("the console died"); return; }
-        if (g_aimLid) {
+        if (g_face == Face::Lid) {
             if (!E::CallMainPlayerUseSelectedAction(player)) { Abandon("useSelectedAction did not dispatch"); return; }
             UE_LOGI("[DRONE-CALL-DRILL] client pressed the lid latch");
             Go(Step::LidWait);
+            return;
+        }
+        if (g_face == Face::Timer) {
+            // The mirror's value is the host's last word, and the lane cancels the client's own body, so
+            // only the host's stream can move it: a press whose value flips here was the host's.
+            void* drone = DR::Find();
+            bool cur = false;
+            if (!drone || !DR::ReadLeaveAfter5min(drone, cur)) { Abandon("this copy's leave timer is unread"); return; }
+            if (g_timerPress == 0) g_timerBase = cur;
+            g_timerWant = !cur;
+            const uint64_t sent0 = coop::drone_call_intent::SentCount();
+            if (!E::CallMainPlayerUseSelectedAction(player)) { Abandon("useSelectedAction did not dispatch"); return; }
+            if (coop::drone_call_intent::SentCount() == sent0) {
+                UE_LOGW("[DRONE-CALL-DRILL] FAIL on the client: the trace was on the leave timer face with the lid "
+                        "open, and the timer press sent the host nothing");
+                g_step = Step::Done;
+                return;
+            }
+            ++g_timerPress;
+            UE_LOGI("[DRONE-CALL-DRILL] client timer press #%d went to the host (this copy reads %s, the host's "
+                    "stream must bring %s)", g_timerPress, LeaveName(cur), LeaveName(g_timerWant));
+            g_timerClick = false;
+            Go(Step::TimerWait);
             return;
         }
         // A flight measured after the press must be the press's: a drone that took off on its own since
@@ -255,12 +307,48 @@ void ClientTick(void* player) {
         if (!c) { Abandon("the console died"); return; }
         if (D::IsLidOpen(c)) {
             UE_LOGI("[DRONE-CALL-DRILL] client: the lid is open on this copy");
-            g_aimLid = false;
+            g_face = Face::Timer;
             g_aimPose = 0;
             Go(Step::Aim);
             return;
         }
         if (now - g_stepMs > kLidBoundMs) Abandon("the lid did not open on this copy after its press");
+        return;
+    }
+    case Step::TimerWait: {
+        // The click is the console's own audio_change on this copy: the lane cancels the body that would
+        // have played it and plays it from a task of its own, so it is read every tick until it sounds.
+        if (!g_timerClick) {
+            void* c = g_console.Get();
+            if (c && D::IsChangeCuePlaying(c)) {
+                g_timerClick = true;
+                UE_LOGI("[DRONE-CALL-DRILL] client: the timer's click is playing on this copy (press #%d)",
+                        g_timerPress);
+            } else if (now - g_stepMs > kClickBoundMs) {
+                UE_LOGW("[DRONE-CALL-DRILL] FAIL on the client: the timer's click did not play on this copy "
+                        "after timer press #%d", g_timerPress);
+                g_step = Step::Done;
+                return;
+            }
+        }
+        void* drone = DR::Find();
+        bool value = false;
+        if (!drone || !DR::ReadLeaveAfter5min(drone, value)) { Abandon("this copy's leave timer is unread"); return; }
+        if (value == g_timerWant && g_timerClick) {
+            UE_LOGI("[DRONE-CALL-DRILL] client: the host's leave timer flipped to %s (the load's was %s)", LeaveName(value),
+                    LeaveName(g_timerBase));
+            g_aimPose = 0;
+            // The second press flips it back, so the save's value is left as it was; then the keyboard.
+            g_face = g_timerPress < 2 ? Face::Timer : Face::Keyboard;
+            Go(Step::Aim);
+            return;
+        }
+        if (now - g_stepMs > kTimerBoundMs) {
+            UE_LOGW("[DRONE-CALL-DRILL] FAIL on the client: the host's leave timer %s never came to this copy "
+                    "after timer press #%d (this copy still reads %s)",
+                    g_timerPress < 2 ? "flip" : "flip back", g_timerPress, LeaveName(value));
+            g_step = Step::Done;
+        }
         return;
     }
     case Step::Outcome: {
@@ -379,7 +467,9 @@ void OnDisconnect() {
     g_step = Step::Arm;
     g_stepTicks = 0;
     g_aimPose = 0;
-    g_aimLid = false;
+    g_face = Face::Keyboard;
+    g_timerPress = 0;
+    g_timerBase = g_timerWant = g_timerClick = false;
     g_presses = 0;
     g_sackAtPress = false;
     g_saidInFlight = false;

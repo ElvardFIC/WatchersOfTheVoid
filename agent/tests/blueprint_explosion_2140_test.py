@@ -18,8 +18,10 @@ p=Package(str(research/'assets/VotV__Content__objects__misc__explosion_saltrocke
 assert not any(p.class_of_export(e)=='Function' for e in p.exports) # inherits the gated native graph
 s=root/'src/votv-coop'
 sub=(s/'src/coop/session/subsystems.cpp').read_text()
-for call in ('Install(&session)','Tick()','OnPeerLeft(slot)','OnDisconnect()'):
- assert 'coop::explosion_events::'+call in sub
+for call in ('Install(&session)','Tick()','OnDisconnect()'):
+ assert 'coop::native_explosion_sync::'+call in sub
+assert 'coop::explosion_events::Install(&session)' not in sub
+assert 'coop::explosion_events::Tick()' not in sub
 assert 'case ReliableKind::ExplosionEvent:' not in (s/'src/coop/net/session_lanes.h').read_text()
 dispatch=(s/'src/coop/dispatch/event_dispatch_world.cpp').read_text()
 assert 'sizeof(net::ExplosionEventPayload)' in dispatch and 'coop::explosion_events::Receive' in dispatch

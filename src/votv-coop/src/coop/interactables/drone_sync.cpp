@@ -53,6 +53,7 @@ struct DroneMirror {
     uint8_t lastStateBits = 0;    // last applied FX bits (dust / canTakeOff) -- edge detection
     bool    haveStateBits = false;
     int8_t  hostActive = -1;      // the host's last word on Active: 1, 0, or -1 before any
+    bool    leaveWriteWarned = false;  // the leave timer's failed write, said once a session
     // The newest word that arrived before this peer's drone resolved, waiting whole -- the pose and the
     // gate fields with it -- for the first tick that finds the drone.
     bool    hasPending = false;
@@ -84,7 +85,7 @@ struct HostRead {
     FVector  loc{};
     FRotator rot{};
     bool     active = false;
-    uint8_t  bits = 0;  // bit0 rotor dust, bit1 canTakeOff (arrived), bit2 hasSack
+    uint8_t  bits = 0;  // bit0 rotor dust, bit1 arrived, bit2 hasSack, bit3 leaveAfter5min
 };
 
 bool ReadHost(void* drone, HostRead& r) {
@@ -189,6 +190,7 @@ void ApplyState(void* drone, const coop::net::DroneStatePayload& payload) {
     const uint8_t ob = g_m.haveStateBits ? g_m.lastStateBits : 0;
     const bool canTakeOff = (nb & D::kFxArrived) != 0;
     const bool hasSack    = (nb & D::kFxHasSack) != 0;
+    const bool leaveAfter5min = (nb & D::kFxLeaveAfter5min) != 0;
 
     // Interaction gate: write canTakeOff (THE gate) + hasSack (option prerequisite) onto the mirror so
     // a parked drone is interactable instead of "in motion" (the suppressed tick never sets them).

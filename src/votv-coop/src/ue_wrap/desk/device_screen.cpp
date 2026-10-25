@@ -11,10 +11,13 @@
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/sdk_profile.h"
 #include "ue_wrap/core/types.h"
+#include "ue_wrap/actors/notebook.h"
+#include "ue_wrap/actors/prop.h"
 
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <cwchar>
 
 namespace ue_wrap::device_screen {
 namespace {
@@ -204,6 +207,19 @@ std::wstring PosKey(const wchar_t* prefix, void* actor) {
     return k;
 }
 
+// The identity of a prop that hosts an editor (a notebook, a drawable paper): the prefix and the
+// FNV-1a hash of the prop's Key, 21 chars, inside the 31-char WireKey budget, the same on every peer
+// because the Key is. Empty for a prop with no Key, as PosKey is for an actor with no place.
+std::wstring PropKey(const wchar_t* prefix, void* prop) {
+    const std::wstring propKey = ue_wrap::prop::GetKeyString(prop);
+    if (propKey.empty() || propKey == L"None") return {};   // None is the FName of a prop with no Key
+    uint64_t h = 1469598103934665603ull;
+    for (wchar_t ch : propKey) { h ^= static_cast<uint16_t>(ch); h *= 1099511628211ull; }
+    wchar_t key[32]{};
+    swprintf_s(key, L"%ls%016llx", prefix, static_cast<unsigned long long>(h));
+    return key;
+}
+
 // Resolve the owning actor of a per-instance widget by matching the device's
 // widget backref field over the (few) live instances. Edge-rate only (claim
 // classification), never per-tick.
@@ -244,6 +260,9 @@ std::wstring ClassifyWidgetClaimKey(void* widget) {
     if (!widget || !R::IsLive(widget)) return {};
     void* cls = R::ClassOf(widget);
     if (!cls) return {};
+    // These editors claim their backing prop, not a shared widget class, so two props stay independent.
+    if (ue_wrap::notebook::IsEditorWidget(widget)) return PropKey(L"note_", ue_wrap::notebook::NotebookOf(widget));
+    if (ue_wrap::notebook::IsPaperDrawWidget(widget)) return PropKey(L"draw_", ue_wrap::notebook::PaperOf(widget));
     FillWidgetSlotFromClass(cls);  // beta: resolve this widget's class from its own ClassOf (late-buy safe), inline before the match
     if (g_widgets[1].cls && cls == g_widgets[1].cls) {
         // panel_SATconsole.action sets ui_console.used before entering the shared
@@ -271,13 +290,15 @@ std::wstring ClassifyWidgetClaimKey(void* widget) {
         UE_LOGW("device_screen: arcade widget %p has no owning cabinet (scrWidge miss)", widget);
         return {};
     }
-    return {};  // clipboard / prop inventory / paper / picker -- not devices
+    return {};  // Non-device widgets. Notebook editors are handled above by their owning prop.
 }
 
 std::wstring ClassifyDeviceActorClaimKey(void* actor) {
     if (!actor) return {};
     void* cls = R::ClassOf(actor);
     if (!cls) return {};
+    if (ue_wrap::notebook::IsNotebook(actor)) return PropKey(L"note_", actor);
+    if (ue_wrap::notebook::IsDrawablePaper(actor)) return PropKey(L"draw_", actor);
     FillDeviceSlotFromClass(cls);  // beta: resolve this device's class from its own ClassOf (late-buy safe), inline before the match
     if (g_devices[1].cls && cls == g_devices[1].cls) return PosKey(L"sat_", actor);
     for (size_t i = 0; i < 6; ++i)

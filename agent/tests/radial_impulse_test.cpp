@@ -80,3 +80,9 @@ int main(){using namespace test;std::vector<ue_wrap::CachedObjRef> found;
  Reset();foreign=true;CHECK(Collect(found)&&frees==1&&found.size()==1&&found[0].Is(&first));
  puts("PASS production radial wrapper/ParamFrame: native sphere/filter, copied inputs, engine-owned outputs, malformed refusal and native callback lifetime");
 }
+
+// Reflection names used by ParamFrame missing-field diagnostics.
+namespace ue_wrap::reflection {
+std::wstring ToString(const FName&){return L"fixture_function";}
+const FName& NameOf(void*){static const FName name{};return name;}
+}

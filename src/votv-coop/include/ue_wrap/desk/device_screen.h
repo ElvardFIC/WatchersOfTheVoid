@@ -45,16 +45,17 @@ void* ReadActiveInterface(void* player);
 //                                   into the same screen)
 //   uiwindow_transformerScreens_C -> "tfm_<posKey of the owning panel>"
 //   ui_arcade_invaders_C          -> "arc_<posKey of the owning prop>"
-// Empty for any other widget (clipboard / prop inventory / draw paper /
-// texture picker ride the same plumbing but are NOT devices).
+//   ui_notebook_C / ui_paperDraw_C -> "note_" / "draw_" + hash of the prop's Key
+// Empty for any other widget (prop inventory / texture picker are NOT devices).
 std::wstring ClassifyWidgetClaimKey(void* widget);
 
 // Classify an AIMED ACTOR into the claim key its E-press would enter (the
 // deny-gate side): analogDScreenTest_C -> "desk", panel_SATconsole_C ->
 // "sat_<posKey>", panel_radar_C -> "radar", panel_reactor_C -> "reactor", laptop_C /
 // prop_portablePc_C -> "laptop", transformerMGPanel_C -> "tfm_<posKey>",
-// prop_arcade_C -> "arc_<posKey>". Empty for a non-device actor, and for a transformer or arcade
-// whose location read failed.
+// prop_arcade_C -> "arc_<posKey>", prop_notebook_C (the torn sheet too) -> "note_<hash>",
+// prop_paper_drawable_C -> "draw_<hash>". Empty for a non-device actor, for a transformer or arcade
+// whose location read failed, and for a notebook or paper with no Key.
 std::wstring ClassifyDeviceActorClaimKey(void* actor);
 
 // Null the local player's aim fields (lookAtActor + HitResult.Actor weakptr) for the CURRENT

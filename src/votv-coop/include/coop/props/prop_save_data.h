@@ -78,7 +78,9 @@ void ExpectRecordFor(void* actor, const std::wstring& key, uint8_t senderSlot);
 
 // A chunk of either kind off the wire. `intent` distinguishes PropSaveDataIntent (a client's
 // claim, which only the host acts on) from PropSaveData (the canonical). The session is the one
-// the host re-publishes a taken claim on.
+// the host re-publishes a taken claim on. A class with a rule about who may write its record or when it may
+// apply registers it with coop/props/prop_record_gates; a record that parks is judged by the same gates
+// when it lands.
 void OnChunk(coop::net::Session& s, const coop::net::BlobChunkPayload& p, uint8_t senderSlot,
              bool intent);
 

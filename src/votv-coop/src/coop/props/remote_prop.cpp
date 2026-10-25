@@ -5,6 +5,7 @@
 
 #include "coop/props/remote_prop.h"
 #include "coop/interactables/cord_sync.h"
+#include "remote_prop_internal.h"  // impl-private (src-local), NOT under include/
 
 #include "coop/props/active_drive.h"   // the fixed-delay snapshot interp, shared with the trash carry stream
 #include "coop/props/prop_sound.h"
@@ -158,17 +159,14 @@ constexpr uint32_t kRelatchLoud = 60;
 
 }  // namespace [drive helpers part 1]
 
-namespace {  // [drive helpers part 2]
-
 // A drive on `actor` belonging to a slot other than `slot` (-1 excludes none).
 bool IsActorDrivenByOtherThan(void* actor, int slot) {
+    UE_ASSERT_GAME_THREAD("remote_prop::IsActorDrivenByOtherThan");
     if (!actor) return false;
     for (int s = 0; s < static_cast<int>(coop::players::kMaxPeers); ++s)
         if (s != slot && g_drives[s].actor == actor && g_holds[s].actorIdentity.Is(actor)) return true;
     return false;
 }
-
-}  // namespace [drive helpers part 2]
 
 // True when some slot's drive targets `actor`; the spawn receiver skips the transform converge
 // for a driven prop (PropPose owns its position).
@@ -203,7 +201,7 @@ std::wstring KeyToWString(const coop::net::WireKey& k) {
     return s;
 }
 
-namespace {  // [drive helpers part 3]
+namespace {  // [drive helpers part 2]
 
 // The WireKey against the drive's cached key; keys are ASCII, so a byte compare is exact.
 bool KeyMatchesCache(int slot, const coop::net::WireKey& k) {
@@ -821,6 +819,7 @@ void ForceRelease() {
     // A slot's generations are its holder's; the next session's holder counts its own.
     const auto identities = g_holds;
     g_holds.fill({});
+    ResetWireDestroys();
     int released = 0;
     for (auto& d : g_drives) {
         if (!d.actor) continue;

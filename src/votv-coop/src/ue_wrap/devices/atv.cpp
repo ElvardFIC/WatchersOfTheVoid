@@ -8,6 +8,7 @@
 
 #include "ue_wrap/actors/save_record.h" // the loaded world save's object records (Fstruct_save)
 #include "ue_wrap/core/call.h"      // ParamFrame / Call -- the GameplayStatics spawn (SpawnMirror)
+#include "ue_wrap/core/fname_utils.h"  // StringToFName -- SpawnMirror's key
 #include "ue_wrap/engine/engine.h"
 #include "ue_wrap/world/media_player.h"
 #include "ue_wrap/engine/engine_component.h"
@@ -66,6 +67,9 @@ void* g_loadLightsFn = nullptr; // applies the lights bool to the lamps
 void* g_setKeyFn = nullptr;
 int32_t g_skipByte = -1;        // skipSave, else ignoreSave
 uint8_t g_skipMask = 0;
+int32_t g_trapOff     = -1;       // trap     (a bool bit: the byte, with its mask below)
+uint8_t g_trapMask    = 0;
+int32_t g_tpOff       = -1;       // tp       (a UBillboardComponent*: where `explode` places its blast)
 
 int32_t ResolveOff(void* cls, const wchar_t* name, int32_t fallback) {
     int32_t o = R::FindPropertyOffset(cls, name);
@@ -122,6 +126,15 @@ bool EnsureResolved() {
     g_setKeyFn = R::FindDispatchFunction(cls, L"setKey", nullptr);
     if (!R::FindBoolProperty(cls, L"skipSave", g_skipByte, g_skipMask))
         R::FindBoolProperty(cls, L"ignoreSave", g_skipByte, g_skipMask);
+    // No fallback: a miss leaves the trap host-only, as it was before it travelled. The flag is a bit packed with its
+    // neighbours (inWater, floater), so its byte and mask are both resolved.
+    if (!R::FindBoolProperty(cls, L"trap", g_trapOff, g_trapMask) || g_trapOff < 0 || g_trapMask == 0) {
+        g_trapOff = -1;
+        UE_LOGW("atv: trap offset not found -- the story event's trap stays host-only");
+    }
+    // No fallback: a miss leaves a client's ATV explosion unrequested, since the host has no place to put it.
+    g_tpOff = R::FindPropertyOffset(cls, L"tp");
+    if (g_tpOff < 0) UE_LOGW("atv: tp offset not found -- a client's ATV explosion cannot be requested");
 
     g_resolved.store(true, std::memory_order_release);
     UE_LOGI("atv: resolved ATV_C=%p Key@0x%04X Player@0x%04X isDriven@0x%04X fuel@0x%04X "
@@ -142,6 +155,27 @@ bool IsAtv(void* obj) {
     if (!atvCls) return false;
     void* cls = R::ClassOf(obj);
     return cls && R::IsDescendantOfAny(cls, &atvCls, 1);
+}
+
+size_t ForEachAtv(void (*fn)(void* ctx, void* actor, int32_t idx), void* ctx) {
+    if (!fn) return 0;
+    // The classes first: the instance walk does not run from inside the class walk.
+    std::vector<void*> classes;
+    object_index::ForEachClass([](void* c, void* cls, void* anyInstance) {
+        if (IsAtv(anyInstance)) static_cast<std::vector<void*>*>(c)->push_back(cls);
+    }, &classes);
+    struct Walk { void (*fn)(void*, void*, int32_t); void* ctx; size_t loading; } walk{fn, ctx, 0};
+    for (void* cls : classes) {
+        object_index::ForEachInstance(cls, [](void* p, void* obj, int32_t idx) {
+            Walk* w = static_cast<Walk*>(p);
+            const auto flags = R::SlotFlags(idx);
+            if (flags & R::slot_flags::Dying) return;   // leaving: not counted
+            if (flags & R::slot_flags::NotYetReadable) { ++w->loading; return; }
+            if (R::NameStartsWith(R::NameOf(obj), L"Default__")) return;
+            w->fn(w->ctx, obj, idx);
+        }, &walk);
+    }
+    return walk.loading;
 }
 
 std::wstring GetKeyString(void* atv) {
@@ -571,6 +605,26 @@ bool EjectWheel(void* atv, int index) {
     return Call(atv, dmg);
 }
 
+bool ReadTrap(void* atv, bool& out) {
+    if (!atv || g_trapOff < 0) return false;
+    out = (*(reinterpret_cast<const uint8_t*>(atv) + g_trapOff) & g_trapMask) != 0;
+    return true;
+}
+
+bool WriteTrap(void* atv, bool v) {
+    if (!atv || g_trapOff < 0) return false;
+    uint8_t& byte = *(reinterpret_cast<uint8_t*>(atv) + g_trapOff);
+    byte = v ? static_cast<uint8_t>(byte | g_trapMask) : static_cast<uint8_t>(byte & ~g_trapMask);
+    return true;
+}
+
+bool ReadTpLocation(void* atv, FVector& out) {
+    out = FVector{};
+    if (!atv || g_tpOff < 0) return false;
+    void* tp = *reinterpret_cast<void* const*>(reinterpret_cast<const char*>(atv) + g_tpOff);
+    return tp && engine::TryGetComponentLocation(tp, out);
+}
+
 bool TeleportRig(void* atv, const FVector& loc, const FRotator& rot) {
     if (!atv || !EnsureResolved()) return false;
     // The memoised lookup, on the rig's own class: a warp comes at up to 20 Hz and a hit renders no
@@ -593,19 +647,44 @@ bool TeleportRig(void* atv, const FVector& loc, const FRotator& rot) {
     return Call(atv, f);
 }
 
-void* SpawnMirror(const std::wstring& className, const FVector& loc, const FRotator& rot) {
-    if (!EnsureResolved() || className.empty()) return nullptr;
-    void* actorClass = R::FindClass(className.c_str());
-    if (!actorClass) {
-        UE_LOGW("atv: SpawnMirror class '%ls' not found in GUObjectArray", className.c_str());
-        return nullptr;
+const char* SpawnFailText(SpawnFail why) {
+    switch (why) {
+        case SpawnFail::None:          return "no failure";
+        case SpawnFail::Unresolved:    return "the ATV wrapper, the spawn functions or the world are unresolved";
+        case SpawnFail::NoKey:         return "the class name or the key is empty";
+        case SpawnFail::ClassNotFound: return "the class is not loaded";
+        case SpawnFail::NotAnAtv:      return "the class is not an ATV subclass";
+        case SpawnFail::NoOffset:      return "the class has no key property";
+        case SpawnFail::NameNone:      return "the key did not convert to a name";
+        case SpawnFail::BeginFailed:   return "the deferred spawn failed";
+        case SpawnFail::FinishFailed:  return "finishing the spawn failed (the orphan was destroyed)";
+        case SpawnFail::KeyMismatch:   return "the mirror was born under another key (destroyed)";
     }
+    return "unknown";
+}
+
+// The key is written as a raw FName into the deferred actor, before its finish: the construction script
+// runs in the finish and, finding a key, keeps it and registers it; finding none, it mints a random one.
+// A raw write because ATV_C's own setKey is an empty stub in the Blueprint (its entry is a bare return),
+// so the props lane's setKey call (coop/props/prop_fresh_spawn.cpp, the deferred key write) writes nothing on
+// an ATV. The offset and the FName are resolved before anything is spawned; a miss spawns nothing,
+// never a mirror with a random key. A failure sets `why` and logs nothing: the caller says it once per key.
+void* SpawnMirror(const std::wstring& className, const FVector& loc, const FRotator& rot,
+                  const std::wstring& key, SpawnFail* why, std::wstring* bornKey) {
+    SpawnFail local = SpawnFail::None;
+    SpawnFail& fail = why ? *why : local;
+    fail = SpawnFail::None;
+    if (!EnsureResolved()) { fail = SpawnFail::Unresolved; return nullptr; }
+    if (className.empty() || key.empty()) { fail = SpawnFail::NoKey; return nullptr; }
+    void* actorClass = R::FindClass(className.c_str());
+    if (!actorClass) { fail = SpawnFail::ClassNotFound; return nullptr; }
     // Trust boundary: the className arrives over the wire -- only spawn ATV-lineage classes.
     void* atvCls = AtvClass();
-    if (!atvCls || !R::IsDescendantOfAny(actorClass, &atvCls, 1)) {
-        UE_LOGW("atv: SpawnMirror '%ls' is NOT an ATV subclass -- refusing", className.c_str());
-        return nullptr;
-    }
+    if (!atvCls || !R::IsDescendantOfAny(actorClass, &atvCls, 1)) { fail = SpawnFail::NotAnAtv; return nullptr; }
+    const int32_t keyOff = R::FindPropertyOffset(actorClass, L"key");
+    if (keyOff < 0) { fail = SpawnFail::NoOffset; return nullptr; }
+    const R::FName keyName = fname_utils::StringToFName(key);
+    if (keyName.ComparisonIndex == 0) { fail = SpawnFail::NameNone; return nullptr; }
     // GameplayStatics spawn refs (resolved once; same pair npc_mirror drives).
     static void* sGsCdo   = nullptr;
     static void* sBeginFn = nullptr;
@@ -620,11 +699,12 @@ void* SpawnMirror(const std::wstring& className, const FVector& loc, const FRota
     if (!sGsCdo || !sBeginFn || !sFinishFn) {
         static bool sWarned = false;
         if (!sWarned) { sWarned = true;
-            UE_LOGW("atv: SpawnMirror -- GameplayStatics BeginDeferred/Finish unresolved; cannot spawn runtime ATV"); }
+            UE_LOGW("atv: SpawnMirror -- GameplayStatics BeginDeferred/Finish unresolved; cannot spawn an ATV mirror"); }
+        fail = SpawnFail::Unresolved;
         return nullptr;
     }
     void* worldCtx = engine::GetWorldContext();
-    if (!worldCtx) return nullptr;
+    if (!worldCtx) { fail = SpawnFail::Unresolved; return nullptr; }
 
     FTransform xform{};
     engine::RotatorToQuat(rot.Pitch, rot.Yaw, rot.Roll, xform.RotX, xform.RotY, xform.RotZ, xform.RotW);
@@ -633,32 +713,32 @@ void* SpawnMirror(const std::wstring& className, const FVector& loc, const FRota
     void* spawned = nullptr;
     {
         ParamFrame begin(sBeginFn);
-        if (!begin.valid()) return nullptr;
+        if (!begin.valid()) { fail = SpawnFail::BeginFailed; return nullptr; }
         begin.Set<void*>(L"WorldContextObject", worldCtx);
         begin.Set<void*>(L"ActorClass", actorClass);
         begin.SetRaw(L"SpawnTransform", &xform, sizeof(xform));
         begin.Set<uint8_t>(L"CollisionHandlingOverride", uint8_t{1});  // AlwaysSpawn
         begin.Set<void*>(L"Owner", nullptr);
-        if (!Call(sGsCdo, begin)) return nullptr;
+        if (!Call(sGsCdo, begin)) { fail = SpawnFail::BeginFailed; return nullptr; }
         spawned = begin.Get<void*>(L"ReturnValue");
     }
-    if (!spawned) {
-        UE_LOGW("atv: SpawnMirror BeginDeferred returned null for '%ls'", className.c_str());
-        return nullptr;
-    }
+    if (!spawned) { fail = SpawnFail::BeginFailed; return nullptr; }
+    // While the actor is still deferred: its construction script runs in the finish.
+    *reinterpret_cast<R::FName*>(reinterpret_cast<char*>(spawned) + keyOff) = keyName;
     {
         ParamFrame finish(sFinishFn);
         if (!finish.valid()) {
             // The BeginDeferred actor was created but never finished -- UE does NOT GC it (it lingers
             // in the world). Destroy the orphan, exactly as npc_mirror does on the same failure.
             DestroyMirror(spawned);
+            fail = SpawnFail::FinishFailed;
             return nullptr;
         }
         finish.Set<void*>(L"Actor", spawned);
         finish.SetRaw(L"SpawnTransform", &xform, sizeof(xform));
         if (!Call(sGsCdo, finish)) {
-            UE_LOGW("atv: SpawnMirror FinishSpawning failed for %p '%ls' -- destroying orphan", spawned, className.c_str());
             DestroyMirror(spawned);  // don't leak the half-spawned actor
+            fail = SpawnFail::FinishFailed;
             return nullptr;
         }
     }
@@ -667,6 +747,17 @@ void* SpawnMirror(const std::wstring& className, const FVector& loc, const FRota
     // the wheels stay where the class default left them.
     if (!TeleportRig(spawned, loc, rot))
         UE_LOGW("atv: SpawnMirror teleportVehicle failed for %p -- wheels may not have followed", spawned);
+    // The construction script's keeping of a preset key is read back, not assumed: a mirror that stands
+    // under another key, a case-different one included (the index and the prune file key exactly), would
+    // be filed by the caller under the host's and be pruned as a stranger by the next pass. The same rig
+    // destroy as the failures above.
+    const std::wstring born = GetKeyString(spawned);
+    if (born != key) {
+        if (bornKey) *bornKey = born;
+        DestroyMirror(spawned);
+        fail = SpawnFail::KeyMismatch;
+        return nullptr;
+    }
     return spawned;  // physics LEFT ON -- a native idle ATV (grabbable). atv_sync owns lifetime/sync.
 }
 
@@ -737,15 +828,23 @@ bool DestroyMirror(void* atv) {
     // removes its driver and passengers before its game vehicle goes
     // (reference/mtasa-blue/Client/mods/deathmatch/logic/CClientVehicle.cpp:3075-3094). A dismount that
     // cannot run is said: the destroy still goes ahead, and the player is left as the seat held them.
-    if (engine::GetController(atv)) {
-        void* const fn = R::FindDispatchFunctionCached(R::ClassOf(atv), L"dismount");
-        ParamFrame f(fn);
-        if (!fn || !f.valid() || !Call(atv, f))
-            UE_LOGW("atv: DestroyMirror could not run the ATV's own dismount -- the local driver stays "
-                    "unpossessed and hidden after the ATV goes");
-    }
+    if (engine::GetController(atv) && !Dismount(atv))
+        UE_LOGW("atv: DestroyMirror could not run the ATV's own dismount -- the local driver stays "
+                "unpossessed and hidden after the ATV goes");
     // K2_DestroyActor is declared on Actor, not on ATV_C, so it is resolved there.
     return engine::DestroyActor(atv);
+}
+
+void* SpawnMirror(const std::wstring& className,const FVector& loc,const FRotator& rot) {
+    std::wstring key;
+    for(int i=1;i<=2;++i) {
+        const auto candidate=L"coopatv"+std::to_wstring(i);
+        if(!FindOtherLiveByKey(candidate,nullptr) && !LoadedSaveNamesKey(candidate.c_str())) {key=candidate;break;}
+    }
+    if(key.empty())return nullptr;
+    void* actor=SpawnMirror(className,loc,rot,key);
+    if(actor)SetIncludedInSave(actor,true);
+    return actor;
 }
 
 }  // namespace ue_wrap::atv

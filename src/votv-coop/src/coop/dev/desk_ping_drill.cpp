@@ -2,6 +2,8 @@
 
 #include "coop/dev/desk_ping_drill.h"
 
+#include "desk_ping_drill_observer.h"
+
 #include "coop/config/config.h"
 #include "coop/config/config_registry.h"
 #include "coop/dev/director/director.h"
@@ -13,6 +15,8 @@
 #include "coop/net/protocol.h"
 #include "coop/net/session.h"
 #include "coop/player/players_registry.h"
+#include "coop/player/puppet_drive.h"      // Puppet: the second client's pose reaches this client
+#include "coop/player/remote_player.h"
 #include "coop/session/join_progress.h"
 #include "coop/session/net_pump.h"  // HasAnnouncedWorldReady
 
@@ -24,6 +28,7 @@
 #include "ue_wrap/desk/coords_panel.h"
 #include "ue_wrap/desk/desk_ping.h"
 #include "ue_wrap/desk/desk_press.h"
+#include "ue_wrap/desk/device_screen.h"
 #include "ue_wrap/desk/space_renderer.h"
 #include "ue_wrap/engine/engine_component.h"  // GetComponentLocation
 #include "ue_wrap/facts/function_row.h"
@@ -44,6 +49,7 @@ namespace CD = ue_wrap::console_desk;
 namespace CP = ue_wrap::coords_panel;
 namespace DG = ue_wrap::desk_ping;
 namespace DPR = ue_wrap::desk_press;
+namespace DS = ue_wrap::device_screen;
 namespace E = ue_wrap::engine;
 namespace GW = coop::dev::game_window;
 namespace PS = coop::desk_ping_sync;
@@ -54,10 +60,12 @@ namespace sg = ue_wrap::script_gate;
 UE_FACT_FN(kRowGatherSignal, "dev.desk_ping_drill", L"spaceRenderer_C", L"gatherSignal", Declared);
 UE_FACT_FN(kRowWriteToCoordLog2, "dev.desk_ping_drill", L"analogDScreenTest_C", L"writeToCoordLog_2", Declared);
 
-bool On() {
-    static const bool on = coop::config::ResolveString(::coop::config_registry::rows::desk_ping_drill) == "run";
-    return on;
+const std::string& Mode() {
+    static const std::string mode = coop::config::ResolveString(::coop::config_registry::rows::desk_ping_drill);
+    return mode;
 }
+
+bool On() { return Mode() == "run" || Mode() == "observed"; }
 
 // An equilateral triangle of circumradius kCircumradius: sides of 346, under the atlas's 740, and an inradius of 100,
 // which paces a ping at about 18 s (its stages divide by the inradius over 100, plus 1).
@@ -69,15 +77,18 @@ constexpr float kClearance = 250.f;
 constexpr int   kStandpoints = 6;
 constexpr float kStandRingCm = 110.f;
 constexpr float kStandReachCm = 60.f;
-constexpr int   kWalkDeadlineS = 240;
-// Failure bounds only: each step ends on the state it waits for.
-constexpr uint64_t kStartBoundMs = 60000;
-constexpr uint64_t kEnterBoundMs = 15000;
+// Failure bounds only: each step ends on the state it waits for. The ones the observer half shares are its header's.
+using observer::kEnterBoundMs;
+using observer::kStartBoundMs;
+using observer::kVerdictBoundMs;
+using observer::kWalkDeadlineS;
 constexpr uint64_t kPlaceBoundMs = 45000;
 constexpr uint64_t kPingStartBoundMs = 5000;
 constexpr uint64_t kPingEndBoundMs = 60000;
-constexpr uint64_t kVerdictBoundMs = 90000;
 constexpr uint64_t kRelayBoundMs = 5000;  // the host's catch detector polls once a second
+// An observed run's second client boots a whole game after the first has joined.
+constexpr int      kObserverSlot = 2;
+constexpr uint64_t kObserverReadyBoundMs = kStartBoundMs * 3;
 // A step that retries its reads does so this often, not every tick.
 constexpr uint64_t kRetryMs = 500;
 constexpr const wchar_t* kFixtureName = L"planeteater";
@@ -217,6 +228,7 @@ void HostGo(HStep s) {
     g_hostMs = ::GetTickCount64();
     g_hostBefore = g_census;
     g_hostCounts = PS::CountsNow();
+    if (s == HStep::Miss || s == HStep::Catch) observer::Reset();
 }
 
 void HostAbandon(const char* why) {
@@ -227,6 +239,7 @@ void HostAbandon(const char* why) {
 void HostTick(coop::net::Session* s) {
     const uint64_t now = ::GetTickCount64();
     const PS::Counts c = PS::CountsNow();
+    if (g_host == HStep::Miss || g_host == HStep::Catch) observer::Sample(now, "host");
     switch (g_host) {
     case HStep::WaitClient:
         if (!s->AnyWorldReadyPeer() || !CensusLive()) {
@@ -240,13 +253,16 @@ void HostTick(coop::net::Session* s) {
         return;
     case HStep::Miss: {
         if (c.rolled == g_hostCounts.rolled) return;  // the client's legs carry their own bounds
+        // The aim stays the miss's until the client's next commit, which follows this ping's ending.
+        if (!observer::SettleStarted()) CP::ReadDishAim(g_missAim);
+        if (!observer::Settled(now, g_hostCounts.mirrorEnded)) return;
         const bool ok = c.primed == g_hostCounts.primed + 1 && c.caught == g_hostCounts.caught &&
-                        g_census.ran == g_hostBefore.ran + 1;
+                        g_census.ran == g_hostBefore.ran + 1 && observer::Passed(g_hostCounts.mirrorEnded);
         g_hostPass = g_hostPass && ok;
-        UE_LOGI("[DESK-PING-DRILL] host miss %s: primed %u, rolled %u, caught %u; its gatherSignal ran %u",
+        UE_LOGI("[DESK-PING-DRILL] host miss %s: primed %u, rolled %u, caught %u; its gatherSignal ran %u; %s",
                 ok ? "PASS" : "FAIL", c.primed - g_hostCounts.primed, c.rolled - g_hostCounts.rolled,
-                c.caught - g_hostCounts.caught, g_census.ran - g_hostBefore.ran);
-        CP::ReadDishAim(g_missAim);
+                c.caught - g_hostCounts.caught, g_census.ran - g_hostBefore.ran,
+                observer::MaxText(g_hostCounts.mirrorEnded).c_str());
         HostGo(HStep::Fixture);
         return;
     }
@@ -285,19 +301,21 @@ void HostTick(coop::net::Session* s) {
         if (!g_rolledMs) g_rolledMs = now;
         const uint64_t attributed = coop::signal_catch_sync::AttributedCatchesRelayed() - g_hostAttributed;
         if ((c.busy == g_hostCounts.busy || attributed == 0) && now - g_rolledMs <= kRelayBoundMs) return;
+        if (!observer::Settled(now, g_hostCounts.mirrorEnded)) return;
         int32_t found = 0;
         const bool foundRead = ue_wrap::profile::ReadSignalsFound(found);
         const uint64_t own = coop::signal_catch_sync::LocalCatchesRelayed() - g_hostCatches;
         const bool ok = c.primed == g_hostCounts.primed + 1 && c.caught == g_hostCounts.caught + 1 &&
                         g_census.ran == g_hostBefore.ran + 1 && foundRead && found == g_hostFound &&
-                        attributed == 1 && own == 0 && c.busy == g_hostCounts.busy + 1;
+                        attributed == 1 && own == 0 && c.busy == g_hostCounts.busy + 1 &&
+                        observer::Passed(g_hostCounts.mirrorEnded);
         g_hostPass = g_hostPass && ok;
         UE_LOGI("[DESK-PING-DRILL] host catch %s: primed %u, rolled %u, caught %u; its gatherSignal ran %u; its own "
-                "finds %d -> %d; catches relayed as the client's %llu, as its own %llu; busy refusals %u",
+                "finds %d -> %d; catches relayed as the client's %llu, as its own %llu; busy refusals %u; %s",
                 ok ? "PASS" : "FAIL", c.primed - g_hostCounts.primed, c.rolled - g_hostCounts.rolled,
                 c.caught - g_hostCounts.caught, g_census.ran - g_hostBefore.ran, g_hostFound, found,
                 static_cast<unsigned long long>(attributed), static_cast<unsigned long long>(own),
-                c.busy - g_hostCounts.busy);
+                c.busy - g_hostCounts.busy, observer::MaxText(g_hostCounts.mirrorEnded).c_str());
         UE_LOGI("[DESK-PING-DRILL] host DONE %s", g_hostPass ? "PASS" : "FAIL");
         g_host = HStep::Done;
         return;
@@ -309,7 +327,7 @@ void HostTick(coop::net::Session* s) {
 
 // ---- the client ---------------------------------------------------------------------------------------------------
 
-enum class CStep : uint8_t { Ready, Walk, Enter, Place, Settle, Pinging, Verdict, Done };
+enum class CStep : uint8_t { Ready, WaitObserver, Walk, Enter, Place, Settle, Pinging, Verdict, Leave, Done };
 CStep    g_client = CStep::Ready;
 int      g_leg = 0;  // 0 the miss, 1 the catch
 uint64_t g_stepMs = 0;
@@ -327,6 +345,7 @@ Census   g_before;
 PS::Counts g_counts;
 int32_t  g_found = 0;
 std::shared_ptr<coop::director::BackgroundWalk> g_walk;
+bool     g_left = false;  // the Leave step has made its exit
 
 void Go(CStep s) {
     g_client = s;
@@ -339,6 +358,12 @@ void Abandon(const char* why) {
 }
 
 const char* LegName() { return g_leg == 0 ? "miss" : "catch"; }
+
+// The client's verdict line, after it has given the desk back: its legs' and the leave's.
+void ClientDone() {
+    UE_LOGI("[DESK-PING-DRILL] client DONE %s", g_pass ? "PASS" : "FAIL");
+    g_client = CStep::Done;
+}
 
 void ClientTick(coop::net::Session* s) {
     const uint64_t now = ::GetTickCount64();
@@ -357,6 +382,18 @@ void ClientTick(coop::net::Session* s) {
             return;
         }
         UE_LOGI("[DESK-PING-DRILL] client: the census is live");
+        Go(Observed() ? CStep::WaitObserver : CStep::Walk);
+        return;
+    }
+    case CStep::WaitObserver: {
+        // An observed run starts its legs once the second client is in its world: the host relays that client's pose
+        // here only from then, so the slot-2 puppet with a pose is what this client sees of its readiness.
+        coop::RemotePlayer& observerPuppet = coop::puppet_drive::Puppet(kObserverSlot);
+        if (!observerPuppet.valid() || !observerPuppet.HasPose()) {
+            if (now - g_stepMs > kObserverReadyBoundMs) Abandon("the observer in slot 2 never became ready");
+            return;
+        }
+        UE_LOGI("[DESK-PING-DRILL] client: the observer in slot 2 is ready");
         Go(CStep::Walk);
         return;
     }
@@ -519,8 +556,32 @@ void ClientTick(coop::net::Session* s) {
         UE_LOGI("[DESK-PING-DRILL] client busy %s: refusals shown %u, busy lines %u", busyOk ? "PASS" : "FAIL",
                 c.answered - g_counts.answered, g_census.busy - g_before.busy);
         g_pass = g_pass && ok && busyOk;
-        UE_LOGI("[DESK-PING-DRILL] client DONE %s", g_pass ? "PASS" : "FAIL");
-        g_client = CStep::Done;
+        g_left = false;
+        Go(CStep::Leave);
+        return;
+    }
+    case CStep::Leave: {
+        // The pinger gives the desk back by the game's own forced exit from an interface, as the other drills leave a
+        // screen, so a second client can tell the scans are over. A leave that fails is the client's FAIL.
+        if (!g_left) {
+            g_left = true;
+            if (!DS::ForceExitInterface(player)) {
+                UE_LOGW("[DESK-PING-DRILL] client could not leave the coordinates screen");
+                g_pass = false;
+                ClientDone();
+            }
+            return;
+        }
+        if (coop::device_occupancy::LocalHolds(L"desk") || coop::device_occupancy::HolderOf(L"desk") != 0xFF) {
+            if (now - g_stepMs > kEnterBoundMs) {
+                UE_LOGW("[DESK-PING-DRILL] client still holds the desk after leaving the coordinates screen");
+                g_pass = false;
+                ClientDone();
+            }
+            return;
+        }
+        UE_LOGI("[DESK-PING-DRILL] client left the desk");
+        ClientDone();
         return;
     }
     case CStep::Done:
@@ -530,13 +591,15 @@ void ClientTick(coop::net::Session* s) {
 
 }  // namespace
 
+bool Observed() { return Mode() == "observed"; }
+
 void Tick(coop::net::Session* session) {
     if (!On() || !session || !session->running()) return;
     if (session->role() == coop::net::Role::Host) {
         HostTick(session);
         return;
     }
-    if (session->connected()) ClientTick(session);
+    if (session->connected() && !observer::ClientTick()) ClientTick(session);
 }
 
 void OnDisconnect() {
@@ -553,6 +616,8 @@ void OnDisconnect() {
     g_ring.clear();
     g_stand = 0;
     g_ringBuilt = false;
+    g_left = false;
+    observer::OnDisconnect();
 }
 
 }  // namespace coop::dev::desk_ping_drill

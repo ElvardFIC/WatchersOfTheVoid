@@ -43,8 +43,10 @@ assert tags['shake']==('ObjectProperty',4)
 
 s=root/'src/votv-coop'
 sub=(s/'src/coop/session/subsystems.cpp').read_text()
-for call in ('Install(&session)','Tick()','OnPeerLeft(slot)','OnDisconnect()'):
- assert 'coop::explosion_sync::'+call in sub
+for call in ('Install(&session)','Tick()','OnDisconnect()'):
+ assert 'coop::native_explosion_sync::'+call in sub
+assert 'coop::explosion_sync::Install(&session)' not in sub
+assert 'coop::explosion_sync::Tick()' not in sub
 assert 'explosion_sync::QueueConnect' not in sub
 lanes=(s/'src/coop/net/session_lanes.h').read_text()
 assert 'case ReliableKind::Explosion:' not in lanes # Normal fallback, no relay whitelist entry
