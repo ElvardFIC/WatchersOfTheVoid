@@ -19,7 +19,7 @@ CFG_STRING(fingerprint_census_red, "fingerprint_census_red", "dev", "", "VOTVCOO
     "'RED ARM FAILED'. Empty: no red arm.")
 CFG_STRING(game_build_force, "game_build_force", "dev", "", "VOTVCOOP_GAME_BUILD_FORCE", false,
     "The version gate's drill arm: run the mod as if the game were another build -- a row id of "
-    ***REMOVED***
+    "ue_wrap/facts/game_builds.inc (a row's id), or 'unknown' for a build no row names -- so the "
     "popup, the report, the stand-down's wording and the Join's refusal can be shown on a healthy install. "
     "Changes what the mod believes, never the game. Empty: the build as read.")
 CFG_STRING(scan_ledger_red, "scan_ledger_red", "dev", "", "VOTVCOOP_SCAN_LEDGER_RED", false,

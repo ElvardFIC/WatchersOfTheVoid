@@ -14,5 +14,4 @@
 // disclose nothing beyond a build its developers announced. Included by ue_wrap/core/game_build.cpp only.
 
 GAME_BUILD("0.9.0n", "0.9.0n", "0.9.0n", 0x6a08597du, "56065b874f3bfc685e67b17e96cfcbbad9c55248")
-***REMOVED***
-           ***REMOVED***
+// A 0.10.0 row joins this table when that build ships publicly.

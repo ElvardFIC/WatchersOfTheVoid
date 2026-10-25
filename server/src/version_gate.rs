@@ -174,7 +174,7 @@ mod tests {
 
     #[test]
     fn game_build_shape() {
-        ***REMOVED***
+        for k in ["", "6a08597d-56065b874f3bfc68", "11223344-aabbccddeeff0011", "6a08597d-nopak"] {
             assert!(game_build_shape_ok(k), "{k} should pass");
         }
         for k in ["6a08597d", "6A08597D-56065b874f3bfc68", "6a08597d-56065b874f3bfc6", "6a08597-56065b874f3bfc68",

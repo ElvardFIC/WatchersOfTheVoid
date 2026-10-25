@@ -4,7 +4,7 @@
 // (IMAGE_FILE_HEADER::TimeDateStamp, the same in the packed and the unpacked image of one build) and
 // the main pak's index hash (FPakInfo::IndexHash, plaintext even where the index is encrypted). The
 // file size names nothing (one build measured three sizes, packed and two unpacked dumps), and the
-// game's displayed version is no better (***REMOVED*** displays a0.9.0n). The builds the mod knows
+// game's displayed version is no better (a newer build may display an older version string). The builds the mod knows
 // are rows (ue_wrap/facts/game_builds.inc), oldest first, so a row's position orders builds.
 //
 // This layer reads and matches. What a build means for the mod -- the target, newer, older, untested
@@ -33,9 +33,9 @@ struct Identity {
 
 // One build the mod knows: facts about the game only.
 struct Row {
-    ***REMOVED***
+    const char* id;               // names the row: "0.9.0n"
     const char* version;          // the game version line as a Multivoid target names it: "0.10.0"
-    ***REMOVED***
+    const char* display;          // the game's name for a person: "0.9.0n"
     uint32_t    exeStamp;         // IMAGE_FILE_HEADER::TimeDateStamp
     const char* pakIndexHashHex;  // FPakInfo::IndexHash, 40 lowercase hex
 };
@@ -54,7 +54,7 @@ const Row* Match(const Identity& id);
 const Row* MatchExe(const Identity& id);
 const Row* MatchPak(const Identity& id);
 
-***REMOVED***
+// By the row's id ("0.9.0n"), and by a peer's key. nullptr when none.
 const Row* FindById(const char* id);
 const Row* FindByKey(const char* key);
 

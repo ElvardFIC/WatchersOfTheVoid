@@ -61,7 +61,7 @@ pub const LATEST_URL: &str = "https://github.com/VOTV-MP/Multivoid/releases";
 pub const LEGACY_GAME: &str = "0.9.0n";
 
 /// The latest release per game version, served by /v1/latest as `games` (b222):
-***REMOVED***
+/// `COOP_LATEST_GAMES=<game>:<build>:<tag>,...` -- e.g. `0.9.0n:221:0.9.0n b221,0.10.0:1:0.10.0 b1`; the
 /// tag keeps the "<game> b<N>" shape and may hold spaces, never `,` or `:`. The mod picks the entry for the
 /// game it runs.
 #[derive(Debug, Clone, PartialEq)]

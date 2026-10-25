@@ -199,7 +199,7 @@ bool RunSelftest() {
         }
     };
     std::string body;
-    ***REMOVED***
+    ok(ComposeBody(GB::Kind::Newer, "0.10.0", "0.10.0", 0, &body) && !body.empty(),
        "the newer build's text formats");
     ok(ComposeBody(GB::Kind::Older, "0.8.2", "0.8.2", 150, &body) && body.find("b150") != std::string::npos,
        "the older build's text, with its last Multivoid build, formats and names it");
