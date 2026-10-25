@@ -99,6 +99,8 @@ bool Build(void* actor, void* component, const FVector& location, uint8_t* hit, 
                 Names(hit, Member::Component, component) ? 1 : 0, Names(hit, Member::Actor, actor) ? 1 : 0);
         return false;
     }
+    const auto& layout=Members();
+    if(!layout.ok || !(hit[layout.blockByte]&layout.blockMask) || !current())return false;
     return true;
 }
 
@@ -141,6 +143,7 @@ bool WriteWhile(ParamFrame& frame,const wchar_t* param,void* actor,void* compone
         frame.function()==function.Raw() && R::OuterOf(frame.function())==owner.Raw();};
     if(!current())return false;
     const int32_t size = R::FindParamSize(g_makeFn, L"ReturnValue");
+    if(!current())return false;
     const int32_t into = R::FindParamSize(frame.function(), param);
     if (!current() || R::PropertyInnerStruct(frame.function(),param)!=g_hitStruct || !current() || size <= 0 || size != into) {
         UE_LOGW("hit_result: not built: MakeHitResult returns %d bytes and '%ls' takes %d", size, param, into);
@@ -164,8 +167,11 @@ bool WriteFieldWhile(void* object,const wchar_t* field,void* actor,void* compone
     const auto current=[&]{return caller() && source.Current() && destination.Get() && type.Get() && R::ClassOf(object)==cls;};
     if(!current())return false;
     const int32_t off = R::FindPropertyOffset(cls, field);
+    if(!current())return false;
     void* inner = R::PropertyInnerStruct(cls, field);
+    if(!current())return false;
     const int32_t size = R::FindParamSize(g_makeFn, L"ReturnValue");
+    if(!current())return false;
     const auto objectSize=R::StructSize(cls);
     if (!current() || off<0 || off>objectSize || inner!=g_hitStruct || size<=0 || size>objectSize-off || size!=R::StructSize(inner) || !current()) {
         UE_LOGW("hit_result: not built: MakeHitResult returns %d bytes and '%ls' holds %d", size, field,

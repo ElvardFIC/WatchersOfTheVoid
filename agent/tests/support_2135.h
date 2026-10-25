@@ -27,10 +27,8 @@ inline bool IsLive(void* a){return IsLiveByIndex(a,0);}
 #ifndef TEST_CUSTOM_ACTION_REFS
 inline void* ClassOf(void* a){return a;}
 #endif
-#ifndef TEST_CUSTOM_ACTION_FIELDS
 inline int32_t FindPropertyOffset(void*,const wchar_t*){return offsetof(test::Obj,clipboard);}
 inline bool FindBoolProperty(void*,const wchar_t* n,int32_t& off,uint8_t& mask){off=offsetof(test::Obj,flags);mask=std::wstring(n)==L"skipTextSave"?2:1;return test::fields;}
-#endif
 inline int32_t ParamOffset::Of(void*){return std::wstring(param_)==L"action"?0:8;}
 }
 namespace ue_wrap::world_identity {

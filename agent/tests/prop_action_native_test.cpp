@@ -1,17 +1,6 @@
-#define TEST_CUSTOM_ACTION_FIELDS
 #define PROP_ACTION_DELIVERY_NO_MAIN
 #include "prop_action_delivery_test.cpp"
-namespace test {
-bool impactField=true,blockedField=true;int32_t blockedOffset=offsetof(Obj,flags),componentBytes=sizeof(Obj);uint8_t blockedMask=4;
-std::function<void()> fieldCallback;
-}
-namespace ue_wrap::reflection {
-int32_t FindPropertyOffset(void*,const wchar_t* name){if(!wcscmp(name,L"physicsImpact"))return test::impactField?offsetof(test::Obj,clipboard):-1;return -1;}
-bool FindBoolProperty(void*,const wchar_t* name,int32_t& off,uint8_t& mask){CHECK(!wcscmp(name,L"isNotSawable"));off=test::blockedOffset;mask=test::blockedMask;test::CallbackOnce(test::fieldCallback);return test::blockedField;}
-int32_t StructSize(void* cls){return cls==&test::mesh?test::componentBytes:sizeof(test::Obj);}
-}
-void NativeStart(Role role=Role::Host){Start(role);test::actor.clipboard=&test::mesh;test::mesh.flags=0;
- test::impactField=test::blockedField=true;test::blockedOffset=offsetof(test::Obj,flags);test::componentBytes=sizeof(test::Obj);test::blockedMask=4;test::fieldCallback={};}
+void NativeStart(Role role=Role::Host){Start(role);}
 Call Hit(){auto c=Open();args.damage=20;args.impact={10,20,30};c.function=&test::damageFn;return c;}
 uint8_t clean=0;
 Call Slice(){auto c=Open();c.function=&test::sliceFn;c.locals=&clean;return c;}
@@ -38,31 +27,33 @@ int main(int argc,char** argv){using namespace test;const char* selected=argc>1?
   NativeStart(Role::Client);heldCallback=[]{++actor.serial;};CHECK(A::OnDamage(Hit())==V::Cancel && session.sent.empty());
   NativeStart(Role::Client);auto c=Hit();c.fromOurCode=true;CHECK(A::OnDamage(c)==V::Cancel && session.sent.empty());
  },count);
- Case("saw-packed-bit",selected,[&]{NativeStart();mesh.flags=2;CHECK(A::Sawable(&actor));mesh.flags=6;CHECK(!A::Sawable(&actor));
-  mesh.flags=0;for(int cause=0;cause<6;++cause){NativeStart();if(cause==0)impactField=false;if(cause==1)blockedField=false;
-   if(cause==2)blockedMask=0;if(cause==3)blockedOffset=-1;if(cause==4)blockedOffset=sizeof(Obj);if(cause==5)componentBytes=1;
+ Case("saw-native-getter",selected,[&]{NativeStart();CHECK(A::Sawable(&actor) && getterCalls==1);getterBlocked=true;CHECK(!A::Sawable(&actor));
+  for(int cause=0;cause<3;++cause){NativeStart();if(cause==0)haveFunction=false;if(cause==1)getterCallOk=false;if(cause==2)getterReadOk=false;
    CHECK(!A::Sawable(&actor));}
  },count);
- Case("saw-component-retirement",selected,[&]{for(int cause=0;cause<6;++cause){NativeStart();fieldCallback=[&,cause]{
-  if(cause==0)++actor.serial;if(cause==1)actorType=&otherClass;if(cause==2)++mesh.serial;if(cause==3)actor.clipboard=&otherPlayer;
-  if(cause==4)impactField=false;if(cause==5)++world;};CHECK(!A::Sawable(&actor));}
+ Case("saw-getter-retirement",selected,[&]{for(int cause=0;cause<5;++cause){NativeStart();getterCallback=[&,cause]{
+  if(cause==0)++actor.serial;if(cause==1)actorType=&otherClass;if(cause==2)++sawFn.serial;
+  if(cause==3)++mreOwner.serial;if(cause==4)++world;};CHECK(!A::Sawable(&actor));}
+  NativeStart();getterCallback=[]{CHECK(!A::Sawable(&actor));};CHECK(A::Sawable(&actor) && getterCalls==1);
  },count);
  Case("native-slice",selected,[&]{NativeStart();sawTool=true;A::OnReliable(Payload(2),1);CHECK(sliceCalls==1);
-  NativeStart();sawTool=true;mesh.flags=4;A::OnReliable(Payload(2),1);CHECK(!sliceCalls);
+  NativeStart();sawTool=true;getterBlocked=true;A::OnReliable(Payload(2),1);CHECK(!sliceCalls);
   NativeStart();sawTool=true;parametersOk=false;A::OnReliable(Payload(2),1);CHECK(!sliceCalls);
  },count);
  Case("slice-preparation",selected,[&]{for(int stage=0;stage<2;++stage)for(int cause=0;cause<10;++cause){NativeStart();sawTool=true;
   auto retire=[&,cause]{if(cause==0)++coop::net::session_serial::testSerial;if(cause==1)++actor.serial;if(cause==2)++sliceFn.serial;
-   if(cause==3)++mreOwner.serial;if(cause==4)++mesh.serial;if(cause==5)actor.clipboard=&otherPlayer;
-   if(cause==6)mesh.flags=4;if(cause==7)sawTool=false;if(cause==8)propKey=L"new";if(cause==9)++ui.serial;};
+  if(cause==3)++mreOwner.serial;if(cause==4)++sawFn.serial;if(cause==5)getterCallOk=false;
+   if(cause==6)getterBlocked=true;if(cause==7)sawTool=false;if(cause==8)propKey=L"new";if(cause==9)++ui.serial;};
+  frameTarget=&sliceFn;
   if(stage==0)frameCallback=retire;else bindCallback=retire;A::OnReliable(Payload(2),1);
-  // A newly bound component/serial is eligible if its current saw flag permits
-  // the operation. Source/function/tool/key replacement never authorizes it.
-  CHECK(sliceCalls==int(cause==4 || cause==5));}
+  // A fresh valid getter may be read after metadata replacement; all source,
+  // slice-function, tool, key and failed/blocked getter changes must refuse.
+  CHECK(sliceCalls==int(cause==4));}
  },count);
  Case("client-slice",selected,[&]{NativeStart(Role::Client);sawTool=true;CHECK(A::OnSlice(Slice())==V::Cancel && session.sent.size()==1 && Sent(0).action==2);
-  NativeStart(Role::Client);sawTool=true;fieldCallback=[]{++actor.serial;};CHECK(A::OnSlice(Slice())==V::Cancel && session.sent.empty());
+  NativeStart(Role::Client);sawTool=true;getterCallback=[]{++actor.serial;};CHECK(A::OnSlice(Slice())==V::Cancel && session.sent.empty());
+  NativeStart(Role::Client);sawTool=true;heldCallback=[]{sawTool=false;};CHECK(A::OnSlice(Slice())==V::Cancel && session.sent.empty());
   NativeStart(Role::Client);sawTool=true;auto c=Slice();c.fromOurCode=true;CHECK(A::OnSlice(c)==V::Cancel && session.sent.empty());
  },count);
- CHECK(count>0);std::printf("PASS native prop actions: %d cases, guarded damage/slice/inputs, live tool and key, finite impact and checked packed saw eligibility\n",count);
+ CHECK(count>0);std::printf("PASS native prop actions: %d cases, guarded damage/slice/inputs, live tool and key, finite impact and checked native saw getter\n",count);
 }

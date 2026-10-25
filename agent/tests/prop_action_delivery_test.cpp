@@ -6,7 +6,7 @@ namespace test {
 Obj cls{8},otherClass{9},mesh{10},otherPlayer{11};void* actorType=&cls;
 }
 namespace ue_wrap::reflection {
-int32_t SlotSerial(int32_t i){using namespace test;for(auto* o:{&actor,&ui,&damageFn,&sliceFn,&mreFn,&spawnFn,&mreOwner,&cls,&otherClass,&mesh,&otherPlayer})if(o->id==i)return o->serial;return 0;}
+int32_t SlotSerial(int32_t i){using namespace test;for(auto* o:{&actor,&ui,&damageFn,&sliceFn,&mreFn,&spawnFn,&mreOwner,&sawFn,&cls,&otherClass,&mesh,&otherPlayer})if(o->id==i)return o->serial;return 0;}
 void* ClassOf(void* a){return a==&test::actor?test::actorType:a;}
 }
 const char* actionCase="setup";
@@ -15,7 +15,7 @@ const char* actionCase="setup";
 using Role=coop::net::Role;using V=ue_wrap::script_gate::Verdict;using Call=ue_wrap::script_gate::Call;
 void Start(Role role=Role::Client){
  using namespace test;Reset();session.mode=role;actorType=&cls;meshActor=&mesh;
- for(auto* o:{&actor,&ui,&damageFn,&sliceFn,&mreFn,&spawnFn,&mreOwner,&cls,&otherClass,&mesh,&otherPlayer})o->live=true;
+ for(auto* o:{&actor,&ui,&damageFn,&sliceFn,&mreFn,&spawnFn,&mreOwner,&sawFn,&cls,&otherClass,&mesh,&otherPlayer})o->live=true;
  coop::players::Registry::Get().local=&ui;
  for(int i=0;i<4;++i){auto& row=coop::roster_ledger::testRows[i];row.playerNo=uint16_t(10+i);row.bornGeneration=1;}
  ++coop::net::session_serial::testSerial;A::EnsureWorld();

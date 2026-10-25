@@ -10,6 +10,7 @@ namespace test {
 struct Obj {int id=0,serial=1;bool live=true;void* overlap=nullptr;void* cls=nullptr;} objs[400];
 bool touches=true,callOk=true,kill=false,fields=true,materialOK=true;int feeds=0,restores=0;
 bool solid=false,locationOK=true,damageFields=true;int damages=0;uint32_t world=1;
+ue_wrap::FVector locationValue{1,2,3};
 void (*locCallback)()=nullptr;
 void (*overlapCallback)()=nullptr;
 void (*nameCallback)()=nullptr;
@@ -54,7 +55,7 @@ bool CallFunction(void* a,void* f,void* raw){
 }
 }
 namespace ue_wrap::world_identity {void* CurrentWorld(){return nullptr;}void* WorldOf(void*){return nullptr;}uint32_t Generation(){return test::world;}}
-namespace ue_wrap::engine {bool TryGetActorLocation(void*,FVector& p){p={1,2,3};if(test::locCallback)test::locCallback();return test::locationOK;}}
+namespace ue_wrap::engine {bool TryGetActorLocation(void*,FVector& p){p=test::locationValue;if(test::locCallback)test::locCallback();return test::locationOK;}}
 namespace ue_wrap::save_record {std::wstring ReadFNameAt(const void*,int32_t){return L"native_wall_17";}}
 namespace ue_wrap::log {void Write(Level,const char*,...) {}}
 namespace ue_wrap::fname_utils {reflection::FName StringToFName(const std::wstring&){if(test::nameCallback)test::nameCallback();return {9,0};}}

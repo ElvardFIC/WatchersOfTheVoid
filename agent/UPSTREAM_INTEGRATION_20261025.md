@@ -2,6 +2,7 @@
 
 Integration target: VOTV-MP/Multivoid `ad5315611` (25 October 2026).
 Fork source baseline: `d00610643`; origin reconciliation: `68f0c2a7f`.
+Later local native-action/hit-result fixes from `ddc711220` are merged before qualification.
 
 ## History
 
@@ -60,12 +61,12 @@ ATV payload retains steering/cockpit fields and now carries the host's syncer.
 ## Verification
 
 `package/check_current.ps1 -BuildDirectory build/integration
--EvidenceDirectory build/upstream-qualified-2215` records the full aggregate,
+-EvidenceDirectory build/upstream-qualified-final-2215` records the full aggregate,
 stable production-source snapshot, Release build and DLL ABI evidence in the
 integration worktree. Individual logs and exact exit codes are retained there.
 
 `run_upstream_integration.ps1` tests the actual blast receive validator and drone
-controller, plus the independent published-ID baseline. `run_atv_steering.ps1`
+and ATV condition controllers, plus the independent published-ID baseline. `run_atv_steering.ps1`
 now extracts the actual complete-set sender and checks steering and retained
 honks through joins. `run_item_records.ps1 -FaultControls` covers the merged
 record lifecycle, denied class gates, held-target retries, delayed births and

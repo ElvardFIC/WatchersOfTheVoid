@@ -128,18 +128,19 @@ bool Sawable(void* actor,const std::function<bool()>& caller={}) {
     if((caller && !caller()) || !ue_wrap::prop::IsDescendantOfProp(actor))return false;
     ue_wrap::CachedObjRef ref,type;ref.Set(actor);type.Set(R::ClassOf(actor));const auto world=ue_wrap::world_identity::Generation();
     const auto current=[&]{return (!caller || caller()) && world==ue_wrap::world_identity::Generation() && TargetCurrent(ref,type);};
-    const auto field=R::FindPropertyOffset(type.Raw(),L"physicsImpact"),actorSize=R::StructSize(type.Raw());
-    if(!current() || field<0 || field>actorSize || int(sizeof(void*))>actorSize-field)return false;
-    void* component=nullptr;std::memcpy(&component,static_cast<uint8_t*>(actor)+field,sizeof(component));
-    if(!component || !R::IsLive(component))return false;
-    ue_wrap::CachedObjRef componentRef,componentType;componentRef.Set(component);componentType.Set(R::ClassOf(component));
-    int32_t off=-1;uint8_t mask=0;
-    const bool have=R::FindBoolProperty(componentType.Raw(),L"isNotSawable",off,mask);
-    const auto size=R::StructSize(componentType.Raw());
-    if(!current() || !TargetCurrent(componentRef,componentType) || !have || !mask || off<0 || off>=size ||
-        R::FindPropertyOffset(type.Raw(),L"physicsImpact")!=field || !current() || !TargetCurrent(componentRef,componentType))return false;
-    void* latest=nullptr;std::memcpy(&latest,static_cast<uint8_t*>(actor)+field,sizeof(latest));
-    return latest==component && !(static_cast<uint8_t*>(component)[off]&mask);
+    // The cooked hacksaw calls this getter on the prop. It is a Blueprint
+    // function, including subclass overrides, rather than a component flag.
+    static std::vector<ue_wrap::CachedObjRef> active;
+    if(active.size()>=32 || std::any_of(active.begin(),active.end(),[&](const auto& row){return row.Is(actor);}))return false;
+    active.push_back(ref);struct Guard{std::vector<ue_wrap::CachedObjRef>& rows;~Guard(){rows.pop_back();}}guard{active};
+    ue_wrap::CachedObjRef function,owner;
+    void* fn=R::FindDispatchFunctionCached(type.Raw(),L"isNotSawable");function.Set(fn);owner.Set(fn?R::OuterOf(fn):nullptr);
+    const auto prepared=[&]{return current() && function.Get() && owner.Get() && R::OuterOf(fn)==owner.Raw() &&
+        R::FindDispatchFunctionCached(type.Raw(),L"isNotSawable")==fn;};
+    if(!prepared())return false;
+    ue_wrap::ParamFrame frame(fn);bool blocked=true;
+    return prepared() && frame.valid() && ue_wrap::Call(actor,frame) && prepared() &&
+        frame.GetRaw(L"return",&blocked,sizeof(blocked)) && prepared() && !blocked;
 }
 
 bool IsSwingValid(const std::wstring& held, float damage) {
@@ -160,19 +161,21 @@ template<class T> bool ReadArg(const SG::Call& c, const wchar_t* name, T& value,
 
 struct InputSource {
     coop::net::Session* session=nullptr;uint64_t epoch=0;
-    ue_wrap::CachedObjRef actor,type,player,function,owner;uint8_t slot=0;uint16_t person=0;uint32_t born=0;
+    ue_wrap::CachedObjRef actor,type,player,function,owner;const wchar_t* verb=nullptr;uint8_t slot=0;uint16_t person=0;uint32_t born=0;
     bool Current()const {
         const auto& row=coop::roster_ledger::Get(slot);
         return coop::prop_action_sync::Current(session,epoch) && session->role()==coop::net::Role::Client &&
             TargetCurrent(actor,type) && player.Get() && function.Get() && owner.Get() && R::OuterOf(function.Raw())==owner.Raw() &&
+            R::FindDispatchFunctionCached(type.Raw(),verb)==function.Raw() &&
             coop::players::Registry::Get().Local()==player.Raw() &&
             coop::players::Registry::Get().LocalPeerId()==slot && row.playerNo==person && row.bornGeneration==born;
     }
 };
-InputSource CaptureInput(void* actor,void* function) {
+InputSource CaptureInput(void* actor,void* function,const wchar_t* verb) {
     InputSource source;source.session=g_session.load();source.epoch=g_epoch;source.actor.Set(actor);source.type.Set(R::ClassOf(actor));
     source.player.Set(coop::players::Registry::Get().Local());source.slot=coop::players::Registry::Get().LocalPeerId();
     source.function.Set(function);source.owner.Set(function?R::OuterOf(function):nullptr);
+    source.verb=verb;
     const auto& person=coop::roster_ledger::Get(source.slot);source.person=person.playerNo;source.born=person.bornGeneration;return source;
 }
 
@@ -335,7 +338,7 @@ SG::Verdict OnDamage(const SG::Call& c) {
         (!wall && !ue_wrap::prop::IsDescendantOfProp(c.object)))
         return SG::Verdict::Run;
     EnsureWorld();
-    const auto input=CaptureInput(c.object,c.function);
+    const auto input=CaptureInput(c.object,c.function,L"addDamage");
     void* source = nullptr;
     if (!ReadArg(c, L"actor", source,[&]{return input.Current();})) return SG::Verdict::Cancel;
     void* localPlayer = input.player.Raw();
@@ -358,7 +361,8 @@ SG::Verdict OnDamage(const SG::Call& c) {
         !std::isfinite(impact.Y) || !std::isfinite(impact.Z) ||
         impact.X * impact.X + impact.Y * impact.Y + impact.Z * impact.Z > 10000000000.f)
         return SG::Verdict::Cancel;
-    if (!input.Current() || (wall && !coop::net_pump::IsInAnnouncedWorld(c.object))) return SG::Verdict::Cancel;
+    if (!input.Current() || !IsSwingValid(coop::hand_item::HeldItem(localSlot),damage) || !input.Current() ||
+        (wall && !coop::net_pump::IsInAnnouncedWorld(c.object))) return SG::Verdict::Cancel;
     SendIntent(c.object, wall ? kWallDamage : kDamage, damage, impact, false);
     return SG::Verdict::Cancel;
 }
@@ -370,7 +374,7 @@ SG::Verdict OnSlice(const SG::Call& c) {
         !ue_wrap::prop::IsDescendantOfProp(c.object))
         return SG::Verdict::Run;
     EnsureWorld();
-    const auto input=CaptureInput(c.object,c.function);
+    const auto input=CaptureInput(c.object,c.function,L"slice");
     if(c.fromOurCode || !input.Current())return SG::Verdict::Cancel;
     if (localSlot == 0 || localSlot >= coop::net::kMaxPeers) return SG::Verdict::Cancel;
     if (!coop::hand_item::LastHeldClassIs(localSlot, L"prop_hacksaw_C")) return SG::Verdict::Run;
@@ -378,7 +382,8 @@ SG::Verdict OnSlice(const SG::Call& c) {
     if (!ReadArg(c, L"clean", cleanValue,[&]{return input.Current();}) || cleanValue > 1) return SG::Verdict::Cancel;
     const bool clean = cleanValue != 0;
     const ue_wrap::FVector zero{};
-    if (!Sawable(c.object,[&]{return input.Current();}) || !input.Current() || !TakeToken(localSlot)) return SG::Verdict::Cancel;
+    if (!Sawable(c.object,[&]{return input.Current();}) || !input.Current() ||
+        !coop::hand_item::LastHeldClassIs(localSlot,L"prop_hacksaw_C") || !input.Current() || !TakeToken(localSlot)) return SG::Verdict::Cancel;
     SendIntent(c.object, kSlice, 0.f, zero, clean);
     return SG::Verdict::Cancel;
 }
@@ -561,7 +566,7 @@ void OnReliable(const coop::net::PropActionIntentPayload& input, uint8_t senderS
         else RunDamage(target, player, p.damage, {p.impactX, p.impactY, p.impactZ},armed);
     } else if (p.action == kSlice) {
         if (p.damage != 0.f || !coop::hand_item::LastHeldClassIs(senderSlot, L"prop_hacksaw_C") ||
-            !Sawable(target)) return;
+            !Sawable(target,author)) return;
         const auto sawing=[&]{return addressed() && coop::hand_item::LastHeldClassIs(senderSlot,L"prop_hacksaw_C") &&
             Sawable(target,author) && author();};
         if(!sawing())return;

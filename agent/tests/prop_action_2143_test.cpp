@@ -13,7 +13,7 @@ std::array<Row,4> testRows=[] {std::array<Row,4> rows{};for(int i=0;i<4;++i){row
 const Row& Get(int slot){static Row empty;return slot>=0 && slot<4?testRows[slot]:empty;}
 }
 namespace test {
-Obj damageFn{3},sliceFn{4},mreFn{5},spawnFn{6},mreOwner{7},localPlayer{12};
+Obj damageFn{3},sliceFn{4},mreFn{5},spawnFn{6},mreOwner{7},localPlayer{12},sawFn{13};
 int damageCalls=0, sliceCalls=0, mreCalls=0, dispatches=0, cues=0;
 bool haveFunction=true, hitOk=true, parametersOk=true;
 bool mre=true,handAxis=false;uint8_t appliedAction=0;
@@ -24,6 +24,8 @@ std::wstring propKey=L"box";
 std::function<void()> keyCallback,frameCallback,bindCallback,locationCallback,hitCallback,callCallback,publishCallback;
 std::function<void()> argCallback,heldCallback;
 std::wstring held=L"hammer";bool sawTool=false,finiteLocation=true;
+bool getterBlocked=false,getterCallOk=true,getterReadOk=true;int getterCalls=0;
+std::function<void()> getterCallback;void* frameTarget=nullptr;
 void CallbackOnce(std::function<void()>& slot){auto fn=std::move(slot);slot={};if(fn)fn();}
 bool safe=false,locked=true,publishOK=true;int loot=0,records=0;
 ue_wrap::placed_save::Kind wallKind=ue_wrap::placed_save::Kind::None;
@@ -42,6 +44,7 @@ void* FindDispatchFunctionCached(void*,const wchar_t* name){
  ++test::dispatches;if(!test::haveFunction)return nullptr;
  if(std::wstring(name)==L"actionOptionIndex")return &test::mreFn;
  if(std::wstring(name)==L"spawn")return &test::spawnFn;
+ if(std::wstring(name)==L"isNotSawable")return &test::sawFn;
  return std::wstring(name)==L"addDamage"?&test::damageFn:&test::sliceFn;
 }
 void* OuterOf(void*){return test::functionOwner;}
@@ -49,9 +52,6 @@ void* FindObject(const wchar_t*,const wchar_t*){return &test::actor;}
 const FName& NameOf(void*){static FName n{};return n;}
 bool NameEquals(const FName&,const wchar_t*){return test::mre;}
 int32_t FunctionFrameSize(void*){return test::frameSize;}
-#ifndef TEST_CUSTOM_ACTION_FIELDS
-int32_t StructSize(void*){return sizeof(test::Obj);}
-#endif
 int32_t FindParamOffset(void*,const wchar_t* name){std::wstring n=name;
  test::CallbackOnce(test::argCallback);
  if(n==L"actor"||n==L"player")return offsetof(test::Params,actor);
@@ -75,7 +75,11 @@ void PlaySoundAtLocation(void*,void*,const FVector&,void* attenuation,float volu
 }
 }
 namespace ue_wrap {
-ParamFrame::ParamFrame(void* fn):fn_(fn){test::CallbackOnce(test::frameCallback);}
+ParamFrame::ParamFrame(void* fn):fn_(fn){if(fn==&test::sawFn)buf_.assign(1,0);if(!test::frameTarget || test::frameTarget==fn)test::CallbackOnce(test::frameCallback);}
+bool ParamFrame::GetRaw(const wchar_t* name,void* out,int32_t size)const{
+ CHECK(fn_==&test::sawFn && !wcscmp(name,L"return") && size==1);if(!test::getterReadOk)return false;
+ std::memcpy(out,buf_.data(),1);return true;
+}
 bool ParamFrame::SetRaw(const wchar_t* name,const void* data,int32_t){
  test::CallbackOnce(test::bindCallback);
  if(!test::parametersOk)return false;
@@ -84,6 +88,7 @@ bool ParamFrame::SetRaw(const wchar_t* name,const void* data,int32_t){
  if(std::wstring(name)==L"actor"||std::wstring(name)==L"player")std::memcpy(&test::appliedPlayer,data,sizeof(void*));return true;
 }
 bool Call(void* target,ParamFrame& f){CHECK(target==&test::actor);
+ if(f.function()==&test::sawFn){++test::getterCalls;if(!test::getterCallOk)return false;std::memcpy(f.data(),&test::getterBlocked,1);test::CallbackOnce(test::getterCallback);return true;}
  if(f.function()==&test::damageFn)++test::damageCalls;
  else if(f.function()==&test::mreFn)++test::mreCalls;else ++test::sliceCalls;test::CallbackOnce(test::callCallback);return true;
 }
@@ -123,6 +128,7 @@ void Reset(){A::OnDisconnect();session={};++test::world;
  test::localHand=test::meshActor=nullptr;test::functionOwner=&test::mreOwner;test::propKey=L"box";test::invocations={1,2};
  test::keyCallback=test::frameCallback=test::bindCallback=test::locationCallback=test::hitCallback=test::callCallback=test::publishCallback={};
  test::argCallback=test::heldCallback={};test::held=L"hammer";test::sawTool=false;test::finiteLocation=true;
+ test::getterBlocked=false;test::getterCallOk=test::getterReadOk=true;test::getterCalls=0;test::getterCallback={};test::frameTarget=nullptr;
  test::wallKind=ue_wrap::placed_save::Kind::None;test::wallHits=0;test::wallKey=L"native_wall_17";test::wallResolveCallback=nullptr;
  coop::element::reach=true;coop::players::Registry::Get().peer=1;
  coop::players::Registry::Get().local=&test::localPlayer;
