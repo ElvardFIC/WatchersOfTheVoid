@@ -149,7 +149,6 @@ set(VOTVCOOP_DEV_SOURCES
     src/coop/dev/tower_drill.cpp
     src/coop/dev/dependency_dump.cpp
     src/coop/dev/end_play_probe.cpp
-    ***REMOVED***
     src/coop/dev/death_seam_census.cpp
     src/coop/dev/damage_probe.cpp
     src/coop/dev/grime_drill.cpp
@@ -241,3 +240,7 @@ set(VOTVCOOP_DEV_SOURCES
     src/coop/dev/pi3_drill.cpp
     src/coop/dev/native_spawn_probe.cpp
 )
+# Per-developer local sources: a gitignored file on this box may append its own entries to
+# VOTVCOOP_DEV_SOURCES and add its own include root. Absent from the public tree; a no-op without it.
+include(${CMAKE_CURRENT_SOURCE_DIR}/../../ignore_folder/local_dev/local/sources.local.cmake OPTIONAL)
+

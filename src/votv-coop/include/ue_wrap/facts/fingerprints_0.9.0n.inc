@@ -152,7 +152,6 @@ inline constexpr RefFn kRefFns[] = {
     {L"event_trashpiles_c", L"bndevt__event_funnygascans_box_k2node_componentboundevent_0_componentbeginoverlapsignature__delegatesignature", L"event_trashpiles_c.bndevt__event_funnygascans_box_k2node_componentboundevent_0_componentbeginoverlapsignature__delegatesignature", 0x068571522f5f0453ull, 0x8202f247b7e27515ull},
     {L"explosion_c", L"receivebeginplay", L"explosion_c.receivebeginplay", 0x6a2d5d90ab51fa2dull, 0xe96fb2ac56d27efeull},
     {L"explosion_c", L"runecheck", L"explosion_c.runecheck", 0x6a2d5d90ab51fa2dull, 0x8c7ca455c1c2c2f6ull},
-    ***REMOVED***
     {L"fossilhound_c", L"executeubergraph_fossilhound", L"fossilhound_c.executeubergraph_fossilhound", 0xd3c93c9d2749b427ull, 0xc5a9f326eccf1f5dull},
     {L"gameplaystatics", L"begindeferredactorspawnfromclass", L"gameplaystatics.begindeferredactorspawnfromclass", 0x113120c7a3a1fbf1ull, 0xcbf29ce484222325ull},
     {L"gameplaystatics", L"finishspawningactor", L"gameplaystatics.finishspawningactor", 0xbdb90cbf23892f9full, 0xcbf29ce484222325ull},

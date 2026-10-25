@@ -1,5 +1,5 @@
 // coop/config/config_registry_rows_dev_port.inc -- the [dev] rows of the version-port tooling (the fingerprint
-// capture and census red arm, the dependency dump, the ***REMOVED***, the version gate's arms), included by
+// capture and census red arm, the dependency dump, the version gate's arms), included by
 // config_registry_rows_dev.inc where they stood, so each keeps its place in every expansion of the list.
 // The entry forms are config_registry_rows.inc's.
 
@@ -17,12 +17,6 @@ CFG_STRING(fingerprint_census_red, "fingerprint_census_red", "dev", "", "VOTVCOO
     "The fingerprint census's red arm: a row key ('class.function', lowercase) whose reference is falsified, so the "
     "census must report it 'body changed' and print 'fingerprint-census: RED ARM <row> reported body changed', or "
     "'RED ARM FAILED'. Empty: no red arm.")
-***REMOVED***
-    ***REMOVED***
-    "mainGamemode BeginPlay scans Binaries for *.dll and Content/Paks for *.pak, then pops 'Modded "
-    "client detected!' and quits). Empties that one scan's file list through our Func-patch substrate; "
-    ***REMOVED***
-    "public build is expected to carry no such gate, so this is off by default and never ships.")
 CFG_STRING(game_build_force, "game_build_force", "dev", "", "VOTVCOOP_GAME_BUILD_FORCE", false,
     "The version gate's drill arm: run the mod as if the game were another build -- a row id of "
     ***REMOVED***
