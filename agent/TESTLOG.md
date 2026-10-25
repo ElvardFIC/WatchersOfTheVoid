@@ -1,3 +1,71 @@
+# Upstream integration b2215 (25 October 2026)
+
+Merged VOTV-MP/Multivoid through `ad531561142ff5685153dc799f9ff2de4af07056`
+with all fork history and the latest local native-action/hit-result fixes
+`ddc711220`. The fetched graph originally had 607 commits ahead / 923 behind;
+the integrated graph has **0 upstream commits missing**. Own commits remain.
+Origin `68f0c2a7f` is also an ancestor; no reset, rebase or force push is needed.
+
+Upstream rewrote its old `93dd26cc2` history; the corresponding rewritten
+`df76e6f66` differs in 15 cleanup files. Ordinary merge chose the ancient
+`1afb8c2ef` and conflicted over already-shared changes. Three-way content
+reconciliation uses preserved shared commit `2276a14c8` and resolves 53 paths,
+while the merge records the actual branch tips as parents. The subsequent
+latest-local merge uses our original `d00610643` content baseline.
+
+Combined behavior:
+
+- Keep 32-player chooser/admission/master capacity and all 226 published fork
+  message values. Protocol/build is **2215**, with fifteen additions at 238?252.
+  Legacy PlayerDamage=20 and AtvRelease=71 remain reserved and explicitly refused.
+- Import host-judged damage, creature-hit intents, parked-creature presentation,
+  full ATV ownership/seat/syncer tables and join sets, shared-prop transactions,
+  notebook/paper editing, text codec and device/UI/localization fixes. Retain
+  PvP, native-state guards, full NPC rotations, Kerfur and sit presentation.
+- Retain ATV companion placement/collision checks, save-key recovery,
+  steering, cockpit/modules, radio URLs, service/refuel/repair and honk retry.
+  Only the host ejects tyres; clients consume its resulting mask. Failed native
+  ejection publishes actual native state and the assigned syncer owns sends.
+- Keep owned record queues, safe/can/grill guards and exact source/class/revision
+  checks. Class-gated or held records wait; successful native application precedes
+  publication, including the actually adjusted record and reentrant replacements.
+- Use one native explosion pipeline; retain fork radial prop discovery and
+  force-only motion through the idempotent coast lane. Old blast controllers
+  remain testable but their duplicate runtime Install/Tick paths are disabled.
+  PC minigame blasts stay personal, without dissolve, broadcast or parking.
+- Keep drone lifetime/retry guards and legacy absolute requests; new timer presses
+  toggle current host state. Two queued presses restore the original setting.
+  Desk ping progress and pending verdict/reply retries both run.
+
+PASS **94/94 full regression groups** on the stable combined source. Includes
+118 Rust master tests, native/cooked contract checks and 18 routing mutation
+controls. Independent baseline checks preserve every published message value;
+new fixtures execute the actual blast decoder, drone intent controller and ATV
+condition controller. The latter reproduced the duplicate-ejection failure before
+its fix. Steering fixtures exercise the actual complete-set sender and retained
+join honks. Additional fault runs pass all **11 item-record** and **10 native
+prop-action/hit-result/wall** mutation controls, which must fail at their intended
+assertions. Engine/transport seams in controller tests are controlled doubles.
+
+Full qualification command in the isolated integration checkout:
+`package/check_current.ps1 -BuildDirectory build/integration
+-EvidenceDirectory build/upstream-qualified-final-2215`.
+Final evidence is retained in the canonical checkout at
+`build/upstream-qualified-2215/verification.json`, with all 94 runner logs and
+fault-control logs. Paths inside the original evidence retain their execution
+locations; the qualified DLL is copied byte-for-byte beside the evidence as
+`build/upstream-qualified-2215/main.dll`. Production snapshot SHA256:
+`67fc6c1e8c87ae12efbaf938d60248bf0d4d84d42e7fe5fad71fc0ced348ff88`.
+
+PASS stable-source **Release/ABI b2215**, 842 production source entries.
+DLL SHA256:
+`36bf0697655c6ebeaaadf721f20b7da86f87c076acca5b9ed2bceb6c0256b290`.
+
+Rendered multiplayer, actual keyboard input and full-manager startup remain
+unverified. Every peer must use b2215. No distribution archive, game installation
+or master deployment is part of this integration. Existing acceptance items stay
+open in TODO and WORK.
+
 # Development b2214 - prop-action/MRE delivery (25 October 2026)
 
 Ten completed fixes are checked in TODO. Prop action queues now own target/class

@@ -6,7 +6,7 @@ coordinate/scale/range limits and private-PC refusal. It runs the real drone
 intent controller, including two queued timer toggles, and checks that all 226
 published fork message values remain reserved beside fifteen distinct upstream
 additions. It is included in the full current-source qualification. Integration
-boundaries are recorded in [the integration report](../UPSTREAM_INTEGRATION_20261025.md).
+boundaries are recorded in [TESTLOG.md](../TESTLOG.md#upstream-integration-b2215-25-october-2026).
 
 `run_prop_action_delivery.ps1 -FaultControls` runs the real action controller in
 18 scenario groups. Coverage includes owned first-send payloads and nested FIFO,
@@ -120,7 +120,7 @@ GitHub runs it beside the fact-row gate.
 
 Current full audit: run `powershell -NoProfile -ExecutionPolicy Bypass -File
 package/check_current.ps1` from the checkout after source edits finish.
-With no filter it runs 92 groups, including prop-action delivery, food callbacks, wall delivery, container recovery, console callbacks/delivery, host-player selection, profile-join, container-apply,
+With no filter it runs 94 groups, including upstream integration, native prop actions, prop-action delivery, food callbacks, wall delivery, container recovery, console callbacks/delivery, host-player selection, profile-join, container-apply,
 inventory-restore, Ariral phase, container-birth, session-report and canned-refresh runners,
 completes the incremental Release build and verifies that the
 production inputs stayed unchanged, without repackaging. Results and
@@ -134,8 +134,8 @@ For a focused qualification, call the script from PowerShell with
 The same stable-source, Release and ABI checks still run; `verification.json`
 records `FullRegression=false` and the exact selected groups. Unknown groups fail.
 A focused report does not replace the last full-suite qualification.
-The b2214 qualification in `build/prop-action-delivery-2214/` covers 6 selected groups.
-The last full aggregate remains 83/83 on b2203. Focused qualifications and
+The b2215 full qualification in `build/upstream-qualified-2215/` covers 94 groups.
+Focused qualifications and
 separate fault-control runs are recorded in TESTLOG; they do not claim a full run.
 
 `run_sat_console_delivery.ps1` exercises the actual console controller, wire

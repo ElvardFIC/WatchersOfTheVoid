@@ -26,18 +26,17 @@ unreproduced report or an unperformed rendered multiplayer test.
 
 ## Current baseline and pending acceptance
 
-Current development: **DLL b2214 / protocol 2214**, game **0.9.0n**, targeting
-package **0.9.2159**. **6/6 selected groups**, stable Release/ABI pass:
-`build/prop-action-delivery-2214/verification.json` (`FullRegression=false`).
-The last full aggregate remains **83/83 on b2203**:
-`build/inventory-apply-2203/verification.json`. The current 92-group full suite
-was not run for b2214; focused evidence lists its exact coverage.
+Current development: **DLL b2215 / protocol 2215**, game **0.9.0n**, targeting
+package **0.9.2159**. Upstream `ad5315611` is merged with all local history,
+including native-action/hit-result fixes from `ddc711220`.
+**94/94 full regression groups pass**; Release/ABI qualification is recorded in
+`build/upstream-qualified-2215/verification.json`. See [TESTLOG.md](TESTLOG.md).
 Native blast/ATV evidence was recorded on earlier DLLs. Rendered gameplay and
 real keyboard input still need acceptance.
 
 Last prepared manager package: **0.9.2158 / DLL b2186 / protocol 2186**.
 Its Release, **68/68 offline groups**, package label and archive checks passed.
-It does not include the b2187–b2214 fixes; no 2159 archive is prepared.
+It does not include the b2187–b2215 fixes; no 2159 archive is prepared.
 Verification history remains in [TESTLOG.md](TESTLOG.md); completed release reports
 and superseded build instructions have been removed from this backlog.
 
@@ -56,9 +55,11 @@ and superseded build instructions have been removed from this backlog.
   118 local master tests pass; details below.
 - [ ] Accept 2–32-player hosting/admission in game and confirm the deployed
   master's matching capacity. Its local Release build is ready; no remote deployment is recorded.
-- [ ] Accept the selected upstream adaptations in game: vital quantization,
-  late prop/trash class resolution, fossil-hound body yaw, NPC pose caching and
-  plain-wisp landing. Deferred conflicts: [FORK_AUDIT_20261022.md](FORK_AUDIT_20261022.md).
+- [x] Integrate upstream through `ad5315611`, preserving local history, 32-player
+  hosting, published wire IDs, prop lifetimes, ATV steering and blast motion.
+- [ ] Accept the combined upstream behavior in game: host/client damage and
+  creature hits, ATV ownership/conditions/joins, explosions, shared prop actions,
+  notebook/paper edits, drone controls and parked-creature presentation.
 - [ ] Optional future rigging: authored/cooked player PhysicsAsset or a separately
   validated stock-body display retargeter, after choosing its tradeoffs.
 

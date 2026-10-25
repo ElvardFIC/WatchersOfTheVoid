@@ -1,12 +1,11 @@
 # WORK — current state and open work
 
-Current development: **DLL b2214 / protocol 2214**, game **0.9.0n**, targeting
-package **0.9.2159**. Stable Release/ABI and **6/6 selected groups** pass:
-`build/prop-action-delivery-2214/verification.json` (`FullRegression=false`).
-Last full aggregate: **83/83 on b2203**, `build/inventory-apply-2203/verification.json`.
-The current 92-group full suite was not run on b2214.
+Current development: **DLL b2215 / protocol 2215**, game **0.9.0n**, targeting
+package **0.9.2159**. **94/94 full regression groups pass**; Release/ABI evidence:
+`build/upstream-qualified-2215/verification.json`. Upstream `ad5315611` and
+local native-action/hit-result fixes `ddc711220` are included with their history.
 Last prepared manager package: **0.9.2158 / DLL b2186 / protocol 2186**,
-qualified with **68/68 groups**. It excludes b2187–b2214; no 2159 archive is prepared.
+qualified with **68/68 groups**. It excludes b2187–b2215; no 2159 archive is prepared.
 
 [TODO.md](TODO.md) owns priorities and report checklists.
 [TESTLOG.md](TESTLOG.md) owns completed-change reports, hashes and evidence.
@@ -16,6 +15,23 @@ This file keeps implementation boundaries and unresolved questions.
 The owner now requests **10 concrete fixes per continuation**. TODO records
 completed implementation with [x] separately from remaining work and rendered
 acceptance; changing that status does not claim new gameplay evidence.
+
+## Upstream integration awaiting gameplay acceptance
+
+The complete upstream ancestry is merged without resetting or rebasing our
+commits. Keep 32-player admission, stable published message values, owned native
+lifetimes and record queues, personal PC explosions, ATV steering/cockpit/radio
+state and blast-driven prop discovery. Adopt upstream host-judged damage,
+creature hits/presentation, ATV authority/join sets, shared-prop transactions,
+notebook/paper editing, explosion requests and device/UI/localization changes.
+Actual received ATV condition results and post-application prop records are
+published only after native application. Two queued drone timer presses toggle
+host state twice. Details and verification boundaries: [TESTLOG.md](TESTLOG.md).
+
+Rendered host/client acceptance remains open for these combined paths, including
+concurrent actions, driver handoff, force-only blasts and late join. Every peer
+requires b2215. No manager archive, game installation or master deployment was
+performed; older acceptance items below remain open.
 
 ## 24 October report batch
 
