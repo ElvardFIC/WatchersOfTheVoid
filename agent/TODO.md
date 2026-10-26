@@ -384,6 +384,35 @@ PASS 23 new scenario groups and ten compiled fault controls, included in the
 damage, the base no-op slice and the hacksaw's separate mesh-cut/broken path.
 Rendered impacts, cutting/fragment replication and full gameplay acceptance stay open.
 
+### Implemented — ten native damage/slice/hit fixes (b2215)
+
+- [x] Capture client actor/class, player/person and function/owner before native
+  argument lookup; retired input cannot enqueue a hit against a replacement.
+- [x] Refuse reflected client damage/slice echoes and revalidate the current tool
+  before submission, preserving host ownership of world mutations.
+- [x] Revalidate the receiver's exact world key and current author through damage
+  and slice preparation; authorization cannot migrate to a retagged target.
+- [x] Recheck the live melee tool and damage allowance after callback-capable
+  preparation instead of retaining an old held-item proof.
+- [x] Guard inherited damage function/owner, actor/class and parameter binding
+  through native dispatch, without reading a retired target for failure logging.
+- [x] Bind damage to the current mesh/class and finite position through hit
+  construction; metadata and component replacement cannot authorize an old hit.
+- [x] Invoke the native actor isNotSawable getter, including overrides; it is a
+  function rather than a component field. Refuse failed/unreadable/reentrant
+  getter work and preserve source/function/tool currency through slice dispatch.
+- [x] Carry caller/source ownership through wall damage metadata, location and
+  argument preparation, while preserving native destruction as a valid outcome.
+- [x] Check every MakeHitResult binding, exact destination struct, blocking flag,
+  weak target and source/function lifetime before writing the owned hit bytes.
+- [x] Protect hit-field destination/class/offset/schema and bounds through native
+  construction; retry missing/replaced layout metadata and retain caller location.
+
+PASS 23 new scenario groups and ten compiled fault controls, included in the
+94-group qualified source snapshot. Native/cooked contracts distinguish inherited
+damage, the base no-op slice and the hacksaw's separate mesh-cut/broken path.
+Rendered impacts, cutting/fragment replication and full gameplay acceptance stay open.
+
 ### Implemented — ten prop-action/MRE delivery fixes (b2214)
 
 - [x] Retire action queues, rate buckets, safe publication and MRE scopes across
@@ -990,6 +1019,7 @@ Wall41 remains excluded.
 - [ ] Resolve the remaining public-prose counters recorded in TESTLOG:
   document count 85/82, src.comment_doc_row 155/0 and
   src.files_not_swept 84/0 with the reading-room checkouts absent.
+  The latest fact-row gate passes (565 rows/181 files);
   The latest fact-row gate passes (565 rows/181 files);
   older missing-reference/unused-row findings are superseded.
 

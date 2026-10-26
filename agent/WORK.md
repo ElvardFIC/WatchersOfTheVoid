@@ -388,6 +388,7 @@ need acceptance of newer personal-sleep behavior. Use identical current DLLs and
 record role, item/model, reproduction and logs in TESTLOG before closing reports.
 
 The latest fact-row gate passes **565 rows / 181 files**. Remaining public-prose
+The latest fact-row gate passes **565 rows / 181 files**. Remaining public-prose
 counters: documents **85/82**, src.comment_doc_row **155/0** and
 src.files_not_swept **84/0**, with reading-room checkouts absent.
 Full-manager-package startup and rendered multiplayer remain unverified.
