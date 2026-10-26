@@ -1,4 +1,37 @@
-# Current 2161 continuation — console metadata (26 October 2026)
+# 2161 console-only continuation — ten native-operation fixes (26 October 2026)
+
+The user assigned console work to this session and left flashlight work to the
+other session. This continuation does not edit item_activate.cpp. Public/internal
+identities remain 0.9.2161 / b2217 / protocol 2217.
+
+Ten individually named TODO/WORK fixes cover live layout bindings, atlas identity,
+factory/context/result ownership, init/dish lifetime, superseded command fields,
+writeToLog preparation, text-box class, two-field clear preparation, bounded and
+transactional argument reads, and bounded panel enumeration. Old classes/functions/
+CDOs that remain alive no longer keep an obsolete layout binding latched forever.
+
+PASS run_sat_console_callbacks.ps1 -FaultControls: 21 controller scenarios, the
+existing actual ParamFrame/FText/FString input/metadata tests, ten new native-operation
+groups and 23 compiled removal controls (nine controller, four earlier wrapper,
+ten new native controls). PASS run_sat_console_delivery.ps1: 14 scenarios.
+PASS production-header compilation of both controller and native wrapper.
+PASS sat_console_native_contract_test.py against current cooked 0.9.0n assets:
+enterCommand's clr resets consoleLine and logText; writeToLog uses consoleLine.
+The cooked proof includes both asset hashes.
+
+Console-only evidence and tested source hashes:
+`build/sat-console-callbacks-check/console-verification.json`.
+Logs: console-focused.log, console-delivery.log, console-native-contract.log and
+console-native-compile.log in that directory. Native wrapper source SHA256:
+`60bba74cca4a66799153b60976d8701da039a5a5dd0c8b103c6b3ba0070c4006`.
+No shared DLL/qualification-current report was overwritten by this continuation.
+No combined Release build, full regression/package qualification, native game
+startup/rendered acceptance, installation, commit or publication was performed.
+Complete reflected schemas, caller session predicates inside every helper,
+atomic rollback and uncertain-native-call retry/admission remain open boundaries.
+Earlier shared Release evidence below describes its earlier source snapshot.
+
+# Earlier 2161 continuation — console metadata and flashlight lifetime fixes (26 October 2026)
 
 Four implemented changes: delayed-resolution retry, clean partial layouts, live
 metadata dependencies and bounded/validated FString reads. Versions stay 2161/b2217.
@@ -14,13 +47,30 @@ and string-capacity. Control logs: build/sat-console-callbacks-check/mutants/.
 PASS production-header compile of ue_wrap/desk/sat_console.cpp to
 build/sat-console-callbacks-check/native_wrapper_production.obj.
 
-An attempted run_2145 compile exposed concurrent Seat/Scope edits to item_activate.cpp
-colliding with this continuation's own in-progress lifetime state. The same file then
-changed again (Publish/DebugForceToggle) without an edit from this agent. Own overlapping
-flashlight changes were withdrawn; external edits preserved. The user was asked about
-file ownership. Six planned flashlight fixes remain pending in TODO. No combined Release
-or current-source qualification is claimed; qualification-current below belongs to the
-preceding snapshot. Rendered gameplay, archive and installation remain unperformed.
+The earlier interrupted run_2145 compile exposed conflicting Seat/Scope edits. The
+owner clarified no other writer is active and authorised reconciliation. That temporary
+state is superseded by the final single SessionScope/PublishState implementation.
+
+PASS six flashlight scenarios in run_2145: session/world/role/link/pointer retirement;
+roster person and transport replacement retiring pending/cache state; rejection of local,
+foreign and wrong-slot actors; owned packet across a mutating native getter; source
+retirement before visibility and within the final binding getter; and stale publication
+completion, including nested different state, return to the previously admitted state
+and identical-state recursion. Late old transport completion invalidates the signature;
+the next publication sends the current intensity again. Six separately compiled removal
+controls each fail the selected scenario's assertion. Logs: build/flashlight-state-check/.
+The debug toggle now samples/publishes entirely on the game thread, using PublishState.
+
+PASS five selected current groups: run_2145, run_flashlight_click,
+run_sat_console_callbacks, run_sat_console_delivery and sync_native_contract. Final
+Release/ABI and production version formatter pass, 0.9.2161 / b2217 / protocol 2217.
+Evidence: build/qualification-current/verification.json, source-start.sha256 and logs/.
+The earlier source-before.json is a historical packaging snapshot; it was not refreshed
+by this focused check and is not the current source manifest.
+DLL SHA256: `408037f478d3939dce20642b3398d6356b17941a2bd8f2d0cbc91e695ebd4fe8`.
+FullRegression=false, TwoPlayerGameplayVerified=false, Packaged=false. This evidence
+supersedes the preceding snapshot's hash. Rendered gameplay, archive and installation
+remain unperformed. Refused targeted host late-join cache relays still have no retry queue.
 
 # Earlier 2161 continuation — flashlight and console priorities (26 October 2026)
 

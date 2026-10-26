@@ -1,4 +1,8 @@
 ## 0.9.2161
+- Guard console atlas/factory/init/command/log preparation by current object,
+  class, function and layout bindings. Reject malformed parameter/panel-array bounds.
+- Preserve newer command fields and stop retired clear/input operations; validate
+  both console backing-log fields before starting display-only clearing.
 - Guard remote flashlight clicks by current peer/body/session identity, retain
   transitions through unavailable resources/positions and recover replaced assets.
 - Preserve newer states through nested preparation, refuse non-finite positions

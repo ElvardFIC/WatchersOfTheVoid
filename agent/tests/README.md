@@ -1,5 +1,14 @@
 # Regression tests
 
+`run_sat_console_callbacks.ps1 -FaultControls` includes ten console native-lifetime
+groups in `sat_console_native_lifetime_test.cpp`, using the production wrapper,
+ParamFrame, FString/FText and field-write code. They cover live binding replacement,
+atlas/factory/init ownership, superseded commands, output/box preparation, clear
+retirement, frame bounds and panel-array headers. Ten additional compiled controls
+bring this runner to 23 controls (nine controller and fourteen wrapper controls).
+`sat_console_native_contract_test.py` separately checks current cooked clr's two
+backing-string resets. These focused checks do not qualify a shared Release DLL.
+
 `run_flashlight_click.ps1 -CompileSources -FaultControls` executes the real remote
 click controller with 32 slots, actual roster PerSlotState and CachedObjRef, and
 native preparation fakes. Ten groups cover slot/body routing, puppet/class/world

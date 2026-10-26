@@ -5,7 +5,33 @@ The owner explicitly keeps work in 2161. Continuations do not advance versions o
 automatically prepare releases. The previous 2162 label was an assistant mistake;
 older reports/archives retain their historical bytes and do not qualify new changes.
 
-## Current continuation — console metadata; flashlight ownership unresolved
+## Console native-operation continuation
+
+User allocation: this session owns console work; flashlight work belongs to the
+other session. Versions remain 2161/b2217/protocol 2217. Ten individually named
+fixes are in TODO: live layout bindings, atlas identity, factory ownership,
+native init, command-field admission, writeToLog preparation, box class, clear
+preparation, bounded/transactional argument reads and bounded panel enumeration.
+Widget helpers retain object/class/world and layout revision through callbacks.
+The command verb verifies that its field still contains the intended command;
+clear resolves both offsets before either write and stops on retirement. Frame
+header reads require room for the full FString/type, and output text/type commit
+together. Panel enumeration checks current desk class, TArray capacity/count and
+header identity before following entries. A stale factory result of the captured
+terminal class is marked for retirement instead of being published.
+
+PASS ten new real-wrapper/ParamFrame/FString groups, existing input and metadata
+checks, 21 controller callbacks, 14 delivery groups and 23 compiled controls. A
+current cooked asset check confirms clr resets consoleLine/logText and writeToLog
+uses consoleLine. Both production TUs compile. Console-only evidence and source
+hashes are in `build/sat-console-callbacks-check/console-verification.json`;
+TESTLOG records the limits. Combined Release/full
+regression/package and rendered multiplayer acceptance remain open. No flashlight
+source or shared qualified DLL is changed by this console continuation. Native
+argument/property schemas, session predicates inside all helpers, atomic rollback
+and uncertain-call retry semantics are not established by these guards.
+
+## Earlier continuation — ten console metadata and flashlight lifetime fixes
 
 Four completed fixes in ue_wrap/desk/sat_console.cpp: keep throttled metadata retries
 after the former five-pass permanent shutdown; clear every partial offset before retry;
@@ -16,17 +42,28 @@ again. Reflection resolution also refuses recursive entry. Versions are unchange
 
 PASS the 21 existing controller scenarios, actual-wrapper tests with four new groups,
 thirteen compiled removal controls (nine controller, four wrapper), and native wrapper
-production-header compilation. Gameplay acceptance and a stable combined Release build
-remain unperformed. The former qualification-current evidence describes the prior snapshot.
+production-header compilation. The six flashlight fixes below are also completed;
+five selected current groups, Release/ABI and production label formatter pass. Current
+qualification-current evidence describes the combined stable source, with FullRegression=false.
 
-The same continuation initially selected six flashlight lifetime/routing/publication
-fixes (listed individually as pending in TODO). During implementation another writer
-inserted Seat/Scope state, rewrote Publish and DebugForceToggle in item_activate.cpp.
-This was observed changing again after the first conflict. Own overlapping changes
-were withdrawn without removing the other writer's implementation. The user has a
-pending question about file ownership. Do not claim these six implemented or qualify
-an actively changing combined source; coordinate ownership first. No install/package,
-version bump, commit or publication.
+The owner clarified no other writer is active and authorised reconciliation. The
+observed temporary Seat/Scope/Publish edits are superseded by one SessionScope and
+PublishState implementation. Six completed fixes: retire receiver/cache/publication
+state on session pointer/start serial/world/role/running/link transitions; retire a
+deferred state and host cache when roster person/transport generation changes; require
+exact registry actor-to-slot association; copy received payloads before callbacks;
+validate source/binding before the first setter and again after binding getters; and
+own send completion by publication revision and local pawn incarnation. Nested identical
+publication cannot recurse into another send. A nested different state supersedes old
+completion, and a late older send invalidates dedup so a fresh sample repairs transport
+ordering. The debug toggle samples and publishes on the game thread through PublishState.
+
+PASS six new flashlight scenarios and six separately compiled removal controls in
+run_2145.ps1 -FaultControls. TESTLOG records final combined evidence. Rendered two-player
+beam/mode/battery/join and console concurrent-author/clear/history acceptance, full
+regression and a new package remain open. Refused targeted host late-join cache relays
+still have no retry queue; source retirement does not establish reliable join convergence.
+No install/package, version bump, commit or publication was performed by this agent.
 
 ## Flashlight and console priority continuation — 26 October
 
@@ -387,6 +424,7 @@ Wall41; chair reports 11/36 are duplicates. Previously working nightmares (10)
 need acceptance of newer personal-sleep behavior. Use identical current DLLs and
 record role, item/model, reproduction and logs in TESTLOG before closing reports.
 
+The latest fact-row gate passes **565 rows / 181 files**. Remaining public-prose
 The latest fact-row gate passes **565 rows / 181 files**. Remaining public-prose
 counters: documents **85/82**, src.comment_doc_row **155/0** and
 src.files_not_swept **84/0**, with reading-room checkouts absent.

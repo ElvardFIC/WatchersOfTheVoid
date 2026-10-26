@@ -261,7 +261,13 @@ bool PublishState(void* self) {
     // while a different state is in flight. Completion owns this exact revision.
     g_lastSentSig=kNoSendYet;
     const bool sent=session->SendReliable(coop::net::ReliableKind::ItemActivate,&p,sizeof(p));
-    if(!Current(epoch) || revision!=g_sendRevision || !publisher.Is(coop::players::Registry::Get().Local()))return false;
+    if(!Current(epoch))return false;
+    if(revision!=g_sendRevision || !publisher.Is(coop::players::Registry::Get().Local())){
+        // The older transport call may have queued AFTER a nested publication.
+        // Owe a fresh sample so its late completion cannot leave peers on that
+        // older state while the signature falsely says the newer one was sent.
+        g_lastSentSig=kNoSendYet;return false;
+    }
     if(sent)g_lastSentSig=sig;
     if(ProbeLogEnabled())UE_LOGI("flashlight: publish state=%u mode=%u sent=%d",p.state,p.mode,sent?1:0);
     return sent;
