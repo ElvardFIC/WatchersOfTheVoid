@@ -65,13 +65,28 @@ bool BindingsCurrent(){
         R::ClassOf(g_layoutRefs[8].Get())==g_layoutRefs[9].Raw() &&
         R::FindFunction(g_layoutRefs[9].Raw(),L"Create")==g_layoutRefs[10].Raw();
 }
+uint64_t g_layoutRevision=0;
+bool BindingsCurrent(){
+    const wchar_t* names[]{kTerminalClass,L"ui_consolesAtlas_C",L"analogDScreenTest_C",L"EditableTextBox"};
+    for(size_t i=0;i<4;++i)if(R::FindClass(names[i])!=g_layoutRefs[i].Raw())return false;
+    if(R::FindFunction(g_layoutRefs[0].Raw(),kEnterCommand)!=g_layoutRefs[4].Raw() ||
+       R::FindFunction(g_layoutRefs[0].Raw(),kWriteToLog)!=g_layoutRefs[5].Raw() ||
+       R::FindFunction(g_layoutRefs[0].Raw(),kInit)!=g_layoutRefs[6].Raw())return false;
+    return R::FindFunction(g_layoutRefs[3].Raw(),L"SetText")==g_layoutRefs[7].Raw() &&
+        R::FindClassDefaultObject(L"WidgetBlueprintLibrary")==g_layoutRefs[8].Raw() &&
+        R::ClassOf(g_layoutRefs[8].Get())==g_layoutRefs[9].Raw() &&
+        R::FindFunction(g_layoutRefs[9].Raw(),L"Create")==g_layoutRefs[10].Raw();
+}
 
 bool LayoutCurrent() {
+    if(!g_resolved || !std::all_of(g_layoutRefs.begin(),g_layoutRefs.end(),[](const CachedObjRef& ref){return ref.Get()!=nullptr;}))return false;
+    if(!BindingsCurrent())return false;
     return g_resolved && std::all_of(g_layoutRefs.begin(),g_layoutRefs.end(),
         [](const CachedObjRef& ref){return ref.Get()!=nullptr;}) && BindingsCurrent();
 }
 
 void ResetLayout() {
+    ++g_layoutRevision;
     ++g_layoutRevision;
     g_resolved=false;g_termCls.Reset();g_layoutRefs={};
     g_offProcessing=g_offPanel=g_offUsed=g_offActiveDish=-1;g_maskProcessing=0;
@@ -125,6 +140,18 @@ void* TerminalClass() {
 
 bool IsTerminal(void* obj) {
     return obj && R::IsLive(obj) && R::ClassOf(obj) == TerminalClass();
+}
+struct Lease {
+    CachedObjRef object,cls;uint32_t world=world_identity::Generation();uint64_t layout=g_layoutRevision;
+    explicit Lease(void* value){object.Set(value);cls.Set(object.Get()?R::ClassOf(object.Get()):nullptr);}
+    bool Current()const{return object.Get() && cls.Get() && R::ClassOf(object.Get())==cls.Get() &&
+        world==world_identity::Generation() && LayoutCurrent() && layout==g_layoutRevision;}
+};
+bool ParamBounds(size_t dependency,int32_t offset,size_t bytes){
+    if(!LayoutCurrent() || offset<0)return false;
+    const auto function=g_layoutRefs[dependency];const auto revision=g_layoutRevision;
+    const auto size=R::FunctionFrameSize(function.Get());
+    return size>=0 && offset<=size && bytes<=size_t(size-offset) && function.Get() && LayoutCurrent() && revision==g_layoutRevision;
 }
 struct Lease {
     CachedObjRef object,cls;uint32_t world=world_identity::Generation();uint64_t layout=g_layoutRevision;
@@ -215,10 +242,14 @@ void* LocalTerminal() {
     Lease owner(atlas);const auto offset=g_offAtlasTerm;if(!owner.Current() || owner.cls.Get()!=g_layoutRefs[1].Get())return nullptr;
     void* term = ReadObject(atlas, g_offAtlasTerm);
     return owner.Current() && offset==g_offAtlasTerm && console_desk::AtlasWidget()==atlas && IsTerminal(term) ? term : nullptr;
+    return owner.Current() && offset==g_offAtlasTerm && console_desk::AtlasWidget()==atlas && IsTerminal(term) ? term : nullptr;
 }
 
 void* CreateTerminal(void* worldContext) {
     if (!worldContext || !EnsureResolved()) return nullptr;
+    Lease context(worldContext);const auto factory=g_layoutRefs[10],library=g_layoutRefs[8],terminalClass=g_termCls;
+    const auto valid=[&]{return context.Current() && factory.Is(g_fnCreate) && library.Is(g_wblCdo) && terminalClass.Is(g_termCls.Get());};
+    if(!valid())return nullptr;
     Lease context(worldContext);const auto factory=g_layoutRefs[10],library=g_layoutRefs[8],terminalClass=g_termCls;
     const auto valid=[&]{return context.Current() && factory.Is(g_fnCreate) && library.Is(g_wblCdo) && terminalClass.Is(g_termCls.Get());};
     if(!valid())return nullptr;
@@ -227,6 +258,12 @@ void* CreateTerminal(void* worldContext) {
     if (!cls || !f.valid() || !f.Set(L"WorldContextObject", worldContext) || !f.Set(L"WidgetType", cls))
         return nullptr;
     void* noPlayer = nullptr;  // the game instance owns it: no world object is its outer
+    if (!f.Set(L"OwningPlayer", noPlayer) || !valid() || !Call(g_wblCdo, f)) return nullptr;
+    void* made=nullptr;if(!f.GetRaw(L"ReturnValue",&made,sizeof(made)))return nullptr;
+    if(!valid()){
+        if(made && R::IsLive(made) && terminalClass.Get() && R::ClassOf(made)==terminalClass.Get())R::MarkPendingKill(made);
+        return nullptr;
+    }
     if (!f.Set(L"OwningPlayer", noPlayer) || !valid() || !Call(g_wblCdo, f)) return nullptr;
     void* made=nullptr;if(!f.GetRaw(L"ReturnValue",&made,sizeof(made)))return nullptr;
     if(!valid()){
@@ -242,10 +279,15 @@ void DiscardTerminal(void* term) {
 
 bool ReadEnterCommandLine(const uint8_t* locals, std::wstring& out) {
     if (!locals || !ParamBounds(4,g_offEnterC,sizeof(FStringView))) return false;
+    if (!locals || !ParamBounds(4,g_offEnterC,sizeof(FStringView))) return false;
     return ReadString(locals,g_offEnterC,out,65536);
 }
 
 bool ReadWriteToLogArgs(const uint8_t* locals, std::wstring& text, uint8_t& bracketsType) {
+    if (!locals || !ParamBounds(5,g_offWriteB,sizeof(FStringView)) || !ParamBounds(5,g_offWriteType,1))return false;
+    std::wstring value;if(!ReadString(locals,g_offWriteB,value,8192))return false;
+    const auto type=locals[g_offWriteType];if(type>3)return false;
+    text=std::move(value);bracketsType=type;
     if (!locals || !ParamBounds(5,g_offWriteB,sizeof(FStringView)) || !ParamBounds(5,g_offWriteType,1))return false;
     std::wstring value;if(!ReadString(locals,g_offWriteB,value,8192))return false;
     const auto type=locals[g_offWriteType];if(type>3)return false;
@@ -299,6 +341,7 @@ bool CallInit(void* term, const std::wstring& name, bool hide, void* dish) {
     if (!f.SetRaw(L"name", &v, sizeof(v)) || !f.SetRaw(L"hide", &h, sizeof(h)) || !f.Set(L"dish", dish))
         return false;
     return valid() && function.Get() && Call(term, f) && valid() && function.Get();
+    return valid() && function.Get() && Call(term, f) && valid() && function.Get();
 }
 
 bool RunCommand(void* term, const std::wstring& line) {
@@ -315,6 +358,9 @@ bool RunCommand(void* term, const std::wstring& line) {
     std::wstring written;
     return owner.Current() && function.Get() && ReadString(term,offset,written,65536) && written==line &&
         Call(term, f) && owner.Current() && function.Get();
+    std::wstring written;
+    return owner.Current() && function.Get() && ReadString(term,offset,written,65536) && written==line &&
+        Call(term, f) && owner.Current() && function.Get();
 }
 
 bool CallWriteToLog(void* term, const std::wstring& text, uint8_t bracketsType) {
@@ -328,6 +374,7 @@ bool CallWriteToLog(void* term, const std::wstring& text, uint8_t bracketsType) 
     if (!f.SetRaw(L"B", &v, sizeof(v)) || !f.SetRaw(L"bracketsType", &bracketsType, sizeof(bracketsType)))
         return false;
     return owner.Current() && function.Get() && Call(term, f) && owner.Current() && function.Get();
+    return owner.Current() && function.Get() && Call(term, f) && owner.Current() && function.Get();
 }
 
 bool ConsumeInput(void* term) {
@@ -336,6 +383,7 @@ bool ConsumeInput(void* term) {
 
 bool ConsumeInputWhile(void* term, const std::function<bool()>& current) {
     if (!current || !current() || !LayoutCurrent() || !IsTerminal(term)) return false;
+    CachedObjRef terminal, terminalClass, textBox, textBoxClass, setText;
     CachedObjRef terminal, terminalClass, textBox, textBoxClass, setText;
     terminal.Set(term);
     void* cls = R::ClassOf(term);
@@ -347,11 +395,13 @@ bool ConsumeInputWhile(void* term, const std::function<bool()>& current) {
         if (!R::IsLive(box) || !g_fnSetText || !R::IsLive(g_fnSetText)) return false;
         textBox.Set(box);
         textBoxClass.Set(R::ClassOf(box));
+        textBoxClass.Set(R::ClassOf(box));
         setText.Set(g_fnSetText);
     }
     const auto valid = [&] {
         return current() && terminal.Is(term) && terminalClass.Is(cls) && R::ClassOf(term) == cls &&
             LayoutCurrent() && g_offCommand == commandOffset && g_offTextBox == boxOffset &&
+            *At<void*>(term, boxOffset) == box && (!box || (textBox.Is(box) && textBoxClass.Get() && R::ClassOf(box)==textBoxClass.Get() && setText.Is(g_fnSetText)));
             *At<void*>(term, boxOffset) == box && (!box || (textBox.Is(box) && textBoxClass.Get() && R::ClassOf(box)==textBoxClass.Get() && setText.Is(g_fnSetText)));
     };
     if (!valid()) return false;
@@ -373,7 +423,11 @@ bool ConsumeInputWhile(void* term, const std::function<bool()>& current) {
 bool ClearLog(void* term) {
     if(!LayoutCurrent() || !IsTerminal(term))return false;
     Lease owner(term);const auto log=g_offLog;
+    if(!LayoutCurrent() || !IsTerminal(term))return false;
+    Lease owner(term);const auto log=g_offLog;
     const int logText=R::FindPropertyOffset(R::ClassOf(term),L"logText");
+    if(logText<0 || !owner.Current() || !WriteFStringField(term,log,L"") || !owner.Current())return false;
+    if(!WriteFStringField(term,logText,L"") || !owner.Current())return false;
     if(logText<0 || !owner.Current() || !WriteFStringField(term,log,L"") || !owner.Current())return false;
     if(!WriteFStringField(term,logText,L"") || !owner.Current())return false;
     return CallWriteToLog(term,L"",0);
@@ -394,7 +448,15 @@ void* FindPanelByName(const std::wstring& name) {
     void* const* elems = reinterpret_cast<void* const*>(snapshot.data);
     for (int32_t i = 0; i < snapshot.num; ++i) {
         if(!owner.Current() || arr->data!=snapshot.data || arr->num!=snapshot.num || arr->max!=snapshot.max)return nullptr;
+    const auto snapshot=*arr;
+    if (!snapshot.data || snapshot.num <= 0 || snapshot.max<snapshot.num || snapshot.num>4096) return nullptr;
+    void* const* elems = reinterpret_cast<void* const*>(snapshot.data);
+    for (int32_t i = 0; i < snapshot.num; ++i) {
+        if(!owner.Current() || arr->data!=snapshot.data || arr->num!=snapshot.num || arr->max!=snapshot.max)return nullptr;
         void* p = elems[i];
+        CachedObjRef candidate;candidate.Set(p);
+        if (candidate.Get() && R::ToString(R::NameOf(p)) == name)
+            return owner.Current() && candidate.Get() && arr->data==snapshot.data && arr->num==snapshot.num && arr->max==snapshot.max?p:nullptr;
         CachedObjRef candidate;candidate.Set(p);
         if (candidate.Get() && R::ToString(R::NameOf(p)) == name)
             return owner.Current() && candidate.Get() && arr->data==snapshot.data && arr->num==snapshot.num && arr->max==snapshot.max?p:nullptr;
