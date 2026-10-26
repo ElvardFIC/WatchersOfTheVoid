@@ -16,11 +16,12 @@
 namespace ue_wrap::lightswitch {
 
 // Resolve Atrigger_lightRoot_C + the Key / IsActive offsets + the SetActive
-// UFunction. Idempotent; true once resolved. Game thread.
+// UFunctions. Re-resolves retired/rebound metadata; missing fields remain
+// unavailable without offset fallbacks. Game thread.
 bool EnsureResolved();
 
 // True iff `obj`'s class is trigger_lightRoot_C or a subclass. False if not yet
-// resolved.
+// class is resident. This predicate depends on class, not field readiness.
 bool IsLightRoot(void* obj);
 
 // The light-group's AtriggerBase_C::Key as a wide string ("" on failure, L"None"
@@ -78,7 +79,8 @@ void* SwitchRoot(void* sw);
 //   1 -> isActive := true;  updLig()                                 (absolute ON,  UNGATED)
 //   2 -> isActive := false; updLig()                                 (absolute OFF, UNGATED)
 // `owner` is written into the ubergraph frame and never read on any path, so we pass the
-// root itself rather than inventing a caller. Game thread. False on null/unresolved.
+// root itself rather than inventing a caller. Preparation retains actor/class/
+// function/world/layout identity and checks every argument. Game thread.
 bool CallRunTrigger(void* root, int32_t index);
 
 // Drive the group to `on` ABSOLUTELY, through the game's own verb (index 1/2). Ungated on
@@ -95,6 +97,8 @@ bool TryReadBreaker(void* root, bool& open);
 bool CallSetBreaker(void* root, bool open);
 
 // Ceiling-lamp presentation is distinct from the root's persistent switch state.
+// Setters retain actor/class/function/world identity through preparation and
+// completion. Ambient operations also hold the exact bottomLight binding.
 bool EnsureLampResolved();
 bool IsCeilingLamp(void* actor);
 bool TryReadLampActive(void* actor, bool& on);

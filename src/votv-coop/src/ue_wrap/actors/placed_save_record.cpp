@@ -1,4 +1,5 @@
 #include "ue_wrap/actors/placed_save.h"
+#include "ue_wrap/actors/llama_marker.h"
 #include "ue_wrap/actors/wall_drying.h"
 #include <cmath>
 
@@ -19,6 +20,7 @@ bool Name(const std::wstring& s) {
 bool Empty(const std::wstring& s) { return s.empty() || s == L"None"; }
 }
 Kind ClassKind(const std::wstring& name) {
+    if (name == L"llamaSoul_C") return Kind::Marker;
     if (name == L"dirthole_C") return Kind::DirtHole;
     if (name == L"faucet_C") return Kind::Faucet;
     if (name == L"groundHose_C") return Kind::Hose;
@@ -29,6 +31,7 @@ Kind ClassKind(const std::wstring& name) {
 }
 bool Normalize(const SR::SaveRecord& in, SR::SaveRecord& out) {
     const Kind kind = ClassKind(in.className);
+    if (kind == Kind::Marker) return llama_marker::Normalize(in,out);
     if (kind == Kind::None || Empty(in.key) || !Name(in.key)) return false;
     for (float v : in.xform) if (!std::isfinite(v)) return false;
     float q = 0; for (int i = 0; i < 4; ++i) q += in.xform[i] * in.xform[i];

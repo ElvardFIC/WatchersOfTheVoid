@@ -12,6 +12,7 @@
 #include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <string>
 #include <unordered_set>
@@ -28,13 +29,15 @@ UE_FACT_FN(kRowRunTrigger, "lightgroup_verbs", nullptr, L"runTrigger", AnyClass)
 constexpr int kTag = 0x4C475254;  // 'LGRT'
 
 std::atomic<coop::net::Session*> g_session{nullptr};
-// The watch registers once: a refusal (a full gate table) is final, and said once. It settles once
-// live, or once no name is left to resolve and it is dead for good.
+// A refused registration may precede gate installation. Retry with a bounded
+// cadence instead of disabling light-group authority for the rest of the process.
 enum class Reg : uint8_t { Pending, Registered, Refused };
 Reg  g_reg = Reg::Pending;
 bool g_settled = false;
 bool g_lampWatched = false;
 bool g_ambientWatched = false;
+std::chrono::steady_clock::time_point g_nextWatchTry{};
+bool g_saidWatchFailure = false;
 constexpr int kLampTag = 0x4C414D50;
 constexpr int kAmbientTag = 0x414D424C;
 coop::net::Session* ConnectedAs(coop::net::Role role);
@@ -73,7 +76,7 @@ std::unordered_set<std::wstring> g_saidRefused;
 
 coop::net::Session* ConnectedAs(coop::net::Role role) {
     auto* s = g_session.load(std::memory_order_acquire);
-    return (s && s->connected() && s->role() == role) ? s : nullptr;
+    return (s && s->running() && s->connected() && s->role() == role) ? s : nullptr;
 }
 
 // CLIENT, before the body.
@@ -115,19 +118,24 @@ void Install(coop::net::Session* session) {
     if (!g_lampWatched)
         g_lampWatched = sg::WatchClassName(L"ceilingLamp_C", L"setActive", kLampTag,
                                           &OnLampPre, &OnLampPost);
-    if (g_reg != Reg::Pending) return;
+    if (g_reg == Reg::Registered) return;
+    const auto now = std::chrono::steady_clock::now();
+    if (now < g_nextWatchTry) return;
+    g_nextWatchTry = now + std::chrono::seconds(1);
     if (sg::WatchName(kRowRunTrigger, kTag, &OnTriggerPre, &OnTriggerPost)) {
         g_reg = Reg::Registered;
         return;
     }
     g_reg = Reg::Refused;
-    UE_LOGE("[LIGHT-GROUP] the script-body gate refused the watch on runTrigger -- for the rest of this process "
-            "the group lane cannot see it");
+    if (!g_saidWatchFailure) {
+        g_saidWatchFailure = true;
+        UE_LOGE("[LIGHT-GROUP] the script-body gate refused runTrigger -- retrying once a second");
+    }
 }
 
 void Tick() {
     sg::ResolvePendingNames();
-    if (g_settled || g_reg == Reg::Pending) return;
+    if (g_settled || g_reg != Reg::Registered) return;
     if (g_reg == Reg::Registered && sg::NameWatchLive(kRowRunTrigger, kTag)) {
         g_settled = true;
         UE_LOGI("[LIGHT-GROUP] the light group gate is live: runTrigger");

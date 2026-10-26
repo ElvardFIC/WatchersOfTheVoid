@@ -1,8 +1,11 @@
 #pragma once
 #include <cstdint>
 #include "coop/player/remote_player.h"
+#ifndef TEST_STATE_MAX_PEERS
+#define TEST_STATE_MAX_PEERS 4
+#endif
 namespace coop::players {
-inline constexpr uint8_t kMaxPeers=4;
+inline constexpr uint8_t kMaxPeers=TEST_STATE_MAX_PEERS;
 class Registry {
 public:
     uint8_t peer=1;

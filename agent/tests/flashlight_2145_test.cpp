@@ -93,6 +93,7 @@ void LifetimeCases(const char* selected=nullptr){
 }
 }
 int main(int argc,char** argv){namespace S=coop::item_activate;using namespace test;if(argc>1){LifetimeCases(argv[1]);return 0;}coop::net::Session session;
+ for(auto& person:people)person.playerNo=1;
  coop::players::Registry::Get().local=&actor;S::g_session=&session;S::g_flashlightClassHash=42;
  auto poll=[] {S::g_nextStatePoll=0;S::TickConnect();};
  poll();CHECK(session.sent.size()==1);poll();CHECK(session.sent.size()==1);
@@ -105,7 +106,8 @@ int main(int argc,char** argv){namespace S=coop::item_activate;using namespace t
  S::g_flashlightClassHash=0;S::Install(&session);
  CHECK(S::g_flashlightClassHash==S::HashClassName(L"prop_equipment_flashlight_C"));
  lightState.hasFlashlight=true;poll();CHECK(session.sent.size()==6);
- session.sendOk=false;S::QueueConnectBroadcastForSlot(2);CHECK(S::g_lastSentSig==S::kNoSendYet);
+ const auto signature=S::g_lastSentSig.load();
+ session.sendOk=false;S::QueueConnectBroadcastForSlot(2);CHECK(S::g_lastSentSig==signature);
  session.sendOk=true;poll();CHECK(session.sent.size()==7);
  p={};p.itemClassHash=S::g_flashlightClassHash;p.state=1;p.intensity=5;p.outerConeAngle=45;p.innerConeAngle=20;
  coop::players::Registry::Get().puppet.actor=&ui;
@@ -143,6 +145,7 @@ int main(int argc,char** argv){namespace S=coop::item_activate;using namespace t
  puts("PASS flashlight install before player-class readiness and deferred component/setter apply, latest-state and departure");
  puts("PASS actual flashlight battery-empty edge without input, send retry, dedupe, unequip and world/disconnect reset");
  LifetimeCases();
+ return 0;
 }
 namespace ue_wrap::reflection {void* FindClass(const wchar_t*){return nullptr;}void* FindFunction(void*,const wchar_t*){std::abort();}}
 namespace ue_wrap::engine {bool WriteMainPlayerFlashlight(void*,bool){std::abort();}}

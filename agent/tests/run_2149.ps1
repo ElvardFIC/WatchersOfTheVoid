@@ -14,7 +14,7 @@ try {
   }
   [IO.File]::WriteAllText((Join-Path $output $destination),($bodies -join "`r`n"),[Text.UTF8Encoding]::new($false))
  }
- Extract 'src/votv-coop/src/coop/interactables/atv_sync.cpp' @('IsLocalGrabber','IsHeldForMount','OnMountPre','SenderMaySpeakFor','AcceptIncomingOccupancy') 'mount.h'
+ Extract 'src/votv-coop/src/coop/interactables/atv_sync.cpp' @('IsLocalGrabber','IsHeldForMount','OnMountPre','IsOccupiedByOther') 'mount.h'
  Extract 'src/votv-coop/src/ue_wrap/devices/atv.cpp' @('FindCompanionLocation') 'placement.h'
  & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I agent/tests/atv_stubs /I agent/tests/text_drone_stubs /I agent/tests/stubs /I src/votv-coop/include "/Fo$output/atv.obj" "/Fe$output/atv.exe" agent/tests/atv_2149_test.cpp /link /OPT:REF
  if($LASTEXITCODE -ne 0){throw 'ATV test compile failed'}

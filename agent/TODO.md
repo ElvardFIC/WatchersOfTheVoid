@@ -1,6 +1,6 @@
 # TODO — current priorities
 
-Continuation size: **10 concrete fixes per pass**. Checked items mean implemented
+Continuation size: **75 concrete fixes per pass**. Checked items mean implemented
 code with recorded verification; unchecked items mean remaining implementation
 or a named acceptance test that has not passed. Completed code does not close an
 unreproduced report or an unperformed rendered multiplayer test.
@@ -11,7 +11,725 @@ Owner correction: **keep working on 2161**. A continuation does not change the
 public version or automatically prepare a package. Historical 2162 labels were
 an assistant mistake; their evidence remains historical, not current qualification.
 
-### Implemented — ten console native-operation fixes
+### Prepared package — 0.9.2161 (27 October)
+
+- [x] Run all 121 registered offline validation groups against the current source snapshot.
+- [x] Build/verify Release b2217, protocol 2217 and the production 0.9.2161 label.
+- [x] Prepare and verify the 32-member manager ZIP with the exact qualified DLL.
+- [x] Reject failed/focused/incomplete qualification, stale label and mismatched DLL controls.
+- [x] Refresh package README/RELEASE/CHANGELOG and record archive/DLL checksums.
+- [ ] Rendered manager startup and real-peer gameplay acceptance remain open.
+
+Archive: dist/ElvardFIC-WatchersOfTheVoid-0.9.2161.zip. Offline package evidence:
+build/package-current/verification.json. No version bump, game installation or publication.
+
+### Implemented — TODO Console/events: 75 llama marker/event/Begin fixes (27 October)
+
+Keep 0.9.2161 / b2217 / protocol 2217. Extend the existing PlacedSave path for
+the native llamaSoul save marker; separate canonical presentation from native
+event accounting; recover Sphere/timer initialization suppressed at client Begin.
+No new reliable kind, wire shape, package or release identity.
+
+- [x] 1. Recognize the exact llamaSoul marker class.
+- [x] 2. Validate current marker owner/world identity.
+- [x] 3. Read the native save key.
+- [x] 4. Refuse foreign save-key takeover.
+- [x] 5. Require measured actor_save ancestry.
+- [x] 6. Validate native getData dispatch.
+- [x] 7. Validate native loadData dispatch.
+- [x] 8. Normalize only the exact marker record class.
+- [x] 9. Refuse extra marker record fields.
+- [x] 10. Validate finite location/rotation.
+- [x] 11. Validate marker scale.
+- [x] 12. Verify the native generated key.
+- [x] 13. Recheck source after native callbacks.
+- [x] 14. Preserve the complete native key without truncation.
+- [x] 15. Materialize the exact marker class on clients.
+- [x] 16. Check key vacancy before loading a marker.
+- [x] 17. Validate the spawned actor incarnation.
+- [x] 18. Apply transform explicitly; base loadData restores only key.
+- [x] 19. Verify key readback and ownership after apply.
+- [x] 20. Adopt an existing keyed save-loaded marker.
+- [x] 21. Keep marker creation host-authoritative.
+- [x] 22. Refuse client-authored marker removal.
+- [x] 23. Refuse marker care/harvest/unrelated operations.
+- [x] 24. Discover late marker births through the existing census.
+- [x] 25. Preserve native marker actors across disconnect/rejoin.
+- [x] 26. Stop canonical client Apply from minting native h.
+- [x] 27. Keep canonical light/audio presentation through wire state.
+- [x] 28. Discover local events active before connection.
+- [x] 29. Prepare native accounting before the first canonical apply.
+- [x] 30. Debit only verified matching sender entries.
+- [x] 31. Validate GameMode/class/world ownership.
+- [x] 32. Validate active-event counter type/range.
+- [x] 33. Validate the native sender array.
+- [x] 34. Account for repeated entries of the same sender.
+- [x] 35. Preserve unrelated event senders.
+- [x] 36. Subtract only llama's captured event contribution.
+- [x] 37. Clear native h while preserving adjacent bits.
+- [x] 38. Revalidate immediately before committing accounting changes.
+- [x] 39. Preserve caller output on failed native reads.
+- [x] 40. Retry transient unavailable metadata without changing accounting.
+- [x] 41. Exclude host-owned actors from client cleanup.
+- [x] 42. Never debit an absent sender.
+- [x] 43. Prevent repeated accounting cleanup.
+- [x] 44. Refuse retired actor/class/world owners.
+- [x] 45. Bound weak accounting-guard records.
+- [x] 46. Block a legacy false event debit when its sender is absent.
+- [x] 47. Preserve legitimate new native activation.
+- [x] 48. Preserve registered native event completion.
+- [x] 49. Keep the guard through same-world disconnect with its own script-gate hold.
+- [x] 50. Retire dead/world-replaced guards and skip duplicate generic event replay.
+- [x] 51. Track only suppressed original-true client Begins.
+- [x] 52. Require no pre-existing timer before new-Begin recovery.
+- [x] 53. Leave existing handles to the prior pause-lease module.
+- [x] 54. Capture the original Sphere collision setting.
+- [x] 55. Require the actual Sphere component type.
+- [x] 56. Validate source-to-Sphere fields.
+- [x] 57. Validate GetCollisionEnabled and its byte return.
+- [x] 58. Preserve output after failed/retired preparation.
+- [x] 59. Bind recovery to actor/class/world incarnation.
+- [x] 60. Bind recovery to the Sphere/component-class incarnation.
+- [x] 61. Validate TimerHandle layout even for a zero handle.
+- [x] 62. Pair PRE/POST/cancel with exact invocation ownership.
+- [x] 63. Reserve before callback-capable native preparation.
+- [x] 64. Commit only a successful original-true park and admitted base init.
+- [x] 65. Discard canceled unmodified PRE without synthesizing work.
+- [x] 66. Wait for the original Begin stack to finish.
+- [x] 67. Restore collision only while its disabled state remains ours.
+- [x] 68. Refuse a replaced Sphere.
+- [x] 69. Never replace an externally created nonzero timer.
+- [x] 70. Invoke only native graph108, never base Begin1146.
+- [x] 71. Defer rearming until SP/host authority.
+- [x] 72. Admit native timer creation once, including uncertain completion.
+- [x] 73. Read back the actual native handle after graph admission.
+- [x] 74. Bound/deduplicate and retire Begin recovery records.
+- [x] 75. Retain safe pre-admission restoration refusals for paced retry.
+
+PASS 75 new numbered actual-code lifecycle groups: 25 marker wrapper/PlacedSave
+cases, 25 event wrapper/controller cases and 25 Begin wrapper/controller cases.
+Root integration also checks accounting readiness before canonical Apply and
+refused Begin preparation before base init. Current combined qualification is
+recorded in TESTLOG; engine/codec/registry/transport boundaries are doubled.
+- [ ] Accept rendered native save/reload, same-world teardown, event/audio timing,
+  marker adoption and timer rearm. Canonical visuals do not synthesize native
+  host activeEvents contributions on clients. An old/new latent continuation on
+  the same actor has no causal nonce; absent-sender protection does not prove
+  phase reconstruction. Unknown metadata cannot prove absent membership, so the
+  guard retains native execution. Missing POST permits collision cleanup only;
+  unknown admitted timer creation is never replayed. Safe cleanup refusals need
+  a later Install/Tick; there is no idle SP retry pump. Full regression/package
+  and the wider Console/events category remain open.
+
+### Earlier implementation — TODO Console/events: 75 llama timer/delivery/completion fixes (27 October)
+
+Keep 0.9.2161 / b2217 / protocol 2217. Continue the llama follow-ups with three
+separate owners: native pre-session timer leases, canonical state/cue delivery
+and completion/motion after launch admission. No new network kind or package.
+
+- [x] 1. Discover client llama timers already running before connection.
+- [x] 2. Repeat the timer census for late/save-loaded actors.
+- [x] 3. Require the timer owner's actual llama class and current world.
+- [x] 4. Exclude hand-axis actors from timer parking.
+- [x] 5. Bind timer parking to the source actor incarnation.
+- [x] 6. Bind timer parking to the source class incarnation.
+- [x] 7. Validate the timer property's type before parking.
+- [x] 8. Validate the inner TimerHandle type and size.
+- [x] 9. Refuse zero or malformed timer handles.
+- [x] 10. Confirm the native timer exists before mutation.
+- [x] 11. Distinguish active timers from paused timers.
+- [x] 12. Leave timers already paused before coop untouched.
+- [x] 13. Validate pause/unpause/query function bindings.
+- [x] 14. Validate their exact parameter spans.
+- [x] 15. Pause without clearing or rearming the native timer.
+- [x] 16. Confirm the actual paused result.
+- [x] 17. Retain uncertain dispatched pause ownership for reconciliation.
+- [x] 18. Bind timer leases to session/start/role/world.
+- [x] 19. Reserve timer ownership before callbacks.
+- [x] 20. Refuse nested timer acquisition/restoration.
+- [x] 21. Bound and deduplicate native timer leases.
+- [x] 22. Preserve the native interval's remaining phase through pause/unpause.
+- [x] 23. Resume only the captured timer parked by this controller.
+- [x] 24. Leave replacement or already stopped timers untouched.
+- [x] 25. Restore timer leases on disconnect, role change and session restart.
+- [x] 26. Preserve a still-live cue through same-active heartbeat.
+- [x] 27. Preserve the original cue timestamp through heartbeat.
+- [x] 28. Preserve quiet recipient intent through same-pulse heartbeat.
+- [x] 29. Track each recipient's already delivered sound pulse.
+- [x] 30. Prevent newer same-pulse packets from extending local cue expiry.
+- [x] 31. Prevent same-pulse sound resurrection after a quiet snapshot.
+- [x] 32. Keep packet ordering after client state expiry.
+- [x] 33. Keep heard-pulse history after client state expiry.
+- [x] 34. Reconcile clock rollback before installing a newly received cue.
+- [x] 35. Saturate receive-expiry arithmetic.
+- [x] 36. Make client poll pacing safe across unsigned clock overflow.
+- [x] 37. Resolve the current canonical tracker actor for each apply.
+- [x] 38. Recheck announced-world membership inside apply ownership.
+- [x] 39. Recheck recipient identity/connection after source callbacks before send.
+- [x] 40. Recheck recipient readiness immediately before send.
+- [x] 41. Recheck state/debt revision after nested source sampling or requeue.
+- [x] 42. Rotate source send order under the shared budget.
+- [x] 43. Rotate recipient send order.
+- [x] 44. Bound per-row send attempts to prevent refusal fanout starvation.
+- [x] 45. Restore parked Begin flags when an invocation disappears.
+- [x] 46. Restore parked Begin flags at disconnect.
+- [x] 47. Restore a locally held park token after its capture disappears in a callback.
+- [x] 48. Restore in matching POST even if the function token retired.
+- [x] 49. Retain refused Begin-flag restoration for retry.
+- [x] 50. Restore the old role's parked flag before a same-world role/session change.
+- [x] 51. Separate target admission from source-owned launch completion.
+- [x] 52. Finish an admitted launch after the selected peer disconnects.
+- [x] 53. Finish an admitted launch after the selected target moves.
+- [x] 54. Finish an admitted launch after the selected body is replaced.
+- [x] 55. Stop completion when the source actor/class/world retires.
+- [x] 56. Recheck source position after rotation before clearing the timer.
+- [x] 57. Dispatch the native tail once after an uncertain velocity attempt.
+- [x] 58. Keep tail ownership independent of retired velocity-function binding.
+- [x] 59. Queue motion admission for remote jumps.
+- [x] 60. Queue motion admission for native local-host jumps.
+- [x] 61. Confirm Coast admission through IsDriven readback.
+- [x] 62. Retry motion after late prop-element enrollment.
+- [x] 63. Pace retained motion retries.
+- [x] 64. Bound pending motion rows.
+- [x] 65. Cancel motion on source/key/class retirement.
+- [x] 66. Retire motion on session/start/world replacement.
+- [x] 67. Yield motion to a newer player-hand claim.
+- [x] 68. Yield launch/motion ownership to Kerfur.
+- [x] 69. Cancel pending motion on explicit reset.
+- [x] 70. Bound motion lifetime and handle clock rollback.
+- [x] 71. Release source capacity after failed/unarmed capture.
+- [x] 72. Preserve consumed-timer latches while pruning idle poll records.
+- [x] 73. Admit a newly armed llama after stale poll-record pressure.
+- [x] 74. Reserve queued motion before callback-capable Coast admission.
+- [x] 75. Keep newer motion debt through older callback completion.
+
+PASS 75 new numbered actual-code recovery groups: 25 timer wrapper/controller/
+ParamFrame cases, 25 state/Begin cases and 25 launch/motion cases. The earlier
+100 llama groups also pass. Engine/reflection/registry/transport/object slots
+and clocks are doubled; current combined Release qualification is in TESTLOG.
+- [ ] Accept rendered same-world disconnect/rejoin, preserved timer phase,
+  heartbeat sound/quiet joins, physical motion after late enrollment and native
+  tail completion. Marker/save/event-count lifecycle and restoration of
+  never-created Begin timers/Sphere collision remain separate gaps. An external
+  pause on an identical already-paused handle is not causally distinguishable.
+  Refused timer cleanup is retained for a later Install/Tick, without an idle SP
+  retry pump. Ordering/heard tombstones retain at most 256 keys; oldest expired
+  rows may be evicted. Full regression/package and the wider category remain open.
+
+### Earlier implementation — TODO Console/events: 75 remote-player llama trigger fixes (27 October)
+
+Owner changes continuation size to **75**; AGENTS and agent/README now match.
+Keep 0.9.2161 / b2217 / protocol 2217. Continue the existing llama subtask rather
+than closing the wider Console/events category. No new network kind or package.
+
+- [x] 1. Restrict remote target selection to the host.
+- [x] 2. Stop selection outside a running connected session.
+- [x] 3. Require the target's world-ready slot.
+- [x] 4. Require the target's transport-ready slot.
+- [x] 5. Select registered players rather than class-scanned actors.
+- [x] 6. Refuse dead remote players.
+- [x] 7. Wait for the target's first network pose.
+- [x] 8. Refuse remote ragdoll display bodies.
+- [x] 9. Confirm proximity using native Pawn overlap.
+- [x] 10. Keep local-host triggering native, but require its own body in that overlap; prevent a remote overlap from launching toward camera zero.
+- [x] 11. Refuse unrelated overlapping Pawns.
+- [x] 12. Validate finite target body coordinates.
+- [x] 13. Validate finite target eye coordinates.
+- [x] 14. Bound the eye/body separation to 600 cm.
+- [x] 15. Choose the nearest visible remote eye.
+- [x] 16. Break equal-distance ties by slot.
+- [x] 17. Trace native static/dynamic occlusion from the Audio origin.
+- [x] 18. Refuse activation when the trace is unavailable.
+- [x] 19. Try another target when a nearer player is obstructed.
+- [x] 20. Bind selection to the roster person number.
+- [x] 21. Bind selection to the transport generation.
+- [x] 22. Hold the target body's slot/serial incarnation.
+- [x] 23. Hold the target body's class incarnation.
+- [x] 24. Recheck target membership/life/pose after native callbacks; refuse movement beyond 1 cm during admission.
+- [x] 25. Exclude llama owned by a hand stream or hand axis.
+- [x] 26. Require a current prop_llama class.
+- [x] 27. Refuse an already active h state.
+- [x] 28. Require the native yumpskare setting.
+- [x] 29. Require a StructProperty timer field.
+- [x] 30. Require the actual eight-byte TimerHandle type.
+- [x] 31. Refuse zero timer handles.
+- [x] 32. Confirm native timer activity, including before launch.
+- [x] 33. Require a typed current SphereComponent.
+- [x] 34. Validate the float radius and retain its value through admission.
+- [x] 35. Read the actual world-space sphere center.
+- [x] 36. Read the actual Audio world origin for visibility.
+- [x] 37. Require a typed current StaticMeshComponent.
+- [x] 38. Require active physics simulation, including before launch.
+- [x] 39. Retain each source-to-component binding.
+- [x] 40. Retain the source world pointer and generation.
+- [x] 41. Validate native query functions and exact nonoverlapping parameter spans.
+- [x] 42. Use native Pawn query type byte 2.
+- [x] 43. Remove the mainPlayer-only native class filter for registered cooperative bodies.
+- [x] 44. Own overlap input arrays across the native call.
+- [x] 45. Free engine-owned overlap output after success.
+- [x] 46. Free engine-owned overlap output after call refusal.
+- [x] 47. Validate overlap counts/capacity/null-data shape before access.
+- [x] 48. Deduplicate overlapping actor incarnations.
+- [x] 49. Bound selection to 31 registered candidates; reject native arrays beyond 65536 rows without truncating away players behind unrelated Pawns.
+- [x] 50. Preserve caller output after a failed or retired native snapshot.
+- [x] 51. Launch toward the selected eye rather than host camera zero.
+- [x] 52. Preserve the native cross-product rotation axes.
+- [x] 53. Refuse a degenerate horizontal launch direction.
+- [x] 54. Validate the native calculated rotator before mutation.
+- [x] 55. Preserve native velocity multiplication by three.
+- [x] 56. Preserve native vertical velocity addition of 100.
+- [x] 57. Refuse non-finite launch velocity and intermediate axes.
+- [x] 58. Prepare all required launch functions/frames before changing physics; recheck source points after callback-capable preparation.
+- [x] 59. Validate rotation parameters and disable physics teleport as natively authored.
+- [x] 60. Honor the native rotation call's boolean refusal.
+- [x] 61. Clear the captured native timer before the impulse.
+- [x] 62. Copy back the cleared handle only while the captured timer still owns that field.
+- [x] 63. Replace velocity rather than add to current velocity.
+- [x] 64. Preserve native BoneName None.
+- [x] 65. Run native graph tail 212 for Audio, Sphere collision, h, light, event accounting and the three-second continuation.
+- [x] 66. Publish remote activation through existing LlamaState and once-only client cues.
+- [x] 67. Open the existing host prop coasting stream after remote launch admission.
+- [x] 68. Open that motion stream after the native local-host jump as well.
+- [x] 69. Consume admitted/uncertain one-shot launches without another impulse.
+- [x] 70. Retry preparation refusals on a later poll.
+- [x] 71. Recognize a replacement native timer as a new activation.
+- [x] 72. Reserve admission before callbacks and refuse nested selection/native jump checks.
+- [x] 73. Refuse queued jump/check delegates from a consumed timer.
+- [x] 74. Bound activation records to 256 and retire them on source/session/start/world replacement.
+- [x] 75. Keep the native 500 ms poll cadence and recover clock rollback.
+
+Verification: 75 numbered focused cases across actual target controller, native
+wrapper/ParamFrame and state-controller integration. Engine/registry/transport/
+object slots and clock boundaries are doubled. Wider qualification is in TESTLOG.
+- [ ] Accept rendered remote/local triggering, direction, physics streaming,
+  sound/light, equal-distance/obstructed players, held props, join/reconnect and
+  save/reload with identical DLLs. Marker/save/event-count lifecycle and
+  pre-session timer restoration remain open. Native effects already admitted
+  cannot be rolled back; uncertain completion consumes that timer's one-shot.
+  Full regression/package and the wider Console/events category remain open.
+
+### Earlier implementation — TODO Console/events: 25 llama jump/light/audio fixes (26 October)
+
+Keep 0.9.2161 / b2217 / protocol 2217. Follow the llama part of Console/events.
+Use the existing prop lane for motion and a dedicated host-only LlamaState (253)
+for h/light state and an expiring sound edge. Development DLLs must match.
+
+- [x] Sample the canonical llama event state on the host.
+- [x] Refuse independent client jump/check/timer-resume and destroy bookkeeping bodies.
+- [x] Preserve base prop BeginPlay while parking its timer setting only for that invocation; restore the original setting afterward.
+- [x] Bind sampling/application to current world/key and exclude hand-axis actors.
+- [x] Validate the graph EntryPoint field, exact size/span and current function.
+- [x] Capture host jump PRE/POST with exact invocation, frame, function, source and key ownership.
+- [x] Consume a dispatched sound once, including uncertain native completion.
+- [x] Apply the canonical h bit and PointLight visibility without native jump replay.
+- [x] Preserve neighboring h/yumpskare flag bits and original timer-setting value.
+- [x] Require typed current PointLightComponent and AudioComponent fields.
+- [x] Validate effect-function identities and exact visibility/Activate parameters.
+- [x] Hold source/component/class bindings around native effects and callbacks.
+- [x] Keep failed native state reads from overwriting caller output.
+- [x] Bound/deduplicate collected actors, keyed rows and pending invocation captures.
+- [x] Retire state on same-pointer session restart, running/role/link or host-connection replacement.
+- [x] Retire state on world-pointer/generation/readiness changes.
+- [x] Preserve newer nested source samples with per-key sampling revisions.
+- [x] Own received bytes and validate host sender, key, booleans and lifetime shape.
+- [x] Bind outbound debt to recipient person, connection and join revision.
+- [x] Retain debt through temporary recipient world/lane readiness loss.
+- [x] Own each outgoing packet and preserve requeued debt across send callbacks.
+- [x] Retain client state while its announced world actor/components become ready.
+- [x] Handle sequence/pulse wrap and reject stale/duplicate packets or repeated cues.
+- [x] Bound sound debt with remaining lifetime, clock-rollback retirement and quiet join seeds.
+- [x] Wire host authorship, normal lane, dispatcher and all session lifecycle callbacks.
+
+PASS 17 actual-controller groups at 32 peers and eight actual-wrapper/ParamFrame
+groups; all 25 item numbers are covered. Cooked contracts verify native graph,
+base initialization, jump/physics, light/audio, event-count and console dependencies.
+Current combined qualification is recorded in TESTLOG.
+- [ ] Accept rendered host/client llama jump and ordinary prop motion, sound/light,
+  late join/reconnect, held-item transitions and save/world reload. The llamaSoul
+  marker/save/event-count lifecycle and restoration of pre-session timers remain
+  open. Remote-player trigger selection is implemented by the 27 October batch above.
+  Lifetime bounds are local send/receive/admission bounds, not a synchronized
+  audio clock or proof of maximum reliable-transport delay. Full regression/package
+  and the wider Console/events category remain open.
+
+### Earlier implementation — TODO Console/events: 25 Rufus/thiccfus birth and pose fixes (26 October)
+
+Keep 0.9.2161 / b2217 / protocol 2217. Follow the first open Console/events family
+with verified native rufus_C -> Character, thiccfus_C -> rufus_C, and a separate
+prop_thiccfus_C plush. This is birth/pose and mirror authority, not complete gameplay.
+
+- [x] Add rufus_C as a late NPC base without delaying lane installation.
+- [x] Recognize inherited thiccfus_C on first load while excluding prop_thiccfus_C.
+- [x] Catch console deferred births using the exact permitted output classes.
+- [x] Hold queued output object/class slot serials rather than bare index liveness.
+- [x] Bind queued births to session/start serial, host/running state and world identity.
+- [x] Deduplicate pending births and remove retired debt before consuming queue capacity.
+- [x] Validate finite location/rotation/scale and current actor before enrollment.
+- [x] Stream the actual Rufus mesh world yaw through the existing body-yaw field.
+- [x] Apply the host mesh yaw on Rufus/thiccfus mirrors.
+- [x] Refuse mirror BeginPlay's independent AI and per-player HUD creation.
+- [x] Refuse mirror Tick's local-player repositioning and camera-dependent decisions.
+- [x] Refuse mirror AI delegates and latent graph continuations.
+- [x] Refuse mirror-local damage and explosion gameplay execution.
+- [x] Refuse mirror corpse/plush child production and destructive gameplay branches.
+- [x] Keep unmarked host/local actors' native graph behavior unchanged.
+- [x] Require a live class-scoped graph guard before BeginDeferred and FinishSpawning.
+- [x] Require guard admission before adoption; undo newly added marks after refused binding.
+- [x] Restore native Mesh -> SpringArm KeepRelative attachment without HUD/AI replay.
+- [x] Hold actor, mesh, arm, AnimBP and class bindings throughout preparation.
+- [x] Validate attachment function identity and every parameter/return span.
+- [x] Honor attachment refusal and retry presentation without repeating known attachment.
+- [x] Set the matching animation instance's native pawn reference to the mirror actor.
+- [x] Retry missing/foreign AnimBP preparation via pose dirtiness, even while stationary.
+- [x] Reject failed/non-finite/replaced yaw reads without overwriting the caller's output.
+- [x] Preserve mesh pitch/roll and honor checked rotation-write failures.
+
+PASS 25 focused actual-wrapper/catch/drain/enroll/adoption/ParamFrame groups, current
+cooked contracts and actual NPC pose retry regression. Current qualification is in
+TESTLOG. Engine, registry, transport and script-gate dispatch boundaries are doubled.
+- [ ] Accept rendered console birth, both models, motion/animation/body yaw, join/
+  rejoin and destruction. Cross-player targeting/grab outcomes, audio/HUD/event
+  presentation, corpse mesh/loot and damage/explosion feedback transport remain open.
+  Adoption does not undo effects that ran before marking. Native scale reads retain
+  the engine helper's unit-scale failure fallback. Full regression/package remain open.
+
+### Earlier implementation — TODO Console/events: 25 Maxwell native playback fixes (26 October)
+
+Follow the open Maxwell-phase subtask in Console/events. Keep 0.9.2161 / b2217 /
+protocol 2217. These boundaries protect native music/squeak presentation; they do
+not complete Rufus/thiccfus, llama, grunt AI/damage/effects or rendered acceptance.
+
+- [x] Refuse null/zero-capacity collection buffers and respect their bounds.
+- [x] Retire collected results when the world pointer/generation/readiness changes.
+- [x] Deduplicate the same toy returned by several indexed variant classes.
+- [x] Hold the toy's exact current class through sampling and native operations.
+- [x] Require a current AudioComponent before reading or dispatching toy audio.
+- [x] Retain the exact toy-field/component binding across native queries.
+- [x] Revalidate isUsed's class, offset and mask while preserving adjacent bits.
+- [x] Publish music state only when used/volume/pitch remain coherent after IsPlaying.
+- [x] Reject malformed present pitch instead of silently substituting a guessed rate.
+- [x] Leave the caller's squeak-pitch output intact after failed or retired reads.
+- [x] Revalidate the exact Sound field/component/resource relationship for clock reads.
+- [x] Hold SoundWave object/class incarnations through clock preparation and readback.
+- [x] Read duration, looping and pitch coherently, including callback-side changes.
+- [x] Validate current IsPlaying binding and its exact one-byte return before dispatch.
+- [x] Copy incoming State before native callbacks can overwrite caller-owned data.
+- [x] Validate complete phase/rate/volume shape before changing native fields.
+- [x] Validate volume function identity and exact float parameter around dispatch.
+- [x] Validate pitch function identity and exact float parameter around dispatch.
+- [x] Validate Play identity and exact StartTime parameter before a seek/start.
+- [x] Require unchanged duration/rate/resource before and after native phase seeking.
+- [x] Bind Stop to the captured function, component, class and world.
+- [x] Bind touch to the captured toy/function and refuse stale completion.
+- [x] Prepare ToggleActive before touch and revalidate that exact binding afterward.
+- [x] Guard squeak pitch/Activate preparation while consuming an admitted one-shot once.
+- [x] Preserve nested newer Playback state with invocation revisions.
+
+PASS 25 actual-wrapper/real-ParamFrame groups in run_maxwell_native, plus the
+existing toy music/phase/lifetime regression. Current Release and combined checks
+are recorded in TESTLOG. Engine/reflection and object-slot boundaries are doubled.
+- [ ] Accept rendered host/client Maxwell/variant phase, native schemas, pause/
+  restart, world reload and late-join timing with identical DLLs. Optional phase
+  still requires a known looping SoundWave; no seek is guessed for other sources.
+  Already admitted native effects cannot be rolled back. Full regression/package
+  and the broader Console/events category remain open.
+
+### Earlier implementation — TODO Console/events: 25 Madness recovery fixes (26 October)
+
+Follow the first open Remaining implementation category, Console/events,
+specifically its named Madness playback-recovery subtask. Keep 0.9.2161 / b2217 /
+protocol 2217. This does not close Rufus/thiccfus, llama or grunt AI/effects.
+
+- [x] Retire Madness state on a same-address session restart using the start serial.
+- [x] Bind state to running/connected role, world pointer and generation; clear retired presentation.
+- [x] Recover polling and age compensation after clock rollback without unsigned underflow.
+- [x] Validate coherent active/HUD/music/score/time snapshots before host publication.
+- [x] Hold the master and its class through sampling; re-resolve a master whose class binding retired.
+- [x] Apply network age/transit compensation only while active music is playing; bound extrapolation.
+- [x] Capture recipient person and transport generation when queuing a send.
+- [x] Retain send debt through temporary world/lane readiness loss.
+- [x] Cancel departed/replaced/unknown-recipient debt before sending.
+- [x] Own a separate outgoing packet for each recipient through callback-capable transport.
+- [x] Preserve newer same-person join debt using per-recipient revisions.
+- [x] Finish retained cleanup before starting a different event; keep partial current-event presentation across preparation retries.
+- [x] Read fields through current object/class/layout bindings and support the actual master lineage.
+- [x] Retain exact master-to-HUD and count-source identity through native reads.
+- [x] Continue reading active HUD/score when the known music field is temporarily null.
+- [x] Hold IsPlaying/age function identity and validate exact return spans before dispatch/readback.
+- [x] Validate widget factory/CDO/class and the typed returned widget before adoption.
+- [x] Retain a created widget through viewport refusal and avoid repeated AddToViewport after success.
+- [x] Validate the returned audio component; recover stopped/dead audio without restarting unchanged live music.
+- [x] Hold original world/context/factory dependencies through widget/audio preparation and completion.
+- [x] Refuse malformed factory-return layouts before allocation; check exact GetRaw results and retain typed uncertain completions.
+- [x] Retain text_count/class binding and write matching text/count directly, without addCount's enemy-spawn side effect.
+- [x] Stop/remove only the captured owned component and class incarnation.
+- [x] Keep fresh nested View ownership through older Apply/Clear completion using monotonic revisions.
+- [x] Retain refused Stop/RemoveFromParent cleanup for a later retry while the controller owns the View.
+
+PASS 25 focused runtime groups using actual controller/wrapper/ParamFrame,
+previous console/Madness regressions and cooked native dependencies. Combined
+qualification and hashes are recorded in TESTLOG.
+- [ ] Rendered host/client Madness music seek, pause/resume, HUD/score, late join,
+  reconnect, event replacement and viewport readiness. Exact audio sample timing,
+  enemy/variant AI, damage and effects remain unverified. Unknown native outcomes
+  cannot be rolled back; failed cleanup after final controller teardown has no
+  retained owner. The broader Console/events category, full regression and package
+  qualification remain open.
+
+### Earlier implementation — 25 host companion lifecycle fixes (26 October)
+
+Keep 0.9.2161 / b2217 / protocol 2217. The original one-ATV-for-everyone report
+remains open; the host controller now uses a private checked lifecycle module.
+
+- [x] Reset companion state on world pointer/generation change.
+- [x] Bind creation/publication to the running connected host session and start serial; exclude old-session disconnect cleanup.
+- [x] Keep minted actor/class identity in checked object references.
+- [x] Keep settling source identity by slot serial instead of raw pointer equality.
+- [x] Refuse non-finite source position and all three rotation axes.
+- [x] Restart the two-second stillness window after movement exceeding 2 cm.
+- [x] Restart stillness after pitch/yaw/roll changes exceeding one degree, using wrapped angles.
+- [x] Recover clock rollback and support a stillness window beginning at time zero.
+- [x] Reset stillness on unknown, zero, two or more live ATVs.
+- [x] Require a new stillness window after riding or carrying the source.
+- [x] Recheck source identity and final pose after parking/count/occupancy preparation; snapshot candidate tokens before native reads.
+- [x] Recount the world after parking search and before minting.
+- [x] Scope parking-search and announcement timestamps to the current lifecycle.
+- [x] Permit the sole persisted coopatv-key rig to serve as a source.
+- [x] Give a second saved rig five seconds to appear without letting stale save counts stall forever.
+- [x] Prevent nested TrySpawnCompanion from creating a second simultaneous candidate.
+- [x] Validate the returned rig's class/incarnation/world and leave foreign returns untouched.
+- [x] Remove a third candidate without setting a permanent spawn-success latch; allow a later one-ATV world to retry.
+- [x] Retain a refused live-controller destroy and retry cleanup without minting another body.
+- [x] Remove only a still-matching owned index row after successful destruction.
+- [x] Never send a blanket key destroy for a foreign or missing index row.
+- [x] Validate bounded ASCII save keys and exact readback while holding the minted actor through publication.
+- [x] Preserve existing seat/syncer/clock state when publishing an already indexed instance.
+- [x] Rebind only an owned source row into an available target, recheck native completion and move the freshest index state/world stamp.
+- [x] Retain refused spawn-announcement debt and retry with a 250 ms ceiling while preserving newer scope/state.
+
+PASS 25 real-lifecycle groups with engine/count/save/transport boundaries doubled;
+the production ATV controller compiles. Combined source/DLL qualification is in
+TESTLOG. No rendered or save-file acceptance is implied.
+- [ ] Reproduce the original garage failure on host and clients, verify two rigs,
+  late saved-body arrival, save/reload, reconnect, no third rig and exact garage
+  parking. Existing native key reservation still refuses occupied save names;
+  stale save records are never overwritten. Failed disconnect cleanup and already
+  accepted native effects are not rolled back/retried after teardown. Full
+  regression/package qualification remain open.
+
+### Earlier implementation — 25 seat presentation fixes (26 October)
+
+Owner changes continuation size to **25 fixes**; AGENTS and agent/README now
+match. Keep 0.9.2161 / b2217 / protocol 2217. No package/version change.
+
+- [x] Defer NoBody/NoTarget chair admission and apply when the first posed sender/target becomes readable.
+- [x] Bound body anchors to 450 cm of the named chair using overflow-safe distance arithmetic.
+- [x] Retain exact current-world chair ownership through reads and authorization.
+- [x] Hold local pawn/class identity and confirm an unchanged local seat across occupancy reads.
+- [x] Restore tracked local/remote mesh shifts on scope retirement; preserve a fresh nested session during cleanup.
+- [x] Recover a replaced AnimBP base class through the current object index instead of a raw static latch.
+- [x] Read/write isOnAtv with its reflected bool mask, preserving adjacent bits.
+- [x] Write useLegIK through its separate reflected bool mask.
+- [x] Resolve a current mesh setter on the component class and require every frame argument before dispatch.
+- [x] Reject non-finite model dimensions, forward vectors and shifts; use a bounded capsule-height fallback.
+- [x] Capture a finite authored mesh base only while component/class/parent identity remains current.
+- [x] Transform shifts through the complete parent rotation and retain vertical forward motion on pitched seats.
+- [x] Retain authored bases across refused/partial writes and retry restoration without erasing nested shifts.
+- [x] Expand mesh-shift capacity from 16 to all 32 player bodies.
+- [x] Follow streamed seated body yaw directly, bypassing standing head-lead hysteresis.
+- [x] Refresh head look from the final seated body/head location after chair or ATV placement.
+- [x] Refresh flashlight world aim after seat tilt/rotation, retaining the current pawn/arm binding.
+- [x] Remove the raw flashlight-rotation fallback; recover checked world-rotation functions and require all arguments.
+- [x] Hold ATV actor/class/world identity through driver-pose preparation and completion.
+- [x] Retain the exact ATV seat component/class binding through both transform reads and apply.
+- [x] Require successful finite position/rotation reads for all six driver-pose fields.
+- [x] Refuse fallback driver placement after a failed ATV rotation read.
+- [x] Validate the finite, nonzero bounded fallback forward vector before calculating the seat point.
+- [x] Stop subsequent driver writes on native refusal, unknown/replaced person, transport/slot/pawn or scope change.
+- [x] Cancel the old chair anchor when the authoritative ATV seat table takes ownership of that player's placement.
+
+PASS 25 new groups with production controller/wrapper/ParamFrame and extracted
+view/rotation methods, 32-player mesh-capacity and driver transition cases.
+Compiled removal controls and combined qualification are recorded in TESTLOG.
+- [ ] Rendered host/client chair/ATV alignment on ordinary/custom models,
+  head/flashlight direction, banked/pitched vehicles, standing/IK recovery,
+  moving chairs, late joins/reconnect and 32-player load. Live reflection schemas
+  and engine-native completion remain unmeasured. The zero-return relative-location
+  getter cannot distinguish a failed read from an authored zero. Accepted native
+  effects cannot be rolled back. Original second ATV reproduction, full regression
+  and package qualification remain open.
+
+### Earlier implementation — ten chair/body rotation fixes (26 October)
+
+Keep 0.9.2161 / b2217 / protocol 2217. Owner explicitly requests synchronised
+rotation of the player seated in a chair. No wire layout or version changes.
+
+- [x] Send small body translations/turns at up to 20 Hz: replace the 40 cm movement threshold with 1 cm and use a 0.5 degree turn threshold.
+- [x] Detect pitch/yaw/roll changes of the chair, including wrapped angles; retain the one-second heartbeat and refused-send retry.
+- [x] Interpolate body position/yaw and chair angles together over 50 ms using shortest arcs; rebase continuously and apply after prop presentation.
+- [x] Treat OFF as anchor cancellation only; never rotate the chair from a stand-up packet.
+- [x] Validate the named chair, exact key, host reach and local occupancy before admitting a body anchor.
+- [x] Retain a pending named chair and retry lookup before applying the body; wait for a missing puppet.
+- [x] Retire anchors across world/session/role, roster-person or transport replacement, dead/reused chair and heartbeat expiry.
+- [x] Own each outgoing/incoming packet and validate finite pose, bounded ASCII key, pawn/chair/class incarnation and exact current seat during capture.
+- [x] Release chair placement through stand/laptop/sleep/ragdoll/death transitions; share the actual RemotePlayer sitting predicate with presentation.
+- [x] Preserve fresh state through old send completion: check revision/session/pawn/seat/class and suppress nested Tick drains.
+
+PASS ten current-controller groups at 32 slots and ten compiled removal controls.
+The real RemotePlayer IsSitting predicate is extracted unchanged. Current cooked
+assets confirm parent-chair sittingOn attachment and clearing on unsit. Combined
+qualification and hashes are recorded in TESTLOG; engine/transport boundaries
+remain doubled in the controller fixture.
+- [ ] Rendered host/client chair spinning, model/mesh/head/flashlight alignment,
+  late join/reconnect, moving chairs, normal stand/laptop/sleep/ragdoll transitions
+  and ATV driver/passenger behavior. Pre-pose admission now waits in the latest
+  continuation instead of discarding the packet. Accepted native writes
+  and sends cannot be rolled back. Original missing second ATV, full regression
+  and package qualification remain open.
+
+### Earlier implementation — ten ATV spawn/placement fixes (26 October)
+
+Keep 0.9.2161 / b2217 / protocol 2217. The owner's report remains that only one
+ATV appears for everyone; these code checks do not establish its live cause.
+
+- [x] Reject non-finite spawn location/rotation before deferred actor creation.
+- [x] Resolve a fresh checked GameplayStatics class/CDO/begin/finish tuple for each spawn; detect retired or replaced bindings.
+- [x] Freeze requested class/key/pose and hold class/base/key-offset identity through FName conversion and completion.
+- [x] Fence deferred spawning by the captured world generation, world context and context class.
+- [x] Validate the deferred return's class/world before writing its raw key; leave foreign returns untouched.
+- [x] Hold deferred actor/class incarnation through finish preparation, dispatch and completion.
+- [x] Clean up only the captured actor incarnation/class in the original world/generation; preserve replacements.
+- [x] Fence TeleportRig by finite pose and current actor/class/function/world through preparation and completion.
+- [x] Refuse publication and clean up an owned rig when its whole-rig teleport fails.
+- [x] Hold source ATV identity through parking queries, stop immediately on retirement and refuse a changed source pose without publishing output.
+
+PASS ten spawn/parking fixture groups and ten compiled removal controls, spawn
+argument/finish recovery and existing mount/wall/pit/tilt regressions. Current
+combined source/DLL qualification and exact hashes are recorded in TESTLOG.
+- [ ] Reproduce host/client garage creation in the game: confirm two complete
+  rigs, first join, reconnect/reload, riding/grabbing and preserved save behavior.
+  Live reflection schemas, real garage traces and rendered wheel placement remain
+  unverified. Unknown deferred returns cannot be identified or safely rolled back;
+  already dispatched effects cannot be undone. Full regression/package remain open.
+
+### Earlier implementation — ten lamp/ambient/switch-audio fixes (26 October)
+
+Keep 0.9.2161 / b2217 / protocol 2217. Continue the remaining native presentation
+boundaries from the previous lighting audit.
+
+- [x] Capture lamp actor/class/function/world identity before frame preparation; reject stale preparation/completion.
+- [x] Capture ambient actor/class/function/world identity before component/frame preparation.
+- [x] Hold exact bottomLight/component/class binding through reads, apply preparation and completion; leave failed read output unchanged.
+- [x] Recover replaced sound-function metadata and verify the exact hooked callee with a scoped native-hook accessor.
+- [x] Bound cue/volume/pitch parameter spans before installing or reading the sound hook.
+- [x] Copy cue/volume/pitch before callback-capable engine work.
+- [x] Replace the raw attenuation latch with checked resource/class references and recover replacement/readiness loss.
+- [x] Reject non-finite/invalid audio multipliers and non-finite positions before spatial playback.
+- [x] Retain replay-source, cue, attenuation, function and world currency through location preparation.
+- [x] Guard attenuation construction against reentry and restore exact enclosing replay identity after nested use.
+
+PASS ten new presentation groups and ten compiled removal controls, previous ten
+native-lighting groups/controls, actual native-hook PRE/POST callee/cleanup tests,
+and lamp/ambient/cooking regression. The current suite includes
+run_light_presentation. Combined qualification and exact hashes are in TESTLOG.
+- [ ] Rendered multiplayer lamp/ambient/flicker/switch audio and joins/reloads;
+  original garage-companion reproduction, full regression and package qualification.
+  Inner engine audio-dispatch preparation/schema is not established by these
+  boundary tests. Native side effects already dispatched cannot be rolled back.
+
+### Earlier implementation — ten native lighting fixes (26 October)
+
+Development stays 0.9.2161 / b2217 / protocol 2217. Continue the lighting audit
+through the real root/switch wrapper and ParamFrame, without changing versions.
+
+- [x] Re-resolve light-root metadata after partial load, class/function replacement or serial reuse; require runTrigger before readiness.
+- [x] Re-resolve switch metadata after class/use-function replacement or serial reuse.
+- [x] Refuse missing root Key/live-state fields instead of substituting fixed offsets.
+- [x] Refuse missing switch Key/A/objects fields instead of substituting fixed offsets.
+- [x] Read the root's live isActive through its reflected bool byte/mask.
+- [x] Read the switch's A through its reflected bool byte/mask.
+- [x] Read the group's active breaker through its own bool byte/mask, separate from live state.
+- [x] Validate linked-array counts/capacity and retain source/header/entry/target identity during SwitchRoot lookup.
+- [x] Check all runTrigger/breaker arguments and hold actor/class/function/world/layout through native group calls.
+- [x] Hold switch/class/function/world/layout through replay-frame and sound preparation and native use completion.
+
+PASS ten real-wrapper/ParamFrame groups and ten compiled removal controls.
+Lamp/ambient and current cooking/wrapper regressions pass. Existing replay sound
+and nested-switch tests now resolve real switch metadata instead of injecting a
+private raw function pointer. Current combined qualification is recorded in
+TESTLOG and build/qualification-current; source/DLL identity is checked there.
+- [ ] Rendered switch/group/breaker/flicker behavior, world reload and host/client
+  joins; full regression and package qualification. Accepted native calls cannot
+  be rolled back, and a false completion may already have side effects. Named
+  sound-hook/resource and lamp/ambient preparation fixes are implemented above;
+  inner engine audio-dispatch boundaries remain open.
+
+### Earlier implementation — ten flashlight join-delivery fixes (26 October)
+
+Keep public 0.9.2161 / b2217 / protocol 2217. Close the previously open targeted
+flashlight replay retry work; rendered acceptance remains separate.
+
+- [x] Retain a refused local-player seed per recipient instead of relying on broadcast dedup reset.
+- [x] Retain refused host cache relays with the original sender-slot attribution.
+- [x] Sample current local state again after missing pawn/component or transport readiness.
+- [x] Replay OFF as well as ON to clear stale seeded light.
+- [x] Bind each recipient to its captured person and connection; cancel departure/reuse debt.
+- [x] Cancel relays for a departed/replaced/disconnected author; require known author connection identity.
+- [x] Own replay packet bytes through callback-capable sends instead of lending mutable cache storage.
+- [x] Preserve newer enqueue/cache/publication revisions through older send completion and nested ticks.
+- [x] Drain all targeted seeds/relays through one rotating 64-attempt-per-tick budget.
+- [x] Gate replay by live session/world/role, allowed target and link/lane/world readiness.
+
+PASS ten production-controller groups at 32-slot capacity and ten compiled
+removal controls. The stress case retains 961 debts across refusal, caps each
+tick at 64 attempts and finishes without duplicate recipient/origin pairs.
+Previous flashlight state/lifetime cases and six controls also pass. Combined
+Release/ABI, public label and selected related-group evidence is recorded in
+qualification-current; TESTLOG describes the exact snapshot and limits.
+- [ ] Rendered host/client late join/reconnect, battery-empty/OFF/mode changes,
+  departure/slot reuse and reliable backpressure. Unknown recipient identities
+  are refused until a new valid queue request. Admission is not atomic with
+  net-thread teardown; no delivery rollback or retry after accepted transport is
+  claimed. Full regression and package qualification remain open.
+
+### Earlier audit — ATV creation, lights and console (26 October)
+
+Owner reports that only one ATV appears for everyone and requests flashlight,
+console and light-synchronisation checks. Keep 0.9.2161 / b2217 / protocol 2217.
+
+- [x] Retry incomplete ATV hit-delegate resolution/registration once a second.
+- [x] Ensure the hit guard on subsequent pump installs, outside the one-time index/subscription latch.
+- [x] Require each NormalImpulse vector to fit its own live parameter frame before registration.
+- [x] Retry rejected honk and mount watches independently without duplicating accepted watches.
+- [x] Retry initially refused light-group runTrigger registration instead of disabling it permanently.
+- [x] Stop client light blocking and host light capture when the session is no longer running.
+- [x] Check all deferred ATV spawn arguments before dispatching BeginDeferredActorSpawnFromClass.
+- [x] Check finish arguments and exact returned actor; destroy failed deferred bodies before publication.
+- [x] Refuse teleportVehicle dispatch when location or rotation argument preparation fails.
+- [x] Refuse non-finite yaw before selecting a companion parking location.
+- [x] Additional audit repair: remove merged duplicate console declarations, statements and nested panel loop; restore compilation with the lifetime checks retained.
+
+PASS 11 selected current groups, combined Release/ABI and production public-label
+formatter. Console: 21 callbacks, 14 delivery cases, ten native groups and 23
+compiled removal controls. Flashlight state: six removal controls; remote click:
+ten removal controls and production compilation. Restore the flashlight fixture's
+single definitions and remove its duplicate lifetime run. Update the obsolete
+2149 mount fixture to current syncer/stamped-seat queries; it does not test host
+authority or the deleted AcceptIncomingOccupancy model. Register ATV recovery,
+placement, lamp and cooked-console checks in the current suite.
+Evidence: `build/qualification-current/verification.json` and `audit-extra.json`.
+- [ ] Reproduce the reported missing companion in-game, then confirm two ATVs
+  beside the garage's original ATV on host and clients, no third spawn after
+  reconnect, and preservation of an already saved second ATV's position.
+  The permanent hit-guard failure is a confirmed blocker; it is not yet proven
+  to be the cause of the owner's particular save/gameplay report.
+- [ ] Rendered flashlight beam/mode/battery/late-join, group/lamp/ambient flicker,
+  console concurrent authors/clear/history/reconnect; full regression and package
+  qualification remain open. Targeted flashlight join retry is implemented above.
+  This audit does not establish complete metadata/session lifetime
+  for every native spawn helper. No archive, install, commit or version bump.
+
+### Earlier implementation — ten console native-operation fixes
 
 The user assigned this continuation to the console and left flashlight work to
 the other session. Public version/protocol remain 0.9.2161 / 2217.
@@ -66,8 +784,8 @@ PASS five selected current groups, Release/ABI and production version formatter;
 evidence: `build/qualification-current/verification.json`. Public version remains
 0.9.2161; internal b2217/protocol 2217. No new archive or normal profile installation.
 - [ ] Rendered two-player flashlight/console acceptance, full regression and package
-  qualification for this snapshot. Targeted host late-join replay retry remains open;
-  this continuation retires stale cached sources, but does not queue refused relays.
+  qualification for this snapshot. Targeted host late-join replay retry is now
+  implemented in the join-delivery continuation above.
 
 ### Implemented — flashlight and console priority continuation (26 October)
 
@@ -878,11 +1596,36 @@ contracts, as recorded in TESTLOG. The following rendered acceptance is separate
 - [x] Grill edits (b2191–b2192): guard ordered coal/lid work and hand rows across
   session restart, replacement, native-read retirement and interrupted delivery.
 
-- [ ] Console/events (12–15, 26, 42): complete Rufus/thiccfus, llama, Madness grunts
+- [x] Console/events — Madness playback recovery: current controller/native
+  lifetime, recipient retry, music/HUD recovery and owned cleanup implemented
+  above with 25 focused code groups. Rendered acceptance remains open.
+- [x] Console/events — Maxwell native phase/recovery boundaries: exact source/class/
+  function ownership, coherent clocks, checked seeks and nested Playback recovery
+  implemented above with 25 actual-wrapper groups. Rendered timing remains open.
+- [x] Console/events — Rufus/thiccfus birth/pose and parked mirror graph: late
+  ancestry admission, exact console catches, scoped/de-duplicated enrollment,
+  guarded native mesh/AnimBP setup and streamed mesh yaw implemented above.
+- [x] Console/events — llama jump/light/audio: host state and expiring sound edge,
+  client graph authority with preserved base initialization, native presentation,
+  scoped recipient retries and quiet join seeds implemented above.
+- [x] Console/events — llama remote targets, admitted completion and motion debt:
+  registered visible target selection, source-owned tail and confirmed paced prop
+  motion admission implemented above; rendered physics remains open.
+- [x] Console/events — llama pre-session timers and recovery boundaries: exact
+  pause leases, bounded delivery/tombstones and owned Begin flag recovery are
+  implemented above; unknown native outcomes do not imply rollback or idle retry.
+- [x] Console/events — llamaSoul marker and native event/Begin recovery: existing
+  PlacedSave record transport/adoption, verified sender cleanup, absent-sender
+  guard and isolated108 rearm are implemented above with 75 focused groups.
+- [ ] Console/events (12–15, 26, 42): complete Rufus/thiccfus gameplay transport,
+  cross-player targets, effects and child state; accept llama marker/save/reload,
+  native event cleanup and rendered jump/light/audio/prop-motion. Broader client
+  event-count presentation/transport and old/new latent phase causality remain
+  beyond the verified local cleanup boundary. Complete Madness grunts
   and variant AI/damage/effects; accept the host-ordered submitted/periodic/clear
   console output in game. b2209 implements recipient/source-safe queues, history,
   busy state and all 31 remote terminal seats with local regression coverage.
-  Verify Madness playback recovery and Maxwell phase. b2210 implements client
+  Accept rendered Madness playback recovery and Maxwell phase. b2210 implements client
   input-consumption and per-row native display lifetime with invocation-owned
   attribution, scoped replay and local controller/wrapper regression coverage.
   Other funny-rule HUD/events and remaining toy/squeeze sounds still need coverage.
@@ -1007,7 +1750,8 @@ Wall41 remains excluded.
   both peers; anchored-hook retirement, one ordinary pickup, retry and late join;
   drone audio; all equippable items with full inventory; simultaneous container
   removal and row refresh on the other peer.
-- [ ] Chairs (11/36): rotation and transitions to laptop/sleep/ragdoll.
+- [ ] Chairs (11/36): chair/body rotation and transition code implemented above;
+  rendered host/client rotation and laptop/sleep/ragdoll acceptance remain open.
 - [ ] Cremator: host-authoritative door and paint-only lever on both peers;
   measure door FPS against the reported performance problem.
 - [ ] Personal sleep (10/49): independent nightmare settings, different beds,
@@ -1056,10 +1800,12 @@ Wall41 remains excluded.
 
 ## Release preparation
 
-Current 2161 work is development, not a newly qualified package. The last recorded GitHub description update was 2160. Thunderstore
-upload remains pending API access or manual import of the verified ZIP. Use
-package/build_current.ps1 and package/release.json for later builds. Native startup
-and rendered multiplayer acceptance remain open; see TESTLOG for verification limits.
+The current 2161 snapshot is packaged as an offline test build after the complete
+121-group suite and archive checks. The last recorded GitHub description update
+was 2160. Thunderstore publication remains pending an explicit owner request;
+the verified local ZIP is ready for manager import. Use package/build_current.ps1
+and package/release.json for later builds. Native startup and rendered multiplayer
+acceptance remain open; see TESTLOG for verification limits.
 
 Commit, push, game installation and publication require an explicit request.
 No other-agent workflow. Update the active tracking documents in place.

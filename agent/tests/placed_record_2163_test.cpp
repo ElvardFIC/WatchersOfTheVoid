@@ -1,4 +1,5 @@
 #include "../../src/votv-coop/src/ue_wrap/actors/placed_save_record.cpp"
+#include "llama_marker_boundary_stubs.h"
 #include <cstdio>
 #include <cstdlib>
 #include <limits>

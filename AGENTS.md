@@ -3,7 +3,7 @@
 Read `agent/README.md`, `agent/TODO.md` and `agent/WORK.md` before continuing fixes.
 Update the existing TODO/WORK documents as work lands; record verification in
 `agent/TESTLOG.md`. Keep implemented code separate from unperformed gameplay checks.
-For an owner's "продовжуй", handle ten concrete fixes per continuation.
+For an owner's "продовжуй", handle 75 concrete fixes per continuation.
 The active public version is **0.9.2161**. A continuation does not start a new
 version, bump the public version/protocol, or prepare a new release automatically.
 Change versions only when the owner explicitly requests it. Name every fix item

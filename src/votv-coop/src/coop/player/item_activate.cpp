@@ -129,11 +129,31 @@ uint64_t g_inflightSig=kNoSendYet;
 struct PeerBinding { bool known=false; uint16_t person=0; uint32_t generation=0; };
 PeerBinding g_peerBinding[coop::players::kMaxPeers]{};
 
+// Column 0 is this machine's freshly sampled light. On the host, columns
+// 1..31 replay cached client states with their original wire attribution.
+struct JoinDebt {
+    bool pending=false;
+    uint64_t revision=0;
+    PeerBinding recipient{},author{};
+};
+JoinDebt g_joinDebt[coop::players::kMaxPeers][coop::players::kMaxPeers]{};
+uint64_t g_joinRevision=0;
+size_t g_joinCount=0,g_joinCursor=0;
+bool g_joinFlushing=false;
+constexpr size_t kJoinSendBudget=64;
+
+void ClearJoinDebt(int target,int source) {
+    auto& row=g_joinDebt[target][source];
+    if(row.pending)--g_joinCount;
+    row={};row.revision=++g_joinRevision;
+}
+
 void RetireState() {
     ++g_epoch;++g_sendRevision;
     g_nextStatePoll=0;g_pollPlayer.Reset();g_publishing=false;g_inflightSig=kNoSendYet;
     g_lastSentSig.store(kNoSendYet);g_latchedOnIntensity.store(0.f);
     for(int slot=0;slot<coop::players::kMaxPeers;++slot)OnDisconnectForSlot(slot);
+    g_joinCursor=0;
 }
 
 void Reconcile() {
@@ -275,6 +295,95 @@ bool PublishState(void* self) {
 
 void OnUpdateFlashlightPost(void* self,void*,void*) {
     PublishState(self);
+}
+
+PeerBinding ReplaySeat(int slot) {
+    auto* session=g_session.load();
+    return {true,coop::roster_ledger::Get(slot).playerNo,session?session->peerGenerationForSlot(slot):0};
+}
+
+bool SameReplaySeat(int slot,const PeerBinding& seat) {
+    const auto now=ReplaySeat(slot);
+    return seat.known && seat.person && seat.person==now.person && seat.generation==now.generation;
+}
+
+bool ReplayTarget(int slot) {
+    if(slot<0 || slot>=coop::players::kMaxPeers || !Current(g_epoch))return false;
+    return g_scopeState.role==coop::net::Role::Host ? slot>0 : slot==0;
+}
+
+void OweJoinState(int target,int source) {
+    if(!ReplayTarget(target) || (source && target==source))return;
+    const auto recipient=ReplaySeat(target);
+    // A host slot without a connection generation is not a captured recipient.
+    // The client's sole host link uses generation zero; session scope fences it.
+    if(!recipient.person || (g_scopeState.role==coop::net::Role::Host && !recipient.generation))return;
+    PeerBinding author{};
+    if(source){
+        if(g_scopeState.role!=coop::net::Role::Host || !g_peerActivateValid[source])return;
+        author=g_peerBinding[source];
+        if(!author.generation || !SameReplaySeat(source,author) || !g_session.load()->IsSlotConnected(source))return;
+    }
+    auto& row=g_joinDebt[target][source];
+    if(!row.pending)++g_joinCount;
+    row={true,++g_joinRevision,recipient,author};
+}
+
+void FlushJoinStates() {
+    if(g_joinFlushing || !g_joinCount || !Current(g_epoch))return;
+    g_joinFlushing=true;
+    struct Flushing {~Flushing(){g_joinFlushing=false;}} flushing;
+    const auto epoch=g_epoch;
+    auto* session=g_session.load();
+    size_t budget=kJoinSendBudget;
+    constexpr size_t slots=coop::players::kMaxPeers,cells=slots*slots;
+    // Advance even after a refused send, so one blocked recipient cannot starve
+    // the rest. Join hooks only enqueue; this is the sole targeted-send drain.
+    for(size_t visited=0;visited<cells && budget && g_joinCount && Current(epoch);++visited){
+        const auto cell=g_joinCursor;g_joinCursor=(g_joinCursor+1)%cells;
+        const int target=static_cast<int>(cell/slots),source=static_cast<int>(cell%slots);
+        auto& row=g_joinDebt[target][source];
+        if(!row.pending)continue;
+        const auto revision=row.revision;
+        const auto owns=[&]{return Current(epoch) && row.pending && row.revision==revision;};
+        if(!ReplayTarget(target)){ClearJoinDebt(target,source);continue;}
+        const auto recipient=ReplaySeat(target);
+        if(recipient.generation!=row.recipient.generation ||
+           (row.recipient.person && recipient.person!=row.recipient.person)){
+            ClearJoinDebt(target,source);continue;
+        }
+        if(!row.recipient.person || !session->IsSlotConnected(target) ||
+           !session->IsSlotReady(target) || !session->IsSlotWorldReady(target))continue;
+        const auto targetSeat=row.recipient,author=row.author;
+        coop::net::ItemActivatePayload payload{};
+        ue_wrap::CachedObjRef publisher;
+        const uint64_t sourceRevision=source?g_pendingApplyRevision[source]:g_sendRevision;
+        if(source){
+            if(!g_peerActivateValid[source] || !SameReplaySeat(source,author) || !session->IsSlotConnected(source)){
+                ClearJoinDebt(target,source);continue;
+            }
+            payload=g_peerActivateCache[source];
+        }else{
+            void* local=coop::players::Registry::Get().Local();publisher.Set(local);
+            if(!BuildPayloadFromLocal(local,payload,session))continue;
+        }
+        const auto sourceCurrent=[&]{
+            return source ? g_peerActivateValid[source] && SameReplaySeat(source,author) && session->IsSlotConnected(source) &&
+                g_pendingApplyRevision[source]==sourceRevision :
+                publisher.Is(coop::players::Registry::Get().Local()) && g_sendRevision==sourceRevision;
+        };
+        if(!owns() || !SameReplaySeat(target,targetSeat) || !sourceCurrent() ||
+           !session->IsSlotConnected(target) || !session->IsSlotReady(target) ||
+           !session->IsSlotWorldReady(target))continue;
+        --budget;
+        // Own the packet bytes across callback-capable transport preparation.
+        // OFF is a state too: it clears an older seed, including a re-queued one.
+        const bool sent=session->SendReliableToSlot(target,coop::net::ReliableKind::ItemActivate,
+            &payload,sizeof(payload),static_cast<uint8_t>(source));
+        // A newer enqueue/cache/publication must survive an older completion.
+        if(owns() && sent && SameReplaySeat(target,targetSeat) && sourceCurrent())
+            ClearJoinDebt(target,source);
+    }
 }
 }  // namespace
 
@@ -515,66 +624,17 @@ void ApplyToPuppetOrDefer(uint8_t senderPeerSlot, void* puppetActor,
 
 void QueueConnectBroadcastForSlot(int peerSlot) {
     Reconcile();
-    // A targeted seed cannot satisfy the regular broadcast. In particular a refused
-    // seed must leave a fresh publication owed when the pawn or transport becomes ready.
-    g_lastSentSig.store(kNoSendYet, std::memory_order_release);
-    auto* s = g_session.load(std::memory_order_acquire);
-    if (!s) {
-        UE_LOGW("flashlight: QueueConnectBroadcastForSlot called with no session");
-        return;
-    }
-    if (peerSlot < 0 || peerSlot >= static_cast<int>(coop::players::kMaxPeers)) {
-        UE_LOGW("flashlight: QueueConnectBroadcastForSlot peerSlot=%d out of range", peerSlot);
-        return;
-    }
-    void* mp = coop::players::Registry::Get().Local();
-    if (!mp) {
-        // No local player yet (the menu): nothing to broadcast; the player spawns in the loading
-        // splash before the session connects, so this is rare.
-        UE_LOGI("flashlight: QueueConnectBroadcastForSlot(slot=%d) no local mp yet -- no broadcast",
-                peerSlot);
-        return;
-    }
-    coop::net::ItemActivatePayload p{};
-    if (!BuildPayloadFromLocal(mp, p, s)) {
-        UE_LOGW("flashlight: QueueConnectBroadcastForSlot(slot=%d) BuildPayloadFromLocal failed",
-                peerSlot);
-        return;
-    }
-    // Off is not sent: the puppet spawns off, and the observer ships a later toggle.
-    if (p.state == 0) {
-        UE_LOGI("flashlight: QueueConnectBroadcastForSlot(slot=%d) local state is OFF -- "
-                "skipping (puppet default is OFF; no replay needed)", peerSlot);
-        return;
-    }
-    // To the one slot: the connected peers got the state on the toggle.
-    s->SendReliableToSlot(peerSlot, coop::net::ReliableKind::ItemActivate, &p, sizeof(p));
-    UE_LOGI("flashlight: connect-broadcast slot=%d sent state=%d Intensity=%.2f "
-            "outerCone=%.1f mode=%u senderElementId=0x%08x",
-            peerSlot, p.state, p.intensity, p.outerConeAngle, p.mode, p.senderElementId);
+    // Targeted debt is independent of the regular publisher's dedup signature.
+    OweJoinState(peerSlot,0);
 }
 
 void ReplayPeerStatesToSlot(int newSlot) {
     Reconcile();
-    // Every other client's cached state, replayed to a new client so it converges; ItemActivate is
-    // edge-triggered, and the joiner cannot learn these otherwise. Host only.
-    auto* s = g_session.load(std::memory_order_acquire);
-    if (!s || s->role() != coop::net::Role::Host) return;
-    if (newSlot < 1 || newSlot >= static_cast<int>(coop::players::kMaxPeers)) return;
+    if(!ReplayTarget(newSlot) || g_scopeState.role!=coop::net::Role::Host)return;
     for (int peer = 1; peer < static_cast<int>(coop::players::kMaxPeers); ++peer) {
         if (peer == newSlot) continue;
         BindPeer(static_cast<uint8_t>(peer));
-        if (!g_peerActivateValid[peer]) continue;
-        const coop::net::ItemActivatePayload& p = g_peerActivateCache[peer];
-        // Off is skipped: the joiner's puppet for that peer spawns off.
-        if (p.state == 0) continue;
-        // The sender slot is the origin peer, so the joiner routes the action to that peer's puppet
-        // and the eid-range trust check sees a peer-range id from a peer slot.
-        s->SendReliableToSlot(newSlot, coop::net::ReliableKind::ItemActivate,
-                              &p, sizeof(p), static_cast<uint8_t>(peer));
-        UE_LOGI("flashlight: T2-4 replayed peer %d state=%d (Intensity=%.2f "
-                "senderElementId=0x%08x) to late joiner slot %d",
-                peer, p.state, p.intensity, p.senderElementId, newSlot);
+        OweJoinState(newSlot,peer);
     }
 }
 
@@ -615,6 +675,7 @@ void TickConnect() {
         if (ApplyToPuppet(puppet, p, peer) && revision == g_pendingApplyRevision[peer])
             g_pendingApplyValid[peer] = false;
     }
+    FlushJoinStates();
 }
 
 void OnDisconnect() {
@@ -624,6 +685,10 @@ void OnDisconnect() {
 }
 void OnDisconnectForSlot(int peerSlot) {
     if (peerSlot < 0 || peerSlot >= static_cast<int>(coop::players::kMaxPeers)) return;
+    for(int other=0;other<coop::players::kMaxPeers;++other){
+        ClearJoinDebt(peerSlot,other);
+        if(peerSlot>0)ClearJoinDebt(other,peerSlot);
+    }
     g_peerBinding[peerSlot]={};
     // A leaving peer's cached state goes, so a peer reusing the slot does not inherit its
     // flashlight.

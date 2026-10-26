@@ -63,6 +63,10 @@ CallerFrame CurrentCallerFrame();
 // and for a function with no return value. Game thread.
 void* CurrentResult();
 
+// The exact hooked callee, distinct from CurrentCallerFrame's Blueprint caller.
+// Valid only during a native pre/post callback; null outside it. Game thread.
+void* CurrentNativeFunction();
+
 // Patch the function a row resolves to: its native Func gets a transparent forwarder that forwards to the
 // original Func (which steps the params off the bytecode stream, runs the implementation and writes
 // *Result), then reads FFrame::Object and *Result and invokes `cb` with both. No engine layout leaks

@@ -1,17 +1,28 @@
+#define TEST_CUSTOM_ACTION_REFS
 #include "support_2135.h"
-#include "../../src/votv-coop/src/coop/world/madness_sync.cpp"
+namespace test {inline bool overrideMasterClass=false;inline void* masterClass=nullptr;}
+namespace ue_wrap::reflection {
+inline int32_t SlotSerial(int32_t i){return i==1?test::actor.serial:test::ui.serial;}
+inline void* ClassOf(void* p){return p==&test::actor&&test::overrideMasterClass?test::masterClass:p;}
+}
+#ifndef MADNESS_SYNC_SOURCE
+#define MADNESS_SYNC_SOURCE "../../src/votv-coop/src/coop/world/madness_sync.cpp"
+#endif
+#include MADNESS_SYNC_SOURCE
 #include <limits>
 namespace test {
 bool active=false,readOk=true;ue_wrap::madness::State state{true,true,true,7,20};
 ue_wrap::madness::State applied;int applies=0,clears=0;
-uint16_t people[4]{10,11,12,13};std::function<void()> onClear;
+uint16_t people[coop::net::kMaxPeers]{10,11,12,13};std::function<void()> onClear;
+uint32_t sessionSerial=1;bool clearOk=true;
 }
-namespace coop::roster_ledger {const Row& Get(int slot){static Row rows[4];rows[slot].playerNo=test::people[slot];return rows[slot];}}
+namespace coop::net::session_serial {uint32_t Current(){return test::sessionSerial;}}
+namespace coop::roster_ledger {const Row& Get(int slot){static Row rows[coop::net::kMaxPeers];rows[slot].playerNo=test::people[slot];return rows[slot];}}
 namespace ue_wrap::madness {
 void* FindHost(){return test::active?&test::actor:nullptr;}
 bool Read(void*,State& out){out=test::state;test::Callback();return test::readOk;}
 bool Apply(View& v,const State& state,const std::function<bool()>& current){CHECK(!current || current());test::applied=state;++test::applies;v.started=state.playing;test::Callback();return !current || current();}
-void Clear(View& v){const bool active=v.started;v={};++test::clears;if(active){auto f=std::move(test::onClear);test::onClear={};if(f)f();}}
+void Clear(View& v){if(!test::clearOk){++test::clears;return;}const bool active=v.started;v={};++test::clears;if(active){auto f=std::move(test::onClear);test::onClear={};if(f)f();}}
 }
 int main(){using namespace test;namespace S=coop::madness_sync;using P=coop::net::MadnessStatePayload;
  coop::net::Session session;S::Install(&session);S::Tick();CHECK(session.sent.size()==3&&!S::g_state.active);
@@ -59,4 +70,5 @@ int main(){using namespace test;namespace S=coop::madness_sync;using P=coop::net
  S::QueueConnect(2);session.allowSend=[&](int,auto,const void*,int){S::OnDisconnect();return true;};S::Tick();CHECK(!S::g_session && !S::g_pending);
  session.allowSend={};S::Install(&session);now+=100;state.elapsed=NAN;S::Tick();CHECK(!S::g_have);state.elapsed=20;
  puts("PASS real madness controller: host start/end/restart/score, retry/join, sender/order/bounds, seek, world/reentrant teardown, latest receipt and recipient/source replacement");
+ return 0;
 }

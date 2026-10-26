@@ -11,6 +11,7 @@
 #include "ue_wrap/facts/function_row.h"
 
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 
 // InstallHitGuard and PublishOwned sit at namespace scope because they are the definitions the
@@ -68,6 +69,8 @@ std::atomic<bool>  g_guardActive{false};   // false in single-player: the game m
 std::atomic<unsigned long long> g_hitNeutered{0};
 std::atomic<unsigned long long> g_hitAllowed{0};
 std::atomic<bool>  g_hitGuardArmed{false};              // all 7 delegates registered -- else the lane runs INERT
+std::chrono::steady_clock::time_point g_nextHitTry{};
+bool g_saidHitFailure = false;
 // The byte offset of the impulse inside each delegate's params frame, resolved once at install
 // by reflection, per function: they are seven distinct UFunction objects sharing one
 // signature. -1 is unresolved.
@@ -129,11 +132,12 @@ bool OnAtvHitPre(void* self, void* params) { return NeuterHit(self, params, Idx)
 
 void InstallHitGuard() {
     if (g_hitGuardArmed.load(std::memory_order_relaxed)) return;
-    // The attempt is latched, not only the success: an armed flag that is false on every failure
-    // path would redo the seven function lookups below on every call in a session where the
-    // delegates do not resolve.
-    static std::atomic<bool> sTried{false};
-    if (sTried.exchange(true, std::memory_order_acq_rel)) return;
+    // Metadata and interceptor capacity can become available after the first pump.
+    // Re-registering the exact function/callback pair is idempotent. Keep the lane
+    // inert until all seven succeed, and bound incomplete retries to once a second.
+    const auto now = std::chrono::steady_clock::now();
+    if (now < g_nextHitTry) return;
+    g_nextHitTry = now + std::chrono::seconds(1);
     // POSITIONAL, not compacted: fns[i] pairs with the callback carrying bit i, so a miss leaves its
     // slot empty and the count falls short of seven.
     static const ue_wrap::facts::Function* const kHitRows[7] = {
@@ -145,7 +149,7 @@ void InstallHitGuard() {
     for (int i = 0; i < 7; ++i) {
         fns[i] = ue_wrap::facts::Resolve(*kHitRows[i]);
         if (fns[i]) ++n;
-        else UE_LOGW("atv: hit delegate '%ls' unresolved", kHitRows[i]->Name());
+        else if (!g_saidHitFailure) UE_LOGW("atv: hit delegate '%ls' unresolved", kHitRows[i]->Name());
     }
     // Each delegate's own impulse offset: seven functions share one signature, so the offsets will
     // agree, and they are resolved per function anyway, since this is a raw write into an engine
@@ -153,7 +157,10 @@ void InstallHitGuard() {
     int offsOk = 0;
     for (int i = 0; i < 7; ++i) {
         if (!fns[i]) continue;
-        g_impulseOff[i] = R::FindParamOffset(fns[i].Fn(), L"NormalImpulse");
+        const int32_t off = R::FindParamOffset(fns[i].Fn(), L"NormalImpulse");
+        const int32_t frame = R::FunctionFrameSize(fns[i].Fn());
+        // A nonnegative offset alone does not establish room for three floats.
+        g_impulseOff[i] = (off >= 0 && off <= frame && 3 * sizeof(float) <= frame - off) ? off : -1;
         if (g_impulseOff[i] >= 0) ++offsOk;
     }
     using Cb = bool (*)(void*, void*);
@@ -167,7 +174,8 @@ void InstallHitGuard() {
     };
     int ok = 0;
     for (int i = 0; i < 7; ++i)
-        if (fns[i] && ue_wrap::game_thread::RegisterInterceptor(fns[i], kCallbacks[i])) ++ok;
+        if (fns[i] && g_impulseOff[i] >= 0 &&
+            ue_wrap::game_thread::RegisterInterceptor(fns[i], kCallbacks[i])) ++ok;
     if (ok == 7 && offsOk == 7) {
         g_hitGuardArmed.store(true, std::memory_order_relaxed);
         // What the line may claim: a local-consistency control, not an anti-cheat one. Health is
@@ -179,13 +187,14 @@ void InstallHitGuard() {
                 "while wheelsOnSurface still sets, so the rig keeps its shape. Local consistency, "
                 "not anti-cheat: `health` is not on the wire, so editing this locally desyncs only "
                 "your own copy.", g_impulseOff[0]);
-    } else {
+    } else if (!g_saidHitFailure) {
         // Fail closed: without all seven the simulate-and-correct model does not run at all, and
         // the tick mirrors nothing, so peers diverge visibly rather than one silently destroying a
         // vehicle the other still has.
         UE_LOGE("atv: hit guard NOT armed (%d/7 delegates resolved, %d/7 registered, %d/7 impulse "
-                "offsets) -- ATV sync stays INERT this session; the interceptor table may be full "
+                "offsets) -- ATV sync waits and retries once a second; the interceptor table may be full "
                 "(kMaxInterceptors), or NormalImpulse moved in the params frame", n, ok, offsOk);
+        g_saidHitFailure = true;
     }
 }
 

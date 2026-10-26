@@ -20,6 +20,7 @@
 #include "ue_wrap/actors/sit_pose.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/actors/wisp.h"     // DriveWispLanding -- the fade-in edge on a wisp_C mirror
+#include "ue_wrap/actors/rufus.h"
 
 #include <algorithm>
 #include <chrono>
@@ -217,16 +218,18 @@ bool Npc::ApplyToEngine() {
     // root re-bases this child mesh's world transform). The mirror's actor tick is off, so the
     // kerfur BP never overwrites it -> no gate flag needed. Each is class-gated inside: the kerfur's, and the fossil
     // hound's (its mesh hangs on a SpringArm a mirror never turns).
+    bool bodyReady=true;
     if (hasBodyYaw_) {
         Pup::DriveKerfurBodyYaw(actor, curBodyYaw_);
         ue_wrap::fossilhound::DriveBodyYaw(actor, curBodyYaw_);
+        if(ue_wrap::rufus::IsFamily(actor))bodyReady=ue_wrap::rufus::DriveBodyYaw(actor,curBodyYaw_);
     }
     // Write the host-authoritative kerfur command and spooky flag so the parked mirror's AnimBP
     // state machine matches the host (the mirror runs no AI -> it can't pick its own). Class-gated
     // inside -> safe no-op on non-kerfur NPCs.
     if (hasKerfState_) ue_wrap::kerfur::DriveKerfurState(actor, kerfState_, kerfSpooky_);
     ue_wrap::sit_pose::DriveSitting(actor, (curStateBits_ & coop::net::kEntityPoseBitKerfurOnAtv) != 0);
-    return moved && turned;
+    return moved && turned && bodyReady;
 }
 
 }  // namespace coop::element

@@ -19,7 +19,7 @@ release.json only when preparing that version and record fresh verification.
 
 The user leads the project. Assistant scope is bug fixes only; `another agent` is
 retired. Historical archives and backup copies were removed at the owner's request.
-When the owner says "продовжуй", handle 10 concrete fix items per pass, run the
+When the owner says "продовжуй", handle 75 concrete fix items per pass, run the
 relevant checks, and report implemented boundaries separately from game acceptance.
 Before the next batch, reconcile TODO with completed work. Mark verified code
 changes [x]; keep unfinished implementation and unperformed gameplay acceptance [ ].

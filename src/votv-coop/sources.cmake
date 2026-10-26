@@ -62,6 +62,11 @@ set(VOTVCOOP_SOURCES
     src/ue_wrap/actors/sponge_effects.cpp
     src/ue_wrap/actors/physics_gun.cpp
     src/coop/props/dingus_music_sync.cpp
+    src/coop/props/llama_sync.cpp
+    src/coop/props/llama_trigger.cpp
+    src/coop/props/llama_timers.cpp
+    src/coop/props/llama_events.cpp
+    src/coop/props/llama_begin_restore.cpp
     src/coop/props/watoy_sync.cpp
     src/coop/props/sponge_effects_sync.cpp
     src/coop/props/prop_knock.cpp
@@ -170,6 +175,13 @@ set(VOTVCOOP_SOURCES
     src/ue_wrap/devices/passwordlock.cpp
     src/ue_wrap/core/trace.cpp
     src/ue_wrap/actors/fossilhound.cpp
+    src/ue_wrap/actors/rufus.cpp
+    src/ue_wrap/actors/llama.cpp
+    src/ue_wrap/actors/llama_trigger.cpp
+    src/ue_wrap/actors/llama_timer.cpp
+    src/ue_wrap/actors/llama_marker.cpp
+    src/ue_wrap/actors/llama_events.cpp
+    src/ue_wrap/actors/llama_begin_restore.cpp
     src/ue_wrap/actors/fossilhound_presentation.cpp
     src/ue_wrap/actors/wisp.cpp
     src/ue_wrap/actors/swinger.cpp

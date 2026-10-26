@@ -10,6 +10,7 @@
 #include "coop/net/session.h"
 #include "coop/creatures/npc_mirror.h"
 #include "coop/creatures/npc_mirror_brain.h"  // PrepareBirth / SetUpPresentation: a parked family's twin has its brain off
+#include "ue_wrap/actors/rufus.h"
 #include "coop/creatures/npc_sync.h"
 #include "coop/world/creature_event_relay.h"  // OnMirrorBound: the host's event count for a new mirror
 #include "coop/props/remote_prop_spawn.h"  // HasLoadTailQuiesced -- shared save-load-tail quiescence signal
@@ -73,10 +74,16 @@ inline long long MsSince(std::chrono::steady_clock::time_point t) {
 // child exactly as the host's does (structural, not a fix-up). Parks it
 // host-driven. Returns true on success (false leaves the entry pending for the next scan).
 bool BindAsMirror(uint32_t eid, void* obj, const std::wstring& classW) {
+    const bool rufus=ue_wrap::rufus::IsFamily(obj);
+    const bool alreadyMarked=coop::npc_mirror_brain::IsMarkedMirror(obj);
+    const int32_t index=rufus?R::InternalIndexOf(obj):-1;
+    const int32_t serial=index>=0?R::SlotSerial(index):0;
+    if(rufus&&!coop::npc_mirror_brain::PrepareBirth(obj))return false;
     if (!coop::element::CreateOrAdoptNpcMirror(static_cast<coop::element::ElementId>(eid), obj, classW,
                                             /*senderSlot=*/-1)) {
         UE_LOGW("npc-adopt: CreateOrAdoptNpcMirror(eid=%u) failed for local actor %p -- retry/fallback",
                 eid, obj);
+        if(rufus&&!alreadyMarked)coop::npc_mirror_brain::UnmarkMirror(index,serial);
         return false;
     }
     // The twin's BeginPlay ran as the client's own creature, so its setEvent(true) is registered: the relay

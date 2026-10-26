@@ -125,6 +125,7 @@ const char* RowForClass(const std::string& className) {
 // INFO and the WARN stays meaningful for genuinely uncovered classes.
 struct LaneOwned { const char* className; const char* lane; };
 const LaneOwned kLaneOwnedClasses[] = {
+    { "prop_llama_C", "llama_sync (canonical light/audio and native event ownership)" },
     { "trigger_alarm_C", "alarm_sync" },
     { "newsky_C", "sky_sync (current black-hole material/light)" },
     { "arirShipAppear_C", "ariral_ship_sync (current phase and photo listener)" },

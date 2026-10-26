@@ -17,8 +17,8 @@
 namespace coop::atv_hit_guard {
 
 // Register the seven interceptors. Idempotent; logs and leaves the lane INERT if fewer than 7
-// resolve or register, because a partially guarded rig is worse than an unguarded one -- it
-// destroys vehicles on some peers and not others. Game thread.
+// resolve or register. Incomplete installations retry at most once a second; each
+// impulse write must fit its live parameter frame. Game thread.
 void InstallHitGuard();
 
 // Publish the set of ATVs whose tick THIS peer owns. A hit on anything not in this set is

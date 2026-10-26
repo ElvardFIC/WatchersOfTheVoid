@@ -1,10 +1,8 @@
 #include "ue_wrap/core/log.h"
 #define DINGUS_WRAPPER_FIXTURE_ONLY
-#define DINGUS_REAL_FRAME
 #include "dingus_music_wrapper_test.cpp"
-#include "../../src/votv-coop/src/ue_wrap/core/call.cpp"
 int main(){using namespace test;namespace M=ue_wrap::dingus_music;
-    const auto reset=[] {++world;for(int i=0;i<Count;++i){objects[i]={};objects[i].index=i;objects[i].serial=int(world);}
+    const auto reset=[] {++world;for(int i=0;i<Count;++i){objects[i]={};objects[i].index=i;objects[i].serial=int(world*1000)+i;}
         objects[Actor].component=At(Audio);objects[Audio].sound=At(Sound);objects[OtherAudio].sound=At(Sound);objects[Sound].flags|=2;objects[OtherSound].flags|=2;
         plays=stops=0;fields=clockFields=result=parameters=allowSeek=true;callback={};after.clear();missing.clear();lastStart=0;};
     reset();M::Clock clock{};CHECK(M::ReadClock(At(Actor),clock) && clock.duration==69.1716f && clock.sound.Is(At(Sound)));
@@ -31,10 +29,4 @@ int main(){using namespace test;namespace M=ue_wrap::dingus_music;
     sourceCurrent=true;after=L"Activate";callback=[&]{sourceCurrent=false;};
     CHECK(M::Squeak(At(Actor),1.7f,[&]{return sourceCurrent;}) && chirps==heard+1);
     puts("PASS toy clock wrapper/actual ParamFrame: looping-wave duration, native seek/modulo/rate, no heartbeat restart, stopped/replaced component/sound recovery, optional metadata and native lifetime fences");return 0;
-}
-
-// Reflection names used by ParamFrame missing-field diagnostics.
-namespace ue_wrap::reflection {
-std::wstring ToString(const FName&){return L"fixture_function";}
-const FName& NameOf(void*){static const FName name{};return name;}
 }

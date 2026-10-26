@@ -23,6 +23,8 @@ Source: [ElvardFIC/WatchersOfTheVoid](https://github.com/ElvardFIC/WatchersOfThe
 - The current upstream integration, preserving this fork's player capacity, item identity and delivery guards.
 - Bay-window sponge-stroke FIFO retries, bounded replay and session/world lifetime guards.
 - Retried native canvas preparation, checked draw/scalar bindings and guarded brush/canvas ownership.
+- Host-selected llama targets, synchronized jump motion, light/audio and quiet joins.
+- Native llamaSoul save-marker synchronization and guarded timer/event recovery.
 
 See CHANGELOG.md for the full change list. Some systems are only partially implemented.
 
@@ -46,10 +48,10 @@ This test package contains **DLL b2217 / network protocol 2217** and includes th
 changes since 0.9.2158, plus the current upstream integration.
 Automatic joins above four players also require the updated master service.
 
-The active version remains **2161** across development continuations. Current
-sponge-foam changes have focused regression coverage; full regression and a new
-manager-package qualification remain open. Existing archives describe earlier
-snapshots. Current evidence and limits are recorded in RELEASE.md and agent/TESTLOG.md.
+The active version remains **2161** across development continuations. This archive
+is an offline test build of the current development snapshot. Its package checks
+cover the manager layout, included models, version label and matching Release DLL.
+Current qualification and limits are recorded in RELEASE.md and agent/TESTLOG.md.
 Rendered gameplay, real-peer synchronization and full event coverage remain
 unverified for this exact package. Paid client repair, resource transactions,
 ancillary MRE effects and other reported gameplay cases remain open.

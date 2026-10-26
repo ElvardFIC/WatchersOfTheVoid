@@ -10,10 +10,6 @@ $functions=foreach($name in @('PosKey','ClassifyWidgetClaimKey','ClassifyDeviceA
     $match.Value
 }
 [IO.File]::WriteAllText((Join-Path $output 'console_identity.inc'),($functions -join "`n"),[Text.UTF8Encoding]::new($false))
-$atv=Get-Content (Join-Path $checkout 'src/votv-coop/src/coop/interactables/atv_sync.cpp') -Raw
-$match=[regex]::Match($atv,'(?ms)^void TrySpawnCompanion\(.*?^\}')
-if(-not $match.Success){throw 'Production companion controller missing'}
-[IO.File]::WriteAllText((Join-Path $output 'companion_retry.inc'),$match.Value,[Text.UTF8Encoding]::new($false))
 $rest=Get-Content (Join-Path $checkout 'src/votv-coop/src/coop/player/sleep_rest.cpp') -Raw
 $functions=foreach($name in @('PersonalRest','OnSleepPost','Tick')) {
     $match=[regex]::Match($rest,"(?ms)^(bool|void) $name\(.*?^\}")
@@ -27,3 +23,5 @@ if($LASTEXITCODE){throw 'Session report regression compile failed'}
 if($LASTEXITCODE){throw 'Session report regression failed'}
 & "$env:USERPROFILE/.local/bin/python3.15.exe" "$PSScriptRoot/session_reports_native_test.py"
 if($LASTEXITCODE){throw 'Session report native contract failed'}
+& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'run_atv_companion.ps1')
+if($LASTEXITCODE){throw 'Current companion report regression failed'}

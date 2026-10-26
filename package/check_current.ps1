@@ -41,11 +41,11 @@ try {
     [IO.File]::WriteAllText((Join-Path $evidence 'source-start.sha256'), $sourceAtStart)
     foreach($name in @(
         'run_player_reports','run_host_players','run_session_reports','run_sat_console_delivery','run_sat_console_callbacks','run_container_recovery','run_container_birth','run_container_apply','run_ariral_ship','run_inventory_apply','run_profile_join','run_2174','run_wisp_animation','run_ragdoll_retry','run_ragdoll_skin',
-        'run_sleep_personal','run_dream_identity','run_entity_sync','run_garden_sync','run_laptop_ui','run_world_sound','run_flashlight_click','run_events',
+        'run_sleep_personal','run_dream_identity','run_entity_sync','run_garden_sync','run_laptop_ui','run_world_sound','run_flashlight_join','run_flashlight_click','run_events',
         'run_placement','run_shared_screen','run_balance','run_item_batch','run_held_identity','run_trowel',
         'run_2130','run_2139','run_2140','run_2141','run_2153','run_2154','run_2155','run_2156',
-        'run_stow_2157','run_2160','run_2161','run_2162','run_2165','run_2168','run_2169','run_blood','run_atv_steering',
-        'run_2170','run_2172','run_2173','run_2180','run_sync_2157','run_upstream','run_upstream_integration','run_explosion_motion',
+        'run_stow_2157','run_2160','run_2161','run_2162','run_2163','run_2165','run_2168','run_2169','run_blood','run_atv_steering',
+        'run_llama_marker','run_llama_events','run_llama_begin_restore','run_llama_timers','run_llama_trigger','run_llama','run_rufus','run_maxwell_native','run_madness_recovery','run_atv_companion','run_seat_presentation','run_chair_sync','run_light_presentation','run_lightswitch_native','run_atv_recovery','run_atv_spawn_lifetime','run_2149','run_2177','run_2170','run_2172','run_2173','run_2180','run_sync_2157','run_upstream','run_upstream_integration','run_explosion_motion',
         'run_nonentity','run_cooking','run_food_callbacks','run_prop_action_delivery','run_prop_action_native','run_drink_spills','run_gasoline','run_grill_edits',
         'run_grill_hand','run_grime_join','run_hand_tools','run_item_records','run_save_record','run_kitchen',
         'run_scorch','run_sponge_effects','run_window_stroke','run_toy_music','run_wall_creative','run_water_pour',
@@ -56,10 +56,10 @@ try {
     foreach($entry in @(@('coin_collect','-CollectOnly'),@('inventory_capture','-InventoryOnly'))) {
         Invoke-Check $entry[0] 'powershell' @('-NoProfile','-ExecutionPolicy','Bypass','-File','agent/tests/run_2151.ps1',$entry[1])
     }
-    foreach($name in @('player_reports_native_test','insomnia_native_test','entity_sync_native_test','coin_collect_native_test','native_physics_fingerprints_test','event_rate_native_test','dream_identity_native_test','server_breaker_native_test','sync_native_contract_test')) {
+    foreach($name in @('llama_native_contract_test','rufus_native_contract_test','madness_native_contract_test','chair_native_contract_test','player_reports_native_test','insomnia_native_test','entity_sync_native_test','coin_collect_native_test','native_physics_fingerprints_test','event_rate_native_test','dream_identity_native_test','server_breaker_native_test','sync_native_contract_test','sat_console_native_contract_test')) {
         $arguments=@("agent/tests/$name.py")
         $runner=$name
-        if($name -in @('dream_identity_native_test','server_breaker_native_test','sync_native_contract_test')) {
+        if($name -in @('llama_native_contract_test','rufus_native_contract_test','madness_native_contract_test','chair_native_contract_test','dream_identity_native_test','server_breaker_native_test','sync_native_contract_test')) {
             $arguments+=$AssetDirectory
         }
         if($name -eq 'sync_native_contract_test') {

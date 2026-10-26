@@ -1,4 +1,6 @@
 #include "ue_wrap/engine/engine.h"
+#include "ue_wrap/core/cached_obj_ref.h"
+#include "ue_wrap/engine/world_identity.h"
 
 #include "ue_wrap/core/call.h"
 #include "ue_wrap/core/fname_utils.h"
@@ -540,18 +542,18 @@ FRotator GetComponentWorldRotation(void* component) {
 }
 
 bool SetComponentWorldRotation(void* component, const FRotator& rotation) {
-    if (!component || !R::IsLive(component)) return false;
-    static void* fn = nullptr;
-    if (!fn) {
-        if (void* sc = R::FindClass(P::name::SceneComponentClass))
-            fn = R::FindFunction(sc, P::name::SetWorldRotationFn);
-    }
-    if (!fn) return false;
-    ParamFrame f(fn);
-    f.SetRaw(L"NewRotation", &rotation, sizeof(rotation));
-    f.Set<bool>(L"bSweep", false);
-    f.Set<bool>(L"bTeleport", true);  // K2_SetWorldRotation's FHitResult& out-param frame space is allocated by ParamFrame
-    return Call(component, f);
+    if(!component||!R::IsLive(component)||!std::isfinite(rotation.Pitch)||!std::isfinite(rotation.Yaw)||!std::isfinite(rotation.Roll))return false;
+    CachedObjRef object,cls,function;object.Set(component);cls.Set(R::ClassOf(component));
+    function.Set(R::FindDispatchFunctionCached(cls.Get(),P::name::SetWorldRotationFn));
+    const auto generation=world_identity::Generation();void* world=world_identity::CurrentWorld();
+    const auto current=[&]{return object.Get()&&cls.Get()&&function.Get()&&world&&
+        generation==world_identity::Generation()&&world==world_identity::CurrentWorld()&&
+        R::ClassOf(component)==cls.Get()&&R::FindDispatchFunctionCached(cls.Get(),P::name::SetWorldRotationFn)==function.Get();};
+    if(!current())return false;
+    ParamFrame f(function.Get());
+    if(!f.valid()||!f.Set<FRotator>(L"NewRotation",rotation)||!f.Set<bool>(L"bSweep",false)||
+       !f.Set<bool>(L"bTeleport",true)||!current())return false;
+    return Call(component,f)&&current();
 }
 
 bool ProjectWorldToScreen(void* playerController, const FVector& world,

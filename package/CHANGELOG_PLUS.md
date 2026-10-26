@@ -1,4 +1,86 @@
 ## 0.9.2161
+- Replace the old versioned cover with the supplied MULTIPLAYER MOD artwork and
+  update the package icon while preserving the full composition.
+- Select visible registered remote players for llama activation; preserve native
+  launch direction/velocity and stream both remote and local-host jumps.
+- Retain llama motion until the prop lane accepts it, with bounded retries and
+  hand/Kerfur ownership checks; finish admitted effects without repeating impulses.
+- Preserve llama sound lifetimes and quiet joins across heartbeat/retries, retain
+  ordering history and recover temporary Begin flags across session changes.
+- Pause pre-existing client llama timers without rearming them; restore owned
+  timers and suppressed Sphere/Begin initialization through checked native paths.
+- Synchronize the native llamaSoul save marker through the existing PlacedSave
+  route, with keyed adoption and host-only marker mutation.
+- Separate remote llama visuals from native event bookkeeping; remove only
+  verified local sender contributions and guard legacy absent-sender debits.
+- Synchronize llama event light/state and expiring sound cues from the host;
+  use quiet snapshots for players joining during the effect.
+- Keep native base prop initialization while suppressing independent client
+  jumps; restore the original jump-setting flag after initialization.
+- Retain scoped llama delivery/readiness retries, validate native effect bindings
+  and consume each admitted sound once across retries and nested updates.
+- Route Rufus/thiccfus console births through NPC identity/pose with exact output
+  filtering and scoped, deduplicated deferred enrollment.
+- Park Rufus mirrors before their native AI/HUD/damage/child branches run; require
+  a ready graph guard before allocation, finish and adoption.
+- Restore the native mesh/animation binding and stream visible body yaw; retry
+  failed preparation while stationary and preserve model pitch/roll.
+- Guard Maxwell/variant music reads and phase seeks with current toy/component/
+  class/function identity and coherent sound duration, looping and pitch.
+- Validate native audio parameters, preserve caller state across callbacks and
+  retain newer playback during nested updates without restarting unchanged music.
+- Bound and deduplicate indexed toy collection; protect touch/toggle/squeak
+  preparation and keep failed pitch reads from overwriting valid output.
+- Recover Madness music/HUD through session/world changes, readiness loss,
+  stopped components and refused cleanup; preserve newer state during callbacks.
+- Bind Madness sends to recipient identity, retain join retries and compensate
+  event age only while music is playing.
+- Validate current native factory/query bindings and return layouts; update HUD
+  text/count directly without replaying addCount's enemy-spawn callback.
+- Keep companion creation scoped to the host/world and checked ATV instances;
+  restart settling after movement, rotation, riding, carrying or count uncertainty.
+- Permit an existing coop-key rig as the sole source, bound saved-body waiting
+  and recover creation after a rejected third ATV or refused cleanup.
+- Protect companion index/key ownership, preserve current driver state during
+  publication/rebinding and retry refused spawn announcements.
+- Retain chair placement while the sender's first pose loads; validate anchor
+  distance, world and current local occupancy before applying it.
+- Preserve adjacent sitting/IK flags, recover reloaded animation metadata and
+  support mesh-shift restoration for all 32 players.
+- Keep authored mesh offsets through failed writes and nested cleanup; apply
+  full parent rotation and vertical forward motion on tilted seats.
+- Refresh head look and flashlight world aim after final seat placement, with
+  checked native rotation calls and no raw rotation fallback.
+- Guard ATV driver poses by rig/seat/player identity, readable finite transforms
+  and accepted writes; give the ATV seat priority over an old chair anchor.
+- Stream small seated-player movements and every chair rotation axis at up to
+  20 Hz; interpolate the chair and body together through wrapped angles.
+- Admit a chair before placing its rider, retry late chair discovery, cancel
+  placement on stand/laptop/sleep/ragdoll and retire stale session/peer work.
+- Keep stand-up packets from rotating released chairs and preserve fresh seating
+  state through refused sends, replaced objects and nested callbacks.
+- Validate finite/frozen ATV spawn inputs and current class/key layout, native
+  services and original world/context through deferred creation and finish.
+- Refuse foreign deferred returns and failed whole-rig placement; clean up only
+  the captured rig incarnation. Stop garage queries on source retirement or movement.
+- Hold lamp/ambient source and exact ambient-component identity through native
+  preparation/completion; reject retired or replaced bindings.
+- Bound and copy switch-audio parameters, verify the hooked callee, recover spatial
+  resources and reject invalid audio/positions while preserving nested replay context.
+- Recover replaced/incomplete light-root and switch metadata without fixed offset
+  fallbacks; read live state, switch position and breaker through separate bool masks.
+- Bound switch-to-group array lookup, check group-call arguments and retain
+  object/function/world/layout identity through group and switch replay calls.
+- Retry refused flashlight join seeds and cached host relays for the original
+  recipient/source connection. Replay current ON/OFF state with owned packet bytes.
+- Preserve newer light state through nested sends; pace targeted replay through
+  one rotating 64-attempt budget and wait for active, ready recipient links.
+- Recover incomplete ATV hit-guard installation so a temporary startup refusal
+  cannot permanently block companion creation; retry honk/mount watches independently.
+- Validate impulse-frame bounds, companion yaw, deferred spawn/finish results and
+  rig-teleport arguments; clean up failed deferred bodies before publication.
+- Retry initially refused light-group watches and stop network light guards when
+  the session stops. Remove merged duplicate console code that blocked compilation.
 - Guard console atlas/factory/init/command/log preparation by current object,
   class, function and layout bindings. Reject malformed parameter/panel-array bounds.
 - Preserve newer command fields and stop retired clear/input operations; validate

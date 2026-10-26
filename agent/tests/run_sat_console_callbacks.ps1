@@ -66,10 +66,12 @@ try {
   }
   $wrapperPath=Join-Path $root 'src/votv-coop/src/ue_wrap/desk/sat_console.cpp'
   $wrapperText=[IO.File]::ReadAllText($wrapperPath)
+  $layoutCurrent=[regex]::Match($wrapperText.Replace("`r`n","`n"),'(?ms)^bool LayoutCurrent\(\) \{.*?^\}').Value
+  if(-not $layoutCurrent){throw 'Missing console LayoutCurrent control anchor'}
   $wrapperMutations=@(
    @{Name='metadata-retry';Before='if(g_resolving)return false;';After='if(g_resolving || g_attempts>=kMaxPostClassAttempts)return false;'},
    @{Name='partial-layout';Before="    ResetLayout();`n`n    void* term = R::FindClass(kTerminalClass);";After="`n    void* term = R::FindClass(kTerminalClass);"},
-   @{Name='metadata-currency';Before="return g_resolved && std::all_of(g_layoutRefs.begin(),g_layoutRefs.end(),`n        [](const CachedObjRef& ref){return ref.Get()!=nullptr;}) && BindingsCurrent();";After='return g_resolved;'},
+   @{Name='metadata-currency';Before=$layoutCurrent;After='bool LayoutCurrent() { return g_resolved; }'},
    @{Name='string-capacity';Before='if(view.num<0 || view.max<view.num || size_t(view.num)>limit+1)return false;';After='if(view.num<0 || size_t(view.num)>limit+1)return false;'}
   )
   foreach($mutation in $wrapperMutations){
@@ -89,7 +91,7 @@ try {
    Write-Host ('PASS fault '+$mutation.Name+': '+[regex]::Match($report,'FAIL [^\r\n]+').Value)
   }
   $nativeControls=@(
-   @{Name='binding';Before='}) && BindingsCurrent();';After='});'},
+   @{Name='binding';Before=$layoutCurrent;After='bool LayoutCurrent() { return g_resolved && std::all_of(g_layoutRefs.begin(),g_layoutRefs.end(),[](const CachedObjRef& ref){return ref.Get()!=nullptr;}); }'},
    @{Name='atlas';Before=' || owner.cls.Get()!=g_layoutRefs[1].Get()';After=''},
    @{Name='factory';Before='context.Current()';After='true'},
    @{Name='init';Before='(!dish || selectedDish.Is(dish))';After='true'},
@@ -101,8 +103,9 @@ try {
    @{Name='panels';Before=' || snapshot.max<snapshot.num';After=''}
   )
   foreach($control in $nativeControls){
-   if(-not $wrapperText.Contains($control.Before)){throw "Missing native console control anchor: $($control.Name)"}
-   $path=Join-Path $mutantRoot ('native_'+$control.Name+'.cpp');[IO.File]::WriteAllText($path,$wrapperText.Replace($control.Before,$control.After))
+   $copy=$wrapperText.Replace("`r`n","`n")
+   if(-not $copy.Contains($control.Before)){throw "Missing native console control anchor: $($control.Name)"}
+   $path=Join-Path $mutantRoot ('native_'+$control.Name+'.cpp');[IO.File]::WriteAllText($path,$copy.Replace($control.Before,$control.After))
    $header=Join-Path $mutantRoot ('native_'+$control.Name+'.h')
    [IO.File]::WriteAllText($header,('#define SAT_CONSOLE_WRAPPER_SOURCE "'+$path.Replace('\','/')+'"'+[Environment]::NewLine))
    $exe=Join-Path $mutantRoot ('native_'+$control.Name+'.exe')

@@ -32,6 +32,14 @@ public:
     // What SetActorRotation shows (the presentation yaw).
     float Yaw() const { return yaw_; }
 
+    // A seated body turns with its support; standing head-lead hysteresis does not apply.
+    bool Seated(uint64_t nowMs, float wireYawDeg) {
+        const float next=ue_wrap::NormalizeAxis(wireYawDeg);
+        const bool changed=std::fabs(ue_wrap::NormalizeAxis(next-yaw_))>.001f;
+        yaw_=next;turning_=false;lastMs_=nowMs;
+        return changed;
+    }
+
     // Re-base on wire truth: spawn placement, first packet, teleport snap,
     // ragdoll recover. Clears the hysteresis latch + the dt clock.
     void Reset(float yawDeg) {

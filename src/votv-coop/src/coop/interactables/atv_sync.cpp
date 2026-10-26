@@ -30,6 +30,8 @@
 #include "coop/net/protocol.h"
 #include "coop/net/refusal_tally.h"
 #include "coop/net/session.h"
+#include "coop/net/session_serial.h"
+#include "ue_wrap/core/cached_obj_ref.h"
 #include "coop/net/wire_key_util.h"  // WireKeyFromString / StringFromWireKey / FnvKey (shared)
 #include "coop/player/players_registry.h"   // Registry::Local / LocalPeerId / kMaxPeers
 #include "coop/player/roster_ledger.h"      // SubscribeSlotReplaced: a departed peer must not hold an ATV
@@ -218,231 +220,19 @@ ue_wrap::script_gate::Verdict OnMountPre(const ue_wrap::script_gate::Call& c) {
     return IsHeldForMount(c.object) || IsOccupiedByOther(c.object) ? V::Cancel : V::Run;
 }
 
-bool g_companionSpawned=false,g_companionCapped=false;
-void* g_companionActor=nullptr;std::wstring g_companionKey;
-uint64_t g_companionSettledSince=0,g_compStillSince=0;
-void* g_compSrc=nullptr;FVector g_compLoc{};
-constexpr uint64_t kCompanionSettleMs=2000;
-bool IsSynthKey(const std::wstring& key){return key.rfind(L"coopatv",0)==0;}
-void SendAtvDestroy(const std::wstring& key) {
-    auto* session=LaneSession();if(!session || !session->connected())return;
-    coop::net::AtvDestroyPayload p{};WireKeyFromString(key,p.key);
-    session->SendReliable(coop::net::ReliableKind::AtvDestroy,&p,sizeof(p));
-}
-
-int LiveAtvCount() {
-    return A::CountLiveSettled();
-}
-
-void RemoveMintedCompanion() {
-    void* extra = g_companionActor;
-    const std::wstring key = g_companionKey;
-    auto it = key.empty() ? g_atvs.end() : g_atvs.find(key);
-    const bool entryIsOurs = it != g_atvs.end() && (!extra || it->second.actor == extra);
-    if (entryIsOurs) {
-        g_atvs.erase(it);
-        if (!key.empty()) {
-            SendAtvDestroy(key);
-            UE_LOGW("atv: removed scooter '%ls' -- keeping the world at two", key.c_str());
-        }
-    } else if (!key.empty() && it == g_atvs.end()) {
-        SendAtvDestroy(key);
-    }
-    if (extra && R::IsLive(extra)) {
-        A::DestroyMirror(extra);
-        if (!entryIsOurs)
-            UE_LOGW("atv: removed the companion body -- keeping the world at two");
-    }
-    g_companionActor = nullptr;
-    g_companionKey.clear();
-    g_companionCapped = true;
-}
-
-bool PublishCompanion(void* spawned) {
-    std::wstring key = A::EnsureOwnSaveKey(spawned);
-    if (key.empty() || key == L"None") {
-        const std::wstring now = A::GetKeyString(spawned);
-        if (!now.empty() && now != L"None") return false;
-        return false;
-    }
-    auto taken = g_atvs.find(key);
-    if (taken != g_atvs.end() && taken->second.actor && taken->second.actor != spawned)
-        return false;
-    g_companionKey = key;
-    UE_LOGI("atv: companion game-save key '%ls' (its own record, not the other scooter's)",
-            key.c_str());
-    AtvEntry e{};
-    e.actor = spawned;
-    e.idx = R::InternalIndexOf(spawned);
-    e.world=ue_wrap::world_identity::WorldOf(spawned);
-    g_atvs[key] = std::move(e);
-    SendAtvSpawn(key, spawned, /*slot*/ -1);
-    FVector loc{}; FRotator rot{};
-    if (A::GetRootTransform(spawned, loc, rot))
-        UE_LOGI("atv: companion announced at (%.0f, %.0f, %.0f) key='%ls'",
-                loc.X, loc.Y, loc.Z, key.c_str());
-    return true;
-}
-
-void RebindCompanionKey(const std::wstring& from, const std::wstring& to) {
-    AtvEntry entry{};
-    auto it = g_atvs.find(from);
-    if (it != g_atvs.end()) {
-        entry = it->second;
-        g_atvs.erase(it);
-    }
-    entry.actor = g_companionActor;
-    entry.idx = R::InternalIndexOf(g_companionActor);
-    g_atvs[to] = entry;
-    g_companionKey = to;
-    SendAtvDestroy(from);
-    SendAtvSpawn(to, g_companionActor, /*slot*/ -1);
-    UE_LOGI("atv: companion save key moved to '%ls' -- '%ls' belongs to another scooter",
-            to.c_str(), from.c_str());
-}
-
-void RepairCompanionKeyCollision() {
-    if (!g_companionActor || !R::IsLive(g_companionActor) || g_companionKey.empty()) return;
-    std::wstring mine = A::GetKeyString(g_companionActor);
-    if (mine.empty() || mine == L"None") mine = g_companionKey;
-    if (!A::FindOtherLiveByKey(mine, g_companionActor)) return;
-    const int n = LiveAtvCount();
-    if (n < 0) return;
-    const bool canMove = n <= 2 && mine != L"coopatv2"
-        && !A::FindOtherLiveByKey(L"coopatv2", g_companionActor)
-        && !A::LoadedSaveNamesKey(L"coopatv2")
-        && A::WriteSaveKey(g_companionActor, L"coopatv2");
-    if (canMove) {
-        RebindCompanionKey(g_companionKey, L"coopatv2");
-        return;
-    }
-    UE_LOGW("atv: companion key '%ls' collides with a scooter that arrived later -- removing the companion",
-            mine.c_str());
-    RemoveMintedCompanion();
-}
-
-void WatchMintedCompanion(uint64_t nowMs) {
-    if (!g_companionActor || !R::IsLive(g_companionActor)) {
-        g_companionActor = nullptr;
-        if (g_companionKey.empty()) {
-            g_companionSpawned = false;
-            g_companionCapped = false;
-            g_companionSettledSince = 0;
-        }
-        return;
-    }
-    const int n = LiveAtvCount();
-    if (n < 0) {
-        g_companionSettledSince = 0;
-        return;
-    }
-    if (n > 2) {
-        RemoveMintedCompanion();
-        return;
-    }
-    // Settled at two or fewer, on a tick after the mint. A saved scooter that is not live yet
-    // is not in this count: more save records than other live bodies, or coopatv1 named by
-    // the save and not held by a live scooter.
-    const int saveN = A::LoadedSaveAtvCount();
-    const bool twinLive = A::FindOtherLiveByKey(L"coopatv1", g_companionActor) != nullptr;
-    const bool unseen = (saveN >= 0 && saveN > n - 1)
-        || (A::LoadedSaveNamesKey(L"coopatv1") && !twinLive);
-    if (unseen) {
-        if (g_companionSettledSince == 0) g_companionSettledSince = nowMs;
-        if (g_companionKey.empty() && nowMs - g_companionSettledSince >= kCompanionSettleMs) {
-            if (!PublishCompanion(g_companionActor)) RemoveMintedCompanion();
-        }
-        return;
-    }
-    g_companionSettledSince = 0;
-    if (g_companionKey.empty() && !PublishCompanion(g_companionActor)) {
-        RemoveMintedCompanion();
-        return;
-    }
-    g_companionCapped = true;
-}
-
-void TrySpawnCompanion(uint64_t nowMs) {
-    // A failed publication/collision cleanup can remove the minted body before
-    // it ever has an indexed key. The settled latch must not suppress retries
-    // for the rest of the session when the world still contains only one ATV.
-    if (g_companionSpawned && g_companionKey.empty() &&
-        (!g_companionActor || !R::IsLive(g_companionActor))) {
-        g_companionActor = nullptr;
-        g_companionSpawned = false;
-        g_companionCapped = false;
-        g_companionSettledSince = 0;
-    }
-    if (g_companionSpawned) {
-        if (!g_companionCapped) WatchMintedCompanion(nowMs);
-        RepairCompanionKeyCollision();
-        return;
-    }
-    const int live = LiveAtvCount();
-    if (live < 0 || live != 1) return;
-    void* src = nullptr;
-    FVector loc{};
-    FRotator rot{};
-    for (auto& kv : g_atvs) {
-        if (IsSynthKey(kv.first)) continue;
-        if (!R::IsLiveByIndex(kv.second.actor, kv.second.idx)) continue;
-        if (!src && A::GetRootTransform(kv.second.actor, loc, rot)) src = kv.second.actor;
-    }
-    if (!src) return;
-    const float dx = loc.X - g_compLoc.X, dy = loc.Y - g_compLoc.Y, dz = loc.Z - g_compLoc.Z;
-    if (src != g_compSrc || dx * dx + dy * dy + dz * dz > 150.f * 150.f) {
-        g_compSrc = src;
-        g_compLoc = loc;
-        g_compStillSince = nowMs;
-        return;
-    }
-    if (g_compStillSince == 0 || nowMs - g_compStillSince < kCompanionSettleMs) return;
-    if (LiveAtvCount() != 1) return;  // a second one arrived while this one was settling
-    if (A::IsDriven(src) || IsLocalGrabber(src, coop::players::Registry::Get().Local())) return;
-    // A failed search does not mint a vehicle in a neighbouring room. Throttle
-    // collision queries while the garage is crowded; moving an obstacle retries.
-    static uint64_t lastSearch = 0;
-    if (lastSearch && nowMs >= lastSearch && nowMs - lastSearch < 2000) return;
-    lastSearch = nowMs;
-    FVector spawn{};
-    if (!A::FindCompanionLocation(src, spawn)) return;
-    void* spawned = A::SpawnMirror(L"ATV_C", spawn, rot);
-    if (spawned) {
-        const int n = LiveAtvCount();
-        if (n > 2) {
-            A::DestroyMirror(spawned);
-            g_companionSpawned = true;
-            g_companionCapped = true;
-            UE_LOGW("atv: refused a third scooter -- the world already has %d", n);
-            return;
-        }
-    }
-    if (!spawned) {
-        static uint64_t sLastFail = 0;
-        if (nowMs - sLastFail > 5000) {
-            sLastFail = nowMs;
-            UE_LOGW("atv: companion spawn failed beside (%.0f, %.0f, %.0f)", loc.X, loc.Y, loc.Z);
-        }
-        return;
-    }
-    // The key waits for a settled count after this tick. LiveAtvCount() >= 0 here is the count
-    // the mint just joined, not a settlement that includes a scooter still on its way.
-    g_companionActor = spawned;
-    g_companionSpawned = true;
-    g_companionCapped = false;
-    g_companionSettledSince = 0;
-    UE_LOGI("atv: companion minted at (%.0f, %.0f, %.0f) -- watching the count before its save key",
-            spawn.X, spawn.Y, spawn.Z);
-}
+#include "atv_companion.h"
 
 void EnsureHonkWatch() {
-    static bool once = false;
-    if (once) return;
-    once = true;
-    ue_wrap::script_gate::WatchClassName(L"ATV_C", L"InpActEvt_atv_honk_K2Node_InputActionEvent",
-                                         0x4154484B, &OnHonkPre, nullptr);
-    ue_wrap::script_gate::WatchClassName(L"ATV_C", L"actionName",
-                                         0x41544D54, &OnMountPre, nullptr);
+    static bool honk = false, mount = false;
+    static std::chrono::steady_clock::time_point nextTry{};
+    if (honk && mount) return;
+    const auto now = std::chrono::steady_clock::now();
+    if (now < nextTry) return;
+    nextTry = now + std::chrono::seconds(1);
+    if (!honk) honk = ue_wrap::script_gate::WatchClassName(
+        L"ATV_C", L"InpActEvt_atv_honk_K2Node_InputActionEvent", 0x4154484B, &OnHonkPre, nullptr);
+    if (!mount) mount = ue_wrap::script_gate::WatchClassName(
+        L"ATV_C", L"actionName", 0x41544D54, &OnMountPre, nullptr);
     ue_wrap::script_gate::ResolvePendingNames();
 }
 
@@ -645,6 +435,7 @@ void Install(coop::net::Session* session) {
     // First, before the latch: the damage gate has its own, and registers its watches by name on every pump tick
     // until they are live, whether or not the ATV class has loaded.
     coop::atv_damage_gate::Install();
+    if (A::EnsureResolved()) coop::atv_hit_guard::InstallHitGuard();
     // Install is the per-tick ensure path (net_pump re-calls it until the class loads), latched so
     // the one-time registration happens once.
     if (!g_installed && A::EnsureResolved()) {
@@ -652,7 +443,6 @@ void Install(coop::net::Session* session) {
         // The condition layout is warmed here, with ATV_C resident, so its one-shot resolve (thirteen
         // offsets and four function lookups) lands at session setup rather than in the first apply frame.
         ue_wrap::atv_condition::Resolve();
-        coop::atv_hit_guard::InstallHitGuard();      // the seven ComponentHit interceptors -- Tick refuses to run without them
         SubscribeDepartures();  // a departed peer must not hold an ATV hostage
         g_installed = true;
     }
@@ -1045,9 +835,7 @@ void Tick() {
 void OnDisconnect() {
     coop::atv_steering_sync::OnDisconnect();
     g_radioSent.clear();
-    if(g_companionKey.empty() && g_companionActor && R::IsLive(g_companionActor))A::DestroyMirror(g_companionActor);
-    g_companionActor=nullptr;g_companionKey.clear();g_companionSpawned=false;g_companionCapped=false;
-    g_companionSettledSince=0;g_compStillSince=0;g_compSrc=nullptr;
+    ResetCompanion(true);
     for (auto& b:g_editBuckets) b.Reset();
     spawn_park::Clear();
     ResetArrivalState();

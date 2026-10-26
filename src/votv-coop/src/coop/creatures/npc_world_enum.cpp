@@ -7,6 +7,7 @@
 // so existing diagnostics keep matching.
 
 #include "coop/creatures/npc_world_enum.h"
+#include "npc_spawn_lifetime.h"
 
 #include "coop/element/element_deleter.h"
 #include "coop/element/mirror_manager.h"
@@ -26,6 +27,8 @@
 #include "ue_wrap/facts/function_row.h"
 
 #include <cstdint>
+#include <algorithm>
+#include <cmath>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -57,6 +60,8 @@ coop::element::ElementId EnrollUntrackedNpcActor(void* obj, const std::wstring& 
                                                  ue_wrap::FVector* outLoc = nullptr) {
     auto* s = coop::npc_sync::GetSession();
     if (!s) return coop::element::kInvalidId;
+    const lifetime::Pending source(s,obj);
+    if(!source.Current(coop::npc_sync::GetSession()))return coop::element::kInvalidId;
     // An NPC whose location or rotation cannot be read is not enrolled, before any element is made
     // for it: the read failing is a dispatch that faulted, so no broadcast or snapshot row could
     // ever place it, and the pose stream would fault on it every tick.
@@ -68,6 +73,10 @@ coop::element::ElementId EnrollUntrackedNpcActor(void* obj, const std::wstring& 
         return coop::element::kInvalidId;
     }
     if (outLoc) *outLoc = loc;
+    const auto scl=ue_wrap::engine::GetActorScale3D(obj);
+    const float values[]={loc.X,loc.Y,loc.Z,rot.Pitch,rot.Yaw,rot.Roll,scl.X,scl.Y,scl.Z};
+    for(float value:values)if(!std::isfinite(value))return coop::element::kInvalidId;
+    if(!source.Current(coop::npc_sync::GetSession()))return coop::element::kInvalidId;
     auto npc = std::make_unique<coop::element::Npc>();
     std::string typeName8;
     for (size_t k = 0; k < clsName.size() && k < 63; ++k)
@@ -108,14 +117,13 @@ coop::element::ElementId EnrollUntrackedNpcActor(void* obj, const std::wstring& 
     // fan-out's own gate first, where MTA filters inside its fan-out (CPlayerManager.cpp:162-170).
     // MTA registers an element at its creation (reference/mtasa-blue/Server/mods/deathmatch/logic/CElement.cpp:39);
     // a creature that loaded with the level, or that no watched spawn source made, is enrolled here.
-    if (s->connected() && s->AnyWorldReadyPeer(skipSlot)) {
+    if (source.Current(coop::npc_sync::GetSession()) && s->connected() && s->AnyWorldReadyPeer(skipSlot)) {
         coop::net::EntitySpawnPayload p{};
         const std::string& tn = el->GetTypeName();
         p.className.len = 0;
         for (size_t k = 0; k < tn.size() && k < 63; ++k)
             p.className.data[p.className.len++] = tn[k];
         p.elementId = static_cast<uint32_t>(eid);
-        const auto scl = ue_wrap::engine::GetActorScale3D(obj);  // mirror at true size
         p.locX = loc.X; p.locY = loc.Y; p.locZ = loc.Z;
         p.rotPitch = rot.Pitch; p.rotYaw = rot.Yaw; p.rotRoll = rot.Roll;
         p.scaleX = scl.X; p.scaleY = scl.Y; p.scaleZ = scl.Z;
@@ -137,7 +145,9 @@ coop::element::ElementId EnrollUntrackedNpcActor(void* obj, const std::wstring& 
 // bypass ProcessEvent: event swarms/controllers, ambient tickers, the sell-gun
 // coin mint and jellyfish route need this native seam. Output is still filtered
 // by the NPC/world-actor allowlists; unrelated births remain host-local.
+constexpr const wchar_t* kConsoleNpcOutputs[]={L"rufus_C",L"thiccfus_C",nullptr};
 constexpr ExSpawnSource kExSpawnSources[] = {
+    {L"ui_console_C",kConsoleNpcOutputs},          // funny console's exact Character outputs
     {L"trigger_wispSwarm_C",     nullptr},          // the wisps event swarm
     {L"piramidSpawner_C",        nullptr},          // the piramid event chain
     {L"ticker_wispSpawner_C",    nullptr},          // the ambient sky wisps
@@ -173,7 +183,7 @@ bool IsWaAllowlistedClass(void* cls) {
 // Queue entries carry the internal index captured at catch time, so the drain validates with
 // the index-paired liveness check; a raw pointer cached across a tick boundary is the recycle
 // hazard. Cleared on disconnect.
-struct PendingExSpawn { void* actor; int32_t internalIdx; };
+using PendingExSpawn=lifetime::Pending;
 std::mutex g_pendingMx;
 std::vector<PendingExSpawn> g_pendingExSpawns;        // queued actors awaiting the GT drain
 constexpr size_t kMaxPendingExSpawns = 256;           // sanity cap (a swarm is 32)
@@ -191,7 +201,9 @@ constexpr size_t kMaxPendingExSpawns = 256;           // sanity cap (a swarm is 
 void OnBeginDeferredExSpawn(void* /*context*/, void* srcObj, void* spawned) {
     if (!spawned || !srcObj) return;
     auto* s = coop::npc_sync::GetSession();
-    if (!s || s->role() != coop::net::Role::Host) return;
+    if (!s || !s->running() || s->role() != coop::net::Role::Host) return;
+    const lifetime::Pending candidate(s,spawned);
+    if(!candidate.Current(coop::npc_sync::GetSession()))return;
     // IsInstalled is the lifecycle-armed proxy for both lanes (they install together at session
     // start). The NPC-specific disabled gate lives in the drain's NPC branch, so a degraded NPC
     // lifecycle cannot silently drop world-actor catches.
@@ -206,10 +218,13 @@ void OnBeginDeferredExSpawn(void* /*context*/, void* srcObj, void* spawned) {
     if (!source) return;
     void* cls = R::ClassOf(spawned);
     if (!cls) return;
+    if(!lifetime::OutputAllowed(source->outputs,R::ToString(R::NameOf(cls))))return;
     coop::npc_sync::RefreshLateAllowlist();  // an event creature's class may have just loaded
     if (!coop::npc_sync::IsAllowlistedClass(cls) && !IsWaAllowlistedClass(cls)) return;
-    const int32_t idx = R::InternalIndexOf(spawned);
+    if(!candidate.Current(coop::npc_sync::GetSession()))return;
     std::lock_guard<std::mutex> lk(g_pendingMx);
+    std::erase_if(g_pendingExSpawns,[s](const PendingExSpawn& row){return !row.Current(s);});
+    for(const auto& row:g_pendingExSpawns)if(row.actor.Is(spawned))return;
     if (g_pendingExSpawns.size() >= kMaxPendingExSpawns) {
         // The cap exists so a stalled drain cannot grow the queue unbounded; a full queue then
         // drops every later catch quietly. Said once: the drop is per-catch, the evidence once.
@@ -222,7 +237,7 @@ void OnBeginDeferredExSpawn(void* /*context*/, void* srcObj, void* spawned) {
         }
         return;
     }
-    g_pendingExSpawns.push_back({spawned, idx});
+    g_pendingExSpawns.push_back(candidate);
 }
 
 }  // namespace
@@ -254,10 +269,10 @@ void DrainPendingExSpawns() {
         pending.swap(g_pendingExSpawns);
     }
     for (const PendingExSpawn& e : pending) {
-        void* obj = e.actor;
+        void* obj = e.actor.Get();
         // Index-paired liveness: the catch-time internal index makes a recycled slot read dead
         // instead of validating a different object at the same address.
-        if (!obj || !R::IsLiveByIndex(obj, e.internalIdx)) continue;  // died before Finish / recycled
+        if (!e.Current(coop::npc_sync::GetSession())) continue;
         void* cls = R::ClassOf(obj);
         if (!cls) continue;
         if (!coop::npc_sync::IsAllowlistedClass(cls)) {

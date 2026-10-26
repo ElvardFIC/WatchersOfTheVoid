@@ -4,6 +4,7 @@
 // and the shared sender-eid range check; see coop/dispatch/event_dispatch.h.
 
 #include "event_dispatch.h"  // co-located private header (src tree, not include/)
+#include "coop/props/llama_sync.h"
 
 #include "coop/element/registry.h"
 #include "coop/creatures/grayboar_actions.h"
@@ -207,6 +208,11 @@ bool HandleWorldEvent(net::Session& session,
         if(msg.senderPeerSlot!=0 || msg.payloadLen!=sizeof(net::MadnessStatePayload))break;
         net::MadnessStatePayload p{};std::memcpy(&p,msg.payload,sizeof(p));
         coop::madness_sync::Receive(p,0);break;
+    }
+    case net::ReliableKind::LlamaState: {
+        if(msg.senderPeerSlot!=0 || msg.payloadLen!=sizeof(net::LlamaStatePayload))break;
+        net::LlamaStatePayload p{};std::memcpy(&p,msg.payload,sizeof(p));
+        coop::llama_sync::Receive(p,0);break;
     }
     case net::ReliableKind::HookRetrieve: {
         if(msg.payloadLen!=sizeof(net::HookRetrievePayload) || msg.senderPeerSlot<0 ||

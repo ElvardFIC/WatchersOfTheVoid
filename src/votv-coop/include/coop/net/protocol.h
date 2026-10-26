@@ -1092,6 +1092,7 @@ enum class ReliableKind : uint8_t {
     AtvTakeover = 250,
     AtvAnswer = 251,
     AtvSetComplete = 252,
+    LlamaState = 253, // host llama light/state + expiring sound edge; no client physics/AI replay
 };
 
 #pragma pack(push, 1)
@@ -1413,6 +1414,14 @@ struct DingusMusicPayload {
     uint8_t op,playing,used,reserved; // 0 host state, 1 toggle, 2 first touch, 3 squeak request, 4 host squeak
 };
 static_assert(sizeof(DingusMusicPayload)==58,"DingusMusicPayload wire size");
+
+struct LlamaStatePayload {
+    WireKey key;
+    uint32_t sequence,pulse;
+    uint16_t ttlMs;
+    uint8_t active,cue;
+};
+static_assert(sizeof(LlamaStatePayload)==44,"LlamaStatePayload wire size");
 
 struct PropFirePayload {
     WireKey key;

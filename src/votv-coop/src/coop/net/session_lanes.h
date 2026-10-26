@@ -226,6 +226,7 @@ inline Lane LaneForKind(ReliableKind k) {
     case ReliableKind::PlacedSave:        return Lane::Normal; // creation, acknowledgement and retirement in order
     case ReliableKind::HookRetrieve:      return Lane::Normal; // ordered with anchor births/retirement; host intent, never relayed
     case ReliableKind::MadnessState:      return Lane::Normal; // host-owned event audio/HUD snapshot
+    case ReliableKind::LlamaState:        return Lane::Normal; // host-owned llama light and expiring sound
     case ReliableKind::DingusMusic:       return Lane::Normal; // authorized here, never blindly relayed
     case ReliableKind::Watoy:             return Lane::Normal; // keyed activation and occupant/generation-checked hand state
     case ReliableKind::SpongeEffect:      return Lane::Normal; // validated cosmetic foam, never blindly relayed

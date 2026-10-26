@@ -271,6 +271,7 @@ constexpr ClientAuthorship AuthorshipOf(ReliableKind k) {
     case ReliableKind::CordState:
     case ReliableKind::DreamScene:
     case ReliableKind::MadnessState:
+    case ReliableKind::LlamaState:
     case ReliableKind::CeilingLampState:
     case ReliableKind::AmbientLightState:
     case ReliableKind::GrayboarAction:

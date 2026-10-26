@@ -47,7 +47,8 @@ bool IsParkedClass(void* cls);
 // parked, and say, once per class, when a watch its BeginPlay passes through is not live. The tables' class names are
 // resolved first; until they are, no class can be told as parked, so the mirror is left unmarked, its Blueprint runs
 // (fail open), and that is said once per class. Game thread.
-void PrepareBirth(void* actor);
+// False refuses a Rufus-family birth until its exact graph guard is live.
+bool PrepareBirth(void* actor);
 
 // How a mirror came to be: spawned by the client for the host's creature, whose BeginPlay the graph watches refused;
 // or adopted, a twin the client's own save loaded, whose BeginPlay ran whole as the client's own creature.

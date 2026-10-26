@@ -3,6 +3,7 @@
 // drains, the ghost sweep and the per-tick pose drive. See coop/creatures/npc_mirror.h.
 
 #include "coop/creatures/npc_mirror.h"
+#include "rufus_birth_guard.h"
 
 #include "coop/element/mirror_manager.h"
 #include "coop/element/mirror_managers.h"  // PropMirrors/NpcMirrors/WaMirrors
@@ -178,6 +179,8 @@ bool SpawnFreshNpcMirror(const std::wstring& classW, void* actorClass, uint32_t 
                          float scaleX, float scaleY, float scaleZ) {
     using ue_wrap::ParamFrame;
     using ue_wrap::Call;
+    // Refuse before allocating an unfinished Rufus when its graph guard is unavailable.
+    if(!coop::npc_mirror_brain::rufus_birth::ReadyForClass(actorClass))return false;
     // The UFunctions and the CDO must be resolved (a receiver can fire before Install completes on
     // a fast handshake). A zeroed wire pose spawns at the origin: visibly wrong, not a crash.
     if (!g_spawnFn || !g_finishSpawnFn || !g_gsCdo ||
@@ -270,7 +273,11 @@ bool SpawnFreshNpcMirror(const std::wstring& classW, void* actorClass, uint32_t 
         return false;
     }
     // A mirror of a parked family is marked before the finish runs its BeginPlay, which the graph watches refuse.
-    coop::npc_mirror_brain::PrepareBirth(spawned);
+    if(!coop::npc_mirror_brain::PrepareBirth(spawned)) {
+        UE_LOGW("npc-sync: Rufus mirror guard unavailable; refusing FinishSpawning eid=%u",elementId);
+        if(g_k2DestroyFn&&R::IsLive(spawned))R::CallFunction(spawned,g_k2DestroyFn,nullptr);
+        return false;
+    }
     {
         ParamFrame finish(g_finishSpawnFn);
         if (!finish.valid()) {

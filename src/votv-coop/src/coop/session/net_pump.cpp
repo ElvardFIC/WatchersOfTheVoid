@@ -618,12 +618,11 @@ void Tick(coop::net::Session& session) {
     if (worldUp) {
         coop::puppet_drive::DriveTick(session,
                                       HasAnnouncedWorldReady());
-        coop::sit_pose::DriveRemotes();
-        coop::sit_pose::DriveAtvDrivers();
-
         // The receiver-side held-prop driver: the latest PropPose applied (a Key lookup on first
         // arrival, transform writes after); a stream stop over 500 ms is an implicit release.
         { PP::Scope _s{PP::Bucket::RemoteProp}; coop::remote_prop::Tick(session); }
+        coop::sit_pose::DriveRemotes();
+        coop::sit_pose::DriveAtvDrivers();
     }  // worldUp (puppet drive + ragdoll + pose-diag + remote prop)
 
     // Session events (joins, disconnects) to the feed, and our Join; g_netLocal goes along so

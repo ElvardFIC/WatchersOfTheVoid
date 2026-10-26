@@ -1,5 +1,206 @@
 # Regression tests
 
+`run_llama_marker.ps1`, `run_llama_events.ps1` and
+`run_llama_begin_restore.ps1` cover the marker/event/Begin continuation with 75
+new numbered `PASS llama lifecycle N` groups. Marker tests include 19 actual
+wrapper/record/ParamFrame groups and six actual PlacedSave/chunk/wire groups;
+engine/codec/key-registry boundaries are doubled. Check exact native marker
+class/key/record/transform, foreign-key refusal, keyed adoption, late census,
+client mutation refusal and native actor preservation. The garden/2163 fixtures
+have narrow marker boundary doubles so their previous family checks remain intact.
+
+Event cases exercise verified sender/count cleanup, multiplicity, unchanged
+unrelated storage/order, masked h, final snapshot validation, unavailable metadata,
+weak source guard ownership and independent script-gate lifetime. Canonical Apply
+now controls light/audio without writing native h. Begin cases capture Sphere/
+zero-timer state, correlate invocations, preserve the oldest baseline, restore
+only observed owned collision and admit isolated graph108 once after authority
+and stack release. Read back native handles without inventing or replaying an
+uncertain timer. Consumed source notification prevents delayed recovery after
+an admitted host jump. Root integration adds Prepare/cancel/post/readiness cases.
+
+Cooked contracts verify actor_save key-only load, native marker inheritance,
+int_save capture, additive native event accounting and isolated108 timer creation.
+The suites use actual production controllers/wrappers with fake engine/registry/
+transport/clock boundaries; live schemas/rendering/save timing remain unverified.
+The legacy false guard proves absence protection only, not old/new latent phase
+causality. Missing POST and unknown admitted graph outcomes never synthesize
+another timer; safe cleanup retries require later Install/Tick. No removal-control
+or full rendered-pipeline count is claimed for these suites.
+
+The llama recovery continuation adds `run_llama_timers.ps1` for the actual native
+timer wrapper, actual lease controller and real ParamFrame. It exercises existing
+client timers, original paused state, exact-handle pause/unpause, remaining phase,
+uncertain completion, callback retirement, metadata recovery and same-world
+teardown. Timer ownership is bounded; refused restoration is retried by later
+Install/Tick calls, without an idle single-player polling claim. Identical-handle
+external pause causality cannot be distinguished. Newly suppressed Begin timers
+are not synthesized, and marker/save/event-count lifecycle remains separate.
+
+The same continuation adds delivery/Begin restoration cases to `run_llama.ps1`
+and launch-completion/motion cases to `run_llama_trigger.ps1`. New item numbers
+use the separate `PASS llama recovery N` prefix, 1 through 75. Check heartbeat
+cue debt, quiet/delivered history, bounded tombstones, clocks, canonical actor,
+callback-side recipient replacement, send fairness, temporary flag restoration,
+source-owned completion and confirmed paced motion admission. Engine/reflection/
+registry/transport/object slots and clocks are doubled. Cooked graph checks and
+Release linking complement these fixtures; neither proves rendered gameplay.
+
+`run_llama_trigger.ps1` covers the remote-player activation continuation: 39
+actual native-wrapper/real-ParamFrame groups and 34 actual selector/lifetime
+groups at 32 slots. Two integration groups in `run_llama.ps1` bring coverage to
+all 75 numbered TODO items. Check registry/life/pose/readiness, finite coordinates,
+identity replacement, overlap and occlusion, nearest visible selection, local-body
+native fallback, timer/physics/components, checked native launch preparation,
+native math/velocity/tail, output cleanup, once-only admission, retry/new timer,
+reentrancy, scope retirement/capacity and clock rollback. Both new production TUs
+compile separately. The native contract checks cooked axes, velocity, timer,
+overlap/Pawn filter and tail entry. Engine/reflection/registry/transport/object
+slots and clock are doubled. The runners are in check_current; rendered gameplay,
+marker/save/event counts and pre-session timer restoration remain open. No
+removal-control or complete pipeline/rendered count is claimed.
+
+`run_llama.ps1` covers the 25-item Console/events llama jump/light/audio subtask:
+17 actual-controller groups at 32 peers and eight actual-wrapper/real-ParamFrame
+groups. Cover graph/base-init authority, temporary flag restoration, source/key/
+world/session ownership, coherent reads, typed native effects, admitted cue dedup,
+bounded state, recipient readiness/replacement/requeue, ordering/wrap, pending
+actors, expiry/rollback and quiet joins. Four production TUs compile. Engine,
+reflection, object slots, transport and clocks are doubled. The opt-in custom
+world-identity support macro leaves older fixtures unchanged. The cooked
+`llama_native_contract_test.py` validates graph/console/marker dependencies.
+Both runners are in check_current; reliablekind_gate checks full host-only route
+integration. Rendered physics/effects, marker/save/event counts and audio timing
+remain unverified. No removal-control count is claimed for this suite.
+
+`run_rufus.ps1` follows TODO Console/events' Rufus/thiccfus birth/pose subtask.
+Its 25 numbered groups include the actual native wrapper/ParamFrame, birth and
+pending lifetime helpers and extracted production catch/drain/enroll/adoption
+bodies. Fake registry/transport/engine/object slots/script-gate dispatch cover
+ancestry/plush exclusion, exact sources, incarnation/scope/duplicate/finite gates,
+whole-graph mirror refusal, admission readiness, native mesh attachment/AnimBP,
+finite yaw and checked writes. Seven production TUs compile. `run_entity_sync`
+also verifies stationary preparation retry in the actual NPC driver. The cooked
+`rufus_native_contract_test.py` confirms family, console spawns, unsafe graph paths,
+mesh/animation dependencies and source admission ordering. Both runners are in
+check_current. Full pipeline/rendered behavior and cross-player gameplay/effects
+remain open; no removal-control count is claimed for this suite.
+
+`run_maxwell_native.ps1` follows TODO Console/events' Maxwell phase/recovery
+subtask. Its 25 actual-wrapper/real-ParamFrame groups cover bounded/current-world
+deduplicated collection, exact actor/audio/class/field identities, coherent state
+and clock reads, unchanged failed output, checked query/float/bool parameters,
+owned input, same-resource/duration/rate seeks, Stop/touch/toggle/squeak dispatch
+and nested Playback revisions. Typed engine/reflection/object slots are doubled;
+the production TU compiles. The older toy wrapper fixture now uses real ParamFrame
+as well, retaining existing run_toy_music seek/no-restart/recovery coverage. The
+runner is in check_current; sync_native_contract checks local cooked toy routes
+and wave duration/loop metadata. Rendered phase, live schemas and enemy gameplay
+remain outside these fixtures. No removal-control count is claimed for this suite.
+
+`run_madness_recovery.ps1` follows TODO Console/events' playback-recovery subtask.
+Twelve actual-controller groups at 32 slots cover scope/clock/shape/source, paused
+age, recipient identity/readiness/departure, owned packets/revisions and old-event
+cleanup. Thirteen actual-wrapper plus real ParamFrame groups cover native reads,
+typed factories/return spans, widget/audio recovery, world/context, direct HUD
+count/text, owned cleanup and nested/refused work. The legacy wrapper entry reuses
+this fixture; old controller/console cases remain in run_2154. The native contract
+checks cooked HUD/count -> master.killed -> spawnGrunt dependencies. Runtime/native
+runners are in check_current. Engine/reflection/transport/clock are doubled;
+rendered play and complete grunts/variant AI/damage/effects remain open.
+
+`run_atv_companion.ps1` includes the actual private host lifecycle with real
+CachedObjRef/AtvEntry and engine/count/save/transport doubles. Its 25 groups cover
+scopes, incarnation, stillness and clock/count recovery, occupied sources, parking
+revalidation, saved coop-key sources, bounded save arrival, reentry, typed results,
+third-body/destroy retry, protected index cleanup, key publication/rebind state
+and refused announcement retry. Compile the real controller. The runner is in
+check_current. The outer hit-guard gate, live garage/spawn and native save files
+remain outside this fixture; original gameplay acceptance stays open.
+The legacy session-report runner delegates its ATV check here while retaining
+the actual console classifiers, sleep controller and cooked-contract checks;
+its old duplicated companion model/extractor has been removed.
+
+`run_seat_presentation.ps1 -FaultControls` tests the 25-item seat continuation:
+twelve real-controller groups and thirteen wrapper/view groups with 25 numbered
+compiled removal controls. Include the actual sit wrapper and ParamFrame; extract
+the actual view, world-rotation and sitting methods. Cover pending/bounded chair
+admission, scope restore, reflected masks, class/function recovery, finite geometry,
+full parent rotations, refused/reentrant mesh restore, partial writes, 32 bodies,
+seated yaw, final head/world flashlight aim and ATV rig/seat/driver transitions.
+Four production TUs compile. The runner is in check_current. Reflection/object
+slots/engine/transport/clock are doubled; rendered alignment and live schemas are
+unverified, and the relative-location getter cannot distinguish failure from zero.
+
+`run_chair_sync.ps1 -FaultControls` includes the actual chair controller plus the
+extracted production RemotePlayer sitting predicate. Ten groups and ten compiled
+removal controls cover small-motion/all-axis updates, 20 Hz pacing and heartbeat,
+joint shortest-arc body/chair interpolation, OFF cancellation, admission before
+placement, late object/puppet discovery, scope/person/connection retirement,
+owned validated samples, state transitions and reentrant send completion. Slot 31
+and invalid slot 32 are exercised. Engine/reflection/object-slot/transport/clock
+boundaries are fake; three production TUs compile. The legacy 2144 entry delegates
+to this runner. `chair_native_contract_test.py` checks current cooked sitBox parent
+chair, mainPlayer sittingOn attachment and unsit clearing. Both runners are in
+check_current. These checks do not prove rendered multiplayer alignment or live
+reflection schemas; the original garage-companion report remains open.
+
+`run_atv_spawn_lifetime.ps1 -FaultControls` extracts current production TeleportRig,
+keyed SpawnMirror and parking bodies. Nine spawn groups plus the current parking
+fixture cover finite/frozen inputs, native service/class/key-offset recovery,
+original world/context, validated deferred return type, finish and teleport
+lifetime, incarnation-scoped cleanup, failed-placement publication and unchanged
+source pose/output. Ten compiled source-removal controls must reach named runtime
+assertions. Production atv.cpp compiles. Reflection/object slots/world/ParamFrame/
+native calls are fake; this does not establish live schemas, real garage traces,
+rendered wheels or the original missing second ATV. The runner is in check_current.
+The shared spawn fixture now models object incarnation; parking tests stop queries
+on actor/world retirement and refuse all six changed source-pose axes.
+
+`run_light_presentation.ps1 -FaultControls` reuses the production lighting wrapper
+and actual ParamFrame fixture for ten lamp/ambient/switch-audio groups and ten
+compiled removal controls. It covers early actor/function/world capture, coherent
+ambient component binding, sound metadata/callee and frame bounds, copied packets,
+resource recovery, finite values, source retirement, allocation reentry and nested
+scope restoration. It also compiles the real native-hook guard-page fixture and
+checks exact PRE/POST callee identity and cleanup. Both production TUs compile.
+The prior native-lighting fixture/control anchor is updated for sound readiness.
+Both runners are in check_current; boundary fakes do not prove rendered completion
+or the inner engine audio-wrapper's preparation lifetime.
+
+`run_lightswitch_native.ps1 -FaultControls` includes the production lighting
+wrapper and actual ParamFrame implementation. Ten groups and ten compiled
+removal controls cover root/switch partial resolution and metadata replacement,
+missing fields without fallback, three bool masks, bounded linked-root arrays,
+checked group arguments and actor/class/function/world/layout lifetime through
+group and switch preparation/completion. Reflection/native boundaries are fake;
+the tests do not establish real reflected offsets or rendered multiplayer.
+The current suite includes this runner. Active wrappers_2129 sound/provenance
+tests now resolve switch metadata instead of injecting a private raw cache.
+
+`run_flashlight_join.ps1 -FaultControls` includes the real flashlight controller
+through the existing state fixture, with 32-slot transport/registry doubles. Ten
+groups cover local/relay refusal, fresh sampling, OFF, recipient/author retirement,
+owned packet bytes, newer completion/reentry, 64-attempt fairness and session/
+role/link/lane/world admission. Ten compiled source-removal controls must reach
+their named runtime assertions. The 961-debt stress case completes without
+duplicate recipient/origin deliveries. The production TU compiles. This runner
+is in check_current. Engine/transport fakes do not establish rendered joins or
+atomic admission against net-thread teardown; unknown identities are refused.
+
+`run_atv_recovery.ps1` runs the real hit guard and unchanged controller install/
+verb bodies against delayed metadata, temporary interceptor capacity, impulse
+frame bounds, throttled/idempotent retry and owner/mirror/offline dispatch.
+It also runs unchanged native spawn/teleport bodies with argument-preparation,
+finish-result and cleanup failures. `run_2149.ps1` now uses the current syncer/
+stamped-seat mount queries and retains supported nearby parking/wall/pit/trace/
+tilt tests, adding non-finite yaw. Deleted authority routines are not covered.
+`run_2177.ps1` adds refused-watch recovery and stopped-session lamp/ambient
+guards. All three runners and the cooked-console check are in check_current.
+Engine boundary fakes do not prove real garage geometry or rendered multiplayer.
+The audit repairs merged duplicate console code and duplicate flashlight fixture
+definitions; two console controls now remove both lifecycle checkpoints.
+
 `run_sat_console_callbacks.ps1 -FaultControls` includes ten console native-lifetime
 groups in `sat_console_native_lifetime_test.cpp`, using the production wrapper,
 ParamFrame, FString/FText and field-write code. They cover live binding replacement,

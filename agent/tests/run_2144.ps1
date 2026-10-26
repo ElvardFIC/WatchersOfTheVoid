@@ -5,10 +5,12 @@ New-Item -ItemType Directory -Force -Path $output | Out-Null
 Push-Location $root
 try {
  if(-not(Get-Command cl -ErrorAction SilentlyContinue)){. (Join-Path $root '../_toolchain/env.ps1')}
- foreach($name in @('ragdoll_skin','chair')) {
+ foreach($name in @('ragdoll_skin')) {
   & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I agent/tests/text_drone_stubs /I agent/tests/stubs /I src/votv-coop/include "/Fo$output/$name.obj" "/Fe$output/$name.exe" "agent/tests/${name}_2144_test.cpp" /link /OPT:REF
   if($LASTEXITCODE -ne 0){throw "Compile failed: $name"}
   & "$output/$name.exe"
   if($LASTEXITCODE -ne 0){throw "Test failed: $name"}
  }
+ & powershell -NoProfile -ExecutionPolicy Bypass -File agent/tests/run_chair_sync.ps1
+ if($LASTEXITCODE){throw 'Current chair regression failed'}
 }finally{Pop-Location}

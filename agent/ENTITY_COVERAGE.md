@@ -18,9 +18,9 @@ ancestors of current `main`. The merge retained local reliable kinds 202/203, as
 work. The sync branch's laptop, garden, world-sound and placed-hose modules remain in the build and
 session integration. The continued executable audit found 38 missing authorship rows: the
 receiving host rejected 27 kinds of legitimate client intents/owner samples as unknown. All 38
-rows now follow their actual send/receive paths (27 Client, 11 Host). The router gate and its 18
-injected failure controls pass for all 213 kinds. Current source is protocol 2159 under parallel work; the last complete audit was
-2158 with39 passing groups. The 21 October audit is
+rows now follow their actual send/receive paths (27 Client, 11 Host). The historical router gate and its 18
+injected failure controls passed for 213 kinds. Active development is 0.9.2161 / b2217;
+current verification is in TESTLOG. The earlier complete audit was 2158 with 39 passing groups. The 21 October audit is
 recorded in TODO/WORK/TESTLOG and build/todo-audit/verification.json. The mapping
 review does not close the class-specific behavior adapters below.
 
@@ -80,7 +80,8 @@ review does not close the class-specific behavior adapters below.
 | Rune Sphere | rune prop family `prop_rune_C`/`prop_rune_0..3_C`, with `airRuneBox_C`, `earthRuneZone_C`, `waterRuneTrigger_C` | prop plus unrouted ritual actors | Activation and ritual phase ownership |
 | Black Sphere / Red Void Orb | `npc_orborb_C`; producer candidate `blackballSpawner_C` (`actor_save_C`) | pose for orb; spawner unrouted | Charge/crash visual, local Meta Paranoia and timed lifetime |
 | Living Erie | `eriePlushLive_C` plus `_good_C`/`_evil_C` | unrouted | Interaction, grow/fire/damage/steal and ownership |
-| Rufus | `rufus_C`; corpse `rufusCorpse_C` | unrouted | Interaction, animation, damage and lifetime |
+| Rufus / thiccfus | `rufus_C` (`Character`); `thiccfus_C` inherits it; separate plush `prop_thiccfus_C`; corpse `rufusCorpse_C` | NPC birth/pose, exact console EX catches and parked mirror graph; native mesh/AnimBP setup plus streamed body yaw | Live birth/join/animation/destruction acceptance; cross-player targeting/grab, sound/HUD/event state, damage/explosion feedback and corpse mesh/loot transport. Marking does not reverse earlier native effects. Girufus remains unmapped |
+| Llama event | `prop_llama_C` (`prop_C`), singleton marker `llamaSoul_C` (`actor_save_C`) | Ordinary prop motion plus host-owned h/light state and expiring sound edge; quiet join seeds and client jump-graph authority | Rendered jump/motion/light/audio and join/reload acceptance; remote-player trigger selection (native host camera/player zero remains), marker/save/event-count lifetime, hand transitions and pre-session timer restoration; local cue expiry does not establish synchronized audio timing |
 | Gnomes / Nisse | `tomtenisse_C`; death/soul actor `nisse_soul_C` (`actor_save_C`) | unrouted | Group spawn, presents, revenge, damage/death and shared lifetime |
 | Krampus | `npc_krampus_C` | pose plus creature-event count | stab/fireball/jump/target/despawn actions and event acceptance |
 

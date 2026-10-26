@@ -1,4 +1,5 @@
 #include "ue_wrap/actors/placed_save.h"
+#include "ue_wrap/actors/llama_marker.h"
 #include "ue_wrap/actors/wall_build.h"
 #include "ue_wrap/actors/wall_drying.h"
 #include "ue_wrap/core/call.h"
@@ -69,6 +70,7 @@ Kind Type(void* actor) {
     void* cls = R::ClassOf(actor);
     if (!cls) return Kind::None;
     const auto& name = R::NameOf(cls);
+    if (R::NameEquals(name, L"llamaSoul_C")) return Kind::Marker;
     if (R::NameEquals(name, L"dirthole_C")) return Kind::DirtHole;
     if (R::NameEquals(name, L"faucet_C")) return Kind::Faucet;
     if (R::NameEquals(name, L"groundHose_C")) return Kind::Hose;
@@ -101,6 +103,7 @@ bool PlacementCaller(Kind kind, void* function) {
 bool Ready(void* actor) {
     const Kind kind = Type(actor);
     if (kind == Kind::None) return false;
+    if (kind == Kind::Marker) return llama_marker::Ready(actor);
     if (kind != Kind::Hose) return true;
     int32_t off = -1; uint8_t mask = 0;
     return R::FindBoolProperty(R::ClassOf(actor), L"moving", off, mask) && off >= 0 && mask &&
@@ -108,6 +111,7 @@ bool Ready(void* actor) {
 }
 bool Capture(void* actor, SR::SaveRecord& record) {
     if (Type(actor) == Kind::None) return false;
+    if (Type(actor) == Kind::Marker) return llama_marker::Capture(actor,record);
     if (Type(actor) == Kind::DirtHole) {
         CachedObjRef ref; ref.Set(actor);
         const auto world = world_identity::Generation();
@@ -147,6 +151,7 @@ bool Capture(void* actor, SR::SaveRecord& record) {
 }
 bool SetKey(void* actor, const std::wstring& key) {
     if (Type(actor) == Kind::None || Empty(key) || !Name(key)) return false;
+    if (Type(actor) == Kind::Marker) return llama_marker::SetKey(actor,key);
     if (Type(actor) == Kind::DirtHole) {
         CleanHoleKeys();
         CachedObjRef ref; ref.Set(actor);
@@ -163,6 +168,7 @@ bool SetKey(void* actor, const std::wstring& key) {
 }
 std::wstring ExistingKey(void* actor) {
     if (Type(actor) == Kind::None) return {};
+    if (Type(actor) == Kind::Marker) return llama_marker::Key(actor);
     if (Type(actor) == Kind::DirtHole) {
         CleanHoleKeys(); CachedObjRef ref; ref.Set(actor);
         const auto it = g_holeKeys.find(ref.Idx());
@@ -242,6 +248,7 @@ bool ApplyCare(void* plant, CareKind kind, float amount) {
 }
 bool Apply(void* actor, const SR::SaveRecord& record) {
     if (Type(actor) != ClassKind(record.className) || R::ClassNameOf(actor) != record.className) return false;
+    if (Type(actor) == Kind::Marker) return llama_marker::Apply(actor,record);
     CachedObjRef ref; ref.Set(actor);
     if (Type(actor) == Kind::DirtHole) {
         SR::SaveRecord checked;
@@ -299,6 +306,7 @@ bool DetachSprinkler(void* actor, const std::wstring& expectedEndpoint) {
     return Verb(actor, L"detachSprinkler") && current();
 }
 void* Spawn(const SR::SaveRecord& record) {
+    if (ClassKind(record.className) == Kind::Marker) return llama_marker::Spawn(record);
     void* cls = object_index::ClassByName(record.className.c_str());
     if (!cls || ClassKind(record.className) == Kind::None) return nullptr;
     const FVector pos{record.xform[4], record.xform[5], record.xform[6]};
@@ -350,7 +358,7 @@ bool Link(void* actor, const SR::SaveRecord& record) {
     const Kind kind = Type(actor);
     if (kind == Kind::None) return false;
     CachedObjRef ref; ref.Set(actor);
-    if (IsWall(kind) || kind == Kind::DirtHole) return true; // no hose/pot links or processKeys work
+    if (IsWall(kind) || kind == Kind::DirtHole || kind == Kind::Marker) return true; // no hose/pot links or processKeys work
     if (kind == Kind::Faucet) {
         const auto& key = record.names[0][0];
         if (!Empty(key)) {

@@ -3,6 +3,8 @@
 // npc_mirror_brain_table.cpp.
 
 #include "coop/creatures/npc_mirror_brain.h"
+#include "rufus_birth_guard.h"
+#include "ue_wrap/actors/rufus.h"
 
 #include "coop/element/death_seam.h"
 #include "coop/element/element.h"
@@ -296,14 +298,16 @@ void UnmarkMirror(int32_t index, int32_t serial) {
 }
 
 bool IsParkedClass(void* cls) {
+    if(ue_wrap::rufus::IsFamilyClass(cls))return true;
     int hops = 0;
     for (; cls && hops < 16; cls = R::SuperStructOf(cls), ++hops)
         if (TableFor(cls)) return true;
     return false;
 }
 
-void PrepareBirth(void* actor) {
+bool PrepareBirth(void* actor) {
     UE_ASSERT_GAME_THREAD("npc_mirror_brain::PrepareBirth");
+    if(ue_wrap::rufus::IsFamily(actor))return rufus_birth::Prepare(actor);
     void* const cls = actor ? R::ClassOf(actor) : nullptr;
     // The table's class names first: before they resolve no class reads as parked, so the mirror stays unmarked and
     // its Blueprint runs (fail open), which is said once per class.
@@ -313,11 +317,12 @@ void PrepareBirth(void* actor) {
             UE_LOGW("npc_mirror_brain: %ls born before the parked class names resolved -- not marked, its Blueprint "
                     "runs", R::ClassNameOf(actor).c_str());
         }
-        return;
+        return true;
     }
-    if (!IsParkedClass(cls)) return;
+    if (!IsParkedClass(cls)) return true;
     MarkMirror(actor);
     CheckWatchesLive(cls);
+    return true;
 }
 
 void SetUpPresentation(void* actor, Origin origin) {
@@ -327,7 +332,9 @@ void SetUpPresentation(void* actor, Origin origin) {
     static const EntryTable* const zombieTable = TableNamed(P::name::NpcClass_Zombie);
     static const EntryTable* const houndTable = TableNamed(P::name::NpcClass_Fossilhound);
     bool ok = true;
-    if (zombieTable && ChainHasTable(cls, *zombieTable)) {
+    if(ue_wrap::rufus::IsFamily(actor)) {
+        ok=ue_wrap::rufus::PreparePresentation(actor);
+    } else if (zombieTable && ChainHasTable(cls, *zombieTable)) {
         ok = ue_wrap::zombie::ApplyBeginPlayPresentation(actor);
     } else if (houndTable && ChainHasTable(cls, *houndTable)) {
         // An adopted twin's own BeginPlay ran as the client's creature and already started the per-viewer loop.
@@ -342,6 +349,7 @@ void SetUpPresentation(void* actor, Origin origin) {
 uint32_t AdoptedKickSkips() { return g_adoptedKickSkips; }
 
 void Install() {
+    rufus_birth::Install();
     ResolveClassNames();   // a latch; the lookups also ask for it
     bool registered = true;
     for (Watch& w : g_watches) {
