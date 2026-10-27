@@ -25,16 +25,6 @@ acceptance, qualification and results belong in WORK.md and TESTLOG.md.
   while preserving eligibility, probabilities, animation and effect duration.
 - [ ] Complete level/map-script event routes once their asset headers are available.
 
-## Reported defects
-
-- [ ] Bench58: fix the host's old rifle disappearing after ordinary placement.
-  Candidate: prop_rifle_C; its inherited destruction route remains unidentified.
-  Client placement recovery does not resolve the host's reported disappearance.
-- [ ] Token52: resolve the reported shared saveSlot.Points inconsistency during
-  credits, spending, join and reconnect; the original UI/trigger remains unknown.
-- [ ] Repair trowel identity/stock mismatch across native hold[0] reconstruction,
-  unequip and drop. Preserve an existing saved key and exact stock, including zero;
-  never restore a deferred profile into a replacement item.
 
 ## Shared items and resources
 
