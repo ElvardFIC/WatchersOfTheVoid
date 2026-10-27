@@ -20,4 +20,5 @@ try {
         }
     }
     & (Join-Path $PSScriptRoot 'run_serverbox.ps1') -CompileSources:$CompileSources
+    & (Join-Path $PSScriptRoot 'run_event_slots.ps1') -CompileSources:$CompileSources
 } finally { Pop-Location }

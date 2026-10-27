@@ -258,7 +258,7 @@ void DriveMenuModeJoinWorldBoot() {
         GT::Post([rst] { ue_wrap::engine::ResetCachedSave(); rst->store(1); });
         while (rst->load() == 0 && !coop::shutdown::IsShuttingDown()) ::Sleep(5);
         if (!waitForApplyBlob()) return;
-        coop::player_inventory_sync::BeginJoinApply();
+        coop::player_inventory_sync::BeginJoinApply(mode);
         if (!BootStorySaveBlocking(/*forceFresh=*/false, slot.c_str(), mode)) {
             // NOT a fresh boot. The world we were given is the world this join is about, and an
             // engine that will not load it has ended the join, not changed its subject.
@@ -274,7 +274,7 @@ void DriveMenuModeJoinWorldBoot() {
         UE_LOGI("harness: the host has no save -- fresh-booting the ephemeral baseline in the "
                 "host's mode %d, as asked", freshMode);
         if (!waitForApplyBlob()) return;
-        coop::player_inventory_sync::BeginJoinApply();
+        coop::player_inventory_sync::BeginJoinApply(freshMode);
         if (!BootStorySaveBlocking(/*forceFresh=*/true, /*slotOverride=*/nullptr, freshMode))
             FailJoinNoWorld_(coop::net::EndReason::WorldWouldNotLoad,
                              "the engine did not reach gameplay with a fresh world");

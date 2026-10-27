@@ -5,9 +5,11 @@
 #include "coop/interactables/laptop_buffer_sync.h"  // the quad's shadow primes after a laptop apply
 #include "coop/net/blob_chunks.h"
 #include "coop/net/session.h"
+#include "coop/net/session_serial.h"
 #include "coop/text/utf8_codec.h"
 
 #include "ue_wrap/core/game_thread.h"
+#include "ue_wrap/core/cached_obj_ref.h"
 #include "ue_wrap/core/log.h"
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/actors/floppy_disc.h"
@@ -18,8 +20,10 @@
 #include <windows.h>
 
 #include <atomic>
+#include <array>
 #include <chrono>
 #include <cstring>
+#include <functional>
 #include <map>
 #include <set>
 #include <string>
@@ -185,6 +189,14 @@ bool g_haveCanonical[FS::kDeviceKindCount] = {};
 // over the host's value.
 std::map<uint32_t, Slot> g_pendingCanonical;
 std::map<uint32_t, uint32_t> g_pendingCanonicalGen;
+std::map<uint32_t, uint64_t> g_pendingCanonicalRevision;
+std::set<uint32_t> g_pendingWriteDebt;
+std::array<uint32_t,FS::kDeviceKindCount> g_pendingCursor{};
+uint64_t g_pendingEpoch=0,g_pendingRevision=0;
+uint32_t g_boundWorld=0,g_boundSerial=0;
+bool g_pendingDraining=false;
+struct CanonicalOrder{bool known=false;uint32_t sequence=0;};
+std::array<std::array<CanonicalOrder,kMaxDevices>,FS::kDeviceKindCount> g_canonicalOrder{};
 
 // CLIENT: a claim the host drops -- for its rate, its size, a bad index or a malformed body --
 // gets no answer of any kind, and this peer primed its shadow when the claim was SENT. Without
@@ -226,6 +238,20 @@ std::map<uint8_t, Rate> g_rate;      // per sender slot
 
 uint32_t ShadowKey(FS::DeviceKind kind, size_t index) {
     return (static_cast<uint32_t>(kind) << 16) | static_cast<uint32_t>(index);
+}
+
+bool StageCanonical(FS::DeviceKind kind,uint8_t index,Slot value,uint32_t generation,uint32_t sequence){
+    const auto kindIndex=static_cast<uint8_t>(kind);
+    if(kindIndex>=FS::kDeviceKindCount || index>=kMaxDevices)return false;
+    auto& order=g_canonicalOrder[kindIndex][index];
+    if(order.known && int32_t(sequence-order.sequence)<=0)return false;
+    const auto key=ShadowKey(kind,index);
+    g_pendingCanonical[key]=std::move(value);
+    g_pendingCanonicalRevision[key]=++g_pendingRevision;
+    if(kind==FS::DeviceKind::Laptop)g_pendingCanonicalGen[key]=generation;
+    g_awaiting.erase(key);
+    order={true,sequence};
+    return true;
 }
 
 bool IsHost() {
@@ -330,51 +356,90 @@ void PrimeQuadIfLaptop(FS::DeviceKind kind) {
 // Apply one slot to a live device and prime the shadow to what was written, so the next poll
 // reads no edge. A slot that already reads the incoming value is left alone: at a join most of a
 // base's boxes are empty on both peers, and writing each anyway would mint every string and swap
-// every mesh in the frame that closes the connect set. Returns true when it wrote.
-bool ApplySlot(FS::DeviceKind kind, size_t index, void* device, const Slot& s) {
+// every mesh in the frame that closes the connect set. True means complete,
+// including an already-equal slot; false means the canonical still needs retry.
+bool ApplySlot(FS::DeviceKind kind, size_t index, void* device, const Slot& input,
+               const std::function<bool()>& guard={},bool retryWrite=false) {
+    const Slot s=input;
+    ue_wrap::CachedObjRef target,cls;target.Set(device);
+    if(!target.Get())return false;cls.Set(R::ClassOf(device));
+    const auto epoch=g_pendingEpoch;
+    const auto world=ue_wrap::world_identity::Generation(),serial=coop::net::session_serial::Current();
+    auto* session=g_session.load();
+    const auto current=[&]{return epoch==g_pendingEpoch && session==g_session.load() &&
+        world==ue_wrap::world_identity::Generation() && serial==coop::net::session_serial::Current() &&
+        target.Get() && cls.Get() && R::ClassOf(device)==cls.Get() && (!guard || guard());};
+    if(!current())return false;
     // Two empty slots agree before either one's content is read, and at a join most of a base's
     // boxes are that case -- reading the rows and the JSON first would mint a stale disc's record
     // per box for a comparison that never looks at it.
     FS::Scalars curSt{};
-    if (FS::ReadScalars(kind, device, curSt) && curSt.floppyType < 0 && s.st.floppyType < 0) {
+    const bool scalars=FS::ReadScalars(kind, device, curSt);
+    if(!current())return false;
+    if (!retryWrite && scalars && curSt.floppyType < 0 && s.st.floppyType < 0) {
         PrimeShadow(kind, index, device);
-        return false;
+        return current();
     }
     Slot cur;
     const bool read = ReadSlotOf(kind, device, cur);
-    if (read && SlotEquals(kind, cur, s)) {
+    if(!current())return false;
+    if (!retryWrite && read && SlotEquals(kind, cur, s)) {
         PrimeShadow(kind, index, device);
-        return false;
+        return current();
     }
-    if (s.st.floppyType < 0) FS::ClearSlot(kind, device);
-    else                     FS::WriteSlot(kind, device, s.st, s.c);
+    const bool written=s.st.floppyType < 0 ? FS::ClearSlot(kind,device) : FS::WriteSlot(kind,device,s.st,s.c);
+    if(!written || !current())return false;
     PrimeShadow(kind, index, device);
+    if(!current())return false;
     PrimeQuadIfLaptop(kind);
-    return true;
+    return current();
 }
 
 // Apply staged host values when a device that was not present during the connect snapshot appears.
 // The canonical is retained per device index; a later host value replaces an earlier staged one.
 void DrainPendingCanonicals(FS::DeviceKind kind, const std::vector<void*>& devices) {
-    for (auto it = g_pendingCanonical.begin(); it != g_pendingCanonical.end();) {
-        if (static_cast<FS::DeviceKind>(it->first >> 16) != kind) { ++it; continue; }
-        const size_t index = static_cast<uint16_t>(it->first);
+    if(g_pendingDraining)return;
+    g_pendingDraining=true;
+    struct DrainGuard{~DrainGuard(){g_pendingDraining=false;}} drainGuard;
+    // Native writes can clear/replace the pending maps. Iterate owned values and
+    // retire only the revision that successfully reached its original device.
+    struct PendingSlot {uint32_t key;Slot value;uint64_t revision;uint32_t generation;bool hasGeneration;};
+    std::vector<PendingSlot> pending;
+    auto& cursor=g_pendingCursor[static_cast<uint8_t>(kind)];
+    auto it=g_pendingCanonical.upper_bound(cursor);
+    for(size_t visited=0;visited<g_pendingCanonical.size() && pending.size()<8;++visited){
+        if(it==g_pendingCanonical.end())it=g_pendingCanonical.begin();
+        const auto& [key,value]=*it++;
+        if(static_cast<FS::DeviceKind>(key>>16)!=kind)continue;
+        cursor=key;
+        const auto revision=g_pendingCanonicalRevision.find(key);
+        if(revision==g_pendingCanonicalRevision.end())continue;
+        const auto gen=g_pendingCanonicalGen.find(key);
+        pending.push_back({key,value,revision->second,gen==g_pendingCanonicalGen.end()?0:gen->second,gen!=g_pendingCanonicalGen.end()});
+    }
+    const auto epoch=g_pendingEpoch;
+    for (const auto& item:pending) {
+        const auto key=item.key;
+        if(epoch!=g_pendingEpoch)return;
+        if (static_cast<FS::DeviceKind>(key >> 16) != kind) continue;
+        const size_t index = static_cast<uint16_t>(key);
         if (index >= devices.size() || !devices[index] || !R::IsLive(devices[index])) {
-            ++it;
             continue;
         }
-        ApplySlot(kind, index, devices[index], it->second);
+        const auto current=[&]{const auto row=g_pendingCanonicalRevision.find(key);
+            return epoch==g_pendingEpoch && row!=g_pendingCanonicalRevision.end() && row->second==item.revision;};
+        if(!current())continue;
+        const bool retryWrite=g_pendingWriteDebt.count(key)!=0;
+        g_pendingWriteDebt.insert(key);
+        if(!ApplySlot(kind,index,devices[index],item.value,current,retryWrite) || !current())continue;
         g_haveCanonical[static_cast<uint8_t>(kind)] = true;
         if (kind == FS::DeviceKind::Laptop) {
-            const auto gen = g_pendingCanonicalGen.find(it->first);
-            if (gen != g_pendingCanonicalGen.end()) {
-                g_laptopGen = gen->second;
-                g_pendingCanonicalGen.erase(gen);
-            }
-        } else {
-            g_pendingCanonicalGen.erase(it->first);
+            if(item.hasGeneration)g_laptopGen=item.generation;
         }
-        it = g_pendingCanonical.erase(it);
+        g_pendingCanonicalGen.erase(key);
+        g_pendingCanonicalRevision.erase(key);
+        g_pendingWriteDebt.erase(key);
+        g_pendingCanonical.erase(key);
     }
 }
 
@@ -565,6 +630,7 @@ void SweepKind(coop::net::Session* s, FS::DeviceKind kind, bool host) {
     for (size_t i = 0; i < n; ++i) {
         void* d = devices[i];
         if (!d || !R::IsLive(d)) continue;
+        if(!host && g_pendingCanonical.count(ShadowKey(kind,i)))continue;
         uint64_t digest = 0;
         if (!FS::ReadDigest(kind, d, digest, ScopeOf(kind))) continue;
         const uint32_t key = ShadowKey(kind, i);
@@ -592,6 +658,9 @@ void SweepKind(coop::net::Session* s, FS::DeviceKind kind, bool host) {
 }  // namespace
 
 void Install(coop::net::Session* session) {
+    if(g_session.load()!=session || g_boundWorld!=ue_wrap::world_identity::Generation() ||
+       g_boundSerial!=coop::net::session_serial::Current())OnDisconnect();
+    g_boundWorld=ue_wrap::world_identity::Generation();g_boundSerial=coop::net::session_serial::Current();
     g_session.store(session, std::memory_order_release);
 }
 
@@ -599,6 +668,7 @@ void Tick() {
     if (!GT::IsGameThread()) return;
     auto* s = g_session.load(std::memory_order_acquire);
     if (!s || !s->connected()) return;
+    Install(s);
     const uint64_t now = NowMs();
     if (now < g_nextSweep) return;
     g_nextSweep = now + kSweepMs;
@@ -626,6 +696,7 @@ void OnChunk(const coop::net::BlobChunkPayload& p, uint8_t senderSlot) {
     }
     auto* s = g_session.load(std::memory_order_acquire);
     if (!s) return;
+    Install(s);
     std::vector<uint8_t> blob;
     if (!g_asm.OnChunk(p, senderSlot, blob)) return;
     if (blob.size() < 2) return;
@@ -744,10 +815,7 @@ void OnChunk(const coop::net::BlobChunkPayload& p, uint8_t senderSlot) {
         return;
     }
     for (auto& entry : parsed) {
-        const uint32_t key = ShadowKey(kind, entry.first);
-        g_awaiting.erase(key);
-        g_pendingCanonical[key] = std::move(entry.second);
-        if (kind == FS::DeviceKind::Laptop) g_pendingCanonicalGen[key] = gen;
+        StageCanonical(kind,entry.first,std::move(entry.second),gen,p.blobSeq);
     }
     std::vector<void*> devices;
     if (FS::EnsureResolved(kind)) ReadDevices(kind, devices);
@@ -794,12 +862,17 @@ void OnPeerGone(uint8_t senderSlot) {
 }
 
 void OnDisconnect() {
+    ++g_pendingEpoch;
     g_shadow.clear();
     g_retry.clear();
     g_unsendable.clear();
     g_awaiting.clear();
     g_pendingCanonical.clear();
     g_pendingCanonicalGen.clear();
+    g_pendingCanonicalRevision.clear();
+    g_pendingWriteDebt.clear();
+    g_pendingCursor.fill(0);
+    g_canonicalOrder={};
     g_connectRetry.clear();
     for (bool& have : g_haveCanonical) have = false;
     g_laptopGen = 0;

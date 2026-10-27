@@ -14,6 +14,7 @@ bool saveOk=false;int saves=0,loads=0;void* out=nullptr;
 ue_wrap::script_gate::PostFn saved=nullptr,loaded=nullptr;
 void Callback(){auto f=std::move(callback);callback={};if(f)f();}
 }
+namespace ue_wrap::object_index {void* ClassByName(const wchar_t*){std::abort();}}
 namespace ue_wrap::reflection {
 void* EngineAlloc(size_t n,uint32_t){if(!test::allocation)return nullptr;auto* p=std::malloc(n);CHECK(p);test::buffers.insert(p);return p;}
 void EngineFree(void* p){if(p){CHECK(test::buffers.erase(p)==1);std::free(p);}}

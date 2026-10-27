@@ -25,6 +25,10 @@ assert 'g_selectedSlot.empty()' in native and 'g_modeButtons={};' in native
 assert 'host_game_mode::Label(g_choice.mode)' in (root/'src/votv-coop/src/ui/host_session_settings.cpp').read_text()
 boot=(root/'src/votv-coop/src/harness/world_boot.cpp').read_text()
 assert 'b->ph.save.newGame?b->ph.save.mode:-1' in boot
+assert 'BeginJoinApply(mode);' in boot and 'BeginJoinApply(freshMode);' in boot
+join=(root/'src/votv-coop/src/coop/session/net_pump.cpp').read_text()
+native_case=join.split('case PIS::JoinPlacement::NativeMap:',1)[1].split('break;',1)[0]
+assert 'ApplyLocally' not in native_case
 load=(root/'src/votv-coop/src/ue_wrap/engine/engine_save.cpp').read_text()
 assert load.count('if (!g_gameModeApplied) return false;')==2
 assert load.count('L"/Game/maps/tutorial3"')==2

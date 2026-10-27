@@ -532,6 +532,9 @@ void Tick(coop::net::Session& session) {
             namespace PIS = coop::player_inventory_sync;
             float x = 0, y = 0, z = 0, yaw = 0;
             switch (PIS::TakeJoinPlacement(x, y, z, yaw)) {
+            case PIS::JoinPlacement::NativeMap:
+                UE_LOGI("net_pump: CLIENT spawn -> native map placement (Tutorial; no KPP/profile teleport)");
+                break;
             case PIS::JoinPlacement::ProfilePose:
                 coop::teleport_client::ApplyLocally({x, y, z, 0.f, yaw, 0.f});
                 UE_LOGI("net_pump: CLIENT spawn -> the profile's pose (%.0f, %.0f, %.0f) yaw=%.0f",

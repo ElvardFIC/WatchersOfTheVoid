@@ -29,6 +29,7 @@ std::map<std::wstring,int> ids;std::map<int,std::wstring> words;
 std::map<const void*,ue_wrap::signal_dynamic::Row> signals;
 std::function<void()> onNative,onAllocate;
 std::function<void()> onVolume;
+std::function<void()> onResolve;
 int volumeCalls=0,nameCalls=0;
 void Callback(std::function<void()>& source){auto fn=std::move(source);source={};if(fn)fn();}
 int Field(void* p,int offset){return int(offsetof(Obj,fields))+static_cast<Obj*>(p)->cls->bias+offset;}
@@ -44,7 +45,7 @@ I::PlayerInventory Rich() {
 }
 void Reset() {
     for(void* p:owned)std::free(p);owned.clear();signals.clear();ids.clear();words.clear();
-    world=1;metadata=boolReady=classesReady=namesReady=stringsReady=signalsReady=true;allocations=failAt=decodes=0;onNative=onAllocate=onVolume={};volumeCalls=nameCalls=0;
+    world=1;metadata=boolReady=classesReady=namesReady=stringsReady=signalsReady=true;allocations=failAt=decodes=0;onNative=onAllocate=onVolume=onResolve={};volumeCalls=nameCalls=0;
     for(int i=0;i<32;++i){const int serial=objects[i].serial+1;objects[i]={};objects[i].id=i;objects[i].serial=serial;objects[i].name.ComparisonIndex=10000+i;objects[i].cls=&objects[31];}
     for(int i=0;i<4;++i)objects[i].cls=&objects[10+i];objects[4].cls=&objects[11];
     objects[10].label=L"mainGamemode_C";objects[11].label=L"saveSlot_C";objects[12].label=L"prop_container_C";objects[13].label=L"propInventory_C";
@@ -84,7 +85,7 @@ void* FindClass(const wchar_t* n){return test::classesReady&&!wcscmp(n,L"prop_sa
 void* FindFunction(void*,const wchar_t*){std::abort();}
 void* FindDispatchFunction(void*,const wchar_t*,void**){std::abort();}
 #ifndef CONTAINER_APPLY_HARNESS
-void* FindDispatchFunctionCached(void*,const wchar_t* n){return &test::objects[!wcscmp(n,L"updateVolumesAndMass")?26:27];}
+void* FindDispatchFunctionCached(void*,const wchar_t* n){if(!wcscmp(n,L"recalculateNames"))test::Callback(test::onResolve);return &test::objects[!wcscmp(n,L"updateVolumesAndMass")?26:27];}
 #endif
 void* SuperStructOf(void*){std::abort();}
 bool IsDescendantOfAny(void*,void* const*,size_t,int){std::abort();}
@@ -111,7 +112,11 @@ bool ReadStruct(const void* p,Row& out,bool){auto it=test::signals.find(p);if(it
 bool WriteStructLive(void* p,const Row& row){test::Callback(test::onNative);if(!test::signalsReady)return false;test::signals[p]=row;test::signals[p].image.clear();return true;}
 }
 #ifndef CONTAINER_APPLY_HARNESS
-namespace ue_wrap::object_index {void* ClassByName(const wchar_t* n){return &test::objects[!wcscmp(n,L"propInventory_C")?13:12];}}
+namespace ue_wrap::object_index {void* ClassByName(const wchar_t* n){
+    if(!wcscmp(n,L"propInventory_C"))return &test::objects[13];
+    if(!wcscmp(n,L"prop_container_C"))return &test::objects[12];
+    return test::classesReady&&!wcscmp(n,L"prop_sample_C")?&test::objects[20]:nullptr;
+}}
 #endif
 namespace ue_wrap::prop {bool WalksToBase(void* cls,void* base){return cls==base;}std::wstring GetInteractableKeyString(void*){std::abort();}}
 #ifndef CONTAINER_APPLY_HARNESS
@@ -197,7 +202,8 @@ int main() {
     puts("PASS held replacement stages full data and refuses failed/stale writes; caller cancellation stops profile publication");
     Reset();C::RederiveShownState(&objects[2],&objects[3]);CHECK(volumeCalls==1&&nameCalls==1);
     for(int mode=0;mode<5;++mode){Reset();onVolume=[mode]{if(mode==0)++world;if(mode==1)++objects[3].serial;if(mode==2)Set(&objects[2],0,static_cast<void*>(&objects[5]));if(mode==3)Set(&objects[3],8,static_cast<void*>(&objects[5]));if(mode==4)++objects[27].serial;};C::RederiveShownState(&objects[2],&objects[3]);CHECK(volumeCalls==1&&nameCalls==1);}
-    puts("PASS derived container state: names rebuild before volume/mass; retired callbacks never dispatch again");
+    Reset();onResolve=[]{++world;};C::RederiveShownState(&objects[2],&objects[3]);CHECK(!nameCalls && !volumeCalls);
+    puts("PASS derived container state: names rebuild before volume/mass; retired callbacks and function resolution never dispatch again");
     Reset();
     return 0;
 }

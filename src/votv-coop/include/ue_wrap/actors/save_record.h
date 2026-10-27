@@ -27,13 +27,10 @@
 namespace ue_wrap::save_record {
 
 // How a class leaf name on a record resolves to a UClass as the record is written. A null resolver
-// means reflection::FindClass, the authoritative walk-the-array-on-a-miss that is correct everywhere
-// but costs a whole-array walk per unresolved name. A peer applying data IT RECEIVED FROM AN
-// ATTACKER (the host taking a client's record) passes ue_wrap::object_index::ClassByName instead: a
-// one-step lookup that answers a loaded class and a miss alike, so an attacker's unknown name costs a
-// hash probe, not a 250k-object walk. A client applying the host's own
-// record keeps the default: its object index can trail during a blocking world load, where the walk
-// still finds a class the index does not list yet, and a cheating host is out of scope here.
+// means object_index::ClassByName. Unknown or not-yet-indexed classes cost one
+// lookup and keep checked restoration incomplete. Callers retry pending records
+// after the class/index is ready; they must not publish a partially encoded slot.
+// An explicit resolver can provide a different class source when required.
 using ClassResolver = void* (*)(const wchar_t*);
 
 // One Fstruct_save record as engine-agnostic POD (the wire layer serializes this).
@@ -125,13 +122,13 @@ bool UpdateScalarGroups(void* record, const SaveRecord& expected, const SaveReco
 
 // Write one Fstruct_save into the ZEROED 0x100 slot at `base`, constructing engine-OWNED
 // TArrays via reflection::EngineAlloc (FNames interned, FStrings engine-minted, UClasses
-// FindClass'd). The slot MUST be zeroed by the caller (AllocZeroed); any previous buffers it
+// resolved through the loaded-class index). The slot MUST be zeroed by the caller (AllocZeroed); any previous buffers it
 // referenced are intentionally orphaned -- recursively freeing nested Fstruct_save sub-arrays +
 // FString buffers is far more crash-prone than a bounded leak, and the engine never double-frees
 // a buffer it has lost the pointer to. Buffers WE allocate are GMalloc-owned (EngineAlloc), so
 // the engine's later Array realloc / GC free of them is allocator-matched.
 // `resolve` governs how every class leaf (the record's own class and its `classes` group) resolves;
-// null = reflection::FindClass (see ClassResolver).
+// null = object_index::ClassByName (see ClassResolver).
 void WriteSaveRecord(uint8_t* base, const SaveRecord& r, ClassResolver resolve = nullptr);
 // Encode into a zeroed, unpublished slot, reporting allocation, class,
 // name/string and signal construction failures. False may leave partial scratch
@@ -174,7 +171,7 @@ bool CaptureRecord(void* actor, SaveRecord& out);
 // only thing this pair exists to move -- including the TAIL of a group the base also writes, which
 // is where a food keeps its temperature. Which elements those are is read off the base class at
 // runtime, never listed here. Two dispatches: the base capture and the apply.
-// `resolve` is forwarded to the write of the merged record (null = FindClass; see ClassResolver).
+// `resolve` is forwarded to the write of the merged record (null = class index; see ClassResolver).
 bool ApplyRecord(void* actor, const SaveRecord& r, ClassResolver resolve = nullptr);
 
 // Synchronous caller-owned revision/authority guard, checked through convention
@@ -203,7 +200,7 @@ bool CaptureRecordVia(void* actor, void* recordFn, SaveRecord& out);
 // Write `r` into `loadFn`'s `data` parameter and call it. THE RECORD IS APPLIED AS GIVEN: there is
 // no splice here, so a caller handing this a record that came off the wire has already decided,
 // field by field, which parts it is willing to take from the sender.
-// `resolve` is forwarded to the record write (null = FindClass; see ClassResolver).
+// `resolve` is forwarded to the record write (null = class index; see ClassResolver).
 bool ApplyRecordVia(void* actor, void* loadFn, const SaveRecord& r, ClassResolver resolve = nullptr);
 
 // Full-record restore with a required synchronous caller guard. Validates actor,

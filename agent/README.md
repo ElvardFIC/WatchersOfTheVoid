@@ -1,7 +1,7 @@
 # Agent context
 
 Owner instruction, 27 October: development now targets **0.9.2162**. The last
-qualified package remains **0.9.2161 / b2217**. Do not increment
+qualified package is **0.9.2162 / b2217** (offline). Do not increment
 the public version for each continuation. Keep internal build/protocol identity
 separate, and change it only when required/explicitly requested, not per batch.
 Name every planned fix and every completed fix individually. Earlier 2162

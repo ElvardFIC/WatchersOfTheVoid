@@ -476,38 +476,53 @@ void* ReadMainPlayerGrabTimeline(void* mainPlayer) {
 
 void* GetMainPlayerLightR(void* mainPlayer) {
     if (!mainPlayer || !R::IsLive(mainPlayer)) return nullptr;
-    void* light = *reinterpret_cast<void**>(
-        reinterpret_cast<uint8_t*>(mainPlayer) + P::off::AmainPlayer_light_R);
+    static R::InstanceOffset field{L"light_R"};
+    const int32_t offset=field.Of(mainPlayer);
+    if(offset<0)return nullptr;
+    void* light=nullptr;
+    std::memcpy(&light,static_cast<uint8_t*>(mainPlayer)+offset,sizeof(light));
     if (!light || !R::IsLive(light)) return nullptr;
     return light;
 }
 
 bool ReadFlashlightSnapshot(void* light, FlashlightSnapshot& out) {
     if (!light || !R::IsLive(light)) return false;
+    static R::InstanceOffset intensity{L"Intensity"},outer{L"OuterConeAngle"},inner{L"InnerConeAngle"};
+    const int i=intensity.Of(light),o=outer.Of(light),n=inner.Of(light);
+    int visible=-1;uint8_t mask=0;
+    if(i<0 || o<0 || n<0 || !R::FindBoolProperty(R::ClassOf(light),L"bVisible",visible,mask) ||
+       visible<0 || !mask)return false;
     auto* base = reinterpret_cast<uint8_t*>(light);
-    out.intensity       = *reinterpret_cast<float*>(base + P::off::ULightComponentBase_Intensity);
-    out.outerConeAngle  = *reinterpret_cast<float*>(base + P::off::USpotLightComponent_OuterConeAngle);
-    out.innerConeAngle  = *reinterpret_cast<float*>(base + P::off::USpotLightComponent_InnerConeAngle);
-    const uint8_t flags = *reinterpret_cast<uint8_t*>(base + P::off::USceneComponent_VisFlagsByte);
-    out.visible         = (flags & 0x10) != 0;
+    FlashlightSnapshot snapshot{};
+    std::memcpy(&snapshot.intensity,base+i,sizeof(float));
+    std::memcpy(&snapshot.outerConeAngle,base+o,sizeof(float));
+    std::memcpy(&snapshot.innerConeAngle,base+n,sizeof(float));
+    snapshot.visible=(base[visible]&mask)!=0;
+    out=snapshot;
     return true;
 }
 
 bool ReadMainPlayerFlashlightState(void* mainPlayer, MainPlayerFlashlightState& out) {
-    out = {};
     if (!mainPlayer || !R::IsLive(mainPlayer)) return false;
+    int offsets[3]{};uint8_t masks[3]{};
+    const wchar_t* names[]{L"flashlight",L"hasFlashlight",L"crankFlashlight"};
+    for(int i=0;i<3;++i)
+        if(!R::FindBoolProperty(R::ClassOf(mainPlayer),names[i],offsets[i],masks[i]) ||
+           offsets[i]<0 || !masks[i])return false;
+    static R::InstanceOffset mode{L"flashlightMode"};
+    const int modeOffset=mode.Of(mainPlayer);if(modeOffset<0)return false;
     auto* base = reinterpret_cast<uint8_t*>(mainPlayer);
-    out.flashlight      = *reinterpret_cast<bool*>(base + P::off::AmainPlayer_flashlight);
-    out.hasFlashlight   = *reinterpret_cast<bool*>(base + P::off::AmainPlayer_hasFlashlight);
-    out.crankFlashlight = *reinterpret_cast<bool*>(base + P::off::AmainPlayer_crankFlashlight);
-    out.mode            = *reinterpret_cast<uint8_t*>(base + P::off::AmainPlayer_flashlightMode);
+    out={(base[offsets[0]]&masks[0])!=0,(base[offsets[1]]&masks[1])!=0,
+         (base[offsets[2]]&masks[2])!=0,base[modeOffset]};
     return true;
 }
 
 bool WriteMainPlayerFlashlight(void* mainPlayer, bool newState) {
     if (!mainPlayer || !R::IsLive(mainPlayer)) return false;
+    int offset=-1;uint8_t mask=0;
+    if(!R::FindBoolProperty(R::ClassOf(mainPlayer),L"flashlight",offset,mask) || offset<0 || !mask)return false;
     auto* base = reinterpret_cast<uint8_t*>(mainPlayer);
-    *reinterpret_cast<bool*>(base + P::off::AmainPlayer_flashlight) = newState;
+    base[offset]=newState?base[offset]|mask:base[offset]&static_cast<uint8_t>(~mask);
     return true;
 }
 

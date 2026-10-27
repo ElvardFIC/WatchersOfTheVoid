@@ -41,6 +41,11 @@ bool IsStrokeDraw(void* sourceObject);
 // The last stroke's top-left corner (field A). Raw field read.
 bool ReadStrokeCorner(void* window, float& x, float& y);
 
+// Observe the exact native draw while its Blueprint caller frame is alive.
+// Uses the audited held/thrown wash call sites and their original material;
+// at most two pure scalar queries, with incarnation checks around each call.
+bool ReadStrokeDab(void* window,Dab& out,const std::function<bool()>& current);
+
 // The brush the player's held sponge (or mop) paints with: its size and the brush material's
 // current opac/col, which the sponge rewrites right before each dab. False when the player holds
 // no sponge. Game thread (reads the material parameters through UFunctions).

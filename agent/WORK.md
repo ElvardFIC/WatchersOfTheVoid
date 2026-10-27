@@ -1,5 +1,255 @@
 # WORK — current state and open work
 
+## Tutorial join and white-circle report (28 October 2026)
+
+Selected fixes: TI1 preserve Tutorial placement before native save restoration;
+TI2 preserve it at the client pawn appearance and later respawns; TI3 reject
+empty item-icon caches outside Tutorial; TI4 reject null texture tables and
+retry incomplete quick-slot refreshes without changing Tutorial presentation.
+
+TI1 and TI2 implemented. The join's save-ready callback previously overwrote
+playerTransform with a profile position or the main map's KPP coordinates in
+every mode. net_pump then teleported the new pawn to those coordinates again.
+Tutorial's native tick calls lib.end on an unsuccessful world-static sphere
+trace; lib.end recursively calls itself before QuitGame. Sending a Tutorial
+player to KPP can therefore reach a stack overflow outside the Tutorial map.
+
+Both downloaded-save and no-save joins now publish the authoritative host mode
+atomically with the join request, before the local GI changes mode. Tutorial
+keeps its level/host-save placement without importing a profile pose or KPP
+spawn; later pawn appearances retain that policy. Other modes keep their prior
+profile/start-point behavior. No Tutorial protection or native exit is bypassed.
+
+Fresh local crashes at 09:25:55 and 09:26:33 on 28 October report stack overflow;
+the second dump has 11,939 FFrames with 11,937 repetitions of one node. This is
+consistent with the native recursive end path, but the available capture does
+not prove which Tutorial guard fired. Two-peer rendered acceptance remains open.
+
+Owner clarified: every inventory item icon becomes a white circle; the Tutorial
+crash happens after the character appears. Read-only inspection then found all
+2471 native item-cache `.vimg` files have zero bytes. The cooked renderer admits
+disk icons by file count alone and publishes failed decodes into a nonempty GI
+texture array. The previous readiness check accepted that array's count.
+
+TI3 and TI4 implemented. Both mod-driven save/fresh boots validate the native
+asset-folder item cache before non-Tutorial travel. Empty `.vimg` files are
+removed by exact file handles that exclude concurrent writers; unrelated/valid
+files, links and nested directories are preserved. A busy writer causes retry.
+The native file-count mismatch selects its own full icon-rendering route.
+Invalid/null cached texture tables are reset before travel, retaining their
+engine allocation/capacity. Callback owner/mode changes refuse stale cleanup.
+Tutorial skips this repair and the quick-slot refresh policy.
+
+Readiness now requires matching counts and nonnull decoded textures. A refused
+or incomplete quick-slot rebuild does not settle its renderer; stale renderer
+callbacks cannot settle a new world. The new cache/refresh runner is included
+in run_game_modes. No native game asset, save format or renderer graph changed.
+The early pause-guard hypothesis was not used for a production change.
+
+Verification is recorded in TESTLOG. No version/protocol bump, package,
+installation or commit is part of this change.
+
+## Event routes and remaining generators (28 October 2026)
+
+Owner selects the three Events backlog entries. Preserve the existing worktree,
+release metadata and protocol while implementing named corrections:
+
+- EV1: scale bp7Spawner's eligible-roll wait on each owner, preserving native
+  mode/camera/distance/integer-roll eligibility and personal pause/quit outcomes.
+- EV2: retain server/laptop canonical slot updates until their fields and content
+  really apply; protect pending canonical state from local claims while waiting.
+- EV3: bind held client calendar schedules to their originating class/field and
+  session lifetime, restoring only the exact array header that was held.
+- EV4: prevent an older interval read from overwriting a newer native re-arm or
+  recursively scaling its newer baseline during callback reentry.
+- EV5: reject duplicate/older host canonicals per device, including blobs whose
+  older chunk assembly completes after a newer protected-floppy result.
+
+Native evidence: ticker_bp7Spawner uses a ten-second wait, camera/navigation and
+a full signed-int random roll. Its NewBlueprint7 output tracks player 0 and can
+pause/quit that player's game. It stays owner-local, like personal dream/ending
+consequences. serverBreaker chooses a box, and its protected branch removes one
+floppyData row before sound/delegate notification without setting isBroken.
+The existing slot canonical already carries those rows, independently of the
+broken-state snapshot; failed slot application must not retire that canonical.
+
+EV1-EV5 are implemented. BP7 retains its native per-player camera/eligibility,
+full-int random roll, chase/delay and pause/quit branches; only the ten-second
+generator wait scales, on host and clients. Native reentrant interval reads now
+reserve an exact revision so an older read cannot replace a newer re-arm.
+
+The slot channel keeps the exact canonical revision through field/write/refresh
+refusals, suppresses stale local claims while it waits, and forces an unfinished
+presentation write even when its scalar/content fields already match. Reentrant
+canonical arrival stages the newer revision without recursively writing over
+the active one. Drains rotate through eight slots per device kind and scope
+state to session/world; chunk admission refreshes that scope before accepting a
+new-world snapshot. The schedule hold/restore similarly binds the original
+object/class/field/session/world, including worldless save objects, and detaches
+the restore list before any callback-capable reflection.
+Host canonical sequence acceptance is per device, wrapping in the existing
+32-bit sequence order. An older/duplicate completed blob cannot restore consumed
+protection data or roll back a pending laptop generation. This adds no wire fields
+or opcodes. The new event-slot runner is nested in the registered run_events group.
+
+This does not complete all three requested entries. treeSpawner still needs
+host-selected visibility/scale/motion/lifetime transport; serverBreaker still
+needs protected-branch sound/delegate and full recipient delivery ownership
+before its wait can be scaled. EV2 fixes canonical application loss, not those
+remaining effect routes. The eight event categories and map-script adapters
+remain open; personal dream/ending, reputation thresholds, calendar gates and
+native protection/exit branches were not replaced with blanket replay.
+
+Verification: final 12-group focused qualification, fresh Release and separate
+ABI drill pass; source remained stable. Extra event-slot refusal/reentry/order
+fault controls pass. Evidence: build/events-final-20261028/verification.json and
+build/event-slot-check/final.log. FullRegression=false; no current gameplay,
+new archive, version/protocol bump, installation or publication is claimed.
+
+## Requested implementation continuation (28 October 2026)
+
+Owner requests the Priority regressions, Events and Shared items/resources
+backlog. These remain distinct unfinished systems; prior offline tests do not
+close the flashlight/T-pose reports or establish category-wide event parity.
+No package/version/protocol change is part of this implementation pass.
+
+Named fixes before implementation:
+
+- C1: validate complete watoy native parameter schemas and retain the exact
+  actor/class/function ownership across reflection, callbacks and dispatch.
+- C2: bind watoy activation observations, including client world requests, to
+  the current dispatch function and its parameterless input contract.
+- C3: reject held-toy capture inputs with incompatible parameter metadata.
+- C4: periodically reconcile an already-applied remote flashlight against its
+  latest received state, including native changes on the same light component.
+  Preserve scope/occupant/revision checks across the reconciliation read.
+- C5: remove whole-object-array class scans from default save-record class
+  restoration and the unloaded prop-base lookup; keep unresolved restoration
+  incomplete so pending hand/item state can retry when the class loads.
+- C6: distinguish watoy activation refusal before dispatch from uncertain native
+  completion; retry only work that has not entered the native activation call.
+
+C1-C6 implemented within those scopes. Watoy activation, audio, attached-emitter
+queries/spawn and particle activation now validate complete parameter lists,
+sizes, bounds, non-overlap and exact class/function incarnations. Parameterless
+Blueprint functions may still have frame storage for locals. An admitted native
+activation is consumed even if its completion cannot be certified; presentation
+state may still be sampled without replaying gameplay. Observation binds the
+actual current parameterless activate function before client requests and again
+after native callbacks. Held-toy input reads additionally reject duplicate,
+overlapping, mismatched and output-only parameter metadata.
+
+C4 reconciles received remote flashlight state at 250ms intervals on the same
+component; unchanged state does no setter dispatch. Newer payloads, occupant
+changes and retirement during the read cannot acknowledge the older state.
+This is a concrete missed-reconciliation fix, not proof that the owner's missing
+remote-light report is fully resolved in rendered multiplayer.
+
+C5 replaces default record-class/base-class array walks with indexed lookups.
+ApplyRecordWhile now refuses incomplete encoding before loadData. Unresolved
+classes preserve the caller's pending record instead of publishing null fields;
+class readiness can delay restoration until the index catches up. Explicit class
+resolvers remain supported. The inventory fixture needed its index double updated
+to return the named item class rather than a container for all unknown names.
+
+These changes do not finish the complete requested backlog. Remaining work
+includes held-toy native variant schemas, watoy start-cue and physics-hook
+ownership, rendered flashlight/ragdoll failures, thrown-sponge resources/foam,
+the event-category/level adapters and generator effects, Console/entity effects,
+atomic repair/personal resource/food transactions, grime persistence, remaining
+sky phases, other stow paths and model previews. Keep those TODO entries open;
+do not count this pass as completion of all listed systems.
+
+Verification: 123 registered groups pass across the initial complete run and
+four focused reruns after fixture dependency corrections. The initial failed
+gate is preserved; final coverage and matching production/DLL hashes are in
+build/requested-backlog-20261028/final-validation.json. Fresh Release/identity
+and ABI drill pass. Details, extra fault controls and gameplay limits are in
+TESTLOG. The existing qualified archive/release metadata are unchanged; this
+locally rebuilt DLL is not a newly packaged release.
+
+## Fork license attribution (27 October 2026)
+
+Owner requests updating the license on GitHub for the fork and their own code.
+L1: retain the existing MIT grant and upstream copyright notice; add a separate
+2026 ElvardFIC notice scoped to original contributions to Watchers of the Void.
+Only LICENSE is authorized for this GitHub update; unrelated 2162 changes remain
+in the local worktree. Preserve third-party licenses and asset scope notices.
+
+L1 completed: LICENSE on main now contains the scoped ElvardFIC notice and the
+unchanged full upstream MIT text. GitHub commit:
+52469cb49e6e1f9d2a9645949f21af932fb7e924. Readback verified blob
+44242446a3cbe12ba825173ac51241c07272ca68; local LICENSE matches that content.
+
+## Requested priority regressions and events (2162, 27 October)
+
+Named implementation items before editing:
+
+- P1: replace flashlight pointer/scalar offsets and visibility-bit assumptions
+  with incarnation-bound reflected fields; preserve output on unresolved reads.
+- P2: allow equipped crank flashlights to publish their native visible state.
+- P3: retain received flashlight state and reapply it when the puppet/light
+  incarnation changes, including on clients.
+- P4: share watoy presentation ownership across copied Views; retire cleanup
+  once and prevent stale copies from stopping a newer presentation.
+- P5: explicitly enable physics-to-pose blending and component ticking before
+  exposing a selected ragdoll body; body simulation alone is insufficient as
+  a presentation readiness check. This is a targeted initialization correction,
+  not yet a demonstrated resolution of the owner's rendered T-pose report.
+- P6: bind watoy activation/cue capture to its original hand generation,
+  occupant, connection and actor class; never adopt a later hand generation.
+- P7: bind held-toy captures to their actor class and exact dispatch function,
+  and validate input parameter spans/sizes before selecting a native action.
+- P8: cap held-toy/watoy native presentation attempts per tick and rotate state
+  application fairly; keep transport retry separate from native presentation.
+- P9: capture window dabs from the original native draw's wash material/size
+  and exact Blueprint call site, including its thrown-sponge branch. Read the
+  two brush scalars at observation, rather than sampling a later held item.
+  Keep the observer bounded to those two pure native scalar queries per dab.
+- P10: rotate unsuccessful watoy native activation requests behind unattempted
+  requests, so missing actors cannot exhaust every tick's quota ahead of ready
+  actors. Preserve the separate reliable cue order and original source bindings.
+
+The current game PAK is readable at the path in extract_current.ps1. Extracted
+263 missing .umap headers into the existing research directory. Level-script
+analysis is now possible; the historical missing-header prerequisite is obsolete.
+Ragdoll and complete event/category routes remain under investigation.
+
+P1-P10 are implemented within the scopes named above. Focused flashlight,
+held-toy, watoy, ragdoll and window-canvas runners pass. Added actual-reader
+coverage with relocated fields/packed flags, on/off replacement replay, stale and
+independent View cleanup, original-hand retirement, malformed capture inputs,
+native first-dab material ownership and held/thrown geometry. New 32-peer tests
+check eight state/pulse or hand/cue attempts per drain and eventual completion;
+watoy state delivery rotates across a permanently refused row without starving
+other rows. State and cue send drains each cap attempts at 64. Existing fault
+controls for hand toys, watoy and window drawing also reached their expected
+assertions. These scopes do not finish the larger native-schema/event backlog.
+
+Map evidence: build/priority-level-scripts/inventory.json inventories 263 headers,
+52 maps with scripts and 172 functions. Decoded map outputs include the main
+map's personal achievements, local presentation and native protection/quit
+branches; no blanket replay/suppression has been added. Native executable symbol
+evidence for the ragdoll blend setter and its parameter is recorded separately
+in build/2162-native-symbols.json; this establishes symbol presence, not rendered
+or real-peer behavior.
+
+The owner subsequently requested build 2162, then asked to continue that build.
+Packaging is now authorized. Ran cleanup preview and actual cleanup before
+changing release.json: 1,548 generated/obsolete files, about 941 MiB, retaining
+the qualified 2161 archive/DLL, dependencies and unique research/evidence.
+The retained DLL was restored from the qualified archive and matched the prior
+qualification hash before cleanup. Internal protocol remains 2217 because no
+wire format changed. Final fresh qualification and packaging passed all 123
+registered groups, Release/ABI and package rejection checks. P10 was caught in
+final review after an initial complete pass; the final source was then given
+another complete fresh run. Delivery: dist/ElvardFIC-WatchersOfTheVoid-0.9.2162.zip.
+DLL SHA256: 0f393882a8848517e7c8e98bb625166b432baf91c1172584322e03072ac65bd2.
+ZIP SHA256: d9e9fc91448b71a6f1a40a6ffdb0f4536c0b33d594d68d508d52aa0949c569e4.
+FullRegression and BuildUpToDate are true; rendered gameplay and current-package
+manager startup remain unverified. Evidence is in TESTLOG.md and the existing
+qualification/package JSON files. No game installation or publication was requested.
+
 ## Current feature - hosting game-mode selection (2162)
 
 Owner explicitly requests six modes: Tutorial, Story Mode, Infinite Mode,

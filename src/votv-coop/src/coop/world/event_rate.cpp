@@ -33,17 +33,22 @@ constexpr const wchar_t* kSpawners[] = {
     L"ticker_wispSpawner_C", L"ticker_egSpawner_C",
     L"ticker_eyers_C", L"ticker_fireflySpawner_C",
     L"ticker_flickerer_C",
+    // Its camera/navigation roll and NewBlueprint7 pause/quit are owner-local.
+    // Every peer retains its own native eligibility/outcome; only the wait scales.
+    L"ticker_bp7Spawner_C",
 };
 struct Wait {
     ue_wrap::CachedObjRef actor;
     float native = 0.f;
     float applied = 0.f;
+    uint64_t revision=0;
 };
 net::Session* g_session = nullptr;
 ue_wrap::CachedObjRef g_hook;
 std::unordered_map<void*, Wait> g_waits;
 bool g_writing = false;
 uint64_t g_epoch = 0;
+uint64_t g_revision=0;
 uint32_t g_serial = 0, g_world = 0;
 std::chrono::steady_clock::time_point g_scan{};
 
@@ -58,7 +63,8 @@ bool CanApply(void* actor) {
     // the existing capture/replay path shares the resulting emitter.
     return Host() || (Active() && g_session->role() == net::Role::Client &&
         (R::ClassNameOf(actor) == L"ticker_eyers_C" ||
-         R::ClassNameOf(actor) == L"ticker_fireflySpawner_C"));
+         R::ClassNameOf(actor) == L"ticker_fireflySpawner_C" ||
+         R::ClassNameOf(actor) == L"ticker_bp7Spawner_C"));
 }
 bool InWorld(void* actor) {
     return actor && R::IsLive(actor) && W::CurrentWorld() &&
@@ -91,16 +97,22 @@ void Apply(void* actor, bool nativeWrite) {
     const auto world = W::Generation(), serial = net::session_serial::Current();
     auto* session = g_session;
     ue_wrap::CachedObjRef ref; ref.Set(actor);
+    auto& reservation=g_waits[actor];
+    const bool priorSame=reservation.actor.Is(actor);
+    reservation.actor=ref;
+    const auto revision=reservation.revision=++g_revision;
     const auto valid = [&] {
+        const auto found=g_waits.find(actor);
         return epoch == g_epoch && g_session == session && world == W::Generation() &&
-            serial == net::session_serial::Current() && ref.Get() == actor && InWorld(actor) && CanApply(actor);
+            serial == net::session_serial::Current() && ref.Get() == actor && InWorld(actor) && CanApply(actor) &&
+            found!=g_waits.end() && found->second.revision==revision && found->second.actor.Is(actor);
     };
     float current = 0.f;
     if (!Read(actor, current) || !valid()) return;
     auto& wait = g_waits[actor];
     // Each native re-arm supplies a fresh baseline, even if it happens to pick
     // exactly the last applied interval. A settings edit instead keeps baseline.
-    if (nativeWrite || !wait.actor.Is(actor) || current != wait.applied) {
+    if (nativeWrite || !priorSame || current != wait.applied) {
         wait.actor.Set(actor);
         wait.native = current;
         wait.applied = current;

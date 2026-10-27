@@ -1,4 +1,4 @@
-# Watchers of the Void 0.9.2161 — offline test build
+# Watchers of the Void 0.9.2162 — offline test build
 
 For Voices of the Void Alpha 0.9.0n, Windows x64. By ElvardFIC and AquaFishhh.
 Internal DLL/network identity: **b2217 / protocol 2217**.
@@ -6,10 +6,23 @@ Internal DLL/network identity: **b2217 / protocol 2217**.
 > **Every version is a test version. It requires extensive testing and may be unstable.**
 > Automated checks do not establish stable gameplay or replace multiplayer testing.
 
-This package contains the current 2161 development snapshot. The version remains
-2161; historical 2162 labels do not identify this build. Every player must use
+The owner requested this 2162 build on 27 October 2026. Every player must use
 this exact ZIP and game version. Matching version numbers alone do not establish
 matching DLL contents after several development snapshots of the same version.
+
+This snapshot adds Tutorial, Story, Infinite, Ambience, Sandbox and Solar hosting
+choices. Flashlight reads use reflected fields/bit masks, equipped crank lights
+publish their visible state and replaced puppets receive their last light state.
+Ragdoll setup explicitly enables physics blending and skeletal-component ticking.
+Held-toy capture checks dispatch/input ownership. Watoy views share presentation
+leases, cues retain their original hand provenance, and native presentation/send
+work has per-tick limits. Window strokes capture the native wash material/size
+at the actual held/thrown draw site, preserving first-dab settings.
+
+These are code corrections with offline regression coverage. This build does
+not establish that the reported flashlight and T-pose regressions are resolved
+on real peers. Complete event-category routes, remaining watoy native schemas
+and broader thrown-sponge foam/resource ownership remain unfinished.
 
 The current build/package procedure requires the complete passing offline suite,
 a Release/ABI check, unchanged production inputs and the production menu label.

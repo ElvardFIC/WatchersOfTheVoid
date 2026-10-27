@@ -1,3 +1,200 @@
+# Tutorial join correction (28 October 2026)
+
+Owner follow-up: white circles affect all inventory item icons; the joining
+Tutorial client crashes after character appearance.
+
+PASS run_game_modes including run_item_icons: actual production cache helper
+and extracted PrepareForWorld/refresh bodies reject empty `.vimg` files and
+null texture arrays, preserve nonempty/unrelated/nested files, retain engine
+array allocation/capacity and retry an open concurrent writer. Tutorial skips
+cleanup/refresh; callback owner/mode changes refuse stale work. Matching counts
+alone cannot publish null textures as ready. Failed/incomplete refreshes retry,
+successful refreshes settle, and stale renderer callbacks cannot latch a new
+world. Both save/fresh boot wiring and cooked count-only cache admission pass.
+
+Read-only local observation: 2471/2471 item `.vimg` files have size zero. The
+installed cache was not changed during this task; the corrected DLL repairs
+it on a subsequent mod-driven non-Tutorial load. No installation is claimed.
+Fresh Release build passes with cache admission and refresh changes.
+
+PASS run_profile_join -FaultControls: actual production callback retains native
+Tutorial placement with missing/valid profiles, across repeated pawn placement
+consumption and a newer Tutorial request arriving inside an older callback.
+Story/Infinite/Custom/Sandbox/Halloween/Ambient/Solar and invalid-mode fallback
+keep their existing placement. Seven existing injected lifetime/revision/send
+controls fail at their intended assertions. Production controller compilation
+passes. Release DLL build passes, including changed world_boot and net_pump.
+PASS run_game_modes: existing mode/save/native contracts plus host-mode request
+wiring on both join paths and absence of a Tutorial appearance teleport.
+
+Read-only inspection of the 28 October local crash contexts found
+EXCEPTION_STACK_OVERFLOW in crashes B7D06444... (09:25:55) and E90A44A5...
+(09:26:33). The latter has 11,939 chained FFrames, 11,937 on one node; evidence:
+build/tutorial-crash-20261028.txt. Consistent with lib.end recursion, not proof
+of the exact triggering guard or a successful post-fix session.
+
+- [ ] Join a newly created Tutorial with two real peers, with and without a
+  returning profile; check native placement and absence of fatal errors.
+- [ ] Repeat Tutorial pawn appearance, then quit/rejoin a normal campaign;
+  verify ordinary profile/KPP placement still works.
+- [ ] With the updated DLL, open inventory in each supported non-Tutorial mode;
+  verify item textures regenerate and remain correct after Tutorial -> campaign.
+- [ ] Verify Tutorial retains its native icon presentation; check quick slots
+  after delayed texture publication and after a failed refresh.
+
+# Event routes and generators (28 October 2026)
+
+EV1-EV5 in WORK implement scoped corrections within the three selected Events
+entries; they do not complete all categories, tree/server effects or map routes.
+
+PASS run_event_slots -CompileSources -FaultControls against the actual production
+slot channel. Cover protected-row consumption with refused/partial writes,
+refresh debt after fields match, empty/equal states, eight-slot rotating drains,
+new canonical arrival inside reads/writes, nested-drain refusal, scope teardown,
+world/serial/actor replacement, chunk admission on a new world, laptop occupancy
+generation and suppression of stale local claims. Per-device host sequencing
+rejects older and duplicate completed blobs before/after application, preserves
+other devices' independent sequences and handles wrap through zero. Six injected
+controls (sequence, retry, presentation debt, revision, claim and reentry) reach
+their intended assertions. Evidence: build/event-slot-check/final.log.
+
+PASS run_2165 -CompileSources: actual calendar hold/restore retains the exact
+class/field/array/session/world, including a worldless save object. Stale class,
+field relocation, resolver reentry, object recycling, session replacement and
+old-world restore cases refuse. Existing client load-window suppression, host
+native schedules, and native initialization/solo recovery remain intact.
+
+PASS expanded event_rate fixture: bp7 ten-second baseline scales on host and
+client; settings edits and native re-arms do not compound. NewBlueprint7's own
+effect cadence is unchanged. A nested newer native re-arm wins over the older
+read and restores its own baseline on teardown. The fresh cooked contract
+confirms mode/camera/navigation/distance gates, full signed-int roll, NewVar_6
+initialization, chase, native delay and personal pause/quit branches.
+
+PASS final check_current against stable production source: all 12 selected
+registered groups, including the nested event-slot fixture, and fresh Release
+b2217 / 854 production entries. BuildUpToDate=true; FullRegression=false (the
+complete 123-group suite was not repeated for this change). PASS separate ABI
+gate and injected violating-PE control. Evidence:
+build/events-final-20261028/verification.json and abi.log. DLL SHA256:
+d50d1e400412ee8dcd5d4238ff072613b2ce891fc5899549e102157313ebe309.
+Production snapshot SHA256:
+754e427b0d38c514734387357d041dffe3dd3d1e033275bf7e3f8562014e494d.
+The earlier focused run in build/events-20261028 predates EV5 and is superseded.
+No live
+game/peer run or package archive is claimed; tree visibility/motion/lifetime,
+protected-server sound/delegate/per-recipient delivery, the other category
+adapters and level-script routes remain open implementation.
+
+# Requested backlog continuation (28 October 2026)
+
+Implemented C1-C6 named in WORK. PASS run_watoy with CompileSources and
+FaultControls: exact native parameter lists/sizes/spans, overlap/duplicates/extra
+inputs, BP locals on parameterless activation, function serial/dispatch changes,
+stale completion/candidate cleanup, capture identity before client requests and
+after callbacks, pre-dispatch retry and consumption of uncertain activation.
+New schema/function/uncertain-activation removal controls reach assertions.
+Existing 32-peer eight-presentation/64-send and lifetime controls still pass.
+Evidence: build/watoy-check/continuation-final.log.
+
+PASS run_2157 with CompileSources and FaultControls: held-toy capture rejects
+duplicate/overlapping/mismatched spans and missing/input-output flags; existing
+ownership, fair work limits and removal controls remain effective. Evidence:
+build/hand-toy-continuation.log.
+
+PASS run_2145 with FaultControls, run_flashlight_join and run_flashlight_native:
+same-component remote-light drift (visibility, intensity, cones, NaN/read refusal),
+stable-state dedupe, off correction, setter refusal/retry, newer-payload and
+departure during read. Existing exact native frames, reader metadata, join and
+sender ownership regressions pass. These are offline fixtures; the reported
+rendered remote-light failure is not closed.
+
+PASS run_stow_2157: production class restoration helper handles 4096 indexed
+misses with the array-walk double forbidden, null names, late class readiness and
+an explicit resolver. PASS run_save_record with CompileSources/FaultControls:
+incomplete merged encoding does not reach loadData; the same pending input can
+retry, and prior retirement/ownership controls still fail when removed.
+
+Full-suite initial run found an obsolete inventory class-index double returning
+the container class for every unknown name. Updated its named item lookup while
+preserving class-unready refusal. PASS run_inventory_apply with FaultControls
+after correction. The extra stale-derived-state control also exposed a missing
+fixture case: invalidate the world while resolving recalculateNames, before the
+first dispatch. Added that case; the mutation is now rejected without changing
+production derivation behavior. Evidence:
+build/inventory-apply-check/continuation-final.log. Initial failure remains in
+build/requested-backlog-20261028/logs/run_inventory_apply.log.
+
+The initial complete run executed 123 registered groups: 119 passed; inventory
+had the double mismatch above, and nonentity/cooking/grill-hand scalar fixtures
+needed the newly referenced class-index boundary linked. Added refusing doubles
+to the scalar fixtures; these paths do not perform class restoration. The four
+affected groups then pass through check_current's focused rerun and Release
+verification against the same production snapshot/DLL. Original failed results
+remain unchanged. Final coverage is 123/123 across the complete run plus focused
+reruns, not a claim that the initial gate passed. Consolidated evidence:
+build/requested-backlog-20261028/final-validation.json; focused evidence:
+build/requested-backlog-rerun-20261028/verification.json.
+
+PASS fresh Release b2217, 854 source entries, BuildUpToDate=true, import/export
+identity checks and separate abi_gate with injected violating-PE control.
+DLL SHA256: 9d10a0aafaed4a2bc75a6f948c6833060842dba3a0c69e90ac7bd1ffc7dde185.
+Production snapshot SHA256:
+c9e36b73037c28346ede54fe708ba6e6db65ab63ad66ef75277e3ab4a44b0309.
+No rendered host/client run, package archive, installation or publication is
+part of these results. Event/resource/foam/model and remaining native schemas
+remain implementation backlog; this is not completion of all requested systems.
+
+# Fork license attribution (27 October 2026)
+
+PASS L1: compare LICENSE against git HEAD; removing only the new scoped
+ElvardFIC copyright line reproduces the previous MIT license exactly.
+GitHub main update 52469cb49e6e1f9d2a9645949f21af932fb7e924 changes LICENSE only.
+Readback matches expected blob 44242446a3cbe12ba825173ac51241c07272ca68.
+No production code, dependency license, model-asset notice or package changed.
+
+# 0.9.2162 delivery — fresh offline qualification (27 October 2026)
+
+Owner requested build 2162 and continuation. Final package:
+dist/ElvardFIC-WatchersOfTheVoid-0.9.2162.zip, 15,389,755 bytes, 32 members.
+Game target 0.9.0n; internal DLL/network identity remains b2217 / protocol 2217.
+
+PASS package/build_current.ps1 with no qualification reuse: all 123 registered
+groups, fresh Release, unchanged source snapshot, DLL identity/import/export
+checks, production 0.9.2162 menu label, ZIP layout/models/branding/manifest and
+qualified DLL. Package rejection controls refuse incomplete/failed suites,
+stale UI labels and mismatched DLL bytes. FullRegression=true and
+BuildUpToDate=true. Final evidence: build/qualification-current/verification.json,
+source-before.json and build/package-current/verification.json.
+
+DLL SHA256: 0f393882a8848517e7c8e98bb625166b432baf91c1172584322e03072ac65bd2.
+ZIP SHA256: d9e9fc91448b71a6f1a40a6ffdb0f4536c0b33d594d68d508d52aa0949c569e4.
+Production snapshot SHA256:
+3d6e69d43221ea46c44ced9e5a92bc9390249cea29270808e4a4c14fbd3ce173.
+
+PASS focused checks for P1-P10 in WORK: production flashlight reader extraction
+uses relocated fields/packed flags and preserves unresolved outputs; controller
+covers crank light, on/off pawn replacement, retry and departure. Held-toy capture
+rejects wrong dispatch/input spans and foreign users. Watoy copied/independent
+View cleanup and original hand/occupant/connection retirement pass. Real 32-seat
+fixtures cover eight native presentations per drain, 64 state send attempts,
+fair refused state retries and ready activation behind eight missing actors.
+Window tests cover native first-dab material/size, both held/thrown draw sites,
+ownership changes during scalar reads and refusal-preserving FIFO. Existing
+held-toy/watoy/window fault controls reached their intended assertions.
+Supplemental run_2164 also passes. Native binary symbol evidence confirms the
+ragdoll blending setter/parameter exists in the installed executable; the native
+fixture checks explicit blend/tick setup before readiness.
+
+An initial complete qualification was superseded by P10. The final source above
+was given another complete fresh run; the initial record is retained under
+build/priority-regressions/2162-initial-qualification.json.
+
+Current-package manager startup and rendered host/client gameplay were not run.
+The owner's flashlight/T-pose reports are not closed by these offline results.
+Complete event routes, remaining native watoy schemas and broader thrown-sponge
+foam/resource ownership remain open in TODO. No game installation or publication.
+
 # 2162 hosting game-mode selection (27 October 2026)
 
 Owner explicitly requests Tutorial, Story Mode, Infinite Mode, Ambience Mode,

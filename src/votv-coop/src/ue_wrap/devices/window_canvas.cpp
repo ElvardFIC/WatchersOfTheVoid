@@ -5,12 +5,16 @@
 #include "ue_wrap/core/fname_utils.h"
 #include "ue_wrap/core/gc_pin.h"
 #include "ue_wrap/core/object_index.h"
+#include "ue_wrap/core/script_calls.h"
+#include "ue_wrap/core/ufunction_hook.h"
 #include "ue_wrap/core/types.h"
 #include "ue_wrap/world/world_singleton.h"
 #include <cmath>
 #include <cstring>
 #include <utility>
 #include <vector>
+#include <chrono>
+#include <algorithm>
 
 namespace ue_wrap::window_canvas {
 namespace {
@@ -85,6 +89,46 @@ struct Core {
     int a=-1,canv=-1,cv=-1;uint8_t mask=0;
     bool Live()const{return cls.Get() && canvasClass.Get() && draw.Live() && a>=0 && canv>=0 && cv>=0 && mask;}
 } g_core;
+struct StrokeSite {int end=-1,material=-1,size=-1;float multiplier=1;};
+struct StrokeSource {
+    CachedObjRef cls;Binding graph;std::vector<StrokeSite> sites;
+    bool Live()const{return g_core.Live() && cls.Is(g_core.cls.Get()) && graph.Live() && sites.size()==2;}
+} g_strokeSource;
+uint64_t g_strokeResolveAfter=0;
+void ResolveStrokeSource(const Guard& current){
+    if(g_strokeSource.Live() || !current() || !g_core.Live())return;
+    const auto now=uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count());
+    if(now<g_strokeResolveAfter)return;g_strokeResolveAfter=now+1000;
+    StrokeSource source;source.cls=g_core.cls;
+    const auto valid=[&]{return current() && source.cls.Is(g_core.cls.Get());};
+    source.graph=FindBinding(source.cls.Get(),L"ExecuteUbergraph_d_window",valid);
+    if(!valid() || !source.graph.Live())return;
+    std::vector<script_calls::CallSite> calls;
+    if(!script_calls::EnumerateCalls(source.graph.fn.Get(),calls) || !valid() || !source.graph.Live())return;
+    const int bytes=R::FunctionFrameSize(source.graph.fn.Get());
+    if(bytes<=0 || bytes>64*1024)return;
+    const auto offset=[&](const wchar_t* name,int size,const wchar_t* type){
+        if(!valid() || !source.graph.Live())return -1;
+        int off=-1;std::wstring actual;
+        if(!R::PropertyOffsetAndClass(source.graph.fn.Get(),name,off,actual) || actual!=type || off<0 || off>bytes-size)return -1;
+        if(!valid() || !source.graph.Live())return -1;
+        return off;
+    };
+    for(const auto& call:calls){
+        if(!script_calls::SameCallee(call,g_core.draw.fn.Get()))continue;
+        for(int branch=0;branch<2;++branch){
+            const auto* material=branch?L"CallFunc_wash_dynmat_1":L"CallFunc_wash_dynmat";
+            const auto* size=branch?L"CallFunc_wash_size_1":L"CallFunc_wash_size";
+            if(!script_calls::CallHasLocal(call,material))continue;
+            const int m=offset(material,sizeof(void*),L"ObjectProperty"),s=offset(size,sizeof(float),L"FloatProperty");
+            if(m<0 || s<0 || call.end<=call.start)return;
+            source.sites.push_back({call.end,m,s,branch?1.f:2.f});
+        }
+    }
+    if(valid() && source.graph.Live() && source.sites.size()==2 && source.sites[0].end!=source.sites[1].end)
+        g_strokeSource=std::move(source);
+}
 struct Sponge {
     CachedObjRef cls;int size=-1,strength=-1,soap=-1,mid=-1,parent=-1;
     bool Live()const{return cls.Get() && size>=0 && strength>=0 && soap>=0 && mid>=0 && parent>=0;}
@@ -202,7 +246,9 @@ bool EnsureResolved(){
     CachedObjRef identity;identity.Set(cls);
     void* canvas=object_index::ClassByName(L"Canvas");
     if(!source.Current() || !identity.Get() || !canvas || !R::IsLive(canvas))return false;
-    if(g_core.cls.Is(cls) && g_core.canvasClass.Is(canvas) && g_core.Live())return true;
+    if(g_core.cls.Is(cls) && g_core.canvasClass.Is(canvas) && g_core.Live()){
+        ResolveStrokeSource([&]{return source.Current();});return true;
+    }
     Core fields;fields.cls=identity;fields.canvasClass.Set(canvas);
     const auto valid=[&]{return source.Current() && revision==g_coreRevision && fields.cls.Get() && fields.canvasClass.Get();};
     fields.a=R::FindPropertyOffset(cls,L"A");if(!valid())return false;
@@ -211,7 +257,8 @@ bool EnsureResolved(){
     fields.draw=FindBinding(canvas,L"K2_DrawMaterial",valid);
     if(!valid() || !fields.Live() || object_index::ClassByName(L"d_window_C")!=cls ||
         object_index::ClassByName(L"Canvas")!=canvas || !valid())return false;
-    g_core=fields;++g_coreRevision;return true;
+    g_core=fields;++g_coreRevision;g_strokeResolveAfter=0;
+    ResolveStrokeSource([&]{return source.Current();});return true;
 }
 bool IsWindow(void* object){
     if(!g_core.Live())return false;Identity actor(object);
@@ -227,6 +274,25 @@ bool ReadStrokeCorner(void* object,float& x,float& y){
     const auto point=Read<FVector2D>(object,g_core.a);
     if(!std::isfinite(point.X) || !std::isfinite(point.Y))return false;
     x=point.X;y=point.Y;return true;
+}
+bool ReadStrokeDab(void* window,Dab& out,const Guard& current){
+    const Operation source;Identity actor(window);
+    const auto frame=ufunction_hook::CurrentCallerFrame();const auto fields=g_strokeSource;
+    const auto stable=[&]{return Valid([&]{return source.Current() && actor.Current() && fields.Live() &&
+        frame.locals && fields.graph.fn.Is(frame.function);},current);};
+    if(!stable() || !IsStrokeDraw(window) || !stable())return false;
+    const auto it=std::find_if(fields.sites.begin(),fields.sites.end(),[&](const StrokeSite& site){return site.end==frame.codeOffset;});
+    if(it==fields.sites.end())return false;
+    void* mid=Read<void*>(frame.locals,it->material);Identity material(mid);
+    const float size=Read<float>(frame.locals,it->size)*it->multiplier;
+    const auto bound=[&]{return stable() && material.Current() && Read<void*>(frame.locals,it->material)==mid &&
+        Read<float>(frame.locals,it->size)*it->multiplier==size;};
+    Dab dab{};dab.size=size;R::FName opacity{},colour{};
+    if(!bound() || !ReadStrokeCorner(window,dab.x,dab.y) || !bound() ||
+       !Name(g_nOpac,L"opac",opacity,bound) || !Name(g_nCol,L"col",colour,bound) ||
+       !Scalar(mid,opacity,dab.opac,bound) || !bound() || !Scalar(mid,colour,dab.col,bound) ||
+       !bound() || !DabValid(dab))return false;
+    out=dab;return true;
 }
 
 bool ReadHeldBrush(void* player,float& size,float& opac,float& col,const Guard& current){

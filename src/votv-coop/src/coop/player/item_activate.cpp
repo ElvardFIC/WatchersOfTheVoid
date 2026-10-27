@@ -102,7 +102,10 @@ std::atomic<coop::net::Session*> g_session{nullptr};
 // unreliable packet, so the latest payload waits here until TickConnect finds the puppet in the
 // registry. Latest wins. Game thread.
 bool g_pendingApplyValid[coop::players::kMaxPeers] = {};
+bool g_receivedApplyValid[coop::players::kMaxPeers] = {};
+ue_wrap::CachedObjRef g_appliedPawn[coop::players::kMaxPeers],g_appliedLight[coop::players::kMaxPeers];
 uint64_t g_pendingApplyRevision[coop::players::kMaxPeers] = {};
+uint64_t g_nextApplyCheck[coop::players::kMaxPeers] = {};
 coop::net::ItemActivatePayload g_pendingApplyPayload[coop::players::kMaxPeers] = {};
 
 // The host's per-client cache of the last item state applied for that peer, not cleared on
@@ -233,7 +236,7 @@ bool BuildPayloadFromLocal(void* mp, coop::net::ItemActivatePayload& out, coop::
         out.senderElementId =
             (selfEid == coop::element::kInvalidId) ? 0u : selfEid;
     }
-    out.state           = fl.flashlight && fl.hasFlashlight && !fl.crankFlashlight && snap.visible ? 1 : 0;
+    out.state           = fl.flashlight && fl.hasFlashlight && snap.visible ? 1 : 0;
     out.flags           = 0;  // no actor key
     out.mode            = fl.mode;
     out.actorKeyHash    = 0;
@@ -582,6 +585,10 @@ bool ApplyToPuppet(void* puppetActor, const coop::net::ItemActivatePayload& inco
     // mode-change packet does not click.
     coop::flashlight_click_sound::PlayIfStateChanged(
         puppetActor, senderPeerSlot, newState);
+    if(!current())return false;
+    g_appliedPawn[senderPeerSlot]=pawnRef;
+    g_appliedLight[senderPeerSlot]=lightRef;
+    g_nextApplyCheck[senderPeerSlot]=GetTickCount64()+250;
     return true;
 }
 
@@ -611,6 +618,7 @@ void ApplyToPuppetOrDefer(uint8_t senderPeerSlot, void* puppetActor,
     // latest state until the complete apply succeeds, rather than dropping it at birth.
     g_pendingApplyPayload[senderPeerSlot] = p;
     g_pendingApplyValid[senderPeerSlot] = true;
+    g_receivedApplyValid[senderPeerSlot] = true;
     const auto revision = ++g_pendingApplyRevision[senderPeerSlot];
     if (puppetActor && R::IsLive(puppetActor) && ApplyToPuppet(puppetActor, p, senderPeerSlot)) {
         if (revision == g_pendingApplyRevision[senderPeerSlot]) g_pendingApplyValid[senderPeerSlot] = false;
@@ -661,11 +669,34 @@ void TickConnect() {
     // The pending applies drain once the registry has a live puppet for the slot.
     for (uint8_t peer = 0; peer < coop::players::kMaxPeers; ++peer) {
         BindPeer(peer);
-        if (!g_pendingApplyValid[peer]) continue;
+        if (!g_receivedApplyValid[peer]) continue;
         auto* rp = coop::players::Registry::Get().Puppet(peer);
         if (!rp || !rp->valid()) continue;
         void* puppet = rp->GetActor();
         if (!puppet || !R::IsLive(puppet)) continue;
+        const auto epoch=g_epoch,observed=g_pendingApplyRevision[peer];
+        void* light=E::GetMainPlayerLightR(puppet);
+        if(!Current(epoch))break;
+        if(!g_receivedApplyValid[peer] || observed!=g_pendingApplyRevision[peer])continue;
+        if(!g_pendingApplyValid[peer] && g_appliedPawn[peer].Is(puppet) && g_appliedLight[peer].Is(light)){
+            if(now<g_nextApplyCheck[peer])continue;
+            const auto binding=g_peerBinding[peer];
+            const auto expected=g_pendingApplyPayload[peer];
+            E::FlashlightSnapshot actual{};
+            const bool read=E::ReadFlashlightSnapshot(light,actual);
+            // Reflection/native callbacks may retire the owner or install a newer
+            // payload. Never acknowledge or overwrite that newer state here.
+            if(!PeerCurrent(peer,binding,epoch))continue;
+            if(observed!=g_pendingApplyRevision[peer] || !g_receivedApplyValid[peer] ||
+               !g_appliedPawn[peer].Is(puppet) || !g_appliedLight[peer].Is(light))continue;
+            const bool sameLight=E::GetMainPlayerLightR(puppet)==light;
+            if(!sameLight || !PeerCurrent(peer,binding,epoch) || observed!=g_pendingApplyRevision[peer])continue;
+            g_nextApplyCheck[peer]=now+250;
+            const auto equal=[](float a,float b){return std::isfinite(a) && std::fabs(a-b)<=.001f;};
+            if(read && actual.visible==(expected.state!=0) && equal(actual.intensity,expected.state?expected.intensity:0.f) &&
+               (!expected.state || (equal(actual.outerConeAngle,expected.outerConeAngle) && equal(actual.innerConeAngle,expected.innerConeAngle))))continue;
+        }
+        g_pendingApplyValid[peer]=true;
         coop::net::ItemActivatePayload p = g_pendingApplyPayload[peer];
         const auto revision = g_pendingApplyRevision[peer];
         UE_LOGI("flashlight: draining deferred apply for peerSlot=%u "
@@ -690,9 +721,12 @@ void OnDisconnectForSlot(int peerSlot) {
         if(peerSlot>0)ClearJoinDebt(other,peerSlot);
     }
     g_peerBinding[peerSlot]={};
+    g_nextApplyCheck[peerSlot]=0;
     // A leaving peer's cached state goes, so a peer reusing the slot does not inherit its
     // flashlight.
     g_peerActivateValid[peerSlot] = false;
+    g_receivedApplyValid[peerSlot]=false;
+    g_appliedPawn[peerSlot].Reset();g_appliedLight[peerSlot].Reset();
     ++g_pendingApplyRevision[peerSlot];
     g_peerActivateCache[peerSlot] = {};
     if (!g_pendingApplyValid[peerSlot]) return;

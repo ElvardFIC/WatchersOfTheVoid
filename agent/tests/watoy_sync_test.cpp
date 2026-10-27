@@ -8,6 +8,9 @@
 #include <set>
 namespace test {
 bool found=true,toy=true,writable=true,readable=true;
+void* activationFunction=&ui;
+bool activationParameters=false;
+bool activationReady=true,activationComplete=true;
 void* localHand=nullptr;
 void* mirror=nullptr;
 void* componentOwner=nullptr;
@@ -22,14 +25,21 @@ std::function<void()> toyCallback;
 }
 namespace coop::net::session_serial {uint32_t Current(){return test::sessionSerial;}}
 namespace ue_wrap::script_gate {bool IsInvocationActive(uint64_t id){return test::invocations.contains(id);}}
+namespace ue_wrap::reflection {
+void* FindDispatchFunctionCached(void*,const wchar_t*){return test::activationFunction;}
+std::vector<ParamInfo> FunctionParams(void*){return test::activationParameters?std::vector<ParamInfo>{{L"Unexpected",0,4,0x80}}:std::vector<ParamInfo>{};}
+}
 namespace ue_wrap::watoy {
 bool IsToy(void* a){const bool result=a && reflection::IsLive(a) && test::toy;auto callback=std::move(test::toyCallback);test::toyCallback={};if(callback)callback();return result;}
 size_t Collect(CachedObjRef* out,size_t cap){if(!cap || !test::found)return 0;out[0].Set(&test::actor);return 1;}
 bool Read(void*,State& s){s=test::state;test::Callback();return test::readable;}
-bool Activate(void*,const std::function<bool()>& current){if(current && !current())return false;++test::activations;test::state.active=true;test::Callback();return !current || current();}
+bool Activate(void*,const std::function<bool()>& current,bool* dispatched){if(dispatched)*dispatched=false;
+    if(!test::activationReady || (current && !current()))return false;
+    if(dispatched)*dispatched=true;++test::activations;test::state.active=test::activationComplete;test::Callback();
+    return test::activationComplete && (!current || current());}
 bool ApplyAudio(void* a,const State& s,const std::function<bool()>& current){if(current && !current())return false;++test::applies;test::heard=s;if(a==&test::ui)test::handHeard=s;test::Callback();return test::writable && (!current || current());}
-bool Apply(View& view,void* actor,const State& state,const std::function<bool()>& current){view.actor.Set(actor);return ApplyAudio(actor,state) && current();}
-void Clear(View& view){auto actor=view.actor.Get();view={};if(actor)ApplyAudio(actor,{});}
+bool Apply(View& view,void* actor,const State& state,const std::function<bool()>& current){if(!view.presentation)view.presentation=std::make_shared<Presentation>();view.presentation->actor.Set(actor);return ApplyAudio(actor,state) && current();}
+void Clear(View& view){auto actor=view.Actor().Get();view={};if(actor)ApplyAudio(actor,{});}
 bool PlayStartCue(){++test::cues;test::Callback();return true;}
 void* ZeroGravityOwner(void*){return test::componentOwner;}
 }
@@ -58,6 +68,8 @@ void Start(coop::net::Session& session,coop::net::Role role) {
     S::OnDisconnect();session.mode=role;session.linked=session.ready=session.sendOk=true;session.sent.clear();session.allowSend={};
     coop::players::Registry::Get().peer=role==coop::net::Role::Host?0:1;
     found=toy=writable=readable=true;localHand=mirror=componentOwner=nullptr;handGeneration=mirrorGeneration=1;
+    activationFunction=&ui;activationParameters=false;
+    activationReady=activationComplete=true;
     for(int slot=0;slot<coop::net::kMaxPeers;++slot)roster[slot].playerNo=uint16_t(slot+10);
     state={};heard={};S::Install(&session);S::ReconcileOccupants();
     coop::element::reach=true;callback=toyCallback={};coop::element::callback={};
@@ -124,13 +136,13 @@ int main() {
     h=Hand(200,2);handGeneration=1;mirrorGeneration=1;mirror=nullptr;S::Receive(h,0);S::Tick();auto beforeApplies=applies;
     mirror=&ui;mirrorGeneration=1;now+=100;S::Tick();CHECK(applies==beforeApplies+1); // world row only
     mirrorGeneration=handGeneration=2;now+=100;S::Tick();CHECK(handHeard.pitch==3 && S::g_hands[2].actor.Is(&ui));
-    mirror=nullptr;now+=100;S::Tick();CHECK(!S::g_handViews[2].actor.Get() && !handHeard.active);
+    mirror=nullptr;now+=100;S::Tick();CHECK(!S::g_handViews[2].Actor().Get() && !handHeard.active);
     // State may arrive before the replacement mirror. Retire the old view while
     // retaining the newer sample until that exact hand generation exists.
-    mirror=&ui;now+=100;S::Tick();CHECK(S::g_handViews[2].actor.Is(&ui) && handHeard.active);
+    mirror=&ui;now+=100;S::Tick();CHECK(S::g_handViews[2].Actor().Is(&ui) && handHeard.active);
     auto replacement=h;replacement.sequence++;replacement.generation=3;S::Receive(replacement,0);
-    now+=100;S::Tick();CHECK(!S::g_handViews[2].actor.Get() && !handHeard.active);
-    mirrorGeneration=handGeneration=3;now+=100;S::Tick();CHECK(S::g_handViews[2].actor.Is(&ui) && handHeard.active);
+    now+=100;S::Tick();CHECK(!S::g_handViews[2].Actor().Get() && !handHeard.active);
+    mirrorGeneration=handGeneration=3;now+=100;S::Tick();CHECK(S::g_handViews[2].Actor().Is(&ui) && handHeard.active);
     h=replacement;
     auto old=h;old.sequence++;old.generation=1;S::Receive(old,0);CHECK(S::g_hands[2].state.generation==3);
     old=h;old.sequence++;old.playerNo++;S::Receive(old,0);CHECK(S::g_hands[2].state.sequence==h.sequence);
@@ -143,9 +155,9 @@ int main() {
     // older cue look like a replay: the two owner streams have separate cursors.
     h=Hand(10,2,1);S::Receive(h,1);h=Hand(9,2,1,4);S::Receive(h,1);CHECK(S::g_out.size()==1);S::Tick();CHECK(S::g_out.empty());
     Start(session,Role::Client);localHand=&actor;handGeneration=0;state.active=false;
-    CHECK(S::BeforeActivate(call)==V::Run);state.active=true;S::AfterActivate(call);CHECK(S::g_out.size()==1);
-    S::Tick();CHECK(S::g_out.size()==1);handGeneration=4;S::Tick();CHECK(S::g_out.empty());
-    bool announcedCue=false;for(const auto& out:session.sent){auto p=Decode(out);if(p.op==4){CHECK(p.generation==4);announcedCue=true;}}CHECK(announcedCue);
+    CHECK(S::BeforeActivate(call)==V::Run);state.active=true;S::AfterActivate(call);CHECK(S::g_out.empty());
+    S::Tick();handGeneration=4;S::Tick();CHECK(S::g_out.empty());
+    for(const auto& out:session.sent)CHECK(Decode(out).op!=4); // No later generation adoption.
     Start(session,Role::Client);S::Receive(active,0);S::Tick();CHECK(S::g_worldViews.size()==1);
     found=false;now+=10001;S::Tick();CHECK(S::g_worldRows.empty() && S::g_worldViews.empty());found=true;
     S::Receive(active,0);S::Tick();

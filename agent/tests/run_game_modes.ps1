@@ -15,4 +15,6 @@ try {
     if($LASTEXITCODE){throw 'Game-mode regression failed'}
     & $python agent/tests/game_mode_native_test.py
     if($LASTEXITCODE){throw 'Cooked game-mode contract failed'}
+    & powershell -NoProfile -ExecutionPolicy Bypass -File agent/tests/run_item_icons.ps1
+    if($LASTEXITCODE){throw 'Item icon mode/cache regression failed'}
 } finally {Pop-Location}

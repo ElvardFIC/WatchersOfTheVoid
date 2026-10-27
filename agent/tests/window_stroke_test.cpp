@@ -53,6 +53,10 @@ bool IsWindow(void* p){return reflection::IsLive(p);}
 bool IsStrokeDraw(void*){return test::stroke;}
 bool ReadStrokeCorner(void*,float& x,float& y){x=test::x;y=test::y;test::Run(test::onCorner);return true;}
 bool ReadHeldBrush(void*,float& size,float& opac,float& col,const std::function<bool()>& current){++test::brushReads;size=test::size;opac=test::opac;col=test::col;test::Run(test::onRead);return test::brush && (!current || current());}
+bool ReadStrokeDab(void* window,Dab& out,const std::function<bool()>& current){
+    if(!ReadStrokeCorner(window,out.x,out.y) || !current())return false;
+    return ReadHeldBrush(nullptr,out.size,out.opac,out.col,current);
+}
 bool IsSignalPlaying(){test::Run(test::onSignal);return test::signal;}
 DrawResult DrawDab(void*,const Dab& dab,const std::function<bool()>& current){
     if(!test::prepared || (current && !current()))return DrawResult::Retry;
@@ -82,7 +86,7 @@ int main(int argc,char** argv){using namespace test;coop::net::Session s;
     if(Select(argc,argv,"refused-fifo")){
         Reset(s);Observe(1);Observe(2);s.allow=[](const auto&){return false;};S::Tick();
         CHECK(s.sent.empty() && S::g_outbound.size()==2);
-        size=99;opac=3;S::Tick();CHECK(brushReads==1);
+        size=99;opac=3;S::Tick();CHECK(brushReads==2);
         s.allow={};S::Tick();CHECK(s.sent.size()==2 && s.sent[0].x==1 && s.sent[1].x==2 && s.sent[0].size==32);
     }
     if(Select(argc,argv,"send-budget")){
@@ -102,10 +106,12 @@ int main(int argc,char** argv){using namespace test;coop::net::Session s;
         S::Tick();CHECK(S::g_outbound.size()==1 && S::g_outbound.front().dab.x==77);
     }
     if(Select(argc,argv,"brush-retirement")){
-        Reset(s);Observe();onRead=[&]{++serial;};S::Tick();CHECK(s.sent.empty());
-        Reset(s);Observe();onRead=[&]{Observe(2);S::Tick();};S::Tick();CHECK(s.sent.size()==1 && S::g_outbound.size()==1);
-        Reset(s);Observe();brush=false;S::Tick();CHECK(S::g_outbound.empty() && s.sent.empty());
-        Reset(s);Observe();size=NAN;S::Tick();CHECK(s.sent.empty());
+        Reset(s);onRead=[&]{++serial;};Observe();S::Tick();CHECK(s.sent.empty());
+        Reset(s);onRead=[&]{Observe(2);S::Tick();};Observe();S::Tick();CHECK(s.sent.size()==1 && S::g_outbound.empty());
+        Reset(s);brush=false;Observe();S::Tick();CHECK(S::g_outbound.empty() && s.sent.empty());
+        Reset(s);size=NAN;Observe();S::Tick();CHECK(s.sent.empty());
+        Reset(s);Observe();size=99;opac=3;Observe(2);S::Tick();
+        CHECK(s.sent.size()==2 && s.sent[0].size==32 && s.sent[0].opac==.4f && s.sent[1].size==99 && s.sent[1].opac==3);
     }
     if(Select(argc,argv,"source-reset")){
         for(int cause=0;cause<6;++cause){Reset(s);Observe();Receive();

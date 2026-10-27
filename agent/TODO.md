@@ -1,6 +1,6 @@
 # TODO - implementation backlog
 
-Development target: **0.9.2162**. Last qualified package: **0.9.2161 / b2217**.
+Development target: **0.9.2162**. Last qualified package: **0.9.2162 / b2217** (offline).
 Only defects and unfinished implementation belong here. Validation, rendered
 acceptance, qualification and results belong in WORK.md and TESTLOG.md.
 
@@ -8,33 +8,29 @@ acceptance, qualification and results belong in WORK.md and TESTLOG.md.
 
 - [ ] Fix remote flashlights: every peer currently sees only their own light.
 - [ ] Fix the T-pose when players fall into ragdoll on every peer.
-- [ ] Finish held-toy hook/function/schema ownership and bounded native work.
-- [ ] Finish watoy parameter schema/ownership, independent copied-View cleanup,
-  original hand provenance and bounded native presentation work.
-- [ ] Finish first-dab brush provenance and thrown-sponge synchronization.
+- [ ] Finish held-toy native variant schemas and hook/function ownership beyond
+  the validated Dingus/ABPlush capture inputs; preserve bounded native work.
+- [ ] Finish watoy start-cue and physics-hook ownership beyond the validated
+  activation/audio/emitter schemas and native activation admission.
+- [ ] Finish thrown-sponge foam and resource synchronization beyond window dabs.
 
 ## Events
 
-- [ ] Complete native routes for Dreams, Ariral Reputation, Player-Activated,
-  Time-Related, Endings, Story Mode, Random and Signal events: actual triggers,
-  selected outcomes, effects and join/lifetime ownership. Preserve personal
-  dream/ending consequences, reputation tiers, calendar branches and story phases.
-- [ ] Extend frequency control to the remaining repeatable random events.
-  Complete treeSpawner, bp7Spawner and serverBreaker authority/effect routes,
-  including protected-server floppy consumption. Change eligible-roll waits
-  while preserving eligibility, probabilities, animation and effect duration.
-- [ ] Complete level/map-script event routes once their asset headers are available.
-
-## Reported defects
-
-- [ ] Bench58: fix the host's old rifle disappearing after ordinary placement.
-  Candidate: prop_rifle_C; its inherited destruction route remains unidentified.
-  Client placement recovery does not resolve the host's reported disappearance.
-- [ ] Token52: resolve the reported shared saveSlot.Points inconsistency during
-  credits, spending, join and reconnect; the original UI/trigger remains unknown.
-- [ ] Repair trowel identity/stock mismatch across native hold[0] reconstruction,
-  unequip and drop. Preserve an existing saved key and exact stock, including zero;
-  never restore a deferred profile into a replacement item.
+- [ ] Complete remaining native adapters for Dreams, Ariral Reputation,
+  Player-Activated, Time-Related, Endings, Story Mode, Random and Signal events:
+  actual triggers, selected outcomes, phases/effects and current-state late join.
+  Preserve personal dream/ending consequences, reputation tiers, calendar
+  eligibility and story phases.
+- [ ] treeSpawner: transport the host-selected tree's visibility, mesh scale,
+  movement and lifetime; complete client producer suppression and late join.
+  Then scale only the native 600–900-second spawn wait, preserving mode gates
+  and the tree's render/proximity-dependent behavior.
+- [ ] serverBreaker: finish protected-floppy consumption delivery to every
+  recipient, protection/repair sound and delegate consequences. Preserve the
+  host-selected box and native day/difficulty/upgrade probabilities; then scale
+  only the eligible-roll wait (native 1200–600 seconds).
+- [ ] Complete level/map-script event routes using the extracted map headers;
+  preserve personal consequences and the native protection/exit branches.
 
 ## Shared items and resources
 
@@ -57,8 +53,8 @@ acceptance, qualification and results belong in WORK.md and TESTLOG.md.
   portion/output arbitration, personal effects before host acceptance, native
   poison-pour/roach/rewards, uncertain-open refund recovery and persistence.
   Do not admit arbitrary replaceProp or replay uncertain effects.
-- [ ] Fix remaining stow stalls, including unresolved-class lookups, while
-  preserving pending item-state restoration.
+- [ ] Fix remaining stow stalls beyond indexed save-record class restoration,
+  while preserving pending item-state restoration.
 - [ ] Fill missing model previews and custom-skin compatibility without removing
   rig exclusions. Keep skeletal scaling and arbitrary creature physics separate.
 

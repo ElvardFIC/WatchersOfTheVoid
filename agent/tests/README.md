@@ -1,5 +1,16 @@
 # Regression tests
 
+The 2162 priority regressions extend `run_flashlight_native.ps1` with extracted
+production readers against relocated fields/packed flags. `run_2145.ps1` covers
+equipped crank lights and retained on/off state after puppet replacement.
+`run_2157.ps1` validates captured dispatch/input ownership and a 32-peer native
+presentation budget. `run_watoy.ps1` includes 32-seat presentation/send limits,
+fair refused state delivery, readiness retry rotation, original-hand provenance
+and shared View ownership/cleanup; fault controls remove the relevant guards.
+`run_window_stroke.ps1` checks original native wash material/size at both draw
+sites, first-dab settings and retirement during scalar queries. These are offline
+native-boundary fixtures; rendered game behavior requires separate acceptance.
+
 `run_game_modes.ps1` covers the six-choice hosting model, actual native new-save
 map initialization and mode-application/readback/retry bodies, with reflected
 objects and native FName construction doubled. Cooked contracts confirm the enum

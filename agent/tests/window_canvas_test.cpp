@@ -16,7 +16,9 @@ namespace W=ue_wrap::window_canvas;
 namespace R=ue_wrap::reflection;
 enum Id {Window,WindowClass,ChildClass,Canvas,Canvas2,CanvasClass,Mid,Mid2,MidClass,Parent,ParentClass,
     Sponge,SpongeClass,SpongeCDO,Player,PlayerClass,GM,GMClass,Panels,PanelsClass,Library,LibraryClass,
-    DrawFn,OpenFn,SetFn,GetFn,CreateFn,NewClass,VectorStruct,Count};
+    DrawFn,OpenFn,SetFn,GetFn,CreateFn,NewClass,VectorStruct,GraphFn,Count};
+struct GraphFrame {void* material=nullptr;float size=16;void* thrownMaterial=nullptr;float thrownSize=48;} graphFrame;
+ue_wrap::ufunction_hook::CallerFrame caller{};
 struct Obj {
     int id=0,serial=0;bool live=true;void* cls=nullptr;void* owner=nullptr;
     void* holding=nullptr;void* canv=nullptr;void* mid=nullptr;void* parent=nullptr;void* panels=nullptr;
@@ -37,6 +39,7 @@ std::wstring FnName(void* fn){
     const auto id=static_cast<Obj*>(fn)->id;
     if(id==DrawFn)return L"K2_DrawMaterial";if(id==OpenFn)return L"canvas";
     if(id==SetFn)return L"SetScalarParameterValue";if(id==GetFn)return L"K2_GetScalarParameterValue";
+    if(id==GraphFn)return L"ExecuteUbergraph_d_window";
     CHECK(id==CreateFn);return L"CreateDynamicMaterialInstance";
 }
 std::vector<R::ParamInfo> Params(void* fn){
@@ -72,6 +75,7 @@ void Reset(){
     objects[GM].cls=At(GMClass);objects[GM].panels=At(Panels);objects[Panels].cls=At(PanelsClass);
     objects[Library].cls=At(LibraryClass);
     objects[DrawFn].owner=At(CanvasClass);objects[OpenFn].owner=At(WindowClass);
+    objects[GraphFn].owner=At(WindowClass);graphFrame={At(Mid),16,At(Mid2),48};caller={At(GraphFn),reinterpret_cast<uint8_t*>(&graphFrame),100};
     objects[SetFn].owner=objects[GetFn].owner=At(MidClass);objects[CreateFn].owner=At(LibraryClass);
     W::g_core={};W::g_sponge={};W::g_nOpac={};W::g_nCol={};
 }
@@ -109,6 +113,7 @@ bool FindBoolProperty(void*,const wchar_t* name,int32_t& offset,uint8_t& mask){
 void* FindDispatchFunctionCached(void*,const wchar_t* name){
     using namespace canvas_test;Event(L"lookup:"+std::wstring(name));if(missing==name)return nullptr;
     if(!wcscmp(name,L"K2_DrawMaterial"))return At(DrawFn);if(!wcscmp(name,L"canvas"))return At(OpenFn);
+    if(!wcscmp(name,L"ExecuteUbergraph_d_window"))return At(GraphFn);
     if(!wcscmp(name,L"SetScalarParameterValue"))return At(SetFn);if(!wcscmp(name,L"K2_GetScalarParameterValue"))return At(GetFn);
     CHECK(!wcscmp(name,L"CreateDynamicMaterialInstance"));return At(CreateFn);
 }
@@ -128,7 +133,17 @@ void* PropertyInnerStruct(void*,const wchar_t*){return canvas_test::At(canvas_te
 int32_t StructSize(void*){return sizeof(ue_wrap::FVector2D);}
 int32_t FunctionFrameSize(void* fn){
     using namespace canvas_test;Event(L"frame:"+FnName(fn));if(badFrame==FnName(fn))return 0;
+    if(fn==At(GraphFn))return sizeof(GraphFrame);
     const auto params=Params(fn);return params.empty()?0:params.back().offset+params.back().size;
+}
+bool PropertyOffsetAndClass(void*,const wchar_t* name,int32_t& offset,std::wstring& type){
+    using namespace canvas_test;
+    if(!wcscmp(name,L"CallFunc_wash_dynmat")){offset=offsetof(GraphFrame,material);type=L"ObjectProperty";}
+    else if(!wcscmp(name,L"CallFunc_wash_size")){offset=offsetof(GraphFrame,size);type=L"FloatProperty";}
+    else if(!wcscmp(name,L"CallFunc_wash_dynmat_1")){offset=offsetof(GraphFrame,thrownMaterial);type=L"ObjectProperty";}
+    else if(!wcscmp(name,L"CallFunc_wash_size_1")){offset=offsetof(GraphFrame,thrownSize);type=L"FloatProperty";}
+    else return false;
+    return true;
 }
 std::vector<ParamInfo> FunctionParams(void* fn){return canvas_test::Params(fn);}
 bool CallFunction(void* target,void* fn,void* raw){
@@ -170,12 +185,37 @@ void* WorldOf(void*){return nullptr;}
 }
 namespace ue_wrap::world_singleton {void* Gamemode(){canvas_test::Event(L"gamemode");return canvas_test::gamemode;}}
 namespace ue_wrap::log {void Write(Level,const char*,...) {}}
+namespace ue_wrap::ufunction_hook {CallerFrame CurrentCallerFrame(){return canvas_test::caller;}}
+namespace ue_wrap::script_calls {
+bool EnumerateCalls(void*,std::vector<CallSite>& out){
+    out={CallSite{},CallSite{}};out[0].start=10;out[0].end=100;out[1].start=20;out[1].end=200;
+    for(auto& site:out)site.callee=canvas_test::At(canvas_test::DrawFn);return true;
+}
+bool SameCallee(const CallSite& site,void* fn){return site.callee==fn;}
+bool CallHasLocal(const CallSite& site,const wchar_t* name){
+    return !wcscmp(name,site.start==10?L"CallFunc_wash_dynmat":L"CallFunc_wash_dynmat_1");
+}
+}
 namespace ue_wrap {
 bool GcPin::Pin(void* object){Release();if(!object || canvas_test::Roots().contains(object))return false;obj_=object;canvas_test::Roots().insert(object);canvas_test::Event(L"pin");return true;}
 void GcPin::Release(){if(!obj_)return;void* old=obj_;obj_=nullptr;canvas_test::Roots().erase(old);canvas_test::Event(L"unpin");}
 }
 
 int main(int argc,char** argv){using namespace canvas_test;using Result=W::DrawResult;
+    if(Select(argc,argv,"original-dab")){
+        Reset();CHECK(W::EnsureResolved());objects[Window].flags=4;objects[Player].holding=nullptr;
+        objects[Sponge].mid=nullptr;objects[Mid].opac=.8f;W::Dab dab{};
+        CHECK(W::ReadStrokeDab(At(Window),dab,[]{return current;}) && dab.size==32 && dab.opac==.8f && gets==2);
+        caller.codeOffset=200;objects[Mid2].opac=.15f;objects[Mid2].col=.25f;
+        CHECK(W::ReadStrokeDab(At(Window),dab,[]{return current;}) && dab.size==48 && dab.opac==.15f && dab.col==.25f);
+        const auto before=gets;caller.codeOffset=201;CHECK(!W::ReadStrokeDab(At(Window),dab,[]{return current;}) && gets==before);
+        caller.codeOffset=100;caller.function=At(OpenFn);CHECK(!W::ReadStrokeDab(At(Window),dab,[]{return current;}));
+        for(int cause=0;cause<4;++cause){Reset();CHECK(W::EnsureResolved());objects[Window].flags=4;dab={-9,-9,-9,-9,-9};
+            trigger=L"read:opac";callback=[cause]{if(cause==0)graphFrame.material=At(Mid2);if(cause==1)++world;
+                if(cause==2)++objects[GraphFn].serial;if(cause==3)++objects[Mid].serial;};
+            CHECK(!W::ReadStrokeDab(At(Window),dab,[]{return current;}) && gets==1 && dab.size==-9);
+        }
+    }
     if(Select(argc,argv,"geometry")){
         Reset();CHECK(Draw()==Result::Applied && draws==1 && creates==1 && sets==2 && Roots().size()==1);
         CHECK(Draw()==Result::Applied && creates==1 && draws==2);W::ReleaseBrush();CHECK(Roots().empty());

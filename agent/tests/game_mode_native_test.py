@@ -20,4 +20,10 @@ create=rows('umg__interfaces__ui_saveSlots','ExecuteUbergraph_ui_saveSlots')
 assert 'Inst(tempSave)->Inst(mainMap) =' in create
 maps=(research/'current-pak-files.txt').read_text(encoding='utf-8-sig')
 assert '/maps/tutorial3.umap' in maps
+processor=rows('objects__propProcessor','ExecuteUbergraph_propProcessor')
+assert 'GetDirectoryContentsWithFileInfo' in processor
+assert 'EqualEqual_IntInt(Local(CallFunc_Array_Length_ReturnValue_3), Local(CallFunc_Array_Length_ReturnValue_6))' in processor
+assert 'BytesToImage(Local(CallFunc_LoadFile_bytes), byte:2' in processor
+assert 'Inst(texs_GAMEINST) = Inst(toTex)' in processor
 print('PASS cooked mode ordinals, Tutorial first map, save prefixes and native mainMap creation')
+print('PASS cooked item importer count-only disk admission and game-instance texture publication')

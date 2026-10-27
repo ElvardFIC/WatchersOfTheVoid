@@ -4,10 +4,20 @@
 #include <map>
 #include <set>
 #include <cwchar>
+#include <cstring>
+#include "ue_wrap/core/object_index.h"
 namespace test {
 inline bool overrides = true, cycle = false;
 inline int names = 0;
 inline std::wstring leaf = L"prop_leaf_C", parent = L"prop_family_C";
+inline bool classLoaded=false;inline unsigned classLookups=0,customLookups=0;
+}
+namespace ue_wrap::object_index {
+void* ClassByName(const wchar_t*){++test::classLookups;return test::classLoaded?&test::actor:nullptr;}
+}
+namespace ue_wrap::save_record {
+using ClassResolver=void* (*)(const wchar_t*);
+#include "../../_research/tests_2157/class_field.h"
 }
 namespace ue_wrap::reflection {
 const FName& NameOf(void* p) { static FName n; n.ComparisonIndex = p == &test::actor ? 1 : 2; return n; }
@@ -25,6 +35,14 @@ std::map<void*, OwnedClass> g_ownedCache;
 }
 int main() {
  using namespace test; namespace S = coop::prop_save_data;
+ void* restored=&ui;
+ for(int i=0;i<4096;++i)CHECK(!ue_wrap::save_record::WriteClassField(&restored,L"not_loaded_C",nullptr) && !restored);
+ CHECK(classLookups==4096);
+ CHECK(ue_wrap::save_record::WriteClassField(&restored,L"",nullptr) && !restored && classLookups==4096);
+ classLoaded=true;
+ CHECK(ue_wrap::save_record::WriteClassField(&restored,L"not_loaded_C",nullptr) && restored==&actor);
+ CHECK(ue_wrap::save_record::WriteClassField(&restored,L"custom",[](const wchar_t*)->void*{++customLookups;return &ui;}) && restored==&ui && customLookups==1);
+ puts("PASS stow record classes: 4096 indexed misses without array scans, null names, late readiness and explicit resolver");
  CHECK(S::Covers(&actor)); CHECK(names == 0);
  S::DeclareClassOwnedElsewhere(L"not_loaded_C");
  CHECK(S::Covers(&actor)); CHECK(names == 2);

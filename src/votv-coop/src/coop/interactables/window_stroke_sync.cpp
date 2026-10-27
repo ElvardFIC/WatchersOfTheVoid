@@ -174,8 +174,8 @@ void Reconcile() {
         (s && g_role != s->role())) Reset(s);
 }
 
-// Func post-hook on UCanvas::K2_DrawMaterial: game thread, deep inside the engine call, so field
-// reads and a queue push only.
+// Func post-hook on UCanvas::K2_DrawMaterial. Capture its exact native brush now:
+// a later hand sample loses first-dab settings and cannot describe thrown sponges.
 void OnDrawPost(void* /*canvas*/, void* sourceObject, void* /*result*/) {
     const Source source;
     if (g_wireApplyDepth > 0 || g_observing || !g_armed.load(std::memory_order_relaxed) ||
@@ -184,36 +184,17 @@ void OnDrawPost(void* /*canvas*/, void* sourceObject, void* /*result*/) {
     ue_wrap::CachedObjRef actor; actor.Set(sourceObject);
     const auto current = [&]{return source.Current() && actor.Get()==sourceObject;};
     if (!WC::IsStrokeDraw(sourceObject) || !current()) return;
-    float x = 0.f, y = 0.f;
-    if (!WC::ReadStrokeCorner(sourceObject, x, y) || !current() || g_outbound.size() >= kMaxQueued ||
-        !std::isfinite(x) || !std::isfinite(y) || x < -512 || x > 2157 || y < -512 || y > 1024) return;
-    g_outbound.push_back({WC::Dab{x,y}, Clock::now()+kOutboundTtl, ++g_sequence});
+    WC::Dab dab{};
+    if(!WC::ReadStrokeDab(sourceObject,dab,current) || !current() || !Valid(dab) || g_outbound.size()>=kMaxQueued)return;
+    g_outbound.push_back({dab, Clock::now()+kOutboundTtl, ++g_sequence,true});
 }
 
 void SendOutbound(coop::net::Session* s) {
     const Source source;
     if (!source.Current() || source.session != s || g_outbound.empty()) return;
-    // Seal only the rows already observed before these native reads. Accepted
-    // payloads retain their original brush across backpressure and hand changes.
+    // Rows already contain the original draw's complete brush. Sending performs
+    // no engine queries and cannot substitute a newer held item or material.
     const uint64_t last = g_outbound.back().sequence;
-    float size = 0.f, opac = 0.f, col = 0.f;
-    bool needBrush = false;
-    for (const auto& row : g_outbound) if (!row.ready && row.sequence <= last) needBrush = true;
-    bool brush = true;
-    if (needBrush) {
-        brush = WC::ReadHeldBrush(coop::players::Registry::Get().Local(), size, opac, col,
-                                  [&]{return source.Current();});
-        if (!source.Current()) return;
-        brush = brush && Valid(WC::Dab{0,0,size,opac,col});
-    }
-    for (auto it=g_outbound.begin(); it!=g_outbound.end();) {
-        if (it->sequence>last) break;
-        if (!it->ready) {
-            if (!brush) {it=g_outbound.erase(it); ++g_unsent; continue;}
-            it->dab.size=size; it->dab.opac=opac; it->dab.col=col; it->ready=true;
-        }
-        ++it;
-    }
     for (int work=0; work<kDrainPerTick && !g_outbound.empty(); ++work) {
         const auto row=g_outbound.front();
         if (row.sequence>last || !row.ready || !source.Current()) return;
@@ -320,7 +301,7 @@ void OnReliable(const coop::net::WindowStrokePayload& payload, uint8_t senderPee
 }
 
 void Tick() {
-    if (g_ticking) return;
+    if (g_ticking || g_observing) return;
     struct Guard { Guard(){g_ticking=true;} ~Guard(){g_ticking=false;} } guard;
     Reconcile();
     const Source source;

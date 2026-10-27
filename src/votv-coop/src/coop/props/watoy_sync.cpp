@@ -35,7 +35,8 @@ struct Targets {std::array<uint16_t,net::kMaxPeers> people{};std::array<uint32_t
 struct Source {uint16_t person=0;uint32_t connection=0;uint64_t epoch=0;};
 struct Row {Packet state{};CachedObjRef actor;uint64_t at=0;uint32_t pending=0;bool authorized=false;Targets targets{};Source source{};};
 struct Outbound {Packet state{};uint64_t expires=0;uint32_t pending=0;bool play=false;uint8_t origin=0;bool authorize=false;CachedObjRef ownHand;Targets targets{};Source source{};};
-struct Activation {CachedObjRef actor,function;void* stack=nullptr;uint64_t invocation=0,epoch=0;bool active=false,ready=false;};
+struct Activation {CachedObjRef actor,cls,function;void* stack=nullptr;uint64_t invocation=0,epoch=0;
+    uint32_t generation=0;uint8_t slot=0;Source source{};bool hand=false,active=false,ready=false;};
 std::unordered_map<std::wstring,Row> g_worldRows;
 std::unordered_map<std::wstring,W::View> g_worldViews;
 std::array<Row,net::kMaxPeers> g_hands{};
@@ -51,6 +52,8 @@ uint8_t g_rateCount[net::kMaxPeers]{};
 bool g_ticking=false,g_forceHook=false,g_velocityHook=false,g_gravityHook=false;
 bool g_watches=false,g_watchSaid=false;
 uint64_t g_hookRetry=0,g_watchRetry=0;
+size_t g_handCursor=0,g_worldCursor=0,g_flushCursor=0;
+constexpr unsigned kStatePresentations=8,kCuePresentations=8,kNativeActivations=8,kSendAttempts=64;
 uint32_t g_serial=0,g_connections[net::kMaxPeers]{};
 uint64_t g_peerEpoch[net::kMaxPeers]{};
 net::Role g_role=net::Role::Host;
@@ -80,7 +83,8 @@ void Bind(Targets& targets,uint32_t mask){for(int slot=0;slot<net::kMaxPeers;++s
     targets.people[slot]=roster_ledger::Get(slot).playerNo;targets.connections[slot]=g_session->peerGenerationForSlot(slot);targets.epochs[slot]=g_peerEpoch[slot];}}
 bool Recipient(const Targets& targets,int slot){return Current() && targets.people[slot] && targets.people[slot]==roster_ledger::Get(slot).playerNo &&
     targets.connections[slot]==g_session->peerGenerationForSlot(slot) && targets.epochs[slot]==g_peerEpoch[slot];}
-void PruneActivations(){std::erase_if(g_activation,[](const Activation& row){return !Current(row.epoch) || !row.actor.Get() || !row.function.Get() || !SG::IsInvocationActive(row.invocation);});}
+bool ActivationCurrent(const Activation& row);
+void PruneActivations(){std::erase_if(g_activation,[](const Activation& row){return !ActivationCurrent(row);});}
 uint8_t Local(){return players::Registry::Get().LocalPeerId();}
 uint32_t Mask(int except=-1) {
     uint32_t result=0;for(int slot=1;slot<net::kMaxPeers;++slot)
@@ -92,6 +96,16 @@ bool Eligible(void* actor) {
         ue_wrap::world_identity::CurrentWorld() &&
         ue_wrap::world_identity::WorldOf(actor)==ue_wrap::world_identity::CurrentWorld() &&
         (g_session->role()!=net::Role::Client || net_pump::IsInAnnouncedWorld(actor));
+}
+bool ActivationCurrent(const Activation& row){
+    if(!Current(row.epoch) || !row.actor.Get() || !row.cls.Get() ||
+       R::ClassOf(row.actor.Get())!=row.cls.Get() || !row.function.Get() ||
+       R::FindDispatchFunctionCached(row.cls.Get(),L"activate")!=row.function.Get() ||
+       !R::FunctionParams(row.function.Get()).empty() || !row.function.Get() || !row.cls.Get() ||
+       R::ClassOf(row.actor.Get())!=row.cls.Get() || !Current(row.epoch) ||
+       !SG::IsInvocationActive(row.invocation) || row.slot!=Local() || !SourceCurrent(row.source,row.slot))return false;
+    return row.hand ? row.generation && hand_item::LocalHandActor()==row.actor.Get() &&
+        hand_item::Generation(row.slot)==row.generation : !hand_item::IsHandAxisActor(row.actor.Get());
 }
 bool KeyValid(const net::WireKey& key) {
     if(!key.len || key.len>sizeof(key.data))return false;
@@ -144,34 +158,52 @@ void SampleWorld(void* actor,uint64_t now) {
         Bind(row.targets,row.pending);
     }
 }
-void QueueCue(void* actor) {
+void QueueCueBound(void* actor,bool hand,uint8_t slot,uint32_t generation,const Source& source) {
     if(!Current() || g_out.size()>=64)return;
-    const auto epoch=g_epoch;CachedObjRef live;live.Set(actor);
+    const auto epoch=g_epoch;CachedObjRef live,cls;live.Set(actor);if(live.Get())cls.Set(R::ClassOf(actor));
+    const auto valid=[&]{return Current(epoch) && live.Get() && cls.Get() && R::ClassOf(actor)==cls.Get() &&
+        slot==Local() && SourceCurrent(source,slot) && (hand ? generation &&
+        actor==hand_item::LocalHandActor() && hand_item::Generation(slot)==generation : !hand_item::IsHandAxisActor(actor));};
+    if(!valid())return;
     Packet p{};p.sequence=Next(g_request);
-    if(actor==hand_item::LocalHandActor()) {
-        p.slot=Local();if(p.slot>=net::kMaxPeers)return;
-        p.playerNo=roster_ledger::Get(p.slot).playerNo;p.generation=hand_item::Generation(p.slot);p.op=HandCue;
-        if(!p.playerNo)return;
+    if(hand) {
+        p.slot=slot;p.playerNo=source.person;p.generation=generation;p.op=HandCue;
     } else {
         if(!Eligible(actor))return;
         const auto key=Key(actor);if(key.empty())return;
         net::WireKeyFromString(key,p.key);p.op=WorldCue;
     }
-    if(!Current(epoch) || !live.Get() || g_out.size()>=64)return;
+    if(!valid() || g_out.size()>=64)return;
     const bool host=g_session->role()==net::Role::Host;
     if(host)p.sequence=0; // assign in delivery order, after a pending hand is announced
     g_out.push_back({p,active_drive::NowMs()+1500,host?Mask(p.op==HandCue?p.slot:-1):1u,false});
     Bind(g_out.back().targets,g_out.back().pending);
+    g_out.back().source=source;g_out.back().origin=slot;
     if(p.op==HandCue)g_out.back().ownHand.Set(actor);
 }
+void QueueCue(void* actor) {
+    if(!Current())return;
+    const auto slot=Local();if(slot>=net::kMaxPeers)return;
+    const bool hand=actor==hand_item::LocalHandActor();
+    QueueCueBound(actor,hand,slot,hand?hand_item::Generation(slot):0,CaptureSource(slot));
+}
 SG::Verdict BeforeActivate(const SG::Call& c) {
-    if(!Current() || c.fromOurCode || !W::IsToy(c.object))return SG::Verdict::Run;
+    if(!Current() || c.fromOurCode || !c.object)return SG::Verdict::Run;
+    const auto epoch=g_epoch;CachedObjRef live;live.Set(c.object);if(!live.Get())return SG::Verdict::Run;
+    Activation row{};row.actor=live;row.cls.Set(R::ClassOf(c.object));
+    row.function.Set(c.function);row.stack=c.stack;row.invocation=c.invocation;row.epoch=epoch;
+    row.slot=Local();if(row.slot>=net::kMaxPeers)return SG::Verdict::Run;
+    row.source=CaptureSource(row.slot);row.hand=c.object==hand_item::LocalHandActor();
+    if(row.hand)row.generation=hand_item::Generation(row.slot);
+    if(!W::IsToy(c.object) || !Current(epoch) || !live.Get())return SG::Verdict::Run;
     if(hand_item::IsMirrorActor(c.object))return SG::Verdict::Cancel;
-    const auto epoch=g_epoch;CachedObjRef live;live.Set(c.object);
-    if(c.object!=hand_item::LocalHandActor() && g_session->role()==net::Role::Client) {
+    if(!ActivationCurrent(row))return SG::Verdict::Run;
+    if(!row.hand && g_session->role()==net::Role::Client) {
         if(Eligible(c.object) && g_out.size()<64) {
             const auto key=Key(c.object);
-            if(!key.empty() && Current(epoch) && live.Get() && g_out.size()<64) {
+            if(!key.empty() && Current(epoch) && live.Get() && row.cls.Get() &&
+               R::ClassOf(c.object)==row.cls.Get() && !hand_item::IsHandAxisActor(c.object) &&
+               SourceCurrent(row.source,row.slot) && g_out.size()<64) {
                 Packet p{};net::WireKeyFromString(key,p.key);p.op=ActivateWorld;p.sequence=Next(g_request);
                 g_out.push_back({p,active_drive::NowMs()+3000,1u,false});
                 Bind(g_out.back().targets,g_out.back().pending);
@@ -182,12 +214,12 @@ SG::Verdict BeforeActivate(const SG::Call& c) {
     PruneActivations();
     if(!c.invocation || !c.function || g_activation.size()>=32 ||
        std::any_of(g_activation.begin(),g_activation.end(),[&](const Activation& row){return row.invocation==c.invocation;}))return SG::Verdict::Run;
-    Activation row{};row.actor=live;row.function.Set(c.function);row.stack=c.stack;row.invocation=c.invocation;row.epoch=epoch;
+    if(!ActivationCurrent(row))return SG::Verdict::Run;
     g_activation.push_back(row);
     W::State before{};const bool read=W::Read(c.object,before);
     auto found=std::find_if(g_activation.begin(),g_activation.end(),[&](const Activation& item){return item.invocation==row.invocation && item.epoch==epoch;});
     if(found!=g_activation.end()){
-        if(read && Current(epoch) && live.Get() && row.function.Get() && SG::IsInvocationActive(c.invocation)){found->active=before.active;found->ready=true;}
+        if(read && ActivationCurrent(row)){found->active=before.active;found->ready=true;}
         else g_activation.erase(found);
     }
     return SG::Verdict::Run;
@@ -198,11 +230,10 @@ void AfterActivate(const SG::Call& c) {
         row.actor.Get()==c.object && row.function.Get()==c.function && row.stack==c.stack;});
     if(found==g_activation.end())return;
     const auto before=*found;g_activation.erase(found);
-    if(!Current(before.epoch) || before.active || !SG::IsInvocationActive(before.invocation))return;
+    if(!ActivationCurrent(before) || before.active)return;
     W::State state{};
-    if(!W::Read(c.object,state) || !Current(before.epoch) || !before.actor.Get() || !before.function.Get() ||
-       !SG::IsInvocationActive(before.invocation) || !state.active)return;
-    QueueCue(c.object);g_poll=0;
+    if(!W::Read(c.object,state) || !ActivationCurrent(before) || !state.active)return;
+    QueueCueBound(c.object,before.hand,before.slot,before.generation,before.source);g_poll=0;
 }
 bool Park(void* actor) {
     return Current() && W::IsToy(actor) && ue_wrap::world_identity::CurrentWorld() &&
@@ -253,8 +284,11 @@ void SampleLocal(uint64_t now) {
 }
 void ApplyHands() {
     const auto epoch=g_epoch;
-    for(uint8_t slot=0;slot<net::kMaxPeers;++slot) {
+    unsigned attempts=0;
+    for(unsigned visited=0;visited<net::kMaxPeers && attempts<kStatePresentations;++visited) {
+        const auto slot=static_cast<uint8_t>(g_handCursor);g_handCursor=(g_handCursor+1)%net::kMaxPeers;
         if(slot==Local())continue;
+        ++attempts;
         const auto row=g_hands[slot];
         void* actor=row.state.sequence?HandActor(row.state):nullptr;
         if(!W::IsToy(actor)) {
@@ -299,37 +333,48 @@ bool ActivateRequest(const Packet& p,uint8_t sender,uint64_t now,const Source& s
     if(!current() || !live.Get())return true;
     if(!readable)return false;
     if(!before.active) {
-        const bool activated=W::Activate(actor,current);
+        bool dispatched=false;
+        const bool activated=W::Activate(actor,current,&dispatched);
         if(!current() || !live.Get())return true;
-        if(!activated)return false;
+        if(!activated && !dispatched)return false;
         if(W::Read(actor,after) && current() && live.Get() && after.active)QueueCue(actor);
     }
     if(current() && live.Get())SampleWorld(actor,now);
     return true;
 }
 void FlushRows() {
-    const auto epoch=g_epoch;const auto rows=g_worldRows;const auto hands=g_hands;
-    const auto flush=[&](const Row& row,const auto& find){
-        for(int slot=0;slot<net::kMaxPeers;++slot)if(row.pending&(1u<<slot)){
-            if(!Current(epoch))return;
-            auto* current=find();if(!current || current->state.sequence!=row.state.sequence)break;
-            const bool sent=!g_session->IsSlotWorldReady(slot) || !Recipient(row.targets,slot) ||
-                g_session->SendReliableToSlot(slot,net::ReliableKind::Watoy,&row.state,sizeof(row.state));
-            if(!Current(epoch))return;
-            current=find();
-            if(sent && current && current->state.sequence==row.state.sequence &&
-               current->targets.people[slot]==row.targets.people[slot] && current->targets.connections[slot]==row.targets.connections[slot] &&
-               current->targets.epochs[slot]==row.targets.epochs[slot])current->pending&=~(1u<<slot);
-        }
-    };
-    for(const auto& [key,row]:rows){
-        flush(row,[&]()->Row*{const auto it=g_worldRows.find(key);return it==g_worldRows.end()?nullptr:&it->second;});
+    const auto epoch=g_epoch;
+    struct Pending {std::wstring key;int hand=-1;Row row;};
+    std::vector<Pending> rows;
+    for(const auto& [key,row]:g_worldRows)if(row.pending)rows.push_back({key,-1,row});
+    std::sort(rows.begin(),rows.end(),[](const Pending& a,const Pending& b){return a.key<b.key;});
+    for(int slot=0;slot<net::kMaxPeers;++slot)
+        if(g_hands[slot].authorized && g_hands[slot].pending)rows.push_back({{},slot,g_hands[slot]});
+    if(rows.empty()){g_flushCursor=0;return;}
+    const size_t cells=rows.size()*net::kMaxPeers;
+    unsigned attempts=0;
+    for(size_t visited=0;visited<cells && attempts<kSendAttempts;++visited){
+        const auto cell=g_flushCursor%cells;g_flushCursor=(cell+1)%cells;
+        const auto& item=rows[cell/net::kMaxPeers];const auto& row=item.row;
+        const int slot=int(cell%net::kMaxPeers);
+        if(!(row.pending&(1u<<slot)))continue;
         if(!Current(epoch))return;
-    }
-    for(size_t slot=0;slot<hands.size();++slot)if(hands[slot].authorized){
-        flush(hands[slot],[&]()->Row*{return &g_hands[slot];});if(!Current(epoch))return;
+        const auto find=[&]()->Row*{
+            if(item.hand>=0)return &g_hands[item.hand];
+            const auto it=g_worldRows.find(item.key);return it==g_worldRows.end()?nullptr:&it->second;
+        };
+        auto* current=find();if(!current || current->state.sequence!=row.state.sequence)continue;
+        const bool retired=!g_session->IsSlotWorldReady(slot) || !Recipient(row.targets,slot);
+        if(!retired)++attempts;
+        const bool sent=retired || g_session->SendReliableToSlot(slot,net::ReliableKind::Watoy,&row.state,sizeof(row.state));
+        if(!Current(epoch))return;
+        current=find();
+        if(sent && current && current->state.sequence==row.state.sequence &&
+           current->targets.people[slot]==row.targets.people[slot] && current->targets.connections[slot]==row.targets.connections[slot] &&
+           current->targets.epochs[slot]==row.targets.epochs[slot])current->pending&=~(1u<<slot);
     }
 }
+
 void Restore(std::deque<Outbound>& retained,uint64_t epoch){
     if(!Current(epoch))return;
     std::erase_if(retained,[](Outbound& item){
@@ -341,9 +386,10 @@ void Restore(std::deque<Outbound>& retained,uint64_t epoch){
 }
 void Drain(uint64_t now) {
     const auto epoch=g_epoch;uint32_t blocked=0;
+    unsigned activations=0,presentations=0,sends=0;
     if(g_session->role()==net::Role::Host)std::stable_partition(g_out.begin(),g_out.end(),[](const Outbound& item){
         return !item.authorize && item.state.sequence && (item.state.op==WorldCue || item.state.op==HandCue);});
-    std::deque<Outbound> retained;
+    std::deque<Outbound> retained,retryActivations;
     const size_t count=g_out.size();
     for(size_t i=0;i<count && !g_out.empty();++i) {
         auto item=g_out.front();g_out.pop_front();auto& p=item.state;
@@ -353,13 +399,14 @@ void Drain(uint64_t now) {
         if(item.ownHand.Idx()>=0) {
             if(!item.ownHand.Get() || item.ownHand.Get()!=hand_item::LocalHandActor() || p.slot!=Local())continue;
             const auto generation=hand_item::Generation(p.slot);
-            if(p.generation && generation && p.generation!=generation)continue;
-            if(!p.generation)p.generation=generation;
-            if(!p.generation){retained.push_back(item);Restore(retained,epoch);return;}
+            if(!p.generation || p.generation!=generation)continue;
         }
         if(item.authorize) {
             if(p.op==ActivateWorld) {
-                if(now<g_poll || !ActivateRequest(p,item.origin,now,item.source))retained.push_back(item);
+                if(now<g_poll){retained.push_back(item);continue;}
+                if(activations>=kNativeActivations){retained.push_back(item);continue;}
+                ++activations;
+                if(!ActivateRequest(p,item.origin,now,item.source))retryActivations.push_back(item);
                 if(!Current(epoch))return;
                 continue;
             }
@@ -374,19 +421,27 @@ void Drain(uint64_t now) {
         }
         if(g_session->role()==net::Role::Host && !p.sequence)p.sequence=Next(g_sequence);
         if(item.play) {
+            if(presentations>=kCuePresentations){retained.push_back(item);blocked|=item.pending;continue;}
+            ++presentations;
             void* actor=p.op==HandCue?HandActor(p):prop_element_tracker::FindLiveActorByKey(net::StringFromWireKey(p.key));
             if((p.op==HandCue?W::IsToy(actor):Eligible(actor)) && W::PlayStartCue())item.play=false;
             if(!Current(epoch))return;
         }
         for(int slot=0;slot<net::kMaxPeers;++slot)if((item.pending&~blocked)&(1u<<slot)) {
             if(item.source.person && !SourceCurrent(item.source,item.origin)){item.pending=0;item.play=false;break;}
-            if(!g_session->IsSlotWorldReady(slot) || !Recipient(item.targets,slot) || g_session->SendReliableToSlot(slot,net::ReliableKind::Watoy,&p,sizeof(p)))
+            const bool retired=!g_session->IsSlotWorldReady(slot) || !Recipient(item.targets,slot);
+            if(!retired && sends>=kSendAttempts)break;
+            if(!retired)++sends;
+            if(retired || g_session->SendReliableToSlot(slot,net::ReliableKind::Watoy,&p,sizeof(p)))
                 item.pending&=~(1u<<slot);
             if(!Current(epoch))return;
         }
         blocked|=item.pending;
         if(item.pending || item.play)retained.push_back(item);
     }
+    // Failed readiness attempts rotate behind requests that did not get a
+    // native-work permit. Cue order remains in retained, on its reliable lane.
+    retained.insert(retained.end(),retryActivations.begin(),retryActivations.end());
     Restore(retained,epoch);
 }
 void PruneRows(uint64_t now) {
@@ -433,10 +488,19 @@ void Tick() {
         ApplyHands();if(!Current(epoch))return;
         if(g_session->role()==net::Role::Host) {
             std::array<CachedObjRef,256> actors{};const auto count=W::Collect(actors.data(),actors.size());
-            for(size_t i=0;i<count;++i){SampleWorld(actors[i].Get(),now);if(!Current(epoch))return;}
+            for(size_t visited=0;visited<count && visited<kStatePresentations;++visited){
+                const auto i=g_worldCursor%count;g_worldCursor=(i+1)%count;
+                SampleWorld(actors[i].Get(),now);if(!Current(epoch))return;
+            }
         } else {
             const auto rows=g_worldRows;
-            for(const auto& [key,row]:rows) {
+            std::vector<std::wstring> keys;keys.reserve(rows.size());
+            for(const auto& [key,row]:rows)keys.push_back(key);
+            std::sort(keys.begin(),keys.end());
+            for(size_t visited=0;visited<keys.size() && visited<kStatePresentations;++visited) {
+                const auto i=g_worldCursor%keys.size();g_worldCursor=(i+1)%keys.size();
+                const auto& key=keys[i];const auto& row=rows.at(key);
+                if(now-row.at>10000)continue;
                 void* actor=prop_element_tracker::FindLiveActorByKey(key);if(!Eligible(actor))continue;
                 CachedObjRef live;live.Set(actor);auto view=g_worldViews[key];
                 const auto valid=[&]{const auto it=g_worldRows.find(key);return Current(epoch) && live.Get() &&
@@ -534,7 +598,7 @@ void OnDisconnect() {
     for(const auto& view:g_handViews)stop.push_back(view);
     ++g_epoch;g_session=nullptr;g_worldRows.clear();g_hands={};g_out.clear();g_activation.clear();
     g_worldViews.clear();g_handViews={};
-    g_world=g_sequence=g_request=g_lastCue=g_serial=0;g_poll=0;g_running=g_linked=false;
+    g_world=g_sequence=g_request=g_lastCue=g_serial=0;g_poll=0;g_handCursor=g_worldCursor=g_flushCursor=0;g_running=g_linked=false;
     for(int slot=0;slot<net::kMaxPeers;++slot){g_seen[slot]=g_seenState[slot]=0;g_rateAt[slot]=0;g_rateCount[slot]=0;g_occupants[slot]=0;}
     for(auto& view:stop)W::Clear(view);
 }

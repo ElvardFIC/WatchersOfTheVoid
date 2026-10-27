@@ -31,3 +31,7 @@ bodies = [function(signature) for signature in (
 path.with_name('flashlight_native_production.inc').write_text(
     'namespace ue_wrap::engine {\nnamespace R=reflection; namespace P=profile;\n' + cache + '\n' +
     '\n'.join(bodies) + '\n}\n', encoding='utf-8')
+path.with_name('flashlight_reader_production.inc').write_text(
+    'namespace ue_wrap::engine {\nnamespace R=reflection;\n' + '\n'.join(function(s) for s in (
+        'void* GetMainPlayerLightR(', 'bool ReadFlashlightSnapshot(',
+        'bool ReadMainPlayerFlashlightState(', 'bool WriteMainPlayerFlashlight(')) + '\n}\n', encoding='utf-8')

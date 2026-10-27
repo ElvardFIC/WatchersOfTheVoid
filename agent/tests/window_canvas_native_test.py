@@ -33,6 +33,10 @@ assert 'Inst(canv)' in set_draw and 'K2_DrawMaterial' not in set_draw
 assert 'EndDrawCanvasToRenderTarget(self, Inst(cont))' in '\n'.join(function('endDraw').values())
 assert graph[1978] == 'canvas()'
 assert 'Inst(canv)->Canvas.K2_DrawMaterial(' in graph[2038]
+assert 'Local(CallFunc_wash_dynmat_1)' in graph[2038]
+assert 'MakeVector2D(Local(CallFunc_wash_size_1), Local(CallFunc_wash_size_1))' in graph[1992]
+assert 'Inst(canv)->Canvas.K2_DrawMaterial(Local(CallFunc_wash_dynmat),' in graph[663]
+assert 'Multiply_IntFloat(2, Local(CallFunc_wash_size))' in graph[575]
 assert 'Inst(a)' in graph[2038] and '0.5, 0.5' in graph[2038]
 assert 'Inst(analogPanels)->Inst(isPlayingSignal)' in graph[2960]
 

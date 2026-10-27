@@ -10,6 +10,7 @@
 #include "ue_wrap/core/reflection.h"
 #include "ue_wrap/core/types.h"
 #include "ue_wrap/core/log.h"
+#include "ue_wrap/core/object_index.h"
 #include "ue_wrap/core/field_io.h"
 #include "ue_wrap/desk/signal_dynamic.h"
 
@@ -50,7 +51,7 @@ std::wstring ReadClassNameAt(const void* base, int32_t off) {
     void* cls = nullptr;
     std::memcpy(&cls, reinterpret_cast<const uint8_t*>(base) + off, sizeof(void*));
     if (!PlausibleObjPtr(cls) || !R::IsLive(cls)) return {};
-    return R::ToString(R::NameOf(cls));  // leaf name; re-resolved via FindClass on apply
+    return R::ToString(R::NameOf(cls));  // leaf name; resolved through the loaded-class index on apply
 }
 std::array<float, 10> ReadXformAt(const void* base, int32_t off) {
     ue_wrap::FTransform t{};
@@ -75,12 +76,12 @@ void ReadGroups(const void* save, int32_t off, int32_t elemSize, std::vector<V>&
     }
 }
 
-// Resolve `leaf` through `resolve` (null = FindClass) and write the UClass (or null) at `dst`.
+// Resolve `leaf` through `resolve` (null = loaded-class index) and write the UClass (or null) at `dst`.
 // Returns false ONLY when a non-empty name did not resolve, so WriteSaveRecord can count the misses
 // and say them once per record rather than once per leaf: a crafted record's `classes` group is
 // thousands of unknown names, and a line each turned the write into its own flood.
 bool WriteClassField(void* dst, const std::wstring& leaf, ClassResolver resolve) {
-    void* cls = leaf.empty() ? nullptr : (resolve ? resolve(leaf.c_str()) : R::FindClass(leaf.c_str()));
+    void* cls = leaf.empty() ? nullptr : (resolve ? resolve(leaf.c_str()) : object_index::ClassByName(leaf.c_str()));
     std::memcpy(dst, &cls, sizeof(void*));
     return cls || leaf.empty();
 }
@@ -317,7 +318,7 @@ bool EnsurePropClass() {
     const uint64_t now = NowMs();
     if (now < g_nextPropTryMs) return false;
     g_nextPropTryMs = now + 1000;
-    g_propCls = R::FindClass(L"prop_C");
+    g_propCls = object_index::ClassByName(L"prop_C");
     if (!g_propCls) {
         static bool s_warned = false;
         if (!s_warned) {
@@ -614,8 +615,9 @@ bool ApplyRecordWhile(void* actor, const SaveRecord& r, const std::function<bool
     ParamFrame f(loadFn.Get());
     const int32_t off = f.ParamOffset(L"data");
     if (!f.valid() || off < 0 || off + kSaveRecordBytes > f.FrameSize()) return false;
-    // The frame arrives zeroed, which is WriteSaveRecord's stated precondition.
-    WriteSaveRecord(static_cast<uint8_t*>(f.data()) + off, merged, resolve);
+    // Unresolved classes/allocation failures leave unpublished scratch only.
+    // The caller must retain the pending record rather than load null fields.
+    if(!WriteSaveRecordChecked(static_cast<uint8_t*>(f.data()) + off, merged, resolve))return false;
     // Class resolution can dispatch/re-enter; refuse before loadData can touch a retired target.
     if(!current())return false;
     return Call(actor, f) && current();

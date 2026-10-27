@@ -14,6 +14,7 @@
 #include "ue_wrap/engine/world_identity.h"
 #include "ue_wrap/world/game_mode.h"
 #include "ue_wrap/world/game_rules.h"
+#include "ue_wrap/hotbar/icons.h"
 #include "ue_wrap/world/world_singleton.h"
 
 #include <cstdint>
@@ -381,6 +382,7 @@ bool LoadStorySave(const wchar_t* slot, int forceGameMode) {
     // loaded.
     ApplyGameModeFromSlot(gi, slot, forceGameMode);
     if (!g_gameModeApplied) return false;
+    if (!ue_wrap::hotbar::PrepareForWorld(ue_wrap::game_mode::ReadFrom(gi))) return false;
 
     std::wstring openCmd = L"open ";
     openCmd += ue_wrap::game_mode::ReadFrom(gi)==ue_wrap::game_mode::kTutorial
@@ -493,6 +495,7 @@ bool StartFreshGame(int gameMode) {
     }
     ApplyGameModeFromSlot(gi, kFreshSlotName, mode);
     if (!g_gameModeApplied) return false;
+    if (!ue_wrap::hotbar::PrepareForWorld(mode)) return false;
 
     std::wstring openCmd = L"open ";
     openCmd += mode==ue_wrap::game_mode::kTutorial

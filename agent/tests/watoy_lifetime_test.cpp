@@ -11,13 +11,37 @@ int main(int argc,char** argv){
   ++sessionSerial;Start(session,role);invocations.clear();
  };
  const auto callFor=[&](uint64_t id){ue_wrap::script_gate::Call call{};call.object=&actor;call.function=&ui;call.invocation=id;invocations.insert(id);return call;};
+ if(run("uncertain")){
+  reset();activationReady=false;S::Receive(World(1,1),1);
+  CHECK(!activations && S::g_out.size()==1);
+  activationReady=true;S::Tick();CHECK(activations==1 && std::none_of(S::g_out.begin(),S::g_out.end(),[](const auto& row){return row.state.op==S::ActivateWorld;}));
+  reset();const auto before=activations;activationComplete=false;S::Receive(World(1,1),1);
+  CHECK(activations==before+1 && !state.active && S::g_out.empty());
+  S::Tick();S::Tick();CHECK(activations==before+1 && S::g_out.empty());
+  puts("PASS watoy activation retries only before native dispatch, consumes uncertain completion");
+ }
+ if(run("function")){
+  for(bool client:{false,true})for(int fault=0;fault<3;++fault){
+   reset(client?Role::Client:Role::Host);auto call=callFor(90);
+   if(fault==0)call.function=&actor;
+   if(fault==1)activationFunction=&actor;
+   if(fault==2)activationParameters=true;
+   S::BeforeActivate(call);state.active=true;S::AfterActivate(call);
+   CHECK(S::g_activation.empty() && S::g_out.empty());
+  }
+  reset();auto call=callFor(91);S::BeforeActivate(call);activationFunction=&actor;state.active=true;S::AfterActivate(call);
+  CHECK(S::g_out.empty());
+  reset();call=callFor(92);S::BeforeActivate(call);activationParameters=true;state.active=true;S::AfterActivate(call);
+  CHECK(S::g_out.empty());
+  puts("PASS watoy capture exact dispatch and parameterless schema before client requests and after native callbacks");
+ }
  if(run("scope")){
   for(int cause=0;cause<5;++cause){reset();session.sendOk=false;S::QueueCue(&actor);
    if(cause==0)++sessionSerial;if(cause==1)session.active=false;if(cause==2)session.linked=false;
    if(cause==3)session.mode=Role::Client;if(cause==4)++world;
    S::Tick();CHECK(S::g_out.empty());
   }
-  reset();S::g_worldViews[key].actor.Set(&actor);coop::net::Session replacement;
+  reset();S::g_worldViews[key].presentation=std::make_shared<ue_wrap::watoy::Presentation>();S::g_worldViews[key].presentation->actor.Set(&actor);coop::net::Session replacement;
   callback=[&]{S::Install(&replacement);S::QueueCue(&actor);};++sessionSerial;S::Install(&session);
   CHECK(S::g_session==&replacement && S::g_out.size()==1);S::OnDisconnect();
   puts("PASS watoy scope");
@@ -90,9 +114,9 @@ int main(int argc,char** argv){
   reset();S::SampleWorld(&actor,now);const auto old=S::g_worldRows.at(key).state.sequence;
   toy=false;toyCallback=[&]{toy=true;state.volume=.9f;S::SampleWorld(&actor,now);};S::PruneRows(now);
   CHECK(S::g_worldRows.contains(key) && S::g_worldRows.at(key).state.sequence!=old);
-  reset(Role::Client);S::Receive(World(1),0);S::g_worldViews[key].actor.Set(&actor);now+=10001;
-  callback=[&]{S::Receive(World(2),0);S::g_worldViews[key].actor.Set(&actor);};S::PruneRows(now);
-  CHECK(S::g_worldRows.at(key).state.sequence==2 && S::g_worldViews.at(key).actor.Get());
+  reset(Role::Client);S::Receive(World(1),0);S::g_worldViews[key].presentation=std::make_shared<ue_wrap::watoy::Presentation>();S::g_worldViews[key].presentation->actor.Set(&actor);now+=10001;
+  callback=[&]{S::Receive(World(2),0);S::g_worldViews[key].presentation=std::make_shared<ue_wrap::watoy::Presentation>();S::g_worldViews[key].presentation->actor.Set(&actor);};S::PruneRows(now);
+  CHECK(S::g_worldRows.at(key).state.sequence==2 && S::g_worldViews.at(key).Actor().Get());
   reset();S::SampleWorld(&actor,now);toyCallback=[&]{S::OnDisconnect();S::Install(&session);};S::PruneRows(now);CHECK(S::g_worldRows.empty());
   puts("PASS watoy prune");
  }
@@ -107,6 +131,22 @@ int main(int argc,char** argv){
   reset();readable=false;auto external=World(1,1);coop::element::callback=[&]{external.sequence=777;external.op=4;};
   S::Receive(external,1);CHECK(S::g_out.size()==1 && S::g_out.front().state.sequence==1 && S::g_out.front().state.op==1);
   puts("PASS watoy payload");
+ }
+ if(run("original-hand")){
+  for(int cause=0;cause<5;++cause){reset();localHand=&actor;handGeneration=3;
+   auto call=callFor(900+cause);S::BeforeActivate(call);state.active=true;
+   if(cause==0)localHand=nullptr;if(cause==1)++handGeneration;
+   if(cause==2)++roster[0].playerNo;if(cause==3)++session.generations[0];
+   if(cause==4)++actor.serial;
+   S::AfterActivate(call);CHECK(S::g_out.empty());
+  }
+  reset();localHand=&actor;handGeneration=3;auto call=callFor(910);state.active=false;
+  toyCallback=[]{localHand=nullptr;};S::BeforeActivate(call);state.active=true;
+  S::AfterActivate(call);CHECK(S::g_out.empty()); // Initial type lookup cannot reroute a hand to the world.
+  reset();localHand=&actor;handGeneration=3;call=callFor(911);S::BeforeActivate(call);state.active=true;
+  S::AfterActivate(call);CHECK(S::g_out.size()==1 && S::g_out.front().state.generation==3);
+  handGeneration=4;S::Drain(now);CHECK(S::g_out.empty());
+  puts("PASS watoy original hand, occupant, connection and class across native activation and delivery");
  }
  return 0;
 }

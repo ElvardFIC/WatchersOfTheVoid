@@ -10,6 +10,10 @@ try {
     if($LASTEXITCODE -ne 0){throw 'Watoy controller test compile failed'}
     & "$output/watoy_sync.exe"
     if($LASTEXITCODE -ne 0){throw 'Watoy controller test failed'}
+    & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /DTEST_STATE_MAX_PEERS=32 /I agent/tests/state_2145_stubs /I agent/tests/text_drone_stubs /I agent/tests/stubs /I src/votv-coop/include "/Fo$output/watoy_budget.obj" "/Fe$output/watoy_budget.exe" agent/tests/watoy_budget_test.cpp /link /OPT:REF
+    if($LASTEXITCODE){throw 'Watoy budget compile failed'}
+    & "$output/watoy_budget.exe"
+    if($LASTEXITCODE){throw 'Watoy budget failed'}
     & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I agent/tests/toy_stubs /I agent/tests/state_2145_stubs /I agent/tests/text_drone_stubs /I agent/tests/stubs /I src/votv-coop/include "/Fo$output/watoy_lifetime.obj" "/Fe$output/watoy_lifetime.exe" agent/tests/watoy_lifetime_test.cpp /link /OPT:REF
     if($LASTEXITCODE -ne 0){throw 'Watoy lifetime test compile failed'}
     & "$output/watoy_lifetime.exe"
@@ -25,6 +29,8 @@ try {
     if($FaultControls){
         $source=[IO.File]::ReadAllText((Join-Path $root 'src/votv-coop/src/coop/props/watoy_sync.cpp'))
         $controls=@(
+            @{Name='uncertain';Changes=@(@('if(!activated && !dispatched)return false;','if(!activated)return false;'))},
+            @{Name='function';Changes=@(@('R::FindDispatchFunctionCached(row.cls.Get(),L"activate")!=row.function.Get()','false'),@('!R::FunctionParams(row.function.Get()).empty()','false'))},
             @{Name='scope';Changes=@(@('g_serial==net::session_serial::Current()','true'))},
             @{Name='post';Changes=@(@(' && row.stack==c.stack',''))},
             @{Name='reservation';Changes=@(@('g_activation.push_back(row);','/* late reservation */'),@('W::State before{};const bool read=W::Read(c.object,before);','W::State before{};const bool read=W::Read(c.object,before);g_activation.push_back(row);'))},
@@ -59,6 +65,8 @@ try {
     if($FaultControls){
         $source=[IO.File]::ReadAllText((Join-Path $root 'src/votv-coop/src/ue_wrap/actors/watoy.cpp'))
         $controls=@(
+            @{Name='native-schema';Changes=@(@('if(actual.size()!=parameters.size())return false;','/* extra parameters admitted */'))},
+            @{Name='native-function';Changes=@(@('R::FindDispatchFunctionCached(owner.cls.Get(),name)==function.Get()','true'))},
             @{Name='field-class';Changes=@(@('cls.Get() && R::ClassOf(object.Get())==cls.Get()','true'))},
             @{Name='unknown-zero';Changes=@(@('if(!Field(actor,field,raw))return false;','/* unknown becomes inactive */'))},
             @{Name='read-bindings';Changes=@(@('Audio(actor)==audio &&','true &&'),@('actual==zero','true'))},
@@ -68,7 +76,8 @@ try {
             @{Name='spawn-binding';Changes=@(@('prop::GetStaticMesh(actor)==mesh.object.Get()','true'))},
             @{Name='spawn-output';Changes=@(@('!std::isfinite(world.RotX)','false'))},
             @{Name='spawn-candidate';Changes=@(@('if(candidate.object.Get())engine::DestroyComponent(candidate.object.Get(),source.object.Get());','/* stale candidate leaked */'))},
-            @{Name='view-reentry';Changes=@(@('view.revision==revision','true'))}
+            @{Name='view-reentry';Changes=@(@('view.revision==revision','true'),@('lease->revision==revision','true'),@('view.presentation==lease','true'))},
+            @{Name='view-copies';Changes=@(@('if(!lease || lease->retired || lease->revision!=admitted)return;','if(!lease)return;'))}
         )
         foreach($control in $controls){
             $mutant=$source;$changes=$control.Changes

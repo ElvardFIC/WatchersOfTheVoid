@@ -14,7 +14,11 @@ int starts=0,stops=0,spawns=0,destroys=0,activations=0,cues=0;
 std::wstring callFail;
 std::wstring afterName;
 std::function<void(const std::wstring&)> callback;
-std::map<std::wstring,std::wstring> functions;
+struct Function:Obj {std::wstring name;};
+std::map<std::wstring,Function> functions;
+std::map<std::wstring,void*> dispatchOverrides;
+std::wstring schemaFunction,schemaParameter;
+int schemaFault=0;
 std::wstring missingField,metaName,badOutputFunction,badOutputName,poisonOutput;
 std::function<void()> metaCallback;
 std::vector<std::wstring> calls;
@@ -24,7 +28,11 @@ void Meta(const std::wstring& name){if(name!=metaName)return;auto callback=std::
 using Bytes=std::vector<uint8_t>;
 std::map<const ue_wrap::ParamFrame*,std::map<std::wstring,Bytes>> frames;
 void* At(Index i){return &objects[i];}
-void* Fn(const wchar_t* name){auto& value=functions[name];value=name;return &value;}
+void* Fn(const wchar_t* name){auto& value=functions[name];if(value.name.empty()){
+    value.name=name;value.index=Count+int(functions.size());}return &value;}
+Obj* ByIndex(int i){if(i>=0 && i<Count)return &objects[i];
+    for(auto& [name,fn]:functions)if(fn.index==i)return &fn;return nullptr;}
+const std::wstring& FunctionName(void* p){return static_cast<Function*>(p)->name;}
 template<class T> T Get(const ue_wrap::ParamFrame& f,const wchar_t* name){T out{};CHECK(f.GetRaw(name,&out,sizeof(out)));return out;}
 template<class T> void Put(ue_wrap::ParamFrame& f,const wchar_t* name,const T& value){CHECK(f.SetRaw(name,&value,sizeof(value)));}
 void Callback(const std::wstring& function){if(!afterName.empty() && afterName!=function)return;afterName.clear();auto f=std::move(callback);callback={};if(f)f(function);}
@@ -32,10 +40,11 @@ void Callback(const std::wstring& function){if(!afterName.empty() && afterName!=
 namespace ue_wrap::reflection {
 bool IsLive(void* p){return p && static_cast<test::Obj*>(p)->live;}
 int32_t InternalIndexOf(void* p){return p?static_cast<test::Obj*>(p)->index:-1;}
-int32_t AllocateSlotSerial(int32_t i){return test::objects[i].serial;}
-int32_t SlotSerial(int32_t i){return test::objects[i].serial;}
-bool IsLiveByIndex(void* p,int32_t i){return i>=0 && i<test::Count && p==&test::objects[i] && IsLive(p);}
-void* ClassOf(void* p){if(p && test::classes[static_cast<test::Obj*>(p)->index])return test::classes[static_cast<test::Obj*>(p)->index];
+int32_t AllocateSlotSerial(int32_t i){return SlotSerial(i);}
+int32_t SlotSerial(int32_t i){auto* value=test::ByIndex(i);return value?value->serial:0;}
+bool IsLiveByIndex(void* p,int32_t i){return p && p==test::ByIndex(i) && IsLive(p);}
+void* ClassOf(void* p){if(p && static_cast<test::Obj*>(p)->index>=test::Count)return p;
+    if(p && test::classes[static_cast<test::Obj*>(p)->index])return test::classes[static_cast<test::Obj*>(p)->index];
     if(p==test::At(test::Actor))return test::At(test::ToyClass);if(p==test::At(test::Zero))return test::At(test::ZeroClass);
     if(p==test::At(test::Spawned) || p==test::At(test::NativeEffect))return test::At(test::PSCClass);return p;}
 bool IsDescendantOfAny(void* cls,void* const* bases,size_t n,int){return n==1 && cls==bases[0];}
@@ -45,7 +54,36 @@ bool NameEquals(const FName& name,const wchar_t* text){return (name.ComparisonIn
 void* OuterOf(void* p){if(p==test::At(test::Zero))return test::At(test::Actor);return p==test::At(test::Template)?test::At(test::Package):nullptr;}
 void* FindClassDefaultObject(const wchar_t* name){if(!wcscmp(name,L"GameplayStatics"))return test::At(test::Library);
     if(!wcscmp(name,L"KismetSystemLibrary"))return test::At(test::System);CHECK(!wcscmp(name,L"KismetMathLibrary"));return test::At(test::Math);}
-void* FindDispatchFunctionCached(void*,const wchar_t* name){test::Meta(std::wstring(L"resolve:")+name);return test::Fn(name);}
+void* FindDispatchFunctionCached(void*,const wchar_t* name){test::Meta(std::wstring(L"resolve:")+name);
+    const auto it=test::dispatchOverrides.find(name);return it==test::dispatchOverrides.end()?test::Fn(name):it->second;}
+std::vector<ParamInfo> FunctionParams(void* function){
+    using namespace test;const auto& name=FunctionName(function);std::vector<ParamInfo> result;
+    const auto add=[&](const wchar_t* field,int bytes){int offset=result.empty()?0:result.back().offset+result.back().size;
+        result.push_back({field,offset,bytes,0x80});};
+    if(name==L"IsPlaying")add(L"ReturnValue",1);
+    else if(name==L"SetVolumeMultiplier")add(L"NewVolumeMultiplier",4);
+    else if(name==L"SetPitchMultiplier")add(L"NewPitchMultiplier",4);
+    else if(name==L"Play")add(L"StartTime",4);
+    else if(name==L"SetActive"){add(L"bNewActive",1);add(L"bReset",1);}
+    else if(name==L"K2_GetComponentToWorld")add(L"ReturnValue",sizeof(FTransform));
+    else if(name==L"GetComponentBounds"){add(L"Component",sizeof(void*));add(L"Origin",sizeof(FVector));add(L"BoxExtent",sizeof(FVector));add(L"SphereRadius",4);}
+    else if(name==L"InverseTransformLocation"){add(L"T",sizeof(FTransform));add(L"Location",sizeof(FVector));add(L"ReturnValue",sizeof(FVector));}
+    else if(name==L"SpawnEmitterAttached"){
+        add(L"EmitterTemplate",sizeof(void*));add(L"AttachToComponent",sizeof(void*));add(L"AttachPointName",sizeof(FName));
+        add(L"Location",sizeof(FVector));add(L"Rotation",sizeof(FRotator));add(L"Scale",sizeof(FVector));
+        add(L"LocationType",1);add(L"bAutoDestroy",1);add(L"PoolingMethod",1);add(L"bAutoActivate",1);add(L"ReturnValue",sizeof(void*));
+    }else CHECK(name==L"activate" || name==L"Stop");
+    if(schemaFunction==name){
+        for(auto& field:result)if(field.name==schemaParameter){
+            if(schemaFault==1)++field.size;if(schemaFault==2)field.offset=256;if(schemaFault==3)field.offset=0;
+        }
+        if(schemaFault==4)add(L"Unexpected",4);
+        if(schemaFault==5)std::erase_if(result,[](const auto& p){return p.name==schemaParameter;});
+        if(schemaFault==6 && !result.empty())result.push_back(result.front());
+    }
+    return result;
+}
+int32_t FunctionFrameSize(void*){return 256;}
 int32_t InstanceOffset::Of(void*) {
     test::Meta(std::wstring(L"field:")+prop_);
     if(!test::fields || test::missingField==prop_)return -1;
@@ -76,14 +114,20 @@ bool DestroyComponent(void* effect,void*){CHECK(effect==test::At(test::Spawned))
 }
 namespace ue_wrap {
 ParamFrame::ParamFrame(void* fn):fn_(fn){test::frames[this].clear();}
+int32_t ParamFrame::OffsetOf(const wchar_t* name)const{for(const auto& param:reflection::FunctionParams(fn_))if(param.name==name)return param.offset;return -1;}
 bool ParamFrame::SetRaw(const wchar_t* name,const void* p,int32_t n){auto& bytes=test::frames[this][name];bytes.resize(n);std::memcpy(bytes.data(),p,n);return true;}
-bool ParamFrame::GetRaw(const wchar_t* name,void* p,int32_t n)const {if(*static_cast<std::wstring*>(fn_)==test::badOutputFunction && name==test::badOutputName)return false;
+bool ParamFrame::GetRaw(const wchar_t* name,void* p,int32_t n)const {if(test::FunctionName(fn_)==test::badOutputFunction && name==test::badOutputName)return false;
     const auto& fields=test::frames[this];auto it=fields.find(name);if(it==fields.end() || it->second.size()!=n)return false;std::memcpy(p,it->second.data(),n);return true;}
 bool Call(void* object,ParamFrame& f) {
-    using namespace test;const auto name=*static_cast<std::wstring*>(f.function());calls.push_back(name);if(name==callFail)return false;
+    using namespace test;const auto name=FunctionName(f.function());calls.push_back(name);if(name==callFail)return false;
     if(name==L"activate"){CHECK(object==At(Actor));++activations;}
     else if(name==L"IsPlaying"){CHECK(object==At(Audio));if(!queryOk)return false;Put(f,L"ReturnValue",playing);}
     else if(name==L"SetPitchMultiplier"){CHECK(object==At(Audio));objects[Audio].pitch=Get<float>(f,L"NewPitchMultiplier");}
+    else if(name==L"SetVolumeMultiplier"){CHECK(object==At(Audio));objects[Audio].volume=Get<float>(f,L"NewVolumeMultiplier");}
+    else if(name==L"Play"){CHECK(object==At(Audio) && Get<float>(f,L"StartTime")==0);playing=true;++starts;}
+    else if(name==L"Stop"){CHECK(object==At(Audio));playing=false;++stops;}
+    else if(name==L"SetActive"){CHECK((object==At(Spawned) || object==At(NativeEffect)) && !Get<bool>(f,L"bReset"));
+        static_cast<Obj*>(object)->active=Get<bool>(f,L"bNewActive");}
     else if(name==L"K2_GetComponentToWorld"){CHECK(object==At(Mesh));FTransform t{};t.TX=12;if(poisonOutput==name)t.RotX=NAN;Put(f,L"ReturnValue",t);}
     else if(name==L"GetComponentBounds"){CHECK(object==At(System) && Get<void*>(f,L"Component")==At(Mesh));Put(f,L"Origin",FVector{poisonOutput==name?NAN:22,32,42});}
     else if(name==L"InverseTransformLocation"){CHECK(object==At(Math) && Get<FTransform>(f,L"T").TX==12 && Get<FVector>(f,L"Location").X==22);Put(f,L"ReturnValue",FVector{poisonOutput==name?NAN:10,20,30});}
@@ -120,23 +164,23 @@ int main() {
     CHECK(!W::IsToy(At(Other)) && W::ZeroGravityOwner(At(Other))==nullptr && W::ZeroGravityOwner(At(Zero))==At(Actor));
     objects[Zero].owner=nullptr;CHECK(W::ZeroGravityOwner(At(Zero))==At(Actor));objects[Zero].owner=At(Actor);
     W::View view;state={true,.6f,2.5f,true};
-    CHECK(W::Apply(view,At(Actor),state,current) && playing && spawns==1 && starts==1 && view.ownsEffect);
+    CHECK(W::Apply(view,At(Actor),state,current) && playing && spawns==1 && starts==1 && view.OwnsEffect());
     CHECK(objects[Audio].volume==.6f && objects[Audio].pitch==2.5f && objects[Spawned].active && activations==0);
     CHECK(W::Apply(view,At(Actor),state,current) && starts==1 && spawns==1); // unchanged audio/particles do not restart
     playing=false;CHECK(W::Apply(view,At(Actor),state,current) && starts==2 && spawns==1);
     queryOk=false;CHECK(!W::Apply(view,At(Actor),state,current) && starts==2);queryOk=true;
-    state.effect=false;CHECK(W::Apply(view,At(Actor),state,current) && destroys==1 && playing && !view.effect.Get());
+    state.effect=false;CHECK(W::Apply(view,At(Actor),state,current) && destroys==1 && playing && !view.Effect().Get());
     state.active=false;CHECK(W::Apply(view,At(Actor),state,current) && !playing && stops==1);
     state={true,.7f,3,true};objects[Zero].effect=At(NativeEffect);
-    CHECK(W::Apply(view,At(Actor),state,current) && !view.ownsEffect && spawns==1 && objects[NativeEffect].active);
-    W::Clear(view);CHECK(!view.actor.Get() && !objects[NativeEffect].active && destroys==1);objects[Zero].effect=nullptr;
-    spawnOk=false;CHECK(!W::Apply(view,At(Actor),state,current) && !view.effect.Get());spawnOk=true;
+    CHECK(W::Apply(view,At(Actor),state,current) && !view.OwnsEffect() && spawns==1 && objects[NativeEffect].active);
+    W::Clear(view);CHECK(!view.Actor().Get() && !objects[NativeEffect].active && destroys==1);objects[Zero].effect=nullptr;
+    spawnOk=false;CHECK(!W::Apply(view,At(Actor),state,current) && !view.Effect().Get());spawnOk=true;
     CHECK(W::Apply(view,At(Actor),state,current) && spawns==2);W::Clear(view);CHECK(destroys==2);
     // A change of session/world during the spawn releases the just-created PSC.
     callback=[&](const std::wstring& name){CHECK(name==L"IsPlaying");valid=false;};CHECK(!W::Apply(view,At(Actor),state,current));W::Clear(view);valid=true;
     afterName=L"SpawnEmitterAttached";callback=[&](const std::wstring&){valid=false;};
-    CHECK(!W::Apply(view,At(Actor),state,current) && !view.effect.Get() && destroys==3 && spawns==3);valid=true;
-    callFail=L"InverseTransformLocation";CHECK(!W::Apply(view,At(Actor),state,current));CHECK(!view.effect.Get());callFail.clear();
+    CHECK(!W::Apply(view,At(Actor),state,current) && !view.Effect().Get() && destroys==3 && spawns==3);valid=true;
+    callFail=L"InverseTransformLocation";CHECK(!W::Apply(view,At(Actor),state,current));CHECK(!view.Effect().Get());callFail.clear();
     callback=[&](const std::wstring&){++world;};CHECK(!W::Apply(view,At(Actor),state,current));W::Clear(view);
     fields=false;CHECK(!W::Read(At(Actor),state));fields=true;
     state={true,.5f,1,true};CHECK(W::Apply(view,At(Actor),state,current));

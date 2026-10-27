@@ -16,6 +16,12 @@ bool plush=false,alt=false;
 uint16_t people[coop::net::kMaxPeers]{10,11,12,13};int stops=0;
 uint32_t sessionSerial=1;std::set<uint64_t> invocations;
 std::function<void()> pitchCallback,altCallback;
+void* usePlayer=&actor;void* dispatchFunction=&ui;
+int parameterOffset=0,parameterSize=-1,frameSize=16;
+bool missingInput=false;
+uint64_t inputFlags=0x80;
+int inputSchemaFault=0;
+std::wstring inputName;
 }
 namespace coop::net::session_serial {uint32_t Current(){return test::sessionSerial;}}
 namespace ue_wrap::script_gate {bool IsInvocationActive(uint64_t id){return test::invocations.contains(id);}}
@@ -38,13 +44,25 @@ bool IsMirrorActor(void* a){for(auto* mirror:test::mirrors)if(mirror==a && a)ret
 }
 namespace coop::roster_ledger {const Row& Get(int slot){static Row rows[net::kMaxPeers];rows[slot].playerNo=test::people[slot];return rows[slot];}}
 namespace ue_wrap::reflection {
-int32_t FindParamOffset(void*,const wchar_t*){return 0;}
-int32_t FunctionFrameSize(void*){return 1;}
+void* FindDispatchFunctionCached(void*,const wchar_t*){return test::dispatchFunction;}
+int32_t FindParamOffset(void*,const wchar_t* name){test::inputName=name;return test::missingInput?-1:test::parameterOffset;}
+int32_t FindParamSize(void*,const wchar_t* name){return test::parameterSize>=0?test::parameterSize:!wcscmp(name,L"player")?sizeof(void*):1;}
+int32_t FunctionFrameSize(void*){return test::frameSize;}
+std::vector<ParamInfo> FunctionParams(void*){
+    using namespace test;std::vector<ParamInfo> params{{inputName,parameterOffset,FindParamSize(nullptr,inputName.c_str()),inputFlags}};
+    if(inputSchemaFault==1)params.push_back(params.front());
+    if(inputSchemaFault==2)params.push_back({L"Overlap",parameterOffset,1,0x80});
+    if(inputSchemaFault==3)params.front().offset++;
+    if(inputSchemaFault==4)params.front().size++;
+    return params;
+}
 }
 void ResetToy(coop::net::Session& session){
  namespace S=coop::hand_toy_audio;using namespace test;S::OnDisconnect();++world;session={};
- coop::players::Registry::Get().peer=0;local=nullptr;plush=alt=false;applyOk=true;music={true,true,.05f};callback={};
+ coop::players::Registry::Get().peer=0;coop::players::Registry::Get().local=&actor;local=nullptr;plush=alt=false;applyOk=true;music={true,true,.05f};callback={};
  pitchCallback=altCallback={};
+ dispatchFunction=&ui;parameterOffset=0;parameterSize=-1;frameSize=16;missingInput=false;usePlayer=&actor;
+ inputFlags=0x80;inputSchemaFault=0;inputName.clear();
  for(int slot=0;slot<coop::net::kMaxPeers;++slot){generations[slot]=mirrorGenerations[slot]=7;mirrors[slot]=nullptr;}
  mirrors[1]=&ui;S::Install(&session);
 }
@@ -54,7 +72,7 @@ void NativeCapture(ue_wrap::script_gate::Call call){
 }
 #ifndef HAND_TOY_FIXTURE_ONLY
 int main(){using namespace test;namespace S=coop::hand_toy_audio;namespace A=coop::element;using Packet=coop::net::HandToyAudioPayload;
- coop::net::Session session;auto& registry=coop::players::Registry::Get();registry.peer=0;
+ coop::net::Session session;auto& registry=coop::players::Registry::Get();registry.peer=0;registry.local=&actor;
  CHECK(coop::net::LaneForKind(coop::net::ReliableKind::HandToyAudio)==coop::net::Lane::Normal);
  CHECK(!coop::net::IsClientRelayableReliableKind(coop::net::ReliableKind::HandToyAudio));
  S::Install(&session);S::Tick();CHECK(session.sent.size()==3&&applies==0);
@@ -95,7 +113,7 @@ int main(){using namespace test;namespace S=coop::hand_toy_audio;namespace A=coo
  p={7,20,1.f,0,1,0,0,people[0]};S::Receive(p,0);callback=[&]{S::OnDisconnect();};S::Tick();CHECK(!S::g_session&&S::g_pulses.empty());
  S::Install(&session);p.sequence++;S::Receive(p,0);++world;S::Install(&session);CHECK(S::g_pulses.empty()&&!S::g_rows[0].have);
  S::OnPeerLeft(1);S::OnDisconnect();
- S::Install(&session);local=&actor;c.tag=S::kPlushUse;plush=true;NativeCapture(c);CHECK(S::g_pulses.empty());
+ S::Install(&session);local=&actor;c.tag=S::kPlushUse;c.locals=reinterpret_cast<uint8_t*>(&usePlayer);plush=true;NativeCapture(c);CHECK(S::g_pulses.empty());
  alt=true;NativeCapture(c);CHECK(S::g_pulses.size()==1);session.sent.clear();S::Tick();CHECK(!S::g_rows[1].have&&session.sent.size()==1);
  S::OnDisconnect();session.mode=coop::net::Role::Host;registry.peer=0;plush=false;local=&actor;S::Install(&session);
  c.tag=S::kRmb;NativeCapture(c);NativeCapture(c);auto older=S::g_pulses.front().state.sequence;session.sent.clear();

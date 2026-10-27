@@ -1,3 +1,21 @@
+## 0.9.2162
+- Add Tutorial, Story, Infinite, Ambience, Sandbox and Solar choices to both host
+  menus; preserve existing-save modes and use the native Tutorial entry map.
+- Read flashlight state through reflected offsets/bit masks, allow crank lights
+  and reapply received on/off state after remote pawn or light replacement.
+- Explicitly enable physics-to-pose blending and skeletal-component ticking
+  during ragdoll startup; real-peer T-pose acceptance remains open.
+- Bind held-toy captures to their dispatch function, input size/span and local
+  user; limit native state/squeak presentations per tick.
+- Share watoy presentation leases across copied and independent views; prevent
+  duplicate/stale cleanup and retain original hand/occupant/connection provenance.
+- Bound watoy native activation, cues and state work; cap reliable retries and
+  rotate refused state delivery fairly across recipients.
+- Capture original window brush material/size at the native draw, including
+  thrown sponges, instead of sampling the held item at a later tick.
+- Extract missing map headers and inventory level scripts for continuing event
+  work. Complete event routes and rendered multiplayer acceptance remain open.
+
 ## 0.9.2161
 - Replace the old versioned cover with the supplied MULTIPLAYER MOD artwork and
   update the package icon while preserving the full composition.

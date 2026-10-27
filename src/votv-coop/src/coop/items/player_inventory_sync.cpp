@@ -23,6 +23,7 @@
 #include "ue_wrap/actors/effects.h"  // ResetOnSaveObject, the host's effects out of the joiner's save
 #include "ue_wrap/engine/engine.h"      // SetSaveObjectReadyHook, the pre-materialise apply point
 #include "ue_wrap/engine/world_identity.h"
+#include "ue_wrap/world/game_mode.h"
 #include "ue_wrap/actors/inventory.h"
 #include "ue_wrap/actors/building_material.h"
 #include "ue_wrap/actors/puppet.h"  // ReadCharacterIsFalling
@@ -107,7 +108,7 @@ bool g_profileApplied = false;
 // right before it loads a world, consumed by the hook. Without it the hook cannot tell a join from
 // any other load in this process: the session's role outlives a stopped session, so "I am a
 // client" stayed true through a later Host-with-save, whose load the hook would then have emptied.
-std::atomic<uint64_t> g_joinApplyState{0}; // request counter plus armed low bit
+std::atomic<uint64_t> g_joinApplyState{0}; // request counter, mode in bits 1..3, armed low bit
 
 // Host: the per-slot send sequence for the on-join push (independent of the client stream's
 // sequence space; assembler keys are per sender and sequence, so they never collide).
@@ -621,9 +622,13 @@ bool SendInventoryToSlot(int peerSlot) {
 
 bool HasPendingApply() { return g_hasPendingApply.load(std::memory_order_acquire); }
 
-void BeginJoinApply() {
+void BeginJoinApply(int gameMode) {
+    // Publish the host's mode with the request: the local GI still belongs to
+    // the menu/previous campaign when the save-ready hook runs.
+    static_assert(ue_wrap::game_mode::kCount <= 8, "join request reserves three mode bits");
+    const auto mode = static_cast<uint64_t>(ue_wrap::game_mode::IsValid(gameMode) ? gameMode : 0);
     auto old=g_joinApplyState.load(std::memory_order_acquire);
-    while(!g_joinApplyState.compare_exchange_weak(old,((old&~uint64_t{1})+2)|1,std::memory_order_acq_rel)){}
+    while(!g_joinApplyState.compare_exchange_weak(old,((old&~uint64_t{15})+16)|(mode<<1)|1,std::memory_order_acq_rel)){}
 }
 
 JoinPlacement TakeJoinPlacement(float& x, float& y, float& z, float& yaw) {
@@ -632,7 +637,7 @@ JoinPlacement TakeJoinPlacement(float& x, float& y, float& z, float& yaw) {
         x = g_joinPose.x; y = g_joinPose.y; z = g_joinPose.z; yaw = g_joinPose.yaw;
     }
     // The join's appearance only: a later body in this session is a respawn.
-    g_joinPlacement = JoinPlacement::StartPoint;
+    g_joinPlacement = at == JoinPlacement::NativeMap ? at : JoinPlacement::StartPoint;
     g_joinPose = {};
     return at;
 }
@@ -674,7 +679,7 @@ void OnDisconnect() {
     g_lastPoll = Clock::time_point{};
     g_hasPendingApply.store(false, std::memory_order_release);
     auto state=g_joinApplyState.load(std::memory_order_acquire);
-    while(!g_joinApplyState.compare_exchange_weak(state,(state&~uint64_t{1})+2,std::memory_order_acq_rel)){}
+    while(!g_joinApplyState.compare_exchange_weak(state,(state&~uint64_t{15})+16,std::memory_order_acq_rel)){}
     ++g_pendingRevision;
     g_profileApplied = false;
     g_pendingApply = coop::player_profile::Profile{};

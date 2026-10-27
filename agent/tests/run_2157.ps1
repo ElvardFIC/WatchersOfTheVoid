@@ -16,6 +16,10 @@ try {
  if($LASTEXITCODE){throw 'Hand toy lifetime compile failed'}
  & "$output/hand_toy_lifetime.exe"
  if($LASTEXITCODE){throw 'Hand toy lifetime failed'}
+ & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /DTEST_STATE_MAX_PEERS=32 /I agent/tests/state_2145_stubs /I agent/tests/text_drone_stubs /I agent/tests/stubs /I src/votv-coop/include "/Fo$output/hand_toy_budget.obj" "/Fe$output/hand_toy_budget.exe" agent/tests/hand_toy_budget_test.cpp /link /OPT:REF
+ if($LASTEXITCODE){throw 'Hand toy budget compile failed'}
+ & "$output/hand_toy_budget.exe"
+ if($LASTEXITCODE){throw 'Hand toy budget failed'}
  if($FaultControls){
   $source=[IO.File]::ReadAllText((Join-Path $root 'src/votv-coop/src/coop/player/hand_toy_audio.cpp'))
   $controls=@(

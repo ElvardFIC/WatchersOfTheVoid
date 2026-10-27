@@ -51,6 +51,25 @@ Found Get(const std::string&,std::vector<uint8_t>& out){++join_test::gets;out=jo
 void Quarantine(const std::string&){++join_test::quarantines;}
 }
 int main(){using namespace join_test;
+    // The mode comes from the transfer, before the local GI leaves the menu.
+    // Tutorial must retain the level/host placement even with a valid old KPP pose.
+    for(bool haveProfile:{false,true}) {
+        Reset();if(haveProfile)Offer();
+        J::BeginJoinApply(ue_wrap::game_mode::kTutorial);J::OnSaveObjectReady(&test::liveUnits);
+        CHECK(poses==0&&J::g_joinPlacement==J::JoinPlacement::NativeMap);
+        CHECK(J::g_profileApplied==haveProfile);
+        float x=0,y=0,z=0,yaw=0;
+        CHECK(J::TakeJoinPlacement(x,y,z,yaw)==J::JoinPlacement::NativeMap);
+        CHECK(J::TakeJoinPlacement(x,y,z,yaw)==J::JoinPlacement::NativeMap); // respawn too
+    }
+    for(int mode:{0,1,3,4,5,6,7,-1,8}) {
+        Reset();Offer();J::BeginJoinApply(mode);J::OnSaveObjectReady(&test::liveUnits);
+        CHECK(poses==1&&J::g_joinPlacement==J::JoinPlacement::ProfilePose);
+    }
+    Reset();Offer();onEffects=[]{J::BeginJoinApply(ue_wrap::game_mode::kTutorial);};
+    Apply();CHECK(!J::g_profileApplied&&poses==0);
+    J::OnSaveObjectReady(&test::liveUnits);CHECK(J::g_profileApplied&&poses==0&&J::g_joinPlacement==J::JoinPlacement::NativeMap);
+    puts("PASS Tutorial join: request-owned host mode preserves native placement with missing/old profiles, reentry and respawn; other modes retain their profile placement");
     Reset();Offer();Apply();CHECK(J::g_profileApplied&&effects==1&&inventories==1&&vitals==1&&poses==1&&appliedItems.hold[0].data.ints[0][0]==5&&appliedVitals.health==25&&appliedPose.x==100);
     J::OnSaveObjectReady(&test::liveUnits);CHECK(effects==1);
     Reset(coop::net::Role::Host);Apply();CHECK(effects==0&&!J::g_profileApplied);

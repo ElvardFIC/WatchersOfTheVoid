@@ -14,6 +14,20 @@ int main(int argc,char** argv){
  };
  const auto packet=[&](int slot=1,uint8_t op=1){return Packet{7,1,op?1.2f:.15f,uint8_t(slot),op,uint8_t(!op),uint8_t(!op),people[slot]};};
  const auto callFor=[&](uint64_t id){ue_wrap::script_gate::Call c{};c.object=&actor;c.function=&ui;c.invocation=id;c.tag=S::kRmb;invocations.insert(id);return c;};
+ if(run("schema")){
+  for(bool plushUse:{false,true})for(int fault=0;fault<7;++fault){
+   reset();local=&actor;auto c=callFor(900+fault);uint8_t action=6;
+   alt=true;usePlayer=&actor;
+   c.tag=plushUse?S::kPlushUse:S::kAction;
+   c.locals=plushUse?reinterpret_cast<uint8_t*>(&usePlayer):&action;
+   if(fault<4)inputSchemaFault=fault+1;
+   if(fault==4)inputFlags=0;
+   if(fault==5)inputFlags=0x180;
+   if(fault==6)inputFlags=0x480;
+   S::BeforeCapture(c);S::Capture(c);CHECK(S::g_pulses.empty());
+  }
+  puts("PASS held-toy inputs reject duplicate/overlap/inconsistent spans and non-input flags");
+ }
  if(run("scope")){
   for(int cause=0;cause<5;++cause){reset();local=&actor;session.sendOk=false;ue_wrap::script_gate::Call c{};c.object=&actor;c.tag=S::kRmb;NativeCapture(c);CHECK(S::g_pulses.size()==1);
    if(cause==0)++sessionSerial;if(cause==1)session.active=false;if(cause==2)session.linked=false;if(cause==3)session.mode=Role::Client;if(cause==4)++world;
@@ -45,7 +59,7 @@ int main(int argc,char** argv){
    S::Capture(c);CHECK(S::g_pulses.empty());
   }
   reset();local=&actor;generations[0]=0;auto c=callFor(101);S::BeforeCapture(c);generations[0]=9;S::Capture(c);CHECK(S::g_pulses.empty());
-  reset();local=&actor;c=callFor(102);c.tag=S::kPlushUse;alt=true;S::BeforeCapture(c);alt=false;S::Capture(c);CHECK(S::g_pulses.size()==1);
+  reset();local=&actor;c=callFor(102);c.tag=S::kPlushUse;c.locals=reinterpret_cast<uint8_t*>(&usePlayer);alt=true;S::BeforeCapture(c);alt=false;S::Capture(c);CHECK(S::g_pulses.size()==1);
   reset();local=&actor;c=callFor(103);uint8_t action=6;c.tag=S::kAction;c.locals=&action;S::BeforeCapture(c);action=5;S::Capture(c);CHECK(S::g_pulses.size()==1);
   puts("PASS hand toy frozen-hand");
  }
@@ -54,7 +68,7 @@ int main(int argc,char** argv){
   for(int cause=0;cause<4;++cause){auto wrong=c;if(cause==0)wrong.stack=&actor;if(cause==1)wrong.function=&actor;if(cause==2)++wrong.invocation;if(cause==3)++wrong.tag;
    S::Capture(wrong);CHECK(S::g_frames.size()==1 && S::g_pulses.empty());}
   S::Capture(c);CHECK(S::g_frames.empty() && S::g_pulses.size()==1);
-  reset();local=&actor;c=callFor(201);c.tag=S::kPlushUse;alt=true;
+  reset();local=&actor;c=callFor(201);c.tag=S::kPlushUse;c.locals=reinterpret_cast<uint8_t*>(&usePlayer);alt=true;
   altCallback=[&]{CHECK(S::g_frames.size()==1 && !S::g_frames.front().ready);S::BeforeCapture(c);};S::BeforeCapture(c);CHECK(S::g_frames.size()==1);
   invocations.clear();S::Tick();CHECK(S::g_frames.empty());
   reset();local=&actor;for(uint64_t id=1;id<=40;++id){auto frame=callFor(id);S::BeforeCapture(frame);}CHECK(S::g_frames.size()==32);
@@ -91,6 +105,19 @@ int main(int argc,char** argv){
   S::Tick();CHECK(replaced && (S::g_rows[0].pending&(1u<<2)));session.allowSend={};session.sent.clear();S::Tick();
   CHECK(session.sent.size()==1 && session.sent.front().slot==2 && !(S::g_rows[0].pending&(1u<<2)));
   puts("PASS hand toy completion");
+ }
+ if(run("schema-owner")){
+  for(int cause=0;cause<6;++cause){reset();local=&actor;auto c=callFor(800+cause);
+   uint8_t action=6;c.tag=S::kAction;c.locals=&action;
+   if(cause==0)missingInput=true;if(cause==1)parameterSize=4;if(cause==2)parameterOffset=16;
+   if(cause==3)frameSize=0;if(cause==4)dispatchFunction=&actor;if(cause==5)c.tag=123;
+   S::BeforeCapture(c);S::Capture(c);CHECK(S::g_pulses.empty());
+  }
+  reset();local=&actor;auto c=callFor(820);c.tag=S::kPlushUse;c.locals=reinterpret_cast<uint8_t*>(&usePlayer);
+  usePlayer=&ui;alt=true;S::BeforeCapture(c);S::Capture(c);CHECK(S::g_pulses.empty());
+  reset();local=&actor;c=callFor(821);S::BeforeCapture(c);dispatchFunction=&actor;S::Capture(c);CHECK(S::g_pulses.empty());
+  reset();local=&actor;c=callFor(822);S::BeforeCapture(c);++actor.serial;S::Capture(c);CHECK(S::g_pulses.empty());
+  puts("PASS held-toy exact dispatch ownership, input spans/sizes, known tags and original local user");
  }
  return 0;
 }

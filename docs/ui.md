@@ -150,13 +150,24 @@ identically. So the window is the game's, and nothing the mod does per frame wid
 
 The mod supplies the notification the renderer never sends. Once per world, when both tables are
 ready and the bar is showing no icon for something the player is carrying, it calls the game's own
-rebuild verb once and stops asking. It reimplements nothing and edits no asset. The trigger is the
+rebuild verb and stops asking after a successful refresh. Refused/incomplete
+refreshes retry; a stale world's callback cannot settle the new world. The trigger is the
 bar disagreeing with what the player carries rather than the moment the tables fill, because a
 world load runs as one long blocking call and a run was measured where the tables filled inside
 that window, between the game's refresh and the mod's first look; asking whether the bar is wrong
 still answers correctly afterwards. The texture array lives on the game instance rather than the
-world, so a second world loaded in the same process finds the icons already built and the question
-costs one comparison.
+world, so a second world loaded in the same process can reuse valid icons; the
+per-world latch avoids additional refreshes.
+
+Before a mod-driven non-Tutorial world load, the boot validates the native item-icon
+cache. A 28 October inspection found all 2471 `.vimg` files empty: the native
+importer accepts file count without checking contents and publishes failed decodes
+into its game-instance array. Empty `.vimg` files are removed under a Windows
+handle that denies concurrent writers; valid files, unrelated files and nested
+directories stay intact. Missing files select the game's own render route. A cache
+containing null textures is also cleared from the game instance before travel.
+Readiness now requires matching name/texture counts and populated texture entries.
+Tutorial retains its native presentation and skips this repair/refresh policy.
 
 It reaches a world with no session as well as one with a session, and for a release it did not. The
 rebuild rides the session's tick, and the branch that carries it in a world with no session was

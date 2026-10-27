@@ -5,13 +5,13 @@
 #define FLASHLIGHT_STATE_SOURCE "../../src/votv-coop/src/coop/player/item_activate.cpp"
 #endif
 #include FLASHLIGHT_STATE_SOURCE
-namespace test {bool haveLight=true,settersReady=true;int applies=0,cones=0,visibility=0;float lastIntensity=0;std::function<void()> onSnapshot,onLightRead,onVisibility;ue_wrap::engine::MainPlayerFlashlightState lightState{true,true,false,0};ue_wrap::engine::FlashlightSnapshot light{5,45,20,true};}
+namespace test {bool haveLight=true,settersReady=true,snapshotReady=true;int applies=0,cones=0,visibility=0;float lastIntensity=0;std::function<void()> onSnapshot,onLightRead,onVisibility;ue_wrap::engine::MainPlayerFlashlightState lightState{true,true,false,0};ue_wrap::engine::FlashlightSnapshot light{5,45,20,true},remoteLight{5,45,20,true};}
 namespace ue_wrap::engine {
 void* GetController(void* a){return a;}void* GetMainPlayerLightR(void* a){auto cb=std::move(test::onLightRead);test::onLightRead={};if(cb)cb();return test::haveLight?a:nullptr;}
 bool ReadMainPlayerFlashlightState(void*,MainPlayerFlashlightState& out){out=test::lightState;return true;}
-bool ReadFlashlightSnapshot(void*,FlashlightSnapshot& out){out=test::light;auto cb=std::move(test::onSnapshot);test::onSnapshot={};if(cb)cb();return true;}
-bool SetSceneComponentVisibility(void*,bool,bool){++test::visibility;auto cb=std::move(test::onVisibility);test::onVisibility={};if(cb)cb();return test::settersReady;}bool SetLightIntensity(void*,float value){++test::applies;test::lastIntensity=value;test::Callback();return test::settersReady;}
-bool SetSpotLightOuterConeAngle(void*,float){++test::cones;return true;}bool SetSpotLightInnerConeAngle(void*,float){++test::cones;return true;}
+bool ReadFlashlightSnapshot(void* object,FlashlightSnapshot& out){out=object==&test::ui?test::remoteLight:test::light;auto cb=std::move(test::onSnapshot);test::onSnapshot={};if(cb)cb();return test::snapshotReady;}
+bool SetSceneComponentVisibility(void*,bool visible,bool){++test::visibility;if(test::settersReady)test::remoteLight.visible=visible;auto cb=std::move(test::onVisibility);test::onVisibility={};if(cb)cb();return test::settersReady;}bool SetLightIntensity(void*,float value){++test::applies;test::lastIntensity=value;if(test::settersReady)test::remoteLight.intensity=value;test::Callback();return test::settersReady;}
+bool SetSpotLightOuterConeAngle(void*,float value){++test::cones;test::remoteLight.outerConeAngle=value;return true;}bool SetSpotLightInnerConeAngle(void*,float value){++test::cones;test::remoteLight.innerConeAngle=value;return true;}
 }
 namespace coop::flashlight_click_sound {void PlayIfStateChanged(void*,uint8_t,bool){}}
 namespace test {uint32_t sessionSerial=1;std::array<coop::roster_ledger::Row,coop::players::kMaxPeers> people;}
@@ -24,11 +24,37 @@ void ResetLifetime(){
  callback={};onSnapshot={};onLightRead={};onVisibility={};S::OnDisconnect();
  lifetimeSession={};otherSession={};actor.live=ui.live=true;++actor.serial;++ui.serial;
  auto& registry=coop::players::Registry::Get();registry.local=&actor;registry.puppet.actor=&ui;registry.puppetSlot=0;
- haveLight=settersReady=true;applies=cones=visibility=0;lightState={true,true,false,0};light={5,45,20,true};
+ haveLight=settersReady=snapshotReady=true;applies=cones=visibility=0;lightState={true,true,false,0};light=remoteLight={5,45,20,true};
  for(auto& person:people)person.playerNo=1;
  ++sessionSerial;S::Install(&lifetimeSession);
 }
 coop::net::ItemActivatePayload Payload(){coop::net::ItemActivatePayload p{};p.itemClassHash=S::g_flashlightClassHash;p.state=1;p.intensity=5;p.outerConeAngle=45;p.innerConeAngle=20;return p;}
+void NativeDrift(){
+ const auto check=[] {S::g_nextApplyCheck[0]=0;S::g_nextStatePoll=UINT64_MAX;S::TickConnect();};
+ for(int fault=0;fault<6;++fault){
+  ResetLifetime();auto p=Payload();S::ApplyToPuppetOrDefer(0,&ui,p);const int before=applies;
+  check();CHECK(applies==before); // stable state does not re-dispatch setters
+  if(fault==0)remoteLight.visible=false;
+  if(fault==1)remoteLight.intensity=0;
+  if(fault==2)remoteLight.outerConeAngle=60;
+  if(fault==3)remoteLight.innerConeAngle=1;
+  if(fault==4)remoteLight.intensity=NAN;
+  if(fault==5)snapshotReady=false;
+  check();CHECK(applies==before+1 && remoteLight.visible && remoteLight.intensity==5 &&
+      remoteLight.outerConeAngle==45 && remoteLight.innerConeAngle==20 && !S::g_pendingApplyValid[0]);
+ }
+ ResetLifetime();auto p=Payload();p.state=0;S::ApplyToPuppetOrDefer(0,&ui,p);
+ remoteLight.visible=true;remoteLight.intensity=8;check();CHECK(!remoteLight.visible && remoteLight.intensity==0);
+ ResetLifetime();p=Payload();S::ApplyToPuppetOrDefer(0,&ui,p);remoteLight.intensity=0;
+ settersReady=false;check();CHECK(S::g_pendingApplyValid[0]);settersReady=true;S::TickConnect();
+ CHECK(!S::g_pendingApplyValid[0] && remoteLight.intensity==5);
+ ResetLifetime();p=Payload();S::ApplyToPuppetOrDefer(0,&ui,p);remoteLight.intensity=0;
+ onSnapshot=[&]{auto newer=p;newer.state=0;S::ApplyToPuppetOrDefer(0,&ui,newer);};check();
+ CHECK(!remoteLight.visible && !remoteLight.intensity && !S::g_pendingApplyPayload[0].state);
+ ResetLifetime();p=Payload();S::ApplyToPuppetOrDefer(0,&ui,p);remoteLight.intensity=0;const int before=applies;
+ onSnapshot=[] {S::OnDisconnectForSlot(0);};check();CHECK(applies==before && !S::g_receivedApplyValid[0]);
+ puts("PASS remote flashlight same-component native drift, stable dedupe, off correction, refusal retry and newer/retired read ownership");
+}
 void SessionLifetime(){
  for(int mode=0;mode<5;++mode){
   ResetLifetime();haveLight=false;auto p=Payload();S::ApplyToPuppetOrDefer(1,nullptr,p);
@@ -144,6 +170,19 @@ int main(int argc,char** argv){namespace S=coop::item_activate;using namespace t
  puts("PASS flashlight local ownership, coherent snapshots, finite ranges, newer-state interruption, nested echo and pawn recreation");
  puts("PASS flashlight install before player-class readiness and deferred component/setter apply, latest-state and departure");
  puts("PASS actual flashlight battery-empty edge without input, send retry, dedupe, unequip and world/disconnect reset");
+ ResetLifetime();
+ lightState.crankFlashlight=true;sample={};
+ CHECK(S::BuildPayloadFromLocal(&actor,sample,&lifetimeSession) && sample.state==1);
+ // The last received state survives a puppet replacement without a new packet.
+ auto latest=Payload();S::ApplyToPuppetOrDefer(0,&ui,latest);
+ CHECK(!S::g_pendingApplyValid[0]);const auto applied=applies;
+ ++ui.serial;S::TickConnect();CHECK(applies==applied+1 && lastIntensity==5 && !S::g_pendingApplyValid[0]);
+ latest.state=0;S::ApplyToPuppetOrDefer(0,&ui,latest);const auto offApplied=applies;
+ ++ui.serial;settersReady=false;S::TickConnect();CHECK(S::g_pendingApplyValid[0]);
+ settersReady=true;S::TickConnect();CHECK(applies==offApplied+2 && !S::g_pendingApplyValid[0] && !lastIntensity);
+ const auto retired=applies;S::OnDisconnectForSlot(0);++ui.serial;S::TickConnect();CHECK(applies==retired);
+ puts("PASS equipped crank flashlight and on/off replay after puppet replacement, refusal retry and departure");
+ NativeDrift();
  LifetimeCases();
  return 0;
 }
