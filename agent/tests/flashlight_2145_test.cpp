@@ -8,6 +8,7 @@
 namespace test {bool haveLight=true,settersReady=true;int applies=0,cones=0,visibility=0;float lastIntensity=0;std::function<void()> onSnapshot,onLightRead,onVisibility;ue_wrap::engine::MainPlayerFlashlightState lightState{true,true,false,0};ue_wrap::engine::FlashlightSnapshot light{5,45,20,true};}
 namespace ue_wrap::engine {
 void* GetController(void* a){return a;}void* GetMainPlayerLightR(void* a){auto cb=std::move(test::onLightRead);test::onLightRead={};if(cb)cb();return test::haveLight?a:nullptr;}
+void* GetController(void* a){return a;}void* GetMainPlayerLightR(void* a){auto cb=std::move(test::onLightRead);test::onLightRead={};if(cb)cb();return test::haveLight?a:nullptr;}
 bool ReadMainPlayerFlashlightState(void*,MainPlayerFlashlightState& out){out=test::lightState;return true;}
 bool ReadFlashlightSnapshot(void*,FlashlightSnapshot& out){out=test::light;auto cb=std::move(test::onSnapshot);test::onSnapshot={};if(cb)cb();return true;}
 bool SetSceneComponentVisibility(void*,bool,bool){++test::visibility;auto cb=std::move(test::onVisibility);test::onVisibility={};if(cb)cb();return test::settersReady;}bool SetLightIntensity(void*,float value){++test::applies;test::lastIntensity=value;test::Callback();return test::settersReady;}
