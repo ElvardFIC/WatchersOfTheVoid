@@ -1,11 +1,11 @@
-param([string]$Python='python')
+param([string]$Python=(Join-Path $env:USERPROFILE '.local/bin/python3.15.exe'))
 $ErrorActionPreference='Stop'
 $root=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 $output=Join-Path $root '_research\tests_2129'
 New-Item -ItemType Directory -Force -Path $output | Out-Null
 Push-Location $root
 try {
-    . .\_toolchain\env.ps1
+    . (Join-Path $root '../_toolchain/env.ps1')
     foreach ($suite in @('save_codec_2129','wrappers_2129')) {
         & cl /nologo /std:c++20 /EHsc /I agent\tests\stubs /I src\votv-coop\include "/Fo$output\$suite.obj" "/Fe$output\$suite.exe" "agent\tests\${suite}_test.cpp" /link cabinet.lib
         if ($LASTEXITCODE -ne 0) { throw "Compilation failed: $suite" }

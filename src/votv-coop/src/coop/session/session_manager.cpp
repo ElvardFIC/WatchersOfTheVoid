@@ -17,6 +17,7 @@
 #include "coop/session/shutdown.h"
 #include "coop/version.h"  // generated public package label and game compatibility target
 #include "ue_wrap/core/log.h"
+#include "ue_wrap/world/game_mode.h"
 
 #include <algorithm>
 #include <windows.h>
@@ -411,6 +412,10 @@ bool HostWithSave(const SaveChoice& choice, const std::string& name, bool locked
                   const std::string& password, int playersMax, const std::string& masterUrl,
                   coop::session::HostMode mode, net::Refusal* refused) {
     if (refused) *refused = net::Refusal{};
+    if (choice.newGame && !ue_wrap::game_mode::IsValid(choice.mode)) {
+        SetHostStatus("Host failed: invalid game mode");
+        return false;
+    }
     if (HostRefusedBySubstrate(refused)) return false;
     if (g_actionBusy.exchange(true)) { UE_LOGW("session_manager: action busy -- HostWithSave ignored"); return false; }
     // The secret this session will require, resolved once and carried into whichever host path

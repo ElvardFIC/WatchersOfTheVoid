@@ -3,6 +3,7 @@
 #include "ue_wrap/world/game_mode.h"
 
 #include "ue_wrap/core/reflection.h"
+#include "ue_wrap/core/sdk_profile.h"
 #include "ue_wrap/world/world_singleton.h"
 
 #include <cstdint>
@@ -61,6 +62,10 @@ bool FungunHoldAllowed() {
 }
 
 const wchar_t* Name(int ord) { return IsValid(ord) ? kNames[ord] : nullptr; }
+
+const wchar_t* DefaultLevel(int mode) {
+    return mode==kTutorial?L"tutorial3":profile::name::GameplayLevel;
+}
 
 std::string NameOrOrdinal(int ord) {
     const wchar_t* n = Name(ord);

@@ -1,11 +1,11 @@
-param([string]$Python='python',[switch]$Quick)
+param([string]$Python=(Join-Path $env:USERPROFILE '.local/bin/python3.15.exe'),[switch]$Quick)
 $ErrorActionPreference='Stop'
 $root=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 $output=Join-Path $root '_research/tests_2135'
 New-Item -ItemType Directory -Force -Path $output | Out-Null
 Push-Location $root
 try {
- . .\_toolchain\env.ps1
+ . (Join-Path $root '../_toolchain/env.ps1')
  foreach($suite in @('notebook','drone_intent','drone_state','drone_wrapper')) {
   & cl /nologo /std:c++20 /EHsc /Gy /utf-8 /I agent/tests/text_drone_stubs /I agent/tests/stubs /I src/votv-coop/include "/Fo$output/$suite.obj" "/Fe$output/$suite.exe" "agent/tests/${suite}_2135_test.cpp" /link /OPT:REF
   if($LASTEXITCODE -ne 0){throw "Compile failed: $suite"}

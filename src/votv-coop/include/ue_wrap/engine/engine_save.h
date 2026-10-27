@@ -17,7 +17,8 @@ namespace ue_wrap::engine {
 bool ReturnToMainMenu();
 
 // Load a save slot through the game's own entry (LoadGameFromSlot, setSaveSlotObject with
-// loadObjects=true, then untitled_1; the save selects the mode). `forceGameMode` >= 0 writes that
+// loadObjects=true, then the mode's initial map; the save selects the mode).
+// `forceGameMode` >= 0 writes that
 // enum_gamemode ordinal instead of deriving it from the slot-name prefix, which the coop slot
 // `zcoop_<pid>` lacks. False if the slot is missing or the load cannot dispatch. Game thread.
 bool LoadStorySave(const wchar_t* slot, int forceGameMode = -1);

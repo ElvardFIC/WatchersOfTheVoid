@@ -1,6 +1,7 @@
 #include "coop/session/session_manager.h"
 #include "coop/net/lobby_announcer.h"
 #include "coop/net/peer_limits.h"
+#include "ui/host_game_mode.h"
 #include <atomic>
 #include <cstdio>
 #include <cstdlib>
@@ -42,13 +43,16 @@ void ArmDeferredAnnounce(const std::string&,const std::string&,const std::string
 }
 int main(){namespace S=coop::session_manager;using coop::session::Reachability;
  S::SaveChoice choice;choice.newGame=true;choice.newName="new save";
+ for(const auto& game:ui::host_game_mode::kChoices)
  for(int limit=2;limit<=32;++limit)for(bool direct:{false,true})for(bool listed:{false,true})for(bool master:{false,true})for(bool newGame:{false,true}){
+  choice.mode=game.mode;
   choice.newGame=newGame;choice.slot="existing save";
   test::master=master;test::announces=test::announcedLimit=test::deferredLimit=0;S::g_hasPendingHost=false;
   coop::net::Refusal refused;
   CHECK(S::HostWithSave(choice,"test",false,"",limit,"test-master",{direct?Reachability::Direct:Reachability::Brokered,listed},&refused));
   CHECK(S::g_hasPendingHost && S::g_pendingHost.cfg.playerLimit==limit);
   CHECK(S::g_pendingHost.save.newName==choice.newName);
+  CHECK(S::g_pendingHost.save.mode==choice.mode);
   CHECK(S::g_pendingHost.save.newGame==newGame && S::g_pendingHost.save.slot==choice.slot);
   if(direct&&!listed)CHECK(test::announces==0 && test::deferredLimit==limit && !S::g_pendingHost.listed);
   else CHECK(test::announces==1 && test::announcedLimit==limit && S::g_pendingHost.listed==master);
@@ -59,5 +63,8 @@ int main(){namespace S=coop::session_manager;using coop::session::Reachability;
   S::AnnounceEnvHostHidden("test","world",limit);CHECK(test::announcedLimit==limit);}
  S::HostWithSave(choice,"test",false,"",999,"test-master",{Reachability::Direct,false},nullptr);CHECK(S::g_pendingHost.cfg.playerLimit==32);
  S::HostWithSave(choice,"test",false,"",-1,"test-master",{Reachability::Direct,false},nullptr);CHECK(S::g_pendingHost.cfg.playerLimit==2);
+ choice.newGame=true;choice.mode=255;S::g_hasPendingHost=false;const int calls=test::announces;
+ CHECK(!S::HostWithSave(choice,"test",false,"",4,"test-master",{Reachability::Direct,false},nullptr));
+ CHECK(!S::g_hasPendingHost && test::announces==calls && !S::g_actionBusy);
  std::puts("PASS real hosting controllers: all 31 limits through new-save/direct/hidden/listed/brokered/offline fallback, legacy host and env announcement");
 }

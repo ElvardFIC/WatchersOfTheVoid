@@ -342,7 +342,8 @@ void DriveHostBootIfPending() {
                 coop::player_profile_store::ForgetSlot(b->slot);
             }
             if (b->slot.empty()) { b->st.store(3); return; }
-            const bool inGame = ue_wrap::engine::LoadStorySave(b->slot.c_str());
+            const bool inGame = ue_wrap::engine::LoadStorySave(b->slot.c_str(),
+                b->ph.save.newGame?b->ph.save.mode:-1);
             // The picked slot is what this host serves to joiners.
             if (inGame) coop::save_transfer::SetHostSlot(b->slot);
             b->st.store(inGame ? 2 : 1);

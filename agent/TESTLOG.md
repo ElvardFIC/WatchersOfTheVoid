@@ -1,3 +1,124 @@
+# 2162 hosting game-mode selection (27 October 2026)
+
+Owner explicitly requests Tutorial, Story Mode, Infinite Mode, Ambience Mode,
+Sandbox Mode and Solar Mode. Implement named G1-G3, then remove the completed
+implementation entries from TODO; validation remains in this document and WORK.
+
+PASS run_game_modes: actual new-save map and mode-application helpers plus the
+shared six-choice UI model, with native/reflection boundaries doubled. Check
+ordinals 2/0/1/6/4/7, default Story, invalid hidden/unknown selection refusal,
+per-mode mainMap, write/readback retry, existing-save mode ownership and retired
+save/class identity around FName construction. Source wiring covers both menus,
+session recap, captured new-game boot mode, Tutorial map travel/world recognition
+and the existing client mode-transfer byte. Cooked primary assets confirm the
+mode ordinals, tutorial3 first-level call, native mainMap creation and prefixes.
+
+PASS expanded run_host_players: actual hosting controllers for all six modes,
+all 31 player limits, new/existing slots, direct/brokered, listed/hidden and master
+failure branches. Invalid new-game mode refuses before queue/announcement. Its
+local server library suite also passes 118 tests. PASS run_upstream_integration,
+run_save_record, sync_native_contract and reliablekind_gate. These six registered
+groups pass in build/game-mode-feature-final/verification.json, with stable
+production source and Release b2217 / 854 production C++ entries.
+FullRegression=false: this is a focused feature qualification, not all 123 groups.
+
+PASS separate run_2164 sky regression (build/game-modes-check/sky.log),
+l10n_pot --check (443 entries) and abi_gate with its injected rejection control
+(build/game-modes-check/abi.log). Fresh DLL SHA256:
+efadfe9a41ff076c77378e2acba8f2e4e6c7161fa097dc900830e901e8d2c7c6.
+
+An earlier attempted focused run named the unregistered run_2164 group and
+stopped before building; its partial evidence remains in build/game-mode-feature.
+The final registered run completed successfully, and run_2164 was executed
+separately. No ignored failure is counted as a passing group.
+
+Native and fallback hosting select the same mode, settings show the captured
+choice, existing saves retain their own mode, and native widget pointers retire
+with the menu. Tutorial and its chapter worlds count as gameplay; new Tutorial
+starts at /Game/maps/tutorial3. Sandbox uses the main map. No additional Sandbox
+map picker, wire format change, protocol/public-version bump, archive, install,
+commit or publication. Rendered menus and real-peer gameplay for these modes
+remain unperformed acceptance; no fix to the prior flashlight/T-pose reports is
+claimed by this feature.
+
+# 2162 native flashlight audit repairs (27 October 2026)
+
+Owner removes all validation/acceptance tasks from TODO while the requested
+75-task work is ongoing. Replace the superseded B01-B75 selection with an
+implementation-only backlog: 38 entries before these three repairs, 35 remaining.
+Keep validation here/in WORK; do not claim 75 tasks completed.
+
+Implemented A10: refuse each native light setter when ParamFrame writes fail.
+Implemented A11: apply ItemActivate inside the existing admitted game-thread
+inbox drain, removing the extra task that could survive session/occupant turnover.
+Implemented A12: reject resolved Player id/sender-slot mismatch and malformed
+null/length/slot boundaries before reading or applying ItemActivate.
+
+PASS new run_flashlight_native: extracted actual setter/dispatcher bodies, real
+ParamFrame/call.cpp, reflection/native/registry boundaries doubled. Exact setter
+bytes, missing/overflowing fields, negative/zero frames, dead/null targets and
+native refusal; immediate apply/no posted work, correct host/relayed origins,
+Player spoofing, self echo, invalid slots/lengths and pre-pose retention.
+PASS related run_flashlight_join, run_flashlight_click, run_2145 and
+reliablekind_gate. PASS check_current's focused five-group run, stable production
+source and Release/loader import/export verification. Evidence:
+build/flashlight-audit-fixes/verification.json (FullRegression=false), logs/,
+build.log. Register the new native group for future full qualification.
+DLL SHA256: 35924fa834fb0e5af38e153dc36aa62c13fe22fdcf3393497f30972314aea056.
+
+No full 122-group rerun, archive, game install, publication or version/protocol
+change. Remote-light visibility and the reported T-pose remain unclosed gameplay
+defects; these three code repairs do not prove their original cause fixed.
+
+# 2162 offline audit (27 October 2026)
+
+Owner reports: flashlight visible only locally on every peer; falling produces a
+T-pose on all players. These reports remain OPEN: no rendered host/client
+reproduction or verified gameplay repair was performed.
+
+Baseline build/audit-current: run_sat_console_callbacks and run_flashlight_join
+fail to compile. Review b9a087de9's entire delta: it adds duplicate SAT-console
+blocks (60 lines) and duplicate flashlight fixture definitions (one line).
+Remove exactly those additions. Compare pre-merge contents: identical. The only
+remaining difference from that TU's last-qualified file hash is LF/CRLF.
+
+PASS package/check_current.ps1 -EvidenceDirectory build/audit-current-fixed:
+121/121 registered groups, stable production source SHA256
+caeeb4982b06fcfd1205ee9fc50f800791042e820761a16fd128af92c4d5c200,
+Release b2217, 854 production entries, loader exports and static runtime imports.
+PASS abi_gate.py main.dll --drill (including the injected rejection control).
+PASS verify_package_label.py: production formatter still 0.9.2161.
+DLL SHA256: 03fe830ac55f758c65b8554e9840ae9c6113b19590f66567157d06983a3b8062.
+
+PASS 132 server tests via portable Rust/MSVC, cargo test --locked --offline
+--manifest-path server/Cargo.toml (118 library + 6 identity + 7 lobby + 1 cost).
+PASS master-contact, workflow-expression, reliable-kind, fact-row, data-path,
+plural-vector, peer-connection, registry, GC-pin, MinHook, atlas and captured
+fingerprint checks. Initial l10n_pot check FAIL: stale template/pseudolocale.
+Regenerate from current call sites; recheck PASS (443 entries).
+
+Run all 37 scripts absent from the main runner's direct list as well. Initial
+supplemental result: 18 pass / 19 fail. Repair legacy toolchain, Python and
+research paths and run with the portable build environment: final 23 pass /
+14 fail. Details and per-runner causes are in WORK and
+build/audit-supplemental-final/results.json; preserve failures without weakening
+assertions. Some supplemental scripts are already transitively covered by the
+main suite, so these counts are script runs, not independent unique test groups.
+
+Inventory: 140 regression scripts, all 1089 production/development source units
+listed and present, no unlisted .cpp. Compare all 2142 last-qualified snapshot
+inputs: exact matches except the repaired SAT-console's line endings.
+Evidence: build/audit-gates/inventory.json, abi.log, package-label.log,
+server-tests.log, results.json and logs. The original results.json retains the
+initial failing l10n gate; the regenerated template subsequently passed.
+
+Static review also finds unchecked native flashlight frame setters, unbound
+deferred ItemActivate delivery and missing payload-EID versus sender-slot
+validation. These are OPEN code findings, not verified fixes for the owner's
+constant missing-light report. Ragdoll configuration resets to reference pose
+before physics takeover; rendered transfer remains OPEN. TODO A8–A13 track the
+remaining work. No new archive, install, commit, push or publication.
+
 # 2161 package preparation (27 October 2026)
 
 Owner explicitly requested the 2161 build. PASS package/build_current.ps1:

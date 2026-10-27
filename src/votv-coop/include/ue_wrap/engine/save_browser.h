@@ -13,6 +13,7 @@
 //
 // CreateNamedSave mirrors VOTV's create primitive: CreateSaveGameObject(saveSlot_C)
 // + SaveGameToSlot(obj, "<prefix><name>", 0), a persisted-at-creation blank save.
+// The new save's mainMap is initialized to the mode's native starting level.
 
 #pragma once
 

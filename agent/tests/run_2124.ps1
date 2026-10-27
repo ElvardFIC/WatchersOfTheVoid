@@ -1,11 +1,11 @@
-param([string]$Python = 'python')
+param([string]$Python = (Join-Path $env:USERPROFILE '.local/bin/python3.15.exe'))
 $ErrorActionPreference = 'Stop'
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 $output = Join-Path $root '_research\tests_2124'
 New-Item -ItemType Directory -Force -Path $output | Out-Null
 Push-Location $root
 try {
-    . .\_toolchain\env.ps1
+    . (Join-Path $root '../_toolchain/env.ps1')
     foreach ($name in @('wire_2124', 'service_panel_2124', 'kitchen_2124', 'gravity_2124')) {
         & cl /nologo /std:c++20 /EHsc /I agent\tests\stubs /I src\votv-coop\include /I src\votv-coop\src "/Fo$output\$name.obj" "/Fe$output\$name.exe" "agent\tests\${name}_test.cpp"
         if ($LASTEXITCODE -ne 0) { throw "Test compilation failed: $name" }

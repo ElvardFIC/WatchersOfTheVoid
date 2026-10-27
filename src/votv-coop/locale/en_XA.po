@@ -131,8 +131,8 @@ msgid "%1$s deleted an email: %2$s"
 msgstr "[[%1$s deleted an email: %2$s]]"
 
 #, c-format
-msgid "%1$s is asleep -- the world runs faster"
-msgstr "[[%1$s is asleep -- the world runs faster]]"
+msgid "%1$s is asleep"
+msgstr "[[%1$s is asleep]]"
 
 #, c-format
 msgid "%1$s is connecting to the game..."
@@ -918,12 +918,6 @@ msgstr "[[Skin '%s' is not installed here -- keeping your current one]]"
 #, c-format
 msgid "Skin: %s"
 msgstr "[[Skin: %s]]"
-
-msgid "Skins"
-msgstr "[[Skins]]"
-
-msgid "Skins come from converter .pak files under Content/Paks/LogicMods (any subfolder). One pak may carry several skins -- the four scientists ship together in scientists.pak."
-msgstr "[[Skins come from converter .pak files under Content/Paks/LogicMods (any subfolder). One pak may carry several skins -- the four scientists ship together in scientists.pak.]]"
 
 msgid "Someone else has that item."
 msgstr "[[Someone else has that item.]]"

@@ -2,11 +2,11 @@
 from pathlib import Path
 import sys
 root = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(root / '_research'))
+sys.path.insert(0, str(root.parent / '_research'))
 from kismet_dis import Package, Dis, find_script
 
 def body(asset, function):
-    p = Package(str(root / '_research/assets' / ('VotV__Content__' + asset + '.uasset')))
+    p = Package(str(root.parent / '_research/assets' / ('VotV__Content__' + asset + '.uasset')))
     e = next(e for e in p.exports if e['name'] == function and p.class_of_export(e) == 'Function')
     code, _ = find_script(p.export_data(e))
     rows = Dis(p, code).run()

@@ -1,6 +1,7 @@
 // ui/host_save_picker.cpp -- see ui/host_save_picker.h.
 
 #include "ui/host_save_picker.h"
+#include "ui/host_game_mode.h"
 
 #include "ui/server_browser.h"
 #include "coop/session/join_progress.h"
@@ -120,10 +121,7 @@ void DoHostNew() {
     sm::SaveChoice c;
     c.newGame = true;
     c.newName = g_newName;
-    // Story: a NEW game in any other mode needs the native map picker (cbox_sboxLevel), which
-    // this window does not carry. Hosting an EXISTING save of any mode works, and the joiner
-    // then comes up in it.
-    c.mode = ue_wrap::game_mode::kStory;
+    c.mode = host_game_mode::Value();
     // A brand-new game's load is the SLOWEST host boot (the save isn't loadable for tens
     // of seconds), so the no-feedback window was the worst here -- this is exactly where
     // the user self-joined. Cover the menu the instant the action is accepted.
@@ -135,7 +133,7 @@ void DoHostNew() {
         return;
     }
     coop::join_progress::BeginHostBoot(g_newName);
-    UE_LOGI("host_save_picker: HOST NEW story game '%s'", g_newName);
+    UE_LOGI("host_save_picker: HOST NEW game '%s' (mode=%u)", g_newName,unsigned(c.mode));
     Close();
     ui::server_browser::Close();
 }
@@ -185,7 +183,7 @@ void Render() {
         ImGui::Spacing();
 
         // The save list (native metadata read off each UsaveSlot_C).
-        const float footer = ImGui::GetFrameHeightWithSpacing() * 3.4f;
+        const float footer = ImGui::GetFrameHeightWithSpacing() * 4.8f;
         const ImGuiTableFlags tflags = ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH |
                                        ImGuiTableFlags_ScrollY | ImGuiTableFlags_Resizable |
                                        ImGuiTableFlags_PadOuterX;
@@ -224,9 +222,18 @@ void Render() {
             ImGui::EndTable();
         }
 
-        // New Game (Story) row.
+        // The mode belongs to a new world; existing saves retain their own mode.
         ImGui::Separator();
-        ImGui::TextUnformatted("New Game (Story):");
+        ImGui::SetNextItemWidth(S(220.f));
+        const int modeIndex=host_game_mode::IndexOf(host_game_mode::Value());
+        if (ImGui::BeginCombo("New game mode",host_game_mode::kChoices[modeIndex].label)) {
+            for (const auto& choice:host_game_mode::kChoices) {
+                if (ImGui::Selectable(choice.label,choice.mode==host_game_mode::Value()))
+                    host_game_mode::Select(choice.mode);
+            }
+            ImGui::EndCombo();
+        }
+        ImGui::TextUnformatted("New Game:");
         ImGui::SameLine();
         ImGui::SetNextItemWidth(S(220.0f));
         // Enter in the name field = the primary action: a text field with one obvious

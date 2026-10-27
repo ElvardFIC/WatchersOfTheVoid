@@ -103,8 +103,8 @@ void ApplyGameModeFromSlot(void* gi, const wchar_t* slot, int forceGameMode = -1
     // The save-transfer slot carries a prefix the game's mode map cannot match, and a fresh coop
     // world has no slot file at all; both name their mode outright instead.
     if (forceGameMode >= 0) {
-        g_gameModeApplied = true;
         const int old = ue_wrap::game_mode::WriteTo(gi, forceGameMode);
+        g_gameModeApplied = old>=0 && ue_wrap::game_mode::ReadFrom(gi)==forceGameMode;
         UE_LOGI("engine: ApplyGameModeFromSlot -- slot '%ls' FORCED GameMode=%d (was %d; named mode)",
                 slot, forceGameMode, old);
         return;
@@ -119,13 +119,14 @@ void ApplyGameModeFromSlot(void* gi, const wchar_t* slot, int forceGameMode = -1
     const int bestMode = DeriveModeFromSlot(slot);
     // The widget is loaded and getSavePrefix is deterministic, so this latches whether or not a
     // prefix matched; a re-run would give the same answer.
-    g_gameModeApplied = true;
     if (bestMode >= 0) {
         const int old = ue_wrap::game_mode::WriteTo(gi, bestMode);
+        g_gameModeApplied = old>=0 && ue_wrap::game_mode::ReadFrom(gi)==bestMode;
         UE_LOGI("engine: ApplyGameModeFromSlot -- slot '%ls' prefix-matched GameMode=%d (was %d); "
                 "the mode a load outside the slot menu would leave at the engine default",
                 slot, bestMode, old);
     } else {
+        g_gameModeApplied = true;
         UE_LOGW("engine: ApplyGameModeFromSlot -- NO getSavePrefix prefix matched slot '%ls' "
                 "(GameMode stays %d)", slot, ue_wrap::game_mode::ReadFrom(gi));
     }
@@ -227,7 +228,8 @@ BootWorldView SurveyBootWorld(const char* who) {
         // right "wait" answer.
         v.curWorld = R::FindObjectByClass(P::name::WorldClass);
         if (v.curWorld &&
-            R::ToString(R::NameOf(v.curWorld)).find(L"ntitled") != std::wstring::npos)
+            (R::NameContains(R::NameOf(v.curWorld),L"ntitled") ||
+             R::NameContains(R::NameOf(v.curWorld),L"tutorial3")))
             v.gameplayLoading = true;
     }
     // The menu or preLoad: fall through, and the open is issued.
@@ -378,9 +380,11 @@ bool LoadStorySave(const wchar_t* slot, int forceGameMode) {
     // The game mode from the slot prefix before the travel, retried each poll until the widget is
     // loaded.
     ApplyGameModeFromSlot(gi, slot, forceGameMode);
+    if (!g_gameModeApplied) return false;
 
     std::wstring openCmd = L"open ";
-    openCmd += P::name::GameplayLevel;
+    openCmd += ue_wrap::game_mode::ReadFrom(gi)==ue_wrap::game_mode::kTutorial
+        ?L"/Game/maps/tutorial3":ue_wrap::game_mode::DefaultLevel(ue_wrap::game_mode::ReadFrom(gi));
     UE_LOGI("engine: LoadStorySave -- at preLoad/menu; (re)issuing '%ls' (save '%ls' registered)",
             openCmd.c_str(), slot);
     ExecuteConsoleCommand(openCmd.c_str());
@@ -488,9 +492,11 @@ bool StartFreshGame(int gameMode) {
         mode = ue_wrap::game_mode::kStory;
     }
     ApplyGameModeFromSlot(gi, kFreshSlotName, mode);
+    if (!g_gameModeApplied) return false;
 
     std::wstring openCmd = L"open ";
-    openCmd += P::name::GameplayLevel;
+    openCmd += mode==ue_wrap::game_mode::kTutorial
+        ?L"/Game/maps/tutorial3":ue_wrap::game_mode::DefaultLevel(mode);
     UE_LOGI("engine: StartFreshGame -- at preLoad/menu; issuing '%ls' (BLANK save registered, mode=%d %s)",
             openCmd.c_str(), mode, ue_wrap::game_mode::NameOrOrdinal(mode).c_str());
     ExecuteConsoleCommand(openCmd.c_str());

@@ -1,5 +1,22 @@
 # Regression tests
 
+`run_game_modes.ps1` covers the six-choice hosting model, actual native new-save
+map initialization and mode-application/readback/retry bodies, with reflected
+objects and native FName construction doubled. Cooked contracts confirm the enum
+ordinals, Tutorial's first map, save prefixes and native mainMap field. Wiring
+assertions cover both menus, recap, host boot, world classification and existing
+client mode transfer. `run_host_players.ps1` additionally executes the actual host
+controllers for all six modes across each player limit and connection/listing
+path. Release compilation complements these checks; rendered acceptance is separate.
+
+`run_flashlight_native.ps1` extracts the production native flashlight setters and
+ItemActivate dispatcher body. The setter fixture uses actual ParamFrame/call.cpp
+with reflection/native boundaries doubled, checking exact argument bytes and no
+dispatch after missing/overflowing parameters or invalid frames. The dispatcher
+fixture covers synchronous admitted application without another posted task,
+Player-id/sender-slot ownership, null/size/slot boundaries and pre-pose retention.
+These checks do not establish visible rendered light or ragdoll behavior.
+
 `run_llama_marker.ps1`, `run_llama_events.ps1` and
 `run_llama_begin_restore.ps1` cover the marker/event/Begin continuation with 75
 new numbered `PASS llama lifecycle N` groups. Marker tests include 19 actual

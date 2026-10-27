@@ -1,5 +1,176 @@
 # WORK — current state and open work
 
+## Current feature - hosting game-mode selection (2162)
+
+Owner explicitly requests six modes: Tutorial, Story Mode, Infinite Mode,
+Ambience Mode, Sandbox Mode and Solar Mode. This authorizes feature work despite
+the older bug-fixes-only default. Name G1-G3 before implementation, then remove
+those completed entries from the implementation-only TODO.
+
+G1 implemented: shared six-choice selection in the native host window and fallback
+picker, and the captured mode in the session recap. Default remains Story. Mode
+controls apply to new games; existing saves keep their own mode. Native controls
+dim/ignore mode input for existing saves, repaint on return from the fallback,
+clear stale deleted-slot selection and retire widget pointers on menu replacement.
+
+G2 implemented: cooked enum ordinals are 2/0/1/6/4/7, not menu indices. Initialize
+new-save mainMap before persistence, validating save/class identity around native
+FName construction. Host boot explicitly passes the captured new-game mode, and
+mode application waits for successful write/readback before travelling. Tutorial
+routes to /Game/maps/tutorial3; campaign modes and Sandbox use the main map.
+Reject invalid new-game ordinals before hosting/network actions. Existing client
+save-transfer already carries gameMode and both saved/fresh client boot paths now
+use the corresponding initial map; no wire shape/protocol change is required.
+
+G3 implemented: tutorial3 and its chapter worlds are classified as playable,
+including the degraded boot-survey fallback. Menu/preload remain non-gameplay.
+An existing save still derives its own mode; selecting a new mode never mutates it.
+
+PASS new actual-helper six-mode fixture/cooked contracts and expanded actual host
+controllers across all 31 player limits and connection/listing/offline paths.
+Related save/upstream/contract/routing groups and a separate sky regression pass.
+Release evidence is build/game-mode-feature-final; detailed outcomes in TESTLOG.
+Rendered menu geometry, real host/client Tutorial chapters and native Solar/
+Sandbox behavior remain gameplay acceptance limits, not completed tests. Sandbox
+creation uses the main map; a separate Sandbox map picker was not requested.
+No new release archive, installation or publication; release metadata unchanged.
+
+## Current implementation and TODO scope - 2162
+
+The owner requested 75 existing tasks, then explicitly removed all checks from
+TODO. The earlier B01-B75 selection is superseded: most selected entries were
+rendered acceptance rather than implementation. Keep those acceptance limits and
+validation results here/in TESTLOG, not in TODO. The cleaned list contained 38
+implementation entries; three audit fixes below are complete and removed, leaving
+35 unfinished entries. Do not claim 75 completed tasks or invent microchecks to
+meet that number. Preserve the flashlight/T-pose defects as open implementation.
+
+Completed A10: all four native flashlight setters now refuse dispatch if any
+ParamFrame write fails, including visibility's second boolean. Completion can no
+longer acknowledge a zero/default frame after missing/overflowing metadata.
+
+Completed A11: ItemActivate now applies directly in the existing game-thread
+inbox drain. Remove its redundant posted task, so no queued application survives
+the originating session or occupant. The lane itself retains pre-pose state.
+
+Completed A12: reject a resolved Player id belonging to a different sender slot.
+Reject null payloads, non-exact lengths and invalid sender slots before reading
+the body. Preserve valid host/relayed origins, missing-id fallback and self-echo
+handling. No wire shape, public version or protocol change.
+
+New run_flashlight_native extracts actual production setter/dispatcher bodies;
+the native fixture uses real ParamFrame/call.cpp with reflection/native doubles.
+It covers exact bytes, missing/overflowing fields, invalid/zero frames, dead
+targets/native refusal, immediate application, Player spoofing, boundaries and
+pre-pose retention. Registered in check_current; rendered gameplay remains open.
+The 14 older supplemental fixture failures remain recorded in the audit below;
+they are not converted into TODO implementation tasks or counted as repaired.
+
+
+## Current audit target — 0.9.2162 (27 October 2026)
+
+The owner's latest instruction explicitly selects 2162, superseding the older
+2161-only continuation instruction. Last qualified package: 0.9.2161 / b2217.
+No package/version/protocol change is part of this audit.
+
+Owner reproduction report: every player sees only their own flashlight, and every
+player enters a T-pose on falling. These are reported gameplay failures, not
+reproduced/closed by this offline audit. No live game logs or rendered peer run
+were available in this work. Prior doubled fixtures passing is not acceptance.
+
+### Findings and disposition
+
+1. **P0, repaired — corrupt merge.** b9a087de9 adds 60 duplicate lines in
+   ue_wrap/desk/sat_console.cpp and one duplicate definition line in the flashlight
+   fixture. Duplicated BindingsCurrent/Lease/ParamBounds, variables and an unmatched
+   loop stop compilation. Both failing baseline groups pass after removing exactly
+   that merge's additions. Production contents equal the pre-merge parent.
+2. **P1, repaired after audit — unchecked native flashlight parameters.** In
+   ue_wrap/engine/engine_mainplayer.cpp:514, :523, :533 and :542 the four light
+   setters ignore ParamFrame::Set results, then return Call's result. Missing or
+   incompatible parameter metadata can therefore dispatch a default/partial frame
+   and be acknowledged as a successful apply; item_activate then clears retry debt.
+   Existing controller fixtures replace these setters. Requires an actual-wrapper
+   failure/retry regression. This conditional defect is not proof of the owner's
+   constant missing-light cause.
+3. **P1, repaired after audit — deferred flashlight delivery outlives its origin.**
+   coop/dispatch/event_dispatch_entity.cpp:753 captures only slot and payload in a
+   posted task. No session serial, world generation or occupant identity is retained.
+   A task executed after Stop/Start or slot replacement can apply the old light to
+   the new occupant; ApplyToPuppetOrDefer reconciles against the new current scope.
+   Bind the originating identity at admission and reject retired work before apply.
+4. **P1, repaired after audit — flashlight sender/target identity mismatch.** The ItemActivate
+   branch selects a Player's slot from payload senderElementId (:732), without
+   comparing it with msg.senderPeerSlot. VerifySenderEidRange checks host versus
+   client ranges, not the client occupant. A client can name another client's
+   existing Player id and target its puppet. ApplyToPuppet's belongs check verifies
+   the selected slot, so it does not restore the missing sender check. Needs an
+   actual-dispatcher impersonation/normal-relay regression.
+5. **P1, investigation — ragdoll reference pose and takeover.**
+   ue_wrap/engine/engine_ragdoll_skin.cpp:215 switches to single-node animation,
+   SetSkeletalMesh reinitializes the pose and the function finishes with physics
+   blend weight zero. It transfers appearance/world transform, not the current
+   animated bone pose. engine_playerragdoll.cpp subsequently rebuilds bodies and
+   sets simulation/blend to one; late recovery and remote creation use a 30ms
+   wait. Native fixtures fake simulation/configuration and do not prove the
+   rendered takeover or that a failed native call leaves a usable body. This is
+   a specific risk consistent with a T-pose, not a verified explanation of all
+   reported falls. Preserve the reported issue until rendered entry/fall/recovery,
+   standing/crouched and host/client cases pass.
+6. **P1, open — regression coverage drift.** There are 140 run_*.ps1 scripts;
+   37 are absent from check_current's direct list. Some are nested already:
+   run_ragdoll_native under run_ragdoll_skin, run_serverbox under run_events,
+   and run_2179 under run_2180. Therefore 37 does not mean 37 unique uncovered
+   mechanics. Execute them anyway: final result 23 pass, 14 fail. Older shared
+   Session/Registry doubles still use four seats while production uses 32; the
+   service-panel test hits that exact static assertion. Other failures are stale
+   interfaces, missing fixture includes and obsolete source/mutation anchors.
+   They cannot be counted as passes or assumed to be production failures.
+7. **P2, repaired — broken validation paths.** Sixteen legacy PS runners pointed
+   at a nonexistent checkout-local toolchain; fifteen used the inaccessible
+   WindowsApps python alias. Eleven native-evidence scripts read research below
+   the checkout instead of its sibling. Correct those paths without changing
+   assertions or weakening controls. The remaining failures are listed below.
+8. **P2, repaired — stale generated translations and development instructions.**
+   Regenerate multivoid.pot/en_XA.po (443 entries). The template gate now passes.
+   Align AGENTS/agent README/root README with the explicit 2162 audit target;
+   preserve release.json and the historical 2161 package identity.
+
+Failing supplemental runners (all retained as failures): run_2124 (four/32-seat
+stub mismatch); run_2126 and run_2129 (generated control misses facts_test_support.h);
+run_2127 (gravity fixture linker drift); run_2128 (removed lightswitch internals);
+run_2129_audit (save callback signatures); run_2131 (Registry double API);
+run_2132 (obsolete source-text assertion); run_2134 (removed lift Mirror API);
+run_2135 (drone wrapper fixture dependencies); run_2136 (relocated pump assertion);
+run_2137 (obsolete cancellation mutation anchor); run_2138 and run_2175
+(hand fixture dependencies). Full logs: build/audit-supplemental-final/log names
+are <runner>.log, with results.json in that directory.
+
+### Verification and limits
+
+PASS all 121 registered groups against a stable production source stamp; current
+Release b2217, 854 production C++ entries, ABI gate including its injected negative
+control, production 0.9.2161 menu formatter, 132 server tests, and the architecture
+gates recorded in build/audit-gates/results.json. Recheck l10n_pot after generation:
+PASS (the initial gate-results entry intentionally retains the failing baseline).
+Supplemental final result: 23/37, with actual ragdoll native/stream fixtures passing.
+
+Inventory accounts for all 1089 production/development units with no missing
+listed files and no unlisted production/development .cpp. Comparison of all 2142
+last-qualified snapshot inputs after the repair matches exactly except SAT-console
+line endings (LF versus the snapshot's CRLF); normalized contents match too. This
+does not prove all game behavior correct or absence of older defects.
+
+Evidence: build/audit-current (interrupted failing baseline),
+build/audit-current-fixed/verification.json (complete passing main run),
+build/audit-supplemental-final/results.json, build/audit-gates/inventory.json,
+abi.log, package-label.log and server-tests.log. Fresh local Release DLL SHA256:
+03fe830ac55f758c65b8554e9840ae9c6113b19590f66567157d06983a3b8062.
+The previous archive retains its qualified historical DLL; it is not repackaged
+with this locally rebuilt DLL. No 2162 package, game installation or publication.
+
+Earlier entries below retain their historical version and acceptance boundaries.
+
 Active development: **0.9.2161 / b2217 / protocol 2217** (27 October 2026).
 The owner explicitly keeps work in 2161. Continuations do not advance versions or
 automatically prepare releases. The previous 2162 label was an assistant mistake;

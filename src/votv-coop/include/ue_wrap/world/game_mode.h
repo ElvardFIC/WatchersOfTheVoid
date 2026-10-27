@@ -24,6 +24,10 @@ constexpr int kStory = 0;
 // Infinite, the second mode whose guns are held only through the exits FungunHoldAllowed reads.
 constexpr int kInfinite = 1;
 
+constexpr int kTutorial = 2;
+constexpr int kAmbient = 6;
+constexpr int kSolar = 7;
+
 // Sandbox, the mode whose rules let a player cheat (ordinal 4 in the name table, game_mode.cpp).
 constexpr int kSandbox = 4;
 
@@ -31,6 +35,10 @@ constexpr bool IsValid(int ord) { return ord >= 0 && ord < kCount; }
 
 // The game's own name for an ordinal ("Sandbox"), or null when the ordinal names no mode.
 const wchar_t* Name(int ord);
+
+// Initial native map for a new game. Tutorial starts on its own first level;
+// Sandbox defaults to the main map, as do the campaign modes.
+const wchar_t* DefaultLevel(int mode);
 
 // The same for a narrow-string caller, rendering an ordinal that names no mode as "#N".
 std::string NameOrOrdinal(int ord);

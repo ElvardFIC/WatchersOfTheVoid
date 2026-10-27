@@ -1,11 +1,11 @@
-param([string]$Python='python')
+param([string]$Python=(Join-Path $env:USERPROFILE '.local/bin/python3.15.exe'))
 $ErrorActionPreference='Stop'
 $root=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 $output=Join-Path $root '_research\tests_2131'
 New-Item -ItemType Directory -Force -Path $output | Out-Null
 Push-Location $root
 try {
-    . .\_toolchain\env.ps1
+    . (Join-Path $root '../_toolchain/env.ps1')
     function Compile-AndRun([string]$name,[string]$source,[bool]$negative) {
         & cl /nologo /std:c++20 /EHsc /Gy /I agent\tests\player_2131_stubs /I agent\tests\stubs /I src\votv-coop\include "/Fo$output\$name.obj" "/Fe$output\$name.exe" $source /link /OPT:REF
         if ($LASTEXITCODE -ne 0) { throw "Compilation failed: $name" }

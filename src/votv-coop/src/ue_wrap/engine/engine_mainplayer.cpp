@@ -516,8 +516,7 @@ bool SetLightIntensity(void* light, float newIntensity) {
     void* fn = ResolveLightIntensityFn();
     if (!fn) return false;
     ParamFrame f(fn);
-    f.Set<float>(L"NewIntensity", newIntensity);
-    return Call(light, f);
+    return f.Set<float>(L"NewIntensity", newIntensity) && Call(light, f);
 }
 
 bool SetSceneComponentVisibility(void* sceneComponent, bool newVisibility, bool propagateToChildren) {
@@ -525,9 +524,8 @@ bool SetSceneComponentVisibility(void* sceneComponent, bool newVisibility, bool 
     void* fn = ResolveSceneVisibilityFn();
     if (!fn) return false;
     ParamFrame f(fn);
-    f.Set<bool>(L"bNewVisibility", newVisibility);
-    f.Set<bool>(L"bPropagateToChildren", propagateToChildren);
-    return Call(sceneComponent, f);
+    return f.Set<bool>(L"bNewVisibility", newVisibility) &&
+        f.Set<bool>(L"bPropagateToChildren", propagateToChildren) && Call(sceneComponent, f);
 }
 
 bool SetSpotLightOuterConeAngle(void* spotLight, float newAngle) {
@@ -535,8 +533,7 @@ bool SetSpotLightOuterConeAngle(void* spotLight, float newAngle) {
     ResolveSpotConeFns();
     if (!g_setSpotOuterConeAngleFn) return false;
     ParamFrame f(g_setSpotOuterConeAngleFn);
-    f.Set<float>(L"NewOuterConeAngle", newAngle);
-    return Call(spotLight, f);
+    return f.Set<float>(L"NewOuterConeAngle", newAngle) && Call(spotLight, f);
 }
 
 bool SetSpotLightInnerConeAngle(void* spotLight, float newAngle) {
@@ -544,8 +541,7 @@ bool SetSpotLightInnerConeAngle(void* spotLight, float newAngle) {
     ResolveSpotConeFns();
     if (!g_setSpotInnerConeAngleFn) return false;
     ParamFrame f(g_setSpotInnerConeAngleFn);
-    f.Set<float>(L"NewInnerConeAngle", newAngle);
-    return Call(spotLight, f);
+    return f.Set<float>(L"NewInnerConeAngle", newAngle) && Call(spotLight, f);
 }
 
 bool ReadMainPlayerRagdollState(void* mainPlayer, bool& isRagdoll, bool& dead) {

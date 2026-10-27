@@ -2,9 +2,9 @@
 from pathlib import Path
 import struct,sys
 root=Path(__file__).resolve().parents[2]
-sys.path.insert(0,str(root/'_research'))
+sys.path.insert(0,str(root.parent/'_research'))
 from kismet_dis import Package,Dis
-p=Package(str(root/'_research/assets/VotV__Content__objects__cargoLift.uasset'))
+p=Package(str(root.parent/'_research/assets/VotV__Content__objects__cargoLift.uasset'))
 def body(name):
  e=next(e for e in p.exports if e['name']==name and p.class_of_export(e)=='Function')
  data=p.export_data(e)

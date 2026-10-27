@@ -648,7 +648,8 @@ bool HandleEntityEvent(net::Session& session,
     case net::ReliableKind::ItemActivate: {
         // A peer's item state changed with a world effect both peers must see (the flashlight,
         // applied to the puppet's light).
-        if (msg.payloadLen < sizeof(net::ItemActivatePayload)) {
+        if (!msg.payload || msg.payloadLen != sizeof(net::ItemActivatePayload) ||
+            msg.senderPeerSlot < 0 || msg.senderPeerSlot >= net::kMaxPeers) {
             UE_LOGW("event_feed: ItemActivate payload too short (%zu < %zu)",
                     static_cast<size_t>(msg.payloadLen), sizeof(net::ItemActivatePayload));
             break;
@@ -730,6 +731,11 @@ bool HandleEntityEvent(net::Session& session,
             if (el && el->GetType() == coop::element::ElementType::Player) {
                 resolvedSlot =
                     static_cast<coop::element::Player*>(el)->PeerSlot();
+                if (resolvedSlot != msg.senderPeerSlot) {
+                    UE_LOGW("event_feed: ItemActivate player id belongs to slot %u, sender=%d -- dropping",
+                            unsigned(resolvedSlot), msg.senderPeerSlot);
+                    break;
+                }
             }
         }
         if (resolvedSlot >= net::kMaxPeers) {
@@ -743,19 +749,12 @@ bool HandleEntityEvent(net::Session& session,
                 break;
             }
         }
-        // The puppet may be null when this packet beats the first pose (the puppet spawns on the
-        // first pose, and a reliable message can arrive first in a connect burst);
-        // ApplyToPuppetOrDefer stashes the payload until it appears. Only the slot and the payload
-        // are captured, and the puppet is re-fetched inside the lambda: Destroy can run between the
-        // post and the dispatch and recycle the slot.
-        net::ItemActivatePayload pCopy = p;
-        const uint8_t peerSlotCopy = resolvedSlot;
-        ue_wrap::game_thread::Post([peerSlotCopy, pCopy] {
-            ::coop::RemotePlayer* rp =
-                ::coop::players::Registry::Get().Puppet(peerSlotCopy);
-            void* puppetNow = (rp && rp->valid()) ? rp->GetActor() : nullptr;
-            ::coop::item_activate::ApplyToPuppetOrDefer(peerSlotCopy, puppetNow, pCopy);
-        });
+        // This dispatcher already runs in the game-thread inbox drain. Apply in
+        // that admitted scope; another posted task could outlive its session or
+        // slot occupant. The lane itself retains state if the puppet is not ready.
+        auto* rp = coop::players::Registry::Get().Puppet(resolvedSlot);
+        void* puppetNow = (rp && rp->valid()) ? rp->GetActor() : nullptr;
+        coop::item_activate::ApplyToPuppetOrDefer(resolvedSlot, puppetNow, p);
         break;
     }
     case net::ReliableKind::PropSaveData:
